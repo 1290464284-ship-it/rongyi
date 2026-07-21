@@ -1,0 +1,20 @@
+{
+  "name": "dental-clinic",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev:api": "pnpm --filter @dental/api dev",
+    "dev:web": "pnpm --filter @dental/web dev",
+    "dev": "concurrently \"pnpm dev:api\" \"pnpm dev:web\"",
+    "build": "pnpm --filter @dental/shared build && pnpm --filter @dental/api build && pnpm --filter @dental/web build",
+    "electron:dev": "pnpm --filter @dental/web electron:dev",
+    "electron:pack": "pnpm --filter @dental/web electron:pack",
+    "electron:dist": "pnpm --filter @dental/web electron:dist"
+  },
+  "devDependencies": {
+    "@vercel/ncc": "^0.44.1",
+    "concurrently": "^8.2.2",
+    "typescript": "^5.4.0"
+  },
+  "packageManager": "pnpm@9.0.0"
+}

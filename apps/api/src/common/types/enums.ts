@@ -1,0 +1,123 @@
+export enum Role {
+  BOSS = 'BOSS',
+  DOCTOR = 'DOCTOR',
+  RECEPTIONIST = 'RECEPTIONIST',
+}
+
+export enum Gender {
+  MALE = 'MALE',
+  FEMALE = 'FEMALE',
+  UNKNOWN = 'UNKNOWN',
+}
+
+export enum AppointmentStatus {
+  BOOKED = 'BOOKED',
+  ARRIVED = 'ARRIVED',
+  IN_CHAIR = 'IN_CHAIR',
+  COMPLETED = 'COMPLETED',
+  CANCELLED = 'CANCELLED',
+  NO_SHOW = 'NO_SHOW',
+}
+
+export enum AppointmentType {
+  FIRST_VISIT = 'FIRST_VISIT',
+  RETURN = 'RETURN',
+  CONSULTATION = 'CONSULTATION',
+  EMERGENCY = 'EMERGENCY',
+  RECALL = 'RECALL',
+}
+
+export enum VisitStatus {
+  IN_PROGRESS = 'IN_PROGRESS',
+  COMPLETED = 'COMPLETED',
+}
+
+export enum ToothStatus {
+  SOUND = 'SOUND',
+  FILLED = 'FILLED',
+  CROWNED = 'CROWNED',
+  MISSING = 'MISSING',
+  IMPLANT = 'IMPLANT',
+  BRIDGE = 'BRIDGE',
+  ROOT_CANAL = 'ROOT_CANAL',
+  EXTRACTED = 'EXTRACTED',
+  DECAYED = 'DECAYED',
+}
+
+export enum ToothCondition {
+  DECAY = 'DECAY',
+  FILLING = 'FILLING',
+  CROWN = 'CROWN',
+  BRIDGE = 'BRIDGE',
+  IMPLANT = 'IMPLANT',
+  ROOT_CANAL = 'ROOT_CANAL',
+  EXTRACTION = 'EXTRACTION',
+  MOBILITY = 'MOBILITY',
+  CALCULUS = 'CALCULUS',
+  BLEEDING = 'BLEEDING',
+  FURCATION = 'FURCATION',
+  OTHER = 'OTHER',
+}
+
+export enum TreatmentStatus {
+  PLANNED = 'PLANNED',
+  APPROVED = 'APPROVED',
+  IN_PROGRESS = 'IN_PROGRESS',
+  COMPLETED = 'COMPLETED',
+  CANCELLED = 'CANCELLED',
+}
+
+export enum ChargeStatus {
+  UNPAID = 'UNPAID',
+  PARTIAL = 'PARTIAL',
+  PAID = 'PAID',
+  REFUNDED = 'REFUNDED',
+}
+
+export enum PayMethod {
+  CASH = 'CASH',
+  WECHAT = 'WECHAT',
+  ALIPAY = 'ALIPAY',
+  UNIONPAY = 'UNIONPAY',
+  INSURANCE = 'INSURANCE',
+  OTHER = 'OTHER',
+}
+
+export enum PlanStatus {
+  DRAFT = 'DRAFT',
+  APPROVED = 'APPROVED',
+  IN_PROGRESS = 'IN_PROGRESS',
+  COMPLETED = 'COMPLETED',
+  CANCELLED = 'CANCELLED',
+}
+
+export enum PlanItemStatus {
+  PLANNED = 'PLANNED',
+  IN_PROGRESS = 'IN_PROGRESS',
+  COMPLETED = 'COMPLETED',
+  SKIPPED = 'SKIPPED',
+}
+
+export enum ImagingType {
+  PANORAMIC = 'PANORAMIC',
+  PERIAPICAL = 'PERIAPICAL',
+  BITEWING = 'BITEWING',
+  CBCT = 'CBCT',
+  INTRAORAL = 'INTRAORAL',
+  EXTRAORAL = 'EXTRAORAL',
+  OTHER = 'OTHER',
+}
+
+export enum RegistrationType {
+  FIRST_VISIT = 'FIRST_VISIT',
+  RETURN_VISIT = 'RETURN_VISIT',
+  EMERGENCY = 'EMERGENCY',
+}
+
+export enum RegistrationStatus {
+  REGISTERED = 'REGISTERED',
+  TRIAGED = 'TRIAGED',
+  IN_PROGRESS = 'IN_PROGRESS',
+  COMPLETED = 'COMPLETED',
+  CANCELLED = 'CANCELLED',
+}
