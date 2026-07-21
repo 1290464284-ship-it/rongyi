@@ -1,0 +1,99 @@
+{
+  "name": "@dental/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "lint": "eslint src --ext ts,tsx",
+    "electron:compile": "tsc -p tsconfig.electron.json && node scripts/rename-main.cjs",
+    "electron:dev": "concurrently \"pnpm dev\" \"pnpm electron:compile && electron .\"",
+    "electron:build": "pnpm build && pnpm electron:compile && electron-builder",
+    "electron:pack": "pnpm build && pnpm electron:compile && electron-builder --dir",
+    "electron:dist": "pnpm build && pnpm electron:compile && electron-builder --publish never"
+  },
+  "dependencies": {
+    "@dental/shared": "workspace:*",
+    "@hookform/resolvers": "^3.3.4",
+    "@tanstack/react-query": "^5.20.0",
+    "axios": "^1.6.7",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.1.0",
+    "date-fns": "^3.3.1",
+    "echarts": "^6.1.0",
+    "echarts-for-react": "^3.0.6",
+    "lucide-react": "^0.330.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-hook-form": "^7.50.0",
+    "react-router-dom": "^6.22.0",
+    "sanitize-html": "^2.17.6",
+    "sonner": "^1.4.0",
+    "tailwind-merge": "^2.2.1",
+    "tailwindcss": "^3.4.1",
+    "zod": "^3.22.4",
+    "zustand": "^4.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "@types/react": "^18.2.55",
+    "@types/react-dom": "^18.2.55",
+    "@types/sanitize-html": "^2.16.1",
+    "@vitejs/plugin-react": "^4.2.1",
+    "autoprefixer": "^10.4.17",
+    "concurrently": "^8.2.2",
+    "electron": "28",
+    "electron-builder": "^26.15.3",
+    "postcss": "^8.4.35",
+    "typescript": "^5.4.0",
+    "vite": "^5.1.0"
+  },
+  "build": {
+    "appId": "com.dental.clinic",
+    "productName": "牙科管家",
+    "directories": {
+      "output": "../../release-v2"
+    },
+    "files": [
+      "electron/**/*",
+      "dist-web/**/*",
+      "public/**/*"
+    ],
+    "asarUnpack": [
+      "dist-web/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../api/bundle",
+        "to": "api/bundle"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "牙科管家"
+    }
+  }
+}
