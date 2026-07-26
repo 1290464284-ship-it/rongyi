@@ -1,14 +1,21 @@
 import { ReactNode, useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
 
+let openDialogCount = 0;
+
 export function Dialog({ open, onClose, children, className }: { open: boolean; onClose: () => void; children: ReactNode; className?: string }) {
   const dialogRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!open) return;
 
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') onCloseRef.current();
     };
     document.addEventListener('keydown', handleEscape);
 
@@ -20,16 +27,21 @@ export function Dialog({ open, onClose, children, className }: { open: boolean; 
       firstFocusable?.focus();
     }, 50);
 
-    // Prevent background scroll
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    // Prevent background scroll with ref counter for stacked dialogs
+    openDialogCount++;
+    if (openDialogCount === 1) {
+      document.body.style.overflow = 'hidden';
+    }
 
     return () => {
       document.removeEventListener('keydown', handleEscape);
       clearTimeout(timer);
-      document.body.style.overflow = prevOverflow;
+      openDialogCount--;
+      if (openDialogCount === 0) {
+        document.body.style.overflow = '';
+      }
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
   return (

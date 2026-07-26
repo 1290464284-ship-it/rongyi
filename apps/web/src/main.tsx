@@ -4,12 +4,14 @@ import { HashRouter } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
 import App from './App';
-import { queryClient } from './lib/query-client';
+import { queryClient } from './lib/api/query-client';
 import { initErrorHandler } from './lib/error-logger';
+import { initSyncService } from './lib/sync/sync-service';
 import { GlobalLoading } from './components/GlobalLoading';
 import './index.css';
 
 initErrorHandler();
+initSyncService();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

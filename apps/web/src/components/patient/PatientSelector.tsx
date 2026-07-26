@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/table';
 import { TableLoading, EmptyState } from '@/components/ui/loading';
 import { Badge } from '@/components/ui/badge';
-import { usePatients } from '@/lib/patients';
+import { usePatients, type Patient } from '@/lib/api/patients/patients';
 import { debounce } from '@/lib/utils';
 
 interface PatientSelectorProps {
@@ -44,7 +44,7 @@ export function PatientSelector({ open, onClose, onSelect, title = '选择患者
 
   const { data, isLoading } = usePatients(debouncedKeyword, page, 20);
 
-  const handleSelect = (patient: any) => {
+  const handleSelect = (patient: Patient) => {
     onSelect({ id: patient.id, name: patient.name, code: patient.code, phone: patient.phone });
     onClose();
   };

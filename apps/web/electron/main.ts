@@ -6,13 +6,20 @@ import { platform } from 'os';
 import { writeFileSync, existsSync, mkdirSync, readFileSync, statSync, unlinkSync, renameSync, readFile } from 'fs';
 import { createServer } from 'http';
 import * as crypto from 'crypto';
-
-// P2-17: 移除全局禁用硬件加速，仅在检测到 GPU 异常时降级
-// app.disableHardwareAcceleration() 会显著影响 ECharts/CSS 动画性能
+import { autoUpdater } from 'electron-updater';
+import {
+  DEFAULT_API_PORT,
+  DEFAULT_WEB_PORT,
+  API_STARTUP_MAX_RETRIES,
+  API_STARTUP_RETRY_DELAY_MS,
+  API_RESTART_DELAY_MS,
+  API_FORCE_KILL_TIMEOUT_MS,
+  ELECTRON_LOG_ROTATION,
+} from '../src/config/constants';
 
 const isDev = !app.isPackaged;
-const apiPort = 3001;
-const webPort = 5173;
+const apiPort = DEFAULT_API_PORT;
+const webPort = DEFAULT_WEB_PORT;
 
 let mainWindow: BrowserWindow | null = null;
 let apiProcess: ChildProcess | null = null;
@@ -39,12 +46,15 @@ function getJwtSecret(): string {
     }
 
     const newSecret = crypto.randomBytes(32).toString('hex');
-    writeFileSync(secretPath, JSON.stringify({ jwtSecret: newSecret }));
+    writeFileSync(secretPath, JSON.stringify({ jwtSecret: newSecret }), { mode: 0o600 });
     log(`生成新的JWT密钥并保存`);
     return newSecret;
   } catch (err) {
-    log(`获取JWT密钥失败，使用临时密钥: ${(err as Error).message}`);
-    return crypto.randomBytes(32).toString('hex');
+    const msg = `获取JWT密钥失败: ${(err as Error).message}`;
+    log(msg);
+    dialog.showErrorBox('密钥错误', msg + '\n\n无法读取或创建JWT密钥文件，应用将退出。');
+    app.quit();
+    throw new Error(msg);
   }
 }
 
@@ -70,29 +80,29 @@ function getEncryptionKey(): string {
       } catch {}
     }
     config.encryptionKey = newKey;
-    writeFileSync(secretPath, JSON.stringify(config));
+    writeFileSync(secretPath, JSON.stringify(config), { mode: 0o600 });
     log(`生成新的数据加密密钥并保存`);
     return newKey;
   } catch (err) {
-    log(`获取加密密钥失败，使用临时密钥: ${(err as Error).message}`);
-    return crypto.randomBytes(32).toString('base64');
+    const msg = `获取加密密钥失败: ${(err as Error).message}`;
+    log(msg);
+    dialog.showErrorBox('密钥错误', msg + '\n\n无法读取或创建数据加密密钥文件，应用将退出。');
+    app.quit();
+    throw new Error(msg);
   }
 }
-
-const MAX_LOG_SIZE = 5 * 1024 * 1024; // 5MB
-const MAX_LOG_FILES = 3;
 
 const rotateLogIfNeeded = (): void => {
   try {
     if (!existsSync(logPath)) return;
     const stats = statSync(logPath);
-    if (stats.size >= MAX_LOG_SIZE) {
+    if (stats.size >= ELECTRON_LOG_ROTATION.MAX_LOG_SIZE_BYTES) {
       // 删除最旧的日志，重命名其他日志
-      for (let i = MAX_LOG_FILES - 1; i > 0; i--) {
+      for (let i = ELECTRON_LOG_ROTATION.MAX_LOG_FILES - 1; i > 0; i--) {
         const oldPath = `${logPath}.${i}`;
         const newPath = `${logPath}.${i + 1}`;
         if (existsSync(oldPath)) {
-          if (i === MAX_LOG_FILES - 1) {
+          if (i === ELECTRON_LOG_ROTATION.MAX_LOG_FILES - 1) {
             unlinkSync(oldPath);
           } else {
             renameSync(oldPath, newPath);
@@ -139,12 +149,12 @@ app.on('child-process-gone', (_event, details) => {
 });
 
 const waitForApi = async (): Promise<void> => {
-  const maxRetries = 30;
-  const delay = 1000;
+  const maxRetries = API_STARTUP_MAX_RETRIES;
+  const delay = API_STARTUP_RETRY_DELAY_MS;
 
   for (let i = 0; i < maxRetries; i++) {
     try {
-      const response = await fetch(`http://localhost:${apiPort}/api/auth/health`);
+      const response = await fetch(`http://localhost:${apiPort}/api/v1/health`);
       const data = await response.json() as any;
       if (data.status === 'ok') {
         log('API 服务启动成功，数据库已连接');
@@ -268,7 +278,7 @@ const startApi = (): Promise<void> => {
               }
             }
             isRestarting = false;
-          }, 3000);
+          }, API_RESTART_DELAY_MS);
         }
       }
     });
@@ -288,14 +298,13 @@ const stopApi = (): void => {
     log('正在停止 API 服务...');
     apiProcess.kill('SIGTERM');
 
-    // 5秒后如果进程仍未退出，强制杀死
     const forceKillTimer = setTimeout(() => {
       if (apiProcess) {
         log('API 服务未在5秒内退出，强制杀死');
         apiProcess.kill('SIGKILL');
         apiProcess = null;
       }
-    }, 5000);
+    }, API_FORCE_KILL_TIMEOUT_MS);
 
     apiProcess.on('exit', () => {
       clearTimeout(forceKillTimer);
@@ -317,6 +326,7 @@ const createWindow = () => {
     frame: true,
     backgroundColor: '#F5F7FA',
     webPreferences: {
+      sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
       devTools: isDev,
@@ -399,7 +409,7 @@ const createWindow = () => {
             } else {
               headers['Cache-Control'] = 'no-cache';
               // P2-18: HTML 响应添加 CSP 头，提供纵深防御
-              headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' http://localhost:*";
+              headers['Content-Security-Policy'] = `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' http://localhost:${apiPort}`;
             }
             res.writeHead(200, headers);
             res.end(content);
@@ -562,6 +572,41 @@ if (!gotTheLock) {
       const menu = Menu.buildFromTemplate(menuTemplate);
       Menu.setApplicationMenu(menu);
       createWindow();
+
+      // 自动更新检查（仅生产环境）
+      if (!isDev) {
+        autoUpdater.autoDownload = false;
+        autoUpdater.autoInstallOnAppQuit = true;
+        autoUpdater.checkForUpdates().catch((err) => {
+          log('自动更新检查失败: ' + (err as Error).message);
+        });
+        autoUpdater.on('update-available', (info) => {
+          log(`发现新版本: ${info.version}`);
+          dialog.showMessageBox({
+            type: 'info',
+            title: '发现新版本',
+            message: `牙科管家 v${info.version} 已发布，正在下载更新...`,
+            buttons: ['好的'],
+          });
+          autoUpdater.downloadUpdate();
+        });
+        autoUpdater.on('update-downloaded', (info) => {
+          log(`新版本已下载: ${info.version}`);
+          dialog.showMessageBox({
+            type: 'info',
+            title: '更新就绪',
+            message: `牙科管家 v${info.version} 已准备就绪，重启后生效。`,
+            buttons: ['立即重启', '稍后重启'],
+          }).then(({ response }) => {
+            if (response === 0) {
+              autoUpdater.quitAndInstall();
+            }
+          });
+        });
+        autoUpdater.on('error', (err) => {
+          log('自动更新错误: ' + err.message);
+        });
+      }
 
       app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {

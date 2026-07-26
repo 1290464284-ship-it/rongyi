@@ -1,104 +1,112 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
-@layer base {
-  * {
-    box-sizing: border-box;
-  }
-  
-  html {
-    font-size: 14px;
-  }
-  
-  body {
-    @apply bg-background text-foreground font-sans antialiased;
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
-  }
-  
-  ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
-  
-  ::-webkit-scrollbar-track {
-    background: #F0F2F5;
-  }
-  
-  ::-webkit-scrollbar-thumb {
-    background: #CBD5DC;
-    border-radius: 4px;
-  }
-  
-  ::-webkit-scrollbar-thumb:hover {
-    background: #9EABB9;
-  }
+@theme {
+  --color-background: #F5F7FA;
+  --color-foreground: #2C3E50;
+  --color-muted: #E8ECF0;
+  --color-muted-foreground: #6B7C93;
+  --color-border: #DCE2E8;
+  --color-primary: #1E5AA8;
+  --color-primary-foreground: #FFFFFF;
+  --color-primaryLight: #3A7BC8;
+  --color-primaryLight-foreground: #FFFFFF;
+  --color-primaryDark: #154A8A;
+  --color-primaryDark-foreground: #FFFFFF;
+  --color-secondary: #00B3AA;
+  --color-secondary-foreground: #FFFFFF;
+  --color-destructive: #E74C3C;
+  --color-destructive-foreground: #FFFFFF;
+  --color-success: #27AE60;
+  --color-success-foreground: #FFFFFF;
+  --color-warning: #F39C12;
+  --color-warning-foreground: #FFFFFF;
+  --color-info: #3498DB;
+  --color-info-foreground: #FFFFFF;
+
+  --font-family-sans: 'Microsoft YaHei', 'PingFang SC', 'Hiragino Sans GB', 'WenQuanYi Micro Hei', sans-serif;
+
+  --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --shadow-card: 0 4px 12px rgba(0, 0, 0, 0.1);
+  --shadow-dropdown: 0 6px 16px rgba(0, 0, 0, 0.12);
+
+  --font-size-page-title: 1.5rem;
+  --font-size-page-title--line-height: 2rem;
+  --font-size-page-title--font-weight: 700;
+  --font-size-section-title: 1.125rem;
+  --font-size-section-title--line-height: 1.75rem;
+  --font-size-section-title--font-weight: 600;
+
+  --radius-lg: 6px;
+  --radius-md: 4px;
+  --radius-sm: 2px;
 }
 
-@layer components {
-  .desktop-btn {
-    @apply px-3 py-1.5 text-sm font-medium rounded border transition-all duration-200;
-    @apply hover:shadow-soft active:scale-[0.98];
-  }
-  
-  .desktop-btn-primary {
-    @apply desktop-btn bg-primary text-white border-primary hover:bg-primaryLight;
-  }
-  
-  .desktop-btn-secondary {
-    @apply desktop-btn bg-white text-foreground border-border hover:bg-muted;
-  }
-  
-  .desktop-btn-danger {
-    @apply desktop-btn bg-destructive text-white border-destructive hover:bg-red-600;
-  }
-  
-  .desktop-card {
-    @apply bg-white border border-border rounded-lg shadow-soft;
-  }
-  
-  .desktop-input {
-    @apply w-full px-3 py-2 border border-border rounded-md text-sm;
-    @apply focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary;
-    @apply transition-all duration-200;
-  }
-  
-  .desktop-select {
-    @apply w-full px-3 py-2 border border-border rounded-md text-sm appearance-none;
-    @apply focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary;
-    @apply transition-all duration-200;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236B7C93' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 8px center;
-    background-size: 16px;
-  }
-  
-  .desktop-tab {
-    @apply px-4 py-2 text-sm font-medium border-b-2 transition-all duration-200 cursor-pointer;
-    @apply border-transparent text-muted-foreground hover:text-foreground;
-  }
-  
-  .desktop-tab-active {
-    @apply desktop-tab border-primary text-primary;
-  }
-  
-  .animate-fade-in {
-    animation: fadeIn 0.2s ease-out;
-  }
-  
-  .animate-slide-down {
-    animation: slideDown 0.2s ease-out;
-  }
-  
-  .animate-slide-up {
-    animation: slideUp 0.2s ease-out;
-  }
-  
-  .animate-scale-in {
-    animation: scaleIn 0.2s ease-out;
-  }
+@utility desktop-btn {
+  @apply px-3 py-1.5 text-sm font-medium rounded border transition-all duration-200;
+  @apply hover:shadow-soft active:scale-[0.98];
+}
+
+@utility desktop-btn-primary {
+  @apply desktop-btn bg-primary text-white border-primary hover:bg-primaryLight;
+}
+
+@utility desktop-btn-secondary {
+  @apply desktop-btn bg-white text-foreground border-border hover:bg-muted;
+}
+
+@utility desktop-btn-danger {
+  @apply desktop-btn bg-destructive text-white border-destructive hover:bg-red-600;
+}
+
+@utility desktop-card {
+  @apply bg-white border border-border rounded-lg shadow-soft;
+}
+
+@utility desktop-input {
+  @apply w-full px-3 py-2 border border-border rounded-md text-sm;
+  @apply focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary;
+  @apply transition-all duration-200;
+}
+
+@utility desktop-select {
+  @apply w-full px-3 py-2 border border-border rounded-md text-sm appearance-none;
+  @apply focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary;
+  @apply transition-all duration-200;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236B7C93' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 16px;
+}
+
+@utility desktop-tab {
+  @apply px-4 py-2 text-sm font-medium border-b-2 transition-all duration-200 cursor-pointer;
+  @apply border-transparent text-muted-foreground hover:text-foreground;
+}
+
+@utility desktop-tab-active {
+  @apply desktop-tab border-primary text-primary;
+}
+
+@utility animate-fade-in {
+  animation: fadeIn 0.2s ease-out;
+}
+
+@utility animate-slide-down {
+  animation: slideDown 0.2s ease-out;
+}
+
+@utility animate-slide-up {
+  animation: slideUp 0.2s ease-out;
+}
+
+@utility animate-scale-in {
+  animation: scaleIn 0.2s ease-out;
+}
+
+@utility animate-global-loading {
+  animation: globalLoading 1.2s ease-in-out infinite;
+  transform-origin: left center;
+  will-change: transform;
 }
 
 @keyframes fadeIn {
@@ -121,17 +129,43 @@
   to { opacity: 1; transform: scale(1); }
 }
 
-/* 全局加载进度条动画：横向移动 + 渐变宽度 */
 @keyframes globalLoading {
   0% { transform: translateX(-100%) scaleX(0.3); }
   50% { transform: translateX(0) scaleX(0.6); }
   100% { transform: translateX(100%) scaleX(0.3); }
 }
 
-.animate-global-loading {
-  animation: globalLoading 1.2s ease-in-out infinite;
-  transform-origin: left center;
-  will-change: transform;
+* {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 14px;
+}
+
+body {
+  @apply bg-background text-foreground font-sans antialiased;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #F0F2F5;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #CBD5DC;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #9EABB9;
 }
 
 @media print {

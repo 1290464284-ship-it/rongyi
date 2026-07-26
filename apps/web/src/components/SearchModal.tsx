@@ -1,16 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '@/lib/api';
+import { useSearch, type SearchResult } from '@/lib/api/system/search';
 import { Search, X, Users, Calendar, Receipt, Stethoscope, Monitor, UserCog } from 'lucide-react';
-
-export interface SearchResult {
-  type: string;
-  typeLabel: string;
-  id: string;
-  title: string;
-  subtitle?: string;
-  url: string;
-}
 
 const TYPE_ICONS: Record<string, typeof Users> = {
   patient: Users,
@@ -33,10 +24,11 @@ const TYPE_COLORS: Record<string, string> = {
 export default function SearchModal() {
   const [open, setOpen] = useState(false);
   const [keyword, setKeyword] = useState('');
-  const [results, setResults] = useState<SearchResult[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [debouncedKeyword, setDebouncedKeyword] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+
+  const { data: results = [], isLoading: loading } = useSearch(debouncedKeyword);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -47,7 +39,7 @@ export default function SearchModal() {
       if (e.key === 'Escape' && open) {
         setOpen(false);
         setKeyword('');
-        setResults([]);
+        setDebouncedKeyword('');
       }
     };
     document.addEventListener('keydown', handleKeyDown);
@@ -62,30 +54,28 @@ export default function SearchModal() {
 
   useEffect(() => {
     if (keyword.length < 2) {
-      setResults([]);
+      setDebouncedKeyword('');
       return;
     }
 
-    setLoading(true);
-    const timer = setTimeout(async () => {
-      try {
-        const res = await api.get<SearchResult[]>('/search', { params: { q: keyword } });
-        setResults(res.data);
-      } catch {
-        setResults([]);
-      } finally {
-        setLoading(false);
-      }
+    const timer = setTimeout(() => {
+      setDebouncedKeyword(keyword);
     }, 300);
 
     return () => clearTimeout(timer);
   }, [keyword]);
 
   const handleSelect = (url: string) => {
-    navigate(url);
+    // 校验 url 必须是站内路径：以 '/' 开头且不包含 '://' 和 'javascript:'
+    const isInternalPath = url.startsWith('/') && !url.includes('://') && !url.toLowerCase().includes('javascript:');
+    if (isInternalPath) {
+      navigate(url);
+    } else {
+      navigate('/');
+    }
     setOpen(false);
     setKeyword('');
-    setResults([]);
+    setDebouncedKeyword('');
   };
 
   return (

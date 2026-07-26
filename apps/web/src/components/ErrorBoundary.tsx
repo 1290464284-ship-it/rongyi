@@ -3,13 +3,13 @@ import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { useNavigate } from 'react-router-dom';
+import { errorLogger } from '@/lib/error-logger';
 
 interface Props {
   children: ReactNode;
   fallback?: ReactNode;
   variant?: 'full' | 'inline';
   onError?: (error: Error) => void;
-  enableGlobalErrorListener?: boolean;
 }
 
 interface State {
@@ -18,44 +18,40 @@ interface State {
   errorInfo: ErrorInfo | null;
 }
 
-let globalErrorListenersBound = false;
-let globalErrorHandlers: Array<(error: Error) => void> = [];
+// 全局错误触发事件，用于异步错误触发 ErrorBoundary
+type ErrorTriggerHandler = (error: Error) => void;
+const errorTriggerListeners: Set<ErrorTriggerHandler> = new Set();
 
-const bindGlobalErrorListeners = () => {
-  if (globalErrorListenersBound) return;
-
-  const handleError = (event: ErrorEvent) => {
-    console.error('Global error:', event.error);
-    globalErrorHandlers.forEach(handler => {
-      try { handler(event.error); } catch {}
-    });
-  };
-
-  const handleRejection = (event: PromiseRejectionEvent) => {
-    console.error('Unhandled promise rejection:', event.reason);
-    globalErrorHandlers.forEach(handler => {
-      try { handler(event.reason as Error); } catch {}
-    });
-  };
-
-  window.addEventListener('error', handleError);
-  window.addEventListener('unhandledrejection', handleRejection);
-  globalErrorListenersBound = true;
+export const triggerErrorBoundary = (error: Error) => {
+  errorTriggerListeners.forEach(handler => {
+    try {
+      handler(error);
+    } catch (e) {
+      console.error('Error in error trigger handler:', e);
+    }
+  });
 };
 
-const extractErrorMessage = (error: any): string => {
+const extractErrorMessage = (error: unknown): string => {
   if (typeof error === 'string') {
     return error;
   }
-  if (error?.message) {
-    return typeof error.message === 'string' ? error.message : JSON.stringify(error.message);
+  if (error instanceof Error) {
+    return error.message;
   }
-  if (error?.response?.data?.message) {
-    const msg = error.response.data.message;
-    return typeof msg === 'string' ? msg : JSON.stringify(msg);
-  }
-  if (error?.statusText) {
-    return error.statusText;
+  if (error && typeof error === 'object') {
+    const err = error as Record<string, unknown>;
+    if (typeof err.message === 'string') {
+      return err.message;
+    }
+    const response = err.response as Record<string, unknown> | undefined;
+    const responseData = response?.data as Record<string, unknown> | undefined;
+    if (responseData && typeof responseData.message === 'string') {
+      return responseData.message;
+    }
+    if (typeof err.statusText === 'string') {
+      return err.statusText;
+    }
   }
   try {
     return JSON.stringify(error);
@@ -76,29 +72,26 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('Error Boundary caught error:', error);
-    console.error('Error info:', errorInfo);
+    errorLogger.error('ErrorBoundary caught error', error, 'ErrorBoundary.componentDidCatch');
     this.setState({ errorInfo });
     this.props.onError?.(error);
   }
 
   componentDidMount() {
-    if (this.props.enableGlobalErrorListener !== false) {
-      bindGlobalErrorListeners();
-      this._globalHandler = (error: Error) => {
-        this.props.onError?.(error);
-      };
-      globalErrorHandlers.push(this._globalHandler);
-    }
+    this._errorTriggerHandler = (error: Error) => {
+      this.setState({ hasError: true, error, errorInfo: null });
+      this.props.onError?.(error);
+    };
+    errorTriggerListeners.add(this._errorTriggerHandler);
   }
 
   componentWillUnmount() {
-    if (this._globalHandler) {
-      globalErrorHandlers = globalErrorHandlers.filter(h => h !== this._globalHandler);
+    if (this._errorTriggerHandler) {
+      errorTriggerListeners.delete(this._errorTriggerHandler);
     }
   }
 
-  private _globalHandler?: (error: Error) => void;
+  private _errorTriggerHandler?: ErrorTriggerHandler;
 
   handleReset = () => {
     this.setState({ hasError: false, error: null, errorInfo: null });
@@ -173,5 +166,3 @@ function PageErrorHomeButton() {
     </Button>
   );
 }
-
-

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
+import { UI_ANIMATION_DURATION_MS } from '@/config/constants';
 
 interface AnimatedRouteProps {
   children: React.ReactNode;
@@ -11,7 +12,7 @@ export function AnimatedRoute({ children }: AnimatedRouteProps) {
 
   useEffect(() => {
     setIsAnimating(true);
-    const timer = setTimeout(() => setIsAnimating(false), 200);
+    const timer = setTimeout(() => setIsAnimating(false), UI_ANIMATION_DURATION_MS);
     return () => clearTimeout(timer);
   }, [location.pathname]);
 
