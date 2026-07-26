@@ -1,8 +1,10 @@
-import { useOperationLogs, type OperationLog } from '@/lib/operation-logs';
+import { useState } from 'react';
+import { useOperationLogs, type OperationLog } from '@/lib/api/system/operation-logs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageLoading } from '@/components/ui/loading';
 import { formatDateTime } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 
 const ACTION_LABEL: Record<string, string> = {
   CREATE: '创建',
@@ -26,10 +28,16 @@ const ACTION_COLOR: Record<string, string> = {
   RESTORE: 'bg-primary/10 text-primary',
 };
 
+const PAGE_SIZE = 20;
+
 export default function OperationLogPage() {
-  const { data, isLoading, isError } = useOperationLogs({ pageSize: 100 });
+  // 4.2: 接入分页，避免一次性拉取全部日志导致渲染卡顿
+  const [page, setPage] = useState(1);
+  const { data, isLoading, isError } = useOperationLogs({ page, pageSize: PAGE_SIZE });
 
   const logs: OperationLog[] = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
     <div className="p-6 space-y-4">
@@ -79,6 +87,27 @@ export default function OperationLogPage() {
               ))}
             </TableBody>
           </Table>
+          <div className="flex items-center justify-between px-3 py-2 border-t border-border text-sm text-muted-foreground">
+            <span>共 {total} 条 · 第 {page}/{totalPages} 页</span>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                上一页
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                下一页
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

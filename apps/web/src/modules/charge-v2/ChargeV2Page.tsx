@@ -1,3 +1,7 @@
+/**
+ * @deprecated 此页面已合并到 UnifiedChargePage 中，作为"组合 / 欠费"标签页使用。
+ * 请勿直接在路由中使用此页面，应通过 UnifiedChargePage 访问。
+ */
 import { useState } from 'react';
 import { Package, CreditCard, AlertCircle } from 'lucide-react';
 import { ChargeCombosTab } from './components/CombosTab';

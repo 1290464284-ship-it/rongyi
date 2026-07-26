@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
-import { useCreateAppointment, APPOINTMENT_TYPE_LABEL, type Appointment } from '@/lib/appointments';
+import { useCreateAppointment, APPOINTMENT_TYPE_LABEL, type Appointment } from '@/lib/api/clinical/appointments';
 import { useChairs } from '@/lib/chairs';
-import { api } from '@/lib/api';
+import { useDoctors } from '@/lib/staff';
+import { usePatientSearch } from '@/lib/api/patients/patients';
 
 interface Props {
   defaultStartTime: string; // ISO
@@ -15,8 +15,6 @@ interface Props {
   defaultChairId?: string; // 默认牙椅
   onClose: () => void;
 }
-
-interface Doctor { id: string; name: string; role: string; }
 
 // 预约类型选项（与后端 AppointmentType 枚举对齐）
 const TYPE_OPTIONS: Appointment['type'][] = [
@@ -47,22 +45,18 @@ export default function AppointmentForm({ defaultStartTime, defaultEndTime, defa
   const [patientKeyword, setPatientKeyword] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<{ id: string; name: string } | null>(null);
 
-  const { data: patients } = useQuery({
-    queryKey: ['patients', patientKeyword, 1],
-    queryFn: async () =>
-      (await api.get<{ items: { id: string; name: string; phone: string; code: string }[] }>('/patients', {
-        params: { keyword: patientKeyword, page: 1, pageSize: 10 },
-      })).data,
-    enabled: patientKeyword.length > 0,
-  });
+  const { data: patients } = usePatientSearch(patientKeyword);
+  const { data: doctors } = useDoctors();
 
-  const { data: doctors } = useQuery({
-    queryKey: ['doctors'],
-    queryFn: async () =>
-      (await api.get<Doctor[]>('/auth/users', { params: { role: 'DOCTOR' } })).data,
-  });
-
-  const onSubmit = async (data: any) => {
+  const onSubmit = async (data: {
+    patientId: string;
+    doctorId: string;
+    chairId: string;
+    startTime: string;
+    endTime: string;
+    type: Appointment['type'];
+    remark: string;
+  }) => {
     const payload = {
       ...data,
       patientId: selectedPatient?.id ?? data.patientId,

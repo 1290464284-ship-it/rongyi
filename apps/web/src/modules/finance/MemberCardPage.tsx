@@ -22,8 +22,9 @@ import {
   useRechargeMemberCard,
   useMemberCardLogs,
   type MemberCard,
-} from '@/lib/member-cards';
-import { usePatients } from '@/lib/patients';
+  type MemberCardLog,
+} from '@/lib/api/financial/member-cards';
+import { usePatients } from '@/lib/api/patients/patients';
 import { formatDateTime } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -117,7 +118,7 @@ export default function MemberCardPage() {
     });
   };
 
-  const fmt = (v: any) => `¥${Number(v ?? 0).toFixed(2)}`;
+  const fmt = (v: number | string | null | undefined) => `¥${Number(v ?? 0).toFixed(2)}`;
 
   return (
     <div className="p-6 space-y-4">
@@ -410,7 +411,7 @@ export default function MemberCardPage() {
 
 function LogsView({ cardId, cardNo }: { cardId: string; cardNo: string }) {
   const { data, isLoading } = useMemberCardLogs(cardId);
-  const fmt = (v: any) => `¥${Number(v ?? 0).toFixed(2)}`;
+  const fmt = (v: number | string | null | undefined) => `¥${Number(v ?? 0).toFixed(2)}`;
 
   return (
     <div className="space-y-3">
@@ -434,7 +435,7 @@ function LogsView({ cardId, cardNo }: { cardId: string; cardNo: string }) {
             ) : !data?.length ? (
               <EmptyState colSpan={5} text="暂无记录" />
             ) : (
-              data.map((log: any) => (
+              data.map((log: MemberCardLog) => (
                 <TableRow key={log.id}>
                   <TableCell className="text-muted-foreground">{formatDateTime(log.createdAt)}</TableCell>
                   <TableCell>

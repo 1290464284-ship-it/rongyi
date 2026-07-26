@@ -42,7 +42,7 @@ import {
   useUpdateMedicalRecord,
   useDeleteMedicalRecord,
   useLockMedicalRecord,
-} from '@/lib/medical-records';
+} from '@/lib/api/clinical/medical-records';
 import { ConfirmDialog } from './ConfirmDialog';
 
 export function RecordsTab() {

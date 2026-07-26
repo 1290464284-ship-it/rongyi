@@ -18,9 +18,10 @@ import {
   type CreateFollowUpV2Dto,
   type UpdateFollowUpV2Dto,
   type CompleteFollowUpV2Dto,
-} from '@/lib/follow-ups-v2';
+} from '@/lib/api/communication/follow-ups';
 import { useStaff } from '@/lib/staff';
 import { PatientSelector } from '@/components/patient/PatientSelector';
+import { DROPDOWN_MAX_PAGE_SIZE } from '@/config/constants';
 
 export function CreateFollowUpDialog({
   open,
@@ -33,7 +34,7 @@ export function CreateFollowUpDialog({
 }) {
   const [openSelector, setOpenSelector] = useState(false);
   const { data: staff } = useStaff();
-  const { data: templates } = useFollowUpTemplates({ isEnabled: true, pageSize: 200 });
+  const { data: templates } = useFollowUpTemplates({ isEnabled: true, pageSize: DROPDOWN_MAX_PAGE_SIZE });
 
   const [patientId, setPatientId] = useState('');
   const [patientName, setPatientName] = useState('');

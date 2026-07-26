@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Plus, Search, Printer, Trash2, Eye, Check, X, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -27,10 +27,11 @@ import {
   useCreatePrescription,
   useDeletePrescription,
   type Prescription,
-} from '@/lib/prescriptions';
-import { usePatients } from '@/lib/patients';
+  type CreatePrescriptionDto,
+} from '@/lib/api/content/prescriptions';
+import { usePatients } from '@/lib/api/patients/patients';
 import { useStaff } from '@/lib/staff';
-import { useAuthStore } from '@/lib/auth-store';
+import { useAuthStore } from '@/lib/store/auth-store';
 import { PatientSelector } from '@/components/patient/PatientSelector';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
@@ -47,6 +48,7 @@ export default function PrescriptionPage() {
   const [viewOpen, setViewOpen] = useState(false);
   const [selectedRx, setSelectedRx] = useState<Prescription | null>(null);
   const [createOpen, setCreateOpen] = useState(() => !!presetPatientId);
+  const printTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data, isLoading } = usePrescriptions({ page, pageSize });
   const createRx = useCreatePrescription();
@@ -65,6 +67,16 @@ export default function PrescriptionPage() {
       )
     : prescriptions;
 
+  // 组件卸载时清理打印定时器
+  useEffect(() => {
+    return () => {
+      if (printTimerRef.current) {
+        clearTimeout(printTimerRef.current);
+        printTimerRef.current = null;
+      }
+    };
+  }, []);
+
   function handleView(rx: Prescription) {
     setSelectedRx(rx);
     setViewOpen(true);
@@ -72,7 +84,14 @@ export default function PrescriptionPage() {
 
   function handlePrint(rx: Prescription) {
     setSelectedRx(rx);
-    setTimeout(() => window.print(), 100);
+    // 先清理之前的定时器
+    if (printTimerRef.current) {
+      clearTimeout(printTimerRef.current);
+    }
+    printTimerRef.current = setTimeout(() => {
+      printTimerRef.current = null;
+      window.print();
+    }, 100);
   }
 
   function handleDelete(id: string) {
@@ -240,7 +259,7 @@ function CreatePrescriptionDialog({
   onClose: () => void;
   presetPatientId?: string;
   presetVisitId?: string;
-  onCreate: (data: any) => Promise<any>;
+  onCreate: (data: CreatePrescriptionDto) => Promise<Prescription>;
   isPending?: boolean;
 }) {
   const user = useAuthStore(s => s.user);
@@ -274,7 +293,7 @@ function CreatePrescriptionDialog({
     setItems(items.filter(i => i.id !== id));
   }
 
-  function updateItem(id: string, field: keyof EditableRxItem, value: any) {
+  function updateItem(id: string, field: keyof EditableRxItem, value: EditableRxItem[keyof EditableRxItem]) {
     setItems(items.map(i => (i.id === id ? { ...i, [field]: value } : i)));
   }
 
@@ -285,7 +304,7 @@ function CreatePrescriptionDialog({
       doctorId,
       visitId: presetVisitId || undefined,
       remark: remark || undefined,
-      items: items.map(({ id: _id, ...rest }) => rest),
+      items: items.map(({ id: _id, ...rest }) => ({ ...rest, quantity: String(rest.quantity) })),
     });
     onClose();
     setRemark('');

@@ -31,7 +31,7 @@ import {
   useDeleteFollowUpItem,
   FOLLOW_UP_ITEM_TYPE_LABEL,
   type FollowUpItem,
-} from '@/lib/follow-ups-v2';
+} from '@/lib/api/communication/follow-ups';
 import {
   CreateItemDialog,
   EditItemDialog,

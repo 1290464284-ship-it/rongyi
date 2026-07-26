@@ -1,34 +1,152 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef, memo, useCallback } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Search, Plus } from 'lucide-react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { Table, TableHeader, TableRow, TableHead } from '@/components/ui/table';
 import { Dialog, DialogHeader, DialogTitle, DialogContent } from '@/components/ui/dialog';
 import { TableLoading, EmptyState } from '@/components/ui/loading';
-import { usePatients, PATIENT_SOURCE_LABEL, PATIENT_SOURCE_COLOR, type Patient } from '@/lib/patients';
+import { usePatients, PATIENT_SOURCE_LABEL, PATIENT_SOURCE_COLOR, type Patient } from '@/lib/api/patients/patients';
 import PatientForm from './PatientForm';
 import { formatDate, debounce } from '@/lib/utils';
 
+const genderText = (g: string) => ({ MALE: '男', FEMALE: '女', UNKNOWN: '未知' } as Record<string, string>)[g] ?? g;
+
+const ROW_HEIGHT = 48;
+
+interface VirtualPatientRowProps {
+  patient: Patient;
+  onClick: () => void;
+  index: number;
+  measureRef: (el: Element | null) => void;
+  startY: number;
+}
+
+const VirtualPatientRow = memo(({ patient, onClick, index, measureRef, startY }: VirtualPatientRowProps) => {
+  return (
+    <tr
+      key={patient.id}
+      ref={measureRef}
+      data-index={index}
+      className="cursor-pointer hover:bg-muted/50 transition-colors"
+      onClick={onClick}
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: '100%',
+        transform: `translateY(${startY}px)`,
+        display: 'table',
+        tableLayout: 'fixed',
+        height: ROW_HEIGHT,
+      }}
+    >
+      <td style={{ padding: '0 1rem', borderBottom: '1px solid hsl(var(--border))' }}>
+        <Badge className="bg-muted text-muted-foreground font-mono">{patient.code}</Badge>
+      </td>
+      <td style={{ padding: '0 1rem', borderBottom: '1px solid hsl(var(--border))', fontWeight: 500 }}>
+        {patient.name}
+      </td>
+      <td style={{ padding: '0 1rem', borderBottom: '1px solid hsl(var(--border))' }}>
+        {genderText(patient.gender)}
+      </td>
+      <td style={{ padding: '0 1rem', borderBottom: '1px solid hsl(var(--border))' }}>
+        {patient.phone}
+      </td>
+      <td style={{ padding: '0 1rem', borderBottom: '1px solid hsl(var(--border))' }}>
+        <div className="flex flex-wrap gap-1">
+          {(patient.tags ?? []).slice(0, 3).map((t) => (
+            <Badge key={t} className="bg-info/10 text-info">{t}</Badge>
+          ))}
+          {(patient.tags ?? []).length > 3 && (
+            <Badge className="bg-muted text-muted-foreground">+{patient.tags.length - 3}</Badge>
+          )}
+        </div>
+      </td>
+      <td style={{ padding: '0 1rem', borderBottom: '1px solid hsl(var(--border))' }}>
+        <Badge className={PATIENT_SOURCE_COLOR[patient.source] ?? 'bg-muted text-muted-foreground'}>
+          {PATIENT_SOURCE_LABEL[patient.source] ?? patient.source}
+        </Badge>
+      </td>
+      <td style={{ padding: '0 1rem', borderBottom: '1px solid hsl(var(--border))', color: 'hsl(var(--muted-foreground))' }}>
+        {formatDate(patient.createdAt)}
+      </td>
+      <td
+        style={{
+          padding: '0 1rem',
+          borderBottom: '1px solid hsl(var(--border))',
+          color: 'hsl(var(--muted-foreground))',
+          maxWidth: '200px',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+        title={patient.remark ?? ''}
+      >
+        {patient.remark ?? '-'}
+      </td>
+    </tr>
+  );
+});
+
+VirtualPatientRow.displayName = 'VirtualPatientRow';
+
 export default function PatientListPage() {
   const nav = useNavigate();
-  const [keyword, setKeyword] = useState('');
-  const [debouncedKeyword, setDebouncedKeyword] = useState('');
-  const [page, setPage] = useState(1);
+  const [searchParams, setSearchParams] = useSearchParams();
+  
+  // 从 URL 参数读取默认值
+  const [keyword, setKeyword] = useState(searchParams.get('keyword') || '');
+  const [debouncedKeyword, setDebouncedKeyword] = useState(searchParams.get('keyword') || '');
+  const [page, setPage] = useState(Number(searchParams.get('page')) || 1);
   const [open, setOpen] = useState(false);
   const { data, isLoading } = usePatients(debouncedKeyword, page);
+  const parentRef = useRef<HTMLDivElement>(null);
 
+  const items = data?.items ?? [];
+
+  const rowVirtualizer = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 10,
+  });
+
+  // 关键词变化时更新 URL
   useEffect(() => {
     const debounceFn = debounce(() => {
       setDebouncedKeyword(keyword);
       setPage(1);
+      // 更新 URL 参数
+      const params = new URLSearchParams(searchParams);
+      if (keyword) {
+        params.set('keyword', keyword);
+      } else {
+        params.delete('keyword');
+      }
+      params.set('page', '1');
+      setSearchParams(params, { replace: true });
     }, 300);
     debounceFn();
     return () => debounceFn.cancel();
   }, [keyword]);
 
-  const genderText = (g: string) => ({ MALE: '男', FEMALE: '女', UNKNOWN: '未知' } as Record<string, string>)[g] ?? g;
+  // 页码变化时更新 URL
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams);
+    if (page > 1) {
+      params.set('page', String(page));
+    } else {
+      params.delete('page');
+    }
+    setSearchParams(params, { replace: true });
+  }, [page]);
+
+  const handleRowClick = useCallback((patientId: string) => {
+    nav(`/patients/${patientId}`);
+  }, [nav]);
 
   return (
     <div className="p-6 space-y-4">
@@ -45,52 +163,46 @@ export default function PatientListPage() {
         <span className="text-sm text-muted-foreground">共 {data?.total ?? 0} 位患者</span>
       </div>
 
-      <div className="rounded-lg border border-border bg-white">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>病历号</TableHead>
-              <TableHead>姓名</TableHead>
-              <TableHead>性别</TableHead>
-              <TableHead>手机</TableHead>
-              <TableHead>标签</TableHead>
-              <TableHead>来源</TableHead>
-              <TableHead>建档日期</TableHead>
-              <TableHead>备注</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableLoading colSpan={8} />
-            ) : !data?.items.length ? (
-              <EmptyState colSpan={8} text="暂无患者" />
-            ) : data.items.map((p: Patient) => (
-              <TableRow key={p.id} className="cursor-pointer" onClick={() => nav(`/patients/${p.id}`)}>
-                <TableCell><Badge className="bg-muted text-muted-foreground font-mono">{p.code}</Badge></TableCell>
-                <TableCell className="font-medium">{p.name}</TableCell>
-                <TableCell>{genderText(p.gender)}</TableCell>
-                <TableCell>{p.phone}</TableCell>
-                <TableCell>
-                  <div className="flex flex-wrap gap-1">
-                    {(p.tags ?? []).slice(0, 3).map((t) => (
-                      <Badge key={t} className="bg-info/10 text-info">{t}</Badge>
-                    ))}
-                    {(p.tags ?? []).length > 3 && (
-                      <Badge className="bg-muted text-muted-foreground">+{p.tags.length - 3}</Badge>
-                    )}
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <Badge className={PATIENT_SOURCE_COLOR[p.source] ?? 'bg-muted text-muted-foreground'}>
-                    {PATIENT_SOURCE_LABEL[p.source] ?? p.source}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-muted-foreground">{formatDate(p.createdAt)}</TableCell>
-                <TableCell className="text-muted-foreground max-w-[200px] truncate" title={p.remark ?? ''}>{p.remark ?? '-'}</TableCell>
+      <div className="rounded-lg border border-border bg-white overflow-hidden">
+        <div ref={parentRef} className="overflow-auto" style={{ height: '600px' }}>
+          <Table style={{ display: 'table', width: '100%', tableLayout: 'fixed' }}>
+            <TableHeader style={{ position: 'sticky', top: 0, zIndex: 10, background: 'white' }}>
+              <TableRow>
+                <TableHead style={{ width: '100px' }}>病历号</TableHead>
+                <TableHead style={{ width: '100px' }}>姓名</TableHead>
+                <TableHead style={{ width: '60px' }}>性别</TableHead>
+                <TableHead style={{ width: '120px' }}>手机</TableHead>
+                <TableHead style={{ width: '150px' }}>标签</TableHead>
+                <TableHead style={{ width: '100px' }}>来源</TableHead>
+                <TableHead style={{ width: '100px' }}>建档日期</TableHead>
+                <TableHead>备注</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <tbody style={{ display: 'block', height: rowVirtualizer.getTotalSize() }}>
+              {isLoading ? (
+                <TableLoading colSpan={8} />
+              ) : !items.length ? (
+                <EmptyState colSpan={8} text="暂无患者" />
+              ) : (
+                rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const patient = items[virtualRow.index];
+                  return (
+                    <VirtualPatientRow
+                      key={patient.id}
+                      patient={patient}
+                      index={virtualRow.index}
+                      measureRef={(el) => {
+                        if (el) rowVirtualizer.measureElement(el);
+                      }}
+                      startY={virtualRow.start}
+                      onClick={() => handleRowClick(patient.id)}
+                    />
+                  );
+                })
+              )}
+            </tbody>
+          </Table>
+        </div>
       </div>
 
       {data && data.total > 20 && (

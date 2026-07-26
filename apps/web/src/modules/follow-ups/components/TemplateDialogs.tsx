@@ -17,7 +17,7 @@ import {
   type FollowUpTemplate,
   type CreateFollowUpTemplateDto,
   type UpdateFollowUpTemplateDto,
-} from '@/lib/follow-ups-v2';
+} from '@/lib/api/communication/follow-ups';
 
 export function CreateTemplateDialog({
   open,

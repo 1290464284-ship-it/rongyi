@@ -18,7 +18,7 @@ import { EmptyState } from '@/components/ui/loading';
 import {
   useFollowUpWorkloadStats,
   useFollowUpNpsStats,
-} from '@/lib/follow-ups-v2';
+} from '@/lib/api/communication/follow-ups';
 import { StatCard, StatusBar } from './StatsComponents';
 
 export function StatsTab() {

@@ -13,7 +13,7 @@ import {
   PATIENT_SOURCE_LABEL,
   type Patient,
   type CreatePatientDto,
-} from '@/lib/patients';
+} from '@/lib/api/patients/patients';
 
 interface Props {
   onClose: () => void;
@@ -83,7 +83,7 @@ export default function PatientForm({ onClose, onSaved, initialPatient }: Props)
   const [medicationHistory, setMedicationHistory] = useState<string[]>(initialPatient?.medicationHistory ?? []);
   const [systemicDiseases, setSystemicDiseases] = useState<string[]>(initialPatient?.systemicDiseases ?? []);
 
-  const { register, handleSubmit, formState: { errors } } = useForm({
+  const { register, handleSubmit, formState: { errors } } = useForm<CreatePatientDto & { birthDate: string; idCard: string; address: string; occupation: string; referrer: string; emergencyContact: string; emergencyPhone: string; remark: string }>({
     defaultValues: {
       name: initialPatient?.name ?? '',
       gender: initialPatient?.gender ?? 'UNKNOWN',
@@ -100,7 +100,7 @@ export default function PatientForm({ onClose, onSaved, initialPatient }: Props)
     },
   });
 
-  const onSubmit = async (data: any) => {
+  const onSubmit = async (data: CreatePatientDto & { birthDate: string; idCard: string; address: string; occupation: string; referrer: string; emergencyContact: string; emergencyPhone: string; remark: string }) => {
     const payload: CreatePatientDto = {
       ...data,
       birthDate: data.birthDate || undefined,

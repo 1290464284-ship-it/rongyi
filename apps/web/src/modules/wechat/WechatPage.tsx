@@ -22,7 +22,7 @@ import {
   useAppointmentReminders,
   useSendWechat,
   useSendBatchWechat,
-} from '@/lib/wechat';
+} from '@/lib/api/communication/wechat';
 import { formatDate, formatDateTime } from '@/lib/utils';
 import { toast } from 'sonner';
 

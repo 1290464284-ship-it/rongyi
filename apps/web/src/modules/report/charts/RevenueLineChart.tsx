@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
-import type { RevenueData } from '@/lib/stats';
+import echarts from '@/lib/echarts';
+import type { CallbackDataParams } from 'echarts/types/dist/shared';
+import type { RevenueData } from '@/lib/api/system/stats';
 
 export default function RevenueLineChart({ data, loading }: { data?: RevenueData; loading: boolean }) {
   const option = useMemo(() => {
@@ -8,10 +10,10 @@ export default function RevenueLineChart({ data, loading }: { data?: RevenueData
     return {
       tooltip: {
         trigger: 'axis',
-        formatter: (params: any) => {
+        formatter: (params: CallbackDataParams[]) => {
           const p = params[0];
           const item = timeline[p.dataIndex];
-          return `${p.axisValue}<br/>营收：¥${p.value}<br/>笔数：${item?.count ?? 0}`;
+          return `${(p as any).axisValue ?? ''}<br/>营收：¥${p.value}<br/>笔数：${item?.count ?? 0}`;
         },
       },
       grid: { left: 50, right: 20, top: 30, bottom: 40 },
@@ -70,5 +72,5 @@ export default function RevenueLineChart({ data, loading }: { data?: RevenueData
   if (!data?.timeline?.length) {
     return <div className='text-center text-muted-foreground py-8'>暂无数据</div>;
   }
-  return <ReactECharts option={option} style={{ height: '300px' }} />;
+  return <ReactECharts echarts={echarts} option={option} style={{ height: '300px' }} />;
 }

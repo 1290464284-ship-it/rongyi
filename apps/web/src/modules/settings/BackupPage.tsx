@@ -23,7 +23,7 @@ import {
   useRestoreBackup,
   useDeleteBackup,
   type BackupRecord,
-} from '@/lib/backups';
+} from '@/lib/api/system/backups';
 import { formatDateTime } from '@/lib/utils';
 import { toast } from 'sonner';
 

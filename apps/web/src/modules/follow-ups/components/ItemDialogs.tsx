@@ -15,7 +15,7 @@ import {
   type FollowUpItem,
   type CreateFollowUpItemDto,
   type UpdateFollowUpItemDto,
-} from '@/lib/follow-ups-v2';
+} from '@/lib/api/communication/follow-ups';
 
 export function CreateItemDialog({
   open,

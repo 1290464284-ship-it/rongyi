@@ -1,13 +1,14 @@
+import React from 'react';
 import { Calendar, Users, Receipt, TrendingUp, Clock, Phone } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { useDashboard } from '@/lib/stats';
+import { useDashboard } from '@/lib/api/system/stats';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { useNavigate } from 'react-router-dom';
 
-export default function DashboardPage() {
+export default React.memo(function DashboardPage() {
   const { data, isLoading, isError, error } = useDashboard();
   const nav = useNavigate();
 
@@ -32,7 +33,7 @@ export default function DashboardPage() {
     return (
       <div className="p-6 text-center">
         <p className="text-destructive font-medium">数据加载失败</p>
-        <p className="text-xs text-muted-foreground mt-1">{(error as any)?.message || '请检查网络连接后重试'}</p>
+        <p className="text-xs text-muted-foreground mt-1">{error instanceof Error ? error.message : '请检查网络连接后重试'}</p>
         <button
           onClick={() => window.location.reload()}
           className="mt-3 text-sm text-primary hover:text-primaryLight font-medium"
@@ -212,7 +213,7 @@ export default function DashboardPage() {
       </Card>
     </div>
   );
-}
+});
 
 /** 迷你牙位图 SVG — 只读，展示全口牙列概览 */
 function MiniToothChart() {

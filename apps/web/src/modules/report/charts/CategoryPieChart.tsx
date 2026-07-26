@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
-import type { RevenueData } from '@/lib/stats';
+import echarts from '@/lib/echarts';
+import type { RevenueData } from '@/lib/api/system/stats';
 
 const PALETTE = [
   '#1E5AA8', '#3A7BC8', '#00B3AA', '#27AE60', '#F39C12',
@@ -56,5 +57,5 @@ export default function CategoryPieChart({ data }: { data?: RevenueData }) {
   if (!data?.categories?.length) {
     return <div className='text-center text-muted-foreground py-4'>暂无数据</div>;
   }
-  return <ReactECharts option={option} style={{ height: '300px' }} />;
+  return <ReactECharts echarts={echarts} option={option} style={{ height: '300px' }} />;
 }

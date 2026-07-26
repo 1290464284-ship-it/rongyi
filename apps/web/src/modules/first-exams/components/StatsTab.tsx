@@ -1,6 +1,6 @@
 import { Users, TrendingUp, BarChart3, TrendingDown } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { useFirstExamStats } from '@/lib/first-exams';
+import { useFirstExamStats } from '@/lib/api/clinical/first-exams';
 
 export function StatsTab() {
   const { data: stats, isLoading } = useFirstExamStats();
