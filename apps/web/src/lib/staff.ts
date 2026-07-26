@@ -1,6 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
-import { api } from './api';
-import { useCrudCreate, useCrudUpdate, useCrudDelete } from './use-crud';
+import { api } from './api/api';
+import { useCrudCreate, useCrudUpdate, useCrudDelete } from './hooks/use-crud';
+import { getCacheOptions } from './api/query-client';
+
+const DICT_CACHE = getCacheOptions('dict');
 
 export interface StaffUser {
   id: string;
@@ -12,11 +15,16 @@ export interface StaffUser {
   createdAt: string;
 }
 
-export function useStaff() {
+export function useStaff(params?: { role?: string }) {
   return useQuery({
-    queryKey: ['staff'],
-    queryFn: async () => (await api.get<StaffUser[]>('/auth/users')).data,
+    queryKey: ['staff', params],
+    queryFn: async () => (await api.get<StaffUser[]>('/auth/users', { params })).data,
+    ...DICT_CACHE,
   });
+}
+
+export function useDoctors() {
+  return useStaff({ role: 'DOCTOR' });
 }
 
 export interface CreateStaffDto {

@@ -2,14 +2,14 @@ import { useMemo } from 'react';
 import { format, parseISO } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { Calendar, Stethoscope, Pill } from 'lucide-react';
-import type { Appointment } from '@/lib/appointments';
-import type { Visit } from '@/lib/visits';
-import type { Treatment } from '@/lib/treatments';
+import type { Appointment } from '@/lib/api/clinical/appointments';
+import type { Visit } from '@/lib/api/clinical/visits';
+import type { Treatment } from '@/lib/api/clinical/treatments';
 import {
   APPOINTMENT_STATUS_LABEL,
   APPOINTMENT_TYPE_LABEL,
-} from '@/lib/appointments';
-import { TREATMENT_STATUS_LABEL, TREATMENT_STATUS_COLOR } from '@/lib/treatments';
+} from '@/lib/api/clinical/appointments';
+import { TREATMENT_STATUS_LABEL, TREATMENT_STATUS_COLOR } from '@/lib/api/clinical/treatments';
 import { Badge } from '@/components/ui/badge';
 
 type TimelineNode =

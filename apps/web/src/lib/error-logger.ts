@@ -1,4 +1,10 @@
-import { api } from './api';
+import { api } from './api/api';
+import { triggerErrorBoundary } from '../components/ErrorBoundary';
+import {
+  ERROR_LOG_FLUSH_INTERVAL_MS,
+  MAX_ERROR_LOGS,
+  MAX_ERROR_LOG_RETRY_COUNT,
+} from '../config/constants';
 
 interface ErrorLog {
   id?: string;
@@ -13,14 +19,12 @@ interface ErrorLog {
 }
 
 const logs: ErrorLog[] = [];
-const MAX_LOGS = 100;
-const MAX_RETRY_COUNT = 3;
 const RETRY_LOGS: Map<string, { logs: ErrorLog[]; retryCount: number }> = new Map();
 let flushTimeout: ReturnType<typeof setTimeout> | null = null;
 
 function addLog(log: ErrorLog) {
   logs.unshift(log);
-  if (logs.length > MAX_LOGS) {
+  if (logs.length > MAX_ERROR_LOGS) {
     logs.pop();
   }
   scheduleFlush();
@@ -28,7 +32,7 @@ function addLog(log: ErrorLog) {
 
 function scheduleFlush() {
   if (flushTimeout) return;
-  flushTimeout = setTimeout(flushLogs, 5000);
+  flushTimeout = setTimeout(flushLogs, ERROR_LOG_FLUSH_INTERVAL_MS);
 }
 
 async function flushLogs() {
@@ -47,7 +51,7 @@ async function flushLogs() {
     const existing = RETRY_LOGS.get(batchId);
     const retryCount = existing?.retryCount ?? 0;
 
-    if (retryCount < MAX_RETRY_COUNT) {
+    if (retryCount < MAX_ERROR_LOG_RETRY_COUNT) {
       // 放回队列，等待重试
       logs.push(...batch);
       RETRY_LOGS.set(batchId, { logs: batch, retryCount: retryCount + 1 });
@@ -110,6 +114,15 @@ export const errorLogger = {
     }
     return flushLogs();
   },
+
+  // 清理函数：清除定时器并 flush 剩余日志
+  cleanup: () => {
+    if (flushTimeout) {
+      clearTimeout(flushTimeout);
+      flushTimeout = null;
+    }
+    return flushLogs();
+  },
 };
 
 let errorHandler: ((event: ErrorEvent) => void) | null = null;
@@ -122,10 +135,15 @@ export function initErrorHandler() {
 
   errorHandler = (event: ErrorEvent) => {
     errorLogger.error(event.message, event.error, 'window.error');
+    // 触发 ErrorBoundary 显示降级界面
+    triggerErrorBoundary(event.error || new Error(event.message));
   };
 
   rejectionHandler = (event: PromiseRejectionEvent) => {
-    errorLogger.error('Unhandled Promise rejection', event.reason as Error, 'unhandledrejection');
+    const error = event.reason instanceof Error ? event.reason : new Error(String(event.reason));
+    errorLogger.error('Unhandled Promise rejection', error, 'unhandledrejection');
+    // 触发 ErrorBoundary 显示降级界面
+    triggerErrorBoundary(error);
   };
 
   window.addEventListener('error', errorHandler);

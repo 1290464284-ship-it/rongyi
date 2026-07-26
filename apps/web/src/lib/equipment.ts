@@ -1,4 +1,11 @@
-import { createCrudHooks } from './use-crud';
+import { createCrudHooks } from './hooks/use-crud';
+import {
+  EQUIPMENT_CATEGORIES,
+  EQUIPMENT_STATUS_LABEL,
+  EQUIPMENT_STATUS_COLOR,
+} from '@dental/shared';
+
+export { EQUIPMENT_CATEGORIES, EQUIPMENT_STATUS_LABEL, EQUIPMENT_STATUS_COLOR };
 
 export interface Equipment {
   id: string;
@@ -11,7 +18,7 @@ export interface Equipment {
   purchasePrice?: number | null;
   purchaseDate?: string | null;
   supplier?: string | null;
-  status: 'NORMAL' | 'MAINTENANCE' | 'OUT_OF_SERVICE';
+  status: 'NORMAL' | 'MAINTENANCE' | 'BROKEN' | 'SCRAPPED';
   remarks?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -52,29 +59,7 @@ export interface UpdateEquipmentDto {
   remarks?: string;
 }
 
-export const EQUIPMENT_STATUS_LABEL: Record<string, string> = {
-  NORMAL: '正常',
-  MAINTENANCE: '维修中',
-  OUT_OF_SERVICE: '停用',
-};
-
-export const EQUIPMENT_STATUS_COLOR: Record<string, string> = {
-  NORMAL: 'bg-success/10 text-success',
-  MAINTENANCE: 'bg-warning/10 text-warning',
-  OUT_OF_SERVICE: 'bg-destructive/10 text-destructive',
-};
-
-export const EQUIPMENT_CATEGORIES = [
-  '牙科综合治疗台',
-  'X光机/CT',
-  '超声洁牙机',
-  '激光治疗仪',
-  '消毒设备',
-  '器械工具',
-  '其他',
-];
-
-export type EquipmentStatus = 'NORMAL' | 'MAINTENANCE' | 'OUT_OF_SERVICE';
+export type EquipmentStatus = 'NORMAL' | 'MAINTENANCE' | 'BROKEN' | 'SCRAPPED';
 
 const hooks = createCrudHooks<Equipment, CreateEquipmentDto, UpdateEquipmentDto, QueryEquipmentDto>(
   'equipment',

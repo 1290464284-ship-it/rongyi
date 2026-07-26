@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useIsFetching, useIsMutating } from '@tanstack/react-query';
+import { UI_DEBOUNCE_DELAY_MS } from '@/config/constants';
 import { cn } from '@/lib/utils';
 
 /**
@@ -26,7 +27,7 @@ export function GlobalLoading() {
       let cancelled = false;
       const showTimer = setTimeout(() => {
         if (!cancelled) setVisible(true);
-      }, 200);
+      }, UI_DEBOUNCE_DELAY_MS);
       return () => {
         cancelled = true;
         clearTimeout(showTimer);

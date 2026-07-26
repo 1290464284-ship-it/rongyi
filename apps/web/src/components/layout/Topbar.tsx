@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
-import { useAuthStore } from '@/lib/auth-store';
+import { useAuthStore } from '@/lib/store/auth-store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { api } from '@/lib/api';
+import { useChangePassword } from '@/lib/auth';
 import { toast } from 'sonner';
 import { LogOut, ChevronDown, KeyRound, User as UserIcon } from 'lucide-react';
 import SearchModal from '@/components/SearchModal';
@@ -42,7 +42,8 @@ export default function Topbar() {
   const onSwitchAccount = () => {
     setMenuOpen(false);
     logout();
-    window.location.href = '/login';
+    // 10.2: 项目使用 HashRouter，跳转需用 hash 路径，否则会跳出 SPA
+    window.location.href = '#/login';
   };
 
   const onChangePassword = () => {
@@ -111,7 +112,7 @@ function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose: () =>
   const [oldPwd, setOldPwd] = useState('');
   const [newPwd, setNewPwd] = useState('');
   const [confirmPwd, setConfirmPwd] = useState('');
-  const [loading, setLoading] = useState(false);
+  const changePassword = useChangePassword();
 
   async function handleSubmit() {
     if (!oldPwd || !newPwd || !confirmPwd) return;
@@ -123,17 +124,14 @@ function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose: () =>
       toast.error('两次输入的新密码不一致');
       return;
     }
-    setLoading(true);
     try {
-      await api.post('/auth/change-password', { oldPassword: oldPwd, newPassword: newPwd });
+      await changePassword.mutateAsync({ oldPassword: oldPwd, newPassword: newPwd });
       toast.success('密码修改成功');
       onClose();
       setOldPwd(''); setNewPwd(''); setConfirmPwd('');
-    } catch (err: any) {
-      const msg = err.response?.data?.message || '密码修改失败';
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
       toast.error(typeof msg === 'string' ? msg : '密码修改失败');
-    } finally {
-      setLoading(false);
     }
   }
 
@@ -182,7 +180,7 @@ function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose: () =>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={onClose}>取消</Button>
-            <Button onClick={handleSubmit} disabled={loading || !oldPwd || !newPwd || !confirmPwd}>
+            <Button onClick={handleSubmit} disabled={changePassword.isPending || !oldPwd || !newPwd || !confirmPwd}>
               确认修改
             </Button>
           </div>

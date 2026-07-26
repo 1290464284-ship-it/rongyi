@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { navEntries, isGroup, type NavEntry, type NavItem, type Role } from '@/lib/nav';
-import { useAuthStore } from '@/lib/auth-store';
+import { navEntries, isGroup, type NavEntry, type NavItem, type NavGroup, type Role } from '@/lib/nav';
+import { useAuthStore } from '@/lib/store/auth-store';
 import { cn } from '@/lib/utils';
 import { ChevronDown } from 'lucide-react';
 
@@ -32,7 +32,7 @@ export default function Sidebar() {
       }
     });
     return set;
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
 
   const [expanded, setExpanded] = useState<Set<string>>(initialExpanded);
 
@@ -98,7 +98,7 @@ export default function Sidebar() {
           }
 
           // 分组项
-          const group = entry as NavEntry & { label: string; icon: any; children: NavItem[] };
+          const group = entry as NavGroup;
           const key = String(idx);
           const isOpen = expanded.has(key);
           const hasActiveChild = group.children.some((c) => location.pathname.startsWith(c.to));

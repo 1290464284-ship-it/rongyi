@@ -1,4 +1,4 @@
-import { createCrudHooks } from './use-crud';
+import { createCrudHooks } from './hooks/use-crud';
 
 export interface Chair {
   id: string;
@@ -20,7 +20,7 @@ export interface UpdateChairDto {
   active?: number;
 }
 
-const hooks = createCrudHooks<Chair, CreateChairDto, UpdateChairDto>('chairs', 'chairs');
+const hooks = createCrudHooks<Chair, CreateChairDto, UpdateChairDto>('chairs', 'chairs', { cacheStrategy: 'dict' });
 
 export const useChairs = hooks.useList;
 export const useChair = hooks.useItem;

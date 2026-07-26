@@ -1,4 +1,4 @@
-import { createPaginatedCrudHooks } from './use-crud';
+import { createPaginatedCrudHooks } from './hooks/use-crud';
 
 export interface TreatmentCatalogItem {
   id: string;
@@ -31,6 +31,7 @@ export interface UpdateTreatmentCatalogDto {
 const hooks = createPaginatedCrudHooks<TreatmentCatalogItem, CreateTreatmentCatalogDto, UpdateTreatmentCatalogDto>(
   'treatments/catalog',
   'treatment-catalog',
+  { cacheStrategy: 'dict' },
 );
 
 export const useTreatmentCatalog = hooks.useList;

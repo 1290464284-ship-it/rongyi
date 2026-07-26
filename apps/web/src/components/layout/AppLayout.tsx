@@ -15,9 +15,13 @@ export default function AppLayout() {
       >
         跳到主内容
       </a>
-      <Sidebar />
+      <ErrorBoundary variant="inline">
+        <Sidebar />
+      </ErrorBoundary>
       <div className="flex-1 flex flex-col overflow-hidden">
-        <Topbar />
+        <ErrorBoundary variant="inline">
+          <Topbar />
+        </ErrorBoundary>
         <main id="main-content" className="flex-1 overflow-auto bg-background" tabIndex={-1}>
           <div className="max-w-[1440px] mx-auto h-full">
             <ErrorBoundary key={location.pathname} variant="inline">
