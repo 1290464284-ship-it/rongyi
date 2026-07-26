@@ -1,5 +1,5 @@
-import { AsyncLocalStorage } from 'async_hooks';
-import * as crypto from 'crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import * as crypto from 'node:crypto';
 
 /**
  * Request context stored in AsyncLocalStorage.
@@ -10,6 +10,8 @@ export interface RequestContext {
   traceId: string;
   /** Authenticated user ID (if available) */
   userId?: string;
+  /** Current clinic ID (if available, multi-clinic support) */
+  clinicId?: string;
   /** Request start timestamp (ISO string) */
   requestStart?: string;
 }
@@ -45,6 +47,25 @@ export function getTraceId(): string | undefined {
  */
 export function getCurrentUserId(): string | undefined {
   return als.getStore()?.userId;
+}
+
+/**
+ * Get the current clinic ID.
+ * Returns undefined if called outside a request context or clinic not set.
+ */
+export function getCurrentClinicId(): string | undefined {
+  return als.getStore()?.clinicId;
+}
+
+/**
+ * Set the clinic ID in the current request context.
+ * No-op if called outside a request context.
+ */
+export function setClinicId(clinicId: string): void {
+  const store = als.getStore();
+  if (store) {
+    store.clinicId = clinicId;
+  }
 }
 
 /**

@@ -2,7 +2,11 @@ import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@
 import { Reflector } from '@nestjs/core';
 import { ROLES_KEY } from '../decorators/roles.decorator';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
-import { Role } from '../types/enums';
+import { Role } from '@dental/shared';
+
+interface RequestUser {
+  role: Role;
+}
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -22,13 +26,13 @@ export class RolesGuard implements CanActivate {
       context.getClass(),
     ]);
     if (!requiredRoles || requiredRoles.length === 0) {
-      return true;
+      throw new ForbiddenException('未配置角色权限');
     }
-    const request = context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest<{ user?: RequestUser }>();
     const user = request.user;
-    if (!user) throw new ForbiddenException('not logged in');
+    if (!user) throw new ForbiddenException('未登录');
     if (!requiredRoles.includes(user.role)) {
-      throw new ForbiddenException('insufficient permissions');
+      throw new ForbiddenException('权限不足');
     }
     return true;
   }

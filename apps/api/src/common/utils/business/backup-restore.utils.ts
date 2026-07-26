@@ -2,15 +2,15 @@
  * 数据恢复测试工具
  * 用于验证备份文件的完整性和可恢复性
  */
-import * as fs from 'fs';
-import * as path from 'path';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import Database from 'better-sqlite3';
 
 export interface RestoreTestResult {
   success: boolean;
   backupPath: string;
   tableCount: number;
-  tables: Array<{ name: string; rowCount: number; valid: boolean }>;
+  tables: Array<{ name: string; readable: boolean; valid: boolean }>;
   integrityCheck: boolean;
   error?: string;
 }
@@ -54,14 +54,15 @@ export function testBackupRestore(backupPath: string): RestoreTestResult {
       "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
     ).all() as Array<{ name: string }>;
 
-    const tableResults: Array<{ name: string; rowCount: number; valid: boolean }> = [];
+    const tableResults: Array<{ name: string; readable: boolean; valid: boolean }> = [];
 
+    // P3-5: 用 SELECT 1 LIMIT 1 替代 COUNT(*) 避免全表扫描，仅检查表可读性
     for (const { name } of tables) {
       try {
-        const countRow = testDb.prepare(`SELECT COUNT(*) as count FROM "${name}"`).get() as { count: number };
-        tableResults.push({ name, rowCount: countRow.count, valid: true });
-      } catch (err) {
-        tableResults.push({ name, rowCount: 0, valid: false });
+        testDb.prepare(`SELECT 1 FROM "${name}" LIMIT 1`).get();
+        tableResults.push({ name, readable: true, valid: true });
+      } catch {
+        tableResults.push({ name, readable: false, valid: false });
       }
     }
 
@@ -81,7 +82,7 @@ export function testBackupRestore(backupPath: string): RestoreTestResult {
       integrityCheck: integrityOk,
       error: missingTables.length > 0 ? `缺少关键表: ${missingTables.join(', ')}` : undefined,
     };
-  } catch (err) {
+  } catch (err: unknown) {
     return {
       success: false,
       backupPath,

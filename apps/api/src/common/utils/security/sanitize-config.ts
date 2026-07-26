@@ -6,7 +6,7 @@ import { sanitizeHtml, sanitizePlain } from './sanitize';
  *
  * Add new table entries here to automatically protect all CRUD operations.
  *
- * Usage: import { sanitizeData } from '../utils/sanitize-config';
+ * Usage: import { sanitizeData } from '../utils/security/sanitize-config';
  *         const safe = sanitizeData('Patient', { name: '<script>', remark: '<b>ok</b>' });
  */
 type ColumnType = 'plain' | 'rich';
@@ -164,11 +164,11 @@ const COLUMN_CONFIGS: Record<string, Record<string, ColumnType>> = {
  * @param data - The record to sanitize (DTO or partial)
  * @returns A new object with sanitized string values
  */
-export function sanitizeData(tableName: string, data: Record<string, unknown>): Record<string, unknown> {
+export function sanitizeData<T extends object>(tableName: string, data: T): T {
   const config = COLUMN_CONFIGS[tableName];
-  if (!config) return data; // table not configured — pass through unchanged
+  if (!config) return data;
 
-  const sanitized: Record<string, unknown> = { ...data };
+  const sanitized = { ...data } as Record<string, unknown>;
   for (const [key, value] of Object.entries(data)) {
     const columnType = config[key];
     if (!columnType || value === undefined || value === null) continue;
@@ -176,7 +176,6 @@ export function sanitizeData(tableName: string, data: Record<string, unknown>): 
     if (typeof value === 'string') {
       sanitized[key] = columnType === 'rich' ? sanitizeHtml(value) : sanitizePlain(value);
     }
-    // Non-string values (numbers, arrays, etc.) are passed through
   }
-  return sanitized;
+  return sanitized as T;
 }

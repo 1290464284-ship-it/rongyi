@@ -1,3 +1,5 @@
+import { nowISO } from '../format/date';
+
 /**
  * SQL Builder for dynamic UPDATE statements.
  *
@@ -60,7 +62,7 @@ export class UpdateBuilder {
    */
   setUpdatedAt(): this {
     this.updates.push('updatedAt = ?');
-    this.params.push(new Date().toISOString());
+    this.params.push(nowISO());
     return this;
   }
 
