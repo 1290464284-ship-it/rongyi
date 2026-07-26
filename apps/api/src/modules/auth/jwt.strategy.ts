@@ -11,7 +11,7 @@ import { AuthService } from './auth.service';
  */
 const extractJwtFromCookieOrHeader = (req: Request): string | null => {
   // Try cookie first (preferred)
-  if (req.cookies && req.cookies['access_token']) {
+  if (req.cookies?.['access_token']) {
     return req.cookies['access_token'];
   }
   // Fallback to Authorization header (for backward compatibility)
@@ -25,6 +25,8 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       jwtFromRequest: extractJwtFromCookieOrHeader,
       secretOrKey: config.get('JWT_SECRET'),
       passReqToCallback: false,
+      issuer: 'dental-api',
+      audience: 'dental-web',
     });
   }
 
@@ -33,6 +35,6 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     const user = await this.auth.validateById(payload.sub, payload.tv);
     if (!user) throw new UnauthorizedException();
     // P3: 多诊所扩展 — 将 clinicId 附加到 request.user，供后续 ClinicContext 使用
-    return { ...user, clinicId: payload.cid || (user as Record<string, unknown>).clinicId };
+    return { ...user, clinicId: payload.cid || user.clinicId };
   }
 }

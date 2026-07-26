@@ -1,4 +1,4 @@
-import {
+﻿import {
   Body,
   Controller,
   Get,
@@ -6,40 +6,43 @@ import {
   Patch,
   Post,
   Query,
-  UseGuards,
-} from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
-import { Role } from '../../../common/types/enums';
-import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
+  } from '@nestjs/common';
+import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Role } from '@dental/shared';
 import { Roles } from '../../../common/decorators/roles.decorator';
+import { OperationLogResource } from '../../../common/decorators/operation-log-resource.decorator';
 import { Visit } from '@dental/shared';
 import { VisitsService } from './visits.service';
 import { CreateVisitDto } from './dto/create-visit.dto';
 import { CompleteVisitDto } from './dto/complete-visit.dto';
 import { QueryVisitDto } from './dto/query-visit.dto';
 
-@UseGuards(JwtAuthGuard)
 @Roles(Role.BOSS, Role.DOCTOR)
 @ApiTags('就诊管理')
+@OperationLogResource('就诊')
 @Controller('visits')
 export class VisitsController {
   constructor(private visits: VisitsService) {}
 
+  @ApiOperation({ summary: '新增' })
   @Post()
   create(@Body() dto: CreateVisitDto) {
     return this.visits.create(dto as unknown as Partial<Visit>);
   }
 
+  @ApiOperation({ summary: '分页查询列表' })
   @Get()
   findMany(@Query() q: QueryVisitDto) {
     return this.visits.findMany(q);
   }
 
+  @ApiOperation({ summary: '获取详情' })
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.visits.findOne(id);
   }
 
+  @ApiOperation({ summary: 'complete - 接诊' })
   @Patch(':id/complete')
   complete(@Param('id') id: string, @Body() dto: CompleteVisitDto) {
     return this.visits.complete(id, dto);
