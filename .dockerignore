@@ -1,0 +1,87 @@
+# Dependencies
+node_modules
+pnpm-store
+.npm
+
+# Build outputs
+dist
+build
+bundle
+coverage
+
+# Git
+.git
+.gitignore
+.github
+
+# Documentation
+*.md
+docs/
+README.md
+
+# Tests
+test/
+tests/
+**/*.spec.ts
+**/*.test.ts
+jest.config.js
+jest.setup.js
+jest.*.config.js
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# IDE and editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+*.cache
+
+# Lint output
+lint-detail.json
+lint-summary.cjs
+
+# Debug files
+*.txt
+e2e-results.json
+auth-e2e-debug.txt
+charge-v2-debug.txt
+e2e-debug.txt
+e2e-final.txt
+patients-e2e.txt
+
+# Husky
+.husky
+
+# Electron (web app only)
+apps/web/electron/
+apps/web/release/
+
+# Data (local development)
+data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+backups/

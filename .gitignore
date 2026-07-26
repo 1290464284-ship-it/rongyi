@@ -1,11 +1,31 @@
 node_modules
 dist
 dist-web
+build
+coverage
+.nyc_output
+
+# Environment
 .env
 .env.local
-*.log
+.env.*.local
+apps/web/.env
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS
 .DS_Store
-coverage
+Thumbs.db
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
 .prisma
 uploads/
 .turbo
@@ -23,10 +43,16 @@ apps/web/electron/main.cjs
 apps/api/bundle/
 apps/api/dist/
 
+# 代码健康度报告
+apps/api/.code-health/
+
 # 本地数据库与备份（勿提交诊所数据）
+data/
+backups/
 apps/api/data/
 apps/api/prisma/data/
 apps/api/backups/
+*.db
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
@@ -46,3 +72,11 @@ ruanjian_extracted/
 # Build artifacts and debug logs
 bundle/
 *.asar
+
+# API debug artifacts (api root only, not subdirectories)
+apps/api/*.txt
+apps/api/*.log
+apps/api/*.json
+
+# Encryption keys (never commit)
+.encryption-key
