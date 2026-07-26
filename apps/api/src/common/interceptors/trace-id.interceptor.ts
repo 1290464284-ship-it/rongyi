@@ -1,10 +1,17 @@
 import { Injectable, NestInterceptor, ExecutionContext, CallHandler } from '@nestjs/common';
 import { Observable } from 'rxjs';
-import { tap, finalize } from 'rxjs/operators';
-import { runWithContext, generateTraceId, RequestContext } from '../utils/async-context';
+import { tap } from 'rxjs/operators';
+import { runWithContext, generateTraceId, RequestContext } from '../utils/context/async-context';
 import { AppLogger } from '../services/logger.service';
+import { TRACE_ID_HEADER } from '../middleware/trace.middleware';
+import { Request, Response } from 'express';
 
-const logger = new AppLogger('TraceIdInterceptor');
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+interface RequestUser {
+  id?: string;
+  userId?: string;
+}
 
 /**
  * Interceptor that injects a traceId into the AsyncLocalStorage context.
@@ -17,12 +24,14 @@ const logger = new AppLogger('TraceIdInterceptor');
  */
 @Injectable()
 export class TraceIdInterceptor implements NestInterceptor {
-  intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
-    const request = context.switchToHttp().getRequest();
-    const response = context.switchToHttp().getResponse();
+  private readonly logger = new AppLogger(TraceIdInterceptor.name);
 
-    // Extract or generate traceId
-    const traceId = request.headers['x-request-id'] || generateTraceId();
+  intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
+    const request = context.switchToHttp().getRequest<Request & { user?: RequestUser }>();
+    const response = context.switchToHttp().getResponse<Response>();
+
+    const rawTraceId = request.headers['x-request-id'] as string | undefined;
+    const traceId = rawTraceId && UUID_RE.test(rawTraceId) ? rawTraceId : generateTraceId();
 
     // Extract user info if authenticated
     const user = request.user;
@@ -35,8 +44,7 @@ export class TraceIdInterceptor implements NestInterceptor {
       requestStart: new Date().toISOString(),
     };
 
-    // Set response header for client correlation
-    response.setHeader('X-Trace-Id', traceId);
+    response.setHeader(TRACE_ID_HEADER, traceId);
 
     const startTime = Date.now();
 
@@ -46,7 +54,7 @@ export class TraceIdInterceptor implements NestInterceptor {
         tap({
           next: () => {
             const duration = Date.now() - startTime;
-            logger.logRequest(
+            this.logger.logRequest(
               traceId,
               request.method,
               request.url,
@@ -54,9 +62,8 @@ export class TraceIdInterceptor implements NestInterceptor {
               duration,
             );
           },
-          error: (error) => {
-            const duration = Date.now() - startTime;
-            logger.logError(
+          error: (error: Error) => {
+            this.logger.logError(
               traceId,
               `${request.method} ${request.url} failed: ${error.message}`,
               error,

@@ -1,10 +1,10 @@
-import { SetMetadata } from '@nestjs/common';
+﻿import { SetMetadata } from '@nestjs/common';
 
 export interface OperationLogOptions {
   action: string;
   target?: string;
-  detail?: (args: any[], result: any) => string;
-  extractUserId?: (args: any[]) => string;
+  detail?: (args: unknown[], result: unknown) => string;
+  extractUserId?: (args: unknown[]) => string;
 }
 
 export const OPERATION_LOG_KEY = 'operation_log';

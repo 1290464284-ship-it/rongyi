@@ -1,4 +1,11 @@
+/**
+ * 内存缓存存储
+ *
+ * 基于 Map 的 LRU 风格缓存实现，适用于单实例部署。
+ * 从原 CacheService 提取的存储逻辑，保持完全相同的行为。
+ */
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { ICacheStore } from './cache-store.interface';
 import { DEFAULT_CACHE_TTL_MS, ONE_MINUTE_MS } from '../../config/constants';
 
 interface CacheEntry<T> {
@@ -7,27 +14,18 @@ interface CacheEntry<T> {
   accessedAt: number;
 }
 
-interface CacheStats {
-  hits: number;
-  misses: number;
-  hitRate: number;
-  size: number;
-  maxSize: number;
-}
-
 const MAX_CACHE_SIZE = 1000;
 const EVICT_BATCH_SIZE = 50;
 const CLEANUP_INTERVAL_MS = 5 * ONE_MINUTE_MS;
 
 @Injectable()
-export class CacheService implements OnModuleInit, OnModuleDestroy {
+export class MemoryCacheStore implements ICacheStore, OnModuleInit, OnModuleDestroy {
   private store = new Map<string, CacheEntry<unknown>>();
   private cleanupTimer: ReturnType<typeof setInterval> | null = null;
-  private hits = 0;
-  private misses = 0;
 
   onModuleInit() {
     this.cleanupTimer = setInterval(() => this.cleanupExpired(), CLEANUP_INTERVAL_MS);
+    this.cleanupTimer.unref?.();
   }
 
   onModuleDestroy() {
@@ -37,18 +35,17 @@ export class CacheService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  get size(): number {
+    return this.store.size;
+  }
+
   get<T>(key: string): T | undefined {
     const entry = this.store.get(key) as CacheEntry<T> | undefined;
-    if (!entry) {
-      this.misses++;
-      return undefined;
-    }
+    if (!entry) return undefined;
     if (entry.expiresAt < Date.now()) {
       this.store.delete(key);
-      this.misses++;
       return undefined;
     }
-    this.hits++;
     entry.accessedAt = Date.now();
     return entry.value;
   }
@@ -79,34 +76,6 @@ export class CacheService implements OnModuleInit, OnModuleDestroy {
 
   clear(): void {
     this.store.clear();
-  }
-
-  async getOrSet<T>(
-    key: string,
-    factory: () => Promise<T> | T,
-    ttlMs?: number,
-  ): Promise<T> {
-    const cached = this.get<T>(key);
-    if (cached !== undefined) return cached;
-    const value = await factory();
-    this.set(key, value, ttlMs);
-    return value;
-  }
-
-  getStats(): CacheStats {
-    const total = this.hits + this.misses;
-    return {
-      hits: this.hits,
-      misses: this.misses,
-      hitRate: total > 0 ? this.hits / total : 0,
-      size: this.store.size,
-      maxSize: MAX_CACHE_SIZE,
-    };
-  }
-
-  resetStats(): void {
-    this.hits = 0;
-    this.misses = 0;
   }
 
   private cleanupExpired(): void {

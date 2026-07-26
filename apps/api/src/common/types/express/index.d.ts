@@ -1,4 +1,4 @@
-// Express Request 类型扩展，添加 req.user 属性
+﻿// Express Request 类型扩展，添加 req.user 属性
 declare namespace Express {
   interface User {
     id: string;

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+﻿import { Injectable } from '@nestjs/common';
 import { DbService } from '../../db/db.service';
 
 export type TransactionHandler<T> = (db: DbService['db']) => T;
