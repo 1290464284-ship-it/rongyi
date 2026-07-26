@@ -1,4 +1,4 @@
-import sanitizeHtmlLib from 'sanitize-html';
+﻿import sanitizeHtmlLib from 'sanitize-html';
 
 const SANITIZE_OPTIONS = {
   allowedTags: ['b', 'i', 'em', 'strong', 'u', 's', 'sub', 'sup', 'br', 'p', 'ul', 'ol', 'li'],

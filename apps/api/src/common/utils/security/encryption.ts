@@ -1,7 +1,8 @@
-import * as crypto from 'crypto';
-import * as fs from 'fs';
-import * as path from 'path';
+import * as crypto from 'node:crypto';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { Logger } from '@nestjs/common';
+import { getDataDir } from '../../../db/paths';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12;
@@ -18,9 +19,23 @@ const logger = new Logger('Encryption');
  * To generate a key: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
  * Set it in .env: ENCRYPTION_KEY=<the-64-char-hex-key>
  *
- * On first launch with no key configured, a new key is generated, printed to
- * stderr, and the process REFUSES TO START until ENCRYPTION_KEY is set.
+ * On first launch with no key configured, a new key is generated, written to
+ * a restricted file, and the process REFUSES TO START until ENCRYPTION_KEY is set.
  */
+
+/** Typed error for encryption/decryption failures. */
+export class EncryptionError extends Error {
+  constructor(
+    message: string,
+    public readonly code: 'E_NULL_INPUT' | 'E_DECRYPT_FAILED' | 'E_KEY_MISSING' | 'E_KEY_WRITE_FAILED',
+  ) {
+    super(message);
+    this.name = 'EncryptionError';
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, EncryptionError);
+    }
+  }
+}
 
 /** Optional legacy key for decrypting data encrypted with a previous key */
 let _legacyKey: Buffer | null = null;
@@ -30,27 +45,34 @@ export function setLegacyEncryptionKey(key: string): void {
   if (key.length === 64 && /^[a-f0-9]{64}$/i.test(key)) {
     _legacyKey = Buffer.from(key, 'hex');
   } else {
-    _legacyKey = crypto.createHash('sha256').update(key).digest();
+    throw new EncryptionError('Legacy encryption key must be a 64-character hex string', 'E_KEY_MISSING');
   }
 }
 
 /** Try the active key first, then the legacy key. Returns {plaintext, needsReencrypt} */
-function decryptWithFallback(ciphertext: string): { plaintext: string | null; needsReencrypt: boolean } | null {
-  if (!ciphertext || !ciphertext.includes(':')) return null;
+function decryptWithFallback(ciphertext: string): { plaintext: string; needsReencrypt: boolean } {
+  if (!ciphertext?.includes(':')) {
+    throw new EncryptionError('Invalid ciphertext format', 'E_DECRYPT_FAILED');
+  }
 
   const parts = ciphertext.split(':');
-  if (parts.length !== 3) return null;
+  if (parts.length !== 3) {
+    throw new EncryptionError(
+      `Invalid ciphertext format: expected 3 parts, got ${parts.length}`,
+      'E_DECRYPT_FAILED',
+    );
+  }
   const iv = Buffer.from(parts[0], 'hex');
   const authTag = Buffer.from(parts[1], 'hex');
   const encrypted = Buffer.from(parts[2], 'hex');
 
   const tryKey = (key: Buffer): string | null => {
     try {
-      const decipher = crypto.createDecipheriv(ALGORITHM, key, iv, { authTagLength: AUTH_TAG_LENGTH } as any);
-      (decipher as any).setAuthTag(authTag);
+      const decipher = crypto.createDecipheriv(ALGORITHM, key, iv, { authTagLength: AUTH_TAG_LENGTH } as crypto.CipherGCMOptions);
+      (decipher).setAuthTag(authTag);
       return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
-    } catch (e) {
-      logger.debug(`解密失败: ${(e as Error).message}`);
+    } catch (err: unknown) {
+      logger.debug(`解密失败: ${(err as Error).message}`);
       return null;
     }
   };
@@ -67,7 +89,10 @@ function decryptWithFallback(ciphertext: string): { plaintext: string | null; ne
     }
   }
 
-  return null;
+  throw new EncryptionError(
+    `Decryption failed: active key${(_legacyKey ? ' and legacy key' : '')} did not match`,
+    'E_DECRYPT_FAILED',
+  );
 }
 
 function getEncryptionKey(): Buffer {
@@ -77,17 +102,17 @@ function getEncryptionKey(): Buffer {
   let envKey = process.env.ENCRYPTION_KEY;
   if (!envKey) {
     try {
-      const keyFile = path.join(process.cwd(), '.encryption-key');
+      const keyFile = path.join(getDataDir(), '.encryption-key');
       if (fs.existsSync(keyFile)) {
         envKey = fs.readFileSync(keyFile, 'utf8').trim();
-        logger.warn('从 .encryption-key 文件加载密钥，建议复制到 .env');
+        logger.debug('从 .encryption-key 文件加载密钥，建议复制到 .env');
       }
     } catch (readErr) {
-      logger.warn(`读取 .encryption-key 文件失败: ${(readErr as Error).message}`);
+      logger.debug(`读取 .encryption-key 文件失败: ${(readErr as Error).message}`);
     }
   }
 
-  if (envKey && envKey.length >= 12) {
+  if (envKey && envKey.length >= 32) {
     if (envKey.length === 64 && /^[a-f0-9]{64}$/i.test(envKey)) {
       _key = Buffer.from(envKey, 'hex');
     } else {
@@ -96,27 +121,15 @@ function getEncryptionKey(): Buffer {
     return _key;
   }
 
-  // No key configured — abort
+  // No key configured — generate and persist securely, then abort
   const newKeyHex = crypto.randomBytes(32).toString('hex');
-  const msg = [
-    '',
-    '========================================',
-    '严重错误: ENCRYPTION_KEY 未配置！',
-    '',
-    '已为您生成一个新的加密密钥:',
-    `  ENCRYPTION_KEY=${newKeyHex}`,
-    '',
-    '请将上述行添加到 .env 文件后重新启动。',
-    '如果不保存此密钥，已有的加密数据将永久无法解密。',
-    '========================================',
-    '',
-  ].join('\n');
-  logger.error(msg);
   try {
-    const keyFilePath = path.join(process.cwd(), '.encryption-key');
-    // P1 修复（密钥文件无权限保护）：mode 0o600 仅属主可读写
+    const keyFilePath = path.join(getDataDir(), '.encryption-key');
     fs.writeFileSync(keyFilePath, newKeyHex + '\n', { mode: 0o600 });
-    logger.error(`密钥已保存到 ${keyFilePath}，请复制到 .env 文件中`);
+    fs.chmodSync(keyFilePath, 0o600);
+    logger.warn(
+      `未配置 ENCRYPTION_KEY，已生成新密钥并保存到 ${keyFilePath}，请将其设置到环境变量后重新启动`,
+    );
   } catch (writeErr) {
     logger.error(`保存 .encryption-key 文件失败: ${(writeErr as Error).message}`);
   }
@@ -126,46 +139,48 @@ function getEncryptionKey(): Buffer {
 /**
  * Encrypt plaintext → hex-encoded ciphertext (IV + authTag + encrypted).
  * Output format: `<iv_hex>:<authTag_hex>:<ciphertext_hex>`
+ *
+ * Throws EncryptionError for null/undefined input.
  */
 export function encryptField(plaintext: string | null | undefined): string | null {
-  if (!plaintext) return null;
+  if (plaintext === null || plaintext === undefined) {
+    throw new EncryptionError('Cannot encrypt null or undefined value', 'E_NULL_INPUT');
+  }
   const key = getEncryptionKey();
   const iv = crypto.randomBytes(IV_LENGTH);
-  const cipher = crypto.createCipheriv(ALGORITHM, key, iv, { authTagLength: AUTH_TAG_LENGTH } as any);
+  const cipher = crypto.createCipheriv(ALGORITHM, key, iv, { authTagLength: AUTH_TAG_LENGTH } as crypto.CipherGCMOptions);
   const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
-  const authTag = (cipher as any).getAuthTag();
+  const authTag = (cipher).getAuthTag();
   return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted.toString('hex')}`;
 }
 
 /**
  * Decrypt hex-encoded ciphertext → plaintext.
- * Tries active key first, then legacy key (if configured via LEGACY_ENCRYPTION_KEY env var).
+ * Tries active key first, then legacy key (if configured via setLegacyEncryptionKey).
  * If decrypted with legacy key, returns the plaintext (caller should re-encrypt).
  *
- * Returns null for null/undefined input, or the raw ciphertext on total failure
- * (so that the UI shows garbage rather than silently hiding data).
+ * Returns null for null/undefined input.
+ * Throws EncryptionError when ciphertext is malformed or no key can decrypt it.
  */
 export function decryptField(ciphertext: string | null | undefined): string | null {
-  if (!ciphertext) return null;
-  const result = decryptWithFallback(ciphertext);
-  if (!result) {
-    logger.warn(`解密失败，输入格式不正确或密钥不匹配: ${ciphertext?.substring(0, 30)}...`);
+  if (ciphertext === null || ciphertext === undefined) {
     return null;
   }
+  const result = decryptWithFallback(ciphertext);
   return result.plaintext;
 }
 
 /**
  * Decrypt + detect if the data needs re-encryption (was encrypted with legacy key).
+ *
+ * Returns { plaintext: null, needsReencrypt: false } for null/undefined input.
+ * Throws EncryptionError when ciphertext is malformed or no key can decrypt it.
  */
 export function decryptFieldWithFlag(ciphertext: string | null | undefined): { plaintext: string | null; needsReencrypt: boolean } {
-  if (!ciphertext) return { plaintext: null, needsReencrypt: false };
-  const result = decryptWithFallback(ciphertext);
-  if (!result) {
-    logger.warn(`解密失败，输入格式不正确或密钥不匹配: ${ciphertext?.substring(0, 30)}...`);
+  if (ciphertext === null || ciphertext === undefined) {
     return { plaintext: null, needsReencrypt: false };
   }
-  return result;
+  return decryptWithFallback(ciphertext);
 }
 
 // ===== 备份文件加密/解密 =====
@@ -176,16 +191,16 @@ const BACKUP_VERSION = 1;
 export function encryptBuffer(data: Buffer): Buffer {
   const key = getEncryptionKey();
   const iv = crypto.randomBytes(IV_LENGTH);
-  const cipher = crypto.createCipheriv(ALGORITHM, key, iv, { authTagLength: AUTH_TAG_LENGTH } as any);
+  const cipher = crypto.createCipheriv(ALGORITHM, key, iv, { authTagLength: AUTH_TAG_LENGTH } as crypto.CipherGCMOptions);
   const encrypted = Buffer.concat([cipher.update(data), cipher.final()]);
-  const authTag = (cipher as any).getAuthTag();
+  const authTag = (cipher).getAuthTag();
   // Format: magic(4) + version(1) + iv(12) + authTag(16) + ciphertext
   return Buffer.concat([BACKUP_MAGIC, Buffer.from([BACKUP_VERSION]), iv, authTag, encrypted]);
 }
 
 /** Check if a Buffer is encrypted (has DBAK magic header) */
 export function isEncryptedBuffer(data: Buffer): boolean {
-  return data.length >= 5 && data.slice(0, 4).equals(BACKUP_MAGIC);
+  return data.length >= 5 && Buffer.from(data.subarray(0, 4)).equals(BACKUP_MAGIC);
 }
 
 /** Decrypt a Buffer. Returns null if not encrypted or decryption fails. Call isEncryptedBuffer first. */
@@ -197,56 +212,16 @@ export function decryptBufferIfEncrypted(data: Buffer): Buffer | null {
     logger.error(`不支持的备份加密版本: ${version}`);
     return null;
   }
-  const iv = data.slice(5, 17);
-  const authTag = data.slice(17, 33);
-  const encrypted = data.slice(33);
+  const iv = Buffer.from(data.subarray(5, 17));
+  const authTag = Buffer.from(data.subarray(17, 33));
+  const encrypted = Buffer.from(data.subarray(33));
   try {
     const key = getEncryptionKey();
-    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv, { authTagLength: AUTH_TAG_LENGTH } as any);
-    (decipher as any).setAuthTag(authTag);
+    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv, { authTagLength: AUTH_TAG_LENGTH } as crypto.CipherGCMOptions);
+    (decipher).setAuthTag(authTag);
     return Buffer.concat([decipher.update(encrypted), decipher.final()]);
-  } catch (e) {
-    logger.error(`备份解密失败: ${(e as Error).message}`);
-    return null;
+  } catch (err: unknown) {
+    throw new EncryptionError(`备份解密失败: ${(err as Error).message}`, 'E_DECRYPT_FAILED');
   }
 }
 
-/**
- * Batch re-encrypt all encrypted fields in the database from legacy to active key.
- * Call this after setting LEGACY_ENCRYPTION_KEY to migrate old data.
- */
-export function migrateEncryptedData(dbService: any): { migrated: number; errors: number } {
-  if (!_legacyKey) return { migrated: 0, errors: 0 };
-
-  let migrated = 0;
-  let errors = 0;
-
-  const tables = [{ table: 'Patient', field: 'idCard' }];
-
-  for (const { table, field } of tables) {
-    try {
-      const rows = dbService.prepare(
-        `SELECT id, ${field} FROM ${table} WHERE ${field} IS NOT NULL AND ${field} != ''`
-      ).all() as Array<{ id: string; [key: string]: string }>;
-
-      for (const row of rows) {
-        try {
-          const result = decryptWithFallback(row[field]);
-          if (result && result.needsReencrypt) {
-            const newCiphertext = encryptField(result.plaintext);
-            dbService.prepare(`UPDATE ${table} SET ${field} = ? WHERE id = ?`)
-              .run(newCiphertext, row.id);
-            migrated++;
-          }
-        } catch (e) {
-          logger.warn(`迁移数据失败，行ID: ${row.id}, 错误: ${(e as Error).message}`);
-          errors++;
-        }
-      }
-    } catch (e) {
-      logger.debug(`表 ${table} 可能不存在: ${(e as Error).message}`);
-    }
-  }
-
-  return { migrated, errors };
-}

@@ -10,16 +10,21 @@
  *
  * 新代码请直接 `new AppLogger(context)` 或通过 DI 注入，不要再使用本文件。
  */
-import { AppLogger } from '../services/logger.service';
+import { AppLogger } from '../../services/logger.service';
 
 const bootstrapLogger = new AppLogger('Bootstrap');
 
 export const logger = {
-  debug: (message: any, context: string = 'Bootstrap') => bootstrapLogger.debug(message, context),
-  info: (message: any, context: string = 'Bootstrap') => bootstrapLogger.log(message, context),
-  warn: (message: any, context: string = 'Bootstrap') => bootstrapLogger.warn(message, context),
+  // 跟随 NestJS LoggerService 接口签名，使用 unknown 替代 any 以保留类型安全
+
+  debug: (message: unknown, context: string = 'Bootstrap') => bootstrapLogger.debug(message, context),
+
+  info: (message: unknown, context: string = 'Bootstrap') => bootstrapLogger.log(message, context),
+
+  warn: (message: unknown, context: string = 'Bootstrap') => bootstrapLogger.warn(message, context),
   // 旧 API：error(message, context, error?) → AppLogger.error(message, error?, context?)
-  error: (message: any, context: string = 'Bootstrap', error?: Error) => {
+
+  error: (message: unknown, context: string = 'Bootstrap', error?: Error) => {
     bootstrapLogger.error(message, error, context);
   },
 };
