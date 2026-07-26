@@ -1,7 +1,21 @@
 
+// 枚举类型从 ./enums 复用，避免与 enums.ts 重复导出同名类型
+import type {
+  AppointmentType,
+  AppointmentStatus,
+  VisitStatus,
+  TreatmentStatus,
+  ChargeStatus,
+  Gender,
+  PatientSource,
+  FollowUpStatus,
+  RegistrationStatus,
+  RegistrationType,
+  PayMethod,
+} from '../enums';
+
 // DB row type for better-sqlite3 compatibility
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type DbRow = Record<string, any>;
+export type DbRow = Record<string, unknown>;
 
 export interface BaseEntity {
   id: string;
@@ -16,7 +30,7 @@ export interface Pagination<T> {
   pageSize: number;
 }
 
-export type UserRole = 'BOSS' | 'DOCTOR' | 'RECEPTIONIST';
+export type UserRole = 'BOSS' | 'DOCTOR' | 'RECEPTIONIST' | 'NURSE' | 'ADMIN';
 
 export interface User extends BaseEntity {
   [key: string]: unknown;
@@ -33,10 +47,6 @@ export interface User extends BaseEntity {
   refreshTokenExpiresAt?: string | null;
 }
 
-export type PatientSource = 'WALK_IN' | 'REFERRAL' | 'ONLINE' | 'OTHER';
-
-export type PatientGender = 'MALE' | 'FEMALE' | 'UNKNOWN';
-
 export interface FamilyMember {
   [key: string]: unknown;
   id: string;
@@ -50,7 +60,7 @@ export interface Patient extends BaseEntity {
   [key: string]: unknown;
   code: string;
   name: string;
-  gender: PatientGender;
+  gender: Gender;
   phone: string;
   birthDate?: string | null;
   idCard?: string | null;
@@ -72,10 +82,6 @@ export interface Patient extends BaseEntity {
   familyMembers?: FamilyMember[];
 }
 
-export type AppointmentType = 'FIRST_VISIT' | 'RETURN' | 'CLEANING' | 'CHECKUP' | 'EXAM' | 'TREATMENT' | 'FOLLOW_UP' | 'OTHER';
-
-export type AppointmentStatus = 'BOOKED' | 'CONFIRMED' | 'ARRIVED' | 'IN_CHAIR' | 'COMPLETED' | 'CANCELLED';
-
 export interface Appointment extends BaseEntity {
   [key: string]: unknown;
   patientId: string;
@@ -90,8 +96,6 @@ export interface Appointment extends BaseEntity {
   deletedAt?: string | null;
 }
 
-export type VisitStatus = 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
-
 export interface Visit extends BaseEntity {
   [key: string]: unknown;
   patientId: string;
@@ -105,8 +109,6 @@ export interface Visit extends BaseEntity {
   status: VisitStatus;
   deletedAt?: string | null;
 }
-
-export type TreatmentStatus = 'PLANNED' | 'APPROVED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
 
 export interface Treatment extends BaseEntity {
   [key: string]: unknown;
@@ -133,10 +135,6 @@ export interface TreatmentCatalog extends BaseEntity {
   remark?: string | null;
 }
 
-export type ChargeStatus = 'UNPAID' | 'PARTIAL' | 'PAID' | 'REFUNDED';
-
-export type PaymentMethodType = 'CASH' | 'WECHAT' | 'ALIPAY' | 'CARD' | 'DEBT' | 'MEMBER_CARD';
-
 export interface Charge extends BaseEntity {
   [key: string]: unknown;
   patientId: string;
@@ -148,7 +146,7 @@ export interface Charge extends BaseEntity {
   refundedAmount: number;
   discount: number;
   status: ChargeStatus;
-  payMethod?: PaymentMethodType | null;
+  payMethod?: PayMethod | null;
   paidAt?: string | null;
   remark?: string | null;
   chargeId?: string;
@@ -160,7 +158,7 @@ export interface Charge extends BaseEntity {
   deletedAt?: string | null;
 }
 
-export type EquipmentStatus = 'NORMAL' | 'MAINTENANCE' | 'OUT_OF_SERVICE';
+export type EquipmentStatus = 'NORMAL' | 'MAINTENANCE' | 'BROKEN' | 'SCRAPPED';
 
 export interface Equipment extends BaseEntity {
   [key: string]: unknown;
@@ -177,7 +175,7 @@ export interface Equipment extends BaseEntity {
   remarks?: string | null;
 }
 
-export type FollowUpStatus = 'PENDING' | 'COMPLETED' | 'CANCELLED';
+export { FollowUpStatus } from '../enums';
 
 export interface FollowUp extends BaseEntity {
   [key: string]: unknown;
@@ -204,7 +202,7 @@ export interface MemberCard extends BaseEntity {
   balance: number;
   totalRecharge: number;
   totalConsume: number;
-  status: 'ACTIVE' | 'INACTIVE';
+  status: 'ACTIVE' | 'INACTIVE' | 'DISABLED' | 'FROZEN' | 'EXPIRED';
   points: number;
   totalPoints: number;
   level: 'NORMAL' | 'VIP' | 'SVIP';
@@ -262,8 +260,8 @@ export interface Registration extends BaseEntity {
   [key: string]: unknown;
   patientId: string;
   doctorId?: string | null;
-  type: string;
-  status: 'REGISTERED' | 'TRIAGED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+  type: RegistrationType;
+  status: RegistrationStatus;
   visitId?: string | null;
   appointmentId?: string | null;
   triageNote?: string | null;
@@ -494,11 +492,11 @@ export const PATIENT_SOURCE_COLOR: Record<PatientSource, string> = {
 
 export const APPOINTMENT_STATUS_LABEL: Record<AppointmentStatus, string> = {
   BOOKED: '已预约',
-  CONFIRMED: '已确认',
   ARRIVED: '已到店',
   IN_CHAIR: '就诊中',
   COMPLETED: '已完成',
   CANCELLED: '已取消',
+  NO_SHOW: '爽约',
 };
 
 export const TREATMENT_STATUS_LABEL: Record<TreatmentStatus, string> = {
@@ -514,18 +512,21 @@ export const CHARGE_STATUS_LABEL: Record<ChargeStatus, string> = {
   PARTIAL: '部分支付',
   PAID: '已支付',
   REFUNDED: '已退款',
+  CANCELLED: '已取消',
 };
 
 export const EQUIPMENT_STATUS_LABEL: Record<EquipmentStatus, string> = {
   NORMAL: '正常',
   MAINTENANCE: '维修中',
-  OUT_OF_SERVICE: '停用',
+  BROKEN: '故障',
+  SCRAPPED: '报废',
 };
 
 export const EQUIPMENT_STATUS_COLOR: Record<EquipmentStatus, string> = {
   NORMAL: 'bg-success/10 text-success',
   MAINTENANCE: 'bg-warning/10 text-warning',
-  OUT_OF_SERVICE: 'bg-destructive/10 text-destructive',
+  BROKEN: 'bg-destructive/10 text-destructive',
+  SCRAPPED: 'bg-muted text-muted-foreground',
 };
 
 export const EQUIPMENT_CATEGORIES = [
@@ -540,3 +541,14 @@ export const EQUIPMENT_CATEGORIES = [
   '办公家具',
   '其他',
 ];
+
+// 离线同步相关类型
+export type {
+  SyncOperation,
+  SyncChangeRecord,
+  SyncPushChange,
+  SyncPushPayload,
+  SyncPullResult,
+  SyncResult,
+  SyncStatus,
+} from './sync';
