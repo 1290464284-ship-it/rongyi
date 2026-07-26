@@ -3,6 +3,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { DbService } from '../src/db/db.service';
+import { TEST_USER_PASSWORD, extractAccessToken } from './test-helpers';
 import { _isTestMode } from '../src/db/database';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
@@ -31,19 +32,21 @@ describe('Member Cards (e2e)', () => {
 
     for (const t of tables) { try { db.exec(`DELETE FROM "${t}"`); } catch { /* ok */ } }
 
-    const hash = await bcrypt.hash('REDACTED', 10);
-    db.prepare('INSERT INTO User (id, username, passwordHash, name, role, active, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?)').run(
-      crypto.randomUUID(), 'rec_member', hash, '会员卡测试前台', 'RECEPTIONIST', new Date().toISOString(), new Date().toISOString()
+    const hash = await bcrypt.hash(TEST_USER_PASSWORD, 10);
+    db.prepare('INSERT OR IGNORE INTO Clinic (id, name, code, isActive, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)')
+      .run('test-clinic-001', '测试诊所', 'TEST001', 1, new Date().toISOString(), new Date().toISOString());
+    db.prepare('INSERT INTO User (id, username, passwordHash, name, role, active, clinicId, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?,?)').run(
+      crypto.randomUUID(), 'rec_member', hash, '会员卡测试前台', 'RECEPTIONIST', 'test-clinic-001', new Date().toISOString(), new Date().toISOString()
     );
 
     const pId = crypto.randomUUID();
-    db.prepare('INSERT INTO Patient (id, code, name, gender, phone, active, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?)').run(
-      pId, 'PMEMBER', '会员卡测试患者', 'MALE', '13800000000', new Date().toISOString(), new Date().toISOString()
+    db.prepare('INSERT INTO Patient (id, code, name, gender, phone, clinicId, active, createdAt, updatedAt) VALUES (?,?,?,?,?,?,1,?,?)').run(
+      pId, 'PMEMBER', '会员卡测试患者', 'MALE', '13800000000', 'test-clinic-001', new Date().toISOString(), new Date().toISOString()
     );
     patientId = pId;
 
-    const res = await request(app.getHttpServer()).post('/api/auth/login').send({ username: 'rec_member', password: 'REDACTED' });
-    token = res.body.access_token;
+    const res = await request(app.getHttpServer()).post('/api/auth/login').send({ username: 'rec_member', password: TEST_USER_PASSWORD });
+    token = extractAccessToken(res);
   });
 
   afterAll(async () => { await app.close(); });
@@ -61,9 +64,10 @@ describe('Member Cards (e2e)', () => {
     });
 
     it('POST /member-cards/patient/:patientId - 同一患者不能重复创建', async () => {
-      await request(app.getHttpServer())
+      const dupRes = await request(app.getHttpServer())
         .post(`/api/member-cards/patient/${patientId}`).set('Authorization', `Bearer ${token}`)
         .expect(400);
+      expect(dupRes.status).toBe(400);
     });
   });
 
@@ -87,17 +91,19 @@ describe('Member Cards (e2e)', () => {
     });
 
     it('POST /member-cards/:id/recharge - 充值金额为0返回400', async () => {
-      await request(app.getHttpServer())
+      const zeroRes = await request(app.getHttpServer())
         .post(`/api/member-cards/${cardId}/recharge`).set('Authorization', `Bearer ${token}`)
         .send({ amount: 0 })
         .expect(400);
+      expect(zeroRes.status).toBe(400);
     });
 
     it('POST /member-cards/:id/recharge - 充值金额为负数返回400', async () => {
-      await request(app.getHttpServer())
+      const negRes = await request(app.getHttpServer())
         .post(`/api/member-cards/${cardId}/recharge`).set('Authorization', `Bearer ${token}`)
         .send({ amount: -100 })
         .expect(400);
+      expect(negRes.status).toBe(400);
     });
   });
 
@@ -112,17 +118,19 @@ describe('Member Cards (e2e)', () => {
     });
 
     it('POST /member-cards/:id/consume - 消费金额不能为0', async () => {
-      await request(app.getHttpServer())
+      const zeroRes = await request(app.getHttpServer())
         .post(`/api/member-cards/${cardId}/consume`).set('Authorization', `Bearer ${token}`)
         .send({ amount: 0 })
         .expect(400);
+      expect(zeroRes.status).toBe(400);
     });
 
     it('POST /member-cards/:id/consume - 余额不足返回400', async () => {
-      await request(app.getHttpServer())
+      const overRes = await request(app.getHttpServer())
         .post(`/api/member-cards/${cardId}/consume`).set('Authorization', `Bearer ${token}`)
         .send({ amount: 10000 })
         .expect(400);
+      expect(overRes.status).toBe(400);
     });
   });
 
@@ -137,10 +145,11 @@ describe('Member Cards (e2e)', () => {
     });
 
     it('POST /member-cards/:id/refund - 退款金额不能为0', async () => {
-      await request(app.getHttpServer())
+      const zeroRes = await request(app.getHttpServer())
         .post(`/api/member-cards/${cardId}/refund`).set('Authorization', `Bearer ${token}`)
         .send({ amount: 0 })
         .expect(400);
+      expect(zeroRes.status).toBe(400);
     });
   });
 
@@ -170,10 +179,11 @@ describe('Member Cards (e2e)', () => {
     });
 
     it('POST /member-cards/:id/points/deduct - 积分不足返回400', async () => {
-      await request(app.getHttpServer())
+      const overRes = await request(app.getHttpServer())
         .post(`/api/member-cards/${cardId}/points/deduct`).set('Authorization', `Bearer ${token}`)
         .send({ points: 10000 })
         .expect(400);
+      expect(overRes.status).toBe(400);
     });
   });
 

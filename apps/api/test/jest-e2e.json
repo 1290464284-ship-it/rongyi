@@ -1,15 +1,22 @@
 {
-  "moduleFileExtensions": ["js", "json", "ts"],
-  "rootDir": ".",
   "testEnvironment": "node",
+  "rootDir": ".",
   "testRegex": ".e2e-spec.ts$",
-  "transform": { "^.+\\.(t|j)s$": ["ts-jest", { "diagnostics": false }] },
+  "transform": { "^.+\\.(t|j)s$": ["ts-jest", { "diagnostics": false, "tsconfig": "<rootDir>/../tsconfig.json" }] },
   "collectCoverageFrom": ["**/*.(t|j)s"],
   "coverageDirectory": "../coverage",
+  "moduleFileExtensions": ["js", "json", "ts"],
   "moduleNameMapper": {
-    "^@shared/(.*)$": "<rootDir>../../packages/shared/src/$1",
-    "^sanitize-html$": "<rootDir>/test/__mocks__/sanitize-html.ts"
+    "^@/(.*)$": "<rootDir>/../src/$1",
+    "^@common/(.*)$": "<rootDir>/../src/common/$1",
+    "^@modules/(.*)$": "<rootDir>/../src/modules/$1",
+    "^@db/(.*)$": "<rootDir>/../src/db/$1",
+    "^@shared/(.*)$": "<rootDir>/../../../packages/shared/src/$1",
+    "^@dental/shared$": "<rootDir>/../../../packages/shared/src/index.ts",
+    "^sanitize-html$": "<rootDir>/__mocks__/sanitize-html.ts"
   },
+  "testPathIgnorePatterns": ["<rootDir>/node_modules/", "<rootDir>/../dist/", "<rootDir>/../node_modules/"],
+  "verbose": true,
   "maxWorkers": 1,
   "globalSetup": "<rootDir>/global-setup.ts",
   "setupFiles": ["<rootDir>/setup.ts"]

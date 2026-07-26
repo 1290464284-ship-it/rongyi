@@ -3,6 +3,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { DbService } from '../src/db/db.service';
+import { TEST_USER_PASSWORD, extractAccessToken } from './test-helpers';
 import { _isTestMode } from '../src/db/database';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
@@ -27,7 +28,6 @@ describe('Charges (e2e)', () => {
 
   beforeAll(async () => {
     process.env.TEST_DB_MEMORY = '1';
-    _isTestMode = true;
     const moduleFixture: TestingModule = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleFixture.createNestApplication();
     app.setGlobalPrefix('api');
@@ -37,17 +37,19 @@ describe('Charges (e2e)', () => {
 
     for (const t of tables) { try { db.exec(`DELETE FROM "${t}"`); } catch { /* ok */ } }
 
-    const hash = await bcrypt.hash('REDACTED', 10);
+    const hash = await bcrypt.hash(TEST_USER_PASSWORD, 10);
     const dId = crypto.randomUUID();
-    db.prepare('INSERT INTO User (id, username, passwordHash, name, role, active, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?)').run(dId, 'doc_charge', hash, '收费测试医生', 'DOCTOR', new Date().toISOString(), new Date().toISOString());
+    db.prepare('INSERT OR IGNORE INTO Clinic (id, name, code, isActive, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)')
+      .run('test-clinic-001', '测试诊所', 'TEST001', 1, new Date().toISOString(), new Date().toISOString());
+    db.prepare('INSERT INTO User (id, username, passwordHash, name, role, active, clinicId, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?,?)').run(dId, 'doc_charge', hash, '收费测试医生', 'DOCTOR', 'test-clinic-001', new Date().toISOString(), new Date().toISOString());
     doctorId = dId;
 
     const pId = crypto.randomUUID();
-    db.prepare('INSERT INTO Patient (id, code, name, gender, phone, active, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?)').run(pId, 'PCHARGE', '收费测试患者', 'MALE', '13700000000', new Date().toISOString(), new Date().toISOString());
+    db.prepare('INSERT INTO Patient (id, code, name, gender, phone, clinicId, active, createdAt, updatedAt) VALUES (?,?,?,?,?,?,1,?,?)').run(pId, 'PCHARGE', '收费测试患者', 'MALE', '13700000000', 'test-clinic-001', new Date().toISOString(), new Date().toISOString());
     patientId = pId;
 
-    const res = await request(app.getHttpServer()).post('/api/auth/login').send({ username: 'doc_charge', password: 'REDACTED' });
-    token = res.body.access_token;
+    const res = await request(app.getHttpServer()).post('/api/auth/login').send({ username: 'doc_charge', password: TEST_USER_PASSWORD });
+    token = extractAccessToken(res);
   });
 
   afterAll(async () => { await app.close(); });
@@ -56,7 +58,7 @@ describe('Charges (e2e)', () => {
     const res1 = await request(app.getHttpServer())
       .post('/api/charge-v2').set('Authorization', `Bearer ${token}`)
       .send({ patientId, doctorId, items: [
-        { name: '树脂补牙', category: '修复', price: 300, quantity: 1, teethNumbers: [16] },
+        { name: '树脂补牙', category: '修复', price: 300, quantity: 1, teethNumbers: ['16'] },
         { name: '超声波洁牙', category: '预防', price: 150, quantity: 1, teethNumbers: [] },
       ]})
       .expect(201);
@@ -72,11 +74,12 @@ describe('Charges (e2e)', () => {
       ]}).expect(201);
   });
 
-  it('POST /charges - 空明细返回 400', () => {
-    return request(app.getHttpServer())
+  it('POST /charges - 空明细返回 400', async () => {
+    const emptyRes = await request(app.getHttpServer())
       .post('/api/charge-v2').set('Authorization', `Bearer ${token}`)
       .send({ patientId, doctorId, items: [] })
       .expect(400);
+    expect(emptyRes.status).toBe(400);
   });
 
   it('GET /charges - 分页查询', () => {
@@ -112,11 +115,12 @@ describe('Charges (e2e)', () => {
       .expect((res) => { expect(res.body.status).toBe('PAID'); });
   });
 
-  it('PATCH /charges/:id/pay - 超额支付返回 400', () => {
+  it('PATCH /charges/:id/pay - 超额支付返回 400', async () => {
     // 已经付清 (PAID)，再付应返回 400
-    return request(app.getHttpServer())
+    const overRes = await request(app.getHttpServer())
       .patch(`/api/charge-v2/${chargeId}/pay`).set('Authorization', `Bearer ${token}`)
       .send({ amount: 0.01, payMethod: 'CASH' })
       .expect(400);
+    expect(overRes.status).toBe(400);
   });
 });

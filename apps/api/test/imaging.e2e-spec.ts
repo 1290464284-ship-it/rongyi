@@ -5,6 +5,7 @@ import * as bcrypt from 'bcryptjs';
 import { AppModule } from '../src/app.module';
 import { DbService } from '../src/db/db.service';
 import * as crypto from 'crypto';
+import { extractAccessToken } from './test-helpers';
 
 describe('Imaging (e2e)', () => {
   let app: INestApplication;
@@ -36,15 +37,17 @@ describe('Imaging (e2e)', () => {
 
     const hash = await bcrypt.hash('0801', 10);
     const uid = crypto.randomUUID();
-    db.prepare('INSERT INTO User (id, username, passwordHash, name, role, active, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?)').run(uid, 'boss', hash, '老板', 'BOSS', new Date().toISOString(), new Date().toISOString());
+    db.prepare('INSERT OR IGNORE INTO Clinic (id, name, code, isActive, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)')
+      .run('test-clinic-001', '测试诊所', 'TEST001', 1, new Date().toISOString(), new Date().toISOString());
+    db.prepare('INSERT INTO User (id, username, passwordHash, name, role, active, clinicId, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?,?)').run(uid, 'boss', hash, '老板', 'BOSS', 'test-clinic-001', new Date().toISOString(), new Date().toISOString());
     doctorId = uid;
 
     const pId = crypto.randomUUID();
-    db.prepare('INSERT INTO Patient (id, code, name, gender, phone, active, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?)').run(pId, 'P0001', '测试患者', 'MALE', '13800000001', new Date().toISOString(), new Date().toISOString());
+    db.prepare('INSERT INTO Patient (id, code, name, gender, phone, clinicId, active, createdAt, updatedAt) VALUES (?,?,?,?,?,?,1,?,?)').run(pId, 'P0001', '测试患者', 'MALE', '13800000001', 'test-clinic-001', new Date().toISOString(), new Date().toISOString());
     patientId = pId;
 
     const login = await request(app.getHttpServer()).post('/api/auth/login').send({ username: 'boss', password: '0801' });
-    token = login.body.access_token;
+    token = extractAccessToken(login);
   });
 
   afterAll(async () => { await app.close(); });

@@ -4,6 +4,7 @@ import request from 'supertest';
 import * as bcrypt from 'bcryptjs';
 import { AppModule } from '../src/app.module';
 import { DbService } from '../src/db/db.service';
+import { TEST_USER_PASSWORD, extractAccessToken } from './test-helpers';
 
 describe('Patients (e2e)', () => {
   let app: INestApplication;
@@ -38,15 +39,17 @@ describe('Patients (e2e)', () => {
       try { db.exec(`DELETE FROM "${table}"`); } catch { /* ok */ }
     }
 
-    const hash = await bcrypt.hash('REDACTED', 10);
+    const hash = await bcrypt.hash(TEST_USER_PASSWORD, 10);
+    db.prepare('INSERT OR IGNORE INTO Clinic (id, name, code, isActive, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)')
+      .run('test-clinic-001', '测试诊所', 'TEST001', 1, new Date().toISOString(), new Date().toISOString());
     db.prepare(
-      'INSERT INTO User (id, username, passwordHash, name, role, active, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?)'
-    ).run('boss-001', 'boss', hash, '老板', 'BOSS', new Date().toISOString(), new Date().toISOString());
+      'INSERT INTO User (id, username, passwordHash, name, role, active, clinicId, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?,?)'
+    ).run('boss-001', 'boss', hash, '老板', 'BOSS', 'test-clinic-001', new Date().toISOString(), new Date().toISOString());
 
     const login = await request(app.getHttpServer())
       .post('/api/auth/login')
-      .send({ username: 'boss', password: 'REDACTED' });
-    token = login.body.access_token;
+      .send({ username: 'boss', password: TEST_USER_PASSWORD });
+    token = extractAccessToken(login);
   });
 
   afterAll(async () => { await app.close(); });
@@ -93,7 +96,7 @@ describe('Patients (e2e)', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ phone: '13900139000', address: '上海市浦东新区' });
     expect(res.status).toBe(HttpStatus.OK);
-    expect(res.body.phone).toBe('13900139000');
+    expect(res.body.phone).toBe('139****9000');
   });
 
   it('POST /api/patients 重复手机号允许创建（家人共用）', async () => {

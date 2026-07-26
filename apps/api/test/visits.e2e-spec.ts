@@ -4,6 +4,7 @@ import request from 'supertest';
 import * as bcrypt from 'bcryptjs';
 import { AppModule } from '../src/app.module';
 import { DbService } from '../src/db/db.service';
+import { TEST_USER_PASSWORD, randomFutureISO, addMinutesISO, extractAccessToken } from './test-helpers';
 import * as crypto from 'crypto';
 
 describe('Visits (e2e)', () => {
@@ -24,6 +25,9 @@ describe('Visits (e2e)', () => {
     'Patient','User',
   ];
 
+  const apptStart = randomFutureISO();
+  const apptEnd = addMinutesISO(apptStart, 30);
+
   beforeAll(async () => {
     const module: TestingModule = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = module.createNestApplication();
@@ -34,14 +38,16 @@ describe('Visits (e2e)', () => {
 
     for (const t of tables) { try { db.exec(`DELETE FROM "${t}"`); } catch { /* ok */ } }
 
-    const hash = await bcrypt.hash('REDACTED', 10);
+    const hash = await bcrypt.hash(TEST_USER_PASSWORD, 10);
     const dId = crypto.randomUUID();
-    db.prepare('INSERT INTO User (id, username, passwordHash, name, role, active, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?)').run(dId, 'docv', hash, '陈医生', 'DOCTOR', new Date().toISOString(), new Date().toISOString());
+    db.prepare('INSERT OR IGNORE INTO Clinic (id, name, code, isActive, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)')
+      .run('test-clinic-001', '测试诊所', 'TEST001', 1, new Date().toISOString(), new Date().toISOString());
+    db.prepare('INSERT INTO User (id, username, passwordHash, name, role, active, clinicId, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?,?)').run(dId, 'docv', hash, '陈医生', 'DOCTOR', 'test-clinic-001', new Date().toISOString(), new Date().toISOString());
     doctorId = dId;
-    db.prepare('INSERT INTO User (id, username, passwordHash, name, role, active, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?)').run('boss-001', 'boss', hash, '老板', 'BOSS', new Date().toISOString(), new Date().toISOString());
+    db.prepare('INSERT INTO User (id, username, passwordHash, name, role, active, clinicId, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?,?)').run('boss-001', 'boss', hash, '老板', 'BOSS', 'test-clinic-001', new Date().toISOString(), new Date().toISOString());
 
-    const res = await request(app.getHttpServer()).post('/api/auth/login').send({ username: 'boss', password: 'REDACTED' });
-    token = res.body.access_token;
+    const res = await request(app.getHttpServer()).post('/api/auth/login').send({ username: 'boss', password: TEST_USER_PASSWORD });
+    token = extractAccessToken(res);
 
     const pRes = await request(app.getHttpServer())
       .post('/api/patients').set('Authorization', `Bearer ${token}`)
@@ -50,7 +56,7 @@ describe('Visits (e2e)', () => {
 
     const aRes = await request(app.getHttpServer())
       .post('/api/appointments').set('Authorization', `Bearer ${token}`)
-      .send({ patientId, doctorId, startTime: '2026-08-02T10:00:00.000Z', endTime: '2026-08-02T10:30:00.000Z', type: 'FIRST_VISIT' });
+      .send({ patientId, doctorId, startTime: apptStart, endTime: apptEnd, type: 'FIRST_VISIT' });
     appointmentId = aRes.body.id;
   });
 

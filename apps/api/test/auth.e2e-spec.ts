@@ -7,6 +7,7 @@ import request from 'supertest';
 import * as bcrypt from 'bcryptjs';
 import { AppModule } from '../src/app.module';
 import { DbService } from '../src/db/db.service';
+import { TEST_USER_PASSWORD, extractAccessToken } from './test-helpers';
 
 describe('Auth (e2e)', () => {
   let app: INestApplication;
@@ -41,10 +42,12 @@ describe('Auth (e2e)', () => {
     }
 
     // Create test user
-    const hash = await bcrypt.hash('REDACTED', 10);
+    const hash = await bcrypt.hash(TEST_USER_PASSWORD, 10);
+    db.prepare('INSERT OR IGNORE INTO Clinic (id, name, code, isActive, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)')
+      .run('test-clinic-001', '测试诊所', 'TEST001', 1, new Date().toISOString(), new Date().toISOString());
     db.prepare(
-      'INSERT INTO User (id, username, passwordHash, name, role, active, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?)'
-    ).run('boss-001', 'boss', hash, '老板', 'BOSS', new Date().toISOString(), new Date().toISOString());
+      'INSERT INTO User (id, username, passwordHash, name, role, active, clinicId, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?,?)'
+    ).run('boss-001', 'boss', hash, '老板', 'BOSS', 'test-clinic-001', new Date().toISOString(), new Date().toISOString());
   });
 
   afterAll(async () => { await app.close(); });
@@ -52,9 +55,10 @@ describe('Auth (e2e)', () => {
   it('POST /api/auth/login 正确密码返回JWT', async () => {
     const res = await request(app.getHttpServer())
       .post('/api/auth/login')
-      .send({ username: 'boss', password: 'REDACTED' });
+      .send({ username: 'boss', password: TEST_USER_PASSWORD });
     expect(res.status).toBe(HttpStatus.OK);
-    expect(res.body.access_token).toBeDefined();
+    // D2-4: token 只通过 httpOnly cookie 传递，不在响应体中
+    expect(extractAccessToken(res)).toBeDefined();
     expect(res.body.user.username).toBe('boss');
   });
 
@@ -67,9 +71,9 @@ describe('Auth (e2e)', () => {
 
   it('GET /api/auth/me 带token返回当前用户', async () => {
     const login = await request(app.getHttpServer())
-      .post('/api/auth/login').send({ username: 'boss', password: 'REDACTED' });
+      .post('/api/auth/login').send({ username: 'boss', password: TEST_USER_PASSWORD });
     const me = await request(app.getHttpServer())
-      .get('/api/auth/me').set('Authorization', `Bearer ${login.body.access_token}`);
+      .get('/api/auth/me').set('Authorization', `Bearer ${extractAccessToken(login)}`);
     expect(me.status).toBe(HttpStatus.OK);
     expect(me.body.username).toBe('boss');
   });
@@ -86,7 +90,7 @@ describe('Auth (e2e)', () => {
 
   it('POST /api/auth/login 账号锁定期间正确密码也无法登录', async () => {
     const res = await request(app.getHttpServer())
-      .post('/api/auth/login').send({ username: 'boss', password: 'REDACTED' });
+      .post('/api/auth/login').send({ username: 'boss', password: TEST_USER_PASSWORD });
     expect(res.status).toBe(HttpStatus.UNAUTHORIZED);
   });
 
@@ -94,9 +98,10 @@ describe('Auth (e2e)', () => {
     // Manually un-set lock
     db.prepare("UPDATE User SET lockedUntil = NULL, loginAttempts = 0 WHERE username = ?").run('boss');
     const res = await request(app.getHttpServer())
-      .post('/api/auth/login').send({ username: 'boss', password: 'REDACTED' });
+      .post('/api/auth/login').send({ username: 'boss', password: TEST_USER_PASSWORD });
     expect(res.status).toBe(HttpStatus.OK);
-    expect(res.body.access_token).toBeDefined();
+    // D2-4: token 只通过 httpOnly cookie 传递
+    expect(extractAccessToken(res)).toBeDefined();
   });
 
   it('POST /api/auth/login 正确密码登录后重置失败次数', async () => {

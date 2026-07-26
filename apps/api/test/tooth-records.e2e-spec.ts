@@ -4,7 +4,7 @@ import request from 'supertest';
 import * as bcrypt from 'bcryptjs';
 import { AppModule } from '../src/app.module';
 import { DbService } from '../src/db/db.service';
-import * as crypto from 'crypto';
+import { TEST_USER_PASSWORD, extractAccessToken } from './test-helpers';
 
 describe('ToothRecords (e2e)', () => {
   let app: INestApplication;
@@ -32,11 +32,13 @@ describe('ToothRecords (e2e)', () => {
 
     for (const t of tables) { try { db.exec(`DELETE FROM "${t}"`); } catch { /* ok */ } }
 
-    const hash = await bcrypt.hash('REDACTED', 10);
-    db.prepare('INSERT INTO User (id, username, passwordHash, name, role, active, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?)').run('boss-001', 'boss', hash, '老板', 'BOSS', new Date().toISOString(), new Date().toISOString());
+    const hash = await bcrypt.hash(TEST_USER_PASSWORD, 10);
+    db.prepare('INSERT OR IGNORE INTO Clinic (id, name, code, isActive, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)')
+      .run('test-clinic-001', '测试诊所', 'TEST001', 1, new Date().toISOString(), new Date().toISOString());
+    db.prepare('INSERT INTO User (id, username, passwordHash, name, role, active, clinicId, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?,?)').run('boss-001', 'boss', hash, '老板', 'BOSS', 'test-clinic-001', new Date().toISOString(), new Date().toISOString());
 
-    const res = await request(app.getHttpServer()).post('/api/auth/login').send({ username: 'boss', password: 'REDACTED' });
-    token = res.body.access_token;
+    const res = await request(app.getHttpServer()).post('/api/auth/login').send({ username: 'boss', password: TEST_USER_PASSWORD });
+    token = extractAccessToken(res);
 
     const pRes = await request(app.getHttpServer())
       .post('/api/patients').set('Authorization', `Bearer ${token}`)
@@ -68,13 +70,15 @@ describe('ToothRecords (e2e)', () => {
   it('GET /tooth-records - 按患者查询', () => {
     return request(app.getHttpServer())
       .get(`/api/tooth-records?patientId=${patientId}`).set('Authorization', `Bearer ${token}`)
-      .expect(200);
+      .expect(200)
+      .expect((res) => { expect(res.body.items.length).toBeGreaterThanOrEqual(1); });
   });
 
   it('DELETE /tooth-records/:toothNumber - 删除牙位记录', () => {
     return request(app.getHttpServer())
       .delete(`/api/tooth-records/16?patientId=${patientId}`).set('Authorization', `Bearer ${token}`)
-      .expect(200);
+      .expect(200)
+      .expect((res) => { expect(res.body).toBeDefined(); });
   });
 
   it('未带 token 返回 401', () => {

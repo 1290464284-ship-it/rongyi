@@ -3,6 +3,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { DbService } from '../src/db/db.service';
+import { TEST_USER_PASSWORD, extractAccessToken } from './test-helpers';
 import { _isTestMode } from '../src/db/database';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
@@ -26,7 +27,6 @@ describe('Charge V2 - Combos & Payment Methods & Debts (e2e)', () => {
 
   beforeAll(async () => {
     process.env.TEST_DB_MEMORY = '1';
-    _isTestMode = true;
     const moduleFixture: TestingModule = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleFixture.createNestApplication();
     app.setGlobalPrefix('api');
@@ -36,20 +36,22 @@ describe('Charge V2 - Combos & Payment Methods & Debts (e2e)', () => {
 
     for (const t of tables) { try { db.exec(`DELETE FROM "${t}"`); } catch { /* ok */ } }
 
-    const hash = await bcrypt.hash('REDACTED', 10);
+    const hash = await bcrypt.hash(TEST_USER_PASSWORD, 10);
     userId = crypto.randomUUID();
-    db.prepare('INSERT INTO User (id, username, passwordHash, name, role, active, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?)').run(
-      userId, 'doc_charge2', hash, '收费测试医生2', 'DOCTOR', new Date().toISOString(), new Date().toISOString()
+    db.prepare('INSERT OR IGNORE INTO Clinic (id, name, code, isActive, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)')
+      .run('test-clinic-001', '测试诊所', 'TEST001', 1, new Date().toISOString(), new Date().toISOString());
+    db.prepare('INSERT INTO User (id, username, passwordHash, name, role, active, clinicId, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?,?)').run(
+      userId, 'doc_charge2', hash, '收费测试医生2', 'DOCTOR', 'test-clinic-001', new Date().toISOString(), new Date().toISOString()
     );
 
     const pId = crypto.randomUUID();
-    db.prepare('INSERT INTO Patient (id, code, name, gender, phone, active, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?)').run(
-      pId, 'PCHARGE2', '收费测试患者2', 'MALE', '13600000000', new Date().toISOString(), new Date().toISOString()
+    db.prepare('INSERT INTO Patient (id, code, name, gender, phone, clinicId, active, createdAt, updatedAt) VALUES (?,?,?,?,?,?,1,?,?)').run(
+      pId, 'PCHARGE2', '收费测试患者2', 'MALE', '13600000000', 'test-clinic-001', new Date().toISOString(), new Date().toISOString()
     );
     patientId = pId;
 
-    const res = await request(app.getHttpServer()).post('/api/auth/login').send({ username: 'doc_charge2', password: 'REDACTED' });
-    token = res.body.access_token;
+    const res = await request(app.getHttpServer()).post('/api/auth/login').send({ username: 'doc_charge2', password: TEST_USER_PASSWORD });
+    token = extractAccessToken(res);
   });
 
   afterAll(async () => { await app.close(); });
@@ -72,7 +74,9 @@ describe('Charge V2 - Combos & Payment Methods & Debts (e2e)', () => {
       const res = await request(app.getHttpServer())
         .get('/api/charge-v2/combos').set('Authorization', `Bearer ${token}`)
         .expect(200);
-      expect(res.body.total).toBeGreaterThanOrEqual(1);
+      // listCombos 直接返回数组，不是 { total, items }
+      expect(Array.isArray(res.body)).toBe(true);
+      expect(res.body.length).toBeGreaterThanOrEqual(1);
     });
 
     it('PATCH /charge-v2/combos/:id - 更新收费组合', async () => {
@@ -89,9 +93,10 @@ describe('Charge V2 - Combos & Payment Methods & Debts (e2e)', () => {
         .send({ name: '临时组合', category: '临时', items: [{ itemName: '临时项目', price: 100, quantity: 1 }] });
       const tempId = tempRes.body.id;
 
-      await request(app.getHttpServer())
+      const delRes = await request(app.getHttpServer())
         .delete(`/api/charge-v2/combos/${tempId}`).set('Authorization', `Bearer ${token}`)
         .expect(200);
+      expect(delRes.status).toBe(200);
     });
   });
 
@@ -133,9 +138,10 @@ describe('Charge V2 - Combos & Payment Methods & Debts (e2e)', () => {
         .send({ name: '临时方式', code: 'TEMP' });
       const tempId = tempRes.body.id;
 
-      await request(app.getHttpServer())
+      const delRes = await request(app.getHttpServer())
         .delete(`/api/charge-v2/payment-methods/${tempId}`).set('Authorization', `Bearer ${token}`)
         .expect(200);
+      expect(delRes.status).toBe(200);
     });
   });
 
@@ -161,10 +167,11 @@ describe('Charge V2 - Combos & Payment Methods & Debts (e2e)', () => {
     });
 
     it('POST /charge-v2/debts/from-charge - 同一收费单不能重复创建欠费', async () => {
-      await request(app.getHttpServer())
+      const dupRes = await request(app.getHttpServer())
         .post('/api/charge-v2/debts/from-charge').set('Authorization', `Bearer ${token}`)
         .send({ chargeId, patientId, totalAmount: 5000, debtAmount: 3000 })
         .expect(400);
+      expect(dupRes.status).toBe(400);
     });
 
     it('GET /charge-v2/debts - 获取欠费列表', async () => {
@@ -190,26 +197,33 @@ describe('Charge V2 - Combos & Payment Methods & Debts (e2e)', () => {
     });
 
     it('POST /charge-v2/debts/:id/pay - 部分还款', async () => {
+      // 债务创建时 totalAmount=5000, debtAmount=3000, 初始 paidAmount=2000
+      // 还款 1000 后 paidAmount = 2000 + 1000 = 3000
       const res = await request(app.getHttpServer())
         .post(`/api/charge-v2/debts/${debtId}/pay`).set('Authorization', `Bearer ${token}`)
         .send({ amount: 1000 })
         .expect(200);
-      expect(res.body.paid).toBe(1000);
+      expect(Number(res.body.paidAmount)).toBe(3000);
+      expect(Number(res.body.debtAmount)).toBe(2000);
     });
 
     it('POST /charge-v2/debts/:id/pay - 还清余款', async () => {
+      // 之前 paidAmount=3000, debtAmount=2000; 再还 2000 后 paidAmount=5000
       const res = await request(app.getHttpServer())
         .post(`/api/charge-v2/debts/${debtId}/pay`).set('Authorization', `Bearer ${token}`)
         .send({ amount: 2000 })
         .expect(200);
-      expect(res.body.paid).toBe(3000);
+      expect(Number(res.body.paidAmount)).toBe(5000);
+      expect(Number(res.body.debtAmount)).toBe(0);
+      expect(res.body.status).toBe('PAID');
     });
 
     it('POST /charge-v2/debts/:id/pay - 超额还款返回400', async () => {
-      await request(app.getHttpServer())
+      const overRes = await request(app.getHttpServer())
         .post(`/api/charge-v2/debts/${debtId}/pay`).set('Authorization', `Bearer ${token}`)
         .send({ amount: 100 })
         .expect(400);
+      expect(overRes.status).toBe(400);
     });
   });
 
@@ -222,7 +236,7 @@ describe('Charge V2 - Combos & Payment Methods & Debts (e2e)', () => {
         .send({
           patientId,
           doctorId: userId,
-          items: [{ name: '补牙', category: '修复', price: 800, quantity: 1, teethNumbers: [26] }],
+          items: [{ name: '补牙', category: '修复', price: 800, quantity: 1, teethNumbers: ['26'] }],
         });
       testChargeId = res.body.id;
     });

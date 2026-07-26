@@ -4,6 +4,7 @@ import request from 'supertest';
 import * as bcrypt from 'bcryptjs';
 import { AppModule } from '../src/app.module';
 import { DbService } from '../src/db/db.service';
+import { TEST_USER_PASSWORD, extractAccessToken } from './test-helpers';
 import * as crypto from 'crypto';
 
 describe('Prescriptions (e2e)', () => {
@@ -33,17 +34,19 @@ describe('Prescriptions (e2e)', () => {
 
     for (const t of tables) { try { db.exec(`DELETE FROM "${t}"`); } catch { /* ok */ } }
 
-    const hash = await bcrypt.hash('REDACTED', 10);
+    const hash = await bcrypt.hash(TEST_USER_PASSWORD, 10);
     const dId = crypto.randomUUID();
-    db.prepare('INSERT INTO User (id, username, passwordHash, name, role, active, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?)').run(dId, 'doc_rx', hash, '处方测试医生', 'DOCTOR', new Date().toISOString(), new Date().toISOString());
+    db.prepare('INSERT OR IGNORE INTO Clinic (id, name, code, isActive, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)')
+      .run('test-clinic-001', '测试诊所', 'TEST001', 1, new Date().toISOString(), new Date().toISOString());
+    db.prepare('INSERT INTO User (id, username, passwordHash, name, role, active, clinicId, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?,?)').run(dId, 'doc_rx', hash, '处方测试医生', 'DOCTOR', 'test-clinic-001', new Date().toISOString(), new Date().toISOString());
     doctorId = dId;
 
     const pId = crypto.randomUUID();
-    db.prepare('INSERT INTO Patient (id, code, name, gender, phone, active, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?)').run(pId, 'PRX001', '处方测试患者', 'MALE', '13800000001', new Date().toISOString(), new Date().toISOString());
+    db.prepare('INSERT INTO Patient (id, code, name, gender, phone, clinicId, active, createdAt, updatedAt) VALUES (?,?,?,?,?,?,1,?,?)').run(pId, 'PRX001', '处方测试患者', 'MALE', '13800000001', 'test-clinic-001', new Date().toISOString(), new Date().toISOString());
     patientId = pId;
 
-    const res = await request(app.getHttpServer()).post('/api/auth/login').send({ username: 'doc_rx', password: 'REDACTED' });
-    token = res.body.access_token;
+    const res = await request(app.getHttpServer()).post('/api/auth/login').send({ username: 'doc_rx', password: TEST_USER_PASSWORD });
+    token = extractAccessToken(res);
   });
 
   afterAll(async () => { await app.close(); });
@@ -65,10 +68,11 @@ describe('Prescriptions (e2e)', () => {
       .expect((res) => { expect(res.body.total).toBe(1); });
   });
 
-  it('POST /prescriptions - 空明细返回 400', () => {
-    return request(app.getHttpServer())
+  it('POST /prescriptions - 空明细返回 400', async () => {
+    const emptyRes = await request(app.getHttpServer())
       .post('/api/prescriptions').set('Authorization', `Bearer ${token}`)
       .send({ patientId, doctorId, items: [] })
       .expect(400);
+    expect(emptyRes.status).toBe(400);
   });
 });
