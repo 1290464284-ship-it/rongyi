@@ -1,7 +1,13 @@
-import { Injectable, BadRequestException, ConflictException } from '@nestjs/common';
+import { BusinessValidationException, BusinessConflictException } from '@common/errors';
+import { Injectable } from '@nestjs/common';
+
 import { DbService } from '../../../db/db.service';
 import { BaseService } from '../../../common/services/base.service';
-import { getCurrentClinicId } from '../../../common/services/clinic-context.service';
+import { ClinicContextService } from '../../../common/services/clinic-context.service';
+import { CacheService } from '../../../common/services/cache.service';
+import { CACHE_PREFIXES } from '../../../common/constants/cache-keys';
+import { CLINIC_DETAIL_CACHE_TTL_MS } from '../../../config/constants';
+import { AuditLogType } from '../../../common/constants';
 
 export interface Clinic {
   id: string;
@@ -18,65 +24,123 @@ export interface Clinic {
   deletedAt?: string | null;
 }
 
+/**
+ * 迁移说明：
+ * 1. findOne/findActive 从直接使用 db.prepare 迁移到使用 BaseRepository.findById
+ * 2. create 中的 code 唯一性检查使用 BaseRepository 执行
+ * 3. Clinic 表特殊：不需要 clinicId 过滤（管理端需查看所有诊所）
+ */
 @Injectable()
 export class ClinicsService extends BaseService<Clinic> {
-  constructor(dbService: DbService) {
-    // Clinic 表本身不需要 clinicId 过滤（管理端需查看所有诊所）
-    super(dbService, 'Clinic', [], ['name', 'code'], [], true, ['code']);
+
+  constructor(
+    dbService: DbService,
+    clinicContext: ClinicContextService,
+    private cache: CacheService,
+  ) {
+    super(dbService, clinicContext, 'Clinic', [], ['name', 'code'], [], true, ['code']);
   }
 
-  /**
-   * 重写 findMany — 诊所管理不需要按 clinicId 过滤（跳过诊所隔离）
-   */
   async findMany(options: Parameters<BaseService<Clinic>['findMany']>[0] = {}) {
     return super.findMany({ ...options, skipClinicFilter: true });
   }
 
-  /**
-   * 重写 findOne — 诊所管理不需要按 clinicId 过滤
-   */
   async findOne(id: string): Promise<Clinic> {
-    // 临时跳过 clinicId 过滤：直接用原始查询
-    const item = this.dbService.prepare(
-      `SELECT * FROM Clinic WHERE id = ? AND deletedAt IS NULL`,
-    ).get(id) as Clinic | undefined;
-    if (!item) {
-      throw new BadRequestException('诊所不存在');
-    }
-    return item;
+    return this.cache.getOrSet(
+      `${CACHE_PREFIXES.CLINIC}${id}`,
+      async () => {
+        const item = this.baseRepository.findById<Clinic>(
+          this.dbService,
+          this.tableName,
+          '*',
+          id,
+          ['deletedAt IS NULL'],
+        );
+        if (!item) {
+          throw new BusinessValidationException('诊所不存在');
+        }
+        return item;
+      },
+      CLINIC_DETAIL_CACHE_TTL_MS,
+    );
   }
 
   async create(dto: Partial<Clinic>): Promise<Clinic> {
-    // 检查 code 唯一性
-    const existing = this.dbService.prepare(
-      'SELECT id FROM Clinic WHERE code = ? AND deletedAt IS NULL',
-    ).get(dto.code) as { id: string } | undefined;
-    if (existing) {
-      throw new ConflictException(`诊所编码 "${dto.code}" 已存在`);
+    const codeQuery = this.baseRepository.buildPaginatedQuery(
+      this.tableName,
+      'id',
+      ' WHERE code = ? AND deletedAt IS NULL',
+      [dto.code],
+      'createdAt',
+      'DESC',
+      undefined,
+      1,
+      1,
+    );
+    const { items } = this.baseRepository.executePaginatedQuery<{ id: string }>(this.dbService, codeQuery);
+    if (items.length > 0) {
+      throw new BusinessConflictException(`诊所编码 "${dto.code}" 已存在`);
     }
 
-    // Clinic 表本身的 clinicId 列无意义（它是 clinicId 的来源），但 BaseService.create
-    // 会自动注入当前用户的 clinicId。这在功能上无害（Clinic 查询已跳过 clinicId 过滤）。
-    return super.create(dto);
+    const result = await super.create(dto);
+    this.logAudit(this.dbService, AuditLogType.CLINIC_CREATE, result.id, "Clinic", { afterData: { name: result.name, code: result.code } });
+    this.invalidateClinicCache();
+    return result;
+  }
+
+  async update(id: string, dto: Partial<Clinic>): Promise<Clinic> {
+    const result = await super.update(id, dto);
+    this.invalidateClinicCache(id);
+    return result;
+  }
+
+  async remove(id: string): Promise<void> {
+    await super.remove(id);
+    this.invalidateClinicCache(id);
+  }
+
+  private invalidateClinicCache(id?: string): void {
+    if (id) {
+      this.cache.del(`${CACHE_PREFIXES.CLINIC}${id}`);
+    }
+    this.cache.delPattern(`${CACHE_PREFIXES.CLINIC}active:`);
   }
 
   /**
    * 获取当前用户的诊所信息
    */
   async getCurrentClinic(): Promise<Clinic | null> {
-    const clinicId = getCurrentClinicId();
+    const clinicId = this.clinicContext.getClinicId();
     if (!clinicId) return null;
-    return this.dbService.prepare(
-      'SELECT * FROM Clinic WHERE id = ? AND isActive = 1 AND deletedAt IS NULL',
-    ).get(clinicId) as Clinic | null;
+    try {
+      return await this.findOne(clinicId);
+    } catch {
+      return null;
+    }
   }
 
   /**
    * 获取所有活跃诊所（供用户注册/切换时选择）
    */
   async findActive(): Promise<Clinic[]> {
-    return this.dbService.prepare(
-      'SELECT id, name, code, address, phone FROM Clinic WHERE isActive = 1 AND deletedAt IS NULL ORDER BY name',
-    ).all() as Clinic[];
+    return this.cache.getOrSet(
+      `${CACHE_PREFIXES.CLINIC}active:list`,
+      () => {
+        const builtQuery = this.baseRepository.buildPaginatedQuery(
+          this.tableName,
+          'id, name, code, address, phone',
+          ' WHERE isActive = 1 AND deletedAt IS NULL',
+          [],
+          'name',
+          'ASC',
+          undefined,
+          1000,
+          1,
+        );
+        const { items } = this.baseRepository.executePaginatedQuery<Clinic>(this.dbService, builtQuery);
+        return items;
+      },
+      CLINIC_DETAIL_CACHE_TTL_MS,
+    );
   }
 }

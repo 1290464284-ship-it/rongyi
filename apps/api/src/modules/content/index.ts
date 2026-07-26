@@ -1,4 +1,4 @@
-export * from './prescriptions/prescriptions.module';
+﻿export * from './prescriptions/prescriptions.module';
 export * from './prescriptions/prescriptions.service';
 export * from './prescriptions/prescriptions.controller';
 export * from './imaging/imaging.module';

@@ -1,8 +1,3 @@
-import { IsOptional, IsString } from 'class-validator';
-import { BaseQueryDto } from '../../../../common/dto/base-query.dto';
+import { PaginationQueryDto } from '../../../../common/dto/pagination.dto';
 
-export class QuerySupplierDto extends BaseQueryDto {
-  @IsOptional()
-  @IsString()
-  keyword?: string;
-}
+export class QuerySupplierDto extends PaginationQueryDto {}

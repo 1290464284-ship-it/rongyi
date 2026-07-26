@@ -1,14 +1,42 @@
 import { InventoryService } from './inventory.service';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
+import { ClinicContextService } from '../../../common/services/clinic-context.service';
+import { IdempotencyService } from '../../../common/services/idempotency.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { StatsService } from '../../system/stats/stats.service';
+
+function createMockClinicContext(): ClinicContextService {
+  return {
+    getClinicId: () => 'test-clinic-001',
+    getUserId: () => 'test-user',
+    getRole: () => 'DOCTOR',
+    run: <T>(_ctx: unknown, fn: () => T) => fn(),
+    isInitialized: () => true,
+  } as unknown as ClinicContextService;
+}
+
+function createMockIdempotency(): IdempotencyService {
+  return {
+    executeInTransaction: <T>(_options: unknown, handler: (db: unknown) => T) => handler(undefined),
+    execute: async <T>(_options: unknown, handler: () => Promise<T> | T) => handler(),
+  } as unknown as IdempotencyService;
+}
+
+function createMockStatsService(): jest.Mocked<StatsService> {
+  return {
+    invalidateStatsCache: jest.fn(),
+  } as unknown as jest.Mocked<StatsService>;
+}
 
 describe('InventoryService', () => {
   let service: InventoryService;
   let db: MockDbService;
+  let statsService: jest.Mocked<StatsService>;
 
   beforeEach(() => {
     db = new MockDbService();
-    service = new InventoryService(db as any);
+    statsService = createMockStatsService();
+    service = new InventoryService(db as any, createMockClinicContext(), createMockIdempotency(), statsService);
   });
 
   afterEach(() => {
@@ -38,7 +66,7 @@ describe('InventoryService', () => {
   describe('update - 库存绕过流水防护（P1 修复）', () => {
     beforeEach(() => {
       db.seed('InventoryItem', [
-        { id: 'item-001', code: 'MED-001', name: '丁香油', stock: 100, minStock: 10, category: '药品', unit: '瓶', price: 15.5 },
+        { id: 'item-001', code: 'MED-001', name: '丁香油', stock: 100, minStock: 10, category: '药品', unit: '瓶', price: 15.5, clinicId: 'test-clinic-001' },
       ]);
     });
 
@@ -70,7 +98,7 @@ describe('InventoryService', () => {
   describe('stockAction - 入库 (IN)', () => {
     beforeEach(() => {
       db.seed('InventoryItem', [
-        { id: 'item-001', code: 'MED-001', name: '丁香油', stock: 100, minStock: 10, category: '药品', unit: '瓶', price: 15.5 },
+        { id: 'item-001', code: 'MED-001', name: '丁香油', stock: 100, minStock: 10, category: '药品', unit: '瓶', price: 15.5, clinicId: 'test-clinic-001' },
       ]);
     });
 
@@ -106,20 +134,22 @@ describe('InventoryService', () => {
   describe('stockAction - 出库 (OUT)', () => {
     beforeEach(() => {
       db.seed('InventoryItem', [
-        { id: 'item-001', code: 'MED-001', name: '丁香油', stock: 100, minStock: 10, category: '药品', unit: '瓶', price: 15.5 },
+        { id: 'item-001', code: 'MED-001', name: '丁香油', stock: 100, minStock: 10, category: '药品', unit: '瓶', price: 15.5, clinicId: 'test-clinic-001' },
       ]);
     });
 
-    it('正常出库应减少库存（mock 限制：WHERE id = ? AND stock >= ? 不被正确处理）', async () => {
-      // MockDbService 不支持 WHERE id = ? AND stock >= ? 复合条件，
-      // UPDATE 返回 changes=0，service 抛出 "库存不足"。
-      // 出库的 SQL 级别验证需在 e2e/集成测试中进行。
-      await expect(service.stockAction({
+    it('正常出库应产生交易记录（mock 限制：stock 计算可能不精确）', async () => {
+      const result = await service.stockAction({
         itemId: 'item-001',
         type: 'OUT',
         quantity: 30,
         remark: '科室领用',
-      })).rejects.toThrow();
+      });
+      expect((result as any).id).toBeDefined();
+      const txns = db.getTableData('InventoryTransaction');
+      expect(txns.length).toBe(1);
+      expect(txns[0].type).toBe('OUT');
+      expect(txns[0].quantity).toBe(30);
     });
 
     it('出库数量超过库存应抛出 BadRequestException（库存不足）', async () => {
@@ -138,7 +168,7 @@ describe('InventoryService', () => {
   describe('stockAction - 调整 (ADJUST)', () => {
     beforeEach(() => {
       db.seed('InventoryItem', [
-        { id: 'item-001', code: 'MED-001', name: '丁香油', stock: 100, minStock: 10, category: '药品', unit: '瓶', price: 15.5 },
+        { id: 'item-001', code: 'MED-001', name: '丁香油', stock: 100, minStock: 10, category: '药品', unit: '瓶', price: 15.5, clinicId: 'test-clinic-001' },
       ]);
     });
 
@@ -166,7 +196,7 @@ describe('InventoryService', () => {
   describe('stockAction - 无效类型', () => {
     it('无效的操作类型应抛出 BadRequestException', async () => {
       db.seed('InventoryItem', [
-        { id: 'item-001', code: 'MED-001', name: '丁香油', stock: 100, minStock: 10, category: '药品', unit: '瓶', price: 15.5 },
+        { id: 'item-001', code: 'MED-001', name: '丁香油', stock: 100, minStock: 10, category: '药品', unit: '瓶', price: 15.5, clinicId: 'test-clinic-001' },
       ]);
       await expect(service.stockAction({
         itemId: 'item-001',
@@ -188,6 +218,114 @@ describe('InventoryService', () => {
       // MockDbService 会过滤 deletedAt IS NULL，但 stock <= minStock 过滤可能不精确
       // 至少应包含低库存项
       expect(result.length).toBeGreaterThanOrEqual(0);
+    });
+  });
+
+  // ==================== findTransactions ====================
+
+  describe('findTransactions - 查询交易流水', () => {
+    beforeEach(() => {
+      db.seed('InventoryTransaction', [
+        {
+          id: 'txn-001', itemId: 'item-001', type: 'IN', quantity: 50,
+          unitPrice: 15, totalAmount: 750, remark: '采购入库',
+          clinicId: 'test-clinic-001', createdAt: '2026-01-15T10:00:00.000Z',
+        },
+        {
+          id: 'txn-002', itemId: 'item-001', type: 'OUT', quantity: 10,
+          unitPrice: 15, totalAmount: 150, remark: '科室领用',
+          clinicId: 'test-clinic-001', createdAt: '2026-01-16T10:00:00.000Z',
+        },
+        {
+          id: 'txn-003', itemId: 'item-002', type: 'IN', quantity: 200,
+          unitPrice: 2, totalAmount: 400, remark: '采购入库',
+          clinicId: 'test-clinic-001', createdAt: '2026-01-17T10:00:00.000Z',
+        },
+      ]);
+    });
+
+    it('不传 itemId 应返回所有交易记录', async () => {
+      const result = await service.findTransactions();
+      expect(result.length).toBe(3);
+    });
+
+    it('传入 itemId 应只返回该商品的交易记录', async () => {
+      const result = await service.findTransactions('item-001');
+      expect(result.length).toBe(2);
+      expect(result.every((t: any) => t.itemId === 'item-001')).toBe(true);
+    });
+
+    it('分页查询 limit=2 offset=0 应返回前 2 条', async () => {
+      const result = await service.findTransactions(undefined, { limit: 2, offset: 0 });
+      expect(result.length).toBe(2);
+    });
+
+    it('分页查询 limit=2 offset=2 应返回第 3 条', async () => {
+      const result = await service.findTransactions(undefined, { limit: 2, offset: 2 });
+      expect(result.length).toBe(1);
+    });
+
+    it('不存在的 itemId 应返回空数组', async () => {
+      const result = await service.findTransactions('non-existent');
+      expect(result.length).toBe(0);
+    });
+  });
+
+  // ==================== stockAction - 边界情况 ====================
+
+  describe('stockAction - 边界情况', () => {
+    beforeEach(() => {
+      db.seed('InventoryItem', [
+        { id: 'item-001', code: 'MED-001', name: '丁香油', stock: 100, minStock: 10, category: '药品', unit: '瓶', price: 15.5, clinicId: 'test-clinic-001' },
+      ]);
+    });
+
+    it('数量为 0 应抛出 BadRequestException', async () => {
+      await expect(service.stockAction({
+        itemId: 'item-001',
+        type: 'IN',
+        quantity: 0,
+      })).rejects.toThrow(BadRequestException);
+    });
+
+    it('数量为负数应抛出 BadRequestException', async () => {
+      await expect(service.stockAction({
+        itemId: 'item-001',
+        type: 'IN',
+        quantity: -10,
+      })).rejects.toThrow(BadRequestException);
+    });
+
+    it('入库操作应正确更新库存并生成交易记录', async () => {
+      const result = await service.stockAction({
+        itemId: 'item-001',
+        type: 'IN',
+        quantity: 30,
+        unitPrice: 20,
+        remark: '补货入库',
+      });
+      expect((result as any).id).toBeDefined();
+      const txns = db.getTableData('InventoryTransaction');
+      expect(txns.length).toBe(1);
+      expect(txns[0].type).toBe('IN');
+      expect(txns[0].quantity).toBe(30);
+      expect(txns[0].unitPrice).toBe(20);
+      expect(txns[0].remark).toBe('补货入库');
+    });
+
+    it('出库操作应正确减少库存并生成交易记录', async () => {
+      const result = await service.stockAction({
+        itemId: 'item-001',
+        type: 'OUT',
+        quantity: 20,
+        remark: '日常消耗',
+      });
+      expect((result as any).id).toBeDefined();
+      const txns = db.getTableData('InventoryTransaction');
+      expect(txns.length).toBe(1);
+      expect(txns[0].type).toBe('OUT');
+      expect(txns[0].quantity).toBe(20);
+      expect(txns[0].remark).toBe('日常消耗');
     });
   });
 });

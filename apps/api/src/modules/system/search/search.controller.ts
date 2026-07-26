@@ -1,18 +1,18 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
-import { Role } from '../../../common/types/enums';
+import { Controller, Get, Query } from '@nestjs/common';
+import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Role } from '@dental/shared';
 import { SearchService } from './search.service';
-import { CurrentUser } from '../../../common/decorators/current-user.decorator';
-import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
+import { OperationLogResource } from '../../../common/decorators/operation-log-resource.decorator';
 
-@UseGuards(JwtAuthGuard)
 @Roles(Role.BOSS, Role.DOCTOR, Role.RECEPTIONIST)
 @ApiTags('搜索')
+@OperationLogResource('搜索')
 @Controller('search')
 export class SearchController {
   constructor(private searchService: SearchService) {}
 
+  @ApiOperation({ summary: '搜索' })
   @Get()
   search(
     @Query('q') keyword: string,
