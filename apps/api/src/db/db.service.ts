@@ -1,7 +1,11 @@
 import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
-import { Database, Statement } from 'better-sqlite3';
-import { db, initDb, seedDb, createDbConnection, cancelAutoBackup, resetTestMode } from './database';
-import { setLegacyEncryptionKey, migrateEncryptedData } from '../common/utils/encryption';
+import Database, { Database as DatabaseType } from 'better-sqlite3';
+import { IDatabase, IStatement } from './db.interface';
+import { initDb, seedDb, createDbConnection, cancelAutoBackup, resetTestMode } from './database';
+
+const MAX_STATEMENT_CACHE_SIZE = 100;
+const STATEMENT_EVICT_BATCH_SIZE = 10;
+const SLOW_QUERY_THRESHOLD_MS = 100;
 
 /**
  * P2 修复（WriteQueue 写操作串行化机制已定义但从未使用）：
@@ -18,32 +22,22 @@ import { setLegacyEncryptionKey, migrateEncryptedData } from '../common/utils/en
  */
 
 @Injectable()
-export class DbService implements OnModuleInit, OnModuleDestroy {
-  private database!: Database;
+export class DbService implements OnModuleInit, OnModuleDestroy, IDatabase {
+  private database!: DatabaseType;
   private walCheckpointTimer: NodeJS.Timeout | null = null;
-  private readonly logger = new Logger('DbService');
+  private readonly logger = new Logger(DbService.name);
+  private statementCache = new Map<string, IStatement>();
 
   onModuleInit() {
     resetTestMode();
-    if (!db) {
-      createDbConnection();
-    }
-    this.database = db;
-    initDb();
-    seedDb();
-
-    if (process.env.LEGACY_ENCRYPTION_KEY) {
-      setLegacyEncryptionKey(process.env.LEGACY_ENCRYPTION_KEY);
-      const result = migrateEncryptedData(this);
-      if (result.migrated > 0 || result.errors > 0) {
-        this.logger.log(`加密数据迁移完成: ${result.migrated} 条已重新加密, ${result.errors || 0} 条出错`);
-      }
-    }
+    this.database = createDbConnection();
+    initDb(this.database);
+    seedDb(this.database);
 
     this.walCheckpointTimer = setInterval(() => {
       try {
-        this.database.pragma('wal_checkpoint(TRUNCATE)');
-      } catch (err) {
+        this.database.pragma('wal_checkpoint(PASSIVE)');
+      } catch (err: unknown) {
         this.logger.error('WAL checkpoint 失败', err instanceof Error ? err : undefined);
       }
     }, 60 * 1000);
@@ -58,37 +52,138 @@ export class DbService implements OnModuleInit, OnModuleDestroy {
     cancelAutoBackup();
     try {
       if (this.database) {
-        this.database.pragma('wal_checkpoint(TRUNCATE)');
+        this.database.pragma('wal_checkpoint(PASSIVE)');
         this.database.close();
       }
-    } catch (err) {
+    } catch (err: unknown) {
       this.logger.warn('关闭数据库连接时出错', err instanceof Error ? err : undefined);
     }
   }
 
-  prepare(sql: string): Statement {
-    return this.database.prepare(sql);
+  prepare(sql: string): IStatement {
+    const cached = this.statementCache.get(sql);
+    if (cached) {
+      this.statementCache.delete(sql);
+      this.statementCache.set(sql, cached);
+      return cached;
+    }
+    const stmt = this.database.prepare(sql) as IStatement;
+    if (this.statementCache.size >= MAX_STATEMENT_CACHE_SIZE) {
+      this.evictOldestStatements(STATEMENT_EVICT_BATCH_SIZE);
+    }
+    this.statementCache.set(sql, stmt);
+    return stmt;
+  }
+
+  private evictOldestStatements(count: number): void {
+    const keys = this.statementCache.keys();
+    let removed = 0;
+    while (removed < count) {
+      const result = keys.next();
+      if (result.done) break;
+      this.statementCache.delete(result.value as string);
+      removed++;
+    }
+  }
+
+  clearStatementCache(): void {
+    this.statementCache.clear();
+  }
+
+  /**
+   * Execute a query and log if it exceeds SLOW_QUERY_THRESHOLD_MS.
+   * Usage: const rows = this.dbService.timedQuery('SELECT ...', () => stmt.all(...params));
+   */
+  timedQuery<T>(sql: string, fn: () => T): T {
+    const start = Date.now();
+    const result = fn();
+    const duration = Date.now() - start;
+    if (duration > SLOW_QUERY_THRESHOLD_MS) {
+      this.logger.warn(`Slow query (${duration}ms): ${sql.slice(0, 200)}`);
+    }
+    return result;
   }
 
   exec(sql: string): void {
-    this.database.exec(sql);
+    try {
+      this.database.exec(sql);
+    } catch (err: unknown) {
+      this.logger.error('exec() failed', err instanceof Error ? err : undefined);
+      throw err;
+    }
   }
 
-  transaction<T>(fn: (db: Database) => T): T {
-    const txFn = this.database.transaction(fn);
-    const result = txFn(this.database);
-    return result;
+  get name(): string {
+    return this.database.name;
+  }
+
+  pragma(sql: string): unknown {
+    try {
+      return this.database.pragma(sql);
+    } catch (err: unknown) {
+      this.logger.error('pragma() failed', err instanceof Error ? err : undefined);
+      throw err;
+    }
+  }
+
+  close(): void {
+    try {
+      this.database.close();
+    } catch (err: unknown) {
+      this.logger.error('close() failed', err instanceof Error ? err : undefined);
+      throw err;
+    }
+  }
+
+  async backup(destination: string): Promise<unknown> {
+    try {
+      return await this.database.backup(destination);
+    } catch (err: unknown) {
+      this.logger.error('备份数据库失败', err instanceof Error ? err : undefined);
+      throw err;
+    }
+  }
+
+  transaction<T>(fn: (db: IDatabase) => T): T {
+    // 顶层事务使用 BEGIN IMMEDIATE 提升写隔离级别，避免延迟锁升级死锁
+    // 嵌套调用（已在事务中）退回 better-sqlite3 原生 transaction，由其用 SAVEPOINT 处理
+    if (this.database.inTransaction) {
+      const txFn = this.database.transaction(fn);
+      return txFn(this.database);
+    }
+    this.database.exec('BEGIN IMMEDIATE');
+    try {
+      const result = fn(this.db);
+      try {
+        this.database.exec('COMMIT');
+      } catch (commitErr) {
+        try { this.database.exec('ROLLBACK'); } catch { /* best effort */ }
+        throw commitErr;
+      }
+      return result;
+    } catch (err) {
+      try { this.database.exec('ROLLBACK'); } catch { /* best effort */ }
+      throw err;
+    }
+  }
+
+  /**
+   * 打开一个只读数据库连接（用于备份文件校验等场景）。
+   * 调用方需负责调用返回实例的 close()。
+   */
+  openReadonly(path: string): IDatabase {
+    return new Database(path, { readonly: true });
   }
 
   checkpoint(mode: 'PASSIVE' | 'FULL' | 'RESTART' | 'TRUNCATE' = 'TRUNCATE'): void {
     try {
       this.database.pragma(`wal_checkpoint(${mode})`);
-    } catch (err) {
+    } catch (err: unknown) {
       this.logger.error('WAL checkpoint 失败', err instanceof Error ? err : undefined);
     }
   }
 
-  get db(): Database {
+  get db(): IDatabase {
     return this.database;
   }
 
@@ -99,15 +194,16 @@ export class DbService implements OnModuleInit, OnModuleDestroy {
     }
     try {
       this.database?.close();
-    } catch {
-      // 忽略关闭失败
+    } catch (err: unknown) {
+      this.logger.warn('关闭数据库连接失败:', err instanceof Error ? err.message : String(err));
     }
+    this.statementCache.clear();
     this.database = createDbConnection();
-    initDb();
+    initDb(this.database);
     this.walCheckpointTimer = setInterval(() => {
       try {
-        this.database.pragma('wal_checkpoint(TRUNCATE)');
-      } catch (err) {
+        this.database.pragma('wal_checkpoint(PASSIVE)');
+      } catch (err: unknown) {
         this.logger.error('WAL checkpoint 失败', err instanceof Error ? err : undefined);
       }
     }, 60 * 1000);

@@ -1,8 +1,11 @@
 import * as bcrypt from 'bcryptjs';
-import { db, isTestMode } from './database';
+import crypto from 'node:crypto';
+import { Database } from 'better-sqlite3';
+import { isTestMode } from './database';
 import { scheduleAutoBackup } from './database';
+import { DEFAULT_DEV_PASSWORD } from '../config/constants';
 
-export const seedDb = () => {
+export const seedDb = (db: Database) => {
   // 测试模式下跳过 seed
   if (isTestMode()) return;
   const userCount = (db.prepare('SELECT COUNT(*) as count FROM User').get() as { count: number }).count;
@@ -14,10 +17,10 @@ export const seedDb = () => {
 
     const isProd =
       process.env.NODE_ENV === 'production' || Boolean(process.env.ELECTRON_RUN_AS_NODE);
-    const genRandomPin = () => String(Math.floor(1000 + Math.random() * 9000));
-    const bossPassword = isProd ? genRandomPin() : '123456';
-    const doctorPassword = isProd ? genRandomPin() : '123456';
-    const frontPassword = isProd ? genRandomPin() : '123456';
+    const genRandomPin = () => crypto.randomBytes(8).toString('hex').slice(0, 8);
+    const bossPassword = isProd ? genRandomPin() : DEFAULT_DEV_PASSWORD;
+    const doctorPassword = isProd ? genRandomPin() : DEFAULT_DEV_PASSWORD;
+    const frontPassword = isProd ? genRandomPin() : DEFAULT_DEV_PASSWORD;
 
     const bossHash = bcrypt.hashSync(bossPassword, 10);
     const doctorHash = bcrypt.hashSync(doctorPassword, 10);
@@ -57,9 +60,9 @@ export const seedDb = () => {
       { code: 'T015', name: '咬合调整', category: '修复治疗', price: 300 },
     ];
 
-    const insertTreatment = db.prepare(`INSERT INTO TreatmentCatalog (id, code, name, category, price) VALUES (?, ?, ?, ?, ?)`);
+    const insertTreatment = db.prepare(`INSERT INTO TreatmentCatalog (id, code, name, category, price, clinicId) VALUES (?, ?, ?, ?, ?, ?)`);
     treatments.forEach((t, i) => {
-      insertTreatment.run(`tc-${i + 1}`, t.code, t.name, t.category, t.price);
+      insertTreatment.run(`tc-${i + 1}`, t.code, t.name, t.category, t.price, defaultClinicId);
     });
 
     const drugs = [
@@ -72,9 +75,9 @@ export const seedDb = () => {
       { code: 'D007', name: '丁硼乳膏', spec: '65g', category: '口腔护理', price: 12, unit: '支' },
     ];
 
-    const insertDrug = db.prepare(`INSERT INTO DrugCatalog (id, code, name, spec, category, price, unit) VALUES (?, ?, ?, ?, ?, ?, ?)`);
+    const insertDrug = db.prepare(`INSERT INTO DrugCatalog (id, code, name, spec, category, price, unit, clinicId) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
     drugs.forEach((d, i) => {
-      insertDrug.run(`dc-${i + 1}`, d.code, d.name, d.spec, d.category, d.price, d.unit);
+      insertDrug.run(`dc-${i + 1}`, d.code, d.name, d.spec, d.category, d.price, d.unit, defaultClinicId);
     });
 
     const chairs = [
@@ -82,9 +85,9 @@ export const seedDb = () => {
       { name: '2号牙椅', location: '一楼B诊室' },
       { name: '3号牙椅', location: '二楼C诊室' },
     ];
-    const insertChair = db.prepare('INSERT INTO Chair (id, name, location) VALUES (?, ?, ?)');
+    const insertChair = db.prepare('INSERT INTO Chair (id, name, location, clinicId) VALUES (?, ?, ?, ?)');
     chairs.forEach((c, i) => {
-      insertChair.run(`chair-${i + 1}`, c.name, c.location);
+      insertChair.run(`chair-${i + 1}`, c.name, c.location, defaultClinicId);
     });
 
     const clinicInfo = [
@@ -93,11 +96,11 @@ export const seedDb = () => {
       { key: 'address', value: '' },
       { key: 'logo', value: '' },
     ];
-    const insertInfo = db.prepare('INSERT INTO ClinicInfo (id, key, value) VALUES (?, ?, ?)');
+    const insertInfo = db.prepare('INSERT INTO ClinicInfo (id, key, value, clinicId) VALUES (?, ?, ?, ?)');
     clinicInfo.forEach((c, i) => {
-      insertInfo.run(`info-${i + 1}`, c.key, c.value);
+      insertInfo.run(`info-${i + 1}`, c.key, c.value, defaultClinicId);
     });
   }
 
-  scheduleAutoBackup();
+  scheduleAutoBackup(db);
 };

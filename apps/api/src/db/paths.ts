@@ -1,18 +1,23 @@
-import { join, dirname } from 'path';
-import * as fs from 'fs';
-import * as crypto from 'crypto';
-import { logger } from '../common/utils/log';
+﻿import { join, dirname } from 'node:path';
+import * as fs from 'node:fs';
+import * as crypto from 'node:crypto';
+import { logger } from '../common/utils/infra/log';
+import {
+  DEFAULT_API_PORT,
+  DEFAULT_CORS_ORIGINS,
+  JWT_EXPIRES_IN,
+} from '../config/constants';
 
 const ENV_FALLBACKS: Record<string, string> = {
-  PORT: '3001',
-  CORS_ORIGIN: 'http://localhost:5173,http://localhost:3000',
-  JWT_EXPIRES_IN: '7d',
+  PORT: String(DEFAULT_API_PORT),
+  CORS_ORIGIN: DEFAULT_CORS_ORIGINS.join(','),
+  JWT_EXPIRES_IN,
 };
 
 function ensureDir(dir: string): void {
   try {
     fs.mkdirSync(dir, { recursive: true });
-  } catch (err) {
+  } catch (err: unknown) {
     logger.warn(`无法创建目录 ${dir}: ${(err as Error).message}`);
   }
 }
@@ -62,7 +67,8 @@ export function ensureEnvFile(envPath: string): void {
     'CORS_ORIGIN=' + ENV_FALLBACKS.CORS_ORIGIN,
   ];
   try {
-    fs.writeFileSync(envPath, lines.join('\n') + '\n');
+    fs.writeFileSync(envPath, lines.join('\n') + '\n', { mode: 0o600 });
+    fs.chmodSync(envPath, 0o600);
     console.log('[Setup] 已创建 .env，并生成 JWT_SECRET 和 ENCRYPTION_KEY');
   } catch (writeErr) {
     console.error(
@@ -93,7 +99,7 @@ function copyDbFiles(srcDb: string, destDb: string): void {
     if (fs.existsSync(src)) {
       try {
         fs.copyFileSync(src, destDb + suffix);
-      } catch (err) {
+      } catch (err: unknown) {
         logger.warn(`无法复制数据库辅助文件 ${src}: ${(err as Error).message}`);
       }
     }
@@ -141,7 +147,7 @@ export function migrateLegacyDatabaseIfNeeded(): void {
       );
       console.log('[DB] 旧库迁移完成（旧文件已保留，未删除）');
       return;
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('[DB] 旧库迁移失败:', err);
     }
   }
