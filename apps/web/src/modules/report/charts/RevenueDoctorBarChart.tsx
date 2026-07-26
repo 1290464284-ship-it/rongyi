@@ -1,5 +1,7 @@
 import { useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
+import echarts from '@/lib/echarts';
+import type { CallbackDataParams } from 'echarts/types/dist/shared';
 
 interface RevenueDoctorItem {
   doctorId: string;
@@ -16,7 +18,7 @@ export default function RevenueDoctorBarChart({ data, loading }: { data?: Revenu
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
-      formatter: (params: any) => {
+      formatter: (params: CallbackDataParams[]) => {
         const p = params[0];
         const item = list[p.dataIndex];
         return `${item?.doctorName ?? p.name}<br/>收入：¥${item?.amount?.toFixed(2) ?? 0}<br/>笔数：${item?.count ?? 0}<br/>占比：${item?.percentage?.toFixed(1) ?? 0}%`;
@@ -63,5 +65,5 @@ export default function RevenueDoctorBarChart({ data, loading }: { data?: Revenu
   if (list.length === 0) {
     return <div className='text-center text-muted-foreground py-8'>暂无数据</div>;
   }
-  return <ReactECharts option={option} style={{ height: '320px' }} />;
+  return <ReactECharts echarts={echarts} option={option} style={{ height: '320px' }} />;
 }

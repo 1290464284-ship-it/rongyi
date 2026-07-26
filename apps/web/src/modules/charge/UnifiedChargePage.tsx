@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { Receipt, Package } from 'lucide-react';
-import ChargePage from '@/modules/charge/ChargePage';
-import ChargeV2Page from '@/modules/charge-v2/ChargeV2Page';
 import { cn } from '@/lib/utils';
+
+const ChargePage = lazy(() => import('@/modules/charge/ChargePage'));
+const ChargeV2Page = lazy(() => import('@/modules/charge-v2/ChargeV2Page'));
 
 type Tab = 'cashier' | 'advanced';
 
@@ -43,7 +44,9 @@ export default function UnifiedChargePage() {
         </button>
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
-        {tab === 'cashier' ? <ChargePage /> : <ChargeV2Page />}
+        <Suspense fallback={<div className="p-6 text-center text-muted-foreground">加载中...</div>}>
+          {tab === 'cashier' ? <ChargePage /> : <ChargeV2Page />}
+        </Suspense>
       </div>
     </div>
   );

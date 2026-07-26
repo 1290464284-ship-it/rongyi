@@ -15,13 +15,14 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useIsBoss } from '@/components/ui/permission';
 import {
   useSuppliers,
   useCreateSupplier,
   useUpdateSupplier,
   useDeleteSupplier,
   type Supplier,
-} from '@/lib/suppliers';
+} from '@/lib/api/inventory/suppliers';
 import { toast } from 'sonner';
 
 const PAGE_SIZE = 20;
@@ -45,6 +46,7 @@ const EMPTY_FORM: FormState = {
 };
 
 export default function SuppliersPage() {
+  const isBoss = useIsBoss();
   const [keyword, setKeyword] = useState('');
   const [page, setPage] = useState(1);
   const { data, isLoading } = useSuppliers(keyword, page, PAGE_SIZE);
@@ -183,16 +185,18 @@ export default function SuppliersPage() {
                         <Button variant="ghost" size="icon" onClick={() => openEdit(item)} title="编辑" aria-label="编辑">
                           <Pencil className="h-4 w-4" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setDeleteTarget(item)}
-                          title="删除"
-                          className="text-destructive hover:text-destructive"
-                          aria-label="删除"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {isBoss && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setDeleteTarget(item)}
+                            title="删除"
+                            className="text-destructive hover:text-destructive"
+                            aria-label="删除"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>

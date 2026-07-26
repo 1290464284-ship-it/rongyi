@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
-import type { PatientGrowthData } from '@/lib/stats';
+import echarts from '@/lib/echarts';
+import type { CallbackDataParams } from 'echarts/types/dist/shared';
+import type { PatientGrowthData } from '@/lib/api/system/stats';
 
 export default function PatientGrowthChart({ data, loading }: { data?: PatientGrowthData; loading: boolean }) {
   const option = useMemo(() => {
@@ -8,11 +10,11 @@ export default function PatientGrowthChart({ data, loading }: { data?: PatientGr
     return {
       tooltip: {
         trigger: 'axis',
-        formatter: (params: any) => {
+        formatter: (params: CallbackDataParams[]) => {
           const p0 = params[0];
           const p1 = params[1];
           const item = items[p0.dataIndex];
-          return `${item?.date ?? p0.axisValue}<br/>${p0.marker}新增患者：${p0.value}<br/>${p1?.marker ?? ''}累计患者：${p1?.value ?? 0}`;
+          return `${item?.date ?? (p0 as any).axisValue ?? ''}<br/>${p0.marker}新增患者：${p0.value}<br/>${p1?.marker ?? ''}累计患者：${p1?.value ?? 0}`;
         },
       },
       legend: {
@@ -96,5 +98,5 @@ export default function PatientGrowthChart({ data, loading }: { data?: PatientGr
   if (!data?.items?.length) {
     return <div className='text-center text-muted-foreground py-8'>暂无数据</div>;
   }
-  return <ReactECharts option={option} style={{ height: '320px' }} />;
+  return <ReactECharts echarts={echarts} option={option} style={{ height: '320px' }} />;
 }

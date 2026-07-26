@@ -15,8 +15,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { useSettings, useUpdateSettings } from '@/lib/settings';
-import { useOperationLogs, type OperationLog } from '@/lib/operation-logs';
+import { useSettings, useUpdateSettings } from '@/lib/api/system/settings';
+import { useOperationLogs, type OperationLog } from '@/lib/api/system/operation-logs';
 import { formatDateTime } from '@/lib/utils';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -103,7 +103,8 @@ function ClinicInfoTab() {
     if (data) {
       const next: Record<string, string> = {};
       FIELDS.forEach((f) => {
-        next[f.key] = (data as any)[f.key] ?? '';
+        const dataMap = data as unknown as Record<string, string>;
+        next[f.key] = dataMap[f.key] ?? '';
       });
       setForm(next);
     }

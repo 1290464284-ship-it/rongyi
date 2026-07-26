@@ -27,6 +27,8 @@ import {
   useUpdateStaff,
   useDeleteStaff,
   type StaffUser,
+  type CreateStaffDto,
+  type UpdateStaffDto,
 } from '@/lib/staff';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
@@ -141,12 +143,12 @@ function CreateStaffDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  onCreate: (data: any) => Promise<any>;
+  onCreate: (data: CreateStaffDto) => Promise<StaffUser>;
 }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  const [role, setRole] = useState('DOCTOR');
+  const [role, setRole] = useState<CreateStaffDto['role']>('DOCTOR');
   const [phone, setPhone] = useState('');
 
   async function handleSubmit() {
@@ -180,7 +182,7 @@ function CreateStaffDialog({
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label htmlFor="create-staff-role">角色</Label>
-              <Select id="create-staff-role" value={role} onChange={e => setRole(e.target.value)}>
+              <Select id="create-staff-role" value={role} onChange={e => setRole(e.target.value as CreateStaffDto['role'])}>
                 <option value="DOCTOR">医生</option>
                 <option value="RECEPTIONIST">前台</option>
               </Select>
@@ -212,15 +214,15 @@ function EditStaffDialog({
   open: boolean;
   onClose: () => void;
   user: StaffUser;
-  onUpdate: ({ id, data }: { id: string; data: any }) => Promise<any>;
+  onUpdate: ({ id, data }: { id: string; data: UpdateStaffDto & { password?: string } }) => Promise<StaffUser>;
 }) {
   const [name, setName] = useState(user.name);
-  const [role, setRole] = useState(user.role);
+  const [role, setRole] = useState<UpdateStaffDto['role']>(user.role);
   const [phone, setPhone] = useState(user.phone || '');
   const [password, setPassword] = useState('');
 
   async function handleSubmit() {
-    const data: any = { name, role, phone: phone || undefined };
+    const data: UpdateStaffDto & { password?: string } = { name, role, phone: phone || undefined };
     if (password) data.password = password;
     await onUpdate({ id: user.id, data });
     onClose();
@@ -240,7 +242,7 @@ function EditStaffDialog({
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label htmlFor="edit-staff-role">角色</Label>
-              <Select id="edit-staff-role" value={role} onChange={e => setRole(e.target.value as any)}>
+              <Select id="edit-staff-role" value={role} onChange={e => setRole(e.target.value as UpdateStaffDto['role'])}>
                 <option value="DOCTOR">医生</option>
                 <option value="RECEPTIONIST">前台</option>
               </Select>

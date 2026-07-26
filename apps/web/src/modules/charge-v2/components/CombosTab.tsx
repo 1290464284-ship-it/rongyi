@@ -31,6 +31,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { TableLoading, EmptyState } from '@/components/ui/loading';
+import { PermissionButton, useIsBoss } from '@/components/ui/permission';
 import {
   useChargeCombos,
   useCreateChargeCombo,
@@ -38,7 +39,7 @@ import {
   useDeleteChargeCombo,
   type ChargeCombo,
   type CreateChargeComboDto,
-} from '@/lib/charge-v2';
+} from '@/lib/api/financial/charge-v2';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 
@@ -55,6 +56,7 @@ const COMBO_CATEGORIES = [
 const PAGE_SIZE = 10;
 
 export function ChargeCombosTab() {
+  const isBoss = useIsBoss();
   const [keyword, setKeyword] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [page, setPage] = useState(1);
@@ -137,10 +139,12 @@ export function ChargeCombosTab() {
                 ))}
               </Select>
             </div>
-            <Button onClick={() => setCreateOpen(true)}>
-              <Plus className="w-4 h-4 mr-2" />
-              新建组合
-            </Button>
+            <PermissionButton roles={['BOSS']}>
+              <Button onClick={() => setCreateOpen(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                新建组合
+              </Button>
+            </PermissionButton>
           </div>
         </CardHeader>
         <CardContent>
@@ -206,17 +210,21 @@ export function ChargeCombosTab() {
                         {format(new Date(combo.createdAt), 'yyyy-MM-dd', { locale: zhCN })}
                       </TableCell>
                       <TableCell className="text-right space-x-1">
-                        <Button size="sm" variant="ghost" onClick={() => handleEdit(combo)} aria-label="编辑">
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleDelete(combo)}
-                          aria-label="删除"
-                        >
-                          <Trash2 className="w-3.5 h-3.5 text-destructive" />
-                        </Button>
+                        {isBoss && (
+                          <Button size="sm" variant="ghost" onClick={() => handleEdit(combo)} aria-label="编辑">
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </Button>
+                        )}
+                        {isBoss && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleDelete(combo)}
+                            aria-label="删除"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   );

@@ -11,7 +11,7 @@ import {
   useUpdatePeriodontalRecord,
   useDeletePeriodontalRecord,
   type PeriodontalRecord,
-} from '@/lib/periodontal-records';
+} from '@/lib/api/clinical/periodontal-records';
 import { formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
 

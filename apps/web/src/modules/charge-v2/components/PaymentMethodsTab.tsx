@@ -29,6 +29,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { TableLoading, EmptyState } from '@/components/ui/loading';
+import { PermissionButton, useIsBoss } from '@/components/ui/permission';
 import {
   usePaymentMethods,
   useCreatePaymentMethod,
@@ -37,7 +38,7 @@ import {
   useTogglePaymentMethod,
   type PaymentMethod,
   type CreatePaymentMethodDto,
-} from '@/lib/charge-v2';
+} from '@/lib/api/financial/charge-v2';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 
@@ -51,6 +52,7 @@ const PAYMENT_METHOD_TYPES = [
 ];
 
 export function PaymentMethodsTab() {
+  const isBoss = useIsBoss();
   const [keyword, setKeyword] = useState('');
   const [page, setPage] = useState(1);
 
@@ -126,10 +128,12 @@ export function PaymentMethodsTab() {
                 />
               </div>
             </div>
-            <Button onClick={() => setCreateOpen(true)}>
-              <Plus className="w-4 h-4 mr-2" />
-              新建方式
-            </Button>
+            <PermissionButton roles={['BOSS']}>
+              <Button onClick={() => setCreateOpen(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                新建方式
+              </Button>
+            </PermissionButton>
           </div>
         </CardHeader>
         <CardContent>
@@ -179,17 +183,21 @@ export function PaymentMethodsTab() {
                       {format(new Date(method.createdAt), 'yyyy-MM-dd', { locale: zhCN })}
                     </TableCell>
                     <TableCell className="text-right space-x-1">
-                      <Button size="sm" variant="ghost" onClick={() => handleEdit(method)} aria-label="编辑">
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleDelete(method)}
-                        aria-label="删除"
-                      >
-                        <Trash2 className="w-3.5 h-3.5 text-destructive" />
-                      </Button>
+                      {isBoss && (
+                        <Button size="sm" variant="ghost" onClick={() => handleEdit(method)} aria-label="编辑">
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </Button>
+                      )}
+                      {isBoss && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleDelete(method)}
+                          aria-label="删除"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))

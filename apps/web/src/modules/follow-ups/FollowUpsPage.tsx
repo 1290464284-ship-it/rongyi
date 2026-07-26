@@ -17,7 +17,7 @@ const TABS: { key: TabType; label: string; icon: typeof ListTodo }[] = [
   { key: 'stats', label: '统计分析', icon: BarChart3 },
 ];
 
-export default function FollowUpsV2Page() {
+export default function FollowUpsPage() {
   const [activeTab, setActiveTab] = useState<TabType>('workbench');
 
   return (

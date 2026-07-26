@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useState } from 'react';
+import React, { lazy, Suspense, useMemo, useState } from 'react';
 import {
   TrendingUp,
   BarChart3,
@@ -32,8 +32,8 @@ import {
   useAppointmentStatusStats,
   useMemberStats,
   type RevenueData,
-} from '@/lib/stats';
-import { APPOINTMENT_STATUS_LABEL } from '@/lib/appointments';
+} from '@/lib/api/system/stats';
+import { APPOINTMENT_STATUS_LABEL } from '@/lib/api/clinical/appointments';
 import { format, subDays, subMonths } from 'date-fns';
 
 const RevenueLineChart = lazy(() => import('./charts/RevenueLineChart'));
@@ -68,7 +68,7 @@ type TabKey =
   | 'appointment'
   | 'member';
 
-export default function ReportPage() {
+const ReportPage = React.memo(function ReportPage() {
   const [tab, setTab] = useState<TabKey>('revenue');
   const today = new Date();
   const [range, setRange] = useState<'week' | 'month' | 'year'>('month');
@@ -142,7 +142,8 @@ export default function ReportPage() {
       {tab === 'member' && <MemberTab />}
     </div>
   );
-}
+});
+export default ReportPage;
 
 function RevenueTab({
   startDate,
@@ -551,7 +552,7 @@ function AppointmentTab({ dateRange }: { dateRange: { startDate: string; endDate
               ) : (
                 list.map((s) => (
                   <TableRow key={s.status}>
-                    <TableCell className='font-medium'>{APPOINTMENT_STATUS_LABEL[s.status] ?? s.status}</TableCell>
+                    <TableCell className='font-medium'>{APPOINTMENT_STATUS_LABEL[s.status as keyof typeof APPOINTMENT_STATUS_LABEL] ?? s.status}</TableCell>
                     <TableCell className='text-right'>{s.count}</TableCell>
                     <TableCell className='text-right text-muted-foreground'>{s.percentage.toFixed(1)}%</TableCell>
                   </TableRow>

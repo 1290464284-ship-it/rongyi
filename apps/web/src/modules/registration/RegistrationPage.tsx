@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Plus, Search, Play, Check, X, UserCheck, ClipboardList, Clock, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -38,9 +38,9 @@ import {
   type RegistrationType,
   type CreateRegistrationDto,
   type TriageRegistrationDto,
-} from '@/lib/registrations';
+} from '@/lib/api/clinical/registrations';
 import { useStaff } from '@/lib/staff';
-import { useAuthStore } from '@/lib/auth-store';
+import { useAuthStore } from '@/lib/store/auth-store';
 import { PatientSelector } from '@/components/patient/PatientSelector';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
@@ -62,7 +62,7 @@ const TAB_LABELS: Record<TabKey, string> = {
   completed: '已完成',
 };
 
-export default function RegistrationPage() {
+const RegistrationPage = React.memo(function RegistrationPage() {
   const user = useAuthStore(s => s.user);
   const [activeTab, setActiveTab] = useState<TabKey>('registered');
   const [keyword, setKeyword] = useState('');
@@ -115,8 +115,8 @@ export default function RegistrationPage() {
     try {
       await startVisitRegistration.mutateAsync(registration.id);
       toast.success('开始接诊成功');
-    } catch (e: any) {
-      toast.error(e?.message || '开始接诊失败');
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : '开始接诊失败');
     }
   }
 
@@ -132,8 +132,8 @@ export default function RegistrationPage() {
       toast.success('接诊完成');
       setConfirmCompleteOpen(false);
       setSelectedRegistration(null);
-    } catch (e: any) {
-      toast.error(e?.message || '操作失败');
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : '操作失败');
     }
   }
 
@@ -149,8 +149,8 @@ export default function RegistrationPage() {
       toast.success('已取消挂号');
       setConfirmCancelOpen(false);
       setSelectedRegistration(null);
-    } catch (e: any) {
-      toast.error(e?.message || '操作失败');
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : '操作失败');
     }
   }
 
@@ -350,7 +350,8 @@ export default function RegistrationPage() {
       )}
     </div>
   );
-}
+});
+export default RegistrationPage;
 
 function CreateRegistrationDialog({
   open,
@@ -394,8 +395,8 @@ function CreateRegistrationDialog({
       setDoctorId(defaultDoctorId ?? '');
       setType('FIRST_VISIT');
       setChiefComplaint('');
-    } catch (e: any) {
-      toast.error(e?.message || '挂号失败');
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : '挂号失败');
     }
   }
 
@@ -415,7 +416,9 @@ function CreateRegistrationDialog({
         <DialogContent>
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label>患者 *</Label>
+              <Label>
+                患者 <span className="text-destructive">*</span>
+              </Label>
               <Button
                 variant="outline"
                 className="w-full justify-start"
@@ -428,7 +431,9 @@ function CreateRegistrationDialog({
             </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="reg-type">挂号类型 *</Label>
+            <Label htmlFor="reg-type">
+              挂号类型 <span className="text-destructive">*</span>
+            </Label>
             <Select id="reg-type" value={type} onChange={e => setType(e.target.value as RegistrationType)}>
               <option value="FIRST_VISIT">初诊</option>
               <option value="RETURN_VISIT">复诊</option>
@@ -437,7 +442,9 @@ function CreateRegistrationDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="reg-doctor">主治医生 *</Label>
+            <Label htmlFor="reg-doctor">
+              主治医生 <span className="text-destructive">*</span>
+            </Label>
             <Select id="reg-doctor" value={doctorId} onChange={e => setDoctorId(e.target.value)}>
               <option value="">请选择医生</option>
               {doctors.map(d => (
@@ -511,8 +518,8 @@ function TriageDialog({
       });
       toast.success('分诊成功');
       onClose();
-    } catch (e: any) {
-      toast.error(e?.message || '分诊失败');
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : '分诊失败');
     }
   }
 

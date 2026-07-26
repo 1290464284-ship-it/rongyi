@@ -18,7 +18,7 @@ import {
   RecordModifyRequest,
   useRecordModifyRequests,
   useReviewModifyRequest,
-} from '@/lib/medical-records';
+} from '@/lib/api/clinical/medical-records';
 
 export function RequestsTab() {
   const [selectedRequest, setSelectedRequest] = useState<RecordModifyRequest | null>(null);

@@ -28,7 +28,7 @@ import {
   APPOINTMENT_TYPE_LABEL,
   APPOINTMENT_TYPE_COLOR,
   type Appointment,
-} from '@/lib/appointments';
+} from '@/lib/api/clinical/appointments';
 import { useChairs, type Chair } from '@/lib/chairs';
 import AppointmentForm from './AppointmentForm';
 

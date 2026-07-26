@@ -19,8 +19,9 @@ import {
   type FollowUpPriority,
   type CreateFollowUpAutoRuleDto,
   type UpdateFollowUpAutoRuleDto,
-} from '@/lib/follow-ups-v2';
+} from '@/lib/api/communication/follow-ups';
 import { useStaff } from '@/lib/staff';
+import { DROPDOWN_MAX_PAGE_SIZE } from '@/config/constants';
 
 export function CreateAutoRuleDialog({
   open,
@@ -31,7 +32,7 @@ export function CreateAutoRuleDialog({
   onClose: () => void;
   onCreate: (data: CreateFollowUpAutoRuleDto) => Promise<FollowUpAutoRule>;
 }) {
-  const { data: templates } = useFollowUpTemplates({ isEnabled: true, pageSize: 200 });
+  const { data: templates } = useFollowUpTemplates({ isEnabled: true, pageSize: DROPDOWN_MAX_PAGE_SIZE });
   const { data: staff } = useStaff();
 
   const [name, setName] = useState('');
@@ -199,7 +200,7 @@ export function EditAutoRuleDialog({
   rule: FollowUpAutoRule;
   onUpdate: (data: UpdateFollowUpAutoRuleDto) => Promise<FollowUpAutoRule>;
 }) {
-  const { data: templates } = useFollowUpTemplates({ isEnabled: true, pageSize: 200 });
+  const { data: templates } = useFollowUpTemplates({ isEnabled: true, pageSize: DROPDOWN_MAX_PAGE_SIZE });
   const { data: staff } = useStaff();
 
   const [name, setName] = useState(rule.name);

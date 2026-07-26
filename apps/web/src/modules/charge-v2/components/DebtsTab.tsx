@@ -43,7 +43,7 @@ import {
   DEBT_STATUS_COLOR,
   type DebtRecord,
   type PayDebtDto,
-} from '@/lib/charge-v2';
+} from '@/lib/api/financial/charge-v2';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 

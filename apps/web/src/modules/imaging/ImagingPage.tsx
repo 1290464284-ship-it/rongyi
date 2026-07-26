@@ -40,10 +40,11 @@ import {
   IMAGING_TYPE_COLOR,
   type Imaging,
   type ImagingType,
-} from '@/lib/imaging';
+  type CreateImagingDto,
+} from '@/lib/api/content/imaging';
 import { PatientSelector } from '@/components/patient/PatientSelector';
 import { useStaff } from '@/lib/staff';
-import { useAuthStore } from '@/lib/auth-store';
+import { useAuthStore } from '@/lib/store/auth-store';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 
@@ -347,7 +348,7 @@ function CreateImagingDialog({
   open: boolean;
   onClose: () => void;
   presetPatientId?: string;
-  onCreate: (data: any) => Promise<any>;
+  onCreate: (data: CreateImagingDto) => Promise<Imaging>;
 }) {
   const [openSelector, setOpenSelector] = useState(false);
   const user = useAuthStore(s => s.user);
@@ -382,13 +383,9 @@ function CreateImagingDialog({
     if (!patientId || !title || !imageUrl) return;
     await onCreate({
       patientId,
-      doctorId: doctorId || undefined,
       type,
-      title,
+      filePath: imageUrl,
       description: description || undefined,
-      imageUrl,
-      takenAt: new Date(takenAt).toISOString(),
-      remark: remark || undefined,
     });
     onClose();
   }

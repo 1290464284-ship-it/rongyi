@@ -42,11 +42,11 @@ import {
   VISIT_STATUS_LABEL,
   VISIT_STATUS_COLOR,
   type Visit,
-} from '@/lib/visits';
-import { useAppointments, APPOINTMENT_STATUS_LABEL, APPOINTMENT_STATUS_COLOR, type Appointment } from '@/lib/appointments';
+} from '@/lib/api/clinical/visits';
+import { useAppointments, APPOINTMENT_STATUS_LABEL, APPOINTMENT_STATUS_COLOR, type Appointment } from '@/lib/api/clinical/appointments';
 import { PatientSelector } from '@/components/patient/PatientSelector';
 import { useStaff } from '@/lib/staff';
-import { useAuthStore } from '@/lib/auth-store';
+import { useAuthStore } from '@/lib/store/auth-store';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 
@@ -98,7 +98,7 @@ export default function ClinicalPage() {
     setSelectedVisit(visit);
   }
 
-  function handleStartFromAppointment(apt: any) {
+  function handleStartFromAppointment(apt: Appointment) {
     setSelectedVisit(null);
     setCreateOpen(true);
     setPresetAppointment(apt);
@@ -390,7 +390,12 @@ function VisitDetailPanel({
         <Button
           size='sm'
           variant='outline'
-          onClick={() => onNavigate(`/charge-v2?patientId=${visit.patientId}&visitId=${visit.id}`)}
+          onClick={() => {
+            const params = new URLSearchParams();
+            params.set('patientId', visit.patientId);
+            params.set('visitId', visit.id);
+            onNavigate(`/charge-v2?${params.toString()}`);
+          }}
         >
           <Receipt className='w-3 h-3 mr-1' />
           收费
@@ -398,7 +403,12 @@ function VisitDetailPanel({
         <Button
           size='sm'
           variant='outline'
-          onClick={() => onNavigate(`/prescriptions?patientId=${visit.patientId}&visitId=${visit.id}`)}
+          onClick={() => {
+            const params = new URLSearchParams();
+            params.set('patientId', visit.patientId);
+            params.set('visitId', visit.id);
+            onNavigate(`/prescriptions?${params.toString()}`);
+          }}
         >
           <Pill className='w-3 h-3 mr-1' />
           处方
@@ -406,7 +416,12 @@ function VisitDetailPanel({
         <Button
           size='sm'
           variant='outline'
-          onClick={() => onNavigate(`/treatment-plans?patientId=${visit.patientId}&visitId=${visit.id}`)}
+          onClick={() => {
+            const params = new URLSearchParams();
+            params.set('patientId', visit.patientId);
+            params.set('visitId', visit.id);
+            onNavigate(`/treatment-plans?${params.toString()}`);
+          }}
         >
           <ClipboardList className='w-3 h-3 mr-1' />
           治疗计划
@@ -414,7 +429,7 @@ function VisitDetailPanel({
         <Button
           size='sm'
           variant='outline'
-          onClick={() => onNavigate(`/patients/${visit.patientId}`)}
+          onClick={() => onNavigate(`/patients/${encodeURIComponent(visit.patientId)}`)}
         >
           <User className='w-3 h-3 mr-1' />
           患者档案
@@ -440,9 +455,14 @@ function CreateVisitDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  preset: any | null;
+  preset: Appointment | null;
   defaultDoctorId?: string;
-  onCreate: (data: any) => Promise<any>;
+  onCreate: (data: {
+    patientId: string;
+    doctorId: string;
+    appointmentId?: string;
+    chiefComplaint?: string;
+  }) => Promise<Visit>;
 }) {
   const [openSelector, setOpenSelector] = useState(false);
   const { data: staff } = useStaff();
@@ -571,7 +591,7 @@ function CompleteVisitDialog({
   open: boolean;
   onClose: () => void;
   visit: Visit;
-  onComplete: ({ id, data }: { id: string; data: any }) => Promise<any>;
+  onComplete: ({ id, data }: { id: string; data: { diagnosis?: string; treatmentPlan?: string } }) => Promise<Visit>;
 }) {
   const [diagnosis, setDiagnosis] = useState(visit.diagnosis ?? '');
   const [treatmentPlan, setTreatmentPlan] = useState(visit.treatmentPlan ?? '');

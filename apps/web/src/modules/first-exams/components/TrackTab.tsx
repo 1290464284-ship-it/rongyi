@@ -26,7 +26,7 @@ import {
   useUpdateFirstExamTrack,
   useCreateFollowUp,
   type FirstExamTrack,
-} from '@/lib/first-exams';
+} from '@/lib/api/clinical/first-exams';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { toast } from 'sonner';

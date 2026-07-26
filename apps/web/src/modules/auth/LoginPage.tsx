@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { api } from '@/lib/api';
-import { useAuthStore } from '@/lib/auth-store';
+import { useLogin } from '@/lib/auth';
+import { useAuthStore } from '@/lib/store/auth-store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -19,10 +19,11 @@ export default function LoginPage() {
   const nav = useNavigate();
   const login = useAuthStore((s) => s.login);
   const [err, setErr] = useState('');
+  const loginMutation = useLogin();
   const {
     register,
     handleSubmit,
-    formState: { errors, isSubmitting },
+    formState: { errors },
   } = useForm<z.infer<typeof schema>>({
     resolver: zodResolver(schema),
   });
@@ -30,11 +31,12 @@ export default function LoginPage() {
   const onSubmit = async (data: z.infer<typeof schema>) => {
     setErr('');
     try {
-      const res = await api.post('/auth/login', data);
-      login(res.data.user);
+      const res = await loginMutation.mutateAsync(data);
+      login(res.user);
       nav('/');
-    } catch (err: any) {
-      if (err?.response?.status === 401) {
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 401) {
         setErr('用户名或密码错误');
       } else {
         setErr('登录失败，请稍后重试');
@@ -99,7 +101,7 @@ export default function LoginPage() {
                 )}
               </div>
               {err && <p className="text-xs text-destructive">{err}</p>}
-              <Button type="submit" className="w-full bg-gradient-to-r from-primary to-secondary hover:from-primaryDark hover:to-secondary/90 transition-all duration-300" disabled={isSubmitting}>
+              <Button type="submit" className="w-full bg-gradient-to-r from-primary to-secondary hover:from-primaryDark hover:to-secondary/90 transition-all duration-300" disabled={loginMutation.isPending}>
                 登录
               </Button>
             </form>

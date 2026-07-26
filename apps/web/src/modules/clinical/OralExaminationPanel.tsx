@@ -14,7 +14,7 @@ import {
   useDeleteOralExamination,
   type OralExamination,
   type CreateOralExaminationDto,
-} from '@/lib/oral-examinations';
+} from '@/lib/api/clinical/oral-examinations';
 import { formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -271,12 +271,12 @@ function ListInput({ label, placeholder, value, onChange, onAdd, items, onRemove
       <Label>{label}</Label>
       <div className="flex gap-2">
         <Input placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onAdd(); } }} />
-        <Button type="button" size="sm" onClick={onAdd}><Plus className="h-4 w-4" /></Button>
+        <Button type="button" size="sm" onClick={onAdd} aria-label="添加"><Plus className="h-4 w-4" /></Button>
       </div>
       {items.length > 0 && (
         <div className="flex flex-wrap gap-1 mt-2">
           {items.map((it, i) => (
-            <button key={i} type="button" onClick={() => onRemove(i)} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs ${color}`}>
+            <button key={i} type="button" onClick={() => onRemove(i)} aria-label={`移除${it}`} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs ${color}`}>
               {it} <span className="text-xs opacity-60">×</span>
             </button>
           ))}

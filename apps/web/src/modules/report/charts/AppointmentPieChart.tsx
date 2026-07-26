@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
-import { APPOINTMENT_STATUS_LABEL } from '@/lib/appointments';
+import echarts from '@/lib/echarts';
+import type { CallbackDataParams } from 'echarts/types/dist/shared';
+import { APPOINTMENT_STATUS_LABEL } from '@/lib/api/clinical/appointments';
 
 const PALETTE = [
   '#1E5AA8', '#3A7BC8', '#00B3AA', '#27AE60', '#F39C12',
@@ -21,9 +23,9 @@ export default function AppointmentPieChart({ data, loading }: { data?: Appointm
     color: PALETTE,
     tooltip: {
       trigger: 'item',
-      formatter: (p: any) => {
+      formatter: (p: CallbackDataParams & { percent: number }) => {
         const item = list[p.dataIndex];
-        const label = APPOINTMENT_STATUS_LABEL[item?.status] ?? item?.status ?? p.name;
+        const label = APPOINTMENT_STATUS_LABEL[item?.status as keyof typeof APPOINTMENT_STATUS_LABEL] ?? item?.status ?? p.name;
         return `${label}: ${p.value} 笔 (${p.percent}%)`;
       },
     },
@@ -34,7 +36,7 @@ export default function AppointmentPieChart({ data, loading }: { data?: Appointm
       textStyle: { color: '#6B7C93', fontSize: 12 },
       itemWidth: 10,
       itemHeight: 10,
-      formatter: (name: string) => APPOINTMENT_STATUS_LABEL[name] ?? name,
+      formatter: (name: string) => APPOINTMENT_STATUS_LABEL[name as keyof typeof APPOINTMENT_STATUS_LABEL] ?? name,
     },
     series: [
       {
@@ -72,5 +74,5 @@ export default function AppointmentPieChart({ data, loading }: { data?: Appointm
   if (list.length === 0) {
     return <div className='text-center text-muted-foreground py-8'>暂无数据</div>;
   }
-  return <ReactECharts option={option} style={{ height: '320px' }} />;
+  return <ReactECharts echarts={echarts} option={option} style={{ height: '320px' }} />;
 }

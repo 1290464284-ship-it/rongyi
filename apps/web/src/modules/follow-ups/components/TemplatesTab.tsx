@@ -24,7 +24,7 @@ import {
   useDeleteFollowUpTemplate,
   useToggleFollowUpTemplate,
   type FollowUpTemplate,
-} from '@/lib/follow-ups-v2';
+} from '@/lib/api/communication/follow-ups';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import {

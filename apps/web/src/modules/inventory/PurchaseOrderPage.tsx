@@ -17,6 +17,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useIsBoss } from '@/components/ui/permission';
 import {
   usePurchaseOrders,
   useCreatePurchaseOrder,
@@ -24,9 +25,10 @@ import {
   useCancelPurchaseOrder,
   type PurchaseOrder,
   type PurchaseOrderStatus,
-} from '@/lib/purchase-orders';
-import { useSuppliers } from '@/lib/suppliers';
-import { useInventoryItems } from '@/lib/inventory';
+} from '@/lib/api/inventory/purchase-orders';
+import { useSuppliers } from '@/lib/api/inventory/suppliers';
+import { useInventoryItems } from '@/lib/api/inventory/inventory';
+import { DROPDOWN_MAX_PAGE_SIZE } from '@/config/constants';
 import { formatDateTime } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -55,6 +57,7 @@ interface OrderLine {
 const EMPTY_LINE: OrderLine = { itemId: '', name: '', spec: '', quantity: '1', unitPrice: '0' };
 
 export default function PurchaseOrderPage() {
+  const isBoss = useIsBoss();
   const [status, setStatus] = useState('ALL');
   const [page, setPage] = useState(1);
   const { data, isLoading } = usePurchaseOrders({
@@ -67,10 +70,10 @@ export default function PurchaseOrderPage() {
   const receiveMut = useReceivePurchaseOrder();
   const cancelMut = useCancelPurchaseOrder();
 
-  const { data: suppliersData } = useSuppliers('', 1, 200);
+  const { data: suppliersData } = useSuppliers('', 1, DROPDOWN_MAX_PAGE_SIZE);
   const suppliers = suppliersData?.items ?? [];
 
-  const { data: invData } = useInventoryItems({ pageSize: 200 });
+  const { data: invData } = useInventoryItems({ pageSize: DROPDOWN_MAX_PAGE_SIZE });
   const invItems = invData?.items ?? [];
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -262,16 +265,18 @@ export default function PurchaseOrderPage() {
                             >
                               <Check className="h-4 w-4" />
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => setCancelTarget(o)}
-                              title="取消"
-                              className="text-destructive hover:text-destructive"
-                              aria-label="取消"
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
+                            {isBoss && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => setCancelTarget(o)}
+                                title="取消"
+                                className="text-destructive hover:text-destructive"
+                                aria-label="取消"
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            )}
                           </>
                         )}
                       </div>
