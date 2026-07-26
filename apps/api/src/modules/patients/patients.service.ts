@@ -1,16 +1,27 @@
-import { Injectable } from "@nestjs/common";
+import { BusinessValidationException, BusinessForbiddenException, BusinessConflictException } from '@common/errors';
+import { Injectable } from '@nestjs/common';
+
 import { DbService } from "../../db/db.service";
-import { BaseService, QueryOptions } from "../../common/services/base.service";
-import { sanitizePlain } from "../../common/utils/sanitize";
-import { encryptField, decryptField } from "../../common/utils/encryption";
-import * as crypto from "crypto";
-import { CreatePatientDto, PatientGender, PatientSource } from "./dto/create-patient.dto";
+import { BaseService, QueryOptions, MAX_PAGE_SIZE } from "../../common/services/base.service";
+import { PAGINATION } from "../../common/constants/pagination";
+import { sanitizePlain } from "../../common/utils/security/sanitize";
+import { encryptField, decryptField } from "../../common/utils/security/encryption";
+import { maskIdCard, maskPhone } from "../../common/utils/security/mask";
+import * as crypto from "node:crypto";
+import { ClinicContextService } from "../../common/services/clinic-context.service";
+import { CreatePatientDto, PatientSource } from "./dto/create-patient.dto";
+import { UNIQUE_CONSTRAINT_MAX_RETRIES } from "../../config/constants";
+import { validateColumnName, escapeLike } from "../../common/utils/db/validate-name";
+import { Pagination } from "@dental/shared";
+import { Gender } from "@dental/shared";
+import { AuditLogType } from "../../common/constants";
+import { StatsService } from '../system/stats/stats.service';
 
 export interface Patient {
   id: string;
   code: string;
   name: string;
-  gender: PatientGender;
+  gender: Gender;
   birthDate?: string;
   phone: string;
   idCard: string;
@@ -35,8 +46,13 @@ export interface Patient {
 
 @Injectable()
 export class PatientsService extends BaseService<Patient> {
-  constructor(dbService: DbService) {
-    super(dbService, "Patient", ["allergies","medicalHistory"], ["name","phone"], [
+  constructor(
+    dbService: DbService,
+    clinicContext: ClinicContextService,
+    private statsService: StatsService,
+  ) {
+    // 注册 tags/medicationHistory/systemicDiseases 为 JSON 字段，确保读取时正确解析为数组
+    super(dbService, clinicContext, "Patient", ["allergies","medicalHistory","tags","medicationHistory","systemicDiseases"], ["name","phone"], [
       { table: "Appointment", foreignKey: "patientId" },
       { table: "Visit", foreignKey: "patientId" },
       { table: "Treatment", foreignKey: "patientId" },
@@ -48,7 +64,7 @@ export class PatientsService extends BaseService<Patient> {
       { table: "Registration", foreignKey: "patientId" },
       { table: "FollowUp", foreignKey: "patientId" },
       { table: "MedicalRecord", foreignKey: "patientId" },
-      // P1 修复（软删除级联遗漏）：原代码漏级联以下 7 张关联表，删除患者后产生孤儿数据
+      // 以下关联表也需级联软删除，避免删除患者后产生孤儿数据
       { table: "MemberCard", foreignKey: "patientId" },
       { table: "Refund", foreignKey: "patientId" },
       { table: "ProcessingOrder", foreignKey: "patientId" },
@@ -61,42 +77,156 @@ export class PatientsService extends BaseService<Patient> {
     ], true, ["code"]);
   }
 
-  async create(dto: Partial<Patient>): Promise<Patient> {
-    const createDto = dto as CreatePatientDto;
-    const id = crypto.randomUUID();
-    const now = new Date().toISOString();
-    const code = createDto.code || this.generateCode('P');
-    this.dbService.prepare(
-      `INSERT INTO Patient (id, code, name, gender, birthDate, phone, idCard, address, occupation, remark, source, tags, allergies, medicalHistory, medicationHistory, systemicDiseases, referrer, emergencyContact, emergencyPhone, familyId, active, createdAt, updatedAt)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)`
-    ).run(
-      id, code, sanitizePlain(createDto.name), createDto.gender, createDto.birthDate || null,
-      sanitizePlain(createDto.phone), encryptField(createDto.idCard),
-      sanitizePlain(createDto.address || ''), sanitizePlain(createDto.occupation || ''),
-      sanitizePlain(createDto.remark || ''), createDto.source || "WALK_IN",
-      JSON.stringify(createDto.tags || []), JSON.stringify(createDto.allergies || []),
-      JSON.stringify(createDto.medicalHistory || []), JSON.stringify(createDto.medicationHistory || []),
-      JSON.stringify(createDto.systemicDiseases || []), createDto.referrer || null,
-      createDto.emergencyContact || null, createDto.emergencyPhone || null,
-      createDto.familyId || null, now, now
-    );
-    return this.decryptPatient(await super.findOne(id));
+  async create(dto: CreatePatientDto): Promise<Patient> {
+    const MAX_RETRIES = UNIQUE_CONSTRAINT_MAX_RETRIES;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const id = crypto.randomUUID();
+        const now = new Date().toISOString();
+        const code = dto.code || this.generateCode('P');
+        const clinicId = this.clinicContext.getClinicId();
+        this.dbService.prepare(
+          `INSERT INTO Patient (id, code, name, gender, birthDate, phone, idCard, address, occupation, remark, source, tags, allergies, medicalHistory, medicationHistory, systemicDiseases, referrer, emergencyContact, emergencyPhone, familyId, active, clinicId, createdAt, updatedAt)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?)`
+        ).run(
+          id, code, sanitizePlain(dto.name), dto.gender, dto.birthDate || null,
+          sanitizePlain(dto.phone), dto.idCard ? encryptField(dto.idCard) : null,
+          sanitizePlain(dto.address || ''), sanitizePlain(dto.occupation || ''),
+          sanitizePlain(dto.remark || ''), dto.source || "WALK_IN",
+          JSON.stringify(dto.tags || []), JSON.stringify(dto.allergies || []),
+          JSON.stringify(dto.medicalHistory || []), JSON.stringify(dto.medicationHistory || []),
+          JSON.stringify(dto.systemicDiseases || []), dto.referrer || null,
+          dto.emergencyContact || null, dto.emergencyPhone || null,
+          dto.familyId || null, clinicId || null, now, now
+        );
+        const result = this.decryptPatient(await super.findOne(id));
+
+        this.statsService.invalidateStatsCache('dashboard');
+        this.statsService.invalidateStatsCache('patient');
+        this.statsService.invalidateStatsCache('patientGrowth');
+
+        return result;
+      } catch (err: unknown) {
+        if (attempt < MAX_RETRIES && err instanceof Error && err.message.includes('UNIQUE constraint failed')) {
+          if (!dto.code) {
+            continue;
+          }
+        }
+        throw err;
+      }
+    }
+    throw new BusinessConflictException(`创建患者失败，请重试`);
   }
 
-  async findOne(id: string) {
+  async findOne(id: string): Promise<Patient> {
     const patient = await super.findOne(id);
     return this.decryptPatient(patient);
   }
 
-  async findMany(options: QueryOptions) {
-    const result = await super.findMany(options);
-    result.items = result.items.map((p: Patient) => this.decryptPatient(p));
-    return result;
+  async findMany(options: QueryOptions = {}): Promise<Pagination<Patient>> {
+    const { keyword, page: rawPage = 1, pageSize: rawPageSize = PAGINATION.DEFAULT_PAGE_SIZE, sortBy = 'createdAt', sortOrder = 'DESC', cursor, includeDeleted = false, skipClinicFilter = false } = options;
+    const page = Math.max(1, Math.floor(Number(rawPage) || 1));
+    const pageSize = Math.min(Math.max(1, Math.floor(Number(rawPageSize) || PAGINATION.DEFAULT_PAGE_SIZE)), MAX_PAGE_SIZE);
+
+    if (!validateColumnName(sortBy)) {
+      throw new BusinessValidationException(`无效的排序字段`);
+    }
+
+    const validSortOrder = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (!skipClinicFilter) {
+      const clinicId = this.clinicContext.getClinicId();
+      if (clinicId) {
+        conditions.push('clinicId = ?');
+        params.push(clinicId);
+      } else {
+        throw new BusinessForbiddenException('缺少诊所信息，请重新登录');
+      }
+    }
+
+    if (this.hasSoftDelete && !includeDeleted) {
+      conditions.push('deletedAt IS NULL');
+    }
+
+    if (keyword && keyword.trim()) {
+      const trimmed = keyword.trim();
+      const escaped = escapeLike(trimmed);
+      const prefixPattern = `${escaped}%`;
+
+      const searchConditions: string[] = [];
+      const searchParams: unknown[] = [];
+
+      searchConditions.push("name LIKE ? ESCAPE '\\'");
+      searchParams.push(prefixPattern);
+
+      searchConditions.push("phone LIKE ? ESCAPE '\\'");
+      searchParams.push(prefixPattern);
+
+      searchConditions.push("code LIKE ? ESCAPE '\\'");
+      searchParams.push(prefixPattern);
+
+      if (/^\d+$/.test(trimmed) && trimmed.length >= 8) {
+        searchConditions.push("idCard LIKE ? ESCAPE '\\'");
+        searchParams.push(prefixPattern);
+      }
+
+      conditions.push(`(${searchConditions.join(' OR ')})`);
+      params.push(...searchParams);
+    }
+
+    if (options.filters) {
+      Object.entries(options.filters).forEach(([key, value]) => {
+        if (!validateColumnName(key)) {
+          throw new BusinessValidationException(`无效的筛选字段`);
+        }
+        if (value !== undefined && value !== null && value !== '') {
+          conditions.push(`${key} = ?`);
+          params.push(value);
+        }
+      });
+    }
+
+    const whereClause = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+
+    const countQuery = `SELECT COUNT(*) as total FROM Patient${whereClause}`;
+    const countRow = this.dbService.prepare(countQuery).get(...params) as { total: number };
+    const total = countRow.total;
+
+    let dataQuery = `SELECT id, code, name, gender, birthDate, phone, idCard, source, tags, active, createdAt, updatedAt FROM Patient${whereClause}`;
+    const dataParams: unknown[] = [...params];
+
+    if (cursor) {
+      const whereOrAnd = conditions.length > 0 ? 'AND' : 'WHERE';
+      const cursorOp = validSortOrder === 'ASC' ? '>' : '<';
+      dataQuery += ` ${whereOrAnd} id ${cursorOp} ?`;
+      dataParams.push(cursor);
+      dataQuery += ` ORDER BY ${sortBy} ${validSortOrder}, id ${validSortOrder} LIMIT ?`;
+      dataParams.push(pageSize);
+    } else {
+      dataQuery += ` ORDER BY ${sortBy} ${validSortOrder}, id ${validSortOrder} LIMIT ? OFFSET ?`;
+      dataParams.push(pageSize, (page - 1) * pageSize);
+    }
+
+    const items = this.dbService.prepare(dataQuery).all(...dataParams) as Patient[];
+
+    this.parseJsonFields(items);
+
+    const decryptedItems = items.map((p: Patient) => this.decryptPatient(p));
+
+    return {
+      items: decryptedItems,
+      total,
+      page,
+      pageSize,
+    };
   }
 
   async update(id: string, dto: Partial<Patient>): Promise<Patient> {
     if (dto.idCard !== undefined) {
-      dto = { ...dto, idCard: encryptField(dto.idCard as string) };
+      dto = { ...dto, idCard: dto.idCard ? encryptField(dto.idCard) : null };
     }
     const result = await super.update(id, dto);
     return this.decryptPatient(result);
@@ -104,9 +234,37 @@ export class PatientsService extends BaseService<Patient> {
 
   private decryptPatient(patient: Patient): Patient {
     if (!patient) return patient;
-    if (patient.idCard) {
-      patient.idCard = decryptField(patient.idCard);
+    const result = { ...patient };
+    if (result.idCard && result.idCard.includes(':')) {
+      const decrypted = decryptField(result.idCard);
+      // 统一使用 mask.ts 工具，避免 Knowledge Duplication
+      result.idCard = maskIdCard(decrypted) ?? decrypted;
     }
-    return patient;
+    // 列表展示时也对 phone 脱敏（详细查看时通过 getFullPhone 接口拿全量）
+    if (result.phone) {
+      result.phone = maskPhone(result.phone) ?? result.phone;
+    }
+    return result;
+  }
+
+  /**
+   * D2-5: 获取完整手机号（仅在需要场景调用，如发送短信）
+   * 调用方需确保有相应权限
+   */
+  async getFullPhone(patientId: string): Promise<string | null> {
+    this.logAudit(this.dbService, AuditLogType.PHONE_ACCESS, patientId, "Patient", { remark: "获取完整手机号" });
+    const patient = await super.findOne(patientId);
+    return patient?.phone ?? null;
+  }
+
+  /**
+   * 获取完整身份证号（仅在需要场景调用，如打印处方）
+   * 调用方需确保有相应权限
+   */
+  async getFullIdCard(patientId: string): Promise<string | null> {
+    this.logAudit(this.dbService, AuditLogType.ID_CARD_ACCESS, patientId, "Patient", { remark: "获取完整身份证号" });
+    const patient = await super.findOne(patientId);
+    if (!patient.idCard) return null;
+    return decryptField(patient.idCard);
   }
 }

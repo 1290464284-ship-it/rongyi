@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+﻿import { Module } from '@nestjs/common';
 import { PeriodontalRecordsController } from './periodontal-records.controller';
 import { PeriodontalRecordsService } from './periodontal-records.service';
 

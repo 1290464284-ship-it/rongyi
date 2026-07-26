@@ -1,4 +1,4 @@
-export * from './first-exams/first-exams.module';
+﻿export * from './first-exams/first-exams.module';
 export * from './first-exams/first-exams.service';
 export * from './first-exams/first-exams.controller';
 export * from './oral-examinations/oral-examinations.module';

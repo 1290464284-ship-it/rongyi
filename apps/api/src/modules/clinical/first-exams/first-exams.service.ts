@@ -1,97 +1,345 @@
-import { Injectable, NotFoundException, HttpException } from "@nestjs/common";
+import { BusinessValidationException } from '@common/errors';
+import { Injectable } from '@nestjs/common';
+
+import { BaseService } from "../../../common/services/base.service";
+import { FirstExam } from "@dental/shared";
+import * as crypto from "node:crypto";
+import { ClinicContextService } from "../../../common/services/clinic-context.service";
+import { safeJsonArray } from "../../../common/utils/format/json.utils";
+import { FirstExamStatus, AuditLogType } from "../../../common/constants";
 import { DbService } from "../../../db/db.service";
-import * as crypto from "crypto";
-import { UpdateBuilder } from "../../../common/utils/sql-builder";
 
+const FIRST_EXAM_FIELDS = "id, patientId, doctorId, chiefComplaint, diagnosis, treatmentSuggestion, status, remark, createdAt, updatedAt";
+
+const ALLOWED_TRANSITIONS: Record<string, readonly string[]> = {
+  [FirstExamStatus.DRAFT]: [FirstExamStatus.SUBMITTED, FirstExamStatus.APPROVED],
+  [FirstExamStatus.SUBMITTED]: [FirstExamStatus.APPROVED, FirstExamStatus.REJECTED],
+  [FirstExamStatus.REJECTED]: [FirstExamStatus.DRAFT],
+  [FirstExamStatus.APPROVED]: [FirstExamStatus.DRAFT],
+};
+
+/**
+ * 迁移说明：
+ * 1. updateStatus/restart/stats 使用 BaseRepository 替代直接 db.prepare
+ * 2. createFollowUp/getTrack/listTracks/getTeeth/updateTooth 使用 BaseRepository 操作关联表
+ */
 @Injectable()
-export class FirstExamsService {
-  constructor(private dbService: DbService) {}
-
-  async findMany(params: { patientId?: string; status?: string; page?: number; pageSize?: number }) {
-    const { patientId, status, page = 1, pageSize = 50 } = params;
-    let query = "SELECT id, patientId, doctorId, chiefComplaint, diagnosis, treatmentSuggestion, status, remark, createdAt, updatedAt FROM FirstExam WHERE deletedAt IS NULL";
-    const qp: unknown[] = [];
-    if (patientId) { query += " AND patientId = ?"; qp.push(patientId); }
-    if (status) { query += " AND status = ?"; qp.push(status); }
-    query += " ORDER BY createdAt DESC LIMIT ? OFFSET ?";
-    qp.push(pageSize, (page - 1) * pageSize);
-    const items = this.dbService.prepare(query).all(...qp);
-    let countQuery = "SELECT COUNT(*) as count FROM FirstExam WHERE deletedAt IS NULL";
-    const countParams: unknown[] = [];
-    if (patientId) { countQuery += " AND patientId = ?"; countParams.push(patientId); }
-    if (status) { countQuery += " AND status = ?"; countParams.push(status); }
-    const total = (this.dbService.prepare(countQuery).get(...countParams) as { count: number })?.count || 0;
-    return { items, total, page, pageSize };
-  }
-
-  async findOne(id: string) {
-    const fe = this.dbService.prepare("SELECT id, patientId, doctorId, chiefComplaint, diagnosis, treatmentSuggestion, status, remark, createdAt, updatedAt FROM FirstExam WHERE id = ? AND deletedAt IS NULL").get(id);
-    if (!fe) throw new NotFoundException("初诊记录不存在");
-    return fe;
+export class FirstExamsService extends BaseService<FirstExam> {
+  constructor(dbService: DbService, clinicContext: ClinicContextService) {
+    super(dbService, clinicContext, 'FirstExam');
+    this.selectFields = FIRST_EXAM_FIELDS.split(',').map(s => s.trim()).filter(Boolean);
+    this.hasSoftDelete = true;
+    this.cascadeTables = [
+      { table: 'FirstExamTooth', foreignKey: 'examId' },
+      { table: 'FirstExamTrack', foreignKey: 'examId' },
+      { table: 'FirstExamFollowUp', foreignKey: 'examId' },
+    ];
   }
 
   async create(dto: { patientId: string; doctorId?: string; chiefComplaint?: string; diagnosis?: string; treatmentSuggestion?: string; remark?: string }) {
-    const id = crypto.randomUUID();
-    const now = new Date().toISOString();
-    this.dbService.prepare("INSERT INTO FirstExam (id, patientId, doctorId, chiefComplaint, diagnosis, treatmentSuggestion, status, remark, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?)")
-      .run(id, dto.patientId, dto.doctorId || null, dto.chiefComplaint || null, dto.diagnosis || null, dto.treatmentSuggestion || null, "PENDING", dto.remark || null, now, now);
-    return this.findOne(id);
+    return super.create({
+      patientId: dto.patientId,
+      doctorId: dto.doctorId,
+      chiefComplaint: dto.chiefComplaint,
+      diagnosis: dto.diagnosis,
+      treatmentSuggestion: dto.treatmentSuggestion,
+      remark: dto.remark,
+      status: FirstExamStatus.DRAFT,
+    });
+  }
+
+  async update(id: string, dto: { chiefComplaint?: string; diagnosis?: string; treatmentSuggestion?: string; remark?: string }) {
+    return super.update(id, {
+      chiefComplaint: dto.chiefComplaint,
+      diagnosis: dto.diagnosis,
+      treatmentSuggestion: dto.treatmentSuggestion,
+      remark: dto.remark,
+    });
   }
 
   async updateStatus(id: string, status: string) {
-    await this.findOne(id);
-    this.dbService.prepare("UPDATE FirstExam SET status = ?, updatedAt = ? WHERE id = ?").run(status, new Date().toISOString(), id);
-    return this.findOne(id);
+    const oldRecord = await this.findOne(id);
+    const allowed = ALLOWED_TRANSITIONS[oldRecord.status] || [];
+    if (!allowed.includes(status)) {
+      throw new BusinessValidationException(`初诊状态不可从 ${oldRecord.status} 流转到 ${status}`);
+    }
+    const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
+    const now = new Date().toISOString();
+    return this.dbService.transaction((db) => {
+      // 迁移：使用 BaseRepository.update 替代直接 db.prepare UPDATE
+      this.baseRepository.update(
+        db,
+        this.tableName,
+        ['status = ?', 'updatedAt = ?'],
+        [status, now],
+        id,
+        clinicClause,
+        clinicParams,
+      );
+      this.logAudit(db, AuditLogType.FIRST_EXAM_STATUS_UPDATE, id, "FirstExam", { beforeData: { status: oldRecord.status }, afterData: { status } });
+      return this.baseRepository.findById(db, this.tableName, '*', id, ['deletedAt IS NULL'], clinicParams);
+    });
   }
 
-  async stats() { const total = (this.dbService.prepare("SELECT COUNT(*) as c FROM FirstExam WHERE deletedAt IS NULL").get() as {c:number})?.c||0; return { total }; }
-  async complete(id: string) { this.dbService.prepare("UPDATE FirstExam SET status=?,updatedAt=? WHERE id=?").run("COMPLETED",new Date().toISOString(),id); return this.findOne(id); }
-  async findAll(params?: { page?: number; pageSize?: number }) {
-    const { page = 1, pageSize = 50 } = params || {};
-    const query = "SELECT id, patientId, doctorId, chiefComplaint, diagnosis, treatmentSuggestion, status, remark, createdAt, updatedAt FROM FirstExam WHERE deletedAt IS NULL ORDER BY createdAt DESC LIMIT ? OFFSET ?";
-    const items = this.dbService.prepare(query).all(pageSize, (page - 1) * pageSize);
-    const total = (this.dbService.prepare("SELECT COUNT(*) as count FROM FirstExam WHERE deletedAt IS NULL").get() as { count: number })?.count || 0;
-    return { items, total, page, pageSize };
+  async stats() {
+    const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
+    // 迁移：使用 BaseRepository.buildPaginatedQuery 获取总数
+    const builtQuery = this.baseRepository.buildPaginatedQuery(
+      this.tableName,
+      'COUNT(*) as c',
+      ` WHERE deletedAt IS NULL${clinicClause}`,
+      clinicParams,
+      'createdAt',
+      'DESC',
+      undefined,
+      1,
+      1,
+    );
+    const { items } = this.baseRepository.executePaginatedQuery<{ c: number }>(this.dbService, builtQuery);
+    const total = items[0]?.c || 0;
+    return { total };
   }
-  async remove(id: string) { await this.findOne(id); const n=new Date().toISOString(); this.dbService.prepare("UPDATE FirstExam SET deletedAt=?,updatedAt=? WHERE id=?").run(n,n,id); return {id}; }
-  async createFollowUp(id: string, dto: { planDate?: string; content?: string; assigneeId?: string }) { 
-    const now = new Date().toISOString(); 
-    const fid = crypto.randomUUID(); 
-    this.dbService.prepare("INSERT INTO FirstExamFollowUp (id, examId, planDate, content, assigneeId, createdAt) VALUES (?,?,?,?,?,?)")
-      .run(fid, id, dto.planDate || null, dto.content || null, dto.assigneeId || null, now); 
-    return { id: fid }; 
+  async complete(id: string) {
+    return this.updateStatus(id, FirstExamStatus.APPROVED);
   }
-  async getTrack(id: string) { return this.dbService.prepare("SELECT id, examId, content, createdAt FROM FirstExamTrack WHERE id=?").get(id); }
-  async restart(id: string) { this.dbService.prepare("UPDATE FirstExam SET status=?,updatedAt=? WHERE id=?").run("PENDING",new Date().toISOString(),id); return this.findOne(id); }
-  async listTracks(examId: string) { return this.dbService.prepare("SELECT id, examId, content, createdAt FROM FirstExamTrack WHERE examId=? AND deletedAt IS NULL ORDER BY createdAt DESC").all(examId); }
-  async updateTooth(id: string, toothNumber: number, dto: { toothStatus?: string; diseases?: unknown; treatmentPlan?: string; remark?: string }) {
-    const builder = new UpdateBuilder("FirstExamTooth");
-    builder.set("toothStatus", dto.toothStatus);
-    builder.set("diseases", dto.diseases !== undefined ? JSON.stringify(dto.diseases) : undefined);
-    builder.set("treatmentPlan", dto.treatmentPlan);
-    builder.set("remark", dto.remark);
-    builder.setUpdatedAt();
-    const result = builder.buildWithCustomWhere("examId = ? AND toothNumber = ?", [id, toothNumber]);
-    if (result) {
-      this.dbService.prepare(result.sql).run(...result.params);
-    }
-    return { id, toothNumber };
+  async createFollowUp(id: string, dto: { planDate?: string; content?: string; assigneeId?: string }) {
+    await this.findOne(id); // 校验 exam 存在且属于当前诊所
+    const now = new Date().toISOString();
+    const fid = crypto.randomUUID();
+    const clinicId = this.clinicContext.getClinicId();
+    this.baseRepository.insert(this.dbService, 'FirstExamFollowUp', {
+      id: fid,
+      examId: id,
+      planDate: dto.planDate || null,
+      content: dto.content || null,
+      assigneeId: dto.assigneeId || null,
+      clinicId: clinicId || null,
+      createdAt: now,
+    });
+    this.logAudit(this.dbService, AuditLogType.FIRST_EXAM_FOLLOWUP_CREATE, id, "FirstExam", { afterData: { followUpId: fid, planDate: dto.planDate, content: dto.content } });
+    return { id: fid };
   }
-  async updateTrack(_id: string, _dto: unknown) { throw new HttpException('此功能尚未实现', 501); }
-  async update(id: string, dto: { chiefComplaint?: string; diagnosis?: string; treatmentSuggestion?: string; remark?: string }) {
-    await this.findOne(id);
-    const builder = new UpdateBuilder("FirstExam");
-    builder.set("chiefComplaint", dto.chiefComplaint);
-    builder.set("diagnosis", dto.diagnosis);
-    builder.set("treatmentSuggestion", dto.treatmentSuggestion);
-    builder.set("remark", dto.remark);
-    builder.setUpdatedAt();
-    const result = builder.build(id);
-    if (result) {
-      this.dbService.prepare(result.sql).run(...result.params);
-    }
+  async getTrack(id: string) {
+    const { params: clinicParams } = this.buildClinicClause();
+    return this.baseRepository.findById(
+      this.dbService,
+      'FirstExamTrack',
+      'id, examId, content, createdAt',
+      id,
+      ['deletedAt IS NULL'],
+      clinicParams,
+    );
+  }
+  async restart(id: string) {
+    const existing = await this.findOne(id);
+    const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
+    const now = new Date().toISOString();
+    this.dbService.transaction((db) => {
+      this.baseRepository.update(
+        db,
+        this.tableName,
+        ['status = ?', 'updatedAt = ?'],
+        [FirstExamStatus.DRAFT, now],
+        id,
+        clinicClause,
+        clinicParams,
+      );
+      this.logAudit(db, AuditLogType.FIRST_EXAM_RESTART, id, "FirstExam", { beforeData: { status: existing.status }, afterData: { status: FirstExamStatus.DRAFT } });
+    });
     return this.findOne(id);
   }
-  async getTeeth(examId: string) { return this.dbService.prepare("SELECT id, examId, toothNumber, toothStatus, diseases, treatmentPlan, remark FROM FirstExamTooth WHERE examId = ? ORDER BY toothNumber").all(examId); }
-  async batchUpdateTeeth(_examId: string, _teeth: unknown[]) { throw new HttpException('此功能尚未实现', 501); }
+  async listTracks(examId: string) {
+    const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
+    const builtQuery = this.baseRepository.buildPaginatedQuery(
+      'FirstExamTrack',
+      'id, examId, content, createdAt',
+      ` WHERE examId = ? AND deletedAt IS NULL${clinicClause}`,
+      [examId, ...clinicParams],
+      'createdAt',
+      'DESC',
+      undefined,
+      100,
+      1,
+    );
+    const { items } = this.baseRepository.executePaginatedQuery(this.dbService, builtQuery);
+    return items;
+  }
+  async updateTooth(id: string, toothNumber: number, dto: { toothStatus?: string; diseases?: unknown; treatmentPlan?: string; remark?: string }) {
+    const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
+    const now = new Date().toISOString();
+    const checkQuery = this.baseRepository.buildPaginatedQuery(
+      'FirstExamTooth',
+      'id',
+      ` WHERE examId = ? AND toothNumber = ?${clinicClause}`,
+      [id, toothNumber, ...clinicParams],
+      'createdAt',
+      'DESC',
+      undefined,
+      1,
+      1,
+    );
+    const { items: existingItems } = this.baseRepository.executePaginatedQuery<{ id: string }>(this.dbService, checkQuery);
+    if (existingItems.length > 0) {
+      this.baseRepository.update(
+        this.dbService,
+        'FirstExamTooth',
+        [
+          'toothStatus = ?',
+          'diseases = ?',
+          'treatmentPlan = ?',
+          'remark = ?',
+          'updatedAt = ?',
+        ],
+        [
+          dto.toothStatus,
+          dto.diseases !== undefined ? JSON.stringify(dto.diseases) : null,
+          dto.treatmentPlan,
+          dto.remark,
+          now,
+        ],
+        existingItems[0].id,
+        clinicClause,
+        clinicParams,
+      );
+    }
+    this.logAudit(this.dbService, AuditLogType.FIRST_EXAM_TOOTH_UPDATE, id, "FirstExam", { afterData: { toothNumber, toothStatus: dto.toothStatus } });
+    return { id, toothNumber };
+  }
+  async updateTrack(id: string, dto: { status?: string; leaderSuggestion?: string; directorSuggestion?: string; churnReason?: string; churnSolution?: string; doctorId?: string }) {
+    const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
+    const now = new Date().toISOString();
+    const fields: string[] = [];
+    const values: unknown[] = [];
+
+    if (dto.status !== undefined) {
+      fields.push('status = ?');
+      values.push(dto.status);
+    }
+    if (dto.leaderSuggestion !== undefined) {
+      fields.push('leaderSuggestion = ?');
+      values.push(dto.leaderSuggestion);
+    }
+    if (dto.directorSuggestion !== undefined) {
+      fields.push('directorSuggestion = ?');
+      values.push(dto.directorSuggestion);
+    }
+    if (dto.churnReason !== undefined) {
+      fields.push('churnReason = ?');
+      values.push(dto.churnReason);
+    }
+    if (dto.churnSolution !== undefined) {
+      fields.push('churnSolution = ?');
+      values.push(dto.churnSolution);
+    }
+    if (dto.doctorId !== undefined) {
+      fields.push('doctorId = ?');
+      values.push(dto.doctorId);
+    }
+
+    if (fields.length === 0) {
+      return this.getTrack(id);
+    }
+
+    fields.push('updatedAt = ?');
+    values.push(now);
+
+    this.baseRepository.update(
+      this.dbService,
+      'FirstExamTrack',
+      fields,
+      values,
+      id,
+      clinicClause,
+      clinicParams,
+    );
+
+    this.logAudit(this.dbService, AuditLogType.FIRST_EXAM_TRACK_UPDATE, id, "FirstExamTrack", { afterData: dto });
+
+    return this.getTrack(id);
+  }
+  async getTeeth(examId: string) {
+    const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
+    const builtQuery = this.baseRepository.buildPaginatedQuery(
+      'FirstExamTooth',
+      'id, examId, toothNumber, toothStatus, diseases, treatmentPlan, remark',
+      ` WHERE examId = ?${clinicClause}`,
+      [examId, ...clinicParams],
+      'toothNumber',
+      'ASC',
+      undefined,
+      100,
+      1,
+    );
+    const { items } = this.baseRepository.executePaginatedQuery<Record<string, unknown>>(this.dbService, builtQuery);
+    for (const tooth of items) {
+      tooth.diseases = safeJsonArray(tooth.diseases as string | null);
+    }
+    return items;
+  }
+  async batchUpdateTeeth(examId: string, teeth: { toothNumber: number; toothStatus?: string; diseases?: unknown; treatmentPlan?: string; remark?: string }[]) {
+    await this.findOne(examId);
+    if (!Array.isArray(teeth) || teeth.length === 0) {
+      return this.getTeeth(examId);
+    }
+    const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
+    this.dbService.transaction((db) => {
+      const now = new Date().toISOString();
+      const clinicId = this.clinicContext.getClinicId();
+
+      // Batch existence check: fetch all existing teeth in ONE query
+      const toothNumbers = teeth.map(t => t.toothNumber);
+      const placeholders = toothNumbers.map(() => '?').join(',');
+      const batchCheckSql = `SELECT id, toothNumber FROM FirstExamTooth WHERE examId = ? AND toothNumber IN (${placeholders})${clinicClause}`;
+      const batchCheckParams = [examId, ...toothNumbers, ...clinicParams];
+      const existingRows = db.prepare(batchCheckSql).all(...batchCheckParams) as { id: string; toothNumber: number }[];
+      const existingMap = new Map(existingRows.map(r => [r.toothNumber, r.id]));
+
+      // Partition teeth into updates and inserts
+      const updates: { tooth: typeof teeth[number]; id: string }[] = [];
+      const inserts: typeof teeth[number][] = [];
+      for (const tooth of teeth) {
+        const existingId = existingMap.get(tooth.toothNumber);
+        if (existingId) {
+          updates.push({ tooth, id: existingId });
+        } else {
+          inserts.push(tooth);
+        }
+      }
+
+      // Batch updates
+      if (updates.length > 0) {
+        const updateStmt = db.prepare(
+          `UPDATE FirstExamTooth SET toothStatus = ?, diseases = ?, treatmentPlan = ?, remark = ?, updatedAt = ? WHERE id = ?`
+        );
+        for (const { tooth, id } of updates) {
+          updateStmt.run(
+            tooth.toothStatus,
+            tooth.diseases !== undefined ? JSON.stringify(tooth.diseases) : null,
+            tooth.treatmentPlan,
+            tooth.remark,
+            now,
+            id,
+          );
+        }
+      }
+
+      // Batch inserts
+      if (inserts.length > 0) {
+        const insertStmt = db.prepare(
+          `INSERT INTO FirstExamTooth (id, examId, toothNumber, toothStatus, diseases, treatmentPlan, remark, clinicId, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        );
+        for (const tooth of inserts) {
+          insertStmt.run(
+            crypto.randomUUID(), examId, tooth.toothNumber,
+            tooth.toothStatus || null,
+            tooth.diseases !== undefined ? JSON.stringify(tooth.diseases) : null,
+            tooth.treatmentPlan || null, tooth.remark || null,
+            clinicId || null, now, now,
+          );
+        }
+      }
+    });
+    return this.getTeeth(examId);
+  }
 }

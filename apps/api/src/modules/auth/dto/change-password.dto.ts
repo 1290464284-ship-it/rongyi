@@ -1,4 +1,5 @@
 import { IsString, MinLength, MaxLength, Validate, ValidatorConstraint, ValidatorConstraintInterface, ValidationArguments } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
 
 @ValidatorConstraint({ async: false })
 class PasswordComplexity implements ValidatorConstraintInterface {
@@ -6,19 +7,21 @@ class PasswordComplexity implements ValidatorConstraintInterface {
     if (!password) return false;
     if (password.length < 6) return false;
     if (password.length > 20) return false;
-    if (/^\d{6,}$/.test(password)) return true;
-    if (/[a-zA-Z]/.test(password) && /\d/.test(password)) return true;
-    return false;
+    if (!/[a-zA-Z]/.test(password)) return false;
+    if (!/\d/.test(password)) return false;
+    return true;
   }
-  defaultMessage(args: ValidationArguments): string {
-    return '密码至少6位，支持纯数字或字母+数字组合';
+  defaultMessage(_args: ValidationArguments): string {
+    return '密码至少6位，必须包含字母和数字';
   }
 }
 
 export class ChangePasswordDto {
+  @ApiProperty({ description: '原密码', example: 'oldPassword123' })
   @IsString()
   oldPassword!: string;
 
+  @ApiProperty({ description: '新密码（6-20位，必须包含字母和数字）', example: 'newPassword456' })
   @IsString()
   @MinLength(6)
   @MaxLength(20)
