@@ -1,7 +1,11 @@
-import { Injectable, BadRequestException } from "@nestjs/common";
-import { DbService } from "../../../db/db.service";
+import { BusinessValidationException } from '@common/errors';
+import { Injectable } from '@nestjs/common';
+
 import { ToothRecord } from "@dental/shared";
-import * as crypto from "crypto";
+import { BaseService } from "../../../common/services/base.service";
+import { ClinicContextService } from "../../../common/services/clinic-context.service";
+import * as crypto from "node:crypto";
+import { DbService } from "../../../db/db.service";
 
 interface UpsertToothRecordDto {
   currentStatus?: string;
@@ -14,38 +18,135 @@ function isValidToothNumber(n: number): boolean {
       || (n >= 51 && n <= 55) || (n >= 61 && n <= 65) || (n >= 71 && n <= 75) || (n >= 81 && n <= 85);
 }
 
+/**
+ * 迁移说明：
+ * 1. findByTooth/upsert/removeByTooth 从直接使用 db.prepare 迁移到使用 BaseRepository
+ * 2. ToothRecord 表特殊：使用 patientId + toothNumber 组合键查询，而非标准 id 查询
+ */
 @Injectable()
-export class ToothRecordsService {
-  constructor(private dbService: DbService) {}
+export class ToothRecordsService extends BaseService<ToothRecord> {
 
-  async findOne(patientId: string, toothNumber: number): Promise<ToothRecord | undefined> {
-    return this.dbService.prepare("SELECT * FROM ToothRecord WHERE patientId = ? AND toothNumber = ? AND deletedAt IS NULL").get(patientId, toothNumber) as ToothRecord | undefined;
+  constructor(dbService: DbService, clinicContext: ClinicContextService) {
+    super(dbService, clinicContext, 'ToothRecord', ['conditions']);
+  }
+
+  async findByTooth(patientId: string, toothNumber: number): Promise<ToothRecord | undefined> {
+    if (!isValidToothNumber(toothNumber)) throw new BusinessValidationException(`无效的牙位号: ${toothNumber}`);
+    const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
+    const builtQuery = this.baseRepository.buildPaginatedQuery(
+      this.tableName,
+      '*',
+      ` WHERE patientId = ? AND toothNumber = ? AND deletedAt IS NULL${clinicClause}`,
+      [patientId, toothNumber, ...clinicParams],
+      'createdAt',
+      'DESC',
+      undefined,
+      1,
+      1,
+    );
+    const { items } = this.baseRepository.executePaginatedQuery<ToothRecord>(this.dbService, builtQuery);
+    const record = items[0];
+    if (record) this.parseJsonFields([record]);
+    return record;
   }
 
   async upsert(patientId: string, toothNumber: number, data: UpsertToothRecordDto) {
-    if (!isValidToothNumber(toothNumber)) throw new BadRequestException(`无效的牙位号: ${toothNumber}`);
+    if (!isValidToothNumber(toothNumber)) throw new BusinessValidationException(`无效的牙位号: ${toothNumber}`);
+    const clinicId = this.clinicContext.getClinicId();
     const now = new Date().toISOString();
-    return this.dbService.transaction((db) => {
-      const existing = db.prepare("SELECT id FROM ToothRecord WHERE patientId = ? AND toothNumber = ? AND deletedAt IS NULL").get(patientId, toothNumber);
+    const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
+    const record = this.dbService.transaction((db) => {
+      const checkQuery = this.baseRepository.buildPaginatedQuery(
+        this.tableName,
+        'id',
+        ` WHERE patientId = ? AND toothNumber = ? AND deletedAt IS NULL${clinicClause}`,
+        [patientId, toothNumber, ...clinicParams],
+        'createdAt',
+        'DESC',
+        undefined,
+        1,
+        1,
+      );
+      const { items: existingItems } = this.baseRepository.executePaginatedQuery<{ id: string }>(db, checkQuery);
+      const existing = existingItems[0];
+
       if (existing) {
-        db.prepare("UPDATE ToothRecord SET currentStatus=?, conditions=?, remark=?, updatedAt=? WHERE patientId=? AND toothNumber=? AND deletedAt IS NULL")
-          .run(data.currentStatus||"SOUND", JSON.stringify(data.conditions||[]), data.remark||null, now, patientId, toothNumber);
+        this.baseRepository.update(
+          db,
+          this.tableName,
+          ['currentStatus = ?', 'conditions = ?', 'remark = ?', 'updatedAt = ?'],
+          [data.currentStatus || 'SOUND', JSON.stringify(data.conditions || []), data.remark || null, now],
+          existing.id,
+          clinicClause,
+          clinicParams,
+        );
+        this.logAudit(db, "TOOTH_RECORD_UPDATE", existing.id, "ToothRecord", { afterData: { currentStatus: data.currentStatus, conditions: data.conditions } });
       } else {
-        db.prepare("INSERT INTO ToothRecord (id, patientId, toothNumber, currentStatus, conditions, remark, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?)")
-          .run(crypto.randomUUID(), patientId, toothNumber, data.currentStatus||"SOUND", JSON.stringify(data.conditions||[]), data.remark||null, now, now);
+        const newId = crypto.randomUUID();
+        this.baseRepository.insert(db, this.tableName, {
+          id: newId,
+          patientId,
+          toothNumber,
+          currentStatus: data.currentStatus || 'SOUND',
+          conditions: JSON.stringify(data.conditions || []),
+          remark: data.remark || null,
+          clinicId: clinicId || null,
+          createdAt: now,
+          updatedAt: now,
+        });
+        this.logAudit(db, "TOOTH_RECORD_CREATE", newId, "ToothRecord", { afterData: { currentStatus: data.currentStatus, conditions: data.conditions } });
       }
-      return db.prepare("SELECT * FROM ToothRecord WHERE patientId=? AND toothNumber=? AND deletedAt IS NULL").get(patientId, toothNumber) as ToothRecord;
+
+      const resultQuery = this.baseRepository.buildPaginatedQuery(
+        this.tableName,
+        '*',
+        ` WHERE patientId = ? AND toothNumber = ? AND deletedAt IS NULL${clinicClause}`,
+        [patientId, toothNumber, ...clinicParams],
+        'createdAt',
+        'DESC',
+        undefined,
+        1,
+        1,
+      );
+      const { items: resultItems } = this.baseRepository.executePaginatedQuery<ToothRecord>(db, resultQuery);
+      return resultItems[0];
     });
+    if (record) this.parseJsonFields([record]);
+    return record;
   }
 
-  async remove(patientId: string, toothNumber: number) {
+  async removeByTooth(patientId: string, toothNumber: number) {
+    if (!isValidToothNumber(toothNumber)) throw new BusinessValidationException(`无效的牙位号: ${toothNumber}`);
     const now = new Date().toISOString();
-    this.dbService.prepare("UPDATE ToothRecord SET deletedAt = ?, updatedAt = ? WHERE patientId = ? AND toothNumber = ? AND deletedAt IS NULL")
-      .run(now, now, patientId, toothNumber);
+    const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
+    const checkQuery = this.baseRepository.buildPaginatedQuery(
+      this.tableName,
+      'id',
+      ` WHERE patientId = ? AND toothNumber = ? AND deletedAt IS NULL${clinicClause}`,
+      [patientId, toothNumber, ...clinicParams],
+      'createdAt',
+      'DESC',
+      undefined,
+      1,
+      1,
+    );
+    const { items: existingItems } = this.baseRepository.executePaginatedQuery<{ id: string }>(this.dbService, checkQuery);
+    if (existingItems.length > 0) {
+      this.baseRepository.update(
+        this.dbService,
+        this.tableName,
+        ['deletedAt = ?', 'updatedAt = ?'],
+        [now, now],
+        existingItems[0].id,
+        clinicClause,
+        clinicParams,
+      );
+    }
+    this.logAudit(this.dbService, "TOOTH_RECORD_REMOVE", existingItems[0].id, "ToothRecord");
     return { success: true };
   }
 
-  findByPatient(patientId: string) {
-    return this.dbService.prepare("SELECT * FROM ToothRecord WHERE patientId = ? AND deletedAt IS NULL ORDER BY toothNumber ASC").all(patientId);
+  async findByPatient(patientId: string) {
+    return this.findMany({ filters: { patientId }, pageSize: 100, sortBy: 'toothNumber', sortOrder: 'ASC' });
   }
 }

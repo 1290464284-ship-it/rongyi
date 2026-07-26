@@ -1,4 +1,4 @@
-export * from './inventory/inventory.module';
+﻿export * from './inventory/inventory.module';
 export * from './inventory/inventory.service';
 export * from './inventory/inventory.controller';
 export * from './purchase-orders/purchase-orders.module';

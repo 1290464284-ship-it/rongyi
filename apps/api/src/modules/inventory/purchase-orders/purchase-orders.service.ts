@@ -1,7 +1,13 @@
-import { Injectable, NotFoundException, BadRequestException } from "@nestjs/common";
+import { BusinessNotFoundException, BusinessValidationException } from '@common/errors';
+import { Injectable } from '@nestjs/common';
+
 import { DbService } from "../../../db/db.service";
-import * as crypto from "crypto";
-import { multiplyMoney, sumMoney } from "../../../common/utils/money.utils";
+import { BaseService } from "../../../common/services/base.service";
+import * as crypto from "node:crypto";
+import { yuanToCents, centsToYuan, multiplyCents, sumCents } from "../../../common/utils/format/money.utils";
+import { ClinicContextService } from "../../../common/services/clinic-context.service";
+import { BUSINESS_CODE_MAX_RETRIES } from "../../../config/constants";
+import { AuditLogType } from "../../../common/constants";
 
 export interface PurchaseOrder {
   id: string;
@@ -13,6 +19,7 @@ export interface PurchaseOrder {
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
+  clinicId?: string | null;
 }
 
 export interface UserInfo {
@@ -21,117 +28,233 @@ export interface UserInfo {
 }
 
 @Injectable()
-export class PurchaseOrdersService {
-  constructor(private dbService: DbService) {}
+export class PurchaseOrdersService extends BaseService<PurchaseOrder> {
+  constructor(dbService: DbService, clinicContext: ClinicContextService) {
+    super(dbService, clinicContext, 'PurchaseOrder', [], [], [
+      { table: 'PurchaseOrderItem', foreignKey: 'orderId' },
+    ]);
+  }
 
   async findMany(params: { supplierId?: string; status?: string; page?: number; pageSize?: number }) {
     const { supplierId, status, page = 1, pageSize = 50 } = params;
-    let query = "SELECT * FROM PurchaseOrder WHERE 1=1";
-    const qp: unknown[] = [];
-    if (supplierId) { query += " AND supplierId = ?"; qp.push(supplierId); }
-    if (status) { query += " AND status = ?"; qp.push(status); }
-    query += " ORDER BY createdAt DESC LIMIT ? OFFSET ?";
-    qp.push(pageSize, (page - 1) * pageSize);
-    const items = this.dbService.prepare(query).all(...qp);
-    const countQuery = "SELECT COUNT(*) as count FROM PurchaseOrder WHERE 1=1" +
-      (supplierId ? " AND supplierId = ?" : "") + (status ? " AND status = ?" : "");
-    const countParams: unknown[] = [];
-    if (supplierId) countParams.push(supplierId);
-    if (status) countParams.push(status);
-    const total = (this.dbService.prepare(countQuery).get(...countParams) as { count: number })?.count || 0;
-    return { items, total, page, pageSize };
+    const filters: Record<string, unknown> = {};
+    if (supplierId) filters.supplierId = supplierId;
+    if (status) filters.status = status;
+    return super.findMany({ filters, page, pageSize });
   }
 
-  async findOne(id: string): Promise<PurchaseOrder> {
-    const po = this.dbService.prepare("SELECT * FROM PurchaseOrder WHERE id = ?").get(id) as PurchaseOrder | undefined;
-    if (!po) throw new NotFoundException("采购单不存在");
-    return po;
-  }
-
-  async create(dto: { supplierId: string; items: Array<{ itemId?: string; name: string; spec?: string; quantity: number; unitPrice: number }> }, user?: UserInfo) {
+  async createOrder(dto: { supplierId: string; items: Array<{ itemId?: string; name: string; spec?: string; quantity: number; unitPrice: number }> }, user?: UserInfo) {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
-    const totalAmount = sumMoney(dto.items.map(i => multiplyMoney(i.quantity, i.unitPrice)));
-    const number = "PO" + Date.now();
-    this.dbService.transaction((db) => {
-      db.prepare("INSERT INTO PurchaseOrder (id, number, supplierId, totalAmount, status, operatorId, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?)")
-        .run(id, number, dto.supplierId, totalAmount, "PENDING", user?.id || null, now, now);
+    const totalAmount = centsToYuan(sumCents(dto.items.map(i => multiplyCents(yuanToCents(i.unitPrice), i.quantity))));
+    const clinicId = this.clinicContext.getClinicId();
+    const MAX_RETRIES = BUSINESS_CODE_MAX_RETRIES;
+    let lastError: Error | undefined;
 
-      if (dto.items.length > 0) {
-        const placeholders = dto.items.map(() => "(?,?,?,?,?,?,?,?)").join(", ");
-        const values: unknown[] = [];
-        for (const item of dto.items) {
-          values.push(crypto.randomUUID(), id, item.itemId || null, item.name, item.spec || null, item.quantity, item.unitPrice, multiplyMoney(item.quantity, item.unitPrice));
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        const number = "PO" + Date.now() + crypto.randomBytes(2).toString('hex') + (attempt > 0 ? `-${attempt}` : "");
+
+        this.dbService.transaction((db) => {
+          db.prepare("INSERT INTO PurchaseOrder (id, number, supplierId, totalAmount, status, operatorId, clinicId, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?)")
+            .run(id, number, dto.supplierId, totalAmount, "PENDING", user?.id || null, clinicId || null, now, now);
+
+          if (dto.items.length > 0) {
+            const placeholders = dto.items.map(() => "(?,?,?,?,?,?,?,?,?)").join(", ");
+            const values: unknown[] = [];
+            for (const item of dto.items) {
+              values.push(crypto.randomUUID(), id, item.itemId || null, item.name, item.spec || null, item.quantity, item.unitPrice, centsToYuan(multiplyCents(yuanToCents(item.unitPrice), item.quantity)), clinicId || null);
+            }
+            db.prepare(`INSERT INTO PurchaseOrderItem (id, orderId, itemId, name, spec, quantity, unitPrice, subtotal, clinicId) VALUES ${placeholders}`).run(...values);
+          }
+        });
+
+        this.logAudit(this.dbService, AuditLogType.PURCHASE_ORDER_CREATE, id, "PurchaseOrder", { afterData: { supplierId: dto.supplierId, totalAmount, itemCount: dto.items.length } });
+
+        return this.findOne(id);
+      } catch (e: unknown) {
+        lastError = e instanceof Error ? e : new Error(String(e));
+        if (e instanceof Error && e.message.includes("UNIQUE constraint failed: PurchaseOrder.number")) {
+          continue;
         }
-        db.prepare(`INSERT INTO PurchaseOrderItem (id, orderId, itemId, name, spec, quantity, unitPrice, subtotal) VALUES ${placeholders}`).run(...values);
+        throw e;
       }
-    });
-    return this.findOne(id);
+    }
+    throw lastError || new BusinessValidationException("创建采购单失败，请重试");
   }
+
+  private static readonly VALID_STATUS_TRANSITIONS: Record<string, string[]> = {
+    PENDING: ['PARTIAL', 'RECEIVED', 'CANCELLED'],
+    PARTIAL: ['RECEIVED', 'CANCELLED'],
+    RECEIVED: [],
+    CANCELLED: [],
+  };
 
   async updateStatus(id: string, status: string) {
-    await this.findOne(id);
-    this.dbService.prepare("UPDATE PurchaseOrder SET status = ?, updatedAt = ? WHERE id = ?").run(status, new Date().toISOString(), id);
+    const order = await this.findOne(id);
+    const currentStatus = order.status;
+    const validNextStatuses = PurchaseOrdersService.VALID_STATUS_TRANSITIONS[currentStatus];
+    if (!validNextStatuses?.includes(status)) {
+      throw new BusinessValidationException('非法的状态转换');
+    }
+    const now = new Date().toISOString();
+    const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
+    const result = this.dbService.prepare(
+      `UPDATE PurchaseOrder SET status = ?, updatedAt = ? WHERE id = ? AND status = ? AND deletedAt IS NULL${clinicClause}`
+    ).run(status, now, id, currentStatus, ...clinicParams);
+    if (result.changes === 0) {
+      throw new BusinessValidationException('状态已变更，请刷新后重试（可能存在并发操作）');
+    }
     return this.findOne(id);
   }
 
-  async receive(id: string, user?: any) {
+  async receive(id: string, user?: UserInfo) {
     const po = await this.findOne(id);
-    if (po.status === 'RECEIVED') throw new BadRequestException('采购单已收货，不可重复操作');
-    if (po.status !== 'PENDING' && po.status !== 'PARTIAL') throw new BadRequestException('当前状态不可收货');
+    if (po.status === 'RECEIVED') throw new BusinessValidationException('采购单已收货，不可重复操作');
+    if (po.status !== 'PENDING' && po.status !== 'PARTIAL') throw new BusinessValidationException('当前状态不可收货');
 
     const now = new Date().toISOString();
+    const clinicId = this.clinicContext.getClinicId();
+    const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
 
     const result = this.dbService.transaction((db) => {
-      const currentPo = db.prepare("SELECT * FROM PurchaseOrder WHERE id = ?").get(id) as PurchaseOrder | undefined;
-      if (!currentPo) throw new NotFoundException("采购单不存在");
-      if (currentPo.status === 'RECEIVED') throw new BadRequestException('采购单已收货，不可重复操作');
-      if (currentPo.status !== 'PENDING' && currentPo.status !== 'PARTIAL') throw new BadRequestException('当前状态不可收货');
+      // D2-3: 软删除过滤 + clinicId 过滤
+      const currentPo = db.prepare(`SELECT id, number, supplierId, totalAmount, status, operatorId, remark, clinicId, createdAt, updatedAt, deletedAt FROM PurchaseOrder WHERE id = ? AND deletedAt IS NULL${clinicClause}`).get(id, ...clinicParams) as PurchaseOrder | undefined;
+      if (!currentPo) throw new BusinessNotFoundException("采购单不存在");
+      if (currentPo.status === 'RECEIVED') throw new BusinessValidationException('采购单已收货，不可重复操作');
+      if (currentPo.status !== 'PENDING' && currentPo.status !== 'PARTIAL') throw new BusinessValidationException('当前状态不可收货');
 
-      const items = db.prepare("SELECT * FROM PurchaseOrderItem WHERE orderId = ?").all(id) as Array<{ id: string; itemId: string | null; name: string; quantity: number; unitPrice: number }>;
+      const items = db.prepare(`SELECT id, orderId, itemId, name, spec, quantity, unitPrice, subtotal, clinicId, createdAt, updatedAt, deletedAt FROM PurchaseOrderItem WHERE orderId = ?${clinicClause}`).all(id, ...clinicParams) as Array<{ id: string; itemId: string | null; name: string; quantity: number; unitPrice: number }>;
 
-      const itemIds = items.filter(i => i.itemId).map(i => i.itemId) as string[];
+      const itemIds = items.filter(i => i.itemId).map(i => i.itemId);
       const inventoryMap = new Map<string, Record<string, unknown>>();
       if (itemIds.length > 0) {
         const placeholders = itemIds.map(() => '?').join(',');
-        const inventoryItems = db.prepare(`SELECT * FROM InventoryItem WHERE id IN (${placeholders}) AND deletedAt IS NULL`).all(...itemIds) as Array<Record<string, unknown>>;
+        const inventoryItems = db.prepare(`SELECT id, code, name, spec, category, unit, stock, minStock, price, supplierId, expireDate, location, remark, clinicId, createdAt, updatedAt, deletedAt FROM InventoryItem WHERE id IN (${placeholders}) AND deletedAt IS NULL${clinicClause}`).all(...itemIds, ...clinicParams) as Array<Record<string, unknown>>;
         inventoryItems.forEach(item => inventoryMap.set(item.id as string, item));
       }
 
+      // Batch update: single UPDATE with CASE expression instead of N individual UPDATEs
+      const itemsToUpdate = items.filter(item => item.itemId && inventoryMap.has(item.itemId));
       const txValues: unknown[] = [];
       const txPlaceholders: string[] = [];
-      for (const item of items) {
-        if (item.itemId && inventoryMap.has(item.itemId)) {
-          db.prepare("UPDATE InventoryItem SET stock = stock + ?, updatedAt = ? WHERE id = ?").run(item.quantity, now, item.itemId);
-          txPlaceholders.push("(?,?,?,?,?,?,?,?,?,?,?)");
+
+      if (itemsToUpdate.length > 0) {
+        const caseParts: string[] = [];
+        const updateParams: unknown[] = [];
+        const updateIds: string[] = [];
+        for (const item of itemsToUpdate) {
+          caseParts.push(`WHEN ? THEN ?`);
+          updateParams.push(item.itemId, item.quantity);
+          updateIds.push(item.itemId);
+        }
+        const idPlaceholders = updateIds.map(() => '?').join(',');
+        const updateResult = db.prepare(
+          `UPDATE InventoryItem SET stock = stock + CASE id ${caseParts.join(' ')} END, updatedAt = ? WHERE id IN (${idPlaceholders}) AND deletedAt IS NULL${clinicClause}`
+        ).run(...updateParams, now, ...updateIds, ...clinicParams);
+        if (updateResult.changes !== itemsToUpdate.length) {
+          throw new BusinessValidationException('部分库存项不存在或已删除，无法入库');
+        }
+
+        for (const item of itemsToUpdate) {
+          txPlaceholders.push("(?,?,?,?,?,?,?,?,?,?,?,?,?)");
           txValues.push(
             crypto.randomUUID(), item.itemId, 'IN', item.quantity, item.unitPrice,
-            multiplyMoney(item.unitPrice, item.quantity), po.supplierId, id, user?.id || null,
-            user?.name || null, '采购入库'
+            centsToYuan(multiplyCents(yuanToCents(item.unitPrice), item.quantity)), po.supplierId, id, user?.id || null,
+            user?.name || null, '采购入库', clinicId || null, now
           );
         }
       }
 
       if (txPlaceholders.length > 0) {
-        db.prepare(`INSERT INTO InventoryTransaction (id, itemId, type, quantity, unitPrice, totalAmount, supplierId, purchaseOrderId, operatorId, operatorName, remark) VALUES ${txPlaceholders.join(', ')}`).run(...txValues);
+        db.prepare(`INSERT INTO InventoryTransaction (id, itemId, type, quantity, unitPrice, totalAmount, supplierId, purchaseOrderId, operatorId, operatorName, remark, clinicId, createdAt) VALUES ${txPlaceholders.join(', ')}`).run(...txValues);
       }
 
-      const updateResult = db.prepare("UPDATE PurchaseOrder SET status = 'RECEIVED', updatedAt = ? WHERE id = ? AND status IN ('PENDING', 'PARTIAL')").run(now, id);
+      // D2-3: 软删除过滤 + clinicId 过滤
+      const updateResult = db.prepare(`UPDATE PurchaseOrder SET status = 'RECEIVED', updatedAt = ? WHERE id = ? AND deletedAt IS NULL AND status IN ('PENDING', 'PARTIAL')${clinicClause}`).run(now, id, ...clinicParams);
       if (updateResult.changes === 0) {
-        throw new BadRequestException('采购单状态已变更，请刷新后重试');
+        throw new BusinessValidationException('采购单状态已变更，请刷新后重试');
       }
 
-      return db.prepare("SELECT * FROM PurchaseOrder WHERE id = ?").get(id);
+      this.logAudit(db, AuditLogType.PURCHASE_ORDER_RECEIVE, id, "PurchaseOrder", { beforeData: { status: po.status }, afterData: { status: "RECEIVED" } });
+
+      return db.prepare(`SELECT id, number, supplierId, totalAmount, status, operatorId, remark, clinicId, createdAt, updatedAt, deletedAt FROM PurchaseOrder WHERE id = ? AND deletedAt IS NULL${clinicClause}`).get(id, ...clinicParams);
     });
     return result;
   }
 
   async cancel(id: string) {
     const po = await this.findOne(id);
-    if (po.status === 'RECEIVED') throw new BadRequestException('已收货的采购单不可取消，请先做退货处理');
-    if (po.status === 'CANCELLED') throw new BadRequestException('采购单已取消');
+    if (po.status === 'RECEIVED') throw new BusinessValidationException('已收货的采购单不可取消，请先做退货处理');
+    if (po.status === 'CANCELLED') throw new BusinessValidationException('采购单已取消');
+
     const now = new Date().toISOString();
-    this.dbService.prepare("UPDATE PurchaseOrder SET status = 'CANCELLED', updatedAt = ? WHERE id = ?").run(now, id);
-    return this.findOne(id);
+    const clinicId = this.clinicContext.getClinicId();
+    const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
+
+    const result = this.dbService.transaction((db) => {
+      // Atomic status update with TOCTOU guard — only succeeds if status is still valid
+      const statusResult = db.prepare(
+        `UPDATE PurchaseOrder SET status = 'CANCELLED', updatedAt = ? WHERE id = ? AND status IN ('PARTIAL', 'PENDING') AND deletedAt IS NULL${clinicClause}`
+      ).run(now, id, ...clinicParams);
+      if (statusResult.changes === 0) {
+        throw new BusinessValidationException('采购单状态已变更，请刷新后重试（可能存在并发操作）');
+      }
+
+      // If PO was PARTIAL (partially received), reverse the received inventory
+      if (po.status === 'PARTIAL') {
+        const items = db.prepare(`SELECT id, orderId, itemId, name, spec, quantity, unitPrice, subtotal, clinicId, createdAt, updatedAt, deletedAt FROM PurchaseOrderItem WHERE orderId = ?${clinicClause}`).all(id, ...clinicParams) as Array<{ id: string; itemId: string | null; name: string; quantity: number; unitPrice: number }>;
+        const itemsToReverse = items.filter(item => item.itemId);
+
+        if (itemsToReverse.length > 0) {
+          // Pre-check: verify all items have sufficient stock in a single query
+          const checkIds = itemsToReverse.map(i => i.itemId);
+          const checkPh = checkIds.map(() => '?').join(',');
+          const stockRows = db.prepare(
+            `SELECT id, stock FROM InventoryItem WHERE id IN (${checkPh}) AND deletedAt IS NULL${clinicClause}`
+          ).all(...checkIds, ...clinicParams) as Array<{ id: string; stock: number }>;
+          const stockMap = new Map(stockRows.map(r => [r.id, r.stock]));
+          for (const item of itemsToReverse) {
+            const stock = stockMap.get(item.itemId);
+            if (stock === undefined || stock < item.quantity) {
+              throw new BusinessValidationException(`库存反转失败（物料：${item.name}），库存不足或物料不存在`);
+            }
+          }
+
+          // Batch UPDATE with CASE expression
+          const caseParts: string[] = [];
+          const updateParams: unknown[] = [];
+          const updateIds: string[] = [];
+          for (const item of itemsToReverse) {
+            caseParts.push(`WHEN ? THEN ?`);
+            updateParams.push(item.itemId, item.quantity);
+            updateIds.push(item.itemId);
+          }
+          const idPlaceholders = updateIds.map(() => '?').join(',');
+          db.prepare(
+            `UPDATE InventoryItem SET stock = stock - CASE id ${caseParts.join(' ')} END, updatedAt = ? WHERE id IN (${idPlaceholders}) AND deletedAt IS NULL`
+          ).run(...updateParams, now, ...updateIds, ...clinicParams);
+
+          // Batch INSERT InventoryTransaction
+          const txPlaceholders: string[] = [];
+          const txValues: unknown[] = [];
+          for (const item of itemsToReverse) {
+            txPlaceholders.push("(?,?,?,?,?,?,?,?,?,?,?)");
+            txValues.push(
+              crypto.randomUUID(), item.itemId, 'OUT', item.quantity, item.unitPrice,
+              centsToYuan(multiplyCents(yuanToCents(item.unitPrice), item.quantity)), id, null, '采购单取消退货', clinicId || null, now
+            );
+          }
+          db.prepare(`INSERT INTO InventoryTransaction (id, itemId, type, quantity, unitPrice, totalAmount, purchaseOrderId, operatorId, remark, clinicId, createdAt) VALUES ${txPlaceholders.join(', ')}`).run(...txValues);
+        }
+      }
+
+      this.logAudit(db, AuditLogType.PURCHASE_ORDER_CANCEL, id, "PurchaseOrder", { beforeData: { status: po.status }, afterData: { status: 'CANCELLED' } });
+
+      return db.prepare(`SELECT id, number, supplierId, totalAmount, status, operatorId, remark, clinicId, createdAt, updatedAt, deletedAt FROM PurchaseOrder WHERE id = ? AND deletedAt IS NULL${clinicClause}`).get(id, ...clinicParams);
+    });
+
+    return result;
   }
+
 }

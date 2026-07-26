@@ -2,11 +2,11 @@ import { Module } from '@nestjs/common';
 import { SettingsController } from './settings.controller';
 import { SettingsService } from './settings.service';
 import { DbModule } from '../../../db/db.module';
-import { CacheService } from '../../../common/services/cache.service';
+import { CommonServicesModule } from '../../../common/services/common-services.module';
 
 @Module({
-  imports: [DbModule],
+  imports: [DbModule, CommonServicesModule],
   controllers: [SettingsController],
-  providers: [SettingsService, CacheService],
+  providers: [SettingsService],
 })
 export class SettingsModule {}

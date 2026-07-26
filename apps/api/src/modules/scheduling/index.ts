@@ -1,4 +1,4 @@
-export * from './appointments/appointments.module';
+﻿export * from './appointments/appointments.module';
 export * from './appointments/appointments.service';
 export * from './appointments/appointments.controller';
 export * from './chairs/chairs.module';
