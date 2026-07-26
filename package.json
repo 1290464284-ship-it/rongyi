@@ -9,12 +9,23 @@
     "build": "pnpm --filter @dental/shared build && pnpm --filter @dental/api build && pnpm --filter @dental/web build",
     "electron:dev": "pnpm --filter @dental/web electron:dev",
     "electron:pack": "pnpm --filter @dental/web electron:pack",
-    "electron:dist": "pnpm --filter @dental/web electron:dist"
+    "electron:dist": "pnpm --filter @dental/web electron:dist",
+    "audit": "pnpm audit --audit-level=high",
+    "test:cov": "pnpm --filter @dental/api test:cov",
+    "typecheck": "pnpm --filter @dental/api typecheck && pnpm --filter @dental/web exec tsc -b --noEmit",
+    "lint": "pnpm --filter @dental/api lint",
+    "verify": "pnpm typecheck && pnpm lint && pnpm --filter @dental/api test",
+    "changeset": "changeset",
+    "version:packages": "changeset version",
+    "prepare": "husky"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.27.0",
     "@vercel/ncc": "^0.44.1",
-    "concurrently": "^8.2.2",
-    "typescript": "^5.4.0"
+    "concurrently": "^10.0.3",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.1.1",
+    "typescript": "^5.7.3"
   },
-  "packageManager": "pnpm@9.0.0"
+  "packageManager": "pnpm@11.15.1"
 }

@@ -1,0 +1,19 @@
+#!/usr/bin/env sh
+
+echo "🔍 Running lint-staged..."
+cd apps/api && pnpm exec lint-staged
+cd ../..
+
+echo "🔎 Running typecheck (api)..."
+cd apps/api && pnpm run typecheck
+cd ../..
+
+echo "🔎 Running typecheck (web)..."
+cd apps/web && npx tsc -b --noEmit
+cd ../..
+
+echo "🧪 Running API unit tests..."
+cd apps/api && pnpm test --passWithNoTests
+cd ../..
+
+echo "✅ Pre-commit checks passed"
