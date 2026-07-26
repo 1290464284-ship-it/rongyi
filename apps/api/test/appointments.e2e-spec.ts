@@ -4,6 +4,7 @@ import request from 'supertest';
 import * as bcrypt from 'bcryptjs';
 import { AppModule } from '../src/app.module';
 import { DbService } from '../src/db/db.service';
+import { TEST_USER_PASSWORD, randomFutureISO, addMinutesISO, extractAccessToken } from './test-helpers';
 
 describe('Appointments (e2e)', () => {
   let app: INestApplication;
@@ -13,8 +14,8 @@ describe('Appointments (e2e)', () => {
   let patientId: string;
   let appointmentId: string;
 
-  const baseTime = '2026-08-01T09:00:00.000Z';
-  const baseEnd = '2026-08-01T09:30:00.000Z';
+  const baseTime = randomFutureISO();
+  const baseEnd = addMinutesISO(baseTime, 30);
 
   const tables = [
     'UsedRefreshToken', 'FirstExamFollowUp', 'FirstExamTooth', 'FirstExamTrack', 'FirstExam',
@@ -28,8 +29,8 @@ describe('Appointments (e2e)', () => {
 
   async function login() {
     const res = await request(app.getHttpServer())
-      .post('/api/auth/login').send({ username: 'boss', password: '123456' });
-    return res.body.access_token as string;
+      .post('/api/auth/login').send({ username: 'boss', password: TEST_USER_PASSWORD });
+    return extractAccessToken(res);
   }
 
   async function createPatient(name: string, phone: string) {
@@ -49,12 +50,14 @@ describe('Appointments (e2e)', () => {
 
     for (const t of tables) { try { db.exec(`DELETE FROM "${t}"`); } catch { /* ok */ } }
 
-    const hash = await bcrypt.hash('123456', 10);
+    const hash = await bcrypt.hash(TEST_USER_PASSWORD, 10);
     const dId = require('crypto').randomUUID();
-    db.prepare('INSERT INTO User (id, username, passwordHash, name, role, active, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?)').run(dId, 'doc1', hash, '王医生', 'DOCTOR', new Date().toISOString(), new Date().toISOString());
+    db.prepare('INSERT OR IGNORE INTO Clinic (id, name, code, isActive, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)')
+      .run('test-clinic-001', '测试诊所', 'TEST001', 1, new Date().toISOString(), new Date().toISOString());
+    db.prepare('INSERT INTO User (id, username, passwordHash, name, role, active, clinicId, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?,?)').run(dId, 'doc1', hash, '王医生', 'DOCTOR', 'test-clinic-001', new Date().toISOString(), new Date().toISOString());
     doctorId = dId;
 
-    db.prepare('INSERT INTO User (id, username, passwordHash, name, role, active, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?)').run('boss-001', 'boss', hash, '老板', 'BOSS', new Date().toISOString(), new Date().toISOString());
+    db.prepare('INSERT INTO User (id, username, passwordHash, name, role, active, clinicId, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?,?)').run('boss-001', 'boss', hash, '老板', 'BOSS', 'test-clinic-001', new Date().toISOString(), new Date().toISOString());
 
     token = await login();
     patientId = await createPatient('赵六', '13700137000');
@@ -76,7 +79,7 @@ describe('Appointments (e2e)', () => {
   it('POST 同医生同时段冲突检测返回 400', async () => {
     const res = await request(app.getHttpServer())
       .post('/api/appointments').set('Authorization', `Bearer ${token}`)
-      .send({ patientId, doctorId, startTime: '2026-08-01T09:15:00.000Z', endTime: '2026-08-01T09:45:00.000Z', type: 'RETURN' });
+      .send({ patientId, doctorId, startTime: addMinutesISO(baseTime, 15), endTime: addMinutesISO(baseTime, 45), type: 'RETURN' });
     expect(res.status).toBe(HttpStatus.BAD_REQUEST);
   });
 

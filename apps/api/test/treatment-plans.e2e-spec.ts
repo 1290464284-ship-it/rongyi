@@ -4,6 +4,7 @@ import request from 'supertest';
 import * as bcrypt from 'bcryptjs';
 import { AppModule } from '../src/app.module';
 import { DbService } from '../src/db/db.service';
+import { TEST_USER_PASSWORD, extractAccessToken } from './test-helpers';
 import * as crypto from 'crypto';
 
 describe('TreatmentPlans (e2e)', () => {
@@ -33,17 +34,19 @@ describe('TreatmentPlans (e2e)', () => {
 
     for (const t of tables) { try { db.exec(`DELETE FROM "${t}"`); } catch { /* ok */ } }
 
-    const hash = await bcrypt.hash('123456', 10);
+    const hash = await bcrypt.hash(TEST_USER_PASSWORD, 10);
     const dId = crypto.randomUUID();
-    db.prepare('INSERT INTO User (id, username, passwordHash, name, role, active, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?)').run(dId, 'doc_plan', hash, '赵医生', 'DOCTOR', new Date().toISOString(), new Date().toISOString());
+    db.prepare('INSERT OR IGNORE INTO Clinic (id, name, code, isActive, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)')
+      .run('test-clinic-001', '测试诊所', 'TEST001', 1, new Date().toISOString(), new Date().toISOString());
+    db.prepare('INSERT INTO User (id, username, passwordHash, name, role, active, clinicId, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?,?)').run(dId, 'doc_plan', hash, '赵医生', 'DOCTOR', 'test-clinic-001', new Date().toISOString(), new Date().toISOString());
     doctorId = dId;
 
     const pId = crypto.randomUUID();
-    db.prepare('INSERT INTO Patient (id, code, name, gender, phone, active, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?)').run(pId, 'PPLAN', '孙小红', 'FEMALE', '13900139001', new Date().toISOString(), new Date().toISOString());
+    db.prepare('INSERT INTO Patient (id, code, name, gender, phone, clinicId, active, createdAt, updatedAt) VALUES (?,?,?,?,?,?,1,?,?)').run(pId, 'PPLAN', '孙小红', 'FEMALE', '13900139001', 'test-clinic-001', new Date().toISOString(), new Date().toISOString());
     patientId = pId;
 
-    const res = await request(app.getHttpServer()).post('/api/auth/login').send({ username: 'doc_plan', password: '123456' });
-    token = res.body.access_token;
+    const res = await request(app.getHttpServer()).post('/api/auth/login').send({ username: 'doc_plan', password: TEST_USER_PASSWORD });
+    token = extractAccessToken(res);
   });
 
   afterAll(async () => { await app.close(); });
@@ -63,7 +66,8 @@ describe('TreatmentPlans (e2e)', () => {
     return request(app.getHttpServer())
       .post('/api/treatment-plans').set('Authorization', `Bearer ${token}`)
       .send({ patientId, doctorId, name: '空计划', items: [] })
-      .expect(400);
+      .expect(400)
+      .expect((res) => { expect(res.body.message).toBeDefined(); });
   });
 
   it('GET /treatment-plans - 分页查询', () => {

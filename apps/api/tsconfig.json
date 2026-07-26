@@ -22,13 +22,26 @@
     "paths": {
       "@shared/*": [
         "../../packages/shared/src/*"
+      ],
+      "@/*": [
+        "./src/*"
+      ],
+      "@common/*": [
+        "./src/common/*"
+      ],
+      "@modules/*": [
+        "./src/modules/*"
+      ],
+      "@db/*": [
+        "./src/db/*"
       ]
     },
     "types": ["jest", "node"]
   },
   "include": [
     "src/**/*",
-    "prisma/**/*"
+    "prisma/**/*",
+    "test/**/*"
   ],
   "exclude": [
     "node_modules",

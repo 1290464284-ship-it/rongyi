@@ -112,9 +112,9 @@ function verifyAll() {
     '检测非正常退出代码',
   );
 
-  // 验证: 3秒延迟重启
+  // 验证: 3秒延迟重启（常量名替代魔法数字）
   assert(
-    mainTsContent.includes('setTimeout') && mainTsContent.includes('3000'),
+    mainTsContent.includes('setTimeout') && mainTsContent.includes('API_RESTART_DELAY_MS'),
     '3秒延迟重启',
   );
 
@@ -130,9 +130,9 @@ function verifyAll() {
     '使用 SIGTERM 优雅停止',
   );
 
-  // 验证: 5秒强制杀死
+  // 验证: 5秒强制杀死（常量名替代魔法数字）
   assert(
-    mainTsContent.includes("kill('SIGKILL')") && mainTsContent.includes('5000'),
+    mainTsContent.includes("kill('SIGKILL')") && mainTsContent.includes('API_FORCE_KILL_TIMEOUT_MS'),
     '5秒超时后 SIGKILL 强制杀死',
   );
 
@@ -288,13 +288,13 @@ function verifyAll() {
 
   // 验证: 日志轮转
   assert(
-    mainTsContent.includes('MAX_LOG_SIZE') && mainTsContent.includes('5 * 1024 * 1024'),
-    '日志大小限制 5MB',
+    mainTsContent.includes('ELECTRON_LOG_ROTATION') && mainTsContent.includes('MAX_LOG_SIZE_BYTES'),
+    '日志大小限制使用 ELECTRON_LOG_ROTATION.MAX_LOG_SIZE_BYTES 常量',
   );
 
   assert(
-    mainTsContent.includes('MAX_LOG_FILES') && mainTsContent.includes('3'),
-    '最多保留 3 个日志文件',
+    mainTsContent.includes('ELECTRON_LOG_ROTATION') && mainTsContent.includes('MAX_LOG_FILES'),
+    '最多保留日志文件数使用 ELECTRON_LOG_ROTATION.MAX_LOG_FILES 常量',
   );
 
   // 验证: 错误捕获
@@ -316,13 +316,13 @@ function verifyAll() {
   );
 
   assert(
-    mainTsContent.includes('maxRetries') && mainTsContent.includes('30'),
-    '最大重试 30 次',
+    mainTsContent.includes('maxRetries') && mainTsContent.includes('API_STARTUP_MAX_RETRIES'),
+    '最大重试次数使用 API_STARTUP_MAX_RETRIES 常量',
   );
 
   assert(
-    mainTsContent.includes('delay') && mainTsContent.includes('1000'),
-    '每次间隔 1000ms',
+    mainTsContent.includes('delay') && mainTsContent.includes('API_STARTUP_RETRY_DELAY_MS'),
+    '每次间隔使用 API_STARTUP_RETRY_DELAY_MS 常量',
   );
 
   // ===== 输出总结 =====

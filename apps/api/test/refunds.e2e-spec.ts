@@ -3,6 +3,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { DbService } from '../src/db/db.service';
+import { TEST_USER_PASSWORD, extractAccessToken } from './test-helpers';
 import { _isTestMode } from '../src/db/database';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
@@ -32,20 +33,22 @@ describe('Refunds (e2e)', () => {
 
     for (const t of tables) { try { db.exec(`DELETE FROM "${t}"`); } catch { /* ok */ } }
 
-    const hash = await bcrypt.hash('123456', 10);
+    const hash = await bcrypt.hash(TEST_USER_PASSWORD, 10);
     bossUserId = crypto.randomUUID();
-    db.prepare('INSERT INTO User (id, username, passwordHash, name, role, active, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?)').run(
-      bossUserId, 'boss_refund', hash, '退款测试老板', 'BOSS', new Date().toISOString(), new Date().toISOString()
+    db.prepare('INSERT OR IGNORE INTO Clinic (id, name, code, isActive, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)')
+      .run('test-clinic-001', '测试诊所', 'TEST001', 1, new Date().toISOString(), new Date().toISOString());
+    db.prepare('INSERT INTO User (id, username, passwordHash, name, role, active, clinicId, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?,?)').run(
+      bossUserId, 'boss_refund', hash, '退款测试老板', 'BOSS', 'test-clinic-001', new Date().toISOString(), new Date().toISOString()
     );
 
     const pId = crypto.randomUUID();
-    db.prepare('INSERT INTO Patient (id, code, name, gender, phone, active, createdAt, updatedAt) VALUES (?,?,?,?,?,1,?,?)').run(
-      pId, 'PREFUND', '退款测试患者', 'FEMALE', '13900000000', new Date().toISOString(), new Date().toISOString()
+    db.prepare('INSERT INTO Patient (id, code, name, gender, phone, clinicId, active, createdAt, updatedAt) VALUES (?,?,?,?,?,?,1,?,?)').run(
+      pId, 'PREFUND', '退款测试患者', 'FEMALE', '13900000000', 'test-clinic-001', new Date().toISOString(), new Date().toISOString()
     );
     patientId = pId;
 
-    const res = await request(app.getHttpServer()).post('/api/auth/login').send({ username: 'boss_refund', password: '123456' });
-    bossToken = res.body.access_token;
+    const res = await request(app.getHttpServer()).post('/api/auth/login').send({ username: 'boss_refund', password: TEST_USER_PASSWORD });
+    bossToken = extractAccessToken(res);
 
     const chargeRes = await request(app.getHttpServer())
       .post('/api/charge-v2').set('Authorization', `Bearer ${bossToken}`)
@@ -81,24 +84,27 @@ describe('Refunds (e2e)', () => {
     });
 
     it('POST /refunds - 退款金额不能超过已付金额', async () => {
-      await request(app.getHttpServer())
+      const overRes = await request(app.getHttpServer())
         .post('/api/refunds').set('Authorization', `Bearer ${bossToken}`)
         .send({ chargeId, patientId, amount: 10000, reason: '超额退款' })
         .expect(400);
+      expect(overRes.status).toBe(400);
     });
 
     it('POST /refunds - 退款金额必须大于0', async () => {
-      await request(app.getHttpServer())
+      const zeroRes = await request(app.getHttpServer())
         .post('/api/refunds').set('Authorization', `Bearer ${bossToken}`)
         .send({ chargeId, patientId, amount: 0, reason: '零元退款' })
         .expect(400);
+      expect(zeroRes.status).toBe(400);
     });
 
     it('POST /refunds - 不存在的收费单返回404', async () => {
-      await request(app.getHttpServer())
+      const notFoundRes = await request(app.getHttpServer())
         .post('/api/refunds').set('Authorization', `Bearer ${bossToken}`)
         .send({ chargeId: 'nonexistent-id', patientId, amount: 100, reason: '测试' })
         .expect(404);
+      expect(notFoundRes.status).toBe(404);
     });
   });
 
@@ -143,9 +149,10 @@ describe('Refunds (e2e)', () => {
     });
 
     it('GET /refunds/:id - 不存在的退款单返回404', async () => {
-      await request(app.getHttpServer())
+      const notFoundRes = await request(app.getHttpServer())
         .get('/api/refunds/nonexistent-id').set('Authorization', `Bearer ${bossToken}`)
         .expect(404);
+      expect(notFoundRes.status).toBe(404);
     });
   });
 
