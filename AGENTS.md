@@ -33,6 +33,16 @@ source/
 | 公共基础 | `src/common/` (guards, filters, interceptors, middleware, services, repositories) | `src/lib/`, `src/components/ui/` |
 | 数据库 | `src/db/` (schema, migrations, seed, DbService) | — |
 
+## 任务简报约定
+
+非平凡改动（多文件、跨模块、涉及数据库/依赖变更）开始前，Agent 须先声明任务简报，包含：
+
+1. **改动范围**：将编辑哪些模块/文件（对照"模块所有者映射"）
+2. **验收标准**：完成的判定条件（如"`pnpm run verify` 全部通过 + 新增测试覆盖 X 场景"）
+3. **不做什么**：本次明确排除的范围（防止范围蔓延）
+
+复杂任务（新模块、架构调整、≥5 个文件）应先产出 Plan/Spec 并获用户确认后再执行；简单修改（单文件、配置、文档）可直接执行，但仍须在完成时报告验证结果。
+
 ## 关键约束
 
 > **规范来源声明**：以下约束的详细规范定义在 `.qoder/rules/` 目录中，此处仅作摘要。修改约束时请更新对应的 rule 文件。
@@ -51,6 +61,8 @@ source/
 | 场景 | 命令 | 工作目录 |
 |------|------|--------|
 | **根级全量验证** | `pnpm verify` | 根目录 |
+| **根级交付验证（含 build + 三包覆盖率）** | `pnpm verify:delivery` | 根目录 |
+| **根级三包覆盖率** | `pnpm test:cov` | 根目录 |
 | **Pre-commit 钩子** | 自动（lint-staged + typecheck + test + arch:check，api/web 并行） | 提交时自动触发 |
 | API 单元测试 | `pnpm test` | `apps/api` |
 | API 覆盖率 | `pnpm test:cov` | `apps/api` |
@@ -62,10 +74,78 @@ source/
 | API 全量验证 | `pnpm verify` | `apps/api` |
 | Web 构建 | `pnpm build` | `apps/web` |
 | Web E2E 测试 | `pnpm test:e2e` | `apps/web` |
+| Web 单元测试 | `pnpm test` | `apps/web` |
+| Web 覆盖率（含阈值门禁） | `pnpm test:cov` | `apps/web` |
 | Web Lint | `pnpm lint` | `apps/web` |
+| Web Lint（严格） | `pnpm lint:strict` | `apps/web` |
+| Web 类型检查 | `pnpm typecheck` | `apps/web` |
 | Web 全量验证 | `pnpm verify` | `apps/web` |
 | 全量构建 | `pnpm build` | 根目录 |
 | 开发模式 | `pnpm dev` | 根目录 |
+
+## 验证执行链路
+
+验证通过三层机制自动执行，确保每次变更都经过质量门禁：
+
+| 层级 | 触发时机 | 覆盖范围 | 执行方式 |
+|------|---------|---------|---------|
+| **L0: Agent Hooks** | Agent 编辑/收尾时自动触发 | 编辑留痕 + 未验证改动提醒 | `.qoder/hooks.json`（verify-tracker + verify-gate） |
+| **L1: Pre-commit Hook** | `git commit` 时自动触发 | lint-staged + typecheck + test + arch:check | `.husky/pre-commit`（api/web 并行） |
+| **L2: Skill 路由** | 用户或 Agent 主动调用 | 按场景选择验证粒度 | `/monorepo-verify`、`/monorepo-test-verify`、`/monorepo-debug-test` |
+| **L3: 交付验收** | PR 准备或合并前 | 完整验证 + build + 覆盖率 | `/monorepo-delivery-acceptance` |
+
+> **注意**: Pre-commit hook 的执行不会被会话分析捕获为 tool call。这是正常行为——hook 由 git 触发，不经过 Agent 工具链。验证证据应通过 hook 执行结果（pass/fail）判断，而非会话中的 tool call 记录。
+
+### 验证 Skill 覆盖映射
+
+| 工作流需求 | 所有者 Skill | 触发条件 |
+|-----------|-------------|---------|
+| 完整门禁验证 | `/monorepo-verify` | typecheck + lint + test + arch 全量 |
+| 仅测试验证 | `/monorepo-test-verify` | 运行测试、查看覆盖率 |
+| 调试与修复 | `/monorepo-debug-test` | 测试失败、构建报错、类型错误 |
+| 交付验收 | `/monorepo-delivery-acceptance` | PR 准备、合并前审查 |
+| Harness 分析 | 内置 `/better-harness` | 项目健康分析、会话复核（非项目 Skill） |
+
+## 会话模式分类指引
+
+长会话（>45 分钟估算活跃时长）通常属于以下模式：
+
+| 模式 | 典型时长 | 特征 | 示例 |
+|------|---------|------|------|
+| **子 Agent 分析任务** | 60-320 min | child-agent 角色，0 失败事件 | Better Harness 全轮分析、代码审查 |
+| **复杂功能实现** | 30-90 min | 多文件编辑，多步骤验证 | 新模块开发、跨模块重构 |
+| **调试与修复** | 15-60 min | 失败→诊断→修复→验证循环 | 测试失败修复、类型错误排查 |
+| **简单修改** | <15 min | 单文件编辑，快速验证 | 配置修改、文档更新 |
+
+> 子 Agent 长任务（如 Better Harness 分析）的长时长来自多步骤分析流程的正常执行，不属于工具链摩擦或效率问题。在复核时应将其分类为"复杂分析任务"而非"需要优化"。
+
+## 交付验收与高风险审批
+
+### 交付验收流程
+
+每次交付（提交/合并/发布）须按以下步骤走完，形成可追溯的验收记录：
+
+1. **验证通过**：`pnpm run verify` 全部通过（typecheck + lint:strict + test + arch:check）；合并/发布级交付须跑 `pnpm run verify:delivery`（额外含 build + 三包覆盖率阈值门禁）
+2. **验收 Skill**：合并前调用 `/monorepo-delivery-acceptance` 完成变更审查
+3. **模块化提交**：按 Git 模块化提交命名规范拆分提交，每个提交是独立可回滚单元
+4. **结果报告**：交付时明确报告验证结果（通过项 + 测试数量），失败时如实报告并附输出
+
+### 高风险改动审批
+
+以下改动属于高风险，执行前须向用户确认，不得静默执行：
+
+| 高风险类别 | 示例 | 审批要求 |
+|-----------|------|---------|
+| 数据库结构变更 | 新增 migration、ALTER TABLE | 确认迁移方案 + 幂等性 |
+| 依赖变更 | `pnpm add/remove/update` | 确认包名与版本 |
+| 删除/覆盖文件 | 删除模块、覆盖配置 | 确认删除范围 |
+| 外发操作 | git push、发布、外部 API 调用 | 逐次确认，不复用历史授权 |
+
+### 回滚约定
+
+- 每个模块化提交是最小回滚单元，`git revert <commit>` 即可撤销单个改动
+- 数据库 migration 不可逆时，须在 migration 注释中说明手动回滚步骤
+- 交付失败时优先回滚到上一个 verify 通过的提交，再排查
 
 ## 禁止事项
 
