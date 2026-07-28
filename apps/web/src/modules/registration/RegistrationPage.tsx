@@ -89,7 +89,7 @@ const RegistrationPage = React.memo(function RegistrationPage() {
   const completeRegistration = useCompleteRegistration();
   const cancelRegistration = useCancelRegistration();
 
-  const registrations = data?.items ?? [];
+  const registrations = useMemo(() => data?.items ?? [], [data?.items]);
   const total = data?.total ?? 0;
   const totalPages = Math.ceil(total / pageSize);
 

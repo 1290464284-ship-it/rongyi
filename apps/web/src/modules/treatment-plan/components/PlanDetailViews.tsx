@@ -32,7 +32,7 @@ export function AggregateView({
       map.get(cat)!.push(item);
     }
     return Array.from(map.entries());
-  }, [plan.items]);
+  }, [plan]);
 
   const completedCount = plan.items.filter(i => i.status === 'COMPLETED' || i.status === 'SKIPPED').length;
   const progress = plan.items.length > 0 ? Math.round((completedCount / plan.items.length) * 100) : 0;

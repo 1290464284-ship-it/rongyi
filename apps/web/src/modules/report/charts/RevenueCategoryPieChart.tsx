@@ -16,7 +16,7 @@ interface RevenueCategoryItem {
 }
 
 export default function RevenueCategoryPieChart({ data, loading }: { data?: RevenueCategoryItem[]; loading: boolean }) {
-  const list = data ?? [];
+  const list = useMemo(() => data ?? [], [data]);
   
   const option = useMemo(() => ({
     color: PALETTE,

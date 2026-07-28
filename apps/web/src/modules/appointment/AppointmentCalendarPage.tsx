@@ -232,7 +232,7 @@ export default function AppointmentCalendarPage() {
   });
   const update = useUpdateAppointment();
   const remove = useDeleteAppointment();
-  const appts = data?.items ?? [];
+  const appts = useMemo(() => data?.items ?? [], [data?.items]);
 
   // 牙椅筛选（客户端兜底，保证选定牙椅时仅显示该牙椅预约）
   const filteredAppts = useMemo(() => {

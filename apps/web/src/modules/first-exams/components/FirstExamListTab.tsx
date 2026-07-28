@@ -62,7 +62,7 @@ export function FirstExamListTab() {
   const restartExam = useRestartFirstExam();
   const deleteExam = useDeleteFirstExam();
 
-  const exams = data?.items ?? [];
+  const exams = useMemo(() => data?.items ?? [], [data?.items]);
   const total = data?.total ?? 0;
   const totalPages = Math.ceil(total / pageSize);
 

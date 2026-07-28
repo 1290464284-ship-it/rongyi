@@ -53,7 +53,7 @@ export function ItemsTab() {
   const updateItem = useUpdateFollowUpItem();
   const deleteItem = useDeleteFollowUpItem();
 
-  const items = data?.items ?? [];
+  const items = useMemo(() => data?.items ?? [], [data?.items]);
   const total = data?.total ?? 0;
   const totalPages = Math.ceil(total / pageSize);
 

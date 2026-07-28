@@ -2,6 +2,7 @@ import tseslint from '@typescript-eslint/eslint-plugin';
 import tsParser from '@typescript-eslint/parser';
 import eslint from '@eslint/js';
 import globals from 'globals';
+import reactHooks from 'eslint-plugin-react-hooks';
 
 export default [
   eslint.configs.recommended,
@@ -20,9 +21,13 @@ export default [
     },
     plugins: {
       '@typescript-eslint': tseslint,
+      'react-hooks': reactHooks,
     },
     rules: {
       ...tseslint.configs.recommended.rules,
+      // React Hooks 规则：确保钩子调用顺序正确 + 依赖数组完整
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
       // no-explicit-any 保持 recommended 默认 error，与 .qoder/rules/no-typescript-any.md 一致
       '@typescript-eslint/no-unused-vars': [
         'warn',

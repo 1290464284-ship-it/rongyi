@@ -14,7 +14,7 @@ interface MemberLevelItem {
 }
 
 export default function MemberLevelPieChart({ data, loading }: { data?: MemberLevelItem[]; loading: boolean }) {
-  const levelDist = data ?? [];
+  const levelDist = useMemo(() => data ?? [], [data]);
   
   const option = useMemo(() => ({
     color: PALETTE,

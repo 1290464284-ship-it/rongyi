@@ -49,7 +49,7 @@ export default function PriceListPage() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [deleteTarget, setDeleteTarget] = useState<TreatmentCatalogItem | null>(null);
 
-  const items = data?.items ?? [];
+  const items = useMemo(() => data?.items ?? [], [data?.items]);
 
   const categories = useMemo(() => {
     const set = new Set<string>();

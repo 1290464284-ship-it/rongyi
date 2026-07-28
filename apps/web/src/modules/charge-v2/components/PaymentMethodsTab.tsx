@@ -67,7 +67,7 @@ export function PaymentMethodsTab() {
   const deletePaymentMethod = useDeletePaymentMethod();
   const togglePaymentMethod = useTogglePaymentMethod();
 
-  const methods = data ?? [];
+  const methods = useMemo(() => data ?? [], [data]);
 
   const filteredMethods = useMemo(() => {
     if (!keyword) return methods;

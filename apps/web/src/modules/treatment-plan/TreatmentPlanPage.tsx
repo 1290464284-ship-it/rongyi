@@ -64,7 +64,7 @@ export default function TreatmentPlanPage() {
   const updateStatus = useUpdatePlanStatus();
   const updateItemStatus = useUpdatePlanItemStatus();
 
-  const plans = data?.items ?? [];
+  const plans = useMemo(() => data?.items ?? [], [data?.items]);
   const total = data?.total ?? 0;
   const totalPages = Math.ceil(total / pageSize);
 

@@ -48,7 +48,7 @@ export function TemplatesTab() {
   const deleteTemplate = useDeleteFollowUpTemplate();
   const toggleTemplate = useToggleFollowUpTemplate();
 
-  const templates = data?.items ?? [];
+  const templates = useMemo(() => data?.items ?? [], [data?.items]);
   const total = data?.total ?? 0;
   const totalPages = Math.ceil(total / pageSize);
 

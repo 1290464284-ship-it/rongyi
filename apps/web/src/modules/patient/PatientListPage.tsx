@@ -131,6 +131,7 @@ export default function PatientListPage() {
     }, 300);
     debounceFn();
     return () => debounceFn.cancel();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- URL同步effect仅在keyword变化时触发，添加searchParams/setSearchParams会导致无限循环
   }, [keyword]);
 
   // 页码变化时更新 URL
@@ -142,6 +143,7 @@ export default function PatientListPage() {
       params.delete('page');
     }
     setSearchParams(params, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- URL同步effect仅在page变化时触发
   }, [page]);
 
   const handleRowClick = useCallback((patientId: string) => {

@@ -11,5 +11,6 @@ module.exports = {
     '^@dental/shared$': '<rootDir>/../../packages/shared/src/index.ts',
   },
   testPathIgnorePatterns: ['<rootDir>/node_modules/', '<rootDir>/dist/'],
+  modulePathIgnorePatterns: ['<rootDir>/dist/'],
   verbose: true,
 };

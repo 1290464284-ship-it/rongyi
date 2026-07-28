@@ -17,7 +17,7 @@ interface AppointmentStatusItem {
 }
 
 export default function AppointmentPieChart({ data, loading }: { data?: AppointmentStatusItem[]; loading: boolean }) {
-  const list = data ?? [];
+  const list = useMemo(() => data ?? [], [data]);
   
   const option = useMemo(() => ({
     color: PALETTE,

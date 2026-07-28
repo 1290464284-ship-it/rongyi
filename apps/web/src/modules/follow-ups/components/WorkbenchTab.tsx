@@ -64,7 +64,7 @@ export function WorkbenchTab() {
   const deleteFollowUp = useDeleteFollowUpV2();
   const completeFollowUp = useCompleteFollowUpV2();
 
-  const followUps = data?.items ?? [];
+  const followUps = useMemo(() => data?.items ?? [], [data?.items]);
   const total = data?.total ?? 0;
   const totalPages = Math.ceil(total / pageSize);
 

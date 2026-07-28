@@ -12,7 +12,7 @@ interface RevenueDoctorItem {
 }
 
 export default function RevenueDoctorBarChart({ data, loading }: { data?: RevenueDoctorItem[]; loading: boolean }) {
-  const list = data ?? [];
+  const list = useMemo(() => data ?? [], [data]);
   
   const option = useMemo(() => ({
     tooltip: {

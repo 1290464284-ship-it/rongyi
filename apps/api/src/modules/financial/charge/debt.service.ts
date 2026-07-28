@@ -84,8 +84,8 @@ export class DebtService extends BaseService<DebtRecord> {
         COALESCE(SUM(debtAmount), 0) as totalDebt,
         COALESCE(COUNT(*), 0) as totalCount
        FROM DebtRecord
-       WHERE deletedAt IS NULL AND status != '${DebtStatus.PAID}' AND status != '${DebtStatus.CANCELLED}'${clinicClause}`
-    ).get(...clinicParams) as { totalDebt: number; totalCount: number };
+       WHERE deletedAt IS NULL AND status != ? AND status != ?${clinicClause}`
+    ).get(DebtStatus.PAID, DebtStatus.CANCELLED, ...clinicParams) as { totalDebt: number; totalCount: number };
 
     return {
       totalDebt: centsToYuan(row.totalDebt),
