@@ -24,8 +24,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 11
 
       - name: Get pnpm store directory
         shell: bash
@@ -45,8 +43,14 @@ jobs:
       - name: Lint (API)
         run: pnpm --filter @dental/api lint:strict
 
+      - name: Lint (Web)
+        run: pnpm --filter @dental/web lint:strict
+
       - name: Build shared
         run: pnpm --filter @dental/shared build
+
+      - name: Test (Shared)
+        run: pnpm --filter @dental/shared test
 
       - name: Build API
         run: pnpm --filter @dental/api build
@@ -56,6 +60,12 @@ jobs:
 
       - name: Type check (API)
         run: pnpm --filter @dental/api typecheck
+
+      - name: Type check (Web)
+        run: pnpm --filter @dental/web typecheck
+
+      - name: Architecture check (API)
+        run: pnpm --filter @dental/api arch:check
 
       - name: Test (API)
         run: pnpm --filter @dental/api test:cov

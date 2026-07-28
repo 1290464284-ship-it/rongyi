@@ -10,6 +10,7 @@ export const ROLES = {
   RECEPTIONIST: 'RECEPTIONIST',
   NURSE: 'NURSE',
   ADMIN: 'ADMIN',
+  TECHNICIAN: 'TECHNICIAN',
 } as const;
 
 export type SharedRole = typeof ROLES[keyof typeof ROLES];
@@ -20,6 +21,7 @@ export const ROLE_LEVELS: Record<SharedRole, number> = {
   [ROLES.DOCTOR]: 3,
   [ROLES.NURSE]: 2,
   [ROLES.RECEPTIONIST]: 1,
+  [ROLES.TECHNICIAN]: 1,
 } as const;
 
 export function hasRoleLevel(userRole: SharedRole, requiredRole: SharedRole): boolean {

@@ -35,19 +35,23 @@ source/
 
 ## 关键约束
 
-1. **SQLite + 原生 SQL**：数据库使用 `better-sqlite3`，通过 `DbService` 执行参数化 SQL。**无 ORM、无 Prisma**。Schema 定义在 `apps/api/src/db/schema.ts`，迁移在 `apps/api/src/db/migrations.ts`。
-2. **pnpm monorepo**：包管理器为 pnpm 11+，workspace 协议引用内部包。所有安装/运行命令须在对应 workspace 下执行或使用 `pnpm --filter`。
-3. **NestJS 模块边界**：每个业务域一个 Module，通过 DI 注入服务。跨模块调用须经 Module imports 显式声明，禁止直接 import 其他模块内部文件。
-4. **本地优先部署**：Electron 桌面应用 + 可选 LAN 浏览器访问，无云依赖。
-5. **软删除**：所有表使用 `deletedAt` 列实现软删除。
-6. **参数化查询**：SQL 一律使用 `?` 占位符，严禁字符串拼接。
-7. **UI 语言**：界面中文 (zh-CN)，代码标识符英文。
-8. **共享包**：跨前后端的类型/枚举放 `packages/shared`，修改后需重新 build。
+> **规范来源声明**：以下约束的详细规范定义在 `.qoder/rules/` 目录中，此处仅作摘要。修改约束时请更新对应的 rule 文件。
+
+1. **SQLite + 原生 SQL** → 详见 `.qoder/rules/no-orm-usage.md`
+2. **pnpm monorepo**：包管理器为 pnpm 11+，workspace 协议引用内部包
+3. **NestJS 模块边界** → 详见 `.qoder/rules/nestjs-module-boundary.md`
+4. **本地优先部署**：Electron 桌面应用 + 可选 LAN 浏览器访问，无云依赖
+5. **软删除** → 详见 `.qoder/rules/soft-delete-enforcement.md`
+6. **参数化查询** → 详见 `.qoder/rules/sql-parameterization.md`
+7. **UI 语言**：界面中文 (zh-CN)，代码标识符英文
+8. **共享包**：跨前后端的类型/枚举放 `packages/shared`，修改后需重新 build
 
 ## 验证命令路由
 
 | 场景 | 命令 | 工作目录 |
-|------|------|---------|
+|------|------|--------|
+| **根级全量验证** | `pnpm verify` | 根目录 |
+| **Pre-commit 钩子** | 自动（lint-staged + typecheck + test，api/web 并行） | 提交时自动触发 |
 | API 单元测试 | `pnpm test` | `apps/api` |
 | API 覆盖率 | `pnpm test:cov` | `apps/api` |
 | API E2E 测试 | `pnpm test:e2e` | `apps/api` |
@@ -59,19 +63,24 @@ source/
 | Web 构建 | `pnpm build` | `apps/web` |
 | Web E2E 测试 | `pnpm test:e2e` | `apps/web` |
 | Web Lint | `pnpm lint` | `apps/web` |
+| Web 全量验证 | `pnpm verify` | `apps/web` |
 | 全量构建 | `pnpm build` | 根目录 |
 | 开发模式 | `pnpm dev` | 根目录 |
 
 ## 禁止事项
 
-- ❌ **不引入 Prisma / TypeORM / 任何 ORM** — 本项目使用原生 SQL
-- ❌ **不运行数据库 migration 命令** — 迁移由应用启动时自动执行
-- ❌ **不直接修改 `src/db/schema.ts`** — 须通过 migration 流程变更表结构
-- ❌ **不在 SQL 中使用字符串拼接** — 必须参数化
-- ❌ **不跨模块直接 import 内部文件** — 通过 NestJS Module 导出
-- ❌ **不修改 `pnpm-lock.yaml` 手动内容** — 由 pnpm 命令管理
-- ❌ **不在前端直接调用 SQLite** — 所有数据操作经 API
-- ❌ **不删除 `packages/shared/dist/`** — 由 build 生成，修改源码后重新 build
+> 以下每条约束只有一个规范来源（rule 文件），修改时请更新对应 rule 文件。
+
+- ❌ **不引入 ORM** → 详见 `.qoder/rules/no-orm-usage.md`
+- ❌ **不手动运行 migration** → 详见 `.qoder/rules/no-manual-migration.md`
+- ❌ **不直接修改 schema.ts** → 详见 `.qoder/rules/db-schema-protection.md`
+- ❌ **不在 SQL 中拼接字符串** → 详见 `.qoder/rules/sql-parameterization.md`
+- ❌ **不跨模块 import 内部文件** → 详见 `.qoder/rules/nestjs-module-boundary.md`
+- ❌ **不手动修改 pnpm-lock.yaml** → 详见 `.qoder/rules/pnpm-lock-protection.md`
+- ❌ **不在前端直接访问数据库** → 详见 `.qoder/rules/frontend-no-direct-data.md`
+- ❌ **不删除 packages/shared/dist/** — 由 build 生成，修改源码后重新 build
+
+> **注意**：以上禁止事项为全局架构约束，无论编辑哪个文件均须遵守。核心规则（SQL 参数化、软删除、Schema 保护、pnpm-lock 保护、禁止 ORM、禁止第三方 UI 框架、禁止 any 类型）已设为 `alwaysApply: true`，在任何文件编辑时均会触发。其他规则（NestJS 模块边界、前端 API 层、前端数据访问、手动 migration）通过 glob 模式在相关文件中自动触发，但约束本身同样适用于所有相关文件。
 
 ## 快速定位指南
 

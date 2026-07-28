@@ -1,19 +1,32 @@
 #!/usr/bin/env sh
 
-echo "🔍 Running lint-staged..."
-cd apps/api && pnpm exec lint-staged
-cd ../..
+# Pre-commit 钩子：lint-staged + typecheck + test（api/web 并行）
+# 注意：build 验证不在 pre-commit 中，由 CI 流水线覆盖。
+# 原因：typecheck 已捕获大部分构建问题，build 步骤耗时较长（~11s），
+# 且构建错误频率低。CI 包含完整的 build + E2E 验证。
 
-echo "🔎 Running typecheck (api)..."
-cd apps/api && pnpm run typecheck
-cd ../..
+# ── Stage 1: lint-staged (parallel) ──────────────────────────────────────────
+echo "🔍 Running lint-staged (api + web)..."
+(cd apps/api && pnpm exec lint-staged) &
+PID_API_LINT=$!
+(cd apps/web && pnpm exec lint-staged) &
+PID_WEB_LINT=$!
+wait $PID_API_LINT $PID_WEB_LINT || { echo "❌ lint-staged failed"; exit 1; }
 
-echo "🔎 Running typecheck (web)..."
-cd apps/web && npx tsc -b --noEmit
-cd ../..
+# ── Stage 2: typecheck (parallel) ────────────────────────────────────────────
+echo "🔎 Running typecheck (api + web)..."
+(cd apps/api && pnpm run typecheck) &
+PID_API_TC=$!
+(cd apps/web && pnpm run typecheck) &
+PID_WEB_TC=$!
+wait $PID_API_TC $PID_WEB_TC || { echo "❌ typecheck failed"; exit 1; }
 
-echo "🧪 Running API unit tests..."
-cd apps/api && pnpm test --passWithNoTests
-cd ../..
+# ── Stage 3: unit tests (parallel) ───────────────────────────────────────────
+echo "🧪 Running unit tests (api + web)..."
+(cd apps/api && pnpm test --passWithNoTests) &
+PID_API_TEST=$!
+(cd apps/web && pnpm test --passWithNoTests) &
+PID_WEB_TEST=$!
+wait $PID_API_TEST $PID_WEB_TEST || { echo "❌ unit tests failed"; exit 1; }
 
 echo "✅ Pre-commit checks passed"

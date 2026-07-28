@@ -13,6 +13,7 @@ export const Role = {
   RECEPTIONIST: 'RECEPTIONIST',
   NURSE: 'NURSE',
   ADMIN: 'ADMIN',
+  TECHNICIAN: 'TECHNICIAN',
 } as const;
 export type Role = typeof Role[keyof typeof Role];
 
@@ -136,8 +137,9 @@ export type PayMethod = typeof PayMethod[keyof typeof PayMethod];
 
 export const PlanStatus = {
   DRAFT: 'DRAFT',
-  PENDING: 'PENDING',
+  SUBMITTED: 'SUBMITTED',
   APPROVED: 'APPROVED',
+  REJECTED: 'REJECTED',
   IN_PROGRESS: 'IN_PROGRESS',
   COMPLETED: 'COMPLETED',
   CANCELLED: 'CANCELLED',
@@ -145,7 +147,6 @@ export const PlanStatus = {
 export type PlanStatus = typeof PlanStatus[keyof typeof PlanStatus];
 
 export const PlanItemStatus = {
-  PENDING: 'PENDING',
   PLANNED: 'PLANNED',
   IN_PROGRESS: 'IN_PROGRESS',
   COMPLETED: 'COMPLETED',
