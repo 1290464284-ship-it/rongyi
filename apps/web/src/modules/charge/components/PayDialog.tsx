@@ -36,7 +36,7 @@ export function PayDialog({
       setAmount(remaining);
       setPayMethod('WECHAT');
     }
-  }, [open, charge.id]);
+  }, [open, charge.id, remaining]);
 
   async function handlePay() {
     if (amount <= 0) return;

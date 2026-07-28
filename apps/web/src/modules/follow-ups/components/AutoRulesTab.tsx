@@ -57,7 +57,7 @@ export function AutoRulesTab() {
   const deleteRule = useDeleteFollowUpAutoRule();
   const toggleRule = useToggleFollowUpAutoRule();
 
-  const rules = data?.items ?? [];
+  const rules = useMemo(() => data?.items ?? [], [data?.items]);
   const total = data?.total ?? 0;
   const totalPages = Math.ceil(total / pageSize);
 

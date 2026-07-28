@@ -77,6 +77,7 @@
 | 文档 | 说明 |
 |------|------|
 | [性能优化指南](./performance/optimization-guide.md) | 数据库、缓存、查询优化 |
+| [查询优化](./performance/query-optimization.md) | SQL 查询性能调优 |
 
 ### ✨ 功能特性
 
@@ -222,7 +223,8 @@ docs/
 │   ├── monitoring-alerting.md   # 监控与告警
 │   └── troubleshooting.md       # 故障排查
 ├── performance/                 # 性能文档
-│   └── optimization-guide.md    # 性能优化指南
+│   ├── optimization-guide.md    # 性能优化指南
+│   └── query-optimization.md    # 查询优化
 └── security/                    # 安全文档
     ├── security-architecture.md # 安全架构
     ├── data-encryption.md       # 数据加密

@@ -34,7 +34,7 @@ export function RefundDialog({
       setAmount(refundable);
       setReason('');
     }
-  }, [open, charge.id]);
+  }, [open, charge.id, refundable]);
 
   async function handleRefund() {
     if (amount <= 0 || amount > refundable) return;

@@ -91,8 +91,8 @@ source/
 |------|---------|---------|---------|
 | **L0: Agent Hooks** | Agent 编辑/收尾时自动触发 | 编辑留痕 + 未验证改动提醒 | `.qoder/hooks.json`（verify-tracker + verify-gate） |
 | **L1: Pre-commit Hook** | `git commit` 时自动触发 | lint-staged + typecheck + test + arch:check | `.husky/pre-commit`（api/web 并行） |
-| **L2: Skill 路由** | 用户或 Agent 主动调用 | 按场景选择验证粒度 | `/monorepo-verify`、`/monorepo-test-verify`、`/monorepo-debug-test` |
-| **L3: 交付验收** | PR 准备或合并前 | 完整验证 + build + 覆盖率 | `/monorepo-delivery-acceptance` |
+| **L2: Skill 路由** | 用户或 Agent 主动调用 | 按场景选择验证粒度 | `.qoder/skills/monorepo-verify`、`.qoder/skills/monorepo-test-verify`、`.qoder/skills/monorepo-debug-test` |
+| **L3: 交付验收** | PR 准备或合并前 | 完整验证 + build + 覆盖率 | `.qoder/skills/monorepo-delivery-acceptance` |
 
 > **注意**: Pre-commit hook 的执行不会被会话分析捕获为 tool call。这是正常行为——hook 由 git 触发，不经过 Agent 工具链。验证证据应通过 hook 执行结果（pass/fail）判断，而非会话中的 tool call 记录。
 
@@ -100,10 +100,10 @@ source/
 
 | 工作流需求 | 所有者 Skill | 触发条件 |
 |-----------|-------------|---------|
-| 完整门禁验证 | `/monorepo-verify` | typecheck + lint + test + arch 全量 |
-| 仅测试验证 | `/monorepo-test-verify` | 运行测试、查看覆盖率 |
-| 调试与修复 | `/monorepo-debug-test` | 测试失败、构建报错、类型错误 |
-| 交付验收 | `/monorepo-delivery-acceptance` | PR 准备、合并前审查 |
+| 完整门禁验证 | `.qoder/skills/monorepo-verify` (`/monorepo-verify`) | typecheck + lint + test + arch 全量 |
+| 仅测试验证 | `.qoder/skills/monorepo-test-verify` (`/monorepo-test-verify`) | 运行测试、查看覆盖率 |
+| 调试与修复 | `.qoder/skills/monorepo-debug-test` (`/monorepo-debug-test`) | 测试失败、构建报错、类型错误 |
+| 交付验收 | `.qoder/skills/monorepo-delivery-acceptance` (`/monorepo-delivery-acceptance`) | PR 准备、合并前审查 |
 | Harness 分析 | 内置 `/better-harness` | 项目健康分析、会话复核（非项目 Skill） |
 
 ## 会话模式分类指引

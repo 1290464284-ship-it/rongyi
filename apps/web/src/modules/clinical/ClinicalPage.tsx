@@ -77,7 +77,7 @@ export default function ClinicalPage() {
   const createVisit = useCreateVisit();
   const completeVisit = useCompleteVisit();
 
-  const visits = data?.items ?? [];
+  const visits = useMemo(() => data?.items ?? [], [data?.items]);
   const pendingAppointments = (aptData?.items ?? []).filter(
     a => a.status === 'BOOKED' || a.status === 'ARRIVED',
   );

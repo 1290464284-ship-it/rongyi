@@ -272,16 +272,31 @@ export class PatientsService extends BaseService<Patient> {
   /**
    * 软删除患者（覆盖 BaseService 的硬删除行为）
    * 执行软删除：设置 deletedAt + active=0 + 级联软删除关联表 + 唯一字段后缀
+   * 合并事务：softDelete 与 active=0 在同一事务内完成，确保原子性
    */
   async remove(id: string): Promise<unknown> {
-    await this.softDelete(id);
-    // 患者模型特有：软删除后标记为 inactive
     const clinicId = this.clinicContext.getClinicId();
-    if (clinicId) {
-      this.dbService.prepare('UPDATE Patient SET active = 0 WHERE id = ? AND clinicId = ?').run(id, clinicId);
-    } else {
-      this.dbService.prepare('UPDATE Patient SET active = 0 WHERE id = ?').run(id);
-    }
+    this.dbService.transaction(() => {
+      // 直接调用同步的 softDeleteManager（避免 async softDelete 的 floating promise 问题）
+      const existing = this.softDeleteManager.softDelete(this.dbService, id, {
+        tableName: this.tableName,
+        cascadeTables: this.cascadeTables,
+        uniqueFields: this.uniqueFields,
+        hasSoftDelete: this.hasSoftDelete,
+        selectColumns: this.getSelectColumns(),
+        clinicClause: this.buildClinicClause(),
+        clinicId,
+      });
+      this.parseJsonFields([existing as unknown as Patient]);
+      this.parseMoneyFields([existing as unknown as Patient]);
+
+      // 患者模型特有：软删除后标记为 inactive（在同一事务内执行）
+      if (clinicId) {
+        this.dbService.prepare('UPDATE Patient SET active = 0 WHERE id = ? AND clinicId = ?').run(id, clinicId);
+      } else {
+        this.dbService.prepare('UPDATE Patient SET active = 0 WHERE id = ?').run(id);
+      }
+    });
     return id;
   }
 }

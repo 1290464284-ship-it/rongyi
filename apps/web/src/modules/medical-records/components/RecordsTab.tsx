@@ -68,7 +68,7 @@ export function RecordsTab() {
   const deleteMutation = useDeleteMedicalRecord();
   const lockMutation = useLockMedicalRecord();
 
-  const records = data?.items ?? [];
+  const records = useMemo(() => data?.items ?? [], [data?.items]);
   const total = data?.total ?? 0;
   const _totalPages = Math.ceil(total / pageSize);
 

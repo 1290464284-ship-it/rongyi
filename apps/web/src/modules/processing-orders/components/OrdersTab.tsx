@@ -65,7 +65,7 @@ export function OrdersTab() {
   const deleteOrder = useDeleteProcessingOrder();
   const updateStatus = useUpdateProcessingOrderStatus();
 
-  const orders = ordersData?.items ?? [];
+  const orders = useMemo(() => ordersData?.items ?? [], [ordersData?.items]);
   const total = ordersData?.total ?? 0;
   const totalPages = Math.ceil(total / pageSize);
 

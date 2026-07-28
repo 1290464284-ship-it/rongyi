@@ -17,7 +17,7 @@ const baseRules = {
   ...security.configs.recommended.rules,
   ...prettier.rules,
 
-  'no-console': 'off',
+  'no-console': ['warn', { allow: ['warn', 'error'] }],
 
   // 允许下划线前缀的未使用变量（如 _isTestMode 表示"故意未使用"）
   '@typescript-eslint/no-unused-vars': [
@@ -413,6 +413,7 @@ module.exports = [
       'test/**/*.ts',
     ],
     rules: {
+      'no-console': 'off',
       'sonarjs/pseudo-random': 'off',
       'no-empty': 'off',
       '@typescript-eslint/no-explicit-any': 'off',
@@ -443,6 +444,7 @@ module.exports = [
       'src/common/test-helpers/**/*.ts',
     ],
     rules: {
+      'no-console': 'off',
       'sonarjs/pseudo-random': 'off',
       'no-empty': 'off',
       '@typescript-eslint/no-explicit-any': 'off',
@@ -457,5 +459,18 @@ module.exports = [
   },
   {
     ignores: ['dist', 'node_modules', 'bundle', 'eslint.config.js', '*.d.ts'],
+  },
+  // CLI 脚本、logger 服务、seed 脚本、db paths 合法使用 console
+  {
+    files: [
+      'src/cli/**/*.ts',
+      'src/common/services/logger.service.ts',
+      'src/db/paths.ts',
+      'src/db/seeds.ts',
+      'src/db/seed/**/*.ts',
+    ],
+    rules: {
+      'no-console': 'off',
+    },
   },
 ];

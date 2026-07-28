@@ -185,7 +185,7 @@ Content-Type: application/json
 | Cookie 名称 | HttpOnly | Secure | SameSite | Max-Age | 说明 |
 |-------------|----------|--------|----------|---------|------|
 | `access_token` | ✓ | 生产环境启用 | strict | 1 小时 | Access Token |
-| `refresh_token` | ✓ | 生产环境启用 | strict | 7 天 | Refresh Token |
+| `refresh_token` | ✓ | 生产环境启用 | strict | 24 小时 | Refresh Token |
 
 ### 3.2 短信验证码登录
 
@@ -250,10 +250,10 @@ Cookie: access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...; refresh_token=...
 
 ### 4.3 过期时间说明
 
-| Token 类型 | 有效期 | 过期前行为 |
-|-----------|--------|-----------|
-| Access Token | 30 分钟 | 过期后返回 401，前端自动调用刷新接口 |
-| Refresh Token | 24 小时 | 过期后返回 401，需重新登录 |
+| Token 类型 | 有效期 | Cookie Max-Age | 过期前行为 |
+|-----------|--------|----------------|----------|
+| Access Token | 30 分钟 | 1 小时 | 过期后返回 401，前端自动调用刷新接口 |
+| Refresh Token | 24 小时 | 24 小时 | 过期后返回 401，需重新登录 |
 
 ### 4.4 Token 提取顺序
 
@@ -309,11 +309,9 @@ sequenceDiagram
 POST /api/auth/refresh
 Content-Type: application/json
 Cookie: refresh_token=xxx
-
-{
-  "refreshToken": "可选，Cookie 优先"
-}
 ```
+
+> **注意**：Refresh Token **仅通过 HttpOnly Cookie 传递**，不接受请求体参数。这是安全设计（防 XSS 窃取）。如果 Cookie 中未携带 `refresh_token`，接口将返回错误。
 
 #### 响应（成功）
 

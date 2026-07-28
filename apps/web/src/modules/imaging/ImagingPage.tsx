@@ -61,7 +61,7 @@ export default function ImagingPage() {
   const createImg = useCreateImaging();
   const deleteImg = useDeleteImaging();
 
-  const imagings = data?.items ?? [];
+  const imagings = useMemo(() => data?.items ?? [], [data?.items]);
   const total = data?.total ?? 0;
   const totalPages = Math.ceil(total / pageSize);
 

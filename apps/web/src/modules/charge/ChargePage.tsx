@@ -58,6 +58,7 @@ const ChargePage = React.memo(function ChargePage() {
       setSearchParams(params, { replace: true });
     }, 300);
     return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- URL同步effect仅在keyword变化时触发，添加searchParams/setSearchParams会导致无限循环
   }, [keyword]);
 
   // 状态筛选变化时更新 URL
@@ -71,6 +72,7 @@ const ChargePage = React.memo(function ChargePage() {
     params.set('page', '1');
     setSearchParams(params, { replace: true });
     setPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- URL同步effect仅在statusFilter变化时触发
   }, [statusFilter]);
 
   // 页码变化时更新 URL
@@ -82,6 +84,7 @@ const ChargePage = React.memo(function ChargePage() {
       params.delete('page');
     }
     setSearchParams(params, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- URL同步effect仅在page变化时触发
   }, [page]);
 
   const { data, isLoading } = useCharges({
