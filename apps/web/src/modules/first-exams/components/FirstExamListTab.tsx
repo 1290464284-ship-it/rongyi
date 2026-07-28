@@ -144,9 +144,10 @@ export function FirstExamListTab() {
               className="w-36"
             >
               <option value="">全部状态</option>
-              <option value="PENDING">待开始</option>
-              <option value="IN_PROGRESS">进行中</option>
-              <option value="COMPLETED">已完成</option>
+              <option value="DRAFT">草稿</option>
+              <option value="SUBMITTED">已提交</option>
+              <option value="APPROVED">已批准</option>
+              <option value="REJECTED">已驳回</option>
             </Select>
             <Input
               type="date"
@@ -212,7 +213,7 @@ export function FirstExamListTab() {
                         <Eye className="w-3 h-3 mr-1" />
                         详情
                       </Button>
-                      {exam.status !== 'COMPLETED' && (
+                      {exam.status !== 'APPROVED' && (
                         <Button
                           size="sm"
                           variant="ghost"
@@ -222,7 +223,7 @@ export function FirstExamListTab() {
                           完成
                         </Button>
                       )}
-                      {exam.status === 'COMPLETED' && (
+                      {exam.status === 'APPROVED' && (
                         <Button
                           size="sm"
                           variant="ghost"
@@ -232,7 +233,7 @@ export function FirstExamListTab() {
                           重新开始
                         </Button>
                       )}
-                      {exam.status !== 'COMPLETED' && (
+                      {exam.status !== 'APPROVED' && (
                         <Button
                           size="sm"
                           variant="ghost"

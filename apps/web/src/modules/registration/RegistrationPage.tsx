@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Search, Play, Check, X, UserCheck, ClipboardList, Clock, User } from 'lucide-react';
+import { Plus, Search, Play, Check, X, UserCheck, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';

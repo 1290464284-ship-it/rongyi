@@ -3,7 +3,6 @@ import { useSearchParams } from 'react-router-dom';
 import {
   Plus,
   Search,
-  Eye,
   Trash2,
   Check,
   X,
@@ -24,14 +23,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import {
   useImagingList,
   useCreateImaging,
@@ -237,6 +228,7 @@ function ImagingCard({
           <img
             src={img.thumbnailUrl || img.imageUrl}
             alt={img.title}
+            loading='lazy'
             className='w-full h-full object-cover'
             onError={e => {
               (e.target as HTMLImageElement).style.display = 'none';
@@ -279,6 +271,7 @@ function ImagingDetail({ img }: { img: Imaging }) {
           <img
             src={img.imageUrl}
             alt={img.title}
+            loading='lazy'
             className='max-w-full max-h-[500px] object-contain'
             onError={e => {
               (e.target as HTMLImageElement).style.display = 'none';

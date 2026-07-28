@@ -1,11 +1,13 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { UserRole } from '@dental/shared';
+import { queryClient } from '../api/query-client';
 
 interface AuthUser {
   id: string;
   username: string;
   name: string;
-  role: 'BOSS' | 'DOCTOR' | 'RECEPTIONIST';
+  role: UserRole;
 }
 
 interface AuthState {
@@ -23,15 +25,8 @@ export const useAuthStore = create<AuthState>()(
       // 8.2: logout 时清除所有 React Query 缓存，避免下个用户看到上个用户的数据
       logout: () => {
         set({ user: null });
-        // 清除 localStorage 中其他业务缓存（React Query 默认持久化在 localStorage）
-        if (typeof window !== 'undefined') {
-          // 移除 React Query 缓存键
-          for (const key of Object.keys(localStorage)) {
-            if (key.startsWith('@@') || key.includes('query') || key.includes('mutation')) {
-              localStorage.removeItem(key);
-            }
-          }
-        }
+        // React Query 缓存在内存中，直接清空 queryClient 即可
+        queryClient.clear();
       },
       isAuthenticated: () => get().user !== null,
     }),

@@ -1,7 +1,6 @@
 import React from 'react';
 import { Calendar, Users, Receipt, TrendingUp, Clock, Phone } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useDashboard } from '@/lib/api/system/stats';
 import { format } from 'date-fns';

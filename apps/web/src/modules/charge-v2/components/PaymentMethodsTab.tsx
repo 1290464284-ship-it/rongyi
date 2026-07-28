@@ -54,7 +54,6 @@ const PAYMENT_METHOD_TYPES = [
 export function PaymentMethodsTab() {
   const isBoss = useIsBoss();
   const [keyword, setKeyword] = useState('');
-  const [page, setPage] = useState(1);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);

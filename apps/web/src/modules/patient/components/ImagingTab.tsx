@@ -27,6 +27,7 @@ export function ImagingTab({ imagings, patientId }: { imagings: Imaging[]; patie
                   <img
                     src={img.thumbnailUrl || img.imageUrl}
                     alt={img.title}
+                    loading="lazy"
                     className="w-full h-full object-cover"
                     onError={(e) => {
                       (e.target as HTMLImageElement).style.display = 'none';

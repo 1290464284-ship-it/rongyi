@@ -260,7 +260,7 @@ function FollowUpDialog({
   onClose: () => void;
   trackId: string;
   patientId?: string;
-  onCreate: (data: { patientId: string; type: string; content: string; followUpDate: string }) => Promise<any>;
+  onCreate: (data: { patientId: string; type: string; content: string; followUpDate: string }) => Promise<void>;
 }) {
   const [type, setType] = useState('');
   const [content, setContent] = useState('');

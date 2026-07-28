@@ -36,7 +36,7 @@ interface ToothData {
   [tooth: number]: Partial<Record<SiteKey, number>>;
 }
 
-const buildEmptyData = (): Record<string, any> => ({ teeth: {}, general: { bleedingIndex: '', plaqueIndex: '', furcation: '', mobility: '' } });
+const _buildEmptyData = (): { teeth: ToothData; general: { bleedingIndex: string; plaqueIndex: string; furcation: string; mobility: string } } => ({ teeth: {}, general: { bleedingIndex: '', plaqueIndex: '', furcation: '', mobility: '' } });
 
 export default function PeriodontalRecordPanel({ patientId }: Props) {
   const { data: records = [] } = usePeriodontalRecords(patientId);
@@ -120,7 +120,7 @@ export default function PeriodontalRecordPanel({ patientId }: Props) {
     }
   };
 
-  const hasToothData = useMemo(() => Object.keys(teethData).length > 0, [teethData]);
+  const _hasToothData = useMemo(() => Object.keys(teethData).length > 0, [teethData]);
 
   return (
     <div className="space-y-4">

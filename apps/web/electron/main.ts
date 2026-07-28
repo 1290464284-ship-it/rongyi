@@ -4,7 +4,7 @@ import { join } from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import { platform } from 'os';
 import { writeFileSync, existsSync, mkdirSync, readFileSync, statSync, unlinkSync, renameSync, readFile } from 'fs';
-import { createServer } from 'http';
+import { createServer, type IncomingMessage, type ServerResponse } from 'http';
 import * as crypto from 'crypto';
 import { autoUpdater } from 'electron-updater';
 import {
@@ -73,7 +73,7 @@ function getEncryptionKey(): string {
     }
 
     const newKey = crypto.randomBytes(32).toString('base64');
-    let config: any = {};
+    let config: Record<string, unknown> = {};
     if (existsSync(secretPath)) {
       try {
         config = JSON.parse(readFileSync(secretPath, 'utf-8'));
@@ -155,7 +155,7 @@ const waitForApi = async (): Promise<void> => {
   for (let i = 0; i < maxRetries; i++) {
     try {
       const response = await fetch(`http://localhost:${apiPort}/api/v1/health`);
-      const data = await response.json() as any;
+      const data = await response.json() as { status?: string; message?: string };
       if (data.status === 'ok') {
         log('API 服务启动成功，数据库已连接');
         return;
@@ -255,7 +255,8 @@ const startApi = (): Promise<void> => {
     });
 
     apiProcess.on('error', (err) => {
-      const errorMsg = `启动 API 服务失败: ${err.message}, code: ${(err as any).code}, path: ${(err as any).path}`;
+      const nodeErr = err as NodeJS.ErrnoException;
+      const errorMsg = `启动 API 服务失败: ${err.message}, code: ${nodeErr.code}, path: ${nodeErr.path}`;
       log(errorMsg);
       reject(new Error(errorMsg));
     });
@@ -338,14 +339,15 @@ const createWindow = () => {
     mainWindow.loadURL(`http://localhost:${webPort}`);
     mainWindow.webContents.openDevTools();
   } else {
-    const resourcesPath = (process as any).resourcesPath;
+    // Electron 打包后 process.resourcesPath 指向 asar 资源目录
+    const resourcesPath = (process as unknown as { resourcesPath: string }).resourcesPath;
     let distPath = join(resourcesPath, 'dist-web');
     if (!existsSync(distPath)) {
       distPath = join(resourcesPath, 'app.asar.unpacked', 'dist-web');
     }
     log(`distPath: ${distPath}`);
     log(`distPath exists: ${existsSync(distPath)}`);
-    const server = createServer((req: any, res: any) => {
+    const server = createServer((req: IncomingMessage, res: ServerResponse) => {
       try {
         // 解析URL，防止路径遍历攻击
         const urlObj = new URL(req.url, `http://localhost:${apiPort}`);
@@ -383,12 +385,12 @@ const createWindow = () => {
         };
         const contentType = contentTypes[extname] || 'application/octet-stream';
 
-        readFile(filePath, (err: any, content: any) => {
+        readFile(filePath, (err: NodeJS.ErrnoException | null, content: Buffer) => {
           if (err) {
             // SPA路由：对非静态资源请求返回index.html
             if (err.code === 'ENOENT' && !extname) {
               const indexPath = join(distPath, 'index.html');
-              readFile(indexPath, (indexErr: any, indexContent: any) => {
+              readFile(indexPath, (indexErr: NodeJS.ErrnoException | null, indexContent: Buffer) => {
                 if (indexErr) {
                   res.writeHead(500);
                   res.end('Internal Server Error');
@@ -421,7 +423,8 @@ const createWindow = () => {
       }
     });
     server.listen(0, () => {
-      const port = (server.address() as any).port;
+      const addr = server.address();
+      const port = typeof addr === 'object' && addr !== null ? addr.port : 0;
       log(`启动本地静态服务器: http://localhost:${port}`);
       if (mainWindow) {
         mainWindow.loadURL(`http://localhost:${port}/index.html`);

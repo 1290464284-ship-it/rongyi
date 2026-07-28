@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query';
-import { api } from './api/api';
+import { api, resetRefreshFailedFlag } from './api/api';
 import type { StaffUser } from './staff';
 
 export interface LoginRequest {
@@ -13,8 +13,12 @@ export interface LoginResponse {
 
 export function useLogin() {
   return useMutation({
-    mutationFn: async (data: LoginRequest) =>
-      (await api.post<LoginResponse>('/auth/login', data)).data,
+    mutationFn: async (data: LoginRequest) => {
+      const res = (await api.post<LoginResponse>('/auth/login', data)).data;
+      // 登录成功后重置 refresh 失败标志，恢复 token 自动刷新能力
+      resetRefreshFailedFlag();
+      return res;
+    },
   });
 }
 

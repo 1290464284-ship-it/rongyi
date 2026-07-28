@@ -24,8 +24,9 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { lazy } from 'react';
+import type { UserRole } from '@dental/shared';
 
-export type Role = 'BOSS' | 'DOCTOR' | 'RECEPTIONIST' | 'NURSE';
+export type Role = UserRole;
 
 export interface AppRoute {
   path: string;
@@ -65,6 +66,7 @@ const FirstExamsPage = lazy(() => import('@/modules/first-exams/FirstExamsPage')
 const WechatPage = lazy(() => import('@/modules/wechat/WechatPage'));
 const EquipmentPage = lazy(() => import('@/modules/equipment/EquipmentPage'));
 const OperationLogPage = lazy(() => import('@/modules/settings/OperationLogPage'));
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- reserved for 404 catch-all route
 const NotFoundPage = lazy(() => import('@/components/NotFoundPage'));
 
 export const appRoutes: AppRoute[] = [

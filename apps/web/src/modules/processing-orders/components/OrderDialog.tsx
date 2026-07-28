@@ -13,7 +13,7 @@ import { Select } from '@/components/ui/select';
 import { PatientSelector } from '@/components/patient/PatientSelector';
 import { useProcessingProducts } from '@/lib/api/inventory/processing-orders';
 import { toast } from 'sonner';
-import type { ProcessingOrder, ProcessingFactory, ProcessingOrderItem } from '@/lib/api/inventory/processing-orders';
+import type { ProcessingOrder, ProcessingFactory } from '@/lib/api/inventory/processing-orders';
 
 interface OrderItemForm {
   id: string;

@@ -26,7 +26,6 @@ import {
   FOLLOW_UP_PRIORITY_LABEL,
   FOLLOW_UP_PRIORITY_COLOR,
   type FollowUpAutoRule,
-  type FollowUpPriority,
 } from '@/lib/api/communication/follow-ups';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';

@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
+import type { UserRole } from '@dental/shared';
 import { useAuthStore } from '@/lib/store/auth-store';
 
-type Role = 'BOSS' | 'DOCTOR' | 'RECEPTIONIST';
+type Role = UserRole;
 
 /** 检查当前用户是否拥有指定角色之一 */
 export function useHasRole(roles: Role[]): boolean {

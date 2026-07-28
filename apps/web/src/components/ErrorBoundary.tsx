@@ -10,6 +10,12 @@ interface Props {
   fallback?: ReactNode;
   variant?: 'full' | 'inline';
   onError?: (error: Error) => void;
+  /**
+   * 是否监听全局异步错误触发（triggerErrorBoundary）。
+   * - false：仅捕获 React 渲染错误（用于顶层全局 boundary，避免单个路由的异步错误导致整页崩溃）
+   * - true（默认）：同时监听异步错误触发（用于页面级 boundary，实现局部错误隔离）
+   */
+  listenToAsyncErrors?: boolean;
 }
 
 interface State {
@@ -78,6 +84,11 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidMount() {
+    // P0 修复：listenToAsyncErrors=false 的 boundary（如顶层全局 boundary）
+    // 不注册异步错误监听，避免单个路由的异步错误导致整页崩溃
+    if (this.props.listenToAsyncErrors === false) {
+      return;
+    }
     this._errorTriggerHandler = (error: Error) => {
       this.setState({ hasError: true, error, errorInfo: null });
       this.props.onError?.(error);

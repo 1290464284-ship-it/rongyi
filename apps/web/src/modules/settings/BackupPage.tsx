@@ -3,7 +3,6 @@ import { Plus, RotateCcw, Trash2, DatabaseBackup } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { LoadingButton, TableLoading, EmptyState } from '@/components/ui/loading';
 import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';

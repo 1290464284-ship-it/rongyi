@@ -39,7 +39,7 @@ export interface FirstExam {
   };
 }
 
-export type FirstExamStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
+export type FirstExamStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED';
 export type DentitionType = 'PRIMARY' | 'DECIDUOUS' | 'PERMANENT' | 'MIXED';
 export type ToothStatus = 'NORMAL' | 'CARIES' | 'MISSING' | 'IMPACTED' | 'RESTORED' | 'EXTRACTED' | 'SOUND' | 'UNERUPTED';
 
@@ -217,7 +217,7 @@ export interface UpdateFirstExamTrackDto {
 export function useUpdateFirstExamTrack() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ examId, trackId, data }: { examId: string; trackId: string; data: UpdateFirstExamTrackDto }) =>
+    mutationFn: async ({ examId: _examId, trackId, data }: { examId: string; trackId: string; data: UpdateFirstExamTrackDto }) =>
       (await api.patch<FirstExamTrack>(`/first-exams/tracks/${trackId}`, data)).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['first-exam-tracks'] }),
   });
@@ -287,13 +287,15 @@ export const TOOTH_STATUS_COLOR: Record<string, string> = {
 };
 
 export const FIRST_EXAM_STATUS_LABEL: Record<string, string> = {
-  PENDING: '待检查',
-  IN_PROGRESS: '检查中',
-  COMPLETED: '已完成',
+  DRAFT: '草稿',
+  SUBMITTED: '已提交',
+  APPROVED: '已批准',
+  REJECTED: '已驳回',
 };
 
 export const FIRST_EXAM_STATUS_COLOR: Record<string, string> = {
-  PENDING: 'bg-warning/10 text-warning',
-  IN_PROGRESS: 'bg-info/10 text-info',
-  COMPLETED: 'bg-success/10 text-success',
+  DRAFT: 'bg-muted text-muted-foreground',
+  SUBMITTED: 'bg-info/10 text-info',
+  APPROVED: 'bg-success/10 text-success',
+  REJECTED: 'bg-destructive/10 text-destructive',
 };

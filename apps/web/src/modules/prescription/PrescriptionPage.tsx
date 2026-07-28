@@ -29,7 +29,6 @@ import {
   type Prescription,
   type CreatePrescriptionDto,
 } from '@/lib/api/content/prescriptions';
-import { usePatients } from '@/lib/api/patients/patients';
 import { useStaff } from '@/lib/staff';
 import { useAuthStore } from '@/lib/store/auth-store';
 import { PatientSelector } from '@/components/patient/PatientSelector';

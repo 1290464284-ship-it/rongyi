@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useMemo, useState } from 'react';
+import React, { lazy, Suspense, useState } from 'react';
 import {
   TrendingUp,
   BarChart3,
@@ -31,7 +31,6 @@ import {
   useInventoryStatus,
   useAppointmentStatusStats,
   useMemberStats,
-  type RevenueData,
 } from '@/lib/api/system/stats';
 import { APPOINTMENT_STATUS_LABEL } from '@/lib/api/clinical/appointments';
 import { format, subDays, subMonths } from 'date-fns';
@@ -50,14 +49,6 @@ const SuspenseChart = ({ children }: { children: React.ReactNode }) => (
     {children}
   </Suspense>
 );
-
-const PAY_LABEL: Record<string, string> = {
-  CASH: '现金',
-  WECHAT: '微信',
-  ALIPAY: '支付宝',
-  CARD: '银行卡',
-  OTHER: '其他',
-};
 
 type TabKey =
   | 'revenue'

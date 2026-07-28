@@ -8,8 +8,9 @@ export type TreatmentPlanStatus = PlanStatus;
 
 export const PLAN_STATUS_LABEL: Record<TreatmentPlanStatus, string> = {
   DRAFT: '草稿',
-  PENDING: '待执行',
+  SUBMITTED: '已提交',
   APPROVED: '已批准',
+  REJECTED: '已驳回',
   IN_PROGRESS: '执行中',
   COMPLETED: '已完成',
   CANCELLED: '已取消',
@@ -17,15 +18,15 @@ export const PLAN_STATUS_LABEL: Record<TreatmentPlanStatus, string> = {
 
 export const PLAN_STATUS_COLOR: Record<TreatmentPlanStatus, string> = {
   DRAFT: 'bg-muted text-muted-foreground',
-  PENDING: 'bg-warning/10 text-warning',
+  SUBMITTED: 'bg-info/10 text-info',
   APPROVED: 'bg-info/10 text-info',
+  REJECTED: 'bg-destructive/10 text-destructive',
   IN_PROGRESS: 'bg-primary/10 text-primary',
   COMPLETED: 'bg-success/10 text-success',
   CANCELLED: 'bg-muted text-muted-foreground',
 };
 
 export const ITEM_STATUS_LABEL: Record<PlanItemStatus, string> = {
-  PENDING: '待执行',
   PLANNED: '已计划',
   IN_PROGRESS: '执行中',
   COMPLETED: '已完成',
@@ -33,7 +34,6 @@ export const ITEM_STATUS_LABEL: Record<PlanItemStatus, string> = {
 };
 
 export const ITEM_STATUS_COLOR: Record<PlanItemStatus, string> = {
-  PENDING: 'bg-warning/10 text-warning',
   PLANNED: 'bg-info/10 text-info',
   IN_PROGRESS: 'bg-primary/10 text-primary',
   COMPLETED: 'bg-success/10 text-success',

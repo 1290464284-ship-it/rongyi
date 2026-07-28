@@ -4,16 +4,18 @@ import echarts from '@/lib/echarts';
 import type { CallbackDataParams } from 'echarts/types/dist/shared';
 import type { RevenueData } from '@/lib/api/system/stats';
 
+type AxisCallbackParams = CallbackDataParams & { axisValue?: string };
+
 export default function RevenueLineChart({ data, loading }: { data?: RevenueData; loading: boolean }) {
   const option = useMemo(() => {
     const timeline = data?.timeline ?? [];
     return {
       tooltip: {
         trigger: 'axis',
-        formatter: (params: CallbackDataParams[]) => {
+        formatter: (params: AxisCallbackParams[]) => {
           const p = params[0];
           const item = timeline[p.dataIndex];
-          return `${(p as any).axisValue ?? ''}<br/>营收：¥${p.value}<br/>笔数：${item?.count ?? 0}`;
+          return `${p.axisValue ?? ''}<br/>营收：¥${p.value}<br/>笔数：${item?.count ?? 0}`;
         },
       },
       grid: { left: 50, right: 20, top: 30, bottom: 40 },
