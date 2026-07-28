@@ -62,12 +62,12 @@ export default defineConfig({
       reporter: ['text', 'lcov', 'text-summary'],
       include: ['src/**/*.{ts,tsx}'],
       exclude: ['src/**/*.{test,spec}.{ts,tsx}', 'src/test/**', 'src/main.tsx'],
-      // 棘轮阈值：全量 src 口径 2026-07 实测（21.57/16.24/12.01/22.35）设置下限，只升不降
+      // 棘轮阈值：全量 src 口径 2026-07 实测（32.22/19.83/23.37/33.24）设置下限，只升不降
       thresholds: {
-        statements: 20,
-        branches: 15,
-        functions: 11,
-        lines: 21,
+        statements: 31,
+        branches: 19,
+        functions: 22,
+        lines: 32,
       },
     },
   },
