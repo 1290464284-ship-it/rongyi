@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 
-# Pre-commit 钩子：lint-staged + typecheck + test（api/web 并行）
+# Pre-commit 钩子：lint-staged + typecheck + test + arch:check
 # 注意：build 验证不在 pre-commit 中，由 CI 流水线覆盖。
 # 原因：typecheck 已捕获大部分构建问题，build 步骤耗时较长（~11s），
 # 且构建错误频率低。CI 包含完整的 build + E2E 验证。
@@ -28,5 +28,9 @@ PID_API_TEST=$!
 (cd apps/web && pnpm test --passWithNoTests) &
 PID_WEB_TEST=$!
 wait $PID_API_TEST $PID_WEB_TEST || { echo "❌ unit tests failed"; exit 1; }
+
+# ── Stage 4: arch:check (api only, ~2s) ──────────────────────────────────────
+echo "🏗️  Running arch:check..."
+(cd apps/api && pnpm run arch:check) || { echo "❌ arch:check failed"; exit 1; }
 
 echo "✅ Pre-commit checks passed"
