@@ -99,6 +99,8 @@ pnpm test:e2e          # Playwright E2E 测试
 pnpm dev               # Vite 开发服务器 (port 5173)
 ```
 
+> **交付流程**：非平凡改动遵循根 `AGENTS.md` 的「任务简报约定」与「交付验收与高风险审批」章节；交付前审查可使用 `delivery-reviewer` 代理（`.qoder/agents/`）。
+
 ## 关键约束
 
 > **规范来源声明**：以下约束的详细规范定义在 `.qoder/rules/` 目录中，此处仅作摘要。修改约束时请更新对应的 rule 文件。
