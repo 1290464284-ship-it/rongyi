@@ -74,9 +74,9 @@ export function useTogglePaymentMethod() {
   });
 }
 
-type DebtsQuery = { patientId?: string; status?: string; page?: number; pageSize?: number };
+type DebtsQuery = { patientId?: string; status?: string; keyword?: string; startDate?: string; endDate?: string; page?: number; pageSize?: number };
 
-export function useDebts(params: { patientId?: string; status?: string; page?: number; pageSize?: number }) {
+export function useDebts(params: DebtsQuery) {
   return useCrudPaginated<DebtRecord, DebtsQuery>('charge-v2/debts', 'debts', params);
 }
 

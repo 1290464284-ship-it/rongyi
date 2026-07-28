@@ -10,7 +10,7 @@ export interface ChargeItem {
   category: string;
   price: string | number;
   quantity: number;
-  teethNumbers: number[];
+  teethNumbers: string[];
   subtotal: string | number;
   remark?: string | null;
 }

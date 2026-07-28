@@ -20,6 +20,12 @@ export class QueryDebtDto {
   @IsOptional()
   status?: DebtStatus;
 
+  @ApiProperty({ description: '搜索关键字（患者姓名/电话/单号）', example: '张三', required: false })
+  @IsString()
+  @IsOptional()
+  @MaxLength(100)
+  keyword?: string;
+
   @ApiProperty({ description: '开始日期', example: '2024-01-01', required: false })
   @IsString()
   @IsOptional()

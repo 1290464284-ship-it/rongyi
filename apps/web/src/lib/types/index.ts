@@ -163,7 +163,7 @@ export interface Treatment {
   category: string;
   price: string | number;
   quantity: number;
-  teethNumbers: number[];
+  teethNumbers: string[];
   status: TreatmentStatus;
   plannedDate?: string | null;
   completedDate?: string | null;

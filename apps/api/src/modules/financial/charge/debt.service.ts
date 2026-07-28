@@ -24,17 +24,56 @@ export class DebtService extends BaseService<DebtRecord> {
   }
 
   listDebts(dto: QueryDebtDto) {
-    const filters: Record<string, unknown> = {};
-    if (dto.patientId) filters.patientId = dto.patientId;
-    if (dto.status) filters.status = dto.status;
+    const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
+    const conditions: string[] = ['deletedAt IS NULL'];
+    const params: unknown[] = [];
 
-    return this.findMany({
-      page: dto.page,
-      pageSize: dto.pageSize,
-      filters,
-      sortBy: 'createdAt',
-      sortOrder: 'DESC',
-    });
+    // 诊所隔离
+    if (clinicClause) {
+      conditions.push('clinicId = ?');
+      params.push(...clinicParams);
+    }
+
+    if (dto.patientId) {
+      conditions.push('patientId = ?');
+      params.push(dto.patientId);
+    }
+    if (dto.status) {
+      conditions.push('status = ?');
+      params.push(dto.status);
+    }
+    if (dto.startDate) {
+      conditions.push('createdAt >= ?');
+      params.push(dto.startDate);
+    }
+    if (dto.endDate) {
+      conditions.push('createdAt <= ?');
+      params.push(`${dto.endDate} 23:59:59`);
+    }
+    if (dto.keyword) {
+      conditions.push(
+        `patientId IN (SELECT id FROM Patient WHERE deletedAt IS NULL AND (name LIKE ? ESCAPE '\\' OR phone LIKE ? ESCAPE '\\'))`,
+      );
+      const escaped = `%${dto.keyword.replace(/[%_\\]/g, '\\$&')}%`;
+      params.push(escaped, escaped);
+    }
+
+    const page = Math.max(1, dto.page ?? 1);
+    const pageSize = Math.min(Math.max(1, dto.pageSize ?? 20), 200);
+    const offset = (page - 1) * pageSize;
+    const whereClause = conditions.join(' AND ');
+
+    const countRow = this.dbService.prepare(
+      `SELECT COUNT(*) as count FROM DebtRecord WHERE ${whereClause}`,
+    ).get(...params) as { count: number };
+
+    const items = this.dbService.prepare(
+      `SELECT * FROM DebtRecord WHERE ${whereClause} ORDER BY createdAt DESC LIMIT ? OFFSET ?`,
+    ).all(...params, pageSize, offset) as DebtRecord[];
+
+    this.parseMoneyFields(items);
+
+    return { items, total: countRow.count, page, pageSize };
   }
 
   debtStats() {
