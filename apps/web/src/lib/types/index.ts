@@ -11,6 +11,7 @@ import {
   PlanItemStatus,
   TreatmentStatus,
   ImagingType,
+  PatientSource,
 } from '@dental/shared';
 export {
   Role,
@@ -54,6 +55,13 @@ export interface Patient {
   remark?: string | null;
   allergies: string[];
   medicalHistory: string[];
+  medicationHistory: string[];
+  systemicDiseases: string[];
+  tags: string[];
+  source: PatientSource;
+  avatar?: string | null;
+  emergencyContact?: string | null;
+  emergencyPhone?: string | null;
   familyId?: string | null;
   referrer?: string | null;
   active: number;
@@ -73,11 +81,14 @@ export interface Appointment {
   patient?: Patient;
   doctorId: string;
   doctor?: User;
+  chairId?: string | null;
+  visitId?: string | null;
   startTime: string;
   endTime: string;
   status: AppointmentStatus;
   type: AppointmentType;
   remark?: string | null;
+  deletedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -149,6 +149,7 @@ export function DataTableWrapper<T extends Record<string, unknown>>({
               className="h-8 w-8"
               disabled={!canPrev}
               onClick={() => onPageChange?.(1)}
+              aria-label="首页"
             >
               <ChevronsLeft className="h-4 w-4" />
             </Button>
@@ -158,6 +159,7 @@ export function DataTableWrapper<T extends Record<string, unknown>>({
               className="h-8 w-8"
               disabled={!canPrev}
               onClick={() => onPageChange?.(page - 1)}
+              aria-label="上一页"
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
@@ -170,6 +172,7 @@ export function DataTableWrapper<T extends Record<string, unknown>>({
               className="h-8 w-8"
               disabled={!canNext}
               onClick={() => onPageChange?.(page + 1)}
+              aria-label="下一页"
             >
               <ChevronRight className="h-4 w-4" />
             </Button>
@@ -179,6 +182,7 @@ export function DataTableWrapper<T extends Record<string, unknown>>({
               className="h-8 w-8"
               disabled={!canNext}
               onClick={() => onPageChange?.(totalPages)}
+              aria-label="末页"
             >
               <ChevronsRight className="h-4 w-4" />
             </Button>

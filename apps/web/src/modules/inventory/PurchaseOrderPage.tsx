@@ -195,8 +195,9 @@ export default function PurchaseOrderPage() {
       <Card className="p-4 space-y-3">
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-2">
-            <Label className="text-muted-foreground">状态</Label>
+            <Label htmlFor="po-filter-status" className="text-muted-foreground">状态</Label>
             <Select
+              id="po-filter-status"
               value={status}
               onChange={(e) => {
                 setStatus(e.target.value);

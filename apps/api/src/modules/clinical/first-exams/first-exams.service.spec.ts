@@ -494,13 +494,13 @@ describe('FirstExamsService', () => {
       expect(true).toBe(true);
     });
 
-    it('硬删除应写入审计日志', async () => {
+    it('删除应写入软删除审计日志', async () => {
       const created = await service.create({ patientId: 'patient-001' });
 
       await service.remove((created as any).id);
 
       const auditLogs = db.getTableData('AuditLog');
-      const log = auditLogs.find(l => l.targetId === (created as any).id && l.type === 'HARD_DELETE');
+      const log = auditLogs.find(l => l.targetId === (created as any).id && l.type === 'SOFT_DELETE');
       expect(log).toBeDefined();
     });
 

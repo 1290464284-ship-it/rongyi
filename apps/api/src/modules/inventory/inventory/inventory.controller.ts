@@ -62,10 +62,12 @@ export class InventoryController {
   @Get('transactions')
   findTransactions(
     @Query('itemId') itemId?: string,
-    @Query('page') _page?: string,
-    @Query('pageSize') _pageSize?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
   ) {
-    return this.inventory.findTransactions(itemId);
+    const p = Math.max(1, Math.floor(Number(page) || 1));
+    const ps = Math.min(100, Math.max(1, Math.floor(Number(pageSize) || 50)));
+    return this.inventory.findTransactions(itemId, { limit: ps, offset: (p - 1) * ps });
   }
 
   @ApiOperation({ summary: 'stockAction - 库存' })

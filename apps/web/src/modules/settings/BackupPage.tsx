@@ -186,6 +186,7 @@ export default function BackupPage() {
                           size='icon'
                           onClick={() => setDeleteTarget(b)}
                           title='删除'
+                          aria-label='删除'
                           className='text-destructive hover:text-destructive'
                         >
                           <Trash2 className='h-4 w-4' />

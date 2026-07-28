@@ -227,7 +227,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     } catch (err: unknown) {
       this.logger.warn('listUsers pagination query failed, falling back to simple query', err instanceof Error ? err.message : String(err));
       const clinicId = this.clinicContext.getClinicId();
-      return this.dbService.prepare("SELECT id, name, role, username, phone, createdAt FROM User WHERE active = 1 AND clinicId = ? ORDER BY createdAt DESC").all(clinicId);
+      return this.dbService.prepare("SELECT id, name, role, username, phone, createdAt FROM User WHERE active = 1 AND clinicId = ? ORDER BY createdAt DESC LIMIT 100 OFFSET 0").all(clinicId);
     }
   }
 

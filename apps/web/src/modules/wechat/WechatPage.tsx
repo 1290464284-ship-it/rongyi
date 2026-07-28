@@ -119,8 +119,8 @@ function WechatLogsTab() {
     <Card className='p-4 space-y-3'>
       <div className='flex items-center gap-3 flex-wrap'>
         <div className='flex items-center gap-2'>
-          <Label className='text-muted-foreground'>类型</Label>
-          <Select value={type} onChange={(e) => setType(e.target.value)} className='w-32'>
+          <Label htmlFor='wx-filter-type' className='text-muted-foreground'>类型</Label>
+          <Select id='wx-filter-type' value={type} onChange={(e) => setType(e.target.value)} className='w-32'>
             <option value='ALL'>全部类型</option>
             <option value='APPOINTMENT_REMINDER'>预约提醒</option>
             <option value='BIRTHDAY_GREETING'>生日关怀</option>
@@ -129,8 +129,8 @@ function WechatLogsTab() {
           </Select>
         </div>
         <div className='flex items-center gap-2'>
-          <Label className='text-muted-foreground'>状态</Label>
-          <Select value={status} onChange={(e) => setStatus(e.target.value)} className='w-28'>
+          <Label htmlFor='wx-filter-status' className='text-muted-foreground'>状态</Label>
+          <Select id='wx-filter-status' value={status} onChange={(e) => setStatus(e.target.value)} className='w-28'>
             <option value='ALL'>全部状态</option>
             <option value='PENDING'>待发送</option>
             <option value='SENT'>已发送</option>
@@ -248,8 +248,9 @@ function BirthdayTab() {
     <Card className='p-4 space-y-3'>
       <div className='flex items-start gap-3 flex-col'>
         <div className='w-full'>
-          <Label className='mb-1.5 block'>祝福内容</Label>
+          <Label htmlFor='wx-batch-content' className='mb-1.5 block'>祝福内容</Label>
           <Textarea
+            id='wx-batch-content'
             rows={3}
             value={batchContent}
             onChange={(e) => setBatchContent(e.target.value)}
@@ -380,8 +381,9 @@ function AppointmentTab() {
     <Card className='p-4 space-y-3'>
       <div className='flex items-start gap-3 flex-col'>
         <div className='w-full'>
-          <Label className='mb-1.5 block'>提醒内容</Label>
+          <Label htmlFor='wx-remind-content' className='mb-1.5 block'>提醒内容</Label>
           <Textarea
+            id='wx-remind-content'
             rows={3}
             value={batchContent}
             onChange={(e) => setBatchContent(e.target.value)}
