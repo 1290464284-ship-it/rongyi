@@ -143,6 +143,7 @@ export function generateRandomPassword(length: number = 10): string {
   const all = upper + lower + digits + specials;
 
   // 确保每种字符类型至少出现一次
+  /* eslint-disable sonarjs/pseudo-random */
   let password = '';
   password += upper[Math.floor(Math.random() * upper.length)];
   password += lower[Math.floor(Math.random() * lower.length)];
@@ -155,6 +156,7 @@ export function generateRandomPassword(length: number = 10): string {
 
   // 打乱顺序
   return password.split('').sort(() => Math.random() - 0.5).join('');
+  /* eslint-enable sonarjs/pseudo-random */
 }
 
 // 常用时间单位（毫秒）

@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
+import { BusinessNotFoundException } from '@common/errors';
 import { ClinicsController } from './clinics.controller';
 import { ClinicsService } from './clinics.service';
 

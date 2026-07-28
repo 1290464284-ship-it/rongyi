@@ -1,5 +1,5 @@
 import { ClinicsService } from './clinics.service';
-import { BusinessValidationException, BusinessConflictException, BusinessNotFoundException } from '@common/errors';
+import { BusinessConflictException, BusinessNotFoundException } from '@common/errors';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import { CacheService } from '../../../common/services/cache.service';

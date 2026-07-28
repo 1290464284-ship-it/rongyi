@@ -1,5 +1,5 @@
 import { PurchaseOrdersService } from './purchase-orders.service';
-import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
+import { BusinessValidationException } from '@common/errors';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 

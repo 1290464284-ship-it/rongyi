@@ -1,5 +1,4 @@
 import * as bcrypt from 'bcryptjs';
-import crypto from 'node:crypto';
 import { Database } from 'better-sqlite3';
 import { isTestMode } from './database';
 import { scheduleAutoBackup } from './database';

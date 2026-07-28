@@ -2,7 +2,6 @@ import { RefundsService } from './refunds.service';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { IdempotencyService } from '../../../common/services/idempotency.service';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
-import { NotFoundException } from '@nestjs/common';
 import { BusinessNotFoundException, BusinessValidationException } from '@common/errors';
 import { EventBusService } from '../../../common/events/event-bus.service';
 import { RefundRepository } from './repositories/refund.repository';

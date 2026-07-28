@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import * as crypto from 'node:crypto';
 
 import { SqlExecutor } from '../../../../common/repositories/base.repository';
 import { InventoryItem } from '@dental/shared';

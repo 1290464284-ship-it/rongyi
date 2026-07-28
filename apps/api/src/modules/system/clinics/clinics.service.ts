@@ -1,4 +1,4 @@
-import { BusinessValidationException, BusinessConflictException, BusinessNotFoundException, BusinessException } from '@common/errors';
+import { BusinessConflictException, BusinessNotFoundException, BusinessException } from '@common/errors';
 import { Injectable } from '@nestjs/common';
 
 import { DbService } from '../../../db/db.service';

@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
+import { BusinessValidationException } from '@common/errors';
 import { ChargeService } from './charge.service';
 import { ChargePaymentService } from './charge-payment.service';
 import { MemberCardsService } from '../member-cards/member-cards.service';
@@ -23,7 +23,7 @@ import {
   TEST_PATIENT_ID,
   TEST_DOCTOR_ID,
 } from '../../../../test/factories';
-import { yuanToCents, centsToYuan } from '../../../common/utils/format/money.utils';
+import { yuanToCents } from '../../../common/utils/format/money.utils';
 import { ChargeStatus } from '../../../common/constants';
 import * as crypto from 'node:crypto';
 

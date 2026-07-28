@@ -4,7 +4,6 @@ import { ClinicContextService } from '../../common/services/clinic-context.servi
 import { Gender, PatientSource } from '@dental/shared';
 import { encryptField, decryptField } from '../../common/utils/security/encryption';
 import { EventBusService } from '../../common/events/event-bus.service';
-import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
 import { PatientRepository } from './repositories/patient.repository';
 
 process.env.ENCRYPTION_KEY = 'test-encryption-key-for-unit-tests-only-00000000000000000000000000000000';
