@@ -57,5 +57,18 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     css: false,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov', 'text-summary'],
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: ['src/**/*.{test,spec}.{ts,tsx}', 'src/test/**', 'src/main.tsx'],
+      // 棘轮阈值：全量 src 口径 2026-07 实测（21.57/16.24/12.01/22.35）设置下限，只升不降
+      thresholds: {
+        statements: 20,
+        branches: 15,
+        functions: 11,
+        lines: 21,
+      },
+    },
   },
 });
