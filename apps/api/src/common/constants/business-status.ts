@@ -15,32 +15,17 @@ export {
   PlanStatus,
   PlanItemStatus,
   RegistrationStatus,
+  ChargeStatus,
+  DebtStatus,
 } from '@dental/shared';
 
 /**
- * 收费状态（补充 @dental/shared 中缺失的 CANCELLED）
+ * 收费状态 — 已从 @dental/shared 统一导入（含 CANCELLED）
  */
-export const ChargeStatus = {
-  UNPAID: 'UNPAID',
-  PARTIAL: 'PARTIAL',
-  PAID: 'PAID',
-  REFUNDED: 'REFUNDED',
-  CANCELLED: 'CANCELLED',
-} as const;
-// eslint-disable-next-line no-redeclare
-export type ChargeStatus = typeof ChargeStatus[keyof typeof ChargeStatus];
 
 /**
- * 欠费状态（补充 @dental/shared 中缺失的 CANCELLED）
+ * 欠费状态 — 已从 @dental/shared 统一导入（含 CANCELLED）
  */
-export const DebtStatus = {
-  UNPAID: 'UNPAID',
-  PARTIAL: 'PARTIAL',
-  PAID: 'PAID',
-  CANCELLED: 'CANCELLED',
-} as const;
-// eslint-disable-next-line no-redeclare
-export type DebtStatus = typeof DebtStatus[keyof typeof DebtStatus];
 
 /**
  * 退款状态
