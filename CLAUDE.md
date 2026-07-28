@@ -4,15 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-口腔诊所管理系统 — a local-private-deployment web-based dental clinic management system targeting small clinics (<20 staff), replacing legacy desktop software (艾登特). Four-phase plan; currently at Phase 1 (project skeleton + auth + patient records).
+口腔诊所管理系统 — a local-private-deployment web-based dental clinic management system targeting small clinics (<20 staff), replacing legacy desktop software (艾登特). Four-phase plan; project has progressed beyond Phase 1 with full module implementation across auth, patients, appointments, clinical, inventory, financial, and system domains.
 
 **Tech stack:**
-- Frontend: React 18, TypeScript, Vite, TailwindCSS, shadcn/ui, TanStack Query, Zustand, React Router, ECharts, AG Grid Community, react-hook-form, zod
+- Frontend: React 19, TypeScript, Vite, TailwindCSS 4, custom UI component library (components/ui/), TanStack Query, Zustand, React Router 7, ECharts, react-hook-form, zod
 - Backend: NestJS, better-sqlite3 (local SQLite), raw SQL via DbService, Passport JWT
 - Shared: TypeScript types shared package
 - Deployment: Electron desktop app (single-machine local), optional LAN access via browser
 - Testing: Vitest (frontend), Jest (backend, with better-sqlite3)
-- Package manager: pnpm 9+ (workspaces), Node 20
+- Package manager: pnpm 11+ (workspaces), Node 20
 
 ## Monorepo structure
 
@@ -74,11 +74,11 @@ Default seed users: boss/doctor/front, all password `123456`.
 - **Local-first deployment:** Everything runs on a single machine via Electron desktop app or browser; clinic staff access via LAN. No cloud dependency.
 - **idCard encryption:** Patient national ID stored encrypted; the plan notes this but does not specify the encryption scheme — must be decided during implementation.
 
-## Current state (as of 2026-07-19)
+## Current state (as of 2026-07-27)
 
-Monorepo initialized with dependencies installed in all three packages (`apps/api`, `apps/web`, `packages/shared`). Config files exist (`.editorconfig`, `.gitignore`, `.nvmrc`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`). No source code written yet — all `src/` directories are empty. Root `package.json` not yet created.
+Monorepo fully implemented with 80+ source files and 129+ test files across all three packages (`apps/api`, `apps/web`, `packages/shared`). Root `package.json` exists with complete workspace scripts (dev, build, typecheck, lint, verify, test:cov). Config files include `.editorconfig`, `.gitignore`, `.nvmrc`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`, Husky pre-commit hooks, ESLint, and CI via GitHub Actions.
 
-The implementation plan in `docs/superpowers/plans/2026-07-16-dental-clinic-mvp.md` contains detailed Phase 1 task breakdowns with complete code blocks for each step. Follow that plan strictly for initial implementation.
+All backend and frontend modules listed above are implemented with controllers, services, DTOs, tests, page components, API layers, and routing. The initial implementation plan in `docs/superpowers/plans/2026-07-16-dental-clinic-mvp.md` has been completed; the project has progressed through subsequent phases.
 
 ## Conventions
 

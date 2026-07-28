@@ -80,3 +80,11 @@ apps/api/*.json
 
 # Encryption keys (never commit)
 .encryption-key
+
+# Coverage data
+apps/api/.coveragedata/
+
+# 一次性修复/审计脚本（已执行完毕，不留存版本库）
+apps/api/fix-*.mjs
+apps/api/architecture-audit.mjs
+apps/api/架构审计报告.md

@@ -1,0 +1,18 @@
+#!/usr/bin/env sh
+
+# Critical 变更门禁：typecheck + lint:strict + test + arch:check
+# 完整交付验收使用 pnpm verify:delivery（含 build）
+
+echo "🔍 typecheck..."
+pnpm typecheck || exit 1
+
+echo "🔍 lint:strict..."
+pnpm lint:strict || exit 1
+
+echo "🔍 unit tests..."
+pnpm test || exit 1
+
+echo "🔍 arch:check..."
+pnpm --filter @dental/api run arch:check || exit 1
+
+echo "✅ critical 门禁全部通过"

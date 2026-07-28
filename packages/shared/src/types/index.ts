@@ -30,7 +30,7 @@ export interface Pagination<T> {
   pageSize: number;
 }
 
-export type UserRole = 'BOSS' | 'DOCTOR' | 'RECEPTIONIST' | 'NURSE' | 'ADMIN';
+export type UserRole = 'BOSS' | 'DOCTOR' | 'RECEPTIONIST' | 'NURSE' | 'ADMIN' | 'TECHNICIAN';
 
 export interface User extends BaseEntity {
   [key: string]: unknown;
