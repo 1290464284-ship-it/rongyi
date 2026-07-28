@@ -227,9 +227,10 @@ describe('encryption 加密工具', () => {
       try {
         encryptionModule.encryptField(null);
         fail('should throw');
-      } catch (err: any) {
-        expect(err.code).toBe('E_NULL_INPUT');
-        expect(err.name).toBe('EncryptionError');
+      } catch (err: unknown) {
+        const e = err as { code: string; name: string };
+        expect(e.code).toBe('E_NULL_INPUT');
+        expect(e.name).toBe('EncryptionError');
       }
     });
 
@@ -237,8 +238,8 @@ describe('encryption 加密工具', () => {
       try {
         encryptionModule.decryptField('aa:bb:cc');
         fail('should throw');
-      } catch (err: any) {
-        expect(err.code).toBe('E_DECRYPT_FAILED');
+      } catch (err: unknown) {
+        expect((err as { code: string }).code).toBe('E_DECRYPT_FAILED');
       }
     });
 
@@ -246,8 +247,8 @@ describe('encryption 加密工具', () => {
       try {
         encryptionModule.setLegacyEncryptionKey('short');
         fail('should throw');
-      } catch (err: any) {
-        expect(err.code).toBe('E_KEY_MISSING');
+      } catch (err: unknown) {
+        expect((err as { code: string }).code).toBe('E_KEY_MISSING');
       }
     });
   });
@@ -362,6 +363,68 @@ describe('encryption 加密工具', () => {
       const encrypted = encryptionModule.encryptBuffer(data);
       const decrypted = encryptionModule.decryptBufferIfEncrypted(encrypted);
       expect(decrypted).toEqual(data);
+    });
+  });
+
+  describe('备份独立加密密钥', () => {
+    const MAIN_KEY_HEX = 'a'.repeat(64);
+    const BACKUP_KEY_HEX = 'c'.repeat(64);
+    let originalBackupEnv: string | undefined;
+
+    beforeAll(() => {
+      originalBackupEnv = process.env.BACKUP_ENCRYPTION_KEY;
+    });
+
+    afterAll(() => {
+      if (originalBackupEnv === undefined) {
+        delete process.env.BACKUP_ENCRYPTION_KEY;
+      } else {
+        process.env.BACKUP_ENCRYPTION_KEY = originalBackupEnv;
+      }
+    });
+
+    it('getBackupEncryptionKey 应优先使用 BACKUP_ENCRYPTION_KEY', () => {
+      process.env.ENCRYPTION_KEY = MAIN_KEY_HEX;
+      process.env.BACKUP_ENCRYPTION_KEY = BACKUP_KEY_HEX;
+      jest.resetModules();
+      const mod = require('./encryption');
+
+      expect(mod.getBackupEncryptionKey()).toEqual(Buffer.from(BACKUP_KEY_HEX, 'hex'));
+    });
+
+    it('encryptBuffer 默认使用 BACKUP_ENCRYPTION_KEY 加解密', () => {
+      process.env.ENCRYPTION_KEY = MAIN_KEY_HEX;
+      process.env.BACKUP_ENCRYPTION_KEY = BACKUP_KEY_HEX;
+      jest.resetModules();
+      const mod = require('./encryption');
+      const data = Buffer.from('backup with dedicated key');
+
+      const encrypted = mod.encryptBuffer(data);
+      expect(mod.isEncryptedBuffer(encrypted)).toBe(true);
+      expect(mod.decryptBufferIfEncrypted(encrypted)).toEqual(data);
+    });
+
+    it('encryptBuffer / decryptBufferIfEncrypted 支持传入显式 key', () => {
+      process.env.ENCRYPTION_KEY = MAIN_KEY_HEX;
+      delete process.env.BACKUP_ENCRYPTION_KEY;
+      jest.resetModules();
+      const mod = require('./encryption');
+      const explicitKey = Buffer.from(BACKUP_KEY_HEX, 'hex');
+      const data = Buffer.from('explicit key roundtrip');
+
+      const encrypted = mod.encryptBuffer(data, explicitKey);
+      expect(mod.decryptBufferIfEncrypted(encrypted, explicitKey)).toEqual(data);
+    });
+
+    it('未配置 BACKUP_ENCRYPTION_KEY 时回退到 ENCRYPTION_KEY', () => {
+      delete process.env.BACKUP_ENCRYPTION_KEY;
+      process.env.ENCRYPTION_KEY = MAIN_KEY_HEX;
+      jest.resetModules();
+      const mod = require('./encryption');
+
+      const data = Buffer.from('fallback key roundtrip');
+      const encrypted = mod.encryptBuffer(data);
+      expect(mod.decryptBufferIfEncrypted(encrypted)).toEqual(data);
     });
   });
 });

@@ -344,6 +344,28 @@ describe('logger.service 日志服务', () => {
       expect(parsed.context).toBe('ProdTest');
       expect(parsed.timestamp).toBeDefined();
     });
+
+    it('生产环境 debug 级别应输出 JSON', () => {
+      process.env.LOG_LEVEL = 'debug';
+      jest.resetModules();
+      const { AppLogger: LoggerClass } = require('./logger.service');
+      const log = new LoggerClass('ProdDebug');
+      log.debug('prod debug message');
+      expect(consoleDebugSpy).toHaveBeenCalled();
+      const output = consoleDebugSpy.mock.calls[0][0];
+      expect(() => JSON.parse(output)).not.toThrow();
+      const parsed = JSON.parse(output);
+      expect(parsed.level).toBe('debug');
+    });
+
+    it('生产环境 error 级别在 info 日志级别下应被过滤', () => {
+      process.env.LOG_LEVEL = 'info';
+      jest.resetModules();
+      const { AppLogger: LoggerClass } = require('./logger.service');
+      const log = new LoggerClass('ProdFilter');
+      log.debug('should be filtered');
+      expect(consoleDebugSpy).not.toHaveBeenCalled();
+    });
   });
 
   describe('shutdownLogger 关闭日志', () => {
@@ -433,6 +455,47 @@ describe('logger.service 日志服务', () => {
       expect(consoleWarnSpy).toHaveBeenCalled();
       const output = consoleWarnSpy.mock.calls[0][0];
       expect(() => JSON.parse(output)).not.toThrow();
+    });
+
+    it('生产环境 error 级别应输出 JSON', () => {
+      process.env.NODE_ENV = 'production';
+      process.env.LOG_LEVEL = 'error';
+      jest.resetModules();
+      const { AppLogger: LoggerClass } = require('./logger.service');
+      const log = new LoggerClass('ProdErrorLevel');
+      log.error('test error', new Error('err'));
+      expect(consoleErrorSpy).toHaveBeenCalled();
+      const lastCall = consoleErrorSpy.mock.calls[consoleErrorSpy.mock.calls.length - 1];
+      const output = lastCall[0];
+      expect(() => JSON.parse(output)).not.toThrow();
+    });
+  });
+
+  describe('writeLog 内部方法测试', () => {
+    it('error 方法在非生产环境应输出 stack trace', () => {
+      const err = new Error('test error');
+      logger.error('something failed', err);
+      expect(consoleErrorSpy).toHaveBeenCalled();
+      expect(consoleErrorSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('未知 LOG_LEVEL 应回退到 info', () => {
+      process.env.LOG_LEVEL = 'unknown_level';
+      jest.resetModules();
+      const { AppLogger: LoggerClass } = require('./logger.service');
+      const log = new LoggerClass('FallbackTest');
+      log.debug('test');
+      log.log('test info');
+      expect(consoleLogSpy).toHaveBeenCalled();
+    });
+
+    it('getLogLevel 应对 verbose 级别返回 0', () => {
+      process.env.LOG_LEVEL = 'verbose';
+      jest.resetModules();
+      const { AppLogger: LoggerClass } = require('./logger.service');
+      const log = new LoggerClass('VerboseTest');
+      log.debug('test verbose');
+      expect(consoleDebugSpy).toHaveBeenCalled();
     });
   });
 });

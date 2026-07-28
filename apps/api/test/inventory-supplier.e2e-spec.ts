@@ -2,6 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { DbService } from '@db/db.service';
 import { ClinicContextService } from '@common/services/clinic-context.service';
 import { IdempotencyService } from '@common/services/idempotency.service';
+import { EventBusService } from '@common/events/event-bus.service';
+import { InventoryRepository } from '@modules/inventory/inventory/repositories/inventory.repository';
 import {
   createTestDb,
   cleanupTestDb,
@@ -40,6 +42,8 @@ describe('Inventory Integration Tests', () => {
         { provide: DbService, useValue: testDbService },
         ClinicContextService,
         IdempotencyService,
+        EventBusService,
+        InventoryRepository,
         SuppliersService,
         InventoryService,
       ],

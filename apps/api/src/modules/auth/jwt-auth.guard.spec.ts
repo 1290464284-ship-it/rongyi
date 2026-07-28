@@ -12,7 +12,7 @@ describe('JwtAuthGuard', () => {
     guard = new JwtAuthGuard(reflector as any);
   });
 
-  function createMockContext(handler?: any, classRef?: any): ExecutionContext {
+  function createMockContext(handler?: (...args: unknown[]) => unknown, classRef?: new (...args: unknown[]) => unknown): ExecutionContext {
     return {
       getHandler: () => handler || jest.fn(),
       getClass: () => classRef || class TestClass {},

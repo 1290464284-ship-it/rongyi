@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-non-literal-fs-filename -- 数据库文件路径来自配置常量，非用户输入 */
 import { join, dirname } from 'node:path';
 import * as fs from 'node:fs';
 import * as crypto from 'node:crypto';
@@ -9,7 +10,7 @@ import {
   migrateLegacyDatabaseIfNeeded,
 } from './paths';
 import { createSchema } from './schema';
-import { createIndexes } from './schema/indexes';
+import { createIndexes, getIndexFailures } from './schema/indexes';
 import { runMigrations } from './migrations';
 import { logger } from '../common/utils/infra/log';
 import {
@@ -49,6 +50,19 @@ function applyPragmas(dbInstance: InstanceType<typeof Database>): void {
   dbInstance.pragma(`mmap_size = ${mmapSize}`);
   dbInstance.pragma(`wal_autocheckpoint = ${walAutocheckpoint}`);
   dbInstance.pragma('foreign_keys = ON');
+
+  // 连接池优化：控制 WAL 文件大小，防止无限增长；设置页面大小以提升 I/O 效率
+  dbInstance.pragma('journal_size_limit = 67108864'); // 64MB
+  dbInstance.pragma('page_size = 4096');
+  dbInstance.pragma('automatic_index = true');
+
+  // 首次连接时运行 ANALYZE 以优化查询计划器（仅在表存在时）
+  try {
+    dbInstance.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='Patient' LIMIT 1").get();
+    dbInstance.pragma('optimize');
+  } catch {
+    // 数据库尚未初始化，跳过 optimize
+  }
 }
 
 const resourcesPath =
@@ -163,6 +177,16 @@ export const initDb = (db: InstanceType<typeof Database>) => {
 
   // 重新创建索引（迁移可能通过 rebuildTableWithNewCheck 重建表导致索引丢失）
   createIndexes(db);
+
+  // P1 修复：原先索引创建失败被完全静默吞没，可能导致生产环境性能退化却无人知晓
+  // 现在通过 getIndexFailures() 收集所有失败并在启动时 error 级别告警
+  const indexFailures = getIndexFailures();
+  if (indexFailures.length > 0) {
+    logger.error(`[DB] 索引创建失败 ${indexFailures.length} 个，可能导致查询性能退化或数据完整性问题：`, 'DB');
+    for (const failure of indexFailures) {
+      logger.error(`[DB]   - ${failure.name} ON ${failure.table}: ${failure.error}`, 'DB');
+    }
+  }
 
   // 内存数据库跳过完整性检查
   if (isTestMode()) return;

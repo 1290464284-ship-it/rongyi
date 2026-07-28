@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable } from '@nestjs/common';
 import { DbService } from "../../db/db.service";
 import { BaseService } from "../../common/services/base.service";
 import { ClinicContextService } from "../../common/services/clinic-context.service";

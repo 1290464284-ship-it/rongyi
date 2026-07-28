@@ -60,13 +60,26 @@ export function migrateEncryptedData(dbService: DbService): { migrated: number; 
   return { migrated, errors };
 }
 
+export interface EncryptionMigrationResult {
+  /** 是否跳过迁移（未配置 legacyKey） */
+  skipped: boolean;
+  /** 成功重新加密的行数 */
+  migrated: number;
+  /** 逐行解密/加密失败的行数 */
+  errors: number;
+}
+
 /**
  * Configure the legacy encryption key and migrate encrypted fields.
  * Called once during application bootstrap after DbService is initialized.
+ *
+ * P1 修复：原先返回 void 且 skip 与 failure 不可区分，
+ * 调用方只能用 try/catch + warn 静默吞没所有异常。
+ * 现在返回结构化结果，让调用方区分「跳过」「部分失败」「成功」三种状态。
  */
-export function runEncryptionMigration(dbService: DbService, legacyKey?: string): void {
+export function runEncryptionMigration(dbService: DbService, legacyKey?: string): EncryptionMigrationResult {
   if (!legacyKey) {
-    return;
+    return { skipped: true, migrated: 0, errors: 0 };
   }
 
   setLegacyEncryptionKey(legacyKey);
@@ -74,4 +87,5 @@ export function runEncryptionMigration(dbService: DbService, legacyKey?: string)
   if (result.migrated > 0 || result.errors > 0) {
     logger.log(`加密数据迁移完成: ${result.migrated} 条已重新加密, ${result.errors || 0} 条出错`);
   }
+  return { skipped: false, ...result };
 }

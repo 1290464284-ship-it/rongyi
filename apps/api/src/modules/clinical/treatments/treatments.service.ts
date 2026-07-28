@@ -16,6 +16,7 @@ import {
   buildDictionaryCacheKey,
 } from "../../../common/constants/cache-keys";
 import { TREATMENT_CATALOG_CACHE_TTL_MS } from "../../../config/constants";
+import { yuanToCents, centsToYuan } from "../../../common/utils/format/money.utils";
 
 interface CreateTreatmentDto {
   patientId: string;
@@ -38,8 +39,8 @@ export class TreatmentsService extends BaseService<Treatment> {
     clinicContext: ClinicContextService,
     private cache: CacheService,
   ) {
-    // 娉ㄥ唽 teethNumbers 涓?JSON 瀛楁锛岀‘淇濋€氳繃 super.findOne/update 璇诲彇鏃舵纭В鏋?
-    super(dbService, clinicContext, "Treatment", ["teethNumbers"], ["name"]);
+    // P0 修复：添加 moneyFields=['price']，使 BaseService.findOne/findMany 自动转换（分→元）
+    super(dbService, clinicContext, "Treatment", ["teethNumbers"], ["name"], [], true, [], undefined, undefined, ['price']);
   }
 
   async findMany(params: { patientId?: string; visitId?: string; toothNumber?: number; status?: TreatmentStatus; page?: number; pageSize?: number }) {
@@ -61,6 +62,12 @@ export class TreatmentsService extends BaseService<Treatment> {
     qp.push(pageSize, (page - 1) * pageSize);
     const items = this.dbService.prepare(query).all(...qp) as Treatment[];
     this.parseJsonFields(items);
+    // P0 修复：自定义 SQL 查询的 price 为 cents，需手动转回 yuan
+    items.forEach(item => {
+      if (typeof item.price === 'number') {
+        (item as Record<string, unknown>).price = centsToYuan(item.price);
+      }
+    });
     const total = (this.dbService.prepare(countQuery).get(...cp) as { count: number })?.count || 0;
 
     // N+1 鏌ヨ浼樺寲锛氭壒閲忔煡璇㈡偅鑰呭拰鍖荤敓淇℃伅
@@ -96,18 +103,21 @@ export class TreatmentsService extends BaseService<Treatment> {
   async create(dto: Partial<Treatment>): Promise<Treatment> {
     const createDto = dto as unknown as CreateTreatmentDto;
 
-    // Validate FK: patientId must exist
+    // P1 修复：FK 校验必须带 clinicId 过滤，防止跨诊所引用其他诊所的患者/医生
+    const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
+
+    // Validate FK: patientId must exist (within same clinic)
     const patient = this.dbService.prepare(
-      "SELECT id FROM Patient WHERE id = ? AND deletedAt IS NULL"
-    ).get(createDto.patientId);
+      `SELECT id FROM Patient WHERE id = ? AND deletedAt IS NULL${clinicClause}`
+    ).get(createDto.patientId, ...clinicParams);
     if (!patient) {
-      throw new BusinessNotFoundException('鎮ｈ€呬笉瀛樺湪');
+      throw new BusinessNotFoundException('患者不存在');
     }
 
-    // Validate FK: doctorId must exist
+    // Validate FK: doctorId must exist (within same clinic)
     const doctor = this.dbService.prepare(
-      "SELECT id FROM User WHERE id = ? AND active = 1"
-    ).get(createDto.doctorId);
+      `SELECT id FROM User WHERE id = ? AND active = 1${clinicClause}`
+    ).get(createDto.doctorId, ...clinicParams);
     if (!doctor) {
       throw new BusinessNotFoundException('医生不存在');
     }
@@ -115,6 +125,8 @@ export class TreatmentsService extends BaseService<Treatment> {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const clinicId = this.clinicContext.getClinicId();
+    // P0 修复：price 存入 cents（INTEGER），审计日志中也使用 cents
+    const priceCents = yuanToCents(createDto.price);
     this.baseRepository.insert(this.dbService, 'Treatment', {
       id,
       patientId: createDto.patientId,
@@ -123,7 +135,7 @@ export class TreatmentsService extends BaseService<Treatment> {
       code: createDto.code,
       name: createDto.name,
       category: createDto.category,
-      price: createDto.price,
+      price: priceCents,
       quantity: createDto.quantity || 1,
       teethNumbers: JSON.stringify(createDto.teethNumbers || []),
       remark: createDto.remark || null,
@@ -132,7 +144,7 @@ export class TreatmentsService extends BaseService<Treatment> {
       createdAt: now,
       updatedAt: now,
     });
-    this.logAudit(this.dbService, AuditLogType.TREATMENT_CREATE, id, "Treatment", { afterData: { code: createDto.code, name: createDto.name, category: createDto.category, price: createDto.price, status: TreatmentStatus.PLANNED } });
+    this.logAudit(this.dbService, AuditLogType.TREATMENT_CREATE, id, "Treatment", { afterData: { code: createDto.code, name: createDto.name, category: createDto.category, price: priceCents, status: TreatmentStatus.PLANNED } });
     return super.findOne(id);
   }
 
@@ -166,7 +178,13 @@ export class TreatmentsService extends BaseService<Treatment> {
 
     const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
     const offset = (page - 1) * pageSize;
-    const result = this.dbService.prepare(`SELECT id, code, name, category, price, remark, clinicId, createdAt FROM TreatmentCatalog WHERE deletedAt IS NULL${clinicClause} ORDER BY code LIMIT ? OFFSET ?`).all(...clinicParams, pageSize, offset);
+    const result = this.dbService.prepare(`SELECT id, code, name, category, price, remark, clinicId, createdAt FROM TreatmentCatalog WHERE deletedAt IS NULL${clinicClause} ORDER BY code LIMIT ? OFFSET ?`).all(...clinicParams, pageSize, offset) as Array<Record<string, unknown>>;
+    // P0 修复：自定义 SQL 查询的 price 为 cents，需手动转回 yuan
+    result.forEach(item => {
+      if (typeof item.price === 'number') {
+        item.price = centsToYuan(item.price);
+      }
+    });
     this.cache.set(cacheKey, result, TREATMENT_CATALOG_CACHE_TTL_MS);
     return result;
   }
@@ -197,13 +215,15 @@ export class TreatmentsService extends BaseService<Treatment> {
     this.logAudit(this.dbService, AuditLogType.TREATMENT_CATALOG_CREATE, id, "TreatmentCatalog", { afterData: { code: dto.code, name: dto.name, category: dto.category, price: dto.price } });
     // P4-2: 鏂板鐩綍椤瑰悗澶辨晥缂撳瓨
     this.invalidateCatalogCache(clinicId);
-    const { params: clinicParams } = this.buildClinicClause();
-    return this.baseRepository.findById(this.dbService, 'TreatmentCatalog', '*', id, ['deletedAt IS NULL'], clinicParams);
+    const { clause: createClause, params: clinicParams } = this.buildClinicClause();
+    const createClinicCondition = createClause.replace(/^\s*AND\s+/i, '');
+    return this.baseRepository.findById(this.dbService, 'TreatmentCatalog', '*', id, createClinicCondition ? ['deletedAt IS NULL', createClinicCondition] : ['deletedAt IS NULL'], clinicParams);
   }
 
   async updateCatalog(id: string, dto: UpdateTreatmentCatalogDto) {
     const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
-    const existing = this.baseRepository.findById(this.dbService, 'TreatmentCatalog', '*', id, ['deletedAt IS NULL'], clinicParams);
+    const clinicCondition = clinicClause.replace(/^\s*AND\s+/i, '');
+    const existing = this.baseRepository.findById(this.dbService, 'TreatmentCatalog', '*', id, clinicCondition ? ['deletedAt IS NULL', clinicCondition] : ['deletedAt IS NULL'], clinicParams);
     const updates: string[] = [];
     const params: unknown[] = [];
     if (dto.name !== undefined) { updates.push("name = ?"); params.push(dto.name); }
@@ -217,12 +237,14 @@ export class TreatmentsService extends BaseService<Treatment> {
       const clinicId = this.clinicContext.getClinicId();
       this.invalidateCatalogCache(clinicId);
     }
-    return this.baseRepository.findById(this.dbService, 'TreatmentCatalog', '*', id, ['deletedAt IS NULL'], clinicParams);
+    const clinicCondition2 = clinicClause.replace(/^\s*AND\s+/i, '');
+    return this.baseRepository.findById(this.dbService, 'TreatmentCatalog', '*', id, clinicCondition2 ? ['deletedAt IS NULL', clinicCondition2] : ['deletedAt IS NULL'], clinicParams);
   }
 
   async deleteCatalog(id: string) {
     const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
-    const existing = this.baseRepository.findById(this.dbService, 'TreatmentCatalog', 'id', id, ['deletedAt IS NULL'], clinicParams);
+    const clinicCondition3 = clinicClause.replace(/^\s*AND\s+/i, '');
+    const existing = this.baseRepository.findById(this.dbService, 'TreatmentCatalog', 'id', id, clinicCondition3 ? ['deletedAt IS NULL', clinicCondition3] : ['deletedAt IS NULL'], clinicParams);
     if (!existing) throw new BusinessNotFoundException("治疗项目不存在");
     const now = new Date().toISOString();
     const clinicId = this.clinicContext.getClinicId();

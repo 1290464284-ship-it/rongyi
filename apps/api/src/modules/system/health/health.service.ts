@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-non-literal-fs-filename -- 健康检查路径来自服务端配置，非用户输入 */
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DbService } from '../../../db/db.service';

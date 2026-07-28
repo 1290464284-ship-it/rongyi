@@ -14,7 +14,7 @@ export const inventoryTables = [
     )`,
   `CREATE TABLE IF NOT EXISTS InventoryItem (
       id TEXT PRIMARY KEY,
-      code TEXT UNIQUE NOT NULL,
+      code TEXT NOT NULL,
       name TEXT NOT NULL,
       spec TEXT,
       category TEXT NOT NULL,
@@ -30,13 +30,14 @@ export const inventoryTables = [
       createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
       updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
       deletedAt TEXT,
+      UNIQUE(clinicId, code),
       FOREIGN KEY (supplierId) REFERENCES Supplier(id)
     )`,
   `CREATE TABLE IF NOT EXISTS InventoryTransaction (
       id TEXT PRIMARY KEY,
       itemId TEXT NOT NULL,
       type TEXT NOT NULL CHECK (type IN ('IN', 'OUT', 'ADJUST')),
-      quantity REAL NOT NULL CHECK (quantity > 0),
+      quantity REAL NOT NULL CHECK (quantity >= 0),
       unitPrice INTEGER DEFAULT 0,
       totalAmount INTEGER DEFAULT 0,
       supplierId TEXT,
@@ -54,7 +55,7 @@ export const inventoryTables = [
     )`,
   `CREATE TABLE IF NOT EXISTS PurchaseOrder (
       id TEXT PRIMARY KEY,
-      number TEXT UNIQUE NOT NULL,
+      number TEXT NOT NULL,
       supplierId TEXT NOT NULL,
       totalAmount INTEGER DEFAULT 0,
       status TEXT DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'PARTIAL', 'RECEIVED', 'CANCELLED')),
@@ -64,6 +65,7 @@ export const inventoryTables = [
       createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
       updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
       deletedAt TEXT,
+      UNIQUE(clinicId, number),
       FOREIGN KEY (supplierId) REFERENCES Supplier(id),
       FOREIGN KEY (operatorId) REFERENCES User(id)
     )`,
@@ -126,7 +128,7 @@ export const inventoryTables = [
     )`,
   `CREATE TABLE IF NOT EXISTS ProcessingOrder (
       id TEXT PRIMARY KEY,
-      number TEXT UNIQUE NOT NULL,
+      number TEXT NOT NULL,
       patientId TEXT NOT NULL,
       visitId TEXT,
       factoryId TEXT NOT NULL,
@@ -146,6 +148,7 @@ export const inventoryTables = [
       createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
       updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
       deletedAt TEXT,
+      UNIQUE(clinicId, number),
       FOREIGN KEY (patientId) REFERENCES Patient(id),
       FOREIGN KEY (visitId) REFERENCES Visit(id),
       FOREIGN KEY (factoryId) REFERENCES ProcessingFactory(id),

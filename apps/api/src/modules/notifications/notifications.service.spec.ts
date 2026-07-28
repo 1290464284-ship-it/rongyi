@@ -1,7 +1,7 @@
 import { NotificationsService } from './notifications.service';
+import { BusinessNotFoundException, BusinessForbiddenException } from '@common/errors';
 import { MockDbService } from '../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../common/services/clinic-context.service';
-import { NotFoundException, ForbiddenException } from '@nestjs/common';
 import { NotificationType, NotificationPriority } from './types/notification.types';
 
 function createMockClinicContext(
@@ -70,7 +70,7 @@ describe('NotificationsService', () => {
       expect(result.data).toEqual({ chargeId: 'charge-001', amount: 100 });
     });
 
-    it('缺少诊所上下文时抛出 ForbiddenException', async () => {
+    it('缺少诊所上下文时抛出 BusinessForbiddenException', async () => {
       service = new NotificationsService(db as any, createMockClinicContext(null));
       await expect(
         service.create({
@@ -79,7 +79,7 @@ describe('NotificationsService', () => {
           content: '测试内容',
           priority: NotificationPriority.NORMAL,
         }),
-      ).rejects.toThrow(ForbiddenException);
+      ).rejects.toThrow(BusinessForbiddenException);
     });
 
     it('创建通知后可以通过 findOne 查询到', async () => {
@@ -493,8 +493,8 @@ describe('NotificationsService', () => {
       expect(result.title).toBe('系统通知');
     });
 
-    it('不存在的 ID 抛出 NotFoundException', async () => {
-      await expect(service.findOne('non-existent')).rejects.toThrow(NotFoundException);
+    it('不存在的 ID 抛出 BusinessNotFoundException', async () => {
+      await expect(service.findOne('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
 
     it('查询包含 data 字段的通知', async () => {
@@ -844,8 +844,8 @@ describe('NotificationsService', () => {
       expect(result.readAt).not.toBeNull();
     });
 
-    it('不存在的通知抛出 NotFoundException', async () => {
-      await expect(service.markAsRead('non-existent')).rejects.toThrow(NotFoundException);
+    it('不存在的通知抛出 BusinessNotFoundException', async () => {
+      await expect(service.markAsRead('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
 
     it('广播通知也可以标记已读', async () => {
@@ -1044,8 +1044,8 @@ describe('NotificationsService', () => {
       expect(deleted?.deletedAt).not.toBeNull();
     });
 
-    it('删除不存在的通知抛出 NotFoundException', async () => {
-      await expect(service.remove('non-existent')).rejects.toThrow(NotFoundException);
+    it('删除不存在的通知抛出 BusinessNotFoundException', async () => {
+      await expect(service.remove('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
 
     it('删除后 findMany 不再返回该通知', async () => {
@@ -1122,7 +1122,7 @@ describe('NotificationsService', () => {
       expect(result.data).toEqual({ chargeId: 'c-001', amount: 200 });
     });
 
-    it('缺少诊所上下文时抛出 ForbiddenException', async () => {
+    it('缺少诊所上下文时抛出 BusinessForbiddenException', async () => {
       service = new NotificationsService(db as any, createMockClinicContext(null));
       await expect(
         service.sendToUser('user-001', {
@@ -1131,7 +1131,7 @@ describe('NotificationsService', () => {
           content: '测试内容',
           priority: NotificationPriority.NORMAL,
         }),
-      ).rejects.toThrow(ForbiddenException);
+      ).rejects.toThrow(BusinessForbiddenException);
     });
   });
 
@@ -1175,7 +1175,7 @@ describe('NotificationsService', () => {
       expect(result.data).toEqual({ key: 'value' });
     });
 
-    it('缺少诊所上下文时抛出 ForbiddenException', async () => {
+    it('缺少诊所上下文时抛出 BusinessForbiddenException', async () => {
       service = new NotificationsService(db as any, createMockClinicContext(null));
       await expect(
         service.broadcastToClinic({
@@ -1184,7 +1184,7 @@ describe('NotificationsService', () => {
           content: '测试内容',
           priority: NotificationPriority.NORMAL,
         }),
-      ).rejects.toThrow(ForbiddenException);
+      ).rejects.toThrow(BusinessForbiddenException);
     });
   });
 });

@@ -2,6 +2,7 @@ import { WechatService } from './wechat.service';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import { BusinessValidationException } from '@common/errors';
+import { ForbiddenException } from '@nestjs/common';
 
 function createMockClinicContext(clinicId: string | null = 'test-clinic-001'): ClinicContextService {
   return {
@@ -167,29 +168,35 @@ describe('WechatService', () => {
       await expect(service.getAppointmentReminders()).rejects.toThrow('此功能尚未实现');
       try {
         await service.getAppointmentReminders();
-      } catch (err: any) {
-        expect(err.status).toBe(400);
+      } catch (err: unknown) {
+        expect((err as { status: number }).status).toBe(400);
       }
     });
 
-    it('send 抛出 BusinessValidationException', async () => {
+    it('send 委托给 sendMessage 发送消息', async () => {
+      const result = await service.send({ patientId: 'p-001', type: 'text', content: '你好' });
+      expect(result).toHaveProperty('id');
+      expect(result.status).toBe('PENDING');
+      expect(result.type).toBe('text');
+      expect(result.content).toBe('你好');
+    });
+
+    it('send 缺少 patientId 时抛出校验异常', async () => {
       await expect(service.send({})).rejects.toThrow(BusinessValidationException);
-      await expect(service.send({})).rejects.toThrow('此功能尚未实现');
-      try {
-        await service.send({});
-      } catch (err: any) {
-        expect(err.status).toBe(400);
-      }
+      await expect(service.send({})).rejects.toThrow('patientId 不能为空');
     });
 
-    it('sendBatch 抛出 BusinessValidationException', async () => {
+    it('sendBatch 批量发送消息', async () => {
+      const result = await service.sendBatch({ patientIds: ['p-001', 'p-002'], type: 'text', content: '批量消息' });
+      expect(result.count).toBe(2);
+      expect(result.results).toHaveLength(2);
+      expect(result.results[0].type).toBe('text');
+      expect(result.results[1].type).toBe('text');
+    });
+
+    it('sendBatch 缺少 patientIds 时抛出校验异常', async () => {
       await expect(service.sendBatch({})).rejects.toThrow(BusinessValidationException);
-      await expect(service.sendBatch({})).rejects.toThrow('此功能尚未实现');
-      try {
-        await service.sendBatch({});
-      } catch (err: any) {
-        expect(err.status).toBe(400);
-      }
+      await expect(service.sendBatch({})).rejects.toThrow('patientIds 不能为空');
     });
 
     it('getBirthdayPatients 抛出 BusinessValidationException', async () => {
@@ -197,8 +204,8 @@ describe('WechatService', () => {
       await expect(service.getBirthdayPatients()).rejects.toThrow('此功能尚未实现');
       try {
         await service.getBirthdayPatients();
-      } catch (err: any) {
-        expect(err.status).toBe(400);
+      } catch (err: unknown) {
+        expect((err as { status: number }).status).toBe(400);
       }
     });
   });
@@ -206,37 +213,46 @@ describe('WechatService', () => {
   // ==================== 边界分支补充 ====================
 
   describe('边界分支 - clinicId 为 null 时 sendMessage', () => {
-    it('clinicId 为 null 时 WechatMessage 记录的 clinicId 应存储为 null', async () => {
+    // P1 修复：原先 clinicId 为 null 时会写入 clinicId=null 的记录，
+    // 这类记录在 buildClinicFilterOptional 路径下会被全诊所可见，构成跨租户数据泄露。
+    // 现在统一走 super.create()，由 BaseService.create 强制校验 clinicId（缺失时抛 ForbiddenException）。
+    it('clinicId 为 null 时抛出 ForbiddenException，防止跨租户数据泄露', async () => {
       const nullCtxService = new WechatService(db as any, createMockClinicContext(null));
 
-      const result = await nullCtxService.sendMessage({
+      await expect(nullCtxService.sendMessage({
         patientId: 'patient-001',
         type: 'TEXT',
         content: '测试消息',
-      });
+      })).rejects.toThrow(ForbiddenException);
 
-      expect(result.id).toBeDefined();
-      expect(result.status).toBe('PENDING');
-
+      // 不应写入任何记录
       const messages = db.getTableData('WechatMessage');
-      expect(messages.length).toBe(1);
-      expect(messages[0].clinicId).toBeNull();
-      expect(messages[0].patientId).toBe('patient-001');
+      expect(messages.length).toBe(0);
     });
 
-    it('clinicId 为 null 且 content/templateId 均不传时 clinicId 仍为 null', async () => {
+    it('clinicId 为 null 且传 templateId 时同样抛出 ForbiddenException', async () => {
       const nullCtxService = new WechatService(db as any, createMockClinicContext(null));
 
-      await nullCtxService.sendMessage({
+      await expect(nullCtxService.sendMessage({
         patientId: 'patient-002',
         type: 'TEMPLATE',
         templateId: 'tpl-002',
-      });
+      })).rejects.toThrow(ForbiddenException);
 
       const messages = db.getTableData('WechatMessage');
-      expect(messages[0].clinicId).toBeNull();
-      expect(messages[0].templateId).toBe('tpl-002');
-      expect(messages[0].content).toBeNull();
+      expect(messages.length).toBe(0);
+    });
+
+    it('clinicId 为空串时也抛出 ForbiddenException', async () => {
+      const emptyCtxService = new WechatService(db as any, createMockClinicContext(''));
+
+      await expect(emptyCtxService.sendMessage({
+        patientId: 'patient-003',
+        type: 'TEXT',
+      })).rejects.toThrow(ForbiddenException);
+
+      const messages = db.getTableData('WechatMessage');
+      expect(messages.length).toBe(0);
     });
   });
 });

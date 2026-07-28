@@ -33,6 +33,9 @@ export class CreateChargeDto {
   @ApiProperty({ description: '收费项目列表', type: () => [ChargeItemDto] })
   @IsArray() @ArrayMinSize(1) @ValidateNested({ each: true }) @Type(() => ChargeItemDto)
   items: ChargeItemDto[];
+
+  @ApiProperty({ description: '请求ID（幂等性）— 客户端在重试时使用同一 requestId 防止重复创建收费单', example: 'req-20240115-001', required: false })
+  @IsOptional() @IsString() @MaxLength(100) requestId?: string;
 }
 
 export class QueryChargesDto {

@@ -1,7 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
 import { PrescriptionsController } from './prescriptions.controller';
 import { PrescriptionsService } from './prescriptions.service';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+
 
 describe('PrescriptionsController', () => {
   let controller: PrescriptionsController;
@@ -67,9 +68,9 @@ describe('PrescriptionsController', () => {
       expect(service.findOne).toHaveBeenCalledWith('rx-1');
     });
 
-    it('不存在时透传 NotFoundException', async () => {
-      service.findOne.mockRejectedValue(new NotFoundException('Prescription不存在'));
-      await expect(controller.findOne('non-existent')).rejects.toThrow(NotFoundException);
+    it('不存在时透传 BusinessNotFoundException', async () => {
+      service.findOne.mockRejectedValue(new BusinessNotFoundException('Prescription不存在'));
+      await expect(controller.findOne('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 
@@ -88,10 +89,10 @@ describe('PrescriptionsController', () => {
       expect(service.create).toHaveBeenCalledWith(dto);
     });
 
-    it('处方明细为空时透传 BadRequestException', async () => {
-      service.create.mockRejectedValue(new BadRequestException('处方明细不能为空'));
+    it('处方明细为空时透传 BusinessValidationException', async () => {
+      service.create.mockRejectedValue(new BusinessValidationException('处方明细不能为空'));
       await expect(controller.create({ patientId: 'p-1', doctorId: 'd-1', items: [] } as any))
-        .rejects.toThrow(BadRequestException);
+        .rejects.toThrow(BusinessValidationException);
     });
   });
 
@@ -106,10 +107,10 @@ describe('PrescriptionsController', () => {
       expect(service.update).toHaveBeenCalledWith('rx-1', dto);
     });
 
-    it('更新不存在的处方时透传 NotFoundException', async () => {
-      service.update.mockRejectedValue(new NotFoundException('Prescription不存在'));
+    it('更新不存在的处方时透传 BusinessNotFoundException', async () => {
+      service.update.mockRejectedValue(new BusinessNotFoundException('Prescription不存在'));
       await expect(controller.update('non-existent', { remark: 'x' } as any))
-        .rejects.toThrow(NotFoundException);
+        .rejects.toThrow(BusinessNotFoundException);
     });
   });
 
@@ -121,9 +122,9 @@ describe('PrescriptionsController', () => {
       expect(service.remove).toHaveBeenCalledWith('rx-1');
     });
 
-    it('删除不存在的处方时透传 NotFoundException', async () => {
-      service.remove.mockRejectedValue(new NotFoundException('Prescription不存在'));
-      await expect(controller.remove('non-existent')).rejects.toThrow(NotFoundException);
+    it('删除不存在的处方时透传 BusinessNotFoundException', async () => {
+      service.remove.mockRejectedValue(new BusinessNotFoundException('Prescription不存在'));
+      await expect(controller.remove('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 });

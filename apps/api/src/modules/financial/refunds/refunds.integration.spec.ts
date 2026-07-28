@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
+import { BusinessNotFoundException, BusinessValidationException } from '@common/errors';
 import { RefundsService } from './refunds.service';
 import { ChargeService } from '../charge/charge.service';
 import { ChargePaymentService } from '../charge/charge-payment.service';
@@ -12,6 +13,11 @@ import { IdempotencyService } from '../../../common/services/idempotency.service
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import { CacheService } from '../../../common/services/cache.service';
 import { StatsService } from '../../system/stats/stats.service';
+import { EventBusService } from '../../../common/events/event-bus.service';
+import { RefundRepository } from './repositories/refund.repository';
+import { ChargeRepository } from '../charge/repositories/charge.repository';
+import { MemberCardLogRepository } from '../member-cards/repositories/member-card-log.repository';
+import { MemberPointLogRepository } from '../member-cards/repositories/member-point-log.repository';
 import {
   createTestDb,
   cleanupTestDb,
@@ -58,19 +64,18 @@ describe('RefundsService - Integration', () => {
           provide: StatsService,
           useValue: { invalidateStatsCache: jest.fn() },
         },
+        { provide: EventBusService, useValue: { emit: jest.fn(), on: jest.fn(), onAll: jest.fn() } },
+        RefundRepository,
+        ChargeRepository,
         ChargeService,
         ChargePaymentService,
         DebtService,
         ComboService,
         PaymentMethodService,
-        {
-          provide: MemberCardsService,
-          useValue: {
-            consume: jest.fn().mockResolvedValue({}),
-            refund: jest.fn().mockResolvedValue({}),
-            recharge: jest.fn().mockResolvedValue({}),
-          },
-        },
+        // P0 修复：使用真实 MemberCardsService 实例，以支持 consumeSync 委托调用
+        MemberCardLogRepository,
+        MemberPointLogRepository,
+        MemberCardsService,
         RefundsService,
       ],
     }).compile();
@@ -143,7 +148,7 @@ describe('RefundsService - Integration', () => {
       expect(updatedCharge.status).toBe('REFUNDED');
     });
 
-    it('退款金额超过可退金额应抛出 BadRequestException', async () => {
+    it('退款金额超过可退金额应抛出 BusinessValidationException', async () => {
       const charge = await runAsDoctor(() =>
         chargeService.createCharge({
           patientId: TEST_PATIENT_ID,
@@ -157,10 +162,10 @@ describe('RefundsService - Integration', () => {
 
       await expect(
         runAsDoctor(() => service.createRefund({ chargeId: charge.id, amount: 500 }))
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
-    it('无可退金额应抛出 BadRequestException', async () => {
+    it('无可退金额应抛出 BusinessValidationException', async () => {
       const charge = await runAsDoctor(() =>
         chargeService.createCharge({
           patientId: TEST_PATIENT_ID,
@@ -170,16 +175,16 @@ describe('RefundsService - Integration', () => {
 
       await expect(
         runAsDoctor(() => service.createRefund({ chargeId: charge.id, amount: 100 }))
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
-    it('收费记录不存在应抛出 NotFoundException', async () => {
+    it('收费记录不存在应抛出 BusinessNotFoundException', async () => {
       await expect(
         runAsDoctor(() => service.createRefund({ chargeId: 'non-existent', amount: 100 }))
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toThrow(BusinessNotFoundException);
     });
 
-    it('退款金额为 0 应抛出 BadRequestException', async () => {
+    it('退款金额为 0 应抛出 BusinessValidationException', async () => {
       const charge = await runAsDoctor(() =>
         chargeService.createCharge({
           patientId: TEST_PATIENT_ID,
@@ -193,10 +198,10 @@ describe('RefundsService - Integration', () => {
 
       await expect(
         runAsDoctor(() => service.createRefund({ chargeId: charge.id, amount: 0 }))
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
-    it('退款金额为负数应抛出 BadRequestException', async () => {
+    it('退款金额为负数应抛出 BusinessValidationException', async () => {
       const charge = await runAsDoctor(() =>
         chargeService.createCharge({
           patientId: TEST_PATIENT_ID,
@@ -210,7 +215,7 @@ describe('RefundsService - Integration', () => {
 
       await expect(
         runAsDoctor(() => service.createRefund({ chargeId: charge.id, amount: -50 }))
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
   });
 
@@ -455,10 +460,10 @@ describe('RefundsService - Integration', () => {
       expect((result as any).amount).toBe(100);
     });
 
-    it('退款不存在应抛出 NotFoundException', async () => {
+    it('退款不存在应抛出 BusinessNotFoundException', async () => {
       await expect(
         runAsDoctor(() => service.findOne('non-existent'))
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toThrow(BusinessNotFoundException);
     });
   });
 });

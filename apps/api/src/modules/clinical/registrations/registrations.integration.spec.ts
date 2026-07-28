@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
+
 import { RegistrationsService } from './registrations.service';
 import { VisitsService } from '../visits/visits.service';
 import { AppointmentsService } from '../../scheduling/appointments/appointments.service';
@@ -136,8 +137,8 @@ describe('RegistrationsService - Integration', () => {
       expect(result.status).toBe(RegistrationStatus.REGISTERED);
     });
 
-    it('挂号不存在应抛出 NotFoundException', async () => {
-      await expect(runAsDoctor(() => service.findOne('non-existent'))).rejects.toThrow(NotFoundException);
+    it('挂号不存在应抛出 BusinessNotFoundException', async () => {
+      await expect(runAsDoctor(() => service.findOne('non-existent'))).rejects.toThrow(BusinessNotFoundException);
     });
   });
 
@@ -163,7 +164,7 @@ describe('RegistrationsService - Integration', () => {
 
       await runAsDoctor(() => service.triage(created.id, {}));
 
-      await expect(runAsDoctor(() => service.triage(created.id, {}))).rejects.toThrow(BadRequestException);
+      await expect(runAsDoctor(() => service.triage(created.id, {}))).rejects.toThrow(BusinessValidationException);
     });
   });
 
@@ -195,12 +196,14 @@ describe('RegistrationsService - Integration', () => {
       expect(result.visitId).toBeDefined();
     });
 
-    it('IN_PROGRESS 状态再次调用 startVisit 应抛出 BadRequestException', async () => {
+    it('IN_PROGRESS 状态再次调用 startVisit 应幂等返回（不重复创建 Visit）', async () => {
       const created = await runAsDoctor(() => service.create(createRegistrationFactory()));
 
       await runAsDoctor(() => service.startVisit(created.id));
 
-      await expect(runAsDoctor(() => service.startVisit(created.id))).rejects.toThrow(BadRequestException);
+      const result = await runAsDoctor(() => service.startVisit(created.id));
+      expect(result.status).toBe(RegistrationStatus.IN_PROGRESS);
+      expect(result.visitId).toBeDefined();
 
       const visitCount = db.prepare("SELECT COUNT(*) as count FROM Visit").get() as { count: number };
       expect(visitCount.count).toBe(1);
@@ -212,7 +215,7 @@ describe('RegistrationsService - Integration', () => {
       await runAsDoctor(() => service.startVisit(created.id));
       await runAsDoctor(() => service.complete(created.id));
 
-      await expect(runAsDoctor(() => service.startVisit(created.id))).rejects.toThrow(BadRequestException);
+      await expect(runAsDoctor(() => service.startVisit(created.id))).rejects.toThrow(BusinessValidationException);
     });
   });
 
@@ -231,7 +234,7 @@ describe('RegistrationsService - Integration', () => {
     it('REGISTERED 不可直接完成', async () => {
       const created = await runAsDoctor(() => service.create(createRegistrationFactory()));
 
-      await expect(runAsDoctor(() => service.complete(created.id))).rejects.toThrow(BadRequestException);
+      await expect(runAsDoctor(() => service.complete(created.id))).rejects.toThrow(BusinessValidationException);
     });
 
     it('COMPLETED 是终态，不可再变更', async () => {
@@ -240,7 +243,7 @@ describe('RegistrationsService - Integration', () => {
       await runAsDoctor(() => service.startVisit(created.id));
       await runAsDoctor(() => service.complete(created.id));
 
-      await expect(runAsDoctor(() => service.cancel(created.id))).rejects.toThrow(BadRequestException);
+      await expect(runAsDoctor(() => service.cancel(created.id))).rejects.toThrow(BusinessValidationException);
     });
   });
 
@@ -278,7 +281,7 @@ describe('RegistrationsService - Integration', () => {
 
       await runAsDoctor(() => service.cancel(created.id));
 
-      await expect(runAsDoctor(() => service.triage(created.id, {}))).rejects.toThrow(BadRequestException);
+      await expect(runAsDoctor(() => service.triage(created.id, {}))).rejects.toThrow(BusinessValidationException);
     });
   });
 
@@ -291,10 +294,10 @@ describe('RegistrationsService - Integration', () => {
       expect(result.status).toBe('TRIAGED');
     });
 
-    it('非法状态流转应抛出 BadRequestException', async () => {
+    it('非法状态流转应抛出 BusinessValidationException', async () => {
       const created = await runAsDoctor(() => service.create(createRegistrationFactory()));
 
-      await expect(runAsDoctor(() => service.updateStatus(created.id, 'COMPLETED'))).rejects.toThrow(BadRequestException);
+      await expect(runAsDoctor(() => service.updateStatus(created.id, 'COMPLETED'))).rejects.toThrow(BusinessValidationException);
     });
   });
 

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { AppLogger } from '../../../common/services/logger.service';
+import { BusinessNotFoundException } from '../../../common/errors';
 import { ChargeConsistencyChecker } from './charge-consistency-checker';
 import { MemberCardConsistencyChecker } from './member-card-consistency-checker';
 import { InventoryConsistencyChecker } from './inventory-consistency-checker';
@@ -84,7 +85,8 @@ export class DatabaseConsistencyService {
   async runCheck(checkName: string): Promise<CheckResult> {
     const check = this.checks.find(c => c.name === checkName);
     if (!check) {
-      throw new Error(`未找到检查项: ${checkName}`);
+      // P3 修复：原先 throw new Error 返回 HTTP 500，改为 BusinessNotFoundException 返回 HTTP 404
+      throw new BusinessNotFoundException(`未找到检查项: ${checkName}`);
     }
     try {
       return check.fn();

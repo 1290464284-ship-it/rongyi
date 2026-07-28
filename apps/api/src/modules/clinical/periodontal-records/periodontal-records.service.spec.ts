@@ -1,7 +1,8 @@
 import { PeriodontalRecordsService } from './periodontal-records.service';
+import { BusinessNotFoundException } from '@common/errors';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
-import { NotFoundException } from '@nestjs/common';
+
 
 function createMockClinicContext(clinicId: string | null = 'test-clinic-001'): ClinicContextService {
   return {
@@ -90,8 +91,8 @@ describe('PeriodontalRecordsService', () => {
       expect(result.patientId).toBe('patient-1');
     });
 
-    it('不存在的 ID 抛出 NotFoundException', async () => {
-      await expect(service.findOne('non-existent-id')).rejects.toThrow(NotFoundException);
+    it('不存在的 ID 抛出 BusinessNotFoundException', async () => {
+      await expect(service.findOne('non-existent-id')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 

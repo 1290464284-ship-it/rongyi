@@ -1,7 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { BusinessNotFoundException } from '@common/errors';
 import { NotificationsController } from './notifications.controller';
 import { NotificationsService } from './notifications.service';
-import { NotFoundException } from '@nestjs/common';
+
 import { NotificationType, NotificationPriority } from './types/notification.types';
 
 describe('NotificationsController', () => {
@@ -92,9 +93,9 @@ describe('NotificationsController', () => {
       expect(service.findOne).toHaveBeenCalledWith('notif-1');
     });
 
-    it('service 抛出 NotFoundException 时透传', async () => {
-      service.findOne.mockRejectedValue(new NotFoundException('通知不存在'));
-      await expect(controller.findOne('non-existent')).rejects.toThrow(NotFoundException);
+    it('service 抛出 BusinessNotFoundException 时透传', async () => {
+      service.findOne.mockRejectedValue(new BusinessNotFoundException('通知不存在'));
+      await expect(controller.findOne('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 

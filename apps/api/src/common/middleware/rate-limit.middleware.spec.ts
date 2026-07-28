@@ -3,7 +3,7 @@ import { RateLimitMiddleware } from './rate-limit.middleware';
 import { ConfigService } from '../services/config.service';
 import { Request, Response, NextFunction } from 'express';
 import * as jwt from 'jsonwebtoken';
-import { ROLES } from '../constants/roles';
+import { ROLES } from '@dental/shared';
 import { HttpException } from '@nestjs/common';
 import { MemoryRateLimitStore, RateLimitStore } from './rate-limit-store';
 

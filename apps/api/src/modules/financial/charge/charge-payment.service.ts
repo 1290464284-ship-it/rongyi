@@ -10,9 +10,10 @@ import { PayChargeDto } from './dto/pay-charge.dto';
 import { ChargeStatusMachine } from './domain/charge-status-machine';
 import { ChargeRecord } from './entities/charge.entity';
 import { yuanToCents, centsToYuan, centsGreaterThan } from '../../../common/utils/format/money.utils';
-import { StatsService } from '../../system/stats/stats.service';
-import * as crypto from 'node:crypto';
+import { EventBusService } from '../../../common/events/event-bus.service';
+import { ChargePaidEvent } from '../../../common/events/domain-events';
 import { BusinessNotFoundException, BusinessValidationException } from '@common/errors';
+import { ChargeStatus } from '../../../common/constants';
 
 @Injectable()
 export class ChargePaymentService extends BaseService<ChargeRecord> {
@@ -22,7 +23,7 @@ export class ChargePaymentService extends BaseService<ChargeRecord> {
     private idempotency: IdempotencyService,
     private chargeService: ChargeService,
     private memberCardsService: MemberCardsService,
-    private statsService: StatsService,
+    private eventBus: EventBusService,
   ) {
     super(dbService, clinicContext, 'Charge', [], [], [], true, [], undefined, undefined, [
       'totalAmount', 'paidAmount', 'refundedAmount', 'discount',
@@ -32,6 +33,11 @@ export class ChargePaymentService extends BaseService<ChargeRecord> {
   async payCharge(id: string, dto: PayChargeDto, _operatorId?: string) {
     if (typeof dto.amount !== 'number' || !Number.isFinite(dto.amount) || dto.amount <= 0) {
       throw new BusinessValidationException('支付金额必须为有效正数');
+    }
+
+    // 会员卡支付必须提供 memberCardId，否则会导致 Charge 标记为 PAID 但未实际扣款
+    if (dto.payMethod === 'MEMBER_CARD' && !dto.memberCardId) {
+      throw new BusinessValidationException('会员卡支付必须提供 memberCardId');
     }
 
     const doPay = (db: IDatabase) => {
@@ -45,14 +51,19 @@ export class ChargePaymentService extends BaseService<ChargeRecord> {
 
       const totalAmountCents = Number(charge.totalAmount) || 0;
       const paidAmountCents = Number(charge.paidAmount) || 0;
-      const _refundedAmountCents = Number(charge.refundedAmount) || 0;
-      const totalAmount = centsToYuan(totalAmountCents);
+      const refundedAmountCents = Number(charge.refundedAmount) || 0;
 
-      const remainingCents = totalAmountCents - paidAmountCents;
+      // 净实收 = 已付 - 已退；待付金额须把退款部分算回来，否则部分退款后无法再收款
+      const netPaidCents = paidAmountCents - refundedAmountCents;
+      const remainingCents = totalAmountCents - netPaidCents;
       const remaining = centsToYuan(remainingCents);
 
       if (remaining <= 0) {
         throw new BusinessValidationException('该收费已结清');
+      }
+
+      if (charge.status === ChargeStatus.CANCELLED) {
+        throw new BusinessValidationException('收费单已取消，不能付款');
       }
 
       const amountCents = yuanToCents(dto.amount);
@@ -61,14 +72,16 @@ export class ChargePaymentService extends BaseService<ChargeRecord> {
       }
 
       const newPaidCents = paidAmountCents + amountCents;
-      const newPaid = centsToYuan(newPaidCents);
-      const newStatus = ChargeStatusMachine.resolveByPayment(newPaid, totalAmount);
+      const newStatus = ChargeStatusMachine.resolveByPaymentCents(
+        newPaidCents - refundedAmountCents,
+        totalAmountCents,
+      );
       ChargeStatusMachine.transition(charge.status as string, newStatus);
 
       const now = new Date().toISOString();
 
       const updateResult = db.prepare(
-        `UPDATE Charge SET paidAmount = ?, status = ?, payMethod = ?, paidAt = ?, updatedAt = ? WHERE id = ?${clinicClause} AND deletedAt IS NULL AND (totalAmount - paidAmount) >= ?`
+        `UPDATE Charge SET paidAmount = ?, status = ?, payMethod = ?, paidAt = ?, updatedAt = ? WHERE id = ?${clinicClause} AND deletedAt IS NULL AND paidAmount = ? AND (totalAmount - paidAmount + refundedAmount) >= ?`
       ).run(
         newPaidCents,
         newStatus,
@@ -77,17 +90,24 @@ export class ChargePaymentService extends BaseService<ChargeRecord> {
         now,
         id,
         ...clinicParams,
+        paidAmountCents,
         amountCents,
       );
 
       if (updateResult.changes === 0) {
         const currentCharge = db.prepare(
-          `SELECT totalAmount, paidAmount, status FROM Charge WHERE id = ?${clinicClause} AND deletedAt IS NULL`
+          `SELECT totalAmount, paidAmount, refundedAmount, status FROM Charge WHERE id = ?${clinicClause} AND deletedAt IS NULL`
         ).get(id, ...clinicParams) as Record<string, unknown> | undefined;
         if (!currentCharge) throw new BusinessNotFoundException('收费记录不存在');
-        const remaining = Number(currentCharge.totalAmount) - Number(currentCharge.paidAmount);
+        const currentPaidCents = Number(currentCharge.paidAmount) || 0;
+        const currentRefundedCents = Number(currentCharge.refundedAmount) || 0;
+        const remaining = Number(currentCharge.totalAmount) - currentPaidCents + currentRefundedCents;
         if (remaining < amountCents) {
           throw new BusinessValidationException('待付金额不足，可能存在并发修改，请刷新后重试');
+        }
+        // P1 修复：paidAmount 已被并发修改（CAS 失败），提示用户刷新重试
+        if (currentPaidCents !== paidAmountCents) {
+          throw new BusinessValidationException('收费单已收到其他支付，请刷新后重试');
         }
         throw new BusinessValidationException('支付失败：并发冲突，请刷新后重试');
       }
@@ -103,69 +123,26 @@ export class ChargePaymentService extends BaseService<ChargeRecord> {
     const doFullPay = (db: IDatabase) => {
       const payResult = doPay(db);
       if (dto.payMethod === 'MEMBER_CARD' && dto.memberCardId) {
-        const amountCents = yuanToCents(dto.amount);
-        const now = new Date().toISOString();
-        const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
-        const card = db.prepare(
-          `SELECT id, status, balance FROM MemberCard WHERE id = ?${clinicClause}`
-        ).get(dto.memberCardId, ...clinicParams) as Record<string, unknown> | undefined;
-        if (!card) throw new BusinessValidationException('会员卡不存在');
-        if (card.status !== 'ACTIVE') throw new BusinessValidationException('会员卡状态异常，无法消费');
-        const updateResult = db.prepare(
-          `UPDATE MemberCard SET balance = balance - ?, totalConsume = totalConsume + ?, updatedAt = ? WHERE id = ? AND status = 'ACTIVE' AND balance >= ?${clinicClause}`
-        ).run(amountCents, amountCents, now, dto.memberCardId, amountCents, ...clinicParams);
-        if (updateResult.changes === 0) {
-          throw new BusinessValidationException('会员卡余额不足');
-        }
-        const updatedCard = db.prepare(
-          `SELECT balance, totalConsume FROM MemberCard WHERE id = ?${clinicClause}`
-        ).get(dto.memberCardId, ...clinicParams) as Record<string, unknown>;
-        const newBalanceCents = Number(updatedCard.balance) || 0;
-        const clinicId = this.clinicContext.getClinicId();
-        db.prepare(
-          "INSERT INTO MemberCardLog (id, cardId, type, amount, balanceAfter, chargeId, remark, clinicId, createdAt) VALUES (?,?,?,?,?,?,?,?,?)"
-        ).run(
-          crypto.randomUUID(),
-          dto.memberCardId,
-          'CONSUME',
-          -amountCents,
-          newBalanceCents,
-          id,
-          '收费消费',
-          clinicId,
-          now,
-        );
-        this.logAudit(db, 'MEMBER_CARD_CONSUME', dto.memberCardId, 'MemberCard', {
-          beforeData: { balance: centsToYuan(Number(card.balance) || 0) },
-          afterData: { balance: centsToYuan(newBalanceCents) },
-        });
+        // P0 修复：委托 MemberCardsService.consumeSync 消除重复代码
+        // consumeSync 内部包含 CAS 保护（balance >= ?）、卡状态校验、流水记录、审计日志
+        // 在同一事务内执行，保证收费与扣款原子性
+        this.memberCardsService.consumeSync(db, dto.memberCardId, dto.amount, id, '收费消费');
       }
       return payResult;
     };
 
+    let result;
     if (dto.requestId) {
       const idempotencyKey = `charge-pay:${id}:${dto.requestId}`;
-      const result = await this.idempotency.executeInTransaction(
+      result = await this.idempotency.executeInTransaction(
         { key: idempotencyKey, type: 'CHARGE_PAY' },
         (db) => doFullPay(db),
       );
-      this.invalidatePaymentStatsCaches();
-      return result;
+    } else {
+      result = this.dbService.transaction((db) => doFullPay(db));
     }
 
-    const result = this.dbService.transaction((db) => doFullPay(db));
-    this.invalidatePaymentStatsCaches();
+    this.eventBus.emit(new ChargePaidEvent(id, result.patientId as string, dto.amount, this.clinicContext.getClinicId()));
     return result;
-  }
-
-  /** 支付成功后统一失效受影响的统计缓存 */
-  private invalidatePaymentStatsCaches() {
-    this.statsService.invalidateStatsCache('dashboard');
-    this.statsService.invalidateStatsCache('revenue');
-    this.statsService.invalidateStatsCache('charge');
-    this.statsService.invalidateStatsCache('doctorWorkload');
-    this.statsService.invalidateStatsCache('revenueByDoctor');
-    this.statsService.invalidateStatsCache('revenueByCategory');
-    this.statsService.invalidateStatsCache('member');
   }
 }

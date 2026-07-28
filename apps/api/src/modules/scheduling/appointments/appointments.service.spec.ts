@@ -1,8 +1,9 @@
 import { AppointmentsService } from './appointments.service';
+import { BusinessValidationException } from '@common/errors';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
-import { BadRequestException } from '@nestjs/common';
-import { StatsService } from '../../system/stats/stats.service';
+
+import { EventBusService } from '../../../common/events/event-bus.service';
 
 // 构造 ClinicContextService 的 mock，模拟诊所上下文
 function createMockClinicContext(): ClinicContextService {
@@ -17,21 +18,23 @@ function createMockClinicContext(): ClinicContextService {
   } as unknown as ClinicContextService;
 }
 
-function createMockStatsService(): jest.Mocked<StatsService> {
+function createMockEventBus(): jest.Mocked<EventBusService> {
   return {
-    invalidateStatsCache: jest.fn(),
-  } as unknown as jest.Mocked<StatsService>;
+    emit: jest.fn(),
+    on: jest.fn(),
+    onAll: jest.fn(),
+  } as unknown as jest.Mocked<EventBusService>;
 }
 
 describe('AppointmentsService', () => {
   let service: AppointmentsService;
   let db: MockDbService;
-  let statsService: jest.Mocked<StatsService>;
+  let eventBus: jest.Mocked<EventBusService>;
 
   beforeEach(() => {
     db = new MockDbService();
-    statsService = createMockStatsService();
-    service = new AppointmentsService(db as any, createMockClinicContext(), statsService);
+    eventBus = createMockEventBus();
+    service = new AppointmentsService(db as any, createMockClinicContext(), eventBus);
   });
 
   afterEach(() => {
@@ -60,7 +63,7 @@ describe('AppointmentsService', () => {
       expect((result as any).id).toBeDefined();
     });
 
-    it('缺少必填字段（doctorId）应抛出 BadRequestException', async () => {
+    it('缺少必填字段（doctorId）应抛出 BusinessValidationException', async () => {
       await expect(
         service.create({
           patientId: 'patient-001',
@@ -68,10 +71,10 @@ describe('AppointmentsService', () => {
           endTime: '2026-01-15T10:00:00.000Z',
           type: 'EXAM',
         } as any),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
-    it('缺少必填字段（patientId）应抛出 BadRequestException', async () => {
+    it('缺少必填字段（patientId）应抛出 BusinessValidationException', async () => {
       await expect(
         service.create({
           doctorId: 'doctor-001',
@@ -79,10 +82,10 @@ describe('AppointmentsService', () => {
           endTime: '2026-01-15T10:00:00.000Z',
           type: 'EXAM',
         } as any),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
-    it('缺少必填字段（startTime）应抛出 BadRequestException', async () => {
+    it('缺少必填字段（startTime）应抛出 BusinessValidationException', async () => {
       await expect(
         service.create({
           patientId: 'patient-001',
@@ -90,10 +93,10 @@ describe('AppointmentsService', () => {
           endTime: '2026-01-15T10:00:00.000Z',
           type: 'EXAM',
         } as any),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
-    it('缺少必填字段（type）应抛出 BadRequestException', async () => {
+    it('缺少必填字段（type）应抛出 BusinessValidationException', async () => {
       await expect(
         service.create({
           patientId: 'patient-001',
@@ -101,10 +104,10 @@ describe('AppointmentsService', () => {
           startTime: '2026-01-15T09:00:00.000Z',
           endTime: '2026-01-15T10:00:00.000Z',
         } as any),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
-    it('结束时间早于开始时间应抛出 BadRequestException', async () => {
+    it('结束时间早于开始时间应抛出 BusinessValidationException', async () => {
       await expect(
         service.create({
           patientId: 'patient-001',
@@ -113,10 +116,10 @@ describe('AppointmentsService', () => {
           endTime: '2026-01-15T09:00:00.000Z',
           type: 'EXAM',
         } as any),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
-    it('结束时间等于开始时间应抛出 BadRequestException', async () => {
+    it('结束时间等于开始时间应抛出 BusinessValidationException', async () => {
       await expect(
         service.create({
           patientId: 'patient-001',
@@ -125,7 +128,7 @@ describe('AppointmentsService', () => {
           endTime: '2026-01-15T09:00:00.000Z',
           type: 'EXAM',
         } as any),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
     it('创建预约时应包含 clinicId', async () => {
@@ -154,7 +157,7 @@ describe('AppointmentsService', () => {
       expect(log).toBeDefined();
     });
 
-    it('同一医生时间重叠应抛出 BadRequestException', async () => {
+    it('同一医生时间重叠应抛出 BusinessValidationException', async () => {
       await service.create({
         patientId: 'patient-001',
         doctorId: 'doctor-001',
@@ -171,10 +174,10 @@ describe('AppointmentsService', () => {
           endTime: '2026-01-15T10:30:00.000Z',
           type: 'TREATMENT',
         } as any),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
-    it('同一患者时间重叠应抛出 BadRequestException', async () => {
+    it('同一患者时间重叠应抛出 BusinessValidationException', async () => {
       await service.create({
         patientId: 'patient-001',
         doctorId: 'doctor-001',
@@ -191,10 +194,10 @@ describe('AppointmentsService', () => {
           endTime: '2026-01-15T10:30:00.000Z',
           type: 'TREATMENT',
         } as any),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
-    it('同一牙椅时间重叠应抛出 BadRequestException', async () => {
+    it('同一牙椅时间重叠应抛出 BusinessValidationException', async () => {
       await service.create({
         patientId: 'patient-001',
         doctorId: 'doctor-001',
@@ -213,7 +216,7 @@ describe('AppointmentsService', () => {
           endTime: '2026-01-15T10:30:00.000Z',
           type: 'TREATMENT',
         } as any),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
     it('不同医生不同时间应成功创建', async () => {
@@ -400,7 +403,7 @@ describe('AppointmentsService', () => {
       expect((result as any).status).toBe('CANCELLED');
     });
 
-    it('非法状态流转 BOOKED → COMPLETED 应抛出 BadRequestException', async () => {
+    it('非法状态流转 BOOKED → COMPLETED 应抛出 BusinessValidationException', async () => {
       db.seed('Appointment', [
         {
           id: 'apt-002',
@@ -417,7 +420,7 @@ describe('AppointmentsService', () => {
 
       await expect(
         service.update('apt-002', { status: 'COMPLETED' } as any),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
     it('COMPLETED 是终态，不应流转到任何状态', async () => {
@@ -437,7 +440,7 @@ describe('AppointmentsService', () => {
 
       await expect(
         service.update('apt-001', { status: 'BOOKED' } as any),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
     it('CANCELLED 是终态，不应流转到任何状态', async () => {
@@ -457,7 +460,7 @@ describe('AppointmentsService', () => {
 
       await expect(
         service.update('apt-001', { status: 'ARRIVED' } as any),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
     it('NO_SHOW 是终态，不应流转到任何状态', async () => {
@@ -477,7 +480,7 @@ describe('AppointmentsService', () => {
 
       await expect(
         service.update('apt-001', { status: 'BOOKED' } as any),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
     it('更新预约类型应成功', async () => {
@@ -549,7 +552,7 @@ describe('AppointmentsService', () => {
       expect(log).toBeDefined();
     });
 
-    it('更新结束时间早于开始时间应抛出 BadRequestException', async () => {
+    it('更新结束时间早于开始时间应抛出 BusinessValidationException', async () => {
       db.seed('Appointment', [
         {
           id: 'apt-001',
@@ -569,7 +572,7 @@ describe('AppointmentsService', () => {
           startTime: '2026-01-15T11:00:00.000Z',
           endTime: '2026-01-15T10:00:00.000Z',
         } as any),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
   });
 

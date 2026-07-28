@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit } from "@nestjs/common";
+import { Injectable, OnModuleInit } from '@nestjs/common';
 import { DbService } from "../../../db/db.service";
 import { CacheService } from "../../../common/services/cache.service";
 import { ClinicContextService } from "../../../common/services/clinic-context.service";
@@ -138,7 +138,7 @@ export class SettingsService implements OnModuleInit {
 
   async getNumber(key: string, defaultValue = 0): Promise<number> {
     const val = await this.get(key);
-    const num = val ? parseInt(val, 10) : NaN;
+    const num = val ? Number(val) : NaN;
     return isNaN(num) ? defaultValue : num;
   }
 

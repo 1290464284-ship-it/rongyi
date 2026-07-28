@@ -1,7 +1,8 @@
 import { SuppliersService } from './suppliers.service';
+import { BusinessNotFoundException } from '@common/errors';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
-import { NotFoundException } from '@nestjs/common';
+
 
 function createMockClinicContext(clinicId: string | null = 'test-clinic-001'): ClinicContextService {
   return {
@@ -85,8 +86,8 @@ describe('SuppliersService', () => {
       expect(result.name).toBe('供应商A');
     });
 
-    it('不存在的 ID 抛出 NotFoundException', async () => {
-      await expect(service.findOne('non-existent')).rejects.toThrow(NotFoundException);
+    it('不存在的 ID 抛出 BusinessNotFoundException', async () => {
+      await expect(service.findOne('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
 
     it('已软删的记录不返回', async () => {
@@ -101,7 +102,7 @@ describe('SuppliersService', () => {
         }
         return originalPrepare(sql);
       });
-      await expect(service.findOne('supplier-1')).rejects.toThrow(NotFoundException);
+      await expect(service.findOne('supplier-1')).rejects.toThrow(BusinessNotFoundException);
       prepareSpy.mockRestore();
     });
   });
@@ -150,10 +151,10 @@ describe('SuppliersService', () => {
       expect((result as any).contactPerson).toBe('张三三');
     });
 
-    it('不存在的记录抛出 NotFoundException', async () => {
+    it('不存在的记录抛出 BusinessNotFoundException', async () => {
       await expect(
         service.update('non-existent', { name: '测试' } as any),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toThrow(BusinessNotFoundException);
     });
   });
 
@@ -179,7 +180,7 @@ describe('SuppliersService', () => {
         }
         return originalPrepare(sql);
       });
-      await expect(service.findOne('supplier-1')).rejects.toThrow(NotFoundException);
+      await expect(service.findOne('supplier-1')).rejects.toThrow(BusinessNotFoundException);
       prepareSpy.mockRestore();
     });
 
@@ -191,7 +192,7 @@ describe('SuppliersService', () => {
       expect((supplier as any)?.code).toContain('_deleted_');
     });
 
-    it('已软删的记录再次删除抛出 NotFoundException', async () => {
+    it('已软删的记录再次删除抛出 BusinessNotFoundException', async () => {
       await service.softDelete('supplier-1');
       const originalPrepare = db.prepare.bind(db);
       const prepareSpy = jest.spyOn(db, 'prepare').mockImplementation((sql: string) => {
@@ -200,12 +201,12 @@ describe('SuppliersService', () => {
         }
         return originalPrepare(sql);
       });
-      await expect(service.softDelete('supplier-1')).rejects.toThrow(NotFoundException);
+      await expect(service.softDelete('supplier-1')).rejects.toThrow(BusinessNotFoundException);
       prepareSpy.mockRestore();
     });
 
-    it('不存在的记录抛出 NotFoundException', async () => {
-      await expect(service.softDelete('non-existent')).rejects.toThrow(NotFoundException);
+    it('不存在的记录抛出 BusinessNotFoundException', async () => {
+      await expect(service.softDelete('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 });

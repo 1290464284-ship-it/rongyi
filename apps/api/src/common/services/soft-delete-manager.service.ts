@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { BusinessNotFoundException } from '@common/errors';
 import * as crypto from 'node:crypto';
 import { DbService } from '../../db/db.service';
 import { validateColumnName } from '../utils/db/validate-name';
@@ -53,7 +54,7 @@ export class SoftDeleteManager {
    * @param id 待删除记录 ID
    * @param ctx 软删除上下文（表元数据 + 诊所过滤）
    * @returns beforeData（已读取但未做 JSON/金额解析的原始记录），供调用方做后续处理
-   * @throws NotFoundException 记录不存在或已删除时抛出
+   * @throws BusinessNotFoundException 记录不存在或已删除时抛出
    */
   softDelete(
     dbService: DbService,
@@ -81,7 +82,7 @@ export class SoftDeleteManager {
       ).get(...queryParams) as Record<string, unknown> | undefined;
 
       if (!existing) {
-        throw new NotFoundException(`${ctx.tableName}不存在`);
+        throw new BusinessNotFoundException(`${ctx.tableName}不存在`);
       }
 
       const updates: string[] = ['deletedAt = ?', 'updatedAt = ?'];

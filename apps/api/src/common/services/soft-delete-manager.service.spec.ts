@@ -1,9 +1,10 @@
-import { NotFoundException } from '@nestjs/common';
+
 import { SoftDeleteManager, SoftDeleteContext } from './soft-delete-manager.service';
+import { BusinessNotFoundException } from '@common/errors';
 
 describe('SoftDeleteManager 软删除管理', () => {
   let manager: SoftDeleteManager;
-  let mockDb: any;
+  let mockDb: Record<string, jest.Mock>;
   let mockDbService: any;
   let prepareMock: jest.Mock;
   let transactionMock: jest.Mock;
@@ -63,27 +64,27 @@ describe('SoftDeleteManager 软删除管理', () => {
       expect(auditStmt.run).toHaveBeenCalled();
     });
 
-    it('记录不存在时应抛出 NotFoundException', () => {
+    it('记录不存在时应抛出 BusinessNotFoundException', () => {
       const selectStmt = { get: jest.fn().mockReturnValue(undefined) };
       prepareMock.mockReturnValue(selectStmt);
 
       const ctx = createDefaultContext();
       expect(() => {
         manager.softDelete(mockDbService, 'nonexistent-id', ctx);
-      }).toThrow(NotFoundException);
+      }).toThrow(BusinessNotFoundException);
       expect(() => {
         manager.softDelete(mockDbService, 'nonexistent-id', ctx);
       }).toThrow('TestTable不存在');
     });
 
-    it('记录已删除时应抛出 NotFoundException', () => {
+    it('记录已删除时应抛出 BusinessNotFoundException', () => {
       const selectStmt = { get: jest.fn().mockReturnValue(undefined) };
       prepareMock.mockReturnValueOnce(selectStmt);
 
       const ctx = createDefaultContext({ hasSoftDelete: true });
       expect(() => {
         manager.softDelete(mockDbService, 'already-deleted', ctx);
-      }).toThrow(NotFoundException);
+      }).toThrow(BusinessNotFoundException);
     });
 
     it('不支持软删除的表应正常删除（不检查 deletedAt）', () => {
@@ -422,7 +423,7 @@ describe('SoftDeleteManager 软删除管理', () => {
 
       expect(() => {
         manager.softDelete(mockDbService, 'rec-001', ctx);
-      }).toThrow(NotFoundException);
+      }).toThrow(BusinessNotFoundException);
 
       const selectSql = prepareMock.mock.calls[0][0];
       expect(selectSql).toContain('clinicId');

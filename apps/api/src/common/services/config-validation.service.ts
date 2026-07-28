@@ -1,5 +1,7 @@
 import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { validatePasswordComplexity } from '../utils/security/password';
+import { ADMIN_INITIAL_PASSWORD_ENV_KEY } from '../../config/constants';
 
 export interface ConfigValidationResult {
   valid: boolean;
@@ -153,6 +155,68 @@ export class ConfigValidationService implements OnModuleInit {
   validateAllOrExit(): void {
     this.validateJwtSecretOrExit();
     this.validateEncryptionKeyOrExit();
+    this.validateAdminInitialPasswordOrExit();
+  }
+
+  /**
+   * 启动时强制校验初始管理员密码策略：
+   * - 生产环境必须显式设置 ADMIN_INITIAL_PASSWORD，且复杂度符合要求
+   * - 开发/测试环境允许使用默认弱密码，但会记录警告日志
+   */
+  validateAdminInitialPasswordOrExit(): void {
+    const nodeEnv = this.configService.get<string>('NODE_ENV') || 'development';
+    const isProduction = nodeEnv === 'production';
+    const password = this.configService.get<string>(ADMIN_INITIAL_PASSWORD_ENV_KEY);
+
+    if (isProduction) {
+      if (!password) {
+        const msg = [
+          '========================================',
+          '严重安全错误: 生产环境未配置 ADMIN_INITIAL_PASSWORD！',
+          '默认弱密码在生产环境被禁止使用。',
+          `请在 .env 文件中设置 ${ADMIN_INITIAL_PASSWORD_ENV_KEY}，长度至少 8 位且同时包含字母和数字。`,
+          '========================================',
+        ].join('\n');
+        console.error('\n' + msg + '\n');
+        this.logger.error(msg);
+        process.exit(1);
+      }
+
+      const result = validatePasswordComplexity(password);
+      if (!result.valid) {
+        const msg = [
+          '========================================',
+          '严重安全错误: ADMIN_INITIAL_PASSWORD 复杂度不足！',
+          ...result.errors,
+          '========================================',
+        ].join('\n');
+        console.error('\n' + msg + '\n');
+        this.logger.error(msg);
+        process.exit(1);
+      }
+      return;
+    }
+
+    if (!password) {
+      const msg = [
+        '========================================',
+        '安全警告: 未配置 ADMIN_INITIAL_PASSWORD，将使用默认开发密码。',
+        '此设置仅允许在开发/测试环境使用，生产环境必须配置强密码。',
+        '========================================',
+      ].join('\n');
+      this.logger.warn(msg);
+    } else {
+      const result = validatePasswordComplexity(password);
+      if (!result.valid) {
+        const msg = [
+          '========================================',
+          '安全警告: ADMIN_INITIAL_PASSWORD 复杂度不足，建议更换。',
+          ...result.errors,
+          '========================================',
+        ].join('\n');
+        this.logger.warn(msg);
+      }
+    }
   }
 
   validateEncryptionKeyOrExit(): void {
@@ -262,6 +326,20 @@ export class ConfigValidationService implements OnModuleInit {
     const dbPath = this.configService.get<string>('DB_PATH');
     if (!dataDir && !dbPath && nodeEnv === 'production') {
       warnings.push('生产环境建议显式设置 DATA_DIR 或 DB_PATH');
+    }
+
+    const adminPassword = this.configService.get<string>(ADMIN_INITIAL_PASSWORD_ENV_KEY);
+    if (nodeEnv === 'production') {
+      if (!adminPassword) {
+        errors.push('生产环境必须设置 ADMIN_INITIAL_PASSWORD');
+      } else {
+        const pwdResult = validatePasswordComplexity(adminPassword);
+        if (!pwdResult.valid) {
+          errors.push(`ADMIN_INITIAL_PASSWORD 复杂度不足: ${pwdResult.errors.join('；')}`);
+        }
+      }
+    } else if (!adminPassword) {
+      warnings.push('未配置 ADMIN_INITIAL_PASSWORD，开发环境将使用默认密码');
     }
 
     return { valid: errors.length === 0, warnings, errors };

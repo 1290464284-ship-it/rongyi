@@ -1,7 +1,8 @@
 import { PurchaseOrdersService } from './purchase-orders.service';
+import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
-import { BadRequestException } from '@nestjs/common';
+
 
 // 构造 ClinicContextService 的 mock，模拟诊所上下文
 function createMockClinicContext(): ClinicContextService {
@@ -51,12 +52,12 @@ describe('PurchaseOrdersService', () => {
       // 单项金额：10 元 × 5 = 50 元
       expect((result as any).totalAmount).toBe(50);
 
-      // 验证采购单明细已写入
+      // 验证采购单明细已写入（PurchaseOrderItem.unitPrice 数据库存储为 cents，service 写入时 yuanToCents(10)=1000）
       const items = db.getTableData('PurchaseOrderItem');
       expect(items.length).toBe(1);
       expect(items[0].name).toBe('一次性手套');
       expect(items[0].quantity).toBe(5);
-      expect(items[0].unitPrice).toBe(10);
+      expect(items[0].unitPrice).toBe(1000);
     });
 
     it('多个商品的金额计算应正确（分转元链路）', async () => {
@@ -77,11 +78,11 @@ describe('PurchaseOrdersService', () => {
 
       const items = db.getTableData('PurchaseOrderItem');
       expect(items.length).toBe(2);
-      // 验证每项小计：subtotal = centsToYuan(multiplyCents(yuanToCents(unitPrice), quantity))
+      // subtotal 数据库存储为 cents：yuanToCents(10)*3=3000, yuanToCents(5.5)*4=2200
       const syringe = items.find((i: any) => i.name === '牙科注射器');
-      expect(syringe.subtotal).toBe(30);
+      expect(syringe.subtotal).toBe(3000);
       const cotton = items.find((i: any) => i.name === '棉卷');
-      expect(cotton.subtotal).toBe(22);
+      expect(cotton.subtotal).toBe(2200);
     });
   });
 
@@ -131,7 +132,7 @@ describe('PurchaseOrdersService', () => {
       expect(txns[0].remark).toBe('采购入库');
     });
 
-    it('已收货的采购单重复收货应抛出 BadRequestException', async () => {
+    it('已收货的采购单重复收货应抛出 BusinessValidationException', async () => {
       db.seed('PurchaseOrder', [
         {
           id: 'po-received',
@@ -145,10 +146,10 @@ describe('PurchaseOrdersService', () => {
         },
       ]);
 
-      await expect(service.receive('po-received')).rejects.toThrow(BadRequestException);
+      await expect(service.receive('po-received')).rejects.toThrow(BusinessValidationException);
     });
 
-    it('非 PENDING/PARTIAL 状态的采购单收货应抛出 BadRequestException', async () => {
+    it('非 PENDING/PARTIAL 状态的采购单收货应抛出 BusinessValidationException', async () => {
       db.seed('PurchaseOrder', [
         {
           id: 'po-cancelled',
@@ -162,7 +163,7 @@ describe('PurchaseOrdersService', () => {
         },
       ]);
 
-      await expect(service.receive('po-cancelled')).rejects.toThrow(BadRequestException);
+      await expect(service.receive('po-cancelled')).rejects.toThrow(BusinessValidationException);
     });
   });
 
@@ -189,7 +190,7 @@ describe('PurchaseOrdersService', () => {
       expect((result as any).status).toBe('CANCELLED');
     });
 
-    it('已收货的采购单取消应抛出 BadRequestException', async () => {
+    it('已收货的采购单取消应抛出 BusinessValidationException', async () => {
       db.seed('PurchaseOrder', [
         {
           id: 'po-received-2',
@@ -203,10 +204,10 @@ describe('PurchaseOrdersService', () => {
         },
       ]);
 
-      await expect(service.cancel('po-received-2')).rejects.toThrow(BadRequestException);
+      await expect(service.cancel('po-received-2')).rejects.toThrow(BusinessValidationException);
     });
 
-    it('已取消的采购单再次取消应抛出 BadRequestException', async () => {
+    it('已取消的采购单再次取消应抛出 BusinessValidationException', async () => {
       db.seed('PurchaseOrder', [
         {
           id: 'po-cancelled-2',
@@ -220,7 +221,7 @@ describe('PurchaseOrdersService', () => {
         },
       ]);
 
-      await expect(service.cancel('po-cancelled-2')).rejects.toThrow(BadRequestException);
+      await expect(service.cancel('po-cancelled-2')).rejects.toThrow(BusinessValidationException);
     });
   });
 
@@ -322,24 +323,24 @@ describe('PurchaseOrdersService', () => {
       expect((result as any).status).toBe('PARTIAL');
     });
 
-    it('RECEIVED → PENDING 应抛出 BadRequestException（非法转换）', async () => {
+    it('RECEIVED → PENDING 应抛出 BusinessValidationException（非法转换）', async () => {
       db.seed('PurchaseOrder', [{
         id: 'po-001', number: 'PO2004', supplierId: 'supplier-001',
         totalAmount: 100, status: 'RECEIVED', operatorId: null,
         clinicId: 'test-clinic-001', deletedAt: null,
       }]);
 
-      await expect(service.updateStatus('po-001', 'PENDING')).rejects.toThrow(BadRequestException);
+      await expect(service.updateStatus('po-001', 'PENDING')).rejects.toThrow(BusinessValidationException);
     });
 
-    it('CANCELLED → RECEIVED 应抛出 BadRequestException（非法转换）', async () => {
+    it('CANCELLED → RECEIVED 应抛出 BusinessValidationException（非法转换）', async () => {
       db.seed('PurchaseOrder', [{
         id: 'po-001', number: 'PO2005', supplierId: 'supplier-001',
         totalAmount: 100, status: 'CANCELLED', operatorId: null,
         clinicId: 'test-clinic-001', deletedAt: null,
       }]);
 
-      await expect(service.updateStatus('po-001', 'RECEIVED')).rejects.toThrow(BadRequestException);
+      await expect(service.updateStatus('po-001', 'RECEIVED')).rejects.toThrow(BusinessValidationException);
     });
 
     it('PARTIAL → RECEIVED 应成功', async () => {
@@ -385,7 +386,7 @@ describe('PurchaseOrdersService', () => {
       expect(updated.stock).toBe(60);
     });
 
-    it('不存在的采购单收货应抛出 NotFoundException', async () => {
+    it('不存在的采购单收货应抛出 BusinessNotFoundException', async () => {
       await expect(service.receive('non-existent')).rejects.toThrow();
     });
   });
@@ -394,9 +395,10 @@ describe('PurchaseOrdersService', () => {
 
   describe('findOne - 查询单个采购单', () => {
     it('查询存在的采购单应返回完整信息', async () => {
+      // totalAmount 数据库存 cents：250 元 = 25000 cents
       db.seed('PurchaseOrder', [{
         id: 'po-001', number: 'PO3001', supplierId: 'supplier-001',
-        totalAmount: 250, status: 'PENDING', operatorId: 'user-001',
+        totalAmount: 25000, status: 'PENDING', operatorId: 'user-001',
         clinicId: 'test-clinic-001', deletedAt: null,
       }]);
 
@@ -404,10 +406,11 @@ describe('PurchaseOrdersService', () => {
       expect((result as any).id).toBe('po-001');
       expect((result as any).number).toBe('PO3001');
       expect((result as any).status).toBe('PENDING');
+      // moneyFields 自动 cents→yuan: 25000 → 250
       expect((result as any).totalAmount).toBe(250);
     });
 
-    it('查询不存在的采购单应抛出 NotFoundException', async () => {
+    it('查询不存在的采购单应抛出 BusinessNotFoundException', async () => {
       await expect(service.findOne('non-existent')).rejects.toThrow();
     });
   });

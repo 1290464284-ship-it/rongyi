@@ -1,7 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
 import { ClinicsController } from './clinics.controller';
 import { ClinicsService } from './clinics.service';
-import { BadRequestException } from '@nestjs/common';
+
 
 describe('ClinicsController', () => {
   let controller: ClinicsController;
@@ -94,9 +95,9 @@ describe('ClinicsController', () => {
       expect(service.findOne).toHaveBeenCalledWith('c-1');
     });
 
-    it('不存在时透传 BadRequestException', async () => {
-      service.findOne.mockRejectedValue(new BadRequestException('诊所不存在'));
-      await expect(controller.findOne('non-existent')).rejects.toThrow(BadRequestException);
+    it('不存在时透传 BusinessNotFoundException', async () => {
+      service.findOne.mockRejectedValue(new BusinessNotFoundException('诊所不存在'));
+      await expect(controller.findOne('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 

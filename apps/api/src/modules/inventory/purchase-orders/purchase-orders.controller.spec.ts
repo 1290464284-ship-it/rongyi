@@ -1,7 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
 import { PurchaseOrdersController } from './purchase-orders.controller';
 import { PurchaseOrdersService } from './purchase-orders.service';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+
 
 describe('PurchaseOrdersController', () => {
   let controller: PurchaseOrdersController;
@@ -46,9 +47,9 @@ describe('PurchaseOrdersController', () => {
       expect(service.findOne).toHaveBeenCalledWith('po-1');
     });
 
-    it('不存在时透传 NotFoundException', async () => {
-      service.findOne.mockRejectedValue(new NotFoundException('PurchaseOrder不存在'));
-      await expect(controller.findOne('non-existent')).rejects.toThrow(NotFoundException);
+    it('不存在时透传 BusinessNotFoundException', async () => {
+      service.findOne.mockRejectedValue(new BusinessNotFoundException('PurchaseOrder不存在'));
+      await expect(controller.findOne('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 
@@ -70,9 +71,9 @@ describe('PurchaseOrdersController', () => {
       expect(service.createOrder).toHaveBeenCalledWith(dto, undefined);
     });
 
-    it('参数错误时透传 BadRequestException', async () => {
-      service.createOrder.mockRejectedValue(new BadRequestException('供应商不能为空'));
-      await expect(controller.create({} as any, {} as any)).rejects.toThrow(BadRequestException);
+    it('参数错误时透传 BusinessValidationException', async () => {
+      service.createOrder.mockRejectedValue(new BusinessValidationException('供应商不能为空'));
+      await expect(controller.create({} as any, {} as any)).rejects.toThrow(BusinessValidationException);
     });
   });
 

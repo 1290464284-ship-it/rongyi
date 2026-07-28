@@ -1,10 +1,11 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable } from '@nestjs/common';
 import { DbService } from "../../../db/db.service";
 import { BaseService } from "../../../common/services/base.service";
 import { ClinicContextService } from "../../../common/services/clinic-context.service";
 import { Chair } from "@dental/shared";
 import { PAGINATION } from "../../../common/constants/pagination";
 import { AuditLogType } from "../../../common/constants";
+import { BusinessNotFoundException } from '@common/errors';
 
 @Injectable()
 export class ChairsService extends BaseService<Chair> {
@@ -35,7 +36,10 @@ export class ChairsService extends BaseService<Chair> {
 
   async remove(id: string): Promise<void> {
     const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
-    this.dbService.prepare(`UPDATE Chair SET active = 0 WHERE id = ?${clinicClause}`).run(id, ...clinicParams);
+    const result = this.dbService.prepare(`UPDATE Chair SET active = 0 WHERE id = ?${clinicClause}`).run(id, ...clinicParams);
+    if (result.changes === 0) {
+      throw new BusinessNotFoundException("牙椅不存在");
+    }
     this.logAudit(this.dbService, AuditLogType.CHAIR_DELETE, id, "Chair");
   }
 }

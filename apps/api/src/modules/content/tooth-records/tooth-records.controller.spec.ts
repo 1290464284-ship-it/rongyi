@@ -1,7 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { BusinessValidationException } from '@common/errors';
 import { ToothRecordsController } from './tooth-records.controller';
 import { ToothRecordsService } from './tooth-records.service';
-import { BadRequestException } from '@nestjs/common';
+
 
 describe('ToothRecordsController', () => {
   let controller: ToothRecordsController;
@@ -50,9 +51,9 @@ describe('ToothRecordsController', () => {
       expect(service.findByTooth).toHaveBeenCalledWith('p-1', 21);
     });
 
-    it('无效牙位号透传 BadRequestException', async () => {
-      service.findByTooth.mockRejectedValue(new BadRequestException('无效的牙位号: 99'));
-      await expect(controller.findOne('p-1', 99 as any)).rejects.toThrow(BadRequestException);
+    it('无效牙位号透传 BusinessValidationException', async () => {
+      service.findByTooth.mockRejectedValue(new BusinessValidationException('无效的牙位号: 99'));
+      await expect(controller.findOne('p-1', 99 as any)).rejects.toThrow(BusinessValidationException);
     });
   });
 

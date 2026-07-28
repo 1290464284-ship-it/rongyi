@@ -76,6 +76,12 @@ export class CreateDebtFromChargeDto {
   @IsOptional()
   @MaxLength(500)
   remark?: string;
+
+  @ApiProperty({ description: '请求ID（幂等性）— 客户端在重试时使用同一 requestId 防止重复创建欠费记录', example: 'req-20240115-001', required: false })
+  @IsString()
+  @IsOptional()
+  @MaxLength(100)
+  requestId?: string;
 }
 
 export class PayDebtDto {

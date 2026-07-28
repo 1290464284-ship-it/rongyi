@@ -10,6 +10,7 @@ import { DoctorStatsService } from './doctor-stats.service';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { CacheService } from '../../../common/services/cache.service';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
+import { EventBusService } from '../../../common/events/event-bus.service';
 
 function createMockClinicContext(): ClinicContextService {
   return {
@@ -25,6 +26,14 @@ function createMockClinicContext(): ClinicContextService {
 
 function createMockCache(): CacheService {
   return new CacheService();
+}
+
+function createMockEventBus(): jest.Mocked<EventBusService> {
+  return {
+    emit: jest.fn(),
+    on: jest.fn(),
+    onAll: jest.fn(),
+  } as unknown as jest.Mocked<EventBusService>;
 }
 
 describe('StatsService', () => {
@@ -45,7 +54,8 @@ describe('StatsService', () => {
     const inventoryStats = new InventoryStatsService(db as any, cache, clinicContext);
     const memberStats = new MemberStatsService(db as any, cache, clinicContext);
     const doctorStats = new DoctorStatsService(db as any, cache, clinicContext);
-    service = new StatsService(cache, dashboardStats, revenueStats, patientStats, appointmentStats, chargeStats, inventoryStats, memberStats, doctorStats);
+    const eventBus = createMockEventBus();
+    service = new StatsService(cache, dashboardStats, revenueStats, patientStats, appointmentStats, chargeStats, inventoryStats, memberStats, doctorStats, eventBus);
   });
 
   afterEach(() => {

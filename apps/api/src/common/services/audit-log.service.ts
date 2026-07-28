@@ -1,11 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import * as crypto from 'node:crypto';
 import { IDatabase } from '../../db/db.interface';
-
-/**
- * 审计日志敏感字段列表
- */
-const AUDIT_SENSITIVE_FIELDS = ['password', 'idCard', 'idCardNumber', 'idCardEncrypted', 'token', 'secret'];
+import { isSensitiveField } from '../utils/security/sensitive-fields';
 
 /**
  * 审计日志服务 - 从 BaseService 拆分而来
@@ -76,14 +72,25 @@ export class AuditLogService {
 
   /**
    * 审计日志敏感数据脱敏：对 beforeData/afterData 中的敏感字段进行遮蔽
-   * 防止密码、身份证号、令牌等敏感信息写入审计日志
+   * 防止密码、身份证号、令牌、手机号、邮箱、地址等敏感信息写入审计日志
+   *
+   * P0 修复：原先使用本地维护的 AUDIT_SENSITIVE_FIELDS 列表（仅 6 个字段），
+   * 缺失 phone/email/address/emergencyPhone/emergencyContact/refreshToken/
+   * passwordHash/openId/cardNo 等关键敏感字段，导致审计日志可能明文记录 PII。
+   * 现统一复用 common/utils/security/sensitive-fields.ts 的 isSensitiveField()，
+   * 与日志脱敏、操作日志脱敏保持一致。
    */
   sanitizeAuditData(data: unknown): unknown {
     if (!data || typeof data !== 'object') return data;
+    if (Array.isArray(data)) return data.map((item) => this.sanitizeAuditData(item));
     const sanitized = { ...(data as Record<string, unknown>) };
-    for (const field of AUDIT_SENSITIVE_FIELDS) {
-      if (Object.prototype.hasOwnProperty.call(sanitized, field)) {
-        sanitized[field] = '[REDACTED]';
+    for (const key of Object.keys(sanitized)) {
+      const value = sanitized[key];
+      if (isSensitiveField(key)) {
+        sanitized[key] = '[REDACTED]';
+      } else if (value && typeof value === 'object') {
+        // 递归脱敏嵌套对象，避免深层 PII 泄露
+        sanitized[key] = this.sanitizeAuditData(value);
       }
     }
     return sanitized;

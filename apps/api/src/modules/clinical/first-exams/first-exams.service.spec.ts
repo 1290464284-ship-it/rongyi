@@ -1,8 +1,9 @@
  
 import { FirstExamsService } from './first-exams.service';
+import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+
 
 function createMockClinicContext(clinicId: string | null = 'test-clinic-001'): ClinicContextService {
   return {
@@ -115,10 +116,10 @@ describe('FirstExamsService', () => {
       expect((result as any).remark).toBe('新备注');
     });
 
-    it('更新不存在的初诊应抛出 NotFoundException', async () => {
+    it('更新不存在的初诊应抛出 BusinessNotFoundException', async () => {
       await expect(
         service.update('non-existent', { chiefComplaint: 'test' }),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toThrow(BusinessNotFoundException);
     });
   });
 
@@ -180,41 +181,41 @@ describe('FirstExamsService', () => {
 
     // --- 非法流转 ---
 
-    it('DRAFT → REJECTED 非法流转应抛出 BadRequestException', async () => {
+    it('DRAFT → REJECTED 非法流转应抛出 BusinessValidationException', async () => {
       const created = await service.create({ patientId: 'patient-001' });
 
       await expect(
         service.updateStatus((created as any).id, 'REJECTED'),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
-    it('SUBMITTED → DRAFT 非法流转应抛出 BadRequestException', async () => {
+    it('SUBMITTED → DRAFT 非法流转应抛出 BusinessValidationException', async () => {
       const created = await service.create({ patientId: 'patient-001' });
       await service.updateStatus((created as any).id, 'SUBMITTED');
 
       await expect(
         service.updateStatus((created as any).id, 'DRAFT'),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
-    it('REJECTED → SUBMITTED 非法流转应抛出 BadRequestException', async () => {
+    it('REJECTED → SUBMITTED 非法流转应抛出 BusinessValidationException', async () => {
       const created = await service.create({ patientId: 'patient-001' });
       await service.updateStatus((created as any).id, 'SUBMITTED');
       await service.updateStatus((created as any).id, 'REJECTED');
 
       await expect(
         service.updateStatus((created as any).id, 'SUBMITTED'),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
-    it('REJECTED → APPROVED 非法流转应抛出 BadRequestException', async () => {
+    it('REJECTED → APPROVED 非法流转应抛出 BusinessValidationException', async () => {
       const created = await service.create({ patientId: 'patient-001' });
       await service.updateStatus((created as any).id, 'SUBMITTED');
       await service.updateStatus((created as any).id, 'REJECTED');
 
       await expect(
         service.updateStatus((created as any).id, 'APPROVED'),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
     it('更新不存在的初诊状态应抛出异常', async () => {
@@ -380,8 +381,8 @@ describe('FirstExamsService', () => {
       expect((result as any).chiefComplaint).toBe('牙痛');
     });
 
-    it('查询不存在的初诊应抛出 NotFoundException', async () => {
-      await expect(service.findOne('non-existent')).rejects.toThrow(NotFoundException);
+    it('查询不存在的初诊应抛出 BusinessNotFoundException', async () => {
+      await expect(service.findOne('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 
@@ -422,8 +423,8 @@ describe('FirstExamsService', () => {
       expect(ids).not.toContain((created as any).id);
     });
 
-    it('软删除不存在的初诊应抛出 NotFoundException', async () => {
-      await expect(service.softDelete('non-existent')).rejects.toThrow(NotFoundException);
+    it('软删除不存在的初诊应抛出 BusinessNotFoundException', async () => {
+      await expect(service.softDelete('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
 
     it('软删除应级联软删除关联牙齿记录', async () => {
@@ -503,8 +504,8 @@ describe('FirstExamsService', () => {
       expect(log).toBeDefined();
     });
 
-    it('硬删除不存在的初诊应抛出 NotFoundException', async () => {
-      await expect(service.remove('non-existent')).rejects.toThrow(NotFoundException);
+    it('硬删除不存在的初诊应抛出 BusinessNotFoundException', async () => {
+      await expect(service.remove('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 
@@ -1428,7 +1429,7 @@ describe('FirstExamsService', () => {
 
       await expect(
         service.complete((created as any).id),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
   });
 

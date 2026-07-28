@@ -1,5 +1,6 @@
 import { IdempotencyService } from './idempotency.service';
-import { BadRequestException } from '@nestjs/common';
+import { BusinessValidationException } from '@common/errors';
+
 import { IDEMPOTENCY_DEFAULT_TTL_MS } from '../../config/constants';
 import { createTestDb, createTestDbService, cleanupTestDb } from '../../db/test-helpers';
 import Database from 'better-sqlite3';
@@ -136,7 +137,7 @@ describe('IdempotencyService', () => {
       expect(result).toBe('第二次成功');
     });
 
-    it('PROCESSING 状态未超时应抛出 BadRequestException', () => {
+    it('PROCESSING 状态未超时应抛出 BusinessValidationException', () => {
       const key = 'processing-key';
       const recordId = 'test-record-id';
       const now = new Date().toISOString();
@@ -153,7 +154,7 @@ describe('IdempotencyService', () => {
           { key, type: 'test-type' },
           handler,
         ),
-      ).toThrow(BadRequestException);
+      ).toThrow(BusinessValidationException);
 
       expect(handler).not.toHaveBeenCalled();
     });
@@ -367,7 +368,7 @@ describe('IdempotencyService', () => {
       let callCount = 0;
 
       const originalTransaction = dbService.transaction.bind(dbService);
-      jest.spyOn(dbService, 'transaction').mockImplementation((fn: any) => {
+      jest.spyOn(dbService, 'transaction').mockImplementation((fn: (...args: unknown[]) => unknown) => {
         callCount++;
         if (callCount === 1) {
           const result = originalTransaction(fn);
@@ -418,7 +419,7 @@ describe('IdempotencyService', () => {
 
       expect(() =>
         service.executeInTransaction({ key, type: 'test-type' }, handler),
-      ).toThrow(BadRequestException);
+      ).toThrow(BusinessValidationException);
       expect(handler).not.toHaveBeenCalled();
     });
 
@@ -650,6 +651,255 @@ describe('IdempotencyService', () => {
       );
 
       expect(result).toBeNull();
+    });
+
+    it('应正确返回布尔值 true', () => {
+      const handler = jest.fn().mockReturnValue(true);
+
+      const result = service.executeInTransaction(
+        { key: 'bool-key', type: 'test-type' },
+        handler,
+      );
+
+      expect(result).toBe(true);
+      expect(typeof result).toBe('boolean');
+    });
+
+    it('应正确返回布尔值 false', () => {
+      const handler = jest.fn().mockReturnValue(false);
+
+      const result = service.executeInTransaction(
+        { key: 'bool-false-key', type: 'test-type' },
+        handler,
+      );
+
+      expect(result).toBe(false);
+    });
+
+    it('应正确返回 0 （falsy 数字）', () => {
+      const handler = jest.fn().mockReturnValue(0);
+
+      const result = service.executeInTransaction(
+        { key: 'zero-key', type: 'test-type' },
+        handler,
+      );
+
+      expect(result).toBe(0);
+    });
+
+    it('应正确返回空字符串', () => {
+      const handler = jest.fn().mockReturnValue('');
+
+      const result = service.executeInTransaction(
+        { key: 'empty-str-key', type: 'test-type' },
+        handler,
+      );
+
+      expect(result).toBe('');
+    });
+  });
+
+  describe('Promise 返回检测', () => {
+    it('handler 返回 Promise 时事务回滚，记录不应存在', () => {
+      const handler = jest.fn().mockReturnValue(Promise.resolve('async-result'));
+
+      expect(() =>
+        service.executeInTransaction(
+          { key: 'promise-key', type: 'test-type' },
+          handler,
+        ),
+      ).toThrow(/handler 必须为同步函数/);
+
+      const record = db
+        .prepare('SELECT * FROM IdempotencyRecord WHERE key = ?')
+        .get('promise-key') as any;
+      expect(record).toBeUndefined();
+    });
+
+    it('handler 返回 Promise.reject 时事务回滚，记录不应存在', () => {
+      const rejectedPromise = Promise.reject(new Error('async fail'));
+      rejectedPromise.catch(() => {});
+      const handler = jest.fn().mockReturnValue(rejectedPromise);
+
+      expect(() =>
+        service.executeInTransaction(
+          { key: 'promise-reject-key', type: 'test-type' },
+          handler,
+        ),
+      ).toThrow(/handler 必须为同步函数/);
+
+      const record = db
+        .prepare('SELECT * FROM IdempotencyRecord WHERE key = ?')
+        .get('promise-reject-key') as any;
+      expect(record).toBeUndefined();
+    });
+
+    it('Promise 检测后再次请求应重新执行', () => {
+      const handler = jest.fn()
+        .mockReturnValueOnce(Promise.resolve('async-result'))
+        .mockReturnValueOnce('sync-success');
+
+      expect(() =>
+        service.executeInTransaction(
+          { key: 'promise-retry-key', type: 'test-type' },
+          handler,
+        ),
+      ).toThrow(/handler 必须为同步函数/);
+
+      const result = service.executeInTransaction(
+        { key: 'promise-retry-key', type: 'test-type' },
+        handler,
+      );
+
+      expect(result).toBe('sync-success');
+      expect(handler).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('FAILED 状态重试', () => {
+    it('FAILED 状态记录应被删除后重新执行', () => {
+      const key = 'failed-retry-key';
+      const now = new Date().toISOString();
+      const expiresAt = new Date(Date.now() + IDEMPOTENCY_DEFAULT_TTL_MS).toISOString();
+
+      db.prepare(
+        "INSERT INTO IdempotencyRecord (id, key, type, status, result, createdAt, expiresAt) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ).run('failed-id', key, 'test-type', 'FAILED', JSON.stringify({ error: 'previous fail' }), now, expiresAt);
+
+      const handler = jest.fn().mockReturnValue('recovered');
+      const result = service.executeInTransaction(
+        { key, type: 'test-type' },
+        handler,
+      );
+
+      expect(result).toBe('recovered');
+      expect(handler).toHaveBeenCalledTimes(1);
+
+      const oldRecord = db
+        .prepare('SELECT * FROM IdempotencyRecord WHERE id = ?')
+        .get('failed-id');
+      expect(oldRecord).toBeUndefined();
+    });
+  });
+
+  describe('边界条件与错误处理', () => {
+    it('handler 返回 undefined 应正常处理', () => {
+      const handler = jest.fn().mockReturnValue(undefined);
+
+      const result = service.executeInTransaction(
+        { key: 'undefined-key', type: 'test-type' },
+        handler,
+      );
+
+      expect(result).toBeUndefined();
+    });
+
+    it('handler 抛出非 Error 对象时事务回滚', () => {
+      const handler = jest.fn().mockImplementation(() => {
+        throw 'string error';
+      });
+
+      expect(() =>
+        service.executeInTransaction(
+          { key: 'string-err-key', type: 'test-type' },
+          handler,
+        ),
+      ).toThrow('string error');
+
+      const record = db
+        .prepare('SELECT * FROM IdempotencyRecord WHERE key = ?')
+        .get('string-err-key') as any;
+      expect(record).toBeUndefined();
+    });
+
+    it('handler 抛出数字应正常捕获', () => {
+      const handler = jest.fn().mockImplementation(() => {
+        throw 42;
+      });
+
+      expect(() =>
+        service.executeInTransaction(
+          { key: 'num-err-key', type: 'test-type' },
+          handler,
+        ),
+      ).toThrow('42');
+    });
+
+    it('COMPLETED 状态但无 result 字段时应抛出 BusinessValidationException', () => {
+      const key = 'completed-no-result-key';
+      const now = new Date().toISOString();
+      const expiresAt = new Date(Date.now() + IDEMPOTENCY_DEFAULT_TTL_MS).toISOString();
+
+      db.prepare(
+        "INSERT INTO IdempotencyRecord (id, key, type, status, result, createdAt, expiresAt) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ).run('id-no-result', key, 'test-type', 'COMPLETED', null, now, expiresAt);
+
+      const handler = jest.fn().mockReturnValue('fresh-result');
+      expect(() =>
+        service.executeInTransaction(
+          { key, type: 'test-type' },
+          handler,
+        ),
+      ).toThrow(BusinessValidationException);
+
+      expect(handler).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('幂等键隔离', () => {
+    it('相同 key 不同 type 应共享缓存', () => {
+      const handler = jest.fn().mockReturnValue('shared-result');
+
+      const result1 = service.executeInTransaction(
+        { key: 'shared-key', type: 'type-a' },
+        handler,
+      );
+
+      const result2 = service.executeInTransaction(
+        { key: 'shared-key', type: 'type-b' },
+        handler,
+      );
+
+      expect(result1).toBe('shared-result');
+      expect(result2).toBe('shared-result');
+      expect(handler).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('UNIQUE 冲突 - 过期记录清理', () => {
+    it('UNIQUE 冲突时若记录已过期应删除并重新执行', () => {
+      const key = 'unique-expired-key-2';
+      let insertCount = 0;
+
+      const expiredTime = new Date(Date.now() - 1000).toISOString();
+      const now = new Date().toISOString();
+      const expiresAt = new Date(Date.now() + IDEMPOTENCY_DEFAULT_TTL_MS).toISOString();
+
+      db.prepare(
+        "INSERT INTO IdempotencyRecord (id, key, type, status, createdAt, expiresAt) VALUES (?, ?, ?, ?, ?, ?)",
+      ).run('expired-completed-id', key, 'test-type', 'COMPLETED', now, expiredTime);
+
+      const originalPrepare = (db as any).prepare.bind(db);
+      jest.spyOn(db as any, 'prepare').mockImplementation((sql: string) => {
+        const stmt = originalPrepare(sql);
+        if (sql.includes('INSERT INTO IdempotencyRecord') && sql.includes('id, key, type, status, createdAt, expiresAt')) {
+          const originalRun = stmt.run.bind(stmt);
+          stmt.run = (...params: unknown[]) => {
+            insertCount++;
+            if (insertCount === 1) {
+              throw new Error('UNIQUE constraint failed: IdempotencyRecord.key');
+            }
+            return originalRun(...params);
+          };
+        }
+        return stmt;
+      });
+
+      const handler = jest.fn().mockReturnValue('expired-retry-success');
+      const result = service.executeInTransaction({ key, type: 'test-type' }, handler);
+
+      expect(result).toBe('expired-retry-success');
+      expect(handler).toHaveBeenCalledTimes(1);
     });
   });
 });

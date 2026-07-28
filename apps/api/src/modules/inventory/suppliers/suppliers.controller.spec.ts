@@ -1,7 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { BusinessNotFoundException } from '@common/errors';
 import { SuppliersController } from './suppliers.controller';
 import { SuppliersService } from './suppliers.service';
-import { NotFoundException, ConflictException } from '@nestjs/common';
+import { ConflictException } from '@nestjs/common';
 
 describe('SuppliersController', () => {
   let controller: SuppliersController;
@@ -46,9 +47,9 @@ describe('SuppliersController', () => {
       expect(service.findOne).toHaveBeenCalledWith('s-1');
     });
 
-    it('不存在时透传 NotFoundException', async () => {
-      service.findOne.mockRejectedValue(new NotFoundException('Supplier不存在'));
-      await expect(controller.findOne('non-existent')).rejects.toThrow(NotFoundException);
+    it('不存在时透传 BusinessNotFoundException', async () => {
+      service.findOne.mockRejectedValue(new BusinessNotFoundException('Supplier不存在'));
+      await expect(controller.findOne('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 

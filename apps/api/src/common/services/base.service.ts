@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException, ConflictException } from '@nestjs/common';
+import { Injectable, ForbiddenException, ConflictException } from '@nestjs/common';
+import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
 import * as crypto from 'node:crypto';
 import { DbService } from '../../db/db.service';
 import { IDatabase } from '../../db/db.interface';
@@ -6,15 +7,16 @@ import { Pagination, BaseEntity } from '@dental/shared';
 import { sanitizeData } from '../utils/security/sanitize-config';
 import { AppLogger } from './logger.service';
 import { ClinicContextService } from './clinic-context.service';
-import { MAX_PAGE_SIZE, PAGINATION } from '../constants/pagination';
+import { MAX_PAGE_SIZE } from '../constants/pagination';
 import { UNIQUE_CONSTRAINT_MAX_RETRIES } from '../../config/constants';
 import { yuanToCents, centsToYuan } from '../utils/format/money.utils';
-import { validateTableName, validateColumnName, escapeLike } from '../utils/db/validate-name';
+import { validateTableName, validateColumnName } from '../utils/db/validate-name';
 import { buildClinicFilter, buildClinicFilterOptional } from '../utils/db/clinic-filter';
-// 架构重构：从 BaseService 上帝类拆分出的 4 个职责单一服务
+// 架构重构：从 BaseService 上帝类拆分出的 5 个职责单一服务
 import { AuditLogService } from './audit-log.service';
 import { CodeGenerator } from './code-generator.service';
 import { SoftDeleteManager } from './soft-delete-manager.service';
+import { PaginationService } from './pagination.service';
 import { BaseRepository } from '../repositories/base.repository';
 
 export { MAX_PAGE_SIZE };
@@ -57,6 +59,7 @@ export class BaseService<T extends BaseEntity> {
   protected readonly auditLogService: AuditLogService;
   protected readonly codeGenerator: CodeGenerator;
   protected readonly softDeleteManager: SoftDeleteManager;
+  protected readonly paginationService: PaginationService;
   protected readonly baseRepository: BaseRepository;
 
   constructor(
@@ -79,29 +82,29 @@ export class BaseService<T extends BaseEntity> {
   ) {
     this.logger = new AppLogger(this.constructor.name);
     if (!validateTableName(tableName)) {
-      throw new BadRequestException(`无效的表名: ${tableName}`);
+      throw new BusinessValidationException(`无效的表名: ${tableName}`);
     }
     jsonFields.forEach(field => {
       if (!validateColumnName(field)) {
-        throw new BadRequestException(`无效的 JSON 字段名: ${field}`);
+        throw new BusinessValidationException(`无效的 JSON 字段名: ${field}`);
       }
     });
     searchFields.forEach(field => {
       if (!validateColumnName(field)) {
-        throw new BadRequestException(`无效的搜索字段名: ${field}`);
+        throw new BusinessValidationException(`无效的搜索字段名: ${field}`);
       }
     });
     cascadeTables.forEach(({ table, foreignKey }) => {
       if (!validateTableName(table)) {
-        throw new BadRequestException(`无效的级联表名: ${table}`);
+        throw new BusinessValidationException(`无效的级联表名: ${table}`);
       }
       if (!validateColumnName(foreignKey)) {
-        throw new BadRequestException(`无效的级联外键: ${foreignKey}`);
+        throw new BusinessValidationException(`无效的级联外键: ${foreignKey}`);
       }
     });
     moneyFields.forEach(field => {
       if (!validateColumnName(field)) {
-        throw new BadRequestException(`无效的金额字段名: ${field}`);
+        throw new BusinessValidationException(`无效的金额字段名: ${field}`);
       }
     });
 
@@ -110,6 +113,7 @@ export class BaseService<T extends BaseEntity> {
     this.auditLogService = new AuditLogService();
     this.codeGenerator = new CodeGenerator();
     this.softDeleteManager = new SoftDeleteManager();
+    this.paginationService = new PaginationService();
     this.baseRepository = new BaseRepository();
   }
 
@@ -144,7 +148,7 @@ export class BaseService<T extends BaseEntity> {
    * @returns 创建后的完整实体
    * @throws ForbiddenException 缺少诊所上下文时抛出
    * @throws ConflictException 唯一约束冲突重试失败后抛出
-   * @throws BadRequestException 字段名校验失败时抛出
+   * @throws BusinessValidationException 字段名校验失败时抛出
    * @description 自动处理：XSS 清洗、clinicId 注入、JSON 字段序列化、金额字段元转分、唯一约束冲突重试（code 字段）
    */
   async create(dto: Partial<T>, options: { skipClinicFilter?: boolean } = {}): Promise<T> {
@@ -191,7 +195,7 @@ export class BaseService<T extends BaseEntity> {
         // 校验所有列名，防止 SQL 注入
         keys.forEach((k) => {
           if (!validateColumnName(k)) {
-            throw new BadRequestException(`无效的字段名: ${k}`);
+            throw new BusinessValidationException(`无效的字段名: ${k}`);
           }
         });
         // 重建只含有效键的 data 对象
@@ -234,74 +238,32 @@ export class BaseService<T extends BaseEntity> {
    * @param options.filters 精确过滤条件，键为字段名，值为过滤值
    * @returns 分页结果，包含 items、total、page、pageSize
    * @throws ForbiddenException 缺少诊所上下文时抛出
-   * @throws BadRequestException 排序字段或过滤字段不合法时抛出
+   * @throws BusinessValidationException 排序字段或过滤字段不合法时抛出
    * @description 支持关键词模糊搜索、精确过滤、游标分页、软删除过滤、诊所数据隔离
    */
   async findMany(options: QueryOptions = {}): Promise<Pagination<T>> {
-    const { keyword, page: rawPage = 1, pageSize: rawPageSize = PAGINATION.DEFAULT_PAGE_SIZE, sortBy = 'createdAt', sortOrder = 'DESC', cursor, includeDeleted = false, skipClinicFilter = false } = options;
-    // 服务层兜底分页下限校验（防御非 DTO 入口，如内部调用）
-    const page = Math.max(1, Math.floor(Number(rawPage) || 1));
-    const pageSize = Math.min(Math.max(1, Math.floor(Number(rawPageSize) || PAGINATION.DEFAULT_PAGE_SIZE)), MAX_PAGE_SIZE);
+    const { keyword, page: rawPage, pageSize: rawPageSize, sortBy = 'createdAt', sortOrder = 'DESC', cursor, includeDeleted = false, skipClinicFilter = false } = options;
 
-    if (!validateColumnName(sortBy)) {
-      throw new BadRequestException(`无效的排序字段: ${sortBy}`);
-    }
+    const { page, pageSize } = this.paginationService.validatePagination(rawPage, rawPageSize);
+    const { sortBy: validSortBy, sortOrder: validSortOrder } = this.paginationService.validateSort(sortBy, sortOrder);
 
-    const validSortOrder = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+    const { whereClause, params } = this.paginationService.buildWhereClause({
+      keyword,
+      searchFields: this.searchFields,
+      filters: options.filters,
+      allowedFilterFields: this.allowedFilterFields,
+      clinicId: this.clinicContext.getClinicId(),
+      skipClinicFilter,
+      hasSoftDelete: this.hasSoftDelete,
+      includeDeleted,
+    });
 
-    // 构建 WHERE 条件（复用于 COUNT 和 DATA 查询）
-    const conditions: string[] = [];
-    const params: unknown[] = [];
-
-    // 多诊所数据隔离：自动按当前用户的 clinicId 过滤
-    if (!skipClinicFilter) {
-      const clinicId = this.clinicContext.getClinicId();
-      if (clinicId) {
-        conditions.push('clinicId = ?');
-        params.push(clinicId);
-      } else {
-        throw new ForbiddenException('缺少诊所信息，请重新登录');
-      }
-    }
-
-    // 软删除过滤：默认排除已删除记录
-    if (this.hasSoftDelete && !includeDeleted) {
-      conditions.push('deletedAt IS NULL');
-    }
-
-    if (keyword && this.searchFields.length > 0) {
-      const escaped = escapeLike(keyword);
-      const likeConditions = this.searchFields.map((f) => `${f} LIKE ? ESCAPE '\\'`);
-      conditions.push(`(${likeConditions.join(' OR ')})`);
-      params.push(...this.searchFields.map(() => `%${escaped}%`));
-    }
-
-    if (options.filters) {
-      Object.entries(options.filters).forEach(([key, value]) => {
-        if (!validateColumnName(key)) {
-          throw new BadRequestException(`无效的过滤字段名: ${key}`);
-        }
-        // 过滤字段白名单校验：子类设置 allowedFilterFields 后，仅允许白名单内字段过滤
-        if (this.allowedFilterFields && !this.allowedFilterFields.has(key)) {
-          throw new BadRequestException(`无效的过滤字段: ${key}`);
-        }
-        if (value !== undefined && value !== null && value !== '') {
-          conditions.push(`${key} = ?`);
-          params.push(value);
-        }
-      });
-    }
-
-    const whereClause = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
-
-    // 架构重构：委托 BaseRepository 构造分页查询 SQL（COUNT + DATA）
-    // 业务逻辑（关键词搜索 / 过滤白名单 / 诊所隔离 / 软删除过滤）仍由 BaseService 负责
     const builtQuery = this.baseRepository.buildPaginatedQuery(
       this.tableName,
       this.getSelectColumns(),
       whereClause,
       params,
-      sortBy,
+      validSortBy,
       validSortOrder,
       cursor,
       pageSize,
@@ -354,7 +316,7 @@ export class BaseService<T extends BaseEntity> {
       extraParams,
     );
     if (!item) {
-      throw new NotFoundException(`${this.tableName}不存在`);
+      throw new BusinessNotFoundException(`${this.tableName}不存在`);
     }
     this.parseJsonFields([item]);
     this.parseMoneyFields([item]);
@@ -366,9 +328,9 @@ export class BaseService<T extends BaseEntity> {
    * @param id 记录 ID
    * @param dto 更新数据对象
    * @returns 更新后的完整实体
-   * @throws NotFoundException 记录不存在时抛出
+   * @throws BusinessNotFoundException 记录不存在时抛出
    * @throws ForbiddenException 缺少诊所上下文时抛出
-   * @throws BadRequestException 字段名不合法时抛出
+   * @throws BusinessValidationException 字段名不合法时抛出
    * @description 自动处理：XSS 清洗、JSON 字段序列化、金额字段元转分、updatedAt 自动更新、诊所数据隔离
    */
   async update(id: string, dto: Partial<T>): Promise<T> {
@@ -399,7 +361,7 @@ export class BaseService<T extends BaseEntity> {
       if (value !== undefined && key !== 'id') {
         // 校验列名，防止 SQL 注入（dto 可能包含未声明的字段）
         if (!validateColumnName(key)) {
-          throw new BadRequestException('无效的字段名');
+          throw new BusinessValidationException('无效的字段名');
         }
         updates.push(`${key} = ?`);
         params.push(value);
@@ -426,11 +388,12 @@ export class BaseService<T extends BaseEntity> {
     );
 
     // Re-read directly instead of calling findOne() again
+    const softDeleteCondition = this.hasSoftDelete ? ' AND deletedAt IS NULL' : '';
     const updated = this.dbService.prepare(
-      `SELECT ${this.getSelectColumns()} FROM ${this.tableName} WHERE id = ?${clinicClause} AND deletedAt IS NULL`,
+      `SELECT ${this.getSelectColumns()} FROM ${this.tableName} WHERE id = ?${clinicClause}${softDeleteCondition}`,
     ).get(id, ...clinicParams) as T | undefined;
     if (!updated) {
-      throw new NotFoundException(`${this.tableName}不存在`);
+      throw new BusinessNotFoundException(`${this.tableName}不存在`);
     }
     this.parseJsonFields([updated]);
     this.parseMoneyFields([updated]);
@@ -438,28 +401,33 @@ export class BaseService<T extends BaseEntity> {
   }
 
   async remove(id: string): Promise<unknown> {
-    const existing = await this.findOne(id);
     const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
+    // 将存在性检查移入事务内，消除 TOCTOU 竞态窗口
     // 使用与 softDelete 相同的级联策略：同时清理关联表
-    this.dbService.transaction((db) => {
+    return this.dbService.transaction((db) => {
+      const existing = db.prepare(
+        `SELECT ${this.getSelectColumns()} FROM ${this.tableName} WHERE id = ?${clinicClause}`,
+      ).get(id, ...clinicParams) as T | undefined;
+      if (!existing) {
+        throw new BusinessNotFoundException(`${this.tableName}不存在`);
+      }
       for (const { table, foreignKey } of this.cascadeTables) {
         db.prepare(`DELETE FROM ${table} WHERE ${foreignKey} = ?${clinicClause}`).run(id, ...clinicParams);
       }
       // 架构重构：委托 BaseRepository 执行主表 DELETE
       // 级联表删除因含动态表名 / 外键，仍保留在 BaseService 内（已通过构造函数校验）
-      // BaseRepository.delete 接收 SqlExecutor 接口，DbService 和事务内 IDatabase 都满足
       this.baseRepository.delete(db, this.tableName, id, clinicClause, clinicParams);
 
       this.logAudit(db, "HARD_DELETE", id, this.tableName, { beforeData: existing });
+      this.logger.log(`hardDeleted ${this.tableName} id=${id} (${this.cascadeTables.length} cascade tables)`);
+      return id;
     });
-    this.logger.log(`hardDeleted ${this.tableName} id=${id} (${this.cascadeTables.length} cascade tables)`);
-    return id;
   }
 
   /**
    * 软删除记录
    * @param id 记录 ID
-   * @throws NotFoundException 记录不存在或已删除时抛出
+   * @throws BusinessNotFoundException 记录不存在或已删除时抛出
    * @description 设置 deletedAt 标记为已删除，同时处理：
    *  1. 级联软删除关联表数据（cascadeTables 配置）
    *  2. 唯一字段加后缀避免冲突（uniqueFields 配置）
@@ -539,7 +507,7 @@ export class BaseService<T extends BaseEntity> {
    * @param targetTable 目标关联表名
    * @param fields 需要查询的字段，逗号分隔，默认 'id, name'
    * @returns Map<id, 记录>，以目标表 id 为 key
-   * @throws BadRequestException 字段名不合法时抛出
+   * @throws BusinessValidationException 字段名不合法时抛出
    * @example
    * // 查询患者列表对应的医生信息
    * const doctorMap = this.batchResolve(patients, 'doctorId', 'Doctor', 'id, name, title');
@@ -554,7 +522,7 @@ export class BaseService<T extends BaseEntity> {
     const fieldList = fields.split(',').map(f => f.trim()).filter(Boolean);
     for (const f of fieldList) {
       if (!validateColumnName(f)) {
-        throw new BadRequestException('无效的字段名');
+        throw new BusinessValidationException('无效的字段名');
       }
     }
     const ids = [...new Set(items.map(i => i[key]).filter(Boolean))];

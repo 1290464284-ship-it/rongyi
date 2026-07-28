@@ -1,8 +1,9 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { BusinessValidationException } from '@common/errors';
 import { DbService } from '../../db/db.service';
 import { IDatabase } from '../../db/db.interface';
 import * as crypto from 'node:crypto';
-import { IDEMPOTENCY_DEFAULT_TTL_MS } from '../../config/constants';
+import { IDEMPOTENCY_DEFAULT_TTL_MS, ONE_HOUR_MS } from '../../config/constants';
 
 /**
  * 幂等操作配置选项
@@ -39,8 +40,51 @@ export interface IdempotencyRecord {
 }
 
 @Injectable()
-export class IdempotencyService {
+export class IdempotencyService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(IdempotencyService.name);
+  private cleanupTimer: ReturnType<typeof setInterval> | null = null;
+  private static readonly CLEANUP_INTERVAL_MS = ONE_HOUR_MS;
+
   constructor(private dbService: DbService) {}
+
+  onModuleInit() {
+    // P2 修复：定时清理过期的 IdempotencyRecord，防止表无限增长
+    // 此前仅在被相同 key 再次访问时懒清理，未被访问的过期记录会永久残留
+    this.cleanupTimer = setInterval(
+      () => this.cleanupExpiredRecords(),
+      IdempotencyService.CLEANUP_INTERVAL_MS,
+    );
+    this.cleanupTimer.unref?.();
+    // 启动时立即执行一次
+    process.nextTick(() => this.cleanupExpiredRecords());
+  }
+
+  onModuleDestroy() {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = null;
+    }
+  }
+
+  /**
+   * 清理已过期的幂等记录
+   */
+  private cleanupExpiredRecords(): void {
+    try {
+      const now = new Date().toISOString();
+      const result = this.dbService.prepare(
+        'DELETE FROM IdempotencyRecord WHERE expiresAt < ?',
+      ).run(now);
+      if (result.changes > 0) {
+        this.logger.log(`清理 ${result.changes} 条过期幂等记录`);
+      }
+    } catch (err: unknown) {
+      this.logger.warn(
+        '清理过期幂等记录失败:',
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
 
   /**
    * 在事务中执行幂等操作
@@ -49,9 +93,12 @@ export class IdempotencyService {
    * @param options.type 操作类型标识
    * @param options.ttlMs 幂等记录过期时间（毫秒），默认使用系统配置
    * @param options.processingMessage 处理中时的错误提示消息
-   * @param handler 实际业务处理函数，接收数据库连接对象，支持事务
+   * @param handler 实际业务处理函数，接收数据库连接对象，支持事务。
+   *                **必须是同步函数**（不可返回 Promise），否则会破坏事务原子性。
+   *                若检测到 handler 返回 Promise，本方法会立即抛错并在控制台打印
+   *                堆栈以便排查，防止"事务已 COMMIT 但业务逻辑仍在 await"的隐蔽破坏。
    * @returns 业务处理函数的返回值（首次执行）或缓存的成功结果（重复请求）
-   * @throws BadRequestException 同一 key 正在处理中时抛出
+   * @throws BusinessValidationException 同一 key 正在处理中时抛出
    * @throws Error 业务处理函数抛出的任何异常都会被原样抛出，并记录为 FAILED 状态
    * @description
    * 幂等状态流转：
@@ -82,14 +129,24 @@ export class IdempotencyService {
 
       if (existing) {
         if (existing.status === 'COMPLETED' && existing.result) {
-          return JSON.parse(existing.result) as T;
+          // P1 修复：JSON.parse 失败时清理损坏记录并重试，避免 SyntaxError 导致请求失败
+          try {
+            return JSON.parse(existing.result) as T;
+          } catch {
+            db.prepare('DELETE FROM IdempotencyRecord WHERE id = ?').run(existing.id);
+            throw new BusinessValidationException('幂等记录结果损坏，正在重试');
+          }
+        }
+        if (existing.status === 'COMPLETED' && !existing.result) {
+          db.prepare('DELETE FROM IdempotencyRecord WHERE id = ?').run(existing.id);
+          throw new BusinessValidationException('幂等记录状态异常，正在重试');
         }
         if (existing.status === 'PROCESSING') {
           const processingTime = Date.now() - new Date(existing.createdAt).getTime();
           if (processingTime > PROCESSING_TIMEOUT_MS) {
             db.prepare('DELETE FROM IdempotencyRecord WHERE id = ?').run(existing.id);
           } else {
-            throw new BadRequestException(options.processingMessage || '处理中，请稍后再试');
+            throw new BusinessValidationException(options.processingMessage || '处理中，请稍后再试');
           }
         }
         if (existing.status === 'FAILED') {
@@ -113,7 +170,17 @@ export class IdempotencyService {
               'INSERT INTO IdempotencyRecord (id, key, type, status, createdAt, expiresAt) VALUES (?, ?, ?, ?, ?, ?)',
             ).run(recordId, key, type, 'PROCESSING', now, expiresAt);
           } else if (retryExisting?.status === 'COMPLETED' && retryExisting.result) {
-            return JSON.parse(retryExisting.result) as T;
+            // P1 修复：JSON.parse 失败时清理损坏记录并重试
+            try {
+              return JSON.parse(retryExisting.result) as T;
+            } catch {
+              db.prepare('DELETE FROM IdempotencyRecord WHERE id = ?').run(retryExisting.id);
+              throw new BusinessValidationException('幂等记录结果损坏，正在重试');
+            }
+          } else if (retryExisting?.status === 'COMPLETED' && !retryExisting.result) {
+            // COMPLETED 但无 result：损坏记录，删除后重试（与主流程 L91-93 保持一致）
+            db.prepare('DELETE FROM IdempotencyRecord WHERE id = ?').run(retryExisting.id);
+            throw new BusinessValidationException('幂等记录状态异常，正在重试');
           } else if (retryExisting?.status === 'PROCESSING') {
             const processingTime = Date.now() - new Date(retryExisting.createdAt).getTime();
             if (processingTime > PROCESSING_TIMEOUT_MS) {
@@ -122,10 +189,10 @@ export class IdempotencyService {
                 'INSERT INTO IdempotencyRecord (id, key, type, status, createdAt, expiresAt) VALUES (?, ?, ?, ?, ?, ?)',
               ).run(recordId, key, type, 'PROCESSING', now, expiresAt);
             } else {
-              throw new BadRequestException(options.processingMessage || '处理中，请稍后再试');
+              throw new BusinessValidationException(options.processingMessage || '处理中，请稍后再试');
             }
           } else {
-            throw new BadRequestException(options.processingMessage || '处理中，请稍后再试');
+            throw new BusinessValidationException(options.processingMessage || '处理中，请稍后再试');
           }
         } else {
           throw e;
@@ -134,6 +201,19 @@ export class IdempotencyService {
 
       try {
         const result = handler(db);
+        // 契约守卫：handler 必须是同步函数。better-sqlite3 事务在 handler 返回
+        // 后立即 COMMIT，若 handler 是 async（返回 Promise），await 期间的
+        // DB 操作会落在事务外，破坏原子性并可能造成"状态=COMPLETED 但业务未落库"。
+        if (result instanceof Promise) {
+          const err = new Error(
+            `[IdempotencyService] handler 必须为同步函数（不可返回 Promise）。` +
+            `key=${key}, type=${type}。请移除 handler 内的 await，或改用非事务 API。`,
+          );
+          db.prepare(
+            "UPDATE IdempotencyRecord SET status = 'FAILED', result = ? WHERE id = ?",
+          ).run(JSON.stringify({ error: err.message }), recordId);
+          throw err;
+        }
         db.prepare(
           "UPDATE IdempotencyRecord SET status = 'COMPLETED', result = ? WHERE id = ?",
         ).run(JSON.stringify(result), recordId);

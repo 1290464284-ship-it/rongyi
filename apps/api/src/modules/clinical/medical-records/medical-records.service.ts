@@ -155,6 +155,7 @@ export class MedicalRecordsService extends BaseService<MedicalRecord> {
     if (record.isLocked) {
       throw new BusinessValidationException("病历已锁定，无法直接修改；请提交修改申请并经审批后解锁");
     }
+    const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
     const now = new Date().toISOString();
     this.dbService.transaction((db) => {
       const updates: string[] = ['updatedAt = ?'];
@@ -165,10 +166,10 @@ export class MedicalRecordsService extends BaseService<MedicalRecord> {
       if (dto.examination !== undefined) { updates.push('examination = ?'); params.push(dto.examination); }
       if (dto.diagnosis !== undefined) { updates.push('diagnosis = ?'); params.push(dto.diagnosis); }
       if (dto.treatmentPlan !== undefined) { updates.push('treatmentPlan = ?'); params.push(dto.treatmentPlan); }
-      params.push(id);
-      db.prepare(`UPDATE MedicalRecord SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+      params.push(id, ...clinicParams);
+      // P1 修复：UPDATE 必须带 clinicClause，防止跨诊所篡改病历（多租户数据隔离）
+      db.prepare(`UPDATE MedicalRecord SET ${updates.join(', ')} WHERE id = ? AND deletedAt IS NULL${clinicClause}`).run(...params);
       this.logAudit(db, AuditLogType.MEDICAL_RECORD_UPDATE, id, "MedicalRecord", { afterData: { chiefComplaint: dto.chiefComplaint, diagnosis: dto.diagnosis, treatmentPlan: dto.treatmentPlan } });
-      const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
       return db.prepare(`SELECT id, patientId, visitId, doctorId, templateId, chiefComplaint, presentIllness, pastHistory, allergyHistory, examination, diagnosis, treatmentPlan, teethInvolved, images, signature, isLocked, lockedAt, lockedBy, modifyRequestId, clinicId, createdAt, updatedAt, deletedAt FROM MedicalRecord WHERE id = ?${clinicClause}`).get(id, ...clinicParams);
     });
     return this.findOne(id);
@@ -201,42 +202,45 @@ export class MedicalRecordsService extends BaseService<MedicalRecord> {
     // 注意：当前实现未使用 _userId / _category 过滤，缓存键仅需 clinicId
     const clinicId = this.clinicContext.getClinicId();
     const cacheKey = buildDictionaryCacheKey(DICTIONARY_CACHE_KEYS.MEDICAL_RECORD_PHRASES, clinicId);
-    const cached = this.cache.get<unknown[]>(cacheKey);
-    if (cached) return cached;
-
-    const whereClauses: string[] = ['1=1'];
-    const params: unknown[] = [];
-    if (clinicId) { whereClauses.push('clinicId = ?'); params.push(clinicId); }
-    const result = this.dbService.prepare(`SELECT id, name, category, content, createdAt FROM MedicalRecordPhrase WHERE ${whereClauses.join(' AND ')} ORDER BY category LIMIT ${MAX_PAGE_SIZE}`).all(...params);
-    this.cache.set(cacheKey, result, MEDICAL_RECORD_DICTIONARY_CACHE_TTL_MS);
-    return result;
+    // P0 修复：使用 getOrSet 提供缓存击穿保护（pending Promise 跟踪），
+    // 避免高并发下多个请求同时穿透缓存击中 DB
+    return this.cache.getOrSet<unknown[]>(cacheKey, () => {
+      // P0 修复：使用 buildClinicClause 强制校验 clinicId（缺失时抛错），
+      // 原先 if (clinicId) 模式在 clinicId 缺失时会跳过过滤导致跨租户数据泄露
+      const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
+      return this.dbService.prepare(
+        `SELECT id, name, category, content, createdAt FROM MedicalRecordPhrase WHERE 1=1${clinicClause} ORDER BY category LIMIT ${MAX_PAGE_SIZE}`,
+      ).all(...clinicParams);
+    }, MEDICAL_RECORD_DICTIONARY_CACHE_TTL_MS);
   }
   async listModifyRequests(status?: string) {
-    const clinicId = this.clinicContext.getClinicId();
-    const whereClauses: string[] = ['1=1'];
-    const params: unknown[] = [];
-    if (clinicId) { whereClauses.push('clinicId = ?'); params.push(clinicId); }
+    // P0 修复：使用 buildClinicClause 强制校验 clinicId（缺失时抛错），
+    // 原先 if (clinicId) 模式在 clinicId 缺失时会跳过过滤导致跨租户数据泄露
+    const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
+    const whereClauses: string[] = [`1=1${clinicClause}`];
+    const params: unknown[] = [...clinicParams];
     if (status) {
       whereClauses.push('status = ?');
       params.push(status);
-      return this.dbService.prepare(`SELECT id, recordId, applicantId, reason, status, reviewerId, reviewRemark, reviewedAt, createdAt FROM RecordModifyRequest WHERE ${whereClauses.join(' AND ')} ORDER BY createdAt DESC LIMIT ${MAX_PAGE_SIZE}`).all(...params);
     }
-    return this.dbService.prepare(`SELECT id, recordId, applicantId, reason, status, reviewerId, reviewRemark, reviewedAt, createdAt FROM RecordModifyRequest WHERE ${whereClauses.join(' AND ')} ORDER BY createdAt DESC LIMIT ${MAX_PAGE_SIZE}`).all(...params);
+    return this.dbService.prepare(
+      `SELECT id, recordId, applicantId, reason, status, reviewerId, reviewRemark, reviewedAt, createdAt FROM RecordModifyRequest WHERE ${whereClauses.join(' AND ')} ORDER BY createdAt DESC LIMIT ${MAX_PAGE_SIZE}`,
+    ).all(...params);
   }
   async listTemplates(_userId?: string, _category?: string) {
     // P4-3: 病历模板为字典类数据（变更频率低、读频率高），按诊所缓存
     // 注意：当前实现未使用 _userId / _category 过滤，缓存键仅需 clinicId
     const clinicId = this.clinicContext.getClinicId();
     const cacheKey = buildDictionaryCacheKey(DICTIONARY_CACHE_KEYS.MEDICAL_RECORD_TEMPLATES, clinicId);
-    const cached = this.cache.get<unknown[]>(cacheKey);
-    if (cached) return cached;
-
-    const whereClauses: string[] = ['1=1'];
-    const params: unknown[] = [];
-    if (clinicId) { whereClauses.push('clinicId = ?'); params.push(clinicId); }
-    const result = this.dbService.prepare(`SELECT id, name, category, chiefComplaint, presentIllness, pastHistory, examination, diagnosis, treatmentPlan, createdAt FROM MedicalRecordTemplate WHERE ${whereClauses.join(' AND ')} ORDER BY category LIMIT ${MAX_PAGE_SIZE}`).all(...params);
-    this.cache.set(cacheKey, result, MEDICAL_RECORD_DICTIONARY_CACHE_TTL_MS);
-    return result;
+    // P0 修复：使用 getOrSet 提供缓存击穿保护，原先 cache.get+cache.set 模式有击穿风险
+    return this.cache.getOrSet<unknown[]>(cacheKey, () => {
+      // P0 修复：使用 buildClinicClause 强制校验 clinicId（缺失时抛错），
+      // 原先 if (clinicId) 模式在 clinicId 缺失时会跳过过滤导致跨租户数据泄露
+      const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
+      return this.dbService.prepare(
+        `SELECT id, name, category, chiefComplaint, presentIllness, pastHistory, examination, diagnosis, treatmentPlan, createdAt FROM MedicalRecordTemplate WHERE 1=1${clinicClause} ORDER BY category LIMIT ${MAX_PAGE_SIZE}`,
+      ).all(...clinicParams);
+    }, MEDICAL_RECORD_DICTIONARY_CACHE_TTL_MS);
   }
   async createPhrase(dto: PhraseDto, _userId?: string) {
     const id = crypto.randomUUID();

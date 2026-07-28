@@ -1,9 +1,8 @@
 import { PrescriptionsService } from './prescriptions.service';
+import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import { DrugCatalogService } from '../drug-catalog/drug-catalog.service';
-import { BadRequestException } from '@nestjs/common';
-import { BusinessValidationException } from '../../../common/errors';
 
 function createMockClinicContext(clinicId: string | null = 'test-clinic-001'): ClinicContextService {
   return {
@@ -39,27 +38,27 @@ describe('PrescriptionsService', () => {
   // ==================== create - 输入校验 ====================
 
   describe('create - 输入校验', () => {
-    it('处方明细为空数组应抛出 BadRequestException', async () => {
+    it('处方明细为空数组应抛出 BusinessValidationException', async () => {
       await expect(service.create({
         patientId: 'patient-001',
         doctorId: 'doctor-001',
         items: [],
-      } as any)).rejects.toThrow(BadRequestException);
+      } as any)).rejects.toThrow(BusinessValidationException);
     });
 
-    it('缺少 items 字段应抛出 BadRequestException', async () => {
+    it('缺少 items 字段应抛出 BusinessValidationException', async () => {
       await expect(service.create({
         patientId: 'patient-001',
         doctorId: 'doctor-001',
-      } as any)).rejects.toThrow(BadRequestException);
+      } as any)).rejects.toThrow(BusinessValidationException);
     });
 
-    it('items 为 undefined 应抛出 BadRequestException', async () => {
+    it('items 为 undefined 应抛出 BusinessValidationException', async () => {
       await expect(service.create({
         patientId: 'patient-001',
         doctorId: 'doctor-001',
         items: undefined,
-      } as any)).rejects.toThrow(BadRequestException);
+      } as any)).rejects.toThrow(BusinessValidationException);
     });
   });
 
@@ -152,7 +151,7 @@ describe('PrescriptionsService', () => {
       expect((result as any).patientId).toBe('patient-002');
     });
 
-    it('药品库存不足时应抛出 BadRequestException', async () => {
+    it('药品库存不足时应抛出 BusinessValidationException', async () => {
       // MockDbService 无法精确模拟 WHERE code = ? 查询
       // 但如果 mock 返回了药品数据且 stock < quantity，service 会抛出异常
       // 此测试验证 service 的库存检查逻辑路径
@@ -180,8 +179,8 @@ describe('PrescriptionsService', () => {
           ],
         });
       } catch (err: unknown) {
-        // 如果抛出异常，应是 BadRequestException（库存不足）
-        expect(err).toBeInstanceOf(BadRequestException);
+        // 如果抛出异常，应是 BusinessValidationException（库存不足）
+        expect(err).toBeInstanceOf(BusinessValidationException);
       }
     });
 
@@ -311,7 +310,7 @@ describe('PrescriptionsService', () => {
       expect((result as any).patientId).toBe('patient-001');
     });
 
-    it('不存在的 ID 抛出 NotFoundException', async () => {
+    it('不存在的 ID 抛出 BusinessNotFoundException', async () => {
       await expect(service.findOne('non-existent-id')).rejects.toThrow();
     });
   });
@@ -456,10 +455,10 @@ describe('PrescriptionsService', () => {
       expect(mockDrugCatalog.deductStock).toHaveBeenCalledTimes(1);
     });
 
-    it('deductStock 抛出 BadRequestException 时异常向上传播', async () => {
+    it('deductStock 抛出 BusinessValidationException（库存校验失败）', async () => {
       const mockDrugCatalog = {
         deductStock: jest.fn().mockImplementation(() => {
-          throw new BadRequestException('库存校验失败');
+          throw new BusinessValidationException('库存校验失败');
         }),
       } as unknown as DrugCatalogService;
 
@@ -471,7 +470,7 @@ describe('PrescriptionsService', () => {
         items: [
           { drugCode: 'AMX-001', drugName: '阿莫西林', spec: '0.25g', dosage: '0.5g', frequency: 'tid', days: 5, quantity: 1, unit: '粒' },
         ],
-      } as any)).rejects.toThrow(BadRequestException);
+      } as any)).rejects.toThrow(BusinessValidationException);
 
       expect(mockDrugCatalog.deductStock).toHaveBeenCalledTimes(1);
     });

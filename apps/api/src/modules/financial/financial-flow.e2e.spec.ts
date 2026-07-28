@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException } from '@nestjs/common';
+import { BusinessValidationException } from '@common/errors';
+
 import { RefundsService } from './refunds/refunds.service';
 import { ChargeService } from './charge/charge.service';
 import { ChargePaymentService } from './charge/charge-payment.service';
@@ -7,11 +8,16 @@ import { DebtService } from './charge/debt.service';
 import { ComboService } from './charge/combo.service';
 import { PaymentMethodService } from './charge/payment-method.service';
 import { MemberCardsService } from './member-cards/member-cards.service';
+import { ChargeRepository } from './charge/repositories/charge.repository';
+import { RefundRepository } from './refunds/repositories/refund.repository';
+import { MemberCardLogRepository } from './member-cards/repositories/member-card-log.repository';
+import { MemberPointLogRepository } from './member-cards/repositories/member-point-log.repository';
 import { DbService } from '../../db/db.service';
 import { IdempotencyService } from '../../common/services/idempotency.service';
 import { ClinicContextService } from '../../common/services/clinic-context.service';
 import { CacheService } from '../../common/services/cache.service';
 import { StatsService } from '../system/stats/stats.service';
+import { EventBusService } from '../../common/events/event-bus.service';
 import {
   createTestDb,
   cleanupTestDb,
@@ -69,19 +75,18 @@ describe('Financial Flow E2E - 收费→退款→欠款同步→会员卡退款'
           provide: StatsService,
           useValue: { invalidateStatsCache: jest.fn() },
         },
+        { provide: EventBusService, useValue: { emit: jest.fn(), on: jest.fn(), onAll: jest.fn() } },
+        ChargeRepository,
         ChargeService,
         ChargePaymentService,
         DebtService,
         ComboService,
         PaymentMethodService,
-        {
-          provide: MemberCardsService,
-          useValue: {
-            consume: jest.fn().mockResolvedValue({}),
-            refund: jest.fn().mockResolvedValue({}),
-            recharge: jest.fn().mockResolvedValue({}),
-          },
-        },
+        // P0 修复：使用真实 MemberCardsService 实例，以支持 consumeSync 委托调用
+        MemberCardLogRepository,
+        MemberPointLogRepository,
+        MemberCardsService,
+        RefundRepository,
         RefundsService,
       ],
     }).compile();
@@ -303,7 +308,7 @@ describe('Financial Flow E2E - 收费→退款→欠款同步→会员卡退款'
       // 退款 500 元超过可退金额 300 元 → 应抛出异常
       await expect(
         runAsDoctor(() => refundsService.createRefund({ chargeId: charge.id, amount: 500 })),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
 
       // 会员卡余额未变
       const cardAfter = db.prepare('SELECT balance, totalConsume FROM MemberCard WHERE id = ?').get(TEST_MEMBER_CARD_ID) as any;

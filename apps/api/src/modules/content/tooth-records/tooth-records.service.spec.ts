@@ -1,7 +1,8 @@
 import { ToothRecordsService } from './tooth-records.service';
+import { BusinessValidationException } from '@common/errors';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
-import { BadRequestException } from '@nestjs/common';
+
 
 function createMockClinicContext(clinicId: string | null = 'test-clinic-001'): ClinicContextService {
   return {
@@ -52,23 +53,23 @@ describe('ToothRecordsService', () => {
       expect(result).toBeUndefined();
     });
 
-    it('无效牙位号抛出 BadRequestException', async () => {
-      await expect(service.findByTooth('patient-001', 99)).rejects.toThrow(BadRequestException);
-      await expect(service.findByTooth('patient-001', 0)).rejects.toThrow(BadRequestException);
-      await expect(service.findByTooth('patient-001', 10)).rejects.toThrow(BadRequestException);
+    it('无效牙位号抛出 BusinessValidationException', async () => {
+      await expect(service.findByTooth('patient-001', 99)).rejects.toThrow(BusinessValidationException);
+      await expect(service.findByTooth('patient-001', 0)).rejects.toThrow(BusinessValidationException);
+      await expect(service.findByTooth('patient-001', 10)).rejects.toThrow(BusinessValidationException);
     });
 
     it('有效牙位号不抛异常（恒牙：11-18,21-28,31-38,41-48）', async () => {
       const validNumbers = [11, 18, 21, 28, 31, 38, 41, 48];
       for (const n of validNumbers) {
-        await expect(service.findByTooth('patient-001', n)).resolves.not.toThrow(BadRequestException);
+        await expect(service.findByTooth('patient-001', n)).resolves.not.toThrow(BusinessValidationException);
       }
     });
 
     it('有效牙位号不抛异常（乳牙：51-55,61-65,71-75,81-85）', async () => {
       const validNumbers = [51, 55, 61, 65, 71, 75, 81, 85];
       for (const n of validNumbers) {
-        await expect(service.findByTooth('patient-001', n)).resolves.not.toThrow(BadRequestException);
+        await expect(service.findByTooth('patient-001', n)).resolves.not.toThrow(BusinessValidationException);
       }
     });
   });
@@ -120,8 +121,8 @@ describe('ToothRecordsService', () => {
       expect((result as any).conditions).toEqual([]);
     });
 
-    it('无效牙位号抛出 BadRequestException', async () => {
-      await expect(service.upsert('patient-001', 99, {})).rejects.toThrow(BadRequestException);
+    it('无效牙位号抛出 BusinessValidationException', async () => {
+      await expect(service.upsert('patient-001', 99, {})).rejects.toThrow(BusinessValidationException);
     });
   });
 
@@ -143,8 +144,8 @@ describe('ToothRecordsService', () => {
       expect(record).toBeUndefined();
     });
 
-    it('无效牙位号抛出 BadRequestException', async () => {
-      await expect(service.removeByTooth('patient-001', 99)).rejects.toThrow(BadRequestException);
+    it('无效牙位号抛出 BusinessValidationException', async () => {
+      await expect(service.removeByTooth('patient-001', 99)).rejects.toThrow(BusinessValidationException);
     });
   });
 

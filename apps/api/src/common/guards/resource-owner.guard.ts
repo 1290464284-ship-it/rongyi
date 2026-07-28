@@ -1,4 +1,4 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext, ForbiddenException, Logger } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { RESOURCE_OWNER_KEY, ResourceOwnerConfig } from '../decorators/resource-owner.decorator';
 import { Role } from '@dental/shared';
@@ -8,10 +8,13 @@ import { validateColumnName, validateTableName } from '../utils/db/validate-name
 interface RequestUser {
   id: string;
   role: Role;
+  clinicId?: string;
 }
 
 @Injectable()
 export class ResourceOwnerGuard implements CanActivate {
+  private readonly logger = new Logger(ResourceOwnerGuard.name);
+
   constructor(
     private reflector: Reflector,
     private dbService: DbService,
@@ -46,8 +49,11 @@ export class ResourceOwnerGuard implements CanActivate {
       return true;
     }
 
+    // P1 安全修复：fail-closed —— 未知角色默认拒绝，而非放行
+    // 原先未知角色 return true 会导致权限绕过
     if (user.role !== Role.DOCTOR) {
-      return true;
+      this.logger.warn(`未知角色 ${user.role} 尝试访问资源 ${config.resourceType}/${request.params[config.idParam || 'id']}，已拒绝`);
+      throw new ForbiddenException('无权访问该资源');
     }
 
     const idParam = config.idParam || 'id';
@@ -57,9 +63,17 @@ export class ResourceOwnerGuard implements CanActivate {
       return true;
     }
 
+    let sql = `SELECT ${ownerField} FROM ${config.resourceType} WHERE id = ? AND deletedAt IS NULL`;
+    const params: unknown[] = [resourceId];
+
+    if (user.clinicId) {
+      sql += ' AND clinicId = ?';
+      params.push(user.clinicId);
+    }
+
     const resource = this.dbService
-      .prepare(`SELECT ${ownerField} FROM ${config.resourceType} WHERE id = ? AND deletedAt IS NULL`)
-      .get(resourceId) as Record<string, unknown> | undefined;
+      .prepare(sql)
+      .get(...params) as Record<string, unknown> | undefined;
 
     if (!resource) {
       return true;

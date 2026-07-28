@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-non-literal-fs-filename -- 迁移文件路径来自内部常量，非用户输入 */
 import { Logger } from '@nestjs/common';
 import { Database } from 'better-sqlite3';
 import * as fs from 'node:fs';
@@ -41,20 +42,31 @@ const tableExists = (table: string): boolean => {
 };
 
 const addColumnIfMissing = (table: string, column: string, definition: string) => {
-  try {
-    if (!columnExists(table, column)) {
+  if (!columnExists(table, column)) {
+    try {
       getMigrationDb().exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition};`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // P0 修复：原先所有错误都静默 warn 吞没，掩盖了表不存在、磁盘满等真实问题。
+      // 仅容忍"duplicate column name"（列已存在，理论上 columnExists 已防住，但兼容并发场景）
+      if (/duplicate column name/i.test(msg)) {
+        logger.warn(`列已存在，跳过: ${table}.${column}`);
+        return;
+      }
+      logger.error(`添加列失败 ${table}.${column}: ${msg}`);
+      throw err;
     }
-  } catch (err: unknown) {
-    logger.warn(`跳过列添加 ${table}.${column}:`, (err as Error).message);
   }
 };
 
 const createIndexIfNotExists = (name: string, table: string, columns: string) => {
   try {
     getMigrationDb().exec(`CREATE INDEX IF NOT EXISTS ${name} ON ${table}(${columns})`);
-  } catch {
-    /* ignore */
+  } catch (err: unknown) {
+    // P0 修复：索引创建失败不能静默吞没，否则会导致查询性能退化或唯一性约束缺失
+    // IF NOT EXISTS 已处理"已存在"情况，此处 catch 仅在真实失败时触发
+    logger.error(`创建索引失败 ${name} ON ${table}(${columns}):`, (err as Error).message);
+    throw err;
   }
 };
 
@@ -88,7 +100,7 @@ function recordMigration(version: number, name: string, durationMs: number): voi
   ).run(version, name, durationMs);
 }
 
-export const CURRENT_VERSION = 22;
+export const CURRENT_VERSION = 26;
 
 export const getCurrentVersion = (): number => {
   return (getMigrationDb().prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
@@ -243,24 +255,35 @@ const migrateToV10 = () => {
   // SQLite 不支持 ALTER TABLE 修改约束，需重建表以支持复合唯一约束 UNIQUE(clinicId, key)
   const db = getMigrationDb();
   if (!columnExists('ClinicInfo', 'clinicId')) {
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS ClinicInfo_new (
-        id TEXT PRIMARY KEY,
-        key TEXT NOT NULL,
-        value TEXT,
-        clinicId TEXT,
-        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(clinicId, key)
-      )
-    `);
-    // 复制现有数据（clinicId 设为 NULL 表示全局配置）
-    db.exec(`
-      INSERT OR IGNORE INTO ClinicInfo_new (id, key, value, clinicId, updatedAt)
-      SELECT id, key, value, NULL, updatedAt FROM ClinicInfo
-    `);
-    db.exec('DROP TABLE ClinicInfo');
-    db.exec('ALTER TABLE ClinicInfo_new RENAME TO ClinicInfo');
-    createIndexIfNotExists('idx_clinicinfo_clinic', 'ClinicInfo', 'clinicId');
+    // P0 修复：检测残留的 _new 表（与 rebuildTableWithNewCheck 一致的防护）
+    if (!tableExists('ClinicInfo') && tableExists('ClinicInfo_new')) {
+      throw new Error(
+        '检测到迁移残留: 表 ClinicInfo 不存在但 ClinicInfo_new 存在。' +
+        '请手动将 ClinicInfo_new 重命名为 ClinicInfo 后重启。'
+      );
+    }
+    // P0 修复：用事务包裹整个重建过程，保证原子性
+    const rebuildTx = db.transaction(() => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS ClinicInfo_new (
+          id TEXT PRIMARY KEY,
+          key TEXT NOT NULL,
+          value TEXT,
+          clinicId TEXT,
+          updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(clinicId, key)
+        )
+      `);
+      // 复制现有数据（clinicId 设为 NULL 表示全局配置）
+      db.exec(`
+        INSERT OR IGNORE INTO ClinicInfo_new (id, key, value, clinicId, updatedAt)
+        SELECT id, key, value, NULL, updatedAt FROM ClinicInfo
+      `);
+      db.exec('DROP TABLE ClinicInfo');
+      db.exec('ALTER TABLE ClinicInfo_new RENAME TO ClinicInfo');
+      createIndexIfNotExists('idx_clinicinfo_clinic', 'ClinicInfo', 'clinicId');
+    });
+    rebuildTx();
   }
   // P1-1: UsedRefreshToken 添加 usedAt 索引，加速定时清理
   createIndexIfNotExists('idx_used_refresh_token_usedat', 'UsedRefreshToken', 'usedAt');
@@ -273,18 +296,34 @@ const rebuildTableWithNewCheck = (
   indexes: Array<{ name: string; columns: string }> = [],
 ) => {
   const db = getMigrationDb();
-  if (!tableExists(tableName)) return;
 
+  // P0 修复：检测上一次迁移失败留下的 _new 残留表
+  // 若旧表已不存在但 _new 表存在，说明上次重建在 DROP-RENAME 之间中断
   const tempTableName = `${tableName}_new`;
-  db.exec(`DROP TABLE IF EXISTS ${tempTableName}`);
-  db.exec(newTableSql);
-  db.exec(insertSql);
-  db.exec(`DROP TABLE ${tableName}`);
-  db.exec(`ALTER TABLE ${tempTableName} RENAME TO ${tableName}`);
+  if (!tableExists(tableName)) {
+    if (tableExists(tempTableName)) {
+      throw new Error(
+        `检测到迁移残留: 表 ${tableName} 不存在但 ${tempTableName} 存在。` +
+        `这表明上一次表重建在 DROP 旧表后、RENAME 前中断。` +
+        `请手动将 ${tempTableName} 重命名为 ${tableName} 后重启。`
+      );
+    }
+    return;
+  }
 
-  indexes.forEach(idx => {
-    createIndexIfNotExists(idx.name, tableName, idx.columns);
+  // P0 修复：用事务包裹整个重建过程，保证原子性
+  // SQLite 支持事务内执行 CREATE/DROP/ALTER/RENAME
+  const rebuildTx = db.transaction(() => {
+    db.exec(`DROP TABLE IF EXISTS ${tempTableName}`);
+    db.exec(newTableSql);
+    db.exec(insertSql);
+    db.exec(`DROP TABLE ${tableName}`);
+    db.exec(`ALTER TABLE ${tempTableName} RENAME TO ${tableName}`);
+    indexes.forEach(idx => {
+      createIndexIfNotExists(idx.name, tableName, idx.columns);
+    });
   });
+  rebuildTx();  // 任一步失败 → 整体回滚，旧表保持不变
 };
 
 const migrateToV11 = () => {
@@ -457,7 +496,7 @@ const migrateToV14 = () => {
         id TEXT PRIMARY KEY,
         itemId TEXT NOT NULL,
         type TEXT NOT NULL CHECK (type IN ('IN', 'OUT', 'ADJUST')),
-        quantity REAL NOT NULL CHECK (quantity > 0),
+        quantity REAL NOT NULL CHECK (quantity >= 0),
         unitPrice INTEGER DEFAULT 0,
         totalAmount INTEGER DEFAULT 0,
         supplierId TEXT,
@@ -1198,6 +1237,771 @@ const migrateToV22 = () => {
   logger.log('v22 迁移完成：患者搜索优化索引');
 };
 
+const migrateToV23 = () => {
+  if (tableExists('ChargeItem')) {
+    createIndexIfNotExists('idx_charge_item_charge_category', 'ChargeItem', 'chargeId, category');
+  }
+  if (tableExists('Charge')) {
+    createIndexIfNotExists('idx_charge_clinic_status_created', 'Charge', 'clinicId, status, createdAt DESC');
+    createIndexIfNotExists('idx_charge_clinic_patient_created', 'Charge', 'clinicId, patientId, createdAt DESC');
+    createIndexIfNotExists('idx_charge_clinic_paidat_doctor', 'Charge', 'clinicId, paidAt, doctorId');
+  }
+  if (tableExists('Patient')) {
+    createIndexIfNotExists('idx_patient_clinic_name_phone', 'Patient', 'clinicId, name, phone');
+  }
+  if (tableExists('DrugCatalog')) {
+    createIndexIfNotExists('idx_drugcatalog_clinic_code', 'DrugCatalog', 'clinicId, code');
+  }
+  logger.log('v23 迁移完成：慢查询优化复合索引');
+};
+
+const migrateToV24 = () => {
+  // P0: 修复金额字段类型不一致（REAL → INTEGER）
+  // Treatment、TreatmentCatalog、TreatmentPlan、TreatmentPlanItem、DrugCatalog 使用 REAL
+  // Charge、MemberCard 等使用 INTEGER（分），需要统一为 INTEGER
+  // 迁移策略：重建表 + 现有数据乘以 100（元→分）
+
+  // 1. Treatment.price: REAL → INTEGER
+  if (tableExists('Treatment')) {
+    const tableSql = getMigrationDb().prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='Treatment'").get() as { sql: string } | undefined;
+    if (tableSql?.sql?.includes('price REAL')) {
+      rebuildTableWithNewCheck(
+        'Treatment',
+        `
+        CREATE TABLE Treatment_new (
+          id TEXT PRIMARY KEY,
+          patientId TEXT NOT NULL,
+          visitId TEXT,
+          doctorId TEXT NOT NULL,
+          code TEXT NOT NULL,
+          name TEXT NOT NULL,
+          category TEXT NOT NULL,
+          price INTEGER NOT NULL CHECK (price >= 0),
+          quantity INTEGER DEFAULT 1 CHECK (quantity >= 1),
+          teethNumbers TEXT DEFAULT '[]',
+          status TEXT DEFAULT 'PLANNED' CHECK (status IN ('PLANNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED')),
+          plannedDate TEXT,
+          completedDate TEXT,
+          remark TEXT,
+          clinicId TEXT NOT NULL,
+          createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          deletedAt TEXT,
+          FOREIGN KEY (patientId) REFERENCES Patient(id),
+          FOREIGN KEY (visitId) REFERENCES Visit(id),
+          FOREIGN KEY (doctorId) REFERENCES User(id)
+        )
+        `,
+        `
+        INSERT INTO Treatment_new (id, patientId, visitId, doctorId, code, name, category, price, quantity, teethNumbers, status, plannedDate, completedDate, remark, clinicId, createdAt, updatedAt, deletedAt)
+        SELECT id, patientId, visitId, doctorId, code, name, category,
+               CAST(ROUND(price * 100) AS INTEGER),
+               quantity, teethNumbers, status, plannedDate, completedDate, remark, clinicId, createdAt, updatedAt, deletedAt
+        FROM Treatment
+        `,
+        [
+          { name: 'idx_treatment_clinic', columns: 'clinicId' },
+        ]
+      );
+      logger.log('Treatment.price 已从 REAL 转换为 INTEGER');
+    }
+  }
+
+  // 2. TreatmentCatalog.price: REAL → INTEGER
+  if (tableExists('TreatmentCatalog')) {
+    const tableSql = getMigrationDb().prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='TreatmentCatalog'").get() as { sql: string } | undefined;
+    if (tableSql?.sql?.includes('price REAL')) {
+      rebuildTableWithNewCheck(
+        'TreatmentCatalog',
+        `
+        CREATE TABLE TreatmentCatalog_new (
+          id TEXT PRIMARY KEY,
+          code TEXT UNIQUE NOT NULL,
+          name TEXT NOT NULL,
+          category TEXT NOT NULL,
+          price INTEGER NOT NULL CHECK (price >= 0),
+          remark TEXT,
+          clinicId TEXT NOT NULL,
+          createdAt TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+        `,
+        `
+        INSERT INTO TreatmentCatalog_new (id, code, name, category, price, remark, clinicId, createdAt)
+        SELECT id, code, name, category,
+               CAST(ROUND(price * 100) AS INTEGER),
+               remark, clinicId, createdAt
+        FROM TreatmentCatalog
+        `,
+        [
+          { name: 'idx_treatment_catalog_clinic', columns: 'clinicId' },
+        ]
+      );
+      logger.log('TreatmentCatalog.price 已从 REAL 转换为 INTEGER');
+    }
+  }
+
+  // 3. TreatmentPlan.totalFee: REAL → INTEGER
+  if (tableExists('TreatmentPlan')) {
+    const tableSql = getMigrationDb().prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='TreatmentPlan'").get() as { sql: string } | undefined;
+    if (tableSql?.sql?.includes('totalFee REAL')) {
+      rebuildTableWithNewCheck(
+        'TreatmentPlan',
+        `
+        CREATE TABLE TreatmentPlan_new (
+          id TEXT PRIMARY KEY,
+          patientId TEXT NOT NULL,
+          visitId TEXT,
+          doctorId TEXT NOT NULL,
+          name TEXT NOT NULL,
+          status TEXT DEFAULT 'DRAFT' CHECK (status IN ('DRAFT', 'APPROVED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED')),
+          totalFee INTEGER DEFAULT 0 CHECK (totalFee >= 0),
+          remark TEXT,
+          clinicId TEXT NOT NULL,
+          createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          deletedAt TEXT,
+          FOREIGN KEY (patientId) REFERENCES Patient(id),
+          FOREIGN KEY (visitId) REFERENCES Visit(id),
+          FOREIGN KEY (doctorId) REFERENCES User(id)
+        )
+        `,
+        `
+        INSERT INTO TreatmentPlan_new (id, patientId, visitId, doctorId, name, status, totalFee, remark, clinicId, createdAt, updatedAt, deletedAt)
+        SELECT id, patientId, visitId, doctorId, name, status,
+               CAST(ROUND(COALESCE(totalFee, 0) * 100) AS INTEGER),
+               remark, clinicId, createdAt, updatedAt, deletedAt
+        FROM TreatmentPlan
+        `,
+        [
+          { name: 'idx_treatment_plan_clinic', columns: 'clinicId' },
+        ]
+      );
+      logger.log('TreatmentPlan.totalFee 已从 REAL 转换为 INTEGER');
+    }
+  }
+
+  // 4. TreatmentPlanItem.price: REAL → INTEGER
+  if (tableExists('TreatmentPlanItem')) {
+    const tableSql = getMigrationDb().prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='TreatmentPlanItem'").get() as { sql: string } | undefined;
+    if (tableSql?.sql?.includes('price REAL')) {
+      rebuildTableWithNewCheck(
+        'TreatmentPlanItem',
+        `
+        CREATE TABLE TreatmentPlanItem_new (
+          id TEXT PRIMARY KEY,
+          planId TEXT NOT NULL,
+          code TEXT NOT NULL,
+          name TEXT NOT NULL,
+          category TEXT NOT NULL,
+          price INTEGER NOT NULL CHECK (price >= 0),
+          quantity INTEGER DEFAULT 1 CHECK (quantity >= 1),
+          teethNumbers TEXT DEFAULT '[]',
+          status TEXT DEFAULT 'PLANNED' CHECK (status IN ('PLANNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED')),
+          treatmentId TEXT,
+          completedAt TEXT,
+          remark TEXT,
+          clinicId TEXT NOT NULL,
+          updatedAt TEXT,
+          deletedAt TEXT,
+          FOREIGN KEY (planId) REFERENCES TreatmentPlan(id) ON DELETE CASCADE,
+          FOREIGN KEY (treatmentId) REFERENCES Treatment(id)
+        )
+        `,
+        `
+        INSERT INTO TreatmentPlanItem_new (id, planId, code, name, category, price, quantity, teethNumbers, status, treatmentId, completedAt, remark, clinicId, updatedAt, deletedAt)
+        SELECT id, planId, code, name, category,
+               CAST(ROUND(price * 100) AS INTEGER),
+               quantity, teethNumbers, status, treatmentId, completedAt, remark, clinicId, updatedAt, deletedAt
+        FROM TreatmentPlanItem
+        `,
+        [
+          { name: 'idx_treatment_plan_item_plan', columns: 'planId' },
+        ]
+      );
+      logger.log('TreatmentPlanItem.price 已从 REAL 转换为 INTEGER');
+    }
+  }
+
+  // 5. DrugCatalog.price: REAL → INTEGER
+  if (tableExists('DrugCatalog')) {
+    const tableSql = getMigrationDb().prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='DrugCatalog'").get() as { sql: string } | undefined;
+    if (tableSql?.sql?.includes('price REAL')) {
+      rebuildTableWithNewCheck(
+        'DrugCatalog',
+        `
+        CREATE TABLE DrugCatalog_new (
+          id TEXT PRIMARY KEY,
+          code TEXT UNIQUE NOT NULL,
+          name TEXT NOT NULL,
+          spec TEXT NOT NULL,
+          category TEXT NOT NULL,
+          price INTEGER NOT NULL CHECK (price >= 0),
+          unit TEXT NOT NULL,
+          stock REAL DEFAULT 0 CHECK (stock >= 0),
+          remark TEXT,
+          clinicId TEXT NOT NULL,
+          createdAt TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+        `,
+        `
+        INSERT INTO DrugCatalog_new (id, code, name, spec, category, price, unit, stock, remark, clinicId, createdAt)
+        SELECT id, code, name, spec, category,
+               CAST(ROUND(price * 100) AS INTEGER),
+               unit, stock, remark, clinicId, createdAt
+        FROM DrugCatalog
+        `,
+        [
+          { name: 'idx_drug_catalog_clinic', columns: 'clinicId' },
+        ]
+      );
+      logger.log('DrugCatalog.price 已从 REAL 转换为 INTEGER');
+    }
+  }
+
+  // 6. Charge.discount: 修复 v1 迁移遗留的 REAL 类型
+  // schema 定义为 INTEGER，但 v1 迁移使用了 REAL，需要统一
+  if (tableExists('Charge')) {
+    const tableSql = getMigrationDb().prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='Charge'").get() as { sql: string } | undefined;
+    // 检查 discount 列类型（通过 PRAGMA table_info）
+    const columns = getMigrationDb().prepare('PRAGMA table_info(Charge)').all() as Array<{ name: string; type: string }>;
+    const discountCol = columns.find(c => c.name === 'discount');
+    if (discountCol && discountCol.type === 'REAL') {
+      rebuildTableWithNewCheck(
+        'Charge',
+        `
+        CREATE TABLE Charge_new (
+          id TEXT PRIMARY KEY,
+          patientId TEXT NOT NULL,
+          visitId TEXT,
+          doctorId TEXT,
+          number TEXT UNIQUE NOT NULL,
+          totalAmount INTEGER NOT NULL CHECK (totalAmount >= 0),
+          paidAmount INTEGER DEFAULT 0 CHECK (paidAmount >= 0),
+          refundedAmount INTEGER DEFAULT 0 CHECK (refundedAmount >= 0),
+          discount INTEGER DEFAULT 0 CHECK (discount >= 0),
+          status TEXT DEFAULT 'UNPAID' CHECK (status IN ('UNPAID', 'PARTIAL', 'PAID', 'REFUNDED', 'CANCELLED')),
+          payMethod TEXT,
+          paidAt TEXT,
+          remark TEXT,
+          clinicId TEXT NOT NULL,
+          createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          deletedAt TEXT,
+          FOREIGN KEY (patientId) REFERENCES Patient(id),
+          FOREIGN KEY (visitId) REFERENCES Visit(id),
+          FOREIGN KEY (doctorId) REFERENCES User(id)
+        )
+        `,
+        `
+        INSERT INTO Charge_new (id, patientId, visitId, doctorId, number, totalAmount, paidAmount, refundedAmount, discount, status, payMethod, paidAt, remark, clinicId, createdAt, updatedAt, deletedAt)
+        SELECT id, patientId, visitId, doctorId, number, totalAmount, paidAmount, refundedAmount,
+               CAST(ROUND(COALESCE(discount, 0)) AS INTEGER),
+               status, payMethod, paidAt, remark, clinicId, createdAt, updatedAt, deletedAt
+        FROM Charge
+        `,
+        [
+          { name: 'idx_charge_clinic', columns: 'clinicId' },
+          { name: 'idx_charge_patient_status', columns: 'patientId, status' },
+          { name: 'idx_charge_doctor', columns: 'doctorId' },
+        ]
+      );
+      logger.log('Charge.discount 已从 REAL 转换为 INTEGER');
+    }
+  }
+
+  logger.log('v24 迁移完成：金额字段类型统一为 INTEGER（分）');
+};
+
+const migrateToV25 = () => {
+  // P0: 多租户 UNIQUE 约束修复 — 全局唯一改为诊所内唯一
+  // 原约束: code/number/cardNo TEXT UNIQUE NOT NULL（全局唯一，跨诊所不允许重复）
+  // 新约束: UNIQUE(clinicId, fieldName)（诊所内唯一，不同诊所可重复）
+  // SQLite 不支持 ALTER TABLE 修改约束，需重建表
+  const db = getMigrationDb();
+
+  // 1. Patient.code: UNIQUE NOT NULL -> UNIQUE(clinicId, code)
+  if (tableExists('Patient')) {
+    const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='Patient'").get() as { sql: string } | undefined;
+    if (tableSql?.sql?.includes('code TEXT UNIQUE NOT NULL') && !tableSql?.sql?.includes('UNIQUE(clinicId, code)')) {
+      rebuildTableWithNewCheck(
+        'Patient',
+        `
+        CREATE TABLE Patient_new (
+          id TEXT PRIMARY KEY,
+          code TEXT NOT NULL,
+          name TEXT NOT NULL,
+          gender TEXT NOT NULL CHECK (gender IN ('MALE','FEMALE','UNKNOWN','OTHER')),
+          birthDate TEXT,
+          phone TEXT NOT NULL,
+          idCard TEXT,
+          address TEXT,
+          occupation TEXT,
+          remark TEXT,
+          avatar TEXT,
+          tags TEXT DEFAULT '[]',
+          allergies TEXT DEFAULT '[]',
+          medicalHistory TEXT DEFAULT '[]',
+          medicationHistory TEXT DEFAULT '[]',
+          systemicDiseases TEXT DEFAULT '[]',
+          source TEXT DEFAULT 'WALK_IN',
+          familyId TEXT,
+          referrer TEXT,
+          emergencyContact TEXT,
+          emergencyPhone TEXT,
+          openId TEXT,
+          clinicId TEXT NOT NULL,
+          active INTEGER DEFAULT 1 CHECK (active IN (0,1)),
+          createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          deletedAt TEXT,
+          UNIQUE(clinicId, code),
+          FOREIGN KEY (familyId) REFERENCES Family(id),
+          FOREIGN KEY (clinicId) REFERENCES Clinic(id)
+        )
+        `,
+        `
+        INSERT INTO Patient_new (id, code, name, gender, birthDate, phone, idCard, address, occupation, remark, avatar, tags, allergies, medicalHistory, medicationHistory, systemicDiseases, source, familyId, referrer, emergencyContact, emergencyPhone, openId, clinicId, active, createdAt, updatedAt, deletedAt)
+        SELECT id, code, name, gender, birthDate, phone, idCard, address, occupation, remark, avatar, tags, allergies, medicalHistory, medicationHistory, systemicDiseases, source, familyId, referrer, emergencyContact, emergencyPhone, openId, clinicId, active, createdAt, updatedAt, deletedAt
+        FROM Patient
+        `,
+        [
+          { name: 'idx_patient_clinic', columns: 'clinicId' },
+          { name: 'idx_patient_name', columns: 'name' },
+          { name: 'idx_patient_phone', columns: 'phone' },
+          { name: 'idx_patient_code', columns: 'code' },
+          { name: 'idx_patient_source', columns: 'source' },
+        ]
+      );
+      logger.log('Patient.code 全局唯一约束已改为诊所内唯一');
+    }
+  }
+
+  // 2. Charge.number: UNIQUE NOT NULL -> UNIQUE(clinicId, number)
+  if (tableExists('Charge')) {
+    const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='Charge'").get() as { sql: string } | undefined;
+    if (tableSql?.sql?.includes('number TEXT UNIQUE NOT NULL') && !tableSql?.sql?.includes('UNIQUE(clinicId, number)')) {
+      rebuildTableWithNewCheck(
+        'Charge',
+        `
+        CREATE TABLE Charge_new (
+          id TEXT PRIMARY KEY,
+          patientId TEXT NOT NULL,
+          visitId TEXT,
+          doctorId TEXT,
+          number TEXT NOT NULL,
+          totalAmount INTEGER NOT NULL CHECK (totalAmount >= 0),
+          paidAmount INTEGER DEFAULT 0 CHECK (paidAmount >= 0),
+          refundedAmount INTEGER DEFAULT 0 CHECK (refundedAmount >= 0),
+          discount INTEGER DEFAULT 0 CHECK (discount >= 0),
+          status TEXT DEFAULT 'UNPAID' CHECK (status IN ('UNPAID', 'PARTIAL', 'PAID', 'REFUNDED', 'CANCELLED')),
+          payMethod TEXT,
+          paidAt TEXT,
+          remark TEXT,
+          clinicId TEXT NOT NULL,
+          createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          deletedAt TEXT,
+          UNIQUE(clinicId, number),
+          FOREIGN KEY (patientId) REFERENCES Patient(id),
+          FOREIGN KEY (visitId) REFERENCES Visit(id),
+          FOREIGN KEY (doctorId) REFERENCES User(id)
+        )
+        `,
+        `
+        INSERT INTO Charge_new (id, patientId, visitId, doctorId, number, totalAmount, paidAmount, refundedAmount, discount, status, payMethod, paidAt, remark, clinicId, createdAt, updatedAt, deletedAt)
+        SELECT id, patientId, visitId, doctorId, number, totalAmount, paidAmount, refundedAmount, discount, status, payMethod, paidAt, remark, clinicId, createdAt, updatedAt, deletedAt
+        FROM Charge
+        `,
+        [
+          { name: 'idx_charge_clinic', columns: 'clinicId' },
+          { name: 'idx_charge_patient_status', columns: 'patientId, status' },
+          { name: 'idx_charge_doctor', columns: 'doctorId' },
+        ]
+      );
+      logger.log('Charge.number 全局唯一约束已改为诊所内唯一');
+    }
+  }
+
+  // 3. MemberCard.cardNo: UNIQUE NOT NULL -> UNIQUE(clinicId, cardNo)
+  if (tableExists('MemberCard')) {
+    const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='MemberCard'").get() as { sql: string } | undefined;
+    if (tableSql?.sql?.includes('cardNo TEXT UNIQUE NOT NULL') && !tableSql?.sql?.includes('UNIQUE(clinicId, cardNo)')) {
+      rebuildTableWithNewCheck(
+        'MemberCard',
+        `
+        CREATE TABLE MemberCard_new (
+          id TEXT PRIMARY KEY,
+          patientId TEXT NOT NULL,
+          cardNo TEXT NOT NULL,
+          balance INTEGER DEFAULT 0 CHECK (balance >= 0),
+          totalRecharge INTEGER DEFAULT 0 CHECK (totalRecharge >= 0),
+          totalConsume INTEGER DEFAULT 0 CHECK (totalConsume >= 0),
+          points INTEGER DEFAULT 0,
+          totalPoints INTEGER DEFAULT 0,
+          level TEXT DEFAULT 'NORMAL',
+          status TEXT DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'DISABLED', 'FROZEN', 'EXPIRED')),
+          clinicId TEXT NOT NULL,
+          createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          deletedAt TEXT,
+          UNIQUE(clinicId, cardNo),
+          FOREIGN KEY (patientId) REFERENCES Patient(id)
+        )
+        `,
+        `
+        INSERT INTO MemberCard_new (id, patientId, cardNo, balance, totalRecharge, totalConsume, points, totalPoints, level, status, clinicId, createdAt, updatedAt, deletedAt)
+        SELECT id, patientId, cardNo, balance, totalRecharge, totalConsume, points, totalPoints, level, status, clinicId, createdAt, updatedAt, deletedAt
+        FROM MemberCard
+        `,
+        [
+          { name: 'idx_membercard_clinic', columns: 'clinicId' },
+        ]
+      );
+      logger.log('MemberCard.cardNo 全局唯一约束已改为诊所内唯一');
+    }
+  }
+
+  // 4. TreatmentCatalog.code: UNIQUE NOT NULL -> UNIQUE(clinicId, code)
+  if (tableExists('TreatmentCatalog')) {
+    const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='TreatmentCatalog'").get() as { sql: string } | undefined;
+    if (tableSql?.sql?.includes('code TEXT UNIQUE NOT NULL') && !tableSql?.sql?.includes('UNIQUE(clinicId, code)')) {
+      rebuildTableWithNewCheck(
+        'TreatmentCatalog',
+        `
+        CREATE TABLE TreatmentCatalog_new (
+          id TEXT PRIMARY KEY,
+          code TEXT NOT NULL,
+          name TEXT NOT NULL,
+          category TEXT NOT NULL,
+          price INTEGER NOT NULL CHECK (price >= 0),
+          remark TEXT,
+          clinicId TEXT NOT NULL,
+          createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(clinicId, code)
+        )
+        `,
+        `
+        INSERT INTO TreatmentCatalog_new (id, code, name, category, price, remark, clinicId, createdAt)
+        SELECT id, code, name, category, price, remark, clinicId, createdAt
+        FROM TreatmentCatalog
+        `,
+        [
+          { name: 'idx_treatment_catalog_clinic', columns: 'clinicId' },
+        ]
+      );
+      logger.log('TreatmentCatalog.code 全局唯一约束已改为诊所内唯一');
+    }
+  }
+
+  // 5. DrugCatalog.code: UNIQUE NOT NULL -> UNIQUE(clinicId, code)
+  if (tableExists('DrugCatalog')) {
+    const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='DrugCatalog'").get() as { sql: string } | undefined;
+    if (tableSql?.sql?.includes('code TEXT UNIQUE NOT NULL') && !tableSql?.sql?.includes('UNIQUE(clinicId, code)')) {
+      rebuildTableWithNewCheck(
+        'DrugCatalog',
+        `
+        CREATE TABLE DrugCatalog_new (
+          id TEXT PRIMARY KEY,
+          code TEXT NOT NULL,
+          name TEXT NOT NULL,
+          spec TEXT NOT NULL,
+          category TEXT NOT NULL,
+          price INTEGER NOT NULL CHECK (price >= 0),
+          unit TEXT NOT NULL,
+          stock REAL DEFAULT 0 CHECK (stock >= 0),
+          remark TEXT,
+          clinicId TEXT NOT NULL,
+          createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(clinicId, code)
+        )
+        `,
+        `
+        INSERT INTO DrugCatalog_new (id, code, name, spec, category, price, unit, stock, remark, clinicId, createdAt)
+        SELECT id, code, name, spec, category, price, unit, stock, remark, clinicId, createdAt
+        FROM DrugCatalog
+        `,
+        [
+          { name: 'idx_drugcatalog_clinic', columns: 'clinicId' },
+        ]
+      );
+      logger.log('DrugCatalog.code 全局唯一约束已改为诊所内唯一');
+    }
+  }
+
+  // 6. InventoryItem.code: UNIQUE NOT NULL -> UNIQUE(clinicId, code)
+  if (tableExists('InventoryItem')) {
+    const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='InventoryItem'").get() as { sql: string } | undefined;
+    if (tableSql?.sql?.includes('code TEXT UNIQUE NOT NULL') && !tableSql?.sql?.includes('UNIQUE(clinicId, code)')) {
+      rebuildTableWithNewCheck(
+        'InventoryItem',
+        `
+        CREATE TABLE InventoryItem_new (
+          id TEXT PRIMARY KEY,
+          code TEXT NOT NULL,
+          name TEXT NOT NULL,
+          spec TEXT,
+          category TEXT NOT NULL,
+          unit TEXT NOT NULL,
+          stock REAL DEFAULT 0 CHECK (stock >= 0),
+          minStock REAL DEFAULT 0 CHECK (minStock >= 0),
+          price INTEGER DEFAULT 0,
+          supplierId TEXT,
+          expireDate TEXT,
+          location TEXT,
+          remark TEXT,
+          clinicId TEXT NOT NULL,
+          createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          deletedAt TEXT,
+          UNIQUE(clinicId, code),
+          FOREIGN KEY (supplierId) REFERENCES Supplier(id)
+        )
+        `,
+        `
+        INSERT INTO InventoryItem_new (id, code, name, spec, category, unit, stock, minStock, price, supplierId, expireDate, location, remark, clinicId, createdAt, updatedAt, deletedAt)
+        SELECT id, code, name, spec, category, unit, stock, minStock, price, supplierId, expireDate, location, remark, clinicId, createdAt, updatedAt, deletedAt
+        FROM InventoryItem
+        `,
+        [
+          { name: 'idx_inventory_item_clinic', columns: 'clinicId' },
+        ]
+      );
+      logger.log('InventoryItem.code 全局唯一约束已改为诊所内唯一');
+    }
+  }
+
+  // 7. PurchaseOrder.number: UNIQUE NOT NULL -> UNIQUE(clinicId, number)
+  if (tableExists('PurchaseOrder')) {
+    const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='PurchaseOrder'").get() as { sql: string } | undefined;
+    if (tableSql?.sql?.includes('number TEXT UNIQUE NOT NULL') && !tableSql?.sql?.includes('UNIQUE(clinicId, number)')) {
+      rebuildTableWithNewCheck(
+        'PurchaseOrder',
+        `
+        CREATE TABLE PurchaseOrder_new (
+          id TEXT PRIMARY KEY,
+          number TEXT NOT NULL,
+          supplierId TEXT NOT NULL,
+          totalAmount INTEGER DEFAULT 0,
+          status TEXT DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'PARTIAL', 'RECEIVED', 'CANCELLED')),
+          operatorId TEXT,
+          remark TEXT,
+          clinicId TEXT NOT NULL,
+          createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          deletedAt TEXT,
+          UNIQUE(clinicId, number),
+          FOREIGN KEY (supplierId) REFERENCES Supplier(id),
+          FOREIGN KEY (operatorId) REFERENCES User(id)
+        )
+        `,
+        `
+        INSERT INTO PurchaseOrder_new (id, number, supplierId, totalAmount, status, operatorId, remark, clinicId, createdAt, updatedAt, deletedAt)
+        SELECT id, number, supplierId, totalAmount, status, operatorId, remark, clinicId, createdAt, updatedAt, deletedAt
+        FROM PurchaseOrder
+        `,
+        [
+          { name: 'idx_purchase_order_clinic', columns: 'clinicId' },
+        ]
+      );
+      logger.log('PurchaseOrder.number 全局唯一约束已改为诊所内唯一');
+    }
+  }
+
+  // 8. ProcessingOrder.number: UNIQUE NOT NULL -> UNIQUE(clinicId, number)
+  if (tableExists('ProcessingOrder')) {
+    const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='ProcessingOrder'").get() as { sql: string } | undefined;
+    if (tableSql?.sql?.includes('number TEXT UNIQUE NOT NULL') && !tableSql?.sql?.includes('UNIQUE(clinicId, number)')) {
+      rebuildTableWithNewCheck(
+        'ProcessingOrder',
+        `
+        CREATE TABLE ProcessingOrder_new (
+          id TEXT PRIMARY KEY,
+          number TEXT NOT NULL,
+          patientId TEXT NOT NULL,
+          visitId TEXT,
+          factoryId TEXT NOT NULL,
+          doctorId TEXT,
+          shade TEXT,
+          teethNumbers TEXT DEFAULT '[]',
+          totalFee INTEGER DEFAULT 0,
+          status TEXT DEFAULT 'SENT' CHECK (status IN ('PENDING', 'SENT', 'IN_PROGRESS', 'COMPLETED', 'RECEIVED', 'CANCELLED')),
+          chargeId TEXT,
+          sentAt TEXT,
+          expectedAt TEXT,
+          receivedAt TEXT,
+          deliveredAt TEXT,
+          remark TEXT,
+          creatorId TEXT,
+          clinicId TEXT NOT NULL,
+          createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          deletedAt TEXT,
+          UNIQUE(clinicId, number),
+          FOREIGN KEY (patientId) REFERENCES Patient(id),
+          FOREIGN KEY (visitId) REFERENCES Visit(id),
+          FOREIGN KEY (factoryId) REFERENCES ProcessingFactory(id),
+          FOREIGN KEY (doctorId) REFERENCES User(id),
+          FOREIGN KEY (chargeId) REFERENCES Charge(id)
+        )
+        `,
+        `
+        INSERT INTO ProcessingOrder_new (id, number, patientId, visitId, factoryId, doctorId, shade, teethNumbers, totalFee, status, chargeId, sentAt, expectedAt, receivedAt, deliveredAt, remark, creatorId, clinicId, createdAt, updatedAt, deletedAt)
+        SELECT id, number, patientId, visitId, factoryId, doctorId, shade, teethNumbers, totalFee, status, chargeId, sentAt, expectedAt, receivedAt, deliveredAt, remark, creatorId, clinicId, createdAt, updatedAt, deletedAt
+        FROM ProcessingOrder
+        `,
+        [
+          { name: 'idx_processing_order_clinic', columns: 'clinicId' },
+        ]
+      );
+      logger.log('ProcessingOrder.number 全局唯一约束已改为诊所内唯一');
+    }
+  }
+
+  logger.log('v25 迁移完成：多租户 UNIQUE 约束改为诊所内唯一');
+};
+
+const migrateToV26 = () => {
+  // P1 修复：CHECK 约束与代码枚举不一致
+  //
+  // 1. FirstExam：DB 约束有 CANCELLED（代码未使用），缺失 REJECTED（代码使用）
+  //    原约束: DRAFT, SUBMITTED, APPROVED, CANCELLED
+  //    新约束: DRAFT, SUBMITTED, APPROVED, REJECTED
+  //
+  // 2. TreatmentPlan：DB 约束缺失 SUBMITTED 和 REJECTED（代码状态机使用）
+  //    原约束: DRAFT, APPROVED, IN_PROGRESS, COMPLETED, CANCELLED
+  //    新约束: DRAFT, SUBMITTED, APPROVED, REJECTED, IN_PROGRESS, COMPLETED, CANCELLED
+  //
+  // 3. TreatmentPlanItem：DB 约束缺少 SKIPPED（shared enum 使用）
+  //    原约束: PLANNED, IN_PROGRESS, COMPLETED, CANCELLED
+  //    新约束: PLANNED, IN_PROGRESS, COMPLETED, CANCELLED, SKIPPED
+  //
+  // 由于之前 FirstExam/PlanStatus enum 修复已清理 PENDING 等无效值，
+  // 此处只需扩展 CHECK 集合。
+  const db = getMigrationDb();
+
+  // 1. FirstExam: CANCELLED -> REJECTED（如有历史 CANCELLED 数据需迁移为 REJECTED 以保持一致）
+  if (tableExists('FirstExam')) {
+    const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='FirstExam'").get() as { sql: string } | undefined;
+    if (tableSql?.sql?.includes("'CANCELLED'") && !tableSql?.sql?.includes("'REJECTED'")) {
+      const cancelledCount = (db.prepare(
+        "SELECT COUNT(*) as count FROM FirstExam WHERE status = 'CANCELLED'"
+      ).get() as { count: number })?.count || 0;
+      if (cancelledCount > 0) {
+        logger.log(`FirstExam 表存在 ${cancelledCount} 条 CANCELLED 状态数据，将迁移为 REJECTED`);
+      }
+      rebuildTableWithNewCheck(
+        'FirstExam',
+        `
+        CREATE TABLE FirstExam_new (
+          id TEXT PRIMARY KEY,
+          patientId TEXT NOT NULL,
+          doctorId TEXT,
+          consultantId TEXT,
+          examDate TEXT DEFAULT CURRENT_TIMESTAMP,
+          dentitionType TEXT DEFAULT 'PERMANENT',
+          chiefComplaint TEXT,
+          diagnosis TEXT,
+          treatmentSuggestion TEXT,
+          remark TEXT,
+          isRestart INTEGER DEFAULT 0,
+          parentExamId TEXT,
+          status TEXT DEFAULT 'DRAFT' CHECK (status IN ('DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED')),
+          clinicId TEXT NOT NULL,
+          createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          deletedAt TEXT,
+          FOREIGN KEY (patientId) REFERENCES Patient(id),
+          FOREIGN KEY (doctorId) REFERENCES User(id),
+          FOREIGN KEY (consultantId) REFERENCES User(id)
+        )
+        `,
+        `
+        INSERT INTO FirstExam_new (id, patientId, doctorId, consultantId, examDate, dentitionType, chiefComplaint, diagnosis, treatmentSuggestion, remark, isRestart, parentExamId, status, clinicId, createdAt, updatedAt, deletedAt)
+        SELECT id, patientId, doctorId, consultantId, examDate, dentitionType, chiefComplaint, diagnosis, treatmentSuggestion, remark, isRestart, parentExamId,
+               CASE WHEN status = 'CANCELLED' THEN 'REJECTED' ELSE status END,
+               clinicId, createdAt, updatedAt, deletedAt
+        FROM FirstExam
+        `,
+      );
+      logger.log('FirstExam 表状态 CHECK 约束已更新（CANCELLED → REJECTED）');
+    }
+  }
+
+  // 2. TreatmentPlan: 添加 SUBMITTED 和 REJECTED
+  if (tableExists('TreatmentPlan')) {
+    const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='TreatmentPlan'").get() as { sql: string } | undefined;
+    if (tableSql?.sql && !tableSql.sql.includes("'SUBMITTED'") && !tableSql.sql.includes("'REJECTED'")) {
+      rebuildTableWithNewCheck(
+        'TreatmentPlan',
+        `
+        CREATE TABLE TreatmentPlan_new (
+          id TEXT PRIMARY KEY,
+          patientId TEXT NOT NULL,
+          visitId TEXT,
+          doctorId TEXT NOT NULL,
+          name TEXT NOT NULL,
+          status TEXT DEFAULT 'DRAFT' CHECK (status IN ('DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED')),
+          totalFee INTEGER DEFAULT 0 CHECK (totalFee >= 0),
+          remark TEXT,
+          clinicId TEXT NOT NULL,
+          createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          deletedAt TEXT,
+          FOREIGN KEY (patientId) REFERENCES Patient(id),
+          FOREIGN KEY (visitId) REFERENCES Visit(id),
+          FOREIGN KEY (doctorId) REFERENCES User(id)
+        )
+        `,
+        `
+        INSERT INTO TreatmentPlan_new (id, patientId, visitId, doctorId, name, status, totalFee, remark, clinicId, createdAt, updatedAt, deletedAt)
+        SELECT id, patientId, visitId, doctorId, name, status, totalFee, remark, clinicId, createdAt, updatedAt, deletedAt
+        FROM TreatmentPlan
+        `,
+      );
+      logger.log('TreatmentPlan 表状态 CHECK 约束已更新（添加 SUBMITTED/REJECTED）');
+    }
+  }
+
+  // 3. TreatmentPlanItem: 添加 SKIPPED
+  if (tableExists('TreatmentPlanItem')) {
+    const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='TreatmentPlanItem'").get() as { sql: string } | undefined;
+    if (tableSql?.sql && !tableSql.sql.includes("'SKIPPED'")) {
+      rebuildTableWithNewCheck(
+        'TreatmentPlanItem',
+        `
+        CREATE TABLE TreatmentPlanItem_new (
+          id TEXT PRIMARY KEY,
+          planId TEXT NOT NULL,
+          code TEXT NOT NULL,
+          name TEXT NOT NULL,
+          category TEXT NOT NULL,
+          price INTEGER NOT NULL CHECK (price >= 0),
+          quantity INTEGER DEFAULT 1 CHECK (quantity >= 1),
+          teethNumbers TEXT DEFAULT '[]',
+          status TEXT DEFAULT 'PLANNED' CHECK (status IN ('PLANNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'SKIPPED')),
+          treatmentId TEXT,
+          completedAt TEXT,
+          remark TEXT,
+          clinicId TEXT NOT NULL,
+          updatedAt TEXT,
+          deletedAt TEXT,
+          FOREIGN KEY (planId) REFERENCES TreatmentPlan(id) ON DELETE CASCADE,
+          FOREIGN KEY (treatmentId) REFERENCES Treatment(id)
+        )
+        `,
+        `
+        INSERT INTO TreatmentPlanItem_new (id, planId, code, name, category, price, quantity, teethNumbers, status, treatmentId, completedAt, remark, clinicId, updatedAt, deletedAt)
+        SELECT id, planId, code, name, category, price, quantity, teethNumbers, status, treatmentId, completedAt, remark, clinicId, updatedAt, deletedAt
+        FROM TreatmentPlanItem
+        `,
+      );
+      logger.log('TreatmentPlanItem 表状态 CHECK 约束已更新（添加 SKIPPED）');
+    }
+  }
+
+  logger.log('v26 迁移完成：CHECK 约束与代码枚举对齐');
+};
+
 const migrationNames: Record<number, string> = {
   1: 'initial-columns',
   2: 'indexes-and-updatedAt',
@@ -1221,6 +2025,10 @@ const migrationNames: Record<number, string> = {
   20: 'system-alert-table',
   21: 'user-password-history-fields',
   22: 'patient-search-optimization-indexes',
+  23: 'slow-query-composite-indexes',
+  24: 'money-field-type-unification',
+  25: 'clinic-scoped-unique-constraints',
+  26: 'status-check-constraints-alignment',
 };
 
 function backupBeforeMigration(fromVersion: number, toVersion: number): string | null {
@@ -1263,9 +2071,15 @@ export const runMigrations = (db: Database) => {
   logger.log(`开始迁移: v${currentVersion} -> v${CURRENT_VERSION}`);
 
   // P0-1.6: 迁移前自动备份数据库，作为失败回滚点
+  // P1 修复：备份失败时终止迁移，避免无回滚点时迁移失败导致数据不可恢复
   const backupPath = backupBeforeMigration(currentVersion, CURRENT_VERSION);
   if (backupPath) {
     logger.log(`已创建迁移前备份: ${backupPath}`);
+  } else {
+    throw new Error(
+      '迁移前备份失败，拒绝继续执行迁移以保护数据。' +
+      '请检查磁盘空间和备份目录权限后重试。'
+    );
   }
 
   for (let v = currentVersion + 1; v <= CURRENT_VERSION; v++) {
@@ -1276,30 +2090,41 @@ export const runMigrations = (db: Database) => {
 
     const startTime = Date.now();
     try {
-      switch (v) {
-        case 1: migrateToV1(); break;
-        case 2: migrateToV2(); break;
-        case 3: migrateToV3(); break;
-        case 4: migrateToV4(); break;
-        case 5: migrateToV5(); break;
-        case 6: migrateToV6(); break;
-        case 7: migrateToV7(); break;
-        case 8: migrateToV8(); break;
-        case 9: migrateToV9(); break;
-        case 10: migrateToV10(); break;
-        case 11: migrateToV11(); break;
-        case 12: migrateToV12(); break;
-        case 13: migrateToV13(); break;
-        case 14: migrateToV14(); break;
-        case 15: migrateToV15(); break;
-        case 16: migrateToV16(); break;
-        case 17: migrateToV17(); break;
-        case 18: migrateToV18(); break;
-        case 19: migrateToV19(); break;
-        case 20: migrateToV20(); break;
-        case 21: migrateToV21(); break;
-        case 22: migrateToV22(); break;
-      }
+      // P1 修复：将每个迁移包在事务中，保证原子性
+      // 注意：PRAGMA user_version 不能在事务内执行，因此 setVersion 在事务外调用
+      // recordMigration 也移到事务外，避免 user_version 已升但 schema_migrations 未写入的不一致
+      const db = getMigrationDb();
+      const migrateTx = db.transaction(() => {
+        switch (v) {
+          case 1: migrateToV1(); break;
+          case 2: migrateToV2(); break;
+          case 3: migrateToV3(); break;
+          case 4: migrateToV4(); break;
+          case 5: migrateToV5(); break;
+          case 6: migrateToV6(); break;
+          case 7: migrateToV7(); break;
+          case 8: migrateToV8(); break;
+          case 9: migrateToV9(); break;
+          case 10: migrateToV10(); break;
+          case 11: migrateToV11(); break;
+          case 12: migrateToV12(); break;
+          case 13: migrateToV13(); break;
+          case 14: migrateToV14(); break;
+          case 15: migrateToV15(); break;
+          case 16: migrateToV16(); break;
+          case 17: migrateToV17(); break;
+          case 18: migrateToV18(); break;
+          case 19: migrateToV19(); break;
+          case 20: migrateToV20(); break;
+          case 21: migrateToV21(); break;
+          case 22: migrateToV22(); break;
+          case 23: migrateToV23(); break;
+          case 24: migrateToV24(); break;
+          case 25: migrateToV25(); break;
+          case 26: migrateToV26(); break;
+        }
+      });
+      migrateTx();  // 任一迁移失败 → 整体回滚，数据库保持迁移前状态
       setVersion(v);
       const duration = Date.now() - startTime;
       recordMigration(v, migrationNames[v] || `v${v}`, duration);

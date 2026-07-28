@@ -4,7 +4,7 @@ export const financialTables = [
       patientId TEXT NOT NULL,
       visitId TEXT,
       doctorId TEXT,
-      number TEXT UNIQUE NOT NULL,
+      number TEXT NOT NULL,
       totalAmount INTEGER NOT NULL CHECK (totalAmount >= 0),
       paidAmount INTEGER DEFAULT 0 CHECK (paidAmount >= 0),
       refundedAmount INTEGER DEFAULT 0 CHECK (refundedAmount >= 0),
@@ -17,6 +17,7 @@ export const financialTables = [
       createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
       updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
       deletedAt TEXT,
+      UNIQUE(clinicId, number),
       FOREIGN KEY (patientId) REFERENCES Patient(id),
       FOREIGN KEY (visitId) REFERENCES Visit(id),
       FOREIGN KEY (doctorId) REFERENCES User(id)
@@ -94,6 +95,18 @@ export const financialTables = [
       FOREIGN KEY (chargeId) REFERENCES Charge(id),
       FOREIGN KEY (patientId) REFERENCES Patient(id)
     )`,
+  `CREATE TABLE IF NOT EXISTS DebtPayment (
+      id TEXT PRIMARY KEY,
+      debtId TEXT NOT NULL,
+      amount INTEGER NOT NULL CHECK (amount > 0),
+      payMethod TEXT NOT NULL,
+      paidAt TEXT DEFAULT CURRENT_TIMESTAMP,
+      operatorId TEXT,
+      remark TEXT,
+      clinicId TEXT NOT NULL,
+      FOREIGN KEY (debtId) REFERENCES DebtRecord(id),
+      FOREIGN KEY (operatorId) REFERENCES User(id)
+    )`,
   `CREATE TABLE IF NOT EXISTS Refund (
       id TEXT PRIMARY KEY,
       chargeId TEXT NOT NULL,
@@ -113,7 +126,7 @@ export const financialTables = [
   `CREATE TABLE IF NOT EXISTS MemberCard (
       id TEXT PRIMARY KEY,
       patientId TEXT NOT NULL,
-      cardNo TEXT UNIQUE NOT NULL,
+      cardNo TEXT NOT NULL,
       balance INTEGER DEFAULT 0 CHECK (balance >= 0),
       totalRecharge INTEGER DEFAULT 0 CHECK (totalRecharge >= 0),
       totalConsume INTEGER DEFAULT 0 CHECK (totalConsume >= 0),
@@ -125,6 +138,7 @@ export const financialTables = [
       createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
       updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
       deletedAt TEXT,
+      UNIQUE(clinicId, cardNo),
       FOREIGN KEY (patientId) REFERENCES Patient(id)
     )`,
   `CREATE TABLE IF NOT EXISTS MemberCardLog (

@@ -17,7 +17,9 @@ import {
   PatientCreatedEvent,
   PatientUpdatedEvent,
   AppointmentCreatedEvent,
+  AppointmentUpdatedEvent,
   AppointmentCancelledEvent,
+  AppointmentDeletedEvent,
   InventoryStockChangedEvent,
 } from './domain-events';
 
@@ -29,57 +31,111 @@ export class CacheInvalidationListener {
 
   @OnEvent('charge.created')
   handleChargeCreated(event: ChargeCreatedEvent) {
-    this.invalidateStats(event.clinicId);
-    this.logger.debug(`[Cache] charge.created → 失效统计缓存 clinicId=${event.clinicId}`);
+    try {
+      this.invalidateStats(event.clinicId);
+      this.logger.debug(`[Cache] charge.created → 失效统计缓存 clinicId=${event.clinicId}`);
+    } catch (err) {
+      this.logger.error(`[Cache] charge.created 处理失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   @OnEvent('charge.paid')
   handleChargePaid(event: ChargePaidEvent) {
-    this.invalidateStats(event.clinicId);
-    this.cacheService.delPattern(`${CACHE_PREFIXES.PATIENT}${event.patientId}`);
-    this.logger.debug(`[Cache] charge.paid → 失效统计+患者缓存`);
+    try {
+      this.invalidateStats(event.clinicId);
+      this.cacheService.delPattern(`${CACHE_PREFIXES.PATIENT}${event.patientId}`);
+      this.logger.debug(`[Cache] charge.paid → 失效统计+患者缓存`);
+    } catch (err) {
+      this.logger.error(`[Cache] charge.paid 处理失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   @OnEvent('charge.refunded')
   handleChargeRefunded(event: ChargeRefundedEvent) {
-    this.invalidateStats(event.clinicId);
-    this.cacheService.delPattern(`${CACHE_PREFIXES.PATIENT}${event.patientId}`);
-    this.logger.debug(`[Cache] charge.refunded → 失效统计+患者缓存`);
+    try {
+      this.invalidateStats(event.clinicId);
+      this.cacheService.delPattern(`${CACHE_PREFIXES.PATIENT}${event.patientId}`);
+      this.logger.debug(`[Cache] charge.refunded → 失效统计+患者缓存`);
+    } catch (err) {
+      this.logger.error(`[Cache] charge.refunded 处理失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   @OnEvent('patient.created')
   handlePatientCreated(event: PatientCreatedEvent) {
-    this.invalidateStats(event.clinicId);
-    this.cacheService.delPattern(CACHE_PREFIXES.SEARCH);
-    this.logger.debug(`[Cache] patient.created → 失效统计+搜索缓存`);
+    try {
+      this.invalidateStats(event.clinicId);
+      this.cacheService.delPattern(CACHE_PREFIXES.SEARCH);
+      this.logger.debug(`[Cache] patient.created → 失效统计+搜索缓存`);
+    } catch (err) {
+      this.logger.error(`[Cache] patient.created 处理失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   @OnEvent('patient.updated')
   handlePatientUpdated(event: PatientUpdatedEvent) {
-    this.cacheService.delPattern(`${CACHE_PREFIXES.PATIENT}${event.patientId}`);
-    this.cacheService.delPattern(CACHE_PREFIXES.SEARCH);
-    this.logger.debug(`[Cache] patient.updated → 失效患者+搜索缓存`);
+    try {
+      this.cacheService.delPattern(`${CACHE_PREFIXES.PATIENT}${event.patientId}`);
+      this.cacheService.delPattern(CACHE_PREFIXES.SEARCH);
+      this.logger.debug(`[Cache] patient.updated → 失效患者+搜索缓存`);
+    } catch (err) {
+      this.logger.error(`[Cache] patient.updated 处理失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   @OnEvent('appointment.created')
   handleAppointmentCreated(event: AppointmentCreatedEvent) {
-    this.invalidateStats(event.clinicId);
-    this.cacheService.delPattern(CACHE_PREFIXES.APPOINTMENT);
-    this.logger.debug(`[Cache] appointment.created → 失效统计+预约缓存`);
+    try {
+      this.invalidateStats(event.clinicId);
+      this.cacheService.delPattern(CACHE_PREFIXES.APPOINTMENT);
+      this.logger.debug(`[Cache] appointment.created → 失效统计+预约缓存`);
+    } catch (err) {
+      this.logger.error(`[Cache] appointment.created 处理失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  @OnEvent('appointment.updated')
+  handleAppointmentUpdated(event: AppointmentUpdatedEvent) {
+    try {
+      this.invalidateStats(event.clinicId);
+      this.cacheService.delPattern(CACHE_PREFIXES.APPOINTMENT);
+      this.logger.debug(`[Cache] appointment.updated → 失效统计+预约缓存`);
+    } catch (err) {
+      this.logger.error(`[Cache] appointment.updated 处理失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   @OnEvent('appointment.cancelled')
   handleAppointmentCancelled(event: AppointmentCancelledEvent) {
-    this.invalidateStats(event.clinicId);
-    this.cacheService.delPattern(CACHE_PREFIXES.APPOINTMENT);
-    this.logger.debug(`[Cache] appointment.cancelled → 失效统计+预约缓存`);
+    try {
+      this.invalidateStats(event.clinicId);
+      this.cacheService.delPattern(CACHE_PREFIXES.APPOINTMENT);
+      this.logger.debug(`[Cache] appointment.cancelled → 失效统计+预约缓存`);
+    } catch (err) {
+      this.logger.error(`[Cache] appointment.cancelled 处理失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  @OnEvent('appointment.deleted')
+  handleAppointmentDeleted(event: AppointmentDeletedEvent) {
+    try {
+      this.invalidateStats(event.clinicId);
+      this.cacheService.delPattern(CACHE_PREFIXES.APPOINTMENT);
+      this.logger.debug(`[Cache] appointment.deleted → 失效统计+预约缓存`);
+    } catch (err) {
+      this.logger.error(`[Cache] appointment.deleted 处理失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   @OnEvent('inventory.stock-changed')
   handleInventoryStockChanged(event: InventoryStockChangedEvent) {
-    this.invalidateStats(event.clinicId);
-    this.cacheService.delPattern(CACHE_PREFIXES.DICTIONARY);
-    this.logger.debug(`[Cache] inventory.stock-changed → 失效统计+字典缓存`);
+    try {
+      this.invalidateStats(event.clinicId);
+      this.cacheService.delPattern(CACHE_PREFIXES.DICTIONARY);
+      this.logger.debug(`[Cache] inventory.stock-changed → 失效统计+字典缓存`);
+    } catch (err) {
+      this.logger.error(`[Cache] inventory.stock-changed 处理失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   /**
@@ -87,7 +143,7 @@ export class CacheInvalidationListener {
    */
   private invalidateStats(clinicId: string | null) {
     if (clinicId) {
-      this.cacheService.delPattern(`${CACHE_PREFIXES.STATS}`);
+      this.cacheService.delPattern(CACHE_PREFIXES.STATS);
     }
   }
 }

@@ -1,8 +1,9 @@
 import { TreatmentsService } from './treatments.service';
+import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import { CacheService } from '../../../common/services/cache.service';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+
 
 // 构造 ClinicContextService 的 mock，模拟诊所上下文
 function createMockClinicContext(): ClinicContextService {
@@ -192,14 +193,14 @@ describe('TreatmentsService', () => {
       expect((result as any).status).toBe('CANCELLED');
     });
 
-    it('非法状态流转 COMPLETED → IN_PROGRESS 应抛出 BadRequestException', async () => {
+    it('非法状态流转 COMPLETED → IN_PROGRESS 应抛出 BusinessValidationException', async () => {
       db.seed('Treatment', [
         { id: 'trt-002', patientId: 'patient-001', visitId: 'visit-001', doctorId: 'doctor-001', code: 'T001', name: '根管治疗', category: '治疗', price: 500, quantity: 1, teethNumbers: '[]', status: 'COMPLETED', clinicId: 'test-clinic-001' },
       ]);
 
       await expect(
         service.update('trt-002', { status: 'IN_PROGRESS' } as any),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
     it('COMPLETED 是终态，不应流转到 CANCELLED', async () => {
@@ -209,7 +210,7 @@ describe('TreatmentsService', () => {
 
       await expect(
         service.update('trt-003', { status: 'CANCELLED' } as any),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
     it('CANCELLED 是终态，不应流转到 IN_PROGRESS', async () => {
@@ -219,7 +220,7 @@ describe('TreatmentsService', () => {
 
       await expect(
         service.update('trt-004', { status: 'IN_PROGRESS' } as any),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
     it('CANCELLED 是终态，不应流转到 COMPLETED', async () => {
@@ -229,7 +230,7 @@ describe('TreatmentsService', () => {
 
       await expect(
         service.update('trt-005', { status: 'COMPLETED' } as any),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
     it('更新非状态字段不应触发状态机校验', async () => {
@@ -469,8 +470,8 @@ describe('TreatmentsService', () => {
       expect((result as any).id).toBe((created as any).id);
     });
 
-    it('删除不存在的治疗项目目录应抛出 NotFoundException', async () => {
-      await expect(service.deleteCatalog('non-existent')).rejects.toThrow(NotFoundException);
+    it('删除不存在的治疗项目目录应抛出 BusinessNotFoundException', async () => {
+      await expect(service.deleteCatalog('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
 
     it('删除应设置 deletedAt', async () => {
@@ -751,8 +752,8 @@ describe('TreatmentsService', () => {
   // ==================== findOne - 边界场景 ====================
 
   describe('findOne - 边界场景', () => {
-    it('查询不存在的治疗项目应抛出 NotFoundException', async () => {
-      await expect(service.findOne('non-existent')).rejects.toThrow(NotFoundException);
+    it('查询不存在的治疗项目应抛出 BusinessNotFoundException', async () => {
+      await expect(service.findOne('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
 
     it('teethNumbers 为 null 时应返回空数组', async () => {

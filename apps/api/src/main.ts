@@ -5,6 +5,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import * as helmet from 'helmet';
 import { json, urlencoded } from 'express';
 import cookieParser = require('cookie-parser');
+import * as jwt from 'jsonwebtoken';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { TraceMiddleware } from './common/middleware/trace.middleware';
@@ -47,17 +48,39 @@ async function bootstrap() {
   });
 
   // 在 DbService 初始化完成后执行加密数据迁移
+  // P1 修复：原先用 warn 静默吞没所有异常，跳过与失败不可区分；
+  // 现在区分三种状态：skipped（无需迁移）/ partial-failure（部分行失败）/ thrown-error（意外异常）
   const dbService = app.get(DbService);
   try {
-    runEncryptionMigration(dbService, config.get<string>('LEGACY_ENCRYPTION_KEY'));
+    const migrationResult = runEncryptionMigration(dbService, config.get<string>('LEGACY_ENCRYPTION_KEY'));
+    if (migrationResult.skipped) {
+      loggerService.log('加密数据迁移：未配置 LEGACY_ENCRYPTION_KEY，跳过迁移');
+    } else if (migrationResult.errors > 0) {
+      // 部分行失败：数据可能处于混合状态（部分已重新加密，部分仍用旧密钥）
+      // 不阻止启动（避免锁死运维），但必须 error 级别告警 + Sentry 上报
+      const msg = `加密数据迁移部分失败: ${migrationResult.errors} 条记录无法重新加密，可能仍使用旧密钥。请检查日志并手动处理。`;
+      loggerService.error(msg);
+      if (sentryService.isEnabled()) {
+        sentryService.captureException(new Error(msg), { type: 'encryption_migration_partial_failure', extra: { migrated: migrationResult.migrated, errors: migrationResult.errors } });
+      }
+    } else if (migrationResult.migrated > 0) {
+      loggerService.log(`加密数据迁移完成: ${migrationResult.migrated} 条记录已重新加密`);
+    }
   } catch (err: unknown) {
-    loggerService.warn('Encryption migration skipped or failed: ' + (err instanceof Error ? err.message : String(err)));
+    // 意外异常（如 DB 连接问题）：迁移可能中途崩溃，数据状态未知
+    // 必须 error 级别告警 + Sentry 上报，但不阻止启动以便运维排查
+    const errMsg = '加密数据迁移发生意外异常: ' + (err instanceof Error ? err.message : String(err));
+    loggerService.error(errMsg, err instanceof Error ? err.stack : undefined);
+    if (sentryService.isEnabled()) {
+      sentryService.captureException(err, { type: 'encryption_migration_fatal' });
+    }
   }
 
   // 1.3: JWT 校验逻辑集中到 ConfigValidationService
   const configValidation = app.get(ConfigValidationService);
   configValidation.validateJwtSecretOrExit();
   configValidation.validateEncryptionKeyOrExit();
+  configValidation.validateAdminInitialPasswordOrExit();
 
   const traceMiddleware = new TraceMiddleware();
   app.use(traceMiddleware.use.bind(traceMiddleware));
@@ -120,6 +143,13 @@ async function bootstrap() {
   // Cookie parser for httpOnly cookie-based authentication
   app.use(cookieParser());
 
+  // 差异化请求体大小限制：先注册特定路由，再注册全局默认
+  // 1. 认证等简单接口限制 1mb
+  app.use('/api/v1/auth/login', json({ limit: '1mb' }));
+  app.use('/api/v1/auth/refresh', json({ limit: '1mb' }));
+  // 2. 批量同步/大数据接口限制 50mb
+  app.use('/api/v1/sync/push', json({ limit: '50mb' }));
+  // 3. 全局默认 10mb
   app.use(json({ limit: '10mb' }));
   app.use(urlencoded({ extended: true, limit: '10mb' }));
 
@@ -155,8 +185,15 @@ async function bootstrap() {
     prefix: 'api/v',
   });
 
-  // Swagger 文档（仅在非生产环境启用）
-  if (config.get('NODE_ENV') !== 'production') {
+  // Swagger 文档访问控制
+  // 生产环境默认禁用，需显式设置 SWAGGER_ENABLED=1 或 true
+  // 开发/测试环境默认启用，可设置 SWAGGER_ENABLED=0 或 false 关闭
+  const swaggerEnabledRaw = config.get<string>('SWAGGER_ENABLED');
+  const swaggerExplicitlyEnabled = swaggerEnabledRaw === '1' || swaggerEnabledRaw === 'true';
+  const swaggerExplicitlyDisabled = swaggerEnabledRaw === '0' || swaggerEnabledRaw === 'false';
+  const swaggerEnabled = isProduction ? swaggerExplicitlyEnabled : !swaggerExplicitlyDisabled;
+
+  if (swaggerEnabled) {
     const swaggerConfig = new DocumentBuilder()
       .setTitle('牙科诊所管理系统 API')
       .setDescription(
@@ -195,6 +232,46 @@ async function bootstrap() {
       .addTag('系统', '系统管理相关接口')
       .build();
     const document = SwaggerModule.createDocument(app, swaggerConfig);
+
+    // 非开发环境对 Swagger 文档启用 Basic Auth + JWT 角色保护（仅管理员可访问）
+    const isDevelopment = config.get('NODE_ENV') === 'development';
+    if (!isDevelopment) {
+      const swaggerUsername = config.get<string>('SWAGGER_USERNAME') || 'admin';
+      const swaggerPassword = config.get<string>('SWAGGER_PASSWORD');
+      if (!swaggerPassword) {
+        logger.warn('Swagger 已启用但未配置 SWAGGER_PASSWORD，建议立即设置以避免未授权访问');
+      }
+      const expectedCredentials = Buffer.from(`${swaggerUsername}:${swaggerPassword || ''}`).toString('base64');
+      const swaggerAuth = (req: import('express').Request, res: import('express').Response, next: import('express').NextFunction) => {
+        // 1. Basic Auth 验证
+        const authHeader = req.headers.authorization || '';
+        const [type, credentials] = authHeader.split(' ');
+        if (type !== 'Basic' || !credentials || credentials !== expectedCredentials) {
+          res.set('WWW-Authenticate', 'Basic realm="Swagger API Docs"');
+          return res.status(401).send('Unauthorized');
+        }
+
+        // 2. JWT 角色验证：仅 BOSS 或 ADMIN 可访问
+        const token = req.cookies?.access_token || authHeader.replace('Bearer ', '');
+        if (!token) {
+          return res.status(401).send('需要登录后访问 Swagger 文档');
+        }
+        try {
+          const payload = jwt.verify(token, config.get<string>('JWT_SECRET') || '') as { role?: string };
+          const allowedRoles = ['BOSS', 'ADMIN'];
+          if (!allowedRoles.includes(payload.role || '')) {
+            return res.status(403).send('仅管理员角色可访问 Swagger 文档');
+          }
+          next();
+        } catch {
+          return res.status(401).send('登录已过期，请重新登录');
+        }
+      };
+      const expressInstance = app.getHttpAdapter().getInstance() as import('express').Express;
+      expressInstance.use('/api/docs', swaggerAuth);
+      expressInstance.use('/api/docs-json', swaggerAuth);
+    }
+
     SwaggerModule.setup('api/docs', app, document);
   }
 

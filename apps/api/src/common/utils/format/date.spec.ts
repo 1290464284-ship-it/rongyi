@@ -1,5 +1,6 @@
-import { BadRequestException } from '@nestjs/common';
+
 import fc from 'fast-check';
+import { BusinessValidationException } from '@common/errors';
 import {
   nowISO,
   toISOString,
@@ -42,8 +43,8 @@ describe('date utils', () => {
     });
 
     it('无效日期应抛出异常', () => {
-      expect(() => formatDate('invalid-date')).toThrow(BadRequestException);
-      expect(() => formatDate('')).toThrow(BadRequestException);
+      expect(() => formatDate('invalid-date')).toThrow(BusinessValidationException);
+      expect(() => formatDate('')).toThrow(BusinessValidationException);
     });
   });
 
@@ -68,19 +69,19 @@ describe('date utils', () => {
     });
 
     it('非字符串输入应抛出异常', () => {
-      expect(() => parseDate(123 as unknown as string)).toThrow(BadRequestException);
-      expect(() => parseDate(null)).toThrow(BadRequestException);
-      expect(() => parseDate(undefined as unknown as string)).toThrow(BadRequestException);
+      expect(() => parseDate(123 as unknown as string)).toThrow(BusinessValidationException);
+      expect(() => parseDate(null)).toThrow(BusinessValidationException);
+      expect(() => parseDate(undefined as unknown as string)).toThrow(BusinessValidationException);
     });
 
     it('空字符串应抛出异常', () => {
-      expect(() => parseDate('')).toThrow(BadRequestException);
-      expect(() => parseDate('   ')).toThrow(BadRequestException);
+      expect(() => parseDate('')).toThrow(BusinessValidationException);
+      expect(() => parseDate('   ')).toThrow(BusinessValidationException);
     });
 
     it('无效日期格式应抛出异常', () => {
-      expect(() => parseDate('not-a-date')).toThrow(BadRequestException);
-      expect(() => parseDate('2024-99-99')).toThrow(BadRequestException);
+      expect(() => parseDate('not-a-date')).toThrow(BusinessValidationException);
+      expect(() => parseDate('2024-99-99')).toThrow(BusinessValidationException);
     });
   });
 
@@ -209,11 +210,11 @@ describe('date utils', () => {
     });
 
     it('无效的 startDate 应抛出异常', () => {
-      expect(() => validateDates('invalid', '2024-01-20')).toThrow(BadRequestException);
+      expect(() => validateDates('invalid', '2024-01-20')).toThrow(BusinessValidationException);
     });
 
     it('无效的 endDate 应抛出异常', () => {
-      expect(() => validateDates('2024-01-15', 'invalid')).toThrow(BadRequestException);
+      expect(() => validateDates('2024-01-15', 'invalid')).toThrow(BusinessValidationException);
     });
 
     it('空参数不应抛出异常', () => {
@@ -222,8 +223,8 @@ describe('date utils', () => {
     });
 
     it('格式正确但不存在的日期应抛出异常', () => {
-      expect(() => validateDates('2024-02-30')).toThrow(BadRequestException);
-      expect(() => validateDates('2024-13-01')).toThrow(BadRequestException);
+      expect(() => validateDates('2024-02-30')).toThrow(BusinessValidationException);
+      expect(() => validateDates('2024-13-01')).toThrow(BusinessValidationException);
     });
   });
 
@@ -268,7 +269,7 @@ describe('date utils', () => {
     });
 
     it('无效日期应抛出异常', () => {
-      expect(() => toISOString('invalid')).toThrow(BadRequestException);
+      expect(() => toISOString('invalid')).toThrow(BusinessValidationException);
     });
   });
 

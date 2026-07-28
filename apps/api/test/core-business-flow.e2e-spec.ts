@@ -3,6 +3,12 @@ import { DbService } from '@db/db.service';
 import { ClinicContextService } from '@common/services/clinic-context.service';
 import { IdempotencyService } from '@common/services/idempotency.service';
 import { CacheService } from '@common/services/cache.service';
+import { EventBusService } from '@common/events/event-bus.service';
+import { ChargeRepository } from '@modules/financial/charge/repositories/charge.repository';
+import { RefundRepository } from '@modules/financial/refunds/repositories/refund.repository';
+import { MemberCardLogRepository } from '@modules/financial/member-cards/repositories/member-card-log.repository';
+import { MemberPointLogRepository } from '@modules/financial/member-cards/repositories/member-point-log.repository';
+import { PatientRepository } from '@modules/patients/repositories/patient.repository';
 import {
   createTestDb,
   cleanupTestDb,
@@ -68,6 +74,12 @@ describe('Core Business Flow E2E - 预约→挂号→收费→退款', () => {
         ClinicContextService,
         IdempotencyService,
         CacheService,
+        EventBusService,
+        ChargeRepository,
+        RefundRepository,
+        MemberCardLogRepository,
+        MemberPointLogRepository,
+        PatientRepository,
         AppointmentsService,
         RegistrationsService,
         VisitsService,

@@ -1,5 +1,6 @@
-import { BadRequestException } from '@nestjs/common';
+
 import { OperationLogsController } from './operation-logs.controller';
+import { BusinessValidationException } from '@common/errors';
 import { OperationLogsService } from './operation-logs.service';
 
 describe('OperationLogsController', () => {
@@ -78,30 +79,30 @@ describe('OperationLogsController', () => {
       expect(secondCall.action).toContain('[INFO] 测试信息');
     });
 
-    it('logs 为空数组时抛 BadRequestException', async () => {
+    it('logs 为空数组时抛 BusinessValidationException', async () => {
       await expect(
         controller.batchLog({ logs: [] }, mockReq as any)
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
       await expect(
         controller.batchLog({ logs: [] }, mockReq as any)
       ).rejects.toThrow('logs 不能为空');
     });
 
-    it('logs 不存在或非数组时抛 BadRequestException', async () => {
+    it('logs 不存在或非数组时抛 BusinessValidationException', async () => {
       await expect(
         controller.batchLog({} as any, mockReq as any)
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
 
       await expect(
         controller.batchLog({ logs: 'not-array' } as any, mockReq as any)
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
 
       await expect(
         controller.batchLog(null as any, mockReq as any)
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
-    it('超过 50 条时抛 BadRequestException', async () => {
+    it('超过 50 条时抛 BusinessValidationException', async () => {
       const logs = Array.from({ length: 51 }, (_, i) => ({
         timestamp: '2026-01-01T00:00:00Z',
         level: 'info' as const,
@@ -110,7 +111,7 @@ describe('OperationLogsController', () => {
 
       await expect(
         controller.batchLog({ logs }, mockReq as any)
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
       await expect(
         controller.batchLog({ logs }, mockReq as any)
       ).rejects.toThrow('单次批量日志不能超过 50 条');

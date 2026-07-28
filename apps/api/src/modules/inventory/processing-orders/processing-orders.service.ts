@@ -10,14 +10,16 @@ import { ClinicContextService } from "../../../common/services/clinic-context.se
 import { BUSINESS_CODE_MAX_RETRIES } from "../../../config/constants";
 import { PAGINATION } from "../../../common/constants/pagination";
 import { AuditLogType } from "../../../common/constants";
+import { yuanToCents, centsToYuan } from "../../../common/utils/format/money.utils";
 
 @Injectable()
 export class ProcessingOrdersService extends BaseService<ProcessingOrder> {
   constructor(dbService: DbService, clinicContext: ClinicContextService) {
+    // P0 修复：添加 moneyFields=['totalFee']，使 BaseService.findOne/findMany 自动转换（分→元）
     super(dbService, clinicContext, 'ProcessingOrder', ['teethNumbers'], [], [
       { table: 'ProcessingOrderItem', foreignKey: 'orderId' },
       { table: 'ProcessingFlowLog', foreignKey: 'orderId' },
-    ]);
+    ], true, [], undefined, undefined, ['totalFee']);
   }
 
   async findMany(params: { patientId?: string; status?: string; factoryId?: string; page?: number; pageSize?: number }) {
@@ -29,6 +31,10 @@ export class ProcessingOrdersService extends BaseService<ProcessingOrder> {
     return super.findMany({ filters, page, pageSize });
   }
 
+  /**
+   * P0 修复：INSERT 包入事务 + 补全审计日志
+   * 原先 INSERT 未在事务中且完全缺失审计日志。
+   */
   async create(dto: { patientId: string; factoryId?: string; visitId?: string; doctorId?: string; shade?: string; teethNumbers?: string[]; totalFee?: number; remark?: string }) {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
@@ -40,8 +46,16 @@ export class ProcessingOrdersService extends BaseService<ProcessingOrder> {
       try {
         const number = "PO" + Date.now() + crypto.randomBytes(2).toString('hex') + (attempt > 0 ? `-${attempt}` : "");
 
-        this.dbService.prepare("INSERT INTO ProcessingOrder (id, number, patientId, visitId, factoryId, doctorId, shade, teethNumbers, totalFee, status, remark, clinicId, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
-          .run(id, number, dto.patientId, dto.visitId || null, dto.factoryId || null, dto.doctorId || null, dto.shade || null, JSON.stringify(dto.teethNumbers || []), dto.totalFee || 0, "SENT", dto.remark || null, clinicId || null, now, now);
+        this.dbService.transaction((db) => {
+          // P0 修复：totalFee 存入 cents（schema 为 INTEGER），原先是 yuan 直接存入
+          const totalFeeCents = yuanToCents(dto.totalFee || 0);
+          db.prepare("INSERT INTO ProcessingOrder (id, number, patientId, visitId, factoryId, doctorId, shade, teethNumbers, totalFee, status, remark, clinicId, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+            .run(id, number, dto.patientId, dto.visitId || null, dto.factoryId || null, dto.doctorId || null, dto.shade || null, JSON.stringify(dto.teethNumbers || []), totalFeeCents, "SENT", dto.remark || null, clinicId || null, now, now);
+
+          this.logAudit(db, AuditLogType.PROCESSING_ORDER_CREATE, id, "ProcessingOrder", {
+            afterData: { number, patientId: dto.patientId, factoryId: dto.factoryId, doctorId: dto.doctorId, totalFee: totalFeeCents, status: "SENT" },
+          });
+        });
 
         return this.findOne(id);
       } catch (e: unknown) {
@@ -81,7 +95,12 @@ export class ProcessingOrdersService extends BaseService<ProcessingOrder> {
         throw new BusinessValidationException('状态已变更，请刷新后重试（可能存在并发操作）');
       }
       this.logAudit(db, AuditLogType.PROCESSING_ORDER_STATUS_UPDATE, id, "ProcessingOrder", { beforeData: { status: currentStatus }, afterData: { status } });
-      return db.prepare(`SELECT id, number, patientId, visitId, factoryId, doctorId, shade, teethNumbers, totalFee, status, chargeId, sentAt, expectedAt, receivedAt, deliveredAt, remark, creatorId, clinicId, createdAt, updatedAt, deletedAt FROM ProcessingOrder WHERE id = ? AND deletedAt IS NULL${clinicClause}`).get(id, ...clinicParams);
+      const row = db.prepare(`SELECT id, number, patientId, visitId, factoryId, doctorId, shade, teethNumbers, totalFee, status, chargeId, sentAt, expectedAt, receivedAt, deliveredAt, remark, creatorId, clinicId, createdAt, updatedAt, deletedAt FROM ProcessingOrder WHERE id = ? AND deletedAt IS NULL${clinicClause}`).get(id, ...clinicParams) as Record<string, unknown> | undefined;
+      // P0 修复：自定义 SQL 读取的 totalFee 为 cents，需手动转回 yuan
+      if (row && typeof row.totalFee === 'number') {
+        row.totalFee = centsToYuan(row.totalFee);
+      }
+      return row;
     });
   }
 
@@ -95,12 +114,17 @@ export class ProcessingOrdersService extends BaseService<ProcessingOrder> {
       if (dto.factoryId !== undefined) { updates.push('factoryId = ?'); params.push(dto.factoryId || null); }
       if (dto.shade !== undefined) { updates.push('shade = ?'); params.push(dto.shade); }
       if (dto.teethNumbers !== undefined) { updates.push('teethNumbers = ?'); params.push(JSON.stringify(dto.teethNumbers)); }
-      if (dto.totalFee !== undefined) { updates.push('totalFee = ?'); params.push(dto.totalFee); }
+      if (dto.totalFee !== undefined) { updates.push('totalFee = ?'); params.push(yuanToCents(dto.totalFee)); }
       if (dto.remark !== undefined) { updates.push('remark = ?'); params.push(dto.remark); }
       params.push(id, ...clinicParams);
       db.prepare(`UPDATE ProcessingOrder SET ${updates.join(', ')} WHERE id = ? AND deletedAt IS NULL${clinicClause}`).run(...params);
       this.logAudit(db, AuditLogType.PROCESSING_ORDER_UPDATE, id, "ProcessingOrder", { afterData: { shade: dto.shade, totalFee: dto.totalFee, factoryId: dto.factoryId } });
-      return db.prepare(`SELECT id, number, patientId, visitId, factoryId, doctorId, shade, teethNumbers, totalFee, status, chargeId, sentAt, expectedAt, receivedAt, deliveredAt, remark, creatorId, clinicId, createdAt, updatedAt, deletedAt FROM ProcessingOrder WHERE id = ? AND deletedAt IS NULL${clinicClause}`).get(id, ...clinicParams) as ProcessingOrder;
+      const updated = db.prepare(`SELECT id, number, patientId, visitId, factoryId, doctorId, shade, teethNumbers, totalFee, status, chargeId, sentAt, expectedAt, receivedAt, deliveredAt, remark, creatorId, clinicId, createdAt, updatedAt, deletedAt FROM ProcessingOrder WHERE id = ? AND deletedAt IS NULL${clinicClause}`).get(id, ...clinicParams) as Record<string, unknown> | undefined;
+      // P0 修复：自定义 SQL 读取的 totalFee 为 cents，需手动转回 yuan
+      if (updated && typeof updated.totalFee === 'number') {
+        updated.totalFee = centsToYuan(updated.totalFee);
+      }
+      return updated as ProcessingOrder;
     });
   }
 
@@ -131,9 +155,15 @@ export class ProcessingOrdersService extends BaseService<ProcessingOrder> {
     this.dbService.transaction((db) => {
       db.prepare("INSERT INTO ProcessingFlowLog (id, orderId, status, remark, operatorId, clinicId, createdAt) VALUES (?,?,?,?,?,?,?)")
         .run(id, orderId, dto.status, dto.remark || null, dto.operatorId || null, clinicId || null, now);
-      // 同步更新订单状态
-      db.prepare(`UPDATE ProcessingOrder SET status = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${clinicClause}`).run(dto.status, now, orderId, ...clinicParams);
-      this.logAudit(db, AuditLogType.PROCESSING_FLOW_LOG, orderId, "ProcessingOrder", { afterData: { status: dto.status, remark: dto.remark } });
+      // P1 修复：CAS 保护，防止并发状态流转导致状态被覆盖
+      // WHERE status = currentStatus 确保读取的 currentStatus 未被并发修改
+      const updateResult = db.prepare(
+        `UPDATE ProcessingOrder SET status = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL AND status = ?${clinicClause}`,
+      ).run(dto.status, now, orderId, currentStatus, ...clinicParams);
+      if (updateResult.changes === 0) {
+        throw new BusinessValidationException('订单状态已被修改，请刷新后重试');
+      }
+      this.logAudit(db, AuditLogType.PROCESSING_FLOW_LOG, orderId, "ProcessingOrder", { beforeData: { status: currentStatus }, afterData: { status: dto.status, remark: dto.remark } });
     });
     return { id, orderId, status: dto.status };
   }

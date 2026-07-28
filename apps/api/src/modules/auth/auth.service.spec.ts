@@ -1,8 +1,9 @@
 import { AuthService } from './auth.service';
+import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
 import { MockDbService, MockDbRow } from '../../db/__mocks__/db-service.mock';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { UnauthorizedException, BadRequestException, NotFoundException } from '@nestjs/common';
+import { UnauthorizedException } from '@nestjs/common';
 import { ClinicContextService } from '../../common/services/clinic-context.service';
 import { CacheService } from '../../common/services/cache.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
@@ -56,7 +57,7 @@ describe('AuthService', () => {
 
     cache = createMockCacheService();
     auditLog = {
-      logAudit: jest.fn((db: any, type: string, targetId: string, targetType: string, clinicId: string | null, options?: any) => {
+      logAudit: jest.fn((db: { prepare: jest.Mock }, type: string, targetId: string, targetType: string, clinicId: string | null, options?: Record<string, unknown>) => {
         const id = crypto.randomUUID();
         const now = new Date().toISOString();
         const beforeData = options?.beforeData !== undefined ? JSON.stringify(options.beforeData) : null;
@@ -88,6 +89,7 @@ describe('AuthService', () => {
     refreshTokenExpiresAt: unknown;
     phone: unknown;
     isTempPassword: unknown;
+    passwordChangedAt: unknown;
     createdAt: string;
     updatedAt: string;
   }
@@ -111,6 +113,7 @@ describe('AuthService', () => {
       refreshTokenExpiresAt: overrides.refreshTokenExpiresAt || null,
       phone: overrides.phone || null,
       isTempPassword: overrides.isTempPassword !== undefined ? overrides.isTempPassword : 0,
+      passwordChangedAt: overrides.passwordChangedAt !== undefined ? (overrides.passwordChangedAt as string) : new Date().toISOString(),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -187,10 +190,19 @@ describe('AuthService', () => {
       const user = createUser({ username: 'normaluser', isTempPassword: 0 });
       db.seed('User', [user] as unknown as MockDbRow[]);
 
-       
+      
       const result = await service.login({ username: 'normaluser', password: 'password123' });
 
       expect(result.needChangePassword).toBe(false);
+    });
+
+    it('首次登录（passwordChangedAt 为 null）时 needChangePassword 为 true', async () => {
+      const user = createUser({ username: 'firstloginuser', passwordChangedAt: null });
+      db.seed('User', [user] as unknown as MockDbRow[]);
+
+      const result = await service.login({ username: 'firstloginuser', password: 'password123' });
+
+      expect(result.needChangePassword).toBe(true);
     });
 
     it('登录成功后写入审计日志 AuditLog', async () => {
@@ -300,30 +312,30 @@ describe('AuthService', () => {
       expect(result.success).toBe(true);
     });
 
-    it('旧密码错误时抛出 BadRequestException', async () => {
+    it('旧密码错误时抛出 BusinessValidationException', async () => {
       const user = createUser({ username: 'wrongoldpw' });
       db.seed('User', [user] as unknown as MockDbRow[]);
 
       await expect(
         service.changePassword(user.id, { oldPassword: 'wrong', newPassword: 'newpass' })
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
-    it('新旧密码相同时抛出 BadRequestException', async () => {
+    it('新旧密码相同时抛出 BusinessValidationException', async () => {
       const user = createUser({ username: 'samepw' });
       db.seed('User', [user] as unknown as MockDbRow[]);
 
        
       await expect(
         service.changePassword(user.id, { oldPassword: 'password123', newPassword: 'password123' })
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
        
     });
 
-    it('用户不存在时抛出 NotFoundException', async () => {
+    it('用户不存在时抛出 BusinessNotFoundException', async () => {
       await expect(
         service.changePassword('non-existent-id', { oldPassword: 'a', newPassword: 'b' })
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toThrow(BusinessNotFoundException);
     });
 
     it('禁用的用户无法修改密码', async () => {
@@ -333,7 +345,7 @@ describe('AuthService', () => {
        
       await expect(
         service.changePassword(user.id, { oldPassword: 'password123', newPassword: 'newpass' })
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toThrow(BusinessNotFoundException);
        
     });
   });
@@ -477,7 +489,7 @@ describe('AuthService', () => {
       expect(users.length).toBe(1);
     });
 
-    it('用户名已存在时抛出 BadRequestException', async () => {
+    it('用户名已存在时抛出 BusinessValidationException', async () => {
       const user = createUser({ username: 'existing' });
       db.seed('User', [user] as unknown as MockDbRow[]);
 
@@ -488,7 +500,7 @@ describe('AuthService', () => {
           name: 'Existing',
           role: 'DOCTOR',
         })
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
   });
 
@@ -509,11 +521,11 @@ describe('AuthService', () => {
       const boss = createUser({ username: 'boss', role: 'BOSS' });
       db.seed('User', [boss] as unknown as MockDbRow[]);
 
-      await expect(service.deleteUser(boss.id)).rejects.toThrow(BadRequestException);
+      await expect(service.deleteUser(boss.id)).rejects.toThrow(BusinessValidationException);
     });
 
-    it('删除不存在的用户抛出 NotFoundException', async () => {
-      await expect(service.deleteUser('non-existent')).rejects.toThrow(NotFoundException);
+    it('删除不存在的用户抛出 BusinessNotFoundException', async () => {
+      await expect(service.deleteUser('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 
@@ -607,10 +619,10 @@ describe('AuthService', () => {
       expect(updatedUser?.phone).toBe('13800138000');
     });
 
-    it('用户不存在时抛出 NotFoundException', async () => {
+    it('用户不存在时抛出 BusinessNotFoundException', async () => {
       await expect(
         service.updateUser('non-existent-id', { name: '测试' })
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toThrow(BusinessNotFoundException);
     });
 
     it('可以更新 active 字段', async () => {
@@ -735,7 +747,7 @@ describe('AuthService', () => {
   });
 
   describe('refreshToken - 刷新令牌补充测试', () => {
-    it('刷新时执行过期 UsedRefreshToken 清理', async () => {
+    it('刷新事务内不执行 UsedRefreshToken 清理（由定时器统一负责）', async () => {
       const oldUsedToken = {
         id: 'old-used-1',
         tokenHash: 'old-used-hash',
@@ -756,12 +768,17 @@ describe('AuthService', () => {
 
       const prepareSpy = jest.spyOn(db, 'prepare');
 
-      await service.refreshToken(refreshToken);
+      const result = await service.refreshToken(refreshToken);
 
+      // 刷新本身成功
+      expect(result.access_token).toBeDefined();
+
+      // 清理已移交给 onModuleInit 定时器（cleanupUsedRefreshTokens），
+      // 刷新事务内不应再执行 DELETE FROM UsedRefreshToken
       const deleteCalls = prepareSpy.mock.calls.filter(call =>
         call[0].toUpperCase().startsWith('DELETE FROM USEDREFRESHTOKEN')
       );
-      expect(deleteCalls.length).toBeGreaterThan(0);
+      expect(deleteCalls.length).toBe(0);
 
       prepareSpy.mockRestore();
     });

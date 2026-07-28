@@ -2,8 +2,9 @@ import { InventoryService } from './inventory.service';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import { IdempotencyService } from '../../../common/services/idempotency.service';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { StatsService } from '../../system/stats/stats.service';
+import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
+import { EventBusService } from '../../../common/events/event-bus.service';
+import { InventoryRepository } from './repositories/inventory.repository';
 
 function createMockClinicContext(): ClinicContextService {
   return {
@@ -22,21 +23,23 @@ function createMockIdempotency(): IdempotencyService {
   } as unknown as IdempotencyService;
 }
 
-function createMockStatsService(): jest.Mocked<StatsService> {
+function createMockEventBus(): jest.Mocked<EventBusService> {
   return {
-    invalidateStatsCache: jest.fn(),
-  } as unknown as jest.Mocked<StatsService>;
+    emit: jest.fn(),
+    on: jest.fn(),
+    onAll: jest.fn(),
+  } as unknown as jest.Mocked<EventBusService>;
 }
 
 describe('InventoryService', () => {
   let service: InventoryService;
   let db: MockDbService;
-  let statsService: jest.Mocked<StatsService>;
+  let eventBus: jest.Mocked<EventBusService>;
 
   beforeEach(() => {
     db = new MockDbService();
-    statsService = createMockStatsService();
-    service = new InventoryService(db as any, createMockClinicContext(), createMockIdempotency(), statsService);
+    eventBus = createMockEventBus();
+    service = new InventoryService(db as any, createMockClinicContext(), createMockIdempotency(), eventBus, new InventoryRepository());
   });
 
   afterEach(() => {
@@ -70,16 +73,16 @@ describe('InventoryService', () => {
       ]);
     });
 
-    it('尝试通过 update 直接修改 stock 应抛出 BadRequestException', async () => {
-      await expect(service.update('item-001', { stock: 200 })).rejects.toThrow(BadRequestException);
+    it('尝试通过 update 直接修改 stock 应抛出 BusinessValidationException', async () => {
+      await expect(service.update('item-001', { stock: 200 })).rejects.toThrow(BusinessValidationException);
     });
 
-    it('尝试将 stock 设为 0 应抛出 BadRequestException', async () => {
-      await expect(service.update('item-001', { stock: 0 })).rejects.toThrow(BadRequestException);
+    it('尝试将 stock 设为 0 应抛出 BusinessValidationException', async () => {
+      await expect(service.update('item-001', { stock: 0 })).rejects.toThrow(BusinessValidationException);
     });
 
-    it('尝试将 stock 设为负数应抛出 BadRequestException', async () => {
-      await expect(service.update('item-001', { stock: -5 })).rejects.toThrow(BadRequestException);
+    it('尝试将 stock 设为负数应抛出 BusinessValidationException', async () => {
+      await expect(service.update('item-001', { stock: -5 })).rejects.toThrow(BusinessValidationException);
     });
 
     it('修改非 stock 字段（如 name/minStock）应正常成功', async () => {
@@ -120,12 +123,12 @@ describe('InventoryService', () => {
       expect(txns[0].quantity).toBe(50);
     });
 
-    it('库存项不存在应抛出 NotFoundException', async () => {
+    it('库存项不存在应抛出 BusinessNotFoundException', async () => {
       await expect(service.stockAction({
         itemId: 'non-existent',
         type: 'IN',
         quantity: 50,
-      })).rejects.toThrow(NotFoundException);
+      })).rejects.toThrow(BusinessNotFoundException);
     });
   });
 
@@ -152,7 +155,7 @@ describe('InventoryService', () => {
       expect(txns[0].quantity).toBe(30);
     });
 
-    it('出库数量超过库存应抛出 BadRequestException（库存不足）', async () => {
+    it('出库数量超过库存应抛出 BusinessValidationException（库存不足）', async () => {
       // MockDbService 的 UPDATE WHERE stock >= ? 不会被正确处理
       // 但当 mock 返回 changes=0 时，service 会抛出 '库存不足'
       await expect(service.stockAction({
@@ -182,19 +185,19 @@ describe('InventoryService', () => {
       expect((result as any).stock).toBe(95);
     });
 
-    it('调整数量为负数应抛出 BadRequestException', async () => {
+    it('调整数量为负数应抛出 BusinessValidationException', async () => {
       await expect(service.stockAction({
         itemId: 'item-001',
         type: 'ADJUST',
         quantity: -10,
-      })).rejects.toThrow(BadRequestException);
+      })).rejects.toThrow(BusinessValidationException);
     });
   });
 
   // ==================== stockAction - 无效类型 ====================
 
   describe('stockAction - 无效类型', () => {
-    it('无效的操作类型应抛出 BadRequestException', async () => {
+    it('无效的操作类型应抛出 BusinessValidationException', async () => {
       db.seed('InventoryItem', [
         { id: 'item-001', code: 'MED-001', name: '丁香油', stock: 100, minStock: 10, category: '药品', unit: '瓶', price: 15.5, clinicId: 'test-clinic-001' },
       ]);
@@ -202,7 +205,7 @@ describe('InventoryService', () => {
         itemId: 'item-001',
         type: 'INVALID',
         quantity: 10,
-      })).rejects.toThrow(BadRequestException);
+      })).rejects.toThrow(BusinessValidationException);
     });
   });
 
@@ -280,20 +283,20 @@ describe('InventoryService', () => {
       ]);
     });
 
-    it('数量为 0 应抛出 BadRequestException', async () => {
+    it('数量为 0 应抛出 BusinessValidationException', async () => {
       await expect(service.stockAction({
         itemId: 'item-001',
         type: 'IN',
         quantity: 0,
-      })).rejects.toThrow(BadRequestException);
+      })).rejects.toThrow(BusinessValidationException);
     });
 
-    it('数量为负数应抛出 BadRequestException', async () => {
+    it('数量为负数应抛出 BusinessValidationException', async () => {
       await expect(service.stockAction({
         itemId: 'item-001',
         type: 'IN',
         quantity: -10,
-      })).rejects.toThrow(BadRequestException);
+      })).rejects.toThrow(BusinessValidationException);
     });
 
     it('入库操作应正确更新库存并生成交易记录', async () => {

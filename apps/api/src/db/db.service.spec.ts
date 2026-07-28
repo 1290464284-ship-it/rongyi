@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-non-literal-fs-filename -- 测试文件使用临时数据库路径 */
 import Database from 'better-sqlite3';
 import { DbService } from './db.service';
 

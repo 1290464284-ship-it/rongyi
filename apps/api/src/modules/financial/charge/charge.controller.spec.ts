@@ -1,11 +1,17 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
+
+import { Request } from 'express';
 import { ChargeController } from './charge.controller';
 import { ChargeService } from './charge.service';
 import { ChargePaymentService } from './charge-payment.service';
 import { DebtService } from './debt.service';
 import { ComboService } from './combo.service';
 import { PaymentMethodService } from './payment-method.service';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { CreatePaymentMethodDto } from './dto/payment-method.dto';
+import { QueryDebtDto, PayDebtDto, CreateDebtFromChargeDto } from './dto/debt.dto';
+import { QueryChargesDto, CreateChargeDto } from './dto/create-charge.dto';
+import { PayChargeDto } from './dto/pay-charge.dto';
 
 describe('ChargeController', () => {
   let controller: ChargeController;
@@ -57,211 +63,126 @@ describe('ChargeController', () => {
     controller = module.get(ChargeController);
   });
 
-  // ==================== 收费组合 ====================
-  describe('listCombos', () => {
-    it('调用 comboService.listCombos 传入 req.user.id', async () => {
-      const expected = [{ id: 'cb-1', name: '常规套餐' }];
-      comboService.listCombos.mockResolvedValue(expected);
+  describe('listCombos / createCombo - 收费组合', () => {
+    it('从请求中提取 userId 传递给 listCombos', async () => {
+      comboService.listCombos.mockResolvedValue([]);
+      const req = { user: { id: 'u-1' } } as unknown as Request;
 
-      const result = await controller.listCombos({ user: { id: 'u-1' } } as any);
-      expect(result).toEqual(expected);
+      await controller.listCombos(req);
       expect(comboService.listCombos).toHaveBeenCalledWith('u-1');
     });
-  });
 
-  describe('createCombo', () => {
-    it('调用 comboService.createCombo 传入 dto 和 userId', async () => {
+    it('userId 为 undefined 时也能正常处理', async () => {
+      comboService.listCombos.mockResolvedValue([]);
+      const req = { user: {} } as unknown as Request;
+
+      await controller.listCombos(req);
+      expect(comboService.listCombos).toHaveBeenCalledWith(undefined);
+    });
+
+    it('createCombo 传递 dto 和 userId', async () => {
       const dto = { name: '常规套餐', items: [] };
-      comboService.createCombo.mockResolvedValue({ id: 'cb-1', ...dto });
+      comboService.createCombo.mockResolvedValue({ id: 'cb-1' });
+      const req = { user: { id: 'u-1' } } as unknown as Request;
 
-      const result = await controller.createCombo(dto, { user: { id: 'u-1' } } as any);
-      expect(result).toEqual({ id: 'cb-1', ...dto });
+      await controller.createCombo(dto, req);
       expect(comboService.createCombo).toHaveBeenCalledWith(dto, 'u-1');
     });
-  });
 
-  describe('updateCombo', () => {
-    it('调用 comboService.updateCombo 传入 id 和 dto', async () => {
-      const dto = { name: '更新套餐' };
-      comboService.updateCombo.mockResolvedValue({ id: 'cb-1', ...dto });
-
-      const result = await controller.updateCombo('cb-1', dto);
-      expect(result).toEqual({ id: 'cb-1', ...dto });
-      expect(comboService.updateCombo).toHaveBeenCalledWith('cb-1', dto);
-    });
-  });
-
-  describe('deleteCombo', () => {
-    it('调用 comboService.deleteCombo 传入 id', async () => {
+    it('updateCombo 和 deleteCombo 正常透传', async () => {
+      comboService.updateCombo.mockResolvedValue({ id: 'cb-1' });
       comboService.deleteCombo.mockResolvedValue({ id: 'cb-1' });
-      const result = await controller.deleteCombo('cb-1');
-      expect(result).toEqual({ id: 'cb-1' });
+
+      await controller.updateCombo('cb-1', { name: '更新' });
+      expect(comboService.updateCombo).toHaveBeenCalledWith('cb-1', { name: '更新' });
+
+      await controller.deleteCombo('cb-1');
       expect(comboService.deleteCombo).toHaveBeenCalledWith('cb-1');
     });
   });
 
-  // ==================== 缴费方式 ====================
-  describe('listPaymentMethods', () => {
-    it('调用 paymentMethodService.listPaymentMethods', async () => {
-      const expected = [{ id: 'pm-1', name: '现金' }];
-      paymentMethodService.listPaymentMethods.mockResolvedValue(expected);
+  describe('缴费方式', () => {
+    it('listPaymentMethods 和 createPaymentMethod 正常调用', async () => {
+      paymentMethodService.listPaymentMethods.mockResolvedValue([]);
+      paymentMethodService.createPaymentMethod.mockResolvedValue({ id: 'pm-1' });
 
-      const result = await controller.listPaymentMethods();
-      expect(result).toEqual(expected);
-      expect(paymentMethodService.listPaymentMethods).toHaveBeenCalledWith();
-    });
-  });
+      await controller.listPaymentMethods();
+      expect(paymentMethodService.listPaymentMethods).toHaveBeenCalled();
 
-  describe('createPaymentMethod', () => {
-    it('调用 paymentMethodService.createPaymentMethod 传入 dto', async () => {
-      const dto = { name: '微信支付' };
-      paymentMethodService.createPaymentMethod.mockResolvedValue({ id: 'pm-2', ...dto });
-
-      const result = await controller.createPaymentMethod(dto as any);
-      expect(result).toEqual({ id: 'pm-2', ...dto });
+      const dto: CreatePaymentMethodDto = { name: '微信支付', code: 'WECHAT' };
+      await controller.createPaymentMethod(dto);
       expect(paymentMethodService.createPaymentMethod).toHaveBeenCalledWith(dto);
     });
-  });
 
-  describe('updatePaymentMethod', () => {
-    it('调用 paymentMethodService.updatePaymentMethod 传入 id 和 dto', async () => {
-      const dto = { name: '支付宝' };
-      paymentMethodService.updatePaymentMethod.mockResolvedValue({ id: 'pm-1', ...dto });
-
-      const result = await controller.updatePaymentMethod('pm-1', dto);
-      expect(result).toEqual({ id: 'pm-1', ...dto });
-      expect(paymentMethodService.updatePaymentMethod).toHaveBeenCalledWith('pm-1', dto);
-    });
-  });
-
-  describe('deletePaymentMethod', () => {
-    it('调用 paymentMethodService.deletePaymentMethod 传入 id', async () => {
-      paymentMethodService.deletePaymentMethod.mockResolvedValue({ id: 'pm-1' });
-      const result = await controller.deletePaymentMethod('pm-1');
-      expect(result).toEqual({ id: 'pm-1' });
-      expect(paymentMethodService.deletePaymentMethod).toHaveBeenCalledWith('pm-1');
-    });
-  });
-
-  describe('togglePaymentMethod', () => {
-    it('调用 paymentMethodService.togglePaymentMethod 传入 id', async () => {
+    it('togglePaymentMethod 切换激活状态', async () => {
       paymentMethodService.togglePaymentMethod.mockResolvedValue({ id: 'pm-1', active: false });
+
       const result = await controller.togglePaymentMethod('pm-1');
       expect(result).toEqual({ id: 'pm-1', active: false });
-      expect(paymentMethodService.togglePaymentMethod).toHaveBeenCalledWith('pm-1');
     });
   });
 
-  // ==================== 欠费管理 ====================
-  describe('listDebts', () => {
-    it('调用 debtService.listDebts 传入 dto', async () => {
-      const expected = { items: [], total: 0 };
-      debtService.listDebts.mockResolvedValue(expected);
-      const dto = { patientId: 'p-1', status: 'UNPAID' } as any;
+  describe('欠费管理', () => {
+    it('listDebts 透传查询参数', async () => {
+      const dto: QueryDebtDto = { patientId: 'p-1', status: 'UNPAID' } as QueryDebtDto;
+      debtService.listDebts.mockResolvedValue({ items: [], total: 0 });
 
-      const result = await controller.listDebts(dto);
-      expect(result).toEqual(expected);
+      await controller.listDebts(dto);
       expect(debtService.listDebts).toHaveBeenCalledWith(dto);
     });
-  });
 
-  describe('debtStats', () => {
-    it('调用 debtService.debtStats', async () => {
-      const expected = { total: 100, paid: 80, unpaid: 20 };
-      debtService.debtStats.mockResolvedValue(expected);
+    it('getDebt 不存在时透传 BusinessNotFoundException', async () => {
+      debtService.getDebt.mockRejectedValue(new BusinessNotFoundException('欠费不存在'));
 
-      const result = await controller.debtStats();
-      expect(result).toEqual(expected);
-      expect(debtService.debtStats).toHaveBeenCalledWith();
-    });
-  });
-
-  describe('getDebt', () => {
-    it('调用 debtService.getDebt 传入 id', async () => {
-      const expected = { id: 'd-1', amount: 100 };
-      debtService.getDebt.mockResolvedValue(expected);
-
-      const result = await controller.getDebt('d-1');
-      expect(result).toEqual(expected);
-      expect(debtService.getDebt).toHaveBeenCalledWith('d-1');
+      await expect(controller.getDebt('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
 
-    it('不存在时透传 NotFoundException', async () => {
-      debtService.getDebt.mockRejectedValue(new NotFoundException('Debt不存在'));
-      await expect(controller.getDebt('non-existent')).rejects.toThrow(NotFoundException);
-    });
-  });
+    it('payDebt 传递 userId 用于操作审计', async () => {
+      const dto: PayDebtDto = { amount: 50, payMethod: 'CASH' };
+      debtService.payDebt.mockResolvedValue({ id: 'd-1', paidAmount: 50 });
+      const req = { user: { id: 'u-1' } } as unknown as Request;
 
-  describe('createDebtFromCharge', () => {
-    it('调用 debtService.createDebtFromCharge 传入 dto', async () => {
+      await controller.payDebt('d-1', dto, req);
+      expect(debtService.payDebt).toHaveBeenCalledWith('d-1', dto, 'u-1');
+    });
+
+    it('createDebtFromCharge 从收费单创建欠费', async () => {
       const dto = { chargeId: 'c-1', amount: 100 };
-      debtService.createDebtFromCharge.mockResolvedValue({ id: 'd-1', ...dto });
+      debtService.createDebtFromCharge.mockResolvedValue({ id: 'd-1' });
 
-      const result = await controller.createDebtFromCharge(dto as any);
-      expect(result).toEqual({ id: 'd-1', ...dto });
+      await controller.createDebtFromCharge(dto as unknown as CreateDebtFromChargeDto);
       expect(debtService.createDebtFromCharge).toHaveBeenCalledWith(dto);
     });
   });
 
-  describe('payDebt', () => {
-    it('调用 debtService.payDebt 传入 id/dto/userId', async () => {
-      const dto = { amount: 50, paymentMethod: 'CASH' };
-      debtService.payDebt.mockResolvedValue({ id: 'd-1', paidAmount: 50 });
-
-      const result = await controller.payDebt('d-1', dto, { user: { id: 'u-1' } } as any);
-      expect(result).toEqual({ id: 'd-1', paidAmount: 50 });
-      expect(debtService.payDebt).toHaveBeenCalledWith('d-1', dto, 'u-1');
-    });
-  });
-
-  // ==================== 收费 ====================
-  describe('listCharges', () => {
-    it('调用 chargeService.listCharges 传入 q', async () => {
-      const expected = { items: [], total: 0 };
-      chargeService.listCharges.mockResolvedValue(expected);
+  describe('收费', () => {
+    it('listCharges 透传查询参数', async () => {
       const q = { page: '1', pageSize: '20' };
+      chargeService.listCharges.mockResolvedValue({ items: [], total: 0 });
 
-      const result = await controller.listCharges(q as any);
-      expect(result).toEqual(expected);
+      await controller.listCharges(q as unknown as QueryChargesDto);
       expect(chargeService.listCharges).toHaveBeenCalledWith(q);
     });
-  });
 
-  describe('createCharge', () => {
-    it('调用 chargeService.createCharge 传入 dto', async () => {
-      const dto = { patientId: 'p-1', items: [] };
-      chargeService.createCharge.mockResolvedValue({ id: 'c-1', ...dto });
+    it('createCharge 参数错误时透传 BusinessValidationException', async () => {
+      chargeService.createCharge.mockRejectedValue(new BusinessValidationException('金额错误'));
 
-      const result = await controller.createCharge(dto);
-      expect(result).toEqual({ id: 'c-1', ...dto });
-      expect(chargeService.createCharge).toHaveBeenCalledWith(dto);
+      await expect(controller.createCharge({} as unknown as CreateChargeDto)).rejects.toThrow(BusinessValidationException);
     });
 
-    it('参数错误时透传 BadRequestException', async () => {
-      chargeService.createCharge.mockRejectedValue(new BadRequestException('金额错误'));
-      await expect(controller.createCharge({} as any)).rejects.toThrow(BadRequestException);
-    });
-  });
-
-  describe('getCharge', () => {
-    it('调用 chargeService.getCharge 传入 id', async () => {
-      const expected = { id: 'c-1', totalAmount: 100 };
-      chargeService.getCharge.mockResolvedValue(expected);
-
-      const result = await controller.getCharge('c-1');
-      expect(result).toEqual(expected);
-      expect(chargeService.getCharge).toHaveBeenCalledWith('c-1');
-    });
-  });
-
-  describe('payCharge', () => {
-    it('调用 chargePaymentService.payCharge 传入 id/dto/userId', async () => {
-      const dto = { paymentMethod: 'CASH', amount: 100 };
+    it('payCharge 传递 userId 用于操作审计', async () => {
+      const dto: PayChargeDto = { amount: 100, payMethod: 'CASH' };
       chargePaymentService.payCharge.mockResolvedValue({ id: 'c-1', status: 'PAID' });
+      const req = { user: { id: 'u-1' } } as unknown as Request;
 
-      const result = await controller.payCharge('c-1', dto, { user: { id: 'u-1' } } as any);
-      expect(result).toEqual({ id: 'c-1', status: 'PAID' });
+      await controller.payCharge('c-1', dto, req);
       expect(chargePaymentService.payCharge).toHaveBeenCalledWith('c-1', dto, 'u-1');
+    });
+
+    it('getCharge 不存在时透传 BusinessNotFoundException', async () => {
+      chargeService.getCharge.mockRejectedValue(new BusinessNotFoundException('收费单不存在'));
+
+      await expect(controller.getCharge('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 });

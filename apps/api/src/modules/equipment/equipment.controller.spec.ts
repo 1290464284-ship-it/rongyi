@@ -1,7 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { BusinessNotFoundException } from '@common/errors';
 import { EquipmentController } from './equipment.controller';
 import { EquipmentService } from './equipment.service';
-import { NotFoundException, ConflictException } from '@nestjs/common';
+import { ConflictException } from '@nestjs/common';
 
 describe('EquipmentController', () => {
   let controller: EquipmentController;
@@ -36,6 +37,7 @@ describe('EquipmentController', () => {
       );
       expect(result).toEqual(expected);
       expect(service.findMany).toHaveBeenCalledWith({
+        filters: {},
         keyword: '牙科',
         page: 2,
         pageSize: 10,
@@ -47,6 +49,7 @@ describe('EquipmentController', () => {
       service.findMany.mockResolvedValue(expected);
       await controller.findMany({ keyword: undefined });
       expect(service.findMany).toHaveBeenCalledWith({
+        filters: {},
         keyword: undefined,
         page: 1,
         pageSize: 20,
@@ -76,9 +79,9 @@ describe('EquipmentController', () => {
       expect(service.findOne).toHaveBeenCalledWith('equip-1');
     });
 
-    it('service 抛出 NotFoundException 时透传', async () => {
-      service.findOne.mockRejectedValue(new NotFoundException('Equipment不存在'));
-      await expect(controller.findOne('non-existent')).rejects.toThrow(NotFoundException);
+    it('service 抛出 BusinessNotFoundException 时透传', async () => {
+      service.findOne.mockRejectedValue(new BusinessNotFoundException('Equipment不存在'));
+      await expect(controller.findOne('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 

@@ -126,8 +126,36 @@ export const BACKUP_MAX_DIR_BYTES = 500 * 1024 * 1024; // 500MB
 export const BACKUP_LARGE_DB_THRESHOLD_BYTES = 500 * 1024 * 1024; // 500MB
 export const BACKUP_FULL_VACUUM_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
-// 测试与开发默认值
-export const DEFAULT_DEV_PASSWORD = 'REDACTED';
+// 初始管理员密码复杂度策略
+export const ADMIN_INITIAL_PASSWORD_MIN_LENGTH = 8;
+// eslint-disable-next-line sonarjs/no-hardcoded-passwords
+export const ADMIN_INITIAL_PASSWORD_ENV_KEY = 'ADMIN_INITIAL_PASSWORD';
+
+/**
+ * 生成随机密码（用于开发/测试环境首次启动时的默认账号）。
+ * 生产环境禁止依赖此函数，必须通过 ADMIN_INITIAL_PASSWORD 配置强密码。
+ */
+export function generateRandomPassword(length: number = 10): string {
+  const upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const lower = 'abcdefghijklmnopqrstuvwxyz';
+  const digits = '0123456789';
+  const specials = '!@#$%^&*';
+  const all = upper + lower + digits + specials;
+
+  // 确保每种字符类型至少出现一次
+  let password = '';
+  password += upper[Math.floor(Math.random() * upper.length)];
+  password += lower[Math.floor(Math.random() * lower.length)];
+  password += digits[Math.floor(Math.random() * digits.length)];
+  password += specials[Math.floor(Math.random() * specials.length)];
+
+  for (let i = 4; i < length; i++) {
+    password += all[Math.floor(Math.random() * all.length)];
+  }
+
+  // 打乱顺序
+  return password.split('').sort(() => Math.random() - 0.5).join('');
+}
 
 // 常用时间单位（毫秒）
 export const ONE_SECOND_MS = 1000;

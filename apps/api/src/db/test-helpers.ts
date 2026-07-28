@@ -311,7 +311,8 @@ class TestDbService extends DbService {
   }
 
   get db(): IDatabase {
-    return this.testDb;
+    // 与生产 DbService 保持一致：返回自身（实现 IDatabase，含 transaction）
+    return this;
   }
 
   prepare(sql: string): ReturnType<IDatabase['prepare']> {
@@ -324,7 +325,7 @@ class TestDbService extends DbService {
 
   transaction<T>(fn: (db: IDatabase) => T): T {
     const txFn = this.testDb.transaction(fn);
-    return txFn(this.testDb);
+    return txFn(this);
   }
 
   checkpoint(mode: 'PASSIVE' | 'FULL' | 'RESTART' | 'TRUNCATE' = 'TRUNCATE'): void {

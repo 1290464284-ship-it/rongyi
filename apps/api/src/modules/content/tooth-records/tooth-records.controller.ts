@@ -1,12 +1,4 @@
-﻿import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  Post,
-  Query,
-  } from '@nestjs/common';
+﻿import { Body, Controller, Delete, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Role } from '@dental/shared';
 import { Roles } from '../../../common/decorators/roles.decorator';

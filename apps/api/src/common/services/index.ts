@@ -10,4 +10,5 @@ export * from './operation-log-sink.interface';
 export * from './audit-log.service';
 export * from './code-generator.service';
 export * from './soft-delete-manager.service';
+export * from './pagination.service';
 export * from './common-services.module';

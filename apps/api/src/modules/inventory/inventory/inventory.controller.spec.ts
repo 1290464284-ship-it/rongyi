@@ -1,7 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
 import { InventoryController } from './inventory.controller';
 import { InventoryService } from './inventory.service';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+
 
 describe('InventoryController', () => {
   let controller: InventoryController;
@@ -76,9 +77,9 @@ describe('InventoryController', () => {
       expect(service.findOne).toHaveBeenCalledWith('inv-1');
     });
 
-    it('不存在时透传 NotFoundException', async () => {
-      service.findOne.mockRejectedValue(new NotFoundException('InventoryItem不存在'));
-      await expect(controller.findOneItem('non-existent')).rejects.toThrow(NotFoundException);
+    it('不存在时透传 BusinessNotFoundException', async () => {
+      service.findOne.mockRejectedValue(new BusinessNotFoundException('InventoryItem不存在'));
+      await expect(controller.findOneItem('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 
@@ -105,9 +106,9 @@ describe('InventoryController', () => {
       expect(service.update).toHaveBeenCalledWith('inv-1', dto);
     });
 
-    it('尝试修改 stock 时透传 BadRequestException', async () => {
-      service.update.mockRejectedValue(new BadRequestException('禁止直接修改库存数量'));
-      await expect(controller.updateItem('inv-1', { stock: 100 } as any)).rejects.toThrow(BadRequestException);
+    it('尝试修改 stock 时透传 BusinessValidationException', async () => {
+      service.update.mockRejectedValue(new BusinessValidationException('禁止直接修改库存数量'));
+      await expect(controller.updateItem('inv-1', { stock: 100 } as any)).rejects.toThrow(BusinessValidationException);
     });
   });
 
@@ -153,9 +154,9 @@ describe('InventoryController', () => {
       });
     });
 
-    it('quantity <= 0 时透传 BadRequestException', async () => {
-      service.stockAction.mockRejectedValue(new BadRequestException('数量必须大于0'));
-      await expect(controller.stockAction({ itemId: 'inv-1', type: 'IN', quantity: 0 } as any, {} as any)).rejects.toThrow(BadRequestException);
+    it('quantity <= 0 时透传 BusinessValidationException', async () => {
+      service.stockAction.mockRejectedValue(new BusinessValidationException('数量必须大于0'));
+      await expect(controller.stockAction({ itemId: 'inv-1', type: 'IN', quantity: 0 } as any, {} as any)).rejects.toThrow(BusinessValidationException);
     });
 
     it('req.user 为 undefined 时 operator 信息为 undefined', async () => {

@@ -33,8 +33,9 @@ const baseRules = {
   // TODO: 启用 strictNullChecks 后重新开启以下规则
   '@typescript-eslint/prefer-nullish-coalescing': 'off',
   '@typescript-eslint/no-unnecessary-condition': 'off',
-  // TODO: 渐进式消除 any 后重新开启以下规则
-  '@typescript-eslint/no-explicit-any': 'off',
+  // no-explicit-any 已启用为 error，与 .qoder/rules/no-typescript-any.md 保持一致
+  // 测试文件通过下方 overrides 豁免（规则允许测试中使用 as any 进行 mock）
+  // no-unsafe-* 规则需要 strictNullChecks 启用后才能正确工作
   '@typescript-eslint/no-unsafe-assignment': 'off',
   '@typescript-eslint/no-unsafe-member-access': 'off',
   '@typescript-eslint/no-unsafe-argument': 'off',
@@ -121,11 +122,11 @@ const baseRules = {
   'sonarjs/no-nested-switch': 'off',
   'sonarjs/pseudo-random': 'warn',
 
-  'security/detect-child-process': 'off',
-  'security/detect-non-literal-fs-filename': 'off',
+  'security/detect-child-process': 'warn',
+  'security/detect-non-literal-fs-filename': 'warn',
   'security/detect-non-literal-regexp': 'off',
-  'security/detect-non-literal-require': 'off',
-  'security/detect-eval-with-expression': 'off',
+  'security/detect-non-literal-require': 'warn',
+  'security/detect-eval-with-expression': 'warn',
   'security/detect-pseudoRandomBytes': 'off',
   'security/detect-new-buffer': 'off',
   'security/detect-possible-timing-attacks': 'off',
@@ -336,6 +337,27 @@ const baseRules = {
   'unicorn/prefer-https': 'off',
   'no-import-assign': 'off',
   'sonarjs/sql-queries': 'off',
+
+  // 架构约束：禁止 ORM 框架导入（项目使用原生 SQL + better-sqlite3）
+  'no-restricted-imports': [
+    'error',
+    {
+      patterns: [
+        {
+          group: ['prisma', '@prisma/*', 'prisma/*'],
+          message: '禁止使用 Prisma ORM。本项目使用原生 SQL + better-sqlite3，参见 .qoder/rules/no-orm-usage.md',
+        },
+        {
+          group: ['typeorm', 'typeorm/*'],
+          message: '禁止使用 TypeORM。本项目使用原生 SQL + better-sqlite3，参见 .qoder/rules/no-orm-usage.md',
+        },
+        {
+          group: ['sequelize', 'sequelize/*'],
+          message: '禁止使用 Sequelize。本项目使用原生 SQL + better-sqlite3，参见 .qoder/rules/no-orm-usage.md',
+        },
+      ],
+    },
+  ],
 };
 
 module.exports = [
@@ -385,6 +407,7 @@ module.exports = [
     rules: baseRules,
   },
   // 测试与种子数据生成：合理使用 Math.random() 生成测试数据，非安全敏感场景
+  // 测试文件豁免 no-explicit-any（.qoder/rules/no-typescript-any.md 允许测试中使用 as any 进行 mock）
   {
     files: [
       'test/**/*.ts',
@@ -392,6 +415,7 @@ module.exports = [
     rules: {
       'sonarjs/pseudo-random': 'off',
       'no-empty': 'off',
+      '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unsafe-assignment': 'off',
       '@typescript-eslint/no-unsafe-member-access': 'off',
       '@typescript-eslint/no-unsafe-argument': 'off',
@@ -421,6 +445,8 @@ module.exports = [
     rules: {
       'sonarjs/pseudo-random': 'off',
       'no-empty': 'off',
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-unnecessary-type-assertion': 'off',
       'sonarjs/super-linear-regex': 'off',
       'sonarjs/assertions-in-tests': 'off',
       'sonarjs/no-trivial-assertions': 'off',

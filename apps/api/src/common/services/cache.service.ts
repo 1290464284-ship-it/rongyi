@@ -22,12 +22,16 @@ const CLEANUP_INTERVAL_MS = 5 * ONE_MINUTE_MS;
 @Injectable()
 export class CacheService implements OnModuleInit, OnModuleDestroy {
   private store = new Map<string, CacheEntry<unknown>>();
+  // P2 修复：缓存击穿保护 —— 跟踪进行中的 factory 调用，避免并发请求重复执行
+  private pending = new Map<string, Promise<unknown>>();
   private cleanupTimer: ReturnType<typeof setInterval> | null = null;
   private hits = 0;
   private misses = 0;
 
   onModuleInit() {
     this.cleanupTimer = setInterval(() => this.cleanupExpired(), CLEANUP_INTERVAL_MS);
+    // P1 修复：unref 防止定时器阻止 Node.js 进程正常退出
+    this.cleanupTimer.unref?.();
   }
 
   onModuleDestroy() {
@@ -88,9 +92,20 @@ export class CacheService implements OnModuleInit, OnModuleDestroy {
   ): Promise<T> {
     const cached = this.get<T>(key);
     if (cached !== undefined) return cached;
-    const value = await factory();
-    this.set(key, value, ttlMs);
-    return value;
+    // P2 修复：缓存击穿保护 —— 若已有相同 key 的 factory 在执行中，复用其 Promise
+    const pendingPromise = this.pending.get(key) as Promise<T> | undefined;
+    if (pendingPromise) return pendingPromise;
+    const promise = (async () => {
+      try {
+        const value = await factory();
+        this.set(key, value, ttlMs);
+        return value;
+      } finally {
+        this.pending.delete(key);
+      }
+    })();
+    this.pending.set(key, promise);
+    return promise;
   }
 
   getStats(): CacheStats {

@@ -65,7 +65,7 @@ describe('Patient Workflow (e2e)', () => {
       expect(res.body.id).toBeDefined();
       expect(res.body.code).toMatch(/^P\d+$/);
       expect(res.body.name).toBe('李明');
-      expect(res.body.idCard).toBe('110101***********234');
+      expect(res.body.idCard).toBe('110101********1234');
       expect(res.body.phone).toBe('138****8123');
       expect(res.body.tags).toEqual(expect.arrayContaining(['VIP', '老患者']));
       expect(res.body.allergies).toEqual(['青霉素']);
@@ -117,7 +117,7 @@ describe('Patient Workflow (e2e)', () => {
       expect(res.body.id).toBe(patientId);
       expect(res.body.name).toBe('李晓明');
       expect(res.body.phone).toBe('138****8123');
-      expect(res.body.idCard).toBe('110101***********234');
+      expect(res.body.idCard).toBe('110101********1234');
       expect(res.body.address).toBe('上海市浦东新区陆家嘴环路958号');
       expect(res.body.occupation).toBe('高级工程师');
       expect(res.body.birthDate).toBe('1990-01-01');
@@ -151,7 +151,10 @@ describe('Patient Workflow (e2e)', () => {
     });
 
     it('步骤6: 恢复患者（重新创建或取消删除）', async () => {
-      db.prepare('UPDATE Patient SET deletedAt = NULL, active = 1 WHERE id = ?').run(patientId);
+      // 恢复原始 code（软删除时追加了 _deleted_ 后缀）
+      const row = db.prepare('SELECT code FROM Patient WHERE id = ?').get(patientId) as any;
+      const originalCode = (row.code as string).replace(/_deleted_.*$/, '');
+      db.prepare('UPDATE Patient SET deletedAt = NULL, active = 1, code = ? WHERE id = ?').run(originalCode, patientId);
 
       const res = await request(app.getHttpServer())
         .get(`/api/patients/${patientId}`)

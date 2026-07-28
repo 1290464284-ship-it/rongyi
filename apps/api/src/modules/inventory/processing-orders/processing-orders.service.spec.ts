@@ -1,7 +1,8 @@
 import { ProcessingOrdersService } from './processing-orders.service';
+import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+
 
 function createMockClinicContext(): ClinicContextService {
   return {
@@ -46,6 +47,7 @@ describe('ProcessingOrdersService', () => {
       expect((result as any).factoryId).toBe('factory-001');
       expect((result as any).shade).toBe('A2');
       expect((result as any).status).toBe('SENT');
+      // input 1500 yuan → stored 150000 cents → read back 1500 yuan (BaseService 自动转换)
       expect((result as any).totalFee).toBe(1500);
     });
 
@@ -88,10 +90,11 @@ describe('ProcessingOrdersService', () => {
       const result = await service.findOne('po-001');
       expect((result as any).id).toBe('po-001');
       expect((result as any).shade).toBe('A2');
-      expect((result as any).totalFee).toBe(2000);
+      // v24迁移后totalFee为cents，BaseService自动转换为yuan返回
+      expect((result as any).totalFee).toBe(20);
     });
 
-    it('查询不存在的加工单应抛出 NotFoundException', async () => {
+    it('查询不存在的加工单应抛出 BusinessNotFoundException', async () => {
       await expect(service.findOne('non-existent')).rejects.toThrow();
     });
   });
@@ -210,7 +213,7 @@ describe('ProcessingOrdersService', () => {
       expect((result as any).status).toBe('SENT');
     });
 
-    it('SENT → COMPLETED 应抛出 BadRequestException（跳过中间状态）', async () => {
+    it('SENT → COMPLETED 应抛出 BusinessValidationException（跳过中间状态）', async () => {
       db.seed('ProcessingOrder', [{
         id: 'po-001', number: 'PO3006', patientId: 'patient-001',
         status: 'SENT', clinicId: 'test-clinic-001', deletedAt: null,
@@ -218,10 +221,10 @@ describe('ProcessingOrdersService', () => {
         createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       }]);
 
-      await expect(service.updateStatus('po-001', 'COMPLETED')).rejects.toThrow(BadRequestException);
+      await expect(service.updateStatus('po-001', 'COMPLETED')).rejects.toThrow(BusinessValidationException);
     });
 
-    it('RECEIVED → SENT 应抛出 BadRequestException（终态不可回退）', async () => {
+    it('RECEIVED → SENT 应抛出 BusinessValidationException（终态不可回退）', async () => {
       db.seed('ProcessingOrder', [{
         id: 'po-001', number: 'PO3007', patientId: 'patient-001',
         status: 'RECEIVED', clinicId: 'test-clinic-001', deletedAt: null,
@@ -229,10 +232,10 @@ describe('ProcessingOrdersService', () => {
         createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       }]);
 
-      await expect(service.updateStatus('po-001', 'SENT')).rejects.toThrow(BadRequestException);
+      await expect(service.updateStatus('po-001', 'SENT')).rejects.toThrow(BusinessValidationException);
     });
 
-    it('CANCELLED → SENT 应抛出 BadRequestException（终态不可回退）', async () => {
+    it('CANCELLED → SENT 应抛出 BusinessValidationException（终态不可回退）', async () => {
       db.seed('ProcessingOrder', [{
         id: 'po-001', number: 'PO3008', patientId: 'patient-001',
         status: 'CANCELLED', clinicId: 'test-clinic-001', deletedAt: null,
@@ -240,10 +243,10 @@ describe('ProcessingOrdersService', () => {
         createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       }]);
 
-      await expect(service.updateStatus('po-001', 'SENT')).rejects.toThrow(BadRequestException);
+      await expect(service.updateStatus('po-001', 'SENT')).rejects.toThrow(BusinessValidationException);
     });
 
-    it('IN_PROGRESS → RECEIVED 应抛出 BadRequestException（跳过中间状态）', async () => {
+    it('IN_PROGRESS → RECEIVED 应抛出 BusinessValidationException（跳过中间状态）', async () => {
       db.seed('ProcessingOrder', [{
         id: 'po-001', number: 'PO3009', patientId: 'patient-001',
         status: 'IN_PROGRESS', clinicId: 'test-clinic-001', deletedAt: null,
@@ -251,10 +254,10 @@ describe('ProcessingOrdersService', () => {
         createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       }]);
 
-      await expect(service.updateStatus('po-001', 'RECEIVED')).rejects.toThrow(BadRequestException);
+      await expect(service.updateStatus('po-001', 'RECEIVED')).rejects.toThrow(BusinessValidationException);
     });
 
-    it('不存在的加工单更新状态应抛出 NotFoundException', async () => {
+    it('不存在的加工单更新状态应抛出 BusinessNotFoundException', async () => {
       await expect(service.updateStatus('non-existent', 'COMPLETED')).rejects.toThrow();
     });
   });
@@ -305,7 +308,7 @@ describe('ProcessingOrdersService', () => {
       expect(updatedOrder.status).toBe('IN_PROGRESS');
     });
 
-    it('不存在的加工单添加流程日志应抛出 NotFoundException', async () => {
+    it('不存在的加工单添加流程日志应抛出 BusinessNotFoundException', async () => {
       await expect(service.addFlowLog('non-existent', {
         status: 'COMPLETED',
       })).rejects.toThrow();
@@ -332,6 +335,7 @@ describe('ProcessingOrdersService', () => {
 
     it('更新 totalFee 字段应成功', async () => {
       const result = await service.update('po-001', { totalFee: 2500 });
+      // input 2500 yuan → stored 250000 cents → read back 2500 yuan (BaseService 自动转换)
       expect((result as any).totalFee).toBe(2500);
     });
 
@@ -365,7 +369,7 @@ describe('ProcessingOrdersService', () => {
       expect(order.deletedAt).not.toBeNull();
     });
 
-    it('删除不存在的加工单应抛出 NotFoundException', async () => {
+    it('删除不存在的加工单应抛出 BusinessNotFoundException', async () => {
       await expect(service.remove('non-existent')).rejects.toThrow();
     });
   });
@@ -398,18 +402,18 @@ describe('ProcessingOrdersService', () => {
       expect((result as any).price).toBe(500);
     });
 
-    it('工厂ID为空应抛出 BadRequestException', async () => {
+    it('工厂ID为空应抛出 BusinessValidationException', async () => {
       await expect(service.createProduct({
         factoryId: '',
         name: '全瓷冠',
-      })).rejects.toThrow(BadRequestException);
+      })).rejects.toThrow(BusinessValidationException);
     });
 
-    it('产品名称为空应抛出 BadRequestException', async () => {
+    it('产品名称为空应抛出 BusinessValidationException', async () => {
       await expect(service.createProduct({
         factoryId: 'factory-001',
         name: '',
-      })).rejects.toThrow(BadRequestException);
+      })).rejects.toThrow(BusinessValidationException);
     });
   });
 
@@ -438,8 +442,8 @@ describe('ProcessingOrdersService', () => {
       expect((result as any).id).toBe('prod-001');
     });
 
-    it('删除不存在的产品应抛出 NotFoundException', async () => {
-      await expect(service.deleteProduct('non-existent')).rejects.toThrow(NotFoundException);
+    it('删除不存在的产品应抛出 BusinessNotFoundException', async () => {
+      await expect(service.deleteProduct('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 
@@ -459,8 +463,8 @@ describe('ProcessingOrdersService', () => {
       expect((result as any).status).toBe('ACTIVE');
     });
 
-    it('工厂名称为空应抛出 BadRequestException', async () => {
-      await expect(service.createFactory({ name: '' })).rejects.toThrow(BadRequestException);
+    it('工厂名称为空应抛出 BusinessValidationException', async () => {
+      await expect(service.createFactory({ name: '' })).rejects.toThrow(BusinessValidationException);
     });
   });
 
@@ -476,8 +480,8 @@ describe('ProcessingOrdersService', () => {
       expect((result as any).id).toBe('factory-001');
     });
 
-    it('删除不存在的工厂应抛出 NotFoundException', async () => {
-      await expect(service.deleteFactory('non-existent')).rejects.toThrow(NotFoundException);
+    it('删除不存在的工厂应抛出 BusinessNotFoundException', async () => {
+      await expect(service.deleteFactory('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 });

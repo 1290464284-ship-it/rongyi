@@ -1,7 +1,8 @@
 import { EquipmentService } from './equipment.service';
+import { BusinessNotFoundException } from '@common/errors';
 import { MockDbService } from '../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../common/services/clinic-context.service';
-import { NotFoundException } from '@nestjs/common';
+
 
 function createMockClinicContext(clinicId: string | null = 'test-clinic-001'): ClinicContextService {
   return {
@@ -113,8 +114,8 @@ describe('EquipmentService', () => {
       expect(result.name).toBe('牙科综合治疗台');
     });
 
-    it('不存在的 ID 抛出 NotFoundException', async () => {
-      await expect(service.findOne('non-existent')).rejects.toThrow(NotFoundException);
+    it('不存在的 ID 抛出 BusinessNotFoundException', async () => {
+      await expect(service.findOne('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
 
     it('已软删的记录不返回', async () => {
@@ -129,7 +130,7 @@ describe('EquipmentService', () => {
         }
         return originalPrepare(sql);
       });
-      await expect(service.findOne('equip-1')).rejects.toThrow(NotFoundException);
+      await expect(service.findOne('equip-1')).rejects.toThrow(BusinessNotFoundException);
       prepareSpy.mockRestore();
     });
   });

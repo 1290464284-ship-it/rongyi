@@ -3,7 +3,9 @@ import { MockDbService } from '../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../common/services/clinic-context.service';
 import { Gender, PatientSource } from '@dental/shared';
 import { encryptField, decryptField } from '../../common/utils/security/encryption';
-import { StatsService } from '../system/stats/stats.service';
+import { EventBusService } from '../../common/events/event-bus.service';
+import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
+import { PatientRepository } from './repositories/patient.repository';
 
 process.env.ENCRYPTION_KEY = 'test-encryption-key-for-unit-tests-only-00000000000000000000000000000000';
 
@@ -19,21 +21,23 @@ function createMockClinicContext(): ClinicContextService {
   } as unknown as ClinicContextService;
 }
 
-function createMockStatsService(): jest.Mocked<StatsService> {
+function createMockEventBus(): jest.Mocked<EventBusService> {
   return {
-    invalidateStatsCache: jest.fn(),
-  } as unknown as jest.Mocked<StatsService>;
+    emit: jest.fn(),
+    on: jest.fn(),
+    onAll: jest.fn(),
+  } as unknown as jest.Mocked<EventBusService>;
 }
 
 describe('PatientsService', () => {
   let service: PatientsService;
   let db: MockDbService;
-  let statsService: jest.Mocked<StatsService>;
+  let eventBus: jest.Mocked<EventBusService>;
 
   beforeEach(() => {
     db = new MockDbService();
-    statsService = createMockStatsService();
-    service = new PatientsService(db as any, createMockClinicContext(), statsService);
+    eventBus = createMockEventBus();
+    service = new PatientsService(db as any, createMockClinicContext(), eventBus, new PatientRepository());
   });
 
   afterEach(() => {
@@ -469,7 +473,7 @@ describe('PatientsService', () => {
   // ==================== getFullIdCard - 边界情况 ====================
 
   describe('getFullIdCard - 边界情况', () => {
-    it('患者不存在应抛出 NotFoundException', async () => {
+    it('患者不存在应抛出 BusinessNotFoundException', async () => {
       await expect(service.getFullIdCard('non-existent')).rejects.toThrow();
     });
 
@@ -523,7 +527,7 @@ describe('PatientsService', () => {
       expect(fullPhone).toBe(plainPhone);
     });
 
-    it('患者不存在应抛出 NotFoundException', async () => {
+    it('患者不存在应抛出 BusinessNotFoundException', async () => {
       await expect(service.getFullPhone('non-existent')).rejects.toThrow();
     });
 
@@ -710,7 +714,7 @@ describe('PatientsService', () => {
       expect((result.items[0] as any).name).toBe('C患者');
     });
 
-    it('无效格式的排序字段应抛出 BadRequestException', async () => {
+    it('无效格式的排序字段应抛出 BusinessValidationException', async () => {
       await expect(service.findMany({ sortBy: 'invalid-field!' })).rejects.toThrow();
     });
   });
@@ -888,7 +892,7 @@ describe('PatientsService', () => {
   // ==================== remove - 硬删除 ====================
 
   describe('remove - 硬删除', () => {
-    it('删除不存在的患者应抛出 NotFoundException', async () => {
+    it('删除不存在的患者应抛出 BusinessNotFoundException', async () => {
       await expect(service.remove('non-existent')).rejects.toThrow();
     });
 
@@ -926,7 +930,7 @@ describe('PatientsService', () => {
         getSource: () => 'test',
         run: <T>(_ctx: unknown, fn: () => T) => fn(),
         isInitialized: () => true,
-      } as unknown as ClinicContextService, createMockStatsService());
+      } as unknown as ClinicContextService, createMockEventBus(), new PatientRepository());
 
       await expect(serviceWithoutClinic.findMany({})).rejects.toThrow();
     });
@@ -940,7 +944,7 @@ describe('PatientsService', () => {
         getSource: () => 'test',
         run: <T>(_ctx: unknown, fn: () => T) => fn(),
         isInitialized: () => true,
-      } as unknown as ClinicContextService, createMockStatsService());
+      } as unknown as ClinicContextService, createMockEventBus(), new PatientRepository());
 
       await expect(serviceWithoutClinic.findOne('test-id')).rejects.toThrow();
     });
@@ -971,7 +975,7 @@ describe('PatientsService', () => {
         getSource: () => 'test',
         run: <T>(_ctx: unknown, fn: () => T) => fn(),
         isInitialized: () => true,
-      } as unknown as ClinicContextService, createMockStatsService());
+      } as unknown as ClinicContextService, createMockEventBus(), new PatientRepository());
 
       const result = await serviceClinicA.findMany({});
       expect(result.items.length).toBe(1);
@@ -982,7 +986,7 @@ describe('PatientsService', () => {
   // ==================== 字段验证 ====================
 
   describe('字段验证', () => {
-    it('无效格式的 filter 字段应抛出 BadRequestException', async () => {
+    it('无效格式的 filter 字段应抛出 BusinessValidationException', async () => {
       await expect(service.findMany({ filters: { 'invalid-field!': 'value' } })).rejects.toThrow();
     });
 

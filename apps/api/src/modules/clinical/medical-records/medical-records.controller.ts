@@ -31,35 +31,9 @@ export class MedicalRecordsController {
     });
   }
 
-  @ApiOperation({ summary: '获取详情' })
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.records.findOne(id);
-  }
-
-  @ApiOperation({ summary: '新增' })
-  @Post()
-  create(@Body() dto: CreateMedicalRecordDto) {
-    return this.records.create(dto as Partial<MedicalRecord>);
-  }
-
-  @ApiOperation({ summary: '更新' })
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateMedicalRecordDto) {
-    return this.records.update(id, dto);
-  }
-
-  @ApiOperation({ summary: '删除' })
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.records.remove(id);
-  }
-
-  @ApiOperation({ summary: 'lock - 病历' })
-  @Post(':id/lock')
-  lock(@Param('id') id: string, @Request() req: ExpressRequest) {
-    return this.records.lock(id, req.user?.id);
-  }
+  // P0 修复：静态路径（templates/phrases/modify-requests）必须声明在 @Get(':id') 之前，
+  // 否则 NestJS/Express 按注册顺序匹配，GET /medical-records/templates 会被 :id 捕获（id='templates'），
+  // 导致模板/短语/修改请求接口完全失效。
 
   @ApiOperation({ summary: '查询病历列表' })
   @Get('templates')
@@ -125,5 +99,38 @@ export class MedicalRecordsController {
   @Post('modify-requests/:id/review')
   reviewModifyRequest(@Param('id') id: string, @Body() dto: ReviewModifyRequestDto, @Request() req: ExpressRequest) {
     return this.records.reviewModifyRequest(id, dto, req.user?.id);
+  }
+
+  // 动态 :id 路由必须放在所有静态路径（templates/phrases/modify-requests）之后，
+  // 避免单段静态路径被 :id 参数捕获。
+
+  @ApiOperation({ summary: '获取详情' })
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.records.findOne(id);
+  }
+
+  @ApiOperation({ summary: '新增' })
+  @Post()
+  create(@Body() dto: CreateMedicalRecordDto) {
+    return this.records.create(dto as Partial<MedicalRecord>);
+  }
+
+  @ApiOperation({ summary: '更新' })
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() dto: UpdateMedicalRecordDto) {
+    return this.records.update(id, dto);
+  }
+
+  @ApiOperation({ summary: '删除' })
+  @Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.records.remove(id);
+  }
+
+  @ApiOperation({ summary: 'lock - 病历' })
+  @Post(':id/lock')
+  lock(@Param('id') id: string, @Request() req: ExpressRequest) {
+    return this.records.lock(id, req.user?.id);
   }
 }

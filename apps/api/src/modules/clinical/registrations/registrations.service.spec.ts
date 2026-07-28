@@ -1,7 +1,8 @@
 import { RegistrationsService } from './registrations.service';
+import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ForbiddenException } from '@nestjs/common';
 import { RegistrationStatus } from '@dental/shared';
 
 // 构造 ClinicContextService 的 mock，模拟诊所上下文
@@ -156,8 +157,8 @@ describe('RegistrationsService', () => {
       expect((result as any).patientId).toBe('patient-001');
     });
 
-    it('查询不存在的挂号应抛出 NotFoundException', async () => {
-      await expect(service.findOne('non-existent')).rejects.toThrow(NotFoundException);
+    it('查询不存在的挂号应抛出 BusinessNotFoundException', async () => {
+      await expect(service.findOne('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 
@@ -203,7 +204,8 @@ describe('RegistrationsService', () => {
     });
 
     it('按 endDate 过滤应只返回注册时间小于等于该日期的挂号', async () => {
-      const result = await service.findMany({ endDate: '2026-01-11T23:59:59.000Z' });
+      // 使用日期字符串（非完整 ISO），避免跨时区导致 endOfDay 偏移到次日
+      const result = await service.findMany({ endDate: '2026-01-11' });
 
       expect(result.items.length).toBe(2);
     });
@@ -301,10 +303,10 @@ describe('RegistrationsService', () => {
       expect((result as any).doctorId).toBe('doctor-001');
     });
 
-    it('更新不存在的挂号应抛出 NotFoundException', async () => {
+    it('更新不存在的挂号应抛出 BusinessNotFoundException', async () => {
       await expect(
         service.update('non-existent', { chiefComplaint: 'test' } as any),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toThrow(BusinessNotFoundException);
     });
 
     it('包含 id 字段时应跳过 id 更新', async () => {
@@ -344,10 +346,10 @@ describe('RegistrationsService', () => {
       expect((result as any).chiefComplaint).toBe('初始主诉');
     });
 
-    it('更新 status 字段应成功（update 方法本身不做状态机校验）', async () => {
-      const result = await service.update('reg-001', { status: 'TRIAGED' } as any);
-
-      expect((result as any).status).toBe('TRIAGED');
+    it('更新 status 字段应抛出异常（禁止通过 update 绕过状态机）', async () => {
+      await expect(
+        service.update('reg-001', { status: 'TRIAGED' } as any),
+      ).rejects.toThrow(BusinessValidationException);
     });
   });
 
@@ -403,38 +405,38 @@ describe('RegistrationsService', () => {
 
     // --- 非法流转 ---
 
-    it('REGISTERED → COMPLETED 非法流转应抛出 BadRequestException', async () => {
-      await expect(service.updateStatus('reg-001', 'COMPLETED')).rejects.toThrow(BadRequestException);
+    it('REGISTERED → COMPLETED 非法流转应抛出 BusinessValidationException', async () => {
+      await expect(service.updateStatus('reg-001', 'COMPLETED')).rejects.toThrow(BusinessValidationException);
     });
 
-    it('TRIAGED → TRIAGED 非法流转应抛出 BadRequestException', async () => {
-      await expect(service.updateStatus('reg-002', 'TRIAGED')).rejects.toThrow(BadRequestException);
+    it('TRIAGED → TRIAGED 非法流转应抛出 BusinessValidationException', async () => {
+      await expect(service.updateStatus('reg-002', 'TRIAGED')).rejects.toThrow(BusinessValidationException);
     });
 
-    it('TRIAGED → COMPLETED 非法流转应抛出 BadRequestException', async () => {
-      await expect(service.updateStatus('reg-002', 'COMPLETED')).rejects.toThrow(BadRequestException);
+    it('TRIAGED → COMPLETED 非法流转应抛出 BusinessValidationException', async () => {
+      await expect(service.updateStatus('reg-002', 'COMPLETED')).rejects.toThrow(BusinessValidationException);
     });
 
-    it('IN_PROGRESS → REGISTERED 非法流转应抛出 BadRequestException', async () => {
-      await expect(service.updateStatus('reg-003', 'REGISTERED')).rejects.toThrow(BadRequestException);
+    it('IN_PROGRESS → REGISTERED 非法流转应抛出 BusinessValidationException', async () => {
+      await expect(service.updateStatus('reg-003', 'REGISTERED')).rejects.toThrow(BusinessValidationException);
     });
 
-    it('IN_PROGRESS → TRIAGED 非法流转应抛出 BadRequestException', async () => {
-      await expect(service.updateStatus('reg-003', 'TRIAGED')).rejects.toThrow(BadRequestException);
+    it('IN_PROGRESS → TRIAGED 非法流转应抛出 BusinessValidationException', async () => {
+      await expect(service.updateStatus('reg-003', 'TRIAGED')).rejects.toThrow(BusinessValidationException);
     });
 
-    it('COMPLETED → 任何状态非法流转应抛出 BadRequestException', async () => {
-      await expect(service.updateStatus('reg-004', 'REGISTERED')).rejects.toThrow(BadRequestException);
-      await expect(service.updateStatus('reg-004', 'TRIAGED')).rejects.toThrow(BadRequestException);
-      await expect(service.updateStatus('reg-004', 'IN_PROGRESS')).rejects.toThrow(BadRequestException);
-      await expect(service.updateStatus('reg-004', 'CANCELLED')).rejects.toThrow(BadRequestException);
+    it('COMPLETED → 任何状态非法流转应抛出 BusinessValidationException', async () => {
+      await expect(service.updateStatus('reg-004', 'REGISTERED')).rejects.toThrow(BusinessValidationException);
+      await expect(service.updateStatus('reg-004', 'TRIAGED')).rejects.toThrow(BusinessValidationException);
+      await expect(service.updateStatus('reg-004', 'IN_PROGRESS')).rejects.toThrow(BusinessValidationException);
+      await expect(service.updateStatus('reg-004', 'CANCELLED')).rejects.toThrow(BusinessValidationException);
     });
 
-    it('CANCELLED → 任何状态非法流转应抛出 BadRequestException', async () => {
-      await expect(service.updateStatus('reg-005', 'REGISTERED')).rejects.toThrow(BadRequestException);
-      await expect(service.updateStatus('reg-005', 'TRIAGED')).rejects.toThrow(BadRequestException);
-      await expect(service.updateStatus('reg-005', 'IN_PROGRESS')).rejects.toThrow(BadRequestException);
-      await expect(service.updateStatus('reg-005', 'COMPLETED')).rejects.toThrow(BadRequestException);
+    it('CANCELLED → 任何状态非法流转应抛出 BusinessValidationException', async () => {
+      await expect(service.updateStatus('reg-005', 'REGISTERED')).rejects.toThrow(BusinessValidationException);
+      await expect(service.updateStatus('reg-005', 'TRIAGED')).rejects.toThrow(BusinessValidationException);
+      await expect(service.updateStatus('reg-005', 'IN_PROGRESS')).rejects.toThrow(BusinessValidationException);
+      await expect(service.updateStatus('reg-005', 'COMPLETED')).rejects.toThrow(BusinessValidationException);
     });
 
     it('更新不存在的挂号状态应抛出异常', async () => {
@@ -488,10 +490,10 @@ describe('RegistrationsService', () => {
       expect((result as any).chiefComplaint).toBeNull();
     });
 
-    it('非 REGISTERED 状态不可分诊应抛出 BadRequestException', async () => {
+    it('非 REGISTERED 状态不可分诊应抛出 BusinessValidationException', async () => {
       await expect(
         service.triage('reg-002', { triageNote: 'test' }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
     it('分诊不存在的挂号应抛出异常', async () => {
@@ -530,16 +532,16 @@ describe('RegistrationsService', () => {
       expect((result as any).visitId).toBeDefined();
     });
 
-    it('IN_PROGRESS 状态不可开始就诊应抛出 BadRequestException', async () => {
-      await expect(service.startVisit('reg-003')).rejects.toThrow(BadRequestException);
+    it('IN_PROGRESS 状态不可开始就诊应抛出 BusinessValidationException', async () => {
+      await expect(service.startVisit('reg-003')).rejects.toThrow(BusinessValidationException);
     });
 
-    it('COMPLETED 状态不可开始就诊应抛出 BadRequestException', async () => {
-      await expect(service.startVisit('reg-004')).rejects.toThrow(BadRequestException);
+    it('COMPLETED 状态不可开始就诊应抛出 BusinessValidationException', async () => {
+      await expect(service.startVisit('reg-004')).rejects.toThrow(BusinessValidationException);
     });
 
-    it('CANCELLED 状态不可开始就诊应抛出 BadRequestException', async () => {
-      await expect(service.startVisit('reg-005')).rejects.toThrow(BadRequestException);
+    it('CANCELLED 状态不可开始就诊应抛出 BusinessValidationException', async () => {
+      await expect(service.startVisit('reg-005')).rejects.toThrow(BusinessValidationException);
     });
 
     it('已有关联 visitId 时应幂等返回（不重复创建）', async () => {
@@ -625,16 +627,16 @@ describe('RegistrationsService', () => {
       expect((result as any).completedAt).toBeDefined();
     });
 
-    it('REGISTERED 不可直接完成应抛出 BadRequestException', async () => {
-      await expect(service.complete('reg-002')).rejects.toThrow(BadRequestException);
+    it('REGISTERED 不可直接完成应抛出 BusinessValidationException', async () => {
+      await expect(service.complete('reg-002')).rejects.toThrow(BusinessValidationException);
     });
 
-    it('COMPLETED 是终态不可再完成应抛出 BadRequestException', async () => {
-      await expect(service.complete('reg-003')).rejects.toThrow(BadRequestException);
+    it('COMPLETED 是终态不可再完成应抛出 BusinessValidationException', async () => {
+      await expect(service.complete('reg-003')).rejects.toThrow(BusinessValidationException);
     });
 
-    it('CANCELLED 是终态不可完成应抛出 BadRequestException', async () => {
-      await expect(service.complete('reg-004')).rejects.toThrow(BadRequestException);
+    it('CANCELLED 是终态不可完成应抛出 BusinessValidationException', async () => {
+      await expect(service.complete('reg-004')).rejects.toThrow(BusinessValidationException);
     });
 
     it('完成不存在的挂号应抛出异常', async () => {
@@ -670,12 +672,12 @@ describe('RegistrationsService', () => {
       expect((result as any).status).toBe('CANCELLED');
     });
 
-    it('COMPLETED 不可取消应抛出 BadRequestException', async () => {
-      await expect(service.cancel('reg-004')).rejects.toThrow(BadRequestException);
+    it('COMPLETED 不可取消应抛出 BusinessValidationException', async () => {
+      await expect(service.cancel('reg-004')).rejects.toThrow(BusinessValidationException);
     });
 
-    it('CANCELLED 不可再次取消应抛出 BadRequestException', async () => {
-      await expect(service.cancel('reg-005')).rejects.toThrow(BadRequestException);
+    it('CANCELLED 不可再次取消应抛出 BusinessValidationException', async () => {
+      await expect(service.cancel('reg-005')).rejects.toThrow(BusinessValidationException);
     });
 
     it('取消应写入审计日志', async () => {

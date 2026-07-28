@@ -7,6 +7,46 @@ const MAX_STATEMENT_CACHE_SIZE = 100;
 const STATEMENT_EVICT_BATCH_SIZE = 10;
 const SLOW_QUERY_THRESHOLD_MS = 100;
 
+const DB_BUSY_MAX_RETRIES = 5;
+const DB_BUSY_INITIAL_DELAY_MS = 10;
+
+const BUSY_ERROR_PATTERNS = [
+  'SQLITE_BUSY',
+  'database is locked',
+  'SQLITE_LOCKED',
+  'database table is locked',
+];
+
+function isBusyError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const msg = err.message;
+  return BUSY_ERROR_PATTERNS.some(pattern => msg.includes(pattern));
+}
+
+function sleepSync(ms: number): void {
+  const sab = new SharedArrayBuffer(4);
+  const ia = new Int32Array(sab);
+  Atomics.wait(ia, 0, 0, ms);
+}
+
+function withRetrySync<T>(fn: () => T, maxRetries: number = DB_BUSY_MAX_RETRIES, initialDelayMs: number = DB_BUSY_INITIAL_DELAY_MS): T {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return fn();
+    } catch (err: unknown) {
+      lastError = err;
+      if (attempt < maxRetries && isBusyError(err)) {
+        const delayMs = initialDelayMs * Math.pow(2, attempt);
+        sleepSync(delayMs);
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastError;
+}
+
 /**
  * P2 修复（WriteQueue 写操作串行化机制已定义但从未使用）：
  *
@@ -67,7 +107,12 @@ export class DbService implements OnModuleInit, OnModuleDestroy, IDatabase {
       this.statementCache.set(sql, cached);
       return cached;
     }
-    const stmt = this.database.prepare(sql) as IStatement;
+    const rawStmt = this.database.prepare(sql);
+    const stmt: IStatement = {
+      get: (...params: unknown[]) => withRetrySync(() => rawStmt.get(...params)),
+      all: (...params: unknown[]) => withRetrySync(() => rawStmt.all(...params)),
+      run: (...params: unknown[]) => withRetrySync(() => rawStmt.run(...params)),
+    };
     if (this.statementCache.size >= MAX_STATEMENT_CACHE_SIZE) {
       this.evictOldestStatements(STATEMENT_EVICT_BATCH_SIZE);
     }
@@ -106,7 +151,7 @@ export class DbService implements OnModuleInit, OnModuleDestroy, IDatabase {
 
   exec(sql: string): void {
     try {
-      this.database.exec(sql);
+      withRetrySync(() => this.database.exec(sql));
     } catch (err: unknown) {
       this.logger.error('exec() failed', err instanceof Error ? err : undefined);
       throw err;
@@ -119,7 +164,7 @@ export class DbService implements OnModuleInit, OnModuleDestroy, IDatabase {
 
   pragma(sql: string): unknown {
     try {
-      return this.database.pragma(sql);
+      return withRetrySync(() => this.database.pragma(sql));
     } catch (err: unknown) {
       this.logger.error('pragma() failed', err instanceof Error ? err : undefined);
       throw err;
@@ -149,22 +194,25 @@ export class DbService implements OnModuleInit, OnModuleDestroy, IDatabase {
     // 嵌套调用（已在事务中）退回 better-sqlite3 原生 transaction，由其用 SAVEPOINT 处理
     if (this.database.inTransaction) {
       const txFn = this.database.transaction(fn);
-      return txFn(this.database);
+      return txFn(this);
     }
-    this.database.exec('BEGIN IMMEDIATE');
-    try {
-      const result = fn(this.db);
+    const executeTransaction = (): T => {
+      this.database.exec('BEGIN IMMEDIATE');
       try {
-        this.database.exec('COMMIT');
-      } catch (commitErr) {
+        const result = fn(this.db);
+        try {
+          this.database.exec('COMMIT');
+        } catch (commitErr) {
+          try { this.database.exec('ROLLBACK'); } catch { /* best effort */ }
+          throw commitErr;
+        }
+        return result;
+      } catch (err) {
         try { this.database.exec('ROLLBACK'); } catch { /* best effort */ }
-        throw commitErr;
+        throw err;
       }
-      return result;
-    } catch (err) {
-      try { this.database.exec('ROLLBACK'); } catch { /* best effort */ }
-      throw err;
-    }
+    };
+    return withRetrySync(executeTransaction);
   }
 
   /**
@@ -172,7 +220,18 @@ export class DbService implements OnModuleInit, OnModuleDestroy, IDatabase {
    * 调用方需负责调用返回实例的 close()。
    */
   openReadonly(path: string): IDatabase {
-    return new Database(path, { readonly: true });
+    const conn = new Database(path, { readonly: true });
+    return {
+      name: conn.name,
+      prepare: (sql: string) => conn.prepare(sql),
+      exec: (sql: string) => { conn.exec(sql); },
+      pragma: (sql: string) => conn.pragma(sql),
+      close: () => conn.close(),
+      backup: (destination: string) => conn.backup(destination),
+      transaction: () => {
+        throw new Error('只读连接不支持事务');
+      },
+    };
   }
 
   checkpoint(mode: 'PASSIVE' | 'FULL' | 'RESTART' | 'TRUNCATE' = 'TRUNCATE'): void {
@@ -184,7 +243,9 @@ export class DbService implements OnModuleInit, OnModuleDestroy, IDatabase {
   }
 
   get db(): IDatabase {
-    return this.database;
+    // 返回 this 而非底层连接：DbService 本身实现 IDatabase（含 transaction），
+    // 且 prepare 走语句缓存，底层仍是同一连接
+    return this;
   }
 
   rebuildConnection(): void {

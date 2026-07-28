@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-non-literal-fs-filename -- 日志文件路径来自配置，非用户输入 */
 import { Injectable, LoggerService, Optional } from '@nestjs/common';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -234,6 +235,8 @@ function startDailyCleanup(logDir: string): void {
     dailyCleanupTimer = setInterval(() => {
       cleanupOldLogFiles(logDir);
     }, 24 * 60 * 60 * 1000);
+    // P1 修复：setInterval 也需 unref，否则首次触发后会阻止进程退出
+    dailyCleanupTimer.unref();
   }, initialDelay);
   dailyCleanupTimer.unref();
 }

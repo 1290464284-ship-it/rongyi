@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import { Database } from 'better-sqlite3';
 import { isTestMode } from './database';
 import { scheduleAutoBackup } from './database';
-import { DEFAULT_DEV_PASSWORD } from '../config/constants';
+import { generateRandomPassword } from '../config/constants';
 
 export const seedDb = (db: Database) => {
   // 测试模式下跳过 seed
@@ -17,10 +17,18 @@ export const seedDb = (db: Database) => {
 
     const isProd =
       process.env.NODE_ENV === 'production' || Boolean(process.env.ELECTRON_RUN_AS_NODE);
-    const genRandomPin = () => crypto.randomBytes(8).toString('hex').slice(0, 8);
-    const bossPassword = isProd ? genRandomPin() : DEFAULT_DEV_PASSWORD;
-    const doctorPassword = isProd ? genRandomPin() : DEFAULT_DEV_PASSWORD;
-    const frontPassword = isProd ? genRandomPin() : DEFAULT_DEV_PASSWORD;
+    const initialPassword = process.env.ADMIN_INITIAL_PASSWORD;
+
+    if (isProd && !initialPassword) {
+      throw new Error('生产环境必须设置 ADMIN_INITIAL_PASSWORD，禁止使用默认弱密码');
+    }
+
+    // 开发/测试环境未配置密码时，生成随机密码并通过日志输出
+    const generatedPassword = !isProd && !initialPassword ? generateRandomPassword() : null;
+    const seedPassword = isProd ? initialPassword : (initialPassword || generatedPassword);
+    const bossPassword = seedPassword;
+    const doctorPassword = seedPassword;
+    const frontPassword = seedPassword;
 
     const bossHash = bcrypt.hashSync(bossPassword, 10);
     const doctorHash = bcrypt.hashSync(doctorPassword, 10);
@@ -37,9 +45,14 @@ export const seedDb = (db: Database) => {
     console.log('医生账号: doctor');
     console.log('前台账号: front');
     if (!isProd) {
-      console.log(`(开发模式) 默认密码均为: ${bossPassword}\n`);
+      if (initialPassword) {
+        console.log(`(开发模式) 已使用 ADMIN_INITIAL_PASSWORD 作为默认密码。\n`);
+      } else {
+        console.log(`(开发模式) 已生成随机默认密码: ${bossPassword}`);
+        console.log('建议通过环境变量 ADMIN_INITIAL_PASSWORD 设置固定密码以便复现。\n');
+      }
     } else {
-      console.log('密码已随机生成，请妥善保管（可运行 reset-password 重置）。\n');
+      console.log('已使用 ADMIN_INITIAL_PASSWORD 作为初始密码，请妥善保管（可运行 reset-password 重置）。\n');
     }
 
     const treatments = [

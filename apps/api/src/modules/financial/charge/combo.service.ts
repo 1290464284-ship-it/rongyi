@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { BusinessNotFoundException } from '@common/errors';
 import { DbService } from '../../../db/db.service';
 import { BaseService } from '../../../common/services/base.service';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
@@ -101,11 +102,17 @@ export class ComboService extends BaseService<ChargeCombo> {
       if (updates.category !== undefined) { updateFields.push('category = ?'); updateParams.push(updates.category); }
       if (updates.isPublic !== undefined) { updateFields.push('isPublic = ?'); updateParams.push(updates.isPublic); }
       updateParams.push(id);
-      db.prepare(`UPDATE ChargeCombo SET ${updateFields.join(', ')} WHERE id = ? AND deletedAt IS NULL`).run(...updateParams);
+      const updateResult = db.prepare(`UPDATE ChargeCombo SET ${updateFields.join(', ')} WHERE id = ? AND deletedAt IS NULL`).run(...updateParams);
+      if (updateResult.changes === 0) {
+        throw new BusinessNotFoundException("套餐不存在");
+      }
 
       // Update items if provided
+      // 使用软删除替换物理删除，避免"恢复套餐"时出现空套餐（子项永久丢失）
       if (dto.items !== undefined) {
-        db.prepare(`DELETE FROM ChargeComboItem WHERE comboId = ? AND clinicId = ?`).run(id, clinicId);
+        db.prepare(
+          `UPDATE ChargeComboItem SET deletedAt = ?, updatedAt = ? WHERE comboId = ? AND clinicId = ? AND deletedAt IS NULL`,
+        ).run(now, now, id, clinicId);
 
         if (dto.items.length > 0) {
           const insertItem = db.prepare(
@@ -125,7 +132,11 @@ export class ComboService extends BaseService<ChargeCombo> {
         }
       }
 
-      return db.prepare(`SELECT id, name, category, isPublic, creatorId, clinicId, createdAt, updatedAt, deletedAt FROM ChargeCombo WHERE id = ? AND deletedAt IS NULL`).get(id) as ChargeCombo;
+      const result = db.prepare(`SELECT id, name, category, isPublic, creatorId, clinicId, createdAt, updatedAt, deletedAt FROM ChargeCombo WHERE id = ? AND deletedAt IS NULL`).get(id) as ChargeCombo | undefined;
+      if (!result) {
+        throw new BusinessNotFoundException("套餐不存在");
+      }
+      return result;
     });
 
     this.logAudit(this.dbService, 'COMBO_UPDATE', id, 'ChargeCombo', {
@@ -140,7 +151,7 @@ export class ComboService extends BaseService<ChargeCombo> {
       await this.softDelete(id);
       this.logAudit(this.dbService, 'COMBO_DELETE', id, 'ChargeCombo');
     } catch (error) {
-      if (!(error instanceof NotFoundException)) {
+      if (!(error instanceof BusinessNotFoundException)) {
         throw error;
       }
     }

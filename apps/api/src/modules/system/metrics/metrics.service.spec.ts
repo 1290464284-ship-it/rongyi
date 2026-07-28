@@ -177,4 +177,179 @@ describe('MetricsService', () => {
       expect(Number(match?.[1])).toBeGreaterThan(0);
     });
   });
+
+  describe('路径规范化边界条件', () => {
+    it('空路径应返回 /', () => {
+      service.incrementRequest('GET', '', 200);
+      const metrics = service.getMetrics();
+      expect(metrics).toContain('path="/"');
+    });
+
+    it('undefined 路径应返回 /', () => {
+      service.incrementRequest('GET', undefined as unknown as string, 200);
+      const metrics = service.getMetrics();
+      expect(metrics).toContain('path="/"');
+    });
+
+    it('应去除查询字符串参数', () => {
+      service.incrementRequest('GET', '/api/v1/patients?page=1&limit=10', 200);
+      const metrics = service.getMetrics();
+      expect(metrics).toContain('path="/api/v1/patients"');
+      expect(metrics).not.toContain('?page=1');
+    });
+
+    it('应规范化多个路径参数', () => {
+      service.incrementRequest('GET', '/api/v1/patients/123/appointments/456', 200);
+      const metrics = service.getMetrics();
+      expect(metrics).toContain('path="/api/v1/patients/{id}/appointments/{id}"');
+    });
+
+    it('应规范化 UUID 路径参数', () => {
+      const uuid = '550e8400-e29b-41d4-a716-446655440000';
+      service.incrementRequest('GET', `/api/v1/patients/${uuid}`, 200);
+      const metrics = service.getMetrics();
+      expect(metrics).toContain('path="/api/v1/patients/{id}"');
+    });
+
+    it('混合路径参数（UUID + 数字）应正确规范化', () => {
+      const uuid = '550e8400-e29b-41d4-a716-446655440000';
+      service.incrementRequest('GET', `/api/v1/doctors/${uuid}/patients/12345`, 200);
+      const metrics = service.getMetrics();
+      expect(metrics).toContain('path="/api/v1/doctors/{id}/patients/{id}"');
+    });
+  });
+
+  describe('重复创建指标幂等性', () => {
+    it('重复创建同名计数器不应重复添加', () => {
+      const initialCount = service.getMetrics().split('\n').filter(l => l.includes('http_requests_total')).length;
+      service.onModuleInit();
+      service.onModuleInit();
+      const finalCount = service.getMetrics().split('\n').filter(l => l.includes('http_requests_total')).length;
+      expect(finalCount).toBe(initialCount);
+    });
+
+    it('重复创建同名直方图不应重复添加', () => {
+      const initialCount = service.getMetrics().split('\n').filter(l => l.includes('http_request_duration_ms')).length;
+      service.onModuleInit();
+      const finalCount = service.getMetrics().split('\n').filter(l => l.includes('http_request_duration_ms')).length;
+      expect(finalCount).toBe(initialCount);
+    });
+
+    it('重复创建同名仪表不应重复添加', () => {
+      const initialCount = service.getMetrics().split('\n').filter(l => l.includes('http_active_requests')).length;
+      service.onModuleInit();
+      const finalCount = service.getMetrics().split('\n').filter(l => l.includes('http_active_requests')).length;
+      expect(finalCount).toBe(initialCount);
+    });
+  });
+
+  describe('非已注册指标的早期返回', () => {
+    it('增加不存在的计数器应静默忽略', () => {
+      expect(() => {
+        (service as any).incrementCounter('nonexistent_counter', {})
+      }).not.toThrow();
+    });
+
+    it('观察不存在的直方图应静默忽略', () => {
+      expect(() => {
+        (service as any).observeHistogram('nonexistent_histogram', {}, 100)
+      }).not.toThrow();
+    });
+
+    it('设置不存在的仪表应静默忽略', () => {
+      expect(() => {
+        (service as any).setGauge('nonexistent_gauge', 42)
+      }).not.toThrow();
+    });
+  });
+
+  describe('仪表带标签输出', () => {
+    it('仪表带标签时应在 getMetrics 中正确输出', () => {
+      const svc = new MetricsService();
+      (svc as any).createGauge('labeled_gauge', 'A gauge with labels', { env: 'prod' });
+      (svc as any).setGauge('labeled_gauge', 99);
+      const metrics = svc.getMetrics();
+      expect(metrics).toContain('labeled_gauge{env="prod"} 99');
+    });
+  });
+
+  describe('事件循环延迟监控', () => {
+    it('onModuleInit 应启动事件循环监控', () => {
+      const svc = new MetricsService();
+      svc.onModuleInit();
+      expect((svc as any).eventLoopDelayInterval).not.toBeNull();
+      svc.onModuleDestroy();
+    });
+
+    it('onModuleDestroy 应停止事件循环监控', () => {
+      const svc = new MetricsService();
+      svc.onModuleInit();
+      svc.onModuleDestroy();
+      expect((svc as any).eventLoopDelayInterval).toBeNull();
+    });
+
+    it('重复调用 onModuleDestroy 不应出错', () => {
+      const svc = new MetricsService();
+      svc.onModuleDestroy();
+      svc.onModuleDestroy();
+      expect((svc as any).eventLoopDelayInterval).toBeNull();
+    });
+  });
+
+  describe('直方图边界值', () => {
+    it('值等于 bucket 边界应计入该 bucket', () => {
+      service.observeRequestDuration('GET', '/test', 50);
+      const metrics = service.getMetrics();
+      expect(metrics).toContain('http_request_duration_ms_bucket{method="GET",path="/test",le="50"} 1');
+    });
+
+    it('值大于最大 bucket 应归入 +Inf', () => {
+      service.observeRequestDuration('GET', '/test', 10001);
+      const metrics = service.getMetrics();
+      expect(metrics).toContain('http_request_duration_ms_bucket{method="GET",path="/test",le="+Inf"} 1');
+    });
+
+    it('值为 0 应计入所有 bucket', () => {
+      service.observeRequestDuration('GET', '/test', 0);
+      const metrics = service.getMetrics();
+      expect(metrics).toContain('http_request_duration_ms_bucket{method="GET",path="/test",le="5"} 1');
+    });
+  });
+
+  describe('collectSystemMetrics', () => {
+    it('应收集内存指标并更新仪表值', () => {
+      const svc = new MetricsService();
+      svc.onModuleInit();
+      svc.collectSystemMetrics();
+      const metrics = svc.getMetrics();
+      expect(metrics).toContain('nodejs_heap_used_bytes');
+      expect(metrics).toContain('nodejs_heap_total_bytes');
+      expect(metrics).toContain('nodejs_rss_bytes');
+      expect(metrics).toContain('nodejs_external_bytes');
+      svc.onModuleDestroy();
+    });
+  });
+
+  describe('getMetrics 输出格式', () => {
+    it('空指标系统应输出有效空格式', () => {
+      const svc = new MetricsService();
+      const metrics = svc.getMetrics();
+      expect(typeof metrics).toBe('string');
+    });
+
+    it('每个指标块之间应有空行分隔', () => {
+      service.incrementRequest('GET', '/test', 200);
+      service.incrementDbQuery('SELECT');
+      const metrics = service.getMetrics();
+      const lines = metrics.split('\n');
+      const blankLines = lines.filter(l => l === '').length;
+      expect(blankLines).toBeGreaterThanOrEqual(2);
+    });
+
+    it('getMetrics 应包含 HTTP 方法大写转换', () => {
+      service.incrementRequest('get', '/test', 200);
+      const metrics = service.getMetrics();
+      expect(metrics).toContain('method="GET"');
+    });
+  });
 });

@@ -1,7 +1,8 @@
 import { VisitsService } from './visits.service';
+import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+
 
 // 构造 ClinicContextService 的 mock，模拟诊所上下文
 function createMockClinicContext(): ClinicContextService {
@@ -162,7 +163,7 @@ describe('VisitsService', () => {
       expect((result as any).endTime).toBeDefined();
     });
 
-    it('非 IN_PROGRESS 状态的就诊完成时应抛出 BadRequestException', async () => {
+    it('非 IN_PROGRESS 状态的就诊完成时应抛出 BusinessValidationException', async () => {
       db.seed('Visit', [
         {
           id: 'visit-002',
@@ -179,10 +180,10 @@ describe('VisitsService', () => {
 
       await expect(
         service.complete('visit-002', { diagnosis: 'test' }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
-    it('CANCELLED 状态的就诊完成时应抛出 BadRequestException', async () => {
+    it('CANCELLED 状态的就诊完成时应抛出 BusinessValidationException', async () => {
       db.seed('Visit', [
         {
           id: 'visit-003',
@@ -199,7 +200,7 @@ describe('VisitsService', () => {
 
       await expect(
         service.complete('visit-003', { diagnosis: 'test' }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
     it('完成就诊时应写入审计日志', async () => {
@@ -268,7 +269,7 @@ describe('VisitsService', () => {
       expect((result as any).status).toBe('CANCELLED');
     });
 
-    it('COMPLETED → IN_PROGRESS 非法流转应抛出 BadRequestException', async () => {
+    it('COMPLETED → IN_PROGRESS 非法流转应抛出 BusinessValidationException', async () => {
       db.seed('Visit', [
         {
           id: 'visit-001',
@@ -285,7 +286,7 @@ describe('VisitsService', () => {
 
       await expect(
         service.update('visit-001', { status: 'IN_PROGRESS' } as any),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
     it('COMPLETED 是终态，不应流转到任何状态', async () => {
@@ -305,7 +306,7 @@ describe('VisitsService', () => {
 
       await expect(
         service.update('visit-001', { status: 'CANCELLED' } as any),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
     it('CANCELLED 是终态，不应流转到任何状态', async () => {
@@ -325,7 +326,7 @@ describe('VisitsService', () => {
 
       await expect(
         service.update('visit-001', { status: 'IN_PROGRESS' } as any),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
     it('相同状态重复更新不应抛出异常', async () => {
@@ -395,8 +396,8 @@ describe('VisitsService', () => {
       expect((result as any).patientId).toBe('patient-001');
     });
 
-    it('查询不存在的就诊应抛出 NotFoundException', async () => {
-      await expect(service.findOne('non-existent')).rejects.toThrow(NotFoundException);
+    it('查询不存在的就诊应抛出 BusinessNotFoundException', async () => {
+      await expect(service.findOne('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 
@@ -648,10 +649,10 @@ describe('VisitsService', () => {
       expect((result as any).status).toBe('COMPLETED');
     });
 
-    it('完成不存在的就诊应抛出 NotFoundException', async () => {
+    it('完成不存在的就诊应抛出 BusinessNotFoundException', async () => {
       await expect(
         service.complete('non-existent', { diagnosis: 'test' }),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toThrow(BusinessNotFoundException);
     });
 
     it('完成就诊的审计日志应包含诊断信息', async () => {
@@ -703,10 +704,10 @@ describe('VisitsService', () => {
       expect((result as any).status).toBe('IN_PROGRESS');
     });
 
-    it('更新不存在的就诊应抛出 NotFoundException', async () => {
+    it('更新不存在的就诊应抛出 BusinessNotFoundException', async () => {
       await expect(
         service.update('non-existent', { status: 'COMPLETED' } as any),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toThrow(BusinessNotFoundException);
     });
 
     it('空对象更新不应抛出异常', async () => {

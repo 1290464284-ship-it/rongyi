@@ -1,4 +1,5 @@
-﻿import { join, dirname } from 'node:path';
+﻿/* eslint-disable security/detect-non-literal-fs-filename -- 数据库路径工具函数，路径来自配置常量 */
+import { join, dirname } from 'node:path';
 import * as fs from 'node:fs';
 import * as crypto from 'node:crypto';
 import { logger } from '../common/utils/infra/log';

@@ -1,8 +1,8 @@
 import { ClinicsService } from './clinics.service';
+import { BusinessValidationException, BusinessConflictException, BusinessNotFoundException } from '@common/errors';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import { CacheService } from '../../../common/services/cache.service';
-import { BadRequestException, ConflictException } from '@nestjs/common';
 
 function createMockCacheService(): CacheService {
   const store = new Map<string, unknown>();
@@ -97,8 +97,8 @@ describe('ClinicsService', () => {
       expect(result.id).toBe('clinic-1');
     });
 
-    it('不存在的 ID 抛出 BadRequestException', async () => {
-      await expect(service.findOne('non-existent')).rejects.toThrow(BadRequestException);
+    it('不存在的 ID 抛出 BusinessNotFoundException', async () => {
+      await expect(service.findOne('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
 
     it('已软删的记录不返回', async () => {
@@ -114,7 +114,7 @@ describe('ClinicsService', () => {
         }
         return originalPrepare(sql);
       });
-      await expect(service.findOne('clinic-1')).rejects.toThrow(BadRequestException);
+      await expect(service.findOne('clinic-1')).rejects.toThrow(BusinessNotFoundException);
       prepareSpy.mockRestore();
     });
   });
@@ -126,13 +126,13 @@ describe('ClinicsService', () => {
       expect((result as any).name).toBe('新店');
     });
 
-    it('code 重复时抛出 ConflictException', async () => {
+    it('code 重复时抛出 BusinessConflictException', async () => {
       db.seed('Clinic', [
         { id: 'clinic-1', name: '总店', code: 'C001', isActive: 1 },
       ]);
       await expect(
         service.create({ name: '新店', code: 'C001' }),
-      ).rejects.toThrow(ConflictException);
+      ).rejects.toThrow(BusinessConflictException);
     });
 
     it('已软删的同 code 不视为冲突', async () => {

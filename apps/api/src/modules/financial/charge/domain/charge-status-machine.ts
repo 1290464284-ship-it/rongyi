@@ -4,6 +4,7 @@ import {
   centsLessThanOrEqual,
   yuanToCents,
 } from "../../../../common/utils/format/money.utils";
+import { BusinessValidationException } from "../../../../common/errors";
 
 /**
  * 收费单状态值。
@@ -15,7 +16,11 @@ export const ChargeStatusValue = {
   CANCELLED: "CANCELLED",
 } as const;
 
-export class InvalidChargeStatusTransitionError extends Error {
+/**
+ * P1 修复：继承 BusinessValidationException 而非 Error
+ * 这样全局异常过滤器会返回 400 而非 500，前端可正确显示业务错误提示
+ */
+export class InvalidChargeStatusTransitionError extends BusinessValidationException {
   constructor(from: string, to: string) {
     super(`非法的收费单状态转换: ${from} -> ${to}`);
     this.name = "InvalidChargeStatusTransitionError";
@@ -48,6 +53,8 @@ export class ChargeStatusMachine {
     [ChargeStatusValue.PAID]: [
       ChargeStatusValue.REFUNDED,
       ChargeStatusValue.PAID,
+      // 部分退款后再收款时，净实收可能低于总额，允许回到 PARTIAL
+      ChargeStatusValue.PARTIAL,
     ],
     [ChargeStatusValue.REFUNDED]: [ChargeStatusValue.REFUNDED],
     [ChargeStatusValue.CANCELLED]: [ChargeStatusValue.CANCELLED],
@@ -89,9 +96,19 @@ export class ChargeStatusMachine {
     paidAmount: number,
     totalAmount: number,
   ): (typeof ChargeStatusValue)[keyof typeof ChargeStatusValue] {
-    const paidCents = yuanToCents(paidAmount);
-    const totalCents = yuanToCents(totalAmount);
+    return ChargeStatusMachine.resolveByPaymentCents(
+      yuanToCents(paidAmount),
+      yuanToCents(totalAmount),
+    );
+  }
 
+  /**
+   * resolveByPayment 的分单位版本。调用方持有分金额时应直接使用，避免元↔分双重转换。
+   */
+  static resolveByPaymentCents(
+    paidCents: number,
+    totalCents: number,
+  ): (typeof ChargeStatusValue)[keyof typeof ChargeStatusValue] {
     if (centsLessThanOrEqual(paidCents, 0)) {
       return ChargeStatusValue.UNPAID;
     }
@@ -113,9 +130,21 @@ export class ChargeStatusMachine {
     refundedAmount: number,
     currentStatus: string,
   ): (typeof ChargeStatusValue)[keyof typeof ChargeStatusValue] {
-    const paidCents = yuanToCents(paidAmount);
-    const refundedCents = yuanToCents(refundedAmount);
+    return ChargeStatusMachine.resolveByRefundCents(
+      yuanToCents(paidAmount),
+      yuanToCents(refundedAmount),
+      currentStatus,
+    );
+  }
 
+  /**
+   * resolveByRefund 的分单位版本。调用方持有分金额时应直接使用，避免元↔分双重转换。
+   */
+  static resolveByRefundCents(
+    paidCents: number,
+    refundedCents: number,
+    currentStatus: string,
+  ): (typeof ChargeStatusValue)[keyof typeof ChargeStatusValue] {
     if (centsGreaterThanOrEqual(refundedCents, paidCents)) {
       return ChargeStatusValue.REFUNDED;
     }

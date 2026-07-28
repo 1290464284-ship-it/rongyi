@@ -35,6 +35,10 @@ describe('SqlInjectionMiddleware', () => {
       ['/api/docs/swagger'],
       ['/api/auth/login'],
       ['/api/auth/refresh'],
+      // P1 修复测试：版本化前缀路径也必须匹配
+      ['/api/v1/auth/refresh'],
+      ['/api/v2/auth/refresh'],
+      ['/api/v1/auth/refresh/sub'],
     ])('路径 %s 直接跳过检测', (path) => {
       const req = createMockReq({
         path,
@@ -47,6 +51,18 @@ describe('SqlInjectionMiddleware', () => {
       middleware.use(req, res, next);
 
       expect(next).toHaveBeenCalled();
+    });
+
+    it('版本化前缀的非排除路径不跳过检测', () => {
+      const req = createMockReq({
+        path: '/api/v1/patients',
+        method: 'GET',
+        query: { q: 'select from users' },
+      });
+      const res = createMockRes();
+      const next = createMockNext();
+
+      expect(() => middleware.use(req, res, next)).toThrow(HttpException);
     });
   });
 

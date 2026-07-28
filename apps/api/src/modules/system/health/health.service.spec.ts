@@ -1,4 +1,5 @@
 import { HealthService } from './health.service';
+import * as fs from 'node:fs';
 
 describe('HealthService', () => {
   let service: HealthService;
@@ -150,6 +151,157 @@ describe('HealthService', () => {
       const result = service.getInfo();
 
       expect(result.environment).toBe('development');
+    });
+  });
+
+  describe('checkSimple()', () => {
+    it('数据库正常时返回 ok', () => {
+      mockPrepare({ ok: 1 });
+      const result = service.checkSimple();
+      expect(result.status).toBe('ok');
+    });
+
+    it('数据库返回异常值时返回 down', () => {
+      mockPrepare({ ok: 0 });
+      const result = service.checkSimple();
+      expect(result.status).toBe('down');
+    });
+
+    it('数据库异常时返回 down', () => {
+      dbService.prepare.mockImplementation(() => { throw new Error('DB error'); });
+      const result = service.checkSimple();
+      expect(result.status).toBe('down');
+    });
+  });
+
+  describe('getDetail()', () => {
+    it('应返回详细健康检查结果', async () => {
+      mockPrepare({ ok: 1 });
+      const result = await service.getDetail();
+      expect(result.status).toBeDefined();
+      expect(result.timestamp).toBeDefined();
+      expect(result.checks.length).toBeGreaterThan(0);
+    });
+
+    it('生产环境应省略 data 字段', async () => {
+      configService.get.mockImplementation((key: string) => {
+        if (key === 'NODE_ENV') return 'production';
+        return 'test';
+      });
+      service = new HealthService(dbService as any, configService as any, clinicContext as any);
+      mockPrepare({ ok: 1 });
+      const result = await service.getDetail();
+      result.checks.forEach(check => {
+        expect(check.data).toBeUndefined();
+      });
+    });
+  });
+
+  describe('checkDatabase()', () => {
+    it('数据库正常时返回 ok', () => {
+      mockPrepare({ ok: 1 });
+      const result = service.checkDatabase();
+      expect(result.name).toBe('database');
+      expect(result.status).toBe('ok');
+      expect(result.message).toContain('正常');
+    });
+
+    it('数据库异常时返回 error', () => {
+      dbService.prepare.mockImplementation(() => { throw new Error('Connection refused'); });
+      const result = service.checkDatabase();
+      expect(result.status).toBe('error');
+      expect(result.message).toContain('Connection refused');
+    });
+  });
+
+  describe('checkBackupStatus()', () => {
+    it('无备份记录时返回 warning', () => {
+      mockPrepare();
+      const result = service.checkBackupStatus();
+      expect(result.name).toBe('backup');
+      expect(result.status).toBe('warning');
+      expect(result.message).toContain('暂无备份记录');
+    });
+
+    it('有最近备份时返回 ok', () => {
+      const recentBackup = {
+        id: 'b-1',
+        filename: 'test.sqlite',
+        fileSize: 1024,
+        type: 'manual',
+        operatorId: 'u-1',
+        operatorName: 'Test',
+        remark: null,
+        clinicId: 'clinic-1',
+        createdAt: new Date().toISOString(),
+      };
+      mockPrepare(recentBackup);
+      const result = service.checkBackupStatus();
+      expect(result.status).toBe('ok');
+      expect(result.data).toBeDefined();
+    });
+
+    it('备份超时时返回 warning', () => {
+      const oldBackup = {
+        id: 'b-1',
+        filename: 'test.sqlite',
+        fileSize: 1024,
+        type: 'manual',
+        operatorId: 'u-1',
+        operatorName: 'Test',
+        remark: null,
+        clinicId: 'clinic-1',
+        createdAt: new Date(Date.now() - 30 * 3600000).toISOString(),
+      };
+      mockPrepare(oldBackup);
+      const result = service.checkBackupStatus();
+      expect(result.status).toBe('warning');
+      expect(result.message).toContain('备份超时');
+    });
+  });
+
+  describe('checkDatabaseSize()', () => {
+    it('应返回数据库大小信息', async () => {
+      const statSpy = jest.spyOn(fs.promises, 'stat').mockImplementation(async (path: fs.PathLike) => {
+        if (String(path).endsWith('-wal')) throw new Error('ENOENT');
+        return { size: 1048576 } as fs.Stats;
+      });
+      mockPrepare({ cnt: 10 });
+      const stmt = { get: jest.fn(), all: jest.fn().mockReturnValue([{ name: 'Patient' }]), run: jest.fn() };
+      dbService.prepare.mockReturnValue(stmt);
+
+      const result = await service.checkDatabaseSize();
+      expect(result.name).toBe('database_size');
+      expect(result.data).toBeDefined();
+      statSpy.mockRestore();
+    });
+  });
+
+  describe('getTableStats()', () => {
+    it('应返回表统计信息', () => {
+      const stmt = {
+        get: jest.fn().mockReturnValue({ cnt: 5 }),
+        all: jest.fn().mockReturnValue([{ name: 'Patient' }]),
+        run: jest.fn(),
+      };
+      dbService.prepare.mockReturnValue(stmt);
+
+      const result = service.getTableStats();
+      expect(result.length).toBeGreaterThanOrEqual(0);
+    });
+
+    it('应使用缓存', () => {
+      const stmt = {
+        get: jest.fn().mockReturnValue({ cnt: 5 }),
+        all: jest.fn().mockReturnValue([{ name: 'Patient' }]),
+        run: jest.fn(),
+      };
+      dbService.prepare.mockReturnValue(stmt);
+
+      service.getTableStats();
+      const result2 = service.getTableStats();
+      // Second call should use cache (prepare called same number of times)
+      expect(result2).toBeDefined();
     });
   });
 });

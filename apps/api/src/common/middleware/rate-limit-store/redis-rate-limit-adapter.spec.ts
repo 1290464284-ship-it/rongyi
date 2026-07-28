@@ -14,7 +14,7 @@ describe('createRedisRateLimitStoreIfConfigured', () => {
   });
 
   it('未配置 REDIS_URL 时返回 null（降级到内存存储）', async () => {
-    const result = await createRedisRateLimitStoreIfConfigured(undefined);
+    const result = await createRedisRateLimitStoreIfConfigured('');
     expect(result).toBeNull();
   });
 

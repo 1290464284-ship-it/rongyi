@@ -1,4 +1,5 @@
-import { BadRequestException } from '@nestjs/common';
+
+import { BusinessValidationException } from '@common/errors';
 
 const SCALE = 100;
 
@@ -11,7 +12,7 @@ export class Money {
 
   static fromYuan(yuan: number): Money {
     if (!Number.isFinite(yuan)) {
-      throw new BadRequestException('无效的金额');
+      throw new BusinessValidationException('无效的金额');
     }
     return new Money(yuan * SCALE);
   }
@@ -34,7 +35,7 @@ export class Money {
 
   divide(divisor: number): Money {
     if (divisor === 0) {
-      throw new BadRequestException('不能除以零');
+      throw new BusinessValidationException('不能除以零');
     }
     return new Money(this.cents / divisor);
   }
