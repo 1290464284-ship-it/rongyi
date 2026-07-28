@@ -50,7 +50,7 @@ jobs:
         run: pnpm --filter @dental/shared build
 
       - name: Test (Shared)
-        run: pnpm --filter @dental/shared test
+        run: pnpm --filter @dental/shared test:cov
 
       - name: Build API
         run: pnpm --filter @dental/api build
@@ -71,8 +71,10 @@ jobs:
         run: pnpm --filter @dental/api test:cov
 
       - name: Test (Web)
-        run: pnpm --filter @dental/web test
+        run: pnpm --filter @dental/web test:cov
 
+      # ── E2E tests are CI-only (require Playwright browsers + running server) ──
+      # ── They are NOT included in local verify:delivery ──
       - name: E2E Test (API)
         run: pnpm --filter @dental/api test:e2e
 
