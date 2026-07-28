@@ -61,7 +61,7 @@ describe('LoginPage 登录流程', () => {
     expect(mockMutateAsync).not.toHaveBeenCalled();
   });
 
-  it('密码非 4 位数字时显示校验错误', async () => {
+  it('密码不足 4 位时显示校验错误', async () => {
     const user = userEvent.setup();
     renderLogin();
 
@@ -70,7 +70,7 @@ describe('LoginPage 登录流程', () => {
     await user.click(screen.getByRole('button', { name: /登录/ }));
 
     await waitFor(() => {
-      expect(screen.getByText('密码必须是4位数字')).toBeInTheDocument();
+      expect(screen.getByText('密码至少4位')).toBeInTheDocument();
     });
     expect(mockMutateAsync).not.toHaveBeenCalled();
   });

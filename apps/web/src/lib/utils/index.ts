@@ -5,12 +5,18 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatDate(d: string | Date) {
-  return new Date(d).toLocaleDateString('zh-CN');
+export function formatDate(d: string | Date | null | undefined) {
+  if (!d) return '';
+  const date = new Date(d);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('zh-CN');
 }
 
-export function formatDateTime(d: string | Date) {
-  return new Date(d).toLocaleString('zh-CN');
+export function formatDateTime(d: string | Date | null | undefined) {
+  if (!d) return '';
+  const date = new Date(d);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString('zh-CN');
 }
 
 export function debounce<T extends (...args: Parameters<T>) => void>(

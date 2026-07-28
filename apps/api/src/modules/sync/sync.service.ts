@@ -31,6 +31,36 @@ export interface SyncPullResult {
   serverTime: string;
 }
 
+/**
+ * 允许通过 sync 接口推送变更的业务表白名单。
+ * 安全限制：不在白名单中的表（如 User、Config 等）禁止通过 sync 写入。
+ */
+const SYNC_ALLOWED_TABLES: ReadonlySet<string> = new Set([
+  'Patient',
+  'Appointment',
+  'Treatment',
+  'TreatmentPlan',
+  'TreatmentPlanItem',
+  'Charge',
+  'ChargeItem',
+  'Payment',
+  'Prescription',
+  'PrescriptionItem',
+  'MedicalRecord',
+  'FollowUp',
+  'ToothRecord',
+  'ImagingRecord',
+  'Inventory',
+  'InventoryTransaction',
+  'PurchaseOrder',
+  'PurchaseOrderItem',
+  'ProcessingOrder',
+  'Equipment',
+  'MemberCard',
+  'MemberCardTransaction',
+  'SyncChangeLog',
+]);
+
 @Injectable()
 export class SyncService {
   private readonly logger = new Logger(SyncService.name);
@@ -152,17 +182,26 @@ export class SyncService {
                 k => data[k] !== undefined && validateColumnName(k),
               );
               if (keys.length > 0) {
-                const placeholders = keys.map(() => '?').join(', ');
                 const values = keys.map(k => data[k]);
 
                 if (change.operation === 'INSERT') {
+                  // P0 修复：INSERT 路径强制注入 clinicId，防止跨租户数据污染
+                  if (!keys.includes('clinicId')) {
+                    keys.push('clinicId');
+                    values.push(clinicId);
+                  } else {
+                    // 覆盖客户端传入的 clinicId，以服务端为准
+                    const idx = keys.indexOf('clinicId');
+                    values[idx] = clinicId;
+                  }
+                  const insertPlaceholders = keys.map(() => '?').join(', ');
                   const setClause = keys
-                    .filter(k => k !== 'id')
+                    .filter(k => k !== 'id' && k !== 'clinicId')
                     .map(k => `${k} = excluded.${k}`)
                     .join(', ');
                   if (setClause) {
                     txDb.prepare(
-                      `INSERT INTO ${table} (${keys.join(', ')}) VALUES (${placeholders})
+                      `INSERT INTO ${table} (${keys.join(', ')}) VALUES (${insertPlaceholders})
                        ON CONFLICT(id) DO UPDATE SET ${setClause}`,
                     ).run(...values);
                   }
@@ -230,12 +269,16 @@ export class SyncService {
   }
 
   /**
-   * 简单表名校验，防止 SQL 注入
+   * 表名校验：格式合法性 + 业务白名单双重防护。
+   * 非白名单表（如 User）无法通过 sync 接口写入，防止提权攻击。
    */
   private sanitizeTableName(name: string): string {
-    if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
-      return name;
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
+      throw new Error(`Invalid table name format: ${name}`);
     }
-    throw new Error(`Invalid table name: ${name}`);
+    if (!SYNC_ALLOWED_TABLES.has(name)) {
+      throw new Error(`Table '${name}' is not allowed for sync operations`);
+    }
+    return name;
   }
 }

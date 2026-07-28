@@ -16,11 +16,14 @@ interface ErrorLog {
   userAgent?: string;
   userId?: string;
   context?: string;
+  traceId?: string;
 }
 
 const logs: ErrorLog[] = [];
 const RETRY_LOGS: Map<string, { logs: ErrorLog[]; retryCount: number }> = new Map();
 let flushTimeout: ReturnType<typeof setTimeout> | null = null;
+// P1 修复：batchId 在重试时保持不变，确保 retryCount 正确累加
+let currentBatchId: string | null = null;
 
 function addLog(log: ErrorLog) {
   logs.unshift(log);
@@ -42,30 +45,34 @@ async function flushLogs() {
   const batch = [...logs];
   logs.length = 0;
 
-  const batchId = `batch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  // P1 修复：复用上次失败的 batchId，确保重试计数正确累加
+  const batchId = currentBatchId || `batch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
   try {
     await api.post('/operation-logs/batch', { logs: batch });
     RETRY_LOGS.delete(batchId);
+    currentBatchId = null;
   } catch {
     const existing = RETRY_LOGS.get(batchId);
-    const retryCount = existing?.retryCount ?? 0;
+    const retryCount = (existing?.retryCount ?? 0) + 1;
 
     if (retryCount < MAX_ERROR_LOG_RETRY_COUNT) {
       // 放回队列，等待重试
       logs.push(...batch);
-      RETRY_LOGS.set(batchId, { logs: batch, retryCount: retryCount + 1 });
+      RETRY_LOGS.set(batchId, { logs: batch, retryCount });
+      currentBatchId = batchId;
       scheduleFlush();
     } else {
-      // 超过最大重试次数，丢弃日志并记录到控制台
+      // 超过最大重试次数，丢弃日志并清理 Map 防止内存泄漏
       console.error('[ErrorLogger] 日志上报失败，已达到最大重试次数，丢弃以下日志:', batch);
       RETRY_LOGS.delete(batchId);
+      currentBatchId = null;
     }
   }
 }
 
 export const errorLogger = {
-  error: (message: string, error?: Error, context?: string) => {
+  error: (message: string, error?: Error, context?: string, traceId?: string) => {
     const log: ErrorLog = {
       timestamp: new Date().toISOString(),
       level: 'error',
@@ -74,6 +81,7 @@ export const errorLogger = {
       url: window.location.href,
       userAgent: navigator.userAgent,
       context,
+      traceId,
     };
     console.error('[Error]', message, error);
     addLog(log);
