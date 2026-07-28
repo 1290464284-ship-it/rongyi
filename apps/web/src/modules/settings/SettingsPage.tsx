@@ -174,6 +174,7 @@ function ClinicInfoTab() {
               <img
                 src={form.clinicLogo}
                 alt="诊所 Logo"
+                loading="lazy"
                 className="max-h-20 max-w-xs object-contain"
                 onError={(e) => {
                   (e.target as HTMLImageElement).style.display = 'none';

@@ -159,8 +159,8 @@ export function DetailView({ plan }: { plan: TreatmentPlan }) {
                 ¥{(Number(item.price) * item.quantity).toFixed(2)}
               </TableCell>
               <TableCell>
-                <Badge className={ITEM_STATUS_COLOR[item.status || 'PENDING']}>
-                  {ITEM_STATUS_LABEL[item.status || 'PENDING']}
+                <Badge className={ITEM_STATUS_COLOR[item.status || 'PLANNED']}>
+                  {ITEM_STATUS_LABEL[item.status || 'PLANNED']}
                 </Badge>
               </TableCell>
             </TableRow>

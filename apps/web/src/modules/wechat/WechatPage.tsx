@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Search, Send, Users, MessageCircle } from 'lucide-react';
+import { Search, Send, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';

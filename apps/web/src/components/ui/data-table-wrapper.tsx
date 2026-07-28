@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './table';
 import { Button } from './button';
 
-export interface DataTableColumn<T = any> {
+export interface DataTableColumn<T = Record<string, unknown>> {
   key: string;
   header: string;
   accessorKey?: keyof T;
@@ -13,7 +13,7 @@ export interface DataTableColumn<T = any> {
   width?: string;
 }
 
-export interface DataTableWrapperProps<T = any> {
+export interface DataTableWrapperProps<T = Record<string, unknown>> {
   columns: DataTableColumn<T>[];
   data: T[];
   loading?: boolean;
@@ -47,7 +47,7 @@ function SkeletonRow({ colSpan }: { colSpan: number }) {
   );
 }
 
-export function DataTableWrapper<T extends Record<string, any>>({
+export function DataTableWrapper<T extends Record<string, unknown>>({
   columns,
   data,
   loading = false,

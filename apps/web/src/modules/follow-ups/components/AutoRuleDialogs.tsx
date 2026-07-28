@@ -13,8 +13,6 @@ import {
 } from '@/components/ui/dialog';
 import {
   useFollowUpTemplates,
-  FOLLOW_UP_PRIORITY_LABEL,
-  FOLLOW_UP_PRIORITY_COLOR,
   type FollowUpAutoRule,
   type FollowUpPriority,
   type CreateFollowUpAutoRuleDto,

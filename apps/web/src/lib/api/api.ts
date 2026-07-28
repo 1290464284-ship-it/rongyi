@@ -1,4 +1,4 @@
-import axios, { type AxiosError, type AxiosResponse, type InternalAxiosRequestConfig, type AxiosRequestConfig } from 'axios';
+import axios, { type AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
 import { toastService } from '../utils/toast-service';
 import { useAuthStore } from '../store/auth-store';
 import {
@@ -26,10 +26,6 @@ interface RetryConfig extends InternalAxiosRequestConfig {
   skipErrorToast?: boolean;
 }
 
-interface ApiRequestConfig extends AxiosRequestConfig {
-  signal?: AbortSignal;
-  skipErrorToast?: boolean;
-}
 
 const WRITE_METHODS = ["POST", "PATCH", "PUT", "DELETE"];
 
@@ -133,6 +129,11 @@ const getErrorMessage = (error: AxiosError<ErrorResponse>): string => {
 
 let refreshPromise: Promise<boolean> | null = null;
 let isRefreshingFailed = false;
+
+// 重新登录成功后必须调用，否则 refresh 机制将永久失效
+export const resetRefreshFailedFlag = (): void => {
+  isRefreshingFailed = false;
+};
 
 const refreshAccessToken = async (): Promise<boolean> => {
   if (refreshPromise) return refreshPromise;

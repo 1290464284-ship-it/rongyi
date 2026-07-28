@@ -380,7 +380,10 @@ function ComboDialog({
       category,
       description,
       discountPrice: totalPrice,
-      items: items.map(({ id: _id, ...rest }) => rest) as any,
+      items: items.map(({ id: _id, price, ...rest }) => ({
+        ...rest,
+        price: Number(price),
+      })),
     });
   }
 

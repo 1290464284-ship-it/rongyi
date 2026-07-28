@@ -200,32 +200,54 @@ export async function sync(): Promise<{ pushed: number; pulled: number; conflict
  * 1. 监听网络状态变化
  * 2. 恢复在线时自动触发同步
  * 3. 设置定期同步定时器
+ *
+ * @returns cleanup 函数，在应用卸载或 HMR 重载时调用，清理所有监听器和定时器
+ *          防止内存泄漏（多次 initSyncService 调用会导致监听器累积）
  */
-export function initSyncService(): void {
-  // 监听网络状态
-  window.addEventListener('online', () => {
+export function initSyncService(): () => void {
+  // P0 修复：保存所有定时器和监听器引用，返回 cleanup 函数清理
+  const timers: ReturnType<typeof setTimeout>[] = [];
+  const intervals: ReturnType<typeof setInterval>[] = [];
+
+  const onlineHandler = () => {
     console.log('[Sync] 网络恢复，触发同步...');
     // 延迟 2 秒后同步（等待网络稳定）
-    setTimeout(() => {
-      sync().catch(() => {});
-    }, 2000);
-  });
+    timers.push(
+      setTimeout(() => {
+        sync().catch(() => {});
+      }, 2000),
+    );
+  };
 
-  window.addEventListener('offline', () => {
+  const offlineHandler = () => {
     console.log('[Sync] 网络断开，进入离线模式');
-  });
+  };
+
+  window.addEventListener('online', onlineHandler);
+  window.addEventListener('offline', offlineHandler);
 
   // 定期同步（每 5 分钟）
-  setInterval(() => {
+  const intervalId = setInterval(() => {
     if (navigator.onLine) {
       sync().catch(() => {});
     }
   }, 5 * 60 * 1000);
+  intervals.push(intervalId);
 
   // 启动时如果在线，立即同步一次
   if (navigator.onLine) {
-    setTimeout(() => {
-      sync().catch(() => {});
-    }, 3000);
+    timers.push(
+      setTimeout(() => {
+        sync().catch(() => {});
+      }, 3000),
+    );
   }
+
+  // 返回 cleanup 函数
+  return () => {
+    window.removeEventListener('online', onlineHandler);
+    window.removeEventListener('offline', offlineHandler);
+    intervals.forEach((id) => clearInterval(id));
+    timers.forEach((id) => clearTimeout(id));
+  };
 }

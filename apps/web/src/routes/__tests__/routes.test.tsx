@@ -38,7 +38,7 @@ vi.mock('@/components/layout/AppLayout', () => ({
 // 导入路由配置（在 mock 之后）
 import { routes } from '../index';
 
-function TestRouter({ initialEntries }: { initialEntries: string[] }) {
+function TestRouter({ initialEntries: _initialEntries }: { initialEntries: string[] }) {
   const element = useRoutes(routes);
   return <>{element}</>;
 }

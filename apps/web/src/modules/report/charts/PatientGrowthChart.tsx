@@ -4,17 +4,19 @@ import echarts from '@/lib/echarts';
 import type { CallbackDataParams } from 'echarts/types/dist/shared';
 import type { PatientGrowthData } from '@/lib/api/system/stats';
 
+type AxisCallbackParams = CallbackDataParams & { axisValue?: string };
+
 export default function PatientGrowthChart({ data, loading }: { data?: PatientGrowthData; loading: boolean }) {
   const option = useMemo(() => {
     const items = data?.items ?? [];
     return {
       tooltip: {
         trigger: 'axis',
-        formatter: (params: CallbackDataParams[]) => {
+        formatter: (params: AxisCallbackParams[]) => {
           const p0 = params[0];
           const p1 = params[1];
           const item = items[p0.dataIndex];
-          return `${item?.date ?? (p0 as any).axisValue ?? ''}<br/>${p0.marker}新增患者：${p0.value}<br/>${p1?.marker ?? ''}累计患者：${p1?.value ?? 0}`;
+          return `${item?.date ?? p0.axisValue ?? ''}<br/>${p0.marker}新增患者：${p0.value}<br/>${p1?.marker ?? ''}累计患者：${p1?.value ?? 0}`;
         },
       },
       legend: {

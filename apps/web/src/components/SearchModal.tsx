@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useSearch, type SearchResult } from '@/lib/api/system/search';
+import { useSearch } from '@/lib/api/system/search';
 import { Search, X, Users, Calendar, Receipt, Stethoscope, Monitor, UserCog } from 'lucide-react';
 
 const TYPE_ICONS: Record<string, typeof Users> = {
@@ -26,6 +26,8 @@ export default function SearchModal() {
   const [keyword, setKeyword] = useState('');
   const [debouncedKeyword, setDebouncedKeyword] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const openRef = useRef(open);
+  openRef.current = open;
   const navigate = useNavigate();
 
   const { data: results = [], isLoading: loading } = useSearch(debouncedKeyword);
@@ -36,7 +38,7 @@ export default function SearchModal() {
         e.preventDefault();
         setOpen(true);
       }
-      if (e.key === 'Escape' && open) {
+      if (e.key === 'Escape' && openRef.current) {
         setOpen(false);
         setKeyword('');
         setDebouncedKeyword('');
@@ -44,7 +46,7 @@ export default function SearchModal() {
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [open]);
+  }, []);
 
   useEffect(() => {
     if (open && inputRef.current) {

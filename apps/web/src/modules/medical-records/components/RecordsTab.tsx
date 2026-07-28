@@ -47,7 +47,7 @@ import { ConfirmDialog } from './ConfirmDialog';
 
 export function RecordsTab() {
   const [keyword, setKeyword] = useState('');
-  const [page, setPage] = useState(1);
+  const [page, _setPage] = useState(1);
   const pageSize = 10;
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -70,7 +70,7 @@ export function RecordsTab() {
 
   const records = data?.items ?? [];
   const total = data?.total ?? 0;
-  const totalPages = Math.ceil(total / pageSize);
+  const _totalPages = Math.ceil(total / pageSize);
 
   const filteredRecords = useMemo(() => {
     if (!keyword) return records;

@@ -21,7 +21,7 @@ import {
 } from '@/lib/api/clinical/medical-records';
 
 export function RequestsTab() {
-  const [selectedRequest, setSelectedRequest] = useState<RecordModifyRequest | null>(null);
+  const [_selectedRequest, setSelectedRequest] = useState<RecordModifyRequest | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
 

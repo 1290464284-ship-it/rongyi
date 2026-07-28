@@ -101,23 +101,27 @@ pnpm dev               # Vite 开发服务器 (port 5173)
 
 ## 关键约束
 
-1. **技术栈**：React 19 + TypeScript + Vite + TailwindCSS 4 + TanStack Query + Zustand + React Router 7。
-2. **API 层**：所有后端通信通过 `lib/api/` 中的 Axios 封装，不直接在组件中 fetch。
-3. **状态管理**：全局状态用 Zustand（`lib/store/`），服务端状态用 TanStack Query。
-4. **表单验证**：使用 react-hook-form + zod schema。
-5. **UI 组件**：优先使用 `components/ui/` 中的基础组件，样式用 Tailwind + tailwind-merge。
-6. **路由**：集中定义在 `lib/app-routes.ts`，使用 React Router。
-7. **主题**：暖石色调（背景 `#FAFAF9`，主色 teal `#0F766E`）。
-8. **语言**：UI 文案中文，代码标识符英文。
-9. **Electron 兼容**：构建产物须兼容 Electron 加载（`dist-web/`）。
-10. **共享类型**：从 `@dental/shared` 导入跨端类型，不重复定义。
+> **规范来源声明**：以下约束的详细规范定义在 `.qoder/rules/` 目录中，此处仅作摘要。修改约束时请更新对应的 rule 文件。
+
+1. **技术栈**：React 19 + TypeScript + Vite + TailwindCSS 4 + TanStack Query + Zustand + React Router 7
+2. **API 层** → 详见 `.qoder/rules/frontend-api-layer.md`
+3. **状态管理**：全局状态用 Zustand（`lib/store/`），服务端状态用 TanStack Query
+4. **表单验证**：使用 react-hook-form + zod schema
+5. **UI 组件** → 详见 `.qoder/rules/frontend-ui-framework.md`
+6. **路由**：集中定义在 `lib/app-routes.ts`，使用 React Router
+7. **主题**：暖石色调（背景 `#FAFAF9`，主色 teal `#0F766E`）
+8. **语言**：UI 文案中文，代码标识符英文
+9. **Electron 兼容**：构建产物须兼容 Electron 加载（`dist-web/`）
+10. **共享类型**：从 `@dental/shared` 导入跨端类型，不重复定义
 
 ## 禁止事项
 
-- ❌ 不在组件中直接调用 `fetch` / `axios` — 使用 `lib/api/` 封装
-- ❌ 不引入新的 UI 框架（如 Ant Design、MUI）— 使用现有 Tailwind + 自定义组件
+> 以下每条约束只有一个规范来源（rule 文件），修改时请更新对应 rule 文件。
+
+- ❌ **不在组件中直接调用 fetch/axios** → 详见 `.qoder/rules/frontend-api-layer.md`
+- ❌ **不引入新 UI 框架** → 详见 `.qoder/rules/frontend-ui-framework.md`
 - ❌ 不在前端存储敏感数据（除 localStorage 中的 auth token）
 - ❌ 不直接操作 DOM — 使用 React ref
 - ❌ 不修改 `electron/` 目录除非明确需要桌面端变更
-- ❌ 不跳过 TypeScript 类型（避免 `any`）
+- ❌ **不使用 TypeScript any** → 详见 `.qoder/rules/no-typescript-any.md`
 - ❌ 不在 `modules/` 外创建页面级组件

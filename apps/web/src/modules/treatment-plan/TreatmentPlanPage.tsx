@@ -134,7 +134,9 @@ export default function TreatmentPlanPage() {
             >
               <option value="">全部状态</option>
               <option value="DRAFT">草稿</option>
-              <option value="APPROVED">已审批</option>
+              <option value="SUBMITTED">已提交</option>
+              <option value="APPROVED">已批准</option>
+              <option value="REJECTED">已驳回</option>
               <option value="IN_PROGRESS">进行中</option>
               <option value="COMPLETED">已完成</option>
               <option value="CANCELLED">已取消</option>

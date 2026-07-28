@@ -33,7 +33,7 @@ export function CreateTreatmentPlanDialog({
   open,
   onClose,
   presetPatientId,
-  presetVisitId,
+  presetVisitId: _presetVisitId,
   onCreate,
   isPending,
 }: {
