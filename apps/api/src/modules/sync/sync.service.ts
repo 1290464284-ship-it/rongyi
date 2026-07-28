@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import * as crypto from 'node:crypto';
 import { DbService } from '../../db/db.service';
 import { ClinicContextService } from '../../common/services/clinic-context.service';
@@ -127,7 +127,7 @@ export class SyncService {
     let failed = 0;
     const errors: Array<{ tableName: string; recordId: string; error: string }> = [];
 
-    this.dbService.transaction((db) => {
+    this.dbService.transaction((_db) => {
       for (const change of payload.changes) {
         try {
           this.dbService.transaction((txDb) => {

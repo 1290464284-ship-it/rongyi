@@ -10,7 +10,7 @@ import { yuanToCents, centsToYuan, centsGreaterThan, centsLessThanOrEqual } from
 import { ChargeStatusMachine } from "../charge/domain/charge-status-machine";
 import { ClinicContextService } from "../../../common/services/clinic-context.service";
 import { Refund } from "@dental/shared";
-import { MemberCardStatus, MemberCardLogType, DebtStatus, AuditLogType } from "../../../common/constants";
+import { MemberCardLogType, DebtStatus, AuditLogType } from "../../../common/constants";
 import { EventBusService } from '../../../common/events/event-bus.service';
 import { RefundCreatedEvent } from '../../../common/events/domain-events';
 import { RefundRepository } from './repositories/refund.repository';

@@ -1251,6 +1251,7 @@ describe('DbService — branch coverage', () => {
       const roConn = dbService.openReadonly(tmpFile);
       expect(() => roConn.transaction(() => 'test')).toThrow(/只读连接不支持事务/);
       roConn.close();
+      // eslint-disable-next-line security/detect-non-literal-fs-filename
       fs.unlinkSync(tmpFile);
     });
 
@@ -1264,6 +1265,7 @@ describe('DbService — branch coverage', () => {
       const result = roConn.exec('SELECT 1');
       expect(result).toBeUndefined();
       roConn.close();
+      // eslint-disable-next-line security/detect-non-literal-fs-filename
       fs.unlinkSync(tmpFile);
     });
   });

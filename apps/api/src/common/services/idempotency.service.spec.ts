@@ -873,7 +873,7 @@ describe('IdempotencyService', () => {
 
       const expiredTime = new Date(Date.now() - 1000).toISOString();
       const now = new Date().toISOString();
-      const expiresAt = new Date(Date.now() + IDEMPOTENCY_DEFAULT_TTL_MS).toISOString();
+      const _expiresAt = new Date(Date.now() + IDEMPOTENCY_DEFAULT_TTL_MS).toISOString();
 
       db.prepare(
         "INSERT INTO IdempotencyRecord (id, key, type, status, createdAt, expiresAt) VALUES (?, ?, ?, ?, ?, ?)",

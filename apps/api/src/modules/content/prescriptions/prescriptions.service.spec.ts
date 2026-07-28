@@ -1,5 +1,5 @@
 import { PrescriptionsService } from './prescriptions.service';
-import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
+import { BusinessValidationException } from '@common/errors';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import { DrugCatalogService } from '../drug-catalog/drug-catalog.service';

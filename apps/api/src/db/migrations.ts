@@ -1461,7 +1461,7 @@ const migrateToV24 = () => {
   // 6. Charge.discount: 修复 v1 迁移遗留的 REAL 类型
   // schema 定义为 INTEGER，但 v1 迁移使用了 REAL，需要统一
   if (tableExists('Charge')) {
-    const tableSql = getMigrationDb().prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='Charge'").get() as { sql: string } | undefined;
+    const _tableSql = getMigrationDb().prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='Charge'").get() as { sql: string } | undefined;
     // 检查 discount 列类型（通过 PRAGMA table_info）
     const columns = getMigrationDb().prepare('PRAGMA table_info(Charge)').all() as Array<{ name: string; type: string }>;
     const discountCol = columns.find(c => c.name === 'discount');
