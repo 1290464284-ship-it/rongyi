@@ -217,7 +217,7 @@ export class InventoryRepository {
     clinicParams: unknown[],
   ): { changes: number } {
     return db.prepare(
-      `UPDATE ${this.tableName} SET stock = stock + ?, updatedAt = ? WHERE id = ?${clinicClause}`,
+      `UPDATE ${this.tableName} SET stock = stock + ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${clinicClause}`,
     ).run(quantity, now, id, ...clinicParams);
   }
 
@@ -230,7 +230,7 @@ export class InventoryRepository {
     clinicParams: unknown[],
   ): { changes: number } {
     return db.prepare(
-      `UPDATE ${this.tableName} SET stock = stock - ?, updatedAt = ? WHERE id = ? AND stock >= ?${clinicClause}`,
+      `UPDATE ${this.tableName} SET stock = stock - ?, updatedAt = ? WHERE id = ? AND stock >= ? AND deletedAt IS NULL${clinicClause}`,
     ).run(quantity, now, id, quantity, ...clinicParams);
   }
 
@@ -244,7 +244,7 @@ export class InventoryRepository {
     clinicParams: unknown[],
   ): { changes: number } {
     return db.prepare(
-      `UPDATE ${this.tableName} SET stock = ?, updatedAt = ? WHERE id = ? AND stock = ?${clinicClause}`,
+      `UPDATE ${this.tableName} SET stock = ?, updatedAt = ? WHERE id = ? AND stock = ? AND deletedAt IS NULL${clinicClause}`,
     ).run(newStock, now, id, currentStock, ...clinicParams);
   }
 
