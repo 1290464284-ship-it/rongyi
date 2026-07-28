@@ -51,7 +51,7 @@ source/
 | 场景 | 命令 | 工作目录 |
 |------|------|--------|
 | **根级全量验证** | `pnpm verify` | 根目录 |
-| **Pre-commit 钩子** | 自动（lint-staged + typecheck + test，api/web 并行） | 提交时自动触发 |
+| **Pre-commit 钩子** | 自动（lint-staged + typecheck + test + arch:check，api/web 并行） | 提交时自动触发 |
 | API 单元测试 | `pnpm test` | `apps/api` |
 | API 覆盖率 | `pnpm test:cov` | `apps/api` |
 | API E2E 测试 | `pnpm test:e2e` | `apps/api` |
