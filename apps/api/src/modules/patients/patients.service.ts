@@ -236,10 +236,15 @@ export class PatientsService extends BaseService<Patient> {
   private decryptPatient(patient: Patient): Patient {
     if (!patient) return patient;
     const result = { ...patient };
-    if (result.idCard && result.idCard.includes(':')) {
-      const decrypted = decryptField(result.idCard);
-      // 统一使用 mask.ts 工具，避免 Knowledge Duplication
-      result.idCard = maskIdCard(decrypted) ?? decrypted;
+    try {
+      if (result.idCard && result.idCard.includes(':')) {
+        const decrypted = decryptField(result.idCard);
+        // 统一使用 mask.ts 工具，避免 Knowledge Duplication
+        result.idCard = maskIdCard(decrypted) ?? decrypted;
+      }
+    } catch {
+      // 加密数据损坏时保留原始值，避免单条记录导致整个列表 500
+      result.idCard = '[解密失败]';
     }
     // 列表展示时也对 phone 脱敏（详细查看时通过 getFullPhone 接口拿全量）
     if (result.phone) {
