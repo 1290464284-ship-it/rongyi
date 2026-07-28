@@ -8,6 +8,8 @@
  * 有的允许 +86 前缀，有的第二位范围不对。新增手机号校验需求统一使用此处。
  */
 
+import { BusinessValidationException } from '../../errors';
+
 const PHONE_REGEX = /^1[3-9]\d{9}$/;
 
 /**
@@ -28,11 +30,13 @@ export function isPhoneNumber(phone: string | null | undefined): boolean {
  *
  * @param phone 待校验的手机号
  * @param fieldName 字段名，用于错误提示
- * @throws BadRequestException 手机号格式不正确时抛出
+ * @throws BusinessValidationException 手机号格式不正确时抛出
  */
 export function validatePhoneNumber(phone: string, fieldName = '手机号'): void {
   if (!isPhoneNumber(phone)) {
-    throw new Error(`${fieldName}格式不正确，请输入11位中国大陆手机号`);
+    // P3 修复：原先 throw new Error 会被全局过滤器当作未知错误返回 HTTP 500
+    // 改为 BusinessValidationException 以返回 HTTP 400 + VALIDATION_ERROR
+    throw new BusinessValidationException(`${fieldName}格式不正确，请输入11位中国大陆手机号`);
   }
 }
 

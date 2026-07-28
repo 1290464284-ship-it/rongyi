@@ -1,7 +1,8 @@
 import { PaymentMethodService } from './payment-method.service';
+import { BusinessNotFoundException } from '@common/errors';
 import { MockDbService, MockDbRow } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
-import { NotFoundException } from '@nestjs/common';
+
 
 function createMockClinicContext(): ClinicContextService {
   return {
@@ -161,10 +162,10 @@ describe('PaymentMethodService', () => {
       expect(result.parentId).toBeNull();
     });
 
-    it('不存在的支付方式应抛出 NotFoundException', async () => {
+    it('不存在的支付方式应抛出 BusinessNotFoundException', async () => {
       await expect(
         service.updatePaymentMethod('non-existent', { name: 'test' }),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toThrow(BusinessNotFoundException);
     });
   });
 
@@ -198,10 +199,10 @@ describe('PaymentMethodService', () => {
       expect(deleteLogs[0].targetType).toBe('PaymentMethod');
     });
 
-    it('不存在的支付方式应抛出 NotFoundException', async () => {
+    it('不存在的支付方式应抛出 BusinessNotFoundException', async () => {
       await expect(
         service.deletePaymentMethod('non-existent'),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toThrow(BusinessNotFoundException);
     });
   });
 
@@ -233,10 +234,10 @@ describe('PaymentMethodService', () => {
       expect(result.isEnabled).toBe(0);
     });
 
-    it('不存在的支付方式应抛出 NotFoundException', async () => {
+    it('不存在的支付方式应抛出 BusinessNotFoundException', async () => {
       await expect(
         service.togglePaymentMethod('non-existent'),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toThrow(BusinessNotFoundException);
     });
   });
 
@@ -251,10 +252,10 @@ describe('PaymentMethodService', () => {
       expect(result.name).toBe('现金');
     });
 
-    it('不存在的 id 应抛出 NotFoundException', async () => {
+    it('不存在的 id 应抛出 BusinessNotFoundException', async () => {
       await expect(
         service.findOne('non-existent'),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toThrow(BusinessNotFoundException);
     });
   });
 });

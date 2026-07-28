@@ -11,7 +11,9 @@ import { ChargeStatusMachine } from "../charge/domain/charge-status-machine";
 import { ClinicContextService } from "../../../common/services/clinic-context.service";
 import { Refund } from "@dental/shared";
 import { MemberCardStatus, MemberCardLogType, DebtStatus, AuditLogType } from "../../../common/constants";
-import { StatsService } from '../../system/stats/stats.service';
+import { EventBusService } from '../../../common/events/event-bus.service';
+import { RefundCreatedEvent } from '../../../common/events/domain-events';
+import { RefundRepository } from './repositories/refund.repository';
 
 interface RefundDto {
   chargeId: string;
@@ -32,7 +34,8 @@ export class RefundsService extends BaseService<Refund> {
     dbService: DbService,
     clinicContext: ClinicContextService,
     private idempotency: IdempotencyService,
-    private statsService: StatsService,
+    private eventBus: EventBusService,
+    private refundRepository: RefundRepository,
   ) {
     super(dbService, clinicContext, 'Refund', [], [], [], true, [], undefined, undefined, ['amount']);
   }
@@ -46,11 +49,24 @@ export class RefundsService extends BaseService<Refund> {
 
     // Check charge status before processing
     const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
-    const charge = this.dbService.prepare(`SELECT status FROM Charge WHERE id = ? AND deletedAt IS NULL${clinicClause}`).get(dto.chargeId, ...clinicParams) as { status: string } | undefined;
-    if (!charge) {
+    const chargeStatus = this.refundRepository.getChargeStatus(this.dbService, dto.chargeId, clinicClause, clinicParams);
+    if (!chargeStatus) {
+      this.logger.warn({
+        message: '退款失败：收费记录不存在',
+        chargeId: dto.chargeId,
+        amount: dto.amount,
+        operatorId: user?.id,
+      });
       throw new BusinessNotFoundException("收费记录不存在");
     }
-    if (charge.status === 'CANCELLED') {
+    if (chargeStatus.status === 'CANCELLED') {
+      this.logger.warn({
+        message: '退款失败：收费单已取消',
+        chargeId: dto.chargeId,
+        amount: dto.amount,
+        chargeStatus: chargeStatus.status,
+        operatorId: user?.id,
+      });
       throw new BusinessValidationException("该收费单已取消，无法退款");
     }
 
@@ -62,7 +78,7 @@ export class RefundsService extends BaseService<Refund> {
 
     const doRefundInTx = (db: IDatabase) => {
       const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
-      const charge = db.prepare(`SELECT id, patientId, totalAmount, paidAmount, refundedAmount, status, payMethod FROM Charge WHERE id = ? AND deletedAt IS NULL${clinicClause}`).get(dto.chargeId, ...clinicParams) as Record<string, unknown> | undefined;
+      const charge = this.refundRepository.findChargeForRefund(db, dto.chargeId, clinicClause, clinicParams);
       if (!charge) throw new BusinessNotFoundException("收费记录不存在");
 
       const paidAmountCents = Number(charge.paidAmount) || 0;
@@ -77,17 +93,24 @@ export class RefundsService extends BaseService<Refund> {
         throw new BusinessValidationException(`退款金额不能超过可退金额 ${refundable.toFixed(2)}`);
       }
 
-      db.prepare(
-        "INSERT INTO Refund (id, chargeId, patientId, amount, reason, operatorId, operatorName, clinicId, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-      ).run(refundId, dto.chargeId, charge.patientId, amountCents, dto.reason || null, operatorId, operatorName, clinicId, now);
+      this.refundRepository.create(db, {
+        id: refundId,
+        chargeId: dto.chargeId,
+        patientId: charge.patientId,
+        amount: amountCents,
+        reason: dto.reason || null,
+        operatorId,
+        operatorName,
+        clinicId,
+        createdAt: now,
+      });
 
       const newRefundedCents = refundedAmountCents + amountCents;
       const newRefunded = centsToYuan(newRefundedCents);
-      const chargeBefore = { paidAmount, refundedAmount, status: charge.status as string };
-      const newStatus = ChargeStatusMachine.resolveByRefund(paidAmount, newRefunded, charge.status as string);
-      ChargeStatusMachine.transition(charge.status as string, newStatus);
-      const chargeUpdateResult = db.prepare(`UPDATE Charge SET refundedAmount = ?, status = ?, updatedAt = ? WHERE id = ?${clinicClause} AND refundedAmount + ? <= paidAmount`)
-        .run(newRefundedCents, newStatus, now, dto.chargeId, ...clinicParams, amountCents);
+      const chargeBefore = { paidAmount, refundedAmount, status: charge.status };
+      const newStatus = ChargeStatusMachine.resolveByRefundCents(paidAmountCents, newRefundedCents, charge.status);
+      ChargeStatusMachine.transition(charge.status, newStatus);
+      const chargeUpdateResult = this.refundRepository.updateChargeRefund(db, dto.chargeId, newRefundedCents, newStatus, now, amountCents, clinicClause, clinicParams, refundedAmountCents);
       if (chargeUpdateResult.changes === 0) {
         throw new BusinessValidationException("退款金额超过可退额度，可能存在并发退款");
       }
@@ -95,7 +118,7 @@ export class RefundsService extends BaseService<Refund> {
       const memberCardRefundResult = this.refundMemberCardIfApplicable(db, {
         chargeId: dto.chargeId,
         refundAmount: dto.amount,
-        patientId: charge.patientId as string,
+        patientId: charge.patientId,
         reason: dto.reason,
         operatorId,
         now,
@@ -125,30 +148,35 @@ export class RefundsService extends BaseService<Refund> {
     };
 
     const idempotencyKey = dto.requestId ? `refund:${dto.chargeId}:${dto.requestId}` : null;
-    if (idempotencyKey) {
-      const result = await this.idempotency.executeInTransaction(
-        { key: idempotencyKey, type: "REFUND" },
-        (db) => doRefundInTx(db),
-      );
-      this.statsService.invalidateStatsCache('dashboard');
-      this.statsService.invalidateStatsCache('revenue');
-      this.statsService.invalidateStatsCache('charge');
-      this.statsService.invalidateStatsCache('doctorWorkload');
-      this.statsService.invalidateStatsCache('revenueByDoctor');
-      this.statsService.invalidateStatsCache('revenueByCategory');
-      this.statsService.invalidateStatsCache('member');
+    try {
+      let result;
+      if (idempotencyKey) {
+        result = await this.idempotency.executeInTransaction(
+          { key: idempotencyKey, type: "REFUND" },
+          (db) => doRefundInTx(db),
+        );
+      } else {
+        result = this.dbService.transaction((db) => doRefundInTx(db));
+      }
+      this.eventBus.emit(new RefundCreatedEvent(refundId, dto.chargeId, dto.amount, clinicId));
       return result;
+    } catch (e: unknown) {
+      const err = e instanceof Error ? e : new Error(String(e));
+      this.logger.error(
+        {
+          message: `退款失败: ${err.message}`,
+          refundId,
+          chargeId: dto.chargeId,
+          amount: dto.amount,
+          reason: dto.reason,
+          operatorId,
+          operatorName,
+          idempotencyKey,
+        },
+        err,
+      );
+      throw e;
     }
-
-    const result = this.dbService.transaction((db) => doRefundInTx(db));
-    this.statsService.invalidateStatsCache('dashboard');
-    this.statsService.invalidateStatsCache('revenue');
-    this.statsService.invalidateStatsCache('charge');
-    this.statsService.invalidateStatsCache('doctorWorkload');
-    this.statsService.invalidateStatsCache('revenueByDoctor');
-    this.statsService.invalidateStatsCache('revenueByCategory');
-    this.statsService.invalidateStatsCache('member');
-    return result;
   }
 
   private refundMemberCardIfApplicable(
@@ -160,14 +188,10 @@ export class RefundsService extends BaseService<Refund> {
     const refundAmountCents = yuanToCents(refundAmount);
     const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
 
-    const consumeRow = db.prepare(
-      `SELECT cardId, COALESCE(SUM(amount), 0) AS totalConsumed FROM MemberCardLog WHERE chargeId = ? AND type = ?${clinicClause} GROUP BY cardId`
-    ).get(chargeId, MemberCardLogType.CONSUME, ...clinicParams) as { cardId: string; totalConsumed: number } | undefined;
+    const consumeRow = this.refundRepository.findMemberCardConsumeSum(db, chargeId, MemberCardLogType.CONSUME, clinicClause, clinicParams);
     if (!consumeRow) return null;
 
-    const refundedRow = db.prepare(
-      `SELECT COALESCE(SUM(amount), 0) AS totalRefunded FROM MemberCardLog WHERE chargeId = ? AND type = ?${clinicClause}`
-    ).get(chargeId, MemberCardLogType.REFUND, ...clinicParams) as { totalRefunded: number };
+    const refundedRow = this.refundRepository.findMemberCardRefundSum(db, chargeId, MemberCardLogType.REFUND, clinicClause, clinicParams);
 
     const totalConsumedAbsCents = Math.abs(Number(consumeRow.totalConsumed) || 0);
     const totalAlreadyRefundedCents = Number(refundedRow.totalRefunded) || 0;
@@ -179,23 +203,27 @@ export class RefundsService extends BaseService<Refund> {
     const actualRefund = centsToYuan(actualRefundCents);
     const cardId = consumeRow.cardId;
 
-    const updateResult = db.prepare(
-      `UPDATE MemberCard SET balance = balance + ?, totalConsume = MAX(0, totalConsume - ?), updatedAt = ? WHERE id = ? AND status = ?${clinicClause}`
-    ).run(actualRefundCents, actualRefundCents, now, cardId, MemberCardStatus.ACTIVE, ...clinicParams);
+    const updateResult = this.refundRepository.updateMemberCardBalance(db, cardId, actualRefundCents, now, chargeId, clinicClause, clinicParams);
     if (updateResult.changes === 0) {
-      const existingCard = db.prepare(`SELECT status FROM MemberCard WHERE id = ?${clinicClause}`).get(cardId, ...clinicParams) as { status: string } | undefined;
+      const existingCard = this.refundRepository.getMemberCardFields(db, cardId, clinicClause, clinicParams);
       if (!existingCard) throw new BusinessValidationException("会员卡退款失败：卡不存在");
-      if (existingCard.status !== MemberCardStatus.ACTIVE) throw new BusinessValidationException("会员卡已禁用，无法退款");
-      throw new BusinessValidationException("会员卡退款失败");
+      throw new BusinessValidationException("会员卡可退金额不足，可能存在并发退款，请刷新后重试");
     }
 
-    const updatedCard = db.prepare(`SELECT balance, totalConsume FROM MemberCard WHERE id = ?${clinicClause}`).get(cardId, ...clinicParams) as { balance: number; totalConsume: number };
-    const balanceAfterCents = Number(updatedCard.balance) || 0;
+    const updatedCard = this.refundRepository.getMemberCardFields(db, cardId, clinicClause, clinicParams);
+    const balanceAfterCents = Number(updatedCard?.balance) || 0;
     const balanceAfter = centsToYuan(balanceAfterCents);
 
-    db.prepare(
-      "INSERT INTO MemberCardLog (id, cardId, type, amount, balanceAfter, chargeId, remark, clinicId, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-    ).run(crypto.randomUUID(), cardId, MemberCardLogType.REFUND, actualRefundCents, balanceAfterCents, chargeId, reason || "收费退款", clinicId || null, now);
+    this.refundRepository.createMemberCardLog(db, {
+      id: crypto.randomUUID(),
+      cardId,
+      amount: actualRefundCents,
+      balanceAfter: balanceAfterCents,
+      chargeId,
+      remark: reason || "收费退款",
+      clinicId,
+      createdAt: now,
+    });
 
     return { cardId, refundedAmount: actualRefund, balanceAfter };
   }
@@ -209,10 +237,10 @@ export class RefundsService extends BaseService<Refund> {
 
     const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
 
-    const debt = db.prepare(`SELECT id, totalAmount, paidAmount, debtAmount, status FROM DebtRecord WHERE chargeId = ? AND deletedAt IS NULL${clinicClause}`).get(chargeId, ...clinicParams) as Record<string, unknown> | undefined;
+    const debt = this.refundRepository.findDebtByCharge(db, chargeId, clinicClause, clinicParams);
     if (!debt) return null;
 
-    const debtId = debt.id as string;
+    const debtId = debt.id;
     const oldPaidCents = Math.max(0, Number(debt.paidAmount) || 0);
     const oldDebtCents = Number(debt.debtAmount) || 0;
     const reducePaidCents = centsLessThanOrEqual(refundAmountCents, oldPaidCents) ? refundAmountCents : oldPaidCents;
@@ -223,9 +251,18 @@ export class RefundsService extends BaseService<Refund> {
     const totalAmountCents = newDebtCents + newPaidCents;
     const newStatus = newPaidCents <= 0 ? DebtStatus.UNPAID : (newPaidCents < totalAmountCents ? DebtStatus.PARTIAL : DebtStatus.PAID);
 
-    db.prepare(
-      `UPDATE DebtRecord SET paidAmount = ?, debtAmount = ?, status = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${clinicClause}`
-    ).run(newPaidCents, newDebtCents, newStatus, now, debtId, ...clinicParams);
+    const updateResult = this.refundRepository.updateDebt(db, debtId, {
+      paidAmount: newPaidCents,
+      debtAmount: newDebtCents,
+      status: newStatus,
+      updatedAt: now,
+      oldPaidAmount: oldPaidCents,
+      oldDebtAmount: oldDebtCents,
+    }, clinicClause, clinicParams);
+
+    if (updateResult.changes === 0) {
+      throw new BusinessValidationException("欠费记录并发修改，请刷新后重试");
+    }
 
     return { debtId, paidAmount: newPaid, debtAmount: newDebt, status: newStatus };
   }

@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 
 interface CounterLabels {
   [key: string]: string;
@@ -34,7 +34,7 @@ interface GaugeMetric {
 }
 
 @Injectable()
-export class MetricsService implements OnModuleInit {
+export class MetricsService implements OnModuleInit, OnModuleDestroy {
   private counters: Map<string, CounterMetric> = new Map();
   private histograms: Map<string, HistogramMetric> = new Map();
   private gauges: Map<string, GaugeMetric> = new Map();
@@ -47,6 +47,10 @@ export class MetricsService implements OnModuleInit {
     this.initHistograms();
     this.initGauges();
     this.startEventLoopDelayMonitor();
+  }
+
+  onModuleDestroy() {
+    this.stopEventLoopDelayMonitor();
   }
 
   private initCounters() {
@@ -213,6 +217,13 @@ export class MetricsService implements OnModuleInit {
       lastTime = now;
     }, intervalMs);
     this.eventLoopDelayInterval.unref();
+  }
+
+  private stopEventLoopDelayMonitor() {
+    if (this.eventLoopDelayInterval) {
+      clearInterval(this.eventLoopDelayInterval);
+      this.eventLoopDelayInterval = null;
+    }
   }
 
   collectSystemMetrics() {

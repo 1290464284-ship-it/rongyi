@@ -1,7 +1,8 @@
 import { ChairsService } from './chairs.service';
+import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+
 
 function createMockClinicContext(clinicId: string | null = 'test-clinic-001'): ClinicContextService {
   return {
@@ -125,8 +126,8 @@ describe('ChairsService', () => {
       expect((result as any).name).toBe('新名字');
     });
 
-    it('不存在的 ID 抛出 NotFoundException', async () => {
-      await expect(service.update('non-existent', { name: 'x' })).rejects.toThrow(NotFoundException);
+    it('不存在的 ID 抛出 BusinessNotFoundException', async () => {
+      await expect(service.update('non-existent', { name: 'x' })).rejects.toThrow(BusinessNotFoundException);
     });
   });
 
@@ -144,8 +145,8 @@ describe('ChairsService', () => {
       expect(deleted?.deletedAt).toBeDefined();
     });
 
-    it('不存在的 ID 抛出 NotFoundException', async () => {
-      await expect(service.softDelete('non-existent')).rejects.toThrow(NotFoundException);
+    it('不存在的 ID 抛出 BusinessNotFoundException', async () => {
+      await expect(service.softDelete('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 
@@ -175,8 +176,8 @@ describe('ChairsService', () => {
       expect(result.id).toBe('chair-1');
     });
 
-    it('不存在的 ID 抛出 NotFoundException', async () => {
-      await expect(service.findOne('non-existent')).rejects.toThrow(NotFoundException);
+    it('不存在的 ID 抛出 BusinessNotFoundException', async () => {
+      await expect(service.findOne('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 
@@ -198,8 +199,8 @@ describe('ChairsService', () => {
       await expect(serviceNoCtx.findMany({})).rejects.toThrow();
     });
 
-    it('无效 sortBy 抛出 BadRequestException', async () => {
-      await expect(service.findMany({ sortBy: '1invalid' })).rejects.toThrow(BadRequestException);
+    it('无效 sortBy 抛出 BusinessValidationException', async () => {
+      await expect(service.findMany({ sortBy: '1invalid' })).rejects.toThrow(BusinessValidationException);
     });
 
     it('游标分页 cursor', async () => {

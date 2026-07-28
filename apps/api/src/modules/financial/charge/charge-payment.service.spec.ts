@@ -1,11 +1,16 @@
 /* eslint-disable sonarjs/no-floating-point-equality */
 import { ChargePaymentService } from './charge-payment.service';
+import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
 import { ChargeService } from './charge.service';
+import { MemberCardsService } from '../member-cards/member-cards.service';
+import { MemberCardLogRepository } from '../member-cards/repositories/member-card-log.repository';
+import { MemberPointLogRepository } from '../member-cards/repositories/member-point-log.repository';
 import { MockDbService, MockDbRow } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import { IdempotencyService } from '../../../common/services/idempotency.service';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { StatsService } from '../../system/stats/stats.service';
+
+import { EventBusService } from '../../../common/events/event-bus.service';
+import { ChargeRepository } from './repositories/charge.repository';
 
 function createMockClinicContext(): ClinicContextService {
   return {
@@ -24,29 +29,40 @@ function createMockIdempotency(db: MockDbService): IdempotencyService {
   } as unknown as IdempotencyService;
 }
 
-function createMockStatsService(): jest.Mocked<StatsService> {
+function createMockEventBus(): jest.Mocked<EventBusService> {
   return {
-    invalidateStatsCache: jest.fn(),
-  } as unknown as jest.Mocked<StatsService>;
+    emit: jest.fn(),
+    on: jest.fn(),
+    onAll: jest.fn(),
+  } as unknown as jest.Mocked<EventBusService>;
 }
 
 describe('ChargePaymentService', () => {
   let service: ChargePaymentService;
   let db: MockDbService;
   let chargeService: ChargeService;
-  let statsService: jest.Mocked<StatsService>;
+  let eventBus: jest.Mocked<EventBusService>;
 
   beforeEach(() => {
     db = new MockDbService();
-    statsService = createMockStatsService();
-    chargeService = new ChargeService(db as any, createMockClinicContext(), statsService);
+    eventBus = createMockEventBus();
+    chargeService = new ChargeService(db as any, createMockClinicContext(), eventBus, new ChargeRepository(), createMockIdempotency(db));
+    // P0 修复：使用真实 MemberCardsService 实例，以支持 consumeSync 委托调用
+    const memberCardsService = new MemberCardsService(
+      db as any,
+      createMockClinicContext(),
+      createMockIdempotency(db),
+      new MemberCardLogRepository(),
+      new MemberPointLogRepository(),
+      eventBus,
+    );
     service = new ChargePaymentService(
       db as any,
       createMockClinicContext(),
       createMockIdempotency(db),
       chargeService,
-      {} as any, // memberCardsService not needed for basic tests
-      statsService,
+      memberCardsService,
+      eventBus,
     );
   });
 
@@ -99,56 +115,56 @@ describe('ChargePaymentService', () => {
   // ==================== 支付金额校验 ====================
 
   describe('payCharge - 金额校验', () => {
-    it('支付金额为 0 应抛出 BadRequestException', async () => {
+    it('支付金额为 0 应抛出 BusinessValidationException', async () => {
       seedCharge();
       await expect(
         service.payCharge('charge-001', { amount: 0, payMethod: 'CASH' }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
-    it('支付金额为负数应抛出 BadRequestException', async () => {
+    it('支付金额为负数应抛出 BusinessValidationException', async () => {
       seedCharge();
       await expect(
         service.payCharge('charge-001', { amount: -100, payMethod: 'CASH' }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
-    it('支付金额为 NaN 应抛出 BadRequestException', async () => {
+    it('支付金额为 NaN 应抛出 BusinessValidationException', async () => {
       seedCharge();
       await expect(
         service.payCharge('charge-001', { amount: NaN, payMethod: 'CASH' }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
-    it('支付金额为 Infinity 应抛出 BadRequestException', async () => {
+    it('支付金额为 Infinity 应抛出 BusinessValidationException', async () => {
       seedCharge();
       await expect(
         service.payCharge('charge-001', { amount: Infinity, payMethod: 'CASH' }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
   });
 
   // ==================== 收费记录校验 ====================
 
   describe('payCharge - 收费记录校验', () => {
-    it('不存在的收费记录应抛出 NotFoundException', async () => {
+    it('不存在的收费记录应抛出 BusinessNotFoundException', async () => {
       await expect(
         service.payCharge('non-existent', { amount: 100, payMethod: 'CASH' }),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toThrow(BusinessNotFoundException);
     });
 
-    it('已结清的收费记录应抛出 BadRequestException', async () => {
+    it('已结清的收费记录应抛出 BusinessValidationException', async () => {
       seedCharge({ paidAmount: 30000, status: 'PAID' });
       await expect(
         service.payCharge('charge-001', { amount: 100, payMethod: 'CASH' }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
-    it('支付金额超过待付金额应抛出 BadRequestException', async () => {
+    it('支付金额超过待付金额应抛出 BusinessValidationException', async () => {
       seedCharge({ totalAmount: 30000, paidAmount: 20000 }); // 待付 100 yuan
       await expect(
         service.payCharge('charge-001', { amount: 200, payMethod: 'CASH' }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
   });
 
@@ -246,7 +262,7 @@ describe('ChargePaymentService', () => {
       expect(consumeLogs[0].chargeId).toBe('charge-001');
     });
 
-    it('会员卡余额不足应抛出 BadRequestException', async () => {
+    it('会员卡余额不足应抛出 BusinessValidationException', async () => {
       seedCharge({ totalAmount: 50000 }); // 500 yuan
       seedMemberCard({ balance: 20000 }); // 200 yuan
 
@@ -256,10 +272,10 @@ describe('ChargePaymentService', () => {
           payMethod: 'MEMBER_CARD',
           memberCardId: 'card-001',
         }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
-    it('会员卡不存在应抛出 BadRequestException', async () => {
+    it('会员卡不存在应抛出 BusinessNotFoundException', async () => {
       seedCharge();
       await expect(
         service.payCharge('charge-001', {
@@ -267,10 +283,10 @@ describe('ChargePaymentService', () => {
           payMethod: 'MEMBER_CARD',
           memberCardId: 'non-existent',
         }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessNotFoundException);
     });
 
-    it('会员卡状态非 ACTIVE 应抛出 BadRequestException', async () => {
+    it('会员卡状态非 ACTIVE 应抛出 BusinessValidationException', async () => {
       seedCharge();
       seedMemberCard({ status: 'DISABLED' });
 
@@ -280,7 +296,7 @@ describe('ChargePaymentService', () => {
           payMethod: 'MEMBER_CARD',
           memberCardId: 'card-001',
         }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
     it('会员卡支付应写入会员卡消费日志', async () => {
@@ -343,10 +359,10 @@ describe('ChargePaymentService', () => {
   // ==================== 收费记录不存在 ====================
 
   describe('payCharge - 不存在的收费记录', () => {
-    it('对不存在的收费单支付应抛出 NotFoundException', async () => {
+    it('对不存在的收费单支付应抛出 BusinessNotFoundException', async () => {
       await expect(
         service.payCharge('non-existent', { amount: 100, payMethod: 'CASH' }),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toThrow(BusinessNotFoundException);
     });
   });
 

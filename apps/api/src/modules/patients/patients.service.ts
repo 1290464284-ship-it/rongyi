@@ -15,7 +15,9 @@ import { validateColumnName, escapeLike } from "../../common/utils/db/validate-n
 import { Pagination } from "@dental/shared";
 import { Gender } from "@dental/shared";
 import { AuditLogType } from "../../common/constants";
-import { StatsService } from '../system/stats/stats.service';
+import { EventBusService } from '../../common/events/event-bus.service';
+import { PatientRegisteredEvent } from '../../common/events/domain-events';
+import { PatientRepository } from './repositories/patient.repository';
 
 export interface Patient {
   id: string;
@@ -49,7 +51,8 @@ export class PatientsService extends BaseService<Patient> {
   constructor(
     dbService: DbService,
     clinicContext: ClinicContextService,
-    private statsService: StatsService,
+    private eventBus: EventBusService,
+    private patientRepository: PatientRepository,
   ) {
     // 注册 tags/medicationHistory/systemicDiseases 为 JSON 字段，确保读取时正确解析为数组
     super(dbService, clinicContext, "Patient", ["allergies","medicalHistory","tags","medicationHistory","systemicDiseases"], ["name","phone"], [
@@ -85,25 +88,34 @@ export class PatientsService extends BaseService<Patient> {
         const now = new Date().toISOString();
         const code = dto.code || this.generateCode('P');
         const clinicId = this.clinicContext.getClinicId();
-        this.dbService.prepare(
-          `INSERT INTO Patient (id, code, name, gender, birthDate, phone, idCard, address, occupation, remark, source, tags, allergies, medicalHistory, medicationHistory, systemicDiseases, referrer, emergencyContact, emergencyPhone, familyId, active, clinicId, createdAt, updatedAt)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?)`
-        ).run(
-          id, code, sanitizePlain(dto.name), dto.gender, dto.birthDate || null,
-          sanitizePlain(dto.phone), dto.idCard ? encryptField(dto.idCard) : null,
-          sanitizePlain(dto.address || ''), sanitizePlain(dto.occupation || ''),
-          sanitizePlain(dto.remark || ''), dto.source || "WALK_IN",
-          JSON.stringify(dto.tags || []), JSON.stringify(dto.allergies || []),
-          JSON.stringify(dto.medicalHistory || []), JSON.stringify(dto.medicationHistory || []),
-          JSON.stringify(dto.systemicDiseases || []), dto.referrer || null,
-          dto.emergencyContact || null, dto.emergencyPhone || null,
-          dto.familyId || null, clinicId || null, now, now
-        );
+        this.patientRepository.create(this.dbService, {
+          id,
+          code,
+          name: sanitizePlain(dto.name),
+          gender: dto.gender,
+          birthDate: dto.birthDate || null,
+          phone: sanitizePlain(dto.phone),
+          idCard: dto.idCard ? encryptField(dto.idCard) : null,
+          address: sanitizePlain(dto.address || ''),
+          occupation: sanitizePlain(dto.occupation || ''),
+          remark: sanitizePlain(dto.remark || ''),
+          source: dto.source || "WALK_IN",
+          tags: JSON.stringify(dto.tags || []),
+          allergies: JSON.stringify(dto.allergies || []),
+          medicalHistory: JSON.stringify(dto.medicalHistory || []),
+          medicationHistory: JSON.stringify(dto.medicationHistory || []),
+          systemicDiseases: JSON.stringify(dto.systemicDiseases || []),
+          referrer: dto.referrer || null,
+          emergencyContact: dto.emergencyContact || null,
+          emergencyPhone: dto.emergencyPhone || null,
+          familyId: dto.familyId || null,
+          clinicId: clinicId || null,
+          createdAt: now,
+          updatedAt: now,
+        });
         const result = this.decryptPatient(await super.findOne(id));
 
-        this.statsService.invalidateStatsCache('dashboard');
-        this.statsService.invalidateStatsCache('patient');
-        this.statsService.invalidateStatsCache('patientGrowth');
+        this.eventBus.emit(new PatientRegisteredEvent(id, clinicId || null));
 
         return result;
       } catch (err: unknown) {
@@ -189,28 +201,17 @@ export class PatientsService extends BaseService<Patient> {
       });
     }
 
-    const whereClause = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
-
-    const countQuery = `SELECT COUNT(*) as total FROM Patient${whereClause}`;
-    const countRow = this.dbService.prepare(countQuery).get(...params) as { total: number };
-    const total = countRow.total;
-
-    let dataQuery = `SELECT id, code, name, gender, birthDate, phone, idCard, source, tags, active, createdAt, updatedAt FROM Patient${whereClause}`;
-    const dataParams: unknown[] = [...params];
-
-    if (cursor) {
-      const whereOrAnd = conditions.length > 0 ? 'AND' : 'WHERE';
-      const cursorOp = validSortOrder === 'ASC' ? '>' : '<';
-      dataQuery += ` ${whereOrAnd} id ${cursorOp} ?`;
-      dataParams.push(cursor);
-      dataQuery += ` ORDER BY ${sortBy} ${validSortOrder}, id ${validSortOrder} LIMIT ?`;
-      dataParams.push(pageSize);
-    } else {
-      dataQuery += ` ORDER BY ${sortBy} ${validSortOrder}, id ${validSortOrder} LIMIT ? OFFSET ?`;
-      dataParams.push(pageSize, (page - 1) * pageSize);
-    }
-
-    const items = this.dbService.prepare(dataQuery).all(...dataParams) as Patient[];
+    const { items: rawItems, total } = this.patientRepository.findMany(this.dbService, {
+      selectColumns: 'id, code, name, gender, birthDate, phone, idCard, source, tags, active, createdAt, updatedAt',
+      conditions,
+      params,
+      sortBy,
+      sortOrder: validSortOrder,
+      cursor,
+      page,
+      pageSize,
+    });
+    const items = (rawItems as unknown) as Patient[];
 
     this.parseJsonFields(items);
 
@@ -266,5 +267,21 @@ export class PatientsService extends BaseService<Patient> {
     const patient = await super.findOne(patientId);
     if (!patient.idCard) return null;
     return decryptField(patient.idCard);
+  }
+
+  /**
+   * 软删除患者（覆盖 BaseService 的硬删除行为）
+   * 执行软删除：设置 deletedAt + active=0 + 级联软删除关联表 + 唯一字段后缀
+   */
+  async remove(id: string): Promise<unknown> {
+    await this.softDelete(id);
+    // 患者模型特有：软删除后标记为 inactive
+    const clinicId = this.clinicContext.getClinicId();
+    if (clinicId) {
+      this.dbService.prepare('UPDATE Patient SET active = 0 WHERE id = ? AND clinicId = ?').run(id, clinicId);
+    } else {
+      this.dbService.prepare('UPDATE Patient SET active = 0 WHERE id = ?').run(id);
+    }
+    return id;
   }
 }

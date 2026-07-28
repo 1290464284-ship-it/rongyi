@@ -1,7 +1,8 @@
 import { ImagingService } from './imaging.service';
+import { BusinessNotFoundException } from '@common/errors';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
-import { NotFoundException } from '@nestjs/common';
+
 
 function createMockClinicContext(clinicId: string | null = 'test-clinic-001'): ClinicContextService {
   return {
@@ -88,8 +89,8 @@ describe('ImagingService', () => {
       expect((result as any).title).toBe('全景片');
     });
 
-    it('不存在的 ID 抛出 NotFoundException', async () => {
-      await expect(service.findOne('non-existent-id')).rejects.toThrow(NotFoundException);
+    it('不存在的 ID 抛出 BusinessNotFoundException', async () => {
+      await expect(service.findOne('non-existent-id')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 
@@ -126,8 +127,8 @@ describe('ImagingService', () => {
       expect((result as any).title).toBe('更新后的全景片');
     });
 
-    it('不存在的记录抛出 NotFoundException', async () => {
-      await expect(service.update('non-existent-id', { title: 'test' } as any)).rejects.toThrow(NotFoundException);
+    it('不存在的记录抛出 BusinessNotFoundException', async () => {
+      await expect(service.update('non-existent-id', { title: 'test' } as any)).rejects.toThrow(BusinessNotFoundException);
     });
   });
 
@@ -145,8 +146,8 @@ describe('ImagingService', () => {
       expect(deleted?.deletedAt).toBeDefined();
     });
 
-    it('不存在的记录抛出 NotFoundException', async () => {
-      await expect(service.softDelete('non-existent-id')).rejects.toThrow(NotFoundException);
+    it('不存在的记录抛出 BusinessNotFoundException', async () => {
+      await expect(service.softDelete('non-existent-id')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 

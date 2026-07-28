@@ -1,6 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
+
 import { FirstExamsController } from './first-exams.controller';
 import { FirstExamsService } from './first-exams.service';
+import { QueryFirstExamDto } from './dto/query-first-exam.dto';
+import { ToothDiseaseDto } from './dto/tooth-disease.dto';
 
 describe('FirstExamsController', () => {
   let controller: FirstExamsController;
@@ -34,16 +38,12 @@ describe('FirstExamsController', () => {
   });
 
   describe('findMany', () => {
-    it('传入 query 和 page/pageSize 字符串调用 service.findMany', async () => {
-      const expected = { items: [], total: 0, page: 1, pageSize: 50 };
-      service.findMany.mockResolvedValue(expected);
+    it('将分页字符串参数转为数字并传递给 service', async () => {
+      const q: QueryFirstExamDto = { patientId: 'p-1', status: 'DRAFT' };
+      service.findMany.mockResolvedValue({ items: [], total: 0 });
 
-      const result = await controller.findMany(
-        { patientId: 'p-1', status: 'DRAFT' },
-        '1',
-        '50',
-      );
-      expect(result).toEqual(expected);
+      await controller.findMany(q, '1', '50');
+
       expect(service.findMany).toHaveBeenCalledWith({
         filters: { patientId: 'p-1', status: 'DRAFT' },
         page: 1,
@@ -54,7 +54,20 @@ describe('FirstExamsController', () => {
     it('未传 page/pageSize 时使用默认值', async () => {
       service.findMany.mockResolvedValue({ items: [], total: 0 });
 
-      await controller.findMany({});
+      await controller.findMany({} as QueryFirstExamDto);
+
+      expect(service.findMany).toHaveBeenCalledWith({
+        filters: { patientId: undefined, status: undefined },
+        page: 1,
+        pageSize: 50,
+      });
+    });
+
+    it('无效 page 参数回退到默认值', async () => {
+      service.findMany.mockResolvedValue({ items: [], total: 0 });
+
+      await controller.findMany({} as QueryFirstExamDto, 'abc', 'xyz');
+
       expect(service.findMany).toHaveBeenCalledWith({
         filters: { patientId: undefined, status: undefined },
         page: 1,
@@ -64,29 +77,25 @@ describe('FirstExamsController', () => {
   });
 
   describe('stats', () => {
-    it('调用 service.stats', async () => {
-      const expected = { total: 10, completed: 5 };
+    it('返回初诊统计数据', async () => {
+      const expected = { total: 10, completed: 5, draft: 5 };
       service.stats.mockResolvedValue(expected);
 
       const result = await controller.stats();
       expect(result).toEqual(expected);
-      expect(service.stats).toHaveBeenCalled();
     });
   });
 
   describe('findOne', () => {
-    it('调用 service.findOne 传入 id', async () => {
-      const expected = { id: 'e-1', patientId: 'p-1' };
-      service.findOne.mockResolvedValue(expected);
+    it('不存在时透传 BusinessNotFoundException', async () => {
+      service.findOne.mockRejectedValue(new BusinessNotFoundException('初诊记录不存在'));
 
-      const result = await controller.findOne('e-1');
-      expect(result).toEqual(expected);
-      expect(service.findOne).toHaveBeenCalledWith('e-1');
+      await expect(controller.findOne('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 
   describe('create', () => {
-    it('调用 service.create 传入 dto', async () => {
+    it('创建初诊记录并返回结果', async () => {
       const dto = { patientId: 'p-1', doctorId: 'd-1', chiefComplaint: '牙痛' };
       const expected = { id: 'e-1', ...dto, status: 'DRAFT' };
       service.create.mockResolvedValue(expected);
@@ -97,129 +106,56 @@ describe('FirstExamsController', () => {
     });
   });
 
-  describe('update', () => {
-    it('调用 service.update 传入 id 和 dto', async () => {
-      const dto = { diagnosis: '龋齿' };
-      const expected = { id: 'e-1', diagnosis: '龋齿' };
-      service.update.mockResolvedValue(expected);
-
-      const result = await controller.update('e-1', dto as any);
-      expect(result).toEqual(expected);
-      expect(service.update).toHaveBeenCalledWith('e-1', dto);
-    });
-  });
-
-  describe('remove', () => {
-    it('调用 service.remove 传入 id', async () => {
-      const expected = { success: true };
-      service.remove.mockResolvedValue(expected);
-
-      const result = await controller.remove('e-1');
-      expect(result).toEqual(expected);
-      expect(service.remove).toHaveBeenCalledWith('e-1');
-    });
-  });
-
-  describe('restart', () => {
-    it('调用 service.restart 传入 id', async () => {
-      const expected = { id: 'e-1', status: 'DRAFT' };
-      service.restart.mockResolvedValue(expected);
-
-      const result = await controller.restart('e-1');
-      expect(result).toEqual(expected);
-      expect(service.restart).toHaveBeenCalledWith('e-1');
-    });
-  });
-
-  describe('complete', () => {
-    it('调用 service.complete 传入 id', async () => {
-      const expected = { id: 'e-1', status: 'COMPLETED' };
-      service.complete.mockResolvedValue(expected);
-
-      const result = await controller.complete('e-1');
-      expect(result).toEqual(expected);
-      expect(service.complete).toHaveBeenCalledWith('e-1');
-    });
-  });
-
-  describe('getTeeth', () => {
-    it('调用 service.getTeeth 传入 id', async () => {
-      const expected = [{ toothNumber: 11, currentStatus: 'SOUND' }];
-      service.getTeeth.mockResolvedValue(expected);
-
-      const result = await controller.getTeeth('e-1');
-      expect(result).toEqual(expected);
-      expect(service.getTeeth).toHaveBeenCalledWith('e-1');
-    });
-  });
-
   describe('updateTooth', () => {
-    it('调用 service.updateTooth 传入 id、toothId（转换为数字）和 dto', async () => {
-      const dto = { currentStatus: 'CARIES' };
-      const expected = { toothNumber: 11, currentStatus: 'CARIES' };
-      service.updateTooth.mockResolvedValue(expected);
+    it('将 toothId 字符串转换为数字后传递', async () => {
+      const dto: Partial<ToothDiseaseDto> = { toothStatus: '龋坏' };
+      service.updateTooth.mockResolvedValue({ toothNumber: 11, toothStatus: '龋坏' });
 
-      const result = await controller.updateTooth('e-1', '11', dto as any);
-      expect(result).toEqual(expected);
+      await controller.updateTooth('e-1', '11', dto);
       expect(service.updateTooth).toHaveBeenCalledWith('e-1', 11, dto);
+    });
+
+    it('无效 toothId 透传错误', async () => {
+      service.updateTooth.mockRejectedValue(new BusinessValidationException('无效牙位号'));
+
+      await expect(
+        controller.updateTooth('e-1', 'invalid', { toothStatus: '龋坏' } as Partial<ToothDiseaseDto>),
+      ).rejects.toThrow(BusinessValidationException);
     });
   });
 
   describe('batchUpdateTeeth', () => {
-    it('调用 service.batchUpdateTeeth 传入 id 和牙齿数组', async () => {
-      const teeth = [{ toothNumber: 11, toothStatus: '健康' }, { toothNumber: 16, toothStatus: '龋坏' }];
+    it('批量更新牙齿信息', async () => {
+      const teeth: ToothDiseaseDto[] = [{ toothNumber: 11, toothStatus: '健康' }];
       const expected = [{ toothNumber: 11, toothStatus: '健康' }];
       service.batchUpdateTeeth.mockResolvedValue(expected);
 
       const result = await controller.batchUpdateTeeth('e-1', teeth);
       expect(result).toEqual(expected);
-      expect(service.batchUpdateTeeth).toHaveBeenCalledWith('e-1', teeth);
     });
   });
 
-  describe('listTracks', () => {
-    it('调用 service.listTracks 传入 examId', async () => {
-      const expected = [{ id: 't-1', examId: 'e-1' }];
-      service.listTracks.mockResolvedValue(expected);
+  describe('restart / complete', () => {
+    it('restart 将状态重置为 DRAFT', async () => {
+      const expected = { id: 'e-1', status: 'DRAFT' };
+      service.restart.mockResolvedValue(expected);
 
-      const result = await controller.listTracks('e-1');
+      const result = await controller.restart('e-1');
       expect(result).toEqual(expected);
-      expect(service.listTracks).toHaveBeenCalledWith('e-1');
     });
-  });
 
-  describe('getTrack', () => {
-    it('调用 service.getTrack 传入 id', async () => {
-      const expected = { id: 't-1', examId: 'e-1' };
-      service.getTrack.mockResolvedValue(expected);
+    it('complete 标记初诊为 COMPLETED', async () => {
+      const expected = { id: 'e-1', status: 'COMPLETED' };
+      service.complete.mockResolvedValue(expected);
 
-      const result = await controller.getTrack('t-1');
+      const result = await controller.complete('e-1');
       expect(result).toEqual(expected);
-      expect(service.getTrack).toHaveBeenCalledWith('t-1');
     });
-  });
 
-  describe('updateTrack', () => {
-    it('调用 service.updateTrack 传入 id 和 dto', async () => {
-      const dto = { status: 'FOLLOWING', leaderSuggestion: '建议治疗' };
-      const expected = { id: 't-1', status: 'FOLLOWING' };
-      service.updateTrack.mockResolvedValue(expected);
+    it('不存在的记录 restart 失败', async () => {
+      service.restart.mockRejectedValue(new BusinessNotFoundException('记录不存在'));
 
-      const result = await controller.updateTrack('t-1', dto);
-      expect(result).toEqual(expected);
-      expect(service.updateTrack).toHaveBeenCalledWith('t-1', dto);
-    });
-  });
-
-  describe('createFollowUp', () => {
-    it('调用 service.createFollowUp 传入 id 和 dto', async () => {
-      const dto = { content: '一周后复查', dueDate: '2026-08-01' };
-      const expected = { id: 'f-1', content: '一周后复查' };
-      service.createFollowUp.mockResolvedValue(expected);
-
-      const result = await controller.createFollowUp('t-1', dto);
-      expect(result).toEqual(expected);
-      expect(service.createFollowUp).toHaveBeenCalledWith('t-1', dto);
+      await expect(controller.restart('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 });

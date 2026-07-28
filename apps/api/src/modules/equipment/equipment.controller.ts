@@ -26,6 +26,10 @@ export class EquipmentController {
       keyword: q.keyword || q.name,
       page: safePage(page),
       pageSize: safePageSize(pageSize, 20),
+      filters: {
+        ...(q.category && { category: q.category }),
+        ...(q.status && { status: q.status }),
+      },
     });
   }
 

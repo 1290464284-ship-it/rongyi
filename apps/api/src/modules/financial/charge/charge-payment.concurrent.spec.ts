@@ -2,12 +2,15 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ChargePaymentService } from './charge-payment.service';
 import { ChargeService } from './charge.service';
 import { MemberCardsService } from '../member-cards/member-cards.service';
+import { MemberCardLogRepository } from '../member-cards/repositories/member-card-log.repository';
 import { MemberPointLogRepository } from '../member-cards/repositories/member-point-log.repository';
 import { DbService } from '../../../db/db.service';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import { IdempotencyService } from '../../../common/services/idempotency.service';
 import { CacheService } from '../../../common/services/cache.service';
 import { StatsService } from '../../system/stats/stats.service';
+import { EventBusService } from '../../../common/events/event-bus.service';
+import { ChargeRepository } from '../charge/repositories/charge.repository';
 import {
   createTestDb,
   cleanupTestDb,
@@ -45,18 +48,12 @@ describe('ChargePaymentService - 并发测试', () => {
         IdempotencyService,
         CacheService,
         { provide: StatsService, useValue: { invalidateStatsCache: jest.fn() } },
-        {
-          provide: MemberPointLogRepository,
-          useValue: { insert: jest.fn() },
-        },
-        {
-          provide: MemberCardsService,
-          useValue: {
-            consume: jest.fn().mockResolvedValue({}),
-            refund: jest.fn().mockResolvedValue({}),
-            recharge: jest.fn().mockResolvedValue({}),
-          },
-        },
+        { provide: EventBusService, useValue: { emit: jest.fn(), on: jest.fn(), onAll: jest.fn() } },
+        ChargeRepository,
+        // P0 修复：使用真实 MemberCardsService 实例，以支持 consumeSync 委托调用
+        MemberCardLogRepository,
+        MemberPointLogRepository,
+        MemberCardsService,
         ChargeService,
         ChargePaymentService,
       ],
@@ -307,7 +304,7 @@ describe('ChargePaymentService - 并发测试', () => {
             memberCardId: cardId,
           });
         }),
-      ).rejects.toThrow('会员卡余额不足');
+      ).rejects.toThrow('余额不足');
 
       const card = getMemberCard(cardId);
       expect(card.balance).toBe(5000);

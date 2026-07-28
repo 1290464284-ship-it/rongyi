@@ -1,4 +1,4 @@
-import { BusinessValidationException, BusinessConflictException } from '@common/errors';
+import { BusinessValidationException, BusinessConflictException, BusinessNotFoundException, BusinessException } from '@common/errors';
 import { Injectable } from '@nestjs/common';
 
 import { DbService } from '../../../db/db.service';
@@ -57,7 +57,7 @@ export class ClinicsService extends BaseService<Clinic> {
           ['deletedAt IS NULL'],
         );
         if (!item) {
-          throw new BusinessValidationException('诊所不存在');
+          throw new BusinessNotFoundException('诊所不存在');
         }
         return item;
       },
@@ -114,8 +114,12 @@ export class ClinicsService extends BaseService<Clinic> {
     if (!clinicId) return null;
     try {
       return await this.findOne(clinicId);
-    } catch {
-      return null;
+    } catch (err) {
+      // P1 修复：仅捕获业务异常（诊所不存在等），其他异常（DB 错误等）应向上传播
+      if (err instanceof BusinessException) {
+        return null;
+      }
+      throw err;
     }
   }
 

@@ -2,6 +2,7 @@ import { BusinessValidationException } from '@common/errors';
 import { Injectable } from '@nestjs/common';
 
 import { DbService } from "../../../db/db.service";
+import { IDatabase } from "../../../db/db.interface";
 import { Appointment } from "@dental/shared";
 import { BaseService, MAX_PAGE_SIZE } from "../../../common/services/base.service";
 import { endOfDay, startOfDay, parseDate, validateDates } from "../../../common/utils/format/date";
@@ -9,14 +10,15 @@ import * as crypto from "node:crypto";
 import { UpdateBuilder } from "../../../common/utils/db/sql-builder";
 import { ClinicContextService } from "../../../common/services/clinic-context.service";
 import { AppointmentStatus, AuditLogType } from "../../../common/constants";
-import { StatsService } from '../../system/stats/stats.service';
+import { EventBusService } from '../../../common/events/event-bus.service';
+import { AppointmentCreatedEvent, AppointmentUpdatedEvent, AppointmentDeletedEvent } from '../../../common/events/domain-events';
 
 @Injectable()
 export class AppointmentsService extends BaseService<Appointment> {
   constructor(
     dbService: DbService,
     clinicContext: ClinicContextService,
-    private statsService: StatsService,
+    private eventBus: EventBusService,
   ) {
     super(dbService, clinicContext, 'Appointment');
   }
@@ -82,20 +84,21 @@ export class AppointmentsService extends BaseService<Appointment> {
 
     // 冲突检测 + 插入必须在同一事务内，防止竞态条件
     const result = this.dbService.transaction((db) => {
+      const conflictStatuses = AppointmentsService.CONFLICT_STATUSES;
       const doctorConflict = db.prepare(
-        `SELECT id FROM Appointment WHERE doctorId = ? AND status IN ('${AppointmentStatus.BOOKED}','${AppointmentStatus.ARRIVED}','${AppointmentStatus.IN_CHAIR}') AND startTime < ? AND endTime > ? AND deletedAt IS NULL${clinicClause}`
-      ).get(dto.doctorId, endTime, startTime, ...clinicParams);
+        `SELECT id FROM Appointment WHERE doctorId = ? AND status IN (?,?,?) AND startTime < ? AND endTime > ? AND deletedAt IS NULL${clinicClause}`
+      ).get(dto.doctorId, ...conflictStatuses, endTime, startTime, ...clinicParams);
       if (doctorConflict) throw new BusinessValidationException("该时间段医生已有预约");
 
       const patientConflict = db.prepare(
-        `SELECT id FROM Appointment WHERE patientId = ? AND status IN ('${AppointmentStatus.BOOKED}','${AppointmentStatus.ARRIVED}','${AppointmentStatus.IN_CHAIR}') AND startTime < ? AND endTime > ? AND deletedAt IS NULL${clinicClause}`
-      ).get(dto.patientId, endTime, startTime, ...clinicParams);
+        `SELECT id FROM Appointment WHERE patientId = ? AND status IN (?,?,?) AND startTime < ? AND endTime > ? AND deletedAt IS NULL${clinicClause}`
+      ).get(dto.patientId, ...conflictStatuses, endTime, startTime, ...clinicParams);
       if (patientConflict) throw new BusinessValidationException("该时间段患者已有其他预约");
 
       if (dto.chairId) {
         const chairConflict = db.prepare(
-          `SELECT id FROM Appointment WHERE chairId = ? AND status IN ('${AppointmentStatus.BOOKED}','${AppointmentStatus.ARRIVED}','${AppointmentStatus.IN_CHAIR}') AND startTime < ? AND endTime > ? AND deletedAt IS NULL${clinicClause}`
-        ).get(dto.chairId, endTime, startTime, ...clinicParams);
+          `SELECT id FROM Appointment WHERE chairId = ? AND status IN (?,?,?) AND startTime < ? AND endTime > ? AND deletedAt IS NULL${clinicClause}`
+        ).get(dto.chairId, ...conflictStatuses, endTime, startTime, ...clinicParams);
         if (chairConflict) throw new BusinessValidationException("该时间段牙椅已被占用");
       }
 
@@ -107,12 +110,17 @@ export class AppointmentsService extends BaseService<Appointment> {
       return db.prepare(`SELECT id, patientId, doctorId, chairId, startTime, endTime, status, type, remark, visitId, clinicId, createdAt, updatedAt FROM Appointment WHERE id = ? AND deletedAt IS NULL${clinicClause}`).get(id, ...clinicParams) as Appointment;
     });
 
-    this.statsService.invalidateStatsCache('dashboard');
-    this.statsService.invalidateStatsCache('appointment');
-    this.statsService.invalidateStatsCache('doctorWorkload');
+    this.eventBus.emit(new AppointmentCreatedEvent(result.id, result.patientId, result.doctorId, this.clinicContext.getClinicId()));
 
     return result;
   }
+
+  // 参与时段冲突检测的占用状态（IN 子句参数化使用，占位符数量须与之保持一致）
+  private static readonly CONFLICT_STATUSES: readonly string[] = [
+    AppointmentStatus.BOOKED,
+    AppointmentStatus.ARRIVED,
+    AppointmentStatus.IN_CHAIR,
+  ];
 
   // P1 修复（挂号状态机无流转校验）：定义合法预约状态转换
   private static readonly ALLOWED_TRANSITIONS: Record<string, readonly string[]> = {
@@ -158,20 +166,21 @@ export class AppointmentsService extends BaseService<Appointment> {
     const result = this.dbService.transaction((db) => {
       if (timeOrDoctorChanged) {
         // P1 修复：update 也需检测患者和椅位冲突
+        const conflictStatuses = AppointmentsService.CONFLICT_STATUSES;
         const doctorConflict = db.prepare(
-          `SELECT id FROM Appointment WHERE doctorId = ? AND id != ? AND status IN ('${AppointmentStatus.BOOKED}','${AppointmentStatus.ARRIVED}','${AppointmentStatus.IN_CHAIR}') AND startTime < ? AND endTime > ? AND deletedAt IS NULL${clinicClause}`
-        ).get(newDoctorId, id, newEnd, newStart, ...clinicParams);
+          `SELECT id FROM Appointment WHERE doctorId = ? AND id != ? AND status IN (?,?,?) AND startTime < ? AND endTime > ? AND deletedAt IS NULL${clinicClause}`
+        ).get(newDoctorId, id, ...conflictStatuses, newEnd, newStart, ...clinicParams);
         if (doctorConflict) throw new BusinessValidationException("该时间段医生已有预约");
 
         const patientConflict = db.prepare(
-          `SELECT id FROM Appointment WHERE patientId = ? AND id != ? AND status IN ('${AppointmentStatus.BOOKED}','${AppointmentStatus.ARRIVED}','${AppointmentStatus.IN_CHAIR}') AND startTime < ? AND endTime > ? AND deletedAt IS NULL${clinicClause}`
-        ).get(newPatientId, id, newEnd, newStart, ...clinicParams);
+          `SELECT id FROM Appointment WHERE patientId = ? AND id != ? AND status IN (?,?,?) AND startTime < ? AND endTime > ? AND deletedAt IS NULL${clinicClause}`
+        ).get(newPatientId, id, ...conflictStatuses, newEnd, newStart, ...clinicParams);
         if (patientConflict) throw new BusinessValidationException("该时间段患者已有其他预约");
 
         if (newChairId) {
           const chairConflict = db.prepare(
-            `SELECT id FROM Appointment WHERE chairId = ? AND id != ? AND status IN ('${AppointmentStatus.BOOKED}','${AppointmentStatus.ARRIVED}','${AppointmentStatus.IN_CHAIR}') AND startTime < ? AND endTime > ? AND deletedAt IS NULL${clinicClause}`
-          ).get(newChairId, id, newEnd, newStart, ...clinicParams);
+            `SELECT id FROM Appointment WHERE chairId = ? AND id != ? AND status IN (?,?,?) AND startTime < ? AND endTime > ? AND deletedAt IS NULL${clinicClause}`
+          ).get(newChairId, id, ...conflictStatuses, newEnd, newStart, ...clinicParams);
           if (chairConflict) throw new BusinessValidationException("该时间段牙椅已被占用");
         }
       }
@@ -185,9 +194,20 @@ export class AppointmentsService extends BaseService<Appointment> {
       builder.set("doctorId", dto.doctorId);
       builder.set("chairId", dto.chairId !== undefined ? (dto.chairId || null) : undefined);
       builder.setUpdatedAt();
-      const result = builder.buildWithCustomWhere(`id = ? AND deletedAt IS NULL${clinicClause}`, [id, ...clinicParams]);
+      // P0 修复：当变更 status 时加入 CAS 保护，防止并发状态覆盖
+      const statusChanged = dto.status && dto.status !== (existing.status as string);
+      const whereClause = statusChanged
+        ? `id = ? AND deletedAt IS NULL AND status = ?${clinicClause}`
+        : `id = ? AND deletedAt IS NULL${clinicClause}`;
+      const whereParams = statusChanged
+        ? [id, existing.status, ...clinicParams]
+        : [id, ...clinicParams];
+      const result = builder.buildWithCustomWhere(whereClause, whereParams);
       if (result) {
-        db.prepare(result.sql).run(...result.params);
+        const updateResult = db.prepare(result.sql).run(...result.params);
+        if (statusChanged && updateResult.changes === 0) {
+          throw new BusinessValidationException('预约状态已被修改，请刷新后重试');
+        }
       }
 
       this.logAudit(db, AuditLogType.APPOINTMENT_UPDATE, id, "Appointment", { beforeData: { status: existing.status, startTime: existing.startTime, endTime: existing.endTime, doctorId: existing.doctorId }, afterData: { status: dto.status ?? existing.status, startTime: dto.startTime ? newStart : existing.startTime, endTime: dto.endTime ? newEnd : existing.endTime, doctorId: dto.doctorId ?? existing.doctorId } });
@@ -195,20 +215,28 @@ export class AppointmentsService extends BaseService<Appointment> {
       return db.prepare(`SELECT id, patientId, doctorId, chairId, startTime, endTime, status, type, remark, visitId, clinicId, createdAt, updatedAt FROM Appointment WHERE id = ? AND deletedAt IS NULL${clinicClause}`).get(id, ...clinicParams) as Appointment;
     });
 
-    this.statsService.invalidateStatsCache('dashboard');
-    this.statsService.invalidateStatsCache('appointment');
-    this.statsService.invalidateStatsCache('doctorWorkload');
+    this.eventBus.emit(new AppointmentUpdatedEvent(result.id, result.patientId, result.doctorId, this.clinicContext.getClinicId()));
 
     return result;
   }
 
+  /**
+   * P0 修复：UPDATE + 审计日志包入事务
+   * 原先 UPDATE 和 logAudit 分离，审计写入失败会留下无审计的更新。
+   */
   async linkVisit(appointmentId: string, visitId: string): Promise<Appointment> {
     const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
     const now = new Date().toISOString();
-    this.dbService.prepare(
-      `UPDATE Appointment SET visitId = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${clinicClause}`
-    ).run(visitId, now, appointmentId, ...clinicParams);
-    return this.findOne(appointmentId);
+    return this.dbService.transaction((db) => {
+      const result = db.prepare(
+        `UPDATE Appointment SET visitId = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${clinicClause}`
+      ).run(visitId, now, appointmentId, ...clinicParams);
+      if (result.changes === 0) {
+        throw new BusinessValidationException('预约不存在或已被删除');
+      }
+      this.logAudit(db, "APPOINTMENT_LINK_VISIT", appointmentId, "Appointment", { afterData: { visitId } });
+      return db.prepare(`SELECT id, patientId, doctorId, chairId, startTime, endTime, status, type, remark, visitId, clinicId, createdAt, updatedAt FROM Appointment WHERE id = ? AND deletedAt IS NULL${clinicClause}`).get(appointmentId, ...clinicParams) as Appointment;
+    });
   }
 
   /**
@@ -221,15 +249,35 @@ export class AppointmentsService extends BaseService<Appointment> {
     executor.prepare(
       `UPDATE Appointment SET visitId = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${clinicClause}`
     ).run(visitId, now, appointmentId, ...clinicParams);
+    this.logAudit(executor as unknown as IDatabase, "APPOINTMENT_LINK_VISIT", appointmentId, "Appointment", { afterData: { visitId } });
   }
 
+  /**
+   * P0 修复：softDelete + logAudit 包入事务
+   * 原先 softDelete 和 logAudit 分离，审计写入失败会留下无审计的删除。
+   * eventBus.emit 保持事务后发射（已提交的数据才通知）。
+   */
   async remove(id: string) {
     const existing = await this.findOne(id);
-    await this.softDelete(id);
-    this.logAudit(this.dbService, AuditLogType.APPOINTMENT_REMOVE, id, "Appointment", { beforeData: { status: (existing as Record<string, unknown>).status, patientId: (existing as Record<string, unknown>).patientId, doctorId: (existing as Record<string, unknown>).doctorId } });
+    this.dbService.transaction((db) => {
+      this.softDeleteSync(db, id);
+      this.logAudit(db, AuditLogType.APPOINTMENT_REMOVE, id, "Appointment", { beforeData: { status: (existing as Record<string, unknown>).status, patientId: (existing as Record<string, unknown>).patientId, doctorId: (existing as Record<string, unknown>).doctorId } });
+    });
 
-    this.statsService.invalidateStatsCache('dashboard');
-    this.statsService.invalidateStatsCache('appointment');
-    this.statsService.invalidateStatsCache('doctorWorkload');
+    this.eventBus.emit(new AppointmentDeletedEvent(existing.id, (existing as Record<string, unknown>).patientId as string, (existing as Record<string, unknown>).doctorId as string, this.clinicContext.getClinicId()));
+  }
+
+  /**
+   * 同步版软删除（在已有事务内调用）
+   */
+  private softDeleteSync(db: IDatabase, id: string): void {
+    const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
+    const now = new Date().toISOString();
+    const result = db.prepare(
+      `UPDATE Appointment SET deletedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${clinicClause}`,
+    ).run(now, now, id, ...clinicParams);
+    if (result.changes === 0) {
+      throw new BusinessValidationException('预约不存在或已被删除');
+    }
   }
 }

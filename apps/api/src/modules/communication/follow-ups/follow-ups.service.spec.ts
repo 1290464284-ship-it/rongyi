@@ -1,7 +1,8 @@
 import { FollowUpsService } from './follow-ups.service';
+import { BusinessNotFoundException } from '@common/errors';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
-import { NotFoundException } from '@nestjs/common';
+
 
 function createMockClinicContext(clinicId: string | null = 'test-clinic-001'): ClinicContextService {
   return {
@@ -72,8 +73,8 @@ describe('FollowUpsService', () => {
       expect((result as any).completedAt).toBeTruthy();
     });
 
-    it('完成不存在的随访应抛出 NotFoundException', async () => {
-      await expect(service.complete('non-existent')).rejects.toThrow(NotFoundException);
+    it('完成不存在的随访应抛出 BusinessNotFoundException', async () => {
+      await expect(service.complete('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 
@@ -402,8 +403,8 @@ describe('FollowUpsService', () => {
       expect((result as any).assigneeId).toBe('doctor-001');
     });
 
-    it('更新不存在的随访抛出 NotFoundException', async () => {
-      await expect(service.update('non-existent', { content: 'test' })).rejects.toThrow(NotFoundException);
+    it('更新不存在的随访抛出 BusinessNotFoundException', async () => {
+      await expect(service.update('non-existent', { content: 'test' })).rejects.toThrow(BusinessNotFoundException);
     });
 
     it('事务内写入审计日志', async () => {
@@ -443,7 +444,7 @@ describe('FollowUpsService', () => {
         return originalPrepare(sql);
       });
 
-      await expect(service.findOne('fu-001')).rejects.toThrow(NotFoundException);
+      await expect(service.findOne('fu-001')).rejects.toThrow(BusinessNotFoundException);
       prepareSpy.mockRestore();
     });
   });

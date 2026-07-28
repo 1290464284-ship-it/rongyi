@@ -1,7 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
 import { MemberCardsController } from './member-cards.controller';
 import { MemberCardsService } from './member-cards.service';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+
 
 describe('MemberCardsController', () => {
   let controller: MemberCardsController;
@@ -56,9 +57,9 @@ describe('MemberCardsController', () => {
       expect(service.findByPatient).toHaveBeenCalledWith('p-1');
     });
 
-    it('不存在时透传 NotFoundException', async () => {
-      service.findByPatient.mockRejectedValue(new NotFoundException('MemberCard不存在'));
-      await expect(controller.findByPatient('non-existent')).rejects.toThrow(NotFoundException);
+    it('不存在时透传 BusinessNotFoundException', async () => {
+      service.findByPatient.mockRejectedValue(new BusinessNotFoundException('MemberCard不存在'));
+      await expect(controller.findByPatient('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 
@@ -85,19 +86,27 @@ describe('MemberCardsController', () => {
   });
 
   describe('recharge', () => {
-    it('调用 service.recharge 传入 id 和 amount', async () => {
+    it('调用 service.recharge 传入 id/amount/requestId', async () => {
       const dto = { amount: 100 };
       const expected = { id: 'mc-1', balance: 100 };
       service.recharge.mockResolvedValue(expected);
 
       const result = await controller.recharge('mc-1', dto);
       expect(result).toEqual(expected);
-      expect(service.recharge).toHaveBeenCalledWith('mc-1', 100);
+      expect(service.recharge).toHaveBeenCalledWith('mc-1', 100, undefined);
     });
 
-    it('amount 为负数时透传 BadRequestException', async () => {
-      service.recharge.mockRejectedValue(new BadRequestException('金额必须大于0'));
-      await expect(controller.recharge('mc-1', { amount: -1 } as any)).rejects.toThrow(BadRequestException);
+    it('透传 requestId 到 service 激活幂等保护', async () => {
+      const dto = { amount: 100, requestId: 'req-uuid-001' };
+      service.recharge.mockResolvedValue({ id: 'mc-1', balance: 100 });
+
+      await controller.recharge('mc-1', dto);
+      expect(service.recharge).toHaveBeenCalledWith('mc-1', 100, 'req-uuid-001');
+    });
+
+    it('amount 为负数时透传 BusinessValidationException', async () => {
+      service.recharge.mockRejectedValue(new BusinessValidationException('金额必须大于0'));
+      await expect(controller.recharge('mc-1', { amount: -1 } as any)).rejects.toThrow(BusinessValidationException);
     });
   });
 
@@ -113,46 +122,78 @@ describe('MemberCardsController', () => {
   });
 
   describe('addPoints', () => {
-    it('调用 service.addPoints 传入 id/points/chargeId/remark', async () => {
+    it('调用 service.addPoints 传入 id/points/chargeId/remark/requestId', async () => {
       const dto = { points: 10, chargeId: 'c-1', remark: '充值送积分' };
       service.addPoints.mockResolvedValue({ id: 'mc-1', points: 10 });
 
       const result = await controller.addPoints('mc-1', dto);
       expect(result).toEqual({ id: 'mc-1', points: 10 });
-      expect(service.addPoints).toHaveBeenCalledWith('mc-1', 10, 'c-1', '充值送积分');
+      expect(service.addPoints).toHaveBeenCalledWith('mc-1', 10, 'c-1', '充值送积分', undefined);
+    });
+
+    it('透传 requestId 到 service 激活幂等保护', async () => {
+      const dto = { points: 10, requestId: 'req-uuid-002' };
+      service.addPoints.mockResolvedValue({ id: 'mc-1', points: 10 });
+
+      await controller.addPoints('mc-1', dto);
+      expect(service.addPoints).toHaveBeenCalledWith('mc-1', 10, undefined, undefined, 'req-uuid-002');
     });
   });
 
   describe('deductPoints', () => {
-    it('调用 service.deductPoints 传入 id/points/remark', async () => {
+    it('调用 service.deductPoints 传入 id/points/remark/requestId', async () => {
       const dto = { points: 5, remark: '消费扣减' };
       service.deductPoints.mockResolvedValue({ id: 'mc-1', points: 5 });
 
       const result = await controller.deductPoints('mc-1', dto);
       expect(result).toEqual({ id: 'mc-1', points: 5 });
-      expect(service.deductPoints).toHaveBeenCalledWith('mc-1', 5, '消费扣减');
+      expect(service.deductPoints).toHaveBeenCalledWith('mc-1', 5, '消费扣减', undefined);
+    });
+
+    it('透传 requestId 到 service 激活幂等保护', async () => {
+      const dto = { points: 5, requestId: 'req-uuid-003' };
+      service.deductPoints.mockResolvedValue({ id: 'mc-1', points: 5 });
+
+      await controller.deductPoints('mc-1', dto);
+      expect(service.deductPoints).toHaveBeenCalledWith('mc-1', 5, undefined, 'req-uuid-003');
     });
   });
 
   describe('consume', () => {
-    it('调用 service.consume 传入 id/amount/chargeId/remark', async () => {
+    it('调用 service.consume 传入 id/amount/chargeId/remark/requestId', async () => {
       const dto = { amount: 50, chargeId: 'c-1', remark: '消费' };
       service.consume.mockResolvedValue({ id: 'mc-1', balance: 50 });
 
       const result = await controller.consume('mc-1', dto);
       expect(result).toEqual({ id: 'mc-1', balance: 50 });
-      expect(service.consume).toHaveBeenCalledWith('mc-1', 50, 'c-1', '消费');
+      expect(service.consume).toHaveBeenCalledWith('mc-1', 50, 'c-1', '消费', undefined);
+    });
+
+    it('透传 requestId 到 service 激活幂等保护', async () => {
+      const dto = { amount: 50, requestId: 'req-uuid-004' };
+      service.consume.mockResolvedValue({ id: 'mc-1', balance: 50 });
+
+      await controller.consume('mc-1', dto);
+      expect(service.consume).toHaveBeenCalledWith('mc-1', 50, undefined, undefined, 'req-uuid-004');
     });
   });
 
   describe('refund', () => {
-    it('调用 service.refund 传入 id/amount/chargeId/remark', async () => {
+    it('调用 service.refund 传入 id/amount/chargeId/remark/requestId', async () => {
       const dto = { amount: 30, chargeId: 'c-1', remark: '退款返还' };
       service.refund.mockResolvedValue({ id: 'mc-1', balance: 130 });
 
       const result = await controller.refund('mc-1', dto);
       expect(result).toEqual({ id: 'mc-1', balance: 130 });
-      expect(service.refund).toHaveBeenCalledWith('mc-1', 30, 'c-1', '退款返还');
+      expect(service.refund).toHaveBeenCalledWith('mc-1', 30, 'c-1', '退款返还', undefined);
+    });
+
+    it('透传 requestId 到 service 激活幂等保护', async () => {
+      const dto = { amount: 30, requestId: 'req-uuid-005' };
+      service.refund.mockResolvedValue({ id: 'mc-1', balance: 130 });
+
+      await controller.refund('mc-1', dto);
+      expect(service.refund).toHaveBeenCalledWith('mc-1', 30, undefined, undefined, 'req-uuid-005');
     });
   });
 });

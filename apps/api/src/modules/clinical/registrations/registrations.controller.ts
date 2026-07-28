@@ -1,13 +1,5 @@
 import { safePage, safePageSize } from '../../../common/dto/pagination.dto';
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  Patch,
-  Post,
-  Query,
-} from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Role, Registration } from '@dental/shared';
 import { Roles } from '../../../common/decorators/roles.decorator';

@@ -2,8 +2,10 @@ import { RefundsService } from './refunds.service';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { IdempotencyService } from '../../../common/services/idempotency.service';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { StatsService } from '../../system/stats/stats.service';
+import { NotFoundException } from '@nestjs/common';
+import { BusinessNotFoundException, BusinessValidationException } from '@common/errors';
+import { EventBusService } from '../../../common/events/event-bus.service';
+import { RefundRepository } from './repositories/refund.repository';
 
 function createMockClinicContext(): ClinicContextService {
   return {
@@ -15,23 +17,25 @@ function createMockClinicContext(): ClinicContextService {
   } as unknown as ClinicContextService;
 }
 
-function createMockStatsService(): jest.Mocked<StatsService> {
+function createMockEventBus(): jest.Mocked<EventBusService> {
   return {
-    invalidateStatsCache: jest.fn(),
-  } as unknown as jest.Mocked<StatsService>;
+    emit: jest.fn(),
+    on: jest.fn(),
+    onAll: jest.fn(),
+  } as unknown as jest.Mocked<EventBusService>;
 }
 
 describe('RefundsService', () => {
   let service: RefundsService;
   let db: MockDbService;
   let idempotency: IdempotencyService;
-  let statsService: jest.Mocked<StatsService>;
+  let eventBus: jest.Mocked<EventBusService>;
 
   beforeEach(() => {
     db = new MockDbService();
     idempotency = new IdempotencyService(db as any);
-    statsService = createMockStatsService();
-    service = new RefundsService(db as any, createMockClinicContext(), idempotency, statsService);
+    eventBus = createMockEventBus();
+    service = new RefundsService(db as any, createMockClinicContext(), idempotency, eventBus, new RefundRepository());
   });
 
   afterEach(() => {
@@ -39,21 +43,21 @@ describe('RefundsService', () => {
   });
 
   describe('create - 验证逻辑', () => {
-    it('退款金额为 0 应抛出 BadRequestException', async () => {
+    it('退款金额为 0 应抛出 BusinessValidationException', async () => {
       // Seed a charge
       db.seed('Charge', [{ id: 'charge-001', paidAmount: 100, refundedAmount: 0, status: 'PAID', clinicId: 'test-clinic-001' }]);
 
-      await expect(service.createRefund({ chargeId: 'charge-001', amount: 0 })).rejects.toThrow(BadRequestException);
+      await expect(service.createRefund({ chargeId: 'charge-001', amount: 0 })).rejects.toThrow(BusinessValidationException);
     });
 
-    it('退款金额为负数应抛出 BadRequestException', async () => {
+    it('退款金额为负数应抛出 BusinessValidationException', async () => {
       db.seed('Charge', [{ id: 'charge-001', paidAmount: 100, refundedAmount: 0, status: 'PAID', clinicId: 'test-clinic-001' }]);
 
-      await expect(service.createRefund({ chargeId: 'charge-001', amount: -10 })).rejects.toThrow(BadRequestException);
+      await expect(service.createRefund({ chargeId: 'charge-001', amount: -10 })).rejects.toThrow(BusinessValidationException);
     });
 
-    it('收费记录不存在应抛出 NotFoundException', async () => {
-      await expect(service.createRefund({ chargeId: 'non-existent', amount: 50 })).rejects.toThrow(NotFoundException);
+    it('收费记录不存在应抛出 BusinessNotFoundException', async () => {
+      await expect(service.createRefund({ chargeId: 'non-existent', amount: 50 })).rejects.toThrow(BusinessNotFoundException);
     });
   });
 
@@ -104,8 +108,8 @@ describe('RefundsService', () => {
       expect((result as any).amount).toBe(50);
     });
 
-    it('退款不存在应抛出 NotFoundException', async () => {
-      await expect(service.findOne('non-existent')).rejects.toThrow(NotFoundException);
+    it('退款不存在应抛出 BusinessNotFoundException', async () => {
+      await expect(service.findOne('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 });

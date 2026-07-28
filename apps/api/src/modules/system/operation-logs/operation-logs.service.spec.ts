@@ -1,4 +1,5 @@
 /* eslint-disable sonarjs/no-hardcoded-ip */
+/* eslint-disable security/detect-non-literal-fs-filename -- 测试文件使用临时日志文件路径 */
 import { OperationLogsService } from './operation-logs.service';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';

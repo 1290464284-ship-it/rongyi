@@ -1,7 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { BusinessNotFoundException } from '@common/errors';
 import { RefundsController } from './refunds.controller';
 import { RefundsService } from './refunds.service';
-import { NotFoundException } from '@nestjs/common';
+
 
 describe('RefundsController', () => {
   let controller: RefundsController;
@@ -68,9 +69,9 @@ describe('RefundsController', () => {
       expect(service.findOne).toHaveBeenCalledWith('r-1');
     });
 
-    it('不存在时透传 NotFoundException', async () => {
-      service.findOne.mockRejectedValue(new NotFoundException('Refund不存在'));
-      await expect(controller.findOne('non-existent')).rejects.toThrow(NotFoundException);
+    it('不存在时透传 BusinessNotFoundException', async () => {
+      service.findOne.mockRejectedValue(new BusinessNotFoundException('Refund不存在'));
+      await expect(controller.findOne('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 

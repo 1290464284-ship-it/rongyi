@@ -1,4 +1,5 @@
-import { BadRequestException } from '@nestjs/common';
+
+import { BusinessValidationException } from '@common/errors';
 
 export function nowISO(): string {
   return new Date().toISOString();
@@ -62,15 +63,15 @@ export function formatDateTime(date: Date | string): string {
 
 export function parseDate(dateStr: string): Date {
   if (typeof dateStr !== 'string') {
-    throw new BadRequestException('无效的日期格式: 输入必须是字符串');
+    throw new BusinessValidationException('无效的日期格式: 输入必须是字符串');
   }
   const trimmed = dateStr.trim();
   if (!trimmed) {
-    throw new BadRequestException('无效的日期格式: 日期字符串为空');
+    throw new BusinessValidationException('无效的日期格式: 日期字符串为空');
   }
   const date = new Date(trimmed);
   if (isNaN(date.getTime())) {
-    throw new BadRequestException(`无效的日期格式: ${dateStr}`);
+    throw new BusinessValidationException(`无效的日期格式: ${dateStr}`);
   }
   return date;
 }
@@ -105,10 +106,10 @@ export function endOfMonth(date?: Date): string {
 
 export function validateDates(startDate?: string, endDate?: string): void {
   if (startDate && !isValidCalendarDate(startDate)) {
-    throw new BadRequestException('日期格式错误: startDate 应为有效的 YYYY-MM-DD 日期');
+    throw new BusinessValidationException('日期格式错误: startDate 应为有效的 YYYY-MM-DD 日期');
   }
   if (endDate && !isValidCalendarDate(endDate)) {
-    throw new BadRequestException('日期格式错误: endDate 应为有效的 YYYY-MM-DD 日期');
+    throw new BusinessValidationException('日期格式错误: endDate 应为有效的 YYYY-MM-DD 日期');
   }
 }
 
@@ -173,7 +174,7 @@ function assertValidDate(date: Date | string | number, context?: string): Date {
   const d = new Date(date);
   if (isNaN(d.getTime())) {
     const prefix = context ? `无效的日期 (${context})` : '无效的日期';
-    throw new BadRequestException(`${prefix}: ${String(date)}`);
+    throw new BusinessValidationException(`${prefix}: ${String(date)}`);
   }
   return d;
 }

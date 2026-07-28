@@ -1,9 +1,10 @@
 /* eslint-disable sonarjs/no-floating-point-equality */
 import { DebtService } from './debt.service';
+import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
 import { MockDbService, MockDbRow } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import { IdempotencyService } from '../../../common/services/idempotency.service';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+
 
 function createMockClinicContext(): ClinicContextService {
   return {
@@ -148,40 +149,55 @@ describe('DebtService', () => {
 
       expect(result.remark).toBe('患者经济困难');
     });
+
+    it('带 requestId 的创建应正常执行', async () => {
+      const result = await service.createDebtFromCharge({
+        chargeId: 'charge-001',
+        patientId: 'patient-001',
+        totalAmount: 500,
+        debtAmount: 300,
+        requestId: 'idempotent-create-001',
+      });
+
+      expect(result).toBeDefined();
+      expect(result.chargeId).toBe('charge-001');
+      expect(result.totalAmount).toBe(500);
+      expect(result.debtAmount).toBe(300);
+    });
   });
 
   // ==================== payDebt 还款金额校验 ====================
 
   describe('payDebt - 金额校验', () => {
     // payDebt 的金额校验在事务外同步执行，但方法本身为 async，需使用 rejects.toThrow
-    it('还款金额为 0 应抛出 BadRequestException', async () => {
+    it('还款金额为 0 应抛出 BusinessValidationException', async () => {
       await expect(
         service.payDebt('debt-001', { amount: 0, payMethod: 'CASH' }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
-    it('还款金额为负数应抛出 BadRequestException', async () => {
+    it('还款金额为负数应抛出 BusinessValidationException', async () => {
       await expect(
         service.payDebt('debt-001', { amount: -100, payMethod: 'CASH' }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
-    it('还款金额为 NaN 应抛出 BadRequestException', async () => {
+    it('还款金额为 NaN 应抛出 BusinessValidationException', async () => {
       await expect(
         service.payDebt('debt-001', { amount: NaN, payMethod: 'CASH' }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
-    it('还款金额为 Infinity 应抛出 BadRequestException', async () => {
+    it('还款金额为 Infinity 应抛出 BusinessValidationException', async () => {
       await expect(
         service.payDebt('debt-001', { amount: Infinity, payMethod: 'CASH' }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
-    it('不存在的欠费记录应抛出 NotFoundException', async () => {
+    it('不存在的欠费记录应抛出 BusinessNotFoundException', async () => {
       await expect(
         service.payDebt('non-existent', { amount: 100, payMethod: 'CASH' }),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toThrow(BusinessNotFoundException);
     });
   });
 
@@ -199,11 +215,11 @@ describe('DebtService', () => {
       expect(result.status).toBe('PARTIAL');
     });
 
-    it('还款金额超过欠款金额应抛出 BadRequestException', async () => {
+    it('还款金额超过欠款金额应抛出 BusinessValidationException', async () => {
       seedDebt({ debtAmount: 30000, paidAmount: 20000 });
       await expect(
         service.payDebt('debt-001', { amount: 500, payMethod: 'CASH' }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
   });
 
@@ -252,11 +268,11 @@ describe('DebtService', () => {
   // ==================== payDebt 已结清的记录 ====================
 
   describe('payDebt - 已结清的记录', () => {
-    it('已结清的欠费记录应抛出 BadRequestException', async () => {
+    it('已结清的欠费记录应抛出 BusinessValidationException', async () => {
       seedDebt({ debtAmount: 0, paidAmount: 50000, status: 'PAID' });
       await expect(
         service.payDebt('debt-001', { amount: 100, payMethod: 'CASH' }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
   });
 
@@ -542,8 +558,8 @@ describe('DebtService', () => {
       expect(result.chargeId).toBe('c1');
     });
 
-    it('不存在的 id 应抛出 NotFoundException', async () => {
-      await expect(service.getDebt('non-existent')).rejects.toThrow(NotFoundException);
+    it('不存在的 id 应抛出 BusinessNotFoundException', async () => {
+      await expect(service.getDebt('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 });

@@ -13,6 +13,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { OperationLogResource } from '../../common/decorators/operation-log-resource.decorator';
 import { Public } from '../../common/decorators/public.decorator';
+import { ACCESS_TOKEN_MAX_AGE_MS, REFRESH_TOKEN_TTL_MS } from '../../config/constants';
 
 
 interface JwtUser { id: string; username: string; name: string; role: string; }
@@ -26,9 +27,6 @@ const COOKIE_OPTIONS = {
   secure: process.env.NODE_ENV === 'production',
   sameSite: 'strict' as const,
 };
-
-const ACCESS_TOKEN_MAX_AGE = 3600 * 1000; // 1 hour
-const REFRESH_TOKEN_MAX_AGE = 7 * 24 * 3600 * 1000; // 7 days
 
 @ApiTags('认证与用户管理')
 @OperationLogResource('用户')
@@ -46,11 +44,11 @@ export class AuthController {
     // Set httpOnly cookies for tokens
     res.cookie('access_token', result.access_token, {
       ...COOKIE_OPTIONS,
-      maxAge: ACCESS_TOKEN_MAX_AGE,
+      maxAge: ACCESS_TOKEN_MAX_AGE_MS,
     });
     res.cookie('refresh_token', result.refresh_token, {
       ...COOKIE_OPTIONS,
-      maxAge: REFRESH_TOKEN_MAX_AGE,
+      maxAge: REFRESH_TOKEN_TTL_MS,
     });
     
     // D2-4: token 只通过 httpOnly cookie 传递，不返回在响应体中（防 XSS 窃取）
@@ -61,20 +59,20 @@ export class AuthController {
   @HttpCode(200)
   @ApiOperation({ summary: '刷新令牌' })
   @Post('refresh')
-  async refresh(@Req() req: RequestWithCookies, @Body('refreshToken') bodyRefreshToken: string, @Res({ passthrough: true }) res: Response) {
-    // Prefer httpOnly cookie over body for consistency with D2-4 cookie-only design
-    const refreshToken = req.cookies?.refresh_token || bodyRefreshToken;
+  async refresh(@Req() req: RequestWithCookies, @Res({ passthrough: true }) res: Response) {
+    // D2-4: refresh token 只通过 httpOnly cookie 传递，禁止从请求体读取（防 XSS 窃取）
+    const refreshToken = req.cookies?.refresh_token;
     if (!refreshToken) throw new BusinessValidationException('refreshToken 不能为空');
     const result = await this.auth.refreshToken(refreshToken);
 
     // Update cookies with new tokens
     res.cookie('access_token', result.access_token, {
       ...COOKIE_OPTIONS,
-      maxAge: ACCESS_TOKEN_MAX_AGE,
+      maxAge: ACCESS_TOKEN_MAX_AGE_MS,
     });
     res.cookie('refresh_token', result.refresh_token, {
       ...COOKIE_OPTIONS,
-      maxAge: REFRESH_TOKEN_MAX_AGE,
+      maxAge: REFRESH_TOKEN_TTL_MS,
     });
 
     // D2-4: token 只通过 httpOnly cookie 传递

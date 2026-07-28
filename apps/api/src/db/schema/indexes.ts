@@ -4,17 +4,53 @@ const SCHEMA_LOGGER = {
   warn: (msg: string, err?: unknown) => {
     console.warn(`[Schema] ${msg}`, err ? (err as Error)?.message || err : '');
   },
+  error: (msg: string, err?: unknown) => {
+    console.error(`[Schema] ${msg}`, err ? (err as Error)?.message || err : '');
+  },
 };
 
-/** 创建索引（如果不存在）。where 可选，用于创建部分索引（partial index） */
+/** 索引创建失败信息 */
+export interface IndexCreationFailure {
+  name: string;
+  table: string;
+  error: string;
+}
+
+/** 收集本次 createIndexes 调用期间所有失败的索引 */
+const indexFailures: IndexCreationFailure[] = [];
+
+/**
+ * 创建索引（如果不存在）。where 可选，用于创建部分索引（partial index）
+ *
+ * P1 修复：原先所有错误都用 warn 静默吞没，无法区分「索引已存在」与「列不存在/语法错误」等真实问题。
+ * 现在区分两类错误：
+ *  - "already exists" → 正常情况（CREATE INDEX IF NOT EXISTS 不应报此错，但兼容旧数据），info 级别
+ *  - 其他错误 → error 级别 + 记入 indexFailures，便于上层聚合上报
+ */
 export const createIndexIfNotExists = (db: Database, name: string, table: string, columns: string, where?: string) => {
   try {
     const whereClause = where ? ` WHERE ${where}` : '';
     db.exec(`CREATE INDEX IF NOT EXISTS ${name} ON ${table}(${columns})${whereClause}`);
   } catch (err: unknown) {
-    SCHEMA_LOGGER.warn(`创建索引失败: ${name} ON ${table}`, err);
+    const errMsg = err instanceof Error ? err.message : String(err);
+    // "already exists" 在使用 IF NOT EXISTS 时不应出现，但兼容部分边界场景
+    if (errMsg.includes('already exists')) {
+      SCHEMA_LOGGER.warn(`索引已存在（跳过）: ${name} ON ${table}`);
+    } else {
+      // 真实错误：列不存在、表不存在、语法错误等
+      SCHEMA_LOGGER.error(`创建索引失败: ${name} ON ${table}(${columns})`, err);
+      indexFailures.push({ name, table, error: errMsg });
+    }
   }
 };
+
+/**
+ * 获取累计的索引创建失败列表（主要用于诊断与上报）
+ * 返回副本避免外部修改
+ */
+export function getIndexFailures(): IndexCreationFailure[] {
+  return [...indexFailures];
+}
 
 export function createIndexes(db: Database) {
   createIndexIfNotExists(db, 'idx_clinic_code', 'Clinic', 'code');
@@ -100,10 +136,19 @@ export function createIndexes(db: Database) {
   createIndexIfNotExists(db, 'idx_debt_charge', 'DebtRecord', 'chargeId');
   createIndexIfNotExists(db, 'idx_debt_created', 'DebtRecord', 'createdAt');
   // P0.4: DebtRecord.chargeId 唯一索引（防止同一收费单产生重复欠费记录）
+  // P1 修复：原先 try-catch 完全静默吞没错误（连日志都没有），
+  // 唯一索引创建失败可能暗示数据已存在重复（数据损坏），必须 error 级别告警
   try {
     db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_debt_charge_unique ON DebtRecord(chargeId)');
-  } catch {
-    // 索引可能已存在，静默忽略
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    if (errMsg.includes('UNIQUE constraint failed')) {
+      // 数据层已存在重复 chargeId — 这是数据损坏信号，必须 error 告警
+      SCHEMA_LOGGER.error('创建 idx_debt_charge_unique 失败：DebtRecord 表存在重复 chargeId，需手动清理重复数据', err);
+    } else {
+      SCHEMA_LOGGER.error('创建唯一索引 idx_debt_charge_unique 失败', err);
+    }
+    indexFailures.push({ name: 'idx_debt_charge_unique', table: 'DebtRecord', error: errMsg });
   }
   createIndexIfNotExists(db, 'idx_idempotency_key', 'IdempotencyRecord', 'key');
   createIndexIfNotExists(db, 'idx_idempotency_expires', 'IdempotencyRecord', 'expiresAt');
@@ -278,4 +323,45 @@ export function createIndexes(db: Database) {
   createIndexIfNotExists(db, 'idx_medical_record_clinic_deleted_doctor', 'MedicalRecord', 'clinicId, deletedAt, doctorId');
   // Appointment: clinicId + deletedAt + patientId 复合索引，优化预约按患者查询
   createIndexIfNotExists(db, 'idx_appointment_clinic_deleted_patient', 'Appointment', 'clinicId, deletedAt, patientId');
+
+  // v23: 慢查询优化 — 复合索引补充
+  // ChargeItem: chargeId + category 复合索引，优化 revenue-stats 按分类收入统计的 JOIN + GROUP BY
+  createIndexIfNotExists(db, 'idx_charge_item_charge_category', 'ChargeItem', 'chargeId, category');
+  // Charge: clinicId + status + createdAt DESC 部分索引，优化 charge.service.ts 按状态分页列表及 dashboard 待收费查询
+  createIndexIfNotExists(db, 'idx_charge_clinic_status_created', 'Charge', 'clinicId, status, createdAt DESC', 'deletedAt IS NULL');
+  // Charge: clinicId + patientId + createdAt DESC 部分索引，优化患者收费历史分页查询
+  createIndexIfNotExists(db, 'idx_charge_clinic_patient_created', 'Charge', 'clinicId, patientId, createdAt DESC', 'deletedAt IS NULL');
+  // Charge: clinicId + paidAt + doctorId 部分索引，优化 revenue-stats 按医生收入统计的日期范围 + 分组查询
+  createIndexIfNotExists(db, 'idx_charge_clinic_paidat_doctor', 'Charge', 'clinicId, paidAt, doctorId', 'deletedAt IS NULL');
+  // Patient: clinicId + name + phone 复合索引，优化患者搜索的覆盖索引扫描（减少回表）
+  createIndexIfNotExists(db, 'idx_patient_clinic_name_phone', 'Patient', 'clinicId, name, phone', 'deletedAt IS NULL');
+
+  // DrugCatalog: clinicId + code 复合索引，优化药品目录分页查询
+  createIndexIfNotExists(db, 'idx_drugcatalog_clinic_code', 'DrugCatalog', 'clinicId, code');
+
+  // v24: 补充缺失的 clinicId 索引（含 clinicId 列但无索引的表）
+  // ChargeCombo: clinicId + deletedAt + createdAt 复合索引，优化 combo 分页列表查询
+  createIndexIfNotExists(db, 'idx_charge_combo_clinic_deleted_created', 'ChargeCombo', 'clinicId, deletedAt, createdAt');
+  // ChargeComboItem: clinicId + comboId 复合索引，优化组合项目查询
+  createIndexIfNotExists(db, 'idx_charge_combo_item_clinic_combo', 'ChargeComboItem', 'clinicId, comboId');
+  // PaymentMethod: clinicId 索引，优化支付方式多租户查询
+  createIndexIfNotExists(db, 'idx_payment_method_clinic', 'PaymentMethod', 'clinicId');
+  // TreatmentCatalog: clinicId + deletedAt + code 复合索引，优化治疗目录分页查询
+  createIndexIfNotExists(db, 'idx_treatment_catalog_clinic_deleted_code', 'TreatmentCatalog', 'clinicId, deletedAt, code');
+  // MedicalRecordTemplate: clinicId + deletedAt + category 复合索引，优化病历模板列表查询
+  createIndexIfNotExists(db, 'idx_medical_record_template_clinic_deleted', 'MedicalRecordTemplate', 'clinicId, deletedAt, category');
+  // Supplier: clinicId + deletedAt + name 复合索引，优化供应商多租户查询
+  createIndexIfNotExists(db, 'idx_supplier_clinic_deleted', 'Supplier', 'clinicId, deletedAt, name');
+  // PurchaseOrderItem: clinicId + orderId 复合索引，优化采购订单明细查询
+  createIndexIfNotExists(db, 'idx_purchase_order_item_clinic_order', 'PurchaseOrderItem', 'clinicId, orderId');
+  // ProcessingOrderItem: clinicId + orderId 复合索引，优化加工订单明细查询
+  createIndexIfNotExists(db, 'idx_processing_order_item_clinic_order', 'ProcessingOrderItem', 'clinicId, orderId');
+  // Family: clinicId 索引，优化家庭组多租户查询
+  createIndexIfNotExists(db, 'idx_family_clinic', 'Family', 'clinicId');
+  // PrescriptionItem: clinicId + prescriptionId 复合索引，优化处方明细查询
+  createIndexIfNotExists(db, 'idx_prescription_item_clinic_prescription', 'PrescriptionItem', 'clinicId, prescriptionId');
+  // FirstExamFollowUp: clinicId + examId 复合索引，优化初诊回访查询
+  createIndexIfNotExists(db, 'idx_first_exam_followup_clinic_exam', 'FirstExamFollowUp', 'clinicId, examId');
+  // FirstExamTooth: clinicId + examId 复合索引，优化初诊牙位查询（已有 examId 单列索引）
+  createIndexIfNotExists(db, 'idx_first_exam_tooth_clinic_exam', 'FirstExamTooth', 'clinicId, examId');
 }

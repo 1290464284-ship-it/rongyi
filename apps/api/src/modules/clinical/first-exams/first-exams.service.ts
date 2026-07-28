@@ -77,7 +77,8 @@ export class FirstExamsService extends BaseService<FirstExam> {
         clinicParams,
       );
       this.logAudit(db, AuditLogType.FIRST_EXAM_STATUS_UPDATE, id, "FirstExam", { beforeData: { status: oldRecord.status }, afterData: { status } });
-      return this.baseRepository.findById(db, this.tableName, '*', id, ['deletedAt IS NULL'], clinicParams);
+      const clinicCondition = clinicClause.replace(/^\s*AND\s+/i, '');
+      return this.baseRepository.findById(db, this.tableName, '*', id, clinicCondition ? ['deletedAt IS NULL', clinicCondition] : ['deletedAt IS NULL'], clinicParams);
     });
   }
 
@@ -180,29 +181,28 @@ export class FirstExamsService extends BaseService<FirstExam> {
     );
     const { items: existingItems } = this.baseRepository.executePaginatedQuery<{ id: string }>(this.dbService, checkQuery);
     if (existingItems.length > 0) {
-      this.baseRepository.update(
-        this.dbService,
-        'FirstExamTooth',
-        [
-          'toothStatus = ?',
-          'diseases = ?',
-          'treatmentPlan = ?',
-          'remark = ?',
-          'updatedAt = ?',
-        ],
-        [
-          dto.toothStatus,
-          dto.diseases !== undefined ? JSON.stringify(dto.diseases) : null,
-          dto.treatmentPlan,
-          dto.remark,
-          now,
-        ],
-        existingItems[0].id,
-        clinicClause,
-        clinicParams,
-      );
+      // 只更新显式传入的字段，避免 undefined 覆盖已有数据
+      const fields: string[] = [];
+      const values: unknown[] = [];
+      if (dto.toothStatus !== undefined) { fields.push('toothStatus = ?'); values.push(dto.toothStatus); }
+      if (dto.diseases !== undefined) { fields.push('diseases = ?'); values.push(JSON.stringify(dto.diseases)); }
+      if (dto.treatmentPlan !== undefined) { fields.push('treatmentPlan = ?'); values.push(dto.treatmentPlan); }
+      if (dto.remark !== undefined) { fields.push('remark = ?'); values.push(dto.remark); }
+      if (fields.length > 0) {
+        fields.push('updatedAt = ?');
+        values.push(now);
+        this.baseRepository.update(
+          this.dbService,
+          'FirstExamTooth',
+          fields,
+          values,
+          existingItems[0].id,
+          clinicClause,
+          clinicParams,
+        );
+      }
     }
-    this.logAudit(this.dbService, AuditLogType.FIRST_EXAM_TOOTH_UPDATE, id, "FirstExam", { afterData: { toothNumber, toothStatus: dto.toothStatus } });
+    this.logAudit(this.dbService, AuditLogType.FIRST_EXAM_TOOTH_UPDATE, id, "FirstExam", { afterData: { toothNumber, ...dto } });
     return { id, toothNumber };
   }
   async updateTrack(id: string, dto: { status?: string; leaderSuggestion?: string; directorSuggestion?: string; churnReason?: string; churnSolution?: string; doctorId?: string }) {

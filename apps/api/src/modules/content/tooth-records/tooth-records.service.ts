@@ -141,8 +141,8 @@ export class ToothRecordsService extends BaseService<ToothRecord> {
         clinicClause,
         clinicParams,
       );
+      this.logAudit(this.dbService, "TOOTH_RECORD_REMOVE", existingItems[0].id, "ToothRecord");
     }
-    this.logAudit(this.dbService, "TOOTH_RECORD_REMOVE", existingItems[0].id, "ToothRecord");
     return { success: true };
   }
 

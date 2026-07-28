@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-non-literal-fs-filename -- 加密密钥文件路径来自配置，非用户输入 */
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -23,6 +24,27 @@ const logger = new Logger('Encryption');
  * a restricted file, and the process REFUSES TO START until ENCRYPTION_KEY is set.
  */
 
+/**
+ * 密钥分层管理策略：
+ *
+ * 1. 主加密密钥 (ENCRYPTION_KEY)：用于加密业务敏感字段（如患者身份证号、手机号等）。
+ *    该密钥必须严格保密，不应与备份/日志系统共享。
+ *
+ * 2. 备份加密密钥 (BACKUP_ENCRYPTION_KEY)：用于加密数据库备份文件。
+ *    建议配置独立密钥，实现密钥隔离：
+ *    - 即使主密钥泄露，备份文件仍受独立密钥保护
+ *    - 即使备份密钥泄露，业务数据仍受主密钥保护
+ *    - 便于轮换：备份密钥可独立更换而不影响在线业务数据
+ *
+ * 3. 旧密钥回退 (LEGACY_ENCRYPTION_KEY)：用于解密历史数据，支持密钥迁移。
+ *    读取到旧密钥加密的数据时自动解密并提示重新加密。
+ *
+ * 配置建议：
+ *   ENCRYPTION_KEY=<64-char-hex>        # 主业务密钥
+ *   BACKUP_ENCRYPTION_KEY=<64-char-hex> # 备份专用密钥（推荐独立设置）
+ *   LEGACY_ENCRYPTION_KEY=<64-char-hex> # 旧密钥（仅在迁移期需要）
+ */
+
 /** Typed error for encryption/decryption failures. */
 export class EncryptionError extends Error {
   constructor(
@@ -40,6 +62,8 @@ export class EncryptionError extends Error {
 /** Optional legacy key for decrypting data encrypted with a previous key */
 let _legacyKey: Buffer | null = null;
 let _key: Buffer | null = null;
+let _backupKey: Buffer | null = null;
+let _backupKeyFallbackWarned = false;
 
 export function setLegacyEncryptionKey(key: string): void {
   if (key.length === 64 && /^[a-f0-9]{64}$/i.test(key)) {
@@ -137,6 +161,35 @@ function getEncryptionKey(): Buffer {
 }
 
 /**
+ * Get the dedicated backup encryption key from BACKUP_ENCRYPTION_KEY.
+ *
+ * If BACKUP_ENCRYPTION_KEY is not configured, this falls back to the main
+ * encryption key (ENCRYPTION_KEY) for backward compatibility, but logs a
+ * warning so operators know to configure an independent backup key.
+ */
+export function getBackupEncryptionKey(): Buffer {
+  if (_backupKey) return _backupKey;
+
+  const envKey = process.env.BACKUP_ENCRYPTION_KEY;
+  if (envKey && envKey.length >= 32) {
+    if (envKey.length === 64 && /^[a-f0-9]{64}$/i.test(envKey)) {
+      _backupKey = Buffer.from(envKey, 'hex');
+    } else {
+      _backupKey = crypto.createHash('sha256').update(envKey).digest();
+    }
+    return _backupKey;
+  }
+
+  if (!_backupKeyFallbackWarned) {
+    logger.warn(
+      '未配置 BACKUP_ENCRYPTION_KEY，备份加密将回退使用 ENCRYPTION_KEY。建议为备份配置独立密钥以提高安全性。',
+    );
+    _backupKeyFallbackWarned = true;
+  }
+  return getEncryptionKey();
+}
+
+/**
  * Encrypt plaintext → hex-encoded ciphertext (IV + authTag + encrypted).
  * Output format: `<iv_hex>:<authTag_hex>:<ciphertext_hex>`
  *
@@ -187,11 +240,15 @@ export function decryptFieldWithFlag(ciphertext: string | null | undefined): { p
 const BACKUP_MAGIC = Buffer.from('DBAK');
 const BACKUP_VERSION = 1;
 
-/** Encrypt a Buffer (for backup files). Returns Buffer with magic header. */
-export function encryptBuffer(data: Buffer): Buffer {
-  const key = getEncryptionKey();
+/**
+ * Encrypt a Buffer (for backup files). Returns Buffer with magic header.
+ *
+ * Uses BACKUP_ENCRYPTION_KEY by default; pass an explicit `key` to override.
+ */
+export function encryptBuffer(data: Buffer, key?: Buffer): Buffer {
+  const resolvedKey = key ?? getBackupEncryptionKey();
   const iv = crypto.randomBytes(IV_LENGTH);
-  const cipher = crypto.createCipheriv(ALGORITHM, key, iv, { authTagLength: AUTH_TAG_LENGTH } as crypto.CipherGCMOptions);
+  const cipher = crypto.createCipheriv(ALGORITHM, resolvedKey, iv, { authTagLength: AUTH_TAG_LENGTH } as crypto.CipherGCMOptions);
   const encrypted = Buffer.concat([cipher.update(data), cipher.final()]);
   const authTag = (cipher).getAuthTag();
   // Format: magic(4) + version(1) + iv(12) + authTag(16) + ciphertext
@@ -203,8 +260,12 @@ export function isEncryptedBuffer(data: Buffer): boolean {
   return data.length >= 5 && Buffer.from(data.subarray(0, 4)).equals(BACKUP_MAGIC);
 }
 
-/** Decrypt a Buffer. Returns null if not encrypted or decryption fails. Call isEncryptedBuffer first. */
-export function decryptBufferIfEncrypted(data: Buffer): Buffer | null {
+/**
+ * Decrypt a Buffer. Returns null if not encrypted or decryption fails. Call isEncryptedBuffer first.
+ *
+ * Uses BACKUP_ENCRYPTION_KEY by default; pass an explicit `key` to override.
+ */
+export function decryptBufferIfEncrypted(data: Buffer, key?: Buffer): Buffer | null {
   if (!isEncryptedBuffer(data)) return null;
   if (data.length < 33) return null;
   const version = data[4];
@@ -216,8 +277,8 @@ export function decryptBufferIfEncrypted(data: Buffer): Buffer | null {
   const authTag = Buffer.from(data.subarray(17, 33));
   const encrypted = Buffer.from(data.subarray(33));
   try {
-    const key = getEncryptionKey();
-    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv, { authTagLength: AUTH_TAG_LENGTH } as crypto.CipherGCMOptions);
+    const resolvedKey = key ?? getBackupEncryptionKey();
+    const decipher = crypto.createDecipheriv(ALGORITHM, resolvedKey, iv, { authTagLength: AUTH_TAG_LENGTH } as crypto.CipherGCMOptions);
     (decipher).setAuthTag(authTag);
     return Buffer.concat([decipher.update(encrypted), decipher.final()]);
   } catch (err: unknown) {

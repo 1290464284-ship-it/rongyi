@@ -14,7 +14,7 @@ export class QueryTreatmentPlanDto extends PaginationQueryDto {
   @IsString()
   doctorId?: string;
 
-  @ApiProperty({ description: '计划状态', enum: PlanStatus, example: PlanStatus.PENDING, required: false })
+  @ApiProperty({ description: '计划状态', enum: PlanStatus, example: PlanStatus.DRAFT, required: false })
   @IsOptional()
   @IsEnum(PlanStatus)
   status?: PlanStatus;

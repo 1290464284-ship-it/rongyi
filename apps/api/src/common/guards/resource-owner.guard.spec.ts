@@ -5,7 +5,7 @@ import { Role } from '@dental/shared';
 import { DbService } from '../../db/db.service';
 
 function createMockExecutionContext(
-  user?: { id: string; role: Role },
+  user?: { id: string; role: Role; clinicId?: string },
   params?: Record<string, string>,
 ): ExecutionContext {
   const mockRequest = {
@@ -188,6 +188,43 @@ describe('ResourceOwnerGuard', () => {
       const context = createMockExecutionContext(
         { id: 'doc-1', role: Role.DOCTOR },
         { id: 'appt-1' },
+      );
+      const result = guard.canActivate(context);
+      expect(result).toBe(true);
+    });
+  });
+
+  describe('诊所数据隔离', () => {
+    it('用户有 clinicId 时，查询包含 clinicId 过滤条件', () => {
+      getAllAndOverrideMock.mockReturnValue({ resourceType: 'Appointment' });
+      getMock.mockReturnValue({ doctorId: 'doc-1' });
+      const context = createMockExecutionContext(
+        { id: 'doc-1', role: Role.DOCTOR, clinicId: 'clinic-1' },
+        { id: 'appt-1' },
+      );
+      const result = guard.canActivate(context);
+      expect(result).toBe(true);
+      expect(prepareMock).toHaveBeenCalledWith(expect.stringContaining('AND clinicId = ?'));
+    });
+
+    it('用户无 clinicId 时，查询不包含 clinicId 过滤条件', () => {
+      getAllAndOverrideMock.mockReturnValue({ resourceType: 'Appointment' });
+      getMock.mockReturnValue({ doctorId: 'doc-1' });
+      const context = createMockExecutionContext(
+        { id: 'doc-1', role: Role.DOCTOR },
+        { id: 'appt-1' },
+      );
+      const result = guard.canActivate(context);
+      expect(result).toBe(true);
+      expect(prepareMock).toHaveBeenCalledWith(expect.not.stringContaining('clinicId'));
+    });
+
+    it('资源不属于当前诊所时，返回 true（由后续业务逻辑处理）', () => {
+      getAllAndOverrideMock.mockReturnValue({ resourceType: 'Appointment' });
+      getMock.mockReturnValue(undefined);
+      const context = createMockExecutionContext(
+        { id: 'doc-1', role: Role.DOCTOR, clinicId: 'clinic-1' },
+        { id: 'appt-from-other-clinic' },
       );
       const result = guard.canActivate(context);
       expect(result).toBe(true);

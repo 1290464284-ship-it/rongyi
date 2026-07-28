@@ -23,6 +23,11 @@ export class CreateAppointmentDto {
   @IsEnum(AppointmentType)
   type!: AppointmentType;
 
+  @ApiProperty({ description: '牙椅ID', example: 'chair-uuid-001', required: false })
+  @IsOptional()
+  @IsString()
+  chairId?: string;
+
   @ApiProperty({ description: '备注', example: '患者主诉牙痛', required: false })
   @IsOptional()
   @IsString()

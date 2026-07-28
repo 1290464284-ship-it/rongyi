@@ -76,23 +76,27 @@ pnpm verify:full       # 全量（含 e2e + smoke + migration）
 
 ## 关键约束
 
-1. **原生 SQL only**：通过 `DbService` 执行参数化查询（`?` 占位符），禁止 ORM。
-2. **模块边界**：每个 `modules/<domain>/` 是独立 NestJS Module；跨模块依赖必须在 `*.module.ts` 的 `imports` 中声明。
-3. **BaseRepository / BaseService**：通用 CRUD 继承自 `common/repositories/` 和 `common/services/base.service.ts`。
-4. **诊所隔离**：通过 `ClinicContextInterceptor` + `ClinicContextService` 实现多诊所数据隔离。
-5. **软删除**：所有查询默认过滤 `deletedAt IS NULL`。
-6. **JWT 认证**：Passport JWT Strategy，`@Public()` 装饰器标记公开端点。
-7. **角色权限**：`@Roles()` + `RolesGuard`，角色定义在 `common/constants/roles.ts`。
-8. **API 前缀**：所有端点以 `/api` 开头。
-9. **验证**：入参使用 class-validator DTO。
-10. **测试**：使用 Jest + `@nestjs/testing`，Mock DbService 用 `common/test-helpers/mock-db-factory.ts`。
+> **规范来源声明**：以下约束的详细规范定义在 `.qoder/rules/` 目录中，此处仅作摘要。修改约束时请更新对应的 rule 文件。
+
+1. **原生 SQL only** → 详见 `.qoder/rules/no-orm-usage.md`
+2. **模块边界** → 详见 `.qoder/rules/nestjs-module-boundary.md`
+3. **BaseRepository / BaseService**：通用 CRUD 继承自 `common/repositories/` 和 `common/services/base.service.ts`
+4. **诊所隔离**：通过 `ClinicContextInterceptor` + `ClinicContextService` 实现多诊所数据隔离
+5. **软删除** → 详见 `.qoder/rules/soft-delete-enforcement.md`
+6. **JWT 认证**：Passport JWT Strategy，`@Public()` 装饰器标记公开端点
+7. **角色权限**：`@Roles()` + `RolesGuard`，角色常量统一来自 `@dental/shared`（`ROLES` / `ROLE_LEVELS` / `hasRoleLevel` / `SharedRole`），API 侧禁止在本地重复定义
+8. **API 前缀**：所有端点以 `/api` 开头
+9. **验证**：入参使用 class-validator DTO
+10. **测试**：使用 Jest + `@nestjs/testing`，Mock DbService 用 `common/test-helpers/mock-db-factory.ts`
 
 ## 禁止事项
 
-- ❌ 不引入 Prisma / TypeORM / Sequelize / 任何 ORM
-- ❌ 不手动运行 migration — 应用启动自动执行
-- ❌ 不在 SQL 中拼接字符串（`WHERE id = ${id}`）
-- ❌ 不绕过 Module 边界直接 import 其他模块的 service/controller
+> 以下每条约束只有一个规范来源（rule 文件），修改时请更新对应 rule 文件。
+
+- ❌ **不引入 ORM** → 详见 `.qoder/rules/no-orm-usage.md`
+- ❌ **不手动运行 migration** → 详见 `.qoder/rules/no-manual-migration.md`
+- ❌ **不在 SQL 中拼接字符串** → 详见 `.qoder/rules/sql-parameterization.md`
+- ❌ **不绕过 Module 边界** → 详见 `.qoder/rules/nestjs-module-boundary.md`
 - ❌ 不跳过 `verify` 直接提交代码
 - ❌ 不在 controller 中写业务逻辑 — 委托给 service
 - ❌ 不硬编码配置值 — 使用 ConfigService

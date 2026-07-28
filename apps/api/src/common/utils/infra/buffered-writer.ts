@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-non-literal-fs-filename -- 缓冲写入器路径来自注入配置，非用户输入 */
 import { OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import * as fs from 'node:fs';
 import * as path from 'node:path';

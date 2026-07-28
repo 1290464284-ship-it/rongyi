@@ -1,7 +1,7 @@
 export const patientTables = [
   `CREATE TABLE IF NOT EXISTS Patient (
       id TEXT PRIMARY KEY,
-      code TEXT UNIQUE NOT NULL,
+      code TEXT NOT NULL,
       name TEXT NOT NULL,
       gender TEXT NOT NULL CHECK (gender IN ('MALE','FEMALE','UNKNOWN','OTHER')),
       birthDate TEXT,
@@ -27,6 +27,7 @@ export const patientTables = [
       createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
       updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
       deletedAt TEXT,
+      UNIQUE(clinicId, code),
       FOREIGN KEY (familyId) REFERENCES Family(id),
       FOREIGN KEY (clinicId) REFERENCES Clinic(id)
     )`,
@@ -41,6 +42,7 @@ export const patientTables = [
       patientId TEXT NOT NULL,
       planDate TEXT NOT NULL,
       content TEXT,
+      type TEXT,
       status TEXT DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'NO_ANSWER')),
       result TEXT,
       assigneeId TEXT,

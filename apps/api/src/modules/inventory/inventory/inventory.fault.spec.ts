@@ -1,7 +1,8 @@
 import { InventoryService } from './inventory.service';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import { IdempotencyService } from '../../../common/services/idempotency.service';
-import { StatsService } from '../../system/stats/stats.service';
+import { EventBusService } from '../../../common/events/event-bus.service';
+import { InventoryRepository } from './repositories/inventory.repository';
 import { FaultInjector, createDbBusyFault, createDbLockedFault, createRandomFailureFault } from '../../../common/test-helpers/fault-injection';
 import { FaultyMockDbService } from '../../../common/test-helpers/mock-db-factory';
 import { MockDbRow } from '../../../db/__mocks__/db-service.mock';
@@ -24,28 +25,31 @@ function createMockIdempotency(db: FaultyMockDbService): IdempotencyService {
   } as unknown as IdempotencyService;
 }
 
-function createMockStatsService(): jest.Mocked<StatsService> {
+function createMockEventBus(): jest.Mocked<EventBusService> {
   return {
-    invalidateStatsCache: jest.fn(),
-  } as unknown as jest.Mocked<StatsService>;
+    emit: jest.fn(),
+    on: jest.fn(),
+    onAll: jest.fn(),
+  } as unknown as jest.Mocked<EventBusService>;
 }
 
 describe('InventoryService - 故障注入测试', () => {
   let service: InventoryService;
   let db: FaultyMockDbService;
   let faultInjector: FaultInjector;
-  let statsService: jest.Mocked<StatsService>;
+  let eventBus: jest.Mocked<EventBusService>;
 
   beforeEach(() => {
     faultInjector = new FaultInjector();
     faultInjector.enable();
     db = new FaultyMockDbService(faultInjector);
-    statsService = createMockStatsService();
+    eventBus = createMockEventBus();
     service = new InventoryService(
       db as any,
       createMockClinicContext(),
       createMockIdempotency(db),
-      statsService,
+      eventBus,
+      new InventoryRepository(),
     );
   });
 
@@ -105,7 +109,7 @@ describe('InventoryService - 故障注入测试', () => {
         quantity: 50,
         unitPrice: 15,
         remark: '采购入库',
-      })).rejects.toThrow('SQLITE_BUSY');
+      })).rejects.toThrow('库存操作失败');
 
       const item = getInventoryItem('item-001');
       expect(item).toBeDefined();
@@ -131,7 +135,7 @@ describe('InventoryService - 故障注入测试', () => {
         quantity: 50,
         unitPrice: 15,
         remark: '采购入库',
-      })).rejects.toThrow('SQLITE_BUSY');
+      })).rejects.toThrow('库存操作失败');
 
       const item = getInventoryItem('item-001');
       expect(item?.stock).toBe(100);
@@ -155,7 +159,7 @@ describe('InventoryService - 故障注入测试', () => {
         type: 'OUT',
         quantity: 30,
         remark: '科室领用',
-      })).rejects.toThrow('SQLITE_BUSY');
+      })).rejects.toThrow('库存操作失败');
 
       const item = getInventoryItem('item-001');
       expect(item?.stock).toBe(100);
@@ -177,7 +181,7 @@ describe('InventoryService - 故障注入测试', () => {
         type: 'OUT',
         quantity: 30,
         remark: '科室领用',
-      })).rejects.toThrow('SQLITE_BUSY');
+      })).rejects.toThrow('库存操作失败');
 
       const item = getInventoryItem('item-001');
       expect(item?.stock).toBe(100);
@@ -236,7 +240,7 @@ describe('InventoryService - 故障注入测试', () => {
         type: 'ADJUST',
         quantity: 95,
         remark: '盘点调整',
-      })).rejects.toThrow('SQLITE_LOCKED');
+      })).rejects.toThrow('库存操作失败');
 
       const item = getInventoryItem('item-001');
       expect(item?.stock).toBe(100);

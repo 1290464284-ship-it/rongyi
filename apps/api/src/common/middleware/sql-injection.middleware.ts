@@ -23,11 +23,18 @@ const SQL_INJECTION_PATTERNS = [
 
 // 登录接口不再排除：登录字段（username/password）同样需要检测 SQL 注入，
 // 检测规则为多词 SQL 短语和特定模式，正常用户名/密码不会误报。
-const PATHS_TO_SKIP = [
+//
+// P1 修复：原 PATHS_TO_SKIP 使用简单 startsWith 匹配，但 API 启用了 URI 版本控制
+// (main.ts: app.enableVersioning({ prefix: 'api/v', defaultVersion: '1' }))
+// 实际请求路径为 /api/v1/auth/refresh，而原排除路径为 /api/auth/refresh，不匹配。
+// 改用正则表达式，同时匹配有版本号和无版本号两种路径形式。
+const PATHS_TO_SKIP_REGEX: RegExp[] = [
   // 文档接口包含 SQL 示例语句，会被检测规则误判
-  '/api/docs',
+  // 匹配 /api/docs, /api/docs/swagger 等
+  /^\/api\/docs(\/|$)/,
   // refresh token 为随机字符串，不参与 SQL 拼接，保留排除以避免 token 误报
-  '/api/auth/refresh',
+  // 匹配 /api/auth/refresh 和 /api/v1/auth/refresh, /api/v2/auth/refresh 等
+  /^\/api\/(v\d+\/)?auth\/refresh(\/|$)/,
 ];
 
 @Injectable()
@@ -85,7 +92,7 @@ export class SqlInjectionMiddleware implements NestMiddleware {
   use(req: Request, res: Response, next: NextFunction) {
     const requestPath = req.path;
 
-    if (PATHS_TO_SKIP.some((p) => requestPath.startsWith(p))) {
+    if (PATHS_TO_SKIP_REGEX.some((regex) => regex.test(requestPath))) {
       return next();
     }
 

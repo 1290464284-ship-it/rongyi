@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { AppLogger } from './logger.service';
 import { DbService } from '../../db/db.service';
 import { PAGINATION } from '../../common/constants/pagination';
+import { BusinessException, ErrorCode } from '@common/errors';
 import * as crypto from 'node:crypto';
 
 export enum AlertLevel {
@@ -345,7 +346,7 @@ export class AlertService {
       return rows.map((row) => this.mapRowToAlert(row));
     } catch (err: unknown) {
       this.logger.error('从数据库查询告警失败', err instanceof Error ? err.message : String(err));
-      return [];
+      throw new BusinessException(ErrorCode.DB_ERROR, '查询告警失败');
     }
   }
 

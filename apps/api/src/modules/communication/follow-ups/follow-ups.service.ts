@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable } from '@nestjs/common';
 import { BaseService, QueryOptions } from "../../../common/services/base.service";
 import { ClinicContextService } from "../../../common/services/clinic-context.service";
 import { buildClinicFilter } from "../../../common/utils/db/clinic-filter";
@@ -75,7 +75,8 @@ export class FollowUpsService extends BaseService<FollowUp> {
         clinicParams,
       );
       this.logAudit(db, "FOLLOWUP_COMPLETE", id, "FollowUp", { beforeData: { status: existing.status }, afterData: { status: 'COMPLETED', result: safeResult.result } });
-      return this.baseRepository.findById<FollowUp>(db, this.tableName, '*', id, ['deletedAt IS NULL'], clinicParams);
+      const clinicCondition = clinicClause.replace(/^\s*AND\s+/i, '');
+      return this.baseRepository.findById<FollowUp>(db, this.tableName, '*', id, clinicCondition ? ['deletedAt IS NULL', clinicCondition] : ['deletedAt IS NULL'], clinicParams);
     });
   }
 
@@ -125,7 +126,8 @@ export class FollowUpsService extends BaseService<FollowUp> {
         clinicParams,
       );
       this.logAudit(db, "FOLLOWUP_UPDATE", id, "FollowUp", { beforeData: { status: existing.status }, afterData: { status: safeDto.status } });
-      return this.baseRepository.findById<FollowUp>(db, this.tableName, '*', id, ['deletedAt IS NULL'], clinicParams);
+      const clinicCondition2 = clinicClause.replace(/^\s*AND\s+/i, '');
+      return this.baseRepository.findById<FollowUp>(db, this.tableName, '*', id, clinicCondition2 ? ['deletedAt IS NULL', clinicCondition2] : ['deletedAt IS NULL'], clinicParams);
     });
   }
 

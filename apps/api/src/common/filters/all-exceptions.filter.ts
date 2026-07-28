@@ -2,8 +2,9 @@ import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from
 import { Request, Response } from 'express';
 import { AppLogger, sanitizeObject, sanitizeString } from '../services/logger.service';
 import { BusinessException } from '../errors/business-exception';
-import { LegacyErrorCode, ErrorCode } from '../errors/error-codes';
+import { ErrorCode, mapLegacyToErrorCode } from '../errors/error-codes';
 import { SentryService } from '../monitoring/sentry.service';
+import { getRequestContext, als } from '../utils/context/async-context';
 
 const isDev = process.env.NODE_ENV !== 'production';
 
@@ -33,7 +34,7 @@ function isSqliteError(err: unknown): err is SqliteErrorLike {
 type SqliteErrorHandler = {
   test: (err: Error) => boolean;
   status: number;
-  code: LegacyErrorCode;
+  errorCode: ErrorCode;
   message: string;
 };
 
@@ -41,25 +42,25 @@ const sqliteErrorHandlers: SqliteErrorHandler[] = [
   {
     test: (err) => err.message.includes('UNIQUE constraint failed'),
     status: HttpStatus.CONFLICT,
-    code: LegacyErrorCode.CONFLICT_UNIQUE_CONSTRAINT,
+    errorCode: ErrorCode.CONFLICT_UNIQUE_CONSTRAINT,
     message: '资源已存在，请检查唯一性约束',
   },
   {
     test: (err) => err.message.includes('FOREIGN KEY constraint failed'),
     status: HttpStatus.BAD_REQUEST,
-    code: LegacyErrorCode.DB_FOREIGN_KEY_CONSTRAINT,
+    errorCode: ErrorCode.DB_FOREIGN_KEY_CONSTRAINT,
     message: '关联数据不存在，请检查引用',
   },
   {
     test: (err) => err.message.includes('CHECK constraint failed'),
     status: HttpStatus.BAD_REQUEST,
-    code: LegacyErrorCode.DB_CHECK_CONSTRAINT,
+    errorCode: ErrorCode.DB_CHECK_CONSTRAINT,
     message: '数据不满足校验条件',
   },
   {
     test: (err) => err.message.includes('NOT NULL constraint failed'),
     status: HttpStatus.BAD_REQUEST,
-    code: LegacyErrorCode.DB_NOT_NULL_CONSTRAINT,
+    errorCode: ErrorCode.DB_NOT_NULL_CONSTRAINT,
     message: '必填字段不能为空',
   },
   {
@@ -67,7 +68,7 @@ const sqliteErrorHandlers: SqliteErrorHandler[] = [
       err.message.includes('database is locked') ||
       err.message.includes('SQLITE_BUSY'),
     status: HttpStatus.SERVICE_UNAVAILABLE,
-    code: LegacyErrorCode.DB_BUSY_TIMEOUT,
+    errorCode: ErrorCode.DB_BUSY_TIMEOUT,
     message: '数据库繁忙，请稍后再试',
   },
   {
@@ -75,13 +76,13 @@ const sqliteErrorHandlers: SqliteErrorHandler[] = [
       err.message.includes('SQLITE_LOCKED') ||
       err.message.includes('database table is locked'),
     status: HttpStatus.CONFLICT,
-    code: LegacyErrorCode.DB_LOCKED,
+    errorCode: ErrorCode.DB_LOCKED,
     message: '数据被锁定，请稍后再试',
   },
   {
     test: (err) => err.message.includes('database disk image is malformed'),
     status: HttpStatus.INTERNAL_SERVER_ERROR,
-    code: LegacyErrorCode.DB_CORRUPT,
+    errorCode: ErrorCode.DB_CORRUPT,
     message: '数据库损坏，请联系管理员',
   },
   {
@@ -89,7 +90,7 @@ const sqliteErrorHandlers: SqliteErrorHandler[] = [
       err.message.includes('attempt to write a readonly database') ||
       err.message.includes('SQLITE_READONLY'),
     status: HttpStatus.SERVICE_UNAVAILABLE,
-    code: LegacyErrorCode.DB_READONLY,
+    errorCode: ErrorCode.DB_READONLY,
     message: '数据库只读，无法写入',
   },
   {
@@ -97,7 +98,7 @@ const sqliteErrorHandlers: SqliteErrorHandler[] = [
       err.message.includes('SQLITE_IOERR') ||
       err.message.includes('disk I/O error'),
     status: HttpStatus.INTERNAL_SERVER_ERROR,
-    code: LegacyErrorCode.DB_IO_ERROR,
+    errorCode: ErrorCode.DB_IO_ERROR,
     message: '数据库读写错误，请联系管理员',
   },
 ];
@@ -129,6 +130,17 @@ function hasErrorCode(exception: unknown): exception is HasErrorCode {
   return 'errorCode' in (exception as Record<string, unknown>);
 }
 
+const httpStatusErrorCodeMap: Record<number, ErrorCode | undefined> = {
+  [HttpStatus.NOT_FOUND]: ErrorCode.NOT_FOUND,
+  [HttpStatus.FORBIDDEN]: ErrorCode.FORBIDDEN,
+  [HttpStatus.UNAUTHORIZED]: ErrorCode.UNAUTHORIZED,
+  [HttpStatus.CONFLICT]: ErrorCode.CONFLICT,
+  [HttpStatus.BAD_REQUEST]: ErrorCode.BAD_REQUEST,
+  [HttpStatus.PAYLOAD_TOO_LARGE]: ErrorCode.PAYLOAD_TOO_LARGE,
+  [HttpStatus.UNSUPPORTED_MEDIA_TYPE]: ErrorCode.UNSUPPORTED_MEDIA_TYPE,
+  [HttpStatus.TOO_MANY_REQUESTS]: ErrorCode.RATE_LIMITED,
+};
+
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   constructor(
@@ -142,22 +154,38 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const req = ctx.getRequest<Request>();
     const traceId = req.traceId || 'unknown';
 
+    const currentContext = getRequestContext();
+    const userId = req.user?.id;
+    const clinicId = (req.user as Record<string, unknown>)?.clinicId as string | undefined;
+
+    const hasContext = !!currentContext;
+    if (hasContext) {
+      if (!currentContext.userId && userId) {
+        currentContext.userId = userId;
+      }
+      if (!currentContext.clinicId && clinicId) {
+        currentContext.clinicId = clinicId;
+      }
+    } else {
+      als.enterWith({ traceId, userId, clinicId, requestStart: new Date().toISOString() });
+    }
+
     let status: number;
     let message: unknown;
-    let errorCode: string | undefined;
-    let numericErrorCode: number | undefined;
+    let errorCode: ErrorCode;
     let details: Record<string, unknown> | undefined;
     let stack: string | undefined;
     let shouldReportToSentry = false;
 
     if (exception instanceof BusinessException) {
       status = exception.getStatus();
-      errorCode = exception.getErrorCode();
+      errorCode = exception.errorCode;
       const resp = exception.getResponse() as { code: string; message: string };
       message = resp.message;
+      details = (exception as unknown as { details?: Record<string, unknown> }).details;
     } else if (exception instanceof HttpException && hasErrorCode(exception)) {
       status = exception.getStatus();
-      numericErrorCode = exception.errorCode;
+      errorCode = exception.errorCode;
       details = exception.details;
       const resp = exception.getResponse();
       if (typeof resp === 'string') {
@@ -170,49 +198,38 @@ export class AllExceptionsFilter implements ExceptionFilter {
     } else if (exception instanceof HttpException) {
       status = exception.getStatus();
       const resp = exception.getResponse();
+      let hasBodyCode = false;
       if (typeof resp === 'object' && resp !== null && 'code' in resp) {
-        const r = resp as { code: string; message: string };
-        errorCode = r.code;
+        const r = resp as { code: string | number; message: string };
+        errorCode = typeof r.code === 'number' ? (r.code) : mapLegacyToErrorCode(r.code);
         message = r.message;
+        hasBodyCode = true;
       } else {
         message = resp;
       }
-      if (status === HttpStatus.PAYLOAD_TOO_LARGE) {
-        errorCode = LegacyErrorCode.PAYLOAD_TOO_LARGE;
-      } else if (status === HttpStatus.UNSUPPORTED_MEDIA_TYPE) {
-        errorCode = LegacyErrorCode.UNSUPPORTED_MEDIA_TYPE;
-      } else if (status === HttpStatus.TOO_MANY_REQUESTS) {
-        errorCode = LegacyErrorCode.RATE_LIMITED;
-      } else if (status === HttpStatus.NOT_FOUND) {
-        numericErrorCode = ErrorCode.NOT_FOUND;
-      } else if (status === HttpStatus.FORBIDDEN) {
-        numericErrorCode = ErrorCode.FORBIDDEN;
-      } else if (status === HttpStatus.UNAUTHORIZED) {
-        numericErrorCode = ErrorCode.UNAUTHORIZED;
-      } else if (status === HttpStatus.CONFLICT) {
-        numericErrorCode = ErrorCode.CONFLICT;
-      } else if (status === HttpStatus.BAD_REQUEST) {
-        numericErrorCode = ErrorCode.BAD_REQUEST;
+      if (!hasBodyCode) {
+        const mappedCode = httpStatusErrorCodeMap[status];
+        if (mappedCode !== undefined) {
+          errorCode = mappedCode;
+        }
       }
     } else if (exception instanceof Error && (isSqliteError(exception) || matchSqliteError(exception))) {
       const handler = matchSqliteError(exception);
       if (handler) {
         status = handler.status;
-        errorCode = handler.code;
+        errorCode = handler.errorCode;
         message = handler.message;
       } else {
         status = HttpStatus.INTERNAL_SERVER_ERROR;
-        errorCode = LegacyErrorCode.DB_ERROR;
+        errorCode = ErrorCode.DB_ERROR;
         message = '数据库错误';
       }
-      numericErrorCode = ErrorCode.DATA_INTEGRITY_ERROR;
       stack = exception.stack;
       shouldReportToSentry = true;
     } else {
       status = HttpStatus.INTERNAL_SERVER_ERROR;
       message = '服务器内部错误';
-      errorCode = LegacyErrorCode.INTERNAL_ERROR;
-      numericErrorCode = ErrorCode.UNKNOWN;
+      errorCode = ErrorCode.UNKNOWN;
       const err = toError(exception);
       stack = err.stack;
       shouldReportToSentry = true;
@@ -231,7 +248,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
         method: req.method,
         url: req.url,
         statusCode: status,
-        errorCode: errorCode || String(numericErrorCode),
+        errorCode: String(errorCode),
+        userId,
+        clinicId,
       });
     }
 
@@ -239,27 +258,22 @@ export class AllExceptionsFilter implements ExceptionFilter {
       success: false,
       statusCode: status,
       message: sanitizedMessage,
+      // P0 修复：移除重复的 code 字段，统一使用 errorCode（与 BusinessException.errorCode 一致）
+      // 前端不依赖 code 字段（已验证），保留两者会导致契约歧义
+      errorCode,
       timestamp: new Date().toISOString(),
       path: req.url,
       traceId,
     };
 
-    if (errorCode) {
-      responseBody.code = errorCode;
-    }
-
-    if (numericErrorCode !== undefined) {
-      responseBody.errorCode = numericErrorCode;
-    }
-
     if (details) {
-      responseBody.details = details;
+      // P2 修复：details 字段也需脱敏，防止敏感字段（idCard/phone 等）泄露
+      responseBody.details = sanitizeObject(details);
     }
 
     if (isValidationError(sanitizedMessage)) {
       responseBody.errors = sanitizedMessage.message;
       responseBody.message = '参数校验失败';
-      responseBody.code = LegacyErrorCode.VALIDATION_ERROR;
       responseBody.errorCode = ErrorCode.VALIDATION_ERROR;
     }
 

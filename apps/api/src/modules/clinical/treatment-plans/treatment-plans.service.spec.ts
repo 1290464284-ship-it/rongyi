@@ -1,7 +1,8 @@
 import { TreatmentPlansService } from './treatment-plans.service';
+import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+
 
 function createMockClinicContext(): ClinicContextService {
   return {
@@ -63,7 +64,7 @@ describe('TreatmentPlansService', () => {
       expect(planItems.length).toBe(2);
     });
 
-    it('治疗计划明细为空应抛出 BadRequestException', async () => {
+    it('治疗计划明细为空应抛出 BusinessValidationException', async () => {
       const dto = {
         patientId: 'patient-001',
         doctorId: 'doctor-001',
@@ -71,17 +72,17 @@ describe('TreatmentPlansService', () => {
         items: [],
       };
 
-      await expect(service.create(dto as any)).rejects.toThrow(BadRequestException);
+      await expect(service.create(dto as any)).rejects.toThrow(BusinessValidationException);
     });
 
-    it('治疗计划明细为 undefined 应抛出 BadRequestException', async () => {
+    it('治疗计划明细为 undefined 应抛出 BusinessValidationException', async () => {
       const dto = {
         patientId: 'patient-001',
         doctorId: 'doctor-001',
         name: '无明细计划',
       };
 
-      await expect(service.create(dto as any)).rejects.toThrow(BadRequestException);
+      await expect(service.create(dto as any)).rejects.toThrow(BusinessValidationException);
     });
 
     it('创建治疗计划时使用默认值（totalFee=0, remark=null）', async () => {
@@ -162,14 +163,14 @@ describe('TreatmentPlansService', () => {
       expect((result as any).status).toBe('APPROVED');
     });
 
-    it('DRAFT → APPROVED 非法流转应抛出 BadRequestException', async () => {
+    it('DRAFT → APPROVED 非法流转应抛出 BusinessValidationException', async () => {
       db.seed('TreatmentPlan', [
         { id: 'plan-001', patientId: 'p1', doctorId: 'd1', name: '计划1', status: 'DRAFT', totalFee: 1000, clinicId: 'test-clinic-001' },
       ]);
 
       await expect(
         service.updateStatus('plan-001', { status: 'APPROVED' }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
     it('DRAFT → CANCELLED 应成功', async () => {
@@ -242,24 +243,24 @@ describe('TreatmentPlansService', () => {
       expect((result as any).status).toBe('DRAFT');
     });
 
-    it('非法状态流转 DRAFT → COMPLETED 应抛出 BadRequestException', async () => {
+    it('非法状态流转 DRAFT → COMPLETED 应抛出 BusinessValidationException', async () => {
       db.seed('TreatmentPlan', [
         { id: 'plan-001', patientId: 'p1', doctorId: 'd1', name: '计划1', status: 'DRAFT', totalFee: 1000, clinicId: 'test-clinic-001' },
       ]);
 
       await expect(
         service.updateStatus('plan-001', { status: 'COMPLETED' }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
-    it('非法状态流转 APPROVED → DRAFT 应抛出 BadRequestException', async () => {
+    it('非法状态流转 APPROVED → DRAFT 应抛出 BusinessValidationException', async () => {
       db.seed('TreatmentPlan', [
         { id: 'plan-001', patientId: 'p1', doctorId: 'd1', name: '计划1', status: 'APPROVED', totalFee: 1000, clinicId: 'test-clinic-001' },
       ]);
 
       await expect(
         service.updateStatus('plan-001', { status: 'DRAFT' }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
     it('COMPLETED 是终态，不应流转到任何状态', async () => {
@@ -269,7 +270,7 @@ describe('TreatmentPlansService', () => {
 
       await expect(
         service.updateStatus('plan-001', { status: 'IN_PROGRESS' }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
     it('更新不存在的计划应抛出异常', async () => {
@@ -337,14 +338,14 @@ describe('TreatmentPlansService', () => {
       expect((result as any).teethNumbers).toEqual([11, 12, 13]);
     });
 
-    it('更新不存在的计划项应返回 undefined', async () => {
+    it('更新不存在的计划项应抛出 BusinessNotFoundException', async () => {
       db.seed('TreatmentPlan', [
         { id: 'plan-001', patientId: 'p1', doctorId: 'd1', name: '计划1', status: 'DRAFT', clinicId: 'test-clinic-001' },
       ]);
 
-      const result = await service.updateItemStatus('plan-001', 'non-existent', { status: 'IN_PROGRESS' });
-
-      expect(result).toBeUndefined();
+      await expect(
+        service.updateItemStatus('plan-001', 'non-existent', { status: 'IN_PROGRESS' }),
+      ).rejects.toThrow('治疗计划明细不存在');
     });
 
     it('更新计划项状态应写入审计日志', async () => {
@@ -377,8 +378,8 @@ describe('TreatmentPlansService', () => {
       expect((result as any).name).toBe('测试计划');
     });
 
-    it('查询不存在的计划应抛出 NotFoundException', async () => {
-      await expect(service.findOne('non-existent')).rejects.toThrow(NotFoundException);
+    it('查询不存在的计划应抛出 BusinessNotFoundException', async () => {
+      await expect(service.findOne('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 

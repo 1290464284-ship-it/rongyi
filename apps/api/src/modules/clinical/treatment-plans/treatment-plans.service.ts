@@ -52,18 +52,21 @@ export class TreatmentPlansService extends BaseService<TreatmentPlan> {
       throw new BusinessValidationException('治疗计划明细不能为空');
     }
 
-    // Validate FK: patientId must exist
+    // P1 修复：FK 校验必须带 clinicId 过滤，防止跨诊所引用其他诊所的患者/医生
+    const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
+
+    // Validate FK: patientId must exist (within same clinic)
     const patient = this.dbService.prepare(
-      "SELECT id FROM Patient WHERE id = ? AND deletedAt IS NULL"
-    ).get(createDto.patientId);
+      `SELECT id FROM Patient WHERE id = ? AND deletedAt IS NULL${clinicClause}`
+    ).get(createDto.patientId, ...clinicParams);
     if (!patient) {
       throw new BusinessNotFoundException('患者不存在');
     }
 
-    // Validate FK: doctorId must exist
+    // Validate FK: doctorId must exist (within same clinic)
     const doctor = this.dbService.prepare(
-      "SELECT id FROM User WHERE id = ? AND active = 1"
-    ).get(createDto.doctorId);
+      `SELECT id FROM User WHERE id = ? AND active = 1${clinicClause}`
+    ).get(createDto.doctorId, ...clinicParams);
     if (!doctor) {
       throw new BusinessNotFoundException('医生不存在');
     }
@@ -86,30 +89,60 @@ export class TreatmentPlansService extends BaseService<TreatmentPlan> {
     return super.findOne(id);
   }
 
+  /**
+   * P0 修复：CAS 保护 + 事务内读取
+   * 原先在事务外读取 status，事务内 UPDATE 无 CAS 守卫，
+   * 两个并发请求都读到 DRAFT 并通过状态机校验后都成功 UPDATE。
+   * 现在：SELECT + 状态机校验 + UPDATE(CAS) + 审计 全部在同一事务内。
+   */
   async updateStatus(id: string, dto: { status: string }) {
-    const existing = await super.findOne(id) as TreatmentPlan & { status: string };
-    const allowed = ALLOWED_TRANSITIONS[existing.status] || [];
-    if (!allowed.includes(dto.status)) {
-      throw new BusinessValidationException(`治疗计划状态不可从 ${existing.status} 流转到 ${dto.status}`);
-    }
     const now = new Date().toISOString();
     const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
-    this.dbService.transaction((db) => {
-      db.prepare(`UPDATE TreatmentPlan SET status = ?, updatedAt = ? WHERE id = ?${clinicClause}`).run(dto.status, now, id, ...clinicParams);
+    return this.dbService.transaction((db) => {
+      const existing = db.prepare(
+        `SELECT id, status FROM TreatmentPlan WHERE id = ? AND deletedAt IS NULL${clinicClause}`,
+      ).get(id, ...clinicParams) as { status: string } | undefined;
+      if (!existing) throw new BusinessNotFoundException('治疗计划不存在');
+      const allowed = ALLOWED_TRANSITIONS[existing.status] || [];
+      if (!allowed.includes(dto.status)) {
+        throw new BusinessValidationException(`治疗计划状态不可从 ${existing.status} 流转到 ${dto.status}`);
+      }
+      const result = db.prepare(
+        `UPDATE TreatmentPlan SET status = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL AND status = ?${clinicClause}`,
+      ).run(dto.status, now, id, existing.status, ...clinicParams);
+      if (result.changes === 0) {
+        throw new BusinessValidationException('治疗计划状态已被修改，请刷新后重试');
+      }
       this.logAudit(db, "TREATMENT_PLAN_STATUS_UPDATE", id, "TreatmentPlan", { beforeData: { status: existing.status }, afterData: { status: dto.status } });
+      return db.prepare(
+        `SELECT id, patientId, visitId, doctorId, name, status, totalFee, remark, clinicId, createdAt, updatedAt FROM TreatmentPlan WHERE id = ? AND deletedAt IS NULL${clinicClause}`,
+      ).get(id, ...clinicParams) as TreatmentPlan;
     });
-    return super.findOne(id);
   }
 
+  /**
+   * P0 修复：CAS 保护 + 事务内读取
+   * 原先在事务外读取 item，事务内 UPDATE 无 CAS 守卫。
+   */
   async updateItemStatus(planId: string, itemId: string, dto: { status: string }) {
     const now = new Date().toISOString();
     const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
-    const item = this.dbService.prepare(`SELECT id, planId, code, name, category, price, quantity, teethNumbers, status, treatmentId, completedAt, remark, clinicId, updatedAt, deletedAt FROM TreatmentPlanItem WHERE id = ? AND planId = ? AND deletedAt IS NULL${clinicClause}`).get(itemId, planId, ...clinicParams) as Record<string, unknown> | undefined;
-    const oldStatus = item?.status as string | undefined;
     return this.dbService.transaction((db) => {
-      db.prepare(`UPDATE TreatmentPlanItem SET status = ?, updatedAt = ? WHERE id = ? AND planId = ? AND deletedAt IS NULL${clinicClause}`).run(dto.status, now, itemId, planId, ...clinicParams);
-      this.logAudit(db, "TREATMENT_PLAN_ITEM_STATUS_UPDATE", itemId, "TreatmentPlanItem", { beforeData: oldStatus ? { status: oldStatus } : undefined, afterData: { status: dto.status } });
-      const updatedItem = db.prepare(`SELECT id, planId, code, name, category, price, quantity, teethNumbers, status, treatmentId, completedAt, remark, clinicId, updatedAt, deletedAt FROM TreatmentPlanItem WHERE id = ? AND deletedAt IS NULL${clinicClause}`).get(itemId, ...clinicParams) as Record<string, unknown> | undefined;
+      const item = db.prepare(
+        `SELECT id, planId, code, name, category, price, quantity, teethNumbers, status, treatmentId, completedAt, remark, clinicId, updatedAt, deletedAt FROM TreatmentPlanItem WHERE id = ? AND planId = ? AND deletedAt IS NULL${clinicClause}`,
+      ).get(itemId, planId, ...clinicParams) as Record<string, unknown> | undefined;
+      if (!item) throw new BusinessNotFoundException('治疗计划明细不存在');
+      const oldStatus = item.status as string;
+      const result = db.prepare(
+        `UPDATE TreatmentPlanItem SET status = ?, updatedAt = ? WHERE id = ? AND planId = ? AND deletedAt IS NULL AND status = ?${clinicClause}`,
+      ).run(dto.status, now, itemId, planId, oldStatus, ...clinicParams);
+      if (result.changes === 0) {
+        throw new BusinessValidationException('明细状态已被修改，请刷新后重试');
+      }
+      this.logAudit(db, "TREATMENT_PLAN_ITEM_STATUS_UPDATE", itemId, "TreatmentPlanItem", { beforeData: { status: oldStatus }, afterData: { status: dto.status } });
+      const updatedItem = db.prepare(
+        `SELECT id, planId, code, name, category, price, quantity, teethNumbers, status, treatmentId, completedAt, remark, clinicId, updatedAt, deletedAt FROM TreatmentPlanItem WHERE id = ? AND deletedAt IS NULL${clinicClause}`,
+      ).get(itemId, ...clinicParams) as Record<string, unknown> | undefined;
       if (updatedItem) {
         updatedItem.teethNumbers = safeJsonArray(updatedItem.teethNumbers as string | null);
       }

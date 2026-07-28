@@ -4,12 +4,17 @@
  * 统一导出领域事件 + 事件模块注册。
  * 其他模块通过 import EventsModule 获得 EventEmitter2 注入能力。
  */
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { CacheInvalidationListener } from './cache-invalidation.listener';
+import { EventEmitter2EventBus } from './event-bus';
+import { EventBusService } from './event-bus.service';
 
 export * from './domain-events';
+export * from './event-bus';
+export * from './event-bus.service';
 
+@Global()
 @Module({
   imports: [
     EventEmitterModule.forRoot({
@@ -21,7 +26,7 @@ export * from './domain-events';
       verboseMemoryLeak: true,
     }),
   ],
-  providers: [CacheInvalidationListener],
-  exports: [EventEmitterModule],
+  providers: [CacheInvalidationListener, EventEmitter2EventBus, EventBusService],
+  exports: [EventEmitterModule, EventEmitter2EventBus, EventBusService],
 })
 export class EventsModule {}

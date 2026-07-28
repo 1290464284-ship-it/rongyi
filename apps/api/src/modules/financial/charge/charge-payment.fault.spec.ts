@@ -2,7 +2,8 @@ import { ChargePaymentService } from './charge-payment.service';
 import { ChargeService } from './charge.service';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import { IdempotencyService } from '../../../common/services/idempotency.service';
-import { StatsService } from '../../system/stats/stats.service';
+import { EventBusService } from '../../../common/events/event-bus.service';
+import { ChargeRepository } from './repositories/charge.repository';
 import { FaultInjector, createDbBusyFault, createDbLockedFault } from '../../../common/test-helpers/fault-injection';
 import { FaultyMockDbService } from '../../../common/test-helpers/mock-db-factory';
 import { MockDbRow } from '../../../db/__mocks__/db-service.mock';
@@ -25,10 +26,12 @@ function createMockIdempotency(db: FaultyMockDbService): IdempotencyService {
   } as unknown as IdempotencyService;
 }
 
-function createMockStatsService(): jest.Mocked<StatsService> {
+function createMockEventBus(): jest.Mocked<EventBusService> {
   return {
-    invalidateStatsCache: jest.fn(),
-  } as unknown as jest.Mocked<StatsService>;
+    emit: jest.fn(),
+    on: jest.fn(),
+    onAll: jest.fn(),
+  } as unknown as jest.Mocked<EventBusService>;
 }
 
 describe('ChargePaymentService - 故障注入测试', () => {
@@ -36,21 +39,21 @@ describe('ChargePaymentService - 故障注入测试', () => {
   let db: FaultyMockDbService;
   let chargeService: ChargeService;
   let faultInjector: FaultInjector;
-  let statsService: jest.Mocked<StatsService>;
+  let eventBus: jest.Mocked<EventBusService>;
 
   beforeEach(() => {
     faultInjector = new FaultInjector();
     faultInjector.enable();
     db = new FaultyMockDbService(faultInjector);
-    statsService = createMockStatsService();
-    chargeService = new ChargeService(db as any, createMockClinicContext(), statsService);
+    eventBus = createMockEventBus();
+    chargeService = new ChargeService(db as any, createMockClinicContext(), eventBus, new ChargeRepository(), createMockIdempotency(db));
     service = new ChargePaymentService(
       db as any,
       createMockClinicContext(),
       createMockIdempotency(db),
       chargeService,
       {} as any,
-      statsService,
+      eventBus,
     );
   });
 

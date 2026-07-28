@@ -120,8 +120,25 @@ export class MockDbService implements IDatabase {
       const tableMatch = sql.match(/FROM\s+(\w+)/i);
       if (tableMatch) {
         const table = tableMatch[1];
-        const id = (params.find(p => typeof p === 'string' && p.length > 5) || params[0]) as string;
-        return this.tables.get(table)?.get(id);
+        // Find the param position for id = ? by scanning WHERE conditions left-to-right
+        const whereStart = sql.toUpperCase().indexOf('WHERE');
+        const whereClause = sql.substring(whereStart + 5);
+        const conditions = whereClause.toUpperCase().split(' AND ');
+        let paramIdx = 0;
+        let idValue: string | undefined;
+        for (const cond of conditions) {
+          const trimmed = cond.trim();
+          if (trimmed === 'ID = ?') {
+            idValue = params[paramIdx] as string;
+            break;
+          }
+          // Count ? in this condition to advance param index
+          const qmarks = (trimmed.match(/\?/g) || []).length;
+          paramIdx += qmarks;
+        }
+        if (idValue) {
+          return this.tables.get(table)?.get(idValue);
+        }
       }
     }
 
@@ -492,6 +509,18 @@ export class MockDbService implements IDatabase {
         row.id = this.generateId(table);
       }
 
+      // UsedRefreshToken.tokenHash 有 UNIQUE 约束，模拟重复插入冲突
+      if (table === 'UsedRefreshToken') {
+        const tokenHashValue = row.tokenHash as string | undefined;
+        if (tokenHashValue) {
+          for (const existing of tableData.values()) {
+            if (existing.tokenHash === tokenHashValue) {
+              throw new Error(`UNIQUE constraint failed: UsedRefreshToken.tokenHash`);
+            }
+          }
+        }
+      }
+
       tableData.set(String(row.id), row);
       lastId = String(row.id);
       inserted++;
@@ -568,11 +597,13 @@ export class MockDbService implements IDatabase {
 
     for (const row of rowsToUpdate) {
       let paramIdx = 0;
+      let updatedAtExplicitlySet = false;
 
       for (const clause of setClauses) {
         const colMatch = clause.match(/^(\w+)\s*=/);
         if (colMatch) {
           const col = colMatch[1];
+          if (col.toLowerCase() === 'updatedat') updatedAtExplicitlySet = true;
 
           // column = COALESCE(column, 0) + 1 style — 必须在 column + ? 之前检查
           if (clause.toUpperCase().includes('COALESCE') && clause.includes('+')) {
@@ -615,16 +646,25 @@ export class MockDbService implements IDatabase {
             const result = this.evaluateCaseExpression(clause, row);
             row[col] = result;
           } else {
-            // column = column + ? style（算术累加）— 必须在简单 ? 赋值之前检查
+            // column = column + <expr> style（算术累加）
+            // 支持两种形式：column = column + ? （参数化）和 column = column + 1 （字面量）
             const plusIndex = clause.indexOf('+');
             if (plusIndex !== -1 && clause.includes('=')) {
               const eqIndex = clause.indexOf('=');
               const sourceExpr = clause.substring(eqIndex + 1, plusIndex).trim();
               const sourceCol = sourceExpr;
               const current = (row[sourceCol] as number | undefined) || 0;
-              const delta = setParams[paramIdx] as number;
-              row[col] = current + delta;
-              paramIdx++;
+              // 检查 + 后面是 ? 还是字面量数字
+              const afterPlus = clause.slice(Math.max(0, plusIndex + 1)).trim();
+              if (afterPlus === '?') {
+                const delta = setParams[paramIdx] as number;
+                row[col] = current + delta;
+                paramIdx++;
+              } else {
+                // 字面量数字（如 loginAttempts + 1）
+                const delta = parseInt(afterPlus, 10) || 0;
+                row[col] = current + delta;
+              }
             } else if (clause.includes('?')) {
               row[col] = setParams[paramIdx];
               paramIdx++;
@@ -651,7 +691,9 @@ export class MockDbService implements IDatabase {
         }
       }
 
-      row.updatedAt = new Date().toISOString();
+      if (!updatedAtExplicitlySet) {
+        row.updatedAt = new Date().toISOString();
+      }
 
       if (row.id) {
         tableData.set(row.id as string, row);

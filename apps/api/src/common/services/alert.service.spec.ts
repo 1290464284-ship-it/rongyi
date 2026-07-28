@@ -395,13 +395,12 @@ describe('AlertService', () => {
       expect(mockAll).toHaveBeenCalled();
     });
 
-    it('DB 查询失败时应返回空数组', () => {
+    it('DB 查询失败时应抛出异常', () => {
       mockAll.mockImplementation(() => {
         throw new Error('DB error');
       });
 
-      const result = service.getAlerts({ offset: 0 });
-      expect(result).toEqual([]);
+      expect(() => service.getAlerts({ offset: 0 })).toThrow('查询告警失败');
       expect(loggerErrorSpy).toHaveBeenCalledWith(
         '从数据库查询告警失败',
         'DB error',

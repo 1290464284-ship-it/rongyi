@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable } from '@nestjs/common';
 import { DbService } from "../../../db/db.service";
 import * as crypto from "node:crypto";
 import * as path from "node:path";

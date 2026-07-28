@@ -4,6 +4,8 @@ import { DbService } from '../../../db/db.service';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import { IdempotencyService } from '../../../common/services/idempotency.service';
 import { StatsService } from '../../system/stats/stats.service';
+import { EventBusService } from '../../../common/events/event-bus.service';
+import { InventoryRepository } from './repositories/inventory.repository';
 import {
   createTestDb,
   cleanupTestDb,
@@ -38,6 +40,8 @@ describe('InventoryService - 并发测试', () => {
         ClinicContextService,
         IdempotencyService,
         { provide: StatsService, useValue: { invalidateStatsCache: jest.fn() } },
+        { provide: EventBusService, useValue: { emit: jest.fn(), on: jest.fn(), onAll: jest.fn() } },
+        InventoryRepository,
         InventoryService,
       ],
     }).compile();

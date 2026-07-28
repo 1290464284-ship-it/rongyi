@@ -70,6 +70,36 @@ export class ChargeRefundedEvent extends DomainEvent {
   }
 }
 
+export class ChargeCancelledEvent extends DomainEvent {
+  readonly eventName = 'charge.cancelled';
+  constructor(
+    public readonly chargeId: string,
+    public readonly patientId: string,
+    public readonly totalAmount: number,
+    clinicId: string | null = null,
+    userId: string | null = null,
+  ) {
+    super(clinicId, userId);
+  }
+}
+
+// ============================================================================
+// 退款相关事件
+// ============================================================================
+
+export class RefundCreatedEvent extends DomainEvent {
+  readonly eventName = 'refund.created';
+  constructor(
+    public readonly refundId: string,
+    public readonly chargeId: string,
+    public readonly amount: number,
+    clinicId: string | null = null,
+    userId: string | null = null,
+  ) {
+    super(clinicId, userId);
+  }
+}
+
 // ============================================================================
 // 患者相关事件
 // ============================================================================
@@ -96,12 +126,36 @@ export class PatientUpdatedEvent extends DomainEvent {
   }
 }
 
+export class PatientRegisteredEvent extends DomainEvent {
+  readonly eventName = 'patient.registered';
+  constructor(
+    public readonly patientId: string,
+    clinicId: string | null = null,
+    userId: string | null = null,
+  ) {
+    super(clinicId, userId);
+  }
+}
+
 // ============================================================================
 // 预约相关事件
 // ============================================================================
 
 export class AppointmentCreatedEvent extends DomainEvent {
   readonly eventName = 'appointment.created';
+  constructor(
+    public readonly appointmentId: string,
+    public readonly patientId: string,
+    public readonly doctorId: string,
+    clinicId: string | null = null,
+    userId: string | null = null,
+  ) {
+    super(clinicId, userId);
+  }
+}
+
+export class AppointmentUpdatedEvent extends DomainEvent {
+  readonly eventName = 'appointment.updated';
   constructor(
     public readonly appointmentId: string,
     public readonly patientId: string,
@@ -124,6 +178,19 @@ export class AppointmentCancelledEvent extends DomainEvent {
   }
 }
 
+export class AppointmentDeletedEvent extends DomainEvent {
+  readonly eventName = 'appointment.deleted';
+  constructor(
+    public readonly appointmentId: string,
+    public readonly patientId: string,
+    public readonly doctorId: string,
+    clinicId: string | null = null,
+    userId: string | null = null,
+  ) {
+    super(clinicId, userId);
+  }
+}
+
 // ============================================================================
 // 库存相关事件
 // ============================================================================
@@ -134,6 +201,53 @@ export class InventoryStockChangedEvent extends DomainEvent {
     public readonly itemId: string,
     public readonly changeType: 'IN' | 'OUT' | 'ADJUST',
     public readonly quantity: number,
+    clinicId: string | null = null,
+    userId: string | null = null,
+  ) {
+    super(clinicId, userId);
+  }
+}
+
+// ============================================================================
+// 会员卡相关事件
+// ============================================================================
+
+export class MemberCardBalanceChangedEvent extends DomainEvent {
+  readonly eventName = 'member-card.balance-changed';
+  constructor(
+    public readonly cardId: string,
+    public readonly patientId: string,
+    public readonly changeType: 'RECHARGE' | 'CONSUME' | 'REFUND',
+    public readonly amount: number,
+    public readonly balanceAfter: number,
+    clinicId: string | null = null,
+    userId: string | null = null,
+  ) {
+    super(clinicId, userId);
+  }
+}
+
+export class MemberCardRechargedEvent extends DomainEvent {
+  readonly eventName = 'member-card.recharged';
+  constructor(
+    public readonly cardId: string,
+    public readonly patientId: string,
+    public readonly amount: number,
+    public readonly balanceAfter: number,
+    clinicId: string | null = null,
+    userId: string | null = null,
+  ) {
+    super(clinicId, userId);
+  }
+}
+
+export class MemberCardConsumedEvent extends DomainEvent {
+  readonly eventName = 'member-card.consumed';
+  constructor(
+    public readonly cardId: string,
+    public readonly patientId: string,
+    public readonly amount: number,
+    public readonly balanceAfter: number,
     clinicId: string | null = null,
     userId: string | null = null,
   ) {
@@ -163,10 +277,14 @@ export const EventNames = {
   CHARGE_CREATED: 'charge.created',
   CHARGE_PAID: 'charge.paid',
   CHARGE_REFUNDED: 'charge.refunded',
+  CHARGE_CANCELLED: 'charge.cancelled',
   PATIENT_CREATED: 'patient.created',
   PATIENT_UPDATED: 'patient.updated',
   APPOINTMENT_CREATED: 'appointment.created',
+  APPOINTMENT_UPDATED: 'appointment.updated',
   APPOINTMENT_CANCELLED: 'appointment.cancelled',
+  APPOINTMENT_DELETED: 'appointment.deleted',
   INVENTORY_STOCK_CHANGED: 'inventory.stock-changed',
+  MEMBER_CARD_BALANCE_CHANGED: 'member-card.balance-changed',
   USER_ROLES_CHANGED: 'user.roles-changed',
 } as const;

@@ -4,6 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 import { DbModule } from './db/db.module';
 import { CommonModule } from './common/common.module';
 import { CacheModule } from './common/services/cache.module';
+import { EventsModule } from './common/events/events.module';
 import { getEnvPath } from './db/database';
 import { AuthModule } from './modules/auth/auth.module';
 import { PatientsModule } from './modules/patients/patients.module';
@@ -31,6 +32,7 @@ import { shutdownLogger } from './common/services/logger.service';
     DbModule,
     CommonModule,
     CacheModule,
+    EventsModule,
     AuthModule,
     PatientsModule,
     SchedulingModule,

@@ -1,6 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
+
 import { VisitsController } from './visits.controller';
 import { VisitsService } from './visits.service';
+
+import { QueryVisitDto } from './dto/query-visit.dto';
 
 describe('VisitsController', () => {
   let controller: VisitsController;
@@ -23,8 +27,8 @@ describe('VisitsController', () => {
   });
 
   describe('create', () => {
-    it('调用 service.create 传入 dto', async () => {
-      const dto = { patientId: 'p-1', doctorId: 'd-1' };
+    it('创建就诊记录并返回结果', async () => {
+      const dto = { patientId: 'p-1', doctorId: 'd-1', chiefComplaint: '牙痛' };
       const expected = { id: 'v-1', ...dto, status: 'IN_PROGRESS' };
       service.create.mockResolvedValue(expected);
 
@@ -32,40 +36,69 @@ describe('VisitsController', () => {
       expect(result).toEqual(expected);
       expect(service.create).toHaveBeenCalledWith(dto);
     });
+
+    it('service 抛出异常时向上传播', async () => {
+      service.create.mockRejectedValue(new BusinessValidationException('患者ID不能为空'));
+
+      await expect(
+        controller.create({ patientId: '', doctorId: 'd-1' }),
+      ).rejects.toThrow(BusinessValidationException);
+    });
   });
 
   describe('findMany', () => {
-    it('调用 service.findMany 传入 query', async () => {
-      const q = { patientId: 'p-1', status: 'IN_PROGRESS' };
+    it('透传查询参数并返回分页结果', async () => {
+      const q: QueryVisitDto = { patientId: 'p-1', status: 'IN_PROGRESS' };
+      const expected = { items: [{ id: 'v-1' }], total: 1 };
+      service.findMany.mockResolvedValue(expected);
+
+      const result = await controller.findMany(q);
+      expect(result).toEqual(expected);
+      expect(service.findMany).toHaveBeenCalledWith(q);
+    });
+
+    it('空查询参数也能正常处理', async () => {
       const expected = { items: [], total: 0 };
       service.findMany.mockResolvedValue(expected);
 
-      const result = await controller.findMany(q as any);
+      const result = await controller.findMany({} as QueryVisitDto);
       expect(result).toEqual(expected);
-      expect(service.findMany).toHaveBeenCalledWith(q);
     });
   });
 
   describe('findOne', () => {
-    it('调用 service.findOne 传入 id', async () => {
-      const expected = { id: 'v-1', patientId: 'p-1' };
+    it('存在时返回就诊详情', async () => {
+      const expected = { id: 'v-1', patientId: 'p-1', status: 'IN_PROGRESS' };
       service.findOne.mockResolvedValue(expected);
 
       const result = await controller.findOne('v-1');
       expect(result).toEqual(expected);
-      expect(service.findOne).toHaveBeenCalledWith('v-1');
+    });
+
+    it('不存在时透传 BusinessNotFoundException', async () => {
+      service.findOne.mockRejectedValue(new BusinessNotFoundException('就诊记录不存在'));
+
+      await expect(controller.findOne('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 
   describe('complete', () => {
-    it('调用 service.complete 传入 id 和 dto', async () => {
-      const dto = { diagnosis: '康复', treatmentSummary: '完成治疗' };
-      const expected = { id: 'v-1', status: 'COMPLETED' };
+    it('接诊完成后返回更新结果', async () => {
+      const dto = { diagnosis: '牙髓炎', treatmentSummary: '开髓引流' };
+      const expected = { id: 'v-1', status: 'COMPLETED', diagnosis: '牙髓炎' };
       service.complete.mockResolvedValue(expected);
 
       const result = await controller.complete('v-1', dto);
       expect(result).toEqual(expected);
       expect(service.complete).toHaveBeenCalledWith('v-1', dto);
+    });
+
+    it('不存在的就诊记录接诊失败', async () => {
+      service.complete.mockRejectedValue(new BusinessNotFoundException('就诊记录不存在'));
+
+      await expect(
+        controller.complete('non-existent', { diagnosis: 'test' }),
+      ).rejects.toThrow(BusinessNotFoundException);
     });
   });
 });

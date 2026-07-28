@@ -18,7 +18,6 @@ export async function createRedisRateLimitStoreIfConfigured(
 
   try {
     // 动态加载 ioredis，避免未安装时启动失败
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const IORedis = require('ioredis');
     const client: RedisClientLike = new IORedis(redisUrl, {
       // 连接失败时不抛出未捕获异常，回退到内存存储
@@ -37,7 +36,12 @@ export async function createRedisRateLimitStoreIfConfigured(
       },
     );
 
-    logger.log(`已启用 Redis 限流存储（多实例共享）: ${redisUrl.replace(/\/\/.*@/, '//***@')}`);
+    const atIdx = redisUrl.indexOf('@');
+    const protoIdx = redisUrl.indexOf('//');
+    const displayUrl = atIdx !== -1 && protoIdx !== -1
+      ? `${redisUrl.substring(0, protoIdx + 2)}***${redisUrl.substring(atIdx)}`
+      : redisUrl;
+    logger.log(`已启用 Redis 限流存储（多实例共享）: ${displayUrl}`);
     return new RedisRateLimitStore(client);
   } catch (err) {
     logger.warn(

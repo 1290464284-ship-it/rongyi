@@ -86,7 +86,7 @@ describe('MemberPointLogRepository', () => {
 
   describe('findByCardId', () => {
     beforeEach(() => {
-      const logs: any[] = [];
+      const logs: Record<string, unknown>[] = [];
       for (let i = 1; i <= 5; i++) {
         logs.push({
           id: `pl-${i.toString().padStart(3, '0')}`,

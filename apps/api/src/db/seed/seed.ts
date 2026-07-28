@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-non-literal-fs-filename -- 种子数据路径来自配置常量，非用户输入 */
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import Database from 'better-sqlite3';

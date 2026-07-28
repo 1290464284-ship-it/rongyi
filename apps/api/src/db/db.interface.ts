@@ -17,4 +17,9 @@ export interface IDatabase {
   pragma(sql: string): unknown;
   close(): void;
   backup(destination: string): Promise<unknown>;
+  /**
+   * 在事务中执行回调。已在事务中时嵌套为 SAVEPOINT 语义。
+   * 只读连接调用会抛出异常。
+   */
+  transaction<T>(fn: (db: IDatabase) => T): T;
 }

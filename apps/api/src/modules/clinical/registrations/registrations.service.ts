@@ -1,4 +1,4 @@
-import { BusinessValidationException } from '@common/errors';
+import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
 import { Injectable } from '@nestjs/common';
 
 import { DbService } from "../../../db/db.service";
@@ -11,6 +11,7 @@ import { UpdateRegistrationDto } from "./dto/update-registration.dto";
 import { VisitsService } from "../visits/visits.service";
 import { AppointmentsService } from "../../scheduling/appointments/appointments.service";
 import { PAGINATION } from "../../../common/constants/pagination";
+import { startOfDay, endOfDay } from "../../../common/utils/format/date";
 
 const REG_FIELDS = "id, patientId, doctorId, type, status, visitId, appointmentId, triageNote, chiefComplaint, registeredBy, registeredAt, triagedAt, startedAt, completedAt, createdAt, updatedAt";
 
@@ -56,8 +57,8 @@ export class RegistrationsService extends BaseService<Registration> {
     const qp: unknown[] = [...clinicParams];
     if (patientId) { query += " AND patientId = ?"; qp.push(patientId); }
     if (status) { query += " AND status = ?"; qp.push(status); }
-    if (startDate) { query += " AND registeredAt >= ?"; qp.push(startDate); }
-    if (endDate) { query += " AND registeredAt <= ?"; qp.push(endDate); }
+    if (startDate) { query += " AND registeredAt >= ?"; qp.push(startOfDay(startDate)); }
+    if (endDate) { query += " AND registeredAt <= ?"; qp.push(endOfDay(endDate)); }
     query += " ORDER BY registeredAt DESC LIMIT ? OFFSET ?";
     qp.push(pageSize, (page - 1) * pageSize);
     const items = this.dbService.prepare(query).all(...qp) as Registration[];
@@ -65,8 +66,8 @@ export class RegistrationsService extends BaseService<Registration> {
     const countParams: unknown[] = [...clinicParams];
     if (patientId) { countQuery += " AND patientId = ?"; countParams.push(patientId); }
     if (status) { countQuery += " AND status = ?"; countParams.push(status); }
-    if (startDate) { countQuery += " AND registeredAt >= ?"; countParams.push(startDate); }
-    if (endDate) { countQuery += " AND registeredAt <= ?"; countParams.push(endDate); }
+    if (startDate) { countQuery += " AND registeredAt >= ?"; countParams.push(startOfDay(startDate)); }
+    if (endDate) { countQuery += " AND registeredAt <= ?"; countParams.push(endOfDay(endDate)); }
     const total = (this.dbService.prepare(countQuery).get(...countParams) as { count: number })?.count || 0;
     return { items, total, page, pageSize };
   }
@@ -88,11 +89,33 @@ export class RegistrationsService extends BaseService<Registration> {
 
   /**
    * 通用状态更新（受状态机约束）
+   * 直接构建 UPDATE SQL + CAS 保护，绕过通用 update 方法的 status 守卫
+   * 防止读-写之间的 TOCTOU 竞态
+   *
+   * P1 修复：将 UPDATE + logAudit 包入事务，保证业务写入与审计日志原子提交。
+   * 原先 logAudit 传入 this.dbService（非事务句柄），若审计写入失败，
+   * UPDATE 已提交无法回滚，导致"状态已变更但审计缺失"的不一致。
    */
   async updateStatus(id: string, status: string) {
-    const r = await this.findOne(id);
-    assertTransition(r.status, status, "updateStatus");
-    return this.update(id, { status } as Partial<Registration>);
+    const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
+    const now = new Date().toISOString();
+    return this.dbService.transaction((db) => {
+      const r = db.prepare(
+        `SELECT ${this.selectFields.join(', ')} FROM Registration WHERE id = ? AND deletedAt IS NULL${clinicClause}`,
+      ).get(id, ...clinicParams) as Registration | undefined;
+      if (!r) throw new BusinessValidationException("挂号记录不存在");
+      assertTransition(r.status, status, "updateStatus");
+      const result = db.prepare(
+        `UPDATE Registration SET status = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL AND status = ?${clinicClause}`,
+      ).run(status, now, id, r.status, ...clinicParams);
+      if (result.changes === 0) {
+        throw new BusinessValidationException("挂号状态已被修改，请刷新后重试");
+      }
+      this.logAudit(db, "REGISTRATION_UPDATE_STATUS", id, "Registration", { beforeData: { status: r.status }, afterData: { status } });
+      return db.prepare(
+        `SELECT ${this.selectFields.join(', ')} FROM Registration WHERE id = ? AND deletedAt IS NULL${clinicClause}`,
+      ).get(id, ...clinicParams) as Registration;
+    });
   }
 
   /**
@@ -106,13 +129,17 @@ export class RegistrationsService extends BaseService<Registration> {
    */
   async startVisit(id: string) {
     const reg = await this.findOne(id);
-    // 状态机校验
-    if (reg.status !== "REGISTERED" && reg.status !== "TRIAGED") {
+    // 状态机校验（必须在幂等检查之前：已完成/已取消的挂号已有 visitId，
+    // 若先做幂等检查会直接返回成功，导致状态机校验被跳过）
+    // 但 IN_PROGRESS 状态 + 已有 visitId 是正常的幂等重入，允许返回
+    if (reg.visitId) {
+      if (reg.status === "IN_PROGRESS" || reg.status === "TRIAGED" || reg.status === "REGISTERED") {
+        return this.findOne(id);
+      }
       throw new BusinessValidationException(`当前挂号状态为 ${reg.status}，无法开始就诊（仅 REGISTERED/TRIAGED 可开始）`);
     }
-    // 幂等：已开始过则直接返回
-    if (reg.visitId) {
-      return this.findOne(id);
+    if (reg.status !== "REGISTERED" && reg.status !== "TRIAGED") {
+      throw new BusinessValidationException(`当前挂号状态为 ${reg.status}，无法开始就诊（仅 REGISTERED/TRIAGED 可开始）`);
     }
 
     const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
@@ -147,9 +174,13 @@ export class RegistrationsService extends BaseService<Registration> {
       }
 
       // 回填 Registration.visitId + 状态流转
-      db.prepare(
-        `UPDATE Registration SET status = ?, visitId = ?, startedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${clinicClause}`
+      // WHERE status IN ('REGISTERED','TRIAGED') 防止读-写之间的 TOCTOU 竞态
+      const result = db.prepare(
+        `UPDATE Registration SET status = ?, visitId = ?, startedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL AND status IN ('REGISTERED', 'TRIAGED')${clinicClause}`
       ).run(RegistrationStatus.IN_PROGRESS, visitId, now, now, id, ...clinicParams);
+      if (result.changes === 0) {
+        throw new BusinessValidationException("挂号状态已被修改，请刷新后重试");
+      }
 
       this.logAudit(db, "REGISTRATION_START_VISIT", id, "Registration", { afterData: { visitId, status: RegistrationStatus.IN_PROGRESS } });
 
@@ -159,11 +190,30 @@ export class RegistrationsService extends BaseService<Registration> {
 
   /**
    * 完成就诊：状态机校验（仅 IN_PROGRESS → COMPLETED）
+   * 直接构建 UPDATE SQL + CAS 保护，防止并发完成导致的状态不一致
+   *
+   * P1 修复：将 UPDATE + logAudit 包入事务，保证业务写入与审计日志原子提交。
    */
   async complete(id: string) {
-    const r = await this.findOne(id);
-    assertTransition(r.status, "COMPLETED", "complete");
-    return this.update(id, { status: 'COMPLETED', completedAt: new Date().toISOString() });
+    const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
+    const now = new Date().toISOString();
+    return this.dbService.transaction((db) => {
+      const r = db.prepare(
+        `SELECT ${this.selectFields.join(', ')} FROM Registration WHERE id = ? AND deletedAt IS NULL${clinicClause}`,
+      ).get(id, ...clinicParams) as Registration | undefined;
+      if (!r) throw new BusinessValidationException("挂号记录不存在");
+      assertTransition(r.status, "COMPLETED", "complete");
+      const result = db.prepare(
+        `UPDATE Registration SET status = ?, completedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL AND status = ?${clinicClause}`,
+      ).run('COMPLETED', now, now, id, r.status, ...clinicParams);
+      if (result.changes === 0) {
+        throw new BusinessValidationException("挂号状态已被修改，请刷新后重试");
+      }
+      this.logAudit(db, "REGISTRATION_COMPLETE", id, "Registration", { beforeData: { status: r.status }, afterData: { status: 'COMPLETED', completedAt: now } });
+      return db.prepare(
+        `SELECT ${this.selectFields.join(', ')} FROM Registration WHERE id = ? AND deletedAt IS NULL${clinicClause}`,
+      ).get(id, ...clinicParams) as Registration;
+    });
   }
 
   async findAll(params?: { page?: number; pageSize?: number }) {
@@ -175,43 +225,100 @@ export class RegistrationsService extends BaseService<Registration> {
     return { items, total, page, pageSize };
   }
 
+  /**
+   * P1 修复：将 UPDATE + logAudit 包入事务，保证业务写入与审计日志原子提交。
+   * 原先 logAudit 传入 this.dbService（非事务句柄），UPDATE 与审计不原子。
+   */
   async update(id: string, dto: UpdateRegistrationDto | Partial<Registration>) {
+    // 状态机守卫：禁止通过通用 update 直接修改 status 字段
+    // status 必须走 updateStatus / triage / complete / cancel / startVisit 等专用方法
+    // 这些方法会调用 assertTransition 做合法流转校验，并使用 CAS 防止 TOCTOU 竞态
+    if ('status' in dto && dto.status !== undefined) {
+      throw new BusinessValidationException("禁止通过 update 直接修改 status，请使用 updateStatus/triage/complete/cancel 等专用接口");
+    }
+
     const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
-    const builder = new UpdateBuilder("Registration");
+    return this.dbService.transaction((db) => {
+      // P0 修复：更新前检查记录是否存在，避免对不存在的记录写入审计日志
+      const existing = db.prepare(
+        `SELECT id FROM Registration WHERE id = ? AND deletedAt IS NULL${clinicClause}`,
+      ).get(id, ...clinicParams);
+      if (!existing) throw new BusinessNotFoundException("挂号记录不存在");
 
-    for (const [key, value] of Object.entries(dto)) {
-      if (key === 'id' || key === 'createdAt' || value === undefined) continue;
-      builder.set(key, value);
-    }
+      const builder = new UpdateBuilder("Registration");
 
-    builder.setUpdatedAt();
-    const result = builder.buildWithCustomWhere(`id = ? AND deletedAt IS NULL${clinicClause}`, [id, ...clinicParams]);
-    if (result) {
-      this.dbService.prepare(result.sql).run(...result.params);
-    }
-    this.logAudit(this.dbService, "REGISTRATION_UPDATE", id, "Registration", { afterData: dto });
-    return this.findOne(id);
+      for (const [key, value] of Object.entries(dto)) {
+        if (key === 'id' || key === 'createdAt' || value === undefined) continue;
+        builder.set(key, value);
+      }
+
+      builder.setUpdatedAt();
+      const result = builder.buildWithCustomWhere(`id = ? AND deletedAt IS NULL${clinicClause}`, [id, ...clinicParams]);
+      if (result) {
+        db.prepare(result.sql).run(...result.params);
+      }
+      this.logAudit(db, "REGISTRATION_UPDATE", id, "Registration", { afterData: dto });
+      return db.prepare(
+        `SELECT ${this.selectFields.join(', ')} FROM Registration WHERE id = ? AND deletedAt IS NULL${clinicClause}`,
+      ).get(id, ...clinicParams) as Registration;
+    });
   }
 
   /**
    * 分诊：状态机校验（仅 REGISTERED → TRIAGED）
+   * 直接构建 UPDATE SQL + CAS 保护，防止并发分诊导致的状态不一致
+   *
+   * P1 修复：将 UPDATE + logAudit 包入事务，保证业务写入与审计日志原子提交。
    */
   async triage(id: string, dto: { triageNote?: string | null; chiefComplaint?: string | null }) {
-    const r = await this.findOne(id);
-    assertTransition(r.status, "TRIAGED", "triage");
+    const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
     const triageNote = dto?.triageNote || null;
     const chiefComplaint = dto?.chiefComplaint || null;
-    return this.update(id, { status: 'TRIAGED', triageNote, chiefComplaint, triagedAt: new Date().toISOString() });
+    const now = new Date().toISOString();
+    return this.dbService.transaction((db) => {
+      const r = db.prepare(
+        `SELECT ${this.selectFields.join(', ')} FROM Registration WHERE id = ? AND deletedAt IS NULL${clinicClause}`,
+      ).get(id, ...clinicParams) as Registration | undefined;
+      if (!r) throw new BusinessValidationException("挂号记录不存在");
+      assertTransition(r.status, "TRIAGED", "triage");
+      const result = db.prepare(
+        `UPDATE Registration SET status = ?, triageNote = ?, chiefComplaint = ?, triagedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL AND status = ?${clinicClause}`,
+      ).run('TRIAGED', triageNote, chiefComplaint, now, now, id, r.status, ...clinicParams);
+      if (result.changes === 0) {
+        throw new BusinessValidationException("挂号状态已被修改，请刷新后重试");
+      }
+      this.logAudit(db, "REGISTRATION_TRIAGE", id, "Registration", { beforeData: { status: r.status }, afterData: { status: 'TRIAGED', triageNote, chiefComplaint } });
+      return db.prepare(
+        `SELECT ${this.selectFields.join(', ')} FROM Registration WHERE id = ? AND deletedAt IS NULL${clinicClause}`,
+      ).get(id, ...clinicParams) as Registration;
+    });
   }
 
   /**
    * 取消：状态机校验（COMPLETED / CANCELLED 不可取消）
+   * 直接构建 UPDATE SQL + CAS 保护，防止并发取消导致的状态不一致
+   *
+   * P1 修复：将 UPDATE + logAudit 包入事务，保证业务写入与审计日志原子提交。
    */
   async cancel(id: string) {
-    const r = await this.findOne(id);
-    assertTransition(r.status, "CANCELLED", "cancel");
-    const result = await this.update(id, { status: 'CANCELLED' });
-    this.logAudit(this.dbService, "REGISTRATION_CANCEL", id, "Registration", { beforeData: { status: r.status }, afterData: { status: 'CANCELLED' } });
-    return result;
+    const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
+    const now = new Date().toISOString();
+    return this.dbService.transaction((db) => {
+      const r = db.prepare(
+        `SELECT ${this.selectFields.join(', ')} FROM Registration WHERE id = ? AND deletedAt IS NULL${clinicClause}`,
+      ).get(id, ...clinicParams) as Registration | undefined;
+      if (!r) throw new BusinessValidationException("挂号记录不存在");
+      assertTransition(r.status, "CANCELLED", "cancel");
+      const result = db.prepare(
+        `UPDATE Registration SET status = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL AND status = ?${clinicClause}`,
+      ).run('CANCELLED', now, id, r.status, ...clinicParams);
+      if (result.changes === 0) {
+        throw new BusinessValidationException("挂号状态已被修改，请刷新后重试");
+      }
+      this.logAudit(db, "REGISTRATION_CANCEL", id, "Registration", { beforeData: { status: r.status }, afterData: { status: 'CANCELLED' } });
+      return db.prepare(
+        `SELECT ${this.selectFields.join(', ')} FROM Registration WHERE id = ? AND deletedAt IS NULL${clinicClause}`,
+      ).get(id, ...clinicParams) as Registration;
+    });
   }
 }

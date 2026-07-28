@@ -30,9 +30,10 @@ export interface UserInfo {
 @Injectable()
 export class PurchaseOrdersService extends BaseService<PurchaseOrder> {
   constructor(dbService: DbService, clinicContext: ClinicContextService) {
+    // P0 修复：添加 moneyFields 配置，使 BaseService.findOne/findMany 自动转换 totalAmount（分→元）
     super(dbService, clinicContext, 'PurchaseOrder', [], [], [
       { table: 'PurchaseOrderItem', foreignKey: 'orderId' },
-    ]);
+    ], true, [], undefined, undefined, ['totalAmount']);
   }
 
   async findMany(params: { supplierId?: string; status?: string; page?: number; pageSize?: number }) {
@@ -46,7 +47,10 @@ export class PurchaseOrdersService extends BaseService<PurchaseOrder> {
   async createOrder(dto: { supplierId: string; items: Array<{ itemId?: string; name: string; spec?: string; quantity: number; unitPrice: number }> }, user?: UserInfo) {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
-    const totalAmount = centsToYuan(sumCents(dto.items.map(i => multiplyCents(yuanToCents(i.unitPrice), i.quantity))));
+    // P0 修复：schema 中 totalAmount/unitPrice/subtotal 均为 INTEGER（分），
+    // 原先错误地调用 centsToYuan 将分转回元后存入 INTEGER 列，导致元/分混淆。
+    // 正确做法：存入 cents 值，由 BaseService.moneyFields 在读取时自动转回元。
+    const totalAmount = sumCents(dto.items.map(i => multiplyCents(yuanToCents(i.unitPrice), i.quantity)));
     const clinicId = this.clinicContext.getClinicId();
     const MAX_RETRIES = BUSINESS_CODE_MAX_RETRIES;
     let lastError: Error | undefined;
@@ -63,7 +67,10 @@ export class PurchaseOrdersService extends BaseService<PurchaseOrder> {
             const placeholders = dto.items.map(() => "(?,?,?,?,?,?,?,?,?)").join(", ");
             const values: unknown[] = [];
             for (const item of dto.items) {
-              values.push(crypto.randomUUID(), id, item.itemId || null, item.name, item.spec || null, item.quantity, item.unitPrice, centsToYuan(multiplyCents(yuanToCents(item.unitPrice), item.quantity)), clinicId || null);
+              // P0 修复：unitPrice 和 subtotal 均存入 cents（INTEGER 列）
+              const unitPriceCents = yuanToCents(item.unitPrice);
+              const subtotalCents = multiplyCents(unitPriceCents, item.quantity);
+              values.push(crypto.randomUUID(), id, item.itemId || null, item.name, item.spec || null, item.quantity, unitPriceCents, subtotalCents, clinicId || null);
             }
             db.prepare(`INSERT INTO PurchaseOrderItem (id, orderId, itemId, name, spec, quantity, unitPrice, subtotal, clinicId) VALUES ${placeholders}`).run(...values);
           }
@@ -99,12 +106,21 @@ export class PurchaseOrdersService extends BaseService<PurchaseOrder> {
     }
     const now = new Date().toISOString();
     const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
-    const result = this.dbService.prepare(
-      `UPDATE PurchaseOrder SET status = ?, updatedAt = ? WHERE id = ? AND status = ? AND deletedAt IS NULL${clinicClause}`
-    ).run(status, now, id, currentStatus, ...clinicParams);
-    if (result.changes === 0) {
-      throw new BusinessValidationException('状态已变更，请刷新后重试（可能存在并发操作）');
-    }
+    // P0 修复：将 UPDATE 与 logAudit 包入事务，保证业务写入与审计日志原子提交
+    // 原先完全没有 logAudit 调用，状态流转无审计记录，违反合规要求
+    this.dbService.transaction((db) => {
+      const r = db.prepare(
+        `UPDATE PurchaseOrder SET status = ?, updatedAt = ? WHERE id = ? AND status = ? AND deletedAt IS NULL${clinicClause}`
+      ).run(status, now, id, currentStatus, ...clinicParams);
+      if (r.changes === 0) {
+        throw new BusinessValidationException('状态已变更，请刷新后重试（可能存在并发操作）');
+      }
+      this.logAudit(db, AuditLogType.PURCHASE_ORDER_RECEIVE, id, 'PurchaseOrder', {
+        beforeData: { status: currentStatus },
+        afterData: { status },
+      });
+      return r;
+    });
     return this.findOne(id);
   }
 
@@ -158,9 +174,11 @@ export class PurchaseOrdersService extends BaseService<PurchaseOrder> {
 
         for (const item of itemsToUpdate) {
           txPlaceholders.push("(?,?,?,?,?,?,?,?,?,?,?,?,?)");
+          // P0 修复：item.unitPrice 已是 cents（ INTEGER 列），直接用于 InventoryTransaction（同为 INTEGER）
+          const txTotalCents = multiplyCents(item.unitPrice, item.quantity);
           txValues.push(
             crypto.randomUUID(), item.itemId, 'IN', item.quantity, item.unitPrice,
-            centsToYuan(multiplyCents(yuanToCents(item.unitPrice), item.quantity)), po.supplierId, id, user?.id || null,
+            txTotalCents, po.supplierId, id, user?.id || null,
             user?.name || null, '采购入库', clinicId || null, now
           );
         }
@@ -178,7 +196,12 @@ export class PurchaseOrdersService extends BaseService<PurchaseOrder> {
 
       this.logAudit(db, AuditLogType.PURCHASE_ORDER_RECEIVE, id, "PurchaseOrder", { beforeData: { status: po.status }, afterData: { status: "RECEIVED" } });
 
-      return db.prepare(`SELECT id, number, supplierId, totalAmount, status, operatorId, remark, clinicId, createdAt, updatedAt, deletedAt FROM PurchaseOrder WHERE id = ? AND deletedAt IS NULL${clinicClause}`).get(id, ...clinicParams);
+      const received = db.prepare(`SELECT id, number, supplierId, totalAmount, status, operatorId, remark, clinicId, createdAt, updatedAt, deletedAt FROM PurchaseOrder WHERE id = ? AND deletedAt IS NULL${clinicClause}`).get(id, ...clinicParams) as Record<string, unknown> | undefined;
+      // P0 修复：自定义 SQL 读取的 totalAmount 为 cents，需手动转回 yuan
+      if (received && typeof received.totalAmount === 'number') {
+        received.totalAmount = centsToYuan(received.totalAmount);
+      }
+      return received;
     });
     return result;
   }
@@ -240,9 +263,11 @@ export class PurchaseOrdersService extends BaseService<PurchaseOrder> {
           const txValues: unknown[] = [];
           for (const item of itemsToReverse) {
             txPlaceholders.push("(?,?,?,?,?,?,?,?,?,?,?)");
+            // P0 修复：item.unitPrice 已是 cents，直接计算 totalAmount（cents）
+            const txTotalCents = multiplyCents(item.unitPrice, item.quantity);
             txValues.push(
               crypto.randomUUID(), item.itemId, 'OUT', item.quantity, item.unitPrice,
-              centsToYuan(multiplyCents(yuanToCents(item.unitPrice), item.quantity)), id, null, '采购单取消退货', clinicId || null, now
+              txTotalCents, id, null, '采购单取消退货', clinicId || null, now
             );
           }
           db.prepare(`INSERT INTO InventoryTransaction (id, itemId, type, quantity, unitPrice, totalAmount, purchaseOrderId, operatorId, remark, clinicId, createdAt) VALUES ${txPlaceholders.join(', ')}`).run(...txValues);
@@ -251,7 +276,12 @@ export class PurchaseOrdersService extends BaseService<PurchaseOrder> {
 
       this.logAudit(db, AuditLogType.PURCHASE_ORDER_CANCEL, id, "PurchaseOrder", { beforeData: { status: po.status }, afterData: { status: 'CANCELLED' } });
 
-      return db.prepare(`SELECT id, number, supplierId, totalAmount, status, operatorId, remark, clinicId, createdAt, updatedAt, deletedAt FROM PurchaseOrder WHERE id = ? AND deletedAt IS NULL${clinicClause}`).get(id, ...clinicParams);
+      const cancelled = db.prepare(`SELECT id, number, supplierId, totalAmount, status, operatorId, remark, clinicId, createdAt, updatedAt, deletedAt FROM PurchaseOrder WHERE id = ? AND deletedAt IS NULL${clinicClause}`).get(id, ...clinicParams) as Record<string, unknown> | undefined;
+      // P0 修复：自定义 SQL 读取的 totalAmount 为 cents，需手动转回 yuan
+      if (cancelled && typeof cancelled.totalAmount === 'number') {
+        cancelled.totalAmount = centsToYuan(cancelled.totalAmount);
+      }
+      return cancelled;
     });
 
     return result;

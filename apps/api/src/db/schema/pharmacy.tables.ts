@@ -1,7 +1,7 @@
 export const pharmacyTables = [
   `CREATE TABLE IF NOT EXISTS DrugCatalog (
       id TEXT PRIMARY KEY,
-      code TEXT UNIQUE NOT NULL,
+      code TEXT NOT NULL,
       name TEXT NOT NULL,
       spec TEXT NOT NULL,
       category TEXT NOT NULL,
@@ -10,7 +10,8 @@ export const pharmacyTables = [
       stock REAL DEFAULT 0 CHECK (stock >= 0),
       remark TEXT,
       clinicId TEXT NOT NULL,
-      createdAt TEXT DEFAULT CURRENT_TIMESTAMP
+      createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(clinicId, code)
     )`,
   `CREATE TABLE IF NOT EXISTS Prescription (
       id TEXT PRIMARY KEY,

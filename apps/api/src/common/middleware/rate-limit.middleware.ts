@@ -8,7 +8,7 @@ import { Request, Response, NextFunction } from 'express';
 import * as jwt from 'jsonwebtoken';
 import { ConfigService } from '../services/config.service';
 import { ONE_MINUTE_MS, FIVE_MINUTES_MS } from '../../config/constants';
-import { ROLES } from '../constants/roles';
+import { ROLES } from '@dental/shared';
 import { RateLimitStore, MemoryRateLimitStore } from './rate-limit-store';
 
 /** 基于角色的差异化限流配置（每分钟请求数） */

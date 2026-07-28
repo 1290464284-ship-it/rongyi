@@ -1,7 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
 import { ProcessingOrdersController } from './processing-orders.controller';
 import { ProcessingOrdersService } from './processing-orders.service';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+
 
 describe('ProcessingOrdersController', () => {
   let controller: ProcessingOrdersController;
@@ -56,9 +57,9 @@ describe('ProcessingOrdersController', () => {
       expect(service.createFactory).toHaveBeenCalledWith(dto);
     });
 
-    it('未传 name 时透传 BadRequestException', async () => {
-      service.createFactory.mockRejectedValue(new BadRequestException('工厂名称不能为空'));
-      await expect(controller.createFactory({} as any)).rejects.toThrow(BadRequestException);
+    it('未传 name 时透传 BusinessValidationException', async () => {
+      service.createFactory.mockRejectedValue(new BusinessValidationException('工厂名称不能为空'));
+      await expect(controller.createFactory({} as any)).rejects.toThrow(BusinessValidationException);
     });
   });
 
@@ -80,9 +81,9 @@ describe('ProcessingOrdersController', () => {
       expect(service.deleteFactory).toHaveBeenCalledWith('f-1');
     });
 
-    it('不存在时透传 NotFoundException', async () => {
-      service.deleteFactory.mockRejectedValue(new NotFoundException('工厂不存在'));
-      await expect(controller.deleteFactory('non-existent')).rejects.toThrow(NotFoundException);
+    it('不存在时透传 BusinessNotFoundException', async () => {
+      service.deleteFactory.mockRejectedValue(new BusinessNotFoundException('工厂不存在'));
+      await expect(controller.deleteFactory('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 
@@ -220,9 +221,9 @@ describe('ProcessingOrdersController', () => {
       expect(service.updateStatus).toHaveBeenCalledWith('po-1', 'IN_PROGRESS');
     });
 
-    it('非法状态转换时透传 BadRequestException', async () => {
-      service.updateStatus.mockRejectedValue(new BadRequestException('非法的状态转换'));
-      await expect(controller.updateStatus('po-1', { status: 'COMPLETED' } as any)).rejects.toThrow(BadRequestException);
+    it('非法状态转换时透传 BusinessValidationException', async () => {
+      service.updateStatus.mockRejectedValue(new BusinessValidationException('非法的状态转换'));
+      await expect(controller.updateStatus('po-1', { status: 'COMPLETED' } as any)).rejects.toThrow(BusinessValidationException);
     });
   });
 

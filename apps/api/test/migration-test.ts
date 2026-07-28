@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-non-literal-fs-filename -- 测试文件使用临时目录模拟迁移 */
 /**
  * 数据库迁移 v0→v3 真实数据平滑性测试
  * 

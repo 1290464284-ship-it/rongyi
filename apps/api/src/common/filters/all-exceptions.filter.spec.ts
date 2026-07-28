@@ -7,7 +7,7 @@ import {
   BusinessForbiddenException,
   BusinessValidationException,
 } from '../errors/business-exception';
-import { LegacyErrorCode, ErrorCode } from '../errors/error-codes';
+import { ErrorCode } from '../errors/error-codes';
 import { AppLogger } from '../services/logger.service';
 import { SentryService } from '../monitoring/sentry.service';
 import { Request, Response } from 'express';
@@ -113,7 +113,7 @@ describe('AllExceptionsFilter', () => {
   describe('BusinessException 处理', () => {
     it('正确处理 BusinessException', () => {
       const exception = new BusinessException(
-        LegacyErrorCode.NOT_FOUND,
+        ErrorCode.NOT_FOUND,
         '资源不存在',
         HttpStatus.NOT_FOUND,
       );
@@ -125,7 +125,7 @@ describe('AllExceptionsFilter', () => {
         expect.objectContaining({
           statusCode: HttpStatus.NOT_FOUND,
           message: '资源不存在',
-          code: LegacyErrorCode.NOT_FOUND,
+          errorCode: ErrorCode.NOT_FOUND,
           traceId: 'test-trace-id',
           path: '/api/test',
         }),
@@ -142,15 +142,28 @@ describe('AllExceptionsFilter', () => {
       filter.catch(exception, host);
 
       const jsonArg = (res.json as jest.Mock).mock.calls[0][0];
-      expect(jsonArg.code).toBe('CUSTOM_CODE');
+      expect(jsonArg.errorCode).toBe(ErrorCode.UNKNOWN);
       expect(jsonArg.message).toBe('自定义错误消息');
+    });
+
+    it('BusinessException 使用 ErrorCode 数字错误码', () => {
+      const exception = new BusinessException(
+        ErrorCode.AUTH_LOGIN_FAILED,
+        '登录失败',
+        HttpStatus.UNAUTHORIZED,
+      );
+
+      filter.catch(exception, host);
+
+      const jsonArg = (res.json as jest.Mock).mock.calls[0][0];
+      expect(jsonArg.errorCode).toBe(ErrorCode.AUTH_LOGIN_FAILED);
     });
   });
 
   describe('HttpException 处理', () => {
     it('处理带 code/message 格式的 HttpException', () => {
       const exception = new HttpException(
-        { code: LegacyErrorCode.VALIDATION_ERROR, message: '参数错误' },
+        { code: ErrorCode.VALIDATION_ERROR, message: '参数错误' },
         HttpStatus.BAD_REQUEST,
       );
 
@@ -158,7 +171,7 @@ describe('AllExceptionsFilter', () => {
 
       expect(res.status).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST);
       const jsonArg = (res.json as jest.Mock).mock.calls[0][0];
-      expect(jsonArg.code).toBe(LegacyErrorCode.VALIDATION_ERROR);
+      expect(jsonArg.errorCode).toBe(ErrorCode.VALIDATION_ERROR);
       expect(jsonArg.message).toBe('参数错误');
     });
 
@@ -170,7 +183,7 @@ describe('AllExceptionsFilter', () => {
       expect(res.status).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST);
       const jsonArg = (res.json as jest.Mock).mock.calls[0][0];
       expect(jsonArg.message).toBe('普通错误');
-      expect(jsonArg.code).toBeUndefined();
+      expect(jsonArg.errorCode).toBe(ErrorCode.BAD_REQUEST);
     });
 
     it('处理对象格式的 HttpException（不带 code）', () => {
@@ -183,7 +196,7 @@ describe('AllExceptionsFilter', () => {
 
       const jsonArg = (res.json as jest.Mock).mock.calls[0][0];
       expect(jsonArg.message).toEqual({ error: 'Bad Request', message: '错误详情' });
-      expect(jsonArg.code).toBeUndefined();
+      expect(jsonArg.errorCode).toBe(ErrorCode.BAD_REQUEST);
     });
 
     it('PAYLOAD_TOO_LARGE 状态码自动设置错误码', () => {
@@ -192,7 +205,7 @@ describe('AllExceptionsFilter', () => {
       filter.catch(exception, host);
 
       const jsonArg = (res.json as jest.Mock).mock.calls[0][0];
-      expect(jsonArg.code).toBe(LegacyErrorCode.PAYLOAD_TOO_LARGE);
+      expect(jsonArg.errorCode).toBe(ErrorCode.PAYLOAD_TOO_LARGE);
     });
 
     it('UNSUPPORTED_MEDIA_TYPE 状态码自动设置错误码', () => {
@@ -204,7 +217,7 @@ describe('AllExceptionsFilter', () => {
       filter.catch(exception, host);
 
       const jsonArg = (res.json as jest.Mock).mock.calls[0][0];
-      expect(jsonArg.code).toBe(LegacyErrorCode.UNSUPPORTED_MEDIA_TYPE);
+      expect(jsonArg.errorCode).toBe(ErrorCode.UNSUPPORTED_MEDIA_TYPE);
     });
 
     it('TOO_MANY_REQUESTS 状态码自动设置错误码', () => {
@@ -213,7 +226,7 @@ describe('AllExceptionsFilter', () => {
       filter.catch(exception, host);
 
       const jsonArg = (res.json as jest.Mock).mock.calls[0][0];
-      expect(jsonArg.code).toBe(LegacyErrorCode.RATE_LIMITED);
+      expect(jsonArg.errorCode).toBe(ErrorCode.RATE_LIMITED);
     });
   });
 
@@ -232,7 +245,7 @@ describe('AllExceptionsFilter', () => {
 
       expect(res.status).toHaveBeenCalledWith(HttpStatus.CONFLICT);
       const jsonArg = (res.json as jest.Mock).mock.calls[0][0];
-      expect(jsonArg.code).toBe(LegacyErrorCode.CONFLICT_UNIQUE_CONSTRAINT);
+      expect(jsonArg.errorCode).toBe(ErrorCode.CONFLICT_UNIQUE_CONSTRAINT);
       expect(jsonArg.message).toBe('资源已存在，请检查唯一性约束');
     });
 
@@ -243,7 +256,7 @@ describe('AllExceptionsFilter', () => {
 
       expect(res.status).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST);
       const jsonArg = (res.json as jest.Mock).mock.calls[0][0];
-      expect(jsonArg.code).toBe(LegacyErrorCode.DB_FOREIGN_KEY_CONSTRAINT);
+      expect(jsonArg.errorCode).toBe(ErrorCode.DB_FOREIGN_KEY_CONSTRAINT);
       expect(jsonArg.message).toBe('关联数据不存在，请检查引用');
     });
 
@@ -254,7 +267,7 @@ describe('AllExceptionsFilter', () => {
 
       expect(res.status).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST);
       const jsonArg = (res.json as jest.Mock).mock.calls[0][0];
-      expect(jsonArg.code).toBe(LegacyErrorCode.DB_CHECK_CONSTRAINT);
+      expect(jsonArg.errorCode).toBe(ErrorCode.DB_CHECK_CONSTRAINT);
       expect(jsonArg.message).toBe('数据不满足校验条件');
     });
 
@@ -265,7 +278,7 @@ describe('AllExceptionsFilter', () => {
 
       expect(res.status).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST);
       const jsonArg = (res.json as jest.Mock).mock.calls[0][0];
-      expect(jsonArg.code).toBe(LegacyErrorCode.DB_NOT_NULL_CONSTRAINT);
+      expect(jsonArg.errorCode).toBe(ErrorCode.DB_NOT_NULL_CONSTRAINT);
       expect(jsonArg.message).toBe('必填字段不能为空');
     });
 
@@ -276,7 +289,7 @@ describe('AllExceptionsFilter', () => {
 
       expect(res.status).toHaveBeenCalledWith(HttpStatus.SERVICE_UNAVAILABLE);
       const jsonArg = (res.json as jest.Mock).mock.calls[0][0];
-      expect(jsonArg.code).toBe(LegacyErrorCode.DB_BUSY_TIMEOUT);
+      expect(jsonArg.errorCode).toBe(ErrorCode.DB_BUSY_TIMEOUT);
       expect(jsonArg.message).toBe('数据库繁忙，请稍后再试');
     });
 
@@ -287,7 +300,7 @@ describe('AllExceptionsFilter', () => {
 
       expect(res.status).toHaveBeenCalledWith(HttpStatus.SERVICE_UNAVAILABLE);
       const jsonArg = (res.json as jest.Mock).mock.calls[0][0];
-      expect(jsonArg.code).toBe(LegacyErrorCode.DB_BUSY_TIMEOUT);
+      expect(jsonArg.errorCode).toBe(ErrorCode.DB_BUSY_TIMEOUT);
     });
 
     it('SQLITE_LOCKED 错误', () => {
@@ -297,7 +310,7 @@ describe('AllExceptionsFilter', () => {
 
       expect(res.status).toHaveBeenCalledWith(HttpStatus.CONFLICT);
       const jsonArg = (res.json as jest.Mock).mock.calls[0][0];
-      expect(jsonArg.code).toBe(LegacyErrorCode.DB_LOCKED);
+      expect(jsonArg.errorCode).toBe(ErrorCode.DB_LOCKED);
       expect(jsonArg.message).toBe('数据被锁定，请稍后再试');
     });
 
@@ -307,7 +320,7 @@ describe('AllExceptionsFilter', () => {
       filter.catch(err, host);
 
       const jsonArg = (res.json as jest.Mock).mock.calls[0][0];
-      expect(jsonArg.code).toBe(LegacyErrorCode.DB_LOCKED);
+      expect(jsonArg.errorCode).toBe(ErrorCode.DB_LOCKED);
     });
 
     it('database disk image is malformed 错误', () => {
@@ -317,7 +330,7 @@ describe('AllExceptionsFilter', () => {
 
       expect(res.status).toHaveBeenCalledWith(HttpStatus.INTERNAL_SERVER_ERROR);
       const jsonArg = (res.json as jest.Mock).mock.calls[0][0];
-      expect(jsonArg.code).toBe(LegacyErrorCode.DB_CORRUPT);
+      expect(jsonArg.errorCode).toBe(ErrorCode.DB_CORRUPT);
       expect(jsonArg.message).toBe('数据库损坏，请联系管理员');
     });
 
@@ -328,7 +341,7 @@ describe('AllExceptionsFilter', () => {
 
       expect(res.status).toHaveBeenCalledWith(HttpStatus.SERVICE_UNAVAILABLE);
       const jsonArg = (res.json as jest.Mock).mock.calls[0][0];
-      expect(jsonArg.code).toBe(LegacyErrorCode.DB_READONLY);
+      expect(jsonArg.errorCode).toBe(ErrorCode.DB_READONLY);
       expect(jsonArg.message).toBe('数据库只读，无法写入');
     });
 
@@ -338,7 +351,7 @@ describe('AllExceptionsFilter', () => {
       filter.catch(err, host);
 
       const jsonArg = (res.json as jest.Mock).mock.calls[0][0];
-      expect(jsonArg.code).toBe(LegacyErrorCode.DB_READONLY);
+      expect(jsonArg.errorCode).toBe(ErrorCode.DB_READONLY);
     });
 
     it('SQLITE_IOERR 错误', () => {
@@ -348,7 +361,7 @@ describe('AllExceptionsFilter', () => {
 
       expect(res.status).toHaveBeenCalledWith(HttpStatus.INTERNAL_SERVER_ERROR);
       const jsonArg = (res.json as jest.Mock).mock.calls[0][0];
-      expect(jsonArg.code).toBe(LegacyErrorCode.DB_IO_ERROR);
+      expect(jsonArg.errorCode).toBe(ErrorCode.DB_IO_ERROR);
       expect(jsonArg.message).toBe('数据库读写错误，请联系管理员');
     });
 
@@ -358,7 +371,7 @@ describe('AllExceptionsFilter', () => {
       filter.catch(err, host);
 
       const jsonArg = (res.json as jest.Mock).mock.calls[0][0];
-      expect(jsonArg.code).toBe(LegacyErrorCode.DB_IO_ERROR);
+      expect(jsonArg.errorCode).toBe(ErrorCode.DB_IO_ERROR);
     });
 
     it('未匹配的 SQLite 错误使用通用数据库错误', () => {
@@ -368,11 +381,11 @@ describe('AllExceptionsFilter', () => {
 
       expect(res.status).toHaveBeenCalledWith(HttpStatus.INTERNAL_SERVER_ERROR);
       const jsonArg = (res.json as jest.Mock).mock.calls[0][0];
-      expect(jsonArg.code).toBe(LegacyErrorCode.DB_ERROR);
+      expect(jsonArg.errorCode).toBe(ErrorCode.DB_ERROR);
       expect(jsonArg.message).toBe('数据库错误');
     });
 
-    it('SQLite 错误不上报到 Sentry', () => {
+    it('SQLite 错误上报到 Sentry', () => {
       const err = createSqliteError('UNIQUE constraint failed: users.email');
 
       filter.catch(err, host);
@@ -389,7 +402,7 @@ describe('AllExceptionsFilter', () => {
 
       expect(res.status).toHaveBeenCalledWith(HttpStatus.INTERNAL_SERVER_ERROR);
       const jsonArg = (res.json as jest.Mock).mock.calls[0][0];
-      expect(jsonArg.code).toBe(LegacyErrorCode.INTERNAL_ERROR);
+      expect(jsonArg.errorCode).toBe(ErrorCode.UNKNOWN);
       expect(jsonArg.message).toBe('服务器内部错误');
     });
 
@@ -398,7 +411,7 @@ describe('AllExceptionsFilter', () => {
 
       expect(res.status).toHaveBeenCalledWith(HttpStatus.INTERNAL_SERVER_ERROR);
       const jsonArg = (res.json as jest.Mock).mock.calls[0][0];
-      expect(jsonArg.code).toBe(LegacyErrorCode.INTERNAL_ERROR);
+      expect(jsonArg.errorCode).toBe(ErrorCode.UNKNOWN);
     });
 
     it('对象异常转换为 Error', () => {
@@ -406,7 +419,7 @@ describe('AllExceptionsFilter', () => {
 
       expect(res.status).toHaveBeenCalledWith(HttpStatus.INTERNAL_SERVER_ERROR);
       const jsonArg = (res.json as jest.Mock).mock.calls[0][0];
-      expect(jsonArg.code).toBe(LegacyErrorCode.INTERNAL_ERROR);
+      expect(jsonArg.errorCode).toBe(ErrorCode.UNKNOWN);
     });
 
     it('数字异常转换为 Error', () => {
@@ -431,7 +444,7 @@ describe('AllExceptionsFilter', () => {
 
       const jsonArg = (res.json as jest.Mock).mock.calls[0][0];
       expect(jsonArg.message).toBe('参数校验失败');
-      expect(jsonArg.code).toBe(LegacyErrorCode.VALIDATION_ERROR);
+      expect(jsonArg.errorCode).toBe(ErrorCode.VALIDATION_ERROR);
       expect(jsonArg.errors).toEqual(['邮箱格式不正确', '密码不能为空']);
     });
 
@@ -526,7 +539,7 @@ describe('AllExceptionsFilter', () => {
         method: 'GET',
         url: '/api/test',
         statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        errorCode: LegacyErrorCode.INTERNAL_ERROR,
+        errorCode: String(ErrorCode.UNKNOWN),
       });
     });
 
@@ -555,13 +568,12 @@ describe('AllExceptionsFilter', () => {
 
       filterWithoutSentry.catch(err, host);
 
-      // 不抛错即为通过
       expect(res.status).toHaveBeenCalledWith(HttpStatus.INTERNAL_SERVER_ERROR);
     });
 
     it('BusinessException 不上报 Sentry', () => {
       const exception = new BusinessException(
-        LegacyErrorCode.NOT_FOUND,
+        ErrorCode.NOT_FOUND,
         '资源不存在',
         HttpStatus.NOT_FOUND,
       );
@@ -638,12 +650,13 @@ describe('AllExceptionsFilter', () => {
       expect(jsonArg).toHaveProperty('traceId');
     });
 
-    it('有错误码时包含 code', () => {
+    it('有错误码时包含 errorCode', () => {
       const err = new Error('test');
       filter.catch(err, host);
 
       const jsonArg = (res.json as jest.Mock).mock.calls[0][0];
-      expect(jsonArg).toHaveProperty('code');
+      expect(jsonArg).toHaveProperty('errorCode');
+      expect(typeof jsonArg.errorCode).toBe('number');
     });
 
     it('timestamp 是 ISO 格式字符串', () => {
@@ -667,7 +680,7 @@ describe('AllExceptionsFilter', () => {
   describe('日志记录', () => {
     it('所有错误都记录日志', () => {
       const exception = new BusinessException(
-        LegacyErrorCode.NOT_FOUND,
+        ErrorCode.NOT_FOUND,
         '资源不存在',
         HttpStatus.NOT_FOUND,
       );
@@ -816,9 +829,9 @@ describe('AllExceptionsFilter', () => {
       expect(jsonArg.errorCode).toBe(ErrorCode.NOT_FOUND);
     });
 
-    it('同时保留旧的 code 字段（向后兼容）', () => {
+    it('errorCode 字段统一输出数字格式', () => {
       const exception = new BusinessException(
-        LegacyErrorCode.NOT_FOUND,
+        ErrorCode.NOT_FOUND,
         '资源不存在',
         HttpStatus.NOT_FOUND,
       );
@@ -826,7 +839,18 @@ describe('AllExceptionsFilter', () => {
       filter.catch(exception, host);
 
       const jsonArg = (res.json as jest.Mock).mock.calls[0][0];
-      expect(jsonArg.code).toBe(LegacyErrorCode.NOT_FOUND);
+      expect(typeof jsonArg.errorCode).toBe('number');
+      expect(jsonArg.errorCode).toBe(ErrorCode.NOT_FOUND);
+    });
+
+    it('响应体不包含重复的 code 字段', () => {
+      const exception = new BusinessNotFoundException('用户不存在');
+
+      filter.catch(exception, host);
+
+      const jsonArg = (res.json as jest.Mock).mock.calls[0][0];
+      expect(jsonArg.code).toBeUndefined();
+      expect(jsonArg.errorCode).toBeDefined();
     });
   });
 });

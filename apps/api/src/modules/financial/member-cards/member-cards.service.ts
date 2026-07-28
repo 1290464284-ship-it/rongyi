@@ -10,7 +10,8 @@ import { yuanToCents, centsToYuan } from "../../../common/utils/format/money.uti
 import { BUSINESS_CODE_MAX_RETRIES } from "../../../config/constants";
 import { IdempotencyService } from "../../../common/services/idempotency.service";
 import { MemberCardStatus, MemberCardLogType, PointLogType, AuditLogType } from "../../../common/constants";
-import { StatsService } from '../../system/stats/stats.service';
+import { EventBusService } from '../../../common/events/event-bus.service';
+import { MemberCardRechargedEvent, MemberCardConsumedEvent } from '../../../common/events/domain-events';
 import { MemberCardLogRepository } from "./repositories/member-card-log.repository";
 import { MemberPointLogRepository } from "./repositories/member-point-log.repository";
 
@@ -53,7 +54,7 @@ export class MemberCardsService extends BaseService<MemberCard> {
     private idempotency: IdempotencyService,
     private readonly memberCardLogRepo: MemberCardLogRepository,
     private readonly memberPointLogRepo: MemberPointLogRepository,
-    private statsService: StatsService,
+    private eventBus: EventBusService,
   ) {
     super(dbService, clinicContext, "MemberCard", [], [], [], true, ["cardNo"], undefined, undefined, ['balance', 'totalRecharge', 'totalConsume']);
   }
@@ -114,7 +115,7 @@ export class MemberCardsService extends BaseService<MemberCard> {
     return this.dbService.transaction((db) => handler(db));
   }
 
-  async create(dto: CreateMemberCardDto) {
+  async create(dto: CreateMemberCardDto): Promise<MemberCard> {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const clinicId = this.clinicContext.getClinicId();
@@ -127,16 +128,26 @@ export class MemberCardsService extends BaseService<MemberCard> {
 
         const result = this.dbService.transaction((db) => {
           const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
-          const existing = db.prepare(`SELECT id FROM MemberCard WHERE patientId = ?${clinicClause}`).get(dto.patientId, ...clinicParams);
+          const patient = db.prepare(`SELECT id FROM Patient WHERE id = ? AND deletedAt IS NULL${clinicClause}`).get(dto.patientId, ...clinicParams);
+          if (!patient) throw new BusinessNotFoundException("患者不存在");
+          const existing = db.prepare(`SELECT id FROM MemberCard WHERE patientId = ? AND deletedAt IS NULL${clinicClause}`).get(dto.patientId, ...clinicParams);
           if (existing) throw new BusinessValidationException("该患者已有会员卡");
 
           db.prepare(`INSERT INTO MemberCard (id, patientId, cardNo, balance, totalRecharge, totalConsume, status, clinicId, createdAt, updatedAt) VALUES (?,?,?,0,0,0,?,?,?,?)`)
             .run(id, dto.patientId, cardNo, MemberCardStatus.ACTIVE, clinicId || null, now, now);
 
-          return super.findOne(id);
+          const created = db.prepare(
+            `SELECT id, patientId, cardNo, balance, totalRecharge, totalConsume, points, status, createdAt, updatedAt FROM MemberCard WHERE id = ?`
+          ).get(id) as MemberCardRow;
+          if (created) {
+            created.balance = centsToYuan(Number(created.balance) || 0);
+            created.totalRecharge = centsToYuan(Number(created.totalRecharge) || 0);
+            created.totalConsume = centsToYuan(Number(created.totalConsume) || 0);
+          }
+          return created;
         });
 
-        return result;
+        return result as MemberCard;
       } catch (e: unknown) {
         lastError = e instanceof Error ? e : new Error(String(e));
         if (e instanceof Error && e.message.includes("UNIQUE constraint failed: MemberCard.cardNo")) {
@@ -156,7 +167,7 @@ export class MemberCardsService extends BaseService<MemberCard> {
 
     const doRecharge = (db: IDatabase) => {
       const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
-      const card = db.prepare(`SELECT id, status, balance FROM MemberCard WHERE id = ?${clinicClause}`).get(id, ...clinicParams) as MemberCardRow;
+      const card = db.prepare(`SELECT id, patientId, status, balance FROM MemberCard WHERE id = ?${clinicClause}`).get(id, ...clinicParams) as MemberCardRow & { patientId: string };
       this.assertCardExists(card);
       const result = db.prepare(`UPDATE MemberCard SET balance = balance + ?, totalRecharge = totalRecharge + ?, updatedAt = ? WHERE id = ? AND status = ?${clinicClause}`)
         .run(amountCents, amountCents, now, id, MemberCardStatus.ACTIVE, ...clinicParams);
@@ -190,15 +201,13 @@ export class MemberCardsService extends BaseService<MemberCard> {
         },
       );
 
-      return { id, balance: newBalance, totalRecharge: newTotal };
+      return { id, patientId: card.patientId, balance: newBalance, totalRecharge: newTotal };
     };
 
     const idempotencyKey = requestId ? `member-card-recharge:${id}:${requestId}` : null;
     const result = this.executeWithIdempotency(idempotencyKey, AuditLogType.MEMBER_CARD_RECHARGE, doRecharge);
 
-    this.statsService.invalidateStatsCache('dashboard');
-    this.statsService.invalidateStatsCache('member');
-    this.statsService.invalidateStatsCache('revenue');
+    this.eventBus.emit(new MemberCardRechargedEvent(id, result.patientId, amount, result.balance, clinicId));
 
     return result;
   }
@@ -247,14 +256,23 @@ export class MemberCardsService extends BaseService<MemberCard> {
     });
   }
 
-  async addPoints(id: string, points: number, chargeId?: string, remark?: string) {
+  /**
+   * 增加积分
+   * P1 修复：
+   *   1. 添加 requestId 幂等支持（网络重试不会重复加积分）
+   *   2. 补全审计日志（原先完全缺失，积分变动无审计记录，合规性漏洞）
+   *   3. SELECT 改为查询 points 字段，用于审计 beforeData
+   */
+  async addPoints(id: string, points: number, chargeId?: string, remark?: string, requestId?: string) {
     this.validatePositivePoints(points);
     const now = new Date().toISOString();
     const clinicId = this.clinicContext.getClinicId();
-    return this.dbService.transaction((db) => {
+
+    const doAddPoints = (db: IDatabase) => {
       const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
-      const card = db.prepare(`SELECT id FROM MemberCard WHERE id = ?${clinicClause}`).get(id, ...clinicParams) as MemberCardRow | undefined;
+      const card = db.prepare(`SELECT id, points FROM MemberCard WHERE id = ?${clinicClause}`).get(id, ...clinicParams) as MemberCardRow | undefined;
       this.assertCardExists(card);
+      const beforePoints = Number(card.points) || 0;
       const result = db.prepare(`UPDATE MemberCard SET points = points + ?, updatedAt = ? WHERE id = ?${clinicClause}`).run(points, now, id, ...clinicParams);
       if (result.changes === 0) throw new BusinessValidationException('积分更新失败');
       const newPoints = this.getCardField(db, id, 'points');
@@ -269,18 +287,39 @@ export class MemberCardsService extends BaseService<MemberCard> {
         clinicId: clinicId || null,
       }, now);
 
+      this.logAudit(
+        db,
+        AuditLogType.MEMBER_CARD_POINTS_ADD,
+        id,
+        "MemberCard",
+        { beforeData: { points: beforePoints }, afterData: { points: newPoints } },
+      );
+
       return { id, points: newPoints };
-    });
+    };
+
+    const idempotencyKey = requestId ? `member-card-points-add:${id}:${requestId}` : null;
+    return this.executeWithIdempotency(idempotencyKey, AuditLogType.MEMBER_CARD_POINTS_ADD, doAddPoints);
   }
 
-  async deductPoints(id: string, points: number, remark?: string) {
+  /**
+   * 扣减积分
+   * P1 修复：
+   *   1. 添加 requestId 幂等支持（网络重试不会重复扣积分）
+   *   2. 补全审计日志（原先完全缺失，积分变动无审计记录，合规性漏洞）
+   *   3. SELECT 改为查询 points 字段，用于审计 beforeData
+   *   CAS 保护：WHERE points >= ? 防止并发扣减导致负积分
+   */
+  async deductPoints(id: string, points: number, remark?: string, requestId?: string) {
     this.validatePositivePoints(points);
     const now = new Date().toISOString();
     const clinicId = this.clinicContext.getClinicId();
-    return this.dbService.transaction((db) => {
+
+    const doDeductPoints = (db: IDatabase) => {
       const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
-      const card = db.prepare(`SELECT id FROM MemberCard WHERE id = ?${clinicClause}`).get(id, ...clinicParams) as MemberCardRow | undefined;
+      const card = db.prepare(`SELECT id, points FROM MemberCard WHERE id = ?${clinicClause}`).get(id, ...clinicParams) as MemberCardRow | undefined;
       this.assertCardExists(card);
+      const beforePoints = Number(card.points) || 0;
       const result = db.prepare(`UPDATE MemberCard SET points = points - ?, updatedAt = ? WHERE id = ? AND points >= ?${clinicClause}`).run(points, now, id, points, ...clinicParams);
       if (result.changes === 0) throw new BusinessValidationException('积分不足');
       const newPoints = this.getCardField(db, id, 'points');
@@ -294,66 +333,84 @@ export class MemberCardsService extends BaseService<MemberCard> {
         clinicId: clinicId || null,
       }, now);
 
+      this.logAudit(
+        db,
+        AuditLogType.MEMBER_CARD_POINTS_DEDUCT,
+        id,
+        "MemberCard",
+        { beforeData: { points: beforePoints }, afterData: { points: newPoints } },
+      );
+
       return { id, points: newPoints };
-    });
+    };
+
+    const idempotencyKey = requestId ? `member-card-points-deduct:${id}:${requestId}` : null;
+    return this.executeWithIdempotency(idempotencyKey, AuditLogType.MEMBER_CARD_POINTS_DEDUCT, doDeductPoints);
   }
 
   async consume(id: string, amount: number, chargeId?: string, remark?: string, requestId?: string) {
     this.validatePositiveAmount(amount, "充值/消费/退款金额必须为有效正数");
-    const amountCents = yuanToCents(amount);
-    const now = new Date().toISOString();
-    const clinicId = this.clinicContext.getClinicId();
 
-    const doConsume = (db: IDatabase) => {
-      const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
-      const card = db.prepare(`SELECT id, status, balance FROM MemberCard WHERE id = ?${clinicClause}`).get(id, ...clinicParams) as MemberCardRow;
-      this.assertCardExists(card);
-      this.assertCardActive(card, '会员卡状态异常，无法消费');
-      const result = db.prepare(
-        `UPDATE MemberCard SET balance = balance - ?, totalConsume = totalConsume + ?, updatedAt = ? WHERE id = ? AND status = ? AND balance >= ?${clinicClause}`
-      ).run(amountCents, amountCents, now, id, MemberCardStatus.ACTIVE, amountCents, ...clinicParams);
-      if (result.changes === 0) {
-        const currentCard = db.prepare(`SELECT balance, status FROM MemberCard WHERE id = ?${clinicClause}`).get(id, ...clinicParams) as MemberCardRow;
-        if (!currentCard || currentCard.status !== MemberCardStatus.ACTIVE) throw new BusinessValidationException('会员卡状态异常');
-        throw new BusinessValidationException('余额不足');
-      }
-      const newBalanceCents = this.getCardField(db, id, 'balance');
-      const newTotalConsumeCents = this.getCardField(db, id, 'totalConsume');
-      const newBalance = centsToYuan(newBalanceCents);
-      const newTotalConsume = centsToYuan(newTotalConsumeCents);
-
-      this.memberCardLogRepo.create(db, {
-        cardId: id,
-        type: MemberCardLogType.CONSUME,
-        amount: -amountCents,
-        balanceAfter: newBalanceCents,
-        chargeId: chargeId || null,
-        remark: remark || null,
-        clinicId: clinicId || null,
-      }, now);
-
-      this.logAudit(
-        db,
-        AuditLogType.MEMBER_CARD_CONSUME,
-        id,
-        "MemberCard",
-        {
-          beforeData: { balance: centsToYuan(Number(card.balance) || 0) },
-          afterData: { balance: newBalance },
-        },
-      );
-
-      return { id, balance: newBalance, totalConsume: newTotalConsume };
-    };
+    const doConsume = (db: IDatabase) => this.consumeSync(db, id, amount, chargeId, remark);
 
     const idempotencyKey = requestId ? `member-card-consume:${id}:${requestId}` : null;
     const result = this.executeWithIdempotency(idempotencyKey, AuditLogType.MEMBER_CARD_CONSUME, doConsume);
 
-    this.statsService.invalidateStatsCache('dashboard');
-    this.statsService.invalidateStatsCache('member');
-    this.statsService.invalidateStatsCache('revenue');
+    const clinicId = this.clinicContext.getClinicId();
+    this.eventBus.emit(new MemberCardConsumedEvent(id, result.patientId, amount, result.balance, clinicId));
 
     return result;
+  }
+
+  /**
+   * 同步消费会员卡（可在已有事务内调用）
+   * P0 修复：提取为公共方法，供 ChargePaymentService 委托调用，消除重复代码
+   * 包含 CAS 保护（balance >= ?）防止并发消费导致负余额
+   */
+  consumeSync(db: IDatabase, id: string, amount: number, chargeId?: string, remark?: string) {
+    this.validatePositiveAmount(amount, "充值/消费/退款金额必须为有效正数");
+    const amountCents = yuanToCents(amount);
+    const now = new Date().toISOString();
+    const clinicId = this.clinicContext.getClinicId();
+    const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
+    const card = db.prepare(`SELECT id, patientId, status, balance FROM MemberCard WHERE id = ?${clinicClause}`).get(id, ...clinicParams) as MemberCardRow & { patientId: string };
+    this.assertCardExists(card);
+    this.assertCardActive(card, '会员卡状态异常，无法消费');
+    const result = db.prepare(
+      `UPDATE MemberCard SET balance = balance - ?, totalConsume = totalConsume + ?, updatedAt = ? WHERE id = ? AND status = ? AND balance >= ?${clinicClause}`
+    ).run(amountCents, amountCents, now, id, MemberCardStatus.ACTIVE, amountCents, ...clinicParams);
+    if (result.changes === 0) {
+      const currentCard = db.prepare(`SELECT balance, status FROM MemberCard WHERE id = ?${clinicClause}`).get(id, ...clinicParams) as MemberCardRow;
+      if (!currentCard || currentCard.status !== MemberCardStatus.ACTIVE) throw new BusinessValidationException('会员卡状态异常');
+      throw new BusinessValidationException('余额不足');
+    }
+    const newBalanceCents = this.getCardField(db, id, 'balance');
+    const newTotalConsumeCents = this.getCardField(db, id, 'totalConsume');
+    const newBalance = centsToYuan(newBalanceCents);
+    const newTotalConsume = centsToYuan(newTotalConsumeCents);
+
+    this.memberCardLogRepo.create(db, {
+      cardId: id,
+      type: MemberCardLogType.CONSUME,
+      amount: -amountCents,
+      balanceAfter: newBalanceCents,
+      chargeId: chargeId || null,
+      remark: remark || null,
+      clinicId: clinicId || null,
+    }, now);
+
+    this.logAudit(
+      db,
+      AuditLogType.MEMBER_CARD_CONSUME,
+      id,
+      "MemberCard",
+      {
+        beforeData: { balance: centsToYuan(Number(card.balance) || 0) },
+        afterData: { balance: newBalance },
+      },
+    );
+
+    return { id, patientId: card.patientId, balance: newBalance, totalConsume: newTotalConsume };
   }
 
   async refund(id: string, amount: number, chargeId?: string, remark?: string, requestId?: string) {
@@ -364,7 +421,7 @@ export class MemberCardsService extends BaseService<MemberCard> {
 
     const doRefund = (db: IDatabase) => {
       const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
-      const card = db.prepare(`SELECT id, status, balance FROM MemberCard WHERE id = ?${clinicClause}`).get(id, ...clinicParams) as MemberCardRow;
+      const card = db.prepare(`SELECT id, patientId, status, balance FROM MemberCard WHERE id = ?${clinicClause}`).get(id, ...clinicParams) as MemberCardRow & { patientId: string };
       this.assertCardExists(card);
       const result = db.prepare(
         `UPDATE MemberCard SET balance = balance + ?, totalConsume = MAX(0, totalConsume - ?), updatedAt = ? WHERE id = ? AND status = ?${clinicClause}`
@@ -401,15 +458,14 @@ export class MemberCardsService extends BaseService<MemberCard> {
         },
       );
 
-      return { id, balance: newBalance, totalConsume: newTotalConsume };
+      return { id, patientId: card.patientId, balance: newBalance, totalConsume: newTotalConsume };
     };
 
     const idempotencyKey = requestId ? `member-card-refund:${id}:${requestId}` : null;
     const result = this.executeWithIdempotency(idempotencyKey, AuditLogType.MEMBER_CARD_REFUND, doRefund);
 
-    this.statsService.invalidateStatsCache('dashboard');
-    this.statsService.invalidateStatsCache('member');
-    this.statsService.invalidateStatsCache('revenue');
+    // 退款导致余额增加，对统计缓存的影响与充值一致
+    this.eventBus.emit(new MemberCardRechargedEvent(id, result.patientId, amount, result.balance, clinicId));
 
     return result;
   }

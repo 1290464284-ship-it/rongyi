@@ -29,7 +29,7 @@ function createMockCacheService(): CacheService {
 
 function createMockAuditLogService(): AuditLogService {
   return {
-    logAudit: jest.fn((db: any, type: string, targetId: string, targetType: string, clinicId: string | null, options?: any) => {
+    logAudit: jest.fn((db: { prepare: jest.Mock }, type: string, targetId: string, targetType: string, clinicId: string | null, options?: Record<string, unknown>) => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
       const beforeData = options?.beforeData !== undefined ? JSON.stringify(options.beforeData) : null;

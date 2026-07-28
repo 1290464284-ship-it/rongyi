@@ -1,6 +1,6 @@
 import * as crypto from 'node:crypto';
 import * as bcrypt from 'bcryptjs';
-import { DEFAULT_DEV_PASSWORD, BCRYPT_ROUNDS_DEFAULT } from '../../../config/constants';
+import { generateRandomPassword, BCRYPT_ROUNDS_DEFAULT } from '../../../config/constants';
 
 export interface UserSeedData {
   id: string;
@@ -53,7 +53,8 @@ export function createUser(overrides: Partial<UserSeedData> & { clinicId: string
     username = overrides.username || `user_${id.slice(0, 6)}`;
   }
 
-  const passwordHash = overrides.passwordHash || bcrypt.hashSync(DEFAULT_DEV_PASSWORD, BCRYPT_ROUNDS_DEFAULT);
+  const seedPassword = process.env.ADMIN_INITIAL_PASSWORD || generateRandomPassword();
+  const passwordHash = overrides.passwordHash || bcrypt.hashSync(seedPassword, BCRYPT_ROUNDS_DEFAULT);
 
   return {
     id,

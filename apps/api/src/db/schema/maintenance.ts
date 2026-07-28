@@ -39,7 +39,10 @@ const SOFT_DELETE_TABLES = [
   'Supplier',
   'InventoryItem',
   'PurchaseOrder',
-  'Equipment',
+  // P0 修复：移除 'Equipment' — schema 中 Equipment 表无 deletedAt 字段（inventory.tables.ts:86-102），
+  // 保留会导致 cleanupSoftDeleted 执行 SELECT COUNT(*) FROM Equipment WHERE deletedAt IS NOT NULL 时
+  // 抛 "no such column: deletedAt"，虽被 try/catch 吞掉但功能失效。
+  // 若未来需要 Equipment 软删除，应先在 schema 添加 deletedAt 字段并走迁移。
   'ProcessingFactory',
   'ProcessingOrder',
 ];

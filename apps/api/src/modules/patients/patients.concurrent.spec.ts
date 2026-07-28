@@ -3,6 +3,8 @@ import { PatientsService } from './patients.service';
 import { DbService } from '../../db/db.service';
 import { ClinicContextService } from '../../common/services/clinic-context.service';
 import { StatsService } from '../system/stats/stats.service';
+import { EventBusService } from '../../common/events/event-bus.service';
+import { PatientRepository } from './repositories/patient.repository';
 import {
   createTestDb,
   cleanupTestDb,
@@ -38,6 +40,8 @@ describe('PatientsService - 并发测试', () => {
         { provide: DbService, useValue: testDbService },
         ClinicContextService,
         { provide: StatsService, useValue: { invalidateStatsCache: jest.fn() } },
+        { provide: EventBusService, useValue: { emit: jest.fn(), on: jest.fn(), onAll: jest.fn() } },
+        PatientRepository,
         PatientsService,
       ],
     }).compile();
@@ -192,7 +196,7 @@ describe('PatientsService - 并发测试', () => {
   });
 
   describe('并发创建患者 - 多诊所场景', () => {
-    it('不同诊所创建患者，所有成功的编号全局唯一（全局唯一约束生效）', async () => {
+    it('不同诊所创建患者各自成功（v25迁移后 code 改为诊所内唯一）', async () => {
       const clinic1Id = 'clinic-1';
       const clinic2Id = 'clinic-2';
 
@@ -235,18 +239,27 @@ describe('PatientsService - 并发测试', () => {
         error = e;
       }
 
+      // v25迁移后 Patient.code 改为 UNIQUE(clinicId, code)，不同诊所的 code 允许重复
       const allCodes = (
         db.prepare(
-          'SELECT code FROM Patient WHERE deletedAt IS NULL'
-        ).all() as { code: string }[]
-      ).map((r) => r.code);
+          'SELECT code, clinicId FROM Patient WHERE deletedAt IS NULL'
+        ).all() as { code: string; clinicId: string }[]
+      );
 
-      expectNoDuplicates(allCodes);
+      // 验证所有患者都创建成功
+      expect(allCodes.length).toBe(2);
+      // 验证每个诊所的 code 在该诊所内唯一
+      const clinic1Codes = allCodes.filter(r => r.clinicId === clinic1Id).map(r => r.code);
+      const clinic2Codes = allCodes.filter(r => r.clinicId === clinic2Id).map(r => r.code);
+      expect(new Set(clinic1Codes).size).toBe(clinic1Codes.length);
+      expect(new Set(clinic2Codes).size).toBe(clinic2Codes.length);
 
       if (patient2) {
-        expect(patient2.code).not.toBe(patient1.code);
+        // 不同诊所的患者都应成功创建
+        expect(patient2.code).toBeDefined();
       } else {
-        expect(error.message).toContain('UNIQUE constraint failed');
+        // 如果创建失败（极低概率），应包含唯一约束错误
+        expect(error.message).toMatch(/UNIQUE constraint failed/);
       }
     });
   });

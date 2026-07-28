@@ -1,28 +1,18 @@
 /**
  * 缓存 key 前缀常量
  *
- * 集中管理所有缓存 key 前缀，避免 key 冲突和硬编码
+ * P1 修复：CACHE_PREFIXES 从 @dental/shared 单源重新导出，避免双源定义导致未来不同步。
+ * 原先 API 本地和 shared 包各定义一份，设缓存与删缓存分别从不同来源导入，
+ * 一旦新增前缀只更新一份会导致缓存永不被失效（最难排查的脏读幽灵）。
+ *
+ * API 专有的扩展常量（DICTIONARY_CACHE_KEYS、STATS_CACHE_KEYS 及 builder 函数）仍保留在此文件。
  */
+import { CACHE_PREFIXES } from '@dental/shared';
 
-export const CACHE_PREFIXES = {
-  USER: 'user:',
-  USER_PERMISSIONS: 'user:permissions:',
-  USER_ROLES: 'user:roles:',
-  PATIENT: 'patient:',
-  APPOINTMENT: 'appointment:',
-  CLINIC: 'clinic:',
-  SETTINGS: 'settings:',
-  IDEMPOTENCY: 'idempotency:',
-  OPERATION_LOG: 'oplog:',
-  STATS: 'stats:',
-  SEARCH: 'search:',
-  DICTIONARY: 'dict:',
-  DEPARTMENT: 'dict:department:',
-  TITLE: 'dict:title:',
-  DRUG_CATALOG: 'dict:drugCatalog:',
-  PAYMENT_METHOD: 'dict:paymentMethod:',
-  MEMBER_CARD_TYPE: 'dict:memberCardType:',
-} as const;
+// 重新导出 shared 包的常量和类型，保持现有 import 路径兼容
+export { CACHE_PREFIXES } from '@dental/shared';
+export type { CachePrefix } from '@dental/shared';
+export { buildCacheKey } from '@dental/shared';
 
 /**
  * 字典类数据缓存键后缀
@@ -56,12 +46,6 @@ export const STATS_CACHE_KEYS = {
 } as const;
 
 export type StatsCacheKey = typeof STATS_CACHE_KEYS[keyof typeof STATS_CACHE_KEYS];
-
-export type CachePrefix = typeof CACHE_PREFIXES[keyof typeof CACHE_PREFIXES];
-
-export function buildCacheKey(prefix: CachePrefix, id: string): string {
-  return `${prefix}${id}`;
-}
 
 export function buildStatsCacheKey(category: StatsCacheKey, clinicId: string, ...parts: string[]): string {
   const base = `${CACHE_PREFIXES.STATS}${category}:${clinicId}`;

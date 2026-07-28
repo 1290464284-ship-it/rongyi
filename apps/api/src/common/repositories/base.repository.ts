@@ -224,6 +224,73 @@ export class BaseRepository {
   }
 
   /**
+   * 执行任意参数化 SELECT 并返回单条记录
+   * @param db SQL 执行器
+   * @param sql 参数化 SQL（表名/列名已由调用方校验）
+   * @param params 查询参数
+   */
+  queryOne<T = unknown>(db: SqlExecutor, sql: string, params: unknown[] = []): T | undefined {
+    return db.prepare(sql).get(...params) as T | undefined;
+  }
+
+  /**
+   * 执行任意参数化 SELECT 并返回多条记录
+   * @param db SQL 执行器
+   * @param sql 参数化 SQL（表名/列名已由调用方校验）
+   * @param params 查询参数
+   */
+  queryAll<T = unknown>(db: SqlExecutor, sql: string, params: unknown[] = []): T[] {
+    return db.prepare(sql).all(...params) as T[];
+  }
+
+  /**
+   * 执行任意参数化写操作（INSERT / UPDATE / DELETE）
+   * @param db SQL 执行器
+   * @param sql 参数化 SQL（表名/列名已由调用方校验）
+   * @param params 查询参数
+   */
+  execute(db: SqlExecutor, sql: string, params: unknown[] = []): { changes: number; lastInsertRowid: number | bigint | string } {
+    return db.prepare(sql).run(...params);
+  }
+
+  /**
+   * 构造带 WHERE 的分页查询（复用 buildPaginatedQuery，支持额外条件）
+   * @param tableName 表名
+   * @param selectColumns SELECT 字段列表
+   * @param conditions WHERE 条件数组（不含 'WHERE'，使用 AND 拼接）
+   * @param params 条件参数
+   * @param sortBy 排序字段
+   * @param sortOrder 排序方向
+   * @param cursor 游标 ID
+   * @param pageSize 每页条数
+   * @param page 当前页码
+   */
+  buildPaginatedQueryWithConditions(
+    tableName: string,
+    selectColumns: string,
+    conditions: string[],
+    params: unknown[],
+    sortBy: string,
+    sortOrder: 'ASC' | 'DESC',
+    cursor: string | undefined,
+    pageSize: number,
+    page: number,
+  ): BuiltPaginatedQuery {
+    const whereClause = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+    return this.buildPaginatedQuery(
+      tableName,
+      selectColumns,
+      whereClause,
+      params,
+      sortBy,
+      sortOrder,
+      cursor,
+      pageSize,
+      page,
+    );
+  }
+
+  /**
    * 校验列名（仅供调用方复用，BaseService 内部已校验）
    */
   isValidColumnName(name: string): boolean {

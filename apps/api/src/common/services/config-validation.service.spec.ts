@@ -69,6 +69,7 @@ describe('ConfigValidationService', () => {
           JWT_SECRET: 'short-secret-1234567890',
           ENCRYPTION_KEY: VALID_ENCRYPTION_KEY,
           NODE_ENV: 'production',
+          ADMIN_INITIAL_PASSWORD: 'StrongPass123',
         });
         const result = service.validate();
         expect(result.valid).toBe(true);
@@ -345,14 +346,109 @@ describe('ConfigValidationService', () => {
   });
 
   describe('validateAllOrExit()', () => {
-    it('应调用 validateJwtSecretOrExit 和 validateEncryptionKeyOrExit', () => {
+    it('应调用 validateJwtSecretOrExit、validateEncryptionKeyOrExit 和 validateAdminInitialPasswordOrExit', () => {
       const jwtSpy = jest.spyOn(service, 'validateJwtSecretOrExit').mockImplementation(() => {});
       const encSpy = jest.spyOn(service, 'validateEncryptionKeyOrExit').mockImplementation(() => {});
+      const adminSpy = jest.spyOn(service, 'validateAdminInitialPasswordOrExit').mockImplementation(() => {});
 
       service.validateAllOrExit();
 
       expect(jwtSpy).toHaveBeenCalled();
       expect(encSpy).toHaveBeenCalled();
+      expect(adminSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe('validateAdminInitialPasswordOrExit()', () => {
+    it('生产环境未设置 ADMIN_INITIAL_PASSWORD 时应调用 process.exit(1)', () => {
+      process.env.NODE_ENV = 'production';
+      setConfigValues({ NODE_ENV: 'production', ADMIN_INITIAL_PASSWORD: undefined });
+      expect(() => service.validateAdminInitialPasswordOrExit()).toThrow();
+      expect(processExitSpy).toHaveBeenCalledWith(1);
+    });
+
+    it('生产环境 ADMIN_INITIAL_PASSWORD 复杂度不足时应调用 process.exit(1)', () => {
+      process.env.NODE_ENV = 'production';
+      setConfigValues({ NODE_ENV: 'production', ADMIN_INITIAL_PASSWORD: '12345678' });
+      expect(() => service.validateAdminInitialPasswordOrExit()).toThrow();
+      expect(processExitSpy).toHaveBeenCalledWith(1);
+    });
+
+    it('生产环境 ADMIN_INITIAL_PASSWORD 复杂度符合要求时不退出', () => {
+      process.env.NODE_ENV = 'production';
+      setConfigValues({ NODE_ENV: 'production', ADMIN_INITIAL_PASSWORD: 'SecurePass1' });
+      expect(() => service.validateAdminInitialPasswordOrExit()).not.toThrow();
+      expect(processExitSpy).not.toHaveBeenCalled();
+    });
+
+    it('开发环境未设置 ADMIN_INITIAL_PASSWORD 时应记录警告日志', () => {
+      process.env.NODE_ENV = 'development';
+      setConfigValues({ NODE_ENV: 'development', ADMIN_INITIAL_PASSWORD: undefined });
+      expect(() => service.validateAdminInitialPasswordOrExit()).not.toThrow();
+      expect(loggerWarnSpy).toHaveBeenCalled();
+    });
+
+    it('开发环境 ADMIN_INITIAL_PASSWORD 复杂度不足时应记录警告日志', () => {
+      process.env.NODE_ENV = 'development';
+      setConfigValues({ NODE_ENV: 'development', ADMIN_INITIAL_PASSWORD: '12345678' });
+      expect(() => service.validateAdminInitialPasswordOrExit()).not.toThrow();
+      expect(loggerWarnSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe('ADMIN_INITIAL_PASSWORD 校验', () => {
+    beforeEach(() => {
+      setConfigValues({ JWT_SECRET: VALID_JWT_SECRET, ENCRYPTION_KEY: VALID_ENCRYPTION_KEY });
+    });
+
+    it('生产环境未设置 ADMIN_INITIAL_PASSWORD 时应返回 error', () => {
+      process.env.NODE_ENV = 'production';
+      setConfigValues({
+        JWT_SECRET: VALID_JWT_SECRET,
+        ENCRYPTION_KEY: VALID_ENCRYPTION_KEY,
+        NODE_ENV: 'production',
+        ADMIN_INITIAL_PASSWORD: undefined,
+      });
+      const result = service.validate();
+      expect(result.valid).toBe(false);
+      expect(result.errors).toContain('生产环境必须设置 ADMIN_INITIAL_PASSWORD');
+    });
+
+    it('生产环境 ADMIN_INITIAL_PASSWORD 复杂度不足时应返回 error', () => {
+      process.env.NODE_ENV = 'production';
+      setConfigValues({
+        JWT_SECRET: VALID_JWT_SECRET,
+        ENCRYPTION_KEY: VALID_ENCRYPTION_KEY,
+        NODE_ENV: 'production',
+        ADMIN_INITIAL_PASSWORD: '12345678',
+      });
+      const result = service.validate();
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e) => e.includes('ADMIN_INITIAL_PASSWORD 复杂度不足'))).toBe(true);
+    });
+
+    it('生产环境 ADMIN_INITIAL_PASSWORD 复杂度符合要求时不应返回 error', () => {
+      process.env.NODE_ENV = 'production';
+      setConfigValues({
+        JWT_SECRET: VALID_JWT_SECRET,
+        ENCRYPTION_KEY: VALID_ENCRYPTION_KEY,
+        NODE_ENV: 'production',
+        ADMIN_INITIAL_PASSWORD: 'SecurePass1',
+      });
+      const result = service.validate();
+      expect(result.errors).not.toContain(expect.stringContaining('ADMIN_INITIAL_PASSWORD'));
+    });
+
+    it('开发环境未设置 ADMIN_INITIAL_PASSWORD 时应返回 warning', () => {
+      process.env.NODE_ENV = 'development';
+      setConfigValues({
+        JWT_SECRET: VALID_JWT_SECRET,
+        ENCRYPTION_KEY: VALID_ENCRYPTION_KEY,
+        NODE_ENV: 'development',
+        ADMIN_INITIAL_PASSWORD: undefined,
+      });
+      const result = service.validate();
+      expect(result.warnings).toContain('未配置 ADMIN_INITIAL_PASSWORD，开发环境将使用默认密码');
     });
   });
 

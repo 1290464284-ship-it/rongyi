@@ -65,6 +65,7 @@ interface UserRow {
   clinicId?: string;
   isTempPassword?: number;
   phone?: string;
+  passwordChangedAt?: string;
 }
 
 @Injectable()
@@ -86,7 +87,10 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
   /** P2-1: bcrypt 轮数可配置化 */
   private get bcryptRounds(): number {
     const rounds = this.config.get<string>('BCRYPT_ROUNDS');
-    return rounds ? Math.max(8, Math.min(15, parseInt(rounds, 10))) : 10;
+    if (!rounds) return 10;
+    const parsed = parseInt(rounds, 10);
+    if (Number.isNaN(parsed)) return 10;
+    return Math.max(8, Math.min(15, parsed));
   }
 
   onModuleInit() {
@@ -94,6 +98,8 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     this.cleanupTimer = setInterval(() => {
       this.cleanupUsedRefreshTokens();
     }, this.CLEANUP_INTERVAL_MS);
+    // P1 修复：unref 防止定时器阻止进程正常退出
+    this.cleanupTimer.unref();
     // 启动时立即执行一次
     process.nextTick(() => this.cleanupUsedRefreshTokens());
   }
@@ -123,7 +129,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     // payload after successful authentication. If clinic-scoped login is needed, the
     // frontend should pass a clinic identifier (e.g. subdomain or form field) and this
     // query should be updated to filter accordingly.
-    const user = this.dbService.prepare("SELECT id, username, passwordHash, active, loginAttempts, lockedUntil, tokenVersion, name, role, clinicId, isTempPassword FROM User WHERE username = ?").get(dto.username) as UserRow;
+    const user = this.dbService.prepare("SELECT id, username, passwordHash, active, loginAttempts, lockedUntil, tokenVersion, name, role, clinicId, isTempPassword, passwordChangedAt FROM User WHERE username = ? AND active = 1").get(dto.username) as UserRow;
     if (!user?.active) throw new UnauthorizedException("用户名或密码错误");
 
     const hash = user.passwordHash;
@@ -137,19 +143,26 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     }
     const ok = await bcrypt.compare(dto.password, hash);
     if (!ok) {
-      const attempts = Number(user.loginAttempts) + 1;
+      // P1 修复：使用原子递增 `loginAttempts = loginAttempts + 1` 防止 TOCTOU 竞态
+      // 原先 SELECT 读取 loginAttempts → 计算加 1 → UPDATE 绝对值赋值，
+      // 两个并发失败登录可能都读到 attempts=4，各自写入 5（应为 6），绕过锁定阈值
+      this.dbService.prepare(
+        "UPDATE User SET loginAttempts = loginAttempts + 1, updatedAt = ? WHERE id = ?",
+      ).run(new Date().toISOString(), user.id);
+      // 重新读取递增后的值，判断是否需要锁定
+      const updated = this.dbService.prepare("SELECT loginAttempts FROM User WHERE id = ?").get(user.id) as { loginAttempts: number } | undefined;
+      const attempts = Number(updated?.loginAttempts) || Number(user.loginAttempts) + 1;
       if (attempts >= LOGIN_MAX_ATTEMPTS) {
         const lockUntil = new Date(Date.now() + LOGIN_LOCK_DURATION_MS).toISOString();
-        this.dbService.prepare("UPDATE User SET loginAttempts = ?, lockedUntil = ? WHERE id = ?").run(attempts, lockUntil, user.id);
-        throw new UnauthorizedException("用户名或密码错误");
+        this.dbService.prepare("UPDATE User SET lockedUntil = ? WHERE id = ?").run(lockUntil, user.id);
       }
-      this.dbService.prepare("UPDATE User SET loginAttempts = ? WHERE id = ?").run(attempts, user.id);
       throw new UnauthorizedException("用户名或密码错误");
     }
 
     const is4DigitPin = /^\d{4}$/.test(dto.password);
     const isTempPassword = Number(user.isTempPassword) === 1;
-    const needChangePassword = is4DigitPin || isTempPassword;
+    const isFirstLogin = !user.passwordChangedAt;
+    const needChangePassword = is4DigitPin || isTempPassword || isFirstLogin;
 
     const tokenVersion = Number(user.tokenVersion) || 0;
     const payload = { sub: user.id, username: user.username, role: user.role, tv: tokenVersion, cid: user.clinicId, iss: 'dental-api', aud: 'dental-web' };
@@ -307,65 +320,86 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
 
   async refreshToken(token: string): Promise<RefreshTokenResult> {
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-
-    // Step 1: Check if this exact token hash was already used (reuse detection)
-    interface UsedRefreshTokenRow {
-      userId: string;
-    }
-
-    const usedRecord = this.dbService.prepare(
-      "SELECT userId FROM UsedRefreshToken WHERE tokenHash = ?"
-    ).get(tokenHash) as UsedRefreshTokenRow | undefined;
-
-    if (usedRecord) {
-      // REUSE DETECTED: Invalidate ALL tokens for this user
-      this.dbService.prepare(
-        "UPDATE User SET tokenVersion = COALESCE(tokenVersion, 0) + 1, refreshToken = NULL, refreshTokenExpiresAt = NULL, updatedAt = ? WHERE id = ?"
-      ).run(new Date().toISOString(), usedRecord.userId);
-      // P4-1: 复用检测吊销全部 token，同步失效 UserInfo 缓存
-      this.cache.del(buildCacheKey(CACHE_PREFIXES.USER, usedRecord.userId));
-      throw new UnauthorizedException("登录已过期，请重新登录");
-    }
-
-    // Step 2: Find the user with this as their current valid refresh token
-    const user = this.dbService.prepare(
-      "SELECT id, username, name, role, tokenVersion, clinicId FROM User WHERE refreshToken = ? AND refreshTokenExpiresAt > ? AND active = 1"
-    ).get(tokenHash, new Date().toISOString()) as UserRow | undefined;
-
-    if (!user) throw new UnauthorizedException("登录已过期，请重新登录");
-
-    // Step 4: Issue new access token (1h) — CPU-bound, no DB, safe outside transaction
-    const tokenVersion = Number(user.tokenVersion) || 0;
-    const payload = { sub: user.id, username: user.username, role: user.role, tv: tokenVersion, cid: user.clinicId, iss: 'dental-api', aud: 'dental-web' };
-    const access_token = this.jwt.sign(payload, { secret: this.config.get("JWT_SECRET"), expiresIn: ACCESS_TOKEN_EXPIRES_IN });
-
-    // Step 5: Issue new refresh token (rotation)
-    const new_refresh_token = crypto.randomBytes(48).toString('hex');
-    const refreshExpiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_MS).toISOString();
-    const newRefreshTokenHash = crypto.createHash('sha256').update(new_refresh_token).digest('hex');
     const now = new Date().toISOString();
 
-    // P3-1: refresh token 轮换的三步 DB 操作必须原子化
-    // 若 INSERT(标记旧 token 已用) 成功但 UPDATE(写入新 token) 失败，
-    // 旧 token 已失效但新 token 未写入，用户被锁出且无法恢复
-    this.dbService.transaction((db) => {
-      // Step 3: Mark current token as used BEFORE issuing new ones
-      db.prepare(
-        "INSERT OR IGNORE INTO UsedRefreshToken (tokenHash, userId, usedAt) VALUES (?, ?, ?)"
-      ).run(tokenHash, user.id, now);
+    // P1-1: 把"标记旧 token 已用 + 查用户 + 写新 token"合并在同一事务内，
+    // 用 UsedRefreshToken.tokenHash 主键（UNIQUE）的 INSERT OR FAIL 作为原子闸门，
+    // 彻底消除 refresh token 重放的 TOCTOU 竞态窗口。
+    // 两个并发请求：先到者 INSERT 成功，后到者因 UNIQUE 冲突触发回滚并抛出
+    // UnauthorizedException("登录已过期，请重新登录")，无法拿到新 token。
+    try {
+      const result = this.dbService.transaction((db) => {
+        // Step 1 (atomic gate): 先标记旧 token 已用；若已用过则 PK UNIQUE 冲突回滚，
+        // 若 token 无效（无对应 User）则 FK 约束冲突回滚，二者都触发 UnauthorizedException。
+        // userId 用空串占位——真实 userId 由后续 SELECT 获取，FK 保证无效 token 不会落库。
+        db.prepare(
+          "INSERT OR FAIL INTO UsedRefreshToken (tokenHash, userId, usedAt) VALUES (?, '', ?)"
+        ).run(tokenHash, now);
 
-      db.prepare("UPDATE User SET refreshToken = ?, refreshTokenExpiresAt = ?, updatedAt = ? WHERE id = ?")
-        .run(newRefreshTokenHash, refreshExpiresAt, now, user.id);
+        // Step 2: 在事务内查当前持有该 refresh token 的用户（此时 INSERT 已成功，重放已无可能）
+        const user = db.prepare(
+          "SELECT id, username, name, role, tokenVersion, clinicId FROM User WHERE refreshToken = ? AND refreshTokenExpiresAt > ? AND active = 1"
+        ).get(tokenHash, now) as UserRow | undefined;
 
-      // Periodic cleanup of old UsedRefreshToken entries (>25h)
-      db.prepare("DELETE FROM UsedRefreshToken WHERE usedAt < ?")
-        .run(new Date(Date.now() - this.TOKEN_RETENTION_HOURS * 60 * 60 * 1000).toISOString());
-    });
+        if (!user) {
+          // token 不存在或已失效；事务正常提交（INSERT 已落库），对外返回相同错误避免泄露
+          return { user: null, payload: null, newRefreshToken: null };
+        }
 
-    return {
-      access_token,
-      refresh_token: new_refresh_token,
-      user: { id: user.id, username: user.username, name: user.name, role: user.role, clinicId: user.clinicId },
-    };
+        // Step 3: 生成新 token（CPU 操作，事务内同步执行，不会破坏原子性）
+        const tokenVersion = Number(user.tokenVersion) || 0;
+        const payload = { sub: user.id, username: user.username, role: user.role, tv: tokenVersion, cid: user.clinicId, iss: 'dental-api', aud: 'dental-web' };
+        const access_token = this.jwt.sign(payload, { secret: this.config.get("JWT_SECRET"), expiresIn: ACCESS_TOKEN_EXPIRES_IN });
+
+        const new_refresh_token = crypto.randomBytes(48).toString('hex');
+        const refreshExpiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_MS).toISOString();
+        const newRefreshTokenHash = crypto.createHash('sha256').update(new_refresh_token).digest('hex');
+
+        // Step 4: 写入新 refresh token；若此步失败，整个事务回滚（旧 token 也被回滚，用户未被锁出）
+        db.prepare("UPDATE User SET refreshToken = ?, refreshTokenExpiresAt = ?, updatedAt = ? WHERE id = ?")
+          .run(newRefreshTokenHash, refreshExpiresAt, now, user.id);
+
+        return { user, access_token, new_refresh_token };
+      });
+
+      if (!result.user) {
+        throw new UnauthorizedException("登录已过期，请重新登录");
+      }
+
+      return {
+        access_token: result.access_token,
+        refresh_token: result.new_refresh_token,
+        user: {
+          id: result.user.id,
+          username: result.user.username,
+          name: result.user.name,
+          role: result.user.role,
+          clinicId: result.user.clinicId,
+        },
+      };
+    } catch (err: unknown) {
+      // INSERT OR FAIL 的 UNIQUE 冲突会被 better-sqlite3 抛出，统一映射为 401，避免泄露"此 token 曾用过"
+      if (err instanceof UnauthorizedException) throw err;
+      if (err instanceof Error && err.message.includes('UNIQUE constraint failed')) {
+        // 重放攻击检测：递增所有活跃用户的 tokenVersion，强制全部重新登录。
+        // 事务已回滚，此处通过独立 prepare 执行，不受回滚影响。
+        // 注：UsedRefreshToken.userId 为空串占位，无法精确定位用户，
+        // 因此采用全量吊销策略——安全优先。
+        try {
+          this.dbService.prepare(
+            "UPDATE User SET tokenVersion = COALESCE(tokenVersion, 0) + 1, updatedAt = ? WHERE active = 1"
+          ).run(now);
+        } catch (revokeErr) {
+          // P1 修复：重放攻击已检测但全量吊销失败，旧 token 仍可使用，属于安全事件
+          // 提升为 error 级别并记录详细上下文，便于运维介入
+          this.logger.error(
+            `重放攻击检测后吊销会话失败，旧 token 仍可使用，需人工介入`,
+            revokeErr instanceof Error ? revokeErr : String(revokeErr),
+          );
+        }
+        throw new UnauthorizedException("登录已过期，请重新登录");
+      }
+      throw err;
+    }
   }
 }

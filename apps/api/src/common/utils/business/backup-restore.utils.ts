@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-non-literal-fs-filename -- 备份工具路径来自配置常量，非用户输入 */
 /**
  * 数据恢复测试工具
  * 用于验证备份文件的完整性和可恢复性

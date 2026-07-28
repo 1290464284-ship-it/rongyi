@@ -1,9 +1,12 @@
 /* eslint-disable sonarjs/no-floating-point-equality */
 import { ChargeService } from './charge.service';
+import { BusinessNotFoundException } from '@common/errors';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
-import { NotFoundException } from '@nestjs/common';
-import { StatsService } from '../../system/stats/stats.service';
+import { IdempotencyService } from '../../../common/services/idempotency.service';
+
+import { EventBusService } from '../../../common/events/event-bus.service';
+import { ChargeRepository } from './repositories/charge.repository';
 
 function createMockClinicContext(): ClinicContextService {
   return {
@@ -15,21 +18,30 @@ function createMockClinicContext(): ClinicContextService {
   } as unknown as ClinicContextService;
 }
 
-function createMockStatsService(): jest.Mocked<StatsService> {
+function createMockEventBus(): jest.Mocked<EventBusService> {
   return {
-    invalidateStatsCache: jest.fn(),
-  } as unknown as jest.Mocked<StatsService>;
+    emit: jest.fn(),
+    on: jest.fn(),
+    onAll: jest.fn(),
+  } as unknown as jest.Mocked<EventBusService>;
+}
+
+function createMockIdempotency(db: MockDbService): IdempotencyService {
+  return {
+    executeInTransaction: <T>(_options: unknown, handler: (db: unknown) => T) => db.transaction((txDb: unknown) => handler(txDb)),
+    execute: async <T>(_options: unknown, handler: () => Promise<T> | T) => handler(),
+  } as unknown as IdempotencyService;
 }
 
 describe('ChargeService', () => {
   let service: ChargeService;
   let db: MockDbService;
-  let statsService: jest.Mocked<StatsService>;
+  let eventBus: jest.Mocked<EventBusService>;
 
   beforeEach(() => {
     db = new MockDbService();
-    statsService = createMockStatsService();
-    service = new ChargeService(db as any, createMockClinicContext(), statsService);
+    eventBus = createMockEventBus();
+    service = new ChargeService(db as any, createMockClinicContext(), eventBus, new ChargeRepository(), createMockIdempotency(db));
   });
 
   afterEach(() => {
@@ -203,8 +215,8 @@ describe('ChargeService', () => {
       expect(created.items[0].name).toBe('洗牙');
     });
 
-    it('不存在的收费单应抛出 NotFoundException', () => {
-      expect(() => service.getCharge('non-existent')).toThrow(NotFoundException);
+    it('不存在的收费单应抛出 BusinessNotFoundException', () => {
+      expect(() => service.getCharge('non-existent')).toThrow(BusinessNotFoundException);
     });
 
     it('应正确显示所有收费项目', () => {
@@ -542,20 +554,17 @@ describe('ChargeService', () => {
 
   // ==================== createCharge - 缓存失效 ====================
 
-  describe('createCharge - 缓存失效', () => {
-    it('创建收费单后应调用 invalidateStatsCache 并失效相关缓存类别', () => {
+  describe('createCharge - 事件发布', () => {
+    it('创建收费单后应发布 charge.created 事件', () => {
       service.createCharge({
         patientId: 'patient-001',
         items: [{ name: '洗牙', category: '基础护理', price: 300, quantity: 1 }],
       });
 
-      expect(statsService.invalidateStatsCache).toHaveBeenCalledTimes(6);
-      expect(statsService.invalidateStatsCache).toHaveBeenCalledWith('dashboard');
-      expect(statsService.invalidateStatsCache).toHaveBeenCalledWith('charge');
-      expect(statsService.invalidateStatsCache).toHaveBeenCalledWith('revenue');
-      expect(statsService.invalidateStatsCache).toHaveBeenCalledWith('doctorWorkload');
-      expect(statsService.invalidateStatsCache).toHaveBeenCalledWith('revenueByDoctor');
-      expect(statsService.invalidateStatsCache).toHaveBeenCalledWith('revenueByCategory');
+      expect(eventBus.emit).toHaveBeenCalledTimes(1);
+      expect(eventBus.emit).toHaveBeenCalledWith(
+        expect.objectContaining({ eventName: 'charge.created' }),
+      );
     });
   });
 });

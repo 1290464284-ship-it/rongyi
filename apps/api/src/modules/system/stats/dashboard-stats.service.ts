@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable } from '@nestjs/common';
 import { DbService } from "../../../db/db.service";
 import { CacheService } from "../../../common/services/cache.service";
 import { getLocalDateStr, startOfDay, startOfMonth } from "../../../common/utils/format/date";

@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-non-literal-fs-filename -- 配置文件路径来自环境变量，非用户输入 */
 import { Injectable, Logger } from '@nestjs/common';
 import * as fs from 'node:fs';
 import * as path from 'node:path';

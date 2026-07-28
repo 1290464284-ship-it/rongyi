@@ -1,12 +1,13 @@
 import { MemberCardsService } from './member-cards.service';
+import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+
 import { createMemberCardFactory, TEST_CLINIC_ID } from '../../../../test/factories';
 import { IdempotencyService } from '../../../common/services/idempotency.service';
 import { MemberCardLogRepository } from './repositories/member-card-log.repository';
 import { MemberPointLogRepository } from './repositories/member-point-log.repository';
-import { StatsService } from '../../system/stats/stats.service';
+import { EventBusService } from '../../../common/events/event-bus.service';
 
 function createMockClinicContext(): ClinicContextService {
   return {
@@ -20,14 +21,16 @@ function createMockClinicContext(): ClinicContextService {
 
 function createMockIdempotencyService(db?: MockDbService): IdempotencyService {
   return {
-    executeInTransaction: jest.fn((_options: any, handler: any) => handler(db || {})),
+    executeInTransaction: jest.fn((_options: Record<string, unknown>, handler: (...args: unknown[]) => unknown) => handler(db || {})),
   } as unknown as IdempotencyService;
 }
 
-function createMockStatsService(): jest.Mocked<StatsService> {
+function createMockEventBus(): jest.Mocked<EventBusService> {
   return {
-    invalidateStatsCache: jest.fn(),
-  } as unknown as jest.Mocked<StatsService>;
+    emit: jest.fn(),
+    on: jest.fn(),
+    onAll: jest.fn(),
+  } as unknown as jest.Mocked<EventBusService>;
 }
 
 describe('MemberCardsService', () => {
@@ -35,20 +38,20 @@ describe('MemberCardsService', () => {
   let db: MockDbService;
   let memberCardLogRepo: MemberCardLogRepository;
   let memberPointLogRepo: MemberPointLogRepository;
-  let statsService: jest.Mocked<StatsService>;
+  let eventBus: jest.Mocked<EventBusService>;
 
   beforeEach(() => {
     db = new MockDbService();
     memberCardLogRepo = new MemberCardLogRepository();
     memberPointLogRepo = new MemberPointLogRepository();
-    statsService = createMockStatsService();
+    eventBus = createMockEventBus();
     service = new MemberCardsService(
       db as any,
       createMockClinicContext(),
       createMockIdempotencyService(),
       memberCardLogRepo,
       memberPointLogRepo,
-      statsService,
+      eventBus,
     );
   });
 
@@ -59,6 +62,10 @@ describe('MemberCardsService', () => {
   // ==================== create ====================
 
   describe('create - 创建会员卡', () => {
+    beforeEach(() => {
+      db.seed('Patient', [{ id: 'patient-001', clinicId: TEST_CLINIC_ID }]);
+    });
+
     it('正常创建会员卡', async () => {
       const result = await service.create({ patientId: 'patient-001' });
       expect((result as any).patientId).toBe('patient-001');
@@ -98,6 +105,10 @@ describe('MemberCardsService', () => {
   // ==================== createForPatient ====================
 
   describe('createForPatient - 为患者创建会员卡', () => {
+    beforeEach(() => {
+      db.seed('Patient', [{ id: 'patient-002', clinicId: TEST_CLINIC_ID }]);
+    });
+
     it('调用 create 并返回结果', async () => {
       const result = await service.createForPatient('patient-002');
       expect((result as any).patientId).toBe('patient-002');
@@ -108,28 +119,28 @@ describe('MemberCardsService', () => {
   // ==================== recharge - 输入校验 ====================
 
   describe('recharge - 输入校验', () => {
-    it('充值金额为 0 应抛出 BadRequestException', async () => {
-      await expect(service.recharge('card-001', 0)).rejects.toThrow(BadRequestException);
+    it('充值金额为 0 应抛出 BusinessValidationException', async () => {
+      await expect(service.recharge('card-001', 0)).rejects.toThrow(BusinessValidationException);
     });
 
-    it('充值金额为负数应抛出 BadRequestException', async () => {
-      await expect(service.recharge('card-001', -50)).rejects.toThrow(BadRequestException);
+    it('充值金额为负数应抛出 BusinessValidationException', async () => {
+      await expect(service.recharge('card-001', -50)).rejects.toThrow(BusinessValidationException);
     });
 
-    it('充值金额为 NaN 应抛出 BadRequestException', async () => {
-      await expect(service.recharge('card-001', NaN)).rejects.toThrow(BadRequestException);
+    it('充值金额为 NaN 应抛出 BusinessValidationException', async () => {
+      await expect(service.recharge('card-001', NaN)).rejects.toThrow(BusinessValidationException);
     });
 
-    it('充值金额为 undefined 应抛出 BadRequestException', async () => {
-      await expect(service.recharge('card-001', undefined as any)).rejects.toThrow(BadRequestException);
+    it('充值金额为 undefined 应抛出 BusinessValidationException', async () => {
+      await expect(service.recharge('card-001', undefined as any)).rejects.toThrow(BusinessValidationException);
     });
 
-    it('充值金额为 Infinity 应抛出 BadRequestException', async () => {
-      await expect(service.recharge('card-001', Infinity)).rejects.toThrow(BadRequestException);
+    it('充值金额为 Infinity 应抛出 BusinessValidationException', async () => {
+      await expect(service.recharge('card-001', Infinity)).rejects.toThrow(BusinessValidationException);
     });
 
-    it('充值金额为字符串应抛出 BadRequestException', async () => {
-      await expect(service.recharge('card-001', '100' as any)).rejects.toThrow(BadRequestException);
+    it('充值金额为字符串应抛出 BusinessValidationException', async () => {
+      await expect(service.recharge('card-001', '100' as any)).rejects.toThrow(BusinessValidationException);
     });
   });
 
@@ -265,24 +276,24 @@ describe('MemberCardsService', () => {
   // ==================== consume - 输入校验 ====================
 
   describe('consume - 输入校验', () => {
-    it('消费金额为 0 应抛出 BadRequestException', async () => {
-      await expect(service.consume('card-001', 0)).rejects.toThrow(BadRequestException);
+    it('消费金额为 0 应抛出 BusinessValidationException', async () => {
+      await expect(service.consume('card-001', 0)).rejects.toThrow(BusinessValidationException);
     });
 
-    it('消费金额为负数应抛出 BadRequestException', async () => {
-      await expect(service.consume('card-001', -10)).rejects.toThrow(BadRequestException);
+    it('消费金额为负数应抛出 BusinessValidationException', async () => {
+      await expect(service.consume('card-001', -10)).rejects.toThrow(BusinessValidationException);
     });
 
-    it('消费金额为 NaN 应抛出 BadRequestException', async () => {
-      await expect(service.consume('card-001', NaN)).rejects.toThrow(BadRequestException);
+    it('消费金额为 NaN 应抛出 BusinessValidationException', async () => {
+      await expect(service.consume('card-001', NaN)).rejects.toThrow(BusinessValidationException);
     });
 
-    it('消费金额为 Infinity 应抛出 BadRequestException', async () => {
-      await expect(service.consume('card-001', Infinity)).rejects.toThrow(BadRequestException);
+    it('消费金额为 Infinity 应抛出 BusinessValidationException', async () => {
+      await expect(service.consume('card-001', Infinity)).rejects.toThrow(BusinessValidationException);
     });
 
-    it('消费金额为字符串应抛出 BadRequestException', async () => {
-      await expect(service.consume('card-001', '50' as any)).rejects.toThrow(BadRequestException);
+    it('消费金额为字符串应抛出 BusinessValidationException', async () => {
+      await expect(service.consume('card-001', '50' as any)).rejects.toThrow(BusinessValidationException);
     });
   });
 
@@ -349,20 +360,20 @@ describe('MemberCardsService', () => {
   // ==================== refund - 输入校验 ====================
 
   describe('refund - 输入校验', () => {
-    it('退款金额为 0 应抛出 BadRequestException', async () => {
-      await expect(service.refund('card-001', 0)).rejects.toThrow(BadRequestException);
+    it('退款金额为 0 应抛出 BusinessValidationException', async () => {
+      await expect(service.refund('card-001', 0)).rejects.toThrow(BusinessValidationException);
     });
 
-    it('退款金额为负数应抛出 BadRequestException', async () => {
-      await expect(service.refund('card-001', -30)).rejects.toThrow(BadRequestException);
+    it('退款金额为负数应抛出 BusinessValidationException', async () => {
+      await expect(service.refund('card-001', -30)).rejects.toThrow(BusinessValidationException);
     });
 
-    it('退款金额为 NaN 应抛出 BadRequestException', async () => {
-      await expect(service.refund('card-001', NaN)).rejects.toThrow(BadRequestException);
+    it('退款金额为 NaN 应抛出 BusinessValidationException', async () => {
+      await expect(service.refund('card-001', NaN)).rejects.toThrow(BusinessValidationException);
     });
 
-    it('退款金额为 Infinity 应抛出 BadRequestException', async () => {
-      await expect(service.refund('card-001', Infinity)).rejects.toThrow(BadRequestException);
+    it('退款金额为 Infinity 应抛出 BusinessValidationException', async () => {
+      await expect(service.refund('card-001', Infinity)).rejects.toThrow(BusinessValidationException);
     });
   });
 
@@ -459,19 +470,19 @@ describe('MemberCardsService', () => {
     });
 
     it('积分必须为正数', async () => {
-      await expect(service.addPoints('card-001', 0)).rejects.toThrow(BadRequestException);
+      await expect(service.addPoints('card-001', 0)).rejects.toThrow(BusinessValidationException);
     });
 
-    it('积分为负数应抛出 BadRequestException', async () => {
-      await expect(service.addPoints('card-001', -10)).rejects.toThrow(BadRequestException);
+    it('积分为负数应抛出 BusinessValidationException', async () => {
+      await expect(service.addPoints('card-001', -10)).rejects.toThrow(BusinessValidationException);
     });
 
-    it('积分为 NaN 应抛出 BadRequestException', async () => {
-      await expect(service.addPoints('card-001', NaN)).rejects.toThrow(BadRequestException);
+    it('积分为 NaN 应抛出 BusinessValidationException', async () => {
+      await expect(service.addPoints('card-001', NaN)).rejects.toThrow(BusinessValidationException);
     });
 
-    it('会员卡不存在应抛出 NotFoundException', async () => {
-      await expect(service.addPoints('non-existent', 100)).rejects.toThrow(NotFoundException);
+    it('会员卡不存在应抛出 BusinessNotFoundException', async () => {
+      await expect(service.addPoints('non-existent', 100)).rejects.toThrow(BusinessNotFoundException);
     });
 
     it('加积分后应创建积分日志', async () => {
@@ -536,19 +547,19 @@ describe('MemberCardsService', () => {
 
   describe('deductPoints - 扣减积分', () => {
     it('积分必须为正数', async () => {
-      await expect(service.deductPoints('card-001', 0)).rejects.toThrow(BadRequestException);
+      await expect(service.deductPoints('card-001', 0)).rejects.toThrow(BusinessValidationException);
     });
 
-    it('积分为负数应抛出 BadRequestException', async () => {
-      await expect(service.deductPoints('card-001', -10)).rejects.toThrow(BadRequestException);
+    it('积分为负数应抛出 BusinessValidationException', async () => {
+      await expect(service.deductPoints('card-001', -10)).rejects.toThrow(BusinessValidationException);
     });
 
-    it('积分为 NaN 应抛出 BadRequestException', async () => {
-      await expect(service.deductPoints('card-001', NaN)).rejects.toThrow(BadRequestException);
+    it('积分为 NaN 应抛出 BusinessValidationException', async () => {
+      await expect(service.deductPoints('card-001', NaN)).rejects.toThrow(BusinessValidationException);
     });
 
-    it('会员卡不存在应抛出 NotFoundException', async () => {
-      await expect(service.deductPoints('non-existent', 10)).rejects.toThrow(NotFoundException);
+    it('会员卡不存在应抛出 BusinessNotFoundException', async () => {
+      await expect(service.deductPoints('non-existent', 10)).rejects.toThrow(BusinessNotFoundException);
     });
 
     it('扣减积分时传入 remark', async () => {
@@ -880,8 +891,8 @@ describe('MemberCardsService', () => {
       expect((result as any).balance).toBeCloseTo(123.45, 2);
     });
 
-    it('会员卡不存在应抛出 NotFoundException', async () => {
-      await expect(service.findOne('non-existent')).rejects.toThrow(NotFoundException);
+    it('会员卡不存在应抛出 BusinessNotFoundException', async () => {
+      await expect(service.findOne('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 
@@ -1018,7 +1029,7 @@ describe('MemberCardsService', () => {
         idempotencyService,
         new MemberCardLogRepository(),
         new MemberPointLogRepository(),
-        createMockStatsService(),
+        createMockEventBus(),
       );
 
       await serviceWithIdempotency.recharge('card-001', 100, 'req-001');
@@ -1044,7 +1055,7 @@ describe('MemberCardsService', () => {
         idempotencyService,
         new MemberCardLogRepository(),
         new MemberPointLogRepository(),
-        createMockStatsService(),
+        createMockEventBus(),
       );
 
       await serviceWithIdempotency.recharge('card-001', 100);
@@ -1073,7 +1084,7 @@ describe('MemberCardsService', () => {
         idempotencyService,
         new MemberCardLogRepository(),
         new MemberPointLogRepository(),
-        createMockStatsService(),
+        createMockEventBus(),
       );
 
       try {
@@ -1106,7 +1117,7 @@ describe('MemberCardsService', () => {
         idempotencyService,
         new MemberCardLogRepository(),
         new MemberPointLogRepository(),
-        createMockStatsService(),
+        createMockEventBus(),
       );
 
       try {
@@ -1135,7 +1146,7 @@ describe('MemberCardsService', () => {
 
       try {
         await service.recharge('card-disabled', 100);
-      } catch (e: any) {
+      } catch (e: unknown) {
         expect(e).toBeDefined();
       }
     });
@@ -1156,7 +1167,7 @@ describe('MemberCardsService', () => {
 
       try {
         await service.refund('card-disabled', 50);
-      } catch (e: any) {
+      } catch (e: unknown) {
         expect(e).toBeDefined();
       }
     });
@@ -1177,7 +1188,7 @@ describe('MemberCardsService', () => {
 
       try {
         await service.consume('card-disabled', 50);
-      } catch (e: any) {
+      } catch (e: unknown) {
         expect(e).toBeDefined();
       }
     });
@@ -1216,7 +1227,7 @@ describe('MemberCardsService', () => {
 
       try {
         await service.deductPoints('card-001', 100);
-      } catch (e: any) {
+      } catch (e: unknown) {
         expect(e).toBeDefined();
       }
     });

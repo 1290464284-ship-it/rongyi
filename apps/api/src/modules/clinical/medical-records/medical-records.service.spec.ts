@@ -1,8 +1,9 @@
 import { MedicalRecordsService } from './medical-records.service';
+import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import { CacheService } from '../../../common/services/cache.service';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+
 
 function createMockClinicContext(): ClinicContextService {
   return {
@@ -16,16 +17,24 @@ function createMockClinicContext(): ClinicContextService {
 
 // P4-3: MedicalRecordsService 现在依赖 CacheService，构造一个始终 miss 的 mock
 function createMockCacheService(): CacheService {
-  return {
+  const self = {
     get: jest.fn().mockReturnValue(undefined),
     set: jest.fn(),
     del: jest.fn(),
     delPattern: jest.fn(),
     clear: jest.fn(),
-    getOrSet: jest.fn(),
     getStats: () => ({ hits: 0, misses: 0, hitRate: 0, size: 0, maxSize: 1000 }),
     resetStats: jest.fn(),
-  } as unknown as CacheService;
+  };
+  // getOrSet 行为与真实 CacheService 一致：先查 get，命中则直接返回，未命中则执行 factory 并 set
+  (self as any).getOrSet = jest.fn(async <T>(key: string, fn: () => T | Promise<T>): Promise<T> => {
+    const cached = self.get(key);
+    if (cached !== undefined) return cached as T;
+    const value = await fn();
+    self.set(key, value);
+    return value;
+  });
+  return self as unknown as CacheService;
 }
 
 describe('MedicalRecordsService', () => {
@@ -111,7 +120,7 @@ describe('MedicalRecordsService', () => {
       expect((result as any).diagnosis).toBe('更新后的诊断');
     });
 
-    it('已锁定的病历不能直接修改，应抛出 BadRequestException', async () => {
+    it('已锁定的病历不能直接修改，应抛出 BusinessValidationException', async () => {
       db.seed('MedicalRecord', [
         {
           id: 'record-002',
@@ -125,7 +134,7 @@ describe('MedicalRecordsService', () => {
 
       await expect(
         service.update('record-002', { chiefComplaint: '尝试修改' } as any)
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
     it('修改不存在的病历应抛出异常', async () => {
@@ -154,7 +163,7 @@ describe('MedicalRecordsService', () => {
       expect((result as any).lockedBy).toBe('doctor-001');
     });
 
-    it('已锁定的病历重复锁定应抛出 BadRequestException', async () => {
+    it('已锁定的病历重复锁定应抛出 BusinessValidationException', async () => {
       db.seed('MedicalRecord', [
         {
           id: 'record-002',
@@ -166,7 +175,7 @@ describe('MedicalRecordsService', () => {
         },
       ]);
 
-      await expect(service.lock('record-002', 'doctor-001')).rejects.toThrow(BadRequestException);
+      await expect(service.lock('record-002', 'doctor-001')).rejects.toThrow(BusinessValidationException);
     });
 
     it('锁定不存在的病历应抛出异常', async () => {
@@ -292,13 +301,13 @@ describe('MedicalRecordsService', () => {
       expect(updatedRecord?.isLocked).toBe(1);
     });
 
-    it('审批不存在的申请应抛出 NotFoundException', async () => {
+    it('审批不存在的申请应抛出 BusinessNotFoundException', async () => {
       await expect(
         service.reviewModifyRequest('non-existent', { status: 'APPROVED' }, 'reviewer-001')
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toThrow(BusinessNotFoundException);
     });
 
-    it('审批状态非法应抛出 BadRequestException', async () => {
+    it('审批状态非法应抛出 BusinessValidationException', async () => {
       db.seed('RecordModifyRequest', [
         {
           id: 'req-003',
@@ -312,7 +321,7 @@ describe('MedicalRecordsService', () => {
 
       await expect(
         service.reviewModifyRequest('req-003', { status: 'INVALID_STATUS' }, 'reviewer-001')
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
   });
 
@@ -372,8 +381,8 @@ describe('MedicalRecordsService', () => {
       expect((result as any).chiefComplaint).toBe('测试主诉');
     });
 
-    it('查询不存在的病历应抛出 NotFoundException', async () => {
-      await expect(service.findOne('non-existent')).rejects.toThrow(NotFoundException);
+    it('查询不存在的病历应抛出 BusinessNotFoundException', async () => {
+      await expect(service.findOne('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 
@@ -1141,7 +1150,7 @@ describe('MedicalRecordsService', () => {
   // ==================== reviewModifyRequest - 边界场景 ====================
 
   describe('reviewModifyRequest - 边界场景', () => {
-    it('审批状态非 APPROVED/REJECTED 应抛出 BadRequestException', async () => {
+    it('审批状态非 APPROVED/REJECTED 应抛出 BusinessValidationException', async () => {
       db.seed('RecordModifyRequest', [
         {
           id: 'req-001',
@@ -1156,7 +1165,7 @@ describe('MedicalRecordsService', () => {
 
       await expect(
         service.reviewModifyRequest('req-001', { status: 'PENDING' }, 'reviewer-001')
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(BusinessValidationException);
     });
 
     it('审批通过的病历应保持解锁状态（isLocked = 0）', async () => {

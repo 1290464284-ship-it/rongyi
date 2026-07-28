@@ -1,7 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { BusinessNotFoundException } from '@common/errors';
 import { ImagingController } from './imaging.controller';
 import { ImagingService } from './imaging.service';
-import { NotFoundException } from '@nestjs/common';
+
 
 describe('ImagingController', () => {
   let controller: ImagingController;
@@ -52,9 +53,9 @@ describe('ImagingController', () => {
       expect(service.findOne).toHaveBeenCalledWith('img-1');
     });
 
-    it('不存在时透传 NotFoundException', async () => {
-      service.findOne.mockRejectedValue(new NotFoundException('Imaging不存在'));
-      await expect(controller.findOne('non-existent')).rejects.toThrow(NotFoundException);
+    it('不存在时透传 BusinessNotFoundException', async () => {
+      service.findOne.mockRejectedValue(new BusinessNotFoundException('Imaging不存在'));
+      await expect(controller.findOne('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
 

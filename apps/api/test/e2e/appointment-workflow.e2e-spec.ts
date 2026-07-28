@@ -79,11 +79,14 @@ describe('Appointment Workflow (e2e)', () => {
 
     it('步骤2: 创建医生（已在 beforeAll 中完成）', async () => {
       const res = await request(app.getHttpServer())
-        .get(`/api/users/${doctorId}`)
+        .get('/api/auth/users')
         .set('Authorization', `Bearer ${token}`);
       expect(res.status).toBe(HttpStatus.OK);
-      expect(res.body.name).toBe('王医生');
-      expect(res.body.role).toBe('DOCTOR');
+      const users = Array.isArray(res.body.items) ? res.body.items : res.body;
+      const doctor = users.find((u: any) => u.id === doctorId);
+      expect(doctor).toBeDefined();
+      expect(doctor.name).toBe('王医生');
+      expect(doctor.role).toBe('DOCTOR');
     });
 
     it('步骤3: 创建椅位（已在 beforeAll 中完成）', async () => {
@@ -276,8 +279,10 @@ describe('Appointment Workflow (e2e)', () => {
           doctorId,
           startTime: addMinutesISO(baseTime, 400),
           endTime: addMinutesISO(baseTime, 430),
-          type: 'FOLLOW_UP',
+          type: 'CONSULTATION',
         });
+      expect(newAppt.status).toBe(HttpStatus.CREATED);
+      expect(newAppt.body.id).toBeDefined();
 
       const res = await request(app.getHttpServer())
         .delete(`/api/appointments/${newAppt.body.id}`).set('Authorization', `Bearer ${token}`);

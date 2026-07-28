@@ -29,7 +29,14 @@ export const createSchema = (db: Database) => {
     try {
       db.exec(sql);
     } catch (err: unknown) {
-      SCHEMA_LOGGER.warn('创建表失败', err);
+      // 仅容忍"对象已存在"类错误（幂等执行）；其他错误（语法/磁盘/权限）必须抛出，
+      // 否则表创建失败被静默吞掉，后续业务 SQL 会以更难排查的方式失败
+      const message = (err as Error)?.message || '';
+      if (/already exists/i.test(message)) {
+        SCHEMA_LOGGER.warn('表已存在，跳过创建', err);
+        continue;
+      }
+      throw err;
     }
   }
 
