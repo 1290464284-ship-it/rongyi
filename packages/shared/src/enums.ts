@@ -191,6 +191,7 @@ export const DebtStatus = {
   UNPAID: 'UNPAID',
   PARTIAL: 'PARTIAL',
   PAID: 'PAID',
+  CANCELLED: 'CANCELLED',
 } as const;
 export type DebtStatus = typeof DebtStatus[keyof typeof DebtStatus];
 
