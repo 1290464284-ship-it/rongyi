@@ -3,6 +3,7 @@ import * as crypto from 'node:crypto';
 
 import { SqlExecutor } from '../../../../common/repositories/base.repository';
 import { ChargeRecord, ChargeItemRecord } from '../entities/charge.entity';
+import { maskPhone } from '../../../../common/utils/security/mask';
 
 export interface CreateChargeData {
   id: string;
@@ -185,9 +186,14 @@ export class ChargeRepository {
   ): Array<{ id: string; name: string; phone: string }> {
     if (ids.length === 0) return [];
     const placeholders = ids.map(() => '?').join(',');
-    return db.prepare(
+    const patients = db.prepare(
       `SELECT id, name, phone FROM Patient WHERE id IN (${placeholders}) AND deletedAt IS NULL${clinicClause}`,
     ).all(...ids, ...clinicParams) as Array<{ id: string; name: string; phone: string }>;
+    patients.forEach(p => {
+      const masked = maskPhone(p.phone);
+      if (masked) p.phone = masked;
+    });
+    return patients;
   }
 
   batchFindDoctors(

@@ -121,19 +121,19 @@ describe('InventoryController', () => {
   });
 
   describe('findTransactions', () => {
-    it('传 itemId 时调用 service.findTransactions 传入 itemId', async () => {
+    it('传 itemId 时调用 service.findTransactions 传入 itemId 和分页参数', async () => {
       const expected = [{ id: 't-1', type: 'IN', quantity: 10 }];
       service.findTransactions.mockResolvedValue(expected);
 
       const result = await controller.findTransactions('inv-1', '1', '20');
       expect(result).toEqual(expected);
-      expect(service.findTransactions).toHaveBeenCalledWith('inv-1');
+      expect(service.findTransactions).toHaveBeenCalledWith('inv-1', { limit: 20, offset: 0 });
     });
 
-    it('未传 itemId 时调用 service.findTransactions 传入 undefined', async () => {
+    it('未传 itemId 时调用 service.findTransactions 传入 undefined 和默认分页', async () => {
       service.findTransactions.mockResolvedValue([]);
       await controller.findTransactions();
-      expect(service.findTransactions).toHaveBeenCalledWith(undefined);
+      expect(service.findTransactions).toHaveBeenCalledWith(undefined, { limit: 50, offset: 0 });
     });
   });
 

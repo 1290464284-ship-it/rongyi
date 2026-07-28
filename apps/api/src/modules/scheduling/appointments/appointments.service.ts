@@ -12,6 +12,7 @@ import { ClinicContextService } from "../../../common/services/clinic-context.se
 import { AppointmentStatus, AuditLogType } from "../../../common/constants";
 import { EventBusService } from '../../../common/events/event-bus.service';
 import { AppointmentCreatedEvent, AppointmentUpdatedEvent, AppointmentDeletedEvent } from '../../../common/events/domain-events';
+import { maskPhone } from '../../../common/utils/security/mask';
 
 @Injectable()
 export class AppointmentsService extends BaseService<Appointment> {
@@ -50,7 +51,11 @@ export class AppointmentsService extends BaseService<Appointment> {
       if (patientIds.length > 0) {
         const placeholders = patientIds.map(() => '?').join(',');
         const patients = this.dbService.prepare(`SELECT id, name, phone FROM Patient WHERE id IN (${placeholders}) AND deletedAt IS NULL${clinicClause}`).all(...patientIds, ...clinicParams) as Array<Record<string, unknown>>;
-        patients.forEach(p => patientMap.set(p.id as string, p));
+        patients.forEach(p => {
+          const masked = maskPhone(p.phone as string);
+          if (masked) p.phone = masked;
+          patientMap.set(p.id as string, p);
+        });
       }
       
       const doctorMap = new Map<string, Record<string, unknown>>();

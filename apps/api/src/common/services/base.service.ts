@@ -401,31 +401,13 @@ export class BaseService<T extends BaseEntity> {
   }
 
   /**
-   * 物理删除记录。建议使用 softDelete() 代替，除非合规要求必须永久移除数据。
+   * 删除记录（已重定向至软删除，确保数据可恢复）。
+   * 如需物理删除，由具体 service 子类显式覆写此方法。
    */
   async remove(id: string): Promise<unknown> {
-    this.logger.warn(`[HARD_DELETE] ${this.tableName}.remove(${id}) 执行物理删除，请确认是否应使用 softDelete`);
-    const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
-    // 将存在性检查移入事务内，消除 TOCTOU 竞态窗口
-    // 使用与 softDelete 相同的级联策略：同时清理关联表
-    return this.dbService.transaction((db) => {
-      const existing = db.prepare(
-        `SELECT ${this.getSelectColumns()} FROM ${this.tableName} WHERE id = ?${clinicClause}`,
-      ).get(id, ...clinicParams) as T | undefined;
-      if (!existing) {
-        throw new BusinessNotFoundException(`${this.tableName}不存在`);
-      }
-      for (const { table, foreignKey } of this.cascadeTables) {
-        db.prepare(`DELETE FROM ${table} WHERE ${foreignKey} = ?${clinicClause}`).run(id, ...clinicParams);
-      }
-      // 架构重构：委托 BaseRepository 执行主表 DELETE
-      // 级联表删除因含动态表名 / 外键，仍保留在 BaseService 内（已通过构造函数校验）
-      this.baseRepository.delete(db, this.tableName, id, clinicClause, clinicParams);
-
-      this.logAudit(db, "HARD_DELETE", id, this.tableName, { beforeData: existing });
-      this.logger.log(`hardDeleted ${this.tableName} id=${id} (${this.cascadeTables.length} cascade tables)`);
-      return id;
-    });
+    this.logger.log(`[SOFT_DELETE_REDIRECT] ${this.tableName}.remove(${id}) 已重定向至 softDelete`);
+    await this.softDelete(id);
+    return id;
   }
 
   /**
