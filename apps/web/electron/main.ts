@@ -46,7 +46,15 @@ function getJwtSecret(): string {
     }
 
     const newSecret = crypto.randomBytes(32).toString('hex');
-    writeFileSync(secretPath, JSON.stringify({ jwtSecret: newSecret }), { mode: 0o600 });
+    // P0 修复：读取-合并-写回，避免覆盖已有的 encryptionKey
+    let config: Record<string, unknown> = {};
+    if (existsSync(secretPath)) {
+      try {
+        config = JSON.parse(readFileSync(secretPath, 'utf-8'));
+      } catch {}
+    }
+    config.jwtSecret = newSecret;
+    writeFileSync(secretPath, JSON.stringify(config), { mode: 0o600 });
     log(`生成新的JWT密钥并保存`);
     return newSecret;
   } catch (err) {
@@ -422,7 +430,7 @@ const createWindow = () => {
         res.end('Internal Server Error');
       }
     });
-    server.listen(0, () => {
+    server.listen(0, '127.0.0.1', () => {
       const addr = server.address();
       const port = typeof addr === 'object' && addr !== null ? addr.port : 0;
       log(`启动本地静态服务器: http://localhost:${port}`);

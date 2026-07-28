@@ -34,8 +34,8 @@ export class ChargeService extends BaseService<ChargeRecord> {
 
   async listCharges(q: QueryChargesDto) {
     const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
-    const page = Number(q.page) || 1;
-    const pageSize = Number(q.pageSize) || 20;
+    const page = Math.max(1, Math.floor(Number(q.page) || 1));
+    const pageSize = Math.min(100, Math.max(1, Math.floor(Number(q.pageSize) || 20)));
 
     const { items, total } = this.chargeRepository.findMany(this.dbService, {
       clinicClause,

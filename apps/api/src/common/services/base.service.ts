@@ -400,7 +400,11 @@ export class BaseService<T extends BaseEntity> {
     return updated;
   }
 
+  /**
+   * 物理删除记录。建议使用 softDelete() 代替，除非合规要求必须永久移除数据。
+   */
   async remove(id: string): Promise<unknown> {
+    this.logger.warn(`[HARD_DELETE] ${this.tableName}.remove(${id}) 执行物理删除，请确认是否应使用 softDelete`);
     const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
     // 将存在性检查移入事务内，消除 TOCTOU 竞态窗口
     // 使用与 softDelete 相同的级联策略：同时清理关联表

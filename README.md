@@ -4,7 +4,7 @@
 
 ## 技术栈
 
-- 前端：React 18 + TypeScript + Vite + TailwindCSS
+- 前端：React 19 + TypeScript + Vite + TailwindCSS 4
 - 后端：NestJS + better-sqlite3（SQLite）
 - 桌面：Electron（数据目录位于系统 userData，升级不会覆盖诊所数据）
 

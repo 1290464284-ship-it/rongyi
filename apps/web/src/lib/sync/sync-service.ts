@@ -144,21 +144,16 @@ export async function pullChanges(): Promise<{ changes: unknown[]; serverTime: s
   const since = getLastSyncTime();
   const deviceId = getDeviceId();
 
-  try {
-    const response = await api.get('/sync/pull', {
-      params: { since, deviceId },
-    });
+  const response = await api.get('/sync/pull', {
+    params: { since, deviceId },
+  });
 
-    const result = response.data as { changes: unknown[]; serverTime: string };
+  const result = response.data as { changes: unknown[]; serverTime: string };
 
-    // 更新上次同步时间
-    setLastSyncTime(result.serverTime);
+  // 更新上次同步时间
+  setLastSyncTime(result.serverTime);
 
-    return result;
-  } catch (err) {
-    console.warn('[Sync] 拉取变更失败:', err);
-    throw err;
-  }
+  return result;
 }
 
 /**
@@ -172,7 +167,6 @@ export async function sync(): Promise<{ pushed: number; pulled: number; conflict
 
   // 互斥锁：如果已有同步在进行，直接返回
   if (syncInProgress) {
-    console.log('[Sync] 同步正在进行中，跳过');
     return { pushed: 0, pulled: 0, conflicts: 0 };
   }
 
@@ -210,7 +204,6 @@ export function initSyncService(): () => void {
   const intervals: ReturnType<typeof setInterval>[] = [];
 
   const onlineHandler = () => {
-    console.log('[Sync] 网络恢复，触发同步...');
     // 延迟 2 秒后同步（等待网络稳定）
     timers.push(
       setTimeout(() => {
@@ -220,7 +213,7 @@ export function initSyncService(): () => void {
   };
 
   const offlineHandler = () => {
-    console.log('[Sync] 网络断开，进入离线模式');
+    // 网络断开，进入离线模式
   };
 
   window.addEventListener('online', onlineHandler);

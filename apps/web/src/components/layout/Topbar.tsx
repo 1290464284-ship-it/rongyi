@@ -116,8 +116,8 @@ function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose: () =>
 
   async function handleSubmit() {
     if (!oldPwd || !newPwd || !confirmPwd) return;
-    if (!/^\d{4}$/.test(newPwd)) {
-      toast.error('新密码必须是4位数字');
+    if (newPwd.length < 4 || newPwd.length > 32) {
+      toast.error('新密码长度需在4-32位之间');
       return;
     }
     if (newPwd !== confirmPwd) {

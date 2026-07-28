@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label';
 
 const schema = z.object({
   username: z.string().min(1, '请输入用户名'),
-  password: z.string().length(4, '密码必须是4位数字').regex(/^\d{4}$/, '密码必须是4位数字'),
+  password: z.string().min(4, '密码至少4位').max(32, '密码最长32位'),
 });
 
 export default function LoginPage() {

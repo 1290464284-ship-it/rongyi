@@ -121,8 +121,8 @@ function backupWithBetterSqlite(dbPath, backupPath) {
   try {
     const db = new Database(dbPath, { readonly: true });
     try {
-      // 执行 WAL checkpoint 确保数据一致性
-      db.pragma('wal_checkpoint(FULL)');
+      // 执行 WAL checkpoint 确保数据完全落盘（TRUNCATE 比 FULL 更彻底）
+      db.pragma('wal_checkpoint(TRUNCATE)');
     } catch (checkpointErr) {
       console.warn('警告: WAL checkpoint 失败，继续备份:', checkpointErr.message);
     }
@@ -148,7 +148,7 @@ function backupWithFileCopy(dbPath, backupPath) {
     try {
       const db = new Database(dbPath, { readonly: true });
       try {
-        db.pragma('wal_checkpoint(FULL)');
+        db.pragma('wal_checkpoint(TRUNCATE)');
       } catch (checkpointErr) {
         console.warn('警告: WAL checkpoint 失败:', checkpointErr.message);
       }

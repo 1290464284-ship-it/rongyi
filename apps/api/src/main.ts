@@ -6,6 +6,7 @@ import * as helmet from 'helmet';
 import { json, urlencoded } from 'express';
 import cookieParser = require('cookie-parser');
 import * as jwt from 'jsonwebtoken';
+import * as crypto from 'node:crypto';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { TraceMiddleware } from './common/middleware/trace.middleware';
@@ -239,14 +240,19 @@ async function bootstrap() {
       const swaggerUsername = config.get<string>('SWAGGER_USERNAME') || 'admin';
       const swaggerPassword = config.get<string>('SWAGGER_PASSWORD');
       if (!swaggerPassword) {
-        logger.warn('Swagger 已启用但未配置 SWAGGER_PASSWORD，建议立即设置以避免未授权访问');
+        logger.warn('Swagger 已启用但未配置 SWAGGER_PASSWORD，生产环境下 Swagger 将被禁用');
       }
-      const expectedCredentials = Buffer.from(`${swaggerUsername}:${swaggerPassword || ''}`).toString('base64');
+      const expectedCredentials = Buffer.from(`${swaggerUsername}:${swaggerPassword || ''}`);
       const swaggerAuth = (req: import('express').Request, res: import('express').Response, next: import('express').NextFunction) => {
-        // 1. Basic Auth 验证
+        // P1 修复：未配密码时直接拒绝访问
+        if (!swaggerPassword) {
+          return res.status(403).send('Swagger 文档未配置访问密码，已禁用');
+        }
+        // 1. Basic Auth 验证（恒定时间比较防 timing attack）
         const authHeader = req.headers.authorization || '';
         const [type, credentials] = authHeader.split(' ');
-        if (type !== 'Basic' || !credentials || credentials !== expectedCredentials) {
+        const credentialsBuf = Buffer.from(credentials || '');
+        if (type !== 'Basic' || credentialsBuf.length !== expectedCredentials.length || !crypto.timingSafeEqual(credentialsBuf, expectedCredentials)) {
           res.set('WWW-Authenticate', 'Basic realm="Swagger API Docs"');
           return res.status(401).send('Unauthorized');
         }

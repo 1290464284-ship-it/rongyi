@@ -201,7 +201,13 @@ api.interceptors.response.use(
     // 检查是否跳过错误 toast
     if (!config?.skipErrorToast) {
       const message = getErrorMessage(error);
-      toastService.error(message);
+      // P1 修复：捕获后端返回的 x-request-id 关联前后端日志
+      const traceId = error.response?.headers?.['x-request-id'] as string | undefined;
+      if (traceId) {
+        toastService.error(`${message} (ID: ${traceId.slice(0, 8)})`);
+      } else {
+        toastService.error(message);
+      }
     }
 
     return Promise.reject(error);
