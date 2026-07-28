@@ -16,6 +16,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { TableLoading, EmptyState } from '@/components/ui/loading';
+import { QueryErrorAlert } from '@/components/QueryErrorAlert';
 import {
   useWechatMessages,
   useBirthdayPatients,
@@ -98,7 +99,7 @@ function WechatLogsTab() {
   const [status, setStatus] = useState<string>('ALL');
   const [keyword, setKeyword] = useState('');
 
-  const { data, isLoading } = useWechatMessages({
+  const { data, isLoading, isError, refetch } = useWechatMessages({
     type: type === 'ALL' ? undefined : type,
     status: status === 'ALL' ? undefined : status,
   });
@@ -161,7 +162,9 @@ function WechatLogsTab() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {isLoading ? (
+            {isError ? (
+              <tr><td colSpan={6}><QueryErrorAlert onRetry={refetch} /></td></tr>
+            ) : isLoading ? (
               <TableLoading colSpan={6} />
             ) : list.length === 0 ? (
               <EmptyState colSpan={6} text="暂无消息记录" />
@@ -197,7 +200,7 @@ function WechatLogsTab() {
 }
 
 function BirthdayTab() {
-  const { data, isLoading } = useBirthdayPatients();
+  const { data, isLoading, isError, refetch } = useBirthdayPatients();
   const sendWechatMut = useSendWechat();
   const sendBatchMut = useSendBatchWechat();
 
@@ -276,7 +279,9 @@ function BirthdayTab() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {isLoading ? (
+            {isError ? (
+              <tr><td colSpan={5}><QueryErrorAlert onRetry={refetch} /></td></tr>
+            ) : isLoading ? (
               <TableLoading colSpan={5} />
             ) : list.length === 0 ? (
               <EmptyState colSpan={5} text="本月无过生日患者" />
@@ -312,7 +317,7 @@ function BirthdayTab() {
 }
 
 function AppointmentTab() {
-  const { data, isLoading } = useAppointmentReminders();
+  const { data, isLoading, isError, refetch } = useAppointmentReminders();
   const sendWechatMut = useSendWechat();
   const sendBatchMut = useSendBatchWechat();
 
@@ -405,7 +410,9 @@ function AppointmentTab() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {isLoading ? (
+            {isError ? (
+              <tr><td colSpan={4}><QueryErrorAlert onRetry={refetch} /></td></tr>
+            ) : isLoading ? (
               <TableLoading colSpan={4} />
             ) : list.length === 0 ? (
               <EmptyState colSpan={4} text="明天无预约" />

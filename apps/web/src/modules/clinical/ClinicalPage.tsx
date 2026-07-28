@@ -45,6 +45,7 @@ import {
 } from '@/lib/api/clinical/visits';
 import { useAppointments, APPOINTMENT_STATUS_LABEL, APPOINTMENT_STATUS_COLOR, type Appointment } from '@/lib/api/clinical/appointments';
 import { PatientSelector } from '@/components/patient/PatientSelector';
+import { QueryErrorAlert } from '@/components/QueryErrorAlert';
 import { useStaff } from '@/lib/staff';
 import { useAuthStore } from '@/lib/store/auth-store';
 import { format } from 'date-fns';
@@ -61,7 +62,7 @@ export default function ClinicalPage() {
   const [presetAppointment, setPresetAppointment] = useState<Appointment | null>(null);
 
   // 默认查询今日就诊
-  const { data, isLoading } = useVisitsList({
+  const { data, isLoading, isError, refetch } = useVisitsList({
     status: statusFilter || undefined,
     page: 1,
     pageSize: 100,
@@ -209,7 +210,9 @@ export default function ClinicalPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {isLoading ? (
+                {isError ? (
+                  <tr><td colSpan={6}><QueryErrorAlert onRetry={refetch} /></td></tr>
+                ) : isLoading ? (
                   <TableLoading colSpan={6} />
                 ) : filteredVisits.length === 0 ? (
                   <EmptyState colSpan={6} text="暂无就诊记录" />

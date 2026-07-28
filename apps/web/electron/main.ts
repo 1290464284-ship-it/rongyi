@@ -458,7 +458,12 @@ const createWindow = () => {
   });
 
   mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
-    log(`[Renderer] [${level}] ${message} (${sourceId}:${line})`);
+    // 日志脱敏：过滤可能包含患者姓名/手机/身份证/密码/token 的内容
+    const sanitized = message.replace(
+      /(['"]?(?:password|token|secret|idCard|phone|\u5bc6\u7801|\u8eab\u4efd\u8bc1|\u624b\u673a)['"]?\s*[:=]\s*)['"]?[^\s'"}{,\]]+/gi,
+      '$1[REDACTED]',
+    );
+    log(`[Renderer] [${level}] ${sanitized} (${sourceId}:${line})`);
   });
 
   mainWindow.webContents.on('dom-ready', () => {

@@ -29,6 +29,8 @@ export interface SyncPushPayload {
 export interface SyncPullResult {
   changes: SyncChange[];
   serverTime: string;
+  /** 是否还有更多变更未返回，客户端应继续拉取 */
+  hasMore: boolean;
 }
 
 /**
@@ -120,25 +122,47 @@ export class SyncService {
   }
 
   /**
-   * 拉取自指定时间戳以来的所有变更（排除指定设备自身的变更）
+   * 拉取自指定时间戳以来的变更（排除指定设备自身的变更）
+   * 支持游标续拉：当 hasMore=true 时，客户端应使用返回的最后一条 createdAt 作为下次 since 参数
+   * @param lastId 可选游标，传入上次返回的最后一条 id，用于跳过已拉取的记录（解决同一时间戳多条记录的翻页问题）
    */
-  pullChanges(since: string, deviceId: string): SyncPullResult {
+  pullChanges(since: string, deviceId: string, lastId?: string): SyncPullResult {
     const clinicId = this.clinicContext.getClinicId();
     if (!clinicId) {
-      return { changes: [], serverTime: new Date().toISOString() };
+      return { changes: [], serverTime: new Date().toISOString(), hasMore: false };
     }
 
-    const changes = this.dbService.prepare(
-      `SELECT id, tableName, recordId, operation, deviceId, clinicId, createdAt
-       FROM SyncChangeLog
-       WHERE clinicId = ? AND createdAt > ? AND deviceId != ?
-       ORDER BY createdAt ASC
-       LIMIT 1000`,
-    ).all(clinicId, since, deviceId) as SyncChange[];
+    const PULL_LIMIT = 1000;
+    let changes: SyncChange[];
+
+    if (lastId) {
+      // 游标模式：跳过 lastId 之前的记录（同一时间戳内按 id 排序）
+      changes = this.dbService.prepare(
+        `SELECT id, tableName, recordId, operation, deviceId, clinicId, createdAt
+         FROM SyncChangeLog
+         WHERE clinicId = ? AND createdAt >= ? AND deviceId != ? AND id > ?
+         ORDER BY createdAt ASC, id ASC
+         LIMIT ?`,
+      ).all(clinicId, since, deviceId, lastId, PULL_LIMIT + 1) as SyncChange[];
+    } else {
+      changes = this.dbService.prepare(
+        `SELECT id, tableName, recordId, operation, deviceId, clinicId, createdAt
+         FROM SyncChangeLog
+         WHERE clinicId = ? AND createdAt > ? AND deviceId != ?
+         ORDER BY createdAt ASC, id ASC
+         LIMIT ?`,
+      ).all(clinicId, since, deviceId, PULL_LIMIT + 1) as SyncChange[];
+    }
+
+    const hasMore = changes.length > PULL_LIMIT;
+    if (hasMore) {
+      changes = changes.slice(0, PULL_LIMIT);
+    }
 
     return {
       changes,
       serverTime: new Date().toISOString(),
+      hasMore,
     };
   }
 

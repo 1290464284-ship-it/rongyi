@@ -22,6 +22,7 @@ import {
   type Charge,
 } from '@/lib/api/financial/charges';
 import { TableLoading, EmptyState } from '@/components/ui/loading';
+import { QueryErrorAlert } from '@/components/QueryErrorAlert';
 import { VirtualChargeRow, ROW_HEIGHT } from './components/VirtualChargeRow';
 import { CreateChargeDialog } from './components/CreateChargeDialog';
 import { PayDialog } from './components/PayDialog';
@@ -87,7 +88,7 @@ const ChargePage = React.memo(function ChargePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- URL同步effect仅在page变化时触发
   }, [page]);
 
-  const { data, isLoading } = useCharges({
+  const { data, isLoading, isError, refetch } = useCharges({
     status: statusFilter || undefined,
     keyword: debouncedKeyword || undefined,
     page,
@@ -175,7 +176,9 @@ const ChargePage = React.memo(function ChargePage() {
                 </TableRow>
               </TableHeader>
               <tbody style={{ display: 'block', height: rowVirtualizer.getTotalSize() }}>
-                {isLoading ? (
+                {isError ? (
+                  <tr><td colSpan={8}><QueryErrorAlert onRetry={refetch} /></td></tr>
+                ) : isLoading ? (
                   <TableLoading colSpan={8} />
                 ) : charges.length === 0 ? (
                   <EmptyState colSpan={8} text="暂无收费记录" />

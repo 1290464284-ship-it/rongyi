@@ -24,6 +24,7 @@ import {
   type BackupRecord,
 } from '@/lib/api/system/backups';
 import { formatDateTime } from '@/lib/utils';
+import { QueryErrorAlert } from '@/components/QueryErrorAlert';
 import { toast } from 'sonner';
 
 const TYPE_LABEL: Record<string, string> = {
@@ -52,7 +53,7 @@ const EMPTY_FORM: CreateForm = {
 };
 
 export default function BackupPage() {
-  const { data, isLoading } = useBackups();
+  const { data, isLoading, isError, refetch } = useBackups();
   const createMut = useCreateBackup();
   const restoreMut = useRestoreBackup();
   const deleteMut = useDeleteBackup();
@@ -145,7 +146,9 @@ export default function BackupPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoading ? (
+              {isError ? (
+                <tr><td colSpan={7}><QueryErrorAlert onRetry={refetch} /></td></tr>
+              ) : isLoading ? (
                 <TableLoading colSpan={7} />
               ) : list.length === 0 ? (
                 <EmptyState colSpan={7} text="暂无备份记录" />

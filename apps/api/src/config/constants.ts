@@ -114,6 +114,9 @@ export const LOG_FLUSH_BUFFER_INTERVAL_MS = 1000;
 export const MAX_LOG_BUFFER_SIZE = 100;
 export const MAX_LOG_TOTAL_BUFFER_SIZE = 10000;
 
+// 慢请求告警阈值（毫秒），可通过环境变量 SLOW_REQUEST_THRESHOLD_MS 覆盖
+export const SLOW_REQUEST_THRESHOLD_MS = 3000;
+
 // 分页（单一来源在 common/constants/pagination.ts，这里 re-export 方便使用）
 export { MAX_PAGE_SIZE, PAGINATION } from '../common/constants/pagination';
 

@@ -30,6 +30,7 @@ import {
   type Appointment,
 } from '@/lib/api/clinical/appointments';
 import { useChairs, type Chair } from '@/lib/chairs';
+import { QueryErrorAlert } from '@/components/QueryErrorAlert';
 import AppointmentForm from './AppointmentForm';
 
 type ViewMode = 'day' | 'week' | 'month';
@@ -226,7 +227,7 @@ export default function AppointmentCalendarPage() {
     return { start: gStart, end: addDays(gEnd, 1) };
   }, [view, currentDate]);
 
-  const { data, isLoading } = useAppointments({
+  const { data, isLoading, isError, refetch } = useAppointments({
     startDate: toISO(range.start),
     endDate: toISO(range.end),
   });
@@ -468,6 +469,7 @@ export default function AppointmentCalendarPage() {
         )}
       </div>
 
+      {isError && <QueryErrorAlert onRetry={refetch} />}
       {isLoading && <p className="text-sm text-muted-foreground">加载中…</p>}
 
       {/* 新建预约弹窗 */}

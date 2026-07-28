@@ -21,6 +21,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { TableLoading, EmptyState } from '@/components/ui/loading';
+import { QueryErrorAlert } from '@/components/QueryErrorAlert';
 import {
   useTreatmentPlans,
   useCreateTreatmentPlan,
@@ -53,7 +54,7 @@ export default function TreatmentPlanPage() {
   const [viewMode, setViewMode] = useState<'aggregate' | 'detail'>('aggregate');
   const [createOpen, setCreateOpen] = useState(() => !!presetPatientId);
 
-  const { data, isLoading } = useTreatmentPlans({
+  const { data, isLoading, isError, refetch } = useTreatmentPlans({
     status: statusFilter || undefined,
     page,
     pageSize,
@@ -158,7 +159,9 @@ export default function TreatmentPlanPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoading ? (
+              {isError ? (
+                <tr><td colSpan={8}><QueryErrorAlert onRetry={refetch} /></td></tr>
+              ) : isLoading ? (
                 <TableLoading colSpan={8} />
               ) : filtered.length === 0 ? (
                 <EmptyState colSpan={8} text="暂无数据" />

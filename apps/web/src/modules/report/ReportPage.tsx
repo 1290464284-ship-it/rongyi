@@ -22,6 +22,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { TableLoading, EmptyState } from '@/components/ui/loading';
+import { QueryErrorAlert } from '@/components/QueryErrorAlert';
 import { Badge } from '@/components/ui/badge';
 import {
   useRevenue,
@@ -294,7 +295,7 @@ function PatientGrowthTab({ dateRange }: { dateRange: { startDate: string; endDa
 }
 
 function RevenueCategoryTab({ dateRange }: { dateRange: { startDate: string; endDate: string } }) {
-  const { data, isLoading } = useRevenueByCategory(dateRange);
+  const { data, isLoading, isError, refetch } = useRevenueByCategory(dateRange);
   const list = data ?? [];
   const total = list.reduce((s: number, i: { amount: number }) => s + i.amount, 0);
 
@@ -329,7 +330,9 @@ function RevenueCategoryTab({ dateRange }: { dateRange: { startDate: string; end
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoading ? (
+              {isError ? (
+                <tr><td colSpan={4}><QueryErrorAlert onRetry={refetch} /></td></tr>
+              ) : isLoading ? (
                 <TableLoading colSpan={4} />
               ) : list.length === 0 ? (
                 <EmptyState colSpan={4} text="暂无数据" />
@@ -352,7 +355,7 @@ function RevenueCategoryTab({ dateRange }: { dateRange: { startDate: string; end
 }
 
 function RevenueDoctorTab({ dateRange }: { dateRange: { startDate: string; endDate: string } }) {
-  const { data, isLoading } = useRevenueByDoctor(dateRange);
+  const { data, isLoading, isError, refetch } = useRevenueByDoctor(dateRange);
   const list = data ?? [];
   const total = list.reduce((s: number, i: { amount: number }) => s + i.amount, 0);
 
@@ -387,7 +390,9 @@ function RevenueDoctorTab({ dateRange }: { dateRange: { startDate: string; endDa
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoading ? (
+              {isError ? (
+                <tr><td colSpan={4}><QueryErrorAlert onRetry={refetch} /></td></tr>
+              ) : isLoading ? (
                 <TableLoading colSpan={4} />
               ) : list.length === 0 ? (
                 <EmptyState colSpan={4} text="暂无数据" />
@@ -410,7 +415,7 @@ function RevenueDoctorTab({ dateRange }: { dateRange: { startDate: string; endDa
 }
 
 function InventoryTab() {
-  const { data, isLoading } = useInventoryStatus();
+  const { data, isLoading, isError, refetch } = useInventoryStatus();
 
   const cards = [
     {
@@ -476,7 +481,9 @@ function InventoryTab() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoading ? (
+              {isError ? (
+                <tr><td colSpan={5}><QueryErrorAlert onRetry={refetch} /></td></tr>
+              ) : isLoading ? (
                 <TableLoading colSpan={5} />
               ) : !data?.lowStockItems?.length ? (
                 <EmptyState colSpan={5} text="暂无低库存物品" />
@@ -502,7 +509,7 @@ function InventoryTab() {
 }
 
 function AppointmentTab({ dateRange }: { dateRange: { startDate: string; endDate: string } }) {
-  const { data, isLoading } = useAppointmentStatusStats(dateRange);
+  const { data, isLoading, isError, refetch } = useAppointmentStatusStats(dateRange);
   const list = data ?? [];
   const total = list.reduce((s: number, i: { count: number }) => s + i.count, 0);
 
@@ -536,7 +543,9 @@ function AppointmentTab({ dateRange }: { dateRange: { startDate: string; endDate
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoading ? (
+              {isError ? (
+                <tr><td colSpan={3}><QueryErrorAlert onRetry={refetch} /></td></tr>
+              ) : isLoading ? (
                 <TableLoading colSpan={3} />
               ) : list.length === 0 ? (
                 <EmptyState colSpan={3} text="暂无数据" />
