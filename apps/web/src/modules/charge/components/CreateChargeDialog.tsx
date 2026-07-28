@@ -20,7 +20,7 @@ interface EditableItem {
   category: string;
   price: string;
   quantity: number;
-  teethNumbers: number[];
+  teethNumbers: string[];
 }
 
 const DEFAULT_ITEMS: EditableItem[] = [

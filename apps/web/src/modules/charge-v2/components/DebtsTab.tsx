@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import {
   Search,
   Check,
@@ -51,6 +51,7 @@ const PAGE_SIZE = 10;
 
 export function DebtsTab() {
   const [keyword, setKeyword] = useState('');
+  const [debouncedKeyword, setDebouncedKeyword] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [dateRange, setDateRange] = useState('');
   const [page, setPage] = useState(1);
@@ -59,9 +60,41 @@ export function DebtsTab() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedDebt, setSelectedDebt] = useState<DebtRecord | null>(null);
 
+  // 关键字防抖：350ms 后才发送服务端请求
+  const keywordTimerRef = useMemo(() => ({ current: 0 as unknown as ReturnType<typeof setTimeout> }), []);
+  const handleKeywordChange = useCallback((value: string) => {
+    setKeyword(value);
+    clearTimeout(keywordTimerRef.current);
+    keywordTimerRef.current = setTimeout(() => {
+      setDebouncedKeyword(value);
+      setPage(1);
+    }, 350);
+  }, [keywordTimerRef]);
+
+  // 日期范围计算
+  const dateParams = useMemo(() => {
+    if (!dateRange) return {};
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
+    if (dateRange === 'today') return { startDate: todayStr, endDate: todayStr };
+    if (dateRange === 'week') {
+      const day = now.getDay() || 7;
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - day + 1);
+      return { startDate: monday.toISOString().slice(0, 10), endDate: todayStr };
+    }
+    if (dateRange === 'month') {
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+      return { startDate: firstDay.toISOString().slice(0, 10), endDate: todayStr };
+    }
+    return {};
+  }, [dateRange]);
+
   const { data: statsData } = useDebtStats();
   const { data, isLoading } = useDebts({
     status: statusFilter || undefined,
+    keyword: debouncedKeyword || undefined,
+    ...dateParams,
     page,
     pageSize: PAGE_SIZE,
   });
@@ -72,16 +105,8 @@ export function DebtsTab() {
   const total = data?.total ?? 0;
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
-  const filteredDebts = useMemo(() => {
-    if (!keyword) return debts;
-    const kw = keyword.toLowerCase();
-    return debts.filter(
-      (d) =>
-        d.patient?.name?.toLowerCase().includes(kw) ||
-        d.patient?.phone?.includes(kw) ||
-        d.charge?.number?.toLowerCase().includes(kw),
-    );
-  }, [debts, keyword]);
+  // 服务端已做筛选，前端无需再过滤
+  const filteredDebts = debts;
 
   function handlePay(debt: DebtRecord) {
     setSelectedDebt(debt);
@@ -151,7 +176,7 @@ export function DebtsTab() {
               <Input
                 placeholder="搜索患者姓名/电话/单号"
                 value={keyword}
-                onChange={(e) => setKeyword(e.target.value)}
+                onChange={(e) => handleKeywordChange(e.target.value)}
                 className="pl-10"
               />
             </div>
