@@ -83,7 +83,8 @@ export const errorLogger = {
       context,
       traceId,
     };
-    console.error('[Error]', message, error);
+    // 结构化 JSON 输出，便于 Electron 日志采集与分析
+    console.error(JSON.stringify({ ts: log.timestamp, level: 'error', msg: message, ctx: context, traceId, stack: error?.stack }));
     addLog(log);
   },
 
@@ -96,7 +97,7 @@ export const errorLogger = {
       userAgent: navigator.userAgent,
       context,
     };
-    console.warn('[Warning]', message);
+    console.warn(JSON.stringify({ ts: log.timestamp, level: 'warning', msg: message, ctx: context }));
     addLog(log);
   },
 
@@ -109,7 +110,7 @@ export const errorLogger = {
       userAgent: navigator.userAgent,
       context,
     };
-    console.info('[Info]', message);
+    console.info(JSON.stringify({ ts: log.timestamp, level: 'info', msg: message, ctx: context }));
     addLog(log);
   },
 

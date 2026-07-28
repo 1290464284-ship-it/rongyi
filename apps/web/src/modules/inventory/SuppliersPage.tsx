@@ -24,6 +24,7 @@ import {
   type Supplier,
 } from '@/lib/api/inventory/suppliers';
 import { toast } from 'sonner';
+import { QueryErrorAlert } from '@/components/QueryErrorAlert';
 
 const PAGE_SIZE = 20;
 
@@ -49,7 +50,7 @@ export default function SuppliersPage() {
   const isBoss = useIsBoss();
   const [keyword, setKeyword] = useState('');
   const [page, setPage] = useState(1);
-  const { data, isLoading } = useSuppliers(keyword, page, PAGE_SIZE);
+  const { data, isLoading, isError, refetch } = useSuppliers(keyword, page, PAGE_SIZE);
 
   const createMut = useCreateSupplier();
   const updateMut = useUpdateSupplier();
@@ -168,7 +169,9 @@ export default function SuppliersPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoading ? (
+              {isError ? (
+                <tr><td colSpan={6}><QueryErrorAlert onRetry={refetch} /></td></tr>
+              ) : isLoading ? (
                 <TableLoading colSpan={6} />
               ) : items.length === 0 ? (
                 <EmptyState colSpan={6} text="暂无供应商" />

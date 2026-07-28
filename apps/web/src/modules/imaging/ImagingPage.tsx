@@ -36,6 +36,7 @@ import {
 import { PatientSelector } from '@/components/patient/PatientSelector';
 import { useStaff } from '@/lib/staff';
 import { useAuthStore } from '@/lib/store/auth-store';
+import { QueryErrorAlert } from '@/components/QueryErrorAlert';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 
@@ -52,7 +53,7 @@ export default function ImagingPage() {
   const [selectedImg, setSelectedImg] = useState<Imaging | null>(null);
   const [createOpen, setCreateOpen] = useState(() => !!presetPatientId);
 
-  const { data, isLoading } = useImagingList({
+  const { data, isLoading, isError, refetch } = useImagingList({
     type: typeFilter || undefined,
     page,
     pageSize,
@@ -135,7 +136,9 @@ export default function ImagingPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {isError ? (
+            <QueryErrorAlert onRetry={refetch} />
+          ) : isLoading ? (
             <div className='text-center py-12 text-muted-foreground'>加载中...</div>
           ) : filtered.length === 0 ? (
             <div className='text-center py-12 text-muted-foreground'>

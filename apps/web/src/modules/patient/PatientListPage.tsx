@@ -10,6 +10,7 @@ import { Dialog, DialogHeader, DialogTitle, DialogContent } from '@/components/u
 import { TableLoading, EmptyState } from '@/components/ui/loading';
 import { usePatients, PATIENT_SOURCE_LABEL, PATIENT_SOURCE_COLOR, type Patient } from '@/lib/api/patients/patients';
 import PatientForm from './PatientForm';
+import { QueryErrorAlert } from '@/components/QueryErrorAlert';
 import { formatDate, debounce } from '@/lib/utils';
 
 const genderText = (g: string) => ({ MALE: '男', FEMALE: '女', UNKNOWN: '未知' } as Record<string, string>)[g] ?? g;
@@ -102,7 +103,7 @@ export default function PatientListPage() {
   const [debouncedKeyword, setDebouncedKeyword] = useState(searchParams.get('keyword') || '');
   const [page, setPage] = useState(Number(searchParams.get('page')) || 1);
   const [open, setOpen] = useState(false);
-  const { data, isLoading } = usePatients(debouncedKeyword, page);
+  const { data, isLoading, isError, refetch } = usePatients(debouncedKeyword, page);
   const parentRef = useRef<HTMLDivElement>(null);
 
   const items = data?.items ?? [];
@@ -181,7 +182,9 @@ export default function PatientListPage() {
               </TableRow>
             </TableHeader>
             <tbody style={{ display: 'block', height: rowVirtualizer.getTotalSize() }}>
-              {isLoading ? (
+              {isError ? (
+                <tr><td colSpan={8}><QueryErrorAlert onRetry={refetch} /></td></tr>
+              ) : isLoading ? (
                 <TableLoading colSpan={8} />
               ) : !items.length ? (
                 <EmptyState colSpan={8} text="暂无患者" />

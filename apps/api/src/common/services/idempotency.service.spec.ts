@@ -556,25 +556,9 @@ describe('IdempotencyService', () => {
   });
 
   describe('失败状态记录', () => {
-    it('handler 失败后应在事务内更新为 FAILED 状态', () => {
+    it('handler 失败后应在事务外持久化 FAILED 状态', () => {
       const key = 'failed-status-key';
       const errorMessage = '测试失败消息';
-      let capturedStatus: string | null = null;
-      let capturedResult: string | null = null;
-
-      const originalPrepare = (db as any).prepare.bind(db);
-      jest.spyOn(db as any, 'prepare').mockImplementation((sql: string) => {
-        const stmt = originalPrepare(sql);
-        if (sql.includes("UPDATE IdempotencyRecord SET status = 'FAILED'")) {
-          const originalRun = stmt.run.bind(stmt);
-          stmt.run = (...params: unknown[]) => {
-            capturedStatus = 'FAILED';
-            capturedResult = params[0] as string;
-            return originalRun(...params);
-          };
-        }
-        return stmt;
-      });
 
       const handler = jest.fn().mockImplementation(() => {
         throw new Error(errorMessage);
@@ -584,9 +568,14 @@ describe('IdempotencyService', () => {
         service.executeInTransaction({ key, type: 'test-type' }, handler),
       ).toThrow(errorMessage);
 
-      expect(capturedStatus).toBe('FAILED');
-      expect(capturedResult).toBeDefined();
-      const result = JSON.parse(capturedResult);
+      // P2 修复后 FAILED 在事务外写入，记录应持久化
+      const record = db
+        .prepare('SELECT * FROM IdempotencyRecord WHERE key = ?')
+        .get(key) as any;
+      expect(record).toBeDefined();
+      expect(record.status).toBe('FAILED');
+      expect(record.result).toBeDefined();
+      const result = JSON.parse(record.result);
       expect(result.error).toBe(errorMessage);
     });
   });
@@ -700,7 +689,7 @@ describe('IdempotencyService', () => {
   });
 
   describe('Promise 返回检测', () => {
-    it('handler 返回 Promise 时事务回滚，记录不应存在', () => {
+    it('handler 返回 Promise 时事务回滚，FAILED 记录在事务外持久化', () => {
       const handler = jest.fn().mockReturnValue(Promise.resolve('async-result'));
 
       expect(() =>
@@ -713,10 +702,11 @@ describe('IdempotencyService', () => {
       const record = db
         .prepare('SELECT * FROM IdempotencyRecord WHERE key = ?')
         .get('promise-key') as any;
-      expect(record).toBeUndefined();
+      expect(record).toBeDefined();
+      expect(record.status).toBe('FAILED');
     });
 
-    it('handler 返回 Promise.reject 时事务回滚，记录不应存在', () => {
+    it('handler 返回 Promise.reject 时事务回滚，FAILED 记录在事务外持久化', () => {
       const rejectedPromise = Promise.reject(new Error('async fail'));
       rejectedPromise.catch(() => {});
       const handler = jest.fn().mockReturnValue(rejectedPromise);
@@ -731,7 +721,8 @@ describe('IdempotencyService', () => {
       const record = db
         .prepare('SELECT * FROM IdempotencyRecord WHERE key = ?')
         .get('promise-reject-key') as any;
-      expect(record).toBeUndefined();
+      expect(record).toBeDefined();
+      expect(record.status).toBe('FAILED');
     });
 
     it('Promise 检测后再次请求应重新执行', () => {
@@ -794,7 +785,7 @@ describe('IdempotencyService', () => {
       expect(result).toBeUndefined();
     });
 
-    it('handler 抛出非 Error 对象时事务回滚', () => {
+    it('handler 抛出非 Error 对象时事务回滚，FAILED 记录在事务外持久化', () => {
       const handler = jest.fn().mockImplementation(() => {
         throw 'string error';
       });
@@ -809,7 +800,8 @@ describe('IdempotencyService', () => {
       const record = db
         .prepare('SELECT * FROM IdempotencyRecord WHERE key = ?')
         .get('string-err-key') as any;
-      expect(record).toBeUndefined();
+      expect(record).toBeDefined();
+      expect(record.status).toBe('FAILED');
     });
 
     it('handler 抛出数字应正常捕获', () => {

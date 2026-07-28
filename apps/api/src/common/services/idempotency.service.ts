@@ -119,7 +119,9 @@ export class IdempotencyService implements OnModuleInit, OnModuleDestroy {
     const now = new Date().toISOString();
     const expiresAt = new Date(Date.now() + ttlMs).toISOString();
     const recordId = crypto.randomUUID();
+    let handlerReached = false;
 
+    try {
     return this.dbService.transaction((db) => {
       const existing = db.prepare(
         'SELECT id, key, type, status, result, createdAt, expiresAt FROM IdempotencyRecord WHERE key = ? AND expiresAt > ?',
@@ -199,31 +201,36 @@ export class IdempotencyService implements OnModuleInit, OnModuleDestroy {
         }
       }
 
-      try {
-        const result = handler(db);
-        // 契约守卫：handler 必须是同步函数。better-sqlite3 事务在 handler 返回
-        // 后立即 COMMIT，若 handler 是 async（返回 Promise），await 期间的
-        // DB 操作会落在事务外，破坏原子性并可能造成"状态=COMPLETED 但业务未落库"。
-        if (result instanceof Promise) {
-          const err = new Error(
-            `[IdempotencyService] handler 必须为同步函数（不可返回 Promise）。` +
-            `key=${key}, type=${type}。请移除 handler 内的 await，或改用非事务 API。`,
-          );
-          db.prepare(
-            "UPDATE IdempotencyRecord SET status = 'FAILED', result = ? WHERE id = ?",
-          ).run(JSON.stringify({ error: err.message }), recordId);
-          throw err;
-        }
-        db.prepare(
-          "UPDATE IdempotencyRecord SET status = 'COMPLETED', result = ? WHERE id = ?",
-        ).run(JSON.stringify(result), recordId);
-        return result;
-      } catch (err: unknown) {
-        db.prepare(
-          "UPDATE IdempotencyRecord SET status = 'FAILED', result = ? WHERE id = ?",
-        ).run(JSON.stringify({ error: (err as Error).message }), recordId);
-        throw err;
+      handlerReached = true;
+      const result = handler(db);
+      // 契约守卫：handler 必须是同步函数。better-sqlite3 事务在 handler 返回
+      // 后立即 COMMIT，若 handler 是 async（返回 Promise），await 期间的
+      // DB 操作会落在事务外，破坏原子性并可能造成"状态=COMPLETED 但业务未落库"。
+      if (result instanceof Promise) {
+        throw new Error(
+          `[IdempotencyService] handler 必须为同步函数（不可返回 Promise）。` +
+          `key=${key}, type=${type}。请移除 handler 内的 await，或改用非事务 API。`,
+        );
       }
+      db.prepare(
+        "UPDATE IdempotencyRecord SET status = 'COMPLETED', result = ? WHERE id = ?",
+      ).run(JSON.stringify(result), recordId);
+      return result;
     });
+    } catch (err: unknown) {
+      // P2 修复：FAILED 状态在事务外写入。事务内的 FAILED 更新会被 ROLLBACK 回滚，
+      // 导致失败状态永远无法持久化。现在在事务外重新 INSERT FAILED 记录，
+      // 使后续相同 key 请求可识别"上次失败"并立即重试。
+      if (handlerReached) {
+        try {
+          this.dbService.prepare(
+            "INSERT OR REPLACE INTO IdempotencyRecord (id, key, type, status, result, createdAt, expiresAt) VALUES (?, ?, ?, 'FAILED', ?, ?, ?)",
+          ).run(recordId, key, type, JSON.stringify({ error: (err as Error).message }), now, expiresAt);
+        } catch {
+          // 忽略：写入失败不影响业务异常的正常传播
+        }
+      }
+      throw err;
+    }
   }
 }

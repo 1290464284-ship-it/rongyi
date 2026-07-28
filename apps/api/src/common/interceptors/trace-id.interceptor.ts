@@ -4,6 +4,7 @@ import { tap } from 'rxjs/operators';
 import { runWithContext, generateTraceId, RequestContext } from '../utils/context/async-context';
 import { AppLogger } from '../services/logger.service';
 import { TRACE_ID_HEADER } from '../middleware/trace.middleware';
+import { SLOW_REQUEST_THRESHOLD_MS } from '../../config/constants';
 import { Request, Response } from 'express';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -25,6 +26,7 @@ interface RequestUser {
 @Injectable()
 export class TraceIdInterceptor implements NestInterceptor {
   private readonly logger = new AppLogger(TraceIdInterceptor.name);
+  private readonly slowThreshold = Number(process.env.SLOW_REQUEST_THRESHOLD_MS) || SLOW_REQUEST_THRESHOLD_MS;
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const request = context.switchToHttp().getRequest<Request & { user?: RequestUser }>();
@@ -54,6 +56,11 @@ export class TraceIdInterceptor implements NestInterceptor {
         tap({
           next: () => {
             const duration = Date.now() - startTime;
+            if (duration >= this.slowThreshold) {
+              this.logger.warn(
+                `慢请求告警: ${request.method} ${request.url} 耗时 ${duration}ms (阈值 ${this.slowThreshold}ms)`,
+              );
+            }
             this.logger.logRequest(
               traceId,
               request.method,

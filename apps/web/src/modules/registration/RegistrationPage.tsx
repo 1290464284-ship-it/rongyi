@@ -42,6 +42,7 @@ import {
 import { useStaff } from '@/lib/staff';
 import { useAuthStore } from '@/lib/store/auth-store';
 import { PatientSelector } from '@/components/patient/PatientSelector';
+import { QueryErrorAlert } from '@/components/QueryErrorAlert';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { toast } from 'sonner';
@@ -77,7 +78,7 @@ const RegistrationPage = React.memo(function RegistrationPage() {
 
   const status = TAB_STATUS_MAP[activeTab];
 
-  const { data, isLoading } = useRegistrations({
+  const { data, isLoading, isError, refetch } = useRegistrations({
     status,
     page,
     pageSize,
@@ -215,7 +216,9 @@ const RegistrationPage = React.memo(function RegistrationPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoading ? (
+              {isError ? (
+                <tr><td colSpan={7}><QueryErrorAlert onRetry={refetch} /></td></tr>
+              ) : isLoading ? (
                 <TableLoading colSpan={7} />
               ) : filteredRegistrations.length === 0 ? (
                 <EmptyState colSpan={7} text="暂无数据" />

@@ -25,6 +25,7 @@ import {
   type TreatmentCatalogItem,
 } from '@/lib/treatment-catalog';
 import { toast } from 'sonner';
+import { QueryErrorAlert } from '@/components/QueryErrorAlert';
 
 interface FormState {
   code: string;
@@ -37,7 +38,7 @@ interface FormState {
 const EMPTY_FORM: FormState = { code: '', name: '', category: '', price: '', remark: '' };
 
 export default function PriceListPage() {
-  const { data, isLoading } = useTreatmentCatalog();
+  const { data, isLoading, isError, refetch } = useTreatmentCatalog();
   const createMut = useCreateTreatmentCatalogItem();
   const updateMut = useUpdateTreatmentCatalogItem();
   const deleteMut = useDeleteTreatmentCatalogItem();
@@ -194,7 +195,9 @@ export default function PriceListPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoading ? (
+              {isError ? (
+                <tr><td colSpan={6}><QueryErrorAlert onRetry={refetch} /></td></tr>
+              ) : isLoading ? (
                 <TableLoading colSpan={6} />
               ) : filtered.length === 0 ? (
                 <EmptyState colSpan={6} text="暂无收费项目" />

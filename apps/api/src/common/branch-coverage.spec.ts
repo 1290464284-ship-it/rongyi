@@ -745,7 +745,7 @@ describe('IdempotencyService — branch coverage', () => {
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
-  it('handler 返回 Promise 时事务回滚，记录未留下', () => {
+  it('handler 返回 Promise 时事务回滚，FAILED 记录在事务外持久化', () => {
     const handler = jest.fn().mockReturnValue(Promise.resolve('async'));
 
     expect(() =>
@@ -753,10 +753,11 @@ describe('IdempotencyService — branch coverage', () => {
     ).toThrow(/handler 必须为同步函数/);
 
     const record = db.prepare('SELECT * FROM IdempotencyRecord WHERE key = ?').get('promise-key') as any;
-    expect(record).toBeUndefined();
+    expect(record).toBeDefined();
+    expect(record.status).toBe('FAILED');
   });
 
-  it('handler 返回 Promise.reject 时事务回滚', () => {
+  it('handler 返回 Promise.reject 时事务回滚，FAILED 记录在事务外持久化', () => {
     const rejectedPromise = Promise.reject(new Error('async fail'));
     rejectedPromise.catch(() => {});
     const handler = jest.fn().mockReturnValue(rejectedPromise);
@@ -766,7 +767,8 @@ describe('IdempotencyService — branch coverage', () => {
     ).toThrow(/handler 必须为同步函数/);
 
     const record = db.prepare('SELECT * FROM IdempotencyRecord WHERE key = ?').get('promise-reject') as any;
-    expect(record).toBeUndefined();
+    expect(record).toBeDefined();
+    expect(record.status).toBe('FAILED');
   });
 
   it('非 UNIQUE 错误应直接抛出', () => {
@@ -788,14 +790,15 @@ describe('IdempotencyService — branch coverage', () => {
     ).toThrow('Some other database error');
   });
 
-  it('handler 抛非 Error 对象时应正常回滚', () => {
+  it('handler 抛非 Error 对象时事务回滚，FAILED 记录在事务外持久化', () => {
     const handler = jest.fn().mockImplementation(() => { throw 'string error'; });
     expect(() =>
       service.executeInTransaction({ key: 'str-err', type: 'test-type' }, handler),
     ).toThrow('string error');
 
     const record = db.prepare('SELECT * FROM IdempotencyRecord WHERE key = ?').get('str-err') as any;
-    expect(record).toBeUndefined();
+    expect(record).toBeDefined();
+    expect(record.status).toBe('FAILED');
   });
 });
 

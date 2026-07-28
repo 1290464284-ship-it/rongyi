@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useOperationLogs, type OperationLog } from '@/lib/api/system/operation-logs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageLoading } from '@/components/ui/loading';
+import { QueryErrorAlert } from '@/components/QueryErrorAlert';
 import { formatDateTime } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -33,7 +34,7 @@ const PAGE_SIZE = 20;
 export default function OperationLogPage() {
   // 4.2: 接入分页，避免一次性拉取全部日志导致渲染卡顿
   const [page, setPage] = useState(1);
-  const { data, isLoading, isError } = useOperationLogs({ page, pageSize: PAGE_SIZE });
+  const { data, isLoading, isError, refetch } = useOperationLogs({ page, pageSize: PAGE_SIZE });
 
   const logs: OperationLog[] = data?.items ?? [];
   const total = data?.total ?? 0;
@@ -46,7 +47,7 @@ export default function OperationLogPage() {
       {isLoading && <PageLoading />}
 
       {isError && (
-        <p className="text-sm text-destructive">加载操作日志失败，请稍后重试。</p>
+        <QueryErrorAlert onRetry={refetch} />
       )}
 
       {!isLoading && !isError && logs.length === 0 && (

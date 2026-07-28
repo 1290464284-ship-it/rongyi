@@ -76,7 +76,10 @@ function setLastSyncTime(time: string): void {
   localStorage.setItem(LAST_SYNC_KEY, time);
 }
 
-/** 记录一条本地变更（离线时调用） */
+/**
+ * 记录一条本地变更（离线时调用）
+ * @deprecated 当前无生产调用者，保留作为未来离线优先支持的基础设施。如确认不再需要可安全移除。
+ */
 export function recordLocalChange(
   tableName: string,
   recordId: string,

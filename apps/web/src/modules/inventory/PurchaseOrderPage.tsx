@@ -29,6 +29,7 @@ import { useSuppliers } from '@/lib/api/inventory/suppliers';
 import { useInventoryItems } from '@/lib/api/inventory/inventory';
 import { DROPDOWN_MAX_PAGE_SIZE } from '@/config/constants';
 import { formatDateTime } from '@/lib/utils';
+import { QueryErrorAlert } from '@/components/QueryErrorAlert';
 import { toast } from 'sonner';
 
 const PAGE_SIZE = 20;
@@ -59,7 +60,7 @@ export default function PurchaseOrderPage() {
   const isBoss = useIsBoss();
   const [status, setStatus] = useState('ALL');
   const [page, setPage] = useState(1);
-  const { data, isLoading } = usePurchaseOrders({
+  const { data, isLoading, isError, refetch } = usePurchaseOrders({
     status: status === 'ALL' ? undefined : (status as PurchaseOrderStatus),
     page,
     pageSize: PAGE_SIZE,
@@ -226,7 +227,9 @@ export default function PurchaseOrderPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoading ? (
+              {isError ? (
+                <tr><td colSpan={7}><QueryErrorAlert onRetry={refetch} /></td></tr>
+              ) : isLoading ? (
                 <TableLoading colSpan={7} />
               ) : items.length === 0 ? (
                 <EmptyState colSpan={7} text="暂无采购订单" />
