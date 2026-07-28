@@ -4,7 +4,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('@/lib/store/auth-store', () => ({
-  useAuthStore: () => ({ user: { id: '1', name: '管理员' } }),
+  useAuthStore: (selector: (s: { user: { id: string; name: string }; isAuthenticated: () => boolean }) => unknown) =>
+    selector({ user: { id: '1', name: '管理员' }, isAuthenticated: () => true }),
 }));
 
 vi.mock('@/lib/api/patients/patients', () => ({
