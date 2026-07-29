@@ -41,18 +41,18 @@ export interface AppRoute {
 }
 
 const DashboardPage = lazy(() => import('@/modules/dashboard/DashboardPage'));
-const PatientListPage = lazy(() => import('@/modules/patient/PatientListPage'));
-const PatientDetailPage = lazy(() => import('@/modules/patient/PatientDetailPage'));
+const PatientListPage = lazy(() => import('@/modules/patients/PatientListPage'));
+const PatientDetailPage = lazy(() => import('@/modules/patients/PatientDetailPage'));
 const AppointmentCalendarPage = lazy(() => import('@/modules/appointment/AppointmentCalendarPage'));
 const UnifiedChargePage = lazy(() => import('@/modules/charge/UnifiedChargePage'));
-const PrescriptionPage = lazy(() => import('@/modules/prescription/PrescriptionPage'));
+const PrescriptionPage = lazy(() => import('@/modules/content/prescription/PrescriptionPage'));
 const TreatmentPlanPage = lazy(() => import('@/modules/clinical/treatment-plan/TreatmentPlanPage'));
 const ClinicalPage = lazy(() => import('@/modules/clinical/ClinicalPage'));
 const ReportPage = lazy(() => import('@/modules/report/ReportPage'));
 const StaffPage = lazy(() => import('@/modules/staff/StaffPage'));
-const ImagingPage = lazy(() => import('@/modules/imaging/ImagingPage'));
+const ImagingPage = lazy(() => import('@/modules/content/imaging/ImagingPage'));
 const PriceListPage = lazy(() => import('@/modules/settings/PriceListPage'));
-const MemberCardPage = lazy(() => import('@/modules/finance/MemberCardPage'));
+const MemberCardPage = lazy(() => import('@/modules/charge/finance/MemberCardPage'));
 const SettingsPage = lazy(() => import('@/modules/settings/SettingsPage'));
 const InventoryPage = lazy(() => import('@/modules/inventory/InventoryPage'));
 const SuppliersPage = lazy(() => import('@/modules/inventory/SuppliersPage'));
@@ -60,10 +60,10 @@ const PurchaseOrderPage = lazy(() => import('@/modules/inventory/PurchaseOrderPa
 const BackupPage = lazy(() => import('@/modules/settings/BackupPage'));
 const RegistrationPage = lazy(() => import('@/modules/clinical/registration/RegistrationPage'));
 const MedicalRecordsPage = lazy(() => import('@/modules/clinical/medical-records/MedicalRecordsPage'));
-const FollowUpsPage = lazy(() => import('@/modules/follow-ups/FollowUpsPage'));
-const ProcessingOrdersPage = lazy(() => import('@/modules/processing-orders/ProcessingOrdersPage'));
+const FollowUpsPage = lazy(() => import('@/modules/communication/follow-ups/FollowUpsPage'));
+const ProcessingOrdersPage = lazy(() => import('@/modules/inventory/processing-orders/ProcessingOrdersPage'));
 const FirstExamsPage = lazy(() => import('@/modules/clinical/first-exams/FirstExamsPage'));
-const WechatPage = lazy(() => import('@/modules/wechat/WechatPage'));
+const WechatPage = lazy(() => import('@/modules/communication/wechat/WechatPage'));
 const EquipmentPage = lazy(() => import('@/modules/equipment/EquipmentPage'));
 const OperationLogPage = lazy(() => import('@/modules/settings/OperationLogPage'));
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- reserved for 404 catch-all route
