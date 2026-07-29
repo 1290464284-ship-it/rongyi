@@ -344,8 +344,9 @@ function CreateRecordDialog({
         <DialogContent>
           <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
             <div className="space-y-1.5">
-              <Label>患者 *</Label>
+              <Label htmlFor="mr-patient">患者 *</Label>
               <Button
+                id="mr-patient"
                 variant="outline"
                 className="w-full justify-start"
                 onClick={() => setOpenSelector(true)}

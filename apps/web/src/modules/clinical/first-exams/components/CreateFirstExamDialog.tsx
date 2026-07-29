@@ -89,8 +89,9 @@ export function CreateFirstExamDialog({
         <DialogContent>
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label>患者 *</Label>
+              <Label htmlFor="fe-patient">患者 *</Label>
               <Button
+                id="fe-patient"
                 variant="outline"
                 className="w-full justify-start"
                 onClick={() => setOpenSelector(true)}

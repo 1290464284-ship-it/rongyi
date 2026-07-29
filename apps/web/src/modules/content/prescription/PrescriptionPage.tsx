@@ -320,8 +320,9 @@ function CreatePrescriptionDialog({
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label>患者 *</Label>
+              <Label htmlFor="rx-patient">患者 *</Label>
               <Button
+                id="rx-patient"
                 variant="outline"
                 className="w-full justify-start"
                 onClick={() => setOpenSelector(true)}

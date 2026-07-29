@@ -26,11 +26,13 @@ function TagInput({
   onChange,
   placeholder,
   color = 'bg-primary/10 text-primary',
+  id,
 }: {
   value: string[];
   onChange: (v: string[]) => void;
   placeholder?: string;
   color?: string;
+  id?: string;
 }) {
   const [input, setInput] = useState('');
   const add = () => {
@@ -42,6 +44,7 @@ function TagInput({
     <div className="space-y-1.5">
       <div className="flex gap-2">
         <Input
+          id={id}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
@@ -61,7 +64,7 @@ function TagInput({
           {value.map((tag) => (
             <Badge key={tag} className={`${color} gap-1`}>
               {tag}
-              <button type="button" onClick={() => onChange(value.filter((t) => t !== tag))}>
+              <button type="button" onClick={() => onChange(value.filter((t) => t !== tag))} aria-label={`删除${tag}`}>
                 <X className="h-3 w-3" />
               </button>
             </Badge>
@@ -176,20 +179,20 @@ export default function PatientForm({ onClose, onSaved, initialPatient }: Props)
         <h3 className="text-sm font-semibold text-primary border-l-2 border-primary pl-2">医疗信息</h3>
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <Label>过敏史</Label>
-            <TagInput value={allergies} onChange={setAllergies} placeholder="如：青霉素" color="bg-destructive/10 text-destructive" />
+            <Label htmlFor="pf-allergies">过敏史</Label>
+            <TagInput id="pf-allergies" value={allergies} onChange={setAllergies} placeholder="如：青霉素" color="bg-destructive/10 text-destructive" />
           </div>
           <div className="space-y-1.5">
-            <Label>全身疾病</Label>
-            <TagInput value={systemicDiseases} onChange={setSystemicDiseases} placeholder="如：高血压" color="bg-warning/10 text-warning" />
+            <Label htmlFor="pf-systemic">全身疾病</Label>
+            <TagInput id="pf-systemic" value={systemicDiseases} onChange={setSystemicDiseases} placeholder="如：高血压" color="bg-warning/10 text-warning" />
           </div>
           <div className="space-y-1.5">
-            <Label>既往史</Label>
-            <TagInput value={medicalHistory} onChange={setMedicalHistory} placeholder="如：根管治疗" />
+            <Label htmlFor="pf-history">既往史</Label>
+            <TagInput id="pf-history" value={medicalHistory} onChange={setMedicalHistory} placeholder="如：根管治疗" />
           </div>
           <div className="space-y-1.5">
-            <Label>用药史</Label>
-            <TagInput value={medicationHistory} onChange={setMedicationHistory} placeholder="如：阿司匹林" />
+            <Label htmlFor="pf-medication">用药史</Label>
+            <TagInput id="pf-medication" value={medicationHistory} onChange={setMedicationHistory} placeholder="如：阿司匹林" />
           </div>
         </div>
       </div>
@@ -219,8 +222,8 @@ export default function PatientForm({ onClose, onSaved, initialPatient }: Props)
           </div>
         </div>
         <div className="space-y-1.5">
-          <Label>标签</Label>
-          <TagInput value={tags} onChange={setTags} placeholder="如：VIP、老客户" color="bg-info/10 text-info" />
+          <Label htmlFor="pf-tags">标签</Label>
+          <TagInput id="pf-tags" value={tags} onChange={setTags} placeholder="如：VIP、老客户" color="bg-info/10 text-info" />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="remark">备注</Label>
