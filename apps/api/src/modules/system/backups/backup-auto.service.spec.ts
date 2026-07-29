@@ -153,17 +153,25 @@ describe('BackupAutoService', () => {
       expect(cleanupSpy).toHaveBeenCalled();
     });
 
-    it('备份失败时应记录失败告警', async () => {
+    it('备份失败时应重试并记录失败告警', async () => {
+      jest.useFakeTimers();
       manualBackup.create.mockRejectedValue(new Error('backup failed'));
 
-      await service.performAutoBackup();
+      const promise = service.performAutoBackup();
+      // 快进所有重试延迟 (1s + 2s + 4s)
+      await jest.advanceTimersByTimeAsync(1000);
+      await jest.advanceTimersByTimeAsync(2000);
+      await jest.advanceTimersByTimeAsync(4000);
+      await promise;
 
+      expect(manualBackup.create).toHaveBeenCalledTimes(3);
       expect(alertService.recordFailure).toHaveBeenCalledWith(
         AlertCategory.BACKUP,
         'auto-backup',
-        '自动备份失败',
+        '自动备份连续 3 次失败，请立即检查',
         'backup failed',
       );
+      jest.useRealTimers();
     });
   });
 
