@@ -72,6 +72,15 @@ function reportWarning(rule, file, message) {
   warnings++;
 }
 
+/**
+ * 文件级违规上报（无具体行号，计入 violations 并影响退出码）
+ */
+function reportFileViolation(rule, file, message) {
+  const relativePath = path.relative(apiRoot, file);
+  console.log(`  ${RED}✗${RESET} [${rule}] ${relativePath} — ${message}`);
+  violations++;
+}
+
 // ──────────────────────────────────────────────────────────────
 // 1. SQL 参数化检查 (.qoder/rules/sql-parameterization.md)
 // ──────────────────────────────────────────────────────────────
@@ -415,7 +424,7 @@ function checkDbSchemaProtection() {
     const migrationChanged = changedFiles.some(f => f.includes('migrations.ts'));
 
     if (schemaChanged && !migrationChanged) {
-      reportWarning(
+      reportFileViolation(
         'db-schema-protection',
         schemaPath,
         'schema.ts 被修改但 migrations.ts 未同步修改 — 直接修改 schema.ts 是禁止的，需通过 migration 流程变更',
@@ -455,7 +464,7 @@ function checkPnpmLockProtection() {
     const packageJsonChanged = changedFiles.some(f => f.endsWith('package.json'));
 
     if (lockChanged && !packageJsonChanged) {
-      reportWarning(
+      reportFileViolation(
         'pnpm-lock-protection',
         lockPath,
         'pnpm-lock.yaml 被修改但 package.json 未修改 — 禁止手动编辑 lock 文件，请使用 pnpm add/remove/update 管理依赖',
