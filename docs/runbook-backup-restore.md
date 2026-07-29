@@ -76,8 +76,8 @@ Remove-Item <db>-wal, <db>-shm -ErrorAction SilentlyContinue
 
 ## 四、演练发现的问题（待修复清单）
 
-1. **`backup.transfer is not a function`**：`scripts/backup/backup.js` 与 `src/db/database.ts`（自动备份路径）调用的 better-sqlite3 `db.backup()` 在当前版本返回 Promise，同步式 `backup.transfer(-1)` 调用必然抛错并回退到 `copyFileSync`。功能未受损（回退路径含 WAL checkpoint + 完整性校验），但在线备份的原子性优势未生效，且每次备份都产生一条误导性错误日志。建议改用 `await db.backup(path)` 或直接移除失效的 API 调用
-2. **`idx_treatment_catalog_clinic_deleted_code` 索引创建失败**：启动日志报 `TreatmentCatalog` 表无 `deletedAt` 列（该表设计上不做软删除），schema.ts 中的索引定义与表结构不匹配，每次启动报 2 条 ERROR。建议删除该索引定义或补列（走 migration 流程）
+1. ~~**`backup.transfer is not a function`**~~：已修复。`scripts/backup/backup.js` 与 `src/db/database.ts` 均改用 `await db.backup(path)` 的 Promise 路径，不再调用已失效的同步式 `backup.transfer(-1)`，回退路径仍保留 `copyFileSync` 作为兆底。
+2. ~~**`idx_treatment_catalog_clinic_deleted_code` 索引创建失败**~~：已修复。新增 v28 迁移为 `TreatmentCatalog` 与 `MedicalRecordTemplate` 补齐 `deletedAt` 列（与项目软删除规范对齐），同步更新 schema 表定义。
 3. **seed 工厂数据不满足业务一致性**：`seed:fresh` 生成的收费单（折扣后 totalAmount 与 items 合计不一致）、会员卡余额、库存数量未按业务不变量生成，导致 db-consistency 的金额类检查在演示数据上报 189 个 issue。不影响生产（生产数据由业务流程写入），但会干扰用演示数据做的一致性验证。建议 seed 工厂按不变量生成金额
 
 ---
