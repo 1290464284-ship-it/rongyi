@@ -1,9 +1,12 @@
 #!/usr/bin/env sh
 
-# Pre-commit 钩子：lint-staged + typecheck + test + arch:check
+# Pre-commit 钩子：lint-staged + typecheck + 增量单测 + arch:check
 # 注意：build 验证不在 pre-commit 中，由 CI 流水线覆盖。
 # 原因：typecheck 已捕获大部分构建问题，build 步骤耗时较长（~11s），
 # 且构建错误频率低。CI 包含完整的 build + E2E 验证。
+# 单测策略：pre-commit 只跑受改动影响的测试（jest --onlyChanged / vitest --changed），
+# 降低提交等待成本以减少 --no-verify 绕过动机；
+# 全量单测由 pre-push（verify:critical）与 CI 兜底。
 
 # ── Stage 1: lint-staged (parallel) ──────────────────────────────────────────
 echo "🔍 Running lint-staged (api + web)..."
@@ -21,11 +24,11 @@ PID_API_TC=$!
 PID_WEB_TC=$!
 wait $PID_API_TC $PID_WEB_TC || { echo "❌ typecheck failed"; exit 1; }
 
-# ── Stage 3: unit tests (parallel) ───────────────────────────────────────────
-echo "🧪 Running unit tests (api + web)..."
-(cd apps/api && pnpm test --passWithNoTests) &
+# ── Stage 3: unit tests, affected scope only (parallel) ───────────────────────────────────────────
+echo "🧪 Running affected unit tests (api + web)..."
+(cd apps/api && pnpm exec jest --onlyChanged --passWithNoTests) &
 PID_API_TEST=$!
-(cd apps/web && pnpm test --passWithNoTests) &
+(cd apps/web && pnpm exec vitest run --changed --passWithNoTests) &
 PID_WEB_TEST=$!
 wait $PID_API_TEST $PID_WEB_TEST || { echo "❌ unit tests failed"; exit 1; }
 
