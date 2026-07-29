@@ -1,22 +1,19 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import {
   startOfWeek,
   addDays,
   format,
-  isSameDay,
   parseISO,
   addWeeks,
   addMonths,
   startOfMonth,
   endOfMonth,
   endOfWeek,
-  isSameMonth,
   eachDayOfInterval,
 } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Select } from '@/components/ui/select';
 import { Dialog, DialogHeader, DialogTitle, DialogContent } from '@/components/ui/dialog';
 import {
@@ -25,177 +22,25 @@ import {
   useDeleteAppointment,
   APPOINTMENT_STATUS_LABEL,
   APPOINTMENT_STATUS_COLOR,
-  APPOINTMENT_TYPE_LABEL,
-  APPOINTMENT_TYPE_COLOR,
   type Appointment,
 } from '@/lib/api/clinical/appointments';
 import { useChairs, type Chair } from '@/lib/chairs';
 import { QueryErrorAlert } from '@/components/QueryErrorAlert';
 import AppointmentForm from './AppointmentForm';
+import { AppointmentCard, ContextMenu, nextStatus, type MenuState } from './components/AppointmentCard';
+import { DayView, WeekView, MonthView } from './components/CalendarGrid';
 
 type ViewMode = 'day' | 'week' | 'month';
 
-const HOURS = Array.from({ length: 11 }, (_, i) => i + 8); // 8:00 - 18:00
-const HOUR_H = 48; // 每小时行高 px
-const STATUS_CYCLE: Appointment['status'][] = ['BOOKED', 'ARRIVED', 'IN_CHAIR', 'COMPLETED'];
-
-// 左键切换状态的循环顺序
-function nextStatus(s: Appointment['status']): Appointment['status'] | null {
-  const idx = STATUS_CYCLE.indexOf(s);
-  if (idx >= 0 && idx < STATUS_CYCLE.length - 1) return STATUS_CYCLE[idx + 1];
-  return null;
-}
-
-// 计算时间轴定位
-function calcTop(startISO: string): number {
-  const d = parseISO(startISO);
-  const h = d.getHours() + d.getMinutes() / 60;
-  return (h - 8) * HOUR_H;
-}
-function calcHeight(startISO: string, endISO: string): number {
-  const s = parseISO(startISO);
-  const e = parseISO(endISO);
-  return ((e.getTime() - s.getTime()) / 3600000) * HOUR_H;
-}
-
 const toISO = (d: Date) => format(d, "yyyy-MM-dd'T'00:00:00xxx");
 
-// ===== 预约卡片（支持左键切换状态、右键/长按弹出操作菜单）=====
-function AppointmentCard({
-  appt,
-  showChair,
-  onClick,
-  onMenu,
-}: {
-  appt: Appointment;
-  showChair?: boolean;
-  onClick: (a: Appointment) => void;
-  onMenu: (a: Appointment, x: number, y: number) => void;
-}) {
-  const timerRef = useRef<number | null>(null);
-  const firedRef = useRef(false);
-
-  const startLongPress = (x: number, y: number) => {
-    firedRef.current = false;
-    timerRef.current = window.setTimeout(() => {
-      firedRef.current = true;
-      onMenu(appt, x, y);
-    }, 500);
-  };
-  const cancelLongPress = () => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-  };
-
-  // 组件卸载时清除定时器，防止内存泄漏
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
-    };
-  }, []);
-
-  return (
-    <div
-      className={`absolute left-1 right-1 rounded border px-1.5 py-1 text-xs cursor-pointer overflow-hidden select-none ${APPOINTMENT_STATUS_COLOR[appt.status] ?? 'bg-muted text-muted-foreground border-border'}`}
-      style={{ top: calcTop(appt.startTime), height: Math.max(calcHeight(appt.startTime, appt.endTime), 24) }}
-      onContextMenu={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        onMenu(appt, e.clientX, e.clientY);
-      }}
-      onTouchStart={(e) => {
-        const t = e.touches[0];
-        startLongPress(t.clientX, t.clientY);
-      }}
-      onTouchEnd={cancelLongPress}
-      onTouchMove={cancelLongPress}
-      onClick={(e) => {
-        e.stopPropagation();
-        if (!firedRef.current) onClick(appt);
-        firedRef.current = false;
-      }}
-      title={`${appt.patient.name} - ${APPOINTMENT_STATUS_LABEL[appt.status]}（左键切换状态，右键/长按操作菜单）`}
-    >
-      <div className="flex items-center gap-1">
-        <span className={`h-2 w-2 rounded-full shrink-0 ${APPOINTMENT_TYPE_COLOR[appt.type] ?? 'bg-muted-foreground'}`} />
-        <span className="font-medium truncate">{appt.patient.name}</span>
-      </div>
-      <div className="truncate opacity-80">
-        {format(parseISO(appt.startTime), 'HH:mm')} {APPOINTMENT_TYPE_LABEL[appt.type] ?? appt.type}
-      </div>
-      <div className="truncate opacity-60">
-        {APPOINTMENT_STATUS_LABEL[appt.status]}
-        {showChair && appt.chair ? ` · ${appt.chair.name}` : ''}
-      </div>
-    </div>
-  );
+// startOfDay 局部实现
+function startOfDay(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
 }
 
-// ===== 操作菜单（确认/爽约/取消/删除）=====
-interface MenuState {
-  appt: Appointment;
-  x: number;
-  y: number;
-}
-const MENU_ACTIONS: { key: string; label: string; danger?: boolean }[] = [
-  { key: 'ARRIVED', label: '确认到诊' },
-  { key: 'NO_SHOW', label: '标记爽约' },
-  { key: 'CANCELLED', label: '取消预约' },
-  { key: 'DELETE', label: '删除预约', danger: true },
-];
-function ContextMenu({
-  menu,
-  onClose,
-  onAction,
-}: {
-  menu: MenuState;
-  onClose: () => void;
-  onAction: (appt: Appointment, action: string) => void;
-}) {
-  return (
-    <>
-      <div
-        className="fixed inset-0 z-50"
-        onClick={onClose}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          onClose();
-        }}
-      />
-      <div
-        className="fixed z-50 min-w-[150px] rounded-md border border-border bg-white shadow-dropdown py-1 animate-scale-in"
-        style={{
-          left: Math.min(menu.x, window.innerWidth - 180),
-          top: Math.min(menu.y, window.innerHeight - 220),
-        }}
-      >
-        <div className="px-3 py-1.5 text-xs text-muted-foreground border-b border-border">
-          {menu.appt.patient.name} · {format(parseISO(menu.appt.startTime), 'HH:mm')}-
-          {format(parseISO(menu.appt.endTime), 'HH:mm')}
-        </div>
-        {MENU_ACTIONS.map((it) => (
-          <button
-            key={it.key}
-            className={`w-full text-left px-3 py-1.5 text-sm hover:bg-muted ${it.danger ? 'text-destructive' : 'text-foreground'}`}
-            onClick={() => {
-              onAction(menu.appt, it.key);
-              onClose();
-            }}
-          >
-            {it.label}
-          </button>
-        ))}
-      </div>
-    </>
-  );
-}
-
-// ===== 主页面 =====
 export default function AppointmentCalendarPage() {
   const [view, setView] = useState<ViewMode>('week');
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -219,7 +64,6 @@ export default function AppointmentCalendarPage() {
       const ws = startOfWeek(currentDate, { weekStartsOn: 1 });
       return { start: ws, end: addDays(ws, 7) };
     }
-    // month：拉取整月（含网格溢出天）
     const mStart = startOfMonth(currentDate);
     const mEnd = endOfMonth(currentDate);
     const gStart = startOfWeek(mStart, { weekStartsOn: 1 });
@@ -235,7 +79,7 @@ export default function AppointmentCalendarPage() {
   const remove = useDeleteAppointment();
   const appts = useMemo(() => data?.items ?? [], [data?.items]);
 
-  // 牙椅筛选（客户端兜底，保证选定牙椅时仅显示该牙椅预约）
+  // 牙椅筛选
   const filteredAppts = useMemo(() => {
     if (selectedChairId === 'ALL') return appts;
     return appts.filter((a) => (a.chairId ?? '') === selectedChairId);
@@ -262,7 +106,7 @@ export default function AppointmentCalendarPage() {
     [weekStart],
   );
 
-  // 日视图牙椅列：选定牙椅时只显示该列；全部时显示所有牙椅 + 未分配列
+  // 日视图牙椅列
   const dayChairs = useMemo<Chair[]>(() => {
     if (selectedChairId !== 'ALL') {
       const c = activeChairs.find((ch) => ch.id === selectedChairId);
@@ -493,242 +337,4 @@ export default function AppointmentCalendarPage() {
       )}
     </div>
   );
-}
-
-// ===== 日视图：时间轴 × 牙椅列 =====
-function DayView({
-  chairs,
-  dayAppts,
-  onCellClick,
-  renderCard,
-}: {
-  chairs: Chair[];
-  dayAppts: Appointment[];
-  onCellClick: (hour: number, chairId: string | undefined) => void;
-  renderCard: (a: Appointment) => React.ReactNode;
-}) {
-  if (chairs.length === 0) {
-    return (
-      <div className="h-full rounded-lg border border-border bg-white flex items-center justify-center text-sm text-muted-foreground">
-        暂无可用牙椅，请先在系统中添加牙椅。
-      </div>
-    );
-  }
-  const colWidth = 180;
-  return (
-    <div className="h-full rounded-lg border border-border bg-white overflow-auto">
-      <div style={{ minWidth: 70 + chairs.length * colWidth }}>
-        {/* 表头：牙椅 */}
-        <div
-          className="grid border-b border-border sticky top-0 bg-white z-10"
-          style={{ gridTemplateColumns: `60px repeat(${chairs.length}, 1fr)` }}
-        >
-          <div className="p-2 text-xs text-muted-foreground text-right">时间</div>
-          {chairs.map((c) => (
-            <div key={c.id} className="p-2 text-center border-l border-border">
-              <div className="text-sm font-medium text-foreground">{c.name}</div>
-              {c.location && <div className="text-xs text-muted-foreground">{c.location}</div>}
-            </div>
-          ))}
-        </div>
-
-        {/* 主体：时间列 + 牙椅列 */}
-        <div
-          className="grid"
-          style={{ gridTemplateColumns: `60px repeat(${chairs.length}, 1fr)` }}
-        >
-          <div className="border-r border-border">
-            {HOURS.map((h) => (
-              <div
-                key={h}
-                className="text-xs text-muted-foreground text-right pr-2"
-                style={{ height: HOUR_H }}
-              >
-                {String(h).padStart(2, '0')}:00
-              </div>
-            ))}
-          </div>
-          {chairs.map((c) => {
-            const colAppts = dayAppts.filter((a) => (a.chairId ?? '__none__') === c.id);
-            return (
-              <div
-                key={c.id}
-                className="relative border-l border-border"
-                style={{ height: HOURS.length * HOUR_H }}
-              >
-                {HOURS.map((h) => (
-                  <div
-                    key={h}
-                    className="border-b border-border hover:bg-primary/5 cursor-pointer"
-                    style={{ height: HOUR_H }}
-                    onClick={() => onCellClick(h, c.id === '__none__' ? undefined : c.id)}
-                  />
-                ))}
-                {colAppts.map((a) => renderCard(a))}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ===== 周视图：7 天 × 时间轴 =====
-function WeekView({
-  weekDays,
-  apptsByDay,
-  onCellClick,
-  renderCard,
-}: {
-  weekDays: Date[];
-  apptsByDay: Map<string, Appointment[]>;
-  onCellClick: (day: Date, hour: number) => void;
-  renderCard: (a: Appointment) => React.ReactNode;
-}) {
-  return (
-    <div className="h-full rounded-lg border border-border bg-white overflow-auto">
-      <div className="min-w-[900px] h-full">
-        {/* 表头：星期 */}
-        <div className="grid grid-cols-[60px_repeat(7,1fr)] border-b border-border sticky top-0 bg-white z-10">
-          <div className="p-2 text-xs text-muted-foreground text-right">时间</div>
-          {weekDays.map((d) => {
-            const isToday = isSameDay(d, new Date());
-            return (
-              <div
-                key={d.toISOString()}
-                className={`p-2 text-center border-l border-border ${isToday ? 'bg-primary/5' : ''}`}
-              >
-                <div className="text-xs text-muted-foreground">{format(d, 'EEE', { locale: zhCN })}</div>
-                <div className={`text-sm font-medium ${isToday ? 'text-primary' : 'text-foreground'}`}>
-                  {format(d, 'd')}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* 时间格 + 预约卡片 */}
-        <div className="grid grid-cols-[60px_repeat(7,1fr)] relative">
-          <div className="border-r border-border">
-            {HOURS.map((h) => (
-              <div
-                key={h}
-                className="text-xs text-muted-foreground text-right pr-2"
-                style={{ height: HOUR_H }}
-              >
-                {String(h).padStart(2, '0')}:00
-              </div>
-            ))}
-          </div>
-          {weekDays.map((d) => {
-            const key = format(d, 'yyyy-MM-dd');
-            const dayAppts = apptsByDay.get(key) ?? [];
-            const isToday = isSameDay(d, new Date());
-            return (
-              <div
-                key={key}
-                className={`relative border-l border-border ${isToday ? 'bg-primary/[0.03]' : ''}`}
-                style={{ height: HOURS.length * HOUR_H }}
-              >
-                {HOURS.map((h) => (
-                  <div
-                    key={h}
-                    className="border-b border-border hover:bg-primary/5 cursor-pointer"
-                    style={{ height: HOUR_H }}
-                    onClick={() => onCellClick(d, h)}
-                  />
-                ))}
-                {dayAppts.map((a) => renderCard(a))}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ===== 月视图：日历网格 =====
-function MonthView({
-  days,
-  monthDate,
-  apptsByDay,
-  onPickDay,
-}: {
-  days: Date[];
-  monthDate: Date;
-  apptsByDay: Map<string, Appointment[]>;
-  onPickDay: (d: Date) => void;
-}) {
-  const weekHead = ['一', '二', '三', '四', '五', '六', '日'];
-  return (
-    <div className="h-full rounded-lg border border-border bg-white overflow-auto">
-      <div className="grid grid-cols-7">
-        {weekHead.map((w) => (
-          <div
-            key={w}
-            className="p-2 text-center text-xs font-medium text-muted-foreground border-b border-border"
-          >
-            周{w}
-          </div>
-        ))}
-        {days.map((d) => {
-          const key = format(d, 'yyyy-MM-dd');
-          const dayAppts = apptsByDay.get(key) ?? [];
-          const inMonth = isSameMonth(d, monthDate);
-          const isToday = isSameDay(d, new Date());
-          return (
-            <div
-              key={key}
-              onClick={() => onPickDay(d)}
-              className={`min-h-[96px] p-1.5 border-b border-r border-border cursor-pointer transition-colors hover:bg-primary/5 ${
-                inMonth ? 'bg-white' : 'bg-muted/30'
-              } ${isToday ? 'ring-2 ring-primary/40 ring-inset' : ''}`}
-            >
-              <div className="flex items-center justify-between">
-                <span
-                  className={`text-xs h-5 min-w-5 flex items-center justify-center rounded-full px-1 ${
-                    isToday
-                      ? 'bg-primary text-primary-foreground font-semibold'
-                      : inMonth
-                      ? 'text-foreground'
-                      : 'text-muted-foreground'
-                  }`}
-                >
-                  {format(d, 'd')}
-                </span>
-                {dayAppts.length > 0 && (
-                  <Badge className="bg-primary/10 text-primary">{dayAppts.length}</Badge>
-                )}
-              </div>
-              <div className="mt-1 space-y-0.5">
-                {dayAppts.slice(0, 3).map((a) => (
-                  <div
-                    key={a.id}
-                    className={`truncate text-[11px] px-1 py-0.5 rounded border ${APPOINTMENT_STATUS_COLOR[a.status] ?? ''}`}
-                    title={`${a.patient.name} ${format(parseISO(a.startTime), 'HH:mm')} ${APPOINTMENT_TYPE_LABEL[a.type] ?? a.type}`}
-                  >
-                    {format(parseISO(a.startTime), 'HH:mm')} {a.patient.name}
-                  </div>
-                ))}
-                {dayAppts.length > 3 && (
-                  <div className="text-[11px] text-muted-foreground px-1">
-                    +{dayAppts.length - 3} 更多
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// startOfDay 局部实现（避免额外 date-fns 导入）
-function startOfDay(d: Date): Date {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
 }
