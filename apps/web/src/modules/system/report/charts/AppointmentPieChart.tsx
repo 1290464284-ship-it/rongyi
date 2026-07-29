@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import ReactECharts from 'echarts-for-react';
+import ReactECharts from 'echarts-for-react/lib/core';
 import echarts from '@/lib/echarts';
 import type { CallbackDataParams } from 'echarts/types/dist/shared';
 import { APPOINTMENT_STATUS_LABEL } from '@/lib/api/clinical/appointments';

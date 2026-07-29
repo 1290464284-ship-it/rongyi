@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { api } from '@/lib/api/api';
-import { createQueryWrapper } from '@/test/query-test-utils';
+import { createQueryWrapper } from '@/__tests__/query-test-utils';
 import {
   useTreatmentPlans,
   useCreateTreatmentPlan,

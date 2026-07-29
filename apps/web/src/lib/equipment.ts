@@ -64,6 +64,7 @@ export type EquipmentStatus = 'NORMAL' | 'MAINTENANCE' | 'BROKEN' | 'SCRAPPED';
 const hooks = createCrudHooks<Equipment, CreateEquipmentDto, UpdateEquipmentDto, QueryEquipmentDto>(
   'equipment',
   'equipment',
+  { cacheStrategy: 'dict' },
 );
 
 export const useEquipmentList = hooks.useList;

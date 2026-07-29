@@ -54,14 +54,14 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
-    setupFiles: ['./src/test/setup.ts'],
+    setupFiles: ['./src/__tests__/setup.ts'],
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     css: false,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov', 'text-summary'],
       include: ['src/**/*.{ts,tsx}'],
-      exclude: ['src/**/*.{test,spec}.{ts,tsx}', 'src/test/**', 'src/main.tsx'],
+      exclude: ['src/**/*.{test,spec}.{ts,tsx}', 'src/__tests__/**', 'src/main.tsx'],
       // 棘轮阈值：全量 src 口径 2026-07 实测（32.22/19.83/23.37/33.24）设置下限，只升不降
       thresholds: {
         statements: 31,

@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api/api';
 import { createPaginatedCrudHooks } from '@/lib/hooks/use-crud';
+import { getCacheOptions } from '@/lib/api/query-client';
 
 export interface FirstExam {
   id: string;
@@ -256,6 +257,7 @@ export function useFirstExamStats() {
     queryKey: ['first-exam-stats'],
     queryFn: async () =>
       (await api.get<FirstExamStats>('/first-exams/stats')).data,
+    ...getCacheOptions('fast'),
   });
 }
 
