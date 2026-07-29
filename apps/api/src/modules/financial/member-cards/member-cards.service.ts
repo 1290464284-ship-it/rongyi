@@ -78,7 +78,7 @@ export class MemberCardsService extends BaseService<MemberCard> {
   ): MemberCardRow | undefined {
     const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
     return db.prepare(
-      `SELECT ${fields} FROM MemberCard WHERE id = ?${clinicClause}`
+      `SELECT ${fields} FROM MemberCard WHERE id = ? AND deletedAt IS NULL${clinicClause}`
     ).get(id, ...clinicParams) as MemberCardRow | undefined;
   }
 
@@ -137,7 +137,7 @@ export class MemberCardsService extends BaseService<MemberCard> {
             .run(id, dto.patientId, cardNo, MemberCardStatus.ACTIVE, clinicId || undefined, now, now);
 
           const created = db.prepare(
-            `SELECT id, patientId, cardNo, balance, totalRecharge, totalConsume, points, status, createdAt, updatedAt FROM MemberCard WHERE id = ?`
+            `SELECT id, patientId, cardNo, balance, totalRecharge, totalConsume, points, status, createdAt, updatedAt FROM MemberCard WHERE id = ? AND deletedAt IS NULL`
           ).get(id) as MemberCardRow;
           if (created) {
             created.balance = centsToYuan(Number(created.balance) || 0);
@@ -167,12 +167,12 @@ export class MemberCardsService extends BaseService<MemberCard> {
 
     const doRecharge = (db: IDatabase) => {
       const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
-      const card = db.prepare(`SELECT id, patientId, status, balance FROM MemberCard WHERE id = ?${clinicClause}`).get(id, ...clinicParams) as MemberCardRow & { patientId: string };
+      const card = db.prepare(`SELECT id, patientId, status, balance FROM MemberCard WHERE id = ? AND deletedAt IS NULL${clinicClause}`).get(id, ...clinicParams) as MemberCardRow & { patientId: string };
       this.assertCardExists(card);
       const result = db.prepare(`UPDATE MemberCard SET balance = balance + ?, totalRecharge = totalRecharge + ?, updatedAt = ? WHERE id = ? AND status = ?${clinicClause}`)
         .run(amountCents, amountCents, now, id, MemberCardStatus.ACTIVE, ...clinicParams);
       if (result.changes === 0) {
-        const currentCard = db.prepare(`SELECT status FROM MemberCard WHERE id = ?${clinicClause}`).get(id, ...clinicParams) as MemberCardRow | undefined;
+        const currentCard = db.prepare(`SELECT status FROM MemberCard WHERE id = ? AND deletedAt IS NULL${clinicClause}`).get(id, ...clinicParams) as MemberCardRow | undefined;
         this.assertCardExists(currentCard);
         this.assertCardActive(currentCard, '会员卡已禁用，无法充值');
         throw new BusinessValidationException("充值失败：更新余额失败");
@@ -270,7 +270,7 @@ export class MemberCardsService extends BaseService<MemberCard> {
 
     const doAddPoints = (db: IDatabase) => {
       const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
-      const card = db.prepare(`SELECT id, points FROM MemberCard WHERE id = ?${clinicClause}`).get(id, ...clinicParams) as MemberCardRow | undefined;
+      const card = db.prepare(`SELECT id, points FROM MemberCard WHERE id = ? AND deletedAt IS NULL${clinicClause}`).get(id, ...clinicParams) as MemberCardRow | undefined;
       this.assertCardExists(card);
       const beforePoints = Number(card.points) || 0;
       const result = db.prepare(`UPDATE MemberCard SET points = points + ?, updatedAt = ? WHERE id = ?${clinicClause}`).run(points, now, id, ...clinicParams);
@@ -317,7 +317,7 @@ export class MemberCardsService extends BaseService<MemberCard> {
 
     const doDeductPoints = (db: IDatabase) => {
       const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
-      const card = db.prepare(`SELECT id, points FROM MemberCard WHERE id = ?${clinicClause}`).get(id, ...clinicParams) as MemberCardRow | undefined;
+      const card = db.prepare(`SELECT id, points FROM MemberCard WHERE id = ? AND deletedAt IS NULL${clinicClause}`).get(id, ...clinicParams) as MemberCardRow | undefined;
       this.assertCardExists(card);
       const beforePoints = Number(card.points) || 0;
       const result = db.prepare(`UPDATE MemberCard SET points = points - ?, updatedAt = ? WHERE id = ? AND points >= ?${clinicClause}`).run(points, now, id, points, ...clinicParams);
@@ -373,14 +373,14 @@ export class MemberCardsService extends BaseService<MemberCard> {
     const now = new Date().toISOString();
     const clinicId = this.clinicContext.getClinicId();
     const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
-    const card = db.prepare(`SELECT id, patientId, status, balance FROM MemberCard WHERE id = ?${clinicClause}`).get(id, ...clinicParams) as MemberCardRow & { patientId: string };
+    const card = db.prepare(`SELECT id, patientId, status, balance FROM MemberCard WHERE id = ? AND deletedAt IS NULL${clinicClause}`).get(id, ...clinicParams) as MemberCardRow & { patientId: string };
     this.assertCardExists(card);
     this.assertCardActive(card, '会员卡状态异常，无法消费');
     const result = db.prepare(
       `UPDATE MemberCard SET balance = balance - ?, totalConsume = totalConsume + ?, updatedAt = ? WHERE id = ? AND status = ? AND balance >= ?${clinicClause}`
     ).run(amountCents, amountCents, now, id, MemberCardStatus.ACTIVE, amountCents, ...clinicParams);
     if (result.changes === 0) {
-      const currentCard = db.prepare(`SELECT balance, status FROM MemberCard WHERE id = ?${clinicClause}`).get(id, ...clinicParams) as MemberCardRow;
+      const currentCard = db.prepare(`SELECT balance, status FROM MemberCard WHERE id = ? AND deletedAt IS NULL${clinicClause}`).get(id, ...clinicParams) as MemberCardRow;
       if (!currentCard || currentCard.status !== MemberCardStatus.ACTIVE) throw new BusinessValidationException('会员卡状态异常');
       throw new BusinessValidationException('余额不足');
     }
@@ -421,13 +421,13 @@ export class MemberCardsService extends BaseService<MemberCard> {
 
     const doRefund = (db: IDatabase) => {
       const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
-      const card = db.prepare(`SELECT id, patientId, status, balance FROM MemberCard WHERE id = ?${clinicClause}`).get(id, ...clinicParams) as MemberCardRow & { patientId: string };
+      const card = db.prepare(`SELECT id, patientId, status, balance FROM MemberCard WHERE id = ? AND deletedAt IS NULL${clinicClause}`).get(id, ...clinicParams) as MemberCardRow & { patientId: string };
       this.assertCardExists(card);
       const result = db.prepare(
         `UPDATE MemberCard SET balance = balance + ?, totalConsume = MAX(0, totalConsume - ?), updatedAt = ? WHERE id = ? AND status = ?${clinicClause}`
       ).run(amountCents, amountCents, now, id, MemberCardStatus.ACTIVE, ...clinicParams);
       if (result.changes === 0) {
-        const currentCard = db.prepare(`SELECT status FROM MemberCard WHERE id = ?${clinicClause}`).get(id, ...clinicParams) as MemberCardRow | undefined;
+        const currentCard = db.prepare(`SELECT status FROM MemberCard WHERE id = ? AND deletedAt IS NULL${clinicClause}`).get(id, ...clinicParams) as MemberCardRow | undefined;
         this.assertCardExists(currentCard);
         this.assertCardActive(currentCard, '会员卡已禁用，无法退款');
         throw new BusinessValidationException('退款失败');

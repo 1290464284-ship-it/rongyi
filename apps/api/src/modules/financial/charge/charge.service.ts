@@ -188,7 +188,7 @@ export class ChargeService extends BaseService<ChargeRecord> {
           charge.discount = centsToYuan(Number(charge.discount) || 0);
 
           const items = db.prepare(
-            `SELECT id, chargeId, treatmentId, inventoryItemId, name, category, price, quantity, teethNumbers, subtotal, clinicId FROM ChargeItem WHERE chargeId = ?`
+            `SELECT id, chargeId, treatmentId, inventoryItemId, name, category, price, quantity, teethNumbers, subtotal, clinicId FROM ChargeItem WHERE chargeId = ? AND deletedAt IS NULL`
           ).all(chargeId) as ChargeItemRecord[];
           items.forEach((item) => {
             item.teethNumbers = safeJsonArray(item.teethNumbers as string | null);
@@ -268,6 +268,7 @@ export class ChargeService extends BaseService<ChargeRecord> {
 
     const clinicId = this.clinicContext.getClinicId();
     const row = db.prepare(
+      // soft-delete-exempt: 编号生成需包含已软删除收费单，避免复用历史编号触发 UNIQUE 冲突
       "SELECT number FROM Charge WHERE number LIKE ? ESCAPE '\\' AND clinicId = ? ORDER BY number DESC LIMIT 1"
     ).get(`${dateStr}%`, clinicId) as { number: string } | undefined;
 
@@ -291,6 +292,7 @@ export class ChargeService extends BaseService<ChargeRecord> {
 
     const clinicId = this.clinicContext.getClinicId();
     const row = this.dbService.prepare(
+      // soft-delete-exempt: 编号生成需包含已软删除收费单，避免复用历史编号触发 UNIQUE 冲突
       "SELECT number FROM Charge WHERE number LIKE ? ESCAPE '\\' AND clinicId = ? ORDER BY number DESC LIMIT 1"
     ).get(`${dateStr}%`, clinicId) as { number: string } | undefined;
 

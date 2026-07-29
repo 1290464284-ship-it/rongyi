@@ -170,7 +170,7 @@ export class MedicalRecordsService extends BaseService<MedicalRecord> {
       // P1 修复：UPDATE 必须带 clinicClause，防止跨诊所篡改病历（多租户数据隔离）
       db.prepare(`UPDATE MedicalRecord SET ${updates.join(', ')} WHERE id = ? AND deletedAt IS NULL${clinicClause}`).run(...params);
       this.logAudit(db, AuditLogType.MEDICAL_RECORD_UPDATE, id, "MedicalRecord", { afterData: { chiefComplaint: dto.chiefComplaint, diagnosis: dto.diagnosis, treatmentPlan: dto.treatmentPlan } });
-      return db.prepare(`SELECT id, patientId, visitId, doctorId, templateId, chiefComplaint, presentIllness, pastHistory, allergyHistory, examination, diagnosis, treatmentPlan, teethInvolved, images, signature, isLocked, lockedAt, lockedBy, modifyRequestId, clinicId, createdAt, updatedAt, deletedAt FROM MedicalRecord WHERE id = ?${clinicClause}`).get(id, ...clinicParams);
+      return db.prepare(`SELECT id, patientId, visitId, doctorId, templateId, chiefComplaint, presentIllness, pastHistory, allergyHistory, examination, diagnosis, treatmentPlan, teethInvolved, images, signature, isLocked, lockedAt, lockedBy, modifyRequestId, clinicId, createdAt, updatedAt, deletedAt FROM MedicalRecord WHERE id = ? AND deletedAt IS NULL${clinicClause}`).get(id, ...clinicParams);
     });
     return this.findOne(id);
   }
@@ -342,7 +342,7 @@ export class MedicalRecordsService extends BaseService<MedicalRecord> {
       if (result.changes === 0) throw new BusinessValidationException("病历已被其他用户锁定");
       this.logAudit(db, AuditLogType.MEDICAL_RECORD_LOCK, id, "MedicalRecord", { beforeData: { isLocked: false }, afterData: { isLocked: true, lockedBy: userId || null } });
       const { clause: lockClinicClause, params: lockClinicParams } = this.buildClinicClause();
-      return db.prepare(`SELECT id, patientId, visitId, doctorId, templateId, chiefComplaint, presentIllness, pastHistory, allergyHistory, examination, diagnosis, treatmentPlan, teethInvolved, images, signature, isLocked, lockedAt, lockedBy, modifyRequestId, clinicId, createdAt, updatedAt, deletedAt FROM MedicalRecord WHERE id = ?${lockClinicClause}`).get(id, ...lockClinicParams) as MedicalRecord;
+      return db.prepare(`SELECT id, patientId, visitId, doctorId, templateId, chiefComplaint, presentIllness, pastHistory, allergyHistory, examination, diagnosis, treatmentPlan, teethInvolved, images, signature, isLocked, lockedAt, lockedBy, modifyRequestId, clinicId, createdAt, updatedAt, deletedAt FROM MedicalRecord WHERE id = ? AND deletedAt IS NULL${lockClinicClause}`).get(id, ...lockClinicParams) as MedicalRecord;
     });
   }
 }

@@ -263,7 +263,7 @@ async function bootstrap() {
           return res.status(401).send('需要登录后访问 Swagger 文档');
         }
         try {
-          const payload = jwt.verify(token, config.get<string>('JWT_SECRET') || '') as { role?: string };
+          const payload = jwt.verify(token, config.getOrThrow<string>('JWT_SECRET')) as { role?: string };
           const allowedRoles = ['BOSS', 'ADMIN'];
           if (!allowedRoles.includes(payload.role || '')) {
             return res.status(403).send('仅管理员角色可访问 Swagger 文档');
