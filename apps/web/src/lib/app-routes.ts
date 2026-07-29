@@ -48,16 +48,16 @@ const UnifiedChargePage = lazy(() => import('@/modules/charge/UnifiedChargePage'
 const PrescriptionPage = lazy(() => import('@/modules/content/prescription/PrescriptionPage'));
 const TreatmentPlanPage = lazy(() => import('@/modules/clinical/treatment-plan/TreatmentPlanPage'));
 const ClinicalPage = lazy(() => import('@/modules/clinical/ClinicalPage'));
-const ReportPage = lazy(() => import('@/modules/report/ReportPage'));
-const StaffPage = lazy(() => import('@/modules/staff/StaffPage'));
+const ReportPage = lazy(() => import('@/modules/system/report/ReportPage'));
+const StaffPage = lazy(() => import('@/modules/system/staff/StaffPage'));
 const ImagingPage = lazy(() => import('@/modules/content/imaging/ImagingPage'));
-const PriceListPage = lazy(() => import('@/modules/settings/PriceListPage'));
+const PriceListPage = lazy(() => import('@/modules/system/settings/PriceListPage'));
 const MemberCardPage = lazy(() => import('@/modules/charge/finance/MemberCardPage'));
-const SettingsPage = lazy(() => import('@/modules/settings/SettingsPage'));
+const SettingsPage = lazy(() => import('@/modules/system/settings/SettingsPage'));
 const InventoryPage = lazy(() => import('@/modules/inventory/InventoryPage'));
 const SuppliersPage = lazy(() => import('@/modules/inventory/SuppliersPage'));
 const PurchaseOrderPage = lazy(() => import('@/modules/inventory/PurchaseOrderPage'));
-const BackupPage = lazy(() => import('@/modules/settings/BackupPage'));
+const BackupPage = lazy(() => import('@/modules/system/settings/BackupPage'));
 const RegistrationPage = lazy(() => import('@/modules/clinical/registration/RegistrationPage'));
 const MedicalRecordsPage = lazy(() => import('@/modules/clinical/medical-records/MedicalRecordsPage'));
 const FollowUpsPage = lazy(() => import('@/modules/communication/follow-ups/FollowUpsPage'));
@@ -65,7 +65,7 @@ const ProcessingOrdersPage = lazy(() => import('@/modules/inventory/processing-o
 const FirstExamsPage = lazy(() => import('@/modules/clinical/first-exams/FirstExamsPage'));
 const WechatPage = lazy(() => import('@/modules/communication/wechat/WechatPage'));
 const EquipmentPage = lazy(() => import('@/modules/equipment/EquipmentPage'));
-const OperationLogPage = lazy(() => import('@/modules/settings/OperationLogPage'));
+const OperationLogPage = lazy(() => import('@/modules/system/settings/OperationLogPage'));
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- reserved for 404 catch-all route
 const NotFoundPage = lazy(() => import('@/components/NotFoundPage'));
 
