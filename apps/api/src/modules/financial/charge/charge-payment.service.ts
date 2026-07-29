@@ -59,7 +59,7 @@ export class ChargePaymentService extends BaseService<ChargeRecord> {
       const remainingCents = totalAmountCents - netPaidCents;
       const remaining = centsToYuan(remainingCents);
 
-      if (remaining <= 0) {
+      if (remainingCents <= 0) {
         throw new BusinessValidationException('该收费已结清');
       }
 
@@ -102,8 +102,8 @@ export class ChargePaymentService extends BaseService<ChargeRecord> {
         if (!currentCharge) throw new BusinessNotFoundException('收费记录不存在');
         const currentPaidCents = Number(currentCharge.paidAmount) || 0;
         const currentRefundedCents = Number(currentCharge.refundedAmount) || 0;
-        const remaining = Number(currentCharge.totalAmount) - currentPaidCents + currentRefundedCents;
-        if (remaining < amountCents) {
+        const currentRemainingCents = (Number(currentCharge.totalAmount) || 0) - currentPaidCents + currentRefundedCents;
+        if (currentRemainingCents < amountCents) {
           throw new BusinessValidationException('待付金额不足，可能存在并发修改，请刷新后重试');
         }
         // P1 修复：paidAmount 已被并发修改（CAS 失败），提示用户刷新重试

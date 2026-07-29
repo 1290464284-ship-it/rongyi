@@ -227,7 +227,7 @@ export class DebtService extends BaseService<DebtRecord> {
           `SELECT debtAmount, status FROM DebtRecord WHERE id = ?${clinicClause} AND deletedAt IS NULL`
         ).get(id, ...clinicParams) as Record<string, unknown> | undefined;
         if (!currentDebt) throw new BusinessNotFoundException('欠费记录不存在');
-        if (Number(currentDebt.debtAmount) < amountCents) {
+        if ((Number(currentDebt.debtAmount) || 0) < amountCents) {
           throw new BusinessValidationException('欠款金额不足，可能存在并发修改，请刷新后重试');
         }
         throw new BusinessValidationException('还款失败：并发冲突，请刷新后重试');

@@ -137,32 +137,46 @@ export class BackupAutoService implements OnModuleInit, OnModuleDestroy {
   }
 
   async performAutoBackup() {
-    try {
-      this.logger.log('开始执行自动备份...');
-      const result = await this.manualBackup.create('AUTO', '自动定时备份', { id: 'system', name: 'system' });
-      this.logger.log(`自动备份完成: ${result.filename}`);
-      this.alertService.recordSuccess(AlertCategory.BACKUP, 'auto-backup');
-      await this.cleanupOldAutoBackups();
+    const MAX_RETRIES = 3;
+    const BASE_DELAY_MS = 1000;
 
-      this.logger.log('开始执行数据库优化（VACUUM/ANALYZE）...');
-      const optimizeResult = this.optimizeDatabase();
-      if (optimizeResult.success) {
-        this.logger.log(
-          `数据库优化完成: 大小 ${optimizeResult.sizeBeforeMB}MB → ${optimizeResult.sizeAfterMB}MB ` +
-          `(释放 ${optimizeResult.sizeDiffMB}MB), VACUUM: ${optimizeResult.vacuumMode}`
-        );
-      } else {
-        this.logger.warn(`数据库优化执行异常: ${optimizeResult.error}`);
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        this.logger.log(`开始执行自动备份（第 ${attempt}/${MAX_RETRIES} 次尝试）...`);
+        const result = await this.manualBackup.create('AUTO', '自动定时备份', { id: 'system', name: 'system' });
+        this.logger.log(`自动备份完成: ${result.filename}`);
+        this.alertService.recordSuccess(AlertCategory.BACKUP, 'auto-backup');
+        await this.cleanupOldAutoBackups();
+
+        this.logger.log('开始执行数据库优化（VACUUM/ANALYZE）...');
+        const optimizeResult = this.optimizeDatabase();
+        if (optimizeResult.success) {
+          this.logger.log(
+            `数据库优化完成: 大小 ${optimizeResult.sizeBeforeMB}MB → ${optimizeResult.sizeAfterMB}MB ` +
+            `(释放 ${optimizeResult.sizeDiffMB}MB), VACUUM: ${optimizeResult.vacuumMode}`
+          );
+        } else {
+          this.logger.warn(`数据库优化执行异常: ${optimizeResult.error}`);
+        }
+        return; // 成功，退出重试循环
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.stack : String(err);
+        this.logger.error(`自动备份第 ${attempt} 次尝试失败`, errMsg);
+
+        if (attempt < MAX_RETRIES) {
+          const delay = BASE_DELAY_MS * Math.pow(2, attempt - 1); // 1s, 2s, 4s
+          this.logger.log(`${delay}ms 后重试...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        } else {
+          // 所有重试耗尽，记录 CRITICAL 级别告警
+          this.alertService.recordFailure(
+            AlertCategory.BACKUP,
+            'auto-backup',
+            `自动备份连续 ${MAX_RETRIES} 次失败，请立即检查`,
+            err instanceof Error ? err.message : String(err),
+          );
+        }
       }
-    } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.stack : String(err);
-      this.logger.error('自动备份执行失败', errMsg);
-      this.alertService.recordFailure(
-        AlertCategory.BACKUP,
-        'auto-backup',
-        '自动备份失败',
-        err instanceof Error ? err.message : String(err),
-      );
     }
   }
 
