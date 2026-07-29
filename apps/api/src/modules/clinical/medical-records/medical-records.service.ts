@@ -108,7 +108,7 @@ export class MedicalRecordsService extends BaseService<MedicalRecord> {
       const doctorMap = new Map<string, Record<string, unknown>>();
       if (doctorIds.length > 0) {
         const placeholders = doctorIds.map(() => '?').join(',');
-        const doctors = this.dbService.prepare(`SELECT id, name, role FROM User WHERE id IN (${placeholders}) AND active = 1${clinicClause}`).all(...doctorIds, ...clinicParams) as Array<Record<string, unknown>>;
+        const doctors = this.dbService.prepare(`SELECT id, name, role FROM User WHERE id IN (${placeholders}) AND active = 1 AND deletedAt IS NULL${clinicClause}`).all(...doctorIds, ...clinicParams) as Array<Record<string, unknown>>;
         doctors.forEach(d => doctorMap.set(d.id as string, d));
       }
       

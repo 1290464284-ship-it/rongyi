@@ -55,8 +55,8 @@ export class UserManagementService {
       const clinicId = this.clinicContext.getClinicId();
       const page = 1;
       const pageSize = PAGINATION.DEFAULT_PAGE_SIZE_LARGE;
-      let query = "SELECT id, name, role, username, phone, createdAt FROM User WHERE active = 1 AND clinicId = ?";
-      const countQuery = "SELECT COUNT(*) as total FROM User WHERE active = 1 AND clinicId = ?";
+      let query = "SELECT id, name, role, username, phone, createdAt FROM User WHERE active = 1 AND deletedAt IS NULL AND clinicId = ?";
+      const countQuery = "SELECT COUNT(*) as total FROM User WHERE active = 1 AND deletedAt IS NULL AND clinicId = ?";
       const params: unknown[] = [clinicId];
       if (role) { query += " AND role = ?"; params.push(role); }
       query += " ORDER BY createdAt DESC LIMIT ? OFFSET ?";
@@ -70,12 +70,13 @@ export class UserManagementService {
       return { items, total, page, pageSize };
     } catch {
       const clinicId = this.clinicContext.getClinicId();
-      return this.dbService.prepare("SELECT id, name, role, username, phone, createdAt FROM User WHERE active = 1 AND clinicId = ? ORDER BY createdAt DESC LIMIT 100 OFFSET 0").all(clinicId) as UserSummaryRow[];
+      return this.dbService.prepare("SELECT id, name, role, username, phone, createdAt FROM User WHERE active = 1 AND deletedAt IS NULL AND clinicId = ? ORDER BY createdAt DESC LIMIT 100 OFFSET 0").all(clinicId) as UserSummaryRow[];
     }
   }
 
   async createUser(dto: { username: string; password: string; name: string; role: string; phone?: string }): Promise<UserSummaryRow> {
     const clinicId = this.clinicContext.getClinicId();
+    // soft-delete-exempt: 用户名唯一性约束检查，需包含已软删除记录（DB UNIQUE 约束覆盖全表）
     const existing = this.dbService.prepare("SELECT id FROM User WHERE username = ? AND clinicId = ?").get(dto.username, clinicId);
     if (existing) throw new BusinessValidationException("用户名已存在");
     const passwordHash = await this.passwordPolicy.hashPassword(dto.password);
@@ -87,12 +88,13 @@ export class UserManagementService {
     this.auditLogService.logAudit(this.dbService, "USER_CREATE", userId, "User", clinicId, {
       afterData: { username: dto.username, name: dto.name, role: dto.role },
     });
+    // soft-delete-exempt: 写后读取刚创建的用户，必然 active=1 且无 deletedAt
     return this.dbService.prepare("SELECT id, name, role, username, phone, createdAt FROM User WHERE username = ? AND clinicId = ?").get(dto.username, clinicId) as UserSummaryRow;
   }
 
   async updateUser(id: string, dto: { name?: string; role?: string; phone?: string; active?: number }): Promise<UserSummaryRow> {
     const clinicId = this.clinicContext.getClinicId();
-    const user = this.dbService.prepare("SELECT id, name, role, phone FROM User WHERE id = ? AND clinicId = ?").get(id, clinicId) as UserRow | undefined;
+    const user = this.dbService.prepare("SELECT id, name, role, phone FROM User WHERE id = ? AND clinicId = ? AND active = 1 AND deletedAt IS NULL").get(id, clinicId) as UserRow | undefined;
     if (!user) throw new BusinessNotFoundException("用户不存在");
     const beforeData = JSON.stringify({ name: user.name, role: user.role, phone: user.phone });
     const builder = new UpdateBuilder("User");
@@ -112,16 +114,17 @@ export class UserManagementService {
       beforeData,
       afterData,
     });
+    // soft-delete-exempt: 写后读取刚更新的用户，id 已确认存在
     return this.dbService.prepare("SELECT id, name, role, username, phone, createdAt FROM User WHERE id = ?").get(id) as UserSummaryRow;
   }
 
   async deleteUser(id: string) {
     const clinicId = this.clinicContext.getClinicId();
-    const user = this.dbService.prepare("SELECT id, role FROM User WHERE id = ? AND clinicId = ?").get(id, clinicId) as UserRow;
+    const user = this.dbService.prepare("SELECT id, role FROM User WHERE id = ? AND clinicId = ? AND active = 1 AND deletedAt IS NULL").get(id, clinicId) as UserRow;
     if (!user) throw new BusinessNotFoundException("用户不存在");
     if (user.role === "BOSS") throw new BusinessValidationException("不能删除老板账号");
-    this.dbService.prepare("UPDATE User SET active = 0, tokenVersion = COALESCE(tokenVersion, 0) + 1, updatedAt = ? WHERE id = ? AND clinicId = ?")
-      .run(new Date().toISOString(), id, clinicId);
+    this.dbService.prepare("UPDATE User SET active = 0, deletedAt = ?, tokenVersion = COALESCE(tokenVersion, 0) + 1, updatedAt = ? WHERE id = ? AND clinicId = ?")
+      .run(new Date().toISOString(), new Date().toISOString(), id, clinicId);
     // P4-1: 删除用户（软删 + tokenVersion+1）后失效 UserInfo 缓存
     this.cache.del(buildCacheKey(CACHE_PREFIXES.USER, id));
     this.auditLogService.logAudit(this.dbService, "USER_DELETE", id, "User", clinicId, {
@@ -132,7 +135,7 @@ export class UserManagementService {
 
   async changePassword(userId: string, dto: { oldPassword: string; newPassword: string }) {
     const clinicId = this.clinicContext.getClinicId();
-    const user = this.dbService.prepare("SELECT id, passwordHash, active FROM User WHERE id = ? AND clinicId = ?").get(userId, clinicId) as UserRow | undefined;
+    const user = this.dbService.prepare("SELECT id, passwordHash, active FROM User WHERE id = ? AND clinicId = ? AND active = 1 AND deletedAt IS NULL").get(userId, clinicId) as UserRow | undefined;
     if (!user?.active) throw new BusinessNotFoundException("用户不存在或已禁用");
     const ok = await this.passwordPolicy.comparePassword(dto.oldPassword, user.passwordHash ?? '');
     if (!ok) throw new BusinessValidationException("原密码错误");
