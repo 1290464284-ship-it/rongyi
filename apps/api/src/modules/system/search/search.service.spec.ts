@@ -55,8 +55,8 @@ describe('SearchService', () => {
 
   beforeEach(() => {
     db = new MockDbService();
-    (db as any).tables.set('Patient', new Map());
-    (db as any).tables.set('Appointment', new Map());
+    db.tables.set('Patient', new Map());
+    db.tables.set('Appointment', new Map());
     cache = createMockCacheService();
     context = createMockClinicContext();
     service = new SearchService(asDbService(db), cache, context);

@@ -28,7 +28,7 @@ describe('OperationLogsService', () => {
 
   beforeEach(() => {
     db = new MockDbService();
-    (db as any).tables.set('OperationLog', new Map());
+    db.tables.set('OperationLog', new Map());
     service = new OperationLogsService(asDbService(db), createMockClinicContext());
   });
 

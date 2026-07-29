@@ -51,8 +51,8 @@ describe('SettingsService', () => {
   beforeEach(() => {
     db = new MockDbService();
     // Initialize ClinicInfo and AuditLog tables in the mock
-    (db as any).tables.set('ClinicInfo', new Map());
-    (db as any).tables.set('AuditLog', new Map());
+    db.tables.set('ClinicInfo', new Map());
+    db.tables.set('AuditLog', new Map());
     cache = createMockCacheService();
     context = createMockClinicContext();
     auditLog = createMockAuditLogService();
@@ -302,7 +302,7 @@ describe('SettingsService', () => {
       const prepareSpy = jest.spyOn(db, 'prepare').mockImplementation((sql: string) => {
         if (/DELETE\s+FROM\s+ClinicInfo/i.test(sql)) {
           // 实际从表中删除
-          const tableData = (db as any).tables.get('ClinicInfo');
+          const tableData = db.tables.get('ClinicInfo')!;
           tableData.delete('1');
           return {
             run: () => ({ changes: 1, lastInsertRowid: '' }),
