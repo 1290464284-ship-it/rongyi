@@ -3,7 +3,7 @@ import { Receipt, Package } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const ChargePage = lazy(() => import('@/modules/charge/ChargePage'));
-const ChargeV2Page = lazy(() => import('@/modules/charge-v2/ChargeV2Page'));
+const ChargeV2Page = lazy(() => import('./ChargeV2Page'));
 
 type Tab = 'cashier' | 'advanced';
 

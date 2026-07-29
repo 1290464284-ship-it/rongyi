@@ -213,7 +213,7 @@ export const appRoutes: AppRoute[] = [
     hideInNav: true,
   },
   {
-    path: 'charge-v2',
+    path: 'charge',
     label: '财务中心',
     icon: Receipt,
     roles: ['BOSS', 'RECEPTIONIST'],

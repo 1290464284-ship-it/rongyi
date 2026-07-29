@@ -111,7 +111,7 @@ export default React.memo(function DashboardPage() {
               <Receipt className="w-4 h-4 text-muted-foreground" />
               <span className="text-sm font-medium">待处理收费</span>
             </div>
-            <Button variant="ghost" size="sm" onClick={() => nav('/charge-v2')}>
+            <Button variant="ghost" size="sm" onClick={() => nav('/charge')}>
               查看全部
             </Button>
           </CardHeader>
@@ -124,7 +124,7 @@ export default React.memo(function DashboardPage() {
                   <div
                     key={c.id}
                     className="flex items-center justify-between rounded-md border border-border px-3 py-2 cursor-pointer hover:bg-muted/30"
-                    onClick={() => nav('/charge-v2')}
+                    onClick={() => nav('/charge')}
                   >
                     <div>
                       <div className="text-sm font-medium">{c.patientName}</div>

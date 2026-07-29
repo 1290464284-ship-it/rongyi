@@ -95,7 +95,7 @@ export const routes = [
     children: [
       { index: true, element: <Navigate to='/dashboard' replace /> },
       ...dynamicRoutes,
-      { path: 'charge', element: <Navigate to="/charge-v2" replace /> },
+      { path: 'charge-v2', element: <Navigate to="/charge" replace /> },
       { path: 'follow-ups-v2', element: <Navigate to="/follow-ups" replace /> },
       { path: '*', element: <SuspenseElement element={<NotFoundPage />} /> },
     ],
