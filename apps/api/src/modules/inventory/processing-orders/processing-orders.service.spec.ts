@@ -3,6 +3,7 @@ import { BusinessValidationException, BusinessNotFoundException } from '@common/
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { asDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
+import { ProcessingOrder } from '@dental/shared';
 
 
 function createMockClinicContext(): ClinicContextService {
@@ -129,19 +130,19 @@ describe('ProcessingOrdersService', () => {
     it('按 patientId 过滤应只返回该患者的加工单', async () => {
       const result = await service.findMany({ patientId: 'patient-001' });
       expect(result.items.length).toBe(2);
-      expect(result.items.every((o: any) => o.patientId === 'patient-001')).toBe(true);
+      expect(result.items.every((o: ProcessingOrder) => o.patientId === 'patient-001')).toBe(true);
     });
 
     it('按 status 过滤应只返回匹配状态的加工单', async () => {
       const result = await service.findMany({ status: 'SENT' });
       expect(result.items.length).toBe(1);
-      expect((result.items[0] as any).status).toBe('SENT');
+      expect(result.items[0].status).toBe('SENT');
     });
 
     it('按 factoryId 过滤应只返回该工厂的加工单', async () => {
       const result = await service.findMany({ factoryId: 'factory-001' });
       expect(result.items.length).toBe(2);
-      expect(result.items.every((o: any) => o.factoryId === 'factory-001')).toBe(true);
+      expect(result.items.every((o: ProcessingOrder) => o.factoryId === 'factory-001')).toBe(true);
     });
 
     it('分页查询应返回正确的分页信息', async () => {
@@ -395,12 +396,12 @@ describe('ProcessingOrdersService', () => {
         name: '全瓷冠',
         category: '修复体',
         price: 500,
-      });
+      }) as Record<string, unknown>;
 
-      expect((result as any).id).toBeDefined();
-      expect((result as any).name).toBe('全瓷冠');
-      expect((result as any).factoryId).toBe('factory-001');
-      expect((result as any).price).toBe(500);
+      expect(result.id).toBeDefined();
+      expect(result.name).toBe('全瓷冠');
+      expect(result.factoryId).toBe('factory-001');
+      expect(result.price).toBe(500);
     });
 
     it('工厂ID为空应抛出 BusinessValidationException', async () => {
