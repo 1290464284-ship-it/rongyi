@@ -397,7 +397,7 @@ function VisitDetailPanel({
             const params = new URLSearchParams();
             params.set('patientId', visit.patientId);
             params.set('visitId', visit.id);
-            onNavigate(`/charge-v2?${params.toString()}`);
+            onNavigate(`/charge?${params.toString()}`);
           }}
         >
           <Receipt className='w-3 h-3 mr-1' />
