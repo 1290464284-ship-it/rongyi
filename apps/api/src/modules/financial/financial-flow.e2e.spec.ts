@@ -8,6 +8,9 @@ import { DebtService } from './charge/debt.service';
 import { ComboService } from './charge/combo.service';
 import { PaymentMethodService } from './charge/payment-method.service';
 import { MemberCardsService } from './member-cards/member-cards.service';
+import { MemberCardCoreService } from './member-cards/member-card-core.service';
+import { MemberCardBalanceService } from './member-cards/member-card-balance.service';
+import { MemberCardPointsService } from './member-cards/member-card-points.service';
 import { ChargeRepository } from './charge/repositories/charge.repository';
 import { RefundRepository } from './refunds/repositories/refund.repository';
 import { MemberCardLogRepository } from './member-cards/repositories/member-card-log.repository';
@@ -85,6 +88,9 @@ describe('Financial Flow E2E - 收费→退款→欠款同步→会员卡退款'
         // P0 修复：使用真实 MemberCardsService 实例，以支持 consumeSync 委托调用
         MemberCardLogRepository,
         MemberPointLogRepository,
+        MemberCardCoreService,
+        MemberCardBalanceService,
+        MemberCardPointsService,
         MemberCardsService,
         RefundRepository,
         RefundsService,

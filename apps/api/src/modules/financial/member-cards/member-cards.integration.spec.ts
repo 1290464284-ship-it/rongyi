@@ -1,6 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BusinessNotFoundException, BusinessValidationException } from '@common/errors';
 import { MemberCardsService } from './member-cards.service';
+import { MemberCardCoreService } from './member-card-core.service';
+import { MemberCardBalanceService } from './member-card-balance.service';
+import { MemberCardPointsService } from './member-card-points.service';
 import { DbService } from '../../../db/db.service';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import { IdempotencyService } from '../../../common/services/idempotency.service';
@@ -53,6 +56,9 @@ describe('MemberCardsService - Integration', () => {
         MemberPointLogRepository,
         { provide: StatsService, useValue: { invalidateStatsCache: jest.fn() } },
         { provide: EventBusService, useValue: { emit: jest.fn(), on: jest.fn(), onAll: jest.fn() } },
+        MemberCardCoreService,
+        MemberCardBalanceService,
+        MemberCardPointsService,
         MemberCardsService,
       ],
     }).compile();

@@ -3,6 +3,9 @@ import { BusinessValidationException } from '@common/errors';
 import { ChargeService } from './charge.service';
 import { ChargePaymentService } from './charge-payment.service';
 import { MemberCardsService } from '../member-cards/member-cards.service';
+import { MemberCardCoreService } from '../member-cards/member-card-core.service';
+import { MemberCardBalanceService } from '../member-cards/member-card-balance.service';
+import { MemberCardPointsService } from '../member-cards/member-card-points.service';
 import { DbService } from '../../../db/db.service';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import { IdempotencyService } from '../../../common/services/idempotency.service';
@@ -111,6 +114,9 @@ describe('ChargeService - Integration', () => {
         ChargeService,
         ChargePaymentService,
         // P0 修复：使用真实 MemberCardsService 实例，以支持 consumeSync 委托调用
+        MemberCardCoreService,
+        MemberCardBalanceService,
+        MemberCardPointsService,
         MemberCardsService,
       ],
     }).compile();

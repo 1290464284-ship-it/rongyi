@@ -3,6 +3,9 @@ import { ChargePaymentService } from './charge-payment.service';
 import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
 import { ChargeService } from './charge.service';
 import { MemberCardsService } from '../member-cards/member-cards.service';
+import { MemberCardCoreService } from '../member-cards/member-card-core.service';
+import { MemberCardBalanceService } from '../member-cards/member-card-balance.service';
+import { MemberCardPointsService } from '../member-cards/member-card-points.service';
 import { MemberCardLogRepository } from '../member-cards/repositories/member-card-log.repository';
 import { MemberPointLogRepository } from '../member-cards/repositories/member-point-log.repository';
 import { MockDbService, MockDbRow , asDbService } from '../../../db/__mocks__/db-service.mock';
@@ -48,13 +51,17 @@ describe('ChargePaymentService', () => {
     eventBus = createMockEventBus();
     chargeService = new ChargeService(asDbService(db), createMockClinicContext(), eventBus, new ChargeRepository(), createMockIdempotency(db));
     // P0 修复：使用真实 MemberCardsService 实例，以支持 consumeSync 委托调用
+    const clinicCtx = createMockClinicContext();
+    const idempotency = createMockIdempotency(db);
+    const core = new MemberCardCoreService(asDbService(db), clinicCtx);
+    const balance = new MemberCardBalanceService(asDbService(db), clinicCtx, idempotency, new MemberCardLogRepository(), eventBus);
+    const points = new MemberCardPointsService(asDbService(db), clinicCtx, idempotency, new MemberPointLogRepository());
     const memberCardsService = new MemberCardsService(
       asDbService(db),
-      createMockClinicContext(),
-      createMockIdempotency(db),
-      new MemberCardLogRepository(),
-      new MemberPointLogRepository(),
-      eventBus,
+      clinicCtx,
+      core,
+      balance,
+      points,
     );
     service = new ChargePaymentService(
       asDbService(db),

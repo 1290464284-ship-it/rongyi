@@ -7,6 +7,9 @@ import { DebtService } from '../charge/debt.service';
 import { ComboService } from '../charge/combo.service';
 import { PaymentMethodService } from '../charge/payment-method.service';
 import { MemberCardsService } from '../member-cards/member-cards.service';
+import { MemberCardCoreService } from '../member-cards/member-card-core.service';
+import { MemberCardBalanceService } from '../member-cards/member-card-balance.service';
+import { MemberCardPointsService } from '../member-cards/member-card-points.service';
 import { DbService } from '../../../db/db.service';
 import { IdempotencyService } from '../../../common/services/idempotency.service';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
@@ -74,6 +77,9 @@ describe('RefundsService - Integration', () => {
         // P0 修复：使用真实 MemberCardsService 实例，以支持 consumeSync 委托调用
         MemberCardLogRepository,
         MemberPointLogRepository,
+        MemberCardCoreService,
+        MemberCardBalanceService,
+        MemberCardPointsService,
         MemberCardsService,
         RefundsService,
       ],
