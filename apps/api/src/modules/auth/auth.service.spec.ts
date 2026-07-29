@@ -36,7 +36,7 @@ describe('AuthService', () => {
 
   beforeEach(() => {
     db = new MockDbService();
-    (db as any).tables.set('AuditLog', new Map());
+    db.tables.set('AuditLog', new Map());
 
     jwt = {
       sign: jest.fn((payload) => `mock-jwt-token-${payload.sub || 'unknown'}`),

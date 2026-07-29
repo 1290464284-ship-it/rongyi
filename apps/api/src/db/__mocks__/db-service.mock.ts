@@ -17,7 +17,7 @@ export function asDbService(mock: MockDbService): DbService {
 
 export class MockDbService implements IDatabase {
   readonly name = ':memory:';
-  private tables: Map<string, Map<string, MockDbRow>> = new Map();
+  readonly tables: Map<string, Map<string, MockDbRow>> = new Map();
   private autoIncrement: Map<string, number> = new Map();
   private inTransaction = false;
 
