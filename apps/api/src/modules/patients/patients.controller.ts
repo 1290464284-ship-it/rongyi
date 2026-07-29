@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Role } from '@dental/shared';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -49,6 +49,7 @@ export class PatientsController {
 
   @ApiOperation({ summary: '删除' })
   @Delete(':id')
+  @HttpCode(204)
   remove(@Param('id') id: string) {
     return this.patients.remove(id);
   }

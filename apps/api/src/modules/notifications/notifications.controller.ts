@@ -77,8 +77,9 @@ export class NotificationsController {
 
   @ApiOperation({ summary: '删除' })
   @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '删除通知（软删除）' })
-  @ApiResponse({ status: 200, description: '删除成功' })
+  @ApiResponse({ status: 204, description: '删除成功' })
   @ApiResponse({ status: 404, description: '通知不存在' })
   remove(@Param('id') id: string): Promise<void> {
     return this.notificationsService.remove(id);

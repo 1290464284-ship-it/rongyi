@@ -55,6 +55,7 @@ export class ChargeController {
 
   @ApiOperation({ summary: '删除收费组合' })
   @Delete('combos/:id')
+  @HttpCode(204)
   deleteCombo(@Param('id') id: string) {
     return this.comboService.deleteCombo(id);
   }
@@ -81,6 +82,7 @@ export class ChargeController {
 
   @ApiOperation({ summary: '删除缴费方式' })
   @Delete('payment-methods/:id')
+  @HttpCode(204)
   deletePaymentMethod(@Param('id') id: string) {
     return this.paymentMethodService.deletePaymentMethod(id);
   }

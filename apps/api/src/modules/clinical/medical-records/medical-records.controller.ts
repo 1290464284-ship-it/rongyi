@@ -1,5 +1,5 @@
 import { safePage, safePageSize } from '../../../common/dto/pagination.dto';
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Request } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Request } from '@nestjs/common';
 import { Request as ExpressRequest } from 'express';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Role } from '@dental/shared';
@@ -55,6 +55,7 @@ export class MedicalRecordsController {
 
   @ApiOperation({ summary: '删除病历' })
   @Delete('templates/:id')
+  @HttpCode(204)
   deleteTemplate(@Param('id') id: string, @Request() req: ExpressRequest) {
     return this.records.deleteTemplate(id, req.user?.id);
   }
@@ -79,6 +80,7 @@ export class MedicalRecordsController {
 
   @ApiOperation({ summary: '删除病历' })
   @Delete('phrases/:id')
+  @HttpCode(204)
   deletePhrase(@Param('id') id: string, @Request() req: ExpressRequest) {
     return this.records.deletePhrase(id, req.user?.id);
   }
@@ -124,6 +126,7 @@ export class MedicalRecordsController {
 
   @ApiOperation({ summary: '删除' })
   @Delete(':id')
+  @HttpCode(204)
   remove(@Param('id') id: string) {
     return this.records.remove(id);
   }
