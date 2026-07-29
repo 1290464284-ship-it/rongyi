@@ -114,8 +114,9 @@ export function CreateTreatmentPlanDialog({
           <div className="space-y-4">
             <div className="grid grid-cols-3 gap-4">
               <div className="space-y-1.5">
-                <Label>患者 *</Label>
+                <Label htmlFor="plan-patient">患者 *</Label>
                 <Button
+                  id="plan-patient"
                   variant="outline"
                   className="w-full justify-start"
                   onClick={() => setOpenSelector(true)}

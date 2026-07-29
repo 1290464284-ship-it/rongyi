@@ -528,8 +528,9 @@ function CreateVisitDialog({
             )}
 
             <div className='space-y-1.5'>
-              <Label>患者 *</Label>
+              <Label htmlFor='create-visit-patient'>患者 *</Label>
               <Button
+                id='create-visit-patient'
                 variant='outline'
                 className='w-full justify-start'
                 onClick={() => setOpenSelector(true)}
