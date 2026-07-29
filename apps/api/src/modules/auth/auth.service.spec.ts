@@ -7,6 +7,8 @@ import { UnauthorizedException } from '@nestjs/common';
 import { ClinicContextService } from '../../common/services/clinic-context.service';
 import { CacheService } from '../../common/services/cache.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
+import { PasswordPolicyService } from './password-policy.service';
+import { UserManagementService } from './user-management.service';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'node:crypto';
 
@@ -66,7 +68,7 @@ describe('AuthService', () => {
         ).run(id, type, targetId, targetType, beforeData, afterData, options?.remark || null, clinicId, now, options?.operatorId || null, options?.operatorName || null, options?.amount || null, options?.ip || null);
       }),
     } as unknown as AuditLogService;
-    service = new AuthService(asDbService(db), jwt, config, clinicContext, cache, auditLog);
+    service = new AuthService(asDbService(db), jwt, config, clinicContext, cache, auditLog, new PasswordPolicyService(config), new UserManagementService(asDbService(db), clinicContext, cache, auditLog, new PasswordPolicyService(config)));
   });
 
   afterEach(() => {
@@ -652,7 +654,7 @@ describe('AuthService', () => {
     });
   });
 
-  describe('bcryptRounds - bcrypt 轮数配置', () => {
+  describe('bcryptRounds - bcrypt 轮数配置 (via PasswordPolicyService)', () => {
     it('使用配置的 BCRYPT_ROUNDS 值', () => {
       const customConfig = {
         get: jest.fn((key: string) => {
@@ -661,10 +663,8 @@ describe('AuthService', () => {
         }),
       } as unknown as ConfigService;
 
-      const customService = new AuthService(asDbService(db), jwt, customConfig, clinicContext, cache, auditLog);
-
-      const rounds = (customService as any).bcryptRounds;
-      expect(rounds).toBe(8);
+      const policyService = new PasswordPolicyService(customConfig);
+      expect(policyService.bcryptRounds).toBe(8);
     });
 
     it('BCRYPT_ROUNDS 小于 8 时使用 8', () => {
@@ -675,10 +675,8 @@ describe('AuthService', () => {
         }),
       } as unknown as ConfigService;
 
-      const customService = new AuthService(asDbService(db), jwt, customConfig, clinicContext, cache, auditLog);
-
-      const rounds = (customService as any).bcryptRounds;
-      expect(rounds).toBe(8);
+      const policyService = new PasswordPolicyService(customConfig);
+      expect(policyService.bcryptRounds).toBe(8);
     });
 
     it('BCRYPT_ROUNDS 大于 15 时使用 15', () => {
@@ -689,10 +687,8 @@ describe('AuthService', () => {
         }),
       } as unknown as ConfigService;
 
-      const customService = new AuthService(asDbService(db), jwt, customConfig, clinicContext, cache, auditLog);
-
-      const rounds = (customService as any).bcryptRounds;
-      expect(rounds).toBe(15);
+      const policyService = new PasswordPolicyService(customConfig);
+      expect(policyService.bcryptRounds).toBe(15);
     });
 
     it('未配置 BCRYPT_ROUNDS 时使用默认值 10', () => {
@@ -702,10 +698,8 @@ describe('AuthService', () => {
         }),
       } as unknown as ConfigService;
 
-      const customService = new AuthService(asDbService(db), jwt, customConfig, clinicContext, cache, auditLog);
-
-      const rounds = (customService as any).bcryptRounds;
-      expect(rounds).toBe(10);
+      const policyService = new PasswordPolicyService(customConfig);
+      expect(policyService.bcryptRounds).toBe(10);
     });
   });
 
