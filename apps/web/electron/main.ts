@@ -589,8 +589,8 @@ if (!gotTheLock) {
       Menu.setApplicationMenu(menu);
       createWindow();
 
-      // 自动更新检查（仅生产环境）
-      if (!isDev) {
+      // 自动更新检查（仅生产环境且配置了更新服务器时启用）
+      if (!isDev && process.env.AUTO_UPDATE_URL) {
         autoUpdater.autoDownload = false;
         autoUpdater.autoInstallOnAppQuit = true;
         autoUpdater.checkForUpdates().catch((err) => {

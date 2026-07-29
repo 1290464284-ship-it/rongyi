@@ -76,7 +76,7 @@ export class ComboService extends BaseService<ChargeCombo> {
         }
       }
 
-      return db.prepare(`SELECT id, name, category, isPublic, creatorId, clinicId, createdAt, updatedAt, deletedAt FROM ChargeCombo WHERE id = ?`).get(comboId) as ChargeCombo;
+      return db.prepare(`SELECT id, name, category, isPublic, creatorId, clinicId, createdAt, updatedAt, deletedAt FROM ChargeCombo WHERE id = ? AND deletedAt IS NULL`).get(comboId) as ChargeCombo;
     });
 
     this.logAudit(this.dbService, 'COMBO_CREATE', combo.id, 'ChargeCombo', {

@@ -241,7 +241,7 @@ export class ProcessingOrdersService extends BaseService<ProcessingOrder> {
       .run(id, dto.name, dto.contactPerson || null, dto.phone || null, dto.address || null, dto.remark || null, 'ACTIVE', clinicId || null, now, now);
     this.logAudit(this.dbService, AuditLogType.PROCESSING_FACTORY_CREATE, id, "ProcessingFactory", { afterData: { name: dto.name } });
     const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
-    return this.dbService.prepare(`SELECT id, name, contactPerson, phone, address, remark, status, clinicId, createdAt, updatedAt, deletedAt FROM ProcessingFactory WHERE id = ?${clinicClause}`).get(id, ...clinicParams);
+    return this.dbService.prepare(`SELECT id, name, contactPerson, phone, address, remark, status, clinicId, createdAt, updatedAt, deletedAt FROM ProcessingFactory WHERE id = ? AND deletedAt IS NULL${clinicClause}`).get(id, ...clinicParams);
   }
 
   async updateFactory(id: string, dto: { name?: string; contactPerson?: string; phone?: string; address?: string; remark?: string; status?: string }) {

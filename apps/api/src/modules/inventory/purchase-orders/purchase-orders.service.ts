@@ -142,7 +142,7 @@ export class PurchaseOrdersService extends BaseService<PurchaseOrder> {
       if (currentPo.status === 'RECEIVED') throw new BusinessValidationException('采购单已收货，不可重复操作');
       if (currentPo.status !== 'PENDING' && currentPo.status !== 'PARTIAL') throw new BusinessValidationException('当前状态不可收货');
 
-      const items = db.prepare(`SELECT id, orderId, itemId, name, spec, quantity, unitPrice, subtotal, clinicId, createdAt, updatedAt, deletedAt FROM PurchaseOrderItem WHERE orderId = ?${clinicClause}`).all(id, ...clinicParams) as Array<{ id: string; itemId: string | null; name: string; quantity: number; unitPrice: number }>;
+      const items = db.prepare(`SELECT id, orderId, itemId, name, spec, quantity, unitPrice, subtotal, clinicId, createdAt, updatedAt, deletedAt FROM PurchaseOrderItem WHERE orderId = ? AND deletedAt IS NULL${clinicClause}`).all(id, ...clinicParams) as Array<{ id: string; itemId: string | null; name: string; quantity: number; unitPrice: number }>;
 
       const itemIds = items.filter(i => i.itemId).map(i => i.itemId);
       const inventoryMap = new Map<string, Record<string, unknown>>();
@@ -227,7 +227,7 @@ export class PurchaseOrdersService extends BaseService<PurchaseOrder> {
 
       // If PO was PARTIAL (partially received), reverse the received inventory
       if (po.status === 'PARTIAL') {
-        const items = db.prepare(`SELECT id, orderId, itemId, name, spec, quantity, unitPrice, subtotal, clinicId, createdAt, updatedAt, deletedAt FROM PurchaseOrderItem WHERE orderId = ?${clinicClause}`).all(id, ...clinicParams) as Array<{ id: string; itemId: string | null; name: string; quantity: number; unitPrice: number }>;
+        const items = db.prepare(`SELECT id, orderId, itemId, name, spec, quantity, unitPrice, subtotal, clinicId, createdAt, updatedAt, deletedAt FROM PurchaseOrderItem WHERE orderId = ? AND deletedAt IS NULL${clinicClause}`).all(id, ...clinicParams) as Array<{ id: string; itemId: string | null; name: string; quantity: number; unitPrice: number }>;
         const itemsToReverse = items.filter(item => item.itemId);
 
         if (itemsToReverse.length > 0) {

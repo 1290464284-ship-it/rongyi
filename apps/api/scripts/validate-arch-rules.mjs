@@ -4,7 +4,9 @@
  * 为无法通过 ESLint 静态检测的架构约束提供机械验证。
  * 检查项：
  *   1. SQL 参数化 — 检测 SQL 模板字面量中的危险变量插值
- *   2. 软删除强制 — 检测物理删除语句（DELETE FROM / TRUNCATE / DROP TABLE）
+ *   2. 软删除强制 — 检测物理删除语句（DELETE FROM / TRUNCATE / DROP TABLE），
+ *      并对 service 文件中缺失 deletedAt 过滤的 SELECT 语句发出告警
+ *      （可在语句所在行或上一行添加 soft-delete-exempt: <原因> 注释显式豁免）
  *   3. NestJS 模块边界 — 检测跨模块直接 import 内部文件
  *   4. DB Schema 保护 — 检测 schema.ts 是否被修改
  *   5. pnpm-lock 保护 — 检测 pnpm-lock.yaml 是否被手动修改
@@ -261,14 +263,45 @@ const PHYSICAL_DELETE_ALLOWED_TABLES = [
   'InventoryTransaction', // 库存交易日志表
 ];
 
+/**
+ * SELECT 缺失 deletedAt 过滤的显式豁免注释标记。
+ * 用法：在 SELECT 语句所在行或其上一行添加注释，如：
+ *   // soft-delete-exempt: 编号生成需包含已软删除记录，避免编号复用
+ */
+const SOFT_DELETE_EXEMPT_MARKER = 'soft-delete-exempt';
+
+/**
+ * 从 src/db/schema/*.tables.ts 解析出包含 deletedAt 列的软删除表集合。
+ * 只有这些表的 SELECT 语句才要求 deletedAt 过滤（日志/配置类表无此列）。
+ */
+function loadSoftDeleteTables() {
+  const schemaDir = path.join(apiRoot, 'src', 'db', 'schema');
+  const tables = new Set();
+  if (!fs.existsSync(schemaDir)) return tables;
+
+  for (const name of fs.readdirSync(schemaDir)) {
+    if (!name.endsWith('.ts')) continue;
+    const content = fs.readFileSync(path.join(schemaDir, name), 'utf8');
+    const createTableRegex = /CREATE TABLE IF NOT EXISTS (\w+)([\s\S]*?)(?=CREATE TABLE IF NOT EXISTS|$)/g;
+    let m;
+    while ((m = createTableRegex.exec(content)) !== null) {
+      if (/\bdeletedAt\b/.test(m[2])) tables.add(m[1]);
+    }
+  }
+  return tables;
+}
+
 function checkSoftDelete(files) {
   console.log(`\n${CYAN}━━━ 2. 软删除强制检查${RESET} ${DIM}(.qoder/rules/soft-delete-enforcement.md)${RESET}`);
+
+  const softDeleteTables = loadSoftDeleteTables();
 
   for (const file of files) {
     // 排除 SQL 注入检测中间件（它包含 DROP TABLE / TRUNCATE 关键字用于模式匹配，不执行 SQL）
     const relativePath = path.relative(apiRoot, file);
     if (relativePath.includes('sql-injection.middleware.ts')) continue;
 
+    const isServiceFile = file.endsWith('.service.ts');
     const content = fs.readFileSync(file, 'utf8');
     const lines = content.split('\n');
 
@@ -305,6 +338,35 @@ function checkSoftDelete(files) {
           idx + 1,
           '检测到 DROP TABLE — 禁止在非 migration 文件中使用',
         );
+      }
+
+      // 告警扫描：service 文件中软删除表的 SELECT 语句缺失 deletedAt 过滤
+      if (isServiceFile) {
+        const selectMatch = line.match(/\bSELECT\b[\s\S]*?\bFROM\s+(\w+)/i);
+        if (selectMatch) {
+          const tableName = selectMatch[1];
+          // 仅检查包含 deletedAt 列的软删除表
+          if (softDeleteTables.has(tableName)) {
+            // 已有 deletedAt IS [NOT] NULL 过滤 → 通过（仅列出 deletedAt 列不算过滤）
+            const hasFilter = /deletedAt\s+IS\s+(NOT\s+)?NULL/i.test(line);
+            // WHERE 子句由变量动态拼接（如 ${whereClause}、${dateFilter}）→ 无法静态判断，跳过
+            const hasDynamicWhere =
+              /\$\{[^}]*(?:where|filter|conditions)[^}]*\}/i.test(line) ||
+              new RegExp(`FROM\\s+${tableName}\\s*\\$\\{`, 'i').test(line);
+            // 显式豁免注释（本行或上一行）
+            const isExempt =
+              line.includes(SOFT_DELETE_EXEMPT_MARKER) ||
+              (idx > 0 && lines[idx - 1].includes(SOFT_DELETE_EXEMPT_MARKER));
+
+            if (!hasFilter && !hasDynamicWhere && !isExempt) {
+              reportWarning(
+                'soft-delete-enforcement',
+                file,
+                `L${idx + 1}: SELECT ... FROM ${tableName} 缺少 deletedAt IS NULL 过滤 — 请补充过滤条件，或在本行/上一行添加 \`${SOFT_DELETE_EXEMPT_MARKER}: <原因>\` 注释显式豁免`,
+              );
+            }
+          }
+        }
       }
     });
   }

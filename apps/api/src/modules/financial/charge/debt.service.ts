@@ -159,7 +159,7 @@ export class DebtService extends BaseService<DebtRecord> {
 
       // 6. 读取并转换为元返回
       const row = db.prepare(
-        `SELECT id, chargeId, patientId, totalAmount, paidAmount, debtAmount, status, lastPaymentAt, remark, createdAt, updatedAt FROM DebtRecord WHERE id = ?`
+        `SELECT id, chargeId, patientId, totalAmount, paidAmount, debtAmount, status, lastPaymentAt, remark, createdAt, updatedAt FROM DebtRecord WHERE id = ? AND deletedAt IS NULL`
       ).get(debtId) as DebtRecord;
       row.totalAmount = centsToYuan(Number(row.totalAmount) || 0);
       row.paidAmount = centsToYuan(Number(row.paidAmount) || 0);
