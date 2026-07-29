@@ -2,6 +2,9 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ChargePaymentService } from './charge-payment.service';
 import { ChargeService } from './charge.service';
 import { MemberCardsService } from '../member-cards/member-cards.service';
+import { MemberCardCoreService } from '../member-cards/member-card-core.service';
+import { MemberCardBalanceService } from '../member-cards/member-card-balance.service';
+import { MemberCardPointsService } from '../member-cards/member-card-points.service';
 import { MemberCardLogRepository } from '../member-cards/repositories/member-card-log.repository';
 import { MemberPointLogRepository } from '../member-cards/repositories/member-point-log.repository';
 import { DbService } from '../../../db/db.service';
@@ -53,6 +56,9 @@ describe('ChargePaymentService - 并发测试', () => {
         // P0 修复：使用真实 MemberCardsService 实例，以支持 consumeSync 委托调用
         MemberCardLogRepository,
         MemberPointLogRepository,
+        MemberCardCoreService,
+        MemberCardBalanceService,
+        MemberCardPointsService,
         MemberCardsService,
         ChargeService,
         ChargePaymentService,

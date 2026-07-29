@@ -1,4 +1,7 @@
 import { MemberCardsService } from './member-cards.service';
+import { MemberCardCoreService } from './member-card-core.service';
+import { MemberCardBalanceService } from './member-card-balance.service';
+import { MemberCardPointsService } from './member-card-points.service';
 import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { asDbService } from '../../../db/__mocks__/db-service.mock';
@@ -46,13 +49,17 @@ describe('MemberCardsService', () => {
     memberCardLogRepo = new MemberCardLogRepository();
     memberPointLogRepo = new MemberPointLogRepository();
     eventBus = createMockEventBus();
+    const clinicCtx = createMockClinicContext();
+    const idempotency = createMockIdempotencyService();
+    const core = new MemberCardCoreService(asDbService(db), clinicCtx);
+    const balance = new MemberCardBalanceService(asDbService(db), clinicCtx, idempotency, memberCardLogRepo, eventBus);
+    const points = new MemberCardPointsService(asDbService(db), clinicCtx, idempotency, memberPointLogRepo);
     service = new MemberCardsService(
       asDbService(db),
-      createMockClinicContext(),
-      createMockIdempotencyService(),
-      memberCardLogRepo,
-      memberPointLogRepo,
-      eventBus,
+      clinicCtx,
+      core,
+      balance,
+      points,
     );
   });
 
@@ -1024,13 +1031,16 @@ describe('MemberCardsService', () => {
       ]);
 
       const idempotencyService = createMockIdempotencyService(db);
+      const clinicCtx = createMockClinicContext();
+      const core = new MemberCardCoreService(asDbService(db), clinicCtx);
+      const balance = new MemberCardBalanceService(asDbService(db), clinicCtx, idempotencyService, new MemberCardLogRepository(), createMockEventBus());
+      const points = new MemberCardPointsService(asDbService(db), clinicCtx, idempotencyService, new MemberPointLogRepository());
       const serviceWithIdempotency = new MemberCardsService(
         asDbService(db),
-        createMockClinicContext(),
-        idempotencyService,
-        new MemberCardLogRepository(),
-        new MemberPointLogRepository(),
-        createMockEventBus(),
+        clinicCtx,
+        core,
+        balance,
+        points,
       );
 
       await serviceWithIdempotency.recharge('card-001', 100, 'req-001');
@@ -1050,13 +1060,16 @@ describe('MemberCardsService', () => {
       ]);
 
       const idempotencyService = createMockIdempotencyService(db);
+      const clinicCtx = createMockClinicContext();
+      const core = new MemberCardCoreService(asDbService(db), clinicCtx);
+      const balance = new MemberCardBalanceService(asDbService(db), clinicCtx, idempotencyService, new MemberCardLogRepository(), createMockEventBus());
+      const points = new MemberCardPointsService(asDbService(db), clinicCtx, idempotencyService, new MemberPointLogRepository());
       const serviceWithIdempotency = new MemberCardsService(
         asDbService(db),
-        createMockClinicContext(),
-        idempotencyService,
-        new MemberCardLogRepository(),
-        new MemberPointLogRepository(),
-        createMockEventBus(),
+        clinicCtx,
+        core,
+        balance,
+        points,
       );
 
       await serviceWithIdempotency.recharge('card-001', 100);
@@ -1079,13 +1092,16 @@ describe('MemberCardsService', () => {
       ]);
 
       const idempotencyService = createMockIdempotencyService(db);
+      const clinicCtx = createMockClinicContext();
+      const core = new MemberCardCoreService(asDbService(db), clinicCtx);
+      const balance = new MemberCardBalanceService(asDbService(db), clinicCtx, idempotencyService, new MemberCardLogRepository(), createMockEventBus());
+      const points = new MemberCardPointsService(asDbService(db), clinicCtx, idempotencyService, new MemberPointLogRepository());
       const serviceWithIdempotency = new MemberCardsService(
         asDbService(db),
-        createMockClinicContext(),
-        idempotencyService,
-        new MemberCardLogRepository(),
-        new MemberPointLogRepository(),
-        createMockEventBus(),
+        clinicCtx,
+        core,
+        balance,
+        points,
       );
 
       try {
@@ -1112,13 +1128,16 @@ describe('MemberCardsService', () => {
       ]);
 
       const idempotencyService = createMockIdempotencyService(db);
+      const clinicCtx = createMockClinicContext();
+      const core = new MemberCardCoreService(asDbService(db), clinicCtx);
+      const balance = new MemberCardBalanceService(asDbService(db), clinicCtx, idempotencyService, new MemberCardLogRepository(), createMockEventBus());
+      const points = new MemberCardPointsService(asDbService(db), clinicCtx, idempotencyService, new MemberPointLogRepository());
       const serviceWithIdempotency = new MemberCardsService(
         asDbService(db),
-        createMockClinicContext(),
-        idempotencyService,
-        new MemberCardLogRepository(),
-        new MemberPointLogRepository(),
-        createMockEventBus(),
+        clinicCtx,
+        core,
+        balance,
+        points,
       );
 
       try {

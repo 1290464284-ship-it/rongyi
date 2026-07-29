@@ -19,6 +19,9 @@ import { CacheService } from '../../common/services/cache.service';
 import { StatsService } from '../system/stats/stats.service';
 import { EventBusService } from '../../common/events/event-bus.service';
 import { MemberCardsService } from '../financial/member-cards/member-cards.service';
+import { MemberCardCoreService } from '../financial/member-cards/member-card-core.service';
+import { MemberCardBalanceService } from '../financial/member-cards/member-card-balance.service';
+import { MemberCardPointsService } from '../financial/member-cards/member-card-points.service';
 import {
   createTestDb,
   cleanupTestDb,
@@ -89,6 +92,9 @@ describe('Clinical Flow E2E - 患者→挂号→就诊→治疗→收费', () =>
         // P0 修复：使用真实 MemberCardsService 实例，以支持 consumeSync 委托调用
         MemberCardLogRepository,
         MemberPointLogRepository,
+        MemberCardCoreService,
+        MemberCardBalanceService,
+        MemberCardPointsService,
         MemberCardsService,
         ChargePaymentService,
       ],
