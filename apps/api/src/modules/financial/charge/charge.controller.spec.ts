@@ -72,12 +72,10 @@ describe('ChargeController', () => {
       expect(comboService.listCombos).toHaveBeenCalledWith('u-1');
     });
 
-    it('userId 为 undefined 时也能正常处理', async () => {
-      comboService.listCombos.mockResolvedValue([]);
+    it('userId 为 undefined 时抛出异常', async () => {
       const req = { user: {} } as unknown as Request;
 
-      await controller.listCombos(req);
-      expect(comboService.listCombos).toHaveBeenCalledWith(undefined);
+      expect(() => controller.listCombos(req)).toThrow('用户身份无效');
     });
 
     it('createCombo 传递 dto 和 userId', async () => {

@@ -145,7 +145,6 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (reason) => {
     const msg = reason instanceof Error ? reason.message : String(reason);
     log('UNHANDLED REJECTION: ' + msg);
-    console.error('Unhandled rejection:', reason);
 });
 
 app.on('render-process-gone', (_event, _webContents, details) => {
@@ -259,7 +258,6 @@ const startApi = (): Promise<void> => {
     apiProcess.stderr?.on('data', (data) => {
       const output = data.toString().trim();
       log(`[API ERROR] ${output}`);
-      console.error(`[API ERROR] ${output}`);
     });
 
     apiProcess.on('error', (err) => {
@@ -272,7 +270,7 @@ const startApi = (): Promise<void> => {
     apiProcess.on('close', (code) => {
       log(`API 服务退出，代码: ${code}`);
       if (code !== 0 && code !== null) {
-        console.error(`API 服务异常退出，代码: ${code}`);
+        log(`API 服务异常退出，代码: ${code}`);
         // 自动重启API服务（防止竞态）
         if (!isShuttingDown && !isRestarting) {
           isRestarting = true;
