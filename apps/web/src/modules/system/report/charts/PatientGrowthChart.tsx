@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import ReactECharts from 'echarts-for-react';
+import ReactECharts from 'echarts-for-react/lib/core';
 import echarts from '@/lib/echarts';
 import type { CallbackDataParams } from 'echarts/types/dist/shared';
 import type { PatientGrowthData } from '@/lib/api/system/stats';

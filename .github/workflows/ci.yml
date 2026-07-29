@@ -10,76 +10,91 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ci:
-    name: Lint, Build, Type Check, Test & E2E
+  # ── Job 1: Lint + Typecheck + Architecture (fast feedback) ──
+  lint-typecheck:
+    name: Lint & Type Check
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Get pnpm store directory
-        shell: bash
+      - uses: pnpm/action-setup@v4
+      - shell: bash
         run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-      - name: Cache pnpm store
-        uses: actions/cache@v4
+      - uses: actions/cache@v4
         with:
           path: ${{ env.STORE_PATH }}
           key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @dental/shared build
       - name: Lint (API)
         run: pnpm --filter @dental/api lint:strict
-
       - name: Lint (Web)
         run: pnpm --filter @dental/web lint:strict
-
-      - name: Build shared
-        run: pnpm --filter @dental/shared build
-
-      - name: Test (Shared)
-        run: pnpm --filter @dental/shared test:cov
-
-      - name: Build API
-        run: pnpm --filter @dental/api build
-
-      - name: Build Web
-        run: pnpm --filter @dental/web build
-
       - name: Type check (API)
         run: pnpm --filter @dental/api typecheck
-
       - name: Type check (Web)
         run: pnpm --filter @dental/web typecheck
-
-      - name: Architecture check (API)
+      - name: Architecture check
         run: pnpm --filter @dental/api arch:check
 
+  # ── Job 2: API Build + Test ──
+  test-api:
+    name: API Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: pnpm/action-setup@v4
+      - shell: bash
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @dental/shared build
+      - name: Build API
+        run: pnpm --filter @dental/api build
+      - name: Test (Shared)
+        run: pnpm --filter @dental/shared test:cov
       - name: Test (API)
         run: pnpm --filter @dental/api test:cov
-
-      - name: Test (Web)
-        run: pnpm --filter @dental/web test:cov
-
-      # ── E2E tests are CI-only (require Playwright browsers + running server) ──
-      # ── They are NOT included in local verify:delivery ──
       - name: E2E Test (API)
         run: pnpm --filter @dental/api test:e2e
 
+  # ── Job 3: Web Build + Test ──
+  test-web:
+    name: Web Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: pnpm/action-setup@v4
+      - shell: bash
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @dental/shared build
+      - name: Build Web
+        run: pnpm --filter @dental/web build
+      - name: Test (Web)
+        run: pnpm --filter @dental/web test:cov
       - name: Install Playwright browsers
         run: pnpm --filter @dental/web exec playwright install --with-deps chromium
-
       - name: E2E Test (Web)
         run: pnpm --filter @dental/web test:e2e

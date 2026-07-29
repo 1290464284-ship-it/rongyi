@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api/api';
 import { useCrudPaginated, useCrudList, useCrudCreate, useCrudUpdate, useCrudDelete } from '@/lib/hooks/use-crud';
+import { getCacheOptions } from '@/lib/api/query-client';
 import {
   DEBT_STATUS_LABEL,
   DEBT_STATUS_COLOR,
@@ -84,6 +85,7 @@ export function useDebtStats() {
   return useQuery({
     queryKey: ['debt-stats'],
     queryFn: async () => (await api.get<DebtStatsRes>('/charge-v2/debts/stats')).data,
+    ...getCacheOptions('fast'),
   });
 }
 
