@@ -48,7 +48,6 @@ apps/api/.code-health/
 
 # 本地数据库与备份（勿提交诊所数据）
 data/
-backups/
 apps/api/data/
 apps/api/prisma/data/
 apps/api/backups/
