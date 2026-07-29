@@ -67,7 +67,7 @@ export class TreatmentPlansService extends BaseService<TreatmentPlan> {
 
     // Validate FK: doctorId must exist (within same clinic)
     const doctor = this.dbService.prepare(
-      `SELECT id FROM User WHERE id = ? AND active = 1${clinicClause}`
+      `SELECT id FROM User WHERE id = ? AND active = 1 AND deletedAt IS NULL${clinicClause}`
     ).get(createDto.doctorId, ...clinicParams);
     if (!doctor) {
       throw new BusinessNotFoundException('医生不存在');

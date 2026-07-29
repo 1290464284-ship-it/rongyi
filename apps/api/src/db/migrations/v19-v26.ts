@@ -850,4 +850,17 @@ export const migrateToV26 = () => {
   }
 
   logger.log('v26 迁移完成：CHECK 约束与代码枚举对齐');
+};
+
+export const migrateToV27 = () => {
+  // User 表添加 deletedAt 字段，与项目软删除规范对齐
+  addColumnIfMissing('User', 'deletedAt', 'TEXT');
+
+  // 对已软删除用户（active=0）回填 deletedAt
+  const db = getMigrationDb();
+  db.prepare(
+    "UPDATE User SET deletedAt = updatedAt WHERE active = 0 AND deletedAt IS NULL"
+  ).run();
+
+  logger.log('v27 迁移完成：User 表添加 deletedAt 字段并回填已删除用户');
 };

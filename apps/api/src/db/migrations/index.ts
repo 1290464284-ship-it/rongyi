@@ -20,10 +20,10 @@ import {
 import { migrateToV16, migrateToV17, migrateToV18 } from './v16-v18';
 import {
   migrateToV19, migrateToV20, migrateToV21, migrateToV22, migrateToV23,
-  migrateToV24, migrateToV25, migrateToV26,
+  migrateToV24, migrateToV25, migrateToV26, migrateToV27,
 } from './v19-v26';
 
-export const CURRENT_VERSION = 26;
+export const CURRENT_VERSION = 27;
 
 export const getCurrentVersion = (): number => {
   return (getMigrationDb().prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
@@ -56,6 +56,7 @@ const migrationNames: Record<number, string> = {
   24: 'money-field-type-unification',
   25: 'clinic-scoped-unique-constraints',
   26: 'status-check-constraints-alignment',
+  27: 'user-deletedAt-soft-delete',
 };
 
 function backupBeforeMigration(fromVersion: number, toVersion: number): string | null {
@@ -149,6 +150,7 @@ export const runMigrations = (db: Database) => {
           case 24: migrateToV24(); break;
           case 25: migrateToV25(); break;
           case 26: migrateToV26(); break;
+          case 27: migrateToV27(); break;
         }
       });
       migrateTx();  // 任一迁移失败 → 整体回滚，数据库保持迁移前状态

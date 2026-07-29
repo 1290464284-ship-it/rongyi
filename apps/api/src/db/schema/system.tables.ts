@@ -32,6 +32,7 @@ export const systemTables = [
       clinicId TEXT NOT NULL,
       createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
       updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+      deletedAt TEXT,
       FOREIGN KEY (clinicId) REFERENCES Clinic(id),
       UNIQUE(clinicId, username)
     )`,

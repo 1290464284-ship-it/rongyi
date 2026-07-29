@@ -115,7 +115,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     // payload after successful authentication. If clinic-scoped login is needed, the
     // frontend should pass a clinic identifier (e.g. subdomain or form field) and this
     // query should be updated to filter accordingly.
-    const user = this.dbService.prepare("SELECT id, username, passwordHash, active, loginAttempts, lockedUntil, tokenVersion, name, role, clinicId, isTempPassword, passwordChangedAt FROM User WHERE username = ? AND active = 1").get(dto.username) as UserRow;
+    const user = this.dbService.prepare("SELECT id, username, passwordHash, active, loginAttempts, lockedUntil, tokenVersion, name, role, clinicId, isTempPassword, passwordChangedAt FROM User WHERE username = ? AND active = 1 AND deletedAt IS NULL").get(dto.username) as UserRow;
     if (!user?.active) throw new UnauthorizedException("用户名或密码错误");
 
     const hash = user.passwordHash;
@@ -136,6 +136,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
         "UPDATE User SET loginAttempts = loginAttempts + 1, updatedAt = ? WHERE id = ?",
       ).run(new Date().toISOString(), user.id);
       // 重新读取递增后的值，判断是否需要锁定
+      // soft-delete-exempt: 同一请求内已认证用户的登录尝试计数读取，无需重复过滤
       const updated = this.dbService.prepare("SELECT loginAttempts FROM User WHERE id = ?").get(user.id) as { loginAttempts: number } | undefined;
       const attempts = Number(updated?.loginAttempts) || Number(user.loginAttempts) + 1;
       if (attempts >= LOGIN_MAX_ATTEMPTS) {
@@ -183,7 +184,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       return cachedUser;
     }
 
-    const user = this.dbService.prepare("SELECT id, username, name, role, active, tokenVersion, clinicId FROM User WHERE id = ?").get(id) as UserRow;
+    const user = this.dbService.prepare("SELECT id, username, name, role, active, tokenVersion, clinicId FROM User WHERE id = ? AND deletedAt IS NULL").get(id) as UserRow;
     if (!user?.active) return null;
     const currentTokenVersion = Number(user.tokenVersion) || 0;
     if (tokenVersion !== undefined && tokenVersion !== currentTokenVersion) return null;
@@ -251,7 +252,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
 
         // Step 2: 在事务内查当前持有该 refresh token 的用户（此时 INSERT 已成功，重放已无可能）
         const user = db.prepare(
-          "SELECT id, username, name, role, tokenVersion, clinicId FROM User WHERE refreshToken = ? AND refreshTokenExpiresAt > ? AND active = 1"
+          "SELECT id, username, name, role, tokenVersion, clinicId FROM User WHERE refreshToken = ? AND refreshTokenExpiresAt > ? AND active = 1 AND deletedAt IS NULL"
         ).get(tokenHash, now) as UserRow | undefined;
 
         if (!user) {
