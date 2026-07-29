@@ -4,6 +4,7 @@ import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Role } from '@dental/shared';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { OperationLogResource } from '../../../common/decorators/operation-log-resource.decorator';
+import { BusinessValidationException } from '@common/errors';
 import { ChargeService } from './charge.service';
 import { ChargePaymentService } from './charge-payment.service';
 import { DebtService } from './debt.service';
@@ -33,13 +34,17 @@ export class ChargeController {
   @ApiOperation({ summary: '查询收费组合列表' })
   @Get('combos')
   listCombos(@Request() req: ExpressRequest) {
-    return this.comboService.listCombos(req.user?.id);
+    const userId = req.user?.id;
+    if (!userId) throw new BusinessValidationException('用户身份无效');
+    return this.comboService.listCombos(userId);
   }
 
   @ApiOperation({ summary: '创建收费组合' })
   @Post('combos')
   createCombo(@Body() dto: CreateComboDto, @Request() req: ExpressRequest) {
-    return this.comboService.createCombo(dto, req.user?.id);
+    const userId = req.user?.id;
+    if (!userId) throw new BusinessValidationException('用户身份无效');
+    return this.comboService.createCombo(dto, userId);
   }
 
   @ApiOperation({ summary: '更新收费组合' })
@@ -116,7 +121,9 @@ export class ChargeController {
   @Post('debts/:id/pay')
   @HttpCode(200)
   payDebt(@Param('id') id: string, @Body() dto: PayDebtDto, @Request() req: ExpressRequest) {
-    return this.debtService.payDebt(id, dto, req.user?.id);
+    const userId = req.user?.id;
+    if (!userId) throw new BusinessValidationException('用户身份无效');
+    return this.debtService.payDebt(id, dto, userId);
   }
 
   // ==================== 收费 ====================
@@ -142,6 +149,8 @@ export class ChargeController {
   @ApiOperation({ summary: 'payCharge - 收费' })
   @Patch(':id/pay')
   payCharge(@Param('id') id: string, @Body() dto: PayChargeDto, @Request() req: ExpressRequest) {
-    return this.chargePaymentService.payCharge(id, dto, req.user?.id);
+    const userId = req.user?.id;
+    if (!userId) throw new BusinessValidationException('用户身份无效');
+    return this.chargePaymentService.payCharge(id, dto, userId);
   }
 }

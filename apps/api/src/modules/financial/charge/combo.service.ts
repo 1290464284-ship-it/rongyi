@@ -96,14 +96,14 @@ export class ComboService extends BaseService<ChargeCombo> {
     const now = new Date().toISOString();
 
     const updatedCombo = await this.dbService.transaction((db) => {
-      // Update header
+      // Update header — clinicId 隔离防止水平越权
       const updateFields: string[] = ['updatedAt = ?'];
       const updateParams: unknown[] = [now];
       if (updates.name !== undefined) { updateFields.push('name = ?'); updateParams.push(updates.name); }
       if (updates.category !== undefined) { updateFields.push('category = ?'); updateParams.push(updates.category); }
       if (updates.isPublic !== undefined) { updateFields.push('isPublic = ?'); updateParams.push(updates.isPublic); }
-      updateParams.push(id);
-      const updateResult = db.prepare(`UPDATE ChargeCombo SET ${updateFields.join(', ')} WHERE id = ? AND deletedAt IS NULL`).run(...updateParams);
+      updateParams.push(id, clinicId);
+      const updateResult = db.prepare(`UPDATE ChargeCombo SET ${updateFields.join(', ')} WHERE id = ? AND clinicId = ? AND deletedAt IS NULL`).run(...updateParams);
       if (updateResult.changes === 0) {
         throw new BusinessNotFoundException("套餐不存在");
       }
