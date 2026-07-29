@@ -1,5 +1,5 @@
 import { safePage, safePageSize } from '../../common/dto/pagination.dto';
-import { Body, Controller, Delete, Get, Param, Post, Patch, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Patch, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Role } from '@dental/shared';
 import { Equipment } from '@dental/shared';
@@ -53,6 +53,7 @@ export class EquipmentController {
 
   @ApiOperation({ summary: '删除' })
   @Delete(':id')
+  @HttpCode(204)
   remove(@Param('id') id: string) {
     return this.equipment.remove(id);
   }

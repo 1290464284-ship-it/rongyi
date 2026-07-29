@@ -128,6 +128,7 @@ export class AuthController {
   }
 
   @Roles(Role.BOSS)
+  @HttpCode(204)
   @ApiOperation({ summary: '删除用户' })
   @Delete('users/:id')
   deleteUser(@Param('id') id: string) {

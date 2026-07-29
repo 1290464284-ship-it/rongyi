@@ -1,5 +1,5 @@
 import { safePage, safePageSize } from '../../../common/dto/pagination.dto';
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Role } from '@dental/shared';
 import { Roles } from '../../../common/decorators/roles.decorator';
@@ -38,6 +38,7 @@ export class ProcessingOrdersController {
 
   @ApiOperation({ summary: '删除加工单' })
   @Delete('factories/:id')
+  @HttpCode(204)
   deleteFactory(@Param('id') id: string) {
     return this.processingOrders.deleteFactory(id);
   }
@@ -68,6 +69,7 @@ export class ProcessingOrdersController {
 
   @ApiOperation({ summary: '删除加工单' })
   @Delete('products/:id')
+  @HttpCode(204)
   deleteProduct(@Param('id') id: string) {
     return this.processingOrders.deleteProduct(id);
   }
@@ -104,6 +106,7 @@ export class ProcessingOrdersController {
 
   @ApiOperation({ summary: '删除' })
   @Delete(':id')
+  @HttpCode(204)
   remove(@Param('id') id: string) {
     return this.processingOrders.remove(id);
   }

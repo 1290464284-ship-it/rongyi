@@ -92,6 +92,10 @@ export class PatientsService extends BaseService<Patient> {
         });
         const result = this.decryptPatient(await super.findOne(id));
 
+        this.logAudit(this.dbService, AuditLogType.PATIENT_CREATE, id, 'Patient', {
+          afterData: { name: result.name, code, phone: result.phone },
+        });
+
         this.eventBus.emit(new PatientRegisteredEvent(id, clinicId || undefined));
 
         return result;
@@ -203,10 +207,15 @@ export class PatientsService extends BaseService<Patient> {
   }
 
   async update(id: string, dto: Partial<Patient>): Promise<Patient> {
+    const before = await super.findOne(id);
     if (dto.idCard !== undefined) {
       dto = { ...dto, idCard: dto.idCard ? encryptField(dto.idCard) ?? undefined : undefined };
     }
     const result = await super.update(id, dto);
+    this.logAudit(this.dbService, AuditLogType.PATIENT_UPDATE, id, 'Patient', {
+      beforeData: { name: before.name, phone: before.phone },
+      afterData: { name: result.name, phone: result.phone },
+    });
     return this.decryptPatient(result);
   }
 
@@ -258,6 +267,7 @@ export class PatientsService extends BaseService<Patient> {
    */
   async remove(id: string): Promise<unknown> {
     const clinicId = this.clinicContext.getClinicId();
+    const patient = await super.findOne(id);
     this.dbService.transaction(() => {
       // 直接调用同步的 softDeleteManager（避免 async softDelete 的 floating promise 问题）
       const existing = this.softDeleteManager.softDelete(this.dbService, id, {
@@ -278,6 +288,10 @@ export class PatientsService extends BaseService<Patient> {
       } else {
         this.dbService.prepare('UPDATE Patient SET active = 0 WHERE id = ?').run(id);
       }
+    });
+    this.logAudit(this.dbService, AuditLogType.PATIENT_DELETE, id, 'Patient', {
+      beforeData: { name: (patient as unknown as Record<string, unknown>).name, code: (patient as unknown as Record<string, unknown>).code },
+      remark: '软删除',
     });
     return id;
   }

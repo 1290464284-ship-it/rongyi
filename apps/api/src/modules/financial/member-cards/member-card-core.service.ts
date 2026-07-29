@@ -7,7 +7,7 @@ import * as crypto from "node:crypto";
 import { ClinicContextService } from "../../../common/services/clinic-context.service";
 import { centsToYuan } from "../../../common/utils/format/money.utils";
 import { BUSINESS_CODE_MAX_RETRIES } from "../../../config/constants";
-import { MemberCardStatus } from "../../../common/constants";
+import { MemberCardStatus, AuditLogType } from "../../../common/constants";
 import { MemberCard, MemberCardRow } from './member-cards.service';
 
 @Injectable()
@@ -48,6 +48,11 @@ export class MemberCardCoreService extends BaseService<MemberCard> {
             created.totalRecharge = centsToYuan(Number(created.totalRecharge) || 0);
             created.totalConsume = centsToYuan(Number(created.totalConsume) || 0);
           }
+
+          this.logAudit(db, AuditLogType.MEMBER_CARD_CREATE, id, 'MemberCard', {
+            afterData: { cardNo, patientId: dto.patientId, status: MemberCardStatus.ACTIVE },
+          });
+
           return created;
         });
 
