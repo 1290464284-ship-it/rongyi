@@ -1,7 +1,6 @@
-﻿import { Controller, Post, Get, Patch, Delete, Param, Body, Query } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Delete, Param, Body, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Role } from '@dental/shared';
-import { Prescription } from '@dental/shared';
 import { PrescriptionsService } from './prescriptions.service';
 import { CreatePrescriptionDto } from './dto/create-prescription.dto';
 import { QueryPrescriptionDto } from './dto/query-prescription.dto';
@@ -19,7 +18,7 @@ export class PrescriptionsController {
   @ApiOperation({ summary: '新增' })
   @Post()
   create(@Body() dto: CreatePrescriptionDto) {
-    return this.prescriptions.create(dto as unknown as Partial<Prescription>);
+    return this.prescriptions.create(dto);
   }
 
   @ApiOperation({ summary: '分页查询列表' })
@@ -37,7 +36,7 @@ export class PrescriptionsController {
   @ApiOperation({ summary: '更新' })
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdatePrescriptionDto) {
-    return this.prescriptions.update(id, dto as unknown as Partial<Prescription>);
+    return this.prescriptions.update(id, dto);
   }
 
   @ApiOperation({ summary: '删除' })

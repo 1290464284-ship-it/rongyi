@@ -3,8 +3,17 @@
  * Simulates better-sqlite3's synchronous API without requiring a real database.
  */
 import { IDatabase, IStatement } from '../db.interface';
+import { DbService } from '../db.service';
 
 export type MockDbRow = Record<string, unknown>;
+
+/**
+ * 将 MockDbService 安全地转换为 DbService 类型，供测试中使用。
+ * 消除测试文件中的 `db as any` 模式。
+ */
+export function asDbService(mock: MockDbService): DbService {
+  return mock as unknown as DbService;
+}
 
 export class MockDbService implements IDatabase {
   readonly name = ':memory:';
@@ -213,8 +222,8 @@ export class MockDbService implements IDatabase {
         const column = orderMatch[1];
         const direction = (orderMatch[2] || 'ASC').toUpperCase();
         rows.sort((a, b) => {
-          const aVal = a[column];
-          const bVal = b[column];
+          const aVal = a[column] as string | number;
+          const bVal = b[column] as string | number;
           if (aVal < bVal) return direction === 'ASC' ? -1 : 1;
           if (aVal > bVal) return direction === 'ASC' ? 1 : -1;
           return 0;
@@ -397,7 +406,6 @@ export class MockDbService implements IDatabase {
             return (colVal as number | string) <= (value as number | string);
           });
         }
-        continue;
       }
     }
 

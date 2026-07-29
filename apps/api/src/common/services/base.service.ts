@@ -21,6 +21,19 @@ import { BaseRepository } from '../repositories/base.repository';
 
 export { MAX_PAGE_SIZE };
 
+/** BaseService 构造函数 Options 对象，替代原先的位置参数 */
+export interface ServiceOptions {
+  tableName: string;
+  jsonFields?: string[];
+  searchFields?: string[];
+  cascadeTables?: { table: string; foreignKey: string }[];
+  hasSoftDelete?: boolean;
+  uniqueFields?: string[];
+  codeField?: string;
+  codePrefix?: string;
+  moneyFields?: string[];
+}
+
 export interface QueryOptions {
   keyword?: string;
   page?: number;
@@ -62,39 +75,45 @@ export class BaseService<T extends BaseEntity> {
   protected readonly paginationService: PaginationService;
   protected readonly baseRepository: BaseRepository;
 
+  protected tableName: string;
+  protected jsonFields: string[];
+  protected searchFields: string[];
+  protected cascadeTables: { table: string; foreignKey: string }[];
+  protected hasSoftDelete: boolean;
+  protected uniqueFields: string[];
+  protected codeField?: string;
+  protected codePrefix?: string;
+  protected moneyFields: string[];
+
   constructor(
     protected dbService: DbService,
     protected clinicContext: ClinicContextService,
-    protected tableName: string,
-    protected jsonFields: string[] = [],
-    protected searchFields: string[] = [],
-    protected cascadeTables: { table: string; foreignKey: string }[] = [],
-    /** 表中是否有 deletedAt 列（软删除），默认 true */
-    protected hasSoftDelete = true,
-    /** 唯一约束字段列表，软删除时会给这些字段加后缀以避免冲突 */
-    protected uniqueFields: string[] = [],
-    /** 2.3: code 字段名（如 'code'），用于 create 重试时重新生成；未配置则不重试 */
-    protected codeField?: string,
-    /** 2.3: generateCode 的前缀（如 'P'），与 codeField 配套使用 */
-    protected codePrefix?: string,
-    /** 金额字段列表（元），写入时自动转分，读出时自动转元 */
-    protected moneyFields: string[] = [],
+    options: ServiceOptions,
   ) {
+    this.tableName = options.tableName;
+    this.jsonFields = options.jsonFields ?? [];
+    this.searchFields = options.searchFields ?? [];
+    this.cascadeTables = options.cascadeTables ?? [];
+    this.hasSoftDelete = options.hasSoftDelete ?? true;
+    this.uniqueFields = options.uniqueFields ?? [];
+    this.codeField = options.codeField;
+    this.codePrefix = options.codePrefix;
+    this.moneyFields = options.moneyFields ?? [];
     this.logger = new AppLogger(this.constructor.name);
-    if (!validateTableName(tableName)) {
-      throw new BusinessValidationException(`无效的表名: ${tableName}`);
+    if (!validateTableName(this.tableName)) {
+      throw new BusinessValidationException(`无效的表名: ${this.tableName}`);
     }
-    jsonFields.forEach(field => {
+    this.jsonFields.forEach(field => {
       if (!validateColumnName(field)) {
         throw new BusinessValidationException(`无效的 JSON 字段名: ${field}`);
       }
     });
-    searchFields.forEach(field => {
+    this.searchFields.forEach(field => {
       if (!validateColumnName(field)) {
         throw new BusinessValidationException(`无效的搜索字段名: ${field}`);
       }
     });
-    cascadeTables.forEach(({ table, foreignKey }) => {
+    this.cascadeTables.forEach(({ table, foreignKey }) => {
       if (!validateTableName(table)) {
         throw new BusinessValidationException(`无效的级联表名: ${table}`);
       }
@@ -102,7 +121,7 @@ export class BaseService<T extends BaseEntity> {
         throw new BusinessValidationException(`无效的级联外键: ${foreignKey}`);
       }
     });
-    moneyFields.forEach(field => {
+    this.moneyFields.forEach(field => {
       if (!validateColumnName(field)) {
         throw new BusinessValidationException(`无效的金额字段名: ${field}`);
       }
@@ -252,7 +271,7 @@ export class BaseService<T extends BaseEntity> {
       searchFields: this.searchFields,
       filters: options.filters,
       allowedFilterFields: this.allowedFilterFields,
-      clinicId: this.clinicContext.getClinicId(),
+      clinicId: this.clinicContext.getClinicId() ?? undefined,
       skipClinicFilter,
       hasSoftDelete: this.hasSoftDelete,
       includeDeleted,

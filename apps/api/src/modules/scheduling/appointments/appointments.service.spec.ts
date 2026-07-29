@@ -1,6 +1,7 @@
 import { AppointmentsService } from './appointments.service';
 import { BusinessValidationException } from '@common/errors';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
+import { asDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 
 import { EventBusService } from '../../../common/events/event-bus.service';
@@ -34,7 +35,7 @@ describe('AppointmentsService', () => {
   beforeEach(() => {
     db = new MockDbService();
     eventBus = createMockEventBus();
-    service = new AppointmentsService(db as any, createMockClinicContext(), eventBus);
+    service = new AppointmentsService(asDbService(db), createMockClinicContext(), eventBus);
   });
 
   afterEach(() => {
@@ -55,12 +56,12 @@ describe('AppointmentsService', () => {
       } as any);
 
       expect(result).toBeDefined();
-      expect((result as any).patientId).toBe('patient-001');
-      expect((result as any).doctorId).toBe('doctor-001');
-      expect((result as any).type).toBe('EXAM');
-      expect((result as any).status).toBe('BOOKED');
-      expect((result as any).remark).toBe('初诊检查');
-      expect((result as any).id).toBeDefined();
+      expect(result.patientId).toBe('patient-001');
+      expect(result.doctorId).toBe('doctor-001');
+      expect(result.type).toBe('EXAM');
+      expect(result.status).toBe('BOOKED');
+      expect(result.remark).toBe('初诊检查');
+      expect(result.id).toBeDefined();
     });
 
     it('缺少必填字段（doctorId）应抛出 BusinessValidationException', async () => {
@@ -140,7 +141,7 @@ describe('AppointmentsService', () => {
         type: 'EXAM',
       } as any);
 
-      expect((result as any).clinicId).toBe('test-clinic-001');
+      expect(result.clinicId).toBe('test-clinic-001');
     });
 
     it('创建预约时应写入审计日志', async () => {
@@ -153,7 +154,7 @@ describe('AppointmentsService', () => {
       } as any);
 
       const auditLogs = db.getTableData('AuditLog');
-      const log = auditLogs.find(l => l.targetId === (result as any).id && l.type === 'APPOINTMENT_CREATE');
+      const log = auditLogs.find(l => l.targetId === result.id && l.type === 'APPOINTMENT_CREATE');
       expect(log).toBeDefined();
     });
 
@@ -236,7 +237,7 @@ describe('AppointmentsService', () => {
         type: 'EXAM',
       } as any);
 
-      expect((result as any).doctorId).toBe('doctor-002');
+      expect(result.doctorId).toBe('doctor-002');
     });
   });
 
@@ -260,7 +261,7 @@ describe('AppointmentsService', () => {
 
       const result = await service.update('apt-001', { status: 'ARRIVED' } as any);
 
-      expect((result as any).status).toBe('ARRIVED');
+      expect(result.status).toBe('ARRIVED');
     });
 
     it('合法状态流转 BOOKED → CANCELLED 应成功', async () => {
@@ -280,7 +281,7 @@ describe('AppointmentsService', () => {
 
       const result = await service.update('apt-001', { status: 'CANCELLED' } as any);
 
-      expect((result as any).status).toBe('CANCELLED');
+      expect(result.status).toBe('CANCELLED');
     });
 
     it('合法状态流转 BOOKED → NO_SHOW 应成功', async () => {
@@ -300,7 +301,7 @@ describe('AppointmentsService', () => {
 
       const result = await service.update('apt-001', { status: 'NO_SHOW' } as any);
 
-      expect((result as any).status).toBe('NO_SHOW');
+      expect(result.status).toBe('NO_SHOW');
     });
 
     it('合法状态流转 ARRIVED → IN_CHAIR 应成功', async () => {
@@ -320,7 +321,7 @@ describe('AppointmentsService', () => {
 
       const result = await service.update('apt-001', { status: 'IN_CHAIR' } as any);
 
-      expect((result as any).status).toBe('IN_CHAIR');
+      expect(result.status).toBe('IN_CHAIR');
     });
 
     it('合法状态流转 ARRIVED → CANCELLED 应成功', async () => {
@@ -340,7 +341,7 @@ describe('AppointmentsService', () => {
 
       const result = await service.update('apt-001', { status: 'CANCELLED' } as any);
 
-      expect((result as any).status).toBe('CANCELLED');
+      expect(result.status).toBe('CANCELLED');
     });
 
     it('合法状态流转 ARRIVED → NO_SHOW 应成功', async () => {
@@ -360,7 +361,7 @@ describe('AppointmentsService', () => {
 
       const result = await service.update('apt-001', { status: 'NO_SHOW' } as any);
 
-      expect((result as any).status).toBe('NO_SHOW');
+      expect(result.status).toBe('NO_SHOW');
     });
 
     it('合法状态流转 IN_CHAIR → COMPLETED 应成功', async () => {
@@ -380,7 +381,7 @@ describe('AppointmentsService', () => {
 
       const result = await service.update('apt-001', { status: 'COMPLETED' } as any);
 
-      expect((result as any).status).toBe('COMPLETED');
+      expect(result.status).toBe('COMPLETED');
     });
 
     it('合法状态流转 IN_CHAIR → CANCELLED 应成功', async () => {
@@ -400,7 +401,7 @@ describe('AppointmentsService', () => {
 
       const result = await service.update('apt-001', { status: 'CANCELLED' } as any);
 
-      expect((result as any).status).toBe('CANCELLED');
+      expect(result.status).toBe('CANCELLED');
     });
 
     it('非法状态流转 BOOKED → COMPLETED 应抛出 BusinessValidationException', async () => {
@@ -500,7 +501,7 @@ describe('AppointmentsService', () => {
 
       const result = await service.update('apt-001', { type: 'TREATMENT' } as any);
 
-      expect((result as any).type).toBe('TREATMENT');
+      expect(result.type).toBe('TREATMENT');
     });
 
     it('更新备注应成功', async () => {
@@ -521,7 +522,7 @@ describe('AppointmentsService', () => {
 
       const result = await service.update('apt-001', { remark: '更新备注' });
 
-      expect((result as any).remark).toBe('更新备注');
+      expect(result.remark).toBe('更新备注');
     });
 
     it('更新不存在的预约应抛出异常', async () => {
@@ -599,7 +600,7 @@ describe('AppointmentsService', () => {
       const rows = db.getTableData('Appointment');
       const deleted = rows.find(r => r.id === 'apt-001');
       expect(deleted).toBeDefined();
-      expect(deleted.deletedAt).toBeTruthy();
+      expect(deleted!.deletedAt).toBeTruthy();
     });
 
     it('删除预约应写入审计日志', async () => {
@@ -649,7 +650,7 @@ describe('AppointmentsService', () => {
 
       const result = await service.linkVisit('apt-001', 'visit-001');
 
-      expect((result as any).visitId).toBe('visit-001');
+      expect(result.visitId).toBe('visit-001');
     });
   });
 

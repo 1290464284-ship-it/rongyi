@@ -244,8 +244,8 @@ describe('RefundsService - Integration', () => {
       );
 
       expect(result.memberCard).toBeDefined();
-      expect(result.memberCard.refundedAmount).toBe(100);
-      expect(result.memberCard.balanceAfter).toBe(800);
+      expect(result.memberCard!.refundedAmount).toBe(100);
+      expect(result.memberCard!.balanceAfter).toBe(800);
 
       const afterRefundCard = db.prepare("SELECT balance, totalConsume FROM MemberCard WHERE id = ?").get(TEST_MEMBER_CARD_ID) as any;
       expect(afterRefundCard.balance).toBe(80000);
@@ -322,7 +322,7 @@ describe('RefundsService - Integration', () => {
       );
 
       expect(result.debt).toBeDefined();
-      expect(result.debt.debtId).toBe(debt.id);
+      expect(result.debt!.debtId).toBe(debt.id);
 
       const afterRefundDebt = db.prepare("SELECT paidAmount, debtAmount, status FROM DebtRecord WHERE id = ?").get(debt.id) as any;
       expect(afterRefundDebt.paidAmount).toBe(250000);
@@ -455,8 +455,8 @@ describe('RefundsService - Integration', () => {
 
       const result = await runAsDoctor(() => service.findOne(created.id));
 
-      expect((result as any).id).toBe(created.id);
-      expect((result as any).amount).toBe(100);
+      expect(result.id).toBe(created.id);
+      expect(result.amount).toBe(100);
     });
 
     it('退款不存在应抛出 BusinessNotFoundException', async () => {

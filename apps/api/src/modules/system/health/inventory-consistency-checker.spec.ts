@@ -51,7 +51,7 @@ describe('InventoryConsistencyChecker', () => {
       } as any);
 
       const checks = checker.getChecks();
-      const stockBalanceCheck = checks.find(c => c.name === 'inventory_stock_balance');
+      const stockBalanceCheck = checks.find(c => c.name === 'inventory_stock_balance')!;
       const result = stockBalanceCheck.fn();
 
       expect(result.status).toBe('ok');
@@ -67,7 +67,7 @@ describe('InventoryConsistencyChecker', () => {
       } as any);
 
       const checks = checker.getChecks();
-      const stockBalanceCheck = checks.find(c => c.name === 'inventory_stock_balance');
+      const stockBalanceCheck = checks.find(c => c.name === 'inventory_stock_balance')!;
       const result = stockBalanceCheck.fn();
 
       expect(result.status).toBe('error');
@@ -88,7 +88,7 @@ describe('InventoryConsistencyChecker', () => {
       } as any);
 
       const checks = checker.getChecks();
-      const stockBalanceCheck = checks.find(c => c.name === 'inventory_stock_balance');
+      const stockBalanceCheck = checks.find(c => c.name === 'inventory_stock_balance')!;
       const result = stockBalanceCheck.fn();
 
       expect(result.status).toBe('ok');
@@ -104,7 +104,7 @@ describe('InventoryConsistencyChecker', () => {
       } as any);
 
       const checks = checker.getChecks();
-      const stockBalanceCheck = checks.find(c => c.name === 'inventory_stock_balance');
+      const stockBalanceCheck = checks.find(c => c.name === 'inventory_stock_balance')!;
       const result = stockBalanceCheck.fn();
 
       expect(result.status).toBe('error');
@@ -119,7 +119,7 @@ describe('InventoryConsistencyChecker', () => {
         .mockReturnValueOnce({ all: jest.fn().mockReturnValue([]) } as any);
 
       const checks = checker.getChecks();
-      const amountPositiveCheck = checks.find(c => c.name === 'inventory_amount_positive');
+      const amountPositiveCheck = checks.find(c => c.name === 'inventory_amount_positive')!;
       const result = amountPositiveCheck.fn();
 
       expect(result.status).toBe('ok');
@@ -137,7 +137,7 @@ describe('InventoryConsistencyChecker', () => {
         .mockReturnValueOnce({ all: jest.fn().mockReturnValue([]) } as any);
 
       const checks = checker.getChecks();
-      const amountPositiveCheck = checks.find(c => c.name === 'inventory_amount_positive');
+      const amountPositiveCheck = checks.find(c => c.name === 'inventory_amount_positive')!;
       const result = amountPositiveCheck.fn();
 
       expect(result.status).toBe('error');
@@ -155,7 +155,7 @@ describe('InventoryConsistencyChecker', () => {
         } as any);
 
       const checks = checker.getChecks();
-      const amountPositiveCheck = checks.find(c => c.name === 'inventory_amount_positive');
+      const amountPositiveCheck = checks.find(c => c.name === 'inventory_amount_positive')!;
       const result = amountPositiveCheck.fn();
 
       expect(result.status).toBe('error');
@@ -169,7 +169,7 @@ describe('InventoryConsistencyChecker', () => {
         .mockReturnValueOnce({ all: jest.fn().mockReturnValue([]) } as any);
 
       const checks = checker.getChecks();
-      const amountPositiveCheck = checks.find(c => c.name === 'inventory_amount_positive');
+      const amountPositiveCheck = checks.find(c => c.name === 'inventory_amount_positive')!;
       const result = amountPositiveCheck.fn();
 
       expect(result.status).toBe('ok');
@@ -189,7 +189,7 @@ describe('InventoryConsistencyChecker', () => {
         } as any);
 
       const checks = checker.getChecks();
-      const amountPositiveCheck = checks.find(c => c.name === 'inventory_amount_positive');
+      const amountPositiveCheck = checks.find(c => c.name === 'inventory_amount_positive')!;
       const result = amountPositiveCheck.fn();
 
       expect(result.status).toBe('error');
@@ -204,7 +204,7 @@ describe('InventoryConsistencyChecker', () => {
       } as any);
 
       const checks = checker.getChecks();
-      const transactionItemCheck = checks.find(c => c.name === 'inventory_transaction_item_exists');
+      const transactionItemCheck = checks.find(c => c.name === 'inventory_transaction_item_exists')!;
       const result = transactionItemCheck.fn();
 
       expect(result.status).toBe('ok');
@@ -220,7 +220,7 @@ describe('InventoryConsistencyChecker', () => {
       } as any);
 
       const checks = checker.getChecks();
-      const transactionItemCheck = checks.find(c => c.name === 'inventory_transaction_item_exists');
+      const transactionItemCheck = checks.find(c => c.name === 'inventory_transaction_item_exists')!;
       const result = transactionItemCheck.fn();
 
       expect(result.status).toBe('error');
@@ -237,7 +237,7 @@ describe('InventoryConsistencyChecker', () => {
       } as any);
 
       const checks = checker.getChecks();
-      const transactionItemCheck = checks.find(c => c.name === 'inventory_transaction_item_exists');
+      const transactionItemCheck = checks.find(c => c.name === 'inventory_transaction_item_exists')!;
       const result = transactionItemCheck.fn();
 
       expect(result.status).toBe('error');
@@ -252,7 +252,7 @@ describe('InventoryConsistencyChecker', () => {
       } as any);
 
       const checks = checker.getChecks();
-      const stockBalanceCheck = checks.find(c => c.name === 'inventory_stock_balance');
+      const stockBalanceCheck = checks.find(c => c.name === 'inventory_stock_balance')!;
       const result = stockBalanceCheck.fn();
 
       expect(result.durationMs).toBeDefined();

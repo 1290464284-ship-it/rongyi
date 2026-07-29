@@ -20,7 +20,7 @@ export class ChairsController {
 
   @ApiOperation({ summary: '新增' })
   @Post()
-  create(@Body() dto: CreateChairDto) { return this.chairs.create(dto as unknown as Partial<Chair>); }
+  create(@Body() dto: CreateChairDto) { return this.chairs.create(dto); }
 
   @ApiOperation({ summary: '更新' })
   @Patch(':id')

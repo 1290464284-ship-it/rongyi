@@ -8,10 +8,10 @@ export interface CreateRefundData {
   chargeId: string;
   patientId: string;
   amount: number;
-  reason?: string | null;
-  operatorId?: string | null;
-  operatorName?: string | null;
-  clinicId?: string | null;
+  reason?: string;
+  operatorId?: string;
+  operatorName?: string;
+  clinicId?: string;
   createdAt: string;
 }
 
@@ -21,8 +21,8 @@ export interface RefundMemberCardLogData {
   amount: number;
   balanceAfter: number;
   chargeId: string;
-  remark?: string | null;
-  clinicId?: string | null;
+  remark?: string;
+  clinicId?: string;
   createdAt: string;
 }
 
@@ -147,11 +147,11 @@ export class RefundRepository {
     chargeId: string,
     clinicClause: string,
     clinicParams: unknown[],
-  ): { id: string; patientId: string; totalAmount: number; paidAmount: number; refundedAmount: number; status: string; payMethod?: string | null } | undefined {
+  ): { id: string; patientId: string; totalAmount: number; paidAmount: number; refundedAmount: number; status: string; payMethod?: string } | undefined {
     return db.prepare(
       `SELECT id, patientId, totalAmount, paidAmount, refundedAmount, status, payMethod
        FROM Charge WHERE id = ? AND deletedAt IS NULL${clinicClause}`,
-    ).get(chargeId, ...clinicParams) as { id: string; patientId: string; totalAmount: number; paidAmount: number; refundedAmount: number; status: string; payMethod?: string | null } | undefined;
+    ).get(chargeId, ...clinicParams) as { id: string; patientId: string; totalAmount: number; paidAmount: number; refundedAmount: number; status: string; payMethod?: string } | undefined;
   }
 
   getChargeStatus(

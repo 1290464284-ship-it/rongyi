@@ -18,7 +18,7 @@ export class MemberStatsService {
 
   async getMemberStats() {
     const clinicId = this.clinicContext.getClinicId();
-    const key = buildStatsCacheKey(STATS_CACHE_KEYS.MEMBER, clinicId);
+    const key = buildStatsCacheKey(STATS_CACHE_KEYS.MEMBER, clinicId ?? '');
     return this.cache.getOrSet(key, () => {
       const { clause: clinicClause, params: clinicParams } = buildClinicFilter(clinicId);
       const summary = this.dbService.prepare(

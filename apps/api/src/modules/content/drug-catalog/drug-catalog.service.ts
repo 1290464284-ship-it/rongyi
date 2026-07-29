@@ -36,7 +36,7 @@ export class DrugCatalogService {
    */
   async findCatalog(page = 1, pageSize: number = PAGINATION.DEFAULT_PAGE_SIZE_XLARGE) {
     const clinicId = this.clinicContext.getClinicId();
-    const cacheKey = `${buildDictionaryCacheKey(DICTIONARY_CACHE_KEYS.DRUG_CATALOG, clinicId)}:p${page}:s${pageSize}`;
+    const cacheKey = `${buildDictionaryCacheKey(DICTIONARY_CACHE_KEYS.DRUG_CATALOG, clinicId ?? '')}:p${page}:s${pageSize}`;
     // P0 修复：使用 getOrSet 提供缓存击穿保护 + buildClinicFilter 强制校验 clinicId
     // 原先 if (clinicId) 模式在 clinicId 缺失时会跳过过滤导致跨租户数据泄露
     return this.cache.getOrSet<unknown[]>(cacheKey, () => {

@@ -172,7 +172,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     let status: number;
     let message: unknown;
-    let errorCode: ErrorCode;
+    let errorCode: ErrorCode = ErrorCode.UNKNOWN;
     let details: Record<string, unknown> | undefined;
     let stack: string | undefined;
     let shouldReportToSentry = false;
@@ -190,7 +190,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       const resp = exception.getResponse();
       if (typeof resp === 'string') {
         message = resp;
-      } else if (typeof resp === 'object' && resp !== null && 'message' in resp) {
+      } else if (typeof resp === 'object' && 'message' in resp) {
         message = (resp).message;
       } else {
         message = resp;
@@ -199,7 +199,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       status = exception.getStatus();
       const resp = exception.getResponse();
       let hasBodyCode = false;
-      if (typeof resp === 'object' && resp !== null && 'code' in resp) {
+      if (typeof resp === 'object' && 'code' in resp) {
         const r = resp as { code: string | number; message: string };
         errorCode = typeof r.code === 'number' ? (r.code) : mapLegacyToErrorCode(r.code);
         message = r.message;

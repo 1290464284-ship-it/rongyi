@@ -70,7 +70,7 @@ describe('date utils', () => {
 
     it('非字符串输入应抛出异常', () => {
       expect(() => parseDate(123 as unknown as string)).toThrow(BusinessValidationException);
-      expect(() => parseDate(null)).toThrow(BusinessValidationException);
+      expect(() => parseDate(null as unknown as string)).toThrow(BusinessValidationException);
       expect(() => parseDate(undefined as unknown as string)).toThrow(BusinessValidationException);
     });
 
@@ -233,8 +233,8 @@ describe('date utils', () => {
       const result = parseDateRange('2024-01-15', '2024-01-20');
       expect(result.start).not.toBeNull();
       expect(result.end).not.toBeNull();
-      const startDate = new Date(result.start);
-      const endDate = new Date(result.end);
+      const startDate = new Date(result.start!);
+      const endDate = new Date(result.end!);
       expect(startDate.getHours()).toBe(0);
       expect(endDate.getHours()).toBe(23);
     });

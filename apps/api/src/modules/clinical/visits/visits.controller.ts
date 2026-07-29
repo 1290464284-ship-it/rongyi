@@ -1,9 +1,8 @@
-﻿import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Role } from '@dental/shared';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { OperationLogResource } from '../../../common/decorators/operation-log-resource.decorator';
-import { Visit } from '@dental/shared';
 import { VisitsService } from './visits.service';
 import { CreateVisitDto } from './dto/create-visit.dto';
 import { CompleteVisitDto } from './dto/complete-visit.dto';
@@ -19,7 +18,7 @@ export class VisitsController {
   @ApiOperation({ summary: '新增' })
   @Post()
   create(@Body() dto: CreateVisitDto) {
-    return this.visits.create(dto as unknown as Partial<Visit>);
+    return this.visits.create(dto);
   }
 
   @ApiOperation({ summary: '分页查询列表' })

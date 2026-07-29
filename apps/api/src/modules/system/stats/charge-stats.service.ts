@@ -22,7 +22,7 @@ export class ChargeStatsService {
     const clinicId = this.clinicContext.getClinicId();
     const key = buildStatsCacheKey(
       STATS_CACHE_KEYS.CHARGE,
-      clinicId,
+      clinicId ?? '',
       startDate || '',
       endDate || '',
     );

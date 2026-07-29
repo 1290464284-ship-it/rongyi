@@ -1,5 +1,6 @@
 import { PatientsService } from './patients.service';
 import { MockDbService } from '../../db/__mocks__/db-service.mock';
+import { asDbService } from '../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../common/services/clinic-context.service';
 import { Gender, PatientSource } from '@dental/shared';
 import { encryptField, decryptField } from '../../common/utils/security/encryption';
@@ -36,7 +37,7 @@ describe('PatientsService', () => {
   beforeEach(() => {
     db = new MockDbService();
     eventBus = createMockEventBus();
-    service = new PatientsService(db as any, createMockClinicContext(), eventBus, new PatientRepository());
+    service = new PatientsService(asDbService(db), createMockClinicContext(), eventBus, new PatientRepository());
   });
 
   afterEach(() => {
@@ -52,12 +53,12 @@ describe('PatientsService', () => {
         source: PatientSource.WALK_IN,
       });
 
-      expect((result as any).name).toBe('张三');
-      expect((result as any).phone).toBe('138****8000');
-      expect((result as any).gender).toBe(Gender.MALE);
-      expect((result as any).source).toBe(PatientSource.WALK_IN);
-      expect((result as any).id).toBeDefined();
-      expect((result as any).active).toBe(1);
+      expect(result.name).toBe('张三');
+      expect(result.phone).toBe('138****8000');
+      expect(result.gender).toBe(Gender.MALE);
+      expect(result.source).toBe(PatientSource.WALK_IN);
+      expect(result.id).toBeDefined();
+      expect(result.active).toBe(1);
     });
   });
 
@@ -69,8 +70,8 @@ describe('PatientsService', () => {
         gender: Gender.FEMALE,
       });
 
-      expect((result as any).code).toBeDefined();
-      expect((result as any).code.startsWith('P')).toBe(true);
+      expect(result.code).toBeDefined();
+      expect(result.code.startsWith('P')).toBe(true);
     });
 
     it('传入 code 时应使用指定的编号', async () => {
@@ -81,7 +82,7 @@ describe('PatientsService', () => {
         code: 'P999999',
       });
 
-      expect((result as any).code).toBe('P999999');
+      expect(result.code).toBe('P999999');
     });
   });
 
@@ -96,8 +97,8 @@ describe('PatientsService', () => {
         idCard: plainIdCard,
       });
 
-      expect((result as any).idCard).not.toBe(plainIdCard);
-      expect((result as any).idCard).toMatch(/^\d{6}\*{8}\d{4}$/);
+      expect(result.idCard).not.toBe(plainIdCard);
+      expect(result.idCard).toMatch(/^\d{6}\*{8}\d{4}$/);
     });
 
     it('创建后数据库中 idCard 不是明文（mock 限制：用 seed 验证加密存储模式）', async () => {
@@ -124,9 +125,9 @@ describe('PatientsService', () => {
       const savedPatient = patients.find(p => p.id === 'patient-001');
 
       expect(savedPatient).toBeDefined();
-      expect(savedPatient.idCard).not.toBe(plainIdCard);
-      expect(typeof savedPatient.idCard).toBe('string');
-      expect(decryptField(savedPatient.idCard as string)).toBe(plainIdCard);
+      expect(savedPatient!.idCard).not.toBe(plainIdCard);
+      expect(typeof savedPatient!.idCard).toBe('string');
+      expect(decryptField(savedPatient!.idCard as string)).toBe(plainIdCard);
     });
   });
 
@@ -153,8 +154,8 @@ describe('PatientsService', () => {
 
       const result = await service.findOne('patient-001');
 
-      expect((result as any).idCard).toBe('110101********1234');
-      expect((result as any).idCard).not.toBe(plainIdCard);
+      expect(result.idCard).toBe('110101********1234');
+      expect(result.idCard).not.toBe(plainIdCard);
     });
   });
 
@@ -217,14 +218,14 @@ describe('PatientsService', () => {
         gender: Gender.MALE,
       });
 
-      const patientId = (created as any).id;
+      const patientId = created.id;
       const updated = await service.update(patientId, {
         name: '吴十一',
         phone: '13100131000',
       });
 
-      expect((updated as any).name).toBe('吴十一');
-      expect((updated as any).phone).toBe('131****1000');
+      expect(updated.name).toBe('吴十一');
+      expect(updated.phone).toBe('131****1000');
     });
   });
 
@@ -252,9 +253,9 @@ describe('PatientsService', () => {
 
       const updated = await service.update('patient-001', { idCard: newIdCard });
 
-      expect((updated as any).idCard).toMatch(/^\d{6}\*{8}\d{4}$/);
-      expect((updated as any).idCard).not.toBe(newIdCard);
-      expect((updated as any).idCard).not.toBe(oldIdCard);
+      expect(updated.idCard).toMatch(/^\d{6}\*{8}\d{4}$/);
+      expect(updated.idCard).not.toBe(newIdCard);
+      expect(updated.idCard).not.toBe(oldIdCard);
     });
 
     it('更新身份证号后通过 getFullIdCard 能获取新的完整身份证号', async () => {
@@ -354,14 +355,14 @@ describe('PatientsService', () => {
       }]);
 
       const beforeDelete = db.getTableData('Patient').find(p => p.id === 'patient-001');
-      expect(beforeDelete.deletedAt).toBeNull();
+      expect(beforeDelete!.deletedAt).toBeNull();
 
       await (service as any).softDelete('patient-001');
 
       const afterDelete = db.getTableData('Patient').find(p => p.id === 'patient-001');
       expect(afterDelete).toBeDefined();
-      expect(afterDelete.deletedAt).toBeDefined();
-      expect(afterDelete.deletedAt).not.toBeNull();
+      expect(afterDelete!.deletedAt).toBeDefined();
+      expect(afterDelete!.deletedAt).not.toBeNull();
     });
 
     it('软删除后 code 字段添加后缀以避免唯一约束冲突', async () => {
@@ -384,8 +385,8 @@ describe('PatientsService', () => {
       await (service as any).softDelete('patient-001');
 
       const afterDelete = db.getTableData('Patient').find(p => p.id === 'patient-001');
-      expect(afterDelete.code).not.toBe('P000001');
-      expect((afterDelete.code as string).startsWith('P000001_deleted_')).toBe(true);
+      expect(afterDelete!.code).not.toBe('P000001');
+      expect((afterDelete!.code as string).startsWith('P000001_deleted_')).toBe(true);
     });
   });
 
@@ -578,7 +579,7 @@ describe('PatientsService', () => {
       }]);
 
       const result = await service.findOne('patient-001');
-      expect((result as any).phone).toBe('138****5678');
+      expect(result.phone).toBe('138****5678');
     });
 
     it('findMany 返回的手机号同样脱敏', async () => {
@@ -806,14 +807,14 @@ describe('PatientsService', () => {
         systemicDiseases: ['心脏病'],
       });
 
-      expect(Array.isArray((result as any).tags)).toBe(true);
-      expect((result as any).tags).toContain('VIP');
-      expect((result as any).tags).toContain('老患者');
-      expect(Array.isArray((result as any).allergies)).toBe(true);
-      expect((result as any).allergies).toContain('青霉素');
-      expect(Array.isArray((result as any).medicalHistory)).toBe(true);
-      expect(Array.isArray((result as any).medicationHistory)).toBe(true);
-      expect(Array.isArray((result as any).systemicDiseases)).toBe(true);
+      expect(Array.isArray(result.tags)).toBe(true);
+      expect(result.tags).toContain('VIP');
+      expect(result.tags).toContain('老患者');
+      expect(Array.isArray(result.allergies)).toBe(true);
+      expect(result.allergies).toContain('青霉素');
+      expect(Array.isArray(result.medicalHistory)).toBe(true);
+      expect(Array.isArray(result.medicationHistory)).toBe(true);
+      expect(Array.isArray(result.systemicDiseases)).toBe(true);
     });
 
     it('findOne 返回的 JSON 字段应为数组', async () => {
@@ -835,10 +836,10 @@ describe('PatientsService', () => {
       }]);
 
       const result = await service.findOne('patient-001');
-      expect(Array.isArray((result as any).tags)).toBe(true);
-      expect((result as any).tags.length).toBe(2);
-      expect(Array.isArray((result as any).allergies)).toBe(true);
-      expect((result as any).allergies.length).toBe(1);
+      expect(Array.isArray(result.tags)).toBe(true);
+      expect(result.tags.length).toBe(2);
+      expect(Array.isArray(result.allergies)).toBe(true);
+      expect(result.allergies.length).toBe(1);
     });
 
     it('findMany 返回的 JSON 字段应为数组', async () => {
@@ -862,8 +863,8 @@ describe('PatientsService', () => {
       const result = await service.findMany({});
       expect(result.items.length).toBeGreaterThanOrEqual(1);
       const patient = result.items.find((p: any) => p.id === 'patient-001');
-      expect(Array.isArray(patient.tags)).toBe(true);
-      expect(patient.tags).toContain('VIP');
+      expect(Array.isArray(patient!.tags)).toBe(true);
+      expect(patient!.tags).toContain('VIP');
     });
 
     it('更新 JSON 字段时应正确序列化和反序列化', async () => {
@@ -874,17 +875,17 @@ describe('PatientsService', () => {
         tags: ['初始标签'],
       });
 
-      const patientId = (created as any).id;
+      const patientId = created.id;
       const updated = await service.update(patientId, {
         tags: ['新标签1', '新标签2'],
         allergies: ['新过敏'],
       });
 
-      expect(Array.isArray((updated as any).tags)).toBe(true);
-      expect((updated as any).tags.length).toBe(2);
-      expect((updated as any).tags).toContain('新标签1');
-      expect(Array.isArray((updated as any).allergies)).toBe(true);
-      expect((updated as any).allergies).toContain('新过敏');
+      expect(Array.isArray(updated.tags)).toBe(true);
+      expect(updated.tags.length).toBe(2);
+      expect(updated.tags).toContain('新标签1');
+      expect(Array.isArray(updated.allergies)).toBe(true);
+      expect(updated.allergies).toContain('新过敏');
     });
   });
 
@@ -921,7 +922,7 @@ describe('PatientsService', () => {
 
   describe('诊所数据隔离', () => {
     it('没有 clinicId 时 findMany 应抛出 ForbiddenException', async () => {
-      const serviceWithoutClinic = new PatientsService(db as any, {
+      const serviceWithoutClinic = new PatientsService(asDbService(db), {
         getClinicId: () => null,
         getUserId: () => 'test-user',
         getRole: () => 'DOCTOR',
@@ -935,7 +936,7 @@ describe('PatientsService', () => {
     });
 
     it('没有 clinicId 时 findOne 应抛出 ForbiddenException', async () => {
-      const serviceWithoutClinic = new PatientsService(db as any, {
+      const serviceWithoutClinic = new PatientsService(asDbService(db), {
         getClinicId: () => null,
         getUserId: () => 'test-user',
         getRole: () => 'DOCTOR',
@@ -966,7 +967,7 @@ describe('PatientsService', () => {
         },
       ]);
 
-      const serviceClinicA = new PatientsService(db as any, {
+      const serviceClinicA = new PatientsService(asDbService(db), {
         getClinicId: () => 'clinic-a',
         getUserId: () => 'test-user',
         getRole: () => 'DOCTOR',
@@ -1045,7 +1046,7 @@ describe('PatientsService', () => {
         gender: Gender.MALE,
       });
 
-      expect((result as any).source).toBe('WALK_IN');
+      expect(result.source).toBe('WALK_IN');
     });
 
     it('不指定 tags 时默认为空数组', async () => {
@@ -1055,8 +1056,8 @@ describe('PatientsService', () => {
         gender: Gender.FEMALE,
       });
 
-      expect(Array.isArray((result as any).tags)).toBe(true);
-      expect((result as any).tags.length).toBe(0);
+      expect(Array.isArray(result.tags)).toBe(true);
+      expect(result.tags.length).toBe(0);
     });
 
     it('创建的患者 active 应为 1', async () => {
@@ -1066,7 +1067,7 @@ describe('PatientsService', () => {
         gender: Gender.MALE,
       });
 
-      expect((result as any).active).toBe(1);
+      expect(result.active).toBe(1);
     });
 
     it('创建的患者应有 createdAt 和 updatedAt', async () => {
@@ -1076,8 +1077,8 @@ describe('PatientsService', () => {
         gender: Gender.MALE,
       });
 
-      expect((result as any).createdAt).toBeDefined();
-      expect((result as any).updatedAt).toBeDefined();
+      expect(result.createdAt).toBeDefined();
+      expect(result.updatedAt).toBeDefined();
     });
   });
 

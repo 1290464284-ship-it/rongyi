@@ -17,7 +17,7 @@ export class InventoryStatsService {
 
   async getInventoryStatus() {
     const clinicId = this.clinicContext.getClinicId();
-    const key = buildStatsCacheKey(STATS_CACHE_KEYS.INVENTORY, clinicId);
+    const key = buildStatsCacheKey(STATS_CACHE_KEYS.INVENTORY, clinicId ?? '');
     return this.cache.getOrSet(key, () => {
       const { clause: clinicClause, params: clinicParams } = buildClinicFilter(clinicId);
       return this.dbService.prepare(`SELECT category, COUNT(*) as count, SUM(stock) as totalStock FROM InventoryItem WHERE deletedAt IS NULL${clinicClause} GROUP BY category`).all(...clinicParams) as InventoryStatusRow[];

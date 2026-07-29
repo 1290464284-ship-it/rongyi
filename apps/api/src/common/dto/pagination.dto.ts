@@ -50,10 +50,10 @@ export class DateRangeQueryDto {
 }
 
 export class PaginationResultDto<T> {
-  items: T[];
-  total: number;
-  page: number;
-  pageSize: number;
+  items!: T[];
+  total!: number;
+  page!: number;
+  pageSize!: number;
 }
 
 /** 安全解析分页参数，防止NaN注入 */

@@ -604,7 +604,7 @@ describe('AllExceptionsFilter', () => {
     });
 
     it('没有 traceId 时使用 unknown', () => {
-      req.traceId = undefined;
+      req.traceId = undefined as unknown as string;
 
       const err = new Error('test');
       filter.catch(err, host);

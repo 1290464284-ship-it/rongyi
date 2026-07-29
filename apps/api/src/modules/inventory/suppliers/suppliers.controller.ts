@@ -1,7 +1,6 @@
-﻿import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Role } from '@dental/shared';
-import { Supplier } from '@dental/shared';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { OperationLogResource } from '../../../common/decorators/operation-log-resource.decorator';
 import { SuppliersService } from './suppliers.service';
@@ -30,7 +29,7 @@ export class SuppliersController {
   @ApiOperation({ summary: '新增' })
   @Post()
   create(@Body() dto: CreateSupplierDto) {
-    return this.suppliers.create(dto as unknown as Partial<Supplier>);
+    return this.suppliers.create(dto);
   }
 
   @ApiOperation({ summary: '更新' })

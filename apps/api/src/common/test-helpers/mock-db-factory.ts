@@ -119,7 +119,7 @@ export class FaultyMockDbService extends MockDbService {
   }
 
   private getAllTableNames(): string[] {
-    const testTableNames = [
+    return [
       'Clinic', 'User', 'Patient', 'Charge', 'ChargeItem', 'DebtRecord', 'DebtPayment',
       'Refund', 'MemberCard', 'MemberCardLog', 'MemberPointLog', 'InventoryItem',
       'InventoryTransaction', 'Prescription', 'PrescriptionItem', 'Appointment',
@@ -135,7 +135,6 @@ export class FaultyMockDbService extends MockDbService {
       'ProcessingOrderItem', 'ProcessingFlowLog', 'ProcessingProduct', 'ProcessingFactory',
       'AuditLog',
     ];
-    return testTableNames;
   }
 
   private findMatchingRule(sql: string, method: 'get' | 'all' | 'run' | 'prepare'): SqlFaultRule | undefined {

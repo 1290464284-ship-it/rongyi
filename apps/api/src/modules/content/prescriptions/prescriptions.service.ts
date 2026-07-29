@@ -9,7 +9,7 @@ import { DrugCatalogService } from "../drug-catalog/drug-catalog.service";
 import { DbService } from "../../../db/db.service";
 
 interface PrescriptionItemDto {
-  drugCode?: string | null;
+  drugCode?: string;
   drugName: string;
   spec: string;
   dosage: string;
@@ -21,9 +21,9 @@ interface PrescriptionItemDto {
 
 interface CreatePrescriptionDto {
   patientId: string;
-  visitId?: string | null;
+  visitId?: string;
   doctorId: string;
-  remark?: string | null;
+  remark?: string;
   items: PrescriptionItemDto[];
 }
 
@@ -41,12 +41,13 @@ export class PrescriptionsService extends BaseService<Prescription> {
     clinicContext: ClinicContextService,
     private drugCatalogService: DrugCatalogService,
   ) {
-    super(dbService, clinicContext, "Prescription", [], [], [
-      { table: 'PrescriptionItem', foreignKey: 'prescriptionId' },
-    ]);
+    super(dbService, clinicContext, {
+      tableName: "Prescription",
+      cascadeTables: [{ table: 'PrescriptionItem', foreignKey: 'prescriptionId' }],
+    });
   }
 
-  async create(dto: Partial<Prescription>): Promise<Prescription> {
+  async create(dto: Partial<Prescription> & { items?: unknown[] }): Promise<Prescription> {
     const createDto = dto as unknown as CreatePrescriptionDto;
     if (!createDto.items || createDto.items.length === 0) {
       throw new BusinessValidationException('处方明细不能为空');
@@ -69,7 +70,7 @@ export class PrescriptionsService extends BaseService<Prescription> {
       const drugItems = createDto.items.filter(item => item.drugCode && item.quantity > 0);
       if (drugItems.length > 0) {
         this.drugCatalogService.deductStock(
-          drugItems.map(item => ({ drugCode: item.drugCode, drugName: item.drugName, quantity: item.quantity })),
+          drugItems.map(item => ({ drugCode: item.drugCode ?? '', drugName: item.drugName, quantity: item.quantity })),
           db,
         );
       }

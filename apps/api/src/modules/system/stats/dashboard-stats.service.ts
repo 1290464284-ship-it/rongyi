@@ -31,7 +31,7 @@ export class DashboardStatsService {
     const today = getLocalDateStr();
     const clinicId = this.clinicContext.getClinicId();
     return this.cache.getOrSet(
-      buildStatsCacheKey(STATS_CACHE_KEYS.DASHBOARD, clinicId, today),
+      buildStatsCacheKey(STATS_CACHE_KEYS.DASHBOARD, clinicId ?? '', today),
       () => this.computeDashboard(),
       STATS_DASHBOARD_CACHE_TTL_MS,
     );

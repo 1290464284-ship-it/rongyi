@@ -137,7 +137,7 @@ describe('Financial Flow E2E - 收费→退款→欠款同步→会员卡退款'
       expect(charge.paidAmount).toBe(0);
       expect(charge.refundedAmount).toBe(0);
       expect(charge.status).toBe('UNPAID');
-      expect(charge.items.length).toBe(2);
+      expect(charge.items!.length).toBe(2);
 
       const chargeRow = db.prepare('SELECT totalAmount, paidAmount, refundedAmount, status FROM Charge WHERE id = ?').get(charge.id) as any;
       expect(chargeRow.totalAmount).toBe(C(500));
@@ -207,11 +207,11 @@ describe('Financial Flow E2E - 收费→退款→欠款同步→会员卡退款'
       expect(refundResult.id).toBeDefined();
       expect(refundResult.amount).toBe(100);
       expect(refundResult.memberCard).toBeDefined();
-      expect(refundResult.memberCard.cardId).toBe(TEST_MEMBER_CARD_ID);
-      expect(refundResult.memberCard.refundedAmount).toBe(100);
-      expect(refundResult.memberCard.balanceAfter).toBe(800);
+      expect(refundResult.memberCard!.cardId).toBe(TEST_MEMBER_CARD_ID);
+      expect(refundResult.memberCard!.refundedAmount).toBe(100);
+      expect(refundResult.memberCard!.balanceAfter).toBe(800);
       expect(refundResult.debt).toBeDefined();
-      expect(refundResult.debt.debtId).toBe(debt.id);
+      expect(refundResult.debt!.debtId).toBe(debt.id);
 
       // 会员卡：余额 800，totalConsume 回滚到 200
       const cardAfterRefund = db.prepare('SELECT balance, totalConsume FROM MemberCard WHERE id = ?').get(TEST_MEMBER_CARD_ID) as any;

@@ -49,7 +49,6 @@ describe('RolesGuard', () => {
     it('handler 层级标记 @Public 时直接放行', () => {
       getAllAndOverrideMock.mockImplementation((key: string) => {
         if (key === IS_PUBLIC_KEY) return true;
-        return;
       });
 
       const context = createMockExecutionContext();
@@ -65,7 +64,6 @@ describe('RolesGuard', () => {
     it('class 层级标记 @Public 时直接放行', () => {
       getAllAndOverrideMock.mockImplementation((key: string) => {
         if (key === IS_PUBLIC_KEY) return true;
-        return;
       });
 
       const context = createMockExecutionContext();
@@ -77,7 +75,6 @@ describe('RolesGuard', () => {
     it('@Public 标记时不检查角色也不检查用户', () => {
       getAllAndOverrideMock.mockImplementation((key: string) => {
         if (key === IS_PUBLIC_KEY) return true;
-        return;
       });
 
       const context = createMockExecutionContext();
@@ -96,7 +93,6 @@ describe('RolesGuard', () => {
       getAllAndOverrideMock.mockImplementation((key: string) => {
         if (key === IS_PUBLIC_KEY) return;
         if (key === ROLES_KEY) return;
-        return;
       });
 
       const context = createMockExecutionContext({ role: Role.BOSS });
@@ -109,7 +105,6 @@ describe('RolesGuard', () => {
       getAllAndOverrideMock.mockImplementation((key: string) => {
         if (key === IS_PUBLIC_KEY) return;
         if (key === ROLES_KEY) return [];
-        return;
       });
 
       const context = createMockExecutionContext({ role: Role.BOSS });
@@ -124,7 +119,6 @@ describe('RolesGuard', () => {
       getAllAndOverrideMock.mockImplementation((key: string) => {
         if (key === IS_PUBLIC_KEY) return;
         if (key === ROLES_KEY) return [Role.BOSS];
-        return;
       });
 
       const context = createMockExecutionContext();
@@ -137,7 +131,6 @@ describe('RolesGuard', () => {
       getAllAndOverrideMock.mockImplementation((key: string) => {
         if (key === IS_PUBLIC_KEY) return;
         if (key === ROLES_KEY) return [Role.BOSS];
-        return;
       });
 
       const context = createMockExecutionContext();
@@ -151,7 +144,6 @@ describe('RolesGuard', () => {
       getAllAndOverrideMock.mockImplementation((key: string) => {
         if (key === IS_PUBLIC_KEY) return;
         if (key === ROLES_KEY) return [Role.BOSS];
-        return;
       });
 
       const context = createMockExecutionContext({ role: Role.DOCTOR });
@@ -164,7 +156,6 @@ describe('RolesGuard', () => {
       getAllAndOverrideMock.mockImplementation((key: string) => {
         if (key === IS_PUBLIC_KEY) return;
         if (key === ROLES_KEY) return [Role.RECEPTIONIST];
-        return;
       });
 
       const context = createMockExecutionContext({ role: Role.BOSS });
@@ -176,7 +167,6 @@ describe('RolesGuard', () => {
       getAllAndOverrideMock.mockImplementation((key: string) => {
         if (key === IS_PUBLIC_KEY) return;
         if (key === ROLES_KEY) return [Role.BOSS, Role.DOCTOR];
-        return;
       });
 
       const context = createMockExecutionContext({ role: Role.RECEPTIONIST });
@@ -190,7 +180,6 @@ describe('RolesGuard', () => {
       getAllAndOverrideMock.mockImplementation((key: string) => {
         if (key === IS_PUBLIC_KEY) return;
         if (key === ROLES_KEY) return [Role.BOSS];
-        return;
       });
 
       const context = createMockExecutionContext({ role: Role.BOSS });
@@ -203,7 +192,6 @@ describe('RolesGuard', () => {
       getAllAndOverrideMock.mockImplementation((key: string) => {
         if (key === IS_PUBLIC_KEY) return;
         if (key === ROLES_KEY) return [Role.BOSS, Role.DOCTOR];
-        return;
       });
 
       const context = createMockExecutionContext({ role: Role.DOCTOR });
@@ -216,7 +204,6 @@ describe('RolesGuard', () => {
       getAllAndOverrideMock.mockImplementation((key: string) => {
         if (key === IS_PUBLIC_KEY) return;
         if (key === ROLES_KEY) return [Role.RECEPTIONIST];
-        return;
       });
 
       const context = createMockExecutionContext({ role: Role.RECEPTIONIST });
@@ -229,7 +216,6 @@ describe('RolesGuard', () => {
       getAllAndOverrideMock.mockImplementation((key: string) => {
         if (key === IS_PUBLIC_KEY) return;
         if (key === ROLES_KEY) return [Role.BOSS, Role.DOCTOR, Role.RECEPTIONIST];
-        return;
       });
 
       const context = createMockExecutionContext({ role: Role.BOSS });
@@ -242,7 +228,6 @@ describe('RolesGuard', () => {
       getAllAndOverrideMock.mockImplementation((key: string) => {
         if (key === IS_PUBLIC_KEY) return;
         if (key === ROLES_KEY) return [Role.BOSS, Role.DOCTOR, Role.RECEPTIONIST];
-        return;
       });
 
       const context = createMockExecutionContext({ role: Role.RECEPTIONIST });
@@ -274,7 +259,6 @@ describe('RolesGuard', () => {
       getAllAndOverrideMock.mockImplementation((key: string) => {
         if (key === IS_PUBLIC_KEY) return;
         if (key === ROLES_KEY) return [Role.BOSS];
-        return;
       });
 
       const context = createMockExecutionContext({ role: Role.BOSS });
@@ -291,7 +275,6 @@ describe('RolesGuard', () => {
       getAllAndOverrideMock.mockImplementation((key: string) => {
         if (key === IS_PUBLIC_KEY) return;
         if (key === ROLES_KEY) return [Role.BOSS];
-        return;
       });
 
       const mockHandler = function testHandler() {};

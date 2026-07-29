@@ -1,9 +1,8 @@
-﻿import { Controller, Get, Post, Patch, Delete, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Role } from '@dental/shared';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { OperationLogResource } from '../../../common/decorators/operation-log-resource.decorator';
-import { Imaging } from '@dental/shared';
 import { ImagingService } from './imaging.service';
 import { CreateImagingDto, UpdateImagingDto, QueryImagingDto } from './dto/imaging.dto';
 
@@ -17,7 +16,7 @@ export class ImagingController {
   @ApiOperation({ summary: '新增' })
   @Post()
   create(@Body() dto: CreateImagingDto) {
-    return this.imaging.create(dto as unknown as Partial<Imaging>);
+    return this.imaging.create(dto);
   }
 
   @ApiOperation({ summary: '分页查询列表' })
@@ -35,7 +34,7 @@ export class ImagingController {
   @ApiOperation({ summary: '更新' })
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdateImagingDto) {
-    return this.imaging.update(id, dto as unknown as Partial<Imaging>);
+    return this.imaging.update(id, dto);
   }
 
   @ApiOperation({ summary: '删除' })

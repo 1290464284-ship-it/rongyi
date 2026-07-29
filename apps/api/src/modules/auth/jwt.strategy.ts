@@ -23,7 +23,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   constructor(config: ConfigService, private auth: AuthService) {
     super({
       jwtFromRequest: extractJwtFromCookieOrHeader,
-      secretOrKey: config.get('JWT_SECRET'),
+      secretOrKey: config.getOrThrow('JWT_SECRET'),
       passReqToCallback: false,
       issuer: 'dental-api',
       audience: 'dental-web',

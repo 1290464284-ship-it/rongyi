@@ -16,7 +16,7 @@ import { PAGINATION } from "../../../common/constants/pagination";
 export class WechatService extends BaseService<WechatMessage> {
 
   constructor(dbService: DbService, clinicContext: ClinicContextService) {
-    super(dbService, clinicContext, 'WechatMessage', [], ['patientId']);
+    super(dbService, clinicContext, { tableName: 'WechatMessage', searchFields: ['patientId'] });
   }
 
   async sendMessage(dto: { patientId?: string; type?: string; content?: string; templateId?: string }) {
@@ -30,9 +30,9 @@ export class WechatService extends BaseService<WechatMessage> {
     const result = await super.create({
       patientId: dto.patientId,
       type: dto.type,
-      content: dto.content || null,
+      content: dto.content || undefined,
       status: "PENDING",
-      templateId: dto.templateId || null,
+      templateId: dto.templateId || undefined,
     });
     this.logAudit(this.dbService, "WECHAT_SEND", result.id, "WechatMessage", { afterData: { patientId: dto.patientId, type: dto.type } });
     return result;
@@ -61,7 +61,7 @@ export class WechatService extends BaseService<WechatMessage> {
     if (!dto.patientIds || dto.patientIds.length === 0) {
       throw new BusinessValidationException('patientIds 不能为空');
     }
-    const results = [];
+    const results: WechatMessage[] = [];
     for (const patientId of dto.patientIds) {
       const result = await this.sendMessage({ patientId, type: dto.type, content: dto.content, templateId: dto.templateId });
       results.push(result);

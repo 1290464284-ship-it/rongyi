@@ -196,7 +196,7 @@ describe('SqlInjectionMiddleware', () => {
       const req = createMockReq({
         path: '/api/patients',
         method: 'GET',
-        query: { q: null },
+        query: { q: null as unknown as string },
       });
       const res = createMockRes();
       const next = createMockNext();

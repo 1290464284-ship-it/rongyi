@@ -1,5 +1,5 @@
 import { WechatService } from './wechat.service';
-import { MockDbService } from '../../../db/__mocks__/db-service.mock';
+import { MockDbService , asDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import { BusinessValidationException } from '@common/errors';
 import { ForbiddenException } from '@nestjs/common';
@@ -20,7 +20,7 @@ describe('WechatService', () => {
 
   beforeEach(() => {
     db = new MockDbService();
-    service = new WechatService(db as any, createMockClinicContext());
+    service = new WechatService(asDbService(db), createMockClinicContext());
   });
 
   afterEach(() => {
@@ -59,18 +59,18 @@ describe('WechatService', () => {
 
       const messages = db.getTableData('WechatMessage');
       expect(messages[0].templateId).toBe('tpl-001');
-      expect(messages[0].content).toBeNull();
+      expect(messages[0].content).toBeUndefined();
     });
 
-    it('content 和 templateId 都不传时为 null', async () => {
+    it('content 和 templateId 都不传时为 undefined', async () => {
       await service.sendMessage({
         patientId: 'patient-001',
         type: 'TEXT',
       });
 
       const messages = db.getTableData('WechatMessage');
-      expect(messages[0].content).toBeNull();
-      expect(messages[0].templateId).toBeNull();
+      expect(messages[0].content).toBeUndefined();
+      expect(messages[0].templateId).toBeUndefined();
     });
   });
 
@@ -118,7 +118,7 @@ describe('WechatService', () => {
       expect(result.items.length).toBe(2);
       expect(result.total).toBe(2);
       result.items.forEach(item => {
-        expect((item as any).patientId).toBe('patient-001');
+        expect(item.patientId).toBe('patient-001');
       });
     });
 
@@ -127,7 +127,7 @@ describe('WechatService', () => {
       expect(result.items.length).toBe(2);
       expect(result.total).toBe(2);
       result.items.forEach(item => {
-        expect((item as any).type).toBe('TEXT');
+        expect(item.type).toBe('TEXT');
       });
     });
 
@@ -136,7 +136,7 @@ describe('WechatService', () => {
       expect(result.items.length).toBe(2);
       expect(result.total).toBe(2);
       result.items.forEach(item => {
-        expect((item as any).status).toBe('SENT');
+        expect(item.status).toBe('SENT');
       });
     });
 
@@ -217,7 +217,7 @@ describe('WechatService', () => {
     // 这类记录在 buildClinicFilterOptional 路径下会被全诊所可见，构成跨租户数据泄露。
     // 现在统一走 super.create()，由 BaseService.create 强制校验 clinicId（缺失时抛 ForbiddenException）。
     it('clinicId 为 null 时抛出 ForbiddenException，防止跨租户数据泄露', async () => {
-      const nullCtxService = new WechatService(db as any, createMockClinicContext(null));
+      const nullCtxService = new WechatService(asDbService(db), createMockClinicContext(null));
 
       await expect(nullCtxService.sendMessage({
         patientId: 'patient-001',
@@ -231,7 +231,7 @@ describe('WechatService', () => {
     });
 
     it('clinicId 为 null 且传 templateId 时同样抛出 ForbiddenException', async () => {
-      const nullCtxService = new WechatService(db as any, createMockClinicContext(null));
+      const nullCtxService = new WechatService(asDbService(db), createMockClinicContext(null));
 
       await expect(nullCtxService.sendMessage({
         patientId: 'patient-002',
@@ -244,7 +244,7 @@ describe('WechatService', () => {
     });
 
     it('clinicId 为空串时也抛出 ForbiddenException', async () => {
-      const emptyCtxService = new WechatService(db as any, createMockClinicContext(''));
+      const emptyCtxService = new WechatService(asDbService(db), createMockClinicContext(''));
 
       await expect(emptyCtxService.sendMessage({
         patientId: 'patient-003',

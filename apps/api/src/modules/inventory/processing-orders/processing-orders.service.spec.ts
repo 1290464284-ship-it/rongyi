@@ -1,6 +1,7 @@
 import { ProcessingOrdersService } from './processing-orders.service';
 import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
+import { asDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 
 
@@ -22,7 +23,7 @@ describe('ProcessingOrdersService', () => {
 
   beforeEach(() => {
     db = new MockDbService();
-    service = new ProcessingOrdersService(db as any, createMockClinicContext());
+    service = new ProcessingOrdersService(asDbService(db), createMockClinicContext());
   });
 
   afterEach(() => {
@@ -41,14 +42,14 @@ describe('ProcessingOrdersService', () => {
         totalFee: 1500,
       });
 
-      expect((result as any).id).toBeDefined();
-      expect((result as any).number).toMatch(/^PO[0-9a-f]+$/);
-      expect((result as any).patientId).toBe('patient-001');
-      expect((result as any).factoryId).toBe('factory-001');
-      expect((result as any).shade).toBe('A2');
-      expect((result as any).status).toBe('SENT');
+      expect(result.id).toBeDefined();
+      expect(result.number).toMatch(/^PO[0-9a-f]+$/);
+      expect(result.patientId).toBe('patient-001');
+      expect(result.factoryId).toBe('factory-001');
+      expect(result.shade).toBe('A2');
+      expect(result.status).toBe('SENT');
       // input 1500 yuan → stored 150000 cents → read back 1500 yuan (BaseService 自动转换)
-      expect((result as any).totalFee).toBe(1500);
+      expect(result.totalFee).toBe(1500);
     });
 
     it('不传可选字段应使用默认值', async () => {
@@ -56,11 +57,11 @@ describe('ProcessingOrdersService', () => {
         patientId: 'patient-001',
       });
 
-      expect((result as any).id).toBeDefined();
-      expect((result as any).status).toBe('SENT');
-      expect((result as any).totalFee).toBe(0);
-      expect((result as any).factoryId).toBeNull();
-      expect((result as any).shade).toBeNull();
+      expect(result.id).toBeDefined();
+      expect(result.status).toBe('SENT');
+      expect(result.totalFee).toBe(0);
+      expect(result.factoryId).toBeNull();
+      expect(result.shade).toBeNull();
     });
 
     it('创建后数据库中应有加工单记录', async () => {
@@ -88,10 +89,10 @@ describe('ProcessingOrdersService', () => {
       }]);
 
       const result = await service.findOne('po-001');
-      expect((result as any).id).toBe('po-001');
-      expect((result as any).shade).toBe('A2');
+      expect(result.id).toBe('po-001');
+      expect(result.shade).toBe('A2');
       // v24迁移后totalFee为cents，BaseService自动转换为yuan返回
-      expect((result as any).totalFee).toBe(20);
+      expect(result.totalFee).toBe(20);
     });
 
     it('查询不存在的加工单应抛出 BusinessNotFoundException', async () => {
@@ -162,7 +163,7 @@ describe('ProcessingOrdersService', () => {
       }]);
 
       const result = await service.updateStatus('po-001', 'IN_PROGRESS');
-      expect((result as any).status).toBe('IN_PROGRESS');
+      expect(result!.status).toBe('IN_PROGRESS');
     });
 
     it('IN_PROGRESS → COMPLETED 应成功', async () => {
@@ -174,7 +175,7 @@ describe('ProcessingOrdersService', () => {
       }]);
 
       const result = await service.updateStatus('po-001', 'COMPLETED');
-      expect((result as any).status).toBe('COMPLETED');
+      expect(result!.status).toBe('COMPLETED');
     });
 
     it('COMPLETED → RECEIVED 应成功', async () => {
@@ -186,7 +187,7 @@ describe('ProcessingOrdersService', () => {
       }]);
 
       const result = await service.updateStatus('po-001', 'RECEIVED');
-      expect((result as any).status).toBe('RECEIVED');
+      expect(result!.status).toBe('RECEIVED');
     });
 
     it('SENT → CANCELLED 应成功', async () => {
@@ -198,7 +199,7 @@ describe('ProcessingOrdersService', () => {
       }]);
 
       const result = await service.updateStatus('po-001', 'CANCELLED');
-      expect((result as any).status).toBe('CANCELLED');
+      expect(result!.status).toBe('CANCELLED');
     });
 
     it('PENDING → SENT 应成功', async () => {
@@ -210,7 +211,7 @@ describe('ProcessingOrdersService', () => {
       }]);
 
       const result = await service.updateStatus('po-001', 'SENT');
-      expect((result as any).status).toBe('SENT');
+      expect(result!.status).toBe('SENT');
     });
 
     it('SENT → COMPLETED 应抛出 BusinessValidationException（跳过中间状态）', async () => {
@@ -281,9 +282,9 @@ describe('ProcessingOrdersService', () => {
         operatorId: 'user-001',
       });
 
-      expect((result as any).id).toBeDefined();
-      expect((result as any).orderId).toBe('po-001');
-      expect((result as any).status).toBe('IN_PROGRESS');
+      expect(result.id).toBeDefined();
+      expect(result.orderId).toBe('po-001');
+      expect(result.status).toBe('IN_PROGRESS');
     });
 
     it('添加流程日志后应在 ProcessingFlowLog 表中创建记录', async () => {
@@ -305,7 +306,7 @@ describe('ProcessingOrdersService', () => {
       });
 
       const updatedOrder = db.getTableData('ProcessingOrder').find(o => o.id === 'po-001');
-      expect(updatedOrder.status).toBe('IN_PROGRESS');
+      expect(updatedOrder!.status).toBe('IN_PROGRESS');
     });
 
     it('不存在的加工单添加流程日志应抛出 BusinessNotFoundException', async () => {
@@ -330,23 +331,23 @@ describe('ProcessingOrdersService', () => {
 
     it('更新 shade 字段应成功', async () => {
       const result = await service.update('po-001', { shade: 'B1' });
-      expect((result as any).shade).toBe('B1');
+      expect(result.shade).toBe('B1');
     });
 
     it('更新 totalFee 字段应成功', async () => {
       const result = await service.update('po-001', { totalFee: 2500 });
       // input 2500 yuan → stored 250000 cents → read back 2500 yuan (BaseService 自动转换)
-      expect((result as any).totalFee).toBe(2500);
+      expect(result.totalFee).toBe(2500);
     });
 
     it('更新 factoryId 字段应成功', async () => {
       const result = await service.update('po-001', { factoryId: 'factory-002' });
-      expect((result as any).factoryId).toBe('factory-002');
+      expect(result.factoryId).toBe('factory-002');
     });
 
     it('更新 remark 字段应成功', async () => {
       const result = await service.update('po-001', { remark: '新备注信息' });
-      expect((result as any).remark).toBe('新备注信息');
+      expect(result.remark).toBe('新备注信息');
     });
   });
 
@@ -362,11 +363,11 @@ describe('ProcessingOrdersService', () => {
       }]);
 
       const result = await service.remove('po-001');
-      expect((result as any).id).toBe('po-001');
+      expect(result.id).toBe('po-001');
 
       const order = db.getTableData('ProcessingOrder').find(o => o.id === 'po-001');
       expect(order).toBeDefined();
-      expect(order.deletedAt).not.toBeNull();
+      expect(order!.deletedAt).not.toBeNull();
     });
 
     it('删除不存在的加工单应抛出 BusinessNotFoundException', async () => {
@@ -379,9 +380,9 @@ describe('ProcessingOrdersService', () => {
   describe('stats - 统计', () => {
     it('空数据应返回全零', async () => {
       const result = await service.stats();
-      expect((result as any).total).toBe(0);
-      expect((result as any).completed).toBe(0);
-      expect((result as any).pending).toBe(0);
+      expect(result.total).toBe(0);
+      expect(result.completed).toBe(0);
+      expect(result.pending).toBe(0);
     });
   });
 
@@ -439,7 +440,7 @@ describe('ProcessingOrdersService', () => {
       }]);
 
       const result = await service.deleteProduct('prod-001');
-      expect((result as any).id).toBe('prod-001');
+      expect(result.id).toBe('prod-001');
     });
 
     it('删除不存在的产品应抛出 BusinessNotFoundException', async () => {
@@ -477,7 +478,7 @@ describe('ProcessingOrdersService', () => {
       }]);
 
       const result = await service.deleteFactory('factory-001');
-      expect((result as any).id).toBe('factory-001');
+      expect(result.id).toBe('factory-001');
     });
 
     it('删除不存在的工厂应抛出 BusinessNotFoundException', async () => {

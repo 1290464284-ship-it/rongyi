@@ -37,7 +37,7 @@ export class RefundsService extends BaseService<Refund> {
     private eventBus: EventBusService,
     private refundRepository: RefundRepository,
   ) {
-    super(dbService, clinicContext, 'Refund', [], [], [], true, [], undefined, undefined, ['amount']);
+    super(dbService, clinicContext, { tableName: 'Refund', moneyFields: ['amount'] });
   }
 
   async createRefund(dto: RefundDto, user?: OperatorInfo) {
@@ -72,9 +72,9 @@ export class RefundsService extends BaseService<Refund> {
 
     const refundId = crypto.randomUUID();
     const now = new Date().toISOString();
-    const operatorId = user?.id || null;
-    const operatorName = user?.name || null;
-    const operatorIp = user?.ip || null;
+    const operatorId = user?.id || undefined;
+    const operatorName = user?.name || undefined;
+    const operatorIp = user?.ip || undefined;
 
     const doRefundInTx = (db: IDatabase) => {
       const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
@@ -98,10 +98,10 @@ export class RefundsService extends BaseService<Refund> {
         chargeId: dto.chargeId,
         patientId: charge.patientId,
         amount: amountCents,
-        reason: dto.reason || null,
+        reason: dto.reason || undefined,
         operatorId,
         operatorName,
-        clinicId,
+        clinicId: clinicId ?? undefined,
         createdAt: now,
       });
 
@@ -120,7 +120,7 @@ export class RefundsService extends BaseService<Refund> {
         refundAmount: dto.amount,
         patientId: charge.patientId,
         reason: dto.reason,
-        operatorId,
+        operatorId: operatorId ?? null,
         now,
       });
 
@@ -131,9 +131,9 @@ export class RefundsService extends BaseService<Refund> {
       });
 
       this.logAudit(db, AuditLogType.REFUND, dto.chargeId, "Charge", {
-        operatorId,
-        operatorName,
-        ip: operatorIp,
+        operatorId: operatorId ?? undefined,
+        operatorName: operatorName ?? undefined,
+        ip: operatorIp ?? undefined,
         amount: dto.amount,
         beforeData: { charge: chargeBefore },
         afterData: {
@@ -221,7 +221,7 @@ export class RefundsService extends BaseService<Refund> {
       balanceAfter: balanceAfterCents,
       chargeId,
       remark: reason || "收费退款",
-      clinicId,
+      clinicId: clinicId ?? undefined,
       createdAt: now,
     });
 

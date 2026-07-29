@@ -1,6 +1,6 @@
 import { VisitsService } from './visits.service';
 import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
-import { MockDbService } from '../../../db/__mocks__/db-service.mock';
+import { MockDbService , asDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 
 
@@ -21,7 +21,7 @@ describe('VisitsService', () => {
 
   beforeEach(() => {
     db = new MockDbService();
-    service = new VisitsService(db as any, createMockClinicContext());
+    service = new VisitsService(asDbService(db), createMockClinicContext());
   });
 
   afterEach(() => {
@@ -40,10 +40,10 @@ describe('VisitsService', () => {
       });
 
       expect(result).toBeDefined();
-      expect((result as any).patientId).toBe('patient-001');
-      expect((result as any).doctorId).toBe('doctor-001');
-      expect((result as any).status).toBe('IN_PROGRESS');
-      expect((result as any).chiefComplaint).toBe('牙痛');
+      expect(result.patientId).toBe('patient-001');
+      expect(result.doctorId).toBe('doctor-001');
+      expect(result.status).toBe('IN_PROGRESS');
+      expect(result.chiefComplaint).toBe('牙痛');
     });
 
     it('创建就诊时关联挂号（appointmentId）应正确存储', async () => {
@@ -54,7 +54,7 @@ describe('VisitsService', () => {
         chiefComplaint: '复查',
       });
 
-      expect((result as any).appointmentId).toBe('apt-001');
+      expect(result.appointmentId).toBe('apt-001');
     });
 
     it('创建就诊时应包含 clinicId', async () => {
@@ -64,9 +64,9 @@ describe('VisitsService', () => {
       });
 
       const rows = db.getTableData('Visit');
-      const created = rows.find(r => r.id === (result as any).id);
+      const created = rows.find(r => r.id === result.id);
       expect(created).toBeDefined();
-      expect(created.clinicId).toBe('test-clinic-001');
+      expect(created!.clinicId).toBe('test-clinic-001');
     });
 
     it('创建就诊时应写入审计日志', async () => {
@@ -76,7 +76,7 @@ describe('VisitsService', () => {
       });
 
       const auditLogs = db.getTableData('AuditLog');
-      const visitLog = auditLogs.find(l => l.targetId === (result as any).id && l.type === 'VISIT_CREATE');
+      const visitLog = auditLogs.find(l => l.targetId === result.id && l.type === 'VISIT_CREATE');
       expect(visitLog).toBeDefined();
     });
   });
@@ -96,8 +96,8 @@ describe('VisitsService', () => {
       const rows = db.getTableData('Visit');
       const created = rows.find(r => r.id === id);
       expect(created).toBeDefined();
-      expect(created.patientId).toBe('patient-001');
-      expect(created.status).toBe('IN_PROGRESS');
+      expect(created!.patientId).toBe('patient-001');
+      expect(created!.status).toBe('IN_PROGRESS');
     });
 
     it('同步创建就诊可传入自定义数据库连接', () => {
@@ -139,8 +139,8 @@ describe('VisitsService', () => {
 
       const result = await service.complete('visit-001', { diagnosis: '牙髓炎', remark: '需根管治疗' });
 
-      expect((result as any).status).toBe('COMPLETED');
-      expect((result as any).diagnosis).toBe('牙髓炎');
+      expect(result.status).toBe('COMPLETED');
+      expect(result.diagnosis).toBe('牙髓炎');
     });
 
     it('完成就诊时应设置 endTime', async () => {
@@ -160,7 +160,7 @@ describe('VisitsService', () => {
 
       const result = await service.complete('visit-001', { diagnosis: '牙髓炎' });
 
-      expect((result as any).endTime).toBeDefined();
+      expect(result.endTime).toBeDefined();
     });
 
     it('非 IN_PROGRESS 状态的就诊完成时应抛出 BusinessValidationException', async () => {
@@ -246,7 +246,7 @@ describe('VisitsService', () => {
 
       const result = await service.update('visit-001', { status: 'COMPLETED' } as any);
 
-      expect((result as any).status).toBe('COMPLETED');
+      expect(result.status).toBe('COMPLETED');
     });
 
     it('IN_PROGRESS → CANCELLED 应成功', async () => {
@@ -266,7 +266,7 @@ describe('VisitsService', () => {
 
       const result = await service.update('visit-001', { status: 'CANCELLED' } as any);
 
-      expect((result as any).status).toBe('CANCELLED');
+      expect(result.status).toBe('CANCELLED');
     });
 
     it('COMPLETED → IN_PROGRESS 非法流转应抛出 BusinessValidationException', async () => {
@@ -346,7 +346,7 @@ describe('VisitsService', () => {
 
       const result = await service.update('visit-001', { status: 'IN_PROGRESS' } as any);
 
-      expect((result as any).status).toBe('IN_PROGRESS');
+      expect(result.status).toBe('IN_PROGRESS');
     });
 
     it('不传 status 字段时应正常更新其他字段', async () => {
@@ -366,8 +366,8 @@ describe('VisitsService', () => {
 
       const result = await service.update('visit-001', { chiefComplaint: '新主诉' });
 
-      expect((result as any).chiefComplaint).toBe('新主诉');
-      expect((result as any).status).toBe('IN_PROGRESS');
+      expect(result.chiefComplaint).toBe('新主诉');
+      expect(result.status).toBe('IN_PROGRESS');
     });
   });
 
@@ -392,8 +392,8 @@ describe('VisitsService', () => {
       const result = await service.findOne('visit-001');
 
       expect(result).toBeDefined();
-      expect((result as any).id).toBe('visit-001');
-      expect((result as any).patientId).toBe('patient-001');
+      expect(result.id).toBe('visit-001');
+      expect(result.patientId).toBe('patient-001');
     });
 
     it('查询不存在的就诊应抛出 BusinessNotFoundException', async () => {
@@ -490,8 +490,8 @@ describe('VisitsService', () => {
       });
 
       const rows = db.getTableData('Visit');
-      const created = rows.find(r => r.id === (result as any).id);
-      expect(created.appointmentId).toBeNull();
+      const created = rows.find(r => r.id === result.id);
+      expect(created!.appointmentId).toBeNull();
     });
 
     it('不传 chiefComplaint 时 chiefComplaint 应为 null', async () => {
@@ -501,8 +501,8 @@ describe('VisitsService', () => {
       });
 
       const rows = db.getTableData('Visit');
-      const created = rows.find(r => r.id === (result as any).id);
-      expect(created.chiefComplaint).toBeNull();
+      const created = rows.find(r => r.id === result.id);
+      expect(created!.chiefComplaint).toBeNull();
     });
 
     it('不传 diagnosis 时 diagnosis 应为 null', async () => {
@@ -512,8 +512,8 @@ describe('VisitsService', () => {
       });
 
       const rows = db.getTableData('Visit');
-      const created = rows.find(r => r.id === (result as any).id);
-      expect(created.diagnosis).toBeNull();
+      const created = rows.find(r => r.id === result.id);
+      expect(created!.diagnosis).toBeNull();
     });
 
     it('传入所有字段应正确存储', async () => {
@@ -525,12 +525,12 @@ describe('VisitsService', () => {
         diagnosis: '诊断',
       });
 
-      expect((result as any).patientId).toBe('patient-001');
-      expect((result as any).appointmentId).toBe('apt-001');
-      expect((result as any).doctorId).toBe('doctor-001');
-      expect((result as any).chiefComplaint).toBe('主诉');
-      expect((result as any).diagnosis).toBe('诊断');
-      expect((result as any).status).toBe('IN_PROGRESS');
+      expect(result.patientId).toBe('patient-001');
+      expect(result.appointmentId).toBe('apt-001');
+      expect(result.doctorId).toBe('doctor-001');
+      expect(result.chiefComplaint).toBe('主诉');
+      expect(result.diagnosis).toBe('诊断');
+      expect(result.status).toBe('IN_PROGRESS');
     });
 
     it('创建就诊应自动生成 startTime', async () => {
@@ -540,8 +540,8 @@ describe('VisitsService', () => {
       });
 
       const rows = db.getTableData('Visit');
-      const created = rows.find(r => r.id === (result as any).id);
-      expect(created.startTime).toBeDefined();
+      const created = rows.find(r => r.id === result.id);
+      expect(created!.startTime).toBeDefined();
     });
   });
 
@@ -556,7 +556,7 @@ describe('VisitsService', () => {
 
       const rows = db.getTableData('Visit');
       const created = rows.find(r => r.id === id);
-      expect(created.appointmentId).toBeNull();
+      expect(created!.appointmentId).toBeNull();
     });
 
     it('不传 doctorId 时 doctorId 应为 null', () => {
@@ -566,7 +566,7 @@ describe('VisitsService', () => {
 
       const rows = db.getTableData('Visit');
       const created = rows.find(r => r.id === id);
-      expect(created.doctorId).toBeNull();
+      expect(created!.doctorId).toBeNull();
     });
 
     it('传入 appointmentId 时应正确存储', () => {
@@ -578,7 +578,7 @@ describe('VisitsService', () => {
 
       const rows = db.getTableData('Visit');
       const created = rows.find(r => r.id === id);
-      expect(created.appointmentId).toBe('apt-001');
+      expect(created!.appointmentId).toBe('apt-001');
     });
 
     it('同步创建就诊应返回 IN_PROGRESS 状态', () => {
@@ -589,7 +589,7 @@ describe('VisitsService', () => {
 
       const rows = db.getTableData('Visit');
       const created = rows.find(r => r.id === id);
-      expect(created.status).toBe('IN_PROGRESS');
+      expect(created!.status).toBe('IN_PROGRESS');
     });
 
     it('同步创建就诊应包含 clinicId', () => {
@@ -600,7 +600,7 @@ describe('VisitsService', () => {
 
       const rows = db.getTableData('Visit');
       const created = rows.find(r => r.id === id);
-      expect(created.clinicId).toBe('test-clinic-001');
+      expect(created!.clinicId).toBe('test-clinic-001');
     });
   });
 
@@ -624,8 +624,8 @@ describe('VisitsService', () => {
 
       const result = await service.complete('visit-001', {});
 
-      expect((result as any).status).toBe('COMPLETED');
-      expect((result as any).endTime).toBeDefined();
+      expect(result.status).toBe('COMPLETED');
+      expect(result.endTime).toBeDefined();
     });
 
     it('完成就诊应设置 endTime', async () => {
@@ -645,8 +645,8 @@ describe('VisitsService', () => {
 
       const result = await service.complete('visit-002', { diagnosis: '牙髓炎' });
 
-      expect((result as any).endTime).toBeDefined();
-      expect((result as any).status).toBe('COMPLETED');
+      expect(result.endTime).toBeDefined();
+      expect(result.status).toBe('COMPLETED');
     });
 
     it('完成不存在的就诊应抛出 BusinessNotFoundException', async () => {
@@ -700,8 +700,8 @@ describe('VisitsService', () => {
 
       const result = await service.update('visit-001', { diagnosis: '新诊断' });
 
-      expect((result as any).diagnosis).toBe('新诊断');
-      expect((result as any).status).toBe('IN_PROGRESS');
+      expect(result.diagnosis).toBe('新诊断');
+      expect(result.status).toBe('IN_PROGRESS');
     });
 
     it('更新不存在的就诊应抛出 BusinessNotFoundException', async () => {
@@ -727,7 +727,7 @@ describe('VisitsService', () => {
 
       const result = await service.update('visit-001', {});
 
-      expect((result as any).id).toBe('visit-001');
+      expect(result.id).toBe('visit-001');
     });
   });
 

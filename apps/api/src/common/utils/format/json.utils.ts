@@ -4,7 +4,7 @@
  */
 export function safeJsonParse<T = unknown>(
   value: string | null | undefined,
-  defaultValue: T = null,
+  defaultValue: T = null as unknown as T,
 ): T {
   if (value === null || value === undefined) return defaultValue;
   if (typeof value !== 'string') return value;

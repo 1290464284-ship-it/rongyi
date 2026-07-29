@@ -119,7 +119,6 @@ describe('HealthService', () => {
         if (key === 'npm_package_name') return;
         if (key === 'npm_package_version') return;
         if (key === 'NODE_ENV') return 'test';
-        return;
       });
 
       service = new HealthService(
@@ -139,7 +138,6 @@ describe('HealthService', () => {
         if (key === 'NODE_ENV') return;
         if (key === 'npm_package_name') return '@dental/api';
         if (key === 'npm_package_version') return '0.1.0';
-        return;
       });
 
       service = new HealthService(

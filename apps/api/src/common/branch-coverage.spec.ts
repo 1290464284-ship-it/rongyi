@@ -723,7 +723,7 @@ describe('IdempotencyService — branch coverage', () => {
 
     const originalPrepare = (db as any).prepare.bind(db);
     let insertCallCount = 0;
-    jest.spyOn(db as any, 'prepare').mockImplementation((sql: string) => {
+    jest.spyOn(db as any, 'prepare').mockImplementation(((sql: string) => {
       const stmt = originalPrepare(sql);
       if (sql.includes('INSERT INTO IdempotencyRecord') && sql.includes('id, key, type, status, createdAt, expiresAt')) {
         const originalRun = stmt.run.bind(stmt);
@@ -736,7 +736,7 @@ describe('IdempotencyService — branch coverage', () => {
         };
       }
       return stmt;
-    });
+    }) as any);
 
     const handler = jest.fn().mockReturnValue('proc-expired-retry');
     const result = service.executeInTransaction({ key, type: 'test-type' }, handler);
@@ -774,7 +774,7 @@ describe('IdempotencyService — branch coverage', () => {
   it('非 UNIQUE 错误应直接抛出', () => {
     const key = 'other-error-key';
     const originalPrepare = (db as any).prepare.bind(db);
-    jest.spyOn(db as any, 'prepare').mockImplementation((sql: string) => {
+    jest.spyOn(db as any, 'prepare').mockImplementation(((sql: string) => {
       const stmt = originalPrepare(sql);
       if (sql.includes('INSERT INTO IdempotencyRecord') && sql.includes('id, key, type, status, createdAt, expiresAt')) {
         stmt.run = jest.fn().mockImplementation(() => {
@@ -782,7 +782,7 @@ describe('IdempotencyService — branch coverage', () => {
         });
       }
       return stmt;
-    });
+    }) as any);
 
     const handler = jest.fn();
     expect(() =>
@@ -1004,7 +1004,7 @@ describe('Encryption — branch coverage', () => {
   it('加密空字符串应能成功加解密', () => {
     const encrypted = encryptionModule.encryptField('');
     expect(typeof encrypted).toBe('string');
-    expect(encrypted.length).toBeGreaterThan(0);
+    expect(encrypted!.length).toBeGreaterThan(0);
     const decrypted = encryptionModule.decryptField(encrypted);
     expect(decrypted).toBe('');
   });

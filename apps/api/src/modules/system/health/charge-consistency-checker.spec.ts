@@ -51,7 +51,7 @@ describe('ChargeConsistencyChecker', () => {
       } as any);
 
       const checks = checker.getChecks();
-      const totalAmountCheck = checks.find(c => c.name === 'charge_total_amount');
+      const totalAmountCheck = checks.find(c => c.name === 'charge_total_amount')!;
       const result = totalAmountCheck.fn();
 
       expect(result.status).toBe('ok');
@@ -67,7 +67,7 @@ describe('ChargeConsistencyChecker', () => {
       } as any);
 
       const checks = checker.getChecks();
-      const totalAmountCheck = checks.find(c => c.name === 'charge_total_amount');
+      const totalAmountCheck = checks.find(c => c.name === 'charge_total_amount')!;
       const result = totalAmountCheck.fn();
 
       expect(result.status).toBe('error');
@@ -87,7 +87,7 @@ describe('ChargeConsistencyChecker', () => {
       } as any);
 
       const checks = checker.getChecks();
-      const totalAmountCheck = checks.find(c => c.name === 'charge_total_amount');
+      const totalAmountCheck = checks.find(c => c.name === 'charge_total_amount')!;
       const result = totalAmountCheck.fn();
 
       expect(result.status).toBe('ok');
@@ -103,7 +103,7 @@ describe('ChargeConsistencyChecker', () => {
       } as any);
 
       const checks = checker.getChecks();
-      const totalAmountCheck = checks.find(c => c.name === 'charge_total_amount');
+      const totalAmountCheck = checks.find(c => c.name === 'charge_total_amount')!;
       const result = totalAmountCheck.fn();
 
       expect(result.status).toBe('error');
@@ -121,7 +121,7 @@ describe('ChargeConsistencyChecker', () => {
       } as any);
 
       const checks = checker.getChecks();
-      const paidAmountCheck = checks.find(c => c.name === 'charge_paid_amount');
+      const paidAmountCheck = checks.find(c => c.name === 'charge_paid_amount')!;
       const result = paidAmountCheck.fn();
 
       expect(result.status).toBe('ok');
@@ -136,7 +136,7 @@ describe('ChargeConsistencyChecker', () => {
       } as any);
 
       const checks = checker.getChecks();
-      const paidAmountCheck = checks.find(c => c.name === 'charge_paid_amount');
+      const paidAmountCheck = checks.find(c => c.name === 'charge_paid_amount')!;
       const result = paidAmountCheck.fn();
 
       expect(result.status).toBe('error');
@@ -152,7 +152,7 @@ describe('ChargeConsistencyChecker', () => {
       } as any);
 
       const checks = checker.getChecks();
-      const paidAmountCheck = checks.find(c => c.name === 'charge_paid_amount');
+      const paidAmountCheck = checks.find(c => c.name === 'charge_paid_amount')!;
       const result = paidAmountCheck.fn();
 
       expect(result.status).toBe('ok');
@@ -166,7 +166,7 @@ describe('ChargeConsistencyChecker', () => {
       } as any);
 
       const checks = checker.getChecks();
-      const paidAmountCheck = checks.find(c => c.name === 'charge_paid_amount');
+      const paidAmountCheck = checks.find(c => c.name === 'charge_paid_amount')!;
       const result = paidAmountCheck.fn();
 
       expect(result.status).toBe('ok');
@@ -180,7 +180,7 @@ describe('ChargeConsistencyChecker', () => {
       } as any);
 
       const checks = checker.getChecks();
-      const paidAmountCheck = checks.find(c => c.name === 'charge_paid_amount');
+      const paidAmountCheck = checks.find(c => c.name === 'charge_paid_amount')!;
       const result = paidAmountCheck.fn();
 
       expect(result.status).toBe('ok');
@@ -199,7 +199,7 @@ describe('ChargeConsistencyChecker', () => {
         } as any);
 
       const checks = checker.getChecks();
-      const statusPaymentCheck = checks.find(c => c.name === 'charge_status_payment');
+      const statusPaymentCheck = checks.find(c => c.name === 'charge_status_payment')!;
       const result = statusPaymentCheck.fn();
 
       expect(result.status).toBe('ok');
@@ -219,7 +219,7 @@ describe('ChargeConsistencyChecker', () => {
         } as any);
 
       const checks = checker.getChecks();
-      const statusPaymentCheck = checks.find(c => c.name === 'charge_status_payment');
+      const statusPaymentCheck = checks.find(c => c.name === 'charge_status_payment')!;
       const result = statusPaymentCheck.fn();
 
       expect(result.status).toBe('error');
@@ -239,7 +239,7 @@ describe('ChargeConsistencyChecker', () => {
         } as any);
 
       const checks = checker.getChecks();
-      const statusPaymentCheck = checks.find(c => c.name === 'charge_status_payment');
+      const statusPaymentCheck = checks.find(c => c.name === 'charge_status_payment')!;
       const result = statusPaymentCheck.fn();
 
       expect(result.status).toBe('error');
@@ -257,7 +257,7 @@ describe('ChargeConsistencyChecker', () => {
         } as any);
 
       const checks = checker.getChecks();
-      const statusPaymentCheck = checks.find(c => c.name === 'charge_status_payment');
+      const statusPaymentCheck = checks.find(c => c.name === 'charge_status_payment')!;
       const result = statusPaymentCheck.fn();
 
       expect(result.status).toBe('ok');
@@ -273,7 +273,7 @@ describe('ChargeConsistencyChecker', () => {
         } as any);
 
       const checks = checker.getChecks();
-      const statusPaymentCheck = checks.find(c => c.name === 'charge_status_payment');
+      const statusPaymentCheck = checks.find(c => c.name === 'charge_status_payment')!;
       const result = statusPaymentCheck.fn();
 
       expect(result.status).toBe('ok');
@@ -291,7 +291,7 @@ describe('ChargeConsistencyChecker', () => {
         } as any);
 
       const checks = checker.getChecks();
-      const statusPaymentCheck = checks.find(c => c.name === 'charge_status_payment');
+      const statusPaymentCheck = checks.find(c => c.name === 'charge_status_payment')!;
       const result = statusPaymentCheck.fn();
 
       expect(result.status).toBe('error');
@@ -307,7 +307,7 @@ describe('ChargeConsistencyChecker', () => {
       } as any);
 
       const checks = checker.getChecks();
-      const totalAmountCheck = checks.find(c => c.name === 'charge_total_amount');
+      const totalAmountCheck = checks.find(c => c.name === 'charge_total_amount')!;
       const result = totalAmountCheck.fn();
 
       expect(result.durationMs).toBeDefined();

@@ -144,17 +144,15 @@ describe('ChargePaymentService - 并发测试', () => {
   }
 
   function getCharge(chargeId: string): { paidAmount: number; status: string } | undefined {
-    const row = db.prepare(
+    return db.prepare(
       'SELECT paidAmount, status FROM Charge WHERE id = ? AND clinicId = ?'
     ).get(chargeId, TEST_CLINIC_ID) as { paidAmount: number; status: string } | undefined;
-    return row;
   }
 
   function getMemberCard(cardId: string): { balance: number } | undefined {
-    const row = db.prepare(
+    return db.prepare(
       'SELECT balance FROM MemberCard WHERE id = ? AND clinicId = ?'
     ).get(cardId, TEST_CLINIC_ID) as { balance: number } | undefined;
-    return row;
   }
 
   function getIdempotencyRecordCount(): number {
@@ -177,7 +175,7 @@ describe('ChargePaymentService - 并发测试', () => {
       });
 
       const charge = getCharge(chargeId);
-      expect(charge.paidAmount).toBe(20000);
+      expect(charge!.paidAmount).toBe(20000);
 
       await expect(
         runInContext(async () => {
@@ -189,7 +187,7 @@ describe('ChargePaymentService - 并发测试', () => {
       ).rejects.toThrow();
 
       const chargeAfter = getCharge(chargeId);
-      expect(chargeAfter.paidAmount).toBe(20000);
+      expect(chargeAfter!.paidAmount).toBe(20000);
     });
 
     it('逐次部分支付直到结清，最后一次超额支付应失败', async () => {
@@ -204,8 +202,8 @@ describe('ChargePaymentService - 并发测试', () => {
       });
 
       const charge = getCharge(chargeId);
-      expect(charge.paidAmount).toBe(40000);
-      expect(charge.status).toBe('PARTIAL');
+      expect(charge!.paidAmount).toBe(40000);
+      expect(charge!.status).toBe('PARTIAL');
 
       await expect(
         runInContext(async () => {
@@ -214,7 +212,7 @@ describe('ChargePaymentService - 并发测试', () => {
       ).rejects.toThrow();
 
       const chargeAfter = getCharge(chargeId);
-      expect(chargeAfter.paidAmount).toBe(40000);
+      expect(chargeAfter!.paidAmount).toBe(40000);
     });
 
     it('已结清的收费单再次支付应失败', async () => {
@@ -226,7 +224,7 @@ describe('ChargePaymentService - 并发测试', () => {
       });
 
       const charge = getCharge(chargeId);
-      expect(charge.status).toBe('PAID');
+      expect(charge!.status).toBe('PAID');
 
       await expect(
         runInContext(async () => {
@@ -260,8 +258,8 @@ describe('ChargePaymentService - 并发测试', () => {
       expect(result.failureCount).toBe(0);
 
       const charge = getCharge(chargeId);
-      expect(charge.paidAmount).toBe(concurrentCount * payAmount * 100);
-      expect(charge.status).toBe('PAID');
+      expect(charge!.paidAmount).toBe(concurrentCount * payAmount * 100);
+      expect(charge!.status).toBe('PAID');
     });
 
     it('并发支付性能测试 - 测量 100 次支付的执行时间', async () => {
@@ -285,7 +283,7 @@ describe('ChargePaymentService - 并发测试', () => {
       });
 
       const charge = getCharge(chargeId);
-      expect(charge.paidAmount).toBe(count * 100);
+      expect(charge!.paidAmount).toBe(count * 100);
       expect(durationMs).toBeGreaterThan(0);
     }, 10000);
   });
@@ -307,7 +305,7 @@ describe('ChargePaymentService - 并发测试', () => {
       ).rejects.toThrow('余额不足');
 
       const card = getMemberCard(cardId);
-      expect(card.balance).toBe(5000);
+      expect(card!.balance).toBe(5000);
     });
 
     it('并发会员卡支付全部成功（同步数据库串行执行）', async () => {
@@ -332,7 +330,7 @@ describe('ChargePaymentService - 并发测试', () => {
 
       expect(result.successCount).toBe(count);
       const card = getMemberCard(cardId);
-      expect(card.balance).toBe(500000 - count * 5000);
+      expect(card!.balance).toBe(500000 - count * 5000);
     });
 
     it('会员卡余额扣减后余额为 0 时后续支付失败', async () => {
@@ -349,7 +347,7 @@ describe('ChargePaymentService - 并发测试', () => {
       });
 
       const card = getMemberCard(cardId);
-      expect(card.balance).toBe(0);
+      expect(card!.balance).toBe(0);
 
       await expect(
         runInContext(async () => {
@@ -390,8 +388,8 @@ describe('ChargePaymentService - 并发测试', () => {
       expect(result2).toBeDefined();
 
       const charge = getCharge(chargeId);
-      expect(charge.paidAmount).toBe(30000);
-      expect(charge.status).toBe('PAID');
+      expect(charge!.paidAmount).toBe(30000);
+      expect(charge!.status).toBe('PAID');
 
       const idempotencyCount = getIdempotencyRecordCount();
       expect(idempotencyCount).toBe(1);
@@ -418,8 +416,8 @@ describe('ChargePaymentService - 并发测试', () => {
       });
 
       const charge = getCharge(chargeId);
-      expect(charge.paidAmount).toBe(20000);
-      expect(charge.status).toBe('PARTIAL');
+      expect(charge!.paidAmount).toBe(20000);
+      expect(charge!.status).toBe('PARTIAL');
 
       const idempotencyCount = getIdempotencyRecordCount();
       expect(idempotencyCount).toBe(2);
@@ -449,8 +447,8 @@ describe('ChargePaymentService - 并发测试', () => {
       );
 
       const charge = getCharge(chargeId);
-      expect(charge.paidAmount).toBe(30000);
-      expect(charge.status).toBe('PAID');
+      expect(charge!.paidAmount).toBe(30000);
+      expect(charge!.status).toBe('PAID');
 
       const successCount = results.filter((r) => r === 'success').length;
       expect(successCount).toBeGreaterThanOrEqual(1);
@@ -482,11 +480,11 @@ describe('ChargePaymentService - 并发测试', () => {
       });
 
       const charge = getCharge(chargeId);
-      expect(charge.paidAmount).toBe(40000);
-      expect(charge.status).toBe('PARTIAL');
+      expect(charge!.paidAmount).toBe(40000);
+      expect(charge!.status).toBe('PARTIAL');
 
       const card = getMemberCard(cardId);
-      expect(card.balance).toBe(10000);
+      expect(card!.balance).toBe(10000);
     });
 
     it('并发混合支付（同步数据库串行执行，全部成功）', async () => {
@@ -543,10 +541,10 @@ describe('ChargePaymentService - 并发测试', () => {
 
       const charge = getCharge(chargeId);
       const totalPaidCents = (cashSuccess + cardSuccess) * amountPerPay * 100;
-      expect(charge.paidAmount).toBe(totalPaidCents);
+      expect(charge!.paidAmount).toBe(totalPaidCents);
 
       const card = getMemberCard(cardId);
-      expect(card.balance).toBe(50000 - cardSuccess * amountPerPay * 100);
+      expect(card!.balance).toBe(50000 - cardSuccess * amountPerPay * 100);
     });
   });
 });

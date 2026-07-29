@@ -39,13 +39,13 @@ export class BackupsController {
   @ApiOperation({ summary: '新增' })
   @Post()
   create(@Body() dto: CreateBackupDto, @Request() req: ExpressRequest) {
-    return this.backups.create(dto.type, dto.remark, req.user);
+    return this.backups.create(dto.type, dto.remark, req.user ?? {});
   }
 
   @ApiOperation({ summary: 'restore - 备份' })
   @Post(':id/restore')
   restore(@Param('id') id: string, @Request() req: ExpressRequest) {
-    return this.backups.restoreById(id, req.user);
+    return this.backups.restoreById(id, req.user ?? {});
   }
 
   @ApiOperation({ summary: '删除' })

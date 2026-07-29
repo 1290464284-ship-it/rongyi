@@ -16,10 +16,15 @@ import { yuanToCents, centsToYuan } from "../../../common/utils/format/money.uti
 export class ProcessingOrdersService extends BaseService<ProcessingOrder> {
   constructor(dbService: DbService, clinicContext: ClinicContextService) {
     // P0 修复：添加 moneyFields=['totalFee']，使 BaseService.findOne/findMany 自动转换（分→元）
-    super(dbService, clinicContext, 'ProcessingOrder', ['teethNumbers'], [], [
-      { table: 'ProcessingOrderItem', foreignKey: 'orderId' },
-      { table: 'ProcessingFlowLog', foreignKey: 'orderId' },
-    ], true, [], undefined, undefined, ['totalFee']);
+    super(dbService, clinicContext, {
+      tableName: 'ProcessingOrder',
+      jsonFields: ['teethNumbers'],
+      cascadeTables: [
+        { table: 'ProcessingOrderItem', foreignKey: 'orderId' },
+        { table: 'ProcessingFlowLog', foreignKey: 'orderId' },
+      ],
+      moneyFields: ['totalFee'],
+    });
   }
 
   async findMany(params: { patientId?: string; status?: string; factoryId?: string; page?: number; pageSize?: number }) {
@@ -124,7 +129,7 @@ export class ProcessingOrdersService extends BaseService<ProcessingOrder> {
       if (updated && typeof updated.totalFee === 'number') {
         updated.totalFee = centsToYuan(updated.totalFee);
       }
-      return updated as ProcessingOrder;
+      return updated as unknown as ProcessingOrder;
     });
   }
 

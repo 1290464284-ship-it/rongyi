@@ -289,7 +289,7 @@ function checkSoftDelete(files) {
       }
 
       // 检测 DROP TABLE（非 migration 文件中）
-      if (/\bDROP\s+TABLE\b/i.test(line) && !file.endsWith('migrations.ts')) {
+      if (/\bDROP\s+TABLE\b/i.test(line) && !relativePath.startsWith(path.join('src', 'db', 'migrations'))) {
         reportViolation(
           'soft-delete-enforcement',
           file,
@@ -490,8 +490,10 @@ function main() {
     srcExcludes,
   ).filter(f => {
     const rel = path.relative(apiRoot, f);
-    // 排除 migrations.ts（migration 文件有自己的规则）
-    if (rel.endsWith('migrations.ts')) return false;
+    // 排除 migrations 目录（migration 文件有自己的规则）
+    const migPrefix = path.join('src', 'db', 'migrations');
+    const migPrefixAlt = path.join('db', 'migrations');
+    if (rel.startsWith(migPrefix) || rel.startsWith(migPrefixAlt)) return false;
     // 排除 schema.ts（单独检查）
     if (rel.endsWith('schema.ts')) return false;
     // 排除 db/ 目录下的非 service 文件

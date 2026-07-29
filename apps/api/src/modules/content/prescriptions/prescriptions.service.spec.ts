@@ -1,6 +1,6 @@
 import { PrescriptionsService } from './prescriptions.service';
 import { BusinessValidationException } from '@common/errors';
-import { MockDbService } from '../../../db/__mocks__/db-service.mock';
+import { MockDbService , asDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import { DrugCatalogService } from '../drug-catalog/drug-catalog.service';
 
@@ -28,7 +28,7 @@ describe('PrescriptionsService', () => {
   beforeEach(() => {
     db = new MockDbService();
     drugCatalogService = createMockDrugCatalogService();
-    service = new PrescriptionsService(db as any, createMockClinicContext(), drugCatalogService);
+    service = new PrescriptionsService(asDbService(db), createMockClinicContext(), drugCatalogService);
   });
 
   afterEach(() => {
@@ -82,8 +82,8 @@ describe('PrescriptionsService', () => {
         ],
       });
 
-      expect((result as any).patientId).toBe('patient-001');
-      expect((result as any).doctorId).toBe('doctor-001');
+      expect(result.patientId).toBe('patient-001');
+      expect(result.doctorId).toBe('doctor-001');
 
       // 验证处方明细已写入
       const items = db.getTableData('PrescriptionItem');
@@ -103,7 +103,7 @@ describe('PrescriptionsService', () => {
         ],
       });
 
-      expect((result as any).patientId).toBe('patient-001');
+      expect(result.patientId).toBe('patient-001');
       const items = db.getTableData('PrescriptionItem');
       expect(items.length).toBe(3);
     });
@@ -119,7 +119,7 @@ describe('PrescriptionsService', () => {
         ],
       });
 
-      expect((result as any).remark).toBe('饭后服用');
+      expect(result.remark).toBe('饭后服用');
     });
   });
 
@@ -148,7 +148,7 @@ describe('PrescriptionsService', () => {
         ],
       });
 
-      expect((result as any).patientId).toBe('patient-002');
+      expect(result.patientId).toBe('patient-002');
     });
 
     it('药品库存不足时应抛出 BusinessValidationException', async () => {
@@ -202,7 +202,7 @@ describe('PrescriptionsService', () => {
         ],
       });
 
-      expect((result as any).patientId).toBe('patient-001');
+      expect(result.patientId).toBe('patient-001');
       // DrugCatalog 表不应有任何查询操作（但 mock 不跟踪此行为）
     });
 
@@ -224,7 +224,7 @@ describe('PrescriptionsService', () => {
         ],
       });
 
-      expect((result as any).patientId).toBe('patient-001');
+      expect(result.patientId).toBe('patient-001');
     });
   });
 
@@ -250,7 +250,7 @@ describe('PrescriptionsService', () => {
       expect(items.length).toBe(2);
 
       // 所有 item 的 prescriptionId 应一致
-      expect(items.every(i => i.prescriptionId === (result as any).id)).toBe(true);
+      expect(items.every(i => i.prescriptionId === result.id)).toBe(true);
     });
   });
 
@@ -275,7 +275,7 @@ describe('PrescriptionsService', () => {
       const result = await service.findMany({ filters: { patientId: 'patient-001' } });
       expect(result.items.length).toBe(2);
       result.items.forEach(item => {
-        expect((item as any).patientId).toBe('patient-001');
+        expect(item.patientId).toBe('patient-001');
       });
     });
 
@@ -306,8 +306,8 @@ describe('PrescriptionsService', () => {
 
     it('正常查询', async () => {
       const result = await service.findOne('rx-001');
-      expect((result as any).id).toBe('rx-001');
-      expect((result as any).patientId).toBe('patient-001');
+      expect(result.id).toBe('rx-001');
+      expect(result.patientId).toBe('patient-001');
     });
 
     it('不存在的 ID 抛出 BusinessNotFoundException', async () => {
@@ -326,7 +326,7 @@ describe('PrescriptionsService', () => {
 
     it('正常更新 remark 字段', async () => {
       const result = await service.update('rx-001', { remark: '更新后的备注' });
-      expect((result as any).remark).toBe('更新后的备注');
+      expect(result.remark).toBe('更新后的备注');
     });
 
     it('不存在的处方抛出异常', async () => {
@@ -382,7 +382,7 @@ describe('PrescriptionsService', () => {
 
     beforeEach(() => {
       nullCtxService = new PrescriptionsService(
-        db as any,
+        asDbService(db),
         createMockClinicContext(null),
         createMockDrugCatalogService(),
       );
@@ -413,7 +413,7 @@ describe('PrescriptionsService', () => {
     it('clinicId 为 null 且带 drugCode 时仍应调用 deductStock', async () => {
       const mockDrugCatalog = { deductStock: jest.fn() } as unknown as DrugCatalogService;
       const svc = new PrescriptionsService(
-        db as any,
+        asDbService(db),
         createMockClinicContext(null),
         mockDrugCatalog,
       );
@@ -440,7 +440,7 @@ describe('PrescriptionsService', () => {
         }),
       } as unknown as DrugCatalogService;
 
-      const svc = new PrescriptionsService(db as any, createMockClinicContext(), mockDrugCatalog);
+      const svc = new PrescriptionsService(asDbService(db), createMockClinicContext(), mockDrugCatalog);
 
       // 异常应从事务内向上传播
       await expect(svc.create({
@@ -462,7 +462,7 @@ describe('PrescriptionsService', () => {
         }),
       } as unknown as DrugCatalogService;
 
-      const svc = new PrescriptionsService(db as any, createMockClinicContext(), mockDrugCatalog);
+      const svc = new PrescriptionsService(asDbService(db), createMockClinicContext(), mockDrugCatalog);
 
       await expect(svc.create({
         patientId: 'patient-001',
@@ -479,7 +479,7 @@ describe('PrescriptionsService', () => {
   describe('边界分支 - 混合 items 过滤逻辑', () => {
     it('混合 items（部分有 drugCode、部分无）时只对有效项调用 deductStock', async () => {
       const mockDrugCatalog = { deductStock: jest.fn() } as unknown as DrugCatalogService;
-      const svc = new PrescriptionsService(db as any, createMockClinicContext(), mockDrugCatalog);
+      const svc = new PrescriptionsService(asDbService(db), createMockClinicContext(), mockDrugCatalog);
 
       await svc.create({
         patientId: 'patient-001',
@@ -510,7 +510,7 @@ describe('PrescriptionsService', () => {
 
     it('所有 items 都无有效 drugCode 时不应调用 deductStock', async () => {
       const mockDrugCatalog = { deductStock: jest.fn() } as unknown as DrugCatalogService;
-      const svc = new PrescriptionsService(db as any, createMockClinicContext(), mockDrugCatalog);
+      const svc = new PrescriptionsService(asDbService(db), createMockClinicContext(), mockDrugCatalog);
 
       await svc.create({
         patientId: 'patient-001',
@@ -530,7 +530,7 @@ describe('PrescriptionsService', () => {
     it('visitId 为 null 时显式存储 null', async () => {
       await service.create({
         patientId: 'patient-001',
-        visitId: null,
+        visitId: undefined as any,
         doctorId: 'doctor-001',
         items: [
           { drugName: '阿莫西林', spec: '0.25g', dosage: '0.5g', frequency: 'tid', days: 5, quantity: 30, unit: '粒' },
@@ -545,7 +545,7 @@ describe('PrescriptionsService', () => {
       await service.create({
         patientId: 'patient-001',
         doctorId: 'doctor-001',
-        remark: null,
+        remark: undefined as any,
         items: [
           { drugName: '阿莫西林', spec: '0.25g', dosage: '0.5g', frequency: 'tid', days: 5, quantity: 30, unit: '粒' },
         ],

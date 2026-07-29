@@ -6,14 +6,14 @@ export class CreateClinicDto {
   @IsString()
   @IsNotEmpty({ message: '诊所名称不能为空' })
   @MaxLength(100)
-  name: string;
+  name!: string;
 
   @ApiProperty({ description: '诊所编码', example: 'RY-DENTAL-001' })
   @IsString()
   @IsNotEmpty({ message: '诊所编码不能为空' })
   @Matches(/^[A-Z0-9_-]+$/i, { message: '诊所编码只能包含字母、数字、下划线和连字符' })
   @MaxLength(50)
-  code: string;
+  code!: string;
 
   @ApiProperty({ description: '诊所地址', example: '北京市朝阳区建国路88号', required: false })
   @IsOptional()

@@ -14,7 +14,7 @@ export interface BuildWhereOptions {
   searchFields: string[];
   filters?: Record<string, unknown>;
   allowedFilterFields?: Set<string>;
-  clinicId?: string | null;
+  clinicId?: string;
   skipClinicFilter: boolean;
   hasSoftDelete: boolean;
   includeDeleted: boolean;

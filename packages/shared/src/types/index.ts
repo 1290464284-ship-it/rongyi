@@ -19,8 +19,9 @@ export type DbRow = Record<string, unknown>;
 
 export interface BaseEntity {
   id: string;
+  clinicId?: string;
   createdAt: string;
-  updatedAt?: string | null;
+  updatedAt?: string
 }
 
 export interface Pagination<T> {
@@ -33,22 +34,20 @@ export interface Pagination<T> {
 export type UserRole = 'BOSS' | 'DOCTOR' | 'RECEPTIONIST' | 'NURSE' | 'ADMIN' | 'TECHNICIAN';
 
 export interface User extends BaseEntity {
-  [key: string]: unknown;
   username: string;
   passwordHash?: string;
   name: string;
   role: UserRole;
-  phone?: string | null;
+  phone?: string
   active: number;
   loginAttempts?: number;
-  lockedUntil?: string | null;
+  lockedUntil?: string
   tokenVersion?: number;
-  refreshToken?: string | null;
-  refreshTokenExpiresAt?: string | null;
+  refreshToken?: string
+  refreshTokenExpiresAt?: string
 }
 
 export interface FamilyMember {
-  [key: string]: unknown;
   id: string;
   name: string;
   code: string;
@@ -57,63 +56,60 @@ export interface FamilyMember {
 }
 
 export interface Patient extends BaseEntity {
-  [key: string]: unknown;
   code: string;
   name: string;
   gender: Gender;
   phone: string;
-  birthDate?: string | null;
-  idCard?: string | null;
-  address?: string | null;
-  occupation?: string | null;
-  remark?: string | null;
-  avatar?: string | null;
+  birthDate?: string;
+  idCard?: string;
+  address?: string;
+  occupation?: string;
+  remark?: string;
+  avatar?: string;
   tags: string[];
   allergies: string[];
   medicalHistory: string[];
   medicationHistory: string[];
   systemicDiseases: string[];
   source: PatientSource;
-  familyId?: string | null;
-  referrer?: string | null;
-  emergencyContact?: string | null;
-  emergencyPhone?: string | null;
+  familyId?: string;
+  referrer?: string;
+  emergencyContact?: string;
+  emergencyPhone?: string;
   active: number;
   familyMembers?: FamilyMember[];
+  deletedAt?: string;
 }
 
 export interface Appointment extends BaseEntity {
-  [key: string]: unknown;
   patientId: string;
   doctorId: string;
-  chairId?: string | null;
+  chairId?: string
   startTime: string;
   endTime: string;
   status: AppointmentStatus;
   type: AppointmentType;
-  remark?: string | null;
-  visitId?: string | null;
-  deletedAt?: string | null;
+  remark?: string
+  visitId?: string
+  deletedAt?: string
 }
 
 export interface Visit extends BaseEntity {
-  [key: string]: unknown;
   patientId: string;
-  appointmentId?: string | null;
+  appointmentId?: string
   doctorId: string;
-  chiefComplaint?: string | null;
-  diagnosis?: string | null;
-  treatmentPlan?: string | null;
+  chiefComplaint?: string
+  diagnosis?: string
+  treatmentPlan?: string
   startTime: string;
-  endTime?: string | null;
+  endTime?: string
   status: VisitStatus;
-  deletedAt?: string | null;
+  deletedAt?: string
 }
 
 export interface Treatment extends BaseEntity {
-  [key: string]: unknown;
   patientId: string;
-  visitId?: string | null;
+  visitId?: string
   doctorId: string;
   code: string;
   name: string;
@@ -122,9 +118,9 @@ export interface Treatment extends BaseEntity {
   quantity: number;
   teethNumbers: string[];
   status: TreatmentStatus;
-  plannedDate?: string | null;
-  completedDate?: string | null;
-  remark?: string | null;
+  plannedDate?: string
+  completedDate?: string
+  remark?: string
 }
 
 export interface TreatmentCatalog extends BaseEntity {
@@ -132,71 +128,66 @@ export interface TreatmentCatalog extends BaseEntity {
   name: string;
   category: string;
   price: number;
-  remark?: string | null;
+  remark?: string
 }
 
 export interface Charge extends BaseEntity {
-  [key: string]: unknown;
   patientId: string;
-  visitId?: string | null;
-  doctorId?: string | null;
+  visitId?: string
+  doctorId?: string
   number: string;
   totalAmount: number;
   paidAmount: number;
   refundedAmount: number;
   discount: number;
   status: ChargeStatus;
-  payMethod?: PayMethod | null;
-  paidAt?: string | null;
-  remark?: string | null;
+  payMethod?: PayMethod
+  paidAt?: string
+  remark?: string
   chargeId?: string;
   code?: string;
   isEnabled?: number;
   debtAmount?: number;
-  parentId?: string | null;
+  parentId?: string
   balance?: number;
-  deletedAt?: string | null;
+  deletedAt?: string
 }
 
 export type EquipmentStatus = 'NORMAL' | 'MAINTENANCE' | 'BROKEN' | 'SCRAPPED';
 
 export interface Equipment extends BaseEntity {
-  [key: string]: unknown;
   name: string;
-  model?: string | null;
-  brand?: string | null;
-  serialNumber?: string | null;
-  category?: string | null;
-  location?: string | null;
-  purchasePrice?: number | null;
-  purchaseDate?: string | null;
-  supplier?: string | null;
+  model?: string
+  brand?: string
+  serialNumber?: string
+  category?: string
+  location?: string
+  purchasePrice?: number
+  purchaseDate?: string
+  supplier?: string
   status: EquipmentStatus;
-  remarks?: string | null;
+  remarks?: string
 }
 
 export { FollowUpStatus } from '../enums';
 
 export interface FollowUp extends BaseEntity {
-  [key: string]: unknown;
   patientId: string;
   planDate: string;
-  content?: string | null;
+  content?: string
   status: FollowUpStatus;
-  result?: string | null;
-  assigneeId?: string | null;
-  completedAt?: string | null;
+  result?: string
+  assigneeId?: string
+  completedAt?: string
 }
 
 export interface Chair extends BaseEntity {
-  [key: string]: unknown;
   name: string;
-  location?: string | null;
+  location?: string
   active: number;
 }
 
 export interface MemberCard extends BaseEntity {
-  [key: string]: unknown;
   patientId: string;
   cardNo: string;
   balance: number;
@@ -209,157 +200,151 @@ export interface MemberCard extends BaseEntity {
 }
 
 export interface Prescription extends BaseEntity {
-  [key: string]: unknown;
   patientId: string;
-  visitId?: string | null;
+  visitId?: string
   doctorId: string;
-  remark?: string | null;
+  remark?: string
 }
 
 export interface Imaging extends BaseEntity {
-  [key: string]: unknown;
   patientId: string;
-  visitId?: string | null;
-  doctorId?: string | null;
+  visitId?: string
+  doctorId?: string
   type: string;
   title: string;
-  description?: string | null;
+  description?: string
   imageUrl: string;
-  thumbnailUrl?: string | null;
-  takenAt?: string | null;
-  remark?: string | null;
+  thumbnailUrl?: string
+  takenAt?: string
+  remark?: string
 }
 
 export interface Supplier extends BaseEntity {
-  [key: string]: unknown;
+  code?: string;
   name: string;
-  contactPerson?: string | null;
-  phone?: string | null;
-  address?: string | null;
-  bankAccount?: string | null;
-  remark?: string | null;
+  contactPerson?: string;
+  phone?: string;
+  address?: string;
+  bankAccount?: string;
+  remark?: string;
 }
 
 export interface InventoryItem extends BaseEntity {
-  [key: string]: unknown;
   code: string;
   name: string;
-  spec?: string | null;
+  spec?: string
   category: string;
   unit: string;
   stock: number;
   minStock: number;
   price: number;
-  supplierId?: string | null;
-  expireDate?: string | null;
-  location?: string | null;
-  remark?: string | null;
+  supplierId?: string
+  expireDate?: string
+  location?: string
+  remark?: string
 }
 
 export interface Registration extends BaseEntity {
-  [key: string]: unknown;
   patientId: string;
-  doctorId?: string | null;
+  doctorId?: string
   type: RegistrationType;
   status: RegistrationStatus;
-  visitId?: string | null;
-  appointmentId?: string | null;
-  triageNote?: string | null;
-  chiefComplaint?: string | null;
-  registeredBy?: string | null;
+  visitId?: string
+  appointmentId?: string
+  triageNote?: string
+  chiefComplaint?: string
+  registeredBy?: string
   registeredAt: string;
-  triagedAt?: string | null;
-  startedAt?: string | null;
-  completedAt?: string | null;
+  triagedAt?: string
+  startedAt?: string
+  completedAt?: string
 }
 
 export interface OperationLog extends BaseEntity {
-  [key: string]: unknown;
-  userId?: string | null;
-  userName?: string | null;
+  userId?: string
+  userName?: string
   action: string;
-  target?: string | null;
-  detail?: string | null;
-  ip?: string | null;
+  target?: string
+  detail?: string
+  ip?: string
 }
 
 export interface FirstExam extends BaseEntity {
-  [key: string]: unknown;
   patientId: string;
-  doctorId?: string | null;
-  consultantId?: string | null;
-  chiefComplaint?: string | null;
-  presentIllness?: string | null;
-  pastHistory?: string | null;
-  oralExam?: string | null;
-  auxiliaryExam?: string | null;
-  diagnosis?: string | null;
-  treatmentSuggestion?: string | null;
+  doctorId?: string
+  consultantId?: string
+  chiefComplaint?: string
+  presentIllness?: string
+  pastHistory?: string
+  oralExam?: string
+  auxiliaryExam?: string
+  diagnosis?: string
+  treatmentSuggestion?: string
   status: string;
-  remark?: string | null;
-  deletedAt?: string | null;
+  remark?: string
+  deletedAt?: string
 }
 
 export interface FirstExamTooth {
-  [key: string]: unknown;
   id: string;
   examId: string;
   toothNumber: number;
   toothStatus: string;
   diseases: string[];
   isChief: number;
-  treatmentPlan?: string | null;
-  remark?: string | null;
+  treatmentPlan?: string
+  remark?: string
 }
 
 export interface MedicalRecord extends BaseEntity {
   templateId?: string;
   isTemplate?: number;
   category?: string;
-  [key: string]: unknown;
   patientId: string;
-  visitId?: string | null;
-  doctorId?: string | null;
-  chiefComplaint?: string | null;
-  presentIllness?: string | null;
-  pastHistory?: string | null;
-  allergyHistory?: string | null;
-  examination?: string | null;
-  diagnosis?: string | null;
-  treatmentPlan?: string | null;
+  visitId?: string
+  doctorId?: string
+  chiefComplaint?: string
+  presentIllness?: string
+  pastHistory?: string
+  allergyHistory?: string
+  examination?: string
+  diagnosis?: string
+  treatmentPlan?: string
   teethInvolved?: string[];
   images?: string[];
   isLocked?: number;
+  lockedAt?: string;
+  lockedBy?: string;
+  signature?: string;
+  modifyRequestId?: string;
   status: string;
-  deletedAt?: string | null;
+  deletedAt?: string
 }
 
 export interface ProcessingOrder extends BaseEntity {
-  [key: string]: unknown;
   patientId: string;
-  visitId?: string | null;
-  factoryId?: string | null;
-  doctorId?: string | null;
+  visitId?: string
+  factoryId?: string
+  doctorId?: string
   number: string;
-  shade?: string | null;
+  shade?: string
   teethNumbers: string[];
   totalFee: number;
   status: string;
-  chargeId?: string | null;
-  sentAt?: string | null;
-  expectedAt?: string | null;
-  receivedAt?: string | null;
-  deliveredAt?: string | null;
-  remark?: string | null;
-  deletedAt?: string | null;
+  chargeId?: string
+  sentAt?: string
+  expectedAt?: string
+  receivedAt?: string
+  deliveredAt?: string
+  remark?: string
+  deletedAt?: string
 }
 
 export interface ProcessingOrderItem {
-  [key: string]: unknown;
   id: string;
   orderId: string;
   name: string;
-  spec?: string | null;
+  spec?: string
   quantity: number;
   unitPrice: number;
   subtotal: number;
@@ -367,87 +352,80 @@ export interface ProcessingOrderItem {
 }
 
 export interface BackupRecord {
-  [key: string]: unknown;
   id: string;
   filename: string;
   fileSize: number;
   type: string;
-  remark?: string | null;
+  remark?: string
   createdAt: string;
 }
 
 export interface WechatMessage extends BaseEntity {
-  [key: string]: unknown;
   patientId: string;
   type: string;
-  content?: string | null;
+  content?: string
   status: string;
-  templateId?: string | null;
-  sentAt?: string | null;
-  result?: string | null;
-  remark?: string | null;
-  name?: string | null;
-  openId?: string | null;
+  templateId?: string
+  sentAt?: string
+  result?: string
+  remark?: string
+  name?: string
+  openId?: string
 }
 
 export interface Refund extends BaseEntity {
-  [key: string]: unknown;
   chargeId: string;
   patientId: string;
   amount: number;
-  reason?: string | null;
-  operatorId?: string | null;
-  operatorName?: string | null;
-  deletedAt?: string | null;
+  reason?: string
+  operatorId?: string
+  operatorName?: string
+  deletedAt?: string
 }
 
 export interface SmsLog extends BaseEntity {
-  [key: string]: unknown;
-  patientId?: string | null;
+  patientId?: string
   phone: string;
   content: string;
   type: string;
   status: string;
-  result?: string | null;
-  sentAt?: string | null;
+  result?: string
+  sentAt?: string
   cost?: number;
 }
 
 export interface Invoice extends BaseEntity {
-  [key: string]: unknown;
   chargeId: string;
   patientId: string;
   number: string;
   amount: number;
   type: string;
   status: string;
-  issuedAt?: string | null;
-  remark?: string | null;
+  issuedAt?: string
+  remark?: string
 }
 
 
 
 // DB row types (runtime fields from database)
 export interface ToothRecord extends BaseEntity {
-  [key: string]: unknown;
   patientId: string;
   toothNumber: number;
   currentStatus: string;
   conditions: string[];
-  remark?: string | null;
-  deletedAt?: string | null;
+  remark?: string
+  deletedAt?: string
 }
 
 export interface TreatmentPlan extends BaseEntity {
-  [key: string]: unknown;
   patientId: string;
-  visitId?: string | null;
+  visitId?: string
   doctorId: string;
   name: string;
   status: string;
   totalFee: number;
-  remark?: string | null;
-  deletedAt?: string | null;
+  remark?: string
+  deletedAt?: string
 }
 
 export interface TreatmentPlanItem {
@@ -459,15 +437,15 @@ export interface TreatmentPlanItem {
   quantity: number;
   teethNumbers: string[];
   status: string;
-  treatmentId?: string | null;
-  completedAt?: string | null;
-  remark?: string | null;
+  treatmentId?: string
+  completedAt?: string
+  remark?: string
 }
 
 export interface ChargeItem {
   id: string;
   chargeId: string;
-  treatmentId?: string | null;
+  treatmentId?: string
   name: string;
   category: string;
   price: number;

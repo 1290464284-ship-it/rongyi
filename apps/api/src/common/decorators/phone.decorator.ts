@@ -7,8 +7,8 @@ import {
 import { isPhoneNumber, normalizePhone } from '../utils/format/phone.utils';
 
 @ValidatorConstraint({ async: false })
-class IsPhoneConstraint implements ValidatorConstraintInterface {
-  validate(phone: string): boolean {
+export class IsPhoneConstraint implements ValidatorConstraintInterface {
+  validate(phone: string | null | undefined): boolean {
     if (phone === undefined || phone === null) return true;
     return isPhoneNumber(phone);
   }
@@ -45,8 +45,8 @@ export function IsPhone(validationOptions?: ValidationOptions) {
 }
 
 @ValidatorConstraint({ async: false })
-class IsPhoneNormalizedConstraint implements ValidatorConstraintInterface {
-  validate(phone: string): boolean {
+export class IsPhoneNormalizedConstraint implements ValidatorConstraintInterface {
+  validate(phone: string | null | undefined): boolean {
     if (phone === undefined || phone === null) return true;
     const normalized = normalizePhone(phone);
     return normalized ? isPhoneNumber(normalized) : false;

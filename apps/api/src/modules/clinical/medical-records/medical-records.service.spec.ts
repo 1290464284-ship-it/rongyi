@@ -1,6 +1,7 @@
 import { MedicalRecordsService } from './medical-records.service';
 import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
+import { asDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import { CacheService } from '../../../common/services/cache.service';
 
@@ -43,7 +44,7 @@ describe('MedicalRecordsService', () => {
 
   beforeEach(() => {
     db = new MockDbService();
-    service = new MedicalRecordsService(db as any, createMockClinicContext(), createMockCacheService());
+    service = new MedicalRecordsService(asDbService(db), createMockClinicContext(), createMockCacheService());
   });
 
   afterEach(() => {
@@ -64,9 +65,9 @@ describe('MedicalRecordsService', () => {
       const result = await service.create(dto);
 
       expect(result).toBeDefined();
-      expect((result as any).patientId).toBe('patient-001');
-      expect((result as any).chiefComplaint).toBe('牙痛');
-      expect(Boolean((result as any).isLocked)).toBe(false);
+      expect(result.patientId).toBe('patient-001');
+      expect(result.chiefComplaint).toBe('牙痛');
+      expect(Boolean(result.isLocked)).toBe(false);
     });
 
     it('创建病历带牙齿和图片信息', async () => {
@@ -81,7 +82,7 @@ describe('MedicalRecordsService', () => {
       const result = await service.create(dto);
 
       expect(result).toBeDefined();
-      expect((result as any).patientId).toBe('patient-002');
+      expect(result.patientId).toBe('patient-002');
     });
 
     it('创建病历使用默认值', async () => {
@@ -93,7 +94,7 @@ describe('MedicalRecordsService', () => {
       const result = await service.create(dto);
 
       expect(result).toBeDefined();
-      expect((result as any).patientId).toBe('patient-003');
+      expect(result.patientId).toBe('patient-003');
     });
   });
 
@@ -116,8 +117,8 @@ describe('MedicalRecordsService', () => {
         diagnosis: '更新后的诊断',
       });
 
-      expect((result as any).chiefComplaint).toBe('更新后的主诉');
-      expect((result as any).diagnosis).toBe('更新后的诊断');
+      expect(result.chiefComplaint).toBe('更新后的主诉');
+      expect(result.diagnosis).toBe('更新后的诊断');
     });
 
     it('已锁定的病历不能直接修改，应抛出 BusinessValidationException', async () => {
@@ -159,8 +160,8 @@ describe('MedicalRecordsService', () => {
 
       const result = await service.lock('record-001', 'doctor-001');
 
-      expect((result as any).isLocked).toBe(1);
-      expect((result as any).lockedBy).toBe('doctor-001');
+      expect(result.isLocked).toBe(1);
+      expect(result.lockedBy).toBe('doctor-001');
     });
 
     it('已锁定的病历重复锁定应抛出 BusinessValidationException', async () => {
@@ -202,7 +203,7 @@ describe('MedicalRecordsService', () => {
       );
 
       expect(result).toBeDefined();
-      expect((result as any).id).toBeDefined();
+      expect(result.id).toBeDefined();
 
       const requests = db.getTableData('RecordModifyRequest');
       expect(requests.length).toBe(1);
@@ -253,8 +254,8 @@ describe('MedicalRecordsService', () => {
       );
 
       expect(result).toBeDefined();
-      expect((result as any).status).toBe('APPROVED');
-      expect((result as any).reviewerId).toBe('reviewer-001');
+      expect(result.status).toBe('APPROVED');
+      expect(result.reviewerId).toBe('reviewer-001');
 
       const records = db.getTableData('MedicalRecord');
       const updatedRecord = records.find(r => r.id === 'record-001');
@@ -294,7 +295,7 @@ describe('MedicalRecordsService', () => {
       );
 
       expect(result).toBeDefined();
-      expect((result as any).status).toBe('REJECTED');
+      expect(result.status).toBe('REJECTED');
 
       const records = db.getTableData('MedicalRecord');
       const updatedRecord = records.find(r => r.id === 'record-002');
@@ -333,7 +334,7 @@ describe('MedicalRecordsService', () => {
       );
 
       expect(result).toBeDefined();
-      expect((result as any).id).toBeDefined();
+      expect(result.id).toBeDefined();
 
       const phrases = db.getTableData('MedicalRecordPhrase');
       expect(phrases.length).toBe(1);
@@ -378,7 +379,7 @@ describe('MedicalRecordsService', () => {
       const result = await service.findOne('record-001');
 
       expect(result).toBeDefined();
-      expect((result as any).chiefComplaint).toBe('测试主诉');
+      expect(result.chiefComplaint).toBe('测试主诉');
     });
 
     it('查询不存在的病历应抛出 BusinessNotFoundException', async () => {
@@ -444,12 +445,12 @@ describe('MedicalRecordsService', () => {
       );
 
       expect(result).toBeDefined();
-      expect((result as any).id).toBeDefined();
+      expect(result.id).toBeDefined();
 
       const requests = db.getTableData('RecordModifyRequest');
-      const created = requests.find(r => r.id === (result as any).id);
-      expect(created.status).toBe('PENDING');
-      expect(created.applicantId).toBe('doctor-001');
+      const created = requests.find(r => r.id === result.id);
+      expect(created!.status).toBe('PENDING');
+      expect(created!.applicantId).toBe('doctor-001');
     });
 
     it('创建修改申请不带申请人时 applicantId 应为 null', async () => {
@@ -458,9 +459,9 @@ describe('MedicalRecordsService', () => {
       );
 
       const requests = db.getTableData('RecordModifyRequest');
-      const created = requests.find(r => r.id === (result as any).id);
+      const created = requests.find(r => r.id === result.id);
       // 当 userId 为 undefined 时，safeDto.applicantId || userId || null 应为 null
-      expect(created.applicantId).toBeNull();
+      expect(created!.applicantId).toBeNull();
     });
 
     it('创建修改申请应自动生成 id 和 createdAt', async () => {
@@ -470,10 +471,10 @@ describe('MedicalRecordsService', () => {
       );
 
       const requests = db.getTableData('RecordModifyRequest');
-      const created = requests.find(r => r.id === (result as any).id);
-      expect(created.id).toBeDefined();
-      expect(created.createdAt).toBeDefined();
-      expect(created.clinicId).toBe('test-clinic-001');
+      const created = requests.find(r => r.id === result.id);
+      expect(created!.id).toBeDefined();
+      expect(created!.createdAt).toBeDefined();
+      expect(created!.clinicId).toBe('test-clinic-001');
     });
 
     it('创建修改申请不带 reason 时 reason 应为空字符串', async () => {
@@ -483,8 +484,8 @@ describe('MedicalRecordsService', () => {
       );
 
       const requests = db.getTableData('RecordModifyRequest');
-      const created = requests.find(r => r.id === (result as any).id);
-      expect(created.reason).toBe('');
+      const created = requests.find(r => r.id === result.id);
+      expect(created!.reason).toBe('');
     });
   });
 
@@ -504,8 +505,8 @@ describe('MedicalRecordsService', () => {
 
       const result = await service.reviewModifyRequest('req-no-remark', { status: 'APPROVED' }, 'reviewer-001');
 
-      expect((result as any).status).toBe('APPROVED');
-      expect((result as any).reviewRemark).toBeNull();
+      expect(result.status).toBe('APPROVED');
+      expect(result.reviewRemark).toBeNull();
 
       const records = db.getTableData('MedicalRecord');
       const record = records.find(r => r.id === 'r-lock-1');
@@ -544,7 +545,7 @@ describe('MedicalRecordsService', () => {
       });
 
       expect(result).toBeDefined();
-      expect((result as any).id).toBeDefined();
+      expect(result.id).toBeDefined();
 
       const templates = db.getTableData('MedicalRecordTemplate');
       expect(templates.length).toBe(1);
@@ -577,9 +578,9 @@ describe('MedicalRecordsService', () => {
       const result = await service.createTemplate({ name: '模板1' });
 
       const templates = db.getTableData('MedicalRecordTemplate');
-      const created = templates.find(t => t.id === (result as any).id);
-      expect(created.id).toBeDefined();
-      expect(created.createdAt).toBeDefined();
+      const created = templates.find(t => t.id === result.id);
+      expect(created!.id).toBeDefined();
+      expect(created!.createdAt).toBeDefined();
     });
   });
 
@@ -623,7 +624,7 @@ describe('MedicalRecordsService', () => {
     it('更新模板名称应成功', async () => {
       const result = await service.updateTemplate('tpl-1', { name: '新模板名' });
 
-      expect((result as any).id).toBe('tpl-1');
+      expect(result.id).toBe('tpl-1');
       const templates = db.getTableData('MedicalRecordTemplate');
       expect(templates[0].name).toBe('新模板名');
     });
@@ -649,14 +650,14 @@ describe('MedicalRecordsService', () => {
       const result = await service.updateTemplate('tpl-1', {});
 
       expect(result).toBeDefined();
-      expect((result as any).id).toBe('tpl-1');
+      expect(result.id).toBe('tpl-1');
     });
 
     it('更新不存在的模板不应抛出异常（无校验）', async () => {
       const result = await service.updateTemplate('non-existent', { name: 'test' });
 
       expect(result).toBeDefined();
-      expect((result as any).id).toBe('non-existent');
+      expect(result.id).toBe('non-existent');
     });
   });
 
@@ -670,7 +671,7 @@ describe('MedicalRecordsService', () => {
     it('删除存在的模板应返回 id', async () => {
       const result = await service.deleteTemplate('tpl-1');
 
-      expect((result as any).id).toBe('tpl-1');
+      expect(result.id).toBe('tpl-1');
 
       const templates = db.getTableData('MedicalRecordTemplate');
       const deleted = templates.find(t => t.id === 'tpl-1');
@@ -687,7 +688,7 @@ describe('MedicalRecordsService', () => {
     it('删除不存在的模板不应抛出异常', async () => {
       const result = await service.deleteTemplate('non-existent');
 
-      expect((result as any).id).toBe('non-existent');
+      expect(result.id).toBe('non-existent');
     });
   });
 
@@ -703,7 +704,7 @@ describe('MedicalRecordsService', () => {
     it('更新常用语内容应成功', async () => {
       const result = await service.updatePhrase('phrase-1', { content: '更新后的内容' });
 
-      expect((result as any).id).toBe('phrase-1');
+      expect(result.id).toBe('phrase-1');
       const phrases = db.getTableData('MedicalRecordPhrase');
       expect(phrases[0].content).toBe('更新后的内容');
     });
@@ -739,7 +740,7 @@ describe('MedicalRecordsService', () => {
       const result = await service.updatePhrase('phrase-1', {});
 
       expect(result).toBeDefined();
-      expect((result as any).id).toBe('phrase-1');
+      expect(result.id).toBe('phrase-1');
     });
   });
 
@@ -748,33 +749,33 @@ describe('MedicalRecordsService', () => {
       const result = await service.createPhrase({ content: '只传内容' }, 'doctor-001');
 
       const phrases = db.getTableData('MedicalRecordPhrase');
-      const created = phrases.find(p => p.id === (result as any).id);
-      expect(created.name).toBe('只传内容');
+      const created = phrases.find(p => p.id === result.id);
+      expect(created!.name).toBe('只传内容');
     });
 
     it('创建常用语不带 name 和 content 时 name 应为空字符串', async () => {
       const result = await service.createPhrase({ category: '其他' }, 'doctor-001');
 
       const phrases = db.getTableData('MedicalRecordPhrase');
-      const created = phrases.find(p => p.id === (result as any).id);
-      expect(created.name).toBe('');
-      expect(created.content).toBe('');
+      const created = phrases.find(p => p.id === result.id);
+      expect(created!.name).toBe('');
+      expect(created!.content).toBe('');
     });
 
     it('创建常用语不带 category 时 category 应为 null', async () => {
       const result = await service.createPhrase({ name: '测试', content: '内容' }, 'doctor-001');
 
       const phrases = db.getTableData('MedicalRecordPhrase');
-      const created = phrases.find(p => p.id === (result as any).id);
-      expect(created.category).toBeNull();
+      const created = phrases.find(p => p.id === result.id);
+      expect(created!.category).toBeNull();
     });
 
     it('创建常用语应包含 clinicId', async () => {
       const result = await service.createPhrase({ name: '测试' }, 'doctor-001');
 
       const phrases = db.getTableData('MedicalRecordPhrase');
-      const created = phrases.find(p => p.id === (result as any).id);
-      expect(created.clinicId).toBe('test-clinic-001');
+      const created = phrases.find(p => p.id === result.id);
+      expect(created!.clinicId).toBe('test-clinic-001');
     });
   });
 
@@ -819,7 +820,7 @@ describe('MedicalRecordsService', () => {
     it('删除不存在的常用语不应抛出异常', async () => {
       const result = await service.deletePhrase('non-existent', 'doctor-001');
 
-      expect((result as any).id).toBe('non-existent');
+      expect(result.id).toBe('non-existent');
     });
 
     it('删除常用语应设置 deletedAt', async () => {
@@ -859,26 +860,26 @@ describe('MedicalRecordsService', () => {
     it('只更新 presentIllness 应成功', async () => {
       const result = await service.update('record-multi', { presentIllness: '新病史' });
 
-      expect((result as any).presentIllness).toBe('新病史');
-      expect((result as any).chiefComplaint).toBe('原主诉');
+      expect(result.presentIllness).toBe('新病史');
+      expect(result.chiefComplaint).toBe('原主诉');
     });
 
     it('只更新 pastHistory 应成功', async () => {
       const result = await service.update('record-multi', { pastHistory: '新既往史' });
 
-      expect((result as any).pastHistory).toBe('新既往史');
+      expect(result.pastHistory).toBe('新既往史');
     });
 
     it('只更新 examination 应成功', async () => {
       const result = await service.update('record-multi', { examination: '新检查' });
 
-      expect((result as any).examination).toBe('新检查');
+      expect(result.examination).toBe('新检查');
     });
 
     it('只更新 treatmentPlan 应成功', async () => {
       const result = await service.update('record-multi', { treatmentPlan: '新计划' });
 
-      expect((result as any).treatmentPlan).toBe('新计划');
+      expect(result.treatmentPlan).toBe('新计划');
     });
 
     it('同时更新所有可修改字段应成功', async () => {
@@ -891,19 +892,19 @@ describe('MedicalRecordsService', () => {
         treatmentPlan: '计划1',
       });
 
-      expect((result as any).chiefComplaint).toBe('主诉1');
-      expect((result as any).presentIllness).toBe('病史1');
-      expect((result as any).pastHistory).toBe('既往1');
-      expect((result as any).examination).toBe('检查1');
-      expect((result as any).diagnosis).toBe('诊断1');
-      expect((result as any).treatmentPlan).toBe('计划1');
+      expect(result.chiefComplaint).toBe('主诉1');
+      expect(result.presentIllness).toBe('病史1');
+      expect(result.pastHistory).toBe('既往1');
+      expect(result.examination).toBe('检查1');
+      expect(result.diagnosis).toBe('诊断1');
+      expect(result.treatmentPlan).toBe('计划1');
     });
 
     it('空对象更新不应修改任何字段', async () => {
       const result = await service.update('record-multi', {});
 
-      expect((result as any).chiefComplaint).toBe('原主诉');
-      expect((result as any).diagnosis).toBe('原诊断');
+      expect(result.chiefComplaint).toBe('原主诉');
+      expect(result.diagnosis).toBe('原诊断');
     });
 
     it('更新应写入审计日志', async () => {
@@ -937,9 +938,9 @@ describe('MedicalRecordsService', () => {
 
       const result = await service.lock('r-lock-fields', 'doctor-001');
 
-      expect((result as any).isLocked).toBe(1);
-      expect((result as any).lockedBy).toBe('doctor-001');
-      expect((result as any).lockedAt).toBeDefined();
+      expect(result.isLocked).toBe(1);
+      expect(result.lockedBy).toBe('doctor-001');
+      expect(result.lockedAt).toBeDefined();
     });
 
     it('不带 userId 锁定时 lockedBy 应为 null', async () => {
@@ -949,8 +950,8 @@ describe('MedicalRecordsService', () => {
 
       const result = await service.lock('r-lock-no-user');
 
-      expect((result as any).isLocked).toBe(1);
-      expect((result as any).lockedBy).toBeNull();
+      expect(result.isLocked).toBe(1);
+      expect(result.lockedBy).toBeNull();
     });
   });
 
@@ -961,15 +962,15 @@ describe('MedicalRecordsService', () => {
       const result = await service.create({ patientId: 'p1', doctorId: 'd1' });
 
       const rows = db.getTableData('MedicalRecord');
-      const created = rows.find(r => r.id === (result as any).id);
-      expect(created.clinicId).toBe('test-clinic-001');
+      const created = rows.find(r => r.id === result.id);
+      expect(created!.clinicId).toBe('test-clinic-001');
     });
 
     it('创建病历应自动生成 id 和 createdAt', async () => {
       const result = await service.create({ patientId: 'p1', doctorId: 'd1' });
 
-      expect((result as any).id).toBeDefined();
-      expect((result as any).createdAt).toBeDefined();
+      expect(result.id).toBeDefined();
+      expect(result.createdAt).toBeDefined();
     });
 
     it('创建病历带 visitId 应正确存储', async () => {
@@ -979,7 +980,7 @@ describe('MedicalRecordsService', () => {
         doctorId: 'd1',
       });
 
-      expect((result as any).visitId).toBe('visit-001');
+      expect(result.visitId).toBe('visit-001');
     });
 
     it('创建病历带 allergyHistory 应正确存储', async () => {
@@ -989,7 +990,7 @@ describe('MedicalRecordsService', () => {
         allergyHistory: '青霉素过敏',
       });
 
-      expect((result as any).allergyHistory).toBe('青霉素过敏');
+      expect(result.allergyHistory).toBe('青霉素过敏');
     });
 
     it('创建病历带完整字段应正确存储', async () => {
@@ -1008,9 +1009,9 @@ describe('MedicalRecordsService', () => {
         images: ['img1.jpg'],
       });
 
-      expect((result as any).patientId).toBe('p1');
-      expect((result as any).visitId).toBe('v1');
-      expect((result as any).doctorId).toBe('d1');
+      expect(result.patientId).toBe('p1');
+      expect(result.visitId).toBe('v1');
+      expect(result.doctorId).toBe('d1');
     });
   });
 
@@ -1023,7 +1024,7 @@ describe('MedicalRecordsService', () => {
       ];
       const cacheService = createMockCacheService();
       cacheService.get = jest.fn().mockReturnValue(cachedPhrases);
-      const serviceWithCache = new MedicalRecordsService(db as any, createMockClinicContext(), cacheService);
+      const serviceWithCache = new MedicalRecordsService(asDbService(db), createMockClinicContext(), cacheService);
 
       const result = await serviceWithCache.listPhrases();
 
@@ -1038,7 +1039,7 @@ describe('MedicalRecordsService', () => {
         { id: 'phrase-001', name: '牙痛', category: '主诉', content: '左下后牙疼痛', clinicId: 'test-clinic-001' },
       ]);
       const cacheService = createMockCacheService();
-      const serviceWithCache = new MedicalRecordsService(db as any, createMockClinicContext(), cacheService);
+      const serviceWithCache = new MedicalRecordsService(asDbService(db), createMockClinicContext(), cacheService);
 
       const result = await serviceWithCache.listPhrases();
 
@@ -1054,7 +1055,7 @@ describe('MedicalRecordsService', () => {
       ];
       const cacheService = createMockCacheService();
       cacheService.get = jest.fn().mockReturnValue(cachedTemplates);
-      const serviceWithCache = new MedicalRecordsService(db as any, createMockClinicContext(), cacheService);
+      const serviceWithCache = new MedicalRecordsService(asDbService(db), createMockClinicContext(), cacheService);
 
       const result = await serviceWithCache.listTemplates();
 
@@ -1068,7 +1069,7 @@ describe('MedicalRecordsService', () => {
         { id: 'tpl-1', name: '根管模板', category: '牙体牙髓', clinicId: 'test-clinic-001', createdAt: '2026-01-01' },
       ]);
       const cacheService = createMockCacheService();
-      const serviceWithCache = new MedicalRecordsService(db as any, createMockClinicContext(), cacheService);
+      const serviceWithCache = new MedicalRecordsService(asDbService(db), createMockClinicContext(), cacheService);
 
       const result = await serviceWithCache.listTemplates();
 
@@ -1082,7 +1083,7 @@ describe('MedicalRecordsService', () => {
   describe('缓存失效验证', () => {
     it('创建常用语后应失效常用语缓存', async () => {
       const cacheService = createMockCacheService();
-      const serviceWithCache = new MedicalRecordsService(db as any, createMockClinicContext(), cacheService);
+      const serviceWithCache = new MedicalRecordsService(asDbService(db), createMockClinicContext(), cacheService);
 
       await serviceWithCache.createPhrase({ name: '测试', content: '内容' }, 'doctor-001');
 
@@ -1094,7 +1095,7 @@ describe('MedicalRecordsService', () => {
         { id: 'phrase-1', name: '原名称', category: '主诉', content: '原内容', clinicId: 'test-clinic-001', createdAt: '2026-01-01' },
       ]);
       const cacheService = createMockCacheService();
-      const serviceWithCache = new MedicalRecordsService(db as any, createMockClinicContext(), cacheService);
+      const serviceWithCache = new MedicalRecordsService(asDbService(db), createMockClinicContext(), cacheService);
 
       await serviceWithCache.updatePhrase('phrase-1', { content: '新内容' });
 
@@ -1106,7 +1107,7 @@ describe('MedicalRecordsService', () => {
         { id: 'phrase-1', name: '待删除', category: '主诉', content: '内容', clinicId: 'test-clinic-001', createdAt: '2026-01-01' },
       ]);
       const cacheService = createMockCacheService();
-      const serviceWithCache = new MedicalRecordsService(db as any, createMockClinicContext(), cacheService);
+      const serviceWithCache = new MedicalRecordsService(asDbService(db), createMockClinicContext(), cacheService);
 
       await serviceWithCache.deletePhrase('phrase-1', 'doctor-001');
 
@@ -1115,7 +1116,7 @@ describe('MedicalRecordsService', () => {
 
     it('创建模板后应失效模板缓存', async () => {
       const cacheService = createMockCacheService();
-      const serviceWithCache = new MedicalRecordsService(db as any, createMockClinicContext(), cacheService);
+      const serviceWithCache = new MedicalRecordsService(asDbService(db), createMockClinicContext(), cacheService);
 
       await serviceWithCache.createTemplate({ name: '测试模板' });
 
@@ -1127,7 +1128,7 @@ describe('MedicalRecordsService', () => {
         { id: 'tpl-1', name: '原模板', category: '牙体牙髓', clinicId: 'test-clinic-001', createdAt: '2026-01-01' },
       ]);
       const cacheService = createMockCacheService();
-      const serviceWithCache = new MedicalRecordsService(db as any, createMockClinicContext(), cacheService);
+      const serviceWithCache = new MedicalRecordsService(asDbService(db), createMockClinicContext(), cacheService);
 
       await serviceWithCache.updateTemplate('tpl-1', { name: '新模板' });
 
@@ -1139,7 +1140,7 @@ describe('MedicalRecordsService', () => {
         { id: 'tpl-1', name: '待删除', category: '牙体牙髓', clinicId: 'test-clinic-001', createdAt: '2026-01-01' },
       ]);
       const cacheService = createMockCacheService();
-      const serviceWithCache = new MedicalRecordsService(db as any, createMockClinicContext(), cacheService);
+      const serviceWithCache = new MedicalRecordsService(asDbService(db), createMockClinicContext(), cacheService);
 
       await serviceWithCache.deleteTemplate('tpl-1');
 
@@ -1293,7 +1294,7 @@ describe('MedicalRecordsService', () => {
         teethInvolved: ['11', '21'],
       });
 
-      expect((result as any).teethInvolved).toBeDefined();
+      expect(result.teethInvolved).toBeDefined();
     });
 
     it('创建病历应包含 images 字段', async () => {
@@ -1303,7 +1304,7 @@ describe('MedicalRecordsService', () => {
         images: ['img1.jpg', 'img2.jpg'],
       });
 
-      expect((result as any).images).toBeDefined();
+      expect(result.images).toBeDefined();
     });
   });
 

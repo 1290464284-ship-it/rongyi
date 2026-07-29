@@ -12,7 +12,10 @@ import { CreateVisitDto } from "./dto/create-visit.dto";
 @Injectable()
 export class VisitsService extends BaseService<Visit> {
   constructor(dbService: DbService, clinicContext: ClinicContextService) {
-    super(dbService, clinicContext, "Visit", [], ["chiefComplaint"]);
+    super(dbService, clinicContext, {
+      tableName: "Visit",
+      searchFields: ["chiefComplaint"],
+    });
   }
 
   async findMany(params: { patientId?: string; status?: VisitStatus; doctorId?: string; page?: number; pageSize?: number }) {

@@ -17,7 +17,11 @@ export interface PeriodontalRecord {
 @Injectable()
 export class PeriodontalRecordsService extends BaseService<PeriodontalRecord> {
   constructor(dbService: DbService, clinicContext: ClinicContextService) {
-    super(dbService, clinicContext, "PeriodontalRecord", ["data"], ["remark", "examDate"]);
+    super(dbService, clinicContext, {
+      tableName: "PeriodontalRecord",
+      jsonFields: ["data"],
+      searchFields: ["remark", "examDate"],
+    });
   }
 
   async create(dto: Partial<PeriodontalRecord>): Promise<PeriodontalRecord> {

@@ -1,6 +1,6 @@
 import { EquipmentService } from './equipment.service';
 import { BusinessNotFoundException } from '@common/errors';
-import { MockDbService } from '../../db/__mocks__/db-service.mock';
+import { MockDbService , asDbService } from '../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../common/services/clinic-context.service';
 
 
@@ -20,7 +20,7 @@ describe('EquipmentService', () => {
 
   beforeEach(() => {
     db = new MockDbService();
-    service = new EquipmentService(db as any, createMockClinicContext());
+    service = new EquipmentService(asDbService(db), createMockClinicContext());
   });
 
   afterEach(() => {
@@ -138,9 +138,9 @@ describe('EquipmentService', () => {
   describe('create - 创建设备', () => {
     it('正常创建', async () => {
       const result = await service.create({ name: '新设备', model: 'M001', brand: '品牌X', category: '诊断设备', status: 'NORMAL' });
-      expect((result as any).name).toBe('新设备');
-      expect((result as any).model).toBe('M001');
-      expect((result as any).brand).toBe('品牌X');
+      expect(result.name).toBe('新设备');
+      expect(result.model).toBe('M001');
+      expect(result.brand).toBe('品牌X');
     });
 
     it('name 重复时抛出错误（唯一约束）', async () => {
@@ -184,8 +184,8 @@ describe('EquipmentService', () => {
 
     it('正常更新', async () => {
       const result = await service.update('equip-1', { name: '更新后的设备名', status: 'BROKEN' });
-      expect((result as any).name).toBe('更新后的设备名');
-      expect((result as any).status).toBe('BROKEN');
+      expect(result.name).toBe('更新后的设备名');
+      expect(result.status).toBe('BROKEN');
     });
   });
 

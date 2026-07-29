@@ -10,7 +10,7 @@ import { DbService } from "../../../db/db.service";
 interface UpsertToothRecordDto {
   currentStatus?: string;
   conditions?: string[];
-  remark?: string | null;
+  remark?: string;
 }
 
 function isValidToothNumber(n: number): boolean {
@@ -27,7 +27,7 @@ function isValidToothNumber(n: number): boolean {
 export class ToothRecordsService extends BaseService<ToothRecord> {
 
   constructor(dbService: DbService, clinicContext: ClinicContextService) {
-    super(dbService, clinicContext, 'ToothRecord', ['conditions']);
+    super(dbService, clinicContext, { tableName: 'ToothRecord', jsonFields: ['conditions'] });
   }
 
   async findByTooth(patientId: string, toothNumber: number): Promise<ToothRecord | undefined> {

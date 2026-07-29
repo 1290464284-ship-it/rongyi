@@ -46,7 +46,7 @@ export class RegistrationsService extends BaseService<Registration> {
     private visitsService: VisitsService,
     private appointmentsService: AppointmentsService,
   ) {
-    super(dbService, clinicContext, 'Registration');
+    super(dbService, clinicContext, { tableName: 'Registration' });
     this.selectFields = REG_FIELDS.split(',').map(s => s.trim()).filter(Boolean);
   }
 
@@ -270,7 +270,7 @@ export class RegistrationsService extends BaseService<Registration> {
    *
    * P1 修复：将 UPDATE + logAudit 包入事务，保证业务写入与审计日志原子提交。
    */
-  async triage(id: string, dto: { triageNote?: string | null; chiefComplaint?: string | null }) {
+  async triage(id: string, dto: { triageNote?: string; chiefComplaint?: string }) {
     const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
     const triageNote = dto?.triageNote || null;
     const chiefComplaint = dto?.chiefComplaint || null;

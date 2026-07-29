@@ -24,7 +24,7 @@ export class PatientStatsService {
     const clinicId = this.clinicContext.getClinicId();
     const key = buildStatsCacheKey(
       STATS_CACHE_KEYS.PATIENT_GROWTH,
-      clinicId,
+      clinicId ?? '',
       startDate || '',
       endDate || '',
     );
@@ -46,7 +46,7 @@ export class PatientStatsService {
     const clinicId = this.clinicContext.getClinicId();
     const key = buildStatsCacheKey(
       STATS_CACHE_KEYS.PATIENT,
-      clinicId,
+      clinicId ?? '',
       startDate || '',
       endDate || '',
     );

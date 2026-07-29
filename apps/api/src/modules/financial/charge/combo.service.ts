@@ -13,18 +13,19 @@ export class ComboService extends BaseService<ChargeCombo> {
     dbService: DbService,
     clinicContext: ClinicContextService,
   ) {
-    super(dbService, clinicContext, 'ChargeCombo', [], ['name'], [
-      { table: 'ChargeComboItem', foreignKey: 'comboId' },
-    ]);
+    super(dbService, clinicContext, {
+      tableName: 'ChargeCombo',
+      searchFields: ['name'],
+      cascadeTables: [{ table: 'ChargeComboItem', foreignKey: 'comboId' }],
+    });
   }
 
   async listCombos(userId?: string, page = 1, pageSize = 100) {
     if (userId) {
       const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
-      const filteredItems = this.dbService.prepare(
+      return this.dbService.prepare(
         `SELECT id, name, category, isPublic, creatorId, clinicId, createdAt, updatedAt, deletedAt FROM ChargeCombo WHERE deletedAt IS NULL${clinicClause} AND (isPublic = 1 OR creatorId = ?) ORDER BY createdAt DESC LIMIT ? OFFSET ?`
       ).all(...clinicParams, userId, pageSize, (page - 1) * pageSize) as ChargeCombo[];
-      return filteredItems;
     }
 
     const items = await this.findMany({

@@ -26,7 +26,7 @@ export interface MemberCard {
   status: MemberCardStatus;
   createdAt: string;
   updatedAt: string;
-  deletedAt?: string | null;
+  deletedAt?: string;
 }
 
 export interface CreateMemberCardDto {
@@ -56,7 +56,7 @@ export class MemberCardsService extends BaseService<MemberCard> {
     private readonly memberPointLogRepo: MemberPointLogRepository,
     private eventBus: EventBusService,
   ) {
-    super(dbService, clinicContext, "MemberCard", [], [], [], true, ["cardNo"], undefined, undefined, ['balance', 'totalRecharge', 'totalConsume']);
+    super(dbService, clinicContext, { tableName: "MemberCard", uniqueFields: ["cardNo"], moneyFields: ['balance', 'totalRecharge', 'totalConsume'] });
   }
 
   private validatePositiveAmount(amount: number, message: string): void {
@@ -91,7 +91,7 @@ export class MemberCardsService extends BaseService<MemberCard> {
     return card ? Number((card as unknown as Record<string, unknown>)[field]) || 0 : 0;
   }
 
-  private assertCardExists(card: MemberCardRow | undefined): void {
+  private assertCardExists(card: MemberCardRow | undefined): asserts card is MemberCardRow {
     if (!card) throw new BusinessNotFoundException('会员卡不存在');
   }
 
@@ -134,7 +134,7 @@ export class MemberCardsService extends BaseService<MemberCard> {
           if (existing) throw new BusinessValidationException("该患者已有会员卡");
 
           db.prepare(`INSERT INTO MemberCard (id, patientId, cardNo, balance, totalRecharge, totalConsume, status, clinicId, createdAt, updatedAt) VALUES (?,?,?,0,0,0,?,?,?,?)`)
-            .run(id, dto.patientId, cardNo, MemberCardStatus.ACTIVE, clinicId || null, now, now);
+            .run(id, dto.patientId, cardNo, MemberCardStatus.ACTIVE, clinicId || undefined, now, now);
 
           const created = db.prepare(
             `SELECT id, patientId, cardNo, balance, totalRecharge, totalConsume, points, status, createdAt, updatedAt FROM MemberCard WHERE id = ?`
@@ -187,7 +187,7 @@ export class MemberCardsService extends BaseService<MemberCard> {
         type: MemberCardLogType.RECHARGE,
         amount: amountCents,
         balanceAfter: newBalanceCents,
-        clinicId: clinicId || null,
+        clinicId: clinicId || undefined,
       }, now);
 
       this.logAudit(
@@ -282,9 +282,9 @@ export class MemberCardsService extends BaseService<MemberCard> {
         type: PointLogType.ADD,
         points,
         balanceAfter: newPoints,
-        chargeId: chargeId || null,
-        remark: remark || null,
-        clinicId: clinicId || null,
+        chargeId: chargeId || undefined,
+        remark: remark || undefined,
+        clinicId: clinicId || undefined,
       }, now);
 
       this.logAudit(
@@ -329,8 +329,8 @@ export class MemberCardsService extends BaseService<MemberCard> {
         type: PointLogType.DEDUCT,
         points: -points,
         balanceAfter: newPoints,
-        remark: remark || null,
-        clinicId: clinicId || null,
+        remark: remark || undefined,
+        clinicId: clinicId || undefined,
       }, now);
 
       this.logAudit(
@@ -394,9 +394,9 @@ export class MemberCardsService extends BaseService<MemberCard> {
       type: MemberCardLogType.CONSUME,
       amount: -amountCents,
       balanceAfter: newBalanceCents,
-      chargeId: chargeId || null,
-      remark: remark || null,
-      clinicId: clinicId || null,
+      chargeId: chargeId || undefined,
+      remark: remark || undefined,
+      clinicId: clinicId || undefined,
     }, now);
 
     this.logAudit(
@@ -442,9 +442,9 @@ export class MemberCardsService extends BaseService<MemberCard> {
         type: MemberCardLogType.REFUND,
         amount: amountCents,
         balanceAfter: newBalanceCents,
-        chargeId: chargeId || null,
-        remark: remark || null,
-        clinicId: clinicId || null,
+        chargeId: chargeId || undefined,
+        remark: remark || undefined,
+        clinicId: clinicId || undefined,
       }, now);
 
       this.logAudit(

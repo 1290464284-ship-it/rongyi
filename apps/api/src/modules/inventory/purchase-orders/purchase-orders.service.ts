@@ -19,7 +19,7 @@ export interface PurchaseOrder {
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
-  clinicId?: string | null;
+  clinicId?: string;
 }
 
 export interface UserInfo {
@@ -31,9 +31,11 @@ export interface UserInfo {
 export class PurchaseOrdersService extends BaseService<PurchaseOrder> {
   constructor(dbService: DbService, clinicContext: ClinicContextService) {
     // P0 修复：添加 moneyFields 配置，使 BaseService.findOne/findMany 自动转换 totalAmount（分→元）
-    super(dbService, clinicContext, 'PurchaseOrder', [], [], [
-      { table: 'PurchaseOrderItem', foreignKey: 'orderId' },
-    ], true, [], undefined, undefined, ['totalAmount']);
+    super(dbService, clinicContext, {
+      tableName: 'PurchaseOrder',
+      cascadeTables: [{ table: 'PurchaseOrderItem', foreignKey: 'orderId' }],
+      moneyFields: ['totalAmount'],
+    });
   }
 
   async findMany(params: { supplierId?: string; status?: string; page?: number; pageSize?: number }) {
@@ -133,7 +135,7 @@ export class PurchaseOrdersService extends BaseService<PurchaseOrder> {
     const clinicId = this.clinicContext.getClinicId();
     const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
 
-    const result = this.dbService.transaction((db) => {
+    return this.dbService.transaction((db) => {
       // D2-3: 软删除过滤 + clinicId 过滤
       const currentPo = db.prepare(`SELECT id, number, supplierId, totalAmount, status, operatorId, remark, clinicId, createdAt, updatedAt, deletedAt FROM PurchaseOrder WHERE id = ? AND deletedAt IS NULL${clinicClause}`).get(id, ...clinicParams) as PurchaseOrder | undefined;
       if (!currentPo) throw new BusinessNotFoundException("采购单不存在");
@@ -162,7 +164,7 @@ export class PurchaseOrdersService extends BaseService<PurchaseOrder> {
         for (const item of itemsToUpdate) {
           caseParts.push(`WHEN ? THEN ?`);
           updateParams.push(item.itemId, item.quantity);
-          updateIds.push(item.itemId);
+          updateIds.push(item.itemId ?? '');
         }
         const idPlaceholders = updateIds.map(() => '?').join(',');
         const updateResult = db.prepare(
@@ -203,7 +205,6 @@ export class PurchaseOrdersService extends BaseService<PurchaseOrder> {
       }
       return received;
     });
-    return result;
   }
 
   async cancel(id: string) {
@@ -215,7 +216,7 @@ export class PurchaseOrdersService extends BaseService<PurchaseOrder> {
     const clinicId = this.clinicContext.getClinicId();
     const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
 
-    const result = this.dbService.transaction((db) => {
+    return this.dbService.transaction((db) => {
       // Atomic status update with TOCTOU guard — only succeeds if status is still valid
       const statusResult = db.prepare(
         `UPDATE PurchaseOrder SET status = 'CANCELLED', updatedAt = ? WHERE id = ? AND status IN ('PARTIAL', 'PENDING') AND deletedAt IS NULL${clinicClause}`
@@ -238,7 +239,7 @@ export class PurchaseOrdersService extends BaseService<PurchaseOrder> {
           ).all(...checkIds, ...clinicParams) as Array<{ id: string; stock: number }>;
           const stockMap = new Map(stockRows.map(r => [r.id, r.stock]));
           for (const item of itemsToReverse) {
-            const stock = stockMap.get(item.itemId);
+            const stock = stockMap.get(item.itemId ?? '');
             if (stock === undefined || stock < item.quantity) {
               throw new BusinessValidationException(`库存反转失败（物料：${item.name}），库存不足或物料不存在`);
             }
@@ -251,7 +252,7 @@ export class PurchaseOrdersService extends BaseService<PurchaseOrder> {
           for (const item of itemsToReverse) {
             caseParts.push(`WHEN ? THEN ?`);
             updateParams.push(item.itemId, item.quantity);
-            updateIds.push(item.itemId);
+            updateIds.push(item.itemId ?? '');
           }
           const idPlaceholders = updateIds.map(() => '?').join(',');
           db.prepare(
@@ -283,8 +284,6 @@ export class PurchaseOrdersService extends BaseService<PurchaseOrder> {
       }
       return cancelled;
     });
-
-    return result;
   }
 
 }

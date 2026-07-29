@@ -1,6 +1,6 @@
-import { AuthService } from './auth.service';
+import { AuthService, ListUsersResult, UserSummaryRow } from './auth.service';
 import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
-import { MockDbService, MockDbRow } from '../../db/__mocks__/db-service.mock';
+import { asDbService, MockDbService, MockDbRow } from '../../db/__mocks__/db-service.mock';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { UnauthorizedException } from '@nestjs/common';
@@ -46,7 +46,6 @@ describe('AuthService', () => {
       get: jest.fn((key: string) => {
         if (key === 'JWT_SECRET') return 'test-secret-key';
         if (key === 'BCRYPT_ROUNDS') return '4';
-        return;
       }),
     } as unknown as ConfigService;
 
@@ -67,7 +66,7 @@ describe('AuthService', () => {
         ).run(id, type, targetId, targetType, beforeData, afterData, options?.remark || null, clinicId, now, options?.operatorId || null, options?.operatorName || null, options?.amount || null, options?.ip || null);
       }),
     } as unknown as AuditLogService;
-    service = new AuthService(db as any, jwt, config, clinicContext, cache, auditLog);
+    service = new AuthService(asDbService(db), jwt, config, clinicContext, cache, auditLog);
   });
 
   afterEach(() => {
@@ -483,7 +482,7 @@ describe('AuthService', () => {
        
 
       expect(result).toBeDefined();
-      expect((result as any).username).toBe('newuser');
+      expect(result.username).toBe('newuser');
 
       const users = db.getTableData('User');
       expect(users.length).toBe(1);
@@ -538,11 +537,12 @@ describe('AuthService', () => {
       const result = await service.listUsers();
 
       expect(result).toBeDefined();
-      expect((result as any).items).toBeDefined();
-      expect((result as any).total).toBeDefined();
-      expect((result as any).page).toBe(1);
-      expect((result as any).pageSize).toBe(100);
-      expect(Array.isArray((result as any).items)).toBe(true);
+      const listResult = result as ListUsersResult;
+      expect(listResult.items).toBeDefined();
+      expect(listResult.total).toBeDefined();
+      expect(listResult.page).toBe(1);
+      expect(listResult.pageSize).toBe(100);
+      expect(Array.isArray(listResult.items)).toBe(true);
     });
 
     it('按 role 过滤用户列表', async () => {
@@ -553,8 +553,9 @@ describe('AuthService', () => {
 
       const result = await service.listUsers('DOCTOR');
 
-      expect((result as any).items).toBeDefined();
-      (result as any).items.forEach((item: any) => {
+      const listResult = result as ListUsersResult;
+      expect(listResult.items).toBeDefined();
+      listResult.items.forEach((item) => {
         expect(item.role).toBe('DOCTOR');
       });
     });
@@ -577,8 +578,9 @@ describe('AuthService', () => {
       const result = await service.listUsers();
 
       expect(Array.isArray(result)).toBe(true);
-      expect((result as any[]).length).toBeGreaterThan(0);
-      expect((result as any[])[0].username).toBe('fallback1');
+      const fallbackItems = result as UserSummaryRow[];
+      expect(fallbackItems.length).toBeGreaterThan(0);
+      expect(fallbackItems[0].username).toBe('fallback1');
 
       db.prepare = originalPrepare;
     });
@@ -656,11 +658,10 @@ describe('AuthService', () => {
         get: jest.fn((key: string) => {
           if (key === 'JWT_SECRET') return 'test-secret-key';
           if (key === 'BCRYPT_ROUNDS') return '8';
-          return;
         }),
       } as unknown as ConfigService;
 
-      const customService = new AuthService(db as any, jwt, customConfig, clinicContext, cache, auditLog);
+      const customService = new AuthService(asDbService(db), jwt, customConfig, clinicContext, cache, auditLog);
 
       const rounds = (customService as any).bcryptRounds;
       expect(rounds).toBe(8);
@@ -671,11 +672,10 @@ describe('AuthService', () => {
         get: jest.fn((key: string) => {
           if (key === 'JWT_SECRET') return 'test-secret-key';
           if (key === 'BCRYPT_ROUNDS') return '2';
-          return;
         }),
       } as unknown as ConfigService;
 
-      const customService = new AuthService(db as any, jwt, customConfig, clinicContext, cache, auditLog);
+      const customService = new AuthService(asDbService(db), jwt, customConfig, clinicContext, cache, auditLog);
 
       const rounds = (customService as any).bcryptRounds;
       expect(rounds).toBe(8);
@@ -686,11 +686,10 @@ describe('AuthService', () => {
         get: jest.fn((key: string) => {
           if (key === 'JWT_SECRET') return 'test-secret-key';
           if (key === 'BCRYPT_ROUNDS') return '20';
-          return;
         }),
       } as unknown as ConfigService;
 
-      const customService = new AuthService(db as any, jwt, customConfig, clinicContext, cache, auditLog);
+      const customService = new AuthService(asDbService(db), jwt, customConfig, clinicContext, cache, auditLog);
 
       const rounds = (customService as any).bcryptRounds;
       expect(rounds).toBe(15);
@@ -703,7 +702,7 @@ describe('AuthService', () => {
         }),
       } as unknown as ConfigService;
 
-      const customService = new AuthService(db as any, jwt, customConfig, clinicContext, cache, auditLog);
+      const customService = new AuthService(asDbService(db), jwt, customConfig, clinicContext, cache, auditLog);
 
       const rounds = (customService as any).bcryptRounds;
       expect(rounds).toBe(10);

@@ -20,7 +20,7 @@ function createMockReq(overrides: Partial<Request> = {}): Request {
 
 function createMockRes(): MockResponse {
   const events: Record<string, ((...args: unknown[]) => void)[]> = {};
-  const res = {
+  return {
     setHeader: jest.fn(),
     statusCode: 200,
     on: jest.fn().mockImplementation((event: string, fn: (...args: unknown[]) => void) => {
@@ -31,7 +31,6 @@ function createMockRes(): MockResponse {
     }),
     _events: events,
   } as unknown as MockResponse;
-  return res;
 }
 
 function createMockNext(): NextFunction {

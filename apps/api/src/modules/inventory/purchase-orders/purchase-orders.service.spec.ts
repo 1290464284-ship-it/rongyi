@@ -1,6 +1,7 @@
 import { PurchaseOrdersService } from './purchase-orders.service';
 import { BusinessValidationException } from '@common/errors';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
+import { asDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 
 
@@ -23,7 +24,7 @@ describe('PurchaseOrdersService', () => {
 
   beforeEach(() => {
     db = new MockDbService();
-    service = new PurchaseOrdersService(db as any, createMockClinicContext());
+    service = new PurchaseOrdersService(asDbService(db), createMockClinicContext());
   });
 
   afterEach(() => {
@@ -44,13 +45,13 @@ describe('PurchaseOrdersService', () => {
       const result = await service.createOrder(dto, { id: 'user-001', name: '张三' });
 
       expect(result).toBeDefined();
-      expect((result as any).id).toBeDefined();
-      expect((result as any).number).toMatch(/^PO[0-9a-f]+$/);
-      expect((result as any).supplierId).toBe('supplier-001');
-      expect((result as any).status).toBe('PENDING');
-      expect((result as any).operatorId).toBe('user-001');
+      expect(result.id).toBeDefined();
+      expect(result.number).toMatch(/^PO[0-9a-f]+$/);
+      expect(result.supplierId).toBe('supplier-001');
+      expect(result.status).toBe('PENDING');
+      expect(result.operatorId).toBe('user-001');
       // 单项金额：10 元 × 5 = 50 元
-      expect((result as any).totalAmount).toBe(50);
+      expect(result.totalAmount).toBe(50);
 
       // 验证采购单明细已写入（PurchaseOrderItem.unitPrice 数据库存储为 cents，service 写入时 yuanToCents(10)=1000）
       const items = db.getTableData('PurchaseOrderItem');
@@ -74,15 +75,15 @@ describe('PurchaseOrdersService', () => {
 
       expect(result).toBeDefined();
       // 金额计算：yuanToCents(10)=1000, ×3=3000; yuanToCents(5.5)=550, ×4=2200; sumCents=5200; centsToYuan=52
-      expect((result as any).totalAmount).toBe(52);
+      expect(result.totalAmount).toBe(52);
 
       const items = db.getTableData('PurchaseOrderItem');
       expect(items.length).toBe(2);
       // subtotal 数据库存储为 cents：yuanToCents(10)*3=3000, yuanToCents(5.5)*4=2200
       const syringe = items.find((i: any) => i.name === '牙科注射器');
-      expect(syringe.subtotal).toBe(3000);
+      expect(syringe!.subtotal).toBe(3000);
       const cotton = items.find((i: any) => i.name === '棉卷');
-      expect(cotton.subtotal).toBe(2200);
+      expect(cotton!.subtotal).toBe(2200);
     });
   });
 
@@ -112,16 +113,16 @@ describe('PurchaseOrdersService', () => {
         { id: 'user-001', name: '张三' },
       );
 
-      const result = await service.receive((po as any).id, { id: 'user-001', name: '张三' });
+      const result = await service.receive(po.id, { id: 'user-001', name: '张三' });
 
       // 验证采购单状态变为 RECEIVED
       expect(result).toBeDefined();
-      expect((result as any).status).toBe('RECEIVED');
+      expect(result!.status).toBe('RECEIVED');
 
       // 验证库存累加：100 + 5 = 105
       const invItems = db.getTableData('InventoryItem');
       const updatedInv = invItems.find((i: any) => i.id === 'inv-001');
-      expect(updatedInv.stock).toBe(105);
+      expect(updatedInv!.stock).toBe(105);
 
       // 验证库存流水记录已生成
       const txns = db.getTableData('InventoryTransaction');
@@ -187,7 +188,7 @@ describe('PurchaseOrdersService', () => {
       const result = await service.cancel('po-pending');
 
       expect(result).toBeDefined();
-      expect((result as any).status).toBe('CANCELLED');
+      expect(result!.status).toBe('CANCELLED');
     });
 
     it('已收货的采购单取消应抛出 BusinessValidationException', async () => {
@@ -298,7 +299,7 @@ describe('PurchaseOrdersService', () => {
       }]);
 
       const result = await service.updateStatus('po-001', 'RECEIVED');
-      expect((result as any).status).toBe('RECEIVED');
+      expect(result.status).toBe('RECEIVED');
     });
 
     it('PENDING → CANCELLED 应成功', async () => {
@@ -309,7 +310,7 @@ describe('PurchaseOrdersService', () => {
       }]);
 
       const result = await service.updateStatus('po-001', 'CANCELLED');
-      expect((result as any).status).toBe('CANCELLED');
+      expect(result.status).toBe('CANCELLED');
     });
 
     it('PENDING → PARTIAL 应成功', async () => {
@@ -320,7 +321,7 @@ describe('PurchaseOrdersService', () => {
       }]);
 
       const result = await service.updateStatus('po-001', 'PARTIAL');
-      expect((result as any).status).toBe('PARTIAL');
+      expect(result.status).toBe('PARTIAL');
     });
 
     it('RECEIVED → PENDING 应抛出 BusinessValidationException（非法转换）', async () => {
@@ -351,7 +352,7 @@ describe('PurchaseOrdersService', () => {
       }]);
 
       const result = await service.updateStatus('po-001', 'RECEIVED');
-      expect((result as any).status).toBe('RECEIVED');
+      expect(result.status).toBe('RECEIVED');
     });
 
     it('PARTIAL → CANCELLED 应成功', async () => {
@@ -362,7 +363,7 @@ describe('PurchaseOrdersService', () => {
       }]);
 
       const result = await service.updateStatus('po-001', 'CANCELLED');
-      expect((result as any).status).toBe('CANCELLED');
+      expect(result.status).toBe('CANCELLED');
     });
   });
 
@@ -379,11 +380,11 @@ describe('PurchaseOrdersService', () => {
         items: [{ itemId: 'inv-001', name: '棉卷', quantity: 10, unitPrice: 3 }],
       }, { id: 'user-001', name: '张三' });
 
-      await service.receive((po as any).id, { id: 'user-001', name: '张三' });
+      await service.receive(po.id, { id: 'user-001', name: '张三' });
 
       const invItems = db.getTableData('InventoryItem');
       const updated = invItems.find((i: any) => i.id === 'inv-001');
-      expect(updated.stock).toBe(60);
+      expect(updated!.stock).toBe(60);
     });
 
     it('不存在的采购单收货应抛出 BusinessNotFoundException', async () => {
@@ -403,11 +404,11 @@ describe('PurchaseOrdersService', () => {
       }]);
 
       const result = await service.findOne('po-001');
-      expect((result as any).id).toBe('po-001');
-      expect((result as any).number).toBe('PO3001');
-      expect((result as any).status).toBe('PENDING');
+      expect(result.id).toBe('po-001');
+      expect(result.number).toBe('PO3001');
+      expect(result.status).toBe('PENDING');
       // moneyFields 自动 cents→yuan: 25000 → 250
-      expect((result as any).totalAmount).toBe(250);
+      expect(result.totalAmount).toBe(250);
     });
 
     it('查询不存在的采购单应抛出 BusinessNotFoundException', async () => {

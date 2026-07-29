@@ -5,7 +5,7 @@ import { ChargeService } from './charge.service';
 import { MemberCardsService } from '../member-cards/member-cards.service';
 import { MemberCardLogRepository } from '../member-cards/repositories/member-card-log.repository';
 import { MemberPointLogRepository } from '../member-cards/repositories/member-point-log.repository';
-import { MockDbService, MockDbRow } from '../../../db/__mocks__/db-service.mock';
+import { MockDbService, MockDbRow , asDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import { IdempotencyService } from '../../../common/services/idempotency.service';
 
@@ -46,10 +46,10 @@ describe('ChargePaymentService', () => {
   beforeEach(() => {
     db = new MockDbService();
     eventBus = createMockEventBus();
-    chargeService = new ChargeService(db as any, createMockClinicContext(), eventBus, new ChargeRepository(), createMockIdempotency(db));
+    chargeService = new ChargeService(asDbService(db), createMockClinicContext(), eventBus, new ChargeRepository(), createMockIdempotency(db));
     // P0 修复：使用真实 MemberCardsService 实例，以支持 consumeSync 委托调用
     const memberCardsService = new MemberCardsService(
-      db as any,
+      asDbService(db),
       createMockClinicContext(),
       createMockIdempotency(db),
       new MemberCardLogRepository(),
@@ -57,7 +57,7 @@ describe('ChargePaymentService', () => {
       eventBus,
     );
     service = new ChargePaymentService(
-      db as any,
+      asDbService(db),
       createMockClinicContext(),
       createMockIdempotency(db),
       chargeService,

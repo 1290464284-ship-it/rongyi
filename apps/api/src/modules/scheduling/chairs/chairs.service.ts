@@ -10,7 +10,7 @@ import { BusinessNotFoundException } from '@common/errors';
 @Injectable()
 export class ChairsService extends BaseService<Chair> {
   constructor(dbService: DbService, clinicContext: ClinicContextService) {
-    super(dbService, clinicContext, "Chair", [], ["name"]);
+    super(dbService, clinicContext, { tableName: "Chair", searchFields: ["name"] });
   }
 
   async create(dto: Partial<Chair>): Promise<Chair> {

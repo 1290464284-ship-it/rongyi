@@ -5,7 +5,7 @@ export class CreateChairDto {
   @ApiProperty({ description: '椅位名称', example: '1号椅位' })
   @IsString()
   @MaxLength(100)
-  name: string;
+  name!: string;
 
   @ApiProperty({ description: '位置描述', example: '一楼诊室A', required: false })
   @IsOptional()

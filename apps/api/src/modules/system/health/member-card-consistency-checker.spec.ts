@@ -43,7 +43,7 @@ describe('MemberCardConsistencyChecker', () => {
       } as any);
 
       const checks = checker.getChecks();
-      const balanceCheck = checks.find(c => c.name === 'member_card_balance');
+      const balanceCheck = checks.find(c => c.name === 'member_card_balance')!;
       const result = balanceCheck.fn();
 
       expect(result.status).toBe('ok');
@@ -68,7 +68,7 @@ describe('MemberCardConsistencyChecker', () => {
       } as any);
 
       const checks = checker.getChecks();
-      const balanceCheck = checks.find(c => c.name === 'member_card_balance');
+      const balanceCheck = checks.find(c => c.name === 'member_card_balance')!;
       const result = balanceCheck.fn();
 
       expect(result.status).toBe('error');
@@ -92,7 +92,7 @@ describe('MemberCardConsistencyChecker', () => {
       } as any);
 
       const checks = checker.getChecks();
-      const balanceCheck = checks.find(c => c.name === 'member_card_balance');
+      const balanceCheck = checks.find(c => c.name === 'member_card_balance')!;
       const result = balanceCheck.fn();
 
       expect(result.status).toBe('ok');
@@ -104,7 +104,7 @@ describe('MemberCardConsistencyChecker', () => {
       } as any);
 
       const checks = checker.getChecks();
-      const balanceCheck = checks.find(c => c.name === 'member_card_balance');
+      const balanceCheck = checks.find(c => c.name === 'member_card_balance')!;
       const result = balanceCheck.fn();
 
       expect(result.status).toBe('ok');
@@ -127,7 +127,7 @@ describe('MemberCardConsistencyChecker', () => {
       } as any);
 
       const checks = checker.getChecks();
-      const balanceCheck = checks.find(c => c.name === 'member_card_balance');
+      const balanceCheck = checks.find(c => c.name === 'member_card_balance')!;
       const result = balanceCheck.fn();
 
       expect(result.status).toBe('error');
@@ -151,7 +151,7 @@ describe('MemberCardConsistencyChecker', () => {
       } as any);
 
       const checks = checker.getChecks();
-      const balanceCheck = checks.find(c => c.name === 'member_card_balance');
+      const balanceCheck = checks.find(c => c.name === 'member_card_balance')!;
       const result = balanceCheck.fn();
 
       expect(result.status).toBe('error');
@@ -164,7 +164,7 @@ describe('MemberCardConsistencyChecker', () => {
       } as any);
 
       const checks = checker.getChecks();
-      const balanceCheck = checks.find(c => c.name === 'member_card_balance');
+      const balanceCheck = checks.find(c => c.name === 'member_card_balance')!;
       const result = balanceCheck.fn();
 
       expect(result.status).toBe('ok');
@@ -177,7 +177,7 @@ describe('MemberCardConsistencyChecker', () => {
       } as any);
 
       const checks = checker.getChecks();
-      const balanceCheck = checks.find(c => c.name === 'member_card_balance');
+      const balanceCheck = checks.find(c => c.name === 'member_card_balance')!;
       const result = balanceCheck.fn();
 
       expect(result.status).toBe('ok');
@@ -210,7 +210,7 @@ describe('MemberCardConsistencyChecker', () => {
       } as any);
 
       const checks = checker.getChecks();
-      const balanceCheck = checks.find(c => c.name === 'member_card_balance');
+      const balanceCheck = checks.find(c => c.name === 'member_card_balance')!;
       const result = balanceCheck.fn();
 
       expect(result.status).toBe('error');
@@ -223,7 +223,7 @@ describe('MemberCardConsistencyChecker', () => {
       } as any);
 
       const checks = checker.getChecks();
-      const balanceCheck = checks.find(c => c.name === 'member_card_balance');
+      const balanceCheck = checks.find(c => c.name === 'member_card_balance')!;
       const result = balanceCheck.fn();
 
       expect(result.status).toBe('ok');
@@ -235,7 +235,7 @@ describe('MemberCardConsistencyChecker', () => {
       } as any);
 
       const checks = checker.getChecks();
-      const balanceCheck = checks.find(c => c.name === 'member_card_balance');
+      const balanceCheck = checks.find(c => c.name === 'member_card_balance')!;
       const result = balanceCheck.fn();
 
       expect(result.status).toBe('ok');
@@ -249,7 +249,7 @@ describe('MemberCardConsistencyChecker', () => {
       } as any);
 
       const checks = checker.getChecks();
-      const balanceCheck = checks.find(c => c.name === 'member_card_balance');
+      const balanceCheck = checks.find(c => c.name === 'member_card_balance')!;
       const result = balanceCheck.fn();
 
       expect(result.durationMs).toBeDefined();

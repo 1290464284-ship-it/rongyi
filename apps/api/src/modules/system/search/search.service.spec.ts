@@ -1,5 +1,5 @@
 import { SearchService } from './search.service';
-import { MockDbService } from '../../../db/__mocks__/db-service.mock';
+import { asDbService, MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { CacheService } from '../../../common/services/cache.service';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 
@@ -59,7 +59,7 @@ describe('SearchService', () => {
     (db as any).tables.set('Appointment', new Map());
     cache = createMockCacheService();
     context = createMockClinicContext();
-    service = new SearchService(db as any, cache, context);
+    service = new SearchService(asDbService(db), cache, context);
   });
 
   afterEach(() => {
@@ -69,7 +69,7 @@ describe('SearchService', () => {
 
   describe('search - 整体流程', () => {
     it('无 clinicId 上下文时抛出 CLINIC_CONTEXT_MISSING', async () => {
-      const noCtxService = new SearchService(db as any, cache, createMockClinicContext(null));
+      const noCtxService = new SearchService(asDbService(db), cache, createMockClinicContext(null));
       await expect(noCtxService.search('张')).rejects.toThrow(/CLINIC_CONTEXT_MISSING|诊所上下文缺失/);
     });
 

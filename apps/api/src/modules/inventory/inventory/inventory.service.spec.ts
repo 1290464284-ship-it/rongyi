@@ -1,5 +1,5 @@
 import { InventoryService } from './inventory.service';
-import { MockDbService } from '../../../db/__mocks__/db-service.mock';
+import { MockDbService , asDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import { IdempotencyService } from '../../../common/services/idempotency.service';
 import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
@@ -39,7 +39,7 @@ describe('InventoryService', () => {
   beforeEach(() => {
     db = new MockDbService();
     eventBus = createMockEventBus();
-    service = new InventoryService(db as any, createMockClinicContext(), createMockIdempotency(), eventBus, new InventoryRepository());
+    service = new InventoryService(asDbService(db), createMockClinicContext(), createMockIdempotency(), eventBus, new InventoryRepository());
   });
 
   afterEach(() => {
@@ -59,8 +59,8 @@ describe('InventoryService', () => {
         minStock: 10,
         price: 15.5,
       });
-      expect((result as any).code).toBe('MED-001');
-      expect((result as any).name).toBe('丁香油');
+      expect(result.code).toBe('MED-001');
+      expect(result.name).toBe('丁香油');
     });
   });
 
@@ -87,12 +87,12 @@ describe('InventoryService', () => {
 
     it('修改非 stock 字段（如 name/minStock）应正常成功', async () => {
       const result = await service.update('item-001', { name: '丁香精油', minStock: 20 });
-      expect((result as any).name).toBe('丁香精油');
+      expect(result.name).toBe('丁香精油');
     });
 
     it('修改 price 字段应正常成功', async () => {
       const result = await service.update('item-001', { price: 18.0 });
-      expect((result as any).price).toBe(18.0);
+      expect(result.price).toBe(18.0);
     });
   });
 
@@ -116,7 +116,7 @@ describe('InventoryService', () => {
       // service 层计算 newStock = item.stock + quantity = 100 + 50 = 150
       // 但 MockDbService 的 SELECT * ... WHERE id = ? AND deletedAt IS NULL
       // 在 executeAll 路径下可能返回不同结果。验证交易记录即可。
-      expect((result as any).id).toBeDefined();
+      expect(result.id).toBeDefined();
       const txns = db.getTableData('InventoryTransaction');
       expect(txns.length).toBe(1);
       expect(txns[0].type).toBe('IN');
@@ -148,7 +148,7 @@ describe('InventoryService', () => {
         quantity: 30,
         remark: '科室领用',
       });
-      expect((result as any).id).toBeDefined();
+      expect(result.id).toBeDefined();
       const txns = db.getTableData('InventoryTransaction');
       expect(txns.length).toBe(1);
       expect(txns[0].type).toBe('OUT');
@@ -182,7 +182,7 @@ describe('InventoryService', () => {
         quantity: 95,
         remark: '盘点调整',
       });
-      expect((result as any).stock).toBe(95);
+      expect(result.stock).toBe(95);
     });
 
     it('调整数量为负数应抛出 BusinessValidationException', async () => {
@@ -307,7 +307,7 @@ describe('InventoryService', () => {
         unitPrice: 20,
         remark: '补货入库',
       });
-      expect((result as any).id).toBeDefined();
+      expect(result.id).toBeDefined();
       const txns = db.getTableData('InventoryTransaction');
       expect(txns.length).toBe(1);
       expect(txns[0].type).toBe('IN');
@@ -323,7 +323,7 @@ describe('InventoryService', () => {
         quantity: 20,
         remark: '日常消耗',
       });
-      expect((result as any).id).toBeDefined();
+      expect(result.id).toBeDefined();
       const txns = db.getTableData('InventoryTransaction');
       expect(txns.length).toBe(1);
       expect(txns[0].type).toBe('OUT');

@@ -368,7 +368,7 @@ describe('IdempotencyService', () => {
       let callCount = 0;
 
       const originalTransaction = dbService.transaction.bind(dbService);
-      jest.spyOn(dbService, 'transaction').mockImplementation((fn: (...args: unknown[]) => unknown) => {
+      jest.spyOn(dbService, 'transaction').mockImplementation(((fn: (db: any) => unknown) => {
         callCount++;
         if (callCount === 1) {
           const result = originalTransaction(fn);
@@ -378,7 +378,7 @@ describe('IdempotencyService', () => {
           return result;
         }
         return originalTransaction(fn);
-      });
+      }) as any);
 
       const handler1 = jest.fn().mockReturnValue('first-result');
       service.executeInTransaction({ key, type: 'test-type' }, handler1);
@@ -400,7 +400,7 @@ describe('IdempotencyService', () => {
       ).run('existing-id', key, 'test-type', 'PROCESSING', now, expiresAt);
 
       const originalPrepare = (db as any).prepare.bind(db);
-      jest.spyOn(db as any, 'prepare').mockImplementation((sql: string) => {
+      jest.spyOn(db as any, 'prepare').mockImplementation(((sql: string) => {
         const stmt = originalPrepare(sql);
         if (sql.includes('INSERT INTO IdempotencyRecord')) {
           const originalRun = stmt.run.bind(stmt);
@@ -413,7 +413,7 @@ describe('IdempotencyService', () => {
           };
         }
         return stmt;
-      });
+      }) as any);
 
       const handler = jest.fn().mockReturnValue('should-not-run');
 
@@ -434,7 +434,7 @@ describe('IdempotencyService', () => {
       ).run('completed-id', key, 'test-type', 'COMPLETED', JSON.stringify('pre-existing-result'), now, expiresAt);
 
       const originalPrepare = (db as any).prepare.bind(db);
-      jest.spyOn(db as any, 'prepare').mockImplementation((sql: string) => {
+      jest.spyOn(db as any, 'prepare').mockImplementation(((sql: string) => {
         const stmt = originalPrepare(sql);
         if (sql.includes('INSERT INTO IdempotencyRecord')) {
           const originalRun = stmt.run.bind(stmt);
@@ -447,7 +447,7 @@ describe('IdempotencyService', () => {
           };
         }
         return stmt;
-      });
+      }) as any);
 
       const handler = jest.fn().mockReturnValue('should-not-run');
       const result = service.executeInTransaction(
@@ -472,7 +472,7 @@ describe('IdempotencyService', () => {
       ).run('expired-id', key, 'test-type', 'COMPLETED', now, expiredTime);
 
       const originalPrepare = (db as any).prepare.bind(db);
-      jest.spyOn(db as any, 'prepare').mockImplementation((sql: string) => {
+      jest.spyOn(db as any, 'prepare').mockImplementation(((sql: string) => {
         const stmt = originalPrepare(sql);
         if (sql.includes('INSERT INTO IdempotencyRecord') && sql.includes('id, key, type, status, createdAt, expiresAt')) {
           const originalRun = stmt.run.bind(stmt);
@@ -485,7 +485,7 @@ describe('IdempotencyService', () => {
           };
         }
         return stmt;
-      });
+      }) as any);
 
       const handler = jest.fn().mockReturnValue('retry-success');
       const result = service.executeInTransaction({ key, type: 'test-type' }, handler);
@@ -502,7 +502,7 @@ describe('IdempotencyService', () => {
       const expiresAt = new Date(Date.now() + IDEMPOTENCY_DEFAULT_TTL_MS).toISOString();
 
       const originalPrepare = (db as any).prepare.bind(db);
-      jest.spyOn(db as any, 'prepare').mockImplementation((sql: string) => {
+      jest.spyOn(db as any, 'prepare').mockImplementation(((sql: string) => {
         const stmt = originalPrepare(sql);
 
         if (sql.startsWith('SELECT * FROM IdempotencyRecord WHERE key = ?') && sql.includes('expiresAt > ?')) {
@@ -524,7 +524,7 @@ describe('IdempotencyService', () => {
           };
         }
         return stmt;
-      });
+      }) as any);
 
       const handler = jest.fn().mockReturnValue('processing-timeout-result');
       const result = service.executeInTransaction({ key, type: 'test-type' }, handler);
@@ -537,7 +537,7 @@ describe('IdempotencyService', () => {
       const key = 'other-error-key';
 
       const originalPrepare = (db as any).prepare.bind(db);
-      jest.spyOn(db as any, 'prepare').mockImplementation((sql: string) => {
+      jest.spyOn(db as any, 'prepare').mockImplementation(((sql: string) => {
         const stmt = originalPrepare(sql);
         if (sql.includes('INSERT INTO IdempotencyRecord') && sql.includes('id, key, type, status, createdAt, expiresAt')) {
           stmt.run = jest.fn().mockImplementation(() => {
@@ -545,7 +545,7 @@ describe('IdempotencyService', () => {
           });
         }
         return stmt;
-      });
+      }) as any);
 
       const handler = jest.fn();
 
@@ -872,7 +872,7 @@ describe('IdempotencyService', () => {
       ).run('expired-completed-id', key, 'test-type', 'COMPLETED', now, expiredTime);
 
       const originalPrepare = (db as any).prepare.bind(db);
-      jest.spyOn(db as any, 'prepare').mockImplementation((sql: string) => {
+      jest.spyOn(db as any, 'prepare').mockImplementation(((sql: string) => {
         const stmt = originalPrepare(sql);
         if (sql.includes('INSERT INTO IdempotencyRecord') && sql.includes('id, key, type, status, createdAt, expiresAt')) {
           const originalRun = stmt.run.bind(stmt);
@@ -885,7 +885,7 @@ describe('IdempotencyService', () => {
           };
         }
         return stmt;
-      });
+      }) as any);
 
       const handler = jest.fn().mockReturnValue('expired-retry-success');
       const result = service.executeInTransaction({ key, type: 'test-type' }, handler);

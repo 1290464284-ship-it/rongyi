@@ -2,7 +2,7 @@ import { safePage, safePageSize } from '../../../common/dto/pagination.dto';
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Request } from '@nestjs/common';
 import { Request as ExpressRequest } from 'express';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
-import { Role, MedicalRecord } from '@dental/shared';
+import { Role } from '@dental/shared';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { OperationLogResource } from '../../../common/decorators/operation-log-resource.decorator';
 import { MedicalRecordsService } from './medical-records.service';
@@ -113,7 +113,7 @@ export class MedicalRecordsController {
   @ApiOperation({ summary: '新增' })
   @Post()
   create(@Body() dto: CreateMedicalRecordDto) {
-    return this.records.create(dto as Partial<MedicalRecord>);
+    return this.records.create(dto);
   }
 
   @ApiOperation({ summary: '更新' })

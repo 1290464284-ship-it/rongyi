@@ -1,7 +1,7 @@
 /* eslint-disable sonarjs/no-floating-point-equality */
 import { ChargeService } from './charge.service';
 import { BusinessNotFoundException } from '@common/errors';
-import { MockDbService } from '../../../db/__mocks__/db-service.mock';
+import { MockDbService , asDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import { IdempotencyService } from '../../../common/services/idempotency.service';
 
@@ -41,7 +41,7 @@ describe('ChargeService', () => {
   beforeEach(() => {
     db = new MockDbService();
     eventBus = createMockEventBus();
-    service = new ChargeService(db as any, createMockClinicContext(), eventBus, new ChargeRepository(), createMockIdempotency(db));
+    service = new ChargeService(asDbService(db), createMockClinicContext(), eventBus, new ChargeRepository(), createMockIdempotency(db));
   });
 
   afterEach(() => {
@@ -61,11 +61,11 @@ describe('ChargeService', () => {
       expect(result.patientId).toBe('patient-001');
       expect(result.status).toBe('UNPAID');
       expect(result.totalAmount).toBe(300);
-      expect(result.items.length).toBe(1);
-      expect(result.items[0].name).toBe('洗牙');
-      expect(result.items[0].price).toBe(300);
-      expect(result.items[0].quantity).toBe(1);
-      expect(result.items[0].subtotal).toBe(300);
+      expect(result.items!.length).toBe(1);
+      expect(result.items![0].name).toBe('洗牙');
+      expect(result.items![0].price).toBe(300);
+      expect(result.items![0].quantity).toBe(1);
+      expect(result.items![0].subtotal).toBe(300);
     });
 
     it('应正确计算多个项目的总金额', () => {
@@ -79,9 +79,9 @@ describe('ChargeService', () => {
 
       // totalAmount = 200*1 + 500*2 = 1200
       expect(result.totalAmount).toBe(1200);
-      expect(result.items.length).toBe(2);
-      expect(result.items[0].subtotal).toBe(200);
-      expect(result.items[1].subtotal).toBe(1000);
+      expect(result.items!.length).toBe(2);
+      expect(result.items![0].subtotal).toBe(200);
+      expect(result.items![1].subtotal).toBe(1000);
     });
 
     it('创建的收费单初始状态应为 UNPAID', () => {
@@ -138,7 +138,7 @@ describe('ChargeService', () => {
         ],
       });
 
-      expect(result.items[0].teethNumbers).toEqual(['11', '12', '13']);
+      expect(result.items![0].teethNumbers).toEqual(['11', '12', '13']);
     });
 
     it('带备注的收费单应正确存储', () => {
@@ -168,7 +168,7 @@ describe('ChargeService', () => {
       });
 
       expect(result.totalAmount).toBe(0);
-      expect(result.items[0].price).toBe(0);
+      expect(result.items![0].price).toBe(0);
     });
 
     it('默认数量为 1', () => {
@@ -177,8 +177,8 @@ describe('ChargeService', () => {
         items: [{ name: '洗牙', category: '基础护理', price: 300 }],
       });
 
-      expect(result.items[0].quantity).toBe(1);
-      expect(result.items[0].subtotal).toBe(300);
+      expect(result.items![0].quantity).toBe(1);
+      expect(result.items![0].subtotal).toBe(300);
     });
 
     it('应写入 AuditLog 审计日志', () => {
@@ -211,8 +211,8 @@ describe('ChargeService', () => {
       expect(created.id).toBeDefined();
       expect(created.patientId).toBe('patient-001');
       expect(created.totalAmount).toBe(300);
-      expect(created.items.length).toBe(1);
-      expect(created.items[0].name).toBe('洗牙');
+      expect(created.items!.length).toBe(1);
+      expect(created.items![0].name).toBe('洗牙');
     });
 
     it('不存在的收费单应抛出 BusinessNotFoundException', () => {
@@ -230,8 +230,8 @@ describe('ChargeService', () => {
       });
 
       // createCharge 内部已调用 getCharge，返回值已正确转换
-      expect(created.items.length).toBe(3);
-      expect(created.items.map((i: any) => i.name)).toEqual(
+      expect(created.items!.length).toBe(3);
+      expect(created.items!.map((i: any) => i.name)).toEqual(
         expect.arrayContaining(['洗牙', '补牙', '拍片']),
       );
     });
@@ -314,7 +314,7 @@ describe('ChargeService', () => {
         ],
       });
 
-      expect(result.items.length).toBe(2);
+      expect(result.items!.length).toBe(2);
       expect(result.totalAmount).toBe(600);
     });
 
@@ -327,8 +327,8 @@ describe('ChargeService', () => {
         ],
       });
 
-      expect(result.items[0].subtotal).toBe(50);
-      expect(result.items[1].subtotal).toBe(100);
+      expect(result.items![0].subtotal).toBe(50);
+      expect(result.items![1].subtotal).toBe(100);
       expect(result.totalAmount).toBe(150);
     });
   });
@@ -346,8 +346,8 @@ describe('ChargeService', () => {
       // Mock 限制：第二次 getCharge 会读到已转换的 yuan 值，导致二次转换。
       // 因此使用 createCharge 的返回值（已正确转换）进行断言。
       expect(created.totalAmount).toBe(601);
-      expect(created.items[0].price).toBe(300.5);
-      expect(created.items[0].subtotal).toBe(601);
+      expect(created.items![0].price).toBe(300.5);
+      expect(created.items![0].subtotal).toBe(601);
     });
   });
 
@@ -362,7 +362,7 @@ describe('ChargeService', () => {
         ],
       });
 
-      expect(result.items[0].teethNumbers).toEqual([]);
+      expect(result.items![0].teethNumbers).toEqual([]);
     });
 
     it('teethNumbers 不传时应默认为空数组', () => {
@@ -371,7 +371,7 @@ describe('ChargeService', () => {
         items: [{ name: '洗牙', category: '基础护理', price: 300, quantity: 1 }],
       });
 
-      expect(result.items[0].teethNumbers).toEqual([]);
+      expect(result.items![0].teethNumbers).toEqual([]);
     });
   });
 
@@ -387,7 +387,7 @@ describe('ChargeService', () => {
       expect(result).toBeDefined();
       expect(result.patientId).toBe('patient-001');
       expect(result.totalAmount).toBe(0);
-      expect(result.items.length).toBe(0);
+      expect(result.items!.length).toBe(0);
       expect(result.status).toBe('UNPAID');
     });
 
@@ -398,7 +398,7 @@ describe('ChargeService', () => {
 
       expect(result).toBeDefined();
       expect(result.totalAmount).toBe(0);
-      expect(result.items.length).toBe(0);
+      expect(result.items!.length).toBe(0);
     });
 
     it('空明细也应写入 AuditLog 审计日志', () => {
@@ -427,8 +427,8 @@ describe('ChargeService', () => {
       });
 
       expect(result.totalAmount).toBe(40501.5);
-      expect(result.items[0].subtotal).toBe(30000);
-      expect(result.items[1].subtotal).toBe(10501.5);
+      expect(result.items![0].subtotal).toBe(30000);
+      expect(result.items![1].subtotal).toBe(10501.5);
     });
 
     it('小数金额应正确转换（元→分→元）', () => {
@@ -440,8 +440,8 @@ describe('ChargeService', () => {
       });
 
       expect(result.totalAmount).toBe(123.45);
-      expect(result.items[0].price).toBe(123.45);
-      expect(result.items[0].subtotal).toBe(123.45);
+      expect(result.items![0].price).toBe(123.45);
+      expect(result.items![0].subtotal).toBe(123.45);
     });
 
     it('数量很大时应正确计算', () => {
@@ -453,7 +453,7 @@ describe('ChargeService', () => {
       });
 
       expect(result.totalAmount).toBe(250);
-      expect(result.items[0].subtotal).toBe(250);
+      expect(result.items![0].subtotal).toBe(250);
     });
 
     it('单价为 0 数量为 0 时小计应为 0', () => {
@@ -465,7 +465,7 @@ describe('ChargeService', () => {
       });
 
       expect(result.totalAmount).toBe(0);
-      expect(result.items[0].subtotal).toBe(0);
+      expect(result.items![0].subtotal).toBe(0);
     });
   });
 
@@ -491,7 +491,7 @@ describe('ChargeService', () => {
         items: [{ name: '洗牙', price: 300, quantity: 1 }],
       });
 
-      expect(result.items[0].category).toBe('');
+      expect(result.items![0].category).toBe('');
     });
   });
 

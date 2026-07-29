@@ -1,6 +1,7 @@
 import { MemberCardsService } from './member-cards.service';
 import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
+import { asDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 
 import { createMemberCardFactory, TEST_CLINIC_ID } from '../../../../test/factories';
@@ -46,7 +47,7 @@ describe('MemberCardsService', () => {
     memberPointLogRepo = new MemberPointLogRepository();
     eventBus = createMockEventBus();
     service = new MemberCardsService(
-      db as any,
+      asDbService(db),
       createMockClinicContext(),
       createMockIdempotencyService(),
       memberCardLogRepo,
@@ -68,26 +69,26 @@ describe('MemberCardsService', () => {
 
     it('正常创建会员卡', async () => {
       const result = await service.create({ patientId: 'patient-001' });
-      expect((result as any).patientId).toBe('patient-001');
-      expect((result as any).status).toBe('ACTIVE');
-      expect((result as any).balance).toBe(0);
-      expect((result as any).totalRecharge).toBe(0);
-      expect((result as any).totalConsume).toBe(0);
+      expect(result.patientId).toBe('patient-001');
+      expect(result.status).toBe('ACTIVE');
+      expect(result.balance).toBe(0);
+      expect(result.totalRecharge).toBe(0);
+      expect(result.totalConsume).toBe(0);
     });
 
     it('创建后 cardNo 以 MC 开头', async () => {
       const result = await service.create({ patientId: 'patient-001' });
-      expect((result as any).cardNo).toMatch(/^MC/);
+      expect(result.cardNo).toMatch(/^MC/);
     });
 
     it('创建后初始余额为 0', async () => {
       const result = await service.create({ patientId: 'patient-001' });
-      expect((result as any).balance).toBe(0);
+      expect(result.balance).toBe(0);
     });
 
     it('创建后状态为 ACTIVE', async () => {
       const result = await service.create({ patientId: 'patient-001' });
-      expect((result as any).status).toBe('ACTIVE');
+      expect(result.status).toBe('ACTIVE');
     });
 
     it('同一患者重复创建应抛出异常（Mock 限制：用同一 patientId 种子数据模拟）', async () => {
@@ -111,8 +112,8 @@ describe('MemberCardsService', () => {
 
     it('调用 create 并返回结果', async () => {
       const result = await service.createForPatient('patient-002');
-      expect((result as any).patientId).toBe('patient-002');
-      expect((result as any).status).toBe('ACTIVE');
+      expect(result.patientId).toBe('patient-002');
+      expect(result.status).toBe('ACTIVE');
     });
   });
 
@@ -159,8 +160,8 @@ describe('MemberCardsService', () => {
       ]);
 
       const result = await service.recharge('card-001', 100);
-      expect((result as any).balance).toBe(100);
-      expect((result as any).totalRecharge).toBe(100);
+      expect(result.balance).toBe(100);
+      expect(result.totalRecharge).toBe(100);
     });
 
     it('正常充值 - 累计充值金额正确', async () => {
@@ -175,8 +176,8 @@ describe('MemberCardsService', () => {
       ]);
 
       const result = await service.recharge('card-001', 300);
-      expect((result as any).balance).toBe(350);
-      expect((result as any).totalRecharge).toBe(350);
+      expect(result.balance).toBe(350);
+      expect(result.totalRecharge).toBe(350);
     });
 
     it('多次充值 - 余额和累计充值正确累加', async () => {
@@ -194,8 +195,8 @@ describe('MemberCardsService', () => {
       await service.recharge('card-001', 200);
       const result = await service.recharge('card-001', 300);
 
-      expect((result as any).balance).toBe(600);
-      expect((result as any).totalRecharge).toBe(600);
+      expect(result.balance).toBe(600);
+      expect(result.totalRecharge).toBe(600);
     });
 
     it('充值小数金额 - 元转分正确', async () => {
@@ -210,7 +211,7 @@ describe('MemberCardsService', () => {
       ]);
 
       const result = await service.recharge('card-001', 99.99);
-      expect((result as any).balance).toBeCloseTo(99.99, 2);
+      expect(result.balance).toBeCloseTo(99.99, 2);
     });
 
     it('会员卡不存在应抛出异常', async () => {
@@ -251,7 +252,7 @@ describe('MemberCardsService', () => {
       const logs = db.getTableData('MemberCardLog');
       const rechargeLog = logs.find(l => l.type === 'RECHARGE');
       expect(rechargeLog).toBeDefined();
-      expect(Number(rechargeLog.balanceAfter)).toBe(30000);
+      expect(Number(rechargeLog!.balanceAfter)).toBe(30000);
     });
 
     it('充值后应创建审计日志', async () => {
@@ -449,7 +450,7 @@ describe('MemberCardsService', () => {
         }),
       ]);
       const result = await service.addPoints('card-001', 100);
-      expect((result as any).points).toBe(150);
+      expect(result.points).toBe(150);
     });
 
     it('多次加积分 - 正确累加', async () => {
@@ -466,7 +467,7 @@ describe('MemberCardsService', () => {
       await service.addPoints('card-001', 30);
       const result = await service.addPoints('card-001', 40);
 
-      expect((result as any).points).toBe(100);
+      expect(result.points).toBe(100);
     });
 
     it('积分必须为正数', async () => {
@@ -517,7 +518,7 @@ describe('MemberCardsService', () => {
       const logs = db.getTableData('MemberPointLog');
       const addLog = logs.find(l => l.type === 'ADD');
       expect(addLog).toBeDefined();
-      expect(addLog.balanceAfter).toBe(80);
+      expect(addLog!.balanceAfter).toBe(80);
     });
 
     it('积分日志中 chargeId 和 remark 正确', async () => {
@@ -535,8 +536,8 @@ describe('MemberCardsService', () => {
       const logs = db.getTableData('MemberPointLog');
       const addLog = logs.find(l => l.type === 'ADD');
       expect(addLog).toBeDefined();
-      expect(addLog.chargeId).toBe('charge-001');
-      expect(addLog.remark).toBe('充值赠送');
+      expect(addLog!.chargeId).toBe('charge-001');
+      expect(addLog!.remark).toBe('充值赠送');
     });
   });
 
@@ -601,8 +602,8 @@ describe('MemberCardsService', () => {
       ]);
       const result = await service.findByPatient('patient-001');
       expect(result).toBeDefined();
-      expect((result as any).id).toBe('card-001');
-      expect((result as any).patientId).toBe('patient-001');
+      expect(result!.id).toBe('card-001');
+      expect(result!.patientId).toBe('patient-001');
     });
 
     it('找到会员卡 - 余额已转换为元', async () => {
@@ -616,7 +617,7 @@ describe('MemberCardsService', () => {
         }),
       ]);
       const result = await service.findByPatient('patient-001');
-      expect((result as any).balance).toBeCloseTo(123.45, 2);
+      expect(result!.balance).toBeCloseTo(123.45, 2);
     });
 
     it('找到会员卡 - totalRecharge 和 totalConsume 已转换为元', async () => {
@@ -630,8 +631,8 @@ describe('MemberCardsService', () => {
         }),
       ]);
       const result = await service.findByPatient('patient-001');
-      expect((result as any).totalRecharge).toBe(100);
-      expect((result as any).totalConsume).toBe(50);
+      expect(result!.totalRecharge).toBe(100);
+      expect(result!.totalConsume).toBe(50);
     });
 
     it('未找到会员卡 - 返回 undefined', async () => {
@@ -878,8 +879,8 @@ describe('MemberCardsService', () => {
       ]);
 
       const result = await service.findOne('card-001');
-      expect((result as any).id).toBe('card-001');
-      expect((result as any).patientId).toBe('p1');
+      expect(result.id).toBe('card-001');
+      expect(result.patientId).toBe('p1');
     });
 
     it('余额已转换为元', async () => {
@@ -888,7 +889,7 @@ describe('MemberCardsService', () => {
       ]);
 
       const result = await service.findOne('card-001');
-      expect((result as any).balance).toBeCloseTo(123.45, 2);
+      expect(result.balance).toBeCloseTo(123.45, 2);
     });
 
     it('会员卡不存在应抛出 BusinessNotFoundException', async () => {
@@ -915,8 +916,8 @@ describe('MemberCardsService', () => {
       await service.recharge('card-001', 200);
       const result = await service.recharge('card-001', 300);
 
-      expect((result as any).balance).toBe(600);
-      expect((result as any).totalRecharge).toBe(600);
+      expect(result.balance).toBe(600);
+      expect(result.totalRecharge).toBe(600);
     });
 
     it('充值后交易日志数量正确', async () => {
@@ -953,7 +954,7 @@ describe('MemberCardsService', () => {
       await service.addPoints('card-001', 20);
       const result = await service.addPoints('card-001', 30);
 
-      expect((result as any).points).toBe(60);
+      expect(result.points).toBe(60);
     });
 
     it('积分日志数量正确', async () => {
@@ -990,7 +991,7 @@ describe('MemberCardsService', () => {
       ]);
 
       const result = await service.recharge('card-001', 99999);
-      expect((result as any).balance).toBe(99999);
+      expect(result.balance).toBe(99999);
     });
 
     it('加大量积分', async () => {
@@ -1004,7 +1005,7 @@ describe('MemberCardsService', () => {
       ]);
 
       const result = await service.addPoints('card-001', 99999);
-      expect((result as any).points).toBe(99999);
+      expect(result.points).toBe(99999);
     });
   });
 
@@ -1024,7 +1025,7 @@ describe('MemberCardsService', () => {
 
       const idempotencyService = createMockIdempotencyService(db);
       const serviceWithIdempotency = new MemberCardsService(
-        db as any,
+        asDbService(db),
         createMockClinicContext(),
         idempotencyService,
         new MemberCardLogRepository(),
@@ -1050,7 +1051,7 @@ describe('MemberCardsService', () => {
 
       const idempotencyService = createMockIdempotencyService(db);
       const serviceWithIdempotency = new MemberCardsService(
-        db as any,
+        asDbService(db),
         createMockClinicContext(),
         idempotencyService,
         new MemberCardLogRepository(),
@@ -1079,7 +1080,7 @@ describe('MemberCardsService', () => {
 
       const idempotencyService = createMockIdempotencyService(db);
       const serviceWithIdempotency = new MemberCardsService(
-        db as any,
+        asDbService(db),
         createMockClinicContext(),
         idempotencyService,
         new MemberCardLogRepository(),
@@ -1112,7 +1113,7 @@ describe('MemberCardsService', () => {
 
       const idempotencyService = createMockIdempotencyService(db);
       const serviceWithIdempotency = new MemberCardsService(
-        db as any,
+        asDbService(db),
         createMockClinicContext(),
         idempotencyService,
         new MemberCardLogRepository(),
@@ -1208,7 +1209,7 @@ describe('MemberCardsService', () => {
       ]);
 
       const result = await service.addPoints('card-001', 50);
-      expect((result as any).points).toBeDefined();
+      expect(result.points).toBeDefined();
     });
   });
 
@@ -1248,8 +1249,8 @@ describe('MemberCardsService', () => {
       ]);
 
       const result = await service.findOne('card-001');
-      expect((result as any).totalRecharge).toBe(200);
-      expect((result as any).totalConsume).toBe(100);
+      expect(result.totalRecharge).toBe(200);
+      expect(result.totalConsume).toBe(100);
     });
   });
 

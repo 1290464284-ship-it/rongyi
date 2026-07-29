@@ -3,14 +3,17 @@ import { JwtStrategy } from './jwt.strategy';
 
 describe('JwtStrategy', () => {
   let strategy: JwtStrategy;
-  let config: { get: jest.Mock };
+  let config: { get: jest.Mock; getOrThrow: jest.Mock };
   let auth: { validateById: jest.Mock };
 
   beforeEach(() => {
     config = {
       get: jest.fn((key: string) => {
         if (key === 'JWT_SECRET') return 'test-secret-key';
-        return;
+      }),
+      getOrThrow: jest.fn((key: string) => {
+        if (key === 'JWT_SECRET') return 'test-secret-key';
+        throw new Error(`Missing ${key}`);
       }),
     };
     auth = {
@@ -70,7 +73,7 @@ describe('JwtStrategy', () => {
 
   describe('构造函数配置', () => {
     it('从 ConfigService 读取 JWT_SECRET', () => {
-      expect(config.get).toHaveBeenCalledWith('JWT_SECRET');
+      expect(config.getOrThrow).toHaveBeenCalledWith('JWT_SECRET');
     });
   });
 });

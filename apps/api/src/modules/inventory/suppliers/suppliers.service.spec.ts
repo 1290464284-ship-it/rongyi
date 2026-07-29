@@ -1,6 +1,6 @@
 import { SuppliersService } from './suppliers.service';
 import { BusinessNotFoundException } from '@common/errors';
-import { MockDbService } from '../../../db/__mocks__/db-service.mock';
+import { MockDbService , asDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 
 
@@ -20,7 +20,7 @@ describe('SuppliersService', () => {
 
   beforeEach(() => {
     db = new MockDbService();
-    service = new SuppliersService(db as any, createMockClinicContext());
+    service = new SuppliersService(asDbService(db), createMockClinicContext());
   });
 
   afterEach(() => {
@@ -110,7 +110,7 @@ describe('SuppliersService', () => {
   describe('create - 创建供应商', () => {
     it('正常创建', async () => {
       const result = await service.create({ name: '新供应商', code: 'NEW001' });
-      expect((result as any).code).toBe('NEW001');
+      expect(result.code).toBe('NEW001');
       expect(result.name).toBe('新供应商');
     });
 
@@ -148,7 +148,7 @@ describe('SuppliersService', () => {
     it('正常更新', async () => {
       const result = await service.update('supplier-1', { name: '供应商A-更新', contactPerson: '张三三' });
       expect(result.name).toBe('供应商A-更新');
-      expect((result as any).contactPerson).toBe('张三三');
+      expect(result.contactPerson).toBe('张三三');
     });
 
     it('不存在的记录抛出 BusinessNotFoundException', async () => {

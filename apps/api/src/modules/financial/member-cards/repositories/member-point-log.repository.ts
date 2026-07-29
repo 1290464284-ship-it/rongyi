@@ -10,9 +10,9 @@ export interface MemberPointLog {
   type: PointLogType;
   points: number;
   balanceAfter: number;
-  chargeId?: string | null;
-  remark?: string | null;
-  clinicId?: string | null;
+  chargeId?: string;
+  remark?: string;
+  clinicId?: string;
   createdAt: string;
 }
 
@@ -21,9 +21,9 @@ interface CreatePointLogDto {
   type: PointLogType;
   points: number;
   balanceAfter: number;
-  chargeId?: string | null;
-  remark?: string | null;
-  clinicId?: string | null;
+  chargeId?: string;
+  remark?: string;
+  clinicId?: string;
 }
 
 @Injectable()
