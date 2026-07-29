@@ -126,8 +126,9 @@ source/
 1. **编辑完成后**：立即运行 `/monorepo-verify`（完整门禁）或至少 `pnpm lint:strict` + `pnpm test`
 2. **验证通过后**：方可继续下一个编辑或提交
 3. **验证失败时**：使用 `/monorepo-debug-test` 诊断根因并修复，修复后重新验证
+4. **会话收尾约束**：任何触及 `source/` 代码的会话，在最后一次编辑之后必须通过 `/monorepo-verify` Skill 执行 `pnpm run verify`（工作目录 `source/`），使收尾验证与本次改动集在同一会话内闭合；不得将收尾验证遗留给下一次会话
 
-> 此规则确保 Better Harness 能观测到编辑与验证的因果关联（closure 从 changed-without-check 变为 closed）。
+> 此规则确保 Better Harness 能观测到编辑与验证的因果关联（closure 从 changed-without-check 变为 closed）。verify-gate hook 会在会话收尾时对未验证改动输出提醒（含 `/monorepo-verify` 路由指引，仅提醒不阻塞）。
 
 ## 交付验收与高风险审批
 
