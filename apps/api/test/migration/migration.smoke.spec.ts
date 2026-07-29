@@ -78,6 +78,11 @@ describe('Migration Smoke Test', () => {
         20: 'system-alert-table',
         21: 'user-password-history-fields',
         22: 'patient-search-optimization-indexes',
+        23: 'slow-query-composite-indexes',
+        24: 'money-field-type-unification',
+        25: 'clinic-scoped-unique-constraints',
+        26: 'status-check-constraints-alignment',
+        27: 'user-deletedAt-soft-delete',
       }).length;
 
       expect(migrationNamesCount).toBe(CURRENT_VERSION);

@@ -87,6 +87,13 @@ Remove-Item <db>-wal, <db>-shm -ErrorAction SilentlyContinue
 ```powershell
 # 全程在仓库外隔离目录进行，不触碰真实数据
 $drill = 'D:\backup-drill'
+
+# 0. 强制校验：演练目录必须位于工作区/仓库外（校验失败立即中止，禁止继续）
+# 背景：2026-07 曾因演练目录落在工作区内，导致含密钥的 .env 与库副本残留在仓库旁
+$workspace = (Resolve-Path "$PSScriptRoot\..\..").Path  # 或手动指定工作区根目录
+ if ($drill.StartsWith($workspace, [System.StringComparison]::OrdinalIgnoreCase)) {
+   throw "演练目录 $drill 位于工作区 $workspace 内，违反隔离边界，中止演练"
+ }
 New-Item -ItemType Directory -Force -Path $drill\data | Out-Null
 
 cd source
@@ -108,8 +115,9 @@ node scripts/backup/restore.js --db-path $drill\data\dental.sqlite --backup-dir 
 
 # 5. 验证：backup:verify --list + 启动 API（PORT=3999）+ GET /api/v1/health/db-consistency
 
-# 6. 清理演练目录
+# 6. 清理演练目录（必做收尾步骤，不得跳过：演练库含 seed 数据与 .env 密钥）
 Remove-Item $drill -Recurse -Force
+# 收尾复核：确认工作区内无演练残留（外层 git status 不应出现 .backup-drill/ 或其他演练产物）
 ```
 
 > 建议频率：每季度或重大 schema 变更后演练一次，并更新本文档的耗时记录。

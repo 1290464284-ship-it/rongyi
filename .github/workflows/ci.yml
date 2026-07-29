@@ -67,6 +67,8 @@ jobs:
         run: pnpm --filter @dental/shared test:cov
       - name: Test (API)
         run: pnpm --filter @dental/api test:cov
+      - name: Migration Test (API)
+        run: pnpm --filter @dental/api test:migration
       - name: E2E Test (API)
         run: pnpm --filter @dental/api test:e2e
 
