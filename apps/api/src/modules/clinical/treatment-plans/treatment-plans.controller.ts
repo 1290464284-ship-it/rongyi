@@ -1,8 +1,7 @@
-﻿import { safePage, safePageSize } from '../../../common/dto/pagination.dto';
+import { safePage, safePageSize } from '../../../common/dto/pagination.dto';
 import { Controller, Post, Get, Patch, Delete, Param, Body, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Role } from '@dental/shared';
-import { TreatmentPlan } from '@dental/shared';
 import { TreatmentPlansService } from './treatment-plans.service';
 import { CreateTreatmentPlanDto } from './dto/create-treatment-plan.dto';
 import { UpdateTreatmentPlanDto } from './dto/update-treatment-plan.dto';
@@ -22,7 +21,7 @@ export class TreatmentPlansController {
   @ApiOperation({ summary: '新增' })
   @Post()
   create(@Body() dto: CreateTreatmentPlanDto) {
-    return this.plans.create(dto as unknown as Partial<TreatmentPlan>);
+    return this.plans.create(dto);
   }
 
   @ApiOperation({ summary: '分页查询列表' })
@@ -40,7 +39,7 @@ export class TreatmentPlansController {
   @ApiOperation({ summary: '更新' })
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdateTreatmentPlanDto) {
-    return this.plans.update(id, dto as unknown as Partial<TreatmentPlan>);
+    return this.plans.update(id, dto);
   }
 
   @ApiOperation({ summary: '更新治疗计划' })

@@ -1,6 +1,6 @@
 import { PeriodontalRecordsService } from './periodontal-records.service';
 import { BusinessNotFoundException } from '@common/errors';
-import { MockDbService } from '../../../db/__mocks__/db-service.mock';
+import { MockDbService , asDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 
 
@@ -20,7 +20,7 @@ describe('PeriodontalRecordsService', () => {
 
   beforeEach(() => {
     db = new MockDbService();
-    service = new PeriodontalRecordsService(db as any, createMockClinicContext());
+    service = new PeriodontalRecordsService(asDbService(db), createMockClinicContext());
   });
 
   afterEach(() => {

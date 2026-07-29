@@ -126,7 +126,7 @@ export class DbService implements OnModuleInit, OnModuleDestroy, IDatabase {
     while (removed < count) {
       const result = keys.next();
       if (result.done) break;
-      this.statementCache.delete(result.value as string);
+      this.statementCache.delete(result.value);
       removed++;
     }
   }

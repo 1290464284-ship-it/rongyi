@@ -1,6 +1,6 @@
 import { ToothRecordsService } from './tooth-records.service';
 import { BusinessValidationException } from '@common/errors';
-import { MockDbService } from '../../../db/__mocks__/db-service.mock';
+import { asDbService, MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 
 
@@ -20,7 +20,7 @@ describe('ToothRecordsService', () => {
 
   beforeEach(() => {
     db = new MockDbService();
-    service = new ToothRecordsService(db as any, createMockClinicContext());
+    service = new ToothRecordsService(asDbService(db), createMockClinicContext());
   });
 
   afterEach(() => {
@@ -38,14 +38,14 @@ describe('ToothRecordsService', () => {
     it('正常查询指定牙位记录', async () => {
       const result = await service.findByTooth('patient-001', 11);
       expect(result).toBeDefined();
-      expect((result as any).toothNumber).toBe(11);
-      expect((result as any).currentStatus).toBe('SOUND');
+      expect(result!.toothNumber).toBe(11);
+      expect(result!.currentStatus).toBe('SOUND');
     });
 
     it('conditions JSON 字段被正确解析为数组', async () => {
       const result = await service.findByTooth('patient-001', 11);
-      expect(Array.isArray((result as any).conditions)).toBe(true);
-      expect((result as any).conditions).toEqual(['CARIES']);
+      expect(Array.isArray(result!.conditions)).toBe(true);
+      expect(result!.conditions).toEqual(['CARIES']);
     });
 
     it('不存在的牙位返回 undefined', async () => {
@@ -82,9 +82,9 @@ describe('ToothRecordsService', () => {
         remark: '浅龋',
       });
       expect(result).toBeDefined();
-      expect((result as any).toothNumber).toBe(11);
-      expect((result as any).currentStatus).toBe('CARIES');
-      expect((result as any).remark).toBe('浅龋');
+      expect(result.toothNumber).toBe(11);
+      expect(result.currentStatus).toBe('CARIES');
+      expect(result.remark).toBe('浅龋');
     });
 
     it('conditions JSON 字段在插入后被正确解析', async () => {
@@ -92,8 +92,8 @@ describe('ToothRecordsService', () => {
         currentStatus: 'CARIES',
         conditions: ['DECAY', 'SENSITIVE'],
       });
-      expect(Array.isArray((result as any).conditions)).toBe(true);
-      expect((result as any).conditions).toEqual(['DECAY', 'SENSITIVE']);
+      expect(Array.isArray(result.conditions)).toBe(true);
+      expect(result.conditions).toEqual(['DECAY', 'SENSITIVE']);
     });
 
     it('更新已有记录', async () => {
@@ -106,19 +106,19 @@ describe('ToothRecordsService', () => {
         conditions: ['FILLING'],
         remark: '树脂充填',
       });
-      expect((result as any).currentStatus).toBe('RESTORED');
-      expect((result as any).remark).toBe('树脂充填');
+      expect(result.currentStatus).toBe('RESTORED');
+      expect(result.remark).toBe('树脂充填');
     });
 
     it('默认 currentStatus 为 SOUND', async () => {
       const result = await service.upsert('patient-001', 11, {});
-      expect((result as any).currentStatus).toBe('SOUND');
+      expect(result.currentStatus).toBe('SOUND');
     });
 
     it('默认 conditions 为空数组', async () => {
       const result = await service.upsert('patient-001', 11, {});
-      expect(Array.isArray((result as any).conditions)).toBe(true);
-      expect((result as any).conditions).toEqual([]);
+      expect(Array.isArray(result.conditions)).toBe(true);
+      expect(result.conditions).toEqual([]);
     });
 
     it('无效牙位号抛出 BusinessValidationException', async () => {
@@ -165,15 +165,15 @@ describe('ToothRecordsService', () => {
 
     it('按 toothNumber 升序排序', async () => {
       const result = await service.findByPatient('patient-001');
-      expect((result.items[0] as any).toothNumber).toBe(11);
-      expect((result.items[1] as any).toothNumber).toBe(12);
+      expect(result.items[0].toothNumber).toBe(11);
+      expect(result.items[1].toothNumber).toBe(12);
     });
 
     it('conditions JSON 字段被正确解析', async () => {
       const result = await service.findByPatient('patient-001');
-      const itemWithConditions = result.items.find((i: any) => i.toothNumber === 12);
-      expect(Array.isArray((itemWithConditions as any).conditions)).toBe(true);
-      expect((itemWithConditions as any).conditions).toEqual(['DECAY']);
+      const itemWithConditions = result.items.find((i) => i.toothNumber === 12);
+      expect(Array.isArray(itemWithConditions!.conditions)).toBe(true);
+      expect(itemWithConditions!.conditions).toEqual(['DECAY']);
     });
   });
 
@@ -186,7 +186,7 @@ describe('ToothRecordsService', () => {
 
     it('findOne 正常查询', async () => {
       const result = await service.findOne('toothrecord-001');
-      expect((result as any).id).toBe('toothrecord-001');
+      expect(result.id).toBe('toothrecord-001');
     });
 
     it('create 正常创建', async () => {
@@ -195,7 +195,7 @@ describe('ToothRecordsService', () => {
         toothNumber: 21,
         currentStatus: 'SOUND',
       });
-      expect((result as any).toothNumber).toBe(21);
+      expect(result.toothNumber).toBe(21);
     });
   });
 
@@ -211,10 +211,10 @@ describe('ToothRecordsService', () => {
     it('更新时 data 为空对象应使用默认值 currentStatus=SOUND, conditions=[], remark=null', async () => {
       const result = await service.upsert('patient-001', 11, {});
       // 验证更新后的默认值
-      expect((result as any).currentStatus).toBe('SOUND');
-      expect(Array.isArray((result as any).conditions)).toBe(true);
-      expect((result as any).conditions).toEqual([]);
-      expect((result as any).remark).toBeNull();
+      expect(result.currentStatus).toBe('SOUND');
+      expect(Array.isArray(result.conditions)).toBe(true);
+      expect(result.conditions).toEqual([]);
+      expect(result.remark).toBeNull();
     });
 
     it('更新时 currentStatus 为 undefined 应默认为 SOUND', async () => {
@@ -222,7 +222,7 @@ describe('ToothRecordsService', () => {
         conditions: ['NEW'],
         remark: '新备注',
       });
-      expect((result as any).currentStatus).toBe('SOUND');
+      expect(result.currentStatus).toBe('SOUND');
     });
 
     it('更新时 conditions 为 undefined 应默认为空数组', async () => {
@@ -230,8 +230,8 @@ describe('ToothRecordsService', () => {
         currentStatus: 'RESTORED',
         remark: '新备注',
       });
-      expect(Array.isArray((result as any).conditions)).toBe(true);
-      expect((result as any).conditions).toEqual([]);
+      expect(Array.isArray(result.conditions)).toBe(true);
+      expect(result.conditions).toEqual([]);
     });
 
     it('更新时 remark 为 undefined 应默认为 null', async () => {
@@ -239,7 +239,7 @@ describe('ToothRecordsService', () => {
         currentStatus: 'RESTORED',
         conditions: ['FILLING'],
       });
-      expect((result as any).remark).toBeNull();
+      expect(result.remark).toBeNull();
     });
   });
 
@@ -247,7 +247,7 @@ describe('ToothRecordsService', () => {
     it('clinicId 为 null 时 INSERT 路径的 clinicId 应存储为 null', async () => {
       // buildClinicClause 在 clinicId 为 null 时会抛出异常，
       // 需 mock 该方法返回空子句以覆盖 clinicId || null 分支
-      const nullCtxService = new ToothRecordsService(db as any, createMockClinicContext(null));
+      const nullCtxService = new ToothRecordsService(asDbService(db), createMockClinicContext(null));
       jest.spyOn(nullCtxService as any, 'buildClinicClause').mockReturnValue({ clause: '', params: [] });
 
       const result = await nullCtxService.upsert('patient-001', 11, {
@@ -257,7 +257,7 @@ describe('ToothRecordsService', () => {
       });
 
       // 验证记录的 clinicId 为 null（clinicId || null 的 null 分支被覆盖）
-      expect((result as any).clinicId).toBeNull();
+      expect(result.clinicId).toBeNull();
 
       // 数据库中的记录 clinicId 也应为 null
       const records = db.getTableData('ToothRecord');

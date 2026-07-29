@@ -107,7 +107,7 @@ describe('assertions', () => {
 
     it('非数字类型应抛出异常', () => {
       expect(() => assertIsFiniteNumber('123' as unknown as number)).toThrow();
-      expect(() => assertIsFiniteNumber(null)).toThrow();
+      expect(() => assertIsFiniteNumber(null as unknown as number)).toThrow();
       expect(() => assertIsFiniteNumber(undefined as unknown as number)).toThrow();
     });
 

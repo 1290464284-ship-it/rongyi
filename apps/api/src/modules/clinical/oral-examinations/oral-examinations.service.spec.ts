@@ -1,6 +1,6 @@
 import { OralExaminationsService } from './oral-examinations.service';
 import { BusinessNotFoundException } from '@common/errors';
-import { MockDbService } from '../../../db/__mocks__/db-service.mock';
+import { MockDbService , asDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 
 
@@ -20,7 +20,7 @@ describe('OralExaminationsService', () => {
 
   beforeEach(() => {
     db = new MockDbService();
-    service = new OralExaminationsService(db as any, createMockClinicContext());
+    service = new OralExaminationsService(asDbService(db), createMockClinicContext());
   });
 
   afterEach(() => {

@@ -1,6 +1,6 @@
 import { ChairsService } from './chairs.service';
 import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
-import { MockDbService } from '../../../db/__mocks__/db-service.mock';
+import { MockDbService , asDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 
 
@@ -20,7 +20,7 @@ describe('ChairsService', () => {
 
   beforeEach(() => {
     db = new MockDbService();
-    service = new ChairsService(db as any, createMockClinicContext());
+    service = new ChairsService(asDbService(db), createMockClinicContext());
   });
 
   afterEach(() => {
@@ -93,7 +93,7 @@ describe('ChairsService', () => {
     });
 
     it('无 clinicId 上下文时抛出错误', async () => {
-      const serviceNoCtx = new ChairsService(db as any, createMockClinicContext(null));
+      const serviceNoCtx = new ChairsService(asDbService(db), createMockClinicContext(null));
       await expect(serviceNoCtx.findAll()).rejects.toThrow();
     });
   });
@@ -102,12 +102,12 @@ describe('ChairsService', () => {
     it('正常创建牙椅', async () => {
       const result = await service.create({ name: '1号椅', location: 'A区' });
       expect(result).toBeDefined();
-      expect((result as any).name).toBe('1号椅');
-      expect((result as any).location).toBe('A区');
+      expect(result.name).toBe('1号椅');
+      expect(result.location).toBe('A区');
     });
 
     it('无 clinicId 上下文且无 dto.clinicId 时抛出 ForbiddenException', async () => {
-      const serviceNoCtx = new ChairsService(db as any, createMockClinicContext(null));
+      const serviceNoCtx = new ChairsService(asDbService(db), createMockClinicContext(null));
       await expect(
         serviceNoCtx.create({ name: '1号椅' } as any),
       ).rejects.toThrow();
@@ -123,7 +123,7 @@ describe('ChairsService', () => {
 
     it('正常更新', async () => {
       const result = await service.update('chair-1', { name: '新名字' });
-      expect((result as any).name).toBe('新名字');
+      expect(result.name).toBe('新名字');
     });
 
     it('不存在的 ID 抛出 BusinessNotFoundException', async () => {
@@ -195,7 +195,7 @@ describe('ChairsService', () => {
     });
 
     it('无 clinicId 上下文时抛出 ForbiddenException', async () => {
-      const serviceNoCtx = new ChairsService(db as any, createMockClinicContext(null));
+      const serviceNoCtx = new ChairsService(asDbService(db), createMockClinicContext(null));
       await expect(serviceNoCtx.findMany({})).rejects.toThrow();
     });
 

@@ -2,7 +2,6 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Request } fro
 import { Request as ExpressRequest } from 'express';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Role } from '@dental/shared';
-import { InventoryItem } from '@dental/shared';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { OperationLogResource } from '../../../common/decorators/operation-log-resource.decorator';
 import { InventoryService } from './inventory.service';
@@ -43,7 +42,7 @@ export class InventoryController {
   @ApiOperation({ summary: '创建库存' })
   @Post('items')
   createItem(@Body() dto: CreateInventoryItemDto) {
-    return this.inventory.create(dto as unknown as Partial<InventoryItem>);
+    return this.inventory.create(dto);
   }
 
   @ApiOperation({ summary: '更新库存' })

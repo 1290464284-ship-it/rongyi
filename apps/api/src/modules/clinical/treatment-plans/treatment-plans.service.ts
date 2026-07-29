@@ -25,25 +25,27 @@ interface TreatmentPlanItemDto {
   price: number;
   quantity?: number;
   teethNumbers?: number[];
-  remark?: string | null;
+  remark?: string;
 }
 
 interface CreateTreatmentPlanDto {
   patientId: string;
-  visitId?: string | null;
+  visitId?: string;
   doctorId: string;
   name: string;
   totalFee?: number;
-  remark?: string | null;
+  remark?: string;
   items: TreatmentPlanItemDto[];
 }
 
 @Injectable()
 export class TreatmentPlansService extends BaseService<TreatmentPlan> {
   constructor(dbService: DbService, clinicContext: ClinicContextService) {
-    super(dbService, clinicContext, "TreatmentPlan", [], ["name"], [
-      { table: 'TreatmentPlanItem', foreignKey: 'planId' },
-    ]);
+    super(dbService, clinicContext, {
+      tableName: "TreatmentPlan",
+      searchFields: ["name"],
+      cascadeTables: [{ table: 'TreatmentPlanItem', foreignKey: 'planId' }],
+    });
   }
 
   async create(dto: Partial<TreatmentPlan>): Promise<TreatmentPlan> {

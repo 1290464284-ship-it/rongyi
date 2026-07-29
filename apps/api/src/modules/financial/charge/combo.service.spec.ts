@@ -1,5 +1,5 @@
 import { ComboService } from './combo.service';
-import { MockDbService, MockDbRow } from '../../../db/__mocks__/db-service.mock';
+import { MockDbService, MockDbRow , asDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 
 function createMockClinicContext(): ClinicContextService {
@@ -18,7 +18,7 @@ describe('ComboService', () => {
 
   beforeEach(() => {
     db = new MockDbService();
-    service = new ComboService(db as any, createMockClinicContext());
+    service = new ComboService(asDbService(db), createMockClinicContext());
   });
 
   afterEach(() => {
@@ -236,7 +236,7 @@ describe('ComboService', () => {
       const auditLogs = db.getTableData('AuditLog');
       const updateLog = auditLogs.find(l => l.type === 'COMBO_UPDATE');
       expect(updateLog).toBeDefined();
-      const afterData = JSON.parse(updateLog.afterData as string);
+      const afterData = JSON.parse(updateLog!.afterData as string);
       expect(afterData.name).toBe('更新后名称');
       expect(afterData.category).toBe('更新后分类');
     });
@@ -254,7 +254,7 @@ describe('ComboService', () => {
       const combos = db.getTableData('ChargeCombo');
       const deleted = combos.find(c => c.id === 'combo-001');
       expect(deleted).toBeDefined();
-      expect(deleted.deletedAt).not.toBeNull();
+      expect(deleted!.deletedAt).not.toBeNull();
     });
 
     it('删除后 listCombos 不应包含该套餐', async () => {

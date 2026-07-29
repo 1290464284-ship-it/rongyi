@@ -25,11 +25,12 @@ export class ChargeService extends BaseService<ChargeRecord> {
     private chargeRepository: ChargeRepository,
     private idempotency: IdempotencyService,
   ) {
-    super(dbService, clinicContext, 'Charge', [], ['number'], [
-      { table: 'ChargeItem', foreignKey: 'chargeId' },
-    ], true, ['number'], 'number', 'C', [
-      'totalAmount', 'paidAmount', 'refundedAmount', 'discount',
-    ]);
+    super(dbService, clinicContext, {
+      tableName: 'Charge', searchFields: ['number'],
+      cascadeTables: [{ table: 'ChargeItem', foreignKey: 'chargeId' }],
+      uniqueFields: ['number'], codeField: 'number', codePrefix: 'C',
+      moneyFields: ['totalAmount', 'paidAmount', 'refundedAmount', 'discount'],
+    });
   }
 
   async listCharges(q: QueryChargesDto) {
@@ -56,8 +57,8 @@ export class ChargeService extends BaseService<ChargeRecord> {
 
     // N+1 查询优化：批量查询患者和医生信息
     if (items.length > 0 && !q.patientId) {
-      const patientIds = [...new Set(items.map(c => c.patientId).filter(Boolean))];
-      const doctorIds = [...new Set(items.map(c => c.doctorId).filter(Boolean))];
+      const patientIds = [...new Set(items.map(c => c.patientId).filter((v): v is string => !!v))];
+      const doctorIds = [...new Set(items.map(c => c.doctorId).filter((v): v is string => !!v))];
 
       const patients = this.chargeRepository.batchFindPatients(this.dbService, patientIds, clinicClause, clinicParams);
       const patientMap = new Map<string, Record<string, unknown>>();
@@ -69,8 +70,8 @@ export class ChargeService extends BaseService<ChargeRecord> {
 
       const itemsWithRelations = items.map(c => ({
         ...c,
-        patient: patientMap.get(c.patientId) || null,
-        doctor: doctorMap.get(c.doctorId) || null,
+        patient: patientMap.get(c.patientId ?? '') || null,
+        doctor: doctorMap.get(c.doctorId ?? '') || null,
       }));
       return { items: itemsWithRelations, total, page, pageSize };
     }
@@ -198,7 +199,7 @@ export class ChargeService extends BaseService<ChargeRecord> {
           const result = { ...charge, items } as ChargeRecord & { items?: ChargeItemRecord[] };
           // 缓存 chargeId 与 clinicId 供外部 emit 使用
           (result as ChargeRecord & { _chargeId?: string; _clinicId?: string })._chargeId = chargeId;
-          (result as ChargeRecord & { _chargeId?: string; _clinicId?: string })._clinicId = clinicId;
+          (result as ChargeRecord & { _chargeId?: string; _clinicId?: string })._clinicId = clinicId ?? '';
           (result as ChargeRecord & { _totalAmountCents?: number })._totalAmountCents = totalAmountCents;
           return result;
         } catch (e: unknown) {

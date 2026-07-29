@@ -2,31 +2,31 @@ export interface ChargeRecord {
   id: string;
   patientId: string;
   doctorId?: string;
-  visitId?: string | null;
+  visitId?: string;
   number: string;
   totalAmount: number;
   paidAmount: number;
   refundedAmount?: number;
   discount: number;
   status: string;
-  payMethod?: string | null;
-  paidAt?: string | null;
+  payMethod?: string;
+  paidAt?: string;
   remark?: string;
   createdAt: string;
   updatedAt: string;
-  deletedAt?: string | null;
+  deletedAt?: string;
 }
 
 export interface ChargeItemRecord {
   id: string;
   chargeId: string;
-  treatmentId?: string | null;
-  inventoryItemId?: string | null;
+  treatmentId?: string;
+  inventoryItemId?: string;
   consumedQuantity?: number;
   name: string;
   category: string;
   price: number;
   quantity: number;
-  teethNumbers?: string[] | string;
+  teethNumbers: string[] | string | undefined;
   subtotal: number;
 }

@@ -44,7 +44,7 @@ function createMockHttpContext(options: {
     },
     getHandler: () => handler as never,
     getArgs: () => [] as never,
-    getArgByIndex: () => null,
+    getArgByIndex: () => null as never,
     switchToRpc: () => ({} as never) as ReturnType<ExecutionContext['switchToRpc']>,
     switchToWs: () => ({} as never) as ReturnType<ExecutionContext['switchToWs']>,
     getType: () => 'http' as never,
@@ -62,7 +62,6 @@ function createMockModuleRef(sink: OperationLogSink | null): ModuleRef {
         if (sink) return sink;
         throw new Error('not found');
       }
-      return;
     },
   } as unknown as ModuleRef;
 }

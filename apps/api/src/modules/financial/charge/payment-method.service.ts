@@ -11,7 +11,10 @@ export class PaymentMethodService extends BaseService<PaymentMethod> {
     dbService: DbService,
     clinicContext: ClinicContextService,
   ) {
-    super(dbService, clinicContext, 'PaymentMethod', [], ['name', 'code']);
+    super(dbService, clinicContext, {
+      tableName: 'PaymentMethod',
+      searchFields: ['name', 'code'],
+    });
   }
 
   listPaymentMethods() {

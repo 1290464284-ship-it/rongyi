@@ -3,7 +3,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { Role } from '@dental/shared';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { OperationLogResource } from '../../../common/decorators/operation-log-resource.decorator';
-import { ClinicsService } from './clinics.service';
+import { ClinicsService, Clinic } from './clinics.service';
 import { CreateClinicDto, UpdateClinicDto } from './dto/clinic.dto';
 
 @ApiTags('诊所管理')
@@ -53,7 +53,7 @@ export class ClinicsController {
   @Patch(':id')
   @ApiOperation({ summary: '更新诊所信息' })
   update(@Param('id') id: string, @Body() dto: UpdateClinicDto) {
-    return this.clinics.update(id, dto as unknown);
+    return this.clinics.update(id, dto as unknown as Partial<Clinic>);
   }
 
   @ApiOperation({ summary: '删除' })

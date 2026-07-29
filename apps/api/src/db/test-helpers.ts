@@ -349,8 +349,8 @@ export interface ClinicContextSeed {
   clinicId: string;
   userId: string;
   role: string;
-  userAgent?: string | null;
-  source?: string | null;
+  userAgent?: string;
+  source?: string;
 }
 
 /**

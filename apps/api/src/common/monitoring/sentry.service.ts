@@ -125,7 +125,7 @@ export class SentryService {
       event.breadcrumbs = event.breadcrumbs.map((crumb) => ({
         ...crumb,
         data: crumb.data ? sanitizeValue(crumb.data) : undefined,
-      }));
+      })) as typeof event.breadcrumbs;
     }
     return event;
   }

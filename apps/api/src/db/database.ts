@@ -71,7 +71,7 @@ const resourcesPath =
   '';
 
 const dbOptions: Options = {
-  verbose: process.env.NODE_ENV === 'development' ? (msg: string) => logger.debug(msg, 'SQLite') : undefined,
+  verbose: process.env.NODE_ENV === 'development' ? (msg: unknown) => logger.debug(String(msg), 'SQLite') : undefined,
 };
 
 if (resourcesPath && (process.env.NODE_ENV === 'production' || process.env.ELECTRON_RUN_AS_NODE)) {
@@ -159,7 +159,7 @@ export function rebuildDbConnection(): InstanceType<typeof Database> {
   }
   const dbPath = getDbPath();
   const rebuildOptions: Options = {
-    verbose: process.env.NODE_ENV === 'development' ? (msg: string) => logger.debug(msg, 'SQLite') : undefined,
+    verbose: process.env.NODE_ENV === 'development' ? (msg: unknown) => logger.debug(String(msg), 'SQLite') : undefined,
     ...dbOptions,
   };
   const dbInstance = new Database(dbPath, rebuildOptions);

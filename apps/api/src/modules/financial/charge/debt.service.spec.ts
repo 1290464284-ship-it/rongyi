@@ -1,7 +1,7 @@
 /* eslint-disable sonarjs/no-floating-point-equality */
 import { DebtService } from './debt.service';
 import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
-import { MockDbService, MockDbRow } from '../../../db/__mocks__/db-service.mock';
+import { MockDbService, MockDbRow , asDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import { IdempotencyService } from '../../../common/services/idempotency.service';
 
@@ -37,7 +37,7 @@ describe('DebtService', () => {
       { id: 'charge-boundary-3', patientId: 'patient-001', number: 'CB03', totalAmount: 9999999, paidAmount: 0, refundedAmount: 0, discount: 0, status: 'UNPAID', clinicId: 'test-clinic-001', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
       { id: 'charge-boundary-4', patientId: 'patient-001', number: 'CB04', totalAmount: 12345, paidAmount: 0, refundedAmount: 0, discount: 0, status: 'UNPAID', clinicId: 'test-clinic-001', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
     ]);
-    service = new DebtService(db as any, createMockClinicContext(), createMockIdempotency(db));
+    service = new DebtService(asDbService(db), createMockClinicContext(), createMockIdempotency(db));
   });
 
   afterEach(() => {

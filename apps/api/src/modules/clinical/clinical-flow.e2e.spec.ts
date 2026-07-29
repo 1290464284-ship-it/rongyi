@@ -185,7 +185,7 @@ describe('Clinical Flow E2E - 患者→挂号→就诊→治疗→收费', () =>
       // Step 4: 完成就诊（IN_PROGRESS → COMPLETED，带诊断）
       // ================================================================
       const completedVisit = await runAsDoctor(() =>
-        visitsService.complete(visitId, {
+        visitsService.complete(visitId!, {
           diagnosis: '龋齿（16号牙远中邻面龋）',
           remark: '需要根管治疗',
         }),
@@ -253,7 +253,7 @@ describe('Clinical Flow E2E - 患者→挂号→就诊→治疗→收费', () =>
       expect(charge.paidAmount).toBe(0);
       expect(charge.refundedAmount).toBe(0);
       expect(charge.status).toBe('UNPAID');
-      expect(charge.items.length).toBe(2);
+      expect(charge.items!.length).toBe(2);
 
       const chargeRow = db.prepare('SELECT totalAmount, paidAmount, status FROM Charge WHERE id = ?').get(charge.id) as any;
       expect(chargeRow.totalAmount).toBe(C(950));
@@ -408,7 +408,7 @@ describe('Clinical Flow E2E - 患者→挂号→就诊→治疗→收费', () =>
       const started = await runAsDoctor(() => registrationsService.startVisit(reg.id));
 
       await runAsDoctor(() =>
-        visitsService.complete(started.visitId, {
+        visitsService.complete(started.visitId!, {
           diagnosis: '慢性根尖周炎',
           remark: '建议根管治疗',
         }),
@@ -520,7 +520,7 @@ describe('Clinical Flow E2E - 患者→挂号→就诊→治疗→收费', () =>
       );
 
       expect(charge.totalAmount).toBe(350);
-      expect(charge.items.length).toBe(3);
+      expect(charge.items!.length).toBe(3);
       expect(charge.status).toBe('UNPAID');
 
       const items = db.prepare('SELECT name, price, quantity FROM ChargeItem WHERE chargeId = ? ORDER BY createdAt').all(charge.id) as any[];
@@ -541,9 +541,9 @@ describe('Clinical Flow E2E - 患者→挂号→就诊→治疗→收费', () =>
         }),
       );
 
-      expect(charge.items.length).toBe(2);
-      expect(charge.items[0].teethNumbers).toEqual(['16']);
-      expect(charge.items[1].teethNumbers).toEqual(['26']);
+      expect(charge.items!.length).toBe(2);
+      expect(charge.items![0].teethNumbers).toEqual(['16']);
+      expect(charge.items![1].teethNumbers).toEqual(['26']);
 
       const items = db.prepare('SELECT teethNumbers FROM ChargeItem WHERE chargeId = ? ORDER BY createdAt').all(charge.id) as any[];
       const tooth16 = JSON.parse(items[0].teethNumbers);
@@ -760,7 +760,7 @@ describe('Clinical Flow E2E - 患者→挂号→就诊→治疗→收费', () =>
       const started = await runAsDoctor(() => registrationsService.startVisit(reg.id));
 
       await runAsDoctor(() =>
-        visitsService.complete(started.visitId, {
+        visitsService.complete(started.visitId!, {
           diagnosis: '测试诊断',
         }),
       );

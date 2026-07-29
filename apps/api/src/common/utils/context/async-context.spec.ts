@@ -3,6 +3,8 @@ import {
   getRequestContext,
   getTraceId,
   getCurrentUserId,
+  getCurrentClinicId,
+  setClinicId,
   generateTraceId,
   runWithContext,
   RequestContext,
@@ -89,9 +91,9 @@ describe('async-context', () => {
       runWithContext(context, () => {
         const result = getRequestContext();
         expect(result).toBeDefined();
-        expect(result.traceId).toBe('trace-1');
-        expect(result.userId).toBe('user-1');
-        expect(result.requestStart).toBe('2024-01-01T00:00:00.000Z');
+        expect(result!.traceId).toBe('trace-1');
+        expect(result!.userId).toBe('user-1');
+        expect(result!.requestStart).toBe('2024-01-01T00:00:00.000Z');
       });
     });
   });
@@ -156,6 +158,40 @@ describe('async-context', () => {
       });
 
       expect(result).toBe('async-trace');
+    });
+  });
+
+  describe('setClinicId', () => {
+    it('在上下文中应设置 clinicId', () => {
+      const context: RequestContext = { traceId: 'test' };
+      runWithContext(context, () => {
+        setClinicId('clinic-abc');
+        expect(getCurrentClinicId()).toBe('clinic-abc');
+      });
+    });
+
+    it('在上下文外调用应不报错（no-op）', () => {
+      expect(() => setClinicId('clinic-abc')).not.toThrow();
+    });
+  });
+
+  describe('getCurrentClinicId', () => {
+    it('在上下文之外应返回 undefined', () => {
+      expect(getCurrentClinicId()).toBeUndefined();
+    });
+
+    it('有 clinicId 时应返回', () => {
+      const context: RequestContext = { traceId: 't', clinicId: 'clinic-xyz' };
+      runWithContext(context, () => {
+        expect(getCurrentClinicId()).toBe('clinic-xyz');
+      });
+    });
+
+    it('没有 clinicId 时应返回 undefined', () => {
+      const context: RequestContext = { traceId: 't' };
+      runWithContext(context, () => {
+        expect(getCurrentClinicId()).toBeUndefined();
+      });
     });
   });
 });

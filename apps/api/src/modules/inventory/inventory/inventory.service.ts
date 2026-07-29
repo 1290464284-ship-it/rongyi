@@ -24,7 +24,7 @@ export class InventoryService extends BaseService<InventoryItem> {
     private eventBus: EventBusService,
     private inventoryRepository: InventoryRepository,
   ) {
-    super(dbService, clinicContext, "InventoryItem", [], ["name","code"], [{ table: "InventoryTransaction", foreignKey: "itemId" }], true, ["code"]);
+    super(dbService, clinicContext, { tableName: "InventoryItem", searchFields: ["name","code"], cascadeTables: [{ table: "InventoryTransaction", foreignKey: "itemId" }], uniqueFields: ["code"] });
   }
 
   async update(id: string, dto: Partial<{ code: string; name: string; spec: string; category: string; unit: string; stock: number; minStock: number; price: number; supplierId: string; expireDate: string; location: string; remark: string }>) {
@@ -154,11 +154,11 @@ export class InventoryService extends BaseService<InventoryItem> {
         quantity: dto.quantity,
         unitPrice: dto.unitPrice || 0,
         totalAmount: (dto.unitPrice || 0) * dto.quantity,
-        supplierId: dto.supplierId || null,
-        operatorId: dto.operatorId || null,
-        operatorName: dto.operatorName || null,
-        remark: dto.remark || null,
-        clinicId: this.clinicContext.getClinicId(),
+        supplierId: dto.supplierId || undefined,
+        operatorId: dto.operatorId || undefined,
+        operatorName: dto.operatorName || undefined,
+        remark: dto.remark || undefined,
+        clinicId: this.clinicContext.getClinicId() ?? undefined,
         createdAt: now,
       });
       this.logAudit(db, "STOCK_" + dto.type, dto.itemId, "InventoryItem", { beforeData: { stock: beforeStock }, afterData: { stock: newStock } });

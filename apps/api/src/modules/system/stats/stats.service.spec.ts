@@ -7,7 +7,7 @@ import { ChargeStatsService } from './charge-stats.service';
 import { InventoryStatsService } from './inventory-stats.service';
 import { MemberStatsService } from './member-stats.service';
 import { DoctorStatsService } from './doctor-stats.service';
-import { MockDbService } from '../../../db/__mocks__/db-service.mock';
+import { MockDbService , asDbService } from '../../../db/__mocks__/db-service.mock';
 import { CacheService } from '../../../common/services/cache.service';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import { EventBusService } from '../../../common/events/event-bus.service';
@@ -46,14 +46,14 @@ describe('StatsService', () => {
     db = new MockDbService();
     cache = createMockCache();
     clinicContext = createMockClinicContext();
-    const dashboardStats = new DashboardStatsService(db as any, cache, clinicContext);
-    const revenueStats = new RevenueStatsService(db as any, cache, clinicContext);
-    const patientStats = new PatientStatsService(db as any, cache, clinicContext);
-    const appointmentStats = new AppointmentStatsService(db as any, cache, clinicContext);
-    const chargeStats = new ChargeStatsService(db as any, cache, clinicContext);
-    const inventoryStats = new InventoryStatsService(db as any, cache, clinicContext);
-    const memberStats = new MemberStatsService(db as any, cache, clinicContext);
-    const doctorStats = new DoctorStatsService(db as any, cache, clinicContext);
+    const dashboardStats = new DashboardStatsService(asDbService(db), cache, clinicContext);
+    const revenueStats = new RevenueStatsService(asDbService(db), cache, clinicContext);
+    const patientStats = new PatientStatsService(asDbService(db), cache, clinicContext);
+    const appointmentStats = new AppointmentStatsService(asDbService(db), cache, clinicContext);
+    const chargeStats = new ChargeStatsService(asDbService(db), cache, clinicContext);
+    const inventoryStats = new InventoryStatsService(asDbService(db), cache, clinicContext);
+    const memberStats = new MemberStatsService(asDbService(db), cache, clinicContext);
+    const doctorStats = new DoctorStatsService(asDbService(db), cache, clinicContext);
     const eventBus = createMockEventBus();
     service = new StatsService(cache, dashboardStats, revenueStats, patientStats, appointmentStats, chargeStats, inventoryStats, memberStats, doctorStats, eventBus);
   });
@@ -70,25 +70,25 @@ describe('StatsService', () => {
       const result = await service.dashboard();
 
       expect(result).toBeDefined();
-      expect((result as any).today).toBeDefined();
-      expect((result as any).today.appointments).toBe(0);
-      expect((result as any).today.visits).toBe(0);
-      expect((result as any).today.newPatients).toBe(0);
-      expect((result as any).today.charges).toBeDefined();
+      expect(result.today).toBeDefined();
+      expect(result.today.appointments).toBe(0);
+      expect(result.today.visits).toBe(0);
+      expect(result.today.newPatients).toBe(0);
+      expect(result.today.charges).toBeDefined();
 
-      expect((result as any).finance).toBeDefined();
-      expect((result as any).finance.unpaidAmount).toBeDefined();
-      expect((result as any).finance.monthRevenue).toBeDefined();
-      expect((result as any).finance.totalIncome).toBeDefined();
+      expect(result.finance).toBeDefined();
+      expect(result.finance.unpaidAmount).toBeDefined();
+      expect(result.finance.monthRevenue).toBeDefined();
+      expect(result.finance.totalIncome).toBeDefined();
 
-      expect((result as any).patients).toBeDefined();
-      expect((result as any).patients.total).toBe(0);
-      expect((result as any).patients.recent).toBeDefined();
+      expect(result.patients).toBeDefined();
+      expect(result.patients.total).toBe(0);
+      expect(result.patients.recent).toBeDefined();
 
-      expect((result as any).pendingCharges).toBeDefined();
-      expect((result as any).recentAppointments).toBeDefined();
-      expect((result as any).recentCharges).toBeDefined();
-      expect((result as any).todos).toBeDefined();
+      expect(result.pendingCharges).toBeDefined();
+      expect(result.recentAppointments).toBeDefined();
+      expect(result.recentCharges).toBeDefined();
+      expect(result.todos).toBeDefined();
     });
 
     it('有患者数据时 patients 结构应正确', async () => {
@@ -102,14 +102,14 @@ describe('StatsService', () => {
       ]);
 
       const result = await service.dashboard();
-      expect((result as any).patients).toBeDefined();
-      expect(typeof (result as any).patients.total).toBe('number');
-      expect(Array.isArray((result as any).patients.recent)).toBe(true);
+      expect(result.patients).toBeDefined();
+      expect(typeof result.patients.total).toBe('number');
+      expect(Array.isArray(result.patients.recent)).toBe(true);
     });
 
     it('应返回 todos 数组', async () => {
       const result = await service.dashboard();
-      expect(Array.isArray((result as any).todos)).toBe(true);
+      expect(Array.isArray(result.todos)).toBe(true);
     });
   });
 
@@ -120,13 +120,13 @@ describe('StatsService', () => {
       const result = await service.revenue({});
 
       expect(result).toBeDefined();
-      expect((result as any).daily).toBeDefined();
-      expect(Array.isArray((result as any).daily)).toBe(true);
-      expect((result as any).monthly).toBeDefined();
-      expect(Array.isArray((result as any).monthly)).toBe(true);
-      expect((result as any).summary).toBeDefined();
-      expect((result as any).summary.totalRevenue).toBeDefined();
-      expect((result as any).summary.totalCount).toBe(0);
+      expect(result.daily).toBeDefined();
+      expect(Array.isArray(result.daily)).toBe(true);
+      expect(result.monthly).toBeDefined();
+      expect(Array.isArray(result.monthly)).toBe(true);
+      expect(result.summary).toBeDefined();
+      expect(result.summary.totalRevenue).toBeDefined();
+      expect(result.summary.totalCount).toBe(0);
     });
 
     it('传入日期范围不应抛出异常', async () => {
@@ -135,19 +135,19 @@ describe('StatsService', () => {
         endDate: '2026-12-31',
       });
       expect(result).toBeDefined();
-      expect((result as any).summary).toBeDefined();
+      expect(result.summary).toBeDefined();
     });
 
     it('groupBy=month 应正常返回', async () => {
       const result = await service.revenue({ groupBy: 'month' });
       expect(result).toBeDefined();
-      expect((result as any).monthly).toBeDefined();
+      expect(result.monthly).toBeDefined();
     });
 
     it('groupBy=year 应正常返回', async () => {
       const result = await service.revenue({ groupBy: 'year' });
       expect(result).toBeDefined();
-      expect((result as any).daily).toBeDefined();
+      expect(result.daily).toBeDefined();
     });
 
     it('无效的 groupBy 应默认使用 day', async () => {
@@ -157,8 +157,8 @@ describe('StatsService', () => {
 
     it('summary 中 avgPerOrder 为 0 时 totalCount 为 0', async () => {
       const result = await service.revenue({});
-      expect((result as any).summary.totalCount).toBe(0);
-      expect((result as any).summary.avgPerOrder).toBe('0');
+      expect(result.summary.totalCount).toBe(0);
+      expect(result.summary.avgPerOrder).toBe('0');
     });
   });
 
@@ -185,8 +185,8 @@ describe('StatsService', () => {
   describe('getPatientGrowth - 患者增长', () => {
     it('空数据应返回空 items', async () => {
       const result = await service.getPatientGrowth({});
-      expect((result as any).items).toBeDefined();
-      expect(Array.isArray((result as any).items)).toBe(true);
+      expect(result.items).toBeDefined();
+      expect(Array.isArray(result.items)).toBe(true);
     });
 
     it('有患者数据时应返回增长趋势', async () => {
@@ -209,7 +209,7 @@ describe('StatsService', () => {
         startDate: '2026-01-01',
         endDate: '2026-12-31',
       });
-      expect((result as any).items).toBeDefined();
+      expect(result.items).toBeDefined();
     });
   });
 
@@ -263,12 +263,12 @@ describe('StatsService', () => {
   describe('getAppointmentStats - 预约统计', () => {
     it('空数据应返回正确的结构', async () => {
       const result = await service.getAppointmentStats({});
-      expect((result as any).status).toBeDefined();
-      expect(Array.isArray((result as any).status)).toBe(true);
-      expect((result as any).daily).toBeDefined();
-      expect(Array.isArray((result as any).daily)).toBe(true);
-      expect((result as any).monthly).toBeDefined();
-      expect(Array.isArray((result as any).monthly)).toBe(true);
+      expect(result.status).toBeDefined();
+      expect(Array.isArray(result.status)).toBe(true);
+      expect(result.daily).toBeDefined();
+      expect(Array.isArray(result.daily)).toBe(true);
+      expect(result.monthly).toBeDefined();
+      expect(Array.isArray(result.monthly)).toBe(true);
     });
 
     it('传入日期范围应正常返回', async () => {
@@ -276,7 +276,7 @@ describe('StatsService', () => {
         startDate: '2026-01-01',
         endDate: '2026-12-31',
       });
-      expect((result as any).status).toBeDefined();
+      expect(result.status).toBeDefined();
     });
   });
 
@@ -285,10 +285,10 @@ describe('StatsService', () => {
   describe('getChargeStats - 收费统计', () => {
     it('空数据应返回正确的结构', async () => {
       const result = await service.getChargeStats({});
-      expect((result as any).daily).toBeDefined();
-      expect(Array.isArray((result as any).daily)).toBe(true);
-      expect((result as any).monthly).toBeDefined();
-      expect(Array.isArray((result as any).monthly)).toBe(true);
+      expect(result.daily).toBeDefined();
+      expect(Array.isArray(result.daily)).toBe(true);
+      expect(result.monthly).toBeDefined();
+      expect(Array.isArray(result.monthly)).toBe(true);
     });
 
     it('传入日期范围应正常返回', async () => {
@@ -296,7 +296,7 @@ describe('StatsService', () => {
         startDate: '2026-01-01',
         endDate: '2026-12-31',
       });
-      expect((result as any).daily).toBeDefined();
+      expect(result.daily).toBeDefined();
     });
   });
 
@@ -305,10 +305,10 @@ describe('StatsService', () => {
   describe('getPatientStats - 患者统计', () => {
     it('空数据应返回正确的结构', async () => {
       const result = await service.getPatientStats({});
-      expect((result as any).daily).toBeDefined();
-      expect(Array.isArray((result as any).daily)).toBe(true);
-      expect((result as any).monthly).toBeDefined();
-      expect(Array.isArray((result as any).monthly)).toBe(true);
+      expect(result.daily).toBeDefined();
+      expect(Array.isArray(result.daily)).toBe(true);
+      expect(result.monthly).toBeDefined();
+      expect(Array.isArray(result.monthly)).toBe(true);
     });
   });
 
@@ -317,12 +317,12 @@ describe('StatsService', () => {
   describe('getMemberStats - 会员统计', () => {
     it('空数据应返回全零', async () => {
       const result = await service.getMemberStats();
-      expect((result as any).total).toBe(0);
-      expect((result as any).active).toBe(0);
-      expect((result as any).totalBalance).toBeDefined();
-      expect((result as any).totalPoints).toBe(0);
-      expect((result as any).monthly).toBeDefined();
-      expect((result as any).levelDistribution).toBeDefined();
+      expect(result.total).toBe(0);
+      expect(result.active).toBe(0);
+      expect(result.totalBalance).toBeDefined();
+      expect(result.totalPoints).toBe(0);
+      expect(result.monthly).toBeDefined();
+      expect(result.levelDistribution).toBeDefined();
     });
   });
 
@@ -819,6 +819,60 @@ describe('StatsService', () => {
       expect(statsAfterSecond.misses).toBeGreaterThan(missesAfterFirst);
 
       prepareSpy.mockRestore();
+    });
+  });
+
+  // ==================== onModuleInit / onModuleDestroy ====================
+
+  describe('onModuleInit / onModuleDestroy', () => {
+    function createServiceWithMockEventBus() {
+      const mockSubscription = { unsubscribe: jest.fn() };
+      const mockObservable = { subscribe: jest.fn(() => mockSubscription) };
+      const eventBusWithObs = {
+        emit: jest.fn(),
+        on: jest.fn(() => mockObservable),
+        onAll: jest.fn(),
+      };
+      const dashStats = new DashboardStatsService(asDbService(db), cache, clinicContext);
+      const revStats = new RevenueStatsService(asDbService(db), cache, clinicContext);
+      const patStats = new PatientStatsService(asDbService(db), cache, clinicContext);
+      const aptStats = new AppointmentStatsService(asDbService(db), cache, clinicContext);
+      const chgStats = new ChargeStatsService(asDbService(db), cache, clinicContext);
+      const invStats = new InventoryStatsService(asDbService(db), cache, clinicContext);
+      const memStats = new MemberStatsService(asDbService(db), cache, clinicContext);
+      const docStats = new DoctorStatsService(asDbService(db), cache, clinicContext);
+
+      const svc = new StatsService(
+        cache, dashStats, revStats, patStats,
+        aptStats, chgStats, invStats, memStats, docStats, eventBusWithObs as any,
+      );
+      return { svc, eventBusWithObs, mockSubscription, mockObservable };
+    }
+
+    it('onModuleInit 应订阅领域事件', () => {
+      const { svc, eventBusWithObs, mockObservable } = createServiceWithMockEventBus();
+      svc.onModuleInit();
+      expect(eventBusWithObs.on).toHaveBeenCalledTimes(11);
+      expect(mockObservable.subscribe).toHaveBeenCalledTimes(11);
+    });
+
+    it('onModuleDestroy 应取消所有订阅', () => {
+      const { svc, mockSubscription } = createServiceWithMockEventBus();
+      svc.onModuleInit();
+      svc.onModuleDestroy();
+      expect(mockSubscription.unsubscribe).toHaveBeenCalledTimes(11);
+    });
+
+    it('invalidateStatsCache 指定类别时应调用 delPattern', () => {
+      const delPatternSpy = jest.spyOn(cache, 'delPattern');
+      service.invalidateStatsCache('dashboard');
+      expect(delPatternSpy).toHaveBeenCalledWith(expect.stringContaining('dashboard'));
+    });
+
+    it('invalidateStatsCache 未指定类别时应清除所有统计缓存', () => {
+      const delPatternSpy = jest.spyOn(cache, 'delPattern');
+      service.invalidateStatsCache();
+      expect(delPatternSpy).toHaveBeenCalledWith(expect.stringContaining('stats'));
     });
   });
 });

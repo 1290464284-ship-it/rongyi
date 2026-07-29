@@ -1,7 +1,7 @@
 import { safePage, safePageSize } from '../../../common/dto/pagination.dto';
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
-import { Role, Registration } from '@dental/shared';
+import { Role } from '@dental/shared';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { OperationLogResource } from '../../../common/decorators/operation-log-resource.decorator';
 import { RegistrationsService } from './registrations.service';
@@ -20,7 +20,7 @@ export class RegistrationsController {
   @ApiOperation({ summary: '新增' })
   @Post()
   create(@Body() dto: CreateRegistrationDto) {
-    return this.registrations.create(dto as Partial<Registration>);
+    return this.registrations.create(dto);
   }
 
   @ApiOperation({ summary: '分页查询列表' })

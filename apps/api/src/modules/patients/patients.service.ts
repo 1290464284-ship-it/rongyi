@@ -9,42 +9,14 @@ import { encryptField, decryptField } from "../../common/utils/security/encrypti
 import { maskIdCard, maskPhone } from "../../common/utils/security/mask";
 import * as crypto from "node:crypto";
 import { ClinicContextService } from "../../common/services/clinic-context.service";
-import { CreatePatientDto, PatientSource } from "./dto/create-patient.dto";
+import { CreatePatientDto } from "./dto/create-patient.dto";
 import { UNIQUE_CONSTRAINT_MAX_RETRIES } from "../../config/constants";
 import { validateColumnName, escapeLike } from "../../common/utils/db/validate-name";
-import { Pagination } from "@dental/shared";
-import { Gender } from "@dental/shared";
+import { Pagination, Patient } from "@dental/shared";
 import { AuditLogType } from "../../common/constants";
 import { EventBusService } from '../../common/events/event-bus.service';
 import { PatientRegisteredEvent } from '../../common/events/domain-events';
 import { PatientRepository } from './repositories/patient.repository';
-
-export interface Patient {
-  id: string;
-  code: string;
-  name: string;
-  gender: Gender;
-  birthDate?: string;
-  phone: string;
-  idCard: string;
-  address?: string;
-  occupation?: string;
-  remark?: string;
-  source: PatientSource;
-  tags: string[];
-  allergies: string[];
-  medicalHistory: string[];
-  medicationHistory: string[];
-  systemicDiseases: string[];
-  referrer?: string;
-  emergencyContact?: string;
-  emergencyPhone?: string;
-  familyId?: string;
-  active: number;
-  createdAt: string;
-  updatedAt: string;
-  deletedAt?: string | null;
-}
 
 @Injectable()
 export class PatientsService extends BaseService<Patient> {
@@ -55,29 +27,34 @@ export class PatientsService extends BaseService<Patient> {
     private patientRepository: PatientRepository,
   ) {
     // 注册 tags/medicationHistory/systemicDiseases 为 JSON 字段，确保读取时正确解析为数组
-    super(dbService, clinicContext, "Patient", ["allergies","medicalHistory","tags","medicationHistory","systemicDiseases"], ["name","phone"], [
-      { table: "Appointment", foreignKey: "patientId" },
-      { table: "Visit", foreignKey: "patientId" },
-      { table: "Treatment", foreignKey: "patientId" },
-      { table: "TreatmentPlan", foreignKey: "patientId" },
-      { table: "Charge", foreignKey: "patientId" },
-      { table: "Imaging", foreignKey: "patientId" },
-      { table: "Prescription", foreignKey: "patientId" },
-      { table: "ToothRecord", foreignKey: "patientId" },
-      { table: "Registration", foreignKey: "patientId" },
-      { table: "FollowUp", foreignKey: "patientId" },
-      { table: "MedicalRecord", foreignKey: "patientId" },
-      // 以下关联表也需级联软删除，避免删除患者后产生孤儿数据
-      { table: "MemberCard", foreignKey: "patientId" },
-      { table: "Refund", foreignKey: "patientId" },
-      { table: "ProcessingOrder", foreignKey: "patientId" },
-      { table: "FirstExam", foreignKey: "patientId" },
-      { table: "FirstExamTrack", foreignKey: "patientId" },
-      { table: "OralExamination", foreignKey: "patientId" },
-      { table: "PeriodontalRecord", foreignKey: "patientId" },
-      { table: "DebtRecord", foreignKey: "patientId" },
-      { table: "WechatMessage", foreignKey: "patientId" },
-    ], true, ["code"]);
+    super(dbService, clinicContext, {
+      tableName: "Patient",
+      jsonFields: ["allergies","medicalHistory","tags","medicationHistory","systemicDiseases"],
+      searchFields: ["name","phone"],
+      cascadeTables: [
+        { table: "Appointment", foreignKey: "patientId" },
+        { table: "Visit", foreignKey: "patientId" },
+        { table: "Treatment", foreignKey: "patientId" },
+        { table: "TreatmentPlan", foreignKey: "patientId" },
+        { table: "Charge", foreignKey: "patientId" },
+        { table: "Imaging", foreignKey: "patientId" },
+        { table: "Prescription", foreignKey: "patientId" },
+        { table: "ToothRecord", foreignKey: "patientId" },
+        { table: "Registration", foreignKey: "patientId" },
+        { table: "FollowUp", foreignKey: "patientId" },
+        { table: "MedicalRecord", foreignKey: "patientId" },
+        { table: "MemberCard", foreignKey: "patientId" },
+        { table: "Refund", foreignKey: "patientId" },
+        { table: "ProcessingOrder", foreignKey: "patientId" },
+        { table: "FirstExam", foreignKey: "patientId" },
+        { table: "FirstExamTrack", foreignKey: "patientId" },
+        { table: "OralExamination", foreignKey: "patientId" },
+        { table: "PeriodontalRecord", foreignKey: "patientId" },
+        { table: "DebtRecord", foreignKey: "patientId" },
+        { table: "WechatMessage", foreignKey: "patientId" },
+      ],
+      uniqueFields: ["code"],
+    });
   }
 
   async create(dto: CreatePatientDto): Promise<Patient> {
@@ -93,9 +70,9 @@ export class PatientsService extends BaseService<Patient> {
           code,
           name: sanitizePlain(dto.name),
           gender: dto.gender,
-          birthDate: dto.birthDate || null,
+          birthDate: dto.birthDate || undefined,
           phone: sanitizePlain(dto.phone),
-          idCard: dto.idCard ? encryptField(dto.idCard) : null,
+          idCard: dto.idCard ? encryptField(dto.idCard) ?? undefined : undefined,
           address: sanitizePlain(dto.address || ''),
           occupation: sanitizePlain(dto.occupation || ''),
           remark: sanitizePlain(dto.remark || ''),
@@ -105,17 +82,17 @@ export class PatientsService extends BaseService<Patient> {
           medicalHistory: JSON.stringify(dto.medicalHistory || []),
           medicationHistory: JSON.stringify(dto.medicationHistory || []),
           systemicDiseases: JSON.stringify(dto.systemicDiseases || []),
-          referrer: dto.referrer || null,
-          emergencyContact: dto.emergencyContact || null,
-          emergencyPhone: dto.emergencyPhone || null,
-          familyId: dto.familyId || null,
-          clinicId: clinicId || null,
+          referrer: dto.referrer || undefined,
+          emergencyContact: dto.emergencyContact || undefined,
+          emergencyPhone: dto.emergencyPhone || undefined,
+          familyId: dto.familyId || undefined,
+          clinicId: clinicId || undefined,
           createdAt: now,
           updatedAt: now,
         });
         const result = this.decryptPatient(await super.findOne(id));
 
-        this.eventBus.emit(new PatientRegisteredEvent(id, clinicId || null));
+        this.eventBus.emit(new PatientRegisteredEvent(id, clinicId || undefined));
 
         return result;
       } catch (err: unknown) {
@@ -227,7 +204,7 @@ export class PatientsService extends BaseService<Patient> {
 
   async update(id: string, dto: Partial<Patient>): Promise<Patient> {
     if (dto.idCard !== undefined) {
-      dto = { ...dto, idCard: dto.idCard ? encryptField(dto.idCard) : null };
+      dto = { ...dto, idCard: dto.idCard ? encryptField(dto.idCard) ?? undefined : undefined };
     }
     const result = await super.update(id, dto);
     return this.decryptPatient(result);
@@ -240,7 +217,7 @@ export class PatientsService extends BaseService<Patient> {
       if (result.idCard && result.idCard.includes(':')) {
         const decrypted = decryptField(result.idCard);
         // 统一使用 mask.ts 工具，避免 Knowledge Duplication
-        result.idCard = maskIdCard(decrypted) ?? decrypted;
+        result.idCard = maskIdCard(decrypted) ?? decrypted ?? '';
       }
     } catch {
       // 加密数据损坏时保留原始值，避免单条记录导致整个列表 500
@@ -260,7 +237,7 @@ export class PatientsService extends BaseService<Patient> {
   async getFullPhone(patientId: string): Promise<string | null> {
     this.logAudit(this.dbService, AuditLogType.PHONE_ACCESS, patientId, "Patient", { remark: "获取完整手机号" });
     const patient = await super.findOne(patientId);
-    return patient?.phone ?? null;
+    return patient?.phone ?? undefined;
   }
 
   /**

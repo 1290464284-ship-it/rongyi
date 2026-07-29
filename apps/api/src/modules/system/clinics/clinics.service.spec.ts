@@ -1,6 +1,6 @@
 import { ClinicsService } from './clinics.service';
 import { BusinessConflictException, BusinessNotFoundException } from '@common/errors';
-import { MockDbService } from '../../../db/__mocks__/db-service.mock';
+import { MockDbService , asDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import { CacheService } from '../../../common/services/cache.service';
 
@@ -41,7 +41,7 @@ describe('ClinicsService', () => {
 
   beforeEach(() => {
     db = new MockDbService();
-    service = new ClinicsService(db as any, createMockClinicContext(), createMockCacheService());
+    service = new ClinicsService(asDbService(db), createMockClinicContext(), createMockCacheService());
   });
 
   afterEach(() => {
@@ -122,8 +122,8 @@ describe('ClinicsService', () => {
   describe('create - 创建诊所', () => {
     it('正常创建', async () => {
       const result = await service.create({ name: '新店', code: 'NEW001' });
-      expect((result as any).code).toBe('NEW001');
-      expect((result as any).name).toBe('新店');
+      expect(result.code).toBe('NEW001');
+      expect(result.name).toBe('新店');
     });
 
     it('code 重复时抛出 BusinessConflictException', async () => {
@@ -190,7 +190,7 @@ describe('ClinicsService', () => {
     });
 
     it('无 clinicId 上下文时返回 null', async () => {
-      const serviceNoCtx = new ClinicsService(db as any, createMockClinicContext(null), createMockCacheService());
+      const serviceNoCtx = new ClinicsService(asDbService(db), createMockClinicContext(null), createMockCacheService());
       const result = await serviceNoCtx.getCurrentClinic();
       expect(result).toBeNull();
     });

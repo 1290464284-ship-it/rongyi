@@ -18,9 +18,11 @@ export class DebtService extends BaseService<DebtRecord> {
     clinicContext: ClinicContextService,
     private idempotency: IdempotencyService,
   ) {
-    super(dbService, clinicContext, 'DebtRecord', [], [], [], true, ['chargeId'], undefined, undefined, [
-      'totalAmount', 'paidAmount', 'debtAmount',
-    ]);
+    super(dbService, clinicContext, {
+      tableName: 'DebtRecord',
+      uniqueFields: ['chargeId'],
+      moneyFields: ['totalAmount', 'paidAmount', 'debtAmount'],
+    });
   }
 
   listDebts(dto: QueryDebtDto) {
@@ -237,7 +239,6 @@ export class DebtService extends BaseService<DebtRecord> {
       this.logAudit(db, AuditLogType.DEBT_PAY, id, "DebtRecord", {
         afterData: { amount: dto.amount, status: newStatus, paidAmount: updatedPaidAmount, debtAmount: updatedDebtAmount },
       });
-      return;
     };
 
     const idempotencyKey = dto.requestId ? `debt-pay:${id}:${dto.requestId}` : null;

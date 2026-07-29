@@ -1,6 +1,6 @@
 import { TreatmentPlansService } from './treatment-plans.service';
 import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
-import { MockDbService } from '../../../db/__mocks__/db-service.mock';
+import { asDbService, MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 
 
@@ -31,7 +31,7 @@ describe('TreatmentPlansService', () => {
       { id: 'doctor-001', username: 'doctor1', name: '测试医生1', role: 'DOCTOR', active: 1, clinicId: 'test-clinic-001', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
       { id: 'd1', username: 'doctor_d1', name: '计划医生1', role: 'DOCTOR', active: 1, clinicId: 'test-clinic-001', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
     ]);
-    service = new TreatmentPlansService(db as any, createMockClinicContext());
+    service = new TreatmentPlansService(asDbService(db), createMockClinicContext());
   });
 
   afterEach(() => {
@@ -57,8 +57,8 @@ describe('TreatmentPlansService', () => {
       const result = await service.create(dto);
 
       expect(result).toBeDefined();
-      expect((result as any).name).toBe('正畸治疗计划');
-      expect((result as any).status).toBe('DRAFT');
+      expect(result.name).toBe('正畸治疗计划');
+      expect(result.status).toBe('DRAFT');
 
       const planItems = db.getTableData('TreatmentPlanItem');
       expect(planItems.length).toBe(2);
@@ -98,7 +98,7 @@ describe('TreatmentPlansService', () => {
       const result = await service.create(dto);
 
       expect(result).toBeDefined();
-      expect((result as any).name).toBe('基础计划');
+      expect(result.name).toBe('基础计划');
 
       const planItems = db.getTableData('TreatmentPlanItem');
       expect(planItems.length).toBe(1);
@@ -149,7 +149,7 @@ describe('TreatmentPlansService', () => {
 
       const result = await service.updateStatus('plan-001', { status: 'SUBMITTED' });
 
-      expect((result as any).status).toBe('SUBMITTED');
+      expect(result.status).toBe('SUBMITTED');
     });
 
     it('DRAFT → SUBMITTED → APPROVED 完整流转应成功', async () => {
@@ -160,7 +160,7 @@ describe('TreatmentPlansService', () => {
       await service.updateStatus('plan-001', { status: 'SUBMITTED' });
       const result = await service.updateStatus('plan-001', { status: 'APPROVED' });
 
-      expect((result as any).status).toBe('APPROVED');
+      expect(result.status).toBe('APPROVED');
     });
 
     it('DRAFT → APPROVED 非法流转应抛出 BusinessValidationException', async () => {
@@ -180,7 +180,7 @@ describe('TreatmentPlansService', () => {
 
       const result = await service.updateStatus('plan-001', { status: 'CANCELLED' });
 
-      expect((result as any).status).toBe('CANCELLED');
+      expect(result.status).toBe('CANCELLED');
     });
 
     it('SUBMITTED → APPROVED 应成功', async () => {
@@ -190,7 +190,7 @@ describe('TreatmentPlansService', () => {
 
       const result = await service.updateStatus('plan-001', { status: 'APPROVED' });
 
-      expect((result as any).status).toBe('APPROVED');
+      expect(result.status).toBe('APPROVED');
     });
 
     it('SUBMITTED → REJECTED 应成功', async () => {
@@ -200,7 +200,7 @@ describe('TreatmentPlansService', () => {
 
       const result = await service.updateStatus('plan-001', { status: 'REJECTED' });
 
-      expect((result as any).status).toBe('REJECTED');
+      expect(result.status).toBe('REJECTED');
     });
 
     it('REJECTED → DRAFT 应成功（可重新编辑）', async () => {
@@ -210,7 +210,7 @@ describe('TreatmentPlansService', () => {
 
       const result = await service.updateStatus('plan-001', { status: 'DRAFT' });
 
-      expect((result as any).status).toBe('DRAFT');
+      expect(result.status).toBe('DRAFT');
     });
 
     it('APPROVED → IN_PROGRESS 应成功', async () => {
@@ -220,7 +220,7 @@ describe('TreatmentPlansService', () => {
 
       const result = await service.updateStatus('plan-001', { status: 'IN_PROGRESS' });
 
-      expect((result as any).status).toBe('IN_PROGRESS');
+      expect(result.status).toBe('IN_PROGRESS');
     });
 
     it('IN_PROGRESS → COMPLETED 应成功', async () => {
@@ -230,7 +230,7 @@ describe('TreatmentPlansService', () => {
 
       const result = await service.updateStatus('plan-001', { status: 'COMPLETED' });
 
-      expect((result as any).status).toBe('COMPLETED');
+      expect(result.status).toBe('COMPLETED');
     });
 
     it('CANCELLED → DRAFT 应成功（可重新启用）', async () => {
@@ -240,7 +240,7 @@ describe('TreatmentPlansService', () => {
 
       const result = await service.updateStatus('plan-001', { status: 'DRAFT' });
 
-      expect((result as any).status).toBe('DRAFT');
+      expect(result.status).toBe('DRAFT');
     });
 
     it('非法状态流转 DRAFT → COMPLETED 应抛出 BusinessValidationException', async () => {
@@ -306,7 +306,7 @@ describe('TreatmentPlansService', () => {
       const result = await service.updateItemStatus('plan-001', 'item-001', { status: 'IN_PROGRESS' });
 
       expect(result).toBeDefined();
-      expect((result as any).status).toBe('IN_PROGRESS');
+      expect(result!.status).toBe('IN_PROGRESS');
     });
 
     it('更新计划项状态为 COMPLETED', async () => {
@@ -320,7 +320,7 @@ describe('TreatmentPlansService', () => {
       const result = await service.updateItemStatus('plan-002', 'item-002', { status: 'COMPLETED' });
 
       expect(result).toBeDefined();
-      expect((result as any).status).toBe('COMPLETED');
+      expect(result!.status).toBe('COMPLETED');
     });
 
     it('计划项 teethNumbers 为 JSON 字符串应正确解析', async () => {
@@ -334,8 +334,8 @@ describe('TreatmentPlansService', () => {
       const result = await service.updateItemStatus('plan-003', 'item-003', { status: 'IN_PROGRESS' });
 
       expect(result).toBeDefined();
-      expect(Array.isArray((result as any).teethNumbers)).toBe(true);
-      expect((result as any).teethNumbers).toEqual([11, 12, 13]);
+      expect(Array.isArray(result!.teethNumbers)).toBe(true);
+      expect(result!.teethNumbers).toEqual([11, 12, 13]);
     });
 
     it('更新不存在的计划项应抛出 BusinessNotFoundException', async () => {
@@ -375,7 +375,7 @@ describe('TreatmentPlansService', () => {
       const result = await service.findOne('plan-001');
 
       expect(result).toBeDefined();
-      expect((result as any).name).toBe('测试计划');
+      expect(result.name).toBe('测试计划');
     });
 
     it('查询不存在的计划应抛出 BusinessNotFoundException', async () => {
@@ -394,8 +394,8 @@ describe('TreatmentPlansService', () => {
 
       const result = await service.findMany({});
 
-      expect((result as any).items.length).toBeGreaterThanOrEqual(2);
-      expect((result as any).total).toBeGreaterThanOrEqual(2);
+      expect(result.items.length).toBeGreaterThanOrEqual(2);
+      expect(result.total).toBeGreaterThanOrEqual(2);
     });
   });
 });

@@ -62,7 +62,7 @@ class TestBufferedWriter extends BufferedWriter<string> {
 
   cleanup(): void {
     try {
-      fs.rmSync(this.options.dataDir, { recursive: true, force: true });
+      fs.rmSync(this.options.dataDir!, { recursive: true, force: true });
     } catch {
       // 忽略清理错误
     }
@@ -172,7 +172,7 @@ describe('BufferedWriter 缓冲写入器', () => {
       writer.enqueue('b');
       writer.enqueue('c');
       expect(writer.getFallbackMode()).toBe(true);
-      const logDir = path.join(writer['options'].dataDir, 'logs');
+      const logDir = path.join(writer['options'].dataDir!, 'logs');
       const files = fs.readdirSync(logDir);
       expect(files.length).toBeGreaterThan(0);
       const logFile = path.join(logDir, files[0]);

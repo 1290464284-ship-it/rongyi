@@ -21,7 +21,7 @@ export class AppointmentStatsService {
     const clinicId = this.clinicContext.getClinicId();
     const key = buildStatsCacheKey(
       STATS_CACHE_KEYS.APPOINTMENT,
-      clinicId,
+      clinicId ?? '',
       startDate || '',
       endDate || '',
     );

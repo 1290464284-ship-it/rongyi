@@ -19,7 +19,11 @@ export interface OralExamination {
 @Injectable()
 export class OralExaminationsService extends BaseService<OralExamination> {
   constructor(dbService: DbService, clinicContext: ClinicContextService) {
-    super(dbService, clinicContext, "OralExamination", ["caries", "looseTeeth"], ["mucosa", "tmj", "remark"]);
+    super(dbService, clinicContext, {
+      tableName: "OralExamination",
+      jsonFields: ["caries", "looseTeeth"],
+      searchFields: ["mucosa", "tmj", "remark"],
+    });
   }
 
   async create(dto: Partial<OralExamination>): Promise<OralExamination> {

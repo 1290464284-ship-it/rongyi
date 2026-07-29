@@ -144,7 +144,7 @@ export class SettingsService implements OnModuleInit {
 
   async getBoolean(key: string, defaultValue = false): Promise<boolean> {
     const val = await this.get(key);
-    if (val === undefined || val === null) return defaultValue;
+    if (val === undefined) return defaultValue;
     return val === "true" || val === "1" || val === "yes";
   }
 

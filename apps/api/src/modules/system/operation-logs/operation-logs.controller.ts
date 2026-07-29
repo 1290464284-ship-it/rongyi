@@ -96,7 +96,7 @@ export class OperationLogsController {
         userId,
         userName,
         action: `[${(log.level || 'info').toUpperCase()}] ${log.message.slice(0, 500)}`,
-        target: log.url ? log.url.slice(0, 500) : null,
+        target: log.url ? log.url.slice(0, 500) : undefined,
         detail: JSON.stringify({
           stack: log.stack ? log.stack.slice(0, 2000) : undefined,
           context: log.context ? log.context.slice(0, 500) : undefined,

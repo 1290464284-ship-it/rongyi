@@ -18,7 +18,7 @@ import {
 } from "../../../common/constants/cache-keys";
 import { MEDICAL_RECORD_DICTIONARY_CACHE_TTL_MS } from "../../../config/constants";
 
-interface RecordModifyRequest {
+export interface RecordModifyRequest {
   id: string;
   recordId: string;
   applicantId: string | null;
@@ -62,7 +62,7 @@ export class MedicalRecordsService extends BaseService<MedicalRecord> {
     clinicContext: ClinicContextService,
     private cache: CacheService,
   ) {
-    super(dbService, clinicContext, 'MedicalRecord', ['teethInvolved', 'images']);
+    super(dbService, clinicContext, { tableName: 'MedicalRecord', jsonFields: ['teethInvolved', 'images'] });
     this.selectFields = MEDICAL_RECORD_LIST_FIELDS.split(',').map(s => s.trim()).filter(Boolean);
   }
 
@@ -195,13 +195,13 @@ export class MedicalRecordsService extends BaseService<MedicalRecord> {
       }
       this.logAudit(db, AuditLogType.MODIFY_REQUEST_REVIEW, id, "RecordModifyRequest", { beforeData: { status: req.status }, afterData: { status: dto.status } });
     });
-    return this.dbService.prepare(`SELECT id, recordId, applicantId, reason, status, reviewerId, reviewRemark, reviewedAt, createdAt FROM RecordModifyRequest WHERE id = ?${clinicClause}`).get(id, ...clinicParams);
+    return this.dbService.prepare(`SELECT id, recordId, applicantId, reason, status, reviewerId, reviewRemark, reviewedAt, createdAt FROM RecordModifyRequest WHERE id = ?${clinicClause}`).get(id, ...clinicParams) as RecordModifyRequest;
   }
   async listPhrases(_userId?: string, _category?: string) {
     // P4-3: 病历常用语为字典类数据（变更频率低、读频率高），按诊所缓存
     // 注意：当前实现未使用 _userId / _category 过滤，缓存键仅需 clinicId
     const clinicId = this.clinicContext.getClinicId();
-    const cacheKey = buildDictionaryCacheKey(DICTIONARY_CACHE_KEYS.MEDICAL_RECORD_PHRASES, clinicId);
+    const cacheKey = buildDictionaryCacheKey(DICTIONARY_CACHE_KEYS.MEDICAL_RECORD_PHRASES, clinicId ?? '');
     // P0 修复：使用 getOrSet 提供缓存击穿保护（pending Promise 跟踪），
     // 避免高并发下多个请求同时穿透缓存击中 DB
     return this.cache.getOrSet<unknown[]>(cacheKey, () => {
@@ -231,7 +231,7 @@ export class MedicalRecordsService extends BaseService<MedicalRecord> {
     // P4-3: 病历模板为字典类数据（变更频率低、读频率高），按诊所缓存
     // 注意：当前实现未使用 _userId / _category 过滤，缓存键仅需 clinicId
     const clinicId = this.clinicContext.getClinicId();
-    const cacheKey = buildDictionaryCacheKey(DICTIONARY_CACHE_KEYS.MEDICAL_RECORD_TEMPLATES, clinicId);
+    const cacheKey = buildDictionaryCacheKey(DICTIONARY_CACHE_KEYS.MEDICAL_RECORD_TEMPLATES, clinicId ?? '');
     // P0 修复：使用 getOrSet 提供缓存击穿保护，原先 cache.get+cache.set 模式有击穿风险
     return this.cache.getOrSet<unknown[]>(cacheKey, () => {
       // P0 修复：使用 buildClinicClause 强制校验 clinicId（缺失时抛错），
@@ -342,7 +342,7 @@ export class MedicalRecordsService extends BaseService<MedicalRecord> {
       if (result.changes === 0) throw new BusinessValidationException("病历已被其他用户锁定");
       this.logAudit(db, AuditLogType.MEDICAL_RECORD_LOCK, id, "MedicalRecord", { beforeData: { isLocked: false }, afterData: { isLocked: true, lockedBy: userId || null } });
       const { clause: lockClinicClause, params: lockClinicParams } = this.buildClinicClause();
-      return db.prepare(`SELECT id, patientId, visitId, doctorId, templateId, chiefComplaint, presentIllness, pastHistory, allergyHistory, examination, diagnosis, treatmentPlan, teethInvolved, images, signature, isLocked, lockedAt, lockedBy, modifyRequestId, clinicId, createdAt, updatedAt, deletedAt FROM MedicalRecord WHERE id = ?${lockClinicClause}`).get(id, ...lockClinicParams);
+      return db.prepare(`SELECT id, patientId, visitId, doctorId, templateId, chiefComplaint, presentIllness, pastHistory, allergyHistory, examination, diagnosis, treatmentPlan, teethInvolved, images, signature, isLocked, lockedAt, lockedBy, modifyRequestId, clinicId, createdAt, updatedAt, deletedAt FROM MedicalRecord WHERE id = ?${lockClinicClause}`).get(id, ...lockClinicParams) as MedicalRecord;
     });
   }
 }

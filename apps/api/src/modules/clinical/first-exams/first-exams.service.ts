@@ -11,6 +11,21 @@ import { DbService } from "../../../db/db.service";
 
 const FIRST_EXAM_FIELDS = "id, patientId, doctorId, chiefComplaint, diagnosis, treatmentSuggestion, status, remark, createdAt, updatedAt";
 
+export interface FirstExamTrackRow {
+  id: string;
+  examId: string;
+  content?: string;
+  status?: string;
+  leaderSuggestion?: string;
+  directorSuggestion?: string;
+  churnReason?: string;
+  churnSolution?: string;
+  doctorId?: string;
+  createdAt: string;
+  updatedAt?: string;
+  deletedAt?: string;
+}
+
 const ALLOWED_TRANSITIONS: Record<string, readonly string[]> = {
   [FirstExamStatus.DRAFT]: [FirstExamStatus.SUBMITTED, FirstExamStatus.APPROVED],
   [FirstExamStatus.SUBMITTED]: [FirstExamStatus.APPROVED, FirstExamStatus.REJECTED],
@@ -26,7 +41,7 @@ const ALLOWED_TRANSITIONS: Record<string, readonly string[]> = {
 @Injectable()
 export class FirstExamsService extends BaseService<FirstExam> {
   constructor(dbService: DbService, clinicContext: ClinicContextService) {
-    super(dbService, clinicContext, 'FirstExam');
+    super(dbService, clinicContext, { tableName: 'FirstExam' });
     this.selectFields = FIRST_EXAM_FIELDS.split(',').map(s => s.trim()).filter(Boolean);
     this.hasSoftDelete = true;
     this.cascadeTables = [
@@ -78,7 +93,7 @@ export class FirstExamsService extends BaseService<FirstExam> {
       );
       this.logAudit(db, AuditLogType.FIRST_EXAM_STATUS_UPDATE, id, "FirstExam", { beforeData: { status: oldRecord.status }, afterData: { status } });
       const clinicCondition = clinicClause.replace(/^\s*AND\s+/i, '');
-      return this.baseRepository.findById(db, this.tableName, '*', id, clinicCondition ? ['deletedAt IS NULL', clinicCondition] : ['deletedAt IS NULL'], clinicParams);
+      return this.baseRepository.findById<FirstExam>(db, this.tableName, '*', id, clinicCondition ? ['deletedAt IS NULL', clinicCondition] : ['deletedAt IS NULL'], clinicParams);
     });
   }
 
@@ -120,9 +135,9 @@ export class FirstExamsService extends BaseService<FirstExam> {
     this.logAudit(this.dbService, AuditLogType.FIRST_EXAM_FOLLOWUP_CREATE, id, "FirstExam", { afterData: { followUpId: fid, planDate: dto.planDate, content: dto.content } });
     return { id: fid };
   }
-  async getTrack(id: string) {
+  async getTrack(id: string): Promise<FirstExamTrackRow | undefined> {
     const { params: clinicParams } = this.buildClinicClause();
-    return this.baseRepository.findById(
+    return this.baseRepository.findById<FirstExamTrackRow>(
       this.dbService,
       'FirstExamTrack',
       'id, examId, content, createdAt',
@@ -162,7 +177,7 @@ export class FirstExamsService extends BaseService<FirstExam> {
       100,
       1,
     );
-    const { items } = this.baseRepository.executePaginatedQuery(this.dbService, builtQuery);
+    const { items } = this.baseRepository.executePaginatedQuery<FirstExamTrackRow>(this.dbService, builtQuery);
     return items;
   }
   async updateTooth(id: string, toothNumber: number, dto: { toothStatus?: string; diseases?: unknown; treatmentPlan?: string; remark?: string }) {

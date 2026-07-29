@@ -25,9 +25,10 @@ export class ChargePaymentService extends BaseService<ChargeRecord> {
     private memberCardsService: MemberCardsService,
     private eventBus: EventBusService,
   ) {
-    super(dbService, clinicContext, 'Charge', [], [], [], true, [], undefined, undefined, [
-      'totalAmount', 'paidAmount', 'refundedAmount', 'discount',
-    ]);
+    super(dbService, clinicContext, {
+      tableName: 'Charge',
+      moneyFields: ['totalAmount', 'paidAmount', 'refundedAmount', 'discount'],
+    });
   }
 
   async payCharge(id: string, dto: PayChargeDto, _operatorId?: string) {
@@ -142,7 +143,7 @@ export class ChargePaymentService extends BaseService<ChargeRecord> {
       result = this.dbService.transaction((db) => doFullPay(db));
     }
 
-    this.eventBus.emit(new ChargePaidEvent(id, result.patientId as string, dto.amount, this.clinicContext.getClinicId()));
+    this.eventBus.emit(new ChargePaidEvent(id, result.patientId, dto.amount, this.clinicContext.getClinicId()));
     return result;
   }
 }

@@ -2,6 +2,7 @@
 import { FirstExamsService } from './first-exams.service';
 import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
+import { asDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 
 
@@ -21,7 +22,7 @@ describe('FirstExamsService', () => {
 
   beforeEach(() => {
     db = new MockDbService();
-    service = new FirstExamsService(db as any, createMockClinicContext());
+    service = new FirstExamsService(asDbService(db), createMockClinicContext());
   });
 
   afterEach(() => {
@@ -42,13 +43,13 @@ describe('FirstExamsService', () => {
       });
 
       expect(result).toBeDefined();
-      expect((result as any).patientId).toBe('patient-001');
-      expect((result as any).doctorId).toBe('doctor-001');
-      expect((result as any).chiefComplaint).toBe('牙痛');
-      expect((result as any).diagnosis).toBe('龋齿');
-      expect((result as any).treatmentSuggestion).toBe('补牙');
-      expect((result as any).remark).toBe('尽快治疗');
-      expect((result as any).status).toBe('DRAFT');
+      expect(result.patientId).toBe('patient-001');
+      expect(result.doctorId).toBe('doctor-001');
+      expect(result.chiefComplaint).toBe('牙痛');
+      expect(result.diagnosis).toBe('龋齿');
+      expect(result.treatmentSuggestion).toBe('补牙');
+      expect(result.remark).toBe('尽快治疗');
+      expect(result.status).toBe('DRAFT');
     });
 
     it('创建初诊时应包含 clinicId', async () => {
@@ -57,9 +58,9 @@ describe('FirstExamsService', () => {
       });
 
       const rows = db.getTableData('FirstExam');
-      const created = rows.find(r => r.id === (result as any).id);
+      const created = rows.find(r => r.id === result.id);
       expect(created).toBeDefined();
-      expect(created.clinicId).toBe('test-clinic-001');
+      expect(created!.clinicId).toBe('test-clinic-001');
     });
 
     it('创建初诊时只传 patientId 应使用默认值', async () => {
@@ -67,9 +68,9 @@ describe('FirstExamsService', () => {
         patientId: 'patient-001',
       });
 
-      expect((result as any).status).toBe('DRAFT');
-      expect((result as any).diagnosis).toBeUndefined();
-      expect((result as any).treatmentSuggestion).toBeUndefined();
+      expect(result.status).toBe('DRAFT');
+      expect(result.diagnosis).toBeUndefined();
+      expect(result.treatmentSuggestion).toBeUndefined();
     });
   });
 
@@ -82,13 +83,13 @@ describe('FirstExamsService', () => {
         chiefComplaint: '初始主诉',
       });
 
-      const result = await service.update((created as any).id, {
+      const result = await service.update(created.id, {
         chiefComplaint: '更新主诉',
         diagnosis: '牙周炎',
       });
 
-      expect((result as any).chiefComplaint).toBe('更新主诉');
-      expect((result as any).diagnosis).toBe('牙周炎');
+      expect(result.chiefComplaint).toBe('更新主诉');
+      expect(result.diagnosis).toBe('牙周炎');
     });
 
     it('更新治疗建议应成功', async () => {
@@ -97,11 +98,11 @@ describe('FirstExamsService', () => {
         treatmentSuggestion: '初始建议',
       });
 
-      const result = await service.update((created as any).id, {
+      const result = await service.update(created.id, {
         treatmentSuggestion: '洗牙 + 洁治',
       });
 
-      expect((result as any).treatmentSuggestion).toBe('洗牙 + 洁治');
+      expect(result.treatmentSuggestion).toBe('洗牙 + 洁治');
     });
 
     it('更新备注应成功', async () => {
@@ -109,11 +110,11 @@ describe('FirstExamsService', () => {
         patientId: 'patient-001',
       });
 
-      const result = await service.update((created as any).id, {
+      const result = await service.update(created.id, {
         remark: '新备注',
       });
 
-      expect((result as any).remark).toBe('新备注');
+      expect(result.remark).toBe('新备注');
     });
 
     it('更新不存在的初诊应抛出 BusinessNotFoundException', async () => {
@@ -129,54 +130,54 @@ describe('FirstExamsService', () => {
     it('DRAFT → SUBMITTED 应成功', async () => {
       const created = await service.create({ patientId: 'patient-001' });
 
-      const result = await service.updateStatus((created as any).id, 'SUBMITTED');
+      const result = await service.updateStatus(created.id, 'SUBMITTED');
 
-      expect((result as any).status).toBe('SUBMITTED');
+      expect(result!.status).toBe('SUBMITTED');
     });
 
     it('DRAFT → APPROVED 应成功', async () => {
       const created = await service.create({ patientId: 'patient-001' });
 
-      const result = await service.updateStatus((created as any).id, 'APPROVED');
+      const result = await service.updateStatus(created.id, 'APPROVED');
 
-      expect((result as any).status).toBe('APPROVED');
+      expect(result!.status).toBe('APPROVED');
     });
 
     it('SUBMITTED → APPROVED 应成功', async () => {
       const created = await service.create({ patientId: 'patient-001' });
-      await service.updateStatus((created as any).id, 'SUBMITTED');
+      await service.updateStatus(created.id, 'SUBMITTED');
 
-      const result = await service.updateStatus((created as any).id, 'APPROVED');
+      const result = await service.updateStatus(created.id, 'APPROVED');
 
-      expect((result as any).status).toBe('APPROVED');
+      expect(result!.status).toBe('APPROVED');
     });
 
     it('SUBMITTED → REJECTED 应成功', async () => {
       const created = await service.create({ patientId: 'patient-001' });
-      await service.updateStatus((created as any).id, 'SUBMITTED');
+      await service.updateStatus(created.id, 'SUBMITTED');
 
-      const result = await service.updateStatus((created as any).id, 'REJECTED');
+      const result = await service.updateStatus(created.id, 'REJECTED');
 
-      expect((result as any).status).toBe('REJECTED');
+      expect(result!.status).toBe('REJECTED');
     });
 
     it('REJECTED → DRAFT 应成功（可重新编辑）', async () => {
       const created = await service.create({ patientId: 'patient-001' });
-      await service.updateStatus((created as any).id, 'SUBMITTED');
-      await service.updateStatus((created as any).id, 'REJECTED');
+      await service.updateStatus(created.id, 'SUBMITTED');
+      await service.updateStatus(created.id, 'REJECTED');
 
-      const result = await service.updateStatus((created as any).id, 'DRAFT');
+      const result = await service.updateStatus(created.id, 'DRAFT');
 
-      expect((result as any).status).toBe('DRAFT');
+      expect(result!.status).toBe('DRAFT');
     });
 
     it('APPROVED → DRAFT 应成功（可重新编辑）', async () => {
       const created = await service.create({ patientId: 'patient-001' });
-      await service.updateStatus((created as any).id, 'APPROVED');
+      await service.updateStatus(created.id, 'APPROVED');
 
-      const result = await service.updateStatus((created as any).id, 'DRAFT');
+      const result = await service.updateStatus(created.id, 'DRAFT');
 
-      expect((result as any).status).toBe('DRAFT');
+      expect(result!.status).toBe('DRAFT');
     });
 
     // --- 非法流转 ---
@@ -185,36 +186,36 @@ describe('FirstExamsService', () => {
       const created = await service.create({ patientId: 'patient-001' });
 
       await expect(
-        service.updateStatus((created as any).id, 'REJECTED'),
+        service.updateStatus(created.id, 'REJECTED'),
       ).rejects.toThrow(BusinessValidationException);
     });
 
     it('SUBMITTED → DRAFT 非法流转应抛出 BusinessValidationException', async () => {
       const created = await service.create({ patientId: 'patient-001' });
-      await service.updateStatus((created as any).id, 'SUBMITTED');
+      await service.updateStatus(created.id, 'SUBMITTED');
 
       await expect(
-        service.updateStatus((created as any).id, 'DRAFT'),
+        service.updateStatus(created.id, 'DRAFT'),
       ).rejects.toThrow(BusinessValidationException);
     });
 
     it('REJECTED → SUBMITTED 非法流转应抛出 BusinessValidationException', async () => {
       const created = await service.create({ patientId: 'patient-001' });
-      await service.updateStatus((created as any).id, 'SUBMITTED');
-      await service.updateStatus((created as any).id, 'REJECTED');
+      await service.updateStatus(created.id, 'SUBMITTED');
+      await service.updateStatus(created.id, 'REJECTED');
 
       await expect(
-        service.updateStatus((created as any).id, 'SUBMITTED'),
+        service.updateStatus(created.id, 'SUBMITTED'),
       ).rejects.toThrow(BusinessValidationException);
     });
 
     it('REJECTED → APPROVED 非法流转应抛出 BusinessValidationException', async () => {
       const created = await service.create({ patientId: 'patient-001' });
-      await service.updateStatus((created as any).id, 'SUBMITTED');
-      await service.updateStatus((created as any).id, 'REJECTED');
+      await service.updateStatus(created.id, 'SUBMITTED');
+      await service.updateStatus(created.id, 'REJECTED');
 
       await expect(
-        service.updateStatus((created as any).id, 'APPROVED'),
+        service.updateStatus(created.id, 'APPROVED'),
       ).rejects.toThrow(BusinessValidationException);
     });
 
@@ -227,10 +228,10 @@ describe('FirstExamsService', () => {
     it('更新状态应写入审计日志', async () => {
       const created = await service.create({ patientId: 'patient-001' });
 
-      await service.updateStatus((created as any).id, 'SUBMITTED');
+      await service.updateStatus(created.id, 'SUBMITTED');
 
       const auditLogs = db.getTableData('AuditLog');
-      const log = auditLogs.find(l => l.targetId === (created as any).id && l.type === 'FIRST_EXAM_STATUS_UPDATE');
+      const log = auditLogs.find(l => l.targetId === created.id && l.type === 'FIRST_EXAM_STATUS_UPDATE');
       expect(log).toBeDefined();
     });
   });
@@ -240,19 +241,19 @@ describe('FirstExamsService', () => {
   describe('complete - 完成初诊', () => {
     it('调用 complete 应将状态设为 APPROVED', async () => {
       const created = await service.create({ patientId: 'patient-001' });
-      await service.updateStatus((created as any).id, 'SUBMITTED');
+      await service.updateStatus(created.id, 'SUBMITTED');
 
-      const result = await service.complete((created as any).id);
+      const result = await service.complete(created.id);
 
-      expect((result as any).status).toBe('APPROVED');
+      expect(result!.status).toBe('APPROVED');
     });
 
     it('DRAFT 状态直接 complete 应成功（DRAFT → APPROVED 是合法流转）', async () => {
       const created = await service.create({ patientId: 'patient-001' });
 
-      const result = await service.complete((created as any).id);
+      const result = await service.complete(created.id);
 
-      expect((result as any).status).toBe('APPROVED');
+      expect(result!.status).toBe('APPROVED');
     });
   });
 
@@ -261,31 +262,31 @@ describe('FirstExamsService', () => {
   describe('restart - 重启初诊', () => {
     it('APPROVED 状态重启应设为 DRAFT', async () => {
       const created = await service.create({ patientId: 'patient-001' });
-      await service.updateStatus((created as any).id, 'APPROVED');
+      await service.updateStatus(created.id, 'APPROVED');
 
-      const result = await service.restart((created as any).id);
+      const result = await service.restart(created.id);
 
-      expect((result as any).status).toBe('DRAFT');
+      expect(result.status).toBe('DRAFT');
     });
 
     it('REJECTED 状态重启应设为 DRAFT', async () => {
       const created = await service.create({ patientId: 'patient-001' });
-      await service.updateStatus((created as any).id, 'SUBMITTED');
-      await service.updateStatus((created as any).id, 'REJECTED');
+      await service.updateStatus(created.id, 'SUBMITTED');
+      await service.updateStatus(created.id, 'REJECTED');
 
-      const result = await service.restart((created as any).id);
+      const result = await service.restart(created.id);
 
-      expect((result as any).status).toBe('DRAFT');
+      expect(result.status).toBe('DRAFT');
     });
 
     it('重启应写入审计日志', async () => {
       const created = await service.create({ patientId: 'patient-001' });
-      await service.updateStatus((created as any).id, 'APPROVED');
+      await service.updateStatus(created.id, 'APPROVED');
 
-      await service.restart((created as any).id);
+      await service.restart(created.id);
 
       const auditLogs = db.getTableData('AuditLog');
-      const log = auditLogs.find(l => l.targetId === (created as any).id && l.type === 'FIRST_EXAM_RESTART');
+      const log = auditLogs.find(l => l.targetId === created.id && l.type === 'FIRST_EXAM_RESTART');
       expect(log).toBeDefined();
     });
 
@@ -324,20 +325,20 @@ describe('FirstExamsService', () => {
     it('正常创建随访应返回随访 ID', async () => {
       const exam = await service.create({ patientId: 'patient-001' });
 
-      const result = await service.createFollowUp((exam as any).id, {
+      const result = await service.createFollowUp(exam.id, {
         planDate: '2026-02-01',
         content: '复查牙周状况',
         assigneeId: 'doctor-001',
       });
 
       expect(result).toBeDefined();
-      expect((result as any).id).toBeDefined();
+      expect(result.id).toBeDefined();
     });
 
     it('创建随访时应包含 clinicId', async () => {
       const exam = await service.create({ patientId: 'patient-001' });
 
-      await service.createFollowUp((exam as any).id, {
+      await service.createFollowUp(exam.id, {
         planDate: '2026-02-01',
         content: '复查',
       });
@@ -350,13 +351,13 @@ describe('FirstExamsService', () => {
     it('创建随访时应关联 examId', async () => {
       const exam = await service.create({ patientId: 'patient-001' });
 
-      await service.createFollowUp((exam as any).id, {
+      await service.createFollowUp(exam.id, {
         planDate: '2026-02-01',
         content: '复查',
       });
 
       const rows = db.getTableData('FirstExamFollowUp');
-      expect(rows[0].examId).toBe((exam as any).id);
+      expect(rows[0].examId).toBe(exam.id);
     });
 
     it('创建不存在的初诊的随访应抛出异常', async () => {
@@ -375,10 +376,10 @@ describe('FirstExamsService', () => {
         chiefComplaint: '牙痛',
       });
 
-      const result = await service.findOne((created as any).id);
+      const result = await service.findOne(created.id);
 
       expect(result).toBeDefined();
-      expect((result as any).chiefComplaint).toBe('牙痛');
+      expect(result.chiefComplaint).toBe('牙痛');
     });
 
     it('查询不存在的初诊应抛出 BusinessNotFoundException', async () => {
@@ -393,8 +394,8 @@ describe('FirstExamsService', () => {
 
       const result = await service.findMany({});
 
-      expect((result as any).items.length).toBeGreaterThanOrEqual(2);
-      expect((result as any).total).toBeGreaterThanOrEqual(2);
+      expect(result.items.length).toBeGreaterThanOrEqual(2);
+      expect(result.total).toBeGreaterThanOrEqual(2);
     });
   });
 
@@ -404,23 +405,23 @@ describe('FirstExamsService', () => {
     it('软删除后 deletedAt 应被设置', async () => {
       const created = await service.create({ patientId: 'patient-001' });
 
-      await service.softDelete((created as any).id);
+      await service.softDelete(created.id);
 
       const rows = db.getTableData('FirstExam');
-      const deleted = rows.find(r => r.id === (created as any).id);
+      const deleted = rows.find(r => r.id === created.id);
       expect(deleted).toBeDefined();
-      expect(deleted.deletedAt).toBeTruthy();
+      expect(deleted!.deletedAt).toBeTruthy();
     });
 
     it('软删除后 findMany 不应包含该记录', async () => {
       const created = await service.create({ patientId: 'patient-001' });
       await service.create({ patientId: 'patient-002' });
 
-      await service.softDelete((created as any).id);
+      await service.softDelete(created.id);
 
       const result = await service.findMany({});
-      const ids = (result as any).items.map((i: any) => i.id);
-      expect(ids).not.toContain((created as any).id);
+      const ids = result.items.map((i: any) => i.id);
+      expect(ids).not.toContain(created.id);
     });
 
     it('软删除不存在的初诊应抛出 BusinessNotFoundException', async () => {
@@ -430,15 +431,15 @@ describe('FirstExamsService', () => {
     it('软删除应级联软删除关联牙齿记录', async () => {
       const exam = await service.create({ patientId: 'patient-001' });
       db.seed('FirstExamTooth', [
-        { id: 'tooth-1', examId: (exam as any).id, toothNumber: 11, clinicId: 'test-clinic-001' },
-        { id: 'tooth-2', examId: (exam as any).id, toothNumber: 16, clinicId: 'test-clinic-001' },
+        { id: 'tooth-1', examId: exam.id, toothNumber: 11, clinicId: 'test-clinic-001' },
+        { id: 'tooth-2', examId: exam.id, toothNumber: 16, clinicId: 'test-clinic-001' },
       ]);
 
-      await service.softDelete((exam as any).id);
+      await service.softDelete(exam.id);
 
       const teeth = db.getTableData('FirstExamTooth');
       teeth.forEach(t => {
-        if (t.examId === (exam as any).id) {
+        if (t.examId === exam.id) {
           expect(t.deletedAt).toBeTruthy();
         }
       });
@@ -446,13 +447,13 @@ describe('FirstExamsService', () => {
 
     it('软删除应级联软删除关联随访记录', async () => {
       const exam = await service.create({ patientId: 'patient-001' });
-      await service.createFollowUp((exam as any).id, { content: '复查' });
+      await service.createFollowUp(exam.id, { content: '复查' });
 
-      await service.softDelete((exam as any).id);
+      await service.softDelete(exam.id);
 
       const followUps = db.getTableData('FirstExamFollowUp');
       followUps.forEach(f => {
-        if (f.examId === (exam as any).id) {
+        if (f.examId === exam.id) {
           expect(f.deletedAt).toBeTruthy();
         }
       });
@@ -464,7 +465,7 @@ describe('FirstExamsService', () => {
   describe('remove - 硬删除初诊', () => {
     it('硬删除初诊记录应成功', async () => {
       const created = await service.create({ patientId: 'patient-001' });
-      const id = (created as any).id;
+      const id = created.id;
 
       await service.remove(id);
 
@@ -473,7 +474,7 @@ describe('FirstExamsService', () => {
 
     it('硬删除关联牙齿记录应成功', async () => {
       const exam = await service.create({ patientId: 'patient-001' });
-      const examId = (exam as any).id;
+      const examId = exam.id;
       db.seed('FirstExamTooth', [
         { id: 'tooth-1', examId, toothNumber: 11, clinicId: 'test-clinic-001' },
         { id: 'tooth-2', examId, toothNumber: 16, clinicId: 'test-clinic-001' },
@@ -486,7 +487,7 @@ describe('FirstExamsService', () => {
 
     it('硬删除关联随访记录应成功', async () => {
       const exam = await service.create({ patientId: 'patient-001' });
-      const examId = (exam as any).id;
+      const examId = exam.id;
       await service.createFollowUp(examId, { content: '复查' });
 
       await service.remove(examId);
@@ -497,10 +498,10 @@ describe('FirstExamsService', () => {
     it('删除应写入软删除审计日志', async () => {
       const created = await service.create({ patientId: 'patient-001' });
 
-      await service.remove((created as any).id);
+      await service.remove(created.id);
 
       const auditLogs = db.getTableData('AuditLog');
-      const log = auditLogs.find(l => l.targetId === (created as any).id && l.type === 'SOFT_DELETE');
+      const log = auditLogs.find(l => l.targetId === created.id && l.type === 'SOFT_DELETE');
       expect(log).toBeDefined();
     });
 
@@ -516,7 +517,7 @@ describe('FirstExamsService', () => {
 
     beforeEach(async () => {
       const exam = await service.create({ patientId: 'patient-001' });
-      examId = (exam as any).id;
+      examId = exam.id;
     });
 
     it('更新牙齿状态应成功', async () => {
@@ -529,13 +530,13 @@ describe('FirstExamsService', () => {
       });
 
       expect(result).toBeDefined();
-      expect((result as any).id).toBe(examId);
-      expect((result as any).toothNumber).toBe(16);
+      expect(result.id).toBe(examId);
+      expect(result.toothNumber).toBe(16);
 
       const teeth = db.getTableData('FirstExamTooth');
       const tooth = teeth.find(t => t.toothNumber === 16 && t.examId === examId);
       expect(tooth).toBeDefined();
-      expect(tooth.toothStatus).toBe('龋坏');
+      expect(tooth!.toothStatus).toBe('龋坏');
     });
 
     it('更新牙齿疾病信息应成功', async () => {
@@ -553,8 +554,8 @@ describe('FirstExamsService', () => {
       const teeth = db.getTableData('FirstExamTooth');
       const tooth = teeth.find(t => t.toothNumber === 26 && t.examId === examId);
       expect(tooth).toBeDefined();
-      expect(typeof tooth.diseases).toBe('string');
-      const parsed = JSON.parse(tooth.diseases as string);
+      expect(typeof tooth!.diseases).toBe('string');
+      const parsed = JSON.parse(tooth!.diseases as string);
       expect(parsed).toEqual(diseases);
     });
 
@@ -572,7 +573,7 @@ describe('FirstExamsService', () => {
       const teeth = db.getTableData('FirstExamTooth');
       const tooth = teeth.find(t => t.toothNumber === 36 && t.examId === examId);
       expect(tooth).toBeDefined();
-      expect(tooth.treatmentPlan).toBe('根管治疗后全冠修复');
+      expect(tooth!.treatmentPlan).toBe('根管治疗后全冠修复');
     });
 
     it('更新备注应成功', async () => {
@@ -589,7 +590,7 @@ describe('FirstExamsService', () => {
       const teeth = db.getTableData('FirstExamTooth');
       const tooth = teeth.find(t => t.toothNumber === 46 && t.examId === examId);
       expect(tooth).toBeDefined();
-      expect(tooth.remark).toBe('建议尽早治疗');
+      expect(tooth!.remark).toBe('建议尽早治疗');
     });
 
     it('批量更新多个字段应成功', async () => {
@@ -610,9 +611,9 @@ describe('FirstExamsService', () => {
       const teeth = db.getTableData('FirstExamTooth');
       const tooth = teeth.find(t => t.toothNumber === 11 && t.examId === examId);
       expect(tooth).toBeDefined();
-      expect(tooth.toothStatus).toBe('龋坏');
-      expect(tooth.treatmentPlan).toBe('树脂充填');
-      expect(tooth.remark).toBe('去净腐质后充填');
+      expect(tooth!.toothStatus).toBe('龋坏');
+      expect(tooth!.treatmentPlan).toBe('树脂充填');
+      expect(tooth!.remark).toBe('去净腐质后充填');
     });
 
     it('牙齿不存在时也应返回成功（upsert 模式）', async () => {
@@ -621,7 +622,7 @@ describe('FirstExamsService', () => {
       });
 
       expect(result).toBeDefined();
-      expect((result as any).toothNumber).toBe(99);
+      expect(result.toothNumber).toBe(99);
     });
 
     it('空对象更新应返回成功', async () => {
@@ -648,7 +649,7 @@ describe('FirstExamsService', () => {
       const teeth = db.getTableData('FirstExamTooth');
       const tooth = teeth.find(t => t.toothNumber === 31 && t.examId === examId);
       expect(tooth).toBeDefined();
-      const parsed = JSON.parse(tooth.diseases as string);
+      const parsed = JSON.parse(tooth!.diseases as string);
       expect(parsed).toEqual([]);
     });
 
@@ -658,12 +659,12 @@ describe('FirstExamsService', () => {
       ]);
 
       const before = db.getTableData('FirstExamTooth').find(t => t.toothNumber === 41);
-      const beforeUpdatedAt = before.updatedAt;
+      const beforeUpdatedAt = before!.updatedAt;
 
       await service.updateTooth(examId, 41, { toothStatus: '健康' });
 
       const after = db.getTableData('FirstExamTooth').find(t => t.toothNumber === 41);
-      expect(after.updatedAt).not.toBe(beforeUpdatedAt);
+      expect(after!.updatedAt).not.toBe(beforeUpdatedAt);
     });
   });
 
@@ -674,7 +675,7 @@ describe('FirstExamsService', () => {
 
     beforeEach(async () => {
       const exam = await service.create({ patientId: 'patient-001' });
-      examId = (exam as any).id;
+      examId = exam.id;
     });
 
     it('无牙齿记录时返回空数组', async () => {
@@ -814,7 +815,7 @@ describe('FirstExamsService', () => {
 
     beforeEach(async () => {
       const exam = await service.create({ patientId: 'patient-001' });
-      examId = (exam as any).id;
+      examId = exam.id;
     });
 
     it('存在的追踪记录应正常返回', async () => {
@@ -825,8 +826,8 @@ describe('FirstExamsService', () => {
       const result = await service.getTrack('track-1');
 
       expect(result).toBeDefined();
-      expect((result as any).id).toBe('track-1');
-      expect((result as any).content).toBe('初诊检查完成');
+      expect(result!.id).toBe('track-1');
+      expect(result!.content).toBe('初诊检查完成');
     });
 
     it('不存在的追踪记录返回 undefined', async () => {
@@ -873,7 +874,7 @@ describe('FirstExamsService', () => {
 
     beforeEach(async () => {
       const exam = await service.create({ patientId: 'patient-001' });
-      examId = (exam as any).id;
+      examId = exam.id;
     });
 
     it('无追踪记录时返回空数组', async () => {
@@ -966,7 +967,7 @@ describe('FirstExamsService', () => {
 
     beforeEach(async () => {
       const exam = await service.create({ patientId: 'patient-001' });
-      const examId = (exam as any).id;
+      const examId = exam.id;
       db.seed('FirstExamTrack', [
         {
           id: 'track-001',
@@ -984,7 +985,7 @@ describe('FirstExamsService', () => {
       const result = await service.updateTrack(trackId, { status: 'FOLLOWING' });
 
       expect(result).toBeDefined();
-      expect((result as any).status).toBe('FOLLOWING');
+      expect(result!.status).toBe('FOLLOWING');
     });
 
     it('更新组长建议应成功', async () => {
@@ -993,7 +994,7 @@ describe('FirstExamsService', () => {
       });
 
       expect(result).toBeDefined();
-      expect((result as any).leaderSuggestion).toBe('建议进行根管治疗');
+      expect(result!.leaderSuggestion).toBe('建议进行根管治疗');
     });
 
     it('更新主任建议应成功', async () => {
@@ -1002,7 +1003,7 @@ describe('FirstExamsService', () => {
       });
 
       expect(result).toBeDefined();
-      expect((result as any).directorSuggestion).toBe('同意治疗方案');
+      expect(result!.directorSuggestion).toBe('同意治疗方案');
     });
 
     it('更新流失原因应成功', async () => {
@@ -1011,7 +1012,7 @@ describe('FirstExamsService', () => {
       });
 
       expect(result).toBeDefined();
-      expect((result as any).churnReason).toBe('价格过高');
+      expect(result!.churnReason).toBe('价格过高');
     });
 
     it('更新流失解决方案应成功', async () => {
@@ -1020,7 +1021,7 @@ describe('FirstExamsService', () => {
       });
 
       expect(result).toBeDefined();
-      expect((result as any).churnSolution).toBe('提供优惠方案');
+      expect(result!.churnSolution).toBe('提供优惠方案');
     });
 
     it('更新医生ID应成功', async () => {
@@ -1029,7 +1030,7 @@ describe('FirstExamsService', () => {
       });
 
       expect(result).toBeDefined();
-      expect((result as any).doctorId).toBe('doctor-002');
+      expect(result!.doctorId).toBe('doctor-002');
     });
 
     it('批量更新多个字段应成功', async () => {
@@ -1040,26 +1041,26 @@ describe('FirstExamsService', () => {
       });
 
       expect(result).toBeDefined();
-      expect((result as any).status).toBe('CHURNED');
-      expect((result as any).churnReason).toBe('搬家');
-      expect((result as any).churnSolution).toBe('推荐附近诊所');
+      expect(result!.status).toBe('CHURNED');
+      expect(result!.churnReason).toBe('搬家');
+      expect(result!.churnSolution).toBe('推荐附近诊所');
     });
 
     it('空对象更新应返回原记录', async () => {
       const result = await service.updateTrack(trackId, {});
 
       expect(result).toBeDefined();
-      expect((result as any).status).toBe('PENDING');
+      expect(result!.status).toBe('PENDING');
     });
 
     it('更新后 updatedAt 应存在', async () => {
       const before = db.getTableData('FirstExamTrack').find(t => t.id === trackId);
-      const beforeUpdatedAt = before.updatedAt;
+      const beforeUpdatedAt = before!.updatedAt;
 
       await service.updateTrack(trackId, { status: 'FOLLOWING' });
 
       const after = db.getTableData('FirstExamTrack').find(t => t.id === trackId);
-      expect(after.updatedAt).not.toBe(beforeUpdatedAt);
+      expect(after!.updatedAt).not.toBe(beforeUpdatedAt);
     });
   });
 
@@ -1070,7 +1071,7 @@ describe('FirstExamsService', () => {
 
     beforeEach(async () => {
       const exam = await service.create({ patientId: 'patient-001' });
-      examId = (exam as any).id;
+      examId = exam.id;
     });
 
     it('批量更新多颗牙齿状态应成功', async () => {
@@ -1093,9 +1094,9 @@ describe('FirstExamsService', () => {
       const tooth11 = teeth.find(t => t.toothNumber === 11);
       const tooth16 = teeth.find(t => t.toothNumber === 16);
       const tooth26 = teeth.find(t => t.toothNumber === 26);
-      expect(tooth11.toothStatus).toBe('龋坏');
-      expect(tooth16.toothStatus).toBe('健康');
-      expect(tooth26.toothStatus).toBe('缺失');
+      expect(tooth11!.toothStatus).toBe('龋坏');
+      expect(tooth16!.toothStatus).toBe('健康');
+      expect(tooth26!.toothStatus).toBe('缺失');
     });
 
     it('批量更新牙齿疾病信息应成功', async () => {
@@ -1117,10 +1118,10 @@ describe('FirstExamsService', () => {
       const tooth46 = result.find((t: any) => t.toothNumber === 46);
       expect(tooth36).toBeDefined();
       expect(tooth46).toBeDefined();
-      expect(Array.isArray(tooth36.diseases)).toBe(true);
-      expect(Array.isArray(tooth46.diseases)).toBe(true);
-      expect(tooth36.diseases).toEqual(diseases1);
-      expect(tooth46.diseases).toEqual(diseases2);
+      expect(Array.isArray(tooth36!.diseases)).toBe(true);
+      expect(Array.isArray(tooth46!.diseases)).toBe(true);
+      expect(tooth36!.diseases).toEqual(diseases1);
+      expect(tooth46!.diseases).toEqual(diseases2);
     });
 
     it('批量更新治疗计划应成功', async () => {
@@ -1139,8 +1140,8 @@ describe('FirstExamsService', () => {
       const teeth = db.getTableData('FirstExamTooth');
       const tooth11 = teeth.find(t => t.toothNumber === 11);
       const tooth21 = teeth.find(t => t.toothNumber === 21);
-      expect(tooth11.treatmentPlan).toBe('树脂充填');
-      expect(tooth21.treatmentPlan).toBe('根管治疗后全冠修复');
+      expect(tooth11!.treatmentPlan).toBe('树脂充填');
+      expect(tooth21!.treatmentPlan).toBe('根管治疗后全冠修复');
     });
 
     it('批量更新备注应成功', async () => {
@@ -1159,8 +1160,8 @@ describe('FirstExamsService', () => {
       const teeth = db.getTableData('FirstExamTooth');
       const tooth31 = teeth.find(t => t.toothNumber === 31);
       const tooth41 = teeth.find(t => t.toothNumber === 41);
-      expect(tooth31.remark).toBe('建议尽早治疗');
-      expect(tooth41.remark).toBe('观察即可');
+      expect(tooth31!.remark).toBe('建议尽早治疗');
+      expect(tooth41!.remark).toBe('观察即可');
     });
 
     it('空数组应返回当前牙齿列表', async () => {
@@ -1225,8 +1226,8 @@ describe('FirstExamsService', () => {
     it('按 patientId 过滤应只返回该患者的初诊', async () => {
       const result = await service.findMany({ filters: { patientId: 'patient-001' } });
 
-      expect((result as any).items.length).toBe(2);
-      (result as any).items.forEach((item: any) => {
+      expect(result.items.length).toBe(2);
+      result.items.forEach((item: any) => {
         expect(item.patientId).toBe('patient-001');
       });
     });
@@ -1234,8 +1235,8 @@ describe('FirstExamsService', () => {
     it('按 doctorId 过滤应只返回该医生的初诊', async () => {
       const result = await service.findMany({ filters: { doctorId: 'doctor-001' } });
 
-      expect((result as any).items.length).toBe(2);
-      (result as any).items.forEach((item: any) => {
+      expect(result.items.length).toBe(2);
+      result.items.forEach((item: any) => {
         expect(item.doctorId).toBe('doctor-001');
       });
     });
@@ -1243,43 +1244,43 @@ describe('FirstExamsService', () => {
     it('按 status 过滤应只返回该状态的初诊', async () => {
       const result = await service.findMany({ filters: { status: 'DRAFT' } });
 
-      expect((result as any).items.length).toBe(1);
-      expect((result as any).items[0].status).toBe('DRAFT');
+      expect(result.items.length).toBe(1);
+      expect(result.items[0].status).toBe('DRAFT');
     });
 
     it('分页参数应正确工作', async () => {
       const result = await service.findMany({ page: 1, pageSize: 2 });
 
-      expect((result as any).items.length).toBe(2);
-      expect((result as any).total).toBe(3);
-      expect((result as any).page).toBe(1);
-      expect((result as any).pageSize).toBe(2);
+      expect(result.items.length).toBe(2);
+      expect(result.total).toBe(3);
+      expect(result.page).toBe(1);
+      expect(result.pageSize).toBe(2);
     });
 
     it('第二页应返回正确的数据', async () => {
       const result = await service.findMany({ page: 2, pageSize: 2 });
 
-      expect((result as any).items.length).toBe(1);
-      expect((result as any).total).toBe(3);
-      expect((result as any).page).toBe(2);
+      expect(result.items.length).toBe(1);
+      expect(result.total).toBe(3);
+      expect(result.page).toBe(2);
     });
 
     it('空过滤条件应返回全部数据', async () => {
       const result = await service.findMany({ filters: {} });
 
-      expect((result as any).total).toBeGreaterThanOrEqual(3);
+      expect(result.total).toBeGreaterThanOrEqual(3);
     });
 
     it('pageSize 超过最大值应被限制（MAX_PAGE_SIZE = 200）', async () => {
       const result = await service.findMany({ pageSize: 1000 });
 
-      expect((result as any).pageSize).toBeLessThanOrEqual(200);
+      expect(result.pageSize).toBeLessThanOrEqual(200);
     });
 
     it('page 小于 1 应被修正为 1', async () => {
       const result = await service.findMany({ page: 0 });
 
-      expect((result as any).page).toBe(1);
+      expect(result.page).toBe(1);
     });
   });
 
@@ -1290,7 +1291,7 @@ describe('FirstExamsService', () => {
 
     beforeEach(async () => {
       const exam = await service.create({ patientId: 'patient-001' });
-      examId = (exam as any).id;
+      examId = exam.id;
     });
 
     it('只传 content 创建随访应成功', async () => {
@@ -1299,7 +1300,7 @@ describe('FirstExamsService', () => {
       });
 
       expect(result).toBeDefined();
-      expect((result as any).id).toBeDefined();
+      expect(result.id).toBeDefined();
 
       const rows = db.getTableData('FirstExamFollowUp');
       expect(rows.length).toBe(1);
@@ -1394,28 +1395,28 @@ describe('FirstExamsService', () => {
   describe('restart - 更多重启场景', () => {
     it('SUBMITTED 状态重启应设为 DRAFT', async () => {
       const created = await service.create({ patientId: 'patient-001' });
-      await service.updateStatus((created as any).id, 'SUBMITTED');
+      await service.updateStatus(created.id, 'SUBMITTED');
 
-      const result = await service.restart((created as any).id);
+      const result = await service.restart(created.id);
 
-      expect((result as any).status).toBe('DRAFT');
+      expect(result.status).toBe('DRAFT');
     });
 
     it('DRAFT 状态重启应保持 DRAFT', async () => {
       const created = await service.create({ patientId: 'patient-001' });
 
-      const result = await service.restart((created as any).id);
+      const result = await service.restart(created.id);
 
-      expect((result as any).status).toBe('DRAFT');
+      expect(result.status).toBe('DRAFT');
     });
 
     it('重启后 updatedAt 应存在', async () => {
       const created = await service.create({ patientId: 'patient-001' });
-      await service.updateStatus((created as any).id, 'APPROVED');
+      await service.updateStatus(created.id, 'APPROVED');
 
-      const result = await service.restart((created as any).id);
+      const result = await service.restart(created.id);
 
-      expect((result as any).updatedAt).toBeDefined();
+      expect(result.updatedAt).toBeDefined();
     });
   });
 
@@ -1424,11 +1425,11 @@ describe('FirstExamsService', () => {
   describe('complete - 更多完成场景', () => {
     it('REJECTED 状态直接 complete 应失败（非法流转）', async () => {
       const created = await service.create({ patientId: 'patient-001' });
-      await service.updateStatus((created as any).id, 'SUBMITTED');
-      await service.updateStatus((created as any).id, 'REJECTED');
+      await service.updateStatus(created.id, 'SUBMITTED');
+      await service.updateStatus(created.id, 'REJECTED');
 
       await expect(
-        service.complete((created as any).id),
+        service.complete(created.id),
       ).rejects.toThrow(BusinessValidationException);
     });
   });
@@ -1439,29 +1440,29 @@ describe('FirstExamsService', () => {
     it('创建时自动生成 id', async () => {
       const result = await service.create({ patientId: 'patient-001' });
 
-      expect((result as any).id).toBeDefined();
-      expect(typeof (result as any).id).toBe('string');
+      expect(result.id).toBeDefined();
+      expect(typeof result.id).toBe('string');
     });
 
     it('创建时自动设置 createdAt', async () => {
       const result = await service.create({ patientId: 'patient-001' });
 
-      expect((result as any).createdAt).toBeDefined();
-      expect(typeof (result as any).createdAt).toBe('string');
+      expect(result.createdAt).toBeDefined();
+      expect(typeof result.createdAt).toBe('string');
     });
 
     it('创建时自动设置 updatedAt', async () => {
       const result = await service.create({ patientId: 'patient-001' });
 
-      expect((result as any).updatedAt).toBeDefined();
+      expect(result.updatedAt).toBeDefined();
     });
 
     it('创建后可通过 findOne 查询到', async () => {
       const created = await service.create({ patientId: 'patient-001' });
-      const found = await service.findOne((created as any).id);
+      const found = await service.findOne(created.id);
 
       expect(found).toBeDefined();
-      expect((found as any).id).toBe((created as any).id);
+      expect(found.id).toBe(created.id);
     });
 
     it('特殊字符应正确存储', async () => {
@@ -1471,7 +1472,7 @@ describe('FirstExamsService', () => {
         chiefComplaint: specialChars,
       });
 
-      expect((result as any).chiefComplaint).toBe(specialChars);
+      expect(result.chiefComplaint).toBe(specialChars);
     });
 
     it('长文本应正确存储', async () => {
@@ -1481,7 +1482,7 @@ describe('FirstExamsService', () => {
         diagnosis: longText,
       });
 
-      expect((result as any).diagnosis).toBe(longText);
+      expect(result.diagnosis).toBe(longText);
     });
   });
 
@@ -1491,29 +1492,29 @@ describe('FirstExamsService', () => {
     it('空对象更新应返回原记录', async () => {
       const created = await service.create({ patientId: 'patient-001', chiefComplaint: '牙痛' });
 
-      const result = await service.update((created as any).id, {});
+      const result = await service.update(created.id, {});
 
-      expect((result as any).chiefComplaint).toBe('牙痛');
+      expect(result.chiefComplaint).toBe('牙痛');
     });
 
     it('更新后 updatedAt 应存在', async () => {
       const created = await service.create({ patientId: 'patient-001' });
 
-      const result = await service.update((created as any).id, { remark: 'test' });
+      const result = await service.update(created.id, { remark: 'test' });
 
-      expect((result as any).updatedAt).toBeDefined();
+      expect(result.updatedAt).toBeDefined();
     });
 
     it('多次更新应全部生效', async () => {
       const created = await service.create({ patientId: 'patient-001' });
 
-      await service.update((created as any).id, { chiefComplaint: '第一次更新' });
-      await service.update((created as any).id, { diagnosis: '第二次更新' });
-      const result = await service.update((created as any).id, { treatmentSuggestion: '第三次更新' });
+      await service.update(created.id, { chiefComplaint: '第一次更新' });
+      await service.update(created.id, { diagnosis: '第二次更新' });
+      const result = await service.update(created.id, { treatmentSuggestion: '第三次更新' });
 
-      expect((result as any).chiefComplaint).toBe('第一次更新');
-      expect((result as any).diagnosis).toBe('第二次更新');
-      expect((result as any).treatmentSuggestion).toBe('第三次更新');
+      expect(result.chiefComplaint).toBe('第一次更新');
+      expect(result.diagnosis).toBe('第二次更新');
+      expect(result.treatmentSuggestion).toBe('第三次更新');
     });
 
     it('设置字段为 undefined 应不更新该字段', async () => {
@@ -1523,13 +1524,13 @@ describe('FirstExamsService', () => {
         diagnosis: '原有诊断',
       });
 
-      const result = await service.update((created as any).id, {
+      const result = await service.update(created.id, {
         chiefComplaint: '新主诉',
         diagnosis: undefined,
       });
 
-      expect((result as any).chiefComplaint).toBe('新主诉');
-      expect((result as any).diagnosis).toBe('原有诊断');
+      expect(result.chiefComplaint).toBe('新主诉');
+      expect(result.diagnosis).toBe('原有诊断');
     });
   });
 });

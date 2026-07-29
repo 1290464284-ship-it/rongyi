@@ -1,6 +1,6 @@
 import { PaymentMethodService } from './payment-method.service';
 import { BusinessNotFoundException } from '@common/errors';
-import { MockDbService, MockDbRow } from '../../../db/__mocks__/db-service.mock';
+import { MockDbService, MockDbRow , asDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 
 
@@ -20,7 +20,7 @@ describe('PaymentMethodService', () => {
 
   beforeEach(() => {
     db = new MockDbService();
-    service = new PaymentMethodService(db as any, createMockClinicContext());
+    service = new PaymentMethodService(asDbService(db), createMockClinicContext());
   });
 
   afterEach(() => {
@@ -158,7 +158,7 @@ describe('PaymentMethodService', () => {
 
     it('可以清空 parentId（设为 null）', async () => {
       seedPaymentMethod({ id: 'pm-child', name: '子级', code: 'CHILD', parentId: 'pm-001' });
-      const result = await service.updatePaymentMethod('pm-child', { parentId: null });
+      const result = await service.updatePaymentMethod('pm-child', { parentId: null as unknown as string });
       expect(result.parentId).toBeNull();
     });
 
@@ -181,7 +181,7 @@ describe('PaymentMethodService', () => {
       const methods = db.getTableData('PaymentMethod');
       const deleted = methods.find(m => m.id === 'pm-001');
       expect(deleted).toBeDefined();
-      expect(deleted.deletedAt).not.toBeNull();
+      expect(deleted!.deletedAt).not.toBeNull();
     });
 
     it('删除后列表中不应包含该支付方式', async () => {

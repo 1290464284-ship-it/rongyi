@@ -7,17 +7,17 @@ export interface CreateInventoryItemData {
   id: string;
   code: string;
   name: string;
-  spec?: string | null;
+  spec?: string;
   category: string;
   unit: string;
   stock: number;
   minStock: number;
   price: number;
-  supplierId?: string | null;
-  expireDate?: string | null;
-  location?: string | null;
-  remark?: string | null;
-  clinicId?: string | null;
+  supplierId?: string;
+  expireDate?: string;
+  location?: string;
+  remark?: string;
+  clinicId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -29,11 +29,11 @@ export interface InventoryTransactionData {
   quantity: number;
   unitPrice: number;
   totalAmount: number;
-  supplierId?: string | null;
-  operatorId?: string | null;
-  operatorName?: string | null;
-  remark?: string | null;
-  clinicId?: string | null;
+  supplierId?: string;
+  operatorId?: string;
+  operatorName?: string;
+  remark?: string;
+  clinicId?: string;
   createdAt: string;
 }
 

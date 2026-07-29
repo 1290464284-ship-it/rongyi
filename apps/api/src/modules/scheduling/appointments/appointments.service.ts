@@ -21,7 +21,7 @@ export class AppointmentsService extends BaseService<Appointment> {
     clinicContext: ClinicContextService,
     private eventBus: EventBusService,
   ) {
-    super(dbService, clinicContext, 'Appointment');
+    super(dbService, clinicContext, { tableName: 'Appointment' });
   }
 
   async queryAppointments(params: { doctorId?: string; patientId?: string; status?: string; startDate?: string; endDate?: string; page?: number; pageSize?: number }) {
@@ -138,29 +138,29 @@ export class AppointmentsService extends BaseService<Appointment> {
   };
 
   async update(id: string, dto: Partial<Appointment>): Promise<Appointment> {
-    const existing = await this.findOne(id) as Record<string, unknown>;
+    const existing = await this.findOne(id);
     // P1 修复：用完整状态机替换原先仅 IN_CHAIR→ARRIVED 的检查
-    if (dto.status && dto.status !== (existing.status as string)) {
-      const currentStatus = existing.status as string;
+    if (dto.status && dto.status !== existing.status) {
+      const currentStatus = existing.status;
       const allowed = AppointmentsService.ALLOWED_TRANSITIONS[currentStatus] || [];
       if (!allowed.includes(dto.status)) {
         throw new BusinessValidationException(`预约状态不可从 ${currentStatus} 流转到 ${dto.status}`);
       }
     }
-    const newDoctorId = dto.doctorId || (existing.doctorId as string);
-    const newPatientId = existing.patientId as string;
-    const newChairId = dto.chairId !== undefined ? dto.chairId : (existing.chairId as string | null);
+    const newDoctorId = dto.doctorId || existing.doctorId;
+    const newPatientId = existing.patientId;
+    const newChairId = dto.chairId !== undefined ? dto.chairId : existing.chairId;
     let newStart: string;
     let newEnd: string;
     if (dto.startTime) {
       newStart = parseDate(dto.startTime).toISOString();
     } else {
-      newStart = existing.startTime as string;
+      newStart = existing.startTime;
     }
     if (dto.endTime) {
       newEnd = parseDate(dto.endTime).toISOString();
     } else {
-      newEnd = existing.endTime as string;
+      newEnd = existing.endTime;
     }
     if (new Date(newEnd) <= new Date(newStart)) throw new BusinessValidationException("结束时间必须晚于开始时间");
 
@@ -266,10 +266,10 @@ export class AppointmentsService extends BaseService<Appointment> {
     const existing = await this.findOne(id);
     this.dbService.transaction((db) => {
       this.softDeleteSync(db, id);
-      this.logAudit(db, AuditLogType.APPOINTMENT_REMOVE, id, "Appointment", { beforeData: { status: (existing as Record<string, unknown>).status, patientId: (existing as Record<string, unknown>).patientId, doctorId: (existing as Record<string, unknown>).doctorId } });
+      this.logAudit(db, AuditLogType.APPOINTMENT_REMOVE, id, "Appointment", { beforeData: { status: existing.status, patientId: existing.patientId, doctorId: existing.doctorId } });
     });
 
-    this.eventBus.emit(new AppointmentDeletedEvent(existing.id, (existing as Record<string, unknown>).patientId as string, (existing as Record<string, unknown>).doctorId as string, this.clinicContext.getClinicId()));
+    this.eventBus.emit(new AppointmentDeletedEvent(existing.id, existing.patientId, existing.doctorId, this.clinicContext.getClinicId()));
   }
 
   /**

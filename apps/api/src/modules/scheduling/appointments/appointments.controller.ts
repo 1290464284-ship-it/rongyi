@@ -9,7 +9,6 @@ import { AppointmentsService } from './appointments.service';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
 import { QueryAppointmentDto } from './dto/query-appointment.dto';
-import { Appointment } from '@dental/shared';
 
 @Roles(Role.BOSS, Role.DOCTOR, Role.RECEPTIONIST)
 @ApiTags('预约管理')
@@ -21,7 +20,7 @@ export class AppointmentsController {
   @ApiOperation({ summary: '新增' })
   @Post()
   create(@Body() dto: CreateAppointmentDto) {
-    return this.appointments.create(dto as Partial<Appointment>);
+    return this.appointments.create(dto);
   }
 
   @ApiOperation({ summary: '分页查询列表' })
@@ -43,7 +42,7 @@ export class AppointmentsController {
   @UseGuards(ResourceOwnerGuard)
   @ResourceOwner({ resourceType: 'Appointment' })
   update(@Param('id') id: string, @Body() dto: UpdateAppointmentDto) {
-    return this.appointments.update(id, dto as Partial<Appointment>);
+    return this.appointments.update(id, dto);
   }
 
   @ApiOperation({ summary: '删除' })

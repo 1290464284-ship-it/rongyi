@@ -1,5 +1,5 @@
 import { SettingsService } from './settings.service';
-import { MockDbService } from '../../../db/__mocks__/db-service.mock';
+import { asDbService, MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { CacheService } from '../../../common/services/cache.service';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import { AuditLogService } from '../../../common/services/audit-log.service';
@@ -56,7 +56,7 @@ describe('SettingsService', () => {
     cache = createMockCacheService();
     context = createMockClinicContext();
     auditLog = createMockAuditLogService();
-    service = new SettingsService(db as any, cache, context, auditLog);
+    service = new SettingsService(asDbService(db), cache, context, auditLog);
   });
 
   afterEach(() => {
@@ -141,7 +141,7 @@ describe('SettingsService', () => {
     });
 
     it('无 clinicId 时不应用 clinic 过滤', async () => {
-      const noCtxService = new SettingsService(db as any, cache, createMockClinicContext(null), auditLog);
+      const noCtxService = new SettingsService(asDbService(db), cache, createMockClinicContext(null), auditLog);
       (cache.get as jest.Mock).mockResolvedValue(undefined);
       const result = await noCtxService.getClinicInfo();
       expect(Object.keys(result).length).toBeGreaterThan(0);
@@ -245,7 +245,7 @@ describe('SettingsService', () => {
       expect(result).toEqual({ key: 'myKey', value: 'newValue' });
       const data = db.getTableData('ClinicInfo');
       const updated = data.find((r: any) => r.key === 'myKey');
-      expect(updated.value).toBe('newValue');
+      expect(updated!.value).toBe('newValue');
     });
 
     it('不存在时插入新配置', async () => {
@@ -268,7 +268,7 @@ describe('SettingsService', () => {
     });
 
     it('无 clinicId 时清空所有缓存（delPattern）', async () => {
-      const noCtxService = new SettingsService(db as any, cache, createMockClinicContext(null), auditLog);
+      const noCtxService = new SettingsService(asDbService(db), cache, createMockClinicContext(null), auditLog);
       await noCtxService.updateClinicInfo('cacheKey', 'cacheValue');
       expect(cache.delPattern).toHaveBeenCalled();
     });
@@ -282,7 +282,7 @@ describe('SettingsService', () => {
       const result = await service.upsertMany({ existing: 'updated', brandNew: 'new' });
       expect(result).toEqual({ success: true });
       const data = db.getTableData('ClinicInfo');
-      expect(data.find((r: any) => r.key === 'existing').value).toBe('updated');
+      expect(data.find((r: any) => r.key === 'existing')!.value).toBe('updated');
       expect(data.find((r: any) => r.key === 'brandNew')).toBeDefined();
     });
 
@@ -327,7 +327,7 @@ describe('SettingsService', () => {
     });
 
     it('无 clinicId 时调用 cache.delPattern', async () => {
-      const noCtxService = new SettingsService(db as any, cache, createMockClinicContext(null), auditLog);
+      const noCtxService = new SettingsService(asDbService(db), cache, createMockClinicContext(null), auditLog);
       await noCtxService.delete('anyKey');
       expect(cache.delPattern).toHaveBeenCalled();
     });

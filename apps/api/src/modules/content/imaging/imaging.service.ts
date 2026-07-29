@@ -8,7 +8,10 @@ import { AuditLogType } from "../../../common/constants";
 @Injectable()
 export class ImagingService extends BaseService<Imaging> {
   constructor(dbService: DbService, clinicContext: ClinicContextService) {
-    super(dbService, clinicContext, "Imaging", [], ["title"]);
+    super(dbService, clinicContext, {
+      tableName: "Imaging",
+      searchFields: ["title"],
+    });
   }
 
   async create(dto: Partial<Imaging>): Promise<Imaging> {

@@ -21,7 +21,7 @@ export interface Clinic {
   remark?: string;
   createdAt: string;
   updatedAt: string;
-  deletedAt?: string | null;
+  deletedAt?: string;
 }
 
 /**
@@ -38,7 +38,7 @@ export class ClinicsService extends BaseService<Clinic> {
     clinicContext: ClinicContextService,
     private cache: CacheService,
   ) {
-    super(dbService, clinicContext, 'Clinic', [], ['name', 'code'], [], true, ['code']);
+    super(dbService, clinicContext, { tableName: 'Clinic', searchFields: ['name', 'code'], uniqueFields: ['code'] });
   }
 
   async findMany(options: Parameters<BaseService<Clinic>['findMany']>[0] = {}) {

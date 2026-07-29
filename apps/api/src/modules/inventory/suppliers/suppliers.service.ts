@@ -7,6 +7,6 @@ import { Supplier } from "@dental/shared";
 @Injectable()
 export class SuppliersService extends BaseService<Supplier> {
   constructor(dbService: DbService, clinicContext: ClinicContextService) {
-    super(dbService, clinicContext, "Supplier", [], ["name"], [], true, ["code"]);
+    super(dbService, clinicContext, { tableName: "Supplier", searchFields: ["name"], uniqueFields: ["code"] });
   }
 }

@@ -34,7 +34,7 @@ describe('money.utils', () => {
       expect(yuanToCents(NaN)).toBe(0);
       expect(yuanToCents(Infinity)).toBe(0);
       expect(yuanToCents(-Infinity)).toBe(0);
-      expect(yuanToCents(null)).toBe(0);
+      expect(yuanToCents(null as unknown as number)).toBe(0);
       expect(yuanToCents(undefined as unknown as number)).toBe(0);
       expect(yuanToCents('100' as unknown as number)).toBe(0);
     });

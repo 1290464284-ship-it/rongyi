@@ -1,3 +1,4 @@
+import { asDbService } from '../../../db/__mocks__/db-service.mock';
 import { ChargePaymentService } from './charge-payment.service';
 import { ChargeService } from './charge.service';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
@@ -46,9 +47,9 @@ describe('ChargePaymentService - 故障注入测试', () => {
     faultInjector.enable();
     db = new FaultyMockDbService(faultInjector);
     eventBus = createMockEventBus();
-    chargeService = new ChargeService(db as any, createMockClinicContext(), eventBus, new ChargeRepository(), createMockIdempotency(db));
+    chargeService = new ChargeService(asDbService(db), createMockClinicContext(), eventBus, new ChargeRepository(), createMockIdempotency(db));
     service = new ChargePaymentService(
-      db as any,
+      asDbService(db),
       createMockClinicContext(),
       createMockIdempotency(db),
       chargeService,

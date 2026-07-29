@@ -1,6 +1,7 @@
 import { TreatmentsService } from './treatments.service';
 import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
+import { asDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import { CacheService } from '../../../common/services/cache.service';
 
@@ -45,7 +46,7 @@ describe('TreatmentsService', () => {
       { id: 'doctor-001', username: 'doctor1', name: '测试医生1', role: 'DOCTOR', active: 1, clinicId: 'test-clinic-001', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
       { id: 'doctor-002', username: 'doctor2', name: '测试医生2', role: 'DOCTOR', active: 1, clinicId: 'test-clinic-001', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
     ]);
-    service = new TreatmentsService(db as any, createMockClinicContext(), createMockCacheService());
+    service = new TreatmentsService(asDbService(db), createMockClinicContext(), createMockCacheService());
   });
 
   afterEach(() => {
@@ -70,13 +71,13 @@ describe('TreatmentsService', () => {
       } as any);
 
       expect(result).toBeDefined();
-      expect((result as any).patientId).toBe('patient-001');
-      expect((result as any).code).toBe('T001');
-      expect((result as any).name).toBe('根管治疗');
-      expect((result as any).status).toBe('PLANNED');
+      expect(result.patientId).toBe('patient-001');
+      expect(result.code).toBe('T001');
+      expect(result.name).toBe('根管治疗');
+      expect(result.status).toBe('PLANNED');
       // teethNumbers 应被 JSON 解析为数组
-      expect(Array.isArray((result as any).teethNumbers)).toBe(true);
-      expect((result as any).teethNumbers).toEqual([11, 12]);
+      expect(Array.isArray(result.teethNumbers)).toBe(true);
+      expect(result.teethNumbers).toEqual([11, 12]);
     });
 
     it('不传 teethNumbers 时应默认为空数组', async () => {
@@ -89,8 +90,8 @@ describe('TreatmentsService', () => {
         price: 200,
       });
 
-      expect(Array.isArray((result as any).teethNumbers)).toBe(true);
-      expect((result as any).teethNumbers).toEqual([]);
+      expect(Array.isArray(result.teethNumbers)).toBe(true);
+      expect(result.teethNumbers).toEqual([]);
     });
 
     it('创建治疗项目时应包含 clinicId', async () => {
@@ -104,9 +105,9 @@ describe('TreatmentsService', () => {
       });
 
       const rows = db.getTableData('Treatment');
-      const created = rows.find(r => r.id === (result as any).id);
+      const created = rows.find(r => r.id === result.id);
       expect(created).toBeDefined();
-      expect(created.clinicId).toBe('test-clinic-001');
+      expect(created!.clinicId).toBe('test-clinic-001');
     });
 
     it('创建治疗项目时应写入审计日志', async () => {
@@ -120,7 +121,7 @@ describe('TreatmentsService', () => {
       });
 
       const auditLogs = db.getTableData('AuditLog');
-      const log = auditLogs.find(l => l.targetId === (result as any).id && l.type === 'TREATMENT_CREATE');
+      const log = auditLogs.find(l => l.targetId === result.id && l.type === 'TREATMENT_CREATE');
       expect(log).toBeDefined();
     });
 
@@ -135,8 +136,8 @@ describe('TreatmentsService', () => {
       });
 
       const rows = db.getTableData('Treatment');
-      const created = rows.find(r => r.id === (result as any).id);
-      expect(created.quantity).toBe(1);
+      const created = rows.find(r => r.id === result.id);
+      expect(created!.quantity).toBe(1);
     });
   });
 
@@ -150,7 +151,7 @@ describe('TreatmentsService', () => {
 
       const result = await service.update('trt-001', { status: 'IN_PROGRESS' } as any);
 
-      expect((result as any).status).toBe('IN_PROGRESS');
+      expect(result.status).toBe('IN_PROGRESS');
     });
 
     it('合法状态流转 PLANNED → COMPLETED 应成功', async () => {
@@ -160,7 +161,7 @@ describe('TreatmentsService', () => {
 
       const result = await service.update('trt-001', { status: 'COMPLETED' } as any);
 
-      expect((result as any).status).toBe('COMPLETED');
+      expect(result.status).toBe('COMPLETED');
     });
 
     it('合法状态流转 PLANNED → CANCELLED 应成功', async () => {
@@ -170,7 +171,7 @@ describe('TreatmentsService', () => {
 
       const result = await service.update('trt-001', { status: 'CANCELLED' } as any);
 
-      expect((result as any).status).toBe('CANCELLED');
+      expect(result.status).toBe('CANCELLED');
     });
 
     it('合法状态流转 IN_PROGRESS → COMPLETED 应成功', async () => {
@@ -180,7 +181,7 @@ describe('TreatmentsService', () => {
 
       const result = await service.update('trt-001', { status: 'COMPLETED' } as any);
 
-      expect((result as any).status).toBe('COMPLETED');
+      expect(result.status).toBe('COMPLETED');
     });
 
     it('合法状态流转 IN_PROGRESS → CANCELLED 应成功', async () => {
@@ -190,7 +191,7 @@ describe('TreatmentsService', () => {
 
       const result = await service.update('trt-001', { status: 'CANCELLED' } as any);
 
-      expect((result as any).status).toBe('CANCELLED');
+      expect(result.status).toBe('CANCELLED');
     });
 
     it('非法状态流转 COMPLETED → IN_PROGRESS 应抛出 BusinessValidationException', async () => {
@@ -240,8 +241,8 @@ describe('TreatmentsService', () => {
 
       const result = await service.update('trt-001', { remark: '更新备注' });
 
-      expect((result as any).remark).toBe('更新备注');
-      expect((result as any).status).toBe('PLANNED');
+      expect(result.remark).toBe('更新备注');
+      expect(result.status).toBe('PLANNED');
     });
 
     it('相同状态重复更新不应抛出异常', async () => {
@@ -251,7 +252,7 @@ describe('TreatmentsService', () => {
 
       const result = await service.update('trt-001', { status: 'PLANNED' } as any);
 
-      expect((result as any).status).toBe('PLANNED');
+      expect(result.status).toBe('PLANNED');
     });
 
     it('更新治疗项目应写入审计日志', async () => {
@@ -280,7 +281,7 @@ describe('TreatmentsService', () => {
       const rows = db.getTableData('Treatment');
       const deleted = rows.find(r => r.id === 'trt-003');
       expect(deleted).toBeDefined();
-      expect(deleted.deletedAt).toBeTruthy();
+      expect(deleted!.deletedAt).toBeTruthy();
     });
   });
 
@@ -294,8 +295,8 @@ describe('TreatmentsService', () => {
 
       const result = await service.findOne('trt-004');
 
-      expect(Array.isArray((result as any).teethNumbers)).toBe(true);
-      expect((result as any).teethNumbers).toEqual([11, 12, 13, 21]);
+      expect(Array.isArray(result.teethNumbers)).toBe(true);
+      expect(result.teethNumbers).toEqual([11, 12, 13, 21]);
     });
 
     it('teethNumbers 为空数组字符串时应被解析为空数组', async () => {
@@ -305,8 +306,8 @@ describe('TreatmentsService', () => {
 
       const result = await service.findOne('trt-005');
 
-      expect(Array.isArray((result as any).teethNumbers)).toBe(true);
-      expect((result as any).teethNumbers).toEqual([]);
+      expect(Array.isArray(result.teethNumbers)).toBe(true);
+      expect(result.teethNumbers).toEqual([]);
     });
   });
 
@@ -355,7 +356,7 @@ describe('TreatmentsService', () => {
       const result = await service.findMany({ patientId: 'patient-001' });
 
       for (const item of result.items) {
-        expect(Array.isArray((item as any).teethNumbers)).toBe(true);
+        expect(Array.isArray(item.teethNumbers)).toBe(true);
       }
     });
   });
@@ -373,10 +374,10 @@ describe('TreatmentsService', () => {
       });
 
       expect(result).toBeDefined();
-      expect((result as any).code).toBe('C001');
-      expect((result as any).name).toBe('根管治疗');
-      expect((result as any).category).toBe('治疗');
-      expect((result as any).price).toBe(500);
+      expect(result!.code).toBe('C001');
+      expect(result!.name).toBe('根管治疗');
+      expect(result!.category).toBe('治疗');
+      expect(result!.price).toBe(500);
     });
 
     it('创建治疗项目目录时应包含 clinicId', async () => {
@@ -387,7 +388,7 @@ describe('TreatmentsService', () => {
         price: 300,
       });
 
-      expect((result as any).clinicId).toBe('test-clinic-001');
+      expect((result! as unknown as Record<string, unknown>).clinicId).toBe('test-clinic-001');
     });
 
     it('创建治疗项目目录应写入审计日志', async () => {
@@ -399,7 +400,7 @@ describe('TreatmentsService', () => {
       });
 
       const auditLogs = db.getTableData('AuditLog');
-      const log = auditLogs.find(l => l.targetId === (result as any).id && l.type === 'TREATMENT_CATALOG_CREATE');
+      const log = auditLogs.find(l => l.targetId === result!.id && l.type === 'TREATMENT_CATALOG_CREATE');
       expect(log).toBeDefined();
     });
   });
@@ -413,13 +414,13 @@ describe('TreatmentsService', () => {
         price: 500,
       });
 
-      const result = await service.updateCatalog((created as any).id, {
+      const result = await service.updateCatalog(created!.id, {
         name: '前牙根管治疗',
         price: 600,
       });
 
-      expect((result as any).name).toBe('前牙根管治疗');
-      expect((result as any).price).toBe(600);
+      expect(result!.name).toBe('前牙根管治疗');
+      expect(result!.price).toBe(600);
     });
 
     it('更新部分字段不影响其他字段', async () => {
@@ -430,13 +431,13 @@ describe('TreatmentsService', () => {
         price: 300,
       });
 
-      const result = await service.updateCatalog((created as any).id, {
+      const result = await service.updateCatalog(created!.id, {
         price: 350,
       });
 
-      expect((result as any).name).toBe('补牙');
-      expect((result as any).category).toBe('修复');
-      expect((result as any).price).toBe(350);
+      expect(result!.name).toBe('补牙');
+      expect(result!.category).toBe('修复');
+      expect(result!.price).toBe(350);
     });
 
     it('更新应写入审计日志', async () => {
@@ -447,10 +448,10 @@ describe('TreatmentsService', () => {
         price: 200,
       });
 
-      await service.updateCatalog((created as any).id, { price: 250 });
+      await service.updateCatalog(created!.id, { price: 250 });
 
       const auditLogs = db.getTableData('AuditLog');
-      const log = auditLogs.find(l => l.targetId === (created as any).id && l.type === 'TREATMENT_CATALOG_UPDATE');
+      const log = auditLogs.find(l => l.targetId === created!.id && l.type === 'TREATMENT_CATALOG_UPDATE');
       expect(log).toBeDefined();
     });
   });
@@ -464,10 +465,10 @@ describe('TreatmentsService', () => {
         price: 500,
       });
 
-      const result = await service.deleteCatalog((created as any).id);
+      const result = await service.deleteCatalog(created!.id);
 
       expect(result).toBeDefined();
-      expect((result as any).id).toBe((created as any).id);
+      expect(result.id).toBe(created!.id);
     });
 
     it('删除不存在的治疗项目目录应抛出 BusinessNotFoundException', async () => {
@@ -482,12 +483,12 @@ describe('TreatmentsService', () => {
         price: 300,
       });
 
-      await service.deleteCatalog((created as any).id);
+      await service.deleteCatalog(created!.id);
 
       const rows = db.getTableData('TreatmentCatalog');
-      const deleted = rows.find(r => r.id === (created as any).id);
+      const deleted = rows.find(r => r.id === created!.id);
       expect(deleted).toBeDefined();
-      expect(deleted.deletedAt).toBeTruthy();
+      expect(deleted!.deletedAt).toBeTruthy();
     });
 
     it('删除应写入审计日志', async () => {
@@ -498,10 +499,10 @@ describe('TreatmentsService', () => {
         price: 150,
       });
 
-      await service.deleteCatalog((created as any).id);
+      await service.deleteCatalog(created!.id);
 
       const auditLogs = db.getTableData('AuditLog');
-      const log = auditLogs.find(l => l.targetId === (created as any).id && l.type === 'TREATMENT_CATALOG_DELETE');
+      const log = auditLogs.find(l => l.targetId === created!.id && l.type === 'TREATMENT_CATALOG_DELETE');
       expect(log).toBeDefined();
     });
   });
@@ -519,7 +520,7 @@ describe('TreatmentsService', () => {
 
     it('删除后的目录不应被查询到', async () => {
       const created = await service.createCatalog({ code: 'C001', name: '根管治疗', category: '治疗', price: 500 });
-      await service.deleteCatalog((created as any).id);
+      await service.deleteCatalog(created!.id);
 
       const result = await service.findCatalog();
 
@@ -530,7 +531,7 @@ describe('TreatmentsService', () => {
       const cachedData = [{ id: 'cached-1', code: 'CACHED', name: '缓存项', category: '治疗', price: 100 }];
       const cacheService = createMockCacheService();
       cacheService.get = jest.fn().mockReturnValue(cachedData);
-      const serviceWithCache = new TreatmentsService(db as any, createMockClinicContext(), cacheService);
+      const serviceWithCache = new TreatmentsService(asDbService(db), createMockClinicContext(), cacheService);
 
       const result = await serviceWithCache.findCatalog();
 
@@ -570,8 +571,8 @@ describe('TreatmentsService', () => {
       });
 
       const rows = db.getTableData('TreatmentCatalog');
-      const created = rows.find(r => r.id === (result as any).id);
-      expect(created.remark).toBeNull();
+      const created = rows.find(r => r.id === result!.id);
+      expect(created!.remark).toBeNull();
     });
 
     it('传入 remark 时 remark 应正确存储', async () => {
@@ -584,13 +585,13 @@ describe('TreatmentsService', () => {
       });
 
       const rows = db.getTableData('TreatmentCatalog');
-      const created = rows.find(r => r.id === (result as any).id);
-      expect(created.remark).toBe('特殊说明');
+      const created = rows.find(r => r.id === result!.id);
+      expect(created!.remark).toBe('特殊说明');
     });
 
     it('创建目录项应失效目录缓存', async () => {
       const cacheService = createMockCacheService();
-      const serviceWithCache = new TreatmentsService(db as any, createMockClinicContext(), cacheService);
+      const serviceWithCache = new TreatmentsService(asDbService(db), createMockClinicContext(), cacheService);
 
       await serviceWithCache.createCatalog({
         code: 'C001',
@@ -614,11 +615,11 @@ describe('TreatmentsService', () => {
         price: 500,
       });
 
-      const result = await service.updateCatalog((created as any).id, {
+      const result = await service.updateCatalog(created!.id, {
         category: '牙体牙髓',
       });
 
-      expect((result as any).category).toBe('牙体牙髓');
+      expect(result!.category).toBe('牙体牙髓');
     });
 
     it('更新 remark 字段应成功', async () => {
@@ -629,11 +630,11 @@ describe('TreatmentsService', () => {
         price: 300,
       });
 
-      const result = await service.updateCatalog((created as any).id, {
+      const result = await service.updateCatalog(created!.id, {
         remark: '更新后的备注',
       });
 
-      expect((result as any).remark).toBe('更新后的备注');
+      expect(result!.remark).toBe('更新后的备注');
     });
 
     it('更新所有可更新字段应成功', async () => {
@@ -644,17 +645,17 @@ describe('TreatmentsService', () => {
         price: 100,
       });
 
-      const result = await service.updateCatalog((created as any).id, {
+      const result = await service.updateCatalog(created!.id, {
         name: '更新名称',
         category: '更新类别',
         price: 200,
         remark: '更新备注',
       });
 
-      expect((result as any).name).toBe('更新名称');
-      expect((result as any).category).toBe('更新类别');
-      expect((result as any).price).toBe(200);
-      expect((result as any).remark).toBe('更新备注');
+      expect(result!.name).toBe('更新名称');
+      expect(result!.category).toBe('更新类别');
+      expect(result!.price).toBe(200);
+      expect(result!.remark).toBe('更新备注');
     });
 
     it('空对象更新不应执行 SQL 且不应写审计日志', async () => {
@@ -666,7 +667,7 @@ describe('TreatmentsService', () => {
       });
 
       const auditLogsBefore = db.getTableData('AuditLog').length;
-      const result = await service.updateCatalog((created as any).id, {});
+      const result = await service.updateCatalog(created!.id, {});
 
       expect(result).toBeDefined();
       // 空更新不应写入新的审计日志
@@ -676,7 +677,7 @@ describe('TreatmentsService', () => {
 
     it('更新目录项应失效目录缓存', async () => {
       const cacheService = createMockCacheService();
-      const serviceWithCache = new TreatmentsService(db as any, createMockClinicContext(), cacheService);
+      const serviceWithCache = new TreatmentsService(asDbService(db), createMockClinicContext(), cacheService);
       const created = await serviceWithCache.createCatalog({
         code: 'C005',
         name: '测试',
@@ -685,7 +686,7 @@ describe('TreatmentsService', () => {
       });
 
       (cacheService.delPattern as jest.Mock).mockClear();
-      await serviceWithCache.updateCatalog((created as any).id, { price: 200 });
+      await serviceWithCache.updateCatalog(created!.id, { price: 200 });
 
       expect(cacheService.delPattern).toHaveBeenCalled();
     });
@@ -713,8 +714,8 @@ describe('TreatmentsService', () => {
       });
 
       const rows = db.getTableData('Treatment');
-      const created = rows.find(r => r.id === (result as any).id);
-      expect(created.visitId).toBeNull();
+      const created = rows.find(r => r.id === result.id);
+      expect(created!.visitId).toBeNull();
     });
 
     it('不传 remark 时 remark 应为 null', async () => {
@@ -728,8 +729,8 @@ describe('TreatmentsService', () => {
       });
 
       const rows = db.getTableData('Treatment');
-      const created = rows.find(r => r.id === (result as any).id);
-      expect(created.remark).toBeNull();
+      const created = rows.find(r => r.id === result.id);
+      expect(created!.remark).toBeNull();
     });
 
     it('传入 remark 时 remark 应正确存储', async () => {
@@ -744,8 +745,8 @@ describe('TreatmentsService', () => {
       });
 
       const rows = db.getTableData('Treatment');
-      const created = rows.find(r => r.id === (result as any).id);
-      expect(created.remark).toBe('特殊说明');
+      const created = rows.find(r => r.id === result.id);
+      expect(created!.remark).toBe('特殊说明');
     });
   });
 
@@ -763,8 +764,8 @@ describe('TreatmentsService', () => {
 
       const result = await service.findOne('trt-null');
 
-      expect(Array.isArray((result as any).teethNumbers)).toBe(true);
-      expect((result as any).teethNumbers).toEqual([]);
+      expect(Array.isArray(result.teethNumbers)).toBe(true);
+      expect(result.teethNumbers).toEqual([]);
     });
   });
 

@@ -8,13 +8,13 @@ import { maskPhone } from '../../../../common/utils/security/mask';
 export interface CreateChargeData {
   id: string;
   patientId: string;
-  visitId?: string | null;
-  doctorId?: string | null;
+  visitId?: string;
+  doctorId?: string;
   number: string;
   totalAmount: number;
   status: string;
-  remark?: string | null;
-  clinicId?: string | null;
+  remark?: string;
+  clinicId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -22,15 +22,15 @@ export interface CreateChargeData {
 export interface CreateChargeItemData {
   id: string;
   chargeId: string;
-  treatmentId?: string | null;
-  inventoryItemId?: string | null;
+  treatmentId?: string;
+  inventoryItemId?: string;
   name: string;
   category: string;
   price: number;
   quantity: number;
-  teethNumbers?: string | null;
+  teethNumbers?: string;
   subtotal: number;
-  clinicId?: string | null;
+  clinicId?: string;
 }
 
 export interface ListChargesOptions {

@@ -46,10 +46,19 @@ interface RefreshTokenResult {
 }
 
 export interface ListUsersResult {
-  items: unknown[];
+  items: UserSummaryRow[];
   total: number;
   page: number;
   pageSize: number;
+}
+
+export interface UserSummaryRow {
+  id: string;
+  name: string;
+  role: string;
+  username: string;
+  phone: string | null;
+  createdAt: string;
 }
 
 interface UserRow {
@@ -173,10 +182,10 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     // P3-1: 合并"重置登录尝试"与"写入 refresh token"为单个原子 UPDATE，避免中间崩溃导致状态不一致
     this.dbService.prepare("UPDATE User SET loginAttempts = 0, lockedUntil = NULL, refreshToken = ?, refreshTokenExpiresAt = ?, updatedAt = ? WHERE id = ?")
       .run(refreshTokenHash, refreshExpiresAt, new Date().toISOString(), user.id);
-    this.auditLogService.logAudit(this.dbService, "LOGIN", user.id, "User", user.clinicId, {
+    this.auditLogService.logAudit(this.dbService, "LOGIN", user.id, "User", user.clinicId ?? '', {
       afterData: { username: user.username },
     });
-    return { access_token, refresh_token, user: { id: user.id, username: user.username, name: user.name, role: user.role, clinicId: user.clinicId }, needChangePassword };
+    return { access_token, refresh_token, user: { id: user.id, username: user.username, name: user.name ?? '', role: user.role ?? '', clinicId: user.clinicId ?? '' }, needChangePassword };
   }
 
   async validateById(id: string, tokenVersion?: number): Promise<UserInfo | null> {
@@ -200,13 +209,13 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     if (!user?.active) return null;
     const currentTokenVersion = Number(user.tokenVersion) || 0;
     if (tokenVersion !== undefined && tokenVersion !== currentTokenVersion) return null;
-    const userInfo: UserInfo = { id: user.id, username: user.username, name: user.name, role: user.role, clinicId: user.clinicId };
+    const userInfo: UserInfo = { id: user.id, username: user.username, name: user.name ?? '', role: user.role ?? '', clinicId: user.clinicId ?? '' };
     // 将 tokenVersion 一并写入缓存对象，命中时用于复核（不暴露给外部类型）
     this.cache.set(cacheKey, { ...userInfo, tokenVersion: currentTokenVersion }, USER_INFO_CACHE_TTL_MS);
     return userInfo;
   }
 
-  async listUsers(role?: string): Promise<ListUsersResult | unknown[]> {
+  async listUsers(role?: string): Promise<ListUsersResult | UserSummaryRow[]> {
     try {
       const clinicId = this.clinicContext.getClinicId();
       const page = 1;
@@ -222,16 +231,16 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       const countParams: unknown[] = [clinicId];
       if (role) { countQ += " AND role = ?"; countParams.push(role); }
       const total = (this.dbService.prepare(countQ).get(...countParams) as { total: number }).total;
-      const items = this.dbService.prepare(query).all(...params);
+      const items = this.dbService.prepare(query).all(...params) as UserSummaryRow[];
       return { items, total, page, pageSize };
     } catch (err: unknown) {
       this.logger.warn('listUsers pagination query failed, falling back to simple query', err instanceof Error ? err.message : String(err));
       const clinicId = this.clinicContext.getClinicId();
-      return this.dbService.prepare("SELECT id, name, role, username, phone, createdAt FROM User WHERE active = 1 AND clinicId = ? ORDER BY createdAt DESC LIMIT 100 OFFSET 0").all(clinicId);
+      return this.dbService.prepare("SELECT id, name, role, username, phone, createdAt FROM User WHERE active = 1 AND clinicId = ? ORDER BY createdAt DESC LIMIT 100 OFFSET 0").all(clinicId) as UserSummaryRow[];
     }
   }
 
-  async createUser(dto: { username: string; password: string; name: string; role: string; phone?: string }) {
+  async createUser(dto: { username: string; password: string; name: string; role: string; phone?: string }): Promise<UserSummaryRow> {
     const clinicId = this.clinicContext.getClinicId();
     const existing = this.dbService.prepare("SELECT id FROM User WHERE username = ? AND clinicId = ?").get(dto.username, clinicId);
     if (existing) throw new BusinessValidationException("用户名已存在");
@@ -244,10 +253,10 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     this.auditLogService.logAudit(this.dbService, "USER_CREATE", userId, "User", clinicId, {
       afterData: { username: dto.username, name: dto.name, role: dto.role },
     });
-    return this.dbService.prepare("SELECT id, name, role, username, phone, createdAt FROM User WHERE username = ? AND clinicId = ?").get(dto.username, clinicId);
+    return this.dbService.prepare("SELECT id, name, role, username, phone, createdAt FROM User WHERE username = ? AND clinicId = ?").get(dto.username, clinicId) as UserSummaryRow;
   }
 
-  async updateUser(id: string, dto: { name?: string; role?: string; phone?: string; active?: number }) {
+  async updateUser(id: string, dto: { name?: string; role?: string; phone?: string; active?: number }): Promise<UserSummaryRow> {
     const clinicId = this.clinicContext.getClinicId();
     const user = this.dbService.prepare("SELECT id, name, role, phone FROM User WHERE id = ? AND clinicId = ?").get(id, clinicId) as UserRow | undefined;
     if (!user) throw new BusinessNotFoundException("用户不存在");
@@ -269,7 +278,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       beforeData,
       afterData,
     });
-    return this.dbService.prepare("SELECT id, name, role, username, phone, createdAt FROM User WHERE id = ?").get(id);
+    return this.dbService.prepare("SELECT id, name, role, username, phone, createdAt FROM User WHERE id = ?").get(id) as UserSummaryRow;
   }
 
   async deleteUser(id: string) {
@@ -291,7 +300,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     const clinicId = this.clinicContext.getClinicId();
     const user = this.dbService.prepare("SELECT id, passwordHash, active FROM User WHERE id = ? AND clinicId = ?").get(userId, clinicId) as UserRow;
     if (!user?.active) throw new BusinessNotFoundException("用户不存在或已禁用");
-    const ok = await bcrypt.compare(dto.oldPassword, user.passwordHash);
+    const ok = await bcrypt.compare(dto.oldPassword, user.passwordHash ?? '');
     if (!ok) throw new BusinessValidationException("原密码错误");
     if (dto.oldPassword === dto.newPassword) throw new BusinessValidationException("新密码不能与原密码相同");
     const passwordHash = await bcrypt.hash(dto.newPassword, this.bcryptRounds);
@@ -372,9 +381,9 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
         user: {
           id: result.user.id,
           username: result.user.username,
-          name: result.user.name,
-          role: result.user.role,
-          clinicId: result.user.clinicId,
+          name: result.user.name ?? '',
+          role: result.user.role ?? '',
+          clinicId: result.user.clinicId ?? '',
         },
       };
     } catch (err: unknown) {

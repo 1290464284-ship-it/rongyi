@@ -1,7 +1,7 @@
 /* eslint-disable sonarjs/no-hardcoded-ip */
 /* eslint-disable security/detect-non-literal-fs-filename -- 测试文件使用临时日志文件路径 */
 import { OperationLogsService } from './operation-logs.service';
-import { MockDbService } from '../../../db/__mocks__/db-service.mock';
+import { asDbService, MockDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -29,7 +29,7 @@ describe('OperationLogsService', () => {
   beforeEach(() => {
     db = new MockDbService();
     (db as any).tables.set('OperationLog', new Map());
-    service = new OperationLogsService(db as any, createMockClinicContext());
+    service = new OperationLogsService(asDbService(db), createMockClinicContext());
   });
 
   afterEach(() => {
@@ -118,14 +118,14 @@ describe('OperationLogsService', () => {
     });
 
     it('写入时使用当前 clinicId', () => {
-      const ctxService = new OperationLogsService(db as any, createMockClinicContext('clinic-A'));
+      const ctxService = new OperationLogsService(asDbService(db), createMockClinicContext('clinic-A'));
       (ctxService as any).batchInsert([{ action: 'TEST' }]);
       const data = db.getTableData('OperationLog');
       expect(data[0].clinicId).toBe('clinic-A');
     });
 
     it('clinicId 为 null 时存储 null', () => {
-      const ctxService = new OperationLogsService(db as any, createMockClinicContext(null));
+      const ctxService = new OperationLogsService(asDbService(db), createMockClinicContext(null));
       (ctxService as any).batchInsert([{ action: 'TEST' }]);
       const data = db.getTableData('OperationLog');
       expect(data[0].clinicId).toBeNull();
@@ -204,7 +204,7 @@ describe('OperationLogsService', () => {
     });
 
     it('无 clinicId 时抛出 CLINIC_CONTEXT_MISSING', async () => {
-      const noCtxService = new OperationLogsService(db as any, createMockClinicContext(null));
+      const noCtxService = new OperationLogsService(asDbService(db), createMockClinicContext(null));
       await expect(noCtxService.findMany({})).rejects.toThrow(/CLINIC_CONTEXT_MISSING|诊所上下文缺失/);
     });
   });
@@ -297,7 +297,7 @@ describe('OperationLogsService', () => {
       jest.isolateModules(() => {
         const reloaded = require('./operation-logs.service');
         // 实例化后从 options.dataDir 读 DATA_DIR
-        const inst = new reloaded.OperationLogsService(db as any, createMockClinicContext());
+        const inst = new reloaded.OperationLogsService(asDbService(db), createMockClinicContext());
         capturedDataDir = (inst as unknown as { options: { dataDir: string } }).options.dataDir;
       });
       expect(capturedDataDir).toBe('/custom/path/to');
@@ -361,7 +361,7 @@ describe('OperationLogsService', () => {
       let capturedDataDir: string | undefined;
       jest.isolateModules(() => {
         const reloaded = require('./operation-logs.service');
-        const inst = new reloaded.OperationLogsService(db as any, createMockClinicContext());
+        const inst = new reloaded.OperationLogsService(asDbService(db), createMockClinicContext());
         capturedDataDir = (inst as unknown as { options: { dataDir: string } }).options.dataDir;
       });
       // path.dirname('') 返回 '.'
@@ -380,7 +380,7 @@ describe('OperationLogsService', () => {
 
     it('insertOne 所有可选字段均提供且 clinicId 为 null 时正确写入', () => {
       // 覆盖 insertOne 中 ?? null 的左分支（字段已定义）和 clinicId || null 的右分支
-      const nullCtxService = new OperationLogsService(db as any, createMockClinicContext(null));
+      const nullCtxService = new OperationLogsService(asDbService(db), createMockClinicContext(null));
       (nullCtxService as any).insertOne({
         userId: 'u1',
         userName: '用户1',

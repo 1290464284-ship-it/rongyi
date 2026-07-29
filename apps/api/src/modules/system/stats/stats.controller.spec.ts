@@ -42,7 +42,7 @@ describe('StatsController', () => {
 
   describe('revenue', () => {
     it('调用 service.revenue 不传参数', async () => {
-      const expected = [];
+      const expected: unknown[] = [];
       service.revenue.mockResolvedValue(expected);
 
       const result = await controller.revenue();
@@ -62,7 +62,7 @@ describe('StatsController', () => {
 
   describe('doctorWorkload', () => {
     it('调用 service.doctorWorkload 不传参数', async () => {
-      const expected = [];
+      const expected: unknown[] = [];
       service.doctorWorkload.mockResolvedValue(expected);
 
       const result = await controller.doctorWorkload();
@@ -82,7 +82,7 @@ describe('StatsController', () => {
 
   describe('patientGrowth', () => {
     it('调用 service.getPatientGrowth 不传参数', async () => {
-      const expected = [];
+      const expected: unknown[] = [];
       service.getPatientGrowth.mockResolvedValue(expected);
 
       const result = await controller.patientGrowth();
@@ -102,7 +102,7 @@ describe('StatsController', () => {
 
   describe('revenueByCategory', () => {
     it('调用 service.getRevenueByCategory 不传参数', async () => {
-      const expected = [];
+      const expected: unknown[] = [];
       service.getRevenueByCategory.mockResolvedValue(expected);
 
       const result = await controller.revenueByCategory();
@@ -122,7 +122,7 @@ describe('StatsController', () => {
 
   describe('revenueByDoctor', () => {
     it('调用 service.getRevenueByDoctor 不传参数', async () => {
-      const expected = [];
+      const expected: unknown[] = [];
       service.getRevenueByDoctor.mockResolvedValue(expected);
 
       const result = await controller.revenueByDoctor();
@@ -153,7 +153,7 @@ describe('StatsController', () => {
 
   describe('appointmentStats', () => {
     it('调用 service.getAppointmentStats 不传参数', async () => {
-      const expected = [];
+      const expected: unknown[] = [];
       service.getAppointmentStats.mockResolvedValue(expected);
 
       const result = await controller.appointmentStats();
@@ -173,7 +173,7 @@ describe('StatsController', () => {
 
   describe('appointmentStatusStats', () => {
     it('调用 service.getAppointmentStats 不传参数', async () => {
-      const expected = [];
+      const expected: unknown[] = [];
       service.getAppointmentStats.mockResolvedValue(expected);
 
       const result = await controller.appointmentStatusStats();
@@ -204,7 +204,7 @@ describe('StatsController', () => {
 
   describe('chargeStats', () => {
     it('调用 service.getChargeStats 不传参数', async () => {
-      const expected = [];
+      const expected: unknown[] = [];
       service.getChargeStats.mockResolvedValue(expected);
 
       const result = await controller.chargeStats();
@@ -224,7 +224,7 @@ describe('StatsController', () => {
 
   describe('patientStats', () => {
     it('调用 service.getPatientStats 不传参数', async () => {
-      const expected = [];
+      const expected: unknown[] = [];
       service.getPatientStats.mockResolvedValue(expected);
 
       const result = await controller.patientStats();

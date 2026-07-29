@@ -1,6 +1,6 @@
 import { DrugCatalogService } from './drug-catalog.service';
 import { BusinessValidationException } from '@common/errors';
-import { MockDbService } from '../../../db/__mocks__/db-service.mock';
+import { MockDbService , asDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import { AuditLogService } from '../../../common/services/audit-log.service';
 import { CacheService } from '../../../common/services/cache.service';
@@ -24,7 +24,7 @@ describe('DrugCatalogService', () => {
   beforeEach(() => {
     db = new MockDbService();
     (db as unknown as { tables: Map<string, Map<string, unknown>> }).tables.set('DrugCatalog', new Map());
-    service = new DrugCatalogService(db as any, createMockClinicContext(), { logAudit: jest.fn() } as unknown as AuditLogService, new CacheService());
+    service = new DrugCatalogService(asDbService(db), createMockClinicContext(), { logAudit: jest.fn() } as unknown as AuditLogService, new CacheService());
   });
 
   afterEach(() => {

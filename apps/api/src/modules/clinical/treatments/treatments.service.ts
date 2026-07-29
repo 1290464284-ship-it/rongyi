@@ -3,7 +3,7 @@ import { Injectable } from '@nestjs/common';
 
 import { DbService } from "../../../db/db.service";
 import { BaseService } from "../../../common/services/base.service";
-import { Treatment, TreatmentStatus } from "@dental/shared";
+import { Treatment, TreatmentStatus, TreatmentCatalog } from "@dental/shared";
 import * as crypto from "node:crypto";
 import { ClinicContextService } from "../../../common/services/clinic-context.service";
 import { PAGINATION } from "../../../common/constants/pagination";
@@ -20,7 +20,7 @@ import { yuanToCents, centsToYuan } from "../../../common/utils/format/money.uti
 
 interface CreateTreatmentDto {
   patientId: string;
-  visitId?: string | null;
+  visitId?: string;
   doctorId: string;
   code: string;
   name: string;
@@ -28,7 +28,7 @@ interface CreateTreatmentDto {
   price: number;
   quantity?: number;
   teethNumbers?: number[];
-  remark?: string | null;
+  remark?: string;
 }
 
 @Injectable()
@@ -40,7 +40,7 @@ export class TreatmentsService extends BaseService<Treatment> {
     private cache: CacheService,
   ) {
     // P0 修复：添加 moneyFields=['price']，使 BaseService.findOne/findMany 自动转换（分→元）
-    super(dbService, clinicContext, "Treatment", ["teethNumbers"], ["name"], [], true, [], undefined, undefined, ['price']);
+    super(dbService, clinicContext, { tableName: "Treatment", jsonFields: ["teethNumbers"], searchFields: ["name"], moneyFields: ['price'] });
   }
 
   async findMany(params: { patientId?: string; visitId?: string; toothNumber?: number; status?: TreatmentStatus; page?: number; pageSize?: number }) {
@@ -65,7 +65,7 @@ export class TreatmentsService extends BaseService<Treatment> {
     // P0 修复：自定义 SQL 查询的 price 为 cents，需手动转回 yuan
     items.forEach(item => {
       if (typeof item.price === 'number') {
-        (item as Record<string, unknown>).price = centsToYuan(item.price);
+        (item as unknown as Record<string, unknown>).price = centsToYuan(item.price);
       }
     });
     const total = (this.dbService.prepare(countQuery).get(...cp) as { count: number })?.count || 0;
@@ -172,7 +172,7 @@ export class TreatmentsService extends BaseService<Treatment> {
   async findCatalog(page = 1, pageSize: number = PAGINATION.DEFAULT_PAGE_SIZE_XLARGE) {
     // P4-2: 娌荤枟鐩綍涓哄瓧鍏哥被鏁版嵁锛堝彉鏇撮鐜囦綆銆佽棰戠巼楂橈級锛屾寜璇婃墍 + 鍒嗛〉缂撳瓨
     const clinicId = this.clinicContext.getClinicId();
-    const cacheKey = `${buildDictionaryCacheKey(DICTIONARY_CACHE_KEYS.TREATMENT_CATALOG, clinicId)}:p${page}:s${pageSize}`;
+    const cacheKey = `${buildDictionaryCacheKey(DICTIONARY_CACHE_KEYS.TREATMENT_CATALOG, clinicId ?? '')}:p${page}:s${pageSize}`;
     const cached = this.cache.get<unknown[]>(cacheKey);
     if (cached) return cached;
 
@@ -217,13 +217,13 @@ export class TreatmentsService extends BaseService<Treatment> {
     this.invalidateCatalogCache(clinicId);
     const { clause: createClause, params: clinicParams } = this.buildClinicClause();
     const createClinicCondition = createClause.replace(/^\s*AND\s+/i, '');
-    return this.baseRepository.findById(this.dbService, 'TreatmentCatalog', '*', id, createClinicCondition ? ['deletedAt IS NULL', createClinicCondition] : ['deletedAt IS NULL'], clinicParams);
+    return this.baseRepository.findById<TreatmentCatalog>(this.dbService, 'TreatmentCatalog', '*', id, createClinicCondition ? ['deletedAt IS NULL', createClinicCondition] : ['deletedAt IS NULL'], clinicParams);
   }
 
   async updateCatalog(id: string, dto: UpdateTreatmentCatalogDto) {
     const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
     const clinicCondition = clinicClause.replace(/^\s*AND\s+/i, '');
-    const existing = this.baseRepository.findById(this.dbService, 'TreatmentCatalog', '*', id, clinicCondition ? ['deletedAt IS NULL', clinicCondition] : ['deletedAt IS NULL'], clinicParams);
+    const existing = this.baseRepository.findById<TreatmentCatalog>(this.dbService, 'TreatmentCatalog', '*', id, clinicCondition ? ['deletedAt IS NULL', clinicCondition] : ['deletedAt IS NULL'], clinicParams);
     const updates: string[] = [];
     const params: unknown[] = [];
     if (dto.name !== undefined) { updates.push("name = ?"); params.push(dto.name); }
@@ -232,19 +232,19 @@ export class TreatmentsService extends BaseService<Treatment> {
     if (dto.remark !== undefined) { updates.push("remark = ?"); params.push(dto.remark); }
     if (updates.length > 0) {
       this.baseRepository.update(this.dbService, 'TreatmentCatalog', updates, params, id, clinicClause, clinicParams);
-      this.logAudit(this.dbService, AuditLogType.TREATMENT_CATALOG_UPDATE, id, "TreatmentCatalog", { beforeData: { name: (existing as Record<string, unknown>)?.name, category: (existing as Record<string, unknown>)?.category, price: (existing as Record<string, unknown>)?.price }, afterData: { name: dto.name ?? (existing as Record<string, unknown>)?.name, category: dto.category ?? (existing as Record<string, unknown>)?.category, price: dto.price ?? (existing as Record<string, unknown>)?.price } });
+      this.logAudit(this.dbService, AuditLogType.TREATMENT_CATALOG_UPDATE, id, "TreatmentCatalog", { beforeData: { name: existing?.name, category: existing?.category, price: existing?.price }, afterData: { name: dto.name ?? existing?.name, category: dto.category ?? existing?.category, price: dto.price ?? existing?.price } });
       // P4-2: 鏇存柊鐩綍椤瑰悗澶辨晥缂撳瓨
       const clinicId = this.clinicContext.getClinicId();
       this.invalidateCatalogCache(clinicId);
     }
     const clinicCondition2 = clinicClause.replace(/^\s*AND\s+/i, '');
-    return this.baseRepository.findById(this.dbService, 'TreatmentCatalog', '*', id, clinicCondition2 ? ['deletedAt IS NULL', clinicCondition2] : ['deletedAt IS NULL'], clinicParams);
+    return this.baseRepository.findById<TreatmentCatalog>(this.dbService, 'TreatmentCatalog', '*', id, clinicCondition2 ? ['deletedAt IS NULL', clinicCondition2] : ['deletedAt IS NULL'], clinicParams);
   }
 
   async deleteCatalog(id: string) {
     const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
     const clinicCondition3 = clinicClause.replace(/^\s*AND\s+/i, '');
-    const existing = this.baseRepository.findById(this.dbService, 'TreatmentCatalog', 'id', id, clinicCondition3 ? ['deletedAt IS NULL', clinicCondition3] : ['deletedAt IS NULL'], clinicParams);
+    const existing = this.baseRepository.findById<TreatmentCatalog>(this.dbService, 'TreatmentCatalog', 'id', id, clinicCondition3 ? ['deletedAt IS NULL', clinicCondition3] : ['deletedAt IS NULL'], clinicParams);
     if (!existing) throw new BusinessNotFoundException("治疗项目不存在");
     const now = new Date().toISOString();
     const clinicId = this.clinicContext.getClinicId();

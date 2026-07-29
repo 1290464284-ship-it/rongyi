@@ -229,7 +229,7 @@ describe('OperationLogsController', () => {
 
       expect(service.create).toHaveBeenCalledTimes(1);
       const callArg = service.create.mock.calls[0][0];
-      expect(callArg.target).toBeNull();
+      expect(callArg.target).toBeUndefined();
     });
   });
 });

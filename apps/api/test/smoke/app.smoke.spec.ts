@@ -99,12 +99,12 @@ describe('App Smoke Test', () => {
     ];
 
     it.each(publicRoutes)('公开路由 $method $path 应该存在', async ({ path, method }) => {
-      const response = await request(app.getHttpServer())[method.toLowerCase()](path);
+      const response = await (request(app.getHttpServer()) as any)[method.toLowerCase()](path);
       expect(response.status).not.toBe(404);
     });
 
     it.each(protectedRoutes)('受保护路由 $method $path 应该存在（返回 401 而非 404）', async ({ path, method }) => {
-      const response = await request(app.getHttpServer())[method.toLowerCase()](path);
+      const response = await (request(app.getHttpServer()) as any)[method.toLowerCase()](path);
       expect(response.status).not.toBe(404);
     });
   });

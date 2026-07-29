@@ -25,7 +25,7 @@ export class RevenueStatsService {
     const clinicId = this.clinicContext.getClinicId();
     const key = buildStatsCacheKey(
       STATS_CACHE_KEYS.REVENUE,
-      clinicId,
+      clinicId ?? '',
       params.startDate || '',
       params.endDate || '',
       params.groupBy || 'day',
@@ -56,7 +56,7 @@ export class RevenueStatsService {
     const clinicId = this.clinicContext.getClinicId();
     const key = buildStatsCacheKey(
       STATS_CACHE_KEYS.REVENUE_BY_CATEGORY,
-      clinicId,
+      clinicId ?? '',
       startDate || '',
       endDate || '',
     );
@@ -81,7 +81,7 @@ export class RevenueStatsService {
     const clinicId = this.clinicContext.getClinicId();
     const key = buildStatsCacheKey(
       STATS_CACHE_KEYS.REVENUE_BY_DOCTOR,
-      clinicId,
+      clinicId ?? '',
       startDate || '',
       endDate || '',
     );

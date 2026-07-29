@@ -1,6 +1,6 @@
 import { NotificationsService } from './notifications.service';
 import { BusinessNotFoundException, BusinessForbiddenException } from '@common/errors';
-import { MockDbService } from '../../db/__mocks__/db-service.mock';
+import { MockDbService , asDbService } from '../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../common/services/clinic-context.service';
 import { NotificationType, NotificationPriority } from './types/notification.types';
 
@@ -23,7 +23,7 @@ describe('NotificationsService', () => {
 
   beforeEach(() => {
     db = new MockDbService();
-    service = new NotificationsService(db as any, createMockClinicContext());
+    service = new NotificationsService(asDbService(db), createMockClinicContext());
   });
 
   afterEach(() => {
@@ -71,7 +71,7 @@ describe('NotificationsService', () => {
     });
 
     it('缺少诊所上下文时抛出 BusinessForbiddenException', async () => {
-      service = new NotificationsService(db as any, createMockClinicContext(null));
+      service = new NotificationsService(asDbService(db), createMockClinicContext(null));
       await expect(
         service.create({
           type: NotificationType.SYSTEM,
@@ -430,7 +430,7 @@ describe('NotificationsService', () => {
     });
 
     it('没有 userId 时返回诊所所有通知（包括广播）', async () => {
-      service = new NotificationsService(db as any, createMockClinicContext('test-clinic-001', null));
+      service = new NotificationsService(asDbService(db), createMockClinicContext('test-clinic-001', null));
       const result = await service.findMany();
       expect(result).toBeDefined();
       expect(result.items).toBeDefined();
@@ -1123,7 +1123,7 @@ describe('NotificationsService', () => {
     });
 
     it('缺少诊所上下文时抛出 BusinessForbiddenException', async () => {
-      service = new NotificationsService(db as any, createMockClinicContext(null));
+      service = new NotificationsService(asDbService(db), createMockClinicContext(null));
       await expect(
         service.sendToUser('user-001', {
           type: NotificationType.SYSTEM,
@@ -1157,7 +1157,7 @@ describe('NotificationsService', () => {
       });
 
       const serviceUser2 = new NotificationsService(
-        db as any,
+        asDbService(db),
         createMockClinicContext('test-clinic-001', 'user-002'),
       );
       const found = await serviceUser2.findOne(broadcast.id);
@@ -1176,7 +1176,7 @@ describe('NotificationsService', () => {
     });
 
     it('缺少诊所上下文时抛出 BusinessForbiddenException', async () => {
-      service = new NotificationsService(db as any, createMockClinicContext(null));
+      service = new NotificationsService(asDbService(db), createMockClinicContext(null));
       await expect(
         service.broadcastToClinic({
           type: NotificationType.SYSTEM,

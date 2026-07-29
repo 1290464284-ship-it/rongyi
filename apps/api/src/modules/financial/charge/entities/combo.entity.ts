@@ -2,9 +2,9 @@
 
 export interface ChargeCombo extends BaseEntity {
   name: string;
-  category?: string | null;
+  category?: string;
   isPublic?: number;
-  creatorId?: string | null;
-  clinicId?: string | null;
-  deletedAt?: string | null;
+  creatorId?: string;
+  clinicId?: string;
+  deletedAt?: string;
 }

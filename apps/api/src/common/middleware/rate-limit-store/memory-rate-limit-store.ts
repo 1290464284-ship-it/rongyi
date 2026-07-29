@@ -56,8 +56,7 @@ export class MemoryRateLimitStore implements RateLimitStore {
     const cutoff = Date.now() - maxWindowMs;
     let removed = 0;
     for (const [key, entry] of this.store) {
-      const latest = entry.timestamps[entry.timestamps.length - 1];
-      if (latest === undefined || latest <= cutoff) {
+      if (entry.timestamps.length === 0 || entry.timestamps[entry.timestamps.length - 1] <= cutoff) {
         this.store.delete(key);
         removed++;
       }

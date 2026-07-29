@@ -1,6 +1,6 @@
 import { RegistrationsService } from './registrations.service';
 import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
-import { MockDbService } from '../../../db/__mocks__/db-service.mock';
+import { MockDbService , asDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import { ForbiddenException } from '@nestjs/common';
 import { RegistrationStatus } from '@dental/shared';
@@ -43,7 +43,7 @@ describe('RegistrationsService', () => {
     mockVisitsService = createMockVisitsService();
     mockAppointmentsService = createMockAppointmentsService();
     service = new RegistrationsService(
-      db as any,
+      asDbService(db),
       createMockClinicContext(),
       mockVisitsService,
       mockAppointmentsService,
@@ -67,12 +67,12 @@ describe('RegistrationsService', () => {
       });
 
       expect(result).toBeDefined();
-      expect((result as any).patientId).toBe('patient-001');
-      expect((result as any).doctorId).toBe('doctor-001');
-      expect((result as any).type).toBe('FIRST_VISIT');
-      expect((result as any).status).toBe('REGISTERED');
-      expect((result as any).chiefComplaint).toBe('牙痛');
-      expect((result as any).registeredAt).toBeDefined();
+      expect(result.patientId).toBe('patient-001');
+      expect(result.doctorId).toBe('doctor-001');
+      expect(result.type).toBe('FIRST_VISIT');
+      expect(result.status).toBe('REGISTERED');
+      expect(result.chiefComplaint).toBe('牙痛');
+      expect(result.registeredAt).toBeDefined();
     });
 
     it('创建挂号应包含 clinicId', async () => {
@@ -83,9 +83,9 @@ describe('RegistrationsService', () => {
       });
 
       const rows = db.getTableData('Registration');
-      const created = rows.find(r => r.id === (result as any).id);
+      const created = rows.find(r => r.id === result.id);
       expect(created).toBeDefined();
-      expect(created.clinicId).toBe('test-clinic-001');
+      expect(created!.clinicId).toBe('test-clinic-001');
     });
 
     it('创建挂号应写入审计日志', async () => {
@@ -96,7 +96,7 @@ describe('RegistrationsService', () => {
       });
 
       const auditLogs = db.getTableData('AuditLog');
-      const log = auditLogs.find(l => l.targetId === (result as any).id && l.type === 'REGISTRATION_CREATE');
+      const log = auditLogs.find(l => l.targetId === result.id && l.type === 'REGISTRATION_CREATE');
       expect(log).toBeDefined();
     });
 
@@ -108,8 +108,8 @@ describe('RegistrationsService', () => {
         chiefComplaint: '外伤',
       });
 
-      expect((result as any).type).toBe('EMERGENCY');
-      expect((result as any).status).toBe('REGISTERED');
+      expect(result.type).toBe('EMERGENCY');
+      expect(result.status).toBe('REGISTERED');
     });
 
     it('创建挂号应自动生成 id 和 createdAt', async () => {
@@ -119,8 +119,8 @@ describe('RegistrationsService', () => {
         type: 'FIRST_VISIT',
       });
 
-      expect((result as any).id).toBeDefined();
-      expect((result as any).createdAt).toBeDefined();
+      expect(result.id).toBeDefined();
+      expect(result.createdAt).toBeDefined();
     });
 
     it('创建挂号不传 chiefComplaint 时应为 null/undefined', async () => {
@@ -130,7 +130,7 @@ describe('RegistrationsService', () => {
         type: 'FIRST_VISIT',
       });
 
-      expect((result as any).chiefComplaint).toBeFalsy();
+      expect(result.chiefComplaint).toBeFalsy();
     });
   });
 
@@ -153,8 +153,8 @@ describe('RegistrationsService', () => {
       const result = await service.findOne('reg-001');
 
       expect(result).toBeDefined();
-      expect((result as any).id).toBe('reg-001');
-      expect((result as any).patientId).toBe('patient-001');
+      expect(result.id).toBe('reg-001');
+      expect(result.patientId).toBe('patient-001');
     });
 
     it('查询不存在的挂号应抛出 BusinessNotFoundException', async () => {
@@ -289,9 +289,9 @@ describe('RegistrationsService', () => {
         chiefComplaint: '更新后的主诉',
       });
 
-      expect((result as any).doctorId).toBe('doctor-002');
-      expect((result as any).type).toBe('RETURN_VISIT');
-      expect((result as any).chiefComplaint).toBe('更新后的主诉');
+      expect(result.doctorId).toBe('doctor-002');
+      expect(result.type).toBe('RETURN_VISIT');
+      expect(result.chiefComplaint).toBe('更新后的主诉');
     });
 
     it('只更新部分字段应不影响其他字段', async () => {
@@ -299,8 +299,8 @@ describe('RegistrationsService', () => {
         chiefComplaint: '新主诉',
       });
 
-      expect((result as any).chiefComplaint).toBe('新主诉');
-      expect((result as any).doctorId).toBe('doctor-001');
+      expect(result.chiefComplaint).toBe('新主诉');
+      expect(result.doctorId).toBe('doctor-001');
     });
 
     it('更新不存在的挂号应抛出 BusinessNotFoundException', async () => {
@@ -315,7 +315,7 @@ describe('RegistrationsService', () => {
         chiefComplaint: '新主诉',
       });
 
-      expect((result as any).id).toBe('reg-001');
+      expect(result.id).toBe('reg-001');
     });
 
     it('包含 createdAt 字段时应跳过 createdAt 更新', async () => {
@@ -325,7 +325,7 @@ describe('RegistrationsService', () => {
       });
 
       // createdAt 应保持原值
-      expect((result as any).createdAt).toBe('2026-01-01');
+      expect(result.createdAt).toBe('2026-01-01');
     });
 
     it('undefined 值字段应被跳过', async () => {
@@ -335,15 +335,15 @@ describe('RegistrationsService', () => {
       });
 
       // doctorId 应保持原值
-      expect((result as any).doctorId).toBe('doctor-001');
-      expect((result as any).chiefComplaint).toBe('新主诉');
+      expect(result.doctorId).toBe('doctor-001');
+      expect(result.chiefComplaint).toBe('新主诉');
     });
 
     it('空对象更新应返回原记录', async () => {
       const result = await service.update('reg-001', {});
 
-      expect((result as any).id).toBe('reg-001');
-      expect((result as any).chiefComplaint).toBe('初始主诉');
+      expect(result.id).toBe('reg-001');
+      expect(result.chiefComplaint).toBe('初始主诉');
     });
 
     it('更新 status 字段应抛出异常（禁止通过 update 绕过状态机）', async () => {
@@ -370,37 +370,37 @@ describe('RegistrationsService', () => {
 
     it('REGISTERED → TRIAGED 应成功', async () => {
       const result = await service.updateStatus('reg-001', 'TRIAGED');
-      expect((result as any).status).toBe('TRIAGED');
+      expect(result.status).toBe('TRIAGED');
     });
 
     it('REGISTERED → IN_PROGRESS 应成功', async () => {
       const result = await service.updateStatus('reg-001', 'IN_PROGRESS');
-      expect((result as any).status).toBe('IN_PROGRESS');
+      expect(result.status).toBe('IN_PROGRESS');
     });
 
     it('REGISTERED → CANCELLED 应成功', async () => {
       const result = await service.updateStatus('reg-001', 'CANCELLED');
-      expect((result as any).status).toBe('CANCELLED');
+      expect(result.status).toBe('CANCELLED');
     });
 
     it('TRIAGED → IN_PROGRESS 应成功', async () => {
       const result = await service.updateStatus('reg-002', 'IN_PROGRESS');
-      expect((result as any).status).toBe('IN_PROGRESS');
+      expect(result.status).toBe('IN_PROGRESS');
     });
 
     it('TRIAGED → CANCELLED 应成功', async () => {
       const result = await service.updateStatus('reg-002', 'CANCELLED');
-      expect((result as any).status).toBe('CANCELLED');
+      expect(result.status).toBe('CANCELLED');
     });
 
     it('IN_PROGRESS → COMPLETED 应成功', async () => {
       const result = await service.updateStatus('reg-003', 'COMPLETED');
-      expect((result as any).status).toBe('COMPLETED');
+      expect(result.status).toBe('COMPLETED');
     });
 
     it('IN_PROGRESS → CANCELLED 应成功', async () => {
       const result = await service.updateStatus('reg-003', 'CANCELLED');
-      expect((result as any).status).toBe('CANCELLED');
+      expect(result.status).toBe('CANCELLED');
     });
 
     // --- 非法流转 ---
@@ -460,10 +460,10 @@ describe('RegistrationsService', () => {
         chiefComplaint: '补牙',
       });
 
-      expect((result as any).status).toBe('TRIAGED');
-      expect((result as any).triageNote).toBe('情况稳定');
-      expect((result as any).chiefComplaint).toBe('补牙');
-      expect((result as any).triagedAt).toBeDefined();
+      expect(result.status).toBe('TRIAGED');
+      expect(result.triageNote).toBe('情况稳定');
+      expect(result.chiefComplaint).toBe('补牙');
+      expect(result.triagedAt).toBeDefined();
     });
 
     it('分诊不带 triageNote 时 triageNote 应为 null', async () => {
@@ -471,7 +471,7 @@ describe('RegistrationsService', () => {
         chiefComplaint: '补牙',
       });
 
-      expect((result as any).triageNote).toBeNull();
+      expect(result.triageNote).toBeNull();
     });
 
     it('分诊不带 chiefComplaint 时 chiefComplaint 应为 null', async () => {
@@ -479,15 +479,15 @@ describe('RegistrationsService', () => {
         triageNote: '情况稳定',
       });
 
-      expect((result as any).chiefComplaint).toBeNull();
+      expect(result.chiefComplaint).toBeNull();
     });
 
     it('空对象分诊时 triageNote 和 chiefComplaint 应为 null', async () => {
       const result = await service.triage('reg-001', {});
 
-      expect((result as any).status).toBe('TRIAGED');
-      expect((result as any).triageNote).toBeNull();
-      expect((result as any).chiefComplaint).toBeNull();
+      expect(result.status).toBe('TRIAGED');
+      expect(result.triageNote).toBeNull();
+      expect(result.chiefComplaint).toBeNull();
     });
 
     it('非 REGISTERED 状态不可分诊应抛出 BusinessValidationException', async () => {
@@ -519,17 +519,17 @@ describe('RegistrationsService', () => {
     it('REGISTERED 状态开始就诊应成功并创建 Visit', async () => {
       const result = await service.startVisit('reg-001');
 
-      expect((result as any).status).toBe(RegistrationStatus.IN_PROGRESS);
-      expect((result as any).visitId).toBeDefined();
-      expect((result as any).startedAt).toBeDefined();
+      expect(result.status).toBe(RegistrationStatus.IN_PROGRESS);
+      expect(result.visitId).toBeDefined();
+      expect(result.startedAt).toBeDefined();
       expect(mockVisitsService.createSync).toHaveBeenCalled();
     });
 
     it('TRIAGED 状态开始就诊应成功', async () => {
       const result = await service.startVisit('reg-002');
 
-      expect((result as any).status).toBe(RegistrationStatus.IN_PROGRESS);
-      expect((result as any).visitId).toBeDefined();
+      expect(result.status).toBe(RegistrationStatus.IN_PROGRESS);
+      expect(result.visitId).toBeDefined();
     });
 
     it('IN_PROGRESS 状态不可开始就诊应抛出 BusinessValidationException', async () => {
@@ -553,7 +553,7 @@ describe('RegistrationsService', () => {
 
       // 幂等：直接返回，不调用 createSync
       expect(mockVisitsService.createSync).not.toHaveBeenCalled();
-      expect((result as any).visitId).toBe('existing-visit-id');
+      expect(result.visitId).toBe('existing-visit-id');
     });
 
     it('无预约时开始就诊应调用 visitsService.createSync', async () => {
@@ -578,7 +578,7 @@ describe('RegistrationsService', () => {
       expect(mockVisitsService.createSync).not.toHaveBeenCalled();
       // 应调用 linkVisitSync
       expect(mockAppointmentsService.linkVisitSync).toHaveBeenCalledWith('apt-001', 'existing-visit-for-apt', expect.anything());
-      expect((result as any).visitId).toBe('existing-visit-for-apt');
+      expect(result.visitId).toBe('existing-visit-for-apt');
     });
 
     it('有关联预约但无已存在 Visit 时应创建新 Visit', async () => {
@@ -592,7 +592,7 @@ describe('RegistrationsService', () => {
       expect(mockVisitsService.createSync).toHaveBeenCalledTimes(1);
       // 应调用 linkVisitSync
       expect(mockAppointmentsService.linkVisitSync).toHaveBeenCalledWith('apt-002', 'mock-visit-id', expect.anything());
-      expect((result as any).status).toBe(RegistrationStatus.IN_PROGRESS);
+      expect(result.status).toBe(RegistrationStatus.IN_PROGRESS);
     });
 
     it('开始就诊应写入审计日志', async () => {
@@ -623,8 +623,8 @@ describe('RegistrationsService', () => {
     it('IN_PROGRESS → COMPLETED 应成功并设置 completedAt', async () => {
       const result = await service.complete('reg-001');
 
-      expect((result as any).status).toBe('COMPLETED');
-      expect((result as any).completedAt).toBeDefined();
+      expect(result.status).toBe('COMPLETED');
+      expect(result.completedAt).toBeDefined();
     });
 
     it('REGISTERED 不可直接完成应抛出 BusinessValidationException', async () => {
@@ -659,17 +659,17 @@ describe('RegistrationsService', () => {
 
     it('REGISTERED → CANCELLED 应成功', async () => {
       const result = await service.cancel('reg-001');
-      expect((result as any).status).toBe('CANCELLED');
+      expect(result.status).toBe('CANCELLED');
     });
 
     it('TRIAGED → CANCELLED 应成功', async () => {
       const result = await service.cancel('reg-002');
-      expect((result as any).status).toBe('CANCELLED');
+      expect(result.status).toBe('CANCELLED');
     });
 
     it('IN_PROGRESS → CANCELLED 应成功', async () => {
       const result = await service.cancel('reg-003');
-      expect((result as any).status).toBe('CANCELLED');
+      expect(result.status).toBe('CANCELLED');
     });
 
     it('COMPLETED 不可取消应抛出 BusinessValidationException', async () => {
@@ -698,7 +698,7 @@ describe('RegistrationsService', () => {
   describe('诊所上下文隔离', () => {
     it('无 clinicId 时应抛出 ForbiddenException（缺少诊所信息）', async () => {
       const crossClinicService = new RegistrationsService(
-        db as any,
+        asDbService(db),
         createMockClinicContext(null),
         createMockVisitsService(),
         createMockAppointmentsService(),

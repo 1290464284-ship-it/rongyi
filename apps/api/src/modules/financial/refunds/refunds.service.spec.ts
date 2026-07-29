@@ -1,5 +1,5 @@
 import { RefundsService } from './refunds.service';
-import { MockDbService } from '../../../db/__mocks__/db-service.mock';
+import { MockDbService , asDbService } from '../../../db/__mocks__/db-service.mock';
 import { IdempotencyService } from '../../../common/services/idempotency.service';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import { BusinessNotFoundException, BusinessValidationException } from '@common/errors';
@@ -32,9 +32,9 @@ describe('RefundsService', () => {
 
   beforeEach(() => {
     db = new MockDbService();
-    idempotency = new IdempotencyService(db as any);
+    idempotency = new IdempotencyService(asDbService(db));
     eventBus = createMockEventBus();
-    service = new RefundsService(db as any, createMockClinicContext(), idempotency, eventBus, new RefundRepository());
+    service = new RefundsService(asDbService(db), createMockClinicContext(), idempotency, eventBus, new RefundRepository());
   });
 
   afterEach(() => {
@@ -103,8 +103,8 @@ describe('RefundsService', () => {
 
       const result = await service.findOne('refund-001');
 
-      expect((result as any).id).toBe('refund-001');
-      expect((result as any).amount).toBe(50);
+      expect(result.id).toBe('refund-001');
+      expect(result.amount).toBe(50);
     });
 
     it('退款不存在应抛出 BusinessNotFoundException', async () => {

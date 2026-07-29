@@ -32,7 +32,7 @@ describe('encryption 加密工具', () => {
 
     it('加密结果应包含三段（iv:authTag:ciphertext）', () => {
       const encrypted = encryptionModule.encryptField('test');
-      const parts = (encrypted).split(':');
+      const parts = (encrypted!).split(':');
       expect(parts.length).toBe(3);
       expect(parts[0].length).toBe(24);
       expect(parts[1].length).toBe(32);
@@ -76,7 +76,7 @@ describe('encryption 加密工具', () => {
 
     it('解密被篡改的密文应抛出异常', () => {
       const encrypted = encryptionModule.encryptField('test');
-      const tampered = '00' + encrypted.slice(2);
+      const tampered = '00' + encrypted!.slice(2);
       expect(() => {
         encryptionModule.decryptField(tampered);
       }).toThrow(encryptionModule.EncryptionError);

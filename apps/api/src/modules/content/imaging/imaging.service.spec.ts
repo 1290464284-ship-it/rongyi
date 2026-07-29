@@ -1,6 +1,7 @@
 import { ImagingService } from './imaging.service';
 import { BusinessNotFoundException } from '@common/errors';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
+import { asDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 
 
@@ -20,7 +21,7 @@ describe('ImagingService', () => {
 
   beforeEach(() => {
     db = new MockDbService();
-    service = new ImagingService(db as any, createMockClinicContext());
+    service = new ImagingService(asDbService(db), createMockClinicContext());
   });
 
   afterEach(() => {
@@ -85,8 +86,8 @@ describe('ImagingService', () => {
 
     it('正常查询', async () => {
       const result = await service.findOne('imaging-001');
-      expect((result as any).id).toBe('imaging-001');
-      expect((result as any).title).toBe('全景片');
+      expect(result.id).toBe('imaging-001');
+      expect(result.title).toBe('全景片');
     });
 
     it('不存在的 ID 抛出 BusinessNotFoundException', async () => {
@@ -100,10 +101,10 @@ describe('ImagingService', () => {
         title: '新影像',
         patientId: 'patient-001',
         type: 'XRAY',
-        url: '/new.jpg',
+        imageUrl: '/new.jpg',
       });
-      expect((result as any).title).toBe('新影像');
-      expect((result as any).patientId).toBe('patient-001');
+      expect(result.title).toBe('新影像');
+      expect(result.patientId).toBe('patient-001');
     });
 
     it('自动注入 clinicId', async () => {
@@ -111,7 +112,7 @@ describe('ImagingService', () => {
         title: '测试影像',
         patientId: 'patient-001',
       });
-      expect((result as any).clinicId).toBe('test-clinic-001');
+      expect(result.clinicId).toBe('test-clinic-001');
     });
   });
 
@@ -124,7 +125,7 @@ describe('ImagingService', () => {
 
     it('正常更新', async () => {
       const result = await service.update('imaging-001', { title: '更新后的全景片' });
-      expect((result as any).title).toBe('更新后的全景片');
+      expect(result.title).toBe('更新后的全景片');
     });
 
     it('不存在的记录抛出 BusinessNotFoundException', async () => {

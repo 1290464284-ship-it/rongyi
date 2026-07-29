@@ -10,15 +10,15 @@ export interface FollowUp {
   id: string;
   patientId: string;
   planDate: string;
-  content?: string | null;
+  content?: string;
   status: string;
-  assigneeId?: string | null;
-  result?: string | null;
-  completedAt?: string | null;
-  clinicId?: string | null;
+  assigneeId?: string;
+  result?: string;
+  completedAt?: string;
+  clinicId?: string;
   createdAt: string;
   updatedAt: string;
-  deletedAt?: string | null;
+  deletedAt?: string;
 }
 
 /**
@@ -31,7 +31,7 @@ export interface FollowUp {
 export class FollowUpsService extends BaseService<FollowUp> {
 
   constructor(dbService: DbService, clinicContext: ClinicContextService) {
-    super(dbService, clinicContext, "FollowUp", [], [], [], true, []);
+    super(dbService, clinicContext, { tableName: "FollowUp" });
   }
 
   async findMany(params: { patientId?: string; status?: string; assigneeId?: string; page?: number; pageSize?: number }) {
@@ -89,7 +89,7 @@ export class FollowUpsService extends BaseService<FollowUp> {
     this.logAudit(this.dbService, "FOLLOWUP_REMOVE", id, "FollowUp");
   }
 
-  async update(id: string, dto: { status?: string; content?: string; planDate?: string; assigneeId?: string }) {
+  async update(id: string, dto: Partial<FollowUp>): Promise<FollowUp> {
     const existing = await this.findOne(id);
     const safeDto = sanitizeData('FollowUp', dto);
     const now = new Date().toISOString();
@@ -127,7 +127,7 @@ export class FollowUpsService extends BaseService<FollowUp> {
       );
       this.logAudit(db, "FOLLOWUP_UPDATE", id, "FollowUp", { beforeData: { status: existing.status }, afterData: { status: safeDto.status } });
       const clinicCondition2 = clinicClause.replace(/^\s*AND\s+/i, '');
-      return this.baseRepository.findById<FollowUp>(db, this.tableName, '*', id, clinicCondition2 ? ['deletedAt IS NULL', clinicCondition2] : ['deletedAt IS NULL'], clinicParams);
+      return this.baseRepository.findById<FollowUp>(db, this.tableName, '*', id, clinicCondition2 ? ['deletedAt IS NULL', clinicCondition2] : ['deletedAt IS NULL'], clinicParams) as FollowUp;
     });
   }
 

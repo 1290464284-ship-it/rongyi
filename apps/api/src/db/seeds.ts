@@ -24,7 +24,7 @@ export const seedDb = (db: Database) => {
 
     // 开发/测试环境未配置密码时，生成随机密码并通过日志输出
     const generatedPassword = !isProd && !initialPassword ? generateRandomPassword() : null;
-    const seedPassword = isProd ? initialPassword : (initialPassword || generatedPassword);
+    const seedPassword = (isProd ? initialPassword : (initialPassword || generatedPassword)) || '';
     const bossPassword = seedPassword;
     const doctorPassword = seedPassword;
     const frontPassword = seedPassword;

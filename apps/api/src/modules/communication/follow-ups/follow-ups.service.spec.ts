@@ -1,6 +1,7 @@
 import { FollowUpsService } from './follow-ups.service';
 import { BusinessNotFoundException } from '@common/errors';
 import { MockDbService } from '../../../db/__mocks__/db-service.mock';
+import { asDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 
 
@@ -20,7 +21,7 @@ describe('FollowUpsService', () => {
 
   beforeEach(() => {
     db = new MockDbService();
-    service = new FollowUpsService(db as any, createMockClinicContext());
+    service = new FollowUpsService(asDbService(db), createMockClinicContext());
   });
 
   afterEach(() => {
@@ -39,11 +40,11 @@ describe('FollowUpsService', () => {
       });
 
       expect(result).toBeDefined();
-      expect((result as any).patientId).toBe('patient-001');
-      expect((result as any).status).toBe('PENDING');
-      expect((result as any).planDate).toBe('2026-02-01');
-      expect((result as any).content).toBe('术后一周复查');
-      expect((result as any).assigneeId).toBe('nurse-001');
+      expect(result.patientId).toBe('patient-001');
+      expect(result.status).toBe('PENDING');
+      expect(result.planDate).toBe('2026-02-01');
+      expect(result.content).toBe('术后一周复查');
+      expect(result.assigneeId).toBe('nurse-001');
     });
 
     it('不传 assigneeId 时应为空值', async () => {
@@ -54,7 +55,7 @@ describe('FollowUpsService', () => {
       });
 
       // 未传入 assigneeId 时，字段不存在或为 undefined/null
-      expect((result as any).assigneeId).toBeFalsy();
+      expect(result.assigneeId).toBeFalsy();
     });
   });
 
@@ -68,9 +69,9 @@ describe('FollowUpsService', () => {
 
       const result = await service.complete('fu-001', '患者恢复良好');
 
-      expect((result as any).status).toBe('COMPLETED');
-      expect((result as any).result).toBe('患者恢复良好');
-      expect((result as any).completedAt).toBeTruthy();
+      expect(result!.status).toBe('COMPLETED');
+      expect(result!.result).toBe('患者恢复良好');
+      expect(result!.completedAt).toBeTruthy();
     });
 
     it('完成不存在的随访应抛出 BusinessNotFoundException', async () => {
@@ -88,8 +89,8 @@ describe('FollowUpsService', () => {
 
       const result = await service.update('fu-002', { content: '改为电话回访', planDate: '2026-02-15' });
 
-      expect((result as any).content).toBe('改为电话回访');
-      expect((result as any).planDate).toBe('2026-02-15');
+      expect(result.content).toBe('改为电话回访');
+      expect(result.planDate).toBe('2026-02-15');
     });
   });
 
@@ -106,8 +107,8 @@ describe('FollowUpsService', () => {
       const rows = db.getTableData('FollowUp');
       const deleted = rows.find(r => r.id === 'fu-003');
       expect(deleted).toBeDefined();
-      expect(deleted.deletedAt).toBeTruthy();
-      expect(deleted.status).toBe('CANCELLED');
+      expect(deleted!.deletedAt).toBeTruthy();
+      expect(deleted!.status).toBe('CANCELLED');
     });
   });
 
@@ -370,9 +371,9 @@ describe('FollowUpsService', () => {
 
     it('不传 result 时 result 为 null', async () => {
       const result = await service.complete('fu-001');
-      expect((result as any).status).toBe('COMPLETED');
-      expect((result as any).result).toBeNull();
-      expect((result as any).completedAt).toBeTruthy();
+      expect(result!.status).toBe('COMPLETED');
+      expect(result!.result).toBeNull();
+      expect(result!.completedAt).toBeTruthy();
     });
 
     it('事务内写入审计日志', async () => {
@@ -394,13 +395,13 @@ describe('FollowUpsService', () => {
 
     it('只更新 status 字段', async () => {
       const result = await service.update('fu-001', { status: 'IN_PROGRESS' });
-      expect((result as any).status).toBe('IN_PROGRESS');
-      expect((result as any).content).toBe('原内容');
+      expect(result.status).toBe('IN_PROGRESS');
+      expect(result.content).toBe('原内容');
     });
 
     it('只更新 assigneeId 字段', async () => {
       const result = await service.update('fu-001', { assigneeId: 'doctor-001' });
-      expect((result as any).assigneeId).toBe('doctor-001');
+      expect(result.assigneeId).toBe('doctor-001');
     });
 
     it('更新不存在的随访抛出 BusinessNotFoundException', async () => {

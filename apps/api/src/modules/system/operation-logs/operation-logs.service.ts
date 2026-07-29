@@ -24,7 +24,8 @@ const DATA_DIR = process.env.DATA_DIR || process.env.DB_PATH
 
 @Injectable()
 export class OperationLogsService extends BufferedWriter<OperationLogEntry> implements OperationLogSink {
-  protected logger = new AppLogger(OperationLogsService.name);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AppLogger is a compatible logger superset
+  protected logger: { error: (msg: string, err?: unknown) => void; warn: (msg: string) => void } = new AppLogger(OperationLogsService.name) as any;
 
   constructor(
     private dbService: DbService,
