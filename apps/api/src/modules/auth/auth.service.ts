@@ -1,12 +1,9 @@
-import { BusinessNotFoundException, BusinessValidationException } from '@common/errors';
 import { Injectable, UnauthorizedException, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 
 import { JwtService } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
-import * as bcrypt from "bcryptjs";
 import { DbService } from "../../db/db.service";
 import * as crypto from "node:crypto";
-import { UpdateBuilder } from "../../common/utils/db/sql-builder";
 import { AppLogger } from "../../common/services/logger.service";
 import { isDateInFuture } from "../../common/utils/format/date";
 import { ClinicContextService } from "../../common/services/clinic-context.service";
@@ -21,8 +18,9 @@ import {
   ONE_HOUR_MS,
   USER_INFO_CACHE_TTL_MS,
 } from "../../config/constants";
-import { PAGINATION } from "../../common/constants/pagination";
 import { AuditLogService } from "../../common/services/audit-log.service";
+import { PasswordPolicyService } from './password-policy.service';
+import { UserManagementService, ListUsersResult, UserSummaryRow } from './user-management.service';
 
 export interface UserInfo {
   id: string;
@@ -45,21 +43,7 @@ interface RefreshTokenResult {
   user: UserInfo;
 }
 
-export interface ListUsersResult {
-  items: UserSummaryRow[];
-  total: number;
-  page: number;
-  pageSize: number;
-}
-
-export interface UserSummaryRow {
-  id: string;
-  name: string;
-  role: string;
-  username: string;
-  phone: string | null;
-  createdAt: string;
-}
+export { ListUsersResult, UserSummaryRow } from './user-management.service';
 
 interface UserRow {
   id: string;
@@ -91,16 +75,9 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     private clinicContext: ClinicContextService,
     private cache: CacheService,
     private auditLogService: AuditLogService,
+    private passwordPolicy: PasswordPolicyService,
+    private userManagement: UserManagementService,
   ) {}
-
-  /** P2-1: bcrypt 轮数可配置化 */
-  private get bcryptRounds(): number {
-    const rounds = this.config.get<string>('BCRYPT_ROUNDS');
-    if (!rounds) return 10;
-    const parsed = parseInt(rounds, 10);
-    if (Number.isNaN(parsed)) return 10;
-    return Math.max(8, Math.min(15, parsed));
-  }
 
   onModuleInit() {
     // P1-1: 定时清理过期的 UsedRefreshToken 记录
@@ -150,7 +127,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     if (user.lockedUntil && isDateInFuture(user.lockedUntil)) {
       throw new UnauthorizedException("用户名或密码错误");
     }
-    const ok = await bcrypt.compare(dto.password, hash);
+    const ok = await this.passwordPolicy.comparePassword(dto.password, hash);
     if (!ok) {
       // P1 修复：使用原子递增 `loginAttempts = loginAttempts + 1` 防止 TOCTOU 竞态
       // 原先 SELECT 读取 loginAttempts → 计算加 1 → UPDATE 绝对值赋值，
@@ -168,10 +145,11 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       throw new UnauthorizedException("用户名或密码错误");
     }
 
-    const is4DigitPin = /^\d{4}$/.test(dto.password);
-    const isTempPassword = Number(user.isTempPassword) === 1;
-    const isFirstLogin = !user.passwordChangedAt;
-    const needChangePassword = is4DigitPin || isTempPassword || isFirstLogin;
+    const needChangePassword = this.passwordPolicy.needsPasswordChange(
+      dto.password,
+      Number(user.isTempPassword) === 1,
+      user.passwordChangedAt ?? null,
+    );
 
     const tokenVersion = Number(user.tokenVersion) || 0;
     const payload = { sub: user.id, username: user.username, role: user.role, tv: tokenVersion, cid: user.clinicId, iss: 'dental-api', aud: 'dental-web' };
@@ -215,102 +193,28 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     return userInfo;
   }
 
-  async listUsers(role?: string): Promise<ListUsersResult | UserSummaryRow[]> {
-    try {
-      const clinicId = this.clinicContext.getClinicId();
-      const page = 1;
-      const pageSize = PAGINATION.DEFAULT_PAGE_SIZE_LARGE;
-      let query = "SELECT id, name, role, username, phone, createdAt FROM User WHERE active = 1 AND clinicId = ?";
-      const countQuery = "SELECT COUNT(*) as total FROM User WHERE active = 1 AND clinicId = ?";
-      const params: unknown[] = [clinicId];
-      if (role) { query += " AND role = ?"; params.push(role); }
-      query += " ORDER BY createdAt DESC LIMIT ? OFFSET ?";
-      params.push(pageSize, (page - 1) * pageSize);
+  // ─── User Management Delegation ─────────────────────────────────
+  // These methods delegate to UserManagementService.
+  // Kept here for backward compatibility with existing consumers.
 
-      let countQ = countQuery;
-      const countParams: unknown[] = [clinicId];
-      if (role) { countQ += " AND role = ?"; countParams.push(role); }
-      const total = (this.dbService.prepare(countQ).get(...countParams) as { total: number }).total;
-      const items = this.dbService.prepare(query).all(...params) as UserSummaryRow[];
-      return { items, total, page, pageSize };
-    } catch (err: unknown) {
-      this.logger.warn('listUsers pagination query failed, falling back to simple query', err instanceof Error ? err.message : String(err));
-      const clinicId = this.clinicContext.getClinicId();
-      return this.dbService.prepare("SELECT id, name, role, username, phone, createdAt FROM User WHERE active = 1 AND clinicId = ? ORDER BY createdAt DESC LIMIT 100 OFFSET 0").all(clinicId) as UserSummaryRow[];
-    }
+  async listUsers(role?: string): Promise<ListUsersResult | UserSummaryRow[]> {
+    return this.userManagement.listUsers(role);
   }
 
   async createUser(dto: { username: string; password: string; name: string; role: string; phone?: string }): Promise<UserSummaryRow> {
-    const clinicId = this.clinicContext.getClinicId();
-    const existing = this.dbService.prepare("SELECT id FROM User WHERE username = ? AND clinicId = ?").get(dto.username, clinicId);
-    if (existing) throw new BusinessValidationException("用户名已存在");
-    const passwordHash = await bcrypt.hash(dto.password, this.bcryptRounds);
-    const now = new Date().toISOString();
-    const userId = crypto.randomUUID();
-    const isTempPassword = /^\d{4}$/.test(dto.password) ? 1 : 0;
-    this.dbService.prepare("INSERT INTO User (id, username, passwordHash, name, role, phone, clinicId, createdAt, updatedAt, passwordChangedAt, isTempPassword) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
-      .run(userId, dto.username, passwordHash, dto.name, dto.role, dto.phone || null, clinicId, now, now, now, isTempPassword);
-    this.auditLogService.logAudit(this.dbService, "USER_CREATE", userId, "User", clinicId, {
-      afterData: { username: dto.username, name: dto.name, role: dto.role },
-    });
-    return this.dbService.prepare("SELECT id, name, role, username, phone, createdAt FROM User WHERE username = ? AND clinicId = ?").get(dto.username, clinicId) as UserSummaryRow;
+    return this.userManagement.createUser(dto);
   }
 
   async updateUser(id: string, dto: { name?: string; role?: string; phone?: string; active?: number }): Promise<UserSummaryRow> {
-    const clinicId = this.clinicContext.getClinicId();
-    const user = this.dbService.prepare("SELECT id, name, role, phone FROM User WHERE id = ? AND clinicId = ?").get(id, clinicId) as UserRow | undefined;
-    if (!user) throw new BusinessNotFoundException("用户不存在");
-    const beforeData = JSON.stringify({ name: user.name, role: user.role, phone: user.phone });
-    const builder = new UpdateBuilder("User");
-    builder.set("name", dto.name);
-    builder.set("role", dto.role);
-    builder.set("phone", dto.phone);
-    builder.set("active", dto.active);
-    builder.setUpdatedAt();
-    const result = builder.build(id);
-    if (result) {
-      this.dbService.prepare(result.sql).run(...result.params);
-    }
-    // P4-1: name/role/active 变更后，UserInfo 缓存可能脏，主动失效
-    this.cache.del(buildCacheKey(CACHE_PREFIXES.USER, id));
-    const afterData = JSON.stringify({ name: dto.name ?? user.name, role: dto.role ?? user.role, phone: dto.phone ?? user.phone, active: dto.active });
-    this.auditLogService.logAudit(this.dbService, "USER_UPDATE", id, "User", clinicId, {
-      beforeData,
-      afterData,
-    });
-    return this.dbService.prepare("SELECT id, name, role, username, phone, createdAt FROM User WHERE id = ?").get(id) as UserSummaryRow;
+    return this.userManagement.updateUser(id, dto);
   }
 
   async deleteUser(id: string) {
-    const clinicId = this.clinicContext.getClinicId();
-    const user = this.dbService.prepare("SELECT id, role FROM User WHERE id = ? AND clinicId = ?").get(id, clinicId) as UserRow;
-    if (!user) throw new BusinessNotFoundException("用户不存在");
-    if (user.role === "BOSS") throw new BusinessValidationException("不能删除老板账号");
-    this.dbService.prepare("UPDATE User SET active = 0, tokenVersion = COALESCE(tokenVersion, 0) + 1, updatedAt = ? WHERE id = ? AND clinicId = ?")
-      .run(new Date().toISOString(), id, clinicId);
-    // P4-1: 删除用户（软删 + tokenVersion+1）后失效 UserInfo 缓存
-    this.cache.del(buildCacheKey(CACHE_PREFIXES.USER, id));
-    this.auditLogService.logAudit(this.dbService, "USER_DELETE", id, "User", clinicId, {
-      beforeData: { active: 1, role: user.role },
-      afterData: { active: 0 },
-    });
+    return this.userManagement.deleteUser(id);
   }
 
   async changePassword(userId: string, dto: { oldPassword: string; newPassword: string }) {
-    const clinicId = this.clinicContext.getClinicId();
-    const user = this.dbService.prepare("SELECT id, passwordHash, active FROM User WHERE id = ? AND clinicId = ?").get(userId, clinicId) as UserRow;
-    if (!user?.active) throw new BusinessNotFoundException("用户不存在或已禁用");
-    const ok = await bcrypt.compare(dto.oldPassword, user.passwordHash ?? '');
-    if (!ok) throw new BusinessValidationException("原密码错误");
-    if (dto.oldPassword === dto.newPassword) throw new BusinessValidationException("新密码不能与原密码相同");
-    const passwordHash = await bcrypt.hash(dto.newPassword, this.bcryptRounds);
-    const now = new Date().toISOString();
-    this.dbService.prepare("UPDATE User SET passwordHash = ?, passwordChangedAt = ?, isTempPassword = 0, tokenVersion = COALESCE(tokenVersion, 0) + 1, updatedAt = ? WHERE id = ? AND clinicId = ?")
-      .run(passwordHash, now, now, userId, clinicId);
-    // P4-1: 改密后 tokenVersion+1，旧 token 全部失效；UserInfo 缓存也需同步失效
-    this.cache.del(buildCacheKey(CACHE_PREFIXES.USER, userId));
-    this.auditLogService.logAudit(this.dbService, "PASSWORD_CHANGE", userId, "User", clinicId);
-    return { success: true };
+    return this.userManagement.changePassword(userId, dto);
   }
 
   async logout(userId?: string) {
