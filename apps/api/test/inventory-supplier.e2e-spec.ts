@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { DbService } from '@db/db.service';
 import { ClinicContextService } from '@common/services/clinic-context.service';
 import { IdempotencyService } from '@common/services/idempotency.service';
@@ -40,6 +41,7 @@ describe('Inventory Integration Tests', () => {
     module = await Test.createTestingModule({
       providers: [
         { provide: DbService, useValue: testDbService },
+        { provide: EventEmitter2, useValue: new EventEmitter2() },
         ClinicContextService,
         IdempotencyService,
         EventBusService,

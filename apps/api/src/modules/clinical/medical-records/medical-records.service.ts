@@ -238,7 +238,7 @@ export class MedicalRecordsService extends BaseService<MedicalRecord> {
       // 原先 if (clinicId) 模式在 clinicId 缺失时会跳过过滤导致跨租户数据泄露
       const { clause: clinicClause, params: clinicParams } = this.buildClinicClause();
       return this.dbService.prepare(
-        `SELECT id, name, category, chiefComplaint, presentIllness, pastHistory, examination, diagnosis, treatmentPlan, createdAt FROM MedicalRecordTemplate WHERE 1=1${clinicClause} ORDER BY category LIMIT ${MAX_PAGE_SIZE}`,
+        `SELECT id, name, category, chiefComplaint, presentIllness, pastHistory, examination, diagnosis, treatmentPlan, createdAt FROM MedicalRecordTemplate WHERE deletedAt IS NULL${clinicClause} ORDER BY category LIMIT ${MAX_PAGE_SIZE}`,
       ).all(...clinicParams);
     }, MEDICAL_RECORD_DICTIONARY_CACHE_TTL_MS);
   }

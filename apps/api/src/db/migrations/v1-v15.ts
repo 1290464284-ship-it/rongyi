@@ -75,7 +75,9 @@ export const migrateToV2 = () => {
     'BackupRecord', 'SmsLog', 'WechatMessage', 'Refund', 'Invoice',
   ];
   tablesNeedUpdatedAt.forEach(table => {
-    addColumnIfMissing(table, 'updatedAt', 'TEXT DEFAULT CURRENT_TIMESTAMP');
+    if (tableExists(table)) {
+      addColumnIfMissing(table, 'updatedAt', 'TEXT DEFAULT CURRENT_TIMESTAMP');
+    }
   });
 };
 

@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { CURRENT_VERSION, runMigrations } from '../../src/db/migrations';
+import { CURRENT_VERSION, runMigrations, migrationNames } from '../../src/db/migrations';
 import { createSchema } from '../../src/db/schema';
 
 describe('Migration Smoke Test', () => {
@@ -34,17 +34,22 @@ describe('Migration Smoke Test', () => {
 
     it('schema_migrations 表应该在迁移后存在', () => {
       createSchema(db);
-
-      try {
-        runMigrations(db);
-      } catch {
-        console.warn('迁移过程中出现错误（可能是已知的迁移bug），继续验证 schema_migrations 表');
-      }
+      runMigrations(db);
 
       const result = db.prepare(
         "SELECT name FROM sqlite_master WHERE type='table' AND name = 'schema_migrations'"
       ).get() as { name: string } | undefined;
       expect(result).toBeDefined();
+    });
+
+    it('runMigrations 应该完整执行到 CURRENT_VERSION', () => {
+      createSchema(db);
+      expect(() => runMigrations(db)).not.toThrow();
+
+      const row = db.prepare(
+        'SELECT MAX(CAST(version AS INTEGER)) as v FROM schema_migrations'
+      ).get() as { v: number | null } | undefined;
+      expect(row?.v).toBe(CURRENT_VERSION);
     });
 
     it('CURRENT_VERSION 应该是正整数', () => {
@@ -55,48 +60,20 @@ describe('Migration Smoke Test', () => {
 
   describe('迁移版本管理', () => {
     it('迁移名称映射应该包含所有版本', () => {
-      const migrationNamesCount = Object.keys({
-        1: 'initial-columns',
-        2: 'indexes-and-updatedAt',
-        3: 'soft-delete-columns',
-        4: 'charge-refundedAmount',
-        5: 'processingorder-softdelete',
-        6: 'appointment-visitid-and-chargeitem-inventory',
-        7: 'debt-wechat-firstexamtrack-softdelete',
-        8: 'multi-clinic-clinicId',
-        9: 'purchaseorder-softdelete',
-        10: 'clinicinfo-clinicid',
-        11: 'appointment-status-check-constraint',
-        12: 'membercard-status-check-constraint',
-        13: 'purchaseorder-status-check-constraint',
-        14: 'type-check-constraints',
-        15: 'chargecombo-paymentmethod-updatedAt',
-        16: 'cascade-tables-softdelete-columns',
-        17: 'user-username-unique-per-clinic',
-        18: 'check-constraints-audit-fix',
-        19: 'supplementary-indexes',
-        20: 'system-alert-table',
-        21: 'user-password-history-fields',
-        22: 'patient-search-optimization-indexes',
-        23: 'slow-query-composite-indexes',
-        24: 'money-field-type-unification',
-        25: 'clinic-scoped-unique-constraints',
-        26: 'status-check-constraints-alignment',
-        27: 'user-deletedAt-soft-delete',
-      }).length;
-
-      expect(migrationNamesCount).toBe(CURRENT_VERSION);
+      const definedVersions = Object.keys(migrationNames).map(Number);
+      expect(definedVersions.length).toBe(CURRENT_VERSION);
+      for (let v = 1; v <= CURRENT_VERSION; v++) {
+        expect(migrationNames[v]).toBeDefined();
+        expect(typeof migrationNames[v]).toBe('string');
+        expect(migrationNames[v].length).toBeGreaterThan(0);
+      }
     });
   });
 
   describe('核心表结构验证', () => {
     beforeEach(() => {
       createSchema(db);
-      try {
-        runMigrations(db);
-      } catch {
-        /* 忽略已知迁移错误，继续验证已创建的表 */
-      }
+      runMigrations(db);
     });
 
     it('User 表应该存在并有基本列', () => {

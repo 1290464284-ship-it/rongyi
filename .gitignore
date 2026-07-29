@@ -83,7 +83,11 @@ apps/api/*.json
 # Coverage data
 apps/api/.coveragedata/
 
+# 测试运行产物
+apps/web/test-results/
+apps/api/test-results.json
+
 # 一次性修复/审计脚本（已执行完毕，不留存版本库）
 apps/api/fix-*.mjs
+apps/api/fix-*.js
 apps/api/architecture-audit.mjs
-apps/api/架构审计报告.md

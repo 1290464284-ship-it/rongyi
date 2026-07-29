@@ -92,6 +92,8 @@ export const clinicalTables = [
       remark TEXT,
       clinicId TEXT NOT NULL,
       createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+      updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+      deletedAt TEXT,
       UNIQUE(clinicId, code)
     )`,
   `CREATE TABLE IF NOT EXISTS TreatmentPlan (
@@ -211,7 +213,9 @@ export const clinicalTables = [
       isPublic INTEGER DEFAULT 1,
       creatorId TEXT,
       clinicId TEXT NOT NULL,
-      createdAt TEXT DEFAULT CURRENT_TIMESTAMP
+      createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+      updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+      deletedAt TEXT
     )`,
   `CREATE TABLE IF NOT EXISTS MedicalRecordPhrase (
       id TEXT PRIMARY KEY,

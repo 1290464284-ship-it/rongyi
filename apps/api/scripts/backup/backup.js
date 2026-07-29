@@ -114,28 +114,34 @@ function loadDatabase() {
 }
 
 // 使用 better-sqlite3 备份 API 进行备份
+// better-sqlite3 的 db.backup() 返回 Promise<Backup>，备份完成后自动完成，
+// 不再调用已失效的同步式 backup.transfer(-1)（旧版 API 残留，会抛错并回退到 copyFileSync）。
 function backupWithBetterSqlite(dbPath, backupPath) {
   const Database = loadDatabase();
   if (!Database) return false;
 
+  const db = new Database(dbPath, { readonly: true });
   try {
-    const db = new Database(dbPath, { readonly: true });
+    // 执行 WAL checkpoint 确保数据完全落盘（TRUNCATE 比 FULL 更彻底）
     try {
-      // 执行 WAL checkpoint 确保数据完全落盘（TRUNCATE 比 FULL 更彻底）
       db.pragma('wal_checkpoint(TRUNCATE)');
     } catch (checkpointErr) {
       console.warn('警告: WAL checkpoint 失败，继续备份:', checkpointErr.message);
     }
 
-    // 使用 better-sqlite3 的备份 API
-    const backup = db.backup(backupPath);
-    backup.transfer(-1);
-    backup.close();
-    db.close();
-    return true;
+    // db.backup() 返回 Promise，备份完成后 resolve；失败时 reject。
+    return db
+      .backup(backupPath)
+      .then(() => true)
+      .catch((err) => {
+        console.warn('better-sqlite3 备份失败，回退到文件复制:', err.message);
+        return false;
+      });
   } catch (err) {
     console.warn('better-sqlite3 备份失败，回退到文件复制:', err.message);
     return false;
+  } finally {
+    try { db.close(); } catch { /* ignore */ }
   }
 }
 
@@ -309,7 +315,7 @@ function cleanupOldBackups(backupDir, keepCount) {
 }
 
 // 主函数
-function main() {
+async function main() {
   const options = parseArgs();
 
   if (options.help) {
@@ -351,8 +357,8 @@ function main() {
     // 执行备份
     let backupSuccess = false;
 
-    // 优先使用 better-sqlite3 备份 API
-    backupSuccess = backupWithBetterSqlite(dbPath, backupPath);
+    // 优先使用 better-sqlite3 备份 API（返回 Promise）
+    backupSuccess = await backupWithBetterSqlite(dbPath, backupPath);
 
     // 回退到文件复制
     if (!backupSuccess) {
@@ -492,4 +498,7 @@ function main() {
   }
 }
 
-main();
+main().catch((err) => {
+  console.error('备份主流程异常:', err);
+  process.exit(1);
+});

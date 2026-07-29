@@ -22,14 +22,15 @@ import {
   migrateToV19, migrateToV20, migrateToV21, migrateToV22, migrateToV23,
   migrateToV24, migrateToV25, migrateToV26, migrateToV27,
 } from './v19-v26';
+import { migrateToV28 } from './v27-v28';
 
-export const CURRENT_VERSION = 27;
+export const CURRENT_VERSION = 28;
 
 export const getCurrentVersion = (): number => {
   return (getMigrationDb().prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
 };
 
-const migrationNames: Record<number, string> = {
+export const migrationNames: Record<number, string> = {
   1: 'initial-columns',
   2: 'indexes-and-updatedAt',
   3: 'soft-delete-columns',
@@ -57,6 +58,7 @@ const migrationNames: Record<number, string> = {
   25: 'clinic-scoped-unique-constraints',
   26: 'status-check-constraints-alignment',
   27: 'user-deletedAt-soft-delete',
+  28: 'treatment-medicalrecord-deletedAt-columns',
 };
 
 function backupBeforeMigration(fromVersion: number, toVersion: number): string | null {
@@ -100,14 +102,19 @@ export const runMigrations = (db: Database) => {
 
   // P0-1.6: 迁移前自动备份数据库，作为失败回滚点
   // P1 修复：备份失败时终止迁移，避免无回滚点时迁移失败导致数据不可恢复
-  const backupPath = backupBeforeMigration(currentVersion, CURRENT_VERSION);
+  // 内存数据库（测试模式）无文件可备份，跳过备份直接迁移
+  const dbPath = getDbPath();
+  const isMemoryDb = dbPath === ':memory:' || process.env.TEST_DB_MEMORY === '1';
+  const backupPath = isMemoryDb ? null : backupBeforeMigration(currentVersion, CURRENT_VERSION);
   if (backupPath) {
     logger.log(`已创建迁移前备份: ${backupPath}`);
-  } else {
+  } else if (!isMemoryDb) {
     throw new Error(
       '迁移前备份失败，拒绝继续执行迁移以保护数据。' +
       '请检查磁盘空间和备份目录权限后重试。'
     );
+  } else {
+    logger.log('内存数据库模式，跳过迁移前备份');
   }
 
   for (let v = currentVersion + 1; v <= CURRENT_VERSION; v++) {
@@ -151,6 +158,7 @@ export const runMigrations = (db: Database) => {
           case 25: migrateToV25(); break;
           case 26: migrateToV26(); break;
           case 27: migrateToV27(); break;
+          case 28: migrateToV28(); break;
         }
       });
       migrateTx();  // 任一迁移失败 → 整体回滚，数据库保持迁移前状态

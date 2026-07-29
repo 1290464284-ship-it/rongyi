@@ -321,32 +321,21 @@ export const scheduleAutoBackup = (db: InstanceType<typeof Database>) => {
       }
     };
 
-    const backupPromise = db.backup(backupPath) as unknown as Promise<{ transfer: (n: number) => void; close: () => void }>;
+    // better-sqlite3 的 db.backup() 返回 Promise<Backup>，备份完成后自动完成，
+    // 不再调用已失效的同步式 backup.transfer(-1)（旧版 API 残留，会抛错并回退到 copyFileSync）。
+    const backupPromise = db.backup(backupPath) as unknown as Promise<unknown>;
     if (backupPromise && typeof backupPromise.then === 'function') {
-      backupPromise.then((backup) => {
-        try {
-          backup.transfer(-1);
-          backup.close();
+      backupPromise
+        .then(() => {
           finishBackup();
-        } catch (transferErr) {
-          logger.error(`[Auto Backup] backup.transfer() 失败，回退到 copyFileSync`, 'Backup', transferErr as Error);
+        })
+        .catch((backupErr: unknown) => {
+          logger.error(`[Auto Backup] db.backup() 失败，回退到 copyFileSync`, 'Backup', backupErr as Error);
           try { doFallbackCopy(); } catch { /* ignore */ }
           finishBackup();
-        }
-      }).catch((backupErr: unknown) => {
-        logger.error(`[Auto Backup] db.backup() 失败，回退到 copyFileSync`, 'Backup', backupErr as Error);
-        try { doFallbackCopy(); } catch { /* ignore */ }
-        finishBackup();
-      });
+        });
     } else {
-      try {
-        const backup = backupPromise as unknown as { transfer: (n: number) => void; close: () => void };
-        backup.transfer(-1);
-        backup.close();
-      } catch (backupErr) {
-        logger.error(`[Auto Backup] db.backup() 失败，回退到 copyFileSync`, 'Backup', backupErr as Error);
-        try { doFallbackCopy(); } catch { /* ignore */ }
-      }
+      // 同步返回的旧版 API：直接完成备份流程
       finishBackup();
     }
   };

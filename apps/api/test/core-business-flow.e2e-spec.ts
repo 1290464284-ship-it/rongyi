@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { DbService } from '@db/db.service';
 import { ClinicContextService } from '@common/services/clinic-context.service';
 import { IdempotencyService } from '@common/services/idempotency.service';
@@ -29,6 +30,9 @@ import { ChargePaymentService } from '@modules/financial/charge/charge-payment.s
 import { RefundsService } from '@modules/financial/refunds/refunds.service';
 import { DebtService } from '@modules/financial/charge/debt.service';
 import { MemberCardsService } from '@modules/financial/member-cards/member-cards.service';
+import { MemberCardCoreService } from '@modules/financial/member-cards/member-card-core.service';
+import { MemberCardBalanceService } from '@modules/financial/member-cards/member-card-balance.service';
+import { MemberCardPointsService } from '@modules/financial/member-cards/member-card-points.service';
 import { AppointmentsService } from '@modules/scheduling/appointments/appointments.service';
 import { PatientsService } from '@modules/patients/patients.service';
 import { ComboService } from '@modules/financial/charge/combo.service';
@@ -71,6 +75,7 @@ describe('Core Business Flow E2E - 预约→挂号→收费→退款', () => {
     module = await Test.createTestingModule({
       providers: [
         { provide: DbService, useValue: testDbService },
+        { provide: EventEmitter2, useValue: new EventEmitter2() },
         ClinicContextService,
         IdempotencyService,
         CacheService,
@@ -88,6 +93,9 @@ describe('Core Business Flow E2E - 预约→挂号→收费→退款', () => {
         RefundsService,
         DebtService,
         MemberCardsService,
+        MemberCardCoreService,
+        MemberCardBalanceService,
+        MemberCardPointsService,
         PatientsService,
         ComboService,
         PaymentMethodService,
