@@ -201,6 +201,16 @@ describe('ClinicsService', () => {
       expect(result).not.toBeNull();
       expect(result?.id).toBe('test-clinic-001');
     });
+
+    it('仅返回公开字段，不暴露法人/营业执照/备注等经营敏感字段', async () => {
+      const result = await service.getCurrentClinic();
+      expect(result).not.toBeNull();
+      const publicFields = ['id', 'name', 'code', 'address', 'phone', 'isActive', 'createdAt', 'updatedAt'];
+      expect(new Set(Object.keys(result as object))).toEqual(new Set(publicFields));
+      expect(result).not.toHaveProperty('legalPerson');
+      expect(result).not.toHaveProperty('businessLicense');
+      expect(result).not.toHaveProperty('remark');
+    });
   });
 
   describe('findActive - 查询所有活跃诊所', () => {

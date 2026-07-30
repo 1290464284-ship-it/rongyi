@@ -31,6 +31,8 @@ export class ClinicsController {
   @ApiOperation({ summary: '获取诊所' })
   @Get('current')
   @ApiOperation({ summary: '获取当前用户的诊所信息' })
+  // 顶栏需展示当前诊所，所有登录角色均可读取自己所属诊所（handler 级 @Roles 覆盖类级 BOSS 限制）
+  @Roles(Role.BOSS, Role.DOCTOR, Role.RECEPTIONIST, Role.NURSE, Role.ADMIN, Role.TECHNICIAN)
   getCurrentClinic() {
     return this.clinics.getCurrentClinic();
   }
