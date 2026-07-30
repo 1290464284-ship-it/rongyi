@@ -139,9 +139,12 @@ source/
 每次交付（提交/合并/发布）须按以下步骤走完，形成可追溯的验收记录：
 
 1. **验证通过**：`pnpm run verify` 全部通过（typecheck + lint:strict + test + arch:check）；合并/发布级交付须跑 `pnpm run verify:delivery`（额外含 build + 三包覆盖率阈值门禁）
-2. **验收 Skill**：合并前调用 `/monorepo-delivery-acceptance` 完成变更审查
-3. **模块化提交**：按 Git 模块化提交命名规范拆分提交，每个提交是独立可回滚单元
-4. **结果报告**：交付时明确报告验证结果（通过项 + 测试数量），失败时如实报告并附输出
+2. **验收 Skill**：非平凡改动（多文件、跨模块、DB 迁移、依赖变更）合并前调用 `/monorepo-delivery-acceptance` 完成变更审查 — 该 Skill 会自动调用 `delivery-reviewer` 子代理进行架构规则审查
+3. **证据持久化**：交付证据写入 `.qoder/state/delivery-evidence/<YYYYMMDD-HHmm>-<slug>.md`
+4. **模块化提交**：按 Git 模块化提交命名规范拆分提交，每个提交是独立可回滚单元
+5. **结果报告**：交付时明确报告验证结果（通过项 + 测试数量），失败时如实报告并附输出
+
+> **触发分级**：单文件简单改动（Low/Medium 级）只需 `/monorepo-verify` 即可提交；非平凡改动（High/Critical 级）必须经 `/monorepo-delivery-acceptance` 全流程。
 
 ### 高风险改动审批
 
