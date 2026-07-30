@@ -8,6 +8,7 @@ import { buildClinicFilter } from "../../../common/utils/db/clinic-filter";
 import { STATS_CHARGE_CACHE_TTL_MS } from "../../../config/constants";
 import { STATS_CACHE_KEYS, buildStatsCacheKey } from "../../../common/constants/cache-keys";
 import { DateAmountRow } from "./stats.interfaces";
+import { CLINIC_TZ_SQL_MODIFIER } from "@dental/shared";
 
 @Injectable()
 export class ChargeStatsService {
@@ -32,7 +33,7 @@ export class ChargeStatsService {
       const qp: unknown[] = [];
       if (startDate && endDate) { qp.push(startDate, endOfDay(endDate)); }
       const daily = (this.dbService.prepare(
-        `SELECT date(paidAt) as date, COUNT(*) as count, COALESCE(SUM(paidAmount),0) as amount FROM Charge WHERE deletedAt IS NULL AND paidAt IS NOT NULL ${dateFilter}${clinicClause} GROUP BY date ORDER BY date`
+        `SELECT date(paidAt, '${CLINIC_TZ_SQL_MODIFIER}') as date, COUNT(*) as count, COALESCE(SUM(paidAmount),0) as amount FROM Charge WHERE deletedAt IS NULL AND paidAt IS NOT NULL ${dateFilter}${clinicClause} GROUP BY date ORDER BY date`
       ).all(...qp, ...clinicParams) as DateAmountRow[]).map(r => ({ ...r, amount: centsToYuan(r.amount) }));
       const monthly = (this.dbService.prepare(
         `SELECT substr(paidAt,1,7) as month, COUNT(*) as count, COALESCE(SUM(paidAmount),0) as amount FROM Charge WHERE deletedAt IS NULL AND paidAt IS NOT NULL ${dateFilter}${clinicClause} GROUP BY month ORDER BY month`

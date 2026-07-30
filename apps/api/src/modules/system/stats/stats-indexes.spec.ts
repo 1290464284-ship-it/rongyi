@@ -96,7 +96,7 @@ describe('Stats SQL EXPLAIN 索引命中验证', () => {
 
   describe('Charge 统计查询', () => {
     it('revenue 按日期范围 + clinicId 应走索引', () => {
-      const sql = `SELECT date(paidAt) as date, COUNT(*) as count, COALESCE(SUM(paidAmount),0) as amount
+      const sql = `SELECT date(paidAt, '+8 hours') as date, COUNT(*) as count, COALESCE(SUM(paidAmount),0) as amount
         FROM Charge WHERE deletedAt IS NULL AND paidAt IS NOT NULL AND paidAt >= ? AND paidAt <= ? AND clinicId = ?
         GROUP BY date ORDER BY date`;
       assertUsesIndex(sql, ['2026-01-01', '2026-12-31', 'clinic-explain-test'], 'idx_charge');
@@ -118,7 +118,7 @@ describe('Stats SQL EXPLAIN 索引命中验证', () => {
 
   describe('Appointment 统计查询', () => {
     it('按 startTime 范围 + clinicId 应走索引', () => {
-      const sql = `SELECT date(startTime) as date, COUNT(*) as count
+      const sql = `SELECT date(startTime, '+8 hours') as date, COUNT(*) as count
         FROM Appointment WHERE deletedAt IS NULL AND startTime >= ? AND startTime <= ? AND clinicId = ?
         GROUP BY date ORDER BY date`;
       assertUsesIndex(sql, ['2026-01-01', '2026-12-31', 'clinic-explain-test'], 'idx_appointment');
@@ -147,14 +147,14 @@ describe('Stats SQL EXPLAIN 索引命中验证', () => {
       const queries = [
         {
           name: 'Charge revenue',
-          sql: `SELECT date(paidAt) as date, COUNT(*) as count FROM Charge
+          sql: `SELECT date(paidAt, '+8 hours') as date, COUNT(*) as count FROM Charge
             WHERE deletedAt IS NULL AND paidAt IS NOT NULL AND paidAt >= ? AND paidAt <= ? AND clinicId = ?
             GROUP BY date`,
           params: ['2026-01-01', '2026-12-31', 'clinic-explain-test'],
         },
         {
           name: 'Appointment by date range',
-          sql: `SELECT date(startTime) as date, COUNT(*) as count FROM Appointment
+          sql: `SELECT date(startTime, '+8 hours') as date, COUNT(*) as count FROM Appointment
             WHERE deletedAt IS NULL AND startTime >= ? AND clinicId = ?
             GROUP BY date`,
           params: ['2026-01-01', 'clinic-explain-test'],

@@ -12,6 +12,7 @@ import {
 } from "../../../config/constants";
 import { STATS_CACHE_KEYS, buildStatsCacheKey } from "../../../common/constants/cache-keys";
 import { DateAmountRow, CategoryAmountRow, DoctorRevenueRow } from "./stats.interfaces";
+import { CLINIC_TZ_SQL_MODIFIER } from "@dental/shared";
 
 @Injectable()
 export class RevenueStatsService {
@@ -39,7 +40,7 @@ export class RevenueStatsService {
     validateDates(startDate, endDate);
     const { clause: clinicClause, params: clinicParams } = buildClinicFilter(this.clinicContext.getClinicId());
     const dateFilter = startDate && endDate ? "AND paidAt >= ? AND paidAt <= ?" : "";
-    const groupExpr = groupBy === 'month' ? "substr(paidAt,1,7)" : groupBy === 'year' ? "substr(paidAt,1,4)" : "date(paidAt)";
+    const groupExpr = groupBy === 'month' ? "substr(paidAt,1,7)" : groupBy === 'year' ? "substr(paidAt,1,4)" : `date(paidAt, '${CLINIC_TZ_SQL_MODIFIER}')`;
     const qp: unknown[] = [];
     if (startDate && endDate) { qp.push(startDate, endOfDay(endDate)); }
     const rows = this.dbService.prepare(
