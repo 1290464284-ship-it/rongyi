@@ -1,4 +1,4 @@
-import { StatsCacheCategory } from '../../modules/system/stats/stats.interfaces';
+import { StatsCacheCategory } from '../types/stats-cache-category';
 
 /**
  * StatsService 接口（仅声明需要的方法，避免循环依赖）
