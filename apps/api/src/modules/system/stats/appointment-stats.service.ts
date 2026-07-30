@@ -7,6 +7,7 @@ import { buildClinicFilter } from "../../../common/utils/db/clinic-filter";
 import { STATS_APPOINTMENT_CACHE_TTL_MS } from "../../../config/constants";
 import { STATS_CACHE_KEYS, buildStatsCacheKey } from "../../../common/constants/cache-keys";
 import { DateCountRow, MonthCountRow, StatusCountRow } from "./stats.interfaces";
+import { CLINIC_TZ_SQL_MODIFIER } from "@dental/shared";
 
 @Injectable()
 export class AppointmentStatsService {
@@ -38,7 +39,7 @@ export class AppointmentStatsService {
         ? byStatus.map(r => ({ status: r.status, count: r.count, percentage: 0 }))
         : byStatus.map(r => ({ status: r.status, count: r.count, percentage: Math.round((r.count / total) * 100) }));
       const daily = this.dbService.prepare(
-        `SELECT date(startTime) as date, COUNT(*) as count FROM Appointment WHERE deletedAt IS NULL ${dateFilter}${clinicClause} GROUP BY date ORDER BY date`
+        `SELECT date(startTime, '${CLINIC_TZ_SQL_MODIFIER}') as date, COUNT(*) as count FROM Appointment WHERE deletedAt IS NULL ${dateFilter}${clinicClause} GROUP BY date ORDER BY date`
       ).all(...qp, ...clinicParams) as DateCountRow[];
       const monthly = this.dbService.prepare(
         `SELECT substr(startTime,1,7) as month, COUNT(*) as count FROM Appointment WHERE deletedAt IS NULL ${dateFilter}${clinicClause} GROUP BY month ORDER BY month`

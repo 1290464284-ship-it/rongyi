@@ -15,6 +15,7 @@ import { BusinessNotFoundException, BusinessValidationException } from '@common/
 import { EventBusService } from '../../../common/events/event-bus.service';
 import { ChargeCreatedEvent } from '../../../common/events/domain-events';
 import { ChargeRepository } from './repositories/charge.repository';
+import { getLocalDateInClinicTz } from '@dental/shared';
 
 @Injectable()
 export class ChargeService extends BaseService<ChargeRecord> {
@@ -261,10 +262,8 @@ export class ChargeService extends BaseService<ChargeRecord> {
    * 避免在 idempotency handler 内调用 this.dbService 而脱离事务
    */
   private generateChargeNumberSync(db: IDatabase): string {
-    const date = new Date();
-    const dateStr = date.getFullYear().toString() +
-      String(date.getMonth() + 1).padStart(2, '0') +
-      String(date.getDate()).padStart(2, '0');
+    // 使用诊所固定时区（Asia/Shanghai）获取本地日期，避免服务器时区与诊所不一致时编号跨日错乱
+    const dateStr = getLocalDateInClinicTz(new Date()).replace(/-/g, '');
 
     const clinicId = this.clinicContext.getClinicId();
     const row = db.prepare(
@@ -285,10 +284,8 @@ export class ChargeService extends BaseService<ChargeRecord> {
   }
 
   private generateChargeNumber(): string {
-    const date = new Date();
-    const dateStr = date.getFullYear().toString() +
-      String(date.getMonth() + 1).padStart(2, '0') +
-      String(date.getDate()).padStart(2, '0');
+    // 使用诊所固定时区（Asia/Shanghai）获取本地日期，避免服务器时区与诊所不一致时编号跨日错乱
+    const dateStr = getLocalDateInClinicTz(new Date()).replace(/-/g, '');
 
     const clinicId = this.clinicContext.getClinicId();
     const row = this.dbService.prepare(

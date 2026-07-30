@@ -10,6 +10,7 @@ import {
 } from "../../../config/constants";
 import { STATS_CACHE_KEYS, buildStatsCacheKey } from "../../../common/constants/cache-keys";
 import { DateCountRow, MonthCountRow } from "./stats.interfaces";
+import { CLINIC_TZ_SQL_MODIFIER } from "@dental/shared";
 
 @Injectable()
 export class PatientStatsService {
@@ -56,7 +57,7 @@ export class PatientStatsService {
       const qp: unknown[] = [];
       if (startDate && endDate) { qp.push(startDate, endOfDay(endDate)); }
       const daily = this.dbService.prepare(
-        `SELECT date(createdAt) as date, COUNT(*) as count FROM Patient ${dateFilter} GROUP BY date ORDER BY date`
+        `SELECT date(createdAt, '${CLINIC_TZ_SQL_MODIFIER}') as date, COUNT(*) as count FROM Patient ${dateFilter} GROUP BY date ORDER BY date`
       ).all(...qp, ...clinicParams) as DateCountRow[];
       const monthly = this.dbService.prepare(
         `SELECT substr(createdAt,1,7) as month, COUNT(*) as count FROM Patient ${dateFilter} GROUP BY month ORDER BY month`
