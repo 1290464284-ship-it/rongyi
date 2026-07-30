@@ -148,7 +148,29 @@ describe('DbService', () => {
       expect(row.name).toBe('tx_test');
     });
 
-    it('事务抛出异常应回滚', () => {
+    it('事务内 COMMIT 失败应回滚并抛出', () => {
+      const mockDb = {
+        inTransaction: false,
+        exec: jest.fn((sql: string) => {
+          if (sql === 'BEGIN IMMEDIATE') return;
+          if (sql === 'COMMIT') throw new Error('commit failed');
+          if (sql === 'ROLLBACK') return;
+        }),
+        prepare: jest.fn(),
+        pragma: jest.fn(),
+        close: jest.fn(),
+        backup: jest.fn(),
+        name: 'mock',
+      };
+      (dbService as unknown as Record<string, unknown>).database = mockDb;
+
+      expect(() => {
+        dbService.transaction(() => { /* noop */ });
+      }).toThrow('commit failed');
+      expect(mockDb.exec).toHaveBeenCalledWith('ROLLBACK');
+    });
+
+    it('事务内异常应回滚并抛出', () => {
       try {
         dbService.transaction(() => {
           db.prepare('INSERT INTO test (id, name) VALUES (?, ?)').run(2, 'rollback_test');
@@ -263,6 +285,32 @@ describe('DbService', () => {
       expect(() => {
         readonlyDb.transaction(() => { /* noop */ });
       }).toThrow('只读连接不支持事务');
+      readonlyDb.close();
+
+      try {
+        require('node:fs').unlinkSync(tmpPath);
+      } catch {
+        // 忽略删除错误
+      }
+    });
+
+    it('只读连接的 prepare/exec/pragma 应正常工作', () => {
+      const tmpPath = require('node:path').join(require('node:os').tmpdir(), `test_readonly_ops_${Date.now()}.db`);
+      const tmpDb = new Database(tmpPath);
+      tmpDb.exec('CREATE TABLE t (id INTEGER PRIMARY KEY, val TEXT)');
+      tmpDb.prepare('INSERT INTO t (id, val) VALUES (?, ?)').run(1, 'hello');
+      tmpDb.close();
+
+      const readonlyDb = dbService.openReadonly(tmpPath);
+
+      // prepare
+      const stmt = readonlyDb.prepare('SELECT * FROM t WHERE id = ?');
+      expect(stmt).toBeDefined();
+
+      // pragma
+      const jm = readonlyDb.pragma('journal_mode');
+      expect(jm).toBeDefined();
+
       readonlyDb.close();
 
       try {
