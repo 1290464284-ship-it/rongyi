@@ -103,4 +103,61 @@ describe('AuditLogService', () => {
       expect(service.sanitizeAuditData(42)).toBe(42);
     });
   });
+
+  describe('computeHash', () => {
+    it('应返回确定性的 SHA-256 哈希', () => {
+      const hash = service.computeHash('0', 'CREATE', 'id-1', 'Patient', null, '{"name":"张三"}', 'c1', '2026-01-01T00:00:00.000Z');
+      expect(hash).toMatch(/^[a-f0-9]{64}$/);
+    });
+
+    it('相同输入应产生相同哈希', () => {
+      const args = ['0', 'UPDATE', 'id-1', 'Patient', '{"name":"旧"}', '{"name":"新"}', 'c1', '2026-01-01T00:00:00.000Z'] as const;
+      expect(service.computeHash(...args)).toBe(service.computeHash(...args));
+    });
+
+    it('不同 prevHash 应产生不同哈希', () => {
+      const base = ['UPDATE', 'id-1', 'Patient', null, null, 'c1', '2026-01-01T00:00:00.000Z'] as const;
+      const h1 = service.computeHash('0', ...base);
+      const h2 = service.computeHash('abc123', ...base);
+      expect(h1).not.toBe(h2);
+    });
+  });
+
+  describe('哈希链集成', () => {
+    it('logAudit 应写入 prevHash 和 hash', () => {
+      service.logAudit(asDbService(db), 'USER_CREATE', 'user-1', 'User', 'clinic-1', {
+        afterData: { name: '张三' },
+      });
+
+      const logs = db.getTableData('AuditLog');
+      expect(logs).toHaveLength(1);
+      expect(logs[0].prevHash).toBe('0'); // 首条记录，无前驱
+      expect(logs[0].hash).toMatch(/^[a-f0-9]{64}$/);
+    });
+
+    it('第二条记录应链接到第一条的 hash', () => {
+      const dbService = asDbService(db);
+      service.logAudit(dbService, 'CREATE', 'id-1', 'Patient', 'c1', { afterData: { name: 'A' } });
+      service.logAudit(dbService, 'UPDATE', 'id-1', 'Patient', 'c1', { beforeData: { name: 'A' }, afterData: { name: 'B' } });
+
+      const logs = db.getTableData('AuditLog');
+      expect(logs).toHaveLength(2);
+      // 第二条的 prevHash 应等于第一条的 hash
+      expect(logs[1].prevHash).toBe(logs[0].hash);
+      expect(logs[1].hash).toMatch(/^[a-f0-9]{64}$/);
+      expect(logs[1].hash).not.toBe(logs[0].hash);
+    });
+
+    it('不同诊所的哈希链应独立', () => {
+      const dbService = asDbService(db);
+      service.logAudit(dbService, 'CREATE', 'id-1', 'Patient', 'clinic-A', { afterData: {} });
+      service.logAudit(dbService, 'CREATE', 'id-2', 'Patient', 'clinic-B', { afterData: {} });
+
+      const logs = db.getTableData('AuditLog');
+      expect(logs).toHaveLength(2);
+      // 两个诊所的首条记录 prevHash 都应为 '0'
+      expect(logs[0].prevHash).toBe('0');
+      expect(logs[1].prevHash).toBe('0');
+    });
+  });
 });
