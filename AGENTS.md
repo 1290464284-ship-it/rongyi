@@ -21,14 +21,16 @@ source/
 | 领域 | API 模块路径 | Web 模块路径 |
 |------|-------------|-------------|
 | 认证 | `src/modules/auth/` | `src/modules/auth/` |
-| 患者 | `src/modules/patients/` | `src/modules/patient/` |
+| 患者 | `src/modules/patients/` | `src/modules/patients/` |
 | 预约/排班 | `src/modules/scheduling/` (appointments, chairs) | `src/modules/appointment/` |
-| 临床 | `src/modules/clinical/` (first-exams, oral-examinations, periodontal-records, registrations, visits, treatments, treatment-plans, medical-records) | `src/modules/clinical/`, `first-exams/`, `medical-records/`, `treatment-plan/`, `registration/` |
-| 收费/财务 | `src/modules/financial/` (charge, refunds, member-cards) | `src/modules/charge/`, `charge-v2/`, `finance/` |
-| 库存 | `src/modules/inventory/` (inventory, suppliers, purchase-orders, processing-orders) | `src/modules/inventory/`, `processing-orders/` |
-| 内容 | `src/modules/content/` (drug-catalog, imaging, prescriptions, tooth-records) | `src/modules/imaging/`, `prescription/` |
-| 沟通 | `src/modules/communication/` (follow-ups, wechat) | `src/modules/follow-ups/`, `wechat/` |
-| 系统 | `src/modules/system/` (backups, clinics, health, metrics, operation-logs, search, settings, stats) | `src/modules/settings/`, `dashboard/`, `report/`, `staff/` |
+| 临床 | `src/modules/clinical/` (first-exams, oral-examinations, periodontal-records, registrations, visits, treatments, treatment-plans, medical-records) | `src/modules/clinical/` (first-exams, medical-records, registration, treatment-plan, components) |
+| 收费/财务 | `src/modules/financial/` (charge, refunds, member-cards) | `src/modules/charge/` (components, finance) |
+| 库存 | `src/modules/inventory/` (inventory, suppliers, purchase-orders, processing-orders) | `src/modules/inventory/` (components, processing-orders) |
+| 内容 | `src/modules/content/` (drug-catalog, imaging, prescriptions, tooth-records) | `src/modules/content/` (imaging, prescription) |
+| 沟通 | `src/modules/communication/` (follow-ups, wechat) | `src/modules/communication/` (follow-ups, wechat) |
+| 通知 | `src/modules/notifications/` | — |
+| 同步 | `src/modules/sync/` | — |
+| 系统 | `src/modules/system/` (backups, clinics, health, metrics, operation-logs, search, settings, stats) | `src/modules/system/` (settings, dashboard, report, staff) |
 | 设备 | `src/modules/equipment/` | `src/modules/equipment/` |
 | 公共基础 | `src/common/` (guards, filters, interceptors, middleware, services, repositories) | `src/lib/`, `src/components/ui/` |
 | 数据库 | `src/db/` (schema, migrations, seed, DbService) | — |
