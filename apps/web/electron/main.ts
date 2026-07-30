@@ -363,7 +363,39 @@ const createWindow = () => {
       nodeIntegration: false,
       devTools: isDev,
       webSecurity: true,
+      // P1.4: preload 通过 contextBridge 暴露只读信息（window.dentalBridge）
+      preload: join(__dirname, 'preload.cjs'),
     },
+  });
+
+  // P1.4: 外链白名单 — 拒绝所有非白名单的新窗口（防止 target="_blank" 链接钓鱼）
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      const u = new URL(url);
+      const allowed = ['github.com', 'gitee.com']; // 后续按需扩展
+      if (allowed.some(h => u.hostname === h || u.hostname.endsWith('.' + h))) {
+        return { action: 'allow' };
+      }
+    } catch {
+      // URL 解析失败视为不安全
+    }
+    log(`拦截非白名单新窗口: ${url}`);
+    return { action: 'deny' };
+  });
+
+  // P1.4: 导航保护 — 禁止渲染进程导航到非预期 URL（防止链接跳转离开应用）
+  // 生产环境仅允许本地静态服务器与 API；开发环境额外允许 Vite dev server
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    try {
+      const u = new URL(url);
+      const allowedHosts = ['localhost', '127.0.0.1'];
+      if (!allowedHosts.includes(u.hostname)) {
+        event.preventDefault();
+        log(`拦截非预期导航: ${url}`);
+      }
+    } catch {
+      event.preventDefault();
+    }
   });
 
   if (isDev) {
