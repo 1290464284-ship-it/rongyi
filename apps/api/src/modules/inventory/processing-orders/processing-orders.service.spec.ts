@@ -486,4 +486,197 @@ describe('ProcessingOrdersService', () => {
       await expect(service.deleteFactory('non-existent')).rejects.toThrow(BusinessNotFoundException);
     });
   });
+
+  // ==================== create - 错误路径 ====================
+
+  describe('create - 错误路径', () => {
+    it('事务抛出非 UNIQUE 约束错误时应直接抛出', async () => {
+      jest.spyOn(db, 'transaction').mockImplementation(((_fn: (d: unknown) => unknown) => {
+        throw new Error('SQLITE_ERROR: no such table');
+      }) as any);
+
+      await expect(service.create({
+        patientId: 'patient-001',
+      })).rejects.toThrow('SQLITE_ERROR');
+    });
+  });
+
+  // ==================== updateStatus - 并发冲突 ====================
+
+  describe('updateStatus - 并发冲突', () => {
+    it('并发更新导致 changes=0 时应抛出异常', async () => {
+      db.seed('ProcessingOrder', [{
+        id: 'po-concurrent', number: 'PO7001', patientId: 'patient-001',
+        status: 'SENT', clinicId: 'test-clinic-001', deletedAt: null,
+        teethNumbers: '[]', totalFee: 0,
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      }]);
+
+      const origPrepare = db.prepare.bind(db);
+      jest.spyOn(db, 'prepare').mockImplementation(((sql: string) => {
+        const stmt = origPrepare(sql);
+        if (sql.includes('UPDATE ProcessingOrder SET status') && sql.includes('WHERE id = ? AND status = ?')) {
+          (stmt as any).run = () => ({ changes: 0, lastInsertRowid: '' });
+        }
+        return stmt;
+      }) as any);
+
+      await expect(service.updateStatus('po-concurrent', 'IN_PROGRESS')).rejects.toThrow(BusinessValidationException);
+    });
+  });
+
+  // ==================== addFlowLog - 错误路径 ====================
+
+  describe('addFlowLog - 错误路径', () => {
+    it('非法状态转换应抛出 BusinessValidationException', async () => {
+      db.seed('ProcessingOrder', [{
+        id: 'po-flow-invalid', number: 'PO7100', patientId: 'patient-001',
+        status: 'RECEIVED', clinicId: 'test-clinic-001', deletedAt: null,
+        teethNumbers: '[]', totalFee: 0,
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      }]);
+
+      await expect(service.addFlowLog('po-flow-invalid', {
+        status: 'SENT',
+      })).rejects.toThrow(BusinessValidationException);
+    });
+
+    it('并发修改状态导致 CAS 失败应抛出异常', async () => {
+      db.seed('ProcessingOrder', [{
+        id: 'po-flow-race', number: 'PO7200', patientId: 'patient-001',
+        status: 'SENT', clinicId: 'test-clinic-001', deletedAt: null,
+        teethNumbers: '[]', totalFee: 0,
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      }]);
+
+      const origPrepare = db.prepare.bind(db);
+      jest.spyOn(db, 'prepare').mockImplementation(((sql: string) => {
+        const stmt = origPrepare(sql);
+        if (sql.includes('UPDATE ProcessingOrder SET status') && sql.includes('AND status = ?')) {
+          (stmt as any).run = () => ({ changes: 0, lastInsertRowid: '' });
+        }
+        return stmt;
+      }) as any);
+
+      await expect(service.addFlowLog('po-flow-race', {
+        status: 'IN_PROGRESS',
+      })).rejects.toThrow(BusinessValidationException);
+    });
+  });
+
+  // ==================== linkCharge ====================
+
+  describe('linkCharge - 关联收费', () => {
+    it('应成功关联收费单', async () => {
+      db.seed('ProcessingOrder', [{
+        id: 'po-charge', number: 'PO7300', patientId: 'patient-001',
+        status: 'SENT', clinicId: 'test-clinic-001', deletedAt: null,
+        teethNumbers: '[]', totalFee: 0,
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      }]);
+
+      const result = await service.linkCharge('po-charge', 'charge-001');
+      expect(result).toBeDefined();
+    });
+  });
+
+  // ==================== stats - 有数据 ====================
+
+  describe('stats - 有数据', () => {
+    it('有数据时应返回统计结构', async () => {
+      db.seed('ProcessingOrder', [
+        { id: 'po-s1', number: 'PO7401', patientId: 'p1', status: 'SENT', totalFee: 0, clinicId: 'test-clinic-001', deletedAt: null, teethNumbers: '[]', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        { id: 'po-s2', number: 'PO7402', patientId: 'p2', status: 'RECEIVED', totalFee: 0, clinicId: 'test-clinic-001', deletedAt: null, teethNumbers: '[]', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        { id: 'po-s3', number: 'PO7403', patientId: 'p3', status: 'IN_PROGRESS', totalFee: 0, clinicId: 'test-clinic-001', deletedAt: null, teethNumbers: '[]', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      ]);
+
+      const result = await service.stats();
+      // MockDbService 不支持条件 COUNT，但 total 应正确返回行数
+      expect(result.total).toBe(3);
+      expect(typeof result.completed).toBe('number');
+      expect(typeof result.pending).toBe('number');
+    });
+  });
+
+  // ==================== updateProduct ====================
+
+  describe('updateProduct - 更新产品', () => {
+    it('更新产品名称应成功', async () => {
+      db.seed('ProcessingProduct', [{
+        id: 'prod-upd', factoryId: 'factory-001', name: '旧名称',
+        category: '修复体', price: 500, clinicId: 'test-clinic-001', deletedAt: null,
+      }]);
+
+      const result = await service.updateProduct('prod-upd', { name: '新名称', price: 800 }) as Record<string, unknown>;
+      expect(result.name).toBe('新名称');
+      expect(result.price).toBe(800);
+    });
+
+    it('无更新字段时仍应返回产品', async () => {
+      db.seed('ProcessingProduct', [{
+        id: 'prod-noop', factoryId: 'factory-001', name: '产品',
+        category: '修复体', price: 500, clinicId: 'test-clinic-001', deletedAt: null,
+      }]);
+
+      const result = await service.updateProduct('prod-noop', {}) as Record<string, unknown>;
+      expect(result).toBeDefined();
+      expect(result.name).toBe('产品');
+    });
+  });
+
+  // ==================== listProducts - 无过滤 ====================
+
+  describe('listProducts - 无 factoryId 过滤', () => {
+    it('不传 factoryId 应返回所有产品', async () => {
+      db.seed('ProcessingProduct', [
+        { id: 'prod-a', factoryId: 'factory-001', name: '产品A', clinicId: 'test-clinic-001', deletedAt: null },
+        { id: 'prod-b', factoryId: 'factory-002', name: '产品B', clinicId: 'test-clinic-001', deletedAt: null },
+      ]);
+
+      const result = await service.listProducts();
+      expect(result.length).toBe(2);
+    });
+  });
+
+  // ==================== updateFactory ====================
+
+  describe('updateFactory - 更新工厂', () => {
+    it('更新工厂名称和状态应成功', async () => {
+      db.seed('ProcessingFactory', [{
+        id: 'factory-upd', name: '旧工厂', status: 'ACTIVE',
+        clinicId: 'test-clinic-001', deletedAt: null,
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      }]);
+
+      const result = await service.updateFactory('factory-upd', { name: '新工厂', status: 'INACTIVE' }) as Record<string, unknown>;
+      expect(result.name).toBe('新工厂');
+      expect(result.status).toBe('INACTIVE');
+    });
+
+    it('无更新字段时仍应返回工厂', async () => {
+      db.seed('ProcessingFactory', [{
+        id: 'factory-noop', name: '工厂', status: 'ACTIVE',
+        clinicId: 'test-clinic-001', deletedAt: null,
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      }]);
+
+      const result = await service.updateFactory('factory-noop', {}) as Record<string, unknown>;
+      expect(result).toBeDefined();
+      expect(result.name).toBe('工厂');
+    });
+  });
+
+  // ==================== listFactories ====================
+
+  describe('listFactories - 查询工厂列表', () => {
+    it('应返回所有未删除的工厂', async () => {
+      db.seed('ProcessingFactory', [
+        { id: 'f-1', name: '工厂A', status: 'ACTIVE', clinicId: 'test-clinic-001', deletedAt: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        { id: 'f-2', name: '工厂B', status: 'ACTIVE', clinicId: 'test-clinic-001', deletedAt: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      ]);
+
+      const result = await service.listFactories();
+      expect(result.length).toBe(2);
+    });
+  });
 });
