@@ -2,6 +2,9 @@ node_modules
 dist
 dist-web
 build
+# 应用图标是源资源，非构建产物
+!apps/web/build/
+!apps/web/build/**
 coverage
 .nyc_output
 
@@ -25,6 +28,7 @@ Thumbs.db
 logs
 *.log
 npm-debug.log*
+apps/api/logs/
 
 .prisma
 uploads/

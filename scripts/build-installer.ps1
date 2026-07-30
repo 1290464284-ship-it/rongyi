@@ -37,6 +37,20 @@ if ($CertPassword) {
 
 Write-Host ""
 
+# Pre-build cleanup: remove stale logs and old backups to reduce installer size
+Write-Host "[Cleanup] Removing stale logs and old backups..." -ForegroundColor Cyan
+$staleLogDirs = @(
+    (Join-Path $rootDir 'apps\api\logs'),
+    (Join-Path $rootDir 'apps\api\data\logs')
+)
+foreach ($dir in $staleLogDirs) {
+    if (Test-Path $dir) {
+        Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "  Removed: $dir" -ForegroundColor Gray
+    }
+}
+Write-Host ""
+
 # Change to project root directory
 Push-Location $rootDir
 try {

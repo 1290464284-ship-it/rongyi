@@ -22,8 +22,7 @@
  */
 import { contextBridge, app } from 'electron';
 import { platform, arch } from 'os';
-
-const CLINIC_TIMEZONE = 'Asia/Shanghai';
+import { CLINIC_TIMEZONE } from '@dental/shared';
 
 const bridge = {
   platform: platform(),
