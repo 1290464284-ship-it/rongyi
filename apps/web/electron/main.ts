@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, MenuItemConstructorOptions, dialog } from 'electron';
+import { app, BrowserWindow, Menu, MenuItemConstructorOptions, dialog, safeStorage } from 'electron';
 import * as path from 'path';
 import { join } from 'path';
 import { spawn, ChildProcess } from 'child_process';
@@ -31,70 +31,96 @@ const logPath = join(app.getPath('userData'), 'app.log');
 const configDir = join(app.getPath('userData'), 'config');
 const secretPath = join(configDir, 'secrets.json');
 
-function getJwtSecret(): string {
+// ===== 密钥存储（safeStorage 加固）=====
+// v2 格式：{ version: 2, encrypted: true, jwtSecret: <DPAPI 密文 base64>, encryptionKey: <同左> }
+// 兼容 v1 明文格式：读取后立即用 safeStorage 加密重写
+// 注意：mode 0o600 在 Windows 上无效，真正的保护来自 safeStorage（Windows DPAPI / macOS Keychain）
+interface SecretsFile {
+  version?: number;
+  encrypted?: boolean;
+  jwtSecret?: string;
+  encryptionKey?: string;
+}
+
+function readSecretsFile(): SecretsFile {
+  if (!existsSync(secretPath)) return {};
   try {
-    if (!existsSync(configDir)) {
-      mkdirSync(configDir, { recursive: true });
-    }
-
-    if (existsSync(secretPath)) {
-      const content = readFileSync(secretPath, 'utf-8');
-      const config = JSON.parse(content);
-      if (config.jwtSecret && typeof config.jwtSecret === 'string') {
-        return config.jwtSecret;
-      }
-    }
-
-    const newSecret = crypto.randomBytes(32).toString('hex');
-    // P0 修复：读取-合并-写回，避免覆盖已有的 encryptionKey
-    let config: Record<string, unknown> = {};
-    if (existsSync(secretPath)) {
-      try {
-        config = JSON.parse(readFileSync(secretPath, 'utf-8'));
-      } catch {}
-    }
-    config.jwtSecret = newSecret;
-    writeFileSync(secretPath, JSON.stringify(config), { mode: 0o600 });
-    log(`生成新的JWT密钥并保存`);
-    return newSecret;
-  } catch (err) {
-    const msg = `获取JWT密钥失败: ${(err as Error).message}`;
-    log(msg);
-    dialog.showErrorBox('密钥错误', msg + '\n\n无法读取或创建JWT密钥文件，应用将退出。');
-    app.quit();
-    throw new Error(msg);
+    return JSON.parse(readFileSync(secretPath, 'utf-8')) as SecretsFile;
+  } catch {
+    return {};
   }
 }
 
-function getEncryptionKey(): string {
+function writeSecretsFile(jwtSecret: string, encryptionKey: string, useEncryption: boolean): void {
+  if (!existsSync(configDir)) {
+    mkdirSync(configDir, { recursive: true });
+  }
+  const payload: SecretsFile = useEncryption
+    ? {
+        version: 2,
+        encrypted: true,
+        jwtSecret: safeStorage.encryptString(jwtSecret).toString('base64'),
+        encryptionKey: safeStorage.encryptString(encryptionKey).toString('base64'),
+      }
+    : { version: 2, encrypted: false, jwtSecret, encryptionKey };
+  writeFileSync(secretPath, JSON.stringify(payload), { mode: 0o600 });
+}
+
+function decodeStoredSecret(value: string | undefined, encrypted: boolean): string | null {
+  if (!value || typeof value !== 'string') return null;
+  if (!encrypted) return value;
   try {
-    if (!existsSync(configDir)) {
-      mkdirSync(configDir, { recursive: true });
+    return safeStorage.decryptString(Buffer.from(value, 'base64'));
+  } catch (err) {
+    log(`解密存储密钥失败（系统凭据可能已变更）: ${(err as Error).message}`);
+    return null;
+  }
+}
+
+function loadOrCreateSecrets(): { jwtSecret: string; encryptionKey: string } {
+  try {
+    // 必须在 app ready 后调用（startApi 在 whenReady 内触发，满足前提）
+    const canEncrypt = safeStorage.isEncryptionAvailable();
+    if (!canEncrypt) {
+      log('警告: 当前系统不支持 safeStorage 加密，密钥将以明文存储（mode 0o600）');
+    }
+    const stored = readSecretsFile();
+    const wasEncrypted = stored.encrypted === true;
+
+    let jwtSecret = decodeStoredSecret(stored.jwtSecret, wasEncrypted);
+    let encryptionKey = decodeStoredSecret(stored.encryptionKey, wasEncrypted);
+
+    // 历史 bug 兼容：旧版以 base64 生成 encryptionKey，但 API 强校验 64 位 hex，
+    // 该密钥从未通过 API 启动校验（API 直接退出），因此可安全重新生成
+    if (encryptionKey && !/^[a-f0-9]{64}$/i.test(encryptionKey)) {
+      log('检测到非 hex 格式的历史 encryptionKey（API 无法使用），重新生成');
+      encryptionKey = null;
     }
 
-    if (existsSync(secretPath)) {
-      const content = readFileSync(secretPath, 'utf-8');
-      const config = JSON.parse(content);
-      if (config.encryptionKey && typeof config.encryptionKey === 'string') {
-        return config.encryptionKey;
+    let changed = false;
+    if (!jwtSecret) {
+      jwtSecret = crypto.randomBytes(32).toString('hex');
+      log('生成新的JWT密钥并保存');
+      changed = true;
+    }
+    if (!encryptionKey) {
+      encryptionKey = crypto.randomBytes(32).toString('hex');
+      log('生成新的数据加密密钥并保存');
+      changed = true;
+    }
+
+    // 需要重写：新生成密钥 / v1 明文迁移到加密 / 加密能力状态变化
+    if (changed || wasEncrypted !== canEncrypt) {
+      writeSecretsFile(jwtSecret, encryptionKey, canEncrypt);
+      if (!wasEncrypted && canEncrypt && !changed) {
+        log('已将明文 secrets.json 迁移为 safeStorage 加密存储');
       }
     }
-
-    const newKey = crypto.randomBytes(32).toString('base64');
-    let config: Record<string, unknown> = {};
-    if (existsSync(secretPath)) {
-      try {
-        config = JSON.parse(readFileSync(secretPath, 'utf-8'));
-      } catch {}
-    }
-    config.encryptionKey = newKey;
-    writeFileSync(secretPath, JSON.stringify(config), { mode: 0o600 });
-    log(`生成新的数据加密密钥并保存`);
-    return newKey;
+    return { jwtSecret, encryptionKey };
   } catch (err) {
-    const msg = `获取加密密钥失败: ${(err as Error).message}`;
+    const msg = `获取应用密钥失败: ${(err as Error).message}`;
     log(msg);
-    dialog.showErrorBox('密钥错误', msg + '\n\n无法读取或创建数据加密密钥文件，应用将退出。');
+    dialog.showErrorBox('密钥错误', msg + '\n\n无法读取或创建密钥文件，应用将退出。');
     app.quit();
     throw new Error(msg);
   }
@@ -215,8 +241,7 @@ const startApi = (): Promise<void> => {
     log(`数据库文件存在: ${existsSync(dbFile)}`);
     log(`启动 API: ${apiPath} ${args.join(' ')}`);
     
-    const jwtSecret = getJwtSecret();
-    const encryptionKey = getEncryptionKey();
+    const { jwtSecret, encryptionKey } = loadOrCreateSecrets();
     const legacyDbPath = !isDev
       ? join(process.resourcesPath, 'api', 'data', 'dental.sqlite')
       : '';
@@ -356,7 +381,7 @@ const createWindow = () => {
     const server = createServer((req: IncomingMessage, res: ServerResponse) => {
       try {
         // 解析URL，防止路径遍历攻击
-        const urlObj = new URL(req.url, `http://localhost:${apiPort}`);
+        const urlObj = new URL(req.url ?? '/', `http://localhost:${apiPort}`);
         const pathname = decodeURIComponent(urlObj.pathname);
 
         // 规范化路径，防止 ../ 路径遍历

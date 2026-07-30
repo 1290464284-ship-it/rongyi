@@ -3,7 +3,7 @@
     "target": "ES2022",
     "module": "CommonJS",
     "moduleResolution": "node",
-    "outDir": "electron",
+    "noEmit": true,
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -11,6 +11,6 @@
     "types": ["electron", "node"],
     "declaration": false
   },
-  "include": ["electron/main.ts"],
+  "include": ["electron/*.ts"],
   "exclude": ["node_modules"]
 }
