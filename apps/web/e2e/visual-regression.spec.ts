@@ -33,8 +33,8 @@ async function disableAnimations(page: Page): Promise<void> {
 async function loginAndAwait(page: Page): Promise<void> {
   await page.goto('/login');
   await disableAnimations(page);
-  await page.fill('input[type="text"]', 'boss');
-  await page.fill('input[type="password"]', 'REDACTED');
+  await page.fill('input[id="username"]', 'boss');
+  await page.fill('input[id="password"]', '0801');
   await page.click('button[type="submit"]');
   await page.waitForURL('**/dashboard');
   await page.waitForLoadState('networkidle');
@@ -45,7 +45,7 @@ test.describe('Visual Regression', () => {
     await page.goto('/login');
     await disableAnimations(page);
     await page.waitForLoadState('networkidle');
-    await expect(page).toHaveScreenshot('login-page');
+    await expect(page).toHaveScreenshot('login-page.png');
   });
 
   test.describe('authenticated pages', () => {
@@ -55,31 +55,31 @@ test.describe('Visual Regression', () => {
 
     test('dashboard', async ({ page }) => {
       await page.waitForLoadState('networkidle');
-      await expect(page).toHaveScreenshot('dashboard');
+      await expect(page).toHaveScreenshot('dashboard.png');
     });
 
     test('patient list', async ({ page }) => {
       await page.goto('/patients');
       await page.waitForLoadState('networkidle');
-      await expect(page).toHaveScreenshot('patient-list');
+      await expect(page).toHaveScreenshot('patient-list.png');
     });
 
     test('charge management', async ({ page }) => {
       await page.goto('/charge-v2');
       await page.waitForLoadState('networkidle');
-      await expect(page).toHaveScreenshot('charge-management');
+      await expect(page).toHaveScreenshot('charge-management.png');
     });
 
     test('appointments', async ({ page }) => {
       await page.goto('/appointments');
       await page.waitForLoadState('networkidle');
-      await expect(page).toHaveScreenshot('appointments');
+      await expect(page).toHaveScreenshot('appointments.png');
     });
 
     test('inventory', async ({ page }) => {
       await page.goto('/inventory');
       await page.waitForLoadState('networkidle');
-      await expect(page).toHaveScreenshot('inventory');
+      await expect(page).toHaveScreenshot('inventory.png');
     });
   });
 });

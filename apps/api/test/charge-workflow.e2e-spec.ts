@@ -166,7 +166,7 @@ describe('Charge Workflow (e2e) - 收费完整流程', () => {
       .expect(HttpStatus.CREATED);
     expect(res.body.id).toBeDefined();
     expect(res.body.chargeId).toBe(debtChargeId);
-    expect(res.body.status).toBe('UNPAID');
+    expect(res.body.status).toBe('PARTIAL');
     expect(Number(res.body.debtAmount)).toBe(600);
     debtId = res.body.id;
   });

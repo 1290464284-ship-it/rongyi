@@ -4,8 +4,8 @@ test.describe('Patient Management', () => {
   test.beforeEach(async ({ page }) => {
     // Login first
     await page.goto('/login');
-    await page.fill('input[type="text"]', 'boss');
-    await page.fill('input[type="password"]', 'REDACTED');
+    await page.fill('input[id="username"]', 'boss');
+    await page.fill('input[id="password"]', '0801');
     await page.click('button[type="submit"]');
     await page.waitForURL('**/dashboard');
   });

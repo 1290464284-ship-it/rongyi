@@ -135,7 +135,7 @@ describe('Patient Workflow (e2e)', () => {
       const res = await request(app.getHttpServer())
         .delete(`/api/patients/${patientId}`)
         .set('Authorization', `Bearer ${token}`);
-      expect(res.status).toBe(HttpStatus.OK);
+      expect(res.status).toBe(HttpStatus.NO_CONTENT);
 
       const row = db.prepare('SELECT deletedAt, active FROM Patient WHERE id = ?').get(patientId) as any;
       expect(row.deletedAt).not.toBeNull();

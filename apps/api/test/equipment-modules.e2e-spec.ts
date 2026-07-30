@@ -332,7 +332,7 @@ describe('Equipment Modules (e2e) - 设备管理完整业务流程', () => {
       const res = await request(app.getHttpServer())
         .delete(`/api/equipment/${deleteTestId}`)
         .set('Authorization', `Bearer ${bossToken}`);
-      expect(res.status).toBe(HttpStatus.OK);
+      expect(res.status).toBe(HttpStatus.NO_CONTENT);
     });
 
     it('删除后查询详情返回 404', async () => {

@@ -46,7 +46,6 @@ export class OperationLogsService extends BufferedWriter<OperationLogEntry> impl
     const placeholders = entries.map(() => "(?,?,?,?,?,?,?,?,?)").join(", ");
     const values: unknown[] = [];
     const now = new Date().toISOString();
-    const clinicId = this.clinicContext.getClinicId();
     for (const data of entries) {
       values.push(
         crypto.randomUUID(),
@@ -56,7 +55,7 @@ export class OperationLogsService extends BufferedWriter<OperationLogEntry> impl
         data.target ?? null,
         data.detail ?? null,
         data.ip ?? null,
-        clinicId || null,
+        data.clinicId ?? 'system',
         now
       );
     }
@@ -68,19 +67,21 @@ export class OperationLogsService extends BufferedWriter<OperationLogEntry> impl
   protected insertOne(entry: OperationLogEntry): void {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
-    const clinicId = this.clinicContext.getClinicId();
     this.dbService.prepare(
       "INSERT INTO OperationLog (id, userId, userName, action, target, detail, ip, clinicId, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-    ).run(id, entry.userId ?? null, entry.userName ?? null, entry.action, entry.target ?? null, entry.detail ?? null, entry.ip ?? null, clinicId || null, now);
+    ).run(id, entry.userId ?? null, entry.userName ?? null, entry.action, entry.target ?? null, entry.detail ?? null, entry.ip ?? null, entry.clinicId ?? 'system', now);
   }
 
   // D2-2: 数据库不可用时降级写入文件的序列化逻辑
   protected serializeForFile(entry: OperationLogEntry): string {
-    return JSON.stringify({ ...entry, timestamp: new Date().toISOString(), clinicId: this.clinicContext.getClinicId() });
+    return JSON.stringify({ ...entry, timestamp: new Date().toISOString(), clinicId: entry.clinicId ?? 'system' });
   }
 
   async create(data: OperationLogEntry) {
-    return this.enqueue(data);
+    // 在 enqueue 时捕获 clinicId，避免 flush 时 AsyncLocalStorage 上下文丢失
+    // 对于无诊所上下文的操作（如登录失败），使用 'system' 哨兵值
+    const clinicId = this.clinicContext.getClinicId() ?? 'system';
+    return this.enqueue({ ...data, clinicId });
   }
 
   async findMany(params: { userId?: string; action?: string; startDate?: string; endDate?: string; page?: number; pageSize?: number }) {
