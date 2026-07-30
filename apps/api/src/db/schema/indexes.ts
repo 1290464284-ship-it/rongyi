@@ -364,4 +364,11 @@ export function createIndexes(db: Database) {
   createIndexIfNotExists(db, 'idx_first_exam_followup_clinic_exam', 'FirstExamFollowUp', 'clinicId, examId');
   // FirstExamTooth: clinicId + examId 复合索引，优化初诊牙位查询（已有 examId 单列索引）
   createIndexIfNotExists(db, 'idx_first_exam_tooth_clinic_exam', 'FirstExamTooth', 'clinicId, examId');
+
+  // v29: 关键业务表软删除查询优化复合索引 (clinicId, deletedAt, createdAt/startTime DESC)
+  createIndexIfNotExists(db, 'idx_patient_clinic_deleted_created', 'Patient', 'clinicId, deletedAt, createdAt DESC');
+  createIndexIfNotExists(db, 'idx_appointment_clinic_deleted_start', 'Appointment', 'clinicId, deletedAt, startTime DESC');
+  createIndexIfNotExists(db, 'idx_charge_clinic_deleted_created', 'Charge', 'clinicId, deletedAt, createdAt DESC');
+  createIndexIfNotExists(db, 'idx_treatment_clinic_deleted_created', 'Treatment', 'clinicId, deletedAt, createdAt DESC');
+  createIndexIfNotExists(db, 'idx_medical_record_clinic_deleted_created', 'MedicalRecord', 'clinicId, deletedAt, createdAt DESC');
 }
