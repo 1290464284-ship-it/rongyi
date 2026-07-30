@@ -62,10 +62,11 @@ describe('formatClinicMonthDay', () => {
 
 describe('isClinicToday', () => {
   it('当前 UTC 时间落在 CST 今天范围内返回 true', () => {
-    // 构造一个 CST 今天的 UTC 时间戳：取 CST 今天 12:00 = UTC 今天 04:00
+    // 用 CST 日期（而非 UTC 日期）构造测试输入，避免 UTC/CST 跨日时偏差
     const now = new Date();
+    const cstNow = new Date(now.getTime() + 8 * 60 * 60 * 1000); // CST = UTC+8
     const cstTodayNoonUtc = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 4, 0, 0),
+      Date.UTC(cstNow.getUTCFullYear(), cstNow.getUTCMonth(), cstNow.getUTCDate(), 4, 0, 0),
     );
     expect(isClinicToday(cstTodayNoonUtc)).toBe(true);
   });
