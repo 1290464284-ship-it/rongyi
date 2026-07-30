@@ -113,8 +113,10 @@ function createChairs(db: DatabaseType, clinicId: string): Array<{ id: string }>
 }
 
 function createTreatmentCatalog(db: DatabaseType, clinicId: string): void {
+  // 首启初始化（db/seeds.ts）已预置 tc-1..15，这里用 upsert 覆盖为演示数据（价格以分存储），避免主键冲突
   const stmt = db.prepare(
-    'INSERT INTO TreatmentCatalog (id, code, name, category, price, clinicId, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    `INSERT INTO TreatmentCatalog (id, code, name, category, price, clinicId, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET code = excluded.code, name = excluded.name, category = excluded.category, price = excluded.price, clinicId = excluded.clinicId`,
   );
   TREATMENT_CATALOG.forEach((t, i) => {
     stmt.run(
@@ -447,8 +449,10 @@ function insertClinicInfo(db: DatabaseType, clinicId: string, clinicName: string
     { key: 'address', value: '北京市朝阳区建国路88号' },
     { key: 'logo', value: '' },
   ];
+  // 首启初始化（db/seeds.ts）已预置 info-1..4，这里用 upsert 覆盖为演示诊所信息，避免主键冲突
   const stmt = db.prepare(
-    'INSERT INTO ClinicInfo (id, key, value, clinicId, updatedAt) VALUES (?, ?, ?, ?, ?)',
+    `INSERT INTO ClinicInfo (id, key, value, clinicId, updatedAt) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET key = excluded.key, value = excluded.value, clinicId = excluded.clinicId, updatedAt = excluded.updatedAt`,
   );
   clinicInfo.forEach((c, i) => {
     stmt.run(
