@@ -29,7 +29,7 @@ describe('communication/wechat hooks', () => {
     const { result } = renderHook(() => useWechatMessages(params), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/wechat', { params });
+    expect(mockedApi.get).toHaveBeenCalledWith('/wechat', expect.objectContaining({ params }));
     expect(result.current.data).toEqual(items);
   });
 
@@ -40,7 +40,7 @@ describe('communication/wechat hooks', () => {
     const { result } = renderHook(() => useBirthdayPatients(), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/wechat/birthday-patients');
+    expect(mockedApi.get).toHaveBeenCalledWith('/wechat/birthday-patients', expect.any(Object));
     expect(result.current.data).toEqual(patients);
   });
 
@@ -51,7 +51,7 @@ describe('communication/wechat hooks', () => {
     const { result } = renderHook(() => useAppointmentReminders(), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/wechat/appointment-reminders');
+    expect(mockedApi.get).toHaveBeenCalledWith('/wechat/appointment-reminders', expect.any(Object));
     expect(result.current.data).toEqual(reminders);
   });
 

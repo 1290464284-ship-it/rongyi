@@ -35,7 +35,7 @@ describe('financial/charges hooks', () => {
     const { result } = renderHook(() => useCharges(params), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/charge-v2', { params });
+    expect(mockedApi.get).toHaveBeenCalledWith('/charge-v2', expect.objectContaining({ params }));
     expect(result.current.data).toEqual(paginated);
   });
 
@@ -51,7 +51,7 @@ describe('financial/charges hooks', () => {
     const { result } = renderHook(() => useCharge('c1'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/charge-v2/c1');
+    expect(mockedApi.get).toHaveBeenCalledWith('/charge-v2/c1', expect.any(Object));
     expect(result.current.data).toEqual({ id: 'c1' });
   });
 

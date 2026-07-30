@@ -84,7 +84,7 @@ export function useDebts(params: DebtsQuery) {
 export function useDebtStats() {
   return useQuery({
     queryKey: ['debt-stats'],
-    queryFn: async () => (await api.get<DebtStatsRes>('/charge-v2/debts/stats')).data,
+    queryFn: async ({ signal }) => (await api.get<DebtStatsRes>('/charge-v2/debts/stats', { signal })).data,
     ...getCacheOptions('fast'),
   });
 }

@@ -74,7 +74,7 @@ export const useInventoryItems = crud.useList;
 export function useLowStockItems() {
   return useQuery({
     queryKey: ['low-stock-items'],
-    queryFn: async () => (await api.get<InventoryItem[]>('/inventory/items/low-stock')).data,
+    queryFn: async ({ signal }) => (await api.get<InventoryItem[]>('/inventory/items/low-stock', { signal })).data,
   });
 }
 
@@ -85,7 +85,7 @@ export const useDeleteInventoryItem = crud.useDelete;
 export function useInventoryTransactions(itemId?: string, page?: number, pageSize?: number) {
   return useQuery({
     queryKey: ['inventory-transactions', itemId, page, pageSize],
-    queryFn: async () => (await api.get<Pagination<InventoryTransaction>>('/inventory/transactions', { params: { itemId, page, pageSize } })).data,
+    queryFn: async ({ signal }) => (await api.get<Pagination<InventoryTransaction>>('/inventory/transactions', { params: { itemId, page, pageSize }, signal })).data,
   });
 }
 

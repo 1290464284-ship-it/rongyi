@@ -1,4 +1,4 @@
-import { Loader2 } from 'lucide-react';
+import { Loader2, AlertTriangle } from 'lucide-react';
 import { forwardRef, ButtonHTMLAttributes } from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
@@ -146,6 +146,41 @@ export const EmptyState = ({ text = '暂无数据', subtitle, icon: Icon, action
   }
   return content;
 };
+
+// ===== ErrorState =====
+// 失败重试状态组件
+export interface ErrorStateProps {
+  message?: string;
+  subtitle?: string;
+  onRetry?: () => void;
+  retryLabel?: string;
+  className?: string;
+}
+
+export const ErrorState = ({
+  message = '加载失败',
+  subtitle,
+  onRetry,
+  retryLabel = '重试',
+  className,
+}: ErrorStateProps) => (
+  <div className={cn('flex flex-col items-center justify-center py-12 px-4', className)}>
+    <div className="mb-3 p-3 bg-destructive/10 rounded-full">
+      <AlertTriangle className="w-8 h-8 text-destructive" />
+    </div>
+    <p className="text-sm text-muted-foreground text-center">{message}</p>
+    {subtitle && <p className="text-xs text-muted-foreground/60 mt-1 text-center">{subtitle}</p>}
+    {onRetry && (
+      <button
+        onClick={onRetry}
+        className="mt-4 inline-flex items-center gap-1.5 text-sm text-primary hover:text-primaryLight font-medium transition-colors"
+      >
+        <Loader2 className="w-3.5 h-3.5" />
+        {retryLabel}
+      </button>
+    )}
+  </div>
+);
 
 // ===== PageLoading =====
 // 整页加载占位

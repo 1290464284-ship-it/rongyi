@@ -57,8 +57,8 @@ export function useMemberCards(page = 1, pageSize = 20) {
 export function usePatientMemberCard(patientId: string) {
   return useQuery({
     queryKey: ['member-cards', 'patient', patientId],
-    queryFn: async () => {
-      const res = await api.get(`/member-cards/patient/${patientId}`);
+    queryFn: async ({ signal }) => {
+      const res = await api.get(`/member-cards/patient/${patientId}`, { signal });
       return res.data as MemberCard | null;
     },
     enabled: !!patientId,
@@ -94,8 +94,8 @@ export function useRechargeMemberCard() {
 export function useMemberCardLogs(cardId: string) {
   return useQuery({
     queryKey: ['member-cards', 'logs', cardId],
-    queryFn: async () => {
-      const res = await api.get(`/member-cards/${cardId}/logs`);
+    queryFn: async ({ signal }) => {
+      const res = await api.get(`/member-cards/${cardId}/logs`, { signal });
       return res.data as MemberCardLog[];
     },
     enabled: !!cardId,
@@ -105,7 +105,7 @@ export function useMemberCardLogs(cardId: string) {
 export function useMemberPointLogs(cardId: string) {
   return useQuery({
     queryKey: ['member-cards', 'point-logs', cardId],
-    queryFn: async () => (await api.get<MemberPointLog[]>(`/member-cards/${cardId}/point-logs`)).data,
+    queryFn: async ({ signal }) => (await api.get<MemberPointLog[]>(`/member-cards/${cardId}/point-logs`, { signal })).data,
     enabled: !!cardId,
   });
 }

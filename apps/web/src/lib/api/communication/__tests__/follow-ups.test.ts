@@ -37,7 +37,7 @@ describe('communication/follow-ups hooks', () => {
     const { result } = renderHook(() => useFollowUpsV2(params), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/follow-ups', { params });
+    expect(mockedApi.get).toHaveBeenCalledWith('/follow-ups', expect.objectContaining({ params }));
     expect(result.current.data).toEqual(paginated);
   });
 
@@ -73,9 +73,9 @@ describe('communication/follow-ups hooks', () => {
     const { result } = renderHook(() => useFollowUpTemplates({ page: 2, pageSize: 5 }), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/follow-ups/templates/list', {
+    expect(mockedApi.get).toHaveBeenCalledWith('/follow-ups/templates/list', expect.objectContaining({
       params: { page: 2, pageSize: 5 },
-    });
+    }));
     expect(result.current.data).toEqual({ items: templates, total: 2, page: 2, pageSize: 5 });
   });
 
@@ -98,7 +98,7 @@ describe('communication/follow-ups hooks', () => {
     const { result } = renderHook(() => useFollowUpItems(), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/follow-ups/items/list', { params: undefined });
+    expect(mockedApi.get).toHaveBeenCalledWith('/follow-ups/items/list', expect.objectContaining({ params: undefined }));
     expect(result.current.data).toEqual({ items, total: 1, page: 1, pageSize: 10 });
   });
 
@@ -122,7 +122,7 @@ describe('communication/follow-ups hooks', () => {
     const { result } = renderHook(() => useFollowUpAutoRules(), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/follow-ups/auto-rules/list', { params: undefined });
+    expect(mockedApi.get).toHaveBeenCalledWith('/follow-ups/auto-rules/list', expect.objectContaining({ params: undefined }));
     expect(result.current.data?.items).toEqual(rules);
   });
 
@@ -150,8 +150,8 @@ describe('communication/follow-ups hooks', () => {
     const { result: npsResult } = renderHook(() => useFollowUpNpsStats(params), { wrapper });
     await waitFor(() => expect(npsResult.current.isSuccess).toBe(true));
 
-    expect(mockedApi.get).toHaveBeenNthCalledWith(1, '/follow-ups/stats/workload', { params });
-    expect(mockedApi.get).toHaveBeenNthCalledWith(2, '/follow-ups/stats/nps', { params });
+    expect(mockedApi.get).toHaveBeenNthCalledWith(1, '/follow-ups/stats/workload', expect.objectContaining({ params }));
+    expect(mockedApi.get).toHaveBeenNthCalledWith(2, '/follow-ups/stats/nps', expect.objectContaining({ params }));
     expect(workloadResult.current.data).toEqual(workload);
     expect(npsResult.current.data).toEqual(nps);
   });

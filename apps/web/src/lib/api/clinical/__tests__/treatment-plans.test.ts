@@ -30,7 +30,7 @@ describe('clinical/treatment-plans hooks', () => {
     const { result } = renderHook(() => useTreatmentPlans(params), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/treatment-plans', { params });
+    expect(mockedApi.get).toHaveBeenCalledWith('/treatment-plans', expect.objectContaining({ params }));
     expect(result.current.data).toEqual(paginated);
   });
 

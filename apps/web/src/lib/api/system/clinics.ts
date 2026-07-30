@@ -16,7 +16,7 @@ export interface Clinic {
 export function useCurrentClinic() {
   return useQuery({
     queryKey: ['clinics', 'current'],
-    queryFn: async () => (await api.get<Clinic | null>('/clinics/current')).data,
+    queryFn: async ({ signal }) => (await api.get<Clinic | null>('/clinics/current', { signal })).data,
     staleTime: 30 * 60 * 1000,
   });
 }

@@ -33,7 +33,7 @@ describe('clinical/medical-records hooks', () => {
     const { result } = renderHook(() => useMedicalRecords(params), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/medical-records', { params });
+    expect(mockedApi.get).toHaveBeenCalledWith('/medical-records', expect.objectContaining({ params }));
     expect(result.current.data).toEqual(paginated);
   });
 
@@ -59,7 +59,7 @@ describe('clinical/medical-records hooks', () => {
     );
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/medical-records/templates?category=exam&page=1&pageSize=10');
+    expect(mockedApi.get).toHaveBeenCalledWith('/medical-records/templates?category=exam&page=1&pageSize=10', expect.any(Object));
     expect(result.current.data).toEqual(res);
   });
 
@@ -69,7 +69,7 @@ describe('clinical/medical-records hooks', () => {
     const { result } = renderHook(() => useRecordTemplates(), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/medical-records/templates?');
+    expect(mockedApi.get).toHaveBeenCalledWith('/medical-records/templates?', expect.any(Object));
   });
 
   it('useCreateRecordTemplate 提交 POST /medical-records/templates', async () => {
@@ -92,7 +92,7 @@ describe('clinical/medical-records hooks', () => {
     const { result } = renderHook(() => useRecordPhrases({ category: 'common' }), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/medical-records/phrases?category=common');
+    expect(mockedApi.get).toHaveBeenCalledWith('/medical-records/phrases?category=common', expect.any(Object));
     expect(result.current.data).toEqual(res);
   });
 
@@ -119,7 +119,7 @@ describe('clinical/medical-records hooks', () => {
     );
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/medical-records/modify-requests?status=PENDING&page=2');
+    expect(mockedApi.get).toHaveBeenCalledWith('/medical-records/modify-requests?status=PENDING&page=2', expect.any(Object));
     expect(result.current.data).toEqual(res);
   });
 

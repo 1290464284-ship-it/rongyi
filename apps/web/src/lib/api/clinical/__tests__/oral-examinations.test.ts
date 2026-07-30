@@ -27,9 +27,9 @@ describe('clinical/oral-examinations hooks', () => {
     const { result } = renderHook(() => useOralExaminations('p1'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/oral-examinations', {
+    expect(mockedApi.get).toHaveBeenCalledWith('/oral-examinations', expect.objectContaining({
       params: { patientId: 'p1' },
-    });
+    }));
     expect(result.current.data).toEqual(items);
   });
 

@@ -26,9 +26,9 @@ describe('clinical/treatments hooks', () => {
     const { result } = renderHook(() => useTreatments('p1', 11), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/treatments', {
+    expect(mockedApi.get).toHaveBeenCalledWith('/treatments', expect.objectContaining({
       params: { patientId: 'p1', toothNumber: 11, pageSize: 200 },
-    });
+    }));
     expect(result.current.data).toEqual(paginated);
   });
 

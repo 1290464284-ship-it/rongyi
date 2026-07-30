@@ -32,7 +32,7 @@ export interface UpdateSettingsDto {
 export function useSettings() {
   return useQuery({
     queryKey: ['settings'],
-    queryFn: async () => (await api.get<Settings>('/settings')).data,
+    queryFn: async ({ signal }) => (await api.get<Settings>('/settings', { signal })).data,
   });
 }
 

@@ -67,9 +67,9 @@ export interface PatientSearchItem {
 export function usePatientSearch(keyword: string, enabled = true) {
   return useQuery({
     queryKey: ['patient-search', keyword],
-    queryFn: async () =>
+    queryFn: async ({ signal }) =>
       (await api.get<{ items: PatientSearchItem[] }>('/patients', {
-        params: { keyword, page: 1, pageSize: 10 },
+        params: { keyword, page: 1, pageSize: 10 }, signal,
       })).data,
     enabled: enabled && keyword.length > 0,
   });

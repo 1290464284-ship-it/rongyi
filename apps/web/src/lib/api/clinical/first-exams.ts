@@ -142,8 +142,8 @@ export interface FirstExamTeethData {
 export function useFirstExamTeeth(examId: string | undefined) {
   return useQuery({
     queryKey: ['first-exam-teeth', examId],
-    queryFn: async () => {
-      const data = (await api.get<FirstExamTeethData>(`/first-exams/${examId}/teeth`)).data;
+    queryFn: async ({ signal }) => {
+      const data = (await api.get<FirstExamTeethData>(`/first-exams/${examId}/teeth`, { signal })).data;
       return Object.entries(data.teeth).map(([toothNumber, info]) => ({
         toothNumber: parseInt(toothNumber, 10),
         ...info,
@@ -204,8 +204,8 @@ export function useFirstExamTracks(params: {
 }) {
   return useQuery({
     queryKey: ['first-exam-tracks', params],
-    queryFn: async () =>
-      (await api.get<FirstExamTrackListRes>('/first-exams/tracks/list', { params })).data,
+    queryFn: async ({ signal }) =>
+      (await api.get<FirstExamTrackListRes>('/first-exams/tracks/list', { params, signal })).data,
     enabled: !params.examId || !!params.examId,
   });
 }
@@ -255,8 +255,8 @@ export interface FirstExamStats {
 export function useFirstExamStats() {
   return useQuery({
     queryKey: ['first-exam-stats'],
-    queryFn: async () =>
-      (await api.get<FirstExamStats>('/first-exams/stats')).data,
+    queryFn: async ({ signal }) =>
+      (await api.get<FirstExamStats>('/first-exams/stats', { signal })).data,
     ...getCacheOptions('fast'),
   });
 }

@@ -129,8 +129,8 @@ export function useUpdateProcessingOrderStatus() {
 export function useProcessingFactories(params?: { page?: number; pageSize?: number }) {
   return useQuery({
     queryKey: ['processing-factories', params],
-    queryFn: async () =>
-      (await api.get<{ items: ProcessingFactory[]; total: number; page: number; pageSize: number }>('/processing-orders/factories', { params })).data,
+    queryFn: async ({ signal }) =>
+      (await api.get<{ items: ProcessingFactory[]; total: number; page: number; pageSize: number }>('/processing-orders/factories', { params, signal })).data,
   });
 }
 
@@ -164,8 +164,8 @@ export function useDeleteProcessingFactory() {
 export function useProcessingProducts(params?: { factoryId?: string; page?: number; pageSize?: number }) {
   return useQuery({
     queryKey: ['processing-products', params],
-    queryFn: async () =>
-      (await api.get<{ items: ProcessingProduct[]; total: number; page: number; pageSize: number }>('/processing-orders/products', { params })).data,
+    queryFn: async ({ signal }) =>
+      (await api.get<{ items: ProcessingProduct[]; total: number; page: number; pageSize: number }>('/processing-orders/products', { params, signal })).data,
   });
 }
 
@@ -199,6 +199,6 @@ export function useDeleteProcessingProduct() {
 export function useProcessingStats() {
   return useQuery({
     queryKey: ['processing-stats'],
-    queryFn: async () => (await api.get('/processing-orders/stats')).data,
+    queryFn: async ({ signal }) => (await api.get('/processing-orders/stats', { signal })).data,
   });
 }

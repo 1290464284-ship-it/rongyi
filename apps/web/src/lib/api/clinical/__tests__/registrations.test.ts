@@ -32,7 +32,7 @@ describe('clinical/registrations hooks', () => {
     const { result } = renderHook(() => useRegistrations(params), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/registrations', { params });
+    expect(mockedApi.get).toHaveBeenCalledWith('/registrations', expect.objectContaining({ params }));
     expect(result.current.data).toEqual(paginated);
   });
 

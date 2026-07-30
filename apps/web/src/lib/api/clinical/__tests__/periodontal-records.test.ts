@@ -27,9 +27,9 @@ describe('clinical/periodontal-records hooks', () => {
     const { result } = renderHook(() => usePeriodontalRecords('p1'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/periodontal-records', {
+    expect(mockedApi.get).toHaveBeenCalledWith('/periodontal-records', expect.objectContaining({
       params: { patientId: 'p1' },
-    });
+    }));
     expect(result.current.data).toEqual(items);
   });
 
