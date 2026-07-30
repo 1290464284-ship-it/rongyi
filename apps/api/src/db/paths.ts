@@ -1,4 +1,4 @@
-﻿/* eslint-disable security/detect-non-literal-fs-filename -- 数据库路径工具函数，路径来自配置常量 */
+/* eslint-disable security/detect-non-literal-fs-filename -- 数据库路径工具函数，路径来自配置常量 */
 import { join, dirname } from 'node:path';
 import * as fs from 'node:fs';
 import * as crypto from 'node:crypto';
@@ -34,8 +34,12 @@ export function getDataDir(): string {
     ensureDir(dir);
     return dir;
   }
-  // 开发默认：apps/api/data（不再写入 resources 或 data）
-  const dataDir = join(__dirname, '../../data');
+  // 开发默认：apps/api/data
+  // 使用 process.cwd() 而非 __dirname：nest start --watch 编译到 dist/src/db/，
+  // __dirname 会解析为 dist/src/db/，导致 ../../data = dist/data/（错误）。
+  // process.cwd() 在 pnpm --filter @dental/api dev 时为 apps/api/（正确）。
+  // 生产环境由 DATA_DIR / DB_PATH 环境变量接管，不会走到此分支。
+  const dataDir = join(process.cwd(), 'data');
   ensureDir(dataDir);
   return dataDir;
 }
@@ -87,6 +91,12 @@ export function getEnvPath(): string {
     ensureEnvFile(process.env.ENV_PATH);
     return process.env.ENV_PATH;
   }
+  // 开发环境优先查找 apps/api/.env（process.cwd()），与 dotenv 约定一致
+  const cwdEnvPath = join(process.cwd(), '.env');
+  if (fs.existsSync(cwdEnvPath)) {
+    return cwdEnvPath;
+  }
+  // 回退到 data 目录下的 .env（生产环境持久化路径）
   const envPath = join(getDataDir(), '.env');
   ensureEnvFile(envPath);
   return envPath;

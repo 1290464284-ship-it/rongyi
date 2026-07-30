@@ -95,8 +95,8 @@ describe('Charge V2 - Combos & Payment Methods & Debts (e2e)', () => {
 
       const delRes = await request(app.getHttpServer())
         .delete(`/api/charge-v2/combos/${tempId}`).set('Authorization', `Bearer ${token}`)
-        .expect(200);
-      expect(delRes.status).toBe(200);
+        .expect(204);
+      expect(delRes.status).toBe(204);
     });
   });
 
@@ -140,8 +140,8 @@ describe('Charge V2 - Combos & Payment Methods & Debts (e2e)', () => {
 
       const delRes = await request(app.getHttpServer())
         .delete(`/api/charge-v2/payment-methods/${tempId}`).set('Authorization', `Bearer ${token}`)
-        .expect(200);
-      expect(delRes.status).toBe(200);
+        .expect(204);
+      expect(delRes.status).toBe(204);
     });
   });
 

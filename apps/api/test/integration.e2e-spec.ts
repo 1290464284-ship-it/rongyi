@@ -111,7 +111,7 @@ describe('端到端集成测试 (e2e)', () => {
     it('DELETE /api/patients/:id - 软删除患者', async () => {
       const res = await request(app.getHttpServer())
         .delete(`/api/patients/${patientId}`).set('Authorization', `Bearer ${accessToken}`);
-      expect(res.status).toBe(HttpStatus.OK);
+      expect(res.status).toBe(HttpStatus.NO_CONTENT);
     });
   });
 

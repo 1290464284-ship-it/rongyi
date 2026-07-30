@@ -11,11 +11,13 @@ import {
 
 const isElectron = navigator.userAgent.includes('Electron');
 const envBaseUrl = import.meta.env.VITE_API_BASE_URL as string | undefined;
+// API 使用 URI 版本控制（main.ts: enableVersioning prefix='api/v', defaultVersion='1'）
+// 所有路由前缀为 /api/v1/
 const apiBaseUrl = envBaseUrl
   ? envBaseUrl
   : isElectron
-    ? `http://localhost:${DEFAULT_API_PORT}/api`
-    : '/api';
+    ? `http://localhost:${DEFAULT_API_PORT}/api/v1`
+    : '/api/v1';
 
 const MAX_RETRIES = API_MAX_RETRIES;
 const RETRY_DELAY = API_RETRY_DELAY_MS;

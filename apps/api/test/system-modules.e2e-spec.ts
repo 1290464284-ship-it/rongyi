@@ -165,7 +165,7 @@ describe('System Modules (e2e) - 系统管理完整业务流程', () => {
       const res = await request(app.getHttpServer())
         .delete(`/api/auth/users/${createRes.body.id}`)
         .set('Authorization', `Bearer ${bossToken}`);
-      expect(res.status).toBe(HttpStatus.OK);
+      expect(res.status).toBe(HttpStatus.NO_CONTENT);
     });
   });
 

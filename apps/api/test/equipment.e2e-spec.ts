@@ -264,7 +264,7 @@ describe('Equipment (e2e) - 设备管理', () => {
       const res = await request(app.getHttpServer())
         .delete(`/api/equipment/${deleteTestId}`)
         .set('Authorization', `Bearer ${bossToken}`);
-      expect(res.status).toBe(HttpStatus.OK);
+      expect(res.status).toBe(HttpStatus.NO_CONTENT);
     });
 
     it('DELETE /api/equipment/:id - 删除后再获取详情返回 404', async () => {
