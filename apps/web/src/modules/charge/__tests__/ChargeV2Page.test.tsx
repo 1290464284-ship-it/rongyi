@@ -3,13 +3,13 @@ import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../components/CombosTab', () => ({
+vi.mock('../components/combos/CombosTab', () => ({
   ChargeCombosTab: () => null,
 }));
-vi.mock('../components/PaymentMethodsTab', () => ({
+vi.mock('../components/payments/PaymentMethodsTab', () => ({
   PaymentMethodsTab: () => null,
 }));
-vi.mock('../components/DebtsTab', () => ({
+vi.mock('../components/payments/DebtsTab', () => ({
   DebtsTab: () => null,
 }));
 

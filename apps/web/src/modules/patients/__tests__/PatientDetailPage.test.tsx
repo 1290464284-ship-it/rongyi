@@ -51,17 +51,17 @@ vi.mock('@/lib/api/content/imaging', () => ({
 vi.mock('../PatientForm', () => ({ default: () => null }));
 vi.mock('../../clinical/OralExaminationPanel', () => ({ default: () => null }));
 vi.mock('../../clinical/PeriodontalRecordPanel', () => ({ default: () => null }));
-vi.mock('../components/PatientSidebar', () => ({
+vi.mock('../components/patient-detail-tabs/PatientSidebar', () => ({
   PatientInfoCard: () => null,
   ToothChartPanel: () => null,
 }));
-vi.mock('../components/AppointmentsTab', () => ({ AppointmentsTab: () => null }));
-vi.mock('../components/ChargesTab', () => ({ ChargesTab: () => null }));
-vi.mock('../components/PrescriptionsTab', () => ({ PrescriptionsTab: () => null }));
-vi.mock('../components/TreatmentPlansTab', () => ({ TreatmentPlansTab: () => null }));
-vi.mock('../components/ImagingTab', () => ({ ImagingTab: () => null }));
-vi.mock('../components/ToothRecordsTab', () => ({ ToothRecordsTab: () => null }));
-vi.mock('../components/FollowUpPanel', () => ({ FollowUpPanel: () => null }));
+vi.mock('../components/patient-detail-tabs/AppointmentsTab', () => ({ AppointmentsTab: () => null }));
+vi.mock('../components/patient-detail-tabs/ChargesTab', () => ({ ChargesTab: () => null }));
+vi.mock('../components/patient-detail-tabs/PrescriptionsTab', () => ({ PrescriptionsTab: () => null }));
+vi.mock('../components/patient-detail-tabs/TreatmentPlansTab', () => ({ TreatmentPlansTab: () => null }));
+vi.mock('../components/patient-detail-tabs/ImagingTab', () => ({ ImagingTab: () => null }));
+vi.mock('../components/patient-detail-tabs/ToothRecordsTab', () => ({ ToothRecordsTab: () => null }));
+vi.mock('../components/patient-detail-tabs/FollowUpPanel', () => ({ FollowUpPanel: () => null }));
 vi.mock('@/components/patient/Timeline', () => ({ Timeline: () => null }));
 vi.mock('@/components/ui/loading', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/components/ui/loading')>();
