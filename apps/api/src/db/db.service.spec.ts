@@ -252,11 +252,40 @@ describe('DbService', () => {
         // 忽略删除错误
       }
     });
+
+    it('只读连接的 transaction 应抛出异常', () => {
+      const tmpPath = require('node:path').join(require('node:os').tmpdir(), `test_readonly_tx_${Date.now()}.db`);
+      const tmpDb = new Database(tmpPath);
+      tmpDb.exec('CREATE TABLE t (id INTEGER)');
+      tmpDb.close();
+
+      const readonlyDb = dbService.openReadonly(tmpPath);
+      expect(() => {
+        readonlyDb.transaction(() => { /* noop */ });
+      }).toThrow('只读连接不支持事务');
+      readonlyDb.close();
+
+      try {
+        require('node:fs').unlinkSync(tmpPath);
+      } catch {
+        // 忽略删除错误
+      }
+    });
   });
 
   describe('backup 备份数据库', () => {
     it('backup 方法应存在且返回 Promise', () => {
       expect(typeof dbService.backup).toBe('function');
+    });
+
+    it('backup 失败应抛出异常', async () => {
+      const originalBackup = db.backup.bind(db);
+      (db as unknown as Record<string, unknown>).backup = jest.fn(() => {
+        throw new Error('backup failed');
+      });
+
+      await expect(dbService.backup('/dev/null')).rejects.toThrow('backup failed');
+      (db as unknown as Record<string, unknown>).backup = originalBackup;
     });
   });
 
@@ -322,6 +351,24 @@ describe('DbService', () => {
       expect(loggerSpy).toHaveBeenCalled();
       loggerSpy.mockRestore();
       (db as any).pragma = originalPragma;
+    });
+  });
+
+  describe('exec 错误处理', () => {
+    it('exec 失败应记录错误日志并抛出', () => {
+      const loggerSpy = jest.spyOn((dbService as any).logger, 'error').mockImplementation(() => {});
+      const originalExec = db.exec.bind(db);
+      (db as any).exec = jest.fn(() => {
+        throw new Error('exec error');
+      });
+
+      expect(() => {
+        dbService.exec('BAD SQL');
+      }).toThrow('exec error');
+
+      expect(loggerSpy).toHaveBeenCalled();
+      loggerSpy.mockRestore();
+      (db as any).exec = originalExec;
     });
   });
 
