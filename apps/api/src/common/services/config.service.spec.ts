@@ -21,7 +21,7 @@ describe('ConfigService', () => {
     delete process.env.ENV_PATH;
     delete process.env.PORT;
     delete process.env.JWT_SECRET;
-    delete process.env.JWT_EXPIRES_IN;
+    delete process.env.ACCESS_TOKEN_EXPIRES_IN;
     delete process.env.ENCRYPTION_KEY;
     delete process.env.DATA_DIR;
     delete process.env.DB_PATH;
@@ -92,7 +92,7 @@ describe('ConfigService', () => {
 
     it('应回退到 ENV_FALLBACKS', () => {
       expect(service.get('PORT')).toBeDefined();
-      expect(service.get('JWT_EXPIRES_IN')).toBeDefined();
+      expect(service.get('ACCESS_TOKEN_EXPIRES_IN')).toBeDefined();
     });
 
     it('未找到时应返回 undefined', () => {
@@ -233,8 +233,8 @@ describe('ConfigService', () => {
       expect(() => service.JWT_SECRET).toThrow();
     });
 
-    it('JWT_EXPIRES_IN 应返回默认值', () => {
-      expect(service.JWT_EXPIRES_IN).toBeDefined();
+    it('ACCESS_TOKEN_EXPIRES_IN 应返回默认值', () => {
+      expect(service.ACCESS_TOKEN_EXPIRES_IN).toBeDefined();
     });
 
     it('ENCRYPTION_KEY 未设置时应返回 undefined', () => {

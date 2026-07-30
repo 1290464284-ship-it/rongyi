@@ -48,8 +48,7 @@ export class ChargeService extends BaseService<ChargeRecord> {
       pageSize,
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    items.forEach((item: any) => {
+    items.forEach((item) => {
       item.totalAmount = centsToYuan(Number(item.totalAmount) || 0);
       item.paidAmount = centsToYuan(Number(item.paidAmount) || 0);
       item.refundedAmount = centsToYuan(Number(item.refundedAmount) || 0);

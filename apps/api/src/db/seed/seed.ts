@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import Database from 'better-sqlite3';
 import type { Database as DatabaseType } from 'better-sqlite3';
 import { createDbConnection, initDb, getDbPath } from '../database';
+import { AppLogger } from '../../common/services/logger.service';
 import {
   createAdmin,
   createDoctor,
@@ -465,6 +466,8 @@ function insertClinicInfo(db: DatabaseType, clinicId: string, clinicName: string
   });
 }
 
+const logger = new AppLogger('Seed');
+
 export function runSeed(options: SeedOptions = {}): void {
   const {
     fresh = false,
@@ -497,56 +500,56 @@ export function runSeed(options: SeedOptions = {}): void {
     db = createDbConnection();
   }
 
-  console.log(`\n=== 开始生成种子数据 ===`);
-  console.log(`诊所名称: ${clinicName}`);
-  console.log(`患者数量: ${counts.patients}`);
-  console.log(`预约数量: ${counts.appointments}`);
-  console.log(`收费单数量: ${counts.charges}`);
-  console.log(`库存物品数量: ${counts.inventoryItems}`);
-  console.log(`会员卡数量: ${counts.memberCards}\n`);
+  logger.log(`\n=== 开始生成种子数据 ===`);
+  logger.log(`诊所名称: ${clinicName}`);
+  logger.log(`患者数量: ${counts.patients}`);
+  logger.log(`预约数量: ${counts.appointments}`);
+  logger.log(`收费单数量: ${counts.charges}`);
+  logger.log(`库存物品数量: ${counts.inventoryItems}`);
+  logger.log(`会员卡数量: ${counts.memberCards}\n`);
 
   const startTime = Date.now();
 
   db.transaction(() => {
     const clinicId = createClinic(db, clinicName);
-    console.log(`✓ 创建诊所: ${clinicName}`);
+    logger.log(`✓ 创建诊所: ${clinicName}`);
 
     insertClinicInfo(db, clinicId, clinicName);
-    console.log('✓ 创建诊所信息');
+    logger.log('✓ 创建诊所信息');
 
     const { doctors } = insertUsers(db, clinicId);
-    console.log('✓ 创建用户: 1个管理员 + 2个医生 + 1个前台');
+    logger.log('✓ 创建用户: 1个管理员 + 2个医生 + 1个前台');
 
     const chairs = createChairs(db, clinicId);
-    console.log(`✓ 创建${chairs.length}个牙椅`);
+    logger.log(`✓ 创建${chairs.length}个牙椅`);
 
     createTreatmentCatalog(db, clinicId);
-    console.log('✓ 创建治疗项目目录');
+    logger.log('✓ 创建治疗项目目录');
 
     createPaymentMethods(db, clinicId);
-    console.log('✓ 创建支付方式');
+    logger.log('✓ 创建支付方式');
 
     createSuppliers(db, clinicId);
-    console.log('✓ 创建供应商');
+    logger.log('✓ 创建供应商');
 
     const patients = insertPatients(db, clinicId, counts.patients);
-    console.log(`✓ 创建${patients.length}个患者`);
+    logger.log(`✓ 创建${patients.length}个患者`);
 
     insertAppointments(db, clinicId, counts.appointments, patients, doctors, chairs);
-    console.log(`✓ 创建${counts.appointments}个预约`);
+    logger.log(`✓ 创建${counts.appointments}个预约`);
 
     insertCharges(db, clinicId, counts.charges, patients, doctors);
-    console.log(`✓ 创建${counts.charges}个收费单`);
+    logger.log(`✓ 创建${counts.charges}个收费单`);
 
     insertInventoryItems(db, clinicId, counts.inventoryItems);
-    console.log(`✓ 创建${counts.inventoryItems}个库存物品`);
+    logger.log(`✓ 创建${counts.inventoryItems}个库存物品`);
 
     insertMemberCards(db, clinicId, counts.memberCards, patients);
-    console.log(`✓ 创建${counts.memberCards}张会员卡`);
+    logger.log(`✓ 创建${counts.memberCards}张会员卡`);
   })();
 
   const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-  console.log(`\n=== 种子数据生成完成 (耗时 ${duration}s) ===`);
+  logger.log(`\n=== 种子数据生成完成 (耗时 ${duration}s) ===`);
 
   db.close();
 }

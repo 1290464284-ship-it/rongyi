@@ -2,6 +2,8 @@
 import { Injectable, LoggerService, Optional } from '@nestjs/common';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as zlib from 'node:zlib';
+import { createReadStream, createWriteStream } from 'node:fs';
 import { getTraceId, getCurrentUserId, getCurrentClinicId } from '../utils/context/async-context';
 // P2 修复（日志脱敏有三套实现，敏感字段列表不一致）：统一引用共享常量
 import { isSensitiveField } from '../utils/security/sensitive-fields';
@@ -131,6 +133,8 @@ function rotateLogFilesIfNeeded(logDir: string, dateStr: string): string {
             try { fs.unlinkSync(newPath); } catch { /* ignore */ }
           }
           fs.renameSync(oldPath, newPath);
+          // Compress rotated log files to save disk space
+          compressLogFile(newPath);
         }
       } catch {
         // ignore
@@ -139,6 +143,25 @@ function rotateLogFilesIfNeeded(logDir: string, dateStr: string): string {
   }
 
   return path.join(logDir, getCurrentLogFileName(dateStr, 0));
+}
+
+/**
+ * Compress a rotated log file to .gz in the background (non-blocking).
+ */
+function compressLogFile(filePath: string): void {
+  const gzPath = filePath + '.gz';
+  const input = createReadStream(filePath);
+  const output = createWriteStream(gzPath);
+  const gzip = zlib.createGzip({ level: 6 });
+
+  input.pipe(gzip).pipe(output);
+  output.on('finish', () => {
+    try { fs.unlinkSync(filePath); } catch { /* ignore — original stays if delete fails */ }
+  });
+  // Silently ignore compression errors; the uncompressed file remains as fallback
+  output.on('error', () => {
+    try { fs.unlinkSync(gzPath); } catch { /* ignore */ }
+  });
 }
 
 function getLogFilePath(): string | null {
@@ -177,7 +200,7 @@ function getAllLogFiles(logDir: string): Array<{ name: string; date: string; ind
   const result: Array<{ name: string; date: string; index: number; fullPath: string; mtime: number; size: number }> = [];
 
   for (const file of files) {
-    const match = file.match(/app-(\d{4}-\d{2}-\d{2})(?:\.(\d+))?\.log$/);
+    const match = file.match(/app-(\d{4}-\d{2}-\d{2})(?:\.(\d+))?\.log(?:\.gz)?$/);
     if (match) {
       const fullPath = path.join(logDir, file);
       try {

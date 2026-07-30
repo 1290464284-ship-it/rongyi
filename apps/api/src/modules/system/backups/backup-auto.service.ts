@@ -276,6 +276,21 @@ export class BackupAutoService implements OnModuleInit, OnModuleDestroy {
     const backupDir = getBackupDir(this.dbService);
     if (!fs.existsSync(backupDir)) return;
 
+    // Startup warning: alert if backup directory is unusually large
+    try {
+      const dirFiles = fs.readdirSync(backupDir).filter((f) => f.endsWith('.sqlite'));
+      if (dirFiles.length > 50) {
+        let dirTotalBytes = 0;
+        for (const f of dirFiles) {
+          try { dirTotalBytes += fs.statSync(path.join(backupDir, f)).size; } catch { /* ignore */ }
+        }
+        const dirTotalMB = Math.round(dirTotalBytes / (1024 * 1024));
+        this.logger.warn(
+          `备份目录包含 ${dirFiles.length} 个文件（${dirTotalMB} MB），建议检查清理策略`,
+        );
+      }
+    } catch { /* non-critical, ignore */ }
+
     const recordedFiles = new Set(
       (this.dbService.prepare('SELECT filename FROM BackupRecord').all() as Array<{ filename: string }>)
         .map((r) => r.filename),

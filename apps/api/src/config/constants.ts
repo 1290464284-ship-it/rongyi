@@ -15,7 +15,6 @@ export const DEFAULT_CORS_ORIGINS = [
 ] as const;
 
 // JWT / 认证
-export const JWT_EXPIRES_IN = '7d';
 export const ACCESS_TOKEN_MAX_AGE_MS = 3600 * 1000; // 1 hour
 export const REFRESH_TOKEN_MAX_AGE_MS = 7 * 24 * 3600 * 1000; // 7 days
 export const BCRYPT_ROUNDS_DEFAULT = 10;
@@ -107,9 +106,9 @@ export const API_FORCE_KILL_TIMEOUT_MS = 5000;
 // 日志
 export const LOG_FLUSH_INTERVAL_MS = 5000;
 export const MAX_SANITIZE_DEPTH = 10;
-export const MAX_LOG_FILE_SIZE = 50 * 1024 * 1024;
+export const MAX_LOG_FILE_SIZE = 10 * 1024 * 1024; // 10 MB (单用户诊所场景足够)
 export const MAX_LOG_FILES_PER_DAY = 10;
-export const LOG_RETENTION_DAYS = 30;
+export const LOG_RETENTION_DAYS = 14; // 两周足够排查问题
 export const LOG_FLUSH_BUFFER_INTERVAL_MS = 1000;
 export const MAX_LOG_BUFFER_SIZE = 100;
 export const MAX_LOG_TOTAL_BUFFER_SIZE = 10000;
