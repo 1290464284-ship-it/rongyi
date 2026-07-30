@@ -102,10 +102,18 @@
     "extraResources": [
       {
         "from": "../api/bundle",
-        "to": "api/bundle"
+        "to": "api/bundle",
+        "filter": [
+          "**/*",
+          "!prebuilds/darwin-*/**",
+          "!prebuilds/linux-*/**",
+          "!prebuilds/linuxmusl-*/**",
+          "!prebuilds/win32-arm64/**"
+        ]
       }
     ],
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         {
           "target": "nsis",

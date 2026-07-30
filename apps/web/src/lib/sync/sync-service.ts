@@ -16,6 +16,9 @@ const SYNC_STORAGE_KEY = 'dental_sync';
 const DEVICE_ID_KEY = 'dental_device_id';
 const LAST_SYNC_KEY = 'dental_last_sync';
 
+/** 离线同步队列最大条数，超过时丢弃最旧的记录 */
+const SYNC_QUEUE_MAX_SIZE = 1000;
+
 interface PendingChange {
   id: string;
   tableName: string;
@@ -96,6 +99,12 @@ export function recordLocalChange(
     updatedAt: new Date().toISOString(),
   };
   state.pendingChanges.push(change);
+  // 队列大小限制：超过上限时丢弃最旧的记录
+  if (state.pendingChanges.length > SYNC_QUEUE_MAX_SIZE) {
+    const dropped = state.pendingChanges.length - SYNC_QUEUE_MAX_SIZE;
+    state.pendingChanges = state.pendingChanges.slice(dropped);
+    console.warn(`[Sync] 离线队列超过 ${SYNC_QUEUE_MAX_SIZE} 条，已丢弃 ${dropped} 条最旧记录`);
+  }
   saveSyncState(state);
 }
 
