@@ -1,5 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BusinessNotFoundException } from '@common/errors';
+import { Role } from '@dental/shared';
+import { ROLES_KEY } from '../../../common/decorators/roles.decorator';
 import { ClinicsController } from './clinics.controller';
 import { ClinicsService } from './clinics.service';
 
@@ -82,6 +84,20 @@ describe('ClinicsController', () => {
 
       const result = await controller.getCurrentClinic();
       expect(result).toBeNull();
+    });
+  });
+
+  describe('角色元数据', () => {
+    it('getCurrentClinic 放开全部登录角色（handler 级覆盖类级 BOSS 限制）', () => {
+      const roles = Reflect.getMetadata(ROLES_KEY, ClinicsController.prototype.getCurrentClinic) as Role[];
+      expect(roles).toEqual([Role.BOSS, Role.DOCTOR, Role.RECEPTIONIST, Role.NURSE, Role.ADMIN, Role.TECHNICIAN]);
+    });
+
+    it('类级仍为 BOSS-only，其余端点不受影响', () => {
+      const roles = Reflect.getMetadata(ROLES_KEY, ClinicsController) as Role[];
+      expect(roles).toEqual([Role.BOSS]);
+      // findOne 等 handler 未声明自己的 @Roles，落回类级限制
+      expect(Reflect.getMetadata(ROLES_KEY, ClinicsController.prototype.findOne)).toBeUndefined();
     });
   });
 

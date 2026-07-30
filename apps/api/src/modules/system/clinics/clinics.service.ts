@@ -25,6 +25,12 @@ export interface Clinic {
 }
 
 /**
+ * 全员可读端点（/clinics/current）暴露的诊所公开字段，
+ * 不含法人、营业执照、备注等经营敏感信息（仍限 BOSS 端点）。
+ */
+export type ClinicPublicInfo = Pick<Clinic, 'id' | 'name' | 'code' | 'address' | 'phone' | 'isActive' | 'createdAt' | 'updatedAt'>;
+
+/**
  * 迁移说明：
  * 1. findOne/findActive 从直接使用 db.prepare 迁移到使用 BaseRepository.findById
  * 2. create 中的 code 唯一性检查使用 BaseRepository 执行
@@ -107,13 +113,16 @@ export class ClinicsService extends BaseService<Clinic> {
   }
 
   /**
-   * 获取当前用户的诊所信息
+   * 获取当前用户的诊所信息（仅公开字段，供顶栏等全角色场景使用）
    */
-  async getCurrentClinic(): Promise<Clinic | null> {
+  async getCurrentClinic(): Promise<ClinicPublicInfo | null> {
     const clinicId = this.clinicContext.getClinicId();
     if (!clinicId) return null;
     try {
-      return await this.findOne(clinicId);
+      const clinic = await this.findOne(clinicId);
+      // 全员可读端点做字段投影，避免向非 BOSS 角色暴露经营敏感字段
+      const { id, name, code, address, phone, isActive, createdAt, updatedAt } = clinic;
+      return { id, name, code, address, phone, isActive, createdAt, updatedAt };
     } catch (err) {
       // P1 修复：仅捕获业务异常（诊所不存在等），其他异常（DB 错误等）应向上传播
       if (err instanceof BusinessException) {
