@@ -81,7 +81,9 @@ export const systemTables = [
       userAgent TEXT,
       source TEXT,
       clinicId TEXT NOT NULL,
-      createdAt TEXT DEFAULT CURRENT_TIMESTAMP
+      createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+      prevHash TEXT,
+      hash TEXT
     )`,
   `CREATE TABLE IF NOT EXISTS BackupRecord (
       id TEXT PRIMARY KEY,

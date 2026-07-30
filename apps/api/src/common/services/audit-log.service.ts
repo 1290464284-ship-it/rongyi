@@ -64,10 +64,56 @@ export class AuditLogService {
     const amount = options?.amount ?? null;
     const ip = options?.ip ?? null;
 
+    // 哈希链：查询当前诊所最新记录的 hash，作为本条的 prevHash
+    const prevHash = this.getLatestHash(db, clinicId);
+    const hash = this.computeHash(prevHash, type, targetId, targetType, beforeData, afterData, clinicId, now);
+
     db.prepare(
-      `INSERT INTO AuditLog (id, type, targetId, targetType, beforeData, afterData, remark, clinicId, createdAt, operatorId, operatorName, amount, ip)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(id, type, targetId, targetType, beforeData, afterData, remark, clinicId, now, operatorId, operatorName, amount, ip);
+      `INSERT INTO AuditLog (id, type, targetId, targetType, beforeData, afterData, remark, clinicId, createdAt, operatorId, operatorName, amount, ip, prevHash, hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(id, type, targetId, targetType, beforeData, afterData, remark, clinicId, now, operatorId, operatorName, amount, ip, prevHash, hash);
+  }
+
+  /**
+   * 获取指定诊所最新审计日志的 hash（哈希链的 prevHash）
+   * 无历史记录时返回 '0'（链起点）
+   */
+  private getLatestHash(db: IDatabase, clinicId: string | null): string {
+    try {
+      const row = db.prepare(
+        'SELECT hash FROM AuditLog WHERE clinicId = ? ORDER BY createdAt DESC, id DESC LIMIT 1',
+      ).get(clinicId) as { hash: string | null } | undefined;
+      return row?.hash || '0';
+    } catch {
+      return '0';
+    }
+  }
+
+  /**
+   * 计算审计日志哈希
+   * SHA-256(prevHash|type|targetId|targetType|beforeData|afterData|clinicId|createdAt)
+   */
+  computeHash(
+    prevHash: string,
+    type: string,
+    targetId: string,
+    targetType: string,
+    beforeData: string | null,
+    afterData: string | null,
+    clinicId: string | null,
+    createdAt: string,
+  ): string {
+    const hashInput = [
+      prevHash,
+      type,
+      targetId,
+      targetType,
+      beforeData || '',
+      afterData || '',
+      clinicId || '',
+      createdAt,
+    ].join('|');
+    return crypto.createHash('sha256').update(hashInput).digest('hex');
   }
 
   /**
