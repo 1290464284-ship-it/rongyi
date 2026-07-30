@@ -16,7 +16,7 @@
     "typecheck": "pnpm --filter @dental/api typecheck && pnpm --filter @dental/web typecheck",
     "lint": "pnpm --filter @dental/api lint && pnpm --filter @dental/web lint",
     "lint:strict": "pnpm --filter @dental/api lint:strict && pnpm --filter @dental/web lint:strict",
-    "verify": "pnpm typecheck && pnpm lint:strict && pnpm --filter @dental/shared test && pnpm --filter @dental/api arch:check && pnpm --filter @dental/api test && pnpm --filter @dental/api test:migration && pnpm --filter @dental/web test",
+    "verify": "pnpm typecheck && pnpm lint:strict && pnpm --filter @dental/shared test && pnpm --filter @dental/api arch:check && pnpm --filter @dental/api test && pnpm --filter @dental/api test:migration && pnpm --filter @dental/web test && node apps/api/scripts/check-doc-freshness.mjs",
     "verify:delivery": "pnpm typecheck && pnpm lint:strict && pnpm --filter @dental/api arch:check && pnpm build && pnpm test:cov",
     "verify:critical": "pnpm lint:strict && pnpm typecheck && pnpm --filter @dental/api arch:check && pnpm test && pnpm build",
     "changeset": "changeset",
