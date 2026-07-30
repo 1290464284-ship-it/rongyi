@@ -1,0 +1,29 @@
+# CODEOWNERS - 评审路由
+# 核心文件变更需要额外审查
+
+# 数据库层
+apps/api/src/db/ @rongyi/core
+apps/api/src/common/services/base.service.ts @rongyi/core
+
+# 核心服务
+apps/api/src/modules/system/operation-logs/ @rongyi/core
+
+# API 入口与中间件
+apps/api/src/main.ts @rongyi/core
+apps/api/src/app.module.ts @rongyi/core
+apps/api/src/common/middleware/ @rongyi/core
+
+# 共享类型
+packages/shared/src/ @rongyi/core
+
+# Web API 客户端
+apps/web/src/lib/api/ @rongyi/core
+
+# 架构规则
+.qoder/rules/ @rongyi/governance
+scripts/validate-arch-rules.mjs @rongyi/governance
+
+# Skill 与 Agent 配置
+.qoder/skills/ @rongyi/governance
+.qoder/agents/ @rongyi/governance
+AGENTS.md @rongyi/governance
