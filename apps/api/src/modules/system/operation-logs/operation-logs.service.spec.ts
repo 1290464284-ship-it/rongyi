@@ -77,6 +77,16 @@ describe('OperationLogsService', () => {
       expect(db.getTableData('OperationLog').length).toBe(2);
     });
 
+    it('create 无诊所上下文时 clinicId 使用 system 哨兵值', async () => {
+      const nullCtxService = new OperationLogsService(asDbService(db), createMockClinicContext(null));
+      await nullCtxService.create({ action: 'LOGIN_FAIL' });
+      // 手动 flush 以写入数据库
+      (nullCtxService as any).flush();
+      const data = db.getTableData('OperationLog');
+      expect(data.length).toBe(1);
+      expect(data[0].clinicId).toBe('system');
+    });
+
     it('队列满时丢弃旧数据（直接压入队列）', () => {
       // 直接压入到 queue，绕过自动 flush
       const queue = (service as any).queue;
@@ -117,18 +127,22 @@ describe('OperationLogsService', () => {
       expect(data.length).toBe(0);
     });
 
-    it('写入时使用当前 clinicId', () => {
+    it('写入时使用 entry.clinicId（在 enqueue 时捕获）', () => {
+      // batchInsert 直接被调用时，clinicId 来自 entry（由 create() 在 enqueue 时捕获）
       const ctxService = new OperationLogsService(asDbService(db), createMockClinicContext('clinic-A'));
-      (ctxService as any).batchInsert([{ action: 'TEST' }]);
+      (ctxService as any).batchInsert([{ action: 'TEST', clinicId: 'clinic-A' }]);
       const data = db.getTableData('OperationLog');
       expect(data[0].clinicId).toBe('clinic-A');
     });
 
-    it('clinicId 为 null 时存储 null', () => {
+    it('entry.clinicId 缺失时使用 system 哨兵值', () => {
+      // 无诊所上下文（如登录失败）时，create() 会捕获 'system'；
+      // 直接调用 batchInsert 且未设置 clinicId 时同样降级为 'system'，
+      // 避免 NOT NULL constraint failed: OperationLog.clinicId
       const ctxService = new OperationLogsService(asDbService(db), createMockClinicContext(null));
       (ctxService as any).batchInsert([{ action: 'TEST' }]);
       const data = db.getTableData('OperationLog');
-      expect(data[0].clinicId).toBeNull();
+      expect(data[0].clinicId).toBe('system');
     });
   });
 
@@ -240,12 +254,20 @@ describe('OperationLogsService', () => {
     });
 
     it('serializeForFile 包含 clinicId 和 timestamp', () => {
-      const result = (service as any).serializeForFile({ action: 'TEST', userId: 'u1' });
+      // clinicId 来自 entry（由 create() 在 enqueue 时捕获）；
+      // entry.clinicId 缺失时使用 'system' 哨兵值
+      const result = (service as any).serializeForFile({ action: 'TEST', userId: 'u1', clinicId: 'test-clinic-001' });
       const parsed = JSON.parse(result);
       expect(parsed.action).toBe('TEST');
       expect(parsed.userId).toBe('u1');
       expect(parsed.clinicId).toBe('test-clinic-001');
       expect(parsed.timestamp).toBeDefined();
+    });
+
+    it('serializeForFile 在 entry.clinicId 缺失时使用 system 哨兵值', () => {
+      const result = (service as any).serializeForFile({ action: 'TEST', userId: 'u1' });
+      const parsed = JSON.parse(result);
+      expect(parsed.clinicId).toBe('system');
     });
   });
 
@@ -378,8 +400,9 @@ describe('OperationLogsService', () => {
       }
     });
 
-    it('insertOne 所有可选字段均提供且 clinicId 为 null 时正确写入', () => {
-      // 覆盖 insertOne 中 ?? null 的左分支（字段已定义）和 clinicId || null 的右分支
+    it('insertOne 所有可选字段均提供且 entry.clinicId 缺失时使用 system 哨兵值', () => {
+      // 覆盖 insertOne 中 ?? null 的左分支（字段已定义）；
+      // clinicId 缺失时降级为 'system'（避免 NOT NULL constraint failed）
       const nullCtxService = new OperationLogsService(asDbService(db), createMockClinicContext(null));
       (nullCtxService as any).insertOne({
         userId: 'u1',
@@ -397,7 +420,7 @@ describe('OperationLogsService', () => {
       expect(data[0].target).toBe('Patient');
       expect(data[0].detail).toBe('创建患者');
       expect(data[0].ip).toBe('127.0.0.1');
-      expect(data[0].clinicId).toBeNull();
+      expect(data[0].clinicId).toBe('system');
     });
 
     it('batchInsert 所有可选字段均提供时正确写入', () => {
