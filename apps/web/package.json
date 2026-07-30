@@ -1,6 +1,8 @@
 {
   "name": "@dental/web",
   "version": "0.1.0",
+  "description": "Dental Clinic Management System",
+  "author": "Dental Clinic",
   "private": true,
   "type": "module",
   "main": "electron/main.cjs",
@@ -110,12 +112,6 @@
           "arch": [
             "x64"
           ]
-        },
-        {
-          "target": "portable",
-          "arch": [
-            "x64"
-          ]
         }
       ]
     },
@@ -129,8 +125,9 @@
     },
     "publish": [
       {
-        "provider": "generic",
-        "url": "${AUTO_UPDATE_URL}"
+        "provider": "github",
+        "owner": "1290464284-ship-it",
+        "repo": "rongyi"
       }
     ]
   }
