@@ -23,8 +23,9 @@ import {
   migrateToV24, migrateToV25, migrateToV26, migrateToV27,
 } from './v19-v26';
 import { migrateToV28 } from './v27-v28';
+import { migrateToV29 } from './v29';
 
-export const CURRENT_VERSION = 28;
+export const CURRENT_VERSION = 29;
 
 export const getCurrentVersion = (): number => {
   return (getMigrationDb().prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
@@ -59,6 +60,7 @@ export const migrationNames: Record<number, string> = {
   26: 'status-check-constraints-alignment',
   27: 'user-deletedAt-soft-delete',
   28: 'treatment-medicalrecord-deletedAt-columns',
+  29: 'soft-delete-query-optimization-indexes',
 };
 
 function backupBeforeMigration(fromVersion: number, toVersion: number): string | null {
@@ -159,6 +161,7 @@ export const runMigrations = (db: Database) => {
           case 26: migrateToV26(); break;
           case 27: migrateToV27(); break;
           case 28: migrateToV28(); break;
+          case 29: migrateToV29(); break;
         }
       });
       migrateTx();  // 任一迁移失败 → 整体回滚，数据库保持迁移前状态
