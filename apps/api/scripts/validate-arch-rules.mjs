@@ -10,6 +10,7 @@
  *   3. NestJS 模块边界 — 检测跨模块直接 import 内部文件
  *   4. DB Schema 保护 — 检测 schema.ts 是否被修改
  *   5. pnpm-lock 保护 — 检测 pnpm-lock.yaml 是否被手动修改
+ *   6. Schema/Migration 一致性 — 验证 schema/ 表定义在 migrations/ 中均有对应迁移
  *
  * 用法: node scripts/validate-arch-rules.mjs
  * 退出码: 0 = 通过, 1 = 有违规
@@ -538,6 +539,88 @@ function checkPnpmLockProtection() {
   }
 }
 
+// ============================================================================
+// 6. Schema 与 Migration 一致性检查
+// 验证 migration 文件中引用的表名在 schema/ 定义中均存在
+// （schema/*.tables.ts 是 source-of-truth，migrations 只做增量变更）
+// ============================================================================
+function checkSchemaMigrationConsistency() {
+  console.log(`\n${CYAN}━━━ 6. Schema 与 Migration 一致性检查${RESET} ${DIM}(.qoder/rules/db-schema-protection.md)${RESET}`);
+
+  const schemaDir = path.join(apiRoot, 'src', 'db', 'schema');
+  const migrationsDir = path.join(apiRoot, 'src', 'db', 'migrations');
+
+  if (!fs.existsSync(schemaDir) || !fs.existsSync(migrationsDir)) {
+    console.log(`  ${DIM}（schema 或 migrations 目录不存在，跳过）${RESET}`);
+    return;
+  }
+
+  // 从 schema/*.tables.ts 提取所有 CREATE TABLE 的表名（source of truth）
+  const schemaTableNames = new Set();
+  const tableFiles = fs.readdirSync(schemaDir).filter(f => f.endsWith('.tables.ts'));
+  const createTableRe = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)/gi;
+
+  for (const file of tableFiles) {
+    const content = fs.readFileSync(path.join(schemaDir, file), 'utf8');
+    let match;
+    createTableRe.lastIndex = 0;
+    while ((match = createTableRe.exec(content)) !== null) {
+      schemaTableNames.add(match[1]);
+    }
+  }
+
+  // 从 migration 文件（v*.ts）提取所有引用的表名
+  // 匹配模式：addColumnIfMissing('T', createIndexIfNotExists(..,'T', tableExists('T',
+  // rebuildTableWithNewCheck('T', CREATE TABLE T, ALTER TABLE T
+  const migrationFiles = fs.readdirSync(migrationsDir)
+    .filter(f => f.startsWith('v') && f.endsWith('.ts'));
+
+  // 辅助函数调用中的表名（第一个或第二个参数为 PascalCase 字符串）
+  const helperCallRe = /(?:addColumnIfMissing|rebuildTableWithNewCheck|tableExists)\(\s*'([A-Z]\w+)'/g;
+  const indexHelperRe = /createIndexIfNotExists\(\s*'[^']+',\s*'([A-Z]\w+)'/g;
+  // 直接 SQL 中的表名
+  const sqlTableRe = /(?:CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?|ALTER\s+TABLE\s+)(\w+)/gi;
+
+  const migrationTableNames = new Set();
+
+  for (const file of migrationFiles) {
+    const content = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
+    let match;
+
+    helperCallRe.lastIndex = 0;
+    while ((match = helperCallRe.exec(content)) !== null) {
+      if (!match[1].endsWith('_new')) migrationTableNames.add(match[1]);
+    }
+
+    indexHelperRe.lastIndex = 0;
+    while ((match = indexHelperRe.exec(content)) !== null) {
+      if (!match[1].endsWith('_new')) migrationTableNames.add(match[1]);
+    }
+
+    sqlTableRe.lastIndex = 0;
+    while ((match = sqlTableRe.exec(content)) !== null) {
+      // 排除 rebuildTableWithNewCheck 创建的临时表（xxx_new）
+      if (!match[1].endsWith('_new')) {
+        migrationTableNames.add(match[1]);
+      }
+    }
+  }
+
+  // 检查 migration 中引用的表是否都在 schema 中定义
+  const missingInSchema = [...migrationTableNames].filter(t => !schemaTableNames.has(t));
+  if (missingInSchema.length > 0) {
+    for (const table of missingInSchema) {
+      reportFileViolation(
+        'db-schema-protection',
+        path.join(migrationsDir, 'index.ts'),
+        `migration 引用的表 '${table}' 在 schema/*.tables.ts 中未定义 — 所有表必须在 schema 中有完整定义`,
+      );
+    }
+  } else {
+    console.log(`  ${GREEN}✓ migration 引用的 ${migrationTableNames.size} 张表均在 schema 中有定义${RESET}`);
+  }
+}
+
 // ──────────────────────────────────────────────────────────────
 // 主流程
 // ──────────────────────────────────────────────────────────────
@@ -589,6 +672,9 @@ function main() {
 
   // 5. pnpm-lock 保护检查
   checkPnpmLockProtection();
+
+  // 6. Schema 与 Migration 一致性检查
+  checkSchemaMigrationConsistency();
 
   // 汇总
   console.log(`\n${CYAN}═══════════════════════════════════════════════════════════════${RESET}`);
