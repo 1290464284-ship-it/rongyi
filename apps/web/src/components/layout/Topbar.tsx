@@ -5,8 +5,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useChangePassword } from '@/lib/auth';
+import { useCurrentClinic } from '@/lib/api/system/clinics';
 import { toast } from 'sonner';
-import { LogOut, ChevronDown, KeyRound, User as UserIcon } from 'lucide-react';
+import { LogOut, ChevronDown, KeyRound, User as UserIcon, Building2 } from 'lucide-react';
 import SearchModal from '@/components/SearchModal';
 
 const roleLabels: Record<string, string> = {
@@ -18,6 +19,7 @@ const roleLabels: Record<string, string> = {
 export default function Topbar() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+  const { data: clinic } = useCurrentClinic();
   const [menuOpen, setMenuOpen] = useState(false);
   const [pwdOpen, setPwdOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -53,7 +55,15 @@ export default function Topbar() {
 
   return (
     <header className="h-14 border-b border-border bg-white flex items-center justify-between px-6">
-      <div className="text-sm text-muted-foreground">{today}</div>
+      <div className="flex items-center gap-4">
+        {clinic?.name && (
+          <div className="flex items-center gap-1.5 text-sm font-medium text-foreground" title={`当前诊所：${clinic.name}`}>
+            <Building2 className="w-4 h-4 text-primary" />
+            <span>{clinic.name}</span>
+          </div>
+        )}
+        <div className="text-sm text-muted-foreground">{today}</div>
+      </div>
       <div className="flex items-center gap-3">
         <SearchModal />
         <div className="relative" ref={menuRef}>
