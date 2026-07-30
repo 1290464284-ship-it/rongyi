@@ -25,6 +25,7 @@
     "commitlint": "commitlint --edit",
     "health": "node scripts/code-health.mjs",
     "arch:check": "node scripts/validate-arch-rules.mjs",
+    "verify:indexes": "tsx scripts/verify-indexes.ts",
     "tech-debt": "node scripts/tech-debt-tracker.mjs",
     "audit": "npm audit --audit-level=high",
     "backup": "node scripts/backup/backup.js",
