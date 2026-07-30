@@ -6,16 +6,16 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('../components/WorkbenchTab', () => ({
   WorkbenchTab: () => <div data-testid="workbench-tab">回访工作台内容</div>,
 }));
-vi.mock('../components/TemplatesTab', () => ({
+vi.mock('../components/templates/TemplatesTab', () => ({
   TemplatesTab: () => <div data-testid="templates-tab">回访模板内容</div>,
 }));
-vi.mock('../components/ItemsTab', () => ({
+vi.mock('../components/items/ItemsTab', () => ({
   ItemsTab: () => <div data-testid="items-tab">回访项目内容</div>,
 }));
-vi.mock('../components/AutoRulesTab', () => ({
+vi.mock('../components/auto-rules/AutoRulesTab', () => ({
   AutoRulesTab: () => <div data-testid="auto-rules-tab">自动规则内容</div>,
 }));
-vi.mock('../components/StatsTab', () => ({
+vi.mock('../components/stats/StatsTab', () => ({
   StatsTab: () => <div data-testid="stats-tab">统计分析内容</div>,
 }));
 

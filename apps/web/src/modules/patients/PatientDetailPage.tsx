@@ -19,14 +19,14 @@ import { PageLoading } from '@/components/ui/loading';
 import PatientForm from './PatientForm';
 import OralExaminationPanel from '../clinical/OralExaminationPanel';
 import PeriodontalRecordPanel from '../clinical/PeriodontalRecordPanel';
-import { PatientInfoCard, ToothChartPanel } from './components/PatientSidebar';
-import { AppointmentsTab } from './components/AppointmentsTab';
-import { ChargesTab } from './components/ChargesTab';
-import { PrescriptionsTab } from './components/PrescriptionsTab';
-import { TreatmentPlansTab } from './components/TreatmentPlansTab';
-import { ImagingTab } from './components/ImagingTab';
-import { ToothRecordsTab } from './components/ToothRecordsTab';
-import { FollowUpPanel } from './components/FollowUpPanel';
+import { PatientInfoCard, ToothChartPanel } from './components/patient-detail-tabs/PatientSidebar';
+import { AppointmentsTab } from './components/patient-detail-tabs/AppointmentsTab';
+import { ChargesTab } from './components/patient-detail-tabs/ChargesTab';
+import { PrescriptionsTab } from './components/patient-detail-tabs/PrescriptionsTab';
+import { TreatmentPlansTab } from './components/patient-detail-tabs/TreatmentPlansTab';
+import { ImagingTab } from './components/patient-detail-tabs/ImagingTab';
+import { ToothRecordsTab } from './components/patient-detail-tabs/ToothRecordsTab';
+import { FollowUpPanel } from './components/patient-detail-tabs/FollowUpPanel';
 
 type Tab = 'timeline' | 'tooth' | 'oral-exam' | 'perio' | 'appointments' | 'follow-ups' | 'charges' | 'prescriptions' | 'treatment-plans' | 'imaging';
 

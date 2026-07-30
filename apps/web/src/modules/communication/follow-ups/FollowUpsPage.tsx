@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { BarChart3, FileText, ListTodo, Settings } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { WorkbenchTab } from './components/WorkbenchTab';
-import { TemplatesTab } from './components/TemplatesTab';
-import { ItemsTab } from './components/ItemsTab';
-import { AutoRulesTab } from './components/AutoRulesTab';
-import { StatsTab } from './components/StatsTab';
+import { TemplatesTab } from './components/templates/TemplatesTab';
+import { ItemsTab } from './components/items/ItemsTab';
+import { AutoRulesTab } from './components/auto-rules/AutoRulesTab';
+import { StatsTab } from './components/stats/StatsTab';
 
 type TabType = 'workbench' | 'templates' | 'items' | 'auto-rules' | 'stats';
 

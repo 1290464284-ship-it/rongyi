@@ -25,7 +25,7 @@ import { TableLoading, EmptyState } from '@/components/ui/loading';
 import { QueryErrorAlert } from '@/components/QueryErrorAlert';
 import { VirtualChargeRow, ROW_HEIGHT } from './components/VirtualChargeRow';
 import { CreateChargeDialog } from './components/CreateChargeDialog';
-import { PayDialog } from './components/PayDialog';
+import { PayDialog } from './components/payments/PayDialog';
 import { RefundDialog } from './components/RefundDialog';
 
 const ChargePage = React.memo(function ChargePage() {

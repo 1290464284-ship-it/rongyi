@@ -4,9 +4,9 @@
  */
 import { useState } from 'react';
 import { Package, CreditCard, AlertCircle } from 'lucide-react';
-import { ChargeCombosTab } from './components/CombosTab';
-import { PaymentMethodsTab } from './components/PaymentMethodsTab';
-import { DebtsTab } from './components/DebtsTab';
+import { ChargeCombosTab } from './components/combos/CombosTab';
+import { PaymentMethodsTab } from './components/payments/PaymentMethodsTab';
+import { DebtsTab } from './components/payments/DebtsTab';
 
 type TabType = 'combos' | 'payment-methods' | 'debts';
 
