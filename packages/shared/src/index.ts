@@ -25,6 +25,11 @@ export {
   hasRoleLevel,
   CACHE_PREFIXES,
   buildCacheKey,
+  CLINIC_TIMEZONE,
+  CLINIC_TZ_OFFSET_HOURS,
+  CLINIC_TZ_SQL_MODIFIER,
+  getLocalDateInClinicTz,
+  getLocalDateTimeInClinicTz,
 } from './constants';
 
 // Explicit re-exports for validators (CJS interop)
