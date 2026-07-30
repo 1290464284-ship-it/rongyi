@@ -27,8 +27,8 @@ export function useCrudList<T, TQuery extends Record<string, unknown> = Record<s
 
   return useQuery({
     queryKey: [queryKey, params],
-    queryFn: async () => {
-      const res = await api.get<PaginatedResult<T>>(`/${endpoint}`, { params });
+    queryFn: async ({ signal }) => {
+      const res = await api.get<PaginatedResult<T>>(`/${endpoint}`, { params, signal });
       return res.data.items;
     },
     ...cacheOpts,
@@ -47,8 +47,8 @@ export function useCrudPaginated<T, TQuery extends Record<string, unknown> = Rec
 
   return useQuery({
     queryKey: [queryKey, params],
-    queryFn: async () => {
-      const res = await api.get<PaginatedResult<T>>(`/${endpoint}`, { params });
+    queryFn: async ({ signal }) => {
+      const res = await api.get<PaginatedResult<T>>(`/${endpoint}`, { params, signal });
       return res.data;
     },
     ...cacheOpts,
@@ -67,7 +67,7 @@ export function useCrudItem<T>(
 
   return useQuery({
     queryKey: [queryKey, id],
-    queryFn: async () => (await api.get<T>(`/${endpoint}/${id}`)).data,
+    queryFn: async ({ signal }) => (await api.get<T>(`/${endpoint}/${id}`, { signal })).data,
     enabled: !!id,
     ...cacheOpts,
     ...queryOptions,

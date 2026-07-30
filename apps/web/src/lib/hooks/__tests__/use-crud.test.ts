@@ -42,7 +42,7 @@ describe('use-crud 工厂 hooks', () => {
     const { result } = renderHook(() => useCrudList('things', 'things', { page: 1 }), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/things', { params: { page: 1 } });
+    expect(mockedApi.get).toHaveBeenCalledWith('/things', expect.objectContaining({ params: { page: 1 } }));
     expect(result.current.data).toEqual([{ id: '1' }]);
   });
 
@@ -62,7 +62,7 @@ describe('use-crud 工厂 hooks', () => {
     const { result } = renderHook(() => useCrudItem('things', 'things', '1'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/things/1');
+    expect(mockedApi.get).toHaveBeenCalledWith('/things/1', expect.any(Object));
 
     vi.clearAllMocks();
     renderHook(() => useCrudItem('things', 'things', undefined), { wrapper });

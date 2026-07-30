@@ -33,7 +33,7 @@ describe('financial/charge-v2 hooks', () => {
     const { result } = renderHook(() => useChargeCombos(params), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/charge-v2/combos', { params });
+    expect(mockedApi.get).toHaveBeenCalledWith('/charge-v2/combos', expect.objectContaining({ params }));
     expect(result.current.data).toEqual(paginated);
   });
 
@@ -82,9 +82,9 @@ describe('financial/charge-v2 hooks', () => {
     const { result } = renderHook(() => usePaymentMethods({ isEnabled: true }), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/charge-v2/payment-methods', {
+    expect(mockedApi.get).toHaveBeenCalledWith('/charge-v2/payment-methods', expect.objectContaining({
       params: { isEnabled: true },
-    });
+    }));
     expect(result.current.data).toEqual(items);
   });
 
@@ -108,7 +108,7 @@ describe('financial/charge-v2 hooks', () => {
     const { result } = renderHook(() => useDebts(params), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/charge-v2/debts', { params });
+    expect(mockedApi.get).toHaveBeenCalledWith('/charge-v2/debts', expect.objectContaining({ params }));
     expect(result.current.data).toEqual(paginated);
   });
 
@@ -119,7 +119,7 @@ describe('financial/charge-v2 hooks', () => {
     const { result } = renderHook(() => useDebtStats(), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/charge-v2/debts/stats');
+    expect(mockedApi.get).toHaveBeenCalledWith('/charge-v2/debts/stats', expect.any(Object));
     expect(result.current.data).toEqual(stats);
   });
 

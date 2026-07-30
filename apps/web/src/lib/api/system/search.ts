@@ -13,8 +13,8 @@ export interface SearchResult {
 export function useSearch(keyword: string, enabled = true) {
   return useQuery({
     queryKey: ['search', keyword],
-    queryFn: async () =>
-      (await api.get<SearchResult[]>('/search', { params: { q: keyword } })).data,
+    queryFn: async ({ signal }) =>
+      (await api.get<SearchResult[]>('/search', { params: { q: keyword }, signal })).data,
     enabled: enabled && keyword.length >= 2,
   });
 }

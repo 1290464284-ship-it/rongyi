@@ -29,9 +29,9 @@ describe('clinical/visits hooks', () => {
     const { result } = renderHook(() => useVisits('p1'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/visits', {
+    expect(mockedApi.get).toHaveBeenCalledWith('/visits', expect.objectContaining({
       params: { patientId: 'p1', pageSize: 200 },
-    });
+    }));
   });
 
   it('useVisitsList 默认 pageSize=50 且可被参数覆盖', async () => {
@@ -40,9 +40,9 @@ describe('clinical/visits hooks', () => {
     const { result } = renderHook(() => useVisitsList({ doctorId: 'd1', pageSize: 10 }), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/visits', {
+    expect(mockedApi.get).toHaveBeenCalledWith('/visits', expect.objectContaining({
       params: { doctorId: 'd1', pageSize: 10 },
-    });
+    }));
   });
 
   it('useCreateVisit 提交 POST /visits 并失效 visits/appointments/dashboard', async () => {

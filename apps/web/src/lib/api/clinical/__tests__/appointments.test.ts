@@ -32,9 +32,9 @@ describe('clinical/appointments hooks', () => {
     );
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/appointments', {
+    expect(mockedApi.get).toHaveBeenCalledWith('/appointments', expect.objectContaining({
       params: { doctorId: 'd1', startDate: '2026-07-01', endDate: '2026-07-31', pageSize: 200 },
-    });
+    }));
     expect(result.current.data).toEqual(paginated);
   });
 

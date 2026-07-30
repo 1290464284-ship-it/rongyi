@@ -59,14 +59,14 @@ export function useWechatMessages(params: { patientId?: string; type?: string; s
 export function useBirthdayPatients() {
   return useQuery({
     queryKey: ['wechat', 'birthday-patients'],
-    queryFn: async () => (await api.get<WechatBirthdayPatient[]>('/wechat/birthday-patients')).data,
+    queryFn: async ({ signal }) => (await api.get<WechatBirthdayPatient[]>('/wechat/birthday-patients', { signal })).data,
   });
 }
 
 export function useAppointmentReminders() {
   return useQuery({
     queryKey: ['wechat', 'appointment-reminders'],
-    queryFn: async () => (await api.get<WechatAppointmentReminder[]>('/wechat/appointment-reminders')).data,
+    queryFn: async ({ signal }) => (await api.get<WechatAppointmentReminder[]>('/wechat/appointment-reminders', { signal })).data,
   });
 }
 

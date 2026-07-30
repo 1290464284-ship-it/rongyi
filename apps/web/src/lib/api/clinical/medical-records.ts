@@ -146,12 +146,12 @@ export function useLockMedicalRecord() {
 export function useRecordTemplates(params?: { category?: string; page?: number; pageSize?: number }) {
   return useQuery({
     queryKey: ['record-templates', params],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const searchParams = new URLSearchParams();
       if (params?.category) searchParams.set('category', params.category);
       if (params?.page) searchParams.set('page', params.page.toString());
       if (params?.pageSize) searchParams.set('pageSize', params.pageSize.toString());
-      const res = await api.get(`/medical-records/templates?${searchParams.toString()}`);
+      const res = await api.get(`/medical-records/templates?${searchParams.toString()}`, { signal });
       return res.data as { items: MedicalRecordTemplate[]; total: number };
     },
   });
@@ -172,12 +172,12 @@ export function useDeleteRecordTemplate() {
 export function useRecordPhrases(params?: { category?: string; page?: number; pageSize?: number }) {
   return useQuery({
     queryKey: ['record-phrases', params],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const searchParams = new URLSearchParams();
       if (params?.category) searchParams.set('category', params.category);
       if (params?.page) searchParams.set('page', params.page.toString());
       if (params?.pageSize) searchParams.set('pageSize', params.pageSize.toString());
-      const res = await api.get(`/medical-records/phrases?${searchParams.toString()}`);
+      const res = await api.get(`/medical-records/phrases?${searchParams.toString()}`, { signal });
       return res.data as { items: MedicalRecordPhrase[]; total: number };
     },
   });
@@ -198,12 +198,12 @@ export function useDeleteRecordPhrase() {
 export function useRecordModifyRequests(params?: { status?: string; page?: number; pageSize?: number }) {
   return useQuery({
     queryKey: ['record-modify-requests', params],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const searchParams = new URLSearchParams();
       if (params?.status) searchParams.set('status', params.status);
       if (params?.page) searchParams.set('page', params.page.toString());
       if (params?.pageSize) searchParams.set('pageSize', params.pageSize.toString());
-      const res = await api.get(`/medical-records/modify-requests?${searchParams.toString()}`);
+      const res = await api.get(`/medical-records/modify-requests?${searchParams.toString()}`, { signal });
       return res.data as { items: RecordModifyRequest[]; total: number };
     },
   });

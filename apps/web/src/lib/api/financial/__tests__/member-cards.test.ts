@@ -31,9 +31,9 @@ describe('financial/member-cards hooks', () => {
     const { result } = renderHook(() => useMemberCards(), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/member-cards', {
+    expect(mockedApi.get).toHaveBeenCalledWith('/member-cards', expect.objectContaining({
       params: { page: 1, pageSize: 20 },
-    });
+    }));
     expect(result.current.data).toEqual(paginated);
   });
 
@@ -43,7 +43,7 @@ describe('financial/member-cards hooks', () => {
     const { result } = renderHook(() => usePatientMemberCard('p1'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/member-cards/patient/p1');
+    expect(mockedApi.get).toHaveBeenCalledWith('/member-cards/patient/p1', expect.any(Object));
     expect(result.current.data).toEqual({ id: 'mc1', patientId: 'p1' });
   });
 
@@ -87,7 +87,7 @@ describe('financial/member-cards hooks', () => {
     const { result } = renderHook(() => useMemberCardLogs('mc1'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/member-cards/mc1/logs');
+    expect(mockedApi.get).toHaveBeenCalledWith('/member-cards/mc1/logs', expect.any(Object));
     expect(result.current.data).toEqual(logs);
   });
 
@@ -104,7 +104,7 @@ describe('financial/member-cards hooks', () => {
     const { result } = renderHook(() => useMemberPointLogs('mc1'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/member-cards/mc1/point-logs');
+    expect(mockedApi.get).toHaveBeenCalledWith('/member-cards/mc1/point-logs', expect.any(Object));
     expect(result.current.data).toEqual(logs);
   });
 

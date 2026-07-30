@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -26,12 +28,33 @@ const TYPE_OPTIONS: Appointment['type'][] = [
   'OTHER',
 ];
 
+const appointmentSchema = z.object({
+  patientId: z.string().min(1, '请选择患者'),
+  doctorId: z.string().min(1, '必填'),
+  chairId: z.string().optional(),
+  startTime: z.string().min(1, '必填'),
+  endTime: z.string().min(1, '必填'),
+  type: z.enum(['FIRST_VISIT', 'RETURN', 'CONSULTATION', 'EMERGENCY', 'RECALL', 'OTHER']),
+  remark: z.string().optional(),
+}).refine(
+  (data) => {
+    if (data.startTime && data.endTime) {
+      return new Date(data.endTime) > new Date(data.startTime);
+    }
+    return true;
+  },
+  { message: '结束时间必须晚于开始时间', path: ['endTime'] },
+);
+
+type AppointmentFormValues = z.infer<typeof appointmentSchema>;
+
 export default function AppointmentForm({ defaultStartTime, defaultEndTime, defaultChairId, onClose }: Props) {
   const create = useCreateAppointment();
   const { data: chairs } = useChairs();
   const activeChairs = chairs?.filter((c) => c.active) ?? [];
 
-  const { register, handleSubmit, formState: { errors } } = useForm({
+  const { register, handleSubmit, formState: { errors } } = useForm<AppointmentFormValues>({
+    resolver: zodResolver(appointmentSchema),
     defaultValues: {
       patientId: '',
       doctorId: '',
@@ -48,15 +71,7 @@ export default function AppointmentForm({ defaultStartTime, defaultEndTime, defa
   const { data: patients } = usePatientSearch(patientKeyword);
   const { data: doctors } = useDoctors();
 
-  const onSubmit = async (data: {
-    patientId: string;
-    doctorId: string;
-    chairId: string;
-    startTime: string;
-    endTime: string;
-    type: Appointment['type'];
-    remark: string;
-  }) => {
+  const onSubmit = async (data: AppointmentFormValues) => {
     const payload = {
       ...data,
       patientId: selectedPatient?.id ?? data.patientId,
@@ -101,7 +116,7 @@ export default function AppointmentForm({ defaultStartTime, defaultEndTime, defa
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-1.5">
           <Label htmlFor="doctorId">医生 *</Label>
-          <Select id="doctorId" {...register('doctorId', { required: '必填' })}>
+          <Select id="doctorId" {...register('doctorId')}>
             <option value="">请选择</option>
             {doctors?.map((d) => (
               <option key={d.id} value={d.id}>{d.name}</option>
@@ -120,7 +135,7 @@ export default function AppointmentForm({ defaultStartTime, defaultEndTime, defa
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="type">预约类型 *</Label>
-          <Select id="type" {...register('type', { required: '必填' })}>
+          <Select id="type" {...register('type')}>
             {TYPE_OPTIONS.map((t) => (
               <option key={t} value={t}>{APPOINTMENT_TYPE_LABEL[t]}</option>
             ))}
@@ -128,11 +143,12 @@ export default function AppointmentForm({ defaultStartTime, defaultEndTime, defa
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="startTime">开始时间 *</Label>
-          <Input id="startTime" type="datetime-local" {...register('startTime', { required: '必填' })} />
+          <Input id="startTime" type="datetime-local" {...register('startTime')} />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="endTime">结束时间 *</Label>
-          <Input id="endTime" type="datetime-local" {...register('endTime', { required: '必填' })} />
+          <Input id="endTime" type="datetime-local" {...register('endTime')} />
+          {errors.endTime && <p className="text-xs text-destructive">{errors.endTime.message as string}</p>}
         </div>
       </div>
 

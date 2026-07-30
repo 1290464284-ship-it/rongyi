@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { X, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +15,8 @@ import {
   PATIENT_SOURCE_LABEL,
   type Patient,
   type CreatePatientDto,
+  type PatientGender,
+  type PatientSource,
 } from '@/lib/api/patients/patients';
 
 interface Props {
@@ -75,6 +79,23 @@ function TagInput({
   );
 }
 
+const patientSchema = z.object({
+  name: z.string().min(1, '必填'),
+  gender: z.enum(['UNKNOWN', 'MALE', 'FEMALE', 'OTHER']),
+  phone: z.string().regex(/^\d{11}$/, '11位手机号'),
+  birthDate: z.string().optional(),
+  idCard: z.string().optional(),
+  address: z.string().optional(),
+  occupation: z.string().optional(),
+  source: z.string().optional(),
+  referrer: z.string().optional(),
+  emergencyContact: z.string().optional(),
+  emergencyPhone: z.string().regex(/^\d*$/, '请输入数字').optional(),
+  remark: z.string().optional(),
+});
+
+type PatientFormValues = z.infer<typeof patientSchema>;
+
 export default function PatientForm({ onClose, onSaved, initialPatient }: Props) {
   const isEdit = !!initialPatient;
   const create = useCreatePatient();
@@ -86,7 +107,8 @@ export default function PatientForm({ onClose, onSaved, initialPatient }: Props)
   const [medicationHistory, setMedicationHistory] = useState<string[]>(initialPatient?.medicationHistory ?? []);
   const [systemicDiseases, setSystemicDiseases] = useState<string[]>(initialPatient?.systemicDiseases ?? []);
 
-  const { register, handleSubmit, formState: { errors } } = useForm<CreatePatientDto & { birthDate: string; idCard: string; address: string; occupation: string; referrer: string; emergencyContact: string; emergencyPhone: string; remark: string }>({
+  const { register, handleSubmit, formState: { errors } } = useForm<PatientFormValues>({
+    resolver: zodResolver(patientSchema),
     defaultValues: {
       name: initialPatient?.name ?? '',
       gender: initialPatient?.gender ?? 'UNKNOWN',
@@ -103,9 +125,11 @@ export default function PatientForm({ onClose, onSaved, initialPatient }: Props)
     },
   });
 
-  const onSubmit = async (data: CreatePatientDto & { birthDate: string; idCard: string; address: string; occupation: string; referrer: string; emergencyContact: string; emergencyPhone: string; remark: string }) => {
+  const onSubmit = async (data: PatientFormValues) => {
     const payload: CreatePatientDto = {
       ...data,
+      gender: data.gender as PatientGender,
+      source: (data.source || undefined) as PatientSource | undefined,
       birthDate: data.birthDate || undefined,
       idCard: data.idCard || undefined,
       address: data.address || undefined,
@@ -140,7 +164,7 @@ export default function PatientForm({ onClose, onSaved, initialPatient }: Props)
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label htmlFor="name">姓名 *</Label>
-            <Input id="name" {...register('name', { required: '必填' })} />
+            <Input id="name" {...register('name')} />
             {errors.name && <p className="text-xs text-destructive">{errors.name.message as string}</p>}
           </div>
           <div className="space-y-1.5">
@@ -153,7 +177,7 @@ export default function PatientForm({ onClose, onSaved, initialPatient }: Props)
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="phone">手机 *</Label>
-            <Input id="phone" {...register('phone', { required: '必填', pattern: { value: /^\d{11}$/, message: '11位手机号' } })} />
+            <Input id="phone" {...register('phone')} />
             {errors.phone && <p className="text-xs text-destructive">{errors.phone.message as string}</p>}
           </div>
           <div className="space-y-1.5">

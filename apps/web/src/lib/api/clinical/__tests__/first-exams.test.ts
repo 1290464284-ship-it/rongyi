@@ -36,7 +36,7 @@ describe('clinical/first-exams hooks', () => {
     const { result } = renderHook(() => useFirstExams(params), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/first-exams', { params });
+    expect(mockedApi.get).toHaveBeenCalledWith('/first-exams', expect.objectContaining({ params }));
     expect(result.current.data).toEqual(paginated);
   });
 
@@ -78,7 +78,7 @@ describe('clinical/first-exams hooks', () => {
     const { result } = renderHook(() => useFirstExamTeeth('fe1'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/first-exams/fe1/teeth');
+    expect(mockedApi.get).toHaveBeenCalledWith('/first-exams/fe1/teeth', expect.any(Object));
     expect(result.current.data).toEqual([
       { toothNumber: 11, condition: '龋坏', status: 'CARIES' },
       { toothNumber: 21, status: 'NORMAL' },
@@ -124,7 +124,7 @@ describe('clinical/first-exams hooks', () => {
     const { result } = renderHook(() => useFirstExamTracks(params), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/first-exams/tracks/list', { params });
+    expect(mockedApi.get).toHaveBeenCalledWith('/first-exams/tracks/list', expect.objectContaining({ params }));
     expect(result.current.data).toEqual(res);
   });
 
@@ -160,7 +160,7 @@ describe('clinical/first-exams hooks', () => {
     const { result } = renderHook(() => useFirstExamStats(), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockedApi.get).toHaveBeenCalledWith('/first-exams/stats');
+    expect(mockedApi.get).toHaveBeenCalledWith('/first-exams/stats', expect.any(Object));
     expect(result.current.data).toEqual(stats);
   });
 

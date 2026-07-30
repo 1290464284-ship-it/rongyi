@@ -285,8 +285,8 @@ export function useCompleteFollowUpV2() {
 export function useFollowUpTemplates(params?: { page?: number; pageSize?: number; isEnabled?: boolean }) {
   return useQuery({
     queryKey: ['follow-up-templates', params],
-    queryFn: async () => {
-      const data = (await api.get<FollowUpTemplate[]>('/follow-ups/templates/list', { params })).data;
+    queryFn: async ({ signal }) => {
+      const data = (await api.get<FollowUpTemplate[]>('/follow-ups/templates/list', { params, signal })).data;
       return {
         items: data,
         total: data.length,
@@ -336,8 +336,8 @@ export function useToggleFollowUpTemplate() {
 export function useFollowUpItems(params?: { page?: number; pageSize?: number }) {
   return useQuery({
     queryKey: ['follow-up-items', params],
-    queryFn: async () => {
-      const data = (await api.get<FollowUpItem[]>('/follow-ups/items/list', { params })).data;
+    queryFn: async ({ signal }) => {
+      const data = (await api.get<FollowUpItem[]>('/follow-ups/items/list', { params, signal })).data;
       return {
         items: data,
         total: data.length,
@@ -378,8 +378,8 @@ export function useDeleteFollowUpItem() {
 export function useFollowUpAutoRules(params?: { page?: number; pageSize?: number }) {
   return useQuery({
     queryKey: ['follow-up-auto-rules', params],
-    queryFn: async () => {
-      const data = (await api.get<FollowUpAutoRule[]>('/follow-ups/auto-rules/list', { params })).data;
+    queryFn: async ({ signal }) => {
+      const data = (await api.get<FollowUpAutoRule[]>('/follow-ups/auto-rules/list', { params, signal })).data;
       return {
         items: data,
         total: data.length,
@@ -429,13 +429,13 @@ export function useToggleFollowUpAutoRule() {
 export function useFollowUpWorkloadStats(params?: { startDate?: string; endDate?: string }) {
   return useQuery({
     queryKey: ['follow-up-workload-stats', params],
-    queryFn: async () => (await api.get<FollowUpWorkloadStats>('/follow-ups/stats/workload', { params })).data,
+    queryFn: async ({ signal }) => (await api.get<FollowUpWorkloadStats>('/follow-ups/stats/workload', { params, signal })).data,
   });
 }
 
 export function useFollowUpNpsStats(params?: { startDate?: string; endDate?: string }) {
   return useQuery({
     queryKey: ['follow-up-nps-stats', params],
-    queryFn: async () => (await api.get<FollowUpNpsStats>('/follow-ups/stats/nps', { params })).data,
+    queryFn: async ({ signal }) => (await api.get<FollowUpNpsStats>('/follow-ups/stats/nps', { params, signal })).data,
   });
 }
