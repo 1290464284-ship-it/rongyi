@@ -576,6 +576,35 @@ const menuTemplate: MenuItemConstructorOptions[] = [
     label: '帮助',
     submenu: [
       {
+        label: '检查更新',
+        click: () => {
+          if (isDev) {
+            dialog.showMessageBox({
+              type: 'info',
+              title: '检查更新',
+              message: '开发模式不支持自动更新，请使用安装包部署后测试。',
+            });
+            return;
+          }
+          autoUpdater.checkForUpdates().then((result) => {
+            if (!result) {
+              dialog.showMessageBox({
+                type: 'info',
+                title: '检查更新',
+                message: '未检测到更新。',
+              });
+            }
+          }).catch((err) => {
+            dialog.showMessageBox({
+              type: 'warning',
+              title: '检查更新',
+              message: '检查更新失败，请检查网络连接。\n\n' + (err as Error).message,
+            });
+          });
+        },
+      },
+      { type: 'separator' },
+      {
         label: '关于',
         click: () => {
           const aboutWindow = new BrowserWindow({
@@ -644,8 +673,8 @@ if (!gotTheLock) {
       Menu.setApplicationMenu(menu);
       createWindow();
 
-      // 自动更新检查（仅生产环境且配置了更新服务器时启用）
-      if (!isDev && process.env.AUTO_UPDATE_URL) {
+      // 自动更新检查（生产环境通过 GitHub Releases 自动检测更新）
+      if (!isDev) {
         autoUpdater.autoDownload = false;
         autoUpdater.autoInstallOnAppQuit = true;
         autoUpdater.checkForUpdates().catch((err) => {
@@ -660,6 +689,9 @@ if (!gotTheLock) {
             buttons: ['好的'],
           });
           autoUpdater.downloadUpdate();
+        });
+        autoUpdater.on('update-not-available', (info) => {
+          log(`当前已是最新版本: ${info.version}`);
         });
         autoUpdater.on('update-downloaded', (info) => {
           log(`新版本已下载: ${info.version}`);

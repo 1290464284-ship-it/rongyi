@@ -1,6 +1,8 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+overrides:
+  '@electron/get': '^3.1.0'
 allowBuilds:
   '@scarf/scarf': set this to true or false
   better-sqlite3: set this to true or false
