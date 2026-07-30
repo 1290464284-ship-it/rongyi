@@ -35,9 +35,10 @@ uploads/
 apps/web/vite.config.d.ts
 apps/web/vite.config.js
 
-# Electron 编译产物（由 electron:compile 从 main.ts 生成）
+# Electron 编译产物（由 electron:compile 从 main.ts/preload.ts 生成）
 apps/web/electron/main.js
 apps/web/electron/main.cjs
+apps/web/electron/preload.cjs
 
 # API 打包产物
 apps/api/bundle/

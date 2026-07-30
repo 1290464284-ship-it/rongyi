@@ -18,7 +18,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:update-snapshots": "playwright test --update-snapshots",
-    "electron:compile": "tsc -p tsconfig.electron.json && esbuild electron/main.ts --bundle --platform=node --format=cjs --external:electron --external:electron-updater --outfile=electron/main.cjs",
+    "electron:compile": "tsc -p tsconfig.electron.json && esbuild electron/main.ts --bundle --platform=node --format=cjs --external:electron --external:electron-updater --outfile=electron/main.cjs && esbuild electron/preload.ts --bundle --platform=node --format=cjs --external:electron --outfile=electron/preload.cjs",
     "electron:dev": "concurrently \"pnpm dev\" \"pnpm electron:compile && electron .\"",
     "electron:build": "pnpm build && pnpm electron:compile && electron-builder",
     "electron:pack": "pnpm build && pnpm electron:compile && electron-builder --dir",
