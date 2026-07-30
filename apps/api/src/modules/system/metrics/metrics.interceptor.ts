@@ -2,7 +2,7 @@ import { Injectable, NestInterceptor, ExecutionContext, CallHandler } from '@nes
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { Request, Response } from 'express';
-import { MetricsService } from '../../modules/system/metrics/metrics.service';
+import { MetricsService } from './metrics.service';
 
 interface RequestWithRoute extends Request {
   route: { path?: string };

@@ -1,5 +1,5 @@
 import { MetricsInterceptor } from './metrics.interceptor';
-import { MetricsService } from '../../modules/system/metrics/metrics.service';
+import { MetricsService } from './metrics.service';
 import { ExecutionContext, CallHandler } from '@nestjs/common';
 import { Observable, of, throwError } from 'rxjs';
 

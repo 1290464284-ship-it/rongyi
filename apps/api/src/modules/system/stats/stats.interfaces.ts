@@ -15,15 +15,7 @@ export interface TodoItemRow { id: string; type: string; title: string; status: 
 export interface InventoryStatusRow { category: string; count: number; totalStock: number; }
 export interface MemberLevelRow { level: string; count: number; percentage?: number; }
 
-export type StatsCacheCategory =
-  | 'dashboard'
-  | 'revenue'
-  | 'doctorWorkload'
-  | 'patientGrowth'
-  | 'revenueByCategory'
-  | 'revenueByDoctor'
-  | 'inventory'
-  | 'appointment'
-  | 'charge'
-  | 'patient'
-  | 'member';
+import { StatsCacheCategory } from '../../../common/types/stats-cache-category';
+
+export type { StatsCacheCategory };
+
