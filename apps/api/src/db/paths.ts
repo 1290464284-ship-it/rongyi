@@ -6,13 +6,13 @@ import { logger } from '../common/utils/infra/log';
 import {
   DEFAULT_API_PORT,
   DEFAULT_CORS_ORIGINS,
-  JWT_EXPIRES_IN,
+  ACCESS_TOKEN_EXPIRES_IN,
 } from '../config/constants';
 
 const ENV_FALLBACKS: Record<string, string> = {
   PORT: String(DEFAULT_API_PORT),
   CORS_ORIGIN: DEFAULT_CORS_ORIGINS.join(','),
-  JWT_EXPIRES_IN,
+  ACCESS_TOKEN_EXPIRES_IN,
 };
 
 function ensureDir(dir: string): void {
@@ -67,7 +67,7 @@ export function ensureEnvFile(envPath: string): void {
   const lines = [
     'JWT_SECRET=' + jwtSecret,
     'ENCRYPTION_KEY=' + encryptionKey,
-    'JWT_EXPIRES_IN=' + ENV_FALLBACKS.JWT_EXPIRES_IN,
+    'ACCESS_TOKEN_EXPIRES_IN=' + ENV_FALLBACKS.ACCESS_TOKEN_EXPIRES_IN,
     'PORT=' + ENV_FALLBACKS.PORT,
     'CORS_ORIGIN=' + ENV_FALLBACKS.CORS_ORIGIN,
   ];
@@ -80,7 +80,7 @@ export function ensureEnvFile(envPath: string): void {
       '[Setup] 无法写入 .env (' + envPath + ')，将使用进程环境变量: ' + (writeErr as Error).message,
     );
     process.env.JWT_SECRET = jwtSecret;
-    process.env.JWT_EXPIRES_IN = ENV_FALLBACKS.JWT_EXPIRES_IN;
+    process.env.ACCESS_TOKEN_EXPIRES_IN = ENV_FALLBACKS.ACCESS_TOKEN_EXPIRES_IN;
     process.env.PORT = ENV_FALLBACKS.PORT;
     process.env.CORS_ORIGIN = ENV_FALLBACKS.CORS_ORIGIN;
   }

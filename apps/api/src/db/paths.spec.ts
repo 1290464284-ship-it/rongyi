@@ -116,7 +116,7 @@ describe('Database Paths', () => {
       mockFs.writeFileSync.mockImplementation((() => { throw new Error('write failed'); }) as any);
       ensureEnvFile('/fail/.env');
       expect(process.env.JWT_SECRET).toBeDefined();
-      expect(process.env.JWT_EXPIRES_IN).toBeDefined();
+      expect(process.env.ACCESS_TOKEN_EXPIRES_IN).toBeDefined();
       expect(process.env.PORT).toBeDefined();
       expect(process.env.CORS_ORIGIN).toBeDefined();
     });

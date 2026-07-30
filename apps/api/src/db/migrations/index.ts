@@ -11,6 +11,7 @@ import {
   isMigrationApplied,
   recordMigration,
   setVersion,
+  tableExists,
 } from './helpers';
 import {
   migrateToV1, migrateToV2, migrateToV3, migrateToV4, migrateToV5,
@@ -101,6 +102,22 @@ export const runMigrations = (db: Database) => {
 
   const currentVersion = getCurrentVersion();
   if (currentVersion >= CURRENT_VERSION) return;
+
+  // 基线迁移优化：全新安装时跳过所有增量迁移
+  // createSchema() 已创建完整的 v30 表结构，user_version 为 0 且无迁移记录
+  // 此时直接标记为最新版本，避免执行 30 个无意义的增量迁移
+  if (currentVersion === 0 && tableExists('Patient') && tableExists('Charge') && tableExists('Appointment')) {
+    logger.log('检测到全新安装，直接标记为 v' + CURRENT_VERSION + '（跳过增量迁移）');
+    const migrationDb = getMigrationDb();
+    const recordAll = migrationDb.transaction(() => {
+      for (let v = 1; v <= CURRENT_VERSION; v++) {
+        recordMigration(v, migrationNames[v] || `v${v}`, 0);
+      }
+    });
+    recordAll();
+    setVersion(CURRENT_VERSION);
+    return;
+  }
 
   logger.log(`开始迁移: v${currentVersion} -> v${CURRENT_VERSION}`);
 

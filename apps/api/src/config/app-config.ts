@@ -63,7 +63,7 @@ export function loadAppConfig(): AppConfig {
     port: parseInt(env.PORT || '3001', 10),
     corsOrigins: (env.CORS_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean),
     jwtSecret: env.JWT_SECRET || '',
-    jwtExpiresIn: env.JWT_EXPIRES_IN || '7d',
+    jwtExpiresIn: env.ACCESS_TOKEN_EXPIRES_IN || '30m',
     encryptionKey: env.ENCRYPTION_KEY || undefined,
     dataDir: env.DATA_DIR || undefined,
     db: {

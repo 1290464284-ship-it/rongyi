@@ -8,6 +8,7 @@ import { JwtStrategy } from './jwt.strategy';
 import { PasswordPolicyService } from './password-policy.service';
 import { UserManagementService } from './user-management.service';
 import { CommonServicesModule } from '../../common/services/common-services.module';
+import { ACCESS_TOKEN_EXPIRES_IN } from '../../config/constants';
 
 @Module({
   imports: [
@@ -17,7 +18,7 @@ import { CommonServicesModule } from '../../common/services/common-services.modu
       inject: [ConfigService],
       useFactory: (c: ConfigService) => ({
         secret: c.get('JWT_SECRET'),
-        signOptions: { expiresIn: c.get('JWT_EXPIRES_IN', '7d') },
+        signOptions: { expiresIn: c.get('ACCESS_TOKEN_EXPIRES_IN') || ACCESS_TOKEN_EXPIRES_IN },
       }),
     }),
     CommonServicesModule,

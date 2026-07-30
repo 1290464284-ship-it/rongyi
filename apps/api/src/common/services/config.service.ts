@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import {
   DEFAULT_API_PORT,
   DEFAULT_CORS_ORIGINS,
-  JWT_EXPIRES_IN,
+  ACCESS_TOKEN_EXPIRES_IN,
   BCRYPT_ROUNDS_DEFAULT,
   SQLITE_BUSY_TIMEOUT_MS,
   SQLITE_CACHE_SIZE,
@@ -19,7 +19,7 @@ import {
 const ENV_FALLBACKS: Record<string, string> = {
   PORT: String(DEFAULT_API_PORT),
   CORS_ORIGIN: DEFAULT_CORS_ORIGINS.join(','),
-  JWT_EXPIRES_IN,
+  ACCESS_TOKEN_EXPIRES_IN,
 };
 
 @Injectable()
@@ -84,8 +84,8 @@ export class ConfigService {
     return this.getOrThrow('JWT_SECRET');
   }
 
-  get JWT_EXPIRES_IN(): string {
-    return this.get('JWT_EXPIRES_IN') || JWT_EXPIRES_IN;
+  get ACCESS_TOKEN_EXPIRES_IN(): string {
+    return this.get('ACCESS_TOKEN_EXPIRES_IN') || ACCESS_TOKEN_EXPIRES_IN;
   }
 
   get ENCRYPTION_KEY(): string | undefined {

@@ -74,7 +74,7 @@ function verifyAll() {
     'ELECTRON_RUN_AS_NODE',
     'NODE_ENV',
     'JWT_SECRET',
-    'JWT_EXPIRES_IN',
+    'ACCESS_TOKEN_EXPIRES_IN',
     'DATA_DIR',
     'DB_PATH',
     'ENV_PATH',
