@@ -162,6 +162,44 @@ describe('api 核心封装', () => {
     expect(refreshCallCount()).toBe(2);
   });
 
+  it('401 刷新成功后重放请求再次 401 时直接拒绝', async () => {
+    adapter
+      // 第一次：原请求 401
+      .mockImplementationOnce(async (config) => {
+        if (config.url === '/auth/refresh') return ok(config, { ok: true });
+        throw httpError(config, 401);
+      })
+      // 第二次：refresh 成功
+      .mockImplementationOnce(async (config) => {
+        if (config.url === '/auth/refresh') return ok(config, { ok: true });
+        // 重放请求仍然 401（_isRefreshRetry=true）
+        throw httpError(config, 401);
+      });
+
+    // 需要让 adapter 在第二次调用（重放）时返回 401
+    adapter.mockImplementation(async (config) => {
+      if (config.url === '/auth/refresh') return ok(config, { ok: true });
+      throw httpError(config, 401);
+    });
+
+    await expect(api.get('/protected')).rejects.toBeInstanceOf(AxiosError);
+  });
+
+  it('非 401 错误响应含 x-request-id 时 toast 显示截断 ID', async () => {
+    adapter.mockImplementation(async (config) => {
+      throw new AxiosError('Request failed', undefined, config, null, {
+        data: { message: '服务器错误' },
+        status: 500,
+        statusText: '',
+        headers: { 'x-request-id': 'abcdef12-3456-7890-abcd-ef1234567890' },
+        config,
+      } as AxiosResponse);
+    });
+
+    await expect(api.get('/fail')).rejects.toBeInstanceOf(AxiosError);
+    expect(toastErrorMock).toHaveBeenCalledWith('服务器内部错误，请稍后重试 (ID: abcdef12)');
+  });
+
   it('createAbortController 返回可取消的 signal', () => {
     const { signal, abort } = createAbortController();
     expect(signal.aborted).toBe(false);
