@@ -87,7 +87,7 @@ pnpm verify:full       # 全量（含 e2e + smoke + migration）
 5. **软删除** → 详见 `.qoder/rules/soft-delete-enforcement.md`
 6. **JWT 认证**：Passport JWT Strategy，`@Public()` 装饰器标记公开端点
 7. **角色权限**：`@Roles()` + `RolesGuard`，角色常量统一来自 `@dental/shared`（`ROLES` / `ROLE_LEVELS` / `hasRoleLevel` / `SharedRole`），API 侧禁止在本地重复定义
-8. **API 前缀**：所有端点以 `/api` 开头
+8. **API 前缀**：所有端点以 `/api/v1` 开头（URI 版本控制，`main.ts`: `enableVersioning prefix='api/v', defaultVersion='1'`）
 9. **验证**：入参使用 class-validator DTO
 10. **测试**：使用 Jest + `@nestjs/testing`，Mock DbService 用 `common/test-helpers/mock-db-factory.ts`
 
