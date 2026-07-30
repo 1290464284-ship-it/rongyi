@@ -366,6 +366,103 @@ describe('RateLimitGuard', () => {
     });
   });
 
+  describe('trustProxy 模式', () => {
+    it('应读取 x-forwarded-for 头获取客户端 IP', () => {
+      const proxyConfig = createMockConfigService({ TRUST_PROXY: '1' });
+      const proxyGuard = new RateLimitGuard(reflector, proxyConfig);
+      const options: RateLimitOptions = { capacity: 1, ratePerSecond: 1 };
+      getAllAndOverrideMock.mockReturnValue(options);
+
+      const ctx1 = createMockExecutionContext({
+        ip: '127.0.0.1',
+        headers: { 'x-forwarded-for': '203.0.113.50, 70.41.3.18' },
+      });
+      expect(proxyGuard.canActivate(ctx1)).toBe(true);
+
+      // 来自同一真实 IP 的第二次请求应被限流
+      const ctx2 = createMockExecutionContext({
+        ip: '127.0.0.1',
+        headers: { 'x-forwarded-for': '203.0.113.50' },
+      });
+      expect(() => proxyGuard.canActivate(ctx2)).toThrow(HttpException);
+
+      proxyGuard.resetAll();
+    });
+
+    it('x-forwarded-for 为数组时应取第一个元素', () => {
+      const proxyConfig = createMockConfigService({ TRUST_PROXY: '1' });
+      const proxyGuard = new RateLimitGuard(reflector, proxyConfig);
+      const options: RateLimitOptions = { capacity: 1, ratePerSecond: 1 };
+      getAllAndOverrideMock.mockReturnValue(options);
+
+      const ctx = createMockExecutionContext({
+        ip: '127.0.0.1',
+        headers: { 'x-forwarded-for': ['203.0.113.50'] },
+      });
+      expect(proxyGuard.canActivate(ctx)).toBe(true);
+      proxyGuard.resetAll();
+    });
+
+    it('无 x-forwarded-for 时应回退到 x-real-ip', () => {
+      const proxyConfig = createMockConfigService({ TRUST_PROXY: '1' });
+      const proxyGuard = new RateLimitGuard(reflector, proxyConfig);
+      const options: RateLimitOptions = { capacity: 1, ratePerSecond: 1 };
+      getAllAndOverrideMock.mockReturnValue(options);
+
+      const ctx = createMockExecutionContext({
+        ip: '127.0.0.1',
+        headers: { 'x-real-ip': '198.51.100.10' },
+      });
+      expect(proxyGuard.canActivate(ctx)).toBe(true);
+      proxyGuard.resetAll();
+    });
+
+    it('x-real-ip 为数组时应取第一个元素', () => {
+      const proxyConfig = createMockConfigService({ TRUST_PROXY: '1' });
+      const proxyGuard = new RateLimitGuard(reflector, proxyConfig);
+      const options: RateLimitOptions = { capacity: 1, ratePerSecond: 1 };
+      getAllAndOverrideMock.mockReturnValue(options);
+
+      const ctx = createMockExecutionContext({
+        ip: '127.0.0.1',
+        headers: { 'x-real-ip': ['198.51.100.10'] },
+      });
+      expect(proxyGuard.canActivate(ctx)).toBe(true);
+      proxyGuard.resetAll();
+    });
+
+    it('无代理头时应回退到 req.ip', () => {
+      const proxyConfig = createMockConfigService({ TRUST_PROXY: '1' });
+      const proxyGuard = new RateLimitGuard(reflector, proxyConfig);
+      const options: RateLimitOptions = { capacity: 1, ratePerSecond: 1 };
+      getAllAndOverrideMock.mockReturnValue(options);
+
+      const ctx = createMockExecutionContext({
+        ip: '192.168.0.1',
+        headers: {},
+      });
+      expect(proxyGuard.canActivate(ctx)).toBe(true);
+      proxyGuard.resetAll();
+    });
+  });
+
+  describe('未知 granularity', () => {
+    it('未知粒度应回退到 IP 限流', () => {
+      const options: RateLimitOptions = {
+        capacity: 1,
+        ratePerSecond: 1,
+        granularity: 'unknown' as 'ip',
+      };
+      getAllAndOverrideMock.mockReturnValue(options);
+
+      const ctx1 = createMockExecutionContext({ ip: '50.0.0.1' });
+      expect(guard.canActivate(ctx1)).toBe(true);
+
+      const ctx2 = createMockExecutionContext({ ip: '50.0.0.1' });
+      expect(() => guard.canActivate(ctx2)).toThrow(HttpException);
+    });
+  });
+
   describe('resetAll', () => {
     it('重置所有限流器', () => {
       const options: RateLimitOptions = { capacity: 1, ratePerSecond: 1 };
