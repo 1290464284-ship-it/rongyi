@@ -2,9 +2,10 @@ import { VisitsService } from './visits.service';
 import { BusinessValidationException, BusinessNotFoundException } from '@common/errors';
 import { MockDbService , asDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
+import { MedicalSummaryService } from '../medical-summary/medical-summary.service';
+import { SettingsService } from '../../system/settings/settings.service';
 
 
-// 构造 ClinicContextService 的 mock，模拟诊所上下文
 function createMockClinicContext(): ClinicContextService {
   return {
     getClinicId: () => 'test-clinic-001',
@@ -15,13 +16,37 @@ function createMockClinicContext(): ClinicContextService {
   } as unknown as ClinicContextService;
 }
 
+function createMockSettingsService(overrides: Record<string, string> = {}): SettingsService {
+  const defaults: Record<string, string> = {
+    aiMedicalSummaryEnabled: 'false',
+    ...overrides,
+  };
+  return {
+    get: async (key: string) => defaults[key],
+    getBoolean: async (key: string, def = false) => {
+      const v = defaults[key];
+      if (v == undefined) return def;
+      return v === 'true' || v === '1' || v === 'yes';
+    },
+    getClinicInfo: async () => ({ ...defaults }),
+  } as unknown as SettingsService;
+}
+
+function createStubMedicalSummaryService(db: MockDbService): MedicalSummaryService {
+  return new MedicalSummaryService(
+    asDbService(db),
+    createMockClinicContext(),
+    createMockSettingsService(),
+  );
+}
+
 describe('VisitsService', () => {
   let service: VisitsService;
   let db: MockDbService;
 
   beforeEach(() => {
     db = new MockDbService();
-    service = new VisitsService(asDbService(db), createMockClinicContext());
+    service = new VisitsService(asDbService(db), createMockClinicContext(), createStubMedicalSummaryService(db));
   });
 
   afterEach(() => {
