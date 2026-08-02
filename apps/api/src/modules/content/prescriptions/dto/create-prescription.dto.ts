@@ -1,6 +1,59 @@
-import { IsString, IsArray, ValidateNested, IsOptional, IsInt, IsNumber, MaxLength, Min } from 'class-validator';
+import { IsString, IsArray, ValidateNested, IsOptional, IsInt, IsNumber, MaxLength, Min, IsObject, IsEnum } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
+
+export enum PatientPregnancyStatus {
+  NONE = 'NONE',
+  FIRST_TRIMESTER = 'FIRST_TRIMESTER',
+  SECOND = 'SECOND',
+  THIRD = 'THIRD',
+  LACTATING = 'LACTATING',
+}
+
+export enum OrganImpairmentLevel {
+  NONE = 'NONE',
+  MILD = 'MILD',
+  MODERATE = 'MODERATE',
+  SEVERE = 'SEVERE',
+}
+
+export class PatientContextDto {
+  @ApiProperty({
+    description: '妊娠/哺乳状态',
+    enum: PatientPregnancyStatus,
+    required: false,
+    example: PatientPregnancyStatus.NONE,
+  })
+  @IsOptional()
+  @IsEnum(PatientPregnancyStatus)
+  pregnancyStatus?: PatientPregnancyStatus;
+
+  @ApiProperty({ description: '年龄(岁)', example: 35, required: false })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  age?: number;
+
+  @ApiProperty({
+    description: '肝功能不全程度',
+    enum: OrganImpairmentLevel,
+    required: false,
+    example: OrganImpairmentLevel.NONE,
+  })
+  @IsOptional()
+  @IsEnum(OrganImpairmentLevel)
+  liverImpairment?: OrganImpairmentLevel;
+
+  @ApiProperty({
+    description: '肾功能不全程度',
+    enum: OrganImpairmentLevel,
+    required: false,
+    example: OrganImpairmentLevel.NONE,
+  })
+  @IsOptional()
+  @IsEnum(OrganImpairmentLevel)
+  renalImpairment?: OrganImpairmentLevel;
+}
 
 export class PrescriptionItemDto {
   @ApiProperty({ description: '药品编码', example: 'DRUG001', required: false })
@@ -75,4 +128,17 @@ export class CreatePrescriptionDto {
   @ValidateNested({ each: true })
   @Type(() => PrescriptionItemDto)
   items!: PrescriptionItemDto[];
+
+  @ApiProperty({ description: '医生确认后忽略的禁忌 ruleId 列表', type: [String], required: false, example: ['R-METRO-ALCOHOL'] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  ignoreContraindicationIds?: string[];
+
+  @ApiProperty({ description: '患者人群背景信息', type: () => PatientContextDto, required: false })
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => PatientContextDto)
+  patientContext?: PatientContextDto;
 }

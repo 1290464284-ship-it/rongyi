@@ -1,11 +1,12 @@
 import { BusinessValidationException } from '@common/errors';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 
 import { ToothRecord } from "@dental/shared";
 import { BaseService } from "../../../common/services/base.service";
 import { ClinicContextService } from "../../../common/services/clinic-context.service";
 import * as crypto from "node:crypto";
 import { DbService } from "../../../db/db.service";
+import { MedicalPhraseService } from "../medical-phrase/medical-phrase.service";
 
 interface UpsertToothRecordDto {
   currentStatus?: string;
@@ -26,7 +27,11 @@ function isValidToothNumber(n: number): boolean {
 @Injectable()
 export class ToothRecordsService extends BaseService<ToothRecord> {
 
-  constructor(dbService: DbService, clinicContext: ClinicContextService) {
+  constructor(
+    dbService: DbService,
+    clinicContext: ClinicContextService,
+    @Optional() private medicalPhraseService?: MedicalPhraseService,
+  ) {
     super(dbService, clinicContext, { tableName: 'ToothRecord', jsonFields: ['conditions'] });
   }
 
@@ -112,6 +117,14 @@ export class ToothRecordsService extends BaseService<ToothRecord> {
       return resultItems[0];
     });
     if (record) this.parseJsonFields([record]);
+    if (record && this.medicalPhraseService
+        && (record.currentStatus && record.currentStatus !== 'SOUND'
+            || (Array.isArray(record.conditions) && record.conditions.length > 0))) {
+      void this.medicalPhraseService.recommendForTeeth({
+          patientId,
+          selectedToothNumbers: [toothNumber],
+        }).catch(() => { /* fire & forget, swallow silently */ });
+    }
     return record;
   }
 
