@@ -184,4 +184,19 @@ export const inventoryTables = [
       deletedAt TEXT,
       FOREIGN KEY (orderId) REFERENCES ProcessingOrder(id) ON DELETE CASCADE
     )`,
+  `CREATE TABLE IF NOT EXISTS InventoryReplenishmentSuggestion (
+      id TEXT PRIMARY KEY,
+      clinicId TEXT NOT NULL,
+      inventoryId TEXT NOT NULL,
+      avgDailyConsumption REAL,
+      leadTimeDays INTEGER DEFAULT 7,
+      safetyFactor REAL DEFAULT 1.5,
+      rop REAL NOT NULL,
+      suggestedQty INTEGER NOT NULL,
+      calculationSnapshotJson TEXT,
+      createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+      updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+      deletedAt TEXT,
+      FOREIGN KEY (inventoryId) REFERENCES InventoryItem(id)
+    )`,
 ];

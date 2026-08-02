@@ -23,9 +23,62 @@ import {
   SQLITE_WAL_AUTOCHECKPOINT,
   BACKUP_MAX_AUTO_BACKUPS,
 } from '../config/constants';
+import {
+  initEncryptedDbIfEnabled,
+  getGlobalEncryptedDbHandle,
+  clearGlobalEncryptedDbHandle,
+} from './encryption';
 
 export { getDbPath, getEnvPath, getDataDir } from './paths';
 export { seedDb } from './seeds';
+
+export type EncryptedDbLifecycle = {
+  shutdown?: () => Promise<void>;
+  persist?: () => Promise<void>;
+  enabled: boolean;
+};
+
+let encryptedDbLifecycle: EncryptedDbLifecycle = { enabled: false };
+
+export function getEncryptedDbLifecycle(): EncryptedDbLifecycle {
+  return encryptedDbLifecycle;
+}
+
+export async function initEncryptedDbWrapper(
+  settingsProvider?: () => Promise<Record<string, string>>,
+): Promise<void> {
+  if (isTestMode()) return;
+  const result = await initEncryptedDbIfEnabled(settingsProvider);
+  encryptedDbLifecycle = {
+    enabled: result.enabled,
+    shutdown: result.shutdown,
+    persist: result.persist,
+  };
+}
+
+export function getEncryptedTempDbPath(): string | undefined {
+  const handle = getGlobalEncryptedDbHandle();
+  return handle?.tempPlainPath;
+}
+
+export async function shutdownEncryptedDb(): Promise<void> {
+  const shutdown = encryptedDbLifecycle.shutdown;
+  if (shutdown) {
+    try {
+      await shutdown();
+    } finally {
+      clearGlobalEncryptedDbHandle();
+      encryptedDbLifecycle = { enabled: false };
+    }
+  }
+}
+
+export async function persistEncryptedDb(): Promise<void> {
+  const persist = encryptedDbLifecycle.persist;
+  if (persist) {
+    await persist();
+  }
+}
 
 /**
  * SQLite pragma 配置可环境变量化。
@@ -125,11 +178,18 @@ export function createDbConnection(): InstanceType<typeof Database> {
   const maxRetries = 3;
   const retryDelayMs = 2000;
 
+  const encryptedTempPath = getEncryptedTempDbPath();
+  const actualDbPath = encryptedTempPath ?? getDbPath();
+  const pathLabel = encryptedTempPath ? `encrypted-temp` : 'standard';
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const dbInstance = new Database(getDbPath(), dbOptions);
+      const dbInstance = new Database(actualDbPath, dbOptions);
       applyPragmas(dbInstance);
-      logger.info(`数据库连接成功 (第 ${attempt} 次尝试) path=${getDbPath()}`, 'DB');
+      logger.info(
+        `数据库连接成功 (第 ${attempt} 次尝试) path=${actualDbPath} (${pathLabel})`,
+        'DB',
+      );
       return dbInstance;
     } catch (err: unknown) {
       logger.error(`数据库连接失败 (第 ${attempt} 次尝试)`, 'DB', err as Error);
@@ -157,7 +217,8 @@ export function rebuildDbConnection(): InstanceType<typeof Database> {
   if (process.env.TEST_DB_MEMORY === '1') {
     return createDbConnection();
   }
-  const dbPath = getDbPath();
+  const encryptedTempPath = getEncryptedTempDbPath();
+  const dbPath = encryptedTempPath ?? getDbPath();
   const rebuildOptions: Options = {
     verbose: process.env.NODE_ENV === 'development' ? (msg: unknown) => logger.debug(String(msg), 'SQLite') : undefined,
     ...dbOptions,

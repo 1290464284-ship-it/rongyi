@@ -6,6 +6,8 @@ import { financialTables } from './schema/financial.tables';
 import { pharmacyTables } from './schema/pharmacy.tables';
 import { inventoryTables } from './schema/inventory.tables';
 import { wechatTables } from './schema/wechat.tables';
+import { analyticsTables } from './schema/analytics.tables';
+import { hrTables } from './schema/hr.tables';
 import { createIndexes } from './schema/indexes';
 
 const SCHEMA_LOGGER = {
@@ -22,6 +24,8 @@ const allTables = [
   ...pharmacyTables,
   ...inventoryTables,
   ...wechatTables,
+  ...analyticsTables,
+  ...hrTables,
 ];
 
 export const createSchema = (db: Database) => {

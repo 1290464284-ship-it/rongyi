@@ -167,4 +167,29 @@ export const financialTables = [
       FOREIGN KEY (cardId) REFERENCES MemberCard(id) ON DELETE CASCADE,
       FOREIGN KEY (chargeId) REFERENCES Charge(id)
     )`,
+  `CREATE TABLE IF NOT EXISTS ChargeAssociationRule (
+      id TEXT PRIMARY KEY,
+      clinicId TEXT NOT NULL,
+      antecedent TEXT NOT NULL,
+      consequent TEXT NOT NULL,
+      antecedentSize INTEGER NOT NULL CHECK (antecedentSize >= 1),
+      support REAL NOT NULL CHECK (support >= 0 AND support <= 1),
+      confidence REAL NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+      lift REAL NOT NULL,
+      supportCount INTEGER NOT NULL DEFAULT 0 CHECK (supportCount >= 0),
+      totalTransactions INTEGER NOT NULL DEFAULT 0,
+      createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+      updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+      computedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(clinicId, antecedent, consequent)
+    )`,
+  `CREATE TABLE IF NOT EXISTS ChargeAssociationIgnore (
+      id TEXT PRIMARY KEY,
+      clinicId TEXT NOT NULL,
+      antecedent TEXT NOT NULL,
+      consequent TEXT NOT NULL,
+      ignoredAt TEXT DEFAULT CURRENT_TIMESTAMP,
+      ignoredBy TEXT NOT NULL,
+      UNIQUE(clinicId, antecedent, consequent)
+    )`,
 ];

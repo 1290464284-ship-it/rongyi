@@ -371,4 +371,75 @@ export function createIndexes(db: Database) {
   createIndexIfNotExists(db, 'idx_charge_clinic_deleted_created', 'Charge', 'clinicId, deletedAt, createdAt DESC');
   createIndexIfNotExists(db, 'idx_treatment_clinic_deleted_created', 'Treatment', 'clinicId, deletedAt, createdAt DESC');
   createIndexIfNotExists(db, 'idx_medical_record_clinic_deleted_created', 'MedicalRecord', 'clinicId, deletedAt, createdAt DESC');
+
+  // v31: 艾登特 12 张新表索引
+  // CephalometricLandmarkSet
+  createIndexIfNotExists(db, 'idx_cephalolandmarkset_clinic_deleted', 'CephalometricLandmarkSet', 'clinicId, deletedAt, createdAt DESC');
+  createIndexIfNotExists(db, 'idx_cephalolandmarkset_patient', 'CephalometricLandmarkSet', 'patientId, deletedAt');
+  createIndexIfNotExists(db, 'idx_cephalolandmarkset_image', 'CephalometricLandmarkSet', 'imageId, deletedAt');
+  // CephalometricAnalysisRecord
+  createIndexIfNotExists(db, 'idx_cephalorecord_clinic_deleted', 'CephalometricAnalysisRecord', 'clinicId, deletedAt, createdAt DESC');
+  createIndexIfNotExists(db, 'idx_cephalorecord_landmarkset', 'CephalometricAnalysisRecord', 'landmarkSetId, deletedAt');
+  createIndexIfNotExists(db, 'idx_cephalorecord_doctor', 'CephalometricAnalysisRecord', 'doctorId, deletedAt');
+  createIndexIfNotExists(db, 'idx_cephalorecord_method', 'CephalometricAnalysisRecord', 'method, deletedAt');
+  // CephalometricNormValue
+  createIndexIfNotExists(db, 'idx_cephalonorm_clinic_deleted', 'CephalometricNormValue', 'clinicId, deletedAt, createdAt DESC');
+  createIndexIfNotExists(db, 'idx_cephalonorm_method_metric', 'CephalometricNormValue', 'method, metricName, deletedAt');
+  createIndexIfNotExists(db, 'idx_cephalonorm_race_gender_age', 'CephalometricNormValue', 'race, gender, ageMin, ageMax, deletedAt');
+  // DrugContraindication
+  createIndexIfNotExists(db, 'idx_drugcontra_clinic_deleted', 'DrugContraindication', 'clinicId, deletedAt, createdAt DESC');
+  createIndexIfNotExists(db, 'idx_drugcontra_drugA', 'DrugContraindication', 'drugAId, deletedAt');
+  createIndexIfNotExists(db, 'idx_drugcontra_drugB', 'DrugContraindication', 'drugBId, deletedAt');
+  createIndexIfNotExists(db, 'idx_drugcontra_categoryA', 'DrugContraindication', 'drugCategoryA, deletedAt');
+  createIndexIfNotExists(db, 'idx_drugcontra_categoryB', 'DrugContraindication', 'drugCategoryB, deletedAt');
+  createIndexIfNotExists(db, 'idx_drugcontra_severity', 'DrugContraindication', 'severity, deletedAt');
+  // PatientRiskScore
+  createIndexIfNotExists(db, 'idx_patientrisk_clinic_deleted', 'PatientRiskScore', 'clinicId, deletedAt, createdAt DESC');
+  createIndexIfNotExists(db, 'idx_patientrisk_patient', 'PatientRiskScore', 'patientId, deletedAt, createdAt DESC');
+  createIndexIfNotExists(db, 'idx_patientrisk_assessed', 'PatientRiskScore', 'assessedById, deletedAt');
+  createIndexIfNotExists(db, 'idx_patientrisk_carieslevel', 'PatientRiskScore', 'cariesLevel, deletedAt');
+  createIndexIfNotExists(db, 'idx_patientrisk_periodontallevel', 'PatientRiskScore', 'periodontalLevel, deletedAt');
+  createIndexIfNotExists(db, 'idx_patientrisk_implantlevel', 'PatientRiskScore', 'implantLevel, deletedAt');
+  // BusinessAlert
+  createIndexIfNotExists(db, 'idx_bizalert_clinic_deleted', 'BusinessAlert', 'clinicId, deletedAt, occurredAt DESC');
+  createIndexIfNotExists(db, 'idx_bizalert_type_severity', 'BusinessAlert', 'alertType, severity, deletedAt, occurredAt DESC');
+  createIndexIfNotExists(db, 'idx_bizalert_acknowledged', 'BusinessAlert', 'acknowledged, deletedAt, occurredAt DESC');
+  createIndexIfNotExists(db, 'idx_bizalert_metricname', 'BusinessAlert', 'metricName, deletedAt, occurredAt DESC');
+  // InventoryReplenishmentSuggestion
+  createIndexIfNotExists(db, 'idx_invreplenish_clinic_deleted', 'InventoryReplenishmentSuggestion', 'clinicId, deletedAt, createdAt DESC');
+  createIndexIfNotExists(db, 'idx_invreplenish_inventory', 'InventoryReplenishmentSuggestion', 'inventoryId, deletedAt, createdAt DESC');
+  // SatisfactionSurvey
+  createIndexIfNotExists(db, 'idx_satisfaction_clinic_deleted', 'SatisfactionSurvey', 'clinicId, deletedAt, createdAt DESC');
+  createIndexIfNotExists(db, 'idx_satisfaction_patient', 'SatisfactionSurvey', 'patientId, deletedAt, createdAt DESC');
+  createIndexIfNotExists(db, 'idx_satisfaction_doctor', 'SatisfactionSurvey', 'doctorId, deletedAt, createdAt DESC');
+  createIndexIfNotExists(db, 'idx_satisfaction_overallstars', 'SatisfactionSurvey', 'overallStars, deletedAt, createdAt DESC');
+  // StaffSchedule
+  createIndexIfNotExists(db, 'idx_staffsched_clinic_deleted', 'StaffSchedule', 'clinicId, deletedAt, scheduleDate DESC');
+  createIndexIfNotExists(db, 'idx_staffsched_staff_date', 'StaffSchedule', 'staffId, deletedAt, scheduleDate');
+  createIndexIfNotExists(db, 'idx_staffsched_scheduledate', 'StaffSchedule', 'scheduleDate, deletedAt');
+  createIndexIfNotExists(db, 'idx_staffsched_shift', 'StaffSchedule', 'shiftId, deletedAt');
+  // StaffLeaveRequest
+  createIndexIfNotExists(db, 'idx_staffleave_clinic_deleted', 'StaffLeaveRequest', 'clinicId, deletedAt, createdAt DESC');
+  createIndexIfNotExists(db, 'idx_staffleave_staff_status', 'StaffLeaveRequest', 'staffId, deletedAt, status, startDate');
+  createIndexIfNotExists(db, 'idx_staffleave_approver', 'StaffLeaveRequest', 'approverId, deletedAt, status');
+  createIndexIfNotExists(db, 'idx_staffleave_leavetype', 'StaffLeaveRequest', 'leaveType, deletedAt');
+  createIndexIfNotExists(db, 'idx_staffleave_dates', 'StaffLeaveRequest', 'startDate, endDate, deletedAt');
+  // DataImportJob
+  createIndexIfNotExists(db, 'idx_dataimport_clinic_deleted', 'DataImportJob', 'clinicId, deletedAt, createdAt DESC');
+  createIndexIfNotExists(db, 'idx_dataimport_type_status', 'DataImportJob', 'importType, deletedAt, status, createdAt DESC');
+  createIndexIfNotExists(db, 'idx_dataimport_startedby', 'DataImportJob', 'startedById, deletedAt, createdAt DESC');
+
+  // v41: ChargeAssistant - 关联规则与忽略表
+  createIndexIfNotExists(db, 'IDX_ChargeAssociationRule_clinic_antecedent_cons',
+    'ChargeAssociationRule', 'clinicId, antecedent, consequent');
+  createIndexIfNotExists(db, 'IDX_ChargeAssociationRule_clinic_confidence',
+    'ChargeAssociationRule', 'clinicId, antecedentSize, confidence, lift');
+  createIndexIfNotExists(db, 'IDX_ChargeAssociationIgnore_clinic',
+    'ChargeAssociationIgnore', 'clinicId, antecedent, consequent');
+
+  // v43: Analytics - RFM 分层与医生业绩异常
+  createIndexIfNotExists(db, 'IDX_PatientRfmScore_clinic_segment',
+    'PatientRfmScore', 'clinicId, segment');
+  createIndexIfNotExists(db, 'IDX_DoctorPerfAnomaly_clinic_severity',
+    'DoctorPerformanceAnomaly', 'clinicId, severity, resolvedAt');
 }

@@ -64,4 +64,23 @@ export const pharmacyTables = [
       FOREIGN KEY (visitId) REFERENCES Visit(id),
       FOREIGN KEY (doctorId) REFERENCES User(id)
     )`,
+  `CREATE TABLE IF NOT EXISTS DrugContraindication (
+      id TEXT PRIMARY KEY,
+      clinicId TEXT NOT NULL,
+      drugAId TEXT,
+      drugBId TEXT,
+      drugCategoryA TEXT,
+      drugCategoryB TEXT,
+      severity TEXT NOT NULL CHECK(severity IN ('INFO','WARN','DANGER')) DEFAULT 'WARN',
+      reason TEXT NOT NULL,
+      pregnancyFlag INTEGER DEFAULT 0,
+      lactationFlag INTEGER DEFAULT 0,
+      renalFlag INTEGER DEFAULT 0,
+      hepaticFlag INTEGER DEFAULT 0,
+      createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+      updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+      deletedAt TEXT,
+      FOREIGN KEY (drugAId) REFERENCES DrugCatalog(id),
+      FOREIGN KEY (drugBId) REFERENCES DrugCatalog(id)
+    )`,
 ];
