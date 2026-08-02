@@ -168,8 +168,38 @@ body {
   background: #9EABB9;
 }
 
+@media screen {
+  .no-print { display: block; }
+  .print-only { display: none !important; }
+}
+
 @media print {
-  .no-print { display: none !important; }
+  body { background: white; }
+  .no-print,
+  aside, nav, header, footer,
+  .app-layout-sidebar,
+  .app-layout-topbar,
+  .toast-container,
+  .sonner-toast,
+  button, input, select, dialog { display: none !important; }
+  .print-only { display: block !important; }
+  .print-page { page-break-after: always; }
   .print-area { print-color-adjust: exact; }
+  * { box-shadow: none !important; text-shadow: none !important; }
   @page { margin: 15mm; }
+}
+
+@utility a4-preview {
+  width: 210mm;
+  min-height: 297mm;
+}
+
+@utility a5-preview {
+  width: 148mm;
+  min-height: 210mm;
+}
+
+@utility receipt-preview {
+  width: 80mm;
+  min-height: auto;
 }

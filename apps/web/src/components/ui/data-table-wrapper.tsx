@@ -4,16 +4,16 @@ import { cn } from '@/lib/utils';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './table';
 import { Button } from './button';
 
-export interface DataTableColumn<T = Record<string, unknown>> {
+export interface DataTableColumn<T extends object = Record<string, unknown>> {
   key: string;
-  header: string;
+  header: ReactNode;
   accessorKey?: keyof T;
   cell?: (row: T, index: number) => ReactNode;
   className?: string;
   width?: string;
 }
 
-export interface DataTableWrapperProps<T = Record<string, unknown>> {
+export interface DataTableWrapperProps<T extends object = Record<string, unknown>> {
   columns: DataTableColumn<T>[];
   data: T[];
   loading?: boolean;
@@ -47,7 +47,7 @@ function SkeletonRow({ colSpan }: { colSpan: number }) {
   );
 }
 
-export function DataTableWrapper<T extends Record<string, unknown>>({
+export function DataTableWrapper<T extends object>({
   columns,
   data,
   loading = false,
