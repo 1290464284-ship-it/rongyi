@@ -1,4 +1,4 @@
-﻿import { Global, Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import Database from 'better-sqlite3';
 import { DbService } from '../db.service';
 import { createTestDb, cleanupTestDb } from '../test-helpers';
@@ -21,7 +21,7 @@ export const TEST_DB_INSTANCE = 'TEST_DB_INSTANCE';
       useFactory: (db: DbInstance) => {
         const dbService = new DbService();
         (dbService as unknown as { database: DbInstance }).database = db;
-        dbService.onModuleInit = () => {
+        dbService.onModuleInit = async (): Promise<void> => {
           // 已在 createTestDb 中完成初始化
         };
         return dbService;

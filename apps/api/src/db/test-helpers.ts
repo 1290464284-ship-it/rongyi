@@ -10,6 +10,8 @@ import { financialTables } from './schema/financial.tables';
 import { pharmacyTables } from './schema/pharmacy.tables';
 import { inventoryTables } from './schema/inventory.tables';
 import { wechatTables } from './schema/wechat.tables';
+import { analyticsTables } from './schema/analytics.tables';
+import { hrTables } from './schema/hr.tables';
 import { CURRENT_VERSION } from './migrations';
 import {
   SQLITE_BUSY_TIMEOUT_MS,
@@ -38,6 +40,8 @@ const ALL_TABLE_SCHEMAS = [
   ...pharmacyTables,
   ...inventoryTables,
   ...wechatTables,
+  ...analyticsTables,
+  ...hrTables,
 ];
 
 export function createTestDb(): DbInstance {
@@ -243,6 +247,7 @@ function applyMigrationsToDb(db: DbInstance): void {
     'ChargeItem', 'TreatmentPlanItem', 'PrescriptionItem', 'PurchaseOrderItem',
     'MemberCardLog', 'MemberPointLog', 'InventoryTransaction', 'OperationLog',
     'BackupRecord', 'SmsLog', 'WechatMessage', 'Refund', 'Invoice',
+    'SatisfactionSurvey', 'NpsSnapshot',
   ];
   tablesNeedUpdatedAt.forEach(table => {
     addColumnIfMissing(db, table, 'updatedAt', 'TEXT DEFAULT CURRENT_TIMESTAMP');
@@ -266,6 +271,38 @@ function applyMigrationsToDb(db: DbInstance): void {
 
   addColumnIfMissing(db, 'ChargeItem', 'inventoryItemId', 'TEXT');
   addColumnIfMissing(db, 'ChargeItem', 'consumedQuantity', 'REAL DEFAULT 0');
+
+  // ============= SatisfactionSurvey 所有列（迁移时兼容） =============
+  addColumnIfMissing(db, 'SatisfactionSurvey', 'id', 'TEXT PRIMARY KEY');
+  addColumnIfMissing(db, 'SatisfactionSurvey', 'visitId', 'TEXT UNIQUE');
+  addColumnIfMissing(db, 'SatisfactionSurvey', 'appointmentId', 'TEXT');
+  addColumnIfMissing(db, 'SatisfactionSurvey', 'patientId', 'TEXT NOT NULL');
+  addColumnIfMissing(db, 'SatisfactionSurvey', 'doctorId', 'TEXT');
+  addColumnIfMissing(db, 'SatisfactionSurvey', 'npsScore', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing(db, 'SatisfactionSurvey', 'ratingMedical', 'INTEGER');
+  addColumnIfMissing(db, 'SatisfactionSurvey', 'ratingService', 'INTEGER');
+  addColumnIfMissing(db, 'SatisfactionSurvey', 'ratingEnvironment', 'INTEGER');
+  addColumnIfMissing(db, 'SatisfactionSurvey', 'ratingPrice', 'INTEGER');
+  addColumnIfMissing(db, 'SatisfactionSurvey', 'ratingWait', 'INTEGER');
+  addColumnIfMissing(db, 'SatisfactionSurvey', 'comment', 'TEXT');
+  addColumnIfMissing(db, 'SatisfactionSurvey', 'tags', "TEXT DEFAULT '[]'");
+  addColumnIfMissing(db, 'SatisfactionSurvey', 'source', "TEXT DEFAULT 'CLINIC'");
+  addColumnIfMissing(db, 'SatisfactionSurvey', 'createdAt', 'TEXT DEFAULT CURRENT_TIMESTAMP');
+
+  // ============= NpsSnapshot 所有列（迁移时兼容） =============
+  addColumnIfMissing(db, 'NpsSnapshot', 'id', 'TEXT PRIMARY KEY');
+  addColumnIfMissing(db, 'NpsSnapshot', 'snapshotDate', 'TEXT NOT NULL');
+  addColumnIfMissing(db, 'NpsSnapshot', 'totalResponses', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing(db, 'NpsSnapshot', 'promoters', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing(db, 'NpsSnapshot', 'detractors', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing(db, 'NpsSnapshot', 'passives', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing(db, 'NpsSnapshot', 'nps', 'REAL NOT NULL DEFAULT 0');
+  addColumnIfMissing(db, 'NpsSnapshot', 'avgRatingMedical', 'REAL');
+  addColumnIfMissing(db, 'NpsSnapshot', 'avgRatingService', 'REAL');
+  addColumnIfMissing(db, 'NpsSnapshot', 'avgRatingEnvironment', 'REAL');
+  addColumnIfMissing(db, 'NpsSnapshot', 'avgRatingPrice', 'REAL');
+  addColumnIfMissing(db, 'NpsSnapshot', 'avgRatingWait', 'REAL');
+  addColumnIfMissing(db, 'NpsSnapshot', 'negativeKeywordCount', "TEXT DEFAULT '{}'");
 
   const tablesNeedClinicId = [
     'User', 'Patient', 'Appointment', 'Visit', 'Treatment', 'TreatmentPlan',
@@ -302,11 +339,11 @@ class TestDbService extends DbService {
     this.testDb = db;
   }
 
-  onModuleInit(): void {
+  async onModuleInit(): Promise<void> {
     // 不执行真实的初始化，使用传入的内存数据库
   }
 
-  onModuleDestroy(): void {
+  async onModuleDestroy(): Promise<void> {
     // 不关闭数据库，由测试方管理生命周期
   }
 

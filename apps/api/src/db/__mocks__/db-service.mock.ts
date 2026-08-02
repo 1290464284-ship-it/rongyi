@@ -1,3 +1,4 @@
+ 
 /**
  * Mock implementation of DbService for unit testing.
  * Simulates better-sqlite3's synchronous API without requiring a real database.
@@ -37,6 +38,9 @@ export class MockDbService implements IDatabase {
       'Imaging', 'ToothRecord', 'Visit', 'Equipment', 'schema_migrations',
       'ChargeCombo', 'PaymentMethod', 'DebtPaymentRecord',
       'ProcessingOrderItem', 'ProcessingFlowLog', 'ProcessingProduct', 'ProcessingFactory',
+      'MedicalRecordPhrase', 'MedicalRecordTemplate', 'ClinicInfo',
+      'ChargeAssociationRule', 'ChargeAssociationIgnore',
+      'TreatmentProgressSnapshot', 'AuditLog',
     ];
     tableNames.forEach(name => this.tables.set(name, new Map()));
   }
@@ -202,6 +206,14 @@ export class MockDbService implements IDatabase {
 
     if (!upperSql.startsWith('SELECT')) {
       return [];
+    }
+
+    // ============================================================
+    // 特殊 case: fetchTransactions 的 JOIN 查询（mock 不支持真实 JOIN 语法）
+    // 检测：FROM Charge c INNER JOIN ChargeItem ci（允许不同空格/换行）
+    // ============================================================
+    if (/FROM\s+CHARGE\s+C\s+INNER\s+JOIN\s+CHARGEITEM\s+CI/i.test(sql)) {
+      return this.executeFetchTransactionsJoin(sql, params);
     }
 
     const tableMatch = sql.match(/FROM\s+(\w+)/i);
@@ -412,6 +424,94 @@ export class MockDbService implements IDatabase {
     return rows;
   }
 
+  // ============================================================
+  // 特殊 helper: 处理 fetchTransactions 的 JOIN 查询模拟
+  // SELECT c.id AS chargeId, ci.treatmentId, ci.name, tc.code AS treatmentCatalogCode
+  //   FROM Charge c INNER JOIN ChargeItem ci ON ci.chargeId = c.id
+  //   LEFT JOIN Treatment t ON t.id = ci.treatmentId
+  //   LEFT JOIN TreatmentCatalog tc ON tc.id = t.treatmentCatalogId
+  //   WHERE c.status IN ('PAID','PARTIAL') AND c.createdAt >= ? AND ...
+  // ============================================================
+  private executeFetchTransactionsJoin(sql: string, params: unknown[]): MockDbRow[] {
+    const charges = this.getTableData('Charge');
+    const chargeItems = this.getTableData('ChargeItem');
+    const treatments = this.getTableData('Treatment');
+    const catalogs = this.getTableData('TreatmentCatalog');
+
+    // 解析 WHERE 参数: 第一个 ? 是 createdAt 下界，第二个 ? 是 clinicId（如果有 c.clinicId = ?）
+    let startDateStr: string | undefined;
+    let clinicId: string | undefined;
+
+    // 找第一个 ? 对应的位置（c.createdAt >= ?）
+    if (params.length > 0) {
+      startDateStr = params[0] as string;
+    }
+    // 查找 c.clinicId = ? 在 SQL 中的位置
+    const upperSql = sql.toUpperCase();
+    const clinicIdIdx = upperSql.indexOf('C.CLINICID = ?');
+    if (clinicIdIdx !== -1) {
+      // 在 clinicId = ? 之前有多少个 ?
+      const before = sql.substring(0, clinicIdIdx);
+      const qBefore = (before.match(/\?/g) || []).length;
+      const clinicParamIdx = qBefore;
+      if (params.length > clinicParamIdx) {
+        clinicId = params[clinicParamIdx] as string;
+      }
+    }
+
+    const results: MockDbRow[] = [];
+
+    for (const c of charges) {
+      // 过滤 c.status IN ('PAID', 'PARTIAL')
+      const status = String(c.status ?? '').toUpperCase();
+      if (status !== 'PAID' && status !== 'PARTIAL') continue;
+
+      // 过滤 c.createdAt >= ?
+      if (startDateStr) {
+        const createdAt = String(c.createdAt ?? '');
+        if (createdAt < startDateStr) continue;
+      }
+
+      // 过滤 c.deletedAt IS NULL
+      if (c.deletedAt !== null && c.deletedAt !== undefined) continue;
+
+      // 过滤 c.clinicId = ?
+      if (clinicId !== undefined && c.clinicId !== clinicId) continue;
+
+      // 找 ChargeItem 中 chargeId === c.id 的
+      const items = chargeItems.filter(ci => ci.chargeId === c.id);
+      for (const ci of items) {
+        // 过滤 ci.deletedAt IS NULL
+        if (ci.deletedAt !== null && ci.deletedAt !== undefined) continue;
+
+        // LEFT JOIN Treatment
+        const t = ci.treatmentId
+          ? treatments.find(tr => tr.id === ci.treatmentId)
+          : undefined;
+        // LEFT JOIN TreatmentCatalog
+        const tc = t && t.treatmentCatalogId
+          ? catalogs.find(tc => tc.id === t.treatmentCatalogId)
+          : undefined;
+
+        results.push({
+          chargeId: c.id,
+          treatmentId: ci.treatmentId,
+          name: ci.name,
+          treatmentCatalogCode: tc ? tc.code : undefined,
+        });
+      }
+    }
+
+    // ORDER BY c.id (chargeId 升序)
+    results.sort((a, b) => {
+      const sa = String(a.chargeId ?? '');
+      const sb = String(b.chargeId ?? '');
+      return sa < sb ? -1 : sa > sb ? 1 : 0;
+    });
+
+    return results;
+  }
+
   private splitWhereConditions(whereClause: string): string[] {
     const conditions: string[] = [];
     let depth = 0;
@@ -496,6 +596,8 @@ export class MockDbService implements IDatabase {
       for (const token of valueTokens) {
         if (token === '?') {
           values.push(params[paramIdx++]);
+        } else if (token.toUpperCase() === 'NULL') {
+          values.push(null);
         } else {
           const num = Number(token);
           if (!isNaN(num) && token !== '') {
@@ -525,6 +627,25 @@ export class MockDbService implements IDatabase {
             if (existing.tokenHash === tokenHashValue) {
               throw new Error(`UNIQUE constraint failed: UsedRefreshToken.tokenHash`);
             }
+          }
+        }
+      }
+
+      // TreatmentProgressSnapshot UNIQUE(planId, snapshotDate)
+      if (table === 'TreatmentProgressSnapshot') {
+        const planId = row.planId as string | undefined;
+        const snapshotDate = row.snapshotDate as string | undefined;
+        if (planId && snapshotDate) {
+          let conflictId: string | undefined;
+          for (const existing of tableData.values()) {
+            if (existing.planId === planId && existing.snapshotDate === snapshotDate && existing.id !== row.id) {
+              conflictId = String(existing.id);
+              break;
+            }
+          }
+          if (conflictId) {
+            // 模拟 ON CONFLICT 覆盖：删除旧行
+            tableData.delete(conflictId);
           }
         }
       }
