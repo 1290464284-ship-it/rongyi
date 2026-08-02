@@ -17,6 +17,9 @@ import { ContentModule } from './modules/content/content.module';
 import { CommunicationModule } from './modules/communication/communication.module';
 import { SystemModule } from './modules/system/system.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { HrModule } from './modules/hr/hr.module';
+import { OrthodonticsModule } from './modules/orthodontics/orthodontics.module';
 import { RolesGuard } from './common/guards/roles.guard';
 import { RateLimitGuard } from './common/guards/rate-limit.guard';
 import { JwtAuthGuard } from './modules/auth/jwt-auth.guard';
@@ -44,6 +47,9 @@ import { shutdownLogger } from './common/services/logger.service';
     ContentModule,
     CommunicationModule,
     NotificationsModule,
+    AnalyticsModule,
+    HrModule,
+    OrthodonticsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
