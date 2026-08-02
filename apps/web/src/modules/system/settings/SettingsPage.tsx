@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Save, Building2, ScrollText } from 'lucide-react';
+import { Save, Building2, ScrollText, MonitorPlay } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { LoadingButton, TableLoading, EmptyState } from '@/components/ui/loading';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -21,7 +21,7 @@ import { formatDateTime } from '@/lib/utils';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
-type TabKey = 'clinic' | 'logs';
+type TabKey = 'clinic' | 'logs' | 'desktop';
 
 const FIELDS: { key: string; label: string; placeholder: string; type?: string }[] = [
   { key: 'clinicName', label: '诊所名称', placeholder: '如：明亮口腔诊所' },
@@ -42,8 +42,30 @@ const ACTION_LABEL: Record<string, string> = {
   PAY: '支付',
 };
 
+const LS_START_MINIMIZED = 'dental.desktop.startMinimized';
+const LS_MINIMIZE_ON_CLOSE = 'dental.desktop.minimizeOnClose';
+const LS_AUTO_LAUNCH = 'dental.desktop.autoLaunch';
+
+function readLSBool(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function writeLSBool(key: string, value: boolean): void {
+  try {
+    localStorage.setItem(key, String(value));
+  } catch {
+    /* ignore */
+  }
+}
+
 export default function SettingsPage() {
   const [tab, setTab] = useState<TabKey>('clinic');
+  const bridge = typeof window !== 'undefined' ? window.dentalBridge : undefined;
+  const showDesktopTab = !!bridge;
 
   return (
     <div className="p-6 space-y-4">
@@ -52,17 +74,23 @@ export default function SettingsPage() {
         <p className="text-sm text-muted-foreground mt-1">管理诊所信息与查看操作日志</p>
       </div>
 
-      {/* Tab 切换 */}
       <div className="flex gap-1 border-b border-border">
         <TabButton active={tab === 'clinic'} onClick={() => setTab('clinic')} icon={<Building2 className="h-4 w-4" />}>
           诊所信息
         </TabButton>
+        {showDesktopTab && (
+          <TabButton active={tab === 'desktop'} onClick={() => setTab('desktop')} icon={<MonitorPlay className="h-4 w-4" />}>
+            桌面端
+          </TabButton>
+        )}
         <TabButton active={tab === 'logs'} onClick={() => setTab('logs')} icon={<ScrollText className="h-4 w-4" />}>
           操作日志
         </TabButton>
       </div>
 
-      {tab === 'clinic' ? <ClinicInfoTab /> : <OperationLogsTab />}
+      {tab === 'clinic' && <ClinicInfoTab />}
+      {tab === 'desktop' && showDesktopTab && <DesktopSettingsTab />}
+      {tab === 'logs' && <OperationLogsTab />}
     </div>
   );
 }
@@ -185,6 +213,124 @@ function ClinicInfoTab() {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function DesktopSettingsTab() {
+  const bridge = window.dentalBridge!;
+
+  const [startMinimized, setStartMinimized] = useState<boolean>(() => readLSBool(LS_START_MINIMIZED));
+  const [minimizeOnClose, setMinimizeOnClose] = useState<boolean>(() => readLSBool(LS_MINIMIZE_ON_CLOSE));
+  const [autoLaunch, setAutoLaunch] = useState<boolean>(() => readLSBool(LS_AUTO_LAUNCH));
+  const [loadingAutoLaunch, setLoadingAutoLaunch] = useState<boolean>(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    bridge.tray.getAutoLaunch().then((v) => {
+      if (cancelled) return;
+      setAutoLaunch(!!v);
+      writeLSBool(LS_AUTO_LAUNCH, !!v);
+    }).catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [bridge]);
+
+  const toggleStartMinimized = () => {
+    const next = !startMinimized;
+    setStartMinimized(next);
+    writeLSBool(LS_START_MINIMIZED, next);
+    toast.success(next ? '下次启动时将最小化到托盘' : '已取消启动最小化');
+  };
+
+  const toggleMinimizeOnClose = () => {
+    const next = !minimizeOnClose;
+    setMinimizeOnClose(next);
+    writeLSBool(LS_MINIMIZE_ON_CLOSE, next);
+    toast.success(next ? '关闭窗口时将最小化到托盘而不退出' : '关闭窗口将直接退出程序');
+  };
+
+  const toggleAutoLaunch = async () => {
+    setLoadingAutoLaunch(true);
+    try {
+      const next = !autoLaunch;
+      const res = await bridge.tray.setAutoLaunch(next);
+      if (res?.success) {
+        setAutoLaunch(next);
+        writeLSBool(LS_AUTO_LAUNCH, next);
+        toast.success(next ? '已启用开机自启' : '已禁用开机自启');
+      } else {
+        toast.error('设置开机自启失败');
+      }
+    } catch (err) {
+      toast.error(`设置开机自启失败: ${(err as Error).message}`);
+    } finally {
+      setLoadingAutoLaunch(false);
+    }
+  };
+
+  const CheckboxRow = ({
+    title,
+    desc,
+    checked,
+    onChange,
+    disabled,
+  }: {
+    title: string;
+    desc?: string;
+    checked: boolean;
+    onChange: () => void;
+    disabled?: boolean;
+  }) => (
+    <label
+      className={cn(
+        'flex items-start gap-3 p-3 rounded-md border border-border transition-colors',
+        disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:bg-muted/30',
+      )}
+    >
+      <input
+        type="checkbox"
+        className="mt-1 h-4 w-4 rounded border-border text-primary focus:ring-primary"
+        checked={checked}
+        onChange={onChange}
+        disabled={disabled}
+      />
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium">{title}</div>
+        {desc && <div className="text-xs text-muted-foreground mt-0.5">{desc}</div>}
+      </div>
+    </label>
+  );
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="pb-3">
+          <span className="text-sm font-medium">桌面端设置</span>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <CheckboxRow
+            title="启动时最小化到托盘（不显示主窗口）"
+            desc="下次启动应用生效"
+            checked={startMinimized}
+            onChange={toggleStartMinimized}
+          />
+          <CheckboxRow
+            title="关闭窗口时最小化到托盘而不退出程序"
+            desc="关闭右上角 × 按钮时最小化后台运行，可在托盘菜单中退出"
+            checked={minimizeOnClose}
+            onChange={toggleMinimizeOnClose}
+          />
+          <CheckboxRow
+            title="系统开机自动启动"
+            desc="登录操作系统时自动启动牙科管家"
+            checked={autoLaunch}
+            onChange={toggleAutoLaunch}
+            disabled={loadingAutoLaunch}
+          />
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 

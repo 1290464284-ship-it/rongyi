@@ -8,6 +8,28 @@ vi.mock('@/lib/api/system/stats', () => ({
   useDashboard: () => mockUseDashboard(),
 }));
 
+// Mock AlertBanner hooks (BusinessAlert API)
+vi.mock('@/lib/api/system/business-alerts', () => ({
+  useAlertCounts: () => ({
+    data: { open: 0, ack: 0, resolved: 0, critical: 0 },
+    isLoading: false,
+    refetch: vi.fn(),
+  }),
+  useLatestAlerts: () => ({
+    data: [],
+    isLoading: false,
+  }),
+  SEVERITY_BANNER_CLASS: {
+    INFO: 'bg-blue-600 text-white',
+    WARN: 'bg-orange-500 text-white',
+    ERROR: 'bg-orange-700 text-white',
+    CRITICAL: 'bg-red-600 text-white',
+  },
+  SEVERITY_BADGE_CLASS: {},
+  STATUS_DOT_CLASS: {},
+  ALERT_TYPE_LABEL: {},
+}));
+
 // Mock useNavigate
 const mockNavigate = vi.fn();
 vi.mock('react-router-dom', async () => {

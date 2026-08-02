@@ -10,10 +10,9 @@ export interface PaginatedResult<T> {
   pageSize: number;
 }
 
-export interface CrudOptions<_T, TList, _TCreate, _TUpdate, _TQuery extends Record<string, unknown> = Record<string, unknown>> {
+export interface CrudOptions<_T, _TList, _TCreate, _TUpdate, _TQuery extends Record<string, unknown> = Record<string, unknown>> {
   endpoint: string;
   queryKey: string;
-  listTransformer?: (data: PaginatedResult<TList>) => TList[];
 }
 
 export function useCrudList<T, TQuery extends Record<string, unknown> = Record<string, unknown>>(

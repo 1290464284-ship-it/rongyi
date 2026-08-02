@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useChangePassword } from '@/lib/auth';
 import { useCurrentClinic } from '@/lib/api/system/clinics';
 import { toast } from 'sonner';
-import { LogOut, ChevronDown, KeyRound, User as UserIcon, Building2 } from 'lucide-react';
+import { LogOut, ChevronDown, KeyRound, User as UserIcon, Building2, Minus, Square, X } from 'lucide-react';
 import SearchModal from '@/components/SearchModal';
 
 const roleLabels: Record<string, string> = {
@@ -15,6 +15,140 @@ const roleLabels: Record<string, string> = {
   DOCTOR: '医生',
   RECEPTIONIST: '前台',
 };
+
+function WindowControls() {
+  const bridge = typeof window !== 'undefined' ? window.dentalBridge : undefined;
+  const [isMaximized, setIsMaximized] = useState(false);
+
+  useEffect(() => {
+    if (!bridge) return;
+    bridge.windowActions.getIsMaximized().then(setIsMaximized).catch(() => undefined);
+    const handler = (_e: Event, maximized: boolean) => {
+      setIsMaximized(!!maximized);
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Electron IPC 自定义事件类型
+    window.addEventListener('window:maximize-changed' as any, handler as any);
+    return () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Electron IPC 自定义事件类型
+      window.removeEventListener('window:maximize-changed' as any, handler as any);
+    };
+  }, [bridge]);
+
+  if (!bridge) return null;
+
+  const isMac = bridge.platform === 'darwin';
+  const Wrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+    <div
+      className={`flex items-center gap-1 ${
+        isMac ? 'absolute left-3 top-3 z-10' : 'ml-3'
+      }`}
+      data-testid="window-controls"
+    >
+      {children}
+    </div>
+  );
+
+  const baseBtn =
+    'h-8 w-8 flex items-center justify-center rounded transition-colors text-muted-foreground hover:bg-muted hover:text-foreground focus:outline-none';
+  const closeBtnExtra = isMac
+    ? 'hover:bg-red-500 hover:text-white'
+    : 'hover:bg-red-500 hover:text-white';
+
+  const handleMin = () => {
+    try {
+      bridge.windowActions.minimize();
+    } catch {
+      /* ignore */
+    }
+  };
+  const handleMax = () => {
+    try {
+      bridge.windowActions.toggleMaximize().then((next) => setIsMaximized(!!next)).catch(() => undefined);
+    } catch {
+      /* ignore */
+    }
+  };
+  const handleClose = () => {
+    try {
+      bridge.windowActions.closeOrHideToTray();
+    } catch {
+      /* ignore */
+    }
+  };
+
+  return (
+    <Wrapper>
+      {isMac ? (
+        <>
+          <button
+            type="button"
+            aria-label="关闭"
+            className={`${baseBtn} ${closeBtnExtra}`}
+            onClick={handleClose}
+            data-testid="window-close"
+          >
+            <X className="w-3 h-3" />
+          </button>
+          <button
+            type="button"
+            aria-label="最小化"
+            className={baseBtn}
+            onClick={handleMin}
+            data-testid="window-minimize"
+          >
+            <Minus className="w-3 h-3" />
+          </button>
+          <button
+            type="button"
+            aria-label="最大化"
+            className={baseBtn}
+            onClick={handleMax}
+            data-testid="window-maximize"
+          >
+            <Square className="w-3 h-3" />
+          </button>
+        </>
+      ) : (
+        <>
+          <button
+            type="button"
+            aria-label="最小化"
+            className={baseBtn}
+            onClick={handleMin}
+            data-testid="window-minimize"
+          >
+            <Minus className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            aria-label="最大化"
+            className={baseBtn}
+            onClick={handleMax}
+            data-testid="window-maximize"
+          >
+            {isMaximized ? (
+              <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M8 3h13v13" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M3 8h13v13H3z" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            ) : (
+              <Square className="w-3.5 h-3.5" />
+            )}
+          </button>
+          <button
+            type="button"
+            aria-label="关闭"
+            className={`${baseBtn} ${closeBtnExtra}`}
+            onClick={handleClose}
+            data-testid="window-close"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </>
+      )}
+    </Wrapper>
+  );
+}
 
 export default function Topbar() {
   const user = useAuthStore((s) => s.user);
@@ -44,7 +178,6 @@ export default function Topbar() {
   const onSwitchAccount = () => {
     setMenuOpen(false);
     logout();
-    // 10.2: 项目使用 HashRouter，跳转需用 hash 路径，否则会跳出 SPA
     window.location.href = '#/login';
   };
 
@@ -53,9 +186,13 @@ export default function Topbar() {
     setPwdOpen(true);
   };
 
+  const bridge = typeof window !== 'undefined' ? window.dentalBridge : undefined;
+  const isMac = bridge?.platform === 'darwin';
+
   return (
-    <header className="h-14 border-b border-border bg-white flex items-center justify-between px-6">
-      <div className="flex items-center gap-4">
+    <header className="h-14 border-b border-border bg-white flex items-center justify-between px-6 relative">
+      {isMac && <WindowControls />}
+      <div className={`flex items-center gap-4 ${isMac ? 'ml-16' : ''}`}>
         {clinic?.name && (
           <div className="flex items-center gap-1.5 text-sm font-medium text-foreground" title={`当前诊所：${clinic.name}`}>
             <Building2 className="w-4 h-4 text-primary" />
@@ -111,6 +248,7 @@ export default function Topbar() {
             </div>
           )}
         </div>
+        {!isMac && <WindowControls />}
       </div>
 
       <ChangePasswordDialog open={pwdOpen} onClose={() => setPwdOpen(false)} />

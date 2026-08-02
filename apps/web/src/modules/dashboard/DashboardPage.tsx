@@ -6,6 +6,7 @@ import { useDashboard } from '@/lib/api/system/stats';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { useNavigate } from 'react-router-dom';
+import AlertBanner from './components/AlertBanner';
 
 export default React.memo(function DashboardPage() {
   const { data, isLoading, isError, error } = useDashboard();
@@ -85,6 +86,8 @@ export default React.memo(function DashboardPage() {
         <MiniToothChart />
         <h1 className="text-2xl font-bold">工作台</h1>
       </div>
+
+      <AlertBanner />
 
       <div className="grid grid-cols-4 gap-4">
         {stats.map(s => (

@@ -21,6 +21,12 @@ import {
   FileCheck,
   UserCheck,
   Monitor,
+  AlertTriangle,
+  Upload,
+  Printer,
+  CalendarClock,
+  Smile,
+  Ruler,
   type LucideIcon,
 } from 'lucide-react';
 import { lazy } from 'react';
@@ -41,6 +47,7 @@ export interface AppRoute {
 }
 
 const DashboardPage = lazy(() => import('@/modules/dashboard/DashboardPage'));
+const BusinessAlertPage = lazy(() => import('@/modules/dashboard/BusinessAlertPage'));
 const PatientListPage = lazy(() => import('@/modules/patients/PatientListPage'));
 const PatientDetailPage = lazy(() => import('@/modules/patients/PatientDetailPage'));
 const AppointmentCalendarPage = lazy(() => import('@/modules/appointment/AppointmentCalendarPage'));
@@ -66,6 +73,12 @@ const FirstExamsPage = lazy(() => import('@/modules/clinical/first-exams/FirstEx
 const WechatPage = lazy(() => import('@/modules/communication/wechat/WechatPage'));
 const EquipmentPage = lazy(() => import('@/modules/equipment/EquipmentPage'));
 const OperationLogPage = lazy(() => import('@/modules/system/settings/OperationLogPage'));
+const BulkImportPage = lazy(() => import('@/modules/system/settings/BulkImportPage'));
+const PrintPreviewPage = lazy(() => import('@/modules/system/print/PrintPreviewPage'));
+const TreatmentProgressPage = lazy(() => import('@/modules/clinical/treatment-plan/TreatmentProgressPage'));
+const HrPage = lazy(() => import('@/modules/system/hr/HrPage'));
+const SatisfactionPage = lazy(() => import('@/modules/communication/satisfaction/SatisfactionPage'));
+const CephalometricPage = lazy(() => import('@/modules/clinical/cephalometric/CephalometricPage'));
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- reserved for 404 catch-all route
 const NotFoundPage = lazy(() => import('@/components/NotFoundPage'));
 
@@ -76,6 +89,13 @@ export const appRoutes: AppRoute[] = [
     icon: LayoutDashboard,
     roles: ['BOSS', 'DOCTOR', 'RECEPTIONIST'],
     component: DashboardPage,
+  },
+  {
+    path: 'business-alerts',
+    label: '异常预警',
+    icon: AlertTriangle,
+    roles: ['BOSS', 'RECEPTIONIST'],
+    component: BusinessAlertPage,
   },
   {
     path: 'registration',
@@ -157,6 +177,13 @@ export const appRoutes: AppRoute[] = [
         component: TreatmentPlanPage,
       },
       {
+        path: 'treatment-progress',
+        label: '治疗进度',
+        icon: ClipboardList,
+        roles: ['BOSS', 'DOCTOR'],
+        component: TreatmentProgressPage,
+      },
+      {
         path: 'prescriptions',
         label: '处方管理',
         icon: Pill,
@@ -169,6 +196,13 @@ export const appRoutes: AppRoute[] = [
         icon: Image,
         roles: ['BOSS', 'DOCTOR'],
         component: ImagingPage,
+      },
+      {
+        path: 'cephalometric',
+        label: '头影测量',
+        icon: Ruler,
+        roles: ['BOSS', 'DOCTOR'],
+        component: CephalometricPage,
       },
     ],
   },
@@ -197,6 +231,14 @@ export const appRoutes: AppRoute[] = [
     hideInNav: true,
   },
   {
+    path: 'treatment-progress',
+    label: '治疗进度',
+    icon: ClipboardList,
+    roles: ['BOSS', 'DOCTOR'],
+    component: TreatmentProgressPage,
+    hideInNav: true,
+  },
+  {
     path: 'prescriptions',
     label: '处方管理',
     icon: Pill,
@@ -210,6 +252,14 @@ export const appRoutes: AppRoute[] = [
     icon: Image,
     roles: ['BOSS', 'DOCTOR'],
     component: ImagingPage,
+    hideInNav: true,
+  },
+  {
+    path: 'cephalometric',
+    label: '头影测量',
+    icon: Ruler,
+    roles: ['BOSS', 'DOCTOR'],
+    component: CephalometricPage,
     hideInNav: true,
   },
   {
@@ -255,6 +305,13 @@ export const appRoutes: AppRoute[] = [
     component: WechatPage,
   },
   {
+    path: 'satisfaction',
+    label: '患者满意度',
+    icon: Smile,
+    roles: ['BOSS', 'DOCTOR', 'RECEPTIONIST'],
+    component: SatisfactionPage,
+  },
+  {
     path: 'inventory',
     label: '库存采购',
     icon: Package,
@@ -283,6 +340,13 @@ export const appRoutes: AppRoute[] = [
     component: ProcessingOrdersPage,
   },
   {
+    path: 'hr',
+    label: '人力资源',
+    icon: CalendarClock,
+    roles: ['BOSS'],
+    component: HrPage,
+  },
+  {
     path: 'staff',
     label: '诊所管理',
     icon: UserCog,
@@ -308,7 +372,23 @@ export const appRoutes: AppRoute[] = [
     label: '系统设置',
     icon: Settings,
     roles: ['BOSS'],
-    component: SettingsPage,
+    children: [
+      {
+        path: '',
+        label: '系统设置',
+        icon: Settings,
+        roles: ['BOSS'],
+        component: SettingsPage,
+      },
+      {
+        path: 'bulk-import',
+        label: '批量数据导入',
+        icon: Upload,
+        roles: ['BOSS'],
+        component: BulkImportPage,
+        hideInNav: true,
+      },
+    ],
   },
   {
     path: 'operation-logs',
@@ -316,6 +396,14 @@ export const appRoutes: AppRoute[] = [
     icon: FileCheck,
     roles: ['BOSS'],
     component: OperationLogPage,
+    hideInNav: true,
+  },
+  {
+    path: 'print-preview',
+    label: '打印预览',
+    icon: Printer,
+    roles: ['BOSS', 'DOCTOR', 'RECEPTIONIST'],
+    component: PrintPreviewPage,
     hideInNav: true,
   },
 ];
