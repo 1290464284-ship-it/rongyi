@@ -31,28 +31,11 @@ export class PatientsService extends BaseService<Patient> {
       tableName: "Patient",
       jsonFields: ["allergies","medicalHistory","tags","medicationHistory","systemicDiseases"],
       searchFields: ["name","phone"],
-      cascadeTables: [
-        { table: "Appointment", foreignKey: "patientId" },
-        { table: "Visit", foreignKey: "patientId" },
-        { table: "Treatment", foreignKey: "patientId" },
-        { table: "TreatmentPlan", foreignKey: "patientId" },
-        { table: "Charge", foreignKey: "patientId" },
-        { table: "Imaging", foreignKey: "patientId" },
-        { table: "Prescription", foreignKey: "patientId" },
-        { table: "ToothRecord", foreignKey: "patientId" },
-        { table: "Registration", foreignKey: "patientId" },
-        { table: "FollowUp", foreignKey: "patientId" },
-        { table: "MedicalRecord", foreignKey: "patientId" },
-        { table: "MemberCard", foreignKey: "patientId" },
-        { table: "Refund", foreignKey: "patientId" },
-        { table: "ProcessingOrder", foreignKey: "patientId" },
-        { table: "FirstExam", foreignKey: "patientId" },
-        { table: "FirstExamTrack", foreignKey: "patientId" },
-        { table: "OralExamination", foreignKey: "patientId" },
-        { table: "PeriodontalRecord", foreignKey: "patientId" },
-        { table: "DebtRecord", foreignKey: "patientId" },
-        { table: "WechatMessage", foreignKey: "patientId" },
-      ],
+      // 不配置 cascadeTables：删除患者时不级联软删 20 张关联表。
+      // 理由：(1) 级联软删破坏"恢复患者"语义，关联数据无法随患者恢复；
+      //       (2) 业务侧各列表查询已统一过滤 deletedAt IS NULL，孤儿数据不会泄漏；
+      //       (3) 一次删除跑 20 条 UPDATE 既慢又增加事务冲突概率。
+      // 关联表的数据生命周期由各自模块独立管理（如 Charge 已结清不能删等业务规则）。
       uniqueFields: ["code"],
     });
   }
@@ -183,7 +166,10 @@ export class PatientsService extends BaseService<Patient> {
     }
 
     const { items: rawItems, total } = this.patientRepository.findMany(this.dbService, {
-      selectColumns: 'id, code, name, gender, birthDate, phone, idCard, source, tags, active, createdAt, updatedAt',
+      // 列表场景精简字段：移除加密字段 idCard（解密成本高 + 列表不需要）
+      // 移除大 JSON 字段 allergies/medicalHistory/medicationHistory/systemicDiseases（详情页才需要）
+      // 保留 tags 用于前端列表展示标签
+      selectColumns: 'id, code, name, gender, birthDate, phone, source, tags, active, createdAt, updatedAt',
       conditions,
       params,
       sortBy,
