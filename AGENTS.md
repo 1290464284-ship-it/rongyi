@@ -23,15 +23,18 @@ source/
 | 认证 | `src/modules/auth/` | `src/modules/auth/` |
 | 患者 | `src/modules/patients/` | `src/modules/patients/` |
 | 预约/排班 | `src/modules/scheduling/` (appointments, chairs) | `src/modules/appointment/` |
-| 临床 | `src/modules/clinical/` (first-exams, oral-examinations, periodontal-records, registrations, visits, treatments, treatment-plans, medical-records) | `src/modules/clinical/` (first-exams, medical-records, registration, treatment-plan, components) |
-| 收费/财务 | `src/modules/financial/` (charge, refunds, member-cards) | `src/modules/charge/` (components, finance) |
-| 库存 | `src/modules/inventory/` (inventory, suppliers, purchase-orders, processing-orders) | `src/modules/inventory/` (components, processing-orders) |
-| 内容 | `src/modules/content/` (drug-catalog, imaging, prescriptions, tooth-records) | `src/modules/content/` (imaging, prescription) |
-| 沟通 | `src/modules/communication/` (follow-ups, wechat) | `src/modules/communication/` (follow-ups, wechat) |
+| 临床 | `src/modules/clinical/` (first-exams, follow-up-recommender, medical-records, medical-summary, oral-examinations, periodontal-records, registrations, treatment-plans, treatment-progress, treatments, visits) | `src/modules/clinical/` (cephalometric, components, first-exams, medical-records, registration, treatment-plan) |
+| 收费/财务 | `src/modules/financial/` (charge, charge-assistant, member-cards, refunds) | `src/modules/charge/` (components, finance) |
+| 库存 | `src/modules/inventory/` (inventory, processing-orders, purchase-orders, replenishment-suggestion, suppliers) | `src/modules/inventory/` (components, processing-orders) |
+| 内容 | `src/modules/content/` (drug-catalog, imaging, medical-phrase, prescription-safety, prescriptions, tooth-records) | `src/modules/content/` (imaging, prescription) |
+| 沟通 | `src/modules/communication/` (follow-ups, wechat) | `src/modules/communication/` (follow-ups, satisfaction, wechat) |
 | 通知 | `src/modules/notifications/` | — |
 | 同步 | `src/modules/sync/` | — |
-| 系统 | `src/modules/system/` (backups, clinics, health, metrics, operation-logs, search, settings, stats) | `src/modules/system/` (settings, dashboard, report, staff) |
+| 系统 | `src/modules/system/` (backups, bulk-import, business-alerts, clinics, daily-scheduler, health, metrics, operation-logs, print, search, settings, stats) | `src/modules/system/` (hr, print, report, settings, staff) |
 | 设备 | `src/modules/equipment/` | `src/modules/equipment/` |
+| 数据分析 | `src/modules/analytics/` (customer-insights, doctor-performance, satisfaction) | — |
+| 人力资源 | `src/modules/hr/` | `src/modules/system/hr/` |
+| 正畸 | `src/modules/orthodontics/` (cephalometric) | — |
 | 公共基础 | `src/common/` (guards, filters, interceptors, middleware, services, repositories) | `src/lib/`, `src/components/ui/` |
 | 数据库 | `src/db/` (schema, migrations, seed, DbService) | — |
 
@@ -180,6 +183,7 @@ source/
 
 ## 快速定位指南
 
+- **编辑后验证** → 完成代码编辑后立即调用 `/monorepo-verify`（verify-tracker hook 会在每次编辑后输出 Skill 路由建议）
 - 要改后端业务逻辑 → `apps/api/src/modules/<领域>/`
 - 要改前端页面 → `apps/web/src/modules/<领域>/`
 - 要改 API 调用层 → `apps/web/src/lib/api/`
