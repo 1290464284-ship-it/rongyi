@@ -4,17 +4,18 @@ import { startApiServer, stopApi } from './api-server';
 import { createWindow, getMainWindow } from './window-manager';
 import { buildAppMenu } from './app-menu';
 import { setupAutoUpdater } from './auto-updater';
+import { setupTray, hideToTray } from './tray';
+import { setupIpc } from './ipc-channels';
 
-// 全局错误处理（尽早注册）
+const aiTrayEnabledDefault = true;
+
 setupErrorHandlers();
 
-// 单实例锁，防止多实例同时运行
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
 } else {
   app.on('second-instance', () => {
-    // 有人试图运行第二个实例，我们应该聚焦到我们的窗口
     const mainWindow = getMainWindow();
     if (mainWindow) {
       if (mainWindow.isMinimized()) {
@@ -29,8 +30,20 @@ if (!gotTheLock) {
     try {
       await startApiServer();
       buildAppMenu();
+      setupIpc();
       createWindow();
       setupAutoUpdater();
+      setupTray();
+
+      const mainWindow = getMainWindow();
+      if (mainWindow) {
+        mainWindow.on('close', (event) => {
+          if (aiTrayEnabledDefault && !(app as any).isQuitting) {
+            event.preventDefault();
+            hideToTray();
+          }
+        });
+      }
 
       app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {
@@ -46,13 +59,14 @@ if (!gotTheLock) {
   });
 }
 
-app.on('window-all-closed', () => {
+app.on('before-quit', () => {
+  (app as any).isQuitting = true;
   stopApi();
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
 });
 
-app.on('before-quit', () => {
+app.on('window-all-closed', () => {
   stopApi();
+  if (process.platform !== 'darwin' && !aiTrayEnabledDefault) {
+    app.quit();
+  }
 });

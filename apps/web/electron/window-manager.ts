@@ -11,9 +11,43 @@ const webPort = DEFAULT_WEB_PORT;
 
 let mainWindow: BrowserWindow | null = null;
 
+type WindowStateCallback = (isMaximized: boolean) => void;
+const windowStateCallbacks: Set<WindowStateCallback> = new Set();
+
 export const getMainWindow = (): BrowserWindow | null => mainWindow;
 
-export const createWindow = (): void => {
+export const onWindowStateChange = (callback: WindowStateCallback): (() => void) => {
+  windowStateCallbacks.add(callback);
+  return () => {
+    windowStateCallbacks.delete(callback);
+  };
+};
+
+function emitWindowStateChange(isMaximized: boolean): void {
+  windowStateCallbacks.forEach((cb) => {
+    try {
+      cb(isMaximized);
+    } catch (err) {
+      log(`window state callback error: ${(err as Error).message}`);
+    }
+  });
+  if (mainWindow) {
+    try {
+      mainWindow.webContents.send('window:maximize-changed', isMaximized);
+    } catch {
+      // webContents might be destroyed
+    }
+  }
+}
+
+export interface CreateWindowOptions {
+  showFrame?: boolean;
+  startMinimized?: boolean;
+}
+
+export const createWindow = (options: CreateWindowOptions = {}): void => {
+  const { showFrame = true, startMinimized = false } = options;
+
   mainWindow = new BrowserWindow({
     title: '牙科管家',
     width: 1400,
@@ -22,7 +56,8 @@ export const createWindow = (): void => {
     minHeight: 768,
     center: true,
     show: false,
-    frame: true,
+    frame: showFrame,
+    titleBarStyle: showFrame ? 'default' : 'hidden',
     backgroundColor: '#F5F7FA',
     webPreferences: {
       sandbox: true,
@@ -30,28 +65,32 @@ export const createWindow = (): void => {
       nodeIntegration: false,
       devTools: isDev,
       webSecurity: true,
-      // P1.4: preload 通过 contextBridge 暴露只读信息（window.dentalBridge）
       preload: join(__dirname, 'preload.cjs'),
     },
   });
 
-  // P1.4: 外链白名单 — 拒绝所有非白名单的新窗口（防止 target="_blank" 链接钓鱼）
+  mainWindow.on('maximize', () => {
+    emitWindowStateChange(true);
+  });
+
+  mainWindow.on('unmaximize', () => {
+    emitWindowStateChange(false);
+  });
+
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     try {
       const u = new URL(url);
-      const allowed = ['github.com', 'gitee.com']; // 后续按需扩展
-      if (allowed.some(h => u.hostname === h || u.hostname.endsWith('.' + h))) {
+      const allowed = ['github.com', 'gitee.com'];
+      if (allowed.some((h) => u.hostname === h || u.hostname.endsWith('.' + h))) {
         return { action: 'allow' };
       }
     } catch {
-      // URL 解析失败视为不安全
+      // ignore
     }
     log(`拦截非白名单新窗口: ${url}`);
     return { action: 'deny' };
   });
 
-  // P1.4: 导航保护 — 禁止渲染进程导航到非预期 URL（防止链接跳转离开应用）
-  // 生产环境仅允许本地静态服务器与 API；开发环境额外允许 Vite dev server
   mainWindow.webContents.on('will-navigate', (event, url) => {
     try {
       const u = new URL(url);
@@ -69,7 +108,6 @@ export const createWindow = (): void => {
     mainWindow.loadURL(`http://localhost:${webPort}`);
     mainWindow.webContents.openDevTools();
   } else {
-    // Electron 打包后 process.resourcesPath 指向 asar 资源目录
     const resourcesPath = (process as unknown as { resourcesPath: string }).resourcesPath;
     let distPath = join(resourcesPath, 'dist-web');
     if (!existsSync(distPath)) {
@@ -79,14 +117,11 @@ export const createWindow = (): void => {
     log(`distPath exists: ${existsSync(distPath)}`);
     const server = createServer((req: IncomingMessage, res: ServerResponse) => {
       try {
-        // 解析URL，防止路径遍历攻击
         const urlObj = new URL(req.url ?? '/', `http://localhost:${apiPort}`);
         const pathname = decodeURIComponent(urlObj.pathname);
 
-        // 规范化路径，防止 ../ 路径遍历
         let filePath = path.normalize(path.join(distPath, pathname === '/' ? 'index.html' : pathname));
 
-        // 验证解析后的路径在distPath目录内
         const resolvedDistPath = path.resolve(distPath);
         const resolvedFilePath = path.resolve(filePath);
         if (!resolvedFilePath.startsWith(resolvedDistPath)) {
@@ -117,7 +152,6 @@ export const createWindow = (): void => {
 
         readFile(filePath, (err: NodeJS.ErrnoException | null, content: Buffer) => {
           if (err) {
-            // SPA路由：对非静态资源请求返回index.html
             if (err.code === 'ENOENT' && !extname) {
               const indexPath = join(distPath, 'index.html');
               readFile(indexPath, (indexErr: NodeJS.ErrnoException | null, indexContent: Buffer) => {
@@ -134,13 +168,11 @@ export const createWindow = (): void => {
             res.writeHead(404);
             res.end('File not found');
           } else {
-            // 为静态资源添加缓存控制
             const headers: Record<string, string> = { 'Content-Type': contentType };
             if (extname !== '.html') {
               headers['Cache-Control'] = 'public, max-age=86400';
             } else {
               headers['Cache-Control'] = 'no-cache';
-              // P2-18: HTML 响应添加 CSP 头，提供纵深防御
               headers['Content-Security-Policy'] = `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' http://localhost:${apiPort}`;
             }
             res.writeHead(200, headers);
@@ -163,7 +195,13 @@ export const createWindow = (): void => {
   }
 
   mainWindow.on('ready-to-show', () => {
-    mainWindow?.show();
+    if (mainWindow) {
+      if (startMinimized) {
+        mainWindow.hide();
+      } else {
+        mainWindow.show();
+      }
+    }
   });
 
   mainWindow.on('closed', () => {
@@ -180,7 +218,6 @@ export const createWindow = (): void => {
   });
 
   mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
-    // 日志脱敏：过滤可能包含患者姓名/手机/身份证/密码/token 的内容
     const sanitized = message.replace(
       /(['"]?(?:password|token|secret|idCard|phone|\u5bc6\u7801|\u8eab\u4efd\u8bc1|\u624b\u673a)['"]?\s*[:=]\s*)['"]?[^\s'"}{,\]]+/gi,
       '$1[REDACTED]',
@@ -205,7 +242,6 @@ export const showAboutDialog = (): void => {
     parent: mainWindow || undefined,
     frame: true,
     resizable: false,
-    // P2-16: 加固 About 窗口安全（data: URL 内容为静态，无注入风险，但补全安全开关）
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
