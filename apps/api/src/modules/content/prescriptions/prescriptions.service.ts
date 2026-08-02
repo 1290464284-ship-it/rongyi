@@ -7,6 +7,9 @@ import * as crypto from "node:crypto";
 import { ClinicContextService } from "../../../common/services/clinic-context.service";
 import { DrugCatalogService } from "../drug-catalog/drug-catalog.service";
 import { DbService } from "../../../db/db.service";
+import { PrescriptionSafetyService, PatientContraindicationContext, PrescriptionContraindicationAlert, PrescriptionItemDto as SafetyPrescriptionItemDto } from '../prescription-safety/prescription-safety.service';
+import { AuditLogType } from '../../../common/constants/audit-log-types';
+import { IDatabase } from '../../../db/db.interface';
 
 interface PrescriptionItemDto {
   drugCode?: string;
@@ -25,14 +28,10 @@ interface CreatePrescriptionDto {
   doctorId: string;
   remark?: string;
   items: PrescriptionItemDto[];
+  ignoreContraindicationIds?: string[];
+  patientContext?: PatientContraindicationContext;
 }
 
-/**
- * 迁移说明：
- * 1. create 方法从直接使用 db.prepare INSERT 迁移到使用 BaseRepository.insert
- * 2. 保留事务结构（涉及库存扣减和审计日志，需要原子性）
- * 3. DrugCatalogService.deductStock 跨服务调用保留不变
- */
 @Injectable()
 export class PrescriptionsService extends BaseService<Prescription> {
 
@@ -40,6 +39,7 @@ export class PrescriptionsService extends BaseService<Prescription> {
     dbService: DbService,
     clinicContext: ClinicContextService,
     private drugCatalogService: DrugCatalogService,
+    private prescriptionSafetyService: PrescriptionSafetyService,
   ) {
     super(dbService, clinicContext, {
       tableName: "Prescription",
@@ -52,9 +52,42 @@ export class PrescriptionsService extends BaseService<Prescription> {
     if (!createDto.items || createDto.items.length === 0) {
       throw new BusinessValidationException('处方明细不能为空');
     }
+
+    const items = createDto.items as unknown as SafetyPrescriptionItemDto[];
+    const patientCtx = createDto.patientContext ?? {};
+    const ignoreIds = new Set(createDto.ignoreContraindicationIds);
+
+    let warnings: PrescriptionContraindicationAlert[] = [];
+    try {
+      warnings = await this.prescriptionSafetyService.validate(items, patientCtx);
+    } catch {
+      warnings = [{
+        ruleId: 'SYSTEM-FAIL-OPEN',
+        level: 'WARN',
+        message: '系统内部警告：配伍校验失败，请联系管理员。',
+      }];
+    }
+
+    const dangerItems = warnings.filter(w => w.level === 'DANGER');
+    const unconfirmedDanger = dangerItems.filter(d => !ignoreIds.has(d.ruleId));
+
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const clinicId = this.clinicContext.getClinicId();
+
+    if (unconfirmedDanger.length > 0) {
+      const messages = unconfirmedDanger.map(d => `【${d.level}】${d.message}`).join('；');
+      this.dbService.transaction((db) => {
+        this.writeAudit(db, AuditLogType.PRESCRIPTION_CONTRAINDICATION_BLOCKED, id, {
+          unconfirmedRules: unconfirmedDanger.map(d => ({ ruleId: d.ruleId, message: d.message, drugPair: d.drugPair })),
+          ignoreContraindicationIds: [...ignoreIds],
+        });
+      });
+      throw new BusinessValidationException(
+        `处方存在未确认的配伍禁忌：${messages}`,
+      );
+    }
+
     this.dbService.transaction((db) => {
       this.baseRepository.insert(db, this.tableName, {
         id,
@@ -92,8 +125,50 @@ export class PrescriptionsService extends BaseService<Prescription> {
         });
       }
 
-      this.logAudit(db, "PRESCRIPTION_CREATE", id, "Prescription", { afterData: { patientId: createDto.patientId, doctorId: createDto.doctorId, itemCount: createDto.items.length } });
+      this.logAudit(db, AuditLogType.PRESCRIPTION_CREATE, id, "Prescription", {
+        afterData: { patientId: createDto.patientId, doctorId: createDto.doctorId, itemCount: createDto.items.length },
+      });
+
+      if (dangerItems.length > 0) {
+        this.writeAudit(db, AuditLogType.PRESCRIPTION_CONTRAINDICATION_IGNORED, id, {
+          ignoredRules: dangerItems.map(d => ({ ruleId: d.ruleId, message: d.message, drugPair: d.drugPair })),
+          contraindicationIds: dangerItems.map(d => d.ruleId),
+        });
+      }
+
+      const warnItems = warnings.filter(w => w.level === 'WARN' || w.level === 'INFO');
+      if (warnItems.length > 0 && dangerItems.length === 0) {
+        this.writeAudit(db, AuditLogType.PRESCRIPTION_CONTRAINDICATION_WARNED, id, {
+          warnings: warnItems.map(w => ({ ruleId: w.ruleId, level: w.level, message: w.message, drugPair: w.drugPair })),
+        });
+      }
     });
     return super.findOne(id);
+  }
+
+  private writeAudit(
+    db: IDatabase,
+    type: string,
+    prescriptionId: string,
+    detail: unknown,
+  ): void {
+    const clinicId = this.clinicContext.getClinicId();
+    const now = new Date().toISOString();
+    try {
+      const stmt = db.prepare(
+        `INSERT INTO AuditLog (id, type, targetId, targetType, clinicId, remark, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      );
+      stmt.run(
+        crypto.randomUUID(),
+        type,
+        prescriptionId,
+        'Prescription',
+        clinicId || null,
+        typeof detail === 'string' ? detail : JSON.stringify(detail),
+        now,
+      );
+    } catch (err: unknown) {
+      this.logger.warn(`写入配伍禁忌审计日志失败: ${(err as Error)?.message}`);
+    }
   }
 }

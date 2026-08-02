@@ -3,6 +3,7 @@ import { BusinessValidationException } from '@common/errors';
 import { MockDbService , asDbService } from '../../../db/__mocks__/db-service.mock';
 import { ClinicContextService } from '../../../common/services/clinic-context.service';
 import { DrugCatalogService } from '../drug-catalog/drug-catalog.service';
+import { PrescriptionSafetyService, PrescriptionContraindicationAlert, PatientContraindicationContext, PrescriptionItemDto } from '../prescription-safety/prescription-safety.service';
 
 function createMockClinicContext(clinicId: string | null = 'test-clinic-001'): ClinicContextService {
   return {
@@ -20,15 +21,26 @@ function createMockDrugCatalogService(): DrugCatalogService {
   } as unknown as DrugCatalogService;
 }
 
+function createMockPrescriptionSafetyService(
+  validateResult: PrescriptionContraindicationAlert[] = [],
+): PrescriptionSafetyService {
+  return {
+    validate: jest.fn(async (_items: PrescriptionItemDto[], _ctx?: PatientContraindicationContext) => validateResult),
+    seedDefaultsIfEmpty: jest.fn(async () => 0),
+  } as unknown as PrescriptionSafetyService;
+}
+
 describe('PrescriptionsService', () => {
   let service: PrescriptionsService;
   let db: MockDbService;
   let drugCatalogService: DrugCatalogService;
+  let prescriptionSafetyService: PrescriptionSafetyService;
 
   beforeEach(() => {
     db = new MockDbService();
     drugCatalogService = createMockDrugCatalogService();
-    service = new PrescriptionsService(asDbService(db), createMockClinicContext(), drugCatalogService);
+    prescriptionSafetyService = createMockPrescriptionSafetyService();
+    service = new PrescriptionsService(asDbService(db), createMockClinicContext(), drugCatalogService, prescriptionSafetyService);
   });
 
   afterEach(() => {
@@ -385,6 +397,7 @@ describe('PrescriptionsService', () => {
         asDbService(db),
         createMockClinicContext(null),
         createMockDrugCatalogService(),
+        createMockPrescriptionSafetyService(),
       );
     });
 
@@ -416,6 +429,7 @@ describe('PrescriptionsService', () => {
         asDbService(db),
         createMockClinicContext(null),
         mockDrugCatalog,
+        createMockPrescriptionSafetyService(),
       );
 
       // 事务会执行，但 super.findOne 会抛出 ForbiddenException
@@ -440,7 +454,7 @@ describe('PrescriptionsService', () => {
         }),
       } as unknown as DrugCatalogService;
 
-      const svc = new PrescriptionsService(asDbService(db), createMockClinicContext(), mockDrugCatalog);
+      const svc = new PrescriptionsService(asDbService(db), createMockClinicContext(), mockDrugCatalog, createMockPrescriptionSafetyService());
 
       // 异常应从事务内向上传播
       await expect(svc.create({
@@ -462,7 +476,7 @@ describe('PrescriptionsService', () => {
         }),
       } as unknown as DrugCatalogService;
 
-      const svc = new PrescriptionsService(asDbService(db), createMockClinicContext(), mockDrugCatalog);
+      const svc = new PrescriptionsService(asDbService(db), createMockClinicContext(), mockDrugCatalog, createMockPrescriptionSafetyService());
 
       await expect(svc.create({
         patientId: 'patient-001',
@@ -479,7 +493,7 @@ describe('PrescriptionsService', () => {
   describe('边界分支 - 混合 items 过滤逻辑', () => {
     it('混合 items（部分有 drugCode、部分无）时只对有效项调用 deductStock', async () => {
       const mockDrugCatalog = { deductStock: jest.fn() } as unknown as DrugCatalogService;
-      const svc = new PrescriptionsService(asDbService(db), createMockClinicContext(), mockDrugCatalog);
+      const svc = new PrescriptionsService(asDbService(db), createMockClinicContext(), mockDrugCatalog, createMockPrescriptionSafetyService());
 
       await svc.create({
         patientId: 'patient-001',
@@ -510,7 +524,7 @@ describe('PrescriptionsService', () => {
 
     it('所有 items 都无有效 drugCode 时不应调用 deductStock', async () => {
       const mockDrugCatalog = { deductStock: jest.fn() } as unknown as DrugCatalogService;
-      const svc = new PrescriptionsService(asDbService(db), createMockClinicContext(), mockDrugCatalog);
+      const svc = new PrescriptionsService(asDbService(db), createMockClinicContext(), mockDrugCatalog, createMockPrescriptionSafetyService());
 
       await svc.create({
         patientId: 'patient-001',
