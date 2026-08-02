@@ -8,5 +8,6 @@ import { CommonServicesModule } from '../../../common/services/common-services.m
   imports: [DbModule, CommonServicesModule],
   controllers: [SettingsController],
   providers: [SettingsService],
+  exports: [SettingsService],
 })
 export class SettingsModule {}

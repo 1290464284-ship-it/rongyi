@@ -7,6 +7,10 @@ import { StatsModule } from './stats/stats.module';
 import { ClinicsModule } from './clinics/clinics.module';
 import { HealthModule } from './health/health.module';
 import { MetricsModule } from './metrics/metrics.module';
+import { DailySchedulerModule } from './daily-scheduler/daily-scheduler.module';
+import { BusinessAlertModule } from './business-alerts/business-alert.module';
+import { BulkImportModule } from './bulk-import/bulk-import.module';
+import { PrintModule } from './print/print.module';
 
 @Module({
   imports: [
@@ -18,6 +22,10 @@ import { MetricsModule } from './metrics/metrics.module';
     ClinicsModule,
     HealthModule,
     MetricsModule,
+    DailySchedulerModule,
+    BusinessAlertModule,
+    BulkImportModule,
+    PrintModule,
   ],
 })
 export class SystemModule {}
