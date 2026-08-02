@@ -1,4 +1,4 @@
-﻿import { Module } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { AppointmentsModule } from '../scheduling/appointments/appointments.module';
 import { VisitsModule } from './visits/visits.module';
 import { TreatmentsModule } from './treatments/treatments.module';
@@ -8,6 +8,9 @@ import { OralExaminationsModule } from './oral-examinations/oral-examinations.mo
 import { FirstExamsModule } from './first-exams/first-exams.module';
 import { PeriodontalRecordsModule } from './periodontal-records/periodontal-records.module';
 import { MedicalRecordsModule } from './medical-records/medical-records.module';
+import { MedicalSummaryModule } from './medical-summary/medical-summary.module';
+import { FollowUpRecommenderModule } from './follow-up-recommender/follow-up-recommender.module';
+import { TreatmentProgressModule } from './treatment-progress/treatment-progress.module';
 
 @Module({
   imports: [
@@ -20,6 +23,9 @@ import { MedicalRecordsModule } from './medical-records/medical-records.module';
     FirstExamsModule,
     PeriodontalRecordsModule,
     MedicalRecordsModule,
+    MedicalSummaryModule,
+    FollowUpRecommenderModule,
+    TreatmentProgressModule,
   ],
 })
 export class ClinicalModule {}

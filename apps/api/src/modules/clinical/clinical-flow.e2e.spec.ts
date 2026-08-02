@@ -7,6 +7,8 @@ import { VisitsService } from './visits/visits.service';
 import { TreatmentsService } from './treatments/treatments.service';
 import { ChargeService } from '../financial/charge/charge.service';
 import { ChargePaymentService } from '../financial/charge/charge-payment.service';
+import { MedicalSummaryService } from './medical-summary/medical-summary.service';
+import { SettingsService } from '../system/settings/settings.service';
 import { AppointmentsService } from '../scheduling/appointments/appointments.service';
 import { PatientRepository } from '../patients/repositories/patient.repository';
 import { ChargeRepository } from '../financial/charge/repositories/charge.repository';
@@ -97,6 +99,8 @@ describe('Clinical Flow E2E - 患者→挂号→就诊→治疗→收费', () =>
         MemberCardPointsService,
         MemberCardsService,
         ChargePaymentService,
+        { provide: SettingsService, useValue: { getBoolean: jest.fn().mockResolvedValue(true), get: jest.fn() } },
+        MedicalSummaryService,
       ],
     }).compile();
 
