@@ -38,7 +38,9 @@ export const queryClient = new QueryClient({
       gcTime: CACHE_TIMES.DEFAULT_GC,
       retry: 1,
       refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
+      // 网络恢复时主动重拉，避免离线后切回在线长期看到 stale 数据
+      refetchOnReconnect: true,
+      // 挂载时不强制重拉（保留缓存），关键页（Dashboard/Alerts）可在 hook 层单独开 'always'
       refetchOnMount: false,
     },
     mutations: {
