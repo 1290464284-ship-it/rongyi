@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 数据库表名常量
  * 统一管理所有表名，避免硬编码
  */
@@ -43,6 +43,20 @@ export const TableNames = {
   IDEMPOTENCY_RECORD: 'IdempotencyRecord',
   WECHAT_MESSAGE: 'WechatMessage',
   CLINIC_INFO: 'ClinicInfo',
+  CHARGE_ASSOCIATION_RULE: 'ChargeAssociationRule',
+  CHARGE_ASSOCIATION_IGNORE: 'ChargeAssociationIgnore',
+  PATIENT_RFM_SCORE: 'PatientRfmScore',
+  DOCTOR_PERFORMANCE_ANOMALY: 'DoctorPerformanceAnomaly',
+  TREATMENT_PROGRESS_SNAPSHOT: 'TreatmentProgressSnapshot',
+  SATISFACTION_SURVEY: 'SatisfactionSurvey',
+  NPS_SNAPSHOT: 'NpsSnapshot',
+  PRINT_TEMPLATE: 'PrintTemplate',
+  WORK_SCHEDULE: 'WorkSchedule',
+  LEAVE_REQUEST: 'LeaveRequest',
+  CEPHALOMETRIC_ANALYSIS: 'CephalometricAnalysis',
+  CEPHALOMETRIC_LANDMARK_SET: 'CephalometricLandmarkSet',
+  CEPHALOMETRIC_ANALYSIS_RECORD: 'CephalometricAnalysisRecord',
+  CEPHALOMETRIC_NORM_VALUE: 'CephalometricNormValue',
 } as const;
 
 export type TableName = typeof TableNames[keyof typeof TableNames];
