@@ -20,6 +20,7 @@ import {
   DEFAULT_CORS_ORIGINS,
 } from './config/constants';
 import { DbService } from './db/db.service';
+import { persistEncryptedDb, shutdownEncryptedDb } from './db/database';
 import { runEncryptionMigration } from './bootstrap/encryption-migration';
 
 async function bootstrap() {
@@ -282,9 +283,27 @@ async function bootstrap() {
   }
 
   // 优雅关闭处理
+  app.enableShutdownHooks();
+
   const shutdown = async (signal: string) => {
     loggerService.log(`接收到 ${signal} 信号，开始优雅关闭...`);
     try {
+      try {
+        await persistEncryptedDb();
+        loggerService.log('加密数据库持久化完成');
+      } catch (persistErr: unknown) {
+        loggerService.error(
+          '加密数据库持久化失败: ' + (persistErr instanceof Error ? persistErr.message : String(persistErr)),
+        );
+      }
+      try {
+        await shutdownEncryptedDb();
+        loggerService.log('加密数据库关闭完成');
+      } catch (shutdownErr: unknown) {
+        loggerService.error(
+          '加密数据库关闭失败: ' + (shutdownErr instanceof Error ? shutdownErr.message : String(shutdownErr)),
+        );
+      }
       await app.close();
       loggerService.log('应用已关闭');
     } catch (err: unknown) {

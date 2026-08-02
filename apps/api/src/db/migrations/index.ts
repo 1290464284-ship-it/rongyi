@@ -26,8 +26,27 @@ import {
 import { migrateToV28 } from './v27-v28';
 import { migrateToV29 } from './v29';
 import { migrateToV30 } from './v30';
+import { migrateToV31 } from './v31';
+import { migrateToV32 } from './v32';
+import { migrateToV33 } from './v33';
+import { migrateToV34 } from './v34';
+import { migrateToV35 } from './v35';
+import { migrateToV36 } from './v36';
+import { migrateToV37 } from './v37';
+import { migrateToV38 } from './v38';
+import { migrateToV39 } from './v39';
+import { migrateToV40 } from './v40';
+import { migrateToV41 } from './v41';
+import { migrateToV42 } from './v42';
+import { migrateToV43 } from './v43';
+import { migrateToV44 } from './v44';
+import { migrateToV45 } from './v45';
+import { migrateToV46 } from './v46';
+import { migrateToV47 } from './v47';
+import { migrateToV48 } from './v48';
+import { migrateToV49 } from './v49';
 
-export const CURRENT_VERSION = 30;
+export const CURRENT_VERSION = 49;
 
 export const getCurrentVersion = (): number => {
   return (getMigrationDb().prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
@@ -64,6 +83,25 @@ export const migrationNames: Record<number, string> = {
   28: 'treatment-medicalrecord-deletedAt-columns',
   29: 'soft-delete-query-optimization-indexes',
   30: 'audit-log-hash-chain',
+  31: 'aident-12-new-tables',
+  32: 'aident-visit-phrase-columns',
+  33: 'aident-visit-summary-column',
+  34: 'drug-contraindication-extra-columns',
+  35: 'patient-riskscore-composite-index',
+  36: 'business-alert-composite-index',
+  37: 'inventory-item-sku-clinic-index',
+  38: 'db-encryption-placeholder',
+  39: 'medical-phrase-usage-triggers',
+  40: 'follow-up-recommendation-engine',
+  41: 'charge-association-rules',
+  42: 'inventory-replenishment-suggestion-status',
+  43: 'rfm-churn-doctor-perf',
+  44: 'treatment-progress-snapshot',
+  45: 'satisfaction-nps-system',
+  46: 'print-template-engine',
+  47: 'hr-work-schedule-leave',
+  48: 'cephalometric-analysis',
+  49: 'cephalometric-landmark-set-columns',
 };
 
 function backupBeforeMigration(fromVersion: number, toVersion: number): string | null {
@@ -151,6 +189,7 @@ export const runMigrations = (db: Database) => {
       // recordMigration 也移到事务外，避免 user_version 已升但 schema_migrations 未写入的不一致
       const migrationDb = getMigrationDb();
       const migrateTx = migrationDb.transaction(() => {
+        // eslint-disable-next-line sonarjs/max-switch-cases -- 迁移版本路由，每个case对应一个迁移版本
         switch (v) {
           case 1: migrateToV1(); break;
           case 2: migrateToV2(); break;
@@ -182,6 +221,25 @@ export const runMigrations = (db: Database) => {
           case 28: migrateToV28(); break;
           case 29: migrateToV29(); break;
           case 30: migrateToV30(); break;
+          case 31: migrateToV31(); break;
+          case 32: migrateToV32(); break;
+          case 33: migrateToV33(); break;
+          case 34: migrateToV34(); break;
+          case 35: migrateToV35(); break;
+          case 36: migrateToV36(); break;
+          case 37: migrateToV37(); break;
+          case 38: migrateToV38(); break;
+          case 39: migrateToV39(); break;
+          case 40: migrateToV40(); break;
+          case 41: migrateToV41(); break;
+          case 42: migrateToV42(); break;
+          case 43: migrateToV43(); break;
+          case 44: migrateToV44(); break;
+          case 45: migrateToV45(); break;
+          case 46: migrateToV46(); break;
+          case 47: migrateToV47(); break;
+          case 48: migrateToV48(); break;
+          case 49: migrateToV49(); break;
         }
       });
       migrateTx();  // 任一迁移失败 → 整体回滚，数据库保持迁移前状态

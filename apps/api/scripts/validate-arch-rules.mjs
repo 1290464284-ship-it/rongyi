@@ -484,7 +484,7 @@ function checkDbSchemaProtection() {
 
     const changedFiles = [...staged.split('\n'), ...unstaged.split('\n')].filter(Boolean);
     const schemaChanged = changedFiles.some(f => f.includes('schema.ts'));
-    const migrationChanged = changedFiles.some(f => f.includes('migrations.ts'));
+    const migrationChanged = changedFiles.some(f => f.includes('migrations/index.ts') || f.includes('migrations.ts'));
 
     if (schemaChanged && !migrationChanged) {
       reportFileViolation(
