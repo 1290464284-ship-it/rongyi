@@ -39,12 +39,24 @@ export default defineConfig({
         entryFileNames: 'assets/[name]-[hash].js',
         manualChunks(id) {
           if (id.includes('node_modules')) {
+            // react-dom 必须在 react 之前匹配，避免被 react 兜底
+            if (id.includes('react-dom')) return 'react-dom';
+            if (id.includes('react-router-dom')) return 'router';
             if (id.includes('echarts')) return 'echarts';
+            if (id.includes('echarts-for-react')) return 'echarts';
             if (id.includes('lucide-react')) return 'lucide';
             if (id.includes('date-fns')) return 'dateFns';
             if (id.includes('@tanstack/react-query')) return 'reactQuery';
             if (id.includes('axios')) return 'axios';
-            if (id.includes('react-router-dom')) return 'router';
+            // 表单库整体打包（hook-form + zod resolver）
+            if (id.includes('react-hook-form') || id.includes('@hookform')) return 'forms';
+            // 校验库单独拆分
+            if (id.includes('zod')) return 'zod';
+            // HTML 清洗库体积较大（~80KB gzip），单独拆分避免污染业务 chunk
+            if (id.includes('sanitize-html')) return 'sanitize-html';
+            // 状态管理 + 通知
+            if (id.includes('zustand')) return 'zustand';
+            if (id.includes('sonner')) return 'sonner';
           }
         },
       },
@@ -63,11 +75,12 @@ export default defineConfig({
       include: ['src/**/*.{ts,tsx}'],
       exclude: ['src/**/*.{test,spec}.{ts,tsx}', 'src/__tests__/**', 'src/main.tsx'],
       // 棘轮阈值：全量 src 口径 2026-07 实测（32.22/19.83/23.37/33.24）设置下限，只升不降
+      // 2026-08 抬升 +2~3%，逐步逼近 50% 目标
       thresholds: {
-        statements: 31,
-        branches: 19,
-        functions: 22,
-        lines: 32,
+        statements: 33,
+        branches: 21,
+        functions: 24,
+        lines: 34,
       },
     },
   },
