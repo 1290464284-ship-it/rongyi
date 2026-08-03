@@ -26,6 +26,7 @@ Run all commands from `source/`:
 ```powershell
 pnpm install
 pnpm --filter @dental/v2 typecheck
+pnpm --filter @dental/v2 run knip
 pnpm --filter @dental/v2 test
 pnpm --filter @dental/v2 test:coverage
 pnpm --filter @dental/v2 build

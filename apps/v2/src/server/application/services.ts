@@ -1048,6 +1048,16 @@ const SYNC_ALLOWED_TABLES = new Set([
   'PurchaseOrder',
 ]);
 
+const SYNC_RESOURCES: Record<string, string> = {
+  Patient: 'patients',
+  Appointment: 'appointments',
+  Treatment: 'treatments',
+  Charge: 'charges',
+  InventoryItem: 'inventoryItems',
+  FollowUp: 'followUps',
+  PurchaseOrder: 'purchaseOrders',
+};
+
 export class SyncService {
   constructor(private readonly db: Database.Database) {}
 
@@ -1062,22 +1072,60 @@ export class SyncService {
     return { changes, serverTime: new Date().toISOString() };
   }
 
-  push(payload: { deviceId: string; changes: Array<{ tableName: string; recordId: string; operation: string; updatedAt: string }> }): {
+  async push(payload: {
+    deviceId: string;
+    changes: Array<{
+      tableName: string;
+      recordId: string;
+      operation: string;
+      updatedAt: string;
+      data?: Record<string, unknown>;
+    }>;
+  }): Promise<{
     accepted: number;
     conflicts: number;
     failed: number;
     errors: Array<{ recordId: string; error: string }>;
-  } {
+  }> {
     let accepted = 0;
     const conflicts = 0;
     const errors: Array<{ recordId: string; error: string }> = [];
+    const context: AppContext = {
+      userId: payload.deviceId,
+      clinicId: null,
+      role: 'ADMIN',
+      traceId: 'sync-push',
+      now: () => new Date(),
+    };
     for (const change of payload.changes) {
       if (!SYNC_ALLOWED_TABLES.has(change.tableName)) {
         errors.push({ recordId: change.recordId, error: 'Table is not allowed for sync' });
         continue;
       }
-      this.record(change.tableName, change.recordId, change.operation, payload.deviceId);
-      accepted += 1;
+      const resourceName = SYNC_RESOURCES[change.tableName];
+      const definition = resourceRegistry.get(resourceName);
+      if (!definition) {
+        errors.push({ recordId: change.recordId, error: `Resource is not defined: ${resourceName}` });
+        continue;
+      }
+      try {
+        const repo = new SqliteRepository(this.db, definition);
+        if (change.operation === 'DELETE') {
+          await repo.softDelete(change.recordId, context);
+        } else {
+          if (!change.data || typeof change.data !== 'object') {
+            throw new Error('Sync change requires row data');
+          }
+          const entity = { id: change.recordId, ...change.data };
+          const existing = await repo.findById(change.recordId, context);
+          if (existing) await repo.update(entity, context);
+          else await repo.insert(entity, context);
+        }
+        this.record(change.tableName, change.recordId, change.operation, payload.deviceId);
+        accepted += 1;
+      } catch (error) {
+        errors.push({ recordId: change.recordId, error: error instanceof Error ? error.message : String(error) });
+      }
     }
     return { accepted, conflicts, failed: errors.length, errors };
   }

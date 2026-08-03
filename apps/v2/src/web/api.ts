@@ -12,14 +12,14 @@ async function resolveApiBase(): Promise<string> {
   return apiBase;
 }
 
-export interface ApiError {
+interface ApiError {
   success: false;
   code: string;
   message: string;
   traceId?: string;
 }
 
-export class ClientError extends Error {
+class ClientError extends Error {
   constructor(message: string, readonly code = 'REQUEST_FAILED', readonly traceId?: string) {
     super(message);
   }

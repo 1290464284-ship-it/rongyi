@@ -33,6 +33,9 @@ jobs:
       - name: Typecheck
         run: pnpm --filter @dental/v2 typecheck
 
+      - name: Knip
+        run: pnpm --filter @dental/v2 run knip
+
       - name: Unit tests
         run: pnpm --filter @dental/v2 test
 

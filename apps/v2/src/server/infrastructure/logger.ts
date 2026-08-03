@@ -72,5 +72,3 @@ export class Logger {
     }
   }
 }
-
-export const defaultLogger = new Logger();
