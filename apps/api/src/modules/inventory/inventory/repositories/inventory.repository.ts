@@ -150,17 +150,6 @@ export class InventoryRepository {
     return { items, total };
   }
 
-  delete(
-    db: SqlExecutor,
-    id: string,
-    clinicClause: string,
-    clinicParams: unknown[],
-  ): void {
-    db.prepare(
-      `DELETE FROM ${this.tableName} WHERE id = ?${clinicClause}`,
-    ).run(id, ...clinicParams);
-  }
-
   findLowStockItems(
     db: SqlExecutor,
     clinicClause: string,

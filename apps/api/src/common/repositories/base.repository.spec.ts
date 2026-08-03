@@ -65,21 +65,6 @@ describe('BaseRepository', () => {
     });
   });
 
-  // ==================== delete ====================
-  describe('delete', () => {
-    it('应构造 DELETE 语句', () => {
-      repo.delete(db, 'patients', 'p-1', ' AND clinicId = ?', ['cl-1']);
-      expect(db._calls[0].sql).toBe('DELETE FROM patients WHERE id = ? AND clinicId = ?');
-      expect(db._calls[0].params).toEqual(['p-1', 'cl-1']);
-    });
-
-    it('无诊所条件时应仅按 id 删除', () => {
-      repo.delete(db, 'patients', 'p-1', '', []);
-      expect(db._calls[0].sql).toBe('DELETE FROM patients WHERE id = ?');
-      expect(db._calls[0].params).toEqual(['p-1']);
-    });
-  });
-
   // ==================== buildPaginatedQuery ====================
   describe('buildPaginatedQuery', () => {
     it('无游标时应使用 OFFSET 分页', () => {

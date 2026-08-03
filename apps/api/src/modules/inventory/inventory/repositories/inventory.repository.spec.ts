@@ -123,15 +123,6 @@ describe('InventoryRepository', () => {
     });
   });
 
-  describe('delete', () => {
-    it('应构造 DELETE 语句', () => {
-      const db = buildMockDb();
-      repo.delete(db, 'i-1', ' AND clinicId = ?', ['cl-1']);
-      expect(db._calls[0].sql).toContain('DELETE FROM InventoryItem WHERE id = ? AND clinicId = ?');
-      expect(db._calls[0].params).toEqual(['i-1', 'cl-1']);
-    });
-  });
-
   describe('findLowStockItems', () => {
     it('应查询低于最低库存的物品', () => {
       const db = buildMockDb({ allReturn: [{ id: 'i-1', stock: 5, minStock: 10 }] });

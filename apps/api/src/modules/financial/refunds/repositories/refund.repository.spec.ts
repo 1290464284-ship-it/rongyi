@@ -105,15 +105,6 @@ describe('RefundRepository', () => {
     });
   });
 
-  describe('delete', () => {
-    it('应构造 DELETE 语句', () => {
-      const db = buildMockDb();
-      repo.delete(db, 'r-1', ' AND clinicId = ?', ['cl-1']);
-      expect(db._calls[0].sql).toContain('DELETE FROM Refund WHERE id = ? AND clinicId = ?');
-      expect(db._calls[0].params).toEqual(['r-1', 'cl-1']);
-    });
-  });
-
   describe('findChargeForRefund', () => {
     it('应查询 Charge 表用于退款校验', () => {
       const db = buildMockDb({ getReturn: { id: 'c-1', patientId: 'p-1', totalAmount: 1000, paidAmount: 1000, refundedAmount: 0, status: 'PAID' } });
