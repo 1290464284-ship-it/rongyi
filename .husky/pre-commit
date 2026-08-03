@@ -37,3 +37,37 @@ echo "🏗️  Running arch:check..."
 (cd apps/api && pnpm run arch:check) || { echo "❌ arch:check failed"; exit 1; }
 
 echo "✅ Pre-commit checks passed"
+
+# ── Stage 5: 验证归因记录 ───────────────────────────────────────────────────
+# 将 pre-commit 验证写入 .qoder/state/verify-ok，使 verify-gate 能识别
+# husky 触发的验证已通过，闭合编辑-验证归因链路。
+# 覆盖锚点：本次提交的暂存源文件列表（coveredFiles）。
+node -e "
+const { execSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+try {
+  const stateDir = path.resolve('../.qoder/state');
+  if (!fs.existsSync(stateDir)) process.exit(0);
+  const staged = execSync('git diff --cached --name-only --diff-filter=ACM', { encoding: 'utf-8' })
+    .trim().split('\n').filter(Boolean)
+    .filter(f => /\.(ts|tsx|js|jsx|json|sql)$/i.test(f))
+    .map(f => path.resolve(f).replace(/\\\\/g, '/'));
+  const record = {
+    at: new Date().toISOString(),
+    command: 'verify:precommit',
+    full: 'husky pre-commit (lint-staged + typecheck + jest --onlyChanged + vitest --changed + arch:check)',
+    coveredFiles: staged
+  };
+  const okPath = path.join(stateDir, 'verify-ok');
+  const existing = fs.existsSync(okPath) ? fs.readFileSync(okPath, 'utf-8').trim() : '';
+  const entries = existing ? existing.split('\n').filter(Boolean) : [];
+  entries.push(JSON.stringify(record));
+  fs.writeFileSync(okPath, entries.slice(-20).join('\n') + '\n');
+  // 清除 verify-pending：pre-commit 已验证全部暂存文件
+  const pendingPath = path.join(stateDir, 'verify-pending');
+  if (fs.existsSync(pendingPath)) {
+    try { fs.unlinkSync(pendingPath); } catch {}
+  }
+} catch {}
+" || true
