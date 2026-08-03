@@ -123,26 +123,6 @@ export class BaseRepository {
   }
 
   /**
-   * 执行 DELETE（带诊所过滤），不写审计日志
-   * @param db SQL 执行器
-   * @param tableName 表名
-   * @param id 主键值
-   * @param clinicClause 诊所过滤子句
-   * @param clinicParams 诊所过滤参数
-   */
-  delete(
-    db: SqlExecutor,
-    tableName: string,
-    id: string,
-    clinicClause: string,
-    clinicParams: unknown[],
-  ): void {
-    db.prepare(
-      `DELETE FROM ${tableName} WHERE id = ?${clinicClause}`,
-    ).run(id, ...clinicParams);
-  }
-
-  /**
    * 构造分页查询 SQL（COUNT + DATA），支持游标分页
    *
    * @param tableName 表名

@@ -130,17 +130,6 @@ export class ChargeRepository {
     return { items, total };
   }
 
-  delete(
-    db: SqlExecutor,
-    id: string,
-    clinicClause: string,
-    clinicParams: unknown[],
-  ): void {
-    db.prepare(
-      `DELETE FROM ${this.tableName} WHERE id = ?${clinicClause}`,
-    ).run(id, ...clinicParams);
-  }
-
   findItemsByChargeId(
     db: SqlExecutor,
     chargeId: string,
