@@ -47,11 +47,21 @@ The installer is generated under `apps/v2/release-v2/`. In packaged mode:
 ```powershell
 pnpm verify
 pnpm verify:delivery
+pnpm verify:smoke
 pnpm --filter @dental/v2 smoke:api
 pnpm --filter @dental/v2 smoke:ui
 pnpm --filter @dental/v2 test:load
 pnpm --filter @dental/v2 run verify:package
 ```
+
+For a free internal release build on Windows:
+
+```powershell
+pnpm --filter @dental/v2 electron:dist:internal
+```
+
+Public release still requires a CA-issued code signing certificate; see
+[docs/release-modes.md](docs/release-modes.md).
 
 ## Release
 

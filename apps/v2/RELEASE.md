@@ -79,6 +79,20 @@ Verify a local installer locally:
 pnpm --filter @dental/v2 run verify:signature
 ```
 
+## Internal Build
+
+If you only distribute to machines you control, a free self-signed internal
+build is available:
+
+```powershell
+pnpm --filter @dental/v2 electron:dist:internal
+```
+
+It generates a temporary self-signed certificate, packages the installer,
+verifies package/update metadata, and runs the installer smoke. Windows will
+warn about the unknown publisher; do not treat this as a public signed release.
+See [docs/release-modes.md](../../docs/release-modes.md) for the full comparison.
+
 ## Offline Restore
 
 ```powershell

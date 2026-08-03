@@ -51,8 +51,11 @@ Root aliases are available:
 ```powershell
 pnpm verify
 pnpm verify:delivery
+pnpm verify:smoke
+pnpm verify:internal:delivery
 pnpm build
 pnpm electron:dist
+pnpm --filter @dental/v2 electron:dist:internal
 ```
 
 ## Architecture Constraints

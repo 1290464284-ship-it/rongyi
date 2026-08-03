@@ -70,6 +70,10 @@
 - `latest.yml` update metadata generation and verification.
 - Application icon integrated into Windows package, removing default icon warning.
 - Deliverable release artifacts and post-install verification documented in RELEASE.md.
+- Free internal release path with temporary self-signed certificate, package
+  verification, update metadata, and installer smoke.
+- Local full smoke runner that starts API and Web, then runs API smoke, UI
+  smoke, and load smoke.
 
 ## Remaining
 
