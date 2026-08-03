@@ -1,11 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { installerFileName } from './artifact-name.mjs';
 
 const appRoot = path.resolve(import.meta.dirname, '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(appRoot, 'package.json'), 'utf8'));
 const releaseDir = path.resolve(import.meta.dirname, '..', 'release-v2');
-const productName = pkg.build.productName;
-const installer = path.join(releaseDir, `${productName} Setup ${pkg.version}.exe`);
+const installer = path.join(releaseDir, installerFileName(pkg));
 const blockMap = `${installer}.blockmap`;
 const latestYml = path.join(releaseDir, 'latest.yml');
 if (!fs.existsSync(installer) || !fs.existsSync(blockMap)) {
