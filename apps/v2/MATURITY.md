@@ -50,6 +50,10 @@
 - JSON/CSV file import entry point in the desktop renderer.
 - Doctor satisfaction rankings and sync change-log cleanup.
 - Remote update-channel verification against the published GitHub Release.
+- Windows NSIS installer smoke: silent install, installed API health, silent
+  uninstall.
+- Upgrade smoke: reinstall over an existing installation while preserving
+  user data, then verify the upgraded API.
 - Installer/package artifact verification script.
 - Local signing pipeline verified with a development self-signed certificate.
 - `latest.yml` update metadata generation and verification.

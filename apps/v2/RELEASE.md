@@ -39,6 +39,25 @@ $env:GH_TOKEN = gh auth token
 pnpm --filter @dental/v2 run verify:remote
 ```
 
+## Installer Smoke
+
+The release workflow runs a Windows installer smoke after packaging:
+
+```powershell
+pnpm --filter @dental/v2 run installer:smoke
+```
+
+It silently installs the NSIS package to a temporary directory, starts the
+installed API, verifies health, and uninstalls.
+
+Upgrade smoke can be run with an explicit previous installer:
+
+```powershell
+pnpm --filter @dental/v2 run upgrade:smoke `
+  -CurrentInstallerPath <new-installer.exe> `
+  -PreviousInstallerPath <previous-installer.exe>
+```
+
 ## Signing
 
 The `v2-release.yml` workflow requires `CSC_LINK` and `CSC_KEY_PASSWORD` GitHub

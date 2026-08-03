@@ -28,6 +28,8 @@
     "security:scan": "node scripts/security-scan.mjs",
     "license:check": "node scripts/license-scan.mjs",
     "restore:backup": "node scripts/restore-backup.mjs",
+    "installer:smoke": "powershell -ExecutionPolicy Bypass -File scripts/installer-smoke.ps1",
+    "upgrade:smoke": "powershell -ExecutionPolicy Bypass -File scripts/upgrade-smoke.ps1",
     "verify:package": "node scripts/verify-package.mjs",
     "update:metadata": "node scripts/update-metadata.mjs",
     "verify:update": "node scripts/verify-update.mjs",
