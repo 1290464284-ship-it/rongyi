@@ -31,7 +31,9 @@ export function metricsSnapshot(): Array<Record<string, unknown>> {
     .map(([key, value]) => ({
       key,
       count: value.count,
+      /* v8 ignore start -- buckets are only created after at least one request. */
       avgDurationMs: value.count > 0 ? Math.round(value.totalDurationMs / value.count) : 0,
+      /* v8 ignore stop */
       maxDurationMs: value.maxDurationMs,
       errorCount: value.errorCount,
     }))

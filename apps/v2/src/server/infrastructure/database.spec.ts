@@ -52,4 +52,32 @@ describe('database bootstrap', () => {
     fs.writeFileSync(path.join(malformedDir, 'no-close.tables.ts'), 'CREATE TABLE IF NOT EXISTS MissingClose (id TEXT');
     expect(() => syncLegacySchema(db, malformedDir)).not.toThrow();
   });
+
+  it('honors the configured data directory default and production seed guard', () => {
+    const envDataDir = path.join(dataDir, 'env-data');
+    process.env.V2_DATA_DIR = envDataDir;
+    const envDb = createDatabase();
+    expect(fs.existsSync(path.join(envDataDir, 'v2.sqlite'))).toBe(true);
+    envDb.close();
+    delete process.env.V2_DATA_DIR;
+
+    const oldCwd = process.cwd();
+    const cwdDataDir = path.join(dataDir, 'cwd-data');
+    fs.mkdirSync(cwdDataDir, { recursive: true });
+    process.chdir(cwdDataDir);
+    const cwdDb = createDatabase();
+    expect(fs.existsSync(path.join(cwdDataDir, 'data', 'v2.sqlite'))).toBe(true);
+    cwdDb.close();
+    process.chdir(oldCwd);
+
+    const productionDir = path.join(dataDir, 'production-data');
+    process.env.NODE_ENV = 'production';
+    const productionDb = createDatabase(productionDir);
+    seedDatabase(productionDb);
+    seedDatabase(productionDb);
+    const adminCount = (productionDb.prepare("SELECT COUNT(*) AS c FROM User WHERE username = 'admin'").get() as { c: number }).c;
+    expect(adminCount).toBe(1);
+    productionDb.close();
+    delete process.env.NODE_ENV;
+  });
 });

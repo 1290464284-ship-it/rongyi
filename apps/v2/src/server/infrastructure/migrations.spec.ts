@@ -56,4 +56,31 @@ describe('migrations', () => {
     freshDb.close();
     fs.rmSync(freshDir, { recursive: true, force: true });
   });
+
+  it('skips migration columns that already exist and covers both column expressions', () => {
+    const existingDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-mig-existing-'));
+    const existingDb = createDatabase(existingDir);
+    existingDb.exec('ALTER TABLE User ADD COLUMN refreshToken TEXT');
+    existingDb.exec('ALTER TABLE User ADD COLUMN refreshTokenExpiresAt TEXT');
+    runMigrations(existingDb);
+    const userColumns = new Set(
+      (existingDb.prepare('PRAGMA table_info(User)').all() as Array<{ name: string }>).map((column) => column.name),
+    );
+    expect(userColumns.has('refreshToken')).toBe(true);
+    expect(userColumns.has('refreshTokenExpiresAt')).toBe(true);
+    existingDb.close();
+    fs.rmSync(existingDir, { recursive: true, force: true });
+
+    const responseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-mig-response-'));
+    const responseDb = createDatabase(responseDir);
+    responseDb.exec('ALTER TABLE IdempotencyRecord DROP COLUMN clinicId');
+    runMigrations(responseDb);
+    const idemColumns = new Set(
+      (responseDb.prepare('PRAGMA table_info(IdempotencyRecord)').all() as Array<{ name: string }>).map((column) => column.name),
+    );
+    expect(idemColumns.has('responseJson')).toBe(true);
+    expect(idemColumns.has('clinicId')).toBe(true);
+    responseDb.close();
+    fs.rmSync(responseDir, { recursive: true, force: true });
+  });
 });

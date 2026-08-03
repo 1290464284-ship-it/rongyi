@@ -95,6 +95,33 @@ describe('resource router', () => {
     expect(deleted.body.code).toBe('NOT_FOUND');
   });
 
+  it('covers missing request bodies for generic create and patch', async () => {
+    const created = await request(app)
+      .post('/api/v2/resources/patients')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: 'ROUTER-NOBODY',
+        name: 'No Body Patient',
+        gender: 'UNKNOWN',
+        phone: '13611110001',
+        source: 'WALK_IN',
+        active: true,
+      })
+      .expect(201);
+    const id = created.body.data.id as string;
+
+    await request(app)
+      .post('/api/v2/resources/patients')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(400);
+
+    const patch = await request(app)
+      .patch(`/api/v2/resources/patients/${id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(patch.body.data.id).toBe(id);
+  });
+
   it('covers array filters and unsupported resource capabilities', async () => {
     await request(app)
       .get('/api/v2/resources/patients?tags=a&tags=b')
