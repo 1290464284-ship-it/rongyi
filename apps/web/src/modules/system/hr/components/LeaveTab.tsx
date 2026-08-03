@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { DataTableWrapper, type DataTableColumn } from '@/components/ui/data-table-wrapper';
 import { useAuthStore } from '@/lib/store/auth-store';
-import { useStaff, type StaffUser } from '@/lib/staff';
+import type { StaffUser } from '@/lib/staff';
 import { cn } from '@/lib/utils';
 import {
   useLeaves,

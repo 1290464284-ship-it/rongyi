@@ -1,26 +1,11 @@
-import {
-  ClipboardList,
-  CheckCircle2,
-  AlertTriangle,
-  AlertCircle,
-  TrendingDown,
-  Clock,
-  Smile,
-  User,
-  BarChart3,
-  CalendarDays,
-} from 'lucide-react';
 import ReactECharts from 'echarts-for-react/lib/core';
 import echarts from '@/lib/echarts';
-import { format, differenceInCalendarDays } from 'date-fns';
-import { zhCN } from 'date-fns/locale';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { differenceInCalendarDays } from 'date-fns';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import {
-  LAG_RISK,
   LAG_RISK_LABEL,
   LAG_RISK_COLOR,
   type LagRisk,

@@ -1,8 +1,6 @@
 import {
   ClipboardList,
   CheckCircle2,
-  AlertTriangle,
-  AlertCircle,
   TrendingDown,
   Clock,
   Smile,
@@ -29,12 +27,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { TableLoading, EmptyState, Spinner } from '@/components/ui/loading';
+import { EmptyState, Spinner } from '@/components/ui/loading';
 import { QueryErrorAlert } from '@/components/QueryErrorAlert';
 import { cn } from '@/lib/utils';
 import {
   useTreatmentProgressDetail,
-  PLAN_STATUS,
   PLAN_STATUS_LABEL,
   PLAN_STATUS_COLOR,
   ITEM_STATUS_LABEL,
