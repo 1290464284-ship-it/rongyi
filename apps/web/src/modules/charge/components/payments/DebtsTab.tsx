@@ -32,6 +32,7 @@ import {
   DEBT_STATUS_COLOR,
   type DebtRecord,
 } from '@/lib/api/financial/charge';
+import { formatYuan } from '@dental/shared';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { PayDebtDialog } from './PayDebtDialog';
@@ -111,19 +112,19 @@ export function DebtsTab() {
   const statsCards = [
     {
       label: '总欠费金额',
-      value: `¥${Number(statsData?.totalRemain ?? 0).toFixed(2)}`,
+      value: formatYuan(statsData?.totalRemain),
       icon: Wallet,
       color: 'bg-destructive/10 text-destructive',
     },
     {
       label: '本月新增欠费',
-      value: `¥${Number(statsData?.thisMonthNew ?? 0).toFixed(2)}`,
+      value: formatYuan(statsData?.thisMonthNew),
       icon: TrendingUp,
       color: 'bg-warning/10 text-warning',
     },
     {
       label: '本月已回收',
-      value: `¥${Number(statsData?.thisMonthPaid ?? 0).toFixed(2)}`,
+      value: formatYuan(statsData?.thisMonthPaid),
       icon: DollarSign,
       color: 'bg-success/10 text-success',
     },

@@ -40,6 +40,10 @@ describe('shared package index exports', () => {
     expect(shared.APPOINTMENT_STATUS_LABEL).toBeDefined();
     expect(shared.TREATMENT_STATUS_LABEL).toBeDefined();
     expect(shared.CHARGE_STATUS_LABEL).toBeDefined();
+    expect(shared.CHARGE_STATUS_COLOR).toBeDefined();
+    expect(shared.PAY_METHOD_LABEL).toBeDefined();
+    expect(shared.DEBT_STATUS_LABEL).toBeDefined();
+    expect(shared.DEBT_STATUS_COLOR).toBeDefined();
     expect(shared.EQUIPMENT_STATUS_LABEL).toBeDefined();
     expect(shared.EQUIPMENT_STATUS_COLOR).toBeDefined();
     expect(shared.EQUIPMENT_CATEGORIES).toBeDefined();

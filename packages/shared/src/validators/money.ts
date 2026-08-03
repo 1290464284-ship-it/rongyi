@@ -68,6 +68,12 @@ export function formatCents(cents: number): string {
   return (cents / MONEY_SCALE).toFixed(2);
 }
 
+/** 元格式化为带 ¥ 前缀的字符串（接受 number/string/null/undefined） */
+export function formatYuan(value: number | string | null | undefined): string {
+  const n = typeof value === 'string' ? Number(value) : (value ?? 0);
+  return `¥${(Number.isFinite(n) ? n : 0).toFixed(2)}`;
+}
+
 /**
  * 校验金额是否为有效正数（类型谓词，不抛异常）
  * 用于入口处对金额字段的轻量校验，避免负数/NaN/Infinity 污染数据库。

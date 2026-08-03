@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect } from 'react';
+import { useDebounce } from '@/lib/hooks/use-debounce';
 import {
   AlertTriangle,
   AlertCircle,
@@ -142,9 +143,7 @@ export default function BusinessAlertPage() {
   const pagination = usePaginationState(20);
 
   const [searchText, setSearchText] = useState(searchParams.get('search') ?? '');
-  const [searchDebounced, setSearchDebounced] = useState(
-    searchParams.get('search') ?? ''
-  );
+  const searchDebounced = useDebounce(searchText, 300);
   const [statusFilter, setStatusFilter] = useState<AlertStatus | ''>(
     (searchParams.get('status') as AlertStatus) ?? ''
   );
@@ -165,11 +164,6 @@ export default function BusinessAlertPage() {
     refetchOnWindowFocus: false,
   });
   const counts = countsQuery.data ?? { open: 0, ack: 0, resolved: 0, critical: 0 };
-
-  useEffect(() => {
-    const t = setTimeout(() => setSearchDebounced(searchText), 300);
-    return () => clearTimeout(t);
-  }, [searchText]);
 
   useEffect(() => {
     const next: Record<string, string> = {};

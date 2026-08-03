@@ -13,6 +13,7 @@ import {
   centsLessThanOrEqual,
   centsEquals,
   formatCents,
+  formatYuan,
   isValidMoneyAmount,
 } from '../money';
 
@@ -203,6 +204,30 @@ describe('money validator', () => {
         // TypeScript should recognize amount as number here
         expect(typeof amount).toBe('number');
       }
+    });
+  });
+
+  describe('formatYuan', () => {
+    it('should format number with ¥ prefix', () => {
+      expect(formatYuan(100)).toBe('¥100.00');
+      expect(formatYuan(0)).toBe('¥0.00');
+      expect(formatYuan(99.9)).toBe('¥99.90');
+      expect(formatYuan(1234.567)).toBe('¥1234.57');
+    });
+
+    it('should handle string input', () => {
+      expect(formatYuan('100')).toBe('¥100.00');
+      expect(formatYuan('99.9')).toBe('¥99.90');
+    });
+
+    it('should handle null/undefined', () => {
+      expect(formatYuan(null)).toBe('¥0.00');
+      expect(formatYuan(undefined)).toBe('¥0.00');
+    });
+
+    it('should handle NaN', () => {
+      expect(formatYuan(NaN)).toBe('¥0.00');
+      expect(formatYuan('abc')).toBe('¥0.00');
     });
   });
 });

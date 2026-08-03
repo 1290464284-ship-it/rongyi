@@ -1,6 +1,18 @@
-import { ChargeStatus, PayMethod, CHARGE_STATUS_LABEL as SHARED_CHARGE_STATUS_LABEL } from '@dental/shared';
+import {
+  ChargeStatus,
+  PayMethod,
+  CHARGE_STATUS_LABEL as SHARED_CHARGE_STATUS_LABEL,
+  CHARGE_STATUS_COLOR as SHARED_CHARGE_STATUS_COLOR,
+  PAY_METHOD_LABEL as SHARED_PAY_METHOD_LABEL,
+  DEBT_STATUS_LABEL as SHARED_DEBT_STATUS_LABEL,
+  DEBT_STATUS_COLOR as SHARED_DEBT_STATUS_COLOR,
+} from '@dental/shared';
 export { ChargeStatus, PayMethod };
 export const CHARGE_STATUS_LABEL = SHARED_CHARGE_STATUS_LABEL;
+export const CHARGE_STATUS_COLOR = SHARED_CHARGE_STATUS_COLOR;
+export const PAY_METHOD_LABEL = SHARED_PAY_METHOD_LABEL;
+export const DEBT_STATUS_LABEL = SHARED_DEBT_STATUS_LABEL;
+export const DEBT_STATUS_COLOR = SHARED_DEBT_STATUS_COLOR;
 
 export interface ChargeItem {
   id: string;
@@ -42,26 +54,6 @@ export interface ChargeListRes {
   page: number;
   pageSize: number;
 }
-
-export const CHARGE_STATUS_COLOR: Record<ChargeStatus, string> = {
-  UNPAID: 'bg-warning/10 text-warning border-warning/30',
-  PAID: 'bg-success/10 text-success border-success/30',
-  REFUNDED: 'bg-muted text-muted-foreground border-border',
-  PARTIAL: 'bg-primary/10 text-primary border-primary/30',
-  CANCELLED: 'bg-muted text-muted-foreground border-border',
-};
-
-export const PAY_METHOD_LABEL: Record<PayMethod, string> = {
-  CASH: '现金',
-  WECHAT: '微信',
-  ALIPAY: '支付宝',
-  CARD: '银行卡',
-  DEBT: '赊账',
-  MEMBER_CARD: '会员卡',
-  UNIONPAY: '银联',
-  INSURANCE: '医保',
-  OTHER: '其他',
-};
 
 export interface CreateChargeDto {
   patientId: string;
@@ -164,18 +156,6 @@ export interface PayDebtDto {
   payMethod?: string;
   remark?: string;
 }
-
-export const DEBT_STATUS_LABEL: Record<string, string> = {
-  UNPAID: '未支付',
-  PARTIAL: '部分支付',
-  PAID: '已支付',
-};
-
-export const DEBT_STATUS_COLOR: Record<string, string> = {
-  UNPAID: 'bg-destructive/10 text-destructive',
-  PARTIAL: 'bg-warning/10 text-warning',
-  PAID: 'bg-success/10 text-success',
-};
 
 export interface ChargeComboListRes {
   items: ChargeCombo[];

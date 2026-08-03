@@ -12,6 +12,7 @@ import type {
   RegistrationStatus,
   RegistrationType,
   PayMethod,
+  DebtStatus,
 } from '../enums';
 
 // DB row type for better-sqlite3 compatibility
@@ -494,6 +495,40 @@ export const CHARGE_STATUS_LABEL: Record<ChargeStatus, string> = {
   PAID: '已支付',
   REFUNDED: '已退款',
   CANCELLED: '已取消',
+};
+
+export const CHARGE_STATUS_COLOR: Record<ChargeStatus, string> = {
+  UNPAID: 'bg-warning/10 text-warning border-warning/30',
+  PAID: 'bg-success/10 text-success border-success/30',
+  REFUNDED: 'bg-muted text-muted-foreground border-border',
+  PARTIAL: 'bg-primary/10 text-primary border-primary/30',
+  CANCELLED: 'bg-muted text-muted-foreground border-border',
+};
+
+export const PAY_METHOD_LABEL: Record<PayMethod, string> = {
+  CASH: '现金',
+  WECHAT: '微信',
+  ALIPAY: '支付宝',
+  CARD: '银行卡',
+  DEBT: '赊账',
+  MEMBER_CARD: '会员卡',
+  UNIONPAY: '银联',
+  INSURANCE: '医保',
+  OTHER: '其他',
+};
+
+export const DEBT_STATUS_LABEL: Record<DebtStatus, string> = {
+  UNPAID: '未支付',
+  PARTIAL: '部分支付',
+  PAID: '已支付',
+  CANCELLED: '已取消',
+};
+
+export const DEBT_STATUS_COLOR: Record<DebtStatus, string> = {
+  UNPAID: 'bg-destructive/10 text-destructive',
+  PARTIAL: 'bg-warning/10 text-warning',
+  PAID: 'bg-success/10 text-success',
+  CANCELLED: 'bg-muted text-muted-foreground',
 };
 
 export const EQUIPMENT_STATUS_LABEL: Record<EquipmentStatus, string> = {
