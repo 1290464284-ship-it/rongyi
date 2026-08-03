@@ -5,7 +5,9 @@
 - `release-v2/Dental Clinic V2 Setup 2.0.0.exe`
 - `release-v2/Dental Clinic V2 Setup 2.0.0.exe.blockmap`
 - `release-v2/latest.yml`
-- `release-v2/win-unpacked/Dental Clinic V2.exe`
+
+`release-v2/win-unpacked/` is a transient electron-builder output and is
+normally removed from the workspace after the GitHub Release is verified.
 
 ## Install
 
