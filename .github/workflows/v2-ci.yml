@@ -12,10 +12,6 @@ on:
       - 'docs/refactor-v2-*'
       - '.github/workflows/v2-ci.yml'
 
-defaults:
-  run:
-    working-directory: source
-
 jobs:
   verify:
     runs-on: ubuntu-latest

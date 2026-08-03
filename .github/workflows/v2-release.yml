@@ -8,10 +8,6 @@ on:
 permissions:
   contents: write
 
-defaults:
-  run:
-    working-directory: source
-
 jobs:
   build:
     runs-on: windows-latest
@@ -69,6 +65,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            source/apps/v2/release-v2/*.exe
-            source/apps/v2/release-v2/*.blockmap
-            source/apps/v2/release-v2/latest.yml
+            apps/v2/release-v2/*.exe
+            apps/v2/release-v2/*.blockmap
+            apps/v2/release-v2/latest.yml
