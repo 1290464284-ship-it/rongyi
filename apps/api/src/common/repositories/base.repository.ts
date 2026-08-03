@@ -146,6 +146,9 @@ export class BaseRepository {
     pageSize: number,
     page: number,
   ): BuiltPaginatedQuery {
+    if (!validateColumnName(sortBy)) {
+      throw new Error(`无效的排序字段: ${sortBy}`);
+    }
     const countSql = `SELECT COUNT(*) as total FROM ${tableName}${whereClause}`;
     const countParams = [...params];
 

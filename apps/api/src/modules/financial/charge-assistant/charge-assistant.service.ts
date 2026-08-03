@@ -738,7 +738,7 @@ export class ChargeAssistantService extends BaseService<RuleRecord> {
           );
           inserted++;
         } catch (e) {
-          console.warn('[buildMockDemoRules] insert failed for', ruleKeyStr, e instanceof Error ? e.message : String(e));
+          this.chargeAssistantLogger.warn(`[buildMockDemoRules] insert failed for ${ruleKeyStr}: ${e instanceof Error ? e.message : String(e)}`);
         }
       }
     });

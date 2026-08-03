@@ -184,8 +184,8 @@ export class MedicalRecordsService extends BaseService<MedicalRecord> {
     // 审批状态更新 + 病历解锁必须原子化，避免审批通过但病历未解锁的不一致状态
     this.dbService.transaction((db) => {
       const result = db.prepare(
-        `UPDATE RecordModifyRequest SET status = ?, reviewerId = ?, reviewRemark = ?, reviewedAt = ? WHERE id = ? AND status = '${ModifyRequestStatus.PENDING}'${clinicClause}`
-      ).run(dto.status, userId || null, dto.reviewRemark || null, now, id, ...clinicParams);
+        `UPDATE RecordModifyRequest SET status = ?, reviewerId = ?, reviewRemark = ?, reviewedAt = ? WHERE id = ? AND status = ?${clinicClause}`
+      ).run(dto.status, userId || null, dto.reviewRemark || null, now, id, ModifyRequestStatus.PENDING, ...clinicParams);
       if (result.changes === 0) {
         throw new BusinessValidationException("该请求已被其他审批者处理");
       }

@@ -135,3 +135,49 @@ Remove-Item $drill -Recurse -Force
 ```
 
 > 建议频率：每季度或重大 schema 变更后演练一次，并更新本文档的耗时记录。
+
+---
+
+## 六、加密密钥离线另存指引
+
+数据库中的敏感字段（患者身份证、手机号等）使用 `ENCRYPTION_KEY` 进行字段级加密。**如果密钥丢失，已加密数据将永久不可读。** 因此必须在离线介质上另存密钥副本。
+
+### 密钥位置
+
+- 运行时密钥存放在 `apps/api/.env` 的 `ENCRYPTION_KEY=` 行（64 位十六进制字符串）
+- 首次启动时由 `scripts/setup-env.ts` 自动生成并写入 `.env`，权限 `0600`
+
+### 离线另存步骤（运维手动执行，不进 git）
+
+```powershell
+# 1. 读取当前加密密钥
+$key = Select-String -Path 'source\apps\api\.env' -Pattern '^ENCRYPTION_KEY=' | ForEach-Object { $_.Line.Split('=')[1] }
+if (-not $key) { throw '未找到 ENCRYPTION_KEY，请确认 .env 文件存在' }
+
+# 2. 写入离线介质（U 盘、纸质二维码等）
+#    方式 A：保存到加密 U 盘
+$key | Out-File -FilePath 'E:\dental-encryption-key.txt' -Encoding ascii
+
+#    方式 B：打印为纸质（推荐，抗磁盘故障）
+#    将 $key 值手抄或打印后存放于保险箱
+
+# 3. 同时备份 JWT_SECRET（丢失后所有用户需重新登录）
+$jwt = Select-String -Path 'source\apps\api\.env' -Pattern '^JWT_SECRET=' | ForEach-Object { $_.Line.Split('=')[1] }
+$jwt | Out-File -FilePath 'E:\dental-jwt-secret.txt' -Encoding ascii
+
+# 4. 验证：从离线介质读回并比对
+$restored = Get-Content 'E:\dental-encryption-key.txt'
+if ($restored.Trim() -ne $key) { throw '密钥比对不一致，请重新备份' }
+Write-Host '✓ 密钥离线备份验证通过'
+```
+
+### 恢复场景
+
+| 场景 | 需要密钥？ | 说明 |
+|------|-----------|------|
+| 数据库备份恢复（同机） | 否 | `.env` 仍在，密钥不变 |
+| 数据库备份恢复（新机） | **是** | 必须在新机 `.env` 中写入相同 `ENCRYPTION_KEY`，否则加密字段不可读 |
+| 数据库文件损坏 + 备份恢复 | 否 | 密钥未变，恢复后加密字段正常可读 |
+| `.env` 丢失 | **是** | 从离线介质恢复 `ENCRYPTION_KEY` 写入新 `.env` |
+
+> **重要**：每次轮转 `ENCRYPTION_KEY` 后（如通过 `LEGACY_ENCRYPTION_KEY` 迁移），必须重新执行离线另存步骤。
