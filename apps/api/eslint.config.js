@@ -30,12 +30,12 @@ const baseRules = {
       ignoreRestSiblings: true,
     },
   ],
-  // TODO: 启用 strictNullChecks 后重新开启以下规则
+  // strictNullChecks 已全量开启，以下规则保持关闭因项目仍有大量隐式 undefined 场景
   '@typescript-eslint/prefer-nullish-coalescing': 'off',
   '@typescript-eslint/no-unnecessary-condition': 'off',
   // no-explicit-any 已启用为 error，与 .qoder/rules/no-typescript-any.md 保持一致
   // 测试文件通过下方 overrides 豁免（规则允许测试中使用 as any 进行 mock）
-  // no-unsafe-* 规则需要 strictNullChecks 启用后才能正确工作
+  // no-unsafe-* 规则在 type-aware linting 下由 @typescript-eslint 管理
   '@typescript-eslint/no-unsafe-assignment': 'off',
   '@typescript-eslint/no-unsafe-member-access': 'off',
   '@typescript-eslint/no-unsafe-argument': 'off',
@@ -101,8 +101,8 @@ const baseRules = {
   'sonarjs/no-empty-test-file': 'off',
   'sonarjs/no-empty-test-suite': 'off',
   'sonarjs/no-exclusive-tests': 'off',
-  'sonarjs/no-skipped-tests': 'off',
-  'sonarjs/no-incomplete-assertions': 'off',
+  'sonarjs/no-skipped-tests': 'warn',
+  'sonarjs/no-incomplete-assertions': 'warn',
   'sonarjs/todo-tag': 'off',
   'sonarjs/no-slow-regex': 'off',
   'sonarjs/no-useless-intersection': 'off',

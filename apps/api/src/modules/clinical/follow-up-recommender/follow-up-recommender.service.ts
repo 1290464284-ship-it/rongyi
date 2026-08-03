@@ -455,24 +455,20 @@ export class FollowUpRecommenderService extends BaseService<FollowUpTemplateEnti
       .map(row => row.pid ?? row.patientId ?? (row as { 'V.patientId'?: string })['V.patientId'])
       .filter((v): v is string => typeof v === 'string' && v.length > 0);
 
-    const mdb = this.dbService as unknown as { getTableData?: (t: string) => Array<Record<string, unknown>> };
-    const hasTableData = typeof mdb.getTableData === 'function';
-    const getData = (t: string) => hasTableData ? mdb.getTableData!(t) : this.dbService.prepare(`SELECT * FROM ${t}`).all() as Array<Record<string, unknown>>;
+    // 用 SQL 聚合替代全表加载，避免 N+1 和 SELECT * 无 deletedAt 过滤
+    const recentFollowUpRows = this.dbService.prepare(
+      `SELECT DISTINCT patientId FROM FollowUp
+       WHERE clinicId = ? AND deletedAt IS NULL AND createdAt >= ?`,
+    ).all(clinicId, ninetyDaysAgo) as Array<{ patientId: string }>;
 
-    const allFollowUps = getData('FollowUp') as Array<{ patientId: string; createdAt?: string; clinicId?: string; deletedAt?: string }>;
-    const allAssignments = getData('FollowUpAssignment') as Array<{ patientId: string; createdAt?: string; clinicId?: string; deletedAt?: string }>;
+    const recentAssignmentRows = this.dbService.prepare(
+      `SELECT DISTINCT patientId FROM FollowUpAssignment
+       WHERE clinicId = ? AND deletedAt IS NULL AND createdAt >= ?`,
+    ).all(clinicId, ninetyDaysAgo) as Array<{ patientId: string }>;
 
     const recentPatients = new Set<string>();
-    for (const fu of allFollowUps) {
-      if (fu.deletedAt || fu.clinicId !== clinicId) continue;
-      const created = (fu.createdAt ?? '').slice(0, 10);
-      if (created >= ninetyDaysAgo) recentPatients.add(fu.patientId);
-    }
-    for (const a of allAssignments) {
-      if (a.deletedAt || a.clinicId !== clinicId) continue;
-      const created = (a.createdAt ?? '').slice(0, 10);
-      if (created >= ninetyDaysAgo) recentPatients.add(a.patientId);
-    }
+    for (const fu of recentFollowUpRows) recentPatients.add(fu.patientId);
+    for (const a of recentAssignmentRows) recentPatients.add(a.patientId);
 
 
     const filteredPatients = normalizedPids
