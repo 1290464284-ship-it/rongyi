@@ -10,6 +10,7 @@ apps/v2/logs/
 .env
 .env.*.local
 certs/
+.vscode/
 *.tsbuildinfo
 *.sqlite
 *.sqlite-wal
