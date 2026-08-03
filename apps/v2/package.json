@@ -72,6 +72,7 @@
   "build": {
     "appId": "com.dental.v2",
     "productName": "Dental Clinic V2",
+    "artifactName": "Dental-Clinic-V2-Setup-${version}.${ext}",
     "directories": {
       "output": "release-v2"
     },
