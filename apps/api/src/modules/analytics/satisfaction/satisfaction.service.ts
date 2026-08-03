@@ -501,7 +501,7 @@ export class SatisfactionService {
       }
       const npsVal = ((p - d) / Math.max(1, surveys.length)) * 100;
       const nameRow = this.dbService.prepare(
-        `SELECT name FROM User WHERE id = ? AND clinicId = ?`
+        `SELECT name FROM User WHERE id = ? AND clinicId = ? AND deletedAt IS NULL`
       ).get(doctorId, clinicId) as { name: string | null } | undefined;
       ranked.push({
         doctorId,

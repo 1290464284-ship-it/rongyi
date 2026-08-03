@@ -289,6 +289,7 @@ export class MedicalPhraseService extends BaseService<MedicalRecordPhraseEntity>
         db.prepare(
           `UPDATE MedicalRecordPhrase SET pinOrder = ?, updatedAt = ? WHERE id = ?`
         ).run(newPin, now, existingCopy.id);
+        // soft-delete-exempt: 写后读取刚更新的记录，id 已确认存在且未删除
         const updated = db.prepare(
           `SELECT * FROM MedicalRecordPhrase WHERE id = ?`
         ).get(existingCopy.id) as MedicalRecordPhraseEntity;
@@ -324,6 +325,7 @@ export class MedicalPhraseService extends BaseService<MedicalRecordPhraseEntity>
         afterData: { copiedFromId: phraseId, pinOrder: newPin, action: 'clone' },
       });
 
+      // soft-delete-exempt: 写后读取刚创建的记录，id 已确认存在且未删除
       return db.prepare(
         `SELECT * FROM MedicalRecordPhrase WHERE id = ?`
       ).get(newId) as MedicalRecordPhraseEntity;
