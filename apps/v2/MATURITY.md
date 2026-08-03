@@ -77,6 +77,8 @@
 - Deliverable release artifacts and post-install verification documented in RELEASE.md.
 - Free internal release path with temporary self-signed certificate, package
   verification, update metadata, and installer smoke.
+- GitHub Actions internal release workflow publishes self-signed installers to
+  `v2-internal-*` tags without CA secrets or public-signature verification.
 - Local full smoke runner that starts API and Web, then runs API smoke, UI
   smoke, and load smoke.
 

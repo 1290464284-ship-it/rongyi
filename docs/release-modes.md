@@ -26,6 +26,14 @@ pnpm --filter @dental/v2 electron:dist:internal
 
 产物位于 `apps/v2/release-v2/`。因为证书不受 Windows 信任，首次运行会显示“未知发布者”，需要选择“更多信息”后“仍要运行”。这只应在你控制的电脑上使用，不适合作为公开软件分发。
 
+如果希望把内部版放到 GitHub Release 上，方便多台受控电脑下载，可以在 GitHub Actions 页面手动运行 `V2 Internal Release` workflow：
+
+1. 输入 `version`，例如 `2.1.4`。
+2. 保持 `run_installer_smoke` 为 `true`。
+3. 运行后会在 `v2-internal-2.1.4` tag 下生成安装包、blockmap 和 `latest.yml`。
+
+该 workflow 不需要 CA 证书或付费签名服务，但发布的是自签名内部版，Windows 仍会显示未知发布者。
+
 如果 `electron-builder` 从 GitHub 下载 Electron/签名工具超时，可先设置国内镜像再执行：
 
 ```powershell
