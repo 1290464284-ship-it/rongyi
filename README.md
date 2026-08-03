@@ -65,3 +65,7 @@ Electron 主进程源码为 `apps/web/electron/main.ts`，`main.cjs` 为编译�
 ## 说明
 
 本项目已从早期 Postgres/Prisma 方案迁移到本地 SQLite。历史 Docker/Postgres 文档不再作为主路径。
+
+## Agent 指引
+
+AI Agent 请参阅 [AGENTS.md](./AGENTS.md) 了解项目约束、验证命令、模块映射与交付流程。
