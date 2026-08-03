@@ -34,6 +34,10 @@ pnpm --filter @dental/v2 electron:dist:internal
 
 该 workflow 不需要 CA 证书或付费签名服务，但发布的是自签名内部版，Windows 仍会显示未知发布者。
 
+当前已验证的内部 Release：
+
+[v2-internal-2.1.4](https://github.com/1290464284-ship-it/rongyi/releases/tag/v2-internal-2.1.4)
+
 如果 `electron-builder` 从 GitHub 下载 Electron/签名工具超时，可先设置国内镜像再执行：
 
 ```powershell

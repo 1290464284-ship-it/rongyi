@@ -79,6 +79,8 @@
   verification, update metadata, and installer smoke.
 - GitHub Actions internal release workflow publishes self-signed installers to
   `v2-internal-*` tags without CA secrets or public-signature verification.
+- Remote internal release `v2-internal-2.1.4` published to GitHub with
+  installer, blockmap, and `latest.yml`, and remote update metadata verified.
 - Local full smoke runner that starts API and Web, then runs API smoke, UI
   smoke, and load smoke.
 
