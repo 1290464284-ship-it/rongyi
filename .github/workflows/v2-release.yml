@@ -59,6 +59,36 @@ jobs:
       - name: Installer smoke
         run: pnpm --filter @dental/v2 run installer:smoke
 
+      - name: Upgrade smoke
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          V2_RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          $releases = @(gh release list --json tagName --jq '.[].tagName' |
+            Where-Object { $_ -like 'v2-*' })
+          $current = $env:V2_RELEASE_TAG
+          $index = [array]::IndexOf($releases, $current)
+          if ($index -lt 0 -or $index -ge $releases.Count - 1) {
+            Write-Host "No previous release available; skipping upgrade smoke"
+            exit 0
+          }
+          $previous = $releases[$index + 1]
+          $dir = Join-Path $env:RUNNER_TEMP 'v2-upgrade'
+          if (Test-Path -LiteralPath $dir) {
+            [System.IO.Directory]::Delete($dir, $true)
+          }
+          New-Item -ItemType Directory -Path $dir | Out-Null
+          gh release download $previous --pattern '*.exe' --dir $dir
+          $previousExe = Get-ChildItem -LiteralPath $dir -Filter '*.exe' |
+            Select-Object -First 1 -ExpandProperty FullName
+          $currentExe = Get-ChildItem -LiteralPath apps/v2/release-v2 -Filter '*.exe' |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1 -ExpandProperty FullName
+          powershell -ExecutionPolicy Bypass -File apps/v2/scripts/upgrade-smoke.ps1 `
+            -CurrentInstallerPath $currentExe `
+            -PreviousInstallerPath $previousExe
+
       - name: Generate and verify update metadata
         run: |
           pnpm --filter @dental/v2 run update:metadata

@@ -58,6 +58,9 @@ pnpm --filter @dental/v2 run upgrade:smoke `
   -PreviousInstallerPath <previous-installer.exe>
 ```
 
+The release workflow also runs upgrade smoke automatically on Windows when a
+previous `v2-*` release exists.
+
 ## Signing
 
 The `v2-release.yml` workflow requires `CSC_LINK` and `CSC_KEY_PASSWORD` GitHub

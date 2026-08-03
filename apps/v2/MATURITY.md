@@ -54,6 +54,8 @@
   uninstall.
 - Upgrade smoke: reinstall over an existing installation while preserving
   user data, then verify the upgraded API.
+- Release workflow downloads the previous `v2-*` installer and runs the
+  upgrade smoke on a fresh Windows runner when a previous release exists.
 - Charge discount support with cents validation.
 - Follow-up adherence scoring endpoint.
 - Automatic backup failure creates a scheduler task business alert.
