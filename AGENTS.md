@@ -40,6 +40,8 @@ pnpm --filter @dental/v2 run verify:remote
 pnpm --filter @dental/v2 run license:check
 pnpm --filter @dental/v2 security:scan
 pnpm --filter @dental/v2 restore:backup <backup> <target.sqlite>
+pnpm --filter @dental/v2 run installer:smoke
+pnpm --filter @dental/v2 run upgrade:smoke -CurrentInstallerPath <new> -PreviousInstallerPath <previous>
 ```
 
 Root aliases are available:
