@@ -1,5 +1,16 @@
 # AGENTS.md — 口腔诊所管理系统 (dental-clinic)
 
+## 项目概述
+
+口腔诊所管理系统 — 面向小型私立诊所（<20人）的本地私有部署 Web 软件，替代遗留桌面软件（艾登特）。四阶段规划，目前已超越 Phase 1，全模块实现。
+
+- **前端**：React 19 + TypeScript + Vite + TailwindCSS 4 + 自定义 UI 组件库 + TanStack Query + Zustand
+- **后端**：NestJS + better-sqlite3（SQLite）+ 原生 SQL + Passport JWT
+- **共享**：`@dental/shared` 类型/枚举包
+- **部署**：Electron 桌面应用（单机本地），可选 LAN 浏览器访问，无云依赖
+- **测试**：Vitest（前端）、Jest（后端）
+- **包管理**：pnpm 11+（workspaces）、Node 20
+
 ## 项目结构速览
 
 ```
@@ -192,3 +203,11 @@ source/
 - 要改共享类型 → `packages/shared/src/`
 - 要改认证/权限 → `apps/api/src/modules/auth/` + `apps/api/src/common/guards/`
 - 要改全局中间件/拦截器 → `apps/api/src/common/`
+
+## 关键设计决策
+
+- **牙位图全局联动**：SVG 32 牙位 FDI 编号图谱作为跨模块过滤器——选择牙位可查看其治疗历史、影像和笔记
+- **就诊时间线**：患者详情页展示 预约→就诊→治疗→收费 的时序闭环
+- **营收发现**：Phase 4 每日扫描未跟进治疗计划、逾期收费和流失患者，展示为仪表盘待办
+- **本地优先部署**：Electron 桌面应用 + 可选 LAN 浏览器访问，无云依赖
+- **idCard 加密**：患者身份证存储加密，具体方案在实现时确定
