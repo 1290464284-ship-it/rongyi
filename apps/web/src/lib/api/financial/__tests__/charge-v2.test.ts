@@ -12,7 +12,7 @@ import {
   useDebts,
   useDebtStats,
   usePayDebt,
-} from '@/lib/api/financial/charge-v2';
+} from '@/lib/api/financial/charge';
 
 vi.mock('@/lib/api/api', () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },

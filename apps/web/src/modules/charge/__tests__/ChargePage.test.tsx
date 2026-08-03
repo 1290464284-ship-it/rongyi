@@ -9,7 +9,7 @@ const mockUseCreateCharge = vi.fn();
 const mockUsePayCharge = vi.fn();
 const mockUseRefundCharge = vi.fn();
 
-vi.mock('@/lib/api/financial/charges', () => ({
+vi.mock('@/lib/api/financial/charge', () => ({
   useCharges: (...args: unknown[]) => mockUseCharges(...args),
   useCreateCharge: () => mockUseCreateCharge(),
   usePayCharge: () => mockUsePayCharge(),

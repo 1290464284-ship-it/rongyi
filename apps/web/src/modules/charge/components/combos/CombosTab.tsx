@@ -34,7 +34,7 @@ import {
   useUpdateChargeCombo,
   useDeleteChargeCombo,
   type ChargeCombo,
-} from '@/lib/api/financial/charge-v2';
+} from '@/lib/api/financial/charge';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { ComboDialog, COMBO_CATEGORIES } from './ComboDialog';

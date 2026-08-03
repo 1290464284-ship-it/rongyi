@@ -8,7 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import type { Charge } from '@/lib/api/financial/charges';
+import type { Charge } from '@/lib/api/financial/charge';
 import { LoadingButton } from '@/components/ui/loading';
 import { toastService } from '@/lib/utils/toast-service';
 

@@ -1,5 +1,5 @@
 import { Badge } from '@/components/ui/badge';
-import { CHARGE_STATUS_LABEL, CHARGE_STATUS_COLOR, PAY_METHOD_LABEL } from '@/lib/api/financial/charges';
+import { CHARGE_STATUS_LABEL, CHARGE_STATUS_COLOR, PAY_METHOD_LABEL } from '@/lib/api/financial/charge';
 import type { Charge } from '@/lib/types/charge.types';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';

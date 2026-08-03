@@ -10,7 +10,7 @@ import { useAppointments } from '@/lib/api/clinical/appointments';
 import { useVisits } from '@/lib/api/clinical/visits';
 import { useTreatments } from '@/lib/api/clinical/treatments';
 import { useToothRecords } from '@/lib/api/content/tooth-records';
-import { useCharges } from '@/lib/api/financial/charges';
+import { useCharges } from '@/lib/api/financial/charge';
 import { usePrescriptions } from '@/lib/api/content/prescriptions';
 import { useTreatmentPlans } from '@/lib/api/clinical/treatment-plans';
 import { useImagingList } from '@/lib/api/content/imaging';

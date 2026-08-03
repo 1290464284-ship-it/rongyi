@@ -20,7 +20,7 @@ import {
   CHARGE_STATUS_LABEL,
   type ChargeStatus,
   type Charge,
-} from '@/lib/api/financial/charges';
+} from '@/lib/api/financial/charge';
 import { TableLoading, EmptyState } from '@/components/ui/loading';
 import { QueryErrorAlert } from '@/components/QueryErrorAlert';
 import { VirtualChargeRow, ROW_HEIGHT } from './components/VirtualChargeRow';

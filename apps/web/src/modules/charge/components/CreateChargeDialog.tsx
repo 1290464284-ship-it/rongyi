@@ -9,7 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import type { CreateChargeDto, Charge } from '@/lib/api/financial/charges';
+import type { CreateChargeDto, Charge } from '@/lib/api/financial/charge';
 import { PatientSelector } from '@/components/patient/PatientSelector';
 import { LoadingButton } from '@/components/ui/loading';
 import { toastService } from '@/lib/utils/toast-service';
