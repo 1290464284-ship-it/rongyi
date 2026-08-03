@@ -17,6 +17,10 @@ export function InventoryPage() {
     queryKey: ['inventory-low'],
     queryFn: () => apiRequest<Array<Record<string, unknown>>>('/inventory/low-stock'),
   });
+  const expiring = useQuery({
+    queryKey: ['inventory-expiring'],
+    queryFn: () => apiRequest<Array<Record<string, unknown>>>('/inventory/expiring?days=30'),
+  });
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -26,7 +30,7 @@ export function InventoryPage() {
         body: JSON.stringify({ itemId, type, quantity: Number(quantity) }),
       });
       setMessage('Transaction recorded');
-      await Promise.all([query.refetch(), lowStock.refetch()]);
+      await Promise.all([query.refetch(), lowStock.refetch(), expiring.refetch()]);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Transaction failed');
     }
@@ -74,6 +78,17 @@ export function InventoryPage() {
           <tbody>
             {lowStock.data?.map((row) => (
               <tr key={String(row.id)}><td>{String(row.name)}</td><td>{String(row.stock)}</td><td>{String(row.minStock)}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <h2>Expiring within 30 days</h2>
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>Name</th><th>Expire date</th><th>Stock</th></tr></thead>
+          <tbody>
+            {expiring.data?.map((row) => (
+              <tr key={String(row.id)}><td>{String(row.name ?? row.code ?? '')}</td><td>{String(row.expireDate ?? '')}</td><td>{String(row.stock ?? '')}</td></tr>
             ))}
           </tbody>
         </table>

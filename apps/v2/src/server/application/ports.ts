@@ -155,6 +155,8 @@ export interface AuthUserRecord {
   loginAttempts: number;
   lockedUntil?: string | null;
   tokenVersion: number;
+  refreshToken?: string | null;
+  refreshTokenExpiresAt?: string | null;
   createdAt: string;
   updatedAt: string;
   deletedAt?: string | null;
@@ -163,9 +165,13 @@ export interface AuthUserRecord {
 export interface AuthRepository {
   findByUsername(username: string): AuthUserRecord | null;
   findById(id: string): AuthUserRecord | null;
+  findByRefreshTokenHash(tokenHash: string): AuthUserRecord | null;
   updateLoginAttempts(id: string, attempts: number, lockedUntil: string | null, updatedAt: string): void;
   resetLoginAttempts(id: string, updatedAt: string): void;
   updatePassword(id: string, passwordHash: string, updatedAt: string): void;
+  updateRefreshToken(id: string, tokenHash: string, expiresAt: string, updatedAt: string): void;
+  clearRefreshToken(id: string, updatedAt: string): void;
+  markRefreshTokenUsed(tokenHash: string, userId: string, usedAt: string): void;
 }
 
 export interface PurchaseOrderRecord {

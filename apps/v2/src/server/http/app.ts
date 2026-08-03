@@ -5,6 +5,7 @@ import type Database from 'better-sqlite3';
 import {
   AppointmentService,
   AlertService,
+  AuditService,
   AuthService,
   BackupService,
   BulkImportService,
@@ -21,6 +22,7 @@ import {
   PrintService,
   ProcessingOrderService,
   PurchaseOrderService,
+  SearchService,
   SatisfactionService,
   StatsService,
   SyncService,
@@ -53,6 +55,7 @@ export interface AppDependencies {
 export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependencies): Express {
   const app = express();
   const authService = new AuthService(db);
+  const audit = new AuditService(db);
   const appointments = new AppointmentService(db);
   const charges = new ChargeService(db);
   const inventory = new InventoryService(db);
@@ -80,6 +83,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
   const analytics = new AnalyticsService(db);
   const chargeAssistant = new ChargeAssistantService(db);
   const printTemplates = new PrintTemplateService(db);
+  const search = new SearchService(db);
 
   app.disable('x-powered-by');
   app.use(helmet());
@@ -156,7 +160,41 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
     }
   });
 
+  app.post('/api/v2/auth/refresh', async (req, res, next) => {
+    try {
+      const result = await authService.refresh(String(req.body?.refreshToken ?? ''));
+      res.json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/v2/auth/logout', async (req, res, next) => {
+    try {
+      await authService.logout(String(req.body?.refreshToken ?? ''));
+      res.json({ success: true, data: { loggedOut: true } });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.use('/api/v2', authMiddleware(authService));
+  app.use('/api/v2', (req, res, next) => {
+    res.on('finish', () => {
+      if (req.method === 'GET' || res.statusCode >= 400) return;
+      const params = req.params as Record<string, string | undefined>;
+      audit.log({
+        userId: req.context?.userId ?? null,
+        action: `${req.method} ${req.path}`,
+        target: params.id ?? params.resource ?? null,
+        detail: params.resource ? JSON.stringify({ resource: params.resource }) : null,
+        ip: req.ip,
+        traceId: req.traceId,
+        clinicId: req.context?.clinicId ?? null,
+      });
+    });
+    next();
+  });
 
   app.get('/api/v2/resource-meta', async (req, res) => {
     res.json({ success: true, data: listAllResources(db) });
@@ -513,6 +551,14 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
     }
   });
 
+  app.get('/api/v2/satisfaction/doctor-rankings', async (req, res, next) => {
+    try {
+      res.json({ success: true, data: satisfaction.doctorRankings() });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.post('/api/v2/inventory/transactions', async (req, res, next) => {
     try {
       const result = await inventory.createTransaction(
@@ -529,6 +575,15 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
   app.get('/api/v2/inventory/low-stock', async (req, res, next) => {
     try {
       res.json({ success: true, data: inventory.lowStock() });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/v2/inventory/expiring', async (req, res, next) => {
+    try {
+      const days = Number(req.query.days ?? 30);
+      res.json({ success: true, data: inventory.expiringSoon(Number.isFinite(days) ? days : 30) });
     } catch (error) {
       next(error);
     }
@@ -642,6 +697,15 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
     }
   });
 
+  app.post('/api/v2/sync/cleanup', async (req, res, next) => {
+    try {
+      const before = typeof req.body?.before === 'string' ? req.body.before : undefined;
+      res.json({ success: true, data: sync.cleanup(before) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get('/api/v2/hr/attendance', async (req, res, next) => {
     try {
       res.json({
@@ -695,6 +759,27 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
     }
   });
 
+  app.post('/api/v2/backups/cleanup', async (req, res, next) => {
+    try {
+      const maxKeep = Number(req.body?.maxKeep ?? 30);
+      if (!Number.isFinite(maxKeep) || maxKeep < 1 || maxKeep > 365) {
+        res.status(400).json({ success: false, code: 'VALIDATION_ERROR', message: 'maxKeep must be between 1 and 365' });
+        return;
+      }
+      res.json({ success: true, data: backups.cleanup(maxKeep) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/v2/backups/:filename/restore', async (req, res, next) => {
+    try {
+      res.json({ success: true, data: await backups.stageRestore(req.params.filename) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get('/api/v2/backups/:filename/verify', async (req, res, next) => {
     try {
       res.json({ success: true, data: await backups.verify(req.params.filename) });
@@ -710,10 +795,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
         res.json({ success: true, data: [] });
         return;
       }
-      const patients = db.prepare(
-        `SELECT id, name, phone, code FROM Patient WHERE deletedAt IS NULL AND (name LIKE ? OR phone LIKE ? OR code LIKE ?) LIMIT 20`,
-      ).all(`%${q}%`, `%${q}%`, `%${q}%`);
-      res.json({ success: true, data: patients });
+      res.json({ success: true, data: search.search(q) });
     } catch (error) {
       next(error);
     }

@@ -1,6 +1,6 @@
 {
   "name": "@dental/v2",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Dental Clinic V2 desktop application",
   "author": "Dental Clinic V2 Team",
   "private": true,
@@ -27,6 +27,7 @@
     "audit:security": "node scripts/audit.mjs",
     "security:scan": "node scripts/security-scan.mjs",
     "license:check": "node scripts/license-scan.mjs",
+    "restore:backup": "node scripts/restore-backup.mjs",
     "verify:package": "node scripts/verify-package.mjs",
     "update:metadata": "node scripts/update-metadata.mjs",
     "verify:update": "node scripts/verify-update.mjs"

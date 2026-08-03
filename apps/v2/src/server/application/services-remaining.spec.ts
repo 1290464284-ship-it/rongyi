@@ -113,6 +113,7 @@ describe('remaining services', () => {
     const satisfaction = new SatisfactionService(db);
     expect(satisfaction.nps().score).toBeGreaterThanOrEqual(0);
     expect(satisfaction.trend().length).toBeGreaterThanOrEqual(1);
+    expect(satisfaction.doctorRankings()).toBeInstanceOf(Array);
   });
 
   it('reports failed bulk import rows', async () => {

@@ -41,3 +41,11 @@ The workflow fails before packaging when either secret is missing.
 The repository is currently configured with the local self-signed
 `certs/signing-cert.pfx` to keep the release pipeline green. Replace it with a
 CA-issued code signing certificate before public distribution.
+
+## Offline Restore
+
+```powershell
+pnpm --filter @dental/v2 restore:backup <backup.sqlite|backup.sqlite.enc> <target.sqlite>
+```
+
+For encrypted backups, set `V2_BACKUP_KEY` to the same value used by the app.

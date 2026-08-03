@@ -20,7 +20,11 @@ async function main() {
     method: 'POST',
     body: JSON.stringify({ username: 'admin', password: 'REDACTED' }),
   });
-  const headers = { authorization: `Bearer ${login.token}` };
+  const session = await request('/auth/refresh', {
+    method: 'POST',
+    body: JSON.stringify({ refreshToken: login.refreshToken }),
+  });
+  const headers = { authorization: `Bearer ${session.token}` };
 
   const health = await request('/health');
   if (health.status !== 'ok') throw new Error('health failed');
@@ -84,6 +88,7 @@ async function main() {
     body: JSON.stringify({ itemId: 'inventory-demo-001', type: 'OUT', quantity: 1 }),
   });
   await request('/inventory/low-stock', { headers });
+  await request('/inventory/expiring?days=30', { headers });
 
   const card = await request('/resources/memberCards', {
     method: 'POST',
@@ -126,7 +131,7 @@ async function main() {
   await request(`/registrations/${registration.id}/status`, {
     method: 'PATCH',
     headers,
-    body: JSON.stringify({ status: 'STARTED' }),
+    body: JSON.stringify({ status: 'IN_PROGRESS' }),
   });
   await request(`/registrations/${registration.id}/status`, {
     method: 'PATCH',
@@ -142,11 +147,22 @@ async function main() {
 
   const backup = await request('/backups', { method: 'POST', headers });
   await request(`/backups/${encodeURIComponent(backup.filename)}/verify`, { headers });
+  const restore = await request(`/backups/${encodeURIComponent(backup.filename)}/restore`, {
+    method: 'POST',
+    headers,
+  });
+  if (!restore.stagedPath) throw new Error('backup restore staging failed');
+  await request('/backups/cleanup', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ maxKeep: 10 }),
+  });
   await request('/stats/dashboard', { headers });
   await request('/stats/revenue?groupBy=month', { headers });
   await request('/stats/doctor-workload', { headers });
   await request('/satisfaction/nps', { headers });
   await request('/satisfaction/trend', { headers });
+  await request('/satisfaction/doctor-rankings', { headers });
   await request('/analytics/rfm', { headers });
   await request('/analytics/churn', { headers });
   await request('/analytics/doctor-anomalies', { headers });
@@ -165,6 +181,11 @@ async function main() {
   });
   await request(`/wechat/${wechat.id}/send`, { method: 'POST', headers });
   await request('/sync/pull?since=2020-01-01T00:00:00.000Z&deviceId=smoke', { headers });
+  await request('/sync/cleanup', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({}),
+  });
   await request('/hr/attendance', { headers });
   await request('/system/business-alerts', { headers });
   await request('/notifications', { headers });
@@ -188,6 +209,11 @@ async function main() {
     }),
   });
   if (imported.imported !== 1) throw new Error('bulk import failed');
+
+  await request('/auth/logout', {
+    method: 'POST',
+    body: JSON.stringify({ refreshToken: session.refreshToken }),
+  });
 
   console.log('API smoke passed', { resources: resources.length, patient: patient.id, charge: charge.id });
 }

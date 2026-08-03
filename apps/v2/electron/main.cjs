@@ -47,9 +47,9 @@ function crashLog(message, error) {
   }
 }
 
-function getOrCreateSecret() {
+function getOrCreateSecret(fileName = 'jwt-secret') {
   const secretsDir = path.join(app.getPath('userData'), 'secrets');
-  const secretPath = path.join(secretsDir, 'jwt-secret');
+  const secretPath = path.join(secretsDir, fileName);
   fs.mkdirSync(secretsDir, { recursive: true });
   try {
     const existing = fs.readFileSync(secretPath, 'utf8').trim();
@@ -120,6 +120,7 @@ async function startApi() {
       V2_LEGACY_DB_PATH: path.join(legacyBase, 'dental.sqlite'),
       V2_LEGACY_SCHEMA_DIR: path.join(legacyBase, 'schema'),
       V2_JWT_SECRET: getOrCreateSecret(),
+      V2_BACKUP_KEY: getOrCreateSecret('backup-key'),
       ELECTRON_RUN_AS_NODE: '1',
     },
     stdio: 'ignore',

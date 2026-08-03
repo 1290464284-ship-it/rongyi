@@ -5,6 +5,7 @@ import { createDatabase, seedDatabase, syncLegacySchema } from './infrastructure
 import { Logger } from './infrastructure/logger';
 import { runMigrations } from './infrastructure/migrations';
 import { importLegacyDatabase } from './infrastructure/legacy-import';
+import { BackupService } from './application/services';
 
 const projectRoot = process.cwd();
 const selfContainedLegacyDb = path.join(projectRoot, 'legacy', 'dental.sqlite');
@@ -50,6 +51,21 @@ server.on('error', (error) => {
   logger.error('server failed to start', { action: 'listen', port, error });
   process.exit(1);
 });
+
+const backups = new BackupService(db, dbPath, backupDir);
+const autoBackupIntervalMs = Number(process.env.V2_AUTO_BACKUP_INTERVAL_MS ?? 24 * 60 * 60 * 1000);
+const autoBackupKeep = Number(process.env.V2_AUTO_BACKUP_KEEP ?? 30);
+async function runAutoBackup(): Promise<void> {
+  try {
+    const result = await backups.create({ type: 'AUTO' });
+    const cleanup = backups.cleanup(autoBackupKeep);
+    logger.info('automatic backup completed', { action: 'auto-backup', ...result, cleanup });
+  } catch (error) {
+    logger.error('automatic backup failed', { action: 'auto-backup', error });
+  }
+}
+void runAutoBackup();
+setInterval(() => void runAutoBackup(), Math.max(60_000, autoBackupIntervalMs)).unref();
 
 function shutdown(): void {
   try {

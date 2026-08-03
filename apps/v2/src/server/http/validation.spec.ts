@@ -8,6 +8,7 @@ const definition: ResourceDefinition = {
   fields: [
     { name: 'name', type: 'text', required: true, maxLength: 5 },
     { name: 'age', type: 'number', min: 0, max: 100 },
+    { name: 'amount', type: 'money' },
     { name: 'role', type: 'enum', enumValues: ['A', 'B'] },
     { name: 'active', type: 'boolean' },
     { name: 'data', type: 'json' },
@@ -26,6 +27,7 @@ describe('validatePayload', () => {
     expect(() => validatePayload(definition, { name: 'A', age: 101 })).toThrow('age must be <= 100');
     expect(() => validatePayload(definition, { name: 'A', role: 'X' })).toThrow('role must be one of');
     expect(() => validatePayload(definition, { name: 'REDACTED' })).toThrow('exceeds max length');
+    expect(() => validatePayload(definition, { name: 'A', amount: 12.5 })).toThrow('integer amount in cents');
+    expect(validatePayload(definition, { name: 'A', amount: 1250 }).amount).toBe(1250);
   });
 });
-

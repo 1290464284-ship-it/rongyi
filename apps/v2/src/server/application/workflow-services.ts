@@ -21,16 +21,16 @@ export class ClinicalWorkflowService {
   registrationStatus(id: string, status: string, context: AppContext): Record<string, unknown> {
     const row = this.getRow('Registration', id);
     const allowed: Record<string, readonly string[]> = {
-      REGISTERED: ['TRIAGED', 'STARTED', 'CANCELLED'],
-      TRIAGED: ['STARTED', 'CANCELLED'],
-      STARTED: ['COMPLETED', 'CANCELLED'],
+      REGISTERED: ['TRIAGED', 'IN_PROGRESS', 'CANCELLED'],
+      TRIAGED: ['IN_PROGRESS', 'CANCELLED'],
+      IN_PROGRESS: ['COMPLETED', 'CANCELLED'],
       COMPLETED: [],
       CANCELLED: [],
     };
     this.assertTransition(row, allowed, status);
     const now = context.now().toISOString();
     let visitId = row.visitId ? String(row.visitId) : null;
-    if ((status === 'STARTED' || status === 'COMPLETED') && !visitId) {
+    if ((status === 'IN_PROGRESS' || status === 'COMPLETED') && !visitId) {
       visitId = randomUUID();
       this.clinicalRepository.createVisit({
         id: visitId,
@@ -50,7 +50,6 @@ export class ClinicalWorkflowService {
   visitStatus(id: string, status: string, context: AppContext): Record<string, unknown> {
     const row = this.getRow('Visit', id);
     const allowed: Record<string, readonly string[]> = {
-      REGISTERED: ['IN_PROGRESS', 'CANCELLED'],
       IN_PROGRESS: ['COMPLETED', 'CANCELLED'],
       COMPLETED: [],
       CANCELLED: [],
@@ -83,8 +82,7 @@ export class ClinicalWorkflowService {
   treatmentStatus(id: string, status: string, context: AppContext): Record<string, unknown> {
     const row = this.getRow('Treatment', id);
     const allowed: Record<string, readonly string[]> = {
-      PLANNED: ['APPROVED', 'IN_PROGRESS', 'CANCELLED'],
-      APPROVED: ['IN_PROGRESS', 'CANCELLED'],
+      PLANNED: ['IN_PROGRESS', 'CANCELLED'],
       IN_PROGRESS: ['COMPLETED', 'CANCELLED'],
       COMPLETED: [],
       CANCELLED: [],
@@ -134,24 +132,37 @@ export class ReplenishmentService {
     const items = this.db.prepare(
       'SELECT * FROM InventoryItem WHERE deletedAt IS NULL',
     ).all() as Array<Record<string, unknown>>;
-    const now = context.now().toISOString();
+    const nowDate = context.now();
+    const now = nowDate.toISOString();
+    const since = new Date(nowDate.getTime() - 90 * 86_400_000).toISOString();
+    const leadTimeDays = 7;
+    const safetyFactor = 1.5;
+    const orderCost = 50;
+    const holdingCostRate = 0.1;
     let generated = 0;
     for (const item of items) {
       const stock = Number(item.stock ?? 0);
       const minStock = Number(item.minStock ?? 0);
-      const avgDaily = Math.max(0.01, minStock / 30);
-      const rop = Math.ceil(avgDaily * 7 + avgDaily * 2);
+      const consumed = this.consumption(String(item.id), since);
+      const avgDaily = Math.max(0.01, consumed / 90);
+      const safetyStock = Math.ceil(avgDaily * safetyFactor * 2);
+      const rop = Math.ceil(avgDaily * leadTimeDays + safetyStock);
+      const annualDemand = Math.max(1, avgDaily * 365);
+      const eoq = Math.ceil(Math.sqrt((2 * annualDemand * orderCost) / holdingCostRate));
       if (stock <= rop) {
-        const suggestedQty = Math.max(1, Math.ceil(rop - stock + 1));
+        const suggestedQty = Math.max(1, Math.ceil(rop - stock + 1), eoq);
         const snapshot = {
           avgDaily,
-          leadTimeDays: 7,
-          safetyFactor: 1.5,
-          safetyStock: avgDaily * 2,
+          leadTimeDays,
+          safetyFactor,
+          safetyStock,
           rop,
+          eoq,
+          consumedLast90Days: consumed,
+          consumptionWindowDays: 90,
           stockAtCalculation: stock,
           minStockAtCalculation: minStock,
-          reason: 'ROP_BELOW_MIN',
+          reason: consumed > 0 ? 'DEMAND_BASED_ROP' : 'MIN_STOCK_BASELINE',
         };
         this.db.prepare(
           `INSERT INTO InventoryReplenishmentSuggestion (
@@ -160,13 +171,28 @@ export class ReplenishmentService {
              createdAt, updatedAt, deletedAt
            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
         ).run(
-          randomUUID(), context.clinicId ?? null, item.id, avgDaily, 7, 1.5, rop, suggestedQty,
+          randomUUID(), context.clinicId ?? null, item.id, avgDaily, leadTimeDays, safetyFactor, rop, suggestedQty,
           JSON.stringify(snapshot), now, now,
         );
         generated += 1;
       }
     }
     return { generated };
+  }
+
+  private consumption(itemId: string, since: string): number {
+    const row = this.db.prepare(
+      `SELECT COALESCE(SUM(
+         CASE
+           WHEN type = 'OUT' THEN quantity
+           WHEN type = 'ADJUST' AND quantity < 0 THEN ABS(quantity)
+           ELSE 0
+         END
+       ), 0) AS consumed
+       FROM InventoryTransaction
+       WHERE itemId = ? AND createdAt >= ? AND deletedAt IS NULL`,
+    ).get(itemId, since) as { consumed: number };
+    return Number(row.consumed ?? 0);
   }
 
   applyToPurchaseOrder(ids: string[], context: AppContext): Record<string, unknown> {

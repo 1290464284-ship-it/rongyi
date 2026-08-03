@@ -16,6 +16,7 @@ export interface LogMeta {
   target?: string;
   backupCreated?: string;
   error?: unknown;
+  [key: string]: unknown;
 }
 
 /**

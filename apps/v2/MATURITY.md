@@ -32,12 +32,23 @@
 - System operations page for bulk import and global search.
 - Patient risk workflow page for on-demand risk calculation and history.
 - Coverage threshold raised to 75/55/85/80 after reaching the line coverage target.
+- Coverage final target reached at 81.19% statements / 64.83% branches /
+  91.43% functions / 84.6% lines, and the gate was raised to 80/60/90/84.
 - Metrics persistence to `logs/metrics.json` and Electron crash log file.
 - Electron `win-unpacked` directory package verified with electron-builder.
 - NSIS Windows installer `Dental Clinic V2 Setup 2.0.0.exe` generated successfully.
 - Direct dependency license scan gate.
 - GitHub release workflow publishes installer, blockmap, and latest update metadata.
 - Optional remote crash reporting via `V2_CRASH_REPORT_URL`.
+- Rotating refresh-token sessions with logout and password-change invalidation.
+- Operation/audit logging middleware for all authenticated writes.
+- Encrypted SQLite backups, automatic backup scheduler, restore staging, and
+  retention cleanup.
+- Inventory expiry warnings and demand-based replenishment calculations.
+- Cross-resource masked search across patients, appointments, charges,
+  inventory, suppliers, and follow-ups.
+- JSON/CSV file import entry point in the desktop renderer.
+- Doctor satisfaction rankings and sync change-log cleanup.
 - Installer/package artifact verification script.
 - Local signing pipeline verified with a development self-signed certificate.
 - `latest.yml` update metadata generation and verification.
@@ -46,6 +57,5 @@
 
 ## Remaining
 
-- Raise global coverage to the final 80% target.
 - Add a clean-machine installer upgrade exercise with a real code signing certificate.
 - Verify the live GitHub Release update channel after the first signed `v2-*` tag.

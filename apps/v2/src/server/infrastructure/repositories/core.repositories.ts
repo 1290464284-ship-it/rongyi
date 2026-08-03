@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3';
+import { SystemClock } from '../clock';
 import type {
   AlertRepository,
   AnalyticsRepository,
@@ -164,6 +165,13 @@ export class SqliteAuthRepository implements AuthRepository {
     return row ? this.map(row) : null;
   }
 
+  findByRefreshTokenHash(tokenHash: string): AuthUserRecord | null {
+    const row = this.db.prepare('SELECT * FROM User WHERE refreshToken = ? AND deletedAt IS NULL').get(tokenHash) as
+      | Record<string, unknown>
+      | undefined;
+    return row ? this.map(row) : null;
+  }
+
   updateLoginAttempts(id: string, attempts: number, lockedUntil: string | null, updatedAt: string): void {
     this.db.prepare('UPDATE User SET loginAttempts = ?, lockedUntil = ?, updatedAt = ? WHERE id = ?')
       .run(attempts, lockedUntil, updatedAt, id);
@@ -179,6 +187,22 @@ export class SqliteAuthRepository implements AuthRepository {
       .run(passwordHash, updatedAt, id);
   }
 
+  updateRefreshToken(id: string, tokenHash: string, expiresAt: string, updatedAt: string): void {
+    this.db.prepare('UPDATE User SET refreshToken = ?, refreshTokenExpiresAt = ?, updatedAt = ? WHERE id = ?')
+      .run(tokenHash, expiresAt, updatedAt, id);
+  }
+
+  clearRefreshToken(id: string, updatedAt: string): void {
+    this.db.prepare('UPDATE User SET refreshToken = NULL, refreshTokenExpiresAt = NULL, updatedAt = ? WHERE id = ?')
+      .run(updatedAt, id);
+  }
+
+  markRefreshTokenUsed(tokenHash: string, userId: string, usedAt: string): void {
+    this.db.prepare(
+      'INSERT OR REPLACE INTO UsedRefreshToken (tokenHash, userId, usedAt) VALUES (?, ?, ?)',
+    ).run(tokenHash, userId, usedAt);
+  }
+
   private map(row: Record<string, unknown>): AuthUserRecord {
     return {
       id: String(row.id),
@@ -191,6 +215,8 @@ export class SqliteAuthRepository implements AuthRepository {
       loginAttempts: Number(row.loginAttempts ?? 0),
       lockedUntil: row.lockedUntil ? String(row.lockedUntil) : null,
       tokenVersion: Number(row.tokenVersion ?? 0),
+      refreshToken: row.refreshToken ? String(row.refreshToken) : null,
+      refreshTokenExpiresAt: row.refreshTokenExpiresAt ? String(row.refreshTokenExpiresAt) : null,
       createdAt: String(row.createdAt),
       updatedAt: String(row.updatedAt),
       deletedAt: row.deletedAt ? String(row.deletedAt) : null,
@@ -251,7 +277,7 @@ export class SqliteFollowUpRepository implements FollowUpRepository {
   constructor(private readonly db: Database.Database) {}
 
   reminders(): Array<Record<string, unknown>> {
-    const future = new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10);
+    const future = new SystemClock().clinicDate(Date.now() + 14 * 86_400_000);
     return this.db.prepare(
       `SELECT F.id, F.patientId, F.planDate, F.content, F.status,
               P.name AS patientName, P.phone AS patientPhone

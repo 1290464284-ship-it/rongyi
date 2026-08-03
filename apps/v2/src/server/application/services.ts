@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import Database from 'better-sqlite3';
@@ -23,6 +23,7 @@ import {
 } from '../infrastructure/repositories/core.repositories';
 import { resourceRegistry } from '../../domain/resources';
 import { withIdempotency } from '../infrastructure/idempotency';
+import { SystemClock } from '../infrastructure/clock';
 import type { AppContext, IUnitOfWork, Page, User } from '../../domain/contracts';
 import type {
   AuthRepository,
@@ -44,12 +45,37 @@ import type {
 
 const JWT_SECRET = process.env.V2_JWT_SECRET ?? 'v2-local-secret-change-me';
 const TOKEN_TTL = '8h';
+const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const BACKUP_MAGIC = Buffer.from('DENTALV2ENC1');
 
 interface TokenPayload {
   sub: string;
   clinicId: string | null;
   role: string;
   tokenVersion: number;
+}
+
+interface AuthSession {
+  token: string;
+  refreshToken: string;
+  expiresIn: number;
+  user: Omit<User, 'passwordHash'>;
+}
+
+function hashRefreshToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+function newRefreshToken(): string {
+  return randomBytes(48).toString('hex');
+}
+
+function backupEncryptionKey(): Buffer {
+  const key = process.env.V2_BACKUP_KEY;
+  if (!key) {
+    throw new Error('V2_BACKUP_KEY is required for encrypted backups');
+  }
+  return createHash('sha256').update(key).digest();
 }
 
 function rowToUser(row: AuthUserRecord | Record<string, unknown>): User {
@@ -77,7 +103,7 @@ export class AuthService {
     this.authRepository = authRepository ?? new SqliteAuthRepository(db);
   }
 
-  async login(username: string, password: string): Promise<{ token: string; user: Omit<User, 'passwordHash'> }> {
+  async login(username: string, password: string): Promise<AuthSession> {
     const row = this.authRepository.findByUsername(username);
     if (!row) throw new UnauthorizedError('Invalid username or password');
     const user = rowToUser(row);
@@ -94,8 +120,55 @@ export class AuthService {
     }
     this.authRepository.resetLoginAttempts(user.id, new Date().toISOString());
     const token = this.sign({ sub: user.id, clinicId: user.clinicId ?? null, role: user.role, tokenVersion: user.tokenVersion });
+    const refreshToken = newRefreshToken();
+    const now = new Date().toISOString();
+    this.authRepository.updateRefreshToken(
+      user.id,
+      hashRefreshToken(refreshToken),
+      new Date(Date.now() + REFRESH_TTL_MS).toISOString(),
+      now,
+    );
     const { passwordHash: _passwordHash, ...safeUser } = user;
-    return { token, user: safeUser };
+    return { token, refreshToken, expiresIn: 8 * 60 * 60, user: safeUser };
+  }
+
+  async refresh(refreshToken: string): Promise<AuthSession> {
+    if (!refreshToken) throw new UnauthorizedError('Refresh token is required');
+    const tokenHash = hashRefreshToken(refreshToken);
+    const row = this.authRepository.findByRefreshTokenHash(tokenHash);
+    if (!row) throw new UnauthorizedError('Invalid refresh token');
+    const user = rowToUser(row);
+    if (!user.active) throw new UnauthorizedError('User is disabled');
+    if (user.lockedUntil && new Date(user.lockedUntil).getTime() > Date.now()) {
+      throw new UnauthorizedError('Account is temporarily locked');
+    }
+    const expiresAt = row.refreshTokenExpiresAt ? new Date(row.refreshTokenExpiresAt).getTime() : 0;
+    if (!expiresAt || expiresAt <= Date.now()) {
+      this.authRepository.clearRefreshToken(user.id, new Date().toISOString());
+      throw new UnauthorizedError('Refresh token has expired');
+    }
+    const now = new Date().toISOString();
+    this.authRepository.markRefreshTokenUsed(tokenHash, user.id, now);
+    const nextRefreshToken = newRefreshToken();
+    this.authRepository.updateRefreshToken(
+      user.id,
+      hashRefreshToken(nextRefreshToken),
+      new Date(Date.now() + REFRESH_TTL_MS).toISOString(),
+      now,
+    );
+    const token = this.sign({ sub: user.id, clinicId: user.clinicId ?? null, role: user.role, tokenVersion: user.tokenVersion });
+    const { passwordHash: _passwordHash, ...safeUser } = user;
+    return { token, refreshToken: nextRefreshToken, expiresIn: 8 * 60 * 60, user: safeUser };
+  }
+
+  async logout(refreshToken: string): Promise<void> {
+    if (!refreshToken) return;
+    const tokenHash = hashRefreshToken(refreshToken);
+    const row = this.authRepository.findByRefreshTokenHash(tokenHash);
+    if (!row) return;
+    const now = new Date().toISOString();
+    this.authRepository.markRefreshTokenUsed(tokenHash, row.id, now);
+    this.authRepository.clearRefreshToken(row.id, now);
   }
 
   verifyToken(token: string): TokenPayload {
@@ -130,10 +203,48 @@ export class AuthService {
     if (newPassword.length < 8) throw new ValidationError('New password must be at least 8 characters');
     const hash = await bcrypt.hash(newPassword, 10);
     this.authRepository.updatePassword(userId, hash, new Date().toISOString());
+    this.authRepository.clearRefreshToken(userId, new Date().toISOString());
   }
 
   private sign(payload: TokenPayload): string {
     return jwt.sign(payload, JWT_SECRET, { expiresIn: TOKEN_TTL });
+  }
+}
+
+export interface AuditLogInput {
+  userId?: string | null;
+  userName?: string | null;
+  action: string;
+  target?: string | null;
+  detail?: string | null;
+  ip?: string | null;
+  traceId?: string | null;
+  clinicId?: string | null;
+}
+
+export class AuditService {
+  constructor(private readonly db: Database.Database) {}
+
+  log(input: AuditLogInput): void {
+    const now = new Date().toISOString();
+    this.db.prepare(
+      `INSERT INTO OperationLog (
+         id, userId, userName, action, target, detail, ip, traceId,
+         clinicId, createdAt, updatedAt, deletedAt
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+    ).run(
+      randomUUID(),
+      input.userId ?? null,
+      input.userName ?? null,
+      input.action,
+      input.target ?? null,
+      input.detail ?? null,
+      input.ip ?? null,
+      input.traceId ?? null,
+      input.clinicId ?? null,
+      now,
+      now,
+    );
   }
 }
 
@@ -327,10 +438,22 @@ export class ChargeService {
     payRun();
     const response = { id, paidAmount: newPaid, status: newStatus };
     if (requestId) {
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
       this.db.prepare(
-        `INSERT INTO IdempotencyRecord (id, key, responseJson, clinicId, createdAt, updatedAt, deletedAt)
-         VALUES (?, ?, ?, ?, ?, ?, NULL)`,
-      ).run(randomUUID(), requestId, JSON.stringify(response), row.clinicId ?? null, now, now);
+        `INSERT INTO IdempotencyRecord (
+           id, key, type, status, responseJson, result,
+           clinicId, createdAt, updatedAt, deletedAt, expiresAt
+         ) VALUES (?, ?, 'GENERIC', 'COMPLETED', ?, ?, ?, ?, ?, NULL, ?)`,
+      ).run(
+        randomUUID(),
+        requestId,
+        JSON.stringify(response),
+        JSON.stringify(response),
+        row.clinicId ?? null,
+        now,
+        now,
+        expiresAt,
+      );
     }
     return response;
   }
@@ -442,6 +565,21 @@ export class InventoryService {
   lowStock(): Array<Record<string, unknown>> {
     return this.inventoryRepository.lowStock().map((row) => ({ ...row }));
   }
+
+  expiringSoon(days = 30): Array<Record<string, unknown>> {
+    const clock = new SystemClock();
+    const today = clock.clinicDate();
+    const cutoff = clock.clinicDate(Date.now() + Math.max(1, days) * 86_400_000);
+    return this.db.prepare(
+      `SELECT * FROM InventoryItem
+       WHERE deletedAt IS NULL
+         AND expireDate IS NOT NULL
+         AND expireDate >= ?
+         AND expireDate <= ?
+       ORDER BY expireDate ASC
+       LIMIT 100`,
+    ).all(today, cutoff) as Array<Record<string, unknown>>;
+  }
 }
 
 export class FollowUpService {
@@ -471,7 +609,7 @@ export class FollowUpService {
     let generated = 0;
     const now = context.now().toISOString();
     for (const row of rows) {
-      const date = new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10);
+      const date = new SystemClock().clinicDate(Date.now() + 14 * 86_400_000);
       this.followUpRepository.insert({
         id: randomUUID(),
         clinicId: context.clinicId ?? null,
@@ -488,6 +626,13 @@ export class FollowUpService {
   }
 }
 
+export interface BackupCreateOptions {
+  type?: 'MANUAL' | 'AUTO' | 'RESTORE';
+  operatorId?: string | null;
+  operatorName?: string | null;
+  encrypted?: boolean;
+}
+
 export class BackupService {
   constructor(
     private readonly db: Database.Database,
@@ -498,32 +643,148 @@ export class BackupService {
   list(): Array<Record<string, unknown>> {
     fs.mkdirSync(this.backupDir, { recursive: true });
     return fs.readdirSync(this.backupDir)
-      .filter((name) => name.endsWith('.sqlite'))
+      .filter((name) => name.endsWith('.sqlite') || name.endsWith('.enc'))
+      .filter((name) => !name.startsWith('.staged-'))
       .map((name) => {
         const stat = fs.statSync(path.join(this.backupDir, name));
-        return { filename: name, fileSize: stat.size, createdAt: stat.mtime.toISOString() };
+        return {
+          filename: name,
+          fileSize: stat.size,
+          createdAt: stat.mtime.toISOString(),
+          encrypted: name.endsWith('.enc'),
+        };
       })
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
   }
 
-  async create(): Promise<Record<string, unknown>> {
+  async create(options: BackupCreateOptions = {}): Promise<Record<string, unknown>> {
     fs.mkdirSync(this.backupDir, { recursive: true });
-    const filename = `backup-${new Date().toISOString().replace(/[:.]/g, '-')}.sqlite`;
-    await this.db.backup(path.join(this.backupDir, filename));
-    return { filename, message: 'Backup created' };
+    const encrypted = options.encrypted ?? Boolean(process.env.V2_BACKUP_KEY);
+    const base = `backup-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+    const filename = encrypted ? `${base}.enc` : `${base}.sqlite`;
+    const tempPath = path.join(this.backupDir, `${base}.tmp`);
+    const finalPath = path.join(this.backupDir, filename);
+    await this.db.backup(tempPath);
+    if (encrypted) {
+      this.encryptFile(tempPath, finalPath);
+      fs.unlinkSync(tempPath);
+    } else {
+      fs.renameSync(tempPath, finalPath);
+    }
+    const fileSize = fs.statSync(finalPath).size;
+    this.db.prepare(
+      `INSERT INTO BackupRecord (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         filename, fileSize, type, operatorId, operatorName
+       ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
+    ).run(
+      randomUUID(),
+      null,
+      new Date().toISOString(),
+      new Date().toISOString(),
+      filename,
+      fileSize,
+      options.type ?? 'MANUAL',
+      options.operatorId ?? null,
+      options.operatorName ?? null,
+    );
+    return { filename, fileSize, encrypted, type: options.type ?? 'MANUAL', message: 'Backup created' };
   }
 
   async verify(filename: string): Promise<Record<string, unknown>> {
-    const filePath = path.join(this.backupDir, filename);
-    if (!fs.existsSync(filePath)) throw new NotFoundError('Backup file not found');
-    const backupDb = new Database(filePath, { readonly: true });
-    try {
-      const integrity = backupDb.pragma('integrity_check') as Array<{ integrity_check: string }>;
-      const ok = integrity.length === 1 && integrity[0].integrity_check === 'ok';
-      return { filename, integrity: ok ? 'ok' : 'corrupt', checksum: 'not-applicable' };
-    } finally {
-      backupDb.close();
+    const file = this.safePath(filename);
+    if (!fs.existsSync(file)) throw new NotFoundError('Backup file not found');
+    const encrypted = file.endsWith('.enc');
+    let sqlitePath = file;
+    let tempPath: string | undefined;
+    if (encrypted) {
+      tempPath = path.join(this.backupDir, `.verify-${Date.now()}-${randomBytes(4).toString('hex')}.sqlite`);
+      this.decryptFile(file, tempPath);
+      sqlitePath = tempPath;
     }
+    try {
+      const backupDb = new Database(sqlitePath, { readonly: true });
+      try {
+        const integrity = backupDb.pragma('integrity_check') as Array<{ integrity_check: string }>;
+        const ok = integrity.length === 1 && integrity[0].integrity_check === 'ok';
+        return { filename, integrity: ok ? 'ok' : 'corrupt', encrypted };
+      } finally {
+        backupDb.close();
+      }
+    } finally {
+      if (tempPath && fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+    }
+  }
+
+  async stageRestore(filename: string): Promise<Record<string, unknown>> {
+    const verified = await this.verify(filename);
+    if (verified.integrity !== 'ok') throw new Error('Backup integrity check failed before restore');
+    const source = this.safePath(filename);
+    const stagedPath = path.join(
+      this.backupDir,
+      `.staged-${path.basename(filename).replace(/\.[^.]+$/, '')}-${Date.now()}.sqlite`,
+    );
+    if (source.endsWith('.enc')) {
+      this.decryptFile(source, stagedPath);
+    } else {
+      fs.copyFileSync(source, stagedPath);
+    }
+    const staged = new Database(stagedPath, { readonly: true });
+    try {
+      const integrity = staged.pragma('integrity_check') as Array<{ integrity_check: string }>;
+      if (integrity.length !== 1 || integrity[0].integrity_check !== 'ok') {
+        throw new Error('staged restore integrity check failed');
+      }
+    } finally {
+      staged.close();
+    }
+    return {
+      filename,
+      stagedPath,
+      message: 'Backup verified and staged. Restart the application to activate this restore.',
+    };
+  }
+
+  cleanup(maxKeep = 30): { kept: number; deleted: Array<{ filename: string; fileSize: number }> } {
+    const files = this.list() as Array<{ filename: string; fileSize: number }>;
+    const deleteFiles = files.slice(maxKeep);
+    for (const file of deleteFiles) {
+      fs.unlinkSync(path.join(this.backupDir, file.filename));
+    }
+    return {
+      kept: Math.min(files.length, maxKeep),
+      deleted: deleteFiles.map((file) => ({ filename: file.filename, fileSize: file.fileSize })),
+    };
+  }
+
+  private safePath(filename: string): string {
+    const resolvedDir = path.resolve(this.backupDir);
+    const safeName = path.basename(filename);
+    const full = path.join(resolvedDir, safeName);
+    if (!full.startsWith(resolvedDir)) throw new NotFoundError('Backup path is invalid');
+    return full;
+  }
+
+  private encryptFile(sourcePath: string, targetPath: string): void {
+    const data = fs.readFileSync(sourcePath);
+    const iv = randomBytes(12);
+    const cipher = createCipheriv('aes-256-gcm', backupEncryptionKey(), iv);
+    const encrypted = Buffer.concat([cipher.update(data), cipher.final()]);
+    fs.writeFileSync(targetPath, Buffer.concat([BACKUP_MAGIC, iv, cipher.getAuthTag(), encrypted]));
+  }
+
+  private decryptFile(sourcePath: string, targetPath: string): void {
+    const data = fs.readFileSync(sourcePath);
+    if (data.length < BACKUP_MAGIC.length + 12 + 16) throw new Error('Encrypted backup file is too short');
+    const magic = data.subarray(0, BACKUP_MAGIC.length);
+    if (!magic.equals(BACKUP_MAGIC)) throw new Error('Encrypted backup header is invalid');
+    const iv = data.subarray(BACKUP_MAGIC.length, BACKUP_MAGIC.length + 12);
+    const authTag = data.subarray(BACKUP_MAGIC.length + 12, BACKUP_MAGIC.length + 28);
+    const encrypted = data.subarray(BACKUP_MAGIC.length + 28);
+    const decipher = createDecipheriv('aes-256-gcm', backupEncryptionKey(), iv);
+    decipher.setAuthTag(authTag);
+    const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
+    fs.writeFileSync(targetPath, decrypted);
   }
 }
 
@@ -640,6 +901,98 @@ export class PrintService {
   }
 }
 
+export class SearchService {
+  constructor(private readonly db: Database.Database) {}
+
+  search(query: string): Array<Record<string, unknown>> {
+    const term = `%${query}%`;
+    const results: Array<Record<string, unknown>> = [];
+    const searches: Array<{ resource: string; rows: Array<Record<string, unknown>>; label: (row: Record<string, unknown>) => string }> = [
+      {
+        resource: 'patients',
+        rows: this.db.prepare(
+          `SELECT id, name, phone, code FROM Patient
+           WHERE deletedAt IS NULL AND (name LIKE ? OR phone LIKE ? OR code LIKE ?)
+           LIMIT 20`,
+        ).all(term, term, term) as Array<Record<string, unknown>>,
+        label: (row) => String(row.name ?? row.code ?? ''),
+      },
+      {
+        resource: 'appointments',
+        rows: this.db.prepare(
+          `SELECT A.id, P.name AS patientName, A.startTime, A.status
+           FROM Appointment A
+           LEFT JOIN Patient P ON P.id = A.patientId
+           WHERE A.deletedAt IS NULL AND P.deletedAt IS NULL
+             AND (P.name LIKE ? OR A.startTime LIKE ? OR A.status LIKE ?)
+           LIMIT 20`,
+        ).all(term, term, term) as Array<Record<string, unknown>>,
+        label: (row) => String(row.patientName ?? ''),
+      },
+      {
+        resource: 'charges',
+        rows: this.db.prepare(
+          `SELECT C.id, P.name AS patientName, C.number, C.status
+           FROM Charge C
+           LEFT JOIN Patient P ON P.id = C.patientId
+           WHERE C.deletedAt IS NULL AND P.deletedAt IS NULL
+             AND (C.number LIKE ? OR P.name LIKE ? OR C.status LIKE ?)
+           LIMIT 20`,
+        ).all(term, term, term) as Array<Record<string, unknown>>,
+        label: (row) => String(row.number ?? ''),
+      },
+      {
+        resource: 'inventoryItems',
+        rows: this.db.prepare(
+          `SELECT id, name, code, category, stock FROM InventoryItem
+           WHERE deletedAt IS NULL AND (name LIKE ? OR code LIKE ? OR category LIKE ?)
+           LIMIT 20`,
+        ).all(term, term, term) as Array<Record<string, unknown>>,
+        label: (row) => String(row.name ?? row.code ?? ''),
+      },
+      {
+        resource: 'suppliers',
+        rows: this.db.prepare(
+          `SELECT id, name, code, phone FROM Supplier
+           WHERE deletedAt IS NULL AND (name LIKE ? OR code LIKE ? OR phone LIKE ?)
+           LIMIT 20`,
+        ).all(term, term, term) as Array<Record<string, unknown>>,
+        label: (row) => String(row.name ?? ''),
+      },
+      {
+        resource: 'followUps',
+        rows: this.db.prepare(
+          `SELECT F.id, P.name AS patientName, P.phone AS phone, F.content, F.status
+           FROM FollowUp F
+           LEFT JOIN Patient P ON P.id = F.patientId
+           WHERE F.deletedAt IS NULL AND P.deletedAt IS NULL
+             AND (P.name LIKE ? OR F.content LIKE ? OR F.status LIKE ?)
+           LIMIT 20`,
+        ).all(term, term, term) as Array<Record<string, unknown>>,
+        label: (row) => String(row.patientName ?? ''),
+      },
+    ];
+
+    for (const search of searches) {
+      for (const row of search.rows) {
+        const maskedPhone = row.phone ? this.maskPhone(String(row.phone)) : undefined;
+        results.push({
+          resource: search.resource,
+          id: row.id,
+          label: search.label(row),
+          detail: { ...row, phone: maskedPhone ?? row.phone },
+        });
+      }
+    }
+    return results;
+  }
+
+  private maskPhone(phone: string): string {
+    if (phone.length < 7) return '****';
+    return `${phone.slice(0, 3)}****${phone.slice(-4)}`;
+  }
+}
+
 const SYNC_ALLOWED_TABLES = new Set([
   'Patient',
   'Appointment',
@@ -690,6 +1043,12 @@ export class SyncService {
       `INSERT INTO SyncChange (id, clinicId, createdAt, updatedAt, deletedAt, tableName, recordId, operation, deviceId)
        VALUES (?, NULL, ?, ?, NULL, ?, ?, ?, ?)`,
     ).run(randomUUID(), now, now, tableName, recordId, operation, deviceId);
+  }
+
+  cleanup(before?: string): { deleted: number; cutoff: string } {
+    const cutoff = before ?? new Date(Date.now() - 90 * 86_400_000).toISOString();
+    const result = this.db.prepare('DELETE FROM SyncChange WHERE createdAt < ?').run(cutoff);
+    return { deleted: result.changes, cutoff };
   }
 }
 
@@ -1073,6 +1432,20 @@ export class SatisfactionService {
        FROM SatisfactionSurvey
        GROUP BY surveyDate
        ORDER BY surveyDate ASC`,
+    ).all() as Array<Record<string, unknown>>;
+  }
+
+  doctorRankings(): Array<Record<string, unknown>> {
+    return this.db.prepare(
+      `SELECT S.doctorId, COALESCE(U.name, 'Unknown') AS doctorName,
+              COUNT(*) AS surveyCount,
+              ROUND(AVG(S.score), 1) AS avgScore
+       FROM SatisfactionSurvey S
+       LEFT JOIN User U ON U.id = S.doctorId
+       WHERE S.deletedAt IS NULL
+       GROUP BY S.doctorId, U.name
+       ORDER BY avgScore DESC
+       LIMIT 50`,
     ).all() as Array<Record<string, unknown>>;
   }
 }

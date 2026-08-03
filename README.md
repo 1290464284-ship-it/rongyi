@@ -38,6 +38,9 @@ The installer is generated under `apps/v2/release-v2/`. In packaged mode:
   the working data directory.
 - The API listens on a random localhost port and is supervised by the Electron
   main process.
+- Sessions use short-lived access tokens with rotating refresh tokens.
+- Backups are encrypted with a per-install key, automatically created, verified,
+  staged for restore, and cleaned by retention policy.
 
 ## Verification
 
