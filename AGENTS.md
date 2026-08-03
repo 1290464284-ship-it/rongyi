@@ -36,6 +36,7 @@ pnpm --filter @dental/v2 smoke:ui
 pnpm --filter @dental/v2 test:load
 pnpm --filter @dental/v2 run verify:package
 pnpm --filter @dental/v2 run verify:update
+pnpm --filter @dental/v2 run verify:remote
 pnpm --filter @dental/v2 run license:check
 pnpm --filter @dental/v2 security:scan
 pnpm --filter @dental/v2 restore:backup <backup> <target.sqlite>

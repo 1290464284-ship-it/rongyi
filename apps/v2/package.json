@@ -30,7 +30,8 @@
     "restore:backup": "node scripts/restore-backup.mjs",
     "verify:package": "node scripts/verify-package.mjs",
     "update:metadata": "node scripts/update-metadata.mjs",
-    "verify:update": "node scripts/verify-update.mjs"
+    "verify:update": "node scripts/verify-update.mjs",
+    "verify:remote": "node scripts/verify-remote-release.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",
