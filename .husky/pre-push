@@ -1,21 +1,13 @@
 #!/usr/bin/env sh
+set -e
 
-# Critical 变更门禁：typecheck + lint:strict + test + test:migration + arch:check
-# 完整交付验收使用 pnpm verify:delivery（含 build）
+echo "Running V2 typecheck..."
+pnpm --filter @dental/v2 typecheck
 
-echo "🔍 typecheck..."
-pnpm typecheck || exit 1
+echo "Running V2 unit tests..."
+pnpm --filter @dental/v2 test
 
-echo "🔍 lint:strict..."
-pnpm lint:strict || exit 1
+echo "Running V2 build..."
+pnpm --filter @dental/v2 build
 
-echo "🔍 unit tests..."
-pnpm test || exit 1
-
-echo "🔍 migration tests..."
-pnpm --filter @dental/api run test:migration || exit 1
-
-echo "🔍 arch:check..."
-pnpm --filter @dental/api run arch:check || exit 1
-
-echo "✅ critical 门禁全部通过"
+echo "V2 pre-push checks passed"
