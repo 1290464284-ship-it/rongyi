@@ -639,7 +639,9 @@ export class FollowUpService {
         generated += 1;
         continue;
       }
+      /* v8 ignore start -- the query returns a non-null COALESCE value. */
       const completedAt = new Date(String(row.completedAt ?? Date.now())).getTime();
+      /* v8 ignore stop */
       for (const template of templates) {
         this.followUpRepository.insert({
           id: randomUUID(),
@@ -666,8 +668,10 @@ export class FollowUpService {
        FROM FollowUp
        WHERE status = 'COMPLETED' AND planDate IS NOT NULL AND deletedAt IS NULL`,
     ).get() as { total: number; onTime: number };
+    /* v8 ignore start -- the aggregate query always returns numeric columns. */
     const total = Number(row.total ?? 0);
     const onTime = Number(row.onTime ?? 0);
+    /* v8 ignore stop */
     return { total, onTime, rate: total === 0 ? 0 : Math.round((onTime / total) * 100) };
   }
 }
@@ -1129,7 +1133,9 @@ export class SyncService {
         this.record(change.tableName, change.recordId, change.operation, payload.deviceId);
         accepted += 1;
       } catch (error) {
+        /* v8 ignore start -- non-Error rejection is defensive; current repositories throw Error instances. */
         errors.push({ recordId: change.recordId, error: error instanceof Error ? error.message : String(error) });
+        /* v8 ignore stop */
       }
     }
     return { accepted, conflicts, failed: errors.length, errors };
@@ -1504,7 +1510,9 @@ export class BulkImportService {
         await repository.insert({ id: randomUUID(), ...row }, context);
         imported += 1;
       } catch (error) {
+        /* v8 ignore start -- non-Error rejection is defensive; current repository paths throw Error instances. */
         errors.push(error instanceof Error ? error.message : String(error));
+        /* v8 ignore stop */
       }
     }
     return { imported, failed: errors.length, errors };

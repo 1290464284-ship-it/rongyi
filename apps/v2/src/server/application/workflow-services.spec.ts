@@ -17,6 +17,7 @@ describe('workflow services', () => {
   let db: Database.Database;
   let dataDir: string;
   let context: AppContext;
+  let nullContext: AppContext;
   const now = '2026-08-03T00:00:00.000Z';
 
   beforeAll(() => {
@@ -28,6 +29,13 @@ describe('workflow services', () => {
       clinicId: 'clinic-v2-001',
       role: 'BOSS',
       traceId: 'trace',
+      now: () => new Date(),
+    };
+    nullContext = {
+      userId: 'user-admin-001',
+      clinicId: null,
+      role: 'BOSS',
+      traceId: 'trace-null',
       now: () => new Date(),
     };
   });
@@ -135,5 +143,68 @@ describe('workflow services', () => {
     ).run('item-wf', context.clinicId, now, now);
     const service = new ChargeAssistantService(db);
     expect(service.frequentItems().length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('covers workflow nullish and non-completion branches', () => {
+    db.prepare(
+      `INSERT INTO Registration (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, type, status, visitId, registeredAt
+       ) VALUES (?, NULL, ?, ?, NULL, 'patient-demo-001', NULL, 'REGULAR', 'REGISTERED', 'visit-existing', ?)`,
+    ).run('reg-edge-existing-visit', now, now, now);
+    const workflow = new ClinicalWorkflowService(db);
+    expect(workflow.registrationStatus('reg-edge-existing-visit', 'TRIAGED', nullContext).visitId).toBe('visit-existing');
+
+    db.prepare(
+      `INSERT INTO Registration (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, type, status, registeredAt
+       ) VALUES (?, NULL, ?, ?, NULL, 'patient-demo-001', NULL, 'REGULAR', 'REGISTERED', ?)`,
+    ).run('reg-edge-create-visit', now, now, now);
+    const createdVisit = workflow.registrationStatus('reg-edge-create-visit', 'IN_PROGRESS', nullContext);
+    expect(createdVisit.visitId).toBeDefined();
+
+    db.prepare(
+      `INSERT INTO Visit (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, startTime, status
+       ) VALUES (?, NULL, ?, ?, NULL, 'patient-demo-001', 'user-admin-001', ?, 'IN_PROGRESS')`,
+    ).run('visit-edge-cancelled', now, now, now);
+    expect(workflow.visitStatus('visit-edge-cancelled', 'CANCELLED', nullContext).status).toBe('CANCELLED');
+
+    db.prepare(
+      `INSERT INTO Treatment (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, code, name, category, price, quantity, status
+       ) VALUES (?, NULL, ?, ?, NULL, 'patient-demo-001', 'user-admin-001', 'C-EDGE', 'T', 'GENERAL', 100, 1, 'PLANNED')`,
+    ).run('treatment-edge-cancelled', now, now);
+    expect(workflow.treatmentStatus('treatment-edge-cancelled', 'CANCELLED', nullContext).status).toBe('CANCELLED');
+    db.prepare(
+      `INSERT INTO Treatment (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, code, name, category, price, quantity, status
+       ) VALUES (?, NULL, ?, ?, NULL, 'patient-demo-001', 'user-admin-001', 'C-EDGE-2', 'T', 'GENERAL', 100, 1, 'IN_PROGRESS')`,
+    ).run('treatment-edge-completed', now, now);
+    expect(workflow.treatmentStatus('treatment-edge-completed', 'COMPLETED', nullContext).status).toBe('COMPLETED');
+
+    const replenishment = new ReplenishmentService(db);
+    db.prepare(
+      `INSERT INTO InventoryItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, category, unit, stock, minStock, price
+       ) VALUES (?, NULL, ?, ?, NULL, 'NULL-STOCK', 'Null Stock', 'MAT', 'box', NULL, NULL, 100)`,
+    ).run('item-null-stock', now, now);
+    const generated = replenishment.generate(nullContext);
+    expect(generated.generated).toBeGreaterThanOrEqual(1);
+    const suggestion = db.prepare(
+      "SELECT * FROM InventoryReplenishmentSuggestion WHERE inventoryId = 'item-null-stock' AND deletedAt IS NULL ORDER BY createdAt DESC LIMIT 1",
+    ).get() as { id: string; supplierId: string | null; suggestedQty: number } | undefined;
+    expect(suggestion).toBeDefined();
+    if (suggestion) {
+      const applied = replenishment.applyToPurchaseOrder([suggestion.id], nullContext);
+      expect(applied).toHaveProperty('orderId');
+    }
+    const print = new PrintTemplateService(db);
+    expect(print.render('T-1', { title: null })).not.toContain('null');
   });
 });

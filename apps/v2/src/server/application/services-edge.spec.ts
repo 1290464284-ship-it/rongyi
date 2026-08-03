@@ -40,6 +40,7 @@ import {
   ReplenishmentService,
   WechatService,
 } from './workflow-services';
+import type { AuthRepository } from './ports';
 import type { AppContext } from '../../domain/contracts';
 
 interface TokenPayload {
@@ -161,6 +162,39 @@ describe('service edge coverage', () => {
     db.prepare('UPDATE User SET refreshToken = ?, refreshTokenExpiresAt = ? WHERE id = ?')
       .run(createHash('sha256').update('token-expired').digest('hex'), new Date(Date.now() - 60_000).toISOString(), 'user-admin-001');
     await expect(auth.refresh('token-expired')).rejects.toThrow('expired');
+
+    insertUser('edge-null-clinic', {
+      clinicId: null,
+      loginAttempts: null,
+      tokenVersion: null,
+      passwordHash: bcrypt.hashSync('nullpass', 10),
+    });
+    const nullSession = await auth.login('user-edge-null-clinic', 'nullpass');
+    expect(nullSession.user.clinicId).toBeNull();
+    const nullRefreshed = await auth.refresh(nullSession.refreshToken);
+    expect(nullRefreshed.user.clinicId).toBeNull();
+    db.prepare('UPDATE User SET refreshTokenExpiresAt = NULL WHERE id = ?').run('edge-null-clinic');
+    await expect(auth.refresh(nullRefreshed.refreshToken)).rejects.toThrow('expired');
+
+    const mockAuthRepository = {
+      findByUsername: () => ({
+        id: 'mock-auth-user',
+        clinicId: null,
+        username: 'mock-auth',
+        passwordHash: bcrypt.hashSync('mockpass', 10),
+        name: 'Mock',
+        role: 'BOSS',
+        active: 1,
+        loginAttempts: undefined,
+        tokenVersion: undefined,
+        createdAt: now,
+        updatedAt: now,
+      }),
+      resetLoginAttempts: vi.fn(),
+      updateRefreshToken: vi.fn(),
+    } as unknown as AuthRepository;
+    const mockAuth = new AuthService({} as Database.Database, mockAuthRepository);
+    await expect(mockAuth.login('mock-auth', 'mockpass')).resolves.toBeDefined();
   });
 
   it('covers audit logs with nullish optional fields', () => {
@@ -260,6 +294,106 @@ describe('service edge coverage', () => {
     await service.refund(String(debtCharge.id), 50, 'debt refund', context);
   });
 
+  it('covers null clinic context, missing charge context, member-card refund, and full debt refund', async () => {
+    const now = new Date().toISOString();
+    const service = new ChargeService(db);
+    const appointments = new AppointmentService(db);
+    const nullAppointment = await appointments.create({
+      patientId: 'patient-edge',
+      doctorId: 'user-admin-001',
+      startTime: new Date(Date.now() + 3 * 86_400_000).toISOString(),
+      endTime: new Date(Date.now() + 3 * 86_400_000 + 3_600_000).toISOString(),
+      type: 'REGULAR',
+    }, nullContext);
+    expect(nullAppointment).toHaveProperty('id');
+
+    const nullCharge = await service.create({
+      patientId: 'patient-edge',
+      items: [{ name: 'Null Clinic', category: 'EXAM', price: 100, quantity: 1 }],
+    }, nullContext);
+    await service.pay(String(nullCharge.id), 100, 'CASH', undefined, undefined);
+    const nullIdemCharge = await service.create({
+      patientId: 'patient-edge',
+      items: [{ name: 'Null Idem', category: 'EXAM', price: 50, quantity: 1 }],
+    }, nullContext);
+    await service.pay(String(nullIdemCharge.id), 50, 'CASH', 'null-pay-request', undefined);
+    await service.refund(String(nullCharge.id), 100, 'null refund', nullContext);
+
+    db.prepare(
+      `INSERT INTO Patient (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active
+       ) VALUES (?, NULL, ?, ?, NULL, 'NULL-CLINIC-P', 'Null Clinic Patient', 'UNKNOWN', '13600000008',
+         '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
+    ).run('patient-null-clinic', now, now);
+    db.prepare(
+      `INSERT INTO MemberCard (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, cardNo, balance, totalRecharge, totalConsume,
+         status, points, totalPoints, level
+       ) VALUES (?, NULL, ?, ?, NULL, ?, 'CARD-NULL-CLINIC', 500, 500, 0, 'ACTIVE', 0, 0, 'NORMAL')`,
+    ).run('card-null-clinic', now, now, 'patient-null-clinic');
+    const nullMemberCharge = await service.create({
+      patientId: 'patient-null-clinic',
+      items: [{ name: 'Null Member', category: 'IMPLANT', price: 100, quantity: 1 }],
+    }, nullContext);
+    await service.pay(String(nullMemberCharge.id), 100, 'MEMBER_CARD', undefined, nullContext);
+    await service.refund(String(nullMemberCharge.id), 100, 'null member refund', nullContext);
+
+    const inventory = new InventoryService(db);
+    await inventory.createTransaction({ itemId: 'inventory-demo-001', type: 'OUT', quantity: 1 }, nullContext);
+
+    db.prepare(
+      `INSERT INTO Patient (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active
+       ) VALUES (?, ?, ?, ?, NULL, 'MEMBER-REFUND', 'Member Refund', 'UNKNOWN', '13600000006',
+         '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
+    ).run('patient-member-refund', context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO MemberCard (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, cardNo, balance, totalRecharge, totalConsume,
+         status, points, totalPoints, level
+       ) VALUES (?, ?, ?, ?, NULL, ?, 'CARD-REFUND-MISSING', 500, 500, 0, 'ACTIVE', 0, 0, 'NORMAL')`,
+    ).run('card-refund-missing', context.clinicId, now, now, 'patient-member-refund');
+    const memberCharge = await service.create({
+      patientId: 'patient-member-refund',
+      items: [{ name: 'Member', category: 'IMPLANT', price: 200, quantity: 1 }],
+    }, context);
+    await service.pay(String(memberCharge.id), 200, 'MEMBER_CARD', undefined, context);
+    db.prepare('UPDATE MemberCard SET status = ? WHERE id = ?').run('INACTIVE', 'card-refund-missing');
+    await service.refund(String(memberCharge.id), 50, 'member missing', context);
+
+    const fullDebtCharge = await service.create({
+      patientId: 'patient-edge',
+      items: [{ name: 'Full Debt', category: 'EXAM', price: 300, quantity: 1 }],
+    }, context);
+    await service.pay(String(fullDebtCharge.id), 300, 'CASH', undefined, context);
+    db.prepare(
+      `INSERT INTO Debt (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         chargeId, patientId, totalAmount, paidAmount, status
+       ) VALUES (?, ?, ?, ?, NULL, ?, 'patient-edge', 300, 300, 'PAID')`,
+    ).run('debt-edge-full', context.clinicId, now, now, fullDebtCharge.id);
+    await service.refund(String(fullDebtCharge.id), 300, 'full debt refund', context);
+
+    const paidOverCharge = await service.create({
+      patientId: 'patient-edge',
+      items: [{ name: 'Paid Over Debt', category: 'EXAM', price: 500, quantity: 1 }],
+    }, context);
+    await service.pay(String(paidOverCharge.id), 500, 'CASH', undefined, context);
+    db.prepare(
+      `INSERT INTO Debt (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         chargeId, patientId, totalAmount, paidAmount, status
+       ) VALUES (?, ?, ?, ?, NULL, ?, 'patient-edge', 100, 500, 'PAID')`,
+    ).run('debt-edge-paid-over', context.clinicId, now, now, paidOverCharge.id);
+    await service.refund(String(paidOverCharge.id), 50, 'paid over debt refund', context);
+  });
+
   it('covers inventory transaction and stock branches', async () => {
     const service = new InventoryService(db);
     await expect(service.createTransaction({ itemId: 'missing-item', type: 'OUT', quantity: 1 }, context)).rejects.toThrow('Inventory item not found');
@@ -314,8 +448,32 @@ describe('service edge coverage', () => {
        ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', ?, 'x', 'COMPLETED', ?)`,
     ).run('followup-edge-completed', context.clinicId, now, now, now.slice(0, 10), now.slice(0, 10));
     expect(service.adherence().rate).toBeGreaterThanOrEqual(0);
-    const noTemplateResult = await service.batchGenerate(1, context);
+    const noTemplateResult = await service.batchGenerate(1, nullContext);
     expect(noTemplateResult.generated).toBeGreaterThanOrEqual(1);
+
+    db.prepare(
+      `INSERT INTO FollowUpTemplate (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         name, daysAfter, content, assigneeId, isEnabled,
+         minIntervalDays, recommendedIntervalDays, maxIntervalDays
+       ) VALUES (?, ?, ?, ?, NULL, 'Null Template', NULL, NULL, NULL, 1, 1, 7, 14)`,
+    ).run('template-edge-null', context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO Visit (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, startTime, endTime, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'user-admin-001', ?, ?, 'COMPLETED')`,
+    ).run('visit-edge-null-template', context.clinicId, now, now, now, now);
+    db.prepare(
+      `INSERT INTO Treatment (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, visitId, doctorId, code, name, category,
+         price, quantity, status, completedDate
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'visit-edge-null-template', 'user-admin-001',
+         'NULL-T', 'T', 'GENERAL', 100, 1, 'COMPLETED', NULL)`,
+    ).run('treatment-edge-null-template', context.clinicId, now, now);
+    const nullTemplateResult = await service.batchGenerate(1, nullContext);
+    expect(nullTemplateResult.generated).toBeGreaterThanOrEqual(1);
   });
 
   it('covers backup missing, corrupt, encrypted, and restore branches', async () => {
@@ -408,6 +566,35 @@ describe('service edge coverage', () => {
     expect(search.search('XNULL').some((row) => row.resource === 'patients' && row.label === 'XNULL')).toBe(true);
     expect(search.search('SHORT').some((row) => (row.detail as Record<string, unknown>).phone === '****')).toBe(true);
     expect(search.search('SEARCHCAT').some((row) => row.resource === 'inventoryItems' && row.label === '')).toBe(true);
+
+    db.prepare(
+      `INSERT INTO Appointment (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, startTime, endTime, status, type
+       ) VALUES (?, NULL, ?, ?, NULL, 'patient-missing-label', 'user-admin-001', ?, ?, 'LABELSTATUS', 'REGULAR')`,
+    ).run('appointment-label-null', now, now, now, now);
+    db.prepare(
+      `INSERT INTO Charge (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, number, totalAmount, status
+       ) VALUES (?, NULL, ?, ?, NULL, 'patient-missing-label', NULL, 100, 'LABELCHARGE')`,
+    ).run('charge-label-null', now, now);
+    db.prepare(
+      `INSERT INTO Supplier (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, phone
+       ) VALUES (?, NULL, ?, ?, NULL, NULL, NULL, 'LABELPHONE')`,
+    ).run('supplier-label-null', now, now);
+    db.prepare(
+      `INSERT INTO FollowUp (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, planDate, content, status
+       ) VALUES (?, NULL, ?, ?, NULL, 'patient-missing-label', ?, 'LABELCONTENT', 'PENDING')`,
+    ).run('followup-label-null', now, now, now.slice(0, 10));
+    expect(search.search('LABELSTATUS').some((row) => row.resource === 'appointments' && row.label === '')).toBe(true);
+    expect(search.search('LABELCHARGE').some((row) => row.resource === 'charges' && row.label === '')).toBe(true);
+    expect(search.search('LABELPHONE').some((row) => row.resource === 'suppliers' && row.label === '')).toBe(true);
+    expect(search.search('LABELCONTENT').some((row) => row.resource === 'followUps' && row.label === '')).toBe(true);
   });
 
   it('covers sync push error branches', async () => {
@@ -450,6 +637,24 @@ describe('service edge coverage', () => {
       }],
     });
     expect(updateAgain.accepted).toBe(1);
+    const trickyData: Record<string, unknown> = {};
+    Object.defineProperty(trickyData, 'code', {
+      enumerable: true,
+      get() {
+        throw 'sync-string-error';
+      },
+    });
+    const nonError = await service.push({
+      deviceId: 'device-1',
+      changes: [{
+        tableName: 'Patient',
+        recordId: 'patient-sync-non-error',
+        operation: 'INSERT',
+        updatedAt: now,
+        data: trickyData,
+      }],
+    });
+    expect(nonError.failed).toBe(1);
     expect(service.cleanup(now).deleted).toBeGreaterThanOrEqual(0);
   });
 
@@ -489,6 +694,9 @@ describe('service edge coverage', () => {
     await expect(cards.addPoints('card-edge-2', -11, context)).rejects.toThrow('Insufficient points');
     await cards.addPoints('card-edge-2', -5, context);
     await expect(cards.recharge('missing-card', 1, context)).rejects.toThrow('Member card not found');
+    await cards.recharge('card-edge-2', 10, nullContext);
+    await cards.consume('card-edge-2', 10, nullContext);
+    await cards.addPoints('card-edge-2', 5, nullContext);
 
     const purchase = new PurchaseOrderService(db);
     await expect(purchase.receive('missing-po', context)).rejects.toThrow('Purchase order not found');
@@ -537,8 +745,21 @@ describe('service edge coverage', () => {
        ) VALUES (?, ?, ?, ?, NULL, 'po-edge-3', 'inventory-po-valid', 'Valid', 2, 100, 200)`,
     ).run('poi-edge-valid', context.clinicId, now, now);
     await purchase.receive('po-edge-3', context);
+    db.prepare(
+      `INSERT INTO PurchaseOrder (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         number, supplierId, totalAmount, status
+       ) VALUES (?, NULL, ?, ?, NULL, 'PO-EDGE-NULL', NULL, 0, 'PENDING')`,
+    ).run('po-edge-null', now, now);
+    db.prepare(
+      `INSERT INTO PurchaseOrderItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         orderId, itemId, name, quantity, unitPrice, subtotal
+       ) VALUES (?, NULL, ?, ?, NULL, 'po-edge-null', 'inventory-po-valid', 'Null Clinic', 1, 100, 100)`,
+    ).run('poi-edge-null-clinic', now, now);
+    await purchase.receive('po-edge-null', nullContext);
     const stock = db.prepare('SELECT stock FROM InventoryItem WHERE id = ?').get('inventory-po-valid') as { stock: number };
-    expect(Number(stock.stock)).toBe(3);
+    expect(Number(stock.stock)).toBe(4);
 
     const processing = new ProcessingOrderService(db);
     expect(() => processing.transition('missing-processing', 'SENT', context)).toThrow('Processing order not found');
@@ -550,6 +771,13 @@ describe('service edge coverage', () => {
     ).run('proc-edge', context.clinicId, now, now);
     expect(processing.transition('proc-edge', 'CANCELLED', context).status).toBe('CANCELLED');
     expect(() => processing.transition('proc-edge', 'SENT', context)).toThrow('Cannot transition');
+    db.prepare(
+      `INSERT INTO ProcessingOrder (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         number, patientId, status
+       ) VALUES (?, NULL, ?, ?, NULL, 'PROC-NULL', 'patient-demo-001', 'DRAFT')`,
+    ).run('proc-edge-null', now, now);
+    expect(processing.transition('proc-edge-null', 'SENT', nullContext).status).toBe('SENT');
 
     const risk = new PatientRiskService(db);
     const riskResult = risk.calculate('patient-demo-001', context);
@@ -572,6 +800,7 @@ describe('service edge coverage', () => {
     }
     const riskHigh = new PatientRiskService(db).calculate('patient-risk-high', context);
     expect(riskHigh).toHaveProperty('cariesScore');
+    new PatientRiskService(db).calculate('patient-risk-medium', nullContext);
     for (const [patientId, codePrefix, count] of [
       ['patient-risk-medium', 'RM', 6],
       ['patient-risk-high-level', 'RH', 12],
@@ -604,6 +833,21 @@ describe('service edge coverage', () => {
        ) VALUES (?, ?, ?, ?, NULL, 'missing-patient', 'user-admin-001')`,
     ).run('rx-edge-missing-patient', context.clinicId, now, now);
     expect(prescription.check('rx-edge-missing-patient').safe).toBe(true);
+    db.prepare(
+      `INSERT INTO Patient (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active
+       ) VALUES (?, ?, ?, ?, NULL, 'ALLERGY-EMPTY', 'Empty Allergy', 'UNKNOWN', '13600000007',
+         '[]', '', '[]', '[]', '[]', 'WALK_IN', 1)`,
+    ).run('patient-allergy-empty', context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO Prescription (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-allergy-empty', 'user-admin-001')`,
+    ).run('rx-edge-empty-allergy', context.clinicId, now, now);
+    expect(prescription.check('rx-edge-empty-allergy').safe).toBe(true);
 
     const ceph = new CephalometricService(db);
     await expect(() => ceph.compute('missing-ceph', context)).toThrow('Cephalometric case not found');
@@ -614,6 +858,13 @@ describe('service edge coverage', () => {
        ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'x.png', '{}', 'DRAFT')`,
     ).run('ceph-edge-empty', context.clinicId, now, now);
     expect(ceph.compute('ceph-edge-empty', context).metrics).toEqual({});
+    db.prepare(
+      `INSERT INTO CephalometricCase (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, imageUrl, landmarksJson, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'x.png', NULL, 'DRAFT')`,
+    ).run('ceph-edge-null-landmarks', context.clinicId, now, now);
+    expect(ceph.compute('ceph-edge-null-landmarks', context).metrics).toEqual({});
     db.prepare(
       `INSERT INTO CephalometricCase (
          id, clinicId, createdAt, updatedAt, deletedAt,
@@ -643,6 +894,15 @@ describe('service edge coverage', () => {
     expect(bulkResult.failed).toBe(1);
     const missingRequired = await bulk.importRows('patients', [{ name: 'Missing Code' }], context);
     expect(missingRequired.failed).toBe(1);
+    const nonErrorRow: Record<string, unknown> = {};
+    Object.defineProperty(nonErrorRow, 'code', {
+      enumerable: true,
+      get() {
+        throw 'bulk-string-error';
+      },
+    });
+    const nonErrorImport = await bulk.importRows('patients', [nonErrorRow], context);
+    expect(nonErrorImport.failed).toBe(1);
 
     const debt = new DebtService(db);
     expect(() => debt.pay('missing-debt', 1, context)).toThrow('Debt record not found');

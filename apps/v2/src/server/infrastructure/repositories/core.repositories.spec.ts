@@ -5,10 +5,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase } from '../database';
 import {
+  SqliteAuthRepository,
+  SqliteClinicalWorkflowRepository,
   SqliteDebtRepository,
   SqliteFollowUpRepository,
   SqliteInventoryRepository,
   SqliteMemberCardRepository,
+  SqlitePatientRiskRepository,
   SqliteProcessingOrderRepository,
   SqlitePurchaseOrderRepository,
   SqliteWechatMessageRepository,
@@ -109,6 +112,35 @@ describe('core repositories', () => {
     const charge = repo.findById('charge-repo');
     expect(charge?.paidAmount).toBe(400);
     expect(charge?.refundedAmount).toBe(100);
+    repo.createItem({
+      id: 'charge-item-2',
+      clinicId: 'clinic-v2-001',
+      chargeId: 'charge-repo',
+      treatmentId: 'treatment-1',
+      name: 'Exam 2',
+      category: 'EXAM',
+      price: 200,
+      quantity: 1,
+      teethNumbers: ['1'],
+      subtotal: 200,
+      createdAt: now,
+      updatedAt: now,
+    });
+    repo.createItem({
+      id: 'charge-item-3',
+      clinicId: null,
+      chargeId: 'charge-repo',
+      treatmentId: null,
+      name: 'Exam 3',
+      category: 'EXAM',
+      price: 300,
+      quantity: 1,
+      teethNumbers: [],
+      subtotal: 300,
+      createdAt: now,
+      updatedAt: now,
+    });
+    repo.updatePayment('charge-repo', 500, 'PAID', now);
   });
 
   it('creates purchase orders and marks them received', () => {
@@ -184,5 +216,185 @@ describe('core repositories', () => {
       updatedAt: now,
     });
     expect(repo.reminders().length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('covers repository nullish, boolean, and auth mapping branches', () => {
+    const member = new SqliteMemberCardRepository(db);
+    member.insertLog({
+      id: 'member-log-clinic',
+      clinicId: 'clinic-v2-001',
+      createdAt: now,
+      updatedAt: now,
+      cardId: 'card-repo',
+      type: 'RECHARGE',
+      amount: 100,
+      balanceAfter: 100,
+      remark: 'r',
+    });
+    member.insertLog({
+      id: 'member-log-null',
+      clinicId: null,
+      createdAt: now,
+      updatedAt: now,
+      cardId: 'card-repo',
+      type: 'CONSUME',
+      amount: -10,
+      balanceAfter: 90,
+      remark: null,
+    });
+    member.insertPointLog({
+      id: 'member-point-clinic',
+      clinicId: 'clinic-v2-001',
+      createdAt: now,
+      updatedAt: now,
+      cardId: 'card-repo',
+      type: 'ADD',
+      points: 10,
+      pointsAfter: 10,
+    });
+    member.insertPointLog({
+      id: 'member-point-null',
+      clinicId: null,
+      createdAt: now,
+      updatedAt: now,
+      cardId: 'card-repo',
+      type: 'DEDUCT',
+      points: -1,
+      pointsAfter: 9,
+    });
+
+    const inventory = new SqliteInventoryRepository(db);
+    inventory.createTransaction({
+      id: 'inventory-tx-clinic',
+      clinicId: 'clinic-v2-001',
+      createdAt: now,
+      updatedAt: now,
+      itemId: 'inventory-repo',
+      type: 'IN',
+      quantity: 1,
+      beforeStock: 10,
+      afterStock: 11,
+      operatorId: 'user-1',
+      remark: 'r',
+    });
+    inventory.createTransaction({
+      id: 'inventory-tx-null',
+      clinicId: null,
+      createdAt: now,
+      updatedAt: now,
+      itemId: 'inventory-repo',
+      type: 'OUT',
+      quantity: 1,
+      beforeStock: 11,
+      afterStock: 10,
+      operatorId: null,
+      remark: null,
+    });
+
+    const auth = new SqliteAuthRepository(db);
+    db.prepare(
+      `INSERT INTO User (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         username, passwordHash, name, role, active, loginAttempts, tokenVersion
+       ) VALUES (?, NULL, ?, ?, NULL, 'core-auth', 'hash', 'Core Auth', 'BOSS', 1, NULL, NULL)`,
+    ).run('core-auth-user', now, now);
+    const authUser = auth.findById('core-auth-user');
+    expect(authUser?.clinicId).toBeNull();
+    expect(authUser?.loginAttempts).toBe(0);
+    expect(authUser?.tokenVersion).toBe(0);
+    const authMap = (auth as unknown as {
+      map(row: Record<string, unknown>): { deletedAt: string | null };
+    }).map;
+    expect(authMap({
+      id: 'map-deleted',
+      username: 'u',
+      passwordHash: 'h',
+      name: 'n',
+      role: 'BOSS',
+      active: 1,
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: '2026-08-04T00:00:00.000Z',
+    }).deletedAt).toBe('2026-08-04T00:00:00.000Z');
+    expect(authMap({
+      id: 'map-not-deleted',
+      username: 'u',
+      passwordHash: 'h',
+      name: 'n',
+      role: 'BOSS',
+      active: 1,
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+    }).deletedAt).toBeNull();
+
+    const risk = new SqlitePatientRiskRepository(db);
+    risk.insert({
+      id: 'risk-core-clinic',
+      clinicId: 'clinic-v2-001',
+      createdAt: now,
+      updatedAt: now,
+      patientId: 'patient',
+      cariesScore: 10,
+      periodontalScore: 10,
+      implantScore: 10,
+      cariesLevel: 'LOW',
+      periodontalLevel: 'LOW',
+      implantLevel: 'LOW',
+      factorSnapshotJson: '{}',
+      assessedById: 'user-1',
+    });
+    risk.insert({
+      id: 'risk-core-null',
+      clinicId: null,
+      createdAt: now,
+      updatedAt: now,
+      patientId: 'patient',
+      cariesScore: 0,
+      periodontalScore: 0,
+      implantScore: 0,
+      cariesLevel: 'LOW',
+      periodontalLevel: 'LOW',
+      implantLevel: 'LOW',
+      factorSnapshotJson: '{}',
+      assessedById: null,
+    });
+
+    const clinical = new SqliteClinicalWorkflowRepository(db);
+    clinical.createVisit({
+      id: 'visit-core-clinic',
+      clinicId: 'clinic-v2-001',
+      createdAt: now,
+      updatedAt: now,
+      patientId: 'patient',
+      doctorId: 'doctor-1',
+      userId: 'user-1',
+    });
+    clinical.createVisit({
+      id: 'visit-core-null',
+      clinicId: null,
+      createdAt: now,
+      updatedAt: now,
+      patientId: 'patient',
+      doctorId: null,
+      userId: 'user-1',
+    });
+    clinical.lockMedicalRecord('visit-core-clinic', true, 'user-1', now);
+    clinical.lockMedicalRecord('visit-core-clinic', false, null as unknown as string, now);
+    clinical.updateStatus('Visit', 'visit-core-clinic', 'COMPLETED', now, { endTime: null });
+
+    const followUp = new SqliteFollowUpRepository(db);
+    followUp.insert({
+      id: 'followup-core-null',
+      clinicId: 'clinic-v2-001',
+      createdAt: now,
+      updatedAt: now,
+      patientId: 'followup-patient',
+      planDate: now.slice(0, 10),
+      content: null,
+      status: 'PENDING',
+      assigneeId: null,
+      templateId: null,
+    });
   });
 });

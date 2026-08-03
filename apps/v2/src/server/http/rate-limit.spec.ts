@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createRateLimit } from './rate-limit';
 import type { NextFunction, Request, Response } from 'express';
 
@@ -26,5 +26,11 @@ describe('createRateLimit', () => {
     limiter(fakeRequest(), fakeResponse(), (err) => { error = err; });
     expect(error).toMatchObject({ code: 'RATE_LIMITED', status: 429 });
   });
-});
 
+  it('falls back when the request has no ip', () => {
+    const limiter = createRateLimit({ windowMs: 60_000, max: 1 });
+    const next: NextFunction = vi.fn();
+    limiter({ method: 'GET', path: '/no-ip' } as unknown as Request, fakeResponse(), next);
+    expect(next).toHaveBeenCalledOnce();
+  });
+});

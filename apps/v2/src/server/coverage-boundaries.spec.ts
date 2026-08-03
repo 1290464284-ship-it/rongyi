@@ -255,4 +255,10 @@ describe('coverage boundaries', () => {
     expect(result.value).toBe(1);
     expect(calls).toBe(1);
   });
+
+  it('covers an empty metrics snapshot', async () => {
+    vi.resetModules();
+    const freshMetrics = await import('./http/metrics');
+    expect(freshMetrics.metricsSnapshot()).toEqual([]);
+  });
 });

@@ -139,4 +139,61 @@ describe('SqliteRepository', () => {
     });
     expect(db.prepare('SELECT id FROM Setting WHERE id = ?').get('setting-global')).toBeUndefined();
   });
+
+  it('covers query defaults, clamping, clinic filtering, and search absence', async () => {
+    const repo = new SqliteRepository(db, resourceRegistry.get('patients')!);
+    const defaults = await repo.findMany({}, context);
+    expect(defaults.page).toBe(1);
+    expect(defaults.pageSize).toBe(20);
+
+    const clamped = await repo.findMany({ page: 0, pageSize: 999, search: 'Repo' }, {
+      userId: 'u1',
+      clinicId: null,
+      role: 'BOSS',
+      traceId: 'trace',
+      now: () => new Date(),
+    });
+    expect(clamped.page).toBe(1);
+    expect(clamped.pageSize).toBe(200);
+    expect(clamped.total).toBeGreaterThanOrEqual(0);
+  });
+
+  it('covers custom resources without searchable fields or default sort', async () => {
+    const base = resourceRegistry.get('patients')!;
+    const patientRepo = new SqliteRepository(db, base);
+    await patientRepo.insert({
+      id: 'repo-custom',
+      code: 'CUSTOM-1',
+      name: 'Custom Patient',
+      gender: 'UNKNOWN',
+      phone: '13200000003',
+      source: 'WALK_IN',
+      active: true,
+      tags: [],
+      allergies: [],
+      medicalHistory: [],
+      medicationHistory: [],
+      systemicDiseases: [],
+    }, context);
+
+    const customResource = {
+      ...base,
+      name: 'custom-patients',
+      searchableFields: undefined,
+      defaultSort: undefined,
+      fields: [...base.fields, { name: 'missingField', type: 'text' }],
+    } as unknown as typeof base;
+    const customRepo = new SqliteRepository(db, customResource);
+    await customRepo.findMany({ page: 1, pageSize: 10 }, context);
+    await customRepo.findMany({ page: 1, pageSize: 10, search: 'Custom' }, context);
+    await customRepo.findMany({ page: 1, pageSize: 10, sortBy: 'missing' }, {
+      userId: 'u1',
+      clinicId: null,
+      role: 'BOSS',
+      traceId: 'trace',
+      now: () => new Date(),
+    });
+    const row = await customRepo.findById('repo-custom', context);
+    expect(row?.name).toBe('Custom Patient');
+  });
 });

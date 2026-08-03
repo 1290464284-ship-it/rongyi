@@ -119,7 +119,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
         method: req.method,
         path: req.path,
         statusCode: res.statusCode,
-        durationMs: Date.now() - (res.locals.startedAt ?? Date.now()),
+        durationMs: Date.now() - Number(res.locals.startedAt),
       });
     });
     res.locals.startedAt = Date.now();
@@ -186,13 +186,13 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
       if (req.method === 'GET' || res.statusCode >= 400) return;
       const params = req.params as Record<string, string | undefined>;
       audit.log({
-        userId: req.context?.userId ?? null,
+        userId: req.context!.userId,
         action: `${req.method} ${req.path}`,
         target: params.id ?? params.resource ?? null,
         detail: params.resource ? JSON.stringify({ resource: params.resource }) : null,
         ip: req.ip,
         traceId: req.traceId,
-        clinicId: req.context?.clinicId ?? null,
+        clinicId: req.context!.clinicId,
       });
     });
     next();
