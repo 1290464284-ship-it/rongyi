@@ -56,6 +56,9 @@ jobs:
       - name: Verify package
         run: pnpm --filter @dental/v2 run verify:package
 
+      - name: Verify trusted signature
+        run: pnpm --filter @dental/v2 run verify:signature
+
       - name: Installer smoke
         run: pnpm --filter @dental/v2 run installer:smoke
 

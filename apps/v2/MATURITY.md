@@ -58,6 +58,8 @@
   upgrade smoke on a fresh Windows runner when a previous release exists.
 - Fresh Windows runner upgrade smoke passed for `v2-2.1.3 -> v2-2.1.4`,
   preserving user data and verifying the upgraded API.
+- Release workflow refuses self-signed development certificates via
+  `verify:signature`.
 - Charge discount support with cents validation.
 - Follow-up adherence scoring endpoint.
 - Automatic backup failure creates a scheduler task business alert.
