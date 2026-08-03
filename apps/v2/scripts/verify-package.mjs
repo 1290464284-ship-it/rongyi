@@ -7,10 +7,9 @@ const pkg = JSON.parse(fs.readFileSync(path.join(appRoot, 'package.json'), 'utf8
 const releaseDir = path.resolve(import.meta.dirname, '..', 'release-v2');
 const productName = pkg.build.productName;
 const exePath = path.join(releaseDir, installerFileName(pkg));
-const unpackedExe = path.join(releaseDir, 'win-unpacked', `${productName}.exe`);
 const blockMap = `${exePath}.blockmap`;
 
-const required = [exePath, unpackedExe, blockMap];
+const required = [exePath, blockMap];
 for (const file of required) {
   if (!fs.existsSync(file)) {
     console.error(`missing artifact: ${file}`);
@@ -27,15 +26,23 @@ if (fs.existsSync(latestYml)) {
   }
 }
 
-const legacyDb = path.join(releaseDir, 'win-unpacked', 'resources', 'legacy', 'dental.sqlite');
-const legacySchema = path.join(releaseDir, 'win-unpacked', 'resources', 'legacy', 'schema');
-if (!fs.existsSync(legacyDb)) {
-  console.error(`missing packaged legacy database: ${legacyDb}`);
-  process.exit(1);
-}
-if (!fs.existsSync(legacySchema) || !fs.readdirSync(legacySchema).some((name) => name.endsWith('.tables.ts'))) {
-  console.error(`missing packaged legacy schema: ${legacySchema}`);
-  process.exit(1);
+const unpackedDir = path.join(releaseDir, 'win-unpacked');
+if (fs.existsSync(unpackedDir)) {
+  const unpackedExe = path.join(unpackedDir, `${productName}.exe`);
+  const legacyDb = path.join(unpackedDir, 'resources', 'legacy', 'dental.sqlite');
+  const legacySchema = path.join(unpackedDir, 'resources', 'legacy', 'schema');
+  for (const [label, file] of [['unpacked executable', unpackedExe], ['packaged legacy database', legacyDb]]) {
+    if (!fs.existsSync(file)) {
+      console.error(`missing ${label}: ${file}`);
+      process.exit(1);
+    }
+  }
+  if (!fs.existsSync(legacySchema) || !fs.readdirSync(legacySchema).some((name) => name.endsWith('.tables.ts'))) {
+    console.error(`missing packaged legacy schema: ${legacySchema}`);
+    process.exit(1);
+  }
+} else {
+  console.log('win-unpacked not present; skipping unpacked resource checks');
 }
 
 const devCert = path.join(releaseDir, 'dev-cert.pfx');

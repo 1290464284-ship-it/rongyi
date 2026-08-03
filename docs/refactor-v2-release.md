@@ -26,6 +26,9 @@ Output:
 - `apps/v2/release-v2/Dental Clinic V2 Setup 2.0.0.exe`
 - `apps/v2/release-v2/win-unpacked/Dental Clinic V2.exe`
 
+The `win-unpacked` directory is transient; it exists on the release runner
+during `verify:package` and can be removed locally after upload.
+
 ## Code Signing
 
 Provide these secrets to the release environment:
