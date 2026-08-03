@@ -328,6 +328,58 @@ describe('SyncService', () => {
       expect(result.accepted).toBe(1);
     });
 
+    it('UPDATE 操作携带 deletedAt 应被剥离，不写入记录', () => {
+      const originalUpdatedAt = new Date(Date.now() - 10000).toISOString();
+      dbService.seed('Patient', [{
+        id: 'p-del-at',
+        name: 'Test',
+        clinicId: 'test-clinic-001',
+        deletedAt: null,
+        updatedAt: originalUpdatedAt,
+      }]);
+
+      const result = service.pushChanges({
+        deviceId: 'device-1',
+        changes: [{
+          tableName: 'Patient',
+          recordId: 'p-del-at',
+          operation: 'UPDATE',
+          data: { name: 'Updated', deletedAt: new Date().toISOString() },
+          updatedAt: new Date().toISOString(),
+        }],
+      });
+
+      expect(result.accepted).toBe(1);
+
+      // 验证 deletedAt 未被写入（记录仍为活跃状态）
+      const rows = dbService.getTableData('Patient');
+      const updated = rows.find((r: Record<string, unknown>) => r.id === 'p-del-at');
+      expect(updated).toBeDefined();
+      expect(updated!.deletedAt).toBeNull();
+      expect(updated!.name).toBe('Updated');
+    });
+
+    it('INSERT 操作携带 deletedAt 应被剥离，新记录不应有 deletedAt', () => {
+      const result = service.pushChanges({
+        deviceId: 'device-1',
+        changes: [{
+          tableName: 'Patient',
+          recordId: 'p-new-del',
+          operation: 'INSERT',
+          data: { id: 'p-new-del', name: 'New', deletedAt: new Date().toISOString() },
+          updatedAt: new Date().toISOString(),
+        }],
+      });
+
+      expect(result.accepted).toBe(1);
+
+      // 验证 deletedAt 未被写入
+      const rows = dbService.getTableData('Patient');
+      const inserted = rows.find((r: Record<string, unknown>) => r.id === 'p-new-del');
+      expect(inserted).toBeDefined();
+      expect(inserted!.deletedAt).toBeUndefined();
+    });
+
     it('多条混合操作（INSERT/UPDATE/DELETE/无效）应分别统计', () => {
       dbService.seed('Patient', [
         { id: 'p-upd', name: 'Old', clinicId: 'test-clinic-001', updatedAt: new Date(Date.now() - 10000).toISOString() },

@@ -258,8 +258,8 @@ describe('艾登特 Task1 数据库迁移验证', () => {
   });
 
   describe('TR-1.3: CURRENT_VERSION 和迁移注册', () => {
-    it('CURRENT_VERSION 应该等于 49', () => {
-      expect(CURRENT_VERSION).toBe(49);
+    it('CURRENT_VERSION 应该等于 50', () => {
+      expect(CURRENT_VERSION).toBe(50);
     });
 
     it('migrationNames 应该包含 v31 和 v32', () => {
@@ -605,6 +605,78 @@ describe('艾登特 Task1 数据库迁移验证', () => {
 
       expect(() => {
         migrationDb.prepare("INSERT INTO DrugContraindication (id, clinicId, severity, reason) VALUES ('dc1', 'c1', 'DANGER', '双硫仑样反应')").run();
+      }).not.toThrow();
+    });
+  });
+
+  describe('v50: 唯一索引兜底', () => {
+    beforeEach(() => {
+      // Charge 表不在 BASE_TABLES_FOR_MIGRATION 中，需手动创建
+      migrationDb.exec(`CREATE TABLE IF NOT EXISTS Charge (
+        id TEXT PRIMARY KEY,
+        patientId TEXT NOT NULL,
+        visitId TEXT,
+        doctorId TEXT,
+        number TEXT NOT NULL,
+        totalAmount INTEGER NOT NULL,
+        paidAmount INTEGER DEFAULT 0,
+        refundedAmount INTEGER DEFAULT 0,
+        discount INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'UNPAID',
+        payMethod TEXT,
+        paidAt TEXT,
+        remark TEXT,
+        clinicId TEXT NOT NULL,
+        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        deletedAt TEXT,
+        UNIQUE(clinicId, number)
+      )`);
+
+      const { migrateToV50 } = require('./v50');
+      setMigrationDb(migrationDb);
+      migrateToV50();
+    });
+
+    it('Patient 表应存在 uidx_patient_clinic_code 唯一索引', () => {
+      const indexes = migrationDb.prepare(
+        "SELECT name, sql FROM sqlite_master WHERE type='index' AND name='uidx_patient_clinic_code'"
+      ).all() as Array<{ name: string; sql: string }>;
+      expect(indexes).toHaveLength(1);
+      expect(indexes[0].sql).toMatch(/UNIQUE/i);
+      expect(indexes[0].sql).toContain('clinicId');
+      expect(indexes[0].sql).toContain('code');
+    });
+
+    it('Charge 表应存在 uidx_charge_clinic_number 唯一索引', () => {
+      const indexes = migrationDb.prepare(
+        "SELECT name, sql FROM sqlite_master WHERE type='index' AND name='uidx_charge_clinic_number'"
+      ).all() as Array<{ name: string; sql: string }>;
+      expect(indexes).toHaveLength(1);
+      expect(indexes[0].sql).toMatch(/UNIQUE/i);
+      expect(indexes[0].sql).toContain('clinicId');
+      expect(indexes[0].sql).toContain('number');
+    });
+
+    it('同一诊所内插入重复 code 应被拒绝', () => {
+      migrationDb.prepare("INSERT OR IGNORE INTO Clinic (id, name, code, isActive, createdAt, updatedAt) VALUES ('c-uniq', 'Uniq Clinic', 'UC001', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)").run();
+      migrationDb.prepare(
+        "INSERT INTO Patient (id, code, name, gender, phone, clinicId, active, createdAt, updatedAt) VALUES ('p-dup1', 'PDUP001', '甲', 'MALE', '13800000001', 'c-uniq', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+      ).run();
+
+      expect(() => {
+        migrationDb.prepare(
+          "INSERT INTO Patient (id, code, name, gender, phone, clinicId, active, createdAt, updatedAt) VALUES ('p-dup2', 'PDUP001', '乙', 'FEMALE', '13800000002', 'c-uniq', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+        ).run();
+      }).toThrow(/UNIQUE constraint failed/);
+    });
+
+    it('不同诊所允许相同 code', () => {
+      migrationDb.prepare("INSERT OR IGNORE INTO Clinic (id, name, code, isActive, createdAt, updatedAt) VALUES ('c-uniq2', 'Uniq Clinic 2', 'UC002', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)").run();
+      expect(() => {
+        migrationDb.prepare(
+          "INSERT INTO Patient (id, code, name, gender, phone, clinicId, active, createdAt, updatedAt) VALUES ('p-other', 'PDUP001', '丙', 'MALE', '13800000003', 'c-uniq2', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+        ).run();
       }).not.toThrow();
     });
   });

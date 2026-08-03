@@ -45,8 +45,9 @@ import { migrateToV46 } from './v46';
 import { migrateToV47 } from './v47';
 import { migrateToV48 } from './v48';
 import { migrateToV49 } from './v49';
+import { migrateToV50 } from './v50';
 
-export const CURRENT_VERSION = 49;
+export const CURRENT_VERSION = 50;
 
 export const getCurrentVersion = (): number => {
   return (getMigrationDb().prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
@@ -102,6 +103,7 @@ export const migrationNames: Record<number, string> = {
   47: 'hr-work-schedule-leave',
   48: 'cephalometric-analysis',
   49: 'cephalometric-landmark-set-columns',
+  50: 'unique-index-code-number-safety-net',
 };
 
 function backupBeforeMigration(fromVersion: number, toVersion: number): string | null {
@@ -240,6 +242,7 @@ export const runMigrations = (db: Database) => {
           case 47: migrateToV47(); break;
           case 48: migrateToV48(); break;
           case 49: migrateToV49(); break;
+          case 50: migrateToV50(); break;
         }
       });
       migrateTx();  // 任一迁移失败 → 整体回滚，数据库保持迁移前状态
