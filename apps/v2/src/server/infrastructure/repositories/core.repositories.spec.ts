@@ -99,6 +99,7 @@ describe('core repositories', () => {
       patientId: 'charge-patient',
       number: 'CHG-1',
       totalAmount: 1000,
+      discount: 0,
       status: 'UNPAID',
       createdAt: now,
       updatedAt: now,

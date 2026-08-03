@@ -49,6 +49,7 @@ export interface CreateChargeInput {
   doctorId?: string | null;
   number: string;
   totalAmount: number;
+  discount: number;
   status: string;
   remark?: string | null;
   createdAt: string;

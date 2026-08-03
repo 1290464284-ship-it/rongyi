@@ -94,6 +94,7 @@ describe('service coverage', () => {
     await service.batchGenerate(2, context);
     const generated = db.prepare('SELECT * FROM FollowUp WHERE templateId = ?').all('template-test') as Array<Record<string, unknown>>;
     expect(generated.length).toBeGreaterThanOrEqual(1);
+    expect(typeof service.adherence().rate).toBe('number');
   });
 
   it('creates and verifies backups', async () => {
@@ -165,9 +166,19 @@ describe('service coverage', () => {
     db.prepare(
       `INSERT INTO BusinessAlert (
          id, clinicId, createdAt, updatedAt, deletedAt,
-         level, title, message, source, status
-       ) VALUES (?, ?, ?, ?, NULL, 'WARNING', 'Title', 'Message', 'test', 'OPEN')`,
+         alertType, severity, level, title, message, source, status
+       ) VALUES (?, ?, ?, ?, NULL, 'SCHEDULER_TASK_FAILURE', 'CRITICAL', 'CRITICAL', 'Title', 'Message', 'test', 'OPEN')`,
     ).run('alert-wf', context.clinicId, now, now);
     expect(alerts.setStatus('alert-wf', 'ACKNOWLEDGED', context.userId).status).toBe('ACKNOWLEDGED');
+    const created = alerts.create({
+      alertType: 'SCHEDULER_TASK_FAILURE',
+      level: 'WARNING',
+      severity: 'WARN',
+      title: 'Created alert',
+      message: 'Created message',
+      source: 'test',
+      clinicId: context.clinicId,
+    });
+    expect(created.status).toBe('OPEN');
   });
 });
