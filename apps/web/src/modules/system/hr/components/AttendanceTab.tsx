@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { TableLoading, EmptyState } from '@/components/ui/loading';
-import { useStaff, type StaffUser } from '@/lib/staff';
+import type { StaffUser } from '@/lib/staff';
 import { cn } from '@/lib/utils';
 import {
   useAttendance,

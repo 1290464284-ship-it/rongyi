@@ -2,14 +2,13 @@ import { useState, useMemo } from 'react';
 import {
   CalendarDays, CalendarClock, User, CheckCircle2, FileCheck,
   Plus, Printer,
-  ChevronLeft, ChevronRight, Edit2,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select } from '@/components/ui/select';
-import { useAuthStore } from '@/lib/store/auth-store';
-import { useStaff, type StaffUser } from '@/lib/staff';
+import { useStaff } from '@/lib/staff';
 import { cn } from '@/lib/utils';
 import {
   useScheduleCalendar,
@@ -77,8 +76,6 @@ function ScheduleCard({
 }
 
 export default function HrPage() {
-  const currentUser = useAuthStore((s) => s.user);
-  const isBoss = currentUser?.role === 'BOSS';
 
   const [tab, setTab] = useState<HrTab>('schedule');
   const today = new Date();
