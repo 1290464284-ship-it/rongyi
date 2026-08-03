@@ -56,6 +56,8 @@
   user data, then verify the upgraded API.
 - Release workflow downloads the previous `v2-*` installer and runs the
   upgrade smoke on a fresh Windows runner when a previous release exists.
+- Fresh Windows runner upgrade smoke passed for `v2-2.1.3 -> v2-2.1.4`,
+  preserving user data and verifying the upgraded API.
 - Charge discount support with cents validation.
 - Follow-up adherence scoring endpoint.
 - Automatic backup failure creates a scheduler task business alert.
@@ -69,5 +71,5 @@
 
 ## Remaining
 
-- Add a clean-machine installer upgrade exercise with a real code signing certificate.
-- Run a clean-machine installer upgrade applying a live `v2-*` update.
+- Replace the self-signed signing certificate with a CA-issued certificate.
+- Run a live `electron-updater` apply test with the signed release.
