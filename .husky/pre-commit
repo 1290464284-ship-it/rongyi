@@ -52,7 +52,7 @@ try {
   const staged = execSync('git diff --cached --name-only --diff-filter=ACM', { encoding: 'utf-8' })
     .trim().split('\n').filter(Boolean)
     .filter(f => /\.(ts|tsx|js|jsx|json|sql)$/i.test(f))
-    .map(f => path.resolve(f).replace(/\\\\/g, '/'));
+    .map(f => path.resolve(f).replace(/\\/g, '/'));
   const record = {
     at: new Date().toISOString(),
     command: 'verify:precommit',
