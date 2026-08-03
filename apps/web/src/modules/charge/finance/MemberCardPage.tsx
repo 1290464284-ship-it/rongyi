@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Plus, Search, Wallet, History, CreditCard } from 'lucide-react';
+import { formatYuan } from '@dental/shared';
 import { Button } from '@/components/ui/button';
 import { LoadingButton, TableLoading, EmptyState } from '@/components/ui/loading';
 import { Card } from '@/components/ui/card';
@@ -118,7 +119,7 @@ export default function MemberCardPage() {
     });
   };
 
-  const fmt = (v: number | string | null | undefined) => `¥${Number(v ?? 0).toFixed(2)}`;
+  const fmt = formatYuan;
 
   return (
     <div className="p-6 space-y-4">
@@ -411,7 +412,7 @@ export default function MemberCardPage() {
 
 function LogsView({ cardId, cardNo }: { cardId: string; cardNo: string }) {
   const { data, isLoading } = useMemberCardLogs(cardId);
-  const fmt = (v: number | string | null | undefined) => `¥${Number(v ?? 0).toFixed(2)}`;
+  const fmt = formatYuan;
 
   return (
     <div className="space-y-3">

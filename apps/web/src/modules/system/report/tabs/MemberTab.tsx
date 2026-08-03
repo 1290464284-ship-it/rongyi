@@ -1,6 +1,7 @@
 import { Users, Wallet, Award } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { useMemberStats } from '@/lib/api/system/stats';
+import { formatYuan } from '@dental/shared';
 import MemberLevelPieChart from '../charts/MemberLevelPieChart';
 import { Suspense } from 'react';
 
@@ -22,7 +23,7 @@ export default function MemberTab() {
     },
     {
       label: '总余额',
-      value: `¥${Number(data?.totalBalance ?? 0).toFixed(2)}`,
+      value: formatYuan(data?.totalBalance),
       icon: <Wallet className='w-8 h-8 text-success/30' />,
       color: 'text-success',
     },

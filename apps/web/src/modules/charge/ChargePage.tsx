@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Plus, Search } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { useDebounce } from '@/lib/hooks/use-debounce';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -34,7 +35,7 @@ const ChargePage = React.memo(function ChargePage() {
   // 从 URL 参数读取默认值
   const [statusFilter, setStatusFilter] = useState<ChargeStatus | ''>((searchParams.get('status') as ChargeStatus) || '');
   const [keyword, setKeyword] = useState(searchParams.get('keyword') || '');
-  const [debouncedKeyword, setDebouncedKeyword] = useState(searchParams.get('keyword') || '');
+  const debouncedKeyword = useDebounce(keyword, 300);
   const [page, setPage] = useState(Number(searchParams.get('page')) || 1);
   const pageSize = 10;
   const parentRef = useRef<HTMLDivElement>(null);
@@ -44,23 +45,19 @@ const ChargePage = React.memo(function ChargePage() {
   const [refundOpen, setRefundOpen] = useState(false);
   const [selectedCharge, setSelectedCharge] = useState<Charge | null>(null);
 
-  // 关键词变化时更新 URL
+  // 防抖关键词变化时重置页码并同步 URL
   useEffect(() => {
-    const t = setTimeout(() => {
-      setDebouncedKeyword(keyword);
-      setPage(1);
-      const params = new URLSearchParams(searchParams);
-      if (keyword) {
-        params.set('keyword', keyword);
-      } else {
-        params.delete('keyword');
-      }
-      params.set('page', '1');
-      setSearchParams(params, { replace: true });
-    }, 300);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- URL同步effect仅在keyword变化时触发，添加searchParams/setSearchParams会导致无限循环
-  }, [keyword]);
+    setPage(1);
+    const params = new URLSearchParams(searchParams);
+    if (debouncedKeyword) {
+      params.set('keyword', debouncedKeyword);
+    } else {
+      params.delete('keyword');
+    }
+    params.set('page', '1');
+    setSearchParams(params, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- URL同步仅在debouncedKeyword变化时触发
+  }, [debouncedKeyword]);
 
   // 状态筛选变化时更新 URL
   useEffect(() => {
