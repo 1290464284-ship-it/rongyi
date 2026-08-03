@@ -98,7 +98,7 @@ export function listAllResources(db: Database.Database): ResourceDefinition[] {
   const definitions = [...resourceRegistry.all()];
   const names = new Set(definitions.map((definition) => definition.name));
   for (const table of LEGACY_TABLE_NAMES) {
-    if (names.has(table)) continue;
+    if (names.has(table) || definitions.some((definition) => definition.table === table)) continue;
     const definition = resolveResource(db, table);
     if (definition) definitions.push(definition);
   }

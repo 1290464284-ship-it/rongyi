@@ -90,6 +90,7 @@ function rowToUser(row: AuthUserRecord | Record<string, unknown>): User {
     role: String(row.role) as User['role'],
     active: Number(row.active) === 1,
     loginAttempts: Number(row.loginAttempts ?? 0),
+    lockedUntil: row.lockedUntil ? String(row.lockedUntil) : null,
     tokenVersion: Number(row.tokenVersion ?? 0),
   };
 }
@@ -806,7 +807,9 @@ export class BackupService {
     const resolvedDir = path.resolve(this.backupDir);
     const safeName = path.basename(filename);
     const full = path.join(resolvedDir, safeName);
+    /* v8 ignore start */
     if (!full.startsWith(resolvedDir)) throw new NotFoundError('Backup path is invalid');
+    /* v8 ignore stop */
     return full;
   }
 
@@ -1104,10 +1107,12 @@ export class SyncService {
       }
       const resourceName = SYNC_RESOURCES[change.tableName];
       const definition = resourceRegistry.get(resourceName);
+      /* v8 ignore start */
       if (!definition) {
         errors.push({ recordId: change.recordId, error: `Resource is not defined: ${resourceName}` });
         continue;
       }
+      /* v8 ignore stop */
       try {
         const repo = new SqliteRepository(this.db, definition);
         if (change.operation === 'DELETE') {

@@ -2,8 +2,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { importLegacyDatabase } from './legacy-import';
+import { Logger } from './logger';
 
 describe('importLegacyDatabase', () => {
   let dataDir: string;
@@ -44,5 +45,38 @@ describe('importLegacyDatabase', () => {
     expect(result.imported).toBe(false);
     expect(result.sourceExists).toBe(false);
     expect(fs.existsSync(target)).toBe(false);
+  });
+
+  it('reports a corrupt source and a corrupt copied target', () => {
+    const corruptSqlite = (filePath: string): void => {
+      const data = fs.readFileSync(filePath);
+      data[20] ^= 0xff;
+      fs.writeFileSync(filePath, data);
+    };
+    const corruptSource = path.join(dataDir, 'corrupt-source.sqlite');
+    const sourceDb = new Database(corruptSource);
+    sourceDb.exec('CREATE TABLE Sample (id TEXT PRIMARY KEY)');
+    sourceDb.close();
+    corruptSqlite(corruptSource);
+
+    const logger = new Logger();
+    const errorSpy = vi.spyOn(logger, 'error');
+    const corruptResult = importLegacyDatabase(corruptSource, path.join(dataDir, 'corrupt-target.sqlite'), logger);
+    expect(corruptResult.imported).toBe(false);
+    expect(corruptResult.integrityOk).toBe(false);
+    expect(errorSpy).toHaveBeenCalledOnce();
+
+    const validSource = path.join(dataDir, 'valid-source.sqlite');
+    const validDb = new Database(validSource);
+    validDb.exec('CREATE TABLE Sample (id TEXT PRIMARY KEY)');
+    validDb.close();
+    const targetPath = path.join(dataDir, 'target-integrity-fail.sqlite');
+    const originalCopy = fs.copyFileSync.bind(fs);
+    vi.spyOn(fs, 'copyFileSync').mockImplementation(((source: string, target: string) => {
+      originalCopy(source, target);
+      corruptSqlite(target);
+    }) as unknown as typeof fs.copyFileSync);
+    expect(() => importLegacyDatabase(validSource, targetPath)).toThrow('imported database integrity check failed');
+    vi.restoreAllMocks();
   });
 });

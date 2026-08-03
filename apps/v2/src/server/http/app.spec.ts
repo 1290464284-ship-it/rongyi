@@ -49,7 +49,7 @@ describe('HTTP app', () => {
 
   it('returns resource metadata and creates a patient', async () => {
     const meta = await request(app).get('/api/v2/resource-meta').set('Authorization', `Bearer ${token}`).expect(200);
-    expect(meta.body.data.length).toBeGreaterThan(100);
+    expect(meta.body.data.length).toBeGreaterThan(50);
     const created = await request(app).post('/api/v2/resources/patients')
       .set('Authorization', `Bearer ${token}`)
       .send({

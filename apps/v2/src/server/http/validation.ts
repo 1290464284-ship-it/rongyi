@@ -4,12 +4,16 @@ import type { ResourceDefinition, ResourceField } from '../../domain/contracts';
 /**
  * Validates generic resource payloads using the declarative field metadata.
  */
-export function validatePayload(resource: ResourceDefinition, payload: Record<string, unknown>): Record<string, unknown> {
+export function validatePayload(
+  resource: ResourceDefinition,
+  payload: Record<string, unknown>,
+  options: { partial?: boolean } = {},
+): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const field of resource.fields) {
     const raw = payload[field.name];
     if (raw === undefined || raw === null) {
-      if (field.required) throw new ValidationError(`${field.name} is required`);
+      if (field.required && !options.partial) throw new ValidationError(`${field.name} is required`);
       continue;
     }
     result[field.name] = validateField(field, raw);

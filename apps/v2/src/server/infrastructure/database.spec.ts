@@ -44,4 +44,12 @@ describe('database bootstrap', () => {
   it('is safe when the legacy schema directory is missing', () => {
     expect(() => syncLegacySchema(db, path.join(os.tmpdir(), 'missing-v2-schema'))).not.toThrow();
   });
+
+  it('tolerates malformed legacy schema statements', () => {
+    const malformedDir = path.join(dataDir, 'malformed-schema');
+    fs.mkdirSync(malformedDir, { recursive: true });
+    fs.writeFileSync(path.join(malformedDir, 'no-paren.tables.ts'), 'CREATE TABLE IF NOT EXISTS MissingParen');
+    fs.writeFileSync(path.join(malformedDir, 'no-close.tables.ts'), 'CREATE TABLE IF NOT EXISTS MissingClose (id TEXT');
+    expect(() => syncLegacySchema(db, malformedDir)).not.toThrow();
+  });
 });
