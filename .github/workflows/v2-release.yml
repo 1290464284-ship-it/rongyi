@@ -68,3 +68,9 @@ jobs:
             apps/v2/release-v2/*.exe
             apps/v2/release-v2/*.blockmap
             apps/v2/release-v2/latest.yml
+
+      - name: Verify remote release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          V2_RELEASE_TAG: ${{ github.ref_name }}
+        run: pnpm --filter @dental/v2 run verify:remote

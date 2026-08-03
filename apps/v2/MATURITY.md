@@ -49,6 +49,7 @@
   inventory, suppliers, and follow-ups.
 - JSON/CSV file import entry point in the desktop renderer.
 - Doctor satisfaction rankings and sync change-log cleanup.
+- Remote update-channel verification against the published GitHub Release.
 - Installer/package artifact verification script.
 - Local signing pipeline verified with a development self-signed certificate.
 - `latest.yml` update metadata generation and verification.
@@ -58,4 +59,4 @@
 ## Remaining
 
 - Add a clean-machine installer upgrade exercise with a real code signing certificate.
-- Verify the live GitHub Release update channel after the first signed `v2-*` tag.
+- Run a clean-machine installer upgrade applying a live `v2-*` update.

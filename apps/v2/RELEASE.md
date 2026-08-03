@@ -32,6 +32,13 @@ installer and blockmap to the configured GitHub release. The desktop process
 checks for updates through `electron-updater` when the app is packaged and
 `V2_ENABLE_AUTO_UPDATE=1`.
 
+Verify the published channel metadata with:
+
+```powershell
+$env:GH_TOKEN = gh auth token
+pnpm --filter @dental/v2 run verify:remote
+```
+
 ## Signing
 
 The `v2-release.yml` workflow requires `CSC_LINK` and `CSC_KEY_PASSWORD` GitHub
