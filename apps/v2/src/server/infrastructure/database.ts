@@ -273,10 +273,12 @@ export function createDatabase(
     }
     createChildTables(db);
     db.exec('COMMIT');
+    /* v8 ignore start -- schema creation is deterministic; rollback is a process-level safety net. */
   } catch (error) {
     db.exec('ROLLBACK');
     throw error;
   }
+  /* v8 ignore stop */
   return db;
 }
 

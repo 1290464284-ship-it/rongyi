@@ -31,4 +31,29 @@ describe('migrations', () => {
       migrations.map((migration) => ({ version: migration.version, name: migration.name })),
     );
   });
+
+  it('adds missing migration columns when legacy schema lacks them', () => {
+    const freshDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-mig-fresh-'));
+    const freshDb = createDatabase(freshDir);
+    freshDb.exec('ALTER TABLE OperationLog DROP COLUMN traceId');
+    freshDb.exec('ALTER TABLE IdempotencyRecord DROP COLUMN responseJson');
+    freshDb.exec('ALTER TABLE IdempotencyRecord DROP COLUMN type');
+    freshDb.exec('ALTER TABLE Patient DROP COLUMN occupation');
+    freshDb.exec('ALTER TABLE ProcessingOrderItem DROP COLUMN name');
+    freshDb.exec('ALTER TABLE InventoryReplenishmentSuggestion DROP COLUMN status');
+    runMigrations(freshDb);
+    const operationLog = freshDb.prepare('PRAGMA table_info(OperationLog)').all() as Array<{ name: string }>;
+    const idempotency = freshDb.prepare('PRAGMA table_info(IdempotencyRecord)').all() as Array<{ name: string }>;
+    const patient = freshDb.prepare('PRAGMA table_info(Patient)').all() as Array<{ name: string }>;
+    const item = freshDb.prepare('PRAGMA table_info(ProcessingOrderItem)').all() as Array<{ name: string }>;
+    const suggestion = freshDb.prepare('PRAGMA table_info(InventoryReplenishmentSuggestion)').all() as Array<{ name: string }>;
+    expect(operationLog.some((column) => column.name === 'traceId')).toBe(true);
+    expect(idempotency.some((column) => column.name === 'responseJson')).toBe(true);
+    expect(idempotency.some((column) => column.name === 'type')).toBe(true);
+    expect(patient.some((column) => column.name === 'occupation')).toBe(true);
+    expect(item.some((column) => column.name === 'name')).toBe(true);
+    expect(suggestion.some((column) => column.name === 'status')).toBe(true);
+    freshDb.close();
+    fs.rmSync(freshDir, { recursive: true, force: true });
+  });
 });

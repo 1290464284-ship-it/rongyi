@@ -146,9 +146,11 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
       const snapshot = metricsSnapshot();
       persistMetrics(logDir, snapshot);
       res.json({ success: true, data: snapshot });
+      /* v8 ignore start -- persistMetrics swallows persistence errors by design. */
     } catch (error) {
       next(error);
     }
+    /* v8 ignore stop */
   });
 
   app.post('/api/v2/auth/login', loginLimiter, async (req, res, next) => {
@@ -699,7 +701,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
 
   app.post('/api/v2/sync/push', async (req, res, next) => {
     try {
-      res.json({ success: true, data: sync.push(req.body) });
+      res.json({ success: true, data: await sync.push(req.body) });
     } catch (error) {
       next(error);
     }

@@ -73,5 +73,70 @@ describe('SqliteRepository', () => {
     const user = await repo.findById('repo-user-1', context);
     expect(user?.passwordHash).toBeNull();
   });
-});
 
+  it('serializes nullish JSON, invalid JSON, unknown filters, and missing updates', async () => {
+    const repo = new SqliteRepository(db, resourceRegistry.get('patients')!);
+    await repo.insert({
+      id: 'repo-json-null',
+      code: 'JSON-NULL',
+      name: 'JSON Null',
+      gender: 'UNKNOWN',
+      phone: '13200000001',
+      source: 'WALK_IN',
+      active: false,
+      tags: undefined,
+      allergies: [],
+      medicalHistory: [],
+      medicationHistory: [],
+      systemicDiseases: [],
+    }, context);
+    const nullRow = await repo.findById('repo-json-null', context);
+    expect(nullRow?.tags).toBeNull();
+    expect(nullRow?.active).toBe(false);
+
+    await repo.insert({
+      id: 'repo-json-invalid',
+      code: 'JSON-INVALID',
+      name: 'JSON Invalid',
+      gender: 'UNKNOWN',
+      phone: '13200000002',
+      source: 'WALK_IN',
+      active: true,
+      tags: 'not-json',
+      allergies: [],
+      medicalHistory: [],
+      medicationHistory: [],
+      systemicDiseases: [],
+    }, context);
+    const invalidRow = await repo.findById('repo-json-invalid', context);
+    expect(invalidRow?.tags).toBe('not-json');
+
+    await expect(repo.findMany({ page: 1, pageSize: 10, filters: { unknownField: 'x' } }, context))
+      .rejects.toThrow('Unknown filter field');
+    await expect(repo.update({ id: 'repo-missing-update' }, context))
+      .rejects.toThrow('not found');
+  });
+
+  it('hard-deletes resources that do not support soft delete', async () => {
+    const repo = new SqliteRepository(db, resourceRegistry.get('settings')!);
+    await repo.insert({ id: 'setting-clinic', key: 'clinic-key', value: 'v' }, context);
+    await repo.softDelete('setting-clinic', context);
+    expect(db.prepare('SELECT id FROM Setting WHERE id = ?').get('setting-clinic')).toBeUndefined();
+
+    await repo.insert({ id: 'setting-global', key: 'global-key', value: 'v' }, {
+      userId: 'u1',
+      clinicId: null,
+      role: 'BOSS',
+      traceId: 'trace',
+      now: () => new Date(),
+    });
+    await repo.softDelete('setting-global', {
+      userId: 'u1',
+      clinicId: null,
+      role: 'BOSS',
+      traceId: 'trace',
+      now: () => new Date(),
+    });
+    expect(db.prepare('SELECT id FROM Setting WHERE id = ?').get('setting-global')).toBeUndefined();
+  });
+});
