@@ -1,7 +1,7 @@
 {
   "name": "dental-clinic-v2",
   "private": true,
-  "version": "2.1.3",
+  "version": "2.1.4",
   "scripts": {
     "dev": "pnpm --filter @dental/v2 dev",
     "dev:api": "pnpm --filter @dental/v2 dev:api",
