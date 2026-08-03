@@ -529,6 +529,11 @@ const resources: ResourceDefinition[] = [
 
   crud('followUpTemplates', 'FollowUpTemplate', [
     f('name', 'text', { required: true, searchable: true }),
+    f('type', 'text'),
+    f('daysAfter', 'number', { min: 0 }),
+    f('content', 'longText'),
+    f('assigneeId', 'relation', { relation: { resource: 'users', foreignKey: 'assigneeId', labelField: 'name' } }),
+    f('isEnabled', 'boolean', { default: true }),
     f('triggerTreatmentCodes', 'json', { default: '[]' }),
     f('triggerTreatmentCategories', 'json', { default: '[]' }),
     f('minIntervalDays', 'number', { required: true, min: 0 }),

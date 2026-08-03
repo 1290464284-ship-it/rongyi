@@ -597,7 +597,8 @@ export class FollowUpService {
 
   async batchGenerate(limit = 50, context: AppContext): Promise<{ processed: number; generated: number }> {
     const rows = this.db.prepare(
-      `SELECT DISTINCT V.patientId
+      `SELECT DISTINCT V.patientId,
+              COALESCE(T.completedDate, V.createdAt) AS completedAt
        FROM Visit V
        INNER JOIN Treatment T ON T.visitId = V.id
        WHERE V.status = 'COMPLETED'
@@ -605,22 +606,47 @@ export class FollowUpService {
          AND V.deletedAt IS NULL
          AND T.deletedAt IS NULL
        LIMIT ?`,
-    ).all(limit) as Array<{ patientId: string }>;
+    ).all(limit) as Array<{ patientId: string; completedAt: string }>;
+    const templates = this.db.prepare(
+      `SELECT id, name, daysAfter, content, assigneeId
+       FROM FollowUpTemplate
+       WHERE isEnabled = 1 AND deletedAt IS NULL
+       ORDER BY daysAfter ASC
+       LIMIT 20`,
+    ).all() as Array<{ id: string; name: string; daysAfter: number; content: string | null; assigneeId: string | null }>;
     let generated = 0;
     const now = context.now().toISOString();
     for (const row of rows) {
-      const date = new SystemClock().clinicDate(Date.now() + 14 * 86_400_000);
-      this.followUpRepository.insert({
-        id: randomUUID(),
-        clinicId: context.clinicId ?? null,
-        createdAt: now,
-        updatedAt: now,
-        patientId: row.patientId,
-        planDate: date,
-        content: 'Scheduled follow-up',
-        status: 'PENDING',
-      });
-      generated += 1;
+      if (templates.length === 0) {
+        this.followUpRepository.insert({
+          id: randomUUID(),
+          clinicId: context.clinicId ?? null,
+          createdAt: now,
+          updatedAt: now,
+          patientId: row.patientId,
+          planDate: new SystemClock().clinicDate(Date.now() + 14 * 86_400_000),
+          content: 'Scheduled follow-up',
+          status: 'PENDING',
+        });
+        generated += 1;
+        continue;
+      }
+      const completedAt = new Date(String(row.completedAt ?? Date.now())).getTime();
+      for (const template of templates) {
+        this.followUpRepository.insert({
+          id: randomUUID(),
+          clinicId: context.clinicId ?? null,
+          createdAt: now,
+          updatedAt: now,
+          patientId: row.patientId,
+          planDate: new SystemClock().clinicDate(completedAt + Number(template.daysAfter ?? 1) * 86_400_000),
+          content: template.content ?? template.name,
+          status: 'PENDING',
+          assigneeId: template.assigneeId ?? null,
+          templateId: template.id,
+        });
+        generated += 1;
+      }
     }
     return { processed: rows.length, generated };
   }

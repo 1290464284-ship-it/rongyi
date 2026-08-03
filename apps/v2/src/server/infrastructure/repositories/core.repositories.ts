@@ -293,9 +293,20 @@ export class SqliteFollowUpRepository implements FollowUpRepository {
     this.db.prepare(
       `INSERT INTO FollowUp (
          id, clinicId, createdAt, updatedAt, deletedAt,
-         patientId, planDate, content, status
-       ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
-    ).run(record.id, record.clinicId ?? null, record.createdAt, record.updatedAt, record.patientId, record.planDate, record.content ?? null, record.status);
+         patientId, planDate, content, status, assigneeId, templateId
+       ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      record.id,
+      record.clinicId ?? null,
+      record.createdAt,
+      record.updatedAt,
+      record.patientId,
+      record.planDate,
+      record.content ?? null,
+      record.status,
+      record.assigneeId ?? null,
+      record.templateId ?? null,
+    );
   }
 }
 
