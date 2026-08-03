@@ -281,14 +281,18 @@ function DesktopSettingsTab() {
     checked: boolean;
     onChange: () => void;
     disabled?: boolean;
-  }) => (
+  }) => {
+    const inputId = `settings-${title.replace(/\s+/g, '-').toLowerCase()}`;
+    return (
     <label
+      htmlFor={inputId}
       className={cn(
         'flex items-start gap-3 p-3 rounded-md border border-border transition-colors',
         disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:bg-muted/30',
       )}
     >
       <input
+        id={inputId}
         type="checkbox"
         className="mt-1 h-4 w-4 rounded border-border text-primary focus:ring-primary"
         checked={checked}
@@ -300,7 +304,8 @@ function DesktopSettingsTab() {
         {desc && <div className="text-xs text-muted-foreground mt-0.5">{desc}</div>}
       </div>
     </label>
-  );
+    );
+  };
 
   return (
     <div className="space-y-4">

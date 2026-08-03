@@ -32,10 +32,12 @@ export default function ImportOptions({
       </CardHeader>
       <CardContent className="space-y-3">
         <label
+          htmlFor="import-dry-run"
           className="flex items-start gap-3 rounded-md border border-border p-3 cursor-pointer hover:bg-muted/30 transition-colors"
           data-testid="dry-run-checkbox"
         >
           <input
+            id="import-dry-run"
             type="checkbox"
             className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary"
             checked={dryRun}
@@ -53,8 +55,12 @@ export default function ImportOptions({
         </label>
 
         {showStrictOption && (
-          <label className="flex items-start gap-3 rounded-md border border-border p-3 cursor-pointer hover:bg-muted/30 transition-colors">
+          <label
+            htmlFor="import-strict"
+            className="flex items-start gap-3 rounded-md border border-border p-3 cursor-pointer hover:bg-muted/30 transition-colors"
+          >
             <input
+              id="import-strict"
               type="checkbox"
               className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary"
               checked={strict}
@@ -74,6 +80,7 @@ export default function ImportOptions({
 
         {showAutoCreateOption && (
           <label
+            htmlFor="import-auto-create-drug"
             className={cn(
               'flex items-start gap-3 rounded-md border p-3 cursor-pointer transition-colors',
               autoCreateDrug
@@ -82,6 +89,7 @@ export default function ImportOptions({
             )}
           >
             <input
+              id="import-auto-create-drug"
               type="checkbox"
               className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary"
               checked={autoCreateDrug}

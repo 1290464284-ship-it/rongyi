@@ -389,8 +389,8 @@ export function CephalometricCanvas({
           <div className="bg-muted/20 px-3 py-2 border-b border-border text-xs flex items-center gap-3 flex-wrap">
             <span className="font-medium">参考线：</span>
             {REFERENCE_LINES.map((r) => (
-              <label key={r.key} className="flex items-center gap-1 cursor-pointer">
-                <Checkbox checked={layerVisibility[r.key]} onChange={() => toggleLayer(r.key)} className="h-3 w-3" />
+              <label key={r.key} htmlFor={`layer-${r.key}`} className="flex items-center gap-1 cursor-pointer">
+                <Checkbox id={`layer-${r.key}`} checked={layerVisibility[r.key]} onChange={() => toggleLayer(r.key)} className="h-3 w-3" />
                 <span style={{ color: r.stroke }}>{r.key}</span>
               </label>
             ))}

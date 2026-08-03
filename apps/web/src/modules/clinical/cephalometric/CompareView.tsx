@@ -85,8 +85,8 @@ export function CompareView({ patientId }: CompareViewProps) {
           <h3 className="font-semibold flex items-center gap-2">
             <ArrowRightLeft className="w-4 h-4" />历史对比
           </h3>
-          <label className="flex items-center gap-2 text-xs">
-            <Checkbox checked={onlyDiff} onChange={(v) => setOnlyDiff(v)} className="h-3 w-3" />
+          <label htmlFor="compare-only-diff" className="flex items-center gap-2 text-xs">
+            <Checkbox id="compare-only-diff" checked={onlyDiff} onChange={(v) => setOnlyDiff(v)} className="h-3 w-3" />
             只看差异项
           </label>
         </div>
