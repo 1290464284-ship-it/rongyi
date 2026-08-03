@@ -221,6 +221,8 @@ export interface FollowUpRecord {
   planDate: string;
   content?: string | null;
   status: string;
+  assigneeId?: string | null;
+  templateId?: string | null;
   createdAt: string;
   updatedAt: string;
   deletedAt?: string | null;

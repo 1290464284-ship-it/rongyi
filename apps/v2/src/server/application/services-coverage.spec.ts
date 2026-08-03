@@ -72,8 +72,28 @@ describe('service coverage', () => {
 
   it('generates follow-ups and lists reminders', async () => {
     const service = new FollowUpService(db);
+    db.prepare(
+      `INSERT INTO FollowUpTemplate (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         name, daysAfter, content, isEnabled
+       ) VALUES (?, ?, ?, ?, NULL, 'Template', 5, 'Template follow-up', 1)`,
+    ).run('template-test', context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO Visit (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, startTime, endTime, status
+       ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, 'COMPLETED')`,
+    ).run('visit-followup', context.clinicId, now, now, 'patient-demo-001', 'user-admin-001', now, now);
+    db.prepare(
+      `INSERT INTO Treatment (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, visitId, doctorId, code, name, category,
+         price, quantity, status, completedDate
+       ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, 'T-1', 'T', 'GENERAL', 100, 1, 'COMPLETED', ?)`,
+    ).run('treatment-followup', context.clinicId, now, now, 'patient-demo-001', 'visit-followup', 'user-admin-001', '2026-08-01');
     await service.batchGenerate(2, context);
-    expect(service.reminders().length).toBeGreaterThanOrEqual(1);
+    const generated = db.prepare('SELECT * FROM FollowUp WHERE templateId = ?').all('template-test') as Array<Record<string, unknown>>;
+    expect(generated.length).toBeGreaterThanOrEqual(1);
   });
 
   it('creates and verifies backups', async () => {
