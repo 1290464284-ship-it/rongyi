@@ -459,6 +459,7 @@ export class ReplenishmentSuggestionService extends BaseService<InventoryRepleni
         );
 
         stats.generated++;
+        // soft-delete-exempt: 写后读取刚创建的记录，id 已确认存在且未删除
         const rawRow = db
           .prepare(`SELECT * FROM InventoryReplenishmentSuggestion WHERE id = ?`)
           .get(sugId) as InventoryReplenishmentSuggestionRow;
@@ -696,6 +697,7 @@ export class ReplenishmentSuggestionService extends BaseService<InventoryRepleni
           );
         }
 
+        // soft-delete-exempt: 写后读取刚创建的记录，id 已确认存在且未删除
         const poRow = db
           .prepare(`SELECT * FROM PurchaseOrder WHERE id = ?`)
           .get(poId) as Record<string, unknown>;

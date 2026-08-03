@@ -147,7 +147,7 @@ export class PerformanceAnomalyService {
         AND status IN ('PAID','PARTIAL')
         AND createdAt >= ? AND createdAt <= ?
         AND deletedAt IS NULL
-    `;
+    `; // soft-delete-exempt: 多行 SQL，deletedAt IS NULL 在 L149
     const chargeCountRow = this.dbService.prepare(chargeCountSql)
       .get(clinicId, doctorId, windowStartIso, nowIso) as { cnt: number };
     const chargeCount = chargeCountRow?.cnt ?? 0;
@@ -249,7 +249,7 @@ export class PerformanceAnomalyService {
           AND status IN ('PAID','PARTIAL')
           AND createdAt >= ? AND createdAt < ?
           AND deletedAt IS NULL
-      `).get(cid, doctorId, startIso, endIso) as { cnt: number };
+      `).get(cid, doctorId, startIso, endIso) as { cnt: number }; // soft-delete-exempt: 多行 SQL，deletedAt IS NULL 在上一行
       const cnt = cntRow?.cnt ?? 0;
       return cnt > 0 ? (revRow?.rev ?? 0) / cnt : 0;
     }

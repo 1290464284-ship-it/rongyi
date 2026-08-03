@@ -505,7 +505,7 @@ export class CephalometricService {
       const cid = this.clinicContext.getClinicId();
       if (cid) {
         const cRow = this.dbService.prepare(
-          `SELECT id, name, address, phone, code FROM Clinic WHERE id = ?`,
+          `SELECT id, name, address, phone, code FROM Clinic WHERE id = ? AND deletedAt IS NULL`,
         ).get(cid) as Record<string, unknown> | undefined;
         if (cRow) {
           clinic.id = cRow.id;

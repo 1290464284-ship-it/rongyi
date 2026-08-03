@@ -348,16 +348,35 @@ function checkSoftDelete(files) {
           const tableName = selectMatch[1];
           // 仅检查包含 deletedAt 列的软删除表
           if (softDeleteTables.has(tableName)) {
-            // 已有 deletedAt IS [NOT] NULL 过滤 → 通过（仅列出 deletedAt 列不算过滤）
-            const hasFilter = /deletedAt\s+IS\s+(NOT\s+)?NULL/i.test(line);
+            // 提取完整 SQL 模板字面量（支持反引号、双引号、单引号）
+            // 以支持多行 SQL 查询的 deletedAt 检测
+            let sqlBlock = '';
+            // 向前搜索找到包含开头引号的行
+            let blockStart = idx;
+            for (let j = idx; j >= Math.max(0, idx - 5); j--) {
+              if (/[`"']\s*$/.test(lines[j]) || /[`"']\s*\S/.test(lines[j])) {
+                blockStart = j;
+                break;
+              }
+            }
+            // 向后搜索找到结尾引号（引号后可能跟逗号、分号、括号等）
+            let blockEnd = idx;
+            for (let j = idx; j < Math.min(lines.length, idx + 30); j++) {
+              if (/[`"'][\s,;)]*(?:\)|\.)?[\s,;)]*$/.test(lines[j]) && /[`"']/.test(lines[j])) {
+                blockEnd = j;
+                break;
+              }
+            }
+            sqlBlock = lines.slice(blockStart, blockEnd + 1).join('\n');
+
+            // 已有 deletedAt IS [NOT] NULL 过滤 → 通过（在整个 SQL 块中检查）
+            const hasFilter = /deletedAt\s+IS\s+(NOT\s+)?NULL/i.test(sqlBlock);
             // WHERE 子句由变量动态拼接（如 ${whereClause}、${dateFilter}）→ 无法静态判断，跳过
             const hasDynamicWhere =
-              /\$\{[^}]*(?:where|filter|conditions)[^}]*\}/i.test(line) ||
-              new RegExp(`FROM\\s+${tableName}\\s*\\$\\{`, 'i').test(line);
-            // 显式豁免注释（本行或上一行）
-            const isExempt =
-              line.includes(SOFT_DELETE_EXEMPT_MARKER) ||
-              (idx > 0 && lines[idx - 1].includes(SOFT_DELETE_EXEMPT_MARKER));
+              /\$\{[^}]*(?:where|filter|conditions|clause)[^}]*\}/i.test(sqlBlock) ||
+              new RegExp(`FROM\\s+${tableName}\\s*\\$\\{`, 'i').test(sqlBlock);
+            // 显式豁免注释（SQL 块范围内任一行，或块开始前 3 行内）
+            const isExempt = lines.slice(Math.max(0, blockStart - 3), blockEnd + 1).some(l => l.includes(SOFT_DELETE_EXEMPT_MARKER));
 
             if (!hasFilter && !hasDynamicWhere && !isExempt) {
               reportWarning(

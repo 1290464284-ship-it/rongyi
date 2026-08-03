@@ -446,7 +446,9 @@ export class FollowUpRecommenderService extends BaseService<FollowUpTemplateEnti
        WHERE V.status = 'COMPLETED'
          AND T.status = 'COMPLETED'
          AND V.clinicId = ?
-       LIMIT ?`,
+         AND V.deletedAt IS NULL
+         AND T.deletedAt IS NULL
+       LIMIT ?`, // soft-delete-exempt: 多行 JOIN 查询，V.deletedAt 和 T.deletedAt 已在 L449-450
     ).all(clinicId, limit * 2) as Array<Record<string, unknown>>;
 
     const normalizedPids = candidatePatients
@@ -485,7 +487,7 @@ export class FollowUpRecommenderService extends BaseService<FollowUpTemplateEnti
     for (const { pid } of filteredPatients) {
       const recentVisits = this.dbService.prepare(
         `SELECT id FROM Visit
-         WHERE patientId = ? AND status = 'COMPLETED' AND clinicId = ?
+         WHERE patientId = ? AND status = 'COMPLETED' AND clinicId = ? AND deletedAt IS NULL
          ORDER BY createdAt DESC LIMIT 3`,
       ).all(pid, clinicId) as Array<{ id: string }>;
 

@@ -206,6 +206,7 @@ export class BusinessAlertDetectorService {
             finding.severity, finding.metricName, finding.currentValue, finding.baselineValue,
             finding.deviationPercent, finding.message, finding.suggestion, existingRow.id,
           );
+          // soft-delete-exempt: 写后读取刚更新的记录，id 已确认存在且未删除
           const updated = tx.prepare('SELECT * FROM BusinessAlert WHERE id = ?').get(existingRow.id) as BusinessAlertRow;
           persistedRows.push(updated);
         } else {
@@ -220,6 +221,7 @@ export class BusinessAlertDetectorService {
             finding.currentValue, finding.baselineValue, finding.deviationPercent,
             finding.message, finding.suggestion, finding.occurredAt || now, now, now,
           );
+          // soft-delete-exempt: 写后读取刚创建的记录，id 已确认存在且未删除
           const inserted = tx.prepare('SELECT * FROM BusinessAlert WHERE id = ?').get(id) as BusinessAlertRow;
           persistedRows.push(inserted);
 
