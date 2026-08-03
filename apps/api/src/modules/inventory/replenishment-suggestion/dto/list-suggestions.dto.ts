@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsNumber, IsIn, Min } from 'class-validator';
+import { IsOptional, IsString, IsNumber, IsIn, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -32,6 +32,7 @@ export class ListSuggestionsDto {
   @Type(() => Number)
   @IsNumber()
   @Min(1)
+  @Max(200)
   pageSize?: number = 20;
 
   @ApiProperty({ description: '排序字段', enum: VALID_SORT_BY, example: 'createdAt', required: false })

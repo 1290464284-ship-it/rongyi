@@ -79,9 +79,13 @@ export class SyncService {
     // 此前 cleanupOldChanges 方法已实现但从未被调用
     this.cleanupTimer = setInterval(
       () => {
-        const deleted = this.cleanupOldChanges();
-        if (deleted > 0) {
-          this.logger.log(`清理 ${deleted} 条过期同步变更日志`);
+        try {
+          const deleted = this.cleanupOldChanges();
+          if (deleted > 0) {
+            this.logger.log(`清理 ${deleted} 条过期同步变更日志`);
+          }
+        } catch (error) {
+          this.logger.error('清理过期同步变更日志失败', error);
         }
       },
       SyncService.CLEANUP_INTERVAL_MS,
@@ -203,7 +207,7 @@ export class SyncService {
             } else if (change.data) {
               const data = change.data;
               const keys = Object.keys(data).filter(
-                k => data[k] !== undefined && validateColumnName(k),
+                k => data[k] !== undefined && validateColumnName(k) && k !== 'deletedAt',
               );
               if (keys.length > 0) {
                 const values = keys.map(k => data[k]);
