@@ -2,7 +2,7 @@
  * Security helpers shared by HTTP and repository adapters.
  */
 
-export const SENSITIVE_FIELDS = new Set([
+const SENSITIVE_FIELDS = new Set([
   'passwordHash',
   'refreshToken',
   'tokenHash',
@@ -31,4 +31,3 @@ export function stripProtectedWriteFields(payload: Record<string, unknown>): Rec
   delete result.deletedAt;
   return result;
 }
-

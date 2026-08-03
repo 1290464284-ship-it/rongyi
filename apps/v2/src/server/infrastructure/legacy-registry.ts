@@ -10,7 +10,7 @@ import type { ResourceDefinition, ResourceField, UserRole } from '../../domain/c
  * their existing columns and data without requiring a manual field migration.
  */
 
-export const LEGACY_TABLE_NAMES = [
+const LEGACY_TABLE_NAMES = [
   'Appointment', 'AuditLog', 'AutoFollowUpRule', 'BackupRecord', 'BusinessAlert',
   'CephalometricAnalysis', 'CephalometricAnalysisRecord', 'CephalometricLandmarkSet',
   'CephalometricNormValue', 'Chair', 'Charge', 'ChargeAssociationIgnore',

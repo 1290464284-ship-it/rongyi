@@ -141,14 +141,34 @@ describe('service coverage', () => {
     expect(workflow.registrationStatus('reg-workflow', 'IN_PROGRESS', context).status).toBe('IN_PROGRESS');
   });
 
-  it('returns analytics, sync, print, HR, and alert data', () => {
+  it('returns analytics, sync, print, HR, and alert data', async () => {
     const analytics = new AnalyticsService(db);
     expect(analytics.rfm(context)).toBeInstanceOf(Array);
     expect(analytics.churn(context)).toBeInstanceOf(Array);
     expect(analytics.doctorAnomalies(context)).toBeInstanceOf(Array);
     const sync = new SyncService(db);
     expect(sync.pull(now, 'desktop').changes).toBeInstanceOf(Array);
-    expect(sync.push({ deviceId: 'desktop', changes: [] }).accepted).toBe(0);
+    expect(await sync.push({ deviceId: 'desktop', changes: [] })).toMatchObject({ accepted: 0, failed: 0 });
+    const pushResult = await sync.push({
+      deviceId: 'desktop',
+      changes: [{
+        tableName: 'Patient',
+        recordId: 'patient-synced',
+        operation: 'INSERT',
+        updatedAt: now,
+        data: {
+          code: 'SYNC-1',
+          name: 'Sync Patient',
+          gender: 'UNKNOWN',
+          phone: '13200000000',
+          source: 'OTHER',
+          active: true,
+        },
+      }],
+    });
+    expect(pushResult.accepted).toBe(1);
+    const synced = db.prepare('SELECT * FROM Patient WHERE id = ?').get('patient-synced') as { name: string } | undefined;
+    expect(synced?.name).toBe('Sync Patient');
     expect(sync.cleanup(now).deleted).toBeGreaterThanOrEqual(0);
     const print = new PrintService();
     expect(print.render('report', { title: 'R' })).toContain('R');

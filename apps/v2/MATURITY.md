@@ -57,6 +57,8 @@
 - Charge discount support with cents validation.
 - Follow-up adherence scoring endpoint.
 - Automatic backup failure creates a scheduler task business alert.
+- Sync push applies allowed row changes instead of only recording change log.
+- knip dead-code/dependency gate included in `pnpm verify`.
 - Installer/package artifact verification script.
 - Local signing pipeline verified with a development self-signed certificate.
 - `latest.yml` update metadata generation and verification.
