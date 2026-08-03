@@ -351,13 +351,19 @@ export class ChargeService {
     visitId?: string;
     doctorId?: string;
     items: Array<{ name: string; category: string; price: number; quantity: number; teethNumbers?: string[] }>;
+    discount?: number;
     remark?: string;
   }, context: AppContext): Promise<Record<string, unknown>> {
     if (!input.items?.length) throw new ValidationError('At least one charge item is required');
     const now = context.now().toISOString();
     const id = randomUUID();
     const number = `CHG-${Date.now().toString(36).toUpperCase()}`;
-    const totalAmount = input.items.reduce((sum, item) => sum + Math.round(item.price * item.quantity), 0);
+    const baseTotal = input.items.reduce((sum, item) => sum + Math.round(item.price * item.quantity), 0);
+    const discount = Math.round(input.discount ?? 0);
+    if (!Number.isInteger(input.discount ?? 0) || discount < 0 || discount > baseTotal) {
+      throw new ValidationError('Discount must be a non-negative integer cents value not exceeding the charge total');
+    }
+    const totalAmount = baseTotal - discount;
 
     const chargeRun = this.db.transaction(() => {
       this.chargeRepository.create({
@@ -370,6 +376,7 @@ export class ChargeService {
         doctorId: input.doctorId ?? null,
         number,
         totalAmount,
+        discount,
         status: 'UNPAID',
         remark: input.remark ?? null,
       });
@@ -649,6 +656,18 @@ export class FollowUpService {
       }
     }
     return { processed: rows.length, generated };
+  }
+
+  adherence(): { total: number; onTime: number; rate: number } {
+    const row = this.db.prepare(
+      `SELECT COUNT(*) AS total,
+              COALESCE(SUM(CASE WHEN substr(completedAt, 1, 10) <= planDate THEN 1 ELSE 0 END), 0) AS onTime
+       FROM FollowUp
+       WHERE status = 'COMPLETED' AND planDate IS NOT NULL AND deletedAt IS NULL`,
+    ).get() as { total: number; onTime: number };
+    const total = Number(row.total ?? 0);
+    const onTime = Number(row.onTime ?? 0);
+    return { total, onTime, rate: total === 0 ? 0 : Math.round((onTime / total) * 100) };
   }
 }
 
@@ -1110,6 +1129,44 @@ export class AlertService {
 
   open(): Array<Record<string, unknown>> {
     return this.alertRepository.open();
+  }
+
+  create(input: {
+    alertType: string;
+    level: 'INFO' | 'WARNING' | 'CRITICAL';
+    severity: 'INFO' | 'WARN' | 'CRITICAL';
+    title: string;
+    message: string;
+    source: string;
+    metricName?: string;
+    suggestion?: string;
+    clinicId?: string | null;
+  }): Record<string, unknown> {
+    const now = new Date().toISOString();
+    const id = randomUUID();
+    this.db.prepare(
+      `INSERT INTO BusinessAlert (
+         id, clinicId, alertType, severity, metricName, currentValue,
+         baselineValue, deviationPercent, message, suggestion, acknowledged,
+         acknowledgedAt, acknowledgedBy, occurredAt, level, title, source,
+         status, createdAt, updatedAt, deletedAt
+       ) VALUES (?, ?, ?, ?, ?, 0, 0, 0, ?, ?, 0, NULL, NULL, ?, ?, ?, ?, 'OPEN', ?, ?, NULL)`,
+    ).run(
+      id,
+      input.clinicId ?? null,
+      input.alertType,
+      input.severity,
+      input.metricName ?? null,
+      input.message,
+      input.suggestion ?? null,
+      now,
+      input.level,
+      input.title,
+      input.source,
+      now,
+      now,
+    );
+    return { id, alertType: input.alertType, status: 'OPEN' };
   }
 
   setStatus(id: string, status: 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED', userId?: string): Record<string, unknown> {

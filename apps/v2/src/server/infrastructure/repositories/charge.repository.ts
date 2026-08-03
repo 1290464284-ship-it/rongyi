@@ -22,7 +22,7 @@ export class SqliteChargeRepository implements ChargeRepository {
          id, clinicId, createdAt, updatedAt, deletedAt,
          patientId, visitId, doctorId, number, totalAmount,
          paidAmount, refundedAmount, discount, status, remark
-       ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?)`,
+       ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?)`,
     ).run(
       input.id,
       input.clinicId ?? null,
@@ -33,6 +33,7 @@ export class SqliteChargeRepository implements ChargeRepository {
       input.doctorId ?? null,
       input.number,
       input.totalAmount,
+      input.discount,
       input.status,
       input.remark ?? null,
     );

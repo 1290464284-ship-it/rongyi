@@ -54,6 +54,9 @@
   uninstall.
 - Upgrade smoke: reinstall over an existing installation while preserving
   user data, then verify the upgraded API.
+- Charge discount support with cents validation.
+- Follow-up adherence scoring endpoint.
+- Automatic backup failure creates a scheduler task business alert.
 - Installer/package artifact verification script.
 - Local signing pipeline verified with a development self-signed certificate.
 - `latest.yml` update metadata generation and verification.

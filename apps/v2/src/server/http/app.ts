@@ -597,6 +597,14 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
     }
   });
 
+  app.get('/api/v2/follow-ups/adherence', async (req, res, next) => {
+    try {
+      res.json({ success: true, data: followUps.adherence() });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.post('/api/v2/follow-ups/batch-generate', async (req, res, next) => {
     try {
       const result = await followUps.batchGenerate(Number(req.body?.limit ?? 50), req.context!);

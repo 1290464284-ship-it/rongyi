@@ -54,6 +54,22 @@ describe('application services', () => {
     expect(refunded.amount).toBe(50);
   });
 
+  it('applies a discount when creating a charge', async () => {
+    const service = new ChargeService(db);
+    const created = await service.create({
+      patientId: 'patient-demo-001',
+      items: [{ name: 'Exam', category: 'EXAM', price: 200, quantity: 1 }],
+      discount: 50,
+    }, context);
+    expect(created.totalAmount).toBe(150);
+    const row = db.prepare('SELECT totalAmount, discount FROM Charge WHERE id = ?').get(String(created.id)) as {
+      totalAmount: number;
+      discount: number;
+    };
+    expect(row.totalAmount).toBe(150);
+    expect(row.discount).toBe(50);
+  });
+
   it('rejects a stock decrease below zero', async () => {
     const service = new InventoryService(db);
     await expect(

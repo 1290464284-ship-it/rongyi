@@ -139,6 +139,7 @@ async function main() {
     body: JSON.stringify({ status: 'COMPLETED' }),
   });
   await request('/follow-ups/reminders', { headers });
+  await request('/follow-ups/adherence', { headers });
   await request('/follow-ups/batch-generate', {
     method: 'POST',
     headers,

@@ -5,7 +5,7 @@ import { createDatabase, seedDatabase, syncLegacySchema } from './infrastructure
 import { Logger } from './infrastructure/logger';
 import { runMigrations } from './infrastructure/migrations';
 import { importLegacyDatabase } from './infrastructure/legacy-import';
-import { BackupService } from './application/services';
+import { AlertService, BackupService } from './application/services';
 
 const projectRoot = process.cwd();
 const selfContainedLegacyDb = path.join(projectRoot, 'legacy', 'dental.sqlite');
@@ -53,6 +53,7 @@ server.on('error', (error) => {
 });
 
 const backups = new BackupService(db, dbPath, backupDir);
+const alerts = new AlertService(db);
 const autoBackupIntervalMs = Number(process.env.V2_AUTO_BACKUP_INTERVAL_MS ?? 24 * 60 * 60 * 1000);
 const autoBackupKeep = Number(process.env.V2_AUTO_BACKUP_KEEP ?? 30);
 async function runAutoBackup(): Promise<void> {
@@ -62,6 +63,17 @@ async function runAutoBackup(): Promise<void> {
     logger.info('automatic backup completed', { action: 'auto-backup', ...result, cleanup });
   } catch (error) {
     logger.error('automatic backup failed', { action: 'auto-backup', error });
+    alerts.create({
+      alertType: 'SCHEDULER_TASK_FAILURE',
+      level: 'CRITICAL',
+      severity: 'CRITICAL',
+      title: 'Automatic backup failed',
+      message: error instanceof Error ? error.message : String(error),
+      source: 'BACKUP_AUTO',
+      metricName: 'automatic_backup',
+      suggestion: 'Check disk space, backup permissions, and V2_BACKUP_KEY.',
+      clinicId: null,
+    });
   }
 }
 void runAutoBackup();
