@@ -69,7 +69,15 @@ The workflow fails before packaging when either secret is missing.
 
 The repository is currently configured with the local self-signed
 `certs/signing-cert.pfx` to keep the release pipeline green. Replace it with a
-CA-issued code signing certificate before public distribution.
+CA-issued code signing certificate before public distribution. The release
+workflow now fails when the installer is signed with a self-signed development
+certificate.
+
+Verify a local installer locally:
+
+```powershell
+pnpm --filter @dental/v2 run verify:signature
+```
 
 ## Offline Restore
 
