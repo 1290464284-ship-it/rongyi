@@ -33,6 +33,7 @@ function validateField(field: ResourceField, raw: unknown): unknown {
     case 'money': {
       const value = Number(raw);
       if (!Number.isFinite(value)) throw new ValidationError(`${field.name} must be a number`);
+      if (!Number.isInteger(value)) throw new ValidationError(`${field.name} must be an integer amount in cents`);
       if (field.min !== undefined && value < field.min) throw new ValidationError(`${field.name} must be >= ${field.min}`);
       if (field.max !== undefined && value > field.max) throw new ValidationError(`${field.name} must be <= ${field.max}`);
       return value;
@@ -52,4 +53,3 @@ function validateField(field: ResourceField, raw: unknown): unknown {
       return raw;
   }
 }
-

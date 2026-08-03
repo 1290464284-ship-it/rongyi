@@ -166,7 +166,7 @@ export type RegistrationType = (typeof RegistrationType)[keyof typeof Registrati
 export const RegistrationStatus = {
   REGISTERED: 'REGISTERED',
   TRIAGED: 'TRIAGED',
-  STARTED: 'STARTED',
+  IN_PROGRESS: 'IN_PROGRESS',
   COMPLETED: 'COMPLETED',
   CANCELLED: 'CANCELLED',
 } as const;

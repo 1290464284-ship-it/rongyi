@@ -7,8 +7,9 @@ import type { ResourceField } from '../../domain/contracts';
 
 function columnType(field: ResourceField): string {
   switch (field.type) {
-    case 'number':
     case 'money':
+      return 'INTEGER';
+    case 'number':
       return 'REAL';
     case 'boolean':
       return 'INTEGER';
@@ -43,10 +44,10 @@ function createChildTables(db: Database.Database): void {
       treatmentId TEXT,
       name TEXT NOT NULL,
       category TEXT NOT NULL,
-      price REAL NOT NULL,
+      price INTEGER NOT NULL,
       quantity REAL NOT NULL,
       teethNumbers TEXT NOT NULL DEFAULT '[]',
-      subtotal REAL NOT NULL,
+      subtotal INTEGER NOT NULL,
       clinicId TEXT,
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL,
@@ -59,7 +60,7 @@ function createChildTables(db: Database.Database): void {
       code TEXT NOT NULL,
       name TEXT NOT NULL,
       category TEXT NOT NULL,
-      price REAL NOT NULL,
+      price INTEGER NOT NULL,
       quantity REAL NOT NULL,
       teethNumbers TEXT NOT NULL DEFAULT '[]',
       status TEXT NOT NULL,
@@ -82,7 +83,7 @@ function createChildTables(db: Database.Database): void {
       frequency TEXT,
       days REAL NOT NULL,
       quantity REAL NOT NULL,
-      price REAL NOT NULL,
+      price INTEGER NOT NULL,
       clinicId TEXT,
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL,
@@ -96,8 +97,8 @@ function createChildTables(db: Database.Database): void {
       name TEXT NOT NULL,
       spec TEXT,
       quantity REAL NOT NULL,
-      unitPrice REAL NOT NULL,
-      subtotal REAL NOT NULL,
+      unitPrice INTEGER NOT NULL,
+      subtotal INTEGER NOT NULL,
       clinicId TEXT,
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL,
@@ -110,8 +111,8 @@ function createChildTables(db: Database.Database): void {
       name TEXT NOT NULL,
       spec TEXT,
       quantity REAL NOT NULL,
-      unitPrice REAL NOT NULL,
-      subtotal REAL NOT NULL,
+      unitPrice INTEGER NOT NULL,
+      subtotal INTEGER NOT NULL,
       status TEXT NOT NULL,
       clinicId TEXT,
       createdAt TEXT NOT NULL,
@@ -134,14 +135,32 @@ function createChildTables(db: Database.Database): void {
       deletedAt TEXT
     );
 
-    CREATE TABLE IF NOT EXISTS IdempotencyRecord (
+    CREATE TABLE IF NOT EXISTS BackupRecord (
       id TEXT PRIMARY KEY,
-      key TEXT NOT NULL UNIQUE,
-      responseJson TEXT NOT NULL,
       clinicId TEXT,
+      filename TEXT NOT NULL,
+      fileSize INTEGER,
+      type TEXT DEFAULT 'MANUAL',
+      operatorId TEXT,
+      operatorName TEXT,
+      remark TEXT,
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL,
       deletedAt TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS IdempotencyRecord (
+      id TEXT PRIMARY KEY,
+      key TEXT NOT NULL UNIQUE,
+      type TEXT DEFAULT 'GENERIC',
+      status TEXT DEFAULT 'COMPLETED',
+      responseJson TEXT NOT NULL,
+      result TEXT,
+      clinicId TEXT,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL,
+      deletedAt TEXT,
+      expiresAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+1 day'))
     );
 
     CREATE TABLE IF NOT EXISTS SyncChange (
@@ -168,7 +187,7 @@ function createChildTables(db: Database.Database): void {
       calculationSnapshotJson TEXT,
       status TEXT,
       supplierId TEXT,
-      totalAmount REAL,
+      totalAmount INTEGER,
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL,
       deletedAt TEXT
@@ -264,32 +283,33 @@ export function createDatabase(
 export function seedDatabase(db: Database.Database): void {
   const now = new Date().toISOString();
   const passwordHash = bcrypt.hashSync('admin123', 10);
-  const clinicCount = db.prepare('SELECT COUNT(*) AS count FROM Clinic').get() as { count: number };
-  if (clinicCount.count > 0) return;
+  const clinicRow = db.prepare('SELECT id FROM Clinic LIMIT 1').get() as { id: string } | undefined;
+  const clinicId = clinicRow ? String(clinicRow.id) : 'clinic-v2-001';
+  if (!clinicRow) {
+    db.prepare(
+      `INSERT INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+       VALUES (?, NULL, ?, ?, NULL, 'V2', 'Refactored Clinic', 1)`,
+    ).run(clinicId, now, now);
+  }
 
-  const clinicId = 'clinic-v2-001';
-  const userId = 'user-admin-001';
+  const adminRow = db.prepare("SELECT id, passwordHash FROM User WHERE username = 'admin'").get() as
+    | { id: string; passwordHash: string }
+    | undefined;
+  const userId = adminRow?.id ?? 'user-admin-001';
+  if (!adminRow) {
+    db.prepare(
+      `INSERT INTO User (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         username, passwordHash, name, role, active, loginAttempts, tokenVersion
+       ) VALUES (?, ?, ?, ?, NULL, 'admin', ?, 'System Administrator', 'BOSS', 1, 0, 0)`,
+    ).run(userId, clinicId, now, now, passwordHash);
+  } else if (process.env.NODE_ENV !== 'production') {
+    db.prepare('UPDATE User SET passwordHash = ?, active = 1, lockedUntil = NULL, updatedAt = ? WHERE id = ?')
+      .run(passwordHash, now, userId);
+  }
 
   db.prepare(
-    `INSERT INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
-     VALUES (?, NULL, ?, ?, NULL, 'V2', 'Refactored Clinic', 1)`,
-  ).run(clinicId, now, now);
-
-  db.prepare(
-    `INSERT INTO User (
-       id, clinicId, createdAt, updatedAt, deletedAt,
-       username, passwordHash, name, role, active, loginAttempts, tokenVersion
-     ) VALUES (?, ?, ?, ?, NULL, 'admin', ?, 'System Administrator', 'BOSS', 1, 0, 0)`,
-  ).run(
-    userId,
-    clinicId,
-    now,
-    now,
-    passwordHash,
-  );
-
-  db.prepare(
-    `INSERT INTO Patient (
+    `INSERT OR IGNORE INTO Patient (
        id, clinicId, createdAt, updatedAt, deletedAt,
        code, name, gender, phone, tags, allergies, medicalHistory,
        medicationHistory, systemicDiseases, source, active
@@ -298,21 +318,21 @@ export function seedDatabase(db: Database.Database): void {
   ).run('patient-demo-001', clinicId, now, now);
 
   db.prepare(
-    `INSERT INTO Appointment (
+    `INSERT OR IGNORE INTO Appointment (
        id, clinicId, createdAt, updatedAt, deletedAt,
        patientId, doctorId, startTime, endTime, status, type
      ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', ?, ?, ?, 'BOOKED', 'REGULAR')`,
   ).run('appointment-demo-001', clinicId, now, now, userId, now, new Date(Date.now() + 3_600_000).toISOString());
 
   db.prepare(
-    `INSERT INTO InventoryItem (
+    `INSERT OR IGNORE INTO InventoryItem (
        id, clinicId, createdAt, updatedAt, deletedAt,
        code, name, category, unit, stock, minStock, price
      ) VALUES (?, ?, ?, ?, NULL, 'MAT-001', 'Dental Material', 'CONSUMABLE', 'box', 100, 20, 5000)`,
   ).run('inventory-demo-001', clinicId, now, now);
 
   db.prepare(
-    `INSERT INTO FollowUp (
+    `INSERT OR IGNORE INTO FollowUp (
        id, clinicId, createdAt, updatedAt, deletedAt,
        patientId, planDate, content, status
      ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', ?, 'Post-treatment review', 'PENDING')`,

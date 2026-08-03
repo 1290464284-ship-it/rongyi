@@ -72,13 +72,35 @@ describe('workflow services', () => {
 
   it('generates and applies replenishment suggestions', () => {
     const service = new ReplenishmentService(db);
+    const transactionAt = new Date(Date.now() - 30 * 86_400_000).toISOString();
+    db.prepare(
+      `INSERT INTO InventoryItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, category, unit, stock, minStock, price
+       ) VALUES (?, ?, ?, ?, NULL, 'DEMAND-1', 'Demand Item', 'CONSUMABLE', 'box', 1, 10, 100)`,
+    ).run('item-demand', context.clinicId, transactionAt, transactionAt);
+    db.prepare(
+      `INSERT INTO InventoryTransaction (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         itemId, type, quantity, beforeStock, afterStock, operatorId
+       ) VALUES (?, ?, ?, ?, NULL, ?, 'OUT', 90, 91, 1, ?)`,
+    ).run('tx-demand', context.clinicId, transactionAt, transactionAt, 'item-demand', context.userId);
     const generated = service.generate(context);
-    expect(generated.generated).toBeGreaterThanOrEqual(0);
+    expect(generated.generated).toBeGreaterThanOrEqual(1);
     const suggestion = db.prepare(
+      'SELECT * FROM InventoryReplenishmentSuggestion WHERE inventoryId = ? AND deletedAt IS NULL',
+    ).get('item-demand') as { id: string; calculationSnapshotJson: string } | undefined;
+    expect(suggestion).toBeDefined();
+    if (suggestion) {
+      const snapshot = JSON.parse(suggestion.calculationSnapshotJson) as { reason: string; avgDaily: number };
+      expect(snapshot.reason).toBe('DEMAND_BASED_ROP');
+      expect(snapshot.avgDaily).toBeCloseTo(1, 0);
+    }
+    const anySuggestion = db.prepare(
       'SELECT * FROM InventoryReplenishmentSuggestion WHERE deletedAt IS NULL LIMIT 1',
     ).get() as { id: string } | undefined;
-    if (suggestion) {
-      const result = service.applyToPurchaseOrder([suggestion.id], context);
+    if (anySuggestion) {
+      const result = service.applyToPurchaseOrder([anySuggestion.id], context);
       expect(result).toHaveProperty('orderId');
     }
   });
@@ -115,4 +137,3 @@ describe('workflow services', () => {
     expect(service.frequentItems().length).toBeGreaterThanOrEqual(1);
   });
 });
-

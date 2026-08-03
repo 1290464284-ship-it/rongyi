@@ -1,4 +1,6 @@
 import type Database from 'better-sqlite3';
+import { resourceRegistry } from '../../domain/resources';
+import type { ResourceField } from '../../domain/contracts';
 
 export interface Migration {
   version: number;
@@ -14,7 +16,7 @@ export interface Migration {
  */
 export const migrations: Migration[] = [
   {
-    version: 1,
+    version: 101,
     name: 'v2-initial-indexes',
     up(db) {
       db.exec(`
@@ -24,6 +26,152 @@ export const migrations: Migration[] = [
         CREATE INDEX IF NOT EXISTS idx_v2_inventory_tx_item_date ON InventoryTransaction(itemId, createdAt);
         CREATE INDEX IF NOT EXISTS idx_v2_followup_patient_date ON FollowUp(patientId, planDate);
       `);
+    },
+  },
+  {
+    version: 102,
+    name: 'v2-auth-refresh-session',
+    up(db) {
+      const userColumns = new Set(
+        (db.prepare('PRAGMA table_info(User)').all() as Array<{ name: string }>).map((column) => column.name),
+      );
+      if (!userColumns.has('refreshToken')) {
+        db.exec('ALTER TABLE User ADD COLUMN refreshToken TEXT');
+      }
+      if (!userColumns.has('refreshTokenExpiresAt')) {
+        db.exec('ALTER TABLE User ADD COLUMN refreshTokenExpiresAt TEXT');
+      }
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS UsedRefreshToken (
+          tokenHash TEXT PRIMARY KEY,
+          userId TEXT NOT NULL,
+          usedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (userId) REFERENCES User(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_v2_user_refresh_token ON User(refreshToken);
+      `);
+    },
+  },
+  {
+    version: 103,
+    name: 'v2-audit-backup-columns',
+    up(db) {
+      const ensureColumns = (table: string, columns: string[]): void => {
+        const existing = new Set(
+          (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((column) => column.name),
+        );
+        for (const column of columns) {
+          if (!existing.has(column)) {
+            db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} TEXT`);
+          }
+        }
+      };
+      ensureColumns('OperationLog', ['traceId', 'updatedAt', 'deletedAt']);
+      ensureColumns('BackupRecord', ['updatedAt', 'deletedAt']);
+    },
+  },
+  {
+    version: 104,
+    name: 'v2-idempotency-columns',
+    up(db) {
+      const columns = new Set(
+        (db.prepare('PRAGMA table_info(IdempotencyRecord)').all() as Array<{ name: string }>).map((column) => column.name),
+      );
+      for (const column of ['responseJson', 'clinicId', 'updatedAt', 'deletedAt']) {
+        if (!columns.has(column)) {
+          db.exec(`ALTER TABLE IdempotencyRecord ADD COLUMN ${column} ${column === 'responseJson' ? 'TEXT' : 'TEXT'}`);
+        }
+      }
+    },
+  },
+  {
+    version: 105,
+    name: 'v2-idempotency-legacy-columns',
+    up(db) {
+      const columns = new Set(
+        (db.prepare('PRAGMA table_info(IdempotencyRecord)').all() as Array<{ name: string }>).map((column) => column.name),
+      );
+      const additions: Array<[string, string]> = [
+        ['type', "TEXT DEFAULT 'GENERIC'"],
+        ['status', "TEXT DEFAULT 'COMPLETED'"],
+        ['result', 'TEXT'],
+        ['expiresAt', "TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+1 day'))"],
+      ];
+      for (const [name, definition] of additions) {
+        if (!columns.has(name)) {
+          db.exec(`ALTER TABLE IdempotencyRecord ADD COLUMN ${name} ${definition}`);
+        }
+      }
+    },
+  },
+  {
+    version: 106,
+    name: 'v2-resource-column-sync',
+    up(db) {
+      const fieldType: Record<ResourceField['type'], string> = {
+        number: 'REAL',
+        money: 'INTEGER',
+        boolean: 'INTEGER',
+        date: 'TEXT',
+        datetime: 'TEXT',
+        json: 'TEXT',
+        text: 'TEXT',
+        longText: 'TEXT',
+        enum: 'TEXT',
+        relation: 'TEXT',
+      };
+      for (const resource of resourceRegistry.all()) {
+        const existing = new Set(
+          (db.prepare(`PRAGMA table_info(${resource.table})`).all() as Array<{ name: string }>).map((column) => column.name),
+        );
+        for (const field of resource.fields) {
+          if (!existing.has(field.name)) {
+            db.exec(`ALTER TABLE ${resource.table} ADD COLUMN ${field.name} ${fieldType[field.type]}`);
+          }
+        }
+      }
+      const childAdditions: Array<[string, string]> = [
+        ['InventoryReplenishmentSuggestion', 'status TEXT'],
+        ['InventoryReplenishmentSuggestion', 'supplierId TEXT'],
+        ['InventoryReplenishmentSuggestion', 'totalAmount INTEGER'],
+        ['ProcessingOrderItem', 'name TEXT'],
+        ['ProcessingOrderItem', 'spec TEXT'],
+        ['PurchaseOrder', 'receivedAt TEXT'],
+      ];
+      for (const [table, definition] of childAdditions) {
+        const existing = new Set(
+          (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((column) => column.name),
+        );
+        const columnName = definition.split(' ')[0];
+        if (!existing.has(columnName)) {
+          db.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
+        }
+      }
+    },
+  },
+  {
+    version: 107,
+    name: 'v2-base-column-sync',
+    up(db) {
+      const tables = db.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name != 'schema_migrations'",
+      ).all() as Array<{ name: string }>;
+      const baseColumns: Array<[string, string]> = [
+        ['clinicId', 'TEXT'],
+        ['createdAt', 'TEXT'],
+        ['updatedAt', 'TEXT'],
+        ['deletedAt', 'TEXT'],
+      ];
+      for (const { name } of tables) {
+        const existing = new Set(
+          (db.prepare(`PRAGMA table_info(${name})`).all() as Array<{ name: string }>).map((column) => column.name),
+        );
+        for (const [column, type] of baseColumns) {
+          if (!existing.has(column)) {
+            db.exec(`ALTER TABLE ${name} ADD COLUMN ${column} ${type}`);
+          }
+        }
+      }
     },
   },
 ];

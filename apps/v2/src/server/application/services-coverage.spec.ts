@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../infrastructure/database';
+import { runMigrations } from '../infrastructure/migrations';
 import {
   AlertService,
   AppointmentService,
@@ -32,6 +33,7 @@ describe('service coverage', () => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-services-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
+    runMigrations(db);
     context = {
       userId: 'user-admin-001',
       clinicId: 'clinic-v2-001',
@@ -52,6 +54,7 @@ describe('service coverage', () => {
     expect(login.user.username).toBe('admin');
     await expect(auth.login('admin', 'wrong')).rejects.toThrow('Invalid username or password');
     await auth.changePassword('user-admin-001', 'admin123', 'newpass123');
+    await expect(auth.refresh(login.refreshToken)).rejects.toThrow('Invalid refresh token');
     await expect(auth.login('admin', 'newpass123')).resolves.toBeDefined();
   });
 
@@ -80,6 +83,20 @@ describe('service coverage', () => {
     expect(result.integrity).toBe('ok');
   });
 
+  it('creates encrypted backups, stages restore, and cleans up', async () => {
+    const backupDir = path.join(dataDir, 'encrypted-backups');
+    process.env.V2_BACKUP_KEY = 'test-backup-key-0123456789abcdef';
+    const service = new BackupService(db, path.join(dataDir, 'v2.sqlite'), backupDir);
+    const backup = await service.create({ type: 'AUTO', encrypted: true });
+    expect(String(backup.filename)).toMatch(/\.enc$/);
+    const verified = await service.verify(String(backup.filename));
+    expect(verified.integrity).toBe('ok');
+    const staged = await service.stageRestore(String(backup.filename));
+    expect(staged.stagedPath).toBeDefined();
+    expect(service.cleanup(0).deleted.length).toBeGreaterThanOrEqual(1);
+    delete process.env.V2_BACKUP_KEY;
+  });
+
   it('returns dashboard and revenue stats', () => {
     const service = new StatsService(db);
     expect(service.dashboard(context)).toHaveProperty('patients');
@@ -100,7 +117,7 @@ describe('service coverage', () => {
        ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
     ).run('reg-workflow', context.clinicId, now, now, 'patient-demo-001', 'user-admin-001', 'REGULAR', 'REGISTERED', now);
     const workflow = new ClinicalWorkflowService(db);
-    expect(workflow.registrationStatus('reg-workflow', 'STARTED', context).status).toBe('STARTED');
+    expect(workflow.registrationStatus('reg-workflow', 'IN_PROGRESS', context).status).toBe('IN_PROGRESS');
   });
 
   it('returns analytics, sync, print, HR, and alert data', () => {
@@ -111,6 +128,7 @@ describe('service coverage', () => {
     const sync = new SyncService(db);
     expect(sync.pull(now, 'desktop').changes).toBeInstanceOf(Array);
     expect(sync.push({ deviceId: 'desktop', changes: [] }).accepted).toBe(0);
+    expect(sync.cleanup(now).deleted).toBeGreaterThanOrEqual(0);
     const print = new PrintService();
     expect(print.render('report', { title: 'R' })).toContain('R');
     const hr = new HrService(db);

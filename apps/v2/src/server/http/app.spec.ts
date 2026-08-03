@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createApp } from './app';
 import { createDatabase, seedDatabase } from '../infrastructure/database';
+import { runMigrations } from '../infrastructure/migrations';
 import { Logger } from '../infrastructure/logger';
 
 describe('HTTP app', () => {
@@ -22,6 +23,7 @@ describe('HTTP app', () => {
     backupDir = path.join(dataDir, 'backups');
     db = createDatabase(dataDir, dbPath);
     seedDatabase(db);
+    runMigrations(db);
     app = createApp({
       db,
       dbPath,
@@ -183,6 +185,24 @@ describe('HTTP app', () => {
     await request(app).get('/api/v2/not-a-route').expect(401);
   });
 
+  it('rotates refresh tokens, logs out, and records audit entries', async () => {
+    const login = await request(app).post('/api/v2/auth/login').send({ username: 'admin', password: 'newpass123' }).expect(200);
+    const refreshToken = login.body.data.refreshToken as string;
+    const refreshed = await request(app).post('/api/v2/auth/refresh').send({ refreshToken }).expect(200);
+    expect(refreshed.body.data.token).toBeDefined();
+    expect(refreshed.body.data.refreshToken).not.toBe(refreshToken);
+    await request(app).post('/api/v2/auth/logout').send({ refreshToken: refreshed.body.data.refreshToken }).expect(200);
+    await request(app).post('/api/v2/auth/refresh').send({ refreshToken: refreshed.body.data.refreshToken }).expect(401);
+
+    const before = (db.prepare('SELECT COUNT(*) AS c FROM OperationLog').get() as { c: number }).c;
+    await request(app).post('/api/v2/resources/suppliers')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ code: 'SUP-AUDIT', name: 'Audit Supplier' })
+      .expect(201);
+    const after = (db.prepare('SELECT COUNT(*) AS c FROM OperationLog').get() as { c: number }).c;
+    expect(after).toBeGreaterThan(before);
+  });
+
   it('supports inventory low stock, follow-up reminders, doctor stats, and print templates', async () => {
     await request(app).get('/api/v2/inventory/low-stock').set('Authorization', `Bearer ${token}`).expect(200);
     await request(app).get('/api/v2/follow-ups/reminders').set('Authorization', `Bearer ${token}`).expect(200);
@@ -192,6 +212,37 @@ describe('HTTP app', () => {
     await request(app).get('/api/v2/print/templates').set('Authorization', `Bearer ${token}`).expect(200);
   });
 
+  it('returns expiring inventory and masked cross-resource search results', async () => {
+    const now = new Date().toISOString();
+    const expiringDate = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10);
+    db.prepare(
+      `INSERT INTO InventoryItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, category, unit, stock, minStock, price, expireDate
+       ) VALUES (?, ?, ?, ?, NULL, 'EXP-1', 'Expiring Material', 'CONSUMABLE', 'box', 5, 1, 100, ?)`,
+    ).run('inventory-expiring', null, now, now, expiringDate);
+    const expiring = await request(app).get('/api/v2/inventory/expiring?days=30')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(expiring.body.data.some((item: { id: string }) => item.id === 'inventory-expiring')).toBe(true);
+
+    db.prepare(
+      `INSERT INTO Patient (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active
+       ) VALUES (?, ?, ?, ?, NULL, 'SEARCH-1', 'Searchable Patient', 'UNKNOWN', '13900001111',
+         '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
+    ).run('patient-searchable', null, now, now);
+    const search = await request(app).get('/api/v2/search?q=Searchable')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const patientResult = search.body.data.find((item: { resource: string; id: string }) =>
+      item.resource === 'patients' && item.id === 'patient-searchable');
+    expect(patientResult).toBeDefined();
+    expect(patientResult.detail.phone).toContain('****');
+  });
+
   it('supports clinical workflows and system actions', async () => {
     const registration = await request(app).post('/api/v2/resources/registrations')
       .set('Authorization', `Bearer ${token}`)
@@ -199,7 +250,7 @@ describe('HTTP app', () => {
       .expect(201);
     await request(app).patch(`/api/v2/registrations/${registration.body.data.id}/status`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ status: 'STARTED' })
+      .send({ status: 'IN_PROGRESS' })
       .expect(200);
 
     const visit = await request(app).post('/api/v2/resources/visits')

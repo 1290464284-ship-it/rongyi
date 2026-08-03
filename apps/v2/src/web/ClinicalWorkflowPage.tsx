@@ -7,12 +7,11 @@ type ResourcePageQuery = UseQueryResult<Page<Record<string, unknown>>, Error>;
 
 const transitions: Record<string, Record<string, string[]>> = {
   registrations: {
-    REGISTERED: ['TRIAGED', 'STARTED', 'CANCELLED'],
-    TRIAGED: ['STARTED', 'CANCELLED'],
-    STARTED: ['COMPLETED', 'CANCELLED'],
+    REGISTERED: ['TRIAGED', 'IN_PROGRESS', 'CANCELLED'],
+    TRIAGED: ['IN_PROGRESS', 'CANCELLED'],
+    IN_PROGRESS: ['COMPLETED', 'CANCELLED'],
   },
   visits: {
-    REGISTERED: ['IN_PROGRESS', 'CANCELLED'],
     IN_PROGRESS: ['COMPLETED', 'CANCELLED'],
   },
   firstExams: {
@@ -21,7 +20,6 @@ const transitions: Record<string, Record<string, string[]>> = {
   },
   treatments: {
     PLANNED: ['IN_PROGRESS', 'CANCELLED'],
-    APPROVED: ['IN_PROGRESS', 'CANCELLED'],
     IN_PROGRESS: ['COMPLETED', 'CANCELLED'],
   },
 };

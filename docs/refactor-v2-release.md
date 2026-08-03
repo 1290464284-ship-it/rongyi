@@ -23,7 +23,7 @@ pnpm --filter @dental/v2 exec electron-builder --publish never --config.npmRebui
 
 Output:
 
-- `apps/v2/release-v2/Dental Clinic V2 Setup 2.0.0.exe`
+- `apps/v2/release-v2/Dental-Clinic-V2-Setup-<version>.exe`
 - `apps/v2/release-v2/win-unpacked/Dental Clinic V2.exe`
 
 The `win-unpacked` directory is transient; it exists on the release runner

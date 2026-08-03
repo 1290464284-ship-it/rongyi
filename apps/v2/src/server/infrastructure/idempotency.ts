@@ -24,11 +24,13 @@ export function withIdempotency<T>(
   }
 
   try {
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     db.prepare(
       `INSERT INTO IdempotencyRecord (
-         id, key, responseJson, clinicId, createdAt, updatedAt, deletedAt
-       ) VALUES (?, ?, '{}', NULL, ?, ?, NULL)`,
-    ).run(randomUUID(), key, now, now);
+         id, key, type, status, responseJson, result,
+         clinicId, createdAt, updatedAt, deletedAt, expiresAt
+       ) VALUES (?, ?, 'GENERIC', 'COMPLETED', '{}', '{}', NULL, ?, ?, NULL, ?)`,
+    ).run(randomUUID(), key, now, now, expiresAt);
   } catch (error) {
     const concurrent = db.prepare('SELECT responseJson FROM IdempotencyRecord WHERE key = ?').get(key) as
       | { responseJson: string }
@@ -40,12 +42,11 @@ export function withIdempotency<T>(
   try {
     const result = fn();
     db.prepare(
-      'UPDATE IdempotencyRecord SET responseJson = ?, updatedAt = ? WHERE key = ?',
-    ).run(JSON.stringify(result), now, key);
+      `UPDATE IdempotencyRecord SET responseJson = ?, result = ?, status = 'COMPLETED', updatedAt = ? WHERE key = ?`,
+    ).run(JSON.stringify(result), JSON.stringify(result), now, key);
     return result;
   } catch (error) {
     db.prepare('DELETE FROM IdempotencyRecord WHERE key = ?').run(key);
     throw error;
   }
 }
-
