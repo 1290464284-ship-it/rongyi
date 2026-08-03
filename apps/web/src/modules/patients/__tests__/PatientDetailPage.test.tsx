@@ -35,7 +35,7 @@ vi.mock('@/lib/api/clinical/treatments', () => ({
 vi.mock('@/lib/api/content/tooth-records', () => ({
   useToothRecords: (...args: unknown[]) => mockUseToothRecords(...args),
 }));
-vi.mock('@/lib/api/financial/charges', () => ({
+vi.mock('@/lib/api/financial/charge', () => ({
   useCharges: (...args: unknown[]) => mockUseCharges(...args),
 }));
 vi.mock('@/lib/api/content/prescriptions', () => ({

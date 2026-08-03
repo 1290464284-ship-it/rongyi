@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { DEBT_STATUS_LABEL, DEBT_STATUS_COLOR, type DebtRecord } from '@/lib/api/financial/charge-v2';
+import { DEBT_STATUS_LABEL, DEBT_STATUS_COLOR, type DebtRecord } from '@/lib/api/financial/charge';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 

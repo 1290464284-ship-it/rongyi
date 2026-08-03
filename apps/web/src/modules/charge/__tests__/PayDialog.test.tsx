@@ -13,7 +13,7 @@ vi.mock('@/lib/utils/toast-service', () => ({
 }));
 
 import { PayDialog } from '../components/payments/PayDialog';
-import type { Charge } from '@/lib/api/financial/charges';
+import type { Charge } from '@/lib/api/financial/charge';
 
 const charge = {
   id: 'c1',

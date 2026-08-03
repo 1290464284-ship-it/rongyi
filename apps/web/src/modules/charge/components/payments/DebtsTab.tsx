@@ -31,7 +31,7 @@ import {
   DEBT_STATUS_LABEL,
   DEBT_STATUS_COLOR,
   type DebtRecord,
-} from '@/lib/api/financial/charge-v2';
+} from '@/lib/api/financial/charge';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { PayDebtDialog } from './PayDebtDialog';

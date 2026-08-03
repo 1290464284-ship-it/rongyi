@@ -1,12 +1,19 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api/api';
-import { useCrudPaginated, useCrudList, useCrudCreate, useCrudUpdate, useCrudDelete } from '@/lib/hooks/use-crud';
+import { useCrudPaginated, useCrudItem, useCrudList, useCrudCreate, useCrudUpdate, useCrudDelete } from '@/lib/hooks/use-crud';
 import { getCacheOptions } from '@/lib/api/query-client';
 import {
+  CHARGE_STATUS_LABEL,
+  CHARGE_STATUS_COLOR,
+  PAY_METHOD_LABEL,
   DEBT_STATUS_LABEL,
   DEBT_STATUS_COLOR,
 } from '@/lib/types/charge.types';
 import type {
+  Charge,
+  ChargeStatus,
+  PayMethod,
+  CreateChargeDto,
   ChargeCombo,
   PaymentMethod,
   DebtRecord,
@@ -18,8 +25,19 @@ import type {
   DebtStatsRes,
 } from '@/lib/types/charge.types';
 
-export { DEBT_STATUS_LABEL, DEBT_STATUS_COLOR };
+// ── Re-exports ──────────────────────────────────────────────────────────────
+export {
+  CHARGE_STATUS_LABEL,
+  CHARGE_STATUS_COLOR,
+  PAY_METHOD_LABEL,
+  DEBT_STATUS_LABEL,
+  DEBT_STATUS_COLOR,
+};
 export type {
+  Charge,
+  ChargeStatus,
+  PayMethod,
+  CreateChargeDto,
   ChargeCombo,
   PaymentMethod,
   DebtRecord,
@@ -31,6 +49,52 @@ export type {
   DebtStatsRes,
 };
 
+// ── 基础收费 ────────────────────────────────────────────────────────────────
+type ChargesQuery = {
+  patientId?: string;
+  status?: ChargeStatus;
+  keyword?: string;
+  page?: number;
+  pageSize?: number;
+};
+
+export function useCharges(params: {
+  patientId?: string;
+  status?: ChargeStatus;
+  keyword?: string;
+  page?: number;
+  pageSize?: number;
+}, opts?: { enabled?: boolean }) {
+  return useCrudPaginated<Charge, ChargesQuery>('charge-v2', 'charges', params, { enabled: opts?.enabled });
+}
+
+export function useCharge(id: string | undefined) {
+  return useCrudItem<Charge>('charge-v2', 'charges', id);
+}
+
+export function useCreateCharge() {
+  return useCrudCreate<Charge, CreateChargeDto>('charge-v2', 'charges');
+}
+
+export function usePayCharge() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, amount, payMethod }: { id: string; amount: number; payMethod: PayMethod }) =>
+      (await api.patch<Charge>(`/charge-v2/${id}/pay`, { amount, payMethod })).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['charges'] }),
+  });
+}
+
+export function useRefundCharge() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, patientId, amount, reason }: { id: string; patientId: string; amount: number; reason?: string }) =>
+      (await api.post('/refunds', { chargeId: id, patientId, amount, reason })).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['charges'] }),
+  });
+}
+
+// ── 组合套餐 ────────────────────────────────────────────────────────────────
 type ChargeCombosQuery = { page?: number; pageSize?: number; keyword?: string; category?: string };
 
 export function useChargeCombos(params: { page?: number; pageSize?: number; keyword?: string; category?: string }) {
@@ -49,6 +113,7 @@ export function useDeleteChargeCombo() {
   return useCrudDelete('charge-v2/combos', 'charge-combos');
 }
 
+// ── 支付方式 ────────────────────────────────────────────────────────────────
 type PaymentMethodsQuery = { isEnabled?: boolean };
 
 export function usePaymentMethods(params: { isEnabled?: boolean } = {}) {
@@ -75,6 +140,7 @@ export function useTogglePaymentMethod() {
   });
 }
 
+// ── 欠费管理 ────────────────────────────────────────────────────────────────
 type DebtsQuery = { patientId?: string; status?: string; keyword?: string; startDate?: string; endDate?: string; page?: number; pageSize?: number };
 
 export function useDebts(params: DebtsQuery) {

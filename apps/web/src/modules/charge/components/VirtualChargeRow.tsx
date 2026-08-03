@@ -7,7 +7,7 @@ import {
   CHARGE_STATUS_COLOR,
   PAY_METHOD_LABEL,
   type Charge,
-} from '@/lib/api/financial/charges';
+} from '@/lib/api/financial/charge';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 

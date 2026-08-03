@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { type ChargeCombo, type CreateChargeComboDto } from '@/lib/api/financial/charge-v2';
+import { type ChargeCombo, type CreateChargeComboDto } from '@/lib/api/financial/charge';
 
 export const COMBO_CATEGORIES = [
   '基础治疗',

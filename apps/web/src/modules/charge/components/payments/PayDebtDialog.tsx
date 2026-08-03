@@ -10,7 +10,7 @@ import {
   usePaymentMethods,
   type DebtRecord,
   type PayDebtDto,
-} from '@/lib/api/financial/charge-v2';
+} from '@/lib/api/financial/charge';
 
 export function PayDebtDialog({
   open,
