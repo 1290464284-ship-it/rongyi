@@ -1,101 +1,17 @@
 node_modules
 dist
 dist-web
-build
-# 应用图标是源资源，非构建产物
-!apps/web/build/
-!apps/web/build/**
+dist-electron
 coverage
-.nyc_output
-
-# Environment
-.env
-.env.local
-.env.*.local
-apps/web/.env
-
-# IDE
-.idea
-.vscode
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Logs
-logs
+release-v2/
+apps/v2/data/
+apps/v2/logs/
 *.log
-npm-debug.log*
-apps/api/logs/
-
-.prisma
-uploads/
-.turbo
-
-# TypeScript / Vite 构建产物
+.env
+.env.*.local
+certs/
 *.tsbuildinfo
-apps/web/vite.config.d.ts
-apps/web/vite.config.js
-
-# Electron 编译产物（由 electron:compile 从 main.ts/preload.ts 生成）
-apps/web/electron/main.js
-apps/web/electron/main.cjs
-apps/web/electron/preload.cjs
-
-# API 打包产物
-apps/api/bundle/
-apps/api/dist/
-
-# 代码健康度报告
-apps/api/.code-health/
-
-# 本地数据库与备份（勿提交诊所数据）
-data/
-apps/api/data/
-apps/api/prisma/data/
-apps/api/backups/
-*.db
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
-
-# Source maps（构建产物，不进版本库）
-*.map
-
-# 代码签名证书（私钥，绝不提交）
-certs/
-
-# 发布包与安装产物
-release/
-release-v*/
-../release-v2/
-
-# 参考材料（不属于项目代码）
-ruanjian.zip
-ruanjian_extracted/
-
-# Build artifacts and debug logs
-bundle/
-*.asar
-
-# API debug artifacts (api root only, not subdirectories)
-apps/api/*.txt
-apps/api/*.log
-apps/api/*.json
-
-# Encryption keys (never commit)
-.encryption-key
-
-# Coverage data
-apps/api/.coveragedata/
-
-# 测试运行产物
-apps/web/test-results/
-apps/api/test-results.json
-
-# 一次性修复/审计脚本（已执行完毕，不留存版本库）
-apps/api/fix-*.mjs
-apps/api/fix-*.js
-apps/api/architecture-audit.mjs
+!apps/v2/legacy/dental.sqlite

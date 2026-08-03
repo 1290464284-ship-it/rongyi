@@ -1,0 +1,135 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type Database from 'better-sqlite3';
+import { createDatabase, seedDatabase } from '../infrastructure/database';
+import {
+  AlertService,
+  AppointmentService,
+  AuthService,
+  BackupService,
+  FollowUpService,
+  HrService,
+  PrintService,
+  StatsService,
+  SyncService,
+} from './services';
+import {
+  AnalyticsService,
+  ClinicalWorkflowService,
+  ReplenishmentService,
+} from './workflow-services';
+import type { AppContext } from '../../domain/contracts';
+
+describe('service coverage', () => {
+  let db: Database.Database;
+  let dataDir: string;
+  let context: AppContext;
+  const now = '2026-08-03T00:00:00.000Z';
+
+  beforeAll(() => {
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-services-'));
+    db = createDatabase(dataDir);
+    seedDatabase(db);
+    context = {
+      userId: 'user-admin-001',
+      clinicId: 'clinic-v2-001',
+      role: 'BOSS',
+      traceId: 'trace',
+      now: () => new Date(),
+    };
+  });
+
+  afterAll(() => {
+    db.close();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  it('authenticates users and changes passwords', async () => {
+    const auth = new AuthService(db);
+    const login = await auth.login('admin', 'admin123');
+    expect(login.user.username).toBe('admin');
+    await expect(auth.login('admin', 'wrong')).rejects.toThrow('Invalid username or password');
+    await auth.changePassword('user-admin-001', 'admin123', 'newpass123');
+    await expect(auth.login('admin', 'newpass123')).resolves.toBeDefined();
+  });
+
+  it('creates and transitions appointments', async () => {
+    const service = new AppointmentService(db);
+    const created = await service.create({
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      startTime: new Date(Date.now() + 2 * 86_400_000).toISOString(),
+      endTime: new Date(Date.now() + 2 * 86_400_000 + 3_600_000).toISOString(),
+      type: 'REGULAR',
+    }, context);
+    await expect(service.transition(String(created.id), 'CANCELLED', context)).resolves.toMatchObject({ status: 'CANCELLED' });
+  });
+
+  it('generates follow-ups and lists reminders', async () => {
+    const service = new FollowUpService(db);
+    await service.batchGenerate(2, context);
+    expect(service.reminders().length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('creates and verifies backups', async () => {
+    const service = new BackupService(db, path.join(dataDir, 'v2.sqlite'), path.join(dataDir, 'backups'));
+    const backup = await service.create();
+    const result = await service.verify(String(backup.filename));
+    expect(result.integrity).toBe('ok');
+  });
+
+  it('returns dashboard and revenue stats', () => {
+    const service = new StatsService(db);
+    expect(service.dashboard(context)).toHaveProperty('patients');
+    expect(service.revenue(undefined, undefined, 'month')).toBeInstanceOf(Array);
+    expect(service.patientGrowth()).toBeInstanceOf(Array);
+    expect(service.doctorWorkload()).toBeInstanceOf(Array);
+    expect(service.inventoryStats()).toBeInstanceOf(Array);
+    expect(service.memberStats()).toHaveProperty('total');
+  });
+
+  it('runs replenishment and clinical workflows', () => {
+    const replenishment = new ReplenishmentService(db);
+    expect(typeof replenishment.generate(context).generated).toBe('number');
+    db.prepare(
+      `INSERT INTO Registration (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, type, status, registeredAt
+       ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
+    ).run('reg-workflow', context.clinicId, now, now, 'patient-demo-001', 'user-admin-001', 'REGULAR', 'REGISTERED', now);
+    const workflow = new ClinicalWorkflowService(db);
+    expect(workflow.registrationStatus('reg-workflow', 'STARTED', context).status).toBe('STARTED');
+  });
+
+  it('returns analytics, sync, print, HR, and alert data', () => {
+    const analytics = new AnalyticsService(db);
+    expect(analytics.rfm(context)).toBeInstanceOf(Array);
+    expect(analytics.churn(context)).toBeInstanceOf(Array);
+    expect(analytics.doctorAnomalies(context)).toBeInstanceOf(Array);
+    const sync = new SyncService(db);
+    expect(sync.pull(now, 'desktop').changes).toBeInstanceOf(Array);
+    expect(sync.push({ deviceId: 'desktop', changes: [] }).accepted).toBe(0);
+    const print = new PrintService();
+    expect(print.render('report', { title: 'R' })).toContain('R');
+    const hr = new HrService(db);
+    expect(hr.attendance()).toBeInstanceOf(Array);
+    db.prepare(
+      `INSERT INTO LeaveRequest (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         userId, startDate, endDate, type, reason, status
+       ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, 'ANNUAL', 'reason', 'PENDING')`,
+    ).run('leave-workflow', context.clinicId, now, now, 'user-admin-001', '2026-08-01', '2026-08-03');
+    expect(hr.approveLeave('leave-workflow', context.userId, true).status).toBe('APPROVED');
+    const alerts = new AlertService(db);
+    expect(alerts.open()).toBeInstanceOf(Array);
+    db.prepare(
+      `INSERT INTO BusinessAlert (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         level, title, message, source, status
+       ) VALUES (?, ?, ?, ?, NULL, 'WARNING', 'Title', 'Message', 'test', 'OPEN')`,
+    ).run('alert-wf', context.clinicId, now, now);
+    expect(alerts.setStatus('alert-wf', 'ACKNOWLEDGED', context.userId).status).toBe('ACKNOWLEDGED');
+  });
+});
