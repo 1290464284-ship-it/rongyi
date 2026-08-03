@@ -58,8 +58,9 @@ pnpm --filter @dental/v2 run upgrade:smoke `
   -PreviousInstallerPath <previous-installer.exe>
 ```
 
-The release workflow also runs upgrade smoke automatically on Windows when a
-previous `v2-*` release exists.
+The public release workflow only considers numeric `v2-<major>.<minor>.<patch>`
+releases for upgrade smoke, so internal `v2-internal-*` releases never become
+the upgrade baseline.
 
 ## Signing
 
@@ -92,6 +93,13 @@ It generates a temporary self-signed certificate, packages the installer,
 verifies package/update metadata, and runs the installer smoke. Windows will
 warn about the unknown publisher; do not treat this as a public signed release.
 See [docs/release-modes.md](../../docs/release-modes.md) for the full comparison.
+
+### GitHub Internal Release
+
+Run the `V2 Internal Release` GitHub Actions workflow manually to publish a
+self-signed internal release to a `v2-internal-<version>` tag. This is free,
+does not require CA secrets, and uploads the installer, blockmap, and
+`latest.yml` for controlled machines.
 
 ## Offline Restore
 
