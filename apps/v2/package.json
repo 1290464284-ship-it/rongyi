@@ -1,0 +1,117 @@
+{
+  "name": "@dental/v2",
+  "version": "2.0.0",
+  "description": "Dental Clinic V2 desktop application",
+  "author": "Dental Clinic V2 Team",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "concurrently \"pnpm dev:api\" \"pnpm dev:web\"",
+    "dev:api": "tsx watch src/server/main.ts",
+    "dev:web": "vite",
+    "build:api": "tsc -p tsconfig.server.json",
+    "build:web": "vite build",
+    "build": "pnpm build:api && pnpm build:web",
+    "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.web.json --noEmit",
+    "start": "tsx src/server/main.ts",
+    "electron:compile": "esbuild src/server/main.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --external:bcryptjs --external:jsonwebtoken --outfile=dist-electron/server.cjs",
+    "electron:dev": "concurrently \"pnpm dev:web\" \"pnpm electron:compile && electron .\"",
+    "electron:pack": "pnpm build && pnpm electron:compile && electron-builder --dir --publish never",
+    "electron:dist": "pnpm build && pnpm electron:compile && electron-builder --publish never",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "smoke:api": "node scripts/api-smoke.mjs",
+    "smoke:ui": "node scripts/ui-smoke.mjs",
+    "test:load": "node scripts/load-smoke.mjs",
+    "audit:security": "node scripts/audit.mjs",
+    "security:scan": "node scripts/security-scan.mjs",
+    "license:check": "node scripts/license-scan.mjs",
+    "verify:package": "node scripts/verify-package.mjs",
+    "update:metadata": "node scripts/update-metadata.mjs",
+    "verify:update": "node scripts/verify-update.mjs"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.101.4",
+    "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^13.0.1",
+    "cors": "^2.8.5",
+    "express": "^5.2.1",
+    "electron-updater": "^6.3.0",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.2",
+    "lucide-react": "^1.25.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-router": "^8.3.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^3.0.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.9",
+    "@types/node": "^20.19.43",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@types/supertest": "^6.0.2",
+    "@vitejs/plugin-react": "^5.1.4",
+    "@playwright/test": "^1.52.0",
+    "concurrently": "^10.0.3",
+    "electron": "^43.2.0",
+    "esbuild": "^0.28.1",
+    "electron-builder": "^26.15.3",
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.3",
+    "supertest": "^7.2.2",
+    "vite": "^7.3.6",
+    "vitest": "^4.1.10"
+  }
+  ,
+  "build": {
+    "appId": "com.dental.v2",
+    "productName": "Dental Clinic V2",
+    "directories": {
+      "output": "release-v2"
+    },
+    "files": [
+      "dist-web/**/*",
+      "electron/**/*",
+      "dist-electron/**/*",
+      "package.json",
+      "build/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "legacy",
+        "to": "legacy"
+      }
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "1290464284-ship-it",
+        "repo": "rongyi"
+      }
+    ]
+  }
+}

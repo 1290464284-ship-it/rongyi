@@ -1,0 +1,79 @@
+name: V2 CI
+
+on:
+  push:
+    paths:
+      - 'apps/v2/**'
+      - 'docs/refactor-v2-*'
+      - '.github/workflows/v2-ci.yml'
+  pull_request:
+    paths:
+      - 'apps/v2/**'
+      - 'docs/refactor-v2-*'
+      - '.github/workflows/v2-ci.yml'
+
+defaults:
+  run:
+    working-directory: source
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.15.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: source/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile=false
+
+      - name: Typecheck
+        run: pnpm --filter @dental/v2 typecheck
+
+      - name: Unit tests
+        run: pnpm --filter @dental/v2 test
+
+      - name: Coverage
+        run: pnpm --filter @dental/v2 test:coverage
+
+      - name: Audit
+        run: pnpm --filter @dental/v2 run audit:security
+
+      - name: Security scan
+        run: pnpm --filter @dental/v2 security:scan
+
+      - name: License scan
+        run: pnpm --filter @dental/v2 run license:check
+
+      - name: Build
+        run: pnpm --filter @dental/v2 build
+
+      - name: Electron compile
+        run: pnpm --filter @dental/v2 electron:compile
+
+      - name: Install Playwright
+        run: pnpm --filter @dental/v2 exec playwright install --with-deps chromium
+
+      - name: Start dev servers
+        run: pnpm --filter @dental/v2 dev > /tmp/v2-dev.log 2>&1 &
+
+      - name: Wait for services
+        run: node apps/v2/scripts/wait-for-services.mjs
+
+      - name: API smoke
+        run: pnpm --filter @dental/v2 smoke:api
+
+      - name: UI smoke
+        run: pnpm --filter @dental/v2 smoke:ui
+
+      - name: Load smoke
+        run: pnpm --filter @dental/v2 test:load
