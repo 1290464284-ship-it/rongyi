@@ -7,8 +7,9 @@
 
 ## 当前进度
 
-- 已实现迁移 `116`：MemberCard、Refund 通过表重建启用真实 `FOREIGN KEY`。
+- 已实现迁移 `116`：MemberCard、Refund、ChargeItem、PurchaseOrderItem、InventoryTransaction、ProcessingOrder 通过表重建启用真实 `FOREIGN KEY`。
 - 重建过程保留原有索引，并在迁移后继续执行 `foreign_key_check`。
+- 重建前会校验新旧表列集合；DDL 若会丢失旧列会直接中止，避免静默数据丢失。
 - Charge、ChargeItem、PurchaseOrderItem、InventoryTransaction、FollowUp、ProcessingOrder、Appointment 可按同一模式继续迁移。
 
 ## 风险

@@ -49,6 +49,9 @@
 - 新增 Windows installer smoke workflow，可在 CI 中构建并验证安装包。
 - 新增 `verify:foreign-keys` 与 `v2-foreign-key-migration.md` 专项文档。
 - 迁移 `116` 已为 MemberCard、Refund 启用真实外键约束。
+- 迁移 `116` 已扩展至 ChargeItem、PurchaseOrderItem、InventoryTransaction、ProcessingOrder，并为重建 DDL 增加“禁止丢列”保护。
+- `verify:foreign-keys` 已扩展至 19 条核心关系扫描。
+- Charge 付款/退款更新、处方安全、治疗进度、头影测量写入均改为显式诊所范围，并补齐跨诊所测试。
 - 新增 `benchmark:load`：生成 10 万患者与 10 万收费记录，测量 FTS 搜索和 dashboard。
 - 基准结果：10 万患者/收费写入约 1.5s，FTS 搜索 10ms，dashboard 71ms。
 
