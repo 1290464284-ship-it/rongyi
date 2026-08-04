@@ -9,6 +9,10 @@ export function FollowUpsPage() {
     queryKey: ['followup-reminders'],
     queryFn: () => apiRequest<Array<Record<string, unknown>>>('/follow-ups/reminders'),
   });
+  const summary = useQuery({
+    queryKey: ['followup-summary'],
+    queryFn: () => apiRequest<{ total: number; overdue: number; today: number; upcoming: number }>('/follow-ups/reminders/summary'),
+  });
 
   async function batchGenerate() {
     try {
@@ -66,6 +70,14 @@ export function FollowUpsPage() {
         <button onClick={batchGenerate}>Batch generate</button>
       </div>
       {message && <p className="info">{message}</p>}
+      {summary.data && (
+        <div className="stat-row">
+          <span>Total: {summary.data.total}</span>
+          <span>Overdue: {summary.data.overdue}</span>
+          <span>Today: {summary.data.today}</span>
+          <span>Upcoming: {summary.data.upcoming}</span>
+        </div>
+      )}
       {rows.length === 0 && <DataTable columns={columns} rows={[]} keyField="id" emptyText="No follow-ups" />}
       {groups.map((group) => (
         <section key={group.title}>

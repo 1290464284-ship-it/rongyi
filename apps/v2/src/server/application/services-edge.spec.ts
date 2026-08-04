@@ -1189,7 +1189,23 @@ describe('service edge coverage', () => {
          orderId, itemId, name, quantity, unitPrice, subtotal
        ) VALUES (?, ?, ?, ?, NULL, 'po-edge-3', 'inventory-po-valid', 'Valid', 2, 100, 200)`,
     ).run('poi-edge-valid', context.clinicId, now, now);
-    await purchase.receive('po-edge-3', context);
+    const receipt = await purchase.receive('po-edge-3', context);
+    expect(receipt).toMatchObject({
+      id: 'po-edge-3',
+      status: 'RECEIVED',
+      number: 'PO-EDGE-3',
+      items: [
+        {
+          itemId: 'inventory-po-valid',
+          name: 'Valid',
+          quantity: 2,
+          unitPrice: 100,
+          subtotal: 200,
+          beforeStock: 1,
+          afterStock: 3,
+        },
+      ],
+    });
     expect(purchase.items('po-edge-3', context).length).toBe(1);
     expect(() => purchase.items('missing-po', context)).toThrow('Purchase order not found');
     db.prepare(
@@ -1204,7 +1220,14 @@ describe('service edge coverage', () => {
          orderId, itemId, name, quantity, unitPrice, subtotal
        ) VALUES (?, NULL, ?, ?, NULL, 'po-edge-null', 'inventory-po-valid', 'Null Clinic', 1, 100, 100)`,
     ).run('poi-edge-null-clinic', now, now);
-    await purchase.receive('po-edge-null', nullContext);
+    const nullReceipt = await purchase.receive('po-edge-null', nullContext);
+    expect(nullReceipt.items).toEqual([
+      expect.objectContaining({
+        itemId: 'inventory-po-valid',
+        beforeStock: 3,
+        afterStock: 4,
+      }),
+    ]);
     const stock = db.prepare('SELECT stock FROM InventoryItem WHERE id = ?').get('inventory-po-valid') as { stock: number };
     expect(Number(stock.stock)).toBe(4);
 
