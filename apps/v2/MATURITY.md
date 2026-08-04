@@ -96,6 +96,8 @@
   preventing restored databases from failing the startup integrity check.
 - Backup verification and staging clear SQLite sidecars, and retention cleanup
   deletes matching `BackupRecord` rows instead of leaving stale history.
+- Backup filenames include a random suffix so same-millisecond creates cannot
+  overwrite each other, and retention cleanup clamps `maxKeep` to `1..365`.
 - Staged restore creates the pre-restore safety copy with SQLite `VACUUM INTO`
   when the current database is valid, preserving WAL data instead of copying
   only the main database file.
