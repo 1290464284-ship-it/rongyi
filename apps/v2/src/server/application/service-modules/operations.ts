@@ -255,7 +255,7 @@ export class BackupService {
   async create(options: BackupCreateOptions = {}): Promise<Record<string, unknown>> {
     fs.mkdirSync(this.backupDir, { recursive: true });
     const encrypted = options.encrypted ?? Boolean(process.env.V2_BACKUP_KEY);
-    const base = `backup-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+    const base = `backup-${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`;
     const filename = encrypted ? `${base}.enc` : `${base}.sqlite`;
     const tempPath = path.join(this.backupDir, `${base}.tmp`);
     const finalPath = path.join(this.backupDir, filename);
@@ -345,8 +345,10 @@ export class BackupService {
   }
 
   cleanup(maxKeep = 30): { kept: number; deleted: Array<{ filename: string; fileSize: number }> } {
+    const requested = Number.isFinite(Number(maxKeep)) ? Math.floor(Number(maxKeep)) : 30;
+    const keep = requested < 1 ? 1 : requested > 365 ? 365 : requested;
     const files = this.list() as Array<{ filename: string; fileSize: number }>;
-    const deleteFiles = files.slice(maxKeep);
+    const deleteFiles = files.slice(keep);
     const deleted: Array<{ filename: string; fileSize: number }> = [];
     for (const file of deleteFiles) {
       fs.unlinkSync(path.join(this.backupDir, file.filename));
@@ -354,7 +356,7 @@ export class BackupService {
       deleted.push({ filename: file.filename, fileSize: file.fileSize });
     }
     return {
-      kept: Math.min(files.length, maxKeep),
+      kept: Math.min(files.length, keep),
       deleted,
     };
   }
