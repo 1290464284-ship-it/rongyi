@@ -2,6 +2,7 @@ import { FormEvent, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import type { Page } from './types';
+import { DataTable, type DataTableColumn } from './components';
 
 const STATUSES = ['BOOKED', 'ARRIVED', 'IN_CHAIR', 'COMPLETED', 'CANCELLED', 'NO_SHOW'];
 
@@ -49,6 +50,24 @@ export function AppointmentsPage() {
     }
   }
 
+  const columns: DataTableColumn<Record<string, unknown>>[] = [
+    { key: 'id', label: 'ID', render: (row) => String(row.id).slice(0, 8) },
+    { key: 'patientId', label: 'Patient', render: (row) => String(row.patientId ?? '') },
+    { key: 'doctorId', label: 'Doctor', render: (row) => String(row.doctorId ?? '') },
+    { key: 'startTime', label: 'Start', render: (row) => String(row.startTime ?? '') },
+    { key: 'status', label: 'Status', render: (row) => String(row.status ?? '') },
+    {
+      key: 'actions',
+      label: 'Action',
+      render: (row) => (
+        <select defaultValue="" onChange={(event) => event.target.value && transition(String(row.id), event.target.value)}>
+          <option value="">Change status</option>
+          {STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+        </select>
+      ),
+    },
+  ];
+
   return (
     <div className="page">
       <h1>Appointments</h1>
@@ -60,28 +79,7 @@ export function AppointmentsPage() {
         <button type="submit">Create</button>
       </form>
       {message && <p className="info">{message}</p>}
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th>ID</th><th>Patient</th><th>Doctor</th><th>Start</th><th>Status</th><th>Action</th></tr></thead>
-          <tbody>
-            {query.data?.items.map((row) => (
-              <tr key={String(row.id)}>
-                <td>{String(row.id).slice(0, 8)}</td>
-                <td>{String(row.patientId ?? '')}</td>
-                <td>{String(row.doctorId ?? '')}</td>
-                <td>{String(row.startTime ?? '')}</td>
-                <td>{String(row.status ?? '')}</td>
-                <td>
-                  <select defaultValue="" onChange={(event) => event.target.value && transition(String(row.id), event.target.value)}>
-                    <option value="">Change status</option>
-                    {STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
-                  </select>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable columns={columns} rows={query.data?.items ?? []} keyField="id" emptyText="No appointments" />
     </div>
   );
 }
