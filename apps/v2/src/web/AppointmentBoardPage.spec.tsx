@@ -7,7 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppointmentBoardPage } from './AppointmentBoardPage';
 import { apiRequest } from './api';
 
-vi.mock('./api', () => ({ apiRequest: vi.fn() }));
+vi.mock('./api', () => ({ apiRequest: vi.fn(), downloadCsv: vi.fn() }));
 
 const wrapper = ({ children }: { children: ReactNode }) => (
   <QueryClientProvider client={new QueryClient()}>{children}</QueryClientProvider>

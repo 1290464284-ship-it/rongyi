@@ -1,7 +1,7 @@
 import { FormEvent, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'react-router';
-import { apiRequest } from './api';
+import { apiRequest, downloadCsv } from './api';
 import type { Page, ResourceDefinition, ResourceField } from './types';
 
 const PROTECTED_UI_FIELDS = new Set([
@@ -118,6 +118,14 @@ export function ResourcePage({ resource: fixedResource }: { resource?: string })
     await listQuery.refetch();
   }
 
+  async function exportCsv() {
+    try {
+      await downloadCsv(resource);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'CSV export failed');
+    }
+  }
+
   if (metaQuery.isLoading || listQuery.isLoading) return <div className="page">Loading...</div>;
   if (!definition || listQuery.error) {
     return <div className="page error">{(listQuery.error as Error)?.message ?? 'Resource not found'}</div>;
@@ -130,6 +138,7 @@ export function ResourcePage({ resource: fixedResource }: { resource?: string })
     <div className="page">
       <div className="page-head">
         <h1>{resource}</h1>
+        <button onClick={() => void exportCsv()}>Export</button>
         {definition.capabilities.create && <button onClick={openCreate}>Create</button>}
       </div>
       <input

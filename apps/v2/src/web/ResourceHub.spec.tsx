@@ -8,7 +8,7 @@ import { ResourceHub } from './ResourceHub';
 import { analyticsHubTabs, type HubTab } from './hub-tabs';
 import { apiRequest } from './api';
 
-vi.mock('./api', () => ({ apiRequest: vi.fn() }));
+vi.mock('./api', () => ({ apiRequest: vi.fn(), downloadCsv: vi.fn() }));
 
 const definition = {
   name: 'patients',
