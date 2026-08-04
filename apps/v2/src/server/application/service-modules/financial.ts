@@ -394,11 +394,23 @@ export class PurchaseOrderService {
     if (order.status !== 'PENDING') throw new ConflictError('Purchase order is not pending');
     const now = context.now().toISOString();
     const items = this.purchaseOrderRepository.itemsByOrder(orderId, context.clinicId);
+    const receivedItems: Array<Record<string, unknown>> = [];
     const run = this.db.transaction(() => {
       this.purchaseOrderRepository.markReceived(orderId, now, now, context.clinicId);
       const missing: string[] = [];
       for (const item of items) {
-        if (!item.itemId) continue;
+        if (!item.itemId) {
+          receivedItems.push({
+            itemId: null,
+            name: item.name,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            subtotal: item.subtotal,
+            beforeStock: null,
+            afterStock: null,
+          });
+          continue;
+        }
         const current = this.inventoryRepository.findItem(item.itemId, context.clinicId);
         if (!current) {
           missing.push(item.name);
@@ -406,6 +418,15 @@ export class PurchaseOrderService {
         }
         const before = Number(current.stock);
         const after = before + Number(item.quantity);
+        receivedItems.push({
+          itemId: item.itemId,
+          name: item.name,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          subtotal: item.subtotal,
+          beforeStock: before,
+          afterStock: after,
+        });
         this.inventoryRepository.updateStock(item.itemId, after, now, context.clinicId);
         this.inventoryRepository.createTransaction({
           id: randomUUID(),
@@ -425,7 +446,7 @@ export class PurchaseOrderService {
       }
     });
     run();
-    return { id: orderId, status: 'RECEIVED' };
+    return { id: orderId, number: order.number, status: 'RECEIVED', receivedAt: now, items: receivedItems };
   }
 
   items(orderId: string, context: AppContext): Array<Record<string, unknown>> {

@@ -410,6 +410,16 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
     /* v8 ignore stop */
   });
 
+  app.get('/api/v2/follow-ups/reminders/summary', async (req, res, next) => {
+    try {
+      res.json({ success: true, data: followUps.summary(req.context!) });
+    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
+    } catch (error) {
+      next(error);
+    }
+    /* v8 ignore stop */
+  });
+
   app.patch('/api/v2/follow-ups/:id/complete', writeLimiter, async (req, res, next) => {
     try {
       res.json({

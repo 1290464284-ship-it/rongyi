@@ -280,6 +280,7 @@ describe('HTTP app', () => {
       .send({ limit: 1 })
       .expect(200);
     await request(app).get('/api/v2/follow-ups/reminders').set('Authorization', `Bearer ${token}`).expect(200);
+    await request(app).get('/api/v2/follow-ups/reminders/summary').set('Authorization', `Bearer ${token}`).expect(200);
     await request(app).get('/api/v2/analytics/rfm').set('Authorization', `Bearer ${token}`).expect(200);
     await request(app).get('/api/v2/analytics/churn').set('Authorization', `Bearer ${token}`).expect(200);
     await request(app).get('/api/v2/analytics/doctor-anomalies').set('Authorization', `Bearer ${token}`).expect(200);

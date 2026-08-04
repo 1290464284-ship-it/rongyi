@@ -109,6 +109,28 @@ export class FollowUpService {
     return this.followUpRepository.reminders(context.clinicId);
   }
 
+  summary(context: AppContext): { total: number; overdue: number; today: number; upcoming: number } {
+    const today = new SystemClock().clinicDate();
+    const params = context.clinicId ? [today, today, today, context.clinicId] : [today, today, today];
+    const row = this.db.prepare(
+      `SELECT COUNT(*) AS total,
+              COALESCE(SUM(CASE WHEN planDate < ? THEN 1 ELSE 0 END), 0) AS overdue,
+              COALESCE(SUM(CASE WHEN planDate = ? THEN 1 ELSE 0 END), 0) AS today,
+              COALESCE(SUM(CASE WHEN planDate > ? THEN 1 ELSE 0 END), 0) AS upcoming
+       FROM FollowUp
+       WHERE status IN ('PENDING', 'IN_PROGRESS')
+         AND planDate IS NOT NULL
+         AND deletedAt IS NULL
+         ${tenantAnd(context.clinicId)}`,
+    ).get(...params) as { total: number; overdue: number; today: number; upcoming: number };
+    return {
+      total: Number(row.total),
+      overdue: Number(row.overdue),
+      today: Number(row.today),
+      upcoming: Number(row.upcoming),
+    };
+  }
+
   complete(id: string, context: AppContext, result?: string | null): Record<string, unknown> {
     const row = this.db.prepare(
       `SELECT id, status FROM FollowUp WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,

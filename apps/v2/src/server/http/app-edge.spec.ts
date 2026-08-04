@@ -73,6 +73,7 @@ const errorCases: RouteCase[] = [
   { method: 'get', path: '/api/v2/inventory/low-stock' },
   { method: 'get', path: '/api/v2/inventory/expiring?days=30' },
   { method: 'get', path: '/api/v2/follow-ups/reminders' },
+  { method: 'get', path: '/api/v2/follow-ups/reminders/summary' },
   { method: 'patch', path: '/api/v2/follow-ups/not-found/complete', body: {} },
   { method: 'get', path: '/api/v2/follow-ups/adherence' },
   { method: 'post', path: '/api/v2/follow-ups/batch-generate', body: { limit: 1 } },

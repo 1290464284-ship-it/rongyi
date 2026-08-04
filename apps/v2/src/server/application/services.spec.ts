@@ -19,6 +19,7 @@ import {
 import { SqliteChargeRepository } from '../infrastructure/repositories/charge.repository';
 import type { AuthRepository, MemberCardRepository, MemberCardRecord } from './ports';
 import type { AppContext } from '../../domain/contracts';
+import { SystemClock } from '../infrastructure/clock';
 
 describe('application services', () => {
   let db: Database.Database;
@@ -384,6 +385,43 @@ describe('application services', () => {
        ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', ?, 'Race guard', 'PENDING')`,
     ).run('followup-race-guard', context.clinicId, now, now, now.slice(0, 10));
     expect(() => failingRepository.complete('followup-race-guard', context)).toThrow('cannot be completed');
+  });
+
+  it('summarizes active follow-up reminders by due state', () => {
+    const service = new FollowUpService(db);
+    const clock = new SystemClock();
+    const today = clock.clinicDate();
+    const yesterday = clock.clinicDate(Date.now() - 86_400_000);
+    const tomorrow = clock.clinicDate(Date.now() + 86_400_000);
+    const now = new Date().toISOString();
+    const insert = (id: string, clinicId: string | null, planDate: string, status = 'PENDING') => {
+      db.prepare(
+        `INSERT INTO FollowUp (
+           id, clinicId, createdAt, updatedAt, deletedAt,
+           patientId, planDate, content, status
+         ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', ?, 'summary', ?)`,
+      ).run(id, clinicId, now, now, planDate, status);
+    };
+    const baseline = service.summary(context);
+    const nullBaseline = service.summary({ ...context, clinicId: null });
+    insert('followup-summary-overdue', context.clinicId, yesterday);
+    insert('followup-summary-today', context.clinicId, today);
+    insert('followup-summary-upcoming', context.clinicId, tomorrow, 'IN_PROGRESS');
+    insert('followup-summary-completed', context.clinicId, tomorrow, 'COMPLETED');
+    insert('followup-summary-other-clinic', 'clinic-v2-other', yesterday);
+    insert('followup-summary-null-clinic', null, tomorrow);
+
+    const scoped = service.summary(context);
+    expect(scoped.total - baseline.total).toBe(4);
+    expect(scoped.overdue - baseline.overdue).toBe(1);
+    expect(scoped.today - baseline.today).toBe(1);
+    expect(scoped.upcoming - baseline.upcoming).toBe(2);
+
+    const unscoped = service.summary({ ...context, clinicId: null });
+    expect(unscoped.total - nullBaseline.total).toBe(5);
+    expect(unscoped.overdue - nullBaseline.overdue).toBe(2);
+    expect(unscoped.today - nullBaseline.today).toBe(1);
+    expect(unscoped.upcoming - nullBaseline.upcoming).toBe(2);
   });
 
   it('deducts and refunds member card balance with a charge', async () => {
