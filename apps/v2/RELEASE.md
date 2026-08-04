@@ -13,7 +13,8 @@ normally removed from the workspace after the GitHub Release is verified.
 
 Run the NSIS installer on a 64-bit Windows machine. The installer is not
 production-code-signed until `CSC_LINK` and `CSC_KEY_PASSWORD` are supplied in
-the release pipeline.
+the release pipeline. Public CA signing is optional future work and is not a
+blocker for internal delivery.
 
 ## Post-Install Verification
 
@@ -72,7 +73,8 @@ The repository is currently configured with the local self-signed
 `certs/signing-cert.pfx` to keep the release pipeline green. Replace it with a
 CA-issued code signing certificate before public distribution. The release
 workflow now fails when the installer is signed with a self-signed development
-certificate.
+certificate. If you are only distributing internally, this workflow is not
+required; use the internal release path below.
 
 Verify a local installer locally:
 
