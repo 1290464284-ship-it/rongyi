@@ -14,6 +14,9 @@ const allowed = new Set([
   '0BSD',
   'Unlicense',
   'MPL-2.0',
+  'SEE LICENSE AT https://gsap.com/standard-license',
+  "Standard 'no charge' license: https://gsap.com/standard-license.",
+  'Zlib',
 ]);
 
 const issues = [];
