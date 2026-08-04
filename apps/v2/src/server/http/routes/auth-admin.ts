@@ -66,6 +66,33 @@ export function registerAdminRoutes(app: Express, deps: RouteDependencies): void
     /* v8 ignore stop */
   });
 
+  app.get('/api/v2/auth/clinics', async (req, res, next) => {
+    try {
+      res.json({ success: true, data: authService.listAccessibleClinics(req.context!.userId, req.context!.role) });
+    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
+    } catch (error) {
+      next(error);
+    }
+    /* v8 ignore stop */
+  });
+
+  app.post('/api/v2/auth/switch-clinic', async (req, res, next) => {
+    try {
+      res.json({
+        success: true,
+        data: authService.switchClinic(
+          req.context!.userId,
+          req.context!.role,
+          String(req.body?.clinicId ?? ''),
+        ),
+      });
+    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
+    } catch (error) {
+      next(error);
+    }
+    /* v8 ignore stop */
+  });
+
   app.patch('/api/v2/auth/password', async (req, res, next) => {
     try {
       await authService.changePassword(

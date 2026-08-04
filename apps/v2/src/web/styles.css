@@ -33,6 +33,14 @@ body {
   margin-bottom: 24px;
 }
 
+.clinic-switch {
+  background: #16202f;
+  color: #e8edf3;
+  border: 1px solid #2f3b4c;
+  margin-bottom: 12px;
+  width: 100%;
+}
+
 .sidebar nav {
   display: grid;
   gap: 6px;

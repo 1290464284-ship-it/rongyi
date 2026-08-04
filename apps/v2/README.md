@@ -46,6 +46,8 @@ so existing data and fields remain available.
 - Sync push/pull requires a registered device token. Register a device with
   `POST /api/v2/sync/devices` and pass `deviceToken` to sync requests.
 - Business workflows enforce tenant scope for the current user's `clinicId`.
+- BOSS users can access multiple clinics through `UserClinic` memberships and
+  switch the current clinic from the desktop sidebar.
 
 ## Electron
 

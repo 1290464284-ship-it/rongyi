@@ -30,6 +30,15 @@ describe('core repositories', () => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-core-repo-'));
     db = createDatabase(dataDir);
     runMigrations(db);
+    for (const [id, code, name] of [
+      ['clinic-v2-001', 'V2-1', 'Clinic 1'],
+      ['clinic-v2-other', 'V2-2', 'Clinic 2'],
+    ] as Array<[string, string, string]>) {
+      db.prepare(
+        `INSERT INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+         VALUES (?, NULL, ?, ?, NULL, ?, ?, 1)`,
+      ).run(id, now, now, code, name);
+    }
     for (const id of ['patient-repo', 'patient-deleted', 'patient-inactive', 'patient']) {
       db.prepare(
         `INSERT INTO Patient (
@@ -453,6 +462,14 @@ describe('core repositories', () => {
     expect(auth.findById('admin-created')?.name).toBe('Updated');
     expect(auth.resetPassword('admin-created', 'new-hash', now, 'clinic-v2-001')).toBe(1);
     expect(auth.findById('admin-created')?.tokenVersion).toBe(1);
+    auth.addClinicMembership('admin-created', 'clinic-v2-001', 'BOSS', now, now);
+    expect(auth.clinicMemberships('admin-created')).toContainEqual(
+      expect.objectContaining({ clinicId: 'clinic-v2-001' }),
+    );
+    auth.addClinicMembership('admin-created', 'clinic-v2-other', 'BOSS', now, now);
+    expect(auth.clinicMemberships('admin-created').length).toBeGreaterThanOrEqual(2);
+    auth.setCurrentClinic('admin-created', 'clinic-v2-other', now);
+    expect(auth.findById('admin-created')?.currentClinicId).toBe('clinic-v2-other');
     auth.markRefreshTokenUsed('used-hash', 'admin-created', now);
     expect(auth.isRefreshTokenUsed('used-hash')).toBe(true);
     expect(auth.cleanupUsedRefreshTokens(now)).toBeGreaterThanOrEqual(0);

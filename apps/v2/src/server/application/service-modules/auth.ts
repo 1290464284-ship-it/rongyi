@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import type Database from 'better-sqlite3';
-import { ConflictError, NotFoundError, UnauthorizedError, ValidationError } from '../../infrastructure/errors';
+import { AppError, ConflictError, NotFoundError, UnauthorizedError, ValidationError } from '../../infrastructure/errors';
 import { SqliteAuthRepository } from '../../infrastructure/repositories/core.repositories';
 import { tenantAnd, tenantMatches, tenantParams } from '../../infrastructure/tenant';
 import type { AppContext, User } from '../../../domain/contracts';
@@ -45,7 +45,7 @@ export class AuthService {
       throw new UnauthorizedError('Invalid username or password');
     }
     this.authRepository.resetLoginAttempts(user.id, new Date().toISOString());
-    const token = this.sign({ sub: user.id, clinicId: user.clinicId ?? null, role: user.role, tokenVersion: user.tokenVersion });
+    const token = this.sign({ sub: user.id, clinicId: user.currentClinicId ?? user.clinicId ?? null, role: user.role, tokenVersion: user.tokenVersion });
     const refreshToken = newRefreshToken();
     const now = new Date().toISOString();
     this.authRepository.updateRefreshToken(
@@ -86,7 +86,7 @@ export class AuthService {
       new Date(Date.now() + REFRESH_TTL_MS).toISOString(),
       now,
     );
-    const token = this.sign({ sub: user.id, clinicId: user.clinicId ?? null, role: user.role, tokenVersion: user.tokenVersion });
+    const token = this.sign({ sub: user.id, clinicId: user.currentClinicId ?? user.clinicId ?? null, role: user.role, tokenVersion: user.tokenVersion });
     const { passwordHash: _passwordHash, ...safeUser } = user;
     return { token, refreshToken: nextRefreshToken, expiresIn: 8 * 60 * 60, user: safeUser };
   }
@@ -123,6 +123,49 @@ export class AuthService {
     return safeUser;
   }
 
+  listAccessibleClinics(userId: string, role: User['role']): {
+    currentClinicId: string | null;
+    clinics: Array<{ clinicId: string; name: string; role: string }>;
+  } {
+    const row = this.authRepository.findById(userId);
+    if (!row) throw new NotFoundError('User not found');
+    if (role !== 'BOSS') {
+      const clinicId = row.currentClinicId ?? row.clinicId ?? null;
+      return {
+        currentClinicId: clinicId,
+        clinics: clinicId ? [{ clinicId, name: clinicId, role }] : [],
+      };
+    }
+    let memberships = this.authRepository.clinicMemberships(userId);
+    if (memberships.length === 0 && row.clinicId) {
+      memberships = [{ clinicId: row.clinicId, name: row.clinicId, role }];
+    }
+    return {
+      currentClinicId: row.currentClinicId ?? row.clinicId ?? null,
+      clinics: memberships.map((membership) => ({
+        clinicId: membership.clinicId,
+        name: membership.name || membership.clinicId,
+        role: membership.role,
+      })),
+    };
+  }
+
+  switchClinic(userId: string, role: User['role'], clinicId: string): { token: string; clinicId: string } {
+    if (role !== 'BOSS') {
+      throw new AppError('FORBIDDEN', 'Only BOSS can switch clinics', 403);
+    }
+    const row = this.authRepository.findById(userId);
+    if (!row) throw new NotFoundError('User not found');
+    const memberships = this.authRepository.clinicMemberships(userId);
+    if (!memberships.some((membership) => membership.clinicId === clinicId)) {
+      throw new NotFoundError('Clinic not found');
+    }
+    const now = new Date().toISOString();
+    this.authRepository.setCurrentClinic(userId, clinicId, now);
+    const token = this.sign({ sub: userId, clinicId, role: row.role, tokenVersion: row.tokenVersion });
+    return { token, clinicId };
+  }
+
   async changePassword(userId: string, oldPassword: string, newPassword: string): Promise<void> {
     const row = this.authRepository.findById(userId);
     if (!row) throw new NotFoundError('User not found');
@@ -137,7 +180,7 @@ export class AuthService {
   }
 
   async createUser(
-    input: { username: string; password: string; name: string; role: string; phone?: string; active?: boolean },
+    input: { username: string; password: string; name: string; role: string; phone?: string; active?: boolean; clinicIds?: string[] },
     context: AppContext,
   ): Promise<Omit<User, 'passwordHash'>> {
     const username = String(input.username ?? '').trim();
@@ -146,12 +189,16 @@ export class AuthService {
     if (!username || !name) throw new ValidationError('Username and name are required');
     if (input.password.length < 8) throw new ValidationError('Password must be at least 8 characters');
     if (!isUserRole(role)) throw new ValidationError(`Invalid user role: ${role}`);
+    if (input.clinicIds !== undefined && (!Array.isArray(input.clinicIds) || input.clinicIds.some((id) => typeof id !== 'string'))) {
+      throw new ValidationError('clinicIds must be an array of strings');
+    }
     if (this.authRepository.findByUsername(username)) throw new ConflictError('Username already exists');
     const passwordHash = await bcrypt.hash(input.password, 10);
     const now = new Date().toISOString();
     const record: AuthUserRecord = {
       id: randomUUID(),
       clinicId: context.clinicId,
+      currentClinicId: context.clinicId,
       username,
       passwordHash,
       name,
@@ -174,6 +221,12 @@ export class AuthService {
         throw new ConflictError('Username already exists');
       }
       throw error;
+    }
+    const clinicIds = role === 'BOSS'
+      ? [...new Set([...(context.clinicId ? [context.clinicId] : []), ...(input.clinicIds ?? [])])]
+      : context.clinicId ? [context.clinicId] : [];
+    for (const clinicId of clinicIds) {
+      this.authRepository.addClinicMembership(record.id, clinicId, role, now, now);
     }
     const { passwordHash: _passwordHash, ...safeUser } = rowToUser(record);
     return safeUser;

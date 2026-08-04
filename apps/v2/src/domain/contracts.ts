@@ -236,6 +236,7 @@ export interface User extends Entity, SoftDeletable {
   passwordHash: string;
   name: string;
   role: UserRole;
+  currentClinicId?: ID | null;
   phone?: string;
   active: boolean;
   loginAttempts: number;

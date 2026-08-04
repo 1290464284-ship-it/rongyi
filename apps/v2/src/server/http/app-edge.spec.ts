@@ -130,6 +130,25 @@ describe('HTTP app edge error handling', () => {
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
+  it('lists BOSS clinics and switches the current clinic', async () => {
+    const clinics = await request(app)
+      .get('/api/v2/auth/clinics')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(clinics.body.data.clinics.length).toBeGreaterThanOrEqual(1);
+    const switched = await request(app)
+      .post('/api/v2/auth/switch-clinic')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ clinicId: 'clinic-v2-001' })
+      .expect(200);
+    expect(switched.body.data.clinicId).toBe('clinic-v2-001');
+    await request(app)
+      .post('/api/v2/auth/switch-clinic')
+      .set('Authorization', `Bearer ${token}`)
+      .send({})
+      .expect(404);
+  });
+
   it('short search terms and unknown routes return safe local responses', async () => {
     const short = await request(app)
       .get('/api/v2/search?q=a')

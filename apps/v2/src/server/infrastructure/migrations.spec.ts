@@ -66,6 +66,7 @@ describe('migrations', () => {
     const existingDb = createDatabase(existingDir);
     existingDb.exec('ALTER TABLE User ADD COLUMN refreshToken TEXT');
     existingDb.exec('ALTER TABLE User ADD COLUMN refreshTokenExpiresAt TEXT');
+    existingDb.exec('ALTER TABLE User ADD COLUMN currentClinicId TEXT');
     runMigrations(existingDb);
     const userColumns = new Set(
       (existingDb.prepare('PRAGMA table_info(User)').all() as Array<{ name: string }>).map((column) => column.name),
@@ -114,12 +115,16 @@ describe('migrations', () => {
     const purchaseItemFk = freshDb.prepare('PRAGMA foreign_key_list(PurchaseOrderItem)').all();
     const inventoryTxFk = freshDb.prepare('PRAGMA foreign_key_list(InventoryTransaction)').all();
     const processingFk = freshDb.prepare('PRAGMA foreign_key_list(ProcessingOrder)').all();
+    const userColumns = freshDb.prepare('PRAGMA table_info(User)').all() as Array<{ name: string }>;
+    const userClinicTable = freshDb.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'UserClinic'").get();
     expect(memberFk.length).toBeGreaterThan(0);
     expect(refundFk.length).toBeGreaterThan(0);
     expect(chargeItemFk.length).toBeGreaterThan(0);
     expect(purchaseItemFk.length).toBeGreaterThan(0);
     expect(inventoryTxFk.length).toBeGreaterThan(0);
     expect(processingFk.length).toBeGreaterThan(0);
+    expect(userColumns.some((column) => column.name === 'currentClinicId')).toBe(true);
+    expect(userClinicTable).toBeDefined();
 
     const now = new Date().toISOString();
     freshDb.prepare(

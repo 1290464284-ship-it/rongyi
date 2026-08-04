@@ -59,6 +59,7 @@ export function rowToUser(row: AuthUserRecord | Record<string, unknown>): User {
   return {
     id: String(row.id),
     clinicId: row.clinicId ? String(row.clinicId) : null,
+    currentClinicId: row.currentClinicId ? String(row.currentClinicId) : null,
     createdAt: String(row.createdAt),
     updatedAt: String(row.updatedAt),
     username: String(row.username),

@@ -12,7 +12,7 @@ import {
   UserCog,
   Users,
 } from 'lucide-react';
-import { logout } from './api';
+import { logout, switchClinic } from './api';
 import { apiRequest } from './api';
 
 const groups = [
@@ -34,6 +34,13 @@ export function Layout() {
     queryKey: ['navigation'],
     queryFn: () => apiRequest<{ permissions: string[] }>('/auth/navigation'),
   });
+  const clinics = useQuery({
+    queryKey: ['clinics'],
+    queryFn: () => apiRequest<{
+      currentClinicId: string | null;
+      clinics: Array<{ clinicId: string; name: string }>;
+    }>('/auth/clinics'),
+  });
   const visibleKeys = navigation.data?.permissions ?? [];
   const visibleGroups = groups.filter((group) => visibleKeys.includes(group.key));
 
@@ -54,6 +61,20 @@ export function Layout() {
     <div className="shell">
       <aside className="sidebar">
         <div className="brand">Dental V2</div>
+        {clinics.data && clinics.data.clinics.length > 1 && (
+          <select
+            className="clinic-switch"
+            aria-label="当前诊所"
+            value={clinics.data.currentClinicId ?? ''}
+            onChange={(event) => {
+              void switchClinic(event.target.value).then(() => window.location.reload());
+            }}
+          >
+            {clinics.data.clinics.map((clinic) => (
+              <option key={clinic.clinicId} value={clinic.clinicId}>{clinic.name}</option>
+            ))}
+          </select>
+        )}
         <nav>
           {visibleGroups.map((group) => {
             const Icon = group.icon;

@@ -14,6 +14,7 @@ const INTERNAL_TABLES = new Set([
   'SyncChange',
   'SyncDevice',
   'UsedRefreshToken',
+  'UserClinic',
 ]);
 const resourcesSource = fs.readFileSync(path.join(appRoot, 'src', 'domain', 'resources.ts'), 'utf8');
 const explicitTables = new Set(

@@ -66,7 +66,7 @@ export function authMiddleware(authService: AuthService) {
       }
       req.context = {
         userId: user.id,
-        clinicId: user.clinicId ?? null,
+        clinicId: user.currentClinicId ?? user.clinicId ?? null,
         role: user.role as UserRole,
         traceId: req.traceId,
         now: () => new Date(),

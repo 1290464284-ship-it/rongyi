@@ -7,7 +7,7 @@ const clinicalStaff: UserRole[] = ['BOSS', 'ADMIN', 'DOCTOR', 'NURSE'];
 const adminStaff: UserRole[] = ['BOSS', 'ADMIN'];
 
 export const routeRoleRules: Array<{ pattern: RegExp; roles: UserRole[] }> = [
-  { pattern: /^\/api\/v2\/auth\/(me|password|navigation)/, roles: allStaff },
+  { pattern: /^\/api\/v2\/auth\/(me|password|navigation|clinics|switch-clinic)/, roles: allStaff },
   { pattern: /^\/api\/v2\/admin\/users/, roles: ['BOSS'] },
   { pattern: /^\/api\/v2\/resource-meta/, roles: allStaff },
   { pattern: /^\/api\/v2\/resources/, roles: allStaff },

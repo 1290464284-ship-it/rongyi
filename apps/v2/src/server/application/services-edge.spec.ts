@@ -199,6 +199,78 @@ describe('service edge coverage', () => {
     await expect(mockAuth.login('mock-auth', 'mockpass')).resolves.toBeDefined();
   });
 
+  it('allows only BOSS to access multiple clinics and switch current clinic', async () => {
+    db.prepare(
+      `INSERT OR IGNORE INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+       VALUES (?, NULL, ?, ?, NULL, 'V2-2', 'Clinic 2', 1)`,
+    ).run('clinic-v2-other', now, now);
+    const auth = new AuthService(db);
+    expect(() => auth.listAccessibleClinics('missing-user', 'BOSS')).toThrow('User not found');
+    db.prepare(
+      `INSERT OR IGNORE INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+       VALUES (?, NULL, ?, ?, NULL, 'V2-EMPTY', '', 1)`,
+    ).run('clinic-v2-empty', now, now);
+    const boss = await auth.createUser({
+      username: 'boss-multi',
+      password: 'password123',
+      name: 'Boss Multi',
+      role: 'BOSS',
+      clinicIds: ['clinic-v2-001', 'clinic-v2-other'],
+    }, context);
+    const accessible = auth.listAccessibleClinics(boss.id, 'BOSS');
+    expect(accessible.clinics).toHaveLength(2);
+    const emptyNameBoss = await auth.createUser({
+      username: 'boss-empty-name',
+      password: 'password123',
+      name: 'Boss Empty Name',
+      role: 'BOSS',
+      clinicIds: ['clinic-v2-empty'],
+    }, context);
+    expect(auth.listAccessibleClinics(emptyNameBoss.id, 'BOSS').clinics.some((clinic) => clinic.name === 'clinic-v2-empty')).toBe(true);
+    expect(() => auth.switchClinic('missing-user', 'BOSS', 'clinic-v2-001')).toThrow('User not found');
+    expect(() => auth.switchClinic(boss.id, 'BOSS', 'clinic-v2-missing')).toThrow('Clinic not found');
+    const switched = auth.switchClinic(boss.id, 'BOSS', 'clinic-v2-other');
+    expect(switched.clinicId).toBe('clinic-v2-other');
+    expect((await auth.getUserById(boss.id)).currentClinicId).toBe('clinic-v2-other');
+    db.prepare('DELETE FROM UserClinic WHERE userId = ?').run(boss.id);
+    expect(auth.listAccessibleClinics(boss.id, 'BOSS').clinics).toHaveLength(1);
+    await expect(auth.createUser({
+      username: 'boss-bad-clinics',
+      password: 'password123',
+      name: 'Bad Clinics',
+      role: 'BOSS',
+      clinicIds: 'clinic-v2-001' as unknown as string[],
+    }, context)).rejects.toThrow('clinicIds must be an array of strings');
+
+    const nurse = await auth.createUser({
+      username: 'nurse-single',
+      password: 'password123',
+      name: 'Nurse Single',
+      role: 'NURSE',
+      clinicIds: ['clinic-v2-other'],
+    }, { ...context, clinicId: 'clinic-v2-001' });
+    expect(auth.listAccessibleClinics(nurse.id, 'NURSE').clinics).toHaveLength(1);
+    expect(() => auth.switchClinic(nurse.id, 'NURSE', 'clinic-v2-other')).toThrow('Only BOSS can switch clinics');
+
+    const bossNull = await auth.createUser({
+      username: 'boss-null-clinic',
+      password: 'password123',
+      name: 'Boss Null Clinic',
+      role: 'BOSS',
+    }, { ...context, clinicId: null });
+    const nurseNull = await auth.createUser({
+      username: 'nurse-null-clinic',
+      password: 'password123',
+      name: 'Nurse Null Clinic',
+      role: 'NURSE',
+    }, { ...context, clinicId: null });
+    expect(auth.listAccessibleClinics(bossNull.id, 'BOSS').clinics).toEqual([]);
+    expect(auth.listAccessibleClinics(nurseNull.id, 'NURSE')).toEqual({
+      currentClinicId: null,
+      clinics: [],
+    });
+  });
+
   it('covers audit logs with nullish optional fields', () => {
     const audit = new AuditService(db);
     audit.log({ action: 'EDGE_NULL' });
