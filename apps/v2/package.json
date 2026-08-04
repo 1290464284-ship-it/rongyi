@@ -48,18 +48,38 @@
     "generate:legacy-resources": "node scripts/generate-legacy-resources.mjs"
   },
   "dependencies": {
+    "@chakra-ui/react": "^3.36.1",
+    "@gsap/react": "^2.1.2",
+    "@react-three/drei": "^10.7.4",
+    "@react-three/fiber": "^9.7.0",
+    "@react-three/postprocessing": "^3.0.4",
+    "@react-three/rapier": "^2.2.0",
     "@tanstack/react-query": "^5.101.4",
+    "@use-gesture/react": "^10.3.1",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^13.0.1",
     "cors": "^2.8.5",
     "electron-updater": "^6.3.0",
     "express": "^5.2.1",
+    "face-api.js": "^0.22.2",
+    "gl-matrix": "^3.4.4",
+    "gsap": "^3.15.0",
     "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.2",
-    "lucide-react": "^1.25.0",
+    "lenis": "^1.3.25",
+    "lucide-react": "^0.542.0",
+    "maath": "^0.10.8",
+    "matter-js": "^0.20.0",
+    "meshline": "^3.3.1",
+    "motion": "^12.43.0",
+    "ogl": "^1.0.11",
+    "postprocessing": "^6.39.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-router": "^8.3.0"
+    "react-icons": "^5.7.0",
+    "react-router": "^8.3.0",
+    "react-router-dom": "^6.30.4",
+    "three": "^0.180.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0",
@@ -68,10 +88,12 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.9",
+    "@types/matter-js": "^0.19.8",
     "@types/node": "^20.19.43",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@types/supertest": "^6.0.2",
+    "@types/three": "^0.180.0",
     "@vitejs/plugin-react": "^5.1.4",
     "concurrently": "^10.0.3",
     "electron": "^43.2.0",
@@ -81,6 +103,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.3",
     "jsdom": "^30.0.1",
+    "jsrepo": "^3.8.1",
     "knip": "^6.31.0",
     "supertest": "^7.2.2",
     "tsx": "^4.21.0",
@@ -140,7 +163,11 @@
       "src/domain/contracts.ts",
       "legacy/schema/**",
       "electron/preload.cjs",
-      "scripts/wait-for-services.mjs"
+      "scripts/wait-for-services.mjs",
+      "src/components/reactbits/TextAnimations/BlurText/BlurText.tsx"
+    ],
+    "ignoreDependencies": [
+      "motion"
     ]
   }
 }

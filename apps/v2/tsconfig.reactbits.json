@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.web.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": [
+    "src/components/reactbits/**/*.ts",
+    "src/components/reactbits/**/*.tsx"
+  ]
+}
