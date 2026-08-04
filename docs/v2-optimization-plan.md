@@ -52,6 +52,8 @@
 - 迁移 `116` 已扩展至 ChargeItem、PurchaseOrderItem、InventoryTransaction、ProcessingOrder，并为重建 DDL 增加“禁止丢列”保护。
 - `verify:foreign-keys` 已扩展至 19 条核心关系扫描。
 - Charge 付款/退款更新、处方安全、治疗进度、头影测量写入均改为显式诊所范围，并补齐跨诊所测试。
+- 管理员用户更新与重置密码在仓储层按诊所范围执行，并补充跨诊所回归测试。
+- staged restore 会清理目标库遗留的 SQLite WAL/SHM 文件，避免恢复后索引损坏并触发启动完整性失败。
 - 新增 `benchmark:load`：生成 10 万患者与 10 万收费记录，测量 FTS 搜索和 dashboard。
 - 基准结果：10 万患者/收费写入约 1.5s，FTS 搜索 10ms，dashboard 71ms。
 

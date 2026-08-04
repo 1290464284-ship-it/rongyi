@@ -90,6 +90,10 @@
 - Charge payment/refund repository writes enforce clinic scope, and
   prescription safety, treatment progress, and cephalometric service reads and
   updates are scoped to the active clinic and ignore soft-deleted rows.
+- Admin user updates and password resets enforce clinic scope at the
+  repository layer, with a cross-clinic regression test.
+- Staged restore removes stale SQLite WAL/SHM sidecars before activating,
+  preventing restored databases from failing the startup integrity check.
 
 ## Remaining
 
