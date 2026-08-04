@@ -63,15 +63,28 @@ export class SqliteChargeRepository implements ChargeRepository {
     );
   }
 
-  updatePayment(id: string, paidAmount: number, status: string, paidAt: string, payMethod?: string, memberCardId?: string | null): void {
+  updatePayment(
+    id: string,
+    paidAmount: number,
+    status: string,
+    paidAt: string,
+    payMethod?: string,
+    memberCardId?: string | null,
+    clinicId?: string | null,
+  ): void {
+    const params = clinicId
+      ? [paidAmount, status, paidAt, payMethod ?? null, memberCardId ?? null, paidAt, id, clinicId]
+      : [paidAmount, status, paidAt, payMethod ?? null, memberCardId ?? null, paidAt, id];
     this.db.prepare(
       `UPDATE Charge SET paidAmount = ?, status = ?, paidAt = ?, payMethod = COALESCE(?, payMethod),
-       memberCardId = COALESCE(?, memberCardId), updatedAt = ? WHERE id = ? AND deletedAt IS NULL`,
-    ).run(paidAmount, status, paidAt, payMethod ?? null, memberCardId ?? null, paidAt, id);
+       memberCardId = COALESCE(?, memberCardId), updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
+    ).run(...params);
   }
 
-  updateRefund(id: string, refundedAmount: number, status: string, updatedAt: string): void {
-    this.db.prepare('UPDATE Charge SET refundedAmount = ?, status = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL')
-      .run(refundedAmount, status, updatedAt, id);
+  updateRefund(id: string, refundedAmount: number, status: string, updatedAt: string, clinicId?: string | null): void {
+    const params = clinicId ? [refundedAmount, status, updatedAt, id, clinicId] : [refundedAmount, status, updatedAt, id];
+    this.db.prepare(
+      `UPDATE Charge SET refundedAmount = ?, status = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
+    ).run(...params);
   }
 }

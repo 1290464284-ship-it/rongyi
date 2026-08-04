@@ -153,7 +153,7 @@ export class ChargeService {
             remark: `Charge ${id}`,
           });
         }
-        this.chargeRepository.updatePayment(id, newPaid, newStatus, now, method, memberCardId);
+        this.chargeRepository.updatePayment(id, newPaid, newStatus, now, method, memberCardId, context?.clinicId ?? null);
       });
       payRun();
       return { id, paidAmount: newPaid, status: newStatus };
@@ -186,7 +186,7 @@ export class ChargeService {
       const now = context.now().toISOString();
       const refundId = randomUUID();
       const run = this.db.transaction(() => {
-        this.chargeRepository.updateRefund(id, newRefunded, newStatus, now);
+        this.chargeRepository.updateRefund(id, newRefunded, newStatus, now, context.clinicId);
         if (row.payMethod === 'MEMBER_CARD') {
           const memberCard = row.memberCardId
             ? this.memberCardRepository.findById(String(row.memberCardId), context.clinicId)
