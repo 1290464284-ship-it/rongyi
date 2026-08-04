@@ -305,6 +305,13 @@ describe('core repositories', () => {
     wechat.markSent('wechat-repo', now, now);
     const message = db.prepare('SELECT * FROM WechatMessage WHERE id = ?').get('wechat-repo') as Record<string, unknown>;
     expect(message.status).toBe('SENT');
+    db.prepare(
+      `INSERT INTO WechatMessage (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, type, content, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient', 'TEXT', 'cancelled', 'CANCELLED')`,
+    ).run('wechat-repo-cancelled', null, now, now);
+    expect(wechat.markSent('wechat-repo-cancelled', now, now)).toBe(0);
   });
 
   it('inserts follow-up records and lists reminders', () => {
@@ -651,6 +658,7 @@ describe('core repositories', () => {
     const alert = new SqliteAlertRepository(db);
     expect(alert.open('clinic-v2-001').length).toBeGreaterThanOrEqual(1);
     expect(alert.setStatus('alert-scope', 'RESOLVED', 'user', now, 'clinic-v2-001')).toBe(1);
+    expect(alert.setStatus('alert-scope', 'OPEN', 'user', now, 'clinic-v2-001')).toBe(0);
     expect(alert.open()).toBeInstanceOf(Array);
     expect(alert.setStatus('missing-alert', 'RESOLVED', 'user', now)).toBe(0);
 
@@ -672,7 +680,14 @@ describe('core repositories', () => {
        ) VALUES (?, ?, ?, ?, NULL, 'user', ?, ?, 'ANNUAL', 'r', 'PENDING')`,
     ).run('leave-scope', 'clinic-v2-001', now, now, now.slice(0, 10), now.slice(0, 10));
     expect(hr.approveLeave('leave-scope', 'APPROVED', 'reviewer', now, 'clinic-v2-001')).toBe(1);
-    expect(hr.approveLeave('leave-scope', 'REJECTED', 'reviewer', now)).toBe(1);
+    expect(hr.approveLeave('leave-scope', 'REJECTED', 'reviewer', now)).toBe(0);
+    db.prepare(
+      `INSERT INTO LeaveRequest (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         userId, startDate, endDate, type, reason, status
+       ) VALUES (?, NULL, ?, ?, NULL, 'user', ?, ?, 'ANNUAL', 'r', 'PENDING')`,
+    ).run('leave-scope-null', now, now, now.slice(0, 10), now.slice(0, 10));
+    expect(hr.approveLeave('leave-scope-null', 'APPROVED', 'reviewer', now)).toBe(1);
 
     const clinical = new SqliteClinicalWorkflowRepository(db);
     db.prepare(

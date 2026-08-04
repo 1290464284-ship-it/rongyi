@@ -1058,13 +1058,22 @@ describe('service edge coverage', () => {
        ) VALUES (?, ?, ?, ?, NULL, 'user-admin-001', '2026-08-01', '2026-08-02', 'ANNUAL', 'r', 'PENDING')`,
     ).run('leave-edge-reject', context.clinicId, now, now);
     expect(hr.approveLeave('leave-edge-reject', 'user-admin-001', false, context).status).toBe('REJECTED');
+    expect(() => hr.approveLeave('leave-edge-reject', 'user-admin-001', true, context)).toThrow('cannot be approved');
     expect(() => hr.approveLeave('missing-leave', 'user-admin-001', true, context)).toThrow('Leave request not found');
+    db.prepare(
+      `INSERT INTO LeaveRequest (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         userId, startDate, endDate, type, reason, status
+       ) VALUES (?, ?, ?, ?, NULL, 'user-admin-001', '2026-08-01', '2026-08-02', 'ANNUAL', 'race', 'PENDING')`,
+    ).run('leave-edge-race', context.clinicId, now, now);
+    const failingHr = new HrService(db, { attendance: () => [], approveLeave: () => 0 });
+    expect(() => failingHr.approveLeave('leave-edge-race', 'user-admin-001', true, context)).toThrow('cannot be approved');
 
     const alerts = new AlertService(db);
     expect(alerts.open()).toBeInstanceOf(Array);
     expect(() => alerts.setStatus('missing-alert', 'RESOLVED', 'user-admin-001')).toThrow('Business alert not found');
     expect(() => alerts.setStatus('missing-alert', 'RESOLVED')).toThrow('Business alert not found');
-    alerts.create({
+    const alertEdge = alerts.create({
       alertType: 'TEST',
       level: 'INFO',
       severity: 'INFO',
@@ -1072,6 +1081,30 @@ describe('service edge coverage', () => {
       message: 'M',
       source: 'edge',
     });
+    expect(alerts.setStatus(String(alertEdge.id), 'ACKNOWLEDGED', 'user-admin-001', context).status).toBe('ACKNOWLEDGED');
+    expect(alerts.setStatus(String(alertEdge.id), 'RESOLVED', 'user-admin-001', context).status).toBe('RESOLVED');
+    expect(() => alerts.setStatus(String(alertEdge.id), 'OPEN', 'user-admin-001', context)).toThrow('Cannot transition');
+    expect(() => alerts.setStatus(String(alertEdge.id), 'BAD' as never, 'user-admin-001', context)).toThrow('Invalid business alert status');
+    const alertRace = alerts.create({
+      alertType: 'TEST',
+      level: 'INFO',
+      severity: 'INFO',
+      title: 'R',
+      message: 'R',
+      source: 'edge-race',
+    });
+    const failingAlerts = new AlertService(db, { open: () => [], setStatus: () => 0 });
+    expect(() => failingAlerts.setStatus(String(alertRace.id), 'RESOLVED', 'user-admin-001', context)).toThrow('status update failed');
+    const nullAlertRace = alerts.create({
+      alertType: 'TEST',
+      level: 'INFO',
+      severity: 'INFO',
+      title: 'Null',
+      message: 'Null',
+      source: 'edge-null-race',
+    });
+    const failingNullAlerts = new AlertService(db, { open: () => [], setStatus: () => 0 });
+    expect(() => failingNullAlerts.setStatus(String(nullAlertRace.id), 'RESOLVED')).toThrow('status update failed');
     expect(() => alerts.setStatus('missing-alert', 'RESOLVED', 'user-admin-001', context)).toThrow('Business alert not found');
 
     db.prepare(
