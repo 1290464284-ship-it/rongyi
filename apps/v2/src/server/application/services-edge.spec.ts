@@ -230,6 +230,14 @@ describe('service edge coverage', () => {
       items: [{ name: 'X', category: 'EXAM', price: 100, quantity: 1 }],
       discount: -1,
     }, context)).rejects.toThrow('Discount');
+    await expect(service.create({ patientId: '', items: [{ name: 'X', category: 'EXAM', price: 100, quantity: 1 }] }, context))
+      .rejects.toThrow('patientId');
+    await expect(service.create({ patientId: 'patient-demo-001', items: [{ name: '', category: '', price: 100, quantity: 1 }] }, context))
+      .rejects.toThrow('name and category');
+    await expect(service.create({ patientId: 'patient-demo-001', items: [{ name: 'X', category: 'EXAM', price: 0, quantity: 1 }] }, context))
+      .rejects.toThrow('positive integer');
+    await expect(service.create({ patientId: 'patient-demo-001', items: [{ name: 'X', category: 'EXAM', price: 100, quantity: 0 }] }, context))
+      .rejects.toThrow('quantity must be positive');
 
     const now = new Date().toISOString();
     db.prepare(
@@ -396,6 +404,12 @@ describe('service edge coverage', () => {
 
   it('covers inventory transaction and stock branches', async () => {
     const service = new InventoryService(db);
+    await expect(service.createTransaction({ itemId: 'x', type: 'BAD' as 'OUT', quantity: 1 }, context))
+      .rejects.toThrow('IN, OUT, or ADJUST');
+    await expect(service.createTransaction({ itemId: 'x', type: 'IN', quantity: 0 }, context))
+      .rejects.toThrow('non-zero');
+    await expect(service.createTransaction({ itemId: 'x', type: 'OUT', quantity: -1 }, context))
+      .rejects.toThrow('must be positive');
     await expect(service.createTransaction({ itemId: 'missing-item', type: 'OUT', quantity: 1 }, context)).rejects.toThrow('Inventory item not found');
     const now = new Date().toISOString();
     db.prepare(
@@ -690,6 +704,61 @@ describe('service edge coverage', () => {
     expect(service.cleanup(now, context).deleted).toBeGreaterThanOrEqual(0);
   });
 
+  it('enforces tenant scope in core workflows', async () => {
+    const now = new Date().toISOString();
+    const otherClinic = 'other-clinic';
+
+    db.prepare(
+      `INSERT INTO Appointment (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, startTime, endTime, status, type
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'user-admin-001', ?, ?, 'BOOKED', 'REGULAR')`,
+    ).run('appointment-other', otherClinic, now, now, now, new Date(Date.now() + 3_600_000).toISOString());
+    const appointments = new AppointmentService(db);
+    await expect(appointments.transition('appointment-other', 'CANCELLED', context)).rejects.toThrow('Appointment not found');
+
+    db.prepare(
+      `INSERT INTO Charge (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, number, totalAmount, paidAmount, refundedAmount, discount, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'OTHER-CHARGE', 100, 0, 0, 0, 'UNPAID')`,
+    ).run('charge-other', otherClinic, now, now);
+    const charges = new ChargeService(db);
+    await expect(charges.pay('charge-other', 10, 'CASH', undefined, context)).rejects.toThrow('Charge not found');
+    await expect(charges.refund('charge-other', 10, 'other', context)).rejects.toThrow('Charge not found');
+
+    db.prepare(
+      `INSERT INTO Debt (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         chargeId, patientId, totalAmount, paidAmount, status
+       ) VALUES (?, ?, ?, ?, NULL, 'charge-other', 'patient-demo-001', 100, 0, 'UNPAID')`,
+    ).run('debt-other', otherClinic, now, now);
+    const debts = new DebtService(db);
+    expect(() => debts.pay('debt-other', 10, context)).toThrow('Debt record not found');
+
+    db.prepare(
+      `INSERT INTO MemberCard (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, cardNo, balance, totalRecharge, totalConsume,
+         status, points, totalPoints, level
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'OTHER-CARD', 100, 100, 0, 'ACTIVE', 0, 0, 'NORMAL')`,
+    ).run('card-other', otherClinic, now, now);
+    const cards = new MemberCardService(db);
+    await expect(cards.recharge('card-other', 10, context)).rejects.toThrow('Member card not found');
+    await expect(cards.consume('card-other', 10, context)).rejects.toThrow('Member card not found');
+    await expect(cards.addPoints('card-other', 10, context)).rejects.toThrow('Member card not found');
+
+    db.prepare(
+      `INSERT INTO InventoryItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, category, unit, stock, minStock, price
+       ) VALUES (?, ?, ?, ?, NULL, 'OTHER-ITEM', 'Other Item', 'MAT', 'box', 10, 1, 100)`,
+    ).run('inventory-other', otherClinic, now, now);
+    const inventory = new InventoryService(db);
+    await expect(inventory.createTransaction({ itemId: 'inventory-other', type: 'IN', quantity: 1 }, context))
+      .rejects.toThrow('Inventory item not found');
+  });
+
   it('covers HR, alerts, member cards, purchase, processing, risk, prescription, ceph, progress, import, debt, notifications, satisfaction branches', async () => {
     const hr = new HrService(db);
     expect(hr.attendance(now.slice(0, 10))).toBeInstanceOf(Array);
@@ -724,6 +793,8 @@ describe('service edge coverage', () => {
     await expect(cards.consume('card-edge-2', 0, context)).rejects.toThrow('Consume');
     await expect(cards.consume('card-edge-2', 101, context)).rejects.toThrow('Insufficient member card');
     await expect(cards.addPoints('card-edge-2', -11, context)).rejects.toThrow('Insufficient points');
+    await expect(cards.addPoints('card-edge-2', 0, context)).rejects.toThrow('non-zero integer');
+    await expect(cards.addPoints('card-edge-2', 1.5, context)).rejects.toThrow('non-zero integer');
     await cards.addPoints('card-edge-2', -5, context);
     await expect(cards.recharge('missing-card', 1, context)).rejects.toThrow('Member card not found');
     await cards.recharge('card-edge-2', 10, nullContext);
@@ -960,7 +1031,7 @@ describe('service edge coverage', () => {
 
     const notifications = new NotificationService(db);
     expect(notifications.list('user-admin-001')).toBeInstanceOf(Array);
-    expect(notifications.markRead('missing-notification').read).toBe(true);
+    expect(() => notifications.markRead('missing-notification', context.userId)).toThrow('Notification not found');
 
     const satisfaction = new SatisfactionService(db);
     expect(satisfaction.nps().score).toBeGreaterThanOrEqual(0);

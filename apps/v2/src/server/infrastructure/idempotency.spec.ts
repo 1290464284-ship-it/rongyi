@@ -49,6 +49,17 @@ describe('withIdempotency', () => {
     expect(calls).toBe(2);
   });
 
+  it('rejects an existing processing record', () => {
+    db.prepare(
+      `INSERT INTO IdempotencyRecord (
+         id, key, type, status, responseJson, result,
+         clinicId, createdAt, updatedAt, deletedAt, expiresAt
+       ) VALUES (?, 'existing-processing', 'GENERIC', 'PROCESSING', '{}', '{}', NULL, ?, ?, NULL, ?)`,
+    ).run('idem-processing', new Date().toISOString(), new Date().toISOString(), new Date(Date.now() + 86_400_000).toISOString());
+    expect(() => withIdempotency(db, 'existing-processing', () => ({ ok: true })))
+      .toThrow('Operation is already in progress');
+  });
+
   it('rethrows a failed idempotency record insert', () => {
     db.exec(`
       CREATE TRIGGER IF NOT EXISTS idempotency_fail_insert
@@ -65,7 +76,7 @@ describe('withIdempotency', () => {
   it('returns a concurrent result when the idempotency insert races', () => {
     const get = vi.fn()
       .mockReturnValueOnce(undefined)
-      .mockReturnValueOnce({ responseJson: '{"ok":true}' });
+      .mockReturnValueOnce({ responseJson: '{"ok":true}', status: 'COMPLETED' });
     const run = vi.fn(() => {
       throw new Error('race insert failed');
     });
@@ -75,5 +86,19 @@ describe('withIdempotency', () => {
     expect(withIdempotency(raceDb, 'race-concurrent', () => ({ ok: false }))).toEqual({ ok: true });
     expect(get).toHaveBeenCalledTimes(2);
     expect(run).toHaveBeenCalledOnce();
+  });
+
+  it('rejects concurrent processing records instead of returning an empty placeholder', () => {
+    const get = vi.fn()
+      .mockReturnValueOnce(undefined)
+      .mockReturnValueOnce({ responseJson: '{}', status: 'PROCESSING' });
+    const run = vi.fn(() => {
+      throw new Error('race insert failed');
+    });
+    const raceDb = {
+      prepare: vi.fn(() => ({ get, run })),
+    } as unknown as Database.Database;
+    expect(() => withIdempotency(raceDb, 'race-processing', () => ({ ok: false })))
+      .toThrow('Operation is already in progress');
   });
 });

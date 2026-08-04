@@ -102,7 +102,7 @@ describe('remaining services', () => {
     ).run('notification-remaining', context.clinicId, now, now);
     const notifications = new NotificationService(db);
     expect(notifications.list('user-admin-001').length).toBeGreaterThanOrEqual(1);
-    expect(notifications.markRead('notification-remaining').read).toBe(true);
+    expect(notifications.markRead('notification-remaining', 'user-admin-001').read).toBe(true);
 
     db.prepare(
       `INSERT INTO SatisfactionSurvey (
