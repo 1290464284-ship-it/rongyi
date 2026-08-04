@@ -83,6 +83,13 @@
   installer, blockmap, and `latest.yml`, and remote update metadata verified.
 - Local full smoke runner that starts API and Web, then runs API smoke, UI
   smoke, and load smoke.
+- Foreign-key migration `116` now covers ChargeItem, PurchaseOrderItem,
+  InventoryTransaction, and ProcessingOrder in addition to MemberCard and
+  Refund; the rebuild helper refuses DDL that would drop existing columns.
+- `verify:foreign-keys` scans 19 core relations for orphan rows.
+- Charge payment/refund repository writes enforce clinic scope, and
+  prescription safety, treatment progress, and cephalometric service reads and
+  updates are scoped to the active clinic and ignore soft-deleted rows.
 
 ## Remaining
 
