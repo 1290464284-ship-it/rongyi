@@ -101,6 +101,8 @@
   only the main database file.
 - Sync delete and generic resource delete verify the target exists before
   reporting success, removing remaining fake-success paths for missing rows.
+- Appointment status transitions use the shared clinic-scope helper for both
+  lookup and update instead of relying on a manual clinic comparison.
 - `clean:generated` removes any `dist-*` output directory rather than a fixed
   hard-coded list.
 
