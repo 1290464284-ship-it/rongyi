@@ -144,6 +144,11 @@
 - Purchase orders expose item details through
   `GET /api/v2/purchase-orders/:id/items`, and the inventory workflow page
   shows purchase order line items for quantity/price verification.
+- Purchase receiving returns per-line receipt details with before/after stock,
+  so operators can verify exactly what entered inventory.
+- Follow-up reminders expose a due-state summary endpoint
+  (`GET /api/v2/follow-ups/reminders/summary`) and the follow-up page shows
+  total/overdue/today/upcoming counts alongside the grouped reminder tables.
 - Backup service was extracted from `operations.ts` into
   `service-modules/backup.ts`, reducing the operations module from roughly 680
   lines to 485 lines without changing behavior.
@@ -167,12 +172,10 @@
   expanded set also includes the application layout and follow-up report; it
   now also includes desktop settings; it passes 98% statements, 90% branches,
   98% functions, and 100% lines.
-- Experimental `src/components/**` files are quarantined from ESLint and knip
-  via `eslint.config.js` and `knip.json` until they are adopted or removed.
-- Removed the unused `GridScan` and `Lanyard` ReactBits components and their
-  risky/unlicensed dependencies (`face-api.js`, `@react-three/rapier`,
-  `meshline`); security scan now excludes the experimental component dir and
-  license scan allows GSAP and Zlib, restoring a green `pnpm verify`.
+- Removed the entire unused ReactBits experiment directory
+  (`src/components/reactbits`), its jsrepo config, its dedicated tsconfig, and
+  all experiment-only dependencies; ESLint, knip, security scan, and license
+  scan no longer need component quarantine exceptions.
 - `clean:generated` removes any `dist-*` output directory rather than a fixed
   hard-coded list.
 
