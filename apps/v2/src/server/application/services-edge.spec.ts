@@ -842,6 +842,33 @@ describe('service edge coverage', () => {
     expect(service.cleanup(now, context).deleted).toBeGreaterThanOrEqual(0);
   });
 
+  it('keeps sync pull scoped to the active clinic', () => {
+    const service = new SyncService(db);
+    const device = service.registerDevice('sync-isolation-device', 'Isolation', context);
+    const afterNow = '2026-08-04T00:00:00.100Z';
+    const otherClinic = 'clinic-v2-sync-other';
+    db.prepare(
+      `INSERT OR IGNORE INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+       VALUES (?, NULL, ?, ?, NULL, 'V2-SYNC-OTHER', 'Sync Other Clinic', 1)`,
+    ).run(otherClinic, now, now);
+    db.prepare(
+      `INSERT INTO SyncChange (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         tableName, recordId, operation, deviceId
+       ) VALUES ('sync-isolation-a', ?, ?, ?, NULL, 'Patient', 'patient-a', 'INSERT', 'other-device')`,
+    ).run(context.clinicId, afterNow, afterNow);
+    db.prepare(
+      `INSERT INTO SyncChange (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         tableName, recordId, operation, deviceId
+       ) VALUES ('sync-isolation-b', ?, ?, ?, NULL, 'Patient', 'patient-b', 'INSERT', 'other-device')`,
+    ).run(otherClinic, afterNow, afterNow);
+
+    const pulled = service.pull(now, 'sync-isolation-device', device.token, context);
+    expect(pulled.changes.some((row) => row.id === 'sync-isolation-a')).toBe(true);
+    expect(pulled.changes.some((row) => row.id === 'sync-isolation-b')).toBe(false);
+  });
+
   it('enforces tenant scope in core workflows', async () => {
     const now = new Date().toISOString();
     const otherClinic = 'other-clinic';

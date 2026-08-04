@@ -123,8 +123,9 @@
   on-time, and adherence rate.
 - BOSS clinic switches record an explicit audit entry with from/to clinic ids,
   and clinic memberships only reference active existing clinics.
-- Cross-clinic regression coverage verifies analytics, search, replenishment,
-  generic resource lists, and CSV export are isolated by active clinic.
+- Cross-clinic regression coverage verifies analytics, search, sync pull,
+  replenishment, generic resource lists, and CSV export are isolated by
+  active clinic.
 - Follow-up reminders support completion through `PATCH
   /api/v2/follow-ups/:id/complete`, with clinic scope, status conflict checks,
   and an in-table UI action.
