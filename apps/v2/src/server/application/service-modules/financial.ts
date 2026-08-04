@@ -427,6 +427,12 @@ export class PurchaseOrderService {
     run();
     return { id: orderId, status: 'RECEIVED' };
   }
+
+  items(orderId: string, context: AppContext): Array<Record<string, unknown>> {
+    const order = this.purchaseOrderRepository.findById(orderId, context.clinicId);
+    if (!order) throw new NotFoundError('Purchase order not found');
+    return this.purchaseOrderRepository.itemsByOrder(orderId, context.clinicId).map((item) => ({ ...item }));
+  }
 }
 
 const PROCESSING_TRANSITIONS: Record<string, readonly string[]> = {

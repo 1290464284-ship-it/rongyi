@@ -141,6 +141,9 @@
 - Inventory workflow page completes the replenishment loop in one place:
   generate suggestions, select and apply them to purchase orders, then receive
   pending orders with supplier and amount visible.
+- Purchase orders expose item details through
+  `GET /api/v2/purchase-orders/:id/items`, and the inventory workflow page
+  shows purchase order line items for quantity/price verification.
 - Backup service was extracted from `operations.ts` into
   `service-modules/backup.ts`, reducing the operations module from roughly 680
   lines to 485 lines without changing behavior.

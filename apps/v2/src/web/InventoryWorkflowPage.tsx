@@ -11,6 +11,10 @@ export function InventoryWorkflowPage() {
     queryKey: ['po-workflow'],
     queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/purchaseOrders?page=1&pageSize=100'),
   });
+  const purchaseItems = useQuery({
+    queryKey: ['po-items-workflow'],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/purchaseOrderItems?page=1&pageSize=200'),
+  });
   const processing = useQuery({
     queryKey: ['processing-workflow'],
     queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/processingOrders?page=1&pageSize=100'),
@@ -55,6 +59,14 @@ export function InventoryWorkflowPage() {
       label: 'Action',
       render: (row) => <button onClick={() => run(`/purchase-orders/${String(row.id)}/receive`, 'PATCH', {})}>收货</button>,
     },
+  ];
+
+  const purchaseItemColumns: DataTableColumn<Record<string, unknown>>[] = [
+    { key: 'orderId', label: 'Order', render: (row) => String(row.orderId ?? '').slice(0, 8) },
+    { key: 'name', label: 'Item', render: (row) => String(row.name ?? row.itemId ?? '') },
+    { key: 'quantity', label: 'Qty', render: (row) => String(row.quantity ?? '') },
+    { key: 'unitPrice', label: 'Unit price', render: (row) => String(row.unitPrice ?? '') },
+    { key: 'subtotal', label: 'Subtotal', render: (row) => String(row.subtotal ?? '') },
   ];
 
   const processingColumns: DataTableColumn<Record<string, unknown>>[] = [
@@ -102,6 +114,8 @@ export function InventoryWorkflowPage() {
         keyField="id"
         emptyText="No pending purchase orders"
       />
+      <h2>采购单明细</h2>
+      <DataTable columns={purchaseItemColumns} rows={purchaseItems.data?.items ?? []} keyField="id" emptyText="No purchase items" />
       <h2>加工单</h2>
       <DataTable columns={processingColumns} rows={processing.data?.items ?? []} keyField="id" emptyText="No processing orders" />
       <h2>补货建议</h2>

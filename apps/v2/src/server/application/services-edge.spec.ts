@@ -1190,6 +1190,8 @@ describe('service edge coverage', () => {
        ) VALUES (?, ?, ?, ?, NULL, 'po-edge-3', 'inventory-po-valid', 'Valid', 2, 100, 200)`,
     ).run('poi-edge-valid', context.clinicId, now, now);
     await purchase.receive('po-edge-3', context);
+    expect(purchase.items('po-edge-3', context).length).toBe(1);
+    expect(() => purchase.items('missing-po', context)).toThrow('Purchase order not found');
     db.prepare(
       `INSERT INTO PurchaseOrder (
          id, clinicId, createdAt, updatedAt, deletedAt,

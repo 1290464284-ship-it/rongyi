@@ -149,6 +149,10 @@ describe('HTTP app', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({})
       .expect(200);
+    await request(app)
+      .get('/api/v2/purchase-orders/po-http/items')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
 
     await request(app).get('/api/v2/satisfaction/doctor-rankings')
       .set('Authorization', `Bearer ${token}`)
