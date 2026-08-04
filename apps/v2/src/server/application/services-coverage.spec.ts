@@ -92,6 +92,8 @@ describe('service coverage', () => {
        ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, 'T-1', 'T', 'GENERAL', 100, 1, 'COMPLETED', ?)`,
     ).run('treatment-followup', context.clinicId, now, now, 'patient-demo-001', 'visit-followup', 'user-admin-001', '2026-08-01');
     await service.batchGenerate(2, context);
+    await service.batchGenerate(0, context);
+    await service.batchGenerate(1000, context);
     const generated = db.prepare('SELECT * FROM FollowUp WHERE templateId = ?').all('template-test') as Array<Record<string, unknown>>;
     expect(generated.length).toBeGreaterThanOrEqual(1);
     expect(typeof service.adherence().rate).toBe('number');

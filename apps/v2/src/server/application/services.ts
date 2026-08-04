@@ -636,6 +636,7 @@ export class FollowUpService {
   }
 
   async batchGenerate(limit = 50, context: AppContext): Promise<{ processed: number; generated: number }> {
+    const maxLimit = Math.min(200, Math.max(1, Math.floor(Number(limit) || 50)));
     const rows = this.db.prepare(
       `SELECT DISTINCT V.patientId,
               COALESCE(T.completedDate, V.createdAt) AS completedAt
@@ -646,7 +647,7 @@ export class FollowUpService {
          AND V.deletedAt IS NULL
          AND T.deletedAt IS NULL
        LIMIT ?`,
-    ).all(limit) as Array<{ patientId: string; completedAt: string }>;
+    ).all(maxLimit) as Array<{ patientId: string; completedAt: string }>;
     const templates = this.db.prepare(
       `SELECT id, name, daysAfter, content, assigneeId
        FROM FollowUpTemplate

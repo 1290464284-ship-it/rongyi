@@ -840,14 +840,6 @@ export interface SyncChange extends Entity {
 // Use case and repository ports
 // ---------------------------------------------------------------------------
 
-export interface Command<TInput, TOutput> {
-  execute(input: TInput, context: AppContext): Promise<TOutput>;
-}
-
-export interface Query<TInput, TOutput> {
-  execute(input: TInput, context: AppContext): Promise<TOutput>;
-}
-
 export interface AppContext {
   userId: ID;
   clinicId: ID | null;
@@ -872,34 +864,6 @@ export interface RepositoryQuery extends PageQuery {
 
 export interface IUnitOfWork {
   run<T>(fn: () => T): T;
-}
-
-export interface ITransactionContext {
-  query(sql: string, params: unknown[]): Promise<unknown[]>;
-  execute(sql: string, params: unknown[]): Promise<{ changes: number }>;
-}
-
-export interface DomainEvent {
-  type: string;
-  aggregateId: ID;
-  occurredAt: UTCDateTime;
-  payload: Record<string, unknown>;
-}
-
-export type DomainEventHandler = (event: DomainEvent) => Promise<void>;
-
-export interface IEventBus {
-  publish(event: DomainEvent): Promise<void>;
-  subscribe(type: string, handler: DomainEventHandler): void;
-}
-
-export interface IClock {
-  now(): Date;
-  clinicDate(input?: Date | string | number): ClinicDate;
-}
-
-export interface IIdGenerator {
-  id(): ID;
 }
 
 // ---------------------------------------------------------------------------

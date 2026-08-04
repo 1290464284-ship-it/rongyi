@@ -104,6 +104,8 @@ describe('workflow services', () => {
       expect(snapshot.reason).toBe('DEMAND_BASED_ROP');
       expect(snapshot.avgDaily).toBeCloseTo(1, 0);
     }
+    expect(() => service.applyToPurchaseOrder(null as unknown as string[], context)).toThrow('At least one suggestion');
+    expect(() => service.applyToPurchaseOrder(Array.from({ length: 501 }, () => 'x'), context)).toThrow('at most');
     const anySuggestion = db.prepare(
       'SELECT * FROM InventoryReplenishmentSuggestion WHERE deletedAt IS NULL LIMIT 1',
     ).get() as { id: string } | undefined;
@@ -122,6 +124,8 @@ describe('workflow services', () => {
     ).run('wechat-wf', context.clinicId, now, now);
     const wechat = new WechatService(db);
     expect(wechat.send('wechat-wf', context).status).toBe('SENT');
+    expect(() => wechat.sendBatch(null as unknown as string[], context)).toThrow('array');
+    expect(() => wechat.sendBatch(Array.from({ length: 501 }, () => 'x'), context)).toThrow('at most');
 
     db.prepare(
       `INSERT INTO PrintTemplate (

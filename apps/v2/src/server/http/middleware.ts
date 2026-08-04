@@ -36,10 +36,11 @@ export function errorMiddleware(
     if (logger) logger.error('request failed', entry);
     else console.error(JSON.stringify(entry));
   }
+  const message = appError.status >= 500 ? 'Internal server error' : appError.message;
   res.status(appError.status).json({
     success: false,
     code: appError.code,
-    message: appError.message,
+    message,
     traceId: req.traceId,
     details: appError.details,
   });

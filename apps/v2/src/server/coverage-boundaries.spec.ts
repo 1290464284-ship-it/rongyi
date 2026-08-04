@@ -76,6 +76,20 @@ describe('coverage boundaries', () => {
     metricsMiddleware(routeReq, res, next);
     finish();
 
+    for (let i = 0; i < 1001; i += 1) {
+      let overflowFinish: () => void = () => {};
+      const overflowRes = {
+        statusCode: 200,
+        route: undefined,
+        on: (_event: string, callback: () => void) => {
+          overflowFinish = callback;
+        },
+      } as unknown as Response;
+      metricsMiddleware({ method: 'GET', path: `/overflow/${i}` } as unknown as Request, overflowRes, vi.fn());
+      overflowFinish();
+    }
+    expect(metricsSnapshot().length).toBeLessThanOrEqual(1000);
+
     const snapshot = metricsSnapshot();
     expect(snapshot[0].avgDurationMs).toBeGreaterThanOrEqual(0);
 
@@ -97,6 +111,7 @@ describe('coverage boundaries', () => {
 
     errorMiddleware(new AppError('SERVER', 'boom', 500), badRequest, response, vi.fn());
     expect(consoleSpy).toHaveBeenCalledOnce();
+    expect((response.json as ReturnType<typeof vi.fn>).mock.calls[0][0].message).toBe('Internal server error');
 
     const logger = new Logger({ logDir: dataDir });
     const loggerSpy = vi.spyOn(logger, 'error');
@@ -193,6 +208,11 @@ describe('coverage boundaries', () => {
     vi.advanceTimersByTime(1001);
     limiter({ ip: '1.1.1.1', method: 'GET', path: '/x' } as unknown as Request, response, next);
     expect(next).toHaveBeenCalledTimes(5);
+
+    for (let i = 0; i < 10001; i += 1) {
+      limiter({ ip: `overflow-${i}`, method: 'GET', path: '/x' } as unknown as Request, response, next);
+    }
+    expect(next).toHaveBeenCalled();
   });
 
   it('covers remaining validation branches', () => {
