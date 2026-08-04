@@ -157,9 +157,9 @@
 - Web coverage now includes follow-up, backup, simple list, and inventory
   workflow pages plus the inventory, charges, and finance workflow pages, in
   addition to communication, HR, clinical, patient workflow, and appointment
-  board and patient timeline pages, resource hub/page, hub tabs, and shared
-  components; the expanded set passes 98% statements, 91% branches, 99%
-  functions, and 100% lines.
+  board, patient timeline, and dashboard pages, resource hub/page, hub tabs,
+  and shared components; the expanded set passes 98% statements, 91% branches,
+  99% functions, and 100% lines.
 - Experimental `src/components/**` files are quarantined from ESLint and knip
   via `eslint.config.js` and `knip.json` until they are adopted or removed.
 - `clean:generated` removes any `dist-*` output directory rather than a fixed
