@@ -14,7 +14,7 @@ export function DataTable<T extends Record<string, unknown>>({
 }: {
   columns: DataTableColumn<T>[];
   rows: T[];
-  keyField: keyof T;
+  keyField?: keyof T;
   emptyText?: string;
 }) {
   if (rows.length === 0) return <div className="table-empty">{emptyText}</div>;
@@ -27,8 +27,8 @@ export function DataTable<T extends Record<string, unknown>>({
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr key={String(row[keyField] ?? '')}>
+          {rows.map((row, index) => (
+            <tr key={keyField ? String(row[keyField] ?? '') : index}>
               {columns.map((column) => (
                 <td key={column.key}>
                   {column.render ? column.render(row) : String(row[column.key] ?? '')}

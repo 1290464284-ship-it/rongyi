@@ -42,6 +42,20 @@ describe('shared web components', () => {
     expect(screen.getByText('Nothing here')).toBeDefined();
   });
 
+  it('renders rows without a stable key field', () => {
+    render(
+      <DataTable
+        columns={[
+          { key: 'amount', label: 'Amount' },
+          { key: 'period', label: 'Period' },
+        ]}
+        rows={[{ amount: 10, period: '2026-08' }]}
+      />,
+    );
+    expect(screen.getByText('10')).toBeDefined();
+    expect(screen.getByText('2026-08')).toBeDefined();
+  });
+
   it('renders page errors', () => {
     render(<PageError message="Request failed" />);
     expect(screen.getByText('Request failed')).toBeDefined();

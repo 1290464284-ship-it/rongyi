@@ -151,8 +151,9 @@
 - Shared `DataTable` and `PageError` components were added to
   `src/web/components.tsx`; follow-up and backup pages now reuse `DataTable`,
   and the inventory workflow page now uses it for purchase, processing, and
-  replenishment tables. The shared component is included in the web coverage
-  gate.
+  replenishment tables. `SimpleListPage` also uses `DataTable`, including
+  optional keyless rows for report data. The shared component is included in
+  the web coverage gate.
 - Experimental `src/components/**` files are quarantined from ESLint and knip
   via `eslint.config.js` and `knip.json` until they are adopted or removed.
 - `clean:generated` removes any `dist-*` output directory rather than a fixed
