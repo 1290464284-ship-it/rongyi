@@ -64,7 +64,7 @@ export class PrescriptionSafetyService {
     const patient = this.db.prepare(`SELECT allergies, medicalHistory FROM Patient WHERE id = ?${tenantAnd(context.clinicId)}`).get(prescription.patientId, ...tenantParams(context.clinicId)) as
       | { allergies: string; medicalHistory: string }
       | undefined;
-    const allergies = patient ? JSON.parse(patient.allergies || '[]') as string[] : [];
+    const allergies = patient ? parseStringArray(patient.allergies) : [];
     const items = this.db.prepare('SELECT name FROM PrescriptionItem WHERE prescriptionId = ?').all(prescriptionId) as Array<{ name: string }>;
     const warnings = items
       .flatMap((item) => allergies.filter((allergy) => item.name.toUpperCase().includes(allergy.toUpperCase())))
@@ -79,7 +79,7 @@ export class CephalometricService {
   compute(caseId: string, context: AppContext): Record<string, unknown> {
     const row = this.db.prepare(`SELECT * FROM CephalometricCase WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`).get(caseId, ...tenantParams(context.clinicId)) as Record<string, unknown> | undefined;
     if (!row) throw new NotFoundError('Cephalometric case not found');
-    const landmarks = JSON.parse(String(row.landmarksJson ?? '{}')) as Record<string, { x: number; y: number }>;
+    const landmarks = parseLandmarks(row.landmarksJson);
     const metrics: Record<string, number> = {};
     if (landmarks.sella && landmarks.nasion) {
       metrics.snLength = distance(landmarks.sella, landmarks.nasion);
@@ -150,12 +150,12 @@ export class NotificationService {
 
   list(userId: string): Array<Record<string, unknown>> {
     return this.db.prepare(
-      'SELECT * FROM Notification WHERE userId = ? ORDER BY createdAt DESC LIMIT 100',
+      'SELECT * FROM Notification WHERE userId = ? AND deletedAt IS NULL ORDER BY createdAt DESC LIMIT 100',
     ).all(userId) as Array<Record<string, unknown>>;
   }
 
   markRead(id: string, userId: string): Record<string, unknown> {
-    const result = this.db.prepare('UPDATE Notification SET readAt = ?, updatedAt = ? WHERE id = ? AND userId = ?')
+    const result = this.db.prepare('UPDATE Notification SET readAt = ?, updatedAt = ? WHERE id = ? AND userId = ? AND deletedAt IS NULL')
       .run(new Date().toISOString(), new Date().toISOString(), id, userId);
     if (result.changes === 0) throw new NotFoundError('Notification not found');
     return { id, read: true };
@@ -171,4 +171,22 @@ function angle(a: { x: number; y: number }, b: { x: number; y: number }): number
   const dy = b.y - a.y;
   const rad = Math.atan2(dy, dx);
   return Math.round(Math.abs(rad * 180 / Math.PI));
+}
+
+function parseStringArray(value: unknown): string[] {
+  try {
+    const parsed = JSON.parse(String(value ?? '[]')) as unknown;
+    return Array.isArray(parsed) ? parsed.map((item) => String(item)) : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseLandmarks(value: unknown): Record<string, { x: number; y: number }> {
+  try {
+    const parsed = JSON.parse(String(value ?? '{}')) as unknown;
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, { x: number; y: number }> : {};
+  } catch {
+    return {};
+  }
 }

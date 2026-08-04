@@ -14,6 +14,9 @@ export function validatePayload(
     const raw = payload[field.name];
     if (raw === undefined || raw === null) {
       if (field.required && !options.partial) throw new ValidationError(`${field.name} is required`);
+      if (raw === undefined && field.default !== undefined && !options.partial) {
+        result[field.name] = validateField(field, field.default);
+      }
       continue;
     }
     result[field.name] = validateField(field, raw);

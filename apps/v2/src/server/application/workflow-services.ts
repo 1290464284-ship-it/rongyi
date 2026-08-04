@@ -247,7 +247,7 @@ export class ReplenishmentService {
       for (const [supplierId, group] of groups) {
         index += 1;
         const orderId = randomUUID();
-        const orderNumber = `PO-${Date.now()}-${index}`;
+        const orderNumber = `PO-${Date.now().toString(36).toUpperCase()}-${randomUUID().slice(0, 8).toUpperCase()}-${index}`;
         /* v8 ignore start -- inventory rows and suggestedQty are schema-required; fallbacks are defensive. */
         const totalAmount = group.reduce((sum, suggestion) => {
           const item = inventory.get(String(suggestion.inventoryId));

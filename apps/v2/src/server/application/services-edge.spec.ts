@@ -376,6 +376,8 @@ describe('service edge coverage', () => {
     await service.pay(String(memberCharge.id), 200, 'MEMBER_CARD', undefined, context);
     db.prepare('UPDATE MemberCard SET status = ? WHERE id = ?').run('INACTIVE', 'card-refund-missing');
     await service.refund(String(memberCharge.id), 50, 'member missing', context);
+    const cardAfterRefund = db.prepare('SELECT balance FROM MemberCard WHERE id = ?').get('card-refund-missing') as { balance: number };
+    expect(Number(cardAfterRefund.balance)).toBe(350);
 
     const fullDebtCharge = await service.create({
       patientId: 'patient-edge',
@@ -926,9 +928,9 @@ describe('service edge coverage', () => {
       `INSERT INTO PurchaseOrderItem (
          id, clinicId, createdAt, updatedAt, deletedAt,
          orderId, itemId, name, quantity, unitPrice, subtotal
-       ) VALUES (?, ?, ?, ?, NULL, 'po-edge-2', 'missing-inventory', 'Missing', 1, 100, 100)`,
+       ) VALUES (?, ?, ?, ?, NULL, 'po-edge-2', 'missing-inventory', NULL, 1, 100, 100)`,
     ).run('poi-edge-missing', context.clinicId, now, now);
-    await purchase.receive('po-edge-2', context);
+    await expect(purchase.receive('po-edge-2', context)).rejects.toThrow('missing inventory items');
     db.prepare(
       `INSERT INTO InventoryItem (
          id, clinicId, createdAt, updatedAt, deletedAt,
@@ -1052,6 +1054,36 @@ describe('service edge coverage', () => {
        ) VALUES (?, ?, ?, ?, NULL, 'patient-allergy-empty', 'user-admin-001')`,
     ).run('rx-edge-empty-allergy', context.clinicId, now, now);
     expect(prescription.check('rx-edge-empty-allergy', context).safe).toBe(true);
+    db.prepare(
+      `INSERT INTO Patient (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active
+       ) VALUES (?, ?, ?, ?, NULL, 'ALLERGY-OBJECT', 'Object Allergy', 'UNKNOWN', '13600000010',
+         '[]', '{}', '[]', '[]', '[]', 'WALK_IN', 1)`,
+    ).run('patient-allergy-object', context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO Prescription (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-allergy-object', 'user-admin-001')`,
+    ).run('rx-edge-object-allergy', context.clinicId, now, now);
+    expect(prescription.check('rx-edge-object-allergy', context).safe).toBe(true);
+    db.prepare(
+      `INSERT INTO Patient (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active
+       ) VALUES (?, ?, ?, ?, NULL, 'ALLERGY-NULL', 'Null Allergy', 'UNKNOWN', '13600000011',
+         '[]', NULL, '[]', '[]', '[]', 'WALK_IN', 1)`,
+    ).run('patient-allergy-null', context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO Prescription (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-allergy-null', 'user-admin-001')`,
+    ).run('rx-edge-null-allergy', context.clinicId, now, now);
+    expect(prescription.check('rx-edge-null-allergy', context).safe).toBe(true);
 
     const ceph = new CephalometricService(db);
     await expect(() => ceph.compute('missing-ceph', context)).toThrow('Cephalometric case not found');
@@ -1069,6 +1101,27 @@ describe('service edge coverage', () => {
        ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'x.png', NULL, 'DRAFT')`,
     ).run('ceph-edge-null-landmarks', context.clinicId, now, now);
     expect(ceph.compute('ceph-edge-null-landmarks', context).metrics).toEqual({});
+    db.prepare(
+      `INSERT INTO CephalometricCase (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, imageUrl, landmarksJson, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'x.png', 'not-json', 'DRAFT')`,
+    ).run('ceph-edge-malformed-landmarks', context.clinicId, now, now);
+    expect(ceph.compute('ceph-edge-malformed-landmarks', context).metrics).toEqual({});
+    db.prepare(
+      `INSERT INTO CephalometricCase (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, imageUrl, landmarksJson, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'x.png', '[]', 'DRAFT')`,
+    ).run('ceph-edge-array-landmarks', context.clinicId, now, now);
+    expect(ceph.compute('ceph-edge-array-landmarks', context).metrics).toEqual({});
+    db.prepare(
+      `INSERT INTO CephalometricCase (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, imageUrl, landmarksJson, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'x.png', '123', 'DRAFT')`,
+    ).run('ceph-edge-number-landmarks', context.clinicId, now, now);
+    expect(ceph.compute('ceph-edge-number-landmarks', context).metrics).toEqual({});
     db.prepare(
       `INSERT INTO CephalometricCase (
          id, clinicId, createdAt, updatedAt, deletedAt,
@@ -1136,7 +1189,14 @@ describe('service edge coverage', () => {
     expect(() => notifications.markRead('missing-notification', context.userId)).toThrow('Notification not found');
 
     const satisfaction = new SatisfactionService(db);
-    expect(satisfaction.nps(context).score).toBeGreaterThanOrEqual(0);
+    const npsBefore = satisfaction.nps(context);
+    db.prepare(
+      `INSERT INTO SatisfactionSurvey (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, score, channel, comment, surveyDate
+       ) VALUES (?, ?, ?, ?, ?, 'patient-demo-001', 'user-admin-001', 10, 'CLINIC', 'deleted', '2026-08-04')`,
+    ).run('satisfaction-deleted', context.clinicId, now, now, now);
+    expect(satisfaction.nps(context)).toEqual(npsBefore);
     expect(satisfaction.trend(context)).toBeInstanceOf(Array);
     expect(satisfaction.doctorRankings(context)).toBeInstanceOf(Array);
 

@@ -92,7 +92,13 @@ describe('service coverage', () => {
          price, quantity, status, completedDate
        ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, 'T-1', 'T', 'GENERAL', 100, 1, 'COMPLETED', ?)`,
     ).run('treatment-followup', context.clinicId, now, now, 'patient-demo-001', 'visit-followup', 'user-admin-001', '2026-08-01');
-    await service.batchGenerate(2, context);
+    const first = await service.batchGenerate(2, context);
+    expect(first.generated).toBeGreaterThanOrEqual(1);
+    const beforeSecond = (db.prepare('SELECT COUNT(*) AS c FROM FollowUp WHERE templateId = ?').get('template-test') as { c: number }).c;
+    const second = await service.batchGenerate(2, context);
+    expect(second.generated).toBe(0);
+    const afterSecond = (db.prepare('SELECT COUNT(*) AS c FROM FollowUp WHERE templateId = ?').get('template-test') as { c: number }).c;
+    expect(afterSecond).toBe(beforeSecond);
     await service.batchGenerate(0, context);
     await service.batchGenerate(1000, context);
     const generated = db.prepare('SELECT * FROM FollowUp WHERE templateId = ?').all('template-test') as Array<Record<string, unknown>>;
@@ -132,6 +138,8 @@ describe('service coverage', () => {
     expect(service.memberStats(context)).toHaveProperty('total');
 
     const before = service.dashboard(context) as { paidAmount: number; unpaidAmount: number };
+    const beforeRevenue = service.revenue(undefined, undefined, 'day', context)
+      .reduce((sum, row) => sum + Number(row.amount ?? 0), 0);
     const dashboardNow = new Date().toISOString();
     db.prepare(
       `INSERT INTO Patient (
@@ -151,6 +159,9 @@ describe('service coverage', () => {
     const after = service.dashboard(context) as { paidAmount: number; unpaidAmount: number };
     expect(after.paidAmount).toBe(before.paidAmount);
     expect(after.unpaidAmount).toBe(before.unpaidAmount);
+    const afterRevenue = service.revenue(undefined, undefined, 'day', context)
+      .reduce((sum, row) => sum + Number(row.amount ?? 0), 0);
+    expect(afterRevenue).toBe(beforeRevenue);
 
     db.prepare(
       `INSERT INTO User (

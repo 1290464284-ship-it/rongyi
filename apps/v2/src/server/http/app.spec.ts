@@ -54,6 +54,45 @@ describe('HTTP app', () => {
     expect(deep.body.data.database).toBe('ok');
   });
 
+  it('denies sensitive routes to low-privilege roles', async () => {
+    await request(app)
+      .post('/api/v2/admin/users')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ username: 'tech-audit', password: 'password123', name: 'Tech Audit', role: 'TECHNICIAN' })
+      .expect(201);
+    const login = await request(app)
+      .post('/api/v2/auth/login')
+      .send({ username: 'tech-audit', password: 'password123' })
+      .expect(200);
+    const techToken = login.body.data.token as string;
+    for (const path of [
+      '/api/v2/stats/revenue',
+      '/api/v2/analytics/rfm',
+      '/api/v2/search?q=Smoke',
+      '/api/v2/hr/attendance',
+    ]) {
+      await request(app).get(path).set('Authorization', `Bearer ${techToken}`).expect(403);
+    }
+    await request(app)
+      .post('/api/v2/follow-ups/batch-generate')
+      .set('Authorization', `Bearer ${techToken}`)
+      .send({ limit: 1 })
+      .expect(403);
+  });
+
+  it('rejects malformed print query data with a validation error', async () => {
+    const response = await request(app)
+      .get('/api/v2/print?kind=report&data=%7B%22bad%22')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(400);
+    expect(response.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('returns 404 for unknown non-v2 routes', async () => {
+    const response = await request(app).get('/not-a-v2-route').expect(404);
+    expect(response.body.code).toBe('NOT_FOUND');
+  });
+
   it('creates, verifies, and stages backups through the HTTP API', async () => {
     const created = await request(app)
       .post('/api/v2/backups')

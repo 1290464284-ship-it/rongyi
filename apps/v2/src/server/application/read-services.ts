@@ -1,15 +1,16 @@
 import type Database from 'better-sqlite3';
 import type { AppContext } from '../../domain/contracts';
 import { escapeHtml } from '../shared/html';
-import { tenantAnd } from '../infrastructure/tenant';
+import { tenantAnd, tenantParams, tenantWhere } from '../infrastructure/tenant';
 
 export class StatsService {
   constructor(private readonly db: Database.Database) {}
 
   dashboard(context: AppContext): Record<string, unknown> {
     const clinic = context.clinicId;
-    const withClinic = (sql: string): string => clinic ? sql.replace('{clinic}', 'clinicId = ? AND ') : sql.replace('{clinic}', '');
-    const param = clinic ? [clinic] : [];
+    const tenant = tenantWhere(clinic);
+    const withClinic = (sql: string): string => tenant.sql ? sql.replace('{clinic}', `${tenant.sql} AND `) : sql.replace('{clinic}', '');
+    const param = tenant.params;
     const patientCount = (this.db.prepare(withClinic('SELECT COUNT(*) AS c FROM Patient WHERE {clinic}deletedAt IS NULL')).get(...param) as { c: number }).c;
     const appointmentCount = (this.db.prepare(withClinic('SELECT COUNT(*) AS c FROM Appointment WHERE {clinic}deletedAt IS NULL')).get(...param) as { c: number }).c;
     const chargeRow = this.db.prepare(withClinic(`
@@ -48,12 +49,13 @@ export class StatsService {
       where.push('paidAt <= ?');
       params.push(endDate);
     }
-    if (context?.clinicId) {
-      where.push('clinicId = ?');
-      params.push(context.clinicId);
+    const tenant = tenantWhere(context?.clinicId);
+    if (tenant.sql) {
+      where.push(tenant.sql);
+      params.push(...tenant.params);
     }
     return this.db.prepare(
-      `SELECT ${groupExpr} AS period, SUM(paidAmount) AS amount, COUNT(*) AS count
+      `SELECT ${groupExpr} AS period, SUM(CASE WHEN status <> 'CANCELLED' THEN paidAmount - refundedAmount ELSE 0 END) AS amount, COUNT(*) AS count
        FROM Charge
        WHERE ${where.join(' AND ')}
        GROUP BY ${groupExpr}
@@ -72,9 +74,10 @@ export class StatsService {
       where.push('createdAt <= ?');
       params.push(endDate);
     }
-    if (context?.clinicId) {
-      where.push('clinicId = ?');
-      params.push(context.clinicId);
+    const tenant = tenantWhere(context?.clinicId);
+    if (tenant.sql) {
+      where.push(tenant.sql);
+      params.push(...tenant.params);
     }
     return this.db.prepare(
       `SELECT substr(createdAt, 1, 10) AS day, COUNT(*) AS count
@@ -94,7 +97,7 @@ export class StatsService {
       `SELECT U.id AS doctorId, U.name AS doctorName,
               COUNT(DISTINCT V.id) AS visits,
               COUNT(DISTINCT C.id) AS charges,
-              COALESCE(SUM(C.paidAmount), 0) AS paidAmount
+              COALESCE(SUM(C.paidAmount - C.refundedAmount), 0) AS paidAmount
        FROM User U
        LEFT JOIN Visit V ON V.doctorId = U.id AND V.deletedAt IS NULL${visitJoin}
        LEFT JOIN Charge C ON C.doctorId = U.id AND C.deletedAt IS NULL${chargeJoin}
@@ -105,20 +108,21 @@ export class StatsService {
   }
 
   inventoryStats(context: AppContext): Array<Record<string, unknown>> {
-    const clinicClause = context.clinicId ? 'AND clinicId = ?' : '';
-    const params: unknown[] = context.clinicId ? [context.clinicId] : [];
+    const tenant = tenantWhere(context.clinicId);
+    const params: unknown[] = tenant.params;
     return this.db.prepare(
       `SELECT category, COUNT(*) AS count, SUM(stock) AS totalStock, SUM(minStock) AS minStock
        FROM InventoryItem
-       WHERE deletedAt IS NULL ${clinicClause}
+       WHERE deletedAt IS NULL ${tenant.sql ? `AND ${tenant.sql}` : ''}
        GROUP BY category
        ORDER BY category`,
     ).all(...params) as Array<Record<string, unknown>>;
   }
 
   memberStats(context: AppContext): Record<string, unknown> {
-    const clinicClause = context.clinicId ? 'WHERE clinicId = ?' : '';
-    const params: unknown[] = context.clinicId ? [context.clinicId] : [];
+    const tenant = tenantWhere(context.clinicId);
+    const clinicClause = tenant.sql ? `WHERE ${tenant.sql}` : '';
+    const params: unknown[] = tenant.params;
     const row = this.db.prepare(
       `SELECT COUNT(*) AS total,
               COALESCE(SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END), 0) AS active,
@@ -146,11 +150,11 @@ export class SearchService {
 
   search(query: string, context: AppContext): Array<Record<string, unknown>> {
     const term = `%${query.replace(/[\\%_]/g, '\\$&')}%`;
-    const clinicClause = context.clinicId ? 'AND clinicId = ?' : '';
-    const appointmentClause = context.clinicId ? 'AND A.clinicId = ?' : '';
-    const chargeClause = context.clinicId ? 'AND C.clinicId = ?' : '';
-    const followUpClause = context.clinicId ? 'AND F.clinicId = ?' : '';
-    const clinicParams: unknown[] = context.clinicId ? [context.clinicId] : [];
+    const clinicClause = tenantAnd(context.clinicId);
+    const appointmentClause = tenantAnd(context.clinicId, 'A.clinicId');
+    const chargeClause = tenantAnd(context.clinicId, 'C.clinicId');
+    const followUpClause = tenantAnd(context.clinicId, 'F.clinicId');
+    const clinicParams: unknown[] = tenantParams(context.clinicId);
     const results: Array<Record<string, unknown>> = [];
     const searches: Array<{ resource: string; rows: Array<Record<string, unknown>>; label: (row: Record<string, unknown>) => string }> = [
       {
@@ -242,9 +246,9 @@ export class SatisfactionService {
   constructor(private readonly db: Database.Database) {}
 
   nps(context: AppContext): { promoters: number; detractors: number; passive: number; score: number } {
-    const where = context.clinicId ? 'WHERE clinicId = ?' : '';
-    const params: unknown[] = context.clinicId ? [context.clinicId] : [];
-    const rows = this.db.prepare(`SELECT score FROM SatisfactionSurvey ${where}`).all(...params) as Array<{ score: number }>;
+    const tenantClause = tenantAnd(context.clinicId);
+    const params: unknown[] = tenantParams(context.clinicId);
+    const rows = this.db.prepare(`SELECT score FROM SatisfactionSurvey WHERE deletedAt IS NULL${tenantClause}`).all(...params) as Array<{ score: number }>;
     if (rows.length === 0) return { promoters: 0, detractors: 0, passive: 0, score: 0 };
     const promoters = rows.filter((row) => row.score >= 9).length;
     const detractors = rows.filter((row) => row.score <= 6).length;
@@ -253,20 +257,20 @@ export class SatisfactionService {
   }
 
   trend(context: AppContext): Array<Record<string, unknown>> {
-    const where = context.clinicId ? 'WHERE clinicId = ?' : '';
-    const params: unknown[] = context.clinicId ? [context.clinicId] : [];
+    const tenantClause = tenantAnd(context.clinicId);
+    const params: unknown[] = tenantParams(context.clinicId);
     return this.db.prepare(
       `SELECT surveyDate, AVG(score) AS avgScore, COUNT(*) AS count
        FROM SatisfactionSurvey
-       ${where}
+       WHERE deletedAt IS NULL${tenantClause}
        GROUP BY surveyDate
        ORDER BY surveyDate ASC`,
     ).all(...params) as Array<Record<string, unknown>>;
   }
 
   doctorRankings(context: AppContext): Array<Record<string, unknown>> {
-    const clinicClause = context.clinicId ? 'AND S.clinicId = ?' : '';
-    const params: unknown[] = context.clinicId ? [context.clinicId] : [];
+    const clinicClause = tenantAnd(context.clinicId, 'S.clinicId');
+    const params: unknown[] = tenantParams(context.clinicId);
     return this.db.prepare(
       `SELECT S.doctorId, COALESCE(U.name, 'Unknown') AS doctorName,
               COUNT(*) AS surveyCount,

@@ -37,6 +37,7 @@ import {
   WechatService,
 } from '../application/workflow-services';
 import { authMiddleware, errorMiddleware, roleMiddleware, traceMiddleware } from './middleware';
+import { AppError } from '../infrastructure/errors';
 import { listAllResources } from '../infrastructure/legacy-registry';
 import { metricsMiddleware, metricsSnapshot, persistMetrics } from './metrics';
 import { deepHealth } from './health';
@@ -170,7 +171,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
       roleMiddleware(...rule.roles)(req, res, next);
       return;
     }
-    next();
+    next(new AppError('FORBIDDEN', 'Insufficient permissions', 403));
   });
   app.use('/api/v2', (req, res, next) => {
     res.on('finish', () => {

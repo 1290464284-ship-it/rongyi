@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { withIdempotency } from '../../infrastructure/idempotency';
-import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { SqliteChargeRepository } from '../../infrastructure/repositories/charge.repository';
 import {
   SqliteDebtRepository,
@@ -187,22 +186,21 @@ export class ChargeService {
       const run = this.db.transaction(() => {
         this.chargeRepository.updateRefund(id, newRefunded, newStatus, now);
         if (row.payMethod === 'MEMBER_CARD') {
-          const memberCard = this.memberCardRepository.findByPatient(String(row.patientId), context.clinicId);
-          if (memberCard) {
-            const balance = Number(memberCard.balance) + amount;
-            this.memberCardRepository.updateBalanceRefund(memberCard.id, balance, now, context.clinicId);
-            this.memberCardRepository.insertLog({
-              id: randomUUID(),
-              clinicId: row.clinicId ?? null,
-              createdAt: now,
-              updatedAt: now,
-              cardId: memberCard.id,
-              type: 'REFUND',
-              amount,
-              balanceAfter: balance,
-              remark: reason,
-            });
-          }
+          const memberCard = this.memberCardRepository.findByPatientForRefund(String(row.patientId), context.clinicId);
+          if (!memberCard) throw new ConflictError('Member card used for payment is not found');
+          const balance = Number(memberCard.balance) + amount;
+          this.memberCardRepository.updateBalanceRefund(memberCard.id, balance, now, context.clinicId);
+          this.memberCardRepository.insertLog({
+            id: randomUUID(),
+            clinicId: row.clinicId ?? null,
+            createdAt: now,
+            updatedAt: now,
+            cardId: memberCard.id,
+            type: 'REFUND',
+            amount,
+            balanceAfter: balance,
+            remark: reason,
+          });
         }
         const debt = this.debtRepository.findByCharge(id, context.clinicId);
         if (debt && Number(debt.paidAmount) > 0) {
@@ -249,26 +247,33 @@ export class MemberCardService {
       throw new ValidationError('Invalid member card level');
     }
     const existing = this.db.prepare(
-      `SELECT id FROM MemberCard WHERE cardNo = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
-    ).get(cardNo, ...tenantParams(context.clinicId)) as { id: string } | undefined;
+      'SELECT id FROM MemberCard WHERE cardNo = ? AND deletedAt IS NULL',
+    ).get(cardNo) as { id: string } | undefined;
     if (existing) throw new ConflictError('Member card number already exists');
     const now = context.now().toISOString();
     const id = randomUUID();
-    this.memberCardRepository.create({
-      id,
-      clinicId: context.clinicId,
-      patientId,
-      cardNo,
-      balance: 0,
-      totalRecharge: 0,
-      totalConsume: 0,
-      status: input.status,
-      points: 0,
-      totalPoints: 0,
-      level: input.level,
-      createdAt: now,
-      updatedAt: now,
-    });
+    try {
+      this.memberCardRepository.create({
+        id,
+        clinicId: context.clinicId,
+        patientId,
+        cardNo,
+        balance: 0,
+        totalRecharge: 0,
+        totalConsume: 0,
+        status: input.status,
+        points: 0,
+        totalPoints: 0,
+        level: input.level,
+        createdAt: now,
+        updatedAt: now,
+      });
+    } catch (error) {
+      if (error instanceof Error && /UNIQUE constraint failed/.test(error.message)) {
+        throw new ConflictError('Member card number already exists');
+      }
+      throw error;
+    }
     return { id, cardNo, balance: 0, status: input.status, level: input.level };
   }
 
@@ -280,6 +285,7 @@ export class MemberCardService {
       requestId: requestId ?? '',
     }, () => {
       const card = this.card(cardId, context);
+      this.assertActive(card);
       if (!Number.isSafeInteger(amount) || amount <= 0) throw new ValidationError('Recharge amount must be a positive integer in cents');
       const now = context.now().toISOString();
       const balance = Number(card.balance) + amount;
@@ -297,6 +303,7 @@ export class MemberCardService {
       requestId: requestId ?? '',
     }, () => {
       const card = this.card(cardId, context);
+      this.assertActive(card);
       if (!Number.isSafeInteger(amount) || amount <= 0) throw new ValidationError('Consume amount must be a positive integer in cents');
       const balance = Number(card.balance) - amount;
       if (balance < 0) throw new ConflictError('Insufficient member card balance');
@@ -315,6 +322,7 @@ export class MemberCardService {
       requestId: requestId ?? '',
     }, () => {
       const card = this.card(cardId, context);
+      this.assertActive(card);
       if (!Number.isSafeInteger(points) || points === 0) {
         throw new ValidationError('Points must be a non-zero integer');
       }
@@ -340,6 +348,10 @@ export class MemberCardService {
     const row = this.memberCardRepository.findById(cardId, context.clinicId);
     if (!row) throw new NotFoundError('Member card not found');
     return row;
+  }
+
+  private assertActive(card: MemberCardRecord): void {
+    if (String(card.status) !== 'ACTIVE') throw new ConflictError('Member card is not active');
   }
 
   private log(cardId: string, type: string, amount: number, balanceAfter: number, now: string, clinicId: string | null, remark: string | null): void {
@@ -380,10 +392,14 @@ export class PurchaseOrderService {
     const items = this.purchaseOrderRepository.itemsByOrder(orderId, context.clinicId);
     const run = this.db.transaction(() => {
       this.purchaseOrderRepository.markReceived(orderId, now, now, context.clinicId);
+      const missing: string[] = [];
       for (const item of items) {
         if (!item.itemId) continue;
         const current = this.inventoryRepository.findItem(item.itemId, context.clinicId);
-        if (!current) continue;
+        if (!current) {
+          missing.push(item.name ?? String(item.itemId));
+          continue;
+        }
         const before = Number(current.stock);
         const after = before + Number(item.quantity);
         this.inventoryRepository.updateStock(item.itemId, after, now, context.clinicId);
@@ -399,6 +415,9 @@ export class PurchaseOrderService {
           createdAt: now,
           updatedAt: now,
         });
+      }
+      if (missing.length > 0) {
+        throw new ConflictError(`Purchase order contains missing inventory items: ${missing.join(', ')}`);
       }
     });
     run();

@@ -53,34 +53,39 @@ export class SqliteMemberCardRepository implements MemberCardRepository {
 
   findById(id: string, clinicId?: string | null): MemberCardRecord | null {
     const params = clinicId ? [id, clinicId] : [id];
-    return (this.db.prepare(`SELECT * FROM MemberCard WHERE id = ?${tenantAnd(clinicId)}`).get(...params) as MemberCardRecord | undefined) ?? null;
+    return (this.db.prepare(`SELECT * FROM MemberCard WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`).get(...params) as MemberCardRecord | undefined) ?? null;
   }
 
   findByPatient(patientId: string, clinicId?: string | null): MemberCardRecord | null {
     const params = clinicId ? [patientId, 'ACTIVE', clinicId] : [patientId, 'ACTIVE'];
-    return (this.db.prepare(`SELECT * FROM MemberCard WHERE patientId = ? AND status = ?${tenantAnd(clinicId)} LIMIT 1`).get(...params) as MemberCardRecord | undefined) ?? null;
+    return (this.db.prepare(`SELECT * FROM MemberCard WHERE patientId = ? AND status = ? AND deletedAt IS NULL${tenantAnd(clinicId)} LIMIT 1`).get(...params) as MemberCardRecord | undefined) ?? null;
+  }
+
+  findByPatientForRefund(patientId: string, clinicId?: string | null): MemberCardRecord | null {
+    const params = clinicId ? [patientId, clinicId] : [patientId];
+    return (this.db.prepare(`SELECT * FROM MemberCard WHERE patientId = ? AND deletedAt IS NULL${tenantAnd(clinicId)} LIMIT 1`).get(...params) as MemberCardRecord | undefined) ?? null;
   }
 
   updateBalanceRefund(id: string, balance: number, updatedAt: string, clinicId?: string | null): void {
     const params = clinicId ? [balance, updatedAt, id, clinicId] : [balance, updatedAt, id];
-    this.db.prepare(`UPDATE MemberCard SET balance = ?, updatedAt = ? WHERE id = ?${tenantAnd(clinicId)}`).run(...params);
+    this.db.prepare(`UPDATE MemberCard SET balance = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`).run(...params);
   }
 
   updateRecharge(id: string, balance: number, amount: number, updatedAt: string, clinicId?: string | null): void {
     const params = clinicId ? [balance, amount, updatedAt, id, clinicId] : [balance, amount, updatedAt, id];
-    this.db.prepare(`UPDATE MemberCard SET balance = ?, totalRecharge = totalRecharge + ?, updatedAt = ? WHERE id = ?${tenantAnd(clinicId)}`)
+    this.db.prepare(`UPDATE MemberCard SET balance = ?, totalRecharge = totalRecharge + ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`)
       .run(...params);
   }
 
   updateConsume(id: string, balance: number, amount: number, updatedAt: string, clinicId?: string | null): void {
     const params = clinicId ? [balance, amount, updatedAt, id, clinicId] : [balance, amount, updatedAt, id];
-    this.db.prepare(`UPDATE MemberCard SET balance = ?, totalConsume = totalConsume + ?, updatedAt = ? WHERE id = ?${tenantAnd(clinicId)}`)
+    this.db.prepare(`UPDATE MemberCard SET balance = ?, totalConsume = totalConsume + ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`)
       .run(...params);
   }
 
   updatePoints(id: string, points: number, totalPoints: number, updatedAt: string, clinicId?: string | null): void {
     const params = clinicId ? [points, totalPoints, updatedAt, id, clinicId] : [points, totalPoints, updatedAt, id];
-    this.db.prepare(`UPDATE MemberCard SET points = ?, totalPoints = ?, updatedAt = ? WHERE id = ?${tenantAnd(clinicId)}`)
+    this.db.prepare(`UPDATE MemberCard SET points = ?, totalPoints = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`)
       .run(...params);
   }
 
@@ -434,14 +439,14 @@ export class SqliteAlertRepository implements AlertRepository {
   open(clinicId?: string | null): Array<Record<string, unknown>> {
     const params = clinicId ? [clinicId] : [];
     return this.db.prepare(
-      `SELECT * FROM BusinessAlert WHERE status = 'OPEN'${tenantAnd(clinicId)} ORDER BY createdAt DESC LIMIT 100`,
+      `SELECT * FROM BusinessAlert WHERE status = 'OPEN' AND deletedAt IS NULL${tenantAnd(clinicId)} ORDER BY createdAt DESC LIMIT 100`,
     ).all(...params) as Array<Record<string, unknown>>;
   }
 
   setStatus(id: string, status: string, userId: string | null, now: string, clinicId?: string | null): number {
     const params = clinicId ? [status, userId, now, now, id, clinicId] : [status, userId, now, now, id];
     return this.db.prepare(
-      `UPDATE BusinessAlert SET status = ?, acknowledgedBy = ?, acknowledgedAt = ?, updatedAt = ? WHERE id = ?${tenantAnd(clinicId)}`,
+      `UPDATE BusinessAlert SET status = ?, acknowledgedBy = ?, acknowledgedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
     ).run(...params).changes;
   }
 }
@@ -489,16 +494,17 @@ export class SqliteAnalyticsRepository implements AnalyticsRepository {
   constructor(private readonly db: Database.Database) {}
 
   rfm(clinicId: string | null): Array<Record<string, unknown>> {
-    const clinicClause = clinicId ? 'AND P.clinicId = ?' : '';
-    const params: unknown[] = clinicId ? [clinicId] : [];
+    const patientClause = tenantAnd(clinicId, 'P.clinicId');
+    const chargeClause = tenantAnd(clinicId, 'C.clinicId');
+    const params: unknown[] = clinicId ? [clinicId, clinicId] : [];
     return this.db.prepare(
       `SELECT P.id AS patientId, P.name,
               COUNT(C.id) AS frequency,
-              COALESCE(SUM(C.paidAmount), 0) AS monetary,
+              COALESCE(SUM(C.paidAmount - C.refundedAmount), 0) AS monetary,
               COALESCE(MAX(C.paidAt), P.createdAt) AS lastPaidAt
        FROM Patient P
-       LEFT JOIN Charge C ON C.patientId = P.id AND C.deletedAt IS NULL AND C.paidAt IS NOT NULL
-       WHERE P.deletedAt IS NULL ${clinicClause}
+       LEFT JOIN Charge C ON C.patientId = P.id AND C.deletedAt IS NULL AND C.paidAt IS NOT NULL${chargeClause}
+       WHERE P.deletedAt IS NULL${patientClause}
        GROUP BY P.id, P.name
        ORDER BY monetary DESC
        LIMIT 200`,
@@ -507,14 +513,15 @@ export class SqliteAnalyticsRepository implements AnalyticsRepository {
 
   churn(clinicId: string | null): Array<Record<string, unknown>> {
     const cutoff = new Date(Date.now() - 180 * 86_400_000).toISOString();
-    const clinicClause = clinicId ? 'AND P.clinicId = ?' : '';
-    const params: unknown[] = clinicId ? [clinicId, cutoff] : [cutoff];
+    const patientClause = tenantAnd(clinicId, 'P.clinicId');
+    const visitClause = tenantAnd(clinicId, 'V.clinicId');
+    const params: unknown[] = clinicId ? [clinicId, clinicId, cutoff] : [cutoff];
     return this.db.prepare(
       `SELECT P.id, P.name, P.phone,
               COALESCE(MAX(V.createdAt), '1970-01-01T00:00:00.000Z') AS lastVisitAt
        FROM Patient P
-       LEFT JOIN Visit V ON V.patientId = P.id AND V.deletedAt IS NULL
-       WHERE P.deletedAt IS NULL ${clinicClause}
+       LEFT JOIN Visit V ON V.patientId = P.id AND V.deletedAt IS NULL${visitClause}
+       WHERE P.deletedAt IS NULL${patientClause}
        GROUP BY P.id, P.name, P.phone
        HAVING lastVisitAt < ?
        ORDER BY lastVisitAt ASC
@@ -523,15 +530,16 @@ export class SqliteAnalyticsRepository implements AnalyticsRepository {
   }
 
   doctorAnomalies(clinicId: string | null): Array<Record<string, unknown>> {
-    const clinicClause = clinicId ? 'AND U.clinicId = ? AND C.clinicId = ?' : '';
+    const userClause = tenantAnd(clinicId, 'U.clinicId');
+    const chargeClause = tenantAnd(clinicId, 'C.clinicId');
     const params: unknown[] = clinicId ? [clinicId, clinicId] : [];
     return this.db.prepare(
       `SELECT U.id AS doctorId, U.name AS doctorName,
               COUNT(C.id) AS chargeCount,
-              COALESCE(AVG(C.paidAmount), 0) AS avgCharge
+              COALESCE(AVG(C.paidAmount - C.refundedAmount), 0) AS avgCharge
        FROM User U
-       LEFT JOIN Charge C ON C.doctorId = U.id AND C.deletedAt IS NULL
-       WHERE U.role IN ('DOCTOR', 'BOSS') ${clinicClause}
+       LEFT JOIN Charge C ON C.doctorId = U.id AND C.deletedAt IS NULL${chargeClause}
+       WHERE U.role IN ('DOCTOR', 'BOSS')${userClause}
        GROUP BY U.id, U.name
        HAVING chargeCount > 0
        ORDER BY avgCharge DESC`,
@@ -545,15 +553,15 @@ export class SqliteHrRepository implements HrRepository {
   attendance(workDate?: string, clinicId?: string | null): Array<Record<string, unknown>> {
     if (workDate) {
       const params = clinicId ? [workDate, clinicId] : [workDate];
-      return this.db.prepare(`SELECT * FROM Attendance WHERE workDate = ?${tenantAnd(clinicId)} ORDER BY checkIn`).all(...params) as Array<Record<string, unknown>>;
+      return this.db.prepare(`SELECT * FROM Attendance WHERE workDate = ? AND deletedAt IS NULL${tenantAnd(clinicId)} ORDER BY checkIn`).all(...params) as Array<Record<string, unknown>>;
     }
     const params = clinicId ? [clinicId] : [];
-    return this.db.prepare(`SELECT * FROM Attendance${clinicId ? ' WHERE clinicId = ?' : ''} ORDER BY workDate DESC LIMIT 200`).all(...params) as Array<Record<string, unknown>>;
+    return this.db.prepare(`SELECT * FROM Attendance WHERE deletedAt IS NULL${tenantAnd(clinicId)} ORDER BY workDate DESC LIMIT 200`).all(...params) as Array<Record<string, unknown>>;
   }
 
   approveLeave(id: string, status: string, reviewerId: string, now: string, clinicId?: string | null): number {
     const params = clinicId ? [status, reviewerId, now, now, id, clinicId] : [status, reviewerId, now, now, id];
-    return this.db.prepare(`UPDATE LeaveRequest SET status = ?, reviewerId = ?, reviewedAt = ?, updatedAt = ? WHERE id = ?${tenantAnd(clinicId)}`)
+    return this.db.prepare(`UPDATE LeaveRequest SET status = ?, reviewerId = ?, reviewedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`)
       .run(...params).changes;
   }
 }

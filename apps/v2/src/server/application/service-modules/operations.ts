@@ -148,16 +148,29 @@ export class FollowUpService {
     ).all(...templateParams) as Array<{ id: string; name: string; daysAfter: number; content: string | null; assigneeId: string | null }>;
     let generated = 0;
     const now = context.now().toISOString();
+    const alreadyExists = (patientId: string, planDate: string, templateId: string | null): boolean => {
+      const templateClause = templateId ? 'templateId = ?' : 'templateId IS NULL';
+      const params = [patientId, planDate, ...(templateId ? [templateId] : []), ...tenantParams(context.clinicId)];
+      return Boolean(this.db.prepare(
+        `SELECT 1 FROM FollowUp
+         WHERE patientId = ? AND planDate = ? AND ${templateClause}
+           AND status IN ('PENDING', 'IN_PROGRESS')
+           AND deletedAt IS NULL${tenantAnd(context.clinicId)}
+         LIMIT 1`,
+      ).get(...params));
+    };
     const run = this.db.transaction(() => {
       for (const row of rows) {
         if (templates.length === 0) {
+          const planDate = new SystemClock().clinicDate(Date.now() + 14 * 86_400_000);
+          if (alreadyExists(row.patientId, planDate, null)) continue;
           this.followUpRepository.insert({
             id: randomUUID(),
             clinicId: context.clinicId ?? null,
             createdAt: now,
             updatedAt: now,
             patientId: row.patientId,
-            planDate: new SystemClock().clinicDate(Date.now() + 14 * 86_400_000),
+            planDate,
             content: 'Scheduled follow-up',
             status: 'PENDING',
           });
@@ -167,14 +180,17 @@ export class FollowUpService {
         /* v8 ignore start -- the query returns a non-null COALESCE value. */
         const completedAt = new Date(String(row.completedAt ?? Date.now())).getTime();
         /* v8 ignore stop */
+        if (!Number.isFinite(completedAt)) throw new ValidationError('Completed date is invalid for follow-up generation');
         for (const template of templates) {
+          const planDate = new SystemClock().clinicDate(completedAt + Number(template.daysAfter ?? 1) * 86_400_000);
+          if (alreadyExists(row.patientId, planDate, template.id)) continue;
           this.followUpRepository.insert({
             id: randomUUID(),
             clinicId: context.clinicId ?? null,
             createdAt: now,
             updatedAt: now,
             patientId: row.patientId,
-            planDate: new SystemClock().clinicDate(completedAt + Number(template.daysAfter ?? 1) * 86_400_000),
+            planDate,
             content: template.content ?? template.name,
             status: 'PENDING',
             assigneeId: template.assigneeId ?? null,

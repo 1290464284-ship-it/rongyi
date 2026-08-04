@@ -167,7 +167,14 @@ export class AuthService {
       updatedAt: now,
       deletedAt: null,
     };
-    this.authRepository.insertUser(record);
+    try {
+      this.authRepository.insertUser(record);
+    } catch (error) {
+      if (error instanceof Error && /UNIQUE constraint failed/.test(error.message)) {
+        throw new ConflictError('Username already exists');
+      }
+      throw error;
+    }
     const { passwordHash: _passwordHash, ...safeUser } = rowToUser(record);
     return safeUser;
   }

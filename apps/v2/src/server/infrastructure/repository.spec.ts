@@ -58,6 +58,62 @@ describe('SqliteRepository', () => {
     expect(await repo.findById('repo-patient-1', context)).toBeNull();
   });
 
+  it('applies declared defaults and includes legacy null rows in clinic scope', async () => {
+    const repo = new SqliteRepository(db, resourceRegistry.get('patients')!);
+    const legacyContext = {
+      userId: 'u1',
+      clinicId: null,
+      role: 'BOSS' as const,
+      traceId: 'trace',
+      now: () => new Date(),
+    };
+    await repo.insert({
+      id: 'repo-legacy-defaults',
+      code: 'LEGACY-DEFAULT',
+      name: 'Legacy Default',
+      gender: 'UNKNOWN',
+      source: 'WALK_IN',
+    }, legacyContext);
+    const legacyRow = await repo.findById('repo-legacy-defaults', context);
+    expect(legacyRow?.active).toBe(true);
+    expect(legacyRow?.tags).toEqual([]);
+    const page = await repo.findMany({}, context);
+    expect(page.total).toBeGreaterThanOrEqual(1);
+  });
+
+  it('rejects generic writes with missing relation targets', async () => {
+    const repo = new SqliteRepository(db, resourceRegistry.get('wechatMessages')!);
+    await expect(repo.insert({
+      id: 'repo-orphan-wechat',
+      patientId: 'missing-patient',
+      type: 'TEXT',
+      content: 'x',
+      status: 'PENDING',
+    }, context)).rejects.toThrow('patients not found');
+  });
+
+  it('skips relation validation for unknown relation resources', async () => {
+    const base = resourceRegistry.get('wechatMessages')!;
+    const customResource = {
+      ...base,
+      name: 'custom-wechat',
+      fields: [...base.fields, {
+        name: 'legacyRef',
+        type: 'text',
+        relation: { resource: 'missing-relation', foreignKey: 'legacyRef', labelField: 'id' },
+      }],
+    } as unknown as typeof base;
+    const repo = new SqliteRepository(db, customResource);
+    await expect(repo.insert({
+      id: 'repo-relation-skip',
+      patientId: null,
+      type: 'TEXT',
+      content: 'x',
+      status: 'PENDING',
+      legacyRef: 'x',
+    }, context)).rejects.toThrow(/no (such )?column/);
+  });
+
   it('maps unique index violations to conflicts and allows code reuse after soft delete', async () => {
     const repo = new SqliteRepository(db, resourceRegistry.get('patients')!);
     const first = {
@@ -107,7 +163,10 @@ describe('SqliteRepository', () => {
 
   it('keeps non-Error database failures intact', async () => {
     const throwingDb = {
-      prepare: () => ({ run: () => { throw 'non-error'; } }),
+      prepare: () => ({
+        all: () => [{ name: 'id' }, { name: 'clinicId' }, { name: 'createdAt' }, { name: 'updatedAt' }, { name: 'deletedAt' }],
+        run: () => { throw 'non-error'; },
+      }),
     } as unknown as Database.Database;
     const repo = new SqliteRepository(throwingDb, resourceRegistry.get('patients')!);
     await expect(repo.insert({
@@ -123,6 +182,7 @@ describe('SqliteRepository', () => {
   it('recognizes unique failures reported only through the error message', async () => {
     const throwingDb = {
       prepare: () => ({
+        all: () => [{ name: 'id' }, { name: 'clinicId' }, { name: 'createdAt' }, { name: 'updatedAt' }, { name: 'deletedAt' }],
         run: () => { throw new Error('UNIQUE constraint failed: Patient.code'); },
       }),
     } as unknown as Database.Database;
