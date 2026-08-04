@@ -24,6 +24,7 @@ export default defineConfig({
         'src/web/ClinicalWorkflowPage.tsx',
         'src/web/PatientWorkflowPage.tsx',
         'src/web/AppointmentBoardPage.tsx',
+        'src/web/PatientTimelinePage.tsx',
       ],
       thresholds: {
         statements: 98,
