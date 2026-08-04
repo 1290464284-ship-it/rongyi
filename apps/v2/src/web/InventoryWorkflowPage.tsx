@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import type { Page } from './types';
+import { DataTable, type DataTableColumn } from './components';
 
 export function InventoryWorkflowPage() {
   const [message, setMessage] = useState('');
@@ -44,75 +45,71 @@ export function InventoryWorkflowPage() {
     return status === 'OPEN';
   }) ?? [];
 
+  const purchaseColumns: DataTableColumn<Record<string, unknown>>[] = [
+    { key: 'number', label: 'Number', render: (row) => String(row.number ?? row.id ?? '').slice(0, 14) },
+    { key: 'supplierId', label: 'Supplier', render: (row) => String(row.supplierId ?? '') },
+    { key: 'totalAmount', label: 'Amount', render: (row) => String(row.totalAmount ?? '') },
+    { key: 'status', label: 'Status', render: (row) => String(row.status) },
+    {
+      key: 'actions',
+      label: 'Action',
+      render: (row) => <button onClick={() => run(`/purchase-orders/${String(row.id)}/receive`, 'PATCH', {})}>收货</button>,
+    },
+  ];
+
+  const processingColumns: DataTableColumn<Record<string, unknown>>[] = [
+    { key: 'id', label: 'ID', render: (row) => String(row.id).slice(0, 8) },
+    { key: 'status', label: 'Status', render: (row) => String(row.status) },
+    {
+      key: 'actions',
+      label: 'Action',
+      render: (row) => (
+        <select defaultValue="" onChange={(event) => event.target.value && run(`/processing-orders/${String(row.id)}/status`, 'PATCH', { status: event.target.value })}>
+          <option value="">流转</option>
+          <option value="SENT">SENT</option>
+          <option value="IN_PROGRESS">IN_PROGRESS</option>
+          <option value="COMPLETED">COMPLETED</option>
+          <option value="RECEIVED">RECEIVED</option>
+        </select>
+      ),
+    },
+  ];
+
+  const suggestionColumns: DataTableColumn<Record<string, unknown>>[] = [
+    {
+      key: 'selected',
+      label: '选',
+      render: (row) => (
+        <input type="checkbox" checked={selectedSuggestions.includes(String(row.id))} onChange={(event) => {
+          setSelectedSuggestions((current) => event.target.checked ? [...current, String(row.id)] : current.filter((id) => id !== String(row.id)));
+        }} />
+      ),
+    },
+    { key: 'inventoryId', label: 'Item', render: (row) => String(row.inventoryId ?? row.id ?? '').slice(0, 12) },
+    { key: 'rop', label: 'ROP', render: (row) => String(row.rop ?? '') },
+    { key: 'suggestedQty', label: 'Qty', render: (row) => String(row.suggestedQty ?? '') },
+    { key: 'status', label: 'Status', render: () => 'OPEN' },
+  ];
+
   return (
     <div className="page">
       <h1>库存与采购操作</h1>
       {message && <p className="info">{message}</p>}
       <h2>采购单</h2>
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th>Number</th><th>Supplier</th><th>Amount</th><th>Status</th><th>Action</th></tr></thead>
-          <tbody>
-            {purchase.data?.items.filter((row) => String(row.status) === 'PENDING').map((row) => (
-              <tr key={String(row.id)}>
-                <td>{String(row.number ?? row.id ?? '').slice(0, 14)}</td>
-                <td>{String(row.supplierId ?? '')}</td>
-                <td>{String(row.totalAmount ?? '')}</td>
-                <td>{String(row.status)}</td>
-                <td><button onClick={() => run(`/purchase-orders/${String(row.id)}/receive`, 'PATCH', {})}>收货</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        columns={purchaseColumns}
+        rows={purchase.data?.items.filter((row) => String(row.status) === 'PENDING') ?? []}
+        keyField="id"
+        emptyText="No pending purchase orders"
+      />
       <h2>加工单</h2>
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th>ID</th><th>Status</th><th>Action</th></tr></thead>
-          <tbody>
-            {processing.data?.items.map((row) => (
-              <tr key={String(row.id)}>
-                <td>{String(row.id).slice(0, 8)}</td>
-                <td>{String(row.status)}</td>
-                <td>
-                  <select defaultValue="" onChange={(event) => event.target.value && run(`/processing-orders/${String(row.id)}/status`, 'PATCH', { status: event.target.value })}>
-                    <option value="">流转</option>
-                    <option value="SENT">SENT</option>
-                    <option value="IN_PROGRESS">IN_PROGRESS</option>
-                    <option value="COMPLETED">COMPLETED</option>
-                    <option value="RECEIVED">RECEIVED</option>
-                  </select>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable columns={processingColumns} rows={processing.data?.items ?? []} keyField="id" emptyText="No processing orders" />
       <h2>补货建议</h2>
       <div className="inline-form">
         <button onClick={generateSuggestions}>生成补货建议</button>
         <button onClick={applySuggestions}>应用选中建议</button>
       </div>
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th>选</th><th>Item</th><th>ROP</th><th>Qty</th><th>Status</th></tr></thead>
-          <tbody>
-            {openSuggestions.map((row) => (
-              <tr key={String(row.id)}>
-                <td>
-                  <input type="checkbox" checked={selectedSuggestions.includes(String(row.id))} onChange={(event) => {
-                    setSelectedSuggestions((current) => event.target.checked ? [...current, String(row.id)] : current.filter((id) => id !== String(row.id)));
-                  }} />
-                </td>
-                <td>{String(row.inventoryId ?? row.id ?? '').slice(0, 12)}</td>
-                <td>{String(row.rop ?? '')}</td>
-                <td>{String(row.suggestedQty ?? '')}</td>
-                <td>OPEN</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable columns={suggestionColumns} rows={openSuggestions} keyField="id" emptyText="No open suggestions" />
     </div>
   );
 }
