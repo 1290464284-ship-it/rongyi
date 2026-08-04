@@ -1,0 +1,106 @@
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { apiRequest } from './api';
+import type { Page } from './types';
+
+interface TimelineEvent {
+  id: string;
+  type: string;
+  time: string;
+  title: string;
+  status?: string | null;
+  amount?: unknown;
+}
+
+export function PatientTimelinePage() {
+  const [patientId, setPatientId] = useState('patient-demo-001');
+  const patients = useQuery({
+    queryKey: ['patients-timeline'],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/patients?page=1&pageSize=200'),
+  });
+  const visits = useQuery({
+    queryKey: ['visits-timeline', patientId],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(`/resources/visits?page=1&pageSize=200&patientId=${encodeURIComponent(patientId)}`),
+  });
+  const treatments = useQuery({
+    queryKey: ['treatments-timeline', patientId],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(`/resources/treatments?page=1&pageSize=200&patientId=${encodeURIComponent(patientId)}`),
+  });
+  const charges = useQuery({
+    queryKey: ['charges-timeline', patientId],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(`/resources/charges?page=1&pageSize=200&patientId=${encodeURIComponent(patientId)}`),
+  });
+  const followUps = useQuery({
+    queryKey: ['followUps-timeline', patientId],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(`/resources/followUps?page=1&pageSize=200&patientId=${encodeURIComponent(patientId)}`),
+  });
+
+  const events: TimelineEvent[] = [
+    ...(visits.data?.items ?? []).map((row) => ({
+      id: String(row.id),
+      type: '就诊',
+      time: String(row.startTime ?? row.createdAt ?? ''),
+      title: String(row.summary ?? '就诊记录'),
+      status: row.status ? String(row.status) : null,
+    })),
+    ...(treatments.data?.items ?? []).map((row) => ({
+      id: String(row.id),
+      type: '治疗',
+      time: String(row.completedDate ?? row.createdAt ?? ''),
+      title: String(row.name ?? row.code ?? '治疗记录'),
+      status: row.status ? String(row.status) : null,
+    })),
+    ...(charges.data?.items ?? []).map((row) => ({
+      id: String(row.id),
+      type: '收费',
+      time: String(row.paidAt ?? row.createdAt ?? ''),
+      title: String(row.number ?? '收费记录'),
+      status: row.status ? String(row.status) : null,
+      amount: row.totalAmount,
+    })),
+    ...(followUps.data?.items ?? []).map((row) => ({
+      id: String(row.id),
+      type: '随访',
+      time: String(row.planDate ?? row.createdAt ?? ''),
+      title: String(row.content ?? '随访记录'),
+      status: row.status ? String(row.status) : null,
+    })),
+  ].sort((a, b) => String(b.time).localeCompare(String(a.time)) || a.type.localeCompare(b.type));
+
+  return (
+    <div className="page">
+      <div className="page-head">
+        <h1>患者时间线</h1>
+        <label>
+          患者
+          <select value={patientId} onChange={(event) => setPatientId(event.target.value)}>
+            {patients.data?.items.map((patient) => (
+              <option key={String(patient.id)} value={String(patient.id)}>{String(patient.name ?? patient.id)}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="board-summary">
+        {['就诊', '治疗', '收费', '随访'].map((type) => (
+          <div className="summary-item" key={type}>
+            <span>{type}</span>
+            <strong>{events.filter((event) => event.type === type).length}</strong>
+          </div>
+        ))}
+      </div>
+      <div className="timeline">
+        {events.map((event) => (
+          <article className="timeline-item" key={`${event.type}-${event.id}`}>
+            <div className="timeline-meta">
+              <span>{event.type}</span>
+              <time>{event.time}</time>
+            </div>
+            <strong>{event.title}</strong>
+            <p>{event.status ?? ''}{event.amount === undefined ? '' : ` · ${String(event.amount)}`}</p>
+          </article>
+        ))}
+        {events.length === 0 && <p className="empty-board">暂无时间线记录</p>}
+      </div>
+    </div>
+  );
+}
