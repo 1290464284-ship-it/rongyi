@@ -30,6 +30,16 @@ describe('core repositories', () => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-core-repo-'));
     db = createDatabase(dataDir);
     runMigrations(db);
+    for (const id of ['patient-repo', 'patient-deleted', 'patient-inactive', 'patient']) {
+      db.prepare(
+        `INSERT INTO Patient (
+           id, clinicId, createdAt, updatedAt, deletedAt,
+           code, name, gender, phone, tags, allergies, medicalHistory,
+           medicationHistory, systemicDiseases, source, active
+         ) VALUES (?, NULL, ?, ?, NULL, ?, 'Core Patient', 'UNKNOWN', '13000000000',
+           '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
+      ).run(id, now, now, `CORE-${id}`);
+    }
   });
 
   afterAll(() => {

@@ -5,6 +5,12 @@
 - 应用层已通过 relation 校验和 `verify:foreign-keys` 扫描孤儿数据。
 - SQLite 当前启用 `foreign_keys = ON`，但核心表尚未真正声明 `FOREIGN KEY` 约束。
 
+## 当前进度
+
+- 已实现迁移 `116`：MemberCard、Refund 通过表重建启用真实 `FOREIGN KEY`。
+- 重建过程保留原有索引，并在迁移后继续执行 `foreign_key_check`。
+- Charge、ChargeItem、PurchaseOrderItem、InventoryTransaction、FollowUp、ProcessingOrder、Appointment 可按同一模式继续迁移。
+
 ## 风险
 
 - SQLite 无法直接为已有表添加外键，需要重建表并复制数据。
