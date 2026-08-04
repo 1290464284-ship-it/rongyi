@@ -4,8 +4,10 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID }
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import Database from 'better-sqlite3';
-import { ConflictError, NotFoundError, UnauthorizedError, ValidationError } from '../infrastructure/errors';
+import { AppError, ConflictError, NotFoundError, UnauthorizedError, ValidationError } from '../infrastructure/errors';
 import { SqliteRepository } from '../infrastructure/repository';
+import { stripProtectedWriteFields } from '../infrastructure/security';
+import { validatePayload } from '../http/validation';
 import { SqliteChargeRepository } from '../infrastructure/repositories/charge.repository';
 import { SqliteUnitOfWork } from '../infrastructure/unit-of-work';
 import {
@@ -47,6 +49,20 @@ const JWT_SECRET = process.env.V2_JWT_SECRET ?? 'v2-local-secret-change-me';
 const TOKEN_TTL = '8h';
 const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const BACKUP_MAGIC = Buffer.from('DENTALV2ENC1');
+const FORBIDDEN_BULK_IMPORT_RESOURCES = new Set([
+  'users',
+  'charges',
+  'chargeItems',
+  'refunds',
+  'memberCards',
+  'memberCardLogs',
+  'memberPointLogs',
+  'inventoryItems',
+  'inventoryTransactions',
+  'debtRecords',
+  'purchaseOrders',
+  'processingOrders',
+]);
 
 interface TokenPayload {
   sub: string;
@@ -1068,19 +1084,25 @@ const SYNC_RESOURCES: Record<string, string> = {
 export class SyncService {
   constructor(private readonly db: Database.Database) {}
 
-  pull(since: string, deviceId: string): { changes: Array<Record<string, unknown>>; serverTime: string } {
+  pull(since: string, deviceId: string, deviceToken: string, context: AppContext): { changes: Array<Record<string, unknown>>; serverTime: string } {
+    if (!context.clinicId) throw new AppError('FORBIDDEN', 'Sync requires a clinic scope', 403);
+    if (!['BOSS', 'ADMIN'].includes(context.role)) {
+      throw new AppError('FORBIDDEN', 'Sync requires BOSS or ADMIN', 403);
+    }
+    this.assertDevice(deviceId, deviceToken, context);
     const changes = this.db.prepare(
       `SELECT id, tableName, recordId, operation, deviceId, clinicId, createdAt
        FROM SyncChange
-       WHERE createdAt > ? AND deviceId != ?
+       WHERE createdAt > ? AND deviceId != ? AND clinicId = ?
        ORDER BY createdAt ASC
        LIMIT 1000`,
-    ).all(since, deviceId) as Array<Record<string, unknown>>;
+    ).all(since, deviceId, context.clinicId) as Array<Record<string, unknown>>;
     return { changes, serverTime: new Date().toISOString() };
   }
 
   async push(payload: {
     deviceId: string;
+    deviceToken: string;
     changes: Array<{
       tableName: string;
       recordId: string;
@@ -1088,22 +1110,20 @@ export class SyncService {
       updatedAt: string;
       data?: Record<string, unknown>;
     }>;
-  }): Promise<{
+  }, context: AppContext): Promise<{
     accepted: number;
     conflicts: number;
     failed: number;
     errors: Array<{ recordId: string; error: string }>;
   }> {
+    if (!context.clinicId) throw new AppError('FORBIDDEN', 'Sync requires a clinic scope', 403);
+    if (!['BOSS', 'ADMIN'].includes(context.role)) {
+      throw new AppError('FORBIDDEN', 'Sync requires BOSS or ADMIN', 403);
+    }
+    this.assertDevice(payload.deviceId, payload.deviceToken, context);
     let accepted = 0;
     const conflicts = 0;
     const errors: Array<{ recordId: string; error: string }> = [];
-    const context: AppContext = {
-      userId: payload.deviceId,
-      clinicId: null,
-      role: 'ADMIN',
-      traceId: 'sync-push',
-      now: () => new Date(),
-    };
     for (const change of payload.changes) {
       if (!SYNC_ALLOWED_TABLES.has(change.tableName)) {
         errors.push({ recordId: change.recordId, error: 'Table is not allowed for sync' });
@@ -1125,12 +1145,17 @@ export class SyncService {
           if (!change.data || typeof change.data !== 'object') {
             throw new Error('Sync change requires row data');
           }
-          const entity = { id: change.recordId, ...change.data };
           const existing = await repo.findById(change.recordId, context);
+          const payloadRow = stripProtectedWriteFields(validatePayload(
+            definition,
+            change.data,
+            existing ? { partial: true } : {},
+          ));
+          const entity = { id: change.recordId, ...payloadRow };
           if (existing) await repo.update(entity, context);
           else await repo.insert(entity, context);
         }
-        this.record(change.tableName, change.recordId, change.operation, payload.deviceId);
+        this.record(change.tableName, change.recordId, change.operation, payload.deviceId, context.clinicId);
         accepted += 1;
       } catch (error) {
         /* v8 ignore start -- non-Error rejection is defensive; current repositories throw Error instances. */
@@ -1141,18 +1166,50 @@ export class SyncService {
     return { accepted, conflicts, failed: errors.length, errors };
   }
 
-  record(tableName: string, recordId: string, operation: string, deviceId: string): void {
+  registerDevice(deviceId: string, name: string, context: AppContext): { deviceId: string; token: string } {
+    if (!context.clinicId) throw new AppError('FORBIDDEN', 'Sync requires a clinic scope', 403);
+    if (!['BOSS', 'ADMIN'].includes(context.role)) {
+      throw new AppError('FORBIDDEN', 'Sync requires BOSS or ADMIN', 403);
+    }
+    const token = newRefreshToken();
+    const now = new Date().toISOString();
+    this.db.prepare(
+      `INSERT INTO SyncDevice (
+         id, clinicId, userId, deviceId, tokenHash, name, active,
+         createdAt, updatedAt, deletedAt
+       ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, NULL)
+       ON CONFLICT(clinicId, deviceId) DO UPDATE SET
+         tokenHash = excluded.tokenHash,
+         name = excluded.name,
+         active = 1,
+         updatedAt = excluded.updatedAt`,
+    ).run(randomUUID(), context.clinicId, context.userId, deviceId, hashRefreshToken(token), name, now, now);
+    return { deviceId, token };
+  }
+
+  record(tableName: string, recordId: string, operation: string, deviceId: string, clinicId: string): void {
     const now = new Date().toISOString();
     this.db.prepare(
       `INSERT INTO SyncChange (id, clinicId, createdAt, updatedAt, deletedAt, tableName, recordId, operation, deviceId)
-       VALUES (?, NULL, ?, ?, NULL, ?, ?, ?, ?)`,
-    ).run(randomUUID(), now, now, tableName, recordId, operation, deviceId);
+       VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
+    ).run(randomUUID(), clinicId, now, now, tableName, recordId, operation, deviceId);
   }
 
-  cleanup(before?: string): { deleted: number; cutoff: string } {
+  cleanup(before: string | undefined, context: AppContext): { deleted: number; cutoff: string } {
+    if (!context.clinicId) throw new AppError('FORBIDDEN', 'Sync requires a clinic scope', 403);
     const cutoff = before ?? new Date(Date.now() - 90 * 86_400_000).toISOString();
-    const result = this.db.prepare('DELETE FROM SyncChange WHERE createdAt < ?').run(cutoff);
+    const result = this.db.prepare('DELETE FROM SyncChange WHERE createdAt < ? AND clinicId = ?').run(cutoff, context.clinicId);
     return { deleted: result.changes, cutoff };
+  }
+
+  private assertDevice(deviceId: string, deviceToken: string, context: AppContext): void {
+    if (!deviceId || !deviceToken || !context.clinicId) {
+      throw new AppError('UNAUTHORIZED', 'Device credentials are required', 401);
+    }
+    const device = this.db.prepare(
+      'SELECT id FROM SyncDevice WHERE clinicId = ? AND deviceId = ? AND tokenHash = ? AND active = 1 AND deletedAt IS NULL',
+    ).get(context.clinicId, deviceId, hashRefreshToken(deviceToken));
+    if (!device) throw new AppError('UNAUTHORIZED', 'Device is not registered or active', 401);
   }
 }
 
@@ -1494,20 +1551,22 @@ export class BulkImportService {
   async importRows(resourceName: string, rows: Array<Record<string, unknown>>, context: AppContext): Promise<{ imported: number; failed: number; errors: string[] }> {
     const definition = resourceRegistry.get(resourceName);
     if (!definition || !definition.capabilities.create) throw new ValidationError(`Resource cannot import: ${resourceName}`);
+    if (FORBIDDEN_BULK_IMPORT_RESOURCES.has(resourceName)) {
+      throw new AppError('FORBIDDEN', `Bulk import is disabled for ${resourceName}`, 403);
+    }
+    if (!definition.roles.includes(context.role)) {
+      throw new AppError('FORBIDDEN', `Forbidden resource: ${resourceName}`, 403);
+    }
+    if (!Array.isArray(rows) || rows.length > 1000) {
+      throw new ValidationError('Bulk import rows must be an array with at most 1000 rows');
+    }
     const repository = new SqliteRepository(this.db, definition);
     let imported = 0;
     const errors: string[] = [];
     for (const row of rows) {
       try {
-        for (const field of definition.fields) {
-          if (field.required && !(field.name in row)) {
-            throw new ValidationError(`${field.name} is required`);
-          }
-          if (field.type === 'enum' && row[field.name] !== undefined && !field.enumValues?.includes(String(row[field.name]))) {
-            throw new ValidationError(`${field.name} has invalid enum value`);
-          }
-        }
-        await repository.insert({ id: randomUUID(), ...row }, context);
+        const payload = stripProtectedWriteFields(validatePayload(definition, row));
+        await repository.insert({ id: randomUUID(), ...payload }, context);
         imported += 1;
       } catch (error) {
         /* v8 ignore start -- non-Error rejection is defensive; current repository paths throw Error instances. */

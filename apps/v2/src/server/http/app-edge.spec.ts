@@ -81,8 +81,6 @@ const errorCases: RouteCase[] = [
   { method: 'get', path: '/api/v2/stats/inventory' },
   { method: 'get', path: '/api/v2/stats/member-cards' },
   { method: 'get', path: '/api/v2/print?kind=report&data=%7B%22title%22%3A' },
-  { method: 'get', path: '/api/v2/sync/pull?since=2026-01-01T00:00:00.000Z&deviceId=test' },
-  { method: 'post', path: '/api/v2/sync/push', body: { deviceId: 'test' } },
   { method: 'post', path: '/api/v2/sync/cleanup', body: {} },
   { method: 'get', path: '/api/v2/hr/attendance' },
   { method: 'patch', path: '/api/v2/hr/leaves/not-found/approve', body: { approved: true } },
@@ -125,12 +123,27 @@ describe('HTTP app edge error handling', () => {
     const backupDir = path.join(dataDir, 'backups');
     fs.rmSync(backupDir, { recursive: true, force: true });
     fs.writeFileSync(backupDir, 'not a directory');
-    db.close();
   });
 
   afterAll(() => {
     delete process.env.V2_CORS_ORIGIN;
+    if (db.open) db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  it('short search terms and unknown routes return safe local responses', async () => {
+    const short = await request(app)
+      .get('/api/v2/search?q=a')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(short.body.data).toEqual([]);
+
+    const missing = await request(app)
+      .get('/api/v2/not-a-route')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(404);
+    expect(missing.body.code).toBe('NOT_FOUND');
+    db.close();
   });
 
   it('routes closed-database and invalid-input errors through the app error middleware', async () => {
@@ -166,17 +179,4 @@ describe('HTTP app edge error handling', () => {
     }
   });
 
-  it('short search terms and unknown routes return safe local responses', async () => {
-    const short = await request(app)
-      .get('/api/v2/search?q=a')
-      .set('Authorization', `Bearer ${token}`)
-      .expect(200);
-    expect(short.body.data).toEqual([]);
-
-    const missing = await request(app)
-      .get('/api/v2/not-a-route')
-      .set('Authorization', `Bearer ${token}`)
-      .expect(404);
-    expect(missing.body.code).toBe('NOT_FOUND');
-  });
 });

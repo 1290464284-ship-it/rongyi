@@ -37,7 +37,8 @@
     "update:metadata": "node scripts/update-metadata.mjs",
     "verify:update": "node scripts/verify-update.mjs",
     "verify:remote": "node scripts/verify-remote-release.mjs",
-    "verify:signature": "powershell -ExecutionPolicy Bypass -File scripts/verify-signature.ps1"
+    "verify:signature": "powershell -ExecutionPolicy Bypass -File scripts/verify-signature.ps1",
+    "generate:legacy-resources": "node scripts/generate-legacy-resources.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",

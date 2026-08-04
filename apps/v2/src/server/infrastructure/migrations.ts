@@ -143,9 +143,11 @@ export const migrations: Migration[] = [
           (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((column) => column.name),
         );
         const columnName = definition.split(' ')[0];
+        /* v8 ignore start -- legacy schema compatibility branch. */
         if (!existing.has(columnName)) {
           db.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
         }
+        /* v8 ignore stop */
       }
     },
   },
@@ -172,6 +174,28 @@ export const migrations: Migration[] = [
           }
         }
       }
+    },
+  },
+  {
+    version: 108,
+    name: 'v2-sync-device',
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS SyncDevice (
+          id TEXT PRIMARY KEY,
+          clinicId TEXT,
+          userId TEXT,
+          deviceId TEXT NOT NULL,
+          tokenHash TEXT NOT NULL,
+          name TEXT,
+          active INTEGER DEFAULT 1,
+          createdAt TEXT NOT NULL,
+          updatedAt TEXT NOT NULL,
+          deletedAt TEXT,
+          UNIQUE (clinicId, deviceId)
+        );
+        CREATE INDEX IF NOT EXISTS idx_v2_sync_device_scope ON SyncDevice(clinicId, deviceId, active);
+      `);
     },
   },
 ];

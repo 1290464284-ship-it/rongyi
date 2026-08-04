@@ -111,8 +111,8 @@ export const systemHubTabs: HubTab[] = [
   { id: 'alerts', label: '告警', kind: 'resource', resource: 'businessAlerts' },
   { id: 'logs', label: '操作日志', kind: 'resource', resource: 'operationLogs' },
   { id: 'sync', label: '同步记录', kind: 'resource', resource: 'syncChanges' },
-  { id: 'printTemplates', label: '打印模板', kind: 'resource', resource: 'PrintTemplate' },
-  { id: 'importJobs', label: '导入任务', kind: 'resource', resource: 'DataImportJob' },
+  { id: 'printTemplates', label: '打印模板', kind: 'resource', resource: 'printTemplates' },
+  { id: 'importJobs', label: '导入任务', kind: 'resource', resource: 'dataImportJobs' },
 ];
 
 export const analyticsHubTabs: HubTab[] = [

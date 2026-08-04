@@ -17,7 +17,7 @@ export function InventoryWorkflowPage() {
   });
   const suggestions = useQuery({
     queryKey: ['suggestions-workflow'],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/InventoryReplenishmentSuggestion?page=1&pageSize=100'),
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100'),
   });
 
   async function run(path: string, method: 'PATCH' | 'POST', body: Record<string, unknown>) {
@@ -105,4 +105,3 @@ export function InventoryWorkflowPage() {
     </div>
   );
 }
-

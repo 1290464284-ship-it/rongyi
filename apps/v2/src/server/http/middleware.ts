@@ -46,7 +46,7 @@ export function errorMiddleware(
 }
 
 export function authMiddleware(authService: AuthService) {
-  return (req: Request, res: Response, next: NextFunction): void => {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const header = req.header('authorization') ?? '';
     const token = header.startsWith('Bearer ') ? header.slice(7) : '';
     if (!token) {
@@ -55,10 +55,18 @@ export function authMiddleware(authService: AuthService) {
     }
     try {
       const payload = authService.verifyToken(token);
+      const user = await authService.getUserById(payload.sub);
+      if (!user.active) throw new AppError('UNAUTHORIZED', 'User is disabled', 401);
+      if (user.lockedUntil && new Date(user.lockedUntil).getTime() > Date.now()) {
+        throw new AppError('UNAUTHORIZED', 'Account is temporarily locked', 401);
+      }
+      if (user.tokenVersion !== payload.tokenVersion) {
+        throw new AppError('UNAUTHORIZED', 'Token is no longer valid', 401);
+      }
       req.context = {
-        userId: payload.sub,
-        clinicId: payload.clinicId,
-        role: payload.role as UserRole,
+        userId: user.id,
+        clinicId: user.clinicId ?? null,
+        role: user.role as UserRole,
         traceId: req.traceId,
         now: () => new Date(),
       };

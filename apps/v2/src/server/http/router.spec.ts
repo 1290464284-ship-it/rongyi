@@ -158,4 +158,38 @@ describe('resource router', () => {
       .expect(400);
     expect(invalid.body.code).toBe('VALIDATION_ERROR');
   });
+
+  it('removes legacy table routes and blocks bulk import privilege escalation', async () => {
+    const meta = await request(app)
+      .get('/api/v2/resource-meta')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(meta.body.data.some((item: { name: string }) => item.name === 'User')).toBe(false);
+
+    const legacy = await request(app)
+      .get('/api/v2/resources/User')
+      .set('Authorization', `Bearer ${receptionToken}`)
+      .expect(404);
+    expect(legacy.body.code).toBe('NOT_FOUND');
+
+    const bulkEscalation = await request(app)
+      .post('/api/v2/bulk-import/users')
+      .set('Authorization', `Bearer ${receptionToken}`)
+      .send({ rows: [{ username: 'x', name: 'x', role: 'BOSS' }] })
+      .expect(403);
+    expect(bulkEscalation.body.code).toBe('FORBIDDEN');
+
+    const adminBulk = await request(app)
+      .post('/api/v2/bulk-import/users')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ rows: [{ username: 'x', name: 'x', role: 'BOSS' }] })
+      .expect(403);
+    expect(adminBulk.body.code).toBe('FORBIDDEN');
+
+    await request(app)
+      .post('/api/v2/backups')
+      .set('Authorization', `Bearer ${receptionToken}`)
+      .send({})
+      .expect(403);
+  });
 });

@@ -104,7 +104,7 @@ describe('coverage boundaries', () => {
     expect(loggerSpy).toHaveBeenCalledOnce();
   });
 
-  it('covers auth middleware token and context paths', () => {
+  it('covers auth middleware token and context paths', async () => {
     const auth = {
       verifyToken: vi.fn(() => ({
         sub: 'user-1',
@@ -112,20 +112,28 @@ describe('coverage boundaries', () => {
         role: 'BOSS',
         tokenVersion: 0,
       })),
+      getUserById: vi.fn(async () => ({
+        id: 'user-1',
+        clinicId: 'clinic-1',
+        role: 'BOSS',
+        tokenVersion: 0,
+        active: true,
+        lockedUntil: null,
+      })),
     } as unknown as AuthService;
     const middleware = authMiddleware(auth);
     const response = { setHeader: vi.fn(), statusCode: 200, status: vi.fn(() => response), json: vi.fn(() => response) } as unknown as Response;
     const next: NextFunction = vi.fn();
 
     const missing = { header: () => '', traceId: 'trace' } as unknown as Request;
-    middleware(missing, response, next);
+    await middleware(missing, response, next);
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'UNAUTHORIZED' }));
 
     const invalid = { header: () => 'Bearer bad', traceId: 'trace' } as unknown as Request;
     (auth.verifyToken as ReturnType<typeof vi.fn>).mockImplementation(() => {
       throw new AppError('UNAUTHORIZED', 'invalid', 401);
     });
-    middleware(invalid, response, next);
+    await middleware(invalid, response, next);
     expect(next).toHaveBeenLastCalledWith(expect.objectContaining({ code: 'UNAUTHORIZED' }));
 
     (auth.verifyToken as ReturnType<typeof vi.fn>).mockReturnValue({
@@ -135,8 +143,35 @@ describe('coverage boundaries', () => {
       tokenVersion: 0,
     });
     const valid = { header: () => 'Bearer valid', traceId: 'trace' } as unknown as Request;
-    middleware(valid, response, next);
+    await middleware(valid, response, next);
     expect(valid).toHaveProperty('context');
+
+    (auth.getUserById as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: 'user-1', clinicId: 'clinic-1', role: 'BOSS', tokenVersion: 0, active: false, lockedUntil: null,
+    });
+    await middleware({ header: () => 'Bearer valid', traceId: 'trace' } as unknown as Request, response, next);
+    expect(next).toHaveBeenLastCalledWith(expect.objectContaining({ message: 'User is disabled' }));
+
+    (auth.getUserById as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: 'user-1', clinicId: 'clinic-1', role: 'BOSS', tokenVersion: 0, active: true,
+      lockedUntil: new Date(Date.now() + 60_000).toISOString(),
+    });
+    await middleware({ header: () => 'Bearer valid', traceId: 'trace' } as unknown as Request, response, next);
+    expect(next).toHaveBeenLastCalledWith(expect.objectContaining({ message: 'Account is temporarily locked' }));
+
+    (auth.getUserById as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: 'user-1', clinicId: 'clinic-1', role: 'BOSS', tokenVersion: 999, active: true, lockedUntil: null,
+    });
+    await middleware({ header: () => 'Bearer valid', traceId: 'trace' } as unknown as Request, response, next);
+    expect(next).toHaveBeenLastCalledWith(expect.objectContaining({ message: 'Token is no longer valid' }));
+
+    (auth.getUserById as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: 'user-1', clinicId: null, role: 'BOSS', tokenVersion: 0, active: true, lockedUntil: null,
+    });
+    const nullClinic = { header: () => 'Bearer valid', traceId: 'trace' } as unknown as Request;
+    await middleware(nullClinic, response, next);
+    expect(nullClinic).toHaveProperty('context');
+    expect((nullClinic as Request & { context?: { clinicId: string | null } }).context?.clinicId).toBeNull();
   });
 
   it('covers role middleware missing context and rate limiter window reset', () => {
