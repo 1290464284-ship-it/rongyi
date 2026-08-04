@@ -11,6 +11,7 @@ import {
   AuditService,
   BulkImportService,
   ChargeService,
+  FollowUpService,
   InventoryService,
   MemberCardService,
   PatientRiskService,
@@ -143,6 +144,155 @@ describe('application services', () => {
     expect(Number(card.points)).toBe(20);
   });
 
+  it('rejects member card operations when the card is not active', async () => {
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO Patient (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active
+       ) VALUES (?, ?, ?, ?, NULL, 'INACTIVE-CARD-P', 'Inactive Card Patient', 'UNKNOWN', '13300000000',
+         '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
+    ).run('patient-inactive-card', context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO MemberCard (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, cardNo, balance, totalRecharge, totalConsume,
+         status, points, totalPoints, level
+       ) VALUES (?, ?, ?, ?, NULL, ?, 'CARD-INACTIVE-TEST', 100, 100, 0, 'INACTIVE', 0, 0, 'NORMAL')`,
+    ).run('card-inactive-test', context.clinicId, now, now, 'patient-inactive-card');
+    const service = new MemberCardService(db);
+    await expect(service.recharge('card-inactive-test', 10, context)).rejects.toThrow('not active');
+    await expect(service.consume('card-inactive-test', 10, context)).rejects.toThrow('not active');
+    await expect(service.addPoints('card-inactive-test', 10, context)).rejects.toThrow('not active');
+  });
+
+  it('rejects globally duplicate member card numbers', () => {
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO Patient (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active
+       ) VALUES (?, ?, ?, ?, NULL, 'DUP-CARD-B', 'Duplicate Card Patient B', 'UNKNOWN', '13300000001',
+         '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
+    ).run('patient-dup-card-b', 'clinic-v2-002', now, now);
+    const service = new MemberCardService(db);
+    service.create({
+      patientId: 'patient-demo-001',
+      cardNo: 'CARD-DUP-GLOBAL',
+      status: 'ACTIVE',
+      level: 'NORMAL',
+    }, context);
+    expect(() => service.create({
+      patientId: 'patient-dup-card-b',
+      cardNo: 'CARD-DUP-GLOBAL',
+      status: 'ACTIVE',
+      level: 'NORMAL',
+    }, { ...context, clinicId: 'clinic-v2-002' })).toThrow('already exists');
+  });
+
+  it('maps member-card create unique races to conflict errors', () => {
+    const repo = {
+      create: () => { throw new Error('UNIQUE constraint failed: MemberCard.cardNo'); },
+    } as unknown as MemberCardRepository;
+    const service = new MemberCardService(db, repo);
+    expect(() => service.create({
+      patientId: 'patient-demo-001',
+      cardNo: 'CARD-CATCH-UNIQUE',
+      status: 'ACTIVE',
+      level: 'NORMAL',
+    }, context)).toThrow('already exists');
+  });
+
+  it('rethrows non-unique member-card create failures', () => {
+    const repo = {
+      create: () => { throw new Error('database down'); },
+    } as unknown as MemberCardRepository;
+    const service = new MemberCardService(db, repo);
+    expect(() => service.create({
+      patientId: 'patient-demo-001',
+      cardNo: 'CARD-CATCH-DOWN',
+      status: 'ACTIVE',
+      level: 'NORMAL',
+    }, context)).toThrow('database down');
+  });
+
+  it('fails a member-card refund when the card has been deleted', async () => {
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO Patient (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active
+       ) VALUES (?, ?, ?, ?, NULL, 'DELETED-CARD-P', 'Deleted Card Patient', 'UNKNOWN', '13300000002',
+         '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
+    ).run('patient-deleted-card-refund', context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO MemberCard (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, cardNo, balance, totalRecharge, totalConsume,
+         status, points, totalPoints, level
+       ) VALUES (?, ?, ?, ?, NULL, ?, 'CARD-DELETED-REFUND', 500, 500, 0, 'ACTIVE', 0, 0, 'NORMAL')`,
+    ).run('card-deleted-refund', context.clinicId, now, now, 'patient-deleted-card-refund');
+    const charges = new ChargeService(db);
+    const created = await charges.create({
+      patientId: 'patient-deleted-card-refund',
+      items: [{ name: 'Implant', category: 'IMPLANT', price: 200, quantity: 1 }],
+    }, context);
+    await charges.pay(String(created.id), 200, 'MEMBER_CARD', undefined, context);
+    db.prepare('UPDATE MemberCard SET deletedAt = ? WHERE id = ?').run(now, 'card-deleted-refund');
+    await expect(charges.refund(String(created.id), 50, 'deleted card', context)).rejects.toThrow('Member card used for payment is not found');
+  });
+
+  it('dedupes follow-up generation when no templates exist', async () => {
+    const service = new FollowUpService(db);
+    const now = new Date().toISOString();
+    db.prepare('DELETE FROM FollowUpTemplate').run();
+    db.prepare(
+      `INSERT INTO Visit (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, startTime, endTime, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'user-admin-001', ?, ?, 'COMPLETED')`,
+    ).run('visit-followup-null-template', context.clinicId, now, now, now, now);
+    db.prepare(
+      `INSERT INTO Treatment (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, visitId, doctorId, code, name, category,
+         price, quantity, status, completedDate
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', ?, 'user-admin-001', 'T-NULL', 'T', 'GENERAL', 100, 1, 'COMPLETED', ?)`,
+    ).run('treatment-followup-null-template', context.clinicId, now, now, 'visit-followup-null-template', now.slice(0, 10));
+    const first = await service.batchGenerate(2, context);
+    expect(first.generated).toBeGreaterThanOrEqual(1);
+    const second = await service.batchGenerate(2, context);
+    expect(second.generated).toBe(0);
+  });
+
+  it('rejects invalid completed dates during follow-up generation', async () => {
+    const service = new FollowUpService(db);
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO FollowUpTemplate (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         name, daysAfter, content, isEnabled
+       ) VALUES (?, ?, ?, ?, NULL, 'Bad Date Template', 1, 'bad date', 1)`,
+    ).run('template-bad-date', context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO Visit (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, startTime, endTime, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'user-admin-001', ?, ?, 'COMPLETED')`,
+    ).run('visit-followup-bad-date', context.clinicId, now, now, now, now);
+    db.prepare(
+      `INSERT INTO Treatment (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, visitId, doctorId, code, name, category,
+         price, quantity, status, completedDate
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', ?, 'user-admin-001', 'T-BAD', 'T', 'GENERAL', 100, 1, 'COMPLETED', 'not-a-date')`,
+    ).run('treatment-followup-bad-date', context.clinicId, now, now, 'visit-followup-bad-date');
+    await expect(service.batchGenerate(2, context)).rejects.toThrow('Completed date is invalid');
+  });
+
   it('deducts and refunds member card balance with a charge', async () => {
     const now = new Date().toISOString();
     db.prepare(
@@ -217,6 +367,7 @@ describe('application services', () => {
       create: () => {},
       findById: () => card,
       findByPatient: () => card,
+      findByPatientForRefund: () => card,
       updateBalanceRefund: () => {},
       updateRecharge: () => {},
       updateConsume: () => { throw new Error('member card failure'); },
@@ -249,6 +400,34 @@ describe('application services', () => {
     await expect(service.refresh(session.refreshToken)).rejects.toThrow('Invalid refresh token');
     await service.logout(refreshed.refreshToken);
     await expect(service.refresh(refreshed.refreshToken)).rejects.toThrow('Invalid refresh token');
+  });
+
+  it('maps create-user unique races to conflict errors', async () => {
+    const repo = {
+      findByUsername: () => null,
+      insertUser: () => { throw new Error('UNIQUE constraint failed: User.username'); },
+    } as unknown as AuthRepository;
+    const auth = new AuthService(db, repo);
+    await expect(auth.createUser({
+      username: 'race-user',
+      password: 'password123',
+      name: 'Race User',
+      role: 'DOCTOR',
+    }, context)).rejects.toThrow('Username already exists');
+  });
+
+  it('rethrows non-unique create-user repository failures', async () => {
+    const repo = {
+      findByUsername: () => null,
+      insertUser: () => { throw new Error('database down'); },
+    } as unknown as AuthRepository;
+    const auth = new AuthService(db, repo);
+    await expect(auth.createUser({
+      username: 'down-user',
+      password: 'password123',
+      name: 'Down User',
+      role: 'DOCTOR',
+    }, context)).rejects.toThrow('database down');
   });
 
   it('writes operation log entries', () => {

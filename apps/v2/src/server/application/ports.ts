@@ -85,6 +85,7 @@ export interface MemberCardRepository {
   create(input: MemberCardRecord): void;
   findById(id: string, clinicId?: string | null): MemberCardRecord | null;
   findByPatient(patientId: string, clinicId?: string | null): MemberCardRecord | null;
+  findByPatientForRefund(patientId: string, clinicId?: string | null): MemberCardRecord | null;
   updateBalanceRefund(id: string, balance: number, updatedAt: string, clinicId?: string | null): void;
   updateRecharge(id: string, balance: number, amount: number, updatedAt: string, clinicId?: string | null): void;
   updateConsume(id: string, balance: number, amount: number, updatedAt: string, clinicId?: string | null): void;

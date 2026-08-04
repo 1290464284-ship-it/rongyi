@@ -53,6 +53,54 @@ describe('core repositories', () => {
     expect(card?.totalConsume).toBe(200);
   });
 
+  it('filters soft-deleted rows and supports member-card refund lookups', () => {
+    const member = new SqliteMemberCardRepository(db);
+    db.prepare(
+      `INSERT INTO MemberCard (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, cardNo, balance, totalRecharge, totalConsume,
+         status, points, totalPoints, level
+       ) VALUES (?, ?, ?, ?, ?, ?, 'CARD-DELETED', 0, 0, 0, 'ACTIVE', 0, 0, 'NORMAL')`,
+    ).run('card-deleted', null, now, now, now, 'patient-deleted');
+    expect(member.findById('card-deleted')).toBeNull();
+
+    member.create({
+      id: 'card-inactive-refund',
+      clinicId: null,
+      patientId: 'patient-inactive',
+      cardNo: 'CARD-INACTIVE',
+      balance: 100,
+      totalRecharge: 100,
+      totalConsume: 0,
+      status: 'INACTIVE',
+      points: 0,
+      totalPoints: 0,
+      level: 'NORMAL',
+      createdAt: now,
+      updatedAt: now,
+    });
+    expect(member.findByPatient('patient-inactive')).toBeNull();
+    expect(member.findByPatientForRefund('patient-inactive')).not.toBeNull();
+    expect(member.findByPatientForRefund('patient-inactive', 'clinic-v2-001')).not.toBeNull();
+
+    const hr = new SqliteHrRepository(db);
+    db.prepare(
+      `INSERT INTO Attendance (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         userId, workDate, status
+       ) VALUES (?, NULL, ?, ?, ?, 'user-deleted', '2026-08-03', 'PRESENT')`,
+    ).run('attendance-deleted', now, now, now);
+    expect(hr.attendance('2026-08-03').some((row) => row.id === 'attendance-deleted')).toBe(false);
+
+    db.prepare(
+      `INSERT INTO LeaveRequest (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         userId, startDate, endDate, type, reason, status
+       ) VALUES (?, NULL, ?, ?, ?, 'user-deleted', '2026-08-01', '2026-08-02', 'ANNUAL', 'r', 'PENDING')`,
+    ).run('leave-deleted', now, now, now);
+    expect(hr.approveLeave('leave-deleted', 'APPROVED', 'reviewer', now)).toBe(0);
+  });
+
   it('creates inventory transactions and returns low stock', () => {
     const repo = new SqliteInventoryRepository(db);
     db.prepare(

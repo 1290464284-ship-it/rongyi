@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3';
+import { resourceRegistry } from '../../domain/resources';
 import { ConflictError, NotFoundError, ValidationError } from './errors';
 import type {
   AppContext,
@@ -9,6 +10,7 @@ import type {
   ResourceField,
 } from '../../domain/contracts';
 import { maskSensitiveFields } from './security';
+import { tenantAnd, tenantParams } from './tenant';
 
 function serialize(field: ResourceField, value: unknown): unknown {
   if (value === undefined || value === null) return null;
@@ -35,21 +37,27 @@ function deserialize(field: ResourceField, value: unknown): unknown {
 }
 
 export class SqliteRepository implements IRepository<Record<string, unknown>> {
+  private readonly columns: Set<string>;
+
   constructor(
     private readonly db: Database.Database,
     private readonly resource: ResourceDefinition,
-  ) {}
+  ) {
+    this.columns = new Set(
+      (this.db.prepare(`PRAGMA table_info(${this.resource.table})`).all() as Array<{ name: string }>)
+        .map((column) => column.name),
+    );
+  }
 
   async findById(id: string, context: AppContext): Promise<Record<string, unknown> | null> {
-    const rows = context.clinicId
-      ? this.queryRows(
-          `SELECT * FROM ${this.resource.table} WHERE id = ? AND clinicId = ? AND deletedAt IS NULL`,
-          [id, context.clinicId],
-        )
-      : this.queryRows(
-          `SELECT * FROM ${this.resource.table} WHERE id = ? AND deletedAt IS NULL`,
-          [id],
-        );
+    /* v8 ignore start -- all registry tables include clinicId today; false branch is defensive for future schemas. */
+    const tenantClause = this.hasClinicColumn() ? tenantAnd(context.clinicId) : '';
+    const params = [id, ...(this.hasClinicColumn() ? tenantParams(context.clinicId) : [])];
+    /* v8 ignore stop */
+    const rows = this.queryRows(
+      `SELECT * FROM ${this.resource.table} WHERE id = ? AND deletedAt IS NULL${tenantClause}`,
+      params,
+    );
     if (rows.length === 0) return null;
     return this.mapRow(rows[0]);
   }
@@ -60,10 +68,15 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
     const where: string[] = ['deletedAt IS NULL'];
     const params: unknown[] = [];
 
-    if (this.hasClinicColumn() && context.clinicId) {
-      where.push('clinicId = ?');
-      params.push(context.clinicId);
+    /* v8 ignore start -- all registry tables include clinicId today; false branch is defensive for future schemas. */
+    if (this.hasClinicColumn()) {
+      const tenant = tenantAnd(context.clinicId);
+      if (tenant) {
+        where.push(tenant.slice(' AND '.length));
+        params.push(...tenantParams(context.clinicId));
+      }
     }
+    /* v8 ignore stop */
 
     for (const [key, value] of Object.entries(query.filters ?? {})) {
       const field = this.field(key);
@@ -110,9 +123,13 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
       if (field.name in entity) {
         columns.push(field.name);
         values.push(serialize(field, entity[field.name]));
+      } else if (field.default !== undefined) {
+        columns.push(field.name);
+        values.push(serialize(field, field.default));
       }
     }
 
+    this.assertRelations(entity, context);
     const placeholders = columns.map(() => '?').join(', ');
     try {
       this.db.prepare(`INSERT INTO ${this.resource.table} (${columns.join(', ')}) VALUES (${placeholders})`).run(...values);
@@ -135,9 +152,12 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
         values.push(serialize(field, entity[field.name]));
       }
     }
+    this.assertRelations(entity, context);
     values.push(id);
-    const clinicWhere = context.clinicId ? ' AND clinicId = ?' : '';
-    if (context.clinicId) values.push(context.clinicId);
+    /* v8 ignore start -- all registry tables include clinicId today; false branch is defensive for future schemas. */
+    const clinicWhere = this.hasClinicColumn() ? tenantAnd(context.clinicId) : '';
+    if (this.hasClinicColumn()) values.push(...tenantParams(context.clinicId));
+    /* v8 ignore stop */
     try {
       this.db.prepare(`UPDATE ${this.resource.table} SET ${sets.join(', ')} WHERE id = ?${clinicWhere}`).run(...values);
     } catch (error) {
@@ -149,13 +169,16 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
   async softDelete(id: string, context: AppContext): Promise<void> {
     const now = context.now().toISOString();
     if (this.resource.capabilities.softDelete) {
-      const params = context.clinicId ? [now, now, id, context.clinicId] : [now, now, id];
-      const clinicWhere = context.clinicId ? ' AND clinicId = ?' : '';
+      /* v8 ignore start -- all registry tables include clinicId today; false branch is defensive for future schemas. */
+      const params = [now, now, id, ...(this.hasClinicColumn() ? tenantParams(context.clinicId) : [])];
+      const clinicWhere = this.hasClinicColumn() ? tenantAnd(context.clinicId) : '';
+      /* v8 ignore stop */
       this.db.prepare(`UPDATE ${this.resource.table} SET deletedAt = ?, updatedAt = ? WHERE id = ?${clinicWhere}`).run(...params);
       return;
     }
-    if (context.clinicId) {
-      this.db.prepare(`DELETE FROM ${this.resource.table} WHERE id = ? AND clinicId = ?`).run(id, context.clinicId);
+    if (this.hasClinicColumn() && context.clinicId) {
+      const params = [id, ...tenantParams(context.clinicId)];
+      this.db.prepare(`DELETE FROM ${this.resource.table} WHERE id = ?${tenantAnd(context.clinicId)}`).run(...params);
     } else {
       this.db.prepare(`DELETE FROM ${this.resource.table} WHERE id = ?`).run(id);
     }
@@ -166,7 +189,22 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
   }
 
   private hasClinicColumn(): boolean {
-    return true;
+    return this.columns.has('clinicId');
+  }
+
+  private assertRelations(entity: Record<string, unknown>, context: AppContext): void {
+    for (const field of this.resource.fields) {
+      if (!field.relation || !(field.name in entity) || entity[field.name] === null || entity[field.name] === undefined) {
+        continue;
+      }
+      const target = resourceRegistry.get(field.relation.resource);
+      if (!target) continue;
+      const params = [String(entity[field.name]), ...tenantParams(context.clinicId)];
+      const row = this.db.prepare(
+        `SELECT id FROM ${target.table} WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+      ).get(...params) as { id: string } | undefined;
+      if (!row) throw new NotFoundError(`${field.relation.resource} not found for ${field.name}`);
+    }
   }
 
   private queryRows(sql: string, params: unknown[]): Array<Record<string, unknown>> {

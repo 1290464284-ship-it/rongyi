@@ -121,7 +121,7 @@ const resources: ResourceDefinition[] = [
     f('type', 'enum', { required: true, enumValues: ['REGULAR', 'FOLLOW_UP', 'EMERGENCY', 'CONSULTATION'] }),
     f('remark', 'longText'),
     f('visitId', 'relation', { relation: { resource: 'visits', foreignKey: 'visitId', labelField: 'id' } }),
-  ], { roles: reception }),
+  ], { roles: reception, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
 
   crud('registrations', 'Registration', [
     f('patientId', 'relation', { required: true, relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
@@ -137,7 +137,7 @@ const resources: ResourceDefinition[] = [
     f('triagedAt', 'datetime'),
     f('startedAt', 'datetime'),
     f('completedAt', 'datetime'),
-  ], { roles: reception }),
+  ], { roles: reception, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   crud('visits', 'Visit', [
     f('patientId', 'relation', { required: true, relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
@@ -151,7 +151,7 @@ const resources: ResourceDefinition[] = [
     f('endTime', 'datetime'),
     f('status', 'enum', { required: true, enumValues: ['IN_PROGRESS', 'COMPLETED', 'CANCELLED'] }),
     f('nextReminder', 'date'),
-  ], { roles: clinical }),
+  ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   crud('firstExams', 'FirstExam', [
     f('patientId', 'relation', { required: true, relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
@@ -166,7 +166,7 @@ const resources: ResourceDefinition[] = [
     f('treatmentSuggestion', 'longText'),
     f('status', 'text', { required: true }),
     f('remark', 'longText'),
-  ], { roles: clinical }),
+  ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   crud('firstExamTeeth', 'FirstExamTooth', [
     f('examId', 'relation', { required: true, relation: { resource: 'firstExams', foreignKey: 'examId', labelField: 'id' } }),
@@ -176,14 +176,14 @@ const resources: ResourceDefinition[] = [
     f('isChief', 'boolean', { default: false }),
     f('treatmentPlan', 'longText'),
     f('remark', 'longText'),
-  ], { roles: clinical }),
+  ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   crud('oralExaminations', 'OralExamination', [
     f('patientId', 'relation', { required: true, relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
     f('examDate', 'date', { required: true }),
     f('data', 'json', { required: true }),
     f('remark', 'longText'),
-  ], { roles: clinical }),
+  ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   crud('periodontalRecords', 'PeriodontalRecord', [
     f('patientId', 'relation', { required: true, relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
@@ -192,7 +192,7 @@ const resources: ResourceDefinition[] = [
     f('plaqueIndex', 'number'),
     f('boneLoss', 'text'),
     f('remark', 'longText'),
-  ], { roles: clinical }),
+  ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   crud('medicalRecords', 'MedicalRecord', [
     f('patientId', 'relation', { required: true, relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
@@ -215,7 +215,7 @@ const resources: ResourceDefinition[] = [
     f('lockedBy', 'text'),
     f('signature', 'text'),
     f('status', 'text', { required: true }),
-  ], { roles: clinical }),
+  ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   crud('medicalPhrases', 'MedicalPhrase', [
     f('category', 'text', { required: true }),
@@ -229,7 +229,7 @@ const resources: ResourceDefinition[] = [
     f('currentStatus', 'text', { required: true }),
     f('conditions', 'json', { default: '[]' }),
     f('remark', 'longText'),
-  ], { roles: clinical }),
+  ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   crud('imaging', 'Imaging', [
     f('patientId', 'relation', { required: true, relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
@@ -242,7 +242,7 @@ const resources: ResourceDefinition[] = [
     f('thumbnailUrl', 'text'),
     f('takenAt', 'datetime'),
     f('remark', 'longText'),
-  ], { roles: clinical }),
+  ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   crud('treatmentCatalogs', 'TreatmentCatalog', [
     f('code', 'text', { required: true, unique: true, searchable: true }),
@@ -266,7 +266,7 @@ const resources: ResourceDefinition[] = [
     f('plannedDate', 'date'),
     f('completedDate', 'date'),
     f('remark', 'longText'),
-  ], { roles: clinical }),
+  ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   crud('treatmentPlans', 'TreatmentPlan', [
     f('patientId', 'relation', { required: true, relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
@@ -276,7 +276,7 @@ const resources: ResourceDefinition[] = [
     f('status', 'text', { required: true }),
     f('totalFee', 'money', { required: true }),
     f('remark', 'longText'),
-  ], { roles: clinical }),
+  ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   crud('treatmentPlanItems', 'TreatmentPlanItem', [
     f('planId', 'relation', { required: true, relation: { resource: 'treatmentPlans', foreignKey: 'planId', labelField: 'name' } }),
@@ -290,7 +290,7 @@ const resources: ResourceDefinition[] = [
     f('treatmentId', 'text'),
     f('completedAt', 'datetime'),
     f('remark', 'longText'),
-  ], { roles: clinical }),
+  ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   crud('charges', 'Charge', [
     f('patientId', 'relation', { required: true, relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
@@ -380,7 +380,7 @@ const resources: ResourceDefinition[] = [
     f('visitId', 'relation', { relation: { resource: 'visits', foreignKey: 'visitId', labelField: 'id' } }),
     f('doctorId', 'relation', { required: true, relation: { resource: 'users', foreignKey: 'doctorId', labelField: 'name' } }),
     f('remark', 'longText'),
-  ], { roles: clinical }),
+  ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   crud('prescriptionItems', 'PrescriptionItem', [
     f('prescriptionId', 'relation', { required: true, relation: { resource: 'prescriptions', foreignKey: 'prescriptionId', labelField: 'id' } }),
@@ -392,7 +392,7 @@ const resources: ResourceDefinition[] = [
     f('days', 'number', { required: true, min: 1 }),
     f('quantity', 'number', { required: true, min: 1 }),
     f('price', 'money', { required: true }),
-  ], { roles: clinical }),
+  ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   crud('suppliers', 'Supplier', [
     f('code', 'text', { searchable: true }),
@@ -493,7 +493,7 @@ const resources: ResourceDefinition[] = [
     f('templateId', 'text'),
     f('status', 'text', { default: 'DRAFT' }),
     f('remark', 'longText'),
-  ], { roles: clinical }),
+  ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   crud('smsLogs', 'SmsLog', [
     f('patientId', 'relation', { relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
@@ -504,7 +504,7 @@ const resources: ResourceDefinition[] = [
     f('result', 'longText'),
     f('sentAt', 'datetime'),
     f('cost', 'money'),
-  ], { roles: reception }),
+  ], { roles: reception, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   crud('invoices', 'Invoice', [
     f('chargeId', 'relation', { required: true, relation: { resource: 'charges', foreignKey: 'chargeId', labelField: 'number' } }),
@@ -515,7 +515,7 @@ const resources: ResourceDefinition[] = [
     f('status', 'text', { required: true }),
     f('issuedAt', 'datetime'),
     f('remark', 'longText'),
-  ], { roles: reception }),
+  ], { roles: reception, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   crud('followUps', 'FollowUp', [
     f('patientId', 'relation', { required: true, relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
@@ -526,7 +526,7 @@ const resources: ResourceDefinition[] = [
     f('assigneeId', 'relation', { relation: { resource: 'users', foreignKey: 'assigneeId', labelField: 'name' } }),
     f('templateId', 'text'),
     f('completedAt', 'datetime'),
-  ], { roles: reception, audit: true }),
+  ], { roles: reception, audit: true, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   crud('followUpTemplates', 'FollowUpTemplate', [
     f('name', 'text', { required: true, searchable: true }),
@@ -556,7 +556,7 @@ const resources: ResourceDefinition[] = [
     f('sentAt', 'datetime'),
     f('result', 'longText'),
     f('remark', 'longText'),
-  ], { roles: reception }),
+  ], { roles: reception, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   crud('satisfactionSurveys', 'SatisfactionSurvey', [
     f('patientId', 'relation', { relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
@@ -565,7 +565,7 @@ const resources: ResourceDefinition[] = [
     f('channel', 'text', { required: true }),
     f('comment', 'longText'),
     f('surveyDate', 'date', { required: true }),
-  ], { roles: reception }),
+  ], { roles: reception, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   crud('equipment', 'Equipment', [
     f('name', 'text', { required: true, searchable: true }),
@@ -606,7 +606,7 @@ const resources: ResourceDefinition[] = [
     f('status', 'enum', { required: true, enumValues: ['PENDING', 'APPROVED', 'REJECTED', 'CANCELLED'] }),
     f('reviewerId', 'text'),
     f('reviewedAt', 'datetime'),
-  ], { roles: boss }),
+  ], { roles: boss, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   crud('notifications', 'Notification', [
     f('userId', 'relation', { required: true, relation: { resource: 'users', foreignKey: 'userId', labelField: 'name' } }),
@@ -614,7 +614,7 @@ const resources: ResourceDefinition[] = [
     f('body', 'longText', { required: true }),
     f('kind', 'text', { required: true }),
     f('readAt', 'datetime'),
-  ], { roles: staff, capabilities: { list: true, create: true, update: true, delete: true, softDelete: false } }),
+  ], { roles: staff, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   crud('settings', 'Setting', [
     f('key', 'text', { required: true, unique: true }),

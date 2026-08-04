@@ -5,6 +5,7 @@ import type {
   SearchService,
   StatsService,
 } from '../application/services';
+import { ValidationError } from '../infrastructure/errors';
 import type {
   AnalyticsService,
   ChargeAssistantService,
@@ -191,7 +192,12 @@ export function registerReadRoutes(app: Express, deps: ReadRouteDependencies): v
   app.get('/api/v2/print', async (req, res, next) => {
     try {
       const kind = String(req.query.kind ?? 'report');
-      const data = JSON.parse(String(req.query.data ?? '{}')) as Record<string, unknown>;
+      let data: Record<string, unknown>;
+      try {
+        data = JSON.parse(String(req.query.data ?? '{}')) as Record<string, unknown>;
+      } catch {
+        throw new ValidationError('data must be valid JSON');
+      }
       res.type('html').send(deps.print.render(kind, data));
     /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
     } catch (error) {

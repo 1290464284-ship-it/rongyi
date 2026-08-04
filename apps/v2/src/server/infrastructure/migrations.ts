@@ -260,6 +260,16 @@ export const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 113,
+    name: 'v2-auth-and-sync-performance-indexes',
+    up(db) {
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_v2_used_refresh_token_used_at ON UsedRefreshToken(usedAt);
+        CREATE INDEX IF NOT EXISTS idx_v2_sync_change_clinic_created ON SyncChange(clinicId, createdAt);
+      `);
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

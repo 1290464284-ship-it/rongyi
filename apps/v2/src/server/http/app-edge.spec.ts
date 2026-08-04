@@ -141,8 +141,8 @@ describe('HTTP app edge error handling', () => {
     const missing = await request(app)
       .get('/api/v2/not-a-route')
       .set('Authorization', `Bearer ${token}`)
-      .expect(404);
-    expect(missing.body.code).toBe('NOT_FOUND');
+      .expect(403);
+    expect(missing.body.code).toBe('FORBIDDEN');
     db.close();
   });
 
