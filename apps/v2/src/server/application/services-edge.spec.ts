@@ -910,6 +910,54 @@ describe('service edge coverage', () => {
     expect(inventory.expiringSoon(30, { ...context, clinicId: null })).toBeInstanceOf(Array);
   });
 
+  it('keeps analytics, search, and replenishment scoped to the active clinic', () => {
+    const otherClinic = 'clinic-v2-read-other';
+    db.prepare(
+      `INSERT OR IGNORE INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+       VALUES (?, NULL, ?, ?, NULL, 'V2-READ-OTHER', 'Read Other Clinic', 1)`,
+    ).run(otherClinic, now, now);
+    db.prepare(
+      `INSERT OR IGNORE INTO Patient (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active
+       ) VALUES (?, ?, ?, ?, NULL, 'READ-OTHER', 'Isolation Secret Patient', 'UNKNOWN', '13900008888',
+         '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
+    ).run('patient-read-other', otherClinic, now, now);
+    db.prepare(
+      `INSERT OR IGNORE INTO Charge (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, number, totalAmount, paidAmount, refundedAmount, discount, status, paidAt
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-read-other', 'READ-OTHER-CHARGE', 888, 888, 0, 0, 'PAID', ?)`,
+    ).run('charge-read-other', otherClinic, now, now, now);
+    db.prepare(
+      `INSERT OR IGNORE INTO InventoryItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, category, unit, stock, minStock, price
+       ) VALUES (?, ?, ?, ?, NULL, 'READ-OTHER-ITEM', 'Read Other Item', 'ISOLATION', 'box', 2, 20, 100)`,
+    ).run('inventory-read-other', otherClinic, now, now);
+
+    const stats = new StatsService(db);
+    expect(Number(stats.dashboard(nullContext).patients)).toBeGreaterThan(Number(stats.dashboard(context).patients));
+    const revenue = stats.revenue('2026-08-04T00:00:00.000Z', '2026-08-04T23:59:59.999Z', 'day', context);
+    expect(revenue.some((row) => Number(row.amount) === 888)).toBe(false);
+    expect(stats.inventoryStats(context).some((row) => row.category === 'ISOLATION')).toBe(false);
+
+    const search = new SearchService(db);
+    expect(search.search('Isolation Secret', context)).toEqual([]);
+    expect(search.search('Isolation Secret', nullContext).some((row) => row.id === 'patient-read-other')).toBe(true);
+
+    const inventory = new InventoryService(db);
+    expect(inventory.lowStock(context).some((row) => row.id === 'inventory-read-other')).toBe(false);
+
+    const replenishment = new ReplenishmentService(db);
+    replenishment.generate(context);
+    const otherSuggestion = db.prepare(
+      'SELECT id FROM InventoryReplenishmentSuggestion WHERE inventoryId = ? AND clinicId = ? AND deletedAt IS NULL',
+    ).get('inventory-read-other', otherClinic) as { id: string } | undefined;
+    expect(otherSuggestion).toBeUndefined();
+  });
+
   it('manages users through the admin service', async () => {
     const auth = new AuthService(db);
     const created = await auth.createUser({
