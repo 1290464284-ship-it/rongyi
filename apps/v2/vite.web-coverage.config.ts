@@ -7,7 +7,16 @@ export default defineConfig({
     environment: 'jsdom',
     coverage: {
       provider: 'v8',
-      include: ['src/web/ResourceHub.tsx', 'src/web/ResourcePage.tsx', 'src/web/hub-tabs.tsx', 'src/web/components.tsx'],
+      include: [
+        'src/web/ResourceHub.tsx',
+        'src/web/ResourcePage.tsx',
+        'src/web/hub-tabs.tsx',
+        'src/web/components.tsx',
+        'src/web/FollowUpsPage.tsx',
+        'src/web/BackupsPage.tsx',
+        'src/web/SimpleListPage.tsx',
+        'src/web/InventoryWorkflowPage.tsx',
+      ],
       thresholds: {
         statements: 98,
         branches: 90,

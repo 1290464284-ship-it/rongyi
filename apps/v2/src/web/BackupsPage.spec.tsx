@@ -39,4 +39,67 @@ describe('BackupsPage', () => {
     expect(screen.getByText('1')).toBeDefined();
     expect(screen.getByText('4')).toBeDefined();
   });
+
+  it('covers create, verify, cleanup, and failure paths', async () => {
+    const row = { filename: 'backup-1.sqlite', encrypted: false, fileSize: 100, createdAt: '2026-08-04' };
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([row])
+      .mockResolvedValueOnce({ filename: 'backup-1.sqlite', encrypted: true })
+      .mockResolvedValueOnce([row])
+      .mockResolvedValueOnce({ integrity: 'ok' })
+      .mockRejectedValueOnce(new Error('restore failed'))
+      .mockResolvedValueOnce({ kept: 1, deleted: [{}] })
+      .mockResolvedValueOnce([row])
+      .mockRejectedValueOnce(new Error('cleanup failed'))
+      .mockResolvedValueOnce({ message: 'staged', backupSummary: undefined, currentSummary: undefined })
+      .mockRejectedValueOnce(new Error('create failed'))
+      .mockRejectedValueOnce(new Error('verify failed'));
+
+    render(<BackupsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: 'Create backup' }));
+    expect(await screen.findByText('Backup created: backup-1.sqlite (encrypted)')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
+    expect(await screen.findByText('Integrity: ok')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stage restore' }));
+    expect(await screen.findByText('restore failed')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cleanup (keep 30)' }));
+    expect(await screen.findByText('Kept 1, deleted 1')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cleanup (keep 30)' }));
+    expect(await screen.findByText('cleanup failed')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stage restore' }));
+    expect(await screen.findAllByText('No summary')).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create backup' }));
+    expect(await screen.findByText('create failed')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
+    expect(await screen.findByText('verify failed')).toBeDefined();
+  });
+
+  it('falls back to generic messages for non-error failures', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string, options?: RequestInit) => {
+      if (path === '/backups' && options?.method !== 'POST') {
+        return [{ filename: 'backup-1.sqlite', encrypted: false, fileSize: 100, createdAt: '2026-08-04' }];
+      }
+      throw 'boom';
+    });
+
+    render(<BackupsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: 'Create backup' }));
+    expect(await screen.findByText('Create failed')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
+    expect(await screen.findByText('Verify failed')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stage restore' }));
+    expect(await screen.findByText('Restore staging failed')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cleanup (keep 30)' }));
+    expect(await screen.findByText('Cleanup failed')).toBeDefined();
+  });
 });
