@@ -101,4 +101,47 @@ describe('ResourcePage', () => {
     fireEvent.click(screen.getByText('Next'));
     expect(await screen.findByText('Page 2')).toBeDefined();
   });
+
+  it('renders enum, relation, json, and long text form controls', async () => {
+    const formResource = {
+      name: 'wechatMessages',
+      table: 'WechatMessage',
+      fields: [
+        { name: 'name', type: 'text', required: true },
+        { name: 'status', type: 'enum', enumValues: ['PENDING', 'SENT'] },
+        { name: 'patientId', type: 'relation', relation: { resource: 'patients', labelField: 'name' } },
+        { name: 'notes', type: 'longText' },
+        { name: 'data', type: 'json' },
+      ],
+      capabilities: { create: true, update: false, delete: false, softDelete: false },
+    };
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([formResource])
+      .mockResolvedValueOnce({
+        items: [{
+          id: 'w1',
+          name: 'Message',
+          status: 'PENDING',
+          patientId: 'p1',
+          notes: 'note',
+          data: { key: 'value' },
+        }],
+        total: 1,
+        page: 1,
+        pageSize: 20,
+      })
+      .mockResolvedValueOnce({
+        items: [{ id: 'p1', name: 'Alice' }],
+        total: 1,
+        page: 1,
+        pageSize: 20,
+      });
+    render(<ResourcePage resource="wechatMessages" />, { wrapper });
+    fireEvent.click(await screen.findByText('Create'));
+    expect(await screen.findByText('Alice')).toBeDefined();
+    expect(screen.getByLabelText('status')).toBeDefined();
+    expect(screen.getByLabelText('notes')).toBeDefined();
+    expect(screen.getByLabelText('data')).toBeDefined();
+    expect(screen.getByText('{"key":"value"}')).toBeDefined();
+  });
 });

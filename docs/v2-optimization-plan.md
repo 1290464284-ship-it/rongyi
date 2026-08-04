@@ -3,8 +3,8 @@
 ## 当前基线
 
 - server/domain 覆盖率：100%
-- Web 核心文件覆盖率：statements 74.8%、lines 79.8%
-- 测试：30 个测试文件、174 个测试
+- Web 核心文件覆盖率：statements 82.67%、lines 88.46%
+- 测试：30 个测试文件、175 个测试
 - 门禁：typecheck、lint、knip、build、electron compile、security scan、license check 全部通过
 - 验证：API/UI/load smoke、package verification 通过
 
@@ -38,7 +38,7 @@
 - Idempotency 处理中记录超过 30 分钟后自动清理并允许重试。
 - 新增 `/api/v2/auth/navigation`，前端按角色隐藏导航。
 - refresh、sync、backup、bulk-import、财务/库存写操作增加限流。
-- Web 核心页面补齐创建、编辑、删除、分页测试。
+- Web 核心页面补齐创建、编辑、删除、分页、枚举/关系/JSON 表单测试。
 - 增加通用 CRUD 写策略和裸 `clinicId = ?` 架构扫描测试。
 
 ## 后续建议
