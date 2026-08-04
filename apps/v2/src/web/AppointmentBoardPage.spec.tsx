@@ -76,4 +76,51 @@ describe('AppointmentBoardPage', () => {
       expect.objectContaining({ method: 'PATCH' }),
     ));
   });
+
+  it('renders empty board and fallback labels', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce({
+      items: [
+        { id: 'a-empty', patientId: null, doctorId: null, startTime: null, status: 'BOOKED' },
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 200,
+    });
+    render(<AppointmentBoardPage />, { wrapper });
+    expect(await screen.findByText('未填写患者')).toBeDefined();
+    expect(screen.getByText('未分配医生')).toBeDefined();
+    expect(screen.getAllByText('暂无预约').length).toBe(5);
+  });
+
+  it('reports board transition failures', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/appointments?page=1&pageSize=200') {
+        return {
+          items: [{ id: 'a1', patientId: 'P1', doctorId: 'D1', startTime: '2026-08-04T09:00:00.000Z', status: 'BOOKED' }],
+          total: 1,
+          page: 1,
+          pageSize: 200,
+        };
+      }
+      throw new Error('board failed');
+    });
+
+    render(<AppointmentBoardPage />, { wrapper });
+    fireEvent.change(await screen.findByLabelText('已预约状态'), { target: { value: 'ARRIVED' } });
+    expect(await screen.findByText('board failed')).toBeDefined();
+
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/appointments?page=1&pageSize=200') {
+        return {
+          items: [{ id: 'a1', patientId: 'P1', doctorId: 'D1', startTime: '2026-08-04T09:00:00.000Z', status: 'BOOKED' }],
+          total: 1,
+          page: 1,
+          pageSize: 200,
+        };
+      }
+      throw 'boom';
+    });
+    fireEvent.change(screen.getByLabelText('已预约状态'), { target: { value: 'ARRIVED' } });
+    expect(await screen.findByText('状态更新失败')).toBeDefined();
+  });
 });
