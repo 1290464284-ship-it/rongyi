@@ -73,11 +73,22 @@ describe('database bootstrap', () => {
     const productionDir = path.join(dataDir, 'production-data');
     process.env.NODE_ENV = 'production';
     const productionDb = createDatabase(productionDir);
-    seedDatabase(productionDb);
-    seedDatabase(productionDb);
-    const adminCount = (productionDb.prepare("SELECT COUNT(*) AS c FROM User WHERE username = 'admin'").get() as { c: number }).c;
-    expect(adminCount).toBe(1);
+    expect(() => seedDatabase(productionDb)).toThrow('refusing to seed default credentials');
     productionDb.close();
+
+    const existingAdminDir = path.join(dataDir, 'production-existing-admin');
+    const existingAdminDb = createDatabase(existingAdminDir);
+    const now = new Date().toISOString();
+    existingAdminDb.prepare(
+      `INSERT INTO User (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         username, passwordHash, name, role, active, loginAttempts, tokenVersion
+       ) VALUES ('user-prod-admin', 'clinic-v2-001', ?, ?, NULL, 'admin', 'existing-hash', 'Admin', 'BOSS', 1, 0, 0)`,
+    ).run(now, now);
+    seedDatabase(existingAdminDb);
+    const existingCount = (existingAdminDb.prepare("SELECT COUNT(*) AS c FROM User WHERE username = 'admin'").get() as { c: number }).c;
+    expect(existingCount).toBe(1);
+    existingAdminDb.close();
     delete process.env.NODE_ENV;
   });
 });

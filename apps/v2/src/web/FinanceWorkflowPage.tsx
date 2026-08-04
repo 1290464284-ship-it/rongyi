@@ -15,9 +15,9 @@ export function FinanceWorkflowPage() {
     queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/debtRecords?page=1&pageSize=100'),
   });
 
-  async function run(path: string, id: string, body: Record<string, unknown>) {
+  async function run(path: string, id: string, body: Record<string, unknown>, method: 'POST' | 'PATCH' = 'POST') {
     try {
-      const result = await apiRequest<Record<string, unknown>>(path, { method: 'POST', body: JSON.stringify(body) });
+      const result = await apiRequest<Record<string, unknown>>(path, { method, body: JSON.stringify(body) });
       setMessage(JSON.stringify(result));
       await Promise.all([cards.refetch(), debts.refetch()]);
     } catch (error) {
@@ -37,7 +37,7 @@ export function FinanceWorkflowPage() {
 
   async function payDebt(debtId: string) {
     const amount = Number(prompt('还款金额（分）') ?? 0);
-    await run(`/debts/${debtId}/pay`, debtId, { amount, requestId: `ui-${Date.now()}` });
+    await run(`/debts/${debtId}/pay`, debtId, { amount, requestId: `ui-${Date.now()}` }, 'PATCH');
   }
 
   return (
@@ -83,4 +83,3 @@ export function FinanceWorkflowPage() {
     </div>
   );
 }
-

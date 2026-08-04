@@ -298,6 +298,7 @@ export function createDatabase(
 
 export function seedDatabase(db: Database.Database): void {
   const now = new Date().toISOString();
+  const isProduction = process.env.NODE_ENV === 'production';
   const passwordHash = bcrypt.hashSync('REDACTED', 10);
   const clinicRow = db.prepare('SELECT id FROM Clinic LIMIT 1').get() as { id: string } | undefined;
   const clinicId = clinicRow ? String(clinicRow.id) : 'clinic-v2-001';
@@ -313,6 +314,9 @@ export function seedDatabase(db: Database.Database): void {
     | undefined;
   const userId = adminRow?.id ?? 'user-admin-001';
   if (!adminRow) {
+    if (isProduction) {
+      throw new Error('Production database must contain an admin user; refusing to seed default credentials');
+    }
     db.prepare(
       `INSERT INTO User (
          id, clinicId, createdAt, updatedAt, deletedAt,
@@ -324,33 +328,35 @@ export function seedDatabase(db: Database.Database): void {
       .run(passwordHash, now, userId);
   }
 
-  db.prepare(
-    `INSERT OR IGNORE INTO Patient (
-       id, clinicId, createdAt, updatedAt, deletedAt,
-       code, name, gender, phone, tags, allergies, medicalHistory,
-       medicationHistory, systemicDiseases, source, active
-     ) VALUES (?, ?, ?, ?, NULL, 'P001', 'Demo Patient', 'UNKNOWN', '13800000000',
-       '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
-  ).run('patient-demo-001', clinicId, now, now);
+  if (!isProduction) {
+    db.prepare(
+      `INSERT OR IGNORE INTO Patient (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active
+       ) VALUES (?, ?, ?, ?, NULL, 'P001', 'Demo Patient', 'UNKNOWN', '13800000000',
+         '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
+    ).run('patient-demo-001', clinicId, now, now);
 
-  db.prepare(
-    `INSERT OR IGNORE INTO Appointment (
-       id, clinicId, createdAt, updatedAt, deletedAt,
-       patientId, doctorId, startTime, endTime, status, type
-     ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', ?, ?, ?, 'BOOKED', 'REGULAR')`,
-  ).run('appointment-demo-001', clinicId, now, now, userId, now, new Date(Date.now() + 3_600_000).toISOString());
+    db.prepare(
+      `INSERT OR IGNORE INTO Appointment (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, startTime, endTime, status, type
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', ?, ?, ?, 'BOOKED', 'REGULAR')`,
+    ).run('appointment-demo-001', clinicId, now, now, userId, now, new Date(Date.now() + 3_600_000).toISOString());
 
-  db.prepare(
-    `INSERT OR IGNORE INTO InventoryItem (
-       id, clinicId, createdAt, updatedAt, deletedAt,
-       code, name, category, unit, stock, minStock, price
-     ) VALUES (?, ?, ?, ?, NULL, 'MAT-001', 'Dental Material', 'CONSUMABLE', 'box', 100, 20, 5000)`,
-  ).run('inventory-demo-001', clinicId, now, now);
+    db.prepare(
+      `INSERT OR IGNORE INTO InventoryItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, category, unit, stock, minStock, price
+       ) VALUES (?, ?, ?, ?, NULL, 'MAT-001', 'Dental Material', 'CONSUMABLE', 'box', 100, 20, 5000)`,
+    ).run('inventory-demo-001', clinicId, now, now);
 
-  db.prepare(
-    `INSERT OR IGNORE INTO FollowUp (
-       id, clinicId, createdAt, updatedAt, deletedAt,
-       patientId, planDate, content, status
-     ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', ?, 'Post-treatment review', 'PENDING')`,
-  ).run('followup-demo-001', clinicId, now, now, new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10));
+    db.prepare(
+      `INSERT OR IGNORE INTO FollowUp (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, planDate, content, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', ?, 'Post-treatment review', 'PENDING')`,
+    ).run('followup-demo-001', clinicId, now, now, new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10));
+  }
 }

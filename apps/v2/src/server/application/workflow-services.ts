@@ -305,8 +305,17 @@ export class PrintTemplateService {
       | undefined;
     if (!row) throw new NotFoundError('Print template not found');
     return Object.entries(variables).reduce(
-      (html, [key, value]) => html.replaceAll(`{{${key}}}`, String(value ?? '')),
-      String(row.content),
+      (html, [key, value]) => html.replaceAll(`{{${key}}}`, escapeHtml(String(value ?? ''))),
+      escapeHtml(String(row.content)),
     );
   }
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }

@@ -132,6 +132,9 @@ describe('workflow services', () => {
     const print = new PrintTemplateService(db);
     expect(print.list().length).toBeGreaterThanOrEqual(1);
     expect(print.render('T-1', { title: 'Hello' })).toContain('Hello');
+    const escaped = print.render('T-1', { title: '<script>alert(1)</script>' });
+    expect(escaped).toContain('&lt;script&gt;');
+    expect(escaped).not.toContain('<script>');
   });
 
   it('returns frequent charge items', () => {

@@ -638,7 +638,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
 
   app.patch('/api/v2/notifications/:id/read', async (req, res, next) => {
     try {
-      res.json({ success: true, data: notifications.markRead(req.params.id) });
+      res.json({ success: true, data: notifications.markRead(req.params.id, req.context!.userId) });
     /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
     } catch (error) {
       next(error);

@@ -5,6 +5,7 @@ import { createDatabase, seedDatabase, syncLegacySchema } from './infrastructure
 import { Logger } from './infrastructure/logger';
 import { runMigrations } from './infrastructure/migrations';
 import { importLegacyDatabase } from './infrastructure/legacy-import';
+import { applyStagedRestore } from './infrastructure/restore-apply';
 import { AlertService, BackupService } from './application/services';
 
 const projectRoot = process.cwd();
@@ -38,6 +39,7 @@ if (nodeEnv === 'production') {
   }
 }
 
+applyStagedRestore(dbPath, [dataDir, backupDir], logger);
 const db = createDatabase(dataDir, dbPath);
 syncLegacySchema(db, legacySchemaDir);
 runMigrations(db);

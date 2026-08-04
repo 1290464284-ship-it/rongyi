@@ -316,6 +316,9 @@ export class AppointmentService {
       | Record<string, unknown>
       | undefined;
     if (!row) throw new NotFoundError('Appointment not found');
+    if (row.clinicId && context.clinicId && String(row.clinicId) !== context.clinicId) {
+      throw new NotFoundError('Appointment not found');
+    }
     const current = String(row.status);
     if (!APPOINTMENT_TRANSITIONS[current]?.includes(nextStatus)) {
       throw new ConflictError(`Cannot transition appointment from ${current} to ${nextStatus}`);
@@ -372,6 +375,20 @@ export class ChargeService {
     remark?: string;
   }, context: AppContext): Promise<Record<string, unknown>> {
     if (!input.items?.length) throw new ValidationError('At least one charge item is required');
+    if (!input.patientId || typeof input.patientId !== 'string') {
+      throw new ValidationError('patientId is required');
+    }
+    for (const item of input.items) {
+      if (typeof item.name !== 'string' || !item.name.trim() || typeof item.category !== 'string' || !item.category.trim()) {
+        throw new ValidationError('Charge item name and category are required');
+      }
+      if (!Number.isSafeInteger(item.price) || item.price <= 0) {
+        throw new ValidationError('Charge item price must be a positive integer in cents');
+      }
+      if (!Number.isFinite(item.quantity) || item.quantity <= 0) {
+        throw new ValidationError('Charge item quantity must be positive');
+      }
+    }
     const now = context.now().toISOString();
     const id = randomUUID();
     const number = `CHG-${Date.now().toString(36).toUpperCase()}`;
@@ -420,66 +437,48 @@ export class ChargeService {
   }
 
   async pay(id: string, amount: number, method: string, requestId?: string, context?: AppContext): Promise<Record<string, unknown>> {
-    if (requestId) {
-      const existing = this.db.prepare('SELECT * FROM IdempotencyRecord WHERE key = ?').get(requestId) as
-        | Record<string, unknown>
-        | undefined;
-      if (existing) return JSON.parse(String(existing.responseJson));
-    }
-    const row = this.chargeRepository.findById(id);
-    if (!row) throw new NotFoundError('Charge not found');
-    const total = Number(row.totalAmount);
-    const paid = Number(row.paidAmount);
-    const refunded = Number(row.refundedAmount);
-    const status = String(row.status);
-    if (status === 'CANCELLED' || status === 'REFUNDED') throw new ConflictError('Charge cannot be paid');
-    const remaining = total - paid;
-    if (amount <= 0 || amount > remaining) throw new ValidationError('Payment amount must be positive and not exceed the remaining balance');
-    const newPaid = paid + amount;
-    const newStatus = newPaid >= total ? 'PAID' : 'PARTIAL';
-    const now = context?.now().toISOString() ?? new Date().toISOString();
-    const payRun = this.db.transaction(() => {
-      this.chargeRepository.updatePayment(id, newPaid, newStatus, now, method);
-      if (method === 'MEMBER_CARD') {
-        const memberCard = this.memberCardRepository.findByPatient(String(row.patientId));
-        if (!memberCard) throw new ConflictError('No active member card for patient');
-        const balance = Number(memberCard.balance) - amount;
-        if (balance < 0) throw new ConflictError('Insufficient member card balance');
-        this.memberCardRepository.updateConsume(memberCard.id, balance, amount, now);
-        this.memberCardRepository.insertLog({
-          id: randomUUID(),
-          clinicId: row.clinicId ?? null,
-          createdAt: now,
-          updatedAt: now,
-          cardId: memberCard.id,
-          type: 'CONSUME',
-          amount: -amount,
-          balanceAfter: balance,
-          remark: `Charge ${id}`,
-        });
+    return withIdempotency(this.db, requestId, () => {
+      const row = this.chargeRepository.findById(id);
+      if (!row) throw new NotFoundError('Charge not found');
+      if (row.clinicId && context?.clinicId && row.clinicId !== context.clinicId) {
+        throw new NotFoundError('Charge not found');
       }
+      const total = Number(row.totalAmount);
+      const paid = Number(row.paidAmount);
+      const refunded = Number(row.refundedAmount);
+      const status = String(row.status);
+      if (status === 'CANCELLED' || status === 'REFUNDED') throw new ConflictError('Charge cannot be paid');
+      const remaining = total - paid;
+      if (!Number.isSafeInteger(amount) || amount <= 0 || amount > remaining) {
+        throw new ValidationError('Payment amount must be a positive integer and not exceed the remaining balance');
+      }
+      const newPaid = paid + amount;
+      const newStatus = newPaid >= total ? 'PAID' : 'PARTIAL';
+      const now = context?.now().toISOString() ?? new Date().toISOString();
+      const payRun = this.db.transaction(() => {
+        this.chargeRepository.updatePayment(id, newPaid, newStatus, now, method);
+        if (method === 'MEMBER_CARD') {
+          const memberCard = this.memberCardRepository.findByPatient(String(row.patientId));
+          if (!memberCard) throw new ConflictError('No active member card for patient');
+          const balance = Number(memberCard.balance) - amount;
+          if (balance < 0) throw new ConflictError('Insufficient member card balance');
+          this.memberCardRepository.updateConsume(memberCard.id, balance, amount, now);
+          this.memberCardRepository.insertLog({
+            id: randomUUID(),
+            clinicId: row.clinicId ?? null,
+            createdAt: now,
+            updatedAt: now,
+            cardId: memberCard.id,
+            type: 'CONSUME',
+            amount: -amount,
+            balanceAfter: balance,
+            remark: `Charge ${id}`,
+          });
+        }
+      });
+      payRun();
+      return { id, paidAmount: newPaid, status: newStatus };
     });
-    payRun();
-    const response = { id, paidAmount: newPaid, status: newStatus };
-    if (requestId) {
-      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-      this.db.prepare(
-        `INSERT INTO IdempotencyRecord (
-           id, key, type, status, responseJson, result,
-           clinicId, createdAt, updatedAt, deletedAt, expiresAt
-         ) VALUES (?, ?, 'GENERIC', 'COMPLETED', ?, ?, ?, ?, ?, NULL, ?)`,
-      ).run(
-        randomUUID(),
-        requestId,
-        JSON.stringify(response),
-        JSON.stringify(response),
-        row.clinicId ?? null,
-        now,
-        now,
-        expiresAt,
-      );
-    }
-    return response;
   }
 
   async refund(
@@ -492,10 +491,15 @@ export class ChargeService {
     return withIdempotency(this.db, requestId, () => {
       const row = this.chargeRepository.findById(id);
       if (!row) throw new NotFoundError('Charge not found');
+      if (row.clinicId && context.clinicId && row.clinicId !== context.clinicId) {
+        throw new NotFoundError('Charge not found');
+      }
       const paid = Number(row.paidAmount);
       const refunded = Number(row.refundedAmount);
       const available = paid - refunded;
-      if (amount <= 0 || amount > available) throw new ValidationError('Refund amount exceeds refundable amount');
+      if (!Number.isSafeInteger(amount) || amount <= 0 || amount > available) {
+        throw new ValidationError('Refund amount must be a positive integer and not exceed the refundable amount');
+      }
       const newRefunded = refunded + amount;
       const newStatus = newRefunded >= paid ? 'REFUNDED' : String(row.status);
       const now = context.now().toISOString();
@@ -558,8 +562,20 @@ export class InventoryService {
     requestId?: string,
   ): Promise<Record<string, unknown>> {
     return withIdempotency(this.db, requestId, () => {
+      if (!['IN', 'OUT', 'ADJUST'].includes(input.type)) {
+        throw new ValidationError('Inventory transaction type must be IN, OUT, or ADJUST');
+      }
+      if (!Number.isFinite(input.quantity) || input.quantity === 0) {
+        throw new ValidationError('Inventory transaction quantity must be a non-zero number');
+      }
+      if (input.type !== 'ADJUST' && input.quantity < 0) {
+        throw new ValidationError('Inventory transaction quantity must be positive');
+      }
       const item = this.inventoryRepository.findItem(input.itemId);
       if (!item) throw new NotFoundError('Inventory item not found');
+      if (item.clinicId && context.clinicId && item.clinicId !== context.clinicId) {
+        throw new NotFoundError('Inventory item not found');
+      }
       const before = Number(item.stock);
       const delta = input.type === 'IN' ? input.quantity : input.type === 'OUT' ? -input.quantity : input.quantity;
       const after = before + delta;
@@ -804,6 +820,8 @@ export class BackupService {
     } finally {
       staged.close();
     }
+    const markerPath = path.join(path.dirname(this.dbPath), '.restore-pending.json');
+    fs.writeFileSync(markerPath, JSON.stringify({ stagedPath }), 'utf8');
     return {
       filename,
       stagedPath,
@@ -1303,8 +1321,8 @@ export class MemberCardService {
 
   async recharge(cardId: string, amount: number, context: AppContext, requestId?: string): Promise<Record<string, unknown>> {
     return withIdempotency(this.db, requestId, () => {
-      const card = this.card(cardId);
-      if (amount <= 0) throw new ValidationError('Recharge amount must be positive');
+      const card = this.card(cardId, context);
+      if (!Number.isSafeInteger(amount) || amount <= 0) throw new ValidationError('Recharge amount must be a positive integer in cents');
       const now = context.now().toISOString();
       const balance = Number(card.balance) + amount;
       this.memberCardRepository.updateRecharge(cardId, balance, amount, now);
@@ -1315,8 +1333,8 @@ export class MemberCardService {
 
   async consume(cardId: string, amount: number, context: AppContext, requestId?: string): Promise<Record<string, unknown>> {
     return withIdempotency(this.db, requestId, () => {
-      const card = this.card(cardId);
-      if (amount <= 0) throw new ValidationError('Consume amount must be positive');
+      const card = this.card(cardId, context);
+      if (!Number.isSafeInteger(amount) || amount <= 0) throw new ValidationError('Consume amount must be a positive integer in cents');
       const balance = Number(card.balance) - amount;
       if (balance < 0) throw new ConflictError('Insufficient member card balance');
       const now = context.now().toISOString();
@@ -1328,7 +1346,10 @@ export class MemberCardService {
 
   async addPoints(cardId: string, points: number, context: AppContext, requestId?: string): Promise<Record<string, unknown>> {
     return withIdempotency(this.db, requestId, () => {
-      const card = this.card(cardId);
+      const card = this.card(cardId, context);
+      if (!Number.isSafeInteger(points) || points === 0) {
+        throw new ValidationError('Points must be a non-zero integer');
+      }
       const after = Number(card.points) + points;
       if (after < 0) throw new ConflictError('Insufficient points');
       const now = context.now().toISOString();
@@ -1347,9 +1368,12 @@ export class MemberCardService {
     });
   }
 
-  private card(cardId: string): MemberCardRecord {
+  private card(cardId: string, context: AppContext): MemberCardRecord {
     const row = this.memberCardRepository.findById(cardId);
     if (!row) throw new NotFoundError('Member card not found');
+    if (row.clinicId && context.clinicId && row.clinicId !== context.clinicId) {
+      throw new NotFoundError('Member card not found');
+    }
     return row;
   }
 
@@ -1591,8 +1615,11 @@ export class DebtService {
     return withIdempotency(this.db, requestId, () => {
       const debt = this.debtRepository.findById(debtId);
       if (!debt) throw new NotFoundError('Debt record not found');
+      if (debt.clinicId && context.clinicId && debt.clinicId !== context.clinicId) {
+        throw new NotFoundError('Debt record not found');
+      }
       const remaining = Number(debt.totalAmount) - Number(debt.paidAmount);
-      if (amount <= 0 || amount > remaining) throw new ValidationError('Invalid debt payment amount');
+      if (!Number.isSafeInteger(amount) || amount <= 0 || amount > remaining) throw new ValidationError('Invalid debt payment amount');
       const paid = Number(debt.paidAmount) + amount;
       const status = paid >= Number(debt.totalAmount) ? 'PAID' : 'PARTIAL';
       this.debtRepository.updatePaid(debtId, paid, status, context.now().toISOString());
@@ -1610,9 +1637,10 @@ export class NotificationService {
     ).all(userId) as Array<Record<string, unknown>>;
   }
 
-  markRead(id: string): Record<string, unknown> {
-    this.db.prepare('UPDATE Notification SET readAt = ?, updatedAt = ? WHERE id = ?')
-      .run(new Date().toISOString(), new Date().toISOString(), id);
+  markRead(id: string, userId: string): Record<string, unknown> {
+    const result = this.db.prepare('UPDATE Notification SET readAt = ?, updatedAt = ? WHERE id = ? AND userId = ?')
+      .run(new Date().toISOString(), new Date().toISOString(), id, userId);
+    if (result.changes === 0) throw new NotFoundError('Notification not found');
     return { id, read: true };
   }
 }

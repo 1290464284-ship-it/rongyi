@@ -16,10 +16,11 @@ export function withIdempotency<T>(
   if (!key) return fn();
 
   const now = new Date().toISOString();
-  const existing = db.prepare('SELECT responseJson FROM IdempotencyRecord WHERE key = ?').get(key) as
-    | { responseJson: string }
+  const existing = db.prepare('SELECT responseJson, status FROM IdempotencyRecord WHERE key = ?').get(key) as
+    | { responseJson: string; status: string }
     | undefined;
   if (existing) {
+    if (existing.status !== 'COMPLETED') throw new ConflictError('Operation is already in progress');
     return JSON.parse(existing.responseJson) as T;
   }
 
@@ -29,13 +30,16 @@ export function withIdempotency<T>(
       `INSERT INTO IdempotencyRecord (
          id, key, type, status, responseJson, result,
          clinicId, createdAt, updatedAt, deletedAt, expiresAt
-       ) VALUES (?, ?, 'GENERIC', 'COMPLETED', '{}', '{}', NULL, ?, ?, NULL, ?)`,
+       ) VALUES (?, ?, 'GENERIC', 'PROCESSING', '{}', '{}', NULL, ?, ?, NULL, ?)`,
     ).run(randomUUID(), key, now, now, expiresAt);
   } catch (error) {
-    const concurrent = db.prepare('SELECT responseJson FROM IdempotencyRecord WHERE key = ?').get(key) as
-      | { responseJson: string }
+    const concurrent = db.prepare('SELECT responseJson, status FROM IdempotencyRecord WHERE key = ?').get(key) as
+      | { responseJson: string; status: string }
       | undefined;
-    if (concurrent) return JSON.parse(concurrent.responseJson) as T;
+    if (concurrent) {
+      if (concurrent.status !== 'COMPLETED') throw new ConflictError('Operation is already in progress');
+      return JSON.parse(concurrent.responseJson) as T;
+    }
     throw error;
   }
 

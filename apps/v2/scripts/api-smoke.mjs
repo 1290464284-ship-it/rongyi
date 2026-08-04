@@ -25,6 +25,12 @@ async function main() {
     body: JSON.stringify({ refreshToken: login.refreshToken }),
   });
   const headers = { authorization: `Bearer ${session.token}` };
+  const device = await request('/sync/devices', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ deviceId: 'smoke', name: 'Smoke Device' }),
+  });
+  const deviceToken = device.token;
 
   const health = await request('/health');
   if (health.status !== 'ok') throw new Error('health failed');
@@ -181,7 +187,12 @@ async function main() {
     body: JSON.stringify({ patientId: patient.id, type: 'TEXT', content: 'hello', status: 'PENDING' }),
   });
   await request(`/wechat/${wechat.id}/send`, { method: 'POST', headers });
-  await request('/sync/pull?since=2020-01-01T00:00:00.000Z&deviceId=smoke', { headers });
+  await request(`/sync/pull?since=2020-01-01T00:00:00.000Z&deviceId=smoke&deviceToken=${encodeURIComponent(deviceToken)}`, { headers });
+  await request('/sync/push', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ deviceId: 'smoke', deviceToken, changes: [] }),
+  });
   await request('/sync/cleanup', {
     method: 'POST',
     headers,
