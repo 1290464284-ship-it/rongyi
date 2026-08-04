@@ -3,8 +3,8 @@
 ## 当前基线
 
 - server/domain 覆盖率：100%
-- Web 核心文件覆盖率：statements 82.67%、lines 88.46%
-- 测试：30 个测试文件、175 个测试
+- Web 核心文件覆盖率：statements 99.21%、lines 100%
+- 测试：30 个测试文件、181+ 个测试
 - 门禁：typecheck、lint、knip、build、electron compile、security scan、license check 全部通过
 - 验证：API/UI/load smoke、package verification 通过
 
@@ -47,6 +47,8 @@
 - 新增 `verify:foreign-keys`，扫描核心业务关系中的孤儿数据。
 - 新增 Windows installer smoke workflow，可在 CI 中构建并验证安装包。
 - 新增 `verify:foreign-keys` 与 `v2-foreign-key-migration.md` 专项文档。
+- 新增 `benchmark:load`：生成 10 万患者与 10 万收费记录，测量 FTS 搜索和 dashboard。
+- 基准结果：10 万患者/收费写入约 1.5s，FTS 搜索 10ms，dashboard 71ms。
 
 ## 后续建议
 
