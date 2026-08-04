@@ -10,7 +10,9 @@ import { apiRequest } from './api';
 vi.mock('./api', () => ({ apiRequest: vi.fn(), downloadCsv: vi.fn() }));
 
 const wrapper = ({ children }: { children: ReactNode }) => (
-  <QueryClientProvider client={new QueryClient()}>{children}</QueryClientProvider>
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    {children}
+  </QueryClientProvider>
 );
 
 describe('FollowUpReportPage', () => {
@@ -26,5 +28,17 @@ describe('FollowUpReportPage', () => {
     expect(screen.getByText('20')).toBeDefined();
     expect(screen.getByText('16')).toBeDefined();
     expect(screen.getByText('80%')).toBeDefined();
+  });
+
+  it('renders errors and falls back to zero totals', async () => {
+    vi.mocked(apiRequest).mockRejectedValueOnce(new Error('report failed'));
+    render(<FollowUpReportPage />, { wrapper });
+    expect(await screen.findByText('report failed')).toBeDefined();
+
+    cleanup();
+    vi.mocked(apiRequest).mockResolvedValueOnce(null as never);
+    render(<FollowUpReportPage />, { wrapper });
+    expect(await screen.findByText('0%')).toBeDefined();
+    expect(screen.getAllByText('0').length).toBeGreaterThanOrEqual(2);
   });
 });

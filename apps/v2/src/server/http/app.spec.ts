@@ -284,6 +284,7 @@ describe('HTTP app', () => {
     await request(app).get('/api/v2/analytics/rfm').set('Authorization', `Bearer ${token}`).expect(200);
     await request(app).get('/api/v2/analytics/churn').set('Authorization', `Bearer ${token}`).expect(200);
     await request(app).get('/api/v2/analytics/doctor-anomalies').set('Authorization', `Bearer ${token}`).expect(200);
+    await request(app).get('/api/v2/analytics/clinic-overview').set('Authorization', `Bearer ${token}`).expect(200);
     await request(app).get(`/api/v2/sync/pull?since=2020-01-01T00:00:00.000Z&deviceId=http&deviceToken=${encodeURIComponent(deviceToken)}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
@@ -383,6 +384,38 @@ describe('HTTP app', () => {
     await request(app).patch(`/api/v2/follow-ups/${String(secondFollowUp.body.data.id)}/complete`)
       .set('Authorization', `Bearer ${token}`)
       .send({})
+      .expect(200);
+    const exportResponse = await request(app)
+      .get('/api/v2/follow-ups/reminders/export?scope=overdue')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(exportResponse.headers['content-type']).toContain('text/csv');
+    await request(app)
+      .get('/api/v2/follow-ups/reminders/export')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const thirdFollowUp = await request(app).post('/api/v2/resources/followUps')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ patientId: 'patient-demo-001', planDate: '2026-08-04', content: 'batch complete', status: 'PENDING' })
+      .expect(201);
+    await request(app)
+      .post('/api/v2/follow-ups/batch-complete')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ids: [thirdFollowUp.body.data.id], result: 'batch done' })
+      .expect(200);
+    await request(app)
+      .post('/api/v2/follow-ups/batch-complete')
+      .set('Authorization', `Bearer ${token}`)
+      .send({})
+      .expect(400);
+    const fourthFollowUp = await request(app).post('/api/v2/resources/followUps')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ patientId: 'patient-demo-001', planDate: '2026-08-04', content: 'batch complete no result', status: 'PENDING' })
+      .expect(201);
+    await request(app)
+      .post('/api/v2/follow-ups/batch-complete')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ids: [fourthFollowUp.body.data.id] })
       .expect(200);
     await request(app).get('/api/v2/stats/patient-growth').set('Authorization', `Bearer ${token}`).expect(200);
     await request(app).get('/api/v2/stats/member-cards').set('Authorization', `Bearer ${token}`).expect(200);

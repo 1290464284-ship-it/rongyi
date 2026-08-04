@@ -993,6 +993,15 @@ describe('service edge coverage', () => {
       'SELECT id FROM InventoryReplenishmentSuggestion WHERE inventoryId = ? AND clinicId = ? AND deletedAt IS NULL',
     ).get('inventory-read-other', otherClinic) as { id: string } | undefined;
     expect(otherSuggestion).toBeUndefined();
+
+    const analytics = new AnalyticsService(db);
+    const overview = analytics.clinicOverview();
+    const otherOverview = overview.find((row) => row.clinicId === otherClinic) as Record<string, unknown>;
+    expect(otherOverview).toBeDefined();
+    expect(Number(otherOverview.patients)).toBeGreaterThanOrEqual(1);
+    expect(Number(otherOverview.charges)).toBeGreaterThanOrEqual(1);
+    expect(Number(otherOverview.paidAmount)).toBeGreaterThanOrEqual(888);
+    expect(overview.some((row) => row.clinicId === 'legacy')).toBe(true);
   });
 
   it('manages users through the admin service', async () => {
@@ -1420,7 +1429,7 @@ describe('service edge coverage', () => {
     await expect(bulk.importRows('operationLogs', [], context)).rejects.toThrow('Resource cannot import: operationLogs');
     await expect(bulk.importRows('patients', [], { ...context, role: 'TECHNICIAN' })).rejects.toThrow('Forbidden resource');
     await expect(bulk.importRows('patients', null as unknown as Array<Record<string, unknown>>, context)).rejects.toThrow('array');
-    const tooManyRows = Array.from({ length: 1001 }, (_, index) => ({
+    const tooManyRows = Array.from({ length: 10001 }, (_, index) => ({
       code: `BULK-${index}`,
       name: 'Bulk',
       gender: 'UNKNOWN',
@@ -1437,6 +1446,30 @@ describe('service edge coverage', () => {
     });
     const nonErrorImport = await bulk.importRows('patients', [nonErrorRow], context);
     expect(nonErrorImport.failed).toBe(1);
+    const chunked = await bulk.importRows('patients', [
+      { code: 'CHUNK-1', name: 'Chunk One', gender: 'UNKNOWN', phone: '13600000001', source: 'OTHER' },
+      { name: 'Missing Chunk' },
+      { code: 'CHUNK-2', name: 'Chunk Two', gender: 'UNKNOWN', phone: '13600000002', source: 'OTHER' },
+    ], context, 1);
+    expect(chunked).toMatchObject({ imported: 2, failed: 1, chunks: 3 });
+    expect((await bulk.importRows('patients', [
+      { code: 'CHUNK-ZERO', name: 'Chunk Zero', gender: 'UNKNOWN', phone: '13600000003', source: 'OTHER' },
+    ], context, 0)).chunks).toBe(1);
+    expect((await bulk.importRows('patients', [
+      { code: 'CHUNK-CLAMP', name: 'Chunk Clamp', gender: 'UNKNOWN', phone: '13600000004', source: 'OTHER' },
+    ], context, 5000)).chunks).toBe(1);
+
+    const originalExec = db.exec.bind(db);
+    const exec = vi.spyOn(db, 'exec');
+    exec.mockImplementation((sql: string) => {
+      if (sql === 'COMMIT') throw new Error('commit failed');
+      return originalExec(sql);
+    });
+    await expect(bulk.importRows('patients', [
+      { code: 'CHUNK-ROLLBACK', name: 'Chunk Rollback', gender: 'UNKNOWN', phone: '13600000005', source: 'OTHER' },
+    ], context, 1)).rejects.toThrow('commit failed');
+    expect(db.prepare('SELECT id FROM Patient WHERE code = ?').get('CHUNK-ROLLBACK')).toBeUndefined();
+    exec.mockRestore();
 
     const debt = new DebtService(db);
     await expect(debt.pay('missing-debt', 1, context)).rejects.toThrow('Debt record not found');

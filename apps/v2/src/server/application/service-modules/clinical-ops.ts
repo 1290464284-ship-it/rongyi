@@ -121,7 +121,12 @@ export class TreatmentProgressService {
 export class BulkImportService {
   constructor(private readonly db: Database.Database) {}
 
-  async importRows(resourceName: string, rows: Array<Record<string, unknown>>, context: AppContext): Promise<{ imported: number; failed: number; errors: string[] }> {
+  async importRows(
+    resourceName: string,
+    rows: Array<Record<string, unknown>>,
+    context: AppContext,
+    chunkSize = 100,
+  ): Promise<{ imported: number; failed: number; errors: string[]; chunks: number }> {
     const definition = resourceRegistry.get(resourceName);
     if (!definition) throw new ValidationError(`Resource cannot import: ${resourceName}`);
     if (FORBIDDEN_BULK_IMPORT_RESOURCES.has(resourceName)) {
@@ -131,24 +136,35 @@ export class BulkImportService {
     if (!definition.roles.includes(context.role)) {
       throw new AppError('FORBIDDEN', `Forbidden resource: ${resourceName}`, 403);
     }
-    if (!Array.isArray(rows) || rows.length > 1000) {
-      throw new ValidationError('Bulk import rows must be an array with at most 1000 rows');
+    if (!Array.isArray(rows) || rows.length > 10_000) {
+      throw new ValidationError('Bulk import rows must be an array with at most 10000 rows');
     }
     const repository = new SqliteRepository(this.db, definition);
+    const size = Math.min(1000, Math.max(1, Math.floor(Number(chunkSize) || 100)));
     let imported = 0;
     const errors: string[] = [];
-    for (const row of rows) {
+    for (let offset = 0; offset < rows.length; offset += size) {
+      const chunk = rows.slice(offset, offset + size);
+      this.db.exec('BEGIN IMMEDIATE');
       try {
-        const payload = stripProtectedWriteFields(validatePayload(definition, row));
-        await repository.insert({ id: randomUUID(), ...payload }, context);
-        imported += 1;
+        for (const row of chunk) {
+          try {
+            const payload = stripProtectedWriteFields(validatePayload(definition, row));
+            await repository.insert({ id: randomUUID(), ...payload }, context);
+            imported += 1;
+          } catch (error) {
+            /* v8 ignore start -- non-Error rejection is defensive; current repository paths throw Error instances. */
+            errors.push(error instanceof Error ? error.message : String(error));
+            /* v8 ignore stop */
+          }
+        }
+        this.db.exec('COMMIT');
       } catch (error) {
-        /* v8 ignore start -- non-Error rejection is defensive; current repository paths throw Error instances. */
-        errors.push(error instanceof Error ? error.message : String(error));
-        /* v8 ignore stop */
+        this.db.exec('ROLLBACK');
+        throw error;
       }
     }
-    return { imported, failed: errors.length, errors };
+    return { imported, failed: errors.length, errors, chunks: Math.ceil(rows.length / size) };
   }
 }
 

@@ -56,6 +56,17 @@ describe('shared web components', () => {
     expect(screen.getByText('2026-08')).toBeDefined();
   });
 
+  it('renders rows when the key field value is null', () => {
+    render(
+      <DataTable
+        columns={[{ key: 'name', label: 'Name' }]}
+        rows={[{ id: null, name: 'Null Key' }]}
+        keyField="id"
+      />,
+    );
+    expect(screen.getByText('Null Key')).toBeDefined();
+  });
+
   it('renders page errors', () => {
     render(<PageError message="Request failed" />);
     expect(screen.getByText('Request failed')).toBeDefined();

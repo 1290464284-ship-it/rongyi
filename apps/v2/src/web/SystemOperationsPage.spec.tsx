@@ -25,7 +25,7 @@ describe('SystemOperationsPage', () => {
 
   it('imports rows and runs global search', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path.startsWith('/bulk-import/')) return { imported: 2, failed: 0, errors: [] };
+      if (path.startsWith('/bulk-import/')) return { imported: 2, failed: 0, errors: [], chunks: 1 };
       if (path.startsWith('/search?')) return [{ id: '1', name: 'Demo Patient' }];
       return {};
     });
@@ -35,10 +35,11 @@ describe('SystemOperationsPage', () => {
     fireEvent.change(document.querySelector('textarea') as HTMLTextAreaElement, {
       target: { value: '[{"code":"S1","name":"Supplier"}]' },
     });
+    fireEvent.change(screen.getByLabelText('Chunk size'), { target: { value: '50' } });
     fireEvent.click(screen.getByRole('button', { name: 'Import' }));
-    expect(await screen.findByText('Imported 2, failed 0')).toBeDefined();
+    expect(await screen.findByText('Imported 2, failed 0, chunks 1')).toBeDefined();
 
-    fireEvent.change(document.querySelector('input:not([type="file"])') as HTMLInputElement, { target: { value: 'Demo' } });
+    fireEvent.change(screen.getByLabelText('Search query'), { target: { value: 'Demo' } });
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
     expect(await screen.findByText('Demo Patient')).toBeDefined();
   });
@@ -52,6 +53,18 @@ describe('SystemOperationsPage', () => {
     expect(await screen.findByText('File loaded: 1 rows')).toBeDefined();
 
     mockFileReader('name,code\nA,X');
+    fireEvent.change(document.querySelector('input[type="file"]') as HTMLInputElement, {
+      target: { files: [new File(['x'], 'x.csv')] },
+    });
+    expect(await screen.findByText('File loaded: 1 rows')).toBeDefined();
+
+    mockFileReader('');
+    fireEvent.change(document.querySelector('input[type="file"]') as HTMLInputElement, {
+      target: { files: [new File(['x'], 'x.csv')] },
+    });
+    expect(await screen.findByText('File loaded: 0 rows')).toBeDefined();
+
+    mockFileReader('name,code\nA');
     fireEvent.change(document.querySelector('input[type="file"]') as HTMLInputElement, {
       target: { files: [new File(['x'], 'x.csv')] },
     });
@@ -86,12 +99,12 @@ describe('SystemOperationsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Import' }));
     expect(await screen.findByText('system failed')).toBeDefined();
 
-    fireEvent.change(document.querySelector('input:not([type="file"])') as HTMLInputElement, { target: { value: 'D' } });
+    fireEvent.change(screen.getByLabelText('Search query'), { target: { value: 'D' } });
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(apiRequest).not.toHaveBeenCalledWith('/search?q=D', expect.anything());
 
-    fireEvent.change(document.querySelector('input:not([type="file"])') as HTMLInputElement, { target: { value: 'Demo' } });
+    fireEvent.change(screen.getByLabelText('Search query'), { target: { value: 'Demo' } });
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
     expect(await screen.findByText('system failed')).toBeDefined();
 
