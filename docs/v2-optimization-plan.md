@@ -55,6 +55,7 @@
 - 管理员用户更新与重置密码在仓储层按诊所范围执行，并补充跨诊所回归测试。
 - staged restore 会清理目标库遗留的 SQLite WAL/SHM 文件，避免恢复后索引损坏并触发启动完整性失败。
 - 备份校验与 staged restore 会清理 SQLite 侧文件，保留期清理会同步删除 `BackupRecord` 记录。
+- staged restore 的恢复前备份改为 SQLite `VACUUM INTO`，当前库有效时会保留 WAL 中尚未落盘的数据；损坏/非 SQLite 文件仍回退为文件复制。
 - `clean:generated` 改为自动识别任意 `dist-*` 输出目录，避免硬编码遗漏新构建目录。
 - 新增 `benchmark:load`：生成 10 万患者与 10 万收费记录，测量 FTS 搜索和 dashboard。
 - 基准结果：10 万患者/收费写入约 1.5s，FTS 搜索 10ms，dashboard 71ms。
