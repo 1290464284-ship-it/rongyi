@@ -94,6 +94,10 @@
   repository layer, with a cross-clinic regression test.
 - Staged restore removes stale SQLite WAL/SHM sidecars before activating,
   preventing restored databases from failing the startup integrity check.
+- Backup verification and staging clear SQLite sidecars, and retention cleanup
+  deletes matching `BackupRecord` rows instead of leaving stale history.
+- `clean:generated` removes any `dist-*` output directory rather than a fixed
+  hard-coded list.
 
 ## Remaining
 
