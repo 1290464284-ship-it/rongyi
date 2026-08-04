@@ -142,6 +142,9 @@
 - Backup service was extracted from `operations.ts` into
   `service-modules/backup.ts`, reducing the operations module from roughly 680
   lines to 485 lines without changing behavior.
+- Sync, HR, and alert services were extracted into `sync.ts` and
+  `hr-alerts.ts`; `operations.ts` now only contains inventory and follow-up
+  services at roughly 222 lines.
 - Experimental `src/components/**` files are quarantined from ESLint and knip
   via `eslint.config.js` and `knip.json` until they are adopted or removed.
 - `clean:generated` removes any `dist-*` output directory rather than a fixed
