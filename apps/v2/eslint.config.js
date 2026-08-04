@@ -13,6 +13,7 @@ export default tseslint.config(
       'data/**',
       'logs/**',
       'legacy/**',
+      'src/components/**',
     ],
   },
   ...tseslint.configs.recommended,

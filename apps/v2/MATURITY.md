@@ -139,6 +139,11 @@
 - Inventory workflow page completes the replenishment loop in one place:
   generate suggestions, select and apply them to purchase orders, then receive
   pending orders with supplier and amount visible.
+- Backup service was extracted from `operations.ts` into
+  `service-modules/backup.ts`, reducing the operations module from roughly 680
+  lines to 485 lines without changing behavior.
+- Experimental `src/components/**` files are quarantined from ESLint and knip
+  via `eslint.config.js` and `knip.json` until they are adopted or removed.
 - `clean:generated` removes any `dist-*` output directory rather than a fixed
   hard-coded list.
 
