@@ -30,6 +30,7 @@ export default defineConfig({
         'src/web/SystemOperationsPage.tsx',
         'src/web/LoginPage.tsx',
         'src/web/Layout.tsx',
+        'src/web/FollowUpReportPage.tsx',
       ],
       thresholds: {
         statements: 98,

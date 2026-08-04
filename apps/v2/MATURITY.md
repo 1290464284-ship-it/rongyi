@@ -159,8 +159,8 @@
   addition to communication, HR, clinical, patient workflow, and appointment
   board, patient timeline, dashboard, and appointments pages, resource
   hub/page, hub tabs, system operations, login, and shared components; the
-  expanded set also includes the application layout; it passes 99% statements,
-  90% branches, 99% functions, and 100% lines.
+  expanded set also includes the application layout and follow-up report; it
+  passes 98% statements, 90% branches, 99% functions, and 100% lines.
 - Experimental `src/components/**` files are quarantined from ESLint and knip
   via `eslint.config.js` and `knip.json` until they are adopted or removed.
 - `clean:generated` removes any `dist-*` output directory rather than a fixed
