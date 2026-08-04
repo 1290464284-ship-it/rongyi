@@ -123,6 +123,20 @@ export class FollowUpService {
     return this.followUpRepository.reminders(context.clinicId);
   }
 
+  complete(id: string, context: AppContext): Record<string, unknown> {
+    const row = this.db.prepare(
+      `SELECT id, status FROM FollowUp WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    ).get(id, ...tenantParams(context.clinicId)) as { id: string; status: string } | undefined;
+    if (!row) throw new NotFoundError('Follow-up not found');
+    if (!['PENDING', 'IN_PROGRESS'].includes(row.status)) {
+      throw new ConflictError('Follow-up cannot be completed from current status');
+    }
+    const now = context.now().toISOString();
+    const changes = this.followUpRepository.complete(id, now, now, context.clinicId);
+    if (changes === 0) throw new ConflictError('Follow-up cannot be completed');
+    return { id, status: 'COMPLETED', completedAt: now };
+  }
+
   async batchGenerate(limit = 50, context: AppContext): Promise<{ processed: number; generated: number }> {
     const maxLimit = Math.min(200, Math.max(1, Math.floor(Number(limit) || 50)));
     const rowParams = context.clinicId ? [context.clinicId, maxLimit] : [maxLimit];

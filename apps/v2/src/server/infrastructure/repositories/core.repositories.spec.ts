@@ -328,6 +328,15 @@ describe('core repositories', () => {
       updatedAt: now,
     });
     expect(repo.reminders().length).toBeGreaterThanOrEqual(1);
+    expect(repo.complete('followup-repo', now, now)).toBe(1);
+    expect(repo.complete('followup-repo', now, now)).toBe(0);
+    expect(repo.complete('followup-repo', now, now, 'clinic-v2-001')).toBe(0);
+    const completed = db.prepare('SELECT status, completedAt FROM FollowUp WHERE id = ?').get('followup-repo') as {
+      status: string;
+      completedAt: string;
+    };
+    expect(completed.status).toBe('COMPLETED');
+    expect(completed.completedAt).toBe(now);
   });
 
   it('covers repository nullish, boolean, and auth mapping branches', () => {

@@ -446,6 +446,14 @@ export class SqliteFollowUpRepository implements FollowUpRepository {
       record.templateId ?? null,
     );
   }
+
+  complete(id: string, completedAt: string, updatedAt: string, clinicId?: string | null): number {
+    const params = clinicId ? [completedAt, updatedAt, id, clinicId] : [completedAt, updatedAt, id];
+    return this.db.prepare(
+      `UPDATE FollowUp SET status = 'COMPLETED', completedAt = ?, updatedAt = ?
+       WHERE id = ? AND deletedAt IS NULL AND status IN ('PENDING', 'IN_PROGRESS')${tenantAnd(clinicId)}`,
+    ).run(...params).changes;
+  }
 }
 
 export class SqliteWechatMessageRepository implements WechatMessageRepository {
