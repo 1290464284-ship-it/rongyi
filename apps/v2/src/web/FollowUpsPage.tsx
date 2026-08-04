@@ -22,7 +22,11 @@ export function FollowUpsPage() {
 
   async function completeFollowUp(id: string) {
     try {
-      await apiRequest(`/follow-ups/${id}/complete`, { method: 'PATCH', body: '{}' });
+      const result = prompt('完成结果（可选）') ?? '';
+      await apiRequest(`/follow-ups/${id}/complete`, {
+        method: 'PATCH',
+        body: JSON.stringify({ result: result.trim() || undefined }),
+      });
       setMessage('Follow-up completed');
       await query.refetch();
     } catch (error) {

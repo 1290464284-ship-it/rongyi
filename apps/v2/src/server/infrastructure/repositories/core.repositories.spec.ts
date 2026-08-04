@@ -344,6 +344,15 @@ describe('core repositories', () => {
     };
     expect(completed.status).toBe('COMPLETED');
     expect(completed.completedAt).toBe(now);
+    db.prepare(
+      `INSERT INTO FollowUp (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, planDate, content, status
+       ) VALUES (?, ?, ?, ?, NULL, 'followup-patient', ?, 'Result', 'PENDING')`,
+    ).run('followup-repo-result', null, now, now, now.slice(0, 10));
+    expect(repo.complete('followup-repo-result', now, now, null, '已回访')).toBe(1);
+    const resultRow = db.prepare('SELECT result FROM FollowUp WHERE id = ?').get('followup-repo-result') as { result: string | null };
+    expect(resultRow.result).toBe('已回访');
   });
 
   it('covers repository nullish, boolean, and auth mapping branches', () => {
