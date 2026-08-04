@@ -1,5 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import Database from 'better-sqlite3';
+import type DatabaseType from 'better-sqlite3';
 import type { Logger } from './logger';
 import { removeSqliteSidecars } from './sqlite-files';
 
@@ -29,7 +31,7 @@ export function applyStagedRestore(
   let backupPath: string | undefined;
   if (fs.existsSync(dbPath)) {
     backupPath = `${dbPath}.pre-restore-${Date.now()}`;
-    fs.copyFileSync(dbPath, backupPath);
+    backupExistingDatabase(dbPath, backupPath);
   }
   removeSqliteSidecars(dbPath);
   fs.copyFileSync(resolvedStaged, dbPath);
@@ -38,4 +40,16 @@ export function applyStagedRestore(
   fs.rmSync(markerPath, { force: true });
   logger?.info('staged restore applied', { action: 'restore-apply', stagedPath: resolvedStaged, backupPath });
   return { applied: true, stagedPath: resolvedStaged, backupPath };
+}
+
+function backupExistingDatabase(dbPath: string, backupPath: string): void {
+  let current: DatabaseType.Database | undefined;
+  try {
+    current = new Database(dbPath);
+    current.prepare('VACUUM INTO ?').run(backupPath);
+  } catch {
+    fs.copyFileSync(dbPath, backupPath);
+  } finally {
+    current?.close();
+  }
 }

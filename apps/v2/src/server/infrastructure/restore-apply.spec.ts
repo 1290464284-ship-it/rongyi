@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import Database from 'better-sqlite3';
 import { applyStagedRestore } from './restore-apply';
 
 describe('applyStagedRestore', () => {
@@ -50,6 +51,24 @@ describe('applyStagedRestore', () => {
     expect(fs.existsSync(`${dbPath}-shm`)).toBe(false);
     expect(fs.existsSync(`${stagedPath}-wal`)).toBe(false);
     expect(fs.existsSync(`${stagedPath}-shm`)).toBe(false);
+  });
+
+  it('backs up a valid current database with SQLite instead of copying the main file', () => {
+    const dbPath = path.join(dir, 'valid-current.sqlite');
+    const stagedPath = path.join(dir, 'valid-staged.sqlite');
+    const current = new Database(dbPath);
+    current.pragma('journal_mode = WAL');
+    current.exec('CREATE TABLE backup_sample (id TEXT PRIMARY KEY)');
+    current.prepare('INSERT INTO backup_sample VALUES (?)').run('kept');
+    current.close();
+    fs.writeFileSync(stagedPath, 'fresh-db');
+    fs.writeFileSync(path.join(dir, '.restore-pending.json'), JSON.stringify({ stagedPath }));
+
+    const result = applyStagedRestore(dbPath, [dir]);
+    const backupDb = new Database(result.backupPath as string, { readonly: true });
+    const row = backupDb.prepare('SELECT COUNT(*) AS c FROM backup_sample').get() as { c: number };
+    expect(Number(row.c)).toBe(1);
+    backupDb.close();
   });
 
   it('rejects an unsafe or missing staged path', () => {
