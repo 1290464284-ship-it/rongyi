@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { apiRequest } from './api';
+import { DataTable, type DataTableColumn } from './components';
 
 export function FollowUpsPage() {
   const [message, setMessage] = useState('');
@@ -29,6 +30,22 @@ export function FollowUpsPage() {
     }
   }
 
+  const columns: DataTableColumn<Record<string, unknown>>[] = [
+    {
+      key: 'patient',
+      label: 'Patient',
+      render: (row) => String(row.patientName ?? row.patientId ?? ''),
+    },
+    { key: 'planDate', label: 'Plan date', render: (row) => String(row.planDate ?? '') },
+    { key: 'status', label: 'Status', render: (row) => String(row.status ?? '') },
+    { key: 'content', label: 'Content', render: (row) => String(row.content ?? '') },
+    {
+      key: 'actions',
+      label: 'Actions',
+      render: (row) => <button onClick={() => completeFollowUp(String(row.id))}>Complete</button>,
+    },
+  ];
+
   return (
     <div className="page">
       <div className="page-head">
@@ -36,24 +53,7 @@ export function FollowUpsPage() {
         <button onClick={batchGenerate}>Batch generate</button>
       </div>
       {message && <p className="info">{message}</p>}
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th>Patient</th><th>Plan date</th><th>Status</th><th>Content</th><th>Actions</th></tr></thead>
-          <tbody>
-            {query.data?.map((row) => (
-              <tr key={String(row.id)}>
-                <td>{String(row.patientName ?? row.patientId ?? '')}</td>
-                <td>{String(row.planDate ?? '')}</td>
-                <td>{String(row.status ?? '')}</td>
-                <td>{String(row.content ?? '')}</td>
-                <td>
-                  <button onClick={() => completeFollowUp(String(row.id))}>Complete</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable columns={columns} rows={query.data ?? []} keyField="id" emptyText="No follow-ups" />
     </div>
   );
 }
