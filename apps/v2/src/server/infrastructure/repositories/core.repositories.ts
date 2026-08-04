@@ -242,7 +242,12 @@ export class SqliteAuthRepository implements AuthRepository {
     );
   }
 
-  updateUser(id: string, fields: { name?: string; phone?: string | null; role?: string; active?: boolean }, updatedAt: string): number {
+  updateUser(
+    id: string,
+    fields: { name?: string; phone?: string | null; role?: string; active?: boolean },
+    updatedAt: string,
+    clinicId?: string | null,
+  ): number {
     const sets: string[] = ['updatedAt = ?'];
     const params: unknown[] = [updatedAt];
     if (fields.name !== undefined) {
@@ -262,13 +267,17 @@ export class SqliteAuthRepository implements AuthRepository {
       params.push(fields.active ? 1 : 0);
     }
     params.push(id);
-    return this.db.prepare(`UPDATE User SET ${sets.join(', ')} WHERE id = ? AND deletedAt IS NULL`).run(...params).changes;
+    if (clinicId) params.push(clinicId);
+    return this.db.prepare(
+      `UPDATE User SET ${sets.join(', ')} WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
+    ).run(...params).changes;
   }
 
-  resetPassword(id: string, passwordHash: string, updatedAt: string): number {
+  resetPassword(id: string, passwordHash: string, updatedAt: string, clinicId?: string | null): number {
+    const params = clinicId ? [passwordHash, updatedAt, id, clinicId] : [passwordHash, updatedAt, id];
     return this.db.prepare(
-      `UPDATE User SET passwordHash = ?, tokenVersion = tokenVersion + 1, refreshToken = NULL, refreshTokenExpiresAt = NULL, updatedAt = ? WHERE id = ? AND deletedAt IS NULL`,
-    ).run(passwordHash, updatedAt, id).changes;
+      `UPDATE User SET passwordHash = ?, tokenVersion = tokenVersion + 1, refreshToken = NULL, refreshTokenExpiresAt = NULL, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
+    ).run(...params).changes;
   }
 
   updateLoginAttempts(id: string, attempts: number, lockedUntil: string | null, updatedAt: string): void {

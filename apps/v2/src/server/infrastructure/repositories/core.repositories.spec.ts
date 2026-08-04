@@ -449,9 +449,9 @@ describe('core repositories', () => {
       deletedAt: null,
     });
     expect(auth.findById('admin-created')).not.toBeNull();
-    expect(auth.updateUser('admin-created', { name: 'Updated', phone: null, role: 'NURSE', active: false }, now)).toBe(1);
+    expect(auth.updateUser('admin-created', { name: 'Updated', phone: null, role: 'NURSE', active: false }, now, 'clinic-v2-001')).toBe(1);
     expect(auth.findById('admin-created')?.name).toBe('Updated');
-    expect(auth.resetPassword('admin-created', 'new-hash', now)).toBe(1);
+    expect(auth.resetPassword('admin-created', 'new-hash', now, 'clinic-v2-001')).toBe(1);
     expect(auth.findById('admin-created')?.tokenVersion).toBe(1);
     auth.markRefreshTokenUsed('used-hash', 'admin-created', now);
     expect(auth.isRefreshTokenUsed('used-hash')).toBe(true);
@@ -580,8 +580,30 @@ describe('core repositories', () => {
       deletedAt: null,
     });
     expect(auth.findById('auth-scope')?.active).toBe(false);
-    expect(auth.updateUser('auth-scope', {}, now)).toBe(1);
-    expect(auth.updateUser('auth-scope', { active: true }, now)).toBe(1);
+    expect(auth.updateUser('auth-scope', {}, now, null)).toBe(1);
+    expect(auth.updateUser('auth-scope', { active: true }, now, null)).toBe(1);
+    expect(auth.resetPassword('auth-scope', 'scope-hash', now, null)).toBe(1);
+
+    auth.insertUser({
+      id: 'user-other-clinic',
+      clinicId: 'clinic-v2-other',
+      username: 'other-clinic-user',
+      passwordHash: 'hash',
+      name: 'Other Clinic',
+      role: 'NURSE',
+      active: true,
+      loginAttempts: 0,
+      lockedUntil: null,
+      tokenVersion: 0,
+      refreshToken: null,
+      refreshTokenExpiresAt: null,
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+    });
+    expect(auth.updateUser('user-other-clinic', { name: 'Ignored' }, now, 'clinic-v2-001')).toBe(0);
+    expect(auth.resetPassword('user-other-clinic', 'new-hash', now, 'clinic-v2-001')).toBe(0);
+    expect(auth.findById('user-other-clinic')?.name).toBe('Other Clinic');
 
     db.prepare(
       `INSERT INTO WechatMessage (

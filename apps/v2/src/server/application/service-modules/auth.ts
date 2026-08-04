@@ -192,7 +192,7 @@ export class AuthService {
       phone: input.phone,
       role: input.role,
       active: input.active,
-    }, new Date().toISOString());
+    }, new Date().toISOString(), context.clinicId);
     if (changes === 0) throw new NotFoundError('User not found');
     return this.getUserById(id);
   }
@@ -202,7 +202,7 @@ export class AuthService {
     if (!row || !tenantMatches(row.clinicId, context.clinicId)) throw new NotFoundError('User not found');
     if (newPassword.length < 8) throw new ValidationError('Password must be at least 8 characters');
     const passwordHash = await bcrypt.hash(newPassword, 10);
-    const changes = this.authRepository.resetPassword(id, passwordHash, new Date().toISOString());
+    const changes = this.authRepository.resetPassword(id, passwordHash, new Date().toISOString(), context.clinicId);
     if (changes === 0) throw new NotFoundError('User not found');
     return { id };
   }

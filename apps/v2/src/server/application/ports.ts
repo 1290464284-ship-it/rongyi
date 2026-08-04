@@ -174,8 +174,8 @@ export interface AuthRepository {
   isRefreshTokenUsed(tokenHash: string): boolean;
   cleanupUsedRefreshTokens(before: string): number;
   insertUser(input: AuthUserRecord): void;
-  updateUser(id: string, fields: { name?: string; phone?: string | null; role?: string; active?: boolean }, updatedAt: string): number;
-  resetPassword(id: string, passwordHash: string, updatedAt: string): number;
+  updateUser(id: string, fields: { name?: string; phone?: string | null; role?: string; active?: boolean }, updatedAt: string, clinicId?: string | null): number;
+  resetPassword(id: string, passwordHash: string, updatedAt: string, clinicId?: string | null): number;
   updateLoginAttempts(id: string, attempts: number, lockedUntil: string | null, updatedAt: string): void;
   resetLoginAttempts(id: string, updatedAt: string): void;
   updatePassword(id: string, passwordHash: string, updatedAt: string): void;
