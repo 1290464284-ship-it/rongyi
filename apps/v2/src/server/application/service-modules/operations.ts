@@ -149,6 +149,80 @@ export class FollowUpService {
     return { id, status: 'COMPLETED', completedAt: now, result: normalizedResult };
   }
 
+  batchComplete(
+    ids: string[],
+    context: AppContext,
+    result?: string | null,
+  ): { completed: number; skipped: number; errors: string[] } {
+    if (!Array.isArray(ids) || ids.length === 0 || ids.length > 500) {
+      throw new ValidationError('Follow-up ids must be an array with 1 to 500 items');
+    }
+    const normalizedResult = typeof result === 'string' && result.trim() ? result.trim() : null;
+    if (normalizedResult && normalizedResult.length > 500) {
+      throw new ValidationError('Follow-up result must be at most 500 characters');
+    }
+    const now = context.now().toISOString();
+    let completed = 0;
+    const errors: string[] = [];
+    const run = this.db.transaction(() => {
+      for (const id of ids) {
+        const row = this.db.prepare(
+          `SELECT id, status FROM FollowUp WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+        ).get(id, ...tenantParams(context.clinicId)) as { id: string; status: string } | undefined;
+        if (!row) {
+          errors.push(`Follow-up not found: ${id}`);
+          continue;
+        }
+        if (!['PENDING', 'IN_PROGRESS'].includes(row.status)) {
+          errors.push(`Follow-up cannot be completed from ${row.status}: ${id}`);
+          continue;
+        }
+        const changes = this.followUpRepository.complete(id, now, now, context.clinicId, normalizedResult);
+        if (changes === 0) {
+          errors.push(`Follow-up cannot be completed: ${id}`);
+          continue;
+        }
+        completed += 1;
+      }
+    });
+    run();
+    return { completed, skipped: errors.length, errors };
+  }
+
+  remindersCsv(scope: string, context: AppContext): string {
+    const allowed = new Set(['overdue', 'today', 'upcoming', 'all']);
+    if (!allowed.has(scope)) {
+      throw new ValidationError('Follow-up export scope must be overdue, today, upcoming, or all');
+    }
+    const today = new SystemClock().clinicDate();
+    const scopeClause = scope === 'overdue'
+      ? 'F.planDate < ?'
+      : scope === 'today'
+        ? 'F.planDate = ?'
+        : scope === 'upcoming'
+          ? 'F.planDate > ?'
+          : 'F.planDate IS NOT NULL';
+    const params = scope === 'all'
+      ? [...tenantParams(context.clinicId)]
+      : [today, ...tenantParams(context.clinicId)];
+    const rows = this.db.prepare(
+      `SELECT F.id, P.name AS patientName, P.phone AS patientPhone,
+              F.planDate, F.status, F.content, F.completedAt, F.result
+       FROM FollowUp F
+       LEFT JOIN Patient P ON P.id = F.patientId
+       WHERE F.status IN ('PENDING', 'IN_PROGRESS')
+         AND F.deletedAt IS NULL
+         AND ${scopeClause}
+         ${tenantAnd(context.clinicId, 'F.clinicId')}
+       ORDER BY F.planDate ASC, P.name ASC`,
+    ).all(...params) as Array<Record<string, unknown>>;
+    const headers = ['id', 'patientName', 'patientPhone', 'planDate', 'status', 'content', 'completedAt', 'result'];
+    return [
+      headers.map((header) => csvCell(header)).join(','),
+      ...rows.map((row) => headers.map((header) => csvCell(row[header])).join(',')),
+    ].join('\n');
+  }
+
   async batchGenerate(limit = 50, context: AppContext): Promise<{ processed: number; generated: number }> {
     const maxLimit = Math.min(200, Math.max(1, Math.floor(Number(limit) || 50)));
     const rowParams = context.clinicId ? [context.clinicId, maxLimit] : [maxLimit];
@@ -245,4 +319,9 @@ export class FollowUpService {
     /* v8 ignore stop */
     return { total, onTime, rate: total === 0 ? 0 : Math.round((onTime / total) * 100) };
   }
+}
+
+function csvCell(value: unknown): string {
+  const text = value === null || value === undefined ? '' : String(value);
+  return `"${text.replaceAll('"', '""')}"`;
 }

@@ -1,10 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { apiRequest } from './api';
+import { apiRequest, downloadCsvPath } from './api';
 import { DataTable, type DataTableColumn } from './components';
 
 export function FollowUpsPage() {
   const [message, setMessage] = useState('');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const query = useQuery({
     queryKey: ['followup-reminders'],
     queryFn: () => apiRequest<Array<Record<string, unknown>>>('/follow-ups/reminders'),
@@ -38,7 +39,47 @@ export function FollowUpsPage() {
     }
   }
 
+  async function completeSelected() {
+    try {
+      const result = prompt('\u5b8c\u6210\u7ed3\u679c\uff08\u53ef\u9009\uff09') ?? '';
+      const data = await apiRequest<{ completed: number; skipped: number; errors: string[] }>(
+        '/follow-ups/batch-complete',
+        {
+          method: 'POST',
+          body: JSON.stringify({ ids: selectedIds, result: result.trim() || undefined }),
+        },
+      );
+      setMessage(`Completed ${data.completed}, skipped ${data.skipped}`);
+      setSelectedIds([]);
+      await Promise.all([query.refetch(), summary.refetch()]);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Batch completion failed');
+    }
+  }
+
+  async function exportOverdue() {
+    try {
+      await downloadCsvPath('/follow-ups/reminders/export?scope=overdue', 'overdue-follow-ups.csv');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Export failed');
+    }
+  }
+
   const columns: DataTableColumn<Record<string, unknown>>[] = [
+    {
+      key: 'selected',
+      label: 'Select',
+      render: (row) => (
+        <input
+          type="checkbox"
+          checked={selectedIds.includes(String(row.id))}
+          onChange={(event) => {
+            const id = String(row.id);
+            setSelectedIds((current) => event.target.checked ? [...current, id] : current.filter((item) => item !== id));
+          }}
+        />
+      ),
+    },
     {
       key: 'patient',
       label: 'Patient',
@@ -68,6 +109,8 @@ export function FollowUpsPage() {
       <div className="page-head">
         <h1>Follow-ups</h1>
         <button onClick={batchGenerate}>Batch generate</button>
+        <button onClick={completeSelected} disabled={selectedIds.length === 0}>Complete selected</button>
+        <button onClick={exportOverdue}>Export overdue</button>
       </div>
       {message && <p className="info">{message}</p>}
       {summary.data && (

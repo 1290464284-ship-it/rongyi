@@ -26,6 +26,7 @@ describe('HrWorkflowPage', () => {
           items: [
             { id: 'l-1', userId: 'u-1', startDate: '2026-08-01', endDate: '2026-08-02', status: 'PENDING' },
             { id: 'l-2', userId: null, startDate: null, endDate: null, status: 'APPROVED' },
+            { id: 'l-3', userId: null, startDate: null, endDate: null, status: 'PENDING' },
           ],
           total: 2,
         };
@@ -67,4 +68,9 @@ describe('HrWorkflowPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '驳回' }));
     expect(await screen.findByText('审批失败')).toBeDefined();
   });
+});
+it('renders an empty state when leave data is unavailable', async () => {
+  vi.mocked(apiRequest).mockRejectedValueOnce(new Error('leaves failed'));
+  render(<HrWorkflowPage />, { wrapper });
+  expect(await screen.findByText('No pending leaves')).toBeDefined();
 });

@@ -205,3 +205,19 @@ export async function downloadCsv(resource: string): Promise<void> {
   anchor.click();
   URL.revokeObjectURL(url);
 }
+
+export async function downloadCsvPath(path: string, filename: string): Promise<void> {
+  const base = await resolveApiBase();
+  const auth = await token();
+  const response = await fetch(`${base}${path}`, {
+    headers: auth ? { Authorization: `Bearer ${auth}` } : {},
+  });
+  if (!response.ok) throw new Error('CSV export failed');
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}

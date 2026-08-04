@@ -24,6 +24,16 @@ export interface ReadRouteDependencies {
 }
 
 export function registerReadRoutes(app: Express, deps: ReadRouteDependencies): void {
+  app.get('/api/v2/analytics/clinic-overview', async (req, res, next) => {
+    try {
+      res.json({ success: true, data: deps.analytics.clinicOverview() });
+    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
+    } catch (error) {
+      next(error);
+    }
+    /* v8 ignore stop */
+  });
+
   app.get('/api/v2/analytics/rfm', async (req, res, next) => {
     try {
       res.json({ success: true, data: deps.analytics.rfm(req.context!) });

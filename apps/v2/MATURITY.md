@@ -149,6 +149,18 @@
 - Follow-up reminders expose a due-state summary endpoint
   (`GET /api/v2/follow-ups/reminders/summary`) and the follow-up page shows
   total/overdue/today/upcoming counts alongside the grouped reminder tables.
+- Follow-ups support batch completion through
+  `POST /api/v2/follow-ups/batch-complete`, with per-item failure summaries,
+  and CSV export through `GET /api/v2/follow-ups/reminders/export`.
+- BOSS users can view all-clinic business metrics through
+  `GET /api/v2/analytics/clinic-overview`, including patients, appointments,
+  charges, paid/unpaid amounts, inventory, and pending follow-ups by clinic.
+- Bulk import is processed in configurable transactional chunks (default 100,
+  max 1000 rows per chunk, 10000 rows per request), so a failed chunk does not
+  discard unrelated chunks.
+- Upgrade smoke now creates, verifies, and stages a backup restore against the
+  previous installation before installing the current release, covering the
+  backup/restore + upgrade data-preservation path in the release gate.
 - Backup service was extracted from `operations.ts` into
   `service-modules/backup.ts`, reducing the operations module from roughly 680
   lines to 485 lines without changing behavior.
@@ -170,8 +182,9 @@
   board, patient timeline, dashboard, and appointments pages, resource
   hub/page, hub tabs, system operations, login, and shared components; the
   expanded set also includes the application layout and follow-up report; it
-  now also includes desktop settings; it passes 98% statements, 90% branches,
-  98% functions, and 100% lines.
+  now also includes desktop settings and the clinic overview page; it passes
+  99.02% statements, 93.05% branches, 98.74% functions, and 100% lines against
+  tightened gates of 98.5/92.5/98.5/100.
 - Removed the entire unused ReactBits experiment directory
   (`src/components/reactbits`), its jsrepo config, its dedicated tsconfig, and
   all experiment-only dependencies; ESLint, knip, security scan, and license

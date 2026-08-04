@@ -26,6 +26,51 @@ export class AnalyticsService {
   doctorAnomalies(context: AppContext): Array<Record<string, unknown>> {
     return this.analyticsRepository.doctorAnomalies(context.clinicId);
   }
+
+  clinicOverview(): Array<Record<string, unknown>> {
+    return this.db.prepare(
+      `WITH metrics AS (
+         SELECT clinicId, 'patients' AS metric, COUNT(*) AS value
+         FROM Patient WHERE deletedAt IS NULL GROUP BY clinicId
+         UNION ALL
+         SELECT clinicId, 'appointments', COUNT(*)
+         FROM Appointment WHERE deletedAt IS NULL GROUP BY clinicId
+         UNION ALL
+         SELECT clinicId, 'charges', COUNT(*)
+         FROM Charge WHERE deletedAt IS NULL GROUP BY clinicId
+         UNION ALL
+         SELECT clinicId, 'paidAmount', COALESCE(SUM(paidAmount - refundedAmount), 0)
+         FROM Charge WHERE deletedAt IS NULL AND status <> 'CANCELLED' GROUP BY clinicId
+         UNION ALL
+         SELECT clinicId, 'unpaidAmount', COALESCE(SUM(CASE WHEN status IN ('UNPAID', 'PARTIAL') THEN totalAmount - paidAmount ELSE 0 END), 0)
+         FROM Charge WHERE deletedAt IS NULL GROUP BY clinicId
+         UNION ALL
+         SELECT clinicId, 'inventoryItems', COUNT(*)
+         FROM InventoryItem WHERE deletedAt IS NULL GROUP BY clinicId
+         UNION ALL
+         SELECT clinicId, 'pendingFollowUps', COUNT(*)
+         FROM FollowUp WHERE deletedAt IS NULL AND status IN ('PENDING', 'IN_PROGRESS') GROUP BY clinicId
+       )
+       SELECT
+         COALESCE(C.id, 'legacy') AS clinicId,
+         COALESCE(C.name, 'Legacy') AS clinicName,
+         COALESCE(SUM(CASE WHEN M.metric = 'patients' THEN M.value ELSE 0 END), 0) AS patients,
+         COALESCE(SUM(CASE WHEN M.metric = 'appointments' THEN M.value ELSE 0 END), 0) AS appointments,
+         COALESCE(SUM(CASE WHEN M.metric = 'charges' THEN M.value ELSE 0 END), 0) AS charges,
+         COALESCE(SUM(CASE WHEN M.metric = 'paidAmount' THEN M.value ELSE 0 END), 0) AS paidAmount,
+         COALESCE(SUM(CASE WHEN M.metric = 'unpaidAmount' THEN M.value ELSE 0 END), 0) AS unpaidAmount,
+         COALESCE(SUM(CASE WHEN M.metric = 'inventoryItems' THEN M.value ELSE 0 END), 0) AS inventoryItems,
+         COALESCE(SUM(CASE WHEN M.metric = 'pendingFollowUps' THEN M.value ELSE 0 END), 0) AS pendingFollowUps
+       FROM (
+         SELECT id, name FROM Clinic WHERE deletedAt IS NULL
+         UNION ALL
+         SELECT NULL, NULL
+       ) C
+       LEFT JOIN metrics M ON (C.id IS NULL AND M.clinicId IS NULL) OR M.clinicId = C.id
+       GROUP BY C.id, C.name
+       ORDER BY patients DESC, clinicName ASC`,
+    ).all() as Array<Record<string, unknown>>;
+  }
 }
 
 export class ChargeAssistantService {

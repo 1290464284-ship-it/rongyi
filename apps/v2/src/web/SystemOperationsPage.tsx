@@ -6,6 +6,7 @@ export function SystemOperationsPage() {
   const [rowsJson, setRowsJson] = useState(
     '[{"code":"IMPORT-001","name":"Imported Patient","gender":"UNKNOWN","phone":"13900000000","source":"OTHER"}]',
   );
+  const [chunkSize, setChunkSize] = useState('100');
   const [message, setMessage] = useState('');
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState<Array<Record<string, unknown>>>([]);
@@ -29,11 +30,11 @@ export function SystemOperationsPage() {
     event.preventDefault();
     try {
       const rows = JSON.parse(rowsJson) as Array<Record<string, unknown>>;
-      const result = await apiRequest<{ imported: number; failed: number; errors: string[] }>(
+      const result = await apiRequest<{ imported: number; failed: number; errors: string[]; chunks: number }>(
         `/bulk-import/${resource}`,
-        { method: 'POST', body: JSON.stringify({ rows }) },
+        { method: 'POST', body: JSON.stringify({ rows, chunkSize: Number(chunkSize) }) },
       );
-      setMessage(`Imported ${result.imported}, failed ${result.failed}`);
+      setMessage(`Imported ${result.imported}, failed ${result.failed}, chunks ${result.chunks}`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Import failed');
     }
@@ -60,6 +61,14 @@ export function SystemOperationsPage() {
         </select>
         <textarea value={rowsJson} onChange={(event) => setRowsJson(event.target.value)} />
         <input
+          aria-label="Chunk size"
+          type="number"
+          min={1}
+          max={1000}
+          value={chunkSize}
+          onChange={(event) => setChunkSize(event.target.value)}
+        />
+        <input
           type="file"
           accept=".json,.csv,application/json,text/csv"
           onChange={(event) => {
@@ -72,7 +81,7 @@ export function SystemOperationsPage() {
       {message && <p className="info">{message}</p>}
       <h2>Global Search</h2>
       <div className="inline-form">
-        <input value={search} onChange={(event) => setSearch(event.target.value)} />
+        <input aria-label="Search query" value={search} onChange={(event) => setSearch(event.target.value)} />
         <button onClick={runSearch}>Search</button>
       </div>
       {searchResults.length > 0 && (

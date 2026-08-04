@@ -424,6 +424,58 @@ describe('application services', () => {
     expect(unscoped.upcoming - nullBaseline.upcoming).toBe(2);
   });
 
+  it('batch completes follow-ups and exports reminder CSV', () => {
+    const service = new FollowUpService(db);
+    const now = new Date().toISOString();
+    const insert = (id: string, planDate: string, status = 'PENDING') => {
+      db.prepare(
+        `INSERT INTO FollowUp (
+           id, clinicId, createdAt, updatedAt, deletedAt,
+           patientId, planDate, content, status
+         ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', ?, 'batch', ?)`,
+      ).run(id, context.clinicId, now, now, planDate, status);
+    };
+    insert('followup-batch-ok', '2026-08-01');
+    insert('followup-batch-completed', '2026-08-02', 'COMPLETED');
+
+    const batch = service.batchComplete(
+      ['followup-batch-ok', 'followup-batch-completed', 'followup-batch-missing'],
+      context,
+      '  done  ',
+    );
+    expect(batch).toMatchObject({ completed: 1, skipped: 2 });
+    expect(batch.errors.join(' ')).toContain('cannot be completed');
+    expect(batch.errors.join(' ')).toContain('not found');
+    insert('followup-batch-zero', '2026-08-01');
+    const failingBatch = new FollowUpService(db, {
+      reminders: () => [],
+      insert: () => undefined,
+      complete: () => 0,
+    });
+    expect(failingBatch.batchComplete(['followup-batch-zero'], context).errors.join(' '))
+      .toContain('cannot be completed');
+    expect(() => service.batchComplete([], context)).toThrow('1 to 500');
+    expect(() => service.batchComplete(Array.from({ length: 501 }, (_, index) => `id-${index}`), context))
+      .toThrow('1 to 500');
+    expect(() => service.batchComplete(['followup-batch-ok'], context, 'x'.repeat(501)))
+      .toThrow('at most 500 characters');
+
+    const today = new SystemClock().clinicDate();
+    const yesterday = new SystemClock().clinicDate(Date.now() - 86_400_000);
+    const tomorrow = new SystemClock().clinicDate(Date.now() + 86_400_000);
+    insert('followup-batch-export-overdue', yesterday);
+    insert('followup-batch-export-today', today);
+    insert('followup-batch-export-upcoming', tomorrow);
+    const overdueCsv = service.remindersCsv('overdue', context);
+    expect(overdueCsv).toContain('patientName');
+    expect(overdueCsv).toContain('followup-batch-export-overdue');
+    expect(overdueCsv).not.toContain('followup-batch-export-today');
+    expect(service.remindersCsv('today', context)).toContain('followup-batch-export-today');
+    expect(service.remindersCsv('upcoming', context)).toContain('followup-batch-export-upcoming');
+    expect(service.remindersCsv('all', context)).toContain('followup-batch-export-overdue');
+    expect(() => service.remindersCsv('bad-scope', context)).toThrow('overdue, today, upcoming, or all');
+  });
+
   it('deducts and refunds member card balance with a charge', async () => {
     const now = new Date().toISOString();
     db.prepare(

@@ -318,7 +318,15 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
 
   app.post('/api/v2/bulk-import/:resource', batchLimiter, async (req, res, next) => {
     try {
-      res.json({ success: true, data: await bulkImport.importRows(String(req.params.resource), req.body?.rows ?? [], req.context!) });
+      res.json({
+        success: true,
+        data: await bulkImport.importRows(
+          String(req.params.resource),
+          req.body?.rows ?? [],
+          req.context!,
+          Number(req.body?.chunkSize ?? 100),
+        ),
+      });
     /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
     } catch (error) {
       next(error);
@@ -413,6 +421,37 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
   app.get('/api/v2/follow-ups/reminders/summary', async (req, res, next) => {
     try {
       res.json({ success: true, data: followUps.summary(req.context!) });
+    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
+    } catch (error) {
+      next(error);
+    }
+    /* v8 ignore stop */
+  });
+
+  app.get('/api/v2/follow-ups/reminders/export', async (req, res, next) => {
+    try {
+      const scope = String(req.query.scope ?? 'overdue');
+      res
+        .setHeader('content-type', 'text/csv; charset=utf-8')
+        .setHeader('content-disposition', `attachment; filename="follow-ups-${scope}.csv"`)
+        .send(followUps.remindersCsv(scope, req.context!));
+    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
+    } catch (error) {
+      next(error);
+    }
+    /* v8 ignore stop */
+  });
+
+  app.post('/api/v2/follow-ups/batch-complete', writeLimiter, async (req, res, next) => {
+    try {
+      res.json({
+        success: true,
+        data: followUps.batchComplete(
+          Array.isArray(req.body?.ids) ? req.body.ids : [],
+          req.context!,
+          typeof req.body?.result === 'string' ? req.body.result : null,
+        ),
+      });
     /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
     } catch (error) {
       next(error);
