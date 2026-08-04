@@ -78,4 +78,23 @@ describe('FollowUpsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Complete' }));
     expect(await screen.findByText('Follow-up completion failed')).toBeDefined();
   });
+
+  it('groups follow-ups by overdue, today, and upcoming dates', async () => {
+    const now = new Date();
+    const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const yesterday = new Date(now.getTime() - 86_400_000).toISOString().slice(0, 10);
+    const tomorrow = new Date(now.getTime() + 86_400_000).toISOString().slice(0, 10);
+    vi.mocked(apiRequest).mockResolvedValue([
+      { id: 'fu-overdue', patientName: 'Overdue Patient', planDate: yesterday, status: 'PENDING' },
+      { id: 'fu-today', patientName: 'Today Patient', planDate: todayKey, status: 'PENDING' },
+      { id: 'fu-upcoming', patientName: 'Upcoming Patient', planDate: tomorrow, status: 'PENDING' },
+    ]);
+
+    render(<FollowUpsPage />, { wrapper });
+    expect(await screen.findByText('已逾期 (1)')).toBeDefined();
+    expect(screen.getByText('今日待随访 (1)')).toBeDefined();
+    expect(screen.getByText('后续待随访 (1)')).toBeDefined();
+    expect(screen.getByText('Overdue Patient')).toBeDefined();
+    expect(screen.getByText('Upcoming Patient')).toBeDefined();
+  });
 });
