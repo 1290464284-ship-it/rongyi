@@ -11,12 +11,16 @@ export function HrWorkflowPage() {
   });
 
   async function approve(id: string, approved: boolean) {
-    await apiRequest(`/hr/leaves/${id}/approve`, {
-      method: 'PATCH',
-      body: JSON.stringify({ approved }),
-    });
-    setMessage(approved ? '已批准' : '已驳回');
-    await leaves.refetch();
+    try {
+      await apiRequest(`/hr/leaves/${id}/approve`, {
+        method: 'PATCH',
+        body: JSON.stringify({ approved }),
+      });
+      setMessage(approved ? '已批准' : '已驳回');
+      await leaves.refetch();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '审批失败');
+    }
   }
 
   return (

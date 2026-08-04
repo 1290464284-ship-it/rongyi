@@ -288,6 +288,7 @@ export function createDatabase(
       db.exec(createTableSql(resource.table, resource.fields));
     }
     createChildTables(db);
+    createUniqueIndexes(db);
     db.exec('COMMIT');
     /* v8 ignore start -- schema creation is deterministic; rollback is a process-level safety net. */
   } catch (error) {
@@ -296,6 +297,19 @@ export function createDatabase(
   }
   /* v8 ignore stop */
   return db;
+}
+
+function createUniqueIndexes(db: Database.Database): void {
+  for (const resource of resourceRegistry.all()) {
+    for (const field of resource.fields) {
+      if (field.unique) {
+        db.exec(
+          `CREATE UNIQUE INDEX IF NOT EXISTS idx_v2_unique_${resource.name}_${field.name}
+           ON ${resource.table} (${field.name}) WHERE deletedAt IS NULL`,
+        );
+      }
+    }
+  }
 }
 
 export function seedDatabase(db: Database.Database): void {

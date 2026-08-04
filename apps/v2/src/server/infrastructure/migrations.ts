@@ -245,6 +245,21 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 112,
+    name: 'v2-unique-field-indexes',
+    up(db) {
+      for (const resource of resourceRegistry.all()) {
+        for (const field of resource.fields) {
+          if (!field.unique) continue;
+          db.exec(
+            `CREATE UNIQUE INDEX IF NOT EXISTS idx_v2_unique_${resource.name}_${field.name}
+             ON ${resource.table} (${field.name}) WHERE deletedAt IS NULL`,
+          );
+        }
+      }
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

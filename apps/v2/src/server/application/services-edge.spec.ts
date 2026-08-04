@@ -1003,7 +1003,7 @@ describe('service edge coverage', () => {
     }
     const riskHigh = new PatientRiskService(db).calculate('patient-risk-high', context);
     expect(riskHigh).toHaveProperty('cariesScore');
-    new PatientRiskService(db).calculate('patient-risk-medium', nullContext);
+    expect(() => risk.calculate('missing-risk-patient', context)).toThrow('Patient not found');
     for (const [patientId, codePrefix, count] of [
       ['patient-risk-medium', 'RM', 6],
       ['patient-risk-high-level', 'RH', 12],
@@ -1026,6 +1026,7 @@ describe('service edge coverage', () => {
       }
       new PatientRiskService(db).calculate(patientId, context);
     }
+    new PatientRiskService(db).calculate('patient-risk-medium', nullContext);
 
     const prescription = new PrescriptionSafetyService(db);
     await expect(() => prescription.check('missing-rx', context)).toThrow('Prescription not found');

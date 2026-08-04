@@ -439,7 +439,6 @@ export class SyncService {
     }>;
   }, context: AppContext): Promise<{
     accepted: number;
-    conflicts: number;
     failed: number;
     errors: Array<{ recordId: string; error: string }>;
   }> {
@@ -449,7 +448,6 @@ export class SyncService {
     }
     this.assertDevice(payload.deviceId, payload.deviceToken, context);
     let accepted = 0;
-    const conflicts = 0;
     const errors: Array<{ recordId: string; error: string }> = [];
     for (const change of payload.changes) {
       if (!SYNC_ALLOWED_TABLES.has(change.tableName)) {
@@ -490,7 +488,7 @@ export class SyncService {
         /* v8 ignore stop */
       }
     }
-    return { accepted, conflicts, failed: errors.length, errors };
+    return { accepted, failed: errors.length, errors };
   }
 
   registerDevice(deviceId: string, name: string, context: AppContext): { deviceId: string; token: string } {

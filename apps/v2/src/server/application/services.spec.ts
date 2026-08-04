@@ -6,6 +6,7 @@ import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../infrastructure/database';
 import { runMigrations } from '../infrastructure/migrations';
 import {
+  AppointmentService,
   AuthService,
   AuditService,
   BulkImportService,
@@ -75,6 +76,53 @@ describe('application services', () => {
     await expect(
       service.createTransaction({ itemId: 'inventory-demo-001', type: 'OUT', quantity: 10_000 }, context),
     ).rejects.toThrow('Insufficient stock');
+  });
+
+  it('rejects missing patients and keeps appointment conflicts clinic-scoped', async () => {
+    const appointments = new AppointmentService(db);
+    const charges = new ChargeService(db);
+    const memberCards = new MemberCardService(db);
+    const risk = new PatientRiskService(db);
+    const startTime = new Date(Date.now() + 5 * 86_400_000).toISOString();
+    const endTime = new Date(Date.now() + 5 * 86_400_000 + 3_600_000).toISOString();
+
+    await expect(appointments.create({
+      patientId: 'missing-patient-audit',
+      doctorId: 'user-admin-001',
+      startTime,
+      endTime,
+      type: 'REGULAR',
+    }, context)).rejects.toMatchObject({ status: 404 });
+    await expect(charges.create({
+      patientId: 'missing-patient-audit',
+      items: [{ name: 'Exam', category: 'EXAM', price: 100, quantity: 1 }],
+    }, context)).rejects.toMatchObject({ status: 404 });
+    expect(() => memberCards.create({
+      patientId: 'missing-patient-audit',
+      cardNo: 'CARD-MISSING-PATIENT',
+      status: 'ACTIVE',
+      level: 'NORMAL',
+    }, context)).toThrow('Patient not found');
+    expect(() => risk.calculate('missing-patient-audit', context)).toThrow('Patient not found');
+
+    const now = new Date().toISOString();
+    const otherClinicStart = new Date(Date.now() + 30 * 86_400_000).toISOString();
+    const otherClinicEnd = new Date(Date.now() + 30 * 86_400_000 + 3_600_000).toISOString();
+    db.prepare(
+      `INSERT INTO Appointment (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, chairId, startTime, endTime, status, type
+       ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, 'BOOKED', 'REGULAR')`,
+    ).run('appointment-other-clinic-audit', 'clinic-v2-002', now, now, 'patient-demo-001', 'user-admin-001', 'chair-audit', otherClinicStart, otherClinicEnd);
+
+    await expect(appointments.create({
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      chairId: 'chair-audit',
+      startTime: otherClinicStart,
+      endTime: otherClinicEnd,
+      type: 'REGULAR',
+    }, context)).resolves.toHaveProperty('id');
   });
 
   it('recharges and consumes from a member card', async () => {

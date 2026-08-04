@@ -25,21 +25,33 @@ export function DesktopSettingsPage() {
   const bridge = desktop;
 
   async function toggleAutoLaunch() {
-    const next = !autoLaunch;
-    await bridge.setAutoLaunch(next);
-    setAutoLaunch(next);
-    setMessage(`开机自启已${next ? '开启' : '关闭'}`);
+    try {
+      const next = !autoLaunch;
+      await bridge.setAutoLaunch(next);
+      setAutoLaunch(next);
+      setMessage(`开机自启已${next ? '开启' : '关闭'}`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '切换开机自启失败');
+    }
   }
 
   async function restartApi() {
-    const port = await bridge.restartApi();
-    setApiPort(port);
-    setMessage('API 已重启');
+    try {
+      const port = await bridge.restartApi();
+      setApiPort(port);
+      setMessage('API 已重启');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '重启 API 失败');
+    }
   }
 
   async function checkUpdates() {
-    const result = await bridge.checkUpdates();
-    setUpdateStatus(result.status === 'available' ? `发现新版本 ${result.version}` : result.status === 'none' ? '当前已是最新版本' : result.message ?? '检查失败');
+    try {
+      const result = await bridge.checkUpdates();
+      setUpdateStatus(result.status === 'available' ? `发现新版本 ${result.version}` : result.status === 'none' ? '当前已是最新版本' : result.message ?? '检查失败');
+    } catch (error) {
+      setUpdateStatus(error instanceof Error ? error.message : '检查失败');
+    }
   }
 
   return (

@@ -10,9 +10,13 @@ export function FollowUpsPage() {
   });
 
   async function batchGenerate() {
-    await apiRequest('/follow-ups/batch-generate', { method: 'POST', body: JSON.stringify({ limit: 50 }) });
-    setMessage('Batch generation completed');
-    await query.refetch();
+    try {
+      await apiRequest('/follow-ups/batch-generate', { method: 'POST', body: JSON.stringify({ limit: 50 }) });
+      setMessage('Batch generation completed');
+      await query.refetch();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Batch generation failed');
+    }
   }
 
   return (
@@ -40,4 +44,3 @@ export function FollowUpsPage() {
     </div>
   );
 }
-

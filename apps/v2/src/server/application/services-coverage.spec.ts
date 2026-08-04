@@ -10,6 +10,7 @@ import {
   AppointmentService,
   AuthService,
   BackupService,
+  ChargeService,
   FollowUpService,
   HrService,
   PrintService,
@@ -121,7 +122,7 @@ describe('service coverage', () => {
     delete process.env.V2_BACKUP_KEY;
   });
 
-  it('returns dashboard and revenue stats', () => {
+  it('returns dashboard and revenue stats', async () => {
     const service = new StatsService(db);
     expect(service.dashboard(context)).toHaveProperty('patients');
     expect(service.revenue(undefined, undefined, 'month', context)).toBeInstanceOf(Array);
@@ -129,6 +130,36 @@ describe('service coverage', () => {
     expect(service.doctorWorkload(context)).toBeInstanceOf(Array);
     expect(service.inventoryStats(context)).toBeInstanceOf(Array);
     expect(service.memberStats(context)).toHaveProperty('total');
+
+    const before = service.dashboard(context) as { paidAmount: number; unpaidAmount: number };
+    const dashboardNow = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO Patient (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active
+       ) VALUES (?, ?, ?, ?, NULL, 'DASH-AUDIT', 'Dashboard Audit', 'UNKNOWN', '13600000009',
+         '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
+    ).run('patient-dashboard-audit', context.clinicId, dashboardNow, dashboardNow);
+    const charges = new ChargeService(db);
+    const refundedCharge = await charges.create({
+      patientId: 'patient-dashboard-audit',
+      items: [{ name: 'Audit', category: 'EXAM', price: 1000, quantity: 1 }],
+    }, context);
+    await charges.pay(String(refundedCharge.id), 500, 'CASH', undefined, context);
+    await charges.refund(String(refundedCharge.id), 500, 'dashboard audit', context);
+    const after = service.dashboard(context) as { paidAmount: number; unpaidAmount: number };
+    expect(after.paidAmount).toBe(before.paidAmount);
+    expect(after.unpaidAmount).toBe(before.unpaidAmount);
+
+    db.prepare(
+      `INSERT INTO User (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         username, passwordHash, name, role, active, loginAttempts, tokenVersion
+       ) VALUES (?, ?, ?, ?, NULL, 'idle-doc-audit', 'unused-hash', 'Idle Audit Doctor', 'DOCTOR', 1, 0, 0)`,
+    ).run('user-idle-audit', context.clinicId, dashboardNow, dashboardNow);
+    const workload = service.doctorWorkload(context);
+    expect(workload.some((row) => row.doctorId === 'user-idle-audit' && Number(row.visits) === 0 && Number(row.charges) === 0)).toBe(true);
   });
 
   it('runs replenishment and clinical workflows', () => {

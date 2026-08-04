@@ -1,5 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto';
+import type Database from 'better-sqlite3';
 import type { User, UserRole } from '../../../domain/contracts';
+import { NotFoundError } from '../../infrastructure/errors';
+import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import type { AuthUserRecord } from '../ports';
 
 export const JWT_SECRET = process.env.V2_JWT_SECRET ?? 'v2-local-secret-change-me';
@@ -71,4 +74,11 @@ export function rowToUser(row: AuthUserRecord | Record<string, unknown>): User {
 
 export function isUserRole(role: string): role is UserRole {
   return ['BOSS', 'ADMIN', 'DOCTOR', 'RECEPTIONIST', 'NURSE', 'TECHNICIAN'].includes(role);
+}
+
+export function assertPatientExists(db: Database.Database, patientId: string, clinicId: string | null): void {
+  const row = db.prepare(
+    `SELECT id FROM Patient WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
+  ).get(patientId, ...tenantParams(clinicId)) as { id: string } | undefined;
+  if (!row) throw new NotFoundError('Patient not found');
 }

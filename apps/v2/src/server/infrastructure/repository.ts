@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import { NotFoundError, ValidationError } from './errors';
+import { ConflictError, NotFoundError, ValidationError } from './errors';
 import type {
   AppContext,
   IRepository,
@@ -114,7 +114,12 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
     }
 
     const placeholders = columns.map(() => '?').join(', ');
-    this.db.prepare(`INSERT INTO ${this.resource.table} (${columns.join(', ')}) VALUES (${placeholders})`).run(...values);
+    try {
+      this.db.prepare(`INSERT INTO ${this.resource.table} (${columns.join(', ')}) VALUES (${placeholders})`).run(...values);
+    } catch (error) {
+      if (isUniqueConstraintError(error)) throw new ConflictError(`${this.resource.name} violates a unique field constraint`);
+      throw error;
+    }
   }
 
   async update(entity: Record<string, unknown>, context: AppContext): Promise<void> {
@@ -133,7 +138,12 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
     values.push(id);
     const clinicWhere = context.clinicId ? ' AND clinicId = ?' : '';
     if (context.clinicId) values.push(context.clinicId);
-    this.db.prepare(`UPDATE ${this.resource.table} SET ${sets.join(', ')} WHERE id = ?${clinicWhere}`).run(...values);
+    try {
+      this.db.prepare(`UPDATE ${this.resource.table} SET ${sets.join(', ')} WHERE id = ?${clinicWhere}`).run(...values);
+    } catch (error) {
+      if (isUniqueConstraintError(error)) throw new ConflictError(`${this.resource.name} violates a unique field constraint`);
+      throw error;
+    }
   }
 
   async softDelete(id: string, context: AppContext): Promise<void> {
@@ -173,4 +183,10 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
     result.deletedAt = row.deletedAt ?? null;
     return maskSensitiveFields(result);
   }
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  const code = error instanceof Error ? String((error as { code?: unknown }).code ?? '') : '';
+  const message = error instanceof Error ? error.message : '';
+  return code.includes('UNIQUE') || message.includes('UNIQUE constraint failed');
 }
