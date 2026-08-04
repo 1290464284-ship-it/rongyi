@@ -35,6 +35,23 @@ describe('applyStagedRestore', () => {
     expect(fs.existsSync(path.join(dir, '.restore-pending.json'))).toBe(false);
   });
 
+  it('removes stale WAL and SHM files when applying a staged restore', () => {
+    const dbPath = path.join(dir, 'sidecar-target.sqlite');
+    const stagedPath = path.join(dir, 'sidecar-staged.sqlite');
+    fs.writeFileSync(dbPath, 'old-db');
+    fs.writeFileSync(`${dbPath}-wal`, 'stale-wal');
+    fs.writeFileSync(`${dbPath}-shm`, 'stale-shm');
+    fs.writeFileSync(stagedPath, 'fresh-db');
+    fs.writeFileSync(path.join(dir, '.restore-pending.json'), JSON.stringify({ stagedPath }));
+
+    applyStagedRestore(dbPath, [dir]);
+    expect(fs.readFileSync(dbPath, 'utf8')).toBe('fresh-db');
+    expect(fs.existsSync(`${dbPath}-wal`)).toBe(false);
+    expect(fs.existsSync(`${dbPath}-shm`)).toBe(false);
+    expect(fs.existsSync(`${stagedPath}-wal`)).toBe(false);
+    expect(fs.existsSync(`${stagedPath}-shm`)).toBe(false);
+  });
+
   it('rejects an unsafe or missing staged path', () => {
     const dbPath = path.join(dir, 'unsafe.sqlite');
     fs.writeFileSync(path.join(dir, '.restore-pending.json'), JSON.stringify({ stagedPath: 'C:/Windows/system32/evil.sqlite' }));
