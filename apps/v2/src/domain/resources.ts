@@ -4,6 +4,7 @@ import type {
   ResourceRegistry,
   UserRole,
 } from './contracts';
+import { legacyResources } from './legacy-resources.generated';
 
 /**
  * Declarative resource registry.
@@ -655,9 +656,61 @@ const resources: ResourceDefinition[] = [
     f('operation', 'enum', { required: true, enumValues: ['INSERT', 'UPDATE', 'DELETE'] }),
     f('deviceId', 'text', { required: true }),
   ], { roles: boss, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
+
+  crud('printTemplates', 'PrintTemplate', [
+    f('code', 'text', { required: true, searchable: true, maxLength: 128 }),
+    f('name', 'text', { required: true, searchable: true, maxLength: 128 }),
+    f('category', 'text', { required: true, searchable: true }),
+    f('content', 'longText', { required: true }),
+    f('variables', 'json', { default: '{}' }),
+    f('isDefault', 'boolean', { default: false }),
+    f('paperSize', 'text'),
+    f('orientation', 'text'),
+    f('createdBy', 'text'),
+  ], { roles: ['BOSS', 'ADMIN'] }),
+
+  crud('dataImportJobs', 'DataImportJob', [
+    f('importType', 'text', { required: true }),
+    f('fileName', 'text'),
+    f('totalRows', 'number', { min: 0 }),
+    f('successRows', 'number', { min: 0 }),
+    f('failedRows', 'number', { min: 0 }),
+    f('errorReportPath', 'text'),
+    f('status', 'text'),
+    f('startedById', 'text'),
+    f('completedAt', 'datetime'),
+  ], { roles: boss, capabilities: { list: true, create: false, update: false, delete: false, softDelete: true } }),
+
+  crud('inventoryReplenishmentSuggestions', 'InventoryReplenishmentSuggestion', [
+    f('inventoryId', 'text', { required: true }),
+    f('avgDailyConsumption', 'number', { min: 0 }),
+    f('leadTimeDays', 'number', { min: 0 }),
+    f('safetyFactor', 'number', { min: 0 }),
+    f('rop', 'number', { min: 0 }),
+    f('suggestedQty', 'number', { min: 0 }),
+    f('calculationSnapshotJson', 'json'),
+    f('status', 'enum', { enumValues: ['OPEN', 'APPLIED', 'IGNORED'] }),
+    f('reason', 'longText'),
+    f('supplierId', 'text'),
+    f('totalAmount', 'money', { min: 0 }),
+  ], { roles: ['BOSS', 'ADMIN'], capabilities: { list: true, create: false, update: false, delete: false, softDelete: true } }),
 ];
 
+const INTERNAL_RESOURCE_TABLES = new Set([
+  'BackupRecord',
+  'IdempotencyRecord',
+  'SyncChange',
+  'SyncDevice',
+  'UsedRefreshToken',
+]);
+
 const registry = new Map(resources.map((resource) => [resource.name, resource]));
+for (const resource of legacyResources) {
+  const tableAlreadyDeclared = resources.some((candidate) => candidate.table === resource.table);
+  if (!registry.has(resource.name) && !tableAlreadyDeclared && !INTERNAL_RESOURCE_TABLES.has(resource.table)) {
+    registry.set(resource.name, resource);
+  }
+}
 
 export const resourceRegistry: ResourceRegistry = {
   get(name) {

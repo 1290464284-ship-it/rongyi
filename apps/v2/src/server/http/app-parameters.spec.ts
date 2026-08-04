@@ -14,6 +14,7 @@ describe('HTTP app parameter branches', () => {
   let db: Database.Database;
   let app: ReturnType<typeof createApp>;
   let token: string;
+  let deviceToken: string;
 
   beforeAll(async () => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-app-params-'));
@@ -29,6 +30,12 @@ describe('HTTP app parameter branches', () => {
     });
     const login = await request(app).post('/api/v2/auth/login').send({ username: 'admin', password: 'admin123' }).expect(200);
     token = login.body.data.token as string;
+    const device = await request(app)
+      .post('/api/v2/sync/devices')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ deviceId: 'params', name: 'Params Test' })
+      .expect(201);
+    deviceToken = device.body.data.token as string;
   });
 
   afterAll(() => {
@@ -111,8 +118,8 @@ describe('HTTP app parameter branches', () => {
 
     await auth(request(app).get('/api/v2/print?kind=report&data=%7B%22title%22%3A%22T%22%7D')).expect(200);
     await auth(request(app).get('/api/v2/print')).expect(200);
-    await auth(request(app).get('/api/v2/sync/pull?since=2026-01-01T00:00:00.000Z&deviceId=test')).expect(200);
-    await auth(request(app).get('/api/v2/sync/pull')).expect(200);
+    await auth(request(app).get(`/api/v2/sync/pull?since=2026-01-01T00:00:00.000Z&deviceId=params&deviceToken=${encodeURIComponent(deviceToken)}`)).expect(200);
+    await auth(request(app).get(`/api/v2/sync/pull?deviceId=params&deviceToken=${encodeURIComponent(deviceToken)}`)).expect(200);
     await auth(request(app).post('/api/v2/sync/cleanup')).send({ before: '2026-01-01T00:00:00.000Z' }).expect(200);
     await auth(request(app).post('/api/v2/sync/cleanup')).send().expect(200);
     await auth(request(app).get('/api/v2/hr/attendance?workDate=2026-08-04')).expect(200);

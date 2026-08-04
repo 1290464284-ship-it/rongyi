@@ -175,6 +175,20 @@ function createChildTables(db: Database.Database): void {
       deletedAt TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS SyncDevice (
+      id TEXT PRIMARY KEY,
+      clinicId TEXT,
+      userId TEXT,
+      deviceId TEXT NOT NULL,
+      tokenHash TEXT NOT NULL,
+      name TEXT,
+      active INTEGER DEFAULT 1,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL,
+      deletedAt TEXT,
+      UNIQUE (clinicId, deviceId)
+    );
+
     CREATE TABLE IF NOT EXISTS InventoryReplenishmentSuggestion (
       id TEXT PRIMARY KEY,
       clinicId TEXT,

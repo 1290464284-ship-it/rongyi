@@ -16,6 +16,7 @@ describe('HTTP app', () => {
   let db: Database.Database;
   let app: ReturnType<typeof createApp>;
   let token: string;
+  let deviceToken: string;
 
   beforeAll(async () => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-http-'));
@@ -33,6 +34,12 @@ describe('HTTP app', () => {
     });
     const login = await request(app).post('/api/v2/auth/login').send({ username: 'admin', password: 'admin123' });
     token = login.body.data.token;
+    const device = await request(app)
+      .post('/api/v2/sync/devices')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ deviceId: 'http', name: 'HTTP Test' })
+      .expect(201);
+    deviceToken = device.body.data.token;
   });
 
   afterAll(() => {
@@ -45,6 +52,81 @@ describe('HTTP app', () => {
     expect(health.body.data.status).toBe('ok');
     const deep = await request(app).get('/api/v2/health/deep').expect(200);
     expect(deep.body.data.database).toBe('ok');
+  });
+
+  it('creates, verifies, and stages backups through the HTTP API', async () => {
+    const created = await request(app)
+      .post('/api/v2/backups')
+      .set('Authorization', `Bearer ${token}`)
+      .send({})
+      .expect(201);
+    expect(created.body.data.filename).toBeDefined();
+
+    const filename = created.body.data.filename as string;
+    await request(app)
+      .get(`/api/v2/backups/${encodeURIComponent(filename)}/verify`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    await request(app)
+      .post(`/api/v2/backups/${encodeURIComponent(filename)}/restore`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({})
+      .expect(200);
+  });
+
+  it('covers remaining workflow and system route success branches', async () => {
+    const wechat = await request(app)
+      .post('/api/v2/resources/wechatMessages')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ patientId: 'patient-demo-001', type: 'TEXT', content: 'hello', status: 'PENDING' })
+      .expect(201);
+    await request(app)
+      .post(`/api/v2/wechat/${wechat.body.data.id}/send`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({})
+      .expect(200);
+
+    const purchase = await request(app)
+      .post('/api/v2/resources/purchaseOrders')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ number: 'PO-HTTP', supplierId: 'supplier-http', totalAmount: 0, status: 'PENDING' })
+      .expect(201);
+    await request(app)
+      .patch(`/api/v2/purchase-orders/${purchase.body.data.id}/receive`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({})
+      .expect(200);
+
+    await request(app).get('/api/v2/satisfaction/doctor-rankings')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    await request(app).get('/api/v2/stats/inventory')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    await request(app).get('/api/v2/follow-ups/adherence')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    await request(app).get('/api/v2/backups')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    const leave = await request(app)
+      .post('/api/v2/resources/leaveRequests')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        userId: 'user-admin-001',
+        startDate: '2026-08-01',
+        endDate: '2026-08-02',
+        type: 'ANNUAL',
+        reason: 'http leave',
+        status: 'PENDING',
+      })
+      .expect(201);
+    await request(app)
+      .patch(`/api/v2/hr/leaves/${leave.body.data.id}/approve`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ approved: true })
+      .expect(200);
   });
 
   it('returns resource metadata and creates a patient', async () => {
@@ -144,7 +226,7 @@ describe('HTTP app', () => {
     await request(app).get('/api/v2/analytics/rfm').set('Authorization', `Bearer ${token}`).expect(200);
     await request(app).get('/api/v2/analytics/churn').set('Authorization', `Bearer ${token}`).expect(200);
     await request(app).get('/api/v2/analytics/doctor-anomalies').set('Authorization', `Bearer ${token}`).expect(200);
-    await request(app).get('/api/v2/sync/pull?since=2020-01-01T00:00:00.000Z&deviceId=test')
+    await request(app).get(`/api/v2/sync/pull?since=2020-01-01T00:00:00.000Z&deviceId=http&deviceToken=${encodeURIComponent(deviceToken)}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
     await request(app).get('/api/v2/hr/attendance').set('Authorization', `Bearer ${token}`).expect(200);
@@ -357,7 +439,7 @@ describe('HTTP app', () => {
 
     await request(app).post('/api/v2/sync/push')
       .set('Authorization', `Bearer ${token}`)
-      .send({ deviceId: 'http', changes: [] })
+      .send({ deviceId: 'http', deviceToken, changes: [] })
       .expect(200);
   });
 });

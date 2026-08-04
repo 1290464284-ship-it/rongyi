@@ -146,6 +146,29 @@ describe('SqliteRepository', () => {
     expect(defaults.page).toBe(1);
     expect(defaults.pageSize).toBe(20);
 
+    const globalRepo = new SqliteRepository(db, resourceRegistry.get('patients')!);
+    const globalContext = {
+      userId: 'u1',
+      clinicId: null,
+      role: 'BOSS' as const,
+      traceId: 'trace',
+      now: () => new Date(),
+    };
+    await globalRepo.insert({
+      id: 'repo-global',
+      code: 'GLOBAL-1',
+      name: 'Global Patient',
+      gender: 'UNKNOWN',
+      phone: '13200000009',
+      source: 'WALK_IN',
+      active: true,
+    }, globalContext);
+    const globalRow = await globalRepo.findById('repo-global', globalContext);
+    expect(globalRow?.id).toBe('repo-global');
+    await globalRepo.update({ id: 'repo-global', name: 'Global Renamed' }, globalContext);
+    await globalRepo.softDelete('repo-global', globalContext);
+    expect(await globalRepo.findById('repo-global', globalContext)).toBeNull();
+
     const clamped = await repo.findMany({ page: 0, pageSize: 999, search: 'Repo' }, {
       userId: 'u1',
       clinicId: null,
