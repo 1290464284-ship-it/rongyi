@@ -109,6 +109,8 @@
   lookup and update instead of relying on a manual clinic comparison.
 - Patient hub includes an appointment board with status-column summaries,
   date filtering, and inline status transitions.
+- Patient hub also includes a patient timeline that merges visits, treatments,
+  charges, and follow-ups into a single chronological view.
 - `clean:generated` removes any `dist-*` output directory rather than a fixed
   hard-coded list.
 
