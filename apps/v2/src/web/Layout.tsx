@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useNavigate } from 'react-router';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import {
   LayoutDashboard,
@@ -29,12 +29,26 @@ const groups = [
 
 export function Layout() {
   const navigate = useNavigate();
+  const location = useLocation();
   const navigation = useQuery({
     queryKey: ['navigation'],
     queryFn: () => apiRequest<{ permissions: string[] }>('/auth/navigation'),
   });
   const visibleKeys = navigation.data?.permissions ?? [];
   const visibleGroups = groups.filter((group) => visibleKeys.includes(group.key));
+
+  if (navigation.isLoading) return <div className="page">Loading...</div>;
+  const currentAllowed = visibleGroups.some((group) => group.to === '/'
+    ? location.pathname === '/'
+    : location.pathname.startsWith(group.to));
+  if (!currentAllowed) {
+    return (
+      <div className="page">
+        <h1>Access denied</h1>
+        <p>You do not have permission to view this section.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="shell">
