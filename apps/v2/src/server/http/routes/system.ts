@@ -5,8 +5,10 @@ import type { RouteDependencies } from './deps';
 
 export function registerSystemRoutes(app: Express, deps: RouteDependencies): void {
   const { alerts, backups, db, hr, sync } = deps;
+  const syncLimiter = createRateLimit({ windowMs: 60_000, max: 120 });
+  const backupLimiter = createRateLimit({ windowMs: 60_000, max: 60 });
 
-  app.get('/api/v2/sync/pull', async (req, res, next) => {
+  app.get('/api/v2/sync/pull', syncLimiter, async (req, res, next) => {
     try {
       res.json({
         success: true,
@@ -24,7 +26,7 @@ export function registerSystemRoutes(app: Express, deps: RouteDependencies): voi
     /* v8 ignore stop */
   });
 
-  app.post('/api/v2/sync/devices', async (req, res, next) => {
+  app.post('/api/v2/sync/devices', syncLimiter, async (req, res, next) => {
     try {
       res.status(201).json({
         success: true,
@@ -41,7 +43,7 @@ export function registerSystemRoutes(app: Express, deps: RouteDependencies): voi
     /* v8 ignore stop */
   });
 
-  app.post('/api/v2/sync/push', async (req, res, next) => {
+  app.post('/api/v2/sync/push', syncLimiter, async (req, res, next) => {
     try {
       res.json({ success: true, data: await sync.push(req.body, req.context!) });
     /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
@@ -51,7 +53,7 @@ export function registerSystemRoutes(app: Express, deps: RouteDependencies): voi
     /* v8 ignore stop */
   });
 
-  app.post('/api/v2/sync/cleanup', async (req, res, next) => {
+  app.post('/api/v2/sync/cleanup', syncLimiter, async (req, res, next) => {
     try {
       const before = typeof req.body?.before === 'string' ? req.body.before : undefined;
       res.json({ success: true, data: sync.cleanup(before, req.context!) });
@@ -107,7 +109,7 @@ export function registerSystemRoutes(app: Express, deps: RouteDependencies): voi
     /* v8 ignore stop */
   });
 
-  app.get('/api/v2/backups', async (req, res, next) => {
+  app.get('/api/v2/backups', backupLimiter, async (req, res, next) => {
     try {
       res.json({ success: true, data: backups.list() });
     /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
@@ -117,7 +119,7 @@ export function registerSystemRoutes(app: Express, deps: RouteDependencies): voi
     /* v8 ignore stop */
   });
 
-  app.post('/api/v2/backups', async (req, res, next) => {
+  app.post('/api/v2/backups', backupLimiter, async (req, res, next) => {
     try {
       res.status(201).json({ success: true, data: await backups.create() });
     /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
@@ -127,7 +129,7 @@ export function registerSystemRoutes(app: Express, deps: RouteDependencies): voi
     /* v8 ignore stop */
   });
 
-  app.post('/api/v2/backups/cleanup', async (req, res, next) => {
+  app.post('/api/v2/backups/cleanup', backupLimiter, async (req, res, next) => {
     try {
       const maxKeep = Number(req.body?.maxKeep ?? 30);
       if (!Number.isFinite(maxKeep) || maxKeep < 1 || maxKeep > 365) {
@@ -142,9 +144,9 @@ export function registerSystemRoutes(app: Express, deps: RouteDependencies): voi
     /* v8 ignore stop */
   });
 
-  app.post('/api/v2/backups/:filename/restore', async (req, res, next) => {
+  app.post('/api/v2/backups/:filename/restore', backupLimiter, async (req, res, next) => {
     try {
-      res.json({ success: true, data: await backups.stageRestore(req.params.filename) });
+      res.json({ success: true, data: await backups.stageRestore(String(req.params.filename)) });
     /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
     } catch (error) {
       next(error);
@@ -152,9 +154,9 @@ export function registerSystemRoutes(app: Express, deps: RouteDependencies): voi
     /* v8 ignore stop */
   });
 
-  app.get('/api/v2/backups/:filename/verify', async (req, res, next) => {
+  app.get('/api/v2/backups/:filename/verify', backupLimiter, async (req, res, next) => {
     try {
-      res.json({ success: true, data: await backups.verify(req.params.filename) });
+      res.json({ success: true, data: await backups.verify(String(req.params.filename)) });
     /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
     } catch (error) {
       next(error);

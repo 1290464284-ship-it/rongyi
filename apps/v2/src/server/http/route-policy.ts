@@ -7,7 +7,7 @@ const clinicalStaff: UserRole[] = ['BOSS', 'ADMIN', 'DOCTOR', 'NURSE'];
 const adminStaff: UserRole[] = ['BOSS', 'ADMIN'];
 
 export const routeRoleRules: Array<{ pattern: RegExp; roles: UserRole[] }> = [
-  { pattern: /^\/api\/v2\/auth\/(me|password)/, roles: allStaff },
+  { pattern: /^\/api\/v2\/auth\/(me|password|navigation)/, roles: allStaff },
   { pattern: /^\/api\/v2\/admin\/users/, roles: ['BOSS'] },
   { pattern: /^\/api\/v2\/resource-meta/, roles: allStaff },
   { pattern: /^\/api\/v2\/resources/, roles: allStaff },
@@ -43,3 +43,21 @@ export const routeRoleRules: Array<{ pattern: RegExp; roles: UserRole[] }> = [
   { pattern: /^\/api\/v2\/print/, roles: operationalStaff },
   { pattern: /^\/api\/v2\/search/, roles: operationalStaff },
 ];
+
+const navigationRules: Array<{ key: string; roles: UserRole[] }> = [
+  { key: 'dashboard', roles: allStaff },
+  { key: 'patients', roles: allStaff },
+  { key: 'clinical', roles: clinicalStaff },
+  { key: 'finance', roles: financeStaff },
+  { key: 'inventory', roles: financeStaff },
+  { key: 'analytics', roles: adminStaff },
+  { key: 'communication', roles: operationalStaff },
+  { key: 'hr', roles: adminStaff },
+  { key: 'system', roles: adminStaff },
+];
+
+export function navigationForRole(role: UserRole): string[] {
+  return navigationRules
+    .filter((rule) => rule.roles.includes(role))
+    .map((rule) => rule.key);
+}

@@ -78,6 +78,18 @@ describe('HTTP app', () => {
       .set('Authorization', `Bearer ${techToken}`)
       .send({ limit: 1 })
       .expect(403);
+    const techNav = await request(app)
+      .get('/api/v2/auth/navigation')
+      .set('Authorization', `Bearer ${techToken}`)
+      .expect(200);
+    expect(techNav.body.data.permissions).not.toContain('analytics');
+    expect(techNav.body.data.permissions).not.toContain('system');
+    const bossNav = await request(app)
+      .get('/api/v2/auth/navigation')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(bossNav.body.data.permissions).toContain('analytics');
+    expect(bossNav.body.data.permissions).toContain('system');
   });
 
   it('rejects malformed print query data with a validation error', async () => {

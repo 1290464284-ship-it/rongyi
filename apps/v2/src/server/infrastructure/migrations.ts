@@ -270,6 +270,19 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 114,
+    name: 'v2-charge-member-card',
+    up(db) {
+      const columns = new Set(
+        (db.prepare('PRAGMA table_info(Charge)').all() as Array<{ name: string }>).map((column) => column.name),
+      );
+      if (!columns.has('memberCardId')) {
+        db.exec('ALTER TABLE Charge ADD COLUMN memberCardId TEXT');
+      }
+      db.exec('CREATE INDEX IF NOT EXISTS idx_v2_charge_member_card ON Charge(memberCardId)');
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

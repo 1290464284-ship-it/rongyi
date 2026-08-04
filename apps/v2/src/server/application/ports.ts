@@ -35,6 +35,7 @@ export interface ChargeRecord {
   status: string;
   payMethod?: string | null;
   paidAt?: string | null;
+  memberCardId?: string | null;
   remark?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -60,7 +61,7 @@ export interface ChargeRepository {
   findById(id: string, clinicId?: string | null): ChargeRecord | null;
   create(input: CreateChargeInput): void;
   createItem(item: ChargeItemRecord): void;
-  updatePayment(id: string, paidAmount: number, status: string, paidAt: string, payMethod?: string): void;
+  updatePayment(id: string, paidAmount: number, status: string, paidAt: string, payMethod?: string, memberCardId?: string | null): void;
   updateRefund(id: string, refundedAmount: number, status: string, updatedAt: string): void;
 }
 

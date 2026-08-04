@@ -6,6 +6,7 @@ import type {
   StatsService,
 } from '../application/services';
 import { ValidationError } from '../infrastructure/errors';
+import { createRateLimit } from './rate-limit';
 import type {
   AnalyticsService,
   ChargeAssistantService,
@@ -206,7 +207,8 @@ export function registerReadRoutes(app: Express, deps: ReadRouteDependencies): v
     /* v8 ignore stop */
   });
 
-  app.get('/api/v2/search', async (req, res, next) => {
+  const searchLimiter = createRateLimit({ windowMs: 60_000, max: 300 });
+  app.get('/api/v2/search', searchLimiter, async (req, res, next) => {
     try {
       const q = String(req.query.q ?? '').trim();
       if (q.length < 2) {

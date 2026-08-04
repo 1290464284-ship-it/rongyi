@@ -82,6 +82,7 @@ describe('core repositories', () => {
     expect(member.findByPatient('patient-inactive')).toBeNull();
     expect(member.findByPatientForRefund('patient-inactive')).not.toBeNull();
     expect(member.findByPatientForRefund('patient-inactive', 'clinic-v2-001')).not.toBeNull();
+    expect(member.findByPatientForRefund('patient-no-card')).toBeNull();
 
     const hr = new SqliteHrRepository(db);
     db.prepare(
@@ -192,7 +193,14 @@ describe('core repositories', () => {
       createdAt: now,
       updatedAt: now,
     });
-    repo.updatePayment('charge-repo', 500, 'PAID', now);
+    repo.updatePayment('charge-repo', 500, 'PAID', now, 'MEMBER_CARD', 'card-repo');
+    const paidCharge = repo.findById('charge-repo');
+    expect(paidCharge?.payMethod).toBe('MEMBER_CARD');
+    expect(paidCharge?.memberCardId).toBe('card-repo');
+    repo.updatePayment('charge-repo', 600, 'PAID', now, undefined, null);
+    const cashCharge = repo.findById('charge-repo');
+    expect(cashCharge?.payMethod).toBe('MEMBER_CARD');
+    expect(cashCharge?.memberCardId).toBe('card-repo');
   });
 
   it('creates purchase orders and marks them received', () => {

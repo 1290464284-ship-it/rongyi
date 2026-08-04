@@ -304,6 +304,7 @@ const resources: ResourceDefinition[] = [
     f('status', 'enum', { required: true, enumValues: ['UNPAID', 'PARTIAL', 'PAID', 'REFUNDED', 'CANCELLED'] }),
     f('payMethod', 'enum', { enumValues: ['CASH', 'WECHAT', 'ALIPAY', 'CARD', 'DEBT', 'MEMBER_CARD', 'UNIONPAY', 'INSURANCE', 'OTHER'] }),
     f('paidAt', 'datetime'),
+    f('memberCardId', 'relation', { relation: { resource: 'memberCards', foreignKey: 'memberCardId', labelField: 'cardNo' } }),
     f('remark', 'longText'),
   ], { roles: reception, audit: true, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
 
