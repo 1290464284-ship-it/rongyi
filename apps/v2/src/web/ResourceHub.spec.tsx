@@ -67,6 +67,7 @@ describe('ResourceHub', () => {
     vi.mocked(apiRequest).mockResolvedValue([]);
     render(<ResourceHub title="Analytics" tabs={tabs} />, { wrapper });
     expect(await screen.findByText('RFM')).toBeDefined();
+    fireEvent.click(screen.getByRole('tab', { name: '月度报表' }));
     fireEvent.click(screen.getByRole('tab', { name: 'RFM' }));
     fireEvent.click(screen.getByRole('tab', { name: '流失预警' }));
     fireEvent.click(screen.getByRole('tab', { name: '医生异常' }));
