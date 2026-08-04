@@ -9,6 +9,7 @@ import { SqliteRepository } from '../../infrastructure/repository';
 import { stripProtectedWriteFields } from '../../infrastructure/security';
 import { validatePayload } from '../../http/validation';
 import { SqliteUnitOfWork } from '../../infrastructure/unit-of-work';
+import { removeSqliteSidecars } from '../../infrastructure/sqlite-files';
 import {
   SqliteAlertRepository,
   SqliteFollowUpRepository,
@@ -331,6 +332,7 @@ export class BackupService {
       }
     } finally {
       staged.close();
+      removeSqliteSidecars(stagedPath);
     }
     const markerPath = path.join(path.dirname(this.dbPath), '.restore-pending.json');
     fs.writeFileSync(markerPath, JSON.stringify({ stagedPath }), 'utf8');

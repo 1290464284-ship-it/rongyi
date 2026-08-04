@@ -521,7 +521,9 @@ describe('service edge coverage', () => {
     fs.writeFileSync(corruptPlainPath, corruptBuffer);
     await expect(service.stageRestore('corrupt.sqlite')).rejects.toThrow('Backup integrity check failed before restore');
 
-    await service.stageRestore(String(plain.filename));
+    const stagedResult = await service.stageRestore(String(plain.filename));
+    expect(fs.existsSync(`${stagedResult.stagedPath}-wal`)).toBe(false);
+    expect(fs.existsSync(`${stagedResult.stagedPath}-shm`)).toBe(false);
     const originalCopy = fs.copyFileSync.bind(fs);
     const copySpy = vi.spyOn(fs, 'copyFileSync').mockImplementation(((source: string, target: string) => {
       originalCopy(source, target);
