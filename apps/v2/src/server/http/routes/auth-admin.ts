@@ -78,13 +78,21 @@ export function registerAdminRoutes(app: Express, deps: RouteDependencies): void
 
   app.post('/api/v2/auth/switch-clinic', async (req, res, next) => {
     try {
+      const from = req.context!.clinicId;
+      const result = authService.switchClinic(
+        req.context!.userId,
+        req.context!.role,
+        String(req.body?.clinicId ?? ''),
+      );
+      res.locals.audit = {
+        action: 'auth.switch-clinic',
+        target: result.clinicId,
+        detail: JSON.stringify({ from, to: result.clinicId }),
+        clinicId: result.clinicId,
+      };
       res.json({
         success: true,
-        data: authService.switchClinic(
-          req.context!.userId,
-          req.context!.role,
-          String(req.body?.clinicId ?? ''),
-        ),
+        data: result,
       });
     /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
     } catch (error) {

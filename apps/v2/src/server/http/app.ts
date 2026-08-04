@@ -177,16 +177,19 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
     res.on('finish', () => {
       if (req.method === 'GET' || res.statusCode >= 400) return;
       const params = req.params as Record<string, string | undefined>;
+      const auditOverride = res.locals.audit as
+        | { action?: string; target?: string | null; detail?: string | null; clinicId?: string | null }
+        | undefined;
       deps.audit.log({
         userId: req.context!.userId,
-        action: `${req.method} ${req.path}`,
-        target: params.id ?? params.resource ?? null,
-        detail: params.resource
+        action: auditOverride?.action ?? `${req.method} ${req.path}`,
+        target: auditOverride?.target ?? params.id ?? params.resource ?? null,
+        detail: auditOverride?.detail ?? (params.resource
           ? JSON.stringify({ resource: params.resource, body: maskSensitiveFields(req.body ?? {}) })
-          : null,
+          : null),
         ip: req.ip,
         traceId: req.traceId,
-        clinicId: req.context!.clinicId,
+        clinicId: auditOverride?.clinicId ?? req.context!.clinicId,
       });
     });
     next();

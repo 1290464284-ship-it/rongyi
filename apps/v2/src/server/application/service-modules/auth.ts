@@ -160,6 +160,10 @@ export class AuthService {
     if (!memberships.some((membership) => membership.clinicId === clinicId)) {
       throw new NotFoundError('Clinic not found');
     }
+    const clinic = this.db.prepare('SELECT id FROM Clinic WHERE id = ? AND active = 1 AND deletedAt IS NULL').get(clinicId) as
+      | { id: string }
+      | undefined;
+    if (!clinic) throw new NotFoundError('Clinic not found');
     const now = new Date().toISOString();
     this.authRepository.setCurrentClinic(userId, clinicId, now);
     const token = this.sign({ sub: userId, clinicId, role: row.role, tokenVersion: row.tokenVersion });
@@ -193,6 +197,18 @@ export class AuthService {
       throw new ValidationError('clinicIds must be an array of strings');
     }
     if (this.authRepository.findByUsername(username)) throw new ConflictError('Username already exists');
+    const clinicIds = role === 'BOSS'
+      ? [...new Set([...(context.clinicId ? [context.clinicId] : []), ...(input.clinicIds ?? [])])]
+      : context.clinicId ? [context.clinicId] : [];
+    if (clinicIds.length > 0) {
+      const placeholders = clinicIds.map(() => '?').join(',');
+      const clinics = this.db.prepare(
+        `SELECT id FROM Clinic WHERE id IN (${placeholders}) AND active = 1 AND deletedAt IS NULL`,
+      ).all(...clinicIds) as Array<{ id: string }>;
+      if (clinics.length !== clinicIds.length) {
+        throw new ValidationError('clinicIds must reference existing clinics');
+      }
+    }
     const passwordHash = await bcrypt.hash(input.password, 10);
     const now = new Date().toISOString();
     const record: AuthUserRecord = {
@@ -222,9 +238,6 @@ export class AuthService {
       }
       throw error;
     }
-    const clinicIds = role === 'BOSS'
-      ? [...new Set([...(context.clinicId ? [context.clinicId] : []), ...(input.clinicIds ?? [])])]
-      : context.clinicId ? [context.clinicId] : [];
     for (const clinicId of clinicIds) {
       this.authRepository.addClinicMembership(record.id, clinicId, role, now, now);
     }

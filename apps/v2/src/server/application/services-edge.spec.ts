@@ -241,6 +241,22 @@ describe('service edge coverage', () => {
       role: 'BOSS',
       clinicIds: 'clinic-v2-001' as unknown as string[],
     }, context)).rejects.toThrow('clinicIds must be an array of strings');
+    await expect(auth.createUser({
+      username: 'boss-missing-clinic',
+      password: 'password123',
+      name: 'Missing Clinic',
+      role: 'BOSS',
+      clinicIds: ['clinic-v2-missing'],
+    }, context)).rejects.toThrow('clinicIds must reference existing clinics');
+    db.prepare(
+      `INSERT OR IGNORE INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+       VALUES ('clinic-v2-disabled', NULL, ?, ?, NULL, 'V2-DISABLED', 'Disabled Clinic', 0)`,
+    ).run(now, now);
+    db.prepare(
+      `INSERT OR IGNORE INTO UserClinic (userId, clinicId, role, createdAt, updatedAt, deletedAt)
+       VALUES (?, 'clinic-v2-disabled', 'BOSS', ?, ?, NULL)`,
+    ).run(boss.id, now, now);
+    expect(() => auth.switchClinic(boss.id, 'BOSS', 'clinic-v2-disabled')).toThrow('Clinic not found');
 
     const nurse = await auth.createUser({
       username: 'nurse-single',
