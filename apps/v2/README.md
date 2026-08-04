@@ -35,6 +35,18 @@ into Electron `userData/data/v2.sqlite` in packaged mode. The original database
 is never modified. All legacy tables are synchronized into the V2 working copy
 so existing data and fields remain available.
 
+## Security and Resource Names
+
+- Generic resources use canonical names such as `patients`, `charges`, and
+  `printTemplates`. Legacy SQLite table names such as `User` or `Charge` are not
+  exposed as generic resource routes.
+- Production refuses to seed an `admin/REDACTED` account. Provision the admin
+  user through the packaged database or migration tooling before production
+  startup.
+- Sync push/pull requires a registered device token. Register a device with
+  `POST /api/v2/sync/devices` and pass `deviceToken` to sync requests.
+- Business workflows enforce tenant scope for the current user's `clinicId`.
+
 ## Electron
 
 ```powershell

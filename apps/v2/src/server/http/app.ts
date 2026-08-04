@@ -43,27 +43,9 @@ import { metricsMiddleware, metricsSnapshot, persistMetrics } from './metrics';
 import { deepHealth } from './health';
 import type { Logger } from '../infrastructure/logger';
 import { createRateLimit } from './rate-limit';
-import type { UserRole } from '../../domain/contracts';
-
-const routeRoleRules: Array<{ pattern: RegExp; roles: UserRole[] }> = [
-  { pattern: /^\/api\/v2\/bulk-import\//, roles: ['BOSS', 'ADMIN'] },
-  { pattern: /^\/api\/v2\/sync\//, roles: ['BOSS', 'ADMIN'] },
-  { pattern: /^\/api\/v2\/backups/, roles: ['BOSS', 'ADMIN'] },
-  { pattern: /^\/api\/v2\/system\/business-alerts/, roles: ['BOSS', 'ADMIN'] },
-  { pattern: /^\/api\/v2\/hr\/leaves/, roles: ['BOSS', 'ADMIN'] },
-  { pattern: /^\/api\/v2\/charges(\/|$)/, roles: ['BOSS', 'ADMIN', 'RECEPTIONIST'] },
-  { pattern: /^\/api\/v2\/member-cards(\/|$)/, roles: ['BOSS', 'ADMIN', 'RECEPTIONIST'] },
-  { pattern: /^\/api\/v2\/debts(\/|$)/, roles: ['BOSS', 'ADMIN', 'RECEPTIONIST'] },
-  { pattern: /^\/api\/v2\/inventory/, roles: ['BOSS', 'ADMIN', 'RECEPTIONIST'] },
-  { pattern: /^\/api\/v2\/purchase-orders/, roles: ['BOSS', 'ADMIN', 'RECEPTIONIST'] },
-  { pattern: /^\/api\/v2\/processing-orders/, roles: ['BOSS', 'ADMIN', 'RECEPTIONIST'] },
-  { pattern: /^\/api\/v2\/appointments/, roles: ['BOSS', 'ADMIN', 'RECEPTIONIST', 'DOCTOR', 'NURSE'] },
-  {
-    pattern: /^\/api\/v2\/(registrations|visits|first-exams|treatments|medical-records|patients\/.*\/risk|prescriptions|cephalometric|treatment-plans)/,
-    roles: ['BOSS', 'ADMIN', 'DOCTOR', 'NURSE'],
-  },
-  { pattern: /^\/api\/v2\/wechat/, roles: ['BOSS', 'ADMIN', 'RECEPTIONIST', 'DOCTOR', 'NURSE'] },
-];
+import { maskSensitiveFields } from '../infrastructure/security';
+import { routeRoleRules } from './route-policy';
+import { registerReadRoutes } from './read-routes';
 
 export interface AppDependencies {
   db: Database.Database;
@@ -228,13 +210,25 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
         userId: req.context!.userId,
         action: `${req.method} ${req.path}`,
         target: params.id ?? params.resource ?? null,
-        detail: params.resource ? JSON.stringify({ resource: params.resource }) : null,
+        detail: params.resource
+          ? JSON.stringify({ resource: params.resource, body: maskSensitiveFields(req.body ?? {}) })
+          : null,
         ip: req.ip,
         traceId: req.traceId,
         clinicId: req.context!.clinicId,
       });
     });
     next();
+  });
+
+  registerReadRoutes(app, {
+    analytics,
+    chargeAssistant,
+    printTemplates,
+    satisfaction,
+    stats,
+    print,
+    search,
   });
 
   app.get('/api/v2/resource-meta', async (req, res) => {
@@ -379,65 +373,6 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
     /* v8 ignore stop */
   });
 
-  app.get('/api/v2/analytics/rfm', async (req, res, next) => {
-    try {
-      res.json({ success: true, data: analytics.rfm(req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
-
-  app.get('/api/v2/analytics/churn', async (req, res, next) => {
-    try {
-      res.json({ success: true, data: analytics.churn(req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
-
-  app.get('/api/v2/analytics/doctor-anomalies', async (req, res, next) => {
-    try {
-      res.json({ success: true, data: analytics.doctorAnomalies(req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
-
-  app.get('/api/v2/charge-assistant/frequent-items', async (req, res, next) => {
-    try {
-      res.json({ success: true, data: chargeAssistant.frequentItems(req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
-
-  app.get('/api/v2/print/templates', async (req, res, next) => {
-    try {
-      res.json({ success: true, data: printTemplates.list(req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
-
-  app.post('/api/v2/print/templates/:code/render', async (req, res, next) => {
-    try {
-      res.type('html').send(printTemplates.render(req.params.code, req.body ?? {}, req.context!));
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
 
   app.post('/api/v2/charges', async (req, res, next) => {
     try {
@@ -646,35 +581,6 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
     /* v8 ignore stop */
   });
 
-  app.get('/api/v2/satisfaction/nps', async (req, res, next) => {
-    try {
-      res.json({ success: true, data: satisfaction.nps(req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
-
-  app.get('/api/v2/satisfaction/trend', async (req, res, next) => {
-    try {
-      res.json({ success: true, data: satisfaction.trend(req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
-
-  app.get('/api/v2/satisfaction/doctor-rankings', async (req, res, next) => {
-    try {
-      res.json({ success: true, data: satisfaction.doctorRankings(req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
 
   app.post('/api/v2/inventory/transactions', async (req, res, next) => {
     try {
@@ -743,93 +649,6 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
     /* v8 ignore stop */
   });
 
-  app.get('/api/v2/stats/dashboard', async (req, res, next) => {
-    try {
-      res.json({ success: true, data: stats.dashboard(req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
-
-  app.get('/api/v2/stats/revenue', async (req, res, next) => {
-    try {
-      const groupBy = req.query.groupBy === 'month' ? 'month' : 'day';
-      res.json({
-        success: true,
-        data: stats.revenue(
-          typeof req.query.startDate === 'string' ? req.query.startDate : undefined,
-          typeof req.query.endDate === 'string' ? req.query.endDate : undefined,
-          groupBy,
-          req.context!,
-        ),
-      });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
-
-  app.get('/api/v2/stats/patient-growth', async (req, res, next) => {
-    try {
-      res.json({
-        success: true,
-        data: stats.patientGrowth(
-          typeof req.query.startDate === 'string' ? req.query.startDate : undefined,
-          typeof req.query.endDate === 'string' ? req.query.endDate : undefined,
-          req.context!,
-        ),
-      });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
-
-  app.get('/api/v2/stats/doctor-workload', async (req, res, next) => {
-    try {
-      res.json({ success: true, data: stats.doctorWorkload(req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
-
-  app.get('/api/v2/stats/inventory', async (req, res, next) => {
-    try {
-      res.json({ success: true, data: stats.inventoryStats(req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
-
-  app.get('/api/v2/stats/member-cards', async (req, res, next) => {
-    try {
-      res.json({ success: true, data: stats.memberStats(req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
-
-  app.get('/api/v2/print', async (req, res, next) => {
-    try {
-      const kind = String(req.query.kind ?? 'report');
-      const data = JSON.parse(String(req.query.data ?? '{}')) as Record<string, unknown>;
-      res.type('html').send(print.render(kind, data));
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
 
   app.get('/api/v2/sync/pull', async (req, res, next) => {
     try {
@@ -987,20 +806,6 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
     /* v8 ignore stop */
   });
 
-  app.get('/api/v2/search', async (req, res, next) => {
-    try {
-      const q = String(req.query.q ?? '').trim();
-      if (q.length < 2) {
-        res.json({ success: true, data: [] });
-        return;
-      }
-      res.json({ success: true, data: search.search(q, req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
 
   app.use('/api/v2/resources', resourceWriteLimiter, createResourceRouter(db));
 
