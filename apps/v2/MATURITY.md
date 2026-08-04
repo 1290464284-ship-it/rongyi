@@ -155,9 +155,9 @@
   optional keyless rows for report data. The shared component is included in
   the web coverage gate.
 - Web coverage now includes follow-up, backup, simple list, and inventory
-  workflow pages plus the inventory and charges pages, in addition to resource
-  hub/page, hub tabs, and shared components; the expanded set passes 98%
-  statements, 91% branches, 98% functions, and 100% lines.
+  workflow pages plus the inventory, charges, and finance workflow pages, in
+  addition to resource hub/page, hub tabs, and shared components; the expanded
+  set passes 98% statements, 91% branches, 98% functions, and 100% lines.
 - Experimental `src/components/**` files are quarantined from ESLint and knip
   via `eslint.config.js` and `knip.json` until they are adopted or removed.
 - `clean:generated` removes any `dist-*` output directory rather than a fixed
