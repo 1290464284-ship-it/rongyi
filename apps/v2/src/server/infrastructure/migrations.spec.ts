@@ -103,4 +103,41 @@ describe('migrations', () => {
     oldDb.close();
     fs.rmSync(dir, { recursive: true, force: true });
   });
+
+  it('adds and enforces foreign keys for core tables', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-mig-fk-'));
+    const freshDb = createDatabase(dir);
+    runMigrations(freshDb);
+    const memberFk = freshDb.prepare('PRAGMA foreign_key_list(MemberCard)').all();
+    const refundFk = freshDb.prepare('PRAGMA foreign_key_list(Refund)').all();
+    expect(memberFk.length).toBeGreaterThan(0);
+    expect(refundFk.length).toBeGreaterThan(0);
+
+    const now = new Date().toISOString();
+    freshDb.prepare(
+      `INSERT INTO Patient (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active
+       ) VALUES (?, ?, ?, ?, NULL, 'FK-P', 'FK Patient', 'UNKNOWN', '13000000000',
+         '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
+    ).run('fk-patient', 'clinic-v2-001', now, now);
+    expect(() => freshDb.prepare(
+      `INSERT INTO MemberCard (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, cardNo, balance, totalRecharge, totalConsume,
+         status, points, totalPoints, level
+       ) VALUES (?, ?, ?, ?, NULL, 'missing-patient', 'CARD-FK', 0, 0, 0, 'ACTIVE', 0, 0, 'NORMAL')`,
+    ).run('fk-card', 'clinic-v2-001', now, now)).toThrow(/FOREIGN KEY constraint failed/);
+    expect(() => freshDb.prepare(
+      `INSERT INTO Refund (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         chargeId, patientId, amount, reason
+       ) VALUES (?, ?, ?, ?, NULL, 'missing-charge', 'fk-patient', 100, 'test')`,
+    ).run('fk-refund', 'clinic-v2-001', now, now)).toThrow(/FOREIGN KEY constraint failed/);
+    freshDb.prepare('DELETE FROM schema_migrations WHERE version = ?').run('116');
+    runMigrations(freshDb);
+    freshDb.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
 });

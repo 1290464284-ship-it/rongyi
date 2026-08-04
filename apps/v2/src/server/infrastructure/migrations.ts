@@ -492,7 +492,85 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 116,
+    name: 'v2-core-foreign-keys',
+    up(db) {
+      ensureForeignKeys(db, 'MemberCard', `
+        CREATE TABLE "MemberCard" (
+          id TEXT PRIMARY KEY,
+          patientId TEXT NOT NULL,
+          cardNo TEXT NOT NULL,
+          balance INTEGER DEFAULT 0 CHECK (balance >= 0),
+          totalRecharge INTEGER DEFAULT 0 CHECK (totalRecharge >= 0),
+          totalConsume INTEGER DEFAULT 0 CHECK (totalConsume >= 0),
+          points INTEGER DEFAULT 0,
+          totalPoints INTEGER DEFAULT 0,
+          level TEXT DEFAULT 'NORMAL',
+          status TEXT DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'INACTIVE', 'DISABLED', 'FROZEN', 'EXPIRED')),
+          clinicId TEXT,
+          createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          deletedAt TEXT,
+          UNIQUE(clinicId, cardNo),
+          FOREIGN KEY (patientId) REFERENCES Patient(id)
+        )
+      `);
+      ensureForeignKeys(db, 'Refund', `
+        CREATE TABLE "Refund" (
+          id TEXT PRIMARY KEY,
+          chargeId TEXT NOT NULL,
+          patientId TEXT NOT NULL,
+          amount INTEGER NOT NULL CHECK (amount > 0),
+          reason TEXT,
+          operatorId TEXT,
+          operatorName TEXT,
+          clinicId TEXT,
+          createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          deletedAt TEXT,
+          FOREIGN KEY (chargeId) REFERENCES Charge(id),
+          FOREIGN KEY (patientId) REFERENCES Patient(id),
+          FOREIGN KEY (operatorId) REFERENCES User(id)
+        )
+      `);
+    },
+  },
 ];
+
+function ensureForeignKeys(
+  db: Database.Database,
+  table: string,
+  createSql: string,
+): void {
+  const existing = db.prepare(`PRAGMA foreign_key_list("${table}")`).all();
+  if (existing.length > 0) return;
+
+  const indexes = db.prepare(
+    `SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ? AND sql IS NOT NULL`,
+  ).all(table) as Array<{ sql: string }>;
+  const newTable = `${table}_fk_new`;
+  db.exec(createSql.replace(`"${table}"`, `"${newTable}"`));
+
+  const columns = commonColumns(db, table, newTable);
+  const columnList = columns.map((column) => `"${column}"`).join(', ');
+  db.prepare(
+    `INSERT INTO "${newTable}" (${columnList})
+     SELECT ${columnList} FROM "${table}"`,
+  ).run();
+  db.exec(`DROP TABLE "${table}"`);
+  db.exec(`ALTER TABLE "${newTable}" RENAME TO "${table}"`);
+  for (const index of indexes) db.exec(index.sql);
+}
+
+function commonColumns(db: Database.Database, oldTable: string, newTable: string): string[] {
+  const columns = (table: string): Set<string> => new Set(
+    (db.prepare(`PRAGMA table_info("${table}")`).all() as Array<{ name: string }>).map((column) => column.name),
+  );
+  const oldColumns = columns(oldTable);
+  const newColumns = columns(newTable);
+  return [...newColumns].filter((column) => oldColumns.has(column));
+}
 
 export function runMigrations(db: Database.Database): void {
   db.exec(`

@@ -48,6 +48,7 @@
 - 新增 `verify:foreign-keys`，扫描核心业务关系中的孤儿数据。
 - 新增 Windows installer smoke workflow，可在 CI 中构建并验证安装包。
 - 新增 `verify:foreign-keys` 与 `v2-foreign-key-migration.md` 专项文档。
+- 迁移 `116` 已为 MemberCard、Refund 启用真实外键约束。
 - 新增 `benchmark:load`：生成 10 万患者与 10 万收费记录，测量 FTS 搜索和 dashboard。
 - 基准结果：10 万患者/收费写入约 1.5s，FTS 搜索 10ms，dashboard 71ms。
 
