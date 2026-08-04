@@ -25,6 +25,7 @@ export function DesktopSettingsPage() {
   const bridge = desktop;
 
   async function toggleAutoLaunch() {
+    setUpdateStatus('');
     try {
       const next = !autoLaunch;
       await bridge.setAutoLaunch(next);
@@ -36,6 +37,7 @@ export function DesktopSettingsPage() {
   }
 
   async function restartApi() {
+    setUpdateStatus('');
     try {
       const port = await bridge.restartApi();
       setApiPort(port);
@@ -46,6 +48,7 @@ export function DesktopSettingsPage() {
   }
 
   async function checkUpdates() {
+    setMessage('');
     try {
       const result = await bridge.checkUpdates();
       setUpdateStatus(result.status === 'available' ? `发现新版本 ${result.version}` : result.status === 'none' ? '当前已是最新版本' : result.message ?? '检查失败');
