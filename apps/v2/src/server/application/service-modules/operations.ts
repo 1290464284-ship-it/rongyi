@@ -9,7 +9,7 @@ import { SqliteRepository } from '../../infrastructure/repository';
 import { stripProtectedWriteFields } from '../../infrastructure/security';
 import { validatePayload } from '../../http/validation';
 import { SqliteUnitOfWork } from '../../infrastructure/unit-of-work';
-import { removeSqliteSidecars } from '../../infrastructure/sqlite-files';
+import { removeSqliteSidecars, summarizeSqliteFile } from '../../infrastructure/sqlite-files';
 import {
   SqliteAlertRepository,
   SqliteFollowUpRepository,
@@ -316,7 +316,12 @@ export class BackupService {
       try {
         const integrity = backupDb.pragma('integrity_check') as Array<{ integrity_check: string }>;
         const ok = integrity.length === 1 && integrity[0].integrity_check === 'ok';
-        return { filename, integrity: ok ? 'ok' : 'corrupt', encrypted };
+        return {
+          filename,
+          integrity: ok ? 'ok' : 'corrupt',
+          encrypted,
+          summary: ok ? summarizeSqliteFile(sqlitePath) : undefined,
+        };
       } finally {
         backupDb.close();
         removeSqliteSidecars(sqlitePath);
@@ -349,11 +354,15 @@ export class BackupService {
       staged.close();
       removeSqliteSidecars(stagedPath);
     }
+    const backupSummary = verified.summary as Record<string, number | string | null> | undefined;
+    const currentSummary = fs.existsSync(this.dbPath) ? summarizeSqliteFile(this.dbPath) : undefined;
     const markerPath = path.join(path.dirname(this.dbPath), '.restore-pending.json');
     fs.writeFileSync(markerPath, JSON.stringify({ stagedPath }), 'utf8');
     return {
       filename,
       stagedPath,
+      backupSummary,
+      currentSummary,
       message: 'Backup verified and staged. Restart the application to activate this restore.',
     };
   }
