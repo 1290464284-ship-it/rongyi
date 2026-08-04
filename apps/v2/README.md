@@ -122,7 +122,7 @@ electron/           Electron main and preload
 The desktop sidebar exposes large business areas only. Each area opens one Hub page with tabs:
 
 - 工作台: dashboard
-- 患者与预约: patient files, appointments, family members, risk scores
+- 患者与预约: patient files, appointments, appointment board, family members, risk scores
 - 临床记录: visits, first exams, treatments, records, plans, imaging, cephalometric, prescriptions
 - 财务中心: charges, member cards, refunds, debts, invoices
 - 库存与采购: inventory, suppliers, purchase orders, processing orders

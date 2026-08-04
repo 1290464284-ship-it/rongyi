@@ -157,6 +157,74 @@ body {
   gap: 8px;
 }
 
+.board {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(190px, 1fr));
+  gap: 12px;
+  overflow-x: auto;
+  align-items: start;
+}
+
+.board-column {
+  background: white;
+  border: 1px solid #d9e1ea;
+  border-radius: 8px;
+  padding: 12px;
+  min-height: 320px;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.board-column header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.board-card {
+  background: #f8fafc;
+  border: 1px solid #e0e7ee;
+  border-radius: 8px;
+  padding: 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.board-card time {
+  color: #566575;
+  font-size: 13px;
+}
+
+.board-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.summary-item {
+  background: white;
+  border: 1px solid #d9e1ea;
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.summary-item strong {
+  color: #2f80ed;
+}
+
+.empty-board {
+  color: #8a98a8;
+  margin: 0;
+  padding: 8px 0;
+}
+
 .login-page {
   min-height: 100vh;
   display: grid;

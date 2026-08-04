@@ -19,7 +19,7 @@ try {
 
   await page.goto(`${base}/#/patients`, { waitUntil: 'domcontentloaded' });
   await page.getByRole('heading', { name: '患者与预约' }).waitFor();
-  await page.getByRole('tab', { name: '预约' }).click();
+  await page.getByRole('tab', { name: '预约', exact: true }).click();
   await page.getByRole('tab', { name: '风险评分' }).click();
   await page.getByRole('heading', { name: '患者风险评分' }).waitFor();
 
