@@ -279,6 +279,12 @@ export function createDatabase(
   fs.mkdirSync(dataDir, { recursive: true });
   const resolvedDbPath = dbPath ?? path.join(dataDir, 'v2.sqlite');
   const db = new Database(resolvedDbPath);
+  const integrity = db.pragma('integrity_check') as Array<{ integrity_check: string }>;
+  /* v8 ignore start -- defensive startup guard; verified backups should be clean. */
+  if (integrity.length !== 1 || integrity[0].integrity_check !== 'ok') {
+    throw new Error('Database integrity check failed. Restore from a verified backup before starting.');
+  }
+  /* v8 ignore stop */
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   db.pragma('busy_timeout = 5000');
