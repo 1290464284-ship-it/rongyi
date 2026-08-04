@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import { ResourcePage } from './ResourcePage';
 import { apiRequest } from './api';
 
@@ -16,6 +16,9 @@ const writable = {
   fields: [
     { name: 'name', type: 'text', required: true },
     { name: 'active', type: 'boolean' },
+    { name: 'phone', type: 'text' },
+    { name: 'price', type: 'money' },
+    { name: 'data', type: 'json' },
   ],
   capabilities: { create: true, update: true, delete: true, softDelete: true },
 };
@@ -60,6 +63,7 @@ describe('ResourcePage', () => {
       .mockResolvedValueOnce({ success: true, data: { id: 'p2' } })
       .mockResolvedValueOnce({ items: [{ id: 'p2', name: 'Bob', active: true }], total: 1, page: 1, pageSize: 20 });
     fireEvent.change(screen.getByLabelText('name'), { target: { value: 'Bob' } });
+    fireEvent.change(screen.getByLabelText('phone'), { target: { value: '' } });
     fireEvent.click(screen.getByText('Save'));
     await waitFor(() => expect(vi.mocked(apiRequest)).toHaveBeenCalledWith(
       '/resources/patients',
@@ -132,7 +136,7 @@ describe('ResourcePage', () => {
         pageSize: 20,
       })
       .mockResolvedValueOnce({
-        items: [{ id: 'p1', name: 'Alice' }],
+        items: [{ id: 'p1', name: 'Alice' }, { id: 'p2' }],
         total: 1,
         page: 1,
         pageSize: 20,
@@ -145,6 +149,7 @@ describe('ResourcePage', () => {
     expect(screen.getByLabelText('data')).toBeDefined();
     expect(screen.getByLabelText('active')).toBeDefined();
     expect(screen.getByText('{"key":"value"}')).toBeDefined();
+    expect(screen.getByText('p2')).toBeDefined();
     fireEvent.click(screen.getByLabelText('active'));
     fireEvent.change(screen.getByLabelText('status'), { target: { value: 'SENT' } });
     fireEvent.change(screen.getByLabelText('patientId'), { target: { value: 'p1' } });
@@ -184,5 +189,80 @@ describe('ResourcePage', () => {
       .mockResolvedValueOnce({ items: [{ id: 'p1', name: 'Alice', active: true, phone: null }], total: 1, page: 1, pageSize: 20 });
     render(<ResourcePage resource="patients" />, { wrapper });
     expect(await screen.findByText('Alice')).toBeDefined();
+  });
+
+  it('reads the resource from route params and shows list errors', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([writable])
+      .mockRejectedValueOnce(new Error('list failed'));
+    render(
+      <MemoryRouter initialEntries={['/resources/patients']}>
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+          <Routes>
+            <Route path="/resources/:resource" element={<ResourcePage />} />
+          </Routes>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText('list failed')).toBeDefined();
+  });
+
+  it('edits complex fields and skips empty optional values', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([writable])
+      .mockResolvedValueOnce({
+        items: [{ id: 'p1', name: 'Alice', active: true, phone: '13000000000', price: 1000, data: { key: 'value' } }],
+        total: 1,
+        page: 1,
+        pageSize: 20,
+      });
+    render(<ResourcePage resource="patients" />, { wrapper });
+    fireEvent.click(await screen.findByText('Edit'));
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce({ success: true, data: { id: 'p1' } })
+      .mockResolvedValueOnce({ items: [{ id: 'p1', name: 'Alice Updated', active: true, phone: '', price: 2500, data: {} }], total: 1, page: 1, pageSize: 20 });
+    fireEvent.change(screen.getByLabelText('name'), { target: { value: 'Alice Updated' } });
+    fireEvent.change(screen.getByLabelText('price'), { target: { value: '2500' } });
+    fireEvent.change(screen.getByLabelText('phone'), { target: { value: '' } });
+    fireEvent.click(screen.getByText('Save'));
+    await waitFor(() => expect(vi.mocked(apiRequest)).toHaveBeenCalledWith(
+      '/resources/patients/p1',
+      expect.objectContaining({ method: 'PATCH' }),
+    ));
+  });
+
+  it('does not delete when the user cancels confirmation', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([writable])
+      .mockResolvedValueOnce({ items: [{ id: 'p1', name: 'Alice', active: true }], total: 1, page: 1, pageSize: 20 });
+    render(<ResourcePage resource="patients" />, { wrapper });
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    fireEvent.click(await screen.findByText('Delete'));
+    expect(vi.mocked(apiRequest)).not.toHaveBeenCalledWith(
+      '/resources/patients/p1',
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+  });
+
+  it('shows not found for unknown resources', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce([writable]);
+    render(<ResourcePage resource="missing" />, { wrapper });
+    expect(await screen.findByText('Resource not found')).toBeDefined();
+  });
+
+  it('falls back to patients when no route param is present', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([writable])
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 20 });
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <QueryClientProvider client={new QueryClient()}>
+          <Routes>
+            <Route path="/" element={<ResourcePage />} />
+          </Routes>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText('No records.')).toBeDefined();
   });
 });

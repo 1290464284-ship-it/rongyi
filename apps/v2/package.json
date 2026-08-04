@@ -28,6 +28,7 @@
     "smoke:api": "node scripts/api-smoke.mjs",
     "smoke:ui": "node scripts/ui-smoke.mjs",
     "test:load": "node scripts/load-smoke.mjs",
+    "benchmark:load": "tsx scripts/benchmark-load.ts",
     "smoke:all": "node scripts/run-smokes.mjs",
     "audit:security": "node scripts/audit.mjs",
     "verify:database": "node scripts/verify-database.mjs",

@@ -80,3 +80,6 @@ jobs:
 
       - name: Load smoke
         run: pnpm --filter @dental/v2 test:load
+
+      - name: Load benchmark
+        run: pnpm --filter @dental/v2 benchmark:load
