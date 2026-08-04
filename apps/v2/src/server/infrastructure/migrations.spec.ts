@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
-import { createDatabase, syncLegacySchema } from './database';
+import { createDatabase } from './database';
 import { migrations, runMigrations } from './migrations';
 
 describe('migrations', () => {
@@ -38,6 +38,8 @@ describe('migrations', () => {
     freshDb.exec('ALTER TABLE OperationLog DROP COLUMN traceId');
     freshDb.exec('ALTER TABLE IdempotencyRecord DROP COLUMN responseJson');
     freshDb.exec('ALTER TABLE IdempotencyRecord DROP COLUMN type');
+    freshDb.exec('ALTER TABLE IdempotencyRecord DROP COLUMN userId');
+    freshDb.exec('ALTER TABLE IdempotencyRecord DROP COLUMN operation');
     freshDb.exec('ALTER TABLE Patient DROP COLUMN occupation');
     freshDb.exec('ALTER TABLE ProcessingOrderItem DROP COLUMN name');
     freshDb.exec('ALTER TABLE InventoryReplenishmentSuggestion DROP COLUMN status');
@@ -50,6 +52,8 @@ describe('migrations', () => {
     expect(operationLog.some((column) => column.name === 'traceId')).toBe(true);
     expect(idempotency.some((column) => column.name === 'responseJson')).toBe(true);
     expect(idempotency.some((column) => column.name === 'type')).toBe(true);
+    expect(idempotency.some((column) => column.name === 'userId')).toBe(true);
+    expect(idempotency.some((column) => column.name === 'operation')).toBe(true);
     expect(patient.some((column) => column.name === 'occupation')).toBe(true);
     expect(item.some((column) => column.name === 'name')).toBe(true);
     expect(suggestion.some((column) => column.name === 'status')).toBe(true);

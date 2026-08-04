@@ -15,7 +15,7 @@ import {
   PatientRiskService,
 } from './services';
 import { SqliteChargeRepository } from '../infrastructure/repositories/charge.repository';
-import type { MemberCardRepository, MemberCardRecord } from './ports';
+import type { AuthRepository, MemberCardRepository, MemberCardRecord } from './ports';
 import type { AppContext } from '../../domain/contracts';
 
 describe('application services', () => {
@@ -166,6 +166,7 @@ describe('application services', () => {
       updatedAt: now,
     };
     const failingMemberRepository: MemberCardRepository = {
+      create: () => {},
       findById: () => card,
       findByPatient: () => card,
       updateBalanceRefund: () => {},
@@ -214,5 +215,32 @@ describe('application services', () => {
     const row = db.prepare('SELECT * FROM OperationLog WHERE target = ?').get('target-1') as Record<string, unknown>;
     expect(row.action).toBe('TEST_WRITE');
     expect(row.traceId).toBe('trace-audit');
+  });
+
+  it('rejects user updates when the repository reports zero affected rows', async () => {
+    const fakeAuth = {
+      findById: () => ({
+        id: 'user-1',
+        clinicId: 'clinic-v2-001',
+        username: 'u',
+        passwordHash: 'hash',
+        name: 'n',
+        role: 'BOSS',
+        active: true,
+        loginAttempts: 0,
+        lockedUntil: null,
+        tokenVersion: 0,
+        refreshToken: null,
+        refreshTokenExpiresAt: null,
+        createdAt: '2026-08-04T00:00:00.000Z',
+        updatedAt: '2026-08-04T00:00:00.000Z',
+        deletedAt: null,
+      }),
+      updateUser: () => 0,
+      resetPassword: () => 0,
+    } as unknown as AuthRepository;
+    const service = new AuthService(db, fakeAuth);
+    await expect(service.updateUser('user-1', { name: 'x' }, context)).rejects.toThrow('User not found');
+    await expect(service.resetPassword('user-1', 'password123', context)).rejects.toThrow('User not found');
   });
 });

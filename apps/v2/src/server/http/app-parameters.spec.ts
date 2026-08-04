@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createApp } from './app';
 import { createDatabase, seedDatabase } from '../infrastructure/database';
@@ -124,11 +124,23 @@ describe('HTTP app parameter branches', () => {
     await auth(request(app).post('/api/v2/sync/cleanup')).send().expect(200);
     await auth(request(app).get('/api/v2/hr/attendance?workDate=2026-08-04')).expect(200);
     await auth(request(app).get('/api/v2/hr/attendance')).expect(200);
-    await auth(request(app).patch('/api/v2/system/business-alerts/missing/status')).send({ status: 'RESOLVED' }).expect(200);
-    await auth(request(app).patch('/api/v2/system/business-alerts/missing/status')).send().expect(200);
+    await auth(request(app).patch('/api/v2/system/business-alerts/missing/status')).send({ status: 'RESOLVED' }).expect(404);
+    await auth(request(app).patch('/api/v2/system/business-alerts/missing/status')).send().expect(404);
     await auth(request(app).post('/api/v2/backups/cleanup')).send({ maxKeep: 10 }).expect(200);
     await auth(request(app).post('/api/v2/backups/cleanup')).send().expect(200);
     await auth(request(app).get('/api/v2/search?q=Demo')).expect(200);
     await auth(request(app).get('/api/v2/search')).expect(200);
+  });
+
+  it('covers route body and query default branches', async () => {
+    const auth = (req: request.Test): request.Test => req.set('Authorization', `Bearer ${token}`);
+    await auth(request(app).post('/api/v2/admin/users')).send().expect(400);
+    await auth(request(app).patch('/api/v2/admin/users/missing')).send().expect(404);
+    await auth(request(app).patch('/api/v2/admin/users/user-admin-001/password')).send().expect(400);
+    await auth(request(app).post('/api/v2/member-cards')).send().expect(400);
+    await auth(request(app).get('/api/v2/sync/pull')).expect(401);
+    await auth(request(app).post('/api/v2/sync/devices')).send().expect(201);
+    await auth(request(app).post('/api/v2/backups/cleanup')).send({ maxKeep: 0 }).expect(400);
+    await auth(request(app).post('/api/v2/backups/cleanup')).send({ maxKeep: 366 }).expect(400);
   });
 });

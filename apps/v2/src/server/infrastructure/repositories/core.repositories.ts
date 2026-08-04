@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import { SystemClock } from '../clock';
+import { tenantAnd } from '../tenant';
 import type {
   AlertRepository,
   AnalyticsRepository,
@@ -27,31 +28,60 @@ import type {
 export class SqliteMemberCardRepository implements MemberCardRepository {
   constructor(private readonly db: Database.Database) {}
 
-  findById(id: string): MemberCardRecord | null {
-    return (this.db.prepare('SELECT * FROM MemberCard WHERE id = ?').get(id) as MemberCardRecord | undefined) ?? null;
+  create(input: MemberCardRecord): void {
+    this.db.prepare(
+      `INSERT INTO MemberCard (
+         id, clinicId, patientId, cardNo, balance, totalRecharge, totalConsume,
+         status, points, totalPoints, level, createdAt, updatedAt, deletedAt
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+    ).run(
+      input.id,
+      input.clinicId ?? null,
+      input.patientId,
+      input.cardNo,
+      input.balance,
+      input.totalRecharge,
+      input.totalConsume,
+      input.status,
+      input.points,
+      input.totalPoints,
+      input.level,
+      input.createdAt,
+      input.updatedAt,
+    );
   }
 
-  findByPatient(patientId: string): MemberCardRecord | null {
-    return (this.db.prepare('SELECT * FROM MemberCard WHERE patientId = ? AND status = ? LIMIT 1').get(patientId, 'ACTIVE') as MemberCardRecord | undefined) ?? null;
+  findById(id: string, clinicId?: string | null): MemberCardRecord | null {
+    const params = clinicId ? [id, clinicId] : [id];
+    return (this.db.prepare(`SELECT * FROM MemberCard WHERE id = ?${tenantAnd(clinicId)}`).get(...params) as MemberCardRecord | undefined) ?? null;
   }
 
-  updateBalanceRefund(id: string, balance: number, updatedAt: string): void {
-    this.db.prepare('UPDATE MemberCard SET balance = ?, updatedAt = ? WHERE id = ?').run(balance, updatedAt, id);
+  findByPatient(patientId: string, clinicId?: string | null): MemberCardRecord | null {
+    const params = clinicId ? [patientId, 'ACTIVE', clinicId] : [patientId, 'ACTIVE'];
+    return (this.db.prepare(`SELECT * FROM MemberCard WHERE patientId = ? AND status = ?${tenantAnd(clinicId)} LIMIT 1`).get(...params) as MemberCardRecord | undefined) ?? null;
   }
 
-  updateRecharge(id: string, balance: number, amount: number, updatedAt: string): void {
-    this.db.prepare('UPDATE MemberCard SET balance = ?, totalRecharge = totalRecharge + ?, updatedAt = ? WHERE id = ?')
-      .run(balance, amount, updatedAt, id);
+  updateBalanceRefund(id: string, balance: number, updatedAt: string, clinicId?: string | null): void {
+    const params = clinicId ? [balance, updatedAt, id, clinicId] : [balance, updatedAt, id];
+    this.db.prepare(`UPDATE MemberCard SET balance = ?, updatedAt = ? WHERE id = ?${tenantAnd(clinicId)}`).run(...params);
   }
 
-  updateConsume(id: string, balance: number, amount: number, updatedAt: string): void {
-    this.db.prepare('UPDATE MemberCard SET balance = ?, totalConsume = totalConsume + ?, updatedAt = ? WHERE id = ?')
-      .run(balance, amount, updatedAt, id);
+  updateRecharge(id: string, balance: number, amount: number, updatedAt: string, clinicId?: string | null): void {
+    const params = clinicId ? [balance, amount, updatedAt, id, clinicId] : [balance, amount, updatedAt, id];
+    this.db.prepare(`UPDATE MemberCard SET balance = ?, totalRecharge = totalRecharge + ?, updatedAt = ? WHERE id = ?${tenantAnd(clinicId)}`)
+      .run(...params);
   }
 
-  updatePoints(id: string, points: number, totalPoints: number, updatedAt: string): void {
-    this.db.prepare('UPDATE MemberCard SET points = ?, totalPoints = ?, updatedAt = ? WHERE id = ?')
-      .run(points, totalPoints, updatedAt, id);
+  updateConsume(id: string, balance: number, amount: number, updatedAt: string, clinicId?: string | null): void {
+    const params = clinicId ? [balance, amount, updatedAt, id, clinicId] : [balance, amount, updatedAt, id];
+    this.db.prepare(`UPDATE MemberCard SET balance = ?, totalConsume = totalConsume + ?, updatedAt = ? WHERE id = ?${tenantAnd(clinicId)}`)
+      .run(...params);
+  }
+
+  updatePoints(id: string, points: number, totalPoints: number, updatedAt: string, clinicId?: string | null): void {
+    const params = clinicId ? [points, totalPoints, updatedAt, id, clinicId] : [points, totalPoints, updatedAt, id];
+    this.db.prepare(`UPDATE MemberCard SET points = ?, totalPoints = ?, updatedAt = ? WHERE id = ?${tenantAnd(clinicId)}`)
+      .run(...params);
   }
 
   insertLog(input: Record<string, unknown>): void {
@@ -95,12 +125,14 @@ export class SqliteMemberCardRepository implements MemberCardRepository {
 export class SqliteInventoryRepository implements InventoryRepository {
   constructor(private readonly db: Database.Database) {}
 
-  findItem(id: string): InventoryItemRecord | null {
-    return (this.db.prepare('SELECT * FROM InventoryItem WHERE id = ? AND deletedAt IS NULL').get(id) as InventoryItemRecord | undefined) ?? null;
+  findItem(id: string, clinicId?: string | null): InventoryItemRecord | null {
+    const params = clinicId ? [id, clinicId] : [id];
+    return (this.db.prepare(`SELECT * FROM InventoryItem WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`).get(...params) as InventoryItemRecord | undefined) ?? null;
   }
 
-  updateStock(id: string, stock: number, updatedAt: string): void {
-    this.db.prepare('UPDATE InventoryItem SET stock = ?, updatedAt = ? WHERE id = ?').run(stock, updatedAt, id);
+  updateStock(id: string, stock: number, updatedAt: string, clinicId?: string | null): void {
+    const params = clinicId ? [stock, updatedAt, id, clinicId] : [stock, updatedAt, id];
+    this.db.prepare(`UPDATE InventoryItem SET stock = ?, updatedAt = ? WHERE id = ?${tenantAnd(clinicId)}`).run(...params);
   }
 
   createTransaction(record: InventoryTransactionRecord): void {
@@ -124,27 +156,31 @@ export class SqliteInventoryRepository implements InventoryRepository {
     );
   }
 
-  lowStock(): InventoryItemRecord[] {
+  lowStock(clinicId?: string | null): InventoryItemRecord[] {
+    const params = clinicId ? [clinicId] : [];
     return this.db.prepare(
-      'SELECT * FROM InventoryItem WHERE deletedAt IS NULL AND stock <= minStock ORDER BY stock ASC LIMIT 100',
-    ).all() as InventoryItemRecord[];
+      `SELECT * FROM InventoryItem WHERE deletedAt IS NULL AND stock <= minStock${tenantAnd(clinicId)} ORDER BY stock ASC LIMIT 100`,
+    ).all(...params) as InventoryItemRecord[];
   }
 }
 
 export class SqliteDebtRepository implements DebtRepository {
   constructor(private readonly db: Database.Database) {}
 
-  findById(id: string): DebtRecord | null {
-    return (this.db.prepare('SELECT * FROM Debt WHERE id = ? AND deletedAt IS NULL').get(id) as DebtRecord | undefined) ?? null;
+  findById(id: string, clinicId?: string | null): DebtRecord | null {
+    const params = clinicId ? [id, clinicId] : [id];
+    return (this.db.prepare(`SELECT * FROM Debt WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`).get(...params) as DebtRecord | undefined) ?? null;
   }
 
-  findByCharge(chargeId: string): DebtRecord | null {
-    return (this.db.prepare('SELECT * FROM Debt WHERE chargeId = ? AND deletedAt IS NULL').get(chargeId) as DebtRecord | undefined) ?? null;
+  findByCharge(chargeId: string, clinicId?: string | null): DebtRecord | null {
+    const params = clinicId ? [chargeId, clinicId] : [chargeId];
+    return (this.db.prepare(`SELECT * FROM Debt WHERE chargeId = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`).get(...params) as DebtRecord | undefined) ?? null;
   }
 
-  updatePaid(id: string, paidAmount: number, status: string, updatedAt: string): void {
-    this.db.prepare('UPDATE Debt SET paidAmount = ?, status = ?, updatedAt = ? WHERE id = ?')
-      .run(paidAmount, status, updatedAt, id);
+  updatePaid(id: string, paidAmount: number, status: string, updatedAt: string, clinicId?: string | null): void {
+    const params = clinicId ? [paidAmount, status, updatedAt, id, clinicId] : [paidAmount, status, updatedAt, id];
+    this.db.prepare(`UPDATE Debt SET paidAmount = ?, status = ?, updatedAt = ? WHERE id = ?${tenantAnd(clinicId)}`)
+      .run(...params);
   }
 }
 
@@ -170,6 +206,64 @@ export class SqliteAuthRepository implements AuthRepository {
       | Record<string, unknown>
       | undefined;
     return row ? this.map(row) : null;
+  }
+
+  isRefreshTokenUsed(tokenHash: string): boolean {
+    return Boolean(this.db.prepare('SELECT 1 FROM UsedRefreshToken WHERE tokenHash = ?').get(tokenHash));
+  }
+
+  cleanupUsedRefreshTokens(before: string): number {
+    return this.db.prepare('DELETE FROM UsedRefreshToken WHERE usedAt < ?').run(before).changes;
+  }
+
+  insertUser(input: AuthUserRecord): void {
+    this.db.prepare(
+      `INSERT INTO User (
+         id, clinicId, username, passwordHash, name, role, phone, active,
+         loginAttempts, lockedUntil, tokenVersion, refreshToken, refreshTokenExpiresAt,
+         createdAt, updatedAt, deletedAt
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, 0, NULL, NULL, ?, ?, NULL)`,
+    ).run(
+      input.id,
+      input.clinicId ?? null,
+      input.username,
+      input.passwordHash,
+      input.name,
+      input.role,
+      input.phone ?? null,
+      input.active ? 1 : 0,
+      input.createdAt,
+      input.updatedAt,
+    );
+  }
+
+  updateUser(id: string, fields: { name?: string; phone?: string | null; role?: string; active?: boolean }, updatedAt: string): number {
+    const sets: string[] = ['updatedAt = ?'];
+    const params: unknown[] = [updatedAt];
+    if (fields.name !== undefined) {
+      sets.push('name = ?');
+      params.push(fields.name);
+    }
+    if (fields.phone !== undefined) {
+      sets.push('phone = ?');
+      params.push(fields.phone);
+    }
+    if (fields.role !== undefined) {
+      sets.push('role = ?');
+      params.push(fields.role);
+    }
+    if (fields.active !== undefined) {
+      sets.push('active = ?');
+      params.push(fields.active ? 1 : 0);
+    }
+    params.push(id);
+    return this.db.prepare(`UPDATE User SET ${sets.join(', ')} WHERE id = ? AND deletedAt IS NULL`).run(...params).changes;
+  }
+
+  resetPassword(id: string, passwordHash: string, updatedAt: string): number {
+    return this.db.prepare(
+      `UPDATE User SET passwordHash = ?, tokenVersion = tokenVersion + 1, refreshToken = NULL, refreshTokenExpiresAt = NULL, updatedAt = ? WHERE id = ? AND deletedAt IS NULL`,
+    ).run(passwordHash, updatedAt, id).changes;
   }
 
   updateLoginAttempts(id: string, attempts: number, lockedUntil: string | null, updatedAt: string): void {
@@ -227,12 +321,14 @@ export class SqliteAuthRepository implements AuthRepository {
 export class SqlitePurchaseOrderRepository implements PurchaseOrderRepository {
   constructor(private readonly db: Database.Database) {}
 
-  findById(id: string): PurchaseOrderRecord | null {
-    return (this.db.prepare('SELECT * FROM PurchaseOrder WHERE id = ? AND deletedAt IS NULL').get(id) as PurchaseOrderRecord | undefined) ?? null;
+  findById(id: string, clinicId?: string | null): PurchaseOrderRecord | null {
+    const params = clinicId ? [id, clinicId] : [id];
+    return (this.db.prepare(`SELECT * FROM PurchaseOrder WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`).get(...params) as PurchaseOrderRecord | undefined) ?? null;
   }
 
-  itemsByOrder(orderId: string): PurchaseOrderItemRecord[] {
-    return this.db.prepare('SELECT * FROM PurchaseOrderItem WHERE orderId = ? AND deletedAt IS NULL').all(orderId) as PurchaseOrderItemRecord[];
+  itemsByOrder(orderId: string, clinicId?: string | null): PurchaseOrderItemRecord[] {
+    const params = clinicId ? [orderId, clinicId] : [orderId];
+    return this.db.prepare(`SELECT * FROM PurchaseOrderItem WHERE orderId = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`).all(...params) as PurchaseOrderItemRecord[];
   }
 
   createOrder(input: PurchaseOrderRecord): void {
@@ -253,40 +349,44 @@ export class SqlitePurchaseOrderRepository implements PurchaseOrderRepository {
     ).run(input.id, input.clinicId ?? null, input.createdAt, input.updatedAt, input.orderId, input.itemId ?? null, input.name, input.quantity, input.unitPrice, input.subtotal);
   }
 
-  markReceived(id: string, receivedAt: string, updatedAt: string): void {
-    this.db.prepare('UPDATE PurchaseOrder SET status = ?, receivedAt = ?, updatedAt = ? WHERE id = ?')
-      .run('RECEIVED', receivedAt, updatedAt, id);
+  markReceived(id: string, receivedAt: string, updatedAt: string, clinicId?: string | null): void {
+    const params = clinicId ? [receivedAt, updatedAt, id, clinicId] : [receivedAt, updatedAt, id];
+    this.db.prepare(`UPDATE PurchaseOrder SET status = 'RECEIVED', receivedAt = ?, updatedAt = ? WHERE id = ?${tenantAnd(clinicId)}`)
+      .run(...params);
   }
 }
 
 export class SqliteProcessingOrderRepository implements ProcessingOrderRepository {
   constructor(private readonly db: Database.Database) {}
 
-  findById(id: string): { id: string; status: string; deletedAt?: string | null } | null {
-    return (this.db.prepare('SELECT id, status, deletedAt FROM ProcessingOrder WHERE id = ? AND deletedAt IS NULL').get(id) as
+  findById(id: string, clinicId?: string | null): { id: string; status: string; deletedAt?: string | null } | null {
+    const params = clinicId ? [id, clinicId] : [id];
+    return (this.db.prepare(`SELECT id, status, deletedAt FROM ProcessingOrder WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`).get(...params) as
       | { id: string; status: string; deletedAt?: string | null }
       | undefined) ?? null;
   }
 
-  updateStatus(id: string, status: string, updatedAt: string): void {
-    this.db.prepare('UPDATE ProcessingOrder SET status = ?, updatedAt = ? WHERE id = ?').run(status, updatedAt, id);
+  updateStatus(id: string, status: string, updatedAt: string, clinicId?: string | null): void {
+    const params = clinicId ? [status, updatedAt, id, clinicId] : [status, updatedAt, id];
+    this.db.prepare(`UPDATE ProcessingOrder SET status = ?, updatedAt = ? WHERE id = ?${tenantAnd(clinicId)}`).run(...params);
   }
 }
 
 export class SqliteFollowUpRepository implements FollowUpRepository {
   constructor(private readonly db: Database.Database) {}
 
-  reminders(): Array<Record<string, unknown>> {
+  reminders(clinicId?: string | null): Array<Record<string, unknown>> {
     const future = new SystemClock().clinicDate(Date.now() + 14 * 86_400_000);
+    const params = clinicId ? [future, clinicId] : [future];
     return this.db.prepare(
       `SELECT F.id, F.patientId, F.planDate, F.content, F.status,
               P.name AS patientName, P.phone AS patientPhone
        FROM FollowUp F
        LEFT JOIN Patient P ON P.id = F.patientId
-       WHERE F.status = 'PENDING' AND F.deletedAt IS NULL AND F.planDate <= ?
+       WHERE F.status = 'PENDING' AND F.deletedAt IS NULL AND F.planDate <= ?${tenantAnd(clinicId, 'F.clinicId')}
        ORDER BY F.planDate ASC
        LIMIT 100`,
-    ).all(future) as Array<Record<string, unknown>>;
+    ).all(...params) as Array<Record<string, unknown>>;
   }
 
   insert(record: FollowUpRecord): void {
@@ -313,38 +413,50 @@ export class SqliteFollowUpRepository implements FollowUpRepository {
 export class SqliteWechatMessageRepository implements WechatMessageRepository {
   constructor(private readonly db: Database.Database) {}
 
-  markSent(id: string, sentAt: string, updatedAt: string): void {
-    this.db.prepare(
-      'UPDATE WechatMessage SET status = ?, sentAt = ?, result = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL',
-    ).run('SENT', sentAt, 'sent', updatedAt, id);
+  findById(id: string, clinicId?: string | null): { id: string; status: string; clinicId?: string | null } | null {
+    const params = clinicId ? [id, clinicId] : [id];
+    return (this.db.prepare(`SELECT id, status, clinicId FROM WechatMessage WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`).get(...params) as
+      | { id: string; status: string; clinicId?: string | null }
+      | undefined) ?? null;
+  }
+
+  markSent(id: string, sentAt: string, updatedAt: string, clinicId?: string | null): number {
+    const params = clinicId ? [sentAt, updatedAt, id, clinicId] : [sentAt, updatedAt, id];
+    return this.db.prepare(
+      `UPDATE WechatMessage SET status = ?, sentAt = ?, result = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
+    ).run('SENT', 'sent', ...params).changes;
   }
 }
 
 export class SqliteAlertRepository implements AlertRepository {
   constructor(private readonly db: Database.Database) {}
 
-  open(): Array<Record<string, unknown>> {
+  open(clinicId?: string | null): Array<Record<string, unknown>> {
+    const params = clinicId ? [clinicId] : [];
     return this.db.prepare(
-      `SELECT * FROM BusinessAlert WHERE status = 'OPEN' ORDER BY createdAt DESC LIMIT 100`,
-    ).all() as Array<Record<string, unknown>>;
+      `SELECT * FROM BusinessAlert WHERE status = 'OPEN'${tenantAnd(clinicId)} ORDER BY createdAt DESC LIMIT 100`,
+    ).all(...params) as Array<Record<string, unknown>>;
   }
 
-  setStatus(id: string, status: string, userId: string | null, now: string): void {
-    this.db.prepare(
-      'UPDATE BusinessAlert SET status = ?, acknowledgedBy = ?, acknowledgedAt = ?, updatedAt = ? WHERE id = ?',
-    ).run(status, userId, now, now, id);
+  setStatus(id: string, status: string, userId: string | null, now: string, clinicId?: string | null): number {
+    const params = clinicId ? [status, userId, now, now, id, clinicId] : [status, userId, now, now, id];
+    return this.db.prepare(
+      `UPDATE BusinessAlert SET status = ?, acknowledgedBy = ?, acknowledgedAt = ?, updatedAt = ? WHERE id = ?${tenantAnd(clinicId)}`,
+    ).run(...params).changes;
   }
 }
 
 export class SqlitePatientRiskRepository implements PatientRiskRepository {
   constructor(private readonly db: Database.Database) {}
 
-  treatmentCount(patientId: string): number {
-    return (this.db.prepare('SELECT COUNT(*) AS c FROM Treatment WHERE patientId = ? AND deletedAt IS NULL').get(patientId) as { c: number }).c;
+  treatmentCount(patientId: string, clinicId?: string | null): number {
+    const params = clinicId ? [patientId, clinicId] : [patientId];
+    return (this.db.prepare(`SELECT COUNT(*) AS c FROM Treatment WHERE patientId = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`).get(...params) as { c: number }).c;
   }
 
-  periodontalCount(patientId: string): number {
-    return (this.db.prepare('SELECT COUNT(*) AS c FROM PeriodontalRecord WHERE patientId = ? AND deletedAt IS NULL').get(patientId) as { c: number }).c;
+  periodontalCount(patientId: string, clinicId?: string | null): number {
+    const params = clinicId ? [patientId, clinicId] : [patientId];
+    return (this.db.prepare(`SELECT COUNT(*) AS c FROM PeriodontalRecord WHERE patientId = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`).get(...params) as { c: number }).c;
   }
 
   insert(input: Record<string, unknown>): void {
@@ -430,31 +542,35 @@ export class SqliteAnalyticsRepository implements AnalyticsRepository {
 export class SqliteHrRepository implements HrRepository {
   constructor(private readonly db: Database.Database) {}
 
-  attendance(workDate?: string): Array<Record<string, unknown>> {
+  attendance(workDate?: string, clinicId?: string | null): Array<Record<string, unknown>> {
     if (workDate) {
-      return this.db.prepare('SELECT * FROM Attendance WHERE workDate = ? ORDER BY checkIn').all(workDate) as Array<Record<string, unknown>>;
+      const params = clinicId ? [workDate, clinicId] : [workDate];
+      return this.db.prepare(`SELECT * FROM Attendance WHERE workDate = ?${tenantAnd(clinicId)} ORDER BY checkIn`).all(...params) as Array<Record<string, unknown>>;
     }
-    return this.db.prepare('SELECT * FROM Attendance ORDER BY workDate DESC LIMIT 200').all() as Array<Record<string, unknown>>;
+    const params = clinicId ? [clinicId] : [];
+    return this.db.prepare(`SELECT * FROM Attendance${clinicId ? ' WHERE clinicId = ?' : ''} ORDER BY workDate DESC LIMIT 200`).all(...params) as Array<Record<string, unknown>>;
   }
 
-  approveLeave(id: string, status: string, reviewerId: string, now: string): void {
-    this.db.prepare('UPDATE LeaveRequest SET status = ?, reviewerId = ?, reviewedAt = ?, updatedAt = ? WHERE id = ?')
-      .run(status, reviewerId, now, now, id);
+  approveLeave(id: string, status: string, reviewerId: string, now: string, clinicId?: string | null): number {
+    const params = clinicId ? [status, reviewerId, now, now, id, clinicId] : [status, reviewerId, now, now, id];
+    return this.db.prepare(`UPDATE LeaveRequest SET status = ?, reviewerId = ?, reviewedAt = ?, updatedAt = ? WHERE id = ?${tenantAnd(clinicId)}`)
+      .run(...params).changes;
   }
 }
 
 export class SqliteClinicalWorkflowRepository implements ClinicalWorkflowRepository {
   constructor(private readonly db: Database.Database) {}
 
-  getRow(table: string, id: string): Record<string, unknown> | null {
-    return (this.db.prepare(`SELECT * FROM ${table} WHERE id = ? AND deletedAt IS NULL`).get(id) as Record<string, unknown> | undefined) ?? null;
+  getRow(table: string, id: string, clinicId?: string | null): Record<string, unknown> | null {
+    const params = clinicId ? [id, clinicId] : [id];
+    return (this.db.prepare(`SELECT * FROM ${table} WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`).get(...params) as Record<string, unknown> | undefined) ?? null;
   }
 
-  updateStatus(table: string, id: string, status: string, now: string, extra: Record<string, unknown> = {}): void {
+  updateStatus(table: string, id: string, status: string, now: string, extra: Record<string, unknown> = {}, clinicId?: string | null): void {
     const setClause = Object.keys(extra).map((key) => `${key} = ?`).join(', ');
     const params = Object.values(extra).map((value) => value ?? null);
-    const sql = `UPDATE ${table} SET status = ?, updatedAt = ?${setClause ? `, ${setClause}` : ''} WHERE id = ?`;
-    this.db.prepare(sql).run(status, now, ...params, id);
+    const sql = `UPDATE ${table} SET status = ?, updatedAt = ?${setClause ? `, ${setClause}` : ''} WHERE id = ?${tenantAnd(clinicId)}`;
+    this.db.prepare(sql).run(status, now, ...params, id, ...(clinicId ? [clinicId] : []));
   }
 
   createVisit(input: Record<string, unknown>): string {
@@ -467,9 +583,12 @@ export class SqliteClinicalWorkflowRepository implements ClinicalWorkflowReposit
     return String(input.id);
   }
 
-  lockMedicalRecord(id: string, locked: boolean, userId: string, now: string): void {
+  lockMedicalRecord(id: string, locked: boolean, userId: string, now: string, clinicId?: string | null): void {
+    /* v8 ignore start -- V8 does not report the false ternary branches inside this params literal despite direct coverage. */
+    const params = clinicId ? [locked ? 1 : 0, locked ? now : null, locked ? userId : null, now, id, clinicId] : [locked ? 1 : 0, locked ? now : null, locked ? userId : null, now, id];
+    /* v8 ignore stop */
     this.db.prepare(
-      'UPDATE MedicalRecord SET isLocked = ?, lockedAt = ?, lockedBy = ?, updatedAt = ? WHERE id = ?',
-    ).run(locked ? 1 : 0, locked ? now : null, locked ? userId : null, now, id);
+      `UPDATE MedicalRecord SET isLocked = ?, lockedAt = ?, lockedBy = ?, updatedAt = ? WHERE id = ?${tenantAnd(clinicId)}`,
+    ).run(...params);
   }
 }

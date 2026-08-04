@@ -64,7 +64,7 @@ const resources: ResourceDefinition[] = [
     f('loginAttempts', 'number', { default: 0 }),
     f('lockedUntil', 'datetime'),
     f('tokenVersion', 'number', { default: 0 }),
-  ], { roles: boss }),
+  ], { roles: boss, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
 
   crud('patients', 'Patient', [
     f('code', 'text', { required: true, unique: true, searchable: true, maxLength: 64 }),
@@ -103,7 +103,7 @@ const resources: ResourceDefinition[] = [
     f('implantLevel', 'enum', { required: true, enumValues: ['LOW', 'MEDIUM', 'HIGH', 'EXTREME'] }),
     f('factorSnapshotJson', 'json', { required: true }),
     f('assessedById', 'relation', { relation: { resource: 'users', foreignKey: 'assessedById', labelField: 'name' } }),
-  ], { roles: clinical }),
+  ], { roles: clinical, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
 
   crud('chairs', 'Chair', [
     f('name', 'text', { required: true, searchable: true, maxLength: 64 }),
@@ -305,7 +305,7 @@ const resources: ResourceDefinition[] = [
     f('payMethod', 'enum', { enumValues: ['CASH', 'WECHAT', 'ALIPAY', 'CARD', 'DEBT', 'MEMBER_CARD', 'UNIONPAY', 'INSURANCE', 'OTHER'] }),
     f('paidAt', 'datetime'),
     f('remark', 'longText'),
-  ], { roles: reception, audit: true }),
+  ], { roles: reception, audit: true, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
 
   crud('chargeItems', 'ChargeItem', [
     f('chargeId', 'relation', { required: true, relation: { resource: 'charges', foreignKey: 'chargeId', labelField: 'number' } }),
@@ -316,7 +316,7 @@ const resources: ResourceDefinition[] = [
     f('quantity', 'number', { required: true, min: 1 }),
     f('teethNumbers', 'json', { default: '[]' }),
     f('subtotal', 'money', { required: true }),
-  ], { roles: reception }),
+  ], { roles: reception, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
 
   crud('debtRecords', 'Debt', [
     f('chargeId', 'relation', { required: true, relation: { resource: 'charges', foreignKey: 'chargeId', labelField: 'number' } }),
@@ -324,7 +324,7 @@ const resources: ResourceDefinition[] = [
     f('totalAmount', 'money', { required: true }),
     f('paidAmount', 'money', { default: 0 }),
     f('status', 'enum', { required: true, enumValues: ['UNPAID', 'PARTIAL', 'PAID', 'CANCELLED'] }),
-  ], { roles: reception }),
+  ], { roles: reception, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
 
   crud('memberCards', 'MemberCard', [
     f('patientId', 'relation', { required: true, relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
@@ -336,7 +336,7 @@ const resources: ResourceDefinition[] = [
     f('points', 'number', { default: 0 }),
     f('totalPoints', 'number', { default: 0 }),
     f('level', 'enum', { required: true, enumValues: ['NORMAL', 'VIP', 'SVIP'] }),
-  ], { roles: reception }),
+  ], { roles: reception, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
 
   crud('memberCardLogs', 'MemberCardLog', [
     f('cardId', 'relation', { required: true, relation: { resource: 'memberCards', foreignKey: 'cardId', labelField: 'cardNo' } }),
@@ -345,7 +345,7 @@ const resources: ResourceDefinition[] = [
     f('balanceAfter', 'money', { required: true }),
     f('referenceId', 'text'),
     f('remark', 'longText'),
-  ], { roles: reception }),
+  ], { roles: reception, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
 
   crud('memberPointLogs', 'MemberPointLog', [
     f('cardId', 'relation', { required: true, relation: { resource: 'memberCards', foreignKey: 'cardId', labelField: 'cardNo' } }),
@@ -354,7 +354,7 @@ const resources: ResourceDefinition[] = [
     f('pointsAfter', 'number', { required: true }),
     f('referenceId', 'text'),
     f('remark', 'longText'),
-  ], { roles: reception }),
+  ], { roles: reception, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
 
   crud('refunds', 'Refund', [
     f('chargeId', 'relation', { required: true, relation: { resource: 'charges', foreignKey: 'chargeId', labelField: 'number' } }),
@@ -363,7 +363,7 @@ const resources: ResourceDefinition[] = [
     f('reason', 'longText'),
     f('operatorId', 'text'),
     f('operatorName', 'text'),
-  ], { roles: reception, audit: true }),
+  ], { roles: reception, audit: true, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
 
   crud('drugCatalogItems', 'DrugCatalogItem', [
     f('code', 'text', { required: true, unique: true, searchable: true }),
@@ -417,7 +417,7 @@ const resources: ResourceDefinition[] = [
     f('expireDate', 'date'),
     f('location', 'text'),
     f('remark', 'longText'),
-  ], { roles: boss }),
+  ], { roles: boss, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
 
   crud('inventoryTransactions', 'InventoryTransaction', [
     f('itemId', 'relation', { required: true, relation: { resource: 'inventoryItems', foreignKey: 'itemId', labelField: 'name' } }),
@@ -437,7 +437,7 @@ const resources: ResourceDefinition[] = [
     f('totalAmount', 'money', { required: true }),
     f('status', 'text', { required: true }),
     f('receivedAt', 'datetime'),
-  ], { roles: boss, audit: true }),
+  ], { roles: boss, audit: true, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
 
   crud('purchaseOrderItems', 'PurchaseOrderItem', [
     f('orderId', 'relation', { required: true, relation: { resource: 'purchaseOrders', foreignKey: 'orderId', labelField: 'number' } }),
@@ -447,7 +447,7 @@ const resources: ResourceDefinition[] = [
     f('quantity', 'number', { required: true, min: 1 }),
     f('unitPrice', 'money', { required: true }),
     f('subtotal', 'money', { required: true }),
-  ], { roles: boss }),
+  ], { roles: boss, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
 
   crud('processingFactories', 'ProcessingFactory', [
     f('name', 'text', { required: true, searchable: true }),
@@ -473,7 +473,7 @@ const resources: ResourceDefinition[] = [
     f('receivedAt', 'datetime'),
     f('deliveredAt', 'datetime'),
     f('remark', 'longText'),
-  ], { roles: reception }),
+  ], { roles: reception, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
 
   crud('processingOrderItems', 'ProcessingOrderItem', [
     f('orderId', 'relation', { required: true, relation: { resource: 'processingOrders', foreignKey: 'orderId', labelField: 'number' } }),
@@ -483,7 +483,7 @@ const resources: ResourceDefinition[] = [
     f('unitPrice', 'money', { required: true }),
     f('subtotal', 'money', { required: true }),
     f('status', 'text', { required: true }),
-  ], { roles: reception }),
+  ], { roles: reception, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
 
   crud('cephalometricCases', 'CephalometricCase', [
     f('patientId', 'relation', { required: true, relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
@@ -705,12 +705,14 @@ const INTERNAL_RESOURCE_TABLES = new Set([
 ]);
 
 const registry = new Map(resources.map((resource) => [resource.name, resource]));
+/* v8 ignore start -- generated legacy definitions are pre-pruned; duplicate/internal rows are intentionally never registered. */
 for (const resource of legacyResources) {
   const tableAlreadyDeclared = resources.some((candidate) => candidate.table === resource.table);
   if (!registry.has(resource.name) && !tableAlreadyDeclared && !INTERNAL_RESOURCE_TABLES.has(resource.table)) {
     registry.set(resource.name, resource);
   }
 }
+/* v8 ignore stop */
 
 export const resourceRegistry: ResourceRegistry = {
   get(name) {

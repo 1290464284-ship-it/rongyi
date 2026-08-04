@@ -301,9 +301,9 @@ describe('coverage boundaries', () => {
     expect(missing.imported).toBe(false);
   });
 
-  it('covers idempotency without a key', () => {
+  it('covers idempotency without a key', async () => {
     let calls = 0;
-    const result = withIdempotency({} as Database.Database, undefined, () => {
+    const result = await withIdempotency({} as Database.Database, { operation: 'x', userId: 'u', clinicId: 'c', requestId: '' }, () => {
       calls += 1;
       return { value: 1 };
     });

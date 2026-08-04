@@ -96,7 +96,7 @@ describe('service coverage', () => {
     await service.batchGenerate(1000, context);
     const generated = db.prepare('SELECT * FROM FollowUp WHERE templateId = ?').all('template-test') as Array<Record<string, unknown>>;
     expect(generated.length).toBeGreaterThanOrEqual(1);
-    expect(typeof service.adherence().rate).toBe('number');
+    expect(typeof service.adherence(context).rate).toBe('number');
   });
 
   it('creates and verifies backups', async () => {
@@ -178,23 +178,23 @@ describe('service coverage', () => {
     const print = new PrintService();
     expect(print.render('report', { title: 'R' })).toContain('R');
     const hr = new HrService(db);
-    expect(hr.attendance()).toBeInstanceOf(Array);
+    expect(hr.attendance(undefined, context)).toBeInstanceOf(Array);
     db.prepare(
       `INSERT INTO LeaveRequest (
          id, clinicId, createdAt, updatedAt, deletedAt,
          userId, startDate, endDate, type, reason, status
        ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, 'ANNUAL', 'reason', 'PENDING')`,
     ).run('leave-workflow', context.clinicId, now, now, 'user-admin-001', '2026-08-01', '2026-08-03');
-    expect(hr.approveLeave('leave-workflow', context.userId, true).status).toBe('APPROVED');
+    expect(hr.approveLeave('leave-workflow', context.userId, true, context).status).toBe('APPROVED');
     const alerts = new AlertService(db);
-    expect(alerts.open()).toBeInstanceOf(Array);
+    expect(alerts.open(context)).toBeInstanceOf(Array);
     db.prepare(
       `INSERT INTO BusinessAlert (
          id, clinicId, createdAt, updatedAt, deletedAt,
          alertType, severity, level, title, message, source, status
        ) VALUES (?, ?, ?, ?, NULL, 'SCHEDULER_TASK_FAILURE', 'CRITICAL', 'CRITICAL', 'Title', 'Message', 'test', 'OPEN')`,
     ).run('alert-wf', context.clinicId, now, now);
-    expect(alerts.setStatus('alert-wf', 'ACKNOWLEDGED', context.userId).status).toBe('ACKNOWLEDGED');
+    expect(alerts.setStatus('alert-wf', 'ACKNOWLEDGED', context.userId, context).status).toBe('ACKNOWLEDGED');
     const created = alerts.create({
       alertType: 'SCHEDULER_TASK_FAILURE',
       level: 'WARNING',

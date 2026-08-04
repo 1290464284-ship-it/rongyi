@@ -1,30 +1,27 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'react-router';
 import { apiRequest } from './api';
+import type { Page, ResourceDefinition, ResourceField } from './types';
 
-interface Page<T> {
-  items: T[];
-  total: number;
-  page: number;
-  pageSize: number;
-}
-
-interface ResourceField {
-  name: string;
-  type: 'text' | 'longText' | 'number' | 'money' | 'date' | 'datetime' | 'boolean' | 'enum' | 'json' | 'relation';
-  required?: boolean;
-  enumValues?: readonly string[];
-  relation?: { resource: string; labelField: string };
-  maxLength?: number;
-}
-
-interface ResourceDefinition {
-  name: string;
-  table: string;
-  fields: ResourceField[];
-  capabilities: { create: boolean; update: boolean; delete: boolean; softDelete: boolean };
-}
+const PROTECTED_UI_FIELDS = new Set([
+  'passwordHash',
+  'refreshToken',
+  'tokenHash',
+  'role',
+  'loginAttempts',
+  'lockedUntil',
+  'tokenVersion',
+  'balance',
+  'totalRecharge',
+  'totalConsume',
+  'points',
+  'totalPoints',
+  'stock',
+  'minStock',
+  'paidAmount',
+  'refundedAmount',
+]);
 
 function fieldValue(field: ResourceField, value: unknown): unknown {
   if (field.type === 'json') {
@@ -67,11 +64,10 @@ export function ResourcePage({ resource: fixedResource }: { resource?: string })
     enabled: Boolean(definition),
   });
 
-  useEffect(() => {
-    setPage(1);
-  }, [resource, search]);
-
-  const editableFields = useMemo(() => definition?.fields ?? [], [definition]);
+  const editableFields = useMemo(
+    () => (definition?.fields ?? []).filter((field) => !PROTECTED_UI_FIELDS.has(field.name)),
+    [definition],
+  );
 
   function openCreate() {
     const initial: Record<string, unknown> = {};
@@ -128,7 +124,7 @@ export function ResourcePage({ resource: fixedResource }: { resource?: string })
   }
 
   const rows = listQuery.data?.items ?? [];
-  const columns = rows.length > 0 ? Object.keys(rows[0]).filter((column) => column !== 'passwordHash') : [];
+  const columns = rows.length > 0 ? Object.keys(rows[0]).filter((column) => !PROTECTED_UI_FIELDS.has(column)) : [];
 
   return (
     <div className="page">
@@ -140,7 +136,10 @@ export function ResourcePage({ resource: fixedResource }: { resource?: string })
         className="search"
         placeholder="Search..."
         value={search}
-        onChange={(event) => setSearch(event.target.value)}
+        onChange={(event) => {
+          setSearch(event.target.value);
+          setPage(1);
+        }}
       />
       {rows.length === 0 ? (
         <p>No records.</p>
@@ -225,7 +224,7 @@ function RelationSelect({
   value: unknown;
   onChange: (value: unknown) => void;
 }) {
-  const { data, isLoading } = useQuery({
+  const { data } = useQuery({
     queryKey: ['relation-options', relation.resource],
     queryFn: () => apiRequest<Page<Record<string, unknown>>>(`/resources/${relation.resource}?page=1&pageSize=200`),
   });

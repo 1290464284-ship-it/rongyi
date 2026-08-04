@@ -53,7 +53,7 @@ describe('remaining services', () => {
          prescriptionId, name, days, quantity, price
        ) VALUES (?, ?, ?, ?, NULL, ?, 'Aspirin', 1, 1, 10)`,
     ).run('rxi-remaining', context.clinicId, now, now, 'rx-remaining');
-    const result = new PrescriptionSafetyService(db).check('rx-remaining');
+    const result = new PrescriptionSafetyService(db).check('rx-remaining', context);
     expect(result.safe).toBe(false);
     expect(result.warnings[0]).toContain('Aspirin');
   });
@@ -81,18 +81,18 @@ describe('remaining services', () => {
          planId, code, name, category, price, quantity, status
        ) VALUES (?, ?, ?, ?, NULL, ?, 'C-1', 'Item', 'GENERAL', 100, 1, 'COMPLETED')`,
     ).run('plan-item-remaining', context.clinicId, now, now, 'plan-remaining');
-    const progress = new TreatmentProgressService(db).summary('plan-remaining');
+    const progress = new TreatmentProgressService(db).summary('plan-remaining', context);
     expect(progress.progress).toBe(100);
   });
 
-  it('pays debt, lists notifications, and calculates NPS', () => {
+  it('pays debt, lists notifications, and calculates NPS', async () => {
     db.prepare(
       `INSERT INTO Debt (
          id, clinicId, createdAt, updatedAt, deletedAt,
          chargeId, patientId, totalAmount, paidAmount, status
        ) VALUES (?, ?, ?, ?, NULL, 'charge', 'patient-demo-001', 1000, 0, 'UNPAID')`,
     ).run('debt-remaining', context.clinicId, now, now);
-    expect(new DebtService(db).pay('debt-remaining', 300, context).status).toBe('PARTIAL');
+    expect((await new DebtService(db).pay('debt-remaining', 300, context)).status).toBe('PARTIAL');
 
     db.prepare(
       `INSERT INTO Notification (

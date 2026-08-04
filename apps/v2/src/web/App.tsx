@@ -2,7 +2,8 @@ import { Navigate, Route, Routes, useParams } from 'react-router';
 import { Layout } from './Layout';
 import { LoginPage } from './LoginPage';
 import { DashboardPage } from './DashboardPage';
-import { ResourceHub, patientHubTabs, clinicalHubTabs, financeHubTabs, inventoryHubTabs, communicationHubTabs, hrHubTabs, systemHubTabs, analyticsHubTabs } from './ResourceHub';
+import { ResourceHub } from './ResourceHub';
+import { patientHubTabs, clinicalHubTabs, financeHubTabs, inventoryHubTabs, communicationHubTabs, hrHubTabs, systemHubTabs, analyticsHubTabs } from './hub-tabs';
 import { ResourcePage } from './ResourcePage';
 
 function DynamicResourcePage() {

@@ -28,10 +28,13 @@ jobs:
           node-version: 22
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile=false
+        run: pnpm install --frozen-lockfile
 
       - name: Typecheck
         run: pnpm --filter @dental/v2 typecheck
+
+      - name: Lint
+        run: pnpm --filter @dental/v2 run lint
 
       - name: Knip
         run: pnpm --filter @dental/v2 run knip
@@ -41,6 +44,9 @@ jobs:
 
       - name: Coverage
         run: pnpm --filter @dental/v2 test:coverage
+
+      - name: Web coverage
+        run: pnpm --filter @dental/v2 test:coverage:web
 
       - name: Audit
         run: pnpm --filter @dental/v2 run audit:security

@@ -73,9 +73,10 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
     }
 
     if (query.search && (this.resource.searchableFields?.length ?? 0) > 0) {
-      const searchClauses = this.resource.searchableFields!.map((field) => `${field} LIKE ?`);
+      const searchClauses = this.resource.searchableFields!.map((field) => `${field} LIKE ? ESCAPE '\\'`);
       where.push(`(${searchClauses.join(' OR ')})`);
-      for (let i = 0; i < searchClauses.length; i += 1) params.push(`%${query.search}%`);
+      const escaped = query.search.replace(/[\\%_]/g, '\\$&');
+      for (let i = 0; i < searchClauses.length; i += 1) params.push(`%${escaped}%`);
     }
 
     const whereSql = where.join(' AND ');
@@ -155,7 +156,7 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
   }
 
   private hasClinicColumn(): boolean {
-    return this.resource.fields.some((field) => field.name === 'clinicId') || true;
+    return true;
   }
 
   private queryRows(sql: string, params: unknown[]): Array<Record<string, unknown>> {

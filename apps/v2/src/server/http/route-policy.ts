@@ -1,6 +1,7 @@
 import type { UserRole } from '../../domain/contracts';
 
 export const routeRoleRules: Array<{ pattern: RegExp; roles: UserRole[] }> = [
+  { pattern: /^\/api\/v2\/admin\/users/, roles: ['BOSS'] },
   { pattern: /^\/api\/v2\/bulk-import\//, roles: ['BOSS', 'ADMIN'] },
   { pattern: /^\/api\/v2\/sync\//, roles: ['BOSS', 'ADMIN'] },
   { pattern: /^\/api\/v2\/backups/, roles: ['BOSS', 'ADMIN'] },
