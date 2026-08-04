@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ResourceHub } from './ResourceHub';
 import { analyticsHubTabs, type HubTab } from './hub-tabs';
@@ -64,13 +64,27 @@ describe('ResourceHub', () => {
 
   it('renders analytics custom tab components', async () => {
     const tabs = analyticsHubTabs.filter((tab) => tab.id !== 'dashboard' && tab.id !== 'satisfaction');
-    vi.mocked(apiRequest).mockResolvedValue([]);
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/auth/navigation') return { role: 'BOSS' };
+      return [];
+    });
     render(<ResourceHub title="Analytics" tabs={tabs} />, { wrapper });
     expect(await screen.findByText('RFM')).toBeDefined();
+    expect(await screen.findByText(/\u591a\u95e8\u5e97/)).toBeDefined();
     fireEvent.click(screen.getByRole('tab', { name: '月度报表' }));
     fireEvent.click(screen.getByRole('tab', { name: '库存报表' }));
     fireEvent.click(screen.getByRole('tab', { name: 'RFM' }));
     fireEvent.click(screen.getByRole('tab', { name: '流失预警' }));
     fireEvent.click(screen.getByRole('tab', { name: '医生异常' }));
   });
+});
+it('hides boss-only analytics tabs from non-BOSS roles', async () => {
+  const tabs = analyticsHubTabs.filter((tab) => tab.id !== 'dashboard' && tab.id !== 'satisfaction');
+  vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+    if (path === '/auth/navigation') return { role: 'ADMIN' };
+    return [];
+  });
+  render(<ResourceHub title="Analytics" tabs={tabs} />, { wrapper });
+  expect(await screen.findByText('RFM')).toBeDefined();
+  await waitFor(() => expect(screen.queryByText(/\u591a\u95e8\u5e97/)).toBeNull());
 });

@@ -1,16 +1,27 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { ResourcePage } from './ResourcePage';
 import type { HubTab } from './hub-tabs';
+import { apiRequest } from './api';
 
 export function ResourceHub({ title, tabs }: { title: string; tabs: HubTab[] }) {
   const [activeId, setActiveId] = useState(tabs[0]?.id ?? '');
-  const active = tabs.find((tab) => tab.id === activeId) ?? tabs[0];
+  const hasBossOnly = tabs.some((tab) => tab.bossOnly);
+  const navigation = useQuery({
+    queryKey: ['resource-hub-navigation'],
+    queryFn: () => apiRequest<{ role?: string }>('/auth/navigation'),
+    enabled: hasBossOnly,
+  });
+  const visibleTabs = hasBossOnly
+    ? tabs.filter((tab) => !tab.bossOnly || navigation.data?.role === 'BOSS')
+    : tabs;
+  const active = visibleTabs.find((tab) => tab.id === activeId) ?? visibleTabs[0];
 
   return (
     <div className="hub">
       <h1>{title}</h1>
       <div className="tabs" role="tablist">
-        {tabs.map((tab) => (
+        {visibleTabs.map((tab) => (
           <button
             key={tab.id}
             role="tab"

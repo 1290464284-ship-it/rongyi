@@ -20,8 +20,8 @@ import { PatientWorkflowPage } from './PatientWorkflowPage';
 import { ClinicOverviewPage } from './ClinicOverviewPage';
 
 export type HubTab =
-  | { id: string; label: string; kind: 'resource'; resource: string }
-  | { id: string; label: string; kind: 'custom'; component: ComponentType };
+  | { id: string; label: string; kind: 'resource'; resource: string; bossOnly?: boolean }
+  | { id: string; label: string; kind: 'custom'; component: ComponentType; bossOnly?: boolean };
 
 export const patientHubTabs: HubTab[] = [
   { id: 'patients', label: '\u60a3\u8005\u6863\u6848', kind: 'resource', resource: 'patients' },
@@ -93,7 +93,7 @@ export const systemHubTabs: HubTab[] = [
 
 export const analyticsHubTabs: HubTab[] = [
   { id: 'dashboard', label: '\u5de5\u4f5c\u53f0', kind: 'custom', component: DashboardPage },
-  { id: 'clinicOverview', label: '\u591a\u95e8\u5e97', kind: 'custom', component: ClinicOverviewPage },
+  { id: 'clinicOverview', label: '\u591a\u95e8\u5e97', kind: 'custom', component: ClinicOverviewPage, bossOnly: true },
   { id: 'monthly', label: '\u6708\u5ea6\u62a5\u8868', kind: 'custom', component: () => <SimpleListPage title="\u6708\u5ea6\u62a5\u8868" endpoint="/stats/revenue?groupBy=month" /> },
   { id: 'inventoryReport', label: '\u5e93\u5b58\u62a5\u8868', kind: 'custom', component: () => <SimpleListPage title="\u5e93\u5b58\u62a5\u8868" endpoint="/stats/inventory" /> },
   { id: 'rfm', label: 'RFM', kind: 'custom', component: () => <SimpleListPage title="RFM" endpoint="/analytics/rfm" /> },

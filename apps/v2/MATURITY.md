@@ -183,7 +183,7 @@
   hub/page, hub tabs, system operations, login, and shared components; the
   expanded set also includes the application layout and follow-up report; it
   now also includes desktop settings and the clinic overview page; it passes
-  99.02% statements, 93.05% branches, 98.74% functions, and 100% lines against
+  99.03% statements, 93.1% branches, 98.75% functions, and 100% lines against
   tightened gates of 98.5/92.5/98.5/100.
 - Removed the entire unused ReactBits experiment directory
   (`src/components/reactbits`), its jsrepo config, its dedicated tsconfig, and
