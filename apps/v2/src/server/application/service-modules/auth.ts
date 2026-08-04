@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, UnauthorizedError, ValidationError } from '../../infrastructure/errors';
 import { SqliteAuthRepository } from '../../infrastructure/repositories/core.repositories';
-import { tenantAnd, tenantMatches } from '../../infrastructure/tenant';
+import { tenantAnd, tenantMatches, tenantParams } from '../../infrastructure/tenant';
 import type { AppContext, User } from '../../../domain/contracts';
 import type { AuthRepository, AuthUserRecord } from '../ports';
 import {
@@ -297,19 +297,17 @@ export class AppointmentService {
   }
 
   async transition(id: string, nextStatus: string, context: AppContext): Promise<Record<string, unknown>> {
-    const row = this.db.prepare('SELECT * FROM Appointment WHERE id = ? AND deletedAt IS NULL').get(id) as
+    const row = this.db.prepare(`SELECT * FROM Appointment WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`).get(id, ...tenantParams(context.clinicId)) as
       | Record<string, unknown>
       | undefined;
     if (!row) throw new NotFoundError('Appointment not found');
-    if (row.clinicId && context.clinicId && String(row.clinicId) !== context.clinicId) {
-      throw new NotFoundError('Appointment not found');
-    }
     const current = String(row.status);
     if (!APPOINTMENT_TRANSITIONS[current]?.includes(nextStatus)) {
       throw new ConflictError(`Cannot transition appointment from ${current} to ${nextStatus}`);
     }
-    this.db.prepare('UPDATE Appointment SET status = ?, updatedAt = ? WHERE id = ?')
-      .run(nextStatus, context.now().toISOString(), id);
+    this.db.prepare(
+      `UPDATE Appointment SET status = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    ).run(nextStatus, context.now().toISOString(), id, ...tenantParams(context.clinicId));
     return { id, status: nextStatus };
   }
 
