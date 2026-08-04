@@ -77,6 +77,23 @@ describe('resource router', () => {
       .expect(200);
     expect(byId.body.data.id).toBe(id);
 
+    const exported = await request(app)
+      .get('/api/v2/resources/patients/export')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(exported.headers['content-type']).toContain('text/csv');
+    expect(exported.text).toContain('"id"');
+    expect(exported.text).toContain('Router Patient');
+    const emptyExport = await request(app)
+      .get('/api/v2/resources/patients/export?name=DoesNotExist')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(emptyExport.text).toBe('\uFEFF');
+    await request(app)
+      .get('/api/v2/resources/patients/export?unknown=1')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(400);
+
     await request(app)
       .patch(`/api/v2/resources/patients/${id}`)
       .set('Authorization', `Bearer ${adminToken}`)
@@ -97,6 +114,28 @@ describe('resource router', () => {
       .delete('/api/v2/resources/patients/missing-router-delete')
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(404);
+  });
+
+  it('exports more than one page of rows', async () => {
+    for (let index = 0; index < 201; index += 1) {
+      await request(app)
+        .post('/api/v2/resources/patients')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          code: `EXPORT-${index}`,
+          name: 'Export Row',
+          gender: 'UNKNOWN',
+          phone: `13900000${String(index).padStart(4, '0')}`,
+          source: 'OTHER',
+          active: true,
+        })
+        .expect(201);
+    }
+    const exported = await request(app)
+      .get('/api/v2/resources/patients/export?name=Export Row')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(exported.text.match(/"Export Row"/g)?.length).toBe(201);
   });
 
   it('covers missing request bodies for generic create and patch', async () => {
