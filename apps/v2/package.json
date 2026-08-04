@@ -30,6 +30,8 @@
     "test:load": "node scripts/load-smoke.mjs",
     "smoke:all": "node scripts/run-smokes.mjs",
     "audit:security": "node scripts/audit.mjs",
+    "verify:database": "node scripts/verify-database.mjs",
+    "repair:database": "node scripts/repair-database.mjs",
     "security:scan": "node scripts/security-scan.mjs",
     "clean:generated": "node scripts/clean-generated.mjs",
     "license:check": "node scripts/license-scan.mjs",

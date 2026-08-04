@@ -19,6 +19,8 @@
     "verify:delivery": "pnpm --filter @dental/v2 typecheck && pnpm --filter @dental/v2 test:coverage && pnpm build && pnpm --filter @dental/v2 electron:compile && pnpm --filter @dental/v2 run verify:package && pnpm --filter @dental/v2 run verify:update",
     "verify:critical": "pnpm --filter @dental/v2 typecheck && pnpm --filter @dental/v2 test && pnpm build",
     "verify:smoke": "pnpm --filter @dental/v2 run smoke:all",
+    "verify:database": "pnpm --filter @dental/v2 run verify:database",
+    "repair:database": "pnpm --filter @dental/v2 run repair:database",
     "verify:internal:delivery": "pnpm verify && pnpm verify:smoke && pnpm --filter @dental/v2 electron:dist:internal",
     "prepare": "husky"
   },
