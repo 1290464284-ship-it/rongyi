@@ -614,6 +614,16 @@ describe('service edge coverage', () => {
     expect(fs.existsSync(`${stagedResult.stagedPath}-shm`)).toBe(false);
     expect(fs.existsSync(`${path.join(backupDir, String(plain.filename))}-wal`)).toBe(false);
     expect(fs.existsSync(`${path.join(backupDir, String(plain.filename))}-shm`)).toBe(false);
+    expect(stagedResult.backupSummary).toMatchObject({
+      Patient: expect.any(Number),
+      Charge: expect.any(Number),
+    });
+    expect(stagedResult.currentSummary).toMatchObject({
+      User: expect.any(Number),
+    });
+    const noCurrentService = new BackupService(db, path.join(dataDir, 'missing-v2.sqlite'), backupDir);
+    const stagedNoCurrent = await noCurrentService.stageRestore(String(plain.filename));
+    expect(stagedNoCurrent.currentSummary).toBeUndefined();
     const originalCopy = fs.copyFileSync.bind(fs);
     const copySpy = vi.spyOn(fs, 'copyFileSync').mockImplementation(((source: string, target: string) => {
       originalCopy(source, target);

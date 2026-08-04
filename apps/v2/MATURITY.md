@@ -131,6 +131,9 @@
   and an in-table UI action.
 - WeChat send, leave approval, and business alert transitions now reject
   terminal or disallowed source statuses instead of reporting false success.
+- Backup verification and restore staging return core database summaries,
+  including clinic/user/membership/patient/charge/card/inventory/follow-up/
+  purchase counts and the latest paid charge timestamp.
 - `clean:generated` removes any `dist-*` output directory rather than a fixed
   hard-coded list.
 
