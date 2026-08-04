@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import type { Page } from './types';
+import { DataTable, type DataTableColumn } from './components';
 type ResourcePageQuery = UseQueryResult<Page<Record<string, unknown>>, Error>;
 
 const transitions: Record<string, Record<string, string[]>> = {
@@ -69,27 +70,25 @@ export function ClinicalWorkflowPage() {
       {resources.map((resource) => {
         const query = queries[resource];
         const rows = query.data?.items ?? [];
+        const columns: DataTableColumn<Record<string, unknown>>[] = [
+          { key: 'id', label: 'ID', render: (row) => String(row.id).slice(0, 8) },
+          { key: 'status', label: 'Status', render: (row) => String(row.status ?? '') },
+          {
+            key: 'actions',
+            label: 'Actions',
+            render: (row) => (
+              <>
+                {(transitions[resource]?.[String(row.status)] ?? []).map((next) => (
+                  <button key={next} onClick={() => transition(resource, String(row.id), next)}>{next}</button>
+                ))}
+              </>
+            ),
+          },
+        ];
         return (
           <section key={resource}>
             <h2>{resource}</h2>
-            <div className="table-wrap">
-              <table>
-                <thead><tr><th>ID</th><th>Status</th><th>Actions</th></tr></thead>
-                <tbody>
-                  {rows.map((row) => (
-                    <tr key={String(row.id)}>
-                      <td>{String(row.id).slice(0, 8)}</td>
-                      <td>{String(row.status ?? '')}</td>
-                      <td>
-                        {(transitions[resource]?.[String(row.status)] ?? []).map((next) => (
-                          <button key={next} onClick={() => transition(resource, String(row.id), next)}>{next}</button>
-                        ))}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <DataTable columns={columns} rows={rows} keyField="id" emptyText="No rows" />
           </section>
         );
       })}
