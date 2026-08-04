@@ -99,6 +99,8 @@
 - Staged restore creates the pre-restore safety copy with SQLite `VACUUM INTO`
   when the current database is valid, preserving WAL data instead of copying
   only the main database file.
+- Sync delete and generic resource delete verify the target exists before
+  reporting success, removing remaining fake-success paths for missing rows.
 - `clean:generated` removes any `dist-*` output directory rather than a fixed
   hard-coded list.
 
