@@ -48,6 +48,7 @@ export function importLegacyDatabase(
   removeSqliteSidecars(targetPath);
   if (fs.existsSync(targetPath)) fs.rmSync(targetPath, { force: true });
   backupSqliteFile(sourcePath, targetPath);
+  removeSqliteSidecars(sourcePath);
 
   const targetDb = new Database(targetPath, { readonly: true });
   try {
