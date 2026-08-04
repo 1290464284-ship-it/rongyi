@@ -142,6 +142,12 @@ describe('HTTP app edge error handling', () => {
       .send({ clinicId: 'clinic-v2-001' })
       .expect(200);
     expect(switched.body.data.clinicId).toBe('clinic-v2-001');
+    const auditRow = db.prepare(
+      "SELECT * FROM OperationLog WHERE action = 'auth.switch-clinic' ORDER BY createdAt DESC LIMIT 1",
+    ).get() as Record<string, unknown>;
+    expect(auditRow.target).toBe('clinic-v2-001');
+    expect(JSON.parse(String(auditRow.detail))).toEqual({ from: 'clinic-v2-001', to: 'clinic-v2-001' });
+    expect(auditRow.clinicId).toBe('clinic-v2-001');
     await request(app)
       .post('/api/v2/auth/switch-clinic')
       .set('Authorization', `Bearer ${token}`)
