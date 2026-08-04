@@ -129,6 +129,8 @@
 - Follow-up reminders support completion through `PATCH
   /api/v2/follow-ups/:id/complete`, with clinic scope, status conflict checks,
   and an in-table UI action.
+- WeChat send, leave approval, and business alert transitions now reject
+  terminal or disallowed source statuses instead of reporting false success.
 - `clean:generated` removes any `dist-*` output directory rather than a fixed
   hard-coded list.
 

@@ -469,7 +469,8 @@ export class SqliteWechatMessageRepository implements WechatMessageRepository {
   markSent(id: string, sentAt: string, updatedAt: string, clinicId?: string | null): number {
     const params = clinicId ? [sentAt, updatedAt, id, clinicId] : [sentAt, updatedAt, id];
     return this.db.prepare(
-      `UPDATE WechatMessage SET status = ?, sentAt = ?, result = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
+      `UPDATE WechatMessage SET status = ?, sentAt = ?, result = ?, updatedAt = ?
+       WHERE id = ? AND deletedAt IS NULL AND status IN ('PENDING', 'DRAFT', 'IN_PROGRESS')${tenantAnd(clinicId)}`,
     ).run('SENT', 'sent', ...params).changes;
   }
 }
@@ -487,7 +488,8 @@ export class SqliteAlertRepository implements AlertRepository {
   setStatus(id: string, status: string, userId: string | null, now: string, clinicId?: string | null): number {
     const params = clinicId ? [status, userId, now, now, id, clinicId] : [status, userId, now, now, id];
     return this.db.prepare(
-      `UPDATE BusinessAlert SET status = ?, acknowledgedBy = ?, acknowledgedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
+      `UPDATE BusinessAlert SET status = ?, acknowledgedBy = ?, acknowledgedAt = ?, updatedAt = ?
+       WHERE id = ? AND deletedAt IS NULL AND status IN ('OPEN', 'ACKNOWLEDGED')${tenantAnd(clinicId)}`,
     ).run(...params).changes;
   }
 }
@@ -602,7 +604,10 @@ export class SqliteHrRepository implements HrRepository {
 
   approveLeave(id: string, status: string, reviewerId: string, now: string, clinicId?: string | null): number {
     const params = clinicId ? [status, reviewerId, now, now, id, clinicId] : [status, reviewerId, now, now, id];
-    return this.db.prepare(`UPDATE LeaveRequest SET status = ?, reviewerId = ?, reviewedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`)
+    return this.db.prepare(
+      `UPDATE LeaveRequest SET status = ?, reviewerId = ?, reviewedAt = ?, updatedAt = ?
+       WHERE id = ? AND deletedAt IS NULL AND status = 'PENDING'${tenantAnd(clinicId)}`,
+    )
       .run(...params).changes;
   }
 }

@@ -593,10 +593,15 @@ export class HrService {
   }
 
   approveLeave(id: string, reviewerId: string, approved: boolean, context: AppContext): Record<string, unknown> {
+    const row = this.db.prepare(
+      `SELECT status FROM LeaveRequest WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    ).get(id, ...tenantParams(context.clinicId)) as { status: string } | undefined;
+    if (!row) throw new NotFoundError('Leave request not found');
+    if (row.status !== 'PENDING') throw new ConflictError('Leave request cannot be approved from current status');
     const now = new Date().toISOString();
     const status = approved ? 'APPROVED' : 'REJECTED';
     const changes = this.hrRepository.approveLeave(id, status, reviewerId, now, context.clinicId);
-    if (changes === 0) throw new NotFoundError('Leave request not found');
+    if (changes === 0) throw new ConflictError('Leave request cannot be approved from current status');
     return { id, status };
   }
 }
@@ -653,9 +658,24 @@ export class AlertService {
   }
 
   setStatus(id: string, status: 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED', userId?: string, context?: AppContext): Record<string, unknown> {
+    if (!['OPEN', 'ACKNOWLEDGED', 'RESOLVED'].includes(status)) {
+      throw new ValidationError('Invalid business alert status');
+    }
+    const row = this.db.prepare(
+      `SELECT status FROM BusinessAlert WHERE id = ? AND deletedAt IS NULL${tenantAnd(context?.clinicId ?? null)}`,
+    ).get(id, ...tenantParams(context?.clinicId ?? null)) as { status: string } | undefined;
+    if (!row) throw new NotFoundError('Business alert not found');
+    const transitions: Record<string, readonly string[]> = {
+      OPEN: ['ACKNOWLEDGED', 'RESOLVED'],
+      ACKNOWLEDGED: ['RESOLVED'],
+      RESOLVED: [],
+    };
+    if (!transitions[row.status]?.includes(status)) {
+      throw new ConflictError(`Cannot transition business alert from ${row.status} to ${status}`);
+    }
     const now = new Date().toISOString();
     const changes = this.alertRepository.setStatus(id, status, userId ?? null, now, context?.clinicId ?? null);
-    if (changes === 0) throw new NotFoundError('Business alert not found');
+    if (changes === 0) throw new ConflictError('Business alert status update failed');
     return { id, status };
   }
 }

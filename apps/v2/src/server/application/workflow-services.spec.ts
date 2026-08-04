@@ -133,6 +133,13 @@ describe('workflow services', () => {
     expect(wechat.send('wechat-wf', context).status).toBe('SENT');
     expect(wechat.send('wechat-wf', context).status).toBe('SENT');
     expect(() => wechat.send('missing-wechat', context)).toThrow('Wechat message not found');
+    db.prepare(
+      `INSERT INTO WechatMessage (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, type, content, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'TEXT', 'cancelled', 'CANCELLED')`,
+    ).run('wechat-cancelled', context.clinicId, now, now);
+    expect(() => wechat.send('wechat-cancelled', context)).toThrow('cannot be sent');
     expect(() => wechat.sendBatch(null as unknown as string[], context)).toThrow('array');
     expect(() => wechat.sendBatch(Array.from({ length: 501 }, () => 'x'), context)).toThrow('at most');
 
@@ -141,7 +148,7 @@ describe('workflow services', () => {
       markSent: () => 0,
     };
     expect(() => new WechatService(db, fakeWechat as never).send('missing-update', context))
-      .toThrow('Wechat message not found');
+      .toThrow('cannot be sent');
 
     db.prepare(
       `INSERT INTO PrintTemplate (

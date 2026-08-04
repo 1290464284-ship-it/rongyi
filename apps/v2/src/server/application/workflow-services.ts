@@ -302,6 +302,8 @@ export class ReplenishmentService {
   }
 }
 
+const SENDABLE_WECHAT_STATUSES = new Set(['PENDING', 'DRAFT', 'IN_PROGRESS']);
+
 export class WechatService {
   private readonly db: Database.Database;
   private readonly wechatRepository: WechatMessageRepository;
@@ -315,9 +317,12 @@ export class WechatService {
     const row = this.wechatRepository.findById(messageId, context.clinicId);
     if (!row) throw new NotFoundError('Wechat message not found');
     if (row.status === 'SENT') return { id: messageId, status: 'SENT' };
+    if (!SENDABLE_WECHAT_STATUSES.has(row.status)) {
+      throw new ConflictError('Wechat message cannot be sent from current status');
+    }
     const now = context.now().toISOString();
     const changes = this.wechatRepository.markSent(messageId, now, now, context.clinicId);
-    if (changes === 0) throw new NotFoundError('Wechat message not found');
+    if (changes === 0) throw new ConflictError('Wechat message cannot be sent from current status');
     return { id: messageId, status: 'SENT' };
   }
 
