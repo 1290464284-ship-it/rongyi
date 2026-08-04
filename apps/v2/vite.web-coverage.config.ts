@@ -16,6 +16,7 @@ export default defineConfig({
         'src/web/BackupsPage.tsx',
         'src/web/SimpleListPage.tsx',
         'src/web/InventoryWorkflowPage.tsx',
+        'src/web/InventoryPage.tsx',
       ],
       thresholds: {
         statements: 98,
