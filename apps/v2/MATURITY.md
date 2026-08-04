@@ -107,6 +107,8 @@
   reporting success, removing remaining fake-success paths for missing rows.
 - Appointment status transitions use the shared clinic-scope helper for both
   lookup and update instead of relying on a manual clinic comparison.
+- Patient hub includes an appointment board with status-column summaries,
+  date filtering, and inline status transitions.
 - `clean:generated` removes any `dist-*` output directory rather than a fixed
   hard-coded list.
 

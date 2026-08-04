@@ -1,5 +1,6 @@
 import { ComponentType } from 'react';
 import { AppointmentsPage } from './AppointmentsPage';
+import { AppointmentBoardPage } from './AppointmentBoardPage';
 import { ChargesPage } from './ChargesPage';
 import { InventoryPage } from './InventoryPage';
 import { FollowUpsPage } from './FollowUpsPage';
@@ -22,6 +23,7 @@ export type HubTab =
 export const patientHubTabs: HubTab[] = [
   { id: 'patients', label: '\u60a3\u8005\u6863\u6848', kind: 'resource', resource: 'patients' },
   { id: 'appointments', label: '\u9884\u7ea6', kind: 'custom', component: AppointmentsPage },
+  { id: 'appointmentBoard', label: '\u9884\u7ea6\u770b\u677f', kind: 'custom', component: AppointmentBoardPage },
   { id: 'workflow', label: '\u98ce\u9669\u8bc4\u5206', kind: 'custom', component: PatientWorkflowPage },
   { id: 'family', label: '\u5bb6\u5c5e\u8054\u7cfb\u4eba', kind: 'resource', resource: 'familyMembers' },
 ];
