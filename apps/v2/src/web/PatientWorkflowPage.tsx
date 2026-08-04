@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import type { Page } from './types';
+import { DataTable, type DataTableColumn } from './components';
 
 export function PatientWorkflowPage() {
   const [message, setMessage] = useState('');
@@ -24,40 +25,30 @@ export function PatientWorkflowPage() {
     }
   }
 
+  const patientColumns: DataTableColumn<Record<string, unknown>>[] = [
+    { key: 'id', label: 'ID', render: (row) => String(row.id).slice(0, 8) },
+    { key: 'name', label: 'Name', render: (row) => String(row.name ?? '') },
+    {
+      key: 'actions',
+      label: 'Action',
+      render: (row) => <button onClick={() => calculate(String(row.id))}>计算风险</button>,
+    },
+  ];
+
+  const scoreColumns: DataTableColumn<Record<string, unknown>>[] = [
+    { key: 'patientId', label: 'Patient', render: (row) => String(row.patientId ?? '') },
+    { key: 'cariesScore', label: 'Caries', render: (row) => String(row.cariesScore ?? '') },
+    { key: 'periodontalScore', label: 'Periodontal', render: (row) => String(row.periodontalScore ?? '') },
+    { key: 'implantScore', label: 'Implant', render: (row) => String(row.implantScore ?? '') },
+  ];
+
   return (
     <div className="page">
       <h1>患者风险评分</h1>
       {message && <p className="info">{message}</p>}
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th>ID</th><th>Name</th><th>Action</th></tr></thead>
-          <tbody>
-            {patients.data?.items.map((row) => (
-              <tr key={String(row.id)}>
-                <td>{String(row.id).slice(0, 8)}</td>
-                <td>{String(row.name ?? '')}</td>
-                <td><button onClick={() => calculate(String(row.id))}>计算风险</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable columns={patientColumns} rows={patients.data?.items ?? []} keyField="id" emptyText="No patients" />
       <h2>历史评分</h2>
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th>Patient</th><th>Caries</th><th>Periodontal</th><th>Implant</th></tr></thead>
-          <tbody>
-            {scores.data?.items.map((row) => (
-              <tr key={String(row.id)}>
-                <td>{String(row.patientId ?? '')}</td>
-                <td>{String(row.cariesScore ?? '')}</td>
-                <td>{String(row.periodontalScore ?? '')}</td>
-                <td>{String(row.implantScore ?? '')}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable columns={scoreColumns} rows={scores.data?.items ?? []} keyField="id" emptyText="No scores" />
     </div>
   );
 }
