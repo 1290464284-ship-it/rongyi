@@ -9,7 +9,7 @@ import { resourceRegistry } from '../../../domain/resources';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import type { AppContext } from '../../../domain/contracts';
 import type { PatientRiskRepository } from '../ports';
-import { FORBIDDEN_BULK_IMPORT_RESOURCES } from './common';
+import { FORBIDDEN_BULK_IMPORT_RESOURCES, assertPatientExists } from './common';
 
 export class PatientRiskService {
   private readonly db: Database.Database;
@@ -21,6 +21,7 @@ export class PatientRiskService {
   }
 
   calculate(patientId: string, context: AppContext): Record<string, unknown> {
+    assertPatientExists(this.db, patientId, context.clinicId);
     const treatmentCount = this.patientRiskRepository.treatmentCount(patientId, context.clinicId);
     const periodontalCount = this.patientRiskRepository.periodontalCount(patientId, context.clinicId);
     const cariesScore = Math.min(100, treatmentCount * 5);

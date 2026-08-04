@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import type { AppContext } from '../../domain/contracts';
 import { escapeHtml } from '../shared/html';
+import { tenantAnd } from '../infrastructure/tenant';
 
 export class StatsService {
   constructor(private readonly db: Database.Database) {}
@@ -11,7 +12,11 @@ export class StatsService {
     const param = clinic ? [clinic] : [];
     const patientCount = (this.db.prepare(withClinic('SELECT COUNT(*) AS c FROM Patient WHERE {clinic}deletedAt IS NULL')).get(...param) as { c: number }).c;
     const appointmentCount = (this.db.prepare(withClinic('SELECT COUNT(*) AS c FROM Appointment WHERE {clinic}deletedAt IS NULL')).get(...param) as { c: number }).c;
-    const chargeRow = this.db.prepare(withClinic('SELECT COALESCE(SUM(paidAmount), 0) AS paid, COALESCE(SUM(totalAmount - paidAmount), 0) AS unpaid FROM Charge WHERE {clinic}deletedAt IS NULL')).get(...param) as { paid: number; unpaid: number };
+    const chargeRow = this.db.prepare(withClinic(`
+      SELECT COALESCE(SUM(CASE WHEN status <> 'CANCELLED' THEN paidAmount - refundedAmount ELSE 0 END), 0) AS paid,
+             COALESCE(SUM(CASE WHEN status IN ('UNPAID', 'PARTIAL') THEN totalAmount - paidAmount ELSE 0 END), 0) AS unpaid
+      FROM Charge WHERE {clinic}deletedAt IS NULL
+    `)).get(...param) as { paid: number; unpaid: number };
     const inventoryCount = (this.db.prepare(withClinic('SELECT COUNT(*) AS c FROM InventoryItem WHERE {clinic}deletedAt IS NULL')).get(...param) as { c: number }).c;
     const followUpCount = (this.db.prepare(withClinic("SELECT COUNT(*) AS c FROM FollowUp WHERE {clinic}deletedAt IS NULL AND status = 'PENDING'")).get(...param) as { c: number }).c;
     return {
@@ -81,9 +86,9 @@ export class StatsService {
   }
 
   doctorWorkload(context: AppContext): Array<Record<string, unknown>> {
-    const clinicClause = context.clinicId
-      ? 'AND U.clinicId = ? AND V.clinicId = ? AND C.clinicId = ?'
-      : '';
+    const userClause = tenantAnd(context.clinicId, 'U.clinicId');
+    const visitJoin = tenantAnd(context.clinicId, 'V.clinicId');
+    const chargeJoin = tenantAnd(context.clinicId, 'C.clinicId');
     const params: unknown[] = context.clinicId ? [context.clinicId, context.clinicId, context.clinicId] : [];
     return this.db.prepare(
       `SELECT U.id AS doctorId, U.name AS doctorName,
@@ -91,9 +96,9 @@ export class StatsService {
               COUNT(DISTINCT C.id) AS charges,
               COALESCE(SUM(C.paidAmount), 0) AS paidAmount
        FROM User U
-       LEFT JOIN Visit V ON V.doctorId = U.id AND V.deletedAt IS NULL
-       LEFT JOIN Charge C ON C.doctorId = U.id AND C.deletedAt IS NULL
-       WHERE U.role IN ('DOCTOR', 'BOSS') ${clinicClause}
+       LEFT JOIN Visit V ON V.doctorId = U.id AND V.deletedAt IS NULL${visitJoin}
+       LEFT JOIN Charge C ON C.doctorId = U.id AND C.deletedAt IS NULL${chargeJoin}
+       WHERE U.role IN ('DOCTOR', 'BOSS')${userClause}
        GROUP BY U.id, U.name
        ORDER BY paidAmount DESC`,
     ).all(...params) as Array<Record<string, unknown>>;

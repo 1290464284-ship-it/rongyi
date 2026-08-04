@@ -22,6 +22,7 @@ import type {
   ProcessingOrderRepository,
   PurchaseOrderRepository,
 } from '../ports';
+import { assertPatientExists } from './common';
 
 export class ChargeService {
   private readonly db: Database.Database;
@@ -53,6 +54,7 @@ export class ChargeService {
     if (!input.patientId || typeof input.patientId !== 'string') {
       throw new ValidationError('patientId is required');
     }
+    assertPatientExists(this.db, input.patientId, context.clinicId);
     for (const item of input.items) {
       if (typeof item.name !== 'string' || !item.name.trim() || typeof item.category !== 'string' || !item.category.trim()) {
         throw new ValidationError('Charge item name and category are required');
@@ -66,7 +68,7 @@ export class ChargeService {
     }
     const now = context.now().toISOString();
     const id = randomUUID();
-    const number = `CHG-${Date.now().toString(36).toUpperCase()}`;
+    const number = `CHG-${Date.now().toString(36).toUpperCase()}-${randomUUID().slice(0, 8).toUpperCase()}`;
     const baseTotal = input.items.reduce((sum, item) => sum + Math.round(item.price * item.quantity), 0);
     const discount = Math.round(input.discount ?? 0);
     if (!Number.isInteger(input.discount ?? 0) || discount < 0 || discount > baseTotal) {
@@ -239,6 +241,7 @@ export class MemberCardService {
     const cardNo = String(input.cardNo ?? '').trim();
     const patientId = String(input.patientId ?? '');
     if (!cardNo || !patientId) throw new ValidationError('patientId and cardNo are required');
+    assertPatientExists(this.db, patientId, context.clinicId);
     if (!['ACTIVE', 'INACTIVE', 'DISABLED', 'FROZEN', 'EXPIRED'].includes(input.status)) {
       throw new ValidationError('Invalid member card status');
     }

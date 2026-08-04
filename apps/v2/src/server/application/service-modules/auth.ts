@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, UnauthorizedError, ValidationError } from '../../infrastructure/errors';
 import { SqliteAuthRepository } from '../../infrastructure/repositories/core.repositories';
-import { tenantMatches } from '../../infrastructure/tenant';
+import { tenantAnd, tenantMatches } from '../../infrastructure/tenant';
 import type { AppContext, User } from '../../../domain/contracts';
 import type { AuthRepository, AuthUserRecord } from '../ports';
 import {
@@ -13,6 +13,7 @@ import {
   REFRESH_TTL_MS,
   TOKEN_TTL,
   TokenPayload,
+  assertPatientExists,
   hashRefreshToken,
   isUserRole,
   newRefreshToken,
@@ -262,8 +263,9 @@ export class AppointmentService {
     type: string;
     remark?: string;
   }, context: AppContext): Promise<Record<string, unknown>> {
+    assertPatientExists(this.db, input.patientId, context.clinicId);
     this.assertTimeRange(input.startTime, input.endTime);
-    this.assertNoConflict(input.doctorId, input.chairId, input.startTime, input.endTime);
+    this.assertNoConflict(input.doctorId, input.chairId, input.startTime, input.endTime, context.clinicId);
     const now = context.now().toISOString();
     const id = randomUUID();
     this.db.prepare(
@@ -312,14 +314,21 @@ export class AppointmentService {
     }
   }
 
-  private assertNoConflict(doctorId: string, chairId: string | undefined, startTime: string, endTime: string): void {
+  private assertNoConflict(
+    doctorId: string,
+    chairId: string | undefined,
+    startTime: string,
+    endTime: string,
+    clinicId: string | null,
+  ): void {
+    const params = clinicId ? [doctorId, chairId ?? null, endTime, startTime, clinicId] : [doctorId, chairId ?? null, endTime, startTime];
     const rows = this.db.prepare(
       `SELECT id FROM Appointment
        WHERE deletedAt IS NULL
          AND status NOT IN ('CANCELLED', 'NO_SHOW')
          AND ((doctorId = ?) OR (chairId IS NOT NULL AND chairId = ?))
-         AND startTime < ? AND endTime > ?`,
-    ).all(doctorId, chairId ?? null, endTime, startTime) as Array<{ id: string }>;
+         AND startTime < ? AND endTime > ?${tenantAnd(clinicId)}`,
+    ).all(...params) as Array<{ id: string }>;
     if (rows.length > 0) throw new ConflictError('Doctor or chair is already booked in this time range');
   }
 }

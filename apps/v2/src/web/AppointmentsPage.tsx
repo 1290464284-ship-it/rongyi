@@ -38,11 +38,15 @@ export function AppointmentsPage() {
   }
 
   async function transition(id: string, status: string) {
-    await apiRequest(`/appointments/${id}/status`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status }),
-    });
-    await query.refetch();
+    try {
+      await apiRequest(`/appointments/${id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      });
+      await query.refetch();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Status transition failed');
+    }
   }
 
   return (

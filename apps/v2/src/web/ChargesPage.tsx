@@ -28,22 +28,32 @@ export function ChargesPage() {
   }
 
   async function pay(id: string) {
-    const amount = Number(prompt('Payment amount (cents)?') ?? 0);
-    const requestId = prompt('Request ID (optional)') ?? undefined;
-    await apiRequest(`/charges/${id}/pay`, {
-      method: 'PATCH',
-      body: JSON.stringify({ amount, method: 'CASH', requestId: requestId || undefined }),
-    });
-    await query.refetch();
+    try {
+      const amount = Number(prompt('Payment amount (cents)?') ?? 0);
+      const requestId = prompt('Request ID (optional)') ?? undefined;
+      await apiRequest(`/charges/${id}/pay`, {
+        method: 'PATCH',
+        body: JSON.stringify({ amount, method: 'CASH', requestId: requestId || undefined }),
+      });
+      setMessage('Payment recorded');
+      await query.refetch();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Payment failed');
+    }
   }
 
   async function refund(id: string) {
-    const amount = Number(prompt('Refund amount (cents)?') ?? 0);
-    await apiRequest(`/charges/${id}/refund`, {
-      method: 'POST',
-      body: JSON.stringify({ amount, reason: 'desktop refund' }),
-    });
-    await query.refetch();
+    try {
+      const amount = Number(prompt('Refund amount (cents)?') ?? 0);
+      await apiRequest(`/charges/${id}/refund`, {
+        method: 'POST',
+        body: JSON.stringify({ amount, reason: 'desktop refund' }),
+      });
+      setMessage('Refund recorded');
+      await query.refetch();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Refund failed');
+    }
   }
 
   return (

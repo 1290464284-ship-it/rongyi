@@ -58,6 +58,85 @@ describe('SqliteRepository', () => {
     expect(await repo.findById('repo-patient-1', context)).toBeNull();
   });
 
+  it('maps unique index violations to conflicts and allows code reuse after soft delete', async () => {
+    const repo = new SqliteRepository(db, resourceRegistry.get('patients')!);
+    const first = {
+      id: 'repo-duplicate-1',
+      code: 'DUP-AUDIT',
+      name: 'Duplicate Audit',
+      gender: 'UNKNOWN',
+      phone: '13200000004',
+      source: 'WALK_IN',
+      active: true,
+    };
+    await repo.insert(first, context);
+    await expect(repo.insert({ ...first, id: 'repo-duplicate-2' }, context)).rejects.toMatchObject({ status: 409 });
+    await repo.softDelete('repo-duplicate-1', context);
+    await expect(repo.insert({ ...first, id: 'repo-duplicate-2' }, context)).resolves.toBeUndefined();
+    await repo.insert({ ...first, id: 'repo-duplicate-3', code: 'DUP-OTHER' }, context);
+    await expect(repo.update({ id: 'repo-duplicate-3', code: 'DUP-AUDIT' }, context)).rejects.toMatchObject({ status: 409 });
+  });
+
+  it('rethrows non-unique database failures without hiding them', async () => {
+    const base = resourceRegistry.get('patients')!;
+    const badResource = {
+      ...base,
+      name: 'bad-patients',
+      fields: [...base.fields, { name: 'missingColumn', type: 'text' }],
+    } as unknown as typeof base;
+    const repo = new SqliteRepository(db, badResource);
+    await expect(repo.insert({
+      id: 'repo-bad-insert',
+      code: 'BAD-INSERT',
+      name: 'Bad Insert',
+      gender: 'UNKNOWN',
+      source: 'WALK_IN',
+      active: true,
+      missingColumn: 'x',
+    }, context)).rejects.toThrow(/no (such )?column/);
+    await new SqliteRepository(db, base).insert({
+      id: 'repo-bad-insert',
+      code: 'BAD-INSERT-VALID',
+      name: 'Bad Insert',
+      gender: 'UNKNOWN',
+      source: 'WALK_IN',
+      active: true,
+    }, context);
+    await expect(repo.update({ id: 'repo-bad-insert', missingColumn: 'y' }, context)).rejects.toThrow(/no (such )?column/);
+  });
+
+  it('keeps non-Error database failures intact', async () => {
+    const throwingDb = {
+      prepare: () => ({ run: () => { throw 'non-error'; } }),
+    } as unknown as Database.Database;
+    const repo = new SqliteRepository(throwingDb, resourceRegistry.get('patients')!);
+    await expect(repo.insert({
+      id: 'repo-non-error',
+      code: 'NON-ERROR',
+      name: 'Non Error',
+      gender: 'UNKNOWN',
+      source: 'WALK_IN',
+      active: true,
+    }, context)).rejects.toBe('non-error');
+  });
+
+  it('recognizes unique failures reported only through the error message', async () => {
+    const throwingDb = {
+      prepare: () => ({
+        run: () => { throw new Error('UNIQUE constraint failed: Patient.code'); },
+      }),
+    } as unknown as Database.Database;
+    const repo = new SqliteRepository(throwingDb, resourceRegistry.get('patients')!);
+    await expect(repo.insert({
+      id: 'repo-message-unique',
+      code: 'MESSAGE-UNIQUE',
+      name: 'Message Unique',
+      gender: 'UNKNOWN',
+      source: 'WALK_IN',
+      active: true,
+    }, context)).rejects.toMatchObject({ status: 409 });
+  });
+
   it('masks sensitive user fields returned by generic repository', async () => {
     const repo = new SqliteRepository(db, resourceRegistry.get('users')!);
     await repo.insert({
