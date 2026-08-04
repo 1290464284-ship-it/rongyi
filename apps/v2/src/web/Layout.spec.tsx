@@ -2,11 +2,11 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { Layout } from './Layout';
-import { apiRequest } from './api';
+import { apiRequest, logout, switchClinic } from './api';
 
 vi.mock('./api', () => ({
   apiRequest: vi.fn(),
@@ -31,9 +31,24 @@ function renderLayout() {
   );
 }
 
+function renderLayoutAt(path: string) {
+  return render(
+    <MemoryRouter initialEntries={[path]}>
+      <Routes>
+        <Route element={<Layout />}>
+          <Route path="/" element={<div>Home</div>} />
+          <Route path="/patients" element={<div>Patients</div>} />
+        </Route>
+      </Routes>
+    </MemoryRouter>,
+    { wrapper },
+  );
+}
+
 describe('Layout clinic switcher', () => {
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
     vi.mocked(apiRequest).mockReset();
   });
 
@@ -62,5 +77,47 @@ describe('Layout clinic switcher', () => {
     renderLayout();
     expect(await screen.findByText('Dental V2')).toBeDefined();
     expect(screen.queryByLabelText('当前诊所')).toBeNull();
+  });
+
+  it('shows access denied when the current path is not allowed', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce({ permissions: ['dashboard'] })
+      .mockResolvedValueOnce({
+        currentClinicId: 'clinic-1',
+        clinics: [{ clinicId: 'clinic-1', name: 'Clinic 1' }],
+      });
+    renderLayoutAt('/patients');
+    expect(await screen.findByText('Access denied')).toBeDefined();
+  });
+
+  it('switches clinics and signs out', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce({ permissions: ['dashboard'] })
+      .mockResolvedValueOnce({
+        currentClinicId: 'clinic-1',
+        clinics: [
+          { clinicId: 'clinic-1', name: 'Clinic 1' },
+          { clinicId: 'clinic-2', name: 'Clinic 2' },
+        ],
+      });
+    vi.mocked(switchClinic).mockResolvedValue();
+    vi.mocked(logout).mockResolvedValue();
+    const reload = vi.fn();
+    Object.defineProperty(window, 'location', {
+      value: { ...window.location, reload },
+      writable: true,
+    });
+
+    renderLayout();
+    const switcher = await screen.findByLabelText('当前诊所');
+    fireEvent.change(switcher, { target: { value: 'clinic-2' } });
+    await waitFor(() => {
+      expect(switchClinic).toHaveBeenCalledWith('clinic-2');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Sign out/ }));
+    await waitFor(() => {
+      expect(logout).toHaveBeenCalled();
+    });
   });
 });
