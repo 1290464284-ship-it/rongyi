@@ -48,6 +48,8 @@ so existing data and fields remain available.
 - Business workflows enforce tenant scope for the current user's `clinicId`.
 - BOSS users can access multiple clinics through `UserClinic` memberships and
   switch the current clinic from the desktop sidebar.
+- Resources can be exported as CSV with
+  `GET /api/v2/resources/:resource/export`.
 
 ## Electron
 

@@ -114,6 +114,8 @@
 - Multi-clinic membership is stored in `UserClinic`; only BOSS users can access
   and switch between multiple clinics through `/auth/clinics` and
   `/auth/switch-clinic`.
+- Generic resources support CSV export through
+  `GET /api/v2/resources/:resource/export`, including multi-page row export.
 - `clean:generated` removes any `dist-*` output directory rather than a fixed
   hard-coded list.
 

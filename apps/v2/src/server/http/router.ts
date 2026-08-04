@@ -59,6 +59,31 @@ export function createResourceRouter(db: Database.Database): Router {
     }
   });
 
+  router.get('/:resource/export', async (req, res, next) => {
+    try {
+      const resource = res.locals.resource as ResourceDefinition;
+      const repo = new SqliteRepository(db, resource);
+      const rows: Array<Record<string, unknown>> = [];
+      let page = 1;
+      const pageSize = 200;
+      for (;;) {
+        const result = await repo.findMany({
+          page,
+          pageSize,
+          filters: parseFilters(req),
+        }, req.context!);
+        rows.push(...result.items);
+        if (rows.length >= result.total) break;
+        page += 1;
+      }
+      res.setHeader('content-type', 'text/csv; charset=utf-8');
+      res.setHeader('content-disposition', `attachment; filename="${resource.name}-${Date.now()}.csv"`);
+      res.send(`\uFEFF${toCsv(rows)}`);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.get('/:resource/:id', async (req, res, next) => {
     try {
       const resource = res.locals.resource as ResourceDefinition;
@@ -109,4 +134,20 @@ function parseFilters(req: Request): Record<string, unknown> {
     result[key] = typeof value === 'string' ? value : value;
   }
   return result;
+}
+
+function toCsv(rows: Array<Record<string, unknown>>): string {
+  if (rows.length === 0) return '';
+  const headers = [...new Set(rows.flatMap((row) => Object.keys(row)))];
+  const lines = [
+    headers.map(csvCell).join(','),
+    ...rows.map((row) => headers.map((header) => csvCell(row[header])).join(',')),
+  ];
+  return lines.join('\r\n');
+}
+
+function csvCell(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  const text = typeof value === 'object' ? JSON.stringify(value) : String(value);
+  return `"${text.replace(/"/g, '""')}"`;
 }
