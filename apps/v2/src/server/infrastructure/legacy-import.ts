@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import type { Logger } from './logger';
+import { backupSqliteFile, removeSqliteSidecars } from './sqlite-files';
 
 export interface LegacyImportResult {
   imported: boolean;
@@ -42,9 +43,11 @@ export function importLegacyDatabase(
   let backupCreated: string | undefined;
   if (fs.existsSync(targetPath)) {
     backupCreated = `${targetPath}.pre-import-${Date.now()}`;
-    fs.copyFileSync(targetPath, backupCreated);
+    backupSqliteFile(targetPath, backupCreated);
   }
-  fs.copyFileSync(sourcePath, targetPath);
+  removeSqliteSidecars(targetPath);
+  if (fs.existsSync(targetPath)) fs.rmSync(targetPath, { force: true });
+  backupSqliteFile(sourcePath, targetPath);
 
   const targetDb = new Database(targetPath, { readonly: true });
   try {
@@ -54,6 +57,7 @@ export function importLegacyDatabase(
     }
   } finally {
     targetDb.close();
+    removeSqliteSidecars(targetPath);
   }
 
   logger?.info('legacy database imported', { action: 'legacy-import', target: targetPath, backupCreated });
@@ -65,4 +69,3 @@ export function importLegacyDatabase(
     backupCreated,
   };
 }
-

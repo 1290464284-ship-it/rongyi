@@ -6,6 +6,25 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { importLegacyDatabase } from './legacy-import';
 import { Logger } from './logger';
 
+vi.mock('./sqlite-files', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./sqlite-files')>();
+  return {
+    ...actual,
+    backupSqliteFile: vi.fn((source: string, backup: string) => {
+      if (process.env.V2_CORRUPT_LEGACY_BACKUP === '1') {
+        const temp = `${backup}.tmp`;
+        actual.backupSqliteFile(source, temp);
+        const data = fs.readFileSync(temp);
+        data[20] ^= 0xff;
+        fs.writeFileSync(backup, data);
+        fs.unlinkSync(temp);
+        return;
+      }
+      return actual.backupSqliteFile(source, backup);
+    }),
+  };
+});
+
 describe('importLegacyDatabase', () => {
   let dataDir: string;
   let sourcePath: string;
@@ -71,12 +90,8 @@ describe('importLegacyDatabase', () => {
     validDb.exec('CREATE TABLE Sample (id TEXT PRIMARY KEY)');
     validDb.close();
     const targetPath = path.join(dataDir, 'target-integrity-fail.sqlite');
-    const originalCopy = fs.copyFileSync.bind(fs);
-    vi.spyOn(fs, 'copyFileSync').mockImplementation(((source: string, target: string) => {
-      originalCopy(source, target);
-      corruptSqlite(target);
-    }) as unknown as typeof fs.copyFileSync);
+    process.env.V2_CORRUPT_LEGACY_BACKUP = '1';
     expect(() => importLegacyDatabase(validSource, targetPath)).toThrow('imported database integrity check failed');
-    vi.restoreAllMocks();
+    delete process.env.V2_CORRUPT_LEGACY_BACKUP;
   });
 });
