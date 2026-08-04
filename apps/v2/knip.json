@@ -5,31 +5,5 @@
     "legacy/schema/**",
     "electron/preload.cjs",
     "scripts/wait-for-services.mjs"
-  ],
-  "ignoreFiles": [
-    "jsrepo.config.mts",
-    "src/components/**"
-  ],
-  "ignoreDependencies": [
-    "@chakra-ui/react",
-    "@gsap/react",
-    "@react-three/drei",
-    "@react-three/fiber",
-    "@react-three/postprocessing",
-    "@types/matter-js",
-    "@types/three",
-    "@use-gesture/react",
-    "gl-matrix",
-    "gsap",
-    "jsrepo",
-    "lenis",
-    "maath",
-    "matter-js",
-    "motion",
-    "ogl",
-    "postprocessing",
-    "react-icons",
-    "react-router-dom",
-    "three"
   ]
 }
