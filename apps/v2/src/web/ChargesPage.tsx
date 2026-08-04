@@ -2,6 +2,7 @@ import { FormEvent, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import type { Page } from './types';
+import { DataTable, type DataTableColumn } from './components';
 
 export function ChargesPage() {
   const [patientId, setPatientId] = useState('patient-demo-001');
@@ -56,6 +57,24 @@ export function ChargesPage() {
     }
   }
 
+  const columns: DataTableColumn<Record<string, unknown>>[] = [
+    { key: 'id', label: 'ID', render: (row) => String(row.id).slice(0, 8) },
+    { key: 'number', label: 'Number', render: (row) => String(row.number ?? '') },
+    { key: 'totalAmount', label: 'Total', render: (row) => String(row.totalAmount ?? '') },
+    { key: 'paidAmount', label: 'Paid', render: (row) => String(row.paidAmount ?? '') },
+    { key: 'status', label: 'Status', render: (row) => String(row.status ?? '') },
+    {
+      key: 'actions',
+      label: 'Action',
+      render: (row) => (
+        <>
+          <button onClick={() => pay(String(row.id))}>Pay</button>
+          <button className="danger" onClick={() => refund(String(row.id))}>Refund</button>
+        </>
+      ),
+    },
+  ];
+
   return (
     <div className="page">
       <h1>Charges</h1>
@@ -65,26 +84,7 @@ export function ChargesPage() {
         <button type="submit">Create charge</button>
       </form>
       {message && <p className="info">{message}</p>}
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th>ID</th><th>Number</th><th>Total</th><th>Paid</th><th>Status</th><th>Action</th></tr></thead>
-          <tbody>
-            {query.data?.items.map((row) => (
-              <tr key={String(row.id)}>
-                <td>{String(row.id).slice(0, 8)}</td>
-                <td>{String(row.number ?? '')}</td>
-                <td>{String(row.totalAmount ?? '')}</td>
-                <td>{String(row.paidAmount ?? '')}</td>
-                <td>{String(row.status ?? '')}</td>
-                <td>
-                  <button onClick={() => pay(String(row.id))}>Pay</button>
-                  <button className="danger" onClick={() => refund(String(row.id))}>Refund</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable columns={columns} rows={query.data?.items ?? []} keyField="id" emptyText="No charges" />
     </div>
   );
 }
