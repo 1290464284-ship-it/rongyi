@@ -35,6 +35,15 @@ export function InventoryWorkflowPage() {
     setSelectedSuggestions([]);
   }
 
+  async function generateSuggestions() {
+    await run('/inventory/replenishment/generate', 'POST', {});
+  }
+
+  const openSuggestions = suggestions.data?.items.filter((row) => {
+    const status = row.status === null || row.status === undefined ? 'OPEN' : String(row.status);
+    return status === 'OPEN';
+  }) ?? [];
+
   return (
     <div className="page">
       <h1>库存与采购操作</h1>
@@ -42,11 +51,13 @@ export function InventoryWorkflowPage() {
       <h2>采购单</h2>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>ID</th><th>Status</th><th>Action</th></tr></thead>
+          <thead><tr><th>Number</th><th>Supplier</th><th>Amount</th><th>Status</th><th>Action</th></tr></thead>
           <tbody>
             {purchase.data?.items.filter((row) => String(row.status) === 'PENDING').map((row) => (
               <tr key={String(row.id)}>
-                <td>{String(row.id).slice(0, 8)}</td>
+                <td>{String(row.number ?? row.id ?? '').slice(0, 14)}</td>
+                <td>{String(row.supplierId ?? '')}</td>
+                <td>{String(row.totalAmount ?? '')}</td>
                 <td>{String(row.status)}</td>
                 <td><button onClick={() => run(`/purchase-orders/${String(row.id)}/receive`, 'PATCH', {})}>收货</button></td>
               </tr>
@@ -79,23 +90,24 @@ export function InventoryWorkflowPage() {
       </div>
       <h2>补货建议</h2>
       <div className="inline-form">
+        <button onClick={generateSuggestions}>生成补货建议</button>
         <button onClick={applySuggestions}>应用选中建议</button>
       </div>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>选</th><th>ID</th><th>ROP</th><th>Qty</th><th>Status</th></tr></thead>
+          <thead><tr><th>选</th><th>Item</th><th>ROP</th><th>Qty</th><th>Status</th></tr></thead>
           <tbody>
-            {suggestions.data?.items.map((row) => (
+            {openSuggestions.map((row) => (
               <tr key={String(row.id)}>
                 <td>
                   <input type="checkbox" checked={selectedSuggestions.includes(String(row.id))} onChange={(event) => {
                     setSelectedSuggestions((current) => event.target.checked ? [...current, String(row.id)] : current.filter((id) => id !== String(row.id)));
                   }} />
                 </td>
-                <td>{String(row.id).slice(0, 8)}</td>
+                <td>{String(row.inventoryId ?? row.id ?? '').slice(0, 12)}</td>
                 <td>{String(row.rop ?? '')}</td>
                 <td>{String(row.suggestedQty ?? '')}</td>
-                <td>{String(row.status ?? 'OPEN')}</td>
+                <td>OPEN</td>
               </tr>
             ))}
           </tbody>

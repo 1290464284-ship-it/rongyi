@@ -136,6 +136,9 @@
   purchase counts and the latest paid charge timestamp.
 - The backup page renders the staged backup and current database summaries
   side by side before the restart-based restore is activated.
+- Inventory workflow page completes the replenishment loop in one place:
+  generate suggestions, select and apply them to purchase orders, then receive
+  pending orders with supplier and amount visible.
 - `clean:generated` removes any `dist-*` output directory rather than a fixed
   hard-coded list.
 
