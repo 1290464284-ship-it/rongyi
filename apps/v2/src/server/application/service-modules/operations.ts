@@ -487,6 +487,9 @@ export class SyncService {
       try {
         const repo = new SqliteRepository(this.db, definition);
         if (change.operation === 'DELETE') {
+          if (!(await repo.findById(change.recordId, context))) {
+            throw new Error(`Sync record not found: ${change.recordId}`);
+          }
           await repo.softDelete(change.recordId, context);
         } else {
           if (!change.data || typeof change.data !== 'object') {

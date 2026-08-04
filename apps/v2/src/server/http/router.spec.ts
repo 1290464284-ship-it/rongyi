@@ -93,6 +93,10 @@ describe('resource router', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(404);
     expect(deleted.body.code).toBe('NOT_FOUND');
+    await request(app)
+      .delete('/api/v2/resources/patients/missing-router-delete')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(404);
   });
 
   it('covers missing request bodies for generic create and patch', async () => {
