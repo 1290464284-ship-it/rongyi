@@ -283,6 +283,215 @@ export const migrations: Migration[] = [
       db.exec('CREATE INDEX IF NOT EXISTS idx_v2_charge_member_card ON Charge(memberCardId)');
     },
   },
+  {
+    version: 115,
+    name: 'v2-fts-search-index',
+    up(db) {
+      db.exec(`
+        CREATE VIRTUAL TABLE IF NOT EXISTS SearchIndex USING fts5(
+          resource UNINDEXED,
+          recordId UNINDEXED,
+          clinicId UNINDEXED,
+          content
+        );
+      `);
+      db.exec(`
+        DROP TRIGGER IF EXISTS search_patient_ai;
+        CREATE TRIGGER search_patient_ai AFTER INSERT ON Patient BEGIN
+          DELETE FROM SearchIndex WHERE resource = 'Patient' AND recordId = NEW.id;
+          INSERT INTO SearchIndex(resource, recordId, clinicId, content)
+          SELECT 'Patient', NEW.id, NEW.clinicId,
+                 trim(COALESCE(NEW.name, '') || ' ' || COALESCE(NEW.code, '') || ' ' || COALESCE(NEW.phone, ''))
+          WHERE NEW.deletedAt IS NULL;
+        END;
+
+        DROP TRIGGER IF EXISTS search_patient_au;
+        CREATE TRIGGER search_patient_au AFTER UPDATE ON Patient BEGIN
+          DELETE FROM SearchIndex WHERE resource = 'Patient' AND recordId = NEW.id;
+          INSERT INTO SearchIndex(resource, recordId, clinicId, content)
+          SELECT 'Patient', NEW.id, NEW.clinicId,
+                 trim(COALESCE(NEW.name, '') || ' ' || COALESCE(NEW.code, '') || ' ' || COALESCE(NEW.phone, ''))
+          WHERE NEW.deletedAt IS NULL;
+        END;
+
+        DROP TRIGGER IF EXISTS search_patient_ad;
+        CREATE TRIGGER search_patient_ad AFTER DELETE ON Patient BEGIN
+          DELETE FROM SearchIndex WHERE resource = 'Patient' AND recordId = OLD.id;
+        END;
+
+        DROP TRIGGER IF EXISTS search_patient_child_update;
+        CREATE TRIGGER search_patient_child_update AFTER UPDATE OF name ON Patient BEGIN
+          DELETE FROM SearchIndex WHERE resource = 'Appointment' AND recordId IN (
+            SELECT id FROM Appointment WHERE patientId = NEW.id
+          );
+          INSERT INTO SearchIndex(resource, recordId, clinicId, content)
+          SELECT 'Appointment', A.id, A.clinicId,
+                 trim(COALESCE(P.name, '') || ' ' || COALESCE(A.startTime, '') || ' ' || COALESCE(A.status, ''))
+          FROM Appointment A LEFT JOIN Patient P ON P.id = A.patientId
+          WHERE A.patientId = NEW.id AND A.deletedAt IS NULL AND NEW.deletedAt IS NULL;
+
+          DELETE FROM SearchIndex WHERE resource = 'Charge' AND recordId IN (
+            SELECT id FROM Charge WHERE patientId = NEW.id
+          );
+          INSERT INTO SearchIndex(resource, recordId, clinicId, content)
+          SELECT 'Charge', C.id, C.clinicId,
+                 trim(COALESCE(P.name, '') || ' ' || COALESCE(C.number, '') || ' ' || COALESCE(C.status, ''))
+          FROM Charge C LEFT JOIN Patient P ON P.id = C.patientId
+          WHERE C.patientId = NEW.id AND C.deletedAt IS NULL AND NEW.deletedAt IS NULL;
+
+          DELETE FROM SearchIndex WHERE resource = 'FollowUp' AND recordId IN (
+            SELECT id FROM FollowUp WHERE patientId = NEW.id
+          );
+          INSERT INTO SearchIndex(resource, recordId, clinicId, content)
+          SELECT 'FollowUp', F.id, F.clinicId,
+                 trim(COALESCE(P.name, '') || ' ' || COALESCE(F.content, '') || ' ' || COALESCE(F.status, '') || ' ' || COALESCE(F.planDate, ''))
+          FROM FollowUp F LEFT JOIN Patient P ON P.id = F.patientId
+          WHERE F.patientId = NEW.id AND F.deletedAt IS NULL AND NEW.deletedAt IS NULL;
+        END;
+
+        DROP TRIGGER IF EXISTS search_inventory_item_ai;
+        CREATE TRIGGER search_inventory_item_ai AFTER INSERT ON InventoryItem BEGIN
+          DELETE FROM SearchIndex WHERE resource = 'InventoryItem' AND recordId = NEW.id;
+          INSERT INTO SearchIndex(resource, recordId, clinicId, content)
+          SELECT 'InventoryItem', NEW.id, NEW.clinicId,
+                 trim(COALESCE(NEW.name, '') || ' ' || COALESCE(NEW.code, '') || ' ' || COALESCE(NEW.category, ''))
+          WHERE NEW.deletedAt IS NULL;
+        END;
+
+        DROP TRIGGER IF EXISTS search_inventory_item_au;
+        CREATE TRIGGER search_inventory_item_au AFTER UPDATE ON InventoryItem BEGIN
+          DELETE FROM SearchIndex WHERE resource = 'InventoryItem' AND recordId = NEW.id;
+          INSERT INTO SearchIndex(resource, recordId, clinicId, content)
+          SELECT 'InventoryItem', NEW.id, NEW.clinicId,
+                 trim(COALESCE(NEW.name, '') || ' ' || COALESCE(NEW.code, '') || ' ' || COALESCE(NEW.category, ''))
+          WHERE NEW.deletedAt IS NULL;
+        END;
+
+        DROP TRIGGER IF EXISTS search_inventory_item_ad;
+        CREATE TRIGGER search_inventory_item_ad AFTER DELETE ON InventoryItem BEGIN
+          DELETE FROM SearchIndex WHERE resource = 'InventoryItem' AND recordId = OLD.id;
+        END;
+
+        DROP TRIGGER IF EXISTS search_supplier_ai;
+        CREATE TRIGGER search_supplier_ai AFTER INSERT ON Supplier BEGIN
+          DELETE FROM SearchIndex WHERE resource = 'Supplier' AND recordId = NEW.id;
+          INSERT INTO SearchIndex(resource, recordId, clinicId, content)
+          SELECT 'Supplier', NEW.id, NEW.clinicId,
+                 trim(COALESCE(NEW.name, '') || ' ' || COALESCE(NEW.code, '') || ' ' || COALESCE(NEW.phone, ''))
+          WHERE NEW.deletedAt IS NULL;
+        END;
+
+        DROP TRIGGER IF EXISTS search_supplier_au;
+        CREATE TRIGGER search_supplier_au AFTER UPDATE ON Supplier BEGIN
+          DELETE FROM SearchIndex WHERE resource = 'Supplier' AND recordId = NEW.id;
+          INSERT INTO SearchIndex(resource, recordId, clinicId, content)
+          SELECT 'Supplier', NEW.id, NEW.clinicId,
+                 trim(COALESCE(NEW.name, '') || ' ' || COALESCE(NEW.code, '') || ' ' || COALESCE(NEW.phone, ''))
+          WHERE NEW.deletedAt IS NULL;
+        END;
+
+        DROP TRIGGER IF EXISTS search_supplier_ad;
+        CREATE TRIGGER search_supplier_ad AFTER DELETE ON Supplier BEGIN
+          DELETE FROM SearchIndex WHERE resource = 'Supplier' AND recordId = OLD.id;
+        END;
+
+        DROP TRIGGER IF EXISTS search_appointment_ai;
+        CREATE TRIGGER search_appointment_ai AFTER INSERT ON Appointment BEGIN
+          DELETE FROM SearchIndex WHERE resource = 'Appointment' AND recordId = NEW.id;
+          INSERT INTO SearchIndex(resource, recordId, clinicId, content)
+          SELECT 'Appointment', NEW.id, NEW.clinicId,
+                 trim(COALESCE((SELECT name FROM Patient WHERE id = NEW.patientId), '') || ' ' || COALESCE(NEW.startTime, '') || ' ' || COALESCE(NEW.status, ''))
+          WHERE NEW.deletedAt IS NULL;
+        END;
+
+        DROP TRIGGER IF EXISTS search_appointment_au;
+        CREATE TRIGGER search_appointment_au AFTER UPDATE ON Appointment BEGIN
+          DELETE FROM SearchIndex WHERE resource = 'Appointment' AND recordId = NEW.id;
+          INSERT INTO SearchIndex(resource, recordId, clinicId, content)
+          SELECT 'Appointment', NEW.id, NEW.clinicId,
+                 trim(COALESCE((SELECT name FROM Patient WHERE id = NEW.patientId), '') || ' ' || COALESCE(NEW.startTime, '') || ' ' || COALESCE(NEW.status, ''))
+          WHERE NEW.deletedAt IS NULL;
+        END;
+
+        DROP TRIGGER IF EXISTS search_appointment_ad;
+        CREATE TRIGGER search_appointment_ad AFTER DELETE ON Appointment BEGIN
+          DELETE FROM SearchIndex WHERE resource = 'Appointment' AND recordId = OLD.id;
+        END;
+
+        DROP TRIGGER IF EXISTS search_charge_ai;
+        CREATE TRIGGER search_charge_ai AFTER INSERT ON Charge BEGIN
+          DELETE FROM SearchIndex WHERE resource = 'Charge' AND recordId = NEW.id;
+          INSERT INTO SearchIndex(resource, recordId, clinicId, content)
+          SELECT 'Charge', NEW.id, NEW.clinicId,
+                 trim(COALESCE((SELECT name FROM Patient WHERE id = NEW.patientId), '') || ' ' || COALESCE(NEW.number, '') || ' ' || COALESCE(NEW.status, ''))
+          WHERE NEW.deletedAt IS NULL;
+        END;
+
+        DROP TRIGGER IF EXISTS search_charge_au;
+        CREATE TRIGGER search_charge_au AFTER UPDATE ON Charge BEGIN
+          DELETE FROM SearchIndex WHERE resource = 'Charge' AND recordId = NEW.id;
+          INSERT INTO SearchIndex(resource, recordId, clinicId, content)
+          SELECT 'Charge', NEW.id, NEW.clinicId,
+                 trim(COALESCE((SELECT name FROM Patient WHERE id = NEW.patientId), '') || ' ' || COALESCE(NEW.number, '') || ' ' || COALESCE(NEW.status, ''))
+          WHERE NEW.deletedAt IS NULL;
+        END;
+
+        DROP TRIGGER IF EXISTS search_charge_ad;
+        CREATE TRIGGER search_charge_ad AFTER DELETE ON Charge BEGIN
+          DELETE FROM SearchIndex WHERE resource = 'Charge' AND recordId = OLD.id;
+        END;
+
+        DROP TRIGGER IF EXISTS search_followup_ai;
+        CREATE TRIGGER search_followup_ai AFTER INSERT ON FollowUp BEGIN
+          DELETE FROM SearchIndex WHERE resource = 'FollowUp' AND recordId = NEW.id;
+          INSERT INTO SearchIndex(resource, recordId, clinicId, content)
+          SELECT 'FollowUp', NEW.id, NEW.clinicId,
+                 trim(COALESCE((SELECT name FROM Patient WHERE id = NEW.patientId), '') || ' ' || COALESCE(NEW.content, '') || ' ' || COALESCE(NEW.status, '') || ' ' || COALESCE(NEW.planDate, ''))
+          WHERE NEW.deletedAt IS NULL;
+        END;
+
+        DROP TRIGGER IF EXISTS search_followup_au;
+        CREATE TRIGGER search_followup_au AFTER UPDATE ON FollowUp BEGIN
+          DELETE FROM SearchIndex WHERE resource = 'FollowUp' AND recordId = NEW.id;
+          INSERT INTO SearchIndex(resource, recordId, clinicId, content)
+          SELECT 'FollowUp', NEW.id, NEW.clinicId,
+                 trim(COALESCE((SELECT name FROM Patient WHERE id = NEW.patientId), '') || ' ' || COALESCE(NEW.content, '') || ' ' || COALESCE(NEW.status, '') || ' ' || COALESCE(NEW.planDate, ''))
+          WHERE NEW.deletedAt IS NULL;
+        END;
+
+        DROP TRIGGER IF EXISTS search_followup_ad;
+        CREATE TRIGGER search_followup_ad AFTER DELETE ON FollowUp BEGIN
+          DELETE FROM SearchIndex WHERE resource = 'FollowUp' AND recordId = OLD.id;
+        END;
+      `);
+      db.exec(`
+        INSERT INTO SearchIndex(resource, recordId, clinicId, content)
+        SELECT 'Patient', id, clinicId, trim(COALESCE(name, '') || ' ' || COALESCE(code, '') || ' ' || COALESCE(phone, ''))
+        FROM Patient WHERE deletedAt IS NULL;
+        INSERT INTO SearchIndex(resource, recordId, clinicId, content)
+        SELECT 'InventoryItem', id, clinicId, trim(COALESCE(name, '') || ' ' || COALESCE(code, '') || ' ' || COALESCE(category, ''))
+        FROM InventoryItem WHERE deletedAt IS NULL;
+        INSERT INTO SearchIndex(resource, recordId, clinicId, content)
+        SELECT 'Supplier', id, clinicId, trim(COALESCE(name, '') || ' ' || COALESCE(code, '') || ' ' || COALESCE(phone, ''))
+        FROM Supplier WHERE deletedAt IS NULL;
+        INSERT INTO SearchIndex(resource, recordId, clinicId, content)
+        SELECT 'Appointment', A.id, A.clinicId,
+               trim(COALESCE(P.name, '') || ' ' || COALESCE(A.startTime, '') || ' ' || COALESCE(A.status, ''))
+        FROM Appointment A LEFT JOIN Patient P ON P.id = A.patientId
+        WHERE A.deletedAt IS NULL;
+        INSERT INTO SearchIndex(resource, recordId, clinicId, content)
+        SELECT 'Charge', C.id, C.clinicId,
+               trim(COALESCE(P.name, '') || ' ' || COALESCE(C.number, '') || ' ' || COALESCE(C.status, ''))
+        FROM Charge C LEFT JOIN Patient P ON P.id = C.patientId
+        WHERE C.deletedAt IS NULL;
+        INSERT INTO SearchIndex(resource, recordId, clinicId, content)
+        SELECT 'FollowUp', F.id, F.clinicId,
+               trim(COALESCE(P.name, '') || ' ' || COALESCE(F.content, '') || ' ' || COALESCE(F.status, '') || ' ' || COALESCE(F.planDate, ''))
+        FROM FollowUp F LEFT JOIN Patient P ON P.id = F.patientId
+        WHERE F.deletedAt IS NULL;
+      `);
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

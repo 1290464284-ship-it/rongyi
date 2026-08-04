@@ -149,75 +149,90 @@ export class SearchService {
   constructor(private readonly db: Database.Database) {}
 
   search(query: string, context: AppContext): Array<Record<string, unknown>> {
-    const term = `%${query.replace(/[\\%_]/g, '\\$&')}%`;
+    const ftsQuery = query.split(/\s+/)
+      .filter(Boolean)
+      .map((token) => `"${token.replace(/"/g, '""')}"*`)
+      .join(' ');
     const clinicClause = tenantAnd(context.clinicId);
-    const appointmentClause = tenantAnd(context.clinicId, 'A.clinicId');
-    const chargeClause = tenantAnd(context.clinicId, 'C.clinicId');
-    const followUpClause = tenantAnd(context.clinicId, 'F.clinicId');
-    const clinicParams: unknown[] = tenantParams(context.clinicId);
+    const ftsParams = [ftsQuery, ...tenantParams(context.clinicId)];
+    const matches = this.db.prepare(
+      `SELECT resource, recordId
+       FROM SearchIndex
+       WHERE SearchIndex MATCH ?${clinicClause}
+       LIMIT 500`,
+    ).all(...ftsParams) as Array<{ resource: string; recordId: string }>;
+    const idsByResource = new Map<string, string[]>();
+    for (const match of matches) {
+      const key = searchResourceName(match.resource);
+      const ids = idsByResource.get(key) ?? [];
+      ids.push(match.recordId);
+      idsByResource.set(key, ids);
+    }
+
     const results: Array<Record<string, unknown>> = [];
-    const searches: Array<{ resource: string; rows: Array<Record<string, unknown>>; label: (row: Record<string, unknown>) => string }> = [
+    const searches: Array<{
+      resource: string;
+      rows: Array<Record<string, unknown>>;
+      label: (row: Record<string, unknown>) => string;
+    }> = [
       {
         resource: 'patients',
-        rows: this.db.prepare(
-          `SELECT id, name, phone, code FROM Patient
-           WHERE deletedAt IS NULL AND (name LIKE ? ESCAPE '\\' OR phone LIKE ? ESCAPE '\\' OR code LIKE ? ESCAPE '\\') ${clinicClause}
-           LIMIT 20`,
-        ).all(term, term, term, ...clinicParams) as Array<Record<string, unknown>>,
+        rows: this.rowsByIds('patients', 'SELECT id, name, phone, code FROM Patient', 'deletedAt IS NULL', idsByResource, context),
         label: (row) => String(row.name ?? row.code ?? ''),
       },
       {
         resource: 'appointments',
-        rows: this.db.prepare(
+        rows: this.rowsByIds(
+          'appointments',
           `SELECT A.id, P.name AS patientName, A.startTime, A.status
            FROM Appointment A
-           LEFT JOIN Patient P ON P.id = A.patientId
-           WHERE A.deletedAt IS NULL AND P.deletedAt IS NULL
-             AND (P.name LIKE ? ESCAPE '\\' OR A.startTime LIKE ? ESCAPE '\\' OR A.status LIKE ? ESCAPE '\\') ${appointmentClause}
-           LIMIT 20`,
-        ).all(term, term, term, ...clinicParams) as Array<Record<string, unknown>>,
+           LEFT JOIN Patient P ON P.id = A.patientId`,
+          'A.deletedAt IS NULL AND P.deletedAt IS NULL',
+          idsByResource,
+          context,
+          'A.clinicId',
+          'A.id',
+        ),
         label: (row) => String(row.patientName ?? ''),
       },
       {
         resource: 'charges',
-        rows: this.db.prepare(
+        rows: this.rowsByIds(
+          'charges',
           `SELECT C.id, P.name AS patientName, C.number, C.status
            FROM Charge C
-           LEFT JOIN Patient P ON P.id = C.patientId
-           WHERE C.deletedAt IS NULL AND P.deletedAt IS NULL
-             AND (C.number LIKE ? ESCAPE '\\' OR P.name LIKE ? ESCAPE '\\' OR C.status LIKE ? ESCAPE '\\') ${chargeClause}
-           LIMIT 20`,
-        ).all(term, term, term, ...clinicParams) as Array<Record<string, unknown>>,
+           LEFT JOIN Patient P ON P.id = C.patientId`,
+          'C.deletedAt IS NULL AND P.deletedAt IS NULL',
+          idsByResource,
+          context,
+          'C.clinicId',
+          'C.id',
+        ),
         label: (row) => String(row.number ?? ''),
       },
       {
         resource: 'inventoryItems',
-        rows: this.db.prepare(
-          `SELECT id, name, code, category, stock FROM InventoryItem
-           WHERE deletedAt IS NULL AND (name LIKE ? ESCAPE '\\' OR code LIKE ? ESCAPE '\\' OR category LIKE ? ESCAPE '\\') ${clinicClause}
-           LIMIT 20`,
-        ).all(term, term, term, ...clinicParams) as Array<Record<string, unknown>>,
+        rows: this.rowsByIds('inventoryItems', 'SELECT id, name, code, category, stock FROM InventoryItem', 'deletedAt IS NULL', idsByResource, context),
         label: (row) => String(row.name ?? row.code ?? ''),
       },
       {
         resource: 'suppliers',
-        rows: this.db.prepare(
-          `SELECT id, name, code, phone FROM Supplier
-           WHERE deletedAt IS NULL AND (name LIKE ? ESCAPE '\\' OR code LIKE ? ESCAPE '\\' OR phone LIKE ? ESCAPE '\\') ${clinicClause}
-           LIMIT 20`,
-        ).all(term, term, term, ...clinicParams) as Array<Record<string, unknown>>,
+        rows: this.rowsByIds('suppliers', 'SELECT id, name, code, phone FROM Supplier', 'deletedAt IS NULL', idsByResource, context),
         label: (row) => String(row.name ?? ''),
       },
       {
         resource: 'followUps',
-        rows: this.db.prepare(
+        rows: this.rowsByIds(
+          'followUps',
           `SELECT F.id, P.name AS patientName, P.phone AS phone, F.content, F.status
            FROM FollowUp F
-           LEFT JOIN Patient P ON P.id = F.patientId
-           WHERE F.deletedAt IS NULL AND P.deletedAt IS NULL
-             AND (P.name LIKE ? ESCAPE '\\' OR F.content LIKE ? ESCAPE '\\' OR F.status LIKE ? ESCAPE '\\') ${followUpClause}
-           LIMIT 20`,
-        ).all(term, term, term, ...clinicParams) as Array<Record<string, unknown>>,
+           LEFT JOIN Patient P ON P.id = F.patientId`,
+          'F.deletedAt IS NULL AND P.deletedAt IS NULL',
+          idsByResource,
+          context,
+          'F.clinicId',
+          'F.id',
+        ),
         label: (row) => String(row.patientName ?? ''),
       },
     ];
@@ -234,6 +249,22 @@ export class SearchService {
       }
     }
     return results;
+  }
+
+  private rowsByIds(
+    resource: string,
+    selectFrom: string,
+    whereBase: string,
+    idsByResource: Map<string, string[]>,
+    context: AppContext,
+    tenantColumn = 'clinicId',
+    idColumn = 'id',
+  ): Array<Record<string, unknown>> {
+    const ids = idsByResource.get(resource) ?? [];
+    if (ids.length === 0) return [];
+    const placeholders = ids.map(() => '?').join(', ');
+    const sql = `${selectFrom} WHERE ${whereBase} AND ${idColumn} IN (${placeholders})${tenantAnd(context.clinicId, tenantColumn)}`;
+    return this.db.prepare(sql).all(...ids, ...tenantParams(context.clinicId)) as Array<Record<string, unknown>>;
   }
 
   private maskPhone(phone: string): string {
@@ -282,5 +313,24 @@ export class SatisfactionService {
        ORDER BY avgScore DESC
        LIMIT 50`,
     ).all(...params) as Array<Record<string, unknown>>;
+  }
+}
+
+function searchResourceName(resource: string): string {
+  switch (resource) {
+    case 'Patient':
+      return 'patients';
+    case 'Appointment':
+      return 'appointments';
+    case 'Charge':
+      return 'charges';
+    case 'InventoryItem':
+      return 'inventoryItems';
+    case 'Supplier':
+      return 'suppliers';
+    case 'FollowUp':
+      return 'followUps';
+    default:
+      return resource;
   }
 }
