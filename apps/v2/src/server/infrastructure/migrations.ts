@@ -633,6 +633,39 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 117,
+    name: 'v2-user-clinic-memberships',
+    up(db) {
+      const userColumns = new Set(
+        (db.prepare('PRAGMA table_info(User)').all() as Array<{ name: string }>).map((column) => column.name),
+      );
+      if (!userColumns.has('currentClinicId')) {
+        db.exec('ALTER TABLE User ADD COLUMN currentClinicId TEXT');
+      }
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS UserClinic (
+          userId TEXT NOT NULL,
+          clinicId TEXT NOT NULL,
+          role TEXT NOT NULL,
+          createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          deletedAt TEXT,
+          PRIMARY KEY (userId, clinicId),
+          FOREIGN KEY (userId) REFERENCES User(id) ON DELETE CASCADE,
+          FOREIGN KEY (clinicId) REFERENCES Clinic(id) ON DELETE CASCADE
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_v2_user_clinic
+          ON UserClinic(userId, clinicId);
+      `);
+      db.exec(`
+        INSERT OR IGNORE INTO UserClinic (userId, clinicId, role, createdAt, updatedAt, deletedAt)
+        SELECT id, clinicId, role, createdAt, updatedAt, NULL
+        FROM User
+        WHERE clinicId IS NOT NULL AND deletedAt IS NULL
+      `);
+    },
+  },
 ];
 
 function ensureForeignKeys(

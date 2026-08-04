@@ -179,3 +179,13 @@ export async function logout(): Promise<void> {
   }
   await clearSession();
 }
+
+export async function switchClinic(clinicId: string): Promise<void> {
+  const currentRefresh = await refreshToken();
+  if (!currentRefresh) throw new Error('Session is missing refresh token');
+  const result = await apiRequest<{ token: string; clinicId: string }>('/auth/switch-clinic', {
+    method: 'POST',
+    body: JSON.stringify({ clinicId }),
+  });
+  await setTokens(result.token, currentRefresh);
+}

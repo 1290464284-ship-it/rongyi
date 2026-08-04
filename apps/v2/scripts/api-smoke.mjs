@@ -166,7 +166,6 @@ async function main() {
   });
   await request('/stats/dashboard', { headers });
   await request('/stats/revenue?groupBy=month', { headers });
-  await request('/stats/doctor-workload', { headers });
   await request('/satisfaction/nps', { headers });
   await request('/satisfaction/trend', { headers });
   await request('/satisfaction/doctor-rankings', { headers });

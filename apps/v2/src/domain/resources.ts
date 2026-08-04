@@ -703,6 +703,7 @@ const INTERNAL_RESOURCE_TABLES = new Set([
   'SyncChange',
   'SyncDevice',
   'UsedRefreshToken',
+  'UserClinic',
 ]);
 
 const registry = new Map(resources.map((resource) => [resource.name, resource]));

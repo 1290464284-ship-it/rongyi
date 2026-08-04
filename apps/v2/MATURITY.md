@@ -111,6 +111,9 @@
   date filtering, and inline status transitions.
 - Patient hub also includes a patient timeline that merges visits, treatments,
   charges, and follow-ups into a single chronological view.
+- Multi-clinic membership is stored in `UserClinic`; only BOSS users can access
+  and switch between multiple clinics through `/auth/clinics` and
+  `/auth/switch-clinic`.
 - `clean:generated` removes any `dist-*` output directory rather than a fixed
   hard-coded list.
 

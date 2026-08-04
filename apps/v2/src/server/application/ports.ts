@@ -151,6 +151,7 @@ export interface DebtRepository {
 export interface AuthUserRecord {
   id: string;
   clinicId?: string | null;
+  currentClinicId?: string | null;
   username: string;
   passwordHash: string;
   name: string;
@@ -171,6 +172,9 @@ export interface AuthRepository {
   findByUsername(username: string): AuthUserRecord | null;
   findById(id: string): AuthUserRecord | null;
   findByRefreshTokenHash(tokenHash: string): AuthUserRecord | null;
+  clinicMemberships(userId: string): Array<{ clinicId: string; name: string; role: string }>;
+  setCurrentClinic(userId: string, clinicId: string, updatedAt: string): void;
+  addClinicMembership(userId: string, clinicId: string, role: string, createdAt: string, updatedAt: string): void;
   isRefreshTokenUsed(tokenHash: string): boolean;
   cleanupUsedRefreshTokens(before: string): number;
   insertUser(input: AuthUserRecord): void;

@@ -224,13 +224,14 @@ export class SqliteAuthRepository implements AuthRepository {
   insertUser(input: AuthUserRecord): void {
     this.db.prepare(
       `INSERT INTO User (
-         id, clinicId, username, passwordHash, name, role, phone, active,
+         id, clinicId, currentClinicId, username, passwordHash, name, role, phone, active,
          loginAttempts, lockedUntil, tokenVersion, refreshToken, refreshTokenExpiresAt,
          createdAt, updatedAt, deletedAt
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, 0, NULL, NULL, ?, ?, NULL)`,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, 0, NULL, NULL, ?, ?, NULL)`,
     ).run(
       input.id,
       input.clinicId ?? null,
+      input.currentClinicId ?? input.clinicId ?? null,
       input.username,
       input.passwordHash,
       input.name,
@@ -240,6 +241,28 @@ export class SqliteAuthRepository implements AuthRepository {
       input.createdAt,
       input.updatedAt,
     );
+  }
+
+  clinicMemberships(userId: string): Array<{ clinicId: string; name: string; role: string }> {
+    return this.db.prepare(
+      `SELECT UC.clinicId, C.name, UC.role
+       FROM UserClinic UC
+       LEFT JOIN Clinic C ON C.id = UC.clinicId
+       WHERE UC.userId = ? AND UC.deletedAt IS NULL AND C.deletedAt IS NULL
+       ORDER BY C.name ASC`,
+    ).all(userId) as Array<{ clinicId: string; name: string; role: string }>;
+  }
+
+  setCurrentClinic(userId: string, clinicId: string, updatedAt: string): void {
+    this.db.prepare('UPDATE User SET currentClinicId = ?, updatedAt = ? WHERE id = ?')
+      .run(clinicId, updatedAt, userId);
+  }
+
+  addClinicMembership(userId: string, clinicId: string, role: string, createdAt: string, updatedAt: string): void {
+    this.db.prepare(
+      `INSERT OR IGNORE INTO UserClinic (userId, clinicId, role, createdAt, updatedAt, deletedAt)
+       VALUES (?, ?, ?, ?, ?, NULL)`,
+    ).run(userId, clinicId, role, createdAt, updatedAt);
   }
 
   updateUser(
@@ -315,6 +338,7 @@ export class SqliteAuthRepository implements AuthRepository {
     return {
       id: String(row.id),
       clinicId: row.clinicId ? String(row.clinicId) : null,
+      currentClinicId: row.currentClinicId ? String(row.currentClinicId) : null,
       username: String(row.username),
       passwordHash: String(row.passwordHash),
       name: String(row.name),
