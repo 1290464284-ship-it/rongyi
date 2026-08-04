@@ -91,6 +91,7 @@ export const systemHubTabs: HubTab[] = [
 export const analyticsHubTabs: HubTab[] = [
   { id: 'dashboard', label: '\u5de5\u4f5c\u53f0', kind: 'custom', component: DashboardPage },
   { id: 'monthly', label: '\u6708\u5ea6\u62a5\u8868', kind: 'custom', component: () => <SimpleListPage title="\u6708\u5ea6\u62a5\u8868" endpoint="/stats/revenue?groupBy=month" /> },
+  { id: 'inventoryReport', label: '\u5e93\u5b58\u62a5\u8868', kind: 'custom', component: () => <SimpleListPage title="\u5e93\u5b58\u62a5\u8868" endpoint="/stats/inventory" /> },
   { id: 'rfm', label: 'RFM', kind: 'custom', component: () => <SimpleListPage title="RFM" endpoint="/analytics/rfm" /> },
   { id: 'churn', label: '\u6d41\u5931\u9884\u8b66', kind: 'custom', component: () => <SimpleListPage title="\u6d41\u5931\u9884\u8b66" endpoint="/analytics/churn" /> },
   { id: 'anomalies', label: '\u533b\u751f\u5f02\u5e38', kind: 'custom', component: () => <SimpleListPage title="\u533b\u751f\u5f02\u5e38" endpoint="/analytics/doctor-anomalies" /> },
