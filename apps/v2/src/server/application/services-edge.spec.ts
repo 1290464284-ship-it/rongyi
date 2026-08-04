@@ -687,7 +687,7 @@ describe('service edge coverage', () => {
       deviceToken: device.token,
       changes: [{ tableName: 'Patient', recordId: 'edge-sync-2', operation: 'DELETE', updatedAt: now }],
     }, context);
-    expect(deleteResult.accepted).toBe(1);
+    expect(deleteResult.failed).toBe(1);
     const updateResult = await service.push({
       deviceId: 'device-1',
       deviceToken: device.token,
@@ -712,6 +712,26 @@ describe('service edge coverage', () => {
       }],
     }, context);
     expect(updateAgain.accepted).toBe(1);
+    const deleteTarget = await service.push({
+      deviceId: 'device-1',
+      deviceToken: device.token,
+      changes: [{
+        tableName: 'Patient',
+        recordId: 'patient-sync-delete',
+        operation: 'INSERT',
+        updatedAt: now,
+        data: { code: 'SYNC-DELETE', name: 'Sync Delete', gender: 'UNKNOWN', phone: '13600000005', source: 'OTHER', active: true },
+      }],
+    }, context);
+    expect(deleteTarget.accepted).toBe(1);
+    const deleteExisting = await service.push({
+      deviceId: 'device-1',
+      deviceToken: device.token,
+      changes: [{ tableName: 'Patient', recordId: 'patient-sync-delete', operation: 'DELETE', updatedAt: now }],
+    }, context);
+    expect(deleteExisting.accepted).toBe(1);
+    const deletedRow = db.prepare('SELECT deletedAt FROM Patient WHERE id = ?').get('patient-sync-delete') as { deletedAt: string | null } | undefined;
+    expect(deletedRow?.deletedAt).not.toBeNull();
     const trickyData: Record<string, unknown> = {};
     Object.defineProperty(trickyData, 'code', {
       enumerable: true,

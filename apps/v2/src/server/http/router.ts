@@ -89,6 +89,9 @@ export function createResourceRouter(db: Database.Database): Router {
       const resource = res.locals.resource as ResourceDefinition;
       if (!resource.capabilities.delete) throw new NotFoundError('Delete is not supported for this resource');
       const repo = new SqliteRepository(db, resource);
+      if (!(await repo.findById(req.params.id, req.context!))) {
+        throw new NotFoundError(`${resource.name} not found`);
+      }
       await repo.softDelete(req.params.id, req.context!);
       res.json({ success: true, data: { id: req.params.id } });
     } catch (error) {
