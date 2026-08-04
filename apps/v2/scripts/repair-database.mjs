@@ -41,10 +41,12 @@ try {
   db.exec('REINDEX');
   db.pragma('foreign_keys = ON');
   const integrity = check(db);
+  const foreignKeyIssues = db.pragma('foreign_key_check');
   const ok = integrity.length === 1 && integrity[0].integrity_check === 'ok';
-  if (!ok) {
+  if (!ok || foreignKeyIssues.length > 0) {
     console.error(`repair failed for: ${dbPath}`);
     for (const row of integrity) console.error(row.integrity_check);
+    for (const row of foreignKeyIssues) console.error(JSON.stringify(row));
     console.error(`restore the backup with: restore-backup.mjs`);
     process.exit(1);
   }
