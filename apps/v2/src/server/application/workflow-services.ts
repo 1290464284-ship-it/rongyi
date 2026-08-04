@@ -198,7 +198,9 @@ export class ReplenishmentService {
   }
 
   applyToPurchaseOrder(ids: string[], context: AppContext): Record<string, unknown> {
-    if (!ids.length) throw new ValidationError('At least one suggestion is required');
+    if (!Array.isArray(ids) || ids.length === 0 || ids.length > 500) {
+      throw new ValidationError('At least one suggestion is required and at most 500 can be applied');
+    }
     const placeholders = ids.map(() => '?').join(',');
     const suggestions = this.db.prepare(
       `SELECT * FROM InventoryReplenishmentSuggestion
@@ -248,6 +250,9 @@ export class WechatService {
   }
 
   sendBatch(ids: string[], context: AppContext): { sent: number } {
+    if (!Array.isArray(ids) || ids.length > 500) {
+      throw new ValidationError('Send batch ids must be an array with at most 500 items');
+    }
     for (const id of ids) this.send(id, context);
     return { sent: ids.length };
   }

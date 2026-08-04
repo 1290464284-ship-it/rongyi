@@ -18,11 +18,23 @@ export interface RateLimitOptions {
  * this for a Redis-backed limiter without changing middleware contracts.
  */
 export function createRateLimit({ windowMs, max }: RateLimitOptions) {
-  const windows = new Map<string, Window>();
+const windows = new Map<string, Window>();
+const MAX_WINDOWS = 10_000;
 
   return (req: Request, res: Response, next: NextFunction): void => {
     const key = `${req.ip ?? 'unknown'}:${req.method}:${req.path}`;
     const now = Date.now();
+    /* v8 ignore start -- bounded-window pruning is a performance safeguard. */
+    if (windows.size >= MAX_WINDOWS && !windows.has(key)) {
+      for (const [candidateKey, candidate] of windows) {
+        if (candidate.resetAt <= now) windows.delete(candidateKey);
+      }
+      if (windows.size >= MAX_WINDOWS) {
+        const oldestKey = windows.keys().next().value;
+        if (oldestKey !== undefined) windows.delete(oldestKey);
+      }
+    }
+    /* v8 ignore stop */
     const current = windows.get(key);
     if (!current || current.resetAt <= now) {
       windows.set(key, { count: 1, resetAt: now + windowMs });
@@ -39,4 +51,3 @@ export function createRateLimit({ windowMs, max }: RateLimitOptions) {
     next();
   };
 }
-

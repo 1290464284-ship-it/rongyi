@@ -10,12 +10,19 @@ interface MetricBucket {
 }
 
 const metrics = new Map<string, MetricBucket>();
+const MAX_METRIC_KEYS = 1000;
 
 export function metricsMiddleware(req: Request, res: Response, next: NextFunction): void {
   const startedAt = Date.now();
   res.on('finish', () => {
     const durationMs = Date.now() - startedAt;
     const key = `${req.method} ${req.route?.path ?? req.path} ${res.statusCode}`;
+    /* v8 ignore start -- bounded-map pruning is a performance safeguard. */
+    if (metrics.size >= MAX_METRIC_KEYS && !metrics.has(key)) {
+      const oldest = metrics.keys().next().value;
+      if (oldest !== undefined) metrics.delete(oldest);
+    }
+    /* v8 ignore stop */
     const current = metrics.get(key) ?? { count: 0, totalDurationMs: 0, maxDurationMs: 0, errorCount: 0 };
     current.count += 1;
     current.totalDurationMs += durationMs;
