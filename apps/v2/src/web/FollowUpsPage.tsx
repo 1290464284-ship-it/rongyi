@@ -46,6 +46,15 @@ export function FollowUpsPage() {
     },
   ];
 
+  const now = new Date();
+  const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const rows = query.data ?? [];
+  const groups = [
+    { title: '已逾期', rows: rows.filter((row) => String(row.planDate ?? '') < todayKey) },
+    { title: '今日待随访', rows: rows.filter((row) => String(row.planDate ?? '') === todayKey) },
+    { title: '后续待随访', rows: rows.filter((row) => String(row.planDate ?? '') > todayKey) },
+  ];
+
   return (
     <div className="page">
       <div className="page-head">
@@ -53,7 +62,13 @@ export function FollowUpsPage() {
         <button onClick={batchGenerate}>Batch generate</button>
       </div>
       {message && <p className="info">{message}</p>}
-      <DataTable columns={columns} rows={query.data ?? []} keyField="id" emptyText="No follow-ups" />
+      {rows.length === 0 && <DataTable columns={columns} rows={[]} keyField="id" emptyText="No follow-ups" />}
+      {groups.map((group) => (
+        <section key={group.title}>
+          <h2>{group.title} ({group.rows.length})</h2>
+          <DataTable columns={columns} rows={group.rows} keyField="id" emptyText="暂无" />
+        </section>
+      ))}
     </div>
   );
 }

@@ -129,6 +129,8 @@
 - Follow-up reminders support completion through `PATCH
   /api/v2/follow-ups/:id/complete`, with clinic scope, status conflict checks,
   and an in-table UI action.
+- Follow-up reminders are grouped into overdue, today, and upcoming sections
+  on the communication workflow page.
 - WeChat send, leave approval, and business alert transitions now reject
   terminal or disallowed source statuses instead of reporting false success.
 - Backup verification and restore staging return core database summaries,
