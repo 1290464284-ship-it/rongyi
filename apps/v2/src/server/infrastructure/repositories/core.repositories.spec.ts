@@ -40,6 +40,18 @@ describe('core repositories', () => {
            '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
       ).run(id, now, now, `CORE-${id}`);
     }
+    db.prepare(
+      `INSERT INTO Treatment (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, code, name, category, price, quantity, status
+       ) VALUES (?, NULL, ?, ?, NULL, 'patient', NULL, 'T-1', 'Treatment', 'GENERAL', 100, 1, 'COMPLETED')`,
+    ).run('treatment-1', now, now);
+    db.prepare(
+      `INSERT INTO User (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         username, passwordHash, name, role, active, loginAttempts, tokenVersion
+       ) VALUES (?, NULL, ?, ?, NULL, 'core-operator', 'hash', 'Core Operator', 'BOSS', 1, 0, 0)`,
+    ).run('user-1', now, now);
   });
 
   afterAll(() => {

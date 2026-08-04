@@ -110,8 +110,16 @@ describe('migrations', () => {
     runMigrations(freshDb);
     const memberFk = freshDb.prepare('PRAGMA foreign_key_list(MemberCard)').all();
     const refundFk = freshDb.prepare('PRAGMA foreign_key_list(Refund)').all();
+    const chargeItemFk = freshDb.prepare('PRAGMA foreign_key_list(ChargeItem)').all();
+    const purchaseItemFk = freshDb.prepare('PRAGMA foreign_key_list(PurchaseOrderItem)').all();
+    const inventoryTxFk = freshDb.prepare('PRAGMA foreign_key_list(InventoryTransaction)').all();
+    const processingFk = freshDb.prepare('PRAGMA foreign_key_list(ProcessingOrder)').all();
     expect(memberFk.length).toBeGreaterThan(0);
     expect(refundFk.length).toBeGreaterThan(0);
+    expect(chargeItemFk.length).toBeGreaterThan(0);
+    expect(purchaseItemFk.length).toBeGreaterThan(0);
+    expect(inventoryTxFk.length).toBeGreaterThan(0);
+    expect(processingFk.length).toBeGreaterThan(0);
 
     const now = new Date().toISOString();
     freshDb.prepare(
@@ -135,8 +143,41 @@ describe('migrations', () => {
          chargeId, patientId, amount, reason
        ) VALUES (?, ?, ?, ?, NULL, 'missing-charge', 'fk-patient', 100, 'test')`,
     ).run('fk-refund', 'clinic-v2-001', now, now)).toThrow(/FOREIGN KEY constraint failed/);
+    expect(() => freshDb.prepare(
+      `INSERT INTO ChargeItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         chargeId, name, category, price, quantity, subtotal
+       ) VALUES (?, ?, ?, ?, NULL, 'missing-charge', 'Item', 'EXAM', 100, 1, 100)`,
+    ).run('fk-charge-item', 'clinic-v2-001', now, now)).toThrow(/FOREIGN KEY constraint failed/);
+    expect(() => freshDb.prepare(
+      `INSERT INTO PurchaseOrderItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         orderId, name, quantity, unitPrice, subtotal
+       ) VALUES (?, ?, ?, ?, NULL, 'missing-order', 'Item', 1, 100, 100)`,
+    ).run('fk-purchase-item', 'clinic-v2-001', now, now)).toThrow(/FOREIGN KEY constraint failed/);
+    expect(() => freshDb.prepare(
+      `INSERT INTO InventoryTransaction (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         itemId, type, quantity
+       ) VALUES (?, ?, ?, ?, NULL, 'missing-item', 'IN', 1)`,
+    ).run('fk-inventory-tx', 'clinic-v2-001', now, now)).toThrow(/FOREIGN KEY constraint failed/);
+    expect(() => freshDb.prepare(
+      `INSERT INTO ProcessingOrder (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         number, patientId, factoryId
+       ) VALUES (?, ?, ?, ?, NULL, 'PO-FK', 'missing-patient', 'missing-factory')`,
+    ).run('fk-processing', 'clinic-v2-001', now, now)).toThrow(/FOREIGN KEY constraint failed/);
     freshDb.prepare('DELETE FROM schema_migrations WHERE version = ?').run('116');
     runMigrations(freshDb);
+    freshDb.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('refuses to rewrite a table when the foreign-key DDL would drop columns', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-mig-fk-guard-'));
+    const freshDb = createDatabase(dir);
+    freshDb.exec('ALTER TABLE ChargeItem ADD COLUMN legacyExtra TEXT');
+    expect(() => runMigrations(freshDb)).toThrow(/would drop columns: legacyExtra/);
     freshDb.close();
     fs.rmSync(dir, { recursive: true, force: true });
   });

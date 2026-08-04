@@ -159,10 +159,16 @@ describe('workflow services', () => {
 
   it('returns frequent charge items', () => {
     db.prepare(
+      `INSERT INTO Charge (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, number, totalAmount, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'CHG-WF', 100, 'PAID')`,
+    ).run('charge-wf', context.clinicId, now, now);
+    db.prepare(
       `INSERT INTO ChargeItem (
          id, clinicId, createdAt, updatedAt, deletedAt,
          chargeId, name, category, price, quantity, subtotal
-       ) VALUES (?, ?, ?, ?, NULL, 'charge', 'Exam', 'EXAM', 100, 1, 100)`,
+       ) VALUES (?, ?, ?, ?, NULL, 'charge-wf', 'Exam', 'EXAM', 100, 1, 100)`,
     ).run('item-wf', context.clinicId, now, now);
     const service = new ChargeAssistantService(db);
     expect(service.frequentItems(context).length).toBeGreaterThanOrEqual(1);
