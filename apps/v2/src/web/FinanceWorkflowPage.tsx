@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import type { Page } from './types';
+import { DataTable, type DataTableColumn } from './components';
 
 export function FinanceWorkflowPage() {
   const [message, setMessage] = useState('');
@@ -39,46 +40,42 @@ export function FinanceWorkflowPage() {
     await run(`/debts/${debtId}/pay`, debtId, { amount, requestId: `ui-${Date.now()}` }, 'PATCH');
   }
 
+  const cardColumns: DataTableColumn<Record<string, unknown>>[] = [
+    { key: 'id', label: 'ID', render: (row) => String(row.id).slice(0, 8) },
+    { key: 'cardNo', label: 'Card', render: (row) => String(row.cardNo ?? '') },
+    { key: 'balance', label: 'Balance', render: (row) => String(row.balance ?? '') },
+    {
+      key: 'actions',
+      label: 'Actions',
+      render: (row) => (
+        <>
+          <button onClick={() => recharge(String(row.id))}>充值</button>
+          <button onClick={() => consume(String(row.id))}>消费</button>
+        </>
+      ),
+    },
+  ];
+
+  const debtColumns: DataTableColumn<Record<string, unknown>>[] = [
+    { key: 'id', label: 'ID', render: (row) => String(row.id).slice(0, 8) },
+    { key: 'totalAmount', label: 'Total', render: (row) => String(row.totalAmount ?? '') },
+    { key: 'paidAmount', label: 'Paid', render: (row) => String(row.paidAmount ?? '') },
+    { key: 'status', label: 'Status', render: (row) => String(row.status ?? '') },
+    {
+      key: 'actions',
+      label: 'Action',
+      render: (row) => <button onClick={() => payDebt(String(row.id))}>还款</button>,
+    },
+  ];
+
   return (
     <div className="page">
       <h1>财务操作</h1>
       {message && <p className="info">{message}</p>}
       <h2>会员卡</h2>
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th>ID</th><th>Card</th><th>Balance</th><th>Actions</th></tr></thead>
-          <tbody>
-            {cards.data?.items.map((row) => (
-              <tr key={String(row.id)}>
-                <td>{String(row.id).slice(0, 8)}</td>
-                <td>{String(row.cardNo ?? '')}</td>
-                <td>{String(row.balance ?? '')}</td>
-                <td>
-                  <button onClick={() => recharge(String(row.id))}>充值</button>
-                  <button onClick={() => consume(String(row.id))}>消费</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable columns={cardColumns} rows={cards.data?.items ?? []} keyField="id" emptyText="No member cards" />
       <h2>欠费</h2>
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th>ID</th><th>Total</th><th>Paid</th><th>Status</th><th>Action</th></tr></thead>
-          <tbody>
-            {debts.data?.items.map((row) => (
-              <tr key={String(row.id)}>
-                <td>{String(row.id).slice(0, 8)}</td>
-                <td>{String(row.totalAmount ?? '')}</td>
-                <td>{String(row.paidAmount ?? '')}</td>
-                <td>{String(row.status ?? '')}</td>
-                <td><button onClick={() => payDebt(String(row.id))}>还款</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable columns={debtColumns} rows={debts.data?.items ?? []} keyField="id" emptyText="No debts" />
     </div>
   );
 }
