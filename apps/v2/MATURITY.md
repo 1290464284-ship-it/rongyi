@@ -115,7 +115,8 @@
   and switch between multiple clinics through `/auth/clinics` and
   `/auth/switch-clinic`.
 - Generic resources support CSV export through
-  `GET /api/v2/resources/:resource/export`, including multi-page row export.
+  `GET /api/v2/resources/:resource/export`, including multi-page row export,
+  with an Export button in the generic resource page.
 - `clean:generated` removes any `dist-*` output directory rather than a fixed
   hard-coded list.
 

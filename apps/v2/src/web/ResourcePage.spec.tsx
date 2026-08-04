@@ -6,9 +6,9 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { ResourcePage } from './ResourcePage';
-import { apiRequest } from './api';
+import { apiRequest, downloadCsv } from './api';
 
-vi.mock('./api', () => ({ apiRequest: vi.fn() }));
+vi.mock('./api', () => ({ apiRequest: vi.fn(), downloadCsv: vi.fn() }));
 
 const writable = {
   name: 'patients',
@@ -40,6 +40,28 @@ describe('ResourcePage', () => {
   afterEach(() => {
     cleanup();
     vi.mocked(apiRequest).mockReset();
+    vi.mocked(downloadCsv).mockReset();
+  });
+
+  it('exports the current resource as CSV', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([readOnly])
+      .mockResolvedValueOnce({ items: [{ id: 'p1', name: 'Alice' }], total: 1, page: 1, pageSize: 20 });
+    render(<ResourcePage resource="patients" />, { wrapper });
+    fireEvent.click(await screen.findByText('Export'));
+    expect(vi.mocked(downloadCsv)).toHaveBeenCalledWith('patients');
+  });
+
+  it('shows an alert when CSV export fails', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([readOnly])
+      .mockResolvedValueOnce({ items: [{ id: 'p1', name: 'Alice' }], total: 1, page: 1, pageSize: 20 });
+    vi.mocked(downloadCsv).mockRejectedValueOnce(new Error('export failed'));
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    render(<ResourcePage resource="patients" />, { wrapper });
+    fireEvent.click(await screen.findByText('Export'));
+    await waitFor(() => expect(alertSpy).toHaveBeenCalledWith('export failed'));
+    alertSpy.mockRestore();
   });
 
   it('renders rows and hides write controls for read-only resources', async () => {
