@@ -346,6 +346,27 @@ describe('application services', () => {
       `INSERT INTO FollowUp (
          id, clinicId, createdAt, updatedAt, deletedAt,
          patientId, planDate, content, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', ?, 'With result', 'PENDING')`,
+    ).run('followup-result', context.clinicId, now, now, now.slice(0, 10));
+    expect(service.complete('followup-result', context, ' 已回访 ')).toMatchObject({
+      id: 'followup-result',
+      status: 'COMPLETED',
+      result: '已回访',
+    });
+
+    db.prepare(
+      `INSERT INTO FollowUp (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, planDate, content, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', ?, 'Long result', 'PENDING')`,
+    ).run('followup-long-result', context.clinicId, now, now, now.slice(0, 10));
+    expect(() => service.complete('followup-long-result', context, 'x'.repeat(501)))
+      .toThrow('at most 500 characters');
+
+    db.prepare(
+      `INSERT INTO FollowUp (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, planDate, content, status
        ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', ?, 'Other clinic', 'PENDING')`,
     ).run('followup-other-clinic', 'clinic-v2-other', now, now, now.slice(0, 10));
     expect(() => service.complete('followup-other-clinic', context)).toThrow('Follow-up not found');

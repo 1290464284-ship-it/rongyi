@@ -16,6 +16,7 @@ const wrapper = ({ children }: { children: ReactNode }) => (
 describe('FollowUpsPage', () => {
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
     vi.mocked(apiRequest).mockReset();
   });
 
@@ -24,6 +25,7 @@ describe('FollowUpsPage', () => {
       .mockResolvedValueOnce([{ id: 'fu-1', patientName: 'Demo Patient', planDate: '2026-08-04', status: 'PENDING', content: 'Call patient' }])
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce([]);
+    vi.spyOn(window, 'prompt').mockReturnValue('已回访');
 
     render(<FollowUpsPage />, { wrapper });
     fireEvent.click(await screen.findByRole('button', { name: 'Complete' }));
@@ -31,6 +33,9 @@ describe('FollowUpsPage', () => {
     await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith('/follow-ups/fu-1/complete', expect.objectContaining({ method: 'PATCH' }));
     });
+    expect(apiRequest).toHaveBeenCalledWith('/follow-ups/fu-1/complete', expect.objectContaining({
+      body: JSON.stringify({ result: '已回访' }),
+    }));
     expect(await screen.findByText('Follow-up completed')).toBeDefined();
   });
 
@@ -59,6 +64,7 @@ describe('FollowUpsPage', () => {
       if (path === '/follow-ups/fu-2/complete') throw new Error('complete failed');
       return {};
     });
+    vi.spyOn(window, 'prompt').mockReturnValue('已回访');
 
     render(<FollowUpsPage />, { wrapper });
     fireEvent.click(await screen.findByRole('button', { name: 'Complete' }));
@@ -70,6 +76,7 @@ describe('FollowUpsPage', () => {
       if (path === '/follow-ups/reminders') return [{ id: 'fu-3', status: 'PENDING' }];
       throw 'boom';
     });
+    vi.spyOn(window, 'prompt').mockReturnValue('已回访');
 
     render(<FollowUpsPage />, { wrapper });
     fireEvent.click(await screen.findByRole('button', { name: 'Batch generate' }));

@@ -109,7 +109,7 @@ export class FollowUpService {
     return this.followUpRepository.reminders(context.clinicId);
   }
 
-  complete(id: string, context: AppContext): Record<string, unknown> {
+  complete(id: string, context: AppContext, result?: string | null): Record<string, unknown> {
     const row = this.db.prepare(
       `SELECT id, status FROM FollowUp WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).get(id, ...tenantParams(context.clinicId)) as { id: string; status: string } | undefined;
@@ -117,10 +117,14 @@ export class FollowUpService {
     if (!['PENDING', 'IN_PROGRESS'].includes(row.status)) {
       throw new ConflictError('Follow-up cannot be completed from current status');
     }
+    const normalizedResult = typeof result === 'string' && result.trim() ? result.trim() : null;
+    if (normalizedResult && normalizedResult.length > 500) {
+      throw new ValidationError('Follow-up result must be at most 500 characters');
+    }
     const now = context.now().toISOString();
-    const changes = this.followUpRepository.complete(id, now, now, context.clinicId);
+    const changes = this.followUpRepository.complete(id, now, now, context.clinicId, normalizedResult);
     if (changes === 0) throw new ConflictError('Follow-up cannot be completed');
-    return { id, status: 'COMPLETED', completedAt: now };
+    return { id, status: 'COMPLETED', completedAt: now, result: normalizedResult };
   }
 
   async batchGenerate(limit = 50, context: AppContext): Promise<{ processed: number; generated: number }> {

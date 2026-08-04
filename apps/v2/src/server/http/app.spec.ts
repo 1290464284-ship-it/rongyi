@@ -369,6 +369,15 @@ describe('HTTP app', () => {
       .expect(201);
     await request(app).patch(`/api/v2/follow-ups/${String(followUp.body.data.id)}/complete`)
       .set('Authorization', `Bearer ${token}`)
+      .send({ result: '已回访' })
+      .expect(200);
+    const secondFollowUp = await request(app).post('/api/v2/resources/followUps')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ patientId: 'patient-demo-001', planDate: '2026-08-04', content: 'complete without result', status: 'PENDING' })
+      .expect(201);
+    await request(app).patch(`/api/v2/follow-ups/${String(secondFollowUp.body.data.id)}/complete`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({})
       .expect(200);
     await request(app).get('/api/v2/stats/patient-growth').set('Authorization', `Bearer ${token}`).expect(200);
     await request(app).get('/api/v2/stats/member-cards').set('Authorization', `Bearer ${token}`).expect(200);

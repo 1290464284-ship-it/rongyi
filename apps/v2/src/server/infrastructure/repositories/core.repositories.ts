@@ -447,10 +447,12 @@ export class SqliteFollowUpRepository implements FollowUpRepository {
     );
   }
 
-  complete(id: string, completedAt: string, updatedAt: string, clinicId?: string | null): number {
-    const params = clinicId ? [completedAt, updatedAt, id, clinicId] : [completedAt, updatedAt, id];
+  complete(id: string, completedAt: string, updatedAt: string, clinicId?: string | null, result?: string | null): number {
+    const params = clinicId
+      ? [completedAt, updatedAt, result ?? null, id, clinicId]
+      : [completedAt, updatedAt, result ?? null, id];
     return this.db.prepare(
-      `UPDATE FollowUp SET status = 'COMPLETED', completedAt = ?, updatedAt = ?
+      `UPDATE FollowUp SET status = 'COMPLETED', completedAt = ?, updatedAt = ?, result = ?
        WHERE id = ? AND deletedAt IS NULL AND status IN ('PENDING', 'IN_PROGRESS')${tenantAnd(clinicId)}`,
     ).run(...params).changes;
   }

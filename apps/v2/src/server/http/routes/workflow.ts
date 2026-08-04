@@ -402,7 +402,14 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
 
   app.patch('/api/v2/follow-ups/:id/complete', writeLimiter, async (req, res, next) => {
     try {
-      res.json({ success: true, data: followUps.complete(String(req.params.id), req.context!) });
+      res.json({
+        success: true,
+        data: followUps.complete(
+          String(req.params.id),
+          req.context!,
+          typeof req.body?.result === 'string' ? req.body.result : null,
+        ),
+      });
     /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
     } catch (error) {
       next(error);
