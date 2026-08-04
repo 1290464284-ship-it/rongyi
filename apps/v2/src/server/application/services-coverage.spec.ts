@@ -119,6 +119,7 @@ describe('service coverage', () => {
     const service = new BackupService(db, path.join(dataDir, 'v2.sqlite'), backupDir);
     const backup = await service.create({ type: 'AUTO', encrypted: true });
     expect(String(backup.filename)).toMatch(/\.enc$/);
+    await service.create({ type: 'AUTO', encrypted: true });
     const verified = await service.verify(String(backup.filename));
     expect(verified.integrity).toBe('ok');
     const staged = await service.stageRestore(String(backup.filename));
@@ -129,6 +130,8 @@ describe('service coverage', () => {
     for (const file of cleanup.deleted) {
       expect(db.prepare('SELECT 1 FROM BackupRecord WHERE filename = ?').get(file.filename)).toBeUndefined();
     }
+    expect(service.cleanup(366).kept).toBeGreaterThanOrEqual(1);
+    expect(service.cleanup(Number.NaN).kept).toBeGreaterThanOrEqual(1);
     delete process.env.V2_BACKUP_KEY;
   });
 
