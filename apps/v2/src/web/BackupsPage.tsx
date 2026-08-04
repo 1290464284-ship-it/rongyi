@@ -2,8 +2,38 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { apiRequest } from './api';
 
+type DatabaseSummary = Record<string, number | string | null>;
+
+interface RestoreStagingResult {
+  message: string;
+  backupSummary?: DatabaseSummary;
+  currentSummary?: DatabaseSummary;
+}
+
+function SummaryPanel({ label, summary }: { label: string; summary?: DatabaseSummary }) {
+  if (!summary) return <div><h2>{label}</h2><p>No summary</p></div>;
+  return (
+    <div>
+      <h2>{label}</h2>
+      <div className="table-wrap">
+        <table>
+          <tbody>
+            {Object.entries(summary).map(([key, value]) => (
+              <tr key={key}>
+                <th>{key}</th>
+                <td>{String(value)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export function BackupsPage() {
   const [message, setMessage] = useState('');
+  const [comparison, setComparison] = useState<{ backup?: DatabaseSummary; current?: DatabaseSummary } | null>(null);
   const query = useQuery({
     queryKey: ['backups'],
     queryFn: () => apiRequest<Array<Record<string, unknown>>>('/backups'),
@@ -30,9 +60,10 @@ export function BackupsPage() {
 
   async function stageRestore(filename: string) {
     try {
-      const result = await apiRequest<{ message: string }>(`/backups/${encodeURIComponent(filename)}/restore`, {
+      const result = await apiRequest<RestoreStagingResult>(`/backups/${encodeURIComponent(filename)}/restore`, {
         method: 'POST',
       });
+      setComparison({ backup: result.backupSummary, current: result.currentSummary });
       setMessage(result.message);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Restore staging failed');
@@ -60,6 +91,12 @@ export function BackupsPage() {
         <button onClick={cleanup}>Cleanup (keep 30)</button>
       </div>
       {message && <p className="info">{message}</p>}
+      {comparison && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+          <SummaryPanel label="Backup summary" summary={comparison.backup} />
+          <SummaryPanel label="Current summary" summary={comparison.current} />
+        </div>
+      )}
       <div className="table-wrap">
         <table>
           <thead><tr><th>Filename</th><th>Encrypted</th><th>Size</th><th>Created</th><th>Actions</th></tr></thead>
