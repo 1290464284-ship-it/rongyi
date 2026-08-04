@@ -315,7 +315,7 @@ describe('HTTP app', () => {
          medicationHistory, systemicDiseases, source, active
        ) VALUES (?, ?, ?, ?, NULL, 'SEARCH-1', 'Searchable Patient', 'UNKNOWN', '13900001111',
          '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
-    ).run('patient-searchable', null, now, now);
+    ).run('patient-searchable', 'clinic-v2-001', now, now);
     const search = await request(app).get('/api/v2/search?q=Searchable')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);

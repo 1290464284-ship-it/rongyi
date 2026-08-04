@@ -250,9 +250,9 @@ export interface PatientRiskRepository {
 }
 
 export interface AnalyticsRepository {
-  rfm(): Array<Record<string, unknown>>;
-  churn(): Array<Record<string, unknown>>;
-  doctorAnomalies(): Array<Record<string, unknown>>;
+  rfm(clinicId: string | null): Array<Record<string, unknown>>;
+  churn(clinicId: string | null): Array<Record<string, unknown>>;
+  doctorAnomalies(clinicId: string | null): Array<Record<string, unknown>>;
 }
 
 export interface HrRepository {

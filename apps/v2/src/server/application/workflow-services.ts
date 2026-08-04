@@ -268,44 +268,50 @@ export class AnalyticsService {
   }
 
   rfm(context: AppContext): Array<Record<string, unknown>> {
-    return this.analyticsRepository.rfm();
+    return this.analyticsRepository.rfm(context.clinicId);
   }
 
   churn(context: AppContext): Array<Record<string, unknown>> {
-    return this.analyticsRepository.churn();
+    return this.analyticsRepository.churn(context.clinicId);
   }
 
   doctorAnomalies(context: AppContext): Array<Record<string, unknown>> {
-    return this.analyticsRepository.doctorAnomalies();
+    return this.analyticsRepository.doctorAnomalies(context.clinicId);
   }
 }
 
 export class ChargeAssistantService {
   constructor(private readonly db: Database.Database) {}
 
-  frequentItems(): Array<Record<string, unknown>> {
+  frequentItems(context: AppContext): Array<Record<string, unknown>> {
+    const where = context.clinicId ? 'deletedAt IS NULL AND clinicId = ?' : 'deletedAt IS NULL';
+    const params: unknown[] = context.clinicId ? [context.clinicId] : [];
     return this.db.prepare(
       `SELECT category, name, COUNT(*) AS count
        FROM ChargeItem
-       WHERE deletedAt IS NULL
+       WHERE ${where}
        GROUP BY category, name
        ORDER BY count DESC
        LIMIT 50`,
-    ).all() as Array<Record<string, unknown>>;
+    ).all(...params) as Array<Record<string, unknown>>;
   }
 }
 
 export class PrintTemplateService {
   constructor(private readonly db: Database.Database) {}
 
-  list(): Array<Record<string, unknown>> {
+  list(context: AppContext): Array<Record<string, unknown>> {
+    const where = context.clinicId ? 'deletedAt IS NULL AND clinicId = ?' : 'deletedAt IS NULL';
+    const params: unknown[] = context.clinicId ? [context.clinicId] : [];
     return this.db.prepare(
-      'SELECT * FROM PrintTemplate WHERE deletedAt IS NULL ORDER BY category, name',
-    ).all() as Array<Record<string, unknown>>;
+      `SELECT * FROM PrintTemplate WHERE ${where} ORDER BY category, name`,
+    ).all(...params) as Array<Record<string, unknown>>;
   }
 
-  render(code: string, variables: Record<string, unknown>): string {
-    const row = this.db.prepare('SELECT * FROM PrintTemplate WHERE code = ? AND deletedAt IS NULL').get(code) as
+  render(code: string, variables: Record<string, unknown>, context: AppContext): string {
+    const where = context.clinicId ? 'code = ? AND deletedAt IS NULL AND clinicId = ?' : 'code = ? AND deletedAt IS NULL';
+    const params: unknown[] = context.clinicId ? [code, context.clinicId] : [code];
+    const row = this.db.prepare(`SELECT * FROM PrintTemplate WHERE ${where}`).get(...params) as
       | Record<string, unknown>
       | undefined;
     if (!row) throw new NotFoundError('Print template not found');

@@ -411,7 +411,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
 
   app.get('/api/v2/charge-assistant/frequent-items', async (req, res, next) => {
     try {
-      res.json({ success: true, data: chargeAssistant.frequentItems() });
+      res.json({ success: true, data: chargeAssistant.frequentItems(req.context!) });
     /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
     } catch (error) {
       next(error);
@@ -421,7 +421,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
 
   app.get('/api/v2/print/templates', async (req, res, next) => {
     try {
-      res.json({ success: true, data: printTemplates.list() });
+      res.json({ success: true, data: printTemplates.list(req.context!) });
     /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
     } catch (error) {
       next(error);
@@ -431,7 +431,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
 
   app.post('/api/v2/print/templates/:code/render', async (req, res, next) => {
     try {
-      res.type('html').send(printTemplates.render(req.params.code, req.body ?? {}));
+      res.type('html').send(printTemplates.render(req.params.code, req.body ?? {}, req.context!));
     /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
     } catch (error) {
       next(error);
@@ -648,7 +648,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
 
   app.get('/api/v2/satisfaction/nps', async (req, res, next) => {
     try {
-      res.json({ success: true, data: satisfaction.nps() });
+      res.json({ success: true, data: satisfaction.nps(req.context!) });
     /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
     } catch (error) {
       next(error);
@@ -658,7 +658,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
 
   app.get('/api/v2/satisfaction/trend', async (req, res, next) => {
     try {
-      res.json({ success: true, data: satisfaction.trend() });
+      res.json({ success: true, data: satisfaction.trend(req.context!) });
     /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
     } catch (error) {
       next(error);
@@ -668,7 +668,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
 
   app.get('/api/v2/satisfaction/doctor-rankings', async (req, res, next) => {
     try {
-      res.json({ success: true, data: satisfaction.doctorRankings() });
+      res.json({ success: true, data: satisfaction.doctorRankings(req.context!) });
     /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
     } catch (error) {
       next(error);
@@ -762,6 +762,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
           typeof req.query.startDate === 'string' ? req.query.startDate : undefined,
           typeof req.query.endDate === 'string' ? req.query.endDate : undefined,
           groupBy,
+          req.context!,
         ),
       });
     /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
@@ -778,6 +779,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
         data: stats.patientGrowth(
           typeof req.query.startDate === 'string' ? req.query.startDate : undefined,
           typeof req.query.endDate === 'string' ? req.query.endDate : undefined,
+          req.context!,
         ),
       });
     /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
@@ -789,7 +791,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
 
   app.get('/api/v2/stats/doctor-workload', async (req, res, next) => {
     try {
-      res.json({ success: true, data: stats.doctorWorkload() });
+      res.json({ success: true, data: stats.doctorWorkload(req.context!) });
     /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
     } catch (error) {
       next(error);
@@ -799,7 +801,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
 
   app.get('/api/v2/stats/inventory', async (req, res, next) => {
     try {
-      res.json({ success: true, data: stats.inventoryStats() });
+      res.json({ success: true, data: stats.inventoryStats(req.context!) });
     /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
     } catch (error) {
       next(error);
@@ -809,7 +811,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
 
   app.get('/api/v2/stats/member-cards', async (req, res, next) => {
     try {
-      res.json({ success: true, data: stats.memberStats() });
+      res.json({ success: true, data: stats.memberStats(req.context!) });
     /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
     } catch (error) {
       next(error);
@@ -992,7 +994,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
         res.json({ success: true, data: [] });
         return;
       }
-      res.json({ success: true, data: search.search(q) });
+      res.json({ success: true, data: search.search(q, req.context!) });
     /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
     } catch (error) {
       next(error);

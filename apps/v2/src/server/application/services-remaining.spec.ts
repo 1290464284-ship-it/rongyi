@@ -111,9 +111,9 @@ describe('remaining services', () => {
        ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 10, 'WECHAT', '2026-08-01')`,
     ).run('survey-remaining', context.clinicId, now, now);
     const satisfaction = new SatisfactionService(db);
-    expect(satisfaction.nps().score).toBeGreaterThanOrEqual(0);
-    expect(satisfaction.trend().length).toBeGreaterThanOrEqual(1);
-    expect(satisfaction.doctorRankings()).toBeInstanceOf(Array);
+    expect(satisfaction.nps(context).score).toBeGreaterThanOrEqual(0);
+    expect(satisfaction.trend(context).length).toBeGreaterThanOrEqual(1);
+    expect(satisfaction.doctorRankings(context)).toBeInstanceOf(Array);
   });
 
   it('reports failed bulk import rows', async () => {

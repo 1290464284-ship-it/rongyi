@@ -124,11 +124,11 @@ describe('service coverage', () => {
   it('returns dashboard and revenue stats', () => {
     const service = new StatsService(db);
     expect(service.dashboard(context)).toHaveProperty('patients');
-    expect(service.revenue(undefined, undefined, 'month')).toBeInstanceOf(Array);
-    expect(service.patientGrowth()).toBeInstanceOf(Array);
-    expect(service.doctorWorkload()).toBeInstanceOf(Array);
-    expect(service.inventoryStats()).toBeInstanceOf(Array);
-    expect(service.memberStats()).toHaveProperty('total');
+    expect(service.revenue(undefined, undefined, 'month', context)).toBeInstanceOf(Array);
+    expect(service.patientGrowth(undefined, undefined, context)).toBeInstanceOf(Array);
+    expect(service.doctorWorkload(context)).toBeInstanceOf(Array);
+    expect(service.inventoryStats(context)).toBeInstanceOf(Array);
+    expect(service.memberStats(context)).toHaveProperty('total');
   });
 
   it('runs replenishment and clinical workflows', () => {
