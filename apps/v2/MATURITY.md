@@ -119,6 +119,8 @@
   with an Export button in the generic resource page.
 - Analytics hub includes a fixed monthly revenue report backed by the existing
   revenue statistics endpoint, plus an inventory summary report.
+- Communication hub includes a follow-up adherence report showing total,
+  on-time, and adherence rate.
 - `clean:generated` removes any `dist-*` output directory rather than a fixed
   hard-coded list.
 

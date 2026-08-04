@@ -131,6 +131,6 @@ The desktop sidebar exposes large business areas only. Each area opens one Hub p
 - 财务中心: charges, member cards, refunds, debts, invoices
 - 库存与采购: inventory, suppliers, purchase orders, processing orders
 - 经营分析: dashboard, monthly report, inventory report, RFM, churn warning, doctor anomalies, satisfaction
-- 随访与沟通: follow-ups, WeChat, SMS, satisfaction
+- 随访与沟通: follow-ups, follow-up adherence, WeChat, SMS, satisfaction
 - 人事与设备: staff, schedules, attendance, leaves, equipment
 - 系统管理: backups, settings, alerts, operation logs, sync records
