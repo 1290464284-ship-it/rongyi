@@ -20,9 +20,11 @@ const db = new Database(dbPath, { readonly: true });
 try {
   const integrity = db.pragma('integrity_check');
   const ok = integrity.length === 1 && integrity[0].integrity_check === 'ok';
-  if (!ok) {
+  const foreignKeyIssues = db.pragma('foreign_key_check');
+  if (!ok || foreignKeyIssues.length > 0) {
     console.error(`Database integrity check failed: ${dbPath}`);
     for (const row of integrity) console.error(row.integrity_check);
+    for (const row of foreignKeyIssues) console.error(JSON.stringify(row));
     process.exit(1);
   }
   console.log(`database integrity ok: ${dbPath}`);
