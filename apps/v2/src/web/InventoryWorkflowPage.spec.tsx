@@ -24,6 +24,15 @@ describe('InventoryWorkflowPage', () => {
       if (path === '/resources/purchaseOrders?page=1&pageSize=100') {
         return { items: [{ id: 'po-1', status: 'PENDING', totalAmount: 150 }], total: 1 };
       }
+      if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') {
+        return {
+          items: [
+            { id: 'pi-1', orderId: 'po-1', name: 'Dental Material', quantity: 2, unitPrice: 100, subtotal: 200 },
+            { id: 'pi-2', orderId: null, name: null, quantity: null, unitPrice: null, subtotal: null },
+          ],
+          total: 2,
+        };
+      }
       if (path === '/resources/processingOrders?page=1&pageSize=100') {
         return { items: [], total: 0 };
       }
@@ -34,6 +43,7 @@ describe('InventoryWorkflowPage', () => {
     });
 
     render(<InventoryWorkflowPage />, { wrapper });
+    expect(await screen.findByText('Dental Material')).toBeDefined();
     fireEvent.click(await screen.findByRole('checkbox'));
     fireEvent.click(screen.getByRole('button', { name: '应用选中建议' }));
 
@@ -47,6 +57,9 @@ describe('InventoryWorkflowPage', () => {
   it('generates suggestions and transitions processing orders', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/purchaseOrders?page=1&pageSize=100') {
+        return { items: [], total: 0 };
+      }
+      if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') {
         return { items: [], total: 0 };
       }
       if (path === '/resources/processingOrders?page=1&pageSize=100') {
@@ -75,6 +88,9 @@ describe('InventoryWorkflowPage', () => {
       if (path === '/resources/purchaseOrders?page=1&pageSize=100') {
         return { items: [], total: 0 };
       }
+      if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') {
+        return { items: [], total: 0 };
+      }
       if (path === '/resources/processingOrders?page=1&pageSize=100') {
         return { items: [], total: 0 };
       }
@@ -96,6 +112,9 @@ describe('InventoryWorkflowPage', () => {
   it('uses a generic message for non-error workflow failures', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/purchaseOrders?page=1&pageSize=100') {
+        return { items: [], total: 0 };
+      }
+      if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') {
         return { items: [], total: 0 };
       }
       if (path === '/resources/processingOrders?page=1&pageSize=100') {

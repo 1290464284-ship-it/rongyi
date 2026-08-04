@@ -256,6 +256,16 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
     /* v8 ignore stop */
   });
 
+  app.get('/api/v2/purchase-orders/:id/items', async (req, res, next) => {
+    try {
+      res.json({ success: true, data: purchaseOrders.items(String(req.params.id), req.context!) });
+    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
+    } catch (error) {
+      next(error);
+    }
+    /* v8 ignore stop */
+  });
+
   app.patch('/api/v2/processing-orders/:id/status', writeLimiter, async (req, res, next) => {
     try {
       res.json({ success: true, data: processingOrders.transition(String(req.params.id), String(req.body?.status ?? ''), req.context!) });

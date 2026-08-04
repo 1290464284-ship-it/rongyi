@@ -56,6 +56,7 @@ const errorCases: RouteCase[] = [
   { method: 'post', path: '/api/v2/member-cards/not-found/consume', body: { amount: 1 } },
   { method: 'post', path: '/api/v2/member-cards/not-found/points', body: { points: 1 } },
   { method: 'patch', path: '/api/v2/purchase-orders/not-found/receive', body: {} },
+  { method: 'get', path: '/api/v2/purchase-orders/not-found/items' },
   { method: 'patch', path: '/api/v2/processing-orders/not-found/status', body: { status: 'SENT' } },
   { method: 'post', path: '/api/v2/patients/not-found/risk', body: {} },
   { method: 'get', path: '/api/v2/prescriptions/not-found/safety' },
