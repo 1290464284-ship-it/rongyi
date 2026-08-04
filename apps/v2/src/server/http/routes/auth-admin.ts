@@ -1,10 +1,12 @@
 import type { Express } from 'express';
 import { createRateLimit } from '../rate-limit';
+import { navigationForRole } from '../route-policy';
 import type { RouteDependencies } from './deps';
 
 export function registerPublicAuthRoutes(app: Express, deps: RouteDependencies): void {
   const { authService } = deps;
   const loginLimiter = createRateLimit({ windowMs: 60_000, max: 20 });
+  const refreshLimiter = createRateLimit({ windowMs: 60_000, max: 30 });
 
   app.post('/api/v2/auth/login', loginLimiter, async (req, res, next) => {
     try {
@@ -17,7 +19,7 @@ export function registerPublicAuthRoutes(app: Express, deps: RouteDependencies):
     /* v8 ignore stop */
   });
 
-  app.post('/api/v2/auth/refresh', async (req, res, next) => {
+  app.post('/api/v2/auth/refresh', refreshLimiter, async (req, res, next) => {
     try {
       const result = await authService.refresh(String(req.body?.refreshToken ?? ''));
       res.json({ success: true, data: result });
@@ -47,6 +49,16 @@ export function registerAdminRoutes(app: Express, deps: RouteDependencies): void
     try {
       const user = await authService.getUserById(req.context!.userId);
       res.json({ success: true, data: user });
+    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
+    } catch (error) {
+      next(error);
+    }
+    /* v8 ignore stop */
+  });
+
+  app.get('/api/v2/auth/navigation', async (req, res, next) => {
+    try {
+      res.json({ success: true, data: { permissions: navigationForRole(req.context!.role) } });
     /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
     } catch (error) {
       next(error);

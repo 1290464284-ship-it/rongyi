@@ -10,6 +10,7 @@ export interface IdempotencyScope {
 }
 
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
+const IDEMPOTENCY_PROCESSING_TIMEOUT_MS = 30 * 60 * 1000;
 
 /**
  * Executes a write operation at most once for a client-provided key.
@@ -27,10 +28,12 @@ export function withIdempotency<T>(
   if (!scope?.requestId) return fn();
 
   const now = new Date().toISOString();
+  const staleBefore = new Date(Date.now() - IDEMPOTENCY_PROCESSING_TIMEOUT_MS).toISOString();
   db.prepare('DELETE FROM IdempotencyRecord WHERE expiresAt IS NOT NULL AND expiresAt <= ?').run(now);
+  db.prepare("DELETE FROM IdempotencyRecord WHERE status != 'COMPLETED' AND updatedAt IS NOT NULL AND updatedAt <= ?").run(staleBefore);
   const key = scopeKey(scope);
-  const existing = db.prepare('SELECT responseJson, status FROM IdempotencyRecord WHERE key = ?').get(key) as
-    | { responseJson: string; status: string }
+  const existing = db.prepare('SELECT responseJson, status, updatedAt FROM IdempotencyRecord WHERE key = ?').get(key) as
+    | { responseJson: string; status: string; updatedAt: string }
     | undefined;
   if (existing) {
     if (existing.status !== 'COMPLETED') throw new ConflictError('Operation is already in progress');
@@ -46,8 +49,8 @@ export function withIdempotency<T>(
        ) VALUES (?, ?, 'GENERIC', 'PROCESSING', '{}', '{}', ?, ?, ?, ?, ?, NULL, ?)`,
     ).run(randomUUID(), key, scope.userId ?? null, scope.clinicId ?? null, scope.operation, now, now, expiresAt);
   } catch (error) {
-    const concurrent = db.prepare('SELECT responseJson, status FROM IdempotencyRecord WHERE key = ?').get(key) as
-      | { responseJson: string; status: string }
+    const concurrent = db.prepare('SELECT responseJson, status, updatedAt FROM IdempotencyRecord WHERE key = ?').get(key) as
+      | { responseJson: string; status: string; updatedAt: string }
       | undefined;
     if (concurrent) {
       if (concurrent.status !== 'COMPLETED') throw new ConflictError('Operation is already in progress');

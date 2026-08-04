@@ -110,6 +110,29 @@ describe('withIdempotency', () => {
       .toThrow('Operation is already in progress');
   });
 
+  it('retries processing records that exceed the recovery timeout', async () => {
+    const key = scopeKey(scope('stale-processing'));
+    db.prepare(
+      `INSERT INTO IdempotencyRecord (
+         id, key, type, status, responseJson, result, userId, clinicId, operation,
+         createdAt, updatedAt, deletedAt, expiresAt
+       ) VALUES (?, ?, 'GENERIC', 'PROCESSING', '{}', '{}', 'user-1', 'clinic-1', 'charge.pay', ?, ?, NULL, ?)`,
+    ).run(
+      'idem-stale-processing',
+      key,
+      new Date(Date.now() - 3_600_000).toISOString(),
+      new Date(Date.now() - 3_600_000).toISOString(),
+      new Date(Date.now() + 86_400_000).toISOString(),
+    );
+    let calls = 0;
+    const result = await withIdempotency(db, scope('stale-processing'), () => {
+      calls += 1;
+      return { ok: true };
+    });
+    expect(result.ok).toBe(true);
+    expect(calls).toBe(1);
+  });
+
   it('treats expired completed records as retryable', async () => {
     const key = scopeKey(scope('expired'));
     db.prepare(
@@ -158,7 +181,7 @@ describe('withIdempotency', () => {
     const failingDb = { prepare } as unknown as Database.Database;
     expect(() => withIdempotency(failingDb, scope('update-failure'), () => ({ ok: true })))
       .toThrow('update failed');
-    expect(deleteRun).toHaveBeenCalledTimes(2);
+    expect(deleteRun).toHaveBeenCalledTimes(3);
   });
 
   it('returns a concurrent result when the idempotency insert races', async () => {

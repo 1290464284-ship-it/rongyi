@@ -87,4 +87,20 @@ describe('migrations', () => {
     responseDb.close();
     fs.rmSync(responseDir, { recursive: true, force: true });
   });
+
+  it('adds the charge member-card column when migration 114 runs on an older schema', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-mig-114-'));
+    const oldDb = createDatabase(dir);
+    runMigrations(oldDb);
+    oldDb.exec('DROP INDEX IF EXISTS idx_v2_charge_member_card');
+    oldDb.exec('ALTER TABLE Charge DROP COLUMN memberCardId');
+    oldDb.prepare('DELETE FROM schema_migrations WHERE version = ?').run('114');
+    runMigrations(oldDb);
+    const columns = new Set(
+      (oldDb.prepare('PRAGMA table_info(Charge)').all() as Array<{ name: string }>).map((column) => column.name),
+    );
+    expect(columns.has('memberCardId')).toBe(true);
+    oldDb.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
 });

@@ -245,6 +245,35 @@ describe('application services', () => {
     await expect(charges.refund(String(created.id), 50, 'deleted card', context)).rejects.toThrow('Member card used for payment is not found');
   });
 
+  it('refunds legacy member-card charges without a recorded card id', async () => {
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO Patient (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active
+       ) VALUES (?, ?, ?, ?, NULL, 'LEGACY-CARD-P', 'Legacy Card Patient', 'UNKNOWN', '13300000003',
+         '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
+    ).run('patient-legacy-card-refund', context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO MemberCard (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, cardNo, balance, totalRecharge, totalConsume,
+         status, points, totalPoints, level
+       ) VALUES (?, ?, ?, ?, NULL, ?, 'CARD-LEGACY-REFUND', 500, 500, 0, 'ACTIVE', 0, 0, 'NORMAL')`,
+    ).run('card-legacy-refund', context.clinicId, now, now, 'patient-legacy-card-refund');
+    const charges = new ChargeService(db);
+    const created = await charges.create({
+      patientId: 'patient-legacy-card-refund',
+      items: [{ name: 'Implant', category: 'IMPLANT', price: 200, quantity: 1 }],
+    }, context);
+    await charges.pay(String(created.id), 200, 'MEMBER_CARD', undefined, context);
+    db.prepare('UPDATE Charge SET memberCardId = NULL WHERE id = ?').run(String(created.id));
+    await charges.refund(String(created.id), 50, 'legacy refund', context);
+    const card = db.prepare('SELECT balance FROM MemberCard WHERE id = ?').get('card-legacy-refund') as { balance: number };
+    expect(Number(card.balance)).toBe(350);
+  });
+
   it('dedupes follow-up generation when no templates exist', async () => {
     const service = new FollowUpService(db);
     const now = new Date().toISOString();

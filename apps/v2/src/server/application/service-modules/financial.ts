@@ -133,12 +133,13 @@ export class ChargeService {
       const newStatus = newPaid >= total ? 'PAID' : 'PARTIAL';
       const now = context?.now().toISOString() ?? new Date().toISOString();
       const payRun = this.db.transaction(() => {
-        this.chargeRepository.updatePayment(id, newPaid, newStatus, now, method);
+        let memberCardId: string | null = null;
         if (method === 'MEMBER_CARD') {
           const memberCard = this.memberCardRepository.findByPatient(String(row.patientId), context?.clinicId ?? null);
           if (!memberCard) throw new ConflictError('No active member card for patient');
           const balance = Number(memberCard.balance) - amount;
           if (balance < 0) throw new ConflictError('Insufficient member card balance');
+          memberCardId = memberCard.id;
           this.memberCardRepository.updateConsume(memberCard.id, balance, amount, now, context?.clinicId ?? null);
           this.memberCardRepository.insertLog({
             id: randomUUID(),
@@ -152,6 +153,7 @@ export class ChargeService {
             remark: `Charge ${id}`,
           });
         }
+        this.chargeRepository.updatePayment(id, newPaid, newStatus, now, method, memberCardId);
       });
       payRun();
       return { id, paidAmount: newPaid, status: newStatus };
@@ -186,7 +188,9 @@ export class ChargeService {
       const run = this.db.transaction(() => {
         this.chargeRepository.updateRefund(id, newRefunded, newStatus, now);
         if (row.payMethod === 'MEMBER_CARD') {
-          const memberCard = this.memberCardRepository.findByPatientForRefund(String(row.patientId), context.clinicId);
+          const memberCard = row.memberCardId
+            ? this.memberCardRepository.findById(String(row.memberCardId), context.clinicId)
+            : this.memberCardRepository.findByPatientForRefund(String(row.patientId), context.clinicId);
           if (!memberCard) throw new ConflictError('Member card used for payment is not found');
           const balance = Number(memberCard.balance) + amount;
           this.memberCardRepository.updateBalanceRefund(memberCard.id, balance, now, context.clinicId);

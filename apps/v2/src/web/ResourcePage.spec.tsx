@@ -81,4 +81,24 @@ describe('ResourcePage', () => {
       expect.objectContaining({ method: 'DELETE' }),
     ));
   });
+
+  it('submits an edit form and advances pages', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([writable])
+      .mockResolvedValueOnce({ items: [{ id: 'p1', name: 'Alice', active: true }], total: 30, page: 1, pageSize: 20 });
+    render(<ResourcePage resource="patients" />, { wrapper });
+    fireEvent.click(await screen.findByText('Edit'));
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce({ success: true, data: { id: 'p1' } })
+      .mockResolvedValueOnce({ items: [{ id: 'p1', name: 'Alice Updated', active: true }], total: 30, page: 1, pageSize: 20 });
+    fireEvent.change(screen.getByLabelText('name'), { target: { value: 'Alice Updated' } });
+    fireEvent.click(screen.getByText('Save'));
+    await waitFor(() => expect(vi.mocked(apiRequest)).toHaveBeenCalledWith(
+      '/resources/patients/p1',
+      expect.objectContaining({ method: 'PATCH' }),
+    ));
+    vi.mocked(apiRequest).mockResolvedValueOnce({ items: [], total: 30, page: 2, pageSize: 20 });
+    fireEvent.click(screen.getByText('Next'));
+    expect(await screen.findByText('Page 2')).toBeDefined();
+  });
 });
