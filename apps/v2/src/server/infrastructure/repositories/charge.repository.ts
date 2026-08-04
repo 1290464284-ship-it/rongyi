@@ -64,12 +64,12 @@ export class SqliteChargeRepository implements ChargeRepository {
   }
 
   updatePayment(id: string, paidAmount: number, status: string, paidAt: string, payMethod?: string): void {
-    this.db.prepare('UPDATE Charge SET paidAmount = ?, status = ?, paidAt = ?, payMethod = COALESCE(?, payMethod), updatedAt = ? WHERE id = ?')
+    this.db.prepare('UPDATE Charge SET paidAmount = ?, status = ?, paidAt = ?, payMethod = COALESCE(?, payMethod), updatedAt = ? WHERE id = ? AND deletedAt IS NULL')
       .run(paidAmount, status, paidAt, payMethod ?? null, paidAt, id);
   }
 
   updateRefund(id: string, refundedAmount: number, status: string, updatedAt: string): void {
-    this.db.prepare('UPDATE Charge SET refundedAmount = ?, status = ?, updatedAt = ? WHERE id = ?')
+    this.db.prepare('UPDATE Charge SET refundedAmount = ?, status = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL')
       .run(refundedAmount, status, updatedAt, id);
   }
 }

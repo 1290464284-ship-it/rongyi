@@ -28,12 +28,20 @@ function validateField(field: ResourceField, raw: unknown): unknown {
   switch (field.type) {
     case 'text':
     case 'longText':
-    case 'date':
-    case 'datetime':
     case 'relation':
       if (typeof raw !== 'string') throw new ValidationError(`${field.name} must be a string`);
       if (field.maxLength && raw.length > field.maxLength) {
         throw new ValidationError(`${field.name} exceeds max length ${field.maxLength}`);
+      }
+      return raw;
+    case 'date':
+      if (typeof raw !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(raw) || Number.isNaN(new Date(`${raw}T00:00:00.000Z`).getTime())) {
+        throw new ValidationError(`${field.name} must be a valid YYYY-MM-DD date`);
+      }
+      return raw;
+    case 'datetime':
+      if (typeof raw !== 'string' || Number.isNaN(Date.parse(raw))) {
+        throw new ValidationError(`${field.name} must be a valid date-time`);
       }
       return raw;
     case 'number':
