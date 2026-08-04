@@ -182,8 +182,8 @@ describe('core repositories', () => {
       createdAt: now,
       updatedAt: now,
     });
-    repo.updatePayment('charge-repo', 400, 'PARTIAL', now, 'CASH');
-    repo.updateRefund('charge-repo', 100, 'PARTIAL', now);
+    repo.updatePayment('charge-repo', 400, 'PARTIAL', now, 'CASH', undefined, null);
+    repo.updateRefund('charge-repo', 100, 'PARTIAL', now, null);
     const charge = repo.findById('charge-repo');
     expect(charge?.paidAmount).toBe(400);
     expect(charge?.refundedAmount).toBe(100);
@@ -215,14 +215,35 @@ describe('core repositories', () => {
       createdAt: now,
       updatedAt: now,
     });
-    repo.updatePayment('charge-repo', 500, 'PAID', now, 'MEMBER_CARD', 'card-repo');
+    repo.updatePayment('charge-repo', 500, 'PAID', now, 'MEMBER_CARD', 'card-repo', null);
     const paidCharge = repo.findById('charge-repo');
     expect(paidCharge?.payMethod).toBe('MEMBER_CARD');
     expect(paidCharge?.memberCardId).toBe('card-repo');
-    repo.updatePayment('charge-repo', 600, 'PAID', now, undefined, null);
+    repo.updatePayment('charge-repo', 600, 'PAID', now, undefined, null, null);
     const cashCharge = repo.findById('charge-repo');
     expect(cashCharge?.payMethod).toBe('MEMBER_CARD');
     expect(cashCharge?.memberCardId).toBe('card-repo');
+  });
+
+  it('does not update charges from another clinic through direct repository writes', () => {
+    const repo = new SqliteChargeRepository(db);
+    db.prepare(
+      `INSERT INTO Charge (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, number, totalAmount, discount, status
+       ) VALUES (?, ?, ?, ?, NULL, 'charge-patient', 'CHG-OTHER-CLINIC', 1000, 0, 'UNPAID')`,
+    ).run('charge-other-clinic', 'clinic-v2-other', now, now);
+    repo.updatePayment('charge-other-clinic', 100, 'PARTIAL', now, 'CASH', undefined, 'clinic-v2-001');
+    repo.updatePayment('charge-other-clinic', 0, 'UNPAID', now, undefined, 'card-other', 'clinic-v2-001');
+    repo.updateRefund('charge-other-clinic', 50, 'PARTIAL', now, 'clinic-v2-001');
+    const row = db.prepare('SELECT paidAmount, refundedAmount, status FROM Charge WHERE id = ?').get('charge-other-clinic') as {
+      paidAmount: number;
+      refundedAmount: number;
+      status: string;
+    };
+    expect(Number(row.paidAmount)).toBe(0);
+    expect(Number(row.refundedAmount)).toBe(0);
+    expect(row.status).toBe('UNPAID');
   });
 
   it('creates purchase orders and marks them received', () => {

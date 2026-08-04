@@ -61,11 +61,15 @@ export class PrescriptionSafetyService {
   check(prescriptionId: string, context: AppContext): { safe: boolean; warnings: string[] } {
     const prescription = this.db.prepare(`SELECT * FROM Prescription WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`).get(prescriptionId, ...tenantParams(context.clinicId)) as Record<string, unknown> | undefined;
     if (!prescription) throw new NotFoundError('Prescription not found');
-    const patient = this.db.prepare(`SELECT allergies, medicalHistory FROM Patient WHERE id = ?${tenantAnd(context.clinicId)}`).get(prescription.patientId, ...tenantParams(context.clinicId)) as
+    const patient = this.db.prepare(
+      `SELECT allergies, medicalHistory FROM Patient WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    ).get(prescription.patientId, ...tenantParams(context.clinicId)) as
       | { allergies: string; medicalHistory: string }
       | undefined;
     const allergies = patient ? parseStringArray(patient.allergies) : [];
-    const items = this.db.prepare('SELECT name FROM PrescriptionItem WHERE prescriptionId = ?').all(prescriptionId) as Array<{ name: string }>;
+    const items = this.db.prepare(
+      `SELECT name FROM PrescriptionItem WHERE prescriptionId = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    ).all(prescriptionId, ...tenantParams(context.clinicId)) as Array<{ name: string }>;
     const warnings = items
       .flatMap((item) => allergies.filter((allergy) => item.name.toUpperCase().includes(allergy.toUpperCase())))
       .map((allergy) => `Potential allergy: ${allergy}`);
@@ -88,8 +92,9 @@ export class CephalometricService {
       metrics.interincisalAngle = angle(landmarks.upperIncisor, landmarks.lowerIncisor);
     }
     const now = context.now().toISOString();
-    this.db.prepare('UPDATE CephalometricCase SET metricsJson = ?, status = ?, updatedAt = ? WHERE id = ?')
-      .run(JSON.stringify(metrics), 'ANALYZED', now, caseId);
+    this.db.prepare(
+      `UPDATE CephalometricCase SET metricsJson = ?, status = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    ).run(JSON.stringify(metrics), 'ANALYZED', now, caseId, ...tenantParams(context.clinicId));
     return { id: caseId, metrics };
   }
 }
@@ -100,7 +105,9 @@ export class TreatmentProgressService {
   summary(planId: string, context: AppContext): Record<string, unknown> {
     const plan = this.db.prepare(`SELECT * FROM TreatmentPlan WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`).get(planId, ...tenantParams(context.clinicId)) as Record<string, unknown> | undefined;
     if (!plan) throw new NotFoundError('Treatment plan not found');
-    const items = this.db.prepare('SELECT status FROM TreatmentPlanItem WHERE planId = ?').all(planId) as Array<{ status: string }>;
+    const items = this.db.prepare(
+      `SELECT status FROM TreatmentPlanItem WHERE planId = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    ).all(planId, ...tenantParams(context.clinicId)) as Array<{ status: string }>;
     const completed = items.filter((item) => item.status === 'COMPLETED').length;
     return {
       planId,
