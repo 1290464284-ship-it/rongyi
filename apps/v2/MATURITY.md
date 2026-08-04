@@ -86,5 +86,6 @@
 
 ## Remaining
 
-- Replace the self-signed signing certificate with a CA-issued certificate.
-- Run a live `electron-updater` apply test with the signed release.
+No blockers for the agreed internal delivery scope. Public CA signing is
+explicitly not required by the current product decision and is left as optional
+future work if external distribution is ever requested.
