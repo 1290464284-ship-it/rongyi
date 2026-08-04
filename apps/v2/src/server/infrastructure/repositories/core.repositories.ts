@@ -356,7 +356,7 @@ export class SqlitePurchaseOrderRepository implements PurchaseOrderRepository {
 
   markReceived(id: string, receivedAt: string, updatedAt: string, clinicId?: string | null): void {
     const params = clinicId ? [receivedAt, updatedAt, id, clinicId] : [receivedAt, updatedAt, id];
-    this.db.prepare(`UPDATE PurchaseOrder SET status = 'RECEIVED', receivedAt = ?, updatedAt = ? WHERE id = ?${tenantAnd(clinicId)}`)
+    this.db.prepare(`UPDATE PurchaseOrder SET status = 'RECEIVED', receivedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`)
       .run(...params);
   }
 }
@@ -373,7 +373,7 @@ export class SqliteProcessingOrderRepository implements ProcessingOrderRepositor
 
   updateStatus(id: string, status: string, updatedAt: string, clinicId?: string | null): void {
     const params = clinicId ? [status, updatedAt, id, clinicId] : [status, updatedAt, id];
-    this.db.prepare(`UPDATE ProcessingOrder SET status = ?, updatedAt = ? WHERE id = ?${tenantAnd(clinicId)}`).run(...params);
+    this.db.prepare(`UPDATE ProcessingOrder SET status = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`).run(...params);
   }
 }
 
@@ -577,7 +577,7 @@ export class SqliteClinicalWorkflowRepository implements ClinicalWorkflowReposit
   updateStatus(table: string, id: string, status: string, now: string, extra: Record<string, unknown> = {}, clinicId?: string | null): void {
     const setClause = Object.keys(extra).map((key) => `${key} = ?`).join(', ');
     const params = Object.values(extra).map((value) => value ?? null);
-    const sql = `UPDATE ${table} SET status = ?, updatedAt = ?${setClause ? `, ${setClause}` : ''} WHERE id = ?${tenantAnd(clinicId)}`;
+    const sql = `UPDATE ${table} SET status = ?, updatedAt = ?${setClause ? `, ${setClause}` : ''} WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`;
     this.db.prepare(sql).run(status, now, ...params, id, ...(clinicId ? [clinicId] : []));
   }
 
@@ -596,7 +596,7 @@ export class SqliteClinicalWorkflowRepository implements ClinicalWorkflowReposit
     const params = clinicId ? [locked ? 1 : 0, locked ? now : null, locked ? userId : null, now, id, clinicId] : [locked ? 1 : 0, locked ? now : null, locked ? userId : null, now, id];
     /* v8 ignore stop */
     this.db.prepare(
-      `UPDATE MedicalRecord SET isLocked = ?, lockedAt = ?, lockedBy = ?, updatedAt = ? WHERE id = ?${tenantAnd(clinicId)}`,
+      `UPDATE MedicalRecord SET isLocked = ?, lockedAt = ?, lockedBy = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
     ).run(...params);
   }
 }
