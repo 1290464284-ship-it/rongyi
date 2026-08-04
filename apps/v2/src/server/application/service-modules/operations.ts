@@ -305,6 +305,7 @@ export class BackupService {
         return { filename, integrity: ok ? 'ok' : 'corrupt', encrypted };
       } finally {
         backupDb.close();
+        removeSqliteSidecars(sqlitePath);
       }
     } finally {
       if (tempPath && fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
@@ -346,12 +347,15 @@ export class BackupService {
   cleanup(maxKeep = 30): { kept: number; deleted: Array<{ filename: string; fileSize: number }> } {
     const files = this.list() as Array<{ filename: string; fileSize: number }>;
     const deleteFiles = files.slice(maxKeep);
+    const deleted: Array<{ filename: string; fileSize: number }> = [];
     for (const file of deleteFiles) {
       fs.unlinkSync(path.join(this.backupDir, file.filename));
+      this.db.prepare('DELETE FROM BackupRecord WHERE filename = ?').run(file.filename);
+      deleted.push({ filename: file.filename, fileSize: file.fileSize });
     }
     return {
       kept: Math.min(files.length, maxKeep),
-      deleted: deleteFiles.map((file) => ({ filename: file.filename, fileSize: file.fileSize })),
+      deleted,
     };
   }
 

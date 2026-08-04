@@ -124,7 +124,11 @@ describe('service coverage', () => {
     const staged = await service.stageRestore(String(backup.filename));
     expect(staged.stagedPath).toBeDefined();
     expect(fs.existsSync(path.join(dataDir, '.restore-pending.json'))).toBe(true);
-    expect(service.cleanup(0).deleted.length).toBeGreaterThanOrEqual(1);
+    const cleanup = service.cleanup(0);
+    expect(cleanup.deleted.length).toBeGreaterThanOrEqual(1);
+    for (const file of cleanup.deleted) {
+      expect(db.prepare('SELECT 1 FROM BackupRecord WHERE filename = ?').get(file.filename)).toBeUndefined();
+    }
     delete process.env.V2_BACKUP_KEY;
   });
 
