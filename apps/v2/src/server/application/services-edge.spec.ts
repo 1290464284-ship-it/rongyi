@@ -35,6 +35,8 @@ import {
   TreatmentProgressService,
 } from './services';
 import {
+  AnalyticsService,
+  ChargeAssistantService,
   ClinicalWorkflowService,
   PrintTemplateService,
   ReplenishmentService,
@@ -535,15 +537,33 @@ describe('service edge coverage', () => {
   });
 
   it('covers stats, print, and search label branches', () => {
+    const nullContext = { ...context, clinicId: null };
     const stats = new StatsService(db);
     expect(stats.dashboard(nullContext)).toHaveProperty('patients');
-    expect(stats.revenue('2026-01-01T00:00:00.000Z', '2026-12-31T23:59:59.999Z', 'day')).toBeInstanceOf(Array);
-    expect(stats.revenue('2026-01-01T00:00:00.000Z', '2026-12-31T23:59:59.999Z', 'month')).toBeInstanceOf(Array);
-    expect(stats.patientGrowth('2026-01-01T00:00:00.000Z', '2026-12-31T23:59:59.999Z')).toBeInstanceOf(Array);
+    expect(stats.revenue('2026-01-01T00:00:00.000Z', '2026-12-31T23:59:59.999Z', 'day', nullContext)).toBeInstanceOf(Array);
+    expect(stats.revenue('2026-01-01T00:00:00.000Z', '2026-12-31T23:59:59.999Z', 'month', nullContext)).toBeInstanceOf(Array);
+    expect(stats.patientGrowth('2026-01-01T00:00:00.000Z', '2026-12-31T23:59:59.999Z', nullContext)).toBeInstanceOf(Array);
+    expect(stats.doctorWorkload(nullContext)).toBeInstanceOf(Array);
+    expect(stats.inventoryStats(nullContext)).toBeInstanceOf(Array);
+    expect(stats.memberStats(nullContext)).toHaveProperty('total');
 
     const print = new PrintService();
     expect(print.render('report', { title: 'Title', note: 'Note' })).toContain('Title');
     expect(print.render('report', { note: 'Note' })).toContain('report');
+
+    const analytics = new AnalyticsService(db);
+    expect(analytics.rfm(nullContext)).toBeInstanceOf(Array);
+    expect(analytics.churn(nullContext)).toBeInstanceOf(Array);
+    expect(analytics.doctorAnomalies(nullContext)).toBeInstanceOf(Array);
+    const satisfaction = new SatisfactionService(db);
+    expect(satisfaction.nps(nullContext).score).toBeGreaterThanOrEqual(0);
+    expect(satisfaction.trend(nullContext)).toBeInstanceOf(Array);
+    expect(satisfaction.doctorRankings(nullContext)).toBeInstanceOf(Array);
+    const chargeAssistant = new ChargeAssistantService(db);
+    expect(chargeAssistant.frequentItems(nullContext)).toBeInstanceOf(Array);
+    const printTemplates = new PrintTemplateService(db);
+    expect(printTemplates.list(nullContext)).toBeInstanceOf(Array);
+    expect(() => printTemplates.render('missing-null-template', {}, nullContext)).toThrow('Print template not found');
 
     const now = new Date().toISOString();
     db.prepare(
@@ -575,11 +595,11 @@ describe('service edge coverage', () => {
          '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
     ).run('patient-short-phone', null, now, now);
     const search = new SearchService(db);
-    const results = search.search('Supplier');
+    const results = search.search('Supplier', nullContext);
     expect(results.length).toBeGreaterThanOrEqual(1);
-    expect(search.search('XNULL').some((row) => row.resource === 'patients' && row.label === 'XNULL')).toBe(true);
-    expect(search.search('SHORT').some((row) => (row.detail as Record<string, unknown>).phone === '****')).toBe(true);
-    expect(search.search('SEARCHCAT').some((row) => row.resource === 'inventoryItems' && row.label === '')).toBe(true);
+    expect(search.search('XNULL', nullContext).some((row) => row.resource === 'patients' && row.label === 'XNULL')).toBe(true);
+    expect(search.search('SHORT', nullContext).some((row) => (row.detail as Record<string, unknown>).phone === '****')).toBe(true);
+    expect(search.search('SEARCHCAT', nullContext).some((row) => row.resource === 'inventoryItems' && row.label === '')).toBe(true);
 
     db.prepare(
       `INSERT INTO Appointment (
@@ -605,10 +625,10 @@ describe('service edge coverage', () => {
          patientId, planDate, content, status
        ) VALUES (?, NULL, ?, ?, NULL, 'patient-missing-label', ?, 'LABELCONTENT', 'PENDING')`,
     ).run('followup-label-null', now, now, now.slice(0, 10));
-    expect(search.search('LABELSTATUS').some((row) => row.resource === 'appointments' && row.label === '')).toBe(true);
-    expect(search.search('LABELCHARGE').some((row) => row.resource === 'charges' && row.label === '')).toBe(true);
-    expect(search.search('LABELPHONE').some((row) => row.resource === 'suppliers' && row.label === '')).toBe(true);
-    expect(search.search('LABELCONTENT').some((row) => row.resource === 'followUps' && row.label === '')).toBe(true);
+    expect(search.search('LABELSTATUS', nullContext).some((row) => row.resource === 'appointments' && row.label === '')).toBe(true);
+    expect(search.search('LABELCHARGE', nullContext).some((row) => row.resource === 'charges' && row.label === '')).toBe(true);
+    expect(search.search('LABELPHONE', nullContext).some((row) => row.resource === 'suppliers' && row.label === '')).toBe(true);
+    expect(search.search('LABELCONTENT', nullContext).some((row) => row.resource === 'followUps' && row.label === '')).toBe(true);
   });
 
   it('covers sync push error branches', async () => {
@@ -1034,9 +1054,9 @@ describe('service edge coverage', () => {
     expect(() => notifications.markRead('missing-notification', context.userId)).toThrow('Notification not found');
 
     const satisfaction = new SatisfactionService(db);
-    expect(satisfaction.nps().score).toBeGreaterThanOrEqual(0);
-    expect(satisfaction.trend()).toBeInstanceOf(Array);
-    expect(satisfaction.doctorRankings()).toBeInstanceOf(Array);
+    expect(satisfaction.nps(context).score).toBeGreaterThanOrEqual(0);
+    expect(satisfaction.trend(context)).toBeInstanceOf(Array);
+    expect(satisfaction.doctorRankings(context)).toBeInstanceOf(Array);
 
     const workflow = new ClinicalWorkflowService(db);
     expect(() => workflow.registrationStatus('missing-registration', 'IN_PROGRESS', context)).toThrow('Registration not found');
@@ -1059,6 +1079,6 @@ describe('service edge coverage', () => {
     ).run('wechat-edge-batch', context.clinicId, now, now);
     expect(new WechatService(db).sendBatch(['wechat-edge-batch'], context).sent).toBe(1);
 
-    expect(() => new PrintTemplateService(db).render('missing-template', {})).toThrow('Print template not found');
+    expect(() => new PrintTemplateService(db).render('missing-template', {}, context)).toThrow('Print template not found');
   });
 });

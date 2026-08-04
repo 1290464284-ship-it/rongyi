@@ -134,9 +134,9 @@ describe('workflow services', () => {
        ) VALUES (?, ?, ?, ?, NULL, 'T-1', 'Template', 'REPORT', '<h1>{{title}}</h1>')`,
     ).run('print-wf', context.clinicId, now, now);
     const print = new PrintTemplateService(db);
-    expect(print.list().length).toBeGreaterThanOrEqual(1);
-    expect(print.render('T-1', { title: 'Hello' })).toContain('Hello');
-    const escaped = print.render('T-1', { title: '<script>alert(1)</script>' });
+    expect(print.list(context).length).toBeGreaterThanOrEqual(1);
+    expect(print.render('T-1', { title: 'Hello' }, context)).toContain('Hello');
+    const escaped = print.render('T-1', { title: '<script>alert(1)</script>' }, context);
     expect(escaped).toContain('&lt;script&gt;');
     expect(escaped).not.toContain('<script>');
   });
@@ -149,7 +149,7 @@ describe('workflow services', () => {
        ) VALUES (?, ?, ?, ?, NULL, 'charge', 'Exam', 'EXAM', 100, 1, 100)`,
     ).run('item-wf', context.clinicId, now, now);
     const service = new ChargeAssistantService(db);
-    expect(service.frequentItems().length).toBeGreaterThanOrEqual(1);
+    expect(service.frequentItems(context).length).toBeGreaterThanOrEqual(1);
   });
 
   it('covers workflow nullish and non-completion branches', () => {
@@ -212,6 +212,6 @@ describe('workflow services', () => {
       expect(applied).toHaveProperty('orderId');
     }
     const print = new PrintTemplateService(db);
-    expect(print.render('T-1', { title: null })).not.toContain('null');
+    expect(print.render('T-1', { title: null }, context)).not.toContain('null');
   });
 });

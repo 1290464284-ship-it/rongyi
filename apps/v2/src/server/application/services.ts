@@ -897,7 +897,12 @@ export class StatsService {
     };
   }
 
-  revenue(startDate?: string, endDate?: string, groupBy: 'day' | 'month' = 'day'): Array<Record<string, unknown>> {
+  revenue(
+    startDate?: string,
+    endDate?: string,
+    groupBy: 'day' | 'month' = 'day',
+    context?: AppContext,
+  ): Array<Record<string, unknown>> {
     const groupExpr = groupBy === 'month'
       ? "substr(paidAt, 1, 7)"
       : "substr(paidAt, 1, 10)";
@@ -911,6 +916,10 @@ export class StatsService {
       where.push('paidAt <= ?');
       params.push(endDate);
     }
+    if (context?.clinicId) {
+      where.push('clinicId = ?');
+      params.push(context.clinicId);
+    }
     return this.db.prepare(
       `SELECT ${groupExpr} AS period, SUM(paidAmount) AS amount, COUNT(*) AS count
        FROM Charge
@@ -920,7 +929,7 @@ export class StatsService {
     ).all(...params) as Array<Record<string, unknown>>;
   }
 
-  patientGrowth(startDate?: string, endDate?: string): Array<Record<string, unknown>> {
+  patientGrowth(startDate?: string, endDate?: string, context?: AppContext): Array<Record<string, unknown>> {
     const where: string[] = ['deletedAt IS NULL'];
     const params: unknown[] = [];
     if (startDate) {
@@ -931,6 +940,10 @@ export class StatsService {
       where.push('createdAt <= ?');
       params.push(endDate);
     }
+    if (context?.clinicId) {
+      where.push('clinicId = ?');
+      params.push(context.clinicId);
+    }
     return this.db.prepare(
       `SELECT substr(createdAt, 1, 10) AS day, COUNT(*) AS count
        FROM Patient
@@ -940,7 +953,11 @@ export class StatsService {
     ).all(...params) as Array<Record<string, unknown>>;
   }
 
-  doctorWorkload(): Array<Record<string, unknown>> {
+  doctorWorkload(context: AppContext): Array<Record<string, unknown>> {
+    const clinicClause = context.clinicId
+      ? 'AND U.clinicId = ? AND V.clinicId = ? AND C.clinicId = ?'
+      : '';
+    const params: unknown[] = context.clinicId ? [context.clinicId, context.clinicId, context.clinicId] : [];
     return this.db.prepare(
       `SELECT U.id AS doctorId, U.name AS doctorName,
               COUNT(DISTINCT V.id) AS visits,
@@ -949,30 +966,34 @@ export class StatsService {
        FROM User U
        LEFT JOIN Visit V ON V.doctorId = U.id AND V.deletedAt IS NULL
        LEFT JOIN Charge C ON C.doctorId = U.id AND C.deletedAt IS NULL
-       WHERE U.role IN ('DOCTOR', 'BOSS')
+       WHERE U.role IN ('DOCTOR', 'BOSS') ${clinicClause}
        GROUP BY U.id, U.name
        ORDER BY paidAmount DESC`,
-    ).all() as Array<Record<string, unknown>>;
+    ).all(...params) as Array<Record<string, unknown>>;
   }
 
-  inventoryStats(): Array<Record<string, unknown>> {
+  inventoryStats(context: AppContext): Array<Record<string, unknown>> {
+    const clinicClause = context.clinicId ? 'AND clinicId = ?' : '';
+    const params: unknown[] = context.clinicId ? [context.clinicId] : [];
     return this.db.prepare(
       `SELECT category, COUNT(*) AS count, SUM(stock) AS totalStock, SUM(minStock) AS minStock
        FROM InventoryItem
-       WHERE deletedAt IS NULL
+       WHERE deletedAt IS NULL ${clinicClause}
        GROUP BY category
        ORDER BY category`,
-    ).all() as Array<Record<string, unknown>>;
+    ).all(...params) as Array<Record<string, unknown>>;
   }
 
-  memberStats(): Record<string, unknown> {
+  memberStats(context: AppContext): Record<string, unknown> {
+    const clinicClause = context.clinicId ? 'WHERE clinicId = ?' : '';
+    const params: unknown[] = context.clinicId ? [context.clinicId] : [];
     const row = this.db.prepare(
       `SELECT COUNT(*) AS total,
               COALESCE(SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END), 0) AS active,
               COALESCE(SUM(balance), 0) AS totalBalance,
               COALESCE(SUM(points), 0) AS totalPoints
-       FROM MemberCard`,
-    ).get() as Record<string, unknown>;
+       FROM MemberCard ${clinicClause}`,
+    ).get(...params) as Record<string, unknown>;
     return row;
   }
 }
@@ -991,17 +1012,22 @@ export class PrintService {
 export class SearchService {
   constructor(private readonly db: Database.Database) {}
 
-  search(query: string): Array<Record<string, unknown>> {
+  search(query: string, context: AppContext): Array<Record<string, unknown>> {
     const term = `%${query}%`;
+    const clinicClause = context.clinicId ? 'AND clinicId = ?' : '';
+    const appointmentClause = context.clinicId ? 'AND A.clinicId = ?' : '';
+    const chargeClause = context.clinicId ? 'AND C.clinicId = ?' : '';
+    const followUpClause = context.clinicId ? 'AND F.clinicId = ?' : '';
+    const clinicParams: unknown[] = context.clinicId ? [context.clinicId] : [];
     const results: Array<Record<string, unknown>> = [];
     const searches: Array<{ resource: string; rows: Array<Record<string, unknown>>; label: (row: Record<string, unknown>) => string }> = [
       {
         resource: 'patients',
         rows: this.db.prepare(
           `SELECT id, name, phone, code FROM Patient
-           WHERE deletedAt IS NULL AND (name LIKE ? OR phone LIKE ? OR code LIKE ?)
+           WHERE deletedAt IS NULL AND (name LIKE ? OR phone LIKE ? OR code LIKE ?) ${clinicClause}
            LIMIT 20`,
-        ).all(term, term, term) as Array<Record<string, unknown>>,
+        ).all(term, term, term, ...clinicParams) as Array<Record<string, unknown>>,
         label: (row) => String(row.name ?? row.code ?? ''),
       },
       {
@@ -1011,9 +1037,9 @@ export class SearchService {
            FROM Appointment A
            LEFT JOIN Patient P ON P.id = A.patientId
            WHERE A.deletedAt IS NULL AND P.deletedAt IS NULL
-             AND (P.name LIKE ? OR A.startTime LIKE ? OR A.status LIKE ?)
+             AND (P.name LIKE ? OR A.startTime LIKE ? OR A.status LIKE ?) ${appointmentClause}
            LIMIT 20`,
-        ).all(term, term, term) as Array<Record<string, unknown>>,
+        ).all(term, term, term, ...clinicParams) as Array<Record<string, unknown>>,
         label: (row) => String(row.patientName ?? ''),
       },
       {
@@ -1023,27 +1049,27 @@ export class SearchService {
            FROM Charge C
            LEFT JOIN Patient P ON P.id = C.patientId
            WHERE C.deletedAt IS NULL AND P.deletedAt IS NULL
-             AND (C.number LIKE ? OR P.name LIKE ? OR C.status LIKE ?)
+             AND (C.number LIKE ? OR P.name LIKE ? OR C.status LIKE ?) ${chargeClause}
            LIMIT 20`,
-        ).all(term, term, term) as Array<Record<string, unknown>>,
+        ).all(term, term, term, ...clinicParams) as Array<Record<string, unknown>>,
         label: (row) => String(row.number ?? ''),
       },
       {
         resource: 'inventoryItems',
         rows: this.db.prepare(
           `SELECT id, name, code, category, stock FROM InventoryItem
-           WHERE deletedAt IS NULL AND (name LIKE ? OR code LIKE ? OR category LIKE ?)
+           WHERE deletedAt IS NULL AND (name LIKE ? OR code LIKE ? OR category LIKE ?) ${clinicClause}
            LIMIT 20`,
-        ).all(term, term, term) as Array<Record<string, unknown>>,
+        ).all(term, term, term, ...clinicParams) as Array<Record<string, unknown>>,
         label: (row) => String(row.name ?? row.code ?? ''),
       },
       {
         resource: 'suppliers',
         rows: this.db.prepare(
           `SELECT id, name, code, phone FROM Supplier
-           WHERE deletedAt IS NULL AND (name LIKE ? OR code LIKE ? OR phone LIKE ?)
+           WHERE deletedAt IS NULL AND (name LIKE ? OR code LIKE ? OR phone LIKE ?) ${clinicClause}
            LIMIT 20`,
-        ).all(term, term, term) as Array<Record<string, unknown>>,
+        ).all(term, term, term, ...clinicParams) as Array<Record<string, unknown>>,
         label: (row) => String(row.name ?? ''),
       },
       {
@@ -1053,9 +1079,9 @@ export class SearchService {
            FROM FollowUp F
            LEFT JOIN Patient P ON P.id = F.patientId
            WHERE F.deletedAt IS NULL AND P.deletedAt IS NULL
-             AND (P.name LIKE ? OR F.content LIKE ? OR F.status LIKE ?)
+             AND (P.name LIKE ? OR F.content LIKE ? OR F.status LIKE ?) ${followUpClause}
            LIMIT 20`,
-        ).all(term, term, term) as Array<Record<string, unknown>>,
+        ).all(term, term, term, ...clinicParams) as Array<Record<string, unknown>>,
         label: (row) => String(row.patientName ?? ''),
       },
     ];
@@ -1649,8 +1675,10 @@ export class NotificationService {
 export class SatisfactionService {
   constructor(private readonly db: Database.Database) {}
 
-  nps(): { promoters: number; detractors: number; passive: number; score: number } {
-    const rows = this.db.prepare('SELECT score FROM SatisfactionSurvey').all() as Array<{ score: number }>;
+  nps(context: AppContext): { promoters: number; detractors: number; passive: number; score: number } {
+    const where = context.clinicId ? 'WHERE clinicId = ?' : '';
+    const params: unknown[] = context.clinicId ? [context.clinicId] : [];
+    const rows = this.db.prepare(`SELECT score FROM SatisfactionSurvey ${where}`).all(...params) as Array<{ score: number }>;
     if (rows.length === 0) return { promoters: 0, detractors: 0, passive: 0, score: 0 };
     const promoters = rows.filter((row) => row.score >= 9).length;
     const detractors = rows.filter((row) => row.score <= 6).length;
@@ -1658,27 +1686,32 @@ export class SatisfactionService {
     return { promoters, detractors, passive, score: Math.round(((promoters - detractors) / rows.length) * 100) };
   }
 
-  trend(): Array<Record<string, unknown>> {
+  trend(context: AppContext): Array<Record<string, unknown>> {
+    const where = context.clinicId ? 'WHERE clinicId = ?' : '';
+    const params: unknown[] = context.clinicId ? [context.clinicId] : [];
     return this.db.prepare(
       `SELECT surveyDate, AVG(score) AS avgScore, COUNT(*) AS count
        FROM SatisfactionSurvey
+       ${where}
        GROUP BY surveyDate
        ORDER BY surveyDate ASC`,
-    ).all() as Array<Record<string, unknown>>;
+    ).all(...params) as Array<Record<string, unknown>>;
   }
 
-  doctorRankings(): Array<Record<string, unknown>> {
+  doctorRankings(context: AppContext): Array<Record<string, unknown>> {
+    const clinicClause = context.clinicId ? 'AND S.clinicId = ?' : '';
+    const params: unknown[] = context.clinicId ? [context.clinicId] : [];
     return this.db.prepare(
       `SELECT S.doctorId, COALESCE(U.name, 'Unknown') AS doctorName,
               COUNT(*) AS surveyCount,
               ROUND(AVG(S.score), 1) AS avgScore
        FROM SatisfactionSurvey S
        LEFT JOIN User U ON U.id = S.doctorId
-       WHERE S.deletedAt IS NULL
+       WHERE S.deletedAt IS NULL ${clinicClause}
        GROUP BY S.doctorId, U.name
        ORDER BY avgScore DESC
        LIMIT 50`,
-    ).all() as Array<Record<string, unknown>>;
+    ).all(...params) as Array<Record<string, unknown>>;
   }
 }
 

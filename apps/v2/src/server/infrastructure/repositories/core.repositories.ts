@@ -376,7 +376,9 @@ export class SqlitePatientRiskRepository implements PatientRiskRepository {
 export class SqliteAnalyticsRepository implements AnalyticsRepository {
   constructor(private readonly db: Database.Database) {}
 
-  rfm(): Array<Record<string, unknown>> {
+  rfm(clinicId: string | null): Array<Record<string, unknown>> {
+    const clinicClause = clinicId ? 'AND P.clinicId = ?' : '';
+    const params: unknown[] = clinicId ? [clinicId] : [];
     return this.db.prepare(
       `SELECT P.id AS patientId, P.name,
               COUNT(C.id) AS frequency,
@@ -384,40 +386,44 @@ export class SqliteAnalyticsRepository implements AnalyticsRepository {
               COALESCE(MAX(C.paidAt), P.createdAt) AS lastPaidAt
        FROM Patient P
        LEFT JOIN Charge C ON C.patientId = P.id AND C.deletedAt IS NULL AND C.paidAt IS NOT NULL
-       WHERE P.deletedAt IS NULL
+       WHERE P.deletedAt IS NULL ${clinicClause}
        GROUP BY P.id, P.name
        ORDER BY monetary DESC
        LIMIT 200`,
-    ).all() as Array<Record<string, unknown>>;
+    ).all(...params) as Array<Record<string, unknown>>;
   }
 
-  churn(): Array<Record<string, unknown>> {
+  churn(clinicId: string | null): Array<Record<string, unknown>> {
     const cutoff = new Date(Date.now() - 180 * 86_400_000).toISOString();
+    const clinicClause = clinicId ? 'AND P.clinicId = ?' : '';
+    const params: unknown[] = clinicId ? [clinicId, cutoff] : [cutoff];
     return this.db.prepare(
       `SELECT P.id, P.name, P.phone,
               COALESCE(MAX(V.createdAt), '1970-01-01T00:00:00.000Z') AS lastVisitAt
        FROM Patient P
        LEFT JOIN Visit V ON V.patientId = P.id AND V.deletedAt IS NULL
-       WHERE P.deletedAt IS NULL
+       WHERE P.deletedAt IS NULL ${clinicClause}
        GROUP BY P.id, P.name, P.phone
        HAVING lastVisitAt < ?
        ORDER BY lastVisitAt ASC
        LIMIT 100`,
-    ).all(cutoff) as Array<Record<string, unknown>>;
+    ).all(...params) as Array<Record<string, unknown>>;
   }
 
-  doctorAnomalies(): Array<Record<string, unknown>> {
+  doctorAnomalies(clinicId: string | null): Array<Record<string, unknown>> {
+    const clinicClause = clinicId ? 'AND U.clinicId = ? AND C.clinicId = ?' : '';
+    const params: unknown[] = clinicId ? [clinicId, clinicId] : [];
     return this.db.prepare(
       `SELECT U.id AS doctorId, U.name AS doctorName,
               COUNT(C.id) AS chargeCount,
               COALESCE(AVG(C.paidAmount), 0) AS avgCharge
        FROM User U
        LEFT JOIN Charge C ON C.doctorId = U.id AND C.deletedAt IS NULL
-       WHERE U.role IN ('DOCTOR', 'BOSS')
+       WHERE U.role IN ('DOCTOR', 'BOSS') ${clinicClause}
        GROUP BY U.id, U.name
        HAVING chargeCount > 0
        ORDER BY avgCharge DESC`,
-    ).all() as Array<Record<string, unknown>>;
+    ).all(...params) as Array<Record<string, unknown>>;
   }
 }
 
