@@ -134,6 +134,8 @@
 - Backup verification and restore staging return core database summaries,
   including clinic/user/membership/patient/charge/card/inventory/follow-up/
   purchase counts and the latest paid charge timestamp.
+- The backup page renders the staged backup and current database summaries
+  side by side before the restart-based restore is activated.
 - `clean:generated` removes any `dist-*` output directory rather than a fixed
   hard-coded list.
 
