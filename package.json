@@ -20,6 +20,7 @@
     "verify:critical": "pnpm --filter @dental/v2 typecheck && pnpm --filter @dental/v2 test && pnpm build",
     "verify:smoke": "pnpm --filter @dental/v2 run smoke:all",
     "verify:database": "pnpm --filter @dental/v2 run verify:database",
+    "verify:foreign-keys": "pnpm --filter @dental/v2 run verify:foreign-keys",
     "repair:database": "pnpm --filter @dental/v2 run repair:database",
     "verify:internal:delivery": "pnpm verify && pnpm verify:smoke && pnpm --filter @dental/v2 electron:dist:internal",
     "prepare": "husky"

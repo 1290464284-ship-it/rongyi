@@ -599,6 +599,11 @@ describe('service edge coverage', () => {
     const search = new SearchService(db);
     const results = search.search('Supplier', nullContext);
     expect(results.length).toBeGreaterThanOrEqual(1);
+    db.prepare(
+      `INSERT INTO SearchIndex(resource, recordId, clinicId, content)
+       VALUES ('Unknown', 'search-unknown', 'clinic-v2-001', 'UNKNOWNTERM')`,
+    ).run();
+    search.search('UNKNOWNTERM', context);
     expect(search.search('XNULL', nullContext).some((row) => row.resource === 'patients' && row.label === 'XNULL')).toBe(true);
     expect(search.search('SHORT', nullContext).some((row) => (row.detail as Record<string, unknown>).phone === '****')).toBe(true);
     expect(search.search('SEARCHCAT', nullContext).some((row) => row.resource === 'inventoryItems' && row.label === '')).toBe(true);

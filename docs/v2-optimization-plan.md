@@ -43,6 +43,9 @@
 - 启动前执行数据库完整性预检，损坏库不再静默继续运行。
 - 新增 `verify:database` 与 `repair:database`：可检查完整性，并在备份后执行 `REINDEX` 修复。
 - Electron 登录态迁移到 `safeStorage` 加密文件，Web 开发环境继续回退到 localStorage。
+- 搜索切换到 FTS5 索引，覆盖患者、预约、收费、库存、供应商和随访。
+- 新增 `verify:foreign-keys`，扫描核心业务关系中的孤儿数据。
+- 新增 Windows installer smoke workflow，可在 CI 中构建并验证安装包。
 
 ## 后续建议
 
