@@ -46,6 +46,7 @@
 - 搜索切换到 FTS5 索引，覆盖患者、预约、收费、库存、供应商和随访。
 - 新增 `verify:foreign-keys`，扫描核心业务关系中的孤儿数据。
 - 新增 Windows installer smoke workflow，可在 CI 中构建并验证安装包。
+- 新增 `verify:foreign-keys` 与 `v2-foreign-key-migration.md` 专项文档。
 
 ## 后续建议
 
