@@ -96,7 +96,7 @@ async function main() {
   await request('/inventory/low-stock', { headers });
   await request('/inventory/expiring?days=30', { headers });
 
-  const card = await request('/resources/memberCards', {
+  const card = await request('/member-cards', {
     method: 'POST',
     headers,
     body: JSON.stringify({

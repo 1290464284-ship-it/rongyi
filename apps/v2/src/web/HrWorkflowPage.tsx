@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
-
-interface Page<T> { items: T[]; total: number; page: number; pageSize: number; }
+import type { Page } from './types';
 
 export function HrWorkflowPage() {
   const [message, setMessage] = useState('');
@@ -46,4 +45,3 @@ export function HrWorkflowPage() {
     </div>
   );
 }
-

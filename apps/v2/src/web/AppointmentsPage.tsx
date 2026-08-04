@@ -1,16 +1,15 @@
 import { FormEvent, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
-
-interface Page<T> { items: T[]; total: number; page: number; pageSize: number; }
+import type { Page } from './types';
 
 const STATUSES = ['BOOKED', 'ARRIVED', 'IN_CHAIR', 'COMPLETED', 'CANCELLED', 'NO_SHOW'];
 
 export function AppointmentsPage() {
   const [patientId, setPatientId] = useState('patient-demo-001');
   const [doctorId, setDoctorId] = useState('user-admin-001');
-  const [startTime, setStartTime] = useState(new Date(Date.now() + 86_400_000).toISOString().slice(0, 16));
-  const [endTime, setEndTime] = useState(new Date(Date.now() + 90_000_000).toISOString().slice(0, 16));
+  const [startTime, setStartTime] = useState('');
+  const [endTime, setEndTime] = useState('');
   const [message, setMessage] = useState('');
   const query = useQuery({
     queryKey: ['appointments'],
@@ -26,8 +25,8 @@ export function AppointmentsPage() {
         body: JSON.stringify({
           patientId,
           doctorId,
-          startTime: new Date(startTime).toISOString(),
-          endTime: new Date(endTime).toISOString(),
+          startTime: new Date(startTime || Date.now() + 86_400_000).toISOString(),
+          endTime: new Date(endTime || Date.now() + 90_000_000).toISOString(),
           type: 'REGULAR',
         }),
       });
@@ -82,4 +81,3 @@ export function AppointmentsPage() {
     </div>
   );
 }
-

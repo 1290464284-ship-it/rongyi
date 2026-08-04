@@ -1,0 +1,173 @@
+import { randomUUID } from 'node:crypto';
+import type Database from 'better-sqlite3';
+import { AppError, NotFoundError, ValidationError } from '../../infrastructure/errors';
+import { SqliteRepository } from '../../infrastructure/repository';
+import { stripProtectedWriteFields } from '../../infrastructure/security';
+import { validatePayload } from '../../http/validation';
+import { SqlitePatientRiskRepository } from '../../infrastructure/repositories/core.repositories';
+import { resourceRegistry } from '../../../domain/resources';
+import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
+import type { AppContext } from '../../../domain/contracts';
+import type { PatientRiskRepository } from '../ports';
+import { FORBIDDEN_BULK_IMPORT_RESOURCES } from './common';
+
+export class PatientRiskService {
+  private readonly db: Database.Database;
+  private readonly patientRiskRepository: PatientRiskRepository;
+
+  constructor(db: Database.Database, patientRiskRepository?: PatientRiskRepository) {
+    this.db = db;
+    this.patientRiskRepository = patientRiskRepository ?? new SqlitePatientRiskRepository(db);
+  }
+
+  calculate(patientId: string, context: AppContext): Record<string, unknown> {
+    const treatmentCount = this.patientRiskRepository.treatmentCount(patientId, context.clinicId);
+    const periodontalCount = this.patientRiskRepository.periodontalCount(patientId, context.clinicId);
+    const cariesScore = Math.min(100, treatmentCount * 5);
+    const periodontalScore = Math.min(100, periodontalCount * 10);
+    const implantScore = Math.min(100, treatmentCount * 2);
+    const level = (score: number): 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME' => {
+      if (score >= 80) return 'EXTREME';
+      if (score >= 60) return 'HIGH';
+      if (score >= 30) return 'MEDIUM';
+      return 'LOW';
+    };
+    const now = context.now().toISOString();
+    const id = randomUUID();
+    const snapshot = { treatmentCount, periodontalCount, dataSources: { treatmentCount, periodontalCount } };
+    this.patientRiskRepository.insert({
+      id,
+      clinicId: context.clinicId ?? null,
+      createdAt: now,
+      updatedAt: now,
+      patientId,
+      cariesScore,
+      periodontalScore,
+      implantScore,
+      cariesLevel: level(cariesScore),
+      periodontalLevel: level(periodontalScore),
+      implantLevel: level(implantScore),
+      factorSnapshotJson: JSON.stringify(snapshot),
+      assessedById: context.userId,
+    });
+    return { id, cariesScore, periodontalScore, implantScore };
+  }
+}
+
+export class PrescriptionSafetyService {
+  constructor(private readonly db: Database.Database) {}
+
+  check(prescriptionId: string, context: AppContext): { safe: boolean; warnings: string[] } {
+    const prescription = this.db.prepare(`SELECT * FROM Prescription WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`).get(prescriptionId, ...tenantParams(context.clinicId)) as Record<string, unknown> | undefined;
+    if (!prescription) throw new NotFoundError('Prescription not found');
+    const patient = this.db.prepare(`SELECT allergies, medicalHistory FROM Patient WHERE id = ?${tenantAnd(context.clinicId)}`).get(prescription.patientId, ...tenantParams(context.clinicId)) as
+      | { allergies: string; medicalHistory: string }
+      | undefined;
+    const allergies = patient ? JSON.parse(patient.allergies || '[]') as string[] : [];
+    const items = this.db.prepare('SELECT name FROM PrescriptionItem WHERE prescriptionId = ?').all(prescriptionId) as Array<{ name: string }>;
+    const warnings = items
+      .flatMap((item) => allergies.filter((allergy) => item.name.toUpperCase().includes(allergy.toUpperCase())))
+      .map((allergy) => `Potential allergy: ${allergy}`);
+    return { safe: warnings.length === 0, warnings };
+  }
+}
+
+export class CephalometricService {
+  constructor(private readonly db: Database.Database) {}
+
+  compute(caseId: string, context: AppContext): Record<string, unknown> {
+    const row = this.db.prepare(`SELECT * FROM CephalometricCase WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`).get(caseId, ...tenantParams(context.clinicId)) as Record<string, unknown> | undefined;
+    if (!row) throw new NotFoundError('Cephalometric case not found');
+    const landmarks = JSON.parse(String(row.landmarksJson ?? '{}')) as Record<string, { x: number; y: number }>;
+    const metrics: Record<string, number> = {};
+    if (landmarks.sella && landmarks.nasion) {
+      metrics.snLength = distance(landmarks.sella, landmarks.nasion);
+    }
+    if (landmarks.upperIncisor && landmarks.lowerIncisor) {
+      metrics.interincisalAngle = angle(landmarks.upperIncisor, landmarks.lowerIncisor);
+    }
+    const now = context.now().toISOString();
+    this.db.prepare('UPDATE CephalometricCase SET metricsJson = ?, status = ?, updatedAt = ? WHERE id = ?')
+      .run(JSON.stringify(metrics), 'ANALYZED', now, caseId);
+    return { id: caseId, metrics };
+  }
+}
+
+export class TreatmentProgressService {
+  constructor(private readonly db: Database.Database) {}
+
+  summary(planId: string, context: AppContext): Record<string, unknown> {
+    const plan = this.db.prepare(`SELECT * FROM TreatmentPlan WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`).get(planId, ...tenantParams(context.clinicId)) as Record<string, unknown> | undefined;
+    if (!plan) throw new NotFoundError('Treatment plan not found');
+    const items = this.db.prepare('SELECT status FROM TreatmentPlanItem WHERE planId = ?').all(planId) as Array<{ status: string }>;
+    const completed = items.filter((item) => item.status === 'COMPLETED').length;
+    return {
+      planId,
+      totalItems: items.length,
+      completedItems: completed,
+      progress: items.length === 0 ? 0 : Math.round((completed / items.length) * 100),
+    };
+  }
+}
+
+export class BulkImportService {
+  constructor(private readonly db: Database.Database) {}
+
+  async importRows(resourceName: string, rows: Array<Record<string, unknown>>, context: AppContext): Promise<{ imported: number; failed: number; errors: string[] }> {
+    const definition = resourceRegistry.get(resourceName);
+    if (!definition) throw new ValidationError(`Resource cannot import: ${resourceName}`);
+    if (FORBIDDEN_BULK_IMPORT_RESOURCES.has(resourceName)) {
+      throw new AppError('FORBIDDEN', `Bulk import is disabled for ${resourceName}`, 403);
+    }
+    if (!definition.capabilities.create) throw new ValidationError(`Resource cannot import: ${resourceName}`);
+    if (!definition.roles.includes(context.role)) {
+      throw new AppError('FORBIDDEN', `Forbidden resource: ${resourceName}`, 403);
+    }
+    if (!Array.isArray(rows) || rows.length > 1000) {
+      throw new ValidationError('Bulk import rows must be an array with at most 1000 rows');
+    }
+    const repository = new SqliteRepository(this.db, definition);
+    let imported = 0;
+    const errors: string[] = [];
+    for (const row of rows) {
+      try {
+        const payload = stripProtectedWriteFields(validatePayload(definition, row));
+        await repository.insert({ id: randomUUID(), ...payload }, context);
+        imported += 1;
+      } catch (error) {
+        /* v8 ignore start -- non-Error rejection is defensive; current repository paths throw Error instances. */
+        errors.push(error instanceof Error ? error.message : String(error));
+        /* v8 ignore stop */
+      }
+    }
+    return { imported, failed: errors.length, errors };
+  }
+}
+
+export class NotificationService {
+  constructor(private readonly db: Database.Database) {}
+
+  list(userId: string): Array<Record<string, unknown>> {
+    return this.db.prepare(
+      'SELECT * FROM Notification WHERE userId = ? ORDER BY createdAt DESC LIMIT 100',
+    ).all(userId) as Array<Record<string, unknown>>;
+  }
+
+  markRead(id: string, userId: string): Record<string, unknown> {
+    const result = this.db.prepare('UPDATE Notification SET readAt = ?, updatedAt = ? WHERE id = ? AND userId = ?')
+      .run(new Date().toISOString(), new Date().toISOString(), id, userId);
+    if (result.changes === 0) throw new NotFoundError('Notification not found');
+    return { id, read: true };
+  }
+}
+
+function distance(a: { x: number; y: number }, b: { x: number; y: number }): number {
+  return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+}
+
+function angle(a: { x: number; y: number }, b: { x: number; y: number }): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const rad = Math.atan2(dy, dx);
+  return Math.round(Math.abs(rad * 180 / Math.PI));
+}

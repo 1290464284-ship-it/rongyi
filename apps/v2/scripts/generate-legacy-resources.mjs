@@ -8,6 +8,17 @@ const outputPath = path.join(appRoot, 'src', 'domain', 'legacy-resources.generat
 const db = new Database(dbPath, { readonly: true });
 
 const BASE_COLUMNS = new Set(['id', 'clinicId', 'createdAt', 'updatedAt', 'deletedAt']);
+const INTERNAL_TABLES = new Set([
+  'BackupRecord',
+  'IdempotencyRecord',
+  'SyncChange',
+  'SyncDevice',
+  'UsedRefreshToken',
+]);
+const resourcesSource = fs.readFileSync(path.join(appRoot, 'src', 'domain', 'resources.ts'), 'utf8');
+const explicitTables = new Set(
+  [...resourcesSource.matchAll(/crud\('([^']+)',\s*'([^']+)'/g)].map((match) => match[2]),
+);
 const NAME_OVERRIDES = {
   DataImportJob: 'dataImportJobs',
   InventoryReplenishmentSuggestion: 'inventoryReplenishmentSuggestions',
@@ -41,6 +52,7 @@ const tables = db.prepare(
 const definitions = [];
 for (const row of tables) {
   const table = row.name;
+  if (explicitTables.has(table) || INTERNAL_TABLES.has(table)) continue;
   const columns = db.prepare(`PRAGMA table_info(${JSON.stringify(table)})`).all();
   const fields = columns
     .filter((column) => !BASE_COLUMNS.has(column.name))

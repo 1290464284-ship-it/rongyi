@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { apiRequest } from './api';
-
-interface Page<T> { items: T[]; total: number; page: number; pageSize: number; }
+import type { Page } from './types';
 type ResourcePageQuery = UseQueryResult<Page<Record<string, unknown>>, Error>;
 
 const transitions: Record<string, Record<string, string[]>> = {
@@ -28,15 +27,23 @@ const resources = ['registrations', 'visits', 'firstExams', 'treatments'] as con
 
 export function ClinicalWorkflowPage() {
   const [message, setMessage] = useState('');
-  const queries = Object.fromEntries(
-    resources.map((resource) => [
-      resource,
-      useQuery({
-        queryKey: ['workflow', resource],
-        queryFn: () => apiRequest<Page<Record<string, unknown>>>(`/resources/${resource}?page=1&pageSize=100`),
-      }),
-    ]),
-  ) as Record<typeof resources[number], ResourcePageQuery>;
+  const registrations = useQuery({
+    queryKey: ['workflow', 'registrations'],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/registrations?page=1&pageSize=100'),
+  });
+  const visits = useQuery({
+    queryKey: ['workflow', 'visits'],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/visits?page=1&pageSize=100'),
+  });
+  const firstExams = useQuery({
+    queryKey: ['workflow', 'firstExams'],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/firstExams?page=1&pageSize=100'),
+  });
+  const treatments = useQuery({
+    queryKey: ['workflow', 'treatments'],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/treatments?page=1&pageSize=100'),
+  });
+  const queries = { registrations, visits, firstExams, treatments } as Record<typeof resources[number], ResourcePageQuery>;
 
   async function transition(resource: string, id: string, status: string) {
     try {

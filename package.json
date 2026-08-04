@@ -15,7 +15,7 @@
     "test": "pnpm --filter @dental/v2 test",
     "test:cov": "pnpm --filter @dental/v2 test:coverage",
     "typecheck": "pnpm --filter @dental/v2 typecheck",
-    "verify": "pnpm --filter @dental/v2 typecheck && pnpm --filter @dental/v2 run knip && pnpm --filter @dental/v2 test && pnpm --filter @dental/v2 build && pnpm --filter @dental/v2 electron:compile && pnpm --filter @dental/v2 run audit:security && pnpm --filter @dental/v2 security:scan && pnpm --filter @dental/v2 run license:check",
+    "verify": "pnpm --filter @dental/v2 typecheck && pnpm --filter @dental/v2 run lint && pnpm --filter @dental/v2 run knip && pnpm --filter @dental/v2 test && pnpm --filter @dental/v2 test:coverage && pnpm --filter @dental/v2 test:coverage:web && pnpm --filter @dental/v2 build && pnpm --filter @dental/v2 electron:compile && pnpm --filter @dental/v2 run audit:security && pnpm --filter @dental/v2 security:scan && pnpm --filter @dental/v2 run license:check",
     "verify:delivery": "pnpm --filter @dental/v2 typecheck && pnpm --filter @dental/v2 test:coverage && pnpm build && pnpm --filter @dental/v2 electron:compile && pnpm --filter @dental/v2 run verify:package && pnpm --filter @dental/v2 run verify:update",
     "verify:critical": "pnpm --filter @dental/v2 typecheck && pnpm --filter @dental/v2 test && pnpm build",
     "verify:smoke": "pnpm --filter @dental/v2 run smoke:all",

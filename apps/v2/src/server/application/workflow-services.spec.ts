@@ -113,6 +113,13 @@ describe('workflow services', () => {
       const result = service.applyToPurchaseOrder([anySuggestion.id], context);
       expect(result).toHaveProperty('orderId');
     }
+    db.prepare(
+      `INSERT INTO InventoryReplenishmentSuggestion (
+         id, clinicId, inventoryId, rop, suggestedQty, createdAt, updatedAt, deletedAt
+       ) VALUES (?, ?, ?, 1, 1, ?, ?, NULL)`,
+    ).run('suggestion-missing-item', context.clinicId, 'item-missing', now, now);
+    expect(() => service.applyToPurchaseOrder(['suggestion-missing-item'], context))
+      .toThrow('One or more inventory items are not available');
   });
 
   it('sends wechat messages and renders print templates', () => {
@@ -124,8 +131,17 @@ describe('workflow services', () => {
     ).run('wechat-wf', context.clinicId, now, now);
     const wechat = new WechatService(db);
     expect(wechat.send('wechat-wf', context).status).toBe('SENT');
+    expect(wechat.send('wechat-wf', context).status).toBe('SENT');
+    expect(() => wechat.send('missing-wechat', context)).toThrow('Wechat message not found');
     expect(() => wechat.sendBatch(null as unknown as string[], context)).toThrow('array');
     expect(() => wechat.sendBatch(Array.from({ length: 501 }, () => 'x'), context)).toThrow('at most');
+
+    const fakeWechat = {
+      findById: () => ({ id: 'missing-update', status: 'PENDING' }),
+      markSent: () => 0,
+    };
+    expect(() => new WechatService(db, fakeWechat as never).send('missing-update', context))
+      .toThrow('Wechat message not found');
 
     db.prepare(
       `INSERT INTO PrintTemplate (

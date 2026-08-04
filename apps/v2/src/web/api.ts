@@ -12,13 +12,6 @@ async function resolveApiBase(): Promise<string> {
   return apiBase;
 }
 
-interface ApiError {
-  success: false;
-  code: string;
-  message: string;
-  traceId?: string;
-}
-
 class ClientError extends Error {
   constructor(message: string, readonly code = 'REQUEST_FAILED', readonly traceId?: string) {
     super(message);
@@ -75,7 +68,7 @@ export async function apiRequest<T>(
   if (auth) headers.set('Authorization', `Bearer ${auth}`);
 
   const base = await resolveApiBase();
-  let response = await fetch(`${base}${path}`, { ...options, headers });
+  const response = await fetch(`${base}${path}`, { ...options, headers });
   if (response.status === 401 && !options._retry && path !== '/auth/login' && path !== '/auth/refresh') {
     const refreshed = await refreshAccessToken();
     if (refreshed) {

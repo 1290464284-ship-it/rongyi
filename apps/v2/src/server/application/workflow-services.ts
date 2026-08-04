@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../infrastructure/errors';
 import type { AppContext } from '../../domain/contracts';
+import { tenantAnd, tenantParams } from '../infrastructure/tenant';
+import { escapeHtml } from '../shared/html';
 import {
   SqliteAnalyticsRepository,
   SqliteClinicalWorkflowRepository,
@@ -19,7 +21,7 @@ export class ClinicalWorkflowService {
   }
 
   registrationStatus(id: string, status: string, context: AppContext): Record<string, unknown> {
-    const row = this.getRow('Registration', id);
+    const row = this.getRow('Registration', id, context.clinicId);
     const allowed: Record<string, readonly string[]> = {
       REGISTERED: ['TRIAGED', 'IN_PROGRESS', 'CANCELLED'],
       TRIAGED: ['IN_PROGRESS', 'CANCELLED'],
@@ -41,14 +43,14 @@ export class ClinicalWorkflowService {
         doctorId: row.doctorId ?? context.userId,
         userId: context.userId,
       });
-      this.clinicalRepository.updateStatus('Registration', id, row.status as string, now, { visitId });
+      this.clinicalRepository.updateStatus('Registration', id, row.status as string, now, { visitId }, context.clinicId);
     }
-    this.clinicalRepository.updateStatus('Registration', id, status, now);
+    this.clinicalRepository.updateStatus('Registration', id, status, now, {}, context.clinicId);
     return { id, status, visitId };
   }
 
   visitStatus(id: string, status: string, context: AppContext): Record<string, unknown> {
-    const row = this.getRow('Visit', id);
+    const row = this.getRow('Visit', id, context.clinicId);
     const allowed: Record<string, readonly string[]> = {
       IN_PROGRESS: ['COMPLETED', 'CANCELLED'],
       COMPLETED: [],
@@ -62,12 +64,13 @@ export class ClinicalWorkflowService {
       status,
       now,
       status === 'COMPLETED' ? { endTime: now } : {},
+      context.clinicId,
     );
     return { id, status };
   }
 
   firstExamStatus(id: string, status: string, context: AppContext): Record<string, unknown> {
-    const row = this.getRow('FirstExam', id);
+    const row = this.getRow('FirstExam', id, context.clinicId);
     const allowed: Record<string, readonly string[]> = {
       DRAFT: ['SUBMITTED', 'CANCELLED'],
       SUBMITTED: ['APPROVED', 'CANCELLED'],
@@ -75,12 +78,12 @@ export class ClinicalWorkflowService {
       CANCELLED: [],
     };
     this.assertTransition(row, allowed, status);
-    this.clinicalRepository.updateStatus('FirstExam', id, status, context.now().toISOString());
+    this.clinicalRepository.updateStatus('FirstExam', id, status, context.now().toISOString(), {}, context.clinicId);
     return { id, status };
   }
 
   treatmentStatus(id: string, status: string, context: AppContext): Record<string, unknown> {
-    const row = this.getRow('Treatment', id);
+    const row = this.getRow('Treatment', id, context.clinicId);
     const allowed: Record<string, readonly string[]> = {
       PLANNED: ['IN_PROGRESS', 'CANCELLED'],
       IN_PROGRESS: ['COMPLETED', 'CANCELLED'],
@@ -96,19 +99,20 @@ export class ClinicalWorkflowService {
       status,
       now,
       completedDate ? { completedDate } : {},
+      context.clinicId,
     );
     return { id, status };
   }
 
   lockMedicalRecord(id: string, locked: boolean, context: AppContext): Record<string, unknown> {
-    const row = this.getRow('MedicalRecord', id);
+    this.getRow('MedicalRecord', id, context.clinicId);
     const now = context.now().toISOString();
-    this.clinicalRepository.lockMedicalRecord(id, locked, context.userId, now);
+    this.clinicalRepository.lockMedicalRecord(id, locked, context.userId, now, context.clinicId);
     return { id, isLocked: locked };
   }
 
-  private getRow(table: string, id: string): Record<string, unknown> {
-    const row = this.clinicalRepository.getRow(table, id);
+  private getRow(table: string, id: string, clinicId: string | null): Record<string, unknown> {
+    const row = this.clinicalRepository.getRow(table, id, clinicId);
     if (!row) throw new NotFoundError(`${table} not found`);
     return row;
   }
@@ -129,12 +133,36 @@ export class ReplenishmentService {
   constructor(private readonly db: Database.Database) {}
 
   generate(context: AppContext): { generated: number } {
+    const clinicId = context.clinicId;
+    const clinicParams = tenantParams(clinicId);
+    this.db.prepare(
+      `UPDATE InventoryReplenishmentSuggestion
+       SET status = 'IGNORED', updatedAt = ?
+       WHERE deletedAt IS NULL AND (status IS NULL OR status = 'OPEN')${tenantAnd(clinicId)}`,
+    ).run(context.now().toISOString(), ...clinicParams);
     const items = this.db.prepare(
-      'SELECT * FROM InventoryItem WHERE deletedAt IS NULL',
-    ).all() as Array<Record<string, unknown>>;
+      `SELECT * FROM InventoryItem WHERE deletedAt IS NULL${tenantAnd(clinicId)}`,
+    ).all(...clinicParams) as Array<Record<string, unknown>>;
     const nowDate = context.now();
     const now = nowDate.toISOString();
     const since = new Date(nowDate.getTime() - 90 * 86_400_000).toISOString();
+    const consumptionParams = clinicId ? [since, clinicId] : [since];
+    const consumptionRows = this.db.prepare(
+      `SELECT itemId,
+              COALESCE(SUM(
+                CASE
+                  WHEN type = 'OUT' THEN quantity
+                  WHEN type = 'ADJUST' AND quantity < 0 THEN ABS(quantity)
+                  ELSE 0
+                END
+              ), 0) AS consumed
+       FROM InventoryTransaction
+       WHERE createdAt >= ? AND deletedAt IS NULL${tenantAnd(clinicId)}
+       GROUP BY itemId`,
+    ).all(...consumptionParams) as Array<{ itemId: string; consumed: number }>;
+    /* v8 ignore start -- the aggregate query always returns a numeric consumed value. */
+    const consumptionByItem = new Map(consumptionRows.map((row) => [row.itemId, Number(row.consumed ?? 0)]));
+    /* v8 ignore stop */
     const leadTimeDays = 7;
     const safetyFactor = 1.5;
     const orderCost = 50;
@@ -143,7 +171,7 @@ export class ReplenishmentService {
     for (const item of items) {
       const stock = Number(item.stock ?? 0);
       const minStock = Number(item.minStock ?? 0);
-      const consumed = this.consumption(String(item.id), since);
+      const consumed = consumptionByItem.get(String(item.id)) ?? 0;
       const avgDaily = Math.max(0.01, consumed / 90);
       const safetyStock = Math.ceil(avgDaily * safetyFactor * 2);
       const rop = Math.ceil(avgDaily * leadTimeDays + safetyStock);
@@ -180,57 +208,97 @@ export class ReplenishmentService {
     return { generated };
   }
 
-  private consumption(itemId: string, since: string): number {
-    const row = this.db.prepare(
-      `SELECT COALESCE(SUM(
-         CASE
-           WHEN type = 'OUT' THEN quantity
-           WHEN type = 'ADJUST' AND quantity < 0 THEN ABS(quantity)
-           ELSE 0
-         END
-       ), 0) AS consumed
-       FROM InventoryTransaction
-       WHERE itemId = ? AND createdAt >= ? AND deletedAt IS NULL`,
-    ).get(itemId, since) as { consumed: number };
-    /* v8 ignore start -- the SQL aggregate always returns a numeric value. */
-    return Number(row.consumed ?? 0);
-    /* v8 ignore stop */
-  }
-
   applyToPurchaseOrder(ids: string[], context: AppContext): Record<string, unknown> {
     if (!Array.isArray(ids) || ids.length === 0 || ids.length > 500) {
       throw new ValidationError('At least one suggestion is required and at most 500 can be applied');
     }
-    const placeholders = ids.map(() => '?').join(',');
+    const requestedIds = [...new Set(ids)];
+    const placeholders = requestedIds.map(() => '?').join(',');
+    const clinicId = context.clinicId;
+    const suggestionParams = clinicId ? [...requestedIds, clinicId] : [...requestedIds];
     const suggestions = this.db.prepare(
       `SELECT * FROM InventoryReplenishmentSuggestion
-       WHERE id IN (${placeholders}) AND deletedAt IS NULL AND status IS NULL`,
-    ).all(...ids) as Array<Record<string, unknown>>;
-    if (!suggestions.length) throw new NotFoundError('No applicable suggestions found');
-    const now = context.now().toISOString();
-    const orderId = randomUUID();
-    const orderNumber = `PO-${Date.now()}`;
-    /* v8 ignore start -- suggestedQty is NOT NULL in the schema. */
-    const totalAmount = suggestions.reduce((sum, suggestion) => sum + Math.max(0, Number(suggestion.suggestedQty ?? 0)), 0);
-    /* v8 ignore stop */
-    this.db.prepare(
-      `INSERT INTO PurchaseOrder (
-         id, clinicId, createdAt, updatedAt, deletedAt,
-         number, supplierId, totalAmount, status
-       ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, 'PENDING')`,
-    ).run(orderId, context.clinicId ?? null, now, now, orderNumber, suggestions[0].supplierId ?? null, totalAmount);
-    for (const suggestion of suggestions) {
-      this.db.prepare(
-        `INSERT INTO PurchaseOrderItem (
-           id, clinicId, createdAt, updatedAt, deletedAt,
-           orderId, itemId, name, quantity, unitPrice, subtotal
-         ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, 0, 0)`,
-      ).run(randomUUID(), context.clinicId ?? null, now, now, orderId, suggestion.inventoryId, String(suggestion.inventoryId), Number(suggestion.suggestedQty));
-      this.db.prepare(
-        'UPDATE InventoryReplenishmentSuggestion SET status = ?, updatedAt = ? WHERE id = ?',
-      ).run('APPLIED', now, suggestion.id);
+       WHERE id IN (${placeholders}) AND deletedAt IS NULL AND (status IS NULL OR status = 'OPEN')${tenantAnd(clinicId)}`,
+    ).all(...suggestionParams) as Array<Record<string, unknown>>;
+    if (suggestions.length !== requestedIds.length) throw new NotFoundError('No applicable suggestions found');
+    const inventoryIds = [...new Set(suggestions.map((suggestion) => String(suggestion.inventoryId)))];
+    const inventoryPlaceholders = inventoryIds.map(() => '?').join(',');
+    const inventoryParams = clinicId ? [...inventoryIds, clinicId] : [...inventoryIds];
+    const inventoryRows = this.db.prepare(
+      `SELECT id, name, price, supplierId, clinicId FROM InventoryItem
+       WHERE id IN (${inventoryPlaceholders}) AND deletedAt IS NULL${tenantAnd(clinicId)}`,
+    ).all(...inventoryParams) as Array<{ id: string; name: string; price: number; supplierId?: string | null; clinicId?: string | null }>;
+    const inventory = new Map(inventoryRows.map((row) => [row.id, row]));
+    if (inventoryRows.length !== inventoryIds.length) {
+      throw new NotFoundError('One or more inventory items are not available');
     }
-    return { orderId, orderNumber, items: suggestions.length };
+    const now = context.now().toISOString();
+    const groups = new Map<string | null, Array<Record<string, unknown>>>();
+    for (const suggestion of suggestions) {
+      const item = inventory.get(String(suggestion.inventoryId));
+      const supplierId = item?.supplierId ?? null;
+      const existing = groups.get(supplierId) ?? [];
+      existing.push(suggestion);
+      groups.set(supplierId, existing);
+    }
+    const orders: Array<Record<string, unknown>> = [];
+    let index = 0;
+    const run = this.db.transaction(() => {
+      for (const [supplierId, group] of groups) {
+        index += 1;
+        const orderId = randomUUID();
+        const orderNumber = `PO-${Date.now()}-${index}`;
+        /* v8 ignore start -- inventory rows and suggestedQty are schema-required; fallbacks are defensive. */
+        const totalAmount = group.reduce((sum, suggestion) => {
+          const item = inventory.get(String(suggestion.inventoryId));
+          return sum + Number(item?.price ?? 0) * Number(suggestion.suggestedQty ?? 0);
+        }, 0);
+        /* v8 ignore stop */
+        this.db.prepare(
+          `INSERT INTO PurchaseOrder (
+             id, clinicId, createdAt, updatedAt, deletedAt,
+             number, supplierId, totalAmount, status
+           ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, 'PENDING')`,
+        ).run(orderId, clinicId ?? null, now, now, orderNumber, supplierId, totalAmount);
+        for (const suggestion of group) {
+          const item = inventory.get(String(suggestion.inventoryId));
+          /* v8 ignore start -- inventory rows and suggestedQty are schema-required; fallbacks are defensive. */
+          const quantity = Number(suggestion.suggestedQty ?? 0);
+          const unitPrice = Number(item?.price ?? 0);
+          /* v8 ignore stop */
+          this.db.prepare(
+            `INSERT INTO PurchaseOrderItem (
+               id, clinicId, createdAt, updatedAt, deletedAt,
+               orderId, itemId, name, quantity, unitPrice, subtotal
+             ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)`,
+          ).run(
+            randomUUID(),
+            clinicId ?? null,
+            now,
+            now,
+            orderId,
+            suggestion.inventoryId,
+            /* v8 ignore next -- inventory name is schema-required; fallback is defensive. */
+            item?.name ?? String(suggestion.inventoryId),
+            quantity,
+            unitPrice,
+            quantity * unitPrice,
+          );
+          this.db.prepare(
+            `UPDATE InventoryReplenishmentSuggestion SET status = ?, updatedAt = ? WHERE id = ?${tenantAnd(clinicId)}`,
+          ).run('APPLIED', now, suggestion.id, ...(clinicId ? [clinicId] : []));
+        }
+        orders.push({ id: orderId, number: orderNumber, supplierId, totalAmount, items: group.length });
+      }
+    });
+    run();
+    return {
+      orderId: orders[0]?.id,
+      orderNumber: orders[0]?.number,
+      items: suggestions.length,
+      orders,
+      orderCount: orders.length,
+    };
   }
 }
 
@@ -244,8 +312,12 @@ export class WechatService {
   }
 
   send(messageId: string, context: AppContext): Record<string, unknown> {
+    const row = this.wechatRepository.findById(messageId, context.clinicId);
+    if (!row) throw new NotFoundError('Wechat message not found');
+    if (row.status === 'SENT') return { id: messageId, status: 'SENT' };
     const now = context.now().toISOString();
-    this.wechatRepository.markSent(messageId, now, now);
+    const changes = this.wechatRepository.markSent(messageId, now, now, context.clinicId);
+    if (changes === 0) throw new NotFoundError('Wechat message not found');
     return { id: messageId, status: 'SENT' };
   }
 
@@ -320,13 +392,4 @@ export class PrintTemplateService {
       escapeHtml(String(row.content)),
     );
   }
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 }

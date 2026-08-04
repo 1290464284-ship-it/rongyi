@@ -9,7 +9,6 @@ try {
   });
   console.log(output);
 } catch (error) {
-  const message = `${error.stdout ?? ''}${error.stderr ?? ''}`;
   console.error(error.stdout ?? error.message);
   process.exit(1);
 }

@@ -86,13 +86,15 @@ describe('HTTP app', () => {
       .send({})
       .expect(200);
 
-    const purchase = await request(app)
-      .post('/api/v2/resources/purchaseOrders')
-      .set('Authorization', `Bearer ${token}`)
-      .send({ number: 'PO-HTTP', supplierId: 'supplier-http', totalAmount: 0, status: 'PENDING' })
-      .expect(201);
+    const purchaseNow = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO PurchaseOrder (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         number, supplierId, totalAmount, status
+       ) VALUES (?, ?, ?, ?, NULL, 'PO-HTTP', NULL, 0, 'PENDING')`,
+    ).run('po-http', null, purchaseNow, purchaseNow);
     await request(app)
-      .patch(`/api/v2/purchase-orders/${purchase.body.data.id}/receive`)
+      .patch('/api/v2/purchase-orders/po-http/receive')
       .set('Authorization', `Bearer ${token}`)
       .send({})
       .expect(200);
@@ -238,7 +240,7 @@ describe('HTTP app', () => {
   });
 
   it('supports member cards, debt, purchase, processing, metrics, and replenishment', async () => {
-    const card = await request(app).post('/api/v2/resources/memberCards')
+    const card = await request(app).post('/api/v2/member-cards')
       .set('Authorization', `Bearer ${token}`)
       .send({ patientId: 'patient-demo-001', cardNo: `HTTP-CARD-${Date.now()}`, status: 'ACTIVE', level: 'NORMAL' })
       .expect(201);
@@ -259,6 +261,28 @@ describe('HTTP app', () => {
     await request(app).get('/api/v2/metrics').set('Authorization', `Bearer ${token}`).expect(200);
     await request(app).get('/api/v2/stats/revenue?groupBy=month').set('Authorization', `Bearer ${token}`).expect(200);
     await request(app).get('/api/v2/charge-assistant/frequent-items').set('Authorization', `Bearer ${token}`).expect(200);
+  });
+
+  it('manages users and member cards through explicit admin routes', async () => {
+    const user = await request(app).post('/api/v2/admin/users')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ username: `HTTP-USER-${Date.now()}`, password: 'password123', name: 'HTTP User', role: 'DOCTOR' })
+      .expect(201);
+    const userId = user.body.data.id as string;
+    await request(app).patch(`/api/v2/admin/users/${userId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'HTTP Updated', active: false })
+      .expect(200);
+    await request(app).patch(`/api/v2/admin/users/${userId}/password`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ newPassword: 'newpassword123' })
+      .expect(200);
+
+    const card = await request(app).post('/api/v2/member-cards')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ patientId: 'patient-demo-001', cardNo: `HTTP-CARD-ADMIN-${Date.now()}`, status: 'ACTIVE', level: 'VIP' })
+      .expect(201);
+    expect(card.body.data.balance).toBe(0);
   });
 
   it('rejects unauthenticated and unknown resources', async () => {
@@ -371,11 +395,14 @@ describe('HTTP app', () => {
       .send({ locked: true })
       .expect(200);
 
-    const debt = await request(app).post('/api/v2/resources/debtRecords')
-      .set('Authorization', `Bearer ${token}`)
-      .send({ chargeId: 'charge', patientId: 'patient-demo-001', totalAmount: 1000, paidAmount: 0, status: 'UNPAID' })
-      .expect(201);
-    await request(app).patch(`/api/v2/debts/${debt.body.data.id}/pay`)
+    const debtNow = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO Debt (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         chargeId, patientId, totalAmount, paidAmount, status
+       ) VALUES (?, ?, ?, ?, NULL, 'charge', 'patient-demo-001', 1000, 0, 'UNPAID')`,
+    ).run('debt-http', null, debtNow, debtNow);
+    await request(app).patch('/api/v2/debts/debt-http/pay')
       .set('Authorization', `Bearer ${token}`)
       .send({ amount: 100, requestId: 'http-debt-1' })
       .expect(200);
@@ -394,13 +421,13 @@ describe('HTTP app', () => {
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
 
-    const now = new Date().toISOString();
+    const alertNow = new Date().toISOString();
     db.prepare(
       `INSERT INTO BusinessAlert (
          id, clinicId, createdAt, updatedAt, deletedAt,
          level, title, message, source, status
        ) VALUES (?, ?, ?, ?, NULL, 'WARNING', 'T', 'M', 'test', 'OPEN')`,
-    ).run('alert-http', null, now, now);
+    ).run('alert-http', null, alertNow, alertNow);
     await request(app).get('/api/v2/system/business-alerts').set('Authorization', `Bearer ${token}`).expect(200);
     await request(app).patch('/api/v2/system/business-alerts/alert-http/status')
       .set('Authorization', `Bearer ${token}`)

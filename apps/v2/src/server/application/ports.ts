@@ -57,7 +57,7 @@ export interface CreateChargeInput {
 }
 
 export interface ChargeRepository {
-  findById(id: string): ChargeRecord | null;
+  findById(id: string, clinicId?: string | null): ChargeRecord | null;
   create(input: CreateChargeInput): void;
   createItem(item: ChargeItemRecord): void;
   updatePayment(id: string, paidAmount: number, status: string, paidAt: string, payMethod?: string): void;
@@ -82,12 +82,13 @@ export interface MemberCardRecord {
 }
 
 export interface MemberCardRepository {
-  findById(id: string): MemberCardRecord | null;
-  findByPatient(patientId: string): MemberCardRecord | null;
-  updateBalanceRefund(id: string, balance: number, updatedAt: string): void;
-  updateRecharge(id: string, balance: number, amount: number, updatedAt: string): void;
-  updateConsume(id: string, balance: number, amount: number, updatedAt: string): void;
-  updatePoints(id: string, points: number, totalPoints: number, updatedAt: string): void;
+  create(input: MemberCardRecord): void;
+  findById(id: string, clinicId?: string | null): MemberCardRecord | null;
+  findByPatient(patientId: string, clinicId?: string | null): MemberCardRecord | null;
+  updateBalanceRefund(id: string, balance: number, updatedAt: string, clinicId?: string | null): void;
+  updateRecharge(id: string, balance: number, amount: number, updatedAt: string, clinicId?: string | null): void;
+  updateConsume(id: string, balance: number, amount: number, updatedAt: string, clinicId?: string | null): void;
+  updatePoints(id: string, points: number, totalPoints: number, updatedAt: string, clinicId?: string | null): void;
   insertLog(input: Record<string, unknown>): void;
   insertPointLog(input: Record<string, unknown>): void;
 }
@@ -120,10 +121,10 @@ export interface InventoryTransactionRecord {
 }
 
 export interface InventoryRepository {
-  findItem(id: string): InventoryItemRecord | null;
-  updateStock(id: string, stock: number, updatedAt: string): void;
+  findItem(id: string, clinicId?: string | null): InventoryItemRecord | null;
+  updateStock(id: string, stock: number, updatedAt: string, clinicId?: string | null): void;
   createTransaction(record: InventoryTransactionRecord): void;
-  lowStock(): InventoryItemRecord[];
+  lowStock(clinicId?: string | null): InventoryItemRecord[];
 }
 
 export interface DebtRecord {
@@ -140,9 +141,9 @@ export interface DebtRecord {
 }
 
 export interface DebtRepository {
-  findById(id: string): DebtRecord | null;
-  findByCharge(chargeId: string): DebtRecord | null;
-  updatePaid(id: string, paidAmount: number, status: string, updatedAt: string): void;
+  findById(id: string, clinicId?: string | null): DebtRecord | null;
+  findByCharge(chargeId: string, clinicId?: string | null): DebtRecord | null;
+  updatePaid(id: string, paidAmount: number, status: string, updatedAt: string, clinicId?: string | null): void;
 }
 
 export interface AuthUserRecord {
@@ -152,6 +153,7 @@ export interface AuthUserRecord {
   passwordHash: string;
   name: string;
   role: string;
+  phone?: string | null;
   active: boolean;
   loginAttempts: number;
   lockedUntil?: string | null;
@@ -167,6 +169,11 @@ export interface AuthRepository {
   findByUsername(username: string): AuthUserRecord | null;
   findById(id: string): AuthUserRecord | null;
   findByRefreshTokenHash(tokenHash: string): AuthUserRecord | null;
+  isRefreshTokenUsed(tokenHash: string): boolean;
+  cleanupUsedRefreshTokens(before: string): number;
+  insertUser(input: AuthUserRecord): void;
+  updateUser(id: string, fields: { name?: string; phone?: string | null; role?: string; active?: boolean }, updatedAt: string): number;
+  resetPassword(id: string, passwordHash: string, updatedAt: string): number;
   updateLoginAttempts(id: string, attempts: number, lockedUntil: string | null, updatedAt: string): void;
   resetLoginAttempts(id: string, updatedAt: string): void;
   updatePassword(id: string, passwordHash: string, updatedAt: string): void;
@@ -203,16 +210,16 @@ export interface PurchaseOrderItemRecord {
 }
 
 export interface PurchaseOrderRepository {
-  findById(id: string): PurchaseOrderRecord | null;
-  itemsByOrder(orderId: string): PurchaseOrderItemRecord[];
+  findById(id: string, clinicId?: string | null): PurchaseOrderRecord | null;
+  itemsByOrder(orderId: string, clinicId?: string | null): PurchaseOrderItemRecord[];
   createOrder(input: PurchaseOrderRecord): void;
   createItem(input: PurchaseOrderItemRecord): void;
-  markReceived(id: string, receivedAt: string, updatedAt: string): void;
+  markReceived(id: string, receivedAt: string, updatedAt: string, clinicId?: string | null): void;
 }
 
 export interface ProcessingOrderRepository {
-  findById(id: string): { id: string; status: string; deletedAt?: string | null } | null;
-  updateStatus(id: string, status: string, updatedAt: string): void;
+  findById(id: string, clinicId?: string | null): { id: string; status: string; deletedAt?: string | null } | null;
+  updateStatus(id: string, status: string, updatedAt: string, clinicId?: string | null): void;
 }
 
 export interface FollowUpRecord {
@@ -230,22 +237,23 @@ export interface FollowUpRecord {
 }
 
 export interface FollowUpRepository {
-  reminders(): Array<Record<string, unknown>>;
+  reminders(clinicId?: string | null): Array<Record<string, unknown>>;
   insert(record: FollowUpRecord): void;
 }
 
 export interface WechatMessageRepository {
-  markSent(id: string, sentAt: string, updatedAt: string): void;
+  findById(id: string, clinicId?: string | null): { id: string; status: string; clinicId?: string | null } | null;
+  markSent(id: string, sentAt: string, updatedAt: string, clinicId?: string | null): number;
 }
 
 export interface AlertRepository {
-  open(): Array<Record<string, unknown>>;
-  setStatus(id: string, status: string, userId: string | null, now: string): void;
+  open(clinicId?: string | null): Array<Record<string, unknown>>;
+  setStatus(id: string, status: string, userId: string | null, now: string, clinicId?: string | null): number;
 }
 
 export interface PatientRiskRepository {
-  treatmentCount(patientId: string): number;
-  periodontalCount(patientId: string): number;
+  treatmentCount(patientId: string, clinicId?: string | null): number;
+  periodontalCount(patientId: string, clinicId?: string | null): number;
   insert(input: Record<string, unknown>): void;
 }
 
@@ -256,13 +264,13 @@ export interface AnalyticsRepository {
 }
 
 export interface HrRepository {
-  attendance(workDate?: string): Array<Record<string, unknown>>;
-  approveLeave(id: string, status: string, reviewerId: string, now: string): void;
+  attendance(workDate?: string, clinicId?: string | null): Array<Record<string, unknown>>;
+  approveLeave(id: string, status: string, reviewerId: string, now: string, clinicId?: string | null): number;
 }
 
 export interface ClinicalWorkflowRepository {
-  getRow(table: string, id: string): Record<string, unknown> | null;
-  updateStatus(table: string, id: string, status: string, now: string, extra?: Record<string, unknown>): void;
+  getRow(table: string, id: string, clinicId?: string | null): Record<string, unknown> | null;
+  updateStatus(table: string, id: string, status: string, now: string, extra?: Record<string, unknown>, clinicId?: string | null): void;
   createVisit(input: Record<string, unknown>): string;
-  lockMedicalRecord(id: string, locked: boolean, userId: string, now: string): void;
+  lockMedicalRecord(id: string, locked: boolean, userId: string, now: string, clinicId?: string | null): void;
 }

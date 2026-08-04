@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import type { AppContext } from '../../domain/contracts';
+import { escapeHtml } from '../shared/html';
 
 export class StatsService {
   constructor(private readonly db: Database.Database) {}
@@ -139,7 +140,7 @@ export class SearchService {
   constructor(private readonly db: Database.Database) {}
 
   search(query: string, context: AppContext): Array<Record<string, unknown>> {
-    const term = `%${query}%`;
+    const term = `%${query.replace(/[\\%_]/g, '\\$&')}%`;
     const clinicClause = context.clinicId ? 'AND clinicId = ?' : '';
     const appointmentClause = context.clinicId ? 'AND A.clinicId = ?' : '';
     const chargeClause = context.clinicId ? 'AND C.clinicId = ?' : '';
@@ -151,7 +152,7 @@ export class SearchService {
         resource: 'patients',
         rows: this.db.prepare(
           `SELECT id, name, phone, code FROM Patient
-           WHERE deletedAt IS NULL AND (name LIKE ? OR phone LIKE ? OR code LIKE ?) ${clinicClause}
+           WHERE deletedAt IS NULL AND (name LIKE ? ESCAPE '\\' OR phone LIKE ? ESCAPE '\\' OR code LIKE ? ESCAPE '\\') ${clinicClause}
            LIMIT 20`,
         ).all(term, term, term, ...clinicParams) as Array<Record<string, unknown>>,
         label: (row) => String(row.name ?? row.code ?? ''),
@@ -163,7 +164,7 @@ export class SearchService {
            FROM Appointment A
            LEFT JOIN Patient P ON P.id = A.patientId
            WHERE A.deletedAt IS NULL AND P.deletedAt IS NULL
-             AND (P.name LIKE ? OR A.startTime LIKE ? OR A.status LIKE ?) ${appointmentClause}
+             AND (P.name LIKE ? ESCAPE '\\' OR A.startTime LIKE ? ESCAPE '\\' OR A.status LIKE ? ESCAPE '\\') ${appointmentClause}
            LIMIT 20`,
         ).all(term, term, term, ...clinicParams) as Array<Record<string, unknown>>,
         label: (row) => String(row.patientName ?? ''),
@@ -175,7 +176,7 @@ export class SearchService {
            FROM Charge C
            LEFT JOIN Patient P ON P.id = C.patientId
            WHERE C.deletedAt IS NULL AND P.deletedAt IS NULL
-             AND (C.number LIKE ? OR P.name LIKE ? OR C.status LIKE ?) ${chargeClause}
+             AND (C.number LIKE ? ESCAPE '\\' OR P.name LIKE ? ESCAPE '\\' OR C.status LIKE ? ESCAPE '\\') ${chargeClause}
            LIMIT 20`,
         ).all(term, term, term, ...clinicParams) as Array<Record<string, unknown>>,
         label: (row) => String(row.number ?? ''),
@@ -184,7 +185,7 @@ export class SearchService {
         resource: 'inventoryItems',
         rows: this.db.prepare(
           `SELECT id, name, code, category, stock FROM InventoryItem
-           WHERE deletedAt IS NULL AND (name LIKE ? OR code LIKE ? OR category LIKE ?) ${clinicClause}
+           WHERE deletedAt IS NULL AND (name LIKE ? ESCAPE '\\' OR code LIKE ? ESCAPE '\\' OR category LIKE ? ESCAPE '\\') ${clinicClause}
            LIMIT 20`,
         ).all(term, term, term, ...clinicParams) as Array<Record<string, unknown>>,
         label: (row) => String(row.name ?? row.code ?? ''),
@@ -193,7 +194,7 @@ export class SearchService {
         resource: 'suppliers',
         rows: this.db.prepare(
           `SELECT id, name, code, phone FROM Supplier
-           WHERE deletedAt IS NULL AND (name LIKE ? OR code LIKE ? OR phone LIKE ?) ${clinicClause}
+           WHERE deletedAt IS NULL AND (name LIKE ? ESCAPE '\\' OR code LIKE ? ESCAPE '\\' OR phone LIKE ? ESCAPE '\\') ${clinicClause}
            LIMIT 20`,
         ).all(term, term, term, ...clinicParams) as Array<Record<string, unknown>>,
         label: (row) => String(row.name ?? ''),
@@ -205,7 +206,7 @@ export class SearchService {
            FROM FollowUp F
            LEFT JOIN Patient P ON P.id = F.patientId
            WHERE F.deletedAt IS NULL AND P.deletedAt IS NULL
-             AND (P.name LIKE ? OR F.content LIKE ? OR F.status LIKE ?) ${followUpClause}
+             AND (P.name LIKE ? ESCAPE '\\' OR F.content LIKE ? ESCAPE '\\' OR F.status LIKE ? ESCAPE '\\') ${followUpClause}
            LIMIT 20`,
         ).all(term, term, term, ...clinicParams) as Array<Record<string, unknown>>,
         label: (row) => String(row.patientName ?? ''),
@@ -273,13 +274,4 @@ export class SatisfactionService {
        LIMIT 50`,
     ).all(...params) as Array<Record<string, unknown>>;
   }
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 }

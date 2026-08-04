@@ -5,12 +5,14 @@ import type {
   ChargeRepository,
   CreateChargeInput,
 } from '../../application/ports';
+import { tenantAnd } from '../tenant';
 
 export class SqliteChargeRepository implements ChargeRepository {
   constructor(private readonly db: Database.Database) {}
 
-  findById(id: string): ChargeRecord | null {
-    const row = this.db.prepare('SELECT * FROM Charge WHERE id = ? AND deletedAt IS NULL').get(id) as
+  findById(id: string, clinicId?: string | null): ChargeRecord | null {
+    const params = clinicId ? [id, clinicId] : [id];
+    const row = this.db.prepare(`SELECT * FROM Charge WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`).get(...params) as
       | ChargeRecord
       | undefined;
     return row ?? null;

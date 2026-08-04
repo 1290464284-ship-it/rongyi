@@ -1,8 +1,7 @@
 import { FormEvent, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
-
-interface Page<T> { items: T[]; total: number; page: number; pageSize: number; }
+import type { Page } from './types';
 
 export function ChargesPage() {
   const [patientId, setPatientId] = useState('patient-demo-001');
@@ -79,4 +78,3 @@ export function ChargesPage() {
     </div>
   );
 }
-

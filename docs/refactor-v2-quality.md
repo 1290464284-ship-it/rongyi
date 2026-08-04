@@ -29,13 +29,18 @@ infrastructure/
 ## Quality Gates
 
 - `pnpm --filter @dental/v2 typecheck`
+- `pnpm --filter @dental/v2 run lint`
 - `pnpm --filter @dental/v2 test`
 - `pnpm --filter @dental/v2 build`
 - `pnpm --filter @dental/v2 electron:compile`
 - `pnpm --filter @dental/v2 smoke:api`
 - `pnpm --filter @dental/v2 smoke:ui`
+- `pnpm --filter @dental/v2 test:coverage:web`
+
+Web unit coverage is tracked independently from the server 100% gate in
+`vite.web-coverage.config.ts`. Core resource routing and tab configuration are
+covered by `src/web/*.spec.*`; server and domain code remain at 100% coverage.
 
 The architecture boundary test at
 `apps/v2/src/server/application/architecture.spec.ts` fails if application code
 starts depending on the legacy adapter or raw database bootstrap.
-

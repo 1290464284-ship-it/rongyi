@@ -198,6 +198,53 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 109,
+    name: 'v2-idempotency-scope',
+    up(db) {
+      const columns = new Set(
+        (db.prepare('PRAGMA table_info(IdempotencyRecord)').all() as Array<{ name: string }>).map((column) => column.name),
+      );
+      if (!columns.has('userId')) {
+        db.exec('ALTER TABLE IdempotencyRecord ADD COLUMN userId TEXT');
+      }
+      if (!columns.has('operation')) {
+        db.exec('ALTER TABLE IdempotencyRecord ADD COLUMN operation TEXT');
+      }
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_v2_idempotency_scope ON IdempotencyRecord(userId, clinicId, operation);
+        CREATE INDEX IF NOT EXISTS idx_v2_idempotency_expiry ON IdempotencyRecord(expiresAt);
+      `);
+    },
+  },
+  {
+    version: 110,
+    name: 'v2-performance-indexes',
+    up(db) {
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_v2_charge_doctor ON Charge(doctorId);
+        CREATE INDEX IF NOT EXISTS idx_v2_visit_doctor ON Visit(doctorId);
+        CREATE INDEX IF NOT EXISTS idx_v2_visit_patient ON Visit(patientId);
+        CREATE INDEX IF NOT EXISTS idx_v2_member_card_patient ON MemberCard(patientId);
+        CREATE INDEX IF NOT EXISTS idx_v2_satisfaction_clinic_date ON SatisfactionSurvey(clinicId, surveyDate);
+        CREATE INDEX IF NOT EXISTS idx_v2_inventory_clinic_expiry ON InventoryItem(clinicId, expireDate);
+        CREATE INDEX IF NOT EXISTS idx_v2_followup_clinic_status_date ON FollowUp(clinicId, status, planDate);
+      `);
+    },
+  },
+  {
+    version: 111,
+    name: 'v2-search-indexes',
+    up(db) {
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_v2_patient_search ON Patient(name, code);
+        CREATE INDEX IF NOT EXISTS idx_v2_inventory_search ON InventoryItem(name, code);
+        CREATE INDEX IF NOT EXISTS idx_v2_supplier_search ON Supplier(name, code, phone);
+        CREATE INDEX IF NOT EXISTS idx_v2_charge_number ON Charge(number);
+        CREATE INDEX IF NOT EXISTS idx_v2_appointment_patient_start ON Appointment(patientId, startTime);
+      `);
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

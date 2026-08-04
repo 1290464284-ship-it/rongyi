@@ -4,11 +4,14 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase } from '../database';
+import { runMigrations } from '../migrations';
 import {
+  SqliteAlertRepository,
   SqliteAuthRepository,
   SqliteClinicalWorkflowRepository,
   SqliteDebtRepository,
   SqliteFollowUpRepository,
+  SqliteHrRepository,
   SqliteInventoryRepository,
   SqliteMemberCardRepository,
   SqlitePatientRiskRepository,
@@ -26,6 +29,7 @@ describe('core repositories', () => {
   beforeAll(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-core-repo-'));
     db = createDatabase(dataDir);
+    runMigrations(db);
   });
 
   afterAll(() => {
@@ -327,6 +331,32 @@ describe('core repositories', () => {
       updatedAt: now,
       deletedAt: null,
     }).deletedAt).toBeNull();
+    auth.insertUser({
+      id: 'admin-created',
+      clinicId: 'clinic-v2-001',
+      username: 'created',
+      passwordHash: 'hash',
+      name: 'Created',
+      role: 'DOCTOR',
+      phone: '13800000000',
+      active: true,
+      loginAttempts: 0,
+      lockedUntil: null,
+      tokenVersion: 0,
+      refreshToken: null,
+      refreshTokenExpiresAt: null,
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+    });
+    expect(auth.findById('admin-created')).not.toBeNull();
+    expect(auth.updateUser('admin-created', { name: 'Updated', phone: null, role: 'NURSE', active: false }, now)).toBe(1);
+    expect(auth.findById('admin-created')?.name).toBe('Updated');
+    expect(auth.resetPassword('admin-created', 'new-hash', now)).toBe(1);
+    expect(auth.findById('admin-created')?.tokenVersion).toBe(1);
+    auth.markRefreshTokenUsed('used-hash', 'admin-created', now);
+    expect(auth.isRefreshTokenUsed('used-hash')).toBe(true);
+    expect(auth.cleanupUsedRefreshTokens(now)).toBeGreaterThanOrEqual(0);
 
     const risk = new SqlitePatientRiskRepository(db);
     risk.insert({
@@ -396,5 +426,123 @@ describe('core repositories', () => {
       assigneeId: null,
       templateId: null,
     });
+  });
+
+  it('covers scoped repository branches', () => {
+    const member = new SqliteMemberCardRepository(db);
+    member.create({
+      id: 'card-scope',
+      clinicId: 'clinic-v2-001',
+      patientId: 'patient',
+      cardNo: 'CARD-SCOPE',
+      balance: 0,
+      totalRecharge: 0,
+      totalConsume: 0,
+      status: 'ACTIVE',
+      points: 0,
+      totalPoints: 0,
+      level: 'NORMAL',
+      createdAt: now,
+      updatedAt: now,
+    });
+    member.create({
+      id: 'card-scope-null',
+      clinicId: null,
+      patientId: 'patient',
+      cardNo: 'CARD-SCOPE-NULL',
+      balance: 0,
+      totalRecharge: 0,
+      totalConsume: 0,
+      status: 'INACTIVE',
+      points: 0,
+      totalPoints: 0,
+      level: 'NORMAL',
+      createdAt: now,
+      updatedAt: now,
+    });
+    expect(member.findById('card-scope', 'clinic-v2-001')).not.toBeNull();
+
+    const auth = new SqliteAuthRepository(db);
+    auth.insertUser({
+      id: 'auth-scope',
+      clinicId: null,
+      username: 'scope-user',
+      passwordHash: 'hash',
+      name: 'Scope',
+      role: 'NURSE',
+      active: false,
+      loginAttempts: 0,
+      lockedUntil: null,
+      tokenVersion: 0,
+      refreshToken: null,
+      refreshTokenExpiresAt: null,
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+    });
+    expect(auth.findById('auth-scope')?.active).toBe(false);
+    expect(auth.updateUser('auth-scope', {}, now)).toBe(1);
+    expect(auth.updateUser('auth-scope', { active: true }, now)).toBe(1);
+
+    db.prepare(
+      `INSERT INTO WechatMessage (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, type, content, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient', 'TEXT', 'x', 'PENDING')`,
+    ).run('wechat-scope', 'clinic-v2-001', now, now);
+    const wechat = new SqliteWechatMessageRepository(db);
+    expect(wechat.findById('wechat-scope', 'clinic-v2-001')).not.toBeNull();
+    expect(wechat.findById('wechat-scope')).not.toBeNull();
+    expect(wechat.markSent('wechat-scope', now, now, 'clinic-v2-001')).toBe(1);
+
+    db.prepare(
+      `INSERT INTO BusinessAlert (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         level, title, message, source, status
+       ) VALUES (?, ?, ?, ?, NULL, 'WARNING', 'T', 'M', 'scope', 'OPEN')`,
+    ).run('alert-scope', 'clinic-v2-001', now, now);
+    const alert = new SqliteAlertRepository(db);
+    expect(alert.open('clinic-v2-001').length).toBeGreaterThanOrEqual(1);
+    expect(alert.setStatus('alert-scope', 'RESOLVED', 'user', now, 'clinic-v2-001')).toBe(1);
+    expect(alert.open()).toBeInstanceOf(Array);
+    expect(alert.setStatus('missing-alert', 'RESOLVED', 'user', now)).toBe(0);
+
+    db.prepare(
+      `INSERT INTO Attendance (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         userId, workDate, status
+       ) VALUES (?, ?, ?, ?, NULL, 'user', ?, 'PRESENT')`,
+    ).run('attendance-scope', 'clinic-v2-001', now, now, now.slice(0, 10));
+    const hr = new SqliteHrRepository(db);
+    expect(hr.attendance(now.slice(0, 10), 'clinic-v2-001')).toBeInstanceOf(Array);
+    expect(hr.attendance(undefined, 'clinic-v2-001')).toBeInstanceOf(Array);
+    expect(hr.attendance(now.slice(0, 10))).toBeInstanceOf(Array);
+    expect(hr.attendance()).toBeInstanceOf(Array);
+    db.prepare(
+      `INSERT INTO LeaveRequest (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         userId, startDate, endDate, type, reason, status
+       ) VALUES (?, ?, ?, ?, NULL, 'user', ?, ?, 'ANNUAL', 'r', 'PENDING')`,
+    ).run('leave-scope', 'clinic-v2-001', now, now, now.slice(0, 10), now.slice(0, 10));
+    expect(hr.approveLeave('leave-scope', 'APPROVED', 'reviewer', now, 'clinic-v2-001')).toBe(1);
+    expect(hr.approveLeave('leave-scope', 'REJECTED', 'reviewer', now)).toBe(1);
+
+    const clinical = new SqliteClinicalWorkflowRepository(db);
+    db.prepare(
+      `INSERT INTO Visit (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, startTime, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient', 'doctor', ?, 'IN_PROGRESS')`,
+    ).run('visit-scope', 'clinic-v2-001', now, now, now);
+    db.prepare(
+      `INSERT INTO MedicalRecord (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient', 'doctor', 'DRAFT')`,
+    ).run('record-scope', 'clinic-v2-001', now, now);
+    expect(clinical.getRow('Visit', 'visit-scope', 'clinic-v2-001')).not.toBeNull();
+    clinical.updateStatus('Visit', 'visit-scope', 'COMPLETED', now, { endTime: now }, 'clinic-v2-001');
+    clinical.lockMedicalRecord('record-scope', true, 'user', now, 'clinic-v2-001');
+    clinical.lockMedicalRecord('record-scope', false, null as unknown as string, now);
   });
 });

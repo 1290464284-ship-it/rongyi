@@ -26,11 +26,14 @@ Run all commands from `source/`:
 ```powershell
 pnpm install
 pnpm --filter @dental/v2 typecheck
+pnpm --filter @dental/v2 run lint
 pnpm --filter @dental/v2 run knip
 pnpm --filter @dental/v2 test
 pnpm --filter @dental/v2 test:coverage
+pnpm --filter @dental/v2 test:coverage:web
 pnpm --filter @dental/v2 build
 pnpm --filter @dental/v2 electron:compile
+pnpm --filter @dental/v2 run clean:generated
 pnpm --filter @dental/v2 dev
 pnpm --filter @dental/v2 smoke:api
 pnpm --filter @dental/v2 smoke:ui
