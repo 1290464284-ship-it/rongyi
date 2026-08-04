@@ -930,10 +930,16 @@ describe('service edge coverage', () => {
        ) VALUES (?, ?, ?, ?, NULL, 'po-edge-2', NULL, 'No item', 1, 100, 100)`,
     ).run('poi-edge-null', context.clinicId, now, now);
     db.prepare(
+      `INSERT INTO InventoryItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, category, unit, stock, minStock, price
+       ) VALUES (?, ?, ?, ?, NULL, 'PO-OTHER', 'Other Clinic Item', 'MAT', 'box', 1, 0, 100)`,
+    ).run('inventory-po-other', 'clinic-v2-other', now, now);
+    db.prepare(
       `INSERT INTO PurchaseOrderItem (
          id, clinicId, createdAt, updatedAt, deletedAt,
          orderId, itemId, name, quantity, unitPrice, subtotal
-       ) VALUES (?, ?, ?, ?, NULL, 'po-edge-2', 'missing-inventory', NULL, 1, 100, 100)`,
+       ) VALUES (?, ?, ?, ?, NULL, 'po-edge-2', 'inventory-po-other', 'Other Clinic Item', 1, 100, 100)`,
     ).run('poi-edge-missing', context.clinicId, now, now);
     await expect(purchase.receive('po-edge-2', context)).rejects.toThrow('missing inventory items');
     db.prepare(

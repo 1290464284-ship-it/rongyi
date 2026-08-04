@@ -534,6 +534,103 @@ export const migrations: Migration[] = [
           FOREIGN KEY (operatorId) REFERENCES User(id)
         )
       `);
+      ensureForeignKeys(db, 'ChargeItem', `
+        CREATE TABLE "ChargeItem" (
+          id TEXT PRIMARY KEY,
+          chargeId TEXT NOT NULL,
+          treatmentId TEXT,
+          inventoryItemId TEXT,
+          consumedQuantity REAL DEFAULT 0,
+          name TEXT NOT NULL,
+          category TEXT NOT NULL,
+          price INTEGER NOT NULL CHECK (price >= 0),
+          quantity INTEGER DEFAULT 1 CHECK (quantity >= 1),
+          teethNumbers TEXT DEFAULT '[]',
+          subtotal INTEGER DEFAULT 0 CHECK (subtotal >= 0),
+          clinicId TEXT,
+          createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          deletedAt TEXT,
+          FOREIGN KEY (chargeId) REFERENCES Charge(id) ON DELETE CASCADE,
+          FOREIGN KEY (treatmentId) REFERENCES Treatment(id),
+          FOREIGN KEY (inventoryItemId) REFERENCES InventoryItem(id)
+        )
+      `);
+      ensureForeignKeys(db, 'PurchaseOrderItem', `
+        CREATE TABLE "PurchaseOrderItem" (
+          id TEXT PRIMARY KEY,
+          orderId TEXT NOT NULL,
+          itemId TEXT,
+          name TEXT NOT NULL,
+          spec TEXT,
+          quantity REAL NOT NULL,
+          unitPrice INTEGER NOT NULL,
+          subtotal INTEGER DEFAULT 0,
+          clinicId TEXT,
+          createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          deletedAt TEXT,
+          FOREIGN KEY (orderId) REFERENCES PurchaseOrder(id) ON DELETE CASCADE,
+          FOREIGN KEY (itemId) REFERENCES InventoryItem(id)
+        )
+      `);
+      ensureForeignKeys(db, 'InventoryTransaction', `
+        CREATE TABLE "InventoryTransaction" (
+          id TEXT PRIMARY KEY,
+          itemId TEXT NOT NULL,
+          type TEXT NOT NULL CHECK (type IN ('IN', 'OUT', 'ADJUST')),
+          quantity REAL NOT NULL,
+          unitPrice INTEGER DEFAULT 0,
+          totalAmount INTEGER DEFAULT 0,
+          supplierId TEXT,
+          purchaseOrderId TEXT,
+          operatorId TEXT,
+          operatorName TEXT,
+          remark TEXT,
+          clinicId TEXT,
+          createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          deletedAt TEXT,
+          updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          beforeStock REAL,
+          afterStock REAL,
+          referenceType TEXT,
+          referenceId TEXT,
+          FOREIGN KEY (itemId) REFERENCES InventoryItem(id),
+          FOREIGN KEY (supplierId) REFERENCES Supplier(id),
+          FOREIGN KEY (operatorId) REFERENCES User(id)
+        )
+      `);
+      ensureForeignKeys(db, 'ProcessingOrder', `
+        CREATE TABLE "ProcessingOrder" (
+          id TEXT PRIMARY KEY,
+          number TEXT NOT NULL,
+          patientId TEXT NOT NULL,
+          visitId TEXT,
+          factoryId TEXT,
+          doctorId TEXT,
+          shade TEXT,
+          teethNumbers TEXT DEFAULT '[]',
+          totalFee INTEGER DEFAULT 0,
+          status TEXT DEFAULT 'SENT' CHECK (status IN ('PENDING', 'DRAFT', 'SENT', 'IN_PROGRESS', 'COMPLETED', 'RECEIVED', 'CANCELLED')),
+          chargeId TEXT,
+          sentAt TEXT,
+          expectedAt TEXT,
+          receivedAt TEXT,
+          deliveredAt TEXT,
+          remark TEXT,
+          creatorId TEXT,
+          clinicId TEXT,
+          createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          deletedAt TEXT,
+          UNIQUE(clinicId, number),
+          FOREIGN KEY (patientId) REFERENCES Patient(id),
+          FOREIGN KEY (visitId) REFERENCES Visit(id),
+          FOREIGN KEY (factoryId) REFERENCES ProcessingFactory(id),
+          FOREIGN KEY (doctorId) REFERENCES User(id),
+          FOREIGN KEY (chargeId) REFERENCES Charge(id)
+        )
+      `);
     },
   },
 ];
@@ -552,7 +649,17 @@ function ensureForeignKeys(
   const newTable = `${table}_fk_new`;
   db.exec(createSql.replace(`"${table}"`, `"${newTable}"`));
 
-  const columns = commonColumns(db, table, newTable);
+  const oldColumns = new Set(
+    (db.prepare(`PRAGMA table_info("${table}")`).all() as Array<{ name: string }>).map((column) => column.name),
+  );
+  const newColumns = new Set(
+    (db.prepare(`PRAGMA table_info("${newTable}")`).all() as Array<{ name: string }>).map((column) => column.name),
+  );
+  const missing = [...oldColumns].filter((column) => !newColumns.has(column));
+  if (missing.length > 0) {
+    throw new Error(`Migration for ${table} would drop columns: ${missing.join(', ')}`);
+  }
+  const columns = [...newColumns].filter((column) => oldColumns.has(column));
   const columnList = columns.map((column) => `"${column}"`).join(', ');
   db.prepare(
     `INSERT INTO "${newTable}" (${columnList})
@@ -561,15 +668,6 @@ function ensureForeignKeys(
   db.exec(`DROP TABLE "${table}"`);
   db.exec(`ALTER TABLE "${newTable}" RENAME TO "${table}"`);
   for (const index of indexes) db.exec(index.sql);
-}
-
-function commonColumns(db: Database.Database, oldTable: string, newTable: string): string[] {
-  const columns = (table: string): Set<string> => new Set(
-    (db.prepare(`PRAGMA table_info("${table}")`).all() as Array<{ name: string }>).map((column) => column.name),
-  );
-  const oldColumns = columns(oldTable);
-  const newColumns = columns(newTable);
-  return [...newColumns].filter((column) => oldColumns.has(column));
 }
 
 export function runMigrations(db: Database.Database): void {

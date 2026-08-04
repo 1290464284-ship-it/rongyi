@@ -401,7 +401,7 @@ export class PurchaseOrderService {
         if (!item.itemId) continue;
         const current = this.inventoryRepository.findItem(item.itemId, context.clinicId);
         if (!current) {
-          missing.push(item.name ?? String(item.itemId));
+          missing.push(item.name);
           continue;
         }
         const before = Number(current.stock);
