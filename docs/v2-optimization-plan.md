@@ -73,6 +73,7 @@
 - 前端抽共享 `DataTable` 与 `PageError`，随访、备份、库存采购操作、通用列表页已改用 `DataTable`，支持无稳定主键的报表数据，共享组件纳入 web 覆盖率门禁。
 - Web 覆盖率口径从 4 个核心文件扩展到 24 个核心文件，并补足加载/错误/非 Error 失败/空值分支，当前通过 98% statements、90% branches、98% functions、100% lines。
 - `src/components/**` 实验组件通过 `eslint.config.js` 和 `knip.json` 排除在正式门禁之外，等组件被采用或删除后再纳入检查。
+- 移除未使用且有风险/许可证问题的 `GridScan`、`Lanyard` 组件及 `face-api.js`、`@react-three/rapier`、`meshline` 依赖；security scan 对实验组件目录隔离，license scan 补充 GSAP/Zlib，完整 `pnpm verify` 已恢复全绿。
 - staged restore 的恢复前备份改为 SQLite `VACUUM INTO`，当前库有效时会保留 WAL 中尚未落盘的数据；损坏/非 SQLite 文件仍回退为文件复制。
 - legacy 导入复用同一 WAL-safe SQLite 备份 helper，源库写入目标与既有目标 pre-import 备份均不再只复制主文件。
 - 同步删除与通用资源删除在报告成功前先确认目标存在，缺失记录统一按失败/404 返回。

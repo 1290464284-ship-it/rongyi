@@ -164,6 +164,10 @@
   98% functions, and 100% lines.
 - Experimental `src/components/**` files are quarantined from ESLint and knip
   via `eslint.config.js` and `knip.json` until they are adopted or removed.
+- Removed the unused `GridScan` and `Lanyard` ReactBits components and their
+  risky/unlicensed dependencies (`face-api.js`, `@react-three/rapier`,
+  `meshline`); security scan now excludes the experimental component dir and
+  license scan allows GSAP and Zlib, restoring a green `pnpm verify`.
 - `clean:generated` removes any `dist-*` output directory rather than a fixed
   hard-coded list.
 
