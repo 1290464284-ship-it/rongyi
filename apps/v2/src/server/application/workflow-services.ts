@@ -356,12 +356,12 @@ export class ChargeAssistantService {
   constructor(private readonly db: Database.Database) {}
 
   frequentItems(context: AppContext): Array<Record<string, unknown>> {
-    const where = context.clinicId ? 'deletedAt IS NULL AND clinicId = ?' : 'deletedAt IS NULL';
-    const params: unknown[] = context.clinicId ? [context.clinicId] : [];
+    const tenantClause = tenantAnd(context.clinicId);
+    const params: unknown[] = tenantParams(context.clinicId);
     return this.db.prepare(
       `SELECT category, name, COUNT(*) AS count
        FROM ChargeItem
-       WHERE ${where}
+       WHERE deletedAt IS NULL${tenantClause}
        GROUP BY category, name
        ORDER BY count DESC
        LIMIT 50`,
@@ -373,17 +373,16 @@ export class PrintTemplateService {
   constructor(private readonly db: Database.Database) {}
 
   list(context: AppContext): Array<Record<string, unknown>> {
-    const where = context.clinicId ? 'deletedAt IS NULL AND clinicId = ?' : 'deletedAt IS NULL';
-    const params: unknown[] = context.clinicId ? [context.clinicId] : [];
+    const tenantClause = tenantAnd(context.clinicId);
+    const params: unknown[] = tenantParams(context.clinicId);
     return this.db.prepare(
-      `SELECT * FROM PrintTemplate WHERE ${where} ORDER BY category, name`,
+      `SELECT * FROM PrintTemplate WHERE deletedAt IS NULL${tenantClause} ORDER BY category, name`,
     ).all(...params) as Array<Record<string, unknown>>;
   }
 
   render(code: string, variables: Record<string, unknown>, context: AppContext): string {
-    const where = context.clinicId ? 'code = ? AND deletedAt IS NULL AND clinicId = ?' : 'code = ? AND deletedAt IS NULL';
-    const params: unknown[] = context.clinicId ? [code, context.clinicId] : [code];
-    const row = this.db.prepare(`SELECT * FROM PrintTemplate WHERE ${where}`).get(...params) as
+    const params: unknown[] = [code, ...tenantParams(context.clinicId)];
+    const row = this.db.prepare(`SELECT * FROM PrintTemplate WHERE code = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`).get(...params) as
       | Record<string, unknown>
       | undefined;
     if (!row) throw new NotFoundError('Print template not found');
