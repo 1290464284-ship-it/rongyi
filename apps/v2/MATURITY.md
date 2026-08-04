@@ -118,7 +118,7 @@
   `GET /api/v2/resources/:resource/export`, including multi-page row export,
   with an Export button in the generic resource page.
 - Analytics hub includes a fixed monthly revenue report backed by the existing
-  revenue statistics endpoint.
+  revenue statistics endpoint, plus an inventory summary report.
 - `clean:generated` removes any `dist-*` output directory rather than a fixed
   hard-coded list.
 
