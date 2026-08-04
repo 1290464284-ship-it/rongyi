@@ -145,6 +145,9 @@
 - Sync, HR, and alert services were extracted into `sync.ts` and
   `hr-alerts.ts`; `operations.ts` now only contains inventory and follow-up
   services at roughly 222 lines.
+- `workflow-services.ts` became a four-line barrel; clinical workflow,
+  replenishment, WeChat, analytics, charge assistant, and print template
+  services now live in dedicated `service-modules/*.ts` files.
 - Experimental `src/components/**` files are quarantined from ESLint and knip
   via `eslint.config.js` and `knip.json` until they are adopted or removed.
 - `clean:generated` removes any `dist-*` output directory rather than a fixed
