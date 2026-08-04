@@ -15,6 +15,7 @@ import { FinanceWorkflowPage } from './FinanceWorkflowPage';
 import { SystemOperationsPage } from './SystemOperationsPage';
 import { InventoryWorkflowPage } from './InventoryWorkflowPage';
 import { CommunicationWorkflowPage } from './CommunicationWorkflowPage';
+import { FollowUpReportPage } from './FollowUpReportPage';
 import { PatientWorkflowPage } from './PatientWorkflowPage';
 
 export type HubTab =
@@ -62,6 +63,7 @@ export const inventoryHubTabs: HubTab[] = [
 export const communicationHubTabs: HubTab[] = [
   { id: 'workflow', label: '\u5fae\u4fe1\u53d1\u9001', kind: 'custom', component: CommunicationWorkflowPage },
   { id: 'followUps', label: '\u968f\u8bbf', kind: 'custom', component: FollowUpsPage },
+  { id: 'followUpReport', label: '\u5230\u8bca\u7387', kind: 'custom', component: FollowUpReportPage },
   { id: 'wechat', label: '\u5fae\u4fe1', kind: 'resource', resource: 'wechatMessages' },
   { id: 'sms', label: '\u77ed\u4fe1', kind: 'resource', resource: 'smsLogs' },
   { id: 'satisfaction', label: '\u6ee1\u610f\u5ea6', kind: 'resource', resource: 'satisfactionSurveys' },
