@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ResourceHub } from './ResourceHub';
-import type { HubTab } from './hub-tabs';
+import { analyticsHubTabs, type HubTab } from './hub-tabs';
 import { apiRequest } from './api';
 
 vi.mock('./api', () => ({ apiRequest: vi.fn() }));
@@ -48,5 +48,27 @@ describe('ResourceHub', () => {
       .mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 20 });
     render(<ResourceHub title="Hub" tabs={[{ id: 'resource', label: 'Resource', kind: 'resource', resource: 'patients' }]} />, { wrapper });
     expect(await screen.findByText('Create')).toBeDefined();
+  });
+
+  it('renders empty tab lists without crashing', () => {
+    render(<ResourceHub title="Empty" tabs={[]} />, { wrapper });
+    expect(screen.getByText('Empty')).toBeDefined();
+    expect(screen.queryByRole('tab')).toBeNull();
+  });
+
+  it('renders unknown tab kinds as an empty panel', () => {
+    const tabs = [{ id: 'unknown', label: 'Unknown', kind: 'unknown' } as unknown as HubTab];
+    render(<ResourceHub title="Unknown Hub" tabs={tabs} />, { wrapper });
+    expect(screen.getByText('Unknown')).toBeDefined();
+  });
+
+  it('renders analytics custom tab components', async () => {
+    const tabs = analyticsHubTabs.filter((tab) => tab.id !== 'dashboard' && tab.id !== 'satisfaction');
+    vi.mocked(apiRequest).mockResolvedValue([]);
+    render(<ResourceHub title="Analytics" tabs={tabs} />, { wrapper });
+    expect(await screen.findByText('RFM')).toBeDefined();
+    fireEvent.click(screen.getByRole('tab', { name: 'RFM' }));
+    fireEvent.click(screen.getByRole('tab', { name: '流失预警' }));
+    fireEvent.click(screen.getByRole('tab', { name: '医生异常' }));
   });
 });

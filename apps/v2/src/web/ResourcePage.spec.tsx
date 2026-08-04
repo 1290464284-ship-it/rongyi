@@ -112,6 +112,7 @@ describe('ResourcePage', () => {
         { name: 'patientId', type: 'relation', relation: { resource: 'patients', labelField: 'name' } },
         { name: 'notes', type: 'longText' },
         { name: 'data', type: 'json' },
+        { name: 'active', type: 'boolean' },
       ],
       capabilities: { create: true, update: false, delete: false, softDelete: false },
     };
@@ -142,6 +143,46 @@ describe('ResourcePage', () => {
     expect(screen.getByLabelText('status')).toBeDefined();
     expect(screen.getByLabelText('notes')).toBeDefined();
     expect(screen.getByLabelText('data')).toBeDefined();
+    expect(screen.getByLabelText('active')).toBeDefined();
     expect(screen.getByText('{"key":"value"}')).toBeDefined();
+    fireEvent.click(screen.getByLabelText('active'));
+    fireEvent.change(screen.getByLabelText('status'), { target: { value: 'SENT' } });
+    fireEvent.change(screen.getByLabelText('patientId'), { target: { value: 'p1' } });
+    fireEvent.change(screen.getByLabelText('notes'), { target: { value: 'note updated' } });
+    fireEvent.change(screen.getByLabelText('data'), { target: { value: '{}' } });
+  });
+
+  it('cancels create forms and hides write controls', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([writable])
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 20 });
+    render(<ResourcePage resource="patients" />, { wrapper });
+    fireEvent.click(await screen.findByText('Create'));
+    fireEvent.click(screen.getByText('Cancel'));
+    expect(screen.queryByText('Save')).toBeNull();
+  });
+
+  it('supports search and pager navigation', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([writable])
+      .mockResolvedValueOnce({ items: [{ id: 'p1', name: 'Alice', active: true }], total: 30, page: 1, pageSize: 20 });
+    render(<ResourcePage resource="patients" />, { wrapper });
+    vi.mocked(apiRequest).mockResolvedValueOnce({ items: [], total: 30, page: 2, pageSize: 20 });
+    fireEvent.click(await screen.findByText('Next'));
+    expect(await screen.findByText('Page 2')).toBeDefined();
+    vi.mocked(apiRequest).mockResolvedValueOnce({ items: [{ id: 'p1', name: 'Alice', active: true }], total: 30, page: 1, pageSize: 20 });
+    fireEvent.click(screen.getByText('Previous'));
+    expect(await screen.findByText('Page 1')).toBeDefined();
+    vi.mocked(apiRequest).mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 20 });
+    fireEvent.change(screen.getByPlaceholderText('Search...'), { target: { value: 'Alice' } });
+    expect(await screen.findByText('No records.')).toBeDefined();
+  });
+
+  it('renders null cell values without crashing', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([writable])
+      .mockResolvedValueOnce({ items: [{ id: 'p1', name: 'Alice', active: true, phone: null }], total: 1, page: 1, pageSize: 20 });
+    render(<ResourcePage resource="patients" />, { wrapper });
+    expect(await screen.findByText('Alice')).toBeDefined();
   });
 });
