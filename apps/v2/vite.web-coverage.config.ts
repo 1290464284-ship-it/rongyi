@@ -29,6 +29,7 @@ export default defineConfig({
         'src/web/AppointmentsPage.tsx',
         'src/web/SystemOperationsPage.tsx',
         'src/web/LoginPage.tsx',
+        'src/web/Layout.tsx',
       ],
       thresholds: {
         statements: 98,
