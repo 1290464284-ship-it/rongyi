@@ -363,6 +363,13 @@ describe('HTTP app', () => {
   it('supports inventory low stock, follow-up reminders, and print templates', async () => {
     await request(app).get('/api/v2/inventory/low-stock').set('Authorization', `Bearer ${token}`).expect(200);
     await request(app).get('/api/v2/follow-ups/reminders').set('Authorization', `Bearer ${token}`).expect(200);
+    const followUp = await request(app).post('/api/v2/resources/followUps')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ patientId: 'patient-demo-001', planDate: '2026-08-04', content: 'complete via http', status: 'PENDING' })
+      .expect(201);
+    await request(app).patch(`/api/v2/follow-ups/${String(followUp.body.data.id)}/complete`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
     await request(app).get('/api/v2/stats/patient-growth').set('Authorization', `Bearer ${token}`).expect(200);
     await request(app).get('/api/v2/stats/member-cards').set('Authorization', `Bearer ${token}`).expect(200);
     await request(app).get('/api/v2/print/templates').set('Authorization', `Bearer ${token}`).expect(200);

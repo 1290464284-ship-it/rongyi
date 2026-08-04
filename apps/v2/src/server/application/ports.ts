@@ -245,6 +245,7 @@ export interface FollowUpRecord {
 export interface FollowUpRepository {
   reminders(clinicId?: string | null): Array<Record<string, unknown>>;
   insert(record: FollowUpRecord): void;
+  complete(id: string, completedAt: string, updatedAt: string, clinicId?: string | null): number;
 }
 
 export interface WechatMessageRepository {

@@ -322,6 +322,49 @@ describe('application services', () => {
     await expect(service.batchGenerate(2, context)).rejects.toThrow('Completed date is invalid');
   });
 
+  it('completes follow-ups with clinic scope and status checks', () => {
+    const service = new FollowUpService(db);
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO FollowUp (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, planDate, content, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', ?, 'Complete me', 'PENDING')`,
+    ).run('followup-complete', context.clinicId, now, now, now.slice(0, 10));
+    expect(service.complete('followup-complete', context)).toMatchObject({ id: 'followup-complete', status: 'COMPLETED' });
+    expect(() => service.complete('followup-complete', context)).toThrow('cannot be completed from current status');
+
+    db.prepare(
+      `INSERT INTO FollowUp (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, planDate, content, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', ?, 'In progress', 'IN_PROGRESS')`,
+    ).run('followup-in-progress', context.clinicId, now, now, now.slice(0, 10));
+    expect(service.complete('followup-in-progress', context).status).toBe('COMPLETED');
+
+    db.prepare(
+      `INSERT INTO FollowUp (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, planDate, content, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', ?, 'Other clinic', 'PENDING')`,
+    ).run('followup-other-clinic', 'clinic-v2-other', now, now, now.slice(0, 10));
+    expect(() => service.complete('followup-other-clinic', context)).toThrow('Follow-up not found');
+    expect(() => service.complete('missing-followup', context)).toThrow('Follow-up not found');
+
+    const failingRepository = new FollowUpService(db, {
+      reminders: () => [],
+      insert: () => undefined,
+      complete: () => 0,
+    });
+    db.prepare(
+      `INSERT INTO FollowUp (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, planDate, content, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', ?, 'Race guard', 'PENDING')`,
+    ).run('followup-race-guard', context.clinicId, now, now, now.slice(0, 10));
+    expect(() => failingRepository.complete('followup-race-guard', context)).toThrow('cannot be completed');
+  });
+
   it('deducts and refunds member card balance with a charge', async () => {
     const now = new Date().toISOString();
     db.prepare(
