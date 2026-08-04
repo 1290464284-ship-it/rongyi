@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, safeStorage } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { spawn } = require('node:child_process');
 const crypto = require('node:crypto');
@@ -60,6 +60,12 @@ function getOrCreateSecret(fileName = 'jwt-secret') {
   const secret = crypto.randomBytes(48).toString('hex');
   fs.writeFileSync(secretPath, secret, { mode: 0o600 });
   return secret;
+}
+
+function secretPath(key) {
+  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(key)) throw new Error('Invalid secret key');
+  const secretsDir = path.join(app.getPath('userData'), 'secrets');
+  return path.join(secretsDir, `${key}.enc`);
 }
 
 process.on('uncaughtException', (error) => crashLog('uncaughtException', error));
@@ -231,6 +237,32 @@ app.on('second-instance', () => {
 
 app.whenReady().then(async () => {
   if (!gotSingleInstanceLock) return;
+  ipcMain.handle('desktop:secret:get', (_event, key) => {
+    if (!safeStorage.isEncryptionAvailable()) return null;
+    try {
+      return safeStorage.decryptString(fs.readFileSync(secretPath(key)));
+    } catch {
+      return null;
+    }
+  });
+  ipcMain.handle('desktop:secret:set', (_event, key, value) => {
+    if (!safeStorage.isEncryptionAvailable()) return false;
+    try {
+      fs.mkdirSync(path.dirname(secretPath(key)), { recursive: true });
+      fs.writeFileSync(secretPath(key), safeStorage.encryptString(String(value)), { mode: 0o600 });
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  ipcMain.handle('desktop:secret:delete', (_event, key) => {
+    try {
+      fs.rmSync(secretPath(key), { force: true });
+      return true;
+    } catch {
+      return false;
+    }
+  });
   setupTray();
   await startApi();
   createWindow();

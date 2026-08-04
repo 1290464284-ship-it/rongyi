@@ -1,8 +1,22 @@
 let apiBase: string | null = null;
+let memoryToken: string | null = null;
+let memoryRefreshToken: string | null = null;
+let tokenLoad: Promise<void> | null = null;
+
+interface DesktopSecretStore {
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string): Promise<boolean>;
+  delete(key: string): Promise<boolean>;
+}
+
+interface DesktopBridge {
+  getApiPort?: () => Promise<number>;
+  secrets?: DesktopSecretStore;
+}
 
 async function resolveApiBase(): Promise<string> {
   if (apiBase) return apiBase;
-  const desktop = (window as unknown as { desktop?: { getApiPort?: () => Promise<number> } }).desktop;
+  const desktop = (window as unknown as { desktop?: DesktopBridge }).desktop;
   if (desktop?.getApiPort) {
     const port = await desktop.getApiPort();
     apiBase = `http://127.0.0.1:${port}/api/v2`;
@@ -12,27 +26,88 @@ async function resolveApiBase(): Promise<string> {
   return apiBase;
 }
 
+function desktopSecretStore(): DesktopSecretStore | null {
+  return (window as unknown as { desktop?: DesktopBridge }).desktop?.secrets ?? null;
+}
+
 class ClientError extends Error {
   constructor(message: string, readonly code = 'REQUEST_FAILED', readonly traceId?: string) {
     super(message);
   }
 }
 
-function token(): string | null {
-  return localStorage.getItem('v2.token');
+function loadTokens(): Promise<void> {
+  if (tokenLoad) return tokenLoad;
+  tokenLoad = (async () => {
+    const store = desktopSecretStore();
+    if (store) {
+      try {
+        memoryToken = (await store.get('v2.token')) ?? localStorage.getItem('v2.token');
+        memoryRefreshToken = (await store.get('v2.refreshToken')) ?? localStorage.getItem('v2.refreshToken');
+      } catch {
+        memoryToken = localStorage.getItem('v2.token');
+        memoryRefreshToken = localStorage.getItem('v2.refreshToken');
+      }
+    } else {
+      memoryToken = localStorage.getItem('v2.token');
+      memoryRefreshToken = localStorage.getItem('v2.refreshToken');
+    }
+  })();
+  return tokenLoad;
 }
 
-function refreshToken(): string | null {
-  return localStorage.getItem('v2.refreshToken');
+async function token(): Promise<string | null> {
+  await loadTokens();
+  return memoryToken;
 }
 
-function clearSession(): void {
+async function refreshToken(): Promise<string | null> {
+  await loadTokens();
+  return memoryRefreshToken;
+}
+
+async function setTokens(accessToken: string, newRefreshToken: string): Promise<void> {
+  memoryToken = accessToken;
+  memoryRefreshToken = newRefreshToken;
+  const store = desktopSecretStore();
+  if (store) {
+    let stored = false;
+    let storedRefresh = false;
+    try {
+      stored = await store.set('v2.token', accessToken);
+      storedRefresh = await store.set('v2.refreshToken', newRefreshToken);
+    } catch {
+      stored = false;
+      storedRefresh = false;
+    }
+    if (stored && storedRefresh) {
+      localStorage.removeItem('v2.token');
+      localStorage.removeItem('v2.refreshToken');
+      return;
+    }
+  }
+  localStorage.setItem('v2.token', accessToken);
+  localStorage.setItem('v2.refreshToken', newRefreshToken);
+}
+
+async function clearSession(): Promise<void> {
+  memoryToken = null;
+  memoryRefreshToken = null;
+  const store = desktopSecretStore();
+  if (store) {
+    try {
+      await store.delete('v2.token');
+      await store.delete('v2.refreshToken');
+    } catch {
+      // Fall through and still clear the in-memory/local fallback session.
+    }
+  }
   localStorage.removeItem('v2.token');
   localStorage.removeItem('v2.refreshToken');
 }
 
 async function refreshAccessToken(): Promise<boolean> {
-  const refresh = refreshToken();
+  const refresh = await refreshToken();
   if (!refresh) return false;
   const base = await resolveApiBase();
   try {
@@ -46,14 +121,13 @@ async function refreshAccessToken(): Promise<boolean> {
       data?: { token?: string; refreshToken?: string };
     } | null;
     if (!response.ok || !body?.success || !body.data?.token || !body.data.refreshToken) {
-      clearSession();
+      await clearSession();
       return false;
     }
-    localStorage.setItem('v2.token', body.data.token);
-    localStorage.setItem('v2.refreshToken', body.data.refreshToken);
+    await setTokens(body.data.token, body.data.refreshToken);
     return true;
   } catch {
-    clearSession();
+    await clearSession();
     return false;
   }
 }
@@ -64,7 +138,7 @@ export async function apiRequest<T>(
 ): Promise<T> {
   const headers = new Headers(options.headers);
   headers.set('Content-Type', 'application/json');
-  const auth = token();
+  const auth = await token();
   if (auth) headers.set('Authorization', `Bearer ${auth}`);
 
   const base = await resolveApiBase();
@@ -87,18 +161,21 @@ export async function login(username: string, password: string): Promise<{ token
     method: 'POST',
     body: JSON.stringify({ username, password }),
   });
-  localStorage.setItem('v2.token', result.token);
-  localStorage.setItem('v2.refreshToken', result.refreshToken);
+  await setTokens(result.token, result.refreshToken);
   return result;
 }
 
-export function logout(): void {
-  const refresh = refreshToken();
+export async function logout(): Promise<void> {
+  const refresh = await refreshToken();
   if (refresh) {
-    void apiRequest('/auth/logout', {
-      method: 'POST',
-      body: JSON.stringify({ refreshToken: refresh }),
-    }).catch(() => undefined);
+    try {
+      await apiRequest('/auth/logout', {
+        method: 'POST',
+        body: JSON.stringify({ refreshToken: refresh }),
+      });
+    } catch {
+      // Local session is still cleared when the remote logout is unavailable.
+    }
   }
-  clearSession();
+  await clearSession();
 }
