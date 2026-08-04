@@ -140,7 +140,6 @@ describe('service coverage', () => {
     expect(service.dashboard(context)).toHaveProperty('patients');
     expect(service.revenue(undefined, undefined, 'month', context)).toBeInstanceOf(Array);
     expect(service.patientGrowth(undefined, undefined, context)).toBeInstanceOf(Array);
-    expect(service.doctorWorkload(context)).toBeInstanceOf(Array);
     expect(service.inventoryStats(context)).toBeInstanceOf(Array);
     expect(service.memberStats(context)).toHaveProperty('total');
 
@@ -170,14 +169,6 @@ describe('service coverage', () => {
       .reduce((sum, row) => sum + Number(row.amount ?? 0), 0);
     expect(afterRevenue).toBe(beforeRevenue);
 
-    db.prepare(
-      `INSERT INTO User (
-         id, clinicId, createdAt, updatedAt, deletedAt,
-         username, passwordHash, name, role, active, loginAttempts, tokenVersion
-       ) VALUES (?, ?, ?, ?, NULL, 'idle-doc-audit', 'unused-hash', 'Idle Audit Doctor', 'DOCTOR', 1, 0, 0)`,
-    ).run('user-idle-audit', context.clinicId, dashboardNow, dashboardNow);
-    const workload = service.doctorWorkload(context);
-    expect(workload.some((row) => row.doctorId === 'user-idle-audit' && Number(row.visits) === 0 && Number(row.charges) === 0)).toBe(true);
   });
 
   it('runs replenishment and clinical workflows', () => {

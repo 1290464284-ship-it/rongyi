@@ -360,10 +360,9 @@ describe('HTTP app', () => {
     expect(after).toBeGreaterThan(before);
   });
 
-  it('supports inventory low stock, follow-up reminders, doctor stats, and print templates', async () => {
+  it('supports inventory low stock, follow-up reminders, and print templates', async () => {
     await request(app).get('/api/v2/inventory/low-stock').set('Authorization', `Bearer ${token}`).expect(200);
     await request(app).get('/api/v2/follow-ups/reminders').set('Authorization', `Bearer ${token}`).expect(200);
-    await request(app).get('/api/v2/stats/doctor-workload').set('Authorization', `Bearer ${token}`).expect(200);
     await request(app).get('/api/v2/stats/patient-growth').set('Authorization', `Bearer ${token}`).expect(200);
     await request(app).get('/api/v2/stats/member-cards').set('Authorization', `Bearer ${token}`).expect(200);
     await request(app).get('/api/v2/print/templates').set('Authorization', `Bearer ${token}`).expect(200);

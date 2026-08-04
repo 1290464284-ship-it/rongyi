@@ -88,25 +88,6 @@ export class StatsService {
     ).all(...params) as Array<Record<string, unknown>>;
   }
 
-  doctorWorkload(context: AppContext): Array<Record<string, unknown>> {
-    const userClause = tenantAnd(context.clinicId, 'U.clinicId');
-    const visitJoin = tenantAnd(context.clinicId, 'V.clinicId');
-    const chargeJoin = tenantAnd(context.clinicId, 'C.clinicId');
-    const params: unknown[] = context.clinicId ? [context.clinicId, context.clinicId, context.clinicId] : [];
-    return this.db.prepare(
-      `SELECT U.id AS doctorId, U.name AS doctorName,
-              COUNT(DISTINCT V.id) AS visits,
-              COUNT(DISTINCT C.id) AS charges,
-              COALESCE(SUM(C.paidAmount - C.refundedAmount), 0) AS paidAmount
-       FROM User U
-       LEFT JOIN Visit V ON V.doctorId = U.id AND V.deletedAt IS NULL${visitJoin}
-       LEFT JOIN Charge C ON C.doctorId = U.id AND C.deletedAt IS NULL${chargeJoin}
-       WHERE U.role IN ('DOCTOR', 'BOSS')${userClause}
-       GROUP BY U.id, U.name
-       ORDER BY paidAmount DESC`,
-    ).all(...params) as Array<Record<string, unknown>>;
-  }
-
   inventoryStats(context: AppContext): Array<Record<string, unknown>> {
     const tenant = tenantWhere(context.clinicId);
     const params: unknown[] = tenant.params;

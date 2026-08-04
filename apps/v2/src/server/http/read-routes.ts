@@ -160,16 +160,6 @@ export function registerReadRoutes(app: Express, deps: ReadRouteDependencies): v
     /* v8 ignore stop */
   });
 
-  app.get('/api/v2/stats/doctor-workload', async (req, res, next) => {
-    try {
-      res.json({ success: true, data: deps.stats.doctorWorkload(req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
-
   app.get('/api/v2/stats/inventory', async (req, res, next) => {
     try {
       res.json({ success: true, data: deps.stats.inventoryStats(req.context!) });

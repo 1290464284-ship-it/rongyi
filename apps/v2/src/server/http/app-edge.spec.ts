@@ -77,7 +77,6 @@ const errorCases: RouteCase[] = [
   { method: 'get', path: '/api/v2/stats/dashboard' },
   { method: 'get', path: '/api/v2/stats/revenue?startDate=not-a-date' },
   { method: 'get', path: '/api/v2/stats/patient-growth?startDate=not-a-date' },
-  { method: 'get', path: '/api/v2/stats/doctor-workload' },
   { method: 'get', path: '/api/v2/stats/inventory' },
   { method: 'get', path: '/api/v2/stats/member-cards' },
   { method: 'get', path: '/api/v2/print?kind=report&data=%7B%22title%22%3A' },

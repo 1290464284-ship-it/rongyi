@@ -76,7 +76,7 @@ This document is derived from the legacy application only as a feature checklist
 ## 10. Analytics and Business Alerts
 
 - Dashboard stats: today appointments/visits/patients/charges, finance, recent patients, recent appointments, recent charges, todos.
-- Revenue, patient growth, doctor workload, member stats, inventory stats.
+- Revenue, patient growth, member stats, inventory stats.
 - Customer insights/RFM, churn prediction, satisfaction NPS.
 - Doctor performance anomalies.
 - Business alerts and scheduled task failure alerts.
@@ -104,4 +104,3 @@ This document is derived from the legacy application only as a feature checklist
 - Money stored as cents and converted at presentation boundaries.
 - Trace IDs on every request and structured logging.
 - Dependency and security audit.
-
