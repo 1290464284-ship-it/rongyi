@@ -156,9 +156,9 @@
   the web coverage gate.
 - Web coverage now includes follow-up, backup, simple list, and inventory
   workflow pages plus the inventory, charges, and finance workflow pages, in
-  addition to communication and HR workflow pages, resource hub/page, hub
-  tabs, and shared components; the expanded set passes 98% statements, 90%
-  branches, 98% functions, and 100% lines.
+  addition to communication, HR, and clinical workflow pages, resource
+  hub/page, hub tabs, and shared components; the expanded set passes 98%
+  statements, 90% branches, 98% functions, and 100% lines.
 - Experimental `src/components/**` files are quarantined from ESLint and knip
   via `eslint.config.js` and `knip.json` until they are adopted or removed.
 - `clean:generated` removes any `dist-*` output directory rather than a fixed

@@ -21,6 +21,7 @@ export default defineConfig({
         'src/web/FinanceWorkflowPage.tsx',
         'src/web/CommunicationWorkflowPage.tsx',
         'src/web/HrWorkflowPage.tsx',
+        'src/web/ClinicalWorkflowPage.tsx',
       ],
       thresholds: {
         statements: 98,
