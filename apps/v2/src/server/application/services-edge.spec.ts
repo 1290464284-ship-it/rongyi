@@ -524,6 +524,8 @@ describe('service edge coverage', () => {
     const stagedResult = await service.stageRestore(String(plain.filename));
     expect(fs.existsSync(`${stagedResult.stagedPath}-wal`)).toBe(false);
     expect(fs.existsSync(`${stagedResult.stagedPath}-shm`)).toBe(false);
+    expect(fs.existsSync(`${path.join(backupDir, String(plain.filename))}-wal`)).toBe(false);
+    expect(fs.existsSync(`${path.join(backupDir, String(plain.filename))}-shm`)).toBe(false);
     const originalCopy = fs.copyFileSync.bind(fs);
     const copySpy = vi.spyOn(fs, 'copyFileSync').mockImplementation(((source: string, target: string) => {
       originalCopy(source, target);
