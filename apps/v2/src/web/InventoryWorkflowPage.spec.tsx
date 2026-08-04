@@ -43,4 +43,73 @@ describe('InventoryWorkflowPage', () => {
       }));
     });
   });
+
+  it('generates suggestions and transitions processing orders', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100') {
+        return { items: [], total: 0 };
+      }
+      if (path === '/resources/processingOrders?page=1&pageSize=100') {
+        return { items: [{ id: 'proc-1', status: 'DRAFT' }], total: 1 };
+      }
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') {
+        return { items: [], total: 0 };
+      }
+      return {};
+    });
+
+    render(<InventoryWorkflowPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '生成补货建议' }));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/inventory/replenishment/generate', expect.objectContaining({ method: 'POST' }));
+    });
+
+    fireEvent.change(await screen.findByRole('combobox'), { target: { value: 'SENT' } });
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/processing-orders/proc-1/status', expect.objectContaining({ method: 'PATCH' }));
+    });
+  });
+
+  it('reports replenishment apply failures', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100') {
+        return { items: [], total: 0 };
+      }
+      if (path === '/resources/processingOrders?page=1&pageSize=100') {
+        return { items: [], total: 0 };
+      }
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') {
+        return { items: [{ id: 's-2', inventoryId: 'item-2', rop: 5, suggestedQty: 3, status: 'OPEN' }], total: 1 };
+      }
+      throw new Error('apply failed');
+    });
+
+    render(<InventoryWorkflowPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: '应用选中建议' }));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/inventory/replenishment/apply', expect.objectContaining({ method: 'POST' }));
+    });
+    expect(await screen.findByText('apply failed')).toBeDefined();
+  });
+
+  it('uses a generic message for non-error workflow failures', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100') {
+        return { items: [], total: 0 };
+      }
+      if (path === '/resources/processingOrders?page=1&pageSize=100') {
+        return { items: [], total: 0 };
+      }
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') {
+        return { items: [{ id: 's-3', inventoryId: 'item-3', rop: 5, suggestedQty: 3, status: 'OPEN' }], total: 1 };
+      }
+      throw 'boom';
+    });
+
+    render(<InventoryWorkflowPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: '应用选中建议' }));
+    expect(await screen.findByText('操作失败')).toBeDefined();
+  });
 });

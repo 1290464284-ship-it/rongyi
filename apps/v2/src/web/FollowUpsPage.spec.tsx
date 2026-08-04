@@ -33,4 +33,49 @@ describe('FollowUpsPage', () => {
     });
     expect(await screen.findByText('Follow-up completed')).toBeDefined();
   });
+
+  it('generates follow-ups in batch and reports failures', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/follow-ups/reminders') return [];
+      if (path === '/follow-ups/batch-generate') throw new Error('batch failed');
+      return {};
+    });
+
+    render(<FollowUpsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: 'Batch generate' }));
+    expect(await screen.findByText('batch failed')).toBeDefined();
+
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/follow-ups/reminders') return [];
+      return {};
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Batch generate' }));
+    expect(await screen.findByText('Batch generation completed')).toBeDefined();
+  });
+
+  it('reports follow-up completion failures', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/follow-ups/reminders') return [{ id: 'fu-2', status: 'PENDING' }];
+      if (path === '/follow-ups/fu-2/complete') throw new Error('complete failed');
+      return {};
+    });
+
+    render(<FollowUpsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: 'Complete' }));
+    expect(await screen.findByText('complete failed')).toBeDefined();
+  });
+
+  it('uses generic fallback messages for non-error failures', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/follow-ups/reminders') return [{ id: 'fu-3', status: 'PENDING' }];
+      throw 'boom';
+    });
+
+    render(<FollowUpsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: 'Batch generate' }));
+    expect(await screen.findByText('Batch generation failed')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Complete' }));
+    expect(await screen.findByText('Follow-up completion failed')).toBeDefined();
+  });
 });
