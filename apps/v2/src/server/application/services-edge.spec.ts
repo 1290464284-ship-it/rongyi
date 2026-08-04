@@ -549,7 +549,6 @@ describe('service edge coverage', () => {
     expect(stats.revenue('2026-01-01T00:00:00.000Z', '2026-12-31T23:59:59.999Z', 'day', nullContext)).toBeInstanceOf(Array);
     expect(stats.revenue('2026-01-01T00:00:00.000Z', '2026-12-31T23:59:59.999Z', 'month', nullContext)).toBeInstanceOf(Array);
     expect(stats.patientGrowth('2026-01-01T00:00:00.000Z', '2026-12-31T23:59:59.999Z', nullContext)).toBeInstanceOf(Array);
-    expect(stats.doctorWorkload(nullContext)).toBeInstanceOf(Array);
     expect(stats.inventoryStats(nullContext)).toBeInstanceOf(Array);
     expect(stats.memberStats(nullContext)).toHaveProperty('total');
 

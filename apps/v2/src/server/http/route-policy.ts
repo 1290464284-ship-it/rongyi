@@ -34,7 +34,6 @@ export const routeRoleRules: Array<{ pattern: RegExp; roles: UserRole[] }> = [
   { pattern: /^\/api\/v2\/stats\/dashboard/, roles: allStaff },
   { pattern: /^\/api\/v2\/stats\/revenue/, roles: adminStaff },
   { pattern: /^\/api\/v2\/stats\/patient-growth/, roles: adminStaff },
-  { pattern: /^\/api\/v2\/stats\/doctor-workload/, roles: adminStaff },
   { pattern: /^\/api\/v2\/stats\/inventory/, roles: financeStaff },
   { pattern: /^\/api\/v2\/stats\/member-cards/, roles: financeStaff },
   { pattern: /^\/api\/v2\/analytics/, roles: adminStaff },
