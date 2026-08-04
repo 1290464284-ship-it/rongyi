@@ -1,9 +1,6 @@
-export interface Page<T> {
-  items: T[];
-  total: number;
-  page: number;
-  pageSize: number;
-}
+import type { Page as DomainPage } from '../domain/contracts';
+
+export type Page<T> = DomainPage<T>;
 
 export interface ResourceField {
   name: string;
