@@ -42,6 +42,7 @@
 - 增加通用 CRUD 写策略和裸 `clinicId = ?` 架构扫描测试。
 - 启动前执行数据库完整性预检，损坏库不再静默继续运行。
 - 新增 `verify:database` 与 `repair:database`：可检查完整性，并在备份后执行 `REINDEX` 修复。
+- Electron 登录态迁移到 `safeStorage` 加密文件，Web 开发环境继续回退到 localStorage。
 
 ## 后续建议
 

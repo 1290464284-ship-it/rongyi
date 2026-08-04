@@ -68,7 +68,7 @@ export function Layout() {
         <button
           className="logout"
           onClick={() => {
-            logout();
+            void logout();
             navigate('/login', { replace: true });
           }}
         >
