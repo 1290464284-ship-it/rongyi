@@ -138,6 +138,55 @@ describe('resource router', () => {
     expect(exported.text.match(/"Export Row"/g)?.length).toBe(201);
   });
 
+  it('keeps resource lists and CSV export scoped to the active clinic', async () => {
+    const otherClinic = 'clinic-v2-export-other';
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT OR IGNORE INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+       VALUES (?, NULL, ?, ?, NULL, 'V2-EXPORT-OTHER', 'Export Other Clinic', 1)`,
+    ).run(otherClinic, now, now);
+    const admin = db.prepare("SELECT id FROM User WHERE username = 'admin'").get() as { id: string };
+    db.prepare(
+      `INSERT OR IGNORE INTO UserClinic (userId, clinicId, role, createdAt, updatedAt, deletedAt)
+       VALUES (?, ?, 'BOSS', ?, ?, NULL)`,
+    ).run(admin.id, otherClinic, now, now);
+    db.prepare(
+      `INSERT OR IGNORE INTO Patient (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active
+       ) VALUES (?, ?, ?, ?, NULL, 'EXPORT-OTHER', 'Other Clinic Secret', 'UNKNOWN', '13900009999',
+         '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
+    ).run('patient-export-other', otherClinic, now, now);
+
+    const switched = await request(app)
+      .post('/api/v2/auth/switch-clinic')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ clinicId: otherClinic })
+      .expect(200);
+    const otherToken = switched.body.data.token as string;
+
+    const list = await request(app)
+      .get('/api/v2/resources/patients?search=Other%20Clinic%20Secret')
+      .set('Authorization', `Bearer ${otherToken}`)
+      .expect(200);
+    expect(list.body.data.total).toBe(1);
+    expect(list.body.data.items[0].id).toBe('patient-export-other');
+
+    const originalList = await request(app)
+      .get('/api/v2/resources/patients?search=Router%20Patient')
+      .set('Authorization', `Bearer ${otherToken}`)
+      .expect(200);
+    expect(originalList.body.data.total).toBe(0);
+
+    const exported = await request(app)
+      .get('/api/v2/resources/patients/export?name=Other%20Clinic%20Secret')
+      .set('Authorization', `Bearer ${otherToken}`)
+      .expect(200);
+    expect(exported.text).toContain('Other Clinic Secret');
+    expect(exported.text).not.toContain('Router Patient');
+  });
+
   it('covers missing request bodies for generic create and patch', async () => {
     const created = await request(app)
       .post('/api/v2/resources/patients')
