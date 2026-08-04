@@ -99,6 +99,8 @@
 - Staged restore creates the pre-restore safety copy with SQLite `VACUUM INTO`
   when the current database is valid, preserving WAL data instead of copying
   only the main database file.
+- Legacy database import uses the same WAL-safe SQLite backup helper for both
+  the source copy and the existing-target pre-import backup.
 - Sync delete and generic resource delete verify the target exists before
   reporting success, removing remaining fake-success paths for missing rows.
 - Appointment status transitions use the shared clinic-scope helper for both
