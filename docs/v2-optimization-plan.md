@@ -70,6 +70,7 @@
 - 维护性拆分第一刀：`BackupService` 从 `operations.ts` 抽到独立 `backup.ts`，行为不变，大文件从约 680 行降到约 485 行。
 - 维护性拆分第二刀：`SyncService`、`HrService`、`AlertService` 分别拆到 `sync.ts` 与 `hr-alerts.ts`，`operations.ts` 只剩库存和随访，约 222 行；同步查询同步改用 tenant helper。
 - 维护性拆分第三刀：`workflow-services.ts` 改为 4 行 barrel，临床工作流、补货、微信、经营分析、收费助手、打印模板分别落到独立模块。
+- 前端抽共享 `DataTable` 与 `PageError`，随访页和备份页已改用 `DataTable`，共享组件纳入 web 覆盖率门禁。
 - `src/components/**` 实验组件通过 `eslint.config.js` 和 `knip.json` 排除在正式门禁之外，等组件被采用或删除后再纳入检查。
 - staged restore 的恢复前备份改为 SQLite `VACUUM INTO`，当前库有效时会保留 WAL 中尚未落盘的数据；损坏/非 SQLite 文件仍回退为文件复制。
 - legacy 导入复用同一 WAL-safe SQLite 备份 helper，源库写入目标与既有目标 pre-import 备份均不再只复制主文件。

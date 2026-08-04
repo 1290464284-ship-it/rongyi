@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { apiRequest } from './api';
+import { DataTable, type DataTableColumn } from './components';
 
 type DatabaseSummary = Record<string, number | string | null>;
 
@@ -83,6 +84,23 @@ export function BackupsPage() {
     }
   }
 
+  const backupColumns: DataTableColumn<Record<string, unknown>>[] = [
+    { key: 'filename', label: 'Filename', render: (row) => String(row.filename) },
+    { key: 'encrypted', label: 'Encrypted', render: (row) => String(Boolean(row.encrypted)) },
+    { key: 'fileSize', label: 'Size', render: (row) => String(row.fileSize) },
+    { key: 'createdAt', label: 'Created', render: (row) => String(row.createdAt) },
+    {
+      key: 'actions',
+      label: 'Actions',
+      render: (row) => (
+        <div className="actions">
+          <button onClick={() => verify(String(row.filename))}>Verify</button>
+          <button onClick={() => stageRestore(String(row.filename))}>Stage restore</button>
+        </div>
+      ),
+    },
+  ];
+
   return (
     <div className="page">
       <div className="page-head">
@@ -97,25 +115,7 @@ export function BackupsPage() {
           <SummaryPanel label="Current summary" summary={comparison.current} />
         </div>
       )}
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th>Filename</th><th>Encrypted</th><th>Size</th><th>Created</th><th>Actions</th></tr></thead>
-          <tbody>
-            {query.data?.map((row) => (
-              <tr key={String(row.filename)}>
-                <td>{String(row.filename)}</td>
-                <td>{String(Boolean(row.encrypted))}</td>
-                <td>{String(row.fileSize)}</td>
-                <td>{String(row.createdAt)}</td>
-                <td className="actions">
-                  <button onClick={() => verify(String(row.filename))}>Verify</button>
-                  <button onClick={() => stageRestore(String(row.filename))}>Stage restore</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable columns={backupColumns} rows={query.data ?? []} keyField="filename" emptyText="No backups" />
     </div>
   );
 }
