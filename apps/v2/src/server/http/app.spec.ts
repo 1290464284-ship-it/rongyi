@@ -358,6 +358,61 @@ describe('HTTP app', () => {
     expect(bossNav.body.data.permissions).toContain('system');
   });
 
+  it('audits forbidden attempts', async () => {
+    await request(app)
+      .post('/api/v2/admin/users')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ username: 'tech-audit-403', password: 'password123', name: 'Tech Audit 403', role: 'TECHNICIAN' })
+      .expect(201);
+    const login = await request(app)
+      .post('/api/v2/auth/login')
+      .send({ username: 'tech-audit-403', password: 'password123' })
+      .expect(200);
+    const techToken = login.body.data.token as string;
+    const techUserId = (db.prepare(`SELECT id FROM User WHERE username = 'tech-audit-403'`).get() as { id: string }).id;
+
+    const before = (db.prepare('SELECT COUNT(*) AS c FROM OperationLog').get() as { c: number }).c;
+    await request(app)
+      .post('/api/v2/follow-ups/batch-generate')
+      .set('Authorization', `Bearer ${techToken}`)
+      .send({ limit: 1 })
+      .expect(403);
+    const after = (db.prepare('SELECT COUNT(*) AS c FROM OperationLog').get() as { c: number }).c;
+    expect(after).toBe(before + 1);
+
+    const row = db.prepare(
+      `SELECT action, statusCode, userId FROM OperationLog ORDER BY createdAt DESC, rowid DESC LIMIT 1`,
+    ).get() as { action: string; statusCode: string | null; userId: string };
+    expect(row.action).toContain('POST /api/v2/follow-ups/batch-generate');
+    expect(row.statusCode).toBe('403');
+    expect(row.userId).toBe(techUserId);
+  });
+
+  it('does not audit GET requests', async () => {
+    const before = (db.prepare('SELECT COUNT(*) AS c FROM OperationLog').get() as { c: number }).c;
+    await request(app)
+      .get('/api/v2/resources/suppliers')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const after = (db.prepare('SELECT COUNT(*) AS c FROM OperationLog').get() as { c: number }).c;
+    expect(after).toBe(before);
+  });
+
+  it('records failed validation requests', async () => {
+    const before = (db.prepare('SELECT COUNT(*) AS c FROM OperationLog').get() as { c: number }).c;
+    await request(app)
+      .post('/api/v2/resources/suppliers')
+      .set('Authorization', `Bearer ${token}`)
+      .send({})
+      .expect(400);
+    const after = (db.prepare('SELECT COUNT(*) AS c FROM OperationLog').get() as { c: number }).c;
+    expect(after).toBe(before + 1);
+    const row = db.prepare(
+      `SELECT action, statusCode FROM OperationLog ORDER BY createdAt DESC, rowid DESC LIMIT 1`,
+    ).get() as { action: string; statusCode: string | null };
+    expect(row.statusCode).toBe('400');
+  });
+
   it('rejects malformed print query data with a validation error', async () => {
     const response = await request(app)
       .get('/api/v2/print?kind=report&data=%7B%22bad%22')

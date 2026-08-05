@@ -71,14 +71,15 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
     ip?: string | null;
     traceId?: string | null;
     clinicId?: string | null;
+    statusCode?: number | null;
   }> = [];
   const AUDIT_FLUSH_INTERVAL = 1000;
   const AUDIT_BUFFER_MAX = 50;
   const insertAuditStmt = db.prepare(
     `INSERT INTO OperationLog (
        id, userId, userName, action, target, detail, ip, traceId,
-       clinicId, createdAt, updatedAt, deletedAt
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+       clinicId, statusCode, createdAt, updatedAt, deletedAt
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
   );
   const flushAudit = db.transaction((rows: typeof auditBuffer) => {
     for (const input of rows) {
@@ -93,6 +94,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
         input.ip ?? null,
         input.traceId ?? null,
         input.clinicId ?? null,
+        input.statusCode == null ? null : String(input.statusCode),
         now,
         now,
       );
@@ -127,6 +129,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
         input.ip ?? null,
         input.traceId ?? null,
         input.clinicId ?? null,
+        input.statusCode == null ? null : String(input.statusCode),
         now,
         now,
       );
@@ -260,17 +263,11 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
   registerPublicAuthRoutes(app, deps);
 
   app.use('/api/v2', authMiddleware(deps.authService));
-  app.use('/api/v2', (req, res, next) => {
-    const rule = routeRoleRules.find((candidate) => candidate.pattern.test(req.originalUrl));
-    if (rule) {
-      roleMiddleware(...rule.roles)(req, res, next);
-      return;
-    }
-    next(new AppError('FORBIDDEN', 'Insufficient permissions', 403));
-  });
+  // 审计中间件必须位于角色规则中间件之前：角色规则短路 403（next(error) 跳过
+  // 后继中间件）时，只有已注册的 res.on('finish') 监听才能捕获越权尝试。
   app.use('/api/v2', (req, res, next) => {
     res.on('finish', () => {
-      if (req.method === 'GET' || res.statusCode >= 400) return;
+      if (req.method === 'GET') return;
       const params = req.params as Record<string, string | undefined>;
       const auditOverride = res.locals.audit as
         | { action?: string; target?: string | null; detail?: string | null; clinicId?: string | null }
@@ -285,9 +282,18 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
         ip: req.ip,
         traceId: req.traceId,
         clinicId: auditOverride?.clinicId ?? req.context!.clinicId,
+        statusCode: res.statusCode,
       });
     });
     next();
+  });
+  app.use('/api/v2', (req, res, next) => {
+    const rule = routeRoleRules.find((candidate) => candidate.pattern.test(req.originalUrl));
+    if (rule) {
+      roleMiddleware(...rule.roles)(req, res, next);
+      return;
+    }
+    next(new AppError('FORBIDDEN', 'Insufficient permissions', 403));
   });
 
   registerReadRoutes(app, {

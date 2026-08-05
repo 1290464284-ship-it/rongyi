@@ -757,6 +757,18 @@ export const migrations: Migration[] = [
       db.exec(`CREATE TABLE IF NOT EXISTS MigrationRepairLog (id TEXT PRIMARY KEY, tableName TEXT NOT NULL, field TEXT NOT NULL, recordId TEXT, beforeValue TEXT, afterValue TEXT, reason TEXT NOT NULL, createdAt TEXT DEFAULT CURRENT_TIMESTAMP)`);
     },
   },
+  {
+    version: 122,
+    name: 'v2-operationlog-status-code',
+    up(db) {
+      const columns = new Set(
+        (db.prepare('PRAGMA table_info(OperationLog)').all() as Array<{ name: string }>).map((column) => column.name),
+      );
+      if (!columns.has('statusCode')) {
+        db.exec('ALTER TABLE OperationLog ADD COLUMN statusCode TEXT');
+      }
+    },
+  },
 ];
 
 function ensureForeignKeys(
