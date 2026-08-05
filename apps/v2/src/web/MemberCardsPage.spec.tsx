@@ -40,7 +40,7 @@ describe('MemberCardsPage', () => {
     expect(await screen.findByText('C001')).toBeDefined();
 
     fireEvent.click(screen.getByText('新建会员卡'));
-await waitFor(() => {
+    await waitFor(() => {
       expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
     });
     fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
@@ -51,6 +51,13 @@ await waitFor(() => {
 
     await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith('/member-cards', expect.objectContaining({ method: 'POST' }));
+    });
+    const createCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/member-cards');
+    expect(JSON.parse(String(createCall?.[1]?.body))).toMatchObject({
+      patientId: 'p-1',
+      cardNo: 'C002',
+      status: 'ACTIVE',
+      level: 'SVIP',
     });
     expect(await screen.findByText('会员卡已创建')).toBeDefined();
   });
@@ -68,6 +75,8 @@ await waitFor(() => {
         body: expect.stringContaining('"amount":5000'),
       }));
     });
+    expect((await screen.findAllByText('会员卡操作已完成')).length).toBeGreaterThan(0);
+    await screen.findByText('C001');
 
     fireEvent.click(screen.getByRole('button', { name: '消费' }));
     fireEvent.change(screen.getByLabelText('金额（元）'), { target: { value: '20' } });
@@ -77,6 +86,7 @@ await waitFor(() => {
         body: expect.stringContaining('"amount":2000'),
       }));
     });
+    await screen.findByText('C001');
 
     fireEvent.click(screen.getByRole('button', { name: '积分' }));
     fireEvent.change(screen.getByLabelText('积分数量'), { target: { value: '5' } });
@@ -86,6 +96,7 @@ await waitFor(() => {
         body: expect.stringContaining('"points":5'),
       }));
     });
+    expect((await screen.findAllByText('会员卡操作已完成')).length).toBeGreaterThan(0);
   });
 
   it('validates create and action inputs', async () => {
@@ -101,5 +112,18 @@ await waitFor(() => {
     fireEvent.click(screen.getByRole('button', { name: '充值' }));
     fireEvent.click(screen.getByText('确认'));
     expect(await screen.findByText('请输入有效金额')).toBeDefined();
+  });
+
+  it('renders formatted card labels and rejects invalid points', async () => {
+    mockData();
+    render(<MemberCardsPage />, { wrapper });
+    expect(await screen.findByText('¥10.00')).toBeDefined();
+    expect(screen.getByText('启用')).toBeDefined();
+    expect(screen.getByText('VIP会员')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: '积分' }));
+    fireEvent.change(screen.getByLabelText('积分数量'), { target: { value: '0' } });
+    fireEvent.click(screen.getByText('确认'));
+    expect(await screen.findByText('请输入有效积分')).toBeDefined();
   });
 });

@@ -157,6 +157,14 @@ describe('CrudPage', () => {
     expect(await screen.findByText('删除成功')).toBeDefined();
   });
 
+  it('delete: uses a custom deleteTitle when provided', async () => {
+    mockData();
+    render(<CrudPage<ThingRow, ThingForm> {...baseProps()} deleteTitle="删除物品" />, { wrapper });
+    await screen.findByText('物品甲');
+    fireEvent.click(screen.getAllByText('删除')[0]);
+    expect(await screen.findByText('删除物品')).toBeDefined();
+  });
+
   it('searches with a debounce and resets the page to 1', async () => {
     mockData();
     render(<CrudPage<ThingRow, ThingForm> {...baseProps()} />, { wrapper });

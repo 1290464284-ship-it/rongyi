@@ -35,13 +35,13 @@ describe('TreatmentsPage', () => {
     vi.mocked(apiRequest).mockReset();
   });
 
-  it('creates and transitions treatments', async () => {
+  it('creates a treatment with cents payload and transitions status', async () => {
     mockData();
     render(<TreatmentsPage />, { wrapper });
     expect(await screen.findByText('补牙')).toBeDefined();
 
     fireEvent.click(screen.getByText('新建治疗'));
-await waitFor(() => {
+    await waitFor(() => {
       expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
     });
     fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
@@ -55,12 +55,32 @@ await waitFor(() => {
     await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith('/resources/treatments', expect.objectContaining({ method: 'POST' }));
     });
+    const postCall = vi.mocked(apiRequest).mock.calls.find(
+      (call) => call[0] === '/resources/treatments' && (call[1] as RequestInit)?.method === 'POST',
+    );
+    const body = JSON.parse(String((postCall?.[1] as RequestInit)?.body));
+    expect(body).toMatchObject({
+      patientId: 'p-1',
+      doctorId: 'd-1',
+      name: '洁牙',
+      category: 'GENERAL',
+      price: 20000,
+      quantity: 1,
+      teethNumbers: ['11', '21'],
+      status: 'PLANNED',
+    });
+    expect(body.code).toMatch(/^T-\d+$/);
+    expect(body.plannedDate).toBeUndefined();
     expect(await screen.findByText('治疗记录已创建')).toBeDefined();
 
     fireEvent.change(await screen.findByLabelText('变更治疗状态'), { target: { value: 'IN_PROGRESS' } });
     await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/treatments/t-1/status', expect.objectContaining({ method: 'PATCH' }));
+      expect(apiRequest).toHaveBeenCalledWith('/treatments/t-1/status', expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'IN_PROGRESS' }),
+      }));
     });
+    expect(await screen.findByText('治疗状态已更新')).toBeDefined();
   });
 
   it('validates required treatment fields', async () => {

@@ -41,7 +41,7 @@ describe('ProcessingOrdersPage', () => {
     expect(await screen.findByText('PROC-1')).toBeDefined();
 
     fireEvent.click(screen.getByText('新建加工单'));
-await waitFor(() => {
+    await waitFor(() => {
       expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
     });
     fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
@@ -58,14 +58,25 @@ await waitFor(() => {
     });
     const createCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/processing-orders');
     const createBody = JSON.parse(String(createCall?.[1]?.body));
-    expect(createBody.items[0].unitPrice).toBe(50000);
-    expect(createBody.totalFee).toBe(50000);
+    expect(createBody).toMatchObject({
+      patientId: 'p-1',
+      number: 'PROC-NEW',
+      teethNumbers: ['11', '21'],
+      items: [{ name: '烤瓷冠', quantity: 1, unitPrice: 50000 }],
+      totalFee: 50000,
+    });
+    expect(createBody.doctorId).toBeUndefined();
+    expect(createBody.requestId).toBeTruthy();
     expect(await screen.findByText('加工单已创建')).toBeDefined();
 
     fireEvent.change(await screen.findByLabelText('变更加工状态'), { target: { value: 'SENT' } });
     await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/processing-orders/proc-1/status', expect.objectContaining({ method: 'PATCH' }));
+      expect(apiRequest).toHaveBeenCalledWith('/processing-orders/proc-1/status', expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'SENT' }),
+      }));
     });
+    expect(await screen.findByText('加工单状态已更新')).toBeDefined();
   });
 
   it('validates required processing fields', async () => {
@@ -75,5 +86,32 @@ await waitFor(() => {
     fireEvent.click(screen.getByText('新建加工单'));
     fireEvent.click(screen.getByText('保存'));
     expect(await screen.findByText('请选择患者、填写加工单号并至少添加一条有效明细')).toBeDefined();
+  });
+
+  it('uses the manual total fee when provided', async () => {
+    mockData();
+    render(<ProcessingOrdersPage />, { wrapper });
+    await screen.findByText('PROC-1');
+
+    fireEvent.click(screen.getByText('新建加工单'));
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    fireEvent.change(screen.getByLabelText('加工单号'), { target: { value: 'PROC-FEE' } });
+    fireEvent.change(screen.getByLabelText('加工项目'), { target: { value: '烤瓷冠' } });
+    fireEvent.change(screen.getByLabelText('加工数量'), { target: { value: '1' } });
+    fireEvent.change(screen.getByLabelText('加工单价'), { target: { value: '500' } });
+    fireEvent.change(screen.getByLabelText('总费用'), { target: { value: '700' } });
+    vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'proc-fee' });
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/processing-orders', expect.objectContaining({ method: 'POST' }));
+    });
+    const createCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/processing-orders');
+    const createBody = JSON.parse(String(createCall?.[1]?.body));
+    expect(createBody.totalFee).toBe(70000);
+    expect(createBody.items[0].unitPrice).toBe(50000);
   });
 });

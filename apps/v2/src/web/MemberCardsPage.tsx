@@ -1,8 +1,7 @@
-import { FormEvent, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { FormEvent, useRef, useState } from 'react';
 import { apiRequest } from './api';
-import type { Page } from './types';
-import { DataTable, Dialog, EmptyState, LoadingState, PageError, SearchableSelect } from './components';
+import { CrudPage } from './CrudPage';
+import { Dialog, SearchableSelect, type DataTableColumn } from './components';
 import { formatMoney, toCents } from './format';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
@@ -21,6 +20,12 @@ const LEVEL_LABELS: Record<string, string> = {
   SVIP: 'SVIP会员',
 };
 
+const ACTION_TITLES: Record<string, string> = {
+  RECHARGE: '会员卡充值',
+  CONSUME: '会员卡消费',
+  POINTS: '积分调整',
+};
+
 interface CardRow extends Record<string, unknown> {
   id: string;
   cardNo?: string | null;
@@ -32,59 +37,125 @@ interface CardRow extends Record<string, unknown> {
   level?: string | null;
 }
 
+interface CardForm {
+  patientId: string;
+  cardNo: string;
+  status: string;
+  level: string;
+}
+
+const emptyForm: CardForm = {
+  patientId: '',
+  cardNo: '',
+  status: 'ACTIVE',
+  level: 'NORMAL',
+};
+
+const cardColumns: DataTableColumn<CardRow>[] = [
+  { key: 'cardNo', label: '卡号' },
+  { key: 'patientId', label: '患者', render: (row) => row.patientIdLabel ?? row.patientId ?? '' },
+  { key: 'balance', label: '余额', render: (row) => formatMoney(row.balance) },
+  { key: 'points', label: '积分' },
+  { key: 'status', label: '状态', render: (row) => STATUS_LABELS[String(row.status ?? '')] ?? String(row.status ?? '') },
+  { key: 'level', label: '等级', render: (row) => LEVEL_LABELS[String(row.level ?? '')] ?? String(row.level ?? '') },
+];
+
 export function MemberCardsPage() {
   const { showToast } = useToast();
-  const [showCreate, setShowCreate] = useState(false);
-  const [patientId, setPatientId] = useState('');
-  const [cardNo, setCardNo] = useState('');
-  const [status, setStatus] = useState('ACTIVE');
-  const [level, setLevel] = useState('NORMAL');
   const [actionTarget, setActionTarget] = useState<string | null>(null);
   const [actionKind, setActionKind] = useState<'RECHARGE' | 'CONSUME' | 'POINTS' | null>(null);
   const [actionValue, setActionValue] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const [actionBusy, setActionBusy] = useState(false);
+  const reloadRef = useRef<(() => Promise<unknown>) | null>(null);
 
-  const query = useQuery({
-    queryKey: ['member-cards'],
-    queryFn: () => apiRequest<Page<CardRow>>('/resources/memberCards?page=1&pageSize=100'),
-  });
+  return (
+    <>
+      <CrudPage<CardRow, CardForm>
+        title="会员卡管理"
+        createLabel="新建会员卡"
+        emptyMessage="暂无会员卡"
+        queryKey={['member-cards']}
+        endpoint="/resources/memberCards"
+        pageSize={100}
+        initialForm={emptyForm}
+        validate={(form) => (!form.patientId || !form.cardNo.trim() ? '请选择患者并填写卡号' : null)}
+        submitOverride={async ({ form }) => {
+          await apiRequest('/member-cards', {
+            method: 'POST',
+            body: JSON.stringify({ patientId: form.patientId, cardNo: form.cardNo.trim(), status: form.status, level: form.level }),
+          });
+        }}
+        messages={{ create: '会员卡已创建' }}
+        errorMessages={{ create: '创建会员卡失败' }}
+        columns={cardColumns}
+        rowActions={(row, ctx) => {
+          reloadRef.current = ctx.reload;
+          return (
+          <>
+            <button onClick={() => openAction(row.id, 'RECHARGE')}>充值</button>
+            <button onClick={() => openAction(row.id, 'CONSUME')}>消费</button>
+            <button onClick={() => openAction(row.id, 'POINTS')}>积分</button>
+          </>);
+        }}
+        renderForm={(ctx) => (
+          <>
+            <label>
+              患者
+              <SearchableSelect resource="patients" value={ctx.form.patientId} onChange={(id) => ctx.update({ patientId: id })} ariaLabel="患者" placeholder="选择患者" />
+            </label>
+            <label>
+              卡号
+              <input value={ctx.form.cardNo} onChange={(event) => ctx.update({ cardNo: event.target.value })} />
+            </label>
+            <label>
+              状态
+              <select value={ctx.form.status} onChange={(event) => ctx.update({ status: event.target.value })}>
+                {Object.entries(STATUS_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              等级
+              <select value={ctx.form.level} onChange={(event) => ctx.update({ level: event.target.value })}>
+                {Object.entries(LEVEL_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </label>
+          </>
+        )}
+      />
+      <Dialog open={actionKind !== null} title={ACTION_TITLES[actionKind ?? 'RECHARGE']} onClose={() => setActionKind(null)}>
+        <form onSubmit={runAction}>
+          <label>
+            {actionKind === 'POINTS' ? '积分数量' : '金额（元）'}
+            <input type="number" min="0" value={actionValue} onChange={(event) => setActionValue(event.target.value)} />
+          </label>
+          <div className="modal-actions">
+            <button type="button" onClick={() => setActionKind(null)}>取消</button>
+            <button type="submit" disabled={actionBusy}>确认</button>
+          </div>
+        </form>
+      </Dialog>
+    </>
+  );
 
-  if (query.isLoading) return <LoadingState />;
-  if (query.error) return <PageError message={(query.error as Error).message} />;
-
-  async function create(event: FormEvent) {
-    event.preventDefault();
-    if (submitting || !patientId || !cardNo.trim()) {
-      showToast('请选择患者并填写卡号', 'error');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await apiRequest('/member-cards', {
-        method: 'POST',
-        body: JSON.stringify({ patientId, cardNo: cardNo.trim(), status, level }),
-      });
-      showToast('会员卡已创建', 'success');
-      setShowCreate(false);
-      setPatientId('');
-      setCardNo('');
-      await query.refetch();
-    } catch (error) {
-      showToast(errorMessage(error, '创建会员卡失败'), 'error');
-    } finally {
-      setSubmitting(false);
-    }
+  function openAction(id: string, kind: 'RECHARGE' | 'CONSUME' | 'POINTS') {
+    setActionTarget(id);
+    setActionKind(kind);
+    setActionValue('');
   }
 
   async function runAction(event: FormEvent) {
     event.preventDefault();
-    if (!actionTarget || !actionKind || submitting) return;
+    if (!actionTarget || !actionKind || actionBusy) return;
     const value = Number(actionValue || 0);
     if (actionKind === 'POINTS' ? !Number.isInteger(value) || value === 0 : value <= 0) {
       showToast(actionKind === 'POINTS' ? '请输入有效积分' : '请输入有效金额', 'error');
       return;
     }
-    setSubmitting(true);
+    setActionBusy(true);
     try {
       const body = actionKind === 'POINTS'
         ? { points: value, requestId: crypto.randomUUID() }
@@ -99,103 +170,11 @@ export function MemberCardsPage() {
       setActionTarget(null);
       setActionKind(null);
       setActionValue('');
-      await query.refetch();
+      await reloadRef.current?.();
     } catch (error) {
       showToast(errorMessage(error, '会员卡操作失败'), 'error');
     } finally {
-      setSubmitting(false);
+      setActionBusy(false);
     }
   }
-
-  const columns = [
-    { key: 'cardNo', label: '卡号' },
-    { key: 'patientId', label: '患者', render: (row: CardRow) => row.patientIdLabel ?? row.patientId ?? '' },
-    { key: 'balance', label: '余额', render: (row: CardRow) => formatMoney(row.balance) },
-    { key: 'points', label: '积分' },
-    { key: 'status', label: '状态', render: (row: CardRow) => STATUS_LABELS[String(row.status ?? '')] ?? String(row.status ?? '') },
-    { key: 'level', label: '等级', render: (row: CardRow) => LEVEL_LABELS[String(row.level ?? '')] ?? String(row.level ?? '') },
-    {
-      key: 'actions',
-      label: '操作',
-      render: (row: CardRow) => (
-        <>
-          <button onClick={() => openAction(row.id, 'RECHARGE')}>充值</button>
-          <button onClick={() => openAction(row.id, 'CONSUME')}>消费</button>
-          <button onClick={() => openAction(row.id, 'POINTS')}>积分</button>
-        </>
-      ),
-    },
-  ];
-
-  function openAction(id: string, kind: 'RECHARGE' | 'CONSUME' | 'POINTS') {
-    setActionTarget(id);
-    setActionKind(kind);
-    setActionValue('');
-  }
-
-  return (
-    <div className="page">
-      <div className="page-head">
-        <h1>会员卡管理</h1>
-        <button onClick={() => setShowCreate(true)}>新建会员卡</button>
-      </div>
-      {query.data?.items.length ? (
-        <DataTable columns={columns} rows={query.data.items} keyField="id" />
-      ) : (
-        <EmptyState message="暂无会员卡" />
-      )}
-
-      <Dialog open={showCreate} title="新建会员卡" onClose={() => setShowCreate(false)}>
-        <form onSubmit={create}>
-          <label>
-            患者
-            <SearchableSelect resource="patients" value={patientId} onChange={setPatientId} ariaLabel="患者" placeholder="选择患者" />
-          </label>
-          <label>
-            卡号
-            <input value={cardNo} onChange={(event) => setCardNo(event.target.value)} />
-          </label>
-          <label>
-            状态
-            <select value={status} onChange={(event) => setStatus(event.target.value)}>
-              {Object.entries(STATUS_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            等级
-            <select value={level} onChange={(event) => setLevel(event.target.value)}>
-              {Object.entries(LEVEL_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </select>
-          </label>
-          <div className="modal-actions">
-            <button type="button" onClick={() => setShowCreate(false)}>取消</button>
-            <button type="submit" disabled={submitting}>保存</button>
-          </div>
-        </form>
-      </Dialog>
-
-      <Dialog open={actionKind !== null} title={ACTION_TITLES[actionKind ?? 'RECHARGE']} onClose={() => setActionKind(null)}>
-        <form onSubmit={runAction}>
-          <label>
-            {actionKind === 'POINTS' ? '积分数量' : '金额（元）'}
-            <input type="number" min="0" value={actionValue} onChange={(event) => setActionValue(event.target.value)} />
-          </label>
-          <div className="modal-actions">
-            <button type="button" onClick={() => setActionKind(null)}>取消</button>
-            <button type="submit" disabled={submitting}>确认</button>
-          </div>
-        </form>
-      </Dialog>
-    </div>
-  );
 }
-
-const ACTION_TITLES: Record<string, string> = {
-  RECHARGE: '会员卡充值',
-  CONSUME: '会员卡消费',
-  POINTS: '积分调整',
-};

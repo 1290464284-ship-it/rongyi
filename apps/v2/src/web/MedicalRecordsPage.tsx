@@ -1,12 +1,10 @@
-import { FormEvent, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
+import { CrudPage } from './CrudPage';
+import { SearchableSelect, type DataTableColumn } from './components';
 import type { Page } from './types';
-import { DataTable, Dialog, EmptyState, LoadingState, PageError, SearchableSelect } from './components';
-import { errorMessage } from './messages';
-import { useToast } from './toast-context';
 
-type MedicalRecordRow = Record<string, unknown> & {
+interface MedicalRecordRow extends Record<string, unknown> {
   id: string;
   patientId?: string | null;
   patientIdLabel?: string | null;
@@ -15,7 +13,7 @@ type MedicalRecordRow = Record<string, unknown> & {
   category?: string | null;
   diagnosis?: string | null;
   status?: string | null;
-};
+}
 
 interface RecordForm {
   patientId: string;
@@ -55,12 +53,51 @@ const emptyForm: RecordForm = {
   signature: '',
 };
 
-export function MedicalRecordsPage() {
-  const { showToast } = useToast();
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState<RecordForm>(emptyForm);
-  const [submitting, setSubmitting] = useState(false);
+const recordColumns: DataTableColumn<MedicalRecordRow>[] = [
+  { key: 'patientId', label: '患者', render: (row) => row.patientIdLabel ?? row.patientId ?? '' },
+  { key: 'doctorId', label: '医生', render: (row) => row.doctorIdLabel ?? row.doctorId ?? '' },
+  { key: 'category', label: '分类' },
+  { key: 'diagnosis', label: '诊断' },
+  { key: 'status', label: '状态' },
+];
 
+export function MedicalRecordsPage() {
+  return (
+    <CrudPage<MedicalRecordRow, RecordForm>
+      title="病历管理"
+      createLabel="新建病历"
+      emptyMessage="暂无病历"
+      queryKey={['medical-records']}
+      endpoint="/resources/medicalRecords"
+      initialForm={emptyForm}
+      validate={(form) => (!form.patientId || !form.doctorId ? '请选择患者和医生' : null)}
+      toPayload={(form) => ({
+        patientId: form.patientId,
+        visitId: form.visitId || undefined,
+        doctorId: form.doctorId,
+        category: form.category || undefined,
+        status: form.status,
+        isTemplate: form.isTemplate,
+        chiefComplaint: form.chiefComplaint || undefined,
+        presentIllness: form.presentIllness || undefined,
+        pastHistory: form.pastHistory || undefined,
+        allergyHistory: form.allergyHistory || undefined,
+        examination: form.examination || undefined,
+        diagnosis: form.diagnosis || undefined,
+        treatmentPlan: form.treatmentPlan || undefined,
+        teethInvolved: splitList(form.teethInvolved),
+        images: splitList(form.images),
+        signature: form.signature || undefined,
+      })}
+      messages={{ create: '病历已创建' }}
+      errorMessages={{ create: '创建病历失败' }}
+      columns={recordColumns}
+      renderForm={(ctx) => <RecordFormFields form={ctx.form} update={ctx.update} />}
+    />
+  );
+}
+
+function RecordFormFields({ form, update }: { form: RecordForm; update: (patch: Partial<RecordForm>) => void }) {
   const doctors = useQuery({
     queryKey: ['record-doctors'],
     queryFn: () => apiRequest<Array<Record<string, unknown>>>('/doctors'),
@@ -69,156 +106,83 @@ export function MedicalRecordsPage() {
     queryKey: ['record-visits'],
     queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/visits?page=1&pageSize=100'),
   });
-  const query = useQuery({
-    queryKey: ['medical-records'],
-    queryFn: () => apiRequest<Page<MedicalRecordRow>>('/resources/medicalRecords?page=1&pageSize=50'),
-  });
-
-  if (query.isLoading) return <LoadingState />;
-  if (query.error) return <PageError message={(query.error as Error).message} />;
-
-  async function create(event: FormEvent) {
-    event.preventDefault();
-    if (submitting || !form.patientId || !form.doctorId) {
-      showToast('请选择患者和医生', 'error');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await apiRequest('/resources/medicalRecords', {
-        method: 'POST',
-        body: JSON.stringify({
-          patientId: form.patientId,
-          visitId: form.visitId || undefined,
-          doctorId: form.doctorId,
-          category: form.category || undefined,
-          status: form.status,
-          isTemplate: form.isTemplate,
-          chiefComplaint: form.chiefComplaint || undefined,
-          presentIllness: form.presentIllness || undefined,
-          pastHistory: form.pastHistory || undefined,
-          allergyHistory: form.allergyHistory || undefined,
-          examination: form.examination || undefined,
-          diagnosis: form.diagnosis || undefined,
-          treatmentPlan: form.treatmentPlan || undefined,
-          teethInvolved: splitList(form.teethInvolved),
-          images: splitList(form.images),
-          signature: form.signature || undefined,
-        }),
-      });
-      showToast('病历已创建', 'success');
-      setShowForm(false);
-      await query.refetch();
-    } catch (error) {
-      showToast(errorMessage(error, '创建病历失败'), 'error');
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  const columns = [
-    { key: 'patientId', label: '患者', render: (row: MedicalRecordRow) => row.patientIdLabel ?? row.patientId ?? '' },
-    { key: 'doctorId', label: '医生', render: (row: MedicalRecordRow) => row.doctorIdLabel ?? row.doctorId ?? '' },
-    { key: 'category', label: '分类' },
-    { key: 'diagnosis', label: '诊断' },
-    { key: 'status', label: '状态' },
-  ];
-
   return (
-    <div className="page">
-      <div className="page-head">
-        <h1>病历管理</h1>
-        <button onClick={() => setShowForm(true)}>新建病历</button>
-      </div>
-      {query.data?.items.length ? (
-        <DataTable columns={columns} rows={query.data.items} keyField="id" />
-      ) : (
-        <EmptyState message="暂无病历" />
-      )}
-
-      <Dialog open={showForm} title="新建病历" onClose={() => setShowForm(false)}>
-        <form onSubmit={create}>
-          <label>
-            患者
-            <SearchableSelect resource="patients" value={form.patientId} onChange={(id) => setForm((current) => ({ ...current, patientId: id }))} ariaLabel="患者" placeholder="选择患者" />
-          </label>
-          <label>
-            医生
-            <select value={form.doctorId} onChange={(event) => setForm((current) => ({ ...current, doctorId: event.target.value }))}>
-              <option value="">选择医生</option>
-              {doctors.data?.map((row) => (
-                <option key={String(row.id)} value={String(row.id)}>{String(row.name ?? row.id)}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            关联就诊
-            <select value={form.visitId} onChange={(event) => setForm((current) => ({ ...current, visitId: event.target.value }))}>
-              <option value="">不关联</option>
-              {visits.data?.items.map((row) => (
-                <option key={String(row.id)} value={String(row.id)}>{String(row.id)}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            分类
-            <input value={form.category} onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))} />
-          </label>
-          <label>
-            状态
-            <input value={form.status} onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))} />
-          </label>
-          <label>
-            <input type="checkbox" checked={form.isTemplate} onChange={(event) => setForm((current) => ({ ...current, isTemplate: event.target.checked }))} />
-            作为模板
-          </label>
-          <label>
-            主诉
-            <textarea value={form.chiefComplaint} onChange={(event) => setForm((current) => ({ ...current, chiefComplaint: event.target.value }))} />
-          </label>
-          <label>
-            现病史
-            <textarea value={form.presentIllness} onChange={(event) => setForm((current) => ({ ...current, presentIllness: event.target.value }))} />
-          </label>
-          <label>
-            既往史
-            <textarea value={form.pastHistory} onChange={(event) => setForm((current) => ({ ...current, pastHistory: event.target.value }))} />
-          </label>
-          <label>
-            过敏史
-            <textarea value={form.allergyHistory} onChange={(event) => setForm((current) => ({ ...current, allergyHistory: event.target.value }))} />
-          </label>
-          <label>
-            检查所见
-            <textarea value={form.examination} onChange={(event) => setForm((current) => ({ ...current, examination: event.target.value }))} />
-          </label>
-          <label>
-            诊断
-            <textarea value={form.diagnosis} onChange={(event) => setForm((current) => ({ ...current, diagnosis: event.target.value }))} />
-          </label>
-          <label>
-            治疗计划
-            <textarea value={form.treatmentPlan} onChange={(event) => setForm((current) => ({ ...current, treatmentPlan: event.target.value }))} />
-          </label>
-          <label>
-            涉及牙位（逗号分隔）
-            <input value={form.teethInvolved} onChange={(event) => setForm((current) => ({ ...current, teethInvolved: event.target.value }))} />
-          </label>
-          <label>
-            图片 URL（逗号分隔）
-            <input value={form.images} onChange={(event) => setForm((current) => ({ ...current, images: event.target.value }))} />
-          </label>
-          <label>
-            签名
-            <input value={form.signature} onChange={(event) => setForm((current) => ({ ...current, signature: event.target.value }))} />
-          </label>
-          <div className="modal-actions">
-            <button type="button" onClick={() => setShowForm(false)}>取消</button>
-            <button type="submit" disabled={submitting}>{submitting ? '保存中...' : '保存'}</button>
-          </div>
-        </form>
-      </Dialog>
-    </div>
+    <>
+      <label>
+        患者
+        <SearchableSelect resource="patients" value={form.patientId} onChange={(id) => update({ patientId: id })} ariaLabel="患者" placeholder="选择患者" />
+      </label>
+      <label>
+        医生
+        <select value={form.doctorId} onChange={(event) => update({ doctorId: event.target.value })}>
+          <option value="">选择医生</option>
+          {doctors.data?.map((row) => (
+            <option key={String(row.id)} value={String(row.id)}>{String(row.name ?? row.id)}</option>
+          ))}
+        </select>
+      </label>
+      <label>
+        关联就诊
+        <select value={form.visitId} onChange={(event) => update({ visitId: event.target.value })}>
+          <option value="">不关联</option>
+          {visits.data?.items.map((row) => (
+            <option key={String(row.id)} value={String(row.id)}>{String(row.id)}</option>
+          ))}
+        </select>
+      </label>
+      <label>
+        分类
+        <input value={form.category} onChange={(event) => update({ category: event.target.value })} />
+      </label>
+      <label>
+        状态
+        <input value={form.status} onChange={(event) => update({ status: event.target.value })} />
+      </label>
+      <label>
+        <input type="checkbox" checked={form.isTemplate} onChange={(event) => update({ isTemplate: event.target.checked })} />
+        作为模板
+      </label>
+      <label>
+        主诉
+        <textarea value={form.chiefComplaint} onChange={(event) => update({ chiefComplaint: event.target.value })} />
+      </label>
+      <label>
+        现病史
+        <textarea value={form.presentIllness} onChange={(event) => update({ presentIllness: event.target.value })} />
+      </label>
+      <label>
+        既往史
+        <textarea value={form.pastHistory} onChange={(event) => update({ pastHistory: event.target.value })} />
+      </label>
+      <label>
+        过敏史
+        <textarea value={form.allergyHistory} onChange={(event) => update({ allergyHistory: event.target.value })} />
+      </label>
+      <label>
+        检查所见
+        <textarea value={form.examination} onChange={(event) => update({ examination: event.target.value })} />
+      </label>
+      <label>
+        诊断
+        <textarea value={form.diagnosis} onChange={(event) => update({ diagnosis: event.target.value })} />
+      </label>
+      <label>
+        治疗计划
+        <textarea value={form.treatmentPlan} onChange={(event) => update({ treatmentPlan: event.target.value })} />
+      </label>
+      <label>
+        涉及牙位（逗号分隔）
+        <input value={form.teethInvolved} onChange={(event) => update({ teethInvolved: event.target.value })} />
+      </label>
+      <label>
+        图片 URL（逗号分隔）
+        <input value={form.images} onChange={(event) => update({ images: event.target.value })} />
+      </label>
+      <label>
+        签名
+        <input value={form.signature} onChange={(event) => update({ signature: event.target.value })} />
+      </label>
+    </>
   );
 }
 

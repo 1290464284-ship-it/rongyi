@@ -1,10 +1,7 @@
-import { FormEvent, useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import { apiRequest, getApiOrigin, uploadFile } from './api';
-import type { Page } from './types';
-import { DataTable, Dialog, EmptyState, LoadingState, PageError, SearchableSelect } from './components';
-import { errorMessage } from './messages';
-import { useToast } from './toast-context';
+import { CrudPage } from './CrudPage';
+import { SearchableSelect, type DataTableColumn } from './components';
 
 interface CephalometricRow extends Record<string, unknown> {
   id: string;
@@ -33,17 +30,8 @@ const emptyForm: CephalometricForm = {
 };
 
 export function CephalometricPage() {
-  const { showToast } = useToast();
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState<CephalometricForm>(emptyForm);
   const [file, setFile] = useState<File | null>(null);
-  const [submitting, setSubmitting] = useState(false);
   const [apiOrigin, setApiOrigin] = useState('');
-
-  const query = useQuery({
-    queryKey: ['cephalometric'],
-    queryFn: () => apiRequest<Page<CephalometricRow>>('/resources/cephalometricCases?page=1&pageSize=50'),
-  });
 
   useEffect(() => {
     let cancelled = false;
@@ -55,110 +43,109 @@ export function CephalometricPage() {
     };
   }, []);
 
-  if (query.isLoading) return <LoadingState />;
-  if (query.error) return <PageError message={(query.error as Error).message} />;
+  return (
+    <CrudPage<CephalometricRow, CephalometricForm>
+      title="头影测量"
+      createLabel="新建测量"
+      emptyMessage="暂无头影测量"
+      queryKey={['cephalometric']}
+      endpoint="/resources/cephalometricCases"
+      initialForm={emptyForm}
+      validate={(form) => {
+        let parsedLandmarks: Record<string, unknown> = {};
+        let parsedMetrics: Record<string, unknown> = {};
+        try {
+          parsedLandmarks = JSON.parse(form.landmarksJson || '{}') as Record<string, unknown>;
+          parsedMetrics = JSON.parse(form.metricsJson || '{}') as Record<string, unknown>;
+        } catch {
+          return '标记点或测量结果必须是有效 JSON';
+        }
+        if (!form.patientId || (!file && !parsedLandmarks)) {
+          return '请选择患者并上传影像或填写标记点';
+        }
+        return null;
+      }}
+      submitOverride={async ({ form }) => {
+        const parsedLandmarks = JSON.parse(form.landmarksJson || '{}') as Record<string, unknown>;
+        const parsedMetrics = JSON.parse(form.metricsJson || '{}') as Record<string, unknown>;
+        const imageUrl = file ? (await uploadFile(file)).url : undefined;
+        await apiRequest('/resources/cephalometricCases', {
+          method: 'POST',
+          body: JSON.stringify({
+            patientId: form.patientId,
+            imageUrl: imageUrl ?? '',
+            landmarksJson: JSON.stringify(parsedLandmarks),
+            metricsJson: JSON.stringify(parsedMetrics),
+            templateId: form.templateId || undefined,
+            status: form.status,
+            remark: form.remark || undefined,
+          }),
+        });
+      }}
+      onAfterCreate={() => setFile(null)}
+      messages={{ create: '头影测量已创建' }}
+      errorMessages={{ create: '创建头影测量失败' }}
+      columns={cephalometricColumns(apiOrigin)}
+      renderForm={(ctx) => (
+        <CephalometricFormFields form={ctx.form} update={ctx.update} file={file} setFile={setFile} />
+      )}
+    />
+  );
+}
 
-  async function create(event: FormEvent) {
-    event.preventDefault();
-    let parsedLandmarks: Record<string, unknown> = {};
-    let parsedMetrics: Record<string, unknown> = {};
-    try {
-      parsedLandmarks = JSON.parse(form.landmarksJson || '{}') as Record<string, unknown>;
-      parsedMetrics = JSON.parse(form.metricsJson || '{}') as Record<string, unknown>;
-    } catch {
-      showToast('标记点或测量结果必须是有效 JSON', 'error');
-      return;
-    }
-    if (submitting || !form.patientId || (!file && !parsedLandmarks)) {
-      showToast('请选择患者并上传影像或填写标记点', 'error');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const imageUrl = file ? (await uploadFile(file)).url : undefined;
-      await apiRequest('/resources/cephalometricCases', {
-        method: 'POST',
-        body: JSON.stringify({
-          patientId: form.patientId,
-          imageUrl: imageUrl ?? '',
-          landmarksJson: JSON.stringify(parsedLandmarks),
-          metricsJson: JSON.stringify(parsedMetrics),
-          templateId: form.templateId || undefined,
-          status: form.status,
-          remark: form.remark || undefined,
-        }),
-      });
-      showToast('头影测量已创建', 'success');
-      setShowForm(false);
-      setFile(null);
-      await query.refetch();
-    } catch (error) {
-      showToast(errorMessage(error, '创建头影测量失败'), 'error');
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  const columns = [
-    { key: 'patientId', label: '患者', render: (row: CephalometricRow) => row.patientIdLabel ?? row.patientId ?? '' },
+function cephalometricColumns(apiOrigin: string): DataTableColumn<CephalometricRow>[] {
+  return [
+    { key: 'patientId', label: '患者', render: (row) => row.patientIdLabel ?? row.patientId ?? '' },
     { key: 'status', label: '状态' },
     {
       key: 'preview',
       label: '影像',
-      render: (row: CephalometricRow) => row.imageUrl
-        ? <img className="imaging-thumb" src={`${apiOrigin}${row.imageUrl}`} alt="头影影像" />
-        : '无影像',
+      render: (row) => (row.imageUrl ? <img className="imaging-thumb" src={`${apiOrigin}${row.imageUrl}`} alt="头影影像" /> : '无影像'),
     },
   ];
+}
 
+function CephalometricFormFields({
+  form,
+  update,
+  file,
+  setFile,
+}: {
+  form: CephalometricForm;
+  update: (patch: Partial<CephalometricForm>) => void;
+  file: File | null;
+  setFile: (file: File | null) => void;
+}) {
   return (
-    <div className="page">
-      <div className="page-head">
-        <h1>头影测量</h1>
-        <button onClick={() => setShowForm(true)}>新建测量</button>
-      </div>
-      {query.data?.items.length ? (
-        <DataTable columns={columns} rows={query.data.items} keyField="id" />
-      ) : (
-        <EmptyState message="暂无头影测量" />
-      )}
-
-      <Dialog open={showForm} title="新建头影测量" onClose={() => setShowForm(false)}>
-        <form onSubmit={create}>
-          <label>
-            患者
-            <SearchableSelect resource="patients" value={form.patientId} onChange={(id) => setForm((current) => ({ ...current, patientId: id }))} ariaLabel="患者" placeholder="选择患者" />
-          </label>
-          <label>
-            状态
-            <input value={form.status} onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))} />
-          </label>
-          <label>
-            模板 ID
-            <input value={form.templateId} onChange={(event) => setForm((current) => ({ ...current, templateId: event.target.value }))} />
-          </label>
-          <label>
-            影像文件
-            <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
-          </label>
-          <label>
-            标记点 JSON
-            <textarea value={form.landmarksJson} onChange={(event) => setForm((current) => ({ ...current, landmarksJson: event.target.value }))} />
-          </label>
-          <label>
-            测量结果 JSON
-            <textarea value={form.metricsJson} onChange={(event) => setForm((current) => ({ ...current, metricsJson: event.target.value }))} />
-          </label>
-          <label>
-            备注
-            <textarea value={form.remark} onChange={(event) => setForm((current) => ({ ...current, remark: event.target.value }))} />
-          </label>
-          <div className="modal-actions">
-            <button type="button" onClick={() => setShowForm(false)}>取消</button>
-            <button type="submit" disabled={submitting}>{submitting ? '保存中...' : '保存'}</button>
-          </div>
-        </form>
-      </Dialog>
-    </div>
+    <>
+      <label>
+        患者
+        <SearchableSelect resource="patients" value={form.patientId} onChange={(id) => update({ patientId: id })} ariaLabel="患者" placeholder="选择患者" />
+      </label>
+      <label>
+        状态
+        <input value={form.status} onChange={(event) => update({ status: event.target.value })} />
+      </label>
+      <label>
+        模板 ID
+        <input value={form.templateId} onChange={(event) => update({ templateId: event.target.value })} />
+      </label>
+      <label>
+        影像文件
+        <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
+      </label>
+      <label>
+        标记点 JSON
+        <textarea value={form.landmarksJson} onChange={(event) => update({ landmarksJson: event.target.value })} />
+      </label>
+      <label>
+        测量结果 JSON
+        <textarea value={form.metricsJson} onChange={(event) => update({ metricsJson: event.target.value })} />
+      </label>
+      <label>
+        备注
+        <textarea value={form.remark} onChange={(event) => update({ remark: event.target.value })} />
+      </label>
+    </>
   );
 }

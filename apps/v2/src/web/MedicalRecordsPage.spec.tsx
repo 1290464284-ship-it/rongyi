@@ -38,17 +38,18 @@ describe('MedicalRecordsPage', () => {
     vi.mocked(apiRequest).mockReset();
   });
 
-  it('lists and creates medical records', async () => {
+  it('lists and creates medical records with a linked visit', async () => {
     mockData();
     render(<MedicalRecordsPage />, { wrapper });
     expect(await screen.findByText('龋齿')).toBeDefined();
 
     fireEvent.click(screen.getByText('新建病历'));
-await waitFor(() => {
+    await waitFor(() => {
       expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
     });
     fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
     fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
+    fireEvent.change(screen.getByLabelText('关联就诊'), { target: { value: 'v-1' } });
     fireEvent.change(screen.getByLabelText('诊断'), { target: { value: '牙周炎' } });
     fireEvent.change(screen.getByLabelText('涉及牙位（逗号分隔）'), { target: { value: '11, 21' } });
     vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'r-2' });
@@ -58,11 +59,15 @@ await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith('/resources/medicalRecords', expect.objectContaining({ method: 'POST' }));
     });
     const call = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/resources/medicalRecords');
-    expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({
+    const body = JSON.parse(String(call?.[1]?.body));
+    expect(body).toMatchObject({
       patientId: 'p-1',
       doctorId: 'd-1',
+      visitId: 'v-1',
       diagnosis: '牙周炎',
       teethInvolved: ['11', '21'],
+      isTemplate: false,
+      status: 'DRAFT',
     });
     expect(await screen.findByText('病历已创建')).toBeDefined();
   });

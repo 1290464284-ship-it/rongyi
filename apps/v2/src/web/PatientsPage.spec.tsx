@@ -58,6 +58,15 @@ describe('PatientsPage', () => {
     await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith('/resources/patients', expect.objectContaining({ method: 'POST' }));
     });
+    const call = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/resources/patients');
+    expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({
+      code: 'P002',
+      name: '李四',
+      phone: '13900000000',
+      allergies: ['花生', '鸡蛋'],
+      active: true,
+      source: 'WALK_IN',
+    });
     expect(await screen.findByText('患者档案已创建')).toBeDefined();
   });
 
@@ -93,6 +102,13 @@ describe('PatientsPage', () => {
     await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith('/resources/patients/p1', expect.objectContaining({ method: 'PATCH' }));
     });
+    const updateCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/resources/patients/p1');
+    expect(JSON.parse(String(updateCall?.[1]?.body))).toMatchObject({
+      name: '张三改',
+      phone: '13800000000',
+      allergies: ['青霉素'],
+    });
+    expect(await screen.findByText('患者档案已更新')).toBeDefined();
 
     vi.mocked(apiRequest)
       .mockResolvedValueOnce({ success: true })
@@ -103,5 +119,47 @@ describe('PatientsPage', () => {
       expect(apiRequest).toHaveBeenCalledWith('/resources/patients/p1', expect.objectContaining({ method: 'DELETE' }));
     });
     expect(await screen.findByText('患者档案已删除')).toBeDefined();
+  });
+
+  it('prefills multiline fields when editing', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce(patientList)
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 10 })
+      .mockResolvedValueOnce({ id: 'p1' })
+      .mockResolvedValueOnce(patientList);
+    render(<PatientsPage />, { wrapper });
+    await screen.findByText('张三');
+
+    fireEvent.click(screen.getByText('编辑'));
+    expect((screen.getByLabelText('过敏史（每行一条）') as HTMLTextAreaElement).value).toBe('青霉素');
+    expect((screen.getByLabelText('患者编号') as HTMLInputElement).value).toBe('P001');
+    fireEvent.change(screen.getByLabelText('过敏史（每行一条）'), { target: { value: '青霉素\n阿司匹林' } });
+    fireEvent.click(screen.getByText('保存'));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/patients/p1', expect.objectContaining({ method: 'PATCH' }));
+    });
+    const updateCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/resources/patients/p1');
+    expect(JSON.parse(String(updateCall?.[1]?.body))).toMatchObject({
+      allergies: ['青霉素', '阿司匹林'],
+    });
+    expect(await screen.findByText('患者档案已更新')).toBeDefined();
+  });
+
+  it('excludes the edited patient from duplicate checks', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce(patientList)
+      .mockResolvedValueOnce(patientList)
+      .mockResolvedValueOnce({ id: 'p1' })
+      .mockResolvedValueOnce(patientList);
+    render(<PatientsPage />, { wrapper });
+    await screen.findByText('张三');
+
+    fireEvent.click(screen.getByText('编辑'));
+    fireEvent.click(screen.getByText('保存'));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/patients/p1', expect.objectContaining({ method: 'PATCH' }));
+    });
+    expect(screen.queryByText('手机号或患者编号已存在，请检查后重试')).toBeNull();
+    expect(await screen.findByText('患者档案已更新')).toBeDefined();
   });
 });

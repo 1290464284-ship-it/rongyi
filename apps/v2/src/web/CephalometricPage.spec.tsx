@@ -39,14 +39,14 @@ describe('CephalometricPage', () => {
     vi.mocked(uploadFile).mockReset();
   });
 
-  it('lists and creates cephalometric cases', async () => {
+  it('lists and creates cephalometric cases with an uploaded image', async () => {
     mockData();
     vi.mocked(uploadFile).mockResolvedValue({ id: 'file-1', filename: 'file-1.png', url: '/api/v2/files/file-1.png' });
     render(<CephalometricPage />, { wrapper });
     expect(await screen.findByText('DRAFT')).toBeDefined();
 
     fireEvent.click(screen.getByText('新建测量'));
-await waitFor(() => {
+    await waitFor(() => {
       expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
     });
     fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
@@ -59,6 +59,18 @@ await waitFor(() => {
       expect(uploadFile).toHaveBeenCalledWith(file);
       expect(apiRequest).toHaveBeenCalledWith('/resources/cephalometricCases', expect.objectContaining({ method: 'POST' }));
     });
+    const postCall = vi.mocked(apiRequest).mock.calls.find(
+      (call) => call[0] === '/resources/cephalometricCases' && (call[1] as RequestInit)?.method === 'POST',
+    );
+    const body = JSON.parse(String((postCall?.[1] as RequestInit)?.body));
+    expect(body).toMatchObject({
+      patientId: 'p-1',
+      imageUrl: '/api/v2/files/file-1.png',
+      landmarksJson: '{}',
+      metricsJson: '{}',
+      status: 'DRAFT',
+    });
+    expect(body.templateId).toBeUndefined();
     expect(await screen.findByText('头影测量已创建')).toBeDefined();
   });
 
@@ -67,12 +79,21 @@ await waitFor(() => {
     render(<CephalometricPage />, { wrapper });
     await screen.findByText('DRAFT');
     fireEvent.click(screen.getByText('新建测量'));
-await waitFor(() => {
+    await waitFor(() => {
       expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
     });
     fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
     fireEvent.change(screen.getByLabelText('标记点 JSON'), { target: { value: '{bad json' } });
     fireEvent.click(screen.getByText('保存'));
     expect(await screen.findByText('标记点或测量结果必须是有效 JSON')).toBeDefined();
+  });
+
+  it('validates required patient and image fields', async () => {
+    mockData();
+    render(<CephalometricPage />, { wrapper });
+    await screen.findByText('DRAFT');
+    fireEvent.click(screen.getByText('新建测量'));
+    fireEvent.click(screen.getByText('保存'));
+    expect(await screen.findByText('请选择患者并上传影像或填写标记点')).toBeDefined();
   });
 });
