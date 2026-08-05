@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase } from './database';
 import { SqliteRepository } from './repository';
+import { rebuildSearchIndex } from './search-index';
 import { resourceRegistry } from '../../domain/resources';
 import type { AppContext } from '../../domain/contracts';
 
@@ -16,6 +17,13 @@ describe('SqliteRepository', () => {
   beforeAll(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-repo-'));
     db = createDatabase(dataDir);
+    // createDatabase 不跑迁移，按迁移 115 的 DDL 建 FTS 表供 FTS 分支用例使用。
+    db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS SearchIndex USING fts5(
+      resource UNINDEXED,
+      recordId UNINDEXED,
+      clinicId UNINDEXED,
+      content
+    )`);
     context = {
       userId: 'u1',
       clinicId: 'clinic-v2-001',
@@ -46,6 +54,8 @@ describe('SqliteRepository', () => {
       medicationHistory: [],
       systemicDiseases: [],
     }, context);
+    // 迁移 119 已移除 FTS 触发器（按需重建索引），搜索前需显式重建。
+    rebuildSearchIndex(db);
     const page = await repo.findMany({ page: 1, pageSize: 10, search: 'Repo' }, context);
     expect(page.total).toBe(1);
     expect(page.items[0].name).toBe('Repo Patient');
@@ -359,5 +369,44 @@ describe('SqliteRepository', () => {
     });
     const row = await customRepo.findById('repo-custom', context);
     expect(row?.name).toBe('Custom Patient');
+  });
+
+  it('routes search through the FTS index when searchIndexResource is declared', async () => {
+    const repo = new SqliteRepository(db, resourceRegistry.get('patients')!);
+    await repo.insert({
+      id: 'repo-fts-hit',
+      code: 'FTS-001',
+      name: '张三',
+      gender: 'UNKNOWN',
+      phone: '13200000021',
+      source: 'WALK_IN',
+      active: true,
+    }, context);
+    await repo.insert({
+      id: 'repo-fts-prefix',
+      code: 'FTS-002',
+      name: '王张三',
+      gender: 'UNKNOWN',
+      phone: '13200000022',
+      source: 'WALK_IN',
+      active: true,
+    }, context);
+    rebuildSearchIndex(db);
+    const page = await repo.findMany({ page: 1, pageSize: 10, search: '张三' }, context);
+    // FTS 前缀语义：token '王张三' 不以 '张三' 开头不命中；LIKE '%张三%' 则会命中两者。
+    expect(page.items.map((row) => String(row.name))).toEqual(['张三']);
+    expect(page.total).toBe(1);
+  });
+
+  it('keeps LIKE-based search for resources without searchIndexResource', async () => {
+    const repo = new SqliteRepository(db, resourceRegistry.get('chairs')!);
+    await repo.insert({
+      id: 'repo-chair-fts',
+      name: '王张三椅',
+      location: 'A区',
+      active: true,
+    }, context);
+    const page = await repo.findMany({ page: 1, pageSize: 10, search: '张三' }, context);
+    expect(page.items.map((row) => String(row.name))).toEqual(['王张三椅']);
   });
 });

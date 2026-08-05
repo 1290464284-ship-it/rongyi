@@ -497,6 +497,8 @@ describe('HTTP app', () => {
       .expect(200);
     const relogin = await request(app).post('/api/v2/auth/login').send({ username: 'admin', password: 'newpass123' }).expect(200);
     token = relogin.body.data.token;
+    // 资源列表 search 已走 FTS；迁移 119 移除触发器后需显式重建索引（运行时插入的行不会自动入索引）。
+    rebuildSearchIndex(db);
     const patients = await request(app).get('/api/v2/resources/patients?search=HTTP')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);

@@ -942,6 +942,8 @@ export interface ResourceDefinition {
   table: string;
   fields: ResourceField[];
   searchableFields?: string[];
+  /** SearchIndex 表中该资源对应的 resource 值；声明后 findMany 的 search 走 FTS MATCH 而非 LIKE。 */
+  searchIndexResource?: string;
   defaultSort?: { field: string; order: 'ASC' | 'DESC' };
   capabilities: ResourceCapabilities;
   roles: UserRole[];

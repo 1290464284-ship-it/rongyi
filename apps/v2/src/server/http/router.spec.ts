@@ -8,6 +8,7 @@ import type Database from 'better-sqlite3';
 import { createApp } from './app';
 import { createDatabase, seedDatabase } from '../infrastructure/database';
 import { runMigrations } from '../infrastructure/migrations';
+import { rebuildSearchIndex } from '../infrastructure/search-index';
 import { Logger } from '../infrastructure/logger';
 
 describe('resource router', () => {
@@ -65,6 +66,8 @@ describe('resource router', () => {
       .expect(201);
     const id = created.body.data.id as string;
 
+    // 资源列表 search 已走 FTS；迁移 119 移除触发器后需显式重建索引（运行时插入的行不会自动入索引）。
+    rebuildSearchIndex(db);
     const list = await request(app)
       .get('/api/v2/resources/patients?page=1&pageSize=5&search=Router&sortBy=name&sortOrder=ASC&active=true')
       .set('Authorization', `Bearer ${adminToken}`)
@@ -159,6 +162,8 @@ describe('resource router', () => {
          '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
     ).run('patient-export-other', otherClinic, now, now);
 
+    // 资源列表 search 已走 FTS；迁移 119 移除触发器后需显式重建索引（直接 SQL 插入不会自动入索引）。
+    rebuildSearchIndex(db);
     const switched = await request(app)
       .post('/api/v2/auth/switch-clinic')
       .set('Authorization', `Bearer ${adminToken}`)
