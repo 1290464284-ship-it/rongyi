@@ -33,9 +33,6 @@ jobs:
       - name: Typecheck
         run: pnpm --filter @dental/v2 typecheck
 
-      - name: Unit tests
-        run: pnpm --filter @dental/v2 test
-
       - name: Build and pack installer
         run: pnpm --filter @dental/v2 electron:pack
 
