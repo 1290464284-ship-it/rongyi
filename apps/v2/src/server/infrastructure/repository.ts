@@ -95,8 +95,13 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
     if (query.search && this.resource.searchIndexResource) {
       const ftsQuery = buildFtsQuery(query.search);
       if (ftsQuery) {
-        where.push(`id IN (SELECT recordId FROM SearchIndex WHERE SearchIndex MATCH ? AND resource = ?)`);
+        // SearchIndex 是独立于主表的 FTS 表，外层 WHERE 的 clinicId 过滤不作用于该子查询；
+        // 必须显式追加 clinicId 条件，否则跨诊所记录会进入 IN 列表（R2-P2-04）。
+        // 复用 tenantAnd 生成条件（而非字面量），与上方主表过滤保持一致。
+        const ftsTenant = tenantAnd(context.clinicId);
+        where.push(`id IN (SELECT recordId FROM SearchIndex WHERE SearchIndex MATCH ? AND resource = ?${ftsTenant})`);
         params.push(ftsQuery, this.resource.searchIndexResource);
+        if (ftsTenant) params.push(...tenantParams(context.clinicId));
       }
     } else if (query.search && (this.resource.searchableFields?.length ?? 0) > 0) {
       const searchClauses = this.resource.searchableFields!.map((field) => `${field} LIKE ? ESCAPE '\\'`);

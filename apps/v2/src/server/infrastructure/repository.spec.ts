@@ -401,6 +401,35 @@ describe('SqliteRepository', () => {
     expect(page.total).toBe(1);
   });
 
+  it('scopes FTS search results to the requesting clinic', async () => {
+    const repo = new SqliteRepository(db, resourceRegistry.get('patients')!);
+    const clinicB = { ...context, clinicId: 'clinic-v2-002' };
+    // 两个诊所各插入一条同内容记录：索引 content 完全一致，仅 clinicId 不同。
+    await repo.insert({
+      id: 'repo-fts-clinic-a',
+      code: 'FTS-CLINIC-A',
+      name: '张三隔离',
+      gender: 'UNKNOWN',
+      phone: '13200000041',
+      source: 'WALK_IN',
+      active: true,
+    }, context);
+    await repo.insert({
+      id: 'repo-fts-clinic-b',
+      code: 'FTS-CLINIC-B',
+      name: '张三隔离',
+      gender: 'UNKNOWN',
+      phone: '13200000042',
+      source: 'WALK_IN',
+      active: true,
+    }, clinicB);
+    rebuildSearchIndex(db);
+    const pageA = await repo.findMany({ page: 1, pageSize: 10, search: '张三隔离' }, context);
+    expect(pageA.items.map((row) => String(row.id))).toEqual(['repo-fts-clinic-a']);
+    const pageB = await repo.findMany({ page: 1, pageSize: 10, search: '张三隔离' }, clinicB);
+    expect(pageB.items.map((row) => String(row.id))).toEqual(['repo-fts-clinic-b']);
+  });
+
   it('keeps LIKE-based search for resources without searchIndexResource', async () => {
     const repo = new SqliteRepository(db, resourceRegistry.get('chairs')!);
     await repo.insert({
