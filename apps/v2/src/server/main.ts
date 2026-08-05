@@ -30,6 +30,7 @@ if (!process.env.V2_DB_PATH && legacyDbPath && fs.existsSync(legacyDbPath)) {
 }
 const dbPath = process.env.V2_DB_PATH ?? v2DbPath;
 const dataDir = path.dirname(dbPath);
+const cleanExitMarker = path.join(dataDir, '.clean-exit');
 const backupDir = process.env.V2_BACKUP_DIR ?? path.join(dataDir, 'backups');
 const port = Number(process.env.V2_PORT ?? 3180);
 const host = process.env.V2_HOST ?? '127.0.0.1';
@@ -54,7 +55,9 @@ if (nodeEnv === 'production' && jwtSecret.length < 32) {
 }
 
 applyStagedRestore(dbPath, [dataDir, backupDir], logger);
-const db = createDatabase(dataDir, dbPath);
+const wasCleanExit = fs.existsSync(cleanExitMarker);
+if (wasCleanExit) fs.rmSync(cleanExitMarker, { force: true });
+const db = createDatabase(dataDir, dbPath, { fullIntegrityCheck: !wasCleanExit });
 syncLegacySchema(db, legacySchemaDir);
 runMigrations(db, { snapshotDir: dataDir });
 try {
@@ -128,6 +131,9 @@ function shutdown(): void {
   try {
     db.pragma('wal_checkpoint(PASSIVE)');
     db.close();
+    try {
+      fs.writeFileSync(cleanExitMarker, new Date().toISOString(), 'utf8');
+    } catch { /* best effort */ }
   } catch (error) {
     logger.error('failed to close database', { error });
   }

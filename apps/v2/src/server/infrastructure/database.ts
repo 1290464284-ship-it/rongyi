@@ -303,16 +303,17 @@ export function syncLegacySchema(db: Database.Database, schemaDir: string): void
 export function createDatabase(
   dataDir = process.env.V2_DATA_DIR ?? path.resolve(process.cwd(), 'data'),
   dbPath?: string,
+  options?: { fullIntegrityCheck?: boolean },
 ): Database.Database {
   fs.mkdirSync(dataDir, { recursive: true });
   const resolvedDbPath = dbPath ?? path.join(dataDir, 'v2.sqlite');
   const db = new Database(resolvedDbPath);
-  const integrity = db.pragma('integrity_check') as Array<{ integrity_check: string }>;
-  /* v8 ignore start -- defensive startup guard; verified backups should be clean. */
-  if (integrity.length !== 1 || integrity[0].integrity_check !== 'ok') {
-    throw new Error('Database integrity check failed. Restore from a verified backup before starting.');
+  const fullCheck = options?.fullIntegrityCheck ?? false;
+  const result = db.pragma(fullCheck ? 'integrity_check' : 'quick_check') as Array<{ [key: string]: string }>;
+  if (result.length !== 1 || result[0][fullCheck ? 'integrity_check' : 'quick_check'] !== 'ok') {
+    db.close();
+    throw new Error('SQLite integrity check failed');
   }
-  /* v8 ignore stop */
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   db.pragma('busy_timeout = 5000');

@@ -131,4 +131,44 @@ describe('database bootstrap', () => {
     existingAdminDb.close();
     delete process.env.NODE_ENV;
   });
+
+  it('passes the default quick_check on a healthy database', () => {
+    const quickDir = path.join(dataDir, 'quick-check');
+    fs.mkdirSync(quickDir, { recursive: true });
+    const quickDb = createDatabase(quickDir);
+    expect(quickDb.pragma('quick_check')).toEqual([{ quick_check: 'ok' }]);
+    quickDb.close();
+  });
+
+  it('passes the full integrity check on a healthy database', () => {
+    const fullDir = path.join(dataDir, 'full-check');
+    fs.mkdirSync(fullDir, { recursive: true });
+    const fullDb = createDatabase(fullDir, undefined, { fullIntegrityCheck: true });
+    expect(fullDb.pragma('integrity_check')).toEqual([{ integrity_check: 'ok' }]);
+    fullDb.close();
+  });
+
+  it('full integrity check rejects a database file corrupted with garbage bytes', () => {
+    const corruptDir = path.join(dataDir, 'corrupt-full-check');
+    fs.mkdirSync(corruptDir, { recursive: true });
+    const corruptPath = path.join(corruptDir, 'v2.sqlite');
+    const base = createDatabase(corruptDir, corruptPath);
+    base.pragma('wal_checkpoint(TRUNCATE)');
+    base.close();
+
+    const pageSize = 4096;
+    const fileSize = fs.statSync(corruptPath).size;
+    const alignedMiddle = Math.floor(fileSize / 2 / pageSize) * pageSize;
+    const corruptOffset = Math.max(pageSize, alignedMiddle);
+    const fd = fs.openSync(corruptPath, 'r+');
+    try {
+      fs.writeSync(fd, Buffer.alloc(pageSize, 0xab), 0, pageSize, corruptOffset);
+    } finally {
+      fs.closeSync(fd);
+    }
+
+    expect(() => createDatabase(corruptDir, corruptPath, { fullIntegrityCheck: true })).toThrow(
+      'SQLite integrity check failed',
+    );
+  });
 });
