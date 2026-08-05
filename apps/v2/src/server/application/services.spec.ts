@@ -488,11 +488,12 @@ describe('application services', () => {
     insert('followup-summary-null-clinic', null, tomorrow);
 
     const scoped = service.summary(context);
-    expect(scoped.total - baseline.total).toBe(4);
+    // 严格租户隔离：NULL clinicId 行对 scoped 查询不可见。
+    expect(scoped.total - baseline.total).toBe(3);
     expect(scoped.overdue - baseline.overdue).toBe(1);
     expect(scoped.today - baseline.today).toBe(1);
-    expect(scoped.upcoming - baseline.upcoming).toBe(2);
-
+    expect(scoped.upcoming - baseline.upcoming).toBe(1);
+    // unscoped 全局视图能看见全部非 COMPLETED 插入（含 other-clinic 与 null-clinic 行）。
     const unscoped = service.summary({ ...context, clinicId: null });
     expect(unscoped.total - nullBaseline.total).toBe(5);
     expect(unscoped.overdue - nullBaseline.overdue).toBe(2);

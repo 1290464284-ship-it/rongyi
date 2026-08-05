@@ -726,6 +726,36 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 121,
+    name: 'v2-backfill-null-clinic-ids',
+    up(db) {
+      const tables = ['User', 'Patient', 'Appointment', 'Charge', 'Refund', 'MemberCard', 'ChargeItem',
+        'Treatment', 'Visit', 'FollowUp', 'InventoryItem', 'InventoryTransaction', 'Supplier',
+        'PurchaseOrder', 'PurchaseOrderItem', 'ProcessingOrder', 'Debt', 'OperationLog', 'Alert', 'Notification'];
+      const defaultClinic = db.prepare(`SELECT id FROM Clinic ORDER BY createdAt ASC LIMIT 1`).get() as { id: string } | undefined;
+      if (!defaultClinic) return; // 无诊所数据时跳过
+      // 用户特殊处理：优先取 UserClinic 第一个成员关系。
+      // 必须先于通用回填执行，否则 User 的 NULL 已被填为最早诊所，COALESCE 永不生效。
+      const userCols = (db.prepare('PRAGMA table_info("User")').all() as Array<{ name: string }>).map((c) => c.name);
+      const userClinicExists = db.prepare(
+        `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'UserClinic'`,
+      ).get() !== undefined;
+      if (userCols.includes('clinicId') && userClinicExists) {
+        db.prepare(`UPDATE User SET clinicId = COALESCE(
+          (SELECT clinicId FROM UserClinic WHERE userId = User.id AND deletedAt IS NULL LIMIT 1), ?
+        ) WHERE clinicId IS NULL`).run(defaultClinic.id);
+      }
+      const clinicColumn = 'clinicId';
+      for (const table of tables) {
+        const cols = (db.prepare(`PRAGMA table_info("${table}")`).all() as Array<{ name: string }>).map((c) => c.name);
+        if (!cols.includes(clinicColumn)) continue;
+        db.prepare(`UPDATE "${table}" SET "${clinicColumn}" = ? WHERE "${clinicColumn}" IS NULL`).run(defaultClinic.id);
+      }
+      // 记录修复
+      db.exec(`CREATE TABLE IF NOT EXISTS MigrationRepairLog (id TEXT PRIMARY KEY, tableName TEXT NOT NULL, field TEXT NOT NULL, recordId TEXT, beforeValue TEXT, afterValue TEXT, reason TEXT NOT NULL, createdAt TEXT DEFAULT CURRENT_TIMESTAMP)`);
+    },
+  },
 ];
 
 function ensureForeignKeys(

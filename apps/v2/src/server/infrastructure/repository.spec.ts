@@ -68,25 +68,28 @@ describe('SqliteRepository', () => {
     expect(await repo.findById('repo-patient-1', context)).toBeNull();
   });
 
-  it('applies declared defaults and includes legacy null rows in clinic scope', async () => {
+  it('applies declared defaults and hides null-clinic rows from scoped queries', async () => {
     const repo = new SqliteRepository(db, resourceRegistry.get('patients')!);
-    const legacyContext = {
-      userId: 'u1',
-      clinicId: null,
-      role: 'BOSS' as const,
-      traceId: 'trace',
-      now: () => new Date(),
-    };
     await repo.insert({
       id: 'repo-legacy-defaults',
       code: 'LEGACY-DEFAULT',
       name: 'Legacy Default',
       gender: 'UNKNOWN',
       source: 'WALK_IN',
-    }, legacyContext);
+    }, context);
     const legacyRow = await repo.findById('repo-legacy-defaults', context);
     expect(legacyRow?.active).toBe(true);
     expect(legacyRow?.tags).toEqual([]);
+    // 严格租户隔离：NULL clinicId 行对 scoped 查询不可见（迁移 121 已回填）。
+    const unscopedContext = { ...context, clinicId: null };
+    await repo.insert({
+      id: 'repo-null-clinic',
+      code: 'NULL-CLINIC',
+      name: 'Null Clinic Row',
+      gender: 'UNKNOWN',
+      source: 'WALK_IN',
+    }, unscopedContext);
+    expect(await repo.findById('repo-null-clinic', context)).toBeNull();
     const page = await repo.findMany({}, context);
     expect(page.total).toBeGreaterThanOrEqual(1);
   });

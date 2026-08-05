@@ -172,12 +172,9 @@ describe('service edge coverage', () => {
       tokenVersion: null,
       passwordHash: bcrypt.hashSync('nullpass', 10),
     });
-    const nullSession = await auth.login('user-edge-null-clinic', 'nullpass');
-    expect(nullSession.user.clinicId).toBeNull();
-    const nullRefreshed = await auth.refresh(nullSession.refreshToken);
-    expect(nullRefreshed.user.clinicId).toBeNull();
-    db.prepare('UPDATE User SET refreshTokenExpiresAt = NULL WHERE id = ?').run('edge-null-clinic');
-    await expect(auth.refresh(nullRefreshed.refreshToken)).rejects.toThrow('expired');
+    // 无诊所作用域（clinicId NULL 且无 UserClinic 成员关系）的用户登录/刷新必须被拒绝。
+    await expect(auth.login('user-edge-null-clinic', 'nullpass')).rejects.toThrow('No clinic scope assigned to this account');
+    await expect(auth.login('user-edge-null-clinic', 'nullpass')).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
 
     const mockAuthRepository = {
       findByUsername: () => ({
@@ -195,10 +192,14 @@ describe('service edge coverage', () => {
       }),
       resetLoginAttempts: vi.fn(),
       updateRefreshToken: vi.fn(),
-      clinicMemberships: () => [],
+      clinicMemberships: () => [{ clinicId: 'clinic-v2-001', name: 'Clinic', role: 'BOSS' }],
     } as unknown as AuthRepository;
     const mockAuth = new AuthService({} as Database.Database, mockAuthRepository);
-    await expect(mockAuth.login('mock-auth', 'mockpass')).resolves.toBeDefined();
+    const mockSession = await mockAuth.login('mock-auth', 'mockpass');
+    expect(mockSession.user.clinicId).toBeNull();
+    // 用户行本身无 clinicId 时，token 作用域来自 UserClinic 第一个成员关系。
+    const mockPayload = mockAuth.verifyToken(mockSession.token);
+    expect(mockPayload.clinicId).toBe('clinic-v2-001');
   });
 
   it('allows only BOSS to access multiple clinics and switch current clinic', async () => {
@@ -1265,6 +1266,7 @@ describe('service edge coverage', () => {
       title: 'T',
       message: 'M',
       source: 'edge',
+      clinicId: context.clinicId,
     });
     expect(alerts.setStatus(String(alertEdge.id), 'ACKNOWLEDGED', 'user-admin-001', context).status).toBe('ACKNOWLEDGED');
     expect(alerts.setStatus(String(alertEdge.id), 'RESOLVED', 'user-admin-001', context).status).toBe('RESOLVED');
@@ -1277,6 +1279,7 @@ describe('service edge coverage', () => {
       title: 'R',
       message: 'R',
       source: 'edge-race',
+      clinicId: context.clinicId,
     });
     const failingAlerts = new AlertService(db, { open: () => [], setStatus: () => 0 });
     expect(() => failingAlerts.setStatus(String(alertRace.id), 'RESOLVED', 'user-admin-001', context)).toThrow('status update failed');

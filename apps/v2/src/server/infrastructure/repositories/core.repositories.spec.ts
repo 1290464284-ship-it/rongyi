@@ -97,7 +97,7 @@ describe('core repositories', () => {
 
     member.create({
       id: 'card-inactive-refund',
-      clinicId: null,
+      clinicId: 'clinic-v2-001',
       patientId: 'patient-inactive',
       cardNo: 'CARD-INACTIVE',
       balance: 100,

@@ -343,4 +343,106 @@ describe('migrations', () => {
     freshDb.close();
     fs.rmSync(dir, { recursive: true, force: true });
   });
+
+  it('backfills NULL clinicId rows to the earliest clinic and is idempotent (121)', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-mig-121-'));
+    const freshDb = createDatabase(dir);
+    const now = new Date().toISOString();
+    const migrate121 = migrations.find((migration) => migration.version === 121);
+    expect(migrate121).toBeDefined();
+
+    // 无 Clinic 数据：跳过回填，不抛错。
+    expect(() => migrate121!.up(freshDb)).not.toThrow();
+
+    // 两个诊所，最早的为回填目标。
+    freshDb.prepare(
+      `INSERT INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+       VALUES ('clinic-early', NULL, '2020-01-01T00:00:00.000Z', '2020-01-01T00:00:00.000Z', NULL, 'EARLY', 'Early', 1)`,
+    ).run();
+    freshDb.prepare(
+      `INSERT INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+       VALUES ('clinic-late', NULL, ?, ?, NULL, 'LATE', 'Late', 1)`,
+    ).run(now, now);
+    freshDb.prepare(
+      `INSERT INTO Patient (id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active)
+       VALUES ('patient-null-121', NULL, ?, ?, NULL, 'P-NULL-121', 'Null Patient', 'UNKNOWN', '13000000002',
+         '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
+    ).run(now, now);
+    freshDb.prepare(
+      `INSERT INTO Charge (id, clinicId, createdAt, updatedAt, deletedAt,
+         number, patientId, totalAmount, status)
+       VALUES ('charge-null-121', NULL, ?, ?, NULL, 'CH-NULL-121', 'patient-null-121', 100, 'UNPAID')`,
+    ).run(now, now);
+
+    migrate121!.up(freshDb);
+    const patientClinic = (freshDb.prepare('SELECT clinicId FROM Patient WHERE id = ?').get('patient-null-121') as {
+      clinicId: string | null;
+    }).clinicId;
+    const chargeClinic = (freshDb.prepare('SELECT clinicId FROM Charge WHERE id = ?').get('charge-null-121') as {
+      clinicId: string | null;
+    }).clinicId;
+    expect(patientClinic).toBe('clinic-early');
+    expect(chargeClinic).toBe('clinic-early');
+
+    // 幂等：重复应用不抛错、数据不变。
+    expect(() => migrate121!.up(freshDb)).not.toThrow();
+    expect(patientClinic).toBe('clinic-early');
+
+    freshDb.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('backs users off UserClinic membership before the earliest clinic (121)', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-mig-121-user-'));
+    const freshDb = createDatabase(dir);
+    const now = new Date().toISOString();
+    const migrate121 = migrations.find((migration) => migration.version === 121);
+    expect(migrate121).toBeDefined();
+
+    // 先跑全量迁移：117 建 UserClinic 并 populate。
+    freshDb.prepare(
+      `INSERT INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+       VALUES ('clinic-early', NULL, '2020-01-01T00:00:00.000Z', '2020-01-01T00:00:00.000Z', NULL, 'EARLY', 'Early', 1)`,
+    ).run();
+    freshDb.prepare(
+      `INSERT INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+       VALUES ('clinic-late', NULL, ?, ?, NULL, 'LATE', 'Late', 1)`,
+    ).run(now, now);
+    runMigrations(freshDb);
+
+    // 两个 NULL clinicId 用户：一个有成员关系，一个没有。
+    freshDb.prepare(
+      `INSERT INTO User (id, clinicId, createdAt, updatedAt, deletedAt,
+         username, passwordHash, name, role, active, loginAttempts, tokenVersion, lockedUntil)
+       VALUES ('user-member-121', NULL, ?, ?, NULL, 'member-null-121', 'hash', 'Member', 'BOSS', 1, 0, 0, NULL)`,
+    ).run(now, now);
+    freshDb.prepare(
+      `INSERT INTO User (id, clinicId, createdAt, updatedAt, deletedAt,
+         username, passwordHash, name, role, active, loginAttempts, tokenVersion, lockedUntil)
+       VALUES ('user-plain-121', NULL, ?, ?, NULL, 'plain-null-121', 'hash', 'Plain', 'BOSS', 1, 0, 0, NULL)`,
+    ).run(now, now);
+    freshDb.prepare(
+      `INSERT INTO UserClinic (userId, clinicId, role, createdAt, updatedAt, deletedAt)
+       VALUES ('user-member-121', 'clinic-late', 'BOSS', ?, ?, NULL)`,
+    ).run(now, now);
+
+    migrate121!.up(freshDb);
+    const memberClinic = (freshDb.prepare('SELECT clinicId FROM User WHERE id = ?').get('user-member-121') as {
+      clinicId: string | null;
+    }).clinicId;
+    const plainClinic = (freshDb.prepare('SELECT clinicId FROM User WHERE id = ?').get('user-plain-121') as {
+      clinicId: string | null;
+    }).clinicId;
+    expect(memberClinic).toBe('clinic-late');
+    expect(plainClinic).toBe('clinic-early');
+    // 迁移 117 填充的既有成员行不被改写。
+    expect(
+      (freshDb.prepare('SELECT COUNT(*) AS n FROM UserClinic').get() as { n: number }).n,
+    ).toBeGreaterThanOrEqual(1);
+
+    freshDb.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
 });
