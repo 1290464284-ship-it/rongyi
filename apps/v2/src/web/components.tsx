@@ -1,5 +1,4 @@
-import type { FormEvent, ReactNode } from 'react';
-import { useEffect, useState } from 'react';
+import { Component, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import type { Page } from './types';
@@ -189,6 +188,27 @@ export function QueryBoundary({
   if (error) return <PageError message={errorLabel ?? (error instanceof Error ? error.message : String(error))} />;
   if (data === undefined) return <PageError message={errorLabel ?? '数据加载失败'} />;
   return <>{children}</>;
+}
+
+export class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null };
+
+  static getDerivedStateFromError(error: unknown) {
+    return { error: error instanceof Error ? error : new Error(String(error)) };
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="page error-state">
+          <h1>页面加载失败</h1>
+          <p>{friendlyError(this.state.error.message)}</p>
+          <button onClick={() => window.location.reload()}>重新加载</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 export function Dialog({

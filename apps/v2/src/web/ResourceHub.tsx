@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ResourcePage } from './ResourcePage';
 import type { HubTab } from './hub-tabs';
 import { apiRequest } from './api';
-import { LoadingState } from './components';
+import { ErrorBoundary, LoadingState } from './components';
 
 export function ResourceHub({ title, tabs }: { title: string; tabs: HubTab[] }) {
   const [activeId, setActiveId] = useState(tabs[0]?.id ?? '');
@@ -34,13 +34,15 @@ export function ResourceHub({ title, tabs }: { title: string; tabs: HubTab[] }) 
         ))}
       </div>
       <div className="tab-panel">
-        {active?.kind === 'resource' ? (
-          <ResourcePage key={active.resource} resource={active.resource} />
-        ) : active?.kind === 'custom' ? (
-          <Suspense fallback={<LoadingState label="页面加载中" />}>
-            <active.component />
-          </Suspense>
-        ) : null}
+        <ErrorBoundary key={active?.id ?? 'none'}>
+          {active?.kind === 'resource' ? (
+            <ResourcePage key={active.resource} resource={active.resource} />
+          ) : active?.kind === 'custom' ? (
+            <Suspense fallback={<LoadingState label="页面加载中" />}>
+              <active.component />
+            </Suspense>
+          ) : null}
+        </ErrorBoundary>
       </div>
     </div>
   );
