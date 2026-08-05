@@ -151,15 +151,24 @@ export class BulkImportService {
         for (const row of chunk) {
           try {
             const payload = stripProtectedWriteFields(validatePayload(definition, row));
-            repository.insert({ id: randomUUID(), ...payload }, context);
+            await repository.insert({ id: randomUUID(), ...payload }, context);
             imported += 1;
           } catch (error) {
+            if (isSystematicError(error)) {
+              throw new AppError('IMPORT_SYSTEM_ERROR', `批量导入中止：${error instanceof Error ? error.message : String(error)}`, 500);
+            }
             errors.push(error instanceof Error ? error.message : String(error));
+            continue;
           }
         }
         this.db.exec('COMMIT');
       } catch (e) {
         this.db.exec('ROLLBACK');
+        if (e instanceof AppError) throw e;
+        if (isSystematicError(e)) {
+          const message = e instanceof Error ? e.message : String(e);
+          throw new AppError('IMPORT_SYSTEM_ERROR', `批量导入中止：前 ${imported} 条已导入，请人工核对后重试（${message}）`, 500);
+        }
         throw e;
       }
     }
@@ -212,4 +221,12 @@ function parseLandmarks(value: unknown): Record<string, { x: number; y: number }
   } catch {
     return {};
   }
+}
+
+function isSystematicError(error: unknown): boolean {
+  if (error instanceof Error && 'code' in error) {
+    const code = String((error as { code?: unknown }).code ?? '');
+    if (/SQLITE_(FULL|BUSY|IOERR|CORRUPT|CANTOPEN|NOMEM)/.test(code)) return true;
+  }
+  return false;
 }
