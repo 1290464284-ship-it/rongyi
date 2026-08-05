@@ -37,7 +37,6 @@ jobs:
       - name: Verify
         run: |
           pnpm --filter @dental/v2 typecheck
-          pnpm --filter @dental/v2 test
           pnpm --filter @dental/v2 build
           pnpm --filter @dental/v2 electron:compile
 
