@@ -164,5 +164,6 @@ function toCsv(rows: Array<Record<string, unknown>>, resource: ResourceDefinitio
 function csvCell(value: unknown): string {
   if (value === null || value === undefined) return '';
   const text = typeof value === 'object' ? JSON.stringify(value) : String(value);
-  return `"${text.replace(/"/g, '""')}"`;
+  const guarded = /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
+  return `"${guarded.replace(/"/g, '""')}"`;
 }
