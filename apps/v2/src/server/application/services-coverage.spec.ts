@@ -135,6 +135,33 @@ describe('service coverage', () => {
     delete process.env.V2_BACKUP_KEY;
   });
 
+  it('refuses plaintext backups outside test unless explicitly allowed', async () => {
+    const backupDir = path.join(dataDir, 'plaintext-policy-backups');
+    const service = new BackupService(db, path.join(dataDir, 'v2.sqlite'), backupDir);
+    const prevNodeEnv = process.env.NODE_ENV;
+    const prevAllow = process.env.V2_ALLOW_PLAINTEXT_BACKUP;
+    delete process.env.V2_BACKUP_KEY;
+    try {
+      // production 无 key 无授权：显式明文被拒，默认加密因缺 key 被拒
+      process.env.NODE_ENV = 'production';
+      delete process.env.V2_ALLOW_PLAINTEXT_BACKUP;
+      await expect(service.create({ encrypted: false })).rejects.toThrow('Refusing to create plaintext backup');
+      await expect(service.create()).rejects.toThrow('V2_BACKUP_KEY is required');
+      // production 显式授权明文：允许
+      process.env.V2_ALLOW_PLAINTEXT_BACKUP = '1';
+      const allowed = await service.create({ encrypted: false });
+      expect(String(allowed.filename)).toMatch(/\.sqlite$/);
+      // test 环境：明文始终允许（现有用例已隐式覆盖，这里显式断言一次）
+      process.env.NODE_ENV = 'test';
+      delete process.env.V2_ALLOW_PLAINTEXT_BACKUP;
+      const inTest = await service.create({ encrypted: false });
+      expect(String(inTest.filename)).toMatch(/\.sqlite$/);
+    } finally {
+      if (prevNodeEnv === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = prevNodeEnv;
+      if (prevAllow === undefined) delete process.env.V2_ALLOW_PLAINTEXT_BACKUP; else process.env.V2_ALLOW_PLAINTEXT_BACKUP = prevAllow;
+    }
+  });
+
   it('removes the temp file when backup creation fails', async () => {
     const backupDir = path.join(dataDir, 'failed-backups');
     fs.mkdirSync(backupDir, { recursive: true });
