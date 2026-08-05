@@ -9,7 +9,9 @@ import { useToast } from './toast-context';
 type ImagingRow = Record<string, unknown> & {
   id: string;
   patientId?: string | null;
+  patientIdLabel?: string | null;
   doctorId?: string | null;
+  doctorIdLabel?: string | null;
   type?: string | null;
   title?: string | null;
   imageUrl?: string | null;
@@ -110,8 +112,8 @@ export function ImagingPage() {
     },
     { key: 'title', label: '标题' },
     { key: 'type', label: '类型' },
-    { key: 'patientId', label: '患者' },
-    { key: 'doctorId', label: '医生' },
+    { key: 'patientId', label: '患者', render: (row: ImagingRow) => row.patientIdLabel ?? row.patientId ?? '' },
+    { key: 'doctorId', label: '医生', render: (row: ImagingRow) => row.doctorIdLabel ?? row.doctorId ?? '' },
     {
       key: 'takenAt',
       label: '拍摄时间',

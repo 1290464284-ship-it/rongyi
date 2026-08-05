@@ -25,6 +25,7 @@ interface CardRow extends Record<string, unknown> {
   id: string;
   cardNo?: string | null;
   patientId?: string | null;
+  patientIdLabel?: string | null;
   balance?: number | null;
   points?: number | null;
   status?: string | null;
@@ -108,7 +109,7 @@ export function MemberCardsPage() {
 
   const columns = [
     { key: 'cardNo', label: '卡号' },
-    { key: 'patientId', label: '患者' },
+    { key: 'patientId', label: '患者', render: (row: CardRow) => row.patientIdLabel ?? row.patientId ?? '' },
     { key: 'balance', label: '余额', render: (row: CardRow) => formatMoney(row.balance) },
     { key: 'points', label: '积分' },
     { key: 'status', label: '状态', render: (row: CardRow) => STATUS_LABELS[String(row.status ?? '')] ?? String(row.status ?? '') },

@@ -10,7 +10,9 @@ import { useToast } from './toast-context';
 interface PrescriptionRow extends Record<string, unknown> {
   id: string;
   patientId?: string | null;
+  patientIdLabel?: string | null;
   doctorId?: string | null;
+  doctorIdLabel?: string | null;
   remark?: string | null;
 }
 
@@ -106,8 +108,8 @@ export function PrescriptionsPage() {
   }
 
   const columns = [
-    { key: 'patientId', label: '患者' },
-    { key: 'doctorId', label: '医生' },
+    { key: 'patientId', label: '患者', render: (row: PrescriptionRow) => row.patientIdLabel ?? row.patientId ?? '' },
+    { key: 'doctorId', label: '医生', render: (row: PrescriptionRow) => row.doctorIdLabel ?? row.doctorId ?? '' },
     { key: 'remark', label: '备注' },
   ];
 

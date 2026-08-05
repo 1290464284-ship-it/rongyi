@@ -10,7 +10,9 @@ import { useToast } from './toast-context';
 interface PlanRow extends Record<string, unknown> {
   id: string;
   patientId?: string | null;
+  patientIdLabel?: string | null;
   doctorId?: string | null;
+  doctorIdLabel?: string | null;
   name?: string | null;
   totalFee?: number | null;
   status?: string | null;
@@ -121,8 +123,8 @@ export function TreatmentPlansPage() {
 
   const columns = [
     { key: 'name', label: '计划名称' },
-    { key: 'patientId', label: '患者' },
-    { key: 'doctorId', label: '医生' },
+    { key: 'patientId', label: '患者', render: (row: PlanRow) => row.patientIdLabel ?? row.patientId ?? '' },
+    { key: 'doctorId', label: '医生', render: (row: PlanRow) => row.doctorIdLabel ?? row.doctorId ?? '' },
     { key: 'totalFee', label: '总费用', render: (row: PlanRow) => formatMoney(row.totalFee) },
     { key: 'status', label: '状态' },
   ];

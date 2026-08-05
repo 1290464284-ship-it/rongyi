@@ -16,7 +16,9 @@ const STATUS_LABELS: Record<string, string> = {
 type FirstExamRow = Record<string, unknown> & {
   id: string;
   patientId?: string | null;
+  patientIdLabel?: string | null;
   doctorId?: string | null;
+  doctorIdLabel?: string | null;
   status?: string | null;
   chiefComplaint?: string | null;
 };
@@ -118,8 +120,8 @@ export function FirstExamsPage() {
   }
 
   const columns = [
-    { key: 'patientId', label: '患者' },
-    { key: 'doctorId', label: '医生' },
+    { key: 'patientId', label: '患者', render: (row: FirstExamRow) => row.patientIdLabel ?? row.patientId ?? '' },
+    { key: 'doctorId', label: '医生', render: (row: FirstExamRow) => row.doctorIdLabel ?? row.doctorId ?? '' },
     { key: 'chiefComplaint', label: '主诉' },
     {
       key: 'status',

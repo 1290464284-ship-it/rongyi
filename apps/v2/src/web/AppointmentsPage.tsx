@@ -27,7 +27,9 @@ type LookupRow = Record<string, unknown> & { id: string; name?: string };
 type AppointmentRow = Record<string, unknown> & {
   id: string;
   patientId?: string | null;
+  patientIdLabel?: string | null;
   doctorId?: string | null;
+  doctorIdLabel?: string | null;
   startTime?: string | null;
   status?: string | null;
 };
@@ -96,8 +98,8 @@ export function AppointmentsPage() {
   }
 
   const columns = [
-    { key: 'patientId', label: '患者' },
-    { key: 'doctorId', label: '医生' },
+    { key: 'patientId', label: '患者', render: (row: AppointmentRow) => row.patientIdLabel ?? row.patientId ?? '' },
+    { key: 'doctorId', label: '医生', render: (row: AppointmentRow) => row.doctorIdLabel ?? row.doctorId ?? '' },
     {
       key: 'startTime',
       label: '开始时间',

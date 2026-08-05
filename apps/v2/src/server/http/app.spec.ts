@@ -824,6 +824,12 @@ describe('HTTP app', () => {
         .set('Authorization', `Bearer ${token}`)
         .expect(200);
       expect(hit.body.data.items.some((item: { id: string }) => item.id === 'appointment-by-date-http')).toBe(true);
+      // relation label 随 by-date 返回（白名单 LEFT JOIN），供看板显示姓名而非 UUID。
+      const hitRow = hit.body.data.items.find(
+        (item: { id: string }) => item.id === 'appointment-by-date-http',
+      ) as Record<string, unknown>;
+      expect(hitRow.patientIdLabel).toBe('Demo Patient');
+      expect(hitRow.doctorIdLabel).toBe('System Administrator');
       expect(hit.body.data.total).toBeGreaterThanOrEqual(1);
 
       const miss = await request(app)

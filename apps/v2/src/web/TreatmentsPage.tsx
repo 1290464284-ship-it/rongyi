@@ -18,7 +18,9 @@ const STATUS_LABELS: Record<string, string> = {
 interface TreatmentRow extends Record<string, unknown> {
   id: string;
   patientId?: string | null;
+  patientIdLabel?: string | null;
   doctorId?: string | null;
+  doctorIdLabel?: string | null;
   name?: string | null;
   price?: number | null;
   status?: string | null;
@@ -124,8 +126,8 @@ export function TreatmentsPage() {
 
   const columns = [
     { key: 'name', label: '治疗项目' },
-    { key: 'patientId', label: '患者' },
-    { key: 'doctorId', label: '医生' },
+    { key: 'patientId', label: '患者', render: (row: TreatmentRow) => row.patientIdLabel ?? row.patientId ?? '' },
+    { key: 'doctorId', label: '医生', render: (row: TreatmentRow) => row.doctorIdLabel ?? row.doctorId ?? '' },
     { key: 'price', label: '价格', render: (row: TreatmentRow) => formatMoney(row.price) },
     {
       key: 'status',

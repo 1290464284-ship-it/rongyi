@@ -9,6 +9,7 @@ import { useToast } from './toast-context';
 interface CephalometricRow extends Record<string, unknown> {
   id: string;
   patientId?: string | null;
+  patientIdLabel?: string | null;
   imageUrl?: string | null;
   status?: string | null;
 }
@@ -99,7 +100,7 @@ export function CephalometricPage() {
   }
 
   const columns = [
-    { key: 'patientId', label: '患者' },
+    { key: 'patientId', label: '患者', render: (row: CephalometricRow) => row.patientIdLabel ?? row.patientId ?? '' },
     { key: 'status', label: '状态' },
     {
       key: 'preview',
