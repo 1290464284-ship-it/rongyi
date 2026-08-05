@@ -11,6 +11,7 @@ interface PurchaseRow extends Record<string, unknown> {
   id: string;
   number?: string | null;
   supplierId?: string | null;
+  supplierIdLabel?: string | null;
   totalAmount?: number | null;
   status?: string | null;
 }
@@ -93,7 +94,7 @@ export function PurchaseOrdersPage() {
 
   const columns = [
     { key: 'number', label: '采购单号' },
-    { key: 'supplierId', label: '供应商' },
+    { key: 'supplierId', label: '供应商', render: (row: PurchaseRow) => row.supplierIdLabel ?? row.supplierId ?? '' },
     { key: 'totalAmount', label: '金额', render: (row: PurchaseRow) => formatMoney(row.totalAmount) },
     { key: 'status', label: '状态' },
     {

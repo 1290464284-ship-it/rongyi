@@ -20,6 +20,7 @@ interface ProcessingRow extends Record<string, unknown> {
   id: string;
   number?: string | null;
   patientId?: string | null;
+  patientIdLabel?: string | null;
   status?: string | null;
 }
 
@@ -116,7 +117,7 @@ export function ProcessingOrdersPage() {
 
   const columns = [
     { key: 'number', label: '加工单号' },
-    { key: 'patientId', label: '患者' },
+    { key: 'patientId', label: '患者', render: (row: ProcessingRow) => row.patientIdLabel ?? row.patientId ?? '' },
     {
       key: 'status',
       label: '状态',

@@ -15,7 +15,9 @@ const STATUS_LABELS: Record<string, string> = {
 type VisitRow = Record<string, unknown> & {
   id: string;
   patientId?: string | null;
+  patientIdLabel?: string | null;
   doctorId?: string | null;
+  doctorIdLabel?: string | null;
   startTime?: string | null;
   status?: string | null;
   chiefComplaint?: string | null;
@@ -112,8 +114,8 @@ export function VisitsPage() {
   }
 
   const columns = [
-    { key: 'patientId', label: '患者' },
-    { key: 'doctorId', label: '医生' },
+    { key: 'patientId', label: '患者', render: (row: VisitRow) => row.patientIdLabel ?? row.patientId ?? '' },
+    { key: 'doctorId', label: '医生', render: (row: VisitRow) => row.doctorIdLabel ?? row.doctorId ?? '' },
     {
       key: 'startTime',
       label: '开始时间',

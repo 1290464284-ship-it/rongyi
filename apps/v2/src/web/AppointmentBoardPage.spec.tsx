@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppointmentBoardPage } from './AppointmentBoardPage';
+import { todayLocalDate } from './format';
 import { apiRequest } from './api';
 import { ToastProvider } from './toast';
 
@@ -20,7 +21,8 @@ describe('AppointmentBoardPage', () => {
     vi.mocked(apiRequest).mockReset();
   });
 
-  it('renders appointments grouped by status and requests the board list without a date', async () => {
+  it('renders appointments grouped by status and requests today by date', async () => {
+    const today = todayLocalDate();
     vi.mocked(apiRequest).mockResolvedValue({
       items: [
         { id: 'a1', patientId: 'P1', doctorId: 'D1', startTime: '2026-08-04T09:00:00.000Z', status: 'BOOKED' },
@@ -35,7 +37,7 @@ describe('AppointmentBoardPage', () => {
     expect(screen.getByText('P2')).toBeDefined();
     expect(screen.getAllByText('已预约').length).toBeGreaterThan(0);
     expect(screen.getAllByText('已取消').length).toBeGreaterThan(0);
-    expect(vi.mocked(apiRequest)).toHaveBeenCalledWith('/resources/appointments?page=1&pageSize=200');
+    expect(vi.mocked(apiRequest)).toHaveBeenCalledWith(`/appointments/by-date?date=${today}`);
   });
 
   it('filters the board by selected date and requests the by-date endpoint', async () => {
@@ -62,6 +64,7 @@ describe('AppointmentBoardPage', () => {
     });
     render(<AppointmentBoardPage />, { wrapper });
     expect(await screen.findByText('P1')).toBeDefined();
+    expect(screen.getByText('P2')).toBeDefined();
     fireEvent.change(screen.getByLabelText('日期'), { target: { value: '2026-08-04' } });
     await waitFor(() => expect(screen.queryByText('P2')).toBeNull());
     expect(await screen.findByText('P1')).toBeDefined();
@@ -107,9 +110,28 @@ describe('AppointmentBoardPage', () => {
     expect(screen.getAllByText('暂无预约').length).toBe(5);
   });
 
+  it('prefers relation labels over raw ids on board cards', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce({
+      items: [
+        { id: 'a1', patientId: 'P1', patientIdLabel: '患者甲', doctorId: 'D1', doctorIdLabel: '张医生', startTime: '2026-08-04T09:00:00.000Z', status: 'BOOKED' },
+        { id: 'a2', patientId: 'P2', patientIdLabel: null, doctorId: 'D2', doctorIdLabel: null, startTime: '2026-08-04T10:00:00.000Z', status: 'BOOKED' },
+      ],
+      total: 2,
+      page: 1,
+      pageSize: 200,
+    });
+    render(<AppointmentBoardPage />, { wrapper });
+    expect(await screen.findByText('患者甲')).toBeDefined();
+    expect(screen.getByText('张医生')).toBeDefined();
+    expect(screen.getByText('P2')).toBeDefined();
+    expect(screen.getByText('D2')).toBeDefined();
+    expect(screen.queryByText('P1')).toBeNull();
+  });
+
   it('reports board transition failures', async () => {
+    const today = todayLocalDate();
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/appointments?page=1&pageSize=200') {
+      if (path === `/appointments/by-date?date=${today}`) {
         return {
           items: [{ id: 'a1', patientId: 'P1', doctorId: 'D1', startTime: '2026-08-04T09:00:00.000Z', status: 'BOOKED' }],
           total: 1,
@@ -125,7 +147,7 @@ describe('AppointmentBoardPage', () => {
     expect(await screen.findByText('board failed')).toBeDefined();
 
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/appointments?page=1&pageSize=200') {
+      if (path === `/appointments/by-date?date=${today}`) {
         return {
           items: [{ id: 'a1', patientId: 'P1', doctorId: 'D1', startTime: '2026-08-04T09:00:00.000Z', status: 'BOOKED' }],
           total: 1,

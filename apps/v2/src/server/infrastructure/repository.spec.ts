@@ -520,4 +520,56 @@ describe('SqliteRepository', () => {
     expect(rowsFor()).toHaveLength(3);
     expect(rowsFor()[2].operation).toBe('DELETE');
   });
+
+  it('joins relation label fields from resource metadata onto list rows', async () => {
+    const patientRepo = new SqliteRepository(db, resourceRegistry.get('patients')!);
+    await patientRepo.insert({
+      id: 'repo-label-patient',
+      code: 'LABEL-001',
+      name: 'Label Patient',
+      gender: 'UNKNOWN',
+      source: 'WALK_IN',
+      active: true,
+    }, context);
+    await new SqliteRepository(db, resourceRegistry.get('users')!).insert({
+      id: 'repo-label-user',
+      username: 'label-doctor',
+      passwordHash: 'x',
+      name: 'Label Doctor',
+      role: 'DOCTOR',
+      active: true,
+      loginAttempts: 0,
+      tokenVersion: 0,
+    }, context);
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO Appointment (id, clinicId, createdAt, updatedAt, patientId, doctorId, startTime, endTime, status, type)
+       VALUES ('repo-label-appt', 'clinic-v2-001', ?, ?, 'repo-label-patient', 'repo-label-user', ?, ?, 'BOOKED', 'REGULAR')`,
+    ).run(now, now, now, now);
+    db.prepare(
+      `INSERT INTO Appointment (id, clinicId, createdAt, updatedAt, patientId, doctorId, startTime, endTime, status, type)
+       VALUES ('repo-label-orphan', 'clinic-v2-001', ?, ?, 'missing-label-patient', 'repo-label-user', ?, ?, 'BOOKED', 'REGULAR')`,
+    ).run(now, now, now, now);
+
+    const repo = new SqliteRepository(db, resourceRegistry.get('appointments')!);
+    const page = await repo.findMany({ page: 1, pageSize: 10 }, context);
+    const hit = page.items.find((row) => row.id === 'repo-label-appt');
+    const orphan = page.items.find((row) => row.id === 'repo-label-orphan');
+    expect(hit).toBeDefined();
+    expect(hit).toMatchObject({
+      patientId: 'repo-label-patient',
+      patientIdLabel: 'Label Patient',
+      doctorId: 'repo-label-user',
+      doctorIdLabel: 'Label Doctor',
+    });
+    // 关联目标缺失时 LEFT JOIN 安全回退：label 为 null，原始 UUID 仍在。
+    expect(orphan).toBeDefined();
+    expect(orphan).toMatchObject({
+      patientId: 'missing-label-patient',
+      patientIdLabel: null,
+      doctorIdLabel: 'Label Doctor',
+    });
+    // 分页计数不受 JOIN 影响（LEFT JOIN 主键不产生行倍增）。
+    expect(page.total).toBe(page.items.length);
+  });
 });

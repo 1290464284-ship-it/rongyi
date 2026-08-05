@@ -155,4 +155,33 @@ await waitFor(() => {
     fireEvent.change((await screen.findAllByLabelText('变更预约状态'))[0], { target: { value: 'ARRIVED' } });
     expect(await screen.findByText('appointment failed')).toBeDefined();
   });
+  it('renders relation labels instead of raw ids when present', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/appointments?page=1&pageSize=20') {
+        return {
+          items: [
+            { id: 'a-1', patientId: 'p-9', doctorId: 'd-9', patientIdLabel: '李患者', doctorIdLabel: '王医生', startTime: '2026-08-04T09:00:00.000Z', status: 'BOOKED' },
+            { id: 'a-2', patientId: 'p-9', doctorId: 'd-9', startTime: '2026-08-04T10:00:00.000Z', status: 'BOOKED' },
+          ],
+          total: 2,
+          page: 1,
+          pageSize: 20,
+        };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      if (path === '/resources/chairs?page=1&pageSize=100') {
+        return { items: [{ id: 'c-1', name: '椅位 1' }], total: 1, page: 1, pageSize: 200 };
+      }
+      return {};
+    });
+    render(<AppointmentsPage />, { wrapper });
+    expect(await screen.findByText('李患者')).toBeDefined();
+    expect(screen.getByText('王医生')).toBeDefined();
+    expect(screen.getByText('p-9')).toBeDefined();
+    expect(screen.getByText('d-9')).toBeDefined();
+  });
+
 });

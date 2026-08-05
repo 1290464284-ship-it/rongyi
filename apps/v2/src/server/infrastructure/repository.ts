@@ -14,6 +14,34 @@ import { tenantAnd, tenantParams } from './tenant';
 import { buildFtsQuery, upsertSearchRow, removeSearchRow, refreshPatientChildSearchRows } from './search-index';
 import { recordSyncChange } from './sync-change';
 
+export interface RelationLabelJoin {
+  select: string;
+  join: string;
+}
+
+/**
+ * 为 relation 字段生成 LEFT JOIN 片段：目标表 + labelField 全部来自资源元数据白名单
+ * （resources.ts 中 relation.resource → 目标表、relation.labelField → 标签列），
+ * 不拼接任何用户输入，杜绝 SQL 注入面。目标行须未软删除且与主行同诊所。
+ * 输出形如：`rel0.name AS patientIdLabel` / `LEFT JOIN Patient rel0 ON rel0.id = t.patientId ...`。
+ */
+export function buildRelationLabelJoins(resource: ResourceDefinition): RelationLabelJoin[] {
+  const joins: RelationLabelJoin[] = [];
+  let index = 0;
+  for (const field of resource.fields) {
+    if (field.type !== 'relation' || !field.relation) continue;
+    const target = resourceRegistry.get(field.relation.resource);
+    if (!target) continue;
+    const alias = `rel${index}`;
+    index += 1;
+    joins.push({
+      select: `${alias}.${field.relation.labelField} AS ${field.name}Label`,
+      join: `LEFT JOIN ${target.table} ${alias} ON ${alias}.id = t.${field.relation.foreignKey} AND ${alias}.deletedAt IS NULL AND ${alias}.clinicId = t.clinicId`,
+    });
+  }
+  return joins;
+}
+
 function serialize(field: ResourceField, value: unknown): unknown {
   if (value === undefined || value === null) return null;
   if (field.type === 'json') {
@@ -72,12 +100,12 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
     const rawPageSize = typeof query.pageSize === 'number' && Number.isFinite(query.pageSize) ? query.pageSize : 20;
     const page = Math.max(1, Math.floor(rawPage));
     const pageSize = Math.min(200, Math.max(1, Math.floor(rawPageSize)));
-    const where: string[] = ['deletedAt IS NULL'];
+    const where: string[] = ['t.deletedAt IS NULL'];
     const params: unknown[] = [];
 
     /* v8 ignore start -- all registry tables include clinicId today; false branch is defensive for future schemas. */
     if (this.hasClinicColumn()) {
-      const tenant = tenantAnd(context.clinicId);
+      const tenant = tenantAnd(context.clinicId, 't.clinicId');
       if (tenant) {
         where.push(tenant.slice(' AND '.length));
         params.push(...tenantParams(context.clinicId));
@@ -88,7 +116,7 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
     for (const [key, value] of Object.entries(query.filters ?? {})) {
       const field = this.field(key);
       if (!field) throw new ValidationError(`Unknown filter field: ${key}`);
-      where.push(`${key} = ?`);
+      where.push(`t.${key} = ?`);
       params.push(serialize(field, value));
     }
 
@@ -99,26 +127,32 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
         // 必须显式追加 clinicId 条件，否则跨诊所记录会进入 IN 列表（R2-P2-04）。
         // 复用 tenantAnd 生成条件（而非字面量），与上方主表过滤保持一致。
         const ftsTenant = tenantAnd(context.clinicId);
-        where.push(`id IN (SELECT recordId FROM SearchIndex WHERE SearchIndex MATCH ? AND resource = ?${ftsTenant})`);
+        where.push(`t.id IN (SELECT recordId FROM SearchIndex WHERE SearchIndex MATCH ? AND resource = ?${ftsTenant})`);
         params.push(ftsQuery, this.resource.searchIndexResource);
         if (ftsTenant) params.push(...tenantParams(context.clinicId));
       }
     } else if (query.search && (this.resource.searchableFields?.length ?? 0) > 0) {
-      const searchClauses = this.resource.searchableFields!.map((field) => `${field} LIKE ? ESCAPE '\\'`);
+      const searchClauses = this.resource.searchableFields!.map((field) => `t.${field} LIKE ? ESCAPE '\\'`);
       where.push(`(${searchClauses.join(' OR ')})`);
       const escaped = query.search.replace(/[\\%_]/g, '\\$&');
       for (let i = 0; i < searchClauses.length; i += 1) params.push(`%${escaped}%`);
     }
 
+    // relation 字段 LEFT JOIN 目标表取 labelField，作为 `<field>Label` 附加列返回；
+    // 无关联目标/表缺失时 LEFT JOIN 安全回退为 NULL label（前端回退显示原 UUID）。
+    const labelJoins = buildRelationLabelJoins(this.resource);
+    const labelSelect = labelJoins.length > 0 ? `, ${labelJoins.map((join) => join.select).join(', ')}` : '';
+    const labelJoinSql = labelJoins.map((join) => join.join).join(' ');
+
     const whereSql = where.join(' AND ');
-    const totalRow = this.db.prepare(`SELECT COUNT(*) AS total FROM ${this.resource.table} WHERE ${whereSql}`).get(...params) as { total: number };
+    const totalRow = this.db.prepare(`SELECT COUNT(*) AS total FROM ${this.resource.table} t WHERE ${whereSql}`).get(...params) as { total: number };
     const sortField = query.sortBy && this.field(query.sortBy) ? query.sortBy : this.resource.defaultSort?.field ?? 'createdAt';
     const sortOrder = query.sortOrder === 'ASC' ? 'ASC' : 'DESC';
     const offset = (page - 1) * pageSize;
     const rows = this.queryRows(
-      `SELECT * FROM ${this.resource.table}
+      `SELECT t.*${labelSelect} FROM ${this.resource.table} t ${labelJoinSql}
        WHERE ${whereSql}
-       ORDER BY ${sortField} ${sortOrder}
+       ORDER BY t.${sortField} ${sortOrder}
        LIMIT ? OFFSET ?`,
       [...params, pageSize, offset],
     );

@@ -8,6 +8,8 @@ import type {
 } from '../application/services';
 import { ValidationError } from '../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../infrastructure/tenant';
+import { buildRelationLabelJoins } from '../infrastructure/repository';
+import { resourceRegistry } from '../../domain/resources';
 import { wrapAsync } from './middleware';
 import { createRateLimit } from './rate-limit';
 import type {
@@ -136,8 +138,12 @@ export function registerReadRoutes(app: Express, deps: ReadRouteDependencies): v
       }
       const start = new Date(`${date}T00:00:00+08:00`).toISOString();
       const end = new Date(`${date}T23:59:59.999+08:00`).toISOString();
+      // 与通用 list 一致：relation 字段 LEFT JOIN 取 labelField（白名单元数据），供看板显示姓名而非 UUID。
+      const labelJoins = buildRelationLabelJoins(resourceRegistry.get('appointments')!);
+      const labelSelect = labelJoins.length > 0 ? `, ${labelJoins.map((join) => join.select).join(', ')}` : '';
+      const labelJoinSql = labelJoins.map((join) => join.join).join(' ');
       const rows = deps.db.prepare(
-        `SELECT * FROM Appointment WHERE startTime >= ? AND startTime <= ? AND deletedAt IS NULL${tenantAnd(req.context!.clinicId)} ORDER BY startTime ASC`,
+        `SELECT t.*${labelSelect} FROM Appointment t ${labelJoinSql} WHERE t.startTime >= ? AND t.startTime <= ? AND t.deletedAt IS NULL${tenantAnd(req.context!.clinicId, 't.clinicId')} ORDER BY t.startTime ASC`,
       ).all(start, end, ...tenantParams(req.context!.clinicId)) as Array<Record<string, unknown>>;
       res.json({ success: true, data: { items: rows, total: rows.length } });
   }));

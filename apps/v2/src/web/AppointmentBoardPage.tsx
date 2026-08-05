@@ -5,6 +5,7 @@ import type { Page } from './types';
 import { LoadingState, PageError } from './components';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
+import { todayLocalDate } from './format';
 
 const BOARD_STATUSES = [
   { key: 'BOOKED', label: '已预约' },
@@ -18,19 +19,19 @@ const BOARD_STATUSES = [
 type AppointmentRow = Record<string, unknown> & {
   id: string;
   patientId?: string | null;
+  patientIdLabel?: string | null;
   doctorId?: string | null;
+  doctorIdLabel?: string | null;
   startTime?: string | null;
   status?: string | null;
 };
 
 export function AppointmentBoardPage() {
   const { showToast } = useToast();
-  const [date, setDate] = useState('');
+  const [date, setDate] = useState(todayLocalDate());
   const query = useQuery({
     queryKey: ['appointment-board', date],
-    queryFn: () => date
-      ? apiRequest<Page<AppointmentRow>>(`/appointments/by-date?date=${encodeURIComponent(date)}`)
-      : apiRequest<Page<AppointmentRow>>('/resources/appointments?page=1&pageSize=200'),
+    queryFn: () => apiRequest<Page<AppointmentRow>>(`/appointments/by-date?date=${encodeURIComponent(date)}`),
   });
 
   if (query.isLoading) return <LoadingState label="预约看板加载中..." />;
@@ -84,8 +85,8 @@ export function AppointmentBoardPage() {
               .filter((row) => String(row.status ?? '') === status.key)
               .map((row) => (
                 <article className="board-card" key={row.id}>
-                  <strong>{String(row.patientId ?? '未填写患者')}</strong>
-                  <span>{String(row.doctorId ?? '未分配医生')}</span>
+                  <strong>{String(row.patientIdLabel ?? row.patientId ?? '未填写患者')}</strong>
+                  <span>{String(row.doctorIdLabel ?? row.doctorId ?? '未分配医生')}</span>
                   <time>{String(row.startTime ?? '')}</time>
                   <select
                     defaultValue=""

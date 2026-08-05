@@ -35,3 +35,11 @@ export function formatDisplayValue(value: unknown, field?: ResourceField): strin
   if (typeof value === 'object') return JSON.stringify(value);
   return String(value);
 }
+
+export function todayLocalDate(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}

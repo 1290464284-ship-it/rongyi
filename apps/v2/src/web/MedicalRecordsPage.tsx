@@ -9,7 +9,9 @@ import { useToast } from './toast-context';
 type MedicalRecordRow = Record<string, unknown> & {
   id: string;
   patientId?: string | null;
+  patientIdLabel?: string | null;
   doctorId?: string | null;
+  doctorIdLabel?: string | null;
   category?: string | null;
   diagnosis?: string | null;
   status?: string | null;
@@ -115,8 +117,8 @@ export function MedicalRecordsPage() {
   }
 
   const columns = [
-    { key: 'patientId', label: '患者' },
-    { key: 'doctorId', label: '医生' },
+    { key: 'patientId', label: '患者', render: (row: MedicalRecordRow) => row.patientIdLabel ?? row.patientId ?? '' },
+    { key: 'doctorId', label: '医生', render: (row: MedicalRecordRow) => row.doctorIdLabel ?? row.doctorId ?? '' },
     { key: 'category', label: '分类' },
     { key: 'diagnosis', label: '诊断' },
     { key: 'status', label: '状态' },
