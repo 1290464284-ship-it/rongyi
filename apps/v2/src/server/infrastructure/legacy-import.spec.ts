@@ -5,6 +5,54 @@ import Database from 'better-sqlite3';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { importLegacyDatabase } from './legacy-import';
 import { Logger } from './logger';
+import type { LegacyImportDecision, V2DbOpener } from '../main';
+
+// --- Mocks so `../main` can be imported in tests without starting a server,
+// --- creating real databases, or writing logs into the repository.
+// The legacy-import module itself is intentionally left real: the existing
+// tests below exercise `importLegacyDatabase` against actual sqlite files.
+vi.mock('../http/app', () => ({
+  createApp: vi.fn(() => ({
+    listen: vi.fn(() => ({ on: vi.fn() })),
+  })),
+}));
+vi.mock('./database', () => ({
+  createDatabase: vi.fn(() => ({ pragma: vi.fn(), close: vi.fn() })),
+  seedDatabase: vi.fn(),
+  syncLegacySchema: vi.fn(),
+}));
+vi.mock('./idempotency', () => ({
+  cleanupIdempotencyRecords: vi.fn(() => 0),
+}));
+vi.mock('./migrations', () => ({
+  runMigrations: vi.fn(),
+}));
+vi.mock('./search-index', () => ({
+  rebuildSearchIndex: vi.fn(),
+}));
+vi.mock('./restore-apply', () => ({
+  applyStagedRestore: vi.fn(),
+}));
+vi.mock('../application/services', () => ({
+  BackupService: class {
+    create(): { ok: boolean } {
+      return { ok: true };
+    }
+    cleanup(): Record<string, never> {
+      return {};
+    }
+  },
+  AuditService: class {
+    cleanup(): number {
+      return 0;
+    }
+  },
+  AlertService: class {
+    create(): void {
+      /* no-op */
+    }
+  },
+}));
 
 vi.mock('./sqlite-files', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./sqlite-files')>();
@@ -93,5 +141,96 @@ describe('importLegacyDatabase', () => {
     process.env.V2_CORRUPT_LEGACY_BACKUP = '1';
     expect(() => importLegacyDatabase(validSource, targetPath)).toThrow('imported database integrity check failed');
     delete process.env.V2_CORRUPT_LEGACY_BACKUP;
+  });
+});
+
+describe('shouldImportLegacyDb (T2R-15 / R2-P1-12)', () => {
+  let decisionDir: string;
+  let shouldImportLegacyDb: (
+    v2DbPath: string,
+    options?: { openDb?: V2DbOpener },
+  ) => LegacyImportDecision;
+
+  beforeAll(async () => {
+    decisionDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-legacy-decision-'));
+    // Isolate every directory main.ts reads/writes at module evaluation:
+    // data dir, log dir, and point the legacy db at a missing path so the
+    // startup import block is skipped while we test the decision in isolation.
+    process.env.V2_DATA_DIR = decisionDir;
+    process.env.V2_LOG_DIR = path.join(decisionDir, 'logs');
+    process.env.V2_LEGACY_DB_PATH = path.join(decisionDir, 'no-legacy.sqlite');
+    delete process.env.V2_DB_PATH;
+    ({ shouldImportLegacyDb } = await import('../main'));
+  });
+
+  afterAll(() => {
+    delete process.env.V2_DATA_DIR;
+    delete process.env.V2_LOG_DIR;
+    delete process.env.V2_LEGACY_DB_PATH;
+    fs.rmSync(decisionDir, { recursive: true, force: true });
+  });
+
+  it('imports when v2.sqlite does not exist', () => {
+    const missing = path.join(decisionDir, 'missing-v2.sqlite');
+    const decision = shouldImportLegacyDb(missing);
+    expect(decision.shouldImport).toBe(true);
+    expect(decision.promptRestore).toBe(false);
+    expect(decision.v2IntegrityOk).toBeUndefined();
+  });
+
+  it('does not import when v2.sqlite exists and passes quick_check, even if smaller than 64KB', () => {
+    const v2Path = path.join(decisionDir, 'ok-v2.sqlite');
+    const db = new Database(v2Path);
+    db.exec('CREATE TABLE Patient (id TEXT PRIMARY KEY, name TEXT)');
+    db.close();
+    // Regression for R2-P1-12: a healthy but small v2.sqlite used to be
+    // mistaken for an empty database by the `size < 64 * 1024` heuristic.
+    expect(fs.statSync(v2Path).size).toBeLessThan(64 * 1024);
+    const decision = shouldImportLegacyDb(v2Path);
+    expect(decision.shouldImport).toBe(false);
+    expect(decision.promptRestore).toBe(false);
+    expect(decision.v2IntegrityOk).toBe(true);
+  });
+
+  it('prompts restore/re-import when v2.sqlite exists but fails quick_check', () => {
+    const v2Path = path.join(decisionDir, 'corrupt-v2.sqlite');
+    const db = new Database(v2Path);
+    db.exec('CREATE TABLE Patient (id TEXT PRIMARY KEY, name TEXT)');
+    db.close();
+    const data = fs.readFileSync(v2Path);
+    data[20] ^= 0xff; // corrupt the database header (same technique as above)
+    fs.writeFileSync(v2Path, data);
+    const decision = shouldImportLegacyDb(v2Path);
+    expect(decision.shouldImport).toBe(false);
+    expect(decision.promptRestore).toBe(true);
+    expect(decision.v2IntegrityOk).toBe(false);
+  });
+
+  it('prompts restore/re-import when the v2 file cannot be opened as a database', () => {
+    const notADb = path.join(decisionDir, 'not-a-db.sqlite');
+    fs.writeFileSync(notADb, 'this is definitely not a sqlite database file');
+    const decision = shouldImportLegacyDb(notADb);
+    expect(decision.shouldImport).toBe(false);
+    expect(decision.promptRestore).toBe(true);
+    expect(decision.v2IntegrityOk).toBe(false);
+  });
+
+  it('uses the injected db opener for the quick_check', () => {
+    const v2Path = path.join(decisionDir, 'injected-v2.sqlite');
+    const db = new Database(v2Path);
+    db.exec('CREATE TABLE T (id INTEGER PRIMARY KEY)');
+    db.close();
+    const openDb = vi.fn((filePath: string) => {
+      const opened = new Database(filePath, { readonly: true });
+      return {
+        pragma: (source: string) => opened.pragma(source),
+        close: () => opened.close(),
+      };
+    });
+    const decision = shouldImportLegacyDb(v2Path, { openDb });
+    expect(openDb).toHaveBeenCalledWith(v2Path);
+    expect(decision.shouldImport).toBe(false);
+    expect(decision.promptRestore).toBe(false);
+    expect(decision.v2IntegrityOk).toBe(true);
   });
 });

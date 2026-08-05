@@ -1,6 +1,7 @@
 import * as crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import Database from 'better-sqlite3';
 import { createApp } from './http/app';
 import { createDatabase, seedDatabase, syncLegacySchema } from './infrastructure/database';
 import { cleanupIdempotencyRecords } from './infrastructure/idempotency';
@@ -20,13 +21,85 @@ const v2DataDir = process.env.V2_DATA_DIR ?? path.join(projectRoot, 'data');
 const v2DbPath = path.join(v2DataDir, 'v2.sqlite');
 const logDir = process.env.V2_LOG_DIR ?? path.join(projectRoot, 'logs');
 const logger = new Logger({ logDir });
+
+/**
+ * T2R-15 / R2-P1-12: legacy import decision.
+ *
+ * The old heuristic treated any v2.sqlite smaller than 64KB as an "empty/new
+ * database" and re-imported from the legacy database, which wrongly clobbered
+ * normal small databases (e.g. freshly created ones with a small schema).
+ *
+ * New behavior:
+ *  - v2.sqlite does not exist        -> import from the legacy database;
+ *  - v2.sqlite exists and passes
+ *    PRAGMA quick_check               -> do nothing (database is healthy);
+ *  - v2.sqlite exists but fails
+ *    PRAGMA quick_check               -> prompt the user to restore/re-import
+ *                                       (the caller raises an error that the
+ *                                       Electron shell surfaces as a dialog).
+ *
+ * The database opener is injected via `options.openDb` so the decision can be
+ * unit-tested without touching real files.
+ */
+export interface LegacyImportDecision {
+  /** Whether the legacy database should be imported into v2.sqlite. */
+  shouldImport: boolean;
+  /** Set when v2.sqlite exists but fails quick_check: prompt restore/re-import. */
+  promptRestore: boolean;
+  /** Result of the v2.sqlite quick_check; undefined when the file does not exist. */
+  v2IntegrityOk?: boolean;
+}
+
+export interface V2DbHandle {
+  pragma(source: string): unknown;
+  close(): void;
+}
+
+export type V2DbOpener = (filePath: string) => V2DbHandle;
+
+const defaultV2DbOpener: V2DbOpener = (filePath) => new Database(filePath, { readonly: true });
+
+export function shouldImportLegacyDb(
+  v2DbPath: string,
+  options: { openDb?: V2DbOpener } = {},
+): LegacyImportDecision {
+  const openDb = options.openDb ?? defaultV2DbOpener;
+  if (!fs.existsSync(v2DbPath)) {
+    return { shouldImport: true, promptRestore: false };
+  }
+  let integrityOk = false;
+  let db: V2DbHandle | undefined;
+  try {
+    db = openDb(v2DbPath);
+    const rows = db.pragma('quick_check') as Array<{ quick_check: string }>;
+    integrityOk = Array.isArray(rows) && rows.length === 1 && rows[0].quick_check === 'ok';
+  } catch {
+    integrityOk = false;
+  } finally {
+    db?.close();
+  }
+  return integrityOk
+    ? { shouldImport: false, promptRestore: false, v2IntegrityOk: true }
+    : { shouldImport: false, promptRestore: true, v2IntegrityOk: false };
+}
+
 if (!process.env.V2_DB_PATH && legacyDbPath && fs.existsSync(legacyDbPath)) {
   fs.mkdirSync(v2DataDir, { recursive: true });
-  if (!fs.existsSync(v2DbPath) || fs.statSync(v2DbPath).size < 64 * 1024) {
+  const decision = shouldImportLegacyDb(v2DbPath);
+  if (decision.shouldImport) {
     const importResult = importLegacyDatabase(legacyDbPath, v2DbPath, logger);
     if (!importResult.imported) {
       throw new Error('Legacy database import failed. Refusing to continue with an untrusted working database.');
     }
+  } else if (decision.promptRestore) {
+    logger.error('v2 database failed integrity check (quick_check); refusing to start with an untrusted database', {
+      action: 'v2-db-integrity-check',
+      path: v2DbPath,
+    });
+    throw new Error(
+      'v2.sqlite failed integrity check (quick_check). Refusing to continue with an untrusted working database. ' +
+        'Please restore from a backup, or delete the damaged v2.sqlite and restart to re-import the legacy database.',
+    );
   }
 }
 const dbPath = process.env.V2_DB_PATH ?? v2DbPath;
