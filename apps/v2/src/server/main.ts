@@ -13,9 +13,10 @@ import { applyStagedRestore } from './infrastructure/restore-apply';
 import { AlertService, AuditService, BackupService } from './application/services';
 
 const projectRoot = process.cwd();
-const selfContainedLegacyDb = path.join(projectRoot, 'legacy', 'dental.sqlite');
-const legacyDbPath = process.env.V2_LEGACY_DB_PATH
-  ?? (fs.existsSync(selfContainedLegacyDb) ? selfContainedLegacyDb : undefined);
+// T2R-17 / R2-P0-04: dental.sqlite is no longer bundled in the repository (the
+// 2.4 MB patient database was removed from git); the legacy database path must
+// be provided explicitly via V2_LEGACY_DB_PATH.
+const legacyDbPath = process.env.V2_LEGACY_DB_PATH;
 const legacySchemaDir = process.env.V2_LEGACY_SCHEMA_DIR ?? path.join(projectRoot, 'legacy', 'schema');
 const v2DataDir = process.env.V2_DATA_DIR ?? path.join(projectRoot, 'data');
 const v2DbPath = path.join(v2DataDir, 'v2.sqlite');
