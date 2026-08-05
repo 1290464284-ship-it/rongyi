@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -15,8 +15,13 @@ const wrapper = ({ children }: { children: ReactNode }) => (
 );
 
 describe('BackupsPage', () => {
+  beforeEach(() => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+  });
+
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
     vi.mocked(apiRequest).mockReset();
   });
 
@@ -102,5 +107,20 @@ describe('BackupsPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '清理备份（保留 30 个）' }));
     expect(await screen.findByText('清理备份失败')).toBeDefined();
+  });
+
+  it('does not stage restore or clean up when the confirm dialog is cancelled', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce([{ filename: 'backup-1.sqlite', encrypted: false, fileSize: 100, createdAt: '2026-08-04' }]);
+    vi.mocked(window.confirm).mockReturnValue(false);
+
+    render(<BackupsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '暂存恢复' }));
+    fireEvent.click(screen.getByRole('button', { name: '清理备份（保留 30 个）' }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(apiRequest).not.toHaveBeenCalledWith('/backups/backup-1.sqlite/restore', expect.anything());
+    expect(apiRequest).not.toHaveBeenCalledWith('/backups/cleanup', expect.anything());
+    expect(window.confirm).toHaveBeenCalledWith('确认暂存恢复备份“backup-1.sqlite”？重启应用后生效。');
+    expect(window.confirm).toHaveBeenCalledWith('确认清理过期备份（保留最近 30 个）？此操作不可撤销。');
   });
 });

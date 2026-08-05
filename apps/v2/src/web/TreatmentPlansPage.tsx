@@ -74,6 +74,8 @@ export function TreatmentPlansPage() {
       return;
     }
     setSubmitting(true);
+    let planId: string | null = null;
+    const createdItemIds: string[] = [];
     try {
       const calculatedFee = validItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
       const plan = await apiRequest<{ id: string }>('/resources/treatmentPlans', {
@@ -87,11 +89,13 @@ export function TreatmentPlansPage() {
           remark: remark || undefined,
         }),
       });
+      planId = plan.id;
       for (const item of validItems) {
-        await apiRequest('/resources/treatmentPlanItems', {
+        const created = await apiRequest<{ id: string }>('/resources/treatmentPlanItems', {
           method: 'POST',
           body: JSON.stringify({ planId: plan.id, ...item }),
         });
+        createdItemIds.push(created.id);
       }
       showToast('治疗计划已创建', 'success');
       setShowForm(false);
@@ -101,6 +105,14 @@ export function TreatmentPlansPage() {
       setItems([newItem()]);
       await query.refetch();
     } catch (error) {
+      // 主记录已创建但明细中途失败：清理孤儿记录（清理失败仅告警，不掩盖原始错误）
+      if (planId) {
+        try {
+          await cleanupOrphanPlan(planId, createdItemIds);
+        } catch (cleanupError) {
+          console.warn('清理孤儿治疗计划失败', cleanupError);
+        }
+      }
       showToast(errorMessage(error, '创建治疗计划失败'), 'error');
     } finally {
       setSubmitting(false);
@@ -187,4 +199,20 @@ function splitList(value: string): string[] {
     .split(/[,，]/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+async function cleanupOrphanPlan(planId: string, createdItemIds: string[]): Promise<void> {
+  // 服务端 DELETE 为软删除且不级联：先删已建明细，再删主记录
+  for (const itemId of createdItemIds) {
+    try {
+      await apiRequest(`/resources/treatmentPlanItems/${itemId}`, { method: 'DELETE' });
+    } catch (error) {
+      console.warn(`删除治疗计划明细失败（继续清理主记录）：${itemId}`, error);
+    }
+  }
+  try {
+    await apiRequest(`/resources/treatmentPlans/${planId}`, { method: 'DELETE' });
+  } catch (error) {
+    console.warn(`删除孤儿治疗计划失败：${planId}`, error);
+  }
 }
