@@ -31,6 +31,7 @@ function samplePathForPattern(pattern: RegExp, index: number): string {
     ['/api/v2/processing-orders', '/api/v2/processing-orders/abc'],
     ['/api/v2/appointments', '/api/v2/appointments/abc'],
     ['/api/v2/registrations', '/api/v2/visits', '/api/v2/first-exams', '/api/v2/treatments', '/api/v2/medical-records', '/api/v2/patients/p1/risk', '/api/v2/prescriptions', '/api/v2/cephalometric', '/api/v2/treatment-plans'],
+    ['/api/v2/wechat/send-batch'],
     ['/api/v2/wechat', '/api/v2/wechat/send'],
     ['/api/v2/follow-ups', '/api/v2/follow-ups/abc'],
     ['/api/v2/notifications', '/api/v2/notifications/abc'],
@@ -74,6 +75,16 @@ describe('routeRoleRules', () => {
         expect(rule.roles.includes(denyRole)).toBe(false);
       });
     }
+  });
+
+  it('wechat send-batch 规则收窄为 BOSS/ADMIN 且优先于通用 wechat 规则', () => {
+    const sendBatch = routeRoleRules.find((r) => r.pattern.test('/api/v2/wechat/send-batch') && r.pattern.source.includes('send-batch'));
+    const generic = routeRoleRules.find((r) => r.pattern.test('/api/v2/wechat/status'));
+    expect(sendBatch).toBeDefined();
+    expect(sendBatch!.roles).toEqual(['BOSS', 'ADMIN']);
+    expect(sendBatch!.pattern.test('/api/v2/wechat/send-batch')).toBe(true);
+    expect(generic).toBeDefined();
+    expect(routeRoleRules.indexOf(sendBatch!)).toBeLessThan(routeRoleRules.indexOf(generic!));
   });
 });
 

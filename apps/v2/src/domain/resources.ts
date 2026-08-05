@@ -610,7 +610,7 @@ const resources: ResourceDefinition[] = [
     f('body', 'longText', { required: true }),
     f('kind', 'text', { required: true }),
     f('readAt', 'datetime'),
-  ], { roles: staff, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
+  ], { roles: ['BOSS', 'ADMIN'], capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   crud('settings', 'Setting', [
     f('key', 'text', { required: true, unique: true }),
