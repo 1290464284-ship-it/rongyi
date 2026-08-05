@@ -58,6 +58,29 @@ describe('HTTP app', () => {
     expect(deep.body.data.database).toBe('ok');
   });
 
+  it('allows null origin from Electron file:// renderer with CORS', async () => {
+    const response = await request(app)
+      .get('/api/v2/health')
+      .set('Origin', 'null')
+      .expect(200);
+    expect(response.headers['access-control-allow-origin']).toBe('null');
+  });
+
+  it('allows file:// origins and echoes them in the CORS header', async () => {
+    const response = await request(app)
+      .get('/api/v2/health')
+      .set('Origin', 'file://C:/app/dist-web/index.html')
+      .expect(200);
+    expect(response.headers['access-control-allow-origin']).toBe('file://C:/app/dist-web/index.html');
+  });
+
+  it('rejects untrusted origins without a CORS allow header', async () => {
+    const response = await request(app)
+      .get('/api/v2/health')
+      .set('Origin', 'https://evil.example');
+    expect(response.headers['access-control-allow-origin']).toBeUndefined();
+  });
+
   it('uploads and serves allowed files', async () => {
     const upload = await request(app)
       .post('/api/v2/files')
