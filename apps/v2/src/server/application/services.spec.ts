@@ -17,6 +17,7 @@ import {
   MemberCardService,
   PatientRiskService,
   StatsService,
+  SyncService,
 } from './services';
 import { SqliteChargeRepository } from '../infrastructure/repositories/charge.repository';
 import type { AuthRepository, MemberCardRepository, MemberCardRecord } from './ports';
@@ -817,6 +818,83 @@ describe('application services', () => {
     } finally {
       prepare.mockRestore();
       vi.useRealTimers();
+    }
+  });
+
+  it('pulls sync changes with a cursor across the 1000-row page', () => {
+    const service = new SyncService(db);
+    const device = service.registerDevice('sync-cursor-device', 'Cursor Test', context);
+    // 起点取本库当前最新 createdAt，确保后续插入的 1001 条是唯一可见的新变更。
+    const since = (db.prepare('SELECT MAX(createdAt) AS m FROM SyncChange WHERE clinicId = ?').get(context.clinicId) as { m: string | null }).m
+      ?? new Date(0).toISOString();
+    const createdAtFor = (index: number) => new Date(Date.parse(since) + index + 1).toISOString();
+    try {
+      for (let index = 0; index < 1001; index += 1) {
+        const createdAt = createdAtFor(index);
+        db.prepare(
+          `INSERT INTO SyncChange (
+             id, clinicId, createdAt, updatedAt, deletedAt,
+             tableName, recordId, operation, deviceId
+           ) VALUES (?, ?, ?, ?, NULL, 'Patient', ?, 'INSERT', 'other-device')`,
+        ).run(`sync-cursor-change-${index}`, context.clinicId, createdAt, createdAt, `sync-cursor-record-${index}`);
+      }
+
+      const first = service.pull(since, 'sync-cursor-device', device.token, context);
+      expect(first.changes).toHaveLength(1000);
+      expect(first.changes[0].recordId).toBe('sync-cursor-record-0');
+      expect(first.changes[999].recordId).toBe('sync-cursor-record-999');
+      expect(first.cursor).toBe(createdAtFor(999));
+
+      const second = service.pull(first.cursor, 'sync-cursor-device', device.token, context);
+      expect(second.changes).toHaveLength(1);
+      expect(second.changes[0].recordId).toBe('sync-cursor-record-1000');
+      expect(second.cursor).toBe(createdAtFor(1000));
+
+      const empty = service.pull(second.cursor, 'sync-cursor-device', device.token, context);
+      expect(empty.changes).toHaveLength(0);
+      expect(empty.cursor).toBe(second.cursor);
+    } finally {
+      db.prepare('DELETE FROM SyncChange WHERE clinicId = ? AND recordId LIKE ?').run(context.clinicId, 'sync-cursor-record-%');
+      db.prepare('DELETE FROM SyncDevice WHERE deviceId = ?').run('sync-cursor-device');
+    }
+  });
+
+  it('pushes sync changes in transactional batches and persists every row', async () => {
+    const service = new SyncService(db);
+    const device = service.registerDevice('sync-push-batch-device', 'Push Batch', context);
+    const changes = Array.from({ length: 300 }, (_, index) => ({
+      tableName: 'Patient',
+      recordId: `sync-push-batch-record-${index}`,
+      operation: 'INSERT',
+      updatedAt: new Date().toISOString(),
+      data: {
+        code: `SYNC-PUSH-BATCH-${index}`,
+        name: `Sync Push Batch ${index}`,
+        gender: 'UNKNOWN',
+        phone: `13${String(400000000 + index)}`,
+        source: 'OTHER',
+        active: true,
+      },
+    }));
+    try {
+      const result = await service.push({
+        deviceId: 'sync-push-batch-device',
+        deviceToken: device.token,
+        changes,
+      }, context);
+      expect(result.accepted).toBe(300);
+      expect(result.failed).toBe(0);
+      expect(result.errors).toHaveLength(0);
+
+      const patients = db.prepare('SELECT COUNT(*) AS n FROM Patient WHERE clinicId = ? AND id LIKE ?').get(context.clinicId, 'sync-push-batch-record-%') as { n: number };
+      expect(Number(patients.n)).toBe(300);
+      const changeLog = db.prepare('SELECT COUNT(*) AS n FROM SyncChange WHERE deviceId = ? AND recordId LIKE ?').get('sync-push-batch-device', 'sync-push-batch-record-%') as { n: number };
+      expect(Number(changeLog.n)).toBe(300);
+    } finally {
+      db.prepare('DELETE FROM Patient WHERE clinicId = ? AND id LIKE ?').run(context.clinicId, 'sync-push-batch-record-%');
+      db.prepare('DELETE FROM SearchIndex WHERE resource = ? AND recordId LIKE ?').run('Patient', 'sync-push-batch-record-%');
+      db.prepare('DELETE FROM SyncChange WHERE deviceId = ? AND recordId LIKE ?').run('sync-push-batch-device', 'sync-push-batch-record-%');
+      db.prepare('DELETE FROM SyncDevice WHERE deviceId = ?').run('sync-push-batch-device');
     }
   });
 });

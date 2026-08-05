@@ -33,7 +33,7 @@ const SYNC_RESOURCES: Record<string, string> = {
 export class SyncService {
   constructor(private readonly db: Database.Database) {}
 
-  pull(since: string, deviceId: string, deviceToken: string, context: AppContext): { changes: Array<Record<string, unknown>>; serverTime: string } {
+  pull(since: string, deviceId: string, deviceToken: string, context: AppContext): { changes: Array<Record<string, unknown>>; cursor: string; serverTime: string } {
     if (!context.clinicId) throw new AppError('FORBIDDEN', 'Sync requires a clinic scope', 403);
     if (!['BOSS', 'ADMIN'].includes(context.role)) {
       throw new AppError('FORBIDDEN', 'Sync requires BOSS or ADMIN', 403);
@@ -43,10 +43,13 @@ export class SyncService {
       `SELECT id, tableName, recordId, operation, deviceId, clinicId, createdAt
        FROM SyncChange
        WHERE createdAt > ? AND deviceId != ?${tenantAnd(context.clinicId)}
-       ORDER BY createdAt ASC
+       ORDER BY createdAt ASC, rowid ASC
        LIMIT 1000`,
     ).all(since, deviceId, ...tenantParams(context.clinicId)) as Array<Record<string, unknown>>;
-    return { changes, serverTime: new Date().toISOString() };
+    // 游标 = 本批最后一条的 createdAt（与排序键一致；rowid 仅保证同秒并列时次序稳定，
+    // 客户端以 cursor 续拉不会丢变更）。空批时游标保持入参 since，可继续以同一游标轮询。
+    const cursor = changes.length > 0 ? String(changes[changes.length - 1].createdAt) : since;
+    return { changes, cursor, serverTime: new Date().toISOString() };
   }
 
   async push(payload: {
@@ -71,53 +74,98 @@ export class SyncService {
     this.assertDevice(payload.deviceId, payload.deviceToken, context);
     let accepted = 0;
     const errors: Array<{ recordId: string; error: string }> = [];
-    for (const change of payload.changes) {
-      if (!SYNC_ALLOWED_TABLES.has(change.tableName)) {
-        errors.push({ recordId: change.recordId, error: 'Table is not allowed for sync' });
-        continue;
-      }
-      if (!['INSERT', 'UPDATE', 'DELETE'].includes(change.operation)) {
-        errors.push({ recordId: change.recordId, error: 'Sync operation must be INSERT, UPDATE, or DELETE' });
-        continue;
-      }
-      if (change.tableName === 'Charge' && change.operation !== 'DELETE') {
-        errors.push({ recordId: change.recordId, error: 'Charge writes are disabled in sync; use charge APIs' });
-        continue;
-      }
-      const resourceName = SYNC_RESOURCES[change.tableName];
-      const definition = resourceRegistry.get(resourceName);
-      /* v8 ignore start */
-      if (!definition) {
-        errors.push({ recordId: change.recordId, error: `Resource is not defined: ${resourceName}` });
-        continue;
-      }
-      /* v8 ignore stop */
+    // 每 500 条一个事务批。注意：better-sqlite3 的 db.transaction 会拒绝返回 Promise 的
+    // 回调（TypeError: Transaction function cannot return a promise），而 apply 路径是
+    // async repository 方法（其 SQL 在已 resolve 的微任务链中同步执行），因此这里用显式
+    // BEGIN/COMMIT/ROLLBACK 实现等价的批事务：整批要么全部生效、要么整体回滚。
+    for (let offset = 0; offset < payload.changes.length; offset += 500) {
+      const batch = payload.changes.slice(offset, offset + 500);
+      // 本批已记录单条 error 的下标；系统性错误回滚后按此去重，避免重复记账。
+      const failedIndexes = new Set<number>();
+      let batchAccepted = 0;
+      let inTransaction = false;
       try {
-        const repo = new SqliteRepository(this.db, definition, { emitSyncChange: false });
-        if (change.operation === 'DELETE') {
-          if (!(await repo.findById(change.recordId, context))) {
-            throw new Error(`Sync record not found: ${change.recordId}`);
+        this.db.exec('BEGIN');
+        inTransaction = true;
+        for (let index = 0; index < batch.length; index += 1) {
+          const change = batch[index];
+          if (!SYNC_ALLOWED_TABLES.has(change.tableName)) {
+            errors.push({ recordId: change.recordId, error: 'Table is not allowed for sync' });
+            failedIndexes.add(index);
+            continue;
           }
-          await repo.softDelete(change.recordId, context);
-        } else {
-          if (!change.data || typeof change.data !== 'object') {
-            throw new Error('Sync change requires row data');
+          if (!['INSERT', 'UPDATE', 'DELETE'].includes(change.operation)) {
+            errors.push({ recordId: change.recordId, error: 'Sync operation must be INSERT, UPDATE, or DELETE' });
+            failedIndexes.add(index);
+            continue;
           }
-          const existing = await repo.findById(change.recordId, context);
-          const payloadRow = stripProtectedWriteFields(validatePayload(
-            definition,
-            change.data,
-            existing ? { partial: true } : {},
-          ));
-          const entity = { id: change.recordId, ...payloadRow };
-          if (existing) await repo.update(entity, context);
-          else await repo.insert(entity, context);
+          if (change.tableName === 'Charge' && change.operation !== 'DELETE') {
+            errors.push({ recordId: change.recordId, error: 'Charge writes are disabled in sync; use charge APIs' });
+            failedIndexes.add(index);
+            continue;
+          }
+          const resourceName = SYNC_RESOURCES[change.tableName];
+          const definition = resourceRegistry.get(resourceName);
+          /* v8 ignore start */
+          if (!definition) {
+            errors.push({ recordId: change.recordId, error: `Resource is not defined: ${resourceName}` });
+            failedIndexes.add(index);
+            continue;
+          }
+          /* v8 ignore stop */
+          try {
+            const repo = new SqliteRepository(this.db, definition, { emitSyncChange: false });
+            if (change.operation === 'DELETE') {
+              if (!(await repo.findById(change.recordId, context))) {
+                throw new Error(`Sync record not found: ${change.recordId}`);
+              }
+              await repo.softDelete(change.recordId, context);
+            } else {
+              if (!change.data || typeof change.data !== 'object') {
+                throw new Error('Sync change requires row data');
+              }
+              const existing = await repo.findById(change.recordId, context);
+              const payloadRow = stripProtectedWriteFields(validatePayload(
+                definition,
+                change.data,
+                existing ? { partial: true } : {},
+              ));
+              const entity = { id: change.recordId, ...payloadRow };
+              if (existing) await repo.update(entity, context);
+              else await repo.insert(entity, context);
+            }
+            this.record(change.tableName, change.recordId, change.operation, payload.deviceId, context.clinicId);
+            batchAccepted += 1;
+          } catch (error) {
+            /* v8 ignore start -- systematic SQLite errors carry a `code` (SQLITE_FULL/BUSY/IOERR/...) and abort the batch */
+            if (error instanceof Error && 'code' in error) throw error;
+            /* v8 ignore stop */
+            /* v8 ignore start -- non-Error rejection is defensive; current repositories throw Error instances. */
+            errors.push({ recordId: change.recordId, error: error instanceof Error ? error.message : String(error) });
+            /* v8 ignore stop */
+            failedIndexes.add(index);
+          }
         }
-        this.record(change.tableName, change.recordId, change.operation, payload.deviceId, context.clinicId);
-        accepted += 1;
+        this.db.exec('COMMIT');
+        inTransaction = false;
+        accepted += batchAccepted;
+        /* v8 ignore start -- systematic SQLite errors are not reproducible in unit tests: roll back the batch, mark every not-yet-recorded item as failed, and abort remaining batches */
       } catch (error) {
-        /* v8 ignore start -- non-Error rejection is defensive; current repositories throw Error instances. */
-        errors.push({ recordId: change.recordId, error: error instanceof Error ? error.message : String(error) });
+        if (inTransaction) {
+          try {
+            this.db.exec('ROLLBACK');
+          } catch {
+            // Preserve the original error if ROLLBACK itself fails.
+          }
+        }
+        if (!(error instanceof Error && 'code' in error)) throw error;
+        const message = error.message;
+        for (let index = 0; index < batch.length; index += 1) {
+          if (!failedIndexes.has(index)) {
+            errors.push({ recordId: batch[index].recordId, error: message });
+          }
+        }
+        break;
         /* v8 ignore stop */
       }
     }
