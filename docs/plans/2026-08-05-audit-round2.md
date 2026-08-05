@@ -1,6 +1,6 @@
 # 2026-08-05 第二轮审计修复计划（Dental Clinic V2）
 
-> **For agentic workers:** Implement this plan task-by-task, with a review gate between tasks. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Implement this plan task-by-task, with a review gate between tasks. Steps use checkbox (`- [x]`) syntax for tracking.
 >
 > **执行模型：** 沿用选项 A（Subagent-Driven）——每个任务派发独立子代理 + 调用方评审门禁 + 独立提交；全量测试由调用方串行复验；子代理只读审计、禁止 git 操作。
 
@@ -69,7 +69,7 @@
 
 **背景（已实测坐实）：** Chromium file:// 页面跨域请求发送 `Origin: null`，当前 `new URL('null')` 抛错落入拒绝分支 → 打包版渲染器所有 API 调用 500/被浏览器拦截。同时 helmet 默认 `Cross-Origin-Resource-Policy: same-origin` 会阻断 file:// 页面以 `<img>` 加载 API 图片资源。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `app.spec.ts` 新增（沿用现有 supertest 模式）：
 
@@ -98,12 +98,12 @@ it('still rejects foreign web origins', async () => {
 });
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `pnpm --filter @dental/v2 test src/server/http/app.spec.ts -t "null origin"`
 Expected: 前两个用例 FAIL（当前 `Origin: null` → 500 无 ACAO），第三个 PASS。
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 ```ts
 app.use(helmet()); // 保持全局默认 CORP same-origin
@@ -126,12 +126,12 @@ app.use('/api/v2/files', (req, res, next) => {
 
 （若 files 路由实际挂载路径不同，以 `registerFileRoutes` 的挂载点为准，保持中间件在路由前。）
 
-- [ ] **Step 4: 运行确认通过**
+- [x] **Step 4: 运行确认通过**
 
 Run: `pnpm --filter @dental/v2 test src/server/http/app.spec.ts`
 Expected: 新增 3 个用例 PASS，全文件无回归。
 
-- [ ] **Step 5: 手工实测（本机）**
+- [x] **Step 5: 手工实测（本机）**
 
 ```bash
 cd apps/v2 && NODE_ENV=test V2_PORT=3980 pnpm exec tsx src/server/main.ts > /tmp/v2-api.log 2>&1 &
@@ -140,7 +140,7 @@ curl -s -i -H 'Origin: file://C:/x/index.html' http://127.0.0.1:3980/api/v2/heal
 # 结束进程（只杀本次启动的 PID）
 ```
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add apps/v2/src/server/http/app.ts apps/v2/src/server/http/app.spec.ts
@@ -169,7 +169,7 @@ git commit -m "fix(v2): allow null/file origins for packaged renderer and scope 
 
 **背景（已坐实）：** T2.1 删除 19 个 FTS 触发器后，运行期 CRUD 不写 `SearchIndex`，仅启动 `rebuildSearchIndex`（`main.ts:62-66`）。`repository.ts:89-94` 的 FTS 检索将随数据变更失真。
 
-- [ ] **Step 1: 写失败测试（search-index.spec.ts）**
+- [x] **Step 1: 写失败测试（search-index.spec.ts）**
 
 ```ts
 describe('runtime search index maintenance', () => {
@@ -196,12 +196,12 @@ describe('runtime search index maintenance', () => {
 });
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `pnpm --filter @dental/v2 test src/server/infrastructure/search-index.spec.ts`
 Expected: FAIL（函数不存在）。
 
-- [ ] **Step 3: 实现 search-index.ts**
+- [x] **Step 3: 实现 search-index.ts**
 
 ```ts
 const SEARCH_UPSERT_SQL: Record<string, string> = {
@@ -252,7 +252,7 @@ export function refreshPatientChildSearchRows(db: Database.Database, patientId: 
 }
 ```
 
-- [ ] **Step 4: repository 写路径接线**
+- [x] **Step 4: repository 写路径接线**
 
 `repository.ts` 的 `insert` 成功返回前、`update` 成功后、`softDelete` 成功后分别加：
 
@@ -265,16 +265,16 @@ if (this.resource.searchIndexResource) {
 
 患者改名/软删的级联：`resource.name === 'patients'` 的 update 成功后调用 `refreshPatientChildSearchRows(this.db, id)`；softDelete 患者时对子资源行执行 `removeSearchRow`（子行按 `patientId` 查 `Appointment/Charge/FollowUp` 后逐个删除）。
 
-- [ ] **Step 5: repository.spec.ts 断言**
+- [x] **Step 5: repository.spec.ts 断言**
 
 在现有 repository 写路径用例中补：`insert` 后 SearchIndex 有行、`update` 后内容更新、`softDelete` 后行被删；`patients` 改名后 Appointment 索引行含新名。
 
-- [ ] **Step 6: 运行确认通过**
+- [x] **Step 6: 运行确认通过**
 
 Run: `pnpm --filter @dental/v2 test src/server/infrastructure/search-index.spec.ts src/server/infrastructure/repository.spec.ts`
 Expected: 全 PASS。
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git add apps/v2/src/server/infrastructure/search-index.ts apps/v2/src/server/infrastructure/repository.ts apps/v2/src/server/infrastructure/search-index.spec.ts
@@ -297,7 +297,7 @@ git commit -m "fix(v2): maintain FTS search index on runtime CRUD writes"
 
 **背景（已坐实）：** 118 建 `(clinicId, field) WHERE deletedAt IS NULL` 唯一索引时 NULL 行不冲突；121 把 NULL 统一回填为最早诊所后，旧库中 `(NULL, 同卡号/同单号)` 的重复行直接撞索引 → 迁移抛错 → 启动崩溃。`repairLegacyData` 去重只覆盖非 NULL 行（`migrations.ts:862-874`）。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```ts
 it('preflight dedups NULL-clinic rows before migration 121 backfill', () => {
@@ -307,11 +307,11 @@ it('preflight dedups NULL-clinic rows before migration 121 backfill', () => {
 });
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Expected: FAIL（当前 121 直接抛 UNIQUE constraint failed）。
 
-- [ ] **Step 3: 实现 preflight**
+- [x] **Step 3: 实现 preflight**
 
 ```ts
 function dedupNullClinicRows(db: Database.Database, table: string, uniqueColumn: string): number {
@@ -356,12 +356,12 @@ if (pendingVersions.includes(121)) {
 
 （`pendingVersions` 以实际 runMigrations 的待应用列表变量为准；只针对唯一字段且带 clinicId 列的表。）
 
-- [ ] **Step 4: 运行确认通过**
+- [x] **Step 4: 运行确认通过**
 
 Run: `pnpm --filter @dental/v2 test src/server/infrastructure/migrations.spec.ts`
 Expected: 新用例 PASS，既有迁移用例无回归。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add apps/v2/src/server/infrastructure/migrations.ts
@@ -389,11 +389,11 @@ git commit -m "fix(v2): preflight dedup NULL-clinic rows before backfill migrati
 
 **背景（已坐实）：** memberStats 的会员统计 COUNT 无 `deletedAt IS NULL`，已软删会员计入统计。
 
-- [ ] **Step 1: 写失败测试**：建 1 个会员 → 软删 → memberStats 计数应为 0（当前为 1）。
-- [ ] **Step 2: 运行确认失败**：FAIL。
-- [ ] **Step 3: 实现**：给该 COUNT 加 `AND deletedAt IS NULL`（如聚合中还包含其他表，逐表核对同列）。
-- [ ] **Step 4: 运行确认通过**：`pnpm --filter @dental/v2 test src/server/application/services.spec.ts` PASS。
-- [ ] **Step 5: 提交**
+- [x] **Step 1: 写失败测试**：建 1 个会员 → 软删 → memberStats 计数应为 0（当前为 1）。
+- [x] **Step 2: 运行确认失败**：FAIL。
+- [x] **Step 3: 实现**：给该 COUNT 加 `AND deletedAt IS NULL`（如聚合中还包含其他表，逐表核对同列）。
+- [x] **Step 4: 运行确认通过**：`pnpm --filter @dental/v2 test src/server/application/services.spec.ts` PASS。
+- [x] **Step 5: 提交**
 
 ```bash
 git add apps/v2/src/server/application/read-services.ts apps/v2/src/server/application/services.spec.ts
@@ -411,7 +411,7 @@ git commit -m "fix(v2): exclude soft-deleted members from member stats"
 
 **背景（已坐实）：** `validatePayload` 对未提供字段套用默认值并过 `validateField`（`validation.ts:17-19`）；`'number'` 强制 `Number.isInteger`（`:60`）→ `riskMultiplierHigh: 0.75` / `riskMultiplierExtreme: 0.5` 默认值直接抛错 → **创建随访模板必 400**（显式传整数值可绕过）。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```ts
 // validation.spec.ts
@@ -430,8 +430,8 @@ it('creates a follow-up template with fractional default multipliers', async () 
 });
 ```
 
-- [ ] **Step 2: 运行确认失败**：两个用例 FAIL（当前抛 "must be an integer amount in cents"）。
-- [ ] **Step 3: 实现 validation.ts**
+- [x] **Step 2: 运行确认失败**：两个用例 FAIL（当前抛 "must be an integer amount in cents"）。
+- [x] **Step 3: 实现 validation.ts**
 
 ```ts
 case 'decimal': {
@@ -445,8 +445,8 @@ case 'decimal': {
 
 `resources.ts`：`riskMultiplierLow/Medium/High/Extreme` 的 `f('...', 'number', ...)` 改为 `f('...', 'decimal', ...)`，默认值 1/1/0.75/0.5 不变。
 
-- [ ] **Step 4: 运行确认通过**：`pnpm --filter @dental/v2 test src/server/http/validation.spec.ts src/server/http/app.spec.ts` PASS。
-- [ ] **Step 5: 提交**
+- [x] **Step 4: 运行确认通过**：`pnpm --filter @dental/v2 test src/server/http/validation.spec.ts src/server/http/app.spec.ts` PASS。
+- [x] **Step 5: 提交**
 
 ```bash
 git add apps/v2/src/server/http/validation.ts apps/v2/src/domain/resources.ts apps/v2/src/server/http/validation.spec.ts apps/v2/src/server/http/app.spec.ts
@@ -469,7 +469,7 @@ git commit -m "fix(v2): add decimal field type so follow-up template multipliers
 
 **背景（已坐实）：** 本地 CRUD 不产生 SyncChange，唯一写点在 `SyncService.record`（`sync.ts:150`），而它只在 push 路径被调用 → 其他设备 pull 永远拿不到本机变更。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```ts
 // repository.spec.ts：insert 患者后
@@ -482,8 +482,8 @@ it('pulls server-originated changes to other devices', () => {
 });
 ```
 
-- [ ] **Step 2: 运行确认失败**：repository 用例 FAIL（无 SyncChange 行）。
-- [ ] **Step 3: 实现**
+- [x] **Step 2: 运行确认失败**：repository 用例 FAIL（无 SyncChange 行）。
+- [x] **Step 3: 实现**
 
 ```ts
 // sync-change.ts
@@ -501,9 +501,9 @@ export function recordSyncChange(db: Database.Database, change: {
 `repository.ts`：insert/update/softDelete 成功后（有 clinicId 时）调用 `recordSyncChange(this.db, { tableName: this.resource.table, recordId: id, operation: 'CREATE'|'UPDATE'|'DELETE', clinicId: context.clinicId })`。
 `sync.ts` 的 `record()` 改为内部调用 `recordSyncChange`（保留原签名与调用方，push 路径行为不变）。
 
-- [ ] **Step 4: 全服务直写扫描**：`grep -rn "INSERT INTO \|UPDATE " src/server/application/service-modules --include='*.ts' | grep -v spec`，对直写同步业务表的服务（Charge/ChargeItem/Treatment/Visit/FollowUp/Patient/Appointment/InventoryItem 等）逐个补 `recordSyncChange` 调用；本任务至少覆盖 Charge、Patient 两个高频路径，其余列入任务备注由 T4.1 统一兜底（T4.1 执行时同步完成全量接线）。
-- [ ] **Step 5: 运行确认通过**：`pnpm --filter @dental/v2 test src/server/infrastructure/repository.spec.ts src/server/application/service-modules/sync.spec.ts` PASS。
-- [ ] **Step 6: 提交**
+- [x] **Step 4: 全服务直写扫描**：`grep -rn "INSERT INTO \|UPDATE " src/server/application/service-modules --include='*.ts' | grep -v spec`，对直写同步业务表的服务（Charge/ChargeItem/Treatment/Visit/FollowUp/Patient/Appointment/InventoryItem 等）逐个补 `recordSyncChange` 调用；本任务至少覆盖 Charge、Patient 两个高频路径，其余列入任务备注由 T4.1 统一兜底（T4.1 执行时同步完成全量接线）。
+- [x] **Step 5: 运行确认通过**：`pnpm --filter @dental/v2 test src/server/infrastructure/repository.spec.ts src/server/application/service-modules/sync.spec.ts` PASS。
+- [x] **Step 6: 提交**
 
 ```bash
 git add apps/v2/src/server/infrastructure/sync-change.ts apps/v2/src/server/infrastructure/repository.ts apps/v2/src/server/application/service-modules/sync.ts
@@ -520,11 +520,11 @@ git commit -m "fix(v2): emit sync changes for local CRUD writes"
 
 **背景（已坐实）：** `useState('inventory-demo-001')` / `useState('patient-demo-001')` 写死 demo 行 ID，真实部署（非 seed 环境）下页面永远查不到数据。
 
-- [ ] **Step 1: 写失败测试**：mock API 返回真实列表（无 demo ID）时，页面应显示首条数据而非空态。
-- [ ] **Step 2: 运行确认失败**：FAIL（固定 demo ID 查不到）。
-- [ ] **Step 3: 实现**：初始状态改为从路由参数（如 `?id=`）或列表首项派生：`useState<string | null>(null)` + 加载列表后 `setSelectedId(list[0]?.id ?? null)`；无数据时渲染空态文案。保持 URL 可直达（`useSearchParams` 读 id）。
-- [ ] **Step 4: 运行确认通过** + 全量 web 测试。
-- [ ] **Step 5: 提交**
+- [x] **Step 1: 写失败测试**：mock API 返回真实列表（无 demo ID）时，页面应显示首条数据而非空态。
+- [x] **Step 2: 运行确认失败**：FAIL（固定 demo ID 查不到）。
+- [x] **Step 3: 实现**：初始状态改为从路由参数（如 `?id=`）或列表首项派生：`useState<string | null>(null)` + 加载列表后 `setSelectedId(list[0]?.id ?? null)`；无数据时渲染空态文案。保持 URL 可直达（`useSearchParams` 读 id）。
+- [x] **Step 4: 运行确认通过** + 全量 web 测试。
+- [x] **Step 5: 提交**
 
 ```bash
 git commit -m "fix(v2): derive inventory and patient timeline initial ids from data"
@@ -540,7 +540,7 @@ git commit -m "fix(v2): derive inventory and patient timeline initial ids from d
 
 **背景（已坐实）：** 审计中间件挂在角色中间件**之后**且跳过 `statusCode >= 400` → 403/401/4xx 全部无痕；越权尝试（最有审计价值的行为）不落库。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```ts
 it('audits forbidden attempts', async () => {
@@ -550,10 +550,10 @@ it('audits forbidden attempts', async () => {
 it('does not audit GET requests', () => { /* 现有行为保留 */ });
 ```
 
-- [ ] **Step 2: 运行确认失败**：403 用例 FAIL（无审计行）。
-- [ ] **Step 3: 实现**：将审计中间件移到角色中间件之前（认证之后），条件改为 `if (req.method === 'GET') return;`（记录全部非 GET 状态，含 4xx/5xx）；审计行记录 `statusCode`。注意 `req.context` 在认证后已可用；403 由后续中间件短路时 `res.on('finish')` 仍会触发。
-- [ ] **Step 4: 运行确认通过** + 全量测试（审计相关既有断言如"GET 不审计"需保持）。
-- [ ] **Step 5: 提交**
+- [x] **Step 2: 运行确认失败**：403 用例 FAIL（无审计行）。
+- [x] **Step 3: 实现**：将审计中间件移到角色中间件之前（认证之后），条件改为 `if (req.method === 'GET') return;`（记录全部非 GET 状态，含 4xx/5xx）；审计行记录 `statusCode`。注意 `req.context` 在认证后已可用；403 由后续中间件短路时 `res.on('finish')` 仍会触发。
+- [x] **Step 4: 运行确认通过** + 全量测试（审计相关既有断言如"GET 不审计"需保持）。
+- [x] **Step 5: 提交**
 
 ```bash
 git commit -m "fix(v2): record failed and forbidden requests in audit log"
@@ -569,11 +569,11 @@ git commit -m "fix(v2): record failed and forbidden requests in audit log"
 
 **背景（条件成立）：** 业务事务提交后单独 `UPDATE IdempotencyRecord SET status='COMPLETED'`，若该 UPDATE 失败则回退 `DELETE` 记录 → 客户端重试时业务重复执行。
 
-- [ ] **Step 1: 写失败测试**：模拟业务成功后幂等状态更新抛错（注入），断言业务事务回滚（记录不存在或 status=PENDING，业务副作用不存在）。
-- [ ] **Step 2: 运行确认失败**。
-- [ ] **Step 3: 实现**：把状态更新移入业务事务内（同一 `db.transaction`），删除提交后的 UPDATE + 失败 DELETE 回退逻辑；保持重试路径（PENDING/COMPLETED 判断）不变。
-- [ ] **Step 4: 运行确认通过** + 全量测试。
-- [ ] **Step 5: 提交**
+- [x] **Step 1: 写失败测试**：模拟业务成功后幂等状态更新抛错（注入），断言业务事务回滚（记录不存在或 status=PENDING，业务副作用不存在）。
+- [x] **Step 2: 运行确认失败**。
+- [x] **Step 3: 实现**：把状态更新移入业务事务内（同一 `db.transaction`），删除提交后的 UPDATE + 失败 DELETE 回退逻辑；保持重试路径（PENDING/COMPLETED 判断）不变。
+- [x] **Step 4: 运行确认通过** + 全量测试。
+- [x] **Step 5: 提交**
 
 ```bash
 git commit -m "fix(v2): mark idempotency records complete inside the business transaction"
@@ -661,16 +661,16 @@ git commit -m "fix(v2): mark idempotency records complete inside the business tr
 
 **前置：** T2R-01、T3.3、T3.4、T3.7 已合入。
 
-- [ ] 在合入最新代码的构建上执行：`pnpm --filter @dental/v2 electron:pack` 与安装包安装。
-- [ ] 实测清单（每项记录证据，输出 `docs/audits/打包实测报告-<date>.md`）：
+- [x] 在合入最新代码的构建上执行：`pnpm --filter @dental/v2 electron:pack` 与安装包安装。
+- [x] 实测清单（每项记录证据，输出 `docs/audits/打包实测报告-<date>.md`）：
   1. file:// 渲染器登录 → 列表/详情 API 正常（CORS 终确认；失败即回 T2R-01）。
   2. 图片/头像加载正常（CORP 终确认）。
   3. 自动更新：签名缺失/不符时的行为符合 T3.7 定义。
   4. 升级冒烟走主进程路径（installer-smoke/upgrade-smoke）。
   5. 错误窗 → 重试 → 主窗重建。
   6. 强杀主进程 → API 子进程在心跳窗口内退出（T2R-13 验证）。
-- [ ] 旧库升级演练：用含 NULL clinicId 重复行的旧版数据包升级 → 不崩溃（T2R-03 验证）。
-- [ ] 提交：`docs(v2): add packaging verification report`。
+- [x] 旧库升级演练：用含 NULL clinicId 重复行的旧版数据包升级 → 不崩溃（T2R-03 验证）。
+- [x] 提交：`docs(v2): add packaging verification report`。
 
 **验收：** 报告覆盖 7 项实测并给出 PASS/FAIL + 证据；FAIL 项转回对应任务修复后重测。
 
