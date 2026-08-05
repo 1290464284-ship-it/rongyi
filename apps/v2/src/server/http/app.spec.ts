@@ -164,6 +164,54 @@ describe('HTTP app', () => {
     expect(namedFallback.body.data.url).toContain('.png');
   });
 
+  it('rejects uploads with 413 when the per-user file count quota is reached', async () => {
+    const now = new Date().toISOString();
+    const insert = db.prepare(
+      `INSERT INTO FileRecord (
+         id, clinicId, patientId, filename, originalName, mimeType, fileSize,
+         createdBy, createdAt, updatedAt, deletedAt
+       ) VALUES (?, ?, NULL, ?, 'quota.png', 'image/png', 1, 'user-admin-001', ?, ?, NULL)`,
+    );
+    try {
+      for (let i = 0; i < 200; i += 1) {
+        insert.run(`quota-${i}`, 'clinic-v2-001', `quota-${i}.png`, now, now);
+      }
+      const response = await request(app)
+        .post('/api/v2/files')
+        .set('Authorization', `Bearer ${token}`)
+        .set('content-type', 'image/png')
+        .set('x-file-name', 'quota-test.png')
+        .send(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+        .expect(413);
+      expect(response.body.code).toBe('QUOTA_EXCEEDED');
+    } finally {
+      db.prepare("DELETE FROM FileRecord WHERE createdBy = 'user-admin-001' AND id LIKE 'quota-%'").run();
+    }
+  });
+
+  it('rejects uploads with 413 when the per-user byte quota is reached', async () => {
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO FileRecord (
+         id, clinicId, patientId, filename, originalName, mimeType, fileSize,
+         createdBy, createdAt, updatedAt, deletedAt
+       ) VALUES ('quota-bytes', 'clinic-v2-001', NULL, 'quota-bytes.png', 'quota.png', 'image/png', ?,
+         'user-admin-001', ?, ?, NULL)`,
+    ).run(500 * 1024 * 1024, now, now);
+    try {
+      const response = await request(app)
+        .post('/api/v2/files')
+        .set('Authorization', `Bearer ${token}`)
+        .set('content-type', 'image/png')
+        .set('x-file-name', 'quota-bytes-test.png')
+        .send(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+        .expect(413);
+      expect(response.body.code).toBe('QUOTA_EXCEEDED');
+    } finally {
+      db.prepare("DELETE FROM FileRecord WHERE id = 'quota-bytes'").run();
+    }
+  });
+
   it('isolates uploaded files by clinic and rejects fake file magic', async () => {
     const now = new Date().toISOString();
     db.prepare(

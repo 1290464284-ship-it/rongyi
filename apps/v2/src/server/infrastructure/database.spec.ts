@@ -132,6 +132,37 @@ describe('database bootstrap', () => {
     delete process.env.NODE_ENV;
   });
 
+  it('gates dev admin password reset behind V2_ALLOW_DEV_SEED', () => {
+    const dir = path.join(dataDir, 'dev-seed-gate');
+    const gateDb = createDatabase(dir);
+    const now = new Date().toISOString();
+    gateDb.prepare(
+      `INSERT INTO User (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         username, passwordHash, name, role, active, loginAttempts, tokenVersion
+       ) VALUES ('user-gate-admin', 'clinic-v2-001', ?, ?, NULL, 'admin', 'custom-hash', 'Admin', 'BOSS', 1, 0, 0)`,
+    ).run(now, now);
+    const prevNodeEnv = process.env.NODE_ENV;
+    const prevSeed = process.env.V2_ALLOW_DEV_SEED;
+    try {
+      // development 但未显式授权：不重置密码
+      process.env.NODE_ENV = 'development';
+      delete process.env.V2_ALLOW_DEV_SEED;
+      seedDatabase(gateDb);
+      const unchanged = (gateDb.prepare("SELECT passwordHash FROM User WHERE username = 'admin'").get() as { passwordHash: string }).passwordHash;
+      expect(unchanged).toBe('custom-hash');
+      // development + 显式授权：重置为 admin123
+      process.env.V2_ALLOW_DEV_SEED = '1';
+      seedDatabase(gateDb);
+      const reset = (gateDb.prepare("SELECT passwordHash FROM User WHERE username = 'admin'").get() as { passwordHash: string }).passwordHash;
+      expect(reset).not.toBe('custom-hash');
+    } finally {
+      if (prevNodeEnv === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = prevNodeEnv;
+      if (prevSeed === undefined) delete process.env.V2_ALLOW_DEV_SEED; else process.env.V2_ALLOW_DEV_SEED = prevSeed;
+      gateDb.close();
+    }
+  });
+
   it('passes the default quick_check on a healthy database', () => {
     const quickDir = path.join(dataDir, 'quick-check');
     fs.mkdirSync(quickDir, { recursive: true });
