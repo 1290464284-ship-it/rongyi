@@ -15,4 +15,3 @@ certs/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
-!apps/v2/legacy/dental.sqlite

@@ -29,11 +29,30 @@ The API listens on:
 http://localhost:3180/api/v2
 ```
 
-On first startup, V2 copies the bundled compatibility database at
-`apps/v2/legacy/dental.sqlite` into `apps/v2/data/v2.sqlite` in development, or
-into Electron `userData/data/v2.sqlite` in packaged mode. The original database
-is never modified. All legacy tables are synchronized into the V2 working copy
-so existing data and fields remain available.
+On first startup, V2 imports the legacy compatibility database pointed to by
+`V2_LEGACY_DB_PATH` into `apps/v2/data/v2.sqlite` in development, or into
+Electron `userData/data/v2.sqlite` in packaged mode. The original database is
+never modified. All legacy tables are synchronized into the V2 working copy so
+existing data and fields remain available.
+
+### Legacy database migration (老克隆升级)
+
+`apps/v2/legacy/dental.sqlite` has been removed from the repository (R2-P0-04):
+the patient database is no longer tracked by git, so fresh clones and upgraded
+clones do not contain it. Upgraders of an older clone should:
+
+1. Move the old `apps/v2/legacy/dental.sqlite` to any path outside the
+   repository, e.g. `D:\legacy\dental.sqlite`.
+2. Point the `V2_LEGACY_DB_PATH` environment variable at that file when
+   starting the app:
+
+   ```powershell
+   $env:V2_LEGACY_DB_PATH = 'D:\legacy\dental.sqlite'
+   pnpm --filter @dental/v2 dev
+   ```
+
+3. On startup the API automatically imports it into `v2.sqlite` when the V2
+   database does not exist yet. The legacy file itself is never modified.
 
 ## Security and Resource Names
 
