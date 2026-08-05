@@ -60,19 +60,21 @@ export interface AppDependencies {
   logDir: string;
 }
 
+export interface AuditInput {
+  userId?: string | null;
+  userName?: string | null;
+  action: string;
+  target?: string | null;
+  detail?: string | null;
+  ip?: string | null;
+  traceId?: string | null;
+  clinicId?: string | null;
+  statusCode?: number | null;
+}
+
 export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependencies): Express {
   const app = express();
-  const auditBuffer: Array<{
-    userId?: string | null;
-    userName?: string | null;
-    action: string;
-    target?: string | null;
-    detail?: string | null;
-    ip?: string | null;
-    traceId?: string | null;
-    clinicId?: string | null;
-    statusCode?: number | null;
-  }> = [];
+  const auditBuffer: AuditInput[] = [];
   const AUDIT_FLUSH_INTERVAL = 1000;
   const AUDIT_BUFFER_MAX = 50;
   const insertAuditStmt = db.prepare(
@@ -148,6 +150,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
       scheduleAuditFlush();
     }
   }
+  app.locals.audit = pushAudit;
   function shutdownFlushAudit(): void {
     if (auditBuffer.length === 0) return;
     const rows = auditBuffer.splice(0, auditBuffer.length);
@@ -244,6 +247,8 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
         path: req.path,
         statusCode: res.statusCode,
         durationMs: Date.now() - Number(res.locals.startedAt),
+        userId: req.context?.userId,
+        clinicId: req.context?.clinicId ?? null,
       });
     });
     res.locals.startedAt = Date.now();

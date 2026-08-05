@@ -1099,4 +1099,65 @@ describe('HTTP app', () => {
     expect(lastStatus).toBe(429);
     expect(blocked!.headers['retry-after']).toBeDefined();
   });
+
+  it('audits successful logins with user identity', async () => {
+    const username = 'audit-login-ok';
+    await request(app)
+      .post('/api/v2/admin/users')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ username, password: 'password123', name: 'Audit Login Ok', role: 'RECEPTIONIST' })
+      .expect(201);
+    const response = await request(app)
+      .post('/api/v2/auth/login')
+      .send({ username, password: 'password123' })
+      .expect(200);
+    const row = db.prepare(
+      `SELECT userId, userName, target, traceId FROM OperationLog
+       WHERE action = 'LOGIN_SUCCESS' AND target = ? ORDER BY createdAt DESC, rowid DESC LIMIT 1`,
+    ).get(username) as { userId: string; userName: string; target: string; traceId: string } | undefined;
+    expect(row).toBeDefined();
+    expect(row!.userId).toBe(response.body.data.user.id);
+    expect(row!.userName).toBe(username);
+    expect(row!.target).toBe(username);
+    expect(row!.traceId).toBe(response.headers['x-request-id']);
+  });
+
+  it('audits failed logins with the error detail', async () => {
+    const username = 'audit-login-fail';
+    const response = await request(app)
+      .post('/api/v2/auth/login')
+      .send({ username, password: 'wrong-password' })
+      .expect(401);
+    const rows = db.prepare(
+      `SELECT target, detail, traceId FROM OperationLog WHERE action = 'LOGIN_FAILED' AND traceId = ?`,
+    ).all(response.body.traceId as string) as Array<{ target: string; detail: string | null; traceId: string }>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].target).toBe(username);
+    expect(rows[0].detail).toBe('Invalid username or password');
+  });
+
+  it('does not duplicate audit entries for rate-limited logins', async () => {
+    // 429 在限流器层短路（handler 之外），不得产生第二条 LOGIN_FAILED；
+    // 穿过限流器的 401 每次恰好一条 LOGIN_FAILED。
+    let blocked: request.Response | undefined;
+    const passed: request.Response[] = [];
+    for (let i = 0; i < 11; i += 1) {
+      const response = await request(app)
+        .post('/api/v2/auth/login')
+        .send({ username: `audit-flood-${i}`, password: 'wrong-password' });
+      if (response.status === 429) {
+        blocked = response;
+        break;
+      }
+      passed.push(response);
+    }
+    expect(blocked).toBeDefined();
+    for (const response of passed) {
+      const rows = db.prepare('SELECT action FROM OperationLog WHERE traceId = ?').all(response.body.traceId as string) as Array<{ action: string }>;
+      expect(rows).toHaveLength(1);
+      expect(rows[0].action).toBe('LOGIN_FAILED');
+    }
+    const blockedRows = db.prepare('SELECT COUNT(*) AS c FROM OperationLog WHERE traceId = ?').get(blocked!.body.traceId as string) as { c: number };
+    expect(blockedRows.c).toBe(0);
+  });
 });
