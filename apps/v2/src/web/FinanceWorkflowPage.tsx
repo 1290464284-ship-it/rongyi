@@ -58,11 +58,11 @@ export function FinanceWorkflowPage() {
       return;
     }
     if (action.kind === 'recharge') {
-      await run(`/member-cards/${action.id}/recharge`, action.id, { amount, requestId: `ui-${Date.now()}` });
+      await run(`/member-cards/${action.id}/recharge`, action.id, { amount, requestId: crypto.randomUUID() });
     } else if (action.kind === 'consume') {
-      await run(`/member-cards/${action.id}/consume`, action.id, { amount, requestId: `ui-${Date.now()}` });
+      await run(`/member-cards/${action.id}/consume`, action.id, { amount, requestId: crypto.randomUUID() });
     } else if (action.kind === 'debt') {
-      await run(`/debts/${action.id}/pay`, action.id, { amount, requestId: `ui-${Date.now()}` }, 'PATCH');
+      await run(`/debts/${action.id}/pay`, action.id, { amount, requestId: crypto.randomUUID() }, 'PATCH');
     }
     setAction(null);
   }

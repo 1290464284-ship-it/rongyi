@@ -85,6 +85,7 @@ const errorCases: RouteCase[] = [
   { method: 'get', path: '/api/v2/stats/inventory' },
   { method: 'get', path: '/api/v2/stats/member-cards' },
   { method: 'get', path: '/api/v2/print?kind=report&data=%7B%22title%22%3A' },
+  { method: 'post', path: '/api/v2/print', body: { kind: 'report', data: 'not-an-object' } },
   { method: 'post', path: '/api/v2/sync/cleanup', body: {} },
   { method: 'get', path: '/api/v2/hr/attendance' },
   { method: 'patch', path: '/api/v2/hr/leaves/not-found/approve', body: { approved: true } },

@@ -273,6 +273,20 @@ export async function downloadCsvPath(path: string, filename: string): Promise<v
   URL.revokeObjectURL(url);
 }
 
+export async function fetchPrintHtml(path: string, body: Record<string, unknown>): Promise<string> {
+  const base = await resolveApiBase();
+  const response = await fetchAuthenticated(`${base}${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => null) as { message?: string } | null;
+    throw new ClientError(friendlyError(errorBody?.message ?? `打印请求失败 (${response.status})`));
+  }
+  return response.text();
+}
+
 export async function uploadFile(file: File): Promise<{ id: string; filename: string; url: string }> {
   const base = await resolveApiBase();
   const response = await fetchAuthenticated(`${base}/files`, {

@@ -716,6 +716,16 @@ describe('HTTP app', () => {
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
     expect(print.text).toContain('HTTP');
+    const printPost = await request(app).post('/api/v2/print')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ kind: 'report', data: { title: 'POST-HTTP' } })
+      .expect(200);
+    expect(printPost.text).toContain('POST-HTTP');
+    const printPostDefaults = await request(app).post('/api/v2/print')
+      .set('Authorization', `Bearer ${token}`)
+      .send({})
+      .expect(200);
+    expect(printPostDefaults.text).toContain('report');
   });
 
   it('supports auth profile, password change, and resource CRUD', async () => {
