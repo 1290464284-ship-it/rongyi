@@ -45,4 +45,16 @@ describe('validatePayload', () => {
     expect(() => validatePayload(definition, { name: 'A', ratio: 11 })).toThrow('ratio must be <= 10');
     expect(validatePayload(definition, { name: 'A' }).ratioDefault).toBe(0.25);
   });
+
+  it('normalizes datetime values to UTC ISO', () => {
+    const withOffset = validatePayload(definition, { name: 'A', startsAt: '2026-08-05T10:00:00+08:00' });
+    const withZ = validatePayload(definition, { name: 'A', startsAt: '2026-08-05T02:00:00.000Z' });
+    expect(withOffset.startsAt).toBe('2026-08-05T02:00:00.000Z');
+    expect(withZ.startsAt).toBe('2026-08-05T02:00:00.000Z');
+    expect(withOffset.startsAt).toBe(withZ.startsAt);
+  });
+
+  it('rejects invalid datetime values', () => {
+    expect(() => validatePayload(definition, { name: 'A', startsAt: 'not-a-date' })).toThrow('valid date-time');
+  });
 });
