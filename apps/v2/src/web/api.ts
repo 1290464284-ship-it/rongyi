@@ -6,6 +6,8 @@ let memoryRefreshToken: string | null = null;
 let tokenLoad: Promise<void> | null = null;
 let apiStatusListenerInstalled = false;
 let _refreshPromise: Promise<boolean> | null = null;
+let sessionExpiredCallbacks: Array<() => void> = [];
+let sessionExpiredNotified = false;
 const REQUEST_TIMEOUT_MS = 15_000;
 
 interface DesktopSecretStore {
@@ -43,6 +45,29 @@ async function resolveApiBase(): Promise<string> {
 
 export function resetApiBase(): void {
   apiBase = null;
+}
+
+/**
+ * 注册“会话已失效”全局监听（401 且刷新失败时触发）。
+ * 返回取消函数；一次失效只会通知一次，直到建立新会话（setTokens）后才会再次通知。
+ */
+export function onSessionExpired(callback: () => void): () => void {
+  sessionExpiredCallbacks.push(callback);
+  return () => {
+    sessionExpiredCallbacks = sessionExpiredCallbacks.filter((cb) => cb !== callback);
+  };
+}
+
+function notifySessionExpired(): void {
+  if (sessionExpiredNotified) return;
+  sessionExpiredNotified = true;
+  for (const callback of [...sessionExpiredCallbacks]) {
+    try {
+      callback();
+    } catch {
+      // 监听器异常不得影响 API 请求流程
+    }
+  }
 }
 
 function installApiStatusListener(): void {
@@ -107,6 +132,8 @@ async function refreshToken(): Promise<string | null> {
 export async function setTokens(accessToken: string, newRefreshToken: string): Promise<void> {
   memoryToken = accessToken;
   memoryRefreshToken = newRefreshToken;
+  // 新会话建立后允许再次触发会话失效通知
+  sessionExpiredNotified = false;
   const store = desktopSecretStore();
   if (store) {
     let stored = false;
@@ -157,7 +184,11 @@ async function refreshAccessToken(): Promise<boolean> {
           data?: { token?: string; refreshToken?: string };
         } | null;
         if (!response.ok || !body?.success || !body.data?.token || !body.data.refreshToken) {
-          if (response.status === 401) await clearSession();
+          if (response.status === 401) {
+            await clearSession();
+            // 刷新令牌已被服务端判失效：全局通知 UI 登出
+            notifySessionExpired();
+          }
           return false;
         }
         await setTokens(body.data.token, body.data.refreshToken);
@@ -205,6 +236,8 @@ export async function apiRequest<T>(
     if (refreshed) {
       return apiRequest<T>(path, { ...options, _retry: true });
     }
+    // 刷新失败且原请求为 401：会话确实已失效，全局通知 UI 登出
+    notifySessionExpired();
   }
   const body = await response.json().catch(() => null) as { success?: boolean; data?: T; code?: string; message?: string; traceId?: string } | null;
   if (!response.ok || body?.success === false || body === null) {

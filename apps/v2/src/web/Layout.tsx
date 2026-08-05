@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   LayoutDashboard,
   LogOut,
@@ -13,7 +13,7 @@ import {
   UserCog,
   Users,
 } from 'lucide-react';
-import { logout, switchClinic } from './api';
+import { logout, onSessionExpired, switchClinic } from './api';
 import { apiRequest } from './api';
 import { useToast } from './toast-context';
 
@@ -34,6 +34,15 @@ export function Layout() {
   const location = useLocation();
   const { showToast } = useToast();
   const [selectedClinicId, setSelectedClinicId] = useState<string | null>(null);
+  useEffect(() => {
+    // 会话失效（401 且刷新失败）时全局登出并跳转登录页
+    const unsubscribe = onSessionExpired(() => {
+      showToast('登录状态已失效，请重新登录', 'error');
+      void logout().catch(() => {});
+      navigate('/login', { replace: true });
+    });
+    return unsubscribe;
+  }, [navigate, showToast]);
   const navigation = useQuery({
     queryKey: ['navigation'],
     queryFn: () => apiRequest<{ permissions: string[] }>('/auth/navigation'),

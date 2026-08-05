@@ -333,6 +333,99 @@ describe('401 refresh 触发', () => {
   });
 });
 
+describe('session expired 全局通知', () => {
+  const originalWindow = globalThis.window;
+  const originalLocalStorage = (globalThis as unknown as { localStorage?: Storage }).localStorage;
+
+  let apiRequest: typeof import('./api').apiRequest;
+  let resetApiBase: typeof import('./api').resetApiBase;
+  let setTokens: typeof import('./api').setTokens;
+  let onSessionExpired: typeof import('./api').onSessionExpired;
+  let storageRef: Record<string, string> = {};
+  let fetchCalls: Array<{ url: string }> = [];
+
+  function mockFetch401() {
+    globalThis.fetch = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      fetchCalls.push({ url });
+      return new Response(
+        JSON.stringify({ success: false, code: 'INVALID_TOKEN', message: 'Invalid or expired token' }),
+        { status: 401 },
+      );
+    });
+  }
+
+  beforeEach(async () => {
+    vi.resetModules();
+    storageRef = { 'v2.token': 'expired', 'v2.refreshToken': 'refresh-alive' };
+    fetchCalls = [];
+    const { mock, storage } = makeMockStorage(storageRef);
+    storageRef = mock;
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, writable: true, value: storage });
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      writable: true,
+      value: { localStorage: storage },
+    });
+    delete (globalThis.window as unknown as { desktop?: unknown }).desktop;
+    delete (globalThis as unknown as { import?: { meta?: Record<string, unknown> } }).import;
+    (globalThis as unknown as { import: { meta: { env: Record<string, unknown> } } }).import = {
+      meta: { env: {} },
+    };
+    const mod = await import('./api');
+    apiRequest = mod.apiRequest;
+    resetApiBase = mod.resetApiBase;
+    setTokens = mod.setTokens;
+    onSessionExpired = mod.onSessionExpired;
+    resetApiBase();
+  });
+
+  afterEach(() => {
+    Object.defineProperty(globalThis, 'window', { configurable: true, writable: true, value: originalWindow });
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, writable: true, value: originalLocalStorage });
+  });
+
+  it('401 且 refresh 失败时通知一次（去重）', async () => {
+    // 先触发 loadTokens（空会话）再注入内存会话，模拟真实登录顺序
+    await apiRequest<string>('/auth/login', { method: 'POST' }).catch(() => {});
+    await setTokens('expired', 'refresh-alive');
+    mockFetch401();
+
+    const callback = vi.fn();
+    const unsubscribe = onSessionExpired(callback);
+    await apiRequest<string>('/patients').catch(() => {});
+    await apiRequest<string>('/patients').catch(() => {});
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(fetchCalls.filter((c) => c.url.endsWith('/auth/refresh')).length).toBeGreaterThanOrEqual(1);
+    unsubscribe();
+  });
+
+  it('重新登录（setTokens）后可再次通知', async () => {
+    await apiRequest<string>('/auth/login', { method: 'POST' }).catch(() => {});
+    await setTokens('expired', 'refresh-alive');
+    mockFetch401();
+
+    const callback = vi.fn();
+    const unsubscribe = onSessionExpired(callback);
+    await apiRequest<string>('/patients').catch(() => {});
+    expect(callback).toHaveBeenCalledTimes(1);
+    await setTokens('new-token', 'new-refresh');
+    await apiRequest<string>('/patients').catch(() => {});
+    expect(callback).toHaveBeenCalledTimes(2);
+    unsubscribe();
+  });
+
+  it('/auth/login 的 401 不触发会话失效通知', async () => {
+    mockFetch401();
+    const callback = vi.fn();
+    const unsubscribe = onSessionExpired(callback);
+    await expect(apiRequest<string>('/auth/login', { method: 'POST' })).rejects.toThrow();
+    expect(callback).not.toHaveBeenCalled();
+    expect(fetchCalls.filter((c) => c.url.endsWith('/auth/refresh')).length).toBe(0);
+    unsubscribe();
+  });
+});
+
 describe('friendlyError 映射', () => {
   let friendlyError: typeof import('./messages').friendlyError;
 

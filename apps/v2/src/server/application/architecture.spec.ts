@@ -62,8 +62,7 @@ describe('architecture boundaries', () => {
       'firstExams',
       'treatments',
       'medicalRecords',
-      'treatmentPlans',
-      'prescriptions',
+      // treatmentPlans/prescriptions 已放开软删除（delete+softDelete），供创建失败时客户端清理孤儿记录（R2-P1-19）
       'cephalometricCases',
       'followUps',
       'wechatMessages',

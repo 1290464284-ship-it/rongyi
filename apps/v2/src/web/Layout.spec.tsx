@@ -2,16 +2,17 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { Layout } from './Layout';
-import { apiRequest, logout, switchClinic } from './api';
+import { apiRequest, logout, onSessionExpired, switchClinic } from './api';
 import { ToastProvider } from './toast';
 
 vi.mock('./api', () => ({
   apiRequest: vi.fn(),
   logout: vi.fn(),
+  onSessionExpired: vi.fn(),
   switchClinic: vi.fn(),
 }));
 
@@ -120,5 +121,43 @@ describe('Layout clinic switcher', () => {
     await waitFor(() => {
       expect(logout).toHaveBeenCalled();
     });
+  });
+
+  it('signs out and navigates to login when the session expires', async () => {
+    let onExpire: (() => void) | undefined;
+    vi.mocked(onSessionExpired).mockImplementation((callback: () => void) => {
+      onExpire = callback;
+      return vi.fn();
+    });
+    vi.mocked(logout).mockResolvedValue();
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce({ permissions: ['dashboard'] })
+      .mockResolvedValueOnce({
+        currentClinicId: 'clinic-1',
+        clinics: [{ clinicId: 'clinic-1', name: 'Clinic 1' }],
+      });
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route path="/" element={<div>Home</div>} />
+          </Route>
+          <Route path="/login" element={<div>Login Page</div>} />
+        </Routes>
+      </MemoryRouter>,
+      { wrapper },
+    );
+    await screen.findByText('口腔诊所管理');
+    expect(onSessionExpired).toHaveBeenCalled();
+    expect(onExpire).toBeDefined();
+
+    act(() => { onExpire!(); });
+
+    await waitFor(() => {
+      expect(logout).toHaveBeenCalled();
+    });
+    expect(await screen.findByText('Login Page')).toBeDefined();
+    expect(screen.getByText('登录状态已失效，请重新登录')).toBeDefined();
   });
 });

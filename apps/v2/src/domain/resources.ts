@@ -274,6 +274,7 @@ const resources: ResourceDefinition[] = [
     f('remark', 'longText'),
   ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
+  // R2-P1-19: 允许软删除（无级联），供创建失败时客户端清理孤儿主记录/明细
   crud('treatmentPlans', 'TreatmentPlan', [
     f('patientId', 'relation', { required: true, relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
     f('visitId', 'relation', { relation: { resource: 'visits', foreignKey: 'visitId', labelField: 'id' } }),
@@ -282,8 +283,9 @@ const resources: ResourceDefinition[] = [
     f('status', 'text', { required: true }),
     f('totalFee', 'money', { required: true }),
     f('remark', 'longText'),
-  ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
+  ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: true, softDelete: true } }),
 
+  // R2-P1-19: 允许软删除（无级联），供创建失败时客户端清理孤儿主记录/明细
   crud('treatmentPlanItems', 'TreatmentPlanItem', [
     f('planId', 'relation', { required: true, relation: { resource: 'treatmentPlans', foreignKey: 'planId', labelField: 'name' } }),
     f('code', 'text', { required: true }),
@@ -296,7 +298,7 @@ const resources: ResourceDefinition[] = [
     f('treatmentId', 'text'),
     f('completedAt', 'datetime'),
     f('remark', 'longText'),
-  ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
+  ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: true, softDelete: true } }),
 
   crud('charges', 'Charge', [
     f('patientId', 'relation', { required: true, relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
@@ -382,13 +384,15 @@ const resources: ResourceDefinition[] = [
     f('active', 'boolean', { default: true }),
   ], { roles: boss }),
 
+  // R2-P1-19: 允许软删除（无级联），供创建失败时客户端清理孤儿主记录/明细
   crud('prescriptions', 'Prescription', [
     f('patientId', 'relation', { required: true, relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
     f('visitId', 'relation', { relation: { resource: 'visits', foreignKey: 'visitId', labelField: 'id' } }),
     f('doctorId', 'relation', { required: true, relation: { resource: 'users', foreignKey: 'doctorId', labelField: 'name' } }),
     f('remark', 'longText'),
-  ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
+  ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: true, softDelete: true } }),
 
+  // R2-P1-19: 允许软删除（无级联），供创建失败时客户端清理孤儿主记录/明细
   crud('prescriptionItems', 'PrescriptionItem', [
     f('prescriptionId', 'relation', { required: true, relation: { resource: 'prescriptions', foreignKey: 'prescriptionId', labelField: 'id' } }),
     f('drugId', 'text'),
@@ -399,7 +403,7 @@ const resources: ResourceDefinition[] = [
     f('days', 'number', { required: true, min: 1 }),
     f('quantity', 'number', { required: true, min: 1 }),
     f('price', 'money', { required: true }),
-  ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
+  ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: true, softDelete: true } }),
 
   crud('suppliers', 'Supplier', [
     f('code', 'text', { searchable: true }),

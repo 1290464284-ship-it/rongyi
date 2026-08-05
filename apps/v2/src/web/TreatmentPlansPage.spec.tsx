@@ -68,4 +68,40 @@ await waitFor(() => {
     fireEvent.click(screen.getByText('保存'));
     expect(await screen.findByText('请选择患者、医生并填写计划名称和至少一条有效明细')).toBeDefined();
   });
+
+  it('deletes the orphan plan and created items when item creation fails midway', async () => {
+    mockData();
+    render(<TreatmentPlansPage />, { wrapper });
+    await screen.findByText('正畸计划');
+
+    fireEvent.click(screen.getByText('新建治疗计划'));
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
+    fireEvent.change(screen.getByLabelText('计划名称'), { target: { value: '种植计划' } });
+    fireEvent.click(screen.getByText('添加明细'));
+    const nameInputs = screen.getAllByLabelText('明细名称');
+    const priceInputs = screen.getAllByLabelText('明细单价');
+    fireEvent.change(nameInputs[0], { target: { value: '种植体' } });
+    fireEvent.change(priceInputs[0], { target: { value: '5000' } });
+    fireEvent.change(nameInputs[1], { target: { value: '基台' } });
+    fireEvent.change(priceInputs[1], { target: { value: '1000' } });
+    // 主记录创建成功、第一条明细成功，第二条明细失败
+    vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'plan-2' });
+    vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'item-1' });
+    vi.mocked(apiRequest).mockRejectedValueOnce(new Error('明细创建失败'));
+    fireEvent.click(screen.getByText('保存'));
+
+    expect(await screen.findByText('明细创建失败')).toBeDefined();
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/treatmentPlanItems/item-1', expect.objectContaining({ method: 'DELETE' }));
+      expect(apiRequest).toHaveBeenCalledWith('/resources/treatmentPlans/plan-2', expect.objectContaining({ method: 'DELETE' }));
+    });
+    // 先删明细、再删主记录
+    const calls = vi.mocked(apiRequest).mock.calls.map((call) => String(call[0]));
+    expect(calls.indexOf('/resources/treatmentPlanItems/item-1')).toBeGreaterThanOrEqual(0);
+    expect(calls.indexOf('/resources/treatmentPlans/plan-2')).toBeGreaterThan(calls.indexOf('/resources/treatmentPlanItems/item-1'));
+  });
 });

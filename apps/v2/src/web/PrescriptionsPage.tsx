@@ -69,16 +69,20 @@ export function PrescriptionsPage() {
       return;
     }
     setSubmitting(true);
+    let prescriptionId: string | null = null;
+    const createdItemIds: string[] = [];
     try {
       const prescription = await apiRequest<{ id: string }>('/resources/prescriptions', {
         method: 'POST',
         body: JSON.stringify({ patientId, doctorId, remark: remark || undefined }),
       });
+      prescriptionId = prescription.id;
       for (const item of validItems) {
-        await apiRequest('/resources/prescriptionItems', {
+        const created = await apiRequest<{ id: string }>('/resources/prescriptionItems', {
           method: 'POST',
           body: JSON.stringify({ prescriptionId: prescription.id, ...item }),
         });
+        createdItemIds.push(created.id);
       }
       showToast('处方已创建', 'success');
       setShowForm(false);
@@ -87,6 +91,14 @@ export function PrescriptionsPage() {
       setItems([newItem()]);
       await query.refetch();
     } catch (error) {
+      // 主记录已创建但明细中途失败：清理孤儿记录（清理失败仅告警，不掩盖原始错误）
+      if (prescriptionId) {
+        try {
+          await cleanupOrphanPrescription(prescriptionId, createdItemIds);
+        } catch (cleanupError) {
+          console.warn('清理孤儿处方失败', cleanupError);
+        }
+      }
       showToast(errorMessage(error, '创建处方失败'), 'error');
     } finally {
       setSubmitting(false);
@@ -154,5 +166,21 @@ export function PrescriptionsPage() {
 
   function updateItem(id: string, patch: Partial<PrescriptionItemForm>) {
     setItems((current) => current.map((item) => item.id === id ? { ...item, ...patch } : item));
+  }
+}
+
+async function cleanupOrphanPrescription(prescriptionId: string, createdItemIds: string[]): Promise<void> {
+  // 服务端 DELETE 为软删除且不级联：先删已建明细，再删主记录
+  for (const itemId of createdItemIds) {
+    try {
+      await apiRequest(`/resources/prescriptionItems/${itemId}`, { method: 'DELETE' });
+    } catch (error) {
+      console.warn(`删除处方明细失败（继续清理主记录）：${itemId}`, error);
+    }
+  }
+  try {
+    await apiRequest(`/resources/prescriptions/${prescriptionId}`, { method: 'DELETE' });
+  } catch (error) {
+    console.warn(`删除孤儿处方失败：${prescriptionId}`, error);
   }
 }

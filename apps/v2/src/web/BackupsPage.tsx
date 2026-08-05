@@ -95,6 +95,7 @@ export function BackupsPage() {
 
   async function stageRestore(filename: string) {
     if (busy) return;
+    if (!window.confirm(`确认暂存恢复备份“${filename}”？重启应用后生效。`)) return;
     setBusy(true);
     try {
       const result = await apiRequest<RestoreStagingResult>(`/backups/${encodeURIComponent(filename)}/restore`, {
@@ -117,6 +118,7 @@ export function BackupsPage() {
 
   async function cleanup() {
     if (busy) return;
+    if (!window.confirm('确认清理过期备份（保留最近 30 个）？此操作不可撤销。')) return;
     setBusy(true);
     try {
       const result = await apiRequest<{ kept: number; deleted: Array<{ filename: string }> }>('/backups/cleanup', {
