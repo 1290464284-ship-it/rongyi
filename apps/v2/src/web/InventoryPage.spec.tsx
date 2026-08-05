@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router';
 import { InventoryPage } from './InventoryPage';
 import { apiRequest } from './api';
 import { ToastProvider } from './toast';
@@ -11,7 +12,9 @@ import { ToastProvider } from './toast';
 vi.mock('./api', () => ({ apiRequest: vi.fn(), downloadCsv: vi.fn() }));
 
 const wrapper = ({ children }: { children: ReactNode }) => (
-  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ToastProvider>{children}</ToastProvider></QueryClientProvider>
+  <MemoryRouter>
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ToastProvider>{children}</ToastProvider></QueryClientProvider>
+  </MemoryRouter>
 );
 
 describe('InventoryPage', () => {
@@ -64,7 +67,7 @@ describe('InventoryPage', () => {
     });
 
     render(<InventoryPage />, { wrapper });
-    fireEvent.change(screen.getByDisplayValue('inventory-demo-001'), { target: { value: 'item-new' } });
+    fireEvent.change(screen.getByLabelText('库存项目 ID'), { target: { value: 'item-new' } });
     fireEvent.change(screen.getByDisplayValue('IN'), { target: { value: 'OUT' } });
     fireEvent.change(screen.getByDisplayValue('1'), { target: { value: '2' } });
     fireEvent.click(await screen.findByRole('button', { name: '保存库存流水' }));
@@ -114,5 +117,41 @@ describe('InventoryPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '生成补货建议' }));
     expect(await screen.findByText('生成补货建议失败')).toBeDefined();
+  });
+
+  it('initializes the item id from the first inventory item once the list is loaded', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/inventoryItems?page=1&pageSize=20') {
+        return { items: [{ id: 'i-real-1', name: 'Real Material', stock: 3, minStock: 1 }], total: 1 };
+      }
+      if (path === '/inventory/low-stock') return [];
+      if (path === '/inventory/expiring?days=30') return [];
+      return {};
+    });
+
+    render(<InventoryPage />, { wrapper });
+    expect(await screen.findByDisplayValue('i-real-1')).toBeDefined();
+  });
+
+  it('prefers the URL id parameter over the list first item when initializing', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/inventoryItems?page=1&pageSize=20') {
+        return { items: [{ id: 'i-list-1', name: 'List Material', stock: 3, minStock: 1 }], total: 1 };
+      }
+      if (path === '/inventory/low-stock') return [];
+      if (path === '/inventory/expiring?days=30') return [];
+      return {};
+    });
+
+    render(
+      <MemoryRouter initialEntries={[{ pathname: '/inventory', search: '?id=url-item-9' }]}>
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+          <ToastProvider>
+            <InventoryPage />
+          </ToastProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByDisplayValue('url-item-9')).toBeDefined();
   });
 });

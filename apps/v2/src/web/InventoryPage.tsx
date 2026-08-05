@@ -1,5 +1,6 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router';
 import { apiRequest } from './api';
 import type { Page } from './types';
 import { errorMessage } from './messages';
@@ -7,7 +8,9 @@ import { useToast } from './toast-context';
 
 export function InventoryPage() {
   const { showToast } = useToast();
-  const [itemId, setItemId] = useState('inventory-demo-001');
+  const [searchParams] = useSearchParams();
+  const urlItemId = searchParams.get('id');
+  const [itemId, setItemId] = useState<string | null>(urlItemId);
   const [type, setType] = useState<'IN' | 'OUT' | 'ADJUST'>('IN');
   const [quantity, setQuantity] = useState('1');
   const [submitting, setSubmitting] = useState(false);
@@ -15,6 +18,13 @@ export function InventoryPage() {
     queryKey: ['inventory'],
     queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/inventoryItems?page=1&pageSize=20'),
   });
+  const derivedFromList = useRef(false);
+  useEffect(() => {
+    if (derivedFromList.current || !query.data) return;
+    derivedFromList.current = true;
+    const first = query.data.items[0];
+    setItemId((current) => current ?? (first ? String(first.id) : null));
+  }, [query.data]);
   const lowStock = useQuery({
     queryKey: ['inventory-low'],
     queryFn: () => apiRequest<Array<Record<string, unknown>>>('/inventory/low-stock'),
@@ -63,7 +73,7 @@ export function InventoryPage() {
         <button onClick={generateReplenishment}>生成补货建议</button>
       </div>
       <form className="inline-form" onSubmit={submit}>
-        <input value={itemId} onChange={(event) => setItemId(event.target.value)} />
+        <input aria-label="库存项目 ID" value={itemId ?? ''} onChange={(event) => setItemId(event.target.value)} />
         <select value={type} onChange={(event) => setType(event.target.value as typeof type)}>
           <option value="IN">IN</option>
           <option value="OUT">OUT</option>
