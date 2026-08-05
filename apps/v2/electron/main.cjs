@@ -12,7 +12,7 @@ const {
   crashReporter: nativeCrashReporter,
 } = require('electron');
 const { autoUpdater } = require('electron-updater');
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const crypto = require('node:crypto');
 const http = require('node:http');
 const fs = require('node:fs');
@@ -30,9 +30,14 @@ let _shutdownStarted = false;
 let tray = null;
 let apiRestartCount = 0;
 let apiLastCrashAt = 0;
+let apiHeartbeatTimer = null;
 const API_MAX_RESTARTS = 5;
 const API_BACKOFF_BASE_MS = 30_000;
 const API_BACKOFF_MAX_MS = 300_000;
+// T2R-13 / R2-P1-09: parent-side heartbeat. Must stay well below the child's
+// PARENT_HEARTBEAT_TIMEOUT_MS (10s) so a hard-killed main process stops pinging
+// and the API child exits on its own instead of running as an orphan.
+const API_HEARTBEAT_INTERVAL_MS = 2_000;
 const DEFAULT_WINDOW_STATE = { width: 1280, height: 820 };
 
 function crashLog(message, error) {
@@ -218,6 +223,7 @@ async function startApi() {
   });
   const startedProcess = apiProcess;
   startedProcess.manualStop = false;
+  attachApiHeartbeat(startedProcess);
   apiProcess.on('error', (error) => crashLog('api-spawn-error', error));
   apiProcess.on('exit', (code, signal) => {
     apiProcess = null;
@@ -298,6 +304,55 @@ async function stopApi() {
         setTimeout(done, 200);
       }, 1500);
     });
+  }
+}
+
+// T2R-13 / R2-P1-09: ping the API child over the existing IPC channel. When
+// this main process dies abruptly (crash / SIGKILL / taskkill) the pings stop
+// and the child exits via its own heartbeat timeout / disconnect detection,
+// so it never keeps running and writing the database as an orphan.
+function attachApiHeartbeat(proc) {
+  if (apiHeartbeatTimer) clearInterval(apiHeartbeatTimer);
+  const timer = setInterval(() => {
+    if (proc.killed || apiProcess !== proc) return;
+    try {
+      proc.send('ping');
+    } catch {
+      // IPC channel is gone; the child exits itself via its heartbeat timeout
+    }
+  }, API_HEARTBEAT_INTERVAL_MS);
+  apiHeartbeatTimer = timer;
+  proc.once('exit', () => {
+    // Only clear the timer we own: a stale exit event from a previously
+    // restarted process must not stop the heartbeat of the current child.
+    if (apiHeartbeatTimer === timer) {
+      clearInterval(timer);
+      apiHeartbeatTimer = null;
+    }
+  });
+}
+
+// Synchronous, safe to call from app.on('will-quit') / process.on('exit').
+// Graceful shutdown is handled by stopApi(); this is the final hard stop.
+function terminateApiSync() {
+  if (apiHeartbeatTimer) {
+    clearInterval(apiHeartbeatTimer);
+    apiHeartbeatTimer = null;
+  }
+  const proc = apiProcess;
+  if (!proc || proc.killed || proc.pid == null) return;
+  let killed = false;
+  try {
+    killed = proc.kill();
+  } catch {
+    killed = false;
+  }
+  if (!killed && process.platform === 'win32') {
+    try {
+      spawnSync('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+    } catch {
+      // best effort
+    }
   }
 }
 
@@ -718,4 +773,16 @@ process.on('SIGINT', () => {
       app.quit();
     }
   })();
+});
+
+// T2R-13 / R2-P1-09: final hard-stop fallbacks for every graceful exit path
+// (before-quit / SIGTERM / SIGINT / autoUpdater.quitAndInstall). The API child
+// itself must never outlive the main process; a hard-killed main process is
+// covered by the child-side heartbeat instead.
+app.on('will-quit', () => {
+  terminateApiSync();
+});
+
+process.on('exit', () => {
+  terminateApiSync();
 });

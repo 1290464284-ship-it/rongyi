@@ -22,6 +22,74 @@ const v2DbPath = path.join(v2DataDir, 'v2.sqlite');
 const logDir = process.env.V2_LOG_DIR ?? path.join(projectRoot, 'logs');
 const logger = new Logger({ logDir });
 
+// ── T2R-13 / R2-P1-09: orphan protection ─────────────────────────────────────
+// If the Electron main process is hard-killed (crash / SIGKILL / taskkill), no
+// graceful shutdown message can be sent. This API child must detect the loss of
+// its parent and exit instead of continuing to run and write the database as an
+// orphan. Detection is only active when this process was spawned over IPC
+// (process.channel present); standalone runs such as `pnpm dev:api` are
+// unaffected. main.cjs pings this process every 2s over the same channel:
+//   1. `disconnect` fires when the IPC channel is torn down;
+//   2. a heartbeat timeout: if no message arrives for PARENT_HEARTBEAT_TIMEOUT_MS
+//      (covers teardown races and a wedged-but-alive main process that stopped
+//      pinging) we exit;
+//   3. until the first message has ever been processed (e.g. startup work
+//      blocked the event loop), a direct `process.kill(ppid, 0)` probe is used
+//      instead, so a long boot cannot cause a false orphan exit and a parent
+//      that died during boot is still detected.
+const parentHeartbeatEnabled = Boolean(process.channel);
+const PARENT_HEARTBEAT_TIMEOUT_MS = 10_000; // must stay well above the 2s ping interval
+const PARENT_HEARTBEAT_CHECK_MS = 1_000;
+/** Time of the last IPC message; null until the first message is processed. */
+let lastParentMessageAt: number | null = null;
+
+/** True when the parent process (by PID) is still alive. */
+function parentProcessAlive(): boolean {
+  try {
+    process.kill(process.ppid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function exitAsOrphanGuard(reason: string): void {
+  try {
+    logger.error('parent process lost; API process exiting to avoid running as an orphan', {
+      action: 'parent-lost',
+      reason,
+    });
+  } catch {
+    // best effort
+  }
+  try {
+    db.pragma('wal_checkpoint(PASSIVE)');
+    db.close();
+  } catch {
+    // best effort: the process is going away regardless
+  }
+  process.exit(1);
+}
+
+process.on('message', (message) => {
+  lastParentMessageAt = Date.now();
+  if (message === 'shutdown') shutdown();
+});
+if (parentHeartbeatEnabled) {
+  process.on('disconnect', () => exitAsOrphanGuard('ipc-disconnect'));
+  setInterval(() => {
+    if (lastParentMessageAt === null) {
+      // No heartbeat message has been processed yet; probe the parent PID
+      // directly instead of timing out a stale clock.
+      if (!parentProcessAlive()) exitAsOrphanGuard('ppid-probe');
+      return;
+    }
+    if (Date.now() - lastParentMessageAt > PARENT_HEARTBEAT_TIMEOUT_MS) {
+      exitAsOrphanGuard('heartbeat-timeout');
+    }
+  }, PARENT_HEARTBEAT_CHECK_MS).unref();
+}
+
 /**
  * T2R-15 / R2-P1-12: legacy import decision.
  *
@@ -225,6 +293,3 @@ function shutdown(): void {
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
-process.on('message', (message) => {
-  if (message === 'shutdown') shutdown();
-});
