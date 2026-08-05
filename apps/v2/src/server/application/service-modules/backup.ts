@@ -52,7 +52,11 @@ export class BackupService {
 
   async create(options: BackupCreateOptions = {}): Promise<Record<string, unknown>> {
     fs.mkdirSync(this.backupDir, { recursive: true });
-    const encrypted = options.encrypted ?? Boolean(process.env.V2_BACKUP_KEY);
+    const allowPlaintext = process.env.NODE_ENV === 'test' || process.env.V2_ALLOW_PLAINTEXT_BACKUP === '1';
+    const encrypted = options.encrypted ?? (Boolean(process.env.V2_BACKUP_KEY) || !allowPlaintext);
+    if (!encrypted && !allowPlaintext) {
+      throw new Error('Refusing to create plaintext backup: set V2_BACKUP_KEY or V2_ALLOW_PLAINTEXT_BACKUP=1');
+    }
     const base = `${clinicPrefix(options.clinicId)}backup-${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`;
     const filename = encrypted ? `${base}.enc` : `${base}.sqlite`;
     const tempPath = path.join(this.backupDir, `${base}.tmp`);

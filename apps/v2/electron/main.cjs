@@ -8,6 +8,7 @@ const {
   safeStorage,
   Notification,
   session,
+  dialog,
   crashReporter: nativeCrashReporter,
 } = require('electron');
 const { autoUpdater } = require('electron-updater');
@@ -73,13 +74,48 @@ function getOrCreateSecret(fileName = 'jwt-secret') {
   const secretPath = path.join(secretsDir, fileName);
   fs.mkdirSync(secretsDir, { recursive: true });
   try {
-    const existing = fs.readFileSync(secretPath, 'utf8').trim();
-    if (existing.length >= 32) return existing;
+    const existing = fs.readFileSync(secretPath);
+    if (safeStorage.isEncryptionAvailable()) {
+      try {
+        const plain = safeStorage.decryptString(existing);
+        if (plain.length >= 32) return plain;
+      } catch {
+        // 旧明文文件，落到下方重新加密
+        const plain = existing.toString('utf8').trim();
+        if (plain.length >= 32) {
+          fs.writeFileSync(secretPath, safeStorage.encryptString(plain), { mode: 0o600 });
+          return plain;
+        }
+      }
+    } else {
+      const plain = existing.toString('utf8').trim();
+      if (plain.length >= 32) return plain;
+    }
   } catch {
     // first run or unreadable secret; create a fresh one below
   }
+  // R2-P1-13: 重生成 backup-key 会让既有 .enc 备份永久不可解密，须显式告知。
+  if (fileName === 'backup-key') {
+    const backupDir = path.join(app.getPath('userData'), 'backups');
+    try {
+      if (fs.existsSync(backupDir) && fs.readdirSync(backupDir).some((name) => name.endsWith('.enc'))) {
+        console.warn('backup-key regenerated: existing encrypted backups cannot be decrypted with the new key');
+        dialog.showMessageBoxSync({
+          type: 'warning',
+          title: '备份密钥已更换',
+          message: '检测到备份密钥文件丢失或损坏，系统已生成新密钥。',
+          detail: '此前创建的加密备份（.enc）将无法用新密钥解密。如需恢复旧备份，请从备份中还原原密钥文件，或保留旧密钥文件后重启。',
+          buttons: ['我知道了'],
+        });
+      }
+    } catch {
+      // best effort: 目录不可读时静默跳过，不阻塞启动
+    }
+  }
   const secret = crypto.randomBytes(48).toString('hex');
-  fs.writeFileSync(secretPath, secret, { mode: 0o600 });
+  const encrypted = safeStorage.isEncryptionAvailable();
+  fs.writeFileSync(secretPath, encrypted ? safeStorage.encryptString(secret) : secret, { mode: 0o600 });
+  if (!encrypted) console.warn('safeStorage unavailable; secrets stored in plaintext');
   return secret;
 }
 
