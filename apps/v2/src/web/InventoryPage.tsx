@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router';
 import { apiRequest } from './api';
 import type { Page } from './types';
+import { LoadingState, PageError } from './components';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
 
@@ -33,6 +34,21 @@ export function InventoryPage() {
     queryKey: ['inventory-expiring'],
     queryFn: () => apiRequest<Array<Record<string, unknown>>>('/inventory/expiring?days=30'),
   });
+
+  if (query.isLoading || lowStock.isLoading || expiring.isLoading) return <LoadingState label="库存数据加载中..." />;
+  const loadError = query.error ?? lowStock.error ?? expiring.error;
+  if (loadError) {
+    return (
+      <div className="page">
+        <PageError message={loadError instanceof Error ? loadError.message : String(loadError)} />
+        <button onClick={() => {
+          void query.refetch();
+          void lowStock.refetch();
+          void expiring.refetch();
+        }}>重试</button>
+      </div>
+    );
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();

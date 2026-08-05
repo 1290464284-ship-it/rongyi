@@ -67,7 +67,7 @@ describe('InventoryPage', () => {
     });
 
     render(<InventoryPage />, { wrapper });
-    fireEvent.change(screen.getByLabelText('库存项目 ID'), { target: { value: 'item-new' } });
+    fireEvent.change(await screen.findByLabelText('库存项目 ID'), { target: { value: 'item-new' } });
     fireEvent.change(screen.getByDisplayValue('IN'), { target: { value: 'OUT' } });
     fireEvent.change(screen.getByDisplayValue('1'), { target: { value: '2' } });
     fireEvent.click(await screen.findByRole('button', { name: '保存库存流水' }));

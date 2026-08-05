@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import type { Page } from './types';
-import { DataTable, type DataTableColumn } from './components';
+import { DataTable, LoadingState, PageError, type DataTableColumn } from './components';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
 
@@ -15,6 +15,20 @@ export function CommunicationWorkflowPage() {
     queryKey: ['wechat-status'],
     queryFn: () => apiRequest<{ configured: boolean; provider: string }>('/wechat/status'),
   });
+
+  if (wechat.isLoading || status.isLoading) return <LoadingState label="微信消息加载中..." />;
+  const loadError = wechat.error ?? status.error;
+  if (loadError) {
+    return (
+      <div className="page">
+        <PageError message={loadError instanceof Error ? loadError.message : String(loadError)} />
+        <button onClick={() => {
+          void wechat.refetch();
+          void status.refetch();
+        }}>重试</button>
+      </div>
+    );
+  }
 
   async function send(id: string) {
     try {

@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router';
 import { apiRequest } from './api';
 import type { Page } from './types';
+import { LoadingState, PageError } from './components';
 
 interface TimelineEvent {
   id: string;
@@ -48,6 +49,25 @@ export function PatientTimelinePage() {
     queryFn: () => apiRequest<Page<Record<string, unknown>>>(`/resources/followUps?page=1&pageSize=200&patientId=${encodeURIComponent(patientId ?? '')}`),
     enabled: patientId !== null,
   });
+
+  if (patients.isLoading || visits.isLoading || treatments.isLoading || charges.isLoading || followUps.isLoading) {
+    return <LoadingState label="患者时间线加载中..." />;
+  }
+  const loadError = patients.error ?? visits.error ?? treatments.error ?? charges.error ?? followUps.error;
+  if (loadError) {
+    return (
+      <div className="page">
+        <PageError message={loadError instanceof Error ? loadError.message : String(loadError)} />
+        <button onClick={() => {
+          void patients.refetch();
+          void visits.refetch();
+          void treatments.refetch();
+          void charges.refetch();
+          void followUps.refetch();
+        }}>重试</button>
+      </div>
+    );
+  }
 
   const events: TimelineEvent[] = [
     ...(visits.data?.items ?? []).map((row) => ({

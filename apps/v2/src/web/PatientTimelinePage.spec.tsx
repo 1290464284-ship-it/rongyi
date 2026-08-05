@@ -111,7 +111,7 @@ describe('PatientTimelinePage', () => {
 
     render(<PatientTimelinePage />, { wrapper });
     await screen.findByText('Patient A');
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'patient-demo-002' } });
+    fireEvent.change(await screen.findByRole('combobox'), { target: { value: 'patient-demo-002' } });
     await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith(expect.stringContaining('patientId=patient-demo-002'));
     });

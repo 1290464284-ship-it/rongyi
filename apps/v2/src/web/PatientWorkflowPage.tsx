@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import type { Page } from './types';
-import { DataTable, type DataTableColumn } from './components';
+import { DataTable, LoadingState, PageError, type DataTableColumn } from './components';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
 
@@ -15,6 +15,20 @@ export function PatientWorkflowPage() {
     queryKey: ['risk-workflow'],
     queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/patientRiskScores?page=1&pageSize=100'),
   });
+
+  if (patients.isLoading || scores.isLoading) return <LoadingState label="患者数据加载中..." />;
+  const loadError = patients.error ?? scores.error;
+  if (loadError) {
+    return (
+      <div className="page">
+        <PageError message={loadError instanceof Error ? loadError.message : String(loadError)} />
+        <button onClick={() => {
+          void patients.refetch();
+          void scores.refetch();
+        }}>重试</button>
+      </div>
+    );
+  }
 
   async function calculate(patientId: string) {
     try {

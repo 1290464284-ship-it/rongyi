@@ -70,8 +70,9 @@ describe('HrWorkflowPage', () => {
     expect(await screen.findByText('审批失败')).toBeDefined();
   });
 });
-it('renders an empty state when leave data is unavailable', async () => {
+it('renders an error state with retry when leave data is unavailable', async () => {
   vi.mocked(apiRequest).mockRejectedValueOnce(new Error('leaves failed'));
   render(<HrWorkflowPage />, { wrapper });
-  expect(await screen.findByText('暂无待审批请假')).toBeDefined();
+  expect(await screen.findByText('leaves failed')).toBeDefined();
+  expect(screen.getByRole('button', { name: '重试' })).toBeDefined();
 });
