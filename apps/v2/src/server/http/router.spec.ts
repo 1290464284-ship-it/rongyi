@@ -141,6 +141,29 @@ describe('resource router', () => {
     expect(exported.text.match(/"Export Row"/g)?.length).toBe(201);
   });
 
+  it('prefixes formula-injecting CSV cells with a single quote', async () => {
+    await request(app)
+      .post('/api/v2/resources/patients')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: 'CSV-FORMULA',
+        name: '=HYPERLINK("https://evil.example","x")',
+        gender: 'UNKNOWN',
+        phone: '+8613800000000',
+        address: '-1+1',
+        source: 'WALK_IN',
+        active: true,
+      })
+      .expect(201);
+    const exported = await request(app)
+      .get('/api/v2/resources/patients/export?code=CSV-FORMULA')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    // 公式注入前缀（=、- 等）必须被单引号防护；phone 属敏感字段，导出路径已掩码为空（security.spec 覆盖）。
+    expect(exported.text).toContain(`"'=HYPERLINK(""https://evil.example"",""x"")"`);
+    expect(exported.text).toContain(`"'-1+1"`);
+  });
+
   it('keeps resource lists and CSV export scoped to the active clinic', async () => {
     const otherClinic = 'clinic-v2-export-other';
     const now = new Date().toISOString();
