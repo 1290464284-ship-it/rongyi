@@ -34,7 +34,16 @@ jobs:
         run: pnpm --filter @dental/v2 typecheck
 
       - name: Build and pack installer
-        run: pnpm --filter @dental/v2 electron:pack
+        run: pnpm --filter @dental/v2 electron:dist
+
+      - name: Resolve current installer
+        id: current-installer
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -LiteralPath apps/v2/release-v2 -Filter "*.exe" |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $exe) { throw "No installer produced by electron:dist" }
+          "path=$exe" >> $env:GITHUB_OUTPUT
 
       - name: Run installer smoke
         shell: pwsh
@@ -53,7 +62,7 @@ jobs:
         shell: pwsh
         env:
           V2_PREVIOUS_INSTALLER: apps/v2/release-v2/previous-installer.exe
-          V2_CURRENT_INSTALLER: apps/v2/release-v2/Dental-Clinic-V2-Setup-2.1.4.exe
+          V2_CURRENT_INSTALLER: ${{ steps.current-installer.outputs.path }}
         run: |
           powershell -ExecutionPolicy Bypass -File apps/v2/scripts/upgrade-smoke.ps1 `
             -CurrentInstallerPath $env:V2_CURRENT_INSTALLER `
