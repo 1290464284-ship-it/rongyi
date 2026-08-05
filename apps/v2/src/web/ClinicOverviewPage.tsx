@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
-import { DataTable, type DataTableColumn } from './components';
+import { DataTable, QueryBoundary, type DataTableColumn } from './components';
+import { formatMoney } from './format';
 
 export function ClinicOverviewPage() {
   const query = useQuery({
@@ -8,12 +9,14 @@ export function ClinicOverviewPage() {
     queryFn: () => apiRequest<Array<Record<string, unknown>>>('/analytics/clinic-overview'),
   });
 
-  if (query.isLoading) return <div className="page">Loading...</div>;
-  if (query.error || !query.data) {
-    return <div className="page error">{(query.error as Error)?.message ?? 'Failed to load clinic overview'}</div>;
-  }
+  return (
+    <QueryBoundary isLoading={query.isLoading} error={query.error} data={query.data} errorLabel="无法加载多门店经营概览">
+      <ClinicOverviewContent data={query.data!} />
+    </QueryBoundary>
+  );
+}
 
-  const rows = query.data;
+function ClinicOverviewContent({ data: rows }: { data: Array<Record<string, unknown>> }) {
   const totals = rows.reduce<{
     patients: number;
     appointments: number;
@@ -41,26 +44,26 @@ export function ClinicOverviewPage() {
   });
 
   const columns: DataTableColumn<Record<string, unknown>>[] = [
-    { key: 'clinicName', label: 'Clinic', render: (row) => String(row.clinicName ?? row.clinicId ?? '') },
-    { key: 'patients', label: 'Patients', render: (row) => String(toNumber(row.patients)) },
-    { key: 'appointments', label: 'Appointments', render: (row) => String(toNumber(row.appointments)) },
-    { key: 'charges', label: 'Charges', render: (row) => String(toNumber(row.charges)) },
-    { key: 'paidAmount', label: 'Paid', render: (row) => String(toNumber(row.paidAmount)) },
-    { key: 'unpaidAmount', label: 'Unpaid', render: (row) => String(toNumber(row.unpaidAmount)) },
-    { key: 'inventoryItems', label: 'Inventory', render: (row) => String(toNumber(row.inventoryItems)) },
-    { key: 'pendingFollowUps', label: 'Follow-ups', render: (row) => String(toNumber(row.pendingFollowUps)) },
+    { key: 'clinicName', label: '诊所', render: (row) => String(row.clinicName ?? row.clinicId ?? '') },
+    { key: 'patients', label: '患者', render: (row) => String(toNumber(row.patients)) },
+    { key: 'appointments', label: '预约', render: (row) => String(toNumber(row.appointments)) },
+    { key: 'charges', label: '收费单', render: (row) => String(toNumber(row.charges)) },
+    { key: 'paidAmount', label: '已收金额', render: (row) => formatMoney(row.paidAmount) },
+    { key: 'unpaidAmount', label: '未收金额', render: (row) => formatMoney(row.unpaidAmount) },
+    { key: 'inventoryItems', label: '库存项目', render: (row) => String(toNumber(row.inventoryItems)) },
+    { key: 'pendingFollowUps', label: '待随访', render: (row) => String(toNumber(row.pendingFollowUps)) },
   ];
 
   return (
     <div className="page">
-      <h1>Clinic Overview</h1>
+      <h1>多门店经营概览</h1>
       <div className="stat-row">
-        <span>Patients: {totals.patients}</span>
-        <span>Appointments: {totals.appointments}</span>
-        <span>Paid: {totals.paidAmount}</span>
-        <span>Unpaid: {totals.unpaidAmount}</span>
+        <span>患者：{totals.patients}</span>
+        <span>预约：{totals.appointments}</span>
+        <span>已收：{formatMoney(totals.paidAmount)}</span>
+        <span>未收：{formatMoney(totals.unpaidAmount)}</span>
       </div>
-      <DataTable columns={columns} rows={rows} keyField="clinicId" emptyText="No clinic data" />
+      <DataTable columns={columns} rows={rows} keyField="clinicId" emptyText="暂无诊所数据" />
     </div>
   );
 }

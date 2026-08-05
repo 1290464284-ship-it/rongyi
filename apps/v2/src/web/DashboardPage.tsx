@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
+import { formatMoney } from './format';
+import { QueryBoundary } from './components';
 
 interface DashboardData {
   patients: number;
@@ -16,23 +18,26 @@ export function DashboardPage() {
     queryFn: () => apiRequest<DashboardData>('/stats/dashboard'),
   });
 
-  if (isLoading) return <div className="page">Loading...</div>;
-  if (error || !data) return <div className="page error">{(error as Error)?.message ?? 'Failed to load dashboard'}</div>;
+  return (
+    <QueryBoundary isLoading={isLoading} error={error} data={data} errorLabel="无法加载工作台数据">
+      <DashboardContent data={data!} />
+    </QueryBoundary>
+  );
+}
 
-  const cards = [
-    ['Patients', data.patients],
-    ['Appointments', data.appointments],
-    ['Paid (cents)', data.paidAmount],
-    ['Unpaid (cents)', data.unpaidAmount],
-    ['Inventory', data.inventoryItems],
-    ['Pending follow-ups', data.pendingFollowUps],
-  ];
-
+function DashboardContent({ data }: { data: DashboardData }) {
   return (
     <div className="page">
-      <h1>Dashboard</h1>
+      <h1>工作台</h1>
       <div className="cards">
-        {cards.map(([label, value]) => (
+        {([
+          ['患者数', data.patients],
+          ['预约数', data.appointments],
+          ['已收金额', formatMoney(data.paidAmount)],
+          ['未收金额', formatMoney(data.unpaidAmount)],
+          ['库存项目', data.inventoryItems],
+          ['待随访', data.pendingFollowUps],
+        ] as const).map(([label, value]) => (
           <div className="card" key={String(label)}>
             <strong>{label}</strong>
             <span>{String(value)}</span>
@@ -42,4 +47,3 @@ export function DashboardPage() {
     </div>
   );
 }
-
