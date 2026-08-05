@@ -1,16 +1,46 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { apiRequest, downloadCsvPath } from './api';
-import { DataTable, LoadingState, PageError, PromptDialog, type DataTableColumn } from './components';
+import { DataTable, Dialog, LoadingState, PageError, PromptDialog, type DataTableColumn } from './components';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
 
 type CompletionTarget = { kind: 'single'; id: string } | { kind: 'batch' } | null;
 
+interface FollowUpNps {
+  total: number;
+  promoters: number;
+  passives: number;
+  detractors: number;
+  nps: number;
+  average: number;
+  breakdown: Array<{ rating: number; count: number }>;
+}
+
+interface ExecutionFormState {
+  executionStatus: string;
+  patientRating: string;
+  painLevel: string;
+  feedback: string;
+  contactedAt: string;
+  nextPlanDate: string;
+}
+
+const DEFAULT_EXECUTION_FORM: ExecutionFormState = {
+  executionStatus: 'DONE',
+  patientRating: '',
+  painLevel: '',
+  feedback: '',
+  contactedAt: '',
+  nextPlanDate: '',
+};
+
 export function FollowUpsPage() {
   const { showToast } = useToast();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [completion, setCompletion] = useState<CompletionTarget>(null);
+  const [executionId, setExecutionId] = useState<string | null>(null);
+  const [executionForm, setExecutionForm] = useState<ExecutionFormState>(DEFAULT_EXECUTION_FORM);
   const query = useQuery({
     queryKey: ['followup-reminders'],
     queryFn: () => apiRequest<Array<Record<string, unknown>>>('/follow-ups/reminders'),
@@ -18,6 +48,10 @@ export function FollowUpsPage() {
   const summary = useQuery({
     queryKey: ['followup-summary'],
     queryFn: () => apiRequest<{ total: number; overdue: number; today: number; upcoming: number }>('/follow-ups/reminders/summary'),
+  });
+  const nps = useQuery({
+    queryKey: ['followup-nps'],
+    queryFn: () => apiRequest<FollowUpNps>('/follow-ups/nps'),
   });
 
   if (query.isLoading) return <LoadingState label="随访数据加载中..." />;
@@ -28,6 +62,7 @@ export function FollowUpsPage() {
         <button onClick={() => {
           void query.refetch();
           void summary.refetch();
+          void nps.refetch();
         }}>重试</button>
       </div>
     );
@@ -80,6 +115,29 @@ export function FollowUpsPage() {
     }
   }
 
+  function openExecution(id: string) {
+    setExecutionForm(DEFAULT_EXECUTION_FORM);
+    setExecutionId(id);
+  }
+
+  async function submitExecution() {
+    if (!executionId) return;
+    const body: Record<string, unknown> = { executionStatus: executionForm.executionStatus };
+    if (executionForm.patientRating !== '') body.patientRating = Number(executionForm.patientRating);
+    if (executionForm.painLevel !== '') body.painLevel = Number(executionForm.painLevel);
+    if (executionForm.feedback.trim() !== '') body.feedback = executionForm.feedback.trim();
+    if (executionForm.contactedAt !== '') body.contactedAt = executionForm.contactedAt;
+    if (executionForm.nextPlanDate !== '') body.nextPlanDate = executionForm.nextPlanDate;
+    try {
+      await apiRequest(`/follow-ups/${executionId}/execute`, { method: 'POST', body: JSON.stringify(body) });
+      showToast('随访执行已记录', 'success');
+      setExecutionId(null);
+      await Promise.all([query.refetch(), nps.refetch()]);
+    } catch (error) {
+      showToast(errorMessage(error, '执行失败'), 'error');
+    }
+  }
+
   const columns: DataTableColumn<Record<string, unknown>>[] = [
     {
       key: 'selected',
@@ -106,7 +164,12 @@ export function FollowUpsPage() {
     {
       key: 'actions',
       label: '操作',
-      render: (row) => <button onClick={() => setCompletion({ kind: 'single', id: String(row.id) })}>完成随访</button>,
+      render: (row) => (
+        <span>
+          <button onClick={() => setCompletion({ kind: 'single', id: String(row.id) })}>完成随访</button>
+          <button onClick={() => openExecution(String(row.id))}>执行随访</button>
+        </span>
+      ),
     },
   ];
 
@@ -137,6 +200,15 @@ export function FollowUpsPage() {
           <span>后续：{summary.data.upcoming}</span>
         </div>
       )}
+      {nps.data && (
+        <div className="stat-row">
+          <span>NPS 得分：{nps.data.nps}</span>
+          <span>推荐者：{nps.data.promoters}</span>
+          <span>中立者：{nps.data.passives}</span>
+          <span>贬损者：{nps.data.detractors}</span>
+          <span>平均评分：{nps.data.average}</span>
+        </div>
+      )}
       {rows.length === 0 && <DataTable columns={columns} rows={[]} keyField="id" emptyText="暂无随访" />}
       {groups.map((group) => (
         <section key={group.title}>
@@ -144,6 +216,72 @@ export function FollowUpsPage() {
           <DataTable columns={columns} rows={group.rows} keyField="id" emptyText="暂无" />
         </section>
       ))}
+      <Dialog open={executionId !== null} title="执行随访" onClose={() => setExecutionId(null)}>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submitExecution();
+          }}
+        >
+          <label>
+            执行状态
+            <select
+              value={executionForm.executionStatus}
+              onChange={(event) => setExecutionForm((current) => ({ ...current, executionStatus: event.target.value }))}
+            >
+              <option value="DONE">DONE 已完成</option>
+              <option value="SKIPPED">SKIPPED 已跳过</option>
+            </select>
+          </label>
+          <label>
+            患者评分（0-10）
+            <input
+              type="number"
+              min={0}
+              max={10}
+              value={executionForm.patientRating}
+              onChange={(event) => setExecutionForm((current) => ({ ...current, patientRating: event.target.value }))}
+            />
+          </label>
+          <label>
+            疼痛度（0-10）
+            <input
+              type="number"
+              min={0}
+              max={10}
+              value={executionForm.painLevel}
+              onChange={(event) => setExecutionForm((current) => ({ ...current, painLevel: event.target.value }))}
+            />
+          </label>
+          <label>
+            反馈
+            <textarea
+              value={executionForm.feedback}
+              onChange={(event) => setExecutionForm((current) => ({ ...current, feedback: event.target.value }))}
+            />
+          </label>
+          <label>
+            联系时间
+            <input
+              type="datetime-local"
+              value={executionForm.contactedAt}
+              onChange={(event) => setExecutionForm((current) => ({ ...current, contactedAt: event.target.value }))}
+            />
+          </label>
+          <label>
+            下次随访日期
+            <input
+              type="date"
+              value={executionForm.nextPlanDate}
+              onChange={(event) => setExecutionForm((current) => ({ ...current, nextPlanDate: event.target.value }))}
+            />
+          </label>
+          <div className="modal-actions">
+            <button type="button" onClick={() => setExecutionId(null)}>取消</button>
+            <button type="submit">确认执行</button>
+          </div>
+        </form>
+      </Dialog>
       <PromptDialog
         key={completion !== null ? 'open' : 'closed'}
         open={completion !== null}
