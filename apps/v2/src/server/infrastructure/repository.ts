@@ -64,8 +64,10 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
   }
 
   async findMany(query: RepositoryQuery, context: AppContext): Promise<Page<Record<string, unknown>>> {
-    const page = Math.max(1, query.page ?? 1);
-    const pageSize = Math.min(200, Math.max(1, query.pageSize ?? 20));
+    const rawPage = typeof query.page === 'number' && Number.isFinite(query.page) ? query.page : 1;
+    const rawPageSize = typeof query.pageSize === 'number' && Number.isFinite(query.pageSize) ? query.pageSize : 20;
+    const page = Math.max(1, Math.floor(rawPage));
+    const pageSize = Math.min(200, Math.max(1, Math.floor(rawPageSize)));
     const where: string[] = ['deletedAt IS NULL'];
     const params: unknown[] = [];
 
