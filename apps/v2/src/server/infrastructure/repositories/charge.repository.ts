@@ -6,6 +6,7 @@ import type {
   CreateChargeInput,
 } from '../../application/ports';
 import { tenantAnd } from '../tenant';
+import { recordSyncChange } from '../sync-change';
 
 export class SqliteChargeRepository implements ChargeRepository {
   constructor(private readonly db: Database.Database) {}
@@ -39,6 +40,9 @@ export class SqliteChargeRepository implements ChargeRepository {
       input.status,
       input.remark ?? null,
     );
+    if (input.clinicId) {
+      recordSyncChange(this.db, { tableName: 'Charge', recordId: input.id, operation: 'INSERT', clinicId: input.clinicId });
+    }
   }
 
   createItem(item: ChargeItemRecord): void {
@@ -79,6 +83,9 @@ export class SqliteChargeRepository implements ChargeRepository {
       `UPDATE Charge SET paidAmount = ?, status = ?, paidAt = ?, payMethod = COALESCE(?, payMethod),
        memberCardId = COALESCE(?, memberCardId), updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
     ).run(...params);
+    if (clinicId) {
+      recordSyncChange(this.db, { tableName: 'Charge', recordId: id, operation: 'UPDATE', clinicId });
+    }
   }
 
   updateRefund(id: string, refundedAmount: number, status: string, updatedAt: string, clinicId?: string | null): void {
@@ -86,5 +93,8 @@ export class SqliteChargeRepository implements ChargeRepository {
     this.db.prepare(
       `UPDATE Charge SET refundedAmount = ?, status = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
     ).run(...params);
+    if (clinicId) {
+      recordSyncChange(this.db, { tableName: 'Charge', recordId: id, operation: 'UPDATE', clinicId });
+    }
   }
 }

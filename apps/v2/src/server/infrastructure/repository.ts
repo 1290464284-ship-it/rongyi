@@ -12,6 +12,7 @@ import type {
 import { maskSensitiveFields } from './security';
 import { tenantAnd, tenantParams } from './tenant';
 import { buildFtsQuery, upsertSearchRow, removeSearchRow, refreshPatientChildSearchRows } from './search-index';
+import { recordSyncChange } from './sync-change';
 
 function serialize(field: ResourceField, value: unknown): unknown {
   if (value === undefined || value === null) return null;
@@ -39,11 +40,14 @@ function deserialize(field: ResourceField, value: unknown): unknown {
 
 export class SqliteRepository implements IRepository<Record<string, unknown>> {
   private readonly columns: Set<string>;
+  private readonly emitSyncChange: boolean;
 
   constructor(
     private readonly db: Database.Database,
     private readonly resource: ResourceDefinition,
+    options: { emitSyncChange?: boolean } = {},
   ) {
+    this.emitSyncChange = options.emitSyncChange ?? true;
     this.columns = new Set(
       (this.db.prepare(`PRAGMA table_info(${this.resource.table})`).all() as Array<{ name: string }>)
         .map((column) => column.name),
@@ -147,6 +151,9 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
       throw error;
     }
     if (this.resource.searchIndexResource) upsertSearchRow(this.db, this.resource.searchIndexResource, id);
+    if (this.emitSyncChange && context.clinicId) {
+      recordSyncChange(this.db, { tableName: this.resource.table, recordId: id, operation: 'INSERT', clinicId: context.clinicId });
+    }
   }
 
   async update(entity: Record<string, unknown>, context: AppContext): Promise<void> {
@@ -176,6 +183,9 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
     }
     if (this.resource.searchIndexResource) upsertSearchRow(this.db, this.resource.searchIndexResource, id);
     if (this.resource.name === 'patients') refreshPatientChildSearchRows(this.db, id);
+    if (this.emitSyncChange && context.clinicId) {
+      recordSyncChange(this.db, { tableName: this.resource.table, recordId: id, operation: 'UPDATE', clinicId: context.clinicId });
+    }
   }
 
   async softDelete(id: string, context: AppContext): Promise<void> {
@@ -194,6 +204,9 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
       this.db.prepare(`DELETE FROM ${this.resource.table} WHERE id = ?${clinicWhere}`).run(...params);
     }
     if (this.resource.searchIndexResource) removeSearchRow(this.db, this.resource.searchIndexResource, id);
+    if (this.emitSyncChange && context.clinicId) {
+      recordSyncChange(this.db, { tableName: this.resource.table, recordId: id, operation: 'DELETE', clinicId: context.clinicId });
+    }
     if (this.resource.name === 'patients') {
       // 患者删除后其子记录（Appointment/Charge/FollowUp）索引行不再有意义，逐个清理。
       // 子表可能缺 patientId 列（精简/异构 schema），按实际列结构跳过。

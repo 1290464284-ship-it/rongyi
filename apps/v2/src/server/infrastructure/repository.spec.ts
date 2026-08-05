@@ -471,4 +471,24 @@ describe('SqliteRepository', () => {
     expect(rows[0].content).toContain('Renamed Parent');
     expect(rows[0].content).not.toContain('Parent Name');
   });
+
+  it('records sync changes for repository writes with the server device sentinel', async () => {
+    const repo = new SqliteRepository(db, resourceRegistry.get('patients')!);
+    await repo.insert({
+      id: 'repo-sync-1', code: 'SYNC-001', name: 'Sync Patient', gender: 'UNKNOWN',
+      phone: '13200000009', source: 'WALK_IN', active: true,
+    }, context);
+    const rowsFor = (): Array<{ tableName: string; operation: string; deviceId: string }> =>
+      db.prepare(
+        `SELECT tableName, operation, deviceId FROM SyncChange WHERE recordId = 'repo-sync-1' ORDER BY createdAt`,
+      ).all() as Array<{ tableName: string; operation: string; deviceId: string }>;
+    expect(rowsFor()).toHaveLength(1);
+    expect(rowsFor()[0]).toMatchObject({ tableName: 'Patient', operation: 'INSERT', deviceId: 'server' });
+    await repo.update({ id: 'repo-sync-1', name: 'Renamed Sync' }, context);
+    expect(rowsFor()).toHaveLength(2);
+    expect(rowsFor()[1].operation).toBe('UPDATE');
+    await repo.softDelete('repo-sync-1', context);
+    expect(rowsFor()).toHaveLength(3);
+    expect(rowsFor()[2].operation).toBe('DELETE');
+  });
 });

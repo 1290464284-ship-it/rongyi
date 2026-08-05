@@ -7,6 +7,7 @@ import { validatePayload } from '../../http/validation';
 import { resourceRegistry } from '../../../domain/resources';
 import type { AppContext } from '../../../domain/contracts';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
+import { recordSyncChange, type SyncChangeOperation } from '../../infrastructure/sync-change';
 import { hashRefreshToken, newRefreshToken } from './common';
 
 const SYNC_ALLOWED_TABLES = new Set([
@@ -92,7 +93,7 @@ export class SyncService {
       }
       /* v8 ignore stop */
       try {
-        const repo = new SqliteRepository(this.db, definition);
+        const repo = new SqliteRepository(this.db, definition, { emitSyncChange: false });
         if (change.operation === 'DELETE') {
           if (!(await repo.findById(change.recordId, context))) {
             throw new Error(`Sync record not found: ${change.recordId}`);
@@ -145,11 +146,13 @@ export class SyncService {
   }
 
   record(tableName: string, recordId: string, operation: string, deviceId: string, clinicId: string): void {
-    const now = new Date().toISOString();
-    this.db.prepare(
-      `INSERT INTO SyncChange (id, clinicId, createdAt, updatedAt, deletedAt, tableName, recordId, operation, deviceId)
-       VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
-    ).run(randomUUID(), clinicId, now, now, tableName, recordId, operation, deviceId);
+    recordSyncChange(this.db, {
+      tableName,
+      recordId,
+      operation: operation as SyncChangeOperation,
+      clinicId,
+      deviceId,
+    });
   }
 
   cleanup(before: string | undefined, context: AppContext): { deleted: number; cutoff: string } {
