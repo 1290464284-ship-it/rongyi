@@ -91,6 +91,42 @@ describe('application services', () => {
     expect(charge.status).toBe('PAID');
   });
 
+  it('rolls back debt payment when the charge update fails', async () => {
+    // Dedicated temp database so DROP TABLE Charge cannot affect the shared
+    // db used by the other tests in this file (or trip FK constraints from
+    // existing ChargeItem rows).
+    const localDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-debt-rollback-'));
+    const localDb = createDatabase(localDir);
+    seedDatabase(localDb);
+    runMigrations(localDb);
+    try {
+      const now = new Date().toISOString();
+      localDb.prepare(
+        `INSERT INTO Charge (
+           id, clinicId, createdAt, updatedAt, deletedAt, patientId, number,
+           totalAmount, paidAmount, refundedAmount, discount, status
+         ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'CHG-ROLLBACK-DEBT', 500, 0, 0, 0, 'UNPAID')`,
+      ).run('charge-rollback-debt', context.clinicId, now, now);
+      localDb.prepare(
+        `INSERT INTO Debt (
+           id, clinicId, createdAt, updatedAt, deletedAt, chargeId, patientId,
+           totalAmount, paidAmount, status
+         ) VALUES (?, ?, ?, ?, NULL, 'charge-rollback-debt', 'patient-demo-001', 500, 0, 'UNPAID')`,
+      ).run('debt-rollback-pay', context.clinicId, now, now);
+
+      // Make the second write (Charge UPDATE) fail after the Debt update runs.
+      localDb.prepare('DROP TABLE Charge').run();
+      await expect(new DebtService(localDb).pay('debt-rollback-pay', 100, context)).rejects.toThrow();
+      const debt = localDb.prepare('SELECT paidAmount FROM Debt WHERE id = ?').get('debt-rollback-pay') as {
+        paidAmount: number;
+      };
+      expect(Number(debt.paidAmount)).toBe(0);
+    } finally {
+      localDb.close();
+      fs.rmSync(localDir, { recursive: true, force: true });
+    }
+  });
+
   it('applies a discount when creating a charge', async () => {
     const service = new ChargeService(db);
     const created = await service.create({

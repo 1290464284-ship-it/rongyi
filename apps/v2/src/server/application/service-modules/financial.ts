@@ -684,12 +684,7 @@ export class DebtService {
   }
 
   async pay(debtId: string, amount: number, context: AppContext, requestId?: string): Promise<Record<string, unknown>> {
-    return await withIdempotency(this.db, {
-      operation: 'debt.pay',
-      userId: context.userId,
-      clinicId: context.clinicId,
-      requestId: requestId ?? '',
-    }, () => {
+    const executePay = this.db.transaction((debtId: string, amount: number, context: AppContext) => {
       const debt = this.debtRepository.findById(debtId, context.clinicId);
       if (!debt) throw new NotFoundError('Debt record not found');
       const remaining = Number(debt.totalAmount) - Number(debt.paidAmount);
@@ -716,5 +711,11 @@ export class DebtService {
       }
       return { id: debtId, paidAmount: paid, status };
     });
+    return await withIdempotency(this.db, {
+      operation: 'debt.pay',
+      userId: context.userId,
+      clinicId: context.clinicId,
+      requestId: requestId ?? '',
+    }, () => executePay(debtId, amount, context));
   }
 }
