@@ -209,7 +209,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
         callback(null, true);
         return;
       }
-      if (origin.startsWith('file://')) {
+      if (origin === 'null' || origin.startsWith('file://')) {
         callback(null, true);
         return;
       }
@@ -307,6 +307,13 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
   registerAdminRoutes(app, deps);
   registerWorkflowRoutes(app, deps);
   registerSystemRoutes(app, deps);
+  // file:// (打包版 Electron 渲染器) 以 <img> 加载 API 图片时,
+  // 不受同源策略约束, 但 helmet 默认 Cross-Origin-Resource-Policy: same-origin
+  // 会阻断响应; 仅对 files 路由放开 CORP。
+  app.use('/api/v2/files', (req, res, next) => {
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    next();
+  });
   registerFileRoutes(app, deps);
 
   app.use((req, res) => {
