@@ -44,11 +44,16 @@ function validateField(field: ResourceField, raw: unknown): unknown {
         throw new ValidationError(`${field.name} must be a valid YYYY-MM-DD date`);
       }
       return raw;
-    case 'datetime':
+    case 'datetime': {
       if (typeof raw !== 'string' || Number.isNaN(Date.parse(raw))) {
         throw new ValidationError(`${field.name} must be a valid date-time`);
       }
-      return raw;
+      const normalized = new Date(raw).toISOString();
+      if (Number.isNaN(new Date(normalized).getTime())) {
+        throw new ValidationError(`${field.name} must be a valid date-time`);
+      }
+      return normalized;
+    }
     case 'decimal': {
       const value = typeof raw === 'number'
         ? raw
