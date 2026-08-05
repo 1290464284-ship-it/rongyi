@@ -215,4 +215,112 @@ describe('startSchedulers', () => {
       globalThis.clearInterval = origClear;
     }
   });
+
+  it('stop 后推进 fake timers，各定时回调不再触发', async () => {
+    vi.useFakeTimers();
+    const backups = makeBackups();
+    const audit = makeAudit();
+    const logger = makeLogger();
+    const onAlertCreate = vi.fn();
+    const idempotencyCleanup = vi.fn().mockReturnValue({ deleted: 3 });
+
+    const { stop } = startSchedulers({
+      backups,
+      audit,
+      autoBackupIntervalMs: 60_000,
+      autoBackupKeep: 30,
+      logger,
+      onAlertCreate,
+      idempotencyCleanup,
+    });
+
+    // 首启立即执行的任务各触发一次；idempotency 与原内联行为一致不首启执行。
+    expect(backups.create).toHaveBeenCalledTimes(1);
+    expect(audit.cleanup).toHaveBeenCalledTimes(1);
+    expect(idempotencyCleanup).not.toHaveBeenCalled();
+
+    stop();
+
+    const backupsCalls = vi.mocked(backups.create).mock.calls.length;
+    const auditCalls = vi.mocked(audit.cleanup).mock.calls.length;
+    const idempotencyCalls = idempotencyCleanup.mock.calls.length;
+
+    await vi.advanceTimersByTimeAsync(30 * 24 * 60 * 60 * 1000);
+
+    expect(backups.create).toHaveBeenCalledTimes(backupsCalls);
+    expect(audit.cleanup).toHaveBeenCalledTimes(auditCalls);
+    expect(idempotencyCleanup).toHaveBeenCalledTimes(idempotencyCalls);
+    expect(onAlertCreate).not.toHaveBeenCalled();
+  });
+
+  it('idempotencyCleanup 按每日周期被调用，且不首启执行', async () => {
+    vi.useFakeTimers();
+    const backups = makeBackups();
+    const audit = makeAudit();
+    const logger = makeLogger();
+    const onAlertCreate = vi.fn();
+    const idempotencyCleanup = vi.fn().mockReturnValue({ deleted: 2 });
+
+    const { stop } = startSchedulers({
+      backups,
+      audit,
+      autoBackupIntervalMs: 60_000,
+      autoBackupKeep: 30,
+      logger,
+      onAlertCreate,
+      idempotencyCleanup,
+    });
+
+    expect(idempotencyCleanup).not.toHaveBeenCalled();
+
+    // 24h 前一刻仍未触发
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000 - 1);
+    expect(idempotencyCleanup).not.toHaveBeenCalled();
+
+    // 满 24h 触发一次，并记录删除数量
+    await vi.advanceTimersByTimeAsync(1);
+    expect(idempotencyCleanup).toHaveBeenCalledTimes(1);
+    expect(logger.info).toHaveBeenCalledWith(
+      'idempotency cleanup completed',
+      expect.objectContaining({ action: 'idempotency-cleanup', deleted: 2 }),
+    );
+
+    // 再推 24h：第二次触发
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000);
+    expect(idempotencyCleanup).toHaveBeenCalledTimes(2);
+
+    stop();
+  });
+
+  it('idempotencyCleanup 抛错时吞错仅记录日志', async () => {
+    vi.useFakeTimers();
+    const backups = makeBackups();
+    const audit = makeAudit();
+    const logger = makeLogger();
+    const onAlertCreate = vi.fn();
+    const idempotencyCleanup = vi.fn(() => {
+      throw new Error('idempotency table locked');
+    });
+
+    const { stop } = startSchedulers({
+      backups,
+      audit,
+      autoBackupIntervalMs: 60_000,
+      autoBackupKeep: 30,
+      logger,
+      onAlertCreate,
+      idempotencyCleanup,
+    });
+
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000);
+
+    expect(idempotencyCleanup).toHaveBeenCalledTimes(1);
+    expect(logger.error).toHaveBeenCalledWith(
+      'idempotency cleanup failed',
+      expect.objectContaining({ action: 'idempotency-cleanup' }),
+    );
+    expect(onAlertCreate).not.toHaveBeenCalled();
+
+    stop();
+  });
 });

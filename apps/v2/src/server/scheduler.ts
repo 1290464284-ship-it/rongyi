@@ -3,6 +3,7 @@ import type { AuditService } from './application/service-modules/auth';
 import type { Logger } from './infrastructure/logger';
 
 const AUDIT_RETENTION_MS = 365 * 24 * 60 * 60 * 1000;
+const DAILY_MS = 24 * 60 * 60 * 1000;
 
 interface StartSchedulersOptions {
   backups: BackupService;
@@ -21,15 +22,35 @@ interface StartSchedulersOptions {
     suggestion?: string;
     clinicId?: string | null;
   }) => void;
+  /**
+   * Daily idempotency-record cleanup. Mirrors the return shape of
+   * `cleanupIdempotencyRecords` in infrastructure/idempotency. Optional: when
+   * absent no idempotency timer is registered.
+   */
+  idempotencyCleanup?: () => { deleted: number };
 }
 
 export function startSchedulers(options: StartSchedulersOptions): { stop(): void } {
-  const { backups, audit, autoBackupIntervalMs, autoBackupKeep, logger, onAlertCreate } = options;
+  const {
+    backups,
+    audit,
+    autoBackupIntervalMs,
+    autoBackupKeep,
+    logger,
+    onAlertCreate,
+    idempotencyCleanup,
+  } = options;
+  // Clamp preserved from main.ts: never back up more often than once a minute.
   const intervalMs = Math.max(60_000, autoBackupIntervalMs);
 
   let isRunning = false;
-  let backupTimer: ReturnType<typeof setInterval> | null = null;
-  let auditTimer: ReturnType<typeof setInterval> | null = null;
+  const timers: Array<ReturnType<typeof setInterval>> = [];
+
+  function schedule(callback: () => void, ms: number): void {
+    const timer = setInterval(callback, ms);
+    timer.unref?.();
+    timers.push(timer);
+  }
 
   async function runAutoBackup(): Promise<void> {
     if (isRunning) return;
@@ -65,24 +86,34 @@ export function startSchedulers(options: StartSchedulersOptions): { stop(): void
     }
   }
 
+  function runIdempotencyCleanup(): void {
+    if (!idempotencyCleanup) return;
+    try {
+      const { deleted } = idempotencyCleanup();
+      if (deleted > 0) logger.info('idempotency cleanup completed', { action: 'idempotency-cleanup', deleted });
+    } catch (error) {
+      logger.error('idempotency cleanup failed', { action: 'idempotency-cleanup', error });
+    }
+  }
+
+  // First run executes immediately (behavioral difference from the old
+  // main.ts 5-minute first-delay is accepted by the caller).
   void runAutoBackup();
-  backupTimer = setInterval(() => void runAutoBackup(), intervalMs);
-  backupTimer.unref?.();
+  schedule(() => void runAutoBackup(), intervalMs);
 
   cleanupAuditLogs();
-  auditTimer = setInterval(cleanupAuditLogs, 24 * 60 * 60 * 1000);
-  auditTimer.unref?.();
+  schedule(cleanupAuditLogs, DAILY_MS);
+
+  // main.ts never ran the idempotency cleanup at startup, only on the daily
+  // interval; keep that behavior.
+  if (idempotencyCleanup) {
+    schedule(runIdempotencyCleanup, DAILY_MS);
+  }
 
   return {
     stop() {
-      if (backupTimer) {
-        clearInterval(backupTimer);
-        backupTimer = null;
-      }
-      if (auditTimer) {
-        clearInterval(auditTimer);
-        auditTimer = null;
-      }
+      for (const timer of timers) clearInterval(timer);
+      timers.length = 0;
     },
   };
 }
