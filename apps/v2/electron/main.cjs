@@ -29,7 +29,6 @@ let _shutdownStarted = false;
 let tray = null;
 let apiRestartCount = 0;
 let apiLastCrashAt = 0;
-const API_RESTART_WINDOW_MS = 60_000;
 const API_MAX_RESTARTS = 5;
 const API_BACKOFF_BASE_MS = 30_000;
 const API_BACKOFF_MAX_MS = 300_000;
@@ -117,7 +116,7 @@ function randomPort() {
   return randomInt(30000, 50000);
 }
 
-function waitForApi(port, timeoutMs = 15000) {
+function waitForApi(port, timeoutMs = 30000) {
   return new Promise((resolve, reject) => {
     const startedAt = Date.now();
     const attempt = () => {
@@ -184,14 +183,13 @@ async function startApi() {
   apiProcess.on('exit', (code, signal) => {
     apiProcess = null;
     if (_isQuitting || startedProcess.manualStop) return;
-    const now = Date.now();
-    if (now - apiLastCrashAt > API_RESTART_WINDOW_MS) apiRestartCount = 0;
-    apiLastCrashAt = now;
+    apiLastCrashAt = Date.now();
     apiRestartCount += 1;
-    crashLog('api-exit', new Error(`code=${code} signal=${String(signal)}`));
+    crashLog('api-exit', new Error(`code=${code} signal=${String(signal)} lastCrashAt=${apiLastCrashAt}`));
     if (apiRestartCount >= API_MAX_RESTARTS) {
       sendApiStatus({ status: 'crashed', code });
-      notify('本地服务异常', 'API 连续启动失败，请检查端口占用或数据目录权限后重试。');
+      notify('本地服务异常', 'API 连续启动失败，请检查数据目录或联系管理员。');
+      showApiErrorWindow(`API 连续失败 ${API_MAX_RESTARTS} 次（最近错误 code=${code}）。请检查数据目录权限或恢复备份。`);
       return;
     }
     sendApiStatus({ status: 'restarting', code });
@@ -201,6 +199,7 @@ async function startApi() {
       startApi().catch((error) => {
         crashLog('api-restart-failed', error);
         sendApiStatus({ status: 'crashed', message: error.message });
+        showApiErrorWindow(error instanceof Error ? error.message : String(error));
       });
     }, delayMs);
   });
@@ -376,6 +375,15 @@ function createWindow() {
   });
 }
 
+function showApiErrorWindow(message) {
+  if (BrowserWindow.getAllWindows().length > 0) return;
+  const win = new BrowserWindow({
+    ...DEFAULT_WINDOW_STATE,
+    webPreferences: secureWindowPreferences(),
+  });
+  win.loadFile(path.join(__dirname, 'error.html'), { query: { msg: String(message) } });
+}
+
 function trayImage() {
   const iconPath = path.join(__dirname, '..', 'build', 'icon.ico');
   try {
@@ -541,6 +549,7 @@ app.whenReady().then(async () => {
     }
   });
   ipcMain.handle('desktop:version', () => app.getVersion());
+  ipcMain.handle('desktop:quit', () => app.quit());
   ipcMain.handle('desktop:api-port', () => apiPort);
   ipcMain.handle('desktop:restart-api', async () => {
     apiRestartCount = 0;
@@ -572,7 +581,13 @@ app.whenReady().then(async () => {
   });
 
   setupTray();
-  await startApi();
+  try {
+    await startApi();
+  } catch (error) {
+    crashLog('api-initial-start-failed', error);
+    showApiErrorWindow(error instanceof Error ? error.message : String(error));
+    return;
+  }
   createWindow();
   if (!isDev && process.env.V2_DISABLE_AUTO_UPDATE !== '1') {
     autoUpdater.checkForUpdates().catch((error) => {
