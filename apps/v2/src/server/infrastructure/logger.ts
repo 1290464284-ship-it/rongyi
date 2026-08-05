@@ -20,6 +20,50 @@ export interface LogMeta {
 }
 
 /**
+ * Maximum nesting depth for log value serialization. Guards against circular
+ * references (e.g. req/res objects attached to meta) that would otherwise
+ * make JSON.stringify throw and break logging.
+ */
+export const MAX_SERIALIZE_DEPTH = 5;
+
+/**
+ * Recursively serialize a log value for JSON output. Error instances are
+ * expanded into { message, stack, cause } instead of JSON.stringify's `{}`,
+ * and the expansion recurses through the cause chain. Circular or deeply
+ * nested structures are truncated to '[MaxDepth]' beyond MAX_SERIALIZE_DEPTH.
+ * All other values keep their JSON.stringify-compatible shape (objects with
+ * toJSON, such as Date, are preserved).
+ */
+export function serializeValue(value: unknown, depth = 0): unknown {
+  if (value instanceof Error) {
+    const out: Record<string, unknown> = { message: value.message };
+    if (typeof value.stack === 'string') out.stack = value.stack;
+    const cause = (value as Error & { cause?: unknown }).cause;
+    if (cause !== undefined) {
+      out.cause = depth >= MAX_SERIALIZE_DEPTH ? '[MaxDepth]' : serializeValue(cause, depth + 1);
+    }
+    return out;
+  }
+  if (Array.isArray(value)) {
+    if (depth >= MAX_SERIALIZE_DEPTH) return '[MaxDepth]';
+    return value.map((item) => serializeValue(item, depth + 1));
+  }
+  if (value !== null && typeof value === 'object') {
+    const toJson = (value as { toJSON?: unknown }).toJSON;
+    if (typeof toJson === 'function') {
+      return serializeValue((value as { toJSON: () => unknown }).toJSON(), depth + 1);
+    }
+    if (depth >= MAX_SERIALIZE_DEPTH) return '[MaxDepth]';
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value)) {
+      out[key] = serializeValue(item, depth + 1);
+    }
+    return out;
+  }
+  return value;
+}
+
+/**
  * Structured JSON logger with optional local file output.
  *
  * The file output is intentionally simple: a single log file with size-based
@@ -54,7 +98,7 @@ export class Logger {
       message,
       ...meta,
     };
-    const line = JSON.stringify(entry);
+    const line = JSON.stringify(serializeValue(entry));
     if (level === 'error') console.error(line);
     else if (level === 'warn') console.warn(line);
     else console.log(line);
