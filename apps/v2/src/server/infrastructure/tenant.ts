@@ -1,9 +1,10 @@
 /**
  * Shared tenant-scope helpers.
  *
- * Legacy rows may have a null clinicId. A scoped request always matches those
- * rows in addition to rows from its own clinic; an unscoped global context is
- * only used by legacy/system paths and intentionally sees every row.
+ * Rows are strictly matched against a scoped request's clinic; null clinicId
+ * rows were backfilled by migration 121, so no OR NULL fallback is emitted.
+ * An unscoped global context (clinicId null) intentionally sees every row and
+ * matches every row; it is only used by legacy/system paths.
  */
 
 export type DbParam = string | number | null | bigint | Buffer;
@@ -14,13 +15,6 @@ export interface TenantFilter {
 }
 
 export function tenantWhere(clinicId: string | null | undefined, column = 'clinicId'): TenantFilter {
-  // OR clinicId IS NULL 仅兼容 legacy 行
-  return clinicId
-    ? { sql: `(${column} = ? OR ${column} IS NULL)`, params: [clinicId] }
-    : { sql: '', params: [] };
-}
-
-export function tenantWhereStrict(clinicId: string | null | undefined, column = 'clinicId'): TenantFilter {
   return clinicId
     ? { sql: `(${column} = ?)`, params: [clinicId] }
     : { sql: '', params: [] };
@@ -32,7 +26,7 @@ export function tenantParams(clinicId: string | null | undefined): DbParam[] {
 
 export function tenantMatches(rowClinicId: unknown, clinicId: string | null | undefined): boolean {
   if (!clinicId) return true;
-  return rowClinicId === null || rowClinicId === undefined || String(rowClinicId) === clinicId;
+  return rowClinicId !== null && rowClinicId !== undefined && String(rowClinicId) === clinicId;
 }
 
 export function tenantAnd(clinicId: string | null | undefined, column = 'clinicId'): string {

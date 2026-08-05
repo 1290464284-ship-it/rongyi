@@ -216,6 +216,11 @@ describe('HTTP app', () => {
          username, passwordHash, name, role, active, loginAttempts, tokenVersion
        ) VALUES (?, NULL, NULL, ?, ?, NULL, 'file-null-clinic', ?, 'File Null Clinic', 'RECEPTIONIST', 1, 0, 0)`,
     ).run('user-file-null', now, now, hash);
+    // 用户行 clinicId 为 NULL 时必须经 UserClinic 成员关系解析诊所作用域（迁移 121 后严格隔离）。
+    db.prepare(
+      `INSERT INTO UserClinic (userId, clinicId, role, createdAt, updatedAt, deletedAt)
+       VALUES (?, ?, 'RECEPTIONIST', ?, ?, NULL)`,
+    ).run('user-file-null', 'clinic-v2-001', now, now);
     const nullLogin = await request(app)
       .post('/api/v2/auth/login')
       .send({ username: 'file-null-clinic', password: 'REDACTED' })
@@ -388,7 +393,7 @@ describe('HTTP app', () => {
          id, clinicId, createdAt, updatedAt, deletedAt,
          number, supplierId, totalAmount, status
        ) VALUES (?, ?, ?, ?, NULL, 'PO-HTTP', NULL, 0, 'PENDING')`,
-    ).run('po-http', null, purchaseNow, purchaseNow);
+    ).run('po-http', 'clinic-v2-001', purchaseNow, purchaseNow);
     await request(app)
       .patch('/api/v2/purchase-orders/po-http/receive')
       .set('Authorization', `Bearer ${token}`)
@@ -690,7 +695,7 @@ describe('HTTP app', () => {
          id, clinicId, createdAt, updatedAt, deletedAt,
          code, name, category, unit, stock, minStock, price, expireDate
        ) VALUES (?, ?, ?, ?, NULL, 'EXP-1', 'Expiring Material', 'CONSUMABLE', 'box', 5, 1, 100, ?)`,
-    ).run('inventory-expiring', null, now, now, expiringDate);
+    ).run('inventory-expiring', 'clinic-v2-001', now, now, expiringDate);
     const expiring = await request(app).get('/api/v2/inventory/expiring?days=30')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
@@ -767,7 +772,7 @@ describe('HTTP app', () => {
          id, clinicId, createdAt, updatedAt, deletedAt,
          chargeId, patientId, totalAmount, paidAmount, status
        ) VALUES (?, ?, ?, ?, NULL, 'charge', 'patient-demo-001', 1000, 0, 'UNPAID')`,
-    ).run('debt-http', null, debtNow, debtNow);
+    ).run('debt-http', 'clinic-v2-001', debtNow, debtNow);
     await request(app).patch('/api/v2/debts/debt-http/pay')
       .set('Authorization', `Bearer ${token}`)
       .send({ amount: 100, requestId: 'http-debt-1' })
@@ -793,7 +798,7 @@ describe('HTTP app', () => {
          id, clinicId, createdAt, updatedAt, deletedAt,
          level, title, message, source, status
        ) VALUES (?, ?, ?, ?, NULL, 'WARNING', 'T', 'M', 'test', 'OPEN')`,
-    ).run('alert-http', null, alertNow, alertNow);
+    ).run('alert-http', 'clinic-v2-001', alertNow, alertNow);
     await request(app).get('/api/v2/system/business-alerts').set('Authorization', `Bearer ${token}`).expect(200);
     await request(app).patch('/api/v2/system/business-alerts/alert-http/status')
       .set('Authorization', `Bearer ${token}`)

@@ -136,10 +136,14 @@ export class AuthService {
     }
   }
 
-  private resolveClinicId(user: User): string | null {
+  private resolveClinicId(user: User): string {
     if (user.currentClinicId) return user.currentClinicId;
     if (user.clinicId) return user.clinicId;
-    return this.authRepository.clinicMemberships(user.id)[0]?.clinicId ?? null;
+    const membershipClinicId = this.authRepository.clinicMemberships(user.id)[0]?.clinicId ?? null;
+    if (!membershipClinicId) {
+      throw new AppError('FORBIDDEN', 'No clinic scope assigned to this account', 403);
+    }
+    return membershipClinicId;
   }
 
   async me(payload: TokenPayload): Promise<Omit<User, 'passwordHash'>> {
