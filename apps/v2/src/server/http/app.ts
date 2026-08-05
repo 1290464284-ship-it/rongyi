@@ -301,6 +301,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
   });
 
   registerReadRoutes(app, {
+    db,
     analytics: deps.analytics,
     chargeAssistant: deps.chargeAssistant,
     printTemplates: deps.printTemplates,

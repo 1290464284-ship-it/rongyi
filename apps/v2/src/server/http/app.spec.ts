@@ -752,6 +752,38 @@ describe('HTTP app', () => {
     await request(app).get('/api/v2/search?q=Demo').set('Authorization', `Bearer ${token}`).expect(200);
   });
 
+  it('queries appointments by local date through the read endpoint', async () => {
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO Appointment (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, startTime, endTime, status, type
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'user-admin-001', ?, ?, 'BOOKED', 'REGULAR')`,
+    ).run('appointment-by-date-http', 'clinic-v2-001', now, now, '2026-08-05T02:00:00.000Z', '2026-08-05T03:00:00.000Z');
+    try {
+      const hit = await request(app)
+        .get('/api/v2/appointments/by-date?date=2026-08-05')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(hit.body.data.items.some((item: { id: string }) => item.id === 'appointment-by-date-http')).toBe(true);
+      expect(hit.body.data.total).toBeGreaterThanOrEqual(1);
+
+      const miss = await request(app)
+        .get('/api/v2/appointments/by-date?date=2026-08-06')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(miss.body.data.items.some((item: { id: string }) => item.id === 'appointment-by-date-http')).toBe(false);
+
+      const invalid = await request(app)
+        .get('/api/v2/appointments/by-date?date=abc')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(400);
+      expect(invalid.body.code).toBe('VALIDATION_ERROR');
+    } finally {
+      db.prepare("DELETE FROM Appointment WHERE id = 'appointment-by-date-http'").run();
+    }
+  });
+
   it('supports member cards, debt, purchase, processing, metrics, and replenishment', async () => {
     const card = await request(app).post('/api/v2/member-cards')
       .set('Authorization', `Bearer ${token}`)

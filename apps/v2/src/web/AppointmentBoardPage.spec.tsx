@@ -20,7 +20,7 @@ describe('AppointmentBoardPage', () => {
     vi.mocked(apiRequest).mockReset();
   });
 
-  it('renders appointments grouped by status', async () => {
+  it('renders appointments grouped by status and requests the board list without a date', async () => {
     vi.mocked(apiRequest).mockResolvedValue({
       items: [
         { id: 'a1', patientId: 'P1', doctorId: 'D1', startTime: '2026-08-04T09:00:00.000Z', status: 'BOOKED' },
@@ -35,23 +35,37 @@ describe('AppointmentBoardPage', () => {
     expect(screen.getByText('P2')).toBeDefined();
     expect(screen.getAllByText('已预约').length).toBeGreaterThan(0);
     expect(screen.getAllByText('已取消').length).toBeGreaterThan(0);
+    expect(vi.mocked(apiRequest)).toHaveBeenCalledWith('/resources/appointments?page=1&pageSize=200');
   });
 
-  it('filters the board by selected date', async () => {
-    vi.mocked(apiRequest).mockResolvedValue({
-      items: [
-        { id: 'a1', patientId: 'P1', doctorId: 'D1', startTime: '2026-08-04T09:00:00.000Z', status: 'BOOKED' },
-        { id: 'a2', patientId: 'P2', doctorId: 'D2', startTime: '2026-08-05T10:00:00.000Z', status: 'BOOKED' },
-      ],
-      total: 2,
-      page: 1,
-      pageSize: 200,
+  it('filters the board by selected date and requests the by-date endpoint', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/appointments/by-date?date=2026-08-04') {
+        return {
+          items: [
+            { id: 'a1', patientId: 'P1', doctorId: 'D1', startTime: '2026-08-04T09:00:00.000Z', status: 'BOOKED' },
+          ],
+          total: 1,
+          page: 1,
+          pageSize: 200,
+        };
+      }
+      return {
+        items: [
+          { id: 'a1', patientId: 'P1', doctorId: 'D1', startTime: '2026-08-04T09:00:00.000Z', status: 'BOOKED' },
+          { id: 'a2', patientId: 'P2', doctorId: 'D2', startTime: '2026-08-05T10:00:00.000Z', status: 'BOOKED' },
+        ],
+        total: 2,
+        page: 1,
+        pageSize: 200,
+      };
     });
     render(<AppointmentBoardPage />, { wrapper });
     expect(await screen.findByText('P1')).toBeDefined();
     fireEvent.change(screen.getByLabelText('日期'), { target: { value: '2026-08-04' } });
     await waitFor(() => expect(screen.queryByText('P2')).toBeNull());
-    expect(screen.getByText('P1')).toBeDefined();
+    expect(await screen.findByText('P1')).toBeDefined();
+    expect(vi.mocked(apiRequest)).toHaveBeenCalledWith('/appointments/by-date?date=2026-08-04');
   });
 
   it('updates appointment status from the board', async () => {
