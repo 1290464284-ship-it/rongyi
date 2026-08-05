@@ -445,4 +445,57 @@ describe('migrations', () => {
     freshDb.close();
     fs.rmSync(dir, { recursive: true, force: true });
   });
+
+  it('dedups NULL-clinic duplicate cardNo rows before migration 121 backfill (T2R-03)', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-mig-121-dup-'));
+    const db = createDatabase(dir);
+    const now = new Date().toISOString();
+    // 最早诊所（121 的回填目标）。
+    db.prepare(
+      `INSERT INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+       VALUES ('clinic-early', NULL, '2020-01-01T00:00:00.000Z', '2020-01-01T00:00:00.000Z', NULL, 'EARLY', 'Early', 1)`,
+    ).run();
+    // MemberCard.patientId 为 NOT NULL 外键，先建患者。
+    db.prepare(
+      `INSERT INTO Patient (id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active)
+       VALUES ('patient-mc-dup', NULL, ?, ?, NULL, 'P-MC-DUP', 'Dup Patient', 'UNKNOWN', '13000000003',
+         '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
+    ).run(now, now);
+    // 两行 clinicId NULL、cardNo 相同 —— 121 回填后必撞唯一索引。
+    db.prepare(
+      `INSERT INTO MemberCard (id, clinicId, createdAt, updatedAt, deletedAt, patientId, cardNo,
+         balance, totalRecharge, totalConsume, status, points, totalPoints, level)
+       VALUES ('mc-dup-1', NULL, ?, ?, NULL, 'patient-mc-dup', 'CARD-1', 0, 0, 0, 'ACTIVE', 0, 0, 'NORMAL')`,
+    ).run(now, now);
+    db.prepare(
+      `INSERT INTO MemberCard (id, clinicId, createdAt, updatedAt, deletedAt, patientId, cardNo,
+         balance, totalRecharge, totalConsume, status, points, totalPoints, level)
+       VALUES ('mc-dup-2', NULL, ?, ?, NULL, 'patient-mc-dup', 'CARD-1', 0, 0, 0, 'ACTIVE', 0, 0, 'NORMAL')`,
+    ).run(now, now);
+
+    // 全量迁移（118 建唯一索引、121 回填）不抛错。
+    expect(() => runMigrations(db)).not.toThrow();
+
+    const rows = db.prepare(`SELECT id, clinicId, cardNo FROM MemberCard ORDER BY id`).all() as Array<{
+      id: string; clinicId: string | null; cardNo: string;
+    }>;
+    expect(rows).toHaveLength(2);
+    for (const row of rows) expect(row.clinicId).toBe('clinic-early');
+    const cardNos = rows.map((row) => row.cardNo);
+    expect(new Set(cardNos).size).toBe(2);
+    expect(cardNos).toContain('CARD-1');
+    expect(cardNos.some((cardNo) => cardNo.startsWith('CARD-1-dup-'))).toBe(true);
+    // 修复留痕。
+    const logs = db.prepare(
+      `SELECT * FROM MigrationRepairLog WHERE tableName = 'MemberCard' AND field = 'cardNo'`,
+    ).all() as Array<{ beforeValue: string; afterValue: string }>;
+    expect(logs.length).toBeGreaterThanOrEqual(1);
+    expect(logs[0].beforeValue).toBe('CARD-1');
+    // 幂等：再跑一遍不抛错、数据不变。
+    expect(() => runMigrations(db)).not.toThrow();
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
 });
