@@ -716,6 +716,16 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 120,
+    name: 'v2-perf-indexes',
+    up(db) {
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_idempotency_status_updated ON IdempotencyRecord(status, updatedAt);
+        CREATE INDEX IF NOT EXISTS idx_charge_item_clinic_category_name ON ChargeItem(clinicId, category, name);
+      `);
+    },
+  },
 ];
 
 function ensureForeignKeys(

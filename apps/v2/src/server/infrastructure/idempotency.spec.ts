@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase } from './database';
-import { withIdempotency, type IdempotencyScope } from './idempotency';
+import { cleanupIdempotencyRecords, withIdempotency, type IdempotencyScope } from './idempotency';
 
 const scope = (requestId: string, overrides: Partial<IdempotencyScope> = {}): IdempotencyScope => ({
   operation: 'charge.pay',
@@ -110,7 +110,7 @@ describe('withIdempotency', () => {
       .toThrow('Operation is already in progress');
   });
 
-  it('retries processing records that exceed the recovery timeout', async () => {
+  it('no longer auto-deletes stale processing records in the hot path', () => {
     const key = scopeKey(scope('stale-processing'));
     db.prepare(
       `INSERT INTO IdempotencyRecord (
@@ -125,12 +125,13 @@ describe('withIdempotency', () => {
       new Date(Date.now() + 86_400_000).toISOString(),
     );
     let calls = 0;
-    const result = await withIdempotency(db, scope('stale-processing'), () => {
+    expect(() => withIdempotency(db, scope('stale-processing'), () => {
       calls += 1;
       return { ok: true };
-    });
-    expect(result.ok).toBe(true);
-    expect(calls).toBe(1);
+    })).toThrow('Operation is already in progress');
+    expect(calls).toBe(0);
+    const row = db.prepare('SELECT status FROM IdempotencyRecord WHERE key = ?').get(key);
+    expect(row).toEqual({ status: 'PROCESSING' });
   });
 
   it('treats expired completed records as retryable', async () => {
@@ -181,7 +182,7 @@ describe('withIdempotency', () => {
     const failingDb = { prepare } as unknown as Database.Database;
     expect(() => withIdempotency(failingDb, scope('update-failure'), () => ({ ok: true })))
       .toThrow('update failed');
-    expect(deleteRun).toHaveBeenCalledTimes(3);
+    expect(deleteRun).toHaveBeenCalledTimes(2);
   });
 
   it('returns a concurrent result when the idempotency insert races', async () => {
@@ -193,6 +194,49 @@ describe('withIdempotency', () => {
     const raceDb = createRaceDb({ responseJson: '{}', status: 'PROCESSING' });
     expect(() => withIdempotency(raceDb, scope('race-processing'), () => ({ ok: false })))
       .toThrow('Operation is already in progress');
+  });
+});
+
+describe('cleanupIdempotencyRecords', () => {
+  let db: Database.Database;
+  let dataDir: string;
+
+  beforeAll(() => {
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-idem-cleanup-'));
+    db = createDatabase(dataDir);
+  });
+
+  afterAll(() => {
+    db.close();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  function insertRecord(id: string, key: string, status: string, updatedAt: Date): void {
+    db.prepare(
+      `INSERT INTO IdempotencyRecord (
+         id, key, type, status, responseJson, result, userId, clinicId, operation,
+         createdAt, updatedAt, deletedAt, expiresAt
+       ) VALUES (?, ?, 'GENERIC', ?, '{}', '{}', 'user-1', 'clinic-1', 'charge.pay', ?, ?, NULL, ?)`,
+    ).run(id, key, status, updatedAt.toISOString(), updatedAt.toISOString(), new Date(Date.now() + 86_400_000).toISOString());
+  }
+
+  it('deletes processing records past the recovery timeout', () => {
+    const key = scopeKey(scope('cleanup-stale'));
+    insertRecord('idem-cleanup-stale', key, 'PROCESSING', new Date(Date.now() - 3_600_000));
+    const { deleted } = cleanupIdempotencyRecords(db);
+    expect(deleted).toBe(1);
+    expect(db.prepare('SELECT 1 FROM IdempotencyRecord WHERE key = ?').get(key)).toBeUndefined();
+  });
+
+  it('keeps fresh processing records and all completed records', () => {
+    const freshKey = scopeKey(scope('cleanup-fresh'));
+    const completedKey = scopeKey(scope('cleanup-completed'));
+    insertRecord('idem-cleanup-fresh', freshKey, 'PROCESSING', new Date());
+    insertRecord('idem-cleanup-completed', completedKey, 'COMPLETED', new Date(Date.now() - 3_600_000));
+    const { deleted } = cleanupIdempotencyRecords(db);
+    expect(deleted).toBe(0);
+    expect(db.prepare('SELECT status FROM IdempotencyRecord WHERE key = ?').get(freshKey)).toEqual({ status: 'PROCESSING' });
+    expect(db.prepare('SELECT status FROM IdempotencyRecord WHERE key = ?').get(completedKey)).toEqual({ status: 'COMPLETED' });
   });
 });
 
