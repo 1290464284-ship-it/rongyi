@@ -1,12 +1,31 @@
 import { describe, expect, it } from 'vitest';
 import type { NextFunction, Request, Response } from 'express';
 import { AuthService } from '../application/services';
-import { AppError } from '../infrastructure/errors';
+import { AppError, ValidationError } from '../infrastructure/errors';
 import { authMiddleware, errorMiddleware, roleMiddleware, traceMiddleware } from './middleware';
 
 function fakeResponse(): Response {
   const res = { statusCode: 200, setHeader: () => {}, status: () => res, json: () => res } as unknown as Response;
   return res;
+}
+
+function jsonCapturingResponse(): { res: Response; body: () => Record<string, unknown> | undefined } {
+  const captured: { body?: Record<string, unknown> } = {};
+  const res = {
+    status: () => res,
+    json: (body: unknown) => {
+      captured.body = body as Record<string, unknown>;
+      return res;
+    },
+  } as unknown as Response;
+  return { res, body: () => captured.body };
+}
+
+function runErrorMiddleware(error: unknown): Record<string, unknown> | undefined {
+  const req = { traceId: 'trace-1' } as unknown as Request;
+  const { res, body } = jsonCapturingResponse();
+  errorMiddleware(error, req, res, () => {});
+  return body();
 }
 
 describe('middleware', () => {
@@ -17,6 +36,24 @@ describe('middleware', () => {
     const statusSpy = { status: () => statusSpy, json: () => statusSpy };
     const res = statusSpy as unknown as Response;
     errorMiddleware(new AppError('TEST', 'msg', 422), req, res, () => {});
+  });
+
+  it('does not expose details for 5xx errors', () => {
+    const body = runErrorMiddleware(new AppError('INTERNAL', 'boom', 500, { secret: 'x' }));
+    expect(body).toMatchObject({ code: 'INTERNAL', message: 'Internal server error' });
+    expect(body).not.toHaveProperty('details');
+  });
+
+  it('exposes details for whitelisted validation errors', () => {
+    const body = runErrorMiddleware(new ValidationError('bad input', { field: 'name', reason: 'required' }));
+    expect(body).toMatchObject({ code: 'VALIDATION_ERROR', message: 'bad input' });
+    expect(body?.details).toEqual({ field: 'name', reason: 'required' });
+  });
+
+  it('does not expose details for non-whitelisted 4xx codes', () => {
+    const body = runErrorMiddleware(new AppError('FORBIDDEN', 'nope', 403, { secret: 'x' }));
+    expect(body).toMatchObject({ code: 'FORBIDDEN', message: 'nope' });
+    expect(body).not.toHaveProperty('details');
   });
 
   it('enforces roles', () => {

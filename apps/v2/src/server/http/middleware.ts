@@ -22,6 +22,8 @@ export function traceMiddleware(req: Request, res: Response, next: NextFunction)
   next();
 }
 
+const DETAILS_WHITELIST = ['VALIDATION_ERROR'];
+
 export function errorMiddleware(
   error: unknown,
   req: Request,
@@ -37,13 +39,18 @@ export function errorMiddleware(
     else console.error(JSON.stringify(entry));
   }
   const message = appError.status >= 500 ? 'Internal server error' : appError.message;
-  res.status(appError.status).json({
+  const body: Record<string, unknown> = {
     success: false,
     code: appError.code,
     message,
     traceId: req.traceId,
-    details: appError.details,
-  });
+  };
+  // Only expose details for non-5xx errors whose code is explicitly whitelisted;
+  // 5xx responses must never leak internal details (e.g. stack traces).
+  if (appError.status < 500 && DETAILS_WHITELIST.includes(appError.code)) {
+    body.details = appError.details;
+  }
+  res.status(appError.status).json(body);
 }
 
 export function authMiddleware(authService: AuthService) {
