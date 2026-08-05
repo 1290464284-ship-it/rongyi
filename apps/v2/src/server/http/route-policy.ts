@@ -31,6 +31,7 @@ export const routeRoleRules: Array<{ pattern: RegExp; roles: UserRole[] }> = [
     pattern: /^\/api\/v2\/(registrations|visits|first-exams|treatments|medical-records|patients\/.*\/risk|prescriptions|cephalometric|treatment-plans)/,
     roles: clinicalStaff,
   },
+  { pattern: /^\/api\/v2\/workbench/, roles: clinicalStaff },
   { pattern: /^\/api\/v2\/wechat\/send-batch/, roles: ['BOSS', 'ADMIN'] },
   { pattern: /^\/api\/v2\/wechat/, roles: operationalStaff },
   { pattern: /^\/api\/v2\/follow-ups/, roles: operationalStaff },

@@ -1246,6 +1246,15 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 142,
+    name: 'v2-medical-record-proposed-content',
+    up(db) {
+      addColumns(db, 'MedicalRecord', [
+        ['proposedContentJson', 'TEXT'],
+      ]);
+    },
+  },
 ];
 
 function addColumns(db: Database.Database, table: string, columns: Array<[string, string]>): void {
