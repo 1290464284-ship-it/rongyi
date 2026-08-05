@@ -135,6 +135,42 @@ describe('service coverage', () => {
     delete process.env.V2_BACKUP_KEY;
   });
 
+  it('removes the temp file when backup creation fails', async () => {
+    const backupDir = path.join(dataDir, 'failed-backups');
+    fs.mkdirSync(backupDir, { recursive: true });
+    const service = new BackupService(db, path.join(dataDir, 'v2.sqlite'), backupDir);
+    delete process.env.V2_BACKUP_KEY;
+
+    await expect(service.create({ encrypted: true })).rejects.toThrow('V2_BACKUP_KEY is required');
+
+    const leftovers = fs.readdirSync(backupDir).filter((name) => name.endsWith('.tmp'));
+    expect(leftovers).toEqual([]);
+  });
+
+  it('cleanup removes stale .tmp and .staged-* files but keeps fresh temp files and normal backups', async () => {
+    const backupDir = path.join(dataDir, 'cleanup-temp-backups');
+    const service = new BackupService(db, path.join(dataDir, 'v2.sqlite'), backupDir);
+    const backup = await service.create();
+    const normalPath = path.join(backupDir, String(backup.filename));
+    const staleTmp = path.join(backupDir, 'stale.tmp');
+    const staleStaged = path.join(backupDir, '.staged-old.sqlite');
+    const freshTmp = path.join(backupDir, 'fresh.tmp');
+    fs.writeFileSync(staleTmp, 'stale');
+    fs.writeFileSync(staleStaged, 'stale');
+    fs.writeFileSync(freshTmp, 'fresh');
+    const old = new Date(Date.now() - 48 * 60 * 60 * 1000);
+    fs.utimesSync(staleTmp, old, old);
+    fs.utimesSync(staleStaged, old, old);
+
+    const result = service.cleanup(30);
+
+    expect(fs.existsSync(staleTmp)).toBe(false);
+    expect(fs.existsSync(staleStaged)).toBe(false);
+    expect(fs.existsSync(freshTmp)).toBe(true);
+    expect(fs.existsSync(normalPath)).toBe(true);
+    expect(result.deleted).toHaveLength(0);
+  });
+
   it('returns dashboard and revenue stats', async () => {
     const service = new StatsService(db);
     expect(service.dashboard(context)).toHaveProperty('patients');

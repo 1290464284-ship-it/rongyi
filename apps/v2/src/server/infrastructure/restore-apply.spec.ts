@@ -1,8 +1,9 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import Database from 'better-sqlite3';
+import type { Logger } from './logger';
 import { applyStagedRestore } from './restore-apply';
 
 describe('applyStagedRestore', () => {
@@ -71,13 +72,52 @@ describe('applyStagedRestore', () => {
     backupDb.close();
   });
 
-  it('rejects an unsafe or missing staged path', () => {
-    const dbPath = path.join(dir, 'unsafe.sqlite');
-    fs.writeFileSync(path.join(dir, '.restore-pending.json'), JSON.stringify({ stagedPath: 'C:/Windows/system32/evil.sqlite' }));
-    expect(() => applyStagedRestore(dbPath, [dir])).toThrow('invalid or missing');
+  it('renames the marker and returns { applied: false } when the staged path is unsafe', () => {
+    const caseDir = path.join(dir, 'unsafe-case');
+    fs.mkdirSync(caseDir, { recursive: true });
+    const dbPath = path.join(caseDir, 'unsafe.sqlite');
+    fs.writeFileSync(path.join(caseDir, '.restore-pending.json'), JSON.stringify({ stagedPath: 'C:/Windows/system32/evil.sqlite' }));
 
-    fs.writeFileSync(path.join(dir, '.restore-pending.json'), JSON.stringify({ stagedPath: 123 }));
-    expect(() => applyStagedRestore(dbPath, [dir])).toThrow('invalid or missing');
+    const result = applyStagedRestore(dbPath, [caseDir]);
+
+    expect(result).toEqual({ applied: false });
+    expect(fs.existsSync(path.join(caseDir, '.restore-pending.json'))).toBe(false);
+    const renamed = fs.readdirSync(caseDir).filter((name) => name.startsWith('.restore-pending.json.invalid-'));
+    expect(renamed).toHaveLength(1);
+  });
+
+  it('renames the marker and returns { applied: false } when the staged file is missing', () => {
+    const caseDir = path.join(dir, 'missing-case');
+    fs.mkdirSync(caseDir, { recursive: true });
+    const dbPath = path.join(caseDir, 'missing-staged.sqlite');
+    const stagedPath = path.join(caseDir, 'backups', 'missing.sqlite');
+    fs.writeFileSync(path.join(caseDir, '.restore-pending.json'), JSON.stringify({ stagedPath }));
+
+    const result = applyStagedRestore(dbPath, [caseDir]);
+
+    expect(result).toEqual({ applied: false });
+    expect(fs.existsSync(path.join(caseDir, '.restore-pending.json'))).toBe(false);
+    const renamed = fs.readdirSync(caseDir).filter((name) => name.startsWith('.restore-pending.json.invalid-'));
+    expect(renamed).toHaveLength(1);
+  });
+
+  it('warns through the logger when the stagedPath is not a string', () => {
+    const caseDir = path.join(dir, 'nonstring-case');
+    fs.mkdirSync(caseDir, { recursive: true });
+    const dbPath = path.join(caseDir, 'nonstring.sqlite');
+    fs.writeFileSync(path.join(caseDir, '.restore-pending.json'), JSON.stringify({ stagedPath: 123 }));
+    const warn = vi.fn();
+    const logger = { warn } as unknown as Logger;
+
+    const result = applyStagedRestore(dbPath, [caseDir], logger);
+
+    expect(result).toEqual({ applied: false });
+    expect(warn).toHaveBeenCalledTimes(1);
+    const [message, meta] = warn.mock.calls[0] as [string, Record<string, unknown>];
+    expect(message).toContain('invalid');
+    expect(meta).toMatchObject({ action: 'restore-apply' });
+    expect(String(meta.markerPath)).toMatch(/\.restore-pending\.json\.invalid-\d+$/);
+    expect(fs.existsSync(path.join(caseDir, '.restore-pending.json'))).toBe(false);
   });
 
   it('applies a restore when no current database exists yet', () => {
