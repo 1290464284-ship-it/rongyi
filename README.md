@@ -24,6 +24,8 @@ username: admin
 password: REDACTED
 ```
 
+开发环境如需自动重置 admin/REDACTED，需显式设置 `V2_ALLOW_DEV_SEED=1`。
+
 ## Desktop
 
 ```powershell

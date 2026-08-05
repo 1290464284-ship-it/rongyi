@@ -3,7 +3,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import express, { type Express } from 'express';
 import { wrapAsync } from '../middleware';
-import { NotFoundError, ValidationError } from '../../infrastructure/errors';
+import { AppError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import type { RouteDependencies } from './deps';
 
@@ -26,6 +26,15 @@ export function registerFileRoutes(app: Express, deps: RouteDependencies): void 
         if (req.body.length > MAX_FILE_BYTES) throw new ValidationError('File exceeds 20MB limit');
         if (!validFileMagic(extension, req.body)) throw new ValidationError('File content does not match its type');
         const context = req.context!;
+        const usage = deps.db.prepare(
+          `SELECT COUNT(*) AS count, COALESCE(SUM(fileSize), 0) AS totalBytes
+           FROM FileRecord WHERE createdBy = ? AND deletedAt IS NULL`,
+        ).get(context.userId) as { count: number; totalBytes: number };
+        const MAX_FILES_PER_USER = 200;
+        const MAX_BYTES_PER_USER = 500 * 1024 * 1024;
+        if (usage.count >= MAX_FILES_PER_USER || Number(usage.totalBytes) + req.body.length > MAX_BYTES_PER_USER) {
+          throw new AppError('QUOTA_EXCEEDED', 'File quota exceeded for this user', 413);
+        }
         const now = context.now().toISOString();
         const patientId = typeof req.headers['x-patient-id'] === 'string' ? req.headers['x-patient-id'] : null;
         if (patientId) {

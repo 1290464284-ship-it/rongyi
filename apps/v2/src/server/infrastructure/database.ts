@@ -378,7 +378,7 @@ export function seedDatabase(db: Database.Database): void {
          username, passwordHash, name, role, active, loginAttempts, tokenVersion
        ) VALUES (?, ?, ?, ?, NULL, 'admin', ?, 'System Administrator', 'BOSS', 1, 0, 0)`,
     ).run(userId, clinicId, now, now, passwordHash);
-  } else if (process.env.NODE_ENV !== 'production') {
+  } else if (process.env.NODE_ENV === 'development' && process.env.V2_ALLOW_DEV_SEED === '1') {
     const passwordHash = bcrypt.hashSync('REDACTED', 10);
     db.prepare('UPDATE User SET passwordHash = ?, active = 1, lockedUntil = NULL, updatedAt = ? WHERE id = ?')
       .run(passwordHash, now, userId);
