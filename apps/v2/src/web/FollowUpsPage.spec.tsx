@@ -235,4 +235,74 @@ describe('FollowUpsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '取消' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
+
+  it('renders NPS chips from the nps endpoint', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/follow-ups/reminders') return [];
+      if (path === '/follow-ups/reminders/summary') return { total: 0, overdue: 0, today: 0, upcoming: 0 };
+      if (path === '/follow-ups/nps') {
+        return { total: 10, promoters: 5, passives: 3, detractors: 2, nps: 30, average: 7.8, breakdown: [] };
+      }
+      return {};
+    });
+
+    render(<FollowUpsPage />, { wrapper });
+    expect(await screen.findByText('NPS 得分：30')).toBeDefined();
+    expect(screen.getByText('推荐者：5')).toBeDefined();
+    expect(screen.getByText('中立者：3')).toBeDefined();
+    expect(screen.getByText('贬损者：2')).toBeDefined();
+    expect(screen.getByText('平均评分：7.8')).toBeDefined();
+  });
+
+  it('records a follow-up execution through the dialog', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/follow-ups/reminders') {
+        return [{ id: 'f-1', patientName: '执行患者', planDate: dateKey(new Date()), status: 'PENDING', content: '回访' }];
+      }
+      if (path === '/follow-ups/reminders/summary') return { total: 1, overdue: 0, today: 1, upcoming: 0 };
+      if (path === '/follow-ups/nps') return { total: 1, promoters: 1, passives: 0, detractors: 0, nps: 100, average: 9, breakdown: [] };
+      return {};
+    });
+
+    render(<FollowUpsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '执行随访' }));
+    fireEvent.change(screen.getByLabelText('执行状态'), { target: { value: 'DONE' } });
+    fireEvent.change(screen.getByLabelText('患者评分（0-10）'), { target: { value: '9' } });
+    fireEvent.change(screen.getByLabelText('疼痛度（0-10）'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('反馈'), { target: { value: '状态良好' } });
+    fireEvent.change(screen.getByLabelText('联系时间'), { target: { value: '2026-08-05T09:30' } });
+    fireEvent.change(screen.getByLabelText('下次随访日期'), { target: { value: '2026-09-05' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认执行' }));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/follow-ups/f-1/execute', expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          executionStatus: 'DONE',
+          patientRating: 9,
+          painLevel: 2,
+          feedback: '状态良好',
+          contactedAt: '2026-08-05T09:30',
+          nextPlanDate: '2026-09-05',
+        }),
+      }));
+    });
+    expect(await screen.findByText('随访执行已记录')).toBeDefined();
+  });
+
+  it('reports follow-up execution failures', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/follow-ups/reminders') return [{ id: 'f-2', planDate: dateKey(new Date()), status: 'PENDING' }];
+      if (path === '/follow-ups/reminders/summary') return { total: 1, overdue: 0, today: 1, upcoming: 0 };
+      if (path === '/follow-ups/nps') return { total: 0, promoters: 0, passives: 0, detractors: 0, nps: 0, average: 0, breakdown: [] };
+      if (path === '/follow-ups/f-2/execute') throw new Error('execute failed');
+      return {};
+    });
+
+    render(<FollowUpsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '执行随访' }));
+    fireEvent.change(screen.getByLabelText('患者评分（0-10）'), { target: { value: '9' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认执行' }));
+    expect(await screen.findByText('execute failed')).toBeDefined();
+  });
 });
