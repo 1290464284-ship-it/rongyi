@@ -35,13 +35,13 @@ describe('PrescriptionsPage', () => {
     vi.mocked(apiRequest).mockReset();
   });
 
-  it('creates prescriptions with item details', async () => {
+  it('creates prescriptions with item details and converts prices to cents', async () => {
     mockData();
     render(<PrescriptionsPage />, { wrapper });
     expect(await screen.findByText('饭后服用')).toBeDefined();
 
     fireEvent.click(screen.getByText('新建处方'));
-await waitFor(() => {
+    await waitFor(() => {
       expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
     });
     fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
@@ -59,6 +59,19 @@ await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith('/resources/prescriptions', expect.objectContaining({ method: 'POST' }));
       expect(apiRequest).toHaveBeenCalledWith('/resources/prescriptionItems', expect.objectContaining({ method: 'POST' }));
     });
+    const itemCall = vi.mocked(apiRequest).mock.calls.find((call) => call[0] === '/resources/prescriptionItems');
+    const itemBody = JSON.parse(String((itemCall?.[1] as RequestInit)?.body));
+    expect(itemBody).toMatchObject({
+      prescriptionId: 'pres-2',
+      name: '阿莫西林',
+      frequency: '每日三次',
+      days: 5,
+      quantity: 2,
+      price: 1000,
+    });
+    const prescriptionCall = vi.mocked(apiRequest).mock.calls.find((call) => call[0] === '/resources/prescriptions');
+    const prescriptionBody = JSON.parse(String((prescriptionCall?.[1] as RequestInit)?.body));
+    expect(prescriptionBody).toMatchObject({ patientId: 'p-1', doctorId: 'd-1' });
     expect(await screen.findByText('处方已创建')).toBeDefined();
   });
 
@@ -110,5 +123,20 @@ await waitFor(() => {
     const calls = vi.mocked(apiRequest).mock.calls.map((call) => String(call[0]));
     expect(calls.indexOf('/resources/prescriptionItems/item-1')).toBeGreaterThanOrEqual(0);
     expect(calls.indexOf('/resources/prescriptions/pres-2')).toBeGreaterThan(calls.indexOf('/resources/prescriptionItems/item-1'));
+  });
+
+  it('adds and removes prescription item rows', async () => {
+    mockData();
+    render(<PrescriptionsPage />, { wrapper });
+    await screen.findByText('饭后服用');
+    fireEvent.click(screen.getByText('新建处方'));
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    expect(screen.getAllByLabelText('药品名称')).toHaveLength(1);
+    fireEvent.click(screen.getByText('添加药品'));
+    expect(screen.getAllByLabelText('药品名称')).toHaveLength(2);
+    fireEvent.click(screen.getAllByText('移除')[0]);
+    expect(screen.getAllByLabelText('药品名称')).toHaveLength(1);
   });
 });

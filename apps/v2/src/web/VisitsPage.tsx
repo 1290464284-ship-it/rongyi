@@ -1,8 +1,7 @@
-import { FormEvent, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
-import type { Page } from './types';
-import { DataTable, Dialog, EmptyState, LoadingState, PageError, SearchableSelect } from './components';
+import { CrudPage } from './CrudPage';
+import { SearchableSelect, type DataTableColumn } from './components';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
 
@@ -49,171 +48,127 @@ const emptyForm: VisitForm = {
   nextReminder: '',
 };
 
+const VISIT_FIELDS: Array<{ key: keyof VisitForm; label: string; kind: 'datetime' | 'date' | 'textarea' }> = [
+  { key: 'startTime', label: '开始时间', kind: 'datetime' },
+  { key: 'endTime', label: '结束时间', kind: 'datetime' },
+  { key: 'chiefComplaint', label: '主诉', kind: 'textarea' },
+  { key: 'diagnosis', label: '诊断', kind: 'textarea' },
+  { key: 'treatmentPlan', label: '治疗计划', kind: 'textarea' },
+  { key: 'summary', label: '就诊小结', kind: 'textarea' },
+  { key: 'nextReminder', label: '下次提醒日期', kind: 'date' },
+];
+
+const visitColumns: DataTableColumn<VisitRow>[] = [
+  { key: 'patientId', label: '患者', render: (row) => row.patientIdLabel ?? row.patientId ?? '' },
+  { key: 'doctorId', label: '医生', render: (row) => row.doctorIdLabel ?? row.doctorId ?? '' },
+  { key: 'startTime', label: '开始时间', render: (row) => row.startTime ? new Date(row.startTime).toLocaleString('zh-CN', { hour12: false }) : '' },
+  { key: 'chiefComplaint', label: '主诉' },
+  { key: 'status', label: '状态', render: (row) => STATUS_LABELS[String(row.status ?? '')] ?? String(row.status ?? '') },
+];
+
 export function VisitsPage() {
   const { showToast } = useToast();
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState<VisitForm>(emptyForm);
-  const [submitting, setSubmitting] = useState(false);
-
-  const doctors = useQuery({
-    queryKey: ['visit-doctors'],
-    queryFn: () => apiRequest<Array<Record<string, unknown>>>('/doctors'),
-  });
-  const query = useQuery({
-    queryKey: ['visits'],
-    queryFn: () => apiRequest<Page<VisitRow>>('/resources/visits?page=1&pageSize=50'),
-  });
-
-  if (query.isLoading) return <LoadingState />;
-  if (query.error) return <PageError message={(query.error as Error).message} />;
-
-  async function create(event: FormEvent) {
-    event.preventDefault();
-    if (submitting || !form.patientId || !form.doctorId || !form.startTime) {
-      showToast('请选择患者、医生并填写开始时间', 'error');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await apiRequest('/resources/visits', {
-        method: 'POST',
-        body: JSON.stringify({
-          patientId: form.patientId,
-          doctorId: form.doctorId,
-          startTime: new Date(form.startTime).toISOString(),
-          endTime: form.endTime ? new Date(form.endTime).toISOString() : undefined,
-          status: form.status,
-          chiefComplaint: form.chiefComplaint || undefined,
-          diagnosis: form.diagnosis || undefined,
-          treatmentPlan: form.treatmentPlan || undefined,
-          summary: form.summary || undefined,
-          nextReminder: form.nextReminder || undefined,
-        }),
-      });
-      showToast('就诊记录已创建', 'success');
-      setShowForm(false);
-      await query.refetch();
-    } catch (error) {
-      showToast(errorMessage(error, '创建就诊失败'), 'error');
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function transition(id: string, status: string) {
-    try {
-      await apiRequest(`/visits/${id}/status`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status }),
-      });
-      showToast('就诊状态已更新', 'success');
-      await query.refetch();
-    } catch (error) {
-      showToast(errorMessage(error, '状态更新失败'), 'error');
-    }
-  }
-
-  const columns = [
-    { key: 'patientId', label: '患者', render: (row: VisitRow) => row.patientIdLabel ?? row.patientId ?? '' },
-    { key: 'doctorId', label: '医生', render: (row: VisitRow) => row.doctorIdLabel ?? row.doctorId ?? '' },
-    {
-      key: 'startTime',
-      label: '开始时间',
-      render: (row: VisitRow) => row.startTime ? new Date(row.startTime).toLocaleString('zh-CN', { hour12: false }) : '',
-    },
-    { key: 'chiefComplaint', label: '主诉' },
-    {
-      key: 'status',
-      label: '状态',
-      render: (row: VisitRow) => STATUS_LABELS[String(row.status ?? '')] ?? String(row.status ?? ''),
-    },
-    {
-      key: 'actions',
-      label: '操作',
-      render: (row: VisitRow) => (
+  return (
+    <CrudPage<VisitRow, VisitForm>
+      title="就诊管理"
+      createLabel="新建就诊"
+      emptyMessage="暂无就诊"
+      queryKey={['visits']}
+      endpoint="/resources/visits"
+      initialForm={emptyForm}
+      validate={(form) => (!form.patientId || !form.doctorId || !form.startTime ? '请选择患者、医生并填写开始时间' : null)}
+      toPayload={(form) => ({
+        patientId: form.patientId,
+        doctorId: form.doctorId,
+        startTime: new Date(form.startTime).toISOString(),
+        endTime: form.endTime ? new Date(form.endTime).toISOString() : undefined,
+        status: form.status,
+        chiefComplaint: form.chiefComplaint || undefined,
+        diagnosis: form.diagnosis || undefined,
+        treatmentPlan: form.treatmentPlan || undefined,
+        summary: form.summary || undefined,
+        nextReminder: form.nextReminder || undefined,
+      })}
+      messages={{ create: '就诊记录已创建' }}
+      errorMessages={{ create: '创建就诊失败' }}
+      columns={visitColumns}
+      rowActions={(row, ctx) => (
         <select
           defaultValue=""
           aria-label="变更就诊状态"
-          onChange={(event) => event.target.value && transition(row.id, event.target.value)}
+          onChange={(event) => {
+            const status = event.target.value;
+            if (!status) return;
+            void transitionVisit(showToast, ctx.reload, row.id, status);
+          }}
         >
           <option value="">变更状态</option>
           {Object.entries(STATUS_LABELS).map(([value, label]) => (
             <option key={value} value={value}>{label}</option>
           ))}
         </select>
-      ),
-    },
-  ];
-
-  return (
-    <div className="page">
-      <div className="page-head">
-        <h1>就诊管理</h1>
-        <button onClick={() => setShowForm(true)}>新建就诊</button>
-      </div>
-      {query.data?.items.length ? (
-        <DataTable columns={columns} rows={query.data.items} keyField="id" />
-      ) : (
-        <EmptyState message="暂无就诊" />
       )}
+      renderForm={(ctx) => <VisitForm form={ctx.form} update={ctx.update} />}
+    />
+  );
+}
 
-      <Dialog open={showForm} title="新建就诊" onClose={() => setShowForm(false)}>
-        <form onSubmit={create}>
-          <label>
-            患者
-            <SearchableSelect resource="patients" value={form.patientId} onChange={(id) => setForm((current) => ({ ...current, patientId: id }))} ariaLabel="患者" placeholder="选择患者" />
-          </label>
-          <label>
-            医生
-            <select value={form.doctorId} onChange={(event) => setForm((current) => ({ ...current, doctorId: event.target.value }))}>
-              <option value="">选择医生</option>
-              {doctors.data?.map((row) => (
-                <option key={String(row.id)} value={String(row.id)}>{String(row.name ?? row.id)}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            开始时间
-            <input type="datetime-local" value={form.startTime} onChange={(event) => setForm((current) => ({ ...current, startTime: event.target.value }))} />
-          </label>
-          <label>
-            结束时间
-            <input type="datetime-local" value={form.endTime} onChange={(event) => setForm((current) => ({ ...current, endTime: event.target.value }))} />
-          </label>
-          <label>
-            状态
-            <select value={form.status} onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))}>
-              {Object.entries(STATUS_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            主诉
-            <textarea value={form.chiefComplaint} onChange={(event) => setForm((current) => ({ ...current, chiefComplaint: event.target.value }))} />
-          </label>
-          <label>
-            诊断
-            <textarea value={form.diagnosis} onChange={(event) => setForm((current) => ({ ...current, diagnosis: event.target.value }))} />
-          </label>
-          <label>
-            治疗计划
-            <textarea value={form.treatmentPlan} onChange={(event) => setForm((current) => ({ ...current, treatmentPlan: event.target.value }))} />
-          </label>
-          <label>
-            就诊小结
-            <textarea value={form.summary} onChange={(event) => setForm((current) => ({ ...current, summary: event.target.value }))} />
-          </label>
-          <label>
-            下次提醒日期
-            <input type="date" value={form.nextReminder} onChange={(event) => setForm((current) => ({ ...current, nextReminder: event.target.value }))} />
-          </label>
-          <div className="modal-actions">
-            <button type="button" onClick={() => setShowForm(false)}>取消</button>
-            <button type="submit" disabled={submitting}>{submitting ? '保存中...' : '保存'}</button>
-          </div>
-        </form>
-      </Dialog>
-    </div>
+async function transitionVisit(
+  showToast: (message: string, kind?: 'success' | 'error' | 'info') => void,
+  reload: () => Promise<unknown>,
+  id: string,
+  status: string,
+) {
+  try {
+    await apiRequest(`/visits/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    });
+    showToast('就诊状态已更新', 'success');
+    await reload();
+  } catch (error) {
+    showToast(errorMessage(error, '状态更新失败'), 'error');
+  }
+}
+
+function VisitForm({ form, update }: { form: VisitForm; update: (patch: Partial<VisitForm>) => void }) {
+  const doctors = useQuery({
+    queryKey: ['visit-doctors'],
+    queryFn: () => apiRequest<Array<Record<string, unknown>>>('/doctors'),
+  });
+  return (
+    <>
+      <label>
+        患者
+        <SearchableSelect resource="patients" value={form.patientId} onChange={(id) => update({ patientId: id })} ariaLabel="患者" placeholder="选择患者" />
+      </label>
+      <label>
+        医生
+        <select value={form.doctorId} onChange={(event) => update({ doctorId: event.target.value })}>
+          <option value="">选择医生</option>
+          {doctors.data?.map((row) => (
+            <option key={String(row.id)} value={String(row.id)}>{String(row.name ?? row.id)}</option>
+          ))}
+        </select>
+      </label>
+      {VISIT_FIELDS.map((field) => (
+        <label key={field.key}>
+          {field.label}
+          {field.kind === 'textarea' ? (
+            <textarea value={form[field.key]} onChange={(event) => update({ [field.key]: event.target.value })} />
+          ) : (
+            <input type={field.kind === 'datetime' ? 'datetime-local' : 'date'} value={form[field.key]} onChange={(event) => update({ [field.key]: event.target.value })} />
+          )}
+        </label>
+      ))}
+      <label>
+        状态
+        <select value={form.status} onChange={(event) => update({ status: event.target.value })}>
+          {Object.entries(STATUS_LABELS).map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
+      </label>
+    </>
   );
 }

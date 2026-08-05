@@ -40,13 +40,13 @@ describe('VisitsPage', () => {
     vi.mocked(apiRequest).mockReset();
   });
 
-  it('lists visits and creates a new visit', async () => {
+  it('lists visits and creates a new visit with an ISO payload', async () => {
     mockData();
     render(<VisitsPage />, { wrapper });
     expect(await screen.findByText('牙痛')).toBeDefined();
 
     fireEvent.click(screen.getByText('新建就诊'));
-await waitFor(() => {
+    await waitFor(() => {
       expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
     });
     fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
@@ -59,6 +59,18 @@ await waitFor(() => {
     await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith('/resources/visits', expect.objectContaining({ method: 'POST' }));
     });
+    const postCall = vi.mocked(apiRequest).mock.calls.find(
+      (call) => call[0] === '/resources/visits' && (call[1] as RequestInit)?.method === 'POST',
+    );
+    const body = JSON.parse(String((postCall?.[1] as RequestInit)?.body));
+    expect(body).toMatchObject({
+      patientId: 'p-1',
+      doctorId: 'd-1',
+      startTime: new Date('2026-08-05T09:00').toISOString(),
+      status: 'IN_PROGRESS',
+      chiefComplaint: '补牙',
+    });
+    expect(body.endTime).toBeUndefined();
     expect(await screen.findByText('就诊记录已创建')).toBeDefined();
   });
 
@@ -72,12 +84,16 @@ await waitFor(() => {
     expect(apiRequest).not.toHaveBeenCalledWith('/resources/visits', expect.objectContaining({ method: 'POST' }));
   });
 
-  it('transitions visit status', async () => {
+  it('transitions visit status with a toast', async () => {
     mockData();
     render(<VisitsPage />, { wrapper });
     fireEvent.change(await screen.findByLabelText('变更就诊状态'), { target: { value: 'COMPLETED' } });
     await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/visits/v-1/status', expect.objectContaining({ method: 'PATCH' }));
+      expect(apiRequest).toHaveBeenCalledWith('/visits/v-1/status', expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'COMPLETED' }),
+      }));
     });
+    expect(await screen.findByText('就诊状态已更新')).toBeDefined();
   });
 });
