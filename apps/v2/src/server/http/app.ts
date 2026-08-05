@@ -103,6 +103,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
     }
   });
   let _auditFlushScheduled = false;
+  let _auditRetryScheduled = false;
   function scheduleAuditFlush(): void {
     if (_auditFlushScheduled) return;
     _auditFlushScheduled = true;
@@ -115,6 +116,28 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
       } catch (error) {
         if (logger) logger.error('audit batch flush failed', { error });
         else console.error('audit batch flush failed', error);
+        scheduleAuditRetry(rows);
+      }
+    }, AUDIT_FLUSH_INTERVAL).unref();
+  }
+  // M6-edge: flush 失败后恰好重试一次。_auditRetryScheduled 保证同一时间最多
+  // 一轮重试在途（已有重试则放弃，仅记日志）；重试定时器到点时把失败行（已
+  // 放回队首）与期间新入缓冲的行一起刷出；重试再失败只记日志，不再入队，
+  // 避免无限重试。
+  function scheduleAuditRetry(rows: typeof auditBuffer): void {
+    if (_auditRetryScheduled) return;
+    if (auditBuffer.length + rows.length > AUDIT_BUFFER_MAX * 2) return;
+    auditBuffer.unshift(...rows);
+    _auditRetryScheduled = true;
+    setTimeout(() => {
+      _auditRetryScheduled = false;
+      if (auditBuffer.length === 0) return;
+      const pending = auditBuffer.splice(0, auditBuffer.length);
+      try {
+        flushAudit(pending);
+      } catch (error) {
+        if (logger) logger.error('audit batch retry flush failed', { error });
+        else console.error('audit batch retry flush failed', error);
       }
     }, AUDIT_FLUSH_INTERVAL).unref();
   }
@@ -145,12 +168,14 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
       } catch (error) {
         if (logger) logger.error('audit batch flush failed', { error });
         else console.error('audit batch flush failed', error);
+        scheduleAuditRetry(rows);
       }
     } else {
       scheduleAuditFlush();
     }
   }
   app.locals.audit = pushAudit;
+  app.locals.flushAuditNow = shutdownFlushAudit;
   function shutdownFlushAudit(): void {
     if (auditBuffer.length === 0) return;
     const rows = auditBuffer.splice(0, auditBuffer.length);

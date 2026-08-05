@@ -73,7 +73,16 @@ function exitAsOrphanGuard(reason: string): void {
 
 process.on('message', (message) => {
   lastParentMessageAt = Date.now();
-  if (message === 'shutdown') shutdown();
+  if (message === 'shutdown') {
+    // M6-edge: IPC shutdown 路径先冲刷审计缓冲（app 在模块加载末尾声明，
+    // 闭包在收到消息时才执行，运行时引用合法）。
+    try {
+      (app.locals.flushAuditNow as (() => void) | undefined)?.();
+    } catch {
+      // best effort: shutdown 照常进行
+    }
+    shutdown();
+  }
 });
 if (parentHeartbeatEnabled) {
   process.on('disconnect', () => exitAsOrphanGuard('ipc-disconnect'));

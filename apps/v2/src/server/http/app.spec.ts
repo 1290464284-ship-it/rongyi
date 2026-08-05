@@ -4,7 +4,7 @@ import path from 'node:path';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
-import { createApp } from './app';
+import { createApp, type AuditInput } from './app';
 import { createDatabase, seedDatabase } from '../infrastructure/database';
 import { runMigrations } from '../infrastructure/migrations';
 import { rebuildSearchIndex } from '../infrastructure/search-index';
@@ -1207,5 +1207,202 @@ describe('HTTP app', () => {
     }
     const blockedRows = db.prepare('SELECT COUNT(*) AS c FROM OperationLog WHERE traceId = ?').get(blocked!.body.traceId as string) as { c: number };
     expect(blockedRows.c).toBe(0);
+  });
+
+  // ── T4.10 M6-edge: 审计 flush 重试与关闭冲刷 ────────────────────────────────
+  // pushAudit 在 NODE_ENV=test 下直写 db、不经过缓冲，因此以下用例临时切换到
+  // 'production'（try/finally 恢复）；insertAuditStmt 在 createApp 时一次性
+  // prepare，要模拟 flush 失败必须在 createApp 之前包装 db.prepare，故每个用例
+  // 使用独立的临时 db + 独立 app，避免影响 beforeAll 的共享 app。
+  function wrapOperationLogInsertFailures(localDb: Database.Database, mode: 'once' | 'always'): () => number {
+    let runCalls = 0;
+    const originalPrepare = localDb.prepare.bind(localDb);
+    localDb.prepare = ((source: string) => {
+      const statement = originalPrepare(source);
+      if (source.includes('INSERT INTO OperationLog')) {
+        const originalRun = statement.run.bind(statement);
+        statement.run = ((...args: unknown[]) => {
+          runCalls += 1;
+          if (mode === 'always' || runCalls === 1) {
+            throw new Error('simulated audit flush failure');
+          }
+          return originalRun(...args);
+        }) as typeof statement.run;
+      }
+      return statement;
+    }) as typeof localDb.prepare;
+    return () => runCalls;
+  }
+
+  function createIsolatedAuditApp(failMode?: 'once' | 'always'): {
+    app: ReturnType<typeof createApp>;
+    db: Database.Database;
+    dataDir: string;
+    runCalls: () => number;
+  } {
+    const isolatedDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-audit-'));
+    const isolatedDbPath = path.join(isolatedDataDir, 'v2.sqlite');
+    const isolatedDb = createDatabase(isolatedDataDir, isolatedDbPath);
+    // seedDatabase 在 NODE_ENV=production 下拒绝播种默认凭据；用例需要在
+    // production 下测 pushAudit 缓冲路径，故播种/迁移临时回到 test 再恢复。
+    const seedingNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'test';
+    try {
+      seedDatabase(isolatedDb);
+      runMigrations(isolatedDb);
+    } finally {
+      if (seedingNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = seedingNodeEnv;
+    }
+    const runCalls = failMode === undefined ? () => 0 : wrapOperationLogInsertFailures(isolatedDb, failMode);
+    const isolatedApp = createApp({
+      db: isolatedDb,
+      dbPath: isolatedDbPath,
+      backupDir: path.join(isolatedDataDir, 'backups'),
+      logDir: isolatedDataDir,
+      logger: new Logger({ logDir: isolatedDataDir }),
+    });
+    return { app: isolatedApp, db: isolatedDb, dataDir: isolatedDataDir, runCalls };
+  }
+
+  function restoreNodeEnv(previousNodeEnv: string | undefined): void {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+  }
+
+  it('exposes flushAuditNow and drains the production audit buffer on demand', () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    vi.useFakeTimers();
+    let isolated: ReturnType<typeof createIsolatedAuditApp> | undefined;
+    try {
+      process.env.NODE_ENV = 'production';
+      isolated = createIsolatedAuditApp();
+      const flushAuditNow = isolated.app.locals.flushAuditNow as (() => void) | undefined;
+      expect(typeof flushAuditNow).toBe('function');
+      const audit = isolated.app.locals.audit as (input: AuditInput) => void;
+      audit({ userId: 'u-audit-drain', action: 'drain-0', statusCode: 200 });
+      audit({ userId: 'u-audit-drain', action: 'drain-1', statusCode: 200 });
+      audit({ userId: 'u-audit-drain', action: 'drain-2', statusCode: 200 });
+      flushAuditNow!();
+      const rows = isolated.db.prepare(
+        "SELECT action FROM OperationLog WHERE userId = 'u-audit-drain' ORDER BY action",
+      ).all() as Array<{ action: string }>;
+      expect(rows.map((row) => row.action)).toEqual(['drain-0', 'drain-1', 'drain-2']);
+      // 缓冲空时重复调用是 no-op，不抛错
+      expect(() => flushAuditNow!()).not.toThrow();
+      // flushAuditNow 不是一次性：再次入缓冲的行仍可被冲刷
+      audit({ userId: 'u-audit-drain', action: 'drain-3', statusCode: 200 });
+      flushAuditNow!();
+      expect((isolated.db.prepare(
+        "SELECT COUNT(*) AS c FROM OperationLog WHERE userId = 'u-audit-drain'",
+      ).get() as { c: number }).c).toBe(4);
+    } finally {
+      restoreNodeEnv(previousNodeEnv);
+      vi.useRealTimers();
+      if (isolated) {
+        isolated.db.close();
+        fs.rmSync(isolated.dataDir, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it('retries a failed audit flush exactly once and persists the batch on retry', async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    vi.useFakeTimers();
+    let isolated: ReturnType<typeof createIsolatedAuditApp> | undefined;
+    try {
+      process.env.NODE_ENV = 'production';
+      isolated = createIsolatedAuditApp('once');
+      const audit = isolated.app.locals.audit as (input: AuditInput) => void;
+      audit({ userId: 'u-audit-retry', action: 'retry-once', statusCode: 200 });
+      expect(isolated.runCalls()).toBe(0); // < MAX：只入缓冲并调度定时器，尚未 run
+      await vi.advanceTimersByTimeAsync(1000); // 定时器 flush：首次 run 抛错 → 失败行放回队首并调度重试
+      expect(isolated.runCalls()).toBe(1);
+      expect((isolated.db.prepare(
+        "SELECT COUNT(*) AS c FROM OperationLog WHERE action = 'retry-once'",
+      ).get() as { c: number }).c).toBe(0);
+      await vi.advanceTimersByTimeAsync(1000); // 重试成功：恰好第 2 次 run
+      expect(isolated.runCalls()).toBe(2);
+      const rows = isolated.db.prepare(
+        "SELECT action FROM OperationLog WHERE action = 'retry-once'",
+      ).all() as Array<{ action: string }>;
+      expect(rows).toHaveLength(1);
+      expect(rows[0].action).toBe('retry-once');
+      await vi.advanceTimersByTimeAsync(10_000); // 不再调度更多重试
+      expect(isolated.runCalls()).toBe(2);
+      expect((isolated.db.prepare(
+        "SELECT COUNT(*) AS c FROM OperationLog WHERE action = 'retry-once'",
+      ).get() as { c: number }).c).toBe(1);
+    } finally {
+      restoreNodeEnv(previousNodeEnv);
+      vi.useRealTimers();
+      if (isolated) {
+        isolated.db.close();
+        fs.rmSync(isolated.dataDir, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it('does not lose a full buffer when the immediate flush fails and retries stay bounded', async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    vi.useFakeTimers();
+    let isolated: ReturnType<typeof createIsolatedAuditApp> | undefined;
+    try {
+      process.env.NODE_ENV = 'production';
+      isolated = createIsolatedAuditApp('once');
+      const audit = isolated.app.locals.audit as (input: AuditInput) => void;
+      for (let i = 0; i < 50; i += 1) { // AUDIT_BUFFER_MAX
+        audit({ userId: 'u-audit-max', action: `max-${i}`, statusCode: 200 });
+      }
+      expect(isolated.runCalls()).toBe(1); // 第 50 条触发立即 flush：首次 run 抛错，该批被事务回滚后入队重试
+      await vi.advanceTimersByTimeAsync(1000); // 定时器 flush（先于重试定时器注册）把 50 行刷入
+      expect(isolated.runCalls()).toBe(51); // 1 败 + 50 成
+      const rows = isolated.db.prepare(
+        "SELECT action FROM OperationLog WHERE userId = 'u-audit-max'",
+      ).all() as Array<{ action: string }>;
+      expect(rows).toHaveLength(50); // 全部落库、无重复行
+      expect(new Set(rows.map((row) => row.action)).size).toBe(50);
+      await vi.advanceTimersByTimeAsync(10_000); // 不再有更多 flush 尝试
+      expect(isolated.runCalls()).toBe(51);
+      expect((isolated.db.prepare(
+        "SELECT COUNT(*) AS c FROM OperationLog WHERE userId = 'u-audit-max'",
+      ).get() as { c: number }).c).toBe(50);
+    } finally {
+      restoreNodeEnv(previousNodeEnv);
+      vi.useRealTimers();
+      if (isolated) {
+        isolated.db.close();
+        fs.rmSync(isolated.dataDir, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it('stops after one retry when the flush keeps failing (no infinite loop)', async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    vi.useFakeTimers();
+    let isolated: ReturnType<typeof createIsolatedAuditApp> | undefined;
+    try {
+      process.env.NODE_ENV = 'production';
+      isolated = createIsolatedAuditApp('always');
+      const audit = isolated.app.locals.audit as (input: AuditInput) => void;
+      audit({ userId: 'u-audit-always', action: 'never-persisted', statusCode: 200 });
+      expect(isolated.runCalls()).toBe(0);
+      await vi.advanceTimersByTimeAsync(1000); // 首次 flush 失败 → 入队重试
+      expect(isolated.runCalls()).toBe(1);
+      await vi.advanceTimersByTimeAsync(1000); // 重试也失败 → 只记日志，不再入队
+      expect(isolated.runCalls()).toBe(2);
+      await vi.advanceTimersByTimeAsync(60_000); // 长时间推进不再产生新调用（有界）
+      expect(isolated.runCalls()).toBe(2);
+      expect((isolated.db.prepare(
+        "SELECT COUNT(*) AS c FROM OperationLog WHERE action = 'never-persisted'",
+      ).get() as { c: number }).c).toBe(0);
+    } finally {
+      restoreNodeEnv(previousNodeEnv);
+      vi.useRealTimers();
+      if (isolated) {
+        isolated.db.close();
+        fs.rmSync(isolated.dataDir, { recursive: true, force: true });
+      }
+    }
   });
 });
