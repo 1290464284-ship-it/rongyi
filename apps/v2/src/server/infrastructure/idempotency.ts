@@ -57,14 +57,19 @@ export function withIdempotency<T>(
     throw error;
   }
 
-  let result: T | Promise<T>;
-  try {
-    result = fn();
-  } catch (error) {
-    db.prepare('DELETE FROM IdempotencyRecord WHERE key = ?').run(key);
-    throw error;
-  }
-  if (isPromise(result)) {
+  // Async operations cannot be wrapped in a better-sqlite3 transaction
+  // (db.transaction rejects promise returns with a TypeError), so the async
+  // path keeps the legacy completion semantics: UPDATE on success, DELETE +
+  // rethrow on failure. No current call site uses it, but the spec covers it.
+  if (isAsyncFunction(fn)) {
+    let result: T | Promise<T>;
+    try {
+      result = fn();
+    } catch (error) {
+      db.prepare('DELETE FROM IdempotencyRecord WHERE key = ?').run(key);
+      throw error;
+    }
+    if (!isPromise(result)) return result;
     return result.then(
       (value) => {
         const completedAt = new Date().toISOString();
@@ -79,12 +84,22 @@ export function withIdempotency<T>(
       },
     );
   }
+
+  // Sync path: run the operation and the COMPLETED update inside one
+  // transaction. If fn() or the update fails, better-sqlite3 rolls the whole
+  // transaction back (including business writes fn committed through nested
+  // transactions / SAVEPOINTs), the processing record is deleted, and the
+  // error is rethrown so the client can retry without duplicating side effects.
   try {
-    const completedAt = new Date().toISOString();
-    db.prepare(
-      `UPDATE IdempotencyRecord SET responseJson = ?, result = ?, status = 'COMPLETED', updatedAt = ? WHERE key = ?`,
-    ).run(JSON.stringify(result), JSON.stringify(result), completedAt, key);
-    return result;
+    const runWithCompletion = db.transaction(() => {
+      const value = fn();
+      const completedAt = new Date().toISOString();
+      db.prepare(
+        `UPDATE IdempotencyRecord SET responseJson = ?, result = ?, status = 'COMPLETED', updatedAt = ? WHERE key = ?`,
+      ).run(JSON.stringify(value), JSON.stringify(value), completedAt, key);
+      return value;
+    });
+    return runWithCompletion();
   } catch (error) {
     db.prepare('DELETE FROM IdempotencyRecord WHERE key = ?').run(key);
     throw error;
@@ -111,4 +126,8 @@ export function cleanupIdempotencyRecords(db: Database.Database): { deleted: num
 
 function isPromise(value: unknown): value is Promise<unknown> {
   return typeof value === 'object' && value !== null && typeof (value as { then?: unknown }).then === 'function';
+}
+
+function isAsyncFunction(value: unknown): value is () => Promise<unknown> {
+  return typeof value === 'function' && value.constructor?.name === 'AsyncFunction';
 }
