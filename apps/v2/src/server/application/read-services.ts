@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3';
 import type { AppContext } from '../../domain/contracts';
 import { escapeHtml } from '../shared/html';
 import { tenantAnd, tenantParams, tenantWhere } from '../infrastructure/tenant';
+import { buildFtsQuery } from '../infrastructure/search-index';
 
 export class StatsService {
   constructor(private readonly db: Database.Database) {}
@@ -132,10 +133,8 @@ export class SearchService {
   constructor(private readonly db: Database.Database) {}
 
   search(query: string, context: AppContext): Array<Record<string, unknown>> {
-    const ftsQuery = query.split(/\s+/)
-      .filter(Boolean)
-      .map((token) => `"${token.replace(/"/g, '""')}"*`)
-      .join(' ');
+    const ftsQuery = buildFtsQuery(query);
+    if (!ftsQuery) return [];
     const clinicClause = tenantAnd(context.clinicId);
     const ftsParams = [ftsQuery, ...tenantParams(context.clinicId)];
     const matches = this.db.prepare(

@@ -689,6 +689,33 @@ export const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 119,
+    name: 'v2-drop-search-triggers',
+    up(db) {
+      db.exec(`
+        DROP TRIGGER IF EXISTS search_patient_ai;
+        DROP TRIGGER IF EXISTS search_patient_au;
+        DROP TRIGGER IF EXISTS search_patient_ad;
+        DROP TRIGGER IF EXISTS search_patient_child_update;
+        DROP TRIGGER IF EXISTS search_inventory_item_ai;
+        DROP TRIGGER IF EXISTS search_inventory_item_au;
+        DROP TRIGGER IF EXISTS search_inventory_item_ad;
+        DROP TRIGGER IF EXISTS search_supplier_ai;
+        DROP TRIGGER IF EXISTS search_supplier_au;
+        DROP TRIGGER IF EXISTS search_supplier_ad;
+        DROP TRIGGER IF EXISTS search_appointment_ai;
+        DROP TRIGGER IF EXISTS search_appointment_au;
+        DROP TRIGGER IF EXISTS search_appointment_ad;
+        DROP TRIGGER IF EXISTS search_charge_ai;
+        DROP TRIGGER IF EXISTS search_charge_au;
+        DROP TRIGGER IF EXISTS search_charge_ad;
+        DROP TRIGGER IF EXISTS search_followup_ai;
+        DROP TRIGGER IF EXISTS search_followup_au;
+        DROP TRIGGER IF EXISTS search_followup_ad;
+      `);
+    },
+  },
 ];
 
 function ensureForeignKeys(

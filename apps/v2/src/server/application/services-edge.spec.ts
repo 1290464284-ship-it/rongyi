@@ -8,6 +8,7 @@ import type Database from 'better-sqlite3';
 import DatabaseClass from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../infrastructure/database';
 import { runMigrations } from '../infrastructure/migrations';
+import { rebuildSearchIndex } from '../infrastructure/search-index';
 import {
   AlertService,
   AppointmentService,
@@ -846,6 +847,8 @@ describe('service edge coverage', () => {
        ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, 'UNKNOWN', 'SHORT',
          '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
     ).run('patient-short-phone', null, now, now);
+    // 迁移 119 已移除 FTS 触发器（按需重建索引），测试需显式重建。
+    rebuildSearchIndex(db);
     const search = new SearchService(db);
     const results = search.search('Supplier', nullContext);
     expect(results.length).toBeGreaterThanOrEqual(1);
@@ -882,6 +885,7 @@ describe('service edge coverage', () => {
          patientId, planDate, content, status
        ) VALUES (?, NULL, ?, ?, NULL, 'patient-missing-label', ?, 'LABELCONTENT', 'PENDING')`,
     ).run('followup-label-null', now, now, now.slice(0, 10));
+    rebuildSearchIndex(db);
     expect(search.search('LABELSTATUS', nullContext).some((row) => row.resource === 'appointments' && row.label === '')).toBe(true);
     expect(search.search('LABELCHARGE', nullContext).some((row) => row.resource === 'charges' && row.label === '')).toBe(true);
     expect(search.search('LABELPHONE', nullContext).some((row) => row.resource === 'suppliers' && row.label === '')).toBe(true);
@@ -1141,6 +1145,7 @@ describe('service edge coverage', () => {
     expect(revenue.some((row) => Number(row.amount) === 888)).toBe(false);
     expect(stats.inventoryStats(context).some((row) => row.category === 'ISOLATION')).toBe(false);
 
+    rebuildSearchIndex(db);
     const search = new SearchService(db);
     expect(search.search('Isolation Secret', context)).toEqual([]);
     expect(search.search('Isolation Secret', nullContext).some((row) => row.id === 'patient-read-other')).toBe(true);

@@ -7,6 +7,7 @@ import type Database from 'better-sqlite3';
 import { createApp } from './app';
 import { createDatabase, seedDatabase } from '../infrastructure/database';
 import { runMigrations } from '../infrastructure/migrations';
+import { rebuildSearchIndex } from '../infrastructure/search-index';
 import { Logger } from '../infrastructure/logger';
 
 describe('HTTP app', () => {
@@ -701,6 +702,8 @@ describe('HTTP app', () => {
        ) VALUES (?, ?, ?, ?, NULL, 'SEARCH-1', 'Searchable Patient', 'UNKNOWN', '13900001111',
          '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
     ).run('patient-searchable', 'clinic-v2-001', now, now);
+    // 迁移 119 已移除 FTS 触发器（按需重建索引），测试需显式重建。
+    rebuildSearchIndex(db);
     const search = await request(app).get('/api/v2/search?q=Searchable')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);

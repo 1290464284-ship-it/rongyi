@@ -5,6 +5,7 @@ import { createApp } from './http/app';
 import { createDatabase, seedDatabase, syncLegacySchema } from './infrastructure/database';
 import { Logger } from './infrastructure/logger';
 import { runMigrations } from './infrastructure/migrations';
+import { rebuildSearchIndex } from './infrastructure/search-index';
 import { importLegacyDatabase } from './infrastructure/legacy-import';
 import { applyStagedRestore } from './infrastructure/restore-apply';
 import { AlertService, AuditService, BackupService } from './application/services';
@@ -56,6 +57,11 @@ applyStagedRestore(dbPath, [dataDir, backupDir], logger);
 const db = createDatabase(dataDir, dbPath);
 syncLegacySchema(db, legacySchemaDir);
 runMigrations(db, { snapshotDir: dataDir });
+try {
+  rebuildSearchIndex(db);
+} catch (error) {
+  logger.error('search index rebuild failed at startup', { action: 'search-index-rebuild', error });
+}
 seedDatabase(db);
 const app = createApp({ db, dbPath, backupDir, logger, logDir });
 
