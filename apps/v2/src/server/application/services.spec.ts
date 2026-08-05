@@ -144,6 +144,30 @@ describe('application services', () => {
     expect(row.discount).toBe(50);
   });
 
+  it('rejects charge items whose quantity exceeds the maximum', async () => {
+    const service = new ChargeService(db);
+    const before = db.prepare('SELECT COUNT(*) AS n FROM Charge').get() as { n: number };
+    await expect(service.create({
+      patientId: 'patient-demo-001',
+      items: [{ name: 'Huge Quantity', category: 'EXAM', price: 100, quantity: 1e15 }],
+    }, context)).rejects.toThrow('Charge item quantity must not exceed 1000000');
+    // Validation must fail before any write happens.
+    const after = db.prepare('SELECT COUNT(*) AS n FROM Charge').get() as { n: number };
+    expect(after.n).toBe(before.n);
+  });
+
+  it('rejects charge items whose subtotal exceeds the maximum allowed amount', async () => {
+    const service = new ChargeService(db);
+    const before = db.prepare('SELECT COUNT(*) AS n FROM Charge').get() as { n: number };
+    await expect(service.create({
+      patientId: 'patient-demo-001',
+      items: [{ name: 'Huge Subtotal', category: 'EXAM', price: 100_000_000, quantity: 100_000 }],
+    }, context)).rejects.toThrow('Charge item subtotal exceeds maximum allowed amount');
+    // Validation must fail before any write happens.
+    const after = db.prepare('SELECT COUNT(*) AS n FROM Charge').get() as { n: number };
+    expect(after.n).toBe(before.n);
+  });
+
   it('rejects a stock decrease below zero', async () => {
     const service = new InventoryService(db);
     await expect(
