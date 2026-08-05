@@ -5,7 +5,16 @@ import { NotFoundError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import type { AuthUserRecord } from '../ports';
 
-export const JWT_SECRET = process.env.V2_JWT_SECRET ?? 'v2-local-secret-change-me';
+function _resolveJwtSecret(): string {
+  const envSecret = process.env.V2_JWT_SECRET;
+  if (envSecret) return envSecret;
+  const nodeEnv = process.env.NODE_ENV ?? 'development';
+  if (nodeEnv === 'production') {
+    throw new Error('V2_JWT_SECRET must be set to a random secret of at least 32 characters in production');
+  }
+  return randomBytes(32).toString('hex');
+}
+export const JWT_SECRET = _resolveJwtSecret();
 export const TOKEN_TTL = '8h';
 export const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const BACKUP_MAGIC = Buffer.from('DENTALV2ENC1');
@@ -82,4 +91,34 @@ export function assertPatientExists(db: Database.Database, patientId: string, cl
     `SELECT id FROM Patient WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
   ).get(patientId, ...tenantParams(clinicId)) as { id: string } | undefined;
   if (!row) throw new NotFoundError('Patient not found');
+}
+
+export function assertDoctorExists(db: Database.Database, doctorId: string, clinicId: string | null): void {
+  const row = db.prepare(
+    `SELECT id FROM User
+     WHERE id = ? AND role IN ('DOCTOR', 'BOSS') AND active = 1 AND deletedAt IS NULL${tenantAnd(clinicId)}`,
+  ).get(doctorId, ...tenantParams(clinicId)) as { id: string } | undefined;
+  if (!row) throw new NotFoundError('Doctor not found');
+}
+
+export function assertChairExists(db: Database.Database, chairId: string, clinicId: string | null): void {
+  const row = db.prepare(
+    `SELECT id FROM Chair WHERE id = ? AND active = 1 AND deletedAt IS NULL${tenantAnd(clinicId)}`,
+  ).get(chairId, ...tenantParams(clinicId)) as { id: string } | undefined;
+  if (!row) throw new NotFoundError('Chair not found');
+}
+
+export function assertVisitExists(
+  db: Database.Database,
+  visitId: string,
+  patientId: string,
+  clinicId: string | null,
+): void {
+  const row = db.prepare(
+    `SELECT id, patientId FROM Visit WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
+  ).get(visitId, ...tenantParams(clinicId)) as { id: string; patientId?: string | null } | undefined;
+  if (!row) throw new NotFoundError('Visit not found');
+  if (row.patientId && String(row.patientId) !== patientId) {
+    throw new NotFoundError('Visit does not belong to the patient');
+  }
 }

@@ -1,5 +1,6 @@
 import type { Express } from 'express';
 import { createRateLimit } from '../rate-limit';
+import { wrapAsync } from '../middleware';
 import type { RouteDependencies } from './deps';
 
 export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): void {
@@ -25,131 +26,62 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
   const writeLimiter = createRateLimit({ windowMs: 60_000, max: 120 });
   const batchLimiter = createRateLimit({ windowMs: 60_000, max: 60 });
 
-  app.post('/api/v2/appointments', writeLimiter, async (req, res, next) => {
-    try {
+  app.post('/api/v2/appointments', writeLimiter, wrapAsync(async (req, res) => {
       const result = await appointments.create(req.body, req.context!);
       res.status(201).json({ success: true, data: result });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.patch('/api/v2/appointments/:id/status', async (req, res, next) => {
-    try {
-      const result = await appointments.transition(req.params.id, String(req.body?.status ?? ''), req.context!);
+  app.patch('/api/v2/appointments/:id/status', wrapAsync(async (req, res) => {
+      const result = await appointments.transition(String(req.params.id), String(req.body?.status ?? ''), req.context!);
       res.json({ success: true, data: result });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.patch('/api/v2/registrations/:id/status', async (req, res, next) => {
-    try {
-      res.json({ success: true, data: clinicalWorkflow.registrationStatus(req.params.id, String(req.body?.status ?? ''), req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  app.patch('/api/v2/registrations/:id/status', wrapAsync(async (req, res) => {
+      res.json({ success: true, data: clinicalWorkflow.registrationStatus(String(req.params.id), String(req.body?.status ?? ''), req.context!) });
+  }));
 
-  app.patch('/api/v2/visits/:id/status', async (req, res, next) => {
-    try {
-      res.json({ success: true, data: clinicalWorkflow.visitStatus(req.params.id, String(req.body?.status ?? ''), req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  app.patch('/api/v2/visits/:id/status', wrapAsync(async (req, res) => {
+      res.json({ success: true, data: clinicalWorkflow.visitStatus(String(req.params.id), String(req.body?.status ?? ''), req.context!) });
+  }));
 
-  app.patch('/api/v2/first-exams/:id/status', async (req, res, next) => {
-    try {
-      res.json({ success: true, data: clinicalWorkflow.firstExamStatus(req.params.id, String(req.body?.status ?? ''), req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  app.patch('/api/v2/first-exams/:id/status', wrapAsync(async (req, res) => {
+      res.json({ success: true, data: clinicalWorkflow.firstExamStatus(String(req.params.id), String(req.body?.status ?? ''), req.context!) });
+  }));
 
-  app.patch('/api/v2/treatments/:id/status', async (req, res, next) => {
-    try {
-      res.json({ success: true, data: clinicalWorkflow.treatmentStatus(req.params.id, String(req.body?.status ?? ''), req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  app.patch('/api/v2/treatments/:id/status', wrapAsync(async (req, res) => {
+      res.json({ success: true, data: clinicalWorkflow.treatmentStatus(String(req.params.id), String(req.body?.status ?? ''), req.context!) });
+  }));
 
-  app.patch('/api/v2/medical-records/:id/lock', async (req, res, next) => {
-    try {
-      res.json({ success: true, data: clinicalWorkflow.lockMedicalRecord(req.params.id, req.body?.locked !== false, req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  app.patch('/api/v2/medical-records/:id/lock', wrapAsync(async (req, res) => {
+      res.json({ success: true, data: clinicalWorkflow.lockMedicalRecord(String(req.params.id), req.body?.locked !== false, req.context!) });
+  }));
 
-  app.post('/api/v2/inventory/replenishment/generate', writeLimiter, async (req, res, next) => {
-    try {
+  app.post('/api/v2/inventory/replenishment/generate', writeLimiter, wrapAsync(async (req, res) => {
       res.json({ success: true, data: replenishment.generate(req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.post('/api/v2/inventory/replenishment/apply', writeLimiter, async (req, res, next) => {
-    try {
+  app.post('/api/v2/inventory/replenishment/apply', writeLimiter, wrapAsync(async (req, res) => {
       res.json({ success: true, data: replenishment.applyToPurchaseOrder(req.body?.ids ?? [], req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.post('/api/v2/wechat/:id/send', writeLimiter, async (req, res, next) => {
-    try {
-      res.json({ success: true, data: wechat.send(String(req.params.id), req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  app.get('/api/v2/wechat/status', wrapAsync(async (req, res) => {
+      res.json({ success: true, data: wechat.status() });
+  }));
 
-  app.post('/api/v2/wechat/send-batch', batchLimiter, async (req, res, next) => {
-    try {
-      res.json({ success: true, data: wechat.sendBatch(req.body?.ids ?? [], req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  app.post('/api/v2/wechat/:id/send', writeLimiter, wrapAsync(async (req, res) => {
+      res.json({ success: true, data: await wechat.send(String(req.params.id), req.context!) });
+  }));
 
-  app.post('/api/v2/charges', writeLimiter, async (req, res, next) => {
-    try {
+  app.post('/api/v2/wechat/send-batch', batchLimiter, wrapAsync(async (req, res) => {
+      res.json({ success: true, data: await wechat.sendBatch(req.body?.ids ?? [], req.context!) });
+  }));
+
+  app.post('/api/v2/charges', writeLimiter, wrapAsync(async (req, res) => {
       const result = await charges.create(req.body, req.context!);
       res.status(201).json({ success: true, data: result });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.patch('/api/v2/charges/:id/pay', writeLimiter, async (req, res, next) => {
-    try {
+  app.patch('/api/v2/charges/:id/pay', writeLimiter, wrapAsync(async (req, res) => {
       const result = await charges.pay(
         String(req.params.id),
         Number(req.body?.amount ?? 0),
@@ -158,15 +90,9 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
         req.context!,
       );
       res.json({ success: true, data: result });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.post('/api/v2/charges/:id/refund', writeLimiter, async (req, res, next) => {
-    try {
+  app.post('/api/v2/charges/:id/refund', writeLimiter, wrapAsync(async (req, res) => {
       const result = await charges.refund(
         String(req.params.id),
         Number(req.body?.amount ?? 0),
@@ -175,25 +101,13 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
         typeof req.body?.requestId === 'string' ? req.body.requestId : undefined,
       );
       res.json({ success: true, data: result });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.post('/api/v2/member-cards', writeLimiter, async (req, res, next) => {
-    try {
+  app.post('/api/v2/member-cards', writeLimiter, wrapAsync(async (req, res) => {
       res.status(201).json({ success: true, data: memberCards.create(req.body ?? {}, req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.post('/api/v2/member-cards/:id/recharge', writeLimiter, async (req, res, next) => {
-    try {
+  app.post('/api/v2/member-cards/:id/recharge', writeLimiter, wrapAsync(async (req, res) => {
       res.json({
         success: true,
         data: await memberCards.recharge(
@@ -203,15 +117,9 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
           typeof req.body?.requestId === 'string' ? req.body.requestId : undefined,
         ),
       });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.post('/api/v2/member-cards/:id/consume', writeLimiter, async (req, res, next) => {
-    try {
+  app.post('/api/v2/member-cards/:id/consume', writeLimiter, wrapAsync(async (req, res) => {
       res.json({
         success: true,
         data: await memberCards.consume(
@@ -221,15 +129,9 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
           typeof req.body?.requestId === 'string' ? req.body.requestId : undefined,
         ),
       });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.post('/api/v2/member-cards/:id/points', writeLimiter, async (req, res, next) => {
-    try {
+  app.post('/api/v2/member-cards/:id/points', writeLimiter, wrapAsync(async (req, res) => {
       res.json({
         success: true,
         data: await memberCards.addPoints(
@@ -239,85 +141,51 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
           typeof req.body?.requestId === 'string' ? req.body.requestId : undefined,
         ),
       });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.patch('/api/v2/purchase-orders/:id/receive', writeLimiter, async (req, res, next) => {
-    try {
+  app.post('/api/v2/purchase-orders', writeLimiter, wrapAsync(async (req, res) => {
+      res.status(201).json({
+        success: true,
+        data: await purchaseOrders.create(req.body ?? {}, req.context!, typeof req.body?.requestId === 'string' ? req.body.requestId : undefined),
+      });
+  }));
+
+  app.patch('/api/v2/purchase-orders/:id/receive', writeLimiter, wrapAsync(async (req, res) => {
       res.json({ success: true, data: await purchaseOrders.receive(String(req.params.id), req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.get('/api/v2/purchase-orders/:id/items', async (req, res, next) => {
-    try {
+  app.get('/api/v2/purchase-orders/:id/items', wrapAsync(async (req, res) => {
       res.json({ success: true, data: purchaseOrders.items(String(req.params.id), req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.patch('/api/v2/processing-orders/:id/status', writeLimiter, async (req, res, next) => {
-    try {
+  app.post('/api/v2/processing-orders', writeLimiter, wrapAsync(async (req, res) => {
+      res.status(201).json({
+        success: true,
+        data: await processingOrders.create(req.body ?? {}, req.context!, typeof req.body?.requestId === 'string' ? req.body.requestId : undefined),
+      });
+  }));
+
+  app.patch('/api/v2/processing-orders/:id/status', writeLimiter, wrapAsync(async (req, res) => {
       res.json({ success: true, data: processingOrders.transition(String(req.params.id), String(req.body?.status ?? ''), req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.post('/api/v2/patients/:id/risk', writeLimiter, async (req, res, next) => {
-    try {
+  app.post('/api/v2/patients/:id/risk', writeLimiter, wrapAsync(async (req, res) => {
       res.json({ success: true, data: patientRisk.calculate(String(req.params.id), req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.get('/api/v2/prescriptions/:id/safety', async (req, res, next) => {
-    try {
+  app.get('/api/v2/prescriptions/:id/safety', wrapAsync(async (req, res) => {
       res.json({ success: true, data: prescriptionSafety.check(String(req.params.id), req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.post('/api/v2/cephalometric/:id/analyze', writeLimiter, async (req, res, next) => {
-    try {
+  app.post('/api/v2/cephalometric/:id/analyze', writeLimiter, wrapAsync(async (req, res) => {
       res.json({ success: true, data: cephalometric.compute(String(req.params.id), req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.get('/api/v2/treatment-plans/:id/progress', async (req, res, next) => {
-    try {
+  app.get('/api/v2/treatment-plans/:id/progress', wrapAsync(async (req, res) => {
       res.json({ success: true, data: treatmentProgress.summary(String(req.params.id), req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.post('/api/v2/bulk-import/:resource', batchLimiter, async (req, res, next) => {
-    try {
+  app.post('/api/v2/bulk-import/:resource', batchLimiter, wrapAsync(async (req, res) => {
       res.json({
         success: true,
         data: await bulkImport.importRows(
@@ -327,15 +195,9 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
           Number(req.body?.chunkSize ?? 100),
         ),
       });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.patch('/api/v2/debts/:id/pay', writeLimiter, async (req, res, next) => {
-    try {
+  app.patch('/api/v2/debts/:id/pay', writeLimiter, wrapAsync(async (req, res) => {
       res.json({
         success: true,
         data: await debts.pay(
@@ -345,105 +207,51 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
           typeof req.body?.requestId === 'string' ? req.body.requestId : undefined,
         ),
       });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.get('/api/v2/notifications', async (req, res, next) => {
-    try {
+  app.get('/api/v2/notifications', wrapAsync(async (req, res) => {
       res.json({ success: true, data: notifications.list(req.context!.userId) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.patch('/api/v2/notifications/:id/read', async (req, res, next) => {
-    try {
-      res.json({ success: true, data: notifications.markRead(req.params.id, req.context!.userId) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  app.patch('/api/v2/notifications/:id/read', wrapAsync(async (req, res) => {
+      res.json({ success: true, data: notifications.markRead(String(req.params.id), req.context!.userId) });
+  }));
 
-  app.post('/api/v2/inventory/transactions', writeLimiter, async (req, res, next) => {
-    try {
+  app.post('/api/v2/inventory/transactions', writeLimiter, wrapAsync(async (req, res) => {
       const result = await inventory.createTransaction(
         req.body,
         req.context!,
         typeof req.body?.requestId === 'string' ? req.body.requestId : undefined,
       );
       res.status(201).json({ success: true, data: result });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.get('/api/v2/inventory/low-stock', async (req, res, next) => {
-    try {
+  app.get('/api/v2/inventory/low-stock', wrapAsync(async (req, res) => {
       res.json({ success: true, data: inventory.lowStock(req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.get('/api/v2/inventory/expiring', async (req, res, next) => {
-    try {
+  app.get('/api/v2/inventory/expiring', wrapAsync(async (req, res) => {
       const days = Number(req.query.days ?? 30);
       res.json({ success: true, data: inventory.expiringSoon(Number.isFinite(days) ? days : 30, req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.get('/api/v2/follow-ups/reminders', async (req, res, next) => {
-    try {
+  app.get('/api/v2/follow-ups/reminders', wrapAsync(async (req, res) => {
       res.json({ success: true, data: followUps.reminders(req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.get('/api/v2/follow-ups/reminders/summary', async (req, res, next) => {
-    try {
+  app.get('/api/v2/follow-ups/reminders/summary', wrapAsync(async (req, res) => {
       res.json({ success: true, data: followUps.summary(req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.get('/api/v2/follow-ups/reminders/export', async (req, res, next) => {
-    try {
+  app.get('/api/v2/follow-ups/reminders/export', wrapAsync(async (req, res) => {
       const scope = String(req.query.scope ?? 'overdue');
       res
         .setHeader('content-type', 'text/csv; charset=utf-8')
         .setHeader('content-disposition', `attachment; filename="follow-ups-${scope}.csv"`)
         .send(followUps.remindersCsv(scope, req.context!));
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.post('/api/v2/follow-ups/batch-complete', writeLimiter, async (req, res, next) => {
-    try {
+  app.post('/api/v2/follow-ups/batch-complete', writeLimiter, wrapAsync(async (req, res) => {
       res.json({
         success: true,
         data: followUps.batchComplete(
@@ -452,15 +260,9 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
           typeof req.body?.result === 'string' ? req.body.result : null,
         ),
       });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.patch('/api/v2/follow-ups/:id/complete', writeLimiter, async (req, res, next) => {
-    try {
+  app.patch('/api/v2/follow-ups/:id/complete', writeLimiter, wrapAsync(async (req, res) => {
       res.json({
         success: true,
         data: followUps.complete(
@@ -469,31 +271,14 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
           typeof req.body?.result === 'string' ? req.body.result : null,
         ),
       });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.get('/api/v2/follow-ups/adherence', async (req, res, next) => {
-    try {
+  app.get('/api/v2/follow-ups/adherence', wrapAsync(async (req, res) => {
       res.json({ success: true, data: followUps.adherence(req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.post('/api/v2/follow-ups/batch-generate', batchLimiter, async (req, res, next) => {
-    try {
+  app.post('/api/v2/follow-ups/batch-generate', batchLimiter, wrapAsync(async (req, res) => {
       const result = await followUps.batchGenerate(Number(req.body?.limit ?? 50), req.context!);
       res.json({ success: true, data: result });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 }

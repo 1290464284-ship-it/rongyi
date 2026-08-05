@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import { resourceRegistry } from '../../domain/resources';
+import { uniqueIndexColumns } from './database';
 import type { ResourceField } from '../../domain/contracts';
 
 export interface Migration {
@@ -252,9 +253,10 @@ export const migrations: Migration[] = [
       for (const resource of resourceRegistry.all()) {
         for (const field of resource.fields) {
           if (!field.unique) continue;
+          const indexColumns = uniqueIndexColumns(db, resource.table, field.name);
           db.exec(
             `CREATE UNIQUE INDEX IF NOT EXISTS idx_v2_unique_${resource.name}_${field.name}
-             ON ${resource.table} (${field.name}) WHERE deletedAt IS NULL`,
+             ON ${resource.table} (${indexColumns}) WHERE deletedAt IS NULL`,
           );
         }
       }
@@ -664,6 +666,24 @@ export const migrations: Migration[] = [
         FROM User
         WHERE clinicId IS NOT NULL AND deletedAt IS NULL
       `);
+    },
+  },
+  {
+    version: 118,
+    name: 'v2-clinic-scoped-unique-field-indexes',
+    up(db) {
+      for (const resource of resourceRegistry.all()) {
+        for (const field of resource.fields) {
+          if (!field.unique) continue;
+          const indexName = `idx_v2_unique_${resource.name}_${field.name}`;
+          db.exec(`DROP INDEX IF EXISTS "${indexName}"`);
+          const indexColumns = uniqueIndexColumns(db, resource.table, field.name);
+          db.exec(
+            `CREATE UNIQUE INDEX IF NOT EXISTS "${indexName}"
+             ON ${resource.table} (${indexColumns}) WHERE deletedAt IS NULL`,
+          );
+        }
+      }
     },
   },
 ];

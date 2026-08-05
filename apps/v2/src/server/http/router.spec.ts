@@ -82,7 +82,7 @@ describe('resource router', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
     expect(exported.headers['content-type']).toContain('text/csv');
-    expect(exported.text).toContain('"id"');
+    expect(exported.text).toContain('"ID"');
     expect(exported.text).toContain('Router Patient');
     const emptyExport = await request(app)
       .get('/api/v2/resources/patients/export?name=DoesNotExist')

@@ -232,6 +232,8 @@ describe('SqliteRepository', () => {
     const nullRow = await repo.findById('repo-json-null', context);
     expect(nullRow?.tags).toBeNull();
     expect(nullRow?.active).toBe(false);
+    const inactivePage = await repo.findMany({ page: 1, pageSize: 10, filters: { active: false } }, context);
+    expect(inactivePage.items.every((row) => row.active === false)).toBe(true);
 
     await repo.insert({
       id: 'repo-json-invalid',

@@ -18,13 +18,27 @@ import { CommunicationWorkflowPage } from './CommunicationWorkflowPage';
 import { FollowUpReportPage } from './FollowUpReportPage';
 import { PatientWorkflowPage } from './PatientWorkflowPage';
 import { ClinicOverviewPage } from './ClinicOverviewPage';
+import { UsersPage } from './UsersPage';
+import { PatientsPage } from './PatientsPage';
+import { VisitsPage } from './VisitsPage';
+import { FirstExamsPage } from './FirstExamsPage';
+import { ImagingPage } from './ImagingPage';
+import { MemberCardsPage } from './MemberCardsPage';
+import { MedicalRecordsPage } from './MedicalRecordsPage';
+import { PurchaseOrdersPage } from './PurchaseOrdersPage';
+import { ProcessingOrdersPage } from './ProcessingOrdersPage';
+import { TreatmentsPage } from './TreatmentsPage';
+import { PrescriptionsPage } from './PrescriptionsPage';
+import { TreatmentPlansPage } from './TreatmentPlansPage';
+import { CephalometricPage } from './CephalometricPage';
+import { AnalyticsDashboardPage } from './AnalyticsDashboardPage';
 
 export type HubTab =
   | { id: string; label: string; kind: 'resource'; resource: string; bossOnly?: boolean }
   | { id: string; label: string; kind: 'custom'; component: ComponentType; bossOnly?: boolean };
 
 export const patientHubTabs: HubTab[] = [
-  { id: 'patients', label: '\u60a3\u8005\u6863\u6848', kind: 'resource', resource: 'patients' },
+  { id: 'patients', label: '\u60a3\u8005\u6863\u6848', kind: 'custom', component: PatientsPage },
   { id: 'appointments', label: '\u9884\u7ea6', kind: 'custom', component: AppointmentsPage },
   { id: 'appointmentBoard', label: '\u9884\u7ea6\u770b\u677f', kind: 'custom', component: AppointmentBoardPage },
   { id: 'timeline', label: '\u65f6\u95f4\u7ebf', kind: 'custom', component: PatientTimelinePage },
@@ -34,20 +48,20 @@ export const patientHubTabs: HubTab[] = [
 
 export const clinicalHubTabs: HubTab[] = [
   { id: 'workflow', label: '\u5de5\u4f5c\u6d41', kind: 'custom', component: ClinicalWorkflowPage },
-  { id: 'visits', label: '\u5c31\u8bca', kind: 'resource', resource: 'visits' },
-  { id: 'firstExams', label: '\u9996\u8bca', kind: 'resource', resource: 'firstExams' },
-  { id: 'treatments', label: '\u6cbb\u7597', kind: 'resource', resource: 'treatments' },
-  { id: 'records', label: '\u75c5\u5386', kind: 'resource', resource: 'medicalRecords' },
-  { id: 'plans', label: '\u6cbb\u7597\u8ba1\u5212', kind: 'resource', resource: 'treatmentPlans' },
-  { id: 'imaging', label: '\u5f71\u50cf', kind: 'resource', resource: 'imaging' },
-  { id: 'cephalometric', label: '\u5934\u5f71\u6d4b\u91cf', kind: 'resource', resource: 'cephalometricCases' },
-  { id: 'prescriptions', label: '\u5904\u65b9', kind: 'resource', resource: 'prescriptions' },
+  { id: 'visits', label: '\u5c31\u8bca', kind: 'custom', component: VisitsPage },
+  { id: 'firstExams', label: '\u9996\u8bca', kind: 'custom', component: FirstExamsPage },
+  { id: 'treatments', label: '\u6cbb\u7597', kind: 'custom', component: TreatmentsPage },
+  { id: 'records', label: '\u75c5\u5386', kind: 'custom', component: MedicalRecordsPage },
+  { id: 'plans', label: '\u6cbb\u7597\u8ba1\u5212', kind: 'custom', component: TreatmentPlansPage },
+  { id: 'imaging', label: '\u5f71\u50cf', kind: 'custom', component: ImagingPage },
+  { id: 'cephalometric', label: '\u5934\u5f71\u6d4b\u91cf', kind: 'custom', component: CephalometricPage },
+  { id: 'prescriptions', label: '\u5904\u65b9', kind: 'custom', component: PrescriptionsPage },
 ];
 
 export const financeHubTabs: HubTab[] = [
   { id: 'workflow', label: '\u64cd\u4f5c', kind: 'custom', component: FinanceWorkflowPage },
   { id: 'charges', label: '\u6536\u8d39', kind: 'custom', component: ChargesPage },
-  { id: 'memberCards', label: '\u4f1a\u5458\u5361', kind: 'resource', resource: 'memberCards' },
+  { id: 'memberCards', label: '\u4f1a\u5458\u5361', kind: 'custom', component: MemberCardsPage },
   { id: 'refunds', label: '\u9000\u6b3e', kind: 'resource', resource: 'refunds' },
   { id: 'debts', label: '\u6b20\u8d39', kind: 'resource', resource: 'debtRecords' },
   { id: 'invoices', label: '\u53d1\u7968', kind: 'resource', resource: 'invoices' },
@@ -55,24 +69,25 @@ export const financeHubTabs: HubTab[] = [
 
 export const inventoryHubTabs: HubTab[] = [
   { id: 'items', label: '\u5e93\u5b58', kind: 'custom', component: InventoryPage },
+  { id: 'itemMaster', label: '\u5e93\u5b58\u9879\u76ee', kind: 'resource', resource: 'inventoryItems' },
   { id: 'workflow', label: '\u91c7\u8d2d\u52a0\u5de5', kind: 'custom', component: InventoryWorkflowPage },
   { id: 'suppliers', label: '\u4f9b\u5e94\u5546', kind: 'resource', resource: 'suppliers' },
-  { id: 'purchaseOrders', label: '\u91c7\u8d2d\u5355', kind: 'resource', resource: 'purchaseOrders' },
-  { id: 'processingOrders', label: '\u52a0\u5de5\u5355', kind: 'resource', resource: 'processingOrders' },
+  { id: 'purchaseOrders', label: '\u91c7\u8d2d\u5355', kind: 'custom', component: PurchaseOrdersPage },
+  { id: 'processingOrders', label: '\u52a0\u5de5\u5355', kind: 'custom', component: ProcessingOrdersPage },
 ];
 
 export const communicationHubTabs: HubTab[] = [
   { id: 'workflow', label: '\u5fae\u4fe1\u53d1\u9001', kind: 'custom', component: CommunicationWorkflowPage },
   { id: 'followUps', label: '\u968f\u8bbf', kind: 'custom', component: FollowUpsPage },
   { id: 'followUpReport', label: '\u5230\u8bca\u7387', kind: 'custom', component: FollowUpReportPage },
+  { id: 'followUpTemplates', label: '\u968f\u8bbf\u6a21\u677f', kind: 'resource', resource: 'followUpTemplates' },
   { id: 'wechat', label: '\u5fae\u4fe1', kind: 'resource', resource: 'wechatMessages' },
-  { id: 'sms', label: '\u77ed\u4fe1', kind: 'resource', resource: 'smsLogs' },
   { id: 'satisfaction', label: '\u6ee1\u610f\u5ea6', kind: 'resource', resource: 'satisfactionSurveys' },
 ];
 
 export const hrHubTabs: HubTab[] = [
   { id: 'workflow', label: '\u5ba1\u6279', kind: 'custom', component: HrWorkflowPage },
-  { id: 'staff', label: '\u5458\u5de5', kind: 'resource', resource: 'users' },
+  { id: 'staff', label: '\u5458\u5de5', kind: 'custom', component: UsersPage },
   { id: 'schedules', label: '\u6392\u73ed', kind: 'resource', resource: 'workSchedules' },
   { id: 'attendance', label: '\u8003\u52e4', kind: 'resource', resource: 'attendance' },
   { id: 'leaves', label: '\u8bf7\u5047', kind: 'resource', resource: 'leaveRequests' },
@@ -92,7 +107,8 @@ export const systemHubTabs: HubTab[] = [
 ];
 
 export const analyticsHubTabs: HubTab[] = [
-  { id: 'dashboard', label: '\u5de5\u4f5c\u53f0', kind: 'custom', component: DashboardPage },
+  { id: 'dashboard', label: '\u7ecf\u8425\u62a5\u8868', kind: 'custom', component: AnalyticsDashboardPage },
+  { id: 'workbench', label: '\u5de5\u4f5c\u53f0', kind: 'custom', component: DashboardPage },
   { id: 'clinicOverview', label: '\u591a\u95e8\u5e97', kind: 'custom', component: ClinicOverviewPage, bossOnly: true },
   { id: 'monthly', label: '\u6708\u5ea6\u62a5\u8868', kind: 'custom', component: () => <SimpleListPage title="\u6708\u5ea6\u62a5\u8868" endpoint="/stats/revenue?groupBy=month" /> },
   { id: 'inventoryReport', label: '\u5e93\u5b58\u62a5\u8868', kind: 'custom', component: () => <SimpleListPage title="\u5e93\u5b58\u62a5\u8868" endpoint="/stats/inventory" /> },

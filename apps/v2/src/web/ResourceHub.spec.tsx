@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ResourceHub } from './ResourceHub';
 import { analyticsHubTabs, type HubTab } from './hub-tabs';
 import { apiRequest } from './api';
+import { ToastProvider } from './toast';
 
 vi.mock('./api', () => ({ apiRequest: vi.fn(), downloadCsv: vi.fn() }));
 
@@ -18,7 +19,7 @@ const definition = {
 };
 
 const wrapper = ({ children }: { children: ReactNode }) => (
-  <QueryClientProvider client={new QueryClient()}>{children}</QueryClientProvider>
+  <QueryClientProvider client={new QueryClient()}><ToastProvider>{children}</ToastProvider></QueryClientProvider>
 );
 
 describe('ResourceHub', () => {
@@ -37,7 +38,7 @@ describe('ResourceHub', () => {
     ];
     render(<ResourceHub title="Hub" tabs={tabs} />, { wrapper });
     expect(await screen.findByText('Hub')).toBeDefined();
-    expect(screen.queryByText('Create')).toBeNull();
+    expect(screen.queryByText('新建')).toBeNull();
     fireEvent.click(screen.getByRole('tab', { name: 'Custom' }));
     expect(screen.getByText('Custom tab')).toBeDefined();
   });
@@ -47,7 +48,7 @@ describe('ResourceHub', () => {
       .mockResolvedValueOnce([{ ...definition, capabilities: { create: true, update: false, delete: false, softDelete: false } }])
       .mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 20 });
     render(<ResourceHub title="Hub" tabs={[{ id: 'resource', label: 'Resource', kind: 'resource', resource: 'patients' }]} />, { wrapper });
-    expect(await screen.findByText('Create')).toBeDefined();
+    expect(await screen.findByText('新建')).toBeDefined();
   });
 
   it('renders empty tab lists without crashing', () => {

@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import {
   LayoutDashboard,
   LogOut,
@@ -14,6 +15,7 @@ import {
 } from 'lucide-react';
 import { logout, switchClinic } from './api';
 import { apiRequest } from './api';
+import { useToast } from './toast-context';
 
 const groups = [
   { key: 'dashboard', label: '工作台', to: '/', icon: LayoutDashboard },
@@ -30,6 +32,8 @@ const groups = [
 export function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { showToast } = useToast();
+  const [selectedClinicId, setSelectedClinicId] = useState<string | null>(null);
   const navigation = useQuery({
     queryKey: ['navigation'],
     queryFn: () => apiRequest<{ permissions: string[] }>('/auth/navigation'),
@@ -44,15 +48,23 @@ export function Layout() {
   const visibleKeys = navigation.data?.permissions ?? [];
   const visibleGroups = groups.filter((group) => visibleKeys.includes(group.key));
 
-  if (navigation.isLoading) return <div className="page">Loading...</div>;
+  if (navigation.isLoading) return <div className="page">加载中...</div>;
+  if (navigation.error) {
+    return (
+      <div className="page">
+        <p className="error">无法加载导航权限，请稍后重试</p>
+        <button onClick={() => void navigation.refetch()}>重试</button>
+      </div>
+    );
+  }
   const currentAllowed = visibleGroups.some((group) => group.to === '/'
     ? location.pathname === '/'
     : location.pathname.startsWith(group.to));
   if (!currentAllowed) {
     return (
       <div className="page">
-        <h1>Access denied</h1>
-        <p>You do not have permission to view this section.</p>
+        <h1>无访问权限</h1>
+        <p>您没有权限查看此模块。</p>
       </div>
     );
   }
@@ -60,14 +72,23 @@ export function Layout() {
   return (
     <div className="shell">
       <aside className="sidebar">
-        <div className="brand">Dental V2</div>
+        <div className="brand">口腔诊所管理</div>
         {clinics.data && clinics.data.clinics.length > 1 && (
           <select
             className="clinic-switch"
             aria-label="当前诊所"
-            value={clinics.data.currentClinicId ?? ''}
-            onChange={(event) => {
-              void switchClinic(event.target.value).then(() => window.location.reload());
+            value={selectedClinicId ?? clinics.data.currentClinicId ?? ''}
+            onChange={async (event) => {
+              const newValue = event.target.value;
+              const oldValue = clinics.data.currentClinicId ?? '';
+              setSelectedClinicId(newValue);
+              try {
+                await switchClinic(newValue);
+                window.location.reload();
+              } catch (error) {
+                showToast(error instanceof Error ? error.message : '切换诊所失败', 'error');
+                setSelectedClinicId(oldValue);
+              }
             }}
           >
             {clinics.data.clinics.map((clinic) => (
@@ -88,12 +109,12 @@ export function Layout() {
         </nav>
         <button
           className="logout"
-          onClick={() => {
-            void logout();
+          onClick={async () => {
+            await logout();
             navigate('/login', { replace: true });
           }}
         >
-          <LogOut size={18} /> Sign out
+          <LogOut size={18} /> 退出登录
         </button>
       </aside>
       <main className="content">

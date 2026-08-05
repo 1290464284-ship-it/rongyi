@@ -75,6 +75,14 @@ export class SyncService {
         errors.push({ recordId: change.recordId, error: 'Table is not allowed for sync' });
         continue;
       }
+      if (!['INSERT', 'UPDATE', 'DELETE'].includes(change.operation)) {
+        errors.push({ recordId: change.recordId, error: 'Sync operation must be INSERT, UPDATE, or DELETE' });
+        continue;
+      }
+      if (change.tableName === 'Charge' && change.operation !== 'DELETE') {
+        errors.push({ recordId: change.recordId, error: 'Charge writes are disabled in sync; use charge APIs' });
+        continue;
+      }
       const resourceName = SYNC_RESOURCES[change.tableName];
       const definition = resourceRegistry.get(resourceName);
       /* v8 ignore start */

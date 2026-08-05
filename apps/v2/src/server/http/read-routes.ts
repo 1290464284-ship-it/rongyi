@@ -6,6 +6,7 @@ import type {
   StatsService,
 } from '../application/services';
 import { ValidationError } from '../infrastructure/errors';
+import { wrapAsync } from './middleware';
 import { createRateLimit } from './rate-limit';
 import type {
   AnalyticsService,
@@ -24,118 +25,51 @@ export interface ReadRouteDependencies {
 }
 
 export function registerReadRoutes(app: Express, deps: ReadRouteDependencies): void {
-  app.get('/api/v2/analytics/clinic-overview', async (req, res, next) => {
-    try {
+  app.get('/api/v2/analytics/clinic-overview', wrapAsync(async (req, res) => {
       res.json({ success: true, data: deps.analytics.clinicOverview() });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.get('/api/v2/analytics/rfm', async (req, res, next) => {
-    try {
+  app.get('/api/v2/analytics/rfm', wrapAsync(async (req, res) => {
       res.json({ success: true, data: deps.analytics.rfm(req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.get('/api/v2/analytics/churn', async (req, res, next) => {
-    try {
+  app.get('/api/v2/analytics/churn', wrapAsync(async (req, res) => {
       res.json({ success: true, data: deps.analytics.churn(req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.get('/api/v2/analytics/doctor-anomalies', async (req, res, next) => {
-    try {
+  app.get('/api/v2/analytics/doctor-anomalies', wrapAsync(async (req, res) => {
       res.json({ success: true, data: deps.analytics.doctorAnomalies(req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.get('/api/v2/charge-assistant/frequent-items', async (req, res, next) => {
-    try {
+  app.get('/api/v2/charge-assistant/frequent-items', wrapAsync(async (req, res) => {
       res.json({ success: true, data: deps.chargeAssistant.frequentItems(req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.get('/api/v2/print/templates', async (req, res, next) => {
-    try {
+  app.get('/api/v2/print/templates', wrapAsync(async (req, res) => {
       res.json({ success: true, data: deps.printTemplates.list(req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.post('/api/v2/print/templates/:code/render', async (req, res, next) => {
-    try {
-      res.type('html').send(deps.printTemplates.render(req.params.code, req.body ?? {}, req.context!));
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  app.post('/api/v2/print/templates/:code/render', wrapAsync(async (req, res) => {
+      res.type('html').send(deps.printTemplates.render(String(req.params.code), req.body ?? {}, req.context!));
+  }));
 
-  app.get('/api/v2/satisfaction/nps', async (req, res, next) => {
-    try {
+  app.get('/api/v2/satisfaction/nps', wrapAsync(async (req, res) => {
       res.json({ success: true, data: deps.satisfaction.nps(req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.get('/api/v2/satisfaction/trend', async (req, res, next) => {
-    try {
+  app.get('/api/v2/satisfaction/trend', wrapAsync(async (req, res) => {
       res.json({ success: true, data: deps.satisfaction.trend(req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.get('/api/v2/satisfaction/doctor-rankings', async (req, res, next) => {
-    try {
+  app.get('/api/v2/satisfaction/doctor-rankings', wrapAsync(async (req, res) => {
       res.json({ success: true, data: deps.satisfaction.doctorRankings(req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.get('/api/v2/stats/dashboard', async (req, res, next) => {
-    try {
+  app.get('/api/v2/stats/dashboard', wrapAsync(async (req, res) => {
       res.json({ success: true, data: deps.stats.dashboard(req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.get('/api/v2/stats/revenue', async (req, res, next) => {
-    try {
+  app.get('/api/v2/stats/revenue', wrapAsync(async (req, res) => {
       const groupBy = req.query.groupBy === 'month' ? 'month' : 'day';
       res.json({
         success: true,
@@ -146,15 +80,9 @@ export function registerReadRoutes(app: Express, deps: ReadRouteDependencies): v
           req.context!,
         ),
       });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.get('/api/v2/stats/patient-growth', async (req, res, next) => {
-    try {
+  app.get('/api/v2/stats/patient-growth', wrapAsync(async (req, res) => {
       res.json({
         success: true,
         data: deps.stats.patientGrowth(
@@ -163,35 +91,17 @@ export function registerReadRoutes(app: Express, deps: ReadRouteDependencies): v
           req.context!,
         ),
       });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.get('/api/v2/stats/inventory', async (req, res, next) => {
-    try {
+  app.get('/api/v2/stats/inventory', wrapAsync(async (req, res) => {
       res.json({ success: true, data: deps.stats.inventoryStats(req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.get('/api/v2/stats/member-cards', async (req, res, next) => {
-    try {
+  app.get('/api/v2/stats/member-cards', wrapAsync(async (req, res) => {
       res.json({ success: true, data: deps.stats.memberStats(req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.get('/api/v2/print', async (req, res, next) => {
-    try {
+  app.get('/api/v2/print', wrapAsync(async (req, res) => {
       const kind = String(req.query.kind ?? 'report');
       let data: Record<string, unknown>;
       try {
@@ -200,26 +110,15 @@ export function registerReadRoutes(app: Express, deps: ReadRouteDependencies): v
         throw new ValidationError('data must be valid JSON');
       }
       res.type('html').send(deps.print.render(kind, data));
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
   const searchLimiter = createRateLimit({ windowMs: 60_000, max: 300 });
-  app.get('/api/v2/search', searchLimiter, async (req, res, next) => {
-    try {
+  app.get('/api/v2/search', searchLimiter, wrapAsync(async (req, res) => {
       const q = String(req.query.q ?? '').trim();
       if (q.length < 2) {
         res.json({ success: true, data: [] });
         return;
       }
       res.json({ success: true, data: deps.search.search(q, req.context!) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 }

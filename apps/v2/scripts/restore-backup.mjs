@@ -20,8 +20,8 @@ function decryptFile(sourcePath, targetPath) {
     throw new Error('Encrypted backup header is invalid');
   }
   const iv = data.subarray(BACKUP_MAGIC.length, BACKUP_MAGIC.length + 12);
-  const authTag = data.subarray(BACKUP_MAGIC.length + 12, BACKUP_MAGIC.length + 28);
-  const encrypted = data.subarray(BACKUP_MAGIC.length + 28);
+  const authTag = data.subarray(data.length - 16);
+  const encrypted = data.subarray(BACKUP_MAGIC.length + 12, data.length - 16);
   const decipher = createDecipheriv('aes-256-gcm', backupKey(), iv);
   decipher.setAuthTag(authTag);
   fs.writeFileSync(targetPath, Buffer.concat([decipher.update(encrypted), decipher.final()]));

@@ -223,9 +223,45 @@ export interface PurchaseOrderRepository {
   markReceived(id: string, receivedAt: string, updatedAt: string, clinicId?: string | null): void;
 }
 
+export interface ProcessingOrderRecord {
+  id: string;
+  clinicId?: string | null;
+  patientId: string;
+  visitId?: string | null;
+  factoryId?: string | null;
+  doctorId?: string | null;
+  number: string;
+  shade?: string | null;
+  teethNumbers: string[];
+  totalFee: number;
+  status: string;
+  expectedAt?: string | null;
+  remark?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt?: string | null;
+}
+
+export interface ProcessingOrderItemRecord {
+  id: string;
+  clinicId?: string | null;
+  orderId: string;
+  name: string;
+  spec?: string | null;
+  quantity: number;
+  unitPrice: number;
+  subtotal: number;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt?: string | null;
+}
+
 export interface ProcessingOrderRepository {
   findById(id: string, clinicId?: string | null): { id: string; status: string; deletedAt?: string | null } | null;
   updateStatus(id: string, status: string, updatedAt: string, clinicId?: string | null): void;
+  createOrder(input: ProcessingOrderRecord): void;
+  createItem(input: ProcessingOrderItemRecord): void;
 }
 
 export interface FollowUpRecord {
@@ -249,7 +285,15 @@ export interface FollowUpRepository {
 }
 
 export interface WechatMessageRepository {
-  findById(id: string, clinicId?: string | null): { id: string; status: string; clinicId?: string | null } | null;
+  findById(id: string, clinicId?: string | null): {
+    id: string;
+    status: string;
+    clinicId?: string | null;
+    patientId?: string | null;
+    type?: string | null;
+    content?: string | null;
+    templateId?: string | null;
+  } | null;
   markSent(id: string, sentAt: string, updatedAt: string, clinicId?: string | null): number;
 }
 

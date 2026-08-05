@@ -2,8 +2,23 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { apiRequest } from './api';
 import { DataTable, type DataTableColumn } from './components';
+import { errorMessage } from './messages';
+import { useToast } from './toast-context';
 
 type DatabaseSummary = Record<string, number | string | null>;
+
+const SUMMARY_LABELS: Record<string, string> = {
+  Clinic: '诊所',
+  User: '员工',
+  Patient: '患者',
+  Appointment: '预约',
+  Charge: '收费单',
+  MemberCard: '会员卡',
+  InventoryItem: '库存项目',
+  FollowUp: '随访',
+  PurchaseOrder: '采购单',
+  lastPaidAt: '最近收款时间',
+};
 
 interface RestoreStagingResult {
   message: string;
@@ -12,7 +27,7 @@ interface RestoreStagingResult {
 }
 
 function SummaryPanel({ label, summary }: { label: string; summary?: DatabaseSummary }) {
-  if (!summary) return <div><h2>{label}</h2><p>No summary</p></div>;
+  if (!summary) return <div><h2>{label}</h2><p>暂无摘要</p></div>;
   return (
     <div>
       <h2>{label}</h2>
@@ -21,7 +36,7 @@ function SummaryPanel({ label, summary }: { label: string; summary?: DatabaseSum
           <tbody>
             {Object.entries(summary).map(([key, value]) => (
               <tr key={key}>
-                <th>{key}</th>
+                <th>{SUMMARY_LABELS[key] ?? key}</th>
                 <td>{String(value)}</td>
               </tr>
             ))}
@@ -33,7 +48,8 @@ function SummaryPanel({ label, summary }: { label: string; summary?: DatabaseSum
 }
 
 export function BackupsPage() {
-  const [message, setMessage] = useState('');
+  const { showToast } = useToast();
+  const [busy, setBusy] = useState(false);
   const [comparison, setComparison] = useState<{ backup?: DatabaseSummary; current?: DatabaseSummary } | null>(null);
   const query = useQuery({
     queryKey: ['backups'],
@@ -41,61 +57,83 @@ export function BackupsPage() {
   });
 
   async function create() {
+    if (busy) return;
+    setBusy(true);
     try {
       const result = await apiRequest<{ filename: string; encrypted: boolean }>('/backups', { method: 'POST' });
-      setMessage(`Backup created: ${result.filename}${result.encrypted ? ' (encrypted)' : ''}`);
+      showToast(`备份已创建：${result.filename}${result.encrypted ? '（已加密）' : ''}`, 'success');
       await query.refetch();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Create failed');
+      showToast(errorMessage(error, '创建备份失败'), 'error');
+    } finally {
+      setBusy(false);
     }
   }
 
   async function verify(filename: string) {
+    if (busy) return;
+    setBusy(true);
     try {
       const result = await apiRequest<{ integrity: string }>(`/backups/${encodeURIComponent(filename)}/verify`);
-      setMessage(`Integrity: ${result.integrity}`);
+      showToast(result.integrity === 'ok' ? '备份完整性校验通过' : `备份完整性校验结果：${result.integrity}`, 'success');
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Verify failed');
+      showToast(errorMessage(error, '校验备份失败'), 'error');
+    } finally {
+      setBusy(false);
     }
   }
 
   async function stageRestore(filename: string) {
+    if (busy) return;
+    setBusy(true);
     try {
       const result = await apiRequest<RestoreStagingResult>(`/backups/${encodeURIComponent(filename)}/restore`, {
         method: 'POST',
       });
       setComparison({ backup: result.backupSummary, current: result.currentSummary });
-      setMessage(result.message);
+      showToast(
+        result.message === 'Backup verified and staged. Restart the application to activate this restore.'
+          || result.message === 'Backup verified and staged'
+          ? '恢复已暂存，重启应用后生效'
+          : result.message,
+        'success',
+      );
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Restore staging failed');
+      showToast(errorMessage(error, '暂存恢复失败'), 'error');
+    } finally {
+      setBusy(false);
     }
   }
 
   async function cleanup() {
+    if (busy) return;
+    setBusy(true);
     try {
       const result = await apiRequest<{ kept: number; deleted: Array<{ filename: string }> }>('/backups/cleanup', {
         method: 'POST',
         body: JSON.stringify({ maxKeep: 30 }),
       });
-      setMessage(`Kept ${result.kept}, deleted ${result.deleted.length}`);
+      showToast(`保留 ${result.kept} 个，清理 ${result.deleted.length} 个`, 'success');
       await query.refetch();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Cleanup failed');
+      showToast(errorMessage(error, '清理备份失败'), 'error');
+    } finally {
+      setBusy(false);
     }
   }
 
   const backupColumns: DataTableColumn<Record<string, unknown>>[] = [
-    { key: 'filename', label: 'Filename', render: (row) => String(row.filename) },
-    { key: 'encrypted', label: 'Encrypted', render: (row) => String(Boolean(row.encrypted)) },
-    { key: 'fileSize', label: 'Size', render: (row) => String(row.fileSize) },
-    { key: 'createdAt', label: 'Created', render: (row) => String(row.createdAt) },
+    { key: 'filename', label: '文件名', render: (row) => String(row.filename) },
+    { key: 'encrypted', label: '已加密', render: (row) => String(Boolean(row.encrypted)) },
+    { key: 'fileSize', label: '大小', render: (row) => String(row.fileSize) },
+    { key: 'createdAt', label: '创建时间', render: (row) => String(row.createdAt) },
     {
       key: 'actions',
-      label: 'Actions',
+      label: '操作',
       render: (row) => (
         <div className="actions">
-          <button onClick={() => verify(String(row.filename))}>Verify</button>
-          <button onClick={() => stageRestore(String(row.filename))}>Stage restore</button>
+          <button onClick={() => verify(String(row.filename))}>校验</button>
+          <button onClick={() => stageRestore(String(row.filename))}>暂存恢复</button>
         </div>
       ),
     },
@@ -104,18 +142,17 @@ export function BackupsPage() {
   return (
     <div className="page">
       <div className="page-head">
-        <h1>Backups</h1>
-        <button onClick={create}>Create backup</button>
-        <button onClick={cleanup}>Cleanup (keep 30)</button>
+        <h1>数据备份</h1>
+        <button onClick={create}>创建备份</button>
+        <button onClick={cleanup}>清理备份（保留 30 个）</button>
       </div>
-      {message && <p className="info">{message}</p>}
       {comparison && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
-          <SummaryPanel label="Backup summary" summary={comparison.backup} />
-          <SummaryPanel label="Current summary" summary={comparison.current} />
+          <SummaryPanel label="备份数据摘要" summary={comparison.backup} />
+          <SummaryPanel label="当前数据摘要" summary={comparison.current} />
         </div>
       )}
-      <DataTable columns={backupColumns} rows={query.data ?? []} keyField="filename" emptyText="No backups" />
+      <DataTable columns={backupColumns} rows={query.data ?? []} keyField="filename" emptyText="暂无备份" />
     </div>
   );
 }

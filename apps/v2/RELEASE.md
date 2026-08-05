@@ -2,8 +2,8 @@
 
 ## Generated Artifacts
 
-- `release-v2/Dental Clinic V2 Setup 2.0.0.exe`
-- `release-v2/Dental Clinic V2 Setup 2.0.0.exe.blockmap`
+- `release-v2/Dental Clinic V2 Setup <version>.exe`
+- `release-v2/Dental Clinic V2 Setup <version>.exe.blockmap`
 - `release-v2/latest.yml`
 
 `release-v2/win-unpacked/` is a transient electron-builder output and is
@@ -25,6 +25,20 @@ blocker for internal delivery.
    `resources/legacy/dental.sqlite` into Electron `userData/data`.
 5. Confirm dashboard, patients, charges, inventory, follow-ups, backups, and settings pages open.
 6. Confirm the app exits through the tray and restarts the API when the window is reopened.
+7. Confirm the API only listens on `127.0.0.1` and deep health/metrics require an administrator session.
+8. Confirm the desktop settings page shows update events, API restart status, and window state is remembered.
+
+## Delivery Drill
+
+Before internal release, run the real data drill after building and compiling:
+
+```powershell
+pnpm --filter @dental/v2 build
+pnpm --filter @dental/v2 electron:compile
+pnpm --filter @dental/v2 delivery:drill
+```
+
+See `docs/delivery/delivery-drill.md` for the covered path.
 
 ## Update Channel
 

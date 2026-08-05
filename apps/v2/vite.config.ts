@@ -1,12 +1,22 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 
+function devCsp(): { name: string; apply: 'serve'; transformIndexHtml(html: string): string } {
+  return {
+    name: 'dev-csp',
+    apply: 'serve',
+    transformIndexHtml(html: string): string {
+      return html.replace("script-src 'self';", "script-src 'self' 'unsafe-inline';");
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), devCsp()],
   test: {
     coverage: {
       provider: 'v8',
-      include: ['src/server/**/*.ts', 'src/domain/**/*.ts'],
+      include: ['src/server/**/*.ts', 'src/domain/**/*.ts', 'src/server/scheduler.ts'],
       exclude: ['src/server/main.ts'],
       thresholds: {
         statements: 100,

@@ -1,0 +1,79 @@
+// @vitest-environment jsdom
+
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ReactNode } from 'react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { FirstExamsPage } from './FirstExamsPage';
+import { apiRequest } from './api';
+import { ToastProvider } from './toast';
+
+vi.mock('./api', () => ({ apiRequest: vi.fn() }));
+
+const wrapper = ({ children }: { children: ReactNode }) => (
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <ToastProvider>{children}</ToastProvider>
+  </QueryClientProvider>
+);
+
+function mockData() {
+  vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+    if (path === '/resources/firstExams?page=1&pageSize=50') {
+      return {
+        items: [{ id: 'f-1', patientId: 'p-1', doctorId: 'd-1', status: 'DRAFT', chiefComplaint: '牙痛' }],
+        total: 1,
+        page: 1,
+        pageSize: 50,
+      };
+    }
+    if (path === '/resources/patients?page=1&pageSize=200') {
+      return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+    }
+    if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+    return {};
+  });
+}
+
+describe('FirstExamsPage', () => {
+  afterEach(() => {
+    cleanup();
+    vi.mocked(apiRequest).mockReset();
+  });
+
+  it('lists first exams and creates a new one', async () => {
+    mockData();
+    render(<FirstExamsPage />, { wrapper });
+    expect(await screen.findByText('牙痛')).toBeDefined();
+
+    fireEvent.click(screen.getByText('新建首诊'));
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
+    fireEvent.change(screen.getByLabelText('主诉'), { target: { value: '补牙' } });
+    vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'f-2' });
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/firstExams', expect.objectContaining({ method: 'POST' }));
+    });
+    expect(await screen.findByText('首诊记录已创建')).toBeDefined();
+  });
+
+  it('validates required fields', async () => {
+    mockData();
+    render(<FirstExamsPage />, { wrapper });
+    await screen.findByText('牙痛');
+    fireEvent.click(screen.getByText('新建首诊'));
+    fireEvent.click(screen.getByText('保存'));
+    expect(await screen.findByText('请选择患者和医生')).toBeDefined();
+    expect(apiRequest).not.toHaveBeenCalledWith('/resources/firstExams', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('transitions first exam status', async () => {
+    mockData();
+    render(<FirstExamsPage />, { wrapper });
+    fireEvent.change(await screen.findByLabelText('变更首诊状态'), { target: { value: 'SUBMITTED' } });
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/first-exams/f-1/status', expect.objectContaining({ method: 'PATCH' }));
+    });
+  });
+});

@@ -7,26 +7,28 @@ export class StatsService {
   constructor(private readonly db: Database.Database) {}
 
   dashboard(context: AppContext): Record<string, unknown> {
-    const clinic = context.clinicId;
-    const tenant = tenantWhere(clinic);
-    const withClinic = (sql: string): string => tenant.sql ? sql.replace('{clinic}', `${tenant.sql} AND `) : sql.replace('{clinic}', '');
-    const param = tenant.params;
-    const patientCount = (this.db.prepare(withClinic('SELECT COUNT(*) AS c FROM Patient WHERE {clinic}deletedAt IS NULL')).get(...param) as { c: number }).c;
-    const appointmentCount = (this.db.prepare(withClinic('SELECT COUNT(*) AS c FROM Appointment WHERE {clinic}deletedAt IS NULL')).get(...param) as { c: number }).c;
-    const chargeRow = this.db.prepare(withClinic(`
-      SELECT COALESCE(SUM(CASE WHEN status <> 'CANCELLED' THEN paidAmount - refundedAmount ELSE 0 END), 0) AS paid,
-             COALESCE(SUM(CASE WHEN status IN ('UNPAID', 'PARTIAL') THEN totalAmount - paidAmount ELSE 0 END), 0) AS unpaid
-      FROM Charge WHERE {clinic}deletedAt IS NULL
-    `)).get(...param) as { paid: number; unpaid: number };
-    const inventoryCount = (this.db.prepare(withClinic('SELECT COUNT(*) AS c FROM InventoryItem WHERE {clinic}deletedAt IS NULL')).get(...param) as { c: number }).c;
-    const followUpCount = (this.db.prepare(withClinic("SELECT COUNT(*) AS c FROM FollowUp WHERE {clinic}deletedAt IS NULL AND status = 'PENDING'")).get(...param) as { c: number }).c;
+    const tenant = tenantWhere(context.clinicId);
+    const where = tenant.sql ? `WHERE ${tenant.sql} AND deletedAt IS NULL` : 'WHERE deletedAt IS NULL';
+    const wherePending = tenant.sql
+      ? `WHERE ${tenant.sql} AND deletedAt IS NULL AND status = 'PENDING'`
+      : "WHERE deletedAt IS NULL AND status = 'PENDING'";
+    const whereCharge = tenant.sql ? `WHERE ${tenant.sql} AND deletedAt IS NULL` : 'WHERE deletedAt IS NULL';
+    const row = this.db.prepare(
+      `SELECT (SELECT COUNT(*) FROM Patient ${where}) AS p,
+              (SELECT COUNT(*) FROM Appointment ${where}) AS a,
+              (SELECT COALESCE(SUM(CASE WHEN status <> 'CANCELLED' THEN paidAmount - refundedAmount ELSE 0 END), 0) FROM Charge ${whereCharge}) AS paid,
+              (SELECT COALESCE(SUM(CASE WHEN status IN ('UNPAID', 'PARTIAL') THEN totalAmount - paidAmount ELSE 0 END), 0) FROM Charge ${whereCharge}) AS unpaid,
+              (SELECT COUNT(*) FROM InventoryItem ${where}) AS i,
+              (SELECT COUNT(*) FROM FollowUp ${wherePending}) AS f`,
+    ).get(...tenant.params, ...tenant.params, ...tenant.params, ...tenant.params, ...tenant.params, ...tenant.params) as
+      { p: number; a: number; paid: number; unpaid: number; i: number; f: number };
     return {
-      patients: patientCount,
-      appointments: appointmentCount,
-      paidAmount: chargeRow.paid,
-      unpaidAmount: chargeRow.unpaid,
-      inventoryItems: inventoryCount,
-      pendingFollowUps: followUpCount,
+      patients: row.p,
+      appointments: row.a,
+      paidAmount: row.paid,
+      unpaidAmount: row.unpaid,
+      inventoryItems: row.i,
+      pendingFollowUps: row.f,
     };
   }
 
@@ -37,8 +39,8 @@ export class StatsService {
     context?: AppContext,
   ): Array<Record<string, unknown>> {
     const groupExpr = groupBy === 'month'
-      ? "substr(paidAt, 1, 7)"
-      : "substr(paidAt, 1, 10)";
+      ? "strftime('%Y-%m', paidAt, '+8 hours')"
+      : "strftime('%Y-%m-%d', paidAt, '+8 hours')";
     const where: string[] = ['deletedAt IS NULL', 'paidAt IS NOT NULL'];
     const params: unknown[] = [];
     if (startDate) {
@@ -80,10 +82,10 @@ export class StatsService {
       params.push(...tenant.params);
     }
     return this.db.prepare(
-      `SELECT substr(createdAt, 1, 10) AS day, COUNT(*) AS count
+      `SELECT strftime('%Y-%m-%d', createdAt, '+8 hours') AS day, COUNT(*) AS count
        FROM Patient
        WHERE ${where.join(' AND ')}
-       GROUP BY substr(createdAt, 1, 10)
+       GROUP BY strftime('%Y-%m-%d', createdAt, '+8 hours')
        ORDER BY day ASC`,
     ).all(...params) as Array<Record<string, unknown>>;
   }
@@ -260,12 +262,18 @@ export class SatisfactionService {
   nps(context: AppContext): { promoters: number; detractors: number; passive: number; score: number } {
     const tenantClause = tenantAnd(context.clinicId);
     const params: unknown[] = tenantParams(context.clinicId);
-    const rows = this.db.prepare(`SELECT score FROM SatisfactionSurvey WHERE deletedAt IS NULL${tenantClause}`).all(...params) as Array<{ score: number }>;
-    if (rows.length === 0) return { promoters: 0, detractors: 0, passive: 0, score: 0 };
-    const promoters = rows.filter((row) => row.score >= 9).length;
-    const detractors = rows.filter((row) => row.score <= 6).length;
-    const passive = rows.length - promoters - detractors;
-    return { promoters, detractors, passive, score: Math.round(((promoters - detractors) / rows.length) * 100) };
+    const row = this.db.prepare(
+      `SELECT COUNT(*) AS total,
+              COALESCE(SUM(CASE WHEN score >= 9 THEN 1 ELSE 0 END), 0) AS promoters,
+              COALESCE(SUM(CASE WHEN score <= 6 THEN 1 ELSE 0 END), 0) AS detractors,
+              COALESCE(SUM(CASE WHEN score >= 7 AND score <= 8 THEN 1 ELSE 0 END), 0) AS passive
+       FROM SatisfactionSurvey WHERE deletedAt IS NULL${tenantClause}`,
+    ).get(...params) as { total: number; promoters: number; detractors: number; passive: number };
+    const total = Number(row.total);
+    const promoters = Number(row.promoters);
+    const detractors = Number(row.detractors);
+    const passive = Number(row.passive);
+    return { promoters, detractors, passive, score: total === 0 ? 0 : Math.round(((promoters - detractors) / total) * 100) };
   }
 
   trend(context: AppContext): Array<Record<string, unknown>> {

@@ -150,18 +150,16 @@ export class BulkImportService {
         for (const row of chunk) {
           try {
             const payload = stripProtectedWriteFields(validatePayload(definition, row));
-            await repository.insert({ id: randomUUID(), ...payload }, context);
+            repository.insert({ id: randomUUID(), ...payload }, context);
             imported += 1;
           } catch (error) {
-            /* v8 ignore start -- non-Error rejection is defensive; current repository paths throw Error instances. */
             errors.push(error instanceof Error ? error.message : String(error));
-            /* v8 ignore stop */
           }
         }
         this.db.exec('COMMIT');
-      } catch (error) {
+      } catch (e) {
         this.db.exec('ROLLBACK');
-        throw error;
+        throw e;
       }
     }
     return { imported, failed: errors.length, errors, chunks: Math.ceil(rows.length / size) };

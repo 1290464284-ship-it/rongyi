@@ -22,5 +22,14 @@ describe('errors', () => {
     expect(asAppError('string').message).toBe('string');
     expect(asAppError(new AppError('KEEP', 'keep', 422)).code).toBe('KEEP');
   });
-});
 
+  it('maps malformed and oversized request bodies to client errors', () => {
+    const parseError = new SyntaxError('Unexpected token') as SyntaxError & { type?: string };
+    parseError.type = 'entity.parse.failed';
+    expect(asAppError(parseError)).toMatchObject({ status: 400, code: 'VALIDATION_ERROR' });
+
+    const tooLarge = new Error('request entity too large') as Error & { type?: string };
+    tooLarge.type = 'entity.too.large';
+    expect(asAppError(tooLarge)).toMatchObject({ status: 413, code: 'PAYLOAD_TOO_LARGE' });
+  });
+});

@@ -6,12 +6,13 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ClinicOverviewPage } from './ClinicOverviewPage';
 import { apiRequest } from './api';
+import { ToastProvider } from './toast';
 
 vi.mock('./api', () => ({ apiRequest: vi.fn(), downloadCsv: vi.fn() }));
 
 const wrapper = ({ children }: { children: ReactNode }) => (
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    {children}
+    <ToastProvider>{children}</ToastProvider>
   </QueryClientProvider>
 );
 
@@ -30,36 +31,36 @@ describe('ClinicOverviewPage', () => {
 
     render(<ClinicOverviewPage />, { wrapper });
     expect(await screen.findByText('Clinic A')).toBeDefined();
-    expect(screen.getByText('Patients: 4')).toBeDefined();
-    expect(screen.getByText('Appointments: 5')).toBeDefined();
-    expect(screen.getByText('Paid: 1000')).toBeDefined();
-    expect(screen.getByText('Unpaid: 200')).toBeDefined();
+    expect(screen.getByText('患者：4')).toBeDefined();
+    expect(screen.getByText('预约：5')).toBeDefined();
+    expect(screen.getByText('已收：¥10.00')).toBeDefined();
+    expect(screen.getByText('未收：¥2.00')).toBeDefined();
   });
 
   it('renders errors and empty states', async () => {
     vi.mocked(apiRequest).mockRejectedValueOnce(new Error('overview failed'));
     render(<ClinicOverviewPage />, { wrapper });
-    expect(await screen.findByText('overview failed')).toBeDefined();
+    expect(await screen.findByText('无法加载多门店经营概览')).toBeDefined();
 
     cleanup();
     vi.mocked(apiRequest).mockResolvedValueOnce([]);
     render(<ClinicOverviewPage />, { wrapper });
-    expect(await screen.findByText('No clinic data')).toBeDefined();
+    expect(await screen.findByText('暂无诊所数据')).toBeDefined();
 
     cleanup();
     vi.mocked(apiRequest).mockResolvedValueOnce([{ clinicId: 'clinic-min' }]);
     render(<ClinicOverviewPage />, { wrapper });
     expect(await screen.findByText('clinic-min')).toBeDefined();
-    expect(screen.getByText('Patients: 0')).toBeDefined();
+    expect(screen.getByText('患者：0')).toBeDefined();
 
     cleanup();
     vi.mocked(apiRequest).mockResolvedValueOnce(undefined);
     render(<ClinicOverviewPage />, { wrapper });
-    expect(await screen.findByText(/data is undefined/)).toBeDefined();
+    expect(await screen.findByText('无法加载多门店经营概览')).toBeDefined();
 
     cleanup();
     vi.mocked(apiRequest).mockRejectedValueOnce('boom');
     render(<ClinicOverviewPage />, { wrapper });
-    expect(await screen.findByText('Failed to load clinic overview')).toBeDefined();
+    expect(await screen.findByText('无法加载多门店经营概览')).toBeDefined();
   });
 });

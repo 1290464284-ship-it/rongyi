@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { withIdempotency } from '../../infrastructure/idempotency';
+import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { SqliteChargeRepository } from '../../infrastructure/repositories/charge.repository';
 import {
   SqliteDebtRepository,
@@ -12,7 +13,6 @@ import {
 } from '../../infrastructure/repositories/core.repositories';
 import type { AppContext } from '../../../domain/contracts';
 import type {
-  ChargeItemRecord,
   ChargeRepository,
   DebtRepository,
   InventoryRepository,
@@ -21,7 +21,23 @@ import type {
   ProcessingOrderRepository,
   PurchaseOrderRepository,
 } from '../ports';
-import { assertPatientExists } from './common';
+import {
+  assertDoctorExists,
+  assertPatientExists,
+  assertVisitExists,
+} from './common';
+
+const PAY_METHODS = new Set([
+  'CASH',
+  'WECHAT',
+  'ALIPAY',
+  'CARD',
+  'DEBT',
+  'MEMBER_CARD',
+  'UNIONPAY',
+  'INSURANCE',
+  'OTHER',
+]);
 
 export class ChargeService {
   private readonly db: Database.Database;
@@ -54,6 +70,8 @@ export class ChargeService {
       throw new ValidationError('patientId is required');
     }
     assertPatientExists(this.db, input.patientId, context.clinicId);
+    if (input.doctorId) assertDoctorExists(this.db, input.doctorId, context.clinicId);
+    if (input.visitId) assertVisitExists(this.db, input.visitId, input.patientId, context.clinicId);
     for (const item of input.items) {
       if (typeof item.name !== 'string' || !item.name.trim() || typeof item.category !== 'string' || !item.category.trim()) {
         throw new ValidationError('Charge item name and category are required');
@@ -61,7 +79,7 @@ export class ChargeService {
       if (!Number.isSafeInteger(item.price) || item.price <= 0) {
         throw new ValidationError('Charge item price must be a positive integer in cents');
       }
-      if (!Number.isFinite(item.quantity) || item.quantity <= 0) {
+      if (!Number.isSafeInteger(item.quantity) || item.quantity <= 0) {
         throw new ValidationError('Charge item quantity must be positive');
       }
     }
@@ -90,22 +108,27 @@ export class ChargeService {
         status: 'UNPAID',
         remark: input.remark ?? null,
       });
+      const insertItem = this.db.prepare(
+        `INSERT INTO ChargeItem (
+           id, chargeId, name, category, price, quantity, teethNumbers, subtotal,
+           clinicId, createdAt, updatedAt, deletedAt
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+      );
       for (const item of input.items) {
         const subtotal = Math.round(item.price * item.quantity);
-        const record: ChargeItemRecord = {
-          id: randomUUID(),
-          chargeId: id,
-          name: item.name,
-          category: item.category,
-          price: item.price,
-          quantity: item.quantity,
-          teethNumbers: item.teethNumbers ?? [],
+        insertItem.run(
+          randomUUID(),
+          id,
+          item.name,
+          item.category,
+          item.price,
+          item.quantity,
+          JSON.stringify(item.teethNumbers ?? []),
           subtotal,
-          clinicId: context.clinicId ?? null,
-          createdAt: now,
-          updatedAt: now,
-        };
-        this.chargeRepository.createItem(record);
+          context.clinicId ?? null,
+          now,
+          now,
+        );
       }
     });
     chargeRun();
@@ -128,6 +151,9 @@ export class ChargeService {
       const remaining = total - paid;
       if (!Number.isSafeInteger(amount) || amount <= 0 || amount > remaining) {
         throw new ValidationError('Payment amount must be a positive integer and not exceed the remaining balance');
+      }
+      if (!PAY_METHODS.has(method)) {
+        throw new ValidationError('Invalid payment method');
       }
       const newPaid = paid + amount;
       const newStatus = newPaid >= total ? 'PAID' : 'PARTIAL';
@@ -154,6 +180,28 @@ export class ChargeService {
           });
         }
         this.chargeRepository.updatePayment(id, newPaid, newStatus, now, method, memberCardId, context?.clinicId ?? null);
+        const debt = this.debtRepository.findByCharge(id, context?.clinicId ?? null);
+        if (debt) {
+          const debtStatus = newPaid >= Number(debt.totalAmount) ? 'PAID' : newPaid > 0 ? 'PARTIAL' : 'UNPAID';
+          this.debtRepository.updatePaid(debt.id, newPaid, debtStatus, now, context?.clinicId ?? null);
+        } else if (method === 'DEBT' && newStatus === 'PARTIAL') {
+          this.db.prepare(
+            `INSERT INTO Debt (
+               id, clinicId, createdAt, updatedAt, deletedAt,
+               chargeId, patientId, totalAmount, paidAmount, status
+             ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
+          ).run(
+            randomUUID(),
+            row.clinicId ?? null,
+            now,
+            now,
+            id,
+            String(row.patientId),
+            total,
+            newPaid,
+            newStatus,
+          );
+        }
       });
       payRun();
       return { id, paidAmount: newPaid, status: newStatus };
@@ -251,8 +299,8 @@ export class MemberCardService {
       throw new ValidationError('Invalid member card level');
     }
     const existing = this.db.prepare(
-      'SELECT id FROM MemberCard WHERE cardNo = ? AND deletedAt IS NULL',
-    ).get(cardNo) as { id: string } | undefined;
+      `SELECT id FROM MemberCard WHERE cardNo = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    ).get(cardNo, ...tenantParams(context.clinicId)) as { id: string } | undefined;
     if (existing) throw new ConflictError('Member card number already exists');
     const now = context.now().toISOString();
     const id = randomUUID();
@@ -388,6 +436,70 @@ export class PurchaseOrderService {
     this.inventoryRepository = inventoryRepository ?? new SqliteInventoryRepository(db);
   }
 
+  async create(
+    input: {
+      number: string;
+      supplierId?: string;
+      items: Array<{ itemId?: string; name: string; quantity: number; unitPrice: number }>;
+    },
+    context: AppContext,
+    requestId?: string,
+  ): Promise<Record<string, unknown>> {
+    return withIdempotency(this.db, {
+      operation: 'purchase-order.create',
+      userId: context.userId,
+      clinicId: context.clinicId,
+      requestId: requestId ?? '',
+    }, () => {
+      if (!input.number?.trim()) throw new ValidationError('Purchase order number is required');
+      if (!Array.isArray(input.items) || input.items.length === 0 || input.items.length > 500) {
+        throw new ValidationError('Purchase order items must contain 1 to 500 entries');
+      }
+      const now = context.now().toISOString();
+      const id = randomUUID();
+      let totalAmount = 0;
+      const items = input.items.map((item) => {
+        const name = String(item.name ?? '').trim();
+        const quantity = Number(item.quantity);
+        const unitPrice = Number(item.unitPrice);
+        if (!name || !Number.isSafeInteger(quantity) || quantity <= 0 || !Number.isFinite(unitPrice) || unitPrice < 0) {
+          throw new ValidationError('Each purchase item requires a name, positive quantity, and non-negative unit price');
+        }
+        if (item.itemId && !this.inventoryRepository.findItem(item.itemId, context.clinicId)) {
+          throw new NotFoundError(`Inventory item not found: ${item.itemId}`);
+        }
+        const subtotal = Math.round(unitPrice * quantity);
+        totalAmount += subtotal;
+        return {
+          id: randomUUID(),
+          clinicId: context.clinicId ?? null,
+          orderId: id,
+          itemId: item.itemId ?? null,
+          name,
+          quantity,
+          unitPrice: Math.round(unitPrice),
+          subtotal,
+          createdAt: now,
+          updatedAt: now,
+        };
+      });
+      this.db.transaction(() => {
+        this.purchaseOrderRepository.createOrder({
+          id,
+          clinicId: context.clinicId ?? null,
+          number: input.number.trim(),
+          supplierId: input.supplierId ?? null,
+          totalAmount,
+          status: 'PENDING',
+          createdAt: now,
+          updatedAt: now,
+        });
+        for (const item of items) this.purchaseOrderRepository.createItem(item);
+      })();
+      return { id, number: input.number.trim(), status: 'PENDING', totalAmount };
+    });
+  }
+
   async receive(orderId: string, context: AppContext): Promise<Record<string, unknown>> {
     const order = this.purchaseOrderRepository.findById(orderId, context.clinicId);
     if (!order) throw new NotFoundError('Purchase order not found');
@@ -474,6 +586,83 @@ export class ProcessingOrderService {
     this.processingOrderRepository = processingOrderRepository ?? new SqliteProcessingOrderRepository(db);
   }
 
+  async create(
+    input: {
+      patientId: string;
+      doctorId?: string;
+      factoryId?: string;
+      number: string;
+      shade?: string;
+      teethNumbers?: string[];
+      totalFee: number;
+      expectedAt?: string;
+      remark?: string;
+      items: Array<{ name: string; spec?: string; quantity: number; unitPrice: number }>;
+    },
+    context: AppContext,
+    requestId?: string,
+  ): Promise<Record<string, unknown>> {
+    return withIdempotency(this.db, {
+      operation: 'processing-order.create',
+      userId: context.userId,
+      clinicId: context.clinicId,
+      requestId: requestId ?? '',
+    }, () => {
+      assertPatientExists(this.db, input.patientId, context.clinicId);
+      if (!input.number?.trim()) throw new ValidationError('Processing order number is required');
+      if (!Number.isFinite(Number(input.totalFee)) || Number(input.totalFee) < 0) {
+        throw new ValidationError('Processing order total fee must be non-negative');
+      }
+      if (!Array.isArray(input.items) || input.items.length === 0 || input.items.length > 500) {
+        throw new ValidationError('Processing order items must contain 1 to 500 entries');
+      }
+      const now = context.now().toISOString();
+      const id = randomUUID();
+      const items = input.items.map((item) => {
+        const name = String(item.name ?? '').trim();
+        const quantity = Number(item.quantity);
+        const unitPrice = Number(item.unitPrice);
+        if (!name || !Number.isSafeInteger(quantity) || quantity <= 0 || !Number.isFinite(unitPrice) || unitPrice < 0) {
+          throw new ValidationError('Each processing item requires a name, positive quantity, and non-negative unit price');
+        }
+        const subtotal = Math.round(unitPrice * quantity);
+        return {
+          id: randomUUID(),
+          clinicId: context.clinicId ?? null,
+          orderId: id,
+          name,
+          spec: item.spec ?? null,
+          quantity,
+          unitPrice: Math.round(unitPrice),
+          subtotal,
+          status: 'DRAFT',
+          createdAt: now,
+          updatedAt: now,
+        };
+      });
+      this.db.transaction(() => {
+        this.processingOrderRepository.createOrder({
+          id,
+          clinicId: context.clinicId ?? null,
+          patientId: input.patientId,
+          doctorId: input.doctorId ?? null,
+          factoryId: input.factoryId ?? null,
+          number: input.number.trim(),
+          shade: input.shade ?? null,
+          teethNumbers: Array.isArray(input.teethNumbers) ? input.teethNumbers : [],
+          totalFee: Math.round(Number(input.totalFee)),
+          status: 'DRAFT',
+          expectedAt: input.expectedAt ?? null,
+          remark: input.remark ?? null,
+          createdAt: now,
+          updatedAt: now,
+        });
+        for (const item of items) this.processingOrderRepository.createItem(item);
+      })();
+      return { id, number: input.number.trim(), status: 'DRAFT' };
+    });
+  }
+
   transition(id: string, status: string, context: AppContext): Record<string, unknown> {
     const row = this.processingOrderRepository.findById(id, context.clinicId);
     if (!row) throw new NotFoundError('Processing order not found');
@@ -508,6 +697,23 @@ export class DebtService {
       const paid = Number(debt.paidAmount) + amount;
       const status = paid >= Number(debt.totalAmount) ? 'PAID' : 'PARTIAL';
       this.debtRepository.updatePaid(debtId, paid, status, context.now().toISOString(), context.clinicId);
+      const charge = this.db.prepare(
+        `SELECT id, totalAmount, paidAmount
+         FROM Charge WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+      ).get(debt.chargeId, ...tenantParams(context.clinicId)) as {
+        id: string;
+        totalAmount: number;
+        paidAmount: number;
+      } | undefined;
+      if (charge) {
+        const chargePaid = Math.min(Number(charge.totalAmount), Number(charge.paidAmount) + amount);
+        const chargeStatus = chargePaid >= Number(charge.totalAmount) ? 'PAID' : chargePaid > 0 ? 'PARTIAL' : 'UNPAID';
+        this.db.prepare(
+          `UPDATE Charge
+           SET paidAmount = ?, status = ?, updatedAt = ?
+           WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+        ).run(chargePaid, chargeStatus, context.now().toISOString(), charge.id, ...tenantParams(context.clinicId));
+      }
       return { id: debtId, paidAmount: paid, status };
     });
   }

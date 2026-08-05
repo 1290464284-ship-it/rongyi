@@ -6,12 +6,13 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { FollowUpReportPage } from './FollowUpReportPage';
 import { apiRequest } from './api';
+import { ToastProvider } from './toast';
 
 vi.mock('./api', () => ({ apiRequest: vi.fn(), downloadCsv: vi.fn() }));
 
 const wrapper = ({ children }: { children: ReactNode }) => (
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    {children}
+    <ToastProvider>{children}</ToastProvider>
   </QueryClientProvider>
 );
 
@@ -33,7 +34,7 @@ describe('FollowUpReportPage', () => {
   it('renders errors and falls back to zero totals', async () => {
     vi.mocked(apiRequest).mockRejectedValueOnce(new Error('report failed'));
     render(<FollowUpReportPage />, { wrapper });
-    expect(await screen.findByText('report failed')).toBeDefined();
+    expect(await screen.findByText('无法加载随访到诊率')).toBeDefined();
 
     cleanup();
     vi.mocked(apiRequest).mockResolvedValueOnce(null as never);

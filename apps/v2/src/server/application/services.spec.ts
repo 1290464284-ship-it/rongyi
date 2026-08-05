@@ -11,6 +11,7 @@ import {
   AuditService,
   BulkImportService,
   ChargeService,
+  DebtService,
   FollowUpService,
   InventoryService,
   MemberCardService,
@@ -55,6 +56,39 @@ describe('application services', () => {
     expect(paid.status).toBe('PAID');
     const refunded = await service.refund(String(created.id), 50, 'adjustment', context);
     expect(refunded.amount).toBe(50);
+  });
+
+  it('creates and updates debt records for partial DEBT payments', async () => {
+    const service = new ChargeService(db);
+    const created = await service.create({
+      patientId: 'patient-demo-001',
+      items: [{ name: 'Debt Exam', category: 'EXAM', price: 200, quantity: 1 }],
+    }, context);
+    const partial = await service.pay(String(created.id), 80, 'DEBT', undefined, context);
+    expect(partial.status).toBe('PARTIAL');
+    const debt = db.prepare('SELECT id, totalAmount, paidAmount, status FROM Debt WHERE chargeId = ?').get(String(created.id)) as {
+      id: string;
+      totalAmount: number;
+      paidAmount: number;
+      status: string;
+    };
+    expect(debt.totalAmount).toBe(200);
+    expect(debt.paidAmount).toBe(80);
+    expect(debt.status).toBe('PARTIAL');
+
+    await new DebtService(db).pay(String(debt.id), 120, context);
+    const updated = db.prepare('SELECT paidAmount, status FROM Debt WHERE chargeId = ?').get(String(created.id)) as {
+      paidAmount: number;
+      status: string;
+    };
+    expect(updated.paidAmount).toBe(200);
+    expect(updated.status).toBe('PAID');
+    const charge = db.prepare('SELECT paidAmount, status FROM Charge WHERE id = ?').get(String(created.id)) as {
+      paidAmount: number;
+      status: string;
+    };
+    expect(charge.paidAmount).toBe(200);
+    expect(charge.status).toBe('PAID');
   });
 
   it('applies a discount when creating a charge', async () => {
@@ -110,6 +144,10 @@ describe('application services', () => {
     const now = new Date().toISOString();
     const otherClinicStart = new Date(Date.now() + 30 * 86_400_000).toISOString();
     const otherClinicEnd = new Date(Date.now() + 30 * 86_400_000 + 3_600_000).toISOString();
+    db.prepare(
+      `INSERT INTO Chair (id, clinicId, createdAt, updatedAt, deletedAt, name, location, active)
+       VALUES (?, ?, ?, ?, NULL, 'Audit Chair', 'Room 1', 1)`,
+    ).run('chair-audit', context.clinicId, now, now);
     db.prepare(
       `INSERT INTO Appointment (
          id, clinicId, createdAt, updatedAt, deletedAt,
@@ -168,7 +206,7 @@ describe('application services', () => {
     await expect(service.addPoints('card-inactive-test', 10, context)).rejects.toThrow('not active');
   });
 
-  it('rejects globally duplicate member card numbers', () => {
+  it('allows the same member card number in different clinics', () => {
     const now = new Date().toISOString();
     db.prepare(
       `INSERT INTO Patient (
@@ -185,12 +223,13 @@ describe('application services', () => {
       status: 'ACTIVE',
       level: 'NORMAL',
     }, context);
-    expect(() => service.create({
+    const second = service.create({
       patientId: 'patient-dup-card-b',
       cardNo: 'CARD-DUP-GLOBAL',
       status: 'ACTIVE',
       level: 'NORMAL',
-    }, { ...context, clinicId: 'clinic-v2-002' })).toThrow('already exists');
+    }, { ...context, clinicId: 'clinic-v2-002' });
+    expect(second.id).toBeDefined();
   });
 
   it('maps member-card create unique races to conflict errors', () => {
@@ -444,8 +483,8 @@ describe('application services', () => {
       '  done  ',
     );
     expect(batch).toMatchObject({ completed: 1, skipped: 2 });
-    expect(batch.errors.join(' ')).toContain('cannot be completed');
-    expect(batch.errors.join(' ')).toContain('not found');
+    expect(batch.errors.join(' ')).toContain('当前状态不能完成随访');
+    expect(batch.errors.join(' ')).toContain('随访记录不存在');
     insert('followup-batch-zero', '2026-08-01');
     const failingBatch = new FollowUpService(db, {
       reminders: () => [],
@@ -453,7 +492,7 @@ describe('application services', () => {
       complete: () => 0,
     });
     expect(failingBatch.batchComplete(['followup-batch-zero'], context).errors.join(' '))
-      .toContain('cannot be completed');
+      .toContain('随访无法完成');
     expect(() => service.batchComplete([], context)).toThrow('1 to 500');
     expect(() => service.batchComplete(Array.from({ length: 501 }, (_, index) => `id-${index}`), context))
       .toThrow('1 to 500');
@@ -467,7 +506,7 @@ describe('application services', () => {
     insert('followup-batch-export-today', today);
     insert('followup-batch-export-upcoming', tomorrow);
     const overdueCsv = service.remindersCsv('overdue', context);
-    expect(overdueCsv).toContain('patientName');
+    expect(overdueCsv).toContain('患者');
     expect(overdueCsv).toContain('followup-batch-export-overdue');
     expect(overdueCsv).not.toContain('followup-batch-export-today');
     expect(service.remindersCsv('today', context)).toContain('followup-batch-export-today');
@@ -625,6 +664,9 @@ describe('application services', () => {
     const row = db.prepare('SELECT * FROM OperationLog WHERE target = ?').get('target-1') as Record<string, unknown>;
     expect(row.action).toBe('TEST_WRITE');
     expect(row.traceId).toBe('trace-audit');
+    db.prepare('UPDATE OperationLog SET createdAt = ? WHERE target = ?')
+      .run('2000-01-01T00:00:00.000Z', 'target-1');
+    expect(audit.cleanup('2000-01-02T00:00:00.000Z')).toBe(1);
   });
 
   it('rejects user updates when the repository reports zero affected rows', async () => {

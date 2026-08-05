@@ -185,7 +185,18 @@ async function main() {
     headers,
     body: JSON.stringify({ patientId: patient.id, type: 'TEXT', content: 'hello', status: 'PENDING' }),
   });
-  await request(`/wechat/${wechat.id}/send`, { method: 'POST', headers });
+  const wechatStatus = await request('/wechat/status', { headers });
+  if (wechatStatus.configured === false) {
+    let blocked = false;
+    try {
+      await request(`/wechat/${wechat.id}/send`, { method: 'POST', headers });
+    } catch {
+      blocked = true;
+    }
+    if (!blocked) throw new Error('unconfigured wechat send must not report success');
+  } else {
+    await request(`/wechat/${wechat.id}/send`, { method: 'POST', headers });
+  }
   await request(`/sync/pull?since=2020-01-01T00:00:00.000Z&deviceId=smoke&deviceToken=${encodeURIComponent(deviceToken)}`, { headers });
   await request('/sync/push', {
     method: 'POST',

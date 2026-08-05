@@ -186,7 +186,7 @@ describe('coverage boundaries', () => {
     const nullClinic = { header: () => 'Bearer valid', traceId: 'trace' } as unknown as Request;
     await middleware(nullClinic, response, next);
     expect(nullClinic).toHaveProperty('context');
-    expect((nullClinic as Request & { context?: { clinicId: string | null } }).context?.clinicId).toBeNull();
+    expect((nullClinic as Request & { context?: { clinicId: string | null } }).context?.clinicId).toBe('clinic-1');
   });
 
   it('covers role middleware missing context and rate limiter window reset', () => {

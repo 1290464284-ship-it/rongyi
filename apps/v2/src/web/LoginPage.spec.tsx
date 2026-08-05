@@ -5,6 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { MemoryRouter } from 'react-router';
 import { LoginPage } from './LoginPage';
 import { login } from './api';
+import { ToastProvider } from './toast';
 
 vi.mock('./api', () => ({
   apiRequest: vi.fn(),
@@ -13,7 +14,7 @@ vi.mock('./api', () => ({
 }));
 
 function renderPage() {
-  return render(<MemoryRouter><LoginPage /></MemoryRouter>);
+  return render(<MemoryRouter><ToastProvider><LoginPage /></ToastProvider></MemoryRouter>);
 }
 
 describe('LoginPage', () => {
@@ -25,9 +26,9 @@ describe('LoginPage', () => {
   it('renders login form and signs in', async () => {
     vi.mocked(login).mockResolvedValue({ token: 't', user: { id: 'u' } });
     renderPage();
-    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'admin' } });
-    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'admin123' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'admin' } });
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'admin123' } });
+    fireEvent.click(screen.getByRole('button', { name: '登录' }));
     await waitFor(() => {
       expect(login).toHaveBeenCalledWith('admin', 'admin123');
     });
@@ -36,13 +37,13 @@ describe('LoginPage', () => {
   it('shows login errors', async () => {
     vi.mocked(login).mockRejectedValue(new Error('invalid credentials'));
     renderPage();
-    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'admin' } });
-    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'wrong' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'admin' } });
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'wrong' } });
+    fireEvent.click(screen.getByRole('button', { name: '登录' }));
     expect(await screen.findByText('invalid credentials')).toBeDefined();
 
     vi.mocked(login).mockRejectedValue('boom');
-    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
-    expect(await screen.findByText('Login failed')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '登录' }));
+    expect(await screen.findByText('登录失败')).toBeDefined();
   });
 });

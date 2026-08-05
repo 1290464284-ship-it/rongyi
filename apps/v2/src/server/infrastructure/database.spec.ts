@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type Database from 'better-sqlite3';
-import { createDatabase, seedDatabase, syncLegacySchema } from './database';
+import Database from 'better-sqlite3';
+import { createDatabase, seedDatabase, syncLegacySchema, uniqueIndexColumns } from './database';
 
 describe('database bootstrap', () => {
   let db: Database.Database;
@@ -51,6 +51,46 @@ describe('database bootstrap', () => {
     fs.writeFileSync(path.join(malformedDir, 'no-paren.tables.ts'), 'CREATE TABLE IF NOT EXISTS MissingParen');
     fs.writeFileSync(path.join(malformedDir, 'no-close.tables.ts'), 'CREATE TABLE IF NOT EXISTS MissingClose (id TEXT');
     expect(() => syncLegacySchema(db, malformedDir)).not.toThrow();
+  });
+
+  it('skips legacy schema tables that are not registered', () => {
+    const filteredDir = path.join(dataDir, 'filtered-schema');
+    fs.mkdirSync(filteredDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(filteredDir, 'filtered.tables.ts'),
+      'CREATE TABLE IF NOT EXISTS Patient (id TEXT); CREATE TABLE IF NOT EXISTS UnregisteredDeadTable (id TEXT);',
+    );
+    syncLegacySchema(db, filteredDir);
+    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>;
+    expect(tables.some((table) => table.name === 'Patient')).toBe(true);
+    expect(tables.some((table) => table.name === 'UnregisteredDeadTable')).toBe(false);
+  });
+
+  it('creates unique indexes without clinicId when a legacy table lacks the column', () => {
+    const legacyDir = path.join(dataDir, 'legacy-no-clinic');
+    fs.mkdirSync(legacyDir, { recursive: true });
+    const legacyPath = path.join(legacyDir, 'v2.sqlite');
+    const legacy = new Database(legacyPath);
+    legacy.exec('CREATE TABLE Patient (id TEXT PRIMARY KEY, code TEXT, deletedAt TEXT)');
+    legacy.close();
+    const db = createDatabase(legacyDir, legacyPath);
+    const index = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'idx_v2_unique_patients_code'").get() as
+      | { sql: string }
+      | undefined;
+    expect(index?.sql ?? '').not.toContain('clinicId');
+    db.close();
+  });
+
+  it('builds unique index columns for both clinic-scoped and legacy tables', () => {
+    const helperDir = path.join(dataDir, 'unique-helper');
+    fs.mkdirSync(helperDir, { recursive: true });
+    const helperPath = path.join(helperDir, 'v2.sqlite');
+    const helper = new Database(helperPath);
+    helper.exec('CREATE TABLE LegacyNoClinic (id TEXT PRIMARY KEY, code TEXT)');
+    helper.exec('CREATE TABLE ClinicTable (id TEXT PRIMARY KEY, clinicId TEXT, code TEXT)');
+    expect(uniqueIndexColumns(helper, 'LegacyNoClinic', 'code')).toBe('code');
+    expect(uniqueIndexColumns(helper, 'ClinicTable', 'code')).toBe('clinicId, code');
+    helper.close();
   });
 
   it('honors the configured data directory default and production seed guard', () => {

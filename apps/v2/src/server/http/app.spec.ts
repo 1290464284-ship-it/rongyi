@@ -50,8 +50,245 @@ describe('HTTP app', () => {
   it('reports health and deep health', async () => {
     const health = await request(app).get('/api/v2/health').expect(200);
     expect(health.body.data.status).toBe('ok');
-    const deep = await request(app).get('/api/v2/health/deep').expect(200);
+    const deep = await request(app)
+      .get('/api/v2/health/deep')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
     expect(deep.body.data.database).toBe('ok');
+  });
+
+  it('uploads and serves allowed files', async () => {
+    const upload = await request(app)
+      .post('/api/v2/files')
+      .set('Authorization', `Bearer ${token}`)
+      .set('content-type', 'image/png')
+      .set('x-file-name', 'sample.png')
+      .set('x-patient-id', 'patient-demo-001')
+      .send(Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+      .expect(201);
+    expect(upload.body.data.url).toMatch(/^\/api\/v2\/files\//);
+
+    const download = await request(app)
+      .get(upload.body.data.url as string)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(download.body).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+
+    for (const [mime, extension] of [
+      ['image/jpeg', '.jpg'],
+      ['image/webp', '.webp'],
+      ['application/pdf', '.pdf'],
+    ]) {
+      const magic = mime === 'image/jpeg'
+        ? Buffer.from([0xff, 0xd8, 0xff])
+        : mime === 'image/webp'
+          ? Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBP')])
+          : Buffer.from('%PDF');
+      const fallback = await request(app)
+        .post('/api/v2/files')
+        .set('Authorization', `Bearer ${token}`)
+        .set('content-type', mime)
+        .send(magic)
+        .expect(201);
+      expect(fallback.body.data.url).toContain(extension);
+    }
+
+    const jpegNamed = await request(app)
+      .post('/api/v2/files')
+      .set('Authorization', `Bearer ${token}`)
+      .set('content-type', 'application/octet-stream')
+      .set('x-file-name', 'image.jpeg')
+      .send(Buffer.from([0xff, 0xd8, 0xff]))
+      .expect(201);
+    expect(jpegNamed.body.data.url).toContain('.jpeg');
+
+    const pngFallback = await request(app)
+      .post('/api/v2/files')
+      .set('Authorization', `Bearer ${token}`)
+      .set('content-type', 'image/png')
+      .send(Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+      .expect(201);
+    expect(pngFallback.body.data.url).toContain('.png');
+
+    const namedFallback = await request(app)
+      .post('/api/v2/files')
+      .set('Authorization', `Bearer ${token}`)
+      .set('x-file-name', 'named.png')
+      .send(Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+      .expect(201);
+    expect(namedFallback.body.data.url).toContain('.png');
+  });
+
+  it('isolates uploaded files by clinic and rejects fake file magic', async () => {
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+       VALUES (?, NULL, ?, ?, NULL, 'V2-2', 'Clinic Two', 1)`,
+    ).run('clinic-v2-002', now, now);
+    db.prepare(
+      `INSERT INTO UserClinic (userId, clinicId, role, createdAt, updatedAt, deletedAt)
+       VALUES (?, ?, 'BOSS', ?, ?, NULL)`,
+    ).run('user-admin-001', 'clinic-v2-002', now, now);
+
+    const upload = await request(app)
+      .post('/api/v2/files')
+      .set('Authorization', `Bearer ${token}`)
+      .set('content-type', 'image/png')
+      .set('x-file-name', 'tenant.png')
+      .send(Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]))
+      .expect(201);
+    const switched = await request(app)
+      .post('/api/v2/auth/switch-clinic')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ clinicId: 'clinic-v2-002' })
+      .expect(200);
+    await request(app)
+      .get(upload.body.data.url as string)
+      .set('Authorization', `Bearer ${switched.body.data.token}`)
+      .expect(404);
+    const back = await request(app)
+      .post('/api/v2/auth/switch-clinic')
+      .set('Authorization', `Bearer ${switched.body.data.token}`)
+      .send({ clinicId: 'clinic-v2-001' })
+      .expect(200);
+    token = back.body.data.token;
+
+    await request(app)
+      .post('/api/v2/files')
+      .set('Authorization', `Bearer ${token}`)
+      .set('content-type', 'image/png')
+      .set('x-file-name', 'fake.png')
+      .send(Buffer.from('not-a-png'))
+      .expect(400);
+  });
+
+  it('rejects unsupported file uploads and invalid file names', async () => {
+    await request(app)
+      .post('/api/v2/files')
+      .set('Authorization', `Bearer ${token}`)
+      .set('content-type', 'application/x-msdownload')
+      .set('x-file-name', 'virus.exe')
+      .send(Buffer.from('MZ'))
+      .expect(400);
+    await request(app)
+      .post('/api/v2/files')
+      .set('Authorization', `Bearer ${token}`)
+      .set('content-type', 'image/png')
+      .set('x-file-name', 'missing.png')
+      .expect(400);
+    await request(app)
+      .post('/api/v2/files')
+      .set('Authorization', `Bearer ${token}`)
+      .set('content-type', 'text/plain')
+      .expect(400);
+    await request(app)
+      .post('/api/v2/files')
+      .set('Authorization', `Bearer ${token}`)
+      .set('content-type', 'image/png')
+      .set('x-file-name', 'patient-missing.png')
+      .set('x-patient-id', 'patient-does-not-exist')
+      .send(Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+      .expect(404);
+    await request(app)
+      .post('/api/v2/files')
+      .set('Authorization', `Bearer ${token}`)
+      .set('content-type', 'image/png')
+      .set('x-file-name', 'large.png')
+      .send(Buffer.alloc(20 * 1024 * 1024 + 1))
+      .expect(400);
+    await request(app)
+      .get('/api/v2/files/000000000000000000000000000000000000.png')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(404);
+    await request(app)
+      .get('/api/v2/files/not-a-real-file.png')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(404);
+  });
+
+  it('handles null-clinic uploads and missing file records on disk', async () => {
+    const now = new Date().toISOString();
+    const hash = (db.prepare("SELECT passwordHash FROM User WHERE id = 'user-admin-001'").get() as { passwordHash: string }).passwordHash;
+    db.prepare(
+      `INSERT INTO User (
+         id, clinicId, currentClinicId, createdAt, updatedAt, deletedAt,
+         username, passwordHash, name, role, active, loginAttempts, tokenVersion
+       ) VALUES (?, NULL, NULL, ?, ?, NULL, 'file-null-clinic', ?, 'File Null Clinic', 'RECEPTIONIST', 1, 0, 0)`,
+    ).run('user-file-null', now, now, hash);
+    const nullLogin = await request(app)
+      .post('/api/v2/auth/login')
+      .send({ username: 'file-null-clinic', password: 'admin123' })
+      .expect(200);
+    await request(app)
+      .post('/api/v2/files')
+      .set('Authorization', `Bearer ${nullLogin.body.data.token}`)
+      .set('content-type', 'image/png')
+      .set('x-file-name', 'null-clinic.png')
+      .send(Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+      .expect(201);
+
+    db.prepare(
+      `INSERT INTO FileRecord (
+         id, clinicId, patientId, filename, originalName, mimeType, fileSize,
+         createdBy, createdAt, updatedAt, deletedAt
+       ) VALUES (?, ?, NULL, ?, 'missing.png', 'image/png', 1, 'user-admin-001', ?, ?, NULL)`,
+    ).run('file-missing-disk', 'clinic-v2-001', '00000000-0000-4000-8000-000000000001.png', now, now);
+    await request(app)
+      .get('/api/v2/files/00000000-0000-4000-8000-000000000001.png')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(500);
+  });
+
+  it('creates purchase and processing orders through the HTTP API', async () => {
+    const purchase = await request(app)
+      .post('/api/v2/purchase-orders')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        number: 'PO-HTTP-NEW',
+        requestId: 'po-http-id',
+        items: [{ itemId: 'inventory-demo-001', name: 'Dental Material', quantity: 1, unitPrice: 100 }],
+      })
+      .expect(201);
+    expect(purchase.body.data.status).toBe('PENDING');
+    await request(app)
+      .post('/api/v2/purchase-orders')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        number: 'PO-HTTP-NOID',
+        items: [{ name: 'No Id Item', quantity: 1, unitPrice: 10 }],
+      })
+      .expect(201);
+    await request(app)
+      .post('/api/v2/purchase-orders')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(400);
+
+    const processing = await request(app)
+      .post('/api/v2/processing-orders')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        patientId: 'patient-demo-001',
+        number: 'PROC-HTTP',
+        totalFee: 500,
+        requestId: 'proc-http-id',
+        items: [{ name: 'Crown', quantity: 1, unitPrice: 500 }],
+      })
+      .expect(201);
+    expect(processing.body.data.status).toBe('DRAFT');
+    await request(app)
+      .post('/api/v2/processing-orders')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        patientId: 'patient-demo-001',
+        number: 'PROC-HTTP-NOID',
+        totalFee: 100,
+        items: [{ name: 'No Id Crown', quantity: 1, unitPrice: 100 }],
+      })
+      .expect(201);
+    await request(app)
+      .post('/api/v2/processing-orders')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(404);
   });
 
   it('denies sensitive routes to low-privilege roles', async () => {
@@ -135,7 +372,14 @@ describe('HTTP app', () => {
       .post(`/api/v2/wechat/${wechat.body.data.id}/send`)
       .set('Authorization', `Bearer ${token}`)
       .send({})
-      .expect(200);
+      .expect(409);
+    await request(app)
+      .get('/api/v2/wechat/status')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200)
+      .expect((response) => {
+        expect(response.body.data.configured).toBe(false);
+      });
 
     const purchaseNow = new Date().toISOString();
     db.prepare(
@@ -256,6 +500,19 @@ describe('HTTP app', () => {
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
     expect(patients.body.data.items.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('lists active doctors for appointment scheduling', async () => {
+    await request(app)
+      .post('/api/v2/admin/users')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ username: 'doctor-http', password: 'password123', name: 'HTTP Doctor', role: 'DOCTOR' })
+      .expect(201);
+    const doctors = await request(app)
+      .get('/api/v2/doctors')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(doctors.body.data.some((entry: { name: string }) => entry.name === 'HTTP Doctor')).toBe(true);
   });
 
   it('supports appointments, follow-ups, analytics, sync, HR, alerts, notifications, and satisfaction', async () => {
@@ -537,6 +794,19 @@ describe('HTTP app', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ status: 'ACKNOWLEDGED' })
       .expect(200);
+
+    db.prepare(
+      `INSERT INTO OperationLog (
+         id, userId, action, target, detail, ip, traceId,
+         clinicId, createdAt, updatedAt, deletedAt
+       ) VALUES (?, 'user-admin-001', 'OLD_AUDIT', 'old', NULL, NULL, NULL, NULL, ?, ?, NULL)`,
+    ).run('audit-http-old', '2000-01-01T00:00:00.000Z', '2000-01-01T00:00:00.000Z');
+    const auditCleanup = await request(app)
+      .post('/api/v2/system/audit/cleanup')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ retentionDays: 365 })
+      .expect(200);
+    expect(auditCleanup.body.data.deleted).toBeGreaterThanOrEqual(1);
 
     await request(app).post(`/api/v2/patients/patient-demo-001/risk`)
       .set('Authorization', `Bearer ${token}`)

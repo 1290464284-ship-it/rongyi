@@ -18,7 +18,7 @@ function serialize(field: ResourceField, value: unknown): unknown {
     return typeof value === 'string' ? value : JSON.stringify(value);
   }
   if (field.type === 'boolean') {
-    return value ? 1 : 0;
+    return value === true || value === 1 || value === 'true' ? 1 : 0;
   }
   return value;
 }
@@ -167,20 +167,19 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
   }
 
   async softDelete(id: string, context: AppContext): Promise<void> {
-    const now = context.now().toISOString();
     if (this.resource.capabilities.softDelete) {
+      const now = context.now().toISOString();
       /* v8 ignore start -- all registry tables include clinicId today; false branch is defensive for future schemas. */
       const params = [now, now, id, ...(this.hasClinicColumn() ? tenantParams(context.clinicId) : [])];
       const clinicWhere = this.hasClinicColumn() ? tenantAnd(context.clinicId) : '';
       /* v8 ignore stop */
       this.db.prepare(`UPDATE ${this.resource.table} SET deletedAt = ?, updatedAt = ? WHERE id = ?${clinicWhere}`).run(...params);
-      return;
-    }
-    if (this.hasClinicColumn() && context.clinicId) {
-      const params = [id, ...tenantParams(context.clinicId)];
-      this.db.prepare(`DELETE FROM ${this.resource.table} WHERE id = ?${tenantAnd(context.clinicId)}`).run(...params);
     } else {
-      this.db.prepare(`DELETE FROM ${this.resource.table} WHERE id = ?`).run(id);
+      /* v8 ignore start -- all registry tables include clinicId today; false branch is defensive for future schemas. */
+      const params = [id, ...(this.hasClinicColumn() ? tenantParams(context.clinicId) : [])];
+      const clinicWhere = this.hasClinicColumn() ? tenantAnd(context.clinicId) : '';
+      /* v8 ignore stop */
+      this.db.prepare(`DELETE FROM ${this.resource.table} WHERE id = ?${clinicWhere}`).run(...params);
     }
   }
 
