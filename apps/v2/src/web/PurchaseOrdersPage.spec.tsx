@@ -21,10 +21,10 @@ function mockData() {
     if (path === '/resources/purchaseOrders?page=1&pageSize=50') {
       return { items: [{ id: 'po-1', number: 'PO-1', supplierId: 's-1', totalAmount: 200, status: 'PENDING' }], total: 1, page: 1, pageSize: 50 };
     }
-    if (path === '/resources/suppliers?page=1&pageSize=200') {
+    if (path === '/resources/suppliers?page=1&pageSize=100') {
       return { items: [{ id: 's-1', name: '供应商甲' }], total: 1, page: 1, pageSize: 200 };
     }
-    if (path === '/resources/inventoryItems?page=1&pageSize=200') {
+    if (path === '/resources/inventoryItems?page=1&pageSize=100') {
       return { items: [{ id: 'i-1', name: '耗材' }], total: 1, page: 1, pageSize: 200 };
     }
     return {};

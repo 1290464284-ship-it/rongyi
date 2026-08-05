@@ -21,7 +21,7 @@ function mockData() {
     if (path === '/resources/memberCards?page=1&pageSize=100') {
       return { items: [{ id: 'card-1', cardNo: 'C001', patientId: 'p-1', balance: 1000, points: 10, status: 'ACTIVE', level: 'VIP' }], total: 1, page: 1, pageSize: 100 };
     }
-    if (path === '/resources/patients?page=1&pageSize=200') {
+    if (path === '/resources/patients?page=1&pageSize=100') {
       return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
     }
     return {};
@@ -40,6 +40,9 @@ describe('MemberCardsPage', () => {
     expect(await screen.findByText('C001')).toBeDefined();
 
     fireEvent.click(screen.getByText('新建会员卡'));
+await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
     fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
     fireEvent.change(screen.getByLabelText('卡号'), { target: { value: 'C002' } });
     fireEvent.change(screen.getByLabelText('等级'), { target: { value: 'SVIP' } });

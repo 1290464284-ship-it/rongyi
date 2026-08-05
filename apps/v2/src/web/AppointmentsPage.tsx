@@ -2,7 +2,7 @@ import { FormEvent, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import type { Page } from './types';
-import { DataTable, LoadingState, PageError } from './components';
+import { DataTable, LoadingState, PageError, SearchableSelect } from './components';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
 
@@ -42,17 +42,9 @@ export function AppointmentsPage() {
   const [endTime, setEndTime] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const patients = useQuery({
-    queryKey: ['appointment-patients'],
-    queryFn: () => apiRequest<Page<LookupRow>>('/resources/patients?page=1&pageSize=200'),
-  });
   const doctors = useQuery({
     queryKey: ['appointment-doctors'],
     queryFn: () => apiRequest<Array<LookupRow>>('/doctors'),
-  });
-  const chairs = useQuery({
-    queryKey: ['appointment-chairs'],
-    queryFn: () => apiRequest<Page<LookupRow>>('/resources/chairs?page=1&pageSize=200'),
   });
   const query = useQuery({
     queryKey: ['appointments'],
@@ -138,24 +130,14 @@ export function AppointmentsPage() {
     <div className="page">
       <h1>预约管理</h1>
       <form className="inline-form" onSubmit={create}>
-        <select aria-label="患者" value={patientId} onChange={(event) => setPatientId(event.target.value)}>
-          <option value="">选择患者</option>
-          {patients.data?.items.map((row) => (
-            <option key={row.id} value={row.id}>{String(row.name ?? row.id)}</option>
-          ))}
-        </select>
+        <SearchableSelect resource="patients" value={patientId} onChange={setPatientId} ariaLabel="患者" placeholder="选择患者" />
         <select aria-label="医生" value={doctorId} onChange={(event) => setDoctorId(event.target.value)}>
           <option value="">选择医生</option>
           {doctors.data?.map((row) => (
             <option key={row.id} value={row.id}>{String(row.name ?? row.id)}</option>
           ))}
         </select>
-        <select aria-label="椅位" value={chairId} onChange={(event) => setChairId(event.target.value)}>
-          <option value="">不指定椅位</option>
-          {chairs.data?.items.map((row) => (
-            <option key={row.id} value={row.id}>{String(row.name ?? row.id)}</option>
-          ))}
-        </select>
+        <SearchableSelect resource="chairs" value={chairId} onChange={setChairId} ariaLabel="椅位" placeholder="不指定椅位" />
         <select aria-label="预约类型" value={type} onChange={(event) => setType(event.target.value)}>
           {Object.entries(TYPE_LABELS).map(([value, label]) => (
             <option key={value} value={value}>{label}</option>

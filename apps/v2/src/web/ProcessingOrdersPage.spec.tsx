@@ -21,7 +21,7 @@ function mockData() {
     if (path === '/resources/processingOrders?page=1&pageSize=50') {
       return { items: [{ id: 'proc-1', number: 'PROC-1', patientId: 'p-1', status: 'DRAFT' }], total: 1, page: 1, pageSize: 50 };
     }
-    if (path === '/resources/patients?page=1&pageSize=200') {
+    if (path === '/resources/patients?page=1&pageSize=100') {
       return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
     }
     if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
@@ -41,6 +41,9 @@ describe('ProcessingOrdersPage', () => {
     expect(await screen.findByText('PROC-1')).toBeDefined();
 
     fireEvent.click(screen.getByText('新建加工单'));
+await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
     fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
     fireEvent.change(screen.getByLabelText('加工单号'), { target: { value: 'PROC-NEW' } });
     fireEvent.change(screen.getByLabelText('牙位（逗号分隔）'), { target: { value: '11,21' } });

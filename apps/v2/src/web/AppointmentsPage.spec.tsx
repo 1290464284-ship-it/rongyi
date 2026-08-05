@@ -28,11 +28,11 @@ const appointmentList = {
 function mockLookups() {
   vi.mocked(apiRequest).mockImplementation(async (path: string) => {
     if (path === '/resources/appointments?page=1&pageSize=20') return appointmentList;
-    if (path === '/resources/patients?page=1&pageSize=200') {
+    if (path === '/resources/patients?page=1&pageSize=100') {
       return { items: [{ id: 'p-1', name: '患者甲' }, { id: 'p-2' }], total: 2, page: 1, pageSize: 200 };
     }
     if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }, { id: 'd-2' }];
-    if (path === '/resources/chairs?page=1&pageSize=200') {
+    if (path === '/resources/chairs?page=1&pageSize=100') {
       return { items: [{ id: 'c-1', name: '椅位 1' }, { id: 'c-2' }], total: 2, page: 1, pageSize: 200 };
     }
     return {};
@@ -50,8 +50,14 @@ describe('AppointmentsPage', () => {
     render(<AppointmentsPage />, { wrapper });
     expect(await screen.findByText('预约管理')).toBeDefined();
 
+await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
     fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
     fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
+await waitFor(() => {
+      expect((screen.getByLabelText('椅位') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
     fireEvent.change(screen.getByLabelText('椅位'), { target: { value: 'c-1' } });
     fireEvent.change(screen.getByLabelText('预约类型'), { target: { value: 'EMERGENCY' } });
     fireEvent.change(screen.getByLabelText('开始时间'), { target: { value: '2026-08-05T09:00' } });
@@ -74,11 +80,11 @@ describe('AppointmentsPage', () => {
   it('shows an error when appointments fail to load', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/appointments?page=1&pageSize=20') throw new Error('appointments failed');
-      if (path === '/resources/patients?page=1&pageSize=200') {
+      if (path === '/resources/patients?page=1&pageSize=100') {
         return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
       }
       if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
-      if (path === '/resources/chairs?page=1&pageSize=200') {
+      if (path === '/resources/chairs?page=1&pageSize=100') {
         return { items: [{ id: 'c-1', name: '椅位 1' }], total: 1, page: 1, pageSize: 200 };
       }
       return {};
@@ -90,11 +96,11 @@ describe('AppointmentsPage', () => {
   it('renders an empty state when no appointments are returned', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/appointments?page=1&pageSize=20') return null as unknown as typeof appointmentList;
-      if (path === '/resources/patients?page=1&pageSize=200') {
+      if (path === '/resources/patients?page=1&pageSize=100') {
         return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
       }
       if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
-      if (path === '/resources/chairs?page=1&pageSize=200') {
+      if (path === '/resources/chairs?page=1&pageSize=100') {
         return { items: [{ id: 'c-1', name: '椅位 1' }], total: 1, page: 1, pageSize: 200 };
       }
       return {};
@@ -125,17 +131,20 @@ describe('AppointmentsPage', () => {
   it('reports create and transition failures', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/appointments?page=1&pageSize=20') return appointmentList;
-      if (path === '/resources/patients?page=1&pageSize=200') {
+      if (path === '/resources/patients?page=1&pageSize=100') {
         return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
       }
       if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
-      if (path === '/resources/chairs?page=1&pageSize=200') {
+      if (path === '/resources/chairs?page=1&pageSize=100') {
         return { items: [{ id: 'c-1', name: '椅位 1' }], total: 1, page: 1, pageSize: 200 };
       }
       throw new Error('appointment failed');
     });
 
     render(<AppointmentsPage />, { wrapper });
+await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
     fireEvent.change(await screen.findByLabelText('患者'), { target: { value: 'p-1' } });
     fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
     fireEvent.change(screen.getByLabelText('开始时间'), { target: { value: '2026-08-05T09:00' } });

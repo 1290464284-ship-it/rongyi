@@ -30,7 +30,7 @@ function mockData() {
         pageSize: 50,
       };
     }
-    if (path === '/resources/patients?page=1&pageSize=200') {
+    if (path === '/resources/patients?page=1&pageSize=100') {
       return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
     }
     if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
@@ -59,6 +59,9 @@ describe('ImagingPage', () => {
     await screen.findByText('全景片');
 
     fireEvent.click(screen.getByText('上传影像'));
+await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
     fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
     fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
     fireEvent.change(screen.getByLabelText('标题'), { target: { value: '根尖片' } });

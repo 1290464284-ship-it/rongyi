@@ -1,6 +1,109 @@
 import type { FormEvent, ReactNode } from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { apiRequest } from './api';
+import type { Page } from './types';
 import { friendlyError } from './messages';
+
+export interface SearchableSelectRow extends Record<string, unknown> {
+  id: string;
+}
+
+export function SearchableSelect({
+  resource,
+  labelField = 'name',
+  placeholder = '选择',
+  value,
+  onChange,
+  ariaLabel,
+  filterParams,
+  pageSize = 100,
+  onLoaded,
+}: {
+  resource: string;
+  labelField?: string;
+  placeholder?: string;
+  value: string;
+  onChange: (id: string) => void;
+  ariaLabel: string;
+  filterParams?: Record<string, string>;
+  pageSize?: number;
+  onLoaded?: (rows: SearchableSelectRow[]) => void;
+}) {
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  // 已加载并去重的条目：搜索变化时清空，加载更多时按 id 追加合并。
+  const [loaded, setLoaded] = useState<SearchableSelectRow[]>([]);
+
+  const query = useQuery({
+    queryKey: ['searchable-select', resource, search, page, filterParams],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      params.set('page', String(page));
+      params.set('pageSize', String(pageSize));
+      const trimmed = search.trim();
+      if (trimmed !== '') params.set('search', trimmed);
+      if (filterParams) {
+        for (const [key, value] of Object.entries(filterParams)) {
+          if (value !== undefined && value !== null && value !== '') params.set(key, value);
+        }
+      }
+      return apiRequest<Page<SearchableSelectRow>>(`/resources/${resource}?${params.toString()}`);
+    },
+  });
+
+  useEffect(() => {
+    const items = query.data?.items ?? [];
+    if (items.length === 0) return;
+    setLoaded((current) => {
+      const byId = new Map<string, SearchableSelectRow>();
+      for (const row of current) byId.set(String(row.id), row);
+      for (const row of items) byId.set(String(row.id), row);
+      return Array.from(byId.values());
+    });
+  }, [query.data]);
+
+  useEffect(() => {
+    if (query.data) onLoaded?.(loaded);
+  }, [loaded, query.data]);
+
+  const total = query.data?.total ?? 0;
+  const hasMore = total > loaded.length;
+  const selectedMissing = value !== '' && !loaded.some((row) => String(row.id) === value);
+
+  return (
+    <span className="searchable-select">
+      <select aria-label={ariaLabel} value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="">{placeholder}</option>
+        {selectedMissing && <option value={value}>{value}</option>}
+        {loaded.map((row) => (
+          <option key={String(row.id)} value={String(row.id)}>
+            {String(row[labelField] ?? row.id)}
+          </option>
+        ))}
+      </select>
+      <input
+        aria-label={`${ariaLabel}搜索`}
+        placeholder="搜索…"
+        value={search}
+        onChange={(event) => {
+          setSearch(event.target.value);
+          setPage(1);
+          setLoaded([]);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') event.preventDefault();
+        }}
+      />
+      {hasMore && (
+        <button type="button" disabled={query.isFetching} onClick={() => setPage((current) => current + 1)}>
+          加载更多（已加载 {loaded.length} 条）
+        </button>
+      )}
+      {query.error && <span className="error">{friendlyError(query.error)}</span>}
+    </span>
+  );
+}
 
 export interface DataTableColumn<T extends Record<string, unknown>> {
   key: string;

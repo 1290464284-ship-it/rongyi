@@ -111,8 +111,18 @@ describe('PatientTimelinePage', () => {
 
     render(<PatientTimelinePage />, { wrapper });
     await screen.findByText('Patient A');
-    fireEvent.change(await screen.findByRole('combobox'), { target: { value: 'patient-demo-002' } });
     await waitFor(() => {
+      expect((screen.getByRole('combobox') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    // 注意：patientId 变化时页面会经 LoadingState 早退而卸载/重挂 SearchableSelect，
+    // options 需重新异步加载；若在重挂后的空 select 上 change，原生 value setter 会
+    // 静默失败。因此在轮询内完成 change + 断言，直到成功。
+    await waitFor(() => {
+      const combo = screen.getByRole('combobox') as HTMLSelectElement;
+      if (!Array.from(combo.options).some((option) => option.value === 'patient-demo-002')) {
+        throw new Error('patient-demo-002 option not loaded yet');
+      }
+      fireEvent.change(combo, { target: { value: 'patient-demo-002' } });
       expect(apiRequest).toHaveBeenCalledWith(expect.stringContaining('patientId=patient-demo-002'));
     });
   });

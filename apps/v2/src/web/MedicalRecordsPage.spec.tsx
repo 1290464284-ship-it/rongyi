@@ -21,7 +21,7 @@ function mockData() {
     if (path === '/resources/medicalRecords?page=1&pageSize=50') {
       return { items: [{ id: 'r-1', patientId: 'p-1', doctorId: 'd-1', category: 'GENERAL', diagnosis: '龋齿', status: 'DRAFT' }], total: 1, page: 1, pageSize: 50 };
     }
-    if (path === '/resources/patients?page=1&pageSize=200') {
+    if (path === '/resources/patients?page=1&pageSize=100') {
       return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
     }
     if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
@@ -44,6 +44,9 @@ describe('MedicalRecordsPage', () => {
     expect(await screen.findByText('龋齿')).toBeDefined();
 
     fireEvent.click(screen.getByText('新建病历'));
+await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
     fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
     fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
     fireEvent.change(screen.getByLabelText('诊断'), { target: { value: '牙周炎' } });
