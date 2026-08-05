@@ -299,12 +299,20 @@ function saveWindowState(win) {
   }
 }
 
+const ALLOWED_SECRET_KEYS = new Set(['v2.token', 'v2.refreshToken']);
+const TRUSTED_RENDERER_PATTERN = /(^file:\/\/.*dist-web[\\/]index\.html$)|(^http:\/\/localhost:5180\/?$)/;
+
+function assertTrustedRenderer(event) {
+  const url = event.senderFrame?.url ?? '';
+  if (!TRUSTED_RENDERER_PATTERN.test(url)) throw new Error('Untrusted IPC sender');
+}
+
 function isAllowedNavigation(url) {
   try {
     const parsed = new URL(url);
     if (parsed.protocol === 'file:' && parsed.pathname.endsWith('/dist-web/index.html')) return true;
     if (parsed.protocol === 'blob:' && isDev) return true;
-    if (parsed.protocol === 'http:' && parsed.hostname === '127.0.0.1') return true;
+    if (parsed.protocol === 'http:' && parsed.hostname === '127.0.0.1' && parsed.port === String(apiPort)) return true;
     if (isDev && parsed.protocol === 'http:' && parsed.hostname === 'localhost') return true;
     if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
       setImmediate(() => shell.openExternal(url));
@@ -523,6 +531,8 @@ app.whenReady().then(async () => {
   });
 
   ipcMain.handle('desktop:secret:get', (_event, key) => {
+    assertTrustedRenderer(_event);
+    if (!ALLOWED_SECRET_KEYS.has(String(key))) return null;
     if (!safeStorage.isEncryptionAvailable()) return null;
     try {
       return safeStorage.decryptString(fs.readFileSync(secretPath(key)));
@@ -531,6 +541,8 @@ app.whenReady().then(async () => {
     }
   });
   ipcMain.handle('desktop:secret:set', (_event, key, value) => {
+    assertTrustedRenderer(_event);
+    if (!ALLOWED_SECRET_KEYS.has(String(key))) return false;
     if (!safeStorage.isEncryptionAvailable()) return false;
     try {
       fs.mkdirSync(path.dirname(secretPath(key)), { recursive: true });
@@ -541,6 +553,8 @@ app.whenReady().then(async () => {
     }
   });
   ipcMain.handle('desktop:secret:delete', (_event, key) => {
+    assertTrustedRenderer(_event);
+    if (!ALLOWED_SECRET_KEYS.has(String(key))) return false;
     try {
       fs.rmSync(secretPath(key), { force: true });
       return true;
@@ -551,7 +565,8 @@ app.whenReady().then(async () => {
   ipcMain.handle('desktop:version', () => app.getVersion());
   ipcMain.handle('desktop:quit', () => app.quit());
   ipcMain.handle('desktop:api-port', () => apiPort);
-  ipcMain.handle('desktop:restart-api', async () => {
+  ipcMain.handle('desktop:restart-api', async (_event) => {
+    assertTrustedRenderer(_event);
     apiRestartCount = 0;
     _shutdownStarted = false;
     _isQuitting = false;
@@ -562,11 +577,13 @@ app.whenReady().then(async () => {
     return startApi();
   });
   ipcMain.handle('desktop:set-auto-launch', (_event, enabled) => {
+    assertTrustedRenderer(_event);
     app.setLoginItemSettings({ openAtLogin: Boolean(enabled) });
     return true;
   });
   ipcMain.handle('desktop:get-auto-launch', () => app.getLoginItemSettings().openAtLogin);
-  ipcMain.handle('desktop:check-updates', async () => {
+  ipcMain.handle('desktop:check-updates', async (_event) => {
+    assertTrustedRenderer(_event);
     if (isDev) return { status: 'disabled' };
     try {
       const result = await autoUpdater.checkForUpdates();
@@ -575,7 +592,8 @@ app.whenReady().then(async () => {
       return { status: 'error', message: error instanceof Error ? error.message : String(error) };
     }
   });
-  ipcMain.handle('desktop:install-update', () => {
+  ipcMain.handle('desktop:install-update', (_event) => {
+    assertTrustedRenderer(_event);
     autoUpdater.quitAndInstall(false, true);
     return true;
   });

@@ -81,6 +81,27 @@ describe('HTTP app', () => {
     expect(response.headers['access-control-allow-origin']).toBeUndefined();
   });
 
+  it('rejects loopback origins on ports other than the API and Vite dev ports', async () => {
+    const response = await request(app)
+      .get('/api/v2/health')
+      .set('Origin', 'http://127.0.0.1:9999');
+    expect(response.headers['access-control-allow-origin']).toBeUndefined();
+  });
+
+  it('allows the configured API port and the Vite dev port as CORS origins', async () => {
+    const api = await request(app)
+      .get('/api/v2/health')
+      .set('Origin', 'http://127.0.0.1:3180')
+      .expect(200);
+    expect(api.headers['access-control-allow-origin']).toBe('http://127.0.0.1:3180');
+
+    const dev = await request(app)
+      .get('/api/v2/health')
+      .set('Origin', 'http://localhost:5180')
+      .expect(200);
+    expect(dev.headers['access-control-allow-origin']).toBe('http://localhost:5180');
+  });
+
   it('uploads and serves allowed files', async () => {
     const upload = await request(app)
       .post('/api/v2/files')
@@ -944,5 +965,28 @@ describe('HTTP app', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ deviceId: 'http', deviceToken, changes: [] })
       .expect(200);
+  });
+
+  it('rate-limits login attempts per IP with a retry-after header', async () => {
+    // 独立 app 实例 = 独立限流器状态：前序用例的登录不会污染本用例计数。
+    const isolatedApp = createApp({
+      db,
+      dbPath,
+      backupDir,
+      logDir: dataDir,
+      logger: new Logger({ logDir: dataDir }),
+    });
+    let blocked: request.Response | undefined;
+    let lastStatus = 0;
+    for (let i = 0; i < 11; i += 1) {
+      const response = await request(isolatedApp)
+        .post('/api/v2/auth/login')
+        .send({ username: `ip-flood-${i}`, password: 'wrong-password' });
+      lastStatus = response.status;
+      if (response.status === 429) blocked = response;
+    }
+    expect(blocked).toBeDefined();
+    expect(lastStatus).toBe(429);
+    expect(blocked!.headers['retry-after']).toBeDefined();
   });
 });

@@ -193,7 +193,8 @@ describe('HTTP app edge error handling', () => {
   });
 
   it('enforces the CORS localhost and configured-origin whitelist', async () => {
-    const allowed = ['https://trusted.example', 'http://localhost:4000', 'http://127.0.0.1:4000'];
+    // 收紧后仅放行 API 端口（默认 3180）与 Vite dev 端口（5180），任意 loopback 端口不再放行。
+    const allowed = ['https://trusted.example', 'http://localhost:3180', 'http://127.0.0.1:3180'];
     for (const origin of allowed) {
       const response = await request(app)
         .get('/api/v2/health')
