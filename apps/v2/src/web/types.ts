@@ -5,7 +5,7 @@ export type Page<T> = DomainPage<T>;
 
 export interface ResourceField {
   name: string;
-  type: 'text' | 'longText' | 'number' | 'money' | 'date' | 'datetime' | 'boolean' | 'enum' | 'json' | 'relation';
+  type: 'text' | 'longText' | 'number' | 'money' | 'date' | 'datetime' | 'boolean' | 'enum' | 'json' | 'relation' | 'decimal';
   required?: boolean;
   enumValues?: readonly string[];
   relation?: { resource: string; labelField: string };

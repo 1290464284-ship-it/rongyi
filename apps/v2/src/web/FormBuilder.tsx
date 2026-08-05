@@ -53,14 +53,14 @@ function renderField(field: ResourceField, value: unknown, onChange: (value: unk
     ? 'datetime-local'
     : field.inputType === 'date' || field.type === 'date'
       ? 'date'
-      : field.type === 'number' || field.type === 'money'
+      : field.type === 'number' || field.type === 'money' || field.type === 'decimal'
         ? 'number'
         : 'text';
   return (
     <input
       type={inputType}
       value={String(value ?? '')}
-      step={field.type === 'money' ? '0.01' : undefined}
+      step={field.type === 'money' || field.type === 'decimal' ? '0.01' : undefined}
       placeholder={field.placeholder}
       onChange={(event) => onChange(event.target.value)}
     />

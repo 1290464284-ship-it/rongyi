@@ -49,6 +49,17 @@ function validateField(field: ResourceField, raw: unknown): unknown {
         throw new ValidationError(`${field.name} must be a valid date-time`);
       }
       return raw;
+    case 'decimal': {
+      const value = typeof raw === 'number'
+        ? raw
+        : typeof raw === 'string' && raw.trim() !== ''
+          ? Number(raw)
+          : Number.NaN;
+      if (!Number.isFinite(value)) throw new ValidationError(`${field.name} must be a number`);
+      if (field.min !== undefined && value < field.min) throw new ValidationError(`${field.name} must be >= ${field.min}`);
+      if (field.max !== undefined && value > field.max) throw new ValidationError(`${field.name} must be <= ${field.max}`);
+      return value;
+    }
     case 'number':
     case 'money': {
       const value = typeof raw === 'number'

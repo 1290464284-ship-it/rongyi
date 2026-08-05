@@ -14,6 +14,8 @@ const definition: ResourceDefinition = {
     { name: 'data', type: 'json' },
     { name: 'day', type: 'date' },
     { name: 'startsAt', type: 'datetime' },
+    { name: 'ratio', type: 'decimal', min: 0, max: 10 },
+    { name: 'ratioDefault', type: 'decimal', default: 0.25 },
   ],
   searchableFields: ['name'],
   defaultSort: { field: 'name', order: 'ASC' },
@@ -37,5 +39,10 @@ describe('validatePayload', () => {
     expect(() => validatePayload(definition, { name: 'A', startsAt: 'not-a-date' })).toThrow('valid date-time');
     expect(validatePayload(definition, { name: 'A', day: '2026-08-01', startsAt: '2026-08-01T00:00:00.000Z' }))
       .toMatchObject({ day: '2026-08-01', startsAt: '2026-08-01T00:00:00.000Z' });
+    expect(validatePayload(definition, { name: 'A', ratio: 0.75 }).ratio).toBe(0.75);
+    expect(validatePayload(definition, { name: 'A', ratio: '0.5' }).ratio).toBe(0.5);
+    expect(() => validatePayload(definition, { name: 'A', ratio: 'abc' })).toThrow('ratio must be a number');
+    expect(() => validatePayload(definition, { name: 'A', ratio: 11 })).toThrow('ratio must be <= 10');
+    expect(validatePayload(definition, { name: 'A' }).ratioDefault).toBe(0.25);
   });
 });
