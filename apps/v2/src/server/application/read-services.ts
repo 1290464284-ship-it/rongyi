@@ -137,7 +137,7 @@ export class StatsService {
   memberStats(context: AppContext): Record<string, unknown> {
     return this.getCached(`memberStats:${context.clinicId ?? 'none'}`, 30_000, () => {
       const tenant = tenantWhere(context.clinicId);
-      const clinicClause = tenant.sql ? `WHERE ${tenant.sql}` : '';
+      const clinicClause = tenant.sql ? `WHERE ${tenant.sql} AND deletedAt IS NULL` : 'WHERE deletedAt IS NULL';
       const params: unknown[] = tenant.params;
       const row = this.db.prepare(
         `SELECT COUNT(*) AS total,
