@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router';
 import { apiRequest } from './api';
 import type { Page } from './types';
-import { LoadingState, PageError } from './components';
+import { LoadingState, PageError, SearchableSelect, type SearchableSelectRow } from './components';
 
 interface TimelineEvent {
   id: string;
@@ -18,17 +18,14 @@ export function PatientTimelinePage() {
   const [searchParams] = useSearchParams();
   const urlPatientId = searchParams.get('id');
   const [patientId, setPatientId] = useState<string | null>(urlPatientId);
-  const patients = useQuery({
-    queryKey: ['patients-timeline'],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/patients?page=1&pageSize=200'),
-  });
+  const [patientRows, setPatientRows] = useState<SearchableSelectRow[]>([]);
   const derivedFromList = useRef(false);
   useEffect(() => {
-    if (derivedFromList.current || !patients.data) return;
+    if (derivedFromList.current || patientRows.length === 0) return;
     derivedFromList.current = true;
-    const first = patients.data.items[0];
+    const first = patientRows[0];
     setPatientId((current) => current ?? (first ? String(first.id) : null));
-  }, [patients.data]);
+  }, [patientRows]);
   const visits = useQuery({
     queryKey: ['visits-timeline', patientId],
     queryFn: () => apiRequest<Page<Record<string, unknown>>>(`/resources/visits?page=1&pageSize=200&patientId=${encodeURIComponent(patientId ?? '')}`),
@@ -50,16 +47,15 @@ export function PatientTimelinePage() {
     enabled: patientId !== null,
   });
 
-  if (patients.isLoading || visits.isLoading || treatments.isLoading || charges.isLoading || followUps.isLoading) {
+  if (visits.isLoading || treatments.isLoading || charges.isLoading || followUps.isLoading) {
     return <LoadingState label="患者时间线加载中..." />;
   }
-  const loadError = patients.error ?? visits.error ?? treatments.error ?? charges.error ?? followUps.error;
+  const loadError = visits.error ?? treatments.error ?? charges.error ?? followUps.error;
   if (loadError) {
     return (
       <div className="page">
         <PageError message={loadError instanceof Error ? loadError.message : String(loadError)} />
         <button onClick={() => {
-          void patients.refetch();
           void visits.refetch();
           void treatments.refetch();
           void charges.refetch();
@@ -107,11 +103,13 @@ export function PatientTimelinePage() {
         <h1>患者时间线</h1>
         <label>
           患者
-          <select value={patientId ?? ''} onChange={(event) => setPatientId(event.target.value)}>
-            {patients.data?.items.map((patient) => (
-              <option key={String(patient.id)} value={String(patient.id)}>{String(patient.name ?? patient.id)}</option>
-            ))}
-          </select>
+          <SearchableSelect
+            resource="patients"
+            value={patientId ?? ''}
+            onChange={(id) => setPatientId(id)}
+            ariaLabel="患者"
+            onLoaded={(rows) => setPatientRows(rows)}
+          />
         </label>
       </div>
       <div className="board-summary">

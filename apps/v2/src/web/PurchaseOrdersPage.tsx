@@ -2,7 +2,7 @@ import { FormEvent, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import type { Page } from './types';
-import { DataTable, Dialog, EmptyState, LoadingState, PageError } from './components';
+import { DataTable, Dialog, EmptyState, LoadingState, PageError, SearchableSelect, type SearchableSelectRow } from './components';
 import { formatMoney, toCents } from './format';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
@@ -33,15 +33,8 @@ export function PurchaseOrdersPage() {
   const [supplierId, setSupplierId] = useState('');
   const [items, setItems] = useState<PurchaseItemForm[]>([newItem()]);
   const [submitting, setSubmitting] = useState(false);
+  const [inventoryRows, setInventoryRows] = useState<SearchableSelectRow[]>([]);
 
-  const suppliers = useQuery({
-    queryKey: ['po-suppliers'],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/suppliers?page=1&pageSize=200'),
-  });
-  const inventory = useQuery({
-    queryKey: ['po-inventory'],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/inventoryItems?page=1&pageSize=200'),
-  });
   const query = useQuery({
     queryKey: ['purchase-orders'],
     queryFn: () => apiRequest<Page<PurchaseRow>>('/resources/purchaseOrders?page=1&pageSize=50'),
@@ -56,7 +49,7 @@ export function PurchaseOrdersPage() {
       .filter((item) => item.quantity && item.unitPrice)
       .map((item) => ({
         itemId: item.itemId || undefined,
-        name: item.itemId ? String(inventory.data?.items.find((row) => String(row.id) === item.itemId)?.name ?? '') : '自定义项目',
+        name: item.itemId ? String(inventoryRows.find((row) => String(row.id) === item.itemId)?.name ?? '') : '自定义项目',
         quantity: Number(item.quantity),
         unitPrice: toCents(item.unitPrice),
       }))
@@ -132,25 +125,24 @@ export function PurchaseOrdersPage() {
           </label>
           <label>
             供应商
-            <select value={supplierId} onChange={(event) => setSupplierId(event.target.value)}>
-              <option value="">不指定</option>
-              {suppliers.data?.items.map((row) => (
-                <option key={String(row.id)} value={String(row.id)}>{String(row.name ?? row.id)}</option>
-              ))}
-            </select>
+            <SearchableSelect
+              resource="suppliers"
+              value={supplierId}
+              onChange={setSupplierId}
+              ariaLabel="供应商"
+              placeholder="不指定"
+            />
           </label>
           {items.map((item) => (
             <div className="charge-item-row" key={item.id}>
-              <select
-                aria-label="采购项目"
+              <SearchableSelect
+                resource="inventoryItems"
                 value={item.itemId}
-                onChange={(event) => updateItem(item.id, { itemId: event.target.value })}
-              >
-                <option value="">选择项目</option>
-                {inventory.data?.items.map((row) => (
-                  <option key={String(row.id)} value={String(row.id)}>{String(row.name ?? row.id)}</option>
-                ))}
-              </select>
+                onChange={(id) => updateItem(item.id, { itemId: id })}
+                ariaLabel="采购项目"
+                placeholder="选择项目"
+                onLoaded={(rows) => setInventoryRows(rows)}
+              />
               <input aria-label="采购数量" type="number" min="1" value={item.quantity} onChange={(event) => updateItem(item.id, { quantity: event.target.value })} />
               <input aria-label="采购单价" type="number" min="0" value={item.unitPrice} onChange={(event) => updateItem(item.id, { unitPrice: event.target.value })} />
               <button type="button" onClick={() => setItems((current) => current.filter((entry) => entry.id !== item.id))}>移除</button>

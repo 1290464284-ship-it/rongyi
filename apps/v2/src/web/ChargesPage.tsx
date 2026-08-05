@@ -2,7 +2,7 @@ import { FormEvent, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import type { Page } from './types';
-import { DataTable, Dialog, EmptyState, LoadingState, PageError } from './components';
+import { DataTable, Dialog, EmptyState, LoadingState, PageError, SearchableSelect } from './components';
 import { formatMoney, toCents } from './format';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
@@ -60,10 +60,6 @@ export function ChargesPage() {
   const [refundAmount, setRefundAmount] = useState('');
   const [refundReason, setRefundReason] = useState('');
 
-  const patients = useQuery({
-    queryKey: ['charge-patients'],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/patients?page=1&pageSize=200'),
-  });
   const query = useQuery({
     queryKey: ['charges'],
     queryFn: () => apiRequest<Page<ChargeRow>>('/resources/charges?page=1&pageSize=50'),
@@ -187,12 +183,7 @@ export function ChargesPage() {
     <div className="page">
       <h1>收费管理</h1>
       <form className="inline-form" onSubmit={create}>
-        <select aria-label="患者" value={patientId} onChange={(event) => setPatientId(event.target.value)}>
-          <option value="">选择患者</option>
-          {patients.data?.items.map((row) => (
-            <option key={String(row.id)} value={String(row.id)}>{String(row.name ?? row.id)}</option>
-          ))}
-        </select>
+        <SearchableSelect resource="patients" value={patientId} onChange={setPatientId} ariaLabel="患者" placeholder="选择患者" />
         <button type="submit" disabled={submitting}>{submitting ? '保存中...' : '新建收费单'}</button>
       </form>
       <div className="charge-items">

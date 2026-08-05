@@ -2,7 +2,7 @@ import { FormEvent, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import type { Page } from './types';
-import { DataTable, Dialog, EmptyState, LoadingState, PageError } from './components';
+import { DataTable, Dialog, EmptyState, LoadingState, PageError, SearchableSelect } from './components';
 import { formatMoney, toCents } from './format';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
@@ -60,10 +60,6 @@ export function TreatmentsPage() {
   const [form, setForm] = useState<TreatmentForm>(emptyForm);
   const [submitting, setSubmitting] = useState(false);
 
-  const patients = useQuery({
-    queryKey: ['treatment-patients'],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/patients?page=1&pageSize=200'),
-  });
   const doctors = useQuery({
     queryKey: ['treatment-doctors'],
     queryFn: () => apiRequest<Array<Record<string, unknown>>>('/doctors'),
@@ -170,12 +166,7 @@ export function TreatmentsPage() {
         <form onSubmit={create}>
           <label>
             患者
-            <select value={form.patientId} onChange={(event) => setForm((current) => ({ ...current, patientId: event.target.value }))}>
-              <option value="">选择患者</option>
-              {patients.data?.items.map((row) => (
-                <option key={String(row.id)} value={String(row.id)}>{String(row.name ?? row.id)}</option>
-              ))}
-            </select>
+            <SearchableSelect resource="patients" value={form.patientId} onChange={(id) => setForm((current) => ({ ...current, patientId: id }))} ariaLabel="患者" placeholder="选择患者" />
           </label>
           <label>
             医生

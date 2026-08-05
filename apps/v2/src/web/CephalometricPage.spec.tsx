@@ -25,7 +25,7 @@ function mockData() {
     if (path === '/resources/cephalometricCases?page=1&pageSize=50') {
       return { items: [{ id: 'c-1', patientId: 'p-1', status: 'DRAFT', imageUrl: '/api/v2/files/x.png' }], total: 1, page: 1, pageSize: 50 };
     }
-    if (path === '/resources/patients?page=1&pageSize=200') {
+    if (path === '/resources/patients?page=1&pageSize=100') {
       return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
     }
     return {};
@@ -46,6 +46,9 @@ describe('CephalometricPage', () => {
     expect(await screen.findByText('DRAFT')).toBeDefined();
 
     fireEvent.click(screen.getByText('新建测量'));
+await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
     fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
     const file = new File(['x'], 'ceph.png', { type: 'image/png' });
     fireEvent.change(screen.getByLabelText('影像文件'), { target: { files: [file] } });
@@ -64,6 +67,9 @@ describe('CephalometricPage', () => {
     render(<CephalometricPage />, { wrapper });
     await screen.findByText('DRAFT');
     fireEvent.click(screen.getByText('新建测量'));
+await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
     fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
     fireEvent.change(screen.getByLabelText('标记点 JSON'), { target: { value: '{bad json' } });
     fireEvent.click(screen.getByText('保存'));

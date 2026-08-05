@@ -26,7 +26,7 @@ const chargeList = {
 function mockData() {
   vi.mocked(apiRequest).mockImplementation(async (path: string) => {
     if (path === '/resources/charges?page=1&pageSize=50') return chargeList;
-    if (path === '/resources/patients?page=1&pageSize=200') {
+    if (path === '/resources/patients?page=1&pageSize=100') {
       return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
     }
     return {};
@@ -44,6 +44,9 @@ describe('ChargesPage', () => {
     render(<ChargesPage />, { wrapper });
     expect(await screen.findByText('N-1')).toBeDefined();
 
+await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
     fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
     fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: '洁牙' } });
     fireEvent.change(screen.getByLabelText('项目分类'), { target: { value: 'CLEAN' } });
@@ -107,7 +110,7 @@ describe('ChargesPage', () => {
 
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/charges?page=1&pageSize=50') throw new Error('charges failed');
-      if (path === '/resources/patients?page=1&pageSize=200') {
+      if (path === '/resources/patients?page=1&pageSize=100') {
         return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
       }
       return {};
@@ -120,7 +123,7 @@ describe('ChargesPage', () => {
     mockData();
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/charges?page=1&pageSize=50') return chargeList;
-      if (path === '/resources/patients?page=1&pageSize=200') {
+      if (path === '/resources/patients?page=1&pageSize=100') {
         return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
       }
       throw new Error('charge failed');
@@ -128,6 +131,9 @@ describe('ChargesPage', () => {
     render(<ChargesPage />, { wrapper });
     await screen.findByText('N-1');
 
+await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
     fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
     fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: '洁牙' } });
     fireEvent.change(screen.getByLabelText('单价'), { target: { value: '100' } });
@@ -165,7 +171,7 @@ describe('ChargesPage', () => {
     mockData();
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/charges?page=1&pageSize=50') return { ...chargeList, items: [] };
-      if (path === '/resources/patients?page=1&pageSize=200') {
+      if (path === '/resources/patients?page=1&pageSize=100') {
         return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
       }
       return {};
@@ -195,6 +201,9 @@ describe('ChargesPage', () => {
     render(<ChargesPage />, { wrapper });
     await screen.findByText('N-1');
 
+await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
     fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
     fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: '无效项目' } });
     fireEvent.click(screen.getByRole('button', { name: '新建收费单' }));
@@ -203,7 +212,7 @@ describe('ChargesPage', () => {
     fireEvent.change(screen.getByLabelText('单价'), { target: { value: '100' } });
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/charges?page=1&pageSize=50') return chargeList;
-      if (path === '/resources/patients?page=1&pageSize=200') {
+      if (path === '/resources/patients?page=1&pageSize=100') {
         return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
       }
       throw 'boom';
