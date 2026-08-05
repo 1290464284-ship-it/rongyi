@@ -55,3 +55,45 @@ const MAX_WINDOWS = 10_000;
     next();
   };
 }
+
+/**
+ * IP-only in-memory sliding rate limiter.
+ *
+ * Key is the client IP alone (no method/path/username dimension), so bursts
+ * against any combination of routes share one budget per IP. Each instance
+ * keeps its own window map; intended for stacking on top of createRateLimit.
+ */
+export function createIpRateLimit({ windowMs, max }: RateLimitOptions) {
+  const windows = new Map<string, Window>();
+  const MAX_WINDOWS = 10_000;
+
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const key = req.ip ?? 'unknown';
+    const now = Date.now();
+    /* v8 ignore start -- bounded-window pruning is a performance safeguard. */
+    if (windows.size >= MAX_WINDOWS && !windows.has(key)) {
+      for (const [candidateKey, candidate] of windows) {
+        if (candidate.resetAt <= now) windows.delete(candidateKey);
+      }
+      if (windows.size >= MAX_WINDOWS) {
+        const oldestKey = windows.keys().next().value;
+        if (oldestKey !== undefined) windows.delete(oldestKey);
+      }
+    }
+    /* v8 ignore stop */
+    const current = windows.get(key);
+    if (!current || current.resetAt <= now) {
+      windows.set(key, { count: 1, resetAt: now + windowMs });
+      next();
+      return;
+    }
+    current.count += 1;
+    if (current.count > max) {
+      res.setHeader('retry-after', String(Math.ceil((current.resetAt - now) / 1000)));
+      next(new AppError('RATE_LIMITED', 'Too many requests', 429));
+      return;
+    }
+    windows.set(key, current);
+    next();
+  };
+}

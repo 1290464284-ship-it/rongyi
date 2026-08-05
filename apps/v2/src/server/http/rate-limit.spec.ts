@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createRateLimit } from './rate-limit';
+import { createIpRateLimit, createRateLimit } from './rate-limit';
 import type { NextFunction, Request, Response } from 'express';
 
 function fakeRequest(path = '/login', ip = '127.0.0.1', method = 'POST'): Request {
@@ -106,5 +106,59 @@ describe('createRateLimit', () => {
     let errorB: unknown;
     limiter(fakeRequest('/b'), fakeResponse().res, (err) => { errorB = err; });
     expect(errorB).toMatchObject({ status: 429 });
+  });
+});
+
+describe('createIpRateLimit', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('同一 IP 连续 11 次（max 10）后第 11 次返回 429 并设置 retry-after', () => {
+    const windowMs = 60_000;
+    const limiter = createIpRateLimit({ windowMs, max: 10 });
+    const next = vi.fn();
+    let lastHeaders: Record<string, string> = {};
+    for (let i = 0; i < 10; i += 1) {
+      const { res, headers } = fakeResponse();
+      limiter(fakeRequest('/login', '10.0.0.1'), res, next);
+      lastHeaders = headers;
+    }
+    expect(next).toHaveBeenCalledTimes(10);
+    expect(lastHeaders['retry-after']).toBeUndefined();
+
+    next.mockClear();
+    const { res: failRes, headers: failHeaders } = fakeResponse();
+    let rateLimitError: unknown;
+    limiter(fakeRequest('/login', '10.0.0.1'), failRes, (err) => { rateLimitError = err; });
+
+    expect(next).not.toHaveBeenCalled();
+    expect(rateLimitError).toMatchObject({ code: 'RATE_LIMITED', status: 429 });
+    expect(failHeaders['retry-after']).toBeDefined();
+    const retrySeconds = Number(failHeaders['retry-after']);
+    expect(Number.isInteger(retrySeconds)).toBe(true);
+    expect(retrySeconds).toBeGreaterThan(0);
+    expect(retrySeconds).toBeLessThanOrEqual(Math.ceil(windowMs / 1000));
+  });
+
+  it('IP-only 语义：同一 IP 不同路径/username 共享计数，不同 IP 互不影响', () => {
+    const limiter = createIpRateLimit({ windowMs: 60_000, max: 2 });
+    const next = vi.fn();
+    limiter(fakeRequest('/login', '10.0.0.2'), fakeResponse().res, next);
+    limiter(fakeRequest('/other', '10.0.0.2'), fakeResponse().res, next);
+    expect(next).toHaveBeenCalledTimes(2);
+
+    let error: unknown;
+    limiter(fakeRequest('/login', '10.0.0.2'), fakeResponse().res, (err) => { error = err; });
+    expect(error).toMatchObject({ status: 429 });
+
+    const otherNext = vi.fn();
+    limiter(fakeRequest('/login', '10.0.0.3'), fakeResponse().res, otherNext);
+    expect(otherNext).toHaveBeenCalledOnce();
   });
 });

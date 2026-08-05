@@ -1,5 +1,5 @@
 import type { Express } from 'express';
-import { createRateLimit } from '../rate-limit';
+import { createIpRateLimit, createRateLimit } from '../rate-limit';
 import { navigationForRole } from '../route-policy';
 import { wrapAsync } from '../middleware';
 import type { RouteDependencies } from './deps';
@@ -7,9 +7,10 @@ import type { RouteDependencies } from './deps';
 export function registerPublicAuthRoutes(app: Express, deps: RouteDependencies): void {
   const { authService } = deps;
   const loginLimiter = createRateLimit({ windowMs: 60_000, max: 20 });
+  const ipLoginLimiter = createIpRateLimit({ windowMs: 60_000, max: 10 });
   const refreshLimiter = createRateLimit({ windowMs: 60_000, max: 30 });
 
-  app.post('/api/v2/auth/login', loginLimiter, wrapAsync(async (req, res) => {
+  app.post('/api/v2/auth/login', loginLimiter, ipLoginLimiter, wrapAsync(async (req, res) => {
       const result = await authService.login(String(req.body?.username ?? ''), String(req.body?.password ?? ''));
       res.json({ success: true, data: result });
   }));

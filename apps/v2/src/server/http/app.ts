@@ -205,7 +205,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
     .map((origin) => origin.trim())
     .filter(Boolean);
   const _configuredPort = Number(process.env.V2_PORT ?? 3180);
-  const _viteDevPort = 5173;
+  const _viteDevPort = 5180;
   app.use(cors({
     origin(origin, callback) {
       if (!origin || configuredCorsOrigins.includes(origin)) {
@@ -219,7 +219,11 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
       try {
         const url = new URL(origin);
         const isLoopback = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
-        if (isLoopback && url.protocol === 'http:') {
+        if (
+          isLoopback &&
+          url.protocol === 'http:' &&
+          (Number(url.port) === _configuredPort || Number(url.port) === _viteDevPort)
+        ) {
           callback(null, true);
           return;
         }
