@@ -1,8 +1,11 @@
+import { useState, type FormEvent, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import { CrudPage } from './CrudPage';
-import { SearchableSelect, type DataTableColumn } from './components';
+import { Dialog, SearchableSelect, type DataTableColumn } from './components';
 import { formatMoney, toCents } from './format';
+import { errorMessage } from './messages';
+import { useToast, type ToastKind } from './toast-context';
 
 interface PlanRow extends Record<string, unknown> {
   id: string;
@@ -13,6 +16,8 @@ interface PlanRow extends Record<string, unknown> {
   name?: string | null;
   totalFee?: number | null;
   status?: string | null;
+  printCount?: number | null;
+  signedAt?: string | null;
 }
 
 interface PlanItemForm {
@@ -34,6 +39,19 @@ interface TreatmentPlanForm {
   totalFee: string;
   remark: string;
   items: PlanItemForm[];
+}
+
+/** 打印接口返回的可打印载荷摘要（POST /treatment-plans/:id/print 的 data）。 */
+interface TreatmentPlanPrintResult {
+  plan: Record<string, unknown> & {
+    id?: string;
+    name?: string | null;
+    patientName?: string | null;
+    doctorName?: string | null;
+    printCount?: number | null;
+  };
+  items: Array<Record<string, unknown>>;
+  template: Record<string, unknown> | null;
 }
 
 function newItem(): PlanItemForm {
@@ -75,66 +93,207 @@ const planColumns: DataTableColumn<PlanRow>[] = [
   { key: 'doctorId', label: '医生', render: (row) => row.doctorIdLabel ?? row.doctorId ?? '' },
   { key: 'totalFee', label: '总费用', render: (row) => formatMoney(row.totalFee) },
   { key: 'status', label: '状态' },
+  { key: 'printCount', label: '打印次数', render: (row) => String(row.printCount ?? 0) },
+  { key: 'signedAt', label: '签字', render: (row) => (row.signedAt ? '已签' : '未签') },
 ];
 
 export function TreatmentPlansPage() {
+  const { showToast } = useToast();
+  const [printResult, setPrintResult] = useState<TreatmentPlanPrintResult | null>(null);
+  const [signTarget, setSignTarget] = useState<{ row: PlanRow; reload: () => Promise<unknown> } | null>(null);
+
   return (
-    <CrudPage<PlanRow, TreatmentPlanForm>
-      title="治疗计划管理"
-      createLabel="新建治疗计划"
-      emptyMessage="暂无治疗计划"
-      queryKey={['treatment-plans']}
-      endpoint="/resources/treatmentPlans"
-      initialForm={emptyPlanForm}
-      validate={(form) => {
-        const validItems = buildValidItems(form.items);
-        if (!form.patientId || !form.doctorId || !form.name.trim() || validItems.length === 0) {
-          return '请选择患者、医生并填写计划名称和至少一条有效明细';
-        }
-        return null;
-      }}
-      submitOverride={async ({ form }) => {
-        const validItems = buildValidItems(form.items);
-        const calculatedFee = validItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
-        let planId: string | null = null;
-        const createdItemIds: string[] = [];
-        try {
-          const plan = await apiRequest<{ id: string }>('/resources/treatmentPlans', {
-            method: 'POST',
-            body: JSON.stringify({
-              patientId: form.patientId,
-              doctorId: form.doctorId,
-              name: form.name.trim(),
-              status: form.status,
-              totalFee: toCents(form.totalFee) || calculatedFee,
-              remark: form.remark || undefined,
-            }),
-          });
-          planId = plan.id;
-          for (const item of validItems) {
-            const created = await apiRequest<{ id: string }>('/resources/treatmentPlanItems', {
+    <>
+      <CrudPage<PlanRow, TreatmentPlanForm>
+        title="治疗计划管理"
+        createLabel="新建治疗计划"
+        emptyMessage="暂无治疗计划"
+        queryKey={['treatment-plans']}
+        endpoint="/resources/treatmentPlans"
+        initialForm={emptyPlanForm}
+        validate={(form) => {
+          const validItems = buildValidItems(form.items);
+          if (!form.patientId || !form.doctorId || !form.name.trim() || validItems.length === 0) {
+            return '请选择患者、医生并填写计划名称和至少一条有效明细';
+          }
+          return null;
+        }}
+        submitOverride={async ({ form }) => {
+          const validItems = buildValidItems(form.items);
+          const calculatedFee = validItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+          let planId: string | null = null;
+          const createdItemIds: string[] = [];
+          try {
+            const plan = await apiRequest<{ id: string }>('/resources/treatmentPlans', {
               method: 'POST',
-              body: JSON.stringify({ planId: plan.id, ...item }),
+              body: JSON.stringify({
+                patientId: form.patientId,
+                doctorId: form.doctorId,
+                name: form.name.trim(),
+                status: form.status,
+                totalFee: toCents(form.totalFee) || calculatedFee,
+                remark: form.remark || undefined,
+              }),
             });
-            createdItemIds.push(created.id);
-          }
-        } catch (error) {
-          // 主记录已创建但明细中途失败：清理孤儿记录（清理失败仅告警，不掩盖原始错误）
-          if (planId) {
-            try {
-              await cleanupOrphanPlan(planId, createdItemIds);
-            } catch (cleanupError) {
-              console.warn('清理孤儿治疗计划失败', cleanupError);
+            planId = plan.id;
+            for (const item of validItems) {
+              const created = await apiRequest<{ id: string }>('/resources/treatmentPlanItems', {
+                method: 'POST',
+                body: JSON.stringify({ planId: plan.id, ...item }),
+              });
+              createdItemIds.push(created.id);
             }
+          } catch (error) {
+            // 主记录已创建但明细中途失败：清理孤儿记录（清理失败仅告警，不掩盖原始错误）
+            if (planId) {
+              try {
+                await cleanupOrphanPlan(planId, createdItemIds);
+              } catch (cleanupError) {
+                console.warn('清理孤儿治疗计划失败', cleanupError);
+              }
+            }
+            throw error;
           }
-          throw error;
-        }
-      }}
-      messages={{ create: '治疗计划已创建' }}
-      errorMessages={{ create: '创建治疗计划失败' }}
-      columns={planColumns}
-      renderForm={(ctx) => <PlanFormFields form={ctx.form} update={ctx.update} />}
-    />
+        }}
+        messages={{ create: '治疗计划已创建' }}
+        errorMessages={{ create: '创建治疗计划失败' }}
+        columns={planColumns}
+        rowActions={(row, ctx) => (
+          <>
+            <button onClick={() => void requestPrint(row, showToast, ctx.reload, setPrintResult)}>打印</button>
+            <button onClick={() => setSignTarget({ row, reload: ctx.reload })}>签字</button>
+          </>
+        )}
+        renderForm={(ctx) => <PlanFormFields form={ctx.form} update={ctx.update} />}
+      />
+
+      <Dialog open={printResult !== null} title="打印预览" onClose={() => setPrintResult(null)}>
+        {printResult && <PrintPreview payload={printResult} onClose={() => setPrintResult(null)} />}
+      </Dialog>
+
+      <Dialog open={signTarget !== null} title="电子签字" onClose={() => setSignTarget(null)}>
+        {signTarget && (
+          <SignForm
+            planId={signTarget.row.id}
+            onClose={() => setSignTarget(null)}
+            onSigned={() => signTarget.reload()}
+          />
+        )}
+      </Dialog>
+    </>
+  );
+}
+
+async function requestPrint(
+  row: PlanRow,
+  showToast: (message: string, kind?: ToastKind) => void,
+  reload: () => Promise<unknown>,
+  onResult: (payload: TreatmentPlanPrintResult) => void,
+): Promise<void> {
+  try {
+    const data = await apiRequest<TreatmentPlanPrintResult>(`/treatment-plans/${row.id}/print`, { method: 'POST' });
+    showToast(`已打印（第 ${data.plan.printCount ?? 0} 次）`, 'success');
+    await reload();
+    onResult(data);
+  } catch (error) {
+    showToast(errorMessage(error, '打印失败'), 'error');
+  }
+}
+
+function PrintPreview({ payload, onClose }: { payload: TreatmentPlanPrintResult; onClose: () => void }): ReactNode {
+  return (
+    <div className="print-preview">
+      <p><strong>患者：</strong>{String(payload.plan.patientName ?? '')}</p>
+      <p><strong>医生：</strong>{String(payload.plan.doctorName ?? '')}</p>
+      <p><strong>计划名称：</strong>{String(payload.plan.name ?? '')}</p>
+      <table>
+        <thead>
+          <tr><th>项目</th><th>数量</th><th>单价</th></tr>
+        </thead>
+        <tbody>
+          {payload.items.map((item, index) => (
+            <tr key={String(item.id ?? index)}>
+              <td>{String(item.name ?? '')}</td>
+              <td>{String(item.quantity ?? '')}</td>
+              <td>{formatMoney(item.price)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p><strong>模板：</strong>{String(payload.template?.name ?? '默认模板')}</p>
+      <div className="modal-actions">
+        <button type="button" onClick={onClose}>关闭</button>
+        <button type="button" onClick={() => window.print()}>打印本页</button>
+      </div>
+    </div>
+  );
+}
+
+function SignForm({
+  planId,
+  onClose,
+  onSigned,
+}: {
+  planId: string;
+  onClose: () => void;
+  onSigned: () => Promise<unknown>;
+}): ReactNode {
+  const { showToast } = useToast();
+  const [signature, setSignature] = useState('');
+  const [signerName, setSignerName] = useState('');
+  const [remark, setRemark] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit(event: FormEvent): Promise<void> {
+    event.preventDefault();
+    if (!signature.trim() || !signerName.trim()) {
+      showToast('请填写签名与签署人姓名', 'error');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await apiRequest(`/treatment-plans/${planId}/sign`, {
+        method: 'POST',
+        body: JSON.stringify({
+          signature: signature.trim(),
+          signerName: signerName.trim(),
+          remark: remark.trim() || undefined,
+        }),
+      });
+      showToast('签署完成', 'success');
+      await onSigned();
+      onClose();
+    } catch (error) {
+      showToast(errorMessage(error, '签署失败'), 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit}>
+      <label>
+        签名图片
+        <textarea
+          aria-label="签名 dataURL"
+          placeholder="粘贴签名图片 dataURL"
+          value={signature}
+          onChange={(event) => setSignature(event.target.value)}
+        />
+      </label>
+      <label>
+        签署人姓名
+        <input aria-label="签署人姓名" value={signerName} onChange={(event) => setSignerName(event.target.value)} />
+      </label>
+      <label>
+        备注
+        <textarea aria-label="签名备注" value={remark} onChange={(event) => setRemark(event.target.value)} />
+      </label>
+      <div className="modal-actions">
+        <button type="button" onClick={onClose}>取消</button>
+        <button type="submit" disabled={submitting}>{submitting ? '签署中...' : '签署'}</button>
+      </div>
+    </form>
   );
 }
 

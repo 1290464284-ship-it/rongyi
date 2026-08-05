@@ -50,6 +50,10 @@ import { registerAdminRoutes, registerPublicAuthRoutes } from './routes/auth-adm
 import { registerWorkflowRoutes } from './routes/workflow';
 import { registerSystemRoutes } from './routes/system';
 import { registerFileRoutes } from './routes/files';
+import { registerWorkbenchRoutes } from './routes/workbench-routes';
+import { registerMedicalRecordEditRoutes } from './routes/medical-record-edit-routes';
+import { registerFirstExamTrackingRoutes } from './routes/first-exam-tracking-routes';
+import { registerTreatmentPlanRoutes } from './routes/treatment-plan-routes';
 import type { RouteDependencies } from './routes/deps';
 
 export interface AppDependencies {
@@ -346,6 +350,10 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
   registerAdminRoutes(app, deps);
   registerWorkflowRoutes(app, deps);
   registerSystemRoutes(app, deps);
+  registerWorkbenchRoutes(app, db);
+  registerMedicalRecordEditRoutes(app, db);
+  registerFirstExamTrackingRoutes(app, db);
+  registerTreatmentPlanRoutes(app, db);
   // file:// (打包版 Electron 渲染器) 以 <img> 加载 API 图片时,
   // 不受同源策略约束, 但 helmet 默认 Cross-Origin-Resource-Policy: same-origin
   // 会阻断响应; 仅对 files 路由放开 CORP。

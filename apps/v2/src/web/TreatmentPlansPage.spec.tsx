@@ -19,12 +19,28 @@ const wrapper = ({ children }: { children: ReactNode }) => (
 function mockData() {
   vi.mocked(apiRequest).mockImplementation(async (path: string) => {
     if (path === '/resources/treatmentPlans?page=1&pageSize=50') {
-      return { items: [{ id: 'plan-1', patientId: 'p-1', doctorId: 'd-1', name: '正畸计划', totalFee: 20000, status: 'APPROVED' }], total: 1, page: 1, pageSize: 50 };
+      return {
+        items: [
+          { id: 'p-1', patientId: 'p-1', doctorId: 'd-1', name: '正畸计划', totalFee: 20000, status: 'APPROVED', printCount: 2, signedAt: '2026-08-01T00:00:00.000Z' },
+          { id: 'p-2', patientId: 'p-1', doctorId: 'd-1', name: '修复计划', totalFee: 30000, status: 'APPROVED', printCount: 0, signedAt: null },
+        ],
+        total: 2, page: 1, pageSize: 50,
+      };
     }
     if (path === '/resources/patients?page=1&pageSize=100') {
       return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
     }
     if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+    if (path === '/treatment-plans/p-1/print') {
+      return {
+        plan: { id: 'p-1', name: '正畸计划', patientName: '患者甲', doctorName: '张医生', printCount: 3 },
+        items: [{ id: 'item-1', name: '种植体', quantity: 2, price: 500000 }],
+        template: { name: '治疗计划模板' },
+      };
+    }
+    if (path === '/treatment-plans/p-1/sign') {
+      return { id: 'p-1', signedAt: '2026-08-06T02:00:00.000Z', signerName: '张三' };
+    }
     return {};
   });
 }
@@ -151,5 +167,141 @@ describe('TreatmentPlansPage', () => {
     const planBody = JSON.parse(String(planCall?.[1]?.body));
     // 5000 元 × 1 个 = 500000 分
     expect(planBody.totalFee).toBe(500000);
+  });
+
+  it('renders print count and signature status columns', async () => {
+    mockData();
+    render(<TreatmentPlansPage />, { wrapper });
+    expect(await screen.findByText('正畸计划')).toBeDefined();
+    expect(screen.getByText('打印次数')).toBeDefined();
+    // 表头「签字」+ 每行「签字」按钮
+    expect(screen.getAllByText('签字').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('已签')).toBeDefined();
+    expect(screen.getByText('未签')).toBeDefined();
+    expect(screen.getByText('2')).toBeDefined();
+    expect(screen.getByText('0')).toBeDefined();
+  });
+
+  it('prints a plan: calls the print endpoint, toasts the new count, and shows the payload summary dialog', async () => {
+    mockData();
+    render(<TreatmentPlansPage />, { wrapper });
+    await screen.findByText('正畸计划');
+
+    fireEvent.click(screen.getAllByText('打印')[0]);
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/treatment-plans/p-1/print', expect.objectContaining({ method: 'POST' }));
+    });
+    expect(await screen.findByText('已打印（第 3 次）')).toBeDefined();
+    // Dialog 载荷摘要：患者/医生/计划名称/明细/模板名/打印本页按钮
+    expect(await screen.findByText('打印预览')).toBeDefined();
+    expect(screen.getByText('患者甲')).toBeDefined();
+    expect(screen.getByText('张医生')).toBeDefined();
+    expect(screen.getAllByText('正畸计划').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('种植体')).toBeDefined();
+    expect(screen.getByText('治疗计划模板')).toBeDefined();
+    expect(screen.getByText('打印本页')).toBeDefined();
+  });
+
+  it('prints with a fallback template name when no template is returned', async () => {
+    mockData();
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/treatmentPlans?page=1&pageSize=50') {
+        return { items: [{ id: 'p-1', patientId: 'p-1', doctorId: 'd-1', name: '正畸计划', totalFee: 20000, status: 'APPROVED', printCount: 0, signedAt: null }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/treatment-plans/p-1/print') {
+        return { plan: { id: 'p-1', name: '正畸计划', patientName: '患者甲', doctorName: '张医生', printCount: 1 }, items: [], template: null };
+      }
+      return {};
+    });
+    render(<TreatmentPlansPage />, { wrapper });
+    await screen.findByText('正畸计划');
+    fireEvent.click(screen.getByText('打印'));
+    expect(await screen.findByText('默认模板')).toBeDefined();
+    expect(await screen.findByText('已打印（第 1 次）')).toBeDefined();
+  });
+
+  it('shows an error toast when printing fails', async () => {
+    mockData();
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/treatmentPlans?page=1&pageSize=50') {
+        return { items: [{ id: 'p-1', patientId: 'p-1', doctorId: 'd-1', name: '正畸计划', totalFee: 20000, status: 'APPROVED', printCount: 0, signedAt: null }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/treatment-plans/p-1/print') {
+        throw new Error('TreatmentPlan not found');
+      }
+      return {};
+    });
+    render(<TreatmentPlansPage />, { wrapper });
+    await screen.findByText('正畸计划');
+    fireEvent.click(screen.getByText('打印'));
+    expect(await screen.findByText('治疗计划不存在')).toBeDefined();
+  });
+
+  it('signs a plan: submits signature and signerName, toasts success, and closes the dialog', async () => {
+    mockData();
+    render(<TreatmentPlansPage />, { wrapper });
+    await screen.findByText('正畸计划');
+
+    fireEvent.click(screen.getAllByRole('button', { name: '签字' })[0]);
+    expect(await screen.findByText('电子签字')).toBeDefined();
+
+    fireEvent.change(screen.getByLabelText('签名 dataURL'), { target: { value: 'data:image/png;base64,SIGN' } });
+    fireEvent.change(screen.getByLabelText('签署人姓名'), { target: { value: '张三' } });
+    fireEvent.change(screen.getByLabelText('签名备注'), { target: { value: '患者已确认' } });
+    fireEvent.click(screen.getByText('签署'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/treatment-plans/p-1/sign', expect.objectContaining({ method: 'POST' }));
+    });
+    const signCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/treatment-plans/p-1/sign');
+    const signBody = JSON.parse(String(signCall?.[1]?.body));
+    expect(signBody).toMatchObject({
+      signature: 'data:image/png;base64,SIGN',
+      signerName: '张三',
+      remark: '患者已确认',
+    });
+    expect(await screen.findByText('签署完成')).toBeDefined();
+    await waitFor(() => {
+      expect(screen.queryByLabelText('签署人姓名')).toBeNull();
+    });
+  });
+
+  it('blocks signing when signature or signerName is empty', async () => {
+    mockData();
+    render(<TreatmentPlansPage />, { wrapper });
+    await screen.findByText('正畸计划');
+    fireEvent.click(screen.getAllByRole('button', { name: '签字' })[0]);
+    await screen.findByText('电子签字');
+
+    fireEvent.click(screen.getByText('签署'));
+    expect((await screen.findAllByText('请填写签名与签署人姓名')).length).toBeGreaterThan(0);
+    expect(apiRequest).not.toHaveBeenCalledWith('/treatment-plans/p-1/sign', expect.objectContaining({ method: 'POST' }));
+
+    fireEvent.change(screen.getByLabelText('签名 dataURL'), { target: { value: 'data:image/png;base64,SIGN' } });
+    fireEvent.click(screen.getByText('签署'));
+    expect((await screen.findAllByText('请填写签名与签署人姓名')).length).toBeGreaterThan(0);
+    expect(apiRequest).not.toHaveBeenCalledWith('/treatment-plans/p-1/sign', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('shows an error toast when signing fails', async () => {
+    mockData();
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/treatmentPlans?page=1&pageSize=50') {
+        return { items: [{ id: 'p-1', patientId: 'p-1', doctorId: 'd-1', name: '正畸计划', totalFee: 20000, status: 'APPROVED', printCount: 0, signedAt: null }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/treatment-plans/p-1/sign') {
+        throw new Error('签署人姓名不能为空');
+      }
+      return {};
+    });
+    render(<TreatmentPlansPage />, { wrapper });
+    await screen.findByText('正畸计划');
+    fireEvent.click(screen.getAllByRole('button', { name: '签字' })[0]);
+    await screen.findByText('电子签字');
+    fireEvent.change(screen.getByLabelText('签名 dataURL'), { target: { value: 'data:image/png;base64,SIGN' } });
+    fireEvent.change(screen.getByLabelText('签署人姓名'), { target: { value: '张三' } });
+    fireEvent.click(screen.getByText('签署'));
+    expect(await screen.findByText('签署人姓名不能为空')).toBeDefined();
   });
 });

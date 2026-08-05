@@ -237,6 +237,7 @@ const resources: ResourceDefinition[] = [
     f('reviewedById', 'text'),
     f('reviewedAt', 'datetime'),
     f('reviewNote', 'longText'),
+    f('proposedContentJson', 'longText'),
   ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   crud('medicalPhrases', 'MedicalPhrase', [
