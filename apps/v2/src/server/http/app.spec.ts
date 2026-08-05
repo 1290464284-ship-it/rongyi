@@ -546,6 +546,20 @@ describe('HTTP app', () => {
     expect(doctors.body.data.some((entry: { name: string }) => entry.name === 'HTTP Doctor')).toBe(true);
   });
 
+  it('creates a follow-up template with fractional default multipliers', async () => {
+    const res = await request(app)
+      .post('/api/v2/resources/followUpTemplates')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'T1', daysAfter: 3, minIntervalDays: 7, recommendedIntervalDays: 14, maxIntervalDays: 30 });
+    expect(res.status).toBe(201);
+    const id = res.body.data.id as string;
+    const row = db.prepare('SELECT riskMultiplierHigh, riskMultiplierExtreme FROM FollowUpTemplate WHERE id = ?').get(id) as {
+      riskMultiplierHigh: number; riskMultiplierExtreme: number;
+    };
+    expect(Number(row.riskMultiplierHigh)).toBeCloseTo(0.75, 5);
+    expect(Number(row.riskMultiplierExtreme)).toBeCloseTo(0.5, 5);
+  });
+
   it('supports appointments, follow-ups, analytics, sync, HR, alerts, notifications, and satisfaction', async () => {
     const appointmentStart = new Date(Date.UTC(2100, 5, 1) + Math.random() * 1000000000000).toISOString();
     const appointment = await request(app).post('/api/v2/appointments')

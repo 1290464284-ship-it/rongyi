@@ -114,6 +114,7 @@ export const migrations: Migration[] = [
     up(db) {
       const fieldType: Record<ResourceField['type'], string> = {
         number: 'REAL',
+        decimal: 'REAL',
         money: 'INTEGER',
         boolean: 'INTEGER',
         date: 'TEXT',

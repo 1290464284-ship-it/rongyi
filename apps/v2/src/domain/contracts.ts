@@ -886,7 +886,8 @@ export type FieldType =
   | 'boolean'
   | 'enum'
   | 'json'
-  | 'relation';
+  | 'relation'
+  | 'decimal';
 
 export type FieldFormat =
   | 'text'
