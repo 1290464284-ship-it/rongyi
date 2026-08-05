@@ -106,6 +106,13 @@ function crashLog(message, error) {
   }
 }
 
+// T2R-22 遗留④：可用明文判定——长度达标且不含控制字符（NUL 会让子进程
+// spawn 环境校验失败，进入错误窗循环）。旧明文密钥（safeStorage 引入前）
+// 均为 ASCII 可打印串，损坏的密文 blob 几乎必然含控制字符或被 UTF-8 替换。
+function isUsablePlainSecret(plain) {
+  return typeof plain === 'string' && plain.length >= 32 && !/[\u0000-\u001f\u007f]/.test(plain);
+}
+
 function getOrCreateSecret(fileName = 'jwt-secret') {
   const secretsDir = path.join(app.getPath('userData'), 'secrets');
   const secretPath = path.join(secretsDir, fileName);
@@ -117,16 +124,22 @@ function getOrCreateSecret(fileName = 'jwt-secret') {
         const plain = safeStorage.decryptString(existing);
         if (plain.length >= 32) return plain;
       } catch {
-        // 旧明文文件，落到下方重新加密
+        // 解密失败：可能是 safeStorage 引入前的旧明文文件，也可能是损坏/后端翻转的密文。
+        // 仅当内容是可用明文时才视为旧明文并重新加密；否则删除重新生成——
+        // 把二进制密文当明文回传会让 JWT 密钥含 NUL 字节，spawn 环境校验失败。
         const plain = existing.toString('utf8').trim();
-        if (plain.length >= 32) {
+        if (isUsablePlainSecret(plain)) {
           fs.writeFileSync(secretPath, safeStorage.encryptString(plain), { mode: 0o600 });
           return plain;
         }
+        console.warn(`secret file ${fileName} is unreadable or corrupt; regenerating`);
+        fs.rmSync(secretPath, { force: true });
       }
     } else {
       const plain = existing.toString('utf8').trim();
-      if (plain.length >= 32) return plain;
+      if (isUsablePlainSecret(plain)) return plain;
+      console.warn(`secret file ${fileName} is unreadable or corrupt; regenerating`);
+      fs.rmSync(secretPath, { force: true });
     }
   } catch {
     // first run or unreadable secret; create a fresh one below
