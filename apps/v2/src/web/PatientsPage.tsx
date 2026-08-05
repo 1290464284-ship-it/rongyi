@@ -5,6 +5,7 @@ import type { Page } from './types';
 import { ConfirmDialog, DataTable, Dialog, EmptyState, LoadingState, PageError } from './components';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
+import { useDebouncedValue } from './use-debounce';
 
 const GENDER_LABELS: Record<string, string> = {
   MALE: '男',
@@ -72,7 +73,8 @@ const emptyForm: PatientForm = {
 
 export function PatientsPage() {
   const { showToast } = useToast();
-  const [search, setSearch] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const search = useDebouncedValue(searchInput, 300);
   const [page, setPage] = useState(1);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -236,9 +238,9 @@ export function PatientsPage() {
         className="search"
         placeholder="搜索编号、姓名或手机号"
         aria-label="搜索患者"
-        value={search}
+        value={searchInput}
         onChange={(event) => {
-          setSearch(event.target.value);
+          setSearchInput(event.target.value);
           setPage(1);
         }}
       />

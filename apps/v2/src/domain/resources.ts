@@ -90,7 +90,7 @@ const resources: ResourceDefinition[] = [
     f('systemicDiseases', 'json', { default: '[]' }),
     f('source', 'enum', { required: true, enumValues: ['WALK_IN', 'REFERRAL', 'ONLINE', 'OTHER'] }),
     f('active', 'boolean', { default: true }),
-  ], { roles: reception }),
+  ], { roles: reception, searchIndexResource: 'Patient' }),
 
   crud('familyMembers', 'FamilyMember', [
     f('patientId', 'relation', { required: true, relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
@@ -127,7 +127,7 @@ const resources: ResourceDefinition[] = [
     f('type', 'enum', { required: true, enumValues: ['REGULAR', 'FOLLOW_UP', 'EMERGENCY', 'CONSULTATION'] }),
     f('remark', 'longText'),
     f('visitId', 'relation', { relation: { resource: 'visits', foreignKey: 'visitId', labelField: 'id' } }),
-  ], { roles: reception, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
+  ], { roles: reception, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false }, searchIndexResource: 'Appointment' }),
 
   crud('registrations', 'Registration', [
     f('patientId', 'relation', { required: true, relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
@@ -312,7 +312,7 @@ const resources: ResourceDefinition[] = [
     f('paidAt', 'datetime'),
     f('memberCardId', 'relation', { relation: { resource: 'memberCards', foreignKey: 'memberCardId', labelField: 'cardNo' } }),
     f('remark', 'longText'),
-  ], { roles: reception, audit: true, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
+  ], { roles: reception, audit: true, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false }, searchIndexResource: 'Charge' }),
 
   crud('chargeItems', 'ChargeItem', [
     f('chargeId', 'relation', { required: true, relation: { resource: 'charges', foreignKey: 'chargeId', labelField: 'number' } }),
@@ -409,7 +409,7 @@ const resources: ResourceDefinition[] = [
     f('address', 'longText'),
     f('bankAccount', 'text'),
     f('remark', 'longText'),
-  ], { roles: boss }),
+  ], { roles: boss, searchIndexResource: 'Supplier' }),
 
   crud('inventoryItems', 'InventoryItem', [
     f('code', 'text', { required: true, unique: true, searchable: true }),
@@ -424,7 +424,7 @@ const resources: ResourceDefinition[] = [
     f('expireDate', 'date'),
     f('location', 'text'),
     f('remark', 'longText'),
-  ], { roles: ['BOSS', 'ADMIN', 'RECEPTIONIST'], capabilities: { list: true, create: true, update: true, delete: false, softDelete: false } }),
+  ], { roles: ['BOSS', 'ADMIN', 'RECEPTIONIST'], capabilities: { list: true, create: true, update: true, delete: false, softDelete: false }, searchIndexResource: 'InventoryItem' }),
 
   crud('inventoryTransactions', 'InventoryTransaction', [
     f('itemId', 'relation', { required: true, relation: { resource: 'inventoryItems', foreignKey: 'itemId', labelField: 'name' } }),
@@ -522,7 +522,7 @@ const resources: ResourceDefinition[] = [
     f('assigneeId', 'relation', { relation: { resource: 'users', foreignKey: 'assigneeId', labelField: 'name' } }),
     f('templateId', 'text'),
     f('completedAt', 'datetime'),
-  ], { roles: reception, audit: true, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
+  ], { roles: reception, audit: true, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false }, searchIndexResource: 'FollowUp' }),
 
   crud('followUpTemplates', 'FollowUpTemplate', [
     f('name', 'text', { required: true, searchable: true }),

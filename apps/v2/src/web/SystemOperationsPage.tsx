@@ -2,6 +2,7 @@ import { FormEvent, useState } from 'react';
 import { apiRequest } from './api';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
+import { useDebouncedValue } from './use-debounce';
 
 export function SystemOperationsPage() {
   const { showToast } = useToast();
@@ -11,7 +12,8 @@ export function SystemOperationsPage() {
   );
   const [chunkSize, setChunkSize] = useState('100');
   const [auditRetentionDays, setAuditRetentionDays] = useState('365');
-  const [search, setSearch] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const search = useDebouncedValue(searchInput, 300);
   const [searchResults, setSearchResults] = useState<Array<Record<string, unknown>>>([]);
 
   function loadFile(file: File) {
@@ -101,7 +103,7 @@ export function SystemOperationsPage() {
       </form>
       <h2>全局搜索</h2>
       <div className="inline-form">
-        <input aria-label="搜索关键词" value={search} onChange={(event) => setSearch(event.target.value)} />
+        <input aria-label="搜索关键词" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} />
         <button onClick={runSearch}>搜索</button>
       </div>
       {searchResults.length > 0 && (

@@ -41,6 +41,8 @@ describe('SystemOperationsPage', () => {
     expect(await screen.findByText('导入完成：成功 2，失败 0，分片 1')).toBeDefined();
 
     fireEvent.change(screen.getByLabelText('搜索关键词'), { target: { value: 'Demo' } });
+    // 搜索输入已防抖（300ms），等待防抖值落地后再点击。
+    await new Promise((resolve) => setTimeout(resolve, 350));
     fireEvent.click(screen.getByRole('button', { name: '搜索' }));
     expect(await screen.findByText('Demo Patient')).toBeDefined();
   });
@@ -108,11 +110,14 @@ describe('SystemOperationsPage', () => {
     expect(await screen.findByText('system failed')).toBeDefined();
 
     fireEvent.change(screen.getByLabelText('搜索关键词'), { target: { value: 'D' } });
+    // 搜索输入已防抖（300ms），等待防抖值落地后再点击。
+    await new Promise((resolve) => setTimeout(resolve, 350));
     fireEvent.click(screen.getByRole('button', { name: '搜索' }));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(apiRequest).not.toHaveBeenCalledWith('/search?q=D', expect.anything());
 
     fireEvent.change(screen.getByLabelText('搜索关键词'), { target: { value: 'Demo' } });
+    await new Promise((resolve) => setTimeout(resolve, 350));
     fireEvent.click(screen.getByRole('button', { name: '搜索' }));
     expect(await screen.findByText('system failed')).toBeDefined();
 

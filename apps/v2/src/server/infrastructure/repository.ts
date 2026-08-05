@@ -11,6 +11,7 @@ import type {
 } from '../../domain/contracts';
 import { maskSensitiveFields } from './security';
 import { tenantAnd, tenantParams } from './tenant';
+import { buildFtsQuery } from './search-index';
 
 function serialize(field: ResourceField, value: unknown): unknown {
   if (value === undefined || value === null) return null;
@@ -85,7 +86,13 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
       params.push(serialize(field, value));
     }
 
-    if (query.search && (this.resource.searchableFields?.length ?? 0) > 0) {
+    if (query.search && this.resource.searchIndexResource) {
+      const ftsQuery = buildFtsQuery(query.search);
+      if (ftsQuery) {
+        where.push(`id IN (SELECT recordId FROM SearchIndex WHERE SearchIndex MATCH ? AND resource = ?)`);
+        params.push(ftsQuery, this.resource.searchIndexResource);
+      }
+    } else if (query.search && (this.resource.searchableFields?.length ?? 0) > 0) {
       const searchClauses = this.resource.searchableFields!.map((field) => `${field} LIKE ? ESCAPE '\\'`);
       where.push(`(${searchClauses.join(' OR ')})`);
       const escaped = query.search.replace(/[\\%_]/g, '\\$&');
