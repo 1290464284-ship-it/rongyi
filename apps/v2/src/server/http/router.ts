@@ -7,6 +7,7 @@ import { validatePayload } from './validation';
 import type { ResourceDefinition } from '../../domain/contracts';
 import { resolveResource } from '../infrastructure/legacy-registry';
 import { stripProtectedWriteFields } from '../infrastructure/security';
+import { withIdempotency } from '../infrastructure/idempotency';
 
 export function createResourceRouter(db: Database.Database): Router {
   const router = Router();
@@ -57,10 +58,19 @@ export function createResourceRouter(db: Database.Database): Router {
       const resource = res.locals.resource as ResourceDefinition;
       if (!resource.capabilities.create) throw new NotFoundError('Create is not supported for this resource');
       const payload = stripProtectedWriteFields(validatePayload(resource, req.body ?? {}));
-      const id = randomUUID();
-      const repo = new SqliteRepository(db, resource);
-      await repo.insert({ id, ...payload }, req.context!);
-      res.status(201).json({ success: true, data: { id } });
+      const requestId = typeof req.header('idempotency-key') === 'string' ? req.header('idempotency-key')! : '';
+      const result = await withIdempotency(db, {
+        operation: `resource.create.${resource.name}`,
+        userId: req.context!.userId,
+        clinicId: req.context!.clinicId,
+        requestId,
+      }, async () => {
+        const id = randomUUID();
+        const repo = new SqliteRepository(db, resource);
+        await repo.insert({ id, ...payload }, req.context!);
+        return { success: true, data: { id } };
+      });
+      res.status(201).json(result);
     } catch (error) {
       next(error);
     }

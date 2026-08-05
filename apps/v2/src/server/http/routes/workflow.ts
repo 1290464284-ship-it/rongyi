@@ -2,6 +2,7 @@ import type { Express } from 'express';
 import { createRateLimit } from '../rate-limit';
 import { wrapAsync } from '../middleware';
 import type { RouteDependencies } from './deps';
+import { withIdempotency } from '../../infrastructure/idempotency';
 
 export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): void {
   const {
@@ -27,8 +28,16 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
   const batchLimiter = createRateLimit({ windowMs: 60_000, max: 60 });
 
   app.post('/api/v2/appointments', writeLimiter, wrapAsync(async (req, res) => {
-      const result = await appointments.create(req.body, req.context!);
-      res.status(201).json({ success: true, data: result });
+      const result = await withIdempotency(deps.db, {
+        operation: 'appointment.create',
+        userId: req.context!.userId,
+        clinicId: req.context!.clinicId,
+        requestId: req.header('idempotency-key') ?? '',
+      }, async () => {
+        const created = await appointments.create(req.body, req.context!);
+        return { success: true, data: created };
+      });
+      res.status(201).json(result);
   }));
 
   app.patch('/api/v2/appointments/:id/status', wrapAsync(async (req, res) => {
@@ -69,11 +78,29 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
   }));
 
   app.post('/api/v2/wechat/:id/send', writeLimiter, wrapAsync(async (req, res) => {
-      res.json({ success: true, data: await wechat.send(String(req.params.id), req.context!) });
+      const result = await withIdempotency(deps.db, {
+        operation: `wechat.send.${String(req.params.id)}`,
+        userId: req.context!.userId,
+        clinicId: req.context!.clinicId,
+        requestId: req.header('idempotency-key') ?? '',
+      }, async () => {
+        const sent = await wechat.send(String(req.params.id), req.context!);
+        return { success: true, data: sent };
+      });
+      res.json(result);
   }));
 
   app.post('/api/v2/wechat/send-batch', batchLimiter, wrapAsync(async (req, res) => {
-      res.json({ success: true, data: await wechat.sendBatch(req.body?.ids ?? [], req.context!) });
+      const result = await withIdempotency(deps.db, {
+        operation: 'wechat.send-batch',
+        userId: req.context!.userId,
+        clinicId: req.context!.clinicId,
+        requestId: req.header('idempotency-key') ?? '',
+      }, async () => {
+        const sent = await wechat.sendBatch(req.body?.ids ?? [], req.context!);
+        return { success: true, data: sent };
+      });
+      res.json(result);
   }));
 
   app.post('/api/v2/charges', writeLimiter, wrapAsync(async (req, res) => {
@@ -151,7 +178,16 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
   }));
 
   app.patch('/api/v2/purchase-orders/:id/receive', writeLimiter, wrapAsync(async (req, res) => {
-      res.json({ success: true, data: await purchaseOrders.receive(String(req.params.id), req.context!) });
+      const result = await withIdempotency(deps.db, {
+        operation: `purchase-order.receive.${String(req.params.id)}`,
+        userId: req.context!.userId,
+        clinicId: req.context!.clinicId,
+        requestId: req.header('idempotency-key') ?? '',
+      }, async () => {
+        const received = await purchaseOrders.receive(String(req.params.id), req.context!);
+        return { success: true, data: received };
+      });
+      res.json(result);
   }));
 
   app.get('/api/v2/purchase-orders/:id/items', wrapAsync(async (req, res) => {
@@ -166,7 +202,16 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
   }));
 
   app.patch('/api/v2/processing-orders/:id/status', writeLimiter, wrapAsync(async (req, res) => {
-      res.json({ success: true, data: processingOrders.transition(String(req.params.id), String(req.body?.status ?? ''), req.context!) });
+      const result = withIdempotency(deps.db, {
+        operation: `processing-order.status.${String(req.params.id)}`,
+        userId: req.context!.userId,
+        clinicId: req.context!.clinicId,
+        requestId: req.header('idempotency-key') ?? '',
+      }, () => ({
+        success: true,
+        data: processingOrders.transition(String(req.params.id), String(req.body?.status ?? ''), req.context!),
+      }));
+      res.json(result);
   }));
 
   app.post('/api/v2/patients/:id/risk', writeLimiter, wrapAsync(async (req, res) => {
@@ -252,25 +297,37 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
   }));
 
   app.post('/api/v2/follow-ups/batch-complete', writeLimiter, wrapAsync(async (req, res) => {
-      res.json({
+      const result = withIdempotency(deps.db, {
+        operation: 'follow-ups.batch-complete',
+        userId: req.context!.userId,
+        clinicId: req.context!.clinicId,
+        requestId: req.header('idempotency-key') ?? '',
+      }, () => ({
         success: true,
         data: followUps.batchComplete(
           Array.isArray(req.body?.ids) ? req.body.ids : [],
           req.context!,
           typeof req.body?.result === 'string' ? req.body.result : null,
         ),
-      });
+      }));
+      res.json(result);
   }));
 
   app.patch('/api/v2/follow-ups/:id/complete', writeLimiter, wrapAsync(async (req, res) => {
-      res.json({
+      const result = withIdempotency(deps.db, {
+        operation: `follow-up.complete.${String(req.params.id)}`,
+        userId: req.context!.userId,
+        clinicId: req.context!.clinicId,
+        requestId: req.header('idempotency-key') ?? '',
+      }, () => ({
         success: true,
         data: followUps.complete(
           String(req.params.id),
           req.context!,
           typeof req.body?.result === 'string' ? req.body.result : null,
         ),
-      });
+      }));
+      res.json(result);
   }));
 
   app.get('/api/v2/follow-ups/adherence', wrapAsync(async (req, res) => {
