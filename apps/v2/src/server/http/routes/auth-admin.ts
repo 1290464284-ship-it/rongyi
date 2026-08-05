@@ -2,6 +2,8 @@ import type { Express } from 'express';
 import { createIpRateLimit, createRateLimit } from '../rate-limit';
 import { navigationForRole } from '../route-policy';
 import { wrapAsync } from '../middleware';
+import { AppError } from '../../infrastructure/errors';
+import type { AuditInput } from '../app';
 import type { RouteDependencies } from './deps';
 
 export function registerPublicAuthRoutes(app: Express, deps: RouteDependencies): void {
@@ -10,9 +12,30 @@ export function registerPublicAuthRoutes(app: Express, deps: RouteDependencies):
   const ipLoginLimiter = createIpRateLimit({ windowMs: 60_000, max: 10 });
   const refreshLimiter = createRateLimit({ windowMs: 60_000, max: 30 });
 
-  app.post('/api/v2/auth/login', loginLimiter, ipLoginLimiter, wrapAsync(async (req, res) => {
-      const result = await authService.login(String(req.body?.username ?? ''), String(req.body?.password ?? ''));
-      res.json({ success: true, data: result });
+  app.post('/api/v2/auth/login', loginLimiter, ipLoginLimiter, wrapAsync(async (req, res, next) => {
+      const username = String(req.body?.username ?? '');
+      const audit = (req.app.locals.audit as ((input: AuditInput) => void) | undefined) ?? (() => {});
+      try {
+        const result = await authService.login(username, String(req.body?.password ?? ''));
+        audit({
+          action: 'LOGIN_SUCCESS',
+          target: username,
+          ip: req.ip ?? null,
+          traceId: req.traceId,
+          userId: result.user.id,
+          userName: username,
+        });
+        res.json({ success: true, data: result });
+      } catch (error) {
+        audit({
+          action: 'LOGIN_FAILED',
+          target: username,
+          detail: error instanceof AppError ? error.message : 'login failed',
+          ip: req.ip ?? null,
+          traceId: req.traceId,
+        });
+        next(error);
+      }
   }));
 
   app.post('/api/v2/auth/refresh', refreshLimiter, wrapAsync(async (req, res) => {
