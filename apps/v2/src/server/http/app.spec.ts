@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createApp } from './app';
 import { createDatabase, seedDatabase } from '../infrastructure/database';
@@ -455,6 +455,54 @@ describe('HTTP app', () => {
       .set('Authorization', `Bearer ${receptionToken}`)
       .send({})
       .expect(409);
+  });
+
+  it('sends a wechat message only once per Idempotency-Key', async () => {
+    const previousUrl = process.env.V2_WECHAT_API_URL;
+    const previousAppId = process.env.V2_WECHAT_APP_ID;
+    const previousSecret = process.env.V2_WECHAT_APP_SECRET;
+    process.env.V2_WECHAT_API_URL = 'https://wechat.test';
+    process.env.V2_WECHAT_APP_ID = 'wechat-app';
+    process.env.V2_WECHAT_APP_SECRET = 'wechat-secret';
+    // 独立 app 实例以便注入已配置的 wechat provider（共享 app 在 beforeAll 时无渠道配置）。
+    const isolatedApp = createApp({
+      db,
+      dbPath,
+      backupDir,
+      logDir: dataDir,
+      logger: new Logger({ logDir: dataDir }),
+    });
+    if (previousUrl === undefined) delete process.env.V2_WECHAT_API_URL; else process.env.V2_WECHAT_API_URL = previousUrl;
+    if (previousAppId === undefined) delete process.env.V2_WECHAT_APP_ID; else process.env.V2_WECHAT_APP_ID = previousAppId;
+    if (previousSecret === undefined) delete process.env.V2_WECHAT_APP_SECRET; else process.env.V2_WECHAT_APP_SECRET = previousSecret;
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true, result: 'sent' }) });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const created = await request(isolatedApp)
+        .post('/api/v2/resources/wechatMessages')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ patientId: 'patient-demo-001', type: 'TEXT', content: 'idempotent send', status: 'PENDING' })
+        .expect(201);
+      const first = await request(isolatedApp)
+        .post(`/api/v2/wechat/${created.body.data.id}/send`)
+        .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', 'wechat-send-idem')
+        .send({})
+        .expect(200);
+      const second = await request(isolatedApp)
+        .post(`/api/v2/wechat/${created.body.data.id}/send`)
+        .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', 'wechat-send-idem')
+        .send({})
+        .expect(200);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(second.body).toEqual(first.body);
+      expect(first.body.data.status).toBe('SENT');
+    } finally {
+      vi.unstubAllGlobals();
+      db.prepare("DELETE FROM WechatMessage WHERE content = 'idempotent send'").run();
+      db.prepare("DELETE FROM IdempotencyRecord WHERE operation LIKE 'wechat.send.%'").run();
+    }
   });
 
   it('audits forbidden attempts', async () => {

@@ -322,4 +322,35 @@ describe('resource router', () => {
     expect(capped.body.data.pageSize).toBe(200);
     await request(app).get('/api/v2/resources/patients?page=&pageSize=').set(auth).expect(200);
   });
+
+  it('deduplicates generic resource POSTs that share an Idempotency-Key', async () => {
+    const body = {
+      code: 'ROUTER-IDEM',
+      name: 'Idempotent Patient',
+      gender: 'UNKNOWN',
+      phone: '13611110009',
+      source: 'WALK_IN',
+      active: true,
+    };
+    try {
+      const first = await request(app)
+        .post('/api/v2/resources/patients')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('Idempotency-Key', 'router-idem-abc')
+        .send(body)
+        .expect(201);
+      const second = await request(app)
+        .post('/api/v2/resources/patients')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('Idempotency-Key', 'router-idem-abc')
+        .send(body)
+        .expect(201);
+      expect(second.body).toEqual(first.body);
+      const rows = db.prepare("SELECT COUNT(*) AS c FROM Patient WHERE code = 'ROUTER-IDEM'").get() as { c: number };
+      expect(rows.c).toBe(1);
+    } finally {
+      db.prepare("DELETE FROM Patient WHERE code = 'ROUTER-IDEM'").run();
+      db.prepare("DELETE FROM IdempotencyRecord WHERE operation = 'resource.create.patients'").run();
+    }
+  });
 });
