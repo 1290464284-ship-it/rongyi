@@ -19,10 +19,12 @@ import {
   StatsService,
   SyncService,
 } from './services';
+import { HttpWechatProvider, WechatService } from './workflow-services';
 import { SqliteChargeRepository } from '../infrastructure/repositories/charge.repository';
-import type { AuthRepository, MemberCardRepository, MemberCardRecord } from './ports';
+import type { AuthRepository, MemberCardRepository, MemberCardRecord, WechatMessageRepository } from './ports';
 import type { AppContext } from '../../domain/contracts';
 import { SystemClock } from '../infrastructure/clock';
+import type { Logger } from '../infrastructure/logger';
 
 describe('application services', () => {
   let db: Database.Database;
@@ -896,5 +898,113 @@ describe('application services', () => {
       db.prepare('DELETE FROM SyncChange WHERE deviceId = ? AND recordId LIKE ?').run('sync-push-batch-device', 'sync-push-batch-record-%');
       db.prepare('DELETE FROM SyncDevice WHERE deviceId = ?').run('sync-push-batch-device');
     }
+  });
+
+  it('reports wechat provider HTTP and network failures with detail', async () => {
+    const provider = new HttpWechatProvider('https://wechat.test', 'app', 'secret');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 503 }));
+    try {
+      const httpFailure = await provider.send({ id: 'wechat-http-fail' });
+      expect(httpFailure).toEqual({ ok: false, result: 'http_503', detail: 'status 503' });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
+    try {
+      const networkFailure = await provider.send({ id: 'wechat-net-fail' });
+      expect(networkFailure).toEqual({ ok: false, result: 'network_error', detail: 'ECONNREFUSED' });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('logs wechat send failures with the provider detail', async () => {
+    const repo: WechatMessageRepository = {
+      findById: (id) => ({ id: String(id), status: 'PENDING', clinicId: context.clinicId }),
+      markSent: () => 1,
+    };
+    const provider = {
+      name: 'failing',
+      isConfigured: () => true,
+      send: async () => ({ ok: false, result: 'network_error', detail: 'connection refused' }),
+    };
+    const loggerError = vi.fn();
+    const logger = { error: loggerError } as unknown as Logger;
+    const service = new WechatService(db, repo, provider, logger);
+
+    await expect(service.send('wechat-fail-detail', context)).rejects.toThrow('Wechat channel send failed');
+    expect(loggerError).toHaveBeenCalledWith('wechat send failed', expect.objectContaining({
+      action: 'wechat-send',
+      recordId: 'wechat-fail-detail',
+      result: 'network_error',
+      detail: 'connection refused',
+      traceId: 'test-trace',
+    }));
+
+    const batch = await service.sendBatch(['wechat-fail-detail'], context);
+    expect(batch.sent).toBe(0);
+    expect(batch.failed).toBe(1);
+    expect(batch.results[0]).toEqual({
+      id: 'wechat-fail-detail',
+      status: 'FAILED',
+      result: 'network_error',
+      detail: 'connection refused',
+    });
+  });
+
+  it('sends wechat batches with at most 10 concurrent provider calls and full coverage', async () => {
+    const repo: WechatMessageRepository = {
+      findById: (id) => ({ id: String(id), status: 'PENDING', clinicId: context.clinicId }),
+      markSent: () => 1,
+    };
+    let concurrent = 0;
+    let maxConcurrent = 0;
+    const provider = {
+      name: 'counting',
+      isConfigured: () => true,
+      send: async () => {
+        concurrent += 1;
+        maxConcurrent = Math.max(maxConcurrent, concurrent);
+        await new Promise((resolve) => setImmediate(resolve));
+        concurrent -= 1;
+        return { ok: true, result: 'sent' };
+      },
+    };
+    const ids = Array.from({ length: 300 }, (_, index) => `wechat-concurrent-${index}`);
+    const service = new WechatService(db, repo, provider);
+    const result = await service.sendBatch(ids, context);
+    expect(result.sent).toBe(300);
+    expect(result.failed).toBe(0);
+    expect(result.results).toHaveLength(300);
+    expect(maxConcurrent).toBeLessThanOrEqual(10);
+  });
+
+  it('keeps individual wechat batch failures without aborting the batch', async () => {
+    const repo: WechatMessageRepository = {
+      findById: (id) => ({ id: String(id), status: 'PENDING', clinicId: context.clinicId }),
+      markSent: () => 1,
+    };
+    const provider = {
+      name: 'flaky',
+      isConfigured: () => true,
+      send: async (payload: { id: string }) => {
+        if (Number(payload.id.split('-').pop()) % 2 === 1) {
+          return { ok: false, result: 'http_503', detail: 'status 503' };
+        }
+        return { ok: true, result: 'sent' };
+      },
+    };
+    const ids = Array.from({ length: 25 }, (_, index) => `wechat-flaky-${index}`);
+    const service = new WechatService(db, repo, provider);
+    const result = await service.sendBatch(ids, context);
+    expect(result.results).toHaveLength(25);
+    expect(result.failed).toBe(12);
+    expect(result.sent).toBe(13);
+    expect(result.results[1]).toMatchObject({
+      id: 'wechat-flaky-1',
+      status: 'FAILED',
+      result: 'http_503',
+      detail: 'status 503',
+    });
   });
 });

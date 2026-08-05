@@ -194,7 +194,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
     satisfaction: new SatisfactionService(db),
     clinicalWorkflow: new ClinicalWorkflowService(db),
     replenishment: new ReplenishmentService(db),
-    wechat: new WechatService(db),
+    wechat: new WechatService(db, undefined, undefined, logger),
     analytics: new AnalyticsService(db),
     chargeAssistant: new ChargeAssistantService(db),
     printTemplates: new PrintTemplateService(db),
