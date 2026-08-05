@@ -77,15 +77,18 @@ function loadTokens(): Promise<void> {
     const store = desktopSecretStore();
     if (store) {
       try {
-        memoryToken = (await store.get('v2.token')) ?? localStorage.getItem('v2.token');
-        memoryRefreshToken = (await store.get('v2.refreshToken')) ?? localStorage.getItem('v2.refreshToken');
+        memoryToken = (await store.get('v2.token')) ?? null;
+        memoryRefreshToken = (await store.get('v2.refreshToken')) ?? null;
       } catch {
-        memoryToken = localStorage.getItem('v2.token');
-        memoryRefreshToken = localStorage.getItem('v2.refreshToken');
+        // safeStorage 不可用/读取失败：仅保持内存会话，不落 localStorage
+        memoryToken = null;
+        memoryRefreshToken = null;
+        console.warn('desktop secret store unavailable; session will not persist across restarts');
       }
     } else {
-      memoryToken = localStorage.getItem('v2.token');
-      memoryRefreshToken = localStorage.getItem('v2.refreshToken');
+      // 无桌面桥（纯浏览器 dev 模式）：仅保持内存会话
+      memoryToken = null;
+      memoryRefreshToken = null;
     }
   })();
   return tokenLoad;
@@ -101,7 +104,7 @@ async function refreshToken(): Promise<string | null> {
   return memoryRefreshToken;
 }
 
-async function setTokens(accessToken: string, newRefreshToken: string): Promise<void> {
+export async function setTokens(accessToken: string, newRefreshToken: string): Promise<void> {
   memoryToken = accessToken;
   memoryRefreshToken = newRefreshToken;
   const store = desktopSecretStore();
@@ -115,14 +118,10 @@ async function setTokens(accessToken: string, newRefreshToken: string): Promise<
       stored = false;
       storedRefresh = false;
     }
-    if (stored && storedRefresh) {
-      localStorage.removeItem('v2.token');
-      localStorage.removeItem('v2.refreshToken');
-      return;
+    if (!stored || !storedRefresh) {
+      console.warn('desktop secret store unavailable; session will not persist across restarts');
     }
   }
-  localStorage.setItem('v2.token', accessToken);
-  localStorage.setItem('v2.refreshToken', newRefreshToken);
 }
 
 async function clearSession(): Promise<void> {
@@ -134,11 +133,9 @@ async function clearSession(): Promise<void> {
       await store.delete('v2.token');
       await store.delete('v2.refreshToken');
     } catch {
-      // Fall through and still clear the in-memory/local fallback session.
+      // 仅保持内存清理，不写 localStorage
     }
   }
-  localStorage.removeItem('v2.token');
-  localStorage.removeItem('v2.refreshToken');
 }
 
 async function refreshAccessToken(): Promise<boolean> {

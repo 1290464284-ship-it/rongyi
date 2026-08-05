@@ -89,12 +89,13 @@ describe('api baseUrl 解析', () => {
   });
 });
 
-describe('loadTokens 优先级 desktop → localStorage', () => {
+describe('token 会话：desktop secrets 优先，无桥时仅内存（不落 localStorage）', () => {
   const originalWindow = globalThis.window;
   const originalLocalStorage = (globalThis as unknown as { localStorage?: Storage }).localStorage;
 
   let apiRequest: typeof import('./api').apiRequest;
   let resetApiBase: typeof import('./api').resetApiBase;
+  let setTokens: typeof import('./api').setTokens;
   let storageRef: Record<string, string> = {};
 
   beforeEach(async () => {
@@ -119,6 +120,7 @@ describe('loadTokens 优先级 desktop → localStorage', () => {
     const mod = await import('./api');
     apiRequest = mod.apiRequest;
     resetApiBase = mod.resetApiBase;
+    setTokens = mod.setTokens;
     resetApiBase();
   });
 
@@ -127,7 +129,7 @@ describe('loadTokens 优先级 desktop → localStorage', () => {
     Object.defineProperty(globalThis, 'localStorage', { configurable: true, writable: true, value: originalLocalStorage });
   });
 
-  it('存在 desktop secrets 时优先读取 desktop，fallback 到 localStorage', async () => {
+  it('存在 desktop secrets 时读取 desktop', async () => {
     const store = new Map<string, string>();
     store.set('v2.token', 'desktop-token');
     store.set('v2.refreshToken', 'desktop-refresh');
@@ -137,8 +139,6 @@ describe('loadTokens 优先级 desktop → localStorage', () => {
       delete: vi.fn().mockResolvedValue(true),
     };
     (globalThis.window as unknown as { desktop: { secrets: typeof secrets } }).desktop = { secrets };
-    storageRef['v2.token'] = 'local-token';
-    storageRef['v2.refreshToken'] = 'local-refresh';
 
     globalThis.fetch = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ success: true, data: 'ok' }), { status: 200 }),
@@ -155,7 +155,7 @@ describe('loadTokens 优先级 desktop → localStorage', () => {
     expect(secrets.get).toHaveBeenCalledWith('v2.refreshToken');
   });
 
-  it('secrets.get 抛错时回退到 localStorage', async () => {
+  it('secrets.get 抛错时仅保持内存会话，不读 localStorage', async () => {
     const secrets = {
       get: vi.fn().mockRejectedValue(new Error('secure enclave unavailable')),
       set: vi.fn().mockResolvedValue(true),
@@ -175,10 +175,12 @@ describe('loadTokens 优先级 desktop → localStorage', () => {
     await apiRequest<string>('/auth-ping');
     const fetchCall = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
     const auth = String(new Request(fetchCall[0], fetchCall[1]).headers.get('Authorization') ?? '');
-    expect(auth).toBe('Bearer local-token');
+    expect(auth).toBe('');
+    expect(storageRef['v2.token']).toBe('local-token');
+    expect(storageRef['v2.refreshToken']).toBe('local-refresh');
   });
 
-  it('没有 desktop bridge 时仅读取 localStorage', async () => {
+  it('无 desktop 桥时不从 localStorage 恢复会话', async () => {
     storageRef['v2.token'] = 'only-local';
     delete (globalThis.window as unknown as { desktop?: unknown }).desktop;
 
@@ -189,7 +191,48 @@ describe('loadTokens 优先级 desktop → localStorage', () => {
     await apiRequest<string>('/auth-ping');
     const fetchCall = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
     const auth = String(new Request(fetchCall[0], fetchCall[1]).headers.get('Authorization') ?? '');
-    expect(auth).toBe('Bearer only-local');
+    expect(auth).toBe('');
+  });
+
+  it('setTokens 在 store 不可用时仅保持内存不写 localStorage', async () => {
+    delete (globalThis.window as unknown as { desktop?: unknown }).desktop;
+    delete storageRef['v2.token'];
+    delete storageRef['v2.refreshToken'];
+
+    globalThis.fetch = vi.fn().mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify({ success: true, data: 'ok' }), { status: 200 })),
+    );
+    // 先触发 loadTokens（无 desktop → 内存为空），模拟真实登录流程的调用顺序
+    await apiRequest<string>('/warmup');
+    await setTokens('mem-token', 'mem-refresh');
+
+    expect(storageRef['v2.token']).toBeUndefined();
+    expect(storageRef['v2.refreshToken']).toBeUndefined();
+
+    await apiRequest<string>('/auth-ping');
+    const calls = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    const lastCall = calls[calls.length - 1];
+    const auth = String(new Request(lastCall[0], lastCall[1]).headers.get('Authorization') ?? '');
+    expect(auth).toBe('Bearer mem-token');
+  });
+
+  it('setTokens 在 store.set 失败时不写 localStorage', async () => {
+    const secrets = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockRejectedValue(new Error('write failed')),
+      delete: vi.fn().mockResolvedValue(true),
+    };
+    (globalThis.window as unknown as { desktop: { secrets: typeof secrets } }).desktop = { secrets };
+    delete storageRef['v2.token'];
+    delete storageRef['v2.refreshToken'];
+
+    await setTokens('mem-token', 'mem-refresh');
+
+    // store.set 首次调用即失败时，第二个 key 的 set 不再执行（生产逻辑），且不写 localStorage
+    expect(secrets.set).toHaveBeenCalledTimes(1);
+    expect(secrets.set).toHaveBeenCalledWith('v2.token', 'mem-token');
+    expect(storageRef['v2.token']).toBeUndefined();
+    expect(storageRef['v2.refreshToken']).toBeUndefined();
   });
 });
 
@@ -199,6 +242,7 @@ describe('401 refresh 触发', () => {
 
   let apiRequest: typeof import('./api').apiRequest;
   let resetApiBase: typeof import('./api').resetApiBase;
+  let setTokens: typeof import('./api').setTokens;
   let storageRef: Record<string, string> = {};
   let fetchCalls: Array<{ url: string; init: RequestInit }> = [];
 
@@ -222,6 +266,7 @@ describe('401 refresh 触发', () => {
     const mod = await import('./api');
     apiRequest = mod.apiRequest;
     resetApiBase = mod.resetApiBase;
+    setTokens = mod.setTokens;
     resetApiBase();
 
     globalThis.fetch = vi.fn().mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -253,6 +298,9 @@ describe('401 refresh 触发', () => {
   });
 
   it('非登录接口 401 时自动调用 refresh 并重放请求', async () => {
+    // 新语义：无桌面桥时令牌仅在内存中；先触发 loadTokens（空会话）再注入内存会话，模拟真实登录顺序
+    await apiRequest<string>('/auth/login', { method: 'POST' }).catch(() => {});
+    await setTokens('expired', 'refresh-alive');
     const data = await apiRequest<string>('/patients');
     expect(data).toBe('refreshed-data');
     const refreshReq = fetchCalls.find((c) => c.url.endsWith('/auth/refresh'));
@@ -260,8 +308,14 @@ describe('401 refresh 触发', () => {
     expect(refreshReq!.init.method).toBe('POST');
     const body = JSON.parse(String(refreshReq!.init.body ?? '{}')) as { refreshToken?: string };
     expect(body.refreshToken).toBe('refresh-alive');
-    expect(storageRef['v2.token']).toBe('new-token');
-    expect(storageRef['v2.refreshToken']).toBe('new-refresh');
+    // 新语义：setTokens 不写 localStorage，预置值保持原样
+    expect(storageRef['v2.token']).toBe('expired');
+    expect(storageRef['v2.refreshToken']).toBe('refresh-alive');
+    const patientCalls = fetchCalls.filter((c) => c.url.endsWith('/patients'));
+    expect(patientCalls.length).toBe(2);
+    const replayed = patientCalls[patientCalls.length - 1];
+    const auth = String(new Request(replayed.url, replayed.init).headers.get('Authorization') ?? '');
+    expect(auth).toBe('Bearer new-token');
   });
 
   it('/auth/login 与 /auth/refresh 遇到 401 不触发 refresh', async () => {

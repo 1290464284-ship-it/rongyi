@@ -39,7 +39,7 @@ function crashLog(message, error) {
   const entry = {
     timestamp: new Date().toISOString(),
     message,
-    stack: error?.stack ?? String(error),
+    stack: String(error?.stack ?? error).split('\n').slice(0, 20).join('\n'),
   };
   try {
     const logDir = path.join(app.getPath('userData'), 'logs');
@@ -49,7 +49,10 @@ function crashLog(message, error) {
     // best effort
   }
   const endpoint = process.env.V2_CRASH_REPORT_URL;
-  if (endpoint) {
+  if (endpoint && !endpoint.startsWith('https://')) {
+    console.warn('V2_CRASH_REPORT_URL must be an HTTPS endpoint; crash report upload skipped');
+  }
+  if (endpoint && endpoint.startsWith('https://')) {
     try {
       const request = http.request(
         endpoint,
@@ -511,6 +514,9 @@ app.on('second-instance', () => {
 
 autoUpdater.autoDownload = true;
 autoUpdater.allowPrerelease = false;
+if (process.platform === 'win32') {
+  autoUpdater.verifyUpdateCodeSignature = true;
+}
 autoUpdater.on('checking-for-update', () => sendUpdateEvent({ type: 'checking' }));
 autoUpdater.on('update-available', (info) => sendUpdateEvent({ type: 'available', version: info?.version }));
 autoUpdater.on('update-not-available', () => sendUpdateEvent({ type: 'none' }));
