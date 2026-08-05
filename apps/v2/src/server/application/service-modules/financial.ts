@@ -39,6 +39,17 @@ const PAY_METHODS = new Set([
   'OTHER',
 ]);
 
+/** 防御性兜底上限：1 亿元（分） */
+const MAX_CHARGE_SUBTOTAL = 100_000_000_00;
+
+function assertSafeSubtotal(price: number, quantity: number): number {
+  const subtotal = Math.round(price * quantity);
+  if (!Number.isSafeInteger(subtotal) || subtotal > MAX_CHARGE_SUBTOTAL) {
+    throw new ValidationError('Charge item subtotal exceeds maximum allowed amount');
+  }
+  return subtotal;
+}
+
 export class ChargeService {
   private readonly db: Database.Database;
   private readonly chargeRepository: ChargeRepository;
@@ -82,11 +93,15 @@ export class ChargeService {
       if (!Number.isSafeInteger(item.quantity) || item.quantity <= 0) {
         throw new ValidationError('Charge item quantity must be positive');
       }
+      if (item.quantity > 1_000_000) {
+        throw new ValidationError('Charge item quantity must not exceed 1000000');
+      }
+      assertSafeSubtotal(item.price, item.quantity);
     }
     const now = context.now().toISOString();
     const id = randomUUID();
     const number = `CHG-${Date.now().toString(36).toUpperCase()}-${randomUUID().slice(0, 8).toUpperCase()}`;
-    const baseTotal = input.items.reduce((sum, item) => sum + Math.round(item.price * item.quantity), 0);
+    const baseTotal = input.items.reduce((sum, item) => sum + assertSafeSubtotal(item.price, item.quantity), 0);
     const discount = Math.round(input.discount ?? 0);
     if (!Number.isInteger(input.discount ?? 0) || discount < 0 || discount > baseTotal) {
       throw new ValidationError('Discount must be a non-negative integer cents value not exceeding the charge total');
@@ -115,7 +130,7 @@ export class ChargeService {
          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
       );
       for (const item of input.items) {
-        const subtotal = Math.round(item.price * item.quantity);
+        const subtotal = assertSafeSubtotal(item.price, item.quantity);
         insertItem.run(
           randomUUID(),
           id,
