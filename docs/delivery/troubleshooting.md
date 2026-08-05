@@ -7,6 +7,10 @@
 %APPDATA%/Dental Clinic V2/logs/metrics.json
 ```
 
+## 崩溃上报
+
+`V2_CRASH_REPORT_URL` 用于接收桌面端未捕获异常与崩溃上报。**仅接受 HTTPS 受信端点**；非 HTTPS 端点会被拒绝且不会发送任何数据。上报体仅含时间戳、消息与栈顶 20 行。
+
 ## API 无法启动
 
 检查：
