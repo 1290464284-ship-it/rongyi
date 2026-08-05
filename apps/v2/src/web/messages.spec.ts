@@ -16,6 +16,11 @@ describe('friendlyError', () => {
     expect(friendlyError('Inventory item not found: item-1')).toBe('库存项目不存在');
   });
 
+  it('translates newly added permission and clinic scope errors', () => {
+    expect(friendlyError(new Error('Insufficient permissions'))).toBe('权限不足');
+    expect(friendlyError(new Error('No clinic scope assigned to this account'))).toBe('账号未分配诊所，请联系管理员');
+  });
+
   it('uses a stable Chinese fallback for non-error failures', () => {
     expect(errorMessage('boom', '操作失败，请稍后重试')).toBe('操作失败，请稍后重试');
     expect(errorMessage(new Error('Patient not found'), '操作失败')).toBe('患者不存在');
