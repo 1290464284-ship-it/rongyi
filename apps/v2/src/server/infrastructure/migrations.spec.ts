@@ -178,6 +178,163 @@ describe('migrations', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it('repairs legacy constraint-violating rows before rebuilding core tables (C1)', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-mig-dirty-'));
+    const dirtyDb = createDatabase(dir);
+    const now = new Date().toISOString();
+
+    // Valid referents for FK checks.
+    dirtyDb.prepare(
+      `INSERT INTO Patient (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active
+       ) VALUES (?, ?, ?, ?, NULL, 'P-DIRTY', 'Dirty Patient', 'UNKNOWN', '13000000001',
+         '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
+    ).run('dirty-patient', 'clinic-dirty', now, now);
+    dirtyDb.prepare(
+      `INSERT INTO Charge (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         number, patientId, totalAmount, status
+       ) VALUES (?, ?, ?, ?, NULL, 'CH-DIRTY', 'dirty-patient', 100, 'UNPAID')`,
+    ).run('dirty-charge', 'clinic-dirty', now, now);
+
+    // Dirty: negative balances on MemberCard.
+    dirtyDb.prepare(
+      `INSERT INTO MemberCard (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, cardNo, balance, totalRecharge, totalConsume,
+         status, points, totalPoints, level
+       ) VALUES (?, ?, ?, ?, NULL, 'dirty-patient', 'CARD-NEG', -100, -50, -25, 'ACTIVE', 0, 0, 'NORMAL')`,
+    ).run('mc-neg', 'clinic-dirty', now, now);
+    // Dirty: duplicate cardNo (one soft-deleted so the pre-116 partial unique index passes).
+    dirtyDb.prepare(
+      `INSERT INTO MemberCard (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, cardNo, balance, totalRecharge, totalConsume,
+         status, points, totalPoints, level
+       ) VALUES (?, ?, ?, ?, '2026-01-01T00:00:00.000Z', 'dirty-patient', 'CARD-DUP', 0, 0, 0, 'ACTIVE', 0, 0, 'NORMAL')`,
+    ).run('mc-dup-old', 'clinic-dirty', now, now);
+    dirtyDb.prepare(
+      `INSERT INTO MemberCard (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, cardNo, balance, totalRecharge, totalConsume,
+         status, points, totalPoints, level
+       ) VALUES (?, ?, ?, ?, NULL, 'dirty-patient', 'CARD-DUP', 5, 5, 0, 'ACTIVE', 0, 0, 'NORMAL')`,
+    ).run('mc-dup-new', 'clinic-dirty', now, now);
+
+    // Dirty: Refund with amount <= 0.
+    dirtyDb.prepare(
+      `INSERT INTO Refund (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         chargeId, patientId, amount, reason
+       ) VALUES (?, ?, ?, ?, NULL, 'dirty-charge', 'dirty-patient', 0, 'zero amount')`,
+    ).run('rf-zero', 'clinic-dirty', now, now);
+    // Dirty: Refund with NOT NULL orphan FK (chargeId missing) -> quarantine.
+    dirtyDb.prepare(
+      `INSERT INTO Refund (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         chargeId, patientId, amount, reason
+       ) VALUES (?, ?, ?, ?, NULL, 'missing-charge', 'dirty-patient', 50, 'orphan')`,
+    ).run('rf-orphan', 'clinic-dirty', now, now);
+    // Dirty: Refund with nullable orphan FK (operatorId missing) -> set NULL.
+    dirtyDb.prepare(
+      `INSERT INTO Refund (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         chargeId, patientId, amount, operatorId, reason
+       ) VALUES (?, ?, ?, ?, NULL, 'dirty-charge', 'dirty-patient', 50, 'missing-user', 'nullable orphan')`,
+    ).run('rf-op-orphan', 'clinic-dirty', now, now);
+
+    // Dirty: ChargeItem with invalid numeric fields.
+    dirtyDb.prepare(
+      `INSERT INTO ChargeItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         chargeId, name, category, price, quantity, subtotal
+       ) VALUES (?, ?, ?, ?, NULL, 'dirty-charge', 'Item', 'EXAM', -1, 0, -9)`,
+    ).run('ci-bad', 'clinic-dirty', now, now);
+
+    // Dirty: ProcessingOrder with illegal status.
+    dirtyDb.prepare(
+      `INSERT INTO ProcessingOrder (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         number, patientId, status, totalFee
+       ) VALUES (?, ?, ?, ?, NULL, 'PO-BAD', 'dirty-patient', 'BOGUS', 0)`,
+    ).run('po-bad', 'clinic-dirty', now, now);
+    // Dirty: duplicate ProcessingOrder number (one soft-deleted).
+    dirtyDb.prepare(
+      `INSERT INTO ProcessingOrder (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         number, patientId, status, totalFee
+       ) VALUES (?, ?, ?, ?, '2026-01-01T00:00:00.000Z', 'dirty-patient', 'PO-DUP', 'SENT', 0)`,
+    ).run('po-dup-old', 'clinic-dirty', now, now);
+    dirtyDb.prepare(
+      `INSERT INTO ProcessingOrder (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         number, patientId, status, totalFee
+       ) VALUES (?, ?, ?, ?, NULL, 'dirty-patient', 'PO-DUP', 'SENT', 0)`,
+    ).run('po-dup-new', 'clinic-dirty', now, now);
+
+    // Dirty: InventoryTransaction with NOT NULL orphan FK (itemId missing) -> quarantine.
+    dirtyDb.prepare(
+      `INSERT INTO InventoryTransaction (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         itemId, type, quantity
+       ) VALUES (?, ?, ?, ?, NULL, 'missing-item', 'IN', 1)`,
+    ).run('it-orphan', 'clinic-dirty', now, now);
+
+    // Must not throw despite the dirty data.
+    expect(() => runMigrations(dirtyDb)).not.toThrow();
+
+    // Numeric clamps applied.
+    const mcNeg = dirtyDb.prepare(
+      'SELECT balance, totalRecharge, totalConsume FROM MemberCard WHERE id = ?',
+    ).get('mc-neg') as { balance: number; totalRecharge: number; totalConsume: number };
+    expect(mcNeg.balance).toBe(0);
+    expect(mcNeg.totalRecharge).toBe(0);
+    expect(mcNeg.totalConsume).toBe(0);
+    const rfZero = dirtyDb.prepare('SELECT amount FROM Refund WHERE id = ?').get('rf-zero') as { amount: number };
+    expect(rfZero.amount).toBe(1);
+    const ciBad = dirtyDb.prepare(
+      'SELECT price, quantity, subtotal FROM ChargeItem WHERE id = ?',
+    ).get('ci-bad') as { price: number; quantity: number; subtotal: number };
+    expect(ciBad.price).toBe(0);
+    expect(ciBad.quantity).toBe(1);
+    expect(ciBad.subtotal).toBe(0);
+    const poBad = dirtyDb.prepare('SELECT status FROM ProcessingOrder WHERE id = ?').get('po-bad') as { status: string };
+    expect(poBad.status).toBe('SENT');
+
+    // Unique keys deduplicated.
+    const dupCards = dirtyDb.prepare(
+      'SELECT clinicId, cardNo FROM MemberCard GROUP BY clinicId, cardNo HAVING COUNT(*) > 1',
+    ).all();
+    expect(dupCards).toHaveLength(0);
+    const dupOrders = dirtyDb.prepare(
+      'SELECT clinicId, number FROM ProcessingOrder GROUP BY clinicId, number HAVING COUNT(*) > 1',
+    ).all();
+    expect(dupOrders).toHaveLength(0);
+
+    // Orphan FKs: nullable -> NULL, NOT NULL -> quarantined (row removed from source table).
+    const rfOp = dirtyDb.prepare('SELECT operatorId FROM Refund WHERE id = ?').get('rf-op-orphan') as {
+      operatorId: string | null;
+    };
+    expect(rfOp.operatorId).toBeNull();
+    expect(dirtyDb.prepare('SELECT id FROM Refund WHERE id = ?').get('rf-orphan')).toBeUndefined();
+    expect(dirtyDb.prepare('SELECT id FROM InventoryTransaction WHERE id = ?').get('it-orphan')).toBeUndefined();
+
+    // Repair log exists and has records; quarantine holds the removed rows.
+    const logTable = dirtyDb.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'MigrationRepairLog'",
+    ).get();
+    expect(logTable).toBeDefined();
+    const logCount = (dirtyDb.prepare('SELECT COUNT(*) AS n FROM MigrationRepairLog').get() as { n: number }).n;
+    expect(logCount).toBeGreaterThan(0);
+    const quarantineCount = (dirtyDb.prepare('SELECT COUNT(*) AS n FROM MigrationRepairQuarantine').get() as { n: number }).n;
+    expect(quarantineCount).toBeGreaterThanOrEqual(2);
+
+    dirtyDb.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('refuses to rewrite a table when the foreign-key DDL would drop columns', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-mig-fk-guard-'));
     const freshDb = createDatabase(dir);
