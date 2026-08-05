@@ -44,7 +44,7 @@ describe('ChargesPage', () => {
     render(<ChargesPage />, { wrapper });
     expect(await screen.findByText('N-1')).toBeDefined();
 
-await waitFor(() => {
+    await waitFor(() => {
       expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
     });
     fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
@@ -80,6 +80,11 @@ await waitFor(() => {
         body: expect.stringContaining('"amount":5000'),
       }));
     });
+    const payCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/charges/c-1/pay');
+    const payBody = JSON.parse(String(payCall?.[1]?.body));
+    expect(payBody).toMatchObject({ amount: 5000, method: 'WECHAT' });
+    expect(payBody.requestId).toBeDefined();
+    expect(await screen.findByText('收款已记录')).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: '退款' }));
     fireEvent.change(screen.getByLabelText('退款金额（元）'), { target: { value: '20' } });
@@ -91,6 +96,11 @@ await waitFor(() => {
         body: expect.stringContaining('"amount":2000'),
       }));
     });
+    const refundCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/charges/c-1/refund');
+    const refundBody = JSON.parse(String(refundCall?.[1]?.body));
+    expect(refundBody).toMatchObject({ amount: 2000, reason: '取消项目' });
+    expect(refundBody.requestId).toBeDefined();
+    expect(await screen.findByText('退款已记录')).toBeDefined();
   });
 
   it('validates required charge fields', async () => {
@@ -131,7 +141,7 @@ await waitFor(() => {
     render(<ChargesPage />, { wrapper });
     await screen.findByText('N-1');
 
-await waitFor(() => {
+    await waitFor(() => {
       expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
     });
     fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
@@ -201,7 +211,7 @@ await waitFor(() => {
     render(<ChargesPage />, { wrapper });
     await screen.findByText('N-1');
 
-await waitFor(() => {
+    await waitFor(() => {
       expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
     });
     fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });

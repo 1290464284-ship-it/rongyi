@@ -59,7 +59,7 @@ describe('ImagingPage', () => {
     await screen.findByText('全景片');
 
     fireEvent.click(screen.getByText('上传影像'));
-await waitFor(() => {
+    await waitFor(() => {
       expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
     });
     fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
@@ -74,6 +74,27 @@ await waitFor(() => {
       expect(uploadFile).toHaveBeenCalledWith(file);
       expect(apiRequest).toHaveBeenCalledWith('/resources/imaging', expect.objectContaining({ method: 'POST' }));
     });
+    const postCall = vi.mocked(apiRequest).mock.calls.find(
+      (call) => call[0] === '/resources/imaging' && (call[1] as RequestInit)?.method === 'POST',
+    );
+    const body = JSON.parse(String((postCall?.[1] as RequestInit)?.body));
+    expect(body).toMatchObject({
+      patientId: 'p-1',
+      doctorId: 'd-1',
+      type: 'UNKNOWN',
+      title: '根尖片',
+      imageUrl: '/api/v2/files/file-1.png',
+    });
+    expect(body.takenAt).toBeUndefined();
     expect(await screen.findByText('影像记录已创建')).toBeDefined();
+  });
+
+  it('validates required fields', async () => {
+    mockData();
+    render(<ImagingPage />, { wrapper });
+    await screen.findByText('全景片');
+    fireEvent.click(screen.getByText('上传影像'));
+    fireEvent.click(screen.getByText('保存'));
+    expect(await screen.findByText('请选择患者、医生并填写影像标题')).toBeDefined();
   });
 });

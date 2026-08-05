@@ -41,7 +41,7 @@ describe('TreatmentPlansPage', () => {
     expect(await screen.findByText('正畸计划')).toBeDefined();
 
     fireEvent.click(screen.getByText('新建治疗计划'));
-await waitFor(() => {
+    await waitFor(() => {
       expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
     });
     fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
@@ -57,6 +57,27 @@ await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith('/resources/treatmentPlans', expect.objectContaining({ method: 'POST' }));
       expect(apiRequest).toHaveBeenCalledWith('/resources/treatmentPlanItems', expect.objectContaining({ method: 'POST' }));
     });
+    const planCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/resources/treatmentPlans');
+    const planBody = JSON.parse(String(planCall?.[1]?.body));
+    expect(planBody).toMatchObject({
+      patientId: 'p-1',
+      doctorId: 'd-1',
+      name: '种植计划',
+      status: 'APPROVED',
+    });
+    expect(planBody.remark).toBeUndefined();
+    const itemCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/resources/treatmentPlanItems');
+    const itemBody = JSON.parse(String(itemCall?.[1]?.body));
+    expect(itemBody).toMatchObject({
+      planId: 'plan-2',
+      name: '种植体',
+      category: 'GENERAL',
+      price: 500000,
+      quantity: 1,
+      teethNumbers: [],
+      status: 'PLANNED',
+    });
+    expect(itemBody.code).toMatch(/^ITEM-\d+$/);
     expect(await screen.findByText('治疗计划已创建')).toBeDefined();
   });
 
@@ -103,5 +124,32 @@ await waitFor(() => {
     const calls = vi.mocked(apiRequest).mock.calls.map((call) => String(call[0]));
     expect(calls.indexOf('/resources/treatmentPlanItems/item-1')).toBeGreaterThanOrEqual(0);
     expect(calls.indexOf('/resources/treatmentPlans/plan-2')).toBeGreaterThan(calls.indexOf('/resources/treatmentPlanItems/item-1'));
+  });
+
+  it('calculates totalFee from item details when the manual fee is empty', async () => {
+    mockData();
+    render(<TreatmentPlansPage />, { wrapper });
+    await screen.findByText('正畸计划');
+
+    fireEvent.click(screen.getByText('新建治疗计划'));
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
+    fireEvent.change(screen.getByLabelText('计划名称'), { target: { value: '种植计划' } });
+    fireEvent.change(screen.getByLabelText('明细名称'), { target: { value: '种植体' } });
+    fireEvent.change(screen.getByLabelText('明细单价'), { target: { value: '5000' } });
+    vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'plan-2' });
+    vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'item-1' });
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/treatmentPlans', expect.objectContaining({ method: 'POST' }));
+    });
+    const planCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/resources/treatmentPlans');
+    const planBody = JSON.parse(String(planCall?.[1]?.body));
+    // 5000 元 × 1 个 = 500000 分
+    expect(planBody.totalFee).toBe(500000);
   });
 });

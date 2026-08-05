@@ -33,6 +33,8 @@ export interface CrudPageProps<
   dialogTitle?: string | ((editing: boolean) => string);
   /** 删除确认文案，默认 '确定删除该记录吗？'。 */
   deleteMessage?: string;
+  /** 删除确认 Dialog 标题，默认 '删除确认'。 */
+  deleteTitle?: string;
   /** page-head 追加按钮（导出等）。 */
   extraHeaderActions?: ReactNode;
   /** 必填：Dialog 内表单体（含字段控件；提交/取消按钮由 CrudPage 提供）。 */
@@ -44,7 +46,7 @@ export function CrudPage<
   TForm extends object,
 >(props: CrudPageProps<TRow, TForm>) {
   const crud = useCrudResource<TRow, TForm>(props);
-  const { query, rows, search, setSearch, page, setPage, showForm, editing, form, updateForm, reload } = crud;
+  const { query, rows, searchInput, setSearch, page, setPage, showForm, editing, form, updateForm, reload } = crud;
 
   if (query.isLoading) return <LoadingState />;
   if (query.error) return <PageError message={(query.error as Error).message} />;
@@ -83,7 +85,7 @@ export function CrudPage<
           className="search"
           placeholder={props.searchPlaceholder ?? '搜索...'}
           aria-label={props.searchAriaLabel ?? '搜索'}
-          value={search}
+          value={searchInput}
           onChange={(event) => setSearch(event.target.value)}
         />
       )}
@@ -113,7 +115,7 @@ export function CrudPage<
       {props.canDelete && (
         <ConfirmDialog
           open={crud.deleteTarget !== null}
-          title="删除确认"
+          title={props.deleteTitle ?? '删除确认'}
           message={props.deleteMessage ?? '确定删除该记录吗？'}
           confirmText="确认删除"
           danger

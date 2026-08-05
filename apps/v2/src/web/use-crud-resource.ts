@@ -59,7 +59,10 @@ export interface CrudResourceResult<
   query: UseQueryResult<Page<TRow>>;
   rows: TRow[];
   reload: () => Promise<unknown>;
+  /** 防抖后的搜索词（查询用）。 */
   search: string;
+  /** 输入框即时值（未防抖），供受控输入框绑定，避免输入滞后。 */
+  searchInput: string;
   setSearch: (value: string) => void;
   page: number;
   setPage: (value: number) => void;
@@ -214,6 +217,7 @@ export function useCrudResource<
     rows: query.data?.items ?? [],
     reload: () => query.refetch(),
     search,
+    searchInput,
     setSearch,
     page,
     setPage,

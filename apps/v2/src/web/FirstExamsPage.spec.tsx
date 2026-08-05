@@ -40,17 +40,18 @@ describe('FirstExamsPage', () => {
     vi.mocked(apiRequest).mockReset();
   });
 
-  it('lists first exams and creates a new one', async () => {
+  it('lists first exams and creates a new one with an optional consultant', async () => {
     mockData();
     render(<FirstExamsPage />, { wrapper });
     expect(await screen.findByText('牙痛')).toBeDefined();
 
     fireEvent.click(screen.getByText('新建首诊'));
-await waitFor(() => {
+    await waitFor(() => {
       expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
     });
     fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
     fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
+    fireEvent.change(screen.getByLabelText('会诊医生'), { target: { value: 'd-1' } });
     fireEvent.change(screen.getByLabelText('主诉'), { target: { value: '补牙' } });
     vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'f-2' });
     fireEvent.click(screen.getByText('保存'));
@@ -58,6 +59,18 @@ await waitFor(() => {
     await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith('/resources/firstExams', expect.objectContaining({ method: 'POST' }));
     });
+    const postCall = vi.mocked(apiRequest).mock.calls.find(
+      (call) => call[0] === '/resources/firstExams' && (call[1] as RequestInit)?.method === 'POST',
+    );
+    const body = JSON.parse(String((postCall?.[1] as RequestInit)?.body));
+    expect(body).toMatchObject({
+      patientId: 'p-1',
+      doctorId: 'd-1',
+      consultantId: 'd-1',
+      status: 'DRAFT',
+      chiefComplaint: '补牙',
+    });
+    expect(body.presentIllness).toBeUndefined();
     expect(await screen.findByText('首诊记录已创建')).toBeDefined();
   });
 
@@ -71,12 +84,16 @@ await waitFor(() => {
     expect(apiRequest).not.toHaveBeenCalledWith('/resources/firstExams', expect.objectContaining({ method: 'POST' }));
   });
 
-  it('transitions first exam status', async () => {
+  it('transitions first exam status with a toast', async () => {
     mockData();
     render(<FirstExamsPage />, { wrapper });
     fireEvent.change(await screen.findByLabelText('变更首诊状态'), { target: { value: 'SUBMITTED' } });
     await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/first-exams/f-1/status', expect.objectContaining({ method: 'PATCH' }));
+      expect(apiRequest).toHaveBeenCalledWith('/first-exams/f-1/status', expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'SUBMITTED' }),
+      }));
     });
+    expect(await screen.findByText('首诊状态已更新')).toBeDefined();
   });
 });
