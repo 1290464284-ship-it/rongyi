@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase } from './database';
 import { SqliteRepository } from './repository';
-import { rebuildSearchIndex } from './search-index';
+import { rebuildSearchIndex, upsertSearchRow } from './search-index';
 import { resourceRegistry } from '../../domain/resources';
 import type { AppContext } from '../../domain/contracts';
 
@@ -411,5 +411,64 @@ describe('SqliteRepository', () => {
     }, context);
     const page = await repo.findMany({ page: 1, pageSize: 10, search: '张三' }, context);
     expect(page.items.map((row) => String(row.name))).toEqual(['王张三椅']);
+  });
+
+  it('maintains the SearchIndex row across insert, update, and soft delete', async () => {
+    const repo = new SqliteRepository(db, resourceRegistry.get('patients')!);
+    await repo.insert({
+      id: 'repo-si-1',
+      code: 'SI-001',
+      name: 'Index Me',
+      gender: 'UNKNOWN',
+      phone: '13200000031',
+      source: 'WALK_IN',
+      active: true,
+    }, context);
+    const rows = (id: string) => db.prepare(
+      `SELECT resource, recordId, content FROM SearchIndex WHERE resource = 'Patient' AND recordId = ?`,
+    ).all(id) as Array<{ resource: string; recordId: string; content: string }>;
+
+    expect(rows('repo-si-1')).toHaveLength(1);
+    expect(rows('repo-si-1')[0].content).toContain('Index Me');
+    expect(rows('repo-si-1')[0].content).toContain('13200000031');
+
+    await repo.update({ id: 'repo-si-1', name: 'Index Renamed' }, context);
+    expect(rows('repo-si-1')).toHaveLength(1);
+    expect(rows('repo-si-1')[0].content).toContain('Index Renamed');
+    expect(rows('repo-si-1')[0].content).not.toContain('Index Me');
+
+    await repo.softDelete('repo-si-1', context);
+    expect(rows('repo-si-1')).toHaveLength(0);
+  });
+
+  it('refreshes Appointment search rows when a patient is renamed through the repository', async () => {
+    const repo = new SqliteRepository(db, resourceRegistry.get('patients')!);
+    await repo.insert({
+      id: 'repo-si-parent',
+      code: 'SI-PARENT',
+      name: 'Parent Name',
+      gender: 'UNKNOWN',
+      phone: '13200000032',
+      source: 'WALK_IN',
+      active: true,
+    }, context);
+    // 预约走专用服务而非通用仓储，这里直接建行并手动建索引行，模拟运行期已有索引。
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO Appointment (id, clinicId, createdAt, updatedAt, patientId, startTime, endTime, status, type)
+       VALUES ('repo-si-appt', 'clinic-v2-001', ?, ?, 'repo-si-parent', ?, ?, 'BOOKED', 'REGULAR')`,
+    ).run(now, now, now, now);
+    upsertSearchRow(db, 'Appointment', 'repo-si-appt');
+    expect(
+      db.prepare(`SELECT content FROM SearchIndex WHERE resource = 'Appointment' AND recordId = 'repo-si-appt'`).get(),
+    ).toMatchObject({ content: expect.stringContaining('Parent Name') });
+
+    await repo.update({ id: 'repo-si-parent', name: 'Renamed Parent' }, context);
+    const rows = db.prepare(
+      `SELECT content FROM SearchIndex WHERE resource = 'Appointment' AND recordId = 'repo-si-appt'`,
+    ).all() as Array<{ content: string }>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].content).toContain('Renamed Parent');
+    expect(rows[0].content).not.toContain('Parent Name');
   });
 });
