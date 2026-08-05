@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router';
 import { apiRequest } from './api';
 import type { Page } from './types';
 
@@ -13,26 +14,39 @@ interface TimelineEvent {
 }
 
 export function PatientTimelinePage() {
-  const [patientId, setPatientId] = useState('patient-demo-001');
+  const [searchParams] = useSearchParams();
+  const urlPatientId = searchParams.get('id');
+  const [patientId, setPatientId] = useState<string | null>(urlPatientId);
   const patients = useQuery({
     queryKey: ['patients-timeline'],
     queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/patients?page=1&pageSize=200'),
   });
+  const derivedFromList = useRef(false);
+  useEffect(() => {
+    if (derivedFromList.current || !patients.data) return;
+    derivedFromList.current = true;
+    const first = patients.data.items[0];
+    setPatientId((current) => current ?? (first ? String(first.id) : null));
+  }, [patients.data]);
   const visits = useQuery({
     queryKey: ['visits-timeline', patientId],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>(`/resources/visits?page=1&pageSize=200&patientId=${encodeURIComponent(patientId)}`),
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(`/resources/visits?page=1&pageSize=200&patientId=${encodeURIComponent(patientId ?? '')}`),
+    enabled: patientId !== null,
   });
   const treatments = useQuery({
     queryKey: ['treatments-timeline', patientId],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>(`/resources/treatments?page=1&pageSize=200&patientId=${encodeURIComponent(patientId)}`),
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(`/resources/treatments?page=1&pageSize=200&patientId=${encodeURIComponent(patientId ?? '')}`),
+    enabled: patientId !== null,
   });
   const charges = useQuery({
     queryKey: ['charges-timeline', patientId],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>(`/resources/charges?page=1&pageSize=200&patientId=${encodeURIComponent(patientId)}`),
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(`/resources/charges?page=1&pageSize=200&patientId=${encodeURIComponent(patientId ?? '')}`),
+    enabled: patientId !== null,
   });
   const followUps = useQuery({
     queryKey: ['followUps-timeline', patientId],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>(`/resources/followUps?page=1&pageSize=200&patientId=${encodeURIComponent(patientId)}`),
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(`/resources/followUps?page=1&pageSize=200&patientId=${encodeURIComponent(patientId ?? '')}`),
+    enabled: patientId !== null,
   });
 
   const events: TimelineEvent[] = [
@@ -73,7 +87,7 @@ export function PatientTimelinePage() {
         <h1>患者时间线</h1>
         <label>
           患者
-          <select value={patientId} onChange={(event) => setPatientId(event.target.value)}>
+          <select value={patientId ?? ''} onChange={(event) => setPatientId(event.target.value)}>
             {patients.data?.items.map((patient) => (
               <option key={String(patient.id)} value={String(patient.id)}>{String(patient.name ?? patient.id)}</option>
             ))}
