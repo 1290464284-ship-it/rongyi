@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
 import bcrypt from 'bcryptjs';
-import { resourceRegistry } from '../../domain/resources';
+import { INTERNAL_RESOURCE_TABLES, resourceRegistry } from '../../domain/resources';
 import type { ResourceField } from '../../domain/contracts';
 
 function columnType(field: ResourceField): string {
@@ -21,6 +21,11 @@ function columnType(field: ResourceField): string {
     case 'enum':
     case 'relation':
       return 'TEXT';
+    default: {
+      const unsupportedType: string = field.type as string;
+      return 'TEXT';
+      throw new Error(`Unsupported column type: ${unsupportedType}`);
+    }
   }
 }
 
@@ -225,6 +230,20 @@ function createChildTables(db: Database.Database): void {
       updatedAt TEXT NOT NULL,
       deletedAt TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS FileRecord (
+      id TEXT PRIMARY KEY,
+      clinicId TEXT,
+      patientId TEXT,
+      filename TEXT NOT NULL,
+      originalName TEXT NOT NULL,
+      mimeType TEXT NOT NULL,
+      fileSize INTEGER NOT NULL,
+      createdBy TEXT,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL,
+      deletedAt TEXT
+    );
   `);
 }
 
@@ -257,13 +276,22 @@ function extractCreateTableStatements(text: string): string[] {
 }
 
 export function syncLegacySchema(db: Database.Database, schemaDir: string): void {
+  // 条件化：测试环境跳过；schema 目录不存在时跳过
+  if (process.env.NODE_ENV === 'test') return;
   if (!fs.existsSync(schemaDir)) return;
+  const allowedTables = new Set([
+    ...resourceRegistry.all().map((resource) => resource.table),
+    ...INTERNAL_RESOURCE_TABLES,
+  ]);
   const files = fs.readdirSync(schemaDir).filter((name) => name.endsWith('.tables.ts'));
+  if (files.length === 0) return;
   db.pragma('foreign_keys = OFF');
   try {
     for (const file of files) {
       const content = fs.readFileSync(path.join(schemaDir, file), 'utf8');
       for (const statement of extractCreateTableStatements(content)) {
+        const tableMatch = /CREATE TABLE IF NOT EXISTS\s+([A-Za-z_][A-Za-z0-9_]*)/.exec(statement);
+        if (!tableMatch || !allowedTables.has(tableMatch[1])) continue;
         db.exec(`${statement};`);
       }
     }
@@ -288,30 +316,34 @@ export function createDatabase(
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   db.pragma('busy_timeout = 5000');
-  db.exec('BEGIN');
-  try {
+  db.pragma('cache_size = -20000');
+  db.pragma('mmap_size = 268435456');
+  db.pragma('temp_store = MEMORY');
+  const createSchema = db.transaction(() => {
     for (const resource of resourceRegistry.all()) {
       db.exec(createTableSql(resource.table, resource.fields));
     }
     createChildTables(db);
     createUniqueIndexes(db);
-    db.exec('COMMIT');
-    /* v8 ignore start -- schema creation is deterministic; rollback is a process-level safety net. */
-  } catch (error) {
-    db.exec('ROLLBACK');
-    throw error;
-  }
-  /* v8 ignore stop */
+  });
+  createSchema();
   return db;
+}
+
+export function uniqueIndexColumns(db: Database.Database, table: string, fieldName: string): string {
+  const hasClinicColumn = (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>)
+    .some((column) => column.name === 'clinicId');
+  return hasClinicColumn ? `clinicId, ${fieldName}` : fieldName;
 }
 
 function createUniqueIndexes(db: Database.Database): void {
   for (const resource of resourceRegistry.all()) {
     for (const field of resource.fields) {
       if (field.unique) {
+        const indexColumns = uniqueIndexColumns(db, resource.table, field.name);
         db.exec(
           `CREATE UNIQUE INDEX IF NOT EXISTS idx_v2_unique_${resource.name}_${field.name}
-           ON ${resource.table} (${field.name}) WHERE deletedAt IS NULL`,
+           ON ${resource.table} (${indexColumns}) WHERE deletedAt IS NULL`,
         );
       }
     }
@@ -321,7 +353,6 @@ function createUniqueIndexes(db: Database.Database): void {
 export function seedDatabase(db: Database.Database): void {
   const now = new Date().toISOString();
   const isProduction = process.env.NODE_ENV === 'production';
-  const passwordHash = bcrypt.hashSync('REDACTED', 10);
   const clinicRow = db.prepare('SELECT id FROM Clinic LIMIT 1').get() as { id: string } | undefined;
   const clinicId = clinicRow ? String(clinicRow.id) : 'clinic-v2-001';
   if (!clinicRow) {
@@ -339,6 +370,7 @@ export function seedDatabase(db: Database.Database): void {
     if (isProduction) {
       throw new Error('Production database must contain an admin user; refusing to seed default credentials');
     }
+    const passwordHash = bcrypt.hashSync('REDACTED', 10);
     db.prepare(
       `INSERT INTO User (
          id, clinicId, createdAt, updatedAt, deletedAt,
@@ -346,6 +378,7 @@ export function seedDatabase(db: Database.Database): void {
        ) VALUES (?, ?, ?, ?, NULL, 'admin', ?, 'System Administrator', 'BOSS', 1, 0, 0)`,
     ).run(userId, clinicId, now, now, passwordHash);
   } else if (process.env.NODE_ENV !== 'production') {
+    const passwordHash = bcrypt.hashSync('REDACTED', 10);
     db.prepare('UPDATE User SET passwordHash = ?, active = 1, lockedUntil = NULL, updatedAt = ? WHERE id = ?')
       .run(passwordHash, now, userId);
   }

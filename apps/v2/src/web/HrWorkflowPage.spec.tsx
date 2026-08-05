@@ -6,11 +6,12 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { HrWorkflowPage } from './HrWorkflowPage';
 import { apiRequest } from './api';
+import { ToastProvider } from './toast';
 
 vi.mock('./api', () => ({ apiRequest: vi.fn(), downloadCsv: vi.fn() }));
 
 const wrapper = ({ children }: { children: ReactNode }) => (
-  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{children}</QueryClientProvider>
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ToastProvider>{children}</ToastProvider></QueryClientProvider>
 );
 
 describe('HrWorkflowPage', () => {
@@ -72,5 +73,5 @@ describe('HrWorkflowPage', () => {
 it('renders an empty state when leave data is unavailable', async () => {
   vi.mocked(apiRequest).mockRejectedValueOnce(new Error('leaves failed'));
   render(<HrWorkflowPage />, { wrapper });
-  expect(await screen.findByText('No pending leaves')).toBeDefined();
+  expect(await screen.findByText('暂无待审批请假')).toBeDefined();
 });

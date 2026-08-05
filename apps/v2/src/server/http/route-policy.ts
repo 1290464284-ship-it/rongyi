@@ -8,6 +8,8 @@ const adminStaff: UserRole[] = ['BOSS', 'ADMIN'];
 
 export const routeRoleRules: Array<{ pattern: RegExp; roles: UserRole[] }> = [
   { pattern: /^\/api\/v2\/auth\/(me|password|navigation|clinics|switch-clinic)/, roles: allStaff },
+  { pattern: /^\/api\/v2\/doctors/, roles: operationalStaff },
+  { pattern: /^\/api\/v2\/files/, roles: operationalStaff },
   { pattern: /^\/api\/v2\/admin\/users/, roles: ['BOSS'] },
   { pattern: /^\/api\/v2\/resource-meta/, roles: allStaff },
   { pattern: /^\/api\/v2\/resources/, roles: allStaff },
@@ -15,6 +17,7 @@ export const routeRoleRules: Array<{ pattern: RegExp; roles: UserRole[] }> = [
   { pattern: /^\/api\/v2\/sync\//, roles: ['BOSS', 'ADMIN'] },
   { pattern: /^\/api\/v2\/backups/, roles: ['BOSS', 'ADMIN'] },
   { pattern: /^\/api\/v2\/system\/business-alerts/, roles: ['BOSS', 'ADMIN'] },
+  { pattern: /^\/api\/v2\/system\/audit\/cleanup/, roles: ['BOSS', 'ADMIN'] },
   { pattern: /^\/api\/v2\/hr\/leaves/, roles: ['BOSS', 'ADMIN'] },
   { pattern: /^\/api\/v2\/hr\/attendance/, roles: adminStaff },
   { pattern: /^\/api\/v2\/charges(\/|$)/, roles: financeStaff },

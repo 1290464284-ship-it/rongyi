@@ -1,14 +1,17 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../infrastructure/database';
 import {
   ChargeAssistantService,
   ClinicalWorkflowService,
+  createWechatProvider,
+  HttpWechatProvider,
   PrintTemplateService,
   ReplenishmentService,
+  UnconfiguredWechatProvider,
   WechatService,
 } from './workflow-services';
 import type { AppContext } from '../../domain/contracts';
@@ -122,33 +125,39 @@ describe('workflow services', () => {
       .toThrow('One or more inventory items are not available');
   });
 
-  it('sends wechat messages and renders print templates', () => {
+  it('sends wechat messages through a configured provider and renders print templates', async () => {
     db.prepare(
       `INSERT INTO WechatMessage (
          id, clinicId, createdAt, updatedAt, deletedAt,
          patientId, type, content, status
        ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'TEXT', 'hello', 'PENDING')`,
     ).run('wechat-wf', context.clinicId, now, now);
-    const wechat = new WechatService(db);
-    expect(wechat.send('wechat-wf', context).status).toBe('SENT');
-    expect(wechat.send('wechat-wf', context).status).toBe('SENT');
-    expect(() => wechat.send('missing-wechat', context)).toThrow('Wechat message not found');
+    const provider = {
+      name: 'fake',
+      isConfigured: () => true,
+      send: async () => ({ ok: true, result: 'delivered' }),
+    };
+    const wechat = new WechatService(db, undefined, provider);
+    expect(wechat.status()).toEqual({ configured: true, provider: 'fake' });
+    expect(await wechat.send('wechat-wf', context)).toMatchObject({ status: 'SENT', result: 'delivered' });
+    expect(await wechat.send('wechat-wf', context)).toMatchObject({ status: 'SENT' });
+    await expect(wechat.send('missing-wechat', context)).rejects.toThrow('Wechat message not found');
     db.prepare(
       `INSERT INTO WechatMessage (
          id, clinicId, createdAt, updatedAt, deletedAt,
          patientId, type, content, status
        ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'TEXT', 'cancelled', 'CANCELLED')`,
     ).run('wechat-cancelled', context.clinicId, now, now);
-    expect(() => wechat.send('wechat-cancelled', context)).toThrow('cannot be sent');
-    expect(() => wechat.sendBatch(null as unknown as string[], context)).toThrow('array');
-    expect(() => wechat.sendBatch(Array.from({ length: 501 }, () => 'x'), context)).toThrow('at most');
+    await expect(wechat.send('wechat-cancelled', context)).rejects.toThrow('cannot be sent');
+    await expect(wechat.sendBatch(null as unknown as string[], context)).rejects.toThrow('array');
+    await expect(wechat.sendBatch(Array.from({ length: 501 }, () => 'x'), context)).rejects.toThrow('at most');
 
     const fakeWechat = {
       findById: () => ({ id: 'missing-update', status: 'PENDING' }),
       markSent: () => 0,
     };
-    expect(() => new WechatService(db, fakeWechat as never).send('missing-update', context))
-      .toThrow('cannot be sent');
+    await expect(new WechatService(db, fakeWechat as never, provider).send('missing-update', context))
+      .rejects.toThrow('cannot be sent');
 
     db.prepare(
       `INSERT INTO PrintTemplate (
@@ -162,6 +171,101 @@ describe('workflow services', () => {
     const escaped = print.render('T-1', { title: '<script>alert(1)</script>' }, context);
     expect(escaped).toContain('&lt;script&gt;');
     expect(escaped).not.toContain('<script>');
+  });
+
+  it('never fakes wechat delivery when the channel is not configured', async () => {
+    db.prepare(
+      `INSERT INTO WechatMessage (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, type, content, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'TEXT', 'unconfigured', 'PENDING')`,
+    ).run('wechat-unconfigured', context.clinicId, now, now);
+    const unconfigured = new UnconfiguredWechatProvider();
+    const service = new WechatService(db, undefined, unconfigured);
+    expect(service.status()).toEqual({ configured: false, provider: 'unconfigured' });
+    await expect(service.send('wechat-unconfigured', context)).rejects.toThrow('Wechat channel is not configured');
+    const row = db.prepare('SELECT status FROM WechatMessage WHERE id = ?').get('wechat-unconfigured') as { status: string };
+    expect(row.status).toBe('PENDING');
+  });
+
+  it('reports wechat provider network and HTTP failures without marking messages sent', async () => {
+    const failingProvider = new HttpWechatProvider('http://127.0.0.1:1', 'app', 'secret');
+    const failed = await failingProvider.send({ id: 'x' });
+    expect(failed.ok).toBe(false);
+    expect(failed.result).toBe('network_error');
+
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 503 });
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = new HttpWechatProvider('https://wechat.test', 'app', 'secret');
+    expect(provider.isConfigured()).toBe(true);
+    const httpFailure = await provider.send({ id: 'x' });
+    expect(httpFailure).toEqual({ ok: false, result: 'http_503' });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: false, result: 'rejected' }) }));
+    const rejected = await provider.send({ id: 'x' });
+    expect(rejected).toEqual({ ok: false, result: 'rejected' });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => null }));
+    const sent = await provider.send({ id: 'x' });
+    expect(sent).toEqual({ ok: true, result: 'sent' });
+    vi.unstubAllGlobals();
+  });
+
+  it('aborts slow wechat requests and handles invalid JSON responses', async () => {
+    vi.useFakeTimers();
+    const provider = new HttpWechatProvider('https://wechat.test', 'app', 'secret');
+    vi.stubGlobal('fetch', vi.fn((_url: unknown, init: { signal: AbortSignal }) => new Promise((_resolve, reject) => {
+      init.signal.addEventListener('abort', () => reject(new Error('aborted')));
+    })));
+    const pending = provider.send({ id: 'slow' });
+    await vi.advanceTimersByTimeAsync(5000);
+    await expect(pending).resolves.toEqual({ ok: false, result: 'network_error' });
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => {
+        throw new Error('invalid json');
+      },
+    }));
+    await expect(provider.send({ id: 'invalid' })).resolves.toEqual({ ok: true, result: 'sent' });
+    vi.unstubAllGlobals();
+  });
+
+  it('covers the wechat provider factory and rejects provider delivery failures', async () => {
+    const unconfigured = new UnconfiguredWechatProvider();
+    expect(await unconfigured.send()).toEqual({ ok: false, result: 'wechat_channel_not_configured' });
+
+    const originalUrl = process.env.V2_WECHAT_API_URL;
+    const originalAppId = process.env.V2_WECHAT_APP_ID;
+    const originalSecret = process.env.V2_WECHAT_APP_SECRET;
+    process.env.V2_WECHAT_API_URL = 'https://wechat.test';
+    process.env.V2_WECHAT_APP_ID = 'app';
+    process.env.V2_WECHAT_APP_SECRET = 'secret';
+    try {
+      expect(createWechatProvider().isConfigured()).toBe(true);
+    } finally {
+      if (originalUrl === undefined) delete process.env.V2_WECHAT_API_URL;
+      else process.env.V2_WECHAT_API_URL = originalUrl;
+      if (originalAppId === undefined) delete process.env.V2_WECHAT_APP_ID;
+      else process.env.V2_WECHAT_APP_ID = originalAppId;
+      if (originalSecret === undefined) delete process.env.V2_WECHAT_APP_SECRET;
+      else process.env.V2_WECHAT_APP_SECRET = originalSecret;
+    }
+
+    db.prepare(
+      `INSERT INTO WechatMessage (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, type, content, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'TEXT', 'delivery-failure', 'PENDING')`,
+    ).run('wechat-delivery-failure', context.clinicId, now, now);
+    const failing = new WechatService(db, undefined, {
+      name: 'failing',
+      isConfigured: () => true,
+      send: async () => ({ ok: false, result: 'rejected_by_channel' }),
+    });
+    await expect(failing.send('wechat-delivery-failure', context)).rejects.toThrow('Wechat channel send failed');
+    const row = db.prepare('SELECT status FROM WechatMessage WHERE id = ?').get('wechat-delivery-failure') as { status: string };
+    expect(row.status).toBe('PENDING');
   });
 
   it('returns frequent charge items', () => {

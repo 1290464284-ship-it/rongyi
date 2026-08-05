@@ -13,9 +13,9 @@ try {
   console.log('login page', { title, heading });
   await page.fill('input', 'admin');
   await page.fill('input[type="password"]', 'REDACTED');
-  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.getByRole('button', { name: '登录' }).click();
   await page.waitForURL('**/#/');
-  await page.getByText('Dashboard').first().waitFor();
+  await page.getByText('工作台').first().waitFor();
 
   await page.goto(`${base}/#/patients`, { waitUntil: 'domcontentloaded' });
   await page.getByRole('heading', { name: '患者与预约' }).waitFor();

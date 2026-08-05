@@ -2,10 +2,20 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import type { Page } from './types';
-import { DataTable, type DataTableColumn } from './components';
+import { DataTable, PromptDialog, type DataTableColumn } from './components';
+import { formatMoney, toCents } from './format';
+import { errorMessage } from './messages';
+import { useToast } from './toast-context';
+
+type MoneyAction =
+  | { kind: 'recharge'; id: string; title: string }
+  | { kind: 'consume'; id: string; title: string }
+  | { kind: 'debt'; id: string; title: string }
+  | null;
 
 export function FinanceWorkflowPage() {
-  const [message, setMessage] = useState('');
+  const { showToast } = useToast();
+  const [action, setAction] = useState<MoneyAction>(null);
   const cards = useQuery({
     queryKey: ['member-cards'],
     queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/memberCards?page=1&pageSize=100'),
@@ -17,65 +27,77 @@ export function FinanceWorkflowPage() {
 
   async function run(path: string, id: string, body: Record<string, unknown>, method: 'POST' | 'PATCH' = 'POST') {
     try {
-      const result = await apiRequest<Record<string, unknown>>(path, { method, body: JSON.stringify(body) });
-      setMessage(JSON.stringify(result));
+      await apiRequest<Record<string, unknown>>(path, { method, body: JSON.stringify(body) });
+      showToast('操作成功', 'success');
       await Promise.all([cards.refetch(), debts.refetch()]);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : '操作失败');
+      showToast(errorMessage(error, '操作失败'), 'error');
     }
   }
 
-  async function recharge(cardId: string) {
-    const amount = Number(prompt('充值金额（分）') ?? 0);
-    await run(`/member-cards/${cardId}/recharge`, cardId, { amount, requestId: `ui-${Date.now()}` });
-  }
-
-  async function consume(cardId: string) {
-    const amount = Number(prompt('消费金额（分）') ?? 0);
-    await run(`/member-cards/${cardId}/consume`, cardId, { amount, requestId: `ui-${Date.now()}` });
-  }
-
-  async function payDebt(debtId: string) {
-    const amount = Number(prompt('还款金额（分）') ?? 0);
-    await run(`/debts/${debtId}/pay`, debtId, { amount, requestId: `ui-${Date.now()}` }, 'PATCH');
+  async function submitAmount(value: string) {
+    const amount = toCents(value);
+    if (!action) return;
+    if (!Number.isFinite(amount) || amount < 0) {
+      showToast('请输入有效金额', 'error');
+      setAction(null);
+      return;
+    }
+    if (action.kind === 'recharge') {
+      await run(`/member-cards/${action.id}/recharge`, action.id, { amount, requestId: `ui-${Date.now()}` });
+    } else if (action.kind === 'consume') {
+      await run(`/member-cards/${action.id}/consume`, action.id, { amount, requestId: `ui-${Date.now()}` });
+    } else if (action.kind === 'debt') {
+      await run(`/debts/${action.id}/pay`, action.id, { amount, requestId: `ui-${Date.now()}` }, 'PATCH');
+    }
+    setAction(null);
   }
 
   const cardColumns: DataTableColumn<Record<string, unknown>>[] = [
-    { key: 'id', label: 'ID', render: (row) => String(row.id).slice(0, 8) },
-    { key: 'cardNo', label: 'Card', render: (row) => String(row.cardNo ?? '') },
-    { key: 'balance', label: 'Balance', render: (row) => String(row.balance ?? '') },
+    { key: 'cardNo', label: '卡号', render: (row) => String(row.cardNo ?? '') },
+    { key: 'balance', label: '余额', render: (row) => formatMoney(row.balance) },
     {
       key: 'actions',
-      label: 'Actions',
+      label: '操作',
       render: (row) => (
         <>
-          <button onClick={() => recharge(String(row.id))}>充值</button>
-          <button onClick={() => consume(String(row.id))}>消费</button>
+          <button onClick={() => setAction({ kind: 'recharge', id: String(row.id), title: '会员卡充值' })}>充值</button>
+          <button onClick={() => setAction({ kind: 'consume', id: String(row.id), title: '会员卡消费' })}>消费</button>
         </>
       ),
     },
   ];
 
   const debtColumns: DataTableColumn<Record<string, unknown>>[] = [
-    { key: 'id', label: 'ID', render: (row) => String(row.id).slice(0, 8) },
-    { key: 'totalAmount', label: 'Total', render: (row) => String(row.totalAmount ?? '') },
-    { key: 'paidAmount', label: 'Paid', render: (row) => String(row.paidAmount ?? '') },
-    { key: 'status', label: 'Status', render: (row) => String(row.status ?? '') },
+    { key: 'totalAmount', label: '应收', render: (row) => formatMoney(row.totalAmount) },
+    { key: 'paidAmount', label: '已收', render: (row) => formatMoney(row.paidAmount) },
+    { key: 'status', label: '状态', render: (row) => String(row.status ?? '') },
     {
       key: 'actions',
-      label: 'Action',
-      render: (row) => <button onClick={() => payDebt(String(row.id))}>还款</button>,
+      label: '操作',
+      render: (row) => <button onClick={() => setAction({ kind: 'debt', id: String(row.id), title: '欠费还款' })}>还款</button>,
     },
   ];
 
   return (
     <div className="page">
       <h1>财务操作</h1>
-      {message && <p className="info">{message}</p>}
       <h2>会员卡</h2>
-      <DataTable columns={cardColumns} rows={cards.data?.items ?? []} keyField="id" emptyText="No member cards" />
+      <DataTable columns={cardColumns} rows={cards.data?.items ?? []} keyField="id" emptyText="暂无会员卡" />
       <h2>欠费</h2>
-      <DataTable columns={debtColumns} rows={debts.data?.items ?? []} keyField="id" emptyText="No debts" />
+      <DataTable columns={debtColumns} rows={debts.data?.items ?? []} keyField="id" emptyText="暂无欠费" />
+      <PromptDialog
+        key={action !== null ? 'open' : 'closed'}
+        open={action !== null}
+        title={action?.title ?? '金额操作'}
+        message="请输入金额，单位：元"
+        value=""
+        inputType="number"
+        placeholder="例如：100"
+        confirmText="确认"
+        onSubmit={(value) => void submitAmount(value)}
+        onCancel={() => setAction(null)}
+      />
     </div>
   );
 }

@@ -1,11 +1,19 @@
-import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import type { Page } from './types';
 import { DataTable, type DataTableColumn } from './components';
+import { errorMessage } from './messages';
+import { useToast } from './toast-context';
+
+const LEAVE_STATUS_LABELS: Record<string, string> = {
+  PENDING: '待审批',
+  APPROVED: '已批准',
+  REJECTED: '已驳回',
+  CANCELLED: '已取消',
+};
 
 export function HrWorkflowPage() {
-  const [message, setMessage] = useState('');
+  const { showToast } = useToast();
   const leaves = useQuery({
     queryKey: ['leaves'],
     queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/leaveRequests?page=1&pageSize=100'),
@@ -17,25 +25,25 @@ export function HrWorkflowPage() {
         method: 'PATCH',
         body: JSON.stringify({ approved }),
       });
-      setMessage(approved ? '已批准' : '已驳回');
+      showToast(approved ? '已批准' : '已驳回', 'success');
       await leaves.refetch();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : '审批失败');
+      showToast(errorMessage(error, '审批失败'), 'error');
     }
   }
 
   const columns: DataTableColumn<Record<string, unknown>>[] = [
     { key: 'id', label: 'ID', render: (row) => String(row.id).slice(0, 8) },
-    { key: 'userId', label: 'User', render: (row) => String(row.userId ?? '') },
+    { key: 'userId', label: '员工', render: (row) => String(row.userId ?? '') },
     {
       key: 'dates',
-      label: 'Dates',
+      label: '日期',
       render: (row) => `${String(row.startDate ?? '')} - ${String(row.endDate ?? '')}`,
     },
-    { key: 'status', label: 'Status', render: (row) => String(row.status ?? '') },
+    { key: 'status', label: '状态', render: (row) => LEAVE_STATUS_LABELS[String(row.status ?? '')] ?? String(row.status ?? '') },
     {
       key: 'actions',
-      label: 'Actions',
+      label: '操作',
       render: (row) => (
         <>
           <button onClick={() => approve(String(row.id), true)}>批准</button>
@@ -48,12 +56,11 @@ export function HrWorkflowPage() {
   return (
     <div className="page">
       <h1>人事审批</h1>
-      {message && <p className="info">{message}</p>}
       <DataTable
         columns={columns}
         rows={leaves.data?.items.filter((row) => String(row.status) === 'PENDING') ?? []}
         keyField="id"
-        emptyText="No pending leaves"
+        emptyText="暂无待审批请假"
       />
     </div>
   );

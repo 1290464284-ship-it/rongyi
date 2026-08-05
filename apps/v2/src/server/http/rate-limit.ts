@@ -22,7 +22,11 @@ const windows = new Map<string, Window>();
 const MAX_WINDOWS = 10_000;
 
   return (req: Request, res: Response, next: NextFunction): void => {
-    const key = `${req.ip ?? 'unknown'}:${req.method}:${req.path}`;
+    const routePath = req.route?.path ?? req.path;
+    const base = `${req.ip ?? 'unknown'}:${req.method}:${routePath}`;
+    const isLogin = req.method === 'POST' && String(req.path).includes('/auth/login');
+    const usernamePart = isLogin && req.body && typeof req.body.username === 'string' ? `:${String(req.body.username)}` : '';
+    const key = base + usernamePart;
     const now = Date.now();
     /* v8 ignore start -- bounded-window pruning is a performance safeguard. */
     if (windows.size >= MAX_WINDOWS && !windows.has(key)) {

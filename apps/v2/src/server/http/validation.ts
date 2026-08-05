@@ -35,7 +35,12 @@ function validateField(field: ResourceField, raw: unknown): unknown {
       }
       return raw;
     case 'date':
-      if (typeof raw !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(raw) || Number.isNaN(new Date(`${raw}T00:00:00.000Z`).getTime())) {
+      if (
+        typeof raw !== 'string'
+        || !/^\d{4}-\d{2}-\d{2}$/.test(raw)
+        || Number.isNaN(new Date(`${raw}T00:00:00.000Z`).getTime())
+        || new Date(`${raw}T00:00:00.000Z`).toISOString().slice(0, 10) !== raw
+      ) {
         throw new ValidationError(`${field.name} must be a valid YYYY-MM-DD date`);
       }
       return raw;
@@ -46,9 +51,17 @@ function validateField(field: ResourceField, raw: unknown): unknown {
       return raw;
     case 'number':
     case 'money': {
-      const value = Number(raw);
+      const value = typeof raw === 'number'
+        ? raw
+        : typeof raw === 'string' && raw.trim() !== ''
+          ? Number(raw)
+          : Number.NaN;
       if (!Number.isFinite(value)) throw new ValidationError(`${field.name} must be a number`);
       if (!Number.isInteger(value)) throw new ValidationError(`${field.name} must be an integer amount in cents`);
+      if (field.type === 'money') {
+        if (value < 0) throw new ValidationError(`${field.name} must be non-negative`);
+        if (value > 1_000_000_00) throw new ValidationError(`${field.name} exceeds maximum amount of 100000000 cents (1000000.00)`);
+      }
       if (field.min !== undefined && value < field.min) throw new ValidationError(`${field.name} must be >= ${field.min}`);
       if (field.max !== undefined && value > field.max) throw new ValidationError(`${field.name} must be <= ${field.max}`);
       return value;

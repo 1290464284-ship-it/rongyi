@@ -6,11 +6,12 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SimpleListPage } from './SimpleListPage';
 import { apiRequest } from './api';
+import { ToastProvider } from './toast';
 
 vi.mock('./api', () => ({ apiRequest: vi.fn(), downloadCsv: vi.fn() }));
 
 const wrapper = ({ children }: { children: ReactNode }) => (
-  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{children}</QueryClientProvider>
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ToastProvider>{children}</ToastProvider></QueryClientProvider>
 );
 
 describe('SimpleListPage', () => {
@@ -22,24 +23,30 @@ describe('SimpleListPage', () => {
   it('shows loading state', () => {
     vi.mocked(apiRequest).mockImplementation(() => new Promise(() => {}));
     render(<SimpleListPage title="Report" endpoint="/stats/revenue" />, { wrapper });
-    expect(screen.getByText('Loading...')).toBeDefined();
+    expect(screen.getByText('加载中...')).toBeDefined();
   });
 
   it('renders formatted report rows', async () => {
     vi.mocked(apiRequest).mockResolvedValue([
-      { amount: 10, nested: { value: 1 }, label: '2026-08' },
+      { amount: 10, nested: { value: 1 }, label: '2026-08', empty: null },
     ]);
     render(<SimpleListPage title="Report" endpoint="/stats/revenue" />, { wrapper });
     expect(await screen.findByText('Report')).toBeDefined();
-    expect(screen.getByText('10')).toBeDefined();
+    expect(screen.getByText('¥0.10')).toBeDefined();
     expect(screen.getByText('{"value":1}')).toBeDefined();
     expect(screen.getByText('2026-08')).toBeDefined();
+  });
+
+  it('renders an empty state when the endpoint returns no data', async () => {
+    vi.mocked(apiRequest).mockResolvedValue(null as unknown as unknown[]);
+    render(<SimpleListPage title="Empty" endpoint="/stats/empty" />, { wrapper });
+    expect(await screen.findByText('暂无数据')).toBeDefined();
   });
 
   it('renders empty state', async () => {
     vi.mocked(apiRequest).mockResolvedValue([]);
     render(<SimpleListPage title="Empty" endpoint="/stats/empty" />, { wrapper });
-    expect(await screen.findByText('No data.')).toBeDefined();
+    expect(await screen.findByText('暂无数据')).toBeDefined();
   });
 
   it('renders error state', async () => {

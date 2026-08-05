@@ -6,11 +6,12 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BackupsPage } from './BackupsPage';
 import { apiRequest } from './api';
+import { ToastProvider } from './toast';
 
 vi.mock('./api', () => ({ apiRequest: vi.fn(), downloadCsv: vi.fn() }));
 
 const wrapper = ({ children }: { children: ReactNode }) => (
-  <QueryClientProvider client={new QueryClient()}>{children}</QueryClientProvider>
+  <QueryClientProvider client={new QueryClient()}><ToastProvider>{children}</ToastProvider></QueryClientProvider>
 );
 
 describe('BackupsPage', () => {
@@ -29,13 +30,13 @@ describe('BackupsPage', () => {
       });
 
     render(<BackupsPage />, { wrapper });
-    fireEvent.click(await screen.findByRole('button', { name: 'Stage restore' }));
+    fireEvent.click(await screen.findByRole('button', { name: '暂存恢复' }));
 
     await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith('/backups/backup-1.sqlite/restore', expect.objectContaining({ method: 'POST' }));
     });
-    expect(await screen.findByText('Backup summary')).toBeDefined();
-    expect(screen.getByText('Current summary')).toBeDefined();
+    expect(await screen.findByText('备份数据摘要')).toBeDefined();
+    expect(screen.getByText('当前数据摘要')).toBeDefined();
     expect(screen.getByText('1')).toBeDefined();
     expect(screen.getByText('4')).toBeDefined();
   });
@@ -56,28 +57,28 @@ describe('BackupsPage', () => {
       .mockRejectedValueOnce(new Error('verify failed'));
 
     render(<BackupsPage />, { wrapper });
-    fireEvent.click(await screen.findByRole('button', { name: 'Create backup' }));
-    expect(await screen.findByText('Backup created: backup-1.sqlite (encrypted)')).toBeDefined();
+    fireEvent.click(await screen.findByRole('button', { name: '创建备份' }));
+    expect(await screen.findByText('备份已创建：backup-1.sqlite（已加密）')).toBeDefined();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
-    expect(await screen.findByText('Integrity: ok')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '校验' }));
+    expect(await screen.findByText('备份完整性校验通过')).toBeDefined();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Stage restore' }));
+    fireEvent.click(screen.getByRole('button', { name: '暂存恢复' }));
     expect(await screen.findByText('restore failed')).toBeDefined();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Cleanup (keep 30)' }));
-    expect(await screen.findByText('Kept 1, deleted 1')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '清理备份（保留 30 个）' }));
+    expect(await screen.findByText('保留 1 个，清理 1 个')).toBeDefined();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Cleanup (keep 30)' }));
+    fireEvent.click(screen.getByRole('button', { name: '清理备份（保留 30 个）' }));
     expect(await screen.findByText('cleanup failed')).toBeDefined();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Stage restore' }));
-    expect(await screen.findAllByText('No summary')).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: '暂存恢复' }));
+    expect(await screen.findAllByText('暂无摘要')).toHaveLength(2);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Create backup' }));
+    fireEvent.click(screen.getByRole('button', { name: '创建备份' }));
     expect(await screen.findByText('create failed')).toBeDefined();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
+    fireEvent.click(screen.getByRole('button', { name: '校验' }));
     expect(await screen.findByText('verify failed')).toBeDefined();
   });
 
@@ -90,16 +91,16 @@ describe('BackupsPage', () => {
     });
 
     render(<BackupsPage />, { wrapper });
-    fireEvent.click(await screen.findByRole('button', { name: 'Create backup' }));
-    expect(await screen.findByText('Create failed')).toBeDefined();
+    fireEvent.click(await screen.findByRole('button', { name: '创建备份' }));
+    expect(await screen.findByText('创建备份失败')).toBeDefined();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
-    expect(await screen.findByText('Verify failed')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '校验' }));
+    expect(await screen.findByText('校验备份失败')).toBeDefined();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Stage restore' }));
-    expect(await screen.findByText('Restore staging failed')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '暂存恢复' }));
+    expect(await screen.findByText('暂存恢复失败')).toBeDefined();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Cleanup (keep 30)' }));
-    expect(await screen.findByText('Cleanup failed')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '清理备份（保留 30 个）' }));
+    expect(await screen.findByText('清理备份失败')).toBeDefined();
   });
 });

@@ -64,6 +64,18 @@ export class Logger {
   private append(filePath: string, line: string): void {
     try {
       if (fs.existsSync(filePath) && fs.statSync(filePath).size >= this.maxFileBytes) {
+        if (fs.existsSync(`${filePath}.4`)) {
+          fs.renameSync(`${filePath}.4`, `${filePath}.5`);
+        }
+        if (fs.existsSync(`${filePath}.3`)) {
+          fs.renameSync(`${filePath}.3`, `${filePath}.4`);
+        }
+        if (fs.existsSync(`${filePath}.2`)) {
+          fs.renameSync(`${filePath}.2`, `${filePath}.3`);
+        }
+        if (fs.existsSync(`${filePath}.1`)) {
+          fs.renameSync(`${filePath}.1`, `${filePath}.2`);
+        }
         fs.renameSync(filePath, `${filePath}.1`);
       }
       fs.appendFileSync(filePath, `${line}\n`, 'utf8');

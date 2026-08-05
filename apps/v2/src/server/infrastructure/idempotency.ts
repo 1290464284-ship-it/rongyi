@@ -27,9 +27,9 @@ export function withIdempotency<T>(
 ): T | Promise<T> {
   if (!scope?.requestId) return fn();
 
-  const now = new Date().toISOString();
+  const startedAt = new Date().toISOString();
   const staleBefore = new Date(Date.now() - IDEMPOTENCY_PROCESSING_TIMEOUT_MS).toISOString();
-  db.prepare('DELETE FROM IdempotencyRecord WHERE expiresAt IS NOT NULL AND expiresAt <= ?').run(now);
+  db.prepare('DELETE FROM IdempotencyRecord WHERE expiresAt IS NOT NULL AND expiresAt <= ?').run(startedAt);
   db.prepare("DELETE FROM IdempotencyRecord WHERE status != 'COMPLETED' AND updatedAt IS NOT NULL AND updatedAt <= ?").run(staleBefore);
   const key = scopeKey(scope);
   const existing = db.prepare('SELECT responseJson, status, updatedAt FROM IdempotencyRecord WHERE key = ?').get(key) as
@@ -47,7 +47,7 @@ export function withIdempotency<T>(
          id, key, type, status, responseJson, result, userId, clinicId, operation,
          createdAt, updatedAt, deletedAt, expiresAt
        ) VALUES (?, ?, 'GENERIC', 'PROCESSING', '{}', '{}', ?, ?, ?, ?, ?, NULL, ?)`,
-    ).run(randomUUID(), key, scope.userId ?? null, scope.clinicId ?? null, scope.operation, now, now, expiresAt);
+    ).run(randomUUID(), key, scope.userId ?? null, scope.clinicId ?? null, scope.operation, startedAt, startedAt, expiresAt);
   } catch (error) {
     const concurrent = db.prepare('SELECT responseJson, status, updatedAt FROM IdempotencyRecord WHERE key = ?').get(key) as
       | { responseJson: string; status: string; updatedAt: string }
@@ -69,9 +69,10 @@ export function withIdempotency<T>(
   if (isPromise(result)) {
     return result.then(
       (value) => {
+        const completedAt = new Date().toISOString();
         db.prepare(
           `UPDATE IdempotencyRecord SET responseJson = ?, result = ?, status = 'COMPLETED', updatedAt = ? WHERE key = ?`,
-        ).run(JSON.stringify(value), JSON.stringify(value), now, key);
+        ).run(JSON.stringify(value), JSON.stringify(value), completedAt, key);
         return value;
       },
       (error: unknown) => {
@@ -81,9 +82,10 @@ export function withIdempotency<T>(
     );
   }
   try {
+    const completedAt = new Date().toISOString();
     db.prepare(
       `UPDATE IdempotencyRecord SET responseJson = ?, result = ?, status = 'COMPLETED', updatedAt = ? WHERE key = ?`,
-    ).run(JSON.stringify(result), JSON.stringify(result), now, key);
+    ).run(JSON.stringify(result), JSON.stringify(result), completedAt, key);
     return result;
   } catch (error) {
     db.prepare('DELETE FROM IdempotencyRecord WHERE key = ?').run(key);

@@ -43,9 +43,32 @@ export class UnauthorizedError extends AppError {
 
 export function asAppError(error: unknown): AppError {
   if (error instanceof AppError) return error;
+  if (error instanceof SyntaxError && 'type' in error && String((error as { type?: unknown }).type) === 'entity.parse.failed') {
+    return new ValidationError('请求体不是有效的 JSON');
+  }
+  if (error instanceof Error && 'type' in error && String((error as { type?: unknown }).type) === 'entity.too.large') {
+    return new AppError('PAYLOAD_TOO_LARGE', '请求内容过大', 413);
+  }
   if (error instanceof Error) {
     return new AppError('INTERNAL_ERROR', error.message, 500);
   }
   return new AppError('INTERNAL_ERROR', String(error), 500);
 }
 
+export function fromNativeError(err: unknown): AppError {
+  const code = err instanceof Error ? String((err as { code?: unknown }).code ?? '') : '';
+  const message = err instanceof Error ? err.message : String(err);
+  const details = err instanceof Error ? { stack: err.stack, ...(err as object) } : undefined;
+  switch (code) {
+    case 'SQLITE_BUSY':
+      return new AppError('DATABASE_LOCKED', message, 503, details);
+    case 'ENOSPC':
+      return new AppError('DISK_FULL', message, 507, details);
+    case 'EACCES':
+      return new AppError('PERMISSION_DENIED', message, 403, details);
+    case 'ENOENT':
+      return new AppError('NOT_FOUND', message, 404, details);
+    default:
+      return new AppError('INTERNAL_ERROR', message, 500, details);
+  }
+}

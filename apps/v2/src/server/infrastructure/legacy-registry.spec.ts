@@ -28,5 +28,8 @@ describe('legacy resource registry', () => {
     const all = listAllResources(db);
     expect(all.some((definition) => definition.name === 'printTemplates')).toBe(true);
     expect(all.some((definition) => definition.name === 'User')).toBe(false);
+    const patients = all.find((definition) => definition.name === 'patients');
+    expect(patients?.label).toBe('患者档案');
+    expect(patients?.fields.some((field) => field.label)).toBe(true);
   });
 });

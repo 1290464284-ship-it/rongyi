@@ -30,8 +30,10 @@ describe('validatePayload', () => {
     expect(() => validatePayload(definition, { name: 'A', role: 'X' })).toThrow('role must be one of');
     expect(() => validatePayload(definition, { name: 'REDACTED' })).toThrow('exceeds max length');
     expect(() => validatePayload(definition, { name: 'A', amount: 12.5 })).toThrow('integer amount in cents');
+    expect(() => validatePayload(definition, { name: 'A', age: true })).toThrow('age must be a number');
     expect(validatePayload(definition, { name: 'A', amount: 1250 }).amount).toBe(1250);
     expect(() => validatePayload(definition, { name: 'A', day: '2026-13-01' })).toThrow('valid YYYY-MM-DD');
+    expect(() => validatePayload(definition, { name: 'A', day: '2026-02-30' })).toThrow('valid YYYY-MM-DD');
     expect(() => validatePayload(definition, { name: 'A', startsAt: 'not-a-date' })).toThrow('valid date-time');
     expect(validatePayload(definition, { name: 'A', day: '2026-08-01', startsAt: '2026-08-01T00:00:00.000Z' }))
       .toMatchObject({ day: '2026-08-01', startsAt: '2026-08-01T00:00:00.000Z' });

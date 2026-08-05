@@ -4,7 +4,7 @@
 
 - Desktop-first renderer with merged sidebar hubs.
 - Legacy database copy and legacy table metadata adapter.
-- 141 resources exposed through declarative/dynamic resource definitions.
+- 92 resources exposed through declarative/dynamic resource definitions.
 - Core workflows: auth, appointments, registrations, visits, charges, refunds, member cards, inventory, purchase orders, processing orders, follow-ups, backups, analytics, sync, print, HR, alerts, notifications.
 - Production config validation for JWT secret and CORS.
 - CORS whitelist with localhost defaults.
@@ -191,9 +191,44 @@
   scan no longer need component quarantine exceptions.
 - `clean:generated` removes any `dist-*` output directory rather than a fixed
   hard-coded list.
+- P5 analytics was upgraded to a chart-based business dashboard with date
+  filtering, revenue/patient-growth/inventory/satisfaction/doctor views, CSV
+  export, and print-to-PDF entry points.
+- HR received dedicated Chinese pages for work schedules, attendance, leave
+  requests, and equipment, replacing generic resource tables for those core
+  operations.
+- Follow-up management now has Chinese template management, dialog-based
+  completion, batch completion, overdue export, and grouped reminder views
+  without native `prompt` usage.
+- Finance workflow now uses an amount dialog instead of native `prompt`, with
+  yuan input, validation, request IDs, and Chinese operation labels.
+- WeChat delivery was changed to a provider interface: unconfigured channels
+  explicitly show “未开通”, disable send, and never mark messages as sent;
+  HTTP provider failures leave the message in a sendable state.
+- API listens on `127.0.0.1` by default; deep health and metrics endpoints now
+  require an authenticated BOSS/ADMIN role.
+- Renderer CSP was added in the built HTML with a dev-only relaxed CSP for Vite
+  HMR, plus Electron navigation whitelist, sandboxed web preferences, denied
+  permission requests, and disabled webview attachment.
+- Electron main now uses the packaged application icon for the tray, remembers
+  window bounds/maximized state, reports renderer process crashes, and uses a
+  native `crashReporter` when configured.
+- API child process shutdown is graceful through IPC with a hard-kill timeout;
+  crash/restart status is emitted to the renderer and repeated failures show a
+  user notification instead of silently looping.
+- Auto updates are enabled by default in packaged builds (can be disabled with
+  `V2_DISABLE_AUTO_UPDATE=1`); IPC events cover checking, available, progress,
+  downloaded, error, and install, and the desktop settings page renders them.
+- P7 delivery assets were added under `docs/delivery/`: install guide,
+  admin initialization, backup/restore, troubleshooting, rollback, acceptance
+  checklist, and delivery drill documentation.
+- `delivery:drill` automates the legacy import -> create data -> encrypted
+  backup -> verify -> corrupt -> restore -> restart -> consistency check path.
 
 ## Remaining
 
-No blockers for the agreed internal delivery scope. Public CA signing is
-explicitly not required by the current product decision and is left as optional
-future work if external distribution is ever requested.
+No P0 blockers for internal controlled delivery. Remaining work is tracked as
+P1 follow-up: real WeChat template messaging, cephalometric calibration tools,
+standalone PDF report styling, performance/commission rule configuration, and
+cloud/mobile/multi-clinic editions. Public CA signing, SmartScreen
+elimination, and public update channels are explicitly deferred to P8.

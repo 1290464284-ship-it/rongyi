@@ -18,6 +18,8 @@ import type {
   MemberCardRecord,
   MemberCardRepository,
   PatientRiskRepository,
+  ProcessingOrderItemRecord,
+  ProcessingOrderRecord,
   ProcessingOrderRepository,
   PurchaseOrderItemRecord,
   PurchaseOrderRecord,
@@ -408,6 +410,53 @@ export class SqliteProcessingOrderRepository implements ProcessingOrderRepositor
     const params = clinicId ? [status, updatedAt, id, clinicId] : [status, updatedAt, id];
     this.db.prepare(`UPDATE ProcessingOrder SET status = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`).run(...params);
   }
+
+  createOrder(input: ProcessingOrderRecord): void {
+    this.db.prepare(
+      `INSERT INTO ProcessingOrder (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, visitId, factoryId, doctorId, number, shade,
+         teethNumbers, totalFee, status, expectedAt, remark
+       ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      input.id,
+      input.clinicId ?? null,
+      input.createdAt,
+      input.updatedAt,
+      input.patientId,
+      input.visitId ?? null,
+      input.factoryId ?? null,
+      input.doctorId ?? null,
+      input.number,
+      input.shade ?? null,
+      JSON.stringify(input.teethNumbers),
+      input.totalFee,
+      input.status,
+      input.expectedAt ?? null,
+      input.remark ?? null,
+    );
+  }
+
+  createItem(input: ProcessingOrderItemRecord): void {
+    this.db.prepare(
+      `INSERT INTO ProcessingOrderItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         orderId, name, spec, quantity, unitPrice, subtotal, status
+       ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      input.id,
+      input.clinicId ?? null,
+      input.createdAt,
+      input.updatedAt,
+      input.orderId,
+      input.name,
+      input.spec ?? null,
+      input.quantity,
+      input.unitPrice,
+      input.subtotal,
+      input.status,
+    );
+  }
 }
 
 export class SqliteFollowUpRepository implements FollowUpRepository {
@@ -461,19 +510,34 @@ export class SqliteFollowUpRepository implements FollowUpRepository {
 export class SqliteWechatMessageRepository implements WechatMessageRepository {
   constructor(private readonly db: Database.Database) {}
 
-  findById(id: string, clinicId?: string | null): { id: string; status: string; clinicId?: string | null } | null {
+  findById(id: string, clinicId?: string | null): {
+    id: string;
+    status: string;
+    clinicId?: string | null;
+    patientId?: string | null;
+    type?: string | null;
+    content?: string | null;
+    templateId?: string | null;
+  } | null {
     const params = clinicId ? [id, clinicId] : [id];
-    return (this.db.prepare(`SELECT id, status, clinicId FROM WechatMessage WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`).get(...params) as
-      | { id: string; status: string; clinicId?: string | null }
+    return (this.db.prepare(`SELECT id, status, clinicId, patientId, type, content, templateId FROM WechatMessage WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`).get(...params) as
+      | {
+          id: string;
+          status: string;
+          clinicId?: string | null;
+          patientId?: string | null;
+          type?: string | null;
+          content?: string | null;
+          templateId?: string | null;
+        }
       | undefined) ?? null;
   }
 
   markSent(id: string, sentAt: string, updatedAt: string, clinicId?: string | null): number {
-    const params = clinicId ? [sentAt, updatedAt, id, clinicId] : [sentAt, updatedAt, id];
     return this.db.prepare(
       `UPDATE WechatMessage SET status = ?, sentAt = ?, result = ?, updatedAt = ?
        WHERE id = ? AND deletedAt IS NULL AND status IN ('PENDING', 'DRAFT', 'IN_PROGRESS')${tenantAnd(clinicId)}`,
-    ).run('SENT', 'sent', ...params).changes;
+    ).run('SENT', sentAt, null, updatedAt, id, ...(clinicId ? [clinicId] : [])).changes;
   }
 }
 

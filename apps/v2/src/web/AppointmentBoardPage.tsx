@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import type { Page } from './types';
+import { errorMessage } from './messages';
+import { useToast } from './toast-context';
 
 const BOARD_STATUSES = [
   { key: 'BOOKED', label: '已预约' },
@@ -21,8 +23,8 @@ type AppointmentRow = Record<string, unknown> & {
 };
 
 export function AppointmentBoardPage() {
+  const { showToast } = useToast();
   const [date, setDate] = useState('');
-  const [message, setMessage] = useState('');
   const query = useQuery({
     queryKey: ['appointment-board'],
     queryFn: () => apiRequest<Page<AppointmentRow>>('/resources/appointments?page=1&pageSize=200'),
@@ -32,15 +34,15 @@ export function AppointmentBoardPage() {
   const countFor = (status: string): number => rows.filter((row) => String(row.status ?? '') === status).length;
 
   async function transition(id: string, status: string) {
-    setMessage('');
     try {
       await apiRequest(`/appointments/${id}/status`, {
         method: 'PATCH',
         body: JSON.stringify({ status }),
       });
+      showToast('预约状态已更新', 'success');
       await query.refetch();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : '状态更新失败');
+      showToast(errorMessage(error, '状态更新失败'), 'error');
     }
   }
 
@@ -50,7 +52,6 @@ export function AppointmentBoardPage() {
         <h1>预约看板</h1>
         <input aria-label="日期" type="date" value={date} onChange={(event) => setDate(event.target.value)} />
       </div>
-      {message && <p className="info">{message}</p>}
       <div className="board-summary">
         {BOARD_STATUSES.map((status) => (
           <div className="summary-item" key={status.key}>

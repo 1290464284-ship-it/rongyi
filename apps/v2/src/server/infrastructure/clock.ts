@@ -6,6 +6,7 @@ export class SystemClock {
   }
 
   clinicDate(input: Date | string | number = new Date()): string {
+    // Asia/Shanghai = +8 hours
     const date = input instanceof Date ? input : new Date(input);
     const shifted = new Date(date.getTime() + CLINIC_TZ_OFFSET_HOURS * 3_600_000);
     const year = shifted.getUTCFullYear();

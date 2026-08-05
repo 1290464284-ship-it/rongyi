@@ -36,6 +36,7 @@ import type Database from 'better-sqlite3';
 
 export interface RouteDependencies {
   db: Database.Database;
+  dbPath: string;
   logger: Logger;
   logDir: string;
   authService: AuthService;

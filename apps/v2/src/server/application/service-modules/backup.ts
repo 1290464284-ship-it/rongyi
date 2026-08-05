@@ -1,3 +1,6 @@
+// TODO(MULTI-CLINIC): Backup records currently use clinicId = NULL globally.
+// When multi-tenancy isolation is required, scope BackupRecord listing,
+// create() and cleanup() by operator clinicId and partition filenames safely.
 import fs from 'node:fs';
 import { createReadStream, createWriteStream } from 'node:fs';
 import path from 'node:path';
@@ -146,9 +149,19 @@ export class BackupService {
     const files = this.list() as Array<{ filename: string; fileSize: number }>;
     const deleteFiles = files.slice(keep);
     const deleted: Array<{ filename: string; fileSize: number }> = [];
+    const filenames = deleteFiles.map((f) => f.filename);
+    const deleteTxn = this.db.transaction((names: string[]) => {
+      const stmt = this.db.prepare('DELETE FROM BackupRecord WHERE filename = ?');
+      for (const name of names) stmt.run(name);
+    });
+    deleteTxn(filenames);
     for (const file of deleteFiles) {
-      fs.unlinkSync(path.join(this.backupDir, file.filename));
-      this.db.prepare('DELETE FROM BackupRecord WHERE filename = ?').run(file.filename);
+      try {
+        fs.unlinkSync(path.join(this.backupDir, file.filename));
+      } catch (error) {
+        console.warn('[backup] failed to delete backup file during cleanup:', file.filename, error instanceof Error ? error.message : error);
+        continue;
+      }
       deleted.push({ filename: file.filename, fileSize: file.fileSize });
     }
     return {

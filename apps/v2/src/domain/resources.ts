@@ -11,6 +11,12 @@ import { legacyResources } from './legacy-resources.generated';
  *
  * Simple CRUD resources are expressed here instead of in duplicated routers and
  * repositories. Complex workflows still live in dedicated application use cases.
+ *
+ * TODO: 统一 entityName 映射说明
+ * 当前 registry 中的 resource.name 与对应实体表名存在两套命名约定：
+ * - 多数资源：resource.name（复数形式，如 patients / appointments）→ 通过 contracts 中 ResourceDefinition.table 映射到实体类名（如 Patient / Appointment）
+ * - 少数例外：imaging（无 s）、firstExamTeeth、memberCardLogs、memberPointLogs 等名称与 table 不一致
+ * 迁移时需梳理所有 name→table 的映射，统一为单一命名策略（建议始终以 domain entity 名为准），并在 resourceRegistry 中提供 name↔entity 双向查询辅助函数。
  */
 
 const boss: UserRole[] = ['BOSS'];
@@ -418,7 +424,7 @@ const resources: ResourceDefinition[] = [
     f('expireDate', 'date'),
     f('location', 'text'),
     f('remark', 'longText'),
-  ], { roles: boss, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
+  ], { roles: ['BOSS', 'ADMIN', 'RECEPTIONIST'], capabilities: { list: true, create: true, update: true, delete: false, softDelete: false } }),
 
   crud('inventoryTransactions', 'InventoryTransaction', [
     f('itemId', 'relation', { required: true, relation: { resource: 'inventoryItems', foreignKey: 'itemId', labelField: 'name' } }),
@@ -495,17 +501,6 @@ const resources: ResourceDefinition[] = [
     f('status', 'text', { default: 'DRAFT' }),
     f('remark', 'longText'),
   ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
-
-  crud('smsLogs', 'SmsLog', [
-    f('patientId', 'relation', { relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
-    f('phone', 'text', { required: true, searchable: true }),
-    f('content', 'longText', { required: true }),
-    f('type', 'text', { required: true }),
-    f('status', 'text', { required: true }),
-    f('result', 'longText'),
-    f('sentAt', 'datetime'),
-    f('cost', 'money'),
-  ], { roles: reception, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   crud('invoices', 'Invoice', [
     f('chargeId', 'relation', { required: true, relation: { resource: 'charges', foreignKey: 'chargeId', labelField: 'number' } }),
@@ -697,7 +692,7 @@ const resources: ResourceDefinition[] = [
   ], { roles: ['BOSS', 'ADMIN'], capabilities: { list: true, create: false, update: false, delete: false, softDelete: true } }),
 ];
 
-const INTERNAL_RESOURCE_TABLES = new Set([
+export const INTERNAL_RESOURCE_TABLES = new Set([
   'BackupRecord',
   'IdempotencyRecord',
   'SyncChange',

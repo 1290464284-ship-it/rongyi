@@ -4,6 +4,11 @@
  * This file is the single source of truth for domain types. Infrastructure,
  * use cases, HTTP adapters, and the web application must depend on these
  * contracts rather than on each other.
+ *
+ * TODO: 渐进拆分规划
+ * - domain/enums.ts: 抽离 UserRole / Gender / AppointmentStatus 等所有枚举常量与联合类型
+ * - domain/entities.ts: 抽离 Clinic / User / Patient / Appointment 等实体接口（继承 Entity/SoftDeletable）
+ * - shared/contracts.ts: 抽离 Page<T> / Result<T> / AppErrorLike / IRepository 等跨层通用契约
  */
 
 // ---------------------------------------------------------------------------
@@ -883,6 +888,23 @@ export type FieldType =
   | 'json'
   | 'relation';
 
+export type FieldFormat =
+  | 'text'
+  | 'money'
+  | 'date'
+  | 'datetime'
+  | 'json';
+
+export type FieldInputType =
+  | 'text'
+  | 'textarea'
+  | 'number'
+  | 'date'
+  | 'datetime'
+  | 'select'
+  | 'checkbox'
+  | 'json';
+
 export interface ResourceField {
   name: string;
   type: FieldType;
@@ -891,6 +913,13 @@ export interface ResourceField {
   searchable?: boolean;
   sortable?: boolean;
   label?: string;
+  enumLabels?: Readonly<Record<string, string>>;
+  format?: FieldFormat;
+  inputType?: FieldInputType;
+  hidden?: boolean;
+  readOnly?: boolean;
+  placeholder?: string;
+  helpText?: string;
   enumValues?: readonly string[];
   relation?: { resource: string; foreignKey: string; labelField: string };
   default?: unknown;
@@ -909,6 +938,7 @@ export interface ResourceCapabilities {
 
 export interface ResourceDefinition {
   name: string;
+  label?: string;
   table: string;
   fields: ResourceField[];
   searchableFields?: string[];

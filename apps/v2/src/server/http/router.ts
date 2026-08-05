@@ -78,7 +78,7 @@ export function createResourceRouter(db: Database.Database): Router {
       }
       res.setHeader('content-type', 'text/csv; charset=utf-8');
       res.setHeader('content-disposition', `attachment; filename="${resource.name}-${Date.now()}.csv"`);
-      res.send(`\uFEFF${toCsv(rows)}`);
+      res.send(`\uFEFF${toCsv(rows, resource)}`);
     } catch (error) {
       next(error);
     }
@@ -136,11 +136,19 @@ function parseFilters(req: Request): Record<string, unknown> {
   return result;
 }
 
-function toCsv(rows: Array<Record<string, unknown>>): string {
+function toCsv(rows: Array<Record<string, unknown>>, resource: ResourceDefinition): string {
   if (rows.length === 0) return '';
   const headers = [...new Set(rows.flatMap((row) => Object.keys(row)))];
+  const labels = new Map(resource.fields.map((field) => [field.name, field.label ?? field.name]));
+  const systemLabels: Record<string, string> = {
+    id: 'ID',
+    clinicId: '诊所',
+    createdAt: '创建时间',
+    updatedAt: '更新时间',
+    deletedAt: '删除时间',
+  };
   const lines = [
-    headers.map(csvCell).join(','),
+    headers.map((header) => csvCell(labels.get(header) ?? systemLabels[header] ?? header)).join(','),
     ...rows.map((row) => headers.map((header) => csvCell(row[header])).join(',')),
   ];
   return lines.join('\r\n');

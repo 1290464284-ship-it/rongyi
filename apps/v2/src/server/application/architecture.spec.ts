@@ -34,7 +34,6 @@ describe('architecture boundaries', () => {
       'memberCardLogs',
       'memberPointLogs',
       'refunds',
-      'inventoryItems',
       'inventoryTransactions',
       'purchaseOrders',
       'purchaseOrderItems',
@@ -48,6 +47,11 @@ describe('architecture boundaries', () => {
         delete: false,
       });
     }
+    expect(resourceRegistry.get('inventoryItems')?.capabilities).toMatchObject({
+      create: true,
+      update: true,
+      delete: false,
+    });
   });
 
   it('prevents generic state transitions on workflow resources', () => {

@@ -8,7 +8,7 @@ import {
 } from '../../infrastructure/repositories/core.repositories';
 import { withIdempotency } from '../../infrastructure/idempotency';
 import { SystemClock } from '../../infrastructure/clock';
-import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
+import { tenantAnd, tenantParams, tenantWhere } from '../../infrastructure/tenant';
 import type { AppContext, IUnitOfWork } from '../../../domain/contracts';
 import type {
   FollowUpRepository,
@@ -40,7 +40,7 @@ export class InventoryService {
       if (!['IN', 'OUT', 'ADJUST'].includes(input.type)) {
         throw new ValidationError('Inventory transaction type must be IN, OUT, or ADJUST');
       }
-      if (!Number.isFinite(input.quantity) || input.quantity === 0) {
+      if (!Number.isSafeInteger(input.quantity) || input.quantity === 0) {
         throw new ValidationError('Inventory transaction quantity must be a non-zero number');
       }
       if (input.type !== 'ADJUST' && input.quantity < 0) {
@@ -82,14 +82,15 @@ export class InventoryService {
     const clock = new SystemClock();
     const today = clock.clinicDate();
     const cutoff = clock.clinicDate(Date.now() + Math.max(1, days) * 86_400_000);
-    const params = context.clinicId ? [today, cutoff, context.clinicId] : [today, cutoff];
+    const tenant = tenantWhere(context.clinicId);
+    const params = [today, cutoff, ...tenant.params];
     return this.db.prepare(
       `SELECT * FROM InventoryItem
        WHERE deletedAt IS NULL
          AND expireDate IS NOT NULL
          AND expireDate >= ?
          AND expireDate <= ?
-         ${tenantAnd(context.clinicId)}
+         ${tenant.sql ? `AND ${tenant.sql}` : ''}
        ORDER BY expireDate ASC
        LIMIT 100`,
     ).all(...params) as Array<Record<string, unknown>>;
@@ -111,7 +112,8 @@ export class FollowUpService {
 
   summary(context: AppContext): { total: number; overdue: number; today: number; upcoming: number } {
     const today = new SystemClock().clinicDate();
-    const params = context.clinicId ? [today, today, today, context.clinicId] : [today, today, today];
+    const tenant = tenantWhere(context.clinicId);
+    const params = [today, today, today, ...tenant.params];
     const row = this.db.prepare(
       `SELECT COUNT(*) AS total,
               COALESCE(SUM(CASE WHEN planDate < ? THEN 1 ELSE 0 END), 0) AS overdue,
@@ -121,7 +123,7 @@ export class FollowUpService {
        WHERE status IN ('PENDING', 'IN_PROGRESS')
          AND planDate IS NOT NULL
          AND deletedAt IS NULL
-         ${tenantAnd(context.clinicId)}`,
+         ${tenant.sql ? `AND ${tenant.sql}` : ''}`,
     ).get(...params) as { total: number; overdue: number; today: number; upcoming: number };
     return {
       total: Number(row.total),
@@ -162,27 +164,30 @@ export class FollowUpService {
       throw new ValidationError('Follow-up result must be at most 500 characters');
     }
     const now = context.now().toISOString();
-    let completed = 0;
     const errors: string[] = [];
+    let completed = 0;
     const run = this.db.transaction(() => {
+      const placeholders = ids.map(() => '?').join(',');
+      const sql = `SELECT id, status FROM FollowUp WHERE id IN (${placeholders}) AND deletedAt IS NULL${tenantAnd(context.clinicId)}`;
+      const params = [...ids, ...tenantParams(context.clinicId)];
+      const rows = this.db.prepare(sql).all(...params) as Array<{ id: string; status: string }>;
+      const rowMap = new Map(rows.map((r) => [r.id, r.status]));
       for (const id of ids) {
-        const row = this.db.prepare(
-          `SELECT id, status FROM FollowUp WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
-        ).get(id, ...tenantParams(context.clinicId)) as { id: string; status: string } | undefined;
-        if (!row) {
-          errors.push(`Follow-up not found: ${id}`);
+        const status = rowMap.get(id);
+        if (!status) {
+          errors.push(`随访记录不存在：${id}`);
           continue;
         }
-        if (!['PENDING', 'IN_PROGRESS'].includes(row.status)) {
-          errors.push(`Follow-up cannot be completed from ${row.status}: ${id}`);
+        if (!['PENDING', 'IN_PROGRESS'].includes(status)) {
+          errors.push(`当前状态不能完成随访：${id}`);
           continue;
         }
         const changes = this.followUpRepository.complete(id, now, now, context.clinicId, normalizedResult);
         if (changes === 0) {
-          errors.push(`Follow-up cannot be completed: ${id}`);
-          continue;
+          errors.push(`随访无法完成：${id}`);
+        } else {
+          completed += 1;
         }
-        completed += 1;
       }
     });
     run();
@@ -216,7 +221,7 @@ export class FollowUpService {
          ${tenantAnd(context.clinicId, 'F.clinicId')}
        ORDER BY F.planDate ASC, P.name ASC`,
     ).all(...params) as Array<Record<string, unknown>>;
-    const headers = ['id', 'patientName', 'patientPhone', 'planDate', 'status', 'content', 'completedAt', 'result'];
+    const headers = ['id', '患者', '电话', '计划日期', '状态', '内容', '完成时间', '结果'];
     return [
       headers.map((header) => csvCell(header)).join(','),
       ...rows.map((row) => headers.map((header) => csvCell(row[header])).join(',')),
@@ -225,7 +230,10 @@ export class FollowUpService {
 
   async batchGenerate(limit = 50, context: AppContext): Promise<{ processed: number; generated: number }> {
     const maxLimit = Math.min(200, Math.max(1, Math.floor(Number(limit) || 50)));
-    const rowParams = context.clinicId ? [context.clinicId, maxLimit] : [maxLimit];
+    const _tenant = tenantWhere(context.clinicId);
+    const tenantV = tenantWhere(context.clinicId, 'V.clinicId');
+    const tenantTpl = tenantWhere(context.clinicId);
+    const rowParams = [...tenantV.params, maxLimit];
     const rows = this.db.prepare(
       `SELECT DISTINCT V.patientId,
               COALESCE(T.completedDate, V.createdAt) AS completedAt
@@ -235,15 +243,15 @@ export class FollowUpService {
          AND T.status = 'COMPLETED'
          AND V.deletedAt IS NULL
          AND T.deletedAt IS NULL
-         ${tenantAnd(context.clinicId, 'V.clinicId')}
+         ${tenantV.sql ? `AND ${tenantV.sql}` : ''}
        LIMIT ?`,
     ).all(...rowParams) as Array<{ patientId: string; completedAt: string }>;
-    const templateParams = context.clinicId ? [context.clinicId] : [];
+    const templateParams = tenantTpl.params;
     const templates = this.db.prepare(
       `SELECT id, name, daysAfter, content, assigneeId
        FROM FollowUpTemplate
        WHERE isEnabled = 1 AND deletedAt IS NULL
-         ${tenantAnd(context.clinicId)}
+         ${tenantTpl.sql ? `AND ${tenantTpl.sql}` : ''}
        ORDER BY daysAfter ASC
        LIMIT 20`,
     ).all(...templateParams) as Array<{ id: string; name: string; daysAfter: number; content: string | null; assigneeId: string | null }>;
@@ -272,7 +280,7 @@ export class FollowUpService {
             updatedAt: now,
             patientId: row.patientId,
             planDate,
-            content: 'Scheduled follow-up',
+            content: '定期随访',
             status: 'PENDING',
           });
           generated += 1;
@@ -309,7 +317,7 @@ export class FollowUpService {
     const params = tenantParams(context.clinicId);
     const row = this.db.prepare(
       `SELECT COUNT(*) AS total,
-              COALESCE(SUM(CASE WHEN substr(completedAt, 1, 10) <= planDate THEN 1 ELSE 0 END), 0) AS onTime
+              COALESCE(SUM(CASE WHEN strftime('%Y-%m-%d', completedAt, '+8 hours') <= planDate THEN 1 ELSE 0 END), 0) AS onTime
        FROM FollowUp
        WHERE status = 'COMPLETED' AND planDate IS NOT NULL AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).get(...params) as { total: number; onTime: number };

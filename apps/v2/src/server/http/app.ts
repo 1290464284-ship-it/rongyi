@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import cors from 'cors';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import helmet from 'helmet';
@@ -36,7 +37,7 @@ import {
   ReplenishmentService,
   WechatService,
 } from '../application/workflow-services';
-import { authMiddleware, errorMiddleware, roleMiddleware, traceMiddleware } from './middleware';
+import { authMiddleware, errorMiddleware, roleMiddleware, traceMiddleware, wrapAsync } from './middleware';
 import { AppError } from '../infrastructure/errors';
 import { listAllResources } from '../infrastructure/legacy-registry';
 import { metricsMiddleware, metricsSnapshot, persistMetrics } from './metrics';
@@ -48,6 +49,7 @@ import { registerReadRoutes } from './read-routes';
 import { registerAdminRoutes, registerPublicAuthRoutes } from './routes/auth-admin';
 import { registerWorkflowRoutes } from './routes/workflow';
 import { registerSystemRoutes } from './routes/system';
+import { registerFileRoutes } from './routes/files';
 import type { RouteDependencies } from './routes/deps';
 
 export interface AppDependencies {
@@ -60,8 +62,106 @@ export interface AppDependencies {
 
 export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependencies): Express {
   const app = express();
+  const auditBuffer: Array<{
+    userId?: string | null;
+    userName?: string | null;
+    action: string;
+    target?: string | null;
+    detail?: string | null;
+    ip?: string | null;
+    traceId?: string | null;
+    clinicId?: string | null;
+  }> = [];
+  const AUDIT_FLUSH_INTERVAL = 1000;
+  const AUDIT_BUFFER_MAX = 50;
+  const insertAuditStmt = db.prepare(
+    `INSERT INTO OperationLog (
+       id, userId, userName, action, target, detail, ip, traceId,
+       clinicId, createdAt, updatedAt, deletedAt
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+  );
+  const flushAudit = db.transaction((rows: typeof auditBuffer) => {
+    for (const input of rows) {
+      const now = new Date().toISOString();
+      insertAuditStmt.run(
+        randomUUID(),
+        input.userId ?? null,
+        input.userName ?? null,
+        input.action,
+        input.target ?? null,
+        input.detail ?? null,
+        input.ip ?? null,
+        input.traceId ?? null,
+        input.clinicId ?? null,
+        now,
+        now,
+      );
+    }
+  });
+  let _auditFlushScheduled = false;
+  function scheduleAuditFlush(): void {
+    if (_auditFlushScheduled) return;
+    _auditFlushScheduled = true;
+    setTimeout(() => {
+      _auditFlushScheduled = false;
+      if (auditBuffer.length === 0) return;
+      const rows = auditBuffer.splice(0, auditBuffer.length);
+      try {
+        flushAudit(rows);
+      } catch (error) {
+        if (logger) logger.error('audit batch flush failed', { error });
+        else console.error('audit batch flush failed', error);
+      }
+    }, AUDIT_FLUSH_INTERVAL).unref();
+  }
+  function pushAudit(input: typeof auditBuffer[number]): void {
+    if (process.env.NODE_ENV === 'test') {
+      const now = new Date().toISOString();
+      insertAuditStmt.run(
+        randomUUID(),
+        input.userId ?? null,
+        input.userName ?? null,
+        input.action,
+        input.target ?? null,
+        input.detail ?? null,
+        input.ip ?? null,
+        input.traceId ?? null,
+        input.clinicId ?? null,
+        now,
+        now,
+      );
+      return;
+    }
+    auditBuffer.push(input);
+    if (auditBuffer.length >= AUDIT_BUFFER_MAX) {
+      const rows = auditBuffer.splice(0, AUDIT_BUFFER_MAX);
+      try {
+        flushAudit(rows);
+      } catch (error) {
+        if (logger) logger.error('audit batch flush failed', { error });
+        else console.error('audit batch flush failed', error);
+      }
+    } else {
+      scheduleAuditFlush();
+    }
+  }
+  function shutdownFlushAudit(): void {
+    if (auditBuffer.length === 0) return;
+    const rows = auditBuffer.splice(0, auditBuffer.length);
+    try {
+      flushAudit(rows);
+    } catch (error) {
+      if (logger) logger.error('audit shutdown flush failed', { error });
+      else console.error('audit shutdown flush failed', error);
+    }
+  }
+  process.once('SIGINT', shutdownFlushAudit);
+  process.once('SIGTERM', shutdownFlushAudit);
+  app.set('flushAudit', shutdownFlushAudit);
+
   const deps: RouteDependencies = {
     db,
+    dbPath,
     logger,
     logDir,
     authService: new AuthService(db),
@@ -101,15 +201,22 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
+  const _configuredPort = Number(process.env.V2_PORT ?? 3180);
+  const _viteDevPort = 5173;
   app.use(cors({
     origin(origin, callback) {
       if (!origin || configuredCorsOrigins.includes(origin)) {
         callback(null, true);
         return;
       }
+      if (origin.startsWith('file://')) {
+        callback(null, true);
+        return;
+      }
       try {
         const url = new URL(origin);
-        if (url.protocol === 'http:' && (url.hostname === 'localhost' || url.hostname === '127.0.0.1')) {
+        const isLoopback = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+        if (isLoopback && url.protocol === 'http:') {
           callback(null, true);
           return;
         }
@@ -140,27 +247,15 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
     res.json({ success: true, data: { status: 'ok', time: new Date().toISOString() } });
   });
 
-  app.get('/api/v2/health/deep', async (req, res, next) => {
-    try {
+  app.get('/api/v2/health/deep', authMiddleware(deps.authService), roleMiddleware('BOSS', 'ADMIN'), wrapAsync(async (req, res) => {
       res.json({ success: true, data: deepHealth(db, backupDir) });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
-  app.get('/api/v2/metrics', async (req, res, next) => {
-    try {
+  app.get('/api/v2/metrics', authMiddleware(deps.authService), roleMiddleware('BOSS', 'ADMIN'), wrapAsync(async (req, res) => {
       const snapshot = metricsSnapshot();
       persistMetrics(logDir, snapshot);
       res.json({ success: true, data: snapshot });
-    /* v8 ignore start -- route error propagation is covered by errorMiddleware tests */
-    } catch (error) {
-      next(error);
-    }
-    /* v8 ignore stop */
-  });
+  }));
 
   registerPublicAuthRoutes(app, deps);
 
@@ -180,7 +275,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
       const auditOverride = res.locals.audit as
         | { action?: string; target?: string | null; detail?: string | null; clinicId?: string | null }
         | undefined;
-      deps.audit.log({
+      pushAudit({
         userId: req.context!.userId,
         action: auditOverride?.action ?? `${req.method} ${req.path}`,
         target: auditOverride?.target ?? params.id ?? params.resource ?? null,
@@ -205,13 +300,14 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
     search: deps.search,
   });
 
-  app.get('/api/v2/resource-meta', async (req, res) => {
+  app.get('/api/v2/resource-meta', wrapAsync(async (req, res) => {
     res.json({ success: true, data: listAllResources(db) });
-  });
+  }));
 
   registerAdminRoutes(app, deps);
   registerWorkflowRoutes(app, deps);
   registerSystemRoutes(app, deps);
+  registerFileRoutes(app, deps);
 
   app.use((req, res) => {
     res.status(404).json({ success: false, code: 'NOT_FOUND', message: 'Route not found' });

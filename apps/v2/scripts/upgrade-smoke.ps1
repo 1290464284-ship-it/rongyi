@@ -79,7 +79,7 @@ try {
   $backup = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:3199/api/v2/backups" -Headers $headers -ContentType "application/json" -Body "{}"
   $filename = [uri]::EscapeDataString([string]$backup.data.filename)
   $verify = Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:3199/api/v2/backups/$filename/verify" -Headers $headers
-  if (-not $verify.data.ok) {
+  if ([string]$verify.data.integrity -ne "ok") {
     throw "Backup verification failed before upgrade"
   }
   $restore = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:3199/api/v2/backups/$filename/restore" -Headers $headers -ContentType "application/json" -Body "{}"

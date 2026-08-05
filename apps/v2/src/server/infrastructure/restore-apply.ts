@@ -17,7 +17,14 @@ export function applyStagedRestore(
   const markerPath = path.join(path.dirname(dbPath), '.restore-pending.json');
   if (!fs.existsSync(markerPath)) return { applied: false };
 
-  const marker = JSON.parse(fs.readFileSync(markerPath, 'utf8')) as { stagedPath?: unknown };
+  let marker: { stagedPath?: unknown };
+  try {
+    marker = JSON.parse(fs.readFileSync(markerPath, 'utf8')) as { stagedPath?: unknown };
+  } catch {
+    fs.rmSync(markerPath, { force: true });
+    console.warn('restore marker is invalid JSON, discarded:', markerPath);
+    return { applied: false };
+  }
   const stagedPath = typeof marker.stagedPath === 'string' ? marker.stagedPath : '';
   const resolvedStaged = path.resolve(stagedPath);
   const allowed = allowedDirs.map((dir) => path.resolve(dir));

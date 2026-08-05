@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { Layout } from './Layout';
 import { apiRequest, logout, switchClinic } from './api';
+import { ToastProvider } from './toast';
 
 vi.mock('./api', () => ({
   apiRequest: vi.fn(),
@@ -15,7 +16,7 @@ vi.mock('./api', () => ({
 }));
 
 const wrapper = ({ children }: { children: ReactNode }) => (
-  <QueryClientProvider client={new QueryClient()}>{children}</QueryClientProvider>
+  <QueryClientProvider client={new QueryClient()}><ToastProvider>{children}</ToastProvider></QueryClientProvider>
 );
 
 function renderLayout() {
@@ -75,7 +76,7 @@ describe('Layout clinic switcher', () => {
         clinics: [{ clinicId: 'clinic-1', name: 'Clinic 1' }],
       });
     renderLayout();
-    expect(await screen.findByText('Dental V2')).toBeDefined();
+    expect(await screen.findByText('口腔诊所管理')).toBeDefined();
     expect(screen.queryByLabelText('当前诊所')).toBeNull();
   });
 
@@ -87,7 +88,7 @@ describe('Layout clinic switcher', () => {
         clinics: [{ clinicId: 'clinic-1', name: 'Clinic 1' }],
       });
     renderLayoutAt('/patients');
-    expect(await screen.findByText('Access denied')).toBeDefined();
+    expect(await screen.findByText('无访问权限')).toBeDefined();
   });
 
   it('switches clinics and signs out', async () => {
@@ -115,7 +116,7 @@ describe('Layout clinic switcher', () => {
       expect(switchClinic).toHaveBeenCalledWith('clinic-2');
     });
 
-    fireEvent.click(screen.getByRole('button', { name: /Sign out/ }));
+    fireEvent.click(screen.getByRole('button', { name: /退出登录/ }));
     await waitFor(() => {
       expect(logout).toHaveBeenCalled();
     });

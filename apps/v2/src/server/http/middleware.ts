@@ -66,7 +66,7 @@ export function authMiddleware(authService: AuthService) {
       }
       req.context = {
         userId: user.id,
-        clinicId: user.currentClinicId ?? user.clinicId ?? null,
+        clinicId: payload.clinicId ?? null,
         role: user.role as UserRole,
         traceId: req.traceId,
         now: () => new Date(),
@@ -89,5 +89,17 @@ export function roleMiddleware(...roles: UserRole[]) {
       return;
     }
     next();
+  };
+}
+
+export type AsyncRequestHandler = (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => Promise<unknown> | unknown;
+
+export function wrapAsync(handler: AsyncRequestHandler) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    Promise.resolve(handler(req, res, next)).catch(next);
   };
 }

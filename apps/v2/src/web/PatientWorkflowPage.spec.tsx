@@ -6,11 +6,12 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { PatientWorkflowPage } from './PatientWorkflowPage';
 import { apiRequest } from './api';
+import { ToastProvider } from './toast';
 
 vi.mock('./api', () => ({ apiRequest: vi.fn(), downloadCsv: vi.fn() }));
 
 const wrapper = ({ children }: { children: ReactNode }) => (
-  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{children}</QueryClientProvider>
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ToastProvider>{children}</ToastProvider></QueryClientProvider>
 );
 
 describe('PatientWorkflowPage', () => {
@@ -47,7 +48,7 @@ describe('PatientWorkflowPage', () => {
     await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith('/patients/p-1/risk', expect.objectContaining({ method: 'POST' }));
     });
-    expect(await screen.findByText('{"id":"risk-1"}')).toBeDefined();
+    expect(await screen.findByText('风险评分已更新')).toBeDefined();
   });
 
   it('reports risk calculation failures', async () => {

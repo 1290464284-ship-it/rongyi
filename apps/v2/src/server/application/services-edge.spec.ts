@@ -194,6 +194,7 @@ describe('service edge coverage', () => {
       }),
       resetLoginAttempts: vi.fn(),
       updateRefreshToken: vi.fn(),
+      clinicMemberships: () => [],
     } as unknown as AuthRepository;
     const mockAuth = new AuthService({} as Database.Database, mockAuthRepository);
     await expect(mockAuth.login('mock-auth', 'mockpass')).resolves.toBeDefined();
@@ -287,6 +288,109 @@ describe('service edge coverage', () => {
     });
   });
 
+  it('lists active doctors scoped to the current clinic', async () => {
+    const auth = new AuthService(db);
+    const doctor = await auth.createUser({
+      username: 'doctor-list-a',
+      password: 'password123',
+      name: 'Doctor A',
+      role: 'DOCTOR',
+    }, context);
+    const disabledDoctor = await auth.createUser({
+      username: 'doctor-list-disabled',
+      password: 'password123',
+      name: 'Disabled Doctor',
+      role: 'DOCTOR',
+      active: false,
+    }, context);
+
+    const doctors = auth.listDoctors(context);
+    expect(doctors.some((entry) => entry.id === doctor.id)).toBe(true);
+    expect(doctors.some((entry) => entry.id === disabledDoctor.id)).toBe(false);
+  });
+
+  it('creates purchase and processing orders with validation', async () => {
+    const purchase = new PurchaseOrderService(db);
+    const createdPo = await purchase.create({
+      number: 'PO-CREATE',
+      items: [{ itemId: 'inventory-demo-001', name: 'Dental Material', quantity: 2, unitPrice: 100 }],
+    }, context);
+    expect(createdPo).toMatchObject({ status: 'PENDING', totalAmount: 200 });
+    expect(purchase.items(String(createdPo.id), context)).toHaveLength(1);
+
+    await expect(purchase.create({ items: [{ name: 'X', quantity: 1, unitPrice: 1 }] } as unknown as Parameters<typeof purchase.create>[0], context)).rejects.toThrow('number is required');
+    await expect(purchase.create({
+      number: 'PO-BAD-NAME',
+      items: [{ name: undefined as unknown as string, quantity: 1, unitPrice: 1 }],
+    }, context)).rejects.toThrow('Each purchase item requires');
+    await expect(purchase.create({ number: 'PO-BAD', items: [] }, context)).rejects.toThrow('1 to 500');
+    await expect(purchase.create({
+      number: 'PO-BAD-2',
+      items: [{ name: 'X', quantity: 0, unitPrice: 1 }],
+    }, context)).rejects.toThrow('positive quantity');
+    await expect(purchase.create({
+      number: 'PO-BAD-3',
+      items: [{ itemId: 'missing-item', name: 'X', quantity: 1, unitPrice: 1 }],
+    }, context)).rejects.toThrow('Inventory item not found');
+    const nullPurchase = await purchase.create({
+      number: 'PO-NULL-CLINIC',
+      items: [{ name: 'Null Clinic Item', quantity: 1, unitPrice: 1 }],
+    }, nullContext);
+    expect(nullPurchase.status).toBe('PENDING');
+
+    const processing = new ProcessingOrderService(db);
+    const createdProc = await processing.create({
+      patientId: 'patient-demo-001',
+      number: 'PROC-CREATE',
+      totalFee: 500,
+      items: [{ name: 'Crown', quantity: 1, unitPrice: 500 }],
+    }, context);
+    expect(createdProc).toMatchObject({ status: 'DRAFT' });
+    await expect(processing.create({
+      patientId: 'patient-demo-001',
+      number: 'PROC-BAD-ITEM',
+      totalFee: 1,
+      items: [{ name: 'X', quantity: 0, unitPrice: 1 }],
+    }, context)).rejects.toThrow('positive quantity');
+    const arrayProc = await processing.create({
+      patientId: 'patient-demo-001',
+      number: 'PROC-ARRAY',
+      totalFee: 100,
+      teethNumbers: ['11'],
+      items: [{ name: 'Bracket', quantity: 1, unitPrice: 100 }],
+    }, nullContext);
+    expect(arrayProc.status).toBe('DRAFT');
+    await expect(processing.create({
+      patientId: 'patient-demo-001',
+      totalFee: 1,
+      items: [{ name: 'X', quantity: 1, unitPrice: 1 }],
+    } as unknown as Parameters<typeof processing.create>[0], context)).rejects.toThrow('number is required');
+    await expect(processing.create({
+      patientId: 'patient-demo-001',
+      number: 'PROC-BAD-NAME',
+      totalFee: 1,
+      items: [{ name: undefined as unknown as string, quantity: 1, unitPrice: 1 }],
+    }, context)).rejects.toThrow('Each processing item requires');
+    await expect(processing.create({
+      patientId: 'missing-patient',
+      number: 'PROC-BAD',
+      totalFee: 1,
+      items: [{ name: 'X', quantity: 1, unitPrice: 1 }],
+    }, context)).rejects.toThrow('Patient not found');
+    await expect(processing.create({
+      patientId: 'patient-demo-001',
+      number: 'PROC-BAD-2',
+      totalFee: -1,
+      items: [{ name: 'X', quantity: 1, unitPrice: 1 }],
+    }, context)).rejects.toThrow('non-negative');
+    await expect(processing.create({
+      patientId: 'patient-demo-001',
+      number: 'PROC-BAD-3',
+      totalFee: 1,
+      items: [],
+    }, context)).rejects.toThrow('1 to 500');
+  });
+
   it('covers audit logs with nullish optional fields', () => {
     const audit = new AuditService(db);
     audit.log({ action: 'EDGE_NULL' });
@@ -305,6 +409,14 @@ describe('service edge coverage', () => {
       endTime: new Date(Date.now() + 10 * 86_400_000 + 3_600_000).toISOString(),
       type: 'REGULAR',
     };
+    db.prepare(
+      `INSERT INTO Chair (id, clinicId, createdAt, updatedAt, deletedAt, name, location, active)
+       VALUES (?, ?, ?, ?, NULL, 'Edge Chair', 'Room 2', 1)`,
+    ).run('chair-1', context.clinicId, new Date().toISOString(), new Date().toISOString());
+    await expect(service.create({ ...base, doctorId: 'missing-doctor' }, context))
+      .rejects.toThrow('Doctor not found');
+    await expect(service.create({ ...base, chairId: 'missing-chair' }, context))
+      .rejects.toThrow('Chair not found');
     const created = await service.create({ ...base, chairId: 'chair-1', remark: 'r' }, context);
     await expect(service.transition('missing-appointment', 'ARRIVED', context)).rejects.toThrow('Appointment not found');
     await expect(service.transition(String(created.id), 'INVALID', context)).rejects.toThrow('Cannot transition');
@@ -338,6 +450,41 @@ describe('service edge coverage', () => {
        ) VALUES (?, ?, ?, ?, NULL, 'EDGE-P', 'Edge Patient', 'UNKNOWN', '13600000001',
          '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
     ).run('patient-edge', context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO Visit (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, startTime, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-edge', 'user-admin-001', ?, 'IN_PROGRESS')`,
+    ).run('visit-edge', context.clinicId, now, now, now);
+    db.prepare(
+      `INSERT INTO Patient (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active
+       ) VALUES (?, ?, ?, ?, NULL, 'EDGE-P-OTHER', 'Other Edge Patient', 'UNKNOWN', '13600000009',
+         '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
+    ).run('patient-edge-other', context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO Visit (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, startTime, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-edge-other', 'user-admin-001', ?, 'IN_PROGRESS')`,
+    ).run('visit-edge-other', context.clinicId, now, now, now);
+    await expect(service.create({
+      patientId: 'patient-edge',
+      visitId: 'missing-visit',
+      items: [{ name: 'Exam', category: 'EXAM', price: 100, quantity: 1 }],
+    }, context)).rejects.toThrow('Visit not found');
+    await expect(service.create({
+      patientId: 'patient-edge',
+      visitId: 'visit-edge-other',
+      items: [{ name: 'Exam', category: 'EXAM', price: 100, quantity: 1 }],
+    }, context)).rejects.toThrow('Visit does not belong to the patient');
+    await expect(service.create({
+      patientId: 'patient-edge',
+      doctorId: 'missing-doctor',
+      items: [{ name: 'Exam', category: 'EXAM', price: 100, quantity: 1 }],
+    }, context)).rejects.toThrow('Doctor not found');
     const created = await service.create({
       patientId: 'patient-edge',
       visitId: 'visit-edge',
@@ -346,6 +493,8 @@ describe('service edge coverage', () => {
       remark: 'r',
     }, context);
     const chargeId = String(created.id);
+    await expect(service.pay(chargeId, 1, 'NOT_A_REAL_METHOD', undefined, context))
+      .rejects.toThrow('Invalid payment method');
     await expect(service.pay('missing-charge', 1, 'CASH', undefined, context)).rejects.toThrow('Charge not found');
     db.prepare('UPDATE Charge SET status = ? WHERE id = ?').run('CANCELLED', chargeId);
     await expect(service.pay(chargeId, 1, 'CASH', undefined, context)).rejects.toThrow('cannot be paid');
@@ -779,6 +928,18 @@ describe('service edge coverage', () => {
       changes: [{ tableName: 'Patient', recordId: 'edge-sync-1', operation: 'INSERT', updatedAt: now, data: undefined }],
     }, context);
     expect(missingData.failed).toBe(1);
+    const badOperation = await service.push({
+      deviceId: 'device-1',
+      deviceToken: device.token,
+      changes: [{ tableName: 'Patient', recordId: 'edge-sync-op', operation: 'UPSERT', updatedAt: now, data: {} }],
+    }, context);
+    expect(badOperation.failed).toBe(1);
+    const chargeSync = await service.push({
+      deviceId: 'device-1',
+      deviceToken: device.token,
+      changes: [{ tableName: 'Charge', recordId: 'edge-sync-charge', operation: 'INSERT', updatedAt: now, data: {} }],
+    }, context);
+    expect(chargeSync.failed).toBe(1);
     const deleteResult = await service.push({
       deviceId: 'device-1',
       deviceToken: device.token,
@@ -1517,7 +1678,12 @@ describe('service edge coverage', () => {
          patientId, type, content, status
        ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'TEXT', 'batch', 'PENDING')`,
     ).run('wechat-edge-batch', context.clinicId, now, now);
-    expect(new WechatService(db).sendBatch(['wechat-edge-batch'], context).sent).toBe(1);
+    const wechat = new WechatService(db, undefined, {
+      name: 'fake',
+      isConfigured: () => true,
+      send: async () => ({ ok: true }),
+    });
+    expect((await wechat.sendBatch(['wechat-edge-batch'], context)).sent).toBe(1);
 
     expect(() => new PrintTemplateService(db).render('missing-template', {}, context)).toThrow('Print template not found');
   });

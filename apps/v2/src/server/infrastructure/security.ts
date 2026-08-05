@@ -10,6 +10,14 @@ const SENSITIVE_FIELDS = new Set([
   'secret',
   'encryptionKey',
   'backupEncryptionKey',
+  'password',
+  'oldPassword',
+  'newPassword',
+  'token',
+  'creditCard',
+  'idCard',
+  'phoneNumber',
+  'email',
 ]);
 
 const PROTECTED_WRITE_FIELDS = new Set([

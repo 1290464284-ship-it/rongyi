@@ -6,11 +6,12 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { CommunicationWorkflowPage } from './CommunicationWorkflowPage';
 import { apiRequest } from './api';
+import { ToastProvider } from './toast';
 
 vi.mock('./api', () => ({ apiRequest: vi.fn(), downloadCsv: vi.fn() }));
 
 const wrapper = ({ children }: { children: ReactNode }) => (
-  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{children}</QueryClientProvider>
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ToastProvider>{children}</ToastProvider></QueryClientProvider>
 );
 
 describe('CommunicationWorkflowPage', () => {
@@ -21,6 +22,9 @@ describe('CommunicationWorkflowPage', () => {
 
   it('renders messages and sends them', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/wechat/status') {
+        return { configured: true, provider: 'http' };
+      }
       if (path === '/resources/wechatMessages?page=1&pageSize=100') {
         return {
           items: [
@@ -34,6 +38,7 @@ describe('CommunicationWorkflowPage', () => {
     });
 
     render(<CommunicationWorkflowPage />, { wrapper });
+    await screen.findByText('微信通道已开通');
     fireEvent.click((await screen.findAllByRole('button', { name: '发送' }))[0]);
     await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith('/wechat/w-1/send', expect.objectContaining({ method: 'POST' }));
@@ -43,6 +48,9 @@ describe('CommunicationWorkflowPage', () => {
 
   it('reports send failures', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/wechat/status') {
+        return { configured: true, provider: 'http' };
+      }
       if (path === '/resources/wechatMessages?page=1&pageSize=100') {
         return { items: [{ id: 'w-1', patientId: 'p-1', status: 'PENDING' }], total: 1 };
       }
@@ -50,10 +58,14 @@ describe('CommunicationWorkflowPage', () => {
     });
 
     render(<CommunicationWorkflowPage />, { wrapper });
+    await screen.findByText('微信通道已开通');
     fireEvent.click(await screen.findByRole('button', { name: '发送' }));
     expect(await screen.findByText('send failed')).toBeDefined();
 
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/wechat/status') {
+        return { configured: true, provider: 'http' };
+      }
       if (path === '/resources/wechatMessages?page=1&pageSize=100') {
         return { items: [{ id: 'w-1', patientId: 'p-1', status: 'PENDING' }], total: 1 };
       }
