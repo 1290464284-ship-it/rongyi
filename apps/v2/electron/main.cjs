@@ -157,7 +157,10 @@ function getOrCreateSecret(fileName = 'jwt-secret') {
 }
 
 function secretPath(key) {
-  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(key)) throw new Error('Invalid secret key');
+  // T2R-22: 白名单 key 形如 'v2.token' / 'v2.refreshToken'（含点号），原字符集
+  // [a-zA-Z0-9_-] 会把它们全部判为非法 → get/set/delete 静默失败，safeStorage
+  // 令牌持久化形同虚设（每次启动须重登）。放行 '.' 且仍禁止 '/' '\' 等路径分隔符。
+  if (!/^[a-zA-Z0-9_.-]{1,64}$/.test(key)) throw new Error('Invalid secret key');
   const secretsDir = path.join(app.getPath('userData'), 'secrets');
   return path.join(secretsDir, `${key}.enc`);
 }
@@ -460,7 +463,10 @@ function saveWindowState(win) {
 }
 
 const ALLOWED_SECRET_KEYS = new Set(['v2.token', 'v2.refreshToken']);
-const TRUSTED_RENDERER_PATTERN = /(^file:\/\/.*dist-web[\\/]index\.html$)|(^http:\/\/localhost:5180\/?$)/;
+// T2R-22: 渲染器经 HashRouter 导航后 URL 恒带 #/... 片段（dev 下还有 ?/ # 查询），
+// 错误窗经 loadFile 带 ?msg= 查询串；这些都属于同文档导航，不引入新来源，
+// 因此放行 [?#] 后缀并显式放行 error.html，否则受保护 IPC 全部被误拒。
+const TRUSTED_RENDERER_PATTERN = /(^file:\/\/.*dist-web[\\/]index\.html(?:[?#].*)?$)|(^file:\/\/.*error\.html(?:[?#].*)?$)|(^http:\/\/localhost:5180\/?(?:[?#].*)?$)/;
 
 function assertTrustedRenderer(event) {
   const url = event.senderFrame?.url ?? '';
@@ -550,6 +556,34 @@ function showApiErrorWindow(message) {
     webPreferences: secureWindowPreferences(),
   });
   win.loadFile(path.join(__dirname, 'error.html'), { query: { msg: String(message) } });
+  // T2R-22 BUG#4: error.js 首行 `const { desktop } = window;` 与 contextBridge
+  // exposeInMainWorld('desktop', ...) 在页面全局作用域重复声明同名绑定，必然抛
+  // "SyntaxError: Identifier 'desktop' has already been declared"，导致 msg 填充
+  // 与重试/退出按钮绑定全部失效（项5 实测：错误窗只显示"正在加载错误信息…"，
+  // 按钮无 onclick）。只允许改 main.cjs，故在页面加载完成后由主进程重新填充
+  // 消息并绑定按钮，绕过崩溃的 error.js（主窗 React 代码仅属性访问 window.desktop，
+  // 不受此冲突影响）。
+  win.webContents.once('did-finish-load', () => {
+    const bootErrorJs = `(() => {
+      const msgEl = document.getElementById('msg');
+      if (msgEl) msgEl.textContent = ${JSON.stringify(String(message))};
+      const retry = document.getElementById('retry');
+      if (retry) {
+        retry.onclick = async () => {
+          const msg = document.getElementById('msg');
+          try {
+            await window.desktop.restartApi();
+            if (msg) msg.textContent = '本地服务已恢复。请关闭本窗口，再通过系统托盘图标打开主窗口。';
+          } catch (error) {
+            if (msg) msg.textContent = '重试失败：' + (error && error.message ? error.message : String(error));
+          }
+        };
+      }
+      const quit = document.getElementById('quit');
+      if (quit) quit.onclick = () => window.desktop.quit();
+    })();`;
+    win.webContents.executeJavaScript(bootErrorJs).catch(() => {});
+  });
 }
 
 function trayImage() {
@@ -635,9 +669,11 @@ app.on('second-instance', () => {
 
 autoUpdater.autoDownload = true;
 autoUpdater.allowPrerelease = false;
-if (process.platform === 'win32') {
-  autoUpdater.verifyUpdateCodeSignature = true;
-}
+// T2R-22: 不要给 verifyUpdateCodeSignature 赋布尔值！NsisUpdater 把它实现为
+// getter/setter（包装 windowsExecutableCodeSignatureVerifier.verifySignature），
+// 赋 true 会把 _verifyUpdateCodeSignature 覆盖成布尔，下载后签名校验必然抛
+// "this._verifyUpdateCodeSignature is not a function"（场景 B 实测）。
+// 默认实现即启用签名校验，无需任何赋值。
 autoUpdater.on('checking-for-update', () => sendUpdateEvent({ type: 'checking' }));
 autoUpdater.on('update-available', (info) => sendUpdateEvent({ type: 'available', version: info?.version }));
 autoUpdater.on('update-not-available', () => sendUpdateEvent({ type: 'none' }));
