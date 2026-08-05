@@ -769,6 +769,38 @@ export const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 123,
+    name: 'v2-userclinic-backfill-members',
+    up(db) {
+      // R2-P1-22：迁移 121 只从 UserClinic 回填 User.clinicId，不反向补成员行；
+      // User.clinicId 非 NULL 但 UserClinic 无对应行的用户会产生关系不一致。
+      // 这里按 User.clinicId 反向补齐成员行（role 取自 User.role）。
+      // 防御：老库可能没有 UserClinic 表或 User.clinicId 列，缺失则跳过。
+      const userClinicExists = db.prepare(
+        `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'UserClinic'`,
+      ).get() !== undefined;
+      if (!userClinicExists) return;
+      const userColumns = new Set(
+        (db.prepare('PRAGMA table_info(User)').all() as Array<{ name: string }>).map((column) => column.name),
+      );
+      if (!userColumns.has('clinicId')) return;
+      const now = new Date().toISOString();
+      // clinicId IN (SELECT id FROM Clinic) 过滤悬空引用：UserClinic.clinicId
+      // 有外键约束，INSERT OR IGNORE 不适用于外键违例，悬空引用会让整个迁移抛错。
+      db.prepare(
+        `INSERT OR IGNORE INTO UserClinic (userId, clinicId, role, createdAt, updatedAt, deletedAt)
+         SELECT id, clinicId, role, ?, ?, NULL
+         FROM User
+         WHERE clinicId IS NOT NULL
+           AND clinicId IN (SELECT id FROM Clinic)
+           AND NOT EXISTS (
+             SELECT 1 FROM UserClinic UC
+             WHERE UC.userId = User.id AND UC.clinicId = User.clinicId AND UC.deletedAt IS NULL
+           )`,
+      ).run(now, now);
+    },
+  },
 ];
 
 function ensureForeignKeys(

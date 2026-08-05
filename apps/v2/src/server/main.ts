@@ -93,8 +93,8 @@ async function runAutoBackup(): Promise<void> {
   if (_autoBackupRunning) return;
   _autoBackupRunning = true;
   try {
-    const result = await backups.create({ type: 'AUTO' });
-    const cleanup = backups.cleanup(autoBackupKeep);
+    const result = await backups.create({ type: 'AUTO', clinicId: null });
+    const cleanup = backups.cleanup(autoBackupKeep, null);
     logger.info('automatic backup completed', { action: 'auto-backup', ...result, cleanup });
   } catch (error) {
     logger.error('automatic backup failed', { action: 'auto-backup', error });

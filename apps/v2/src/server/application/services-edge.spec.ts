@@ -744,22 +744,22 @@ describe('service edge coverage', () => {
     const encrypted = await service.create({ type: 'AUTO', encrypted: true, operatorId: 'u1', operatorName: 'U1' });
     expect(String(encrypted.filename)).toMatch(/\.enc$/);
     await expect(service.stageRestore('missing.sqlite')).rejects.toThrow('Backup file not found');
-    const shortPath = path.join(backupDir, 'short.enc');
+    const shortPath = path.join(backupDir, 'clinic-null-backup-short.enc');
     fs.writeFileSync(shortPath, 'too short');
-    await expect(service.verify('short.enc')).rejects.toThrow('too short');
-    const badMagicPath = path.join(backupDir, 'bad.enc');
+    await expect(service.verify('clinic-null-backup-short.enc')).rejects.toThrow('too short');
+    const badMagicPath = path.join(backupDir, 'clinic-null-backup-bad.enc');
     fs.writeFileSync(badMagicPath, Buffer.alloc(100));
-    await expect(service.verify('bad.enc')).rejects.toThrow('header is invalid');
+    await expect(service.verify('clinic-null-backup-bad.enc')).rejects.toThrow('header is invalid');
 
     const plain = await service.create({ type: 'MANUAL', encrypted: false });
-    const corruptPlainPath = path.join(backupDir, 'corrupt.sqlite');
+    const corruptPlainPath = path.join(backupDir, 'clinic-null-backup-corrupt.sqlite');
     const corruptPlainDb = new DatabaseClass(corruptPlainPath);
     corruptPlainDb.exec('CREATE TABLE BackupSample (id TEXT PRIMARY KEY)');
     corruptPlainDb.close();
     const corruptBuffer = fs.readFileSync(corruptPlainPath);
     corruptBuffer[20] ^= 0xff;
     fs.writeFileSync(corruptPlainPath, corruptBuffer);
-    await expect(service.stageRestore('corrupt.sqlite')).rejects.toThrow('Backup integrity check failed before restore');
+    await expect(service.stageRestore('clinic-null-backup-corrupt.sqlite')).rejects.toThrow('Backup integrity check failed before restore');
 
     const stagedResult = await service.stageRestore(String(plain.filename));
     expect(fs.existsSync(`${stagedResult.stagedPath}-wal`)).toBe(false);
@@ -790,6 +790,43 @@ describe('service edge coverage', () => {
 
     const noKeyService = new BackupService(db, path.join(dataDir, 'v2.sqlite'), path.join(dataDir, 'no-key-backups'));
     await expect(noKeyService.create({ encrypted: true })).rejects.toThrow('V2_BACKUP_KEY is required');
+  });
+
+  it('scopes backups, listing, restore, and cleanup by clinic (T3.2)', async () => {
+    const backupDir = path.join(dataDir, 'clinic-scoped-backups');
+    fs.mkdirSync(backupDir, { recursive: true });
+    const service = new BackupService(db, path.join(dataDir, 'v2.sqlite'), backupDir);
+
+    const clinicA = await service.create({ clinicId: 'clinic-a' });
+    expect(String(clinicA.filename)).toMatch(/^clinic-clinic-a-backup-/);
+    const globalBackup = await service.create({});
+    expect(String(globalBackup.filename)).toMatch(/^clinic-null-backup-/);
+    const clinicB = await service.create({ clinicId: 'clinic-b' });
+    expect(String(clinicB.filename)).toMatch(/^clinic-clinic-b-backup-/);
+
+    const listedA = service.list('clinic-a').map((entry) => String(entry.filename));
+    expect(listedA).toContain(String(clinicA.filename));
+    expect(listedA).not.toContain(String(clinicB.filename));
+    expect(listedA).not.toContain(String(globalBackup.filename));
+    const listedNull = service.list().map((entry) => String(entry.filename));
+    expect(listedNull).toContain(String(globalBackup.filename));
+    expect(listedNull).not.toContain(String(clinicA.filename));
+
+    await expect(service.verify(String(clinicB.filename), 'clinic-a'))
+      .rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
+    await expect(service.stageRestore(String(clinicB.filename), 'clinic-a'))
+      .rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
+    await expect(service.stageRestore(String(clinicA.filename), 'clinic-b'))
+      .rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
+    const verified = await service.verify(String(clinicB.filename), 'clinic-b');
+    expect(verified.integrity).toBe('ok');
+
+    await service.create({ clinicId: 'clinic-a' });
+    const cleanupA = service.cleanup(1, 'clinic-a');
+    expect(cleanupA.deleted).toHaveLength(1);
+    expect(cleanupA.deleted[0].filename.startsWith('clinic-clinic-a-backup-')).toBe(true);
+    expect(fs.existsSync(path.join(backupDir, String(clinicB.filename)))).toBe(true);
+    expect(fs.existsSync(path.join(backupDir, String(globalBackup.filename)))).toBe(true);
   });
 
   it('covers stats, print, and search label branches', () => {
