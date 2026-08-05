@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import type { Page } from './types';
-import { DataTable, type DataTableColumn } from './components';
+import { DataTable, LoadingState, PageError, type DataTableColumn } from './components';
 import { formatMoney } from './format';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
@@ -39,6 +39,24 @@ export function InventoryWorkflowPage() {
     queryKey: ['suggestions-workflow'],
     queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100'),
   });
+
+  if (purchase.isLoading || purchaseItems.isLoading || processing.isLoading || suggestions.isLoading) {
+    return <LoadingState label="库存与采购数据加载中..." />;
+  }
+  const loadError = purchase.error ?? purchaseItems.error ?? processing.error ?? suggestions.error;
+  if (loadError) {
+    return (
+      <div className="page">
+        <PageError message={loadError instanceof Error ? loadError.message : String(loadError)} />
+        <button onClick={() => {
+          void purchase.refetch();
+          void purchaseItems.refetch();
+          void processing.refetch();
+          void suggestions.refetch();
+        }}>重试</button>
+      </div>
+    );
+  }
 
   async function run(path: string, method: 'PATCH' | 'POST', body: Record<string, unknown>) {
     try {

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import type { Page } from './types';
+import { LoadingState, PageError } from './components';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
 
@@ -31,6 +32,16 @@ export function AppointmentBoardPage() {
       ? apiRequest<Page<AppointmentRow>>(`/appointments/by-date?date=${encodeURIComponent(date)}`)
       : apiRequest<Page<AppointmentRow>>('/resources/appointments?page=1&pageSize=200'),
   });
+
+  if (query.isLoading) return <LoadingState label="预约看板加载中..." />;
+  if (query.error) {
+    return (
+      <div className="page">
+        <PageError message={query.error instanceof Error ? query.error.message : String(query.error)} />
+        <button onClick={() => { void query.refetch(); }}>重试</button>
+      </div>
+    );
+  }
 
   const rows = query.data?.items ?? [];
   const countFor = (status: string): number => rows.filter((row) => String(row.status ?? '') === status).length;

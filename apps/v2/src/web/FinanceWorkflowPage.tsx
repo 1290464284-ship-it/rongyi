@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import type { Page } from './types';
-import { DataTable, PromptDialog, type DataTableColumn } from './components';
+import { DataTable, LoadingState, PageError, PromptDialog, type DataTableColumn } from './components';
 import { formatMoney, toCents } from './format';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
@@ -24,6 +24,20 @@ export function FinanceWorkflowPage() {
     queryKey: ['debts'],
     queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/debtRecords?page=1&pageSize=100'),
   });
+
+  if (cards.isLoading || debts.isLoading) return <LoadingState label="财务数据加载中..." />;
+  const loadError = cards.error ?? debts.error;
+  if (loadError) {
+    return (
+      <div className="page">
+        <PageError message={loadError instanceof Error ? loadError.message : String(loadError)} />
+        <button onClick={() => {
+          void cards.refetch();
+          void debts.refetch();
+        }}>重试</button>
+      </div>
+    );
+  }
 
   async function run(path: string, id: string, body: Record<string, unknown>, method: 'POST' | 'PATCH' = 'POST') {
     try {

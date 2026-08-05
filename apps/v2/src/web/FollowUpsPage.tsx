@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { apiRequest, downloadCsvPath } from './api';
-import { DataTable, PromptDialog, type DataTableColumn } from './components';
+import { DataTable, LoadingState, PageError, PromptDialog, type DataTableColumn } from './components';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
 
@@ -19,6 +19,19 @@ export function FollowUpsPage() {
     queryKey: ['followup-summary'],
     queryFn: () => apiRequest<{ total: number; overdue: number; today: number; upcoming: number }>('/follow-ups/reminders/summary'),
   });
+
+  if (query.isLoading) return <LoadingState label="随访数据加载中..." />;
+  if (query.error) {
+    return (
+      <div className="page">
+        <PageError message={query.error instanceof Error ? query.error.message : String(query.error)} />
+        <button onClick={() => {
+          void query.refetch();
+          void summary.refetch();
+        }}>重试</button>
+      </div>
+    );
+  }
 
   async function batchGenerate() {
     try {

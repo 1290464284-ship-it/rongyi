@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import type { Page } from './types';
-import { DataTable, type DataTableColumn } from './components';
+import { DataTable, LoadingState, PageError, type DataTableColumn } from './components';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
 
@@ -18,6 +18,16 @@ export function HrWorkflowPage() {
     queryKey: ['leaves'],
     queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/leaveRequests?page=1&pageSize=100'),
   });
+
+  if (leaves.isLoading) return <LoadingState label="请假数据加载中..." />;
+  if (leaves.error) {
+    return (
+      <div className="page">
+        <PageError message={leaves.error instanceof Error ? leaves.error.message : String(leaves.error)} />
+        <button onClick={() => { void leaves.refetch(); }}>重试</button>
+      </div>
+    );
+  }
 
   async function approve(id: string, approved: boolean) {
     try {

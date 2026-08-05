@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { apiRequest } from './api';
-import { DataTable, type DataTableColumn } from './components';
+import { DataTable, LoadingState, PageError, type DataTableColumn } from './components';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
 
@@ -55,6 +55,16 @@ export function BackupsPage() {
     queryKey: ['backups'],
     queryFn: () => apiRequest<Array<Record<string, unknown>>>('/backups'),
   });
+
+  if (query.isLoading) return <LoadingState label="备份数据加载中..." />;
+  if (query.error) {
+    return (
+      <div className="page">
+        <PageError message={query.error instanceof Error ? query.error.message : String(query.error)} />
+        <button onClick={() => { void query.refetch(); }}>重试</button>
+      </div>
+    );
+  }
 
   async function create() {
     if (busy) return;
