@@ -39,6 +39,35 @@ const API_BACKOFF_MAX_MS = 300_000;
 // and the API child exits on its own instead of running as an orphan.
 const API_HEARTBEAT_INTERVAL_MS = 2_000;
 const DEFAULT_WINDOW_STATE = { width: 1280, height: 820 };
+// T2R-14 / R2-P1-11: two-level API readiness window. The first check of a
+// freshly launched API process uses the same generous window as startApi()'s
+// initial wait (30s) so a slow start or an event loop busy with a long
+// transaction / big import is never mistaken for a dead process. Steady-state
+// checks after the process has been observed ready use a short window so a
+// genuinely hung API is restarted quickly. With a 500ms per-attempt HTTP
+// timeout and a 400ms retry gap, the strict window still allows 2 full
+// attempts plus a third opportunity before rejecting, while a true hang is
+// detected in ~2.3s.
+const API_READY_WINDOW_FIRST_MS = 30_000;
+const API_READY_WINDOW_STRICT_MS = 2_000;
+
+// T2R-14: true once the current API process has been observed healthy; reset
+// on every spawn so each launch/restart gets exactly one relaxed check.
+let apiEverReady = false;
+// T2R-14: last health-check failure, preserved for restart-failure
+// presentation instead of being silently discarded.
+let apiLastHealthError = null;
+// T2R-14: spawn timestamp of the current API process, for uptime logging.
+let apiSpawnedAt = 0;
+
+function apiReadinessWindowMs({ firstCheck }) {
+  return firstCheck ? API_READY_WINDOW_FIRST_MS : API_READY_WINDOW_STRICT_MS;
+}
+
+function withHealthErrorContext(message) {
+  if (!apiLastHealthError) return message;
+  return `${message}（最近一次健康检查失败：${apiLastHealthError.message}）`;
+}
 
 function crashLog(message, error) {
   const entry = {
@@ -163,6 +192,7 @@ function randomPort() {
 function waitForApi(port, timeoutMs = 30000) {
   return new Promise((resolve, reject) => {
     const startedAt = Date.now();
+    let lastError = null;
     const attempt = () => {
       const request = http.get(
         { hostname: '127.0.0.1', port, path: '/api/v2/health', timeout: 500 },
@@ -178,9 +208,13 @@ function waitForApi(port, timeoutMs = 30000) {
       request.on('error', retry);
       request.on('timeout', () => request.destroy());
     };
-    const retry = () => {
+    const retry = (error) => {
+      if (error) lastError = error;
       if (Date.now() - startedAt > timeoutMs) {
-        reject(new Error('API did not become ready'));
+        // T2R-14: preserve the last underlying failure (ECONNREFUSED vs
+        // timeout) so callers can log/present a concrete reason instead of a
+        // generic one.
+        reject(lastError || new Error('API did not become ready'));
         return;
       }
       setTimeout(attempt, 400);
@@ -221,6 +255,8 @@ async function startApi() {
     stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
     windowsHide: true,
   });
+  apiSpawnedAt = Date.now();
+  apiEverReady = false;
   const startedProcess = apiProcess;
   startedProcess.manualStop = false;
   attachApiHeartbeat(startedProcess);
@@ -234,7 +270,7 @@ async function startApi() {
     if (apiRestartCount >= API_MAX_RESTARTS) {
       sendApiStatus({ status: 'crashed', code });
       notify('本地服务异常', 'API 连续启动失败，请检查数据目录或联系管理员。');
-      showApiErrorWindow(`API 连续失败 ${API_MAX_RESTARTS} 次（最近错误 code=${code}）。请检查数据目录权限或恢复备份。`);
+      showApiErrorWindow(withHealthErrorContext(`API 连续失败 ${API_MAX_RESTARTS} 次（最近错误 code=${code}）。请检查数据目录权限或恢复备份。`));
       return;
     }
     sendApiStatus({ status: 'restarting', code });
@@ -244,12 +280,13 @@ async function startApi() {
       startApi().catch((error) => {
         crashLog('api-restart-failed', error);
         sendApiStatus({ status: 'crashed', message: error.message });
-        showApiErrorWindow(error instanceof Error ? error.message : String(error));
+        showApiErrorWindow(withHealthErrorContext(error instanceof Error ? error.message : String(error)));
       });
     }, delayMs);
   });
   try {
     await waitForApi(apiPort);
+    apiEverReady = true;
     sendApiStatus({ status: 'ready', port: apiPort });
     return apiPort;
   } catch (error) {
@@ -263,9 +300,33 @@ async function startApi() {
 
 async function ensureApiServerRunning() {
   if (apiProcess && !apiProcess.killed && apiPort) {
+    // T2R-14 / R2-P1-11: two-level readiness window. The first check of a
+    // freshly launched process (not yet observed ready, or just restarted)
+    // uses the same generous window as startApi()'s initial wait, so a slow
+    // start or an event loop busy with a long transaction / big import is not
+    // mistaken for a dead process. Steady-state checks after the process has
+    // been observed ready use a short window so a genuinely hung API is
+    // restarted quickly.
+    const firstCheck = !apiEverReady;
+    const timeoutMs = apiReadinessWindowMs({ firstCheck });
     try {
-      return await waitForApi(apiPort, 1500);
-    } catch {
+      await waitForApi(apiPort, timeoutMs);
+      apiEverReady = true;
+      return apiPort;
+    } catch (error) {
+      // Preserve the scene instead of silently discarding it: keep the last
+      // health-check error for restart-failure presentation, and log the
+      // failure with uptime / port / restart count / window level before
+      // deciding to kill.
+      apiLastHealthError = error instanceof Error ? error : new Error(String(error));
+      const uptimeMs = apiSpawnedAt ? Date.now() - apiSpawnedAt : 0;
+      crashLog(
+        'api-health-check-failed',
+        new Error(
+          `port=${apiPort} windowMs=${timeoutMs} firstCheck=${firstCheck} ` +
+            `restartCount=${apiRestartCount} uptimeMs=${uptimeMs} error=${apiLastHealthError.message}`,
+        ),
+      );
       // fall through and restart an unhealthy API process
     }
   }
@@ -274,6 +335,11 @@ async function ensureApiServerRunning() {
     apiProcess.kill();
   }
   apiProcess = null;
+  // T2R-14: keep this reset. apiRestartCount is only incremented by the
+  // 'exit' handler for non-manual exits (manualStop is set before every kill
+  // here), so resetting it never affects the API_MAX_RESTARTS cap — it just
+  // gives a health-check-restarted process a fresh crash budget, matching the
+  // "recovered, start over" semantics of a manual restart.
   apiRestartCount = 0;
   return startApi();
 }
