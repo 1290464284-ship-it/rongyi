@@ -55,7 +55,7 @@ if (nodeEnv === 'production' && jwtSecret.length < 32) {
 applyStagedRestore(dbPath, [dataDir, backupDir], logger);
 const db = createDatabase(dataDir, dbPath);
 syncLegacySchema(db, legacySchemaDir);
-runMigrations(db);
+runMigrations(db, { snapshotDir: dataDir });
 seedDatabase(db);
 const app = createApp({ db, dbPath, backupDir, logger, logDir });
 

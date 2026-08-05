@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { resourceRegistry } from '../../domain/resources';
 import { uniqueIndexColumns } from './database';
@@ -714,6 +717,7 @@ function ensureForeignKeys(
   }
   const columns = [...newColumns].filter((column) => oldColumns.has(column));
   const columnList = columns.map((column) => `"${column}"`).join(', ');
+  repairLegacyData(db, table);
   db.prepare(
     `INSERT INTO "${newTable}" (${columnList})
      SELECT ${columnList} FROM "${table}"`,
@@ -723,7 +727,154 @@ function ensureForeignKeys(
   for (const index of indexes) db.exec(index.sql);
 }
 
-export function runMigrations(db: Database.Database): void {
+/**
+ * Repair legacy rows that would violate the constraints of the rebuilt table
+ * before `ensureForeignKeys` copies them over. Every change is recorded in
+ * `MigrationRepairLog`; rows with orphan NOT NULL foreign keys are preserved
+ * verbatim in `MigrationRepairQuarantine` and removed from the source table so
+ * the INSERT SELECT cannot fail.
+ */
+function repairLegacyData(db: Database.Database, table: string): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS MigrationRepairLog (
+    id TEXT PRIMARY KEY,
+    tableName TEXT NOT NULL,
+    field TEXT NOT NULL,
+    recordId TEXT,
+    beforeValue TEXT,
+    afterValue TEXT,
+    reason TEXT NOT NULL,
+    createdAt TEXT DEFAULT CURRENT_TIMESTAMP
+  )`);
+  const log = (tableName: string, field: string, recordId: string, beforeValue: unknown, afterValue: unknown, reason: string): void => {
+    db.prepare(
+      `INSERT INTO MigrationRepairLog (id, tableName, field, recordId, beforeValue, afterValue, reason)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(randomUUID(), tableName, field, recordId, String(beforeValue ?? ''), String(afterValue ?? ''), reason);
+  };
+  // 旧表未必含 116 新表的所有列（如 ChargeItem.inventoryItemId 只在新 DDL 里）；
+  // 缺列时跳过对应修复，INSERT SELECT 会为其使用新表 DEFAULT（通常为 NULL）。
+  const hasColumn = (t: string, c: string): boolean =>
+    (db.prepare(`PRAGMA table_info("${t}")`).all() as Array<{ name: string }>).some((column) => column.name === c);
+
+  // 数值钳制：新表 CHECK/NOT NULL 约束要求的取值域。
+  const repairs: Record<string, Array<[string, string, string]>> = {
+    MemberCard: [
+      ['balance', 'UPDATE MemberCard SET balance = 0 WHERE balance < 0', '负余额钳为 0'],
+      ['totalRecharge', 'UPDATE MemberCard SET totalRecharge = 0 WHERE totalRecharge < 0', '负充值额钳为 0'],
+      ['totalConsume', 'UPDATE MemberCard SET totalConsume = 0 WHERE totalConsume < 0', '负消费额钳为 0'],
+    ],
+    Refund: [
+      ['amount', 'UPDATE Refund SET amount = 1 WHERE amount IS NULL OR amount <= 0', '退款金额置为 1 分'],
+    ],
+    ChargeItem: [
+      ['price', 'UPDATE ChargeItem SET price = 0 WHERE price IS NULL OR price < 0', '单价钳为 0'],
+      ['quantity', 'UPDATE ChargeItem SET quantity = 1 WHERE quantity IS NULL OR quantity < 1', '数量置为 1'],
+      ['subtotal', 'UPDATE ChargeItem SET subtotal = 0 WHERE subtotal IS NULL OR subtotal < 0', '小计钳为 0'],
+    ],
+    PurchaseOrderItem: [
+      ['quantity', 'UPDATE PurchaseOrderItem SET quantity = 1 WHERE quantity IS NULL OR quantity <= 0', '数量置为 1'],
+      ['unitPrice', 'UPDATE PurchaseOrderItem SET unitPrice = 0 WHERE unitPrice IS NULL OR unitPrice < 0', '单价钳为 0'],
+    ],
+    ProcessingOrder: [
+      ['status', "UPDATE ProcessingOrder SET status = 'SENT' WHERE status IS NULL OR status NOT IN ('PENDING','DRAFT','SENT','IN_PROGRESS','COMPLETED','RECEIVED','CANCELLED')", '非法状态置为 SENT'],
+    ],
+  };
+  for (const [field, sql, reason] of repairs[table] ?? []) {
+    if (!hasColumn(table, field)) continue;
+    const rows = db.prepare(`SELECT id, ${field} AS beforeValue FROM "${table}" WHERE ${sql.split('WHERE ')[1]}`).all() as Array<{ id: string; beforeValue: unknown }>;
+    db.exec(sql);
+    for (const row of rows) log(table, field, row.id, row.beforeValue, null, reason);
+  }
+
+  // 唯一键去重：保留组内 MAX(id) 一行，其余追加 -dup-N 后缀。
+  const uniqueColumns: Record<string, string> = {
+    MemberCard: 'cardNo',
+    ProcessingOrder: 'number',
+  };
+  const uniqueColumn = uniqueColumns[table];
+  if (uniqueColumn && hasColumn(table, uniqueColumn) && hasColumn(table, 'clinicId')) {
+    const dupRows = db.prepare(
+      `SELECT id, ${uniqueColumn} AS value, clinicId FROM "${table}" t
+       WHERE t.clinicId IS NOT NULL
+         AND EXISTS (
+           SELECT 1 FROM "${table}" t2
+           WHERE t2.clinicId = t.clinicId AND t2.${uniqueColumn} = t.${uniqueColumn} AND t2.id != t.id
+         )
+         AND t.id != (
+           SELECT MAX(id) FROM "${table}" t3
+           WHERE t3.clinicId = t.clinicId AND t3.${uniqueColumn} = t.${uniqueColumn}
+         )`,
+    ).all() as Array<{ id: string; value: string; clinicId: string | null }>;
+    let n = 1;
+    for (const dup of dupRows) {
+      let after = `${dup.value}-dup-${n++}`;
+      // 避免后缀与同组既有值冲突（重复键组可能已有 -dup-N 形式的值）。
+      while (db.prepare(`SELECT 1 FROM "${table}" WHERE clinicId IS ? AND ${uniqueColumn} = ? AND id != ? LIMIT 1`).get(dup.clinicId, after, dup.id)) {
+        after = `${dup.value}-dup-${n++}`;
+      }
+      db.prepare(`UPDATE "${table}" SET ${uniqueColumn} = ? WHERE id = ?`).run(after, dup.id);
+      log(table, uniqueColumn, dup.id, dup.value, after, '重复唯一键追加后缀');
+    }
+  }
+
+  // 孤儿外键：以迁移 116 各表实际定义的 FK 为准（可空列 -> NULL，NOT NULL 列 -> 隔离）。
+  const orphanFkRepairs: Record<string, Array<[string, string, boolean]>> = {
+    MemberCard: [['patientId', 'Patient', false]],
+    Refund: [['chargeId', 'Charge', false], ['patientId', 'Patient', false], ['operatorId', 'User', true]],
+    ChargeItem: [['chargeId', 'Charge', false], ['treatmentId', 'Treatment', true], ['inventoryItemId', 'InventoryItem', true]],
+    PurchaseOrderItem: [['orderId', 'PurchaseOrder', false], ['itemId', 'InventoryItem', true]],
+    InventoryTransaction: [['itemId', 'InventoryItem', false], ['supplierId', 'Supplier', true], ['operatorId', 'User', true]],
+    ProcessingOrder: [['patientId', 'Patient', false], ['visitId', 'Visit', true], ['factoryId', 'ProcessingFactory', true], ['doctorId', 'User', true], ['chargeId', 'Charge', true]],
+  };
+  for (const [fkColumn, refTable, nullable] of orphanFkRepairs[table] ?? []) {
+    if (!hasColumn(table, fkColumn)) continue;
+    const orphans = db.prepare(
+      `SELECT id, ${fkColumn} AS refId FROM "${table}"
+       WHERE ${fkColumn} IS NOT NULL
+         AND ${fkColumn} NOT IN (SELECT id FROM "${refTable}")`,
+    ).all() as Array<{ id: string; refId: string }>;
+    if (nullable) {
+      for (const o of orphans) {
+        db.prepare(`UPDATE "${table}" SET ${fkColumn} = NULL WHERE id = ?`).run(o.id);
+        log(table, fkColumn, o.id, o.refId, null, '孤儿外键置 NULL');
+      }
+    } else {
+      // NOT NULL 外键孤儿：整行移入隔离表并立即从源表删除，INSERT SELECT 时不再复制。
+      db.exec(`CREATE TABLE IF NOT EXISTS MigrationRepairQuarantine (
+        id TEXT PRIMARY KEY,
+        tableName TEXT NOT NULL,
+        recordJson TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        createdAt TEXT DEFAULT CURRENT_TIMESTAMP
+      )`);
+      for (const o of orphans) {
+        const row = db.prepare(`SELECT * FROM "${table}" WHERE id = ?`).get(o.id) as Record<string, unknown>;
+        db.prepare(
+          `INSERT INTO MigrationRepairQuarantine (id, tableName, recordJson, reason) VALUES (?, ?, ?, ?)`,
+        ).run(randomUUID(), table, JSON.stringify(row), `孤儿外键 ${fkColumn}=${o.refId}`);
+        db.prepare(`DELETE FROM "${table}" WHERE id = ?`).run(o.id);
+      }
+    }
+  }
+}
+
+function snapshotDatabase(db: Database.Database, snapshotDir: string): void {
+  const dir = path.join(snapshotDir, 'pre-migration');
+  fs.mkdirSync(dir, { recursive: true });
+  const dest = path.join(dir, `pre-${new Date().toISOString().replace(/[:.]/g, '-')}.sqlite`);
+  // VACUUM INTO 不能在事务内执行；runMigrations 开始时无事务，安全。
+  db.exec(`VACUUM INTO '${dest.replace(/'/g, "''")}'`);
+}
+
+export function runMigrations(db: Database.Database, options?: { snapshotDir?: string }): void {
+  if (options?.snapshotDir) {
+    try {
+      snapshotDatabase(db, options.snapshotDir);
+    } catch (error) {
+      // 快照失败不阻断启动；迁移本身仍会继续。
+      console.warn('[migrations] pre-migration snapshot failed, continuing', error);
+    }
+  }
   db.exec(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       version TEXT PRIMARY KEY,
