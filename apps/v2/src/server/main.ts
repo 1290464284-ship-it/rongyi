@@ -11,6 +11,7 @@ import { rebuildSearchIndex } from './infrastructure/search-index';
 import { importLegacyDatabase } from './infrastructure/legacy-import';
 import { applyStagedRestore } from './infrastructure/restore-apply';
 import { AlertService, AuditService, BackupService } from './application/services';
+import { startSchedulers } from './scheduler';
 
 const projectRoot = process.cwd();
 // T2R-17 / R2-P0-04: dental.sqlite is no longer bundled in the repository (the
@@ -239,57 +240,25 @@ const configuredAutoBackupKeep = Number(process.env.V2_AUTO_BACKUP_KEEP ?? 30);
 const autoBackupKeep = Number.isFinite(configuredAutoBackupKeep)
   ? Math.min(365, Math.max(1, Math.floor(configuredAutoBackupKeep)))
   : 30;
-let _autoBackupRunning = false;
-async function runAutoBackup(): Promise<void> {
-  if (_autoBackupRunning) return;
-  _autoBackupRunning = true;
-  try {
-    const result = await backups.create({ type: 'AUTO', clinicId: null });
-    const cleanup = backups.cleanup(autoBackupKeep, null);
-    logger.info('automatic backup completed', { action: 'auto-backup', ...result, cleanup });
-  } catch (error) {
-    logger.error('automatic backup failed', { action: 'auto-backup', error });
-    alerts.create({
-      alertType: 'SCHEDULER_TASK_FAILURE',
-      level: 'CRITICAL',
-      severity: 'CRITICAL',
-      title: '自动备份失败',
-      message: error instanceof Error ? error.message : String(error),
-      source: 'BACKUP_AUTO',
-      metricName: 'automatic_backup',
-      suggestion: '请检查磁盘空间、备份目录权限和备份密钥。',
-      clinicId: null,
-    });
-  } finally {
-    _autoBackupRunning = false;
-  }
-}
-setTimeout(() => void runAutoBackup(), 5 * 60 * 1000).unref();
-setInterval(() => void runAutoBackup(), Math.max(60_000, autoBackupIntervalMs)).unref();
 
-const AUDIT_RETENTION_MS = 365 * 24 * 60 * 60 * 1000;
-function cleanupAuditLogs(): void {
-  try {
-    const deleted = audit.cleanup(new Date(Date.now() - AUDIT_RETENTION_MS).toISOString());
-    if (deleted > 0) logger.info('audit log cleanup completed', { action: 'audit-cleanup', deleted });
-  } catch (error) {
-    logger.error('audit log cleanup failed', { action: 'audit-cleanup', error });
-  }
-}
-cleanupAuditLogs();
-setInterval(cleanupAuditLogs, 24 * 60 * 60 * 1000).unref();
-
-setInterval(() => {
-  try {
-    const { deleted } = cleanupIdempotencyRecords(db);
-    if (deleted > 0) logger.info('idempotency cleanup completed', { action: 'idempotency-cleanup', deleted });
-  } catch (error) {
-    logger.error('idempotency cleanup failed', { action: 'idempotency-cleanup', error });
-  }
-}, 24 * 60 * 60 * 1000).unref();
+// ── 定时任务统一收敛到 scheduler 模块 ──────────────────────────────────────────
+// 原内联的三组定时器（自动备份 5min 首延迟 + interval、审计日志清理每日、
+// idempotency 清理每日）全部由 startSchedulers 管理，shutdown 时通过 stop()
+// 一并清空。
+const schedulers = startSchedulers({
+  backups,
+  audit,
+  autoBackupIntervalMs,
+  autoBackupKeep,
+  logger,
+  onAlertCreate: (input) => alerts.create(input),
+  idempotencyCleanup: () => cleanupIdempotencyRecords(db),
+});
 
 function shutdown(): void {
   try {
+    // 先停所有定时器，确保关闭数据库期间没有任何调度回调触碰 db。
+    schedulers.stop();
     db.pragma('wal_checkpoint(PASSIVE)');
     db.close();
     try {
