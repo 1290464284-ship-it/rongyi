@@ -427,6 +427,36 @@ describe('HTTP app', () => {
     expect(bossNav.body.data.permissions).toContain('system');
   });
 
+  it('restricts wechat send-batch to BOSS/ADMIN but keeps single send for operational staff', async () => {
+    await request(app)
+      .post('/api/v2/admin/users')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ username: 'reception-wechat', password: 'password123', name: 'Reception Wechat', role: 'RECEPTIONIST' })
+      .expect(201);
+    const login = await request(app)
+      .post('/api/v2/auth/login')
+      .send({ username: 'reception-wechat', password: 'password123' })
+      .expect(200);
+    const receptionToken = login.body.data.token as string;
+
+    await request(app)
+      .post('/api/v2/wechat/send-batch')
+      .set('Authorization', `Bearer ${receptionToken}`)
+      .send({})
+      .expect(403);
+
+    const wechat = await request(app)
+      .post('/api/v2/resources/wechatMessages')
+      .set('Authorization', `Bearer ${receptionToken}`)
+      .send({ patientId: 'patient-demo-001', type: 'TEXT', content: 'hello', status: 'PENDING' })
+      .expect(201);
+    await request(app)
+      .post(`/api/v2/wechat/${wechat.body.data.id}/send`)
+      .set('Authorization', `Bearer ${receptionToken}`)
+      .send({})
+      .expect(409);
+  });
+
   it('audits forbidden attempts', async () => {
     await request(app)
       .post('/api/v2/admin/users')
