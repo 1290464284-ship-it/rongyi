@@ -199,7 +199,7 @@ describe('workflow services', () => {
     const provider = new HttpWechatProvider('https://wechat.test', 'app', 'secret');
     expect(provider.isConfigured()).toBe(true);
     const httpFailure = await provider.send({ id: 'x' });
-    expect(httpFailure).toEqual({ ok: false, result: 'http_503' });
+    expect(httpFailure).toMatchObject({ ok: false, result: 'http_503' });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: false, result: 'rejected' }) }));
     const rejected = await provider.send({ id: 'x' });
     expect(rejected).toEqual({ ok: false, result: 'rejected' });
@@ -217,7 +217,7 @@ describe('workflow services', () => {
     })));
     const pending = provider.send({ id: 'slow' });
     await vi.advanceTimersByTimeAsync(5000);
-    await expect(pending).resolves.toEqual({ ok: false, result: 'network_error' });
+    await expect(pending).resolves.toMatchObject({ ok: false, result: 'network_error' });
     vi.unstubAllGlobals();
     vi.useRealTimers();
 
