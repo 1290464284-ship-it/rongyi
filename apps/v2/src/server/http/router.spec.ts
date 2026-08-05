@@ -289,4 +289,14 @@ describe('resource router', () => {
       .send({})
       .expect(403);
   });
+
+  it('rejects invalid pagination with 400 and caps oversized pageSize at 200', async () => {
+    const auth = { Authorization: `Bearer ${adminToken}` };
+    for (const qs of ['page=abc', 'page=0', 'page=-1', 'page=1.5', 'pageSize=abc', 'pageSize=0', 'pageSize=-5', 'page=abc&pageSize=abc']) {
+      await request(app).get(`/api/v2/resources/patients?${qs}`).set(auth).expect(400);
+    }
+    const capped = await request(app).get('/api/v2/resources/patients?pageSize=999999').set(auth).expect(200);
+    expect(capped.body.data.pageSize).toBe(200);
+    await request(app).get('/api/v2/resources/patients?page=&pageSize=').set(auth).expect(200);
+  });
 });
