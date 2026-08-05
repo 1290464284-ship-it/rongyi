@@ -29,7 +29,18 @@ export function applyStagedRestore(
   const resolvedStaged = path.resolve(stagedPath);
   const allowed = allowedDirs.map((dir) => path.resolve(dir));
   if (!allowed.some((dir) => resolvedStaged === dir || resolvedStaged.startsWith(dir + path.sep)) || !fs.existsSync(resolvedStaged)) {
-    throw new Error('Staged restore path is invalid or missing');
+    const invalidPath = `${markerPath}.invalid-${Date.now()}`;
+    try {
+      fs.renameSync(markerPath, invalidPath);
+    } catch {
+      fs.rmSync(markerPath, { force: true });
+    }
+    logger?.warn('staged restore marker is invalid or staged file is missing; skipping restore', {
+      action: 'restore-apply',
+      markerPath: invalidPath,
+      stagedPath: resolvedStaged,
+    });
+    return { applied: false };
   }
 
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });

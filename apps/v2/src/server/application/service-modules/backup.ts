@@ -49,31 +49,35 @@ export class BackupService {
     const filename = encrypted ? `${base}.enc` : `${base}.sqlite`;
     const tempPath = path.join(this.backupDir, `${base}.tmp`);
     const finalPath = path.join(this.backupDir, filename);
-    await this.db.backup(tempPath);
-    if (encrypted) {
-      await this.encryptFile(tempPath, finalPath);
-      fs.unlinkSync(tempPath);
-    } else {
-      fs.renameSync(tempPath, finalPath);
+    try {
+      await this.db.backup(tempPath);
+      if (encrypted) {
+        await this.encryptFile(tempPath, finalPath);
+        fs.unlinkSync(tempPath);
+      } else {
+        fs.renameSync(tempPath, finalPath);
+      }
+      const fileSize = fs.statSync(finalPath).size;
+      this.db.prepare(
+        `INSERT INTO BackupRecord (
+           id, clinicId, createdAt, updatedAt, deletedAt,
+           filename, fileSize, type, operatorId, operatorName
+         ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
+      ).run(
+        randomUUID(),
+        null,
+        new Date().toISOString(),
+        new Date().toISOString(),
+        filename,
+        fileSize,
+        options.type ?? 'MANUAL',
+        options.operatorId ?? null,
+        options.operatorName ?? null,
+      );
+      return { filename, fileSize, encrypted, type: options.type ?? 'MANUAL', message: 'Backup created' };
+    } finally {
+      if (fs.existsSync(tempPath)) fs.rmSync(tempPath, { force: true });
     }
-    const fileSize = fs.statSync(finalPath).size;
-    this.db.prepare(
-      `INSERT INTO BackupRecord (
-         id, clinicId, createdAt, updatedAt, deletedAt,
-         filename, fileSize, type, operatorId, operatorName
-       ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
-    ).run(
-      randomUUID(),
-      null,
-      new Date().toISOString(),
-      new Date().toISOString(),
-      filename,
-      fileSize,
-      options.type ?? 'MANUAL',
-      options.operatorId ?? null,
-      options.operatorName ?? null,
-    );
-    return { filename, fileSize, encrypted, type: options.type ?? 'MANUAL', message: 'Backup created' };
   }
 
   async verify(filename: string): Promise<Record<string, unknown>> {
@@ -163,6 +167,12 @@ export class BackupService {
         continue;
       }
       deleted.push({ filename: file.filename, fileSize: file.fileSize });
+    }
+    for (const name of fs.readdirSync(this.backupDir)) {
+      if (name.startsWith('.staged-') || name.endsWith('.tmp')) {
+        const ageMs = Date.now() - fs.statSync(path.join(this.backupDir, name)).mtimeMs;
+        if (ageMs > 24 * 60 * 60 * 1000) fs.rmSync(path.join(this.backupDir, name), { force: true });
+      }
     }
     return {
       kept: Math.min(files.length, keep),
