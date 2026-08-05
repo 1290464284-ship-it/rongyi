@@ -74,11 +74,11 @@ export function registerSystemRoutes(app: Express, deps: RouteDependencies): voi
   }));
 
   app.get('/api/v2/backups', backupLimiter, wrapAsync(async (req, res) => {
-      res.json({ success: true, data: backups.list() });
+      res.json({ success: true, data: backups.list(req.context!.clinicId) });
   }));
 
   app.post('/api/v2/backups', backupLimiter, wrapAsync(async (req, res) => {
-      res.status(201).json({ success: true, data: await backups.create() });
+      res.status(201).json({ success: true, data: await backups.create({ clinicId: req.context!.clinicId }) });
   }));
 
   app.post('/api/v2/backups/cleanup', backupLimiter, wrapAsync(async (req, res) => {
@@ -87,15 +87,15 @@ export function registerSystemRoutes(app: Express, deps: RouteDependencies): voi
         res.status(400).json({ success: false, code: 'VALIDATION_ERROR', message: 'maxKeep must be between 1 and 365' });
         return;
       }
-      res.json({ success: true, data: backups.cleanup(maxKeep) });
+      res.json({ success: true, data: backups.cleanup(maxKeep, req.context!.clinicId) });
   }));
 
   app.post('/api/v2/backups/:filename/restore', backupLimiter, wrapAsync(async (req, res) => {
-      res.json({ success: true, data: await backups.stageRestore(String(req.params.filename)) });
+      res.json({ success: true, data: await backups.stageRestore(String(req.params.filename), req.context!.clinicId) });
   }));
 
   app.get('/api/v2/backups/:filename/verify', backupLimiter, wrapAsync(async (req, res) => {
-      res.json({ success: true, data: await backups.verify(String(req.params.filename)) });
+      res.json({ success: true, data: await backups.verify(String(req.params.filename), req.context!.clinicId) });
   }));
 
   app.use('/api/v2/resources', createRateLimit({ windowMs: 60_000, max: 300 }), createResourceRouter(db));

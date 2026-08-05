@@ -446,6 +446,70 @@ describe('migrations', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it('backfills UserClinic membership rows from User.clinicId (123)', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-mig-123-'));
+    const freshDb = createDatabase(dir);
+    const now = new Date().toISOString();
+    const migrate117 = migrations.find((migration) => migration.version === 117);
+    const migrate123 = migrations.find((migration) => migration.version === 123);
+    expect(migrate117).toBeDefined();
+    expect(migrate123).toBeDefined();
+
+    freshDb.prepare(
+      `INSERT INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+       VALUES ('clinic-123', NULL, ?, ?, NULL, 'C123', 'Clinic 123', 1)`,
+    ).run(now, now);
+    // 先建 UserClinic 表（等价于 117 建表但无用户可回填）。
+    migrate117!.up(freshDb);
+    // 三个用户：无成员行、已有活跃成员行、clinicId 为 NULL。
+    freshDb.prepare(
+      `INSERT INTO User (id, clinicId, createdAt, updatedAt, deletedAt,
+         username, passwordHash, name, role, active, loginAttempts, tokenVersion, lockedUntil)
+       VALUES ('user-123-a', 'clinic-123', ?, ?, NULL, 'u123a', 'hash', 'A', 'DOCTOR', 1, 0, 0, NULL)`,
+    ).run(now, now);
+    freshDb.prepare(
+      `INSERT INTO User (id, clinicId, createdAt, updatedAt, deletedAt,
+         username, passwordHash, name, role, active, loginAttempts, tokenVersion, lockedUntil)
+       VALUES ('user-123-b', 'clinic-123', ?, ?, NULL, 'u123b', 'hash', 'B', 'BOSS', 1, 0, 0, NULL)`,
+    ).run(now, now);
+    freshDb.prepare(
+      `INSERT INTO User (id, clinicId, createdAt, updatedAt, deletedAt,
+         username, passwordHash, name, role, active, loginAttempts, tokenVersion, lockedUntil)
+       VALUES ('user-123-null', NULL, ?, ?, NULL, 'u123n', 'hash', 'N', 'BOSS', 1, 0, 0, NULL)`,
+    ).run(now, now);
+    freshDb.prepare(
+      `INSERT INTO UserClinic (userId, clinicId, role, createdAt, updatedAt, deletedAt)
+       VALUES ('user-123-b', 'clinic-123', 'BOSS', ?, ?, NULL)`,
+    ).run(now, now);
+
+    expect(() => migrate123!.up(freshDb)).not.toThrow();
+
+    const backfilled = freshDb.prepare(
+      'SELECT userId, clinicId, role, deletedAt FROM UserClinic WHERE userId = ?',
+    ).get('user-123-a') as { userId: string; clinicId: string; role: string; deletedAt: string | null };
+    expect(backfilled).toBeDefined();
+    expect(backfilled.clinicId).toBe('clinic-123');
+    expect(backfilled.role).toBe('DOCTOR'); // 取自 User.role
+    expect(backfilled.deletedAt).toBeNull();
+    // 已有活跃成员行不被改写/重复。
+    expect(
+      (freshDb.prepare('SELECT COUNT(*) AS n FROM UserClinic WHERE userId = ?').get('user-123-b') as { n: number }).n,
+    ).toBe(1);
+    // clinicId 为 NULL 的用户不补成员行。
+    expect(freshDb.prepare('SELECT 1 FROM UserClinic WHERE userId = ?').get('user-123-null')).toBeUndefined();
+    // 幂等：再跑一次不新增。
+    expect(() => migrate123!.up(freshDb)).not.toThrow();
+    expect(
+      (freshDb.prepare('SELECT COUNT(*) AS n FROM UserClinic WHERE userId = ?').get('user-123-a') as { n: number }).n,
+    ).toBe(1);
+    // 防御分支：老库无 UserClinic 表时跳过不抛错。
+    freshDb.exec('DROP TABLE IF EXISTS UserClinic');
+    expect(() => migrate123!.up(freshDb)).not.toThrow();
+
+    freshDb.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('dedups NULL-clinic duplicate cardNo rows before migration 121 backfill (T2R-03)', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-mig-121-dup-'));
     const db = createDatabase(dir);

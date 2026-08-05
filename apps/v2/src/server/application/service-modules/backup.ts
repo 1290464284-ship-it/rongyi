@@ -1,13 +1,14 @@
-// TODO(MULTI-CLINIC): Backup records currently use clinicId = NULL globally.
-// When multi-tenancy isolation is required, scope BackupRecord listing,
-// create() and cleanup() by operator clinicId and partition filenames safely.
+// T3.2 (H1-sec): backups are scoped by clinic. Filenames carry a
+// `clinic-${clinicId}-` / `clinic-null-` prefix, listing/cleanup filter by the
+// operator's clinic, and verify/stageRestore reject files owned by another
+// clinic with 403. System-level AUTO backups stay global (clinicId = null).
 import fs from 'node:fs';
 import { createReadStream, createWriteStream } from 'node:fs';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
-import { NotFoundError } from '../../infrastructure/errors';
+import { AppError, NotFoundError } from '../../infrastructure/errors';
 import { removeSqliteSidecars, summarizeSqliteFile } from '../../infrastructure/sqlite-files';
 import { BACKUP_MAGIC, backupEncryptionKey } from './common';
 
@@ -16,6 +17,11 @@ export interface BackupCreateOptions {
   operatorId?: string | null;
   operatorName?: string | null;
   encrypted?: boolean;
+  clinicId?: string | null;
+}
+
+function clinicPrefix(clinicId?: string | null): string {
+  return clinicId ? `clinic-${clinicId}-` : 'clinic-null-';
 }
 
 export class BackupService {
@@ -25,11 +31,13 @@ export class BackupService {
     private readonly backupDir: string,
   ) {}
 
-  list(): Array<Record<string, unknown>> {
+  list(clinicId: string | null = null): Array<Record<string, unknown>> {
     fs.mkdirSync(this.backupDir, { recursive: true });
+    const prefix = clinicPrefix(clinicId);
     return fs.readdirSync(this.backupDir)
       .filter((name) => name.endsWith('.sqlite') || name.endsWith('.enc'))
       .filter((name) => !name.startsWith('.staged-'))
+      .filter((name) => name.startsWith(`${prefix}backup-`))
       .map((name) => {
         const stat = fs.statSync(path.join(this.backupDir, name));
         return {
@@ -45,7 +53,7 @@ export class BackupService {
   async create(options: BackupCreateOptions = {}): Promise<Record<string, unknown>> {
     fs.mkdirSync(this.backupDir, { recursive: true });
     const encrypted = options.encrypted ?? Boolean(process.env.V2_BACKUP_KEY);
-    const base = `backup-${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`;
+    const base = `${clinicPrefix(options.clinicId)}backup-${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`;
     const filename = encrypted ? `${base}.enc` : `${base}.sqlite`;
     const tempPath = path.join(this.backupDir, `${base}.tmp`);
     const finalPath = path.join(this.backupDir, filename);
@@ -65,7 +73,7 @@ export class BackupService {
          ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
       ).run(
         randomUUID(),
-        null,
+        options.clinicId ?? null,
         new Date().toISOString(),
         new Date().toISOString(),
         filename,
@@ -80,9 +88,10 @@ export class BackupService {
     }
   }
 
-  async verify(filename: string): Promise<Record<string, unknown>> {
+  async verify(filename: string, clinicId: string | null = null): Promise<Record<string, unknown>> {
     const file = this.safePath(filename);
     if (!fs.existsSync(file)) throw new NotFoundError('Backup file not found');
+    this.assertClinicOwned(filename, clinicId);
     const encrypted = file.endsWith('.enc');
     let sqlitePath = file;
     let tempPath: string | undefined;
@@ -111,8 +120,8 @@ export class BackupService {
     }
   }
 
-  async stageRestore(filename: string): Promise<Record<string, unknown>> {
-    const verified = await this.verify(filename);
+  async stageRestore(filename: string, clinicId: string | null = null): Promise<Record<string, unknown>> {
+    const verified = await this.verify(filename, clinicId);
     if (verified.integrity !== 'ok') throw new Error('Backup integrity check failed before restore');
     const source = this.safePath(filename);
     const stagedPath = path.join(
@@ -147,10 +156,10 @@ export class BackupService {
     };
   }
 
-  cleanup(maxKeep = 30): { kept: number; deleted: Array<{ filename: string; fileSize: number }> } {
+  cleanup(maxKeep = 30, clinicId: string | null = null): { kept: number; deleted: Array<{ filename: string; fileSize: number }> } {
     const requested = Number.isFinite(Number(maxKeep)) ? Math.floor(Number(maxKeep)) : 30;
     const keep = requested < 1 ? 1 : requested > 365 ? 365 : requested;
-    const files = this.list() as Array<{ filename: string; fileSize: number }>;
+    const files = this.list(clinicId) as Array<{ filename: string; fileSize: number }>;
     const deleteFiles = files.slice(keep);
     const deleted: Array<{ filename: string; fileSize: number }> = [];
     const filenames = deleteFiles.map((f) => f.filename);
@@ -188,6 +197,20 @@ export class BackupService {
     if (!full.startsWith(resolvedDir)) throw new NotFoundError('Backup path is invalid');
     /* v8 ignore stop */
     return full;
+  }
+
+  /**
+   * Clinic ownership check shared by verify/stageRestore. Must run after
+   * safePath (basename) so path traversal is neutralized first, and after the
+   * existence check so a missing file keeps reporting 404 rather than 403.
+   * Legacy un-prefixed backups (`backup-*`) are rejected by this check; the
+   * plan accepts that behavior for upgraded deployments.
+   */
+  private assertClinicOwned(filename: string, clinicId?: string | null): void {
+    const prefix = `${clinicPrefix(clinicId)}backup-`;
+    if (!path.basename(filename).startsWith(prefix)) {
+      throw new AppError('FORBIDDEN', 'Backup belongs to another clinic', 403);
+    }
   }
 
   private async encryptFile(sourcePath: string, targetPath: string): Promise<void> {
