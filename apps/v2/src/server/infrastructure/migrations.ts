@@ -925,6 +925,54 @@ function repairLegacyData(db: Database.Database, table: string): void {
   }
 }
 
+/**
+ * T2R-03 兜底：迁移 121 把 NULL clinicId 统一回填为最早诊所，旧库中
+ * (NULL, 同唯一键) 的重复行回填后会撞 118 建立的 (clinicId, 唯一字段)
+ * 唯一索引。在 121 之前把 NULL clinicId 组内除 MAX(id) 外的重复行追加
+ * -dup-N 后缀，模式与 repairLegacyData 的去重保持一致，每处修改留痕
+ * MigrationRepairLog。返回修复行数。
+ */
+export function dedupNullClinicRows(db: Database.Database, table: string, uniqueColumn: string): number {
+  db.exec(`CREATE TABLE IF NOT EXISTS MigrationRepairLog (
+    id TEXT PRIMARY KEY,
+    tableName TEXT NOT NULL,
+    field TEXT NOT NULL,
+    recordId TEXT,
+    beforeValue TEXT,
+    afterValue TEXT,
+    reason TEXT NOT NULL,
+    createdAt TEXT DEFAULT CURRENT_TIMESTAMP
+  )`);
+  const dupRows = db.prepare(
+    `SELECT id, "${uniqueColumn}" AS value FROM "${table}" t
+     WHERE t.clinicId IS NULL
+       AND EXISTS (
+         SELECT 1 FROM "${table}" t2
+         WHERE t2.clinicId IS NULL AND t2."${uniqueColumn}" = t."${uniqueColumn}" AND t2.id != t.id
+       )
+       AND t.id != (
+         SELECT MAX(id) FROM "${table}" t3
+         WHERE t3.clinicId IS NULL AND t3."${uniqueColumn}" = t."${uniqueColumn}"
+       )`,
+  ).all() as Array<{ id: string; value: string }>;
+  let repaired = 0;
+  let n = 1;
+  for (const dup of dupRows) {
+    let after = `${dup.value}-dup-${n++}`;
+    // 避免后缀与同组既有值冲突（重复键组可能已有 -dup-N 形式的值）。
+    while (db.prepare(`SELECT 1 FROM "${table}" WHERE clinicId IS ? AND "${uniqueColumn}" = ? AND id != ? LIMIT 1`).get(null, after, dup.id)) {
+      after = `${dup.value}-dup-${n++}`;
+    }
+    db.prepare(`UPDATE "${table}" SET "${uniqueColumn}" = ? WHERE id = ?`).run(after, dup.id);
+    db.prepare(
+      `INSERT INTO MigrationRepairLog (id, tableName, field, recordId, beforeValue, afterValue, reason)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(randomUUID(), table, uniqueColumn, dup.id, dup.value, after, 'NULL clinicId 重复键追加后缀（121 回填前）');
+    repaired++;
+  }
+  return repaired;
+}
+
 function snapshotDatabase(db: Database.Database, snapshotDir: string): void {
   const dir = path.join(snapshotDir, 'pre-migration');
   fs.mkdirSync(dir, { recursive: true });
@@ -952,6 +1000,18 @@ export function runMigrations(db: Database.Database, options?: { snapshotDir?: s
   const applied = new Set(
     (db.prepare('SELECT version FROM schema_migrations').all() as Array<{ version: number | string }>).map((row) => Number(row.version)),
   );
+  // 121 将 NULL clinicId 回填为最早诊所；旧库 (NULL, 同唯一键) 重复行会撞 118 的唯一索引。
+  // 在应用 121 前对带 clinicId 列与唯一字段的表执行去重（不动 121 内容本身）。
+  if (!applied.has(121)) {
+    for (const resource of resourceRegistry.all()) {
+      const uniqueField = resource.fields.find((field) => field.unique);
+      if (!uniqueField) continue;
+      const cols = (db.prepare(`PRAGMA table_info("${resource.table}")`).all() as Array<{ name: string }>).map((c) => c.name);
+      // 列缺失（旧 schema 中唯一列可能由更晚的迁移添加）时跳过，避免 preflight 本身抛错。
+      if (!cols.includes('clinicId') || !cols.includes(uniqueField.name)) continue;
+      dedupNullClinicRows(db, resource.table, uniqueField.name);
+    }
+  }
   for (const migration of migrations) {
     if (applied.has(migration.version)) continue;
     const run = db.transaction(() => {
