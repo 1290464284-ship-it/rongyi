@@ -1,10 +1,12 @@
 # 2026-08-05 全面审计修复计划（Dental Clinic V2）
 
+> **状态更新（2026-08-05 第二轮）：** Phase 0/1/2 与 T3.1 已完成（各任务已标注 commit）；迁移编号基准更新为 **122**（118–121 已占用）；T2.1/T3.1 遗留副作用见任务内标注。剩余任务（T3.2–T3.7、Phase 4、Phase 5）的执行顺序与新增任务见 `docs/plans/2026-08-05-audit-round2.md`；第二轮审计报告见 `docs/audits/审计报告-round2-2026-08-05.md`。
+
 > **For agentic workers:** Implement this plan task-by-task, with a review gate between tasks. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 修复 2026-08-05 深度审计发现的全部问题：门禁红态、3 个严重可靠性缺陷、FTS 写放大性能地雷、3 个高危安全缺陷、边界/异常/日志缺口与代码卫生问题，使 `pnpm verify` 全绿并恢复可发布状态。
 
-**Architecture:** 修复按 6 个阶段推进：先恢复门禁与基线（修红测试 + 提交在途变更），再按 可靠性 → 性能 → 安全 → 边界/日志 → 代码卫生 的顺序逐项修复。数据库改动全部走**新增迁移**（118+），不修改已应用的迁移（1-117）；前端重构保持最小侵入；每个任务独立可测试、独立提交。
+**Architecture:** 修复按 6 个阶段推进：先恢复门禁与基线（修红测试 + 提交在途变更），再按 可靠性 → 性能 → 安全 → 边界/日志 → 代码卫生 的顺序逐项修复。数据库改动全部走**新增迁移**（122+），不修改已应用的迁移（1-121）；前端重构保持最小侵入；每个任务独立可测试、独立提交。
 
 **Tech Stack:** TypeScript 5.7 / React 19 + react-router 8 / Express 5 / better-sqlite3（同步 API）/ Electron 43 / vitest 4 / pnpm 11。
 
@@ -12,7 +14,7 @@
 
 - 所有命令在 `D:/Desktop/rongyi/source/` 下执行：`pnpm --filter @dental/v2 <script>`。
 - 数据库只允许 better-sqlite3 + 参数化 SQL；禁止 ORM、新框架、新依赖（本计划不引入任何新包）。
-- 迁移**只增不改**：已有迁移（≤117）不得编辑；新迁移从 118 开始编号，名称 `v2-<kebab-name>`。
+- 迁移**只增不改**：已有迁移（≤121）不得编辑；新迁移从 122 开始编号（118–121 已占用），名称 `v2-<kebab-name>`。
 - 提交信息必须符合 conventional commits（仓库配置了 commitlint + husky）。
 - 每次提交前必须通过：`pnpm --filter @dental/v2 typecheck` + 相关测试文件。
 - 软删除资源所有列表路径保留 `deletedAt IS NULL` 过滤。
@@ -25,6 +27,8 @@
 ## Phase 0 — 门禁恢复与基线提交
 
 ### Task 0.1: QueryBoundary 增加 data 守卫，修复 7 个失败测试
+
+**状态：** ✅ 已完成（commit `66a9c77`）。
 
 **Files:**
 - Modify: `src/web/components.tsx:70-86`（QueryBoundary）
@@ -96,6 +100,8 @@ git commit -m "fix(v2): guard QueryBoundary against undefined data to fix dashbo
 
 ### Task 0.2: 提交在途变更集（162 个文件）
 
+**状态：** ✅ 已完成（commit `75f9e35`，基线入库）。
+
 **Files:** 整个 `source/` 工作树（115 modified + 47 untracked）。
 
 **背景：** 工作树有 +5140/-1810 行未提交修改与 47 个未跟踪新文件（14 个新页面 + spec、`files.ts`、`scheduler.ts`、`ui-meta.ts` 等），CI 不覆盖未提交代码。先跑全量门禁确认绿，再整体提交建立检查点。
@@ -125,6 +131,8 @@ git log --oneline -1
 ---
 
 ### Task 0.3: 行尾符归一（.gitattributes）
+
+**状态：** ✅ 已完成（commit `b06f2a4`）。
 
 **Files:**
 - Create: `source/.gitattributes`
@@ -168,6 +176,8 @@ git commit -m "chore(v2): add .gitattributes with LF normalization"
 ## Phase 1 — 可靠性严重项
 
 ### Task 1.1: 迁移前数据修复 + 迁移前快照（C1）
+
+**状态：** ✅ 已完成（commit `3691fb3`；`repairLegacyData` 去重仅覆盖非 NULL clinicId 行，NULL 重复兜底由第二轮 T2R-03 负责）。
 
 **Files:**
 - Modify: `src/server/infrastructure/migrations.ts`（`runMigrations` + `ensureForeignKeys`，691-724 行）
@@ -343,6 +353,8 @@ git commit -m "fix(v2): repair legacy constraint violations before table rebuild
 
 ### Task 1.2: 恢复 marker 校验失败安全降级 + 备份临时文件清理（C2 + M5）
 
+**状态：** ✅ 已完成（commit `249f1f4`）。
+
 **Files:**
 - Modify: `src/server/infrastructure/restore-apply.ts:28-33`
 - Modify: `src/server/application/service-modules/backup.ts`（create 的 finally 清理 + cleanup 清理 .tmp/.staged-*）
@@ -442,6 +454,8 @@ git commit -m "fix(v2): degrade gracefully on invalid restore marker and clean b
 
 ### Task 1.3: DebtService.pay 事务化（C3）
 
+**状态：** ✅ 已完成（commit `61e1a31`）。
+
 **Files:**
 - Modify: `src/server/application/service-modules/financial.ts:686-719`
 - Test: `src/server/application/workflow-services.spec.ts` 或 `services.spec.ts`（pay 相关用例）
@@ -523,6 +537,8 @@ git commit -m "fix(v2): make debt payment atomic with charge update"
 ---
 
 ### Task 1.4: Electron 重启策略修正 + 首启失败窗口（H1）
+
+**状态：** ✅ 已完成（commit `788edd6`）。
 
 **Files:**
 - Modify: `electron/main.cjs`（184-205 行 exit 处理、120-147 waitForApi、575 附近 whenReady）
@@ -646,8 +662,10 @@ git commit -m "fix(v2): cap API restart attempts per app lifetime and show error
 
 ### Task 2.1: 移除 FTS 触发器，改为启动/导入后重建索引（S1 + L3）
 
+**状态：** ✅ 已完成（commit `fb9a3b1`）。⚠️ **副作用（第二轮审计确认）：** 运行期 repository CRUD 不再维护 `SearchIndex`，搜索将随数据变更失真；由第二轮计划 **T2R-02**（`docs/plans/2026-08-05-audit-round2.md`）修复。
+
 **Files:**
-- Modify: `src/server/infrastructure/migrations.ts`（新增迁移 118）
+- Modify: `src/server/infrastructure/migrations.ts`（新增迁移 119）
 - Create: `src/server/infrastructure/search-index.ts`
 - Modify: `src/server/main.ts`（启动时重建）
 - Modify: `src/server/application/service-modules/clinical-ops.ts`（批量导入完成后重建）
@@ -736,7 +754,7 @@ export function rebuildSearchIndex(db: Database.Database): void {
 }
 ```
 
-- [ ] **Step 4: 新增迁移 118 删除全部 19 个触发器**
+- [ ] **Step 4: 新增迁移 119 删除全部 19 个触发器**
 
 `migrations.ts` 追加（版本号按仓库当前最大 117 递增）：
 
@@ -825,6 +843,8 @@ git commit -m "perf(v2): replace FTS write triggers with on-demand index rebuild
 
 ### Task 2.2: 搜索防抖 + 资源列表走 FTS（H2）
 
+**状态：** ✅ 已完成（commit `3804c4d`）。
+
 **Files:**
 - Create: `src/web/use-debounce.ts`
 - Modify: `src/web/PatientsPage.tsx:75,83-86,240-241`、`src/web/SystemOperationsPage.tsx:47-49`
@@ -905,8 +925,10 @@ git commit -m "perf(v2): debounce search input and route resource search through
 
 ### Task 2.3: 幂等清理索引化并移出热路径（H3-perf）
 
+**状态：** ✅ 已完成（commit `b3a2b8f`；迁移 120）。⚠️ 遗留：幂等 COMPLETED 更新非原子（第二轮 R2-P1-08），由 **T2R-10** 修复。
+
 **Files:**
-- Modify: `src/server/infrastructure/migrations.ts`（迁移 119 加索引）
+- Modify: `src/server/infrastructure/migrations.ts`（迁移 120 加索引）
 - Modify: `src/server/infrastructure/idempotency.ts`（导出清理函数，热路径只保留 expiresAt 清理）
 - Modify: `src/server/main.ts`（每日清理调用）
 - Test: `src/server/infrastructure/idempotency.spec.ts`
@@ -914,7 +936,7 @@ git commit -m "perf(v2): debounce search input and route resource search through
 **Interfaces:**
 - Produces: `cleanupIdempotencyRecords(db): { deleted: number }`。
 
-- [ ] **Step 1: 迁移 119 加索引**
+- [ ] **Step 1: 迁移 120 加索引**
 
 ```ts
 {
@@ -973,6 +995,8 @@ git commit -m "perf(v2): index idempotency cleanup and move it off the write hot
 
 ### Task 2.4: 启动完整性检查分级（H4-perf）
 
+**状态：** ✅ 已完成（commit `42fc4de`；`.clean-exit` 标记）。
+
 **Files:**
 - Modify: `src/server/infrastructure/database.ts:310-312`
 - Modify: `src/server/main.ts`（干净退出标记）
@@ -1027,6 +1051,8 @@ git commit -m "perf(v2): run full integrity check only after unclean shutdown"
 ---
 
 ### Task 2.5: 前端代码分割（H5-perf）
+
+**状态：** ✅ 已完成（commit `dadbd69`）。
 
 **Files:**
 - Modify: `src/web/hub-tabs.tsx`（34 个页面静态 import → React.lazy）
@@ -1110,6 +1136,8 @@ git commit -m "perf(v2): code-split hub pages with React.lazy and vendor chunks"
 
 ### Task 2.6: 仪表盘/统计端点 TTL 缓存（H1-perf）
 
+**状态：** ✅ 已完成（commit `6abf0b4`；`StatsService.getCached`，30s/200 条）。
+
 **Files:**
 - Modify: `src/server/application/read-services.ts`（StatsService 各方法包缓存）
 - Test: `src/server/application/services.spec.ts`
@@ -1158,8 +1186,10 @@ git commit -m "perf(v2): add TTL cache for dashboard and analytics aggregation e
 
 ### Task 3.1: NULL clinicId 回填 + 严格租户隔离（H2-sec）
 
+**状态：** ✅ 已完成（commit `9938852`；迁移 121）。⚠️ 遗留：回填可能撞 118 唯一索引（第二轮 R2-P0-03）由 **T2R-03** 兜底；`UserClinic` 成员未补齐（R2-P1-22）在 T3.2 执行时处理。
+
 **Files:**
-- Modify: `src/server/infrastructure/migrations.ts`（迁移 120）
+- Modify: `src/server/infrastructure/migrations.ts`（迁移 121）
 - Modify: `src/server/infrastructure/tenant.ts`（`tenantWhere` 改为严格匹配）
 - Modify: `src/server/application/service-modules/auth.ts:139-143`（`resolveClinicId` 为 null 时拒绝签发）
 - Test: `src/server/infrastructure/tenant.spec.ts`、`src/server/application/services-edge.spec.ts`
@@ -1167,7 +1197,7 @@ git commit -m "perf(v2): add TTL cache for dashboard and analytics aggregation e
 **Interfaces:**
 - Produces: `tenantWhere(clinicId)` 语义变为 `clinicId = ?`（无 OR NULL）；`resolveClinicId` 无诊所时抛 `AppError('FORBIDDEN', 'No clinic scope', 403)`。
 
-- [ ] **Step 1: 迁移 120 回填 NULL clinicId**
+- [ ] **Step 1: 迁移 121 回填 NULL clinicId**
 
 ```ts
 {
@@ -2347,7 +2377,7 @@ cd source && git add package.json apps/v2/README.md && git commit -m "docs(v2): 
 | H4 启动 integrity_check 挤占窗口 | T2.4 |
 | H5 前端无代码分割 | T2.5 |
 | H1 仪表盘全表聚合 | T2.6 |
-| M5 索引缺失（ChargeItem 分组） | T2.3（迁移 119） |
+| M5 索引缺失（ChargeItem 分组） | T2.3（迁移 120） |
 | H2 安全：NULL clinicId 全库越权 | T3.1 |
 | M1 性能：tenant OR NULL 削弱索引 | T3.1 |
 | H1 安全：备份/恢复全局化 | T3.2 |
@@ -2384,4 +2414,4 @@ cd source && git add package.json apps/v2/README.md && git commit -m "docs(v2): 
 - **Spec 覆盖**：审计报告全部 3 严重 / 6 高 / 6 中 / 6 低（边界）+ 1 严重 / 5 高（性能）+ 3 高 / 6 中 / 5 低（安全）+ 代码卫生项均已映射到任务，无遗漏；仅性能 L1/L4/L5（relation 点查、审计缓冲、上传同步写）为可接受现状，不单列任务（L5 上传写文件在 T3.6 配额附近可顺带评估）。
 - **Placeholder 扫描**：无 TBD/TODO；代码步骤均含具体实现；T3.2/T4.4/T5.3 中有"以实际字段为准/可选"标注的仅限字段名核对与可选优化，主路径完整。
 - **类型一致性**：`buildFtsQuery`（T2.1 产出 → T2.2 消费）、`rebuildSearchIndex`（T2.1 产出 → T2.1 接入）、`useDebouncedValue`（T2.2 产出 → T2.2 消费）、`cleanupIdempotencyRecords`（T2.3 产出 → T5.2 消费）、`startSchedulers` 扩展（T5.2 消费 T2.3 产出）签名一致；`tenantWhereStrict` 在 T3.1 删除、T5.1 确认无引用，顺序正确（T3.1 先于 T5.1）。
-- **依赖顺序**：T0.1→T0.2（先修测试再提交）；T1.1 依赖迁移机制而非新迁移号；T2.1 迁移 118 与 T2.3 迁移 119 与 T3.1 迁移 120 号段无冲突；T5.2 依赖 T2.3 的 `cleanupIdempotencyRecords`。
+- **依赖顺序**：T0.1→T0.2（先修测试再提交）；T1.1 依赖迁移机制而非新迁移号；T2.1 迁移 119 与 T2.3 迁移 120 与 T3.1 迁移 121 号段无冲突（此后新迁移一律 122 起）；T5.2 依赖 T2.3 的 `cleanupIdempotencyRecords`。
