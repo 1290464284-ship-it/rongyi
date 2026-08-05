@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createApp } from './http/app';
 import { createDatabase, seedDatabase, syncLegacySchema } from './infrastructure/database';
+import { cleanupIdempotencyRecords } from './infrastructure/idempotency';
 import { Logger } from './infrastructure/logger';
 import { runMigrations } from './infrastructure/migrations';
 import { rebuildSearchIndex } from './infrastructure/search-index';
@@ -126,6 +127,15 @@ function cleanupAuditLogs(): void {
 }
 cleanupAuditLogs();
 setInterval(cleanupAuditLogs, 24 * 60 * 60 * 1000).unref();
+
+setInterval(() => {
+  try {
+    const { deleted } = cleanupIdempotencyRecords(db);
+    if (deleted > 0) logger.info('idempotency cleanup completed', { action: 'idempotency-cleanup', deleted });
+  } catch (error) {
+    logger.error('idempotency cleanup failed', { action: 'idempotency-cleanup', error });
+  }
+}, 24 * 60 * 60 * 1000).unref();
 
 function shutdown(): void {
   try {
