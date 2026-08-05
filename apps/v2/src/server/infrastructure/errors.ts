@@ -54,21 +54,3 @@ export function asAppError(error: unknown): AppError {
   }
   return new AppError('INTERNAL_ERROR', String(error), 500);
 }
-
-export function fromNativeError(err: unknown): AppError {
-  const code = err instanceof Error ? String((err as { code?: unknown }).code ?? '') : '';
-  const message = err instanceof Error ? err.message : String(err);
-  const details = err instanceof Error ? { stack: err.stack, ...(err as object) } : undefined;
-  switch (code) {
-    case 'SQLITE_BUSY':
-      return new AppError('DATABASE_LOCKED', message, 503, details);
-    case 'ENOSPC':
-      return new AppError('DISK_FULL', message, 507, details);
-    case 'EACCES':
-      return new AppError('PERMISSION_DENIED', message, 403, details);
-    case 'ENOENT':
-      return new AppError('NOT_FOUND', message, 404, details);
-    default:
-      return new AppError('INTERNAL_ERROR', message, 500, details);
-  }
-}

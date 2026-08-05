@@ -3,7 +3,6 @@
   "ignore": [
     "src/domain/contracts.ts",
     "legacy/schema/**",
-    "electron/preload.cjs",
-    "scripts/wait-for-services.mjs"
+    "electron/preload.cjs"
   ]
 }
