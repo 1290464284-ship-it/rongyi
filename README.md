@@ -17,6 +17,10 @@ Open the renderer at:
 http://localhost:5180
 ```
 
+The API listens on `http://127.0.0.1:3180/api/v2` by default. On Windows, port
+`3180` may be excluded by the system (excludedportrange); if the API fails to
+start, use another port, e.g. `$env:V2_PORT = '3980'` before `pnpm dev`.
+
 Default development login:
 
 ```text
