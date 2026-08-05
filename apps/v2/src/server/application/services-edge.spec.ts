@@ -9,6 +9,7 @@ import DatabaseClass from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../infrastructure/database';
 import { runMigrations } from '../infrastructure/migrations';
 import { rebuildSearchIndex } from '../infrastructure/search-index';
+import { recordSyncChange } from '../infrastructure/sync-change';
 import {
   AlertService,
   AppointmentService,
@@ -1074,6 +1075,29 @@ describe('service edge coverage', () => {
     const pulled = service.pull(now, 'sync-isolation-device', device.token, context);
     expect(pulled.changes.some((row) => row.id === 'sync-isolation-a')).toBe(true);
     expect(pulled.changes.some((row) => row.id === 'sync-isolation-b')).toBe(false);
+  });
+
+  it('pulls server-originated changes to other devices and keeps push single-row', async () => {
+    const service = new SyncService(db);
+    const device = service.registerDevice('sync-server-origin-device', 'Server Origin', context);
+    const since = new Date(Date.now() - 60_000).toISOString();
+    // 模拟 web/服务端本地直写产生的 server 变更。
+    recordSyncChange(db, { tableName: 'Patient', recordId: 'patient-server-origin', operation: 'INSERT', clinicId: context.clinicId as string });
+    const pulled = service.pull(since, 'sync-server-origin-device', device.token, context);
+    expect(pulled.changes.some((c) => String(c.recordId) === 'patient-server-origin' && c.deviceId === 'server')).toBe(true);
+    // push 保持单行且设备归属正确（repository 在 push 内不额外发射 server 行）。
+    const pushed = await service.push({
+      deviceId: 'sync-server-origin-device',
+      deviceToken: device.token,
+      changes: [{
+        tableName: 'Patient', recordId: 'patient-pushed-single', operation: 'INSERT', updatedAt: new Date().toISOString(),
+        data: { code: 'SYNC-SINGLE', name: 'Single', gender: 'UNKNOWN', phone: '13500000001', source: 'WALK_IN', active: true },
+      }],
+    }, context);
+    expect(pushed.accepted).toBe(1);
+    const rows = db.prepare(`SELECT deviceId, operation FROM SyncChange WHERE recordId = 'patient-pushed-single'`).all() as Array<{ deviceId: string; operation: string }>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ deviceId: 'sync-server-origin-device', operation: 'INSERT' });
   });
 
   it('enforces tenant scope in core workflows', async () => {
