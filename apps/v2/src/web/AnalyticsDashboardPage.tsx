@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest, getApiOrigin } from './api';
+import { apiRequest, fetchPrintHtml } from './api';
 import { EmptyState, LoadingState, PageError } from './components';
 import { formatMoney } from './format';
 import { errorMessage } from './messages';
@@ -175,25 +175,33 @@ export function AnalyticsDashboardPage() {
   }
 
   async function printReport(): Promise<void> {
+    const target = window.open('', '_blank');
+    if (!target) {
+      showToast('浏览器阻止了打印窗口，请允许弹窗后重试', 'error');
+      return;
+    }
     try {
-      const origin = await getApiOrigin();
-      const encoded = encodeURIComponent(JSON.stringify({
-        title: `经营分析 ${appliedStart} 至 ${appliedEnd}`,
-        patients: dashboard.data?.patients ?? 0,
-        appointments: dashboard.data?.appointments ?? 0,
-        paidAmount: dashboard.data?.paidAmount ?? 0,
-        unpaidAmount: dashboard.data?.unpaidAmount ?? 0,
-        revenueRows: revenue.data ?? [],
-        growthRows: patientGrowth.data ?? [],
-        inventoryRows: inventory.data ?? [],
-        satisfactionRows: satisfaction.data ?? [],
-        doctorRows: doctors.data ?? [],
-      }));
-      const printUrl = `${origin}/api/v2/print?kind=analytics&data=${encoded}`;
-      const target = window.open(printUrl, '_blank', 'noopener,noreferrer');
-      if (target) target.focus();
-      else showToast('浏览器阻止了打印窗口，请允许弹窗后重试', 'error');
+      const html = await fetchPrintHtml('/print', {
+        kind: 'analytics',
+        data: {
+          title: `经营分析 ${appliedStart} 至 ${appliedEnd}`,
+          patients: dashboard.data?.patients ?? 0,
+          appointments: dashboard.data?.appointments ?? 0,
+          paidAmount: dashboard.data?.paidAmount ?? 0,
+          unpaidAmount: dashboard.data?.unpaidAmount ?? 0,
+          revenueRows: revenue.data ?? [],
+          growthRows: patientGrowth.data ?? [],
+          inventoryRows: inventory.data ?? [],
+          satisfactionRows: satisfaction.data ?? [],
+          doctorRows: doctors.data ?? [],
+        },
+      });
+      target.document.open();
+      target.document.write(html);
+      target.document.close();
+      target.focus();
     } catch (error) {
+      target.close();
       showToast(errorMessage(error, '打开打印报表失败'), 'error');
     }
   }

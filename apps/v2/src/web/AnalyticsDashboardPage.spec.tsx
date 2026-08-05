@@ -5,10 +5,10 @@ import type { ReactNode } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AnalyticsDashboardPage } from './AnalyticsDashboardPage';
-import { apiRequest, getApiOrigin } from './api';
+import { apiRequest, fetchPrintHtml } from './api';
 import { ToastProvider } from './toast';
 
-vi.mock('./api', () => ({ apiRequest: vi.fn(), getApiOrigin: vi.fn() }));
+vi.mock('./api', () => ({ apiRequest: vi.fn(), fetchPrintHtml: vi.fn() }));
 
 const wrapper = ({ children }: { children: ReactNode }) => (
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ToastProvider>{children}</ToastProvider></QueryClientProvider>
@@ -42,6 +42,7 @@ describe('AnalyticsDashboardPage', () => {
   afterEach(() => {
     cleanup();
     vi.mocked(apiRequest).mockReset();
+    vi.mocked(fetchPrintHtml).mockReset();
     vi.restoreAllMocks();
   });
 
@@ -67,11 +68,12 @@ describe('AnalyticsDashboardPage', () => {
 
   it('exports CSV and opens the print report', async () => {
     installData();
-    vi.mocked(getApiOrigin).mockResolvedValue('http://127.0.0.1:3180');
+    vi.mocked(fetchPrintHtml).mockResolvedValue('<!doctype html><html><body>report</body></html>');
     const click = vi.fn();
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(click);
     vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:report'), revokeObjectURL: vi.fn() });
-    const open = vi.fn(() => ({ focus: vi.fn() })) as unknown as typeof window.open;
+    const printDoc = { open: vi.fn(), write: vi.fn(), close: vi.fn() };
+    const open = vi.fn(() => ({ focus: vi.fn(), close: vi.fn(), document: printDoc })) as unknown as typeof window.open;
     vi.spyOn(window, 'open').mockImplementation(open);
 
     render(<AnalyticsDashboardPage />, { wrapper });
@@ -81,6 +83,22 @@ describe('AnalyticsDashboardPage', () => {
     expect(await screen.findByText('经营分析已导出为 CSV，可直接用 Excel 打开')).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: '打印/PDF' }));
-    await waitFor(() => expect(open).toHaveBeenCalledWith(expect.stringContaining('/api/v2/print?kind=analytics'), '_blank', 'noopener,noreferrer'));
+    await waitFor(() => {
+      expect(open).toHaveBeenCalledWith('', '_blank');
+      expect(fetchPrintHtml).toHaveBeenCalledWith('/print', expect.objectContaining({ kind: 'analytics' }));
+      expect(printDoc.open).toHaveBeenCalled();
+      expect(printDoc.write).toHaveBeenCalledWith('<!doctype html><html><body>report</body></html>');
+      expect(printDoc.close).toHaveBeenCalled();
+    });
+  });
+
+  it('shows a toast when the print window is blocked', async () => {
+    installData();
+    vi.spyOn(window, 'open').mockImplementation(() => null);
+    render(<AnalyticsDashboardPage />, { wrapper });
+    await screen.findByText('月度收入趋势');
+    fireEvent.click(screen.getByRole('button', { name: '打印/PDF' }));
+    expect(await screen.findByText('浏览器阻止了打印窗口，请允许弹窗后重试')).toBeDefined();
+    expect(fetchPrintHtml).not.toHaveBeenCalled();
   });
 });

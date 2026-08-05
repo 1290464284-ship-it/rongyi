@@ -115,6 +115,20 @@ export function registerReadRoutes(app: Express, deps: ReadRouteDependencies): v
       res.type('html').send(deps.print.render(kind, data));
   }));
 
+  app.post('/api/v2/print', wrapAsync(async (req, res) => {
+      const kind = String(req.body?.kind ?? 'report');
+      const rawData = req.body?.data;
+      let data: Record<string, unknown>;
+      if (rawData === undefined || rawData === null) {
+        data = {};
+      } else if (typeof rawData === 'object' && !Array.isArray(rawData)) {
+        data = rawData as Record<string, unknown>;
+      } else {
+        throw new ValidationError('data must be an object');
+      }
+      res.type('html').send(deps.print.render(kind, data));
+  }));
+
   app.get('/api/v2/appointments/by-date', wrapAsync(async (req, res) => {
       const date = String(req.query.date ?? '');
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
