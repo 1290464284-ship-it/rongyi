@@ -179,10 +179,55 @@ describe('withIdempotency', () => {
       if (sql.startsWith('UPDATE IdempotencyRecord')) return { run: updateRun };
       return { run: vi.fn() };
     });
-    const failingDb = { prepare } as unknown as Database.Database;
+    const failingDb = {
+      prepare,
+      transaction: (fn: () => unknown) => fn(),
+    } as unknown as Database.Database;
     expect(() => withIdempotency(failingDb, scope('update-failure'), () => ({ ok: true })))
       .toThrow('update failed');
     expect(deleteRun).toHaveBeenCalledTimes(2);
+  });
+
+  it('rolls back business side effects when the completed update fails', () => {
+    const originalPrepare = db.prepare.bind(db);
+    const spy = vi.spyOn(db, 'prepare');
+    spy.mockImplementation((sql: string) => {
+      const statement = originalPrepare(sql);
+      if (sql.includes("status = 'COMPLETED'")) {
+        const failing = statement as unknown as { run: () => never };
+        failing.run = () => {
+          throw new Error('injected completed update failure');
+        };
+      }
+      return statement;
+    });
+    try {
+      expect(() =>
+        withIdempotency(db, scope('atomic-failure'), () => {
+          // A business side effect committed through the operation's own write path.
+          db.prepare(
+            `INSERT INTO IdempotencyRecord (
+               id, key, type, status, responseJson, result, userId, clinicId, operation,
+               createdAt, updatedAt, deletedAt, expiresAt
+             ) VALUES (?, ?, 'GENERIC', 'COMPLETED', '{}', '{}', 'user-1', 'clinic-1', 'charge.pay', ?, ?, NULL, ?)`,
+          ).run(
+            'business-side-effect',
+            'some-other-key',
+            new Date().toISOString(),
+            new Date().toISOString(),
+            new Date(Date.now() + 86_400_000).toISOString(),
+          );
+          return { ok: true };
+        }),
+      ).toThrow('injected completed update failure');
+    } finally {
+      spy.mockRestore();
+    }
+    // The failed completion must roll back the business side effect with it.
+    expect(db.prepare('SELECT id FROM IdempotencyRecord WHERE id = ?').get('business-side-effect')).toBeUndefined();
+    // The processing record was removed, so the same key is retryable.
+    const retried = withIdempotency(db, scope('atomic-failure'), () => ({ ok: 'retried' }));
+    expect(retried).toEqual({ ok: 'retried' });
   });
 
   it('returns a concurrent result when the idempotency insert races', async () => {
