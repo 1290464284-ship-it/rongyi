@@ -11,7 +11,7 @@ import type {
 } from '../../domain/contracts';
 import { maskSensitiveFields } from './security';
 import { tenantAnd, tenantParams } from './tenant';
-import { buildFtsQuery } from './search-index';
+import { buildFtsQuery, upsertSearchRow, removeSearchRow, refreshPatientChildSearchRows } from './search-index';
 
 function serialize(field: ResourceField, value: unknown): unknown {
   if (value === undefined || value === null) return null;
@@ -144,6 +144,7 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
       if (isUniqueConstraintError(error)) throw new ConflictError(`${this.resource.name} violates a unique field constraint`);
       throw error;
     }
+    if (this.resource.searchIndexResource) upsertSearchRow(this.db, this.resource.searchIndexResource, id);
   }
 
   async update(entity: Record<string, unknown>, context: AppContext): Promise<void> {
@@ -171,6 +172,8 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
       if (isUniqueConstraintError(error)) throw new ConflictError(`${this.resource.name} violates a unique field constraint`);
       throw error;
     }
+    if (this.resource.searchIndexResource) upsertSearchRow(this.db, this.resource.searchIndexResource, id);
+    if (this.resource.name === 'patients') refreshPatientChildSearchRows(this.db, id);
   }
 
   async softDelete(id: string, context: AppContext): Promise<void> {
@@ -188,6 +191,16 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
       /* v8 ignore stop */
       this.db.prepare(`DELETE FROM ${this.resource.table} WHERE id = ?${clinicWhere}`).run(...params);
     }
+    if (this.resource.searchIndexResource) removeSearchRow(this.db, this.resource.searchIndexResource, id);
+    if (this.resource.name === 'patients') {
+      // 患者删除后其子记录（Appointment/Charge/FollowUp）索引行不再有意义，逐个清理。
+      // 子表可能缺 patientId 列（精简/异构 schema），按实际列结构跳过。
+      for (const childTable of ['Appointment', 'Charge', 'FollowUp']) {
+        if (!this.tableHasColumn(childTable, 'patientId')) continue;
+        const childRows = this.db.prepare(`SELECT id FROM ${childTable} WHERE patientId = ?`).all(id) as Array<{ id: string }>;
+        for (const child of childRows) removeSearchRow(this.db, childTable, String(child.id));
+      }
+    }
   }
 
   private field(name: string): ResourceField | undefined {
@@ -196,6 +209,11 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
 
   private hasClinicColumn(): boolean {
     return this.columns.has('clinicId');
+  }
+
+  private tableHasColumn(table: string, column: string): boolean {
+    const rows = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+    return rows.some((row) => row.name === column);
   }
 
   private assertRelations(entity: Record<string, unknown>, context: AppContext): void {
