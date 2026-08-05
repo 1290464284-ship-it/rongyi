@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { waitForService } from './wait-for-services.mjs';
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const root = path.resolve(appRoot, '..', '..');
@@ -53,23 +54,6 @@ function stopDev() {
   }
 }
 
-async function waitFor(url, label, predicate) {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < timeoutMs) {
-    try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(1000) });
-      if (predicate(response)) {
-        console.log(`${label} ready`);
-        return;
-      }
-    } catch {
-      // not ready yet
-    }
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-  throw new Error(`${label} did not become ready within ${timeoutMs}ms`);
-}
-
 function runSmoke(args) {
   const isWindows = process.platform === 'win32';
   const options = {
@@ -90,11 +74,10 @@ try {
   startDev('api', ['dev:api']);
   startDev('web', ['dev:web']);
 
-  await waitFor(apiUrl, 'api', (response) => response.ok);
-  await waitFor(webUrl, 'web', async (response) => {
-    const text = await response.text();
-    return response.ok && text.includes('root');
-  });
+  await waitForService({ url: apiUrl, text: '', timeoutMs });
+  console.log('api ready');
+  await waitForService({ url: webUrl, text: 'root', timeoutMs });
+  console.log('web ready');
 
   runSmoke(['run', 'smoke:api']);
   runSmoke(['run', 'smoke:ui']);

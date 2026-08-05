@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { installerFileName } from './artifact-name.mjs';
+import { filesExist } from './lib/artifact-utils.mjs';
 
 const appRoot = path.resolve(import.meta.dirname, '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(appRoot, 'package.json'), 'utf8'));
@@ -9,13 +10,7 @@ const productName = pkg.build.productName;
 const exePath = path.join(releaseDir, installerFileName(pkg));
 const blockMap = `${exePath}.blockmap`;
 
-const required = [exePath, blockMap];
-for (const file of required) {
-  if (!fs.existsSync(file)) {
-    console.error(`missing artifact: ${file}`);
-    process.exit(1);
-  }
-}
+filesExist([exePath, blockMap]);
 
 const latestYml = path.join(releaseDir, 'latest.yml');
 if (fs.existsSync(latestYml)) {
