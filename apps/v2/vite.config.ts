@@ -27,9 +27,18 @@ export default defineConfig({
     },
   },
   root: '.',
+  base: './',
   build: {
     outDir: 'dist-web',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom', 'react-router'],
+          'query-vendor': ['@tanstack/react-query'],
+        },
+      },
+    },
   },
   server: {
     port: 5180,
