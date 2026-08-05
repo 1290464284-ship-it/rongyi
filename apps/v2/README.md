@@ -29,6 +29,24 @@ The API listens on:
 http://localhost:3180/api/v2
 ```
 
+### Ports (端口说明)
+
+- 开发模式下 API 默认监听 `http://127.0.0.1:3180`（`V2_PORT` 可改，
+  `src/server/main.ts`），渲染端为 Vite dev 端口 `http://localhost:5180`。
+- **Windows 注意**：`3180` 可能落在系统"排除端口保留"
+  （excludedportrange）范围内，此时 API 无法监听、进程报错退出。改用
+  其他端口启动即可：
+
+  ```powershell
+  $env:V2_PORT = '3980'
+  pnpm --filter @dental/v2 dev
+  ```
+
+  `V2_PORT` 必须是 1-65535 的整数；CORS 白名单会跟随 `V2_PORT` 自动放行
+  （`src/server/http/app.ts`），无需额外配置。
+- 打包版（Electron）会自动挑选随机空闲端口（30000-50000）并注入 API 子进程，
+  以上说明仅适用于开发模式。
+
 On first startup, V2 imports the legacy compatibility database pointed to by
 `V2_LEGACY_DB_PATH` into `apps/v2/data/v2.sqlite` in development, or into
 Electron `userData/data/v2.sqlite` in packaged mode. The original database is
@@ -139,6 +157,15 @@ src/
   web/              React renderer used by the desktop app
 electron/           Electron main and preload
 ```
+
+## Project Scale
+
+Verified 2026-08-05:
+
+- 约 3.5 万行 TypeScript/TSX（`src/`，含测试代码）
+- 76 个测试文件（37 个服务端 `*.spec.ts` + 39 个 Web `*.spec.tsx`）
+- 568 个测试用例（最近一次 vitest 运行记录：523 → 568，见
+  `docs/plans/2026-08-05-wave3-track.md`）
 
 ## Sidebar Groups
 
