@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../infrastructure/database';
 import { runMigrations } from '../infrastructure/migrations';
@@ -16,6 +16,7 @@ import {
   InventoryService,
   MemberCardService,
   PatientRiskService,
+  StatsService,
 } from './services';
 import { SqliteChargeRepository } from '../infrastructure/repositories/charge.repository';
 import type { AuthRepository, MemberCardRepository, MemberCardRecord } from './ports';
@@ -730,5 +731,67 @@ describe('application services', () => {
     const service = new AuthService(db, fakeAuth);
     await expect(service.updateUser('user-1', { name: 'x' }, context)).rejects.toThrow('User not found');
     await expect(service.resetPassword('user-1', 'password123', context)).rejects.toThrow('User not found');
+  });
+
+  it('serves repeated dashboard calls from the TTL cache without re-running aggregation SQL', () => {
+    const service = new StatsService(db);
+    const prepare = vi.spyOn(db, 'prepare');
+    try {
+      service.dashboard(context);
+      expect(prepare).toHaveBeenCalledTimes(1);
+
+      const cached = service.dashboard(context);
+      expect(prepare).toHaveBeenCalledTimes(1);
+      expect(cached).toHaveProperty('patients');
+      expect(cached).toHaveProperty('pendingFollowUps');
+
+      // A different clinic is a different cache key, so it recomputes.
+      service.dashboard({ ...context, clinicId: 'clinic-v2-002' });
+      expect(prepare).toHaveBeenCalledTimes(2);
+    } finally {
+      prepare.mockRestore();
+    }
+  });
+
+  it('keeps revenue cache keys distinct per date range and granularity', () => {
+    const service = new StatsService(db);
+    const prepare = vi.spyOn(db, 'prepare');
+    try {
+      service.revenue('2026-01-01', '2026-01-31', 'month', context);
+      expect(prepare).toHaveBeenCalledTimes(1);
+      service.revenue('2026-01-01', '2026-01-31', 'month', context);
+      expect(prepare).toHaveBeenCalledTimes(1);
+
+      service.revenue('2026-02-01', '2026-02-28', 'month', context);
+      expect(prepare).toHaveBeenCalledTimes(2);
+      service.revenue('2026-01-01', '2026-01-31', 'day', context);
+      expect(prepare).toHaveBeenCalledTimes(3);
+    } finally {
+      prepare.mockRestore();
+    }
+  });
+
+  it('recomputes dashboard aggregation after the 30s TTL expires', () => {
+    const service = new StatsService(db);
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-05T00:00:00.000Z'));
+    const prepare = vi.spyOn(db, 'prepare');
+    try {
+      service.dashboard(context);
+      expect(prepare).toHaveBeenCalledTimes(1);
+      service.dashboard(context);
+      expect(prepare).toHaveBeenCalledTimes(1);
+
+      vi.advanceTimersByTime(29_999);
+      service.dashboard(context);
+      expect(prepare).toHaveBeenCalledTimes(1);
+
+      vi.advanceTimersByTime(1_001);
+      service.dashboard(context);
+      expect(prepare).toHaveBeenCalledTimes(2);
+    } finally {
+      prepare.mockRestore();
+      vi.useRealTimers();
+    }
   });
 });

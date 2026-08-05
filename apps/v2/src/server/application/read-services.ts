@@ -7,30 +7,47 @@ import { buildFtsQuery } from '../infrastructure/search-index';
 export class StatsService {
   constructor(private readonly db: Database.Database) {}
 
+  private readonly statsCache = new Map<string, { at: number; data: unknown }>();
+
+  private getCached<T>(key: string, ttlMs: number, compute: () => T): T {
+    const now = Date.now();
+    const hit = this.statsCache.get(key);
+    if (hit && now - hit.at < ttlMs) return hit.data as T;
+    const data = compute();
+    this.statsCache.set(key, { at: now, data });
+    if (this.statsCache.size > 200) {
+      const oldest = this.statsCache.keys().next().value;
+      if (oldest !== undefined) this.statsCache.delete(oldest);
+    }
+    return data;
+  }
+
   dashboard(context: AppContext): Record<string, unknown> {
-    const tenant = tenantWhere(context.clinicId);
-    const where = tenant.sql ? `WHERE ${tenant.sql} AND deletedAt IS NULL` : 'WHERE deletedAt IS NULL';
-    const wherePending = tenant.sql
-      ? `WHERE ${tenant.sql} AND deletedAt IS NULL AND status = 'PENDING'`
-      : "WHERE deletedAt IS NULL AND status = 'PENDING'";
-    const whereCharge = tenant.sql ? `WHERE ${tenant.sql} AND deletedAt IS NULL` : 'WHERE deletedAt IS NULL';
-    const row = this.db.prepare(
-      `SELECT (SELECT COUNT(*) FROM Patient ${where}) AS p,
-              (SELECT COUNT(*) FROM Appointment ${where}) AS a,
-              (SELECT COALESCE(SUM(CASE WHEN status <> 'CANCELLED' THEN paidAmount - refundedAmount ELSE 0 END), 0) FROM Charge ${whereCharge}) AS paid,
-              (SELECT COALESCE(SUM(CASE WHEN status IN ('UNPAID', 'PARTIAL') THEN totalAmount - paidAmount ELSE 0 END), 0) FROM Charge ${whereCharge}) AS unpaid,
-              (SELECT COUNT(*) FROM InventoryItem ${where}) AS i,
-              (SELECT COUNT(*) FROM FollowUp ${wherePending}) AS f`,
-    ).get(...tenant.params, ...tenant.params, ...tenant.params, ...tenant.params, ...tenant.params, ...tenant.params) as
-      { p: number; a: number; paid: number; unpaid: number; i: number; f: number };
-    return {
-      patients: row.p,
-      appointments: row.a,
-      paidAmount: row.paid,
-      unpaidAmount: row.unpaid,
-      inventoryItems: row.i,
-      pendingFollowUps: row.f,
-    };
+    return this.getCached(`dashboard:${context.clinicId ?? 'none'}`, 30_000, () => {
+      const tenant = tenantWhere(context.clinicId);
+      const where = tenant.sql ? `WHERE ${tenant.sql} AND deletedAt IS NULL` : 'WHERE deletedAt IS NULL';
+      const wherePending = tenant.sql
+        ? `WHERE ${tenant.sql} AND deletedAt IS NULL AND status = 'PENDING'`
+        : "WHERE deletedAt IS NULL AND status = 'PENDING'";
+      const whereCharge = tenant.sql ? `WHERE ${tenant.sql} AND deletedAt IS NULL` : 'WHERE deletedAt IS NULL';
+      const row = this.db.prepare(
+        `SELECT (SELECT COUNT(*) FROM Patient ${where}) AS p,
+                (SELECT COUNT(*) FROM Appointment ${where}) AS a,
+                (SELECT COALESCE(SUM(CASE WHEN status <> 'CANCELLED' THEN paidAmount - refundedAmount ELSE 0 END), 0) FROM Charge ${whereCharge}) AS paid,
+                (SELECT COALESCE(SUM(CASE WHEN status IN ('UNPAID', 'PARTIAL') THEN totalAmount - paidAmount ELSE 0 END), 0) FROM Charge ${whereCharge}) AS unpaid,
+                (SELECT COUNT(*) FROM InventoryItem ${where}) AS i,
+                (SELECT COUNT(*) FROM FollowUp ${wherePending}) AS f`,
+      ).get(...tenant.params, ...tenant.params, ...tenant.params, ...tenant.params, ...tenant.params, ...tenant.params) as
+        { p: number; a: number; paid: number; unpaid: number; i: number; f: number };
+      return {
+        patients: row.p,
+        appointments: row.a,
+        paidAmount: row.paid,
+        unpaidAmount: row.unpaid,
+        inventoryItems: row.i,
+        pendingFollowUps: row.f,
+      };
+    });
   }
 
   revenue(
@@ -39,82 +56,98 @@ export class StatsService {
     groupBy: 'day' | 'month' = 'day',
     context?: AppContext,
   ): Array<Record<string, unknown>> {
-    const groupExpr = groupBy === 'month'
-      ? "strftime('%Y-%m', paidAt, '+8 hours')"
-      : "strftime('%Y-%m-%d', paidAt, '+8 hours')";
-    const where: string[] = ['deletedAt IS NULL', 'paidAt IS NOT NULL'];
-    const params: unknown[] = [];
-    if (startDate) {
-      where.push('paidAt >= ?');
-      params.push(startDate);
-    }
-    if (endDate) {
-      where.push('paidAt <= ?');
-      params.push(endDate);
-    }
-    const tenant = tenantWhere(context?.clinicId);
-    if (tenant.sql) {
-      where.push(tenant.sql);
-      params.push(...tenant.params);
-    }
-    return this.db.prepare(
-      `SELECT ${groupExpr} AS period, SUM(CASE WHEN status <> 'CANCELLED' THEN paidAmount - refundedAmount ELSE 0 END) AS amount, COUNT(*) AS count
-       FROM Charge
-       WHERE ${where.join(' AND ')}
-       GROUP BY ${groupExpr}
-       ORDER BY period ASC`,
-    ).all(...params) as Array<Record<string, unknown>>;
+    return this.getCached(
+      `revenue:${context?.clinicId ?? 'none'}:${startDate ?? ''}:${endDate ?? ''}:${groupBy}`,
+      30_000,
+      () => {
+        const groupExpr = groupBy === 'month'
+          ? "strftime('%Y-%m', paidAt, '+8 hours')"
+          : "strftime('%Y-%m-%d', paidAt, '+8 hours')";
+        const where: string[] = ['deletedAt IS NULL', 'paidAt IS NOT NULL'];
+        const params: unknown[] = [];
+        if (startDate) {
+          where.push('paidAt >= ?');
+          params.push(startDate);
+        }
+        if (endDate) {
+          where.push('paidAt <= ?');
+          params.push(endDate);
+        }
+        const tenant = tenantWhere(context?.clinicId);
+        if (tenant.sql) {
+          where.push(tenant.sql);
+          params.push(...tenant.params);
+        }
+        return this.db.prepare(
+          `SELECT ${groupExpr} AS period, SUM(CASE WHEN status <> 'CANCELLED' THEN paidAmount - refundedAmount ELSE 0 END) AS amount, COUNT(*) AS count
+           FROM Charge
+           WHERE ${where.join(' AND ')}
+           GROUP BY ${groupExpr}
+           ORDER BY period ASC`,
+        ).all(...params) as Array<Record<string, unknown>>;
+      },
+    );
   }
 
   patientGrowth(startDate?: string, endDate?: string, context?: AppContext): Array<Record<string, unknown>> {
-    const where: string[] = ['deletedAt IS NULL'];
-    const params: unknown[] = [];
-    if (startDate) {
-      where.push('createdAt >= ?');
-      params.push(startDate);
-    }
-    if (endDate) {
-      where.push('createdAt <= ?');
-      params.push(endDate);
-    }
-    const tenant = tenantWhere(context?.clinicId);
-    if (tenant.sql) {
-      where.push(tenant.sql);
-      params.push(...tenant.params);
-    }
-    return this.db.prepare(
-      `SELECT strftime('%Y-%m-%d', createdAt, '+8 hours') AS day, COUNT(*) AS count
-       FROM Patient
-       WHERE ${where.join(' AND ')}
-       GROUP BY strftime('%Y-%m-%d', createdAt, '+8 hours')
-       ORDER BY day ASC`,
-    ).all(...params) as Array<Record<string, unknown>>;
+    return this.getCached(
+      `patientGrowth:${context?.clinicId ?? 'none'}:${startDate ?? ''}:${endDate ?? ''}`,
+      30_000,
+      () => {
+        const where: string[] = ['deletedAt IS NULL'];
+        const params: unknown[] = [];
+        if (startDate) {
+          where.push('createdAt >= ?');
+          params.push(startDate);
+        }
+        if (endDate) {
+          where.push('createdAt <= ?');
+          params.push(endDate);
+        }
+        const tenant = tenantWhere(context?.clinicId);
+        if (tenant.sql) {
+          where.push(tenant.sql);
+          params.push(...tenant.params);
+        }
+        return this.db.prepare(
+          `SELECT strftime('%Y-%m-%d', createdAt, '+8 hours') AS day, COUNT(*) AS count
+           FROM Patient
+           WHERE ${where.join(' AND ')}
+           GROUP BY strftime('%Y-%m-%d', createdAt, '+8 hours')
+           ORDER BY day ASC`,
+        ).all(...params) as Array<Record<string, unknown>>;
+      },
+    );
   }
 
   inventoryStats(context: AppContext): Array<Record<string, unknown>> {
-    const tenant = tenantWhere(context.clinicId);
-    const params: unknown[] = tenant.params;
-    return this.db.prepare(
-      `SELECT category, COUNT(*) AS count, SUM(stock) AS totalStock, SUM(minStock) AS minStock
-       FROM InventoryItem
-       WHERE deletedAt IS NULL ${tenant.sql ? `AND ${tenant.sql}` : ''}
-       GROUP BY category
-       ORDER BY category`,
-    ).all(...params) as Array<Record<string, unknown>>;
+    return this.getCached(`inventoryStats:${context.clinicId ?? 'none'}`, 30_000, () => {
+      const tenant = tenantWhere(context.clinicId);
+      const params: unknown[] = tenant.params;
+      return this.db.prepare(
+        `SELECT category, COUNT(*) AS count, SUM(stock) AS totalStock, SUM(minStock) AS minStock
+         FROM InventoryItem
+         WHERE deletedAt IS NULL ${tenant.sql ? `AND ${tenant.sql}` : ''}
+         GROUP BY category
+         ORDER BY category`,
+      ).all(...params) as Array<Record<string, unknown>>;
+    });
   }
 
   memberStats(context: AppContext): Record<string, unknown> {
-    const tenant = tenantWhere(context.clinicId);
-    const clinicClause = tenant.sql ? `WHERE ${tenant.sql}` : '';
-    const params: unknown[] = tenant.params;
-    const row = this.db.prepare(
-      `SELECT COUNT(*) AS total,
-              COALESCE(SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END), 0) AS active,
-              COALESCE(SUM(balance), 0) AS totalBalance,
-              COALESCE(SUM(points), 0) AS totalPoints
-       FROM MemberCard ${clinicClause}`,
-    ).get(...params) as Record<string, unknown>;
-    return row;
+    return this.getCached(`memberStats:${context.clinicId ?? 'none'}`, 30_000, () => {
+      const tenant = tenantWhere(context.clinicId);
+      const clinicClause = tenant.sql ? `WHERE ${tenant.sql}` : '';
+      const params: unknown[] = tenant.params;
+      const row = this.db.prepare(
+        `SELECT COUNT(*) AS total,
+                COALESCE(SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END), 0) AS active,
+                COALESCE(SUM(balance), 0) AS totalBalance,
+                COALESCE(SUM(points), 0) AS totalPoints
+         FROM MemberCard ${clinicClause}`,
+      ).get(...params) as Record<string, unknown>;
+      return row;
+    });
   }
 }
 
