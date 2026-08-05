@@ -26,11 +26,13 @@ export function AppointmentBoardPage() {
   const { showToast } = useToast();
   const [date, setDate] = useState('');
   const query = useQuery({
-    queryKey: ['appointment-board'],
-    queryFn: () => apiRequest<Page<AppointmentRow>>('/resources/appointments?page=1&pageSize=200'),
+    queryKey: ['appointment-board', date],
+    queryFn: () => date
+      ? apiRequest<Page<AppointmentRow>>(`/appointments/by-date?date=${encodeURIComponent(date)}`)
+      : apiRequest<Page<AppointmentRow>>('/resources/appointments?page=1&pageSize=200'),
   });
 
-  const rows = (query.data?.items ?? []).filter((row) => !date || String(row.startTime ?? '').slice(0, 10) === date);
+  const rows = query.data?.items ?? [];
   const countFor = (status: string): number => rows.filter((row) => String(row.status ?? '') === status).length;
 
   async function transition(id: string, status: string) {

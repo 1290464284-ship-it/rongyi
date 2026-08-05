@@ -1,4 +1,5 @@
 import type { Express } from 'express';
+import type Database from 'better-sqlite3';
 import type {
   PrintService,
   SatisfactionService,
@@ -6,6 +7,7 @@ import type {
   StatsService,
 } from '../application/services';
 import { ValidationError } from '../infrastructure/errors';
+import { tenantAnd, tenantParams } from '../infrastructure/tenant';
 import { wrapAsync } from './middleware';
 import { createRateLimit } from './rate-limit';
 import type {
@@ -15,6 +17,7 @@ import type {
 } from '../application/workflow-services';
 
 export interface ReadRouteDependencies {
+  db: Database.Database;
   analytics: AnalyticsService;
   chargeAssistant: ChargeAssistantService;
   printTemplates: PrintTemplateService;
@@ -110,6 +113,19 @@ export function registerReadRoutes(app: Express, deps: ReadRouteDependencies): v
         throw new ValidationError('data must be valid JSON');
       }
       res.type('html').send(deps.print.render(kind, data));
+  }));
+
+  app.get('/api/v2/appointments/by-date', wrapAsync(async (req, res) => {
+      const date = String(req.query.date ?? '');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        throw new ValidationError('date must be YYYY-MM-DD');
+      }
+      const start = new Date(`${date}T00:00:00+08:00`).toISOString();
+      const end = new Date(`${date}T23:59:59.999+08:00`).toISOString();
+      const rows = deps.db.prepare(
+        `SELECT * FROM Appointment WHERE startTime >= ? AND startTime <= ? AND deletedAt IS NULL${tenantAnd(req.context!.clinicId)} ORDER BY startTime ASC`,
+      ).all(start, end, ...tenantParams(req.context!.clinicId)) as Array<Record<string, unknown>>;
+      res.json({ success: true, data: { items: rows, total: rows.length } });
   }));
 
   const searchLimiter = createRateLimit({ windowMs: 60_000, max: 300 });
