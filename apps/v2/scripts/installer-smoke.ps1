@@ -4,6 +4,18 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# T2R-22 leftover 3: port 3199 falls inside the Windows reserved range
+# (3170-3269, Hyper-V/WSL dynamic ports); binding it always fails with EACCES.
+# Use a system-assigned free port instead of a hardcoded one.
+function Get-FreePort {
+  $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+  $listener.Start()
+  $port = ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
+  $listener.Stop()
+  return $port
+}
+$smokePort = Get-FreePort
+
 $releaseDir = Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..\release-v2")
 if (-not $InstallerPath) {
   $InstallerPath = Get-ChildItem -LiteralPath $releaseDir -Filter "*.exe" |
@@ -40,7 +52,7 @@ foreach ($file in $required) {
 }
 
 $env:ELECTRON_RUN_AS_NODE = "1"
-$env:V2_PORT = "3199"
+$env:V2_PORT = [string]$smokePort
 $env:V2_DATA_DIR = Join-Path $installDir ".smoke-data"
 $env:V2_BACKUP_DIR = Join-Path $env:V2_DATA_DIR "backups"
 $env:V2_LOG_DIR = Join-Path $env:V2_DATA_DIR "logs"
@@ -57,7 +69,7 @@ try {
   $healthy = $false
   while ((Get-Date) -lt $deadline) {
     try {
-      $health = Invoke-RestMethod -Uri "http://127.0.0.1:3199/api/v2/health" -TimeoutSec 2
+      $health = Invoke-RestMethod -Uri "http://127.0.0.1:$smokePort/api/v2/health" -TimeoutSec 2
       if ($health.data.status -eq "ok") {
         $healthy = $true
         break

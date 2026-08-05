@@ -5,6 +5,18 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# T2R-22 leftover 3: port 3199 falls inside the Windows reserved range
+# (3170-3269, Hyper-V/WSL dynamic ports); binding it always fails with EACCES.
+# Use a system-assigned free port instead of a hardcoded one.
+function Get-FreePort {
+  $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+  $listener.Start()
+  $port = ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
+  $listener.Stop()
+  return $port
+}
+$smokePort = Get-FreePort
+
 function Wait-ApiHealthy {
   param([int]$Port)
   $deadline = (Get-Date).AddSeconds(30)
@@ -60,7 +72,7 @@ if ($previous.ExitCode -ne 0) {
 }
 
 $env:ELECTRON_RUN_AS_NODE = "1"
-$env:V2_PORT = "3199"
+$env:V2_PORT = [string]$smokePort
 $env:V2_DATA_DIR = Join-Path $appDataRoot "data"
 $env:V2_BACKUP_DIR = Join-Path $env:V2_DATA_DIR "backups"
 $env:V2_LOG_DIR = Join-Path $env:V2_DATA_DIR "logs"
@@ -73,16 +85,16 @@ $env:NODE_ENV = "development"
 $apiScript = Join-Path $installDir "resources\app.asar\dist-electron\server.cjs"
 $previousApi = Start-Process -FilePath (Join-Path $installDir "Dental Clinic V2.exe") -ArgumentList "`"$apiScript`"" -PassThru -WindowStyle Hidden
 try {
-  Wait-ApiHealthy -Port 3199
-  $login = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:3199/api/v2/auth/login" -ContentType "application/json" -Body (@{ username = "admin"; password = "REDACTED" } | ConvertTo-Json)
+  Wait-ApiHealthy -Port $smokePort
+  $login = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:$smokePort/api/v2/auth/login" -ContentType "application/json" -Body (@{ username = "admin"; password = "REDACTED" } | ConvertTo-Json)
   $headers = @{ Authorization = "Bearer $($login.data.token)" }
-  $backup = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:3199/api/v2/backups" -Headers $headers -ContentType "application/json" -Body "{}"
+  $backup = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:$smokePort/api/v2/backups" -Headers $headers -ContentType "application/json" -Body "{}"
   $filename = [uri]::EscapeDataString([string]$backup.data.filename)
-  $verify = Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:3199/api/v2/backups/$filename/verify" -Headers $headers
+  $verify = Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:$smokePort/api/v2/backups/$filename/verify" -Headers $headers
   if ([string]$verify.data.integrity -ne "ok") {
     throw "Backup verification failed before upgrade"
   }
-  $restore = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:3199/api/v2/backups/$filename/restore" -Headers $headers -ContentType "application/json" -Body "{}"
+  $restore = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:$smokePort/api/v2/backups/$filename/restore" -Headers $headers -ContentType "application/json" -Body "{}"
   if (-not $restore.data.stagedPath) {
     throw "Backup restore staging failed before upgrade"
   }
@@ -112,7 +124,7 @@ Write-Host "User data preserved after upgrade"
 
 $api = Start-Process -FilePath $appExe -ArgumentList "`"$apiScript`"" -PassThru -WindowStyle Hidden
 try {
-  Wait-ApiHealthy -Port 3199
+  Wait-ApiHealthy -Port $smokePort
   Write-Host "Upgraded API health check passed"
 } finally {
   if ($api -and -not $api.HasExited) {
