@@ -579,13 +579,13 @@ function showApiErrorWindow(message) {
     webPreferences: secureWindowPreferences(),
   });
   win.loadFile(path.join(__dirname, 'error.html'), { query: { msg: String(message) } });
-  // T2R-22 BUG#4: error.js 首行 `const { desktop } = window;` 与 contextBridge
-  // exposeInMainWorld('desktop', ...) 在页面全局作用域重复声明同名绑定，必然抛
+  // T2R-22 BUG#4 遗留修复（第三轮审计）：electron/error.js 首行 `const { desktop } = window;`
+  // 与 contextBridge exposeInMainWorld('desktop', ...) 重复声明同名绑定，必然抛
   // "SyntaxError: Identifier 'desktop' has already been declared"，导致 msg 填充
   // 与重试/退出按钮绑定全部失效（项5 实测：错误窗只显示"正在加载错误信息…"，
-  // 按钮无 onclick）。只允许改 main.cjs，故在页面加载完成后由主进程重新填充
-  // 消息并绑定按钮，绕过崩溃的 error.js（主窗 React 代码仅属性访问 window.desktop，
-  // 不受此冲突影响）。
+  // 按钮无 onclick）。error.js 已删除，error.html 不再引用它；此处由主进程在
+  // 页面加载完成后填充消息并绑定按钮，作为唯一实现（主窗 React 代码仅属性访问
+  // window.desktop，不受 contextBridge 绑定影响）。
   win.webContents.once('did-finish-load', () => {
     const bootErrorJs = `(() => {
       const msgEl = document.getElementById('msg');
