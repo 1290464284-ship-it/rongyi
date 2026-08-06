@@ -55,6 +55,11 @@ import { registerMedicalRecordEditRoutes } from './routes/medical-record-edit-ro
 import { registerFirstExamTrackingRoutes } from './routes/first-exam-tracking-routes';
 import { registerTreatmentPlanRoutes } from './routes/treatment-plan-routes';
 import { registerFollowUpExecutionRoutes } from './routes/follow-up-execution-routes';
+import { registerMemberDiscountRoutes } from './routes/member-discount-routes';
+import { registerChargeComboRoutes } from './routes/charge-combo-routes';
+import { registerRefundFlowRoutes } from './routes/refund-flow-routes';
+import { registerCostShareRoutes } from './routes/cost-share-routes';
+import { registerProcessingSettleRoutes } from './routes/processing-settle-routes';
 import type { RouteDependencies } from './routes/deps';
 
 export interface AppDependencies {
@@ -356,6 +361,11 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
   registerFirstExamTrackingRoutes(app, db);
   registerTreatmentPlanRoutes(app, db);
   registerFollowUpExecutionRoutes(app, db);
+  registerMemberDiscountRoutes(app, db);
+  registerChargeComboRoutes(app, db);
+  registerRefundFlowRoutes(app, db);
+  registerCostShareRoutes(app, db);
+  registerProcessingSettleRoutes(app, db);
   // file:// (打包版 Electron 渲染器) 以 <img> 加载 API 图片时,
   // 不受同源策略约束, 但 helmet 默认 Cross-Origin-Resource-Policy: same-origin
   // 会阻断响应; 仅对 files 路由放开 CORP。

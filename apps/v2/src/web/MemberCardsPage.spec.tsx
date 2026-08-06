@@ -126,4 +126,77 @@ describe('MemberCardsPage', () => {
     fireEvent.click(screen.getByText('确认'));
     expect(await screen.findByText('请输入有效积分')).toBeDefined();
   });
+
+  it('saves a discount plan from the plan dialog', async () => {
+    mockData();
+    render(<MemberCardsPage />, { wrapper });
+    await screen.findByText('C001');
+
+    fireEvent.click(screen.getByRole('button', { name: '折扣方案' }));
+    fireEvent.change(screen.getByLabelText('折扣率(%)'), { target: { value: '90' } });
+    fireEvent.change(screen.getByLabelText('单次折扣上限(元)'), { target: { value: '50' } });
+    fireEvent.change(screen.getByLabelText('取整方式'), { target: { value: 'ROUND' } });
+    fireEvent.change(screen.getByLabelText('年度折扣上限(元)'), { target: { value: '2000' } });
+    fireEvent.change(screen.getByLabelText('特殊项目折扣'), {
+      target: { value: '[{"name":"隐形矫正","category":"ORTHODONTIC","rate":90}]' },
+    });
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/member-cards/card-1/discount-plan', expect.objectContaining({ method: 'PUT' }));
+    });
+    const planCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/member-cards/card-1/discount-plan');
+    expect(JSON.parse(String(planCall?.[1]?.body))).toEqual({
+      discountRate: 90,
+      maxDiscountAmount: 5000,
+      roundingMode: 'ROUND',
+      annualDiscountLimit: 200000,
+      specialDiscountsJson: [{ name: '隐形矫正', category: 'ORTHODONTIC', rate: 90 }],
+    });
+    expect(await screen.findByText('折扣方案已保存')).toBeDefined();
+  });
+
+  it('rejects invalid special discount JSON with an error toast', async () => {
+    mockData();
+    render(<MemberCardsPage />, { wrapper });
+    await screen.findByText('C001');
+
+    fireEvent.click(screen.getByRole('button', { name: '折扣方案' }));
+    fireEvent.change(screen.getByLabelText('特殊项目折扣'), { target: { value: '[{"name":' } });
+    fireEvent.click(screen.getByText('保存'));
+    expect(await screen.findByText('特殊项目折扣 JSON 格式错误')).toBeDefined();
+    expect(vi.mocked(apiRequest).mock.calls.some(([path]) => path === '/member-cards/card-1/discount-plan')).toBe(false);
+  });
+
+  it('runs a quote from the quote dialog', async () => {
+    mockData();
+    render(<MemberCardsPage />, { wrapper });
+    await screen.findByText('C001');
+    vi.mocked(apiRequest).mockResolvedValueOnce({ applied: true, total: 8500, discount: 1500, annualRemaining: 50000 });
+
+    fireEvent.click(screen.getByRole('button', { name: '报价试算' }));
+    fireEvent.change(screen.getByLabelText('原价金额（元）'), { target: { value: '100' } });
+    fireEvent.click(screen.getByText('试算'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/member-cards/card-1/quote', expect.objectContaining({
+        body: expect.stringContaining('"baseTotal":10000'),
+      }));
+    });
+    expect(await screen.findByText('折后应付：¥85.00')).toBeDefined();
+    expect(screen.getByText('优惠：¥15.00')).toBeDefined();
+    expect(screen.getByText('年度剩余：¥500.00')).toBeDefined();
+  });
+
+  it('shows the no-plan hint when the card has no discount plan', async () => {
+    mockData();
+    render(<MemberCardsPage />, { wrapper });
+    await screen.findByText('C001');
+    vi.mocked(apiRequest).mockResolvedValueOnce({ applied: false, reason: 'NO_PLAN', baseTotal: 10000, total: 10000, discount: 0 });
+
+    fireEvent.click(screen.getByRole('button', { name: '报价试算' }));
+    fireEvent.change(screen.getByLabelText('原价金额（元）'), { target: { value: '100' } });
+    fireEvent.click(screen.getByText('试算'));
+    expect(await screen.findByText('该卡无折扣方案')).toBeDefined();
+  });
 });

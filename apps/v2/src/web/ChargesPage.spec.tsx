@@ -240,4 +240,139 @@ describe('ChargesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '确认退款' }));
     expect(await screen.findByText('退款失败')).toBeDefined();
   });
+
+  it('loads a charge combo into the form items from the combo dialog', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/charges?page=1&pageSize=50') return chargeList;
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/charge-combos') {
+        return [{
+          id: 'combo-1',
+          code: 'CB-01',
+          name: '洁牙套餐',
+          type: 'PUBLIC',
+          items: [
+            { id: 'i-1', comboId: 'combo-1', catalogId: null, name: '洁牙', category: 'CLEAN', price: 30000, quantity: 1, costType: 'SERVICE' },
+            { id: 'i-2', comboId: 'combo-1', catalogId: null, name: '抛光膏', category: 'MATERIAL', price: 5000, quantity: 2, costType: 'MATERIAL' },
+          ],
+        }];
+      }
+      return {};
+    });
+    render(<ChargesPage />, { wrapper });
+    await screen.findByText('N-1');
+
+    fireEvent.click(screen.getByRole('button', { name: '调出收费组合' }));
+    expect(await screen.findByText('洁牙套餐')).toBeDefined();
+    expect(screen.getByText('CB-01')).toBeDefined();
+    expect(screen.getByText('公共')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: '载入组合 洁牙套餐' }));
+    expect(await screen.findByText('收费组合「洁牙套餐」已载入')).toBeDefined();
+
+    const nameInputs = screen.getAllByLabelText('项目名称') as HTMLInputElement[];
+    expect(nameInputs.map((input) => input.value)).toEqual(['洁牙', '抛光膏']);
+    const priceInputs = screen.getAllByLabelText('单价') as HTMLInputElement[];
+    expect(priceInputs.map((input) => input.value)).toEqual(['300', '50']);
+    const quantityInputs = screen.getAllByLabelText('数量') as HTMLInputElement[];
+    expect(quantityInputs.map((input) => input.value)).toEqual(['1', '2']);
+    const typeSelects = screen.getAllByLabelText('类型') as HTMLSelectElement[];
+    expect(typeSelects.map((select) => select.value)).toEqual(['SERVICE', 'MATERIAL']);
+
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    fireEvent.click(screen.getByRole('button', { name: '新建收费单' }));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/charges', expect.objectContaining({ method: 'POST' }));
+    });
+    const call = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/charges');
+    expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({
+      patientId: 'p-1',
+      items: [
+        { name: '洁牙', category: 'CLEAN', price: 30000, quantity: 1, costType: 'SERVICE' },
+        { name: '抛光膏', category: 'MATERIAL', price: 5000, quantity: 2, costType: 'MATERIAL' },
+      ],
+    });
+  });
+
+  it('submits costType and discount with the charge payload', async () => {
+    mockData();
+    render(<ChargesPage />, { wrapper });
+    await screen.findByText('N-1');
+
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: '隐形牙套' } });
+    fireEvent.change(screen.getByLabelText('项目分类'), { target: { value: 'ORTHODONTIC' } });
+    fireEvent.change(screen.getByLabelText('单价'), { target: { value: '100' } });
+    fireEvent.change(screen.getAllByLabelText('类型')[0], { target: { value: 'MATERIAL' } });
+    fireEvent.change(screen.getByLabelText('优惠金额（元）'), { target: { value: '20' } });
+    fireEvent.click(screen.getByRole('button', { name: '新建收费单' }));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/charges', expect.objectContaining({ method: 'POST' }));
+    });
+    const call = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/charges');
+    expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({
+      patientId: 'p-1',
+      items: [{ name: '隐形牙套', category: 'ORTHODONTIC', price: 10000, quantity: 1, costType: 'MATERIAL' }],
+      discount: 2000,
+    });
+  });
+
+  it('applies the member discount quote into the discount field', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/charges?page=1&pageSize=50') return chargeList;
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/member-cards/quote') {
+        return { applied: true, baseTotal: 60000, total: 54000 };
+      }
+      return {};
+    });
+    render(<ChargesPage />, { wrapper });
+    await screen.findByText('N-1');
+
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: '洁牙' } });
+    fireEvent.change(screen.getByLabelText('单价'), { target: { value: '600' } });
+    fireEvent.click(screen.getByRole('button', { name: '会员折扣试算' }));
+
+    expect(await screen.findByText('会员折扣已试算，折后价 ¥540.00')).toBeDefined();
+    expect((screen.getByLabelText('优惠金额（元）') as HTMLInputElement).value).toBe('60.00');
+    const quoteCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/member-cards/quote');
+    expect(JSON.parse(String(quoteCall?.[1]?.body))).toEqual({ patientId: 'p-1', baseTotal: 60000 });
+  });
+
+  it('reports missing member card or plan when quoting', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/charges?page=1&pageSize=50') return chargeList;
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/member-cards/quote') return { applied: false, code: 'NO_ACTIVE_CARD' };
+      return {};
+    });
+    render(<ChargesPage />, { wrapper });
+    await screen.findByText('N-1');
+
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: '洁牙' } });
+    fireEvent.change(screen.getByLabelText('单价'), { target: { value: '100' } });
+    fireEvent.click(screen.getByRole('button', { name: '会员折扣试算' }));
+    expect(await screen.findByText('该患者没有可用会员卡')).toBeDefined();
+  });
 });

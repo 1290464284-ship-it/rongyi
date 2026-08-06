@@ -149,6 +149,41 @@ describe('application services', () => {
     expect(row.discount).toBe(50);
   });
 
+  it('persists costType and discount plan snapshot on charge items', async () => {
+    const service = new ChargeService(db);
+    const created = await service.create({
+      patientId: 'patient-demo-001',
+      items: [
+        { name: 'Brace Adjustment', category: 'ORTHODONTIC', price: 300, quantity: 1, costType: 'SERVICE' },
+        { name: 'Bracket', category: 'MATERIAL', price: 500, quantity: 2, costType: 'MATERIAL' },
+        { name: 'Default Type', category: 'OTHER', price: 100, quantity: 1 },
+      ],
+      discount: 50,
+      discountPlanSnapshot: { plan: 'VIP', discountRate: 90 },
+    }, context);
+    expect(created.totalAmount).toBe(300 + 1000 + 100 - 50);
+    const rows = db.prepare(
+      'SELECT name, costType FROM ChargeItem WHERE chargeId = ? ORDER BY name',
+    ).all(String(created.id)) as Array<{ name: string; costType: string }>;
+    expect(rows).toEqual([
+      { name: 'Brace Adjustment', costType: 'SERVICE' },
+      { name: 'Bracket', costType: 'MATERIAL' },
+      { name: 'Default Type', costType: 'SERVICE' },
+    ]);
+    const charge = db.prepare('SELECT discountPlanSnapshotJson FROM Charge WHERE id = ?').get(String(created.id)) as {
+      discountPlanSnapshotJson: string | null;
+    };
+    expect(JSON.parse(String(charge.discountPlanSnapshotJson))).toEqual({ plan: 'VIP', discountRate: 90 });
+  });
+
+  it('rejects charge items with an invalid costType', async () => {
+    const service = new ChargeService(db);
+    await expect(service.create({
+      patientId: 'patient-demo-001',
+      items: [{ name: 'Bad Type', category: 'OTHER', price: 100, quantity: 1, costType: 'LABOR' as 'SERVICE' }],
+    }, context)).rejects.toThrow('Charge item costType must be SERVICE or MATERIAL');
+  });
+
   it('rejects charge items whose quantity exceeds the maximum', async () => {
     const service = new ChargeService(db);
     const before = db.prepare('SELECT COUNT(*) AS n FROM Charge').get() as { n: number };

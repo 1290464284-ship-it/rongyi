@@ -72,9 +72,10 @@ export class ChargeService {
     patientId: string;
     visitId?: string;
     doctorId?: string;
-    items: Array<{ name: string; category: string; price: number; quantity: number; teethNumbers?: string[] }>;
+    items: Array<{ name: string; category: string; price: number; quantity: number; teethNumbers?: string[]; costType?: 'SERVICE' | 'MATERIAL' }>;
     discount?: number;
     remark?: string;
+    discountPlanSnapshot?: Record<string, unknown> | null;
   }, context: AppContext): Promise<Record<string, unknown>> {
     if (!input.items?.length) throw new ValidationError('At least one charge item is required');
     if (!input.patientId || typeof input.patientId !== 'string') {
@@ -95,6 +96,9 @@ export class ChargeService {
       }
       if (item.quantity > 1_000_000) {
         throw new ValidationError('Charge item quantity must not exceed 1000000');
+      }
+      if (item.costType !== undefined && item.costType !== 'SERVICE' && item.costType !== 'MATERIAL') {
+        throw new ValidationError('Charge item costType must be SERVICE or MATERIAL');
       }
       assertSafeSubtotal(item.price, item.quantity);
     }
@@ -125,9 +129,9 @@ export class ChargeService {
       });
       const insertItem = this.db.prepare(
         `INSERT INTO ChargeItem (
-           id, chargeId, name, category, price, quantity, teethNumbers, subtotal,
+           id, chargeId, name, category, price, quantity, teethNumbers, subtotal, costType,
            clinicId, createdAt, updatedAt, deletedAt
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
       );
       for (const item of input.items) {
         const subtotal = assertSafeSubtotal(item.price, item.quantity);
@@ -140,10 +144,16 @@ export class ChargeService {
           item.quantity,
           JSON.stringify(item.teethNumbers ?? []),
           subtotal,
+          item.costType ?? 'SERVICE',
           context.clinicId ?? null,
           now,
           now,
         );
+      }
+      if (input.discountPlanSnapshot) {
+        this.db.prepare(
+          `UPDATE Charge SET discountPlanSnapshotJson = ? WHERE id = ?`,
+        ).run(JSON.stringify(input.discountPlanSnapshot), id);
       }
     });
     chargeRun();

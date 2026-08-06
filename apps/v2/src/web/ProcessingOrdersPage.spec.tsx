@@ -29,6 +29,27 @@ function mockData() {
   });
 }
 
+function mockSettleData(rows: Array<Record<string, unknown>>) {
+  vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+    if (path === '/resources/processingOrders?page=1&pageSize=50') {
+      return { items: rows, total: rows.length, page: 1, pageSize: 50 };
+    }
+    if (path === '/processing-orders/settle-stats') {
+      const unsettled = rows.filter((row) => row.settleStatus !== 'SETTLED');
+      const settled = rows.filter((row) => row.settleStatus === 'SETTLED');
+      return {
+        unsettled: { count: unsettled.length, feeTotal: unsettled.reduce((sum, row) => sum + Number(row.totalFee ?? 0), 0) },
+        settled: { count: settled.length, amountTotal: settled.reduce((sum, row) => sum + Number(row.settledAmount ?? 0), 0) },
+      };
+    }
+    if (path === '/resources/patients?page=1&pageSize=100') {
+      return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+    }
+    if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+    return {};
+  });
+}
+
 describe('ProcessingOrdersPage', () => {
   afterEach(() => {
     cleanup();
@@ -113,5 +134,65 @@ describe('ProcessingOrdersPage', () => {
     const createBody = JSON.parse(String(createCall?.[1]?.body));
     expect(createBody.totalFee).toBe(70000);
     expect(createBody.items[0].unitPrice).toBe(50000);
+  });
+
+  it('shows settlement columns and settles an unsettled order through the dialog', async () => {
+    mockSettleData([
+      { id: 'proc-1', number: 'PROC-1', patientId: 'p-1', status: 'COMPLETED', settleStatus: 'UNSETTLED', totalFee: 50000 },
+    ]);
+    render(<ProcessingOrdersPage />, { wrapper });
+    expect(await screen.findByText('PROC-1')).toBeDefined();
+    expect(screen.getByText('未结算')).toBeDefined();
+    expect(screen.getByText('—')).toBeDefined();
+    expect(await screen.findByText(/未结算 1 单（金额 ¥500.00）/)).toBeDefined();
+
+    fireEvent.click(screen.getByText('结算'));
+    const amountInput = screen.getByLabelText('结算金额（元）') as HTMLInputElement;
+    expect(amountInput.value).toBe('500.00');
+
+    fireEvent.change(amountInput, { target: { value: '520.5' } });
+    fireEvent.change(screen.getByLabelText('结算单号'), { target: { value: 'REF-001' } });
+    fireEvent.change(screen.getByLabelText('备注'), { target: { value: '月结对账' } });
+    fireEvent.click(screen.getByText('确认结算'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/processing-orders/proc-1/settle', expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ amount: 52050, ref: 'REF-001', note: '月结对账' }),
+      }));
+    });
+    expect(await screen.findByText('加工单已结算')).toBeDefined();
+  });
+
+  it('rejects an empty settlement amount without calling the API', async () => {
+    mockSettleData([
+      { id: 'proc-1', number: 'PROC-1', patientId: 'p-1', status: 'RECEIVED', settleStatus: 'UNSETTLED', totalFee: 30000 },
+    ]);
+    render(<ProcessingOrdersPage />, { wrapper });
+    await screen.findByText('PROC-1');
+
+    fireEvent.click(screen.getByText('结算'));
+    fireEvent.change(screen.getByLabelText('结算金额（元）'), { target: { value: '' } });
+    fireEvent.click(screen.getByText('确认结算'));
+
+    expect(await screen.findByText('请输入有效的结算金额')).toBeDefined();
+    expect(apiRequest).not.toHaveBeenCalledWith('/processing-orders/proc-1/settle', expect.anything());
+  });
+
+  it('unsettles a settled processing order', async () => {
+    mockSettleData([
+      { id: 'proc-2', number: 'PROC-2', patientId: 'p-1', status: 'RECEIVED', settleStatus: 'SETTLED', settledAmount: 50000, totalFee: 50000 },
+    ]);
+    render(<ProcessingOrdersPage />, { wrapper });
+    expect(await screen.findByText('PROC-2')).toBeDefined();
+    expect(screen.getByText('已结算')).toBeDefined();
+    expect(screen.getByText('¥500.00')).toBeDefined();
+    expect(await screen.findByText(/已结算 1 单（金额 ¥500.00）/)).toBeDefined();
+
+    fireEvent.click(screen.getByText('撤销结算'));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/processing-orders/proc-2/unsettle', expect.objectContaining({ method: 'POST' }));
+    });
+    expect(await screen.findByText('已撤销结算')).toBeDefined();
   });
 });

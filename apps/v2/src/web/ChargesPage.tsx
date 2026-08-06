@@ -40,20 +40,41 @@ interface ChargeItemForm {
   category: string;
   price: string;
   quantity: string;
+  costType: 'SERVICE' | 'MATERIAL';
 }
 
 interface ChargeForm {
   patientId: string;
   items: ChargeItemForm[];
   remark: string;
+  discount: string;
+}
+
+interface ChargeComboItemRow {
+  id: string;
+  comboId: string;
+  catalogId?: string | null;
+  name: string;
+  category: string;
+  price: number;
+  quantity: number;
+  costType?: 'SERVICE' | 'MATERIAL' | null;
+}
+
+interface ChargeComboRow {
+  id: string;
+  code: string;
+  name: string;
+  type: 'PUBLIC' | 'PRIVATE';
+  items?: ChargeComboItemRow[];
 }
 
 function newItem(): ChargeItemForm {
-  return { id: crypto.randomUUID(), name: '', category: '', price: '', quantity: '1' };
+  return { id: crypto.randomUUID(), name: '', category: '', price: '', quantity: '1', costType: 'SERVICE' };
 }
 
 function emptyChargeForm(): ChargeForm {
-  return { patientId: '', items: [newItem()], remark: '' };
+  return { patientId: '', items: [newItem()], remark: '', discount: '' };
 }
 
 interface ValidChargeItem {
@@ -61,6 +82,7 @@ interface ValidChargeItem {
   category: string;
   price: number;
   quantity: number;
+  costType: 'SERVICE' | 'MATERIAL';
 }
 
 function buildValidItems(items: ChargeItemForm[]): ValidChargeItem[] {
@@ -71,6 +93,7 @@ function buildValidItems(items: ChargeItemForm[]): ValidChargeItem[] {
       category: item.category.trim() || 'GENERAL',
       price: toCents(item.price),
       quantity: Number(item.quantity || 0),
+      costType: item.costType,
     }))
     .filter((item) => item.price > 0 && item.quantity > 0);
 }
@@ -84,6 +107,9 @@ export function ChargesPage() {
   const [refundAmount, setRefundAmount] = useState('');
   const [refundReason, setRefundReason] = useState('');
   const [actionBusy, setActionBusy] = useState(false);
+  const [comboOpen, setComboOpen] = useState(false);
+  const [combos, setCombos] = useState<ChargeComboRow[] | null>(null);
+  const [comboLoading, setComboLoading] = useState(false);
 
   const crud = useCrudResource<ChargeRow, ChargeForm>({
     queryKey: ['charges'],
@@ -100,6 +126,7 @@ export function ChargesPage() {
     toPayload: (form) => ({
       patientId: form.patientId,
       items: buildValidItems(form.items),
+      discount: toCents(form.discount) || undefined,
       remark: form.remark || undefined,
     }),
     messages: { create: '收费单已创建' },
@@ -135,7 +162,7 @@ export function ChargesPage() {
       </form>
       <div className="charge-items">
         {crud.form.items.map((item) => (
-          <div className="charge-item-row" key={item.id}>
+          <div className="charge-item-row" style={{ gridTemplateColumns: '2fr 1fr 1fr 80px 72px 90px 72px' }} key={item.id}>
             <input
               aria-label="项目名称"
               value={item.name}
@@ -163,11 +190,29 @@ export function ChargesPage() {
               value={item.quantity}
               onChange={(event) => updateItem(item.id, { quantity: event.target.value })}
             />
+            <select
+              aria-label="类型"
+              value={item.costType}
+              onChange={(event) => updateItem(item.id, { costType: event.target.value as 'SERVICE' | 'MATERIAL' })}
+            >
+              <option value="SERVICE">服务</option>
+              <option value="MATERIAL">材料</option>
+            </select>
             <button type="button" onClick={() => crud.updateForm({ items: crud.form.items.filter((entry) => entry.id !== item.id) })}>移除</button>
           </div>
         ))}
       </div>
-      <button type="button" onClick={() => crud.updateForm({ items: [...crud.form.items, newItem()] })}>添加明细</button>
+      <div className="inline-form">
+        <button type="button" onClick={() => crud.updateForm({ items: [...crud.form.items, newItem()] })}>添加明细</button>
+        <button type="button" onClick={loadCombos} disabled={comboLoading}>{comboLoading ? '加载中...' : '调出收费组合'}</button>
+      </div>
+      <div className="inline-form">
+        <label>
+          优惠金额（元）
+          <input type="number" min="0" value={crud.form.discount} onChange={(event) => crud.updateForm({ discount: event.target.value })} />
+        </label>
+        <button type="button" onClick={quoteMemberDiscount} disabled={actionBusy}>会员折扣试算</button>
+      </div>
       <label>
         备注
         <textarea value={crud.form.remark} onChange={(event) => crud.updateForm({ remark: event.target.value })} />
@@ -214,6 +259,27 @@ export function ChargesPage() {
             <button type="submit" disabled={actionBusy}>确认退款</button>
           </div>
         </form>
+      </Dialog>
+
+      <Dialog open={comboOpen} title="调出收费组合" onClose={() => setComboOpen(false)}>
+        {combos === null ? <LoadingState /> : combos.length === 0 ? (
+          <EmptyState message="暂无可用收费组合" />
+        ) : (
+          <div className="combo-list">
+            {combos.map((combo) => (
+              <div className="charge-item-row" style={{ gridTemplateColumns: '2fr 1fr 72px 72px 72px' }} key={combo.id}>
+                <span>{combo.name}</span>
+                <span>{combo.code}</span>
+                <span>{combo.items?.length ?? 0} 项</span>
+                <span>{combo.type === 'PUBLIC' ? '公共' : '私有'}</span>
+                <button type="button" aria-label={`载入组合 ${combo.name}`} onClick={() => applyCombo(combo)}>载入</button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="modal-actions">
+          <button type="button" onClick={() => setComboOpen(false)}>取消</button>
+        </div>
       </Dialog>
     </div>
   );
@@ -266,6 +332,77 @@ export function ChargesPage() {
       await crud.reload();
     } catch (error) {
       showToast(errorMessage(error, '退款失败'), 'error');
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  async function loadCombos() {
+    if (combos === null) {
+      setComboLoading(true);
+      try {
+        const data = await apiRequest<ChargeComboRow[]>('/charge-combos');
+        setCombos(data);
+      } catch (error) {
+        showToast(errorMessage(error, '加载收费组合失败'), 'error');
+        return;
+      } finally {
+        setComboLoading(false);
+      }
+    }
+    setComboOpen(true);
+  }
+
+  async function applyCombo(combo: ChargeComboRow) {
+    let items = combo.items ?? [];
+    if (items.length === 0) {
+      try {
+        const detail = await apiRequest<ChargeComboRow>(`/charge-combos/${combo.id}/items`);
+        items = detail.items ?? [];
+      } catch (error) {
+        showToast(errorMessage(error, '加载组合明细失败'), 'error');
+        return;
+      }
+    }
+    crud.updateForm({
+      items: items.map((item) => ({
+        id: crypto.randomUUID(),
+        name: item.name,
+        category: item.category,
+        price: (item.price / 100).toString(),
+        quantity: String(item.quantity),
+        costType: item.costType ?? 'SERVICE',
+      })),
+    });
+    setComboOpen(false);
+    showToast(`收费组合「${combo.name}」已载入`, 'success');
+  }
+
+  async function quoteMemberDiscount() {
+    const validItems = buildValidItems(crud.form.items);
+    const baseTotal = validItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    if (actionBusy || !crud.form.patientId || baseTotal <= 0) {
+      showToast('请先选择患者并填写有效明细', 'error');
+      return;
+    }
+    setActionBusy(true);
+    try {
+      const data = await apiRequest<{ applied?: boolean; code?: string; baseTotal?: number; total?: number; message?: string }>('/member-cards/quote', {
+        method: 'POST',
+        body: JSON.stringify({ patientId: crud.form.patientId, baseTotal }),
+      });
+      if (data.applied && typeof data.baseTotal === 'number' && typeof data.total === 'number') {
+        crud.updateForm({ discount: ((data.baseTotal - data.total) / 100).toFixed(2) });
+        showToast(`会员折扣已试算，折后价 ${formatMoney(data.total)}`, 'success');
+      } else if (data.code === 'NO_ACTIVE_CARD') {
+        showToast('该患者没有可用会员卡', 'info');
+      } else if (data.code === 'NO_PLAN') {
+        showToast('该患者没有可用会员方案', 'info');
+      } else {
+        showToast(data.message ?? '暂无可用会员折扣', 'info');
+      }
+    } catch (error) {
+      showToast(errorMessage(error, '会员折扣试算失败'), 'error');
     } finally {
       setActionBusy(false);
     }

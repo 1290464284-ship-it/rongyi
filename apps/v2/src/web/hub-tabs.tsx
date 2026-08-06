@@ -1,4 +1,8 @@
 import { lazy, type ComponentType } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { apiRequest } from './api';
+import { DataTable, LoadingState, PageError } from './components';
+import { formatMoney } from './format';
 
 const AppointmentsPage = lazy(() => import('./AppointmentsPage').then((m) => ({ default: m.AppointmentsPage })));
 const AppointmentBoardPage = lazy(() => import('./AppointmentBoardPage').then((m) => ({ default: m.AppointmentBoardPage })));
@@ -33,6 +37,35 @@ const PrescriptionsPage = lazy(() => import('./PrescriptionsPage').then((m) => (
 const TreatmentPlansPage = lazy(() => import('./TreatmentPlansPage').then((m) => ({ default: m.TreatmentPlansPage })));
 const CephalometricPage = lazy(() => import('./CephalometricPage').then((m) => ({ default: m.CephalometricPage })));
 const AnalyticsDashboardPage = lazy(() => import('./AnalyticsDashboardPage').then((m) => ({ default: m.AnalyticsDashboardPage })));
+const RefundsPage = lazy(() => import('./RefundsPage').then((m) => ({ default: m.RefundsPage })));
+
+function CostShareTab() {
+  const query = useQuery({
+    queryKey: ['stats', 'cost-share'],
+    queryFn: () => apiRequest<{ rows: Array<Record<string, unknown>>; summary: { SERVICE?: { total: number; itemCount: number; chargeCount: number }; MATERIAL?: { total: number; itemCount: number; chargeCount: number }; grandTotal?: number } }>('/stats/cost-share'),
+  });
+  if (query.isLoading) return <LoadingState />;
+  if (query.error) return <PageError message={(query.error as Error).message} />;
+  const { rows, summary } = query.data ?? { rows: [], summary: {} };
+  const columns = [
+    { key: 'costType', label: '类型', render: (row: Record<string, unknown>) => (row.costType === 'SERVICE' ? '技术服务' : row.costType === 'MATERIAL' ? '材料耗材' : String(row.costType ?? '')) },
+    { key: 'category', label: '分类' },
+    { key: 'total', label: '金额', render: (row: Record<string, unknown>) => formatMoney(row.total) },
+    { key: 'itemCount', label: '明细数' },
+    { key: 'chargeCount', label: '收费单数' },
+  ];
+  return (
+    <div className="page">
+      <h1>技耗分账统计</h1>
+      <div className="inline-form">
+        <span>技术服务合计：{formatMoney(summary.SERVICE?.total ?? 0)}（{summary.SERVICE?.itemCount ?? 0} 明细 / {summary.SERVICE?.chargeCount ?? 0} 单）</span>
+        <span>材料耗材合计：{formatMoney(summary.MATERIAL?.total ?? 0)}（{summary.MATERIAL?.itemCount ?? 0} 明细 / {summary.MATERIAL?.chargeCount ?? 0} 单）</span>
+        <span>总计：{formatMoney(summary.grandTotal ?? 0)}</span>
+      </div>
+      <DataTable columns={columns} rows={rows.map((row) => ({ ...row, id: `${row.costType}-${row.category}` }))} keyField="id" emptyText="暂无收费明细数据" />
+    </div>
+  );
+}
 
 export type HubTab =
   | { id: string; label: string; kind: 'resource'; resource: string; bossOnly?: boolean }
@@ -63,7 +96,8 @@ export const financeHubTabs: HubTab[] = [
   { id: 'workflow', label: '\u64cd\u4f5c', kind: 'custom', component: FinanceWorkflowPage },
   { id: 'charges', label: '\u6536\u8d39', kind: 'custom', component: ChargesPage },
   { id: 'memberCards', label: '\u4f1a\u5458\u5361', kind: 'custom', component: MemberCardsPage },
-  { id: 'refunds', label: '\u9000\u6b3e', kind: 'resource', resource: 'refunds' },
+  { id: 'treatmentCatalogs', label: '\u6536\u8d39\u9879\u76ee', kind: 'resource', resource: 'treatmentCatalogs', bossOnly: true },
+  { id: 'refunds', label: '\u9000\u6b3e', kind: 'custom', component: RefundsPage },
   { id: 'debts', label: '\u6b20\u8d39', kind: 'resource', resource: 'debtRecords' },
   { id: 'invoices', label: '\u53d1\u7968', kind: 'resource', resource: 'invoices' },
 ];
@@ -113,6 +147,7 @@ export const analyticsHubTabs: HubTab[] = [
   { id: 'clinicOverview', label: '\u591a\u95e8\u5e97', kind: 'custom', component: ClinicOverviewPage, bossOnly: true },
   { id: 'monthly', label: '\u6708\u5ea6\u62a5\u8868', kind: 'custom', component: () => <SimpleListPage title="\u6708\u5ea6\u62a5\u8868" endpoint="/stats/revenue?groupBy=month" /> },
   { id: 'inventoryReport', label: '\u5e93\u5b58\u62a5\u8868', kind: 'custom', component: () => <SimpleListPage title="\u5e93\u5b58\u62a5\u8868" endpoint="/stats/inventory" /> },
+  { id: 'costShare', label: '\u5206\u8d26\u7edf\u8ba1', kind: 'custom', component: CostShareTab },
   { id: 'rfm', label: 'RFM', kind: 'custom', component: () => <SimpleListPage title="RFM" endpoint="/analytics/rfm" /> },
   { id: 'churn', label: '\u6d41\u5931\u9884\u8b66', kind: 'custom', component: () => <SimpleListPage title="\u6d41\u5931\u9884\u8b66" endpoint="/analytics/churn" /> },
   { id: 'anomalies', label: '\u533b\u751f\u5f02\u5e38', kind: 'custom', component: () => <SimpleListPage title="\u533b\u751f\u5f02\u5e38" endpoint="/analytics/doctor-anomalies" /> },
