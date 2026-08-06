@@ -1,6 +1,6 @@
 const owner = process.env.GITHUB_REPOSITORY_OWNER ?? '1290464284-ship-it';
 const repo = process.env.GITHUB_REPOSITORY_NAME ?? 'rongyi';
-const tag = process.env.V2_RELEASE_TAG ?? 'v2-2.1.0';
+const tag = process.env.V2_RELEASE_TAG ?? 'v2-2.2.0';
 
 async function api(pathname) {
   const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/${pathname}`, {

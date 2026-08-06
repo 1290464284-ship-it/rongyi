@@ -30,16 +30,26 @@ infrastructure/
 
 - `pnpm --filter @dental/v2 typecheck`
 - `pnpm --filter @dental/v2 run lint`
+- `pnpm --filter @dental/v2 knip`
 - `pnpm --filter @dental/v2 test`
+- `pnpm --filter @dental/v2 test:coverage`
+- `pnpm --filter @dental/v2 test:coverage:web`
+- `pnpm --filter @dental/v2 audit:security`
+- `pnpm --filter @dental/v2 security:scan`
+- `pnpm --filter @dental/v2 license:check`
 - `pnpm --filter @dental/v2 build`
 - `pnpm --filter @dental/v2 electron:compile`
 - `pnpm --filter @dental/v2 smoke:api`
 - `pnpm --filter @dental/v2 smoke:ui`
-- `pnpm --filter @dental/v2 test:coverage:web`
+- `pnpm --filter @dental/v2 test:load`
+- `pnpm --filter @dental/v2 benchmark:load`
 
-Web unit coverage is tracked independently from the server 100% gate in
-`vite.web-coverage.config.ts`. Core resource routing and tab configuration are
-covered by `src/web/*.spec.*`; server and domain code remain at 100% coverage.
+Coverage thresholds in `vite.config.ts` and `vite.web-coverage.config.ts` are
+set to the measured baselines with ~2% margin (not 100%), so they stay honest
+on future changes. Thresholds (statements/branches/functions/lines):
+server/domain 95/85/97/95 (measured 96.29/88.42/99/97.45), web
+80/69/77/83 (measured 82.13/71.78/79.4/85.48). Core resource routing and tab
+configuration are covered by `src/web/*.spec.*`.
 
 The architecture boundary test at
 `apps/v2/src/server/application/architecture.spec.ts` fails if application code
