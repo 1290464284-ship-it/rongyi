@@ -325,6 +325,9 @@ export function ProcessingOrdersPage() {
         }}
         submitOverride={async ({ form, editing }) => {
           const validItems = buildValidItems(form.items);
+          // 已填写（有名称）但数量/单价无效的明细会被静默丢弃，提交前提示
+          const dropped = form.items.filter((item) => item.name.trim()).length - validItems.length;
+          if (dropped > 0) showToast(`${dropped} 条明细因缺少有效数量或单价将被忽略`, 'info');
           const calculatedTotalFee = validItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
           if (editing) {
             const orderId = editingIdRef.current;

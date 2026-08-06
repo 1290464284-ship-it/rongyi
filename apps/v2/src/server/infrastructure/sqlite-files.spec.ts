@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import Database from 'better-sqlite3';
-import { summarizeSqliteFile } from './sqlite-files';
+import { backupSqliteFile, summarizeSqliteFile } from './sqlite-files';
 
 describe('sqlite file helpers', () => {
   let dir: string;
@@ -50,5 +50,33 @@ describe('sqlite file helpers', () => {
     db.close();
 
     expect(summarizeSqliteFile(dbPath).lastPaidAt).toBeNull();
+  });
+
+  it('backupSqliteFile includes uncheckpointed WAL frames from a WAL-mode source', () => {
+    const dbPath = path.join(dir, 'wal-source.sqlite');
+    const db = new Database(dbPath);
+    db.pragma('journal_mode = WAL');
+    db.pragma('wal_autocheckpoint = 0'); // 关闭自动 checkpoint，保证帧留在 -wal 中
+    db.exec('CREATE TABLE T (id TEXT PRIMARY KEY, value TEXT)');
+    db.prepare('INSERT INTO T (id, value) VALUES (?, ?)').run('w1', 'first');
+    db.prepare('INSERT INTO T (id, value) VALUES (?, ?)').run('w2', 'second');
+    db.close();
+
+    const backupPath = path.join(dir, 'wal-backup.sqlite');
+    backupSqliteFile(dbPath, backupPath);
+
+    // 副本必须包含 WAL 中未 checkpoint 的已提交数据（裸拷贝会丢这两行）
+    const backup = new Database(backupPath, { readonly: true });
+    try {
+      const integrity = backup.pragma('integrity_check') as Array<{ integrity_check: string }>;
+      expect(integrity[0].integrity_check).toBe('ok');
+      const rows = backup.prepare('SELECT id, value FROM T ORDER BY id').all() as Array<{ id: string; value: string }>;
+      expect(rows).toEqual([
+        { id: 'w1', value: 'first' },
+        { id: 'w2', value: 'second' },
+      ]);
+    } finally {
+      backup.close();
+    }
   });
 });

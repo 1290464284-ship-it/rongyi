@@ -223,6 +223,9 @@ export function TreatmentPlansPage() {
         }}
         submitOverride={async ({ form, editing }) => {
           const validItems = buildValidItems(form.items);
+          // 已填写（有名称）但价格/数量无效的明细会被静默丢弃，提交前提示
+          const dropped = form.items.filter((item) => item.name.trim()).length - validItems.length;
+          if (dropped > 0) showToast(`${dropped} 条明细因缺少有效价格或数量将被忽略`, 'info');
           if (editing) {
             await updatePlanWithItems(form, editingIdRef.current);
             return;

@@ -85,14 +85,14 @@ export class AuthService {
     if (this.authRepository.isRefreshTokenUsed(tokenHash)) {
       // M5：refresh token 重用（被盗/重放）→ 按 RFC 6819 吊销整个会话族
       this.revokeReplayedFamily(tokenHash);
-      throw new UnauthorizedError('Invalid refresh token');
+      throw new UnauthorizedError('Invalid refresh token (refresh token reuse detected)');
     }
     const preRow = this.authRepository.findByRefreshTokenHash(tokenHash);
     if (!preRow) throw new UnauthorizedError('Invalid refresh token');
     return this.runTx(() => {
       if (this.authRepository.isRefreshTokenUsed(tokenHash)) {
         this.revokeReplayedFamily(tokenHash);
-        throw new UnauthorizedError('Invalid refresh token');
+        throw new UnauthorizedError('Invalid refresh token (refresh token reuse detected)');
       }
       const row = this.authRepository.findByRefreshTokenHash(tokenHash);
       if (!row) throw new UnauthorizedError('Invalid refresh token');
@@ -121,14 +121,16 @@ export class AuthService {
     });
   }
 
-  async logout(refreshToken: string): Promise<void> {
-    if (!refreshToken) return;
+  /** 注销 refresh token；返回该 token 归属的用户 id（未匹配到任何会话时返回 null）。 */
+  async logout(refreshToken: string): Promise<string | null> {
+    if (!refreshToken) return null;
     const tokenHash = hashRefreshToken(refreshToken);
     const row = this.authRepository.findByRefreshTokenHash(tokenHash);
-    if (!row) return;
+    if (!row) return null;
     const now = new Date().toISOString();
     this.authRepository.markRefreshTokenUsed(tokenHash, row.id, now);
     this.authRepository.clearRefreshToken(row.id, now);
+    return row.id;
   }
 
   /** 重用检测后的会话族吊销（RFC 6819）：清除用户当前 refresh token 并使所有 access token 失效。 */

@@ -157,6 +157,9 @@ export function DispenseWorkbenchPage() {
         quantity: Number(item.quantity),
         batchId: item.batchId.trim() === '' ? undefined : item.batchId.trim(),
       }));
+    // 已选药品但数量无效（空/0/非整数）的明细会被静默丢弃，提交前提示
+    const dropped = createForm.items.filter((item) => item.itemId !== '').length - items.length;
+    if (dropped > 0) showToast(`${dropped} 条明细因数量无效将被忽略`, 'info');
     if (!createForm.patientId || !createForm.number.trim() || items.length === 0) {
       showToast('请选择患者、填写单号并至少填写一条有效发药明细', 'error');
       return;
@@ -575,6 +578,9 @@ function DispenseEditDialog({
         quantity: Number(item.quantity),
         batchId: item.batchId.trim() === '' ? undefined : item.batchId.trim(),
       }));
+    // 已选药品但数量无效（空/0/非整数）的明细会被静默丢弃，提交前提示
+    const dropped = form.items.filter((item) => item.itemId !== '').length - items.length;
+    if (dropped > 0) showToast(`${dropped} 条明细因数量无效将被忽略`, 'info');
     if (!form.patientId || !form.number.trim() || items.length === 0) {
       showToast('请选择患者、填写单号并至少填写一条有效发药明细', 'error');
       return;

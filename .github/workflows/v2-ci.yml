@@ -85,3 +85,15 @@ jobs:
 
       - name: Load benchmark
         run: pnpm --filter @dental/v2 benchmark:load
+
+      - name: Dump dev server logs on failure
+        if: failure()
+        run: |
+          if [ -f /tmp/v2-dev.log ]; then
+            echo "===== v2-dev.log (tail 200) ====="
+            tail -n 200 /tmp/v2-dev.log || true
+            echo "===== v2-dev.log (lines) ====="
+            wc -l /tmp/v2-dev.log || true
+          else
+            echo "No /tmp/v2-dev.log found"
+          fi
