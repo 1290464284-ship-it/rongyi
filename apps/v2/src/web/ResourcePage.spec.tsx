@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { ResourcePage } from './ResourcePage';
@@ -40,6 +40,7 @@ const wrapper = ({ children }: { children: ReactNode }) => (
 describe('ResourcePage', () => {
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
     vi.mocked(apiRequest).mockReset();
     vi.mocked(downloadCsv).mockReset();
   });
@@ -356,7 +357,11 @@ describe('ResourcePage', () => {
       .mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 20 });
     render(<ResourcePage resource="patients" />, { wrapper });
     fireEvent.click(await screen.findByText('新建'));
+    // 关闭动画依赖定时器，先完成异步加载再启用 fake timers
+    vi.useFakeTimers();
     fireEvent.mouseDown(document.querySelector('.modal-backdrop')!);
+    // 关闭动画 120ms 播放完成后表单才移除
+    act(() => vi.advanceTimersByTime(150));
     expect(screen.queryByText('保存')).toBeNull();
   });
 

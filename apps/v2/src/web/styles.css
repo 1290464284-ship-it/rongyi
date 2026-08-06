@@ -124,6 +124,8 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .shell {
@@ -262,6 +264,41 @@ body {
   display: grid;
   place-items: center;
   z-index: 20;
+  animation: maskIn 150ms var(--ease);
+}
+
+/* 弹窗开合动画：开 150ms 淡入 + 200ms 上移；关 120ms 对称淡出（forwards 防闪回） */
+.modal-backdrop .modal {
+  animation: modalUp 200ms var(--ease);
+}
+
+.modal-backdrop.closing {
+  animation: maskOut 120ms var(--ease) forwards;
+  pointer-events: none;
+}
+
+.modal-backdrop.closing .modal {
+  animation: modalDown 120ms var(--ease) forwards;
+}
+
+@keyframes maskIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modalUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes maskOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes modalDown {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(8px); }
 }
 
 .modal {
@@ -636,8 +673,50 @@ button:active {
   transform: scale(0.97);
 }
 
+/* 按钮档位：primary（默认）/ secondary / danger / ghost */
+.btn-secondary {
+  background: var(--surface);
+  color: var(--primary);
+  border: 1px solid var(--primary);
+}
+
+.btn-secondary:hover {
+  background: var(--soft);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid transparent;
+}
+
+.btn-ghost:hover {
+  background: var(--soft);
+  color: var(--text);
+}
+
 .danger:hover {
   background: var(--danger-hover);
+}
+
+/* 表单校验态：错误输入红边框 + 淡红底，辅助错误文本 */
+input.error,
+textarea.error,
+select.error {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+input.error:focus,
+textarea.error:focus,
+select.error:focus {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px var(--danger-soft);
+}
+
+.field-error {
+  color: var(--danger);
+  font-size: 11px;
 }
 
 .error {
@@ -659,6 +738,12 @@ button:active {
   padding: 12px 14px;
   color: white;
   box-shadow: var(--shadow-toast);
+  animation: toastIn var(--dur-slow) var(--ease);
+}
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .toast.success {
@@ -690,7 +775,7 @@ table {
 th,
 td {
   border-bottom: 1px solid var(--border-soft);
-  padding: 10px 12px;
+  padding: 8px 12px;
   text-align: left;
   white-space: nowrap;
   max-width: 280px;
@@ -703,6 +788,9 @@ th {
   background: var(--surface-muted);
   position: sticky;
   top: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
 }
 
 tbody tr {
