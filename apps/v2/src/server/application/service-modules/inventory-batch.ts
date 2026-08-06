@@ -337,6 +337,7 @@ export class InventoryBatchService {
 
 function normalizeDays(days: number | undefined): number {
   const value = Number(days);
-  if (!Number.isFinite(value) || value < 0) return 30;
-  return Math.floor(value);
+  if (!Number.isFinite(value)) return 30;
+  // 上限 1..3650：超大值会造成无效的全表范围扫描（与 workflow expiring 路由一致）
+  return Math.min(Math.max(Math.floor(value), 1), 3650);
 }

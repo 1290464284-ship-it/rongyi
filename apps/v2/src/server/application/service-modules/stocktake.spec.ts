@@ -205,7 +205,7 @@ describe('StocktakeService', () => {
 
   it('租户隔离：他租户盘点单不可见、不可操作', () => {
     insertItem('stock-item-j', 'ST-J', '物品J', 3);
-    const { id } = service.start({ number: 'PD-2026-010' }, context);
+    service.start({ number: 'PD-2026-010' }, context);
 
     // 直接构造他租户盘点单
     db.prepare(

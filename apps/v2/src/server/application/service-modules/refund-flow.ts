@@ -142,12 +142,27 @@ export class RefundFlowService {
     ).run(newRefunded, chargeStatus, now, charge.id);
 
     if (charge.payMethod === 'MEMBER_CARD') {
-      const card = this.db.prepare(
-        `SELECT id, balance
-         FROM MemberCard
-         WHERE patientId = ? AND deletedAt IS NULL AND status = 'ACTIVE'${tenantAnd(context.clinicId)}
-         ORDER BY createdAt LIMIT 1`,
-      ).get(String(charge.patientId), ...tenantParams(context.clinicId)) as { id: string; balance: number } | undefined;
+      // 优先按原支付卡冲销（ChargeService.pay 已把 memberCardId 落库），
+      // 与 ChargeService.refund 回充的卡保持一致，多卡场景不再误扣"第一张 ACTIVE 卡"。
+      let card = charge.memberCardId
+        ? (this.db.prepare(
+            `SELECT id, balance
+             FROM MemberCard
+             WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+          ).get(String(charge.memberCardId), ...tenantParams(context.clinicId)) as { id: string; balance: number } | undefined)
+        : undefined;
+      if (!card) {
+        // 原卡缺失/不可用（如已删）：回退按患者取卡（与 findByPatientForRefund 口径一致），并告警以便排查。
+        card = this.db.prepare(
+          `SELECT id, balance
+           FROM MemberCard
+           WHERE patientId = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}
+           ORDER BY createdAt LIMIT 1`,
+        ).get(String(charge.patientId), ...tenantParams(context.clinicId)) as { id: string; balance: number } | undefined;
+        if (card) {
+          console.warn(`[refund-flow] 原支付卡 ${String(charge.memberCardId ?? '')} 不可用，退款冲销回退到患者卡 ${card.id}`);
+        }
+      }
       if (card) {
         const newBalance = Math.max(0, Number(card.balance) - amount);
         this.db.prepare(

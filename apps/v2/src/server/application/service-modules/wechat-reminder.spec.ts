@@ -81,7 +81,7 @@ describe('WechatReminderService', () => {
     const item = result.items.find((row) => row.scene === 'APPOINTMENT_REMINDER');
     expect(item).toBeDefined();
     expect(item?.patientName).toBe('Demo Patient');
-    expect(item?.patientPhone).toBe('13800000000');
+    expect(item?.patientPhone).toBe('138****0000'); // 电话直出已掩码
     expect(item?.sceneLabel).toBe('复诊提醒');
     expect(item?.content).toContain('Demo Patient');
     expect(item?.content).toContain('复诊');

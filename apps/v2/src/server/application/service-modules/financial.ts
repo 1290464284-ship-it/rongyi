@@ -666,7 +666,7 @@ export class ProcessingOrderService {
     }, () => {
       assertPatientExists(this.db, input.patientId, context.clinicId);
       if (!input.number?.trim()) throw new ValidationError('Processing order number is required');
-      if (!Number.isFinite(Number(input.totalFee)) || Number(input.totalFee) < 0) {
+      if (!Number.isSafeInteger(Number(input.totalFee)) || Number(input.totalFee) < 0) {
         throw new ValidationError('Processing order total fee must be non-negative');
       }
       if (!Array.isArray(input.items) || input.items.length === 0 || input.items.length > 500) {

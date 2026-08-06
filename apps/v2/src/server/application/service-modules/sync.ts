@@ -106,7 +106,7 @@ export class SyncService {
             failedIndexes.add(index);
             continue;
           }
-          if (change.tableName === 'Charge' && change.operation !== 'DELETE') {
+          if (change.tableName === 'Charge') {
             errors.push({ recordId: change.recordId, error: 'Charge writes are disabled in sync; use charge APIs' });
             failedIndexes.add(index);
             continue;

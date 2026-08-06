@@ -116,7 +116,7 @@ export class TreatmentPlanBillingService {
     input: SetPlanDiscountInput,
     context: AppContext,
   ): { id: string; discountType: string; discountRate: number | null; totalFee: number } {
-    const plan = this.findPlan(planId, context);
+    this.findPlan(planId, context); // 校验计划存在且属于当前租户（plan 变量本身此处用不到）
     const discountType = input?.discountType;
     if (typeof discountType !== 'string' || !PLAN_DISCOUNT_TYPES.has(discountType)) {
       throw new ValidationError('折扣类型无效');

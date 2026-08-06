@@ -71,6 +71,10 @@ const PROTECTED_WRITE_FIELDS = new Set([
   'settleStatus',
   'settledAmount',
   'settledAt',
+  // 治疗计划划价状态：仅 TreatmentPlanBillingService 经专用 SQL 写入（bill 联动），
+  // 禁止客户端经通用 CRUD 伪造已划价标记/划价单引用。
+  'billed',
+  'billedChargeId',
 ]);
 
 /** 递归掩码：数组逐项、对象逐键；深度 >5 时原样返回（防深层嵌套拖垮审计）。 */
