@@ -23,8 +23,9 @@ pnpm --filter @dental/v2 electron:dist:internal
 
 1. 在临时目录生成一张自签名代码签名证书。
 2. 构建 Web、API 和 Electron 安装包。
-3. 校验安装包、`latest.yml` 和 blockmap。
-4. 运行 NSIS 安装/卸载 smoke。
+3. 以 `<package.json版本>-internal.<UTC时间戳>` 作为内部版本号打包（保证每次内部构建严格递增，内部 feed 的更新才会被 electron-updater 识别并应用；打包完成后还原 `package.json`）。
+4. 校验安装包、`latest.yml` 和 blockmap。
+5. 运行 NSIS 安装/卸载 smoke。
 
 产物位于 `apps/v2/release-v2/`。因为证书不受 Windows 信任，首次运行会显示“未知发布者”，需要选择“更多信息”后“仍要运行”。这只应在你控制的电脑上使用，不适合作为公开软件分发。
 

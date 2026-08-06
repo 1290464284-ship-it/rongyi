@@ -690,8 +690,12 @@ app.on('second-instance', () => {
     });
 });
 
+// 内部构建版本号策略（审计中危项）：内部版（scripts/build-internal-installer.ps1
+// 打包，版本形如 2.2.0-internal.<UTC时间戳>）必须允许 prerelease，electron-updater
+// 才会把内部 feed 的新构建视为可更新；公开版保持 allowPrerelease=false，只收正式版。
+const isInternalBuild = /-internal\./.test(app.getVersion());
 autoUpdater.autoDownload = true;
-autoUpdater.allowPrerelease = false;
+autoUpdater.allowPrerelease = isInternalBuild;
 // T2R-22: 不要给 verifyUpdateCodeSignature 赋布尔值！NsisUpdater 把它实现为
 // getter/setter（包装 windowsExecutableCodeSignatureVerifier.verifySignature），
 // 赋 true 会把 _verifyUpdateCodeSignature 覆盖成布尔，下载后签名校验必然抛

@@ -45,8 +45,19 @@ See `docs/delivery/delivery-drill.md` for the covered path.
 `latest.yml` is generated from the installer and can be published with the
 installer and blockmap to the configured GitHub release. The desktop process
 checks for updates through `electron-updater` when the app is packaged unless
-`V2_DISABLE_AUTO_UPDATE=1` is set (set it to opt out, e.g. for the internal
-build).
+`V2_DISABLE_AUTO_UPDATE=1` is set.
+
+Version numbering policy (two feeds, one mechanism):
+
+- Public builds keep the plain `package.json` version (e.g. `2.2.0`) and run
+  with `allowPrerelease=false`, so only stable public releases are considered.
+- Internal builds are packaged as `<base>-internal.<UTC timestamp>` (see
+  `build-internal-installer.ps1`), so every internal build is strictly newer
+  than the previous one. The desktop process detects the `-internal.` marker
+  at runtime and enables `allowPrerelease` for internal builds only, which
+  makes the internal feed's prerelease releases apply. Do not change the
+  version while a build is running; the script restores `package.json`
+  afterwards.
 
 Verify the published channel metadata with:
 
@@ -108,10 +119,12 @@ build is available:
 pnpm --filter @dental/v2 electron:dist:internal
 ```
 
-It generates a temporary self-signed certificate, packages the installer,
-verifies package/update metadata, and runs the installer smoke. Windows will
-warn about the unknown publisher; do not treat this as a public signed release.
-See [docs/release-modes.md](../../docs/release-modes.md) for the full comparison.
+It generates a temporary self-signed certificate, packages the installer
+under an `-internal.<UTC timestamp>` version suffix (so internal-feed updates
+always apply), verifies package/update metadata, and runs the installer smoke.
+Windows will warn about the unknown publisher; do not treat this as a public
+signed release. See [docs/release-modes.md](../../docs/release-modes.md) for
+the full comparison.
 
 ### GitHub Internal Release
 

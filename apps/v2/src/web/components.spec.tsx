@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { useState } from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import {
   ConfirmDialog,
@@ -194,5 +195,60 @@ describe('shared web components', () => {
     );
     fireEvent.click(screen.getByText('确认'));
     expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes the dialog with Escape and restores focus to the opener', () => {
+    const onClose = vi.fn();
+    function Harness() {
+      const [open, setOpen] = useState(false);
+      return (
+        <div>
+          <button onClick={() => setOpen(true)}>打开</button>
+          <Dialog open={open} title="弹窗" onClose={() => { onClose(); setOpen(false); }}>
+            <button>弹窗内按钮</button>
+          </Dialog>
+        </div>
+      );
+    }
+    render(<Harness />);
+    const opener = screen.getByText('打开');
+    opener.focus();
+    fireEvent.click(opener);
+    // 打开后焦点移入弹窗
+    expect(document.activeElement).toBe(screen.getByText('弹窗内按钮'));
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    // 关闭后焦点还原到打开弹窗的元素
+    expect(document.activeElement).toBe(opener);
+  });
+
+  it('moves focus into the dialog on open and traps Tab inside it', () => {
+    const onClose = vi.fn();
+    render(
+      <div>
+        <button>外部按钮</button>
+        <Dialog open title="弹窗" onClose={onClose}>
+          <button>第一个</button>
+          <button>第二个</button>
+        </Dialog>
+      </div>,
+    );
+    expect(document.activeElement).toBe(screen.getByText('第一个'));
+
+    // Tab 在最后一个可聚焦元素上循环回第一个
+    screen.getByText('第二个').focus();
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Tab' });
+    expect(document.activeElement).toBe(screen.getByText('第一个'));
+
+    // Shift+Tab 从第一个循环到最后一个
+    screen.getByText('第一个').focus();
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(screen.getByText('第二个'));
+
+    // 焦点逃逸到弹窗外时，Tab 拉回弹窗内
+    (document.querySelector('.modal-backdrop') as HTMLElement)?.focus?.();
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Tab' });
+    expect(document.activeElement).toBe(screen.getByText('第一个'));
   });
 });
