@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Version tag suffix, for example 2.1.4
+        description: Expected version tag suffix (e.g. 2.1.4); must match apps/v2/package.json version, the actual tag v2-internal-<version> is derived from package.json
         required: true
         type: string
       run_installer_smoke:
@@ -54,11 +54,24 @@ jobs:
       - name: Verify update metadata
         run: pnpm --filter @dental/v2 run verify:update
 
+      - name: Resolve version from package.json
+        id: pkg_version
+        shell: bash
+        run: echo "version=$(node -p "require('./apps/v2/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Validate version input matches package.json
+        shell: bash
+        run: |
+          if [ "${{ inputs.version }}" != "${{ steps.pkg_version.outputs.version }}" ]; then
+            echo "::error::input version (${{ inputs.version }}) does not match package.json version (${{ steps.pkg_version.outputs.version }})"
+            exit 1
+          fi
+
       - name: Publish internal release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2-internal-${{ inputs.version }}
-          name: Dental Clinic V2 Internal ${{ inputs.version }}
+          tag_name: v2-internal-${{ steps.pkg_version.outputs.version }}
+          name: Dental Clinic V2 Internal ${{ steps.pkg_version.outputs.version }}
           prerelease: true
           files: |
             apps/v2/release-v2/*.exe
@@ -68,5 +81,5 @@ jobs:
       - name: Verify remote internal release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          V2_RELEASE_TAG: v2-internal-${{ inputs.version }}
+          V2_RELEASE_TAG: v2-internal-${{ steps.pkg_version.outputs.version }}
         run: pnpm --filter @dental/v2 run verify:remote
