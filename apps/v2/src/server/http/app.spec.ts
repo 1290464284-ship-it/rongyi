@@ -918,6 +918,13 @@ describe('HTTP app', () => {
     await request(app).post('/api/v2/auth/logout').send({ refreshToken: refreshed.body.data.refreshToken }).expect(200);
     await request(app).post('/api/v2/auth/refresh').send({ refreshToken: refreshed.body.data.refreshToken }).expect(401);
 
+    // M5：重用已注销/已轮换的 refresh token 会吊销整个会话族（tokenVersion+1），
+    // 该用户此前签发的 access token 全部失效——共享 token 也应被作废。
+    await request(app).get('/api/v2/resource-meta').set('Authorization', `Bearer ${token}`).expect(401);
+    // 重新登录恢复共享 token，供后续用例使用。
+    const relogin = await request(app).post('/api/v2/auth/login').send({ username: 'admin', password: 'newpass123' }).expect(200);
+    token = relogin.body.data.token;
+
     const before = (db.prepare('SELECT COUNT(*) AS c FROM OperationLog').get() as { c: number }).c;
     await request(app).post('/api/v2/resources/suppliers')
       .set('Authorization', `Bearer ${token}`)

@@ -78,7 +78,17 @@ function crashLog(message, error) {
   try {
     const logDir = path.join(app.getPath('userData'), 'logs');
     fs.mkdirSync(logDir, { recursive: true });
-    fs.appendFileSync(path.join(logDir, 'desktop.log'), JSON.stringify(entry) + '\n');
+    // 5MB×5 轮转（与 API 侧 logger 一致），防止 desktop.log 无限追加
+    const logFile = path.join(logDir, 'desktop.log');
+    const MAX_LOG_BYTES = 5 * 1024 * 1024;
+    if (fs.existsSync(logFile) && fs.statSync(logFile).size >= MAX_LOG_BYTES) {
+      for (let i = 4; i >= 1; i -= 1) {
+        const rotated = `${logFile}.${i}`;
+        if (fs.existsSync(rotated)) fs.renameSync(rotated, `${logFile}.${i + 1}`);
+      }
+      fs.renameSync(logFile, `${logFile}.1`);
+    }
+    fs.appendFileSync(logFile, JSON.stringify(entry) + '\n');
   } catch {
     // best effort
   }

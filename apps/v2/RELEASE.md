@@ -44,8 +44,9 @@ See `docs/delivery/delivery-drill.md` for the covered path.
 
 `latest.yml` is generated from the installer and can be published with the
 installer and blockmap to the configured GitHub release. The desktop process
-checks for updates through `electron-updater` when the app is packaged and
-`V2_ENABLE_AUTO_UPDATE=1`.
+checks for updates through `electron-updater` when the app is packaged unless
+`V2_DISABLE_AUTO_UPDATE=1` is set (set it to opt out, e.g. for the internal
+build).
 
 Verify the published channel metadata with:
 
@@ -83,12 +84,14 @@ The `v2-release.yml` workflow requires `CSC_LINK` and `CSC_KEY_PASSWORD` GitHub
 Secrets. `CSC_LINK` must be a PKCS12 certificate file or its base64 content.
 The workflow fails before packaging when either secret is missing.
 
-The repository is currently configured with the local self-signed
-`certs/signing-cert.pfx` to keep the release pipeline green. Replace it with a
-CA-issued code signing certificate before public distribution. The release
-workflow now fails when the installer is signed with a self-signed development
-certificate. If you are only distributing internally, this workflow is not
-required; use the internal release path below.
+The repository ships a local development certificate (`certs/signing-cert.pfx`)
+so local packaging works without secrets. The release pipeline deliberately
+rejects it: `verify:signature` fails when the installer is signed with a
+self-signed certificate (subject contains "Dental Clinic Dev"/"self-signed" or
+issuer equals subject). A CA-issued code signing certificate must be configured
+via the `CSC_LINK`/`CSC_KEY_PASSWORD` secrets before public distribution. If
+you are only distributing internally, this workflow is not required; use the
+internal release path below.
 
 Verify a local installer locally:
 

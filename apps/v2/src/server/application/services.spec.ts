@@ -843,7 +843,16 @@ describe('application services', () => {
     expect(session.refreshToken).toBeDefined();
     const refreshed = await service.refresh(session.refreshToken);
     expect(refreshed.refreshToken).not.toBe(session.refreshToken);
+    const versionBeforeReplay = (db.prepare("SELECT tokenVersion FROM User WHERE username = 'admin'").get() as { tokenVersion: number }).tokenVersion;
     await expect(service.refresh(session.refreshToken)).rejects.toThrow('Invalid refresh token');
+    // M5：重用检测后按 RFC 6819 吊销整个会话族——轮换出的 refresh token 也失效，且当前 refresh token 被清除、tokenVersion 递增
+    await expect(service.refresh(refreshed.refreshToken)).rejects.toThrow('Invalid refresh token');
+    const afterReplay = db.prepare("SELECT refreshToken, tokenVersion FROM User WHERE username = 'admin'").get() as {
+      refreshToken: string | null;
+      tokenVersion: number;
+    };
+    expect(afterReplay.refreshToken).toBeNull();
+    expect(afterReplay.tokenVersion).toBe(versionBeforeReplay + 1);
     await service.logout(refreshed.refreshToken);
     await expect(service.refresh(refreshed.refreshToken)).rejects.toThrow('Invalid refresh token');
   });

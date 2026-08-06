@@ -21,6 +21,7 @@ const SUMMARY_LABELS: Record<string, string> = {
 };
 
 interface RestoreStagingResult {
+  staged?: boolean;
   message: string;
   backupSummary?: DatabaseSummary;
   currentSummary?: DatabaseSummary;
@@ -102,13 +103,8 @@ export function BackupsPage() {
         method: 'POST',
       });
       setComparison({ backup: result.backupSummary, current: result.currentSummary });
-      showToast(
-        result.message === 'Backup verified and staged. Restart the application to activate this restore.'
-          || result.message === 'Backup verified and staged'
-          ? '恢复已暂存，重启应用后生效'
-          : result.message,
-        'success',
-      );
+      // 以服务端明确的状态字段判断成功，不再依赖英文文案相等
+      showToast(result.staged === true ? '恢复已暂存，重启应用后生效' : result.message, 'success');
     } catch (error) {
       showToast(errorMessage(error, '暂存恢复失败'), 'error');
     } finally {

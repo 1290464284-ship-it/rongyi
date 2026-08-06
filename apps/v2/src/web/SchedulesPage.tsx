@@ -321,7 +321,10 @@ function GenerateSection({
         </label>
         <label>
           周（自动取所在周的周一）
-          <input aria-label="选择周" type="date" value={weekStart} onChange={(event) => onWeekStartChange(event.target.value || mondayOf(new Date()))} />
+          <input aria-label="选择周" type="date" value={weekStart} onChange={(event) => {
+            const picked = event.target.value;
+            onWeekStartChange(picked ? mondayOf(new Date(`${picked}T00:00:00`)) : mondayOf(new Date()));
+          }} />
         </label>
         <button type="submit" disabled={generating}>{generating ? '生成中...' : '生成固定排班'}</button>
       </form>

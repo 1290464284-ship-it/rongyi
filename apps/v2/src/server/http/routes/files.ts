@@ -28,8 +28,8 @@ export function registerFileRoutes(app: Express, deps: RouteDependencies): void 
         const context = req.context!;
         const usage = deps.db.prepare(
           `SELECT COUNT(*) AS count, COALESCE(SUM(fileSize), 0) AS totalBytes
-           FROM FileRecord WHERE createdBy = ? AND deletedAt IS NULL`,
-        ).get(context.userId) as { count: number; totalBytes: number };
+           FROM FileRecord WHERE createdBy = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+        ).get(context.userId, ...tenantParams(context.clinicId)) as { count: number; totalBytes: number };
         const MAX_FILES_PER_USER = 200;
         const MAX_BYTES_PER_USER = 500 * 1024 * 1024;
         if (usage.count >= MAX_FILES_PER_USER || Number(usage.totalBytes) + req.body.length > MAX_BYTES_PER_USER) {

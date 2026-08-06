@@ -83,12 +83,15 @@ export class AuthService {
     const tokenHash = hashRefreshToken(refreshToken);
     this.authRepository.cleanupUsedRefreshTokens(new Date(Date.now() - 90 * 86_400_000).toISOString());
     if (this.authRepository.isRefreshTokenUsed(tokenHash)) {
+      // M5：refresh token 重用（被盗/重放）→ 按 RFC 6819 吊销整个会话族
+      this.revokeReplayedFamily(tokenHash);
       throw new UnauthorizedError('Invalid refresh token');
     }
     const preRow = this.authRepository.findByRefreshTokenHash(tokenHash);
     if (!preRow) throw new UnauthorizedError('Invalid refresh token');
     return this.runTx(() => {
       if (this.authRepository.isRefreshTokenUsed(tokenHash)) {
+        this.revokeReplayedFamily(tokenHash);
         throw new UnauthorizedError('Invalid refresh token');
       }
       const row = this.authRepository.findByRefreshTokenHash(tokenHash);
@@ -126,6 +129,18 @@ export class AuthService {
     const now = new Date().toISOString();
     this.authRepository.markRefreshTokenUsed(tokenHash, row.id, now);
     this.authRepository.clearRefreshToken(row.id, now);
+  }
+
+  /** 重用检测后的会话族吊销（RFC 6819）：清除用户当前 refresh token 并使所有 access token 失效。 */
+  private revokeReplayedFamily(tokenHash: string): void {
+    try {
+      const used = this.authRepository.findUsedRefreshToken(tokenHash);
+      if (used?.userId) {
+        this.authRepository.revokeSessionFamily(used.userId, new Date().toISOString());
+      }
+    } catch {
+      // 重用已被拒绝；吊销为尽力而为
+    }
   }
 
   verifyToken(token: string): TokenPayload {

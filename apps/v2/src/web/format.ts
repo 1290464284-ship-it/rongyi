@@ -1,7 +1,9 @@
 import type { ResourceField } from './types';
 
 export function toCents(value: unknown): number {
-  return Math.round(Number(value ?? 0) * 100 + Number.EPSILON * 100);
+  const numeric = Number(value ?? 0);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.round(numeric * 100 + Number.EPSILON * 100);
 }
 
 export function formatMoney(value: unknown): string {
