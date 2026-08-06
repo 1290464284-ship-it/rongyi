@@ -86,7 +86,7 @@ $apiScript = Join-Path $installDir "resources\app.asar\dist-electron\server.cjs"
 $previousApi = Start-Process -FilePath (Join-Path $installDir "Dental Clinic V2.exe") -ArgumentList "`"$apiScript`"" -PassThru -WindowStyle Hidden
 try {
   Wait-ApiHealthy -Port $smokePort
-  $login = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:$smokePort/api/v2/auth/login" -ContentType "application/json" -Body (@{ username = "admin"; password = "admin123" } | ConvertTo-Json)
+  $login = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:$smokePort/api/v2/auth/login" -ContentType "application/json" -Body (@{ username = "admin"; password = $(if ($env:V2_ADMIN_PASSWORD) { $env:V2_ADMIN_PASSWORD } else { "ry0801" }) } | ConvertTo-Json)
   $headers = @{ Authorization = "Bearer $($login.data.token)" }
   $backup = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:$smokePort/api/v2/backups" -Headers $headers -ContentType "application/json" -Body "{}"
   $filename = [uri]::EscapeDataString([string]$backup.data.filename)

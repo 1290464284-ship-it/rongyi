@@ -1,6 +1,7 @@
 import { chromium } from '@playwright/test';
 
 const base = process.env.V2_WEB_URL ?? 'http://localhost:5180';
+const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'ry0801';
 
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage();
@@ -12,7 +13,7 @@ try {
   const heading = await page.getByRole('heading').allTextContents();
   console.log('login page', { title, heading });
   await page.fill('input', 'admin');
-  await page.fill('input[type="password"]', 'admin123');
+  await page.fill('input[type="password"]', adminPassword);
   await page.getByRole('button', { name: '登录' }).click();
   await page.waitForURL('**/#/');
   await page.getByText('工作台').first().waitFor();

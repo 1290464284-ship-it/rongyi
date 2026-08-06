@@ -1,4 +1,5 @@
 const base = process.env.V2_BASE_URL ?? 'http://localhost:3180/api/v2';
+const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'ry0801';
 
 async function request(path, options = {}) {
   const response = await fetch(`${base}${path}`, {
@@ -18,7 +19,7 @@ async function request(path, options = {}) {
 async function main() {
   const login = await request('/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ username: 'admin', password: 'admin123' }),
+    body: JSON.stringify({ username: 'admin', password: adminPassword }),
   });
   const session = await request('/auth/refresh', {
     method: 'POST',
