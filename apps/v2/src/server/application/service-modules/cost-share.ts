@@ -32,7 +32,7 @@ function normalizeDateFilter(value: unknown, field: string): string | null {
   return value;
 }
 
-export interface CostShareRow {
+interface CostShareRow {
   costType: string;
   category: string;
   total: number;
@@ -40,7 +40,7 @@ export interface CostShareRow {
   chargeCount: number;
 }
 
-export interface CostShareSummary {
+interface CostShareSummary {
   SERVICE: { total: number; itemCount: number; chargeCount: number };
   MATERIAL: { total: number; itemCount: number; chargeCount: number };
   grandTotal: number;

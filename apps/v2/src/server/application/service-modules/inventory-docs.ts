@@ -4,7 +4,7 @@ import { ConflictError, NotFoundError, ValidationError } from '../../infrastruct
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import type { AppContext } from '../../../domain/contracts';
 
-export interface ReturnSupplierItemInput {
+interface ReturnSupplierItemInput {
   itemId: string;
   quantity: number;
   unitPrice?: number;
@@ -17,7 +17,7 @@ export interface ReturnSupplierInput {
   remark?: string;
 }
 
-export interface LossItemInput {
+interface LossItemInput {
   itemId: string;
   quantity: number;
   remark?: string;
@@ -28,7 +28,7 @@ export interface LossInput {
   remark?: string;
 }
 
-export interface TransferItemInput {
+interface TransferItemInput {
   fromItemId: string;
   toItemId: string;
   quantity: number;

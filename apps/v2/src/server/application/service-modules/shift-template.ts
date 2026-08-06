@@ -251,7 +251,7 @@ function toTemplateRow(row: Record<string, unknown>): ShiftTemplateRow {
 }
 
 /** 解析 workDaysJson 为 1..7 的升序去重整数数组；非法/缺失返回 []。 */
-export function parseWorkDays(raw: string | null | undefined): number[] {
+function parseWorkDays(raw: string | null | undefined): number[] {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
@@ -289,7 +289,7 @@ function validateTime(value: unknown, label: string): string {
 }
 
 /** 归一化到所在周的周一（本地日期语义），返回 'YYYY-MM-DD'。 */
-export function normalizeWeekStart(value: string): string {
+function normalizeWeekStart(value: string): string {
   const trimmed = typeof value === 'string' ? value.trim() : '';
   const match = DATE_RE.exec(trimmed);
   let date: Date;
