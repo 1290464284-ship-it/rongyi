@@ -11,7 +11,9 @@ import { ToastProvider } from './toast';
 vi.mock('./api', () => ({ apiRequest: vi.fn(), downloadCsv: vi.fn() }));
 
 const wrapper = ({ children }: { children: ReactNode }) => (
-  <QueryClientProvider client={new QueryClient()}><ToastProvider>{children}</ToastProvider></QueryClientProvider>
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <ToastProvider>{children}</ToastProvider>
+  </QueryClientProvider>
 );
 
 describe('InventoryWorkflowPage', () => {
@@ -98,6 +100,9 @@ describe('InventoryWorkflowPage', () => {
       if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') {
         return { items: [{ id: 's-2', inventoryId: 'item-2', rop: 5, suggestedQty: 3, status: 'OPEN' }], total: 1 };
       }
+      if (path === '/stocktakes') {
+        return { items: [], total: 0 };
+      }
       throw new Error('apply failed');
     });
 
@@ -131,5 +136,130 @@ describe('InventoryWorkflowPage', () => {
     fireEvent.click(await screen.findByRole('checkbox'));
     fireEvent.click(screen.getByRole('button', { name: '应用选中建议' }));
     expect(await screen.findByText('操作失败')).toBeDefined();
+  });
+
+  it('renders stocktake list with status labels and per-status actions', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 0 };
+      if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/stocktakes') {
+        return {
+          items: [
+            { id: 'st-1', number: 'PD-001', status: 'IN_PROGRESS', startedById: 'user-1', startedAt: '2026-08-05T10:00:00.000Z', itemCount: 2, differenceCount: 0 },
+            { id: 'st-2', number: 'PD-002', status: 'LOCKED', startedById: 'user-1', startedAt: '2026-08-05T10:00:00.000Z', itemCount: 3, differenceCount: 1 },
+            { id: 'st-3', number: 'PD-003', status: 'COMPLETED', startedById: 'user-1', startedAt: '2026-08-05T10:00:00.000Z', completedById: 'user-1', completedAt: '2026-08-05T12:00:00.000Z', itemCount: 2, differenceCount: 0 },
+            { id: 'st-4', number: 'PD-004', status: 'CANCELLED', startedById: 'user-1', startedAt: '2026-08-05T10:00:00.000Z', itemCount: 1, differenceCount: 0 },
+          ],
+          total: 4,
+        };
+      }
+      return {};
+    });
+
+    render(<InventoryWorkflowPage />, { wrapper });
+    expect(await screen.findByText('PD-001')).toBeDefined();
+    expect(screen.getByText('PD-002')).toBeDefined();
+    expect(screen.getByText('PD-003')).toBeDefined();
+    expect(screen.getByText('PD-004')).toBeDefined();
+    expect(screen.getByText('进行中')).toBeDefined();
+    expect(screen.getByText('已锁定')).toBeDefined();
+    expect(screen.getByText('已完成')).toBeDefined();
+    expect(screen.getByText('已取消')).toBeDefined();
+    expect(screen.getByRole('button', { name: '录入' })).toBeDefined();
+    expect(screen.getByRole('button', { name: '完成盘点' })).toBeDefined();
+    expect(screen.getAllByRole('button', { name: '锁定' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: '取消' })).toHaveLength(2);
+  });
+
+  it('creates a stocktake from the form', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 0 };
+      if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/stocktakes') return { items: [], total: 0 };
+      return {};
+    });
+
+    render(<InventoryWorkflowPage />, { wrapper });
+    await screen.findByText('库存盘点');
+    fireEvent.change(screen.getByLabelText('盘点单号'), { target: { value: 'PD-NEW-1' } });
+    fireEvent.change(screen.getByLabelText('备注'), { target: { value: '月末盘点' } });
+    fireEvent.click(screen.getByRole('button', { name: '开始盘点' }));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/stocktakes', expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ number: 'PD-NEW-1', note: '月末盘点' }),
+      }));
+    });
+  });
+
+  it('expands a stocktake and records counted stock per item', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 0 };
+      if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/stocktakes') {
+        return { items: [{ id: 'st-1', number: 'PD-001', status: 'IN_PROGRESS', startedById: 'user-1', startedAt: '2026-08-05T10:00:00.000Z', itemCount: 2, differenceCount: 0 }], total: 1 };
+      }
+      if (path === '/stocktakes/st-1/items') {
+        return [
+          { id: 'sti-1', itemId: 'item-x', name: '物品X', code: 'X-1', systemStock: 10, countedStock: null, difference: 0 },
+          { id: 'sti-2', itemId: 'item-y', name: '物品Y', code: 'Y-1', systemStock: 5, countedStock: null, difference: 0 },
+        ];
+      }
+      return {};
+    });
+
+    render(<InventoryWorkflowPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '录入' }));
+    expect(await screen.findByText('物品X')).toBeDefined();
+    expect(screen.getByText('物品Y')).toBeDefined();
+
+    const inputs = screen.getAllByLabelText('实盘数量');
+    expect(inputs).toHaveLength(2);
+    fireEvent.change(inputs[0], { target: { value: '12' } });
+    fireEvent.click(screen.getAllByRole('button', { name: '保存' })[0]);
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/stocktakes/st-1/items/item-x', expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ countedStock: 12 }),
+      }));
+    });
+  });
+
+  it('triggers lock, complete and cancel APIs by status', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 0 };
+      if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/stocktakes') {
+        return {
+          items: [
+            { id: 'st-2', number: 'PD-002', status: 'IN_PROGRESS', startedById: 'user-1', startedAt: '2026-08-05T10:00:00.000Z', itemCount: 2, differenceCount: 0 },
+            { id: 'st-3', number: 'PD-003', status: 'LOCKED', startedById: 'user-1', startedAt: '2026-08-05T10:00:00.000Z', itemCount: 2, differenceCount: 1 },
+          ],
+          total: 2,
+        };
+      }
+      return {};
+    });
+
+    render(<InventoryWorkflowPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '锁定' }));
+    fireEvent.click(screen.getByRole('button', { name: '完成盘点' }));
+    fireEvent.click(screen.getAllByRole('button', { name: '取消' })[0]);
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/stocktakes/st-2/lock', expect.objectContaining({ method: 'POST' }));
+      expect(apiRequest).toHaveBeenCalledWith('/stocktakes/st-3/complete', expect.objectContaining({ method: 'POST' }));
+      expect(apiRequest).toHaveBeenCalledWith('/stocktakes/st-2/cancel', expect.objectContaining({ method: 'POST' }));
+    });
   });
 });

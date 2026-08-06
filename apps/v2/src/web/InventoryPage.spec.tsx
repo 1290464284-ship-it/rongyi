@@ -47,6 +47,8 @@ describe('InventoryPage', () => {
           { id: 'i-5', name: null, code: 'EXP-CODE', expireDate: null, stock: null },
         ];
       }
+      if (path.startsWith('/resources/suppliers')) return { items: [], total: 0 };
+      if (path.startsWith('/api/v2/inventory-batches')) return { batches: [], expiring: [] };
       return {};
     });
 
@@ -90,6 +92,8 @@ describe('InventoryPage', () => {
       }
       if (path === '/inventory/low-stock') return [];
       if (path === '/inventory/expiring?days=30') return [];
+      if (path.startsWith('/resources/suppliers')) return { items: [], total: 0 };
+      if (path.startsWith('/api/v2/inventory-batches')) return { batches: [], expiring: [] };
       throw new Error('inventory failed');
     });
 
@@ -153,5 +157,98 @@ describe('InventoryPage', () => {
       </MemoryRouter>,
     );
     expect(await screen.findByDisplayValue('url-item-9')).toBeDefined();
+  });
+
+  it('renders batch tables and expiring batch alerts', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/inventoryItems?page=1&pageSize=20') {
+        return { items: [{ id: 'i-batch', name: 'Batch Material', stock: 10, minStock: 1 }], total: 1 };
+      }
+      if (path === '/inventory/low-stock') return [];
+      if (path === '/inventory/expiring?days=30') return [];
+      if (path.startsWith('/resources/suppliers')) return { items: [{ id: 's-1', name: '供应商甲' }], total: 1 };
+      if (path === '/api/v2/inventory-batches?itemId=i-batch') {
+        return {
+          batches: [
+            { id: 'b-1', batchNo: 'B-001', productionDate: '2026-07-01', expiryDate: '2026-09-01', initialQuantity: 10, remainingQuantity: 10 },
+            { id: 'b-2', batchNo: 'B-002', productionDate: '2026-07-02', expiryDate: '2026-10-01', initialQuantity: 5, remainingQuantity: 3 },
+          ],
+          expiring: [],
+        };
+      }
+      if (path === '/api/v2/inventory-batches?days=30') {
+        return {
+          batches: [],
+          expiring: [
+            { id: 'b-3', batchNo: 'B-003', itemName: '麻醉剂', itemCode: 'MAT-009', expiryDate: '2026-08-12', remainingQuantity: 3 },
+          ],
+        };
+      }
+      return {};
+    });
+
+    render(<InventoryPage />, { wrapper });
+    expect(await screen.findByText('B-001')).toBeDefined();
+    expect(screen.getByText('B-002')).toBeDefined();
+    expect(screen.getByText('B-003')).toBeDefined();
+    expect(screen.getByText('麻醉剂')).toBeDefined();
+    expect(screen.getByRole('button', { name: '生成到期提醒' })).toBeDefined();
+  });
+
+  it('submits a new batch via POST /api/v2/inventory-batches', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/inventoryItems?page=1&pageSize=20') {
+        return { items: [{ id: 'i-form', name: 'Form Material', stock: 0, minStock: 0 }], total: 1 };
+      }
+      if (path === '/inventory/low-stock') return [];
+      if (path === '/inventory/expiring?days=30') return [];
+      if (path.startsWith('/resources/suppliers')) return { items: [{ id: 's-1', name: '供应商甲' }], total: 1 };
+      if (path.startsWith('/api/v2/inventory-batches')) return { batches: [], expiring: [] };
+      return {};
+    });
+
+    render(<InventoryPage />, { wrapper });
+    await waitFor(() => {
+      expect(screen.getByLabelText('供应商').textContent).toContain('供应商甲');
+    });
+    fireEvent.change(await screen.findByLabelText('批次号'), { target: { value: 'B-FORM-1' } });
+    fireEvent.change(screen.getByLabelText('生产日期'), { target: { value: '2026-07-01' } });
+    fireEvent.change(screen.getByLabelText('效期日期'), { target: { value: '2026-09-01' } });
+    fireEvent.change(screen.getByLabelText('入库数量'), { target: { value: '8' } });
+    fireEvent.change(screen.getByLabelText('供应商'), { target: { value: 's-1' } });
+    fireEvent.click(screen.getByRole('button', { name: '新增批次' }));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/api/v2/inventory-batches', expect.objectContaining({ method: 'POST' }));
+    });
+    const postCall = vi.mocked(apiRequest).mock.calls.find(([path, options]) => path === '/api/v2/inventory-batches' && options?.method === 'POST');
+    expect(JSON.parse(String(postCall?.[1]?.body))).toMatchObject({
+      itemId: 'i-form',
+      batchNo: 'B-FORM-1',
+      productionDate: '2026-07-01',
+      expiryDate: '2026-09-01',
+      initialQuantity: 8,
+      supplierId: 's-1',
+    });
+    expect(await screen.findByText('批次已入库')).toBeDefined();
+  });
+
+  it('generates expiry alerts via POST /api/v2/inventory-batches/expiry-alerts', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/inventoryItems?page=1&pageSize=20') return { items: [], total: 0 };
+      if (path === '/inventory/low-stock') return [];
+      if (path === '/inventory/expiring?days=30') return [];
+      if (path.startsWith('/resources/suppliers')) return { items: [], total: 0 };
+      if (path.startsWith('/api/v2/inventory-batches')) return { batches: [], expiring: [] };
+      return {};
+    });
+
+    render(<InventoryPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '生成到期提醒' }));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/api/v2/inventory-batches/expiry-alerts', expect.objectContaining({ method: 'POST' }));
+    });
+    const postCall = vi.mocked(apiRequest).mock.calls.find(([path, options]) => path === '/api/v2/inventory-batches/expiry-alerts' && options?.method === 'POST');
+    expect(JSON.parse(String(postCall?.[1]?.body))).toEqual({ days: 30 });
+    expect(await screen.findByText('到期提醒已生成')).toBeDefined();
   });
 });

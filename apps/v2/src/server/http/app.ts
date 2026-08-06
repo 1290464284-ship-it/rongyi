@@ -37,6 +37,7 @@ import {
   ReplenishmentService,
   WechatService,
 } from '../application/workflow-services';
+import { StocktakeService } from '../application/service-modules/stocktake';
 import { authMiddleware, errorMiddleware, roleMiddleware, traceMiddleware, wrapAsync } from './middleware';
 import { AppError } from '../infrastructure/errors';
 import { listAllResources } from '../infrastructure/legacy-registry';
@@ -60,6 +61,10 @@ import { registerChargeComboRoutes } from './routes/charge-combo-routes';
 import { registerRefundFlowRoutes } from './routes/refund-flow-routes';
 import { registerCostShareRoutes } from './routes/cost-share-routes';
 import { registerProcessingSettleRoutes } from './routes/processing-settle-routes';
+import { registerInventoryBatchRoutes } from './routes/inventory-batch-routes';
+import { registerStocktakeRoutes } from './routes/stocktake-routes';
+import { registerDispenseRoutes } from './routes/dispense-routes';
+import { registerPurchaseReviewRoutes } from './routes/purchase-review-routes';
 import type { RouteDependencies } from './routes/deps';
 
 export interface AppDependencies {
@@ -200,6 +205,10 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
   process.once('SIGTERM', shutdownFlushAudit);
   app.set('flushAudit', shutdownFlushAudit);
 
+  // 盘点锁定守卫：LOCKED 盘点单覆盖的物品在盘点期间禁止出入库。
+  const stocktakes = new StocktakeService(db);
+  const stocktakeLockGuard = (itemId: string, clinicId?: string | null) => stocktakes.assertNotLocked(itemId, clinicId);
+
   const deps: RouteDependencies = {
     db,
     dbPath,
@@ -209,7 +218,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
     audit: new AuditService(db),
     appointments: new AppointmentService(db),
     charges: new ChargeService(db),
-    inventory: new InventoryService(db),
+    inventory: new InventoryService(db, undefined, undefined, stocktakeLockGuard),
     followUps: new FollowUpService(db),
     backups: new BackupService(db, dbPath, backupDir),
     stats: new StatsService(db),
@@ -366,6 +375,10 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
   registerRefundFlowRoutes(app, db);
   registerCostShareRoutes(app, db);
   registerProcessingSettleRoutes(app, db);
+  registerInventoryBatchRoutes(app, db, { lockGuard: stocktakeLockGuard });
+  registerStocktakeRoutes(app, db);
+  registerDispenseRoutes(app, db, { lockGuard: stocktakeLockGuard });
+  registerPurchaseReviewRoutes(app, db);
   // file:// (打包版 Electron 渲染器) 以 <img> 加载 API 图片时,
   // 不受同源策略约束, 但 helmet 默认 Cross-Origin-Resource-Policy: same-origin
   // 会阻断响应; 仅对 files 路由放开 CORP。

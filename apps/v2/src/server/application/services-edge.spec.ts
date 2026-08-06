@@ -44,6 +44,7 @@ import {
   ReplenishmentService,
   WechatService,
 } from './workflow-services';
+import { StocktakeService } from './service-modules/stocktake';
 import type { AuthRepository } from './ports';
 import type { AppContext } from '../../domain/contracts';
 
@@ -679,6 +680,31 @@ describe('service edge coverage', () => {
        ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, 'SEARCHCAT', 'box', 1, 0, 100)`,
     ).run('inventory-null-label', context.clinicId, now, now);
     expect(service.lowStock(context)).toBeInstanceOf(Array);
+  });
+
+  it('blocks stock transactions for items under a locked stocktake and releases after completion', async () => {
+    const stocktakes = new StocktakeService(db);
+    const guarded = new InventoryService(db, undefined, undefined, (itemId, clinicId) => stocktakes.assertNotLocked(itemId, clinicId));
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO InventoryItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, category, unit, stock, minStock, price
+       ) VALUES (?, ?, ?, ?, NULL, 'LOCK-ITEM', 'Locked Item', 'MAT', 'box', 10, 1, 100)`,
+    ).run('inventory-lock-guard', context.clinicId, now, now);
+    const stocktake = stocktakes.start({ number: 'ST-GUARD-1' }, context);
+    // 未锁定时出入库正常
+    await guarded.createTransaction({ itemId: 'inventory-lock-guard', type: 'IN', quantity: 1 }, context);
+    stocktakes.lock(String(stocktake.id), context);
+    await expect(guarded.createTransaction({ itemId: 'inventory-lock-guard', type: 'OUT', quantity: 1 }, context))
+      .rejects.toThrow('库存盘点锁定中');
+    // 未带守卫的服务不受影响（路由层守卫由调用方注入）
+    const unguarded = new InventoryService(db);
+    await unguarded.createTransaction({ itemId: 'inventory-lock-guard', type: 'OUT', quantity: 1 }, context);
+    // 完成盘点后放行
+    stocktakes.complete(String(stocktake.id), context);
+    const after = await guarded.createTransaction({ itemId: 'inventory-lock-guard', type: 'OUT', quantity: 1 }, context);
+    expect(after.afterStock).toBe(9);
   });
 
   it('covers follow-up generation with and without templates and adherence rate', async () => {
@@ -1419,8 +1445,8 @@ describe('service edge coverage', () => {
     db.prepare(
       `INSERT INTO PurchaseOrder (
          id, clinicId, createdAt, updatedAt, deletedAt,
-         number, supplierId, totalAmount, status
-       ) VALUES (?, ?, ?, ?, NULL, 'PO-EDGE-2', NULL, 0, 'PENDING')`,
+         number, supplierId, totalAmount, status, reviewStatus
+       ) VALUES (?, ?, ?, ?, NULL, 'PO-EDGE-2', NULL, 0, 'PENDING', 'APPROVED')`,
     ).run('po-edge-2', context.clinicId, now, now);
     db.prepare(
       `INSERT INTO PurchaseOrderItem (
@@ -1450,8 +1476,8 @@ describe('service edge coverage', () => {
     db.prepare(
       `INSERT INTO PurchaseOrder (
          id, clinicId, createdAt, updatedAt, deletedAt,
-         number, supplierId, totalAmount, status
-       ) VALUES (?, ?, ?, ?, NULL, 'PO-EDGE-3', NULL, 0, 'PENDING')`,
+         number, supplierId, totalAmount, status, reviewStatus
+       ) VALUES (?, ?, ?, ?, NULL, 'PO-EDGE-3', NULL, 0, 'PENDING', 'APPROVED')`,
     ).run('po-edge-3', context.clinicId, now, now);
     db.prepare(
       `INSERT INTO PurchaseOrderItem (
@@ -1481,8 +1507,8 @@ describe('service edge coverage', () => {
     db.prepare(
       `INSERT INTO PurchaseOrder (
          id, clinicId, createdAt, updatedAt, deletedAt,
-         number, supplierId, totalAmount, status
-       ) VALUES (?, NULL, ?, ?, NULL, 'PO-EDGE-NULL', NULL, 0, 'PENDING')`,
+         number, supplierId, totalAmount, status, reviewStatus
+       ) VALUES (?, NULL, ?, ?, NULL, 'PO-EDGE-NULL', NULL, 0, 'PENDING', 'APPROVED')`,
     ).run('po-edge-null', now, now);
     db.prepare(
       `INSERT INTO PurchaseOrderItem (

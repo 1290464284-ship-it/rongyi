@@ -529,6 +529,9 @@ export class PurchaseOrderService {
     const order = this.purchaseOrderRepository.findById(orderId, context.clinicId);
     if (!order) throw new NotFoundError('Purchase order not found');
     if (order.status !== 'PENDING') throw new ConflictError('Purchase order is not pending');
+    if (order.reviewStatus && order.reviewStatus !== 'APPROVED') {
+      throw new ConflictError('Purchase order must be approved before receiving');
+    }
     const now = context.now().toISOString();
     const items = this.purchaseOrderRepository.itemsByOrder(orderId, context.clinicId);
     const receivedItems: Array<Record<string, unknown>> = [];
