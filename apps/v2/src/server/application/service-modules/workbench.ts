@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3';
+import { SystemClock } from '../../infrastructure/clock';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import type { AppContext } from '../../../domain/contracts';
 
@@ -35,7 +36,7 @@ export class ClinicalWorkbenchService {
 
   today(context: AppContext): Record<string, unknown> {
     const clinicId = context.clinicId;
-    const date = context.now().toISOString().slice(0, 10);
+    const date = new SystemClock().clinicDate(context.now());
     const clinicParams = tenantParams(clinicId);
 
     const registrations = this.db.prepare(

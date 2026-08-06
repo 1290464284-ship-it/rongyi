@@ -18,6 +18,7 @@ import {
   PatientRiskService,
   StatsService,
   SyncService,
+  maskPhoneForExport,
 } from './services';
 import { HttpWechatProvider, WechatService } from './workflow-services';
 import { AppError } from '../infrastructure/errors';
@@ -617,6 +618,40 @@ describe('application services', () => {
     expect(() => service.remindersCsv('bad-scope', context)).toThrow('overdue, today, upcoming, or all');
   });
 
+  it('masks phones and guards formula injection in follow-up CSV exports', () => {
+    const service = new FollowUpService(db);
+    const now = new Date().toISOString();
+    // 恶意患者：姓名与电话均以公式字符开头（CWE-1236）。
+    db.prepare(
+      `INSERT INTO Patient (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active
+       ) VALUES (?, ?, ?, ?, NULL, 'P-CSV-EVIL', '=1+1', 'UNKNOWN', '=SUM(1,2)', '[]', '', '', '', '', 'OTHER', 1)`,
+    ).run('patient-csv-evil', context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO FollowUp (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, planDate, content, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-csv-evil', '2026-08-01', 'evil', 'PENDING')`,
+    ).run('followup-csv-evil', context.clinicId, now, now);
+    const csv = service.remindersCsv('all', context);
+    // 公式注入防护：= 前缀的单元格以单引号转义（姓名未掩码，走 csvCell 防护）。
+    expect(csv).toContain(`"'=1+1"`);
+    expect(csv).not.toContain('"=1+1"');
+    // 电话先经掩码处理：=SUM(1,2) 无 7 位以上数字 → 全掩为星号，原始公式不出现在导出中。
+    expect(csv).not.toContain('=SUM(1,2)');
+    expect(csv).toContain('"*********"');
+    // 种子患者电话 13800000000 导出时被掩码为 138****0000。
+    expect(csv).toContain('138****0000');
+    expect(csv).not.toContain('13800000000');
+    // 掩码函数边界：短号全掩、空值返回空串。
+    expect(maskPhoneForExport('13812345678')).toBe('138****5678');
+    expect(maskPhoneForExport('12345')).toBe('*****');
+    expect(maskPhoneForExport(null)).toBe('');
+    expect(maskPhoneForExport(undefined)).toBe('');
+  });
+
   it('deducts and refunds member card balance with a charge', async () => {
     const now = new Date().toISOString();
     db.prepare(
@@ -950,9 +985,10 @@ describe('application services', () => {
   it('pulls sync changes with a cursor across the 1000-row page', () => {
     const service = new SyncService(db);
     const device = service.registerDevice('sync-cursor-device', 'Cursor Test', context);
-    // 起点取本库当前最新 createdAt，确保后续插入的 1001 条是唯一可见的新变更。
-    const since = (db.prepare('SELECT MAX(createdAt) AS m FROM SyncChange WHERE clinicId = ?').get(context.clinicId) as { m: string | null }).m
-      ?? new Date(0).toISOString();
+    // 起点取本库当前最新 createdAt +1ms：新语义下与游标同毫秒的行也会投递（防丢变更），
+    // 必须跳过同毫秒的遗留行，确保后续插入的 1001 条是唯一可见的新变更。
+    const maxRow = db.prepare('SELECT MAX(createdAt) AS m FROM SyncChange WHERE clinicId = ?').get(context.clinicId) as { m: string | null };
+    const since = maxRow.m ? new Date(Date.parse(maxRow.m) + 1).toISOString() : new Date(0).toISOString();
     const createdAtFor = (index: number) => new Date(Date.parse(since) + index + 1).toISOString();
     try {
       for (let index = 0; index < 1001; index += 1) {
@@ -969,12 +1005,12 @@ describe('application services', () => {
       expect(first.changes).toHaveLength(1000);
       expect(first.changes[0].recordId).toBe('sync-cursor-record-0');
       expect(first.changes[999].recordId).toBe('sync-cursor-record-999');
-      expect(first.cursor).toBe(createdAtFor(999));
+      expect(first.cursor).toBe(`${createdAtFor(999)}|${first.changes[999].rowid}`);
 
       const second = service.pull(first.cursor, 'sync-cursor-device', device.token, context);
       expect(second.changes).toHaveLength(1);
       expect(second.changes[0].recordId).toBe('sync-cursor-record-1000');
-      expect(second.cursor).toBe(createdAtFor(1000));
+      expect(second.cursor).toBe(`${createdAtFor(1000)}|${second.changes[0].rowid}`);
 
       const empty = service.pull(second.cursor, 'sync-cursor-device', device.token, context);
       expect(empty.changes).toHaveLength(0);
@@ -982,6 +1018,44 @@ describe('application services', () => {
     } finally {
       db.prepare('DELETE FROM SyncChange WHERE clinicId = ? AND recordId LIKE ?').run(context.clinicId, 'sync-cursor-record-%');
       db.prepare('DELETE FROM SyncDevice WHERE deviceId = ?').run('sync-cursor-device');
+    }
+  });
+
+  it('does not lose sync changes sharing the same createdAt across the 1000-row page', () => {
+    const service = new SyncService(db);
+    const device = service.registerDevice('sync-tie-device', 'Tie Test', context);
+    // 起点 = 当前最新 createdAt +1ms，所有新行共用该时间点：与游标同毫秒的遗留行
+    // 已被排除，且该毫秒恰好没有旧数据，能精确验证同毫秒分页不丢行。
+    const maxRow = db.prepare('SELECT MAX(createdAt) AS m FROM SyncChange WHERE clinicId = ?').get(context.clinicId) as { m: string | null };
+    const since = maxRow.m ? new Date(Date.parse(maxRow.m) + 1).toISOString() : new Date(0).toISOString();
+    const tieTime = since;
+    try {
+      // 1001 条变更共用同一 createdAt（同毫秒并列），且超出单页 LIMIT 1000。
+      for (let index = 0; index < 1001; index += 1) {
+        db.prepare(
+          `INSERT INTO SyncChange (
+             id, clinicId, createdAt, updatedAt, deletedAt,
+             tableName, recordId, operation, deviceId
+           ) VALUES (?, ?, ?, ?, NULL, 'Patient', ?, 'INSERT', 'other-device')`,
+        ).run(`sync-tie-change-${index}`, context.clinicId, tieTime, tieTime, `sync-tie-record-${index}`);
+      }
+
+      const first = service.pull(since, 'sync-tie-device', device.token, context);
+      expect(first.changes).toHaveLength(1000);
+      const firstIds = new Set(first.changes.map((row) => String(row.recordId)));
+      expect(firstIds.size).toBe(1000);
+
+      const second = service.pull(first.cursor, 'sync-tie-device', device.token, context);
+      expect(second.changes).toHaveLength(1);
+      expect(second.changes[0].recordId).toBe('sync-tie-record-1000');
+      expect(second.cursor).toMatch(/^.+\.\d{3}Z\|\d+$/);
+
+      const third = service.pull(second.cursor, 'sync-tie-device', device.token, context);
+      expect(third.changes).toHaveLength(0);
+      expect(third.cursor).toBe(second.cursor);
+    } finally {
+      db.prepare('DELETE FROM SyncChange WHERE clinicId = ? AND recordId LIKE ?').run(context.clinicId, 'sync-tie-record-%');
+      db.prepare('DELETE FROM SyncDevice WHERE deviceId = ?').run('sync-tie-device');
     }
   });
 

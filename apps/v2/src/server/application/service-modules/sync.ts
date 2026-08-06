@@ -39,16 +39,23 @@ export class SyncService {
       throw new AppError('FORBIDDEN', 'Sync requires BOSS', 403);
     }
     this.assertDevice(deviceId, deviceToken, context);
+    // 游标支持两种格式：新格式 `createdAt|rowid`（复合键），旧格式为纯 createdAt
+    // 时间戳。旧格式按 rowid 开区间（-1）解析：同毫秒的行可能被重复投递一次，但
+    // 绝不丢变更——旧实现 `createdAt > since` 会永久跳过与游标同毫秒的后续行。
+    const separator = since.lastIndexOf('|');
+    const cursorTime = separator > 0 ? since.slice(0, separator) : since;
+    const cursorRowid = separator > 0 ? Number(since.slice(separator + 1)) : -1;
     const changes = this.db.prepare(
-      `SELECT id, tableName, recordId, operation, deviceId, clinicId, createdAt
+      `SELECT id, tableName, recordId, operation, deviceId, clinicId, createdAt, rowid
        FROM SyncChange
-       WHERE createdAt > ? AND deviceId != ?${tenantAnd(context.clinicId)}
+       WHERE (createdAt > ? OR (createdAt = ? AND rowid > ?)) AND deviceId != ?${tenantAnd(context.clinicId)}
        ORDER BY createdAt ASC, rowid ASC
        LIMIT 1000`,
-    ).all(since, deviceId, ...tenantParams(context.clinicId)) as Array<Record<string, unknown>>;
-    // 游标 = 本批最后一条的 createdAt（与排序键一致；rowid 仅保证同秒并列时次序稳定，
-    // 客户端以 cursor 续拉不会丢变更）。空批时游标保持入参 since，可继续以同一游标轮询。
-    const cursor = changes.length > 0 ? String(changes[changes.length - 1].createdAt) : since;
+    ).all(cursorTime, cursorTime, cursorRowid, deviceId, ...tenantParams(context.clinicId)) as Array<Record<string, unknown>>;
+    // 游标 = 本批最后一条的 (createdAt, rowid) 复合键；与 ORDER BY 完全一致，
+    // 同毫秒并列 + 超 LIMIT 分页均不会丢变更。空批时游标保持入参 since，可继续以同一游标轮询。
+    const last = changes[changes.length - 1];
+    const cursor = last ? `${String(last.createdAt)}|${String(last.rowid)}` : since;
     return { changes, cursor, serverTime: new Date().toISOString() };
   }
 

@@ -303,6 +303,12 @@ export class AuthService {
     const row = this.authRepository.findById(id);
     if (!row || !tenantMatches(row.clinicId, context.clinicId)) throw new NotFoundError('User not found');
     if (input.role !== undefined && !isUserRole(input.role)) throw new ValidationError(`Invalid user role: ${input.role}`);
+    if (row.role === 'BOSS' && (input.active === false || (input.role !== undefined && input.role !== 'BOSS'))) {
+      const boss = this.db.prepare(
+        `SELECT COUNT(*) AS count FROM User WHERE role = 'BOSS' AND active = 1 AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+      ).get(...tenantParams(context.clinicId)) as { count: number };
+      if (Number(boss.count) <= 1) throw new ValidationError('不能禁用或降级最后一个管理员(BOSS)账号');
+    }
     const now = new Date().toISOString();
     const bumpToken = input.active === false;
     this.runTx(() => {

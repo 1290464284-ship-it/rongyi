@@ -6,6 +6,7 @@
  */
 import type Database from 'better-sqlite3';
 import { NotFoundError, ValidationError } from '../../infrastructure/errors';
+import { SystemClock } from '../../infrastructure/clock';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import type { AppContext } from '../../../domain/contracts';
 
@@ -84,7 +85,7 @@ export class FirstExamTrackingService {
       counts[row.followUpStatus] = Number(row.count ?? 0);
     }
 
-    const today = context.now().toISOString().slice(0, 10);
+    const today = new SystemClock().clinicDate(context.now());
     const dueRow = this.db.prepare(
       `SELECT COUNT(*) AS count FROM FirstExam
        WHERE deletedAt IS NULL

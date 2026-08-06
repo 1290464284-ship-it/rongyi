@@ -358,7 +358,7 @@ const resources: ResourceDefinition[] = [
     f('memberCardId', 'relation', { relation: { resource: 'memberCards', foreignKey: 'memberCardId', labelField: 'cardNo' } }),
     f('remark', 'longText'),
     f('discountPlanSnapshotJson', 'json', { default: '{}' }),
-  ], { roles: reception, audit: true, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false }, searchIndexResource: 'Charge' }),
+  ], { roles: boss, audit: true, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false }, searchIndexResource: 'Charge' }),
 
   crud('chargeItems', 'ChargeItem', [
     f('chargeId', 'relation', { required: true, relation: { resource: 'charges', foreignKey: 'chargeId', labelField: 'number' } }),
@@ -370,7 +370,7 @@ const resources: ResourceDefinition[] = [
     f('teethNumbers', 'json', { default: '[]' }),
     f('subtotal', 'money', { required: true }),
     f('costType', 'enum', { enumValues: ['SERVICE', 'MATERIAL'] }),
-  ], { roles: reception, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
+  ], { roles: boss, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
 
   crud('debtRecords', 'Debt', [
     f('chargeId', 'relation', { required: true, relation: { resource: 'charges', foreignKey: 'chargeId', labelField: 'number' } }),
@@ -378,7 +378,7 @@ const resources: ResourceDefinition[] = [
     f('totalAmount', 'money', { required: true }),
     f('paidAmount', 'money', { default: 0 }),
     f('status', 'enum', { required: true, enumValues: ['UNPAID', 'PARTIAL', 'PAID', 'CANCELLED'] }),
-  ], { roles: reception, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
+  ], { roles: boss, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
 
   crud('memberCards', 'MemberCard', [
     f('patientId', 'relation', { required: true, relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
@@ -395,7 +395,7 @@ const resources: ResourceDefinition[] = [
     f('roundingMode', 'enum', { enumValues: ['FLOOR', 'ROUND', 'NONE'] }),
     f('annualDiscountLimit', 'number', { min: 0 }),
     f('specialDiscountsJson', 'json', { default: '[]' }),
-  ], { roles: reception, capabilities: { list: true, create: true, update: true, delete: true, softDelete: true } }),
+  ], { roles: boss, capabilities: { list: true, create: true, update: true, delete: true, softDelete: true } }),
 
   crud('memberCardLogs', 'MemberCardLog', [
     f('cardId', 'relation', { required: true, relation: { resource: 'memberCards', foreignKey: 'cardId', labelField: 'cardNo' } }),
@@ -404,7 +404,7 @@ const resources: ResourceDefinition[] = [
     f('balanceAfter', 'money', { required: true }),
     f('referenceId', 'text'),
     f('remark', 'longText'),
-  ], { roles: reception, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
+  ], { roles: boss, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
 
   crud('memberPointLogs', 'MemberPointLog', [
     f('cardId', 'relation', { required: true, relation: { resource: 'memberCards', foreignKey: 'cardId', labelField: 'cardNo' } }),
@@ -413,7 +413,7 @@ const resources: ResourceDefinition[] = [
     f('pointsAfter', 'number', { required: true }),
     f('referenceId', 'text'),
     f('remark', 'longText'),
-  ], { roles: reception, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
+  ], { roles: boss, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
 
   crud('refunds', 'Refund', [
     f('chargeId', 'relation', { required: true, relation: { resource: 'charges', foreignKey: 'chargeId', labelField: 'number' } }),
@@ -427,7 +427,7 @@ const resources: ResourceDefinition[] = [
     f('approvedAt', 'datetime'),
     f('processedById', 'text'),
     f('processedAt', 'datetime'),
-  ], { roles: reception, audit: true, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
+  ], { roles: boss, audit: true, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
 
   crud('drugCatalogItems', 'DrugCatalogItem', [
     f('code', 'text', { required: true, unique: true, searchable: true }),
@@ -557,7 +557,7 @@ const resources: ResourceDefinition[] = [
     f('settledAt', 'datetime'),
     f('settlementNote', 'longText'),
     f('settlementRef', 'text'),
-  ], { roles: reception, capabilities: { list: true, create: true, update: true, delete: true, softDelete: true } }),
+  ], { roles: boss, capabilities: { list: true, create: true, update: true, delete: true, softDelete: true } }),
 
   crud('processingOrderItems', 'ProcessingOrderItem', [
     f('orderId', 'relation', { required: true, relation: { resource: 'processingOrders', foreignKey: 'orderId', labelField: 'number' } }),
@@ -567,7 +567,7 @@ const resources: ResourceDefinition[] = [
     f('unitPrice', 'money', { required: true }),
     f('subtotal', 'money', { required: true }),
     f('status', 'text', { required: true }),
-  ], { roles: reception, capabilities: { list: true, create: true, update: true, delete: true, softDelete: true } }),
+  ], { roles: boss, capabilities: { list: true, create: true, update: true, delete: true, softDelete: true } }),
 
   crud('cephalometricCases', 'CephalometricCase', [
     f('patientId', 'relation', { required: true, relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
@@ -590,7 +590,7 @@ const resources: ResourceDefinition[] = [
     f('status', 'text', { required: true }),
     f('issuedAt', 'datetime'),
     f('remark', 'longText'),
-  ], { roles: reception, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
+  ], { roles: boss, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   crud('followUps', 'FollowUp', [
     f('patientId', 'relation', { required: true, relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
@@ -952,7 +952,7 @@ const resources: ResourceDefinition[] = [
     f('sortOrder', 'number', { default: 0 }),
     f('active', 'boolean', { default: true }),
     f('remark', 'longText'),
-  ], { roles: reception }),
+  ], { roles: boss }),
 
   // 加工流程步骤词典（自定义加工流程）
   crud('processingFlowSteps', 'ProcessingFlowStep', [
@@ -973,7 +973,7 @@ const resources: ResourceDefinition[] = [
     f('completedAt', 'datetime'),
     f('operatorId', 'text'),
     f('remark', 'longText'),
-  ], { roles: reception, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
+  ], { roles: boss, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
 
   // 库存独立单据（退回厂商/库损/调拨），写操作走专用服务
   crud('inventoryDocs', 'InventoryDoc', [

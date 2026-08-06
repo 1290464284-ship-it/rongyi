@@ -136,9 +136,17 @@ export function createResourceRouter(db: Database.Database): Router {
     try {
       const resource = res.locals.resource as ResourceDefinition;
       if (!resource.capabilities.delete) throw new NotFoundError('Delete is not supported for this resource');
+      // M2：患者主档删除限 BOSS（医生/前台可误删患者）；病历删除须未锁定（绕过审批流）。
+      if (resource.name === 'patients' && req.context!.role !== 'BOSS') {
+        throw new AppError('FORBIDDEN', 'Deleting patients requires BOSS', 403);
+      }
       const repo = new SqliteRepository(db, resource);
-      if (!(await repo.findById(req.params.id, req.context!))) {
+      const existing = await repo.findById(req.params.id, req.context!);
+      if (!existing) {
         throw new NotFoundError(`${resource.name} not found`);
+      }
+      if (resource.name === 'medicalRecords' && existing.isLocked === true) {
+        throw new AppError('FORBIDDEN', 'Locked medical records cannot be deleted', 403);
       }
       await repo.softDelete(req.params.id, req.context!);
       res.json({ success: true, data: { id: req.params.id } });

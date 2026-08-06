@@ -35,6 +35,8 @@ export const routeRoleRules: Array<{ pattern: RegExp; roles: UserRole[] }> = [
   { pattern: /^\/api\/v2\/schedules\/week/, roles: ['BOSS'] },
   { pattern: /^\/api\/v2\/user-roles/, roles: ['BOSS'] },
   { pattern: /^\/api\/v2\/processing-orders/, roles: financeStaff },
+  // 治疗计划打折/划价是财务操作（H2：临床医生可自行打折绕过收费岗复核），限财务岗
+  { pattern: /^\/api\/v2\/treatment-plans\/[^/]+(\/items\/[^/]+)?\/(bill|discount)(\/|$)/, roles: financeStaff },
   { pattern: /^\/api\/v2\/appointments/, roles: operationalStaff },
   {
     pattern: /^\/api\/v2\/(registrations|visits|first-exams|treatments|medical-records|patients\/.*\/risk|prescriptions|cephalometric|treatment-plans)/,

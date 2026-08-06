@@ -43,12 +43,11 @@ export function importLegacyDatabase(
   let backupCreated: string | undefined;
   if (fs.existsSync(targetPath)) {
     backupCreated = `${targetPath}.pre-import-${Date.now()}`;
-    backupSqliteFile(targetPath, backupCreated);
+    backupSqliteFile(targetPath, backupCreated, logger);
   }
   removeSqliteSidecars(targetPath);
   if (fs.existsSync(targetPath)) fs.rmSync(targetPath, { force: true });
-  backupSqliteFile(sourcePath, targetPath);
-  removeSqliteSidecars(sourcePath);
+  backupSqliteFile(sourcePath, targetPath, logger);
 
   const targetDb = new Database(targetPath, { readonly: true });
   try {

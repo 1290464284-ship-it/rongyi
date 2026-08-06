@@ -48,8 +48,11 @@ function maxValue(rows: ChartRow[], key: (row: ChartRow) => number): number {
 }
 
 function csvCell(value: unknown): string {
-  const text = value === null || value === undefined ? '' : String(value);
-  return `"${text.replaceAll('"', '""')}"`;
+  if (value === null || value === undefined) return '';
+  const text = typeof value === 'object' ? JSON.stringify(value) : String(value);
+  // CWE-1236：阻止公式注入（Excel 打开时执行 =SUM(...) 等），与服务端导出保持一致。
+  const guarded = /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
+  return `"${guarded.replaceAll('"', '""')}"`;
 }
 
 function downloadTextFile(filename: string, content: string, mime = 'text/csv;charset=utf-8'): void {
