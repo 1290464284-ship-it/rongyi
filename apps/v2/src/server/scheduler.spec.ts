@@ -73,7 +73,7 @@ describe('startSchedulers', () => {
   });
 
   it('runAutoBackup 重叠时不并发执行（isRunning 守卫）', async () => {
-    vi.useRealTimers();
+    vi.useFakeTimers();
     ensureTimers();
     const backups = makeBackups();
     let resolveSecond: () => void = () => {};
@@ -98,19 +98,19 @@ describe('startSchedulers', () => {
     const { stop } = startSchedulers({
       backups,
       audit,
-      autoBackupIntervalMs: 60_000,
+      autoBackupIntervalMs: 24 * 60 * 60 * 1000, // 远大于首延迟，避免推进时 interval 同步触发
       autoBackupKeep: 30,
       logger,
       onAlertCreate,
     });
 
+    // 推进 fake timers 越过 5 分钟首延迟触发首次备份
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 1);
     await vi.waitFor(() => expect(backups.create).toHaveBeenCalledTimes(1));
 
-    void (async () => {
-      await new Promise((r) => setTimeout(r, 1));
-      resolveSecond();
-    })();
+    resolveSecond();
 
+    await vi.advanceTimersByTimeAsync(10); // 放行首个备份 mock 内部的 10ms 延迟
     await firstCallPromise;
     const callCountBefore = vi.mocked(backups.create).mock.calls.length;
 
@@ -151,7 +151,7 @@ describe('startSchedulers', () => {
   });
 
   it('runAutoBackup 失败时调用 onAlertCreate', async () => {
-    vi.useRealTimers();
+    vi.useFakeTimers();
     ensureTimers();
     const backups = makeBackups();
     vi.mocked(backups.create).mockRejectedValueOnce(new Error('disk full'));
@@ -168,6 +168,8 @@ describe('startSchedulers', () => {
       onAlertCreate,
     });
 
+    // 推进 fake timers 越过 5 分钟首延迟触发首次备份
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 1);
     const input = await vi.waitFor<AlertCreateInput>(() => {
       expect(onAlertCreate).toHaveBeenCalled();
       return onAlertCreate.mock.calls[0][0] as AlertCreateInput;
@@ -210,7 +212,7 @@ describe('startSchedulers', () => {
         onAlertCreate,
       });
       stop();
-      expect(clears.length).toBe(2);
+      expect(clears.length).toBe(3); // 自动备份 interval + 自动备份首执行 timeout + 审计清理 interval
     } finally {
       globalThis.clearInterval = origClear;
     }
@@ -234,8 +236,9 @@ describe('startSchedulers', () => {
       idempotencyCleanup,
     });
 
-    // 首启立即执行的任务各触发一次；idempotency 与原内联行为一致不首启执行。
-    expect(backups.create).toHaveBeenCalledTimes(1);
+    // 首启不立即执行自动备份（5 分钟首延迟），审计清理照常首启执行；
+    // idempotency 与原内联行为一致不首启执行。
+    expect(backups.create).not.toHaveBeenCalled();
     expect(audit.cleanup).toHaveBeenCalledTimes(1);
     expect(idempotencyCleanup).not.toHaveBeenCalled();
 

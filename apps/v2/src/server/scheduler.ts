@@ -52,6 +52,12 @@ export function startSchedulers(options: StartSchedulersOptions): { stop(): void
     timers.push(timer);
   }
 
+  function scheduleOnce(callback: () => void, ms: number): void {
+    const timer = setTimeout(callback, ms);
+    timer.unref?.();
+    timers.push(timer);
+  }
+
   async function runAutoBackup(): Promise<void> {
     if (isRunning) return;
     isRunning = true;
@@ -96,9 +102,9 @@ export function startSchedulers(options: StartSchedulersOptions): { stop(): void
     }
   }
 
-  // First run executes immediately (behavioral difference from the old
-  // main.ts 5-minute first-delay is accepted by the caller).
-  void runAutoBackup();
+  // 首执行延迟 5 分钟（恢复原 main.ts 的首延迟行为），避免每次启动立即执行
+  // 全量备份拖慢启动；此后按 intervalMs 周期执行。
+  scheduleOnce(() => void runAutoBackup(), 5 * 60 * 1000);
   schedule(() => void runAutoBackup(), intervalMs);
 
   cleanupAuditLogs();

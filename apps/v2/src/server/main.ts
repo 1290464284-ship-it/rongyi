@@ -212,11 +212,23 @@ const wasCleanExit = fs.existsSync(cleanExitMarker);
 if (wasCleanExit) fs.rmSync(cleanExitMarker, { force: true });
 const db = createDatabase(dataDir, dbPath, { fullIntegrityCheck: !wasCleanExit });
 syncLegacySchema(db, legacySchemaDir);
-runMigrations(db, { snapshotDir: dataDir });
-try {
-  rebuildSearchIndex(db);
-} catch (error) {
-  logger.error('search index rebuild failed at startup', { action: 'search-index-rebuild', error });
+const appliedMigrations = runMigrations(db, { snapshotDir: dataDir });
+// 搜索索引由单行 upsertSearchRow 增量维护（repository/search-index 同源 SQL）；
+// 仅当本次启动了迁移（可能改动被索引表结构）或索引为空（首次/被清空）时全量重建，
+// 避免每次启动全表扫描拖慢启动。
+const hasSearchIndexTable = !!db.prepare(
+  `SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'SearchIndex'`,
+).get();
+let searchIndexEmpty = false;
+if (hasSearchIndexTable) {
+  searchIndexEmpty = Number((db.prepare('SELECT COUNT(*) AS total FROM SearchIndex').get() as { total: number }).total) === 0;
+}
+if (appliedMigrations > 0 || searchIndexEmpty) {
+  try {
+    rebuildSearchIndex(db);
+  } catch (error) {
+    logger.error('search index rebuild failed at startup', { action: 'search-index-rebuild', error });
+  }
 }
 seedDatabase(db);
 const app = createApp({ db, dbPath, backupDir, logger, logDir });
