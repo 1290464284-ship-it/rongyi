@@ -72,8 +72,8 @@ describe('AnalyticsDashboardPage', () => {
     const click = vi.fn();
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(click);
     vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:report'), revokeObjectURL: vi.fn() });
-    const printDoc = { open: vi.fn(), write: vi.fn(), close: vi.fn() };
-    const open = vi.fn(() => ({ focus: vi.fn(), close: vi.fn(), document: printDoc })) as unknown as typeof window.open;
+    const target = { focus: vi.fn(), close: vi.fn(), location: { href: '' } };
+    const open = vi.fn(() => target) as unknown as typeof window.open;
     vi.spyOn(window, 'open').mockImplementation(open);
 
     render(<AnalyticsDashboardPage />, { wrapper });
@@ -86,9 +86,9 @@ describe('AnalyticsDashboardPage', () => {
     await waitFor(() => {
       expect(open).toHaveBeenCalledWith('', '_blank');
       expect(fetchPrintHtml).toHaveBeenCalledWith('/print', expect.objectContaining({ kind: 'analytics' }));
-      expect(printDoc.open).toHaveBeenCalled();
-      expect(printDoc.write).toHaveBeenCalledWith('<!doctype html><html><body>report</body></html>');
-      expect(printDoc.close).toHaveBeenCalled();
+      expect(URL.createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
+      expect(target.location.href).toBe('blob:report');
+      expect(target.focus).toHaveBeenCalled();
     });
   });
 
