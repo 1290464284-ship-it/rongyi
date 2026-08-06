@@ -3,6 +3,7 @@ import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { withIdempotency } from '../../infrastructure/idempotency';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
+import { recordSyncChange } from '../../infrastructure/sync-change';
 import { SqliteChargeRepository } from '../../infrastructure/repositories/charge.repository';
 import {
   SqliteDebtRepository,
@@ -154,6 +155,10 @@ export class ChargeService {
         this.db.prepare(
           `UPDATE Charge SET discountPlanSnapshotJson = ? WHERE id = ?`,
         ).run(JSON.stringify(input.discountPlanSnapshot), id);
+        // P2-3：直接改库的路径也必须进同步队列
+        if (context.clinicId) {
+          recordSyncChange(this.db, { tableName: 'Charge', recordId: id, operation: 'UPDATE', clinicId: context.clinicId });
+        }
       }
     });
     chargeRun();
@@ -178,6 +183,10 @@ export class ChargeService {
       this.db.prepare(
         `UPDATE ChargeItem SET deletedAt = ?, updatedAt = ? WHERE chargeId = ? AND deletedAt IS NULL`,
       ).run(now, now, id);
+      // P2-3：取消收费单要通知同步端（删除记录）
+      if (context.clinicId) {
+        recordSyncChange(this.db, { tableName: 'Charge', recordId: id, operation: 'DELETE', clinicId: context.clinicId });
+      }
     })();
     return { id, status: 'CANCELLED' };
   }
@@ -185,6 +194,7 @@ export class ChargeService {
   async pay(id: string, amount: number, method: string, requestId?: string, context?: AppContext, payMethodName?: string): Promise<Record<string, unknown>> {
     return withIdempotency(this.db, {
       operation: 'charge.pay',
+      resourceId: id,
       userId: context?.userId ?? null,
       clinicId: context?.clinicId ?? null,
       requestId: requestId ?? '',
@@ -227,10 +237,32 @@ export class ChargeService {
           });
         }
         this.chargeRepository.updatePayment(id, newPaid, newStatus, now, method, memberCardId, context?.clinicId ?? null);
+        this.db.prepare(
+          `INSERT INTO PaymentLedger (
+             id, clinicId, createdAt, updatedAt, deletedAt,
+             chargeId, patientId, type, method, amount, cardId, operatorId,
+             reversedAmount, relatedId, allocations
+           ) VALUES (?, ?, ?, ?, NULL, ?, ?, 'PAY', ?, ?, ?, ?, 0, NULL, NULL)`,
+        ).run(
+          randomUUID(),
+          row.clinicId ?? null,
+          now,
+          now,
+          id,
+          String(row.patientId),
+          method,
+          amount,
+          memberCardId,
+          context?.userId ?? null,
+        );
         if (typeof payMethodName === 'string' && payMethodName.trim() !== '') {
           this.db.prepare(
             `UPDATE Charge SET payMethodName = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(context?.clinicId ?? null)}`,
           ).run(payMethodName.trim(), now, id, ...tenantParams(context?.clinicId ?? null));
+          // P2-3：直接改库的路径也必须进同步队列
+          if (context?.clinicId) {
+            recordSyncChange(this.db, { tableName: 'Charge', recordId: id, operation: 'UPDATE', clinicId: context.clinicId });
+          }
         }
         const debt = this.debtRepository.findByCharge(id, context?.clinicId ?? null);
         if (debt) {
@@ -269,6 +301,7 @@ export class ChargeService {
   ): Promise<Record<string, unknown>> {
     return withIdempotency(this.db, {
       operation: 'charge.refund',
+      resourceId: id,
       userId: context.userId,
       clinicId: context.clinicId,
       requestId: requestId ?? '',
@@ -287,12 +320,28 @@ export class ChargeService {
       const refundId = randomUUID();
       const run = this.db.transaction(() => {
         this.chargeRepository.updateRefund(id, newRefunded, newStatus, now, context.clinicId);
-        if (row.payMethod === 'MEMBER_CARD') {
-          const memberCard = row.memberCardId
-            ? this.memberCardRepository.findById(String(row.memberCardId), context.clinicId)
+        // 按 PaymentLedger LIFO 逐笔冲销会员卡支付（修复混合支付/多笔部分支付
+        // 退款时整单按单一 payMethod 回充、导致卡余额回充金额错误的缺陷）。
+        // 旧数据（迁移 146 前）已回填为单条合并流水，冲销上限 = paidAmount，有界安全。
+        const payRows = this.db.prepare(
+          `SELECT id, method, amount, cardId, reversedAmount
+           FROM PaymentLedger
+           WHERE chargeId = ? AND type = 'PAY' AND deletedAt IS NULL
+           ORDER BY createdAt DESC, rowid DESC`,
+        ).all(id) as Array<{ id: string; method: string; amount: number; cardId: string | null; reversedAmount: number }>;
+        const allocations: Array<{ ledgerId: string; cardId: string; amount: number }> = [];
+        let remaining = amount;
+        for (const payRow of payRows) {
+          if (remaining <= 0) break;
+          if (payRow.method !== 'MEMBER_CARD') continue;
+          const available = Number(payRow.amount) - Number(payRow.reversedAmount);
+          if (available <= 0) continue;
+          const take = Math.min(available, remaining);
+          const memberCard = payRow.cardId
+            ? this.memberCardRepository.findById(payRow.cardId, context.clinicId)
             : this.memberCardRepository.findByPatientForRefund(String(row.patientId), context.clinicId);
           if (!memberCard) throw new ConflictError('Member card used for payment is not found');
-          const balance = Number(memberCard.balance) + amount;
+          const balance = Number(memberCard.balance) + take;
           this.memberCardRepository.updateBalanceRefund(memberCard.id, balance, now, context.clinicId);
           this.memberCardRepository.insertLog({
             id: randomUUID(),
@@ -301,11 +350,35 @@ export class ChargeService {
             updatedAt: now,
             cardId: memberCard.id,
             type: 'REFUND',
-            amount,
+            amount: take,
             balanceAfter: balance,
             remark: reason,
           });
+          this.db.prepare(
+            `UPDATE PaymentLedger SET reversedAmount = reversedAmount + ?, updatedAt = ? WHERE id = ?`,
+          ).run(take, now, payRow.id);
+          allocations.push({ ledgerId: payRow.id, cardId: memberCard.id, amount: take });
+          remaining -= take;
         }
+        this.db.prepare(
+          `INSERT INTO PaymentLedger (
+             id, clinicId, createdAt, updatedAt, deletedAt,
+             chargeId, patientId, type, method, amount, cardId, operatorId,
+             reversedAmount, relatedId, allocations
+           ) VALUES (?, ?, ?, ?, NULL, ?, ?, 'REFUND', ?, ?, NULL, ?, 0, ?, ?)`,
+        ).run(
+          randomUUID(),
+          row.clinicId ?? null,
+          now,
+          now,
+          id,
+          String(row.patientId),
+          'REFUND',
+          amount,
+          context.userId,
+          refundId,
+          allocations.length > 0 ? JSON.stringify(allocations) : null,
+        );
         const debt = this.debtRepository.findByCharge(id, context.clinicId);
         if (debt && Number(debt.paidAmount) > 0) {
           const newDebtPaid = Math.max(0, Number(debt.paidAmount) - amount);
@@ -384,6 +457,7 @@ export class MemberCardService {
   async recharge(cardId: string, amount: number, context: AppContext, requestId?: string): Promise<Record<string, unknown>> {
     return withIdempotency(this.db, {
       operation: 'member-card.recharge',
+      resourceId: cardId,
       userId: context.userId,
       clinicId: context.clinicId,
       requestId: requestId ?? '',
@@ -402,6 +476,7 @@ export class MemberCardService {
   async consume(cardId: string, amount: number, context: AppContext, requestId?: string): Promise<Record<string, unknown>> {
     return withIdempotency(this.db, {
       operation: 'member-card.consume',
+      resourceId: cardId,
       userId: context.userId,
       clinicId: context.clinicId,
       requestId: requestId ?? '',
@@ -421,6 +496,7 @@ export class MemberCardService {
   async addPoints(cardId: string, points: number, context: AppContext, requestId?: string): Promise<Record<string, unknown>> {
     return withIdempotency(this.db, {
       operation: 'member-card.points',
+      resourceId: cardId,
       userId: context.userId,
       clinicId: context.clinicId,
       requestId: requestId ?? '',
@@ -765,11 +841,16 @@ export class DebtService {
            SET paidAmount = ?, status = ?, updatedAt = ?
            WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
         ).run(chargePaid, chargeStatus, context.now().toISOString(), charge.id, ...tenantParams(context.clinicId));
+        // P2-3：直接改库的路径也必须进同步队列
+        if (context.clinicId) {
+          recordSyncChange(this.db, { tableName: 'Charge', recordId: charge.id, operation: 'UPDATE', clinicId: context.clinicId });
+        }
       }
       return { id: debtId, paidAmount: paid, status };
     });
     return await withIdempotency(this.db, {
       operation: 'debt.pay',
+      resourceId: debtId,
       userId: context.userId,
       clinicId: context.clinicId,
       requestId: requestId ?? '',

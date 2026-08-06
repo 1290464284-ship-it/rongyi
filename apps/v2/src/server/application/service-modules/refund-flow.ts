@@ -141,7 +141,52 @@ export class RefundFlowService {
       `UPDATE Charge SET refundedAmount = ?, status = ?, updatedAt = ? WHERE id = ?`,
     ).run(newRefunded, chargeStatus, now, charge.id);
 
-    if (charge.payMethod === 'MEMBER_CARD') {
+    // 新退款（迁移 146 后）在 PaymentLedger 留有 REFUND 行与逐笔 allocations：
+    // 按流水精确回退对应卡余额并回退 reversedAmount。旧退款（无 allocations）
+    // 走原 payMethod 整单冲销兜底。
+    const refundLedger = this.db.prepare(
+      `SELECT allocations FROM PaymentLedger WHERE relatedId = ? AND type = 'REFUND' AND deletedAt IS NULL`,
+    ).get(refundRow.id) as { allocations: string | null } | undefined;
+    const allocations = refundLedger?.allocations
+      ? (JSON.parse(refundLedger.allocations) as Array<{ ledgerId: string; cardId: string; amount: number }>)
+      : [];
+    if (allocations.length > 0) {
+      for (const allocation of allocations) {
+        const card = this.db.prepare(
+          `SELECT id, balance
+           FROM MemberCard
+           WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+        ).get(allocation.cardId, ...tenantParams(context.clinicId)) as { id: string; balance: number } | undefined;
+        if (!card) {
+          // 卡已被删除等极端情况：告警并跳过，避免冲销失败阻塞审批状态流转。
+          console.warn(`[refund-flow] 退款冲销原卡 ${allocation.cardId} 不可用，跳过该笔 ${allocation.amount} 分`);
+          continue;
+        }
+        const newBalance = Math.max(0, Number(card.balance) - allocation.amount);
+        this.db.prepare(
+          `UPDATE MemberCard SET balance = ?, updatedAt = ? WHERE id = ?`,
+        ).run(newBalance, now, card.id);
+        this.db.prepare(
+          `INSERT INTO MemberCardLog (
+             id, clinicId, createdAt, updatedAt, deletedAt,
+             cardId, type, amount, balanceAfter, remark
+           ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
+        ).run(
+          randomUUID(),
+          charge.clinicId ?? null,
+          now,
+          now,
+          card.id,
+          'REFUND_REVERSAL',
+          -allocation.amount,
+          newBalance,
+          '退款驳回/取消回滚',
+        );
+        this.db.prepare(
+          `UPDATE PaymentLedger SET reversedAmount = MAX(0, reversedAmount - ?), updatedAt = ? WHERE id = ?`,
+        ).run(allocation.amount, now, allocation.ledgerId);
+      }
+    } else if (charge.payMethod === 'MEMBER_CARD') {
       // 优先按原支付卡冲销（ChargeService.pay 已把 memberCardId 落库），
       // 与 ChargeService.refund 回充的卡保持一致，多卡场景不再误扣"第一张 ACTIVE 卡"。
       let card = charge.memberCardId
