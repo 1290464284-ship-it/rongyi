@@ -16,6 +16,11 @@ on:
       - 'docs/refactor-v2-*'
       - '.github/workflows/v2-ci.yml'
 
+# CI 专用环境变量（非生产密钥）：加密备份必需 V2_BACKUP_KEY，
+# 否则 POST /backups 在无 key 且非 test 环境时返回 500，导致 API smoke 失败。
+env:
+  V2_BACKUP_KEY: ci-backup-key-0123456789abcdef
+
 jobs:
   verify:
     name: Lint, Build, Type Check, Test & E2E
