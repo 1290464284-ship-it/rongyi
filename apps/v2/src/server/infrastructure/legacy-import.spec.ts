@@ -17,7 +17,11 @@ vi.mock('../http/app', () => ({
   })),
 }));
 vi.mock('./database', () => ({
-  createDatabase: vi.fn(() => ({ pragma: vi.fn(), close: vi.fn() })),
+  createDatabase: vi.fn(() => ({
+    pragma: vi.fn(),
+    close: vi.fn(),
+    prepare: vi.fn(() => ({ get: vi.fn(() => undefined), all: vi.fn(() => []) })),
+  })),
   seedDatabase: vi.fn(),
   syncLegacySchema: vi.fn(),
 }));
