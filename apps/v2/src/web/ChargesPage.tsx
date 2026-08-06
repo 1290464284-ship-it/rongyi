@@ -1,4 +1,5 @@
 import { FormEvent, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import { DataTable, Dialog, EmptyState, LoadingState, PageError, SearchableSelect, type DataTableColumn } from './components';
 import { formatMoney, toCents } from './format';
@@ -69,6 +70,29 @@ interface ChargeComboRow {
   items?: ChargeComboItemRow[];
 }
 
+interface ChargeTreeNode {
+  id: string;
+  code: string;
+  name: string;
+  category: string;
+  price: number;
+  costType: 'SERVICE' | 'MATERIAL' | null;
+  anesthesia: boolean;
+  businessCategory: 'SERVICE' | 'DRUG' | 'MATERIAL' | 'OTHER' | null;
+  parentId: string | null;
+  children: ChargeTreeNode[];
+}
+
+interface PayMethodNode {
+  id: string;
+  name: string;
+  parentId: string | null;
+  sortOrder: number;
+  active: boolean;
+  remark: string | null;
+  children: PayMethodNode[];
+}
+
 function newItem(): ChargeItemForm {
   return { id: crypto.randomUUID(), name: '', category: '', price: '', quantity: '1', costType: 'SERVICE' };
 }
@@ -98,11 +122,18 @@ function buildValidItems(items: ChargeItemForm[]): ValidChargeItem[] {
     .filter((item) => item.price > 0 && item.quantity > 0);
 }
 
+/** 把自定义缴费方式的名称映射回后端 pay 端点认可的标准 method 码。 */
+function methodCodeForName(name: string): string {
+  const entry = Object.entries(METHOD_LABELS).find(([, label]) => label === name);
+  return entry ? entry[0] : 'OTHER';
+}
+
 export function ChargesPage() {
   const { showToast } = useToast();
   const [paymentTarget, setPaymentTarget] = useState<string | null>(null);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('CASH');
+  const [paymentMethodRoot, setPaymentMethodRoot] = useState('');
   const [refundTarget, setRefundTarget] = useState<string | null>(null);
   const [refundAmount, setRefundAmount] = useState('');
   const [refundReason, setRefundReason] = useState('');
@@ -110,6 +141,11 @@ export function ChargesPage() {
   const [comboOpen, setComboOpen] = useState(false);
   const [combos, setCombos] = useState<ChargeComboRow[] | null>(null);
   const [comboLoading, setComboLoading] = useState(false);
+  const [expandedCatalogs, setExpandedCatalogs] = useState<Record<string, boolean>>({});
+  const [quickTarget, setQuickTarget] = useState<ChargeTreeNode | null>(null);
+  const [quickQuantity, setQuickQuantity] = useState('1');
+  const [quickPatientId, setQuickPatientId] = useState('');
+  const [quickBusy, setQuickBusy] = useState(false);
 
   const crud = useCrudResource<ChargeRow, ChargeForm>({
     queryKey: ['charges'],
@@ -133,8 +169,44 @@ export function ChargesPage() {
     errorMessages: { create: '创建收费失败' },
   });
 
+  const chargeTreeQuery = useQuery({
+    queryKey: ['charge-trees'],
+    queryFn: () => apiRequest<{ items: ChargeTreeNode[] }>('/charge-trees'),
+  });
+  const payMethodQuery = useQuery({
+    queryKey: ['pay-methods', 'tree'],
+    queryFn: () => apiRequest<{ items: PayMethodNode[] }>('/pay-methods/tree'),
+  });
+
   if (crud.query.isLoading) return <LoadingState />;
   if (crud.query.error) return <PageError message={(crud.query.error as Error).message} />;
+
+  const chargeTreeItems = chargeTreeQuery.data?.items ?? [];
+  const payMethodItems = (payMethodQuery.data?.items ?? []).filter((node) => node.active !== false);
+  const payTreeLoaded = payMethodItems.length > 0;
+  // 未配置缴费方式树时退回内置方式列表（两级下拉的第二级仍以“支付方式”呈现）。
+  const fallbackPayMethods: PayMethodNode[] = Object.entries(METHOD_LABELS).map(([code, label]) => ({
+    id: code,
+    name: label,
+    parentId: null,
+    sortOrder: 0,
+    active: true,
+    remark: null,
+    children: [],
+  }));
+  const payRoots = payTreeLoaded ? payMethodItems : fallbackPayMethods;
+  const effectivePayRoot = payRoots.some((node) => node.id === paymentMethodRoot)
+    ? paymentMethodRoot
+    : (payRoots[0]?.id ?? '');
+  const payRootNode = payRoots.find((node) => node.id === effectivePayRoot);
+  const payLeafOptions = payTreeLoaded
+    ? payRootNode
+      ? (payRootNode.children.length > 0 ? payRootNode.children : [payRootNode])
+      : []
+    : fallbackPayMethods;
+  const effectivePayLeaf = payLeafOptions.some((node) => node.id === paymentMethod)
+    ? paymentMethod
+    : (payLeafOptions[0]?.id ?? '');
 
   const columns: DataTableColumn<ChargeRow>[] = [
     { key: 'number', label: '收费单号' },
@@ -223,20 +295,54 @@ export function ChargesPage() {
         <EmptyState message="暂无收费单" />
       )}
 
+      <section aria-label="收费项目" className="charge-tree-panel">
+        <h2>收费项目</h2>
+        {chargeTreeQuery.isLoading ? (
+          <LoadingState label="收费项目加载中..." />
+        ) : chargeTreeQuery.error ? (
+          <p className="error">{errorMessage(chargeTreeQuery.error, '收费项目加载失败')}</p>
+        ) : chargeTreeItems.length === 0 ? (
+          <EmptyState message="暂无收费项目" />
+        ) : (
+          <ul className="charge-tree">{chargeTreeItems.map((node) => renderCatalogNode(node, 0))}</ul>
+        )}
+      </section>
+
       <Dialog open={paymentTarget !== null} title="收款" onClose={() => setPaymentTarget(null)}>
         <form onSubmit={pay}>
           <label>
             收款金额（元）
             <input type="number" min="0" value={paymentAmount} onChange={(event) => setPaymentAmount(event.target.value)} />
           </label>
-          <label>
-            支付方式
-            <select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}>
-              {Object.entries(METHOD_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </select>
-          </label>
+          {payTreeLoaded ? (
+            <>
+              <label>
+                支付方式大类
+                <select aria-label="支付方式大类" value={effectivePayRoot} onChange={(event) => setPaymentMethodRoot(event.target.value)}>
+                  {payRoots.map((node) => (
+                    <option key={node.id} value={node.id}>{node.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                支付方式
+                <select aria-label="支付方式" value={effectivePayLeaf} onChange={(event) => setPaymentMethod(event.target.value)}>
+                  {payLeafOptions.map((node) => (
+                    <option key={node.id} value={node.id}>{node.name}</option>
+                  ))}
+                </select>
+              </label>
+            </>
+          ) : (
+            <label>
+              支付方式
+              <select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}>
+                {Object.entries(METHOD_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </label>
+          )}
           <div className="modal-actions">
             <button type="button" onClick={() => setPaymentTarget(null)}>取消</button>
             <button type="submit" disabled={actionBusy}>确认收款</button>
@@ -257,6 +363,36 @@ export function ChargesPage() {
           <div className="modal-actions">
             <button type="button" onClick={() => setRefundTarget(null)}>取消</button>
             <button type="submit" disabled={actionBusy}>确认退款</button>
+          </div>
+        </form>
+      </Dialog>
+
+      <Dialog open={quickTarget !== null} title="快捷收费" onClose={() => setQuickTarget(null)}>
+        <form onSubmit={quickCharge}>
+          <label>
+            项目名
+            <input readOnly aria-label="快捷收费项目名" value={quickTarget?.name ?? ''} />
+          </label>
+          <label>
+            单价（元）
+            <input readOnly aria-label="快捷收费单价" value={quickTarget ? (quickTarget.price / 100).toString() : ''} />
+          </label>
+          <label>
+            数量
+            <input
+              type="number"
+              min="1"
+              step="1"
+              aria-label="快捷收费数量"
+              value={quickQuantity}
+              onChange={(event) => setQuickQuantity(event.target.value)}
+            />
+          </label>
+          <span>患者</span>
+          <SearchableSelect resource="patients" value={quickPatientId} onChange={setQuickPatientId} ariaLabel="快捷收费患者" placeholder="选择患者" />
+          <div className="modal-actions">
+            <button type="button" onClick={() => setQuickTarget(null)}>取消</button>
+            <button type="submit" disabled={quickBusy}>{quickBusy ? '提交中...' : '确认快捷收费'}</button>
           </div>
         </form>
       </Dialog>
@@ -297,9 +433,18 @@ export function ChargesPage() {
     }
     setActionBusy(true);
     try {
+      let method = effectivePayLeaf;
+      let payMethodName: string | undefined;
+      if (payTreeLoaded) {
+        const leaf = payLeafOptions.find((node) => node.id === effectivePayLeaf);
+        method = leaf ? methodCodeForName(leaf.name) : 'OTHER';
+        payMethodName = leaf?.name;
+      } else {
+        payMethodName = METHOD_LABELS[effectivePayLeaf] ?? effectivePayLeaf;
+      }
       await apiRequest(`/charges/${paymentTarget}/pay`, {
         method: 'PATCH',
-        body: JSON.stringify({ amount, method: paymentMethod, requestId: crypto.randomUUID() }),
+        body: JSON.stringify({ amount, method, payMethodName, requestId: crypto.randomUUID() }),
       });
       showToast('收款已记录', 'success');
       setPaymentTarget(null);
@@ -335,6 +480,69 @@ export function ChargesPage() {
     } finally {
       setActionBusy(false);
     }
+  }
+
+  function toggleCatalog(id: string) {
+    setExpandedCatalogs((current) => ({ ...current, [id]: !(current[id] ?? false) }));
+  }
+
+  function openQuickCharge(node: ChargeTreeNode) {
+    setQuickTarget(node);
+    setQuickQuantity('1');
+    setQuickPatientId('');
+  }
+
+  async function quickCharge(event: FormEvent) {
+    event.preventDefault();
+    if (quickBusy || !quickTarget) return;
+    const quantity = Number(quickQuantity);
+    if (!quickPatientId || !Number.isInteger(quantity) || quantity <= 0) {
+      showToast('请选择患者并填写有效的数量', 'error');
+      return;
+    }
+    setQuickBusy(true);
+    try {
+      const result = await apiRequest<{ chargeId: string; number: string; totalAmount: number }>(
+        `/charge-trees/${quickTarget.id}/quick-charge`,
+        { method: 'POST', body: JSON.stringify({ patientId: quickPatientId, quantity }) },
+      );
+      showToast(`快捷划价成功，收费单 ${result.number}，应收 ${formatMoney(result.totalAmount)}`, 'success');
+      setQuickTarget(null);
+      setQuickQuantity('1');
+      setQuickPatientId('');
+      await crud.reload();
+    } catch (error) {
+      showToast(errorMessage(error, '快捷划价失败'), 'error');
+    } finally {
+      setQuickBusy(false);
+    }
+  }
+
+  function renderCatalogNode(node: ChargeTreeNode, depth: number) {
+    if (node.children.length === 0) {
+      return (
+        <li className="catalog-leaf" key={node.id} style={{ paddingLeft: 8 + depth * 18 }}>
+          <button type="button" aria-label={`快捷划价 ${node.name}`} onClick={() => openQuickCharge(node)}>
+            {node.name} · {formatMoney(node.price)}
+          </button>
+          {node.costType === 'MATERIAL' && <span className="catalog-tag">材料</span>}
+        </li>
+      );
+    }
+    const expanded = expandedCatalogs[node.id] ?? false;
+    return (
+      <li className="catalog-branch" key={node.id}>
+        <button
+          type="button"
+          aria-label={expanded ? `收起 ${node.name}` : `展开 ${node.name}`}
+          onClick={() => toggleCatalog(node.id)}
+          style={{ paddingLeft: 8 + depth * 18 }}
+        >
+          {expanded ? '▾' : '▸'} {node.name} · {formatMoney(node.price)}
+        </button>
+        {expanded && <ul>{node.children.map((child) => renderCatalogNode(child, depth + 1))}</ul>}
+      </li>
+    );
   }
 
   async function loadCombos() {

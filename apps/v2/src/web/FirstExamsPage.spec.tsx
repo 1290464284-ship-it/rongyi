@@ -33,6 +33,23 @@ function mockData() {
       return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
     }
     if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+    if (path === '/resources/firstExamTeeth?examId=f-1&page=1&pageSize=200') {
+      return {
+        items: [
+          { id: 't-1', examId: 'f-1', toothNumber: 16, toothStatus: 'CARIES', isChief: true, chiefMark: 'NONE' },
+          { id: 't-2', examId: 'f-1', toothNumber: 26, toothStatus: 'HEALTHY', isChief: false, chiefMark: 'HORIZONTAL_SHOULD' },
+        ],
+        total: 2,
+        page: 1,
+        pageSize: 200,
+      };
+    }
+    if (path === '/first-exams/history?patientId=p-1') {
+      return [
+        { id: 'f-1', patientId: 'p-1', status: 'DRAFT', followUpStatus: 'PENDING', dentition: 'DECIDUOUS', previousExamId: null, restartedAt: null, chiefComplaint: '牙痛', createdAt: '2026-08-01T02:00:00.000Z' },
+        { id: 'f-0', patientId: 'p-1', status: 'COMPLETED', followUpStatus: 'NONE', dentition: 'PERMANENT', previousExamId: null, restartedAt: null, chiefComplaint: '旧主诉', createdAt: '2026-07-20T02:00:00.000Z' },
+      ];
+    }
     return {};
   });
 }
@@ -131,6 +148,63 @@ describe('FirstExamsPage', () => {
     expect(await screen.findByText('追踪状态已更新')).toBeDefined();
     await waitFor(() => {
       expect(screen.queryByLabelText('流失原因类型')).toBeNull();
+    });
+  });
+
+  it('switches the dentition with a toast', async () => {
+    mockData();
+    render(<FirstExamsPage />, { wrapper });
+    fireEvent.change(await screen.findByLabelText('切换牙列'), { target: { value: 'PERMANENT' } });
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/first-exams/f-1/dentition', expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ dentition: 'PERMANENT' }),
+      }));
+    });
+    expect(await screen.findByText('牙列已更新')).toBeDefined();
+  });
+
+  it('marks a chief tooth through the teeth dialog', async () => {
+    mockData();
+    render(<FirstExamsPage />, { wrapper });
+    await screen.findByText('牙痛');
+
+    fireEvent.click(screen.getByRole('button', { name: '牙齿标记' }));
+    expect(await screen.findByText('16')).toBeDefined();
+    fireEvent.change(await screen.findByLabelText('牙齿 16 主诉标记'), { target: { value: 'HORIZONTAL_DONE' } });
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/first-exams/f-1/teeth/t-1/chief-mark', expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ chiefMark: 'HORIZONTAL_DONE' }),
+      }));
+    });
+    expect(await screen.findByText('牙齿 16 主诉标记已更新')).toBeDefined();
+  });
+
+  it('restarts a first exam after confirmation', async () => {
+    mockData();
+    render(<FirstExamsPage />, { wrapper });
+    await screen.findByText('牙痛');
+
+    fireEvent.click(screen.getByRole('button', { name: '重启检查' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认重启' }));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/first-exams/f-1/restart', expect.objectContaining({ method: 'POST' }));
+    });
+    expect(await screen.findByText('首诊已重启')).toBeDefined();
+  });
+
+  it('shows the patient history through the history dialog', async () => {
+    mockData();
+    render(<FirstExamsPage />, { wrapper });
+    await screen.findByText('牙痛');
+
+    fireEvent.click(screen.getByRole('button', { name: '历史' }));
+    expect(await screen.findByText('旧主诉')).toBeDefined();
+    await waitFor(() => {
+      expect(vi.mocked(apiRequest).mock.calls.some((call) => call[0] === '/first-exams/history?patientId=p-1')).toBe(true);
     });
   });
 });

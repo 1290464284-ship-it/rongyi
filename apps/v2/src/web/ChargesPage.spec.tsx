@@ -375,4 +375,158 @@ describe('ChargesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '会员折扣试算' }));
     expect(await screen.findByText('该患者没有可用会员卡')).toBeDefined();
   });
+
+  it('renders the charge tree and creates a quick charge from a leaf catalog', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/charges?page=1&pageSize=50') return chargeList;
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/charge-trees') {
+        return {
+          items: [
+            {
+              id: 'cat-root', code: 'CAT-1', name: '正畸项目', category: 'GENERAL', price: 10000,
+              costType: 'SERVICE', anesthesia: false, businessCategory: null, parentId: null,
+              children: [
+                {
+                  id: 'cat-leaf', code: 'CAT-1-1', name: '初诊检查', category: 'GENERAL', price: 3000,
+                  costType: 'SERVICE', anesthesia: false, businessCategory: null, parentId: 'cat-root', children: [],
+                },
+              ],
+            },
+            {
+              id: 'cat-material', code: 'CAT-2', name: '种植材料', category: 'GENERAL', price: 200000,
+              costType: 'MATERIAL', anesthesia: false, businessCategory: 'MATERIAL', parentId: null, children: [],
+            },
+          ],
+        };
+      }
+      if (path === '/charge-trees/cat-leaf/quick-charge') {
+        return { chargeId: 'chg-qc', number: 'CHG-QC-1', totalAmount: 6000 };
+      }
+      return {};
+    });
+    render(<ChargesPage />, { wrapper });
+    expect(await screen.findByText('收费项目')).toBeDefined();
+    expect(screen.getByText('N-1')).toBeDefined();
+
+    // 根节点默认收起；叶子大类（无 children）直接提供快捷划价按钮
+    fireEvent.click(screen.getByRole('button', { name: '展开 正畸项目' }));
+    fireEvent.click(screen.getByRole('button', { name: '快捷划价 初诊检查' }));
+    expect(await screen.findByText('快捷收费')).toBeDefined();
+    expect((screen.getByLabelText('快捷收费项目名') as HTMLInputElement).value).toBe('初诊检查');
+    expect((screen.getByLabelText('快捷收费单价') as HTMLInputElement).value).toBe('30');
+
+    fireEvent.change(screen.getByLabelText('快捷收费数量'), { target: { value: '2' } });
+    await waitFor(() => {
+      expect((screen.getByLabelText('快捷收费患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('快捷收费患者'), { target: { value: 'p-1' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认快捷收费' }));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/charge-trees/cat-leaf/quick-charge', expect.objectContaining({ method: 'POST' }));
+    });
+    const call = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/charge-trees/cat-leaf/quick-charge');
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({ patientId: 'p-1', quantity: 2 });
+    expect(await screen.findByText(/快捷划价成功/)).toBeDefined();
+  });
+
+  it('validates quick charge inputs before submitting', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/charges?page=1&pageSize=50') return chargeList;
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/charge-trees') {
+        return {
+          items: [{
+            id: 'cat-root', code: 'CAT-1', name: '正畸项目', category: 'GENERAL', price: 10000,
+            costType: 'SERVICE', anesthesia: false, businessCategory: null, parentId: null,
+            children: [{
+              id: 'cat-leaf', code: 'CAT-1-1', name: '初诊检查', category: 'GENERAL', price: 3000,
+              costType: 'SERVICE', anesthesia: false, businessCategory: null, parentId: 'cat-root', children: [],
+            }],
+          }],
+        };
+      }
+      return {};
+    });
+    render(<ChargesPage />, { wrapper });
+    await screen.findByText('收费项目');
+    fireEvent.click(screen.getByRole('button', { name: '展开 正畸项目' }));
+    fireEvent.click(screen.getByRole('button', { name: '快捷划价 初诊检查' }));
+    await screen.findByText('快捷收费');
+
+    fireEvent.click(screen.getByRole('button', { name: '确认快捷收费' }));
+    expect(await screen.findByText('请选择患者并填写有效的数量')).toBeDefined();
+    expect(apiRequest).not.toHaveBeenCalledWith('/charge-trees/cat-leaf/quick-charge', expect.anything());
+  });
+
+  it('uses the two-level pay method tree and sends the selected leaf name', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/charges?page=1&pageSize=50') return chargeList;
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/pay-methods/tree') {
+        return {
+          items: [
+            { id: 'pm-cash', name: '现金', parentId: null, sortOrder: 0, active: true, remark: null, children: [] },
+            {
+              id: 'pm-elec', name: '电子支付', parentId: null, sortOrder: 1, active: true, remark: null,
+              children: [
+                { id: 'pm-wechat', name: '微信', parentId: 'pm-elec', sortOrder: 1, active: true, remark: null, children: [] },
+                { id: 'pm-card', name: '银行卡', parentId: 'pm-elec', sortOrder: 2, active: true, remark: null, children: [] },
+                { id: 'pm-installment', name: '医美分期', parentId: 'pm-elec', sortOrder: 3, active: true, remark: null, children: [] },
+              ],
+            },
+          ],
+        };
+      }
+      return {};
+    });
+    render(<ChargesPage />, { wrapper });
+    await screen.findByText('N-1');
+
+    fireEvent.click(screen.getByRole('button', { name: '收款' }));
+    // 无子级的根节点本身就是可选的二级方式；默认选中第一个根节点
+    expect((screen.getByLabelText('支付方式') as HTMLSelectElement).value).toBe('pm-cash');
+    expect((screen.getByLabelText('支付方式大类') as HTMLSelectElement).value).toBe('pm-cash');
+
+    // 切换到有子级的父方式后，二级方式自动变为其第一个子级
+    fireEvent.change(screen.getByLabelText('支付方式大类'), { target: { value: 'pm-elec' } });
+    await waitFor(() => {
+      expect((screen.getByLabelText('支付方式') as HTMLSelectElement).value).toBe('pm-wechat');
+    });
+    fireEvent.change(screen.getByLabelText('支付方式'), { target: { value: 'pm-card' } });
+    fireEvent.change(screen.getByLabelText('收款金额（元）'), { target: { value: '50' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认收款' }));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/charges/c-1/pay', expect.objectContaining({ method: 'PATCH' }));
+    });
+    const firstCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/charges/c-1/pay');
+    expect(JSON.parse(String(firstCall?.[1]?.body))).toMatchObject({
+      amount: 5000,
+      method: 'CARD',
+      payMethodName: '银行卡',
+    });
+
+    // 未映射到内置方式的名称使用 OTHER 码，名称照常传给后端
+    fireEvent.click(screen.getByRole('button', { name: '收款' }));
+    expect((screen.getByLabelText('支付方式大类') as HTMLSelectElement).value).toBe('pm-elec');
+    expect((screen.getByLabelText('支付方式') as HTMLSelectElement).value).toBe('pm-card');
+    fireEvent.change(screen.getByLabelText('支付方式'), { target: { value: 'pm-installment' } });
+    fireEvent.change(screen.getByLabelText('收款金额（元）'), { target: { value: '10' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认收款' }));
+
+    await waitFor(() => {
+      expect(vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/charges/c-1/pay').length).toBe(2);
+    });
+    const payCalls = vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/charges/c-1/pay');
+    const secondBody = JSON.parse(String(payCalls[1]?.[1]?.body));
+    expect(secondBody).toMatchObject({ amount: 1000, method: 'OTHER', payMethodName: '医美分期' });
+  });
 });

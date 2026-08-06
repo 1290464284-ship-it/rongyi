@@ -251,4 +251,121 @@ describe('InventoryPage', () => {
     expect(JSON.parse(String(postCall?.[1]?.body))).toEqual({ days: 30 });
     expect(await screen.findByText('到期提醒已生成')).toBeDefined();
   });
+
+  it('loads and renders the inventory detail report on the report tab', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/inventoryItems?page=1&pageSize=20') return { items: [], total: 0 };
+      if (path === '/inventory/low-stock') return [];
+      if (path === '/inventory/expiring?days=30') return [];
+      if (path === '/api/v2/inventory-reports/IN') {
+        return {
+          type: 'IN',
+          from: null,
+          to: null,
+          total: 2,
+          items: [
+            {
+              id: 'r-1',
+              itemName: '麻药',
+              spec: '5ml',
+              category: '药品',
+              unit: '支',
+              type: 'IN',
+              quantity: 10,
+              beforeStock: 0,
+              afterStock: 10,
+              referenceType: 'PURCHASE',
+              remark: '入库备注',
+              createdAt: '2026-08-01T09:30:00',
+            },
+          ],
+          supplierId: null,
+        };
+      }
+      return {};
+    });
+
+    render(<InventoryPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('tab', { name: '库存明细报表' }));
+    expect(await screen.findByText('共 2 条')).toBeDefined();
+    expect(screen.getByText('麻药')).toBeDefined();
+    expect(screen.getByText('5ml')).toBeDefined();
+    expect(screen.getByText('药品')).toBeDefined();
+    expect(screen.getByText('入库备注')).toBeDefined();
+    expect(screen.getByText('PURCHASE')).toBeDefined();
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/api/v2/inventory-reports/IN');
+    });
+  });
+
+  it('renders the summary report aggregates on the report tab', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/inventoryItems?page=1&pageSize=20') return { items: [], total: 0 };
+      if (path === '/inventory/low-stock') return [];
+      if (path === '/inventory/expiring?days=30') return [];
+      if (path.startsWith('/api/v2/inventory-reports/')) {
+        return {
+          type: 'SUMMARY',
+          from: null,
+          to: null,
+          total: 1,
+          items: [
+            { itemId: 'm-1', name: '树脂', spec: 'A2', category: '材料', unit: '盒', currentStock: 12, inQuantity: 5, outQuantity: 2, adjustQuantity: 1 },
+          ],
+          supplierId: null,
+        };
+      }
+      return {};
+    });
+
+    render(<InventoryPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('tab', { name: '库存明细报表' }));
+    await screen.findByText('共 1 条');
+    fireEvent.change(screen.getByLabelText('报表类型'), { target: { value: 'SUMMARY' } });
+    expect(await screen.findByText('树脂')).toBeDefined();
+    expect(screen.getByText('12')).toBeDefined();
+    expect(screen.getByText('5')).toBeDefined();
+    expect(screen.getByText('2')).toBeDefined();
+    expect(screen.getByText('1')).toBeDefined();
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/api/v2/inventory-reports/SUMMARY');
+    });
+  });
+
+  it('appends from/to date filters to the report request', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/inventoryItems?page=1&pageSize=20') return { items: [], total: 0 };
+      if (path === '/inventory/low-stock') return [];
+      if (path === '/inventory/expiring?days=30') return [];
+      if (path.startsWith('/api/v2/inventory-reports/')) {
+        return { type: 'IN', from: '2026-08-01', to: '2026-08-31', total: 0, items: [], supplierId: null };
+      }
+      return {};
+    });
+
+    render(<InventoryPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('tab', { name: '库存明细报表' }));
+    fireEvent.change(screen.getByLabelText('报表开始日期'), { target: { value: '2026-08-01' } });
+    fireEvent.change(screen.getByLabelText('报表结束日期'), { target: { value: '2026-08-31' } });
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/api/v2/inventory-reports/IN?from=2026-08-01&to=2026-08-31');
+    });
+    expect(await screen.findByText('从 2026-08-01')).toBeDefined();
+    expect(screen.getByText('至 2026-08-31')).toBeDefined();
+  });
+
+  it('shows report errors on the report tab', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/inventoryItems?page=1&pageSize=20') return { items: [], total: 0 };
+      if (path === '/inventory/low-stock') return [];
+      if (path === '/inventory/expiring?days=30') return [];
+      if (path.startsWith('/api/v2/inventory-reports/')) throw new Error('report failed');
+      return {};
+    });
+
+    render(<InventoryPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('tab', { name: '库存明细报表' }));
+    expect(await screen.findByText('report failed')).toBeDefined();
+    expect(screen.getByRole('button', { name: '重试' })).toBeDefined();
+  });
 });

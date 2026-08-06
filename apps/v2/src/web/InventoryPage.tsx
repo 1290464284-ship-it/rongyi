@@ -3,7 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router';
 import { apiRequest } from './api';
 import type { Page } from './types';
-import { LoadingState, PageError, SearchableSelect } from './components';
+import { DataTable, LoadingState, PageError, SearchableSelect, type DataTableColumn } from './components';
+import { formatDateTime } from './format';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
 
@@ -23,6 +24,77 @@ interface BatchListData {
   expiring: BatchRow[];
 }
 
+const REPORT_TYPES = [
+  { value: 'IN', label: 'IN 入库' },
+  { value: 'OUT', label: 'OUT 出库' },
+  { value: 'DISPENSE_RETURN', label: 'DISPENSE_RETURN 退药' },
+  { value: 'RETURN_SUPPLIER', label: 'RETURN_SUPPLIER 退回厂商' },
+  { value: 'LOSS', label: 'LOSS 库损' },
+  { value: 'STOCKTAKE', label: 'STOCKTAKE 盘点' },
+  { value: 'TRANSFER_OUT', label: 'TRANSFER_OUT 调拨出' },
+  { value: 'TRANSFER_IN', label: 'TRANSFER_IN 调拨入' },
+  { value: 'SUMMARY', label: 'SUMMARY 汇总' },
+] as const;
+
+const REPORT_TYPE_LABELS: Record<string, string> = Object.fromEntries(REPORT_TYPES.map((entry) => [entry.value, entry.label]));
+
+interface InventoryReportRow extends Record<string, unknown> {
+  id?: string;
+  itemId?: string;
+  itemName?: string | null;
+  spec?: string | null;
+  category?: string | null;
+  unit?: string | null;
+  type?: string | null;
+  quantity?: number;
+  beforeStock?: number;
+  afterStock?: number;
+  referenceType?: string | null;
+  referenceId?: string | null;
+  remark?: string | null;
+  createdAt?: string | null;
+  // SUMMARY 聚合行
+  name?: string | null;
+  currentStock?: number;
+  inQuantity?: number;
+  outQuantity?: number;
+  adjustQuantity?: number;
+}
+
+interface InventoryReportData {
+  type: string;
+  from: string | null;
+  to: string | null;
+  total: number;
+  items: InventoryReportRow[];
+  supplierId?: string | null;
+}
+
+const detailReportColumns: DataTableColumn<InventoryReportRow>[] = [
+  { key: 'createdAt', label: '时间', render: (row) => formatDateTime(row.createdAt) },
+  { key: 'itemName', label: '物料', render: (row) => String(row.itemName ?? row.itemId ?? '') },
+  { key: 'spec', label: '规格' },
+  { key: 'category', label: '分类' },
+  { key: 'unit', label: '单位' },
+  { key: 'type', label: '类型' },
+  { key: 'quantity', label: '数量' },
+  { key: 'beforeStock', label: '变动前' },
+  { key: 'afterStock', label: '变动后' },
+  { key: 'referenceType', label: '参照类型' },
+  { key: 'remark', label: '备注' },
+];
+
+const summaryReportColumns: DataTableColumn<InventoryReportRow>[] = [
+  { key: 'name', label: '物料', render: (row) => String(row.name ?? row.itemId ?? '') },
+  { key: 'spec', label: '规格' },
+  { key: 'category', label: '分类' },
+  { key: 'unit', label: '单位' },
+  { key: 'currentStock', label: '当前库存' },
+  { key: 'inQuantity', label: '入库量' },
+  { key: 'outQuantity', label: '出库量' },
+  { key: 'adjustQuantity', label: '调整量' },
+];
+
 export function InventoryPage() {
   const { showToast } = useToast();
   const [searchParams] = useSearchParams();
@@ -36,6 +108,10 @@ export function InventoryPage() {
   const [expiryDate, setExpiryDate] = useState('');
   const [batchQuantity, setBatchQuantity] = useState('');
   const [supplierId, setSupplierId] = useState('');
+  const [activeTab, setActiveTab] = useState<'overview' | 'report'>('overview');
+  const [reportType, setReportType] = useState('IN');
+  const [reportFrom, setReportFrom] = useState('');
+  const [reportTo, setReportTo] = useState('');
   const query = useQuery({
     queryKey: ['inventory'],
     queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/inventoryItems?page=1&pageSize=20'),
@@ -64,6 +140,19 @@ export function InventoryPage() {
   const expiringBatches = useQuery({
     queryKey: ['inventory-batches-expiring'],
     queryFn: () => apiRequest<BatchListData>('/api/v2/inventory-batches?days=30'),
+  });
+  const report = useQuery({
+    queryKey: ['inventory-report', reportType, reportFrom, reportTo],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (reportFrom) params.set('from', reportFrom);
+      if (reportTo) params.set('to', reportTo);
+      const queryString = params.toString();
+      return apiRequest<InventoryReportData>(
+        `/api/v2/inventory-reports/${reportType}${queryString ? `?${queryString}` : ''}`,
+      );
+    },
+    enabled: activeTab === 'report',
   });
 
   if (query.isLoading || lowStock.isLoading || expiring.isLoading) return <LoadingState label="库存数据加载中..." />;
@@ -167,90 +256,146 @@ export function InventoryPage() {
         <h1>库存管理</h1>
         <button onClick={generateReplenishment}>生成补货建议</button>
       </div>
-      <form className="inline-form" onSubmit={submit}>
-        <input aria-label="库存项目 ID" value={itemId ?? ''} onChange={(event) => setItemId(event.target.value)} />
-        <select value={type} onChange={(event) => setType(event.target.value as typeof type)}>
-          <option value="IN">IN</option>
-          <option value="OUT">OUT</option>
-          <option value="ADJUST">ADJUST</option>
-        </select>
-        <input type="number" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
-        <button type="submit" disabled={submitting}>{submitting ? '保存中...' : '保存库存流水'}</button>
-      </form>
-      <div className="cards">
-        {query.data?.items.map((row) => (
-          <div className="card" key={String(row.id)}>
-            <strong>{String(row.name ?? row.code ?? '')}</strong>
-            <span>库存：{String(row.stock ?? '')} / 最低 {String(row.minStock ?? '')}</span>
+      <div className="tabs" role="tablist">
+        <button
+          role="tab"
+          className={activeTab === 'overview' ? 'tab active' : 'tab'}
+          onClick={() => setActiveTab('overview')}
+        >
+          库存概览
+        </button>
+        <button
+          role="tab"
+          className={activeTab === 'report' ? 'tab active' : 'tab'}
+          onClick={() => setActiveTab('report')}
+        >
+          库存明细报表
+        </button>
+      </div>
+      {activeTab === 'report' ? (
+        <div className="tab-panel">
+          <h2>库存明细报表</h2>
+          <div className="inline-form">
+            <select aria-label="报表类型" value={reportType} onChange={(event) => setReportType(event.target.value)}>
+              {REPORT_TYPES.map((entry) => (
+                <option key={entry.value} value={entry.value}>{entry.label}</option>
+              ))}
+            </select>
+            <input aria-label="报表开始日期" type="date" value={reportFrom} onChange={(event) => setReportFrom(event.target.value)} />
+            <input aria-label="报表结束日期" type="date" value={reportTo} onChange={(event) => setReportTo(event.target.value)} />
           </div>
-        ))}
-      </div>
-      <h2>低库存</h2>
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th>名称</th><th>库存</th><th>最低</th></tr></thead>
-          <tbody>
-            {lowStock.data?.map((row) => (
-              <tr key={String(row.id)}><td>{String(row.name)}</td><td>{String(row.stock)}</td><td>{String(row.minStock)}</td></tr>
+          {report.isLoading && <LoadingState label="报表加载中..." />}
+          {report.error && (
+            <>
+              <PageError message={report.error instanceof Error ? report.error.message : String(report.error)} />
+              <button onClick={() => void report.refetch()}>重试</button>
+            </>
+          )}
+          {report.data && (
+            <>
+              <div className="stat-row">
+                <span>{REPORT_TYPE_LABELS[report.data.type] ?? report.data.type}</span>
+                <span>共 {report.data.total} 条</span>
+                {report.data.from && <span>从 {report.data.from}</span>}
+                {report.data.to && <span>至 {report.data.to}</span>}
+              </div>
+              <DataTable
+                columns={report.data.type === 'SUMMARY' ? summaryReportColumns : detailReportColumns}
+                rows={report.data.items}
+                keyField={report.data.type === 'SUMMARY' ? 'itemId' : 'id'}
+                emptyText="暂无报表数据"
+              />
+            </>
+          )}
+        </div>
+      ) : (
+        <>
+          <form className="inline-form" onSubmit={submit}>
+            <input aria-label="库存项目 ID" value={itemId ?? ''} onChange={(event) => setItemId(event.target.value)} />
+            <select value={type} onChange={(event) => setType(event.target.value as typeof type)}>
+              <option value="IN">IN</option>
+              <option value="OUT">OUT</option>
+              <option value="ADJUST">ADJUST</option>
+            </select>
+            <input type="number" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
+            <button type="submit" disabled={submitting}>{submitting ? '保存中...' : '保存库存流水'}</button>
+          </form>
+          <div className="cards">
+            {query.data?.items.map((row) => (
+              <div className="card" key={String(row.id)}>
+                <strong>{String(row.name ?? row.code ?? '')}</strong>
+                <span>库存：{String(row.stock ?? '')} / 最低 {String(row.minStock ?? '')}</span>
+              </div>
             ))}
-          </tbody>
-        </table>
-      </div>
-      <h2>30 天内到期</h2>
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th>名称</th><th>到期日期</th><th>库存</th></tr></thead>
-          <tbody>
-            {expiring.data?.map((row) => (
-              <tr key={String(row.id)}><td>{String(row.name ?? row.code ?? '')}</td><td>{String(row.expireDate ?? '')}</td><td>{String(row.stock ?? '')}</td></tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <h2>批次管理</h2>
-      <form className="inline-form" onSubmit={submitBatch}>
-        <input aria-label="批次号" placeholder="批次号" value={batchNo} onChange={(event) => setBatchNo(event.target.value)} />
-        <input aria-label="生产日期" type="date" value={productionDate} onChange={(event) => setProductionDate(event.target.value)} />
-        <input aria-label="效期日期" type="date" value={expiryDate} onChange={(event) => setExpiryDate(event.target.value)} />
-        <input aria-label="入库数量" type="number" value={batchQuantity} onChange={(event) => setBatchQuantity(event.target.value)} />
-        <SearchableSelect resource="suppliers" ariaLabel="供应商" value={supplierId} onChange={setSupplierId} placeholder="供应商（可选）" />
-        <button type="submit" disabled={submitting}>{submitting ? '入库中...' : '新增批次'}</button>
-      </form>
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th>批次号</th><th>生产日期</th><th>效期</th><th>入库量</th><th>剩余量</th></tr></thead>
-          <tbody>
-            {(batches.data?.batches ?? []).map((batch) => (
-              <tr key={String(batch.id)}>
-                <td>{String(batch.batchNo ?? '')}</td>
-                <td>{String(batch.productionDate ?? '')}</td>
-                <td>{String(batch.expiryDate ?? '')}</td>
-                <td>{String(batch.initialQuantity ?? '')}</td>
-                <td>{String(batch.remainingQuantity ?? '')}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="page-head">
-        <h2>批次效期提醒</h2>
-        <button onClick={generateExpiryAlerts} disabled={submitting}>{submitting ? '生成中...' : '生成到期提醒'}</button>
-      </div>
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th>物料</th><th>批次号</th><th>效期</th><th>剩余量</th></tr></thead>
-          <tbody>
-            {(expiringBatches.data?.expiring ?? []).map((batch) => (
-              <tr key={String(batch.id)}>
-                <td>{String(batch.itemName ?? batch.itemCode ?? '')}</td>
-                <td>{String(batch.batchNo ?? '')}</td>
-                <td>{String(batch.expiryDate ?? '')}</td>
-                <td>{String(batch.remainingQuantity ?? '')}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+          </div>
+          <h2>低库存</h2>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>名称</th><th>库存</th><th>最低</th></tr></thead>
+              <tbody>
+                {lowStock.data?.map((row) => (
+                  <tr key={String(row.id)}><td>{String(row.name)}</td><td>{String(row.stock)}</td><td>{String(row.minStock)}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <h2>30 天内到期</h2>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>名称</th><th>到期日期</th><th>库存</th></tr></thead>
+              <tbody>
+                {expiring.data?.map((row) => (
+                  <tr key={String(row.id)}><td>{String(row.name ?? row.code ?? '')}</td><td>{String(row.expireDate ?? '')}</td><td>{String(row.stock ?? '')}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <h2>批次管理</h2>
+          <form className="inline-form" onSubmit={submitBatch}>
+            <input aria-label="批次号" placeholder="批次号" value={batchNo} onChange={(event) => setBatchNo(event.target.value)} />
+            <input aria-label="生产日期" type="date" value={productionDate} onChange={(event) => setProductionDate(event.target.value)} />
+            <input aria-label="效期日期" type="date" value={expiryDate} onChange={(event) => setExpiryDate(event.target.value)} />
+            <input aria-label="入库数量" type="number" value={batchQuantity} onChange={(event) => setBatchQuantity(event.target.value)} />
+            <SearchableSelect resource="suppliers" ariaLabel="供应商" value={supplierId} onChange={setSupplierId} placeholder="供应商（可选）" />
+            <button type="submit" disabled={submitting}>{submitting ? '入库中...' : '新增批次'}</button>
+          </form>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>批次号</th><th>生产日期</th><th>效期</th><th>入库量</th><th>剩余量</th></tr></thead>
+              <tbody>
+                {(batches.data?.batches ?? []).map((batch) => (
+                  <tr key={String(batch.id)}>
+                    <td>{String(batch.batchNo ?? '')}</td>
+                    <td>{String(batch.productionDate ?? '')}</td>
+                    <td>{String(batch.expiryDate ?? '')}</td>
+                    <td>{String(batch.initialQuantity ?? '')}</td>
+                    <td>{String(batch.remainingQuantity ?? '')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="page-head">
+            <h2>批次效期提醒</h2>
+            <button onClick={generateExpiryAlerts} disabled={submitting}>{submitting ? '生成中...' : '生成到期提醒'}</button>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>物料</th><th>批次号</th><th>效期</th><th>剩余量</th></tr></thead>
+              <tbody>
+                {(expiringBatches.data?.expiring ?? []).map((batch) => (
+                  <tr key={String(batch.id)}>
+                    <td>{String(batch.itemName ?? batch.itemCode ?? '')}</td>
+                    <td>{String(batch.batchNo ?? '')}</td>
+                    <td>{String(batch.expiryDate ?? '')}</td>
+                    <td>{String(batch.remainingQuantity ?? '')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </div>
   );
 }

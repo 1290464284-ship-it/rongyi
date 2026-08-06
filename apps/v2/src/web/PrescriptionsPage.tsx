@@ -1,8 +1,11 @@
+import { useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import { CrudPage } from './CrudPage';
-import { SearchableSelect, type DataTableColumn } from './components';
-import { toCents } from './format';
+import { Dialog, LoadingState, PageError, SearchableSelect, type DataTableColumn } from './components';
+import { formatDateTime, toCents } from './format';
+import { errorMessage } from './messages';
+import { useToast, type ToastKind } from './toast-context';
 
 interface PrescriptionRow extends Record<string, unknown> {
   id: string;
@@ -11,6 +14,43 @@ interface PrescriptionRow extends Record<string, unknown> {
   doctorId?: string | null;
   doctorIdLabel?: string | null;
   remark?: string | null;
+  status?: string | null;
+  processedAt?: string | null;
+  chargeId?: string | null;
+  chargeIdLabel?: string | null;
+  dispenseId?: string | null;
+}
+
+/** POST /prescriptions/:id/process 返回的划价单 + 领药单信息。 */
+interface PrescriptionProcessResult {
+  prescriptionId: string;
+  status: string;
+  chargeId: string;
+  chargeNumber: string;
+  chargeTotalAmount: number;
+  dispenseId: string;
+  dispenseNumber: string;
+  itemCount: number;
+}
+
+/** GET /prescriptions/:id/status 返回的处理状态。 */
+interface PrescriptionStatusResult {
+  id: string;
+  status: string;
+  processedAt: string | null;
+  chargeId: string | null;
+  dispenseId: string | null;
+}
+
+const PRESCRIPTION_STATUS_LABELS: Record<string, string> = {
+  DRAFT: '草稿',
+  PENDING: '待处理',
+  PROCESSED: '已处理',
+};
+
+function statusLabel(status: string | null | undefined): string {
+  const value = status ?? 'DRAFT';
+  return PRESCRIPTION_STATUS_LABELS[value] ?? value;
 }
 
 interface PrescriptionItemForm {
@@ -68,28 +108,54 @@ const prescriptionColumns: DataTableColumn<PrescriptionRow>[] = [
   { key: 'patientId', label: '患者', render: (row) => row.patientIdLabel ?? row.patientId ?? '' },
   { key: 'doctorId', label: '医生', render: (row) => row.doctorIdLabel ?? row.doctorId ?? '' },
   { key: 'remark', label: '备注' },
+  { key: 'status', label: '状态', render: (row) => statusLabel(row.status) },
+  { key: 'processedAt', label: '处理时间', render: (row) => formatDateTime(row.processedAt) },
+  { key: 'chargeId', label: '划价单', render: (row) => row.chargeIdLabel ?? row.chargeId ?? '' },
+  { key: 'dispenseId', label: '领药单', render: (row) => String(row.dispenseId ?? '') },
 ];
 
 export function PrescriptionsPage() {
+  const { showToast } = useToast();
+  const [statusTarget, setStatusTarget] = useState<{ row: PrescriptionRow; reload: () => Promise<unknown> } | null>(null);
+
   return (
-    <CrudPage<PrescriptionRow, PrescriptionForm>
-      title="处方管理"
-      createLabel="新建处方"
-      emptyMessage="暂无处方"
-      queryKey={['prescriptions']}
-      endpoint="/resources/prescriptions"
-      initialForm={emptyForm}
-      validate={(form) =>
-        !form.patientId || !form.doctorId || validItems(form).length === 0
-          ? '请选择患者、医生并至少填写一条有效处方明细'
-          : null
-      }
-      submitOverride={({ form }) => createPrescription(form)}
-      messages={{ create: '处方已创建' }}
-      errorMessages={{ create: '创建处方失败' }}
-      columns={prescriptionColumns}
-      renderForm={(ctx) => <PrescriptionForm form={ctx.form} update={ctx.update} />}
-    />
+    <>
+      <CrudPage<PrescriptionRow, PrescriptionForm>
+        title="处方管理"
+        createLabel="新建处方"
+        emptyMessage="暂无处方"
+        queryKey={['prescriptions']}
+        endpoint="/resources/prescriptions"
+        initialForm={emptyForm}
+        validate={(form) =>
+          !form.patientId || !form.doctorId || validItems(form).length === 0
+            ? '请选择患者、医生并至少填写一条有效处方明细'
+            : null
+        }
+        submitOverride={({ form }) => createPrescription(form)}
+        messages={{ create: '处方已创建' }}
+        errorMessages={{ create: '创建处方失败' }}
+        columns={prescriptionColumns}
+        rowActions={(row, ctx) =>
+          row.status === 'PROCESSED' ? (
+            <button onClick={() => setStatusTarget({ row, reload: ctx.reload })}>查看状态</button>
+          ) : (
+            <button onClick={() => void processPrescription(row, ctx.reload, showToast)}>处理</button>
+          )
+        }
+        renderForm={(ctx) => <PrescriptionForm form={ctx.form} update={ctx.update} />}
+      />
+
+      <Dialog open={statusTarget !== null} title="处方状态" onClose={() => setStatusTarget(null)}>
+        {statusTarget && (
+          <PrescriptionStatusDialog
+            row={statusTarget.row}
+            onClose={() => setStatusTarget(null)}
+            onChanged={statusTarget.reload}
+          />
+        )}
+      </Dialog>
+    </>
   );
 }
 
@@ -121,6 +187,85 @@ async function createPrescription(form: PrescriptionForm): Promise<void> {
     }
     throw error;
   }
+}
+
+async function processPrescription(
+  row: PrescriptionRow,
+  reload: () => Promise<unknown>,
+  showToast: (message: string, kind?: ToastKind) => void,
+): Promise<void> {
+  try {
+    const result = await apiRequest<PrescriptionProcessResult>(`/prescriptions/${row.id}/process`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+    showToast(`已生成划价单 ${result.chargeNumber} 与领药单 ${result.dispenseNumber}`, 'success');
+    await reload();
+  } catch (error) {
+    showToast(errorMessage(error, '处理处方失败'), 'error');
+  }
+}
+
+function PrescriptionStatusDialog({
+  row,
+  onClose,
+  onChanged,
+}: {
+  row: PrescriptionRow;
+  onClose: () => void;
+  onChanged: () => Promise<unknown>;
+}): ReactNode {
+  const { showToast } = useToast();
+  const query = useQuery({
+    queryKey: ['prescription-status', row.id],
+    queryFn: () => apiRequest<PrescriptionStatusResult>(`/prescriptions/${row.id}/status`),
+  });
+
+  async function refresh(): Promise<void> {
+    await query.refetch();
+    await onChanged();
+  }
+
+  if (query.isLoading) return <LoadingState label="状态加载中..." />;
+  if (query.error) {
+    return (
+      <>
+        <PageError message={query.error.message} />
+        <div className="modal-actions">
+          <button type="button" onClick={onClose}>关闭</button>
+        </div>
+      </>
+    );
+  }
+  const status = query.data;
+  return (
+    <>
+      {status && (
+        <dl>
+          <dt>状态</dt>
+          <dd>{statusLabel(status.status)}</dd>
+          <dt>处理时间</dt>
+          <dd>{formatDateTime(status.processedAt)}</dd>
+          <dt>划价单</dt>
+          <dd>{status.chargeId ?? '—'}</dd>
+          <dt>领药单</dt>
+          <dd>{status.dispenseId ?? '—'}</dd>
+        </dl>
+      )}
+      <div className="modal-actions">
+        <button
+          type="button"
+          onClick={() => {
+            void refresh();
+            showToast('状态已刷新', 'success');
+          }}
+        >
+          刷新
+        </button>
+        <button type="button" onClick={onClose}>关闭</button>
+      </div>
+    </>
+  );
 }
 
 function PrescriptionForm({ form, update }: { form: PrescriptionForm; update: (patch: Partial<PrescriptionForm>) => void }) {

@@ -115,6 +115,7 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
         String(req.body?.method ?? 'CASH'),
         typeof req.body?.requestId === 'string' ? req.body.requestId : undefined,
         req.context!,
+        typeof req.body?.payMethodName === 'string' ? req.body.payMethodName : undefined,
       );
       res.json({ success: true, data: result });
   }));

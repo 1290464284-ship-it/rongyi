@@ -87,6 +87,7 @@ export const clinicalHubTabs: HubTab[] = [
   { id: 'workflow', label: '\u5de5\u4f5c\u6d41', kind: 'custom', component: ClinicalWorkflowPage },
   { id: 'visits', label: '\u5c31\u8bca', kind: 'custom', component: VisitsPage },
   { id: 'firstExams', label: '\u9996\u8bca', kind: 'custom', component: FirstExamsPage },
+  { id: 'departments', label: '\u5206\u8bca\u79d1\u5ba4', kind: 'resource', resource: 'departments' },
   { id: 'treatments', label: '\u6cbb\u7597', kind: 'custom', component: TreatmentsPage },
   { id: 'records', label: '\u75c5\u5386', kind: 'custom', component: MedicalRecordsPage },
   { id: 'plans', label: '\u6cbb\u7597\u8ba1\u5212', kind: 'custom', component: TreatmentPlansPage },
@@ -100,6 +101,7 @@ export const financeHubTabs: HubTab[] = [
   { id: 'charges', label: '\u6536\u8d39', kind: 'custom', component: ChargesPage },
   { id: 'memberCards', label: '\u4f1a\u5458\u5361', kind: 'custom', component: MemberCardsPage },
   { id: 'treatmentCatalogs', label: '\u6536\u8d39\u9879\u76ee', kind: 'resource', resource: 'treatmentCatalogs', bossOnly: true },
+  { id: 'payMethods', label: '\u7f34\u8d39\u65b9\u5f0f', kind: 'resource', resource: 'payMethods' },
   { id: 'refunds', label: '\u9000\u6b3e', kind: 'custom', component: RefundsPage },
   { id: 'debts', label: '\u6b20\u8d39', kind: 'resource', resource: 'debtRecords' },
   { id: 'invoices', label: '\u53d1\u7968', kind: 'resource', resource: 'invoices' },
@@ -113,11 +115,13 @@ export const inventoryHubTabs: HubTab[] = [
   { id: 'suppliers', label: '\u4f9b\u5e94\u5546', kind: 'resource', resource: 'suppliers' },
   { id: 'purchaseOrders', label: '\u91c7\u8d2d\u5355', kind: 'custom', component: PurchaseOrdersPage },
   { id: 'processingOrders', label: '\u52a0\u5de5\u5355', kind: 'custom', component: ProcessingOrdersPage },
+  { id: 'inventoryDocs', label: '\u9000\u56de/\u5e93\u635f\u5355', kind: 'resource', resource: 'inventoryDocs' },
 ];
 
 export const communicationHubTabs: HubTab[] = [
   { id: 'workflow', label: '\u5fae\u4fe1\u53d1\u9001', kind: 'custom', component: CommunicationWorkflowPage },
   { id: 'followUps', label: '\u968f\u8bbf', kind: 'custom', component: FollowUpsPage },
+  { id: 'followUpDicts', label: '\u56de\u8bbf\u8bcd\u5178', kind: 'resource', resource: 'followUpDicts' },
   { id: 'followUpReport', label: '\u5230\u8bca\u7387', kind: 'custom', component: FollowUpReportPage },
   { id: 'followUpTemplates', label: '\u968f\u8bbf\u6a21\u677f', kind: 'resource', resource: 'followUpTemplates' },
   { id: 'wechat', label: '\u5fae\u4fe1', kind: 'resource', resource: 'wechatMessages' },

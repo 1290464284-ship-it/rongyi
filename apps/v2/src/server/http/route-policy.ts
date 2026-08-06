@@ -57,6 +57,15 @@ export const routeRoleRules: Array<{ pattern: RegExp; roles: UserRole[] }> = [
   { pattern: /^\/api\/v2\/charge-assistant/, roles: financeStaff },
   { pattern: /^\/api\/v2\/print/, roles: operationalStaff },
   { pattern: /^\/api\/v2\/search/, roles: operationalStaff },
+  { pattern: /^\/api\/v2\/inventory-reports/, roles: financeStaff },
+  { pattern: /^\/api\/v2\/inventory-docs/, roles: financeStaff },
+  { pattern: /^\/api\/v2\/inventory-transfers/, roles: financeStaff },
+  { pattern: /^\/api\/v2\/processing-flow-stats/, roles: financeStaff },
+  { pattern: /^\/api\/v2\/follow-up-dicts/, roles: operationalStaff },
+  { pattern: /^\/api\/v2\/departments/, roles: operationalStaff },
+  { pattern: /^\/api\/v2\/triage/, roles: clinicalStaff },
+  { pattern: /^\/api\/v2\/pay-methods/, roles: financeStaff },
+  { pattern: /^\/api\/v2\/charge-trees/, roles: financeStaff },
 ];
 
 const navigationRules: Array<{ key: string; roles: UserRole[] }> = [

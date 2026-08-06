@@ -365,10 +365,15 @@ export class DispenseService {
     // 回补库存
     const inventoryService = new InventoryService(this.db, undefined, undefined, this.lockGuard);
     for (const plan of plans) {
-      await inventoryService.createTransaction(
+      const transaction = await inventoryService.createTransaction(
         { itemId: plan.itemId, type: 'IN', quantity: plan.quantity, remark: '药房退药' },
         context,
       );
+      // InventoryService.createTransaction 不落 referenceType；退药回补流水标记为领药退库，
+      // 供库存明细报表 DISPENSE_RETURN 分类使用。
+      this.db.prepare(
+        `UPDATE InventoryTransaction SET referenceType = 'DISPENSE_RETURN' WHERE id = ?`,
+      ).run(String(transaction.id));
     }
 
     const now = context.now().toISOString();

@@ -1265,6 +1265,36 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 144,
+    name: 'v2-r2-feature-fields',
+    up(db) {
+      addColumns(db, 'Registration', [['departmentId', 'TEXT']]);
+      addColumns(db, 'FirstExam', [['dentition', 'TEXT'], ['previousExamId', 'TEXT'], ['restartedAt', 'TEXT']]);
+      addColumns(db, 'FirstExamTooth', [['chiefMark', 'TEXT']]);
+      addColumns(db, 'TreatmentPlan', [
+        ['discountType', 'TEXT'],
+        ['discountRate', 'REAL'],
+        ['followUpStatus', 'TEXT'],
+        ['nextFollowUpAt', 'TEXT'],
+        ['trackingNote', 'TEXT'],
+      ]);
+      addColumns(db, 'TreatmentPlanItem', [['discountRate', 'REAL'], ['billed', 'INTEGER'], ['billedChargeId', 'TEXT']]);
+      addColumns(db, 'Charge', [['payMethodName', 'TEXT']]);
+      addColumns(db, 'Prescription', [['status', 'TEXT'], ['processedAt', 'TEXT'], ['chargeId', 'TEXT'], ['dispenseId', 'TEXT']]);
+      addColumns(db, 'InventoryItem', [['isHighValue', 'INTEGER'], ['catalogId', 'TEXT']]);
+      addColumns(db, 'CephalometricCase', [['reportJson', 'TEXT'], ['reportStatus', 'TEXT']]);
+      addColumns(db, 'TreatmentCatalog', [['parentId', 'TEXT'], ['businessCategory', 'TEXT']]);
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_v2_inv_txn_report ON InventoryTransaction(clinicId, type, referenceType, createdAt);
+        CREATE INDEX IF NOT EXISTS idx_v2_tp_item_billed ON TreatmentPlanItem(clinicId, planId, billed);
+        CREATE INDEX IF NOT EXISTS idx_v2_prescription_status ON Prescription(clinicId, status);
+        CREATE INDEX IF NOT EXISTS idx_v2_registration_dept ON Registration(clinicId, departmentId, status);
+        CREATE INDEX IF NOT EXISTS idx_v2_inventory_doc_type ON InventoryDoc(clinicId, type, status);
+        CREATE INDEX IF NOT EXISTS idx_v2_follow_up_dict ON FollowUpDict(clinicId, dictType, active);
+      `);
+    },
+  },
 ];
 
 function addColumns(db: Database.Database, table: string, columns: Array<[string, string]>): void {
