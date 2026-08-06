@@ -13,6 +13,14 @@ export function formatMoney(value: unknown): string {
   return `¥${(cents / 100).toFixed(2)}`;
 }
 
+/** 按中英文逗号拆分去空白并过滤空项（牙位号、图片列表等共用）。 */
+export function splitList(value: string): string[] {
+  return value
+    .split(/[,，]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 export function formatDate(value: unknown): string {
   if (!value) return '';
   const date = new Date(`${String(value)}T00:00:00.000Z`);

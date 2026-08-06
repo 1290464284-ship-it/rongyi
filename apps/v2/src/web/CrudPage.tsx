@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useCrudResource, type CrudResourceOptions } from './use-crud-resource';
 import { ConfirmDialog, DataTable, Dialog, EmptyState, LoadingState, PageError, type DataTableColumn } from './components';
 
@@ -47,6 +47,16 @@ export function CrudPage<
 >(props: CrudPageProps<TRow, TForm>) {
   const crud = useCrudResource<TRow, TForm>(props);
   const { query, rows, searchInput, setSearch, page, setPage, showForm, editing, form, updateForm, reload } = crud;
+  // Dialog key：每次打开表单递增，强制重挂载，取消动画期间再次打开时清掉迟到的关闭定时器
+  const [dialogEpoch, setDialogEpoch] = useState(0);
+  function openCreate() {
+    crud.openCreate();
+    setDialogEpoch((current) => current + 1);
+  }
+  function openEdit(row: TRow) {
+    crud.openEdit(row);
+    setDialogEpoch((current) => current + 1);
+  }
 
   if (query.isLoading) return <LoadingState />;
   if (query.error) return <PageError message={(query.error as Error).message} />;
@@ -65,7 +75,7 @@ export function CrudPage<
           render: (row: TRow) => (
             <>
               {props.rowActions?.(row, ctx)}
-              {props.canEdit && <button onClick={() => crud.openEdit(row)}>编辑</button>}
+              {props.canEdit && <button onClick={() => openEdit(row)}>编辑</button>}
               {props.canDelete && <button className="danger" onClick={() => crud.requestDelete(row)}>删除</button>}
             </>
           ),
@@ -78,7 +88,7 @@ export function CrudPage<
       <div className="page-head">
         <h1>{props.title}</h1>
         {props.extraHeaderActions}
-        <button onClick={crud.openCreate}>{props.createLabel ?? '新建'}</button>
+        <button onClick={openCreate}>{props.createLabel ?? '新建'}</button>
       </div>
       {props.searchable && (
         <input
@@ -102,7 +112,7 @@ export function CrudPage<
         </div>
       )}
 
-      <Dialog open={showForm} title={title} onClose={crud.closeForm}>
+      <Dialog key={dialogEpoch} open={showForm} title={title} onClose={crud.closeForm}>
         <form onSubmit={crud.submit}>
           {props.renderForm(ctx)}
           <div className="modal-actions">

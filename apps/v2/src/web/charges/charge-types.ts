@@ -42,7 +42,7 @@ export interface ChargeForm {
   discount: string;
 }
 
-export interface ChargeComboItemRow {
+interface ChargeComboItemRow {
   id: string;
   comboId: string;
   catalogId?: string | null;

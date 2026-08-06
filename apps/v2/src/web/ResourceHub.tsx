@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { Suspense, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ResourcePage } from './ResourcePage';
 import type { HubTab } from './hub-tabs';
@@ -47,11 +47,10 @@ export function ResourceHub({ title, tabs }: { title: string; tabs: HubTab[] }) 
   }
 
   // bossOnly 过滤后 active tab 不可见时回退到第一个可见 tab（并补记 visited）
-  useEffect(() => {
-    if (effectiveActiveId && !visitedIds.has(effectiveActiveId)) {
-      setVisitedIds((current) => new Set(current).add(effectiveActiveId));
-    }
-  }, [effectiveActiveId, visitedIds]);
+  // 渲染期调整（React 官方模式）：条件化 setState，避免在 effect 里同步 setState 造成级联渲染
+  if (effectiveActiveId && !visitedIds.has(effectiveActiveId)) {
+    setVisitedIds((current) => new Set(current).add(effectiveActiveId));
+  }
 
   const renderedTabs = visibleTabs.filter((tab) => visitedIds.has(tab.id));
 

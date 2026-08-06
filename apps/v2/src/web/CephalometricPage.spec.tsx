@@ -154,6 +154,30 @@ describe('CephalometricPage', () => {
     expect(await screen.findByText('测量报告已保存')).toBeDefined();
   });
 
+  it('keeps the loaded measurements when saving without editing the JSON', async () => {
+    mockData();
+    render(<CephalometricPage />, { wrapper });
+    await screen.findByText('DRAFT');
+
+    fireEvent.click(screen.getByRole('button', { name: '测量报告' }));
+    await screen.findByLabelText('报告 JSON');
+    // 不做任何编辑，直接保存（回归：旧实现会用 JSON.parse('{}') 清空轮廓点）
+    fireEvent.click(screen.getByText('保存报告'));
+
+    await waitFor(() => {
+      const saveCall = vi.mocked(apiRequest).mock.calls.find(
+        (call) => call[0] === '/cephalometric/c-1/report' && (call[1] as RequestInit)?.method === 'POST',
+      );
+      expect(saveCall).toBeDefined();
+    });
+    const saveCall = vi.mocked(apiRequest).mock.calls.find(
+      (call) => call[0] === '/cephalometric/c-1/report' && (call[1] as RequestInit)?.method === 'POST',
+    );
+    const body = JSON.parse(String((saveCall?.[1] as RequestInit)?.body));
+    expect(body.reportJson).toMatchObject({ outline: [[100, 80], [120, 90], [140, 100]], conclusion: '正常' });
+    expect(body.reportJson.polylines).toHaveLength(1);
+  });
+
   it('sends a wechat message through the send dialog', async () => {
     mockData();
     render(<CephalometricPage />, { wrapper });

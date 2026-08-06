@@ -176,7 +176,7 @@ export function Layout() {
             <input
               className="topbar-search"
               type="search"
-              placeholder="搜索患者 / 项目 / 单号…"
+              placeholder="搜索患者…"
               aria-label="全局搜索"
               value={globalSearch}
               onChange={(event) => setGlobalSearch(event.target.value)}

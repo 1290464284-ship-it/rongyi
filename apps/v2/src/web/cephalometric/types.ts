@@ -19,7 +19,7 @@ export interface CephalometricReportResponse {
   createdAt?: string | null;
 }
 
-export interface CephalometricCompareCase extends Record<string, unknown> {
+interface CephalometricCompareCase extends Record<string, unknown> {
   id?: string;
   patientId?: string | null;
   imageUrl?: string | null;

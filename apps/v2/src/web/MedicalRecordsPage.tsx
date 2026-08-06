@@ -4,6 +4,7 @@ import { apiRequest } from './api';
 import { CrudPage } from './CrudPage';
 import { Dialog, SearchableSelect, type DataTableColumn } from './components';
 import { errorMessage } from './messages';
+import { splitList } from './format';
 import { useToast } from './toast-context';
 import type { Page } from './types';
 
@@ -468,9 +469,3 @@ function listToText(value: unknown): string {
   return textValue(value);
 }
 
-function splitList(value: string): string[] {
-  return value
-    .split(/[,，]/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}

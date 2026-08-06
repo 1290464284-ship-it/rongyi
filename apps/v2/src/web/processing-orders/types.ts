@@ -62,7 +62,7 @@ export interface SettleStats {
   settled: { count: number; amountTotal: number };
 }
 
-export type ProcessingStepStatus = (typeof FLOW_STATUSES)[number];
+type ProcessingStepStatus = (typeof FLOW_STATUSES)[number];
 
 export interface ProcessingOrderStepRow extends Record<string, unknown> {
   id: string;

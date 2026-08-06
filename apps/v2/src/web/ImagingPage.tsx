@@ -453,7 +453,7 @@ function imagingColumns(apiOrigin: string, categories: ImagingCategoryRow[]): Da
 function ImagingFormFields({
   form,
   update,
-  file,
+  file: _file,
   setFile,
   categories,
 }: {

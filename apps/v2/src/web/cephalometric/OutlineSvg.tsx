@@ -18,7 +18,7 @@ export function OutlineSvg({ report }: { report: CephalometricReportJson }) {
       height={300}
       role="img"
       aria-label="轮廓图预览"
-      style={{ border: '1px solid #c9d3de', borderRadius: 8, background: '#f8fafc' }}
+      style={{ border: '1px solid var(--border-strong, #c9d3de)', borderRadius: 8, background: 'var(--surface, #f8fafc)' }}
     >
       {points.length === 0 && (
         <text x={12} y={20} style={{ fontSize: 12, fill: '#6b7280' }}>暂无轮廓数据</text>
