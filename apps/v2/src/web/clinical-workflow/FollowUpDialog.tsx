@@ -17,8 +17,8 @@ export function FollowUpDialog({
   const { showToast } = useToast();
   const patientId = String(row.patientId ?? '');
   const patientName = rowPatientName(row);
-  const defaultPlanDate = new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10);
-  const [planDate, setPlanDate] = useState(defaultPlanDate);
+  // 默认随访日期在挂载时计算一次（惰性初始化，避免渲染期调用 Date.now 的非纯函数）
+  const [planDate, setPlanDate] = useState(() => new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10));
   const [content, setContent] = useState('');
   const [busy, setBusy] = useState(false);
 

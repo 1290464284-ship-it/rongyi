@@ -4,7 +4,6 @@ import type { CephalometricForm } from './types';
 export function CephalometricFormFields({
   form,
   update,
-  file,
   setFile,
 }: {
   form: CephalometricForm;

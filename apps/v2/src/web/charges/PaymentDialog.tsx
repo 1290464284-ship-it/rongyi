@@ -6,7 +6,6 @@ export function PaymentDialog({
   setAmount,
   method,
   setMethod,
-  methodRoot,
   setMethodRoot,
   busy,
   onClose,
