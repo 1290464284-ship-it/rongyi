@@ -33,9 +33,13 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       output: {
-        manualChunks: {
-          'react-vendor': ['react', 'react-dom', 'react-router'],
-          'query-vendor': ['@tanstack/react-query'],
+        // Vite 8（Rolldown 内核）移除了 manualChunks 对象形式，改用 advancedChunks.groups
+        advancedChunks: {
+          includeDependenciesRecursively: true,
+          groups: [
+            { name: 'react-vendor', test: /node_modules\/(react|react-dom|react-router)\// },
+            { name: 'query-vendor', test: /node_modules\/@tanstack\/react-query\// },
+          ],
         },
       },
     },
