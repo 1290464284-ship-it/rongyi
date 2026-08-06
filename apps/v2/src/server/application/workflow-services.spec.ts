@@ -189,7 +189,7 @@ describe('workflow services', () => {
   });
 
   it('reports wechat provider network and HTTP failures without marking messages sent', async () => {
-    const failingProvider = new HttpWechatProvider('http://127.0.0.1:1', 'app', 'secret');
+    const failingProvider = new HttpWechatProvider('https://127.0.0.1:1', 'app', 'secret');
     const failed = await failingProvider.send({ id: 'x' });
     expect(failed.ok).toBe(false);
     expect(failed.result).toBe('network_error');
@@ -229,6 +229,33 @@ describe('workflow services', () => {
     }));
     await expect(provider.send({ id: 'invalid' })).resolves.toEqual({ ok: true, result: 'sent' });
     vi.unstubAllGlobals();
+  });
+
+  it('rejects non-https wechat gateway URLs (TLS enforcement)', async () => {
+    const insecure = new HttpWechatProvider('http://wechat.test', 'app', 'secret');
+    expect(await insecure.send({ id: 'x' })).toMatchObject({
+      ok: false,
+      result: 'insecure_wechat_url',
+    });
+
+    const originalUrl = process.env.V2_WECHAT_API_URL;
+    const originalAppId = process.env.V2_WECHAT_APP_ID;
+    const originalSecret = process.env.V2_WECHAT_APP_SECRET;
+    process.env.V2_WECHAT_API_URL = 'http://wechat.test';
+    process.env.V2_WECHAT_APP_ID = 'app';
+    process.env.V2_WECHAT_APP_SECRET = 'secret';
+    try {
+      const provider = createWechatProvider();
+      expect(provider.name).toBe('unconfigured');
+      expect(provider.isConfigured()).toBe(false);
+    } finally {
+      if (originalUrl === undefined) delete process.env.V2_WECHAT_API_URL;
+      else process.env.V2_WECHAT_API_URL = originalUrl;
+      if (originalAppId === undefined) delete process.env.V2_WECHAT_APP_ID;
+      else process.env.V2_WECHAT_APP_ID = originalAppId;
+      if (originalSecret === undefined) delete process.env.V2_WECHAT_APP_SECRET;
+      else process.env.V2_WECHAT_APP_SECRET = originalSecret;
+    }
   });
 
   it('covers the wechat provider factory and rejects provider delivery failures', async () => {
