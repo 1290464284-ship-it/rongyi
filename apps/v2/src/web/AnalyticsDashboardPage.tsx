@@ -199,9 +199,10 @@ export function AnalyticsDashboardPage() {
           doctorRows: doctors.data ?? [],
         },
       });
-      target.document.open();
-      target.document.write(html);
-      target.document.close();
+      // security-scan 禁止 document.write：打印报表改用 blob URL 打开。
+      const blob = new Blob([html], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      target.location.href = url;
       target.focus();
     } catch (error) {
       target.close();
