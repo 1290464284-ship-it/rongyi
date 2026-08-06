@@ -44,7 +44,7 @@ const baseUserList: {
   pageSize: 20,
 };
 
-const userRoles = { items: [{ userId: 'u1', role: 'RECEPTIONIST' }] };
+const userRoles = { items: [{ userId: 'u1', role: 'BOSS' }] };
 
 describe('UsersPage', () => {
   afterEach(() => {
@@ -54,7 +54,7 @@ describe('UsersPage', () => {
 
   it('shows permission error for non-boss users', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/auth/me') return { role: 'ADMIN' };
+      if (path === '/auth/me') return { role: 'DOCTOR' };
       return {};
     });
     render(<UsersPage />, { wrapper });
@@ -80,7 +80,7 @@ describe('UsersPage', () => {
         id: 'u2',
         username: 'nurse',
         name: '李护士',
-        role: 'NURSE',
+        role: 'DOCTOR',
         active: true,
       }],
     };
@@ -88,7 +88,7 @@ describe('UsersPage', () => {
     fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'nurse' } });
     fireEvent.change(screen.getByLabelText(/初始密码/), { target: { value: 'password1' } });
     fireEvent.change(screen.getByLabelText('姓名'), { target: { value: '李护士' } });
-    fireEvent.change(screen.getByLabelText('角色'), { target: { value: 'NURSE' } });
+    fireEvent.change(screen.getByLabelText('角色'), { target: { value: 'DOCTOR' } });
     fireEvent.click(screen.getByText('保存'));
     await waitFor(() => expect(vi.mocked(apiRequest)).toHaveBeenCalledWith(
       '/admin/users',
@@ -158,14 +158,13 @@ describe('UsersPage', () => {
       if (path === '/auth/me') return { role: 'BOSS' };
       if (path === '/resources/users?page=1&pageSize=100') return baseUserList;
       if (path === '/user-roles') {
-        return { items: [{ userId: 'u1', role: 'RECEPTIONIST' }, { userId: 'u1', role: 'NURSE' }] };
+        return { items: [{ userId: 'u1', role: 'BOSS' }, { userId: 'u1', role: 'DOCTOR' }] };
       }
       return {};
     });
     render(<UsersPage />, { wrapper });
     expect(await screen.findByText('张医生')).toBeDefined();
-    expect(screen.getByText('前台')).toBeDefined();
-    expect(screen.getByText('护士')).toBeDefined();
+    expect(screen.getByText('老板')).toBeDefined();
   });
 
   it('checks additional roles on create and submits them via PUT', async () => {
@@ -183,29 +182,31 @@ describe('UsersPage', () => {
     fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'nurse' } });
     fireEvent.change(screen.getByLabelText(/初始密码/), { target: { value: 'password1' } });
     fireEvent.change(screen.getByLabelText('姓名'), { target: { value: '李护士' } });
-    fireEvent.change(screen.getByLabelText('角色'), { target: { value: 'NURSE' } });
-    fireEvent.click(screen.getByLabelText('前台'));
-    fireEvent.click(screen.getByLabelText('技师'));
+    fireEvent.change(screen.getByLabelText('角色'), { target: { value: 'DOCTOR' } });
+    fireEvent.click(screen.getByLabelText('老板'));
     fireEvent.click(screen.getByText('保存'));
     await waitFor(() => expect(vi.mocked(apiRequest)).toHaveBeenCalledWith(
       '/user-roles/u2',
-      expect.objectContaining({ method: 'PUT', body: JSON.stringify({ roles: ['RECEPTIONIST', 'TECHNICIAN'] }) }),
+      expect.objectContaining({ method: 'PUT', body: JSON.stringify({ roles: ['BOSS'] }) }),
     ));
     expect(await screen.findByText('员工已创建')).toBeDefined();
   });
 
   it('echoes stored additional roles when editing a user', async () => {
+    const bossUserList = {
+      ...baseUserList,
+      items: [{ ...baseUserList.items[0], role: 'BOSS' }],
+    };
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/auth/me') return { role: 'BOSS' };
-      if (path === '/resources/users?page=1&pageSize=100') return baseUserList;
-      if (path === '/user-roles') return { items: [{ userId: 'u1', role: 'NURSE' }] };
+      if (path === '/resources/users?page=1&pageSize=100') return bossUserList;
+      if (path === '/user-roles') return { items: [{ userId: 'u1', role: 'DOCTOR' }] };
       return {};
     });
     render(<UsersPage />, { wrapper });
     await screen.findByText('张医生');
 
     fireEvent.click(screen.getAllByText('编辑')[0]);
-    expect(screen.getByLabelText('护士')).toHaveProperty('checked', true);
-    expect(screen.getByLabelText('前台')).toHaveProperty('checked', false);
+    expect(screen.getByLabelText('医生')).toHaveProperty('checked', true);
   });
 });

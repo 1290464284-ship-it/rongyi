@@ -8,11 +8,7 @@ import { useToast } from './toast-context';
 
 const ROLE_LABELS: Record<string, string> = {
   BOSS: '老板',
-  ADMIN: '管理员',
   DOCTOR: '医生',
-  RECEPTIONIST: '前台',
-  NURSE: '护士',
-  TECHNICIAN: '技师',
 };
 
 const PERMISSIONS = ['list', 'create', 'update', 'delete'];

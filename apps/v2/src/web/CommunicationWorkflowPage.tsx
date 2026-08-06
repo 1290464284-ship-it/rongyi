@@ -160,7 +160,7 @@ export function CommunicationWorkflowPage() {
       )}
 
       <div className="stat-row">
-        <span className={status.data?.configured ? undefined : 'error'}>
+        <span className={status.data?.configured ? undefined : 'info'}>
           {status.data?.configured === false ? '微信通道未开通，发送按钮已禁用' : '微信通道已开通'}
         </span>
         {status.data?.configured === false && <small>请配置 V2_WECHAT_API_URL、V2_WECHAT_APP_ID、V2_WECHAT_APP_SECRET</small>}

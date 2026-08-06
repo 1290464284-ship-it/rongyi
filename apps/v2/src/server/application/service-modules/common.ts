@@ -83,7 +83,7 @@ export function rowToUser(row: AuthUserRecord | Record<string, unknown>): User {
 }
 
 export function isUserRole(role: string): role is UserRole {
-  return ['BOSS', 'ADMIN', 'DOCTOR', 'RECEPTIONIST', 'NURSE', 'TECHNICIAN'].includes(role);
+  return ['BOSS', 'DOCTOR'].includes(role);
 }
 
 export function assertPatientExists(db: Database.Database, patientId: string, clinicId: string | null): void {

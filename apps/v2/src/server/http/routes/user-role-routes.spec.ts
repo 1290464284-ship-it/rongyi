@@ -58,34 +58,34 @@ describe('user role routes', () => {
   it('GET /api/v2/user-roles lists non-deleted rows of the clinic', async () => {
     db.prepare(
       `INSERT INTO UserRole (userId, role, clinicId, createdAt, updatedAt, deletedAt)
-       VALUES ('route-user-001', 'RECEPTIONIST', 'clinic-v2-001', ?, ?, NULL)`,
+       VALUES ('route-user-001', 'BOSS', 'clinic-v2-001', ?, ?, NULL)`,
     ).run(now, now);
 
     const res = await request(app).get('/api/v2/user-roles').expect(200);
     expect(res.body.success).toBe(true);
     expect(res.body.data.items).toEqual([
-      { userId: 'route-user-001', role: 'RECEPTIONIST', clinicId: 'clinic-v2-001', createdAt: now, updatedAt: now, deletedAt: null },
+      { userId: 'route-user-001', role: 'BOSS', clinicId: 'clinic-v2-001', createdAt: now, updatedAt: now, deletedAt: null },
     ]);
   });
 
   it('PUT /api/v2/user-roles/:userId replaces additional roles', async () => {
     const res = await request(app)
       .put('/api/v2/user-roles/route-user-001')
-      .send({ roles: ['NURSE', 'TECHNICIAN'] })
+      .send({ roles: ['BOSS', 'DOCTOR'] })
       .expect(200);
     expect(res.body.success).toBe(true);
-    expect(res.body.data.roles).toEqual(['NURSE', 'TECHNICIAN']);
+    expect(res.body.data.roles).toEqual(['BOSS']);
 
     const rows = db.prepare(
       'SELECT role FROM UserRole WHERE userId = ? ORDER BY role',
     ).all('route-user-001') as Array<{ role: string }>;
-    expect(rows.map((row) => row.role)).toEqual(['NURSE', 'TECHNICIAN']);
+    expect(rows.map((row) => row.role)).toEqual(['BOSS']);
   });
 
   it('PUT /api/v2/user-roles/:userId returns 404 for an unknown user', async () => {
     const res = await request(app)
       .put('/api/v2/user-roles/user-missing-001')
-      .send({ roles: ['NURSE'] })
+      .send({ roles: ['DOCTOR'] })
       .expect(404);
     expect(res.body.success).toBe(false);
     expect(res.body.code).toBe('NOT_FOUND');

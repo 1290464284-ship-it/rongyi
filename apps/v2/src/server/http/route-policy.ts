@@ -1,24 +1,25 @@
 import type { UserRole } from '../../domain/contracts';
 
-const allStaff: UserRole[] = ['BOSS', 'ADMIN', 'DOCTOR', 'RECEPTIONIST', 'NURSE', 'TECHNICIAN'];
-const operationalStaff: UserRole[] = ['BOSS', 'ADMIN', 'DOCTOR', 'RECEPTIONIST', 'NURSE'];
-const financeStaff: UserRole[] = ['BOSS', 'ADMIN', 'RECEPTIONIST'];
-const clinicalStaff: UserRole[] = ['BOSS', 'ADMIN', 'DOCTOR', 'NURSE'];
-const adminStaff: UserRole[] = ['BOSS', 'ADMIN'];
+const allStaff: UserRole[] = ['BOSS', 'DOCTOR'];
+const operationalStaff: UserRole[] = ['BOSS', 'DOCTOR'];
+const financeStaff: UserRole[] = ['BOSS'];
+const clinicalStaff: UserRole[] = ['BOSS', 'DOCTOR'];
+const adminStaff: UserRole[] = ['BOSS'];
 
 export const routeRoleRules: Array<{ pattern: RegExp; roles: UserRole[] }> = [
-  { pattern: /^\/api\/v2\/auth\/(me|password|navigation|clinics|switch-clinic)/, roles: allStaff },
+  { pattern: /^\/api\/v2\/auth\/(me|navigation|clinics|switch-clinic)/, roles: allStaff },
+  { pattern: /^\/api\/v2\/auth\/password/, roles: ['BOSS'] },
   { pattern: /^\/api\/v2\/doctors/, roles: operationalStaff },
   { pattern: /^\/api\/v2\/files/, roles: operationalStaff },
   { pattern: /^\/api\/v2\/admin\/users/, roles: ['BOSS'] },
   { pattern: /^\/api\/v2\/resource-meta/, roles: allStaff },
   { pattern: /^\/api\/v2\/resources/, roles: allStaff },
-  { pattern: /^\/api\/v2\/bulk-import\//, roles: ['BOSS', 'ADMIN'] },
-  { pattern: /^\/api\/v2\/sync\//, roles: ['BOSS', 'ADMIN'] },
-  { pattern: /^\/api\/v2\/backups/, roles: ['BOSS', 'ADMIN'] },
-  { pattern: /^\/api\/v2\/system\/business-alerts/, roles: ['BOSS', 'ADMIN'] },
-  { pattern: /^\/api\/v2\/system\/audit\/cleanup/, roles: ['BOSS', 'ADMIN'] },
-  { pattern: /^\/api\/v2\/hr\/leaves/, roles: ['BOSS', 'ADMIN'] },
+  { pattern: /^\/api\/v2\/bulk-import\//, roles: ['BOSS'] },
+  { pattern: /^\/api\/v2\/sync\//, roles: ['BOSS'] },
+  { pattern: /^\/api\/v2\/backups/, roles: ['BOSS'] },
+  { pattern: /^\/api\/v2\/system\/business-alerts/, roles: ['BOSS'] },
+  { pattern: /^\/api\/v2\/system\/audit\/cleanup/, roles: ['BOSS'] },
+  { pattern: /^\/api\/v2\/hr\/leaves/, roles: ['BOSS'] },
   { pattern: /^\/api\/v2\/hr\/attendance/, roles: adminStaff },
   { pattern: /^\/api\/v2\/charges(\/|$)/, roles: financeStaff },
   { pattern: /^\/api\/v2\/member-cards(\/|$)/, roles: financeStaff },
@@ -27,7 +28,7 @@ export const routeRoleRules: Array<{ pattern: RegExp; roles: UserRole[] }> = [
   { pattern: /^\/api\/v2\/refunds(\/|$)/, roles: financeStaff },
   { pattern: /^\/api\/v2\/inventory/, roles: financeStaff },
   { pattern: /^\/api\/v2\/stocktakes/, roles: adminStaff },
-  { pattern: /^\/api\/v2\/dispenses/, roles: ['BOSS', 'ADMIN', 'RECEPTIONIST', 'NURSE'] },
+  { pattern: /^\/api\/v2\/dispenses/, roles: ['BOSS', 'DOCTOR'] },
   { pattern: /^\/api\/v2\/narcotic-registry/, roles: adminStaff },
   { pattern: /^\/api\/v2\/purchase-orders/, roles: financeStaff },
   { pattern: /^\/api\/v2\/shift-templates/, roles: ['BOSS'] },
@@ -41,7 +42,7 @@ export const routeRoleRules: Array<{ pattern: RegExp; roles: UserRole[] }> = [
   },
   { pattern: /^\/api\/v2\/workbench/, roles: clinicalStaff },
   { pattern: /^\/api\/v2\/wechat-reminders/, roles: operationalStaff },
-  { pattern: /^\/api\/v2\/wechat\/send-batch/, roles: ['BOSS', 'ADMIN'] },
+  { pattern: /^\/api\/v2\/wechat\/send-batch/, roles: ['BOSS'] },
   { pattern: /^\/api\/v2\/wechat/, roles: operationalStaff },
   { pattern: /^\/api\/v2\/follow-ups/, roles: operationalStaff },
   { pattern: /^\/api\/v2\/notifications/, roles: allStaff },

@@ -48,6 +48,8 @@ export interface CrudResourceOptions<
    * 成功由 hook 统一关闭表单、重置表单、刷新列表。页面特有逻辑（如孤儿清理）留在页面内。
    */
   submitOverride?: (ctx: { form: TForm; editing: boolean }) => Promise<void>;
+  /** 自定义删除（如主子表先删子记录再删主记录）。抛错由 hook 统一 toast（errorMessages.delete）。 */
+  deleteOverride?: (row: TRow) => Promise<void>;
   /** 创建成功后、关闭/重置表单前回调。 */
   onAfterCreate?: (form: TForm) => void;
 }
@@ -201,7 +203,11 @@ export function useCrudResource<
     if (!deleteTarget || submitting) return;
     setSubmitting(true);
     try {
-      await apiRequest(`${options.endpoint}/${String(deleteTarget.id)}`, { method: 'DELETE' });
+      if (options.deleteOverride) {
+        await options.deleteOverride(deleteTarget);
+      } else {
+        await apiRequest(`${options.endpoint}/${String(deleteTarget.id)}`, { method: 'DELETE' });
+      }
       setDeleteTarget(null);
       showToast(options.messages?.delete ?? DEFAULT_MESSAGES.delete, 'success');
       await query.refetch();

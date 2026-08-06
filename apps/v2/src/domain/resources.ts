@@ -20,9 +20,9 @@ import { legacyResources } from './legacy-resources.generated';
  */
 
 const boss: UserRole[] = ['BOSS'];
-const staff: UserRole[] = ['BOSS', 'ADMIN', 'DOCTOR', 'RECEPTIONIST', 'NURSE', 'TECHNICIAN'];
-const clinical: UserRole[] = ['BOSS', 'ADMIN', 'DOCTOR', 'NURSE'];
-const reception: UserRole[] = ['BOSS', 'ADMIN', 'DOCTOR', 'RECEPTIONIST', 'NURSE'];
+const staff: UserRole[] = ['BOSS', 'DOCTOR'];
+const clinical: UserRole[] = ['BOSS', 'DOCTOR'];
+const reception: UserRole[] = ['BOSS', 'DOCTOR'];
 
 function f(
   name: string,
@@ -64,7 +64,7 @@ const resources: ResourceDefinition[] = [
     f('username', 'text', { required: true, unique: true, searchable: true, maxLength: 64 }),
     f('passwordHash', 'text', { required: true, maxLength: 200 }),
     f('name', 'text', { required: true, searchable: true, maxLength: 64 }),
-    f('role', 'enum', { required: true, enumValues: ['BOSS', 'ADMIN', 'DOCTOR', 'RECEPTIONIST', 'NURSE', 'TECHNICIAN'] }),
+    f('role', 'enum', { required: true, enumValues: ['BOSS', 'DOCTOR'] }),
     f('phone', 'text'),
     f('active', 'boolean', { default: true }),
     f('loginAttempts', 'number', { default: 0 }),
@@ -490,7 +490,7 @@ const resources: ResourceDefinition[] = [
     f('batchManaged', 'boolean', { default: false }),
     f('isHighValue', 'boolean', { default: false }),
     f('catalogId', 'text'),
-  ], { roles: ['BOSS', 'ADMIN', 'RECEPTIONIST'], capabilities: { list: true, create: true, update: true, delete: false, softDelete: false }, searchIndexResource: 'InventoryItem' }),
+  ], { roles: ['BOSS'], capabilities: { list: true, create: true, update: true, delete: false, softDelete: false }, searchIndexResource: 'InventoryItem' }),
 
   crud('inventoryTransactions', 'InventoryTransaction', [
     f('itemId', 'relation', { required: true, relation: { resource: 'inventoryItems', foreignKey: 'itemId', labelField: 'name' } }),
@@ -711,7 +711,7 @@ const resources: ResourceDefinition[] = [
     f('body', 'longText', { required: true }),
     f('kind', 'text', { required: true }),
     f('readAt', 'datetime'),
-  ], { roles: ['BOSS', 'ADMIN'], capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
+  ], { roles: ['BOSS'], capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   crud('settings', 'Setting', [
     f('key', 'text', { required: true, unique: true }),
@@ -764,7 +764,7 @@ const resources: ResourceDefinition[] = [
     f('paperSize', 'text'),
     f('orientation', 'text'),
     f('createdBy', 'text'),
-  ], { roles: ['BOSS', 'ADMIN'] }),
+  ], { roles: ['BOSS'] }),
 
   crud('dataImportJobs', 'DataImportJob', [
     f('importType', 'text', { required: true }),
@@ -790,7 +790,7 @@ const resources: ResourceDefinition[] = [
     f('reason', 'longText'),
     f('supplierId', 'text'),
     f('totalAmount', 'money', { min: 0 }),
-  ], { roles: ['BOSS', 'ADMIN'], capabilities: { list: true, create: false, update: false, delete: false, softDelete: true } }),
+  ], { roles: ['BOSS'], capabilities: { list: true, create: false, update: false, delete: false, softDelete: true } }),
 
   // 药品/耗材批次（批次管理+效期提醒）
   crud('inventoryBatches', 'InventoryBatch', [
@@ -803,7 +803,7 @@ const resources: ResourceDefinition[] = [
     f('supplierId', 'relation', { relation: { resource: 'suppliers', foreignKey: 'supplierId', labelField: 'name' } }),
     f('purchaseOrderId', 'text'),
     f('active', 'boolean', { default: true }),
-  ], { roles: ['BOSS', 'ADMIN', 'RECEPTIONIST'], capabilities: { list: true, create: true, update: true, delete: false, softDelete: false } }),
+  ], { roles: ['BOSS'], capabilities: { list: true, create: true, update: true, delete: false, softDelete: false } }),
 
   // 库存盘点（开启锁定→差异→结束解锁）
   crud('stocktakes', 'Stocktake', [
@@ -814,7 +814,7 @@ const resources: ResourceDefinition[] = [
     f('completedById', 'relation', { relation: { resource: 'users', foreignKey: 'completedById', labelField: 'name' } }),
     f('completedAt', 'datetime'),
     f('note', 'longText'),
-  ], { roles: ['BOSS', 'ADMIN'], capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
+  ], { roles: ['BOSS'], capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   crud('stocktakeItems', 'StocktakeItem', [
     f('stocktakeId', 'relation', { required: true, relation: { resource: 'stocktakes', foreignKey: 'stocktakeId', labelField: 'number' } }),
@@ -823,7 +823,7 @@ const resources: ResourceDefinition[] = [
     f('countedStock', 'number', { min: 0 }),
     f('difference', 'number', { default: 0 }),
     f('note', 'longText'),
-  ], { roles: ['BOSS', 'ADMIN'], capabilities: { list: true, create: true, update: true, delete: false, softDelete: false } }),
+  ], { roles: ['BOSS'], capabilities: { list: true, create: true, update: true, delete: false, softDelete: false } }),
 
   // 收费组合（公有/私有，划价一键调出）
   crud('chargeCombos', 'ChargeCombo', [
@@ -832,7 +832,7 @@ const resources: ResourceDefinition[] = [
     f('type', 'enum', { required: true, enumValues: ['PUBLIC', 'PRIVATE'] }),
     f('ownerId', 'relation', { relation: { resource: 'users', foreignKey: 'ownerId', labelField: 'name' } }),
     f('active', 'boolean', { default: true }),
-  ], { roles: ['BOSS', 'ADMIN', 'DOCTOR', 'RECEPTIONIST'], capabilities: { list: true, create: true, update: true, delete: false, softDelete: false } }),
+  ], { roles: ['BOSS', 'DOCTOR'], capabilities: { list: true, create: true, update: true, delete: false, softDelete: false } }),
 
   crud('chargeComboItems', 'ChargeComboItem', [
     f('comboId', 'relation', { required: true, relation: { resource: 'chargeCombos', foreignKey: 'comboId', labelField: 'name' } }),
@@ -842,7 +842,7 @@ const resources: ResourceDefinition[] = [
     f('price', 'money', { required: true }),
     f('quantity', 'number', { required: true, min: 1 }),
     f('costType', 'enum', { enumValues: ['SERVICE', 'MATERIAL'] }),
-  ], { roles: ['BOSS', 'ADMIN', 'DOCTOR', 'RECEPTIONIST'], capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
+  ], { roles: ['BOSS', 'DOCTOR'], capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   // 预约事项自定义
   crud('appointmentPurposes', 'AppointmentPurpose', [
@@ -874,7 +874,7 @@ const resources: ResourceDefinition[] = [
     f('dispensedAt', 'datetime'),
     f('returnedAt', 'datetime'),
     f('note', 'longText'),
-  ], { roles: ['BOSS', 'ADMIN', 'RECEPTIONIST', 'NURSE'], capabilities: { list: true, create: true, update: true, delete: false, softDelete: false } }),
+  ], { roles: ['BOSS', 'DOCTOR'], capabilities: { list: true, create: true, update: true, delete: false, softDelete: false } }),
 
   crud('dispenseItems', 'DispenseItem', [
     f('dispenseId', 'relation', { required: true, relation: { resource: 'dispenses', foreignKey: 'dispenseId', labelField: 'number' } }),
@@ -884,7 +884,7 @@ const resources: ResourceDefinition[] = [
     f('spec', 'text'),
     f('quantity', 'number', { required: true, min: 1 }),
     f('returnedQuantity', 'number', { default: 0, min: 0 }),
-  ], { roles: ['BOSS', 'ADMIN', 'RECEPTIONIST', 'NURSE'], capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
+  ], { roles: ['BOSS', 'DOCTOR'], capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   // 麻药登记表
   crud('narcoticRegistry', 'NarcoticRegistry', [
@@ -900,7 +900,7 @@ const resources: ResourceDefinition[] = [
     f('balanceBefore', 'number', { min: 0 }),
     f('balanceAfter', 'number', { min: 0 }),
     f('remark', 'longText'),
-  ], { roles: ['BOSS', 'ADMIN'], capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
+  ], { roles: ['BOSS'], capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   // 影像分类（正畸/美学/石膏）
   crud('imagingCategories', 'ImagingCategory', [
@@ -915,12 +915,12 @@ const resources: ResourceDefinition[] = [
   // 仅开放 list；读写走专用服务路由 /api/v2/user-roles（UserRoleService）。
   crud('userRoles', 'UserRole', [
     f('userId', 'relation', { required: true, relation: { resource: 'users', foreignKey: 'userId', labelField: 'name' } }),
-    f('role', 'enum', { required: true, enumValues: ['BOSS', 'ADMIN', 'DOCTOR', 'RECEPTIONIST', 'NURSE', 'TECHNICIAN'] }),
+    f('role', 'enum', { required: true, enumValues: ['BOSS', 'DOCTOR'] }),
   ], { roles: boss, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
 
   // 角色权限树配置
   crud('rolePermissions', 'RolePermission', [
-    f('role', 'enum', { required: true, enumValues: ['BOSS', 'ADMIN', 'DOCTOR', 'RECEPTIONIST', 'NURSE', 'TECHNICIAN'] }),
+    f('role', 'enum', { required: true, enumValues: ['BOSS', 'DOCTOR'] }),
     f('resource', 'text', { required: true, searchable: true }),
     f('permission', 'text', { required: true }),
     f('allowed', 'boolean', { default: true }),

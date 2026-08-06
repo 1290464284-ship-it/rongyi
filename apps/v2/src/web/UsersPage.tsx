@@ -16,11 +16,7 @@ import { useToast } from './toast-context';
 
 const ROLE_LABELS: Record<string, string> = {
   BOSS: '老板',
-  ADMIN: '管理员',
   DOCTOR: '医生',
-  RECEPTIONIST: '前台',
-  NURSE: '护士',
-  TECHNICIAN: '技师',
 };
 
 type UserRow = Record<string, unknown> & {
@@ -273,7 +269,7 @@ export function UsersPage() {
             <label>
               初始密码
               <input type="password" value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} />
-              <small>至少 8 位</small>
+              <small>至少 6 位</small>
             </label>
           )}
           <label>
@@ -328,7 +324,7 @@ export function UsersPage() {
         key={passwordTarget ?? 'no-target'}
         open={passwordTarget !== null}
         title="重置密码"
-        message="输入新密码，至少 8 位"
+        message="输入新密码，至少 6 位"
         confirmText="重置"
         onSubmit={(value) => void resetPassword(value)}
         onCancel={() => setPasswordTarget(null)}

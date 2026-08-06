@@ -96,7 +96,7 @@ function validItems(form: PrescriptionForm) {
     .filter((item) => item.name.trim() && item.days && item.quantity && item.price)
     .map((item) => ({
       name: item.name.trim(),
-      spec: item.spec || undefined,
+      specification: item.spec || undefined,
       dosage: item.dosage || undefined,
       frequency: item.frequency || undefined,
       days: Number(item.days),
@@ -212,6 +212,21 @@ export function PrescriptionsPage() {
         }
         messages={{ create: '处方已创建', update: '处方已更新', delete: '处方已删除' }}
         errorMessages={{ create: '创建处方失败', update: '更新处方失败', delete: '删除处方失败' }}
+        deleteOverride={async (row) => {
+          // 服务端 DELETE 为软删除且不级联：先删全部明细，再删主记录（明细删除失败仅告警）
+          const prescriptionId = String(row.id);
+          try {
+            const page = await apiRequest<Page<Record<string, unknown>>>(
+              `/resources/prescriptionItems?prescriptionId=${prescriptionId}&page=1&pageSize=100`,
+            );
+            for (const item of page.items) {
+              await apiRequest(`/resources/prescriptionItems/${String(item.id)}`, { method: 'DELETE' });
+            }
+          } catch (error) {
+            console.warn(`删除处方明细失败（继续删除主记录）：${prescriptionId}`, error);
+          }
+          await apiRequest(`/resources/prescriptions/${prescriptionId}`, { method: 'DELETE' });
+        }}
         columns={prescriptionColumns}
         canEdit
         canDelete

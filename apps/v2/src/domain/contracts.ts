@@ -65,11 +65,7 @@ export interface AppErrorLike {
 
 export const UserRole = {
   BOSS: 'BOSS',
-  ADMIN: 'ADMIN',
   DOCTOR: 'DOCTOR',
-  RECEPTIONIST: 'RECEPTIONIST',
-  NURSE: 'NURSE',
-  TECHNICIAN: 'TECHNICIAN',
 } as const;
 export type UserRole = (typeof UserRole)[keyof typeof UserRole];
 

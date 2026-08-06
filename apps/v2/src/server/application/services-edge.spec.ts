@@ -147,7 +147,7 @@ describe('service edge coverage', () => {
     await expect(auth.getUserById('missing-user')).rejects.toThrow('User not found');
     await expect(auth.changePassword('missing-user', 'x', 'newpass123')).rejects.toThrow('User not found');
     await expect(auth.changePassword('user-admin-001', 'wrong', 'newpass123')).rejects.toThrow('Old password is incorrect');
-    await expect(auth.changePassword('user-admin-001', 'REDACTED', 'short')).rejects.toThrow('at least 8');
+    await expect(auth.changePassword('user-admin-001', 'REDACTED', 'short')).rejects.toThrow('at least 6');
 
     await auth.logout('');
     await auth.logout('unknown-token');
@@ -269,11 +269,11 @@ describe('service edge coverage', () => {
       username: 'nurse-single',
       password: 'password123',
       name: 'Nurse Single',
-      role: 'NURSE',
+      role: 'DOCTOR',
       clinicIds: ['clinic-v2-other'],
     }, { ...context, clinicId: 'clinic-v2-001' });
-    expect(auth.listAccessibleClinics(nurse.id, 'NURSE').clinics).toHaveLength(1);
-    expect(() => auth.switchClinic(nurse.id, 'NURSE', 'clinic-v2-other')).toThrow('Only BOSS can switch clinics');
+    expect(auth.listAccessibleClinics(nurse.id, 'DOCTOR').clinics).toHaveLength(1);
+    expect(() => auth.switchClinic(nurse.id, 'DOCTOR', 'clinic-v2-other')).toThrow('Only BOSS can switch clinics');
 
     const bossNull = await auth.createUser({
       username: 'boss-null-clinic',
@@ -285,10 +285,10 @@ describe('service edge coverage', () => {
       username: 'nurse-null-clinic',
       password: 'password123',
       name: 'Nurse Null Clinic',
-      role: 'NURSE',
+      role: 'DOCTOR',
     }, { ...context, clinicId: null });
     expect(auth.listAccessibleClinics(bossNull.id, 'BOSS').clinics).toEqual([]);
-    expect(auth.listAccessibleClinics(nurseNull.id, 'NURSE')).toEqual({
+    expect(auth.listAccessibleClinics(nurseNull.id, 'DOCTOR')).toEqual({
       currentClinicId: null,
       clinics: [],
     });
@@ -1018,8 +1018,8 @@ describe('service edge coverage', () => {
       deviceToken: 'bad-token',
       changes: [],
     }, context)).rejects.toThrow('not registered');
-    expect(() => service.registerDevice('forbidden-device', 'x', { ...context, role: 'TECHNICIAN' }))
-      .toThrow('Sync requires BOSS or ADMIN');
+    expect(() => service.registerDevice('forbidden-device', 'x', { ...context, role: 'DOCTOR' }))
+      .toThrow('Sync requires BOSS');
     expect(() => service.registerDevice('null-clinic-device', 'x', { ...context, clinicId: null }))
       .toThrow('Sync requires a clinic scope');
     const device = service.registerDevice('device-1', 'Edge Device', context);
@@ -1030,13 +1030,13 @@ describe('service edge coverage', () => {
       deviceToken: device.token,
       changes: [],
     }, { ...context, clinicId: null })).rejects.toThrow('Sync requires a clinic scope');
-    expect(() => service.pull(now, 'device-1', device.token, { ...context, role: 'TECHNICIAN' }))
-      .toThrow('Sync requires BOSS or ADMIN');
+    expect(() => service.pull(now, 'device-1', device.token, { ...context, role: 'DOCTOR' }))
+      .toThrow('Sync requires BOSS');
     await expect(service.push({
       deviceId: 'device-1',
       deviceToken: device.token,
       changes: [],
-    }, { ...context, role: 'TECHNICIAN' })).rejects.toThrow('Sync requires BOSS or ADMIN');
+    }, { ...context, role: 'DOCTOR' })).rejects.toThrow('Sync requires BOSS');
     expect(service.pull(now, 'device-1', device.token, context)).toHaveProperty('changes');
     const notAllowed = await service.push({
       deviceId: 'device-1',
@@ -1337,7 +1337,7 @@ describe('service edge coverage', () => {
       password: 'short',
       name: 'Short',
       role: 'DOCTOR',
-    }, context)).rejects.toThrow('at least 8 characters');
+    }, context)).rejects.toThrow('at least 6 characters');
     await expect(auth.createUser({
       username: '',
       password: 'password123',
@@ -1346,12 +1346,12 @@ describe('service edge coverage', () => {
     }, context)).rejects.toThrow('Username and name are required');
     await expect(auth.createUser({} as never, context)).rejects.toThrow('Username and name are required');
 
-    const updated = await auth.updateUser(created.id, { name: 'Updated', phone: '13800000000', role: 'NURSE', active: false }, context);
+    const updated = await auth.updateUser(created.id, { name: 'Updated', phone: '13800000000', role: 'DOCTOR', active: false }, context);
     expect(updated.name).toBe('Updated');
     await expect(auth.updateUser(created.id, { role: 'BAD' }, context)).rejects.toThrow('Invalid user role');
     await expect(auth.updateUser('missing-user', {}, context)).rejects.toThrow('User not found');
     await expect(auth.resetPassword('missing-user', 'password123', context)).rejects.toThrow('User not found');
-    await expect(auth.resetPassword(created.id, 'short', context)).rejects.toThrow('at least 8 characters');
+    await expect(auth.resetPassword(created.id, 'short', context)).rejects.toThrow('at least 6 characters');
     await expect(auth.resetPassword(created.id, 'newpassword123', context)).resolves.toEqual({ id: created.id });
 
     const now = new Date().toISOString();
@@ -1736,7 +1736,7 @@ describe('service edge coverage', () => {
     expect(missingRequired.failed).toBe(1);
     await expect(bulk.importRows('users', [], context)).rejects.toThrow('disabled');
     await expect(bulk.importRows('operationLogs', [], context)).rejects.toThrow('Resource cannot import: operationLogs');
-    await expect(bulk.importRows('patients', [], { ...context, role: 'TECHNICIAN' })).rejects.toThrow('Forbidden resource');
+    await expect(bulk.importRows('rolePermissions', [], { ...context, role: 'DOCTOR' })).rejects.toThrow('Forbidden resource');
     await expect(bulk.importRows('patients', null as unknown as Array<Record<string, unknown>>, context)).rejects.toThrow('array');
     const tooManyRows = Array.from({ length: 10001 }, (_, index) => ({
       code: `BULK-${index}`,

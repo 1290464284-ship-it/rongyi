@@ -384,6 +384,17 @@ export function seedDatabase(db: Database.Database): void {
       .run(passwordHash, now, userId);
   }
 
+  const doctorRow = db.prepare("SELECT id FROM User WHERE username = 'doctor'").get() as { id: string } | undefined;
+  if (!doctorRow && !isProduction) {
+    const doctorHash = bcrypt.hashSync('REDACTED', 10);
+    db.prepare(
+      `INSERT INTO User (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         username, passwordHash, name, role, active, loginAttempts, tokenVersion
+       ) VALUES (?, ?, ?, ?, NULL, 'doctor', ?, 'Default Doctor', 'DOCTOR', 1, 0, 0)`,
+    ).run('user-seed-doctor-001', clinicId, now, now, doctorHash);
+  }
+
   if (!isProduction) {
     db.prepare(
       `INSERT OR IGNORE INTO Patient (

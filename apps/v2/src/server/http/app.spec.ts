@@ -306,12 +306,12 @@ describe('HTTP app', () => {
       `INSERT INTO User (
          id, clinicId, currentClinicId, createdAt, updatedAt, deletedAt,
          username, passwordHash, name, role, active, loginAttempts, tokenVersion
-       ) VALUES (?, NULL, NULL, ?, ?, NULL, 'file-null-clinic', ?, 'File Null Clinic', 'RECEPTIONIST', 1, 0, 0)`,
+       ) VALUES (?, NULL, NULL, ?, ?, NULL, 'file-null-clinic', ?, 'File Null Clinic', 'DOCTOR', 1, 0, 0)`,
     ).run('user-file-null', now, now, hash);
     // 用户行 clinicId 为 NULL 时必须经 UserClinic 成员关系解析诊所作用域（迁移 121 后严格隔离）。
     db.prepare(
       `INSERT INTO UserClinic (userId, clinicId, role, createdAt, updatedAt, deletedAt)
-       VALUES (?, ?, 'RECEPTIONIST', ?, ?, NULL)`,
+       VALUES (?, ?, 'DOCTOR', ?, ?, NULL)`,
     ).run('user-file-null', 'clinic-v2-001', now, now);
     const nullLogin = await request(app)
       .post('/api/v2/auth/login')
@@ -393,7 +393,7 @@ describe('HTTP app', () => {
     await request(app)
       .post('/api/v2/admin/users')
       .set('Authorization', `Bearer ${token}`)
-      .send({ username: 'tech-audit', password: 'password123', name: 'Tech Audit', role: 'TECHNICIAN' })
+      .send({ username: 'tech-audit', password: 'password123', name: 'Tech Audit', role: 'DOCTOR' })
       .expect(201);
     const login = await request(app)
       .post('/api/v2/auth/login')
@@ -403,16 +403,19 @@ describe('HTTP app', () => {
     for (const path of [
       '/api/v2/stats/revenue',
       '/api/v2/analytics/rfm',
-      '/api/v2/search?q=Smoke',
       '/api/v2/hr/attendance',
     ]) {
       await request(app).get(path).set('Authorization', `Bearer ${techToken}`).expect(403);
     }
     await request(app)
+      .get('/api/v2/search?q=Smoke')
+      .set('Authorization', `Bearer ${techToken}`)
+      .expect(200);
+    await request(app)
       .post('/api/v2/follow-ups/batch-generate')
       .set('Authorization', `Bearer ${techToken}`)
       .send({ limit: 1 })
-      .expect(403);
+      .expect(200);
     const techNav = await request(app)
       .get('/api/v2/auth/navigation')
       .set('Authorization', `Bearer ${techToken}`)
@@ -427,15 +430,15 @@ describe('HTTP app', () => {
     expect(bossNav.body.data.permissions).toContain('system');
   });
 
-  it('restricts wechat send-batch to BOSS/ADMIN but keeps single send for operational staff', async () => {
+  it('restricts wechat send-batch to BOSS but keeps single send for operational staff', async () => {
     await request(app)
       .post('/api/v2/admin/users')
       .set('Authorization', `Bearer ${token}`)
-      .send({ username: 'reception-wechat', password: 'password123', name: 'Reception Wechat', role: 'RECEPTIONIST' })
+      .send({ username: 'doctor-wechat', password: 'password123', name: 'Doctor Wechat', role: 'DOCTOR' })
       .expect(201);
     const login = await request(app)
       .post('/api/v2/auth/login')
-      .send({ username: 'reception-wechat', password: 'password123' })
+      .send({ username: 'doctor-wechat', password: 'password123' })
       .expect(200);
     const receptionToken = login.body.data.token as string;
 
@@ -509,7 +512,7 @@ describe('HTTP app', () => {
     await request(app)
       .post('/api/v2/admin/users')
       .set('Authorization', `Bearer ${token}`)
-      .send({ username: 'tech-audit-403', password: 'password123', name: 'Tech Audit 403', role: 'TECHNICIAN' })
+      .send({ username: 'tech-audit-403', password: 'password123', name: 'Tech Audit 403', role: 'DOCTOR' })
       .expect(201);
     const login = await request(app)
       .post('/api/v2/auth/login')
@@ -520,9 +523,9 @@ describe('HTTP app', () => {
 
     const before = (db.prepare('SELECT COUNT(*) AS c FROM OperationLog').get() as { c: number }).c;
     await request(app)
-      .post('/api/v2/follow-ups/batch-generate')
+      .post('/api/v2/admin/users')
       .set('Authorization', `Bearer ${techToken}`)
-      .send({ limit: 1 })
+      .send({ username: 'x', password: 'password123', name: 'X', role: 'DOCTOR' })
       .expect(403);
     const after = (db.prepare('SELECT COUNT(*) AS c FROM OperationLog').get() as { c: number }).c;
     expect(after).toBe(before + 1);
@@ -530,7 +533,7 @@ describe('HTTP app', () => {
     const row = db.prepare(
       `SELECT action, statusCode, userId FROM OperationLog ORDER BY createdAt DESC, rowid DESC LIMIT 1`,
     ).get() as { action: string; statusCode: string | null; userId: string };
-    expect(row.action).toContain('POST /api/v2/follow-ups/batch-generate');
+    expect(row.action).toContain('POST /api/v2/admin/users');
     expect(row.statusCode).toBe('403');
     expect(row.userId).toBe(techUserId);
   });
@@ -886,6 +889,12 @@ describe('HTTP app', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ newPassword: 'newpassword123' })
       .expect(200);
+    // 回归：DELETE 用户此前因 UPDATE 参数不匹配（3 个占位符只传 2 个参数）返回 500
+    await request(app).delete(`/api/v2/admin/users/${userId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const deleted = db.prepare('SELECT deletedAt FROM User WHERE id = ?').get(userId) as { deletedAt: string | null };
+    expect(deleted.deletedAt).not.toBeNull();
 
     const card = await request(app).post('/api/v2/member-cards')
       .set('Authorization', `Bearer ${token}`)
@@ -1169,7 +1178,7 @@ describe('HTTP app', () => {
     await request(app)
       .post('/api/v2/admin/users')
       .set('Authorization', `Bearer ${token}`)
-      .send({ username, password: 'password123', name: 'Audit Login Ok', role: 'RECEPTIONIST' })
+      .send({ username, password: 'password123', name: 'Audit Login Ok', role: 'DOCTOR' })
       .expect(201);
     const response = await request(app)
       .post('/api/v2/auth/login')
