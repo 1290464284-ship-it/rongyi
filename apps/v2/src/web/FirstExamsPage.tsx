@@ -2,9 +2,11 @@ import { useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import { CrudPage } from './CrudPage';
-import { Dialog, SearchableSelect, type DataTableColumn } from './components';
+import { ConfirmDialog, Dialog, SearchableSelect, type DataTableColumn } from './components';
+import { formatDateTime } from './format';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
+import type { Page } from './types';
 
 const STATUS_LABELS: Record<string, string> = {
   DRAFT: '草稿',
@@ -19,6 +21,18 @@ const FOLLOW_UP_STATUS_LABELS: Record<string, string> = {
   HORIZONTAL_SHOULD: '需横向转诊',
   HORIZONTAL_DONE: '横向已转',
   LOST: '已流失',
+};
+
+const DENTITION_LABELS: Record<string, string> = {
+  DECIDUOUS: '乳牙列',
+  PERMANENT: '恒牙列',
+  MIXED: '混合牙列',
+};
+
+const CHIEF_MARK_LABELS: Record<string, string> = {
+  NONE: '无',
+  HORIZONTAL_SHOULD: '横向应',
+  HORIZONTAL_DONE: '横向做',
 };
 
 interface FirstExamTrackingOverview {
@@ -40,7 +54,32 @@ type FirstExamRow = Record<string, unknown> & {
   status?: string | null;
   followUpStatus?: string | null;
   chiefComplaint?: string | null;
+  dentition?: string | null;
+  previousExamId?: string | null;
+  restartedAt?: string | null;
 };
+
+interface FirstExamToothRow extends Record<string, unknown> {
+  id: string;
+  examId?: string | null;
+  toothNumber?: number | null;
+  toothStatus?: string | null;
+  isChief?: boolean | null;
+  chiefMark?: string | null;
+}
+
+interface FirstExamHistoryItem {
+  id: string;
+  patientId?: string | null;
+  doctorId?: string | null;
+  status?: string | null;
+  followUpStatus?: string | null;
+  dentition?: string | null;
+  previousExamId?: string | null;
+  restartedAt?: string | null;
+  chiefComplaint?: string | null;
+  createdAt?: string | null;
+}
 
 interface FirstExamForm {
   patientId: string;
@@ -85,11 +124,21 @@ const firstExamColumns: DataTableColumn<FirstExamRow>[] = [
       return FOLLOW_UP_STATUS_LABELS[value] ?? value;
     },
   },
+  {
+    key: 'dentition',
+    label: '牙列',
+    render: (row) => DENTITION_LABELS[String(row.dentition ?? '')] ?? String(row.dentition ?? ''),
+  },
+  {
+    key: 'restartedAt',
+    label: '重启',
+    render: (row) => (row.restartedAt ? `已重启 ${formatDateTime(row.restartedAt)}` : ''),
+  },
 ];
 
 export function FirstExamsPage() {
   const { showToast } = useToast();
-  const [trackingTarget, setTrackingTarget] = useState<FirstExamRow | null>(null);
+  const [dialogTarget, setDialogTarget] = useState<{ kind: 'tracking' | 'teeth' | 'restart' | 'history'; row: FirstExamRow } | null>(null);
   const overviewQuery = useQuery({
     queryKey: ['first-exams-tracking-overview'],
     queryFn: () => apiRequest<FirstExamTrackingOverview>('/first-exams/tracking-overview'),
@@ -136,14 +185,48 @@ export function FirstExamsPage() {
                 <option key={value} value={value}>{label}</option>
               ))}
             </select>
-            <button onClick={() => setTrackingTarget(row)}>追踪</button>
-            {trackingTarget?.id === row.id && (
+            <button onClick={() => setDialogTarget({ kind: 'tracking', row })}>追踪</button>
+            <select
+              defaultValue={String(row.dentition ?? '')}
+              aria-label="切换牙列"
+              onChange={(event) => {
+                if (event.target.value) void changeDentition(showToast, ctx.reload, row.id, event.target.value);
+              }}
+            >
+              <option value="">牙列</option>
+              {Object.entries(DENTITION_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+            <button onClick={() => setDialogTarget({ kind: 'teeth', row })}>牙齿标记</button>
+            <button onClick={() => setDialogTarget({ kind: 'restart', row })}>重启检查</button>
+            <button onClick={() => setDialogTarget({ kind: 'history', row })}>历史</button>
+            {dialogTarget?.kind === 'tracking' && dialogTarget.row.id === row.id && (
               <TrackingDialog
-                row={row}
+                row={dialogTarget.row}
                 reload={ctx.reload}
                 refetchOverview={() => void overviewQuery.refetch()}
-                onClose={() => setTrackingTarget(null)}
+                onClose={() => setDialogTarget(null)}
               />
+            )}
+            {dialogTarget?.kind === 'teeth' && dialogTarget.row.id === row.id && (
+              <TeethMarkDialog row={dialogTarget.row} reload={ctx.reload} onClose={() => setDialogTarget(null)} />
+            )}
+            {dialogTarget?.kind === 'restart' && dialogTarget.row.id === row.id && (
+              <ConfirmDialog
+                open
+                title="重启检查"
+                message="确定重启该首诊吗？将复制临床内容创建一条新的检查记录（不复制牙齿明细），原记录保留为历史。"
+                confirmText="确认重启"
+                onConfirm={() => {
+                  setDialogTarget(null);
+                  void restartFirstExam(showToast, ctx.reload, row.id);
+                }}
+                onCancel={() => setDialogTarget(null)}
+              />
+            )}
+            {dialogTarget?.kind === 'history' && dialogTarget.row.id === row.id && (
+              <HistoryDialog row={dialogTarget.row} onClose={() => setDialogTarget(null)} />
             )}
           </>
         )}
@@ -295,6 +378,179 @@ async function transitionFirstExam(
   } catch (error) {
     showToast(errorMessage(error, '状态更新失败'), 'error');
   }
+}
+
+async function changeDentition(
+  showToast: (message: string, kind?: 'success' | 'error' | 'info') => void,
+  reload: () => Promise<unknown>,
+  id: string,
+  dentition: string,
+) {
+  try {
+    await apiRequest(`/first-exams/${id}/dentition`, {
+      method: 'POST',
+      body: JSON.stringify({ dentition }),
+    });
+    showToast('牙列已更新', 'success');
+    await reload();
+  } catch (error) {
+    showToast(errorMessage(error, '牙列更新失败'), 'error');
+  }
+}
+
+async function restartFirstExam(
+  showToast: (message: string, kind?: 'success' | 'error' | 'info') => void,
+  reload: () => Promise<unknown>,
+  id: string,
+) {
+  try {
+    await apiRequest(`/first-exams/${id}/restart`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+    showToast('首诊已重启', 'success');
+    await reload();
+  } catch (error) {
+    showToast(errorMessage(error, '重启检查失败'), 'error');
+  }
+}
+
+function TeethMarkDialog({
+  row,
+  reload,
+  onClose,
+}: {
+  row: FirstExamRow;
+  reload: () => Promise<unknown>;
+  onClose: () => void;
+}) {
+  const { showToast } = useToast();
+  const [marks, setMarks] = useState<Record<string, string>>({});
+  const teethQuery = useQuery({
+    queryKey: ['first-exam-teeth', row.id],
+    queryFn: () => apiRequest<Page<FirstExamToothRow>>(`/resources/firstExamTeeth?examId=${encodeURIComponent(row.id)}&page=1&pageSize=200`),
+  });
+  const teeth = teethQuery.data?.items ?? [];
+
+  async function setChiefMark(tooth: FirstExamToothRow, mark: string) {
+    const previous = String(tooth.chiefMark ?? 'NONE');
+    setMarks((current) => ({ ...current, [tooth.id]: mark }));
+    try {
+      await apiRequest(`/first-exams/${row.id}/teeth/${tooth.id}/chief-mark`, {
+        method: 'POST',
+        body: JSON.stringify({ chiefMark: mark }),
+      });
+      showToast(`牙齿 ${String(tooth.toothNumber ?? tooth.id)} 主诉标记已更新`, 'success');
+      await reload();
+    } catch (error) {
+      setMarks((current) => ({ ...current, [tooth.id]: previous }));
+      showToast(errorMessage(error, '主诉标记更新失败'), 'error');
+    }
+  }
+
+  return (
+    <Dialog open title="主诉牙齿标记" onClose={onClose}>
+      {teethQuery.isLoading ? (
+        <p>加载中...</p>
+      ) : teeth.length === 0 ? (
+        <p>该首诊暂无牙齿记录</p>
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th>牙位</th>
+              <th>状态</th>
+              <th>主诉标记</th>
+            </tr>
+          </thead>
+          <tbody>
+            {teeth.map((tooth) => {
+              const toothNumber = String(tooth.toothNumber ?? tooth.id);
+              const currentMark = marks[tooth.id] ?? String(tooth.chiefMark ?? 'NONE');
+              return (
+                <tr key={tooth.id}>
+                  <td>{toothNumber}</td>
+                  <td>{String(tooth.toothStatus ?? '')}</td>
+                  <td>
+                    <select
+                      aria-label={`牙齿 ${toothNumber} 主诉标记`}
+                      value={currentMark}
+                      onChange={(event) => void setChiefMark(tooth, event.target.value)}
+                    >
+                      {Object.entries(CHIEF_MARK_LABELS).map(([value, label]) => (
+                        <option key={value} value={value}>{label}</option>
+                      ))}
+                    </select>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+      <div className="modal-actions">
+        <button type="button" onClick={onClose}>关闭</button>
+      </div>
+    </Dialog>
+  );
+}
+
+function HistoryDialog({ row, onClose }: { row: FirstExamRow; onClose: () => void }) {
+  const historyQuery = useQuery({
+    queryKey: ['first-exam-history', row.id],
+    queryFn: () => apiRequest<FirstExamHistoryItem[]>(`/first-exams/history?patientId=${encodeURIComponent(String(row.patientId ?? ''))}`),
+    enabled: Boolean(row.patientId),
+  });
+  const items = historyQuery.data ?? [];
+
+  return (
+    <Dialog open title="首诊历史" onClose={onClose}>
+      {!row.patientId ? (
+        <p>该记录缺少患者信息，无法查看历史</p>
+      ) : historyQuery.isLoading ? (
+        <p>加载中...</p>
+      ) : items.length === 0 ? (
+        <p>暂无历史记录</p>
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th>时间</th>
+              <th>主诉</th>
+              <th>牙列</th>
+              <th>状态</th>
+              <th>追踪</th>
+              <th>重启</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => (
+              <tr key={item.id}>
+                <td>
+                  {formatDateTime(item.createdAt)}
+                  {item.id === row.id ? '（当前）' : ''}
+                </td>
+                <td>{item.chiefComplaint ?? ''}</td>
+                <td>{DENTITION_LABELS[String(item.dentition ?? '')] ?? String(item.dentition ?? '')}</td>
+                <td>{STATUS_LABELS[String(item.status ?? '')] ?? String(item.status ?? '')}</td>
+                <td>{FOLLOW_UP_STATUS_LABELS[String(item.followUpStatus ?? 'NONE')] ?? String(item.followUpStatus ?? '')}</td>
+                <td>
+                  {item.previousExamId
+                    ? item.restartedAt
+                      ? `已重启 ${formatDateTime(item.restartedAt)}`
+                      : `由 ${item.previousExamId} 重启`
+                    : ''}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <div className="modal-actions">
+        <button type="button" onClick={onClose}>关闭</button>
+      </div>
+    </Dialog>
+  );
 }
 
 function FirstExamFormFields({ form, update }: { form: FirstExamForm; update: (patch: Partial<FirstExamForm>) => void }) {

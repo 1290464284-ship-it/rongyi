@@ -305,4 +305,149 @@ describe('FollowUpsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '确认执行' }));
     expect(await screen.findByText('execute failed')).toBeDefined();
   });
+
+  it('switches to dict management and lists follow-up dictionary entries', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/follow-ups/reminders') return [];
+      if (path === '/follow-ups/reminders/summary') return { total: 0, overdue: 0, today: 0, upcoming: 0 };
+      if (path === '/follow-ups/nps') return { total: 0, promoters: 0, passives: 0, detractors: 0, nps: 0, average: 0, breakdown: [] };
+      if (path === '/resources/followUpDicts?page=1&pageSize=200') {
+        return {
+          items: [
+            { id: 'd-1', dictType: 'TYPE', name: '初诊回访', sortOrder: 1, active: true, remark: '备注A' },
+            { id: 'd-2', dictType: 'RESULT', name: '满意', sortOrder: 2, active: false, remark: null },
+          ],
+          total: 2,
+        };
+      }
+      return {};
+    });
+
+    render(<FollowUpsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('tab', { name: '词典管理' }));
+    expect(await screen.findByText('初诊回访')).toBeDefined();
+    expect(screen.getByText('满意')).toBeDefined();
+    expect(screen.getByText('备注A')).toBeDefined();
+    expect(screen.getByText('是')).toBeDefined();
+    expect(screen.getByText('否')).toBeDefined();
+    expect(screen.getAllByText('RESULT 回访结果').length).toBeGreaterThan(0);
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/followUpDicts?page=1&pageSize=200');
+    });
+  });
+
+  it('creates a follow-up dictionary entry via POST', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/follow-ups/reminders') return [];
+      if (path === '/follow-ups/reminders/summary') return { total: 0, overdue: 0, today: 0, upcoming: 0 };
+      if (path === '/follow-ups/nps') return { total: 0, promoters: 0, passives: 0, detractors: 0, nps: 0, average: 0, breakdown: [] };
+      if (path === '/resources/followUpDicts?page=1&pageSize=200') return { items: [], total: 0 };
+      if (path === '/resources/followUpDicts') return { id: 'd-new' };
+      return {};
+    });
+
+    render(<FollowUpsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('tab', { name: '词典管理' }));
+    await screen.findByText('暂无词典项');
+    fireEvent.click(screen.getByRole('button', { name: '新建词典项' }));
+    fireEvent.change(screen.getByLabelText('分类'), { target: { value: 'CONTENT' } });
+    fireEvent.change(screen.getByLabelText('名称'), { target: { value: '术后回访' } });
+    fireEvent.change(screen.getByLabelText('排序'), { target: { value: '2' } });
+    fireEvent.click(screen.getByLabelText('启用'));
+    fireEvent.change(screen.getByLabelText('备注'), { target: { value: '拆线后' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/followUpDicts', expect.objectContaining({ method: 'POST' }));
+    });
+    const createCall = vi.mocked(apiRequest).mock.calls.find(
+      ([path, options]) => path === '/resources/followUpDicts' && options?.method === 'POST',
+    );
+    expect(JSON.parse(String(createCall?.[1]?.body))).toEqual({
+      dictType: 'CONTENT',
+      name: '术后回访',
+      sortOrder: 2,
+      active: false,
+      remark: '拆线后',
+    });
+    expect(await screen.findByText('词典项已创建')).toBeDefined();
+  });
+
+  it('updates a follow-up dictionary entry via PATCH', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/follow-ups/reminders') return [];
+      if (path === '/follow-ups/reminders/summary') return { total: 0, overdue: 0, today: 0, upcoming: 0 };
+      if (path === '/follow-ups/nps') return { total: 0, promoters: 0, passives: 0, detractors: 0, nps: 0, average: 0, breakdown: [] };
+      if (path === '/resources/followUpDicts?page=1&pageSize=200') {
+        return { items: [{ id: 'd-1', dictType: 'TYPE', name: '初诊回访', sortOrder: 1, active: true, remark: '备注A' }], total: 1 };
+      }
+      if (path === '/resources/followUpDicts/d-1') return { id: 'd-1' };
+      return {};
+    });
+
+    render(<FollowUpsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('tab', { name: '词典管理' }));
+    fireEvent.click(await screen.findByRole('button', { name: '编辑' }));
+    expect(screen.getByRole('dialog')).toBeDefined();
+    expect((screen.getByLabelText('名称') as HTMLInputElement).value).toBe('初诊回访');
+    fireEvent.change(screen.getByLabelText('名称'), { target: { value: '复诊回访' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/followUpDicts/d-1', expect.objectContaining({ method: 'PATCH' }));
+    });
+    const patchCall = vi.mocked(apiRequest).mock.calls.find(
+      ([path, options]) => path === '/resources/followUpDicts/d-1' && options?.method === 'PATCH',
+    );
+    expect(JSON.parse(String(patchCall?.[1]?.body))).toEqual({
+      dictType: 'TYPE',
+      name: '复诊回访',
+      sortOrder: 1,
+      active: true,
+      remark: '备注A',
+    });
+    expect(await screen.findByText('词典项已更新')).toBeDefined();
+  });
+
+  it('deletes a follow-up dictionary entry after confirmation', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/follow-ups/reminders') return [];
+      if (path === '/follow-ups/reminders/summary') return { total: 0, overdue: 0, today: 0, upcoming: 0 };
+      if (path === '/follow-ups/nps') return { total: 0, promoters: 0, passives: 0, detractors: 0, nps: 0, average: 0, breakdown: [] };
+      if (path === '/resources/followUpDicts?page=1&pageSize=200') {
+        return { items: [{ id: 'd-1', dictType: 'TYPE', name: '初诊回访', sortOrder: 1, active: true, remark: '备注A' }], total: 1 };
+      }
+      if (path === '/resources/followUpDicts/d-1') return {};
+      return {};
+    });
+
+    render(<FollowUpsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('tab', { name: '词典管理' }));
+    fireEvent.click(await screen.findByRole('button', { name: '删除' }));
+    expect(await screen.findByText('确定删除该词典项吗？')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '确认删除' }));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/followUpDicts/d-1', expect.objectContaining({ method: 'DELETE' }));
+    });
+    expect(await screen.findByText('词典项已删除')).toBeDefined();
+  });
+
+  it('filters dictionary entries by dictType', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/follow-ups/reminders') return [];
+      if (path === '/follow-ups/reminders/summary') return { total: 0, overdue: 0, today: 0, upcoming: 0 };
+      if (path === '/follow-ups/nps') return { total: 0, promoters: 0, passives: 0, detractors: 0, nps: 0, average: 0, breakdown: [] };
+      if (path.startsWith('/resources/followUpDicts')) {
+        return { items: [{ id: 'd-1', dictType: 'RESULT', name: '满意', sortOrder: 1, active: true }], total: 1 };
+      }
+      return {};
+    });
+
+    render(<FollowUpsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('tab', { name: '词典管理' }));
+    await screen.findByText('满意');
+    fireEvent.change(screen.getByLabelText('词典分类筛选'), { target: { value: 'RESULT' } });
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/followUpDicts?page=1&pageSize=200&dictType=RESULT');
+    });
+    expect(await screen.findByText('满意')).toBeDefined();
+  });
 });

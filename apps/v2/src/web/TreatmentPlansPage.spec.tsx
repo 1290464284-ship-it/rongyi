@@ -41,6 +41,27 @@ function mockData() {
     if (path === '/treatment-plans/p-1/sign') {
       return { id: 'p-1', signedAt: '2026-08-06T02:00:00.000Z', signerName: '张三' };
     }
+    if (path === '/resources/treatmentPlanItems?planId=p-1&page=1&pageSize=200') {
+      return {
+        items: [
+          { id: 'item-1', name: '种植体', category: 'GENERAL', price: 10000, quantity: 1, status: 'PLANNED', discountRate: null, billed: 0, billedChargeId: null },
+          { id: 'item-2', name: '基台', category: 'GENERAL', price: 5000, quantity: 2, status: 'PLANNED', discountRate: null, billed: 0, billedChargeId: null },
+        ],
+        total: 2, page: 1, pageSize: 200,
+      };
+    }
+    if (path === '/treatment-plans/p-1/discount') {
+      return { id: 'p-1', discountType: 'WHOLE', discountRate: 10, totalFee: 18000 };
+    }
+    if (path === '/treatment-plans/p-1/items/item-1/discount') {
+      return { itemId: 'item-1', discountRate: 25, planTotalFee: 17500 };
+    }
+    if (path === '/treatment-plans/p-1/bill') {
+      return { chargeId: 'charge-1', number: 'CHG-ABC123', totalAmount: 10000, itemCount: 1, billedItemIds: ['item-1'] };
+    }
+    if (path === '/treatment-plans/p-1/follow-up') {
+      return { id: 'p-1', followUpStatus: 'PENDING', nextFollowUpAt: '2026-08-20', trackingNote: '患者反馈良好' };
+    }
     return {};
   });
 }
@@ -303,5 +324,169 @@ describe('TreatmentPlansPage', () => {
     fireEvent.change(screen.getByLabelText('签署人姓名'), { target: { value: '张三' } });
     fireEvent.click(screen.getByText('签署'));
     expect(await screen.findByText('签署人姓名不能为空')).toBeDefined();
+  });
+
+  it('saves a whole-plan discount and shows the new total fee', async () => {
+    mockData();
+    render(<TreatmentPlansPage />, { wrapper });
+    await screen.findByText('正畸计划');
+
+    fireEvent.click(screen.getAllByRole('button', { name: '折扣' })[0]);
+    expect(await screen.findByLabelText('明细与划价：正畸计划')).toBeDefined();
+
+    fireEvent.change(screen.getByLabelText('整单折扣类型'), { target: { value: 'WHOLE' } });
+    fireEvent.change(screen.getByLabelText('整单折扣率'), { target: { value: '10' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存折扣' }));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/treatment-plans/p-1/discount', expect.objectContaining({ method: 'POST' }));
+    });
+    const call = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/treatment-plans/p-1/discount');
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({ discountType: 'WHOLE', discountRate: 10 });
+    expect(await screen.findByText('折扣已保存，总费用 ¥180.00')).toBeDefined();
+  });
+
+  it('saves an item discount and clears it back to null', async () => {
+    mockData();
+    render(<TreatmentPlansPage />, { wrapper });
+    await screen.findByText('正畸计划');
+    fireEvent.click(screen.getAllByRole('button', { name: '折扣' })[0]);
+    await screen.findByLabelText('明细折扣 种植体');
+
+    fireEvent.change(screen.getByLabelText('明细折扣 种植体'), { target: { value: '25' } });
+    fireEvent.click(screen.getAllByRole('button', { name: '保存' })[0]);
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/treatment-plans/p-1/items/item-1/discount', expect.objectContaining({ method: 'POST' }));
+    });
+    let calls = vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/treatment-plans/p-1/items/item-1/discount');
+    expect(JSON.parse(String(calls[0]?.[1]?.body))).toEqual({ discountRate: 25 });
+    expect(await screen.findByText('明细折扣已保存，总费用 ¥175.00')).toBeDefined();
+
+    fireEvent.change(screen.getByLabelText('明细折扣 种植体'), { target: { value: '' } });
+    fireEvent.click(screen.getAllByRole('button', { name: '保存' })[0]);
+    await waitFor(() => {
+      calls = vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/treatment-plans/p-1/items/item-1/discount');
+      expect(calls.length).toBe(2);
+    });
+    expect(JSON.parse(String(calls[1]?.[1]?.body))).toEqual({ discountRate: null });
+  });
+
+  it('bills selected items, then bills all items when nothing is selected', async () => {
+    mockData();
+    render(<TreatmentPlansPage />, { wrapper });
+    await screen.findByText('正畸计划');
+    fireEvent.click(screen.getAllByRole('button', { name: '折扣' })[0]);
+    await screen.findByLabelText('勾选划价 种植体');
+
+    fireEvent.click(screen.getByLabelText('勾选划价 种植体'));
+    fireEvent.click(screen.getByRole('button', { name: '划价' }));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/treatment-plans/p-1/bill', expect.objectContaining({ method: 'POST' }));
+    });
+    expect(await screen.findByText('已生成划价单 CHG-ABC123')).toBeDefined();
+    let billCalls = vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/treatment-plans/p-1/bill');
+    expect(JSON.parse(String(billCalls[0]?.[1]?.body))).toEqual({ itemIds: ['item-1'] });
+
+    // 勾选在划价后被清空：再次划价应发送全量（空 body）
+    fireEvent.click(screen.getByRole('button', { name: '划价' }));
+    await waitFor(() => {
+      billCalls = vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/treatment-plans/p-1/bill');
+      expect(billCalls.length).toBe(2);
+    });
+    expect(JSON.parse(String(billCalls[1]?.[1]?.body))).toEqual({});
+  });
+
+  it('disables discount and billing controls when items are already billed', async () => {
+    mockData();
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/treatmentPlans?page=1&pageSize=50') {
+        return { items: [{ id: 'p-1', patientId: 'p-1', doctorId: 'd-1', name: '正畸计划', totalFee: 20000, status: 'APPROVED', printCount: 0, signedAt: null }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/treatmentPlanItems?planId=p-1&page=1&pageSize=200') {
+        return {
+          items: [{ id: 'item-1', name: '种植体', category: 'GENERAL', price: 10000, quantity: 1, status: 'PLANNED', discountRate: null, billed: 1, billedChargeId: 'charge-9' }],
+          total: 1, page: 1, pageSize: 200,
+        };
+      }
+      return {};
+    });
+    render(<TreatmentPlansPage />, { wrapper });
+    await screen.findByText('正畸计划');
+    fireEvent.click(screen.getAllByRole('button', { name: '折扣' })[0]);
+    expect(await screen.findByText('已存在已划价明细，整单折扣不可修改')).toBeDefined();
+    expect((screen.getByLabelText('整单折扣类型') as HTMLSelectElement).disabled).toBe(true);
+    expect((screen.getByLabelText('整单折扣率') as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: '保存折扣' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByLabelText('勾选划价 种植体') as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText('明细折扣 种植体') as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getAllByRole('button', { name: '保存' })[0] as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText('已划价')).toBeDefined();
+  });
+
+  it('saves follow-up info', async () => {
+    mockData();
+    render(<TreatmentPlansPage />, { wrapper });
+    await screen.findByText('正畸计划');
+    fireEvent.click(screen.getAllByRole('button', { name: '回访' })[0]);
+    await screen.findByLabelText('回访状态');
+
+    fireEvent.change(screen.getByLabelText('回访状态'), { target: { value: 'PENDING' } });
+    fireEvent.change(screen.getByLabelText('下次回访时间'), { target: { value: '2026-08-20' } });
+    fireEvent.change(screen.getByLabelText('回访备注'), { target: { value: '患者反馈良好' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/treatment-plans/p-1/follow-up', expect.objectContaining({ method: 'POST' }));
+    });
+    const call = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/treatment-plans/p-1/follow-up');
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({
+      followUpStatus: 'PENDING',
+      nextFollowUpAt: '2026-08-20',
+      trackingNote: '患者反馈良好',
+    });
+    expect(await screen.findByText('回访信息已保存')).toBeDefined();
+  });
+
+  it('renders discount and follow-up columns from plan rows', async () => {
+    mockData();
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/treatmentPlans?page=1&pageSize=50') {
+        return {
+          items: [
+            { id: 'p-1', patientId: 'p-1', doctorId: 'd-1', name: '正畸计划', totalFee: 20000, status: 'APPROVED', printCount: 2, signedAt: null, discountType: 'WHOLE', discountRate: 10, followUpStatus: 'PENDING', nextFollowUpAt: '2026-08-20', trackingNote: '患者反馈良好' },
+            { id: 'p-2', patientId: 'p-1', doctorId: 'd-1', name: '修复计划', totalFee: 30000, status: 'APPROVED', printCount: 0, signedAt: null },
+          ],
+          total: 2, page: 1, pageSize: 50,
+        };
+      }
+      return {};
+    });
+    render(<TreatmentPlansPage />, { wrapper });
+    await screen.findByText('正畸计划');
+    expect(screen.getAllByText('折扣').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('回访').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('整单折 10%')).toBeDefined();
+    expect(screen.getByText('待回访（2026-08-20）')).toBeDefined();
+    expect(screen.getAllByText('无折扣').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('rejects discount rates outside 0-100', async () => {
+    mockData();
+    render(<TreatmentPlansPage />, { wrapper });
+    await screen.findByText('正畸计划');
+    fireEvent.click(screen.getAllByRole('button', { name: '折扣' })[0]);
+    await screen.findByLabelText('整单折扣率');
+
+    fireEvent.change(screen.getByLabelText('整单折扣类型'), { target: { value: 'WHOLE' } });
+    fireEvent.change(screen.getByLabelText('整单折扣率'), { target: { value: '150' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存折扣' }));
+    expect(await screen.findByText('折扣率须在 0-100 之间')).toBeDefined();
+    expect(apiRequest).not.toHaveBeenCalledWith('/treatment-plans/p-1/discount', expect.objectContaining({ method: 'POST' }));
+
+    await screen.findByLabelText('明细折扣 种植体');
+    fireEvent.change(screen.getByLabelText('明细折扣 种植体'), { target: { value: '101' } });
+    fireEvent.click(screen.getAllByRole('button', { name: '保存' })[0]);
+    expect((await screen.findAllByText('折扣率须在 0-100 之间')).length).toBeGreaterThanOrEqual(1);
+    expect(apiRequest).not.toHaveBeenCalledWith('/treatment-plans/p-1/items/item-1/discount', expect.objectContaining({ method: 'POST' }));
   });
 });

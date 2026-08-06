@@ -73,7 +73,8 @@ type RegistrationRow = Record<string, unknown>;
 type WorkbenchDialog =
   | { kind: 'charge'; row: RegistrationRow }
   | { kind: 'record'; row: RegistrationRow }
-  | { kind: 'followup'; row: RegistrationRow };
+  | { kind: 'followup'; row: RegistrationRow }
+  | { kind: 'triage'; row: RegistrationRow };
 
 function newChargeItem(): ChargeItemForm {
   return { id: crypto.randomUUID(), name: '', category: '', price: '', quantity: '1' };
@@ -138,6 +139,7 @@ export function ClinicalWorkflowPage() {
     <div className="page">
       <h1>就诊工作台</h1>
       <TodayOverview data={today.data} />
+      <TriageQueuePanel onStartVisit={(id) => transition('registrations', id, 'IN_PROGRESS')} />
       {resources.map((resource) => {
         const query = queries[resource];
         const rows = query.data?.items ?? [];
@@ -160,6 +162,10 @@ export function ClinicalWorkflowPage() {
                 ))}
                 {resource === 'registrations' && (
                   <>
+                    {row.status === 'REGISTERED' && (
+                      <button onClick={() => setActiveDialog({ kind: 'triage', row })}>分诊</button>
+                    )}
+                    {row.status === 'TRIAGED' && <span className="triage-badge">已分诊</span>}
                     <button onClick={() => setActiveDialog({ kind: 'charge', row })}>划价</button>
                     <button onClick={() => setActiveDialog({ kind: 'record', row })}>病历</button>
                     <button onClick={() => setActiveDialog({ kind: 'followup', row })}>回访</button>
@@ -184,6 +190,9 @@ export function ClinicalWorkflowPage() {
       )}
       {activeDialog?.kind === 'followup' && (
         <FollowUpDialog row={activeDialog.row} onClose={() => setActiveDialog(null)} onSaved={refreshAfterAction} />
+      )}
+      {activeDialog?.kind === 'triage' && (
+        <TriageDialog row={activeDialog.row} onClose={() => setActiveDialog(null)} onSaved={refreshAfterAction} />
       )}
     </div>
   );
@@ -514,5 +523,151 @@ function FollowUpDialog({
         </div>
       </form>
     </Dialog>
+  );
+}
+
+function TriageDialog({
+  row,
+  onClose,
+  onSaved,
+}: {
+  row: RegistrationRow;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { showToast } = useToast();
+  const patientName = rowPatientName(row);
+  const departments = useQuery({
+    queryKey: ['workflow', 'departments'],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/departments?page=1&pageSize=100'),
+  });
+  const doctors = useQuery({
+    queryKey: ['workbench', 'doctors'],
+    queryFn: () => apiRequest<Array<Record<string, unknown>>>('/doctors'),
+  });
+  const [departmentId, setDepartmentId] = useState('');
+  const [doctorId, setDoctorId] = useState('');
+  const [triageNote, setTriageNote] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    try {
+      await apiRequest(`/registrations/${row.id}/triage`, {
+        method: 'POST',
+        body: JSON.stringify({
+          departmentId: departmentId || undefined,
+          doctorId: doctorId || undefined,
+          triageNote: triageNote.trim() || undefined,
+        }),
+      });
+      showToast('分诊已提交', 'success');
+      onSaved();
+      onClose();
+    } catch (error) {
+      showToast(errorMessage(error, '提交分诊失败'), 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open title="分诊" onClose={onClose}>
+      <form onSubmit={submit}>
+        <label>
+          患者
+          <input readOnly value={patientName} aria-label="患者" />
+        </label>
+        <label>
+          分诊科室
+          <select value={departmentId} onChange={(event) => setDepartmentId(event.target.value)}>
+            <option value="">选择科室</option>
+            {departments.data?.items?.map((department) => (
+              <option key={String(department.id)} value={String(department.id)}>
+                {String(department.name ?? department.id)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          分诊医生
+          <select value={doctorId} onChange={(event) => setDoctorId(event.target.value)}>
+            <option value="">选择医生</option>
+            {doctors.data?.map((doctor) => (
+              <option key={String(doctor.id)} value={String(doctor.id)}>
+                {String(doctor.name ?? doctor.id)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          分诊备注
+          <textarea value={triageNote} onChange={(event) => setTriageNote(event.target.value)} />
+        </label>
+        <div className="modal-actions">
+          <button type="button" onClick={onClose}>取消</button>
+          <button type="submit" disabled={busy}>提交分诊</button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
+function TriageQueuePanel({ onStartVisit }: { onStartVisit: (id: string) => void | Promise<void> }) {
+  const [departmentId, setDepartmentId] = useState('');
+  const departments = useQuery({
+    queryKey: ['workflow', 'departments'],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/departments?page=1&pageSize=100'),
+  });
+  const queue = useQuery({
+    queryKey: ['triage', 'queue', departmentId],
+    queryFn: () =>
+      apiRequest<Page<Record<string, unknown>>>(
+        departmentId ? `/triage/queue?departmentId=${encodeURIComponent(departmentId)}` : '/triage/queue',
+      ),
+  });
+  if (queue.isLoading || queue.error) return null;
+  const items = queue.data?.items ?? [];
+
+  async function startVisit(row: Record<string, unknown>) {
+    await onStartVisit(String(row.id ?? ''));
+    void queue.refetch();
+  }
+
+  return (
+    <section className="triage-queue">
+      <h2>分诊队列</h2>
+      <label>
+        科室筛选
+        <select value={departmentId} onChange={(event) => setDepartmentId(event.target.value)}>
+          <option value="">全部科室</option>
+          {departments.data?.items?.map((department) => (
+            <option key={String(department.id)} value={String(department.id)}>
+              {String(department.name ?? department.id)}
+            </option>
+          ))}
+        </select>
+      </label>
+      {items.length === 0 ? (
+        <div className="table-empty">暂无分诊队列</div>
+      ) : (
+        <ul>
+          {items.map((row) => (
+            <li key={String(row.id)}>
+              <span>{String(row.patientName ?? row.patientId ?? '')}</span>
+              <span>{String(row.departmentName ?? row.departmentId ?? '未分诊')}</span>
+              <span>{String(row.doctorName ?? row.doctorId ?? '未分配医生')}</span>
+              <span>{formatDateTime(row.registeredAt)}</span>
+              <span>{row.triagedAt ? formatDateTime(row.triagedAt) : '未分诊'}</span>
+              <span>{STATUS_LABELS[String(row.status ?? '')] ?? String(row.status ?? '')}</span>
+              {row.status === 'REGISTERED' && (
+                <button onClick={() => startVisit(row)}>开始就诊</button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }

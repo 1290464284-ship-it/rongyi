@@ -29,6 +29,8 @@ type AppointmentRow = Record<string, unknown> & {
 export function AppointmentBoardPage() {
   const { showToast } = useToast();
   const [date, setDate] = useState(todayLocalDate());
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   const query = useQuery({
     queryKey: ['appointment-board', date],
     queryFn: () => apiRequest<Page<AppointmentRow>>(`/appointments/by-date?date=${encodeURIComponent(date)}`),
@@ -60,6 +62,16 @@ export function AppointmentBoardPage() {
     }
   }
 
+  async function handleDrop(statusKey: string) {
+    const id = draggingId;
+    setDraggingId(null);
+    setDragOverColumn(null);
+    if (!id) return;
+    const row = rows.find((entry) => entry.id === id);
+    if (!row || String(row.status ?? '') === statusKey) return;
+    await transition(id, statusKey);
+  }
+
   return (
     <div className="page">
       <div className="page-head">
@@ -76,7 +88,23 @@ export function AppointmentBoardPage() {
       </div>
       <div className="board">
         {BOARD_STATUSES.map((status) => (
-          <section className="board-column" key={status.key}>
+          <section
+            className={`board-column${dragOverColumn === status.key ? ' drag-over' : ''}`}
+            style={dragOverColumn === status.key
+              ? { borderColor: '#2f80ed', boxShadow: '0 0 0 2px rgba(47, 128, 237, 0.25)' }
+              : undefined}
+            data-status={status.key}
+            key={status.key}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setDragOverColumn(status.key);
+            }}
+            onDragLeave={() => setDragOverColumn((current) => (current === status.key ? null : current))}
+            onDrop={(event) => {
+              event.preventDefault();
+              void handleDrop(status.key);
+            }}
+          >
             <header>
               <span>{status.label}</span>
               <strong>{countFor(status.key)}</strong>
@@ -84,7 +112,21 @@ export function AppointmentBoardPage() {
             {rows
               .filter((row) => String(row.status ?? '') === status.key)
               .map((row) => (
-                <article className="board-card" key={row.id}>
+                <article
+                  className={`board-card${draggingId === row.id ? ' dragging' : ''}`}
+                  style={draggingId === row.id ? { opacity: 0.55 } : undefined}
+                  draggable
+                  data-id={row.id}
+                  key={row.id}
+                  onDragStart={(event) => {
+                    event.dataTransfer?.setData('text/plain', row.id);
+                    setDraggingId(row.id);
+                  }}
+                  onDragEnd={() => {
+                    setDraggingId(null);
+                    setDragOverColumn(null);
+                  }}
+                >
                   <strong>{String(row.patientIdLabel ?? row.patientId ?? '未填写患者')}</strong>
                   <span>{String(row.doctorIdLabel ?? row.doctorId ?? '未分配医生')}</span>
                   <time>{String(row.startTime ?? '')}</time>

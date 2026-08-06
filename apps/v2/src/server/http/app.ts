@@ -68,6 +68,17 @@ import { registerPurchaseReviewRoutes } from './routes/purchase-review-routes';
 import { registerShiftTemplateRoutes } from './routes/shift-template-routes';
 import { registerUserRoleRoutes } from './routes/user-role-routes';
 import { registerWechatReminderRoutes } from './routes/wechat-reminder-routes';
+import { registerInventoryReportRoutes } from './routes/inventory-report-routes';
+import { registerInventoryDocRoutes } from './routes/inventory-doc-routes';
+import { registerTreatmentPlanBillingRoutes } from './routes/treatment-plan-billing-routes';
+import { registerPrescriptionProcessRoutes } from './routes/prescription-process-routes';
+import { registerFirstExamRestartRoutes } from './routes/first-exam-restart-routes';
+import { registerCephalometricReportRoutes } from './routes/cephalometric-report-routes';
+import { registerProcessingFlowRoutes } from './routes/processing-flow-routes';
+import { registerTriageRoutes } from './routes/triage-routes';
+import { registerPayMethodRoutes } from './routes/pay-method-routes';
+import { registerChargeTreeRoutes } from './routes/charge-tree-routes';
+import { registerHighValueRoutes } from './routes/high-value-routes';
 import type { RouteDependencies } from './routes/deps';
 
 export interface AppDependencies {
@@ -385,6 +396,17 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
   registerShiftTemplateRoutes(app, db);
   registerUserRoleRoutes(app, db);
   registerWechatReminderRoutes(app, db);
+  registerInventoryReportRoutes(app, db);
+  registerInventoryDocRoutes(app, db);
+  registerTreatmentPlanBillingRoutes(app, db);
+  registerPrescriptionProcessRoutes(app, db);
+  registerFirstExamRestartRoutes(app, db);
+  registerCephalometricReportRoutes(app, db);
+  registerProcessingFlowRoutes(app, db);
+  registerTriageRoutes(app, db);
+  registerPayMethodRoutes(app, db);
+  registerChargeTreeRoutes(app, db);
+  registerHighValueRoutes(app, db);
   // file:// (打包版 Electron 渲染器) 以 <img> 加载 API 图片时,
   // 不受同源策略约束, 但 helmet 默认 Cross-Origin-Resource-Policy: same-origin
   // 会阻断响应; 仅对 files 路由放开 CORP。

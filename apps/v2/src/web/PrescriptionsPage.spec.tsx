@@ -25,6 +25,12 @@ function mockData() {
       return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
     }
     if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+    if (path === '/prescriptions/pres-1/process') {
+      return { prescriptionId: 'pres-1', status: 'PROCESSED', chargeId: 'charge-1', chargeNumber: 'CHG-1001', chargeTotalAmount: 25000, dispenseId: 'disp-1', dispenseNumber: 'DSP-1001', itemCount: 2 };
+    }
+    if (path === '/prescriptions/pres-1/status') {
+      return { id: 'pres-1', status: 'PROCESSED', processedAt: '2026-08-06T02:00:00.000Z', chargeId: 'charge-1', dispenseId: 'disp-1' };
+    }
     return {};
   });
 }
@@ -138,5 +144,101 @@ describe('PrescriptionsPage', () => {
     expect(screen.getAllByLabelText('药品名称')).toHaveLength(2);
     fireEvent.click(screen.getAllByText('移除')[0]);
     expect(screen.getAllByLabelText('药品名称')).toHaveLength(1);
+  });
+
+  it('processes a prescription and shows the generated charge and dispense numbers', async () => {
+    mockData();
+    render(<PrescriptionsPage />, { wrapper });
+    await screen.findByText('饭后服用');
+
+    fireEvent.click(screen.getByRole('button', { name: '处理' }));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/prescriptions/pres-1/process', expect.objectContaining({ method: 'POST' }));
+    });
+    const call = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/prescriptions/pres-1/process');
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({});
+    expect(await screen.findByText('已生成划价单 CHG-1001 与领药单 DSP-1001')).toBeDefined();
+  });
+
+  it('renders a processed prescription row with status, charge and dispense columns', async () => {
+    mockData();
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/prescriptions?page=1&pageSize=50') {
+        return {
+          items: [{
+            id: 'pres-1', patientId: 'p-1', patientIdLabel: '患者甲', doctorId: 'd-1', doctorIdLabel: '张医生',
+            remark: '饭后服用', status: 'PROCESSED', processedAt: '2026-08-06T02:00:00.000Z',
+            chargeId: 'charge-1', chargeIdLabel: 'CHG-1001', dispenseId: 'disp-1',
+          }],
+          total: 1, page: 1, pageSize: 50,
+        };
+      }
+      return {};
+    });
+    render(<PrescriptionsPage />, { wrapper });
+    await screen.findByText('饭后服用');
+    expect(screen.getByText('已处理')).toBeDefined();
+    expect(screen.getByText('CHG-1001')).toBeDefined();
+    expect(screen.getByText('disp-1')).toBeDefined();
+    expect(screen.getByRole('button', { name: '查看状态' })).toBeDefined();
+    expect(screen.queryByRole('button', { name: '处理' })).toBeNull();
+  });
+
+  it('opens the status dialog and fetches prescription status', async () => {
+    mockData();
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/prescriptions?page=1&pageSize=50') {
+        return {
+          items: [{
+            id: 'pres-1', patientId: 'p-1', patientIdLabel: '患者甲', doctorId: 'd-1', doctorIdLabel: '张医生',
+            remark: '饭后服用', status: 'PROCESSED', processedAt: '2026-08-06T02:00:00.000Z',
+            chargeId: 'charge-1', chargeIdLabel: 'CHG-1001', dispenseId: 'disp-1',
+          }],
+          total: 1, page: 1, pageSize: 50,
+        };
+      }
+      if (path === '/prescriptions/pres-1/status') {
+        return { id: 'pres-1', status: 'PROCESSED', processedAt: '2026-08-06T02:00:00.000Z', chargeId: 'charge-1', dispenseId: 'disp-1' };
+      }
+      return {};
+    });
+    render(<PrescriptionsPage />, { wrapper });
+    await screen.findByText('饭后服用');
+    fireEvent.click(screen.getByRole('button', { name: '查看状态' }));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/prescriptions/pres-1/status');
+    });
+    // 等待对话框查询完成（charge-1 仅出现在对话框；列表列显示单号 CHG-1001）
+    expect(await screen.findByText('charge-1')).toBeDefined();
+    // 状态：列表列与对话框各一处；领药单两处相同
+    expect((await screen.findAllByText('已处理')).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText('CHG-1001')).toBeDefined();
+    expect((await screen.findAllByText('disp-1')).length).toBeGreaterThanOrEqual(2);
+
+    fireEvent.click(screen.getByRole('button', { name: '刷新' }));
+    expect(await screen.findByText('状态已刷新')).toBeDefined();
+    await waitFor(() => {
+      const statusCalls = vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/prescriptions/pres-1/status');
+      expect(statusCalls.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  it('shows an error toast when processing fails', async () => {
+    mockData();
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/prescriptions?page=1&pageSize=50') {
+        return { items: [{ id: 'pres-1', patientId: 'p-1', doctorId: 'd-1', remark: '饭后服用' }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/prescriptions/pres-1/process') {
+        throw new Error('Prescription not found');
+      }
+      return {};
+    });
+    render(<PrescriptionsPage />, { wrapper });
+    await screen.findByText('饭后服用');
+    fireEvent.click(screen.getByRole('button', { name: '处理' }));
+    expect(await screen.findByText('处方不存在')).toBeDefined();
   });
 });

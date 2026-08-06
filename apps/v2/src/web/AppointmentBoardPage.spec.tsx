@@ -160,4 +160,70 @@ describe('AppointmentBoardPage', () => {
     fireEvent.change(screen.getByLabelText('已预约状态'), { target: { value: 'ARRIVED' } });
     expect(await screen.findByText('状态更新失败')).toBeDefined();
   });
+
+  it('moves a card to another status column via drag and drop', async () => {
+    const today = todayLocalDate();
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === `/appointments/by-date?date=${today}`) {
+        return {
+          items: [{ id: 'a1', patientId: 'P1', doctorId: 'D1', startTime: '2026-08-04T09:00:00.000Z', status: 'BOOKED' }],
+          total: 1,
+          page: 1,
+          pageSize: 200,
+        };
+      }
+      if (path === '/appointments/a1/status') {
+        return { success: true, data: { id: 'a1', status: 'ARRIVED' } };
+      }
+      return {};
+    });
+    render(<AppointmentBoardPage />, { wrapper });
+    expect(await screen.findByText('P1')).toBeDefined();
+
+    const card = document.querySelector('[data-id="a1"]')!;
+    expect(card.getAttribute('draggable')).toBe('true');
+    const arrivedColumn = document.querySelector('[data-status="ARRIVED"]')!;
+
+    fireEvent.dragStart(card);
+    expect(card.className).toContain('dragging');
+    fireEvent.dragOver(arrivedColumn);
+    expect(arrivedColumn.className).toContain('drag-over');
+    fireEvent.drop(arrivedColumn);
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith(
+        '/appointments/a1/status',
+        expect.objectContaining({ method: 'PATCH', body: expect.stringContaining('"status":"ARRIVED"') }),
+      );
+    });
+    expect(await screen.findByText('预约状态已更新')).toBeDefined();
+
+    fireEvent.dragEnd(card);
+    expect(card.className).not.toContain('dragging');
+    expect(arrivedColumn.className).not.toContain('drag-over');
+  });
+
+  it('ignores drops on the same status column and without a dragged card', async () => {
+    const today = todayLocalDate();
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === `/appointments/by-date?date=${today}`) {
+        return {
+          items: [{ id: 'a1', patientId: 'P1', doctorId: 'D1', startTime: '2026-08-04T09:00:00.000Z', status: 'BOOKED' }],
+          total: 1,
+          page: 1,
+          pageSize: 200,
+        };
+      }
+      return {};
+    });
+    render(<AppointmentBoardPage />, { wrapper });
+    expect(await screen.findByText('P1')).toBeDefined();
+
+    // 无拖拽卡片时直接 drop：不发起任何状态请求
+    fireEvent.drop(document.querySelector('[data-status="CANCELLED"]')!);
+    // 拖到自身所在列：不发起任何状态请求
+    fireEvent.dragStart(document.querySelector('[data-id="a1"]')!);
+    fireEvent.drop(document.querySelector('[data-status="BOOKED"]')!);
+    expect(vi.mocked(apiRequest)).not.toHaveBeenCalledWith('/appointments/a1/status', expect.anything());
+  });
 });

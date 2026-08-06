@@ -136,6 +136,7 @@ const resources: ResourceDefinition[] = [
   crud('registrations', 'Registration', [
     f('patientId', 'relation', { required: true, relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
     f('doctorId', 'relation', { relation: { resource: 'users', foreignKey: 'doctorId', labelField: 'name' } }),
+    f('departmentId', 'relation', { relation: { resource: 'departments', foreignKey: 'departmentId', labelField: 'name' } }),
     f('type', 'enum', { required: true, enumValues: ['REGULAR', 'EMERGENCY', 'FOLLOW_UP'] }),
     f('status', 'enum', { required: true, enumValues: ['REGISTERED', 'TRIAGED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'] }),
     f('visitId', 'relation', { relation: { resource: 'visits', foreignKey: 'visitId', labelField: 'id' } }),
@@ -181,6 +182,9 @@ const resources: ResourceDefinition[] = [
     f('lossReason', 'longText'),
     f('nextFollowUpAt', 'date'),
     f('trackingNote', 'longText'),
+    f('dentition', 'enum', { enumValues: ['DECIDUOUS', 'PERMANENT', 'MIXED'] }),
+    f('previousExamId', 'text'),
+    f('restartedAt', 'datetime'),
   ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   crud('firstExamTeeth', 'FirstExamTooth', [
@@ -189,6 +193,7 @@ const resources: ResourceDefinition[] = [
     f('toothStatus', 'text', { required: true }),
     f('diseases', 'json', { default: '[]' }),
     f('isChief', 'boolean', { default: false }),
+    f('chiefMark', 'enum', { enumValues: ['NONE', 'HORIZONTAL_SHOULD', 'HORIZONTAL_DONE'] }),
     f('treatmentPlan', 'longText'),
     f('remark', 'longText'),
   ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
@@ -277,6 +282,8 @@ const resources: ResourceDefinition[] = [
     f('remark', 'longText'),
     f('costType', 'enum', { enumValues: ['SERVICE', 'MATERIAL'] }),
     f('anesthesia', 'boolean', { default: false }),
+    f('parentId', 'text'),
+    f('businessCategory', 'enum', { enumValues: ['SERVICE', 'DRUG', 'MATERIAL', 'OTHER'] }),
   ], { roles: boss }),
 
   crud('treatments', 'Treatment', [
@@ -310,6 +317,11 @@ const resources: ResourceDefinition[] = [
     f('signedAt', 'datetime'),
     f('signerName', 'text'),
     f('signatureRemark', 'longText'),
+    f('discountType', 'enum', { enumValues: ['NONE', 'WHOLE', 'DOUBLE'] }),
+    f('discountRate', 'number', { min: 0, max: 100 }),
+    f('followUpStatus', 'enum', { enumValues: ['NONE', 'PENDING', 'HORIZONTAL_SHOULD', 'HORIZONTAL_DONE', 'LOST'] }),
+    f('nextFollowUpAt', 'date'),
+    f('trackingNote', 'longText'),
   ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: true, softDelete: true } }),
 
   // R2-P1-19: 允许软删除（无级联），供创建失败时客户端清理孤儿主记录/明细
@@ -325,6 +337,9 @@ const resources: ResourceDefinition[] = [
     f('treatmentId', 'text'),
     f('completedAt', 'datetime'),
     f('remark', 'longText'),
+    f('discountRate', 'number', { min: 0, max: 100 }),
+    f('billed', 'boolean', { default: false }),
+    f('billedChargeId', 'text'),
   ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: true, softDelete: true } }),
 
   crud('charges', 'Charge', [
@@ -338,6 +353,7 @@ const resources: ResourceDefinition[] = [
     f('discount', 'money', { default: 0 }),
     f('status', 'enum', { required: true, enumValues: ['UNPAID', 'PARTIAL', 'PAID', 'REFUNDED', 'CANCELLED'] }),
     f('payMethod', 'enum', { enumValues: ['CASH', 'WECHAT', 'ALIPAY', 'CARD', 'DEBT', 'MEMBER_CARD', 'UNIONPAY', 'INSURANCE', 'OTHER'] }),
+    f('payMethodName', 'text'),
     f('paidAt', 'datetime'),
     f('memberCardId', 'relation', { relation: { resource: 'memberCards', foreignKey: 'memberCardId', labelField: 'cardNo' } }),
     f('remark', 'longText'),
@@ -429,6 +445,10 @@ const resources: ResourceDefinition[] = [
     f('visitId', 'relation', { relation: { resource: 'visits', foreignKey: 'visitId', labelField: 'id' } }),
     f('doctorId', 'relation', { required: true, relation: { resource: 'users', foreignKey: 'doctorId', labelField: 'name' } }),
     f('remark', 'longText'),
+    f('status', 'text', { default: 'DRAFT' }),
+    f('processedAt', 'datetime'),
+    f('chargeId', 'relation', { relation: { resource: 'charges', foreignKey: 'chargeId', labelField: 'number' } }),
+    f('dispenseId', 'text'),
   ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: true, softDelete: true } }),
 
   // R2-P1-19: 允许软删除（无级联），供创建失败时客户端清理孤儿主记录/明细
@@ -468,6 +488,8 @@ const resources: ResourceDefinition[] = [
     f('location', 'text'),
     f('remark', 'longText'),
     f('batchManaged', 'boolean', { default: false }),
+    f('isHighValue', 'boolean', { default: false }),
+    f('catalogId', 'text'),
   ], { roles: ['BOSS', 'ADMIN', 'RECEPTIONIST'], capabilities: { list: true, create: true, update: true, delete: false, softDelete: false }, searchIndexResource: 'InventoryItem' }),
 
   crud('inventoryTransactions', 'InventoryTransaction', [
@@ -555,6 +577,8 @@ const resources: ResourceDefinition[] = [
     f('templateId', 'text'),
     f('status', 'text', { default: 'DRAFT' }),
     f('remark', 'longText'),
+    f('reportJson', 'json', { default: '{}' }),
+    f('reportStatus', 'text', { default: 'DRAFT' }),
   ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   crud('invoices', 'Invoice', [
@@ -901,6 +925,76 @@ const resources: ResourceDefinition[] = [
     f('permission', 'text', { required: true }),
     f('allowed', 'boolean', { default: true }),
   ], { roles: boss, capabilities: { list: true, create: true, update: true, delete: true, softDelete: false } }),
+
+  // ===== R2 第二批：12 功能块新增资源 =====
+
+  // 分诊科室词典（挂号/分诊按科室维度）
+  crud('departments', 'Department', [
+    f('name', 'text', { required: true, unique: true, searchable: true }),
+    f('active', 'boolean', { default: true }),
+    f('sortOrder', 'number', { default: 0 }),
+    f('remark', 'longText'),
+  ], { roles: reception }),
+
+  // 回访基础词典（类型/项目/内容/结果/沟通方式）
+  crud('followUpDicts', 'FollowUpDict', [
+    f('dictType', 'enum', { required: true, enumValues: ['TYPE', 'PROJECT', 'CONTENT', 'RESULT', 'COMMUNICATION'] }),
+    f('name', 'text', { required: true, searchable: true }),
+    f('sortOrder', 'number', { default: 0 }),
+    f('active', 'boolean', { default: true }),
+    f('remark', 'longText'),
+  ], { roles: reception }),
+
+  // 自定义缴费方式（支持二级支付方式 parentId）
+  crud('payMethods', 'PayMethod', [
+    f('name', 'text', { required: true, searchable: true }),
+    f('parentId', 'text'),
+    f('sortOrder', 'number', { default: 0 }),
+    f('active', 'boolean', { default: true }),
+    f('remark', 'longText'),
+  ], { roles: reception }),
+
+  // 加工流程步骤词典（自定义加工流程）
+  crud('processingFlowSteps', 'ProcessingFlowStep', [
+    f('name', 'text', { required: true, searchable: true }),
+    f('sortOrder', 'number', { default: 0 }),
+    f('active', 'boolean', { default: true }),
+    f('remark', 'longText'),
+  ], { roles: reception }),
+
+  // 加工单步骤进度（按词典顺序推进，可手动改）
+  crud('processingOrderSteps', 'ProcessingOrderStep', [
+    f('orderId', 'relation', { required: true, relation: { resource: 'processingOrders', foreignKey: 'orderId', labelField: 'number' } }),
+    f('stepId', 'text'),
+    f('stepName', 'text', { required: true }),
+    f('status', 'enum', { required: true, enumValues: ['PENDING', 'IN_PROGRESS', 'DONE'] }),
+    f('sortOrder', 'number', { default: 0 }),
+    f('startedAt', 'datetime'),
+    f('completedAt', 'datetime'),
+    f('operatorId', 'text'),
+    f('remark', 'longText'),
+  ], { roles: reception, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
+
+  // 库存独立单据（退回厂商/库损/调拨），写操作走专用服务
+  crud('inventoryDocs', 'InventoryDoc', [
+    f('number', 'text', { required: true, unique: true, searchable: true }),
+    f('type', 'enum', { required: true, enumValues: ['RETURN_SUPPLIER', 'LOSS', 'TRANSFER'] }),
+    f('supplierId', 'relation', { relation: { resource: 'suppliers', foreignKey: 'supplierId', labelField: 'name' } }),
+    f('status', 'enum', { required: true, enumValues: ['DRAFT', 'COMPLETED', 'CANCELLED'] }),
+    f('operatorId', 'text'),
+    f('operatorName', 'text'),
+    f('completedAt', 'datetime'),
+    f('remark', 'longText'),
+  ], { roles: reception, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
+
+  crud('inventoryDocItems', 'InventoryDocItem', [
+    f('docId', 'relation', { required: true, relation: { resource: 'inventoryDocs', foreignKey: 'docId', labelField: 'number' } }),
+    f('itemId', 'relation', { required: true, relation: { resource: 'inventoryItems', foreignKey: 'itemId', labelField: 'name' } }),
+    f('toItemId', 'relation', { relation: { resource: 'inventoryItems', foreignKey: 'toItemId', labelField: 'name' } }),
+    f('quantity', 'number', { required: true, min: 1 }),
+    f('unitPrice', 'money'),
+    f('remark', 'longText'),
+  ], { roles: reception, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
 ];
 
 export const INTERNAL_RESOURCE_TABLES = new Set([

@@ -1,9 +1,20 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { apiRequest, downloadCsvPath } from './api';
-import { DataTable, Dialog, LoadingState, PageError, PromptDialog, type DataTableColumn } from './components';
+import { ConfirmDialog, DataTable, Dialog, LoadingState, PageError, PromptDialog, type DataTableColumn } from './components';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
+import { useCrudResource } from './use-crud-resource';
+
+const DICT_TYPES = [
+  { value: 'TYPE', label: 'TYPE 回访类型' },
+  { value: 'PROJECT', label: 'PROJECT 回访项目' },
+  { value: 'CONTENT', label: 'CONTENT 回访内容' },
+  { value: 'RESULT', label: 'RESULT 回访结果' },
+  { value: 'COMMUNICATION', label: 'COMMUNICATION 沟通方式' },
+];
+
+const DICT_TYPE_LABELS: Record<string, string> = Object.fromEntries(DICT_TYPES.map((entry) => [entry.value, entry.label]));
 
 type CompletionTarget = { kind: 'single'; id: string } | { kind: 'batch' } | null;
 
@@ -35,12 +46,140 @@ const DEFAULT_EXECUTION_FORM: ExecutionFormState = {
   nextPlanDate: '',
 };
 
+interface FollowUpDictForm {
+  dictType: string;
+  name: string;
+  sortOrder: string;
+  active: boolean;
+  remark: string;
+}
+
+function emptyDictForm(): FollowUpDictForm {
+  return { dictType: 'TYPE', name: '', sortOrder: '0', active: true, remark: '' };
+}
+
+function FollowUpDictsTab() {
+  const [dictTypeFilter, setDictTypeFilter] = useState('');
+  const crud = useCrudResource<Record<string, unknown>, FollowUpDictForm>({
+    queryKey: ['followup-dicts', dictTypeFilter],
+    endpoint: '/resources/followUpDicts',
+    listPath: `/resources/followUpDicts?page=1&pageSize=200${dictTypeFilter ? `&dictType=${encodeURIComponent(dictTypeFilter)}` : ''}`,
+    initialForm: emptyDictForm,
+    canEdit: true,
+    canDelete: true,
+    validate: (form) => (form.name.trim() ? null : '请填写词典项名称'),
+    toPayload: (form) => ({
+      dictType: form.dictType,
+      name: form.name.trim(),
+      sortOrder: Number(form.sortOrder) || 0,
+      active: form.active,
+      remark: form.remark.trim() || undefined,
+    }),
+    messages: { create: '词典项已创建', update: '词典项已更新', delete: '词典项已删除' },
+    errorMessages: { create: '创建词典项失败', update: '更新词典项失败', delete: '删除词典项失败' },
+  });
+
+  if (crud.query.isLoading) return <LoadingState label="词典加载中..." />;
+  if (crud.query.error) {
+    return (
+      <>
+        <PageError message={crud.query.error instanceof Error ? crud.query.error.message : String(crud.query.error)} />
+        <button onClick={() => void crud.query.refetch()}>重试</button>
+      </>
+    );
+  }
+
+  const columns: DataTableColumn<Record<string, unknown>>[] = [
+    {
+      key: 'dictType',
+      label: '分类',
+      render: (row) => DICT_TYPE_LABELS[String(row.dictType ?? '')] ?? String(row.dictType ?? ''),
+    },
+    { key: 'name', label: '名称' },
+    { key: 'sortOrder', label: '排序', render: (row) => String(row.sortOrder ?? '') },
+    { key: 'active', label: '启用', render: (row) => (row.active ? '是' : '否') },
+    { key: 'remark', label: '备注', render: (row) => String(row.remark ?? '') },
+    {
+      key: 'actions',
+      label: '操作',
+      render: (row) => (
+        <>
+          <button onClick={() => crud.openEdit(row)}>编辑</button>
+          <button className="danger" onClick={() => crud.requestDelete(row)}>删除</button>
+        </>
+      ),
+    },
+  ];
+
+  return (
+    <>
+      <div className="page-head">
+        <h2>词典管理</h2>
+        <button onClick={crud.openCreate}>新建词典项</button>
+      </div>
+      <select aria-label="词典分类筛选" value={dictTypeFilter} onChange={(event) => setDictTypeFilter(event.target.value)}>
+        <option value="">全部分类</option>
+        {DICT_TYPES.map((entry) => (
+          <option key={entry.value} value={entry.value}>{entry.label}</option>
+        ))}
+      </select>
+      <DataTable columns={columns} rows={crud.rows} keyField="id" emptyText="暂无词典项" />
+      <Dialog open={crud.showForm} title={crud.editing ? '编辑词典项' : '新建词典项'} onClose={crud.closeForm}>
+        <form onSubmit={crud.submit}>
+          <label>
+            分类
+            <select value={crud.form.dictType} onChange={(event) => crud.updateForm({ dictType: event.target.value })}>
+              {DICT_TYPES.map((entry) => (
+                <option key={entry.value} value={entry.value}>{entry.label}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            名称
+            <input value={crud.form.name} onChange={(event) => crud.updateForm({ name: event.target.value })} />
+          </label>
+          <label>
+            排序
+            <input type="number" value={crud.form.sortOrder} onChange={(event) => crud.updateForm({ sortOrder: event.target.value })} />
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={crud.form.active}
+              onChange={(event) => crud.updateForm({ active: event.target.checked })}
+            />
+            启用
+          </label>
+          <label>
+            备注
+            <textarea value={crud.form.remark} onChange={(event) => crud.updateForm({ remark: event.target.value })} />
+          </label>
+          <div className="modal-actions">
+            <button type="button" onClick={crud.closeForm}>取消</button>
+            <button type="submit" disabled={crud.submitting}>{crud.submitting ? '保存中...' : '保存'}</button>
+          </div>
+        </form>
+      </Dialog>
+      <ConfirmDialog
+        open={crud.deleteTarget !== null}
+        title="删除确认"
+        message="确定删除该词典项吗？"
+        confirmText="确认删除"
+        danger
+        onConfirm={() => void crud.confirmDelete()}
+        onCancel={crud.cancelDelete}
+      />
+    </>
+  );
+}
+
 export function FollowUpsPage() {
   const { showToast } = useToast();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [completion, setCompletion] = useState<CompletionTarget>(null);
   const [executionId, setExecutionId] = useState<string | null>(null);
   const [executionForm, setExecutionForm] = useState<ExecutionFormState>(DEFAULT_EXECUTION_FORM);
+  const [activeTab, setActiveTab] = useState<'list' | 'dicts'>('list');
   const query = useQuery({
     queryKey: ['followup-reminders'],
     queryFn: () => apiRequest<Array<Record<string, unknown>>>('/follow-ups/reminders'),
@@ -186,112 +325,140 @@ export function FollowUpsPage() {
     <div className="page">
       <div className="page-head">
         <h1>随访管理</h1>
-        <button onClick={batchGenerate}>批量生成随访</button>
-        <button onClick={() => setCompletion({ kind: 'batch' })} disabled={selectedIds.length === 0}>
-          批量完成
-        </button>
-        <button onClick={exportOverdue}>导出逾期</button>
+        {activeTab === 'list' && (
+          <>
+            <button onClick={batchGenerate}>批量生成随访</button>
+            <button onClick={() => setCompletion({ kind: 'batch' })} disabled={selectedIds.length === 0}>
+              批量完成
+            </button>
+            <button onClick={exportOverdue}>导出逾期</button>
+          </>
+        )}
       </div>
-      {summary.data && (
-        <div className="stat-row">
-          <span>总计：{summary.data.total}</span>
-          <span>已逾期：{summary.data.overdue}</span>
-          <span>今日：{summary.data.today}</span>
-          <span>后续：{summary.data.upcoming}</span>
-        </div>
-      )}
-      {nps.data && (
-        <div className="stat-row">
-          <span>NPS 得分：{nps.data.nps}</span>
-          <span>推荐者：{nps.data.promoters}</span>
-          <span>中立者：{nps.data.passives}</span>
-          <span>贬损者：{nps.data.detractors}</span>
-          <span>平均评分：{nps.data.average}</span>
-        </div>
-      )}
-      {rows.length === 0 && <DataTable columns={columns} rows={[]} keyField="id" emptyText="暂无随访" />}
-      {groups.map((group) => (
-        <section key={group.title}>
-          <h2>{group.title} ({group.rows.length})</h2>
-          <DataTable columns={columns} rows={group.rows} keyField="id" emptyText="暂无" />
-        </section>
-      ))}
-      <Dialog open={executionId !== null} title="执行随访" onClose={() => setExecutionId(null)}>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void submitExecution();
-          }}
+      <div className="tabs" role="tablist">
+        <button
+          role="tab"
+          className={activeTab === 'list' ? 'tab active' : 'tab'}
+          onClick={() => setActiveTab('list')}
         >
-          <label>
-            执行状态
-            <select
-              value={executionForm.executionStatus}
-              onChange={(event) => setExecutionForm((current) => ({ ...current, executionStatus: event.target.value }))}
+          回访列表
+        </button>
+        <button
+          role="tab"
+          className={activeTab === 'dicts' ? 'tab active' : 'tab'}
+          onClick={() => setActiveTab('dicts')}
+        >
+          词典管理
+        </button>
+      </div>
+      {activeTab === 'dicts' ? (
+        <div className="tab-panel">
+          <FollowUpDictsTab />
+        </div>
+      ) : (
+        <>
+          {summary.data && (
+            <div className="stat-row">
+              <span>总计：{summary.data.total}</span>
+              <span>已逾期：{summary.data.overdue}</span>
+              <span>今日：{summary.data.today}</span>
+              <span>后续：{summary.data.upcoming}</span>
+            </div>
+          )}
+          {nps.data && (
+            <div className="stat-row">
+              <span>NPS 得分：{nps.data.nps}</span>
+              <span>推荐者：{nps.data.promoters}</span>
+              <span>中立者：{nps.data.passives}</span>
+              <span>贬损者：{nps.data.detractors}</span>
+              <span>平均评分：{nps.data.average}</span>
+            </div>
+          )}
+          {rows.length === 0 && <DataTable columns={columns} rows={[]} keyField="id" emptyText="暂无随访" />}
+          {groups.map((group) => (
+            <section key={group.title}>
+              <h2>{group.title} ({group.rows.length})</h2>
+              <DataTable columns={columns} rows={group.rows} keyField="id" emptyText="暂无" />
+            </section>
+          ))}
+          <Dialog open={executionId !== null} title="执行随访" onClose={() => setExecutionId(null)}>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void submitExecution();
+              }}
             >
-              <option value="DONE">DONE 已完成</option>
-              <option value="SKIPPED">SKIPPED 已跳过</option>
-            </select>
-          </label>
-          <label>
-            患者评分（0-10）
-            <input
-              type="number"
-              min={0}
-              max={10}
-              value={executionForm.patientRating}
-              onChange={(event) => setExecutionForm((current) => ({ ...current, patientRating: event.target.value }))}
-            />
-          </label>
-          <label>
-            疼痛度（0-10）
-            <input
-              type="number"
-              min={0}
-              max={10}
-              value={executionForm.painLevel}
-              onChange={(event) => setExecutionForm((current) => ({ ...current, painLevel: event.target.value }))}
-            />
-          </label>
-          <label>
-            反馈
-            <textarea
-              value={executionForm.feedback}
-              onChange={(event) => setExecutionForm((current) => ({ ...current, feedback: event.target.value }))}
-            />
-          </label>
-          <label>
-            联系时间
-            <input
-              type="datetime-local"
-              value={executionForm.contactedAt}
-              onChange={(event) => setExecutionForm((current) => ({ ...current, contactedAt: event.target.value }))}
-            />
-          </label>
-          <label>
-            下次随访日期
-            <input
-              type="date"
-              value={executionForm.nextPlanDate}
-              onChange={(event) => setExecutionForm((current) => ({ ...current, nextPlanDate: event.target.value }))}
-            />
-          </label>
-          <div className="modal-actions">
-            <button type="button" onClick={() => setExecutionId(null)}>取消</button>
-            <button type="submit">确认执行</button>
-          </div>
-        </form>
-      </Dialog>
-      <PromptDialog
-        key={completion !== null ? 'open' : 'closed'}
-        open={completion !== null}
-        title="完成随访"
-        message="填写完成结果，可选"
-        placeholder="例如：已电话回访，患者情况正常"
-        confirmText="确认完成"
-        onSubmit={(value) => void submitCompletion(value)}
-        onCancel={() => setCompletion(null)}
-      />
+              <label>
+                执行状态
+                <select
+                  value={executionForm.executionStatus}
+                  onChange={(event) => setExecutionForm((current) => ({ ...current, executionStatus: event.target.value }))}
+                >
+                  <option value="DONE">DONE 已完成</option>
+                  <option value="SKIPPED">SKIPPED 已跳过</option>
+                </select>
+              </label>
+              <label>
+                患者评分（0-10）
+                <input
+                  type="number"
+                  min={0}
+                  max={10}
+                  value={executionForm.patientRating}
+                  onChange={(event) => setExecutionForm((current) => ({ ...current, patientRating: event.target.value }))}
+                />
+              </label>
+              <label>
+                疼痛度（0-10）
+                <input
+                  type="number"
+                  min={0}
+                  max={10}
+                  value={executionForm.painLevel}
+                  onChange={(event) => setExecutionForm((current) => ({ ...current, painLevel: event.target.value }))}
+                />
+              </label>
+              <label>
+                反馈
+                <textarea
+                  value={executionForm.feedback}
+                  onChange={(event) => setExecutionForm((current) => ({ ...current, feedback: event.target.value }))}
+                />
+              </label>
+              <label>
+                联系时间
+                <input
+                  type="datetime-local"
+                  value={executionForm.contactedAt}
+                  onChange={(event) => setExecutionForm((current) => ({ ...current, contactedAt: event.target.value }))}
+                />
+              </label>
+              <label>
+                下次随访日期
+                <input
+                  type="date"
+                  value={executionForm.nextPlanDate}
+                  onChange={(event) => setExecutionForm((current) => ({ ...current, nextPlanDate: event.target.value }))}
+                />
+              </label>
+              <div className="modal-actions">
+                <button type="button" onClick={() => setExecutionId(null)}>取消</button>
+                <button type="submit">确认执行</button>
+              </div>
+            </form>
+          </Dialog>
+          <PromptDialog
+            key={completion !== null ? 'open' : 'closed'}
+            open={completion !== null}
+            title="完成随访"
+            message="填写完成结果，可选"
+            placeholder="例如：已电话回访，患者情况正常"
+            confirmText="确认完成"
+            onSubmit={(value) => void submitCompletion(value)}
+            onCancel={() => setCompletion(null)}
+          />
+        </>
+      )}
     </div>
   );
 }

@@ -2,10 +2,11 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ProcessingOrdersPage } from './ProcessingOrdersPage';
 import { apiRequest } from './api';
+import { formatDateTime } from './format';
 import { ToastProvider } from './toast';
 
 vi.mock('./api', () => ({ apiRequest: vi.fn() }));
@@ -194,5 +195,139 @@ describe('ProcessingOrdersPage', () => {
       expect(apiRequest).toHaveBeenCalledWith('/processing-orders/proc-2/unsettle', expect.objectContaining({ method: 'POST' }));
     });
     expect(await screen.findByText('已撤销结算')).toBeDefined();
+  });
+
+  it('opens the flow dialog and renders processing steps', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/processingOrders?page=1&pageSize=50') {
+        return { items: [{ id: 'proc-1', number: 'PROC-1', patientId: 'p-1', status: 'DRAFT' }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      if (path === '/api/v2/processing-orders/proc-1/steps') {
+        return [
+          { id: 's-1', stepName: '取模', status: 'DONE', sortOrder: 1, completedAt: '2026-08-01T10:00:00' },
+          { id: 's-2', stepName: '制作', status: 'PENDING', sortOrder: 2, completedAt: null },
+        ];
+      }
+      return {};
+    });
+
+    render(<ProcessingOrdersPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '流程' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('取模')).toBeDefined();
+    expect(within(dialog).getByText('制作')).toBeDefined();
+    expect(within(dialog).getAllByText('已完成').length).toBeGreaterThan(0);
+    expect(within(dialog).getAllByText('待处理').length).toBeGreaterThan(0);
+    expect(within(dialog).getByText(formatDateTime('2026-08-01T10:00:00'))).toBeDefined();
+    expect(within(dialog).getByText('—')).toBeDefined();
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/api/v2/processing-orders/proc-1/steps');
+    });
+  });
+
+  it('advances the flow via register-step', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/processingOrders?page=1&pageSize=50') {
+        return { items: [{ id: 'proc-1', number: 'PROC-1', patientId: 'p-1', status: 'DRAFT' }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      if (path === '/api/v2/processing-orders/proc-1/steps') {
+        return [
+          { id: 's-1', stepName: '取模', status: 'DONE', sortOrder: 1, completedAt: '2026-08-01T10:00:00' },
+          { id: 's-2', stepName: '制作', status: 'PENDING', sortOrder: 2, completedAt: null },
+        ];
+      }
+      if (path === '/api/v2/processing-orders/proc-1/register-step') {
+        return [
+          { id: 's-1', stepName: '取模', status: 'DONE', sortOrder: 1, completedAt: '2026-08-01T10:00:00' },
+          { id: 's-2', stepName: '制作', status: 'IN_PROGRESS', sortOrder: 2, completedAt: null },
+        ];
+      }
+      return {};
+    });
+
+    render(<ProcessingOrdersPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '流程' }));
+    const dialog = await screen.findByRole('dialog');
+    await within(dialog).findByText('取模');
+    fireEvent.click(within(dialog).getByRole('button', { name: '推进' }));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/api/v2/processing-orders/proc-1/register-step', expect.objectContaining({ method: 'POST' }));
+    });
+    const advanceCall = vi.mocked(apiRequest).mock.calls.find(
+      ([path, options]) => path === '/api/v2/processing-orders/proc-1/register-step' && options?.method === 'POST',
+    );
+    expect(JSON.parse(String(advanceCall?.[1]?.body))).toEqual({});
+    expect(await screen.findByText('流程已推进')).toBeDefined();
+    expect((await within(dialog).findAllByText('进行中')).length).toBeGreaterThan(0);
+  });
+
+  it('adjusts a step status via set-step', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/processingOrders?page=1&pageSize=50') {
+        return { items: [{ id: 'proc-1', number: 'PROC-1', patientId: 'p-1', status: 'DRAFT' }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      if (path === '/api/v2/processing-orders/proc-1/steps') {
+        return [{ id: 's-1', stepId: 'st-1', stepName: '取模', status: 'PENDING', sortOrder: 1, completedAt: null }];
+      }
+      if (path === '/api/v2/processing-orders/proc-1/set-step') {
+        return { id: 's-1', stepId: 'st-1', stepName: '取模', status: 'DONE', sortOrder: 1, completedAt: '2026-08-02T08:00:00' };
+      }
+      return {};
+    });
+
+    render(<ProcessingOrdersPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '流程' }));
+    const dialog = await screen.findByRole('dialog');
+    await within(dialog).findByText('取模');
+    fireEvent.change(within(dialog).getByLabelText('调整取模'), { target: { value: 'DONE' } });
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/api/v2/processing-orders/proc-1/set-step', expect.objectContaining({ method: 'POST' }));
+    });
+    const adjustCall = vi.mocked(apiRequest).mock.calls.find(
+      ([path, options]) => path === '/api/v2/processing-orders/proc-1/set-step' && options?.method === 'POST',
+    );
+    expect(JSON.parse(String(adjustCall?.[1]?.body))).toEqual({ stepId: 'st-1', status: 'DONE' });
+    expect(await screen.findByText('步骤状态已调整')).toBeDefined();
+    expect((await within(dialog).findAllByText('已完成')).length).toBeGreaterThan(0);
+  });
+
+  it('renders flow statistics and filters them by date', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/processingOrders?page=1&pageSize=50') {
+        return { items: [{ id: 'proc-1', number: 'PROC-1', patientId: 'p-1', status: 'DRAFT' }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      if (path.startsWith('/api/v2/processing-flow-stats')) {
+        return { from: null, to: null, steps: [{ stepId: 'st-1', stepName: '取模', doneCount: 3, inProgressCount: 1 }] };
+      }
+      return {};
+    });
+
+    render(<ProcessingOrdersPage />, { wrapper });
+    const section = (await screen.findByText('流程统计')).closest('section') as HTMLElement;
+    expect(await within(section).findByText('取模')).toBeDefined();
+    expect(within(section).getByText('3')).toBeDefined();
+    expect(within(section).getByText('1')).toBeDefined();
+
+    fireEvent.change(screen.getByLabelText('统计开始日期'), { target: { value: '2026-08-01' } });
+    fireEvent.change(screen.getByLabelText('统计结束日期'), { target: { value: '2026-08-31' } });
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/api/v2/processing-flow-stats?from=2026-08-01&to=2026-08-31');
+    });
   });
 });

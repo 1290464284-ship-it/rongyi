@@ -160,7 +160,7 @@ export class ChargeService {
     return { id, number, totalAmount, status: 'UNPAID' };
   }
 
-  async pay(id: string, amount: number, method: string, requestId?: string, context?: AppContext): Promise<Record<string, unknown>> {
+  async pay(id: string, amount: number, method: string, requestId?: string, context?: AppContext, payMethodName?: string): Promise<Record<string, unknown>> {
     return withIdempotency(this.db, {
       operation: 'charge.pay',
       userId: context?.userId ?? null,
@@ -205,6 +205,11 @@ export class ChargeService {
           });
         }
         this.chargeRepository.updatePayment(id, newPaid, newStatus, now, method, memberCardId, context?.clinicId ?? null);
+        if (typeof payMethodName === 'string' && payMethodName.trim() !== '') {
+          this.db.prepare(
+            `UPDATE Charge SET payMethodName = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(context?.clinicId ?? null)}`,
+          ).run(payMethodName.trim(), now, id, ...tenantParams(context?.clinicId ?? null));
+        }
         const debt = this.debtRepository.findByCharge(id, context?.clinicId ?? null);
         if (debt) {
           const debtStatus = newPaid >= Number(debt.totalAmount) ? 'PAID' : newPaid > 0 ? 'PARTIAL' : 'UNPAID';

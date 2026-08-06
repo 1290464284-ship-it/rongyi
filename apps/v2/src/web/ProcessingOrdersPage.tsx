@@ -2,8 +2,8 @@ import { useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import { CrudPage } from './CrudPage';
-import { Dialog, SearchableSelect, type DataTableColumn } from './components';
-import { formatMoney, toCents } from './format';
+import { DataTable, Dialog, LoadingState, PageError, SearchableSelect, type DataTableColumn } from './components';
+import { formatDateTime, formatMoney, toCents } from './format';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
 
@@ -15,6 +15,14 @@ const STATUS_LABELS: Record<string, string> = {
   RECEIVED: '已收货',
   CANCELLED: '已取消',
 };
+
+const FLOW_STATUS_LABELS: Record<string, string> = {
+  PENDING: '待处理',
+  IN_PROGRESS: '进行中',
+  DONE: '已完成',
+};
+
+const FLOW_STATUSES = ['PENDING', 'IN_PROGRESS', 'DONE'] as const;
 
 interface ProcessingRow extends Record<string, unknown> {
   id: string;
@@ -49,6 +57,39 @@ interface SettleStats {
   unsettled: { count: number; feeTotal: number };
   settled: { count: number; amountTotal: number };
 }
+
+type ProcessingStepStatus = (typeof FLOW_STATUSES)[number];
+
+interface ProcessingOrderStepRow extends Record<string, unknown> {
+  id: string;
+  stepId?: string | null;
+  stepName: string;
+  status: ProcessingStepStatus;
+  sortOrder: number;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  operatorId?: string | null;
+  remark?: string | null;
+}
+
+interface ProcessingFlowStatRow extends Record<string, unknown> {
+  stepId?: string | null;
+  stepName: string;
+  doneCount: number;
+  inProgressCount: number;
+}
+
+interface ProcessingFlowStatsData {
+  from?: string | null;
+  to?: string | null;
+  steps: ProcessingFlowStatRow[];
+}
+
+const flowStatsColumns: DataTableColumn<ProcessingFlowStatRow>[] = [
+  { key: 'stepName', label: '步骤' },
+  { key: 'doneCount', label: '完成单数', render: (row) => String(row.doneCount ?? 0) },
+  { key: 'inProgressCount', label: '进行中单数', render: (row) => String(row.inProgressCount ?? 0) },
+];
 
 function newItem(): ProcessingItemForm {
   return { id: crypto.randomUUID(), name: '', quantity: '1', unitPrice: '' };
@@ -91,10 +132,85 @@ export function ProcessingOrdersPage() {
   const [settleRef, setSettleRef] = useState('');
   const [settleNote, setSettleNote] = useState('');
   const [settleBusy, setSettleBusy] = useState(false);
+  const [flowTarget, setFlowTarget] = useState<ProcessingRow | null>(null);
+  const [flowSteps, setFlowSteps] = useState<ProcessingOrderStepRow[]>([]);
+  const [flowLoading, setFlowLoading] = useState(false);
+  const [flowBusy, setFlowBusy] = useState(false);
+  const [flowError, setFlowError] = useState<string | null>(null);
+  const [statsFrom, setStatsFrom] = useState('');
+  const [statsTo, setStatsTo] = useState('');
   const stats = useQuery({
     queryKey: ['processing-settle-stats'],
     queryFn: () => apiRequest<SettleStats>('/processing-orders/settle-stats'),
   });
+  const flowStats = useQuery({
+    queryKey: ['processing-flow-stats', statsFrom, statsTo],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (statsFrom) params.set('from', statsFrom);
+      if (statsTo) params.set('to', statsTo);
+      const queryString = params.toString();
+      return apiRequest<ProcessingFlowStatsData>(`/api/v2/processing-flow-stats${queryString ? `?${queryString}` : ''}`);
+    },
+  });
+
+  async function openFlow(row: ProcessingRow) {
+    setFlowTarget(row);
+    setFlowSteps([]);
+    setFlowError(null);
+    setFlowLoading(true);
+    try {
+      const steps = await apiRequest<ProcessingOrderStepRow[]>(`/api/v2/processing-orders/${row.id}/steps`);
+      setFlowSteps(steps);
+    } catch (error) {
+      setFlowError(errorMessage(error, '加载流程失败'));
+    } finally {
+      setFlowLoading(false);
+    }
+  }
+
+  function closeFlow() {
+    setFlowTarget(null);
+    setFlowSteps([]);
+    setFlowError(null);
+  }
+
+  async function advanceFlow() {
+    if (!flowTarget || flowBusy) return;
+    setFlowBusy(true);
+    try {
+      const steps = await apiRequest<ProcessingOrderStepRow[]>(
+        `/api/v2/processing-orders/${flowTarget.id}/register-step`,
+        { method: 'POST', body: JSON.stringify({}) },
+      );
+      setFlowSteps(steps);
+      showToast('流程已推进', 'success');
+    } catch (error) {
+      showToast(errorMessage(error, '推进流程失败'), 'error');
+    } finally {
+      setFlowBusy(false);
+    }
+  }
+
+  async function adjustStep(step: ProcessingOrderStepRow, status: string) {
+    if (!flowTarget || flowBusy) return;
+    setFlowBusy(true);
+    try {
+      const updated = await apiRequest<ProcessingOrderStepRow>(
+        `/api/v2/processing-orders/${flowTarget.id}/set-step`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ stepId: step.stepId ?? step.id, status }),
+        },
+      );
+      setFlowSteps((current) => current.map((entry) => (entry.id === updated.id ? updated : entry)));
+      showToast('步骤状态已调整', 'success');
+    } catch (error) {
+      showToast(errorMessage(error, '调整步骤失败'), 'error');
+    } finally {
+      setFlowBusy(false);
+    }
+  }
 
   function openSettle(row: ProcessingRow, reload: () => Promise<unknown>) {
     setSettleTarget(row);
@@ -196,6 +312,7 @@ export function ProcessingOrdersPage() {
         columns={processingColumns}
         rowActions={(row, ctx) => (
           <>
+            <button onClick={() => void openFlow(row)}>流程</button>
             <select
               defaultValue=""
               aria-label="变更加工状态"
@@ -217,6 +334,19 @@ export function ProcessingOrdersPage() {
         )}
         renderForm={(ctx) => <ProcessingOrderFormFields form={ctx.form} update={ctx.update} />}
       />
+      <section>
+        <h2>流程统计</h2>
+        <div className="inline-form">
+          <input aria-label="统计开始日期" type="date" value={statsFrom} onChange={(event) => setStatsFrom(event.target.value)} />
+          <input aria-label="统计结束日期" type="date" value={statsTo} onChange={(event) => setStatsTo(event.target.value)} />
+        </div>
+        <DataTable
+          columns={flowStatsColumns}
+          rows={flowStats.data?.steps ?? []}
+          keyField="stepId"
+          emptyText="暂无流程统计数据"
+        />
+      </section>
       <Dialog open={settleTarget !== null} title="结算加工单" onClose={closeSettle}>
         <form onSubmit={submitSettle}>
           <label>
@@ -236,6 +366,53 @@ export function ProcessingOrdersPage() {
             <button type="submit" disabled={settleBusy}>{settleBusy ? '结算中...' : '确认结算'}</button>
           </div>
         </form>
+      </Dialog>
+      <Dialog open={flowTarget !== null} title={`加工流程 - ${flowTarget?.number ?? ''}`} onClose={closeFlow}>
+        {flowLoading && <LoadingState label="流程加载中..." />}
+        {flowError && !flowLoading && (
+          <>
+            <PageError message={flowError} />
+            <div className="modal-actions">
+              <button type="button" onClick={closeFlow}>关闭</button>
+            </div>
+          </>
+        )}
+        {!flowLoading && !flowError && (
+          <>
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>步骤</th><th>状态</th><th>完成时间</th><th>调整</th></tr></thead>
+                <tbody>
+                  {flowSteps.map((step) => (
+                    <tr key={String(step.id)}>
+                      <td>{step.stepName}</td>
+                      <td>{FLOW_STATUS_LABELS[step.status] ?? step.status}</td>
+                      <td>{step.completedAt ? formatDateTime(step.completedAt) : '—'}</td>
+                      <td>
+                        <select
+                          aria-label={`调整${step.stepName}`}
+                          value={step.status}
+                          disabled={flowBusy}
+                          onChange={(event) => void adjustStep(step, event.target.value)}
+                        >
+                          {FLOW_STATUSES.map((status) => (
+                            <option key={status} value={status}>{FLOW_STATUS_LABELS[status]}</option>
+                          ))}
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="modal-actions">
+              <button type="button" onClick={closeFlow}>关闭</button>
+              <button type="button" onClick={() => void advanceFlow()} disabled={flowBusy}>
+                {flowBusy ? '推进中...' : '推进'}
+              </button>
+            </div>
+          </>
+        )}
       </Dialog>
     </>
   );
