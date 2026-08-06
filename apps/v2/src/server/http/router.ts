@@ -12,6 +12,12 @@ import { withIdempotency } from '../infrastructure/idempotency';
 export function createResourceRouter(db: Database.Database): Router {
   const router = Router();
 
+  // rolePermissions 的 role 是业务字段（配置某角色的权限），需豁免通用写保护；
+  // 其余资源一律禁止客户端写 role 等系统字段（防提权）。
+  const ROLE_FIELD_EXEMPT_RESOURCES = new Set(['rolePermissions']);
+  const roleExempt = (resource: ResourceDefinition): ReadonlySet<string> | undefined =>
+    ROLE_FIELD_EXEMPT_RESOURCES.has(resource.name) ? new Set(['role']) : undefined;
+
   router.use('/:resource', (req, res, next) => {
     const resource = resolveResource(db, req.params.resource);
     if (!resource) {
@@ -57,7 +63,7 @@ export function createResourceRouter(db: Database.Database): Router {
     try {
       const resource = res.locals.resource as ResourceDefinition;
       if (!resource.capabilities.create) throw new NotFoundError('Create is not supported for this resource');
-      const payload = stripProtectedWriteFields(validatePayload(resource, req.body ?? {}));
+      const payload = stripProtectedWriteFields(validatePayload(resource, req.body ?? {}), roleExempt(resource));
       const requestId = typeof req.header('idempotency-key') === 'string' ? req.header('idempotency-key')! : '';
       const result = await withIdempotency(db, {
         operation: `resource.create.${resource.name}`,
@@ -117,7 +123,7 @@ export function createResourceRouter(db: Database.Database): Router {
     try {
       const resource = res.locals.resource as ResourceDefinition;
       if (!resource.capabilities.update) throw new NotFoundError('Update is not supported for this resource');
-      const payload = stripProtectedWriteFields(validatePayload(resource, req.body ?? {}, { partial: true }));
+      const payload = stripProtectedWriteFields(validatePayload(resource, req.body ?? {}, { partial: true }), roleExempt(resource));
       const repo = new SqliteRepository(db, resource);
       await repo.update({ id: req.params.id, ...payload }, req.context!);
       res.json({ success: true, data: { id: req.params.id } });

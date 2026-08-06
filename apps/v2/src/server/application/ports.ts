@@ -240,6 +240,7 @@ export interface ProcessingOrderRecord {
   teethNumbers: string[];
   totalFee: number;
   status: string;
+  settleStatus?: string | null;
   expectedAt?: string | null;
   remark?: string | null;
   createdAt: string;
