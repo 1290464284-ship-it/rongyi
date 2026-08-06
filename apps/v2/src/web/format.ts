@@ -13,6 +13,14 @@ export function formatMoney(value: unknown): string {
   return `¥${(cents / 100).toFixed(2)}`;
 }
 
+/** 分 → 元字符串（两位小数、无 ¥ 前缀）；null/undefined/空串返回 ''，非有限值原样返回。 */
+export function centsToYuanString(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '';
+  const cents = Number(value);
+  if (!Number.isFinite(cents)) return String(value);
+  return (cents / 100).toFixed(2);
+}
+
 /** 按中英文逗号拆分去空白并过滤空项（牙位号、图片列表等共用）。 */
 export function splitList(value: string): string[] {
   return value

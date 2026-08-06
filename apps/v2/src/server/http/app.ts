@@ -271,8 +271,17 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
         callback(null, true);
         return;
       }
-      if (origin === 'null' || origin.startsWith('file://')) {
-        callback(null, true);
+      // P2-4：'null' origin（沙盒/iframe/数据页）一律不放行；file:// 仅开发环境允许
+      if (origin.startsWith('file://')) {
+        if (process.env.NODE_ENV !== 'production') {
+          callback(null, true);
+          return;
+        }
+        callback(new Error('Not allowed by CORS'));
+        return;
+      }
+      if (origin === 'null') {
+        callback(new Error('Not allowed by CORS'));
         return;
       }
       try {

@@ -82,6 +82,7 @@ describe('middleware', () => {
         tokenVersion: 0,
         role: 'ADMIN',
       }),
+      isClinicAccessible: () => true,
     } as unknown as AuthService;
     const req = {
       header: () => 'Bearer signed-token',
@@ -90,5 +91,33 @@ describe('middleware', () => {
     await authMiddleware(authService)(req, fakeResponse(), () => {});
     expect(req.context?.clinicId).toBe('clinic-multi');
     expect(req.context?.role).toBe('ADMIN');
+  });
+
+  it('rejects tokens whose clinic membership is no longer valid', async () => {
+    const authService = {
+      verifyToken: () => ({
+        sub: 'user-removed',
+        clinicId: 'clinic-gone',
+        role: 'ADMIN',
+        tokenVersion: 0,
+      }),
+      getUserById: async () => ({
+        id: 'user-removed',
+        clinicId: 'clinic-gone',
+        currentClinicId: 'clinic-gone',
+        active: true,
+        lockedUntil: null,
+        tokenVersion: 0,
+        role: 'ADMIN',
+      }),
+      isClinicAccessible: () => false,
+    } as unknown as AuthService;
+    const req = {
+      header: () => 'Bearer signed-token',
+      context: undefined,
+    } as unknown as Request;
+    let error: unknown;
+    await authMiddleware(authService)(req, fakeResponse(), (err) => { error = err; });
+    expect(error).toMatchObject({ code: 'FORBIDDEN', status: 403 });
   });
 });

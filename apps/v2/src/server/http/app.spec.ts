@@ -58,15 +58,15 @@ describe('HTTP app', () => {
     expect(deep.body.data.database).toBe('ok');
   });
 
-  it('allows null origin from Electron file:// renderer with CORS', async () => {
+  it('rejects null origin (sandbox/iframe) without a CORS allow header', async () => {
     const response = await request(app)
       .get('/api/v2/health')
       .set('Origin', 'null')
-      .expect(200);
-    expect(response.headers['access-control-allow-origin']).toBe('null');
+      .expect(500);
+    expect(response.headers['access-control-allow-origin']).toBeUndefined();
   });
 
-  it('allows file:// origins and echoes them in the CORS header', async () => {
+  it('allows file:// origins and echoes them in the CORS header (dev only)', async () => {
     const response = await request(app)
       .get('/api/v2/health')
       .set('Origin', 'file://C:/app/dist-web/index.html')

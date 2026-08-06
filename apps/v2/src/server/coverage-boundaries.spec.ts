@@ -127,6 +127,7 @@ describe('coverage boundaries', () => {
         role: 'BOSS',
         tokenVersion: 0,
       })),
+      isClinicAccessible: vi.fn(() => true),
       getUserById: vi.fn(async () => ({
         id: 'user-1',
         clinicId: 'clinic-1',

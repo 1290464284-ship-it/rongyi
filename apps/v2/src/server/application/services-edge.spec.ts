@@ -1307,6 +1307,12 @@ describe('service edge coverage', () => {
        ) VALUES (?, ?, ?, ?, NULL, 'READ-OTHER-ITEM', 'Read Other Item', 'ISOLATION', 'box', 2, 20, 100)`,
     ).run('inventory-read-other', otherClinic, now, now);
 
+    // 当前用户只属于 clinic-v2-001，不属于 otherClinic
+    db.prepare(
+      `INSERT OR IGNORE INTO UserClinic (userId, clinicId, role, createdAt, updatedAt, deletedAt)
+       VALUES (?, 'clinic-v2-001', 'BOSS', ?, ?, NULL)`,
+    ).run(context.userId, now, now);
+
     const stats = new StatsService(db);
     expect(Number(stats.dashboard(nullContext).patients)).toBeGreaterThan(Number(stats.dashboard(context).patients));
     const revenue = stats.revenue('2026-08-04T00:00:00.000Z', '2026-08-04T23:59:59.999Z', 'day', context);
@@ -1329,13 +1335,11 @@ describe('service edge coverage', () => {
     expect(otherSuggestion).toBeUndefined();
 
     const analytics = new AnalyticsService(db);
-    const overview = analytics.clinicOverview();
+    // 只展示当前用户有成员关系的诊所（UserClinic 过滤）+ legacy 兜底行
+    const overview = analytics.clinicOverview(context);
     const otherOverview = overview.find((row) => row.clinicId === otherClinic) as Record<string, unknown>;
-    expect(otherOverview).toBeDefined();
-    expect(Number(otherOverview.patients)).toBeGreaterThanOrEqual(1);
-    expect(Number(otherOverview.charges)).toBeGreaterThanOrEqual(1);
-    expect(Number(otherOverview.paidAmount)).toBeGreaterThanOrEqual(888);
-    expect(overview.some((row) => row.clinicId === 'legacy')).toBe(true);
+    expect(otherOverview).toBeUndefined();
+    expect(overview.some((row) => row.clinicId === 'clinic-v2-001')).toBe(true);
   });
 
   it('manages users through the admin service', async () => {

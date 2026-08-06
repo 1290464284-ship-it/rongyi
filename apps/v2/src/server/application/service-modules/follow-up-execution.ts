@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
+import { computeNps, computeAverage } from '../nps';
 import type { AppContext } from '../../../domain/contracts';
 
 const EXECUTION_STATUSES = new Set(['DONE', 'SKIPPED']);
@@ -91,8 +92,8 @@ export class FollowUpExecutionService {
       breakdown.push({ rating, count });
     }
     breakdown.sort((a, b) => a.rating - b.rating);
-    const nps = total > 0 ? Math.round(((promoters - detractors) / total) * 100) : 0;
-    const average = total > 0 ? Math.round((ratingSum / total) * 10) / 10 : 0;
+    const nps = computeNps(promoters, detractors, total);
+    const average = computeAverage(ratingSum, total);
     return { total, promoters, passives, detractors, nps, average, breakdown };
   }
 }

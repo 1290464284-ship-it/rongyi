@@ -4,7 +4,7 @@ import { apiRequest } from './api';
 import type { Page } from './types';
 import { CrudPage } from './CrudPage';
 import { Dialog, LoadingState, PageError, SearchableSelect, type DataTableColumn } from './components';
-import { formatDateTime, toCents } from './format';
+import { formatDateTime, centsToYuanString, toCents } from './format';
 import { errorMessage } from './messages';
 import { useToast, type ToastKind } from './toast-context';
 
@@ -139,7 +139,7 @@ function itemRowToForm(row: Record<string, unknown>): PrescriptionItemForm {
     frequency: String(row.frequency ?? ''),
     days: String(row.days ?? ''),
     quantity: String(row.quantity ?? ''),
-    price: (Number(row.price ?? 0) / 100).toFixed(2),
+    price: centsToYuanString(row.price ?? 0),
   };
 }
 

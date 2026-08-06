@@ -43,7 +43,8 @@ http://localhost:3180/api/v2
   ```
 
   `V2_PORT` 必须是 1-65535 的整数；CORS 白名单会跟随 `V2_PORT` 自动放行
-  （`src/server/http/app.ts`），无需额外配置。
+  （`src/server/http/app.ts`），Vite dev 代理也读取 `V2_PORT`
+  （`vite.config.ts`，默认 3180），`/api` 自动转发到当前端口，无需额外配置。
 - 打包版（Electron）会自动挑选随机空闲端口（30000-50000）并注入 API 子进程，
   以上说明仅适用于开发模式。
 
@@ -77,9 +78,10 @@ clones do not contain it. Upgraders of an older clone should:
 - Generic resources use canonical names such as `patients`, `charges`, and
   `printTemplates`. Legacy SQLite table names such as `User` or `Charge` are not
   exposed as generic resource routes.
-- Production refuses to seed an `admin/REDACTED` account. Provision the admin
-  user through the packaged database or migration tooling before production
-  startup.
+- Production refuses to seed a default `admin` account with development
+  credentials (`REDACTED`; overridable via `V2_ADMIN_PASSWORD`). Provision the
+  admin user through the packaged database or migration tooling before
+  production startup.
 - Sync push/pull requires a registered device token. Register a device with
   `POST /api/v2/sync/devices` and pass `deviceToken` to sync requests.
 - Business workflows enforce tenant scope for the current user's `clinicId`.

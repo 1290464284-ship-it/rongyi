@@ -32,7 +32,7 @@ export interface ReadRouteDependencies {
 
 export function registerReadRoutes(app: Express, deps: ReadRouteDependencies): void {
   app.get('/api/v2/analytics/clinic-overview', wrapAsync(async (req, res) => {
-      res.json({ success: true, data: deps.analytics.clinicOverview() });
+      res.json({ success: true, data: deps.analytics.clinicOverview(req.context!) });
   }));
 
   app.get('/api/v2/analytics/rfm', wrapAsync(async (req, res) => {

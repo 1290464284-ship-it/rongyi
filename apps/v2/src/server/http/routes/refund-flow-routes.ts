@@ -7,14 +7,14 @@
 import type { Express } from 'express';
 import type Database from 'better-sqlite3';
 import { wrapAsync } from '../middleware';
+import { parsePagination } from '../pagination';
 import { RefundFlowService } from '../../application/service-modules/refund-flow';
 
 export function registerRefundFlowRoutes(app: Express, db: Database.Database): void {
   const service = new RefundFlowService(db);
 
   app.get('/api/v2/refunds', wrapAsync(async (req, res) => {
-    const page = Number(req.query.page ?? 1);
-    const pageSize = Number(req.query.pageSize ?? 200);
+    const { page, pageSize } = parsePagination(req);
     const items = service.list(req.context!, { page, pageSize });
     const total = service.count(req.context!);
     res.json({ success: true, data: { items, total, page, pageSize } });

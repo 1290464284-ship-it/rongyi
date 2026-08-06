@@ -1,8 +1,9 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import { CrudPage } from './CrudPage';
 import { SearchableSelect, type DataTableColumn } from './components';
-import { formatMoney, splitList, toCents } from './format';
+import { formatMoney, centsToYuanString, splitList, toCents } from './format';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
 
@@ -101,7 +102,7 @@ export function TreatmentsPage() {
         code: String(row.code ?? ''),
         name: String(row.name ?? ''),
         category: String(row.category ?? 'GENERAL'),
-        price: row.price == null ? '' : (Number(row.price) / 100).toFixed(2),
+        price: centsToYuanString(row.price),
         quantity: String(row.quantity ?? '1'),
         teethNumbers: Array.isArray(row.teethNumbers) ? row.teethNumbers.map(String).join(', ') : '',
         status: String(row.status ?? 'PLANNED'),
@@ -115,18 +116,10 @@ export function TreatmentsPage() {
       errorMessages={{ create: '创建治疗记录失败' }}
       columns={treatmentColumns}
       rowActions={(row, ctx) => (
-        <select
-          defaultValue=""
-          aria-label="变更治疗状态"
-          onChange={(event) => {
-            if (event.target.value) void transitionTreatment(showToast, ctx.reload, row.id, event.target.value);
-          }}
-        >
-          <option value="">变更状态</option>
-          {Object.entries(STATUS_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>{label}</option>
-          ))}
-        </select>
+        <TreatmentStatusSelect
+          rowId={row.id}
+          onTransition={(id, status) => void transitionTreatment(showToast, ctx.reload, id, status)}
+        />
       )}
       renderForm={(ctx) => <TreatmentFormFields form={ctx.form} update={ctx.update} />}
     />
@@ -149,6 +142,30 @@ async function transitionTreatment(
   } catch (error) {
     showToast(errorMessage(error, '状态更新失败'), 'error');
   }
+}
+
+/** 行内受控状态下拉：选中后立即复位为占位项，避免非受控 select 在行复用后残留旧值。 */
+function TreatmentStatusSelect({ rowId, onTransition }: {
+  rowId: string;
+  onTransition: (id: string, status: string) => void;
+}) {
+  const [value, setValue] = useState('');
+  return (
+    <select
+      value={value}
+      aria-label="变更治疗状态"
+      onChange={(event) => {
+        const next = event.target.value;
+        setValue('');
+        if (next) onTransition(rowId, next);
+      }}
+    >
+      <option value="">变更状态</option>
+      {Object.entries(STATUS_LABELS).map(([value, label]) => (
+        <option key={value} value={value}>{label}</option>
+      ))}
+    </select>
+  );
 }
 
 function TreatmentFormFields({ form, update }: { form: TreatmentForm; update: (patch: Partial<TreatmentForm>) => void }) {

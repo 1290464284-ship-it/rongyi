@@ -4,7 +4,7 @@ import { useParams } from 'react-router';
 import { apiRequest, downloadCsv } from './api';
 import type { Page, ResourceDefinition, ResourceField } from './types';
 import { ConfirmDialog, Dialog, EmptyState, LoadingState, PageError } from './components';
-import { formatDisplayValue, toCents, toLocalInput } from './format';
+import { formatDisplayValue, centsToYuanString, toCents, toLocalInput } from './format';
 import { FormBuilder } from './FormBuilder';
 import { friendlyError } from './messages';
 import { useDebouncedValue } from './use-debounce';
@@ -51,7 +51,7 @@ function fieldToForm(field: ResourceField, value: unknown): string | boolean {
   if (field.type === 'json') return JSON.stringify(value ?? '', null, 2);
   if (value === null || value === undefined) return '';
   if (field.type === 'datetime' && typeof value === 'string' && value) return toLocalInput(value);
-  if (field.type === 'money' && Number.isFinite(Number(value))) return String((Number(value) / 100).toFixed(2));
+  if (field.type === 'money' && Number.isFinite(Number(value))) return centsToYuanString(value);
   return String(value);
 }
 

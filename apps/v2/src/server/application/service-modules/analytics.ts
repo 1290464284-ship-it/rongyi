@@ -27,7 +27,7 @@ export class AnalyticsService {
     return this.analyticsRepository.doctorAnomalies(context.clinicId);
   }
 
-  clinicOverview(): Array<Record<string, unknown>> {
+  clinicOverview(context: AppContext): Array<Record<string, unknown>> {
     return this.db.prepare(
       `WITH metrics AS (
          SELECT clinicId, 'patients' AS metric, COUNT(*) AS value
@@ -62,14 +62,16 @@ export class AnalyticsService {
          COALESCE(SUM(CASE WHEN M.metric = 'inventoryItems' THEN M.value ELSE 0 END), 0) AS inventoryItems,
          COALESCE(SUM(CASE WHEN M.metric = 'pendingFollowUps' THEN M.value ELSE 0 END), 0) AS pendingFollowUps
        FROM (
-         SELECT id, name FROM Clinic WHERE deletedAt IS NULL
+         SELECT id, name FROM Clinic
+         WHERE deletedAt IS NULL
+           AND (id IN (SELECT clinicId FROM UserClinic WHERE userId = ? AND deletedAt IS NULL) OR id IS NULL)
          UNION ALL
          SELECT NULL, NULL
        ) C
        LEFT JOIN metrics M ON (C.id IS NULL AND M.clinicId IS NULL) OR M.clinicId = C.id
        GROUP BY C.id, C.name
        ORDER BY patients DESC, clinicName ASC`,
-    ).all() as Array<Record<string, unknown>>;
+    ).all(context.userId) as Array<Record<string, unknown>>;
   }
 }
 

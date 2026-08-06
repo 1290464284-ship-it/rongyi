@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import type { Page } from './types';
@@ -62,6 +62,53 @@ interface PurposeForm {
   active: boolean;
 }
 
+/** 将 datetime-local 值按本地时区解析；非法或会被 Date 滚转的日期（如 2 月 30 日）返回 null。 */
+function parseLocalDateTime(value: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const date = new Date(year, month - 1, day, hour, minute);
+  // 回检各分量一致，拒绝浏览器自动滚转出的“假合法”日期
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day ||
+    date.getHours() !== hour ||
+    date.getMinutes() !== minute
+  ) {
+    return null;
+  }
+  return date;
+}
+
+/** 行内受控状态下拉：选中后立即复位为占位项，避免非受控 select 在行复用后残留旧值。 */
+function StatusTransitionSelect({ row, onTransition }: {
+  row: AppointmentRow;
+  onTransition: (id: string, status: string) => void;
+}) {
+  const [value, setValue] = useState('');
+  return (
+    <select
+      value={value}
+      aria-label="变更预约状态"
+      onChange={(event) => {
+        const next = event.target.value;
+        setValue('');
+        if (next) onTransition(row.id, next);
+      }}
+    >
+      <option value="">变更状态</option>
+      {STATUSES.map((status) => (
+        <option key={status} value={status}>{STATUS_LABELS[status]}</option>
+      ))}
+    </select>
+  );
+}
+
 export function AppointmentsPage() {
   const { showToast } = useToast();
   const [patientId, setPatientId] = useState('');
@@ -78,6 +125,9 @@ export function AppointmentsPage() {
   const [newPurposeName, setNewPurposeName] = useState('');
   const [purposeBusy, setPurposeBusy] = useState(false);
   const [editingAppointment, setEditingAppointment] = useState<AppointmentRow | null>(null);
+  // 编辑回填用原始电话缓存（列表行可能被服务端掩码，详情接口返回原始值）
+  const [rawPhoneCache, setRawPhoneCache] = useState<Record<string, string>>({});
+  const editingPhoneFetchRef = useRef(0);
   const [editForm, setEditForm] = useState<AppointmentForm>({
     patientId: '',
     doctorId: '',
@@ -113,8 +163,14 @@ export function AppointmentsPage() {
   async function create(event: FormEvent) {
     event.preventDefault();
     const tempName = tempPatientName.trim();
-    if (submitting || !(patientId || tempName) || !doctorId || !startTime || !endTime) {
+    const startDate = parseLocalDateTime(startTime);
+    const endDate = parseLocalDateTime(endTime);
+    if (submitting || !(patientId || tempName) || !doctorId || !startTime || !endTime || !startDate || !endDate) {
       showToast('请选择患者、医生并填写开始和结束时间', 'error');
+      return;
+    }
+    if (endDate.getTime() <= startDate.getTime()) {
+      showToast('结束时间必须晚于开始时间', 'error');
       return;
     }
     setSubmitting(true);
@@ -125,8 +181,8 @@ export function AppointmentsPage() {
           patientId: patientId || undefined,
           doctorId,
           chairId: chairId || undefined,
-          startTime: new Date(startTime).toISOString(),
-          endTime: new Date(endTime).toISOString(),
+          startTime: startDate.toISOString(),
+          endTime: endDate.toISOString(),
           type,
           purpose: purpose || undefined,
           tempPatientName: tempName || undefined,
@@ -193,6 +249,8 @@ export function AppointmentsPage() {
   }
 
   function openEditAppointment(row: AppointmentRow) {
+    const appointmentId = String(row.id);
+    const cachedPhone = rawPhoneCache[appointmentId];
     setEditForm({
       patientId: String(row.patientId ?? ''),
       doctorId: String(row.doctorId ?? ''),
@@ -200,18 +258,45 @@ export function AppointmentsPage() {
       type: String(row.type ?? 'REGULAR'),
       purpose: String(row.purpose ?? ''),
       tempPatientName: String(row.tempPatientName ?? ''),
-      tempPatientPhone: String(row.tempPatientPhone ?? ''),
+      tempPatientPhone: cachedPhone ?? String(row.tempPatientPhone ?? ''),
       startTime: toLocalInput(row.startTime),
       endTime: toLocalInput(row.endTime),
     });
     setEditingAppointment(row);
+    if (cachedPhone === undefined) {
+      // 列表行电话可能被服务端掩码，详情接口返回原始值；异步回填并缓存，保存仍提交 editForm.tempPatientPhone
+      const requestId = ++editingPhoneFetchRef.current;
+      void apiRequest<AppointmentRow>(`/resources/appointments/${appointmentId}`)
+        .then((detail) => {
+          if (editingPhoneFetchRef.current !== requestId) return;
+          const raw = detail?.tempPatientPhone;
+          if (raw === null || raw === undefined) return;
+          setRawPhoneCache((current) => ({ ...current, [appointmentId]: String(raw) }));
+          setEditForm((current) => ({ ...current, tempPatientPhone: String(raw) }));
+        })
+        .catch(() => {
+          // 详情加载失败时保留行内值（可能为掩码），不阻塞编辑
+        });
+    }
+  }
+
+  function closeEditAppointment() {
+    // 使在途的详情回填失效，避免关闭后写入已不复存在的编辑表单
+    editingPhoneFetchRef.current += 1;
+    setEditingAppointment(null);
   }
 
   async function saveEditAppointment(event: FormEvent) {
     event.preventDefault();
     if (!editingAppointment || submitting) return;
-    if (!editForm.doctorId || !editForm.startTime || !editForm.endTime) {
+    const startDate = parseLocalDateTime(editForm.startTime);
+    const endDate = parseLocalDateTime(editForm.endTime);
+    if (!editForm.doctorId || !editForm.startTime || !editForm.endTime || !startDate || !endDate) {
       showToast('请选择医生并填写开始和结束时间', 'error');
+      return;
+    }
+    if (endDate.getTime() <= startDate.getTime()) {
+      showToast('结束时间必须晚于开始时间', 'error');
       return;
     }
     setSubmitting(true);
@@ -222,8 +307,8 @@ export function AppointmentsPage() {
           patientId: editForm.patientId || undefined,
           doctorId: editForm.doctorId,
           chairId: editForm.chairId || undefined,
-          startTime: new Date(editForm.startTime).toISOString(),
-          endTime: new Date(editForm.endTime).toISOString(),
+          startTime: startDate.toISOString(),
+          endTime: endDate.toISOString(),
           type: editForm.type,
           purpose: editForm.purpose || undefined,
           tempPatientName: editForm.tempPatientName.trim() || undefined,
@@ -247,7 +332,11 @@ export function AppointmentsPage() {
       await apiRequest(`/resources/appointments/${deleteTarget.id}`, { method: 'DELETE' });
       showToast('预约已删除', 'success');
       setDeleteTarget(null);
-      await query.refetch();
+      const refreshed = await query.refetch();
+      // 删除末页最后一条时回退一页，避免停留在空页
+      if (page > 1 && (refreshed.data?.items?.length ?? 0) === 0) {
+        setPage(page - 1);
+      }
     } catch (error) {
       showToast(errorMessage(error, '删除预约失败'), 'error');
       setDeleteTarget(null);
@@ -329,16 +418,7 @@ export function AppointmentsPage() {
       label: '操作',
       render: (row: AppointmentRow) => (
         <>
-          <select
-            defaultValue=""
-            aria-label="变更预约状态"
-            onChange={(event) => event.target.value && transition(row.id, event.target.value)}
-          >
-            <option value="">变更状态</option>
-            {STATUSES.map((status) => (
-              <option key={status} value={status}>{STATUS_LABELS[status]}</option>
-            ))}
-          </select>
+          <StatusTransitionSelect row={row} onTransition={transition} />
           <button onClick={() => openEditAppointment(row)}>编辑</button>
           <button className="danger" onClick={() => setDeleteTarget(row)}>删除</button>
         </>
@@ -401,7 +481,7 @@ export function AppointmentsPage() {
         <button disabled={!query.data || page * 20 >= query.data.total} onClick={() => setPage((value) => value + 1)}>下一页</button>
       </div>
 
-      <Dialog open={editingAppointment !== null} title="编辑预约" onClose={() => setEditingAppointment(null)}>
+      <Dialog open={editingAppointment !== null} title="编辑预约" onClose={closeEditAppointment}>
         <form onSubmit={saveEditAppointment}>
           <SearchableSelect resource="patients" value={editForm.patientId} onChange={(value) => setEditForm((current) => ({ ...current, patientId: value }))} ariaLabel="患者" placeholder="选择患者（预约患者）" />
           <select aria-label="医生" value={editForm.doctorId} onChange={(event) => setEditForm((current) => ({ ...current, doctorId: event.target.value }))}>
@@ -427,7 +507,7 @@ export function AppointmentsPage() {
           <input aria-label="开始时间" type="datetime-local" value={editForm.startTime} onChange={(event) => setEditForm((current) => ({ ...current, startTime: event.target.value }))} />
           <input aria-label="结束时间" type="datetime-local" value={editForm.endTime} onChange={(event) => setEditForm((current) => ({ ...current, endTime: event.target.value }))} />
           <div className="modal-actions">
-            <button type="button" onClick={() => setEditingAppointment(null)}>取消</button>
+            <button type="button" onClick={closeEditAppointment}>取消</button>
             <button type="submit" disabled={submitting}>{submitting ? '保存中...' : '保存'}</button>
           </div>
         </form>

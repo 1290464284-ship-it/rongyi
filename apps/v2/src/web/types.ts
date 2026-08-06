@@ -26,4 +26,5 @@ export interface ResourceDefinition {
   table: string;
   fields: ResourceField[];
   capabilities: { create: boolean; update: boolean; delete: boolean; softDelete: boolean };
+  roles?: string[];
 }

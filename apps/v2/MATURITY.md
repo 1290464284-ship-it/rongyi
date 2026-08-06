@@ -4,7 +4,8 @@
 
 - Desktop-first renderer with merged sidebar hubs.
 - Legacy database copy and legacy table metadata adapter.
-- 92 resources exposed through declarative/dynamic resource definitions.
+- 111 resources exposed through declarative/dynamic resource definitions
+  (78 declarative CRUD + 33 legacy-compatibility).
 - Core workflows: auth, appointments, registrations, visits, charges, refunds, member cards, inventory, purchase orders, processing orders, follow-ups, backups, analytics, sync, print, HR, alerts, notifications.
 - Production config validation for JWT secret and CORS.
 - CORS whitelist with localhost defaults.

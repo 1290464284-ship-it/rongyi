@@ -19,7 +19,9 @@ http://localhost:5180
 
 The API listens on `http://127.0.0.1:3180/api/v2` by default. On Windows, port
 `3180` may be excluded by the system (excludedportrange); if the API fails to
-start, use another port, e.g. `$env:V2_PORT = '3980'` before `pnpm dev`.
+start, use another port, e.g. `$env:V2_PORT = '3980'` before `pnpm dev`. The
+Vite dev proxy reads the same `V2_PORT` (default 3180) and forwards `/api`
+automatically, so no extra proxy configuration is needed.
 
 Default development login:
 
@@ -28,7 +30,8 @@ username: admin
 password: REDACTED
 ```
 
-开发环境如需自动重置 admin/REDACTED，需显式设置 `V2_ALLOW_DEV_SEED=1`。
+开发环境如需自动重置 admin 密码（默认 `REDACTED`，可用 `V2_ADMIN_PASSWORD`
+覆盖），需显式设置 `V2_ALLOW_DEV_SEED=1`。
 
 ## Desktop
 

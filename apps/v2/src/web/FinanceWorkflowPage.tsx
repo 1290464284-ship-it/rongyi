@@ -50,9 +50,9 @@ export function FinanceWorkflowPage() {
   }
 
   async function submitAmount(value: string) {
-    const amount = toCents(value);
     if (!action) return;
-    if (!Number.isFinite(amount) || amount < 0) {
+    const amount = toCents(value);
+    if (!value.trim() || !Number.isFinite(amount) || amount <= 0) {
       showToast('请输入有效金额', 'error');
       setAction(null);
       return;

@@ -7,6 +7,9 @@ export interface IdempotencyScope {
   userId?: string | null;
   clinicId?: string | null;
   requestId: string;
+  /** 业务资源 ID（charge/card/debt/item 等）。同一个 requestId 用于不同资源时必须
+   *  传不同的 resourceId，否则后一个操作会命中前一个操作的缓存响应（串号）。 */
+  resourceId?: string | null;
 }
 
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
@@ -108,7 +111,7 @@ export function withIdempotency<T>(
 
 function scopeKey(scope: IdempotencyScope): string {
   return createHash('sha256')
-    .update([scope.operation, scope.userId ?? '', scope.clinicId ?? '', scope.requestId].join('\0'))
+    .update([scope.operation, scope.resourceId ?? '', scope.userId ?? '', scope.clinicId ?? '', scope.requestId].join('\0'))
     .digest('hex');
 }
 

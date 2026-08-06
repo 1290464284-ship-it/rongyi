@@ -43,7 +43,11 @@ export function DispenseListPanel({
       await apiRequest(`/dispenses/${deleteDispenseTarget.id}`, { method: 'DELETE' });
       showToast('发药单已删除', 'success');
       setDeleteDispenseTarget(null);
-      void dispenses.refetch();
+      const refreshed = await dispenses.refetch();
+      // 删除末页最后一条时回退一页，避免停留在空页
+      if (dispensePage > 1 && (refreshed.data?.items?.length ?? 0) === 0) {
+        setDispensePage((value) => value - 1);
+      }
     } catch (error) {
       showToast(errorMessage(error, '删除发药单失败'), 'error');
     }

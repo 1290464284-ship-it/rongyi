@@ -71,6 +71,11 @@ export function authMiddleware(authService: AuthService) {
       if (user.tokenVersion !== payload.tokenVersion) {
         throw new AppError('UNAUTHORIZED', 'Token is no longer valid', 401);
       }
+      // P2-1：JWT 中的 clinicId 可能是旧的（用户被移出诊所/诊所被删除后 token 未过期），
+      // 校验成员关系仍在，否则 403 强制重新登录/切换诊所。
+      if (!authService.isClinicAccessible(user.id, payload.clinicId)) {
+        throw new AppError('FORBIDDEN', 'Clinic membership is no longer valid', 403);
+      }
       req.context = {
         userId: user.id,
         clinicId: payload.clinicId ?? null,

@@ -40,6 +40,7 @@ export class InventoryService {
   ): Promise<Record<string, unknown>> {
     return withIdempotency(this.db, {
       operation: 'inventory.transaction',
+      resourceId: input.itemId,
       userId: context.userId,
       clinicId: context.clinicId,
       requestId: requestId ?? '',

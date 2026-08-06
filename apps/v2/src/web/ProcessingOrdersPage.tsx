@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import { CrudPage } from './CrudPage';
 import { DataTable, Dialog, LoadingState, PageError } from './components';
-import { formatDateTime, formatMoney, toCents } from './format';
+import { formatDateTime, formatMoney, toCents, centsToYuanString } from './format';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
 import {
@@ -25,6 +25,8 @@ export function ProcessingOrdersPage() {
   const { showToast } = useToast();
   const editingIdRef = useRef<string | null>(null);
   const editingStatusRef = useRef<string | null>(null);
+  // 流程对话框请求序号守卫：关闭/重开时使在途响应失效，避免旧响应覆盖新状态
+  const flowRequestIdRef = useRef(0);
   const [settleTarget, setSettleTarget] = useState<ProcessingRow | null>(null);
   const [settleReload, setSettleReload] = useState<(() => Promise<unknown>) | null>(null);
   const [settleAmount, setSettleAmount] = useState('');
@@ -54,45 +56,57 @@ export function ProcessingOrdersPage() {
   });
 
   async function openFlow(row: ProcessingRow) {
+    const requestId = ++flowRequestIdRef.current;
     setFlowTarget(row);
     setFlowSteps([]);
     setFlowError(null);
     setFlowLoading(true);
+    setFlowBusy(false);
     try {
       const steps = await apiRequest<ProcessingOrderStepRow[]>(`/processing-orders/${row.id}/steps`);
+      if (flowRequestIdRef.current !== requestId) return;
       setFlowSteps(steps);
     } catch (error) {
+      if (flowRequestIdRef.current !== requestId) return;
       setFlowError(errorMessage(error, '加载流程失败'));
     } finally {
-      setFlowLoading(false);
+      if (flowRequestIdRef.current === requestId) setFlowLoading(false);
     }
   }
 
   function closeFlow() {
+    // 使所有在途流程请求失效并复位 busy/loading，避免旧响应或状态卡死
+    flowRequestIdRef.current += 1;
     setFlowTarget(null);
     setFlowSteps([]);
     setFlowError(null);
+    setFlowLoading(false);
+    setFlowBusy(false);
   }
 
   async function advanceFlow() {
     if (!flowTarget || flowBusy) return;
+    const requestId = ++flowRequestIdRef.current;
     setFlowBusy(true);
     try {
       const steps = await apiRequest<ProcessingOrderStepRow[]>(
         `/processing-orders/${flowTarget.id}/register-step`,
         { method: 'POST', body: JSON.stringify({}) },
       );
+      if (flowRequestIdRef.current !== requestId) return;
       setFlowSteps(steps);
       showToast('流程已推进', 'success');
     } catch (error) {
+      if (flowRequestIdRef.current !== requestId) return;
       showToast(errorMessage(error, '推进流程失败'), 'error');
     } finally {
-      setFlowBusy(false);
+      if (flowRequestIdRef.current === requestId) setFlowBusy(false);
     }
   }
 
   async function adjustStep(step: ProcessingOrderStepRow, status: string) {
     if (!flowTarget || flowBusy) return;
+    const requestId = ++flowRequestIdRef.current;
     setFlowBusy(true);
     try {
       const updated = await apiRequest<ProcessingOrderStepRow>(
@@ -102,19 +116,21 @@ export function ProcessingOrdersPage() {
           body: JSON.stringify({ stepId: step.stepId ?? step.id, status }),
         },
       );
+      if (flowRequestIdRef.current !== requestId) return;
       setFlowSteps((current) => current.map((entry) => (entry.id === updated.id ? updated : entry)));
       showToast('步骤状态已调整', 'success');
     } catch (error) {
+      if (flowRequestIdRef.current !== requestId) return;
       showToast(errorMessage(error, '调整步骤失败'), 'error');
     } finally {
-      setFlowBusy(false);
+      if (flowRequestIdRef.current === requestId) setFlowBusy(false);
     }
   }
 
   function openSettle(row: ProcessingRow, reload: () => Promise<unknown>) {
     setSettleTarget(row);
     setSettleReload(() => reload);
-    setSettleAmount(row.totalFee !== null && row.totalFee !== undefined ? (Number(row.totalFee) / 100).toFixed(2) : '');
+    setSettleAmount(centsToYuanString(row.totalFee));
     setSettleRef('');
     setSettleNote('');
   }
@@ -195,7 +211,7 @@ export function ProcessingOrdersPage() {
             number: String(row.number ?? ''),
             shade: String(row.shade ?? ''),
             teethNumbers: joinList(row.teethNumbers),
-            totalFee: row.totalFee === null || row.totalFee === undefined ? '' : (Number(row.totalFee) / 100).toFixed(2),
+            totalFee: centsToYuanString(row.totalFee),
             items: [newItem()],
           };
         }}
@@ -252,18 +268,10 @@ export function ProcessingOrdersPage() {
         rowActions={(row, ctx) => (
           <>
             <button onClick={() => void openFlow(row)}>流程</button>
-            <select
-              defaultValue=""
-              aria-label="变更加工状态"
-              onChange={(event) => {
-                if (event.target.value) void transitionProcessingOrder(showToast, ctx.reload, row.id, event.target.value);
-              }}
-            >
-              <option value="">变更状态</option>
-              {Object.entries(STATUS_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </select>
+            <ProcessingStatusSelect
+              rowId={row.id}
+              onTransition={(id, status) => void transitionProcessingOrder(showToast, ctx.reload, id, status)}
+            />
             {row.settleStatus === 'SETTLED' ? (
               <button onClick={() => void unsettleProcessingOrder(row, ctx.reload)}>撤销结算</button>
             ) : (
@@ -380,4 +388,28 @@ async function transitionProcessingOrder(
   } catch (error) {
     showToast(errorMessage(error, '状态更新失败'), 'error');
   }
+}
+
+/** 行内受控状态下拉：选中后立即复位为占位项，避免非受控 select 在行复用后残留旧值。 */
+function ProcessingStatusSelect({ rowId, onTransition }: {
+  rowId: string;
+  onTransition: (id: string, status: string) => void;
+}) {
+  const [value, setValue] = useState('');
+  return (
+    <select
+      value={value}
+      aria-label="变更加工状态"
+      onChange={(event) => {
+        const next = event.target.value;
+        setValue('');
+        if (next) onTransition(rowId, next);
+      }}
+    >
+      <option value="">变更状态</option>
+      {Object.entries(STATUS_LABELS).map(([value, label]) => (
+        <option key={value} value={value}>{label}</option>
+      ))}
+    </select>
+  );
 }
