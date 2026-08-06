@@ -53,40 +53,39 @@ describe('UserRoleService', () => {
     const service = new UserRoleService(db);
     insertUser('user-doctor-001', 'DOCTOR');
 
-    const result = service.setRoles('user-doctor-001', ['RECEPTIONIST', 'NURSE'], context);
-    expect(result).toEqual(['RECEPTIONIST', 'NURSE']);
+    const result = service.setRoles('user-doctor-001', ['BOSS', 'DOCTOR'], context);
+    expect(result).toEqual(['BOSS']);
 
     const persisted = rows('user-doctor-001');
     expect(persisted).toEqual([
-      { userId: 'user-doctor-001', role: 'NURSE', deletedAt: null },
-      { userId: 'user-doctor-001', role: 'RECEPTIONIST', deletedAt: null },
+      { userId: 'user-doctor-001', role: 'BOSS', deletedAt: null },
     ]);
     const all = service.listAll(context);
     const mine = all.filter((row) => row.userId === 'user-doctor-001');
-    expect(mine.map((row) => row.role).sort()).toEqual(['NURSE', 'RECEPTIONIST']);
+    expect(mine.map((row) => row.role).sort()).toEqual(['BOSS']);
     expect(mine.every((row) => row.clinicId === 'clinic-v2-001')).toBe(true);
   });
 
   it('setRoles diffs by adding and removing roles, and dedupes input', () => {
     const service = new UserRoleService(db);
     insertUser('user-doctor-002', 'DOCTOR');
-    service.setRoles('user-doctor-002', ['RECEPTIONIST', 'NURSE', 'RECEPTIONIST'], context);
+    service.setRoles('user-doctor-002', ['BOSS', 'DOCTOR', 'BOSS'], context);
 
-    const result = service.setRoles('user-doctor-002', ['NURSE', 'TECHNICIAN'], context);
-    expect(result).toEqual(['NURSE', 'TECHNICIAN']);
+    const result = service.setRoles('user-doctor-002', ['DOCTOR'], context);
+    expect(result).toEqual([]);
 
     const persisted = rows('user-doctor-002').map((row) => row.role);
-    expect(persisted).toEqual(['NURSE', 'TECHNICIAN']);
+    expect(persisted).toEqual([]);
   });
 
   it('setRoles skips the primary role from User.role', () => {
     const service = new UserRoleService(db);
     insertUser('user-doctor-003', 'DOCTOR');
 
-    const result = service.setRoles('user-doctor-003', ['DOCTOR', 'ADMIN'], context);
-    expect(result).toEqual(['ADMIN']);
+    const result = service.setRoles('user-doctor-003', ['DOCTOR', 'BOSS'], context);
+    expect(result).toEqual(['BOSS']);
     const persisted = rows('user-doctor-003').map((row) => row.role);
-    expect(persisted).toEqual(['ADMIN']);
+    expect(persisted).toEqual(['BOSS']);
   });
 
   it('setRoles rejects invalid role values with ValidationError', () => {
@@ -94,19 +93,19 @@ describe('UserRoleService', () => {
     insertUser('user-doctor-004', 'DOCTOR');
 
     expect(() => service.setRoles('user-doctor-004', ['NOT_A_ROLE'], context)).toThrow(ValidationError);
-    expect(() => service.setRoles('user-doctor-004', 'NURSE' as unknown as string[], context)).toThrow(ValidationError);
+    expect(() => service.setRoles('user-doctor-004', 'BOSS' as unknown as string[], context)).toThrow(ValidationError);
   });
 
   it('setRoles throws NotFoundError for an unknown user in this clinic', () => {
     const service = new UserRoleService(db);
-    expect(() => service.setRoles('user-missing-001', ['NURSE'], context)).toThrow(NotFoundError);
+    expect(() => service.setRoles('user-missing-001', ['DOCTOR'], context)).toThrow(NotFoundError);
   });
 
   it('listAll is tenant-scoped and hides deleted rows', () => {
     const service = new UserRoleService(db);
     insertUser('user-doctor-005', 'DOCTOR');
-    service.setRoles('user-doctor-005', ['NURSE'], context);
-    db.prepare("UPDATE UserRole SET deletedAt = ? WHERE userId = 'user-doctor-005' AND role = 'NURSE'")
+    service.setRoles('user-doctor-005', ['BOSS'], context);
+    db.prepare("UPDATE UserRole SET deletedAt = ? WHERE userId = 'user-doctor-005' AND role = 'BOSS'")
       .run(now);
 
     const all = service.listAll(context);

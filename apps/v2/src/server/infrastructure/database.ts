@@ -371,7 +371,7 @@ export function seedDatabase(db: Database.Database): void {
     if (isProduction) {
       throw new Error('Production database must contain an admin user; refusing to seed default credentials');
     }
-    const passwordHash = bcrypt.hashSync('admin123', 10);
+    const passwordHash = bcrypt.hashSync('ry0801', 10);
     db.prepare(
       `INSERT INTO User (
          id, clinicId, createdAt, updatedAt, deletedAt,
@@ -379,9 +379,20 @@ export function seedDatabase(db: Database.Database): void {
        ) VALUES (?, ?, ?, ?, NULL, 'admin', ?, 'System Administrator', 'BOSS', 1, 0, 0)`,
     ).run(userId, clinicId, now, now, passwordHash);
   } else if (process.env.NODE_ENV === 'development' && process.env.V2_ALLOW_DEV_SEED === '1') {
-    const passwordHash = bcrypt.hashSync('admin123', 10);
+    const passwordHash = bcrypt.hashSync('ry0801', 10);
     db.prepare('UPDATE User SET passwordHash = ?, active = 1, lockedUntil = NULL, updatedAt = ? WHERE id = ?')
       .run(passwordHash, now, userId);
+  }
+
+  const doctorRow = db.prepare("SELECT id FROM User WHERE username = 'doctor'").get() as { id: string } | undefined;
+  if (!doctorRow && !isProduction) {
+    const doctorHash = bcrypt.hashSync('123456', 10);
+    db.prepare(
+      `INSERT INTO User (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         username, passwordHash, name, role, active, loginAttempts, tokenVersion
+       ) VALUES (?, ?, ?, ?, NULL, 'doctor', ?, 'Default Doctor', 'DOCTOR', 1, 0, 0)`,
+    ).run('user-seed-doctor-001', clinicId, now, now, doctorHash);
   }
 
   if (!isProduction) {

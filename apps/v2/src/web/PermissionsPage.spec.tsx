@@ -28,7 +28,7 @@ const doctorPermissions = {
 
 const receptionPermissions = {
   items: [
-    { id: 'p3', role: 'RECEPTIONIST', resource: 'appointments', permission: 'create', allowed: true },
+    { id: 'p3', role: 'BOSS', resource: 'appointments', permission: 'create', allowed: true },
   ],
   total: 1,
   page: 1,
@@ -44,15 +44,15 @@ describe('PermissionsPage', () => {
   it('loads permissions for the active role and refetches when switching tabs', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/rolePermissions?role=DOCTOR&page=1&pageSize=200') return doctorPermissions;
-      if (path === '/resources/rolePermissions?role=RECEPTIONIST&page=1&pageSize=200') return receptionPermissions;
+      if (path === '/resources/rolePermissions?role=BOSS&page=1&pageSize=200') return receptionPermissions;
       return { items: [], total: 0, page: 1, pageSize: 20 };
     });
     render(<PermissionsPage />, { wrapper });
     expect(await screen.findByText('patients')).toBeDefined();
 
-    fireEvent.click(screen.getByRole('tab', { name: '前台' }));
+    fireEvent.click(screen.getByRole('tab', { name: '老板' }));
     await waitFor(() => expect(vi.mocked(apiRequest)).toHaveBeenCalledWith(
-      '/resources/rolePermissions?role=RECEPTIONIST&page=1&pageSize=200',
+      '/resources/rolePermissions?role=BOSS&page=1&pageSize=200',
     ));
     expect(await screen.findByText('appointments')).toBeDefined();
   });

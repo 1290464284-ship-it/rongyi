@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { routeRoleRules, navigationForRole } from './route-policy';
 import type { UserRole } from '../../domain/contracts';
 
-const ALL_ROLES: readonly UserRole[] = ['BOSS', 'ADMIN', 'DOCTOR', 'RECEPTIONIST', 'NURSE', 'TECHNICIAN'];
+const ALL_ROLES: readonly UserRole[] = ['BOSS', 'DOCTOR'];
 
 function pickDenied(allowed: readonly UserRole[]): UserRole | null {
   return ALL_ROLES.find((r) => !allowed.includes(r)) ?? null;
@@ -11,6 +11,7 @@ function pickDenied(allowed: readonly UserRole[]): UserRole | null {
 function samplePathForPattern(pattern: RegExp, index: number): string {
   const samples: Array<Array<string>> = [
     ['/api/v2/auth/me', '/api/v2/auth/password', '/api/v2/auth/navigation'],
+    ['/api/v2/auth/password', '/api/v2/auth/password'],
     ['/api/v2/doctors', '/api/v2/doctors/abc'],
     ['/api/v2/files', '/api/v2/files/abc'],
     ['/api/v2/admin/users', '/api/v2/admin/users/abc'],
@@ -97,11 +98,11 @@ describe('routeRoleRules', () => {
     }
   });
 
-  it('wechat send-batch 规则收窄为 BOSS/ADMIN 且优先于通用 wechat 规则', () => {
+  it('wechat send-batch 规则收窄为 BOSS 且优先于通用 wechat 规则', () => {
     const sendBatch = routeRoleRules.find((r) => r.pattern.test('/api/v2/wechat/send-batch') && r.pattern.source.includes('send-batch'));
     const generic = routeRoleRules.find((r) => r.pattern.test('/api/v2/wechat/status'));
     expect(sendBatch).toBeDefined();
-    expect(sendBatch!.roles).toEqual(['BOSS', 'ADMIN']);
+    expect(sendBatch!.roles).toEqual(['BOSS']);
     expect(sendBatch!.pattern.test('/api/v2/wechat/send-batch')).toBe(true);
     expect(generic).toBeDefined();
     expect(routeRoleRules.indexOf(sendBatch!)).toBeLessThan(routeRoleRules.indexOf(generic!));
@@ -117,8 +118,8 @@ describe('navigationForRole', () => {
     });
   });
 
-  it('TECHNICIAN 仅访问 allStaff 导航项', () => {
-    const nav = navigationForRole('TECHNICIAN');
+  it('DOCTOR 仅访问 allStaff 导航项', () => {
+    const nav = navigationForRole('DOCTOR');
     expect(nav).toEqual(expect.arrayContaining(['dashboard', 'patients']));
   });
 });

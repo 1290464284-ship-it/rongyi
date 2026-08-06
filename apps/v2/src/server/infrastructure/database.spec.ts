@@ -160,7 +160,7 @@ describe('database bootstrap', () => {
       seedDatabase(gateDb);
       const unchanged = (gateDb.prepare("SELECT passwordHash FROM User WHERE username = 'admin'").get() as { passwordHash: string }).passwordHash;
       expect(unchanged).toBe('custom-hash');
-      // development + 显式授权：重置为 admin123
+      // development + 显式授权：重置为 ry0801
       process.env.V2_ALLOW_DEV_SEED = '1';
       seedDatabase(gateDb);
       const reset = (gateDb.prepare("SELECT passwordHash FROM User WHERE username = 'admin'").get() as { passwordHash: string }).passwordHash;

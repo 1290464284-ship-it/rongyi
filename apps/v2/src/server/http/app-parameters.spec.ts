@@ -28,7 +28,7 @@ describe('HTTP app parameter branches', () => {
       logDir: dataDir,
       logger: new Logger({ logDir: dataDir }),
     });
-    const login = await request(app).post('/api/v2/auth/login').send({ username: 'admin', password: 'admin123' }).expect(200);
+    const login = await request(app).post('/api/v2/auth/login').send({ username: 'admin', password: 'ry0801' }).expect(200);
     token = login.body.data.token as string;
     const device = await request(app)
       .post('/api/v2/sync/devices')

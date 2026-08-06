@@ -27,10 +27,10 @@ describe('LoginPage', () => {
     vi.mocked(login).mockResolvedValue({ token: 't', user: { id: 'u' } });
     renderPage();
     fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'admin' } });
-    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'admin123' } });
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'ry0801' } });
     fireEvent.click(screen.getByRole('button', { name: '登录' }));
     await waitFor(() => {
-      expect(login).toHaveBeenCalledWith('admin', 'admin123');
+      expect(login).toHaveBeenCalledWith('admin', 'ry0801');
     });
   });
 

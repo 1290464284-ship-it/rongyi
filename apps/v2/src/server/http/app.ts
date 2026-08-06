@@ -315,11 +315,11 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
     res.json({ success: true, data: { status: 'ok', time: new Date().toISOString() } });
   });
 
-  app.get('/api/v2/health/deep', authMiddleware(deps.authService), roleMiddleware('BOSS', 'ADMIN'), wrapAsync(async (req, res) => {
+  app.get('/api/v2/health/deep', authMiddleware(deps.authService), roleMiddleware('BOSS'), wrapAsync(async (req, res) => {
       res.json({ success: true, data: deepHealth(db, backupDir) });
   }));
 
-  app.get('/api/v2/metrics', authMiddleware(deps.authService), roleMiddleware('BOSS', 'ADMIN'), wrapAsync(async (req, res) => {
+  app.get('/api/v2/metrics', authMiddleware(deps.authService), roleMiddleware('BOSS'), wrapAsync(async (req, res) => {
       const snapshot = metricsSnapshot();
       persistMetrics(logDir, snapshot);
       res.json({ success: true, data: snapshot });

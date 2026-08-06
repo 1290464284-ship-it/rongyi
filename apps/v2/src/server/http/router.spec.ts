@@ -31,17 +31,17 @@ describe('resource router', () => {
       logDir: dataDir,
       logger: new Logger({ logDir: dataDir }),
     });
-    const admin = await request(app).post('/api/v2/auth/login').send({ username: 'admin', password: 'admin123' }).expect(200);
+    const admin = await request(app).post('/api/v2/auth/login').send({ username: 'admin', password: 'ry0801' }).expect(200);
     adminToken = admin.body.data.token as string;
 
     db.prepare(
       `INSERT INTO User (
          id, clinicId, createdAt, updatedAt, deletedAt,
          username, passwordHash, name, role, active, loginAttempts, tokenVersion
-       ) VALUES (?, ?, ?, ?, NULL, 'receptionist', ?, 'Reception', 'RECEPTIONIST', 1, 0, 0)`,
-    ).run('user-router-reception', 'clinic-v2-001', now, now, bcrypt.hashSync('reception123', 10));
+       ) VALUES (?, ?, ?, ?, NULL, 'doctor-router', ?, 'Doctor Router', 'DOCTOR', 1, 0, 0)`,
+    ).run('user-router-doctor', 'clinic-v2-001', now, now, bcrypt.hashSync('reception123', 10));
     const reception = await request(app).post('/api/v2/auth/login')
-      .send({ username: 'receptionist', password: 'reception123' })
+      .send({ username: 'doctor-router', password: 'reception123' })
       .expect(200);
     receptionToken = reception.body.data.token as string;
   });

@@ -51,7 +51,7 @@ describe('shift template routes', () => {
       ).run(id, now, now, username, name, role);
     };
     insertUser('user-doctor-001', 'doctor01', '张医生', 'DOCTOR');
-    insertUser('user-nurse-001', 'nurse01', '李护士', 'NURSE');
+    insertUser('user-nurse-001', 'nurse01', '李医生', 'DOCTOR');
   });
 
   afterAll(() => {

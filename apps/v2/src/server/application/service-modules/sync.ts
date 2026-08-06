@@ -35,8 +35,8 @@ export class SyncService {
 
   pull(since: string, deviceId: string, deviceToken: string, context: AppContext): { changes: Array<Record<string, unknown>>; cursor: string; serverTime: string } {
     if (!context.clinicId) throw new AppError('FORBIDDEN', 'Sync requires a clinic scope', 403);
-    if (!['BOSS', 'ADMIN'].includes(context.role)) {
-      throw new AppError('FORBIDDEN', 'Sync requires BOSS or ADMIN', 403);
+    if (!['BOSS'].includes(context.role)) {
+      throw new AppError('FORBIDDEN', 'Sync requires BOSS', 403);
     }
     this.assertDevice(deviceId, deviceToken, context);
     const changes = this.db.prepare(
@@ -68,8 +68,8 @@ export class SyncService {
     errors: Array<{ recordId: string; error: string }>;
   }> {
     if (!context.clinicId) throw new AppError('FORBIDDEN', 'Sync requires a clinic scope', 403);
-    if (!['BOSS', 'ADMIN'].includes(context.role)) {
-      throw new AppError('FORBIDDEN', 'Sync requires BOSS or ADMIN', 403);
+    if (!['BOSS'].includes(context.role)) {
+      throw new AppError('FORBIDDEN', 'Sync requires BOSS', 403);
     }
     this.assertDevice(payload.deviceId, payload.deviceToken, context);
     let accepted = 0;
@@ -174,8 +174,8 @@ export class SyncService {
 
   registerDevice(deviceId: string, name: string, context: AppContext): { deviceId: string; token: string } {
     if (!context.clinicId) throw new AppError('FORBIDDEN', 'Sync requires a clinic scope', 403);
-    if (!['BOSS', 'ADMIN'].includes(context.role)) {
-      throw new AppError('FORBIDDEN', 'Sync requires BOSS or ADMIN', 403);
+    if (!['BOSS'].includes(context.role)) {
+      throw new AppError('FORBIDDEN', 'Sync requires BOSS', 403);
     }
     const token = newRefreshToken();
     const now = new Date().toISOString();
