@@ -3,7 +3,6 @@ import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import type { AppContext } from '../../../domain/contracts';
-import { InventoryService } from './operations';
 
 const DISPENSE_STATUSES = ['PENDING', 'PARTIAL', 'DISPENSED', 'RETURNED'] as const;
 
@@ -96,10 +95,10 @@ interface InventoryItemRow {
 /**
  * 药房工作台：发药单（create/list/detail/dispense/returnItems）+ 麻药登记。
  *
- * 库存增减统一走 InventoryService.createTransaction（既有服务，内部已做租户与
- * 库存校验并写 InventoryTransaction）；批次管理物品在发药/退药时同步增减对应
- * InventoryBatch.remainingQuantity。所有写操作保持“先全量校验、后执行扣减”，
- * 避免中途失败留下半成品。
+ * 发药/退药的库存增减、批次余量、明细与状态更新在同一事务内原子完成
+ * （避免并发校验后扣成负数、以及批次守卫失败时库存已扣不可回滚的幽灵库存），
+ * InventoryTransaction 流水直接落 referenceType（DISPENSE / DISPENSE_RETURN）
+ * 供库存明细报表分类。所有写操作保持"先全量校验、后执行扣减"，避免中途失败留下半成品。
  */
 export class DispenseService {
   constructor(
@@ -247,9 +246,9 @@ export class DispenseService {
 
   /**
    * 发药：仅 PENDING/PARTIAL 可发。先全量校验（状态、明细、库存、批次归属与
-   * 批次余量），再逐条调用 InventoryService.createTransaction 扣减库存，最后在
-   * 一个事务内扣减批次余量并落状态。批次扣减带 remainingQuantity >= ? 守卫，
-   * 若影响行数为 0 则抛 ConflictError（防止并发下扣成负数）。
+   * 批次余量），再在单事务内原子完成库存扣减（after >= 0 守卫）、批次余量扣减
+   * （remainingQuantity >= ? 守卫，防止并发下扣成负数）、明细批次落库与状态更新；
+   * 任一守卫失败整体回滚，不再出现"库存已扣、批次失败"的幽灵库存。
    */
   async dispense(id: string, context: AppContext, input?: DispenseAssignInput): Promise<Record<string, unknown>> {
     const dispense = this.db.prepare(
@@ -316,19 +315,45 @@ export class DispenseService {
     }
     if (plans.length === 0) throw new ValidationError('发药单没有可发药品');
 
-    // 扣减库存（逐条，InventoryService 内部自带事务与库存校验）
-    const inventoryService = new InventoryService(this.db, undefined, undefined, this.lockGuard);
-    for (const plan of plans) {
-      await inventoryService.createTransaction(
-        { itemId: plan.itemId, type: 'OUT', quantity: plan.quantity, remark: '药房发药' },
-        context,
-      );
-    }
-
-    // 批次余量扣减 + 状态更新放同一事务；批次的 remainingQuantity 守卫防止并发超扣
+    // 单事务内完成：扣库存（原子守卫，after >= 0）+ 批次余量守卫扣减 + 明细批次落库 + 状态更新。
+    // 此前"扣库存"与"批次守卫/状态"分属多个独立事务，批次守卫失败时库存已扣不可回滚（幽灵库存），
+    // 并发扣减亦可能出现校验后扣成负数；合并后要么全部成功要么整体回滚。
     const now = context.now().toISOString();
     const run = this.db.transaction(() => {
       for (const plan of plans) {
+        this.lockGuard?.(plan.itemId, context.clinicId);
+        const item = this.db.prepare(
+          `SELECT id, stock FROM InventoryItem
+           WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+        ).get(plan.itemId, ...tenantParams(context.clinicId)) as { id: string; stock: number } | undefined;
+        if (!item) throw new NotFoundError('Inventory item not found');
+        const before = Number(item.stock);
+        const after = before - plan.quantity;
+        if (after < 0) throw new ConflictError('Insufficient stock');
+        this.db.prepare(
+          `UPDATE InventoryItem SET stock = ?, updatedAt = ?
+           WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+        ).run(after, now, plan.itemId, ...tenantParams(context.clinicId));
+        this.db.prepare(
+          `INSERT INTO InventoryTransaction (
+             id, clinicId, createdAt, updatedAt, deletedAt,
+             itemId, type, quantity, beforeStock, afterStock, operatorId, remark,
+             referenceType, referenceId, batchId
+           ) VALUES (?, ?, ?, ?, NULL, ?, 'OUT', ?, ?, ?, ?, ?, 'DISPENSE', ?, ?)`,
+        ).run(
+          randomUUID(),
+          context.clinicId ?? null,
+          now,
+          now,
+          plan.itemId,
+          plan.quantity,
+          before,
+          after,
+          context.userId,
+          '药房发药',
+          id,
+          plan.batchId,
+        );
         if (plan.batchId) {
           const result = this.db.prepare(
             `UPDATE InventoryBatch
@@ -379,6 +404,21 @@ export class DispenseService {
       throw new ValidationError('退药明细需包含 1 至 200 条');
     }
 
+    // 按明细行聚合去重：同一 dispenseItemId 出现多次时合并数量，
+    // 避免旧实现逐条校验"各自 ≤ 未退数量"而累计超额回补。
+    const merged = new Map<string, number>();
+    for (const entry of input.items) {
+      if (!entry || typeof entry.dispenseItemId !== 'string' || !entry.dispenseItemId) {
+        throw new ValidationError('退药明细格式无效');
+      }
+      const quantity = Number(entry.quantity);
+      if (!Number.isSafeInteger(quantity) || quantity <= 0) {
+        throw new ValidationError('退回数量必须为正整数');
+      }
+      const key = entry.dispenseItemId;
+      merged.set(key, (merged.get(key) ?? 0) + quantity);
+    }
+
     interface ReturnPlan {
       dispenseItemId: string;
       itemId: string;
@@ -386,15 +426,11 @@ export class DispenseService {
       quantity: number;
     }
     const plans: ReturnPlan[] = [];
-    for (const entry of input.items) {
-      const quantity = Number(entry.quantity);
-      if (!Number.isSafeInteger(quantity) || quantity <= 0) {
-        throw new ValidationError('退回数量必须为正整数');
-      }
+    for (const [dispenseItemId, quantity] of merged) {
       const row = this.db.prepare(
         `SELECT id, itemId, batchId, quantity, returnedQuantity
          FROM DispenseItem WHERE id = ? AND dispenseId = ? AND deletedAt IS NULL`,
-      ).get(entry.dispenseItemId, id) as
+      ).get(dispenseItemId, id) as
         | { id: string; itemId: string; batchId: string | null; quantity: number; returnedQuantity: number }
         | undefined;
       if (!row) throw new NotFoundError('发药明细不存在');
@@ -403,25 +439,45 @@ export class DispenseService {
       plans.push({ dispenseItemId: row.id, itemId: row.itemId, batchId: row.batchId, quantity });
     }
 
-    // 回补库存
-    const inventoryService = new InventoryService(this.db, undefined, undefined, this.lockGuard);
-    for (const plan of plans) {
-      const transaction = await inventoryService.createTransaction(
-        { itemId: plan.itemId, type: 'IN', quantity: plan.quantity, remark: '药房退药' },
-        context,
-      );
-      // InventoryService.createTransaction 不落 referenceType；退药回补流水标记为领药退库，
-      // 供库存明细报表 DISPENSE_RETURN 分类使用。
-      this.db.prepare(
-        `UPDATE InventoryTransaction SET referenceType = 'DISPENSE_RETURN' WHERE id = ?`,
-      ).run(String(transaction.id));
-    }
-
+    // 单事务内完成：回补库存（IN 流水直接带 DISPENSE_RETURN 标记）+ 批次余量回补 +
+    // returnedQuantity 累加 + 状态更新，全部原子，失败整体回滚。
     const now = context.now().toISOString();
     let finalStatus = 'PARTIAL';
     let allReturned = false;
     const run = this.db.transaction(() => {
       for (const plan of plans) {
+        this.lockGuard?.(plan.itemId, context.clinicId);
+        const item = this.db.prepare(
+          `SELECT id, stock FROM InventoryItem
+           WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+        ).get(plan.itemId, ...tenantParams(context.clinicId)) as { id: string; stock: number } | undefined;
+        if (!item) throw new NotFoundError('Inventory item not found');
+        const before = Number(item.stock);
+        const after = before + plan.quantity;
+        this.db.prepare(
+          `UPDATE InventoryItem SET stock = ?, updatedAt = ?
+           WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+        ).run(after, now, plan.itemId, ...tenantParams(context.clinicId));
+        this.db.prepare(
+          `INSERT INTO InventoryTransaction (
+             id, clinicId, createdAt, updatedAt, deletedAt,
+             itemId, type, quantity, beforeStock, afterStock, operatorId, remark,
+             referenceType, referenceId, batchId
+           ) VALUES (?, ?, ?, ?, NULL, ?, 'IN', ?, ?, ?, ?, ?, 'DISPENSE_RETURN', ?, ?)`,
+        ).run(
+          randomUUID(),
+          context.clinicId ?? null,
+          now,
+          now,
+          plan.itemId,
+          plan.quantity,
+          before,
+          after,
+          context.userId,
+          '药房退药',
+          id,
+          plan.batchId,
+        );
         if (plan.batchId) {
           this.db.prepare(
             `UPDATE InventoryBatch
