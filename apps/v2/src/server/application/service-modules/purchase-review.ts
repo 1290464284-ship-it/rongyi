@@ -17,8 +17,7 @@ import type { AppContext } from '../../../domain/contracts';
  * （语义为最近一次审核操作，通过或驳回均写入），返回字段统一用 approvedAt。
  */
 
-export const PURCHASE_REVIEW_STATUSES = ['PENDING', 'SUBMITTED', 'APPROVED', 'REJECTED'] as const;
-export type PurchaseReviewStatus = (typeof PURCHASE_REVIEW_STATUSES)[number];
+const PURCHASE_REVIEW_STATUSES = ['PENDING', 'SUBMITTED', 'APPROVED', 'REJECTED'] as const;
 
 interface PurchaseOrderReviewRow {
   id: string;

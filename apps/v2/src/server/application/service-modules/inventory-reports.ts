@@ -3,7 +3,7 @@ import { ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import type { AppContext } from '../../../domain/contracts';
 
-export const INVENTORY_REPORT_TYPES = [
+const INVENTORY_REPORT_TYPES = [
   'IN',
   'OUT',
   'DISPENSE_RETURN',

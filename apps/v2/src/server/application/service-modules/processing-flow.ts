@@ -14,7 +14,7 @@ import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import type { AppContext } from '../../../domain/contracts';
 
-export type ProcessingStepStatus = 'PENDING' | 'IN_PROGRESS' | 'DONE';
+type ProcessingStepStatus = 'PENDING' | 'IN_PROGRESS' | 'DONE';
 
 const PROCESSING_STEP_STATUSES: readonly ProcessingStepStatus[] = ['PENDING', 'IN_PROGRESS', 'DONE'];
 
@@ -30,7 +30,7 @@ export interface ProcessingOrderStepRow {
   remark: string | null;
 }
 
-export interface ProcessingFlowStepStat {
+interface ProcessingFlowStepStat {
   stepId: string | null;
   stepName: string;
   doneCount: number;

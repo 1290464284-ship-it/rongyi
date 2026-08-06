@@ -1503,7 +1503,7 @@ function repairLegacyData(db: Database.Database, table: string): void {
  * -dup-N 后缀，模式与 repairLegacyData 的去重保持一致，每处修改留痕
  * MigrationRepairLog。返回修复行数。
  */
-export function dedupNullClinicRows(db: Database.Database, table: string, uniqueColumn: string): number {
+function dedupNullClinicRows(db: Database.Database, table: string, uniqueColumn: string): number {
   db.exec(`CREATE TABLE IF NOT EXISTS MigrationRepairLog (
     id TEXT PRIMARY KEY,
     tableName TEXT NOT NULL,

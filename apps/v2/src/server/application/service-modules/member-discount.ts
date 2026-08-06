@@ -8,6 +8,8 @@
 import type Database from 'better-sqlite3';
 import { NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
+import { SystemClock } from '../../infrastructure/clock';
+import { CLINIC_TZ_OFFSET_HOURS } from '../../../domain/contracts';
 import type { AppContext } from '../../../domain/contracts';
 
 const ROUNDING_MODES = new Set(['FLOOR', 'ROUND', 'NONE']);
@@ -37,7 +39,7 @@ export interface SavePlanInput {
   specialDiscountsJson?: unknown;
 }
 
-export interface QuoteItem {
+interface QuoteItem {
   category?: string;
   subtotal: number;
 }
@@ -217,12 +219,14 @@ export class MemberDiscountService {
       discount = Math.min(discount, Number(card.maxDiscountAmount));
     }
 
+    // 年度归属按诊所时区（+8）统计：跨年边界（如 UTC 12-31 16:30 = 本地 01-01 00:30）必须归入诊所本地年。
+    const clinicYear = new SystemClock().clinicDate(context.now()).slice(0, 4);
     const usageRow = this.db.prepare(
       `SELECT COALESCE(SUM(discount), 0) AS usage
        FROM Charge
        WHERE patientId = ? AND deletedAt IS NULL AND discount > 0
-         AND strftime('%Y', createdAt) = strftime('%Y', ?)${tenantAnd(context.clinicId)}`,
-    ).get(card.patientId, context.now().toISOString(), ...tenantParams(context.clinicId)) as { usage: number } | undefined;
+         AND strftime('%Y', createdAt, ?) = ?${tenantAnd(context.clinicId)}`,
+    ).get(card.patientId, `+${CLINIC_TZ_OFFSET_HOURS} hours`, clinicYear, ...tenantParams(context.clinicId)) as { usage: number } | undefined;
     const annualUsage = Number(usageRow?.usage ?? 0);
     let annualRemaining: number | null = null;
     if (card.annualDiscountLimit !== null && card.annualDiscountLimit !== undefined) {

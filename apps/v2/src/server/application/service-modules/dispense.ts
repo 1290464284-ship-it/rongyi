@@ -7,7 +7,7 @@ import { InventoryService } from './operations';
 
 const DISPENSE_STATUSES = ['PENDING', 'PARTIAL', 'DISPENSED', 'RETURNED'] as const;
 
-export interface DispenseCreateItemInput {
+interface DispenseCreateItemInput {
   itemId: string;
   quantity: number;
   batchId?: string | null;
@@ -23,7 +23,7 @@ export interface DispenseCreateInput {
   note?: string;
 }
 
-export interface DispenseUpdateItemInput extends DispenseCreateItemInput {
+interface DispenseUpdateItemInput extends DispenseCreateItemInput {
   /** 已存在的明细行 id（编辑时回填）；无 id 视为新增行。 */
   id?: string;
 }

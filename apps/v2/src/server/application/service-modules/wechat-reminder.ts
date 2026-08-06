@@ -20,11 +20,12 @@ import type Database from 'better-sqlite3';
 import { SystemClock } from '../../infrastructure/clock';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { ConflictError, NotFoundError } from '../../infrastructure/errors';
+import { maskPhoneForExport } from './operations';
 import type { AppContext } from '../../../domain/contracts';
 
-export type WechatReminderScene = 'APPOINTMENT_REMINDER' | 'TREATMENT_RECALL' | 'FIRST_EXAM_NUDGE';
+type WechatReminderScene = 'APPOINTMENT_REMINDER' | 'TREATMENT_RECALL' | 'FIRST_EXAM_NUDGE';
 
-export const WECHAT_REMINDER_SCENE_LABELS: Record<WechatReminderScene, string> = {
+const WECHAT_REMINDER_SCENE_LABELS: Record<WechatReminderScene, string> = {
   APPOINTMENT_REMINDER: '复诊提醒',
   TREATMENT_RECALL: '治疗后回访',
   FIRST_EXAM_NUDGE: '首诊跟进',
@@ -266,7 +267,7 @@ export class WechatReminderService {
       id: row.id,
       patientId: row.patientId,
       patientName: row.patientName,
-      patientPhone: row.patientPhone,
+      patientPhone: maskPhoneForExport(row.patientPhone),
       scene: row.scene,
       sceneLabel: WECHAT_REMINDER_SCENE_LABELS[row.scene] ?? row.scene,
       scheduledDate: row.scheduledDate,
