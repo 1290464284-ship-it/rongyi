@@ -1,7 +1,15 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
-import { DataTable, LoadingState, PageError, SearchableSelect, type DataTableColumn } from './components';
+import {
+  ConfirmDialog,
+  DataTable,
+  Dialog,
+  LoadingState,
+  PageError,
+  SearchableSelect,
+  type DataTableColumn,
+} from './components';
 import { formatDateTime, todayLocalDate } from './format';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
@@ -43,12 +51,16 @@ interface DispenseDetailItem {
 interface DispenseDetail extends Record<string, unknown> {
   id: string;
   number?: string | null;
+  patientId?: string | null;
+  note?: string | null;
   status?: string | null;
   items: DispenseDetailItem[];
 }
 
 interface CreateItemRow {
   key: string;
+  /** 已存在明细行的服务端 id（编辑回填时携带，提交时回传用于更新）。 */
+  id?: string;
   itemId: string;
   quantity: string;
   batchId: string;
@@ -108,6 +120,10 @@ export function DispenseWorkbenchPage() {
   const [createBusy, setCreateBusy] = useState(false);
   const [narcoticBusy, setNarcoticBusy] = useState(false);
   const [action, setAction] = useState<{ mode: 'dispense' | 'return'; row: DispenseRow } | null>(null);
+  const [editDispenseId, setEditDispenseId] = useState<string | null>(null);
+  const [deleteDispenseTarget, setDeleteDispenseTarget] = useState<DispenseRow | null>(null);
+  const [editNarcotic, setEditNarcotic] = useState<Record<string, unknown> | null>(null);
+  const [deleteNarcoticTarget, setDeleteNarcoticTarget] = useState<Record<string, unknown> | null>(null);
 
   const dispenses = useQuery({
     queryKey: ['dispenses'],
@@ -197,6 +213,30 @@ export function DispenseWorkbenchPage() {
     }
   }
 
+  async function confirmDeleteDispense() {
+    if (!deleteDispenseTarget) return;
+    try {
+      await apiRequest(`/dispenses/${deleteDispenseTarget.id}`, { method: 'DELETE' });
+      showToast('发药单已删除', 'success');
+      setDeleteDispenseTarget(null);
+      void dispenses.refetch();
+    } catch (error) {
+      showToast(errorMessage(error, '删除发药单失败'), 'error');
+    }
+  }
+
+  async function confirmDeleteNarcotic() {
+    if (!deleteNarcoticTarget) return;
+    try {
+      await apiRequest(`/narcotic-registry/${String(deleteNarcoticTarget.id)}`, { method: 'DELETE' });
+      showToast('麻药登记已删除', 'success');
+      setDeleteNarcoticTarget(null);
+      void narcotics.refetch();
+    } catch (error) {
+      showToast(errorMessage(error, '删除麻药登记失败'), 'error');
+    }
+  }
+
   const dispenseColumns: DataTableColumn<DispenseRow>[] = [
     { key: 'number', label: '单号' },
     { key: 'patientName', label: '患者', render: (row) => row.patientName ?? row.patientId ?? '' },
@@ -220,6 +260,12 @@ export function DispenseWorkbenchPage() {
             {(status === 'DISPENSED' || status === 'PARTIAL') && (
               <button type="button" onClick={() => setAction({ mode: 'return', row })}>退药</button>
             )}
+            {status === 'PENDING' && (
+              <>
+                <button type="button" onClick={() => setEditDispenseId(row.id)}>编辑</button>
+                <button type="button" onClick={() => setDeleteDispenseTarget(row)}>删除</button>
+              </>
+            )}
           </span>
         );
       },
@@ -234,6 +280,16 @@ export function DispenseWorkbenchPage() {
     { key: 'usage', label: '用途', render: (row) => String(row.usage ?? '') },
     { key: 'balanceBefore', label: '余量前', render: (row) => String(row.balanceBefore ?? '') },
     { key: 'balanceAfter', label: '余量后', render: (row) => String(row.balanceAfter ?? '') },
+    {
+      key: 'actions',
+      label: '操作',
+      render: (row) => (
+        <span className="row-actions">
+          <button type="button" onClick={() => setEditNarcotic(row)}>编辑</button>
+          <button type="button" onClick={() => setDeleteNarcoticTarget(row)}>删除</button>
+        </span>
+      ),
+    },
   ];
 
   return (
@@ -413,7 +469,336 @@ export function DispenseWorkbenchPage() {
           <DataTable columns={narcoticColumns} rows={narcotics.data ?? []} keyField="id" emptyText="暂无麻药登记" />
         )}
       </section>
+
+      {editDispenseId && (
+        <DispenseEditDialog
+          dispenseId={editDispenseId}
+          onClose={() => setEditDispenseId(null)}
+          onDone={() => void dispenses.refetch()}
+        />
+      )}
+      <ConfirmDialog
+        open={deleteDispenseTarget !== null}
+        title="删除发药单"
+        message="确定删除该发药单吗？"
+        confirmText="删除"
+        danger
+        onConfirm={() => void confirmDeleteDispense()}
+        onCancel={() => setDeleteDispenseTarget(null)}
+      />
+      {editNarcotic && (
+        <NarcoticEditDialog
+          record={editNarcotic}
+          onClose={() => setEditNarcotic(null)}
+          onDone={() => void narcotics.refetch()}
+        />
+      )}
+      <ConfirmDialog
+        open={deleteNarcoticTarget !== null}
+        title="删除麻药登记"
+        message="确定删除该麻药登记吗？"
+        confirmText="删除"
+        danger
+        onConfirm={() => void confirmDeleteNarcotic()}
+        onCancel={() => setDeleteNarcoticTarget(null)}
+      />
     </div>
+  );
+}
+
+/** 编辑发药单弹窗：拉取详情回填表单（明细行携带服务端 id），提交 PATCH /dispenses/:id。 */
+function DispenseEditDialog({
+  dispenseId,
+  onClose,
+  onDone,
+}: {
+  dispenseId: string;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const { showToast } = useToast();
+  const [form, setForm] = useState<CreateForm | null>(null);
+  const [itemsMeta, setItemsMeta] = useState<Record<string, boolean>>({});
+  const [busy, setBusy] = useState(false);
+  const detail = useQuery({
+    queryKey: ['dispense-detail', dispenseId],
+    queryFn: () => apiRequest<DispenseDetail>(`/dispenses/${dispenseId}`),
+  });
+
+  // 详情到达后回填一次表单；明细行以服务端 id 作为 key，提交时回传
+  useEffect(() => {
+    if (!detail.data || form !== null) return;
+    setForm({
+      number: String(detail.data.number ?? ''),
+      patientId: String(detail.data.patientId ?? ''),
+      note: String(detail.data.note ?? ''),
+      items: (detail.data.items ?? []).map((item) => ({
+        key: item.id,
+        id: item.id,
+        itemId: String(item.itemId ?? ''),
+        quantity: String(Number(item.quantity ?? 0)),
+        batchId: String(item.batchId ?? ''),
+      })),
+    });
+  }, [detail.data, form]);
+
+  function updateForm(patch: Partial<CreateForm>) {
+    setForm((current) => (current ? { ...current, ...patch } : current));
+  }
+
+  function updateItem(key: string, patch: Partial<CreateItemRow>) {
+    setForm((current) => (current
+      ? { ...current, items: current.items.map((item) => (item.key === key ? { ...item, ...patch } : item)) }
+      : current));
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (busy || !form) return;
+    const items = form.items
+      .filter((item) => item.itemId !== '' && Number.isSafeInteger(Number(item.quantity)) && Number(item.quantity) > 0)
+      .map((item) => ({
+        ...(item.id ? { id: item.id } : {}),
+        itemId: item.itemId,
+        quantity: Number(item.quantity),
+        batchId: item.batchId.trim() === '' ? undefined : item.batchId.trim(),
+      }));
+    if (!form.patientId || !form.number.trim() || items.length === 0) {
+      showToast('请选择患者、填写单号并至少填写一条有效发药明细', 'error');
+      return;
+    }
+    setBusy(true);
+    try {
+      await apiRequest(`/dispenses/${dispenseId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          number: form.number.trim(),
+          patientId: form.patientId,
+          note: form.note.trim() || undefined,
+          items,
+        }),
+      });
+      showToast('发药单已更新', 'success');
+      onClose();
+      onDone();
+    } catch (error) {
+      showToast(errorMessage(error, '更新发药单失败'), 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open title="编辑发药单" onClose={onClose}>
+      {detail.error ? (
+        <PageError message={errorMessage(detail.error, '加载发药单失败')} />
+      ) : detail.isLoading || !form ? (
+        <LoadingState label="加载发药单..." />
+      ) : (
+        <form className="inline-form" onSubmit={submit}>
+          <label>
+            患者
+            <SearchableSelect
+              resource="patients"
+              value={form.patientId}
+              onChange={(id) => updateForm({ patientId: id })}
+              ariaLabel="编辑患者"
+              placeholder="选择患者"
+            />
+          </label>
+          <label>
+            单号
+            <input aria-label="编辑单号" value={form.number} onChange={(event) => updateForm({ number: event.target.value })} />
+          </label>
+          <label>
+            发药备注
+            <input aria-label="编辑发药备注" value={form.note} onChange={(event) => updateForm({ note: event.target.value })} />
+          </label>
+          {form.items.map((item) => (
+            <div className="charge-item-row" key={item.key}>
+              <SearchableSelect
+                resource="inventoryItems"
+                value={item.itemId}
+                onChange={(id) => updateItem(item.key, { itemId: id, batchId: '' })}
+                ariaLabel="编辑物品"
+                placeholder="选择物品"
+                onLoaded={(rows) => {
+                  setItemsMeta((current) => {
+                    const next = { ...current };
+                    for (const row of rows) next[String(row.id)] = Number(row.batchManaged ?? 0) === 1;
+                    return next;
+                  });
+                }}
+              />
+              <input
+                aria-label="编辑发药数量"
+                type="number"
+                min="1"
+                value={item.quantity}
+                onChange={(event) => updateItem(item.key, { quantity: event.target.value })}
+              />
+              {itemsMeta[item.itemId] === true && (
+                <BatchSelect
+                  itemId={item.itemId}
+                  value={item.batchId}
+                  onChange={(batchId) => updateItem(item.key, { batchId })}
+                  ariaLabel="编辑批次"
+                />
+              )}
+              <button type="button" onClick={() => updateForm({ items: form.items.filter((entry) => entry.key !== item.key) })}>
+                移除
+              </button>
+            </div>
+          ))}
+          <button type="button" onClick={() => updateForm({ items: [...form.items, { ...newCreateItem() }] })}>添加明细</button>
+          <div className="modal-actions">
+            <button type="button" onClick={onClose}>取消</button>
+            <button type="submit" disabled={busy}>{busy ? '保存中...' : '保存修改'}</button>
+          </div>
+        </form>
+      )}
+    </Dialog>
+  );
+}
+
+/** 编辑麻药登记弹窗：从列表行预填全部可编辑字段，提交 PATCH /narcotic-registry/:id。 */
+function NarcoticEditDialog({
+  record,
+  onClose,
+  onDone,
+}: {
+  record: Record<string, unknown>;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const { showToast } = useToast();
+  const [form, setForm] = useState<NarcoticForm>(() => ({
+    recordDate: String(record.recordDate ?? ''),
+    itemId: String(record.itemId ?? ''),
+    batchNo: String(record.batchNo ?? ''),
+    quantity: String(Number(record.quantity ?? 0)),
+    usage: String(record.usage ?? ''),
+    balanceBefore: record.balanceBefore === null || record.balanceBefore === undefined ? '' : String(record.balanceBefore),
+    balanceAfter: record.balanceAfter === null || record.balanceAfter === undefined ? '' : String(record.balanceAfter),
+    remark: String(record.remark ?? ''),
+  }));
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (busy) return;
+    const quantity = Number(form.quantity);
+    if (!form.recordDate || !form.itemId || !Number.isSafeInteger(quantity) || quantity < 0) {
+      showToast('请填写登记日期、麻药物品和有效的麻药数量', 'error');
+      return;
+    }
+    setBusy(true);
+    try {
+      await apiRequest(`/narcotic-registry/${String(record.id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          recordDate: form.recordDate,
+          itemId: form.itemId,
+          batchNo: form.batchNo.trim() || undefined,
+          quantity,
+          usage: form.usage.trim() || undefined,
+          balanceBefore: form.balanceBefore.trim() === '' ? undefined : Number(form.balanceBefore),
+          balanceAfter: form.balanceAfter.trim() === '' ? undefined : Number(form.balanceAfter),
+          remark: form.remark.trim() || undefined,
+        }),
+      });
+      showToast('麻药登记已更新', 'success');
+      onClose();
+      onDone();
+    } catch (error) {
+      showToast(errorMessage(error, '更新麻药登记失败'), 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open title="编辑麻药登记" onClose={onClose}>
+      <form className="inline-form" onSubmit={submit}>
+        <label>
+          登记日期
+          <input
+            aria-label="编辑登记日期"
+            type="date"
+            value={form.recordDate}
+            onChange={(event) => setForm((current) => ({ ...current, recordDate: event.target.value }))}
+          />
+        </label>
+        <label>
+          麻药物品
+          <SearchableSelect
+            resource="inventoryItems"
+            value={form.itemId}
+            onChange={(id) => setForm((current) => ({ ...current, itemId: id }))}
+            ariaLabel="编辑麻药物品"
+            placeholder="选择麻药物品"
+          />
+        </label>
+        <label>
+          批号
+          <input
+            aria-label="编辑批号"
+            value={form.batchNo}
+            onChange={(event) => setForm((current) => ({ ...current, batchNo: event.target.value }))}
+          />
+        </label>
+        <label>
+          麻药数量
+          <input
+            aria-label="编辑麻药数量"
+            type="number"
+            min="0"
+            value={form.quantity}
+            onChange={(event) => setForm((current) => ({ ...current, quantity: event.target.value }))}
+          />
+        </label>
+        <label>
+          用途
+          <input
+            aria-label="编辑用途"
+            value={form.usage}
+            onChange={(event) => setForm((current) => ({ ...current, usage: event.target.value }))}
+          />
+        </label>
+        <label>
+          余量前
+          <input
+            aria-label="编辑余量前"
+            type="number"
+            min="0"
+            value={form.balanceBefore}
+            onChange={(event) => setForm((current) => ({ ...current, balanceBefore: event.target.value }))}
+          />
+        </label>
+        <label>
+          余量后
+          <input
+            aria-label="编辑余量后"
+            type="number"
+            min="0"
+            value={form.balanceAfter}
+            onChange={(event) => setForm((current) => ({ ...current, balanceAfter: event.target.value }))}
+          />
+        </label>
+        <label>
+          备注
+          <textarea
+            aria-label="编辑备注"
+            value={form.remark}
+            onChange={(event) => setForm((current) => ({ ...current, remark: event.target.value }))}
+          />
+        </label>
+        <div className="modal-actions">
+          <button type="button" onClick={onClose}>取消</button>
+          <button type="submit" disabled={busy}>{busy ? '保存中...' : '保存修改'}</button>
+        </div>
+      </form>
+    </Dialog>
   );
 }
 

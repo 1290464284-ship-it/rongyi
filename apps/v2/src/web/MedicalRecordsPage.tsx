@@ -230,9 +230,29 @@ export function MedicalRecordsPage() {
         images: splitList(form.images),
         signature: form.signature || undefined,
       })}
-      messages={{ create: '病历已创建' }}
-      errorMessages={{ create: '创建病历失败' }}
+      messages={{ create: '病历已创建', update: '病历已更新', delete: '病历已删除' }}
+      formFromRow={(row) => ({
+        patientId: String(row.patientId ?? ''),
+        visitId: String(row.visitId ?? ''),
+        doctorId: String(row.doctorId ?? ''),
+        category: textValue(row.category),
+        status: textValue(row.status) || 'DRAFT',
+        isTemplate: Boolean(row.isTemplate),
+        chiefComplaint: textValue(row.chiefComplaint),
+        presentIllness: textValue(row.presentIllness),
+        pastHistory: textValue(row.pastHistory),
+        allergyHistory: textValue(row.allergyHistory),
+        examination: textValue(row.examination),
+        diagnosis: textValue(row.diagnosis),
+        treatmentPlan: textValue(row.treatmentPlan),
+        teethInvolved: listToText(row.teethInvolved),
+        images: listToText(row.images),
+        signature: textValue(row.signature),
+      })}
+      errorMessages={{ create: '创建病历失败', update: '更新病历失败', delete: '删除病历失败' }}
       columns={recordColumns}
+      canEdit
+      canDelete
       rowActions={(row, ctx) => {
         reloadRef.current = ctx.reload;
         return (

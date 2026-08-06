@@ -160,6 +160,28 @@ export class ChargeService {
     return { id, number, totalAmount, status: 'UNPAID' };
   }
 
+  /**
+   * 删除（作废）收费单：仅允许 UNPAID 状态且无任何收款/退款记录的收费单，
+   * 软删除主记录与明细，保证财务数据可追溯。
+   */
+  async cancel(id: string, context: AppContext): Promise<{ id: string; status: string }> {
+    const row = this.chargeRepository.findById(id, context.clinicId);
+    if (!row) throw new NotFoundError('Charge not found');
+    if (String(row.status) !== 'UNPAID' || Number(row.paidAmount ?? 0) > 0 || Number(row.refundedAmount ?? 0) > 0) {
+      throw new ConflictError('Only unpaid charges can be deleted');
+    }
+    const now = context.now().toISOString();
+    this.db.transaction(() => {
+      this.db.prepare(
+        `UPDATE Charge SET deletedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL`,
+      ).run(now, now, id);
+      this.db.prepare(
+        `UPDATE ChargeItem SET deletedAt = ?, updatedAt = ? WHERE chargeId = ? AND deletedAt IS NULL`,
+      ).run(now, now, id);
+    })();
+    return { id, status: 'CANCELLED' };
+  }
+
   async pay(id: string, amount: number, method: string, requestId?: string, context?: AppContext, payMethodName?: string): Promise<Record<string, unknown>> {
     return withIdempotency(this.db, {
       operation: 'charge.pay',

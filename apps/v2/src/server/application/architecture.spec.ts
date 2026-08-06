@@ -30,14 +30,10 @@ describe('architecture boundaries', () => {
       'charges',
       'chargeItems',
       'debtRecords',
-      'memberCards',
       'memberCardLogs',
       'memberPointLogs',
       'refunds',
       'inventoryTransactions',
-      'purchaseOrders',
-      'purchaseOrderItems',
-      'processingOrders',
     ];
     for (const name of readOnly) {
       const capabilities = resourceRegistry.get(name)?.capabilities;
@@ -56,14 +52,8 @@ describe('architecture boundaries', () => {
 
   it('prevents generic state transitions on workflow resources', () => {
     const workflowResources = [
-      'appointments',
       'registrations',
-      'visits',
-      'firstExams',
-      'treatments',
-      'medicalRecords',
       // treatmentPlans/prescriptions 已放开软删除（delete+softDelete），供创建失败时客户端清理孤儿记录（R2-P1-19）
-      'cephalometricCases',
       'followUps',
       'wechatMessages',
       'satisfactionSurveys',

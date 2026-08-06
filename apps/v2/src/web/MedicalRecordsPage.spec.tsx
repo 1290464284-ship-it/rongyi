@@ -160,4 +160,42 @@ describe('MedicalRecordsPage', () => {
     expect(screen.getAllByText('申请修改').length).toBe(2);
     expect(screen.getAllByText('审核').length).toBe(1);
   });
+
+  it('edits a medical record with a prefilled form', async () => {
+    mockData();
+    render(<MedicalRecordsPage />, { wrapper });
+    await screen.findByText('龋齿');
+
+    fireEvent.click(screen.getAllByText('编辑')[0]);
+    await waitFor(() => {
+      expect((screen.getByLabelText('诊断') as HTMLTextAreaElement).value).toBe('龋齿');
+    });
+    fireEvent.change(screen.getByLabelText('诊断'), { target: { value: '龋齿（更新）' } });
+    vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'r-1' });
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/medicalRecords/r-1', expect.objectContaining({ method: 'PATCH' }));
+    });
+    const patchCall = vi.mocked(apiRequest).mock.calls.find(
+      (call) => call[0] === '/resources/medicalRecords/r-1' && (call[1] as RequestInit)?.method === 'PATCH',
+    );
+    const body = JSON.parse(String((patchCall?.[1] as RequestInit)?.body));
+    expect(body).toMatchObject({ patientId: 'p-1', doctorId: 'd-1', diagnosis: '龋齿（更新）' });
+    expect(await screen.findByText('病历已更新')).toBeDefined();
+  });
+
+  it('deletes a medical record after confirmation', async () => {
+    mockData();
+    render(<MedicalRecordsPage />, { wrapper });
+    await screen.findByText('龋齿');
+
+    fireEvent.click(screen.getAllByText('删除')[0]);
+    fireEvent.click(await screen.findByText('确认删除'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/medicalRecords/r-1', expect.objectContaining({ method: 'DELETE' }));
+    });
+    expect(await screen.findByText('病历已删除')).toBeDefined();
+  });
 });

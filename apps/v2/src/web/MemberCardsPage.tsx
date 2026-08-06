@@ -69,6 +69,7 @@ const cardColumns: DataTableColumn<CardRow>[] = [
 
 export function MemberCardsPage() {
   const { showToast } = useToast();
+  const editingIdRef = useRef<string | null>(null);
   const [actionTarget, setActionTarget] = useState<string | null>(null);
   const [actionKind, setActionKind] = useState<'RECHARGE' | 'CONSUME' | 'POINTS' | 'PLAN' | 'QUOTE' | null>(null);
   const [actionValue, setActionValue] = useState('');
@@ -89,17 +90,40 @@ export function MemberCardsPage() {
         queryKey={['member-cards']}
         endpoint="/resources/memberCards"
         pageSize={100}
-        initialForm={emptyForm}
-        validate={(form) => (!form.patientId || !form.cardNo.trim() ? '请选择患者并填写卡号' : null)}
-        submitOverride={async ({ form }) => {
-          await apiRequest('/member-cards', {
-            method: 'POST',
-            body: JSON.stringify({ patientId: form.patientId, cardNo: form.cardNo.trim(), status: form.status, level: form.level }),
-          });
+        initialForm={() => {
+          editingIdRef.current = null;
+          return { ...emptyForm };
         }}
-        messages={{ create: '会员卡已创建' }}
-        errorMessages={{ create: '创建会员卡失败' }}
+        formFromRow={(row) => {
+          editingIdRef.current = String(row.id);
+          return {
+            patientId: String(row.patientId ?? ''),
+            cardNo: String(row.cardNo ?? ''),
+            status: String(row.status ?? 'ACTIVE'),
+            level: String(row.level ?? 'NORMAL'),
+          };
+        }}
+        validate={(form) => (!form.patientId || !form.cardNo.trim() ? '请选择患者并填写卡号' : null)}
+        submitOverride={async ({ form, editing }) => {
+          const payload = { patientId: form.patientId, cardNo: form.cardNo.trim(), status: form.status, level: form.level };
+          if (editing) {
+            await apiRequest(`/resources/memberCards/${editingIdRef.current}`, {
+              method: 'PATCH',
+              body: JSON.stringify(payload),
+            });
+          } else {
+            await apiRequest('/member-cards', {
+              method: 'POST',
+              body: JSON.stringify(payload),
+            });
+          }
+        }}
+        messages={{ create: '会员卡已创建', update: '会员卡已更新', delete: '会员卡已删除' }}
+        errorMessages={{ create: '创建会员卡失败', update: '更新会员卡失败', delete: '删除会员卡失败' }}
         columns={cardColumns}
+        canEdit
+        canDelete
+        dialogTitle={(editing) => (editing ? '编辑会员卡' : '新建会员卡')}
         rowActions={(row, ctx) => {
           reloadRef.current = ctx.reload;
           return (

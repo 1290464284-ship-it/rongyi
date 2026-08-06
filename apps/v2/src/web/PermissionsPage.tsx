@@ -41,6 +41,7 @@ export function PermissionsPage() {
   const { showToast } = useToast();
   const [activeRole, setActiveRole] = useState('DOCTOR');
   const [form, setForm] = useState<PermissionForm>(emptyForm);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const permissions = useQuery({
     queryKey: ['role-permissions', activeRole],
@@ -63,6 +64,15 @@ export function PermissionsPage() {
     }
   }
 
+  function openEdit(row: PermissionRow) {
+    setEditingId(row.id);
+    setForm({
+      resource: String(row.resource ?? ''),
+      permission: String(row.permission ?? 'list'),
+      allowed: Boolean(row.allowed),
+    });
+  }
+
   async function addPermission(event: FormEvent) {
     event.preventDefault();
     const resource = form.resource.trim();
@@ -71,20 +81,33 @@ export function PermissionsPage() {
       return;
     }
     try {
-      await apiRequest('/resources/rolePermissions', {
-        method: 'POST',
-        body: JSON.stringify({
-          role: activeRole,
-          resource,
-          permission: form.permission,
-          allowed: form.allowed,
-        }),
-      });
-      showToast('权限已添加', 'success');
+      if (editingId) {
+        await apiRequest(`/resources/rolePermissions/${editingId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            resource,
+            permission: form.permission,
+            allowed: form.allowed,
+          }),
+        });
+        showToast('权限已更新', 'success');
+      } else {
+        await apiRequest('/resources/rolePermissions', {
+          method: 'POST',
+          body: JSON.stringify({
+            role: activeRole,
+            resource,
+            permission: form.permission,
+            allowed: form.allowed,
+          }),
+        });
+        showToast('权限已添加', 'success');
+      }
+      setEditingId(null);
       setForm(emptyForm);
       await permissions.refetch();
     } catch (error) {
-      showToast(errorMessage(error, '添加失败'), 'error');
+      showToast(errorMessage(error, editingId ? '更新失败' : '添加失败'), 'error');
     }
   }
 
@@ -112,7 +135,10 @@ export function PermissionsPage() {
       key: 'actions',
       label: '操作',
       render: (row: PermissionRow) => (
-        <button onClick={() => void removePermission(row)}>删除</button>
+        <>
+          <button onClick={() => openEdit(row)}>编辑</button>
+          <button className="danger" onClick={() => void removePermission(row)}>删除</button>
+        </>
       ),
     },
   ];
@@ -143,7 +169,7 @@ export function PermissionsPage() {
           emptyText="该角色暂无权限配置"
         />
 
-        <h2>新增权限</h2>
+        <h2>{editingId ? '编辑权限' : '新增权限'}</h2>
         <form className="inline-form" onSubmit={addPermission}>
           <input
             value={form.resource}
@@ -168,7 +194,10 @@ export function PermissionsPage() {
             />
             允许
           </label>
-          <button type="submit">添加权限</button>
+          <button type="submit">{editingId ? '保存修改' : '添加权限'}</button>
+          {editingId && (
+            <button type="button" onClick={() => { setEditingId(null); setForm(emptyForm); }}>取消编辑</button>
+          )}
         </form>
       </div>
     </div>

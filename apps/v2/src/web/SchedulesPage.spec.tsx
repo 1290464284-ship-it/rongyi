@@ -40,12 +40,12 @@ function mockLookups(options?: {
   const weekData = options?.weekRows ?? weekRows;
   vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit & { _retry?: boolean }) => {
     const method = (init?.method ?? 'GET').toUpperCase();
-    if (path === '/api/v2/shift-templates/generate') return { created: 3, skipped: 2, weekStart: '2026-08-03' };
-    if (path === '/api/v2/shift-templates' && method === 'POST') return { id: 't-new' };
-    if (path === '/api/v2/shift-templates' && method === 'GET') return templateData;
+    if (path === '/shift-templates/generate') return { created: 3, skipped: 2, weekStart: '2026-08-03' };
+    if (path === '/shift-templates' && method === 'POST') return { id: 't-new' };
+    if (path === '/shift-templates' && method === 'GET') return templateData;
     if (path === '/resources/users?page=1&pageSize=100') return userData;
-    if (path.startsWith('/api/v2/schedules/week?weekStart=')) return weekData;
-    if (path.startsWith('/api/v2/shift-templates/') && method === 'PATCH') return { id: path.split('/').pop() };
+    if (path.startsWith('/schedules/week?weekStart=')) return weekData;
+    if (path.startsWith('/shift-templates/') && method === 'PATCH') return { id: path.split('/').pop() };
     return {};
   });
 }
@@ -89,10 +89,10 @@ describe('SchedulesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '新增模板' }));
 
     await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/api/v2/shift-templates', expect.objectContaining({ method: 'POST' }));
+      expect(apiRequest).toHaveBeenCalledWith('/shift-templates', expect.objectContaining({ method: 'POST' }));
     });
     const call = vi.mocked(apiRequest).mock.calls.find(
-      ([path, init]) => path === '/api/v2/shift-templates' && init?.method === 'POST',
+      ([path, init]) => path === '/shift-templates' && init?.method === 'POST',
     );
     const body = JSON.parse(String(call?.[1]?.body));
     expect(body).toMatchObject({ name: '晚班', startTime: '13:00', endTime: '22:00', color: '#10b981', active: true });
@@ -107,10 +107,10 @@ describe('SchedulesPage', () => {
     await screen.findByText('周末班');
     fireEvent.click(screen.getByRole('button', { name: '停用' }));
     await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/api/v2/shift-templates/t-1', expect.objectContaining({ method: 'PATCH' }));
+      expect(apiRequest).toHaveBeenCalledWith('/shift-templates/t-1', expect.objectContaining({ method: 'PATCH' }));
     });
     const call = vi.mocked(apiRequest).mock.calls.find(
-      ([path, init]) => path === '/api/v2/shift-templates/t-1' && init?.method === 'PATCH',
+      ([path, init]) => path === '/shift-templates/t-1' && init?.method === 'PATCH',
     );
     expect(JSON.parse(String(call?.[1]?.body))).toEqual({ active: false });
     expect(await screen.findByText('模板状态已更新')).toBeDefined();
@@ -129,10 +129,10 @@ describe('SchedulesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '生成固定排班' }));
 
     await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/api/v2/shift-templates/generate', expect.objectContaining({ method: 'POST' }));
+      expect(apiRequest).toHaveBeenCalledWith('/shift-templates/generate', expect.objectContaining({ method: 'POST' }));
     });
     const call = vi.mocked(apiRequest).mock.calls.find(
-      ([path, init]) => path === '/api/v2/shift-templates/generate' && init?.method === 'POST',
+      ([path, init]) => path === '/shift-templates/generate' && init?.method === 'POST',
     );
     expect(JSON.parse(String(call?.[1]?.body))).toEqual({
       templateId: 't-1',

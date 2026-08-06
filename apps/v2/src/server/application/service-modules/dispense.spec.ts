@@ -422,6 +422,137 @@ describe('DispenseService', () => {
     });
   });
 
+  describe('update/delete dispense', () => {
+    it('updates a PENDING dispense: reconciles items (update by id, insert new, soft-delete removed)', () => {
+      insertItem('upd-plain-400', 100, 0);
+      insertItem('upd-plain-401', 100, 0);
+      const created = service().create({
+        number: 'PF-400',
+        patientId: 'patient-demo-001',
+        note: '旧备注',
+        items: [
+          { itemId: 'upd-plain-400', quantity: 2 },
+          { itemId: 'upd-plain-401', quantity: 3 },
+        ],
+      }, context);
+      const rows = db.prepare(
+        'SELECT id, itemId, quantity FROM DispenseItem WHERE dispenseId = ? AND deletedAt IS NULL ORDER BY createdAt ASC',
+      ).all(String(created.id)) as Array<{ id: string; itemId: string; quantity: number }>;
+      const [first, second] = rows;
+
+      const result = service().updateDispense(String(created.id), {
+        number: 'PF-400-U',
+        patientId: 'patient-demo-001',
+        note: '新备注',
+        items: [
+          { id: first.id, itemId: 'upd-plain-400', quantity: 5 },
+          { itemId: 'upd-plain-401', quantity: 1, batchId: 'b-upd' },
+        ],
+      }, context);
+      expect(result).toMatchObject({ id: String(created.id), number: 'PF-400-U', status: 'PENDING', items: 2 });
+
+      const dispense = db.prepare('SELECT number, note, status FROM Dispense WHERE id = ?').get(String(created.id)) as Record<string, unknown>;
+      expect(dispense.number).toBe('PF-400-U');
+      expect(dispense.note).toBe('新备注');
+      expect(dispense.status).toBe('PENDING');
+
+      // first 行更新数量；second 行被软删；新行插入
+      const firstRow = db.prepare('SELECT quantity, deletedAt FROM DispenseItem WHERE id = ?').get(first.id) as Record<string, unknown>;
+      expect(firstRow.quantity).toBe(5);
+      expect(firstRow.deletedAt).toBeNull();
+      const secondRow = db.prepare('SELECT deletedAt FROM DispenseItem WHERE id = ?').get(second.id) as Record<string, unknown>;
+      expect(secondRow.deletedAt).not.toBeNull();
+      const active = db.prepare(
+        'SELECT itemId, quantity, batchId, deletedAt FROM DispenseItem WHERE dispenseId = ? AND deletedAt IS NULL ORDER BY createdAt ASC',
+      ).all(String(created.id)) as Array<{ itemId: string; quantity: number; batchId: string | null; deletedAt: string | null }>;
+      expect(active).toEqual([
+        { itemId: 'upd-plain-400', quantity: 5, batchId: null, deletedAt: null },
+        { itemId: 'upd-plain-401', quantity: 1, batchId: 'b-upd', deletedAt: null },
+      ]);
+      // 库存未被改动（PENDING 编辑不扣库存）
+      expect(stockOf('upd-plain-400')).toBe(100);
+      expect(stockOf('upd-plain-401')).toBe(100);
+    });
+
+    it('rejects editing non-PENDING dispenses with ConflictError', async () => {
+      insertItem('upd-plain-402', 100, 0);
+      const created = service().create({
+        number: 'PF-402',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'upd-plain-402', quantity: 2 }],
+      }, context);
+      await service().dispense(String(created.id), context);
+      expect(() => service().updateDispense(String(created.id), {
+        number: 'PF-402-U',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'upd-plain-402', quantity: 3 }],
+      }, context)).toThrow(ConflictError);
+      expect(() => service().updateDispense(String(created.id), {
+        number: 'PF-402-U',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'upd-plain-402', quantity: 3 }],
+      }, context)).toThrow('仅待发药的发药单可编辑');
+    });
+
+    it('validates update input: number, patient, quantities, items, and item ownership', () => {
+      insertItem('upd-plain-403', 100, 0);
+      const created = service().create({
+        number: 'PF-403',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'upd-plain-403', quantity: 2 }],
+      }, context);
+      const di = db.prepare('SELECT id FROM DispenseItem WHERE dispenseId = ?').get(String(created.id)) as { id: string };
+      const base = { patientId: 'patient-demo-001', items: [{ id: di.id, itemId: 'upd-plain-403', quantity: 2 }] };
+
+      expect(() => service().updateDispense(String(created.id), { ...base, number: '  ' }, context)).toThrow(ValidationError);
+      expect(() => service().updateDispense(String(created.id), { ...base, number: 'PF-403', patientId: 'patient-missing' }, context)).toThrow(NotFoundError);
+      expect(() => service().updateDispense(String(created.id), {
+        ...base, number: 'PF-403', items: [{ id: di.id, itemId: 'upd-plain-403', quantity: 0 }],
+      }, context)).toThrow(ValidationError);
+      expect(() => service().updateDispense(String(created.id), {
+        ...base, number: 'PF-403', items: [{ id: di.id, itemId: 'item-missing', quantity: 1 }],
+      }, context)).toThrow(NotFoundError);
+      expect(() => service().updateDispense(String(created.id), {
+        ...base, number: 'PF-403', items: [{ id: 'di-other', itemId: 'upd-plain-403', quantity: 1 }],
+      }, context)).toThrow(NotFoundError);
+      expect(() => service().updateDispense('dispense-missing', {
+        number: 'PF-403', patientId: 'patient-demo-001', items: [{ itemId: 'upd-plain-403', quantity: 1 }],
+      }, context)).toThrow(NotFoundError);
+    });
+
+    it('soft-deletes a PENDING dispense and its items; rejects others', () => {
+      insertItem('upd-plain-404', 100, 0);
+      const created = service().create({
+        number: 'PF-404',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'upd-plain-404', quantity: 2 }],
+      }, context);
+      const result = service().deleteDispense(String(created.id), context);
+      expect(result).toEqual({ id: String(created.id), deleted: true });
+
+      const dispense = db.prepare('SELECT deletedAt FROM Dispense WHERE id = ?').get(String(created.id)) as Record<string, unknown>;
+      expect(dispense.deletedAt).not.toBeNull();
+      const items = db.prepare('SELECT deletedAt FROM DispenseItem WHERE dispenseId = ?').all(String(created.id)) as Array<{ deletedAt: string | null }>;
+      expect(items.every((row) => row.deletedAt !== null)).toBe(true);
+      const listed = (service().list(context) as Array<Record<string, unknown>>).map((row) => String(row.id));
+      expect(listed).not.toContain(String(created.id));
+      expect(() => service().detail(String(created.id), context)).toThrow(NotFoundError);
+      expect(() => service().deleteDispense('dispense-missing', context)).toThrow(NotFoundError);
+    });
+
+    it('rejects deleting non-PENDING dispenses with ConflictError', async () => {
+      insertItem('upd-plain-405', 100, 0);
+      const created = service().create({
+        number: 'PF-405',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'upd-plain-405', quantity: 2 }],
+      }, context);
+      await service().dispense(String(created.id), context);
+      expect(() => service().deleteDispense(String(created.id), context)).toThrow(ConflictError);
+      expect(() => service().deleteDispense(String(created.id), context)).toThrow('仅待发药的发药单可删除');
+    });
+  });
+
   describe('narcotic registry', () => {
     it('records and lists narcotic registry entries', () => {
       const created = service().recordNarcotic({
@@ -483,6 +614,80 @@ describe('DispenseService', () => {
         itemId: 'inventory-demo-001',
         quantity: 1.5,
       }, context)).toThrow(ValidationError);
+    });
+  });
+
+  describe('update/delete narcotic registry', () => {
+    it('updates editable fields and preserves patientId/doctorId', () => {
+      const created = service().recordNarcotic({
+        recordDate: '2026-08-05',
+        patientId: 'patient-demo-001',
+        doctorId: 'user-admin-001',
+        itemId: 'inventory-demo-001',
+        batchNo: 'B-001',
+        quantity: 2,
+        usage: '术后镇痛',
+        balanceBefore: 10,
+        balanceAfter: 8,
+        remark: '旧备注',
+      }, context);
+      const result = service().updateNarcotic(String(created.id), {
+        recordDate: '2026-08-06',
+        itemId: 'inventory-demo-001',
+        batchNo: 'B-002',
+        quantity: 3,
+        usage: '',
+        balanceBefore: 8,
+        balanceAfter: 5,
+        remark: '新备注',
+      }, context);
+      expect(result).toEqual({ id: String(created.id) });
+
+      const row = db.prepare('SELECT * FROM NarcoticRegistry WHERE id = ?').get(String(created.id)) as Record<string, unknown>;
+      expect(row.recordDate).toBe('2026-08-06');
+      expect(row.batchNo).toBe('B-002');
+      expect(row.quantity).toBe(3);
+      expect(row.usage).toBeNull(); // 空串 -> null
+      expect(row.balanceBefore).toBe(8);
+      expect(row.balanceAfter).toBe(5);
+      expect(row.remark).toBe('新备注');
+      // patientId/doctorId 保持不变
+      expect(row.patientId).toBe('patient-demo-001');
+      expect(row.doctorId).toBe('user-admin-001');
+
+      const listed = service().narcoticList(context) as Array<Record<string, unknown>>;
+      const found = listed.find((entry) => entry.id === created.id);
+      expect(found?.batchNo).toBe('B-002');
+    });
+
+    it('rejects invalid update input and unknown records', () => {
+      const created = service().recordNarcotic({
+        recordDate: '2026-08-05',
+        itemId: 'inventory-demo-001',
+        quantity: 1,
+      }, context);
+      const base = { itemId: 'inventory-demo-001', quantity: 1 };
+      expect(() => service().updateNarcotic(String(created.id), { ...base, recordDate: '  ' }, context)).toThrow(ValidationError);
+      expect(() => service().updateNarcotic(String(created.id), { ...base, recordDate: '2026-08-05', quantity: -1 }, context)).toThrow(ValidationError);
+      expect(() => service().updateNarcotic(String(created.id), { ...base, recordDate: '2026-08-05', quantity: 1.5 }, context)).toThrow(ValidationError);
+      expect(() => service().updateNarcotic(String(created.id), { ...base, recordDate: '2026-08-05', itemId: 'inventory-missing' }, context)).toThrow(NotFoundError);
+      expect(() => service().updateNarcotic('narcotic-missing', { ...base, recordDate: '2026-08-05' }, context)).toThrow(NotFoundError);
+    });
+
+    it('soft-deletes a narcotic record; missing record throws NotFoundError', () => {
+      const created = service().recordNarcotic({
+        recordDate: '2026-08-05',
+        itemId: 'inventory-demo-001',
+        quantity: 1,
+      }, context);
+      const result = service().deleteNarcotic(String(created.id), context);
+      expect(result).toEqual({ id: String(created.id), deleted: true });
+
+      const row = db.prepare('SELECT deletedAt FROM NarcoticRegistry WHERE id = ?').get(String(created.id)) as Record<string, unknown>;
+      expect(row.deletedAt).not.toBeNull();
+      const listed = service().narcoticList(context) as Array<Record<string, unknown>>;
+      expect(listed.map((entry) => String(entry.id))).not.toContain(String(created.id));
+      expect(() => service().deleteNarcotic('narcotic-missing', context)).toThrow(NotFoundError);
     });
   });
 

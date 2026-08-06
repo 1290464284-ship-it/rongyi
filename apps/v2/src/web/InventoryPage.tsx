@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router';
 import { apiRequest } from './api';
 import type { Page } from './types';
-import { DataTable, LoadingState, PageError, SearchableSelect, type DataTableColumn } from './components';
+import { ConfirmDialog, DataTable, Dialog, LoadingState, PageError, SearchableSelect, type DataTableColumn } from './components';
 import { formatDateTime } from './format';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
@@ -17,6 +17,7 @@ interface BatchRow {
   remainingQuantity: number;
   itemName?: string | null;
   itemCode?: string | null;
+  supplierId?: string | null;
 }
 
 interface BatchListData {
@@ -108,6 +109,13 @@ export function InventoryPage() {
   const [expiryDate, setExpiryDate] = useState('');
   const [batchQuantity, setBatchQuantity] = useState('');
   const [supplierId, setSupplierId] = useState('');
+  const [editTarget, setEditTarget] = useState<BatchRow | null>(null);
+  const [editBatchNo, setEditBatchNo] = useState('');
+  const [editProductionDate, setEditProductionDate] = useState('');
+  const [editExpiryDate, setEditExpiryDate] = useState('');
+  const [editSupplierId, setEditSupplierId] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<BatchRow | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'report'>('overview');
   const [reportType, setReportType] = useState('IN');
   const [reportFrom, setReportFrom] = useState('');
@@ -134,12 +142,12 @@ export function InventoryPage() {
   const batches = useQuery({
     queryKey: ['inventory-batches', itemId ?? ''],
     queryFn: () => apiRequest<BatchListData>(
-      itemId ? `/api/v2/inventory-batches?itemId=${encodeURIComponent(itemId)}` : '/api/v2/inventory-batches',
+      itemId ? `/inventory-batches?itemId=${encodeURIComponent(itemId)}` : '/inventory-batches',
     ),
   });
   const expiringBatches = useQuery({
     queryKey: ['inventory-batches-expiring'],
-    queryFn: () => apiRequest<BatchListData>('/api/v2/inventory-batches?days=30'),
+    queryFn: () => apiRequest<BatchListData>('/inventory-batches?days=30'),
   });
   const report = useQuery({
     queryKey: ['inventory-report', reportType, reportFrom, reportTo],
@@ -149,7 +157,7 @@ export function InventoryPage() {
       if (reportTo) params.set('to', reportTo);
       const queryString = params.toString();
       return apiRequest<InventoryReportData>(
-        `/api/v2/inventory-reports/${reportType}${queryString ? `?${queryString}` : ''}`,
+        `/inventory-reports/${reportType}${queryString ? `?${queryString}` : ''}`,
       );
     },
     enabled: activeTab === 'report',
@@ -211,7 +219,7 @@ export function InventoryPage() {
     }
     setSubmitting(true);
     try {
-      await apiRequest('/api/v2/inventory-batches', {
+      await apiRequest('/inventory-batches', {
         method: 'POST',
         body: JSON.stringify({
           itemId,
@@ -240,11 +248,59 @@ export function InventoryPage() {
     if (submitting) return;
     setSubmitting(true);
     try {
-      await apiRequest('/api/v2/inventory-batches/expiry-alerts', { method: 'POST', body: JSON.stringify({ days: 30 }) });
+      await apiRequest('/inventory-batches/expiry-alerts', { method: 'POST', body: JSON.stringify({ days: 30 }) });
       showToast('到期提醒已生成', 'success');
       await expiringBatches.refetch();
     } catch (error) {
       showToast(errorMessage(error, '生成到期提醒失败'), 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function openEditBatch(batch: BatchRow) {
+    setEditBatchNo(batch.batchNo ?? '');
+    setEditProductionDate(batch.productionDate ?? '');
+    setEditExpiryDate(batch.expiryDate ?? '');
+    setEditSupplierId(batch.supplierId ?? '');
+    setEditTarget(batch);
+  }
+
+  async function submitEditBatch(event: FormEvent) {
+    event.preventDefault();
+    if (!editTarget || editing) return;
+    setEditing(true);
+    try {
+      await apiRequest(`/inventory-batches/${editTarget.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          batchNo: editBatchNo,
+          productionDate: editProductionDate,
+          expiryDate: editExpiryDate,
+          supplierId: editSupplierId,
+        }),
+      });
+      showToast('批次已更新', 'success');
+      setEditTarget(null);
+      await Promise.all([batches.refetch(), expiringBatches.refetch()]);
+    } catch (error) {
+      showToast(errorMessage(error, '批次更新失败'), 'error');
+    } finally {
+      setEditing(false);
+    }
+  }
+
+  async function confirmDeleteBatch() {
+    if (!deleteTarget || submitting) return;
+    setSubmitting(true);
+    try {
+      await apiRequest(`/inventory-batches/${deleteTarget.id}`, { method: 'DELETE' });
+      showToast('批次已删除', 'success');
+      setDeleteTarget(null);
+      await Promise.all([batches.refetch(), expiringBatches.refetch()]);
+    } catch (error) {
+      showToast(errorMessage(error, '删除批次失败'), 'error');
+      setDeleteTarget(null);
     } finally {
       setSubmitting(false);
     }
@@ -361,7 +417,7 @@ export function InventoryPage() {
           </form>
           <div className="table-wrap">
             <table>
-              <thead><tr><th>批次号</th><th>生产日期</th><th>效期</th><th>入库量</th><th>剩余量</th></tr></thead>
+              <thead><tr><th>批次号</th><th>生产日期</th><th>效期</th><th>入库量</th><th>剩余量</th><th>操作</th></tr></thead>
               <tbody>
                 {(batches.data?.batches ?? []).map((batch) => (
                   <tr key={String(batch.id)}>
@@ -370,6 +426,10 @@ export function InventoryPage() {
                     <td>{String(batch.expiryDate ?? '')}</td>
                     <td>{String(batch.initialQuantity ?? '')}</td>
                     <td>{String(batch.remainingQuantity ?? '')}</td>
+                    <td>
+                      <button type="button" onClick={() => openEditBatch(batch)}>编辑</button>
+                      <button type="button" onClick={() => setDeleteTarget(batch)}>删除</button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -396,6 +456,26 @@ export function InventoryPage() {
           </div>
         </>
       )}
+      <Dialog open={editTarget !== null} title="编辑批次" onClose={() => setEditTarget(null)}>
+        <form onSubmit={submitEditBatch}>
+          <input aria-label="编辑批次号" placeholder="批次号" value={editBatchNo} onChange={(event) => setEditBatchNo(event.target.value)} />
+          <input aria-label="编辑生产日期" type="date" value={editProductionDate} onChange={(event) => setEditProductionDate(event.target.value)} />
+          <input aria-label="编辑效期日期" type="date" value={editExpiryDate} onChange={(event) => setEditExpiryDate(event.target.value)} />
+          <SearchableSelect resource="suppliers" ariaLabel="编辑供应商" value={editSupplierId} onChange={setEditSupplierId} placeholder="供应商（可选）" />
+          <div className="modal-actions">
+            <button type="button" onClick={() => setEditTarget(null)}>取消</button>
+            <button type="submit" disabled={editing}>{editing ? '保存中...' : '保存'}</button>
+          </div>
+        </form>
+      </Dialog>
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="删除确认"
+        message="确定删除该批次吗？"
+        danger
+        onConfirm={() => void confirmDeleteBatch()}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

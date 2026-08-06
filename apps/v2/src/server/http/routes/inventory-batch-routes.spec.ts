@@ -195,4 +195,94 @@ describe('inventory batch routes', () => {
     expect(res.body.success).toBe(false);
     expect(res.body.code).toBe('VALIDATION_ERROR');
   });
+
+  it('PATCH /api/v2/inventory-batches/:id updates metadata when meta fields are present', async () => {
+    db.prepare(
+      `INSERT INTO InventoryBatch (
+         id, itemId, batchNo, productionDate, expiryDate, initialQuantity,
+         remainingQuantity, supplierId, purchaseOrderId, active, clinicId,
+         createdAt, updatedAt, deletedAt
+       ) VALUES (?, 'route-item-1', 'ROUTE-EDIT', NULL, '2026-09-01', 6, 6, NULL, NULL, 1, 'clinic-v2-001', ?, ?, NULL)`,
+    ).run('route-edit', now, now);
+
+    const res = await request(app)
+      .patch('/api/v2/inventory-batches/route-edit')
+      .send({ batchNo: 'ROUTE-EDIT-2', productionDate: '2026-07-10', expiryDate: '2026-10-01', supplierId: 'sup-1' })
+      .expect(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toEqual({
+      id: 'route-edit',
+      batchNo: 'ROUTE-EDIT-2',
+      productionDate: '2026-07-10',
+      expiryDate: '2026-10-01',
+      supplierId: 'sup-1',
+    });
+    const row = db.prepare('SELECT * FROM InventoryBatch WHERE id = ?').get('route-edit') as Record<string, unknown>;
+    expect(row.batchNo).toBe('ROUTE-EDIT-2');
+    expect(row.productionDate).toBe('2026-07-10');
+    expect(row.expiryDate).toBe('2026-10-01');
+    expect(row.supplierId).toBe('sup-1');
+    expect(row.initialQuantity).toBe(6);
+    expect(row.remainingQuantity).toBe(6);
+  });
+
+  it('returns 400 for invalid date format when updating batch metadata', async () => {
+    const res = await request(app)
+      .patch('/api/v2/inventory-batches/route-edit')
+      .send({ expiryDate: '2026/10/01' })
+      .expect(400);
+    expect(res.body.success).toBe(false);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('returns 404 when updating a missing batch', async () => {
+    const res = await request(app)
+      .patch('/api/v2/inventory-batches/route-missing')
+      .send({ batchNo: 'X' })
+      .expect(404);
+    expect(res.body.success).toBe(false);
+    expect(res.body.code).toBe('NOT_FOUND');
+  });
+
+  it('DELETE /api/v2/inventory-batches/:id soft-deletes an empty batch and hides it from list', async () => {
+    db.prepare(
+      `INSERT INTO InventoryBatch (
+         id, itemId, batchNo, productionDate, expiryDate, initialQuantity,
+         remainingQuantity, supplierId, purchaseOrderId, active, clinicId,
+         createdAt, updatedAt, deletedAt
+       ) VALUES (?, 'route-item-1', 'ROUTE-DELETE', NULL, '2026-09-01', 0, 0, NULL, NULL, 1, 'clinic-v2-001', ?, ?, NULL)`,
+    ).run('route-delete', now, now);
+
+    const res = await request(app).delete('/api/v2/inventory-batches/route-delete').expect(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toEqual({ id: 'route-delete' });
+    const row = db.prepare('SELECT deletedAt, active FROM InventoryBatch WHERE id = ?').get('route-delete') as Record<string, unknown>;
+    expect(row.deletedAt).toBe(now);
+    expect(row.active).toBe(0);
+
+    const list = await request(app).get('/api/v2/inventory-batches').expect(200);
+    const ids = (list.body.data.batches as Array<{ id: string }>).map((batch) => batch.id);
+    expect(ids).not.toContain('route-delete');
+  });
+
+  it('returns 409 when deleting a batch with remaining stock', async () => {
+    db.prepare(
+      `INSERT INTO InventoryBatch (
+         id, itemId, batchNo, productionDate, expiryDate, initialQuantity,
+         remainingQuantity, supplierId, purchaseOrderId, active, clinicId,
+         createdAt, updatedAt, deletedAt
+       ) VALUES (?, 'route-item-1', 'ROUTE-DELETE-STOCK', NULL, '2026-09-01', 5, 5, NULL, NULL, 1, 'clinic-v2-001', ?, ?, NULL)`,
+    ).run('route-delete-stock', now, now);
+
+    const res = await request(app).delete('/api/v2/inventory-batches/route-delete-stock').expect(409);
+    expect(res.body.success).toBe(false);
+    expect(res.body.code).toBe('CONFLICT');
+    expect(res.body.message).toBe('批次仍有剩余库存，不能删除');
+  });
+
+  it('returns 404 when deleting a missing batch', async () => {
+    const res = await request(app).delete('/api/v2/inventory-batches/route-missing').expect(404);
+    expect(res.body.success).toBe(false);
+    expect(res.body.code).toBe('NOT_FOUND');
+  });
 });

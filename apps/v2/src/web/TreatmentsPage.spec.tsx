@@ -83,6 +83,54 @@ describe('TreatmentsPage', () => {
     expect(await screen.findByText('治疗状态已更新')).toBeDefined();
   });
 
+  it('edits a treatment with backfilled cents-to-yuan and PATCH payload', async () => {
+    mockData();
+    render(<TreatmentsPage />, { wrapper });
+    await screen.findByText('补牙');
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    expect((screen.getByLabelText('患者') as HTMLSelectElement).value).toBe('p-1');
+    await waitFor(() => {
+      expect((screen.getByLabelText('医生') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    expect((screen.getByLabelText('医生') as HTMLSelectElement).value).toBe('d-1');
+    expect((screen.getByLabelText('治疗名称') as HTMLInputElement).value).toBe('补牙');
+    expect((screen.getByLabelText('价格') as HTMLInputElement).value).toBe('100.00');
+    expect((screen.getByLabelText('牙位（逗号分隔）') as HTMLInputElement).value).toBe('');
+    expect((screen.getByLabelText('状态') as HTMLSelectElement).value).toBe('PLANNED');
+
+    fireEvent.change(screen.getByLabelText('治疗名称'), { target: { value: '补牙(升级)' } });
+    vi.mocked(apiRequest).mockResolvedValueOnce({ id: 't-1' });
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/treatments/t-1', expect.objectContaining({ method: 'PATCH' }));
+    });
+    const patchCall = vi.mocked(apiRequest).mock.calls.find(
+      (call) => call[0] === '/resources/treatments/t-1' && (call[1] as RequestInit)?.method === 'PATCH',
+    );
+    const body = JSON.parse(String((patchCall?.[1] as RequestInit)?.body));
+    expect(body).toMatchObject({ name: '补牙(升级)', price: 10000, quantity: 1, teethNumbers: [], status: 'PLANNED' });
+    expect(await screen.findByText('治疗记录已更新')).toBeDefined();
+  });
+
+  it('deletes a treatment after confirmation', async () => {
+    mockData();
+    render(<TreatmentsPage />, { wrapper });
+    await screen.findByText('补牙');
+
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认删除' }));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/treatments/t-1', expect.objectContaining({ method: 'DELETE' }));
+    });
+    expect(await screen.findByText('治疗记录已删除')).toBeDefined();
+  });
+
   it('validates required treatment fields', async () => {
     mockData();
     render(<TreatmentsPage />, { wrapper });

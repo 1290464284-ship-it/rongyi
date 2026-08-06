@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import { CrudPage } from './CrudPage';
@@ -6,6 +6,7 @@ import { SearchableSelect, type DataTableColumn, type SearchableSelectRow } from
 import { formatMoney, toCents } from './format';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
+import type { Page } from './types';
 
 const REVIEW_STATUS_LABELS: Record<string, string> = {
   PENDING: '待提交',
@@ -28,8 +29,21 @@ interface PurchaseRow extends Record<string, unknown> {
 interface PurchaseItemForm {
   id: string;
   itemId: string;
+  name: string;
+  spec: string;
   quantity: string;
   unitPrice: string;
+  subtotal: string;
+}
+
+interface PurchaseOrderItemRow extends Record<string, unknown> {
+  id: string;
+  itemId?: string | null;
+  name?: string | null;
+  spec?: string | null;
+  quantity?: number | null;
+  unitPrice?: number | null;
+  subtotal?: number | null;
 }
 
 interface PurchaseOrderForm {
@@ -39,7 +53,7 @@ interface PurchaseOrderForm {
 }
 
 function newItem(): PurchaseItemForm {
-  return { id: crypto.randomUUID(), itemId: '', quantity: '1', unitPrice: '' };
+  return { id: crypto.randomUUID(), itemId: '', name: '', spec: '', quantity: '1', unitPrice: '', subtotal: '' };
 }
 
 function emptyPurchaseForm(): PurchaseOrderForm {
@@ -89,6 +103,8 @@ const purchaseColumns: DataTableColumn<PurchaseRow>[] = [
 
 export function PurchaseOrdersPage() {
   const { showToast } = useToast();
+  const editingIdRef = useRef<string | null>(null);
+  const editingStatusRef = useRef<string | null>(null);
   const [receiving, setReceiving] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [summaryTick, setSummaryTick] = useState(0);
@@ -100,7 +116,20 @@ export function PurchaseOrdersPage() {
       emptyMessage="暂无采购单"
       queryKey={['purchase-orders']}
       endpoint="/resources/purchaseOrders"
-      initialForm={emptyPurchaseForm}
+      initialForm={() => {
+        editingIdRef.current = null;
+        editingStatusRef.current = null;
+        return emptyPurchaseForm();
+      }}
+      formFromRow={(row) => {
+        editingIdRef.current = String(row.id);
+        editingStatusRef.current = String(row.status ?? '');
+        return {
+          number: String(row.number ?? ''),
+          supplierId: String(row.supplierId ?? ''),
+          items: [newItem()],
+        };
+      }}
       validate={(form) => {
         const validItems = buildValidItems(form.items, inventoryRows);
         if (!form.number.trim() || validItems.length === 0) {
@@ -108,16 +137,34 @@ export function PurchaseOrdersPage() {
         }
         return null;
       }}
-      submitOverride={async ({ form }) => {
+      submitOverride={async ({ form, editing }) => {
         const validItems = buildValidItems(form.items, inventoryRows);
+        if (editing) {
+          const orderId = editingIdRef.current;
+          if (!orderId) throw new Error('缺少编辑记录 ID');
+          const totalAmount = validItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+          await apiRequest(`/resources/purchaseOrders/${orderId}`, {
+            method: 'PATCH',
+            body: JSON.stringify({
+              number: form.number.trim(),
+              supplierId: form.supplierId || undefined,
+              totalAmount,
+              status: editingStatusRef.current ?? 'PENDING',
+            }),
+          });
+          await reconcilePurchaseItems(orderId, form.items, inventoryRows);
+          return;
+        }
         await apiRequest('/purchase-orders', {
           method: 'POST',
           body: JSON.stringify({ number: form.number.trim(), supplierId: form.supplierId || undefined, items: validItems, requestId: crypto.randomUUID() }),
         });
       }}
-      messages={{ create: '采购单已创建' }}
-      errorMessages={{ create: '创建采购单失败' }}
+      messages={{ create: '采购单已创建', update: '采购单已更新', delete: '采购单已删除' }}
+      errorMessages={{ create: '创建采购单失败', update: '更新采购单失败', delete: '删除采购单失败' }}
       columns={purchaseColumns}
+      canEdit
+      canDelete
       extraHeaderActions={<ReviewSummaryBar refreshKey={summaryTick} />}
       rowActions={(row, ctx) => (
         <>
@@ -139,10 +186,68 @@ export function PurchaseOrdersPage() {
         </>
       )}
       renderForm={(ctx) => (
-        <PurchaseOrderFormFields form={ctx.form} update={ctx.update} inventoryRows={inventoryRows} setInventoryRows={setInventoryRows} />
+        <PurchaseOrderFormFields
+          form={ctx.form}
+          update={ctx.update}
+          inventoryRows={inventoryRows}
+          setInventoryRows={setInventoryRows}
+          editing={ctx.editing}
+          editingId={editingIdRef.current}
+        />
       )}
     />
   );
+}
+
+/** 编辑保存时的明细 reconcile：有 id 的行 PATCH，新行 POST（带 orderId），被移除的行 DELETE。 */
+async function reconcilePurchaseItems(
+  orderId: string,
+  items: PurchaseItemForm[],
+  inventoryRows: SearchableSelectRow[],
+): Promise<void> {
+  const existing = await apiRequest<Page<PurchaseOrderItemRow>>(
+    `/resources/purchaseOrderItems?orderId=${orderId}&page=1&pageSize=100`,
+  );
+  const existingById = new Map(existing.items.map((row) => [String(row.id), row]));
+  const keptIds = new Set<string>();
+  for (const item of items) {
+    if (!item.quantity || !item.unitPrice) continue;
+    const quantity = Number(item.quantity);
+    const unitPrice = toCents(item.unitPrice);
+    if (!(quantity > 0) || !(unitPrice >= 0)) continue;
+    if (item.id && existingById.has(item.id)) {
+      keptIds.add(item.id);
+      await apiRequest(`/resources/purchaseOrderItems/${item.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          itemId: item.itemId || undefined,
+          name: item.name.trim() || '自定义项目',
+          spec: item.spec.trim() || undefined,
+          quantity,
+          unitPrice,
+          subtotal: Math.round(unitPrice * quantity),
+        }),
+      });
+    } else {
+      await apiRequest('/resources/purchaseOrderItems', {
+        method: 'POST',
+        body: JSON.stringify({
+          orderId,
+          itemId: item.itemId || undefined,
+          name: item.itemId ? String(inventoryRows.find((row) => String(row.id) === item.itemId)?.name ?? '') : '自定义项目',
+          spec: item.spec.trim() || undefined,
+          quantity,
+          unitPrice,
+          subtotal: Math.round(unitPrice * quantity),
+        }),
+      });
+    }
+  }
+  for (const row of existing.items) {
+    if (!keptIds.has(String(row.id))) {
+      await apiRequest(`/resources/purchaseOrderItems/${String(row.id)}`, { method: 'DELETE' });
+    }
+  }
 }
 
 /** 采购单审核汇总条：待审核（SUBMITTED）/ 待收货（APPROVED）计数。 */
@@ -286,12 +391,45 @@ function PurchaseOrderFormFields({
   update,
   inventoryRows,
   setInventoryRows,
+  editing,
+  editingId,
 }: {
   form: PurchaseOrderForm;
   update: (patch: Partial<PurchaseOrderForm>) => void;
   inventoryRows: SearchableSelectRow[];
   setInventoryRows: (rows: SearchableSelectRow[]) => void;
+  editing: boolean;
+  editingId: string | null;
 }) {
+  const loadedItemsForRef = useRef<string | null>(null);
+  const [itemsError, setItemsError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!editing || !editingId || loadedItemsForRef.current === editingId) return;
+    let cancelled = false;
+    loadedItemsForRef.current = editingId;
+    setItemsError(null);
+    apiRequest<Page<PurchaseOrderItemRow>>(`/resources/purchaseOrderItems?orderId=${editingId}&page=1&pageSize=100`)
+      .then((data) => {
+        if (cancelled) return;
+        update({
+          items: (data.items ?? []).map((row) => ({
+            id: String(row.id),
+            itemId: String(row.itemId ?? ''),
+            name: String(row.name ?? ''),
+            spec: String(row.spec ?? ''),
+            quantity: String(row.quantity ?? '1'),
+            unitPrice: (Number(row.unitPrice ?? 0) / 100).toFixed(2),
+            subtotal: (Number(row.subtotal ?? 0) / 100).toFixed(2),
+          })),
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setItemsError('明细加载失败，请关闭后重试');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [editing, editingId, update]);
   return (
     <>
       <label>
@@ -308,6 +446,7 @@ function PurchaseOrderFormFields({
           placeholder="不指定"
         />
       </label>
+      {itemsError && <p className="error">{itemsError}</p>}
       {form.items.map((item) => (
         <div className="charge-item-row" key={item.id}>
           <SearchableSelect

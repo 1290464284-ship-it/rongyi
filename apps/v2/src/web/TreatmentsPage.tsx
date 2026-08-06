@@ -95,7 +95,23 @@ export function TreatmentsPage() {
         completedDate: form.completedDate || undefined,
         remark: form.remark || undefined,
       })}
-      messages={{ create: '治疗记录已创建' }}
+      formFromRow={(row) => ({
+        patientId: String(row.patientId ?? ''),
+        doctorId: String(row.doctorId ?? ''),
+        code: String(row.code ?? ''),
+        name: String(row.name ?? ''),
+        category: String(row.category ?? 'GENERAL'),
+        price: row.price == null ? '' : (Number(row.price) / 100).toFixed(2),
+        quantity: String(row.quantity ?? '1'),
+        teethNumbers: Array.isArray(row.teethNumbers) ? row.teethNumbers.map(String).join(', ') : '',
+        status: String(row.status ?? 'PLANNED'),
+        plannedDate: String(row.plannedDate ?? '').slice(0, 10),
+        completedDate: String(row.completedDate ?? '').slice(0, 10),
+        remark: String(row.remark ?? ''),
+      })}
+      canEdit
+      canDelete
+      messages={{ create: '治疗记录已创建', update: '治疗记录已更新', delete: '治疗记录已删除' }}
       errorMessages={{ create: '创建治疗记录失败' }}
       columns={treatmentColumns}
       rowActions={(row, ctx) => (

@@ -168,7 +168,23 @@ export function FirstExamsPage() {
           treatmentSuggestion: form.treatmentSuggestion || undefined,
           remark: form.remark || undefined,
         })}
-        messages={{ create: '首诊记录已创建' }}
+        formFromRow={(row) => ({
+          patientId: String(row.patientId ?? ''),
+          doctorId: String(row.doctorId ?? ''),
+          consultantId: String(row.consultantId ?? ''),
+          status: String(row.status ?? 'DRAFT'),
+          chiefComplaint: String(row.chiefComplaint ?? ''),
+          presentIllness: String(row.presentIllness ?? ''),
+          pastHistory: String(row.pastHistory ?? ''),
+          oralExam: String(row.oralExam ?? ''),
+          auxiliaryExam: String(row.auxiliaryExam ?? ''),
+          diagnosis: String(row.diagnosis ?? ''),
+          treatmentSuggestion: String(row.treatmentSuggestion ?? ''),
+          remark: String(row.remark ?? ''),
+        })}
+        canEdit
+        canDelete
+        messages={{ create: '首诊记录已创建', update: '首诊记录已更新', delete: '首诊记录已删除' }}
         errorMessages={{ create: '创建首诊失败' }}
         columns={firstExamColumns}
         rowActions={(row, ctx) => (

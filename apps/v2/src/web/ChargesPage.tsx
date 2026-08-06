@@ -1,7 +1,7 @@
 import { FormEvent, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
-import { DataTable, Dialog, EmptyState, LoadingState, PageError, SearchableSelect, type DataTableColumn } from './components';
+import { ConfirmDialog, DataTable, Dialog, EmptyState, LoadingState, PageError, SearchableSelect, type DataTableColumn } from './components';
 import { formatMoney, toCents } from './format';
 import { errorMessage } from './messages';
 import { useCrudResource } from './use-crud-resource';
@@ -146,6 +146,7 @@ export function ChargesPage() {
   const [quickQuantity, setQuickQuantity] = useState('1');
   const [quickPatientId, setQuickPatientId] = useState('');
   const [quickBusy, setQuickBusy] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<ChargeRow | null>(null);
 
   const crud = useCrudResource<ChargeRow, ChargeForm>({
     queryKey: ['charges'],
@@ -220,6 +221,9 @@ export function ChargesPage() {
         <>
           <button onClick={() => setPaymentTarget(row.id)}>收款</button>
           <button className="danger" onClick={() => setRefundTarget(row.id)}>退款</button>
+          {String(row.status ?? '') === 'UNPAID' && (
+            <button className="danger" onClick={() => setDeleteTarget(row)}>删除</button>
+          )}
         </>
       ),
     },
@@ -484,6 +488,22 @@ export function ChargesPage() {
 
   function toggleCatalog(id: string) {
     setExpandedCatalogs((current) => ({ ...current, [id]: !(current[id] ?? false) }));
+  }
+
+  async function deleteCharge() {
+    if (actionBusy || !deleteTarget) return;
+    setActionBusy(true);
+    try {
+      await apiRequest(`/charges/${deleteTarget.id}`, { method: 'DELETE' });
+      showToast('收费单已删除', 'success');
+      setDeleteTarget(null);
+      await crud.reload();
+    } catch (error) {
+      showToast(errorMessage(error, '删除收费单失败'), 'error');
+      setDeleteTarget(null);
+    } finally {
+      setActionBusy(false);
+    }
   }
 
   function openQuickCharge(node: ChargeTreeNode) {

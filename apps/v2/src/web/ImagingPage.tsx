@@ -1,8 +1,8 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest, getApiOrigin, uploadFile } from './api';
 import { CrudPage } from './CrudPage';
-import { DataTable, SearchableSelect, type DataTableColumn } from './components';
+import { ConfirmDialog, DataTable, SearchableSelect, type DataTableColumn } from './components';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
 import type { Page } from './types';
@@ -57,6 +57,7 @@ interface ImagingForm {
   remark: string;
   categoryId: string;
   phase: string;
+  imageUrl: string;
 }
 
 const emptyForm: ImagingForm = {
@@ -69,6 +70,7 @@ const emptyForm: ImagingForm = {
   remark: '',
   categoryId: '',
   phase: '',
+  imageUrl: '',
 };
 
 interface ImagingCategoryRow extends Record<string, unknown> {
@@ -81,6 +83,14 @@ interface ImagingCategoryRow extends Record<string, unknown> {
 
 function formatDateTime(value?: string | null): string {
   return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '';
+}
+
+function toLocalDatetime(value: unknown): string {
+  if (!value) return '';
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 function phaseLabel(phase?: string | null): string {
@@ -101,9 +111,12 @@ function categoryName(row: ImagingRow, categories: ImagingCategoryRow[]): string
 
 export function ImagingPage() {
   const { showToast } = useToast();
+  const editingIdRef = useRef<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [apiOrigin, setApiOrigin] = useState('');
   const [categoryForm, setCategoryForm] = useState({ name: '', type: 'ORTHODONTIC', sortOrder: 0, active: true });
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [deleteCategoryTarget, setDeleteCategoryTarget] = useState<ImagingCategoryRow | null>(null);
   const [compareLeftId, setCompareLeftId] = useState('');
   const [compareRightId, setCompareRightId] = useState('');
 
@@ -133,27 +146,60 @@ export function ImagingPage() {
   const selectedRight = imagingOptions.find((row) => row.id === compareRightId) ?? null;
   const canCompare = selectedLeft !== null && selectedRight !== null && compareLeftId !== compareRightId;
 
-  async function createCategory(event: FormEvent) {
+  async function saveCategory(event: FormEvent) {
     event.preventDefault();
     if (!categoryForm.name.trim()) {
       showToast('请填写分类名称', 'error');
       return;
     }
+    const payload = {
+      name: categoryForm.name.trim(),
+      type: categoryForm.type,
+      sortOrder: categoryForm.sortOrder,
+      active: categoryForm.active,
+    };
     try {
-      await apiRequest('/resources/imagingCategories', {
-        method: 'POST',
-        body: JSON.stringify({
-          name: categoryForm.name.trim(),
-          type: categoryForm.type,
-          sortOrder: categoryForm.sortOrder,
-          active: categoryForm.active,
-        }),
-      });
-      showToast('影像分类已创建', 'success');
+      if (editingCategoryId) {
+        await apiRequest(`/resources/imagingCategories/${editingCategoryId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        });
+        showToast('影像分类已更新', 'success');
+      } else {
+        await apiRequest('/resources/imagingCategories', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        showToast('影像分类已创建', 'success');
+      }
       setCategoryForm({ name: '', type: 'ORTHODONTIC', sortOrder: 0, active: true });
+      setEditingCategoryId(null);
       await categories.refetch();
     } catch (error) {
-      showToast(errorMessage(error, '创建影像分类失败'), 'error');
+      showToast(errorMessage(error, editingCategoryId ? '更新影像分类失败' : '创建影像分类失败'), 'error');
+    }
+  }
+
+  function editCategory(row: ImagingCategoryRow) {
+    setEditingCategoryId(String(row.id));
+    setCategoryForm({
+      name: String(row.name ?? ''),
+      type: String(row.type ?? 'ORTHODONTIC'),
+      sortOrder: Number(row.sortOrder ?? 0),
+      active: Boolean(row.active),
+    });
+  }
+
+  async function confirmDeleteCategory() {
+    const target = deleteCategoryTarget;
+    if (!target) return;
+    try {
+      await apiRequest(`/resources/imagingCategories/${String(target.id)}`, { method: 'DELETE' });
+      showToast('影像分类已删除', 'success');
+      setDeleteCategoryTarget(null);
+      await categories.refetch();
+    } catch (error) {
+      showToast(errorMessage(error, '删除影像分类失败'), 'error');
     }
   }
 
@@ -183,9 +229,13 @@ export function ImagingPage() {
       key: 'actions',
       label: '操作',
       render: (row) => (
-        <button type="button" onClick={() => void toggleCategory(row)}>
-          {row.active ? '停用' : '启用'}
-        </button>
+        <>
+          <button type="button" onClick={() => editCategory(row)}>编辑</button>
+          <button type="button" onClick={() => void toggleCategory(row)}>
+            {row.active ? '停用' : '启用'}
+          </button>
+          <button type="button" className="danger" onClick={() => setDeleteCategoryTarget(row)}>删除</button>
+        </>
       ),
     },
   ];
@@ -198,30 +248,58 @@ export function ImagingPage() {
         emptyMessage="暂无影像"
         queryKey={['imaging']}
         endpoint="/resources/imaging"
-        initialForm={emptyForm}
+        initialForm={() => {
+          editingIdRef.current = null;
+          return { ...emptyForm };
+        }}
         validate={(form) => (!form.patientId || !form.doctorId || !form.title ? '请选择患者、医生并填写影像标题' : null)}
-        submitOverride={async ({ form }) => {
+        submitOverride={async ({ form, editing }) => {
           const imageUrl = file ? (await uploadFile(file)).url : undefined;
-          await apiRequest('/resources/imaging', {
-            method: 'POST',
-            body: JSON.stringify({
-              patientId: form.patientId,
-              doctorId: form.doctorId,
-              type: form.type || 'UNKNOWN',
-              title: form.title,
-              description: form.description || undefined,
-              imageUrl: imageUrl ?? '',
-              takenAt: form.takenAt ? new Date(form.takenAt).toISOString() : undefined,
-              remark: form.remark || undefined,
-              categoryId: form.categoryId || undefined,
-              phase: form.phase || undefined,
-            }),
-          });
+          const payload = {
+            patientId: form.patientId,
+            doctorId: form.doctorId,
+            type: form.type || 'UNKNOWN',
+            title: form.title,
+            description: form.description || undefined,
+            imageUrl: imageUrl ?? String(form.imageUrl ?? ''),
+            takenAt: form.takenAt ? new Date(form.takenAt).toISOString() : undefined,
+            remark: form.remark || undefined,
+            categoryId: form.categoryId || undefined,
+            phase: form.phase || undefined,
+          };
+          if (editing) {
+            await apiRequest(`/resources/imaging/${editingIdRef.current}`, {
+              method: 'PATCH',
+              body: JSON.stringify(payload),
+            });
+          } else {
+            await apiRequest('/resources/imaging', {
+              method: 'POST',
+              body: JSON.stringify(payload),
+            });
+          }
         }}
         onAfterCreate={() => setFile(null)}
-        messages={{ create: '影像记录已创建' }}
-        errorMessages={{ create: '创建影像失败' }}
+        formFromRow={(row) => {
+          editingIdRef.current = String(row.id);
+          return {
+            patientId: String(row.patientId ?? ''),
+            doctorId: String(row.doctorId ?? ''),
+            type: String(row.type ?? ''),
+            title: String(row.title ?? ''),
+            description: String(row.description ?? ''),
+            takenAt: toLocalDatetime(row.takenAt),
+            remark: String(row.remark ?? ''),
+            categoryId: String(row.categoryId ?? ''),
+            phase: String(row.phase ?? ''),
+            imageUrl: String(row.imageUrl ?? ''),
+          };
+        }}
+        messages={{ create: '影像记录已创建', update: '影像记录已更新', delete: '影像记录已删除' }}
+        errorMessages={{ create: '创建影像失败', update: '更新影像失败', delete: '删除影像失败' }}
         columns={imagingColumns(apiOrigin, categoryOptions)}
+        canEdit
+        canDelete
         renderForm={(ctx) => (
           <ImagingFormFields
             form={ctx.form}
@@ -236,7 +314,7 @@ export function ImagingPage() {
       <section className="card" aria-label="影像分类管理">
         <h2>影像分类管理</h2>
         <DataTable columns={categoryColumns} rows={categoryOptions} keyField="id" emptyText="暂无影像分类" />
-        <form className="imaging-category-form" onSubmit={createCategory}>
+        <form className="imaging-category-form" onSubmit={saveCategory}>
           <label>
             名称
             <input
@@ -271,9 +349,30 @@ export function ImagingPage() {
               onChange={(event) => setCategoryForm({ ...categoryForm, active: event.target.checked })}
             />
           </label>
-          <button type="submit">新增分类</button>
+          <button type="submit">{editingCategoryId ? '保存修改' : '新增分类'}</button>
+          {editingCategoryId && (
+            <button
+              type="button"
+              onClick={() => {
+                setEditingCategoryId(null);
+                setCategoryForm({ name: '', type: 'ORTHODONTIC', sortOrder: 0, active: true });
+              }}
+            >
+              取消编辑
+            </button>
+          )}
         </form>
       </section>
+
+      <ConfirmDialog
+        open={deleteCategoryTarget !== null}
+        title="删除影像分类"
+        message={`确定删除影像分类“${String(deleteCategoryTarget?.name ?? '')}”吗？`}
+        confirmText="确认删除"
+        danger
+        onConfirm={() => void confirmDeleteCategory()}
+        onCancel={() => setDeleteCategoryTarget(null)}
+      />
 
       <section className="card" aria-label="影像对比">
         <h2>影像对比</h2>

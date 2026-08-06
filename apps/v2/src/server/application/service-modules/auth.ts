@@ -334,6 +334,26 @@ export class AuthService {
     return { id };
   }
 
+  async deleteUser(id: string, context: AppContext): Promise<{ id: string }> {
+    if (id === context.userId) throw new ValidationError('不能删除当前登录账号');
+    const row = this.authRepository.findById(id);
+    if (!row || !tenantMatches(row.clinicId, context.clinicId)) throw new NotFoundError('User not found');
+    if (row.role === 'BOSS') {
+      const boss = this.db.prepare(
+        `SELECT COUNT(*) AS count FROM User WHERE role = 'BOSS' AND active = 1 AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+      ).get(...tenantParams(context.clinicId)) as { count: number };
+      if (Number(boss.count) <= 1) throw new ValidationError('不能删除最后一个管理员(BOSS)账号');
+    }
+    const now = new Date().toISOString();
+    this.runTx(() => {
+      const changes = this.db.prepare(
+        'UPDATE User SET deletedAt = ?, updatedAt = ?, tokenVersion = tokenVersion + 1, refreshToken = NULL, refreshTokenExpiresAt = NULL WHERE id = ? AND deletedAt IS NULL',
+      ).run(now, id);
+      if (changes.changes === 0) throw new NotFoundError('User not found');
+    });
+    return { id };
+  }
+
   private sign(payload: TokenPayload): string {
     return jwt.sign(payload, JWT_SECRET, { expiresIn: TOKEN_TTL });
   }

@@ -306,4 +306,179 @@ describe('dispense routes', () => {
     expect(noDate.body.code).toBe('VALIDATION_ERROR');
     expect(noDate.body.message).toBe('登记日期不能为空');
   });
+
+  it('PATCH /api/v2/dispenses/:id updates a PENDING dispense and reconciles items', async () => {
+    const id = await createDispense('PF-EDIT-1', [
+      { itemId: 'inventory-demo-001', quantity: 2 },
+      { itemId: 'route-plain-dispense', quantity: 3 },
+    ]);
+    const detail = (await request(app).get(`/api/v2/dispenses/${id}`).expect(200)).body.data;
+    const keptId = String(detail.items[0].id);
+    const droppedId = String(detail.items[1].id);
+
+    const res = await request(app)
+      .patch(`/api/v2/dispenses/${id}`)
+      .send({
+        number: 'PF-EDIT-1-U',
+        patientId: 'patient-demo-001',
+        note: '编辑后的备注',
+        items: [
+          { id: keptId, itemId: 'inventory-demo-001', quantity: 5 },
+          { itemId: 'route-plain-dispense', quantity: 1 },
+        ],
+      })
+      .expect(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toMatchObject({ id, number: 'PF-EDIT-1-U', status: 'PENDING', items: 2 });
+
+    const dispense = db.prepare('SELECT number, note FROM Dispense WHERE id = ?').get(id) as Record<string, unknown>;
+    expect(dispense.number).toBe('PF-EDIT-1-U');
+    expect(dispense.note).toBe('编辑后的备注');
+
+    const kept = db.prepare('SELECT quantity, deletedAt FROM DispenseItem WHERE id = ?').get(keptId) as Record<string, unknown>;
+    expect(kept.quantity).toBe(5);
+    expect(kept.deletedAt).toBeNull();
+    const dropped = db.prepare('SELECT deletedAt FROM DispenseItem WHERE id = ?').get(droppedId) as Record<string, unknown>;
+    expect(dropped.deletedAt).not.toBeNull();
+    const active = db.prepare(
+      'SELECT itemId, quantity FROM DispenseItem WHERE dispenseId = ? AND deletedAt IS NULL ORDER BY createdAt ASC',
+    ).all(id) as Array<{ itemId: string; quantity: number }>;
+    expect(active).toEqual([
+      { itemId: 'inventory-demo-001', quantity: 5 },
+      { itemId: 'route-plain-dispense', quantity: 1 },
+    ]);
+  });
+
+  it('PATCH /api/v2/dispenses/:id validates input and rejects non-PENDING edits', async () => {
+    const id = await createDispense('PF-EDIT-2', [{ itemId: 'route-plain-dispense', quantity: 2 }]);
+    const bad = await request(app)
+      .patch(`/api/v2/dispenses/${id}`)
+      .send({ number: '  ', patientId: 'patient-demo-001', items: [{ itemId: 'route-plain-dispense', quantity: 1 }] })
+      .expect(400);
+    expect(bad.body.code).toBe('VALIDATION_ERROR');
+    expect(bad.body.message).toBe('发药单号不能为空');
+
+    // 已发药的单不能编辑
+    const dispensedId = await createDispense('PF-EDIT-3', [{ itemId: 'route-plain-dispense', quantity: 1 }]);
+    await request(app).post(`/api/v2/dispenses/${dispensedId}/dispense`).send({}).expect(200);
+    const conflict = await request(app)
+      .patch(`/api/v2/dispenses/${dispensedId}`)
+      .send({ number: 'PF-EDIT-3-U', patientId: 'patient-demo-001', items: [{ itemId: 'route-plain-dispense', quantity: 1 }] })
+      .expect(409);
+    expect(conflict.body.code).toBe('CONFLICT');
+    expect(conflict.body.message).toBe('仅待发药的发药单可编辑');
+
+    const missing = await request(app)
+      .patch('/api/v2/dispenses/route-missing')
+      .send({ number: 'PF-X', patientId: 'patient-demo-001', items: [{ itemId: 'route-plain-dispense', quantity: 1 }] })
+      .expect(404);
+    expect(missing.body.code).toBe('NOT_FOUND');
+  });
+
+  it('DELETE /api/v2/dispenses/:id soft-deletes a PENDING dispense and its items; rejects others', async () => {
+    const id = await createDispense('PF-DEL-1', [{ itemId: 'route-plain-dispense', quantity: 2 }]);
+    const res = await request(app).delete(`/api/v2/dispenses/${id}`).expect(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toEqual({ id, deleted: true });
+
+    const dispense = db.prepare('SELECT deletedAt FROM Dispense WHERE id = ?').get(id) as Record<string, unknown>;
+    expect(dispense.deletedAt).not.toBeNull();
+    const items = db.prepare('SELECT deletedAt FROM DispenseItem WHERE dispenseId = ?').all(id) as Array<{ deletedAt: string | null }>;
+    expect(items.every((row) => row.deletedAt !== null)).toBe(true);
+    const list = await request(app).get('/api/v2/dispenses').expect(200);
+    expect((list.body.data as Array<Record<string, unknown>>).map((row) => String(row.id))).not.toContain(id);
+    await request(app).get(`/api/v2/dispenses/${id}`).expect(404);
+
+    const dispensedId = await createDispense('PF-DEL-2', [{ itemId: 'route-plain-dispense', quantity: 1 }]);
+    await request(app).post(`/api/v2/dispenses/${dispensedId}/dispense`).send({}).expect(200);
+    const conflict = await request(app).delete(`/api/v2/dispenses/${dispensedId}`).expect(409);
+    expect(conflict.body.code).toBe('CONFLICT');
+    expect(conflict.body.message).toBe('仅待发药的发药单可删除');
+
+    const missing = await request(app).delete('/api/v2/dispenses/route-missing').expect(404);
+    expect(missing.body.code).toBe('NOT_FOUND');
+  });
+
+  it('PATCH /api/v2/narcotic-registry/:id updates editable fields', async () => {
+    const created = await request(app)
+      .post('/api/v2/narcotic-registry')
+      .send({
+        recordDate: '2026-08-05',
+        patientId: 'patient-demo-001',
+        doctorId: 'user-admin-001',
+        itemId: 'inventory-demo-001',
+        batchNo: 'N-001',
+        quantity: 1,
+        usage: '局部麻醉',
+        balanceBefore: 20,
+        balanceAfter: 19,
+        remark: '旧备注',
+      })
+      .expect(201);
+    const id = String(created.body.data.id);
+
+    const res = await request(app)
+      .patch(`/api/v2/narcotic-registry/${id}`)
+      .send({
+        recordDate: '2026-08-06',
+        itemId: 'inventory-demo-001',
+        batchNo: 'N-002',
+        quantity: 2,
+        usage: '静脉麻醉',
+        balanceBefore: 19,
+        balanceAfter: 17,
+        remark: '新备注',
+      })
+      .expect(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toEqual({ id });
+
+    const row = db.prepare('SELECT * FROM NarcoticRegistry WHERE id = ?').get(id) as Record<string, unknown>;
+    expect(row.recordDate).toBe('2026-08-06');
+    expect(row.batchNo).toBe('N-002');
+    expect(row.quantity).toBe(2);
+    expect(row.usage).toBe('静脉麻醉');
+    expect(row.balanceBefore).toBe(19);
+    expect(row.balanceAfter).toBe(17);
+    expect(row.remark).toBe('新备注');
+    expect(row.patientId).toBe('patient-demo-001');
+    expect(row.doctorId).toBe('user-admin-001');
+
+    const list = await request(app).get('/api/v2/narcotic-registry').expect(200);
+    const listed = (list.body.data as Array<Record<string, unknown>>).find((entry) => String(entry.id) === id);
+    expect(listed?.batchNo).toBe('N-002');
+
+    const bad = await request(app)
+      .patch(`/api/v2/narcotic-registry/${id}`)
+      .send({ recordDate: '  ', itemId: 'inventory-demo-001', quantity: 1 })
+      .expect(400);
+    expect(bad.body.code).toBe('VALIDATION_ERROR');
+    expect(bad.body.message).toBe('登记日期不能为空');
+
+    await request(app)
+      .patch('/api/v2/narcotic-registry/route-missing')
+      .send({ recordDate: '2026-08-06', itemId: 'inventory-demo-001', quantity: 1 })
+      .expect(404);
+  });
+
+  it('DELETE /api/v2/narcotic-registry/:id soft-deletes the record', async () => {
+    const created = await request(app)
+      .post('/api/v2/narcotic-registry')
+      .send({ recordDate: '2026-08-05', itemId: 'inventory-demo-001', quantity: 1 })
+      .expect(201);
+    const id = String(created.body.data.id);
+
+    const res = await request(app).delete(`/api/v2/narcotic-registry/${id}`).expect(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toEqual({ id, deleted: true });
+
+    const row = db.prepare('SELECT deletedAt FROM NarcoticRegistry WHERE id = ?').get(id) as Record<string, unknown>;
+    expect(row.deletedAt).not.toBeNull();
+    const list = await request(app).get('/api/v2/narcotic-registry').expect(200);
+    expect((list.body.data as Array<Record<string, unknown>>).map((entry) => String(entry.id))).not.toContain(id);
+
+    const missing = await request(app).delete('/api/v2/narcotic-registry/route-missing').expect(404);
+    expect(missing.body.code).toBe('NOT_FOUND');
+    expect(missing.body.message).toBe('麻药登记不存在');
+  });
 });
