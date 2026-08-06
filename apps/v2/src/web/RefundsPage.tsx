@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
+import type { Page } from './types';
 import { DataTable, EmptyState, LoadingState, PageError, type DataTableColumn } from './components';
 import { formatDateTime, formatMoney } from './format';
 import { errorMessage } from './messages';
@@ -44,9 +46,15 @@ const columns: DataTableColumn<RefundRow>[] = [
 
 export function RefundsPage() {
   const { showToast } = useToast();
+  const [page, setPage] = useState(1);
+  const summary = useQuery({
+    queryKey: ['refunds-summary'],
+    queryFn: () => apiRequest<Page<RefundRow>>('/refunds?page=1&pageSize=200'),
+    staleTime: 30_000,
+  });
   const query = useQuery({
-    queryKey: ['refunds'],
-    queryFn: () => apiRequest<RefundRow[]>('/refunds'),
+    queryKey: ['refunds', page],
+    queryFn: () => apiRequest<Page<RefundRow>>(`/refunds?page=${page}&pageSize=20`),
   });
 
   if (query.isLoading) return <LoadingState label="退款记录加载中..." />;
@@ -59,7 +67,7 @@ export function RefundsPage() {
     );
   }
 
-  const rows = query.data ?? [];
+  const rows = query.data?.items ?? [];
   const withActions: DataTableColumn<RefundRow>[] = [
     ...columns,
     {
@@ -80,12 +88,17 @@ export function RefundsPage() {
       <div className="page-head">
         <h1>退款管理</h1>
       </div>
-      <RefundStatusChips rows={rows} />
+      <RefundStatusChips rows={summary.data?.items ?? []} />
       {rows.length === 0 ? (
         <EmptyState message="暂无退款记录" />
       ) : (
         <DataTable columns={withActions} rows={rows} keyField="id" emptyText="暂无退款记录" />
       )}
+      <div className="pager">
+        <button disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>上一页</button>
+        <span>第 {page} 页</span>
+        <button disabled={!query.data || page * 20 >= query.data.total} onClick={() => setPage((value) => value + 1)}>下一页</button>
+      </div>
     </div>
   );
 }

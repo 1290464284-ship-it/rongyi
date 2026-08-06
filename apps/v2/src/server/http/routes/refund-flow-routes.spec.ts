@@ -84,8 +84,9 @@ describe('refund flow routes', () => {
   it('GET /api/v2/refunds returns the refund list with joined fields', async () => {
     const res = await request(app).get('/api/v2/refunds').expect(200);
     expect(res.body.success).toBe(true);
-    const rows = res.body.data as Array<Record<string, unknown>>;
+    const rows = res.body.data.items as Array<Record<string, unknown>>;
     expect(Array.isArray(rows)).toBe(true);
+    expect(res.body.data.total).toBeGreaterThanOrEqual(6);
     expect(rows.length).toBeGreaterThanOrEqual(6);
     const row = rows.find((entry) => entry.id === 'route-refund-1') as Record<string, unknown>;
     expect(row).toBeDefined();
@@ -96,6 +97,19 @@ describe('refund flow routes', () => {
     expect(row.amount).toBe(3000);
     expect(row.status).toBe('REQUESTED');
     expect(row.reason).toBe('原因-route-refund-1');
+  });
+
+  it('GET /api/v2/refunds honors page/pageSize', async () => {
+    const res = await request(app).get('/api/v2/refunds?page=1&pageSize=3').expect(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.items).toHaveLength(3);
+    expect(res.body.data.total).toBeGreaterThanOrEqual(6);
+    const pageTwo = await request(app).get('/api/v2/refunds?page=2&pageSize=3').expect(200);
+    const ids = new Set([
+      ...(res.body.data.items as Array<{ id: string }>).map((entry) => entry.id),
+      ...(pageTwo.body.data.items as Array<{ id: string }>).map((entry) => entry.id),
+    ]);
+    expect(ids.size).toBeGreaterThanOrEqual(6);
   });
 
   it('POST /api/v2/refunds/:id/approve approves a REQUESTED refund', async () => {

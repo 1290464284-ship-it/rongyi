@@ -4,6 +4,7 @@ import { apiRequest } from './api';
 import type { Page } from './types';
 import { ConfirmDialog, DataTable, Dialog, LoadingState, PageError, SearchableSelect } from './components';
 import { errorMessage } from './messages';
+import { toLocalInput } from './format';
 import { useToast } from './toast-context';
 
 const STATUSES = ['BOOKED', 'ARRIVED', 'IN_CHAIR', 'COMPLETED', 'CANCELLED', 'NO_SHOW'];
@@ -61,14 +62,6 @@ interface PurposeForm {
   active: boolean;
 }
 
-function toLocalInput(iso?: string | null): string {
-  if (!iso) return '';
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
 export function AppointmentsPage() {
   const { showToast } = useToast();
   const [patientId, setPatientId] = useState('');
@@ -76,6 +69,7 @@ export function AppointmentsPage() {
   const [chairId, setChairId] = useState('');
   const [type, setType] = useState('REGULAR');
   const [purpose, setPurpose] = useState('');
+  const [page, setPage] = useState(1);
   const [tempPatientName, setTempPatientName] = useState('');
   const [tempPatientPhone, setTempPatientPhone] = useState('');
   const [startTime, setStartTime] = useState('');
@@ -109,8 +103,8 @@ export function AppointmentsPage() {
     queryFn: () => apiRequest<Page<PurposeRow>>('/resources/appointmentPurposes?page=1&pageSize=100'),
   });
   const query = useQuery({
-    queryKey: ['appointments'],
-    queryFn: () => apiRequest<Page<AppointmentRow>>('/resources/appointments?page=1&pageSize=20'),
+    queryKey: ['appointments', page],
+    queryFn: () => apiRequest<Page<AppointmentRow>>(`/resources/appointments?page=${page}&pageSize=20`),
   });
 
   if (query.isLoading) return <LoadingState />;
@@ -401,6 +395,11 @@ export function AppointmentsPage() {
         </form>
       </section>
       <DataTable columns={columns} rows={query.data?.items ?? []} keyField="id" emptyText="暂无预约" />
+      <div className="pager">
+        <button disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>上一页</button>
+        <span>第 {page} 页</span>
+        <button disabled={!query.data || page * 20 >= query.data.total} onClick={() => setPage((value) => value + 1)}>下一页</button>
+      </div>
 
       <Dialog open={editingAppointment !== null} title="编辑预约" onClose={() => setEditingAppointment(null)}>
         <form onSubmit={saveEditAppointment}>

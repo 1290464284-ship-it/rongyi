@@ -13,7 +13,11 @@ export function registerRefundFlowRoutes(app: Express, db: Database.Database): v
   const service = new RefundFlowService(db);
 
   app.get('/api/v2/refunds', wrapAsync(async (req, res) => {
-    res.json({ success: true, data: service.list(req.context!) });
+    const page = Number(req.query.page ?? 1);
+    const pageSize = Number(req.query.pageSize ?? 200);
+    const items = service.list(req.context!, { page, pageSize });
+    const total = service.count(req.context!);
+    res.json({ success: true, data: { items, total, page, pageSize } });
   }));
 
   app.post('/api/v2/refunds/:id/approve', wrapAsync(async (req, res) => {

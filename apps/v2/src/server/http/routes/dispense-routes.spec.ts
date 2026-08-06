@@ -131,8 +131,9 @@ describe('dispense routes', () => {
     await createDispense('PF-LIST-1', [{ itemId: 'inventory-demo-001', quantity: 1 }]);
     const list = await request(app).get('/api/v2/dispenses').expect(200);
     expect(list.body.success).toBe(true);
-    const rows = list.body.data as Array<Record<string, unknown>>;
+    const rows = list.body.data.items as Array<Record<string, unknown>>;
     expect(rows.map((row) => row.number)).toEqual(expect.arrayContaining(['PF-LIST-1']));
+    expect(list.body.data.total).toBeGreaterThanOrEqual(1);
     const row = rows.find((entry) => entry.number === 'PF-LIST-1');
     expect(row).toMatchObject({
       patientName: 'Demo Patient',
@@ -142,12 +143,27 @@ describe('dispense routes', () => {
     });
 
     const pending = await request(app).get('/api/v2/dispenses?status=PENDING').expect(200);
-    expect((pending.body.data as Array<Record<string, unknown>>).every((entry) => entry.status === 'PENDING')).toBe(true);
+    expect((pending.body.data.items as Array<Record<string, unknown>>).every((entry) => entry.status === 'PENDING')).toBe(true);
 
     const invalid = await request(app).get('/api/v2/dispenses?status=BAD').expect(400);
     expect(invalid.body.success).toBe(false);
     expect(invalid.body.code).toBe('VALIDATION_ERROR');
     expect(invalid.body.message).toBe('发药单状态筛选无效');
+  });
+
+  it('GET /api/v2/dispenses honors page/pageSize', async () => {
+    await createDispense('PF-PAGE-1', [{ itemId: 'inventory-demo-001', quantity: 1 }]);
+    await createDispense('PF-PAGE-2', [{ itemId: 'inventory-demo-001', quantity: 1 }]);
+    const first = await request(app).get('/api/v2/dispenses?page=1&pageSize=1').expect(200);
+    expect(first.body.data.items).toHaveLength(1);
+    expect(first.body.data.total).toBeGreaterThanOrEqual(2);
+    const second = await request(app).get('/api/v2/dispenses?page=2&pageSize=1').expect(200);
+    expect(second.body.data.items).toHaveLength(1);
+    const numbers = new Set([
+      ...(first.body.data.items as Array<{ number: string }>).map((entry) => entry.number),
+      ...(second.body.data.items as Array<{ number: string }>).map((entry) => entry.number),
+    ]);
+    expect([...numbers]).toEqual(expect.arrayContaining(['PF-PAGE-1', 'PF-PAGE-2']));
   });
 
   it('GET /api/v2/dispenses/:id returns detail with items and 404 for missing', async () => {
@@ -386,7 +402,7 @@ describe('dispense routes', () => {
     const items = db.prepare('SELECT deletedAt FROM DispenseItem WHERE dispenseId = ?').all(id) as Array<{ deletedAt: string | null }>;
     expect(items.every((row) => row.deletedAt !== null)).toBe(true);
     const list = await request(app).get('/api/v2/dispenses').expect(200);
-    expect((list.body.data as Array<Record<string, unknown>>).map((row) => String(row.id))).not.toContain(id);
+    expect((list.body.data.items as Array<Record<string, unknown>>).map((row) => String(row.id))).not.toContain(id);
     await request(app).get(`/api/v2/dispenses/${id}`).expect(404);
 
     const dispensedId = await createDispense('PF-DEL-2', [{ itemId: 'route-plain-dispense', quantity: 1 }]);
