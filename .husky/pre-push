@@ -4,6 +4,15 @@ set -e
 echo "Running V2 typecheck..."
 pnpm --filter @dental/v2 typecheck
 
+echo "Running V2 lint..."
+pnpm --filter @dental/v2 run lint
+
+echo "Running V2 knip..."
+pnpm --filter @dental/v2 run knip
+
+echo "Running V2 security scan..."
+pnpm --filter @dental/v2 security:scan
+
 echo "Running V2 unit tests..."
 pnpm --filter @dental/v2 test
 
