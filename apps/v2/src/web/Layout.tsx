@@ -1,6 +1,6 @@
+import { FormEvent, useEffect, useState, type ComponentType } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
 import {
   LayoutDashboard,
   LogOut,
@@ -17,7 +17,14 @@ import { logout, onSessionExpired, switchClinic } from './api';
 import { apiRequest } from './api';
 import { useToast } from './toast-context';
 
-const groups = [
+interface NavItem {
+  key: string;
+  label: string;
+  to: string;
+  icon: ComponentType<{ size?: number }>;
+}
+
+const NAV_ITEMS: NavItem[] = [
   { key: 'dashboard', label: '工作台', to: '/', icon: LayoutDashboard },
   { key: 'patients', label: '患者与预约', to: '/patients', icon: Users },
   { key: 'clinical', label: '临床记录', to: '/clinical', icon: Stethoscope },
@@ -29,11 +36,22 @@ const groups = [
   { key: 'system', label: '系统管理', to: '/system', icon: Settings },
 ];
 
+const NAV_GROUPS: Array<{ label: string; keys: string[] }> = [
+  { label: '常用', keys: ['dashboard', 'patients', 'clinical', 'finance', 'inventory'] },
+  { label: '更多', keys: ['analytics', 'communication', 'hr', 'system'] },
+];
+
+function titleForPath(pathname: string): string {
+  const item = NAV_ITEMS.find((entry) => (entry.to === '/' ? pathname === '/' : pathname.startsWith(entry.to)));
+  return item?.label ?? '蓉易口腔诊所';
+}
+
 export function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { showToast } = useToast();
   const [selectedClinicId, setSelectedClinicId] = useState<string | null>(null);
+  const [globalSearch, setGlobalSearch] = useState('');
   useEffect(() => {
     // 会话失效（401 且刷新失败）时全局登出并跳转登录页
     const unsubscribe = onSessionExpired(() => {
@@ -54,8 +72,19 @@ export function Layout() {
       clinics: Array<{ clinicId: string; name: string }>;
     }>('/auth/clinics'),
   });
+  const me = useQuery({
+    queryKey: ['me'],
+    queryFn: () => apiRequest<{ name?: string; username: string }>('/auth/me'),
+  });
   const visibleKeys = navigation.data?.permissions ?? [];
-  const visibleGroups = groups.filter((group) => visibleKeys.includes(group.key));
+  const visibleItems = NAV_ITEMS.filter((item) => visibleKeys.includes(item.key));
+
+  function submitGlobalSearch(event: FormEvent) {
+    event.preventDefault();
+    const q = globalSearch.trim();
+    navigate(q ? `/patients?q=${encodeURIComponent(q)}` : '/patients');
+    setGlobalSearch('');
+  }
 
   if (navigation.isLoading) return <div className="page">加载中...</div>;
   if (navigation.error) {
@@ -66,7 +95,7 @@ export function Layout() {
       </div>
     );
   }
-  const currentAllowed = visibleGroups.some((group) => group.to === '/'
+  const currentAllowed = visibleItems.some((group) => group.to === '/'
     ? location.pathname === '/'
     : location.pathname.startsWith(group.to));
   if (!currentAllowed) {
@@ -81,7 +110,10 @@ export function Layout() {
   return (
     <div className="shell">
       <aside className="sidebar">
-        <div className="brand">口腔诊所管理</div>
+        <div className="sidebar-brand">
+          <span className="sidebar-logo" aria-hidden="true" />
+          蓉易口腔诊所
+        </div>
         {clinics.data && clinics.data.clinics.length > 1 && (
           <select
             className="clinic-switch"
@@ -106,13 +138,24 @@ export function Layout() {
           </select>
         )}
         <nav>
-          {visibleGroups.map((group) => {
-            const Icon = group.icon;
+          {NAV_GROUPS.map((group) => {
+            const items = group.keys
+              .map((key) => visibleItems.find((item) => item.key === key))
+              .filter((item): item is NavItem => Boolean(item));
+            if (items.length === 0) return null;
             return (
-              <NavLink key={group.to} to={group.to} end={group.to === '/'}>
-                <Icon size={18} />
-                {group.label}
-              </NavLink>
+              <div key={group.label} className="sidebar-group-wrap">
+                <div className="sidebar-group">{group.label}</div>
+                {items.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <NavLink key={item.to} to={item.to} end={item.to === '/'}>
+                      <Icon size={18} />
+                      {item.label}
+                    </NavLink>
+                  );
+                })}
+              </div>
             );
           })}
         </nav>
@@ -126,9 +169,28 @@ export function Layout() {
           <LogOut size={18} /> 退出登录
         </button>
       </aside>
-      <main className="content">
-        <Outlet />
-      </main>
+      <div className="shell-main">
+        <header className="topbar">
+          <div className="topbar-title">{titleForPath(location.pathname)}</div>
+          <form onSubmit={submitGlobalSearch} role="search">
+            <input
+              className="topbar-search"
+              type="search"
+              placeholder="搜索患者 / 项目 / 单号…"
+              aria-label="全局搜索"
+              value={globalSearch}
+              onChange={(event) => setGlobalSearch(event.target.value)}
+            />
+          </form>
+          <div className="topbar-user">
+            <span className="avatar" aria-hidden="true" />
+            {me.data ? (me.data.name || me.data.username) : ''}
+          </div>
+        </header>
+        <main className="content">
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }
