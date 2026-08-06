@@ -14,7 +14,9 @@ export interface LegacyImportResult {
 
 /**
  * Imports the legacy SQLite database into the V2 working copy with preflight
- * integrity checks. The original source database is never modified.
+ * integrity checks. The original source database is never logically modified:
+ * backupSqliteFile 只对源库做安全的 wal_checkpoint(TRUNCATE)（已提交帧刷回主
+ * 文件，不改变任何数据），绝不删除源库的 -wal/-shm 侧车。
  */
 export function importLegacyDatabase(
   sourcePath: string,

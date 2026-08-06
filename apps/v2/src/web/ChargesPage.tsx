@@ -232,7 +232,13 @@ export function ChargesPage() {
   return (
     <div className="page">
       <h1>收费管理</h1>
-      <form className="inline-form" onSubmit={crud.submit}>
+      <form className="inline-form" onSubmit={(event) => {
+        // 已填写（有名称）但价格/数量无效的明细会被静默丢弃，提交前提示
+        const filled = crud.form.items.filter((item) => item.name.trim()).length;
+        const valid = buildValidItems(crud.form.items).length;
+        if (filled - valid > 0) showToast(`${filled - valid} 条明细因缺少有效价格或数量将被忽略`, 'info');
+        return crud.submit(event);
+      }}>
         <SearchableSelect resource="patients" value={crud.form.patientId} onChange={(id) => crud.updateForm({ patientId: id })} ariaLabel="患者" placeholder="选择患者" />
         <button type="submit" disabled={crud.submitting}>{crud.submitting ? '保存中...' : '新建收费单'}</button>
       </form>

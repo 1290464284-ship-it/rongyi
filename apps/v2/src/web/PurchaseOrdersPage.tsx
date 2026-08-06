@@ -139,6 +139,11 @@ export function PurchaseOrdersPage() {
       }}
       submitOverride={async ({ form, editing }) => {
         const validItems = buildValidItems(form.items, inventoryRows);
+        // 已选择物料或填写了单价但数量/单价无效的明细会被静默丢弃，提交前提示
+        const dropped = form.items
+          .filter((item) => Boolean(item.itemId) || item.unitPrice.trim() !== '')
+          .length - validItems.length;
+        if (dropped > 0) showToast(`${dropped} 条明细因数量或单价无效将被忽略`, 'info');
         if (editing) {
           const orderId = editingIdRef.current;
           if (!orderId) throw new Error('缺少编辑记录 ID');

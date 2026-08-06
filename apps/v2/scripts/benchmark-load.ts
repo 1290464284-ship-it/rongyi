@@ -9,6 +9,20 @@ import type { AppContext } from '../src/domain/contracts';
 
 const patientCount = 100_000;
 const chargeCount = 100_000;
+// 阈值取本机实测的 ~20-40 倍裕量：只拦截病态回归（缺索引/意外 O(n²)/IO 异常），
+// 避免在共享 CI runner 上因正常抖动误报。低于这些值即视为性能回归。
+const THRESHOLDS = {
+  insertPatientsMs: 30_000,
+  insertChargesMs: 30_000,
+  searchMs: 5_000,
+  dashboardMs: 10_000,
+} as const;
+const failures: string[] = [];
+function report(label: string, elapsedMs: number, limitMs: number): void {
+  const ok = elapsedMs <= limitMs;
+  console.log(`${ok ? 'PASS' : 'FAIL'} ${label}: ${Math.round(elapsedMs)}ms (limit ${limitMs}ms)`);
+  if (!ok) failures.push(`${label}: ${Math.round(elapsedMs)}ms > ${limitMs}ms`);
+}
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-benchmark-'));
 const db = createDatabase(dataDir);
 seedDatabase(db);
@@ -67,7 +81,7 @@ db.transaction(() => {
     insertPatient.run(`bench-patient-${i}`, context.clinicId, now, now, `BENCH-${i}`, `Patient ${String(i).padStart(6, '0')}`, `136${String(i).padStart(8, '0')}`);
   }
 })();
-console.log(`inserted ${patientCount} patients in ${Math.round(performance.now() - patientTiming)}ms`);
+report('insert patients', performance.now() - patientTiming, THRESHOLDS.insertPatientsMs);
 
 const chargeTiming = performance.now();
 db.transaction(() => {
@@ -75,7 +89,7 @@ db.transaction(() => {
     insertCharge.run(`bench-charge-${i}`, context.clinicId, now, now, `bench-patient-${i % patientCount}`, `CHG-${i}`);
   }
 })();
-console.log(`inserted ${chargeCount} charges in ${Math.round(performance.now() - chargeTiming)}ms`);
+report('insert charges', performance.now() - chargeTiming, THRESHOLDS.insertChargesMs);
 
 db.exec(`
   INSERT INTO SearchIndex(resource, recordId, clinicId, content)
@@ -90,12 +104,21 @@ db.exec(`
 const search = new SearchService(db);
 const searchTiming = performance.now();
 const searchResults = search.search('Patient 99999', context);
-console.log(`search Patient 99999 returned ${searchResults.length} in ${Math.round(performance.now() - searchTiming)}ms`);
+report('search Patient 99999', performance.now() - searchTiming, THRESHOLDS.searchMs);
+console.log(`  returned ${searchResults.length} results`);
 
 const stats = new StatsService(db);
 const dashboardTiming = performance.now();
 stats.dashboard(context);
-console.log(`dashboard in ${Math.round(performance.now() - dashboardTiming)}ms`);
+report('dashboard', performance.now() - dashboardTiming, THRESHOLDS.dashboardMs);
 
 db.close();
 fs.rmSync(dataDir, { recursive: true, force: true });
+
+if (failures.length > 0) {
+  console.error(`BENCHMARK THRESHOLD FAILED (${failures.length}):`);
+  for (const failure of failures) console.error(`  - ${failure}`);
+  process.exitCode = 1;
+} else {
+  console.log('All benchmark thresholds passed');
+}

@@ -38,13 +38,45 @@ export function registerPublicAuthRoutes(app: Express, deps: RouteDependencies):
       }
   }));
 
-  app.post('/api/v2/auth/refresh', refreshLimiter, wrapAsync(async (req, res) => {
-      const result = await authService.refresh(String(req.body?.refreshToken ?? ''));
-      res.json({ success: true, data: result });
+  app.post('/api/v2/auth/refresh', refreshLimiter, wrapAsync(async (req, res, next) => {
+      const audit = (req.app.locals.audit as ((input: AuditInput) => void) | undefined) ?? (() => {});
+      try {
+        const result = await authService.refresh(String(req.body?.refreshToken ?? ''));
+        audit({
+          action: 'LOGIN_REFRESH',
+          target: result.user.id,
+          userId: result.user.id,
+          userName: result.user.username,
+          ip: req.ip ?? null,
+          traceId: req.traceId,
+        });
+        res.json({ success: true, data: result });
+      } catch (error) {
+        // 失败也要留痕：refresh token 重放（M5 会话族吊销）在此可见
+        audit({
+          action: 'LOGIN_REFRESH_FAILED',
+          detail: error instanceof AppError ? error.message : 'refresh failed',
+          ip: req.ip ?? null,
+          traceId: req.traceId,
+        });
+        next(error);
+      }
   }));
 
   app.post('/api/v2/auth/logout', wrapAsync(async (req, res) => {
-      await authService.logout(String(req.body?.refreshToken ?? ''));
+      const audit = (req.app.locals.audit as ((input: AuditInput) => void) | undefined) ?? (() => {});
+      const userId = await authService.logout(String(req.body?.refreshToken ?? ''));
+      if (userId) {
+        const user = await authService.getUserById(userId);
+        audit({
+          action: 'LOGOUT',
+          target: userId,
+          userId,
+          userName: user.username,
+          ip: req.ip ?? null,
+          traceId: req.traceId,
+        });
+      }
       res.json({ success: true, data: { loggedOut: true } });
   }));
 }

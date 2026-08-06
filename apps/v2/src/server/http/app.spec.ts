@@ -916,7 +916,7 @@ describe('HTTP app', () => {
     expect(refreshed.body.data.token).toBeDefined();
     expect(refreshed.body.data.refreshToken).not.toBe(refreshToken);
     await request(app).post('/api/v2/auth/logout').send({ refreshToken: refreshed.body.data.refreshToken }).expect(200);
-    await request(app).post('/api/v2/auth/refresh').send({ refreshToken: refreshed.body.data.refreshToken }).expect(401);
+    const replay = await request(app).post('/api/v2/auth/refresh').send({ refreshToken: refreshed.body.data.refreshToken }).expect(401);
 
     // M5：重用已注销/已轮换的 refresh token 会吊销整个会话族（tokenVersion+1），
     // 该用户此前签发的 access token 全部失效——共享 token 也应被作废。
@@ -924,6 +924,23 @@ describe('HTTP app', () => {
     // 重新登录恢复共享 token，供后续用例使用。
     const relogin = await request(app).post('/api/v2/auth/login').send({ username: 'admin', password: 'newpass123' }).expect(200);
     token = relogin.body.data.token;
+
+    // refresh 成功/登出/重放失败均应留审计痕迹
+    const refreshAudit = db.prepare(
+      `SELECT action, userName, traceId FROM OperationLog WHERE action = 'LOGIN_REFRESH' ORDER BY createdAt DESC, rowid DESC LIMIT 1`,
+    ).get() as { action: string; userName: string; traceId: string } | undefined;
+    expect(refreshAudit).toBeDefined();
+    expect(refreshAudit!.userName).toBe('admin');
+    const logoutAudit = db.prepare(
+      `SELECT action, userName FROM OperationLog WHERE action = 'LOGOUT' ORDER BY createdAt DESC, rowid DESC LIMIT 1`,
+    ).get() as { action: string; userName: string } | undefined;
+    expect(logoutAudit).toBeDefined();
+    expect(logoutAudit!.userName).toBe('admin');
+    const replayAudit = db.prepare(
+      `SELECT action, detail, traceId FROM OperationLog WHERE action = 'LOGIN_REFRESH_FAILED' AND traceId = ?`,
+    ).get(replay.headers['x-request-id']) as { action: string; detail: string; traceId: string } | undefined;
+    expect(replayAudit).toBeDefined();
+    expect(replayAudit!.detail).toContain('reuse detected');
 
     const before = (db.prepare('SELECT COUNT(*) AS c FROM OperationLog').get() as { c: number }).c;
     await request(app).post('/api/v2/resources/suppliers')

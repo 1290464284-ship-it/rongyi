@@ -19,6 +19,10 @@ export function backupSqliteFile(
   let current: DatabaseType.Database | undefined;
   try {
     current = new Database(sourcePath);
+    // 先 checkpoint(TRUNCATE)：把 WAL 中已提交帧刷回主库文件并截断 WAL。
+    // 这样即使 VACUUM INTO 失败回退到裸 copyFileSync，副本也包含全部已提交
+    // 数据（否则裸拷贝会静默丢掉未 checkpoint 的 WAL 帧）。
+    current.pragma('wal_checkpoint(TRUNCATE)');
     current.prepare('VACUUM INTO ?').run(backupPath);
   } catch (err) {
     logger?.warn('VACUUM INTO backup failed, falling back to plain file copy (backup may be inconsistent with WAL)', {
