@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import { useSearchParams } from 'react-router';
 import { apiRequest } from './api';
 import { CrudPage } from './CrudPage';
 import type { DataTableColumn } from './components';
@@ -93,14 +94,18 @@ const patientColumns: DataTableColumn<PatientRow>[] = [
 
 export function PatientsPage() {
   const editingIdRef = useRef<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const urlSearch = searchParams.get('q') ?? undefined;
   return (
     <CrudPage<PatientRow, PatientForm>
+      key={urlSearch ?? ''}
       title="患者档案"
       createLabel="新建患者"
       emptyMessage="暂无患者"
       queryKey={['patients']}
       endpoint="/resources/patients"
       pageSize={20}
+      initialSearch={urlSearch}
       initialForm={() => {
         editingIdRef.current = null;
         return { ...emptyForm };

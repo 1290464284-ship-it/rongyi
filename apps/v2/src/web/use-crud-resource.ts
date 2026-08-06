@@ -25,6 +25,8 @@ export interface CrudResourceOptions<
   pageSize?: number;
   /** 透传给列表 useQuery。 */
   enabled?: boolean;
+  /** 初始搜索词（如顶栏全局搜索以 ?q= 跳转带入）。 */
+  initialSearch?: string;
   /** 新建/创建成功后的初始表单。 */
   initialForm: TForm | (() => TForm);
   /** 编辑回填；缺省按 initialForm 的键复制 row 同名字段。 */
@@ -92,7 +94,7 @@ export function useCrudResource<
   TForm extends object = Record<string, unknown>,
 >(options: CrudResourceOptions<TRow, TForm>): CrudResourceResult<TRow, TForm> {
   const { showToast } = useToast();
-  const [searchInput, setSearchInput] = useState('');
+  const [searchInput, setSearchInput] = useState(options.initialSearch ?? '');
   const search = useDebouncedValue(searchInput, 300);
   const [page, setPage] = useState(1);
   const [showForm, setShowForm] = useState(false);

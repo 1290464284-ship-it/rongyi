@@ -29,18 +29,18 @@ function DashboardContent({ data }: { data: DashboardData }) {
   return (
     <div className="page">
       <h1>工作台</h1>
-      <div className="cards">
+      <div className="stat-cards">
         {([
-          ['患者数', data.patients],
-          ['预约数', data.appointments],
+          ['患者数', String(data.patients)],
+          ['预约数', String(data.appointments)],
           ['已收金额', formatMoney(data.paidAmount)],
           ['未收金额', formatMoney(data.unpaidAmount)],
-          ['库存项目', data.inventoryItems],
-          ['待随访', data.pendingFollowUps],
+          ['库存项目', String(data.inventoryItems)],
+          ['待随访', String(data.pendingFollowUps)],
         ] as const).map(([label, value]) => (
-          <div className="card" key={String(label)}>
-            <strong>{label}</strong>
-            <span>{String(value)}</span>
+          <div className="stat-card" key={String(label)}>
+            <div className="stat-value">{value}</div>
+            <div className="stat-label">{label}</div>
           </div>
         ))}
       </div>

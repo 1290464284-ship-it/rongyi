@@ -63,7 +63,8 @@ describe('Layout clinic switcher', () => {
           { clinicId: 'clinic-1', name: 'Clinic 1' },
           { clinicId: 'clinic-2', name: 'Clinic 2' },
         ],
-      });
+      })
+      .mockResolvedValueOnce({ name: '王丽', username: 'wangli' });
     renderLayout();
     expect(await screen.findByLabelText('当前诊所')).toBeDefined();
     expect(screen.getByRole('option', { name: 'Clinic 2' })).toBeDefined();
@@ -75,9 +76,10 @@ describe('Layout clinic switcher', () => {
       .mockResolvedValueOnce({
         currentClinicId: 'clinic-1',
         clinics: [{ clinicId: 'clinic-1', name: 'Clinic 1' }],
-      });
+      })
+      .mockResolvedValueOnce({ name: '王丽', username: 'wangli' });
     renderLayout();
-    expect(await screen.findByText('口腔诊所管理')).toBeDefined();
+    expect(await screen.findByText('蓉易口腔诊所')).toBeDefined();
     expect(screen.queryByLabelText('当前诊所')).toBeNull();
   });
 
@@ -87,7 +89,8 @@ describe('Layout clinic switcher', () => {
       .mockResolvedValueOnce({
         currentClinicId: 'clinic-1',
         clinics: [{ clinicId: 'clinic-1', name: 'Clinic 1' }],
-      });
+      })
+      .mockResolvedValueOnce({ name: '王丽', username: 'wangli' });
     renderLayoutAt('/patients');
     expect(await screen.findByText('无访问权限')).toBeDefined();
   });
@@ -101,7 +104,8 @@ describe('Layout clinic switcher', () => {
           { clinicId: 'clinic-1', name: 'Clinic 1' },
           { clinicId: 'clinic-2', name: 'Clinic 2' },
         ],
-      });
+      })
+      .mockResolvedValueOnce({ name: '王丽', username: 'wangli' });
     vi.mocked(switchClinic).mockResolvedValue();
     vi.mocked(logout).mockResolvedValue();
     const reload = vi.fn();
@@ -135,7 +139,8 @@ describe('Layout clinic switcher', () => {
       .mockResolvedValueOnce({
         currentClinicId: 'clinic-1',
         clinics: [{ clinicId: 'clinic-1', name: 'Clinic 1' }],
-      });
+      })
+      .mockResolvedValueOnce({ name: '王丽', username: 'wangli' });
 
     render(
       <MemoryRouter initialEntries={['/']}>
@@ -148,7 +153,7 @@ describe('Layout clinic switcher', () => {
       </MemoryRouter>,
       { wrapper },
     );
-    await screen.findByText('口腔诊所管理');
+    await screen.findByText('蓉易口腔诊所');
     expect(onSessionExpired).toHaveBeenCalled();
     expect(onExpire).toBeDefined();
 

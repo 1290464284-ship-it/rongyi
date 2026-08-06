@@ -41,6 +41,10 @@
   --sidebar-control: #F2F7F5;
   --sidebar-border: #DCE9E6;
 
+  /* 登录页品牌区浅渐变（青蓝×薄荷） */
+  --login-grad-a: #EAF6F4;
+  --login-grad-b: #F5F9F8;
+
   /* 图表系列色 */
   --chart-purple: #7C3AED;
 
@@ -105,6 +109,10 @@
     --sidebar-control: #16262A;
     --sidebar-border: #22383D;
 
+    /* 登录页品牌区深青渐变 */
+    --login-grad-a: #0F1F24;
+    --login-grad-b: #0C171A;
+
     /* 图表系列色 */
     --chart-purple: #A78BFA;
 
@@ -130,8 +138,14 @@ body {
 
 .shell {
   display: grid;
-  grid-template-columns: 240px 1fr;
+  grid-template-columns: 240px minmax(0, 1fr);
   min-height: 100vh;
+}
+
+.shell-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .sidebar {
@@ -140,14 +154,41 @@ body {
   border-right: 1px solid var(--sidebar-border);
   display: flex;
   flex-direction: column;
-  padding: 20px 14px;
+  padding: 16px 12px;
 }
 
-.brand {
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px 16px;
   font-weight: 700;
-  font-size: 20px;
+  font-size: 15px;
   color: var(--primary);
-  margin-bottom: 24px;
+}
+
+.sidebar-logo {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--primary);
+  position: relative;
+  flex-shrink: 0;
+}
+
+.sidebar-logo::after {
+  content: '';
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.sidebar-group {
+  font-size: 10.5px;
+  color: var(--muted-weak);
+  letter-spacing: 0.05em;
+  padding: 10px 10px 4px;
 }
 
 .clinic-switch {
@@ -160,8 +201,9 @@ body {
 
 .sidebar nav {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   flex: 1;
+  align-content: start;
 }
 
 .sidebar nav a,
@@ -171,7 +213,7 @@ body {
   gap: 8px;
   color: inherit;
   text-decoration: none;
-  padding: 10px 12px;
+  padding: 8px 10px;
   border-radius: var(--radius-sm);
   border: 0;
   background: transparent;
@@ -192,9 +234,65 @@ body {
   font-weight: 600;
 }
 
+/* 顶栏：页面标题 + 全局搜索 280px + 用户区 */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar-title {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.topbar-search {
+  width: 280px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  padding: 0 12px;
+  font-size: 13px;
+  font-family: var(--font);
+  color: var(--text);
+  outline: none;
+  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+
+.topbar-search:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--soft);
+}
+
+.topbar-user {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--soft);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
 .content {
-  padding: 28px;
-  min-width: 0;
+  flex: 1;
+  padding: 20px 24px;
+  min-width: 1280px;
 }
 
 .page h1 {
@@ -202,6 +300,13 @@ body {
   font-size: 18px;
   font-weight: 700;
   letter-spacing: -0.01em;
+}
+
+/* 区块标题：14px/600（设计稿 B+A 层级） */
+.content h2,
+.content h3 {
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .hub h1 {
@@ -242,7 +347,7 @@ body {
 }
 
 .search {
-  width: 100%;
+  width: 280px;
   margin: 14px 0;
 }
 
@@ -350,6 +455,45 @@ small {
   gap: 16px;
 }
 
+/* 统计卡：24px 数字 / 11px 说明（设计稿 5.5） */
+.stat-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+}
+
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 14px 16px;
+  display: grid;
+  gap: 4px;
+  transition: box-shadow var(--dur) var(--ease);
+}
+
+.stat-card:hover {
+  box-shadow: var(--shadow-hover);
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-label {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.stat-trend {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--success);
+}
+
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -392,7 +536,8 @@ small {
 
 .analytics-panel h2 {
   margin: 0 0 14px;
-  font-size: 16px;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .bar-chart {
@@ -546,6 +691,8 @@ small {
 
 .summary-item strong {
   color: var(--primary);
+  font-size: 18px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
@@ -585,21 +732,89 @@ small {
   font-size: 13px;
 }
 
+/* ---------- 登录页：左品牌区 + 右登录卡 ---------- */
 .login-page {
   min-height: 100vh;
-  display: grid;
-  place-items: center;
+  display: flex;
+}
+
+.login-brand {
+  flex: 1.2;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 80px;
+  background: linear-gradient(160deg, var(--login-grad-a) 0%, var(--login-grad-b) 60%);
+}
+
+.login-logo {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius);
+  background: var(--primary);
+  position: relative;
+  margin-bottom: 20px;
+}
+
+.login-logo::after {
+  content: '';
+  position: absolute;
+  inset: 10px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.login-brand h1 {
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--primary);
+  letter-spacing: -0.02em;
+  margin: 0 0 12px;
+}
+
+.login-brand p {
+  color: var(--muted);
+  font-size: 14px;
+  margin: 0;
+  max-width: 360px;
+}
+
+.login-panel {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
 }
 
 .login-card {
-  width: 340px;
+  width: 380px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  padding: 24px;
+  padding: 28px;
   display: grid;
   gap: 14px;
+}
+
+.login-card h2 {
+  margin: 0 0 2px;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.login-sub {
+  margin: 0 0 14px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.login-meta {
+  text-align: center;
+  font-size: 11px;
+  color: var(--muted);
+  margin: 8px 0 0;
 }
 
 .inline-form {
@@ -979,7 +1194,7 @@ tbody tr:hover {
 }
 
 .today-stat strong {
-  font-size: 22px;
+  font-size: 24px;
   color: var(--primary);
   font-variant-numeric: tabular-nums;
 }
