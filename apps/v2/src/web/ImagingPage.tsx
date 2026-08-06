@@ -1,8 +1,37 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest, getApiOrigin, uploadFile } from './api';
 import { CrudPage } from './CrudPage';
-import { SearchableSelect, type DataTableColumn } from './components';
+import { DataTable, SearchableSelect, type DataTableColumn } from './components';
+import { errorMessage } from './messages';
+import { useToast } from './toast-context';
+import type { Page } from './types';
+
+const CATEGORY_TYPE_LABELS: Record<string, string> = {
+  ORTHODONTIC: '正畸',
+  AESTHETIC: '美学',
+  PLASTER: '石膏',
+  OTHER: '其他',
+};
+
+const PHASE_LABELS: Record<string, string> = {
+  INITIAL: '初诊',
+  IN_PROGRESS: '治疗中',
+  FINISHED: '完成',
+  RETENTION: '保持期',
+  OTHER: '其他',
+};
+
+const PHASE_OPTIONS = [
+  { value: 'INITIAL', label: '初诊' },
+  { value: 'IN_PROGRESS', label: '治疗中' },
+  { value: 'FINISHED', label: '完成' },
+  { value: 'RETENTION', label: '保持期' },
+  { value: 'OTHER', label: '其他' },
+];
+
+const CATEGORIES_LIST_PATH = '/resources/imagingCategories?page=1&pageSize=100';
+const IMAGING_LIST_PATH = '/resources/imaging?page=1&pageSize=50';
 
 interface ImagingRow extends Record<string, unknown> {
   id: string;
@@ -14,6 +43,8 @@ interface ImagingRow extends Record<string, unknown> {
   title?: string | null;
   imageUrl?: string | null;
   takenAt?: string | null;
+  categoryId?: string | null;
+  phase?: string | null;
 }
 
 interface ImagingForm {
@@ -24,6 +55,8 @@ interface ImagingForm {
   description: string;
   takenAt: string;
   remark: string;
+  categoryId: string;
+  phase: string;
 }
 
 const emptyForm: ImagingForm = {
@@ -34,11 +67,45 @@ const emptyForm: ImagingForm = {
   description: '',
   takenAt: '',
   remark: '',
+  categoryId: '',
+  phase: '',
 };
 
+interface ImagingCategoryRow extends Record<string, unknown> {
+  id: string;
+  name?: string | null;
+  type?: string | null;
+  sortOrder?: number | null;
+  active?: boolean | null;
+}
+
+function formatDateTime(value?: string | null): string {
+  return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '';
+}
+
+function phaseLabel(phase?: string | null): string {
+  if (!phase) return '';
+  return PHASE_LABELS[phase] ?? phase;
+}
+
+function imagingOptionLabel(row: ImagingRow): string {
+  const takenAt = formatDateTime(row.takenAt);
+  return takenAt ? `${String(row.title ?? row.id)}（${takenAt}）` : String(row.title ?? row.id);
+}
+
+function categoryName(row: ImagingRow, categories: ImagingCategoryRow[]): string {
+  if (!row.categoryId) return '';
+  const category = categories.find((item) => item.id === row.categoryId);
+  return category?.name ?? row.categoryId;
+}
+
 export function ImagingPage() {
+  const { showToast } = useToast();
   const [file, setFile] = useState<File | null>(null);
   const [apiOrigin, setApiOrigin] = useState('');
+  const [categoryForm, setCategoryForm] = useState({ name: '', type: 'ORTHODONTIC', sortOrder: 0, active: true });
+  const [compareLeftId, setCompareLeftId] = useState('');
+  const [compareRightId, setCompareRightId] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -50,43 +117,217 @@ export function ImagingPage() {
     };
   }, []);
 
+  const categories = useQuery({
+    queryKey: ['imaging-categories'],
+    queryFn: () => apiRequest<Page<ImagingCategoryRow>>(CATEGORIES_LIST_PATH),
+  });
+  // 与 CrudPage 列表使用同一查询键，共享缓存，避免重复请求。
+  const imagingList = useQuery({
+    queryKey: ['imaging', 1, ''],
+    queryFn: () => apiRequest<Page<ImagingRow>>(IMAGING_LIST_PATH),
+  });
+
+  const categoryOptions = categories.data?.items ?? [];
+  const imagingOptions = imagingList.data?.items ?? [];
+  const selectedLeft = imagingOptions.find((row) => row.id === compareLeftId) ?? null;
+  const selectedRight = imagingOptions.find((row) => row.id === compareRightId) ?? null;
+  const canCompare = selectedLeft !== null && selectedRight !== null && compareLeftId !== compareRightId;
+
+  async function createCategory(event: FormEvent) {
+    event.preventDefault();
+    if (!categoryForm.name.trim()) {
+      showToast('请填写分类名称', 'error');
+      return;
+    }
+    try {
+      await apiRequest('/resources/imagingCategories', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: categoryForm.name.trim(),
+          type: categoryForm.type,
+          sortOrder: categoryForm.sortOrder,
+          active: categoryForm.active,
+        }),
+      });
+      showToast('影像分类已创建', 'success');
+      setCategoryForm({ name: '', type: 'ORTHODONTIC', sortOrder: 0, active: true });
+      await categories.refetch();
+    } catch (error) {
+      showToast(errorMessage(error, '创建影像分类失败'), 'error');
+    }
+  }
+
+  async function toggleCategory(row: ImagingCategoryRow) {
+    try {
+      await apiRequest(`/resources/imagingCategories/${String(row.id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ active: !row.active }),
+      });
+      showToast(row.active ? '影像分类已停用' : '影像分类已启用', 'success');
+      await categories.refetch();
+    } catch (error) {
+      showToast(errorMessage(error, '更新影像分类失败'), 'error');
+    }
+  }
+
+  const categoryColumns: DataTableColumn<ImagingCategoryRow>[] = [
+    { key: 'name', label: '名称' },
+    {
+      key: 'type',
+      label: '类型',
+      render: (row) => CATEGORY_TYPE_LABELS[String(row.type ?? '')] ?? String(row.type ?? ''),
+    },
+    { key: 'sortOrder', label: '排序', render: (row) => String(row.sortOrder ?? 0) },
+    { key: 'active', label: '状态', render: (row) => (row.active ? '启用' : '停用') },
+    {
+      key: 'actions',
+      label: '操作',
+      render: (row) => (
+        <button type="button" onClick={() => void toggleCategory(row)}>
+          {row.active ? '停用' : '启用'}
+        </button>
+      ),
+    },
+  ];
+
   return (
-    <CrudPage<ImagingRow, ImagingForm>
-      title="影像管理"
-      createLabel="上传影像"
-      emptyMessage="暂无影像"
-      queryKey={['imaging']}
-      endpoint="/resources/imaging"
-      initialForm={emptyForm}
-      validate={(form) => (!form.patientId || !form.doctorId || !form.title ? '请选择患者、医生并填写影像标题' : null)}
-      submitOverride={async ({ form }) => {
-        const imageUrl = file ? (await uploadFile(file)).url : undefined;
-        await apiRequest('/resources/imaging', {
-          method: 'POST',
-          body: JSON.stringify({
-            patientId: form.patientId,
-            doctorId: form.doctorId,
-            type: form.type || 'UNKNOWN',
-            title: form.title,
-            description: form.description || undefined,
-            imageUrl: imageUrl ?? '',
-            takenAt: form.takenAt ? new Date(form.takenAt).toISOString() : undefined,
-            remark: form.remark || undefined,
-          }),
-        });
-      }}
-      onAfterCreate={() => setFile(null)}
-      messages={{ create: '影像记录已创建' }}
-      errorMessages={{ create: '创建影像失败' }}
-      columns={imagingColumns(apiOrigin)}
-      renderForm={(ctx) => (
-        <ImagingFormFields form={ctx.form} update={ctx.update} file={file} setFile={setFile} />
-      )}
-    />
+    <>
+      <CrudPage<ImagingRow, ImagingForm>
+        title="影像管理"
+        createLabel="上传影像"
+        emptyMessage="暂无影像"
+        queryKey={['imaging']}
+        endpoint="/resources/imaging"
+        initialForm={emptyForm}
+        validate={(form) => (!form.patientId || !form.doctorId || !form.title ? '请选择患者、医生并填写影像标题' : null)}
+        submitOverride={async ({ form }) => {
+          const imageUrl = file ? (await uploadFile(file)).url : undefined;
+          await apiRequest('/resources/imaging', {
+            method: 'POST',
+            body: JSON.stringify({
+              patientId: form.patientId,
+              doctorId: form.doctorId,
+              type: form.type || 'UNKNOWN',
+              title: form.title,
+              description: form.description || undefined,
+              imageUrl: imageUrl ?? '',
+              takenAt: form.takenAt ? new Date(form.takenAt).toISOString() : undefined,
+              remark: form.remark || undefined,
+              categoryId: form.categoryId || undefined,
+              phase: form.phase || undefined,
+            }),
+          });
+        }}
+        onAfterCreate={() => setFile(null)}
+        messages={{ create: '影像记录已创建' }}
+        errorMessages={{ create: '创建影像失败' }}
+        columns={imagingColumns(apiOrigin, categoryOptions)}
+        renderForm={(ctx) => (
+          <ImagingFormFields
+            form={ctx.form}
+            update={ctx.update}
+            file={file}
+            setFile={setFile}
+            categories={categoryOptions}
+          />
+        )}
+      />
+
+      <section className="card" aria-label="影像分类管理">
+        <h2>影像分类管理</h2>
+        <DataTable columns={categoryColumns} rows={categoryOptions} keyField="id" emptyText="暂无影像分类" />
+        <form className="imaging-category-form" onSubmit={createCategory}>
+          <label>
+            名称
+            <input
+              value={categoryForm.name}
+              onChange={(event) => setCategoryForm({ ...categoryForm, name: event.target.value })}
+            />
+          </label>
+          <label>
+            类型
+            <select
+              value={categoryForm.type}
+              onChange={(event) => setCategoryForm({ ...categoryForm, type: event.target.value })}
+            >
+              {Object.entries(CATEGORY_TYPE_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            排序
+            <input
+              type="number"
+              value={categoryForm.sortOrder}
+              onChange={(event) => setCategoryForm({ ...categoryForm, sortOrder: Number(event.target.value) })}
+            />
+          </label>
+          <label>
+            启用
+            <input
+              type="checkbox"
+              checked={categoryForm.active}
+              onChange={(event) => setCategoryForm({ ...categoryForm, active: event.target.checked })}
+            />
+          </label>
+          <button type="submit">新增分类</button>
+        </form>
+      </section>
+
+      <section className="card" aria-label="影像对比">
+        <h2>影像对比</h2>
+        <div className="imaging-compare-controls">
+          <label>
+            影像一
+            <select value={compareLeftId} onChange={(event) => setCompareLeftId(event.target.value)}>
+              <option value="">选择影像</option>
+              {imagingOptions.map((row) => (
+                <option key={row.id} value={row.id}>{imagingOptionLabel(row)}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            影像二
+            <select value={compareRightId} onChange={(event) => setCompareRightId(event.target.value)}>
+              <option value="">选择影像</option>
+              {imagingOptions.map((row) => (
+                <option key={row.id} value={row.id}>{imagingOptionLabel(row)}</option>
+              ))}
+            </select>
+          </label>
+          <button type="button" onClick={() => { setCompareLeftId(''); setCompareRightId(''); }}>清空对比</button>
+        </div>
+        {canCompare ? (
+          <div className="imaging-compare-view">
+            <figure className="imaging-compare-item">
+              <img src={`${apiOrigin}${selectedLeft?.imageUrl ?? ''}`} alt={String(selectedLeft?.title ?? '影像')} />
+              <figcaption>
+                <div>标题：{selectedLeft?.title ?? ''}</div>
+                <div>类型：{selectedLeft?.type ?? ''}</div>
+                <div>拍摄时间：{formatDateTime(selectedLeft?.takenAt)}</div>
+                <div>阶段：{phaseLabel(selectedLeft?.phase)}</div>
+              </figcaption>
+            </figure>
+            <figure className="imaging-compare-item">
+              <img src={`${apiOrigin}${selectedRight?.imageUrl ?? ''}`} alt={String(selectedRight?.title ?? '影像')} />
+              <figcaption>
+                <div>标题：{selectedRight?.title ?? ''}</div>
+                <div>类型：{selectedRight?.type ?? ''}</div>
+                <div>拍摄时间：{formatDateTime(selectedRight?.takenAt)}</div>
+                <div>阶段：{phaseLabel(selectedRight?.phase)}</div>
+              </figcaption>
+            </figure>
+          </div>
+        ) : (
+          <p className="imaging-compare-hint">请选择两张影像进行对比</p>
+        )}
+      </section>
+    </>
   );
 }
 
-function imagingColumns(apiOrigin: string): DataTableColumn<ImagingRow>[] {
+function imagingColumns(apiOrigin: string, categories: ImagingCategoryRow[]): DataTableColumn<ImagingRow>[] {
   return [
     {
       key: 'preview',
@@ -98,12 +339,14 @@ function imagingColumns(apiOrigin: string): DataTableColumn<ImagingRow>[] {
     },
     { key: 'title', label: '标题' },
     { key: 'type', label: '类型' },
+    { key: 'categoryId', label: '分类', render: (row) => categoryName(row, categories) },
+    { key: 'phase', label: '阶段', render: (row) => phaseLabel(row.phase) },
     { key: 'patientId', label: '患者', render: (row) => row.patientIdLabel ?? row.patientId ?? '' },
     { key: 'doctorId', label: '医生', render: (row) => row.doctorIdLabel ?? row.doctorId ?? '' },
     {
       key: 'takenAt',
       label: '拍摄时间',
-      render: (row) => (row.takenAt ? new Date(row.takenAt).toLocaleString('zh-CN', { hour12: false }) : ''),
+      render: (row) => formatDateTime(row.takenAt),
     },
   ];
 }
@@ -113,11 +356,13 @@ function ImagingFormFields({
   update,
   file,
   setFile,
+  categories,
 }: {
   form: ImagingForm;
   update: (patch: Partial<ImagingForm>) => void;
   file: File | null;
   setFile: (file: File | null) => void;
+  categories: ImagingCategoryRow[];
 }) {
   const doctors = useQuery({
     queryKey: ['imaging-doctors'],
@@ -141,6 +386,24 @@ function ImagingFormFields({
       <label>
         影像类型
         <input value={form.type} onChange={(event) => update({ type: event.target.value })} />
+      </label>
+      <label>
+        分类
+        <select value={form.categoryId} onChange={(event) => update({ categoryId: event.target.value })}>
+          <option value="">不分类</option>
+          {categories.map((category) => (
+            <option key={category.id} value={category.id}>{category.name ?? category.id}</option>
+          ))}
+        </select>
+      </label>
+      <label>
+        阶段
+        <select value={form.phase} onChange={(event) => update({ phase: event.target.value })}>
+          <option value="">不指定</option>
+          {PHASE_OPTIONS.map((phase) => (
+            <option key={phase.value} value={phase.value}>{phase.label}</option>
+          ))}
+        </select>
       </label>
       <label>
         标题

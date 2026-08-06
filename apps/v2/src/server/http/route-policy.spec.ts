@@ -35,6 +35,7 @@ function samplePathForPattern(pattern: RegExp, index: number): string {
     ['/api/v2/purchase-orders', '/api/v2/purchase-orders/abc'],
     ['/api/v2/shift-templates', '/api/v2/shift-templates/abc', '/api/v2/shift-templates/generate'],
     ['/api/v2/schedules/week?weekStart=2026-08-03'],
+    ['/api/v2/user-roles', '/api/v2/user-roles/u-1'],
     ['/api/v2/processing-orders', '/api/v2/processing-orders/abc'],
     ['/api/v2/appointments', '/api/v2/appointments/abc'],
     ['/api/v2/registrations', '/api/v2/visits', '/api/v2/first-exams', '/api/v2/treatments', '/api/v2/medical-records', '/api/v2/patients/p1/risk', '/api/v2/prescriptions', '/api/v2/cephalometric', '/api/v2/treatment-plans'],

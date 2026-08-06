@@ -876,11 +876,12 @@ const resources: ResourceDefinition[] = [
     f('active', 'boolean', { default: true }),
   ], { roles: clinical, capabilities: { list: true, create: true, update: true, delete: false, softDelete: false } }),
 
-  // 多岗位角色（一人多角色）
+  // 多岗位角色（一人多角色）——UserRole 为复合主键表（无 id 列），通用资源路由无法写入，
+  // 仅开放 list；读写走专用服务路由 /api/v2/user-roles（UserRoleService）。
   crud('userRoles', 'UserRole', [
     f('userId', 'relation', { required: true, relation: { resource: 'users', foreignKey: 'userId', labelField: 'name' } }),
     f('role', 'enum', { required: true, enumValues: ['BOSS', 'ADMIN', 'DOCTOR', 'RECEPTIONIST', 'NURSE', 'TECHNICIAN'] }),
-  ], { roles: boss, capabilities: { list: true, create: true, update: false, delete: true, softDelete: false } }),
+  ], { roles: boss, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
 
   // 角色权限树配置
   crud('rolePermissions', 'RolePermission', [
