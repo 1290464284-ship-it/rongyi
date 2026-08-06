@@ -18,6 +18,7 @@ const logDir = path.join(dataDir, 'logs');
 const port = 33000 + Math.floor(Math.random() * 2000);
 const jwtSecret = 'delivery-drill-secret-0123456789abcdef0123456789abcdef';
 const backupKey = 'delivery-drill-backup-key-0123456789abcdef';
+const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'REDACTED';
 
 let apiProcess = null;
 
@@ -136,7 +137,7 @@ async function main() {
     stderrReader = await startApi();
     const login = await request('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ username: 'admin', password: 'REDACTED' }),
+      body: JSON.stringify({ username: 'admin', password: adminPassword }),
     });
     const token = login.token;
     const patientCode = `DRILL-${Date.now()}`;
@@ -168,7 +169,7 @@ async function main() {
     stderrReader = await startApi();
     const relogin = await request('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ username: 'admin', password: 'REDACTED' }),
+      body: JSON.stringify({ username: 'admin', password: adminPassword }),
     });
     const restored = await request('/resources/patients?page=1&pageSize=100', {}, relogin.token);
     const found = (restored.items ?? []).some((row) => String(row.id) === patient.id || String(row.code) === patientCode);

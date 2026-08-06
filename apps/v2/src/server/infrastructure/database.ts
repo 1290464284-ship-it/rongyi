@@ -354,6 +354,8 @@ function createUniqueIndexes(db: Database.Database): void {
 export function seedDatabase(db: Database.Database): void {
   const now = new Date().toISOString();
   const isProduction = process.env.NODE_ENV === 'production';
+  // 默认密码与 smoke 脚本共享；CI/本地可通过 V2_ADMIN_PASSWORD 覆盖。
+  const seedPassword = process.env.V2_ADMIN_PASSWORD ?? 'REDACTED';
   const clinicRow = db.prepare('SELECT id FROM Clinic LIMIT 1').get() as { id: string } | undefined;
   const clinicId = clinicRow ? String(clinicRow.id) : 'clinic-v2-001';
   if (!clinicRow) {
@@ -371,7 +373,7 @@ export function seedDatabase(db: Database.Database): void {
     if (isProduction) {
       throw new Error('Production database must contain an admin user; refusing to seed default credentials');
     }
-    const passwordHash = bcrypt.hashSync('REDACTED', 10);
+    const passwordHash = bcrypt.hashSync(seedPassword, 10);
     db.prepare(
       `INSERT INTO User (
          id, clinicId, createdAt, updatedAt, deletedAt,
@@ -379,7 +381,7 @@ export function seedDatabase(db: Database.Database): void {
        ) VALUES (?, ?, ?, ?, NULL, 'admin', ?, 'System Administrator', 'BOSS', 1, 0, 0)`,
     ).run(userId, clinicId, now, now, passwordHash);
   } else if (process.env.NODE_ENV === 'development' && process.env.V2_ALLOW_DEV_SEED === '1') {
-    const passwordHash = bcrypt.hashSync('REDACTED', 10);
+    const passwordHash = bcrypt.hashSync(seedPassword, 10);
     db.prepare('UPDATE User SET passwordHash = ?, active = 1, lockedUntil = NULL, updatedAt = ? WHERE id = ?')
       .run(passwordHash, now, userId);
   }

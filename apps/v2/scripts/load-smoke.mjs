@@ -1,4 +1,5 @@
 const base = process.env.V2_BASE_URL ?? 'http://localhost:3180/api/v2';
+const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'REDACTED';
 const iterations = Number(process.env.V2_LOAD_ITERATIONS ?? 100);
 
 async function request(path, options = {}) {
@@ -13,7 +14,7 @@ async function request(path, options = {}) {
 
 const login = await request('/auth/login', {
   method: 'POST',
-  body: JSON.stringify({ username: 'admin', password: 'REDACTED' }),
+  body: JSON.stringify({ username: 'admin', password: adminPassword }),
 });
 const headers = { authorization: `Bearer ${login.token}` };
 
