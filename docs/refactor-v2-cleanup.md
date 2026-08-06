@@ -23,7 +23,7 @@ directories and obsolete root entry points have been deleted.
 source/
   apps/v2/            Electron desktop application
   docs/refactor-v2-*  V2 architecture and release documentation
-  .github/workflows/  v2-ci.yml and v2-release.yml
+  .github/workflows/  v2-ci.yml, v2-release.yml, v2-internal-release.yml and v2-windows-smoke.yml
 ```
 
 ## Verification
