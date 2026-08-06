@@ -1,7 +1,7 @@
 import { FormEvent, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
-import { Dialog, LoadingState, PageError } from './components';
+import { Dialog, ConfirmDialog, LoadingState, PageError } from './components';
 import { formatMoney, toCents } from './format';
 import { errorMessage } from './messages';
 import { useCrudResource } from './use-crud-resource';
@@ -184,6 +184,16 @@ export function ChargesPage() {
       <Dialog open={comboOpen} title="调出收费组合" onClose={() => setComboOpen(false)}>
         <ComboDialog combos={combos} onClose={() => setComboOpen(false)} onApply={applyCombo} />
       </Dialog>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="删除收费单确认"
+        message={`确定删除该收费单吗？此操作不可恢复。${deleteTarget ? `（${deleteTarget.number ?? deleteTarget.id}）` : ''}`}
+        confirmText="确认删除"
+        danger
+        onConfirm={() => void deleteCharge()}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 

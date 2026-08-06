@@ -20,7 +20,7 @@ export function CompareResultView({ result }: { result: CephalometricCompareResu
         height={320}
         role="img"
         aria-label="轮廓重叠比较图"
-        style={{ border: '1px solid #c9d3de', borderRadius: 8, background: '#f8fafc' }}
+        style={{ border: '1px solid var(--border-strong, #c9d3de)', borderRadius: 8, background: 'var(--surface, #f8fafc)' }}
       >
         {allPoints.length === 0 && (
           <text x={12} y={20} style={{ fontSize: 12, fill: '#6b7280' }}>所选病例暂无轮廓数据</text>

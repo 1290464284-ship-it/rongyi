@@ -90,10 +90,10 @@ export function CephalometricPage() {
         }}
         validate={(form) => {
           let parsedLandmarks: Record<string, unknown> = {};
-          let parsedMetrics: Record<string, unknown> = {};
+          let _parsedMetrics: Record<string, unknown> = {};
           try {
             parsedLandmarks = JSON.parse(form.landmarksJson || '{}') as Record<string, unknown>;
-            parsedMetrics = JSON.parse(form.metricsJson || '{}') as Record<string, unknown>;
+            _parsedMetrics = JSON.parse(form.metricsJson || '{}') as Record<string, unknown>;
           } catch {
             return '标记点或测量结果必须是有效 JSON';
           }

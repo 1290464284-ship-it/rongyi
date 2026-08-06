@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import { useDebouncedValue } from './use-debounce';
@@ -102,16 +102,20 @@ function RelationSelect({
     placeholderData: (previous) => previous,
   });
   // Accumulate options across pages so「加载更多」never drops previously selected rows.
-  useEffect(() => {
+  // 渲染期调整（React 官方模式）：新数据到达时合并，避免在 effect 里同步 setState 造成级联渲染
+  const [prevQueryData, setPrevQueryData] = useState<Page<Record<string, unknown>> | undefined>(undefined);
+  if (prevQueryData !== query.data) {
+    setPrevQueryData(query.data);
     const incoming = query.data?.items;
-    if (!incoming) return;
-    setAccumulated((current) => {
-      if (page === 1 || current.length === 0) return incoming;
-      const seen = new Set(current.map((item) => String(item.id)));
-      const fresh = incoming.filter((item) => !seen.has(String(item.id)));
-      return fresh.length > 0 ? [...current, ...fresh] : current;
-    });
-  }, [query.data, page]);
+    if (incoming) {
+      setAccumulated((current) => {
+        if (page === 1 || current.length === 0) return incoming;
+        const seen = new Set(current.map((item) => String(item.id)));
+        const fresh = incoming.filter((item) => !seen.has(String(item.id)));
+        return fresh.length > 0 ? [...current, ...fresh] : current;
+      });
+    }
+  }
   const items = accumulated;
   const total = query.data?.total ?? accumulated.length;
 

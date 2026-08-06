@@ -16,7 +16,8 @@ import {
   type ProcessingRow,
   type SettleStats,
 } from './processing-orders/types';
-import { buildValidItems, emptyProcessingForm, joinList, newItem, reconcileProcessingItems, splitList } from './processing-orders/items';
+import { buildValidItems, emptyProcessingForm, joinList, newItem, reconcileProcessingItems } from './processing-orders/items';
+import { splitList } from './format';
 import { flowStatsColumns, processingColumns } from './processing-orders/columns';
 import { ProcessingOrderFormFields } from './processing-orders/ProcessingOrderFormFields';
 

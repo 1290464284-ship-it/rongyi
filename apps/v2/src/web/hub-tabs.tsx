@@ -2,6 +2,7 @@ import { lazy, type ComponentType } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import { DataTable, LoadingState, PageError } from './components';
+import { DashboardPage } from './DashboardPage';
 import { formatMoney } from './format';
 
 const AppointmentsPage = lazy(() => import('./AppointmentsPage').then((m) => ({ default: m.AppointmentsPage })));
@@ -12,7 +13,6 @@ const InventoryPage = lazy(() => import('./InventoryPage').then((m) => ({ defaul
 const FollowUpsPage = lazy(() => import('./FollowUpsPage').then((m) => ({ default: m.FollowUpsPage })));
 const BackupsPage = lazy(() => import('./BackupsPage').then((m) => ({ default: m.BackupsPage })));
 const SimpleListPage = lazy(() => import('./SimpleListPage').then((m) => ({ default: m.SimpleListPage })));
-const DashboardPage = lazy(() => import('./DashboardPage').then((m) => ({ default: m.DashboardPage })));
 const DesktopSettingsPage = lazy(() => import('./DesktopSettingsPage').then((m) => ({ default: m.DesktopSettingsPage })));
 const ClinicalWorkflowPage = lazy(() => import('./ClinicalWorkflowPage').then((m) => ({ default: m.ClinicalWorkflowPage })));
 const HrWorkflowPage = lazy(() => import('./HrWorkflowPage').then((m) => ({ default: m.HrWorkflowPage })));

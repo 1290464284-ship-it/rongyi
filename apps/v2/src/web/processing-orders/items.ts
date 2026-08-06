@@ -28,20 +28,13 @@ export function buildValidItems(items: ProcessingItemForm[]): ValidProcessingIte
     .filter((item) => item.quantity > 0 && item.unitPrice >= 0);
 }
 
-export function splitList(value: string): string[] {
-  return value
-    .split(/[,，]/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
 export function joinList(value: unknown): string {
   if (Array.isArray(value)) return value.join(', ');
   if (value === null || value === undefined) return '';
   return String(value);
 }
 
-export function validFormItems(items: ProcessingItemForm[]): ProcessingItemForm[] {
+function validFormItems(items: ProcessingItemForm[]): ProcessingItemForm[] {
   return items.filter((item) => {
     if (!item.name.trim() || !item.quantity || !item.unitPrice) return false;
     return Number(item.quantity) > 0 && toCents(item.unitPrice) >= 0;

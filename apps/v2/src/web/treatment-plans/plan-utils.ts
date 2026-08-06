@@ -1,5 +1,5 @@
 import { apiRequest } from '../api';
-import { toCents } from '../format';
+import { splitList, toCents } from '../format';
 import type { Page } from '../types';
 import type { PlanItemForm, PlanItemRow, TreatmentPlanForm, ValidPlanItem } from './plan-types';
 
@@ -11,7 +11,7 @@ export function emptyPlanForm(): TreatmentPlanForm {
   return { patientId: '', doctorId: '', name: '', status: 'APPROVED', totalFee: '', remark: '', items: [newItem()] };
 }
 
-export function buildItemPayload(item: PlanItemForm): ValidPlanItem {
+function buildItemPayload(item: PlanItemForm): ValidPlanItem {
   return {
     code: item.code || `ITEM-${Date.now()}`,
     name: item.name.trim(),
@@ -31,7 +31,7 @@ export function buildValidItems(items: PlanItemForm[]): ValidPlanItem[] {
 }
 
 /** 服务端明细行与表单 payload 是否完全一致（一致则编辑保存时跳过 PATCH）。 */
-export function isItemUnchanged(row: PlanItemRow, payload: ValidPlanItem): boolean {
+function isItemUnchanged(row: PlanItemRow, payload: ValidPlanItem): boolean {
   return (
     String(row.code ?? '') === payload.code &&
     String(row.name ?? '') === payload.name &&
@@ -46,13 +46,6 @@ export function isItemUnchanged(row: PlanItemRow, payload: ValidPlanItem): boole
 function listEquals(value: unknown, expected: string[]): boolean {
   const actual = Array.isArray(value) ? value.map(String) : [];
   return actual.length === expected.length && actual.every((entry, index) => entry === expected[index]);
-}
-
-export function splitList(value: string): string[] {
-  return value
-    .split(/[,，]/)
-    .map((item) => item.trim())
-    .filter(Boolean);
 }
 
 /**

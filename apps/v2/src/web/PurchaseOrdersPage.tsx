@@ -394,7 +394,7 @@ async function receivePurchase(
 function PurchaseOrderFormFields({
   form,
   update,
-  inventoryRows,
+  inventoryRows: _inventoryRows,
   setInventoryRows,
   editing,
   editingId,

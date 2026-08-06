@@ -47,9 +47,16 @@ export function ReportDialog({
   }, [effectiveJsonText, effectiveOutlineColor, effectiveLineColor]);
 
   async function handleSave() {
+    // 未编辑时必须以服务端已加载数据为保存底稿，否则只改颜色保存会把
+    // 轮廓点/折线/结论整体清空（jsonText 为 null 时不能再回退到 '{}'）。
+    const text = jsonText ?? (reportQuery.data ? JSON.stringify(loadedReport, null, 2) : null);
+    if (text === null) {
+      showToast('报告数据尚未加载完成，请稍后再试', 'error');
+      return;
+    }
     let parsed: unknown;
     try {
-      parsed = JSON.parse(jsonText || '{}');
+      parsed = JSON.parse(text);
     } catch {
       showToast('报告 JSON 必须是合法 JSON', 'error');
       return;

@@ -9,7 +9,8 @@
   color-scheme: light;
 
   /* 品牌色：青蓝×薄荷双色分工 */
-  --primary: #0E8A8A;
+  /* 亮色主色较设计稿加深一档（#0D8282），保证白字按钮/链接达 WCAG AA 4.5:1 */
+  --primary: #0D8282;
   --primary-hover: #0B7474;
   --accent: #3CC89A;
   --accent-strong: #28A87E;
@@ -29,7 +30,8 @@
   /* 语义色（克制红：禁止纯红大按钮） */
   --success: #1D8A55;
   --success-soft: #E9F7EF;
-  --warning: #D9822B;
+  /* 加深一档保证白底/soft 底标签文字达 WCAG AA（#D9822B 仅 2.6:1） */
+  --warning: #A56310;
   --warning-soft: #FBF0E4;
   --danger: #C94A4A;
   --danger-hover: #B23F3F;
@@ -76,9 +78,9 @@
   :root {
     color-scheme: dark;
 
-    /* 品牌色：主色不变，hover 提亮保可读 */
-    --primary: #0E8A8A;
-    --primary-hover: #12A2A2;
+    /* 品牌色：暗色下主色提亮一档（#14A0A0），保证文字/按钮达 WCAG AA */
+    --primary: #14A0A0;
+    --primary-hover: #17B4B4;
     --accent: #3CC89A;
     --accent-strong: #28A87E;
     --soft: #163238;
@@ -89,7 +91,8 @@
     --surface-muted: #16262A;
     --border: #22383D;
     --border-soft: #1C2E32;
-    --border-strong: #2E4A50;
+    /* 提亮至 3.09:1，满足非文本 UI 组件 3:1 要求 */
+    --border-strong: #507078;
     --text: #E6F4F1;
     --muted: #8FA8B0;
     --muted-weak: #5F7A82;

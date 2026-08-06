@@ -57,16 +57,20 @@ export function SearchableSelect({
     },
   });
 
-  useEffect(() => {
-    const items = query.data?.items ?? [];
-    if (items.length === 0) return;
-    setLoaded((current) => {
-      const byId = new Map<string, SearchableSelectRow>();
-      for (const row of current) byId.set(String(row.id), row);
-      for (const row of items) byId.set(String(row.id), row);
-      return Array.from(byId.values());
-    });
-  }, [query.data]);
+  // 渲染期调整（React 官方模式）：新数据到达时合并，避免在 effect 里同步 setState 造成级联渲染
+  const [prevQueryData, setPrevQueryData] = useState<Page<SearchableSelectRow> | undefined>(undefined);
+  if (prevQueryData !== query.data) {
+    setPrevQueryData(query.data);
+    const incomingItems = query.data?.items ?? [];
+    if (incomingItems.length > 0) {
+      setLoaded((current) => {
+        const byId = new Map<string, SearchableSelectRow>();
+        for (const row of current) byId.set(String(row.id), row);
+        for (const row of incomingItems) byId.set(String(row.id), row);
+        return Array.from(byId.values());
+      });
+    }
+  }
 
   useEffect(() => {
     if (query.data) onLoaded?.(loaded);
@@ -231,12 +235,20 @@ export function Dialog({
   const modalRef = useRef<HTMLDivElement | null>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 关闭代际：每次重新打开递增；迟到的关闭定时器若发现代际已变则不再通知父组件
+  const closeEpochRef = useRef(0);
   const [closing, setClosing] = useState(false);
+  // 渲染期调整：重新打开时复位关闭动画状态（避免在 effect 里同步 setState）
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (open) setClosing(false);
+  }
 
   // 打开时记录触发元素并把焦点移入弹窗；关闭/卸载时还原焦点并清理关闭定时器
   useEffect(() => {
     if (!open) return;
-    setClosing(false);
+    closeEpochRef.current += 1;
     previouslyFocused.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const modal = modalRef.current;
     if (modal) {
@@ -259,8 +271,11 @@ export function Dialog({
   function requestClose() {
     if (closing) return;
     setClosing(true);
+    const epoch = closeEpochRef.current;
     closeTimerRef.current = setTimeout(() => {
       closeTimerRef.current = null;
+      // 若弹窗在动画期间已被重新打开（代际变化），丢弃这次迟到的关闭通知
+      if (closeEpochRef.current !== epoch) return;
       onClose();
     }, DIALOG_CLOSE_MS);
   }

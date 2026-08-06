@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import { CrudPage } from './CrudPage';
 import { SearchableSelect, type DataTableColumn } from './components';
-import { formatMoney, toCents } from './format';
+import { formatMoney, splitList, toCents } from './format';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
 
@@ -219,9 +219,3 @@ function TreatmentFormFields({ form, update }: { form: TreatmentForm; update: (p
   );
 }
 
-function splitList(value: string): string[] {
-  return value
-    .split(/[,，]/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
