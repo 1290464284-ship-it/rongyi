@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError } from '../../infrastructure/errors';
+import { SystemClock } from '../../infrastructure/clock';
 import { SqliteClinicalWorkflowRepository } from '../../infrastructure/repositories/core.repositories';
 import type { AppContext } from '../../../domain/contracts';
 import type { ClinicalWorkflowRepository } from '../ports';
@@ -86,7 +87,7 @@ export class ClinicalWorkflowService {
     };
     this.assertTransition(row, allowed, status);
     const now = context.now().toISOString();
-    const completedDate = status === 'COMPLETED' ? now.slice(0, 10) : null;
+    const completedDate = status === 'COMPLETED' ? new SystemClock().clinicDate(context.now()) : null;
     this.clinicalRepository.updateStatus(
       'Treatment',
       id,

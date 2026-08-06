@@ -17,6 +17,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
+import { SystemClock } from '../../infrastructure/clock';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { ConflictError, NotFoundError } from '../../infrastructure/errors';
 import type { AppContext } from '../../../domain/contracts';
@@ -124,7 +125,7 @@ export class WechatReminderService {
   /** 返回今日清单；首次调用会按当前规则幂等生成当天的 PENDING 提醒。 */
   today(context: AppContext): { date: string; config: WechatReminderConfig; items: WechatReminderItem[] } {
     const now = context.now();
-    const today = now.toISOString().slice(0, 10);
+    const today = new SystemClock().clinicDate(now);
     const config = this.config(context);
     if (config.enabled) this.generateDue(context, config, today);
     return { date: today, config, items: this.listPending(context, today) };

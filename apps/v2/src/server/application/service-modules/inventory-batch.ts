@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
+import { SystemClock } from '../../infrastructure/clock';
 import { tenantAnd, tenantParams, tenantWhere } from '../../infrastructure/tenant';
 import type { AppContext } from '../../../domain/contracts';
 
@@ -78,8 +79,8 @@ export class InventoryBatchService {
     `;
     const batches = this.db.prepare(sql).all(...params, ...tenant.params) as InventoryBatchRow[];
     const now = context.now();
-    const today = now.toISOString().slice(0, 10);
-    const cutoff = new Date(now.getTime() + days * 86_400_000).toISOString().slice(0, 10);
+    const today = new SystemClock().clinicDate(now);
+    const cutoff = new SystemClock().clinicDate(new Date(now.getTime() + days * 86_400_000));
     const expiring = batches.filter((batch) => {
       const expiry = batch.expiryDate;
       if (!expiry) return false;

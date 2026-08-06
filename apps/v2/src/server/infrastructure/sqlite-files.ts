@@ -11,12 +11,22 @@ export function removeSqliteSidecars(dbPath: string): void {
   }
 }
 
-export function backupSqliteFile(sourcePath: string, backupPath: string): void {
+export function backupSqliteFile(
+  sourcePath: string,
+  backupPath: string,
+  logger?: { warn(message: string, meta?: Record<string, unknown>): void },
+): void {
   let current: DatabaseType.Database | undefined;
   try {
     current = new Database(sourcePath);
     current.prepare('VACUUM INTO ?').run(backupPath);
-  } catch {
+  } catch (err) {
+    logger?.warn('VACUUM INTO backup failed, falling back to plain file copy (backup may be inconsistent with WAL)', {
+      action: 'sqlite-backup',
+      source: sourcePath,
+      target: backupPath,
+      error: err,
+    });
     fs.copyFileSync(sourcePath, backupPath);
   } finally {
     current?.close();

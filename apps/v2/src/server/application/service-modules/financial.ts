@@ -514,7 +514,7 @@ export class PurchaseOrderService {
         const name = String(item.name ?? '').trim();
         const quantity = Number(item.quantity);
         const unitPrice = Number(item.unitPrice);
-        if (!name || !Number.isSafeInteger(quantity) || quantity <= 0 || !Number.isFinite(unitPrice) || unitPrice < 0) {
+        if (!name || !Number.isSafeInteger(quantity) || quantity <= 0 || !Number.isSafeInteger(unitPrice) || unitPrice < 0) {
           throw new ValidationError('Each purchase item requires a name, positive quantity, and non-negative unit price');
         }
         if (item.itemId && !this.inventoryRepository.findItem(item.itemId, context.clinicId)) {
@@ -678,7 +678,7 @@ export class ProcessingOrderService {
         const name = String(item.name ?? '').trim();
         const quantity = Number(item.quantity);
         const unitPrice = Number(item.unitPrice);
-        if (!name || !Number.isSafeInteger(quantity) || quantity <= 0 || !Number.isFinite(unitPrice) || unitPrice < 0) {
+        if (!name || !Number.isSafeInteger(quantity) || quantity <= 0 || !Number.isSafeInteger(unitPrice) || unitPrice < 0) {
           throw new ValidationError('Each processing item requires a name, positive quantity, and non-negative unit price');
         }
         const subtotal = Math.round(unitPrice * quantity);

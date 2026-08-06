@@ -119,6 +119,70 @@ describe('resource router', () => {
       .expect(404);
   });
 
+  it('rejects patient deletion from non-BOSS roles', async () => {
+    const created = await request(app)
+      .post('/api/v2/resources/patients')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: 'ROUTER-PATIENT-DELETE-FORBIDDEN',
+        name: 'Delete Forbidden',
+        gender: 'UNKNOWN',
+        phone: '13900001111',
+        source: 'OTHER',
+        active: true,
+      })
+      .expect(201);
+    const id = created.body.data.id as string;
+
+    await request(app)
+      .delete(`/api/v2/resources/patients/${id}`)
+      .set('Authorization', `Bearer ${receptionToken}`)
+      .expect(403);
+
+    // 非 BOSS 删除被拒后记录仍存在，BOSS 可以正常删除。
+    const stillThere = await request(app)
+      .get(`/api/v2/resources/patients/${id}`)
+      .set('Authorization', `Bearer ${receptionToken}`)
+      .expect(200);
+    expect(stillThere.body.data.id).toBe(id);
+  });
+
+  it('rejects deletion of locked medical records', async () => {
+    const created = await request(app)
+      .post('/api/v2/resources/medicalRecords')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        patientId: 'patient-demo-001',
+        chiefComplaint: 'Locked record delete guard',
+        status: 'DRAFT',
+        isLocked: false,
+      })
+      .expect(201);
+    const id = created.body.data.id as string;
+
+    await request(app)
+      .patch(`/api/v2/medical-records/${id}/lock`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ locked: true })
+      .expect(200);
+
+    await request(app)
+      .delete(`/api/v2/resources/medicalRecords/${id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(403);
+
+    // 解锁后可以删除。
+    await request(app)
+      .patch(`/api/v2/medical-records/${id}/lock`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ locked: false })
+      .expect(200);
+    await request(app)
+      .delete(`/api/v2/resources/medicalRecords/${id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+  });
+
   it('exports more than one page of rows', async () => {
     for (let index = 0; index < 201; index += 1) {
       await request(app)

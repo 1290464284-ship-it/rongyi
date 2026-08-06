@@ -229,10 +229,20 @@ export class FollowUpService {
          ${tenantAnd(context.clinicId, 'F.clinicId')}
        ORDER BY F.planDate ASC, P.name ASC`,
     ).all(...params) as Array<Record<string, unknown>>;
-    const headers = ['id', '患者', '电话', '计划日期', '状态', '内容', '完成时间', '结果'];
+    const masked: Array<Record<string, unknown>> = rows.map((row) => ({ ...row, patientPhone: maskPhoneForExport(row.patientPhone as string | null | undefined) }));
+    const headers: Array<{ key: string; label: string }> = [
+      { key: 'id', label: 'id' },
+      { key: 'patientName', label: '患者' },
+      { key: 'patientPhone', label: '电话' },
+      { key: 'planDate', label: '计划日期' },
+      { key: 'status', label: '状态' },
+      { key: 'content', label: '内容' },
+      { key: 'completedAt', label: '完成时间' },
+      { key: 'result', label: '结果' },
+    ];
     return [
-      headers.map((header) => csvCell(header)).join(','),
-      ...rows.map((row) => headers.map((header) => csvCell(row[header])).join(',')),
+      headers.map((header) => csvCell(header.label)).join(','),
+      ...masked.map((row) => headers.map((header) => csvCell(row[header.key])).join(',')),
     ].join('\n');
   }
 
@@ -338,6 +348,17 @@ export class FollowUpService {
 }
 
 function csvCell(value: unknown): string {
-  const text = value === null || value === undefined ? '' : String(value);
-  return `"${text.replaceAll('"', '""')}"`;
+  if (value === null || value === undefined) return '';
+  const text = typeof value === 'object' ? JSON.stringify(value) : String(value);
+  // CWE-1236：阻止公式注入（Excel 打开时执行 =SUM(...) 等）
+  const guarded = /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
+  return `"${guarded.replaceAll('"', '""')}"`;
+}
+
+/** 导出时掩码手机号：保留前 3 后 4，中间以 * 代替。 */
+export function maskPhoneForExport(phone: string | null | undefined): string {
+  if (!phone) return '';
+  const digits = phone.replace(/[^\d]/g, '');
+  if (digits.length < 7) return phone.replace(/./g, '*');
+  return `${digits.slice(0, 3)}****${digits.slice(-4)}`;
 }

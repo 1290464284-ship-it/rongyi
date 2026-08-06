@@ -345,6 +345,11 @@ describe('service edge coverage', () => {
       number: 'PO-BAD-3',
       items: [{ itemId: 'missing-item', name: 'X', quantity: 1, unitPrice: 1 }],
     }, context)).rejects.toThrow('Inventory item not found');
+    // P0-4：单价必须是整数分，小数单价会导致 unitPrice 取整与 subtotal 不一致的坏账。
+    await expect(purchase.create({
+      number: 'PO-BAD-4',
+      items: [{ name: 'X', quantity: 1, unitPrice: 10.5 }],
+    }, context)).rejects.toThrow('unit price');
     const nullPurchase = await purchase.create({
       number: 'PO-NULL-CLINIC',
       items: [{ name: 'Null Clinic Item', quantity: 1, unitPrice: 1 }],
@@ -405,6 +410,13 @@ describe('service edge coverage', () => {
       totalFee: 1,
       items: [],
     }, context)).rejects.toThrow('1 to 500');
+    // P0-4：加工项单价必须是整数分，小数单价会导致 subtotal 坏账。
+    await expect(processing.create({
+      patientId: 'patient-demo-001',
+      number: 'PROC-BAD-4',
+      totalFee: 1,
+      items: [{ name: 'X', quantity: 1, unitPrice: 10.5 }],
+    }, context)).rejects.toThrow('unit price');
     // 加工单结算全链路（全新库）：COMPLETED 后结算 → 对账统计计入已结算。
     const procId = String(createdProc.id);
     processing.transition(procId, 'SENT', context);
@@ -1371,6 +1383,35 @@ describe('service edge coverage', () => {
     db.prepare('INSERT INTO UsedRefreshToken (tokenHash, userId, usedAt) VALUES (?, ?, ?)')
       .run(replayHash, 'user-admin-001', now);
     await expect(auth.refresh('replay-token')).rejects.toThrow('Invalid refresh token');
+  });
+
+  it('refuses to disable or demote the last active BOSS of a clinic', async () => {
+    const auth = new AuthService(db);
+    const t = new Date().toISOString();
+    const clinicId = 'clinic-v2-last-boss';
+    db.prepare(
+      `INSERT OR IGNORE INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+       VALUES (?, NULL, ?, ?, NULL, 'V2-LAST-BOSS', 'Last Boss Clinic', 1)`,
+    ).run(clinicId, t, t);
+    const insertUserAt = (id: string, username: string, role: string): void => {
+      db.prepare(
+        `INSERT INTO User (
+           id, clinicId, createdAt, updatedAt, deletedAt,
+           username, passwordHash, name, role, active, loginAttempts, tokenVersion
+         ) VALUES (?, ?, ?, ?, NULL, ?, 'hash', ?, ?, 1, 0, 0)`,
+      ).run(id, clinicId, t, t, username, id, role);
+    };
+    // 该诊所唯一的 BOSS：禁用或降级必须被拒绝。
+    insertUserAt('user-last-boss', 'lastboss', 'BOSS');
+    const loneContext: AppContext = { ...context, clinicId };
+    await expect(auth.updateUser('user-last-boss', { active: false }, loneContext)).rejects.toThrow('最后一个管理员');
+    await expect(auth.updateUser('user-last-boss', { role: 'DOCTOR' }, loneContext)).rejects.toThrow('最后一个管理员');
+    // 增加第二个 BOSS 后，原 BOSS 可以被禁用（保护只针对最后一个）。
+    insertUserAt('user-last-boss-2', 'lastboss2', 'BOSS');
+    await expect(auth.updateUser('user-last-boss', { active: false }, loneContext)).resolves.toMatchObject({ id: 'user-last-boss' });
+    // 非 BOSS 用户不受保护影响。
+    insertUserAt('user-last-doctor', 'lastdoctor', 'DOCTOR');
+    await expect(auth.updateUser('user-last-doctor', { active: false }, loneContext)).resolves.toMatchObject({ id: 'user-last-doctor' });
   });
 
   it('covers HR, alerts, member cards, purchase, processing, risk, prescription, ceph, progress, import, debt, notifications, satisfaction branches', async () => {

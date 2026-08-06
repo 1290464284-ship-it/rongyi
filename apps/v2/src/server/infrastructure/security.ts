@@ -63,6 +63,14 @@ const PROTECTED_WRITE_FIELDS = new Set([
   'minStock',
   'paidAmount',
   'refundedAmount',
+  // 财务字段（通用 CRUD 禁止客户端直写；走专用路由/财务服务）
+  'discountRate',
+  'maxDiscountAmount',
+  'annualDiscountLimit',
+  'totalFee',
+  'settleStatus',
+  'settledAmount',
+  'settledAt',
 ]);
 
 /** 递归掩码：数组逐项、对象逐键；深度 >5 时原样返回（防深层嵌套拖垮审计）。 */
