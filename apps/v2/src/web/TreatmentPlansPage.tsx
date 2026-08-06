@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import { CrudPage } from './CrudPage';
@@ -29,10 +29,12 @@ interface PlanRow extends Record<string, unknown> {
 /** 治疗计划明细行（/resources/treatmentPlanItems 列表行）。 */
 interface PlanItemRow extends Record<string, unknown> {
   id: string;
+  code?: string | null;
   name?: string | null;
   category?: string | null;
   price?: number | null;
   quantity?: number | null;
+  teethNumbers?: unknown;
   status?: string | null;
   discountRate?: number | null;
   billed?: boolean | number | null;
@@ -48,6 +50,8 @@ interface PlanItemForm {
   quantity: string;
   teethNumbers: string;
   status: string;
+  /** 服务端 billed 状态；true 时行内输入与移除禁用（已划价保护）。 */
+  billed: boolean;
 }
 
 interface TreatmentPlanForm {
@@ -74,7 +78,7 @@ interface TreatmentPlanPrintResult {
 }
 
 function newItem(): PlanItemForm {
-  return { id: crypto.randomUUID(), code: '', name: '', category: '', price: '', quantity: '1', teethNumbers: '', status: 'PLANNED' };
+  return { id: crypto.randomUUID(), code: '', name: '', category: '', price: '', quantity: '1', teethNumbers: '', status: 'PLANNED', billed: false };
 }
 
 function emptyPlanForm(): TreatmentPlanForm {
@@ -91,19 +95,41 @@ interface ValidPlanItem {
   status: string;
 }
 
+function buildItemPayload(item: PlanItemForm): ValidPlanItem {
+  return {
+    code: item.code || `ITEM-${Date.now()}`,
+    name: item.name.trim(),
+    category: item.category || 'GENERAL',
+    price: toCents(item.price),
+    quantity: Number(item.quantity),
+    teethNumbers: splitList(item.teethNumbers),
+    status: item.status,
+  };
+}
+
 function buildValidItems(items: PlanItemForm[]): ValidPlanItem[] {
   return items
     .filter((item) => item.name.trim() && item.price && item.quantity)
-    .map((item) => ({
-      code: item.code || `ITEM-${Date.now()}`,
-      name: item.name.trim(),
-      category: item.category || 'GENERAL',
-      price: toCents(item.price),
-      quantity: Number(item.quantity),
-      teethNumbers: splitList(item.teethNumbers),
-      status: item.status,
-    }))
+    .map(buildItemPayload)
     .filter((item) => item.price > 0 && item.quantity > 0);
+}
+
+/** 服务端明细行与表单 payload 是否完全一致（一致则编辑保存时跳过 PATCH）。 */
+function isItemUnchanged(row: PlanItemRow, payload: ValidPlanItem): boolean {
+  return (
+    String(row.code ?? '') === payload.code &&
+    String(row.name ?? '') === payload.name &&
+    String(row.category ?? 'GENERAL') === payload.category &&
+    Number(row.price ?? 0) === payload.price &&
+    Number(row.quantity ?? 1) === payload.quantity &&
+    String(row.status ?? 'PLANNED') === payload.status &&
+    listEquals(row.teethNumbers, payload.teethNumbers)
+  );
+}
+
+function listEquals(value: unknown, expected: string[]): boolean {
+  const actual = Array.isArray(value) ? value.map(String) : [];
+  return actual.length === expected.length && actual.every((entry, index) => entry === expected[index]);
 }
 
 const PLAN_DISCOUNT_LABELS: Record<string, string> = {
@@ -149,6 +175,10 @@ const planColumns: DataTableColumn<PlanRow>[] = [
 
 export function TreatmentPlansPage() {
   const { showToast } = useToast();
+  // submitOverride 只收到 { form, editing } 不带 id：用 ref 记录当前编辑目标（参考 PatientsPage）
+  const editingIdRef = useRef<string | null>(null);
+  // 编辑会话中明细是否已加载完成；未完成时禁止提交，防止空白明细被当作新建行重复 POST
+  const itemsLoadedRef = useRef(false);
   const [printResult, setPrintResult] = useState<TreatmentPlanPrintResult | null>(null);
   const [signTarget, setSignTarget] = useState<{ row: PlanRow; reload: () => Promise<unknown> } | null>(null);
   const [billingTarget, setBillingTarget] = useState<{ row: PlanRow; reload: () => Promise<unknown> } | null>(null);
@@ -162,16 +192,41 @@ export function TreatmentPlansPage() {
         emptyMessage="暂无治疗计划"
         queryKey={['treatment-plans']}
         endpoint="/resources/treatmentPlans"
-        initialForm={emptyPlanForm}
+        initialForm={() => {
+          editingIdRef.current = null;
+          itemsLoadedRef.current = false;
+          return emptyPlanForm();
+        }}
+        formFromRow={(row) => {
+          editingIdRef.current = String(row.id);
+          itemsLoadedRef.current = false;
+          return {
+            patientId: String(row.patientId ?? ''),
+            doctorId: String(row.doctorId ?? ''),
+            name: String(row.name ?? ''),
+            status: String(row.status ?? 'APPROVED'),
+            totalFee: row.totalFee === null || row.totalFee === undefined ? '' : (Number(row.totalFee) / 100).toFixed(2),
+            remark: String(row.remark ?? ''),
+            // 明细行由 PlanFormFields 打开编辑时异步拉取回填（formFromRow 为同步）
+            items: [newItem()],
+          };
+        }}
         validate={(form) => {
+          if (editingIdRef.current && !itemsLoadedRef.current) {
+            return '明细加载中，请稍候再保存';
+          }
           const validItems = buildValidItems(form.items);
           if (!form.patientId || !form.doctorId || !form.name.trim() || validItems.length === 0) {
             return '请选择患者、医生并填写计划名称和至少一条有效明细';
           }
           return null;
         }}
-        submitOverride={async ({ form }) => {
+        submitOverride={async ({ form, editing }) => {
           const validItems = buildValidItems(form.items);
+          if (editing) {
+            await updatePlanWithItems(form, editingIdRef.current);
+            return;
+          }
           const calculatedFee = validItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
           let planId: string | null = null;
           const createdItemIds: string[] = [];
@@ -207,9 +262,11 @@ export function TreatmentPlansPage() {
             throw error;
           }
         }}
-        messages={{ create: '治疗计划已创建' }}
-        errorMessages={{ create: '创建治疗计划失败' }}
+        messages={{ create: '治疗计划已创建', update: '治疗计划已更新', delete: '治疗计划已删除' }}
+        errorMessages={{ create: '创建治疗计划失败', update: '更新治疗计划失败', delete: '删除治疗计划失败' }}
         columns={planColumns}
+        canEdit
+        canDelete
         rowActions={(row, ctx) => (
           <>
             <button onClick={() => setBillingTarget({ row, reload: ctx.reload })}>折扣</button>
@@ -218,7 +275,15 @@ export function TreatmentPlansPage() {
             <button onClick={() => setSignTarget({ row, reload: ctx.reload })}>签字</button>
           </>
         )}
-        renderForm={(ctx) => <PlanFormFields form={ctx.form} update={ctx.update} />}
+        renderForm={(ctx) => (
+          <PlanFormFields
+            form={ctx.form}
+            update={ctx.update}
+            editing={ctx.editing}
+            planId={ctx.editing ? editingIdRef.current : null}
+            onItemsLoaded={() => { itemsLoadedRef.current = true; }}
+          />
+        )}
       />
 
       <Dialog open={printResult !== null} title="打印预览" onClose={() => setPrintResult(null)}>
@@ -629,7 +694,67 @@ function FollowUpDialog({
   );
 }
 
-function PlanFormFields({ form, update }: { form: TreatmentPlanForm; update: (patch: Partial<TreatmentPlanForm>) => void }) {
+function PlanFormFields({
+  form,
+  update,
+  editing,
+  planId,
+  onItemsLoaded,
+}: {
+  form: TreatmentPlanForm;
+  update: (patch: Partial<TreatmentPlanForm>) => void;
+  editing: boolean;
+  planId: string | null;
+  onItemsLoaded: () => void;
+}) {
+  const { showToast } = useToast();
+  const [itemsLoading, setItemsLoading] = useState(false);
+  // 效果只依赖 editing/planId（对话框每次打开组件都会重挂载），回调一律走 ref 避免陈旧闭包
+  const updateRef = useRef(update);
+  updateRef.current = update;
+  const onItemsLoadedRef = useRef(onItemsLoaded);
+  onItemsLoadedRef.current = onItemsLoaded;
+  const showToastRef = useRef(showToast);
+  showToastRef.current = showToast;
+
+  // 编辑打开时异步回填明细行（formFromRow 是同步的，无法在其中 await）
+  useEffect(() => {
+    if (!editing || !planId) return;
+    let cancelled = false;
+    setItemsLoading(true);
+    (async () => {
+      try {
+        const page = await apiRequest<Page<PlanItemRow>>(`/resources/treatmentPlanItems?planId=${planId}&page=1&pageSize=100`);
+        if (cancelled) return;
+        updateRef.current({
+          items: page.items.map((row) => ({
+            id: String(row.id),
+            code: String(row.code ?? ''),
+            name: String(row.name ?? ''),
+            category: String(row.category ?? ''),
+            price: row.price === null || row.price === undefined ? '' : (Number(row.price) / 100).toFixed(2),
+            quantity: String(row.quantity ?? 1),
+            teethNumbers: Array.isArray(row.teethNumbers) ? row.teethNumbers.map(String).join(', ') : '',
+            status: String(row.status ?? 'PLANNED'),
+            billed: Number(row.billed) === 1,
+          })),
+        });
+      } catch (error) {
+        if (!cancelled) showToastRef.current(errorMessage(error, '加载明细失败'), 'error');
+      } finally {
+        if (!cancelled) {
+          setItemsLoading(false);
+          onItemsLoadedRef.current();
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [editing, planId]);
+
+  function updateItem(id: string, patch: Partial<PlanItemForm>) {
+    updateRef.current({ items: form.items.map((entry) => (entry.id === id ? { ...entry, ...patch } : entry)) });
+  }
+
   const doctors = useQuery({
     queryKey: ['plan-doctors'],
     queryFn: () => apiRequest<Array<Record<string, unknown>>>('/doctors'),
@@ -665,13 +790,18 @@ function PlanFormFields({ form, update }: { form: TreatmentPlanForm; update: (pa
         备注
         <textarea value={form.remark} onChange={(event) => update({ remark: event.target.value })} />
       </label>
+      {itemsLoading && <p className="table-empty">明细加载中...</p>}
       {form.items.map((item) => (
         <div className="charge-item-row" key={item.id}>
-          <input aria-label="明细名称" value={item.name} placeholder="项目名称" onChange={(event) => update({ items: form.items.map((entry) => entry.id === item.id ? { ...entry, name: event.target.value } : entry) })} />
-          <input aria-label="明细编码" value={item.code} placeholder="编码" onChange={(event) => update({ items: form.items.map((entry) => entry.id === item.id ? { ...entry, code: event.target.value } : entry) })} />
-          <input aria-label="明细单价" type="number" min="0" value={item.price} onChange={(event) => update({ items: form.items.map((entry) => entry.id === item.id ? { ...entry, price: event.target.value } : entry) })} />
-          <input aria-label="明细数量" type="number" min="1" value={item.quantity} onChange={(event) => update({ items: form.items.map((entry) => entry.id === item.id ? { ...entry, quantity: event.target.value } : entry) })} />
-          <button type="button" onClick={() => update({ items: form.items.filter((entry) => entry.id !== item.id) })}>移除</button>
+          {item.billed && <span className="role-badge">已划价</span>}
+          <input aria-label="明细名称" disabled={item.billed} value={item.name} placeholder="项目名称" onChange={(event) => updateItem(item.id, { name: event.target.value })} />
+          <input aria-label="明细编码" disabled={item.billed} value={item.code} placeholder="编码" onChange={(event) => updateItem(item.id, { code: event.target.value })} />
+          <input aria-label="明细类别" disabled={item.billed} value={item.category} placeholder="类别（如 种植/修复）" onChange={(event) => updateItem(item.id, { category: event.target.value })} />
+          <input aria-label="明细单价" disabled={item.billed} type="number" min="0" value={item.price} placeholder="单价（元）" onChange={(event) => updateItem(item.id, { price: event.target.value })} />
+          <input aria-label="明细数量" disabled={item.billed} type="number" min="1" value={item.quantity} placeholder="数量" onChange={(event) => updateItem(item.id, { quantity: event.target.value })} />
+          <input aria-label="明细牙位" disabled={item.billed} value={item.teethNumbers} placeholder="牙位（逗号分隔，如 11,21）" onChange={(event) => updateItem(item.id, { teethNumbers: event.target.value })} />
+          <input aria-label="明细状态" disabled={item.billed} value={item.status} placeholder="状态（如 PLANNED）" onChange={(event) => updateItem(item.id, { status: event.target.value })} />
+          <button type="button" disabled={item.billed} onClick={() => update({ items: form.items.filter((entry) => entry.id !== item.id) })}>移除</button>
         </div>
       ))}
       <button type="button" onClick={() => update({ items: [...form.items, newItem()] })}>添加明细</button>
@@ -684,6 +814,59 @@ function splitList(value: string): string[] {
     .split(/[,，]/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+/**
+ * 编辑提交：PATCH 主记录 + 明细 reconcile。
+ * 以服务端当前明细为基准：有 id 且未变更 → 跳过；有 id 且已变更 → PATCH；
+ * 表单中新增（无服务端 id）→ POST；服务端有而表单没有 → DELETE。
+ * billed 保护：已划价明细（billed === true/1）不做 PATCH、不做 DELETE。
+ */
+async function updatePlanWithItems(form: TreatmentPlanForm, planId: string | null): Promise<void> {
+  if (!planId) throw new Error('编辑目标不存在，请刷新后重试');
+  const validEntries = form.items
+    .filter((item) => item.name.trim() && item.price && item.quantity)
+    .map((item) => ({ id: item.id, billed: item.billed, payload: buildItemPayload(item) }))
+    .filter((entry) => entry.payload.price > 0 && entry.payload.quantity > 0);
+  const calculatedFee = validEntries.reduce((sum, entry) => sum + entry.payload.price * entry.payload.quantity, 0);
+  await apiRequest(`/resources/treatmentPlans/${planId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      patientId: form.patientId,
+      doctorId: form.doctorId,
+      name: form.name.trim(),
+      status: form.status,
+      totalFee: toCents(form.totalFee) || calculatedFee,
+      remark: form.remark || undefined,
+    }),
+  });
+  const page = await apiRequest<Page<PlanItemRow>>(`/resources/treatmentPlanItems?planId=${planId}&page=1&pageSize=100`);
+  const serverItems = page.items ?? [];
+  const serverById = new Map(serverItems.map((row) => [String(row.id), row]));
+  const keptIds = new Set<string>();
+  for (const entry of validEntries) {
+    const existing = serverById.get(entry.id);
+    if (!existing) {
+      // 新增行（表单里无服务端 id 的行）
+      await apiRequest('/resources/treatmentPlanItems', {
+        method: 'POST',
+        body: JSON.stringify({ planId, ...entry.payload }),
+      });
+      continue;
+    }
+    keptIds.add(entry.id);
+    if (Number(existing.billed) === 1) continue; // billed 保护：不修改已划价明细
+    if (isItemUnchanged(existing, entry.payload)) continue;
+    await apiRequest(`/resources/treatmentPlanItems/${entry.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(entry.payload),
+    });
+  }
+  for (const row of serverItems) {
+    if (keptIds.has(String(row.id))) continue;
+    if (Number(row.billed) === 1) continue; // billed 保护：不删除已划价明细
+    await apiRequest(`/resources/treatmentPlanItems/${String(row.id)}`, { method: 'DELETE' });
+  }
 }
 
 async function cleanupOrphanPlan(planId: string, createdItemIds: string[]): Promise<void> {

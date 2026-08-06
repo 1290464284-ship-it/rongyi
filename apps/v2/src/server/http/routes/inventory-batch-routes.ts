@@ -43,6 +43,27 @@ export function registerInventoryBatchRoutes(
 
   app.patch('/api/v2/inventory-batches/:id', wrapAsync((req, res) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
+    const hasMetaFields = body.batchNo !== undefined
+      || body.productionDate !== undefined
+      || body.expiryDate !== undefined
+      || body.supplierId !== undefined;
+    if (hasMetaFields) {
+      // 编辑批次元信息（数量不可在此修改，走 adjust 分支）
+      res.json({
+        success: true,
+        data: service.update(
+          String(req.params.id),
+          {
+            batchNo: body.batchNo === undefined || body.batchNo === null ? undefined : String(body.batchNo),
+            productionDate: body.productionDate === undefined || body.productionDate === null ? undefined : String(body.productionDate),
+            expiryDate: body.expiryDate === undefined || body.expiryDate === null ? undefined : String(body.expiryDate),
+            supplierId: body.supplierId === undefined || body.supplierId === null ? undefined : String(body.supplierId),
+          },
+          req.context!,
+        ),
+      });
+      return;
+    }
     res.json({
       success: true,
       data: service.adjust(
@@ -50,6 +71,13 @@ export function registerInventoryBatchRoutes(
         { remainingQuantity: Number(body.remainingQuantity), note: body.note === undefined ? undefined : String(body.note) },
         req.context!,
       ),
+    });
+  }));
+
+  app.delete('/api/v2/inventory-batches/:id', wrapAsync((req, res) => {
+    res.json({
+      success: true,
+      data: service.remove(String(req.params.id), req.context!),
     });
   }));
 

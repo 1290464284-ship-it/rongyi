@@ -25,6 +25,9 @@ function mockData() {
       return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
     }
     if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+    if (path === '/resources/prescriptionItems?prescriptionId=pres-1&page=1&pageSize=100') {
+      return { items: [{ id: 'item-1', prescriptionId: 'pres-1', name: '阿莫西林', specification: '0.25g', dosage: '1粒', frequency: '每日三次', days: 5, quantity: 2, price: 1000 }], total: 1, page: 1, pageSize: 100 };
+    }
     if (path === '/prescriptions/pres-1/process') {
       return { prescriptionId: 'pres-1', status: 'PROCESSED', chargeId: 'charge-1', chargeNumber: 'CHG-1001', chargeTotalAmount: 25000, dispenseId: 'disp-1', dispenseNumber: 'DSP-1001', itemCount: 2 };
     }
@@ -240,5 +243,94 @@ describe('PrescriptionsPage', () => {
     await screen.findByText('饭后服用');
     fireEvent.click(screen.getByRole('button', { name: '处理' }));
     expect(await screen.findByText('处方不存在')).toBeDefined();
+  });
+
+  it('edits a prescription: backfills items and PATCHes master and items', async () => {
+    mockData();
+    render(<PrescriptionsPage />, { wrapper });
+    await screen.findByText('饭后服用');
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    // 明细异步回填（price 分 → 元）
+    expect(await screen.findByDisplayValue('阿莫西林')).toBeDefined();
+    expect((screen.getByLabelText('规格') as HTMLInputElement).value).toBe('0.25g');
+    expect((screen.getByLabelText('单价') as HTMLInputElement).value).toBe('10.00');
+
+    fireEvent.change(screen.getByLabelText('备注'), { target: { value: '饭后半小时服用' } });
+    fireEvent.change(screen.getByLabelText('单价'), { target: { value: '12' } });
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/prescriptions/pres-1', expect.objectContaining({ method: 'PATCH' }));
+    });
+    const masterCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/resources/prescriptions/pres-1');
+    expect(JSON.parse(String(masterCall?.[1]?.body))).toMatchObject({
+      patientId: 'p-1',
+      doctorId: 'd-1',
+      remark: '饭后半小时服用',
+      status: 'DRAFT',
+    });
+    const itemPatchCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/resources/prescriptionItems/item-1');
+    expect(JSON.parse(String(itemPatchCall?.[1]?.body))).toMatchObject({
+      name: '阿莫西林',
+      specification: '0.25g',
+      dosage: '1粒',
+      frequency: '每日三次',
+      days: 5,
+      quantity: 2,
+      price: 1200,
+    });
+    expect(await screen.findByText('处方已更新')).toBeDefined();
+  });
+
+  it('reconciles prescription items on edit: posts new items and deletes removed ones', async () => {
+    mockData();
+    render(<PrescriptionsPage />, { wrapper });
+    await screen.findByText('饭后服用');
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    await screen.findByDisplayValue('阿莫西林');
+
+    // 新增一条明细
+    fireEvent.click(screen.getByText('添加药品'));
+    fireEvent.change(screen.getAllByLabelText('药品名称')[1], { target: { value: '布洛芬' } });
+    fireEvent.change(screen.getAllByLabelText('天数')[1], { target: { value: '3' } });
+    fireEvent.change(screen.getAllByLabelText('数量')[1], { target: { value: '1' } });
+    fireEvent.change(screen.getAllByLabelText('单价')[1], { target: { value: '8' } });
+    // 移除原有明细
+    fireEvent.click(screen.getAllByText('移除')[0]);
+
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/prescriptionItems', expect.objectContaining({ method: 'POST' }));
+      expect(apiRequest).toHaveBeenCalledWith('/resources/prescriptionItems/item-1', expect.objectContaining({ method: 'DELETE' }));
+    });
+    const postCall = vi.mocked(apiRequest).mock.calls.find((call) => call[0] === '/resources/prescriptionItems' && call[1]?.method === 'POST');
+    expect(JSON.parse(String(postCall?.[1]?.body))).toMatchObject({
+      prescriptionId: 'pres-1',
+      name: '布洛芬',
+      days: 3,
+      quantity: 1,
+      price: 800,
+    });
+    expect(await screen.findByText('处方已更新')).toBeDefined();
+  });
+
+  it('deletes a prescription through the generic resource endpoint', async () => {
+    mockData();
+    render(<PrescriptionsPage />, { wrapper });
+    await screen.findByText('饭后服用');
+
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认删除' }));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/prescriptions/pres-1', expect.objectContaining({ method: 'DELETE' }));
+    });
+    expect(await screen.findByText('处方已删除')).toBeDefined();
   });
 });

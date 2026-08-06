@@ -89,7 +89,21 @@ export function VisitsPage() {
         summary: form.summary || undefined,
         nextReminder: form.nextReminder || undefined,
       })}
-      messages={{ create: '就诊记录已创建' }}
+      formFromRow={(row) => ({
+        patientId: String(row.patientId ?? ''),
+        doctorId: String(row.doctorId ?? ''),
+        startTime: toDatetimeLocal(row.startTime),
+        endTime: toDatetimeLocal(row.endTime),
+        status: String(row.status ?? 'IN_PROGRESS'),
+        chiefComplaint: String(row.chiefComplaint ?? ''),
+        diagnosis: String(row.diagnosis ?? ''),
+        treatmentPlan: String(row.treatmentPlan ?? ''),
+        summary: String(row.summary ?? ''),
+        nextReminder: String(row.nextReminder ?? '').slice(0, 10),
+      })}
+      canEdit
+      canDelete
+      messages={{ create: '就诊记录已创建', update: '就诊记录已更新', delete: '就诊记录已删除' }}
       errorMessages={{ create: '创建就诊失败' }}
       columns={visitColumns}
       rowActions={(row, ctx) => (
@@ -129,6 +143,14 @@ async function transitionVisit(
   } catch (error) {
     showToast(errorMessage(error, '状态更新失败'), 'error');
   }
+}
+
+function toDatetimeLocal(iso: unknown): string {
+  if (typeof iso !== 'string' || !iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 function VisitForm({ form, update }: { form: VisitForm; update: (patch: Partial<VisitForm>) => void }) {

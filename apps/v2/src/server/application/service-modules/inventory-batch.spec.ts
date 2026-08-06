@@ -209,6 +209,69 @@ describe('InventoryBatchService', () => {
     expect(() => service.adjust('batch-adjust', { remainingQuantity: -1 }, context)).toThrow(ValidationError);
   });
 
+  it('updates batch metadata without touching quantities and clears fields on empty strings', () => {
+    insertItem('item-update', { code: 'UPDATE-001' });
+    insertBatch('batch-update', { itemId: 'item-update', batchNo: 'OLD', expiryDate: '2026-09-01', initialQuantity: 7, remainingQuantity: 7 });
+    const service = new InventoryBatchService(db);
+
+    const result = service.update('batch-update', {
+      batchNo: 'NEW-BATCH',
+      productionDate: '2026-07-15',
+      expiryDate: '2026-12-01',
+      supplierId: 'sup-1',
+    }, context);
+    expect(result).toEqual({
+      id: 'batch-update',
+      batchNo: 'NEW-BATCH',
+      productionDate: '2026-07-15',
+      expiryDate: '2026-12-01',
+      supplierId: 'sup-1',
+    });
+    const row = batchRow('batch-update');
+    expect(row.batchNo).toBe('NEW-BATCH');
+    expect(row.productionDate).toBe('2026-07-15');
+    expect(row.expiryDate).toBe('2026-12-01');
+    expect(row.supplierId).toBe('sup-1');
+    expect(row.initialQuantity).toBe(7);
+    expect(row.remainingQuantity).toBe(7);
+    expect(row.updatedAt).toBe(now);
+
+    // 空字符串 → 清空为 null
+    const cleared = service.update('batch-update', { batchNo: '', productionDate: '', expiryDate: '', supplierId: '' }, context);
+    expect(cleared).toEqual({ id: 'batch-update', batchNo: null, productionDate: null, expiryDate: null, supplierId: null });
+
+    // 缺省字段保持不变
+    const partial = service.update('batch-update', { batchNo: 'PARTIAL' }, context);
+    expect(partial).toEqual({ id: 'batch-update', batchNo: 'PARTIAL', productionDate: null, expiryDate: null, supplierId: null });
+
+    expect(() => service.update('batch-update', { expiryDate: '2026/09/01' }, context)).toThrow(ValidationError);
+    expect(() => service.update('batch-update', { productionDate: 'not-a-date' }, context)).toThrow(ValidationError);
+    expect(() => service.update('batch-missing', { batchNo: 'X' }, context)).toThrow(NotFoundError);
+  });
+
+  it('removes only empty batches with a soft delete and rejects batches with remaining stock', () => {
+    insertItem('item-remove', { code: 'REMOVE-001' });
+    insertBatch('batch-remove-empty', { itemId: 'item-remove', batchNo: 'EMPTY', initialQuantity: 5, remainingQuantity: 0 });
+    insertBatch('batch-remove-stock', { itemId: 'item-remove', batchNo: 'STOCK', initialQuantity: 5, remainingQuantity: 5 });
+    const service = new InventoryBatchService(db);
+
+    expect(() => service.remove('batch-remove-stock', context)).toThrow(ConflictError);
+    expect(() => service.remove('batch-remove-stock', context)).toThrow('批次仍有剩余库存，不能删除');
+    expect(() => service.remove('batch-missing', context)).toThrow(NotFoundError);
+
+    expect(service.remove('batch-remove-empty', context)).toEqual({ id: 'batch-remove-empty' });
+    const row = batchRow('batch-remove-empty');
+    expect(row.deletedAt).toBe(now);
+    expect(row.active).toBe(0);
+
+    // 软删后 list 不再出现，且再次删除/更新均报 NotFound
+    const { batches } = service.list(context, { itemId: 'item-remove' });
+    expect(batches.map((batch) => batch.id)).not.toContain('batch-remove-empty');
+    expect(batches.map((batch) => batch.id)).toContain('batch-remove-stock');
+    expect(() => service.remove('batch-remove-empty', context)).toThrow(NotFoundError);
+    expect(() => service.update('batch-remove-empty', { batchNo: 'X' }, context)).toThrow(NotFoundError);
+  });
+
   it('generates expiry alerts with dedup and ignores far-future batches', () => {
     insertItem('item-alert', { code: 'ALERT-001', name: '麻醉剂' });
     insertBatch('batch-alert-near', { itemId: 'item-alert', batchNo: 'NEAR', expiryDate: '2026-08-12', initialQuantity: 4, remainingQuantity: 4 });

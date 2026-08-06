@@ -35,6 +35,14 @@ export interface BatchCreateInput {
   purchaseOrderId?: string;
 }
 
+/** 编辑批次元信息：字段缺省表示不修改；空字符串/null 表示清空。数量不可在此修改（走 adjust）。 */
+export interface BatchUpdateInput {
+  batchNo?: string;
+  productionDate?: string;
+  expiryDate?: string;
+  supplierId?: string;
+}
+
 /**
  * 批次管理 + 效期提醒。
  *
@@ -158,6 +166,94 @@ export class InventoryBatchService {
       `UPDATE InventoryBatch SET remainingQuantity = ?, updatedAt = ? WHERE id = ?${tenantAnd(context.clinicId)}`,
     ).run(quantity, now, id, ...tenantParams(context.clinicId));
     return { id, remainingQuantity: quantity };
+  }
+
+  /**
+   * 编辑批次元信息（batchNo/productionDate/expiryDate/supplierId）。
+   * 字段缺省表示不修改；空字符串/null 表示清空。数量（initial/remaining）不可在此修改，走 adjust。
+   */
+  update(id: string, input: BatchUpdateInput, context: AppContext): {
+    id: string;
+    batchNo: string | null;
+    productionDate: string | null;
+    expiryDate: string | null;
+    supplierId: string | null;
+  } {
+    if (input.expiryDate !== undefined && input.expiryDate !== null && input.expiryDate !== '') {
+      if (typeof input.expiryDate !== 'string' || !DATE_RE.test(input.expiryDate)) {
+        throw new ValidationError('效期日期格式应为 YYYY-MM-DD');
+      }
+    }
+    if (input.productionDate !== undefined && input.productionDate !== null && input.productionDate !== '') {
+      if (typeof input.productionDate !== 'string' || !DATE_RE.test(input.productionDate)) {
+        throw new ValidationError('生产日期格式应为 YYYY-MM-DD');
+      }
+    }
+    const row = this.db.prepare(
+      `SELECT id, batchNo, productionDate, expiryDate, supplierId
+       FROM InventoryBatch WHERE id = ? AND deletedAt IS NULL AND active = 1${tenantAnd(context.clinicId)}`,
+    ).get(id, ...tenantParams(context.clinicId)) as
+      | { id: string; batchNo: string | null; productionDate: string | null; expiryDate: string | null; supplierId: string | null }
+      | undefined;
+    if (!row) throw new NotFoundError('Inventory batch not found');
+    const now = context.now().toISOString();
+    const sets: string[] = [];
+    const values: Array<string | null> = [];
+    if (input.batchNo !== undefined) {
+      sets.push('batchNo = ?');
+      values.push(typeof input.batchNo === 'string' && input.batchNo.trim() ? input.batchNo.trim() : null);
+    }
+    if (input.productionDate !== undefined) {
+      sets.push('productionDate = ?');
+      values.push(input.productionDate && input.productionDate !== '' ? input.productionDate : null);
+    }
+    if (input.expiryDate !== undefined) {
+      sets.push('expiryDate = ?');
+      values.push(input.expiryDate && input.expiryDate !== '' ? input.expiryDate : null);
+    }
+    if (input.supplierId !== undefined) {
+      sets.push('supplierId = ?');
+      values.push(typeof input.supplierId === 'string' && input.supplierId.trim() ? input.supplierId.trim() : null);
+    }
+    sets.push('updatedAt = ?');
+    values.push(now);
+    this.db.prepare(
+      `UPDATE InventoryBatch SET ${sets.join(', ')} WHERE id = ?${tenantAnd(context.clinicId)}`,
+    ).run(...values, id, ...tenantParams(context.clinicId));
+    return {
+      id,
+      batchNo: input.batchNo !== undefined
+        ? (typeof input.batchNo === 'string' && input.batchNo.trim() ? input.batchNo.trim() : null)
+        : row.batchNo,
+      productionDate: input.productionDate !== undefined
+        ? (input.productionDate && input.productionDate !== '' ? input.productionDate : null)
+        : row.productionDate,
+      expiryDate: input.expiryDate !== undefined
+        ? (input.expiryDate && input.expiryDate !== '' ? input.expiryDate : null)
+        : row.expiryDate,
+      supplierId: input.supplierId !== undefined
+        ? (typeof input.supplierId === 'string' && input.supplierId.trim() ? input.supplierId.trim() : null)
+        : row.supplierId,
+    };
+  }
+
+  /**
+   * 软删批次：仅当剩余量为 0 时允许（deletedAt + active=0），避免破坏库存一致性。
+   */
+  remove(id: string, context: AppContext): { id: string } {
+    const row = this.db.prepare(
+      `SELECT id, remainingQuantity FROM InventoryBatch
+       WHERE id = ? AND deletedAt IS NULL AND active = 1${tenantAnd(context.clinicId)}`,
+    ).get(id, ...tenantParams(context.clinicId)) as { id: string; remainingQuantity: number } | undefined;
+    if (!row) throw new NotFoundError('Inventory batch not found');
+    if (Number(row.remainingQuantity) > 0) {
+      throw new ConflictError('批次仍有剩余库存，不能删除');
+    }
+    const now = context.now().toISOString();
+    this.db.prepare(
+      `UPDATE InventoryBatch SET deletedAt = ?, active = 0, updatedAt = ? WHERE id = ?${tenantAnd(context.clinicId)}`,
+    ).run(now, now, id, ...tenantParams(context.clinicId));
+    return { id };
   }
 
   /** FIFO 出库：按效期从早到晚逐批扣减，超量整体回滚。 */

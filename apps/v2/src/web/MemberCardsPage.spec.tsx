@@ -199,4 +199,48 @@ describe('MemberCardsPage', () => {
     fireEvent.click(screen.getByText('试算'));
     expect(await screen.findByText('该卡无折扣方案')).toBeDefined();
   });
+
+  it('edits a member card and PATCHes card fields', async () => {
+    mockData();
+    render(<MemberCardsPage />, { wrapper });
+    await screen.findByText('C001');
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    expect((screen.getByLabelText('卡号') as HTMLInputElement).value).toBe('C001');
+    expect((screen.getByLabelText('状态') as HTMLSelectElement).value).toBe('ACTIVE');
+    expect((screen.getByLabelText('等级') as HTMLSelectElement).value).toBe('VIP');
+
+    fireEvent.change(screen.getByLabelText('卡号'), { target: { value: 'C001-X' } });
+    fireEvent.change(screen.getByLabelText('等级'), { target: { value: 'SVIP' } });
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/memberCards/card-1', expect.objectContaining({ method: 'PATCH' }));
+    });
+    const patchCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/resources/memberCards/card-1');
+    expect(JSON.parse(String(patchCall?.[1]?.body))).toMatchObject({
+      patientId: 'p-1',
+      cardNo: 'C001-X',
+      status: 'ACTIVE',
+      level: 'SVIP',
+    });
+    expect(await screen.findByText('会员卡已更新')).toBeDefined();
+  });
+
+  it('deletes a member card through the generic resource endpoint', async () => {
+    mockData();
+    render(<MemberCardsPage />, { wrapper });
+    await screen.findByText('C001');
+
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认删除' }));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/memberCards/card-1', expect.objectContaining({ method: 'DELETE' }));
+    });
+    expect(await screen.findByText('会员卡已删除')).toBeDefined();
+  });
 });

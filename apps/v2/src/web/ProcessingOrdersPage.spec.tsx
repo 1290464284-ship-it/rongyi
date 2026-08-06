@@ -206,7 +206,7 @@ describe('ProcessingOrdersPage', () => {
         return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
       }
       if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
-      if (path === '/api/v2/processing-orders/proc-1/steps') {
+      if (path === '/processing-orders/proc-1/steps') {
         return [
           { id: 's-1', stepName: '取模', status: 'DONE', sortOrder: 1, completedAt: '2026-08-01T10:00:00' },
           { id: 's-2', stepName: '制作', status: 'PENDING', sortOrder: 2, completedAt: null },
@@ -225,7 +225,7 @@ describe('ProcessingOrdersPage', () => {
     expect(within(dialog).getByText(formatDateTime('2026-08-01T10:00:00'))).toBeDefined();
     expect(within(dialog).getByText('—')).toBeDefined();
     await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/api/v2/processing-orders/proc-1/steps');
+      expect(apiRequest).toHaveBeenCalledWith('/processing-orders/proc-1/steps');
     });
   });
 
@@ -238,13 +238,13 @@ describe('ProcessingOrdersPage', () => {
         return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
       }
       if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
-      if (path === '/api/v2/processing-orders/proc-1/steps') {
+      if (path === '/processing-orders/proc-1/steps') {
         return [
           { id: 's-1', stepName: '取模', status: 'DONE', sortOrder: 1, completedAt: '2026-08-01T10:00:00' },
           { id: 's-2', stepName: '制作', status: 'PENDING', sortOrder: 2, completedAt: null },
         ];
       }
-      if (path === '/api/v2/processing-orders/proc-1/register-step') {
+      if (path === '/processing-orders/proc-1/register-step') {
         return [
           { id: 's-1', stepName: '取模', status: 'DONE', sortOrder: 1, completedAt: '2026-08-01T10:00:00' },
           { id: 's-2', stepName: '制作', status: 'IN_PROGRESS', sortOrder: 2, completedAt: null },
@@ -259,10 +259,10 @@ describe('ProcessingOrdersPage', () => {
     await within(dialog).findByText('取模');
     fireEvent.click(within(dialog).getByRole('button', { name: '推进' }));
     await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/api/v2/processing-orders/proc-1/register-step', expect.objectContaining({ method: 'POST' }));
+      expect(apiRequest).toHaveBeenCalledWith('/processing-orders/proc-1/register-step', expect.objectContaining({ method: 'POST' }));
     });
     const advanceCall = vi.mocked(apiRequest).mock.calls.find(
-      ([path, options]) => path === '/api/v2/processing-orders/proc-1/register-step' && options?.method === 'POST',
+      ([path, options]) => path === '/processing-orders/proc-1/register-step' && options?.method === 'POST',
     );
     expect(JSON.parse(String(advanceCall?.[1]?.body))).toEqual({});
     expect(await screen.findByText('流程已推进')).toBeDefined();
@@ -278,10 +278,10 @@ describe('ProcessingOrdersPage', () => {
         return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
       }
       if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
-      if (path === '/api/v2/processing-orders/proc-1/steps') {
+      if (path === '/processing-orders/proc-1/steps') {
         return [{ id: 's-1', stepId: 'st-1', stepName: '取模', status: 'PENDING', sortOrder: 1, completedAt: null }];
       }
-      if (path === '/api/v2/processing-orders/proc-1/set-step') {
+      if (path === '/processing-orders/proc-1/set-step') {
         return { id: 's-1', stepId: 'st-1', stepName: '取模', status: 'DONE', sortOrder: 1, completedAt: '2026-08-02T08:00:00' };
       }
       return {};
@@ -293,10 +293,10 @@ describe('ProcessingOrdersPage', () => {
     await within(dialog).findByText('取模');
     fireEvent.change(within(dialog).getByLabelText('调整取模'), { target: { value: 'DONE' } });
     await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/api/v2/processing-orders/proc-1/set-step', expect.objectContaining({ method: 'POST' }));
+      expect(apiRequest).toHaveBeenCalledWith('/processing-orders/proc-1/set-step', expect.objectContaining({ method: 'POST' }));
     });
     const adjustCall = vi.mocked(apiRequest).mock.calls.find(
-      ([path, options]) => path === '/api/v2/processing-orders/proc-1/set-step' && options?.method === 'POST',
+      ([path, options]) => path === '/processing-orders/proc-1/set-step' && options?.method === 'POST',
     );
     expect(JSON.parse(String(adjustCall?.[1]?.body))).toEqual({ stepId: 'st-1', status: 'DONE' });
     expect(await screen.findByText('步骤状态已调整')).toBeDefined();
@@ -312,7 +312,7 @@ describe('ProcessingOrdersPage', () => {
         return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
       }
       if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
-      if (path.startsWith('/api/v2/processing-flow-stats')) {
+      if (path.startsWith('/processing-flow-stats')) {
         return { from: null, to: null, steps: [{ stepId: 'st-1', stepName: '取模', doneCount: 3, inProgressCount: 1 }] };
       }
       return {};
@@ -327,7 +327,130 @@ describe('ProcessingOrdersPage', () => {
     fireEvent.change(screen.getByLabelText('统计开始日期'), { target: { value: '2026-08-01' } });
     fireEvent.change(screen.getByLabelText('统计结束日期'), { target: { value: '2026-08-31' } });
     await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/api/v2/processing-flow-stats?from=2026-08-01&to=2026-08-31');
+      expect(apiRequest).toHaveBeenCalledWith('/processing-flow-stats?from=2026-08-01&to=2026-08-31');
     });
+  });
+
+  it('edits a processing order: prefills the form, PATCHes the order and reconciles items', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/processingOrders?page=1&pageSize=50') {
+        return {
+          items: [{ id: 'proc-1', number: 'PROC-1', patientId: 'p-1', status: 'DRAFT', shade: 'A2', teethNumbers: ['11', '21'], totalFee: 50000 }],
+          total: 1,
+          page: 1,
+          pageSize: 50,
+        };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      if (path === '/resources/processingOrderItems?orderId=proc-1&page=1&pageSize=100') {
+        return { items: [{ id: 'poi-1', name: '烤瓷冠', spec: 'A2-1', quantity: 1, unitPrice: 50000, subtotal: 50000, status: 'DRAFT' }], total: 1, page: 1, pageSize: 100 };
+      }
+      return {};
+    });
+
+    render(<ProcessingOrdersPage />, { wrapper });
+    await screen.findByText('PROC-1');
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    await waitFor(() => {
+      expect((screen.getByLabelText('加工单号') as HTMLInputElement).value).toBe('PROC-1');
+    });
+    expect((screen.getByLabelText('颜色') as HTMLInputElement).value).toBe('A2');
+    expect((screen.getByLabelText('牙位（逗号分隔）') as HTMLInputElement).value).toBe('11, 21');
+    expect((screen.getByLabelText('总费用') as HTMLInputElement).value).toBe('500.00');
+
+    // 明细异步回填
+    await waitFor(() => {
+      expect((screen.getByLabelText('加工项目') as HTMLInputElement).value).toBe('烤瓷冠');
+    });
+    fireEvent.change(screen.getByLabelText('加工数量'), { target: { value: '2' } });
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/processingOrders/proc-1', expect.objectContaining({ method: 'PATCH' }));
+    });
+    const patchCall = vi.mocked(apiRequest).mock.calls.find(([path, options]) => path === '/resources/processingOrders/proc-1' && options?.method === 'PATCH');
+    expect(JSON.parse(String(patchCall?.[1]?.body))).toMatchObject({
+      number: 'PROC-1',
+      shade: 'A2',
+      teethNumbers: ['11', '21'],
+      totalFee: 50000,
+      status: 'DRAFT',
+    });
+    const itemPatchCall = vi.mocked(apiRequest).mock.calls.find(([path, options]) => path === '/resources/processingOrderItems/poi-1' && options?.method === 'PATCH');
+    expect(JSON.parse(String(itemPatchCall?.[1]?.body))).toMatchObject({
+      name: '烤瓷冠',
+      spec: 'A2-1',
+      quantity: 2,
+      unitPrice: 50000,
+      subtotal: 100000,
+      status: 'DRAFT',
+    });
+    expect(await screen.findByText('加工单已更新')).toBeDefined();
+  });
+
+  it('reconciles processing items: posts new rows and deletes removed ones', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/processingOrders?page=1&pageSize=50') {
+        return { items: [{ id: 'proc-1', number: 'PROC-1', patientId: 'p-1', status: 'DRAFT', totalFee: 50000 }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      if (path === '/resources/processingOrderItems?orderId=proc-1&page=1&pageSize=100') {
+        return { items: [{ id: 'poi-1', name: '烤瓷冠', spec: 'A2-1', quantity: 1, unitPrice: 50000, subtotal: 50000, status: 'DRAFT' }], total: 1, page: 1, pageSize: 100 };
+      }
+      return {};
+    });
+
+    render(<ProcessingOrdersPage />, { wrapper });
+    await screen.findByText('PROC-1');
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    await waitFor(() => {
+      expect((screen.getByLabelText('加工项目') as HTMLInputElement).value).toBe('烤瓷冠');
+    });
+
+    // 新增一条明细并填写，然后移除原有明细
+    fireEvent.click(screen.getByText('添加明细'));
+    const nameInputs = screen.getAllByLabelText('加工项目');
+    expect(nameInputs.length).toBe(2);
+    fireEvent.change(nameInputs[1], { target: { value: '全瓷冠' } });
+    fireEvent.change(screen.getAllByLabelText('加工数量')[1], { target: { value: '1' } });
+    fireEvent.change(screen.getAllByLabelText('加工单价')[1], { target: { value: '300' } });
+    fireEvent.click(screen.getAllByText('移除')[0]);
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/processingOrderItems', expect.objectContaining({ method: 'POST' }));
+    });
+    const postCall = vi.mocked(apiRequest).mock.calls.find(([path, options]) => path === '/resources/processingOrderItems' && options?.method === 'POST');
+    expect(JSON.parse(String(postCall?.[1]?.body))).toMatchObject({
+      orderId: 'proc-1',
+      name: '全瓷冠',
+      quantity: 1,
+      unitPrice: 30000,
+      subtotal: 30000,
+      status: 'DRAFT',
+    });
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/processingOrderItems/poi-1', expect.objectContaining({ method: 'DELETE' }));
+    });
+    expect(await screen.findByText('加工单已更新')).toBeDefined();
+  });
+
+  it('deletes a processing order after confirmation', async () => {
+    mockData();
+    render(<ProcessingOrdersPage />, { wrapper });
+    await screen.findByText('PROC-1');
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    fireEvent.click(screen.getByText('确认删除'));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/processingOrders/proc-1', expect.objectContaining({ method: 'DELETE' }));
+    });
+    expect(await screen.findByText('加工单已删除')).toBeDefined();
   });
 });

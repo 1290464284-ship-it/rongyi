@@ -190,4 +190,50 @@ describe('CephalometricPage', () => {
     expect(await screen.findByLabelText('轮廓重叠比较图')).toBeDefined();
     expect(screen.getByText('对比说明')).toBeDefined();
   });
+
+  it('edits a cephalometric case keeping the original image', async () => {
+    mockData();
+    render(<CephalometricPage />, { wrapper });
+    await screen.findByText('DRAFT');
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    await waitFor(() => {
+      expect((screen.getByLabelText('备注') as HTMLTextAreaElement).value).toBe('');
+    });
+    fireEvent.change(screen.getByLabelText('备注'), { target: { value: '随访复查' } });
+    vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'c-1' });
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/cephalometricCases/c-1', expect.objectContaining({ method: 'PATCH' }));
+    });
+    const patchCall = vi.mocked(apiRequest).mock.calls.find(
+      (call) => call[0] === '/resources/cephalometricCases/c-1' && (call[1] as RequestInit)?.method === 'PATCH',
+    );
+    const body = JSON.parse(String((patchCall?.[1] as RequestInit)?.body));
+    expect(body).toMatchObject({
+      patientId: 'p-1',
+      status: 'DRAFT',
+      imageUrl: '/api/v2/files/x.png',
+      landmarksJson: '{}',
+      metricsJson: '{}',
+      remark: '随访复查',
+    });
+    expect(uploadFile).not.toHaveBeenCalled();
+    expect(await screen.findByText('头影测量已更新')).toBeDefined();
+  });
+
+  it('deletes a cephalometric case after confirmation', async () => {
+    mockData();
+    render(<CephalometricPage />, { wrapper });
+    await screen.findByText('DRAFT');
+
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    fireEvent.click(await screen.findByText('确认删除'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/cephalometricCases/c-1', expect.objectContaining({ method: 'DELETE' }));
+    });
+    expect(await screen.findByText('头影测量已删除')).toBeDefined();
+  });
 });

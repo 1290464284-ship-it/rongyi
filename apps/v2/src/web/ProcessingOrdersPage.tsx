@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import { CrudPage } from './CrudPage';
@@ -6,6 +6,7 @@ import { DataTable, Dialog, LoadingState, PageError, SearchableSelect, type Data
 import { formatDateTime, formatMoney, toCents } from './format';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
+import type { Page } from './types';
 
 const STATUS_LABELS: Record<string, string> = {
   DRAFT: '草稿',
@@ -39,8 +40,21 @@ interface ProcessingRow extends Record<string, unknown> {
 interface ProcessingItemForm {
   id: string;
   name: string;
+  spec: string;
   quantity: string;
   unitPrice: string;
+  subtotal: string;
+  status: string;
+}
+
+interface ProcessingOrderItemRow extends Record<string, unknown> {
+  id: string;
+  name?: string | null;
+  spec?: string | null;
+  quantity?: number | null;
+  unitPrice?: number | null;
+  subtotal?: number | null;
+  status?: string | null;
 }
 
 interface ProcessingOrderForm {
@@ -92,7 +106,7 @@ const flowStatsColumns: DataTableColumn<ProcessingFlowStatRow>[] = [
 ];
 
 function newItem(): ProcessingItemForm {
-  return { id: crypto.randomUUID(), name: '', quantity: '1', unitPrice: '' };
+  return { id: crypto.randomUUID(), name: '', spec: '', quantity: '1', unitPrice: '', subtotal: '', status: 'DRAFT' };
 }
 
 function emptyProcessingForm(): ProcessingOrderForm {
@@ -126,6 +140,8 @@ const processingColumns: DataTableColumn<ProcessingRow>[] = [
 
 export function ProcessingOrdersPage() {
   const { showToast } = useToast();
+  const editingIdRef = useRef<string | null>(null);
+  const editingStatusRef = useRef<string | null>(null);
   const [settleTarget, setSettleTarget] = useState<ProcessingRow | null>(null);
   const [settleReload, setSettleReload] = useState<(() => Promise<unknown>) | null>(null);
   const [settleAmount, setSettleAmount] = useState('');
@@ -150,7 +166,7 @@ export function ProcessingOrdersPage() {
       if (statsFrom) params.set('from', statsFrom);
       if (statsTo) params.set('to', statsTo);
       const queryString = params.toString();
-      return apiRequest<ProcessingFlowStatsData>(`/api/v2/processing-flow-stats${queryString ? `?${queryString}` : ''}`);
+      return apiRequest<ProcessingFlowStatsData>(`/processing-flow-stats${queryString ? `?${queryString}` : ''}`);
     },
   });
 
@@ -160,7 +176,7 @@ export function ProcessingOrdersPage() {
     setFlowError(null);
     setFlowLoading(true);
     try {
-      const steps = await apiRequest<ProcessingOrderStepRow[]>(`/api/v2/processing-orders/${row.id}/steps`);
+      const steps = await apiRequest<ProcessingOrderStepRow[]>(`/processing-orders/${row.id}/steps`);
       setFlowSteps(steps);
     } catch (error) {
       setFlowError(errorMessage(error, '加载流程失败'));
@@ -180,7 +196,7 @@ export function ProcessingOrdersPage() {
     setFlowBusy(true);
     try {
       const steps = await apiRequest<ProcessingOrderStepRow[]>(
-        `/api/v2/processing-orders/${flowTarget.id}/register-step`,
+        `/processing-orders/${flowTarget.id}/register-step`,
         { method: 'POST', body: JSON.stringify({}) },
       );
       setFlowSteps(steps);
@@ -197,7 +213,7 @@ export function ProcessingOrdersPage() {
     setFlowBusy(true);
     try {
       const updated = await apiRequest<ProcessingOrderStepRow>(
-        `/api/v2/processing-orders/${flowTarget.id}/set-step`,
+        `/processing-orders/${flowTarget.id}/set-step`,
         {
           method: 'POST',
           body: JSON.stringify({ stepId: step.stepId ?? step.id, status }),
@@ -282,7 +298,24 @@ export function ProcessingOrdersPage() {
         emptyMessage="暂无加工单"
         queryKey={['processing-orders']}
         endpoint="/resources/processingOrders"
-        initialForm={emptyProcessingForm}
+        initialForm={() => {
+          editingIdRef.current = null;
+          editingStatusRef.current = null;
+          return emptyProcessingForm();
+        }}
+        formFromRow={(row) => {
+          editingIdRef.current = String(row.id);
+          editingStatusRef.current = String(row.status ?? '');
+          return {
+            patientId: String(row.patientId ?? ''),
+            doctorId: String(row.doctorId ?? ''),
+            number: String(row.number ?? ''),
+            shade: String(row.shade ?? ''),
+            teethNumbers: joinList(row.teethNumbers),
+            totalFee: row.totalFee === null || row.totalFee === undefined ? '' : (Number(row.totalFee) / 100).toFixed(2),
+            items: [newItem()],
+          };
+        }}
         validate={(form) => {
           const validItems = buildValidItems(form.items);
           if (!form.patientId || !form.number.trim() || validItems.length === 0) {
@@ -290,9 +323,27 @@ export function ProcessingOrdersPage() {
           }
           return null;
         }}
-        submitOverride={async ({ form }) => {
+        submitOverride={async ({ form, editing }) => {
           const validItems = buildValidItems(form.items);
           const calculatedTotalFee = validItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+          if (editing) {
+            const orderId = editingIdRef.current;
+            if (!orderId) throw new Error('缺少编辑记录 ID');
+            await apiRequest(`/resources/processingOrders/${orderId}`, {
+              method: 'PATCH',
+              body: JSON.stringify({
+                patientId: form.patientId,
+                doctorId: form.doctorId || undefined,
+                number: form.number.trim(),
+                shade: form.shade || undefined,
+                teethNumbers: splitList(form.teethNumbers),
+                totalFee: toCents(form.totalFee) || calculatedTotalFee,
+                status: editingStatusRef.current ?? 'DRAFT',
+              }),
+            });
+            await reconcileProcessingItems(orderId, form.items);
+            return;
+          }
           await apiRequest('/processing-orders', {
             method: 'POST',
             body: JSON.stringify({
@@ -307,9 +358,11 @@ export function ProcessingOrdersPage() {
             }),
           });
         }}
-        messages={{ create: '加工单已创建' }}
-        errorMessages={{ create: '创建加工单失败' }}
+        messages={{ create: '加工单已创建', update: '加工单已更新', delete: '加工单已删除' }}
+        errorMessages={{ create: '创建加工单失败', update: '更新加工单失败', delete: '删除加工单失败' }}
         columns={processingColumns}
+        canEdit
+        canDelete
         rowActions={(row, ctx) => (
           <>
             <button onClick={() => void openFlow(row)}>流程</button>
@@ -332,7 +385,14 @@ export function ProcessingOrdersPage() {
             )}
           </>
         )}
-        renderForm={(ctx) => <ProcessingOrderFormFields form={ctx.form} update={ctx.update} />}
+        renderForm={(ctx) => (
+          <ProcessingOrderFormFields
+            form={ctx.form}
+            update={ctx.update}
+            editing={ctx.editing}
+            editingId={editingIdRef.current}
+          />
+        )}
       />
       <section>
         <h2>流程统计</h2>
@@ -436,11 +496,50 @@ async function transitionProcessingOrder(
   }
 }
 
-function ProcessingOrderFormFields({ form, update }: { form: ProcessingOrderForm; update: (patch: Partial<ProcessingOrderForm>) => void }) {
+function ProcessingOrderFormFields({
+  form,
+  update,
+  editing,
+  editingId,
+}: {
+  form: ProcessingOrderForm;
+  update: (patch: Partial<ProcessingOrderForm>) => void;
+  editing: boolean;
+  editingId: string | null;
+}) {
   const doctors = useQuery({
     queryKey: ['processing-doctors'],
     queryFn: () => apiRequest<Array<Record<string, unknown>>>('/doctors'),
   });
+  const loadedItemsForRef = useRef<string | null>(null);
+  const [itemsError, setItemsError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!editing || !editingId || loadedItemsForRef.current === editingId) return;
+    let cancelled = false;
+    loadedItemsForRef.current = editingId;
+    setItemsError(null);
+    apiRequest<Page<ProcessingOrderItemRow>>(`/resources/processingOrderItems?orderId=${editingId}&page=1&pageSize=100`)
+      .then((data) => {
+        if (cancelled) return;
+        update({
+          items: (data.items ?? []).map((row) => ({
+            id: String(row.id),
+            name: String(row.name ?? ''),
+            spec: String(row.spec ?? ''),
+            quantity: String(row.quantity ?? '1'),
+            unitPrice: (Number(row.unitPrice ?? 0) / 100).toFixed(2),
+            subtotal: (Number(row.subtotal ?? 0) / 100).toFixed(2),
+            status: String(row.status ?? 'DRAFT'),
+          })),
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setItemsError('明细加载失败，请关闭后重试');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [editing, editingId, update]);
   return (
     <>
       <label>
@@ -472,6 +571,7 @@ function ProcessingOrderFormFields({ form, update }: { form: ProcessingOrderForm
         总费用
         <input type="number" min="0" value={form.totalFee} onChange={(event) => update({ totalFee: event.target.value })} />
       </label>
+      {itemsError && <p className="error">{itemsError}</p>}
       {form.items.map((item) => (
         <div className="charge-item-row" key={item.id}>
           <input aria-label="加工项目" value={item.name} placeholder="项目名称" onChange={(event) => update({ items: form.items.map((entry) => entry.id === item.id ? { ...entry, name: event.target.value } : entry) })} />
@@ -490,4 +590,62 @@ function splitList(value: string): string[] {
     .split(/[,，]/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function joinList(value: unknown): string {
+  if (Array.isArray(value)) return value.join(', ');
+  if (value === null || value === undefined) return '';
+  return String(value);
+}
+
+function validFormItems(items: ProcessingItemForm[]): ProcessingItemForm[] {
+  return items.filter((item) => {
+    if (!item.name.trim() || !item.quantity || !item.unitPrice) return false;
+    return Number(item.quantity) > 0 && toCents(item.unitPrice) >= 0;
+  });
+}
+
+/** 编辑保存时的明细 reconcile：有 id 的行 PATCH，新行 POST（带 orderId），被移除的行 DELETE。 */
+async function reconcileProcessingItems(orderId: string, items: ProcessingItemForm[]): Promise<void> {
+  const existing = await apiRequest<Page<ProcessingOrderItemRow>>(
+    `/resources/processingOrderItems?orderId=${orderId}&page=1&pageSize=100`,
+  );
+  const existingById = new Map(existing.items.map((row) => [String(row.id), row]));
+  const keptIds = new Set<string>();
+  for (const item of validFormItems(items)) {
+    const quantity = Number(item.quantity);
+    const unitPrice = toCents(item.unitPrice);
+    if (item.id && existingById.has(item.id)) {
+      keptIds.add(item.id);
+      await apiRequest(`/resources/processingOrderItems/${item.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          name: item.name.trim(),
+          spec: item.spec.trim() || undefined,
+          quantity,
+          unitPrice,
+          subtotal: Math.round(unitPrice * quantity),
+          status: item.status || 'DRAFT',
+        }),
+      });
+    } else {
+      await apiRequest('/resources/processingOrderItems', {
+        method: 'POST',
+        body: JSON.stringify({
+          orderId,
+          name: item.name.trim(),
+          spec: item.spec.trim() || undefined,
+          quantity,
+          unitPrice,
+          subtotal: Math.round(unitPrice * quantity),
+          status: 'DRAFT',
+        }),
+      });
+    }
+  }
+  for (const row of existing.items) {
+    if (!keptIds.has(String(row.id))) {
+      await apiRequest(`/resources/processingOrderItems/${String(row.id)}`, { method: 'DELETE' });
+    }
+  }
 }

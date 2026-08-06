@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DispenseWorkbenchPage } from './DispenseWorkbenchPage';
 import { apiRequest } from './api';
@@ -23,6 +23,10 @@ function mockData() {
     if (method === 'POST' && path === '/dispenses/disp-1/dispense') return { status: 'DISPENSED' };
     if (method === 'POST' && path === '/dispenses/disp-2/return') return { status: 'PARTIAL' };
     if (method === 'POST' && path === '/narcotic-registry') return { id: 'narc-1' };
+    if (method === 'PATCH' && path === '/dispenses/disp-1') return { id: 'disp-1', status: 'PENDING' };
+    if (method === 'DELETE' && path === '/dispenses/disp-1') return { id: 'disp-1', deleted: true };
+    if (method === 'PATCH' && path === '/narcotic-registry/n-1') return { id: 'n-1' };
+    if (method === 'DELETE' && path === '/narcotic-registry/n-1') return { id: 'n-1', deleted: true };
     if (path === '/dispenses') {
       return [
         { id: 'disp-1', number: 'DISP-001', patientId: 'patient-demo-001', patientName: 'Demo Patient', status: 'PENDING', itemsCount: 2, createdAt: '2026-08-01T10:00:00.000Z' },
@@ -34,6 +38,8 @@ function mockData() {
       return {
         id: 'disp-1',
         number: 'DISP-001',
+        patientId: 'patient-demo-001',
+        note: '',
         status: 'PENDING',
         items: [{ id: 'di-1', itemId: 'inventory-demo-001', batchId: null, name: 'Dental Material', spec: null, quantity: 2, returnedQuantity: 0, batchManaged: 0, stock: 90 }],
       };
@@ -46,7 +52,24 @@ function mockData() {
         items: [{ id: 'di-2', itemId: 'inventory-demo-001', batchId: null, name: 'Dental Material', spec: null, quantity: 1, returnedQuantity: 0, batchManaged: 0, stock: 90 }],
       };
     }
-    if (path === '/narcotic-registry') return [];
+    if (path === '/narcotic-registry') {
+      return [
+        {
+          id: 'n-1',
+          recordDate: '2026-08-05',
+          patientId: 'patient-demo-001',
+          itemId: 'inventory-demo-001',
+          itemName: 'Dental Material',
+          batchNo: 'N-001',
+          quantity: 1,
+          usage: '局部麻醉',
+          balanceBefore: 20,
+          balanceAfter: 19,
+          remark: '备注',
+          createdAt: '2026-08-05T10:00:00.000Z',
+        },
+      ];
+    }
     if (path.startsWith('/inventory-batches?itemId=')) {
       return { batches: [{ id: 'batch-1', batchNo: 'B-2026', remainingQuantity: 10 }], expiring: [] };
     }
@@ -170,5 +193,120 @@ describe('DispenseWorkbenchPage', () => {
     const body = JSON.parse(String((narcoticCall?.[1] as RequestInit)?.body));
     expect(body).toMatchObject({ recordDate: '2026-08-06', itemId: 'inventory-demo-001', quantity: 1 });
     expect(await screen.findByText('麻药登记成功')).toBeDefined();
+  });
+
+  it('edits a PENDING dispense: dialog prefills from detail and PATCHes /dispenses/disp-1', async () => {
+    mockData();
+    render(<DispenseWorkbenchPage />, { wrapper });
+    await screen.findByText('DISP-001');
+    const tables = screen.getAllByRole('table');
+    fireEvent.click(within(tables[0]).getByText('编辑'));
+
+    // 弹窗回填断言
+    expect(await screen.findByLabelText('编辑单号')).toBeDefined();
+    await waitFor(() => {
+      expect((screen.getByLabelText('编辑单号') as HTMLInputElement).value).toBe('DISP-001');
+      expect((screen.getByLabelText('编辑患者') as HTMLSelectElement).value).toBe('patient-demo-001');
+      expect((screen.getByLabelText('编辑发药备注') as HTMLInputElement).value).toBe('');
+      expect((screen.getByLabelText('编辑物品') as HTMLSelectElement).value).toBe('inventory-demo-001');
+      expect((screen.getByLabelText('编辑发药数量') as HTMLInputElement).value).toBe('2');
+    });
+
+    fireEvent.change(screen.getByLabelText('编辑发药数量'), { target: { value: '3' } });
+    fireEvent.change(screen.getByLabelText('编辑发药备注'), { target: { value: '新备注' } });
+    fireEvent.click(screen.getByText('保存修改'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/dispenses/disp-1', expect.objectContaining({ method: 'PATCH' }));
+    });
+    const patchCall = vi.mocked(apiRequest).mock.calls.find(
+      (entry) => entry[0] === '/dispenses/disp-1' && String((entry[1] as RequestInit)?.method ?? 'GET').toUpperCase() === 'PATCH',
+    );
+    const body = JSON.parse(String((patchCall?.[1] as RequestInit)?.body));
+    expect(body).toMatchObject({
+      number: 'DISP-001',
+      patientId: 'patient-demo-001',
+      note: '新备注',
+      items: [{ id: 'di-1', itemId: 'inventory-demo-001', quantity: 3 }],
+    });
+    expect(await screen.findByText('发药单已更新')).toBeDefined();
+  });
+
+  it('deletes a PENDING dispense after confirmation', async () => {
+    mockData();
+    render(<DispenseWorkbenchPage />, { wrapper });
+    await screen.findByText('DISP-001');
+    const tables = screen.getAllByRole('table');
+    fireEvent.click(within(tables[0]).getByText('删除'));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('确定删除该发药单吗？')).toBeDefined();
+    fireEvent.click(within(dialog).getByText('删除'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/dispenses/disp-1', expect.objectContaining({ method: 'DELETE' }));
+    });
+    expect(await screen.findByText('发药单已删除')).toBeDefined();
+  });
+
+  it('edits a narcotic registry entry: PATCHes /narcotic-registry/n-1', async () => {
+    mockData();
+    render(<DispenseWorkbenchPage />, { wrapper });
+    await screen.findByText('DISP-001');
+    await screen.findByText('N-001');
+    const tables = screen.getAllByRole('table');
+    fireEvent.click(within(tables[1]).getByText('编辑'));
+
+    expect(await screen.findByLabelText('编辑登记日期')).toBeDefined();
+    await waitFor(() => {
+      expect((screen.getByLabelText('编辑登记日期') as HTMLInputElement).value).toBe('2026-08-05');
+      expect((screen.getByLabelText('编辑麻药物品') as HTMLSelectElement).value).toBe('inventory-demo-001');
+      expect((screen.getByLabelText('编辑批号') as HTMLInputElement).value).toBe('N-001');
+      expect((screen.getByLabelText('编辑麻药数量') as HTMLInputElement).value).toBe('1');
+      expect((screen.getByLabelText('编辑用途') as HTMLInputElement).value).toBe('局部麻醉');
+      expect((screen.getByLabelText('编辑余量前') as HTMLInputElement).value).toBe('20');
+      expect((screen.getByLabelText('编辑余量后') as HTMLInputElement).value).toBe('19');
+      expect((screen.getByLabelText('编辑备注') as HTMLTextAreaElement).value).toBe('备注');
+    });
+
+    fireEvent.change(screen.getByLabelText('编辑麻药数量'), { target: { value: '2' } });
+    fireEvent.click(screen.getByText('保存修改'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/narcotic-registry/n-1', expect.objectContaining({ method: 'PATCH' }));
+    });
+    const patchCall = vi.mocked(apiRequest).mock.calls.find(
+      (entry) => entry[0] === '/narcotic-registry/n-1' && String((entry[1] as RequestInit)?.method ?? 'GET').toUpperCase() === 'PATCH',
+    );
+    const body = JSON.parse(String((patchCall?.[1] as RequestInit)?.body));
+    expect(body).toMatchObject({
+      recordDate: '2026-08-05',
+      itemId: 'inventory-demo-001',
+      batchNo: 'N-001',
+      quantity: 2,
+      usage: '局部麻醉',
+      balanceBefore: 20,
+      balanceAfter: 19,
+      remark: '备注',
+    });
+    expect(await screen.findByText('麻药登记已更新')).toBeDefined();
+  });
+
+  it('deletes a narcotic registry entry after confirmation', async () => {
+    mockData();
+    render(<DispenseWorkbenchPage />, { wrapper });
+    await screen.findByText('DISP-001');
+    await screen.findByText('N-001');
+    const tables = screen.getAllByRole('table');
+    fireEvent.click(within(tables[1]).getByText('删除'));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('确定删除该麻药登记吗？')).toBeDefined();
+    fireEvent.click(within(dialog).getByText('删除'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/narcotic-registry/n-1', expect.objectContaining({ method: 'DELETE' }));
+    });
+    expect(await screen.findByText('麻药登记已删除')).toBeDefined();
   });
 });

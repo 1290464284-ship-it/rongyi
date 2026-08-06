@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import type { Page } from './types';
 import {
+  ConfirmDialog,
   DataTable,
   Dialog,
   LoadingState,
@@ -60,6 +61,7 @@ export function UsersPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [passwordTarget, setPasswordTarget] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<UserRow | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -77,7 +79,7 @@ export function UsersPage() {
   });
   const userRoles = useQuery({
     queryKey: ['user-roles'],
-    queryFn: () => apiRequest<{ items: UserRoleRow[] }>('/api/v2/user-roles'),
+    queryFn: () => apiRequest<{ items: UserRoleRow[] }>('/user-roles'),
     enabled: me.data?.role === 'BOSS',
   });
 
@@ -142,7 +144,7 @@ export function UsersPage() {
         targetId = created.id;
       }
       if (targetId) {
-        await apiRequest(`/api/v2/user-roles/${targetId}`, {
+        await apiRequest(`/user-roles/${targetId}`, {
           method: 'PUT',
           body: JSON.stringify({ roles: additionalRoles }),
         });
@@ -153,6 +155,22 @@ export function UsersPage() {
       await userRoles.refetch();
     } catch (error) {
       showToast(errorMessage(error, '保存失败'), 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function deleteUser() {
+    if (!deleteTarget || submitting) return;
+    setSubmitting(true);
+    try {
+      await apiRequest(`/admin/users/${deleteTarget.id}`, { method: 'DELETE' });
+      showToast('员工已删除', 'success');
+      setDeleteTarget(null);
+      await users.refetch();
+    } catch (error) {
+      showToast(errorMessage(error, '删除失败'), 'error');
+      setDeleteTarget(null);
     } finally {
       setSubmitting(false);
     }
@@ -231,6 +249,7 @@ export function UsersPage() {
         <>
           <button onClick={() => openEdit(row)}>编辑</button>
           <button onClick={() => setPasswordTarget(row.id)}>重置密码</button>
+          <button className="danger" onClick={() => setDeleteTarget(row)}>删除</button>
         </>
       ),
     },
@@ -313,6 +332,16 @@ export function UsersPage() {
         confirmText="重置"
         onSubmit={(value) => void resetPassword(value)}
         onCancel={() => setPasswordTarget(null)}
+      />
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="删除员工"
+        message={`确定删除员工「${deleteTarget?.name ?? ''}」吗？删除后该账号将无法登录。`}
+        confirmText="删除"
+        danger
+        onConfirm={() => void deleteUser()}
+        onCancel={() => setDeleteTarget(null)}
       />
 
       <h2>修改我的密码</h2>

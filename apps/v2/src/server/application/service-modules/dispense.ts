@@ -23,6 +23,18 @@ export interface DispenseCreateInput {
   note?: string;
 }
 
+export interface DispenseUpdateItemInput extends DispenseCreateItemInput {
+  /** 已存在的明细行 id（编辑时回填）；无 id 视为新增行。 */
+  id?: string;
+}
+
+export interface DispenseUpdateInput {
+  number: string;
+  patientId: string;
+  note?: string;
+  items: DispenseUpdateItemInput[];
+}
+
 /** 发药时可为各明细指定批次（覆盖 DispenseItem.batchId，仅对批次管理物品生效）。 */
 export interface DispenseAssignInput {
   items?: Array<{ dispenseItemId?: string; batchId?: string | null }>;
@@ -40,6 +52,18 @@ export interface NarcoticCreateInput {
   batchNo?: string;
   quantity: number;
   unit?: string;
+  usage?: string;
+  balanceBefore?: number;
+  balanceAfter?: number;
+  remark?: string;
+}
+
+/** 麻药登记可编辑字段（patientId/doctorId/pharmacistId/unit 编辑时保持不变）。 */
+export interface NarcoticUpdateInput {
+  recordDate: string;
+  itemId: string;
+  batchNo?: string;
+  quantity: number;
   usage?: string;
   balanceBefore?: number;
   balanceAfter?: number;
@@ -425,6 +449,145 @@ export class DispenseService {
     };
   }
 
+  /**
+   * 编辑发药单：仅 PENDING 可编辑（未扣库存，直接改明细安全）。明细按
+   * (itemId, batchId) 合并（规则同 create）：带 id 的行更新对应 DispenseItem，
+   * 无 id 的行新增，服务端有而表单没有的行软删。全程在一个事务内完成。
+   */
+  updateDispense(id: string, input: DispenseUpdateInput, context: AppContext): Record<string, unknown> {
+    const dispense = this.db.prepare(
+      `SELECT id, status FROM Dispense WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    ).get(id, ...tenantParams(context.clinicId)) as DispenseRow | undefined;
+    if (!dispense) throw new NotFoundError('发药单不存在');
+    if (dispense.status !== 'PENDING') throw new ConflictError('仅待发药的发药单可编辑');
+
+    const number = typeof input.number === 'string' ? input.number.trim() : '';
+    if (!number) throw new ValidationError('发药单号不能为空');
+    if (!Array.isArray(input.items) || input.items.length < 1 || input.items.length > 200) {
+      throw new ValidationError('发药明细需包含 1 至 200 条');
+    }
+    const patient = this.db.prepare(
+      `SELECT id FROM Patient WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    ).get(input.patientId, ...tenantParams(context.clinicId));
+    if (!patient) throw new NotFoundError('Patient not found');
+
+    // 校验每条明细，并按 (itemId, batchId) 合并重复项（与 create 相同规则）
+    const merged = new Map<string, {
+      id?: string;
+      itemId: string;
+      quantity: number;
+      batchId: string | null;
+      name: string;
+      spec: string | null;
+    }>();
+    for (const entry of input.items) {
+      const quantity = Number(entry.quantity);
+      if (!Number.isSafeInteger(quantity) || quantity <= 0) {
+        throw new ValidationError('发药数量必须为正整数');
+      }
+      const item = this.db.prepare(
+        `SELECT id, name, spec, batchManaged, stock FROM InventoryItem
+         WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+      ).get(entry.itemId, ...tenantParams(context.clinicId)) as InventoryItemRow | undefined;
+      if (!item) throw new NotFoundError('Inventory item not found');
+      const batchId = entry.batchId === undefined || entry.batchId === null || entry.batchId === ''
+        ? null
+        : String(entry.batchId);
+      const key = `${entry.itemId}|${batchId ?? ''}`;
+      const existing = merged.get(key);
+      if (existing) {
+        existing.quantity += quantity;
+      } else {
+        merged.set(key, {
+          id: entry.id === undefined || entry.id === null || entry.id === '' ? undefined : String(entry.id),
+          itemId: entry.itemId,
+          quantity,
+          batchId,
+          name: item.name,
+          spec: item.spec ?? null,
+        });
+      }
+    }
+
+    const now = context.now().toISOString();
+    const run = this.db.transaction(() => {
+      const keptIds = new Set<string>();
+      const updateItem = this.db.prepare(
+        `UPDATE DispenseItem SET itemId = ?, batchId = ?, name = ?, spec = ?, quantity = ?, updatedAt = ?
+         WHERE id = ? AND dispenseId = ? AND deletedAt IS NULL`,
+      );
+      const insertItem = this.db.prepare(
+        `INSERT INTO DispenseItem (
+           id, dispenseId, itemId, batchId, name, spec, quantity, returnedQuantity,
+           clinicId, createdAt, updatedAt, deletedAt
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, NULL)`,
+      );
+      for (const row of merged.values()) {
+        if (row.id) {
+          const result = updateItem.run(row.itemId, row.batchId, row.name, row.spec, row.quantity, now, row.id, id);
+          if (result.changes === 0) throw new NotFoundError('发药明细不存在');
+          keptIds.add(row.id);
+        } else {
+          const newId = randomUUID();
+          insertItem.run(
+            newId, id, row.itemId, row.batchId, row.name, row.spec, row.quantity,
+            context.clinicId ?? null, now, now,
+          );
+          keptIds.add(newId);
+        }
+      }
+      // 服务端有而表单没有的明细：软删
+      const kept = Array.from(keptIds);
+      if (kept.length > 0) {
+        const placeholders = kept.map(() => '?').join(',');
+        this.db.prepare(
+          `UPDATE DispenseItem SET deletedAt = ?, updatedAt = ?
+           WHERE dispenseId = ? AND deletedAt IS NULL AND id NOT IN (${placeholders})`,
+        ).run(now, now, id, ...kept);
+      } else {
+        this.db.prepare(
+          `UPDATE DispenseItem SET deletedAt = ?, updatedAt = ?
+           WHERE dispenseId = ? AND deletedAt IS NULL`,
+        ).run(now, now, id);
+      }
+      this.db.prepare(
+        `UPDATE Dispense SET number = ?, patientId = ?, note = ?, updatedAt = ?
+         WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+      ).run(
+        number,
+        input.patientId,
+        input.note === undefined || input.note === null ? null : String(input.note),
+        now,
+        id,
+        ...tenantParams(context.clinicId),
+      );
+    });
+    run();
+    return { id, number, status: 'PENDING', items: merged.size };
+  }
+
+  /** 删除发药单：仅 PENDING 可删，软删发药单并级联软删其明细。 */
+  deleteDispense(id: string, context: AppContext): Record<string, unknown> {
+    const dispense = this.db.prepare(
+      `SELECT id, status FROM Dispense WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    ).get(id, ...tenantParams(context.clinicId)) as DispenseRow | undefined;
+    if (!dispense) throw new NotFoundError('发药单不存在');
+    if (dispense.status !== 'PENDING') throw new ConflictError('仅待发药的发药单可删除');
+    const now = context.now().toISOString();
+    const run = this.db.transaction(() => {
+      this.db.prepare(
+        `UPDATE Dispense SET deletedAt = ?, updatedAt = ?
+         WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+      ).run(now, now, id, ...tenantParams(context.clinicId));
+      this.db.prepare(
+        `UPDATE DispenseItem SET deletedAt = ?, updatedAt = ?
+         WHERE dispenseId = ? AND deletedAt IS NULL`,
+      ).run(now, now, id);
+    });
+    run();
+    return { id, deleted: true };
+  }
+
   narcoticList(context: AppContext, filter?: { recordDate?: string }): Array<Record<string, unknown>> {
     const recordDate = typeof filter?.recordDate === 'string' && filter.recordDate.trim() !== ''
       ? filter.recordDate.trim()
@@ -488,5 +651,57 @@ export class DispenseService {
       now,
     );
     return { id };
+  }
+
+  /** 编辑麻药登记：可编辑登记日期/物品/批号/数量/用途/余量前/余量后/备注，patientId/doctorId 保持不变。 */
+  updateNarcotic(id: string, input: NarcoticUpdateInput, context: AppContext): Record<string, unknown> {
+    const record = this.db.prepare(
+      `SELECT id FROM NarcoticRegistry WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    ).get(id, ...tenantParams(context.clinicId));
+    if (!record) throw new NotFoundError('麻药登记不存在');
+    const recordDate = typeof input.recordDate === 'string' ? input.recordDate.trim() : '';
+    if (!recordDate) throw new ValidationError('登记日期不能为空');
+    const quantity = Number(input.quantity);
+    if (!Number.isSafeInteger(quantity) || quantity < 0) {
+      throw new ValidationError('数量必须为非负整数');
+    }
+    const item = this.db.prepare(
+      `SELECT id FROM InventoryItem WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    ).get(input.itemId, ...tenantParams(context.clinicId));
+    if (!item) throw new NotFoundError('Inventory item not found');
+    const now = context.now().toISOString();
+    this.db.prepare(
+      `UPDATE NarcoticRegistry SET
+         recordDate = ?, itemId = ?, batchNo = ?, quantity = ?,
+         usage = ?, balanceBefore = ?, balanceAfter = ?, remark = ?, updatedAt = ?
+       WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    ).run(
+      recordDate,
+      input.itemId,
+      input.batchNo === undefined || input.batchNo === null || input.batchNo === '' ? null : String(input.batchNo),
+      quantity,
+      input.usage === undefined || input.usage === null || input.usage === '' ? null : String(input.usage),
+      input.balanceBefore === undefined || input.balanceBefore === null ? null : Number(input.balanceBefore),
+      input.balanceAfter === undefined || input.balanceAfter === null ? null : Number(input.balanceAfter),
+      input.remark === undefined || input.remark === null || input.remark === '' ? null : String(input.remark),
+      now,
+      id,
+      ...tenantParams(context.clinicId),
+    );
+    return { id };
+  }
+
+  /** 删除麻药登记：软删。 */
+  deleteNarcotic(id: string, context: AppContext): Record<string, unknown> {
+    const record = this.db.prepare(
+      `SELECT id FROM NarcoticRegistry WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    ).get(id, ...tenantParams(context.clinicId));
+    if (!record) throw new NotFoundError('麻药登记不存在');
+    const now = context.now().toISOString();
+    this.db.prepare(
+      `UPDATE NarcoticRegistry SET deletedAt = ?, updatedAt = ?
+       WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    ).run(now, now, id, ...tenantParams(context.clinicId));
+    return { id, deleted: true };
   }
 }

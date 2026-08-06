@@ -1,6 +1,7 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
+import type { Page } from './types';
 import { CrudPage } from './CrudPage';
 import { Dialog, LoadingState, PageError, SearchableSelect, type DataTableColumn } from './components';
 import { formatDateTime, toCents } from './format';
@@ -68,6 +69,7 @@ interface PrescriptionForm {
   patientId: string;
   doctorId: string;
   remark: string;
+  status: string;
   items: PrescriptionItemForm[];
 }
 
@@ -76,7 +78,7 @@ function newItem(): PrescriptionItemForm {
 }
 
 function emptyForm(): PrescriptionForm {
-  return { patientId: '', doctorId: '', remark: '', items: [newItem()] };
+  return { patientId: '', doctorId: '', remark: '', status: 'DRAFT', items: [newItem()] };
 }
 
 const ITEM_FIELDS: Array<{ key: keyof PrescriptionItemForm; label: string; placeholder: string; type?: 'number'; min?: number }> = [
@@ -104,6 +106,43 @@ function validItems(form: PrescriptionForm) {
     .filter((item) => item.days > 0 && item.quantity > 0 && item.price >= 0);
 }
 
+/** 单条明细提交 payload（编辑 PATCH/POST 用；字段与后端 prescriptionItems 定义一致）。 */
+interface ItemPayload {
+  name: string;
+  specification?: string;
+  dosage?: string;
+  frequency?: string;
+  days: number;
+  quantity: number;
+  price: number;
+}
+
+function itemPayload(item: PrescriptionItemForm): ItemPayload {
+  return {
+    name: item.name.trim(),
+    specification: item.spec || undefined,
+    dosage: item.dosage || undefined,
+    frequency: item.frequency || undefined,
+    days: Number(item.days),
+    quantity: Number(item.quantity),
+    price: toCents(item.price),
+  };
+}
+
+/** 服务端明细行 → 编辑表单明细（price 分 → 元字符串）。 */
+function itemRowToForm(row: Record<string, unknown>): PrescriptionItemForm {
+  return {
+    id: String(row.id),
+    name: String(row.name ?? ''),
+    spec: String(row.specification ?? ''),
+    dosage: String(row.dosage ?? ''),
+    frequency: String(row.frequency ?? ''),
+    days: String(row.days ?? ''),
+    quantity: String(row.quantity ?? ''),
+    price: (Number(row.price ?? 0) / 100).toFixed(2),
+  };
+}
+
 const prescriptionColumns: DataTableColumn<PrescriptionRow>[] = [
   { key: 'patientId', label: '患者', render: (row) => row.patientIdLabel ?? row.patientId ?? '' },
   { key: 'doctorId', label: '医生', render: (row) => row.doctorIdLabel ?? row.doctorId ?? '' },
@@ -117,6 +156,28 @@ const prescriptionColumns: DataTableColumn<PrescriptionRow>[] = [
 export function PrescriptionsPage() {
   const { showToast } = useToast();
   const [statusTarget, setStatusTarget] = useState<{ row: PrescriptionRow; reload: () => Promise<unknown> } | null>(null);
+  const editingIdRef = useRef<string | null>(null);
+  const updateFormRef = useRef<((patch: Partial<PrescriptionForm>) => void) | null>(null);
+  const [editLoadKey, setEditLoadKey] = useState(0);
+
+  // 编辑打开时异步加载该处方的明细行并回填表单 items（formFromRow 是同步的，无法 await）。
+  useEffect(() => {
+    if (editLoadKey === 0) return;
+    const prescriptionId = editingIdRef.current;
+    if (!prescriptionId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const page = await apiRequest<Page<Record<string, unknown>>>(
+          `/resources/prescriptionItems?prescriptionId=${prescriptionId}&page=1&pageSize=100`,
+        );
+        if (!cancelled) updateFormRef.current?.({ items: page.items.map(itemRowToForm) });
+      } catch (error) {
+        showToast(errorMessage(error, '加载处方明细失败'), 'error');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [editLoadKey, showToast]);
 
   return (
     <>
@@ -126,16 +187,35 @@ export function PrescriptionsPage() {
         emptyMessage="暂无处方"
         queryKey={['prescriptions']}
         endpoint="/resources/prescriptions"
-        initialForm={emptyForm}
+        initialForm={() => {
+          editingIdRef.current = null;
+          return emptyForm();
+        }}
+        formFromRow={(row) => {
+          editingIdRef.current = String(row.id);
+          setEditLoadKey((key) => key + 1);
+          return {
+            patientId: String(row.patientId ?? ''),
+            doctorId: String(row.doctorId ?? ''),
+            remark: String(row.remark ?? ''),
+            status: String(row.status ?? 'DRAFT'),
+            items: [],
+          };
+        }}
         validate={(form) =>
           !form.patientId || !form.doctorId || validItems(form).length === 0
             ? '请选择患者、医生并至少填写一条有效处方明细'
             : null
         }
-        submitOverride={({ form }) => createPrescription(form)}
-        messages={{ create: '处方已创建' }}
-        errorMessages={{ create: '创建处方失败' }}
+        submitOverride={({ form, editing }) =>
+          editing ? updatePrescription(form, editingIdRef.current) : createPrescription(form)
+        }
+        messages={{ create: '处方已创建', update: '处方已更新', delete: '处方已删除' }}
+        errorMessages={{ create: '创建处方失败', update: '更新处方失败', delete: '删除处方失败' }}
         columns={prescriptionColumns}
+        canEdit
+        canDelete
+        dialogTitle={(editing) => (editing ? '编辑处方' : '新建处方')}
         rowActions={(row, ctx) =>
           row.status === 'PROCESSED' ? (
             <button onClick={() => setStatusTarget({ row, reload: ctx.reload })}>查看状态</button>
@@ -143,7 +223,10 @@ export function PrescriptionsPage() {
             <button onClick={() => void processPrescription(row, ctx.reload, showToast)}>处理</button>
           )
         }
-        renderForm={(ctx) => <PrescriptionForm form={ctx.form} update={ctx.update} />}
+        renderForm={(ctx) => {
+          updateFormRef.current = ctx.update;
+          return <PrescriptionForm form={ctx.form} update={ctx.update} editing={ctx.editing} />;
+        }}
       />
 
       <Dialog open={statusTarget !== null} title="处方状态" onClose={() => setStatusTarget(null)}>
@@ -186,6 +269,50 @@ async function createPrescription(form: PrescriptionForm): Promise<void> {
       }
     }
     throw error;
+  }
+}
+
+async function updatePrescription(form: PrescriptionForm, prescriptionId: string | null): Promise<void> {
+  if (!prescriptionId) throw new Error('处方 ID 缺失');
+  await apiRequest(`/resources/prescriptions/${prescriptionId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      patientId: form.patientId,
+      doctorId: form.doctorId,
+      remark: form.remark || undefined,
+      status: form.status,
+    }),
+  });
+  const page = await apiRequest<Page<Record<string, unknown>>>(
+    `/resources/prescriptionItems?prescriptionId=${prescriptionId}&page=1&pageSize=100`,
+  );
+  const existing = page.items;
+  const existingIds = new Set(existing.map((row) => String(row.id)));
+  // 保留的明细（有服务端 id）→ PATCH；新增的明细 → POST（带 prescriptionId）。
+  // 与 validItems 同一套有效性过滤，但保留本地 id 用于判断服务端存在性。
+  const items = form.items
+    .filter((item) => item.name.trim() && item.days && item.quantity && item.price)
+    .map((item) => ({ id: item.id, payload: itemPayload(item) }))
+    .filter((entry) => entry.payload.days > 0 && entry.payload.quantity > 0 && entry.payload.price >= 0);
+  for (const { id, payload } of items) {
+    if (existingIds.has(id)) {
+      await apiRequest(`/resources/prescriptionItems/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      });
+    } else {
+      await apiRequest('/resources/prescriptionItems', {
+        method: 'POST',
+        body: JSON.stringify({ prescriptionId, ...payload }),
+      });
+    }
+  }
+  // 表单中已移除的明细 → DELETE
+  for (const row of existing) {
+    const id = String(row.id);
+    if (!form.items.some((item) => item.id === id)) {
+      await apiRequest(`/resources/prescriptionItems/${id}`, { method: 'DELETE' });
+    }
   }
 }
 
@@ -268,7 +395,7 @@ function PrescriptionStatusDialog({
   );
 }
 
-function PrescriptionForm({ form, update }: { form: PrescriptionForm; update: (patch: Partial<PrescriptionForm>) => void }) {
+function PrescriptionForm({ form, update, editing }: { form: PrescriptionForm; update: (patch: Partial<PrescriptionForm>) => void; editing: boolean }) {
   const doctors = useQuery({
     queryKey: ['prescription-doctors'],
     queryFn: () => apiRequest<Array<Record<string, unknown>>>('/doctors'),
@@ -295,6 +422,16 @@ function PrescriptionForm({ form, update }: { form: PrescriptionForm; update: (p
         备注
         <textarea value={form.remark} onChange={(event) => update({ remark: event.target.value })} />
       </label>
+      {editing && (
+        <label>
+          状态
+          <select value={form.status} onChange={(event) => update({ status: event.target.value })}>
+            {Object.entries(PRESCRIPTION_STATUS_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+        </label>
+      )}
       {form.items.map((item) => (
         <div className="prescription-item-row" key={item.id}>
           {ITEM_FIELDS.map((field) => (

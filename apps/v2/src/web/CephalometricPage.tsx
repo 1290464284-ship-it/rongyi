@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest, getApiOrigin, uploadFile } from './api';
 import { CrudPage } from './CrudPage';
@@ -94,6 +94,7 @@ interface CephalometricForm {
   landmarksJson: string;
   metricsJson: string;
   remark: string;
+  imageUrl: string;
 }
 
 const emptyForm: CephalometricForm = {
@@ -103,6 +104,7 @@ const emptyForm: CephalometricForm = {
   landmarksJson: '{}',
   metricsJson: '{}',
   remark: '',
+  imageUrl: '',
 };
 
 function toPoint(point: Point2D): { x: number; y: number } {
@@ -150,8 +152,15 @@ function landmarksOutline(landmarks: Record<string, unknown> | undefined): Array
   return points;
 }
 
+function jsonToText(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (value === null || value === undefined) return '{}';
+  return JSON.stringify(value);
+}
+
 export function CephalometricPage() {
   const { showToast } = useToast();
+  const editingIdRef = useRef<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [apiOrigin, setApiOrigin] = useState('');
   const [reportTarget, setReportTarget] = useState<CephalometricRow | null>(null);
@@ -219,7 +228,10 @@ export function CephalometricPage() {
         emptyMessage="暂无头影测量"
         queryKey={['cephalometric']}
         endpoint="/resources/cephalometricCases"
-        initialForm={emptyForm}
+        initialForm={() => {
+          editingIdRef.current = null;
+          return { ...emptyForm };
+        }}
         validate={(form) => {
           let parsedLandmarks: Record<string, unknown> = {};
           let parsedMetrics: Record<string, unknown> = {};
@@ -234,27 +246,49 @@ export function CephalometricPage() {
           }
           return null;
         }}
-        submitOverride={async ({ form }) => {
+        submitOverride={async ({ form, editing }) => {
           const parsedLandmarks = JSON.parse(form.landmarksJson || '{}') as Record<string, unknown>;
           const parsedMetrics = JSON.parse(form.metricsJson || '{}') as Record<string, unknown>;
           const imageUrl = file ? (await uploadFile(file)).url : undefined;
-          await apiRequest('/resources/cephalometricCases', {
-            method: 'POST',
-            body: JSON.stringify({
-              patientId: form.patientId,
-              imageUrl: imageUrl ?? '',
-              landmarksJson: JSON.stringify(parsedLandmarks),
-              metricsJson: JSON.stringify(parsedMetrics),
-              templateId: form.templateId || undefined,
-              status: form.status,
-              remark: form.remark || undefined,
-            }),
-          });
+          const payload = {
+            patientId: form.patientId,
+            imageUrl: imageUrl ?? String(form.imageUrl ?? ''),
+            landmarksJson: JSON.stringify(parsedLandmarks),
+            metricsJson: JSON.stringify(parsedMetrics),
+            templateId: form.templateId || undefined,
+            status: form.status,
+            remark: form.remark || undefined,
+          };
+          if (editing) {
+            await apiRequest(`/resources/cephalometricCases/${editingIdRef.current}`, {
+              method: 'PATCH',
+              body: JSON.stringify(payload),
+            });
+          } else {
+            await apiRequest('/resources/cephalometricCases', {
+              method: 'POST',
+              body: JSON.stringify(payload),
+            });
+          }
         }}
         onAfterCreate={() => setFile(null)}
-        messages={{ create: '头影测量已创建' }}
-        errorMessages={{ create: '创建头影测量失败' }}
+        formFromRow={(row) => {
+          editingIdRef.current = String(row.id);
+          return {
+            patientId: String(row.patientId ?? ''),
+            status: String(row.status ?? 'DRAFT'),
+            templateId: String(row.templateId ?? ''),
+            landmarksJson: jsonToText(row.landmarksJson),
+            metricsJson: jsonToText(row.metricsJson),
+            remark: String(row.remark ?? ''),
+            imageUrl: String(row.imageUrl ?? ''),
+          };
+        }}
+        messages={{ create: '头影测量已创建', update: '头影测量已更新', delete: '头影测量已删除' }}
+        errorMessages={{ create: '创建头影测量失败', update: '更新头影测量失败', delete: '删除头影测量失败' }}
         columns={cephalometricColumns(apiOrigin)}
+        canEdit
+        canDelete
         rowActions={(row, ctx) => (
           <>
             <button onClick={() => { setSendTarget(null); setReportTarget(row); }}>测量报告</button>

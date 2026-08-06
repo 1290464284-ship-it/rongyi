@@ -96,4 +96,56 @@ describe('VisitsPage', () => {
     });
     expect(await screen.findByText('就诊状态已更新')).toBeDefined();
   });
+
+  it('edits a visit with backfilled form and PATCH payload', async () => {
+    mockData();
+    render(<VisitsPage />, { wrapper });
+    await screen.findByText('牙痛');
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    const startInput = (await screen.findByLabelText('开始时间')) as HTMLInputElement;
+    const d = new Date('2026-08-04T09:00:00.000Z');
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const expectedLocal = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    expect(startInput.value).toBe(expectedLocal);
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    expect((screen.getByLabelText('患者') as HTMLSelectElement).value).toBe('p-1');
+    await waitFor(() => {
+      expect((screen.getByLabelText('医生') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    expect((screen.getByLabelText('医生') as HTMLSelectElement).value).toBe('d-1');
+    expect((screen.getByLabelText('主诉') as HTMLTextAreaElement).value).toBe('牙痛');
+    expect((screen.getByLabelText('状态') as HTMLSelectElement).value).toBe('IN_PROGRESS');
+
+    fireEvent.change(screen.getByLabelText('主诉'), { target: { value: '牙痛加剧' } });
+    vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'v-1' });
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/visits/v-1', expect.objectContaining({ method: 'PATCH' }));
+    });
+    const patchCall = vi.mocked(apiRequest).mock.calls.find(
+      (call) => call[0] === '/resources/visits/v-1' && (call[1] as RequestInit)?.method === 'PATCH',
+    );
+    const body = JSON.parse(String((patchCall?.[1] as RequestInit)?.body));
+    expect(body).toMatchObject({ patientId: 'p-1', doctorId: 'd-1', chiefComplaint: '牙痛加剧' });
+    expect(body.startTime).toBe(new Date(expectedLocal).toISOString());
+    expect(await screen.findByText('就诊记录已更新')).toBeDefined();
+  });
+
+  it('deletes a visit after confirmation', async () => {
+    mockData();
+    render(<VisitsPage />, { wrapper });
+    await screen.findByText('牙痛');
+
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认删除' }));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/visits/v-1', expect.objectContaining({ method: 'DELETE' }));
+    });
+    expect(await screen.findByText('就诊记录已删除')).toBeDefined();
+  });
 });

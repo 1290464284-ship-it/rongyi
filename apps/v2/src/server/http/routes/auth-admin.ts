@@ -121,4 +121,9 @@ export function registerAdminRoutes(app: Express, deps: RouteDependencies): void
       );
       res.json({ success: true, data: result });
   }));
+
+  app.delete('/api/v2/admin/users/:id', wrapAsync(async (req, res) => {
+      const result = await authService.deleteUser(String(req.params.id), req.context!);
+      res.json({ success: true, data: result });
+  }));
 }

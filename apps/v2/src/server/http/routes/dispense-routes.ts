@@ -11,6 +11,7 @@ import {
   DispenseService,
   type DispenseAssignInput,
   type DispenseCreateInput,
+  type DispenseUpdateInput,
   type NarcoticCreateInput,
   type ReturnItemInput,
 } from '../../application/service-modules/dispense';
@@ -36,6 +37,15 @@ export function registerDispenseRoutes(
   app.post('/api/v2/dispenses', wrapAsync(async (req, res) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
     res.status(201).json({ success: true, data: service.create(parseCreateInput(body), req.context!) });
+  }));
+
+  app.patch('/api/v2/dispenses/:id', wrapAsync(async (req, res) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    res.json({ success: true, data: service.updateDispense(String(req.params.id), parseUpdateInput(body), req.context!) });
+  }));
+
+  app.delete('/api/v2/dispenses/:id', wrapAsync(async (req, res) => {
+    res.json({ success: true, data: service.deleteDispense(String(req.params.id), req.context!) });
   }));
 
   app.post('/api/v2/dispenses/:id/dispense', wrapAsync(async (req, res) => {
@@ -68,6 +78,15 @@ export function registerDispenseRoutes(
     const body = (req.body ?? {}) as Record<string, unknown>;
     res.status(201).json({ success: true, data: service.recordNarcotic(parseNarcoticInput(body), req.context!) });
   }));
+
+  app.patch('/api/v2/narcotic-registry/:id', wrapAsync(async (req, res) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    res.json({ success: true, data: service.updateNarcotic(String(req.params.id), parseNarcoticInput(body), req.context!) });
+  }));
+
+  app.delete('/api/v2/narcotic-registry/:id', wrapAsync(async (req, res) => {
+    res.json({ success: true, data: service.deleteNarcotic(String(req.params.id), req.context!) });
+  }));
 }
 
 function parseCreateInput(body: Record<string, unknown>): DispenseCreateInput {
@@ -86,6 +105,25 @@ function parseCreateInput(body: Record<string, unknown>): DispenseCreateInput {
     chargeId: body.chargeId === undefined || body.chargeId === null ? undefined : String(body.chargeId),
     prescriptionId: body.prescriptionId === undefined || body.prescriptionId === null ? undefined : String(body.prescriptionId),
     doctorId: body.doctorId === undefined || body.doctorId === null ? undefined : String(body.doctorId),
+    note: body.note === undefined || body.note === null ? undefined : String(body.note),
+    items,
+  };
+}
+
+function parseUpdateInput(body: Record<string, unknown>): DispenseUpdateInput {
+  const items = Array.isArray(body.items)
+    ? (body.items as Array<Record<string, unknown>>).map((entry) => ({
+        id: entry.id === undefined || entry.id === null || entry.id === '' ? undefined : String(entry.id),
+        itemId: typeof entry.itemId === 'string' ? entry.itemId : String(entry.itemId ?? ''),
+        quantity: Number(entry.quantity),
+        batchId: entry.batchId === undefined || entry.batchId === null || entry.batchId === ''
+          ? undefined
+          : String(entry.batchId),
+      }))
+    : [];
+  return {
+    number: typeof body.number === 'string' ? body.number : String(body.number ?? ''),
+    patientId: typeof body.patientId === 'string' ? body.patientId : String(body.patientId ?? ''),
     note: body.note === undefined || body.note === null ? undefined : String(body.note),
     items,
   };

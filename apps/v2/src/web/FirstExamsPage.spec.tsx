@@ -207,4 +207,52 @@ describe('FirstExamsPage', () => {
       expect(vi.mocked(apiRequest).mock.calls.some((call) => call[0] === '/first-exams/history?patientId=p-1')).toBe(true);
     });
   });
+
+  it('edits a first exam with backfilled consultant and PATCH payload', async () => {
+    mockData();
+    render(<FirstExamsPage />, { wrapper });
+    await screen.findByText('牙痛');
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    expect((await screen.findByLabelText('主诉') as HTMLTextAreaElement).value).toBe('牙痛');
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    expect((screen.getByLabelText('患者') as HTMLSelectElement).value).toBe('p-1');
+    await waitFor(() => {
+      expect((screen.getByLabelText('医生') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    expect((screen.getByLabelText('医生') as HTMLSelectElement).value).toBe('d-1');
+    expect((screen.getByLabelText('会诊医生') as HTMLSelectElement).value).toBe('');
+    expect((screen.getByLabelText('状态') as HTMLSelectElement).value).toBe('DRAFT');
+
+    fireEvent.change(screen.getByLabelText('主诉'), { target: { value: '补牙' } });
+    vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'f-1' });
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/firstExams/f-1', expect.objectContaining({ method: 'PATCH' }));
+    });
+    const patchCall = vi.mocked(apiRequest).mock.calls.find(
+      (call) => call[0] === '/resources/firstExams/f-1' && (call[1] as RequestInit)?.method === 'PATCH',
+    );
+    const body = JSON.parse(String((patchCall?.[1] as RequestInit)?.body));
+    expect(body).toMatchObject({ patientId: 'p-1', doctorId: 'd-1', status: 'DRAFT', chiefComplaint: '补牙' });
+    expect(body.consultantId).toBeUndefined();
+    expect(await screen.findByText('首诊记录已更新')).toBeDefined();
+  });
+
+  it('deletes a first exam after confirmation', async () => {
+    mockData();
+    render(<FirstExamsPage />, { wrapper });
+    await screen.findByText('牙痛');
+
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认删除' }));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/firstExams/f-1', expect.objectContaining({ method: 'DELETE' }));
+    });
+    expect(await screen.findByText('首诊记录已删除')).toBeDefined();
+  });
 });

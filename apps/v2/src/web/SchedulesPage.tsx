@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from './api';
-import { DataTable, LoadingState, type DataTableColumn } from './components';
+import { ConfirmDialog, DataTable, LoadingState, type DataTableColumn } from './components';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
 
@@ -54,7 +54,7 @@ export function SchedulesPage() {
 
   const templatesQuery = useQuery({
     queryKey: ['shift-templates'],
-    queryFn: () => apiRequest<ShiftTemplate[]>('/api/v2/shift-templates'),
+    queryFn: () => apiRequest<ShiftTemplate[]>('/shift-templates'),
   });
   const usersQuery = useQuery({
     queryKey: ['schedule-users'],
@@ -62,7 +62,7 @@ export function SchedulesPage() {
   });
   const weekQuery = useQuery({
     queryKey: ['schedules-week', weekStart],
-    queryFn: () => apiRequest<WeekScheduleRow[]>(`/api/v2/schedules/week?weekStart=${weekStart}`),
+    queryFn: () => apiRequest<WeekScheduleRow[]>(`/schedules/week?weekStart=${weekStart}`),
   });
 
   const reloadTemplates = () => queryClient.invalidateQueries({ queryKey: ['shift-templates'] });
@@ -96,9 +96,23 @@ function TemplateSection({ templates, reload }: { templates?: ShiftTemplate[]; r
   const { showToast } = useToast();
   const [form, setForm] = useState<TemplateForm>({ name: '', startTime: '', endTime: '', workDays: [1, 2, 3, 4, 5], color: '', active: true });
   const [submitting, setSubmitting] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<ShiftTemplate | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ShiftTemplate | null>(null);
   const update = (patch: Partial<TemplateForm>) => setForm((current) => ({ ...current, ...patch }));
 
-  async function handleCreate(event: FormEvent) {
+  function openEdit(template: ShiftTemplate) {
+    setForm({
+      name: String(template.name ?? ''),
+      startTime: String(template.startTime ?? ''),
+      endTime: String(template.endTime ?? ''),
+      workDays: parseWorkDays(template),
+      color: String(template.color ?? ''),
+      active: Number(template.active) === 1,
+    });
+    setEditingTemplate(template);
+  }
+
+  async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (!form.name.trim() || !form.startTime || !form.endTime || form.workDays.length === 0) {
       showToast('请填写模板名称、时间并至少选择一个工作日', 'error');
@@ -106,22 +120,48 @@ function TemplateSection({ templates, reload }: { templates?: ShiftTemplate[]; r
     }
     setSubmitting(true);
     try {
-      await apiRequest('/api/v2/shift-templates', {
-        method: 'POST',
-        body: JSON.stringify({
-          name: form.name.trim(),
-          startTime: form.startTime,
-          endTime: form.endTime,
-          workDaysJson: form.workDays,
-          color: form.color || undefined,
-          active: form.active,
-        }),
-      });
-      showToast('班次模板已创建', 'success');
+      const payload = {
+        name: form.name.trim(),
+        startTime: form.startTime,
+        endTime: form.endTime,
+        workDaysJson: form.workDays,
+        color: form.color || undefined,
+        active: form.active,
+      };
+      if (editingTemplate) {
+        await apiRequest(`/resources/shiftTemplates/${editingTemplate.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        });
+        showToast('班次模板已更新', 'success');
+      } else {
+        await apiRequest('/shift-templates', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        showToast('班次模板已创建', 'success');
+      }
+      setEditingTemplate(null);
       setForm({ name: '', startTime: '', endTime: '', workDays: [1, 2, 3, 4, 5], color: '', active: true });
       await reload();
     } catch (error) {
-      showToast(errorMessage(error, '创建模板失败'), 'error');
+      showToast(errorMessage(error, editingTemplate ? '更新模板失败' : '创建模板失败'), 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function deleteTemplate() {
+    if (!deleteTarget || submitting) return;
+    setSubmitting(true);
+    try {
+      await apiRequest(`/resources/shiftTemplates/${deleteTarget.id}`, { method: 'DELETE' });
+      showToast('班次模板已删除', 'success');
+      setDeleteTarget(null);
+      await reload();
+    } catch (error) {
+      showToast(errorMessage(error, '删除模板失败'), 'error');
+      setDeleteTarget(null);
     } finally {
       setSubmitting(false);
     }
@@ -129,7 +169,7 @@ function TemplateSection({ templates, reload }: { templates?: ShiftTemplate[]; r
 
   async function toggleActive(template: ShiftTemplate) {
     try {
-      await apiRequest(`/api/v2/shift-templates/${template.id}`, {
+      await apiRequest(`/shift-templates/${template.id}`, {
         method: 'PATCH',
         body: JSON.stringify({ active: Number(template.active) !== 1 }),
       });
@@ -143,7 +183,7 @@ function TemplateSection({ templates, reload }: { templates?: ShiftTemplate[]; r
   return (
     <section aria-label="班次模板">
       <h2>班次模板</h2>
-      <form className="form-grid" onSubmit={handleCreate}>
+      <form className="form-grid" onSubmit={handleSubmit}>
         <label>
           模板名称
           <input aria-label="模板名称" value={form.name} onChange={(event) => update({ name: event.target.value })} placeholder="如：早班 09:00-18:00" />
@@ -186,13 +226,22 @@ function TemplateSection({ templates, reload }: { templates?: ShiftTemplate[]; r
           <input aria-label="启用模板" type="checkbox" checked={form.active} onChange={(event) => update({ active: event.target.checked })} />
           启用
         </label>
-        <button type="submit" disabled={submitting}>{submitting ? '创建中...' : '新增模板'}</button>
+        <button type="submit" disabled={submitting}>{submitting ? '保存中...' : editingTemplate ? '保存模板' : '新增模板'}</button>
       </form>
       <DataTable<ShiftTemplate>
-        columns={templateColumns(toggleActive)}
+        columns={templateColumns(toggleActive, openEdit, setDeleteTarget)}
         rows={templates ?? []}
         keyField="id"
         emptyText="暂无班次模板"
+      />
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="删除班次模板"
+        message={`确定删除模板「${deleteTarget?.name ?? ''}」吗？`}
+        confirmText="删除"
+        danger
+        onConfirm={() => void deleteTemplate()}
+        onCancel={() => setDeleteTarget(null)}
       />
     </section>
   );
@@ -233,7 +282,7 @@ function GenerateSection({
     }
     setGenerating(true);
     try {
-      const result = await apiRequest<GenerateResult>('/api/v2/shift-templates/generate', {
+      const result = await apiRequest<GenerateResult>('/shift-templates/generate', {
         method: 'POST',
         body: JSON.stringify({ templateId, userId, weekStart }),
       });
@@ -280,7 +329,11 @@ function GenerateSection({
   );
 }
 
-function templateColumns(toggleActive: (template: ShiftTemplate) => void): DataTableColumn<ShiftTemplate>[] {
+function templateColumns(
+  toggleActive: (template: ShiftTemplate) => void,
+  openEdit: (template: ShiftTemplate) => void,
+  requestDelete: (template: ShiftTemplate) => void,
+): DataTableColumn<ShiftTemplate>[] {
   return [
     { key: 'name', label: '名称' },
     { key: 'startTime', label: '时间', render: (row) => `${row.startTime} - ${row.endTime}` },
@@ -290,10 +343,29 @@ function templateColumns(toggleActive: (template: ShiftTemplate) => void): DataT
       key: 'actions',
       label: '操作',
       render: (row) => (
-        <button onClick={() => void toggleActive(row)}>{Number(row.active) === 1 ? '停用' : '启用'}</button>
+        <>
+          <button onClick={() => void toggleActive(row)}>{Number(row.active) === 1 ? '停用' : '启用'}</button>
+          <button onClick={() => openEdit(row)}>编辑</button>
+          <button className="danger" onClick={() => requestDelete(row)}>删除</button>
+        </>
       ),
     },
   ];
+}
+
+/** 解析模板工作日（优先 workDaysJson 数组，兼容行内已展开的 workDays）。 */
+function parseWorkDays(template: ShiftTemplate): number[] {
+  const raw = template.workDaysJson ?? template.workDays;
+  if (Array.isArray(raw)) return raw.map(Number).filter((day) => day >= 1 && day <= 7).sort((a, b) => a - b);
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.map(Number).filter((day) => day >= 1 && day <= 7).sort((a, b) => a - b);
+    } catch {
+      // fall through
+    }
+  }
+  return [1, 2, 3, 4, 5];
 }
 
 const weekColumns: DataTableColumn<WeekScheduleRow>[] = [

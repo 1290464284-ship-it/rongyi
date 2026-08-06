@@ -131,6 +131,11 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
       res.json({ success: true, data: result });
   }));
 
+  app.delete('/api/v2/charges/:id', writeLimiter, wrapAsync(async (req, res) => {
+      const result = await charges.cancel(String(req.params.id), req.context!);
+      res.json({ success: true, data: result });
+  }));
+
   app.post('/api/v2/member-cards', writeLimiter, wrapAsync(async (req, res) => {
       res.status(201).json({ success: true, data: memberCards.create(req.body ?? {}, req.context!) });
   }));

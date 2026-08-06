@@ -489,4 +489,155 @@ describe('TreatmentPlansPage', () => {
     expect((await screen.findAllByText('折扣率须在 0-100 之间')).length).toBeGreaterThanOrEqual(1);
     expect(apiRequest).not.toHaveBeenCalledWith('/treatment-plans/p-1/items/item-1/discount', expect.objectContaining({ method: 'POST' }));
   });
+
+  it('submits category, teethNumbers and status from the item form fields', async () => {
+    mockData();
+    render(<TreatmentPlansPage />, { wrapper });
+    await screen.findByText('正畸计划');
+
+    fireEvent.click(screen.getByText('新建治疗计划'));
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
+    fireEvent.change(screen.getByLabelText('计划名称'), { target: { value: '种植计划' } });
+    fireEvent.change(screen.getByLabelText('明细名称'), { target: { value: '种植体' } });
+    fireEvent.change(screen.getByLabelText('明细单价'), { target: { value: '5000' } });
+    fireEvent.change(screen.getByLabelText('明细类别'), { target: { value: 'IMPLANT' } });
+    fireEvent.change(screen.getByLabelText('明细牙位'), { target: { value: '11, 21' } });
+    fireEvent.change(screen.getByLabelText('明细状态'), { target: { value: 'CONFIRMED' } });
+    vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'plan-2' });
+    vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'item-1' });
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/treatmentPlanItems', expect.objectContaining({ method: 'POST' }));
+    });
+    const itemCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/resources/treatmentPlanItems');
+    const itemBody = JSON.parse(String(itemCall?.[1]?.body));
+    expect(itemBody).toMatchObject({
+      planId: 'plan-2',
+      category: 'IMPLANT',
+      teethNumbers: ['11', '21'],
+      status: 'CONFIRMED',
+    });
+  });
+
+  it('edits a plan: backfills fields, PATCHes the plan and reconciles items with billed protection', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/treatmentPlans?page=1&pageSize=50') {
+        return {
+          items: [{ id: 'p-1', patientId: 'p-1', doctorId: 'd-1', name: '正畸计划', totalFee: 20000, status: 'APPROVED', printCount: 2, signedAt: null }],
+          total: 1, page: 1, pageSize: 50,
+        };
+      }
+      if (path === '/resources/treatmentPlanItems?planId=p-1&page=1&pageSize=100') {
+        return {
+          items: [
+            { id: 'item-1', code: 'CODE-1', name: '种植体', category: 'IMPLANT', price: 10000, quantity: 1, teethNumbers: ['11'], status: 'PLANNED', discountRate: null, billed: 0, billedChargeId: null },
+            { id: 'item-2', code: 'CODE-2', name: '基台', category: 'GENERAL', price: 5000, quantity: 2, teethNumbers: [], status: 'PLANNED', discountRate: null, billed: 0, billedChargeId: null },
+            { id: 'item-3', code: 'CODE-3', name: '牙冠', category: 'GENERAL', price: 30000, quantity: 1, teethNumbers: [], status: 'PLANNED', discountRate: null, billed: 1, billedChargeId: 'charge-9' },
+          ],
+          total: 3, page: 1, pageSize: 100,
+        };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      return {};
+    });
+    render(<TreatmentPlansPage />, { wrapper });
+    await screen.findByText('正畸计划');
+
+    fireEvent.click(screen.getAllByRole('button', { name: '编辑' })[0]);
+    // 计划字段回填（分 → 元）
+    expect(await screen.findByDisplayValue('种植体')).toBeDefined();
+    expect((screen.getByLabelText('计划名称') as HTMLInputElement).value).toBe('正畸计划');
+    expect((screen.getByLabelText('总费用') as HTMLInputElement).value).toBe('200.00');
+    // 明细行异步回填（含牙位数组 join）
+    const nameInputs = screen.getAllByLabelText('明细名称');
+    expect((nameInputs[0] as HTMLInputElement).value).toBe('种植体');
+    expect((nameInputs[1] as HTMLInputElement).value).toBe('基台');
+    expect((nameInputs[2] as HTMLInputElement).value).toBe('牙冠');
+    expect((screen.getAllByLabelText('明细牙位')[0] as HTMLInputElement).value).toBe('11');
+    // billed 保护：已划价行输入与移除按钮禁用
+    expect((nameInputs[2] as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getAllByLabelText('明细单价')[2] as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getAllByLabelText('明细状态')[2] as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getAllByRole('button', { name: '移除' })[2] as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText('已划价')).toBeDefined();
+
+    // 修改计划、修改一条明细、移除一条、新增一条
+    fireEvent.change(screen.getByLabelText('计划名称'), { target: { value: '正畸计划-改' } });
+    fireEvent.change(nameInputs[1], { target: { value: '基台-改' } });
+    fireEvent.click(screen.getAllByRole('button', { name: '移除' })[0]);
+    fireEvent.click(screen.getByText('添加明细'));
+    const afterNameInputs = screen.getAllByLabelText('明细名称');
+    const afterPriceInputs = screen.getAllByLabelText('明细单价');
+    fireEvent.change(afterNameInputs[2], { target: { value: '新项目' } });
+    fireEvent.change(afterPriceInputs[2], { target: { value: '1000' } });
+    fireEvent.click(screen.getByText('保存'));
+
+    // 主记录 PATCH
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/treatmentPlans/p-1', expect.objectContaining({ method: 'PATCH' }));
+    });
+    const planCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/resources/treatmentPlans/p-1');
+    expect(JSON.parse(String(planCall?.[1]?.body))).toMatchObject({
+      patientId: 'p-1',
+      doctorId: 'd-1',
+      name: '正畸计划-改',
+      status: 'APPROVED',
+      totalFee: 20000,
+    });
+    // 变更明细 PATCH
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/treatmentPlanItems/item-2', expect.objectContaining({ method: 'PATCH' }));
+    });
+    const item2Call = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/resources/treatmentPlanItems/item-2');
+    expect(JSON.parse(String(item2Call?.[1]?.body))).toMatchObject({
+      code: 'CODE-2',
+      name: '基台-改',
+      category: 'GENERAL',
+      price: 5000,
+      quantity: 2,
+      teethNumbers: [],
+      status: 'PLANNED',
+    });
+    // 移除明细 DELETE
+    expect(apiRequest).toHaveBeenCalledWith('/resources/treatmentPlanItems/item-1', expect.objectContaining({ method: 'DELETE' }));
+    // 新增明细 POST（带 planId）
+    const postCalls = vi.mocked(apiRequest).mock.calls.filter(([path, options]) => path === '/resources/treatmentPlanItems' && options?.method === 'POST');
+    expect(postCalls.length).toBe(1);
+    expect(JSON.parse(String(postCalls[0]?.[1]?.body))).toMatchObject({
+      planId: 'p-1',
+      name: '新项目',
+      category: 'GENERAL',
+      price: 100000,
+      quantity: 1,
+      teethNumbers: [],
+      status: 'PLANNED',
+    });
+    // billed 保护：已划价明细 item-3 不做 PATCH、不做 DELETE
+    const billedCalls = vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/resources/treatmentPlanItems/item-3');
+    expect(billedCalls.length).toBe(0);
+    expect(await screen.findByText('治疗计划已更新')).toBeDefined();
+  });
+
+  it('deletes a treatment plan with confirmation', async () => {
+    mockData();
+    render(<TreatmentPlansPage />, { wrapper });
+    await screen.findByText('正畸计划');
+
+    fireEvent.click(screen.getAllByRole('button', { name: '删除' })[0]);
+    expect(await screen.findByText('确定删除该记录吗？')).toBeDefined();
+    fireEvent.click(screen.getByText('确认删除'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/treatmentPlans/p-1', expect.objectContaining({ method: 'DELETE' }));
+    });
+    expect(await screen.findByText('治疗计划已删除')).toBeDefined();
+  });
 });

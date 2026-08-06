@@ -188,4 +188,89 @@ describe('PurchaseOrdersPage', () => {
     expect(await screen.findByText('PO-1')).toBeDefined();
     expect((screen.getByRole('button', { name: '收货' }) as HTMLButtonElement).disabled).toBe(true);
   });
+  it('edits a purchase order: prefills the form, PATCHes the order and reconciles items', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/purchase-orders/review-stats') {
+        return {};
+      }
+      if (path === '/resources/purchaseOrders?page=1&pageSize=50') {
+        return {
+          items: [{ id: 'po-1', number: 'PO-1', supplierId: 's-1', totalAmount: 200, status: 'PENDING' }],
+          total: 1,
+          page: 1,
+          pageSize: 50,
+        };
+      }
+      if (path === '/resources/suppliers?page=1&pageSize=100') {
+        return { items: [{ id: 's-1', name: '供应商甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/resources/inventoryItems?page=1&pageSize=100') {
+        return { items: [{ id: 'i-1', name: '耗材' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/resources/purchaseOrderItems?orderId=po-1&page=1&pageSize=100') {
+        return {
+          items: [{ id: 'poi-1', itemId: 'i-1', name: '耗材', spec: 'S', quantity: 3, unitPrice: 10000, subtotal: 30000 }],
+          total: 1,
+          page: 1,
+          pageSize: 100,
+        };
+      }
+      return {};
+    });
+
+    render(<PurchaseOrdersPage />, { wrapper });
+    await screen.findByText('PO-1');
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    await waitFor(() => {
+      expect((screen.getByLabelText('采购单号') as HTMLInputElement).value).toBe('PO-1');
+    });
+    await waitFor(() => {
+      expect((screen.getByLabelText('供应商') as HTMLSelectElement).value).toBe('s-1');
+    });
+    // 明细异步回填
+    await waitFor(() => {
+      expect((screen.getByLabelText('采购项目') as HTMLSelectElement).value).toBe('i-1');
+    });
+    expect((screen.getByLabelText('采购数量') as HTMLInputElement).value).toBe('3');
+    expect((screen.getByLabelText('采购单价') as HTMLInputElement).value).toBe('100.00');
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/purchaseOrders/po-1', expect.objectContaining({ method: 'PATCH' }));
+    });
+    const patchCall = vi.mocked(apiRequest).mock.calls.find(
+      ([path, options]) => path === '/resources/purchaseOrders/po-1' && options?.method === 'PATCH',
+    );
+    expect(JSON.parse(String(patchCall?.[1]?.body))).toMatchObject({
+      number: 'PO-1',
+      supplierId: 's-1',
+      totalAmount: 30000,
+      status: 'PENDING',
+    });
+    const itemPatchCall = vi.mocked(apiRequest).mock.calls.find(
+      ([path, options]) => path === '/resources/purchaseOrderItems/poi-1' && options?.method === 'PATCH',
+    );
+    expect(JSON.parse(String(itemPatchCall?.[1]?.body))).toMatchObject({
+      itemId: 'i-1',
+      name: '耗材',
+      spec: 'S',
+      quantity: 3,
+      unitPrice: 10000,
+      subtotal: 30000,
+    });
+    expect(await screen.findByText('采购单已更新')).toBeDefined();
+  });
+
+  it('deletes a purchase order after confirmation', async () => {
+    mockData();
+    render(<PurchaseOrdersPage />, { wrapper });
+    await screen.findByText('PO-1');
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    fireEvent.click(screen.getByText('确认删除'));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/purchaseOrders/po-1', expect.objectContaining({ method: 'DELETE' }));
+    });
+    expect(await screen.findByText('采购单已删除')).toBeDefined();
+  });
 });

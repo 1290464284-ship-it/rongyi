@@ -66,7 +66,7 @@ describe('UsersPage', () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string, options?: RequestInit) => {
       if (path === '/auth/me') return { role: 'BOSS' };
       if (path === '/resources/users?page=1&pageSize=100') return users;
-      if (path === '/api/v2/user-roles') return userRoles;
+      if (path === '/user-roles') return userRoles;
       if (path === '/admin/users' && options?.method === 'POST') return { id: 'u2' };
       if (path === '/admin/users/u1' && options?.method === 'PATCH') return { id: 'u1' };
       return {};
@@ -107,7 +107,7 @@ describe('UsersPage', () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/auth/me') return { role: 'BOSS' };
       if (path === '/resources/users?page=1&pageSize=100') return users;
-      if (path === '/api/v2/user-roles') return userRoles;
+      if (path === '/user-roles') return userRoles;
       if (path === '/admin/users/u1/password' ) return { changed: true };
       return {};
     });
@@ -125,7 +125,7 @@ describe('UsersPage', () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/auth/me') return { role: 'BOSS' };
       if (path === '/resources/users?page=1&pageSize=100') return baseUserList;
-      if (path === '/api/v2/user-roles') return userRoles;
+      if (path === '/user-roles') return userRoles;
       return {};
     });
     render(<UsersPage />, { wrapper });
@@ -141,7 +141,7 @@ describe('UsersPage', () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/auth/me') return { role: 'BOSS' };
       if (path === '/resources/users?page=1&pageSize=100') return baseUserList;
-      if (path === '/api/v2/user-roles') return userRoles;
+      if (path === '/user-roles') return userRoles;
       if (path === '/auth/password') return { changed: true };
       return {};
     });
@@ -157,7 +157,7 @@ describe('UsersPage', () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/auth/me') return { role: 'BOSS' };
       if (path === '/resources/users?page=1&pageSize=100') return baseUserList;
-      if (path === '/api/v2/user-roles') {
+      if (path === '/user-roles') {
         return { items: [{ userId: 'u1', role: 'RECEPTIONIST' }, { userId: 'u1', role: 'NURSE' }] };
       }
       return {};
@@ -172,7 +172,7 @@ describe('UsersPage', () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string, options?: RequestInit) => {
       if (path === '/auth/me') return { role: 'BOSS' };
       if (path === '/resources/users?page=1&pageSize=100') return baseUserList;
-      if (path === '/api/v2/user-roles') return userRoles;
+      if (path === '/user-roles') return userRoles;
       if (path === '/admin/users' && options?.method === 'POST') return { id: 'u2' };
       return {};
     });
@@ -188,7 +188,7 @@ describe('UsersPage', () => {
     fireEvent.click(screen.getByLabelText('技师'));
     fireEvent.click(screen.getByText('保存'));
     await waitFor(() => expect(vi.mocked(apiRequest)).toHaveBeenCalledWith(
-      '/api/v2/user-roles/u2',
+      '/user-roles/u2',
       expect.objectContaining({ method: 'PUT', body: JSON.stringify({ roles: ['RECEPTIONIST', 'TECHNICIAN'] }) }),
     ));
     expect(await screen.findByText('员工已创建')).toBeDefined();
@@ -198,7 +198,7 @@ describe('UsersPage', () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/auth/me') return { role: 'BOSS' };
       if (path === '/resources/users?page=1&pageSize=100') return baseUserList;
-      if (path === '/api/v2/user-roles') return { items: [{ userId: 'u1', role: 'NURSE' }] };
+      if (path === '/user-roles') return { items: [{ userId: 'u1', role: 'NURSE' }] };
       return {};
     });
     render(<UsersPage />, { wrapper });

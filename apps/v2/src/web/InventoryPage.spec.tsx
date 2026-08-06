@@ -48,7 +48,7 @@ describe('InventoryPage', () => {
         ];
       }
       if (path.startsWith('/resources/suppliers')) return { items: [], total: 0 };
-      if (path.startsWith('/api/v2/inventory-batches')) return { batches: [], expiring: [] };
+      if (path.startsWith('/inventory-batches')) return { batches: [], expiring: [] };
       return {};
     });
 
@@ -93,7 +93,7 @@ describe('InventoryPage', () => {
       if (path === '/inventory/low-stock') return [];
       if (path === '/inventory/expiring?days=30') return [];
       if (path.startsWith('/resources/suppliers')) return { items: [], total: 0 };
-      if (path.startsWith('/api/v2/inventory-batches')) return { batches: [], expiring: [] };
+      if (path.startsWith('/inventory-batches')) return { batches: [], expiring: [] };
       throw new Error('inventory failed');
     });
 
@@ -167,7 +167,7 @@ describe('InventoryPage', () => {
       if (path === '/inventory/low-stock') return [];
       if (path === '/inventory/expiring?days=30') return [];
       if (path.startsWith('/resources/suppliers')) return { items: [{ id: 's-1', name: '供应商甲' }], total: 1 };
-      if (path === '/api/v2/inventory-batches?itemId=i-batch') {
+      if (path === '/inventory-batches?itemId=i-batch') {
         return {
           batches: [
             { id: 'b-1', batchNo: 'B-001', productionDate: '2026-07-01', expiryDate: '2026-09-01', initialQuantity: 10, remainingQuantity: 10 },
@@ -176,7 +176,7 @@ describe('InventoryPage', () => {
           expiring: [],
         };
       }
-      if (path === '/api/v2/inventory-batches?days=30') {
+      if (path === '/inventory-batches?days=30') {
         return {
           batches: [],
           expiring: [
@@ -195,7 +195,7 @@ describe('InventoryPage', () => {
     expect(screen.getByRole('button', { name: '生成到期提醒' })).toBeDefined();
   });
 
-  it('submits a new batch via POST /api/v2/inventory-batches', async () => {
+  it('submits a new batch via POST /inventory-batches', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/inventoryItems?page=1&pageSize=20') {
         return { items: [{ id: 'i-form', name: 'Form Material', stock: 0, minStock: 0 }], total: 1 };
@@ -203,7 +203,7 @@ describe('InventoryPage', () => {
       if (path === '/inventory/low-stock') return [];
       if (path === '/inventory/expiring?days=30') return [];
       if (path.startsWith('/resources/suppliers')) return { items: [{ id: 's-1', name: '供应商甲' }], total: 1 };
-      if (path.startsWith('/api/v2/inventory-batches')) return { batches: [], expiring: [] };
+      if (path.startsWith('/inventory-batches')) return { batches: [], expiring: [] };
       return {};
     });
 
@@ -218,9 +218,9 @@ describe('InventoryPage', () => {
     fireEvent.change(screen.getByLabelText('供应商'), { target: { value: 's-1' } });
     fireEvent.click(screen.getByRole('button', { name: '新增批次' }));
     await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/api/v2/inventory-batches', expect.objectContaining({ method: 'POST' }));
+      expect(apiRequest).toHaveBeenCalledWith('/inventory-batches', expect.objectContaining({ method: 'POST' }));
     });
-    const postCall = vi.mocked(apiRequest).mock.calls.find(([path, options]) => path === '/api/v2/inventory-batches' && options?.method === 'POST');
+    const postCall = vi.mocked(apiRequest).mock.calls.find(([path, options]) => path === '/inventory-batches' && options?.method === 'POST');
     expect(JSON.parse(String(postCall?.[1]?.body))).toMatchObject({
       itemId: 'i-form',
       batchNo: 'B-FORM-1',
@@ -232,22 +232,22 @@ describe('InventoryPage', () => {
     expect(await screen.findByText('批次已入库')).toBeDefined();
   });
 
-  it('generates expiry alerts via POST /api/v2/inventory-batches/expiry-alerts', async () => {
+  it('generates expiry alerts via POST /inventory-batches/expiry-alerts', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/inventoryItems?page=1&pageSize=20') return { items: [], total: 0 };
       if (path === '/inventory/low-stock') return [];
       if (path === '/inventory/expiring?days=30') return [];
       if (path.startsWith('/resources/suppliers')) return { items: [], total: 0 };
-      if (path.startsWith('/api/v2/inventory-batches')) return { batches: [], expiring: [] };
+      if (path.startsWith('/inventory-batches')) return { batches: [], expiring: [] };
       return {};
     });
 
     render(<InventoryPage />, { wrapper });
     fireEvent.click(await screen.findByRole('button', { name: '生成到期提醒' }));
     await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/api/v2/inventory-batches/expiry-alerts', expect.objectContaining({ method: 'POST' }));
+      expect(apiRequest).toHaveBeenCalledWith('/inventory-batches/expiry-alerts', expect.objectContaining({ method: 'POST' }));
     });
-    const postCall = vi.mocked(apiRequest).mock.calls.find(([path, options]) => path === '/api/v2/inventory-batches/expiry-alerts' && options?.method === 'POST');
+    const postCall = vi.mocked(apiRequest).mock.calls.find(([path, options]) => path === '/inventory-batches/expiry-alerts' && options?.method === 'POST');
     expect(JSON.parse(String(postCall?.[1]?.body))).toEqual({ days: 30 });
     expect(await screen.findByText('到期提醒已生成')).toBeDefined();
   });
@@ -257,7 +257,7 @@ describe('InventoryPage', () => {
       if (path === '/resources/inventoryItems?page=1&pageSize=20') return { items: [], total: 0 };
       if (path === '/inventory/low-stock') return [];
       if (path === '/inventory/expiring?days=30') return [];
-      if (path === '/api/v2/inventory-reports/IN') {
+      if (path === '/inventory-reports/IN') {
         return {
           type: 'IN',
           from: null,
@@ -294,7 +294,7 @@ describe('InventoryPage', () => {
     expect(screen.getByText('入库备注')).toBeDefined();
     expect(screen.getByText('PURCHASE')).toBeDefined();
     await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/api/v2/inventory-reports/IN');
+      expect(apiRequest).toHaveBeenCalledWith('/inventory-reports/IN');
     });
   });
 
@@ -303,7 +303,7 @@ describe('InventoryPage', () => {
       if (path === '/resources/inventoryItems?page=1&pageSize=20') return { items: [], total: 0 };
       if (path === '/inventory/low-stock') return [];
       if (path === '/inventory/expiring?days=30') return [];
-      if (path.startsWith('/api/v2/inventory-reports/')) {
+      if (path.startsWith('/inventory-reports/')) {
         return {
           type: 'SUMMARY',
           from: null,
@@ -328,7 +328,7 @@ describe('InventoryPage', () => {
     expect(screen.getByText('2')).toBeDefined();
     expect(screen.getByText('1')).toBeDefined();
     await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/api/v2/inventory-reports/SUMMARY');
+      expect(apiRequest).toHaveBeenCalledWith('/inventory-reports/SUMMARY');
     });
   });
 
@@ -337,7 +337,7 @@ describe('InventoryPage', () => {
       if (path === '/resources/inventoryItems?page=1&pageSize=20') return { items: [], total: 0 };
       if (path === '/inventory/low-stock') return [];
       if (path === '/inventory/expiring?days=30') return [];
-      if (path.startsWith('/api/v2/inventory-reports/')) {
+      if (path.startsWith('/inventory-reports/')) {
         return { type: 'IN', from: '2026-08-01', to: '2026-08-31', total: 0, items: [], supplierId: null };
       }
       return {};
@@ -348,7 +348,7 @@ describe('InventoryPage', () => {
     fireEvent.change(screen.getByLabelText('报表开始日期'), { target: { value: '2026-08-01' } });
     fireEvent.change(screen.getByLabelText('报表结束日期'), { target: { value: '2026-08-31' } });
     await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/api/v2/inventory-reports/IN?from=2026-08-01&to=2026-08-31');
+      expect(apiRequest).toHaveBeenCalledWith('/inventory-reports/IN?from=2026-08-01&to=2026-08-31');
     });
     expect(await screen.findByText('从 2026-08-01')).toBeDefined();
     expect(screen.getByText('至 2026-08-31')).toBeDefined();
@@ -359,7 +359,7 @@ describe('InventoryPage', () => {
       if (path === '/resources/inventoryItems?page=1&pageSize=20') return { items: [], total: 0 };
       if (path === '/inventory/low-stock') return [];
       if (path === '/inventory/expiring?days=30') return [];
-      if (path.startsWith('/api/v2/inventory-reports/')) throw new Error('report failed');
+      if (path.startsWith('/inventory-reports/')) throw new Error('report failed');
       return {};
     });
 
@@ -367,5 +367,82 @@ describe('InventoryPage', () => {
     fireEvent.click(await screen.findByRole('tab', { name: '库存明细报表' }));
     expect(await screen.findByText('report failed')).toBeDefined();
     expect(screen.getByRole('button', { name: '重试' })).toBeDefined();
+  });
+
+  it('edits a batch via the dialog and PATCH /inventory-batches/:id', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/inventoryItems?page=1&pageSize=20') {
+        return { items: [{ id: 'i-batch', name: 'Batch Material', stock: 10, minStock: 1 }], total: 1 };
+      }
+      if (path === '/inventory/low-stock') return [];
+      if (path === '/inventory/expiring?days=30') return [];
+      if (path.startsWith('/resources/suppliers')) return { items: [{ id: 's-1', name: '供应商甲' }], total: 1 };
+      if (path === '/inventory-batches?itemId=i-batch') {
+        return {
+          batches: [
+            { id: 'b-1', batchNo: 'B-001', productionDate: '2026-07-01', expiryDate: '2026-09-01', initialQuantity: 10, remainingQuantity: 10, supplierId: 's-1' },
+          ],
+          expiring: [],
+        };
+      }
+      if (path.startsWith('/inventory-batches')) return { batches: [], expiring: [] };
+      return {};
+    });
+
+    render(<InventoryPage />, { wrapper });
+    await screen.findByText('B-001');
+    fireEvent.click(screen.getAllByRole('button', { name: '编辑' })[0]);
+
+    expect(await screen.findByRole('dialog', { name: '编辑批次' })).toBeDefined();
+    expect(screen.getByDisplayValue('B-001')).toBeDefined();
+    expect(screen.getByDisplayValue('2026-07-01')).toBeDefined();
+    expect(screen.getByDisplayValue('2026-09-01')).toBeDefined();
+    expect((screen.getByLabelText('编辑供应商') as HTMLSelectElement).value).toBe('s-1');
+
+    fireEvent.change(screen.getByLabelText('编辑批次号'), { target: { value: 'B-001-EDITED' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/inventory-batches/b-1', expect.objectContaining({ method: 'PATCH' }));
+    });
+    const patchCall = vi.mocked(apiRequest).mock.calls.find(([path, options]) => path === '/inventory-batches/b-1' && options?.method === 'PATCH');
+    expect(JSON.parse(String(patchCall?.[1]?.body))).toMatchObject({
+      batchNo: 'B-001-EDITED',
+      productionDate: '2026-07-01',
+      expiryDate: '2026-09-01',
+      supplierId: 's-1',
+    });
+    expect(await screen.findByText('批次已更新')).toBeDefined();
+  });
+
+  it('deletes a batch after confirming the dialog via DELETE /inventory-batches/:id', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/inventoryItems?page=1&pageSize=20') {
+        return { items: [{ id: 'i-batch', name: 'Batch Material', stock: 10, minStock: 1 }], total: 1 };
+      }
+      if (path === '/inventory/low-stock') return [];
+      if (path === '/inventory/expiring?days=30') return [];
+      if (path.startsWith('/resources/suppliers')) return { items: [], total: 0 };
+      if (path === '/inventory-batches?itemId=i-batch') {
+        return {
+          batches: [
+            { id: 'b-1', batchNo: 'B-001', productionDate: '2026-07-01', expiryDate: '2026-09-01', initialQuantity: 10, remainingQuantity: 0 },
+          ],
+          expiring: [],
+        };
+      }
+      if (path.startsWith('/inventory-batches')) return { batches: [], expiring: [] };
+      return {};
+    });
+
+    render(<InventoryPage />, { wrapper });
+    await screen.findByText('B-001');
+    fireEvent.click(screen.getAllByRole('button', { name: '删除' })[0]);
+
+    expect(await screen.findByText('确定删除该批次吗？')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '确认' }));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/inventory-batches/b-1', expect.objectContaining({ method: 'DELETE' }));
+    });
+    expect(await screen.findByText('批次已删除')).toBeDefined();
   });
 });

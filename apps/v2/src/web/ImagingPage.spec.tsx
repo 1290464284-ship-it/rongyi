@@ -258,4 +258,102 @@ describe('ImagingPage', () => {
     fireEvent.click(screen.getByText('清空对比'));
     expect(screen.getByText('请选择两张影像进行对比')).toBeDefined();
   });
+
+  it('edits an imaging record keeping the original image', async () => {
+    mockData();
+    render(<ImagingPage />, { wrapper });
+    await screen.findByText('全景片');
+
+    const recordRow = screen.getByText('全景片').closest('tr') as HTMLElement;
+    fireEvent.click(within(recordRow).getByText('编辑'));
+    await waitFor(() => {
+      expect((screen.getByLabelText('标题') as HTMLInputElement).value).toBe('全景片');
+      expect((screen.getByLabelText('拍摄时间') as HTMLInputElement).value).toBe(toLocalDatetime('2026-01-02T03:04:00.000Z'));
+      expect((screen.getByLabelText('分类') as HTMLSelectElement).value).toBe('c-1');
+    });
+    fireEvent.change(screen.getByLabelText('标题'), { target: { value: '全景片（更新）' } });
+    vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'i-1' });
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/imaging/i-1', expect.objectContaining({ method: 'PATCH' }));
+    });
+    const patchCall = vi.mocked(apiRequest).mock.calls.find(
+      (call) => call[0] === '/resources/imaging/i-1' && (call[1] as RequestInit)?.method === 'PATCH',
+    );
+    const body = JSON.parse(String((patchCall?.[1] as RequestInit)?.body));
+    expect(body).toMatchObject({
+      patientId: 'p-1',
+      doctorId: 'd-1',
+      title: '全景片（更新）',
+      imageUrl: '/api/v2/files/a.png',
+      categoryId: 'c-1',
+      phase: 'INITIAL',
+    });
+    expect(body.takenAt).toBe(new Date(toLocalDatetime('2026-01-02T03:04:00.000Z')).toISOString());
+    expect(uploadFile).not.toHaveBeenCalled();
+    expect(await screen.findByText('影像记录已更新')).toBeDefined();
+  });
+
+  it('deletes an imaging record after confirmation', async () => {
+    mockData();
+    render(<ImagingPage />, { wrapper });
+    await screen.findByText('全景片');
+    const recordRow = screen.getByText('全景片').closest('tr') as HTMLElement;
+    fireEvent.click(within(recordRow).getByText('删除'));
+    fireEvent.click(await screen.findByText('确认删除'));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/imaging/i-1', expect.objectContaining({ method: 'DELETE' }));
+    });
+    expect(await screen.findByText('影像记录已删除')).toBeDefined();
+  });
+
+  it('edits and deletes imaging categories from the management panel', async () => {
+    mockData();
+    render(<ImagingPage />, { wrapper });
+    await screen.findByText('影像分类管理');
+    const panel = screen.getByLabelText('影像分类管理');
+
+    // 编辑：预填分类表单 → PATCH /resources/imagingCategories/:id
+    const categoryRow = within(panel).getByText('正畸类').closest('tr') as HTMLElement;
+    fireEvent.click(within(categoryRow).getByText('编辑'));
+    await waitFor(() => {
+      expect((within(panel).getByLabelText('名称') as HTMLInputElement).value).toBe('正畸类');
+      expect((within(panel).getByLabelText('类型') as HTMLSelectElement).value).toBe('ORTHODONTIC');
+      expect((within(panel).getByLabelText('排序') as HTMLInputElement).value).toBe('1');
+      expect((within(panel).getByLabelText('启用') as HTMLInputElement).checked).toBe(true);
+    });
+    fireEvent.change(within(panel).getByLabelText('名称'), { target: { value: '正畸类（更新）' } });
+    vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'c-1' });
+    fireEvent.click(within(panel).getByText('保存修改'));
+    await waitFor(() => {
+      const patchCall = vi.mocked(apiRequest).mock.calls.find(
+        (call) => call[0] === '/resources/imagingCategories/c-1' && (call[1] as RequestInit)?.method === 'PATCH',
+      );
+      expect(patchCall).toBeDefined();
+      expect(JSON.parse(String((patchCall?.[1] as RequestInit)?.body))).toEqual({
+        name: '正畸类（更新）',
+        type: 'ORTHODONTIC',
+        sortOrder: 1,
+        active: true,
+      });
+    });
+    expect(await screen.findByText('影像分类已更新')).toBeDefined();
+
+    // 删除：ConfirmDialog 确认 → DELETE /resources/imagingCategories/:id
+    vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'c-2' });
+    const row2 = within(panel).getByText('美学类').closest('tr') as HTMLElement;
+    fireEvent.click(within(row2).getByText('删除'));
+    fireEvent.click(await screen.findByText('确认删除'));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/imagingCategories/c-2', expect.objectContaining({ method: 'DELETE' }));
+    });
+    expect(await screen.findByText('影像分类已删除')).toBeDefined();
+  });
 });
+
+function toLocalDatetime(value: string): string {
+  const date = new Date(value);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
