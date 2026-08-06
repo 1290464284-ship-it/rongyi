@@ -16,6 +16,7 @@ const DashboardPage = lazy(() => import('./DashboardPage').then((m) => ({ defaul
 const DesktopSettingsPage = lazy(() => import('./DesktopSettingsPage').then((m) => ({ default: m.DesktopSettingsPage })));
 const ClinicalWorkflowPage = lazy(() => import('./ClinicalWorkflowPage').then((m) => ({ default: m.ClinicalWorkflowPage })));
 const HrWorkflowPage = lazy(() => import('./HrWorkflowPage').then((m) => ({ default: m.HrWorkflowPage })));
+const SchedulesPage = lazy(() => import('./SchedulesPage').then((m) => ({ default: m.SchedulesPage })));
 const FinanceWorkflowPage = lazy(() => import('./FinanceWorkflowPage').then((m) => ({ default: m.FinanceWorkflowPage })));
 const SystemOperationsPage = lazy(() => import('./SystemOperationsPage').then((m) => ({ default: m.SystemOperationsPage })));
 const InventoryWorkflowPage = lazy(() => import('./InventoryWorkflowPage').then((m) => ({ default: m.InventoryWorkflowPage })));
@@ -125,7 +126,7 @@ export const communicationHubTabs: HubTab[] = [
 export const hrHubTabs: HubTab[] = [
   { id: 'workflow', label: '\u5ba1\u6279', kind: 'custom', component: HrWorkflowPage },
   { id: 'staff', label: '\u5458\u5de5', kind: 'custom', component: UsersPage },
-  { id: 'schedules', label: '\u6392\u73ed', kind: 'resource', resource: 'workSchedules' },
+  { id: 'schedules', label: '\u6392\u73ed', kind: 'custom', component: SchedulesPage },
   { id: 'attendance', label: '\u8003\u52e4', kind: 'resource', resource: 'attendance' },
   { id: 'leaves', label: '\u8bf7\u5047', kind: 'resource', resource: 'leaveRequests' },
   { id: 'equipment', label: '\u8bbe\u5907', kind: 'resource', resource: 'equipment' },
