@@ -27,7 +27,7 @@ try {
   await page.goto(`${base}/#/clinical`, { waitUntil: 'domcontentloaded' });
   await page.getByRole('heading', { name: '临床记录' }).waitFor();
   await page.getByRole('tab', { name: '工作流' }).click();
-  await page.getByRole('heading', { name: '临床工作流' }).waitFor();
+  await page.getByRole('heading', { name: '就诊工作台' }).waitFor();
 
   await page.goto(`${base}/#/finance`, { waitUntil: 'domcontentloaded' });
   await page.getByRole('heading', { name: '财务中心' }).waitFor();
