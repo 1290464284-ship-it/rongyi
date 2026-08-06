@@ -31,6 +31,11 @@ type UserRow = Record<string, unknown> & {
   active: boolean;
 };
 
+interface UserRoleRow {
+  userId: string;
+  role: string;
+}
+
 interface UserForm {
   username: string;
   password: string;
@@ -59,6 +64,7 @@ export function UsersPage() {
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [additionalRoles, setAdditionalRoles] = useState<string[]>([]);
 
   const me = useQuery({
     queryKey: ['auth-me'],
@@ -67,6 +73,11 @@ export function UsersPage() {
   const users = useQuery({
     queryKey: ['users'],
     queryFn: () => apiRequest<Page<UserRow>>('/resources/users?page=1&pageSize=100'),
+    enabled: me.data?.role === 'BOSS',
+  });
+  const userRoles = useQuery({
+    queryKey: ['user-roles'],
+    queryFn: () => apiRequest<{ items: UserRoleRow[] }>('/api/v2/user-roles'),
     enabled: me.data?.role === 'BOSS',
   });
 
@@ -80,6 +91,7 @@ export function UsersPage() {
   function openCreate() {
     setEditingId(null);
     setForm(emptyForm);
+    setAdditionalRoles([]);
     setShowForm(true);
   }
 
@@ -93,6 +105,9 @@ export function UsersPage() {
       phone: row.phone ?? '',
       active: Boolean(row.active),
     });
+    setAdditionalRoles((userRoles.data?.items ?? [])
+      .filter((entry) => entry.userId === row.id)
+      .map((entry) => entry.role));
     setShowForm(true);
   }
 
@@ -101,6 +116,7 @@ export function UsersPage() {
     if (submitting) return;
     setSubmitting(true);
     try {
+      let targetId = editingId;
       if (editingId) {
         await apiRequest(`/admin/users/${editingId}`, {
           method: 'PATCH',
@@ -112,7 +128,7 @@ export function UsersPage() {
           }),
         });
       } else {
-        await apiRequest('/admin/users', {
+        const created = await apiRequest<{ id: string }>('/admin/users', {
           method: 'POST',
           body: JSON.stringify({
             username: form.username,
@@ -123,10 +139,18 @@ export function UsersPage() {
             active: form.active,
           }),
         });
+        targetId = created.id;
+      }
+      if (targetId) {
+        await apiRequest(`/api/v2/user-roles/${targetId}`, {
+          method: 'PUT',
+          body: JSON.stringify({ roles: additionalRoles }),
+        });
       }
       showToast(editingId ? '员工资料已更新' : '员工已创建', 'success');
       setShowForm(false);
       await users.refetch();
+      await userRoles.refetch();
     } catch (error) {
       showToast(errorMessage(error, '保存失败'), 'error');
     } finally {
@@ -180,7 +204,19 @@ export function UsersPage() {
     {
       key: 'role',
       label: '角色',
-      render: (row: UserRow) => ROLE_LABELS[row.role] ?? row.role,
+      render: (row: UserRow) => {
+        const extra = (userRoles.data?.items ?? [])
+          .filter((entry) => entry.userId === row.id)
+          .map((entry) => entry.role);
+        return (
+          <>
+            {ROLE_LABELS[row.role] ?? row.role}
+            {extra.map((role) => (
+              <span key={role} className="role-badge">{ROLE_LABELS[role] ?? role}</span>
+            ))}
+          </>
+        );
+      },
     },
     { key: 'phone', label: '电话' },
     {
@@ -237,6 +273,27 @@ export function UsersPage() {
             电话
             <input value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))} />
           </label>
+          <fieldset className="role-checkbox-group">
+            <legend>附加岗位</legend>
+            {Object.entries(ROLE_LABELS)
+              .filter(([value]) => value !== form.role)
+              .map(([value, label]) => (
+                <label key={value}>
+                  <input
+                    type="checkbox"
+                    checked={additionalRoles.includes(value)}
+                    onChange={(event) => {
+                      setAdditionalRoles((current) => (
+                        event.target.checked
+                          ? [...current, value]
+                          : current.filter((role) => role !== value)
+                      ));
+                    }}
+                  />
+                  {label}
+                </label>
+              ))}
+          </fieldset>
           <label>
             <input type="checkbox" checked={form.active} onChange={(event) => setForm((current) => ({ ...current, active: event.target.checked }))} />
             启用账号
