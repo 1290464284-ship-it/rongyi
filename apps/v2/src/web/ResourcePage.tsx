@@ -160,7 +160,11 @@ export function ResourcePage({ resource: fixedResource }: { resource?: string })
       await apiRequest(`/resources/${resource}/${deleteTarget}`, { method: 'DELETE' });
       setDeleteTarget(null);
       showToast('删除成功', 'success');
-      await listQuery.refetch();
+      const refreshed = await listQuery.refetch();
+      // 删除末页最后一条时回退一页，避免停留在空页
+      if (page > 1 && (refreshed.data?.items?.length ?? 0) === 0) {
+        setPage((value) => Math.max(1, value - 1));
+      }
     } catch (error) {
       const message = friendlyError(error);
       showToast(message, 'error');

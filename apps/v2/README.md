@@ -163,9 +163,8 @@ electron/           Electron main and preload
 Verified 2026-08-05:
 
 - 约 3.5 万行 TypeScript/TSX（`src/`，含测试代码）
-- 76 个测试文件（37 个服务端 `*.spec.ts` + 39 个 Web `*.spec.tsx`）
-- 568 个测试用例（最近一次 vitest 运行记录：523 → 568，见
-  `docs/plans/2026-08-05-wave3-track.md`）
+- 139 个测试文件（90 个服务端 `*.spec.ts` + 48 个 Web `*.spec.tsx` + 1 个领域 `*.spec.ts`）
+- 1259 个测试用例（服务端 877 + Web 380 + 领域 2，最近一次 vitest 全量运行记录）
 
 ## Sidebar Groups
 

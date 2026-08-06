@@ -219,6 +219,21 @@ export class SqliteAuthRepository implements AuthRepository {
     return Boolean(this.db.prepare('SELECT 1 FROM UsedRefreshToken WHERE tokenHash = ?').get(tokenHash));
   }
 
+  findUsedRefreshToken(tokenHash: string): { userId: string } | null {
+    const row = this.db.prepare('SELECT userId FROM UsedRefreshToken WHERE tokenHash = ?').get(tokenHash) as
+      | { userId: string }
+      | undefined;
+    return row ?? null;
+  }
+
+  revokeSessionFamily(userId: string, updatedAt: string): void {
+    this.db.prepare(
+      `UPDATE User SET refreshToken = NULL, refreshTokenExpiresAt = NULL,
+         tokenVersion = tokenVersion + 1, updatedAt = ?
+       WHERE id = ? AND deletedAt IS NULL`,
+    ).run(updatedAt, userId);
+  }
+
   cleanupUsedRefreshTokens(before: string): number {
     return this.db.prepare('DELETE FROM UsedRefreshToken WHERE usedAt < ?').run(before).changes;
   }

@@ -283,7 +283,9 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
 
   app.get('/api/v2/inventory/expiring', wrapAsync(async (req, res) => {
       const days = Number(req.query.days ?? 30);
-      res.json({ success: true, data: inventory.expiringSoon(Number.isFinite(days) ? days : 30, req.context!) });
+      // 上限 1..3650：超大值会造成无效的全表范围扫描
+      const clamped = Number.isFinite(days) ? Math.min(Math.max(Math.floor(days), 1), 3650) : 30;
+      res.json({ success: true, data: inventory.expiringSoon(clamped, req.context!) });
   }));
 
   app.get('/api/v2/follow-ups/reminders', wrapAsync(async (req, res) => {

@@ -6,6 +6,9 @@
   "private": true,
   "type": "module",
   "main": "electron/main.cjs",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "concurrently \"pnpm dev:api\" \"pnpm dev:web\"",
     "dev:api": "tsx watch src/server/main.ts",
@@ -136,14 +139,6 @@
         "owner": "1290464284-ship-it",
         "repo": "rongyi"
       }
-    ]
-  },
-  "knip": {
-    "ignore": [
-      "src/domain/contracts.ts",
-      "legacy/schema/**",
-      "electron/preload.cjs",
-      "scripts/wait-for-services.mjs"
     ]
   }
 }

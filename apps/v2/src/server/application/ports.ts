@@ -176,6 +176,10 @@ export interface AuthRepository {
   setCurrentClinic(userId: string, clinicId: string, updatedAt: string): void;
   addClinicMembership(userId: string, clinicId: string, role: string, createdAt: string, updatedAt: string): void;
   isRefreshTokenUsed(tokenHash: string): boolean;
+  /** 查已使用的 refresh token 归属用户（重用吊销会话族用）。 */
+  findUsedRefreshToken(tokenHash: string): { userId: string } | null;
+  /** 吊销用户的整个会话族：清除当前 refresh token 并 bump tokenVersion（RFC 6819 重用应对）。 */
+  revokeSessionFamily(userId: string, updatedAt: string): void;
   cleanupUsedRefreshTokens(before: string): number;
   insertUser(input: AuthUserRecord): void;
   updateUser(id: string, fields: { name?: string; phone?: string | null; role?: string; active?: boolean }, updatedAt: string, clinicId?: string | null): number;

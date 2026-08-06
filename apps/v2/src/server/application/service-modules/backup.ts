@@ -156,6 +156,7 @@ export class BackupService {
       stagedPath,
       backupSummary,
       currentSummary,
+      staged: true,
       message: 'Backup verified and staged. Restart the application to activate this restore.',
     };
   }

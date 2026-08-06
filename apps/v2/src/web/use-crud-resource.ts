@@ -210,7 +210,11 @@ export function useCrudResource<
       }
       setDeleteTarget(null);
       showToast(options.messages?.delete ?? DEFAULT_MESSAGES.delete, 'success');
-      await query.refetch();
+      const refreshed = await query.refetch();
+      // 删除末页最后一条时回退一页，避免停留在空页
+      if (page > 1 && (refreshed.data?.items?.length ?? 0) === 0) {
+        setPage(page - 1);
+      }
     } catch (error) {
       showToast(errorMessage(error, options.errorMessages?.delete ?? DEFAULT_ERROR_MESSAGES.delete), 'error');
     } finally {
