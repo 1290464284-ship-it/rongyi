@@ -65,6 +65,7 @@ import { registerInventoryBatchRoutes } from './routes/inventory-batch-routes';
 import { registerStocktakeRoutes } from './routes/stocktake-routes';
 import { registerDispenseRoutes } from './routes/dispense-routes';
 import { registerPurchaseReviewRoutes } from './routes/purchase-review-routes';
+import { registerShiftTemplateRoutes } from './routes/shift-template-routes';
 import type { RouteDependencies } from './routes/deps';
 
 export interface AppDependencies {
@@ -379,6 +380,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
   registerStocktakeRoutes(app, db);
   registerDispenseRoutes(app, db, { lockGuard: stocktakeLockGuard });
   registerPurchaseReviewRoutes(app, db);
+  registerShiftTemplateRoutes(app, db);
   // file:// (打包版 Electron 渲染器) 以 <img> 加载 API 图片时,
   // 不受同源策略约束, 但 helmet 默认 Cross-Origin-Resource-Policy: same-origin
   // 会阻断响应; 仅对 files 路由放开 CORP。

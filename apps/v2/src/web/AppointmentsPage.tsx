@@ -32,7 +32,10 @@ type AppointmentRow = Record<string, unknown> & {
   doctorIdLabel?: string | null;
   startTime?: string | null;
   status?: string | null;
+  purpose?: string | null;
+  tempPatientName?: string | null;
 };
+type PurposeRow = Record<string, unknown> & { id: string; name?: string; active?: unknown };
 
 export function AppointmentsPage() {
   const { showToast } = useToast();
@@ -40,13 +43,22 @@ export function AppointmentsPage() {
   const [doctorId, setDoctorId] = useState('');
   const [chairId, setChairId] = useState('');
   const [type, setType] = useState('REGULAR');
+  const [purpose, setPurpose] = useState('');
+  const [tempPatientName, setTempPatientName] = useState('');
+  const [tempPatientPhone, setTempPatientPhone] = useState('');
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [newPurposeName, setNewPurposeName] = useState('');
+  const [purposeBusy, setPurposeBusy] = useState(false);
 
   const doctors = useQuery({
     queryKey: ['appointment-doctors'],
     queryFn: () => apiRequest<Array<LookupRow>>('/doctors'),
+  });
+  const purposes = useQuery({
+    queryKey: ['appointment-purposes'],
+    queryFn: () => apiRequest<Page<PurposeRow>>('/resources/appointmentPurposes?page=1&pageSize=100'),
   });
   const query = useQuery({
     queryKey: ['appointments'],
@@ -58,7 +70,8 @@ export function AppointmentsPage() {
 
   async function create(event: FormEvent) {
     event.preventDefault();
-    if (submitting || !patientId || !doctorId || !startTime || !endTime) {
+    const tempName = tempPatientName.trim();
+    if (submitting || !(patientId || tempName) || !doctorId || !startTime || !endTime) {
       showToast('请选择患者、医生并填写开始和结束时间', 'error');
       return;
     }
@@ -67,12 +80,15 @@ export function AppointmentsPage() {
       await apiRequest('/appointments', {
         method: 'POST',
         body: JSON.stringify({
-          patientId,
+          patientId: patientId || undefined,
           doctorId,
           chairId: chairId || undefined,
           startTime: new Date(startTime).toISOString(),
           endTime: new Date(endTime).toISOString(),
           type,
+          purpose: purpose || undefined,
+          tempPatientName: tempName || undefined,
+          tempPatientPhone: tempPatientPhone.trim() || undefined,
         }),
       });
       showToast('预约已创建', 'success');
@@ -81,6 +97,43 @@ export function AppointmentsPage() {
       showToast(errorMessage(error, '创建预约失败'), 'error');
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function addPurpose(event: FormEvent) {
+    event.preventDefault();
+    const name = newPurposeName.trim();
+    if (purposeBusy || !name) {
+      showToast('请输入事项名称', 'error');
+      return;
+    }
+    setPurposeBusy(true);
+    try {
+      await apiRequest('/resources/appointmentPurposes', {
+        method: 'POST',
+        body: JSON.stringify({ name, active: true }),
+      });
+      showToast('事项已添加', 'success');
+      setNewPurposeName('');
+      await purposes.refetch();
+    } catch (error) {
+      showToast(errorMessage(error, '添加事项失败'), 'error');
+    } finally {
+      setPurposeBusy(false);
+    }
+  }
+
+  async function togglePurpose(row: PurposeRow) {
+    try {
+      const active = Number(row.active) === 1;
+      await apiRequest(`/resources/appointmentPurposes/${row.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ active: !active }),
+      });
+      showToast('事项状态已更新', 'success');
+      await purposes.refetch();
+    } catch (error) {
+      showToast(errorMessage(error, '更新事项失败'), 'error');
     }
   }
 
@@ -98,8 +151,9 @@ export function AppointmentsPage() {
   }
 
   const columns = [
-    { key: 'patientId', label: '患者', render: (row: AppointmentRow) => row.patientIdLabel ?? row.patientId ?? '' },
+    { key: 'patientId', label: '患者', render: (row: AppointmentRow) => row.patientIdLabel ?? row.tempPatientName ?? row.patientId ?? '' },
     { key: 'doctorId', label: '医生', render: (row: AppointmentRow) => row.doctorIdLabel ?? row.doctorId ?? '' },
+    { key: 'purpose', label: '预约事项', render: (row: AppointmentRow) => String(row.purpose ?? '') },
     {
       key: 'startTime',
       label: '开始时间',
@@ -145,10 +199,35 @@ export function AppointmentsPage() {
             <option key={value} value={value}>{label}</option>
           ))}
         </select>
+        <select aria-label="预约事项" value={purpose} onChange={(event) => setPurpose(event.target.value)}>
+          <option value="">不指定</option>
+          {purposes.data?.items?.map((row) => (
+            <option key={row.id} value={row.id}>{String(row.name ?? row.id)}</option>
+          ))}
+        </select>
+        <input aria-label="临时患者姓名" type="text" value={tempPatientName} onChange={(event) => setTempPatientName(event.target.value)} placeholder="临时患者姓名" />
+        <input aria-label="临时患者电话" type="text" value={tempPatientPhone} onChange={(event) => setTempPatientPhone(event.target.value)} placeholder="临时患者电话" />
         <input aria-label="开始时间" type="datetime-local" value={startTime} onChange={(event) => setStartTime(event.target.value)} />
         <input aria-label="结束时间" type="datetime-local" value={endTime} onChange={(event) => setEndTime(event.target.value)} />
         <button type="submit" disabled={submitting}>{submitting ? '创建中...' : '创建预约'}</button>
       </form>
+      <section className="analytics-panel" aria-label="预约事项管理">
+        <h2>预约事项管理</h2>
+        <ul className="purpose-list">
+          {(purposes.data?.items ?? []).map((row) => (
+            <li key={row.id}>
+              <span>{String(row.name ?? row.id)}</span>
+              <button type="button" onClick={() => void togglePurpose(row)}>
+                {Number(row.active) === 1 ? '停用' : '启用'}
+              </button>
+            </li>
+          ))}
+        </ul>
+        <form className="inline-form" onSubmit={addPurpose}>
+          <input aria-label="新事项名称" type="text" value={newPurposeName} onChange={(event) => setNewPurposeName(event.target.value)} placeholder="新事项名称" />
+          <button type="submit" disabled={purposeBusy}>{purposeBusy ? '添加中...' : '添加事项'}</button>
+        </form>
+      </section>
       <DataTable columns={columns} rows={query.data?.items ?? []} keyField="id" emptyText="暂无预约" />
     </div>
   );

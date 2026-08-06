@@ -35,6 +35,9 @@ function mockLookups() {
     if (path === '/resources/chairs?page=1&pageSize=100') {
       return { items: [{ id: 'c-1', name: '椅位 1' }, { id: 'c-2' }], total: 2, page: 1, pageSize: 200 };
     }
+    if (path === '/resources/appointmentPurposes?page=1&pageSize=100') {
+      return { items: [{ id: 'purpose-1', name: '复诊检查', active: 1 }, { id: 'purpose-2', name: '种植咨询', active: 1 }], total: 2, page: 1, pageSize: 100 };
+    }
     return {};
   });
 }
@@ -182,6 +185,117 @@ await waitFor(() => {
     expect(screen.getByText('王医生')).toBeDefined();
     expect(screen.getByText('p-9')).toBeDefined();
     expect(screen.getByText('d-9')).toBeDefined();
+  });
+
+  it('creates an appointment for a temp patient without patientId', async () => {
+    mockLookups();
+    render(<AppointmentsPage />, { wrapper });
+    await screen.findByText('预约管理');
+    await waitFor(() => {
+      expect((screen.getByLabelText('医生') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
+    fireEvent.change(screen.getByLabelText('临时患者姓名'), { target: { value: '临时甲' } });
+    fireEvent.change(screen.getByLabelText('临时患者电话'), { target: { value: '13900000000' } });
+    fireEvent.change(screen.getByLabelText('开始时间'), { target: { value: '2026-08-05T09:00' } });
+    fireEvent.change(screen.getByLabelText('结束时间'), { target: { value: '2026-08-05T10:00' } });
+    vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'a-temp' });
+    fireEvent.click(screen.getByRole('button', { name: '创建预约' }));
+    await waitFor(() => {
+      const call = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/appointments');
+      expect(call).toBeDefined();
+      const body = JSON.parse(String((call?.[1] as { body?: string } | undefined)?.body ?? '{}')) as Record<string, unknown>;
+      expect(body.tempPatientName).toBe('临时甲');
+      expect(body.tempPatientPhone).toBe('13900000000');
+      expect(body.patientId).toBeUndefined();
+    });
+  });
+
+  it('renders appointment purposes and sends the selected purpose', async () => {
+    mockLookups();
+    render(<AppointmentsPage />, { wrapper });
+    await screen.findByText('预约管理');
+    await waitFor(() => {
+      const select = screen.getByLabelText('预约事项') as HTMLSelectElement;
+      expect(select.options.length).toBeGreaterThan(1);
+      expect(Array.from(select.options).map((option) => option.textContent)).toEqual(expect.arrayContaining(['复诊检查', '种植咨询']));
+    });
+    fireEvent.change(screen.getByLabelText('预约事项'), { target: { value: 'purpose-1' } });
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
+    fireEvent.change(screen.getByLabelText('开始时间'), { target: { value: '2026-08-05T09:00' } });
+    fireEvent.change(screen.getByLabelText('结束时间'), { target: { value: '2026-08-05T10:00' } });
+    vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'a-purpose' });
+    fireEvent.click(screen.getByRole('button', { name: '创建预约' }));
+    await waitFor(() => {
+      const call = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/appointments');
+      expect(call).toBeDefined();
+      const body = JSON.parse(String((call?.[1] as { body?: string } | undefined)?.body ?? '{}')) as Record<string, unknown>;
+      expect(body.purpose).toBe('purpose-1');
+    });
+  });
+
+  it('shows purpose and temp patient name in the list', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/appointments?page=1&pageSize=20') {
+        return {
+          items: [
+            { id: 'a-1', patientId: 'p-1', patientIdLabel: '患者甲', doctorId: 'd-1', purpose: '洁牙护理', startTime: '2026-08-04T09:00:00.000Z', status: 'BOOKED' },
+            { id: 'a-2', tempPatientName: '临时乙', doctorId: 'd-2', startTime: null, status: 'BOOKED' },
+          ],
+          total: 2,
+          page: 1,
+          pageSize: 20,
+        };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }, { id: 'd-2' }];
+      if (path === '/resources/chairs?page=1&pageSize=100') {
+        return { items: [{ id: 'c-1', name: '椅位 1' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/resources/appointmentPurposes?page=1&pageSize=100') {
+        return { items: [{ id: 'purpose-1', name: '事项甲', active: 1 }], total: 1, page: 1, pageSize: 100 };
+      }
+      return {};
+    });
+    render(<AppointmentsPage />, { wrapper });
+    expect(await screen.findByText('洁牙护理')).toBeDefined();
+    expect(screen.getByText('临时乙')).toBeDefined();
+  });
+
+  it('adds an appointment purpose through the management panel', async () => {
+    mockLookups();
+    render(<AppointmentsPage />, { wrapper });
+    await screen.findByText('预约管理');
+    fireEvent.change(screen.getByLabelText('新事项名称'), { target: { value: '初诊检查' } });
+    vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'purpose-new' });
+    fireEvent.click(screen.getByRole('button', { name: '添加事项' }));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/appointmentPurposes', expect.objectContaining({ method: 'POST' }));
+    });
+    const call = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/resources/appointmentPurposes');
+    const body = JSON.parse(String((call?.[1] as { body?: string } | undefined)?.body ?? '{}')) as Record<string, unknown>;
+    expect(body.name).toBe('初诊检查');
+    expect(await screen.findByText('事项已添加')).toBeDefined();
+  });
+
+  it('toggles an appointment purpose active state', async () => {
+    mockLookups();
+    render(<AppointmentsPage />, { wrapper });
+    await screen.findByText('预约管理');
+    const toggleButtons = await screen.findAllByRole('button', { name: '停用' });
+    fireEvent.click(toggleButtons[0]);
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/appointmentPurposes/purpose-1', expect.objectContaining({ method: 'PATCH' }));
+    });
+    const call = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/resources/appointmentPurposes/purpose-1');
+    const body = JSON.parse(String((call?.[1] as { body?: string } | undefined)?.body ?? '{}')) as Record<string, unknown>;
+    expect(body.active).toBe(false);
   });
 
 });

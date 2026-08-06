@@ -402,42 +402,74 @@ export class AppointmentService {
   }
 
   async create(input: {
-    patientId: string;
+    patientId?: string;
     doctorId: string;
     chairId?: string;
     startTime: string;
     endTime: string;
     type: string;
     remark?: string;
+    purpose?: string;
+    tempPatientName?: string;
+    tempPatientPhone?: string;
   }, context: AppContext): Promise<Record<string, unknown>> {
-    assertPatientExists(this.db, input.patientId, context.clinicId);
+    const tempPatientName = String(input.tempPatientName ?? '').trim();
+    const tempPatientPhone = input.tempPatientPhone !== undefined && input.tempPatientPhone !== null
+      ? String(input.tempPatientPhone).trim()
+      : '';
     assertDoctorExists(this.db, input.doctorId, context.clinicId);
     if (input.chairId) assertChairExists(this.db, input.chairId, context.clinicId);
     if (!['REGULAR', 'FOLLOW_UP', 'EMERGENCY', 'CONSULTATION'].includes(input.type)) {
       throw new ValidationError('Invalid appointment type');
     }
+    if (!input.patientId && !tempPatientName) {
+      throw new ValidationError('patientId or tempPatientName is required');
+    }
+    if (input.patientId) assertPatientExists(this.db, input.patientId, context.clinicId);
     this.assertTimeRange(input.startTime, input.endTime);
     const now = context.now().toISOString();
     const id = randomUUID();
     this.runTx(() => {
+      let resolvedPatientId = input.patientId;
+      if (!resolvedPatientId) {
+        resolvedPatientId = randomUUID();
+        this.db.prepare(
+          `INSERT INTO Patient (
+             id, clinicId, createdAt, updatedAt, deletedAt,
+             code, name, gender, phone, source, active, isTempPatient
+           ) VALUES (?, ?, ?, ?, NULL, ?, ?, 'UNKNOWN', ?, 'WALK_IN', 1, 1)`,
+        ).run(
+          resolvedPatientId,
+          context.clinicId ?? null,
+          now,
+          now,
+          `TEMP-${Date.now()}-${randomUUID().slice(0, 8)}`,
+          tempPatientName,
+          tempPatientPhone || null,
+        );
+      }
       this.assertNoConflict(input.doctorId, input.chairId, input.startTime, input.endTime, context.clinicId);
       this.db.prepare(
         `INSERT INTO Appointment (
            id, clinicId, createdAt, updatedAt, deletedAt,
-           patientId, doctorId, chairId, startTime, endTime, status, type, remark
-         ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, 'BOOKED', ?, ?)`,
+           patientId, doctorId, chairId, startTime, endTime, status, type, remark,
+           purpose, tempPatientName, tempPatientPhone
+         ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, 'BOOKED', ?, ?, ?, ?, ?)`,
       ).run(
         id,
         context.clinicId ?? null,
         now,
         now,
-        input.patientId,
+        resolvedPatientId as string,
         input.doctorId,
         input.chairId ?? null,
         input.startTime,
         input.endTime,
         input.type,
         input.remark ?? null,
+        input.purpose ?? null,
+        input.patientId ? null : (tempPatientName || null),
+        input.patientId ? null : (tempPatientPhone || null),
       );
     });
     return { id, status: 'BOOKED' };
