@@ -742,7 +742,12 @@ app.whenReady().then(async () => {
 
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    const csp = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http://127.0.0.1:*; connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:* ws://localhost:*; font-src 'self' data:; media-src 'self' blob: data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self';";
+    // 审计 L3：CSP 端口收紧。API 端口运行时随机（startApi 后 apiPort 已确定），
+    // 只放行精确的 http://127.0.0.1:<apiPort>，不再使用 http://127.0.0.1:* 通配；
+    // WebSocket 仅 dev 下放行 vite HMR 的 ws://localhost:<devPort>。
+    const apiOrigin = apiPort ? `http://127.0.0.1:${apiPort}` : '';
+    const devWs = isDev ? ` ws://localhost:${new URL(process.env.V2_WEB_URL || 'http://localhost:5180').port}` : '';
+    const csp = `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:${apiOrigin ? ` ${apiOrigin}` : ''}; connect-src 'self'${apiOrigin ? ` ${apiOrigin}` : ''}${devWs}; font-src 'self' data:; media-src 'self' blob: data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self';`;
     callback({
       responseHeaders: {
         ...details.responseHeaders,

@@ -54,6 +54,10 @@ export class HttpWechatProvider implements WechatProvider {
   }
 
   async send(payload: WechatMessagePayload): Promise<WechatSendResult> {
+    // 强制 TLS：appSecret 经网关转发，明文 http 传输属于敏感信息泄露（审计 L2）
+    if (!/^https:\/\//i.test(this.url)) {
+      return { ok: false, result: 'insecure_wechat_url', detail: 'wechat gateway must be served over https' };
+    }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 5000);
     try {
@@ -78,7 +82,14 @@ export function createWechatProvider(): WechatProvider {
   const url = process.env.V2_WECHAT_API_URL?.trim() ?? '';
   const appId = process.env.V2_WECHAT_APP_ID?.trim() ?? '';
   const appSecret = process.env.V2_WECHAT_APP_SECRET?.trim() ?? '';
-  if (url && appId && appSecret) return new HttpWechatProvider(url, appId, appSecret);
+  if (url && appId && appSecret) {
+    // 环境变量入口强制 TLS：http 网关一律视为未配置，避免 appSecret 明文转发（审计 L2）
+    if (!/^https:\/\//i.test(url)) {
+      console.warn('[wechat] V2_WECHAT_API_URL must use https; wechat channel disabled');
+      return new UnconfiguredWechatProvider();
+    }
+    return new HttpWechatProvider(url, appId, appSecret);
+  }
   return new UnconfiguredWechatProvider();
 }
 
