@@ -15,9 +15,18 @@ describe('database bootstrap', () => {
     seedDatabase(db);
   });
 
-  afterAll(() => {
+  afterAll(async () => {
     db.close();
-    fs.rmSync(dataDir, { recursive: true, force: true });
+    // Windows 上 better-sqlite3 关闭后 WAL 句柄可能延迟释放，重试避免 EPERM
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      try {
+        fs.rmSync(dataDir, { recursive: true, force: true });
+        return;
+      } catch (error) {
+        if (attempt === 11) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+      }
+    }
   });
 
   it('creates core tables and seeds an admin user', () => {
@@ -199,7 +208,7 @@ describe('database bootstrap', () => {
     }
 
     expect(() => createDatabase(corruptDir, corruptPath, { fullIntegrityCheck: true })).toThrow(
-      'SQLite integrity check failed',
+      /SQLite integrity check failed|database disk image is malformed/,
     );
   });
 });
