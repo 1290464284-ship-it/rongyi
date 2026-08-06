@@ -55,8 +55,8 @@ describe('security helpers', () => {
 
   it('stops recursion beyond depth 5', () => {
     const deep = { a: { b: { c: { d: { e: { f: { phone: 'x' } } } } } } };
-    const masked = maskSensitiveFields(deep) as Record<string, unknown>;
-    expect((masked.a as any).b.c.d.e.f.phone).toBe('x');
+    const masked = maskSensitiveFields(deep);
+    expect(masked.a.b.c.d.e.f.phone).toBe('x');
   });
 
   it('keeps business fields writable while blocking credentials', () => {

@@ -220,6 +220,22 @@ describe('MemberDiscountService', () => {
     expect(result.total).toBe(96000);
   });
 
+  it('annual usage 按诊所时区（+8）归属年份，UTC 跨年边界计入本地年', () => {
+    const cardId = createCard('MD-CARD-YR');
+    const service = new MemberDiscountService(db);
+    service.savePlan(cardId, { discountRate: 90, annualDiscountLimit: 10000 }, context);
+    // 年度统计按 patientId 聚合，前面用例已产生基线用量；用 delta 断言排除测试间干扰
+    const before = service.quote(cardId, { baseTotal: 100000 }, context).annualUsage as number;
+    // UTC 2025-12-31T16:30:00Z = 诊所本地 2026-01-01 00:30（+8）：应计入 2026 年
+    rawInsertCharge('chg-year-boundary', { discount: 6000, createdAt: '2025-12-31T16:30:00.000Z' });
+    // UTC 2025-12-31T15:59:59Z = 诊所本地 2025-12-31 23:59:59：仍属 2025 年，不计入
+    rawInsertCharge('chg-year-prev', { discount: 8000, createdAt: '2025-12-31T15:59:59.000Z' });
+
+    const result = service.quote(cardId, { baseTotal: 100000 }, context);
+    expect(result.annualUsage).toBe(before + 6000);
+    expect(result.annualRemaining).toBe(Math.max(0, 10000 - (before + 6000)));
+  });
+
   it('quote applies FLOOR / ROUND / NONE rounding to the raw total', () => {
     const service = new MemberDiscountService(db);
     const floorId = createCard('MD-CARD-7A');

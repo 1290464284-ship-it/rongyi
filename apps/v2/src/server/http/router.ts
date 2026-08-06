@@ -1,7 +1,7 @@
 import { Router, type Request } from 'express';
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
-import { AppError, NotFoundError, ValidationError } from '../infrastructure/errors';
+import { AppError, ConflictError, NotFoundError, ValidationError } from '../infrastructure/errors';
 import { SqliteRepository } from '../infrastructure/repository';
 import { validatePayload } from './validation';
 import type { ResourceDefinition } from '../../domain/contracts';
@@ -125,6 +125,14 @@ export function createResourceRouter(db: Database.Database): Router {
       if (!resource.capabilities.update) throw new NotFoundError('Update is not supported for this resource');
       const payload = stripProtectedWriteFields(validatePayload(resource, req.body ?? {}, { partial: true }), roleExempt(resource));
       const repo = new SqliteRepository(db, resource);
+      // 治疗计划明细：price/quantity 允许经通用 CRUD 维护（前端计划编辑器写未划价明细），
+      // 但已划价明细（billed=1）服务端强制不可改价/改量，与 TreatmentPlanBillingService 状态机一致。
+      if (resource.name === 'treatmentPlanItems' && (Object.prototype.hasOwnProperty.call(payload, 'price') || Object.prototype.hasOwnProperty.call(payload, 'quantity'))) {
+        const existing = await repo.findById(req.params.id, req.context!);
+        if (existing && Number(existing.billed) === 1) {
+          throw new ConflictError(Object.prototype.hasOwnProperty.call(payload, 'price') ? '已划价明细不可改价' : '已划价明细不可修改');
+        }
+      }
       await repo.update({ id: req.params.id, ...payload }, req.context!);
       res.json({ success: true, data: { id: req.params.id } });
     } catch (error) {
@@ -147,6 +155,10 @@ export function createResourceRouter(db: Database.Database): Router {
       }
       if (resource.name === 'medicalRecords' && existing.isLocked === true) {
         throw new AppError('FORBIDDEN', 'Locked medical records cannot be deleted', 403);
+      }
+      // 已划价治疗计划明细禁止删除（金额凭证，防伪造/篡改账目）
+      if (resource.name === 'treatmentPlanItems' && existing && Number(existing.billed) === 1) {
+        throw new ConflictError('已划价明细不可删除');
       }
       await repo.softDelete(req.params.id, req.context!);
       res.json({ success: true, data: { id: req.params.id } });

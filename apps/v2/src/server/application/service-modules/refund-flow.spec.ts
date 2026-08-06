@@ -63,7 +63,6 @@ describe('RefundFlowService', () => {
 
   it('链1：会员卡退款走通 申请→审批通过→确认退款，资金状态保持', async () => {
     const chargeService = new ChargeService(db);
-    const memberCardService = new MemberCardService(db);
 
     const cardId = await createCardWithBalance(10000);
     const chargeId = await createPaidCharge(10000, 'MEMBER_CARD');
@@ -141,6 +140,50 @@ describe('RefundFlowService', () => {
     expect(reversalLog.amount).toBe(-4000);
     expect(reversalLog.balanceAfter).toBe(0);
     expect(reversalLog.remark).toBe('退款驳回/取消回滚');
+  });
+
+  it('链3b：多卡场景驳回冲销按原支付卡扣回，不再误扣第一张 ACTIVE 卡', async () => {
+    const chargeService = new ChargeService(db);
+    const memberCardService = new MemberCardService(db);
+    db.prepare('UPDATE MemberCard SET deletedAt = ? WHERE patientId = ? AND deletedAt IS NULL')
+      .run(now, 'patient-demo-001');
+    const cardA = memberCardService.create({
+      patientId: 'patient-demo-001',
+      cardNo: `RF-CARD-A-${Math.random().toString(36).slice(2, 8)}`,
+      status: 'ACTIVE',
+      level: 'NORMAL',
+    }, context);
+    await memberCardService.recharge(String(cardA.id), 10000, context);
+    const cardB = memberCardService.create({
+      patientId: 'patient-demo-001',
+      cardNo: `RF-CARD-B-${Math.random().toString(36).slice(2, 8)}`,
+      status: 'ACTIVE',
+      level: 'NORMAL',
+    }, context);
+    await memberCardService.recharge(String(cardB.id), 10000, context);
+
+    // 先冻结卡A，确保支付落到卡B（Charge.memberCardId = B）
+    db.prepare('UPDATE MemberCard SET status = ? WHERE id = ?').run('FROZEN', cardA.id);
+    const chargeId = await createPaidCharge(10000, 'MEMBER_CARD');
+    const chargeRow = db.prepare('SELECT memberCardId FROM Charge WHERE id = ?').get(chargeId) as { memberCardId: string | null };
+    expect(chargeRow.memberCardId).toBe(String(cardB.id));
+    // 恢复卡A为 ACTIVE，制造旧实现会误选"第一张 ACTIVE 卡=A"的场景
+    db.prepare('UPDATE MemberCard SET status = ? WHERE id = ?').run('ACTIVE', cardA.id);
+
+    const refundResult = await chargeService.refund(chargeId, 4000, '多卡驳回测试', context);
+    const refundId = String(refundResult.id);
+    const service = new RefundFlowService(db);
+    expect(service.reject(refundId, context)).toEqual({ id: refundId, status: 'REJECTED' });
+
+    const balanceA = db.prepare('SELECT balance FROM MemberCard WHERE id = ?').get(String(cardA.id)) as { balance: number };
+    const balanceB = db.prepare('SELECT balance FROM MemberCard WHERE id = ?').get(String(cardB.id)) as { balance: number };
+    expect(balanceA.balance).toBe(10000); // 未动卡A
+    expect(balanceB.balance).toBe(0); // 原支付卡B：退款回充 4000 后驳回扣回 4000
+    const reversalLog = db.prepare(
+      `SELECT * FROM MemberCardLog WHERE cardId = ? AND type = 'REFUND_REVERSAL' ORDER BY createdAt DESC LIMIT 1`,
+    ).get(String(cardB.id)) as Record<string, unknown>;
+    expect(reversalLog).toBeDefined();
+    expect(reversalLog.amount).toBe(-4000);
   });
 
   it('链4：现金退款被取消后资金同样回滚', async () => {

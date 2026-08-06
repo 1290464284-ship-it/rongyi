@@ -387,6 +387,76 @@ describe('resource router', () => {
     await request(app).get('/api/v2/resources/patients?page=&pageSize=').set(auth).expect(200);
   });
 
+  it('blocks price changes on billed treatment plan items but keeps unbilled editable and billed flags unwritable', async () => {
+    const planId = 'router-plan-billed';
+    const auth = { Authorization: `Bearer ${adminToken}` };
+    const nowIso = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO TreatmentPlan (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, name, status, totalFee
+       ) VALUES (?, 'clinic-v2-001', ?, ?, NULL, 'patient-demo-001', 'user-router-doctor', 'Router Billed Plan', 'APPROVED', 100)`,
+    ).run(planId, nowIso, nowIso);
+    const insertItem = db.prepare(
+      `INSERT INTO TreatmentPlanItem (
+         id, planId, code, name, category, price, quantity, teethNumbers, status,
+         discountRate, billed, billedChargeId, clinicId, createdAt, updatedAt, deletedAt
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, '[]', 'PLANNED', NULL, ?, ?, 'clinic-v2-001', ?, ?, NULL)`,
+    );
+    insertItem.run('router-item-unbilled', planId, 'R-1', '未划价项', 'SERVICE', 100, 1, 0, null, nowIso, nowIso);
+    insertItem.run('router-item-billed', planId, 'R-2', '已划价项', 'SERVICE', 200, 1, 1, 'charge-router-1', nowIso, nowIso);
+    try {
+      // 未划价明细仍可改价（前端计划编辑器的正常路径）
+      await request(app)
+        .patch('/api/v2/resources/treatmentPlanItems/router-item-unbilled')
+        .set(auth)
+        .send({ price: 150 })
+        .expect(200);
+      // 已划价明细不可改价（服务端强制，与 TreatmentPlanBillingService 一致）
+      const rejected = await request(app)
+        .patch('/api/v2/resources/treatmentPlanItems/router-item-billed')
+        .set(auth)
+        .send({ price: 1 })
+        .expect(409);
+      expect(rejected.body.message).toContain('已划价明细不可改价');
+      // 客户端伪造 billed/billedChargeId 被通用写保护剥离，不落地
+      await request(app)
+        .patch('/api/v2/resources/treatmentPlanItems/router-item-unbilled')
+        .set(auth)
+        .send({ price: 160, billed: 1, billedChargeId: 'charge-forged' })
+        .expect(200);
+      const row = db.prepare('SELECT billed, billedChargeId, price FROM TreatmentPlanItem WHERE id = ?')
+        .get('router-item-unbilled') as { billed: number; billedChargeId: string | null; price: number };
+      expect(row.billed).toBe(0);
+      expect(row.billedChargeId).toBeNull();
+      expect(row.price).toBe(160);
+      // 已划价明细不可改量
+      const qtyRejected = await request(app)
+        .patch('/api/v2/resources/treatmentPlanItems/router-item-billed')
+        .set(auth)
+        .send({ quantity: 5 })
+        .expect(409);
+      expect(qtyRejected.body.message).toContain('已划价明细不可修改');
+      // 已划价明细不可删除（金额凭证）
+      const deleteRejected = await request(app)
+        .delete('/api/v2/resources/treatmentPlanItems/router-item-billed')
+        .set(auth)
+        .expect(409);
+      expect(deleteRejected.body.message).toContain('已划价明细不可删除');
+      // 未划价明细仍可删除（软删除）
+      await request(app)
+        .delete('/api/v2/resources/treatmentPlanItems/router-item-unbilled')
+        .set(auth)
+        .expect(200);
+      const deletedRow = db.prepare('SELECT deletedAt FROM TreatmentPlanItem WHERE id = ?')
+        .get('router-item-unbilled') as { deletedAt: string | null };
+      expect(deletedRow.deletedAt).not.toBeNull();
+    } finally {
+      db.prepare('DELETE FROM TreatmentPlanItem WHERE planId = ?').run(planId);
+      db.prepare('DELETE FROM TreatmentPlan WHERE id = ?').run(planId);
+    }
+  });
+
   it('deduplicates generic resource POSTs that share an Idempotency-Key', async () => {
     const body = {
       code: 'ROUTER-IDEM',

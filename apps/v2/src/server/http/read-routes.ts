@@ -9,6 +9,7 @@ import type {
 import { ValidationError } from '../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../infrastructure/tenant';
 import { buildRelationLabelJoins } from '../infrastructure/repository';
+import { maskPhoneForExport } from '../application/service-modules/operations';
 import { resourceRegistry } from '../../domain/resources';
 import { wrapAsync } from './middleware';
 import { createRateLimit } from './rate-limit';
@@ -145,7 +146,13 @@ export function registerReadRoutes(app: Express, deps: ReadRouteDependencies): v
       const rows = deps.db.prepare(
         `SELECT t.*${labelSelect} FROM Appointment t ${labelJoinSql} WHERE t.startTime >= ? AND t.startTime <= ? AND t.deletedAt IS NULL${tenantAnd(req.context!.clinicId, 't.clinicId')} ORDER BY t.startTime ASC`,
       ).all(start, end, ...tenantParams(req.context!.clinicId)) as Array<Record<string, unknown>>;
-      res.json({ success: true, data: { items: rows, total: rows.length } });
+      // 临时患者电话（tempPatientPhone）属敏感字段，直出接口需掩码，保持响应结构不变。
+      const items = rows.map((row) => (
+        typeof row.tempPatientPhone === 'string' && row.tempPatientPhone !== ''
+          ? { ...row, tempPatientPhone: maskPhoneForExport(row.tempPatientPhone) }
+          : row
+      ));
+      res.json({ success: true, data: { items, total: rows.length } });
   }));
 
   const searchLimiter = createRateLimit({ windowMs: 60_000, max: 300 });

@@ -404,6 +404,13 @@ describe('service edge coverage', () => {
       totalFee: -1,
       items: [{ name: 'X', quantity: 1, unitPrice: 1 }],
     }, context)).rejects.toThrow('non-negative');
+    // 加工单 totalFee 必须是整数分：小数金额不再静默取整（与 unitPrice 校验一致）
+    await expect(processing.create({
+      patientId: 'patient-demo-001',
+      number: 'PROC-BAD-FEE-DECIMAL',
+      totalFee: 12.5,
+      items: [{ name: 'X', quantity: 1, unitPrice: 1 }],
+    }, context)).rejects.toThrow('non-negative');
     await expect(processing.create({
       patientId: 'patient-demo-001',
       number: 'PROC-BAD-3',
@@ -1074,6 +1081,14 @@ describe('service edge coverage', () => {
       changes: [{ tableName: 'Charge', recordId: 'edge-sync-charge', operation: 'INSERT', updatedAt: now, data: {} }],
     }, context);
     expect(chargeSync.failed).toBe(1);
+    // Charge 任何操作（含 DELETE）都禁止经 sync 写入，防绕过 cancel 状态机软删收费单
+    const chargeDelete = await service.push({
+      deviceId: 'device-1',
+      deviceToken: device.token,
+      changes: [{ tableName: 'Charge', recordId: 'edge-sync-charge', operation: 'DELETE', updatedAt: now }],
+    }, context);
+    expect(chargeDelete.failed).toBe(1);
+    expect(chargeDelete.errors[0].error).toBe('Charge writes are disabled in sync; use charge APIs');
     const deleteResult = await service.push({
       deviceId: 'device-1',
       deviceToken: device.token,
