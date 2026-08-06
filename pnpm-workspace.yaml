@@ -16,6 +16,36 @@ overrides:
   brace-expansion@<1.1.18: 1.1.18
   brace-expansion@>=2.0.0 <2.1.4: 2.1.4
   brace-expansion@>=4.0.0 <5.0.9: 5.0.9
+# typescript@7（Go 原生编译器）移除了经典 JS API，typescript-eslint 运行时需要
+# TS JS API 解析源码（其 peer 仍要求 <6.1.0 且会主动拒绝 TS7）。给各 tseslint
+# 包注入 typescript@6.0.3 作为 optionalDependencies（官方 side-by-side 方案），
+# 运行时它们使用自身的 6.0.3；importer 的 typescript@7.0.2 继续供 tsc CLI 使用。
+# 注意：packageExtensions 的 dependencies 字段在 pnpm 11 不生效，必须用 optionalDependencies。
+packageExtensions:
+  '@typescript-eslint/eslint-plugin':
+    optionalDependencies:
+      typescript: 6.0.3
+  '@typescript-eslint/parser':
+    optionalDependencies:
+      typescript: 6.0.3
+  '@typescript-eslint/project-service':
+    optionalDependencies:
+      typescript: 6.0.3
+  '@typescript-eslint/tsconfig-utils':
+    optionalDependencies:
+      typescript: 6.0.3
+  '@typescript-eslint/type-utils':
+    optionalDependencies:
+      typescript: 6.0.3
+  '@typescript-eslint/typescript-estree':
+    optionalDependencies:
+      typescript: 6.0.3
+  '@typescript-eslint/utils':
+    optionalDependencies:
+      typescript: 6.0.3
+  typescript-eslint:
+    optionalDependencies:
+      typescript: 6.0.3
 allowBuilds:
   '@scarf/scarf': false
   better-sqlite3: true
@@ -30,3 +60,4 @@ minimumReleaseAgeExclude:
   - postcss@8.5.21
   - react-dom@19.2.8
   - react@19.2.8
+  - vite@8.2.1
