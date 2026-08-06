@@ -360,7 +360,7 @@ describe('ChargesPage', () => {
       if (path === '/resources/patients?page=1&pageSize=100') {
         return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
       }
-      if (path === '/member-cards/quote') return { applied: false, code: 'NO_ACTIVE_CARD' };
+      if (path === '/member-cards/quote') return { applied: false, reason: 'NO_ACTIVE_CARD' };
       return {};
     });
     render(<ChargesPage />, { wrapper });

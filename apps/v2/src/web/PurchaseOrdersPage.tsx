@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import { CrudPage } from './CrudPage';
 import { SearchableSelect, type DataTableColumn, type SearchableSelectRow } from './components';
-import { formatMoney, toCents } from './format';
+import { formatMoney, centsToYuanString, toCents } from './format';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
 import type { Page } from './types';
@@ -423,8 +423,8 @@ function PurchaseOrderFormFields({
             name: String(row.name ?? ''),
             spec: String(row.spec ?? ''),
             quantity: String(row.quantity ?? '1'),
-            unitPrice: (Number(row.unitPrice ?? 0) / 100).toFixed(2),
-            subtotal: (Number(row.subtotal ?? 0) / 100).toFixed(2),
+            unitPrice: centsToYuanString(row.unitPrice ?? 0),
+            subtotal: centsToYuanString(row.subtotal ?? 0),
           })),
         });
       })

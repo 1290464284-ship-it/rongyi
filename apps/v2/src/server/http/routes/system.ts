@@ -2,6 +2,7 @@ import type { Express } from 'express';
 import { createResourceRouter } from '../router';
 import { wrapAsync } from '../middleware';
 import { createRateLimit } from '../rate-limit';
+import { ValidationError } from '../../infrastructure/errors';
 import type { RouteDependencies } from './deps';
 
 export function registerSystemRoutes(app: Express, deps: RouteDependencies): void {
@@ -65,8 +66,7 @@ export function registerSystemRoutes(app: Express, deps: RouteDependencies): voi
   app.post('/api/v2/system/audit/cleanup', wrapAsync(async (req, res) => {
       const retentionDays = Number(req.body?.retentionDays ?? 365);
       if (!Number.isInteger(retentionDays) || retentionDays < 30 || retentionDays > 3650) {
-        res.status(400).json({ success: false, code: 'VALIDATION_ERROR', message: 'retentionDays must be between 30 and 3650' });
-        return;
+        throw new ValidationError('retentionDays must be between 30 and 3650');
       }
       const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
       const deleted = audit.cleanup(cutoff);
@@ -84,8 +84,7 @@ export function registerSystemRoutes(app: Express, deps: RouteDependencies): voi
   app.post('/api/v2/backups/cleanup', backupLimiter, wrapAsync(async (req, res) => {
       const maxKeep = Number(req.body?.maxKeep ?? 30);
       if (!Number.isFinite(maxKeep) || maxKeep < 1 || maxKeep > 365) {
-        res.status(400).json({ success: false, code: 'VALIDATION_ERROR', message: 'maxKeep must be between 1 and 365' });
-        return;
+        throw new ValidationError('maxKeep must be between 1 and 365');
       }
       res.json({ success: true, data: backups.cleanup(maxKeep, req.context!.clinicId) });
   }));

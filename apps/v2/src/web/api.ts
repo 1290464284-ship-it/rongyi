@@ -290,7 +290,8 @@ export async function downloadCsv(resource: string): Promise<void> {
   anchor.href = url;
   anchor.download = `${resource}.csv`;
   anchor.click();
-  URL.revokeObjectURL(url);
+  // 延迟释放 blob URL，避免下载尚未开始时即被回收
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 export async function downloadCsvPath(path: string, filename: string): Promise<void> {
@@ -303,7 +304,8 @@ export async function downloadCsvPath(path: string, filename: string): Promise<v
   anchor.href = url;
   anchor.download = filename;
   anchor.click();
-  URL.revokeObjectURL(url);
+  // 延迟释放 blob URL，避免下载尚未开始时即被回收
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 export async function fetchPrintHtml(path: string, body: Record<string, unknown>): Promise<string> {
@@ -343,7 +345,9 @@ async function fetchWithRetry(input: RequestInfo | URL, init: FetchOptions = {})
   let lastError: unknown;
   for (let attempt = 0; attempt < (isIdempotent ? 2 : 1); attempt += 1) {
     try {
-      return await fetch(input, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+      const timeoutSignal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+      const signal = init.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal;
+      return await fetch(input, { ...init, signal });
     } catch (error) {
       lastError = error;
       if (isIdempotent && attempt === 0) {

@@ -181,11 +181,16 @@ export function InventoryPage() {
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (submitting) return;
+    const qty = Number(quantity);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      showToast('请输入有效的库存数量', 'error');
+      return;
+    }
     setSubmitting(true);
     try {
       await apiRequest('/inventory/transactions', {
         method: 'POST',
-        body: JSON.stringify({ itemId, type, quantity: Number(quantity), requestId: crypto.randomUUID() }),
+        body: JSON.stringify({ itemId, type, quantity: qty, requestId: crypto.randomUUID() }),
       });
       showToast('库存流水已记录', 'success');
       await Promise.all([query.refetch(), lowStock.refetch(), expiring.refetch()]);
@@ -217,6 +222,11 @@ export function InventoryPage() {
       showToast('请先填写库存项目 ID', 'error');
       return;
     }
+    const qty = Number(batchQuantity);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      showToast('请输入有效的入库数量', 'error');
+      return;
+    }
     setSubmitting(true);
     try {
       await apiRequest('/inventory-batches', {
@@ -226,7 +236,7 @@ export function InventoryPage() {
           batchNo: batchNo || undefined,
           productionDate: productionDate || undefined,
           expiryDate: expiryDate || undefined,
-          initialQuantity: Number(batchQuantity),
+          initialQuantity: qty,
           supplierId: supplierId || undefined,
         }),
       });

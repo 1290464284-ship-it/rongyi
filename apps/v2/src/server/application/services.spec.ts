@@ -748,7 +748,7 @@ describe('application services', () => {
     }
   });
 
-  it('reports the imported row count when a chunk COMMIT fails systematically', async () => {
+  it('reports the rolled-back imported row count when a chunk COMMIT fails systematically', async () => {
     const localDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-bulk-commit-'));
     const localDb = createDatabase(localDir);
     seedDatabase(localDb);
@@ -773,7 +773,7 @@ describe('application services', () => {
       }
       expect(error).toBeInstanceOf(AppError);
       expect(error).toMatchObject({ status: 500, code: 'IMPORT_SYSTEM_ERROR' });
-      expect((error as Error).message).toContain('前 2 条已导入');
+      expect((error as Error).message).toContain('前 0 条已导入');
       expect((error as Error).message).toContain('database is locked');
       expect(localDb.prepare('SELECT id FROM Patient WHERE code = ?').get('BULK-COMMIT-1')).toBeUndefined();
       expect(localDb.prepare('SELECT id FROM Patient WHERE code = ?').get('BULK-COMMIT-2')).toBeUndefined();

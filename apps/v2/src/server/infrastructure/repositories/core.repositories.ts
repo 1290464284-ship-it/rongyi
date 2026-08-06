@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import { SystemClock } from '../clock';
 import { tenantAnd } from '../tenant';
+import { recordSyncChange } from '../sync-change';
 import type {
   AlertRepository,
   AnalyticsRepository,
@@ -140,6 +141,10 @@ export class SqliteInventoryRepository implements InventoryRepository {
   updateStock(id: string, stock: number, updatedAt: string, clinicId?: string | null): void {
     const params = clinicId ? [stock, updatedAt, id, clinicId] : [stock, updatedAt, id];
     this.db.prepare(`UPDATE InventoryItem SET stock = ?, updatedAt = ? WHERE id = ?${tenantAnd(clinicId)}`).run(...params);
+    // P2-3：库存变更必须进入同步队列，否则离线端永远收不到库存更新
+    if (clinicId) {
+      recordSyncChange(this.db, { tableName: 'InventoryItem', recordId: id, operation: 'UPDATE', clinicId });
+    }
   }
 
   createTransaction(record: InventoryTransactionRecord): void {

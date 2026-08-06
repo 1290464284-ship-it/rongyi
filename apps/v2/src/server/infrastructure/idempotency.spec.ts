@@ -12,12 +12,13 @@ const scope = (requestId: string, overrides: Partial<IdempotencyScope> = {}): Id
   userId: 'user-1',
   clinicId: 'clinic-1',
   requestId,
+  resourceId: 'charge-1',
   ...overrides,
 });
 
 function scopeKey(input: IdempotencyScope): string {
   return createHash('sha256')
-    .update([input.operation, input.userId ?? '', input.clinicId ?? '', input.requestId].join('\0'))
+    .update([input.operation, input.resourceId ?? '', input.userId ?? '', input.clinicId ?? '', input.requestId].join('\0'))
     .digest('hex');
 }
 

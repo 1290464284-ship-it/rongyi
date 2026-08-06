@@ -169,6 +169,21 @@ export class AuthService {
     return user;
   }
 
+  /**
+   * 校验 clinicId 对当前用户是否仍有效（UserClinic 成员关系未删除且诊所未删除）。
+   * 用于 JWT 中 clinicId 的运行时校验（P2-1：用户被移出诊所后旧 token 应立即失效）。
+   * 历史数据兜底：无 UserClinic 行时回退到 User.clinicId/currentClinicId。
+   */
+  isClinicAccessible(userId: string, clinicId: string | null | undefined): boolean {
+    if (!clinicId) return true; // 无诊所作用域（legacy 路径）不做成员校验
+    const row = this.authRepository.findById(userId);
+    if (!row) return false;
+    const memberships = this.authRepository.clinicMemberships(userId);
+    if (memberships.some((membership) => membership.clinicId === clinicId)) return true;
+    // 老库可能没有 UserClinic 行（迁移 123 之前的数据），回退到 User 行字段
+    return (row.currentClinicId ?? row.clinicId ?? null) === clinicId;
+  }
+
   async getUserById(userId: string): Promise<Omit<User, 'passwordHash'>> {
     const row = this.authRepository.findById(userId);
     if (!row) throw new UnauthorizedError('User not found');

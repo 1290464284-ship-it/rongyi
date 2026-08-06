@@ -50,7 +50,8 @@ export default defineConfig({
   server: {
     port: 5180,
     proxy: {
-      '/api': 'http://localhost:3180',
+      // P1-7/P1-8：后端端口不再硬编码，跟随 V2_PORT 环境变量（默认 3180）
+      '/api': `http://localhost:${process.env.V2_PORT ?? 3180}`,
     },
   },
 });

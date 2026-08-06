@@ -2,7 +2,7 @@ import { FormEvent, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import { Dialog, ConfirmDialog, LoadingState, PageError } from './components';
-import { formatMoney, toCents } from './format';
+import { formatMoney, centsToYuanString, toCents } from './format';
 import { errorMessage } from './messages';
 import { useCrudResource } from './use-crud-resource';
 import { useToast } from './toast-context';
@@ -266,7 +266,11 @@ export function ChargesPage() {
       await apiRequest(`/charges/${deleteTarget.id}`, { method: 'DELETE' });
       showToast('收费单已删除', 'success');
       setDeleteTarget(null);
-      await crud.reload();
+      const refreshed = await crud.query.refetch();
+      // 删除末页最后一条时回退一页，避免停留在空页
+      if (crud.page > 1 && (refreshed.data?.items?.length ?? 0) === 0) {
+        crud.setPage(crud.page - 1);
+      }
     } catch (error) {
       showToast(errorMessage(error, '删除收费单失败'), 'error');
       setDeleteTarget(null);
@@ -288,11 +292,12 @@ export function ChargesPage() {
   async function quickCharge(event: FormEvent) {
     event.preventDefault();
     if (quickBusy || !quickTarget) return;
-    const quantity = Number(quickQuantity);
-    if (!quickPatientId || !Number.isInteger(quantity) || quantity <= 0) {
+    // 数量必须是十进制正整数（拒绝 '1e3'、'0x10' 等非常规写法）
+    if (!quickPatientId || !/^\d+$/.test(quickQuantity) || Number(quickQuantity) <= 0) {
       showToast('请选择患者并填写有效的数量', 'error');
       return;
     }
+    const quantity = Number(quickQuantity);
     setQuickBusy(true);
     try {
       const result = await apiRequest<{ chargeId: string; number: string; totalAmount: number }>(
@@ -361,16 +366,16 @@ export function ChargesPage() {
     }
     setActionBusy(true);
     try {
-      const data = await apiRequest<{ applied?: boolean; code?: string; baseTotal?: number; total?: number; message?: string }>('/member-cards/quote', {
+      const data = await apiRequest<{ applied?: boolean; reason?: string; baseTotal?: number; total?: number; message?: string }>('/member-cards/quote', {
         method: 'POST',
         body: JSON.stringify({ patientId: crud.form.patientId, baseTotal }),
       });
       if (data.applied && typeof data.baseTotal === 'number' && typeof data.total === 'number') {
-        crud.updateForm({ discount: ((data.baseTotal - data.total) / 100).toFixed(2) });
+        crud.updateForm({ discount: centsToYuanString(data.baseTotal - data.total) });
         showToast(`会员折扣已试算，折后价 ${formatMoney(data.total)}`, 'success');
-      } else if (data.code === 'NO_ACTIVE_CARD') {
+      } else if (data.reason === 'NO_ACTIVE_CARD') {
         showToast('该患者没有可用会员卡', 'info');
-      } else if (data.code === 'NO_PLAN') {
+      } else if (data.reason === 'NO_PLAN') {
         showToast('该患者没有可用会员方案', 'info');
       } else {
         showToast(data.message ?? '暂无可用会员折扣', 'info');

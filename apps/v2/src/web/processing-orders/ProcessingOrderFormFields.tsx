@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../api';
 import { SearchableSelect } from '../components';
+import { centsToYuanString } from '../format';
 import type { Page } from '../types';
 import { newItem } from './items';
 import type { ProcessingOrderForm, ProcessingOrderItemRow } from './types';
@@ -37,8 +38,8 @@ export function ProcessingOrderFormFields({
             name: String(row.name ?? ''),
             spec: String(row.spec ?? ''),
             quantity: String(row.quantity ?? '1'),
-            unitPrice: (Number(row.unitPrice ?? 0) / 100).toFixed(2),
-            subtotal: (Number(row.subtotal ?? 0) / 100).toFixed(2),
+            unitPrice: centsToYuanString(row.unitPrice ?? 0),
+            subtotal: centsToYuanString(row.subtotal ?? 0),
             status: String(row.status ?? 'DRAFT'),
           })),
         });

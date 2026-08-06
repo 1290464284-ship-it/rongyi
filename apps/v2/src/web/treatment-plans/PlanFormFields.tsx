@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../api';
 import { SearchableSelect } from '../components';
+import { centsToYuanString } from '../format';
 import { errorMessage } from '../messages';
 import { useToast } from '../toast-context';
 import type { Page } from '../types';
@@ -48,7 +49,7 @@ export function PlanFormFields({
             code: String(row.code ?? ''),
             name: String(row.name ?? ''),
             category: String(row.category ?? ''),
-            price: row.price === null || row.price === undefined ? '' : (Number(row.price) / 100).toFixed(2),
+            price: centsToYuanString(row.price),
             quantity: String(row.quantity ?? 1),
             teethNumbers: Array.isArray(row.teethNumbers) ? row.teethNumbers.map(String).join(', ') : '',
             status: String(row.status ?? 'PLANNED'),

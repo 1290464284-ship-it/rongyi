@@ -16,7 +16,7 @@ const wrapper = ({ children }: { children: ReactNode }) => (
 
 function installData() {
   vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-    if (path === '/stats/dashboard') {
+    if (path.startsWith('/stats/dashboard')) {
       return { patients: 12, appointments: 8, paidAmount: 88800, unpaidAmount: 1200, inventoryItems: 5, pendingFollowUps: 3 };
     }
     if (path.startsWith('/stats/revenue')) {

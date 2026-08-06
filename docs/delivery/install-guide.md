@@ -19,8 +19,11 @@
 
 ```text
 用户名：admin
-密码：admin123
+密码：ry0801
 ```
+
+> 默认密码来自代码 `V2_ADMIN_PASSWORD ?? 'ry0801'`（`src/server/infrastructure/database.ts`）；
+> 生产部署建议通过 `V2_ADMIN_PASSWORD` 显式覆盖。
 
 首次登录后立即修改密码，并按 `admin-init.md` 完成员工、角色和业务字典核对。
 

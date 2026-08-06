@@ -7,6 +7,7 @@
 import type { Express } from 'express';
 import type Database from 'better-sqlite3';
 import { wrapAsync } from '../middleware';
+import { parsePagination } from '../pagination';
 import {
   DispenseService,
   type DispenseAssignInput,
@@ -27,8 +28,7 @@ export function registerDispenseRoutes(
     const status = typeof req.query.status === 'string' && req.query.status
       ? String(req.query.status)
       : undefined;
-    const page = Number(req.query.page ?? 1);
-    const pageSize = Number(req.query.pageSize ?? 200);
+    const { page, pageSize } = parsePagination(req);
     const items = service.list(req.context!, { status, page, pageSize });
     const total = service.count(req.context!, { status });
     res.json({ success: true, data: { items, total, page, pageSize } });

@@ -36,8 +36,9 @@ export function CephalometricPage() {
   }, []);
 
   // 与 CrudPage 列表共享查询缓存（useCrudResource 将 queryKey 展开为 ['cephalometric', page, search]）。
+  // 使用独立键 'caseList' 避免与列表查询键冲突（列表键可能被误认为二维分页参数）。
   const caseList = useQuery({
-    queryKey: ['cephalometric', 1, ''],
+    queryKey: ['cephalometric', 'caseList', 1, ''],
     queryFn: () => apiRequest<Page<CephalometricRow>>('/resources/cephalometricCases?page=1&pageSize=50'),
   });
   const compareOptions = caseList.data?.items ?? [];
@@ -97,7 +98,7 @@ export function CephalometricPage() {
           } catch {
             return '标记点或测量结果必须是有效 JSON';
           }
-          if (!form.patientId || (!file && !parsedLandmarks)) {
+          if (!form.patientId || (!file && !form.imageUrl && Object.keys(parsedLandmarks ?? {}).length === 0)) {
             return '请选择患者并上传影像或填写标记点';
           }
           return null;

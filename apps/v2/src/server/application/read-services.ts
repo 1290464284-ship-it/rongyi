@@ -3,6 +3,7 @@ import type { AppContext } from '../../domain/contracts';
 import { escapeHtml } from '../shared/html';
 import { tenantAnd, tenantParams, tenantWhere } from '../infrastructure/tenant';
 import { buildFtsQuery } from '../infrastructure/search-index';
+import { computeNps } from './nps';
 
 export class StatsService {
   constructor(private readonly db: Database.Database) {}
@@ -305,7 +306,7 @@ export class SatisfactionService {
     const promoters = Number(row.promoters);
     const detractors = Number(row.detractors);
     const passive = Number(row.passive);
-    return { promoters, detractors, passive, score: total === 0 ? 0 : Math.round(((promoters - detractors) / total) * 100) };
+    return { promoters, detractors, passive, score: computeNps(promoters, detractors, total) };
   }
 
   trend(context: AppContext): Array<Record<string, unknown>> {

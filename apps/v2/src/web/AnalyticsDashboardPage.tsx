@@ -79,7 +79,7 @@ export function AnalyticsDashboardPage() {
 
   const dashboard = useQuery({
     queryKey: ['analytics-dashboard', appliedStart, appliedEnd],
-    queryFn: () => apiRequest<DashboardData>('/stats/dashboard'),
+    queryFn: () => apiRequest<DashboardData>(`/stats/dashboard${suffix}`),
   });
   const revenue = useQuery({
     queryKey: ['analytics-revenue', appliedStart, appliedEnd],
@@ -204,14 +204,18 @@ export function AnalyticsDashboardPage() {
       const url = URL.createObjectURL(blob);
       target.location.href = url;
       target.focus();
+      // 延迟释放 blob URL，避免页面尚未加载完成即被回收
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
       target.close();
       showToast(errorMessage(error, '打开打印报表失败'), 'error');
     }
   }
 
-  const loading = dashboard.isLoading || revenue.isLoading || patientGrowth.isLoading;
-  const error = dashboard.error || revenue.error || patientGrowth.error;
+  const loading = dashboard.isLoading || revenue.isLoading || patientGrowth.isLoading
+    || inventory.isLoading || satisfaction.isLoading || doctors.isLoading;
+  const error = dashboard.error || revenue.error || patientGrowth.error
+    || inventory.error || satisfaction.error || doctors.error;
   if (loading) return <LoadingState label="经营分析加载中..." />;
   if (error) return <PageError message={(error as Error).message} />;
 

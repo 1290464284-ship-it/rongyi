@@ -8,7 +8,9 @@ const adminStaff: UserRole[] = ['BOSS'];
 
 export const routeRoleRules: Array<{ pattern: RegExp; roles: UserRole[] }> = [
   { pattern: /^\/api\/v2\/auth\/(me|navigation|clinics|switch-clinic)/, roles: allStaff },
-  { pattern: /^\/api\/v2\/auth\/password/, roles: ['BOSS'] },
+  // 改密操作对象恒为当前登录用户（auth-admin PATCH /auth/password → authService.changePassword(userId,...)），
+  // 所有角色都应能改自己的密码，仅限 BOSS 会误禁 DOCTOR
+  { pattern: /^\/api\/v2\/auth\/password/, roles: allStaff },
   { pattern: /^\/api\/v2\/doctors/, roles: operationalStaff },
   { pattern: /^\/api\/v2\/files/, roles: operationalStaff },
   { pattern: /^\/api\/v2\/admin\/users/, roles: ['BOSS'] },

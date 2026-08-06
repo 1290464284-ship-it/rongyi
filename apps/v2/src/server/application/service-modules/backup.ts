@@ -167,27 +167,39 @@ export class BackupService {
     const files = this.list(clinicId) as Array<{ filename: string; fileSize: number }>;
     const deleteFiles = files.slice(keep);
     const deleted: Array<{ filename: string; fileSize: number }> = [];
-    const filenames = deleteFiles.map((f) => f.filename);
-    const deleteTxn = this.db.transaction((names: string[]) => {
-      const stmt = this.db.prepare('DELETE FROM BackupRecord WHERE filename = ?');
-      for (const name of names) stmt.run(name);
-    });
-    deleteTxn(filenames);
+    // P2-11：先物理删除文件，unlink 成功后才删 BackupRecord 行；
+    // 否则 unlink 失败会留下"记录已删但文件还在"的孤儿文件。
+    const removedFilenames: string[] = [];
     for (const file of deleteFiles) {
       try {
         fs.unlinkSync(path.join(this.backupDir, file.filename));
+        removedFilenames.push(file.filename);
+        deleted.push({ filename: file.filename, fileSize: file.fileSize });
       } catch (error) {
         console.warn('[backup] failed to delete backup file during cleanup:', file.filename, error instanceof Error ? error.message : error);
-        continue;
-      }
-      deleted.push({ filename: file.filename, fileSize: file.fileSize });
-    }
-    for (const name of fs.readdirSync(this.backupDir)) {
-      if (name.startsWith('.staged-') || name.endsWith('.tmp')) {
-        const ageMs = Date.now() - fs.statSync(path.join(this.backupDir, name)).mtimeMs;
-        if (ageMs > 24 * 60 * 60 * 1000) fs.rmSync(path.join(this.backupDir, name), { force: true });
       }
     }
+    if (removedFilenames.length > 0) {
+      const deleteTxn = this.db.transaction((names: string[]) => {
+        const stmt = this.db.prepare('DELETE FROM BackupRecord WHERE filename = ?');
+        for (const name of names) stmt.run(name);
+      });
+      deleteTxn(removedFilenames);
+    }
+    // P2-11：staged 中间文件（还原验证暂存）只保留短期，避免占用磁盘；
+    // 数量上限 3 份，超出即清理最旧的。
+    const stagedEntries = fs.readdirSync(this.backupDir)
+      .filter((name) => name.startsWith('.staged-') || name.endsWith('.tmp'))
+      .map((name) => ({ name, mtimeMs: fs.statSync(path.join(this.backupDir, name)).mtimeMs }))
+      .sort((a, b) => b.mtimeMs - a.mtimeMs);
+    const MAX_STAGED = 3;
+    const STAGED_TTL_MS = 6 * 60 * 60 * 1000; // 6 小时
+    const nowMs = Date.now();
+    stagedEntries.forEach((entry, index) => {
+      const expired = nowMs - entry.mtimeMs > STAGED_TTL_MS;
+      const overLimit = index >= MAX_STAGED;
+      if (expired || overLimit) fs.rmSync(path.join(this.backupDir, entry.name), { force: true });
+    });
     return {
       kept: Math.min(files.length, keep),
       deleted,

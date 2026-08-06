@@ -16,6 +16,7 @@ import {
 import { logout, onSessionExpired, switchClinic } from './api';
 import { apiRequest } from './api';
 import { useToast } from './toast-context';
+import type { ResourceDefinition } from './types';
 
 interface NavItem {
   key: string;
@@ -63,7 +64,15 @@ export function Layout() {
   }, [navigate, showToast]);
   const navigation = useQuery({
     queryKey: ['navigation'],
-    queryFn: () => apiRequest<{ permissions: string[] }>('/auth/navigation'),
+    queryFn: () => apiRequest<{ permissions: string[]; role?: string }>('/auth/navigation'),
+  });
+  // /resources/:resource 深链不在 NAV_ITEMS 内，需按资源定义的 roles 校验角色
+  const resourceMatch = location.pathname.match(/^\/resources\/([^/]+)/);
+  const resourceName = resourceMatch ? decodeURIComponent(resourceMatch[1]) : null;
+  const resourceMeta = useQuery({
+    queryKey: ['resource-meta'],
+    queryFn: () => apiRequest<ResourceDefinition[]>('/resource-meta'),
+    enabled: resourceName !== null,
   });
   const clinics = useQuery({
     queryKey: ['clinics'],
@@ -95,9 +104,26 @@ export function Layout() {
       </div>
     );
   }
-  const currentAllowed = visibleItems.some((group) => group.to === '/'
-    ? location.pathname === '/'
-    : location.pathname.startsWith(group.to));
+  if (resourceName !== null && resourceMeta.isLoading) return <div className="page">加载中...</div>;
+  if (resourceName !== null && resourceMeta.error) {
+    return (
+      <div className="page">
+        <p className="error">无法加载资源信息，请稍后重试</p>
+        <button onClick={() => void resourceMeta.refetch()}>重试</button>
+      </div>
+    );
+  }
+  let resourceAllowed = true;
+  if (resourceName !== null) {
+    const definition = resourceMeta.data?.find((entry) => entry.name === resourceName);
+    const role = navigation.data?.role ?? '';
+    resourceAllowed = Boolean(definition && definition.roles?.includes(role));
+  }
+  const currentAllowed = resourceName !== null
+    ? resourceAllowed
+    : visibleItems.some((group) => group.to === '/'
+      ? location.pathname === '/'
+      : location.pathname.startsWith(group.to));
   if (!currentAllowed) {
     return (
       <div className="page">

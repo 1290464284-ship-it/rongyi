@@ -387,6 +387,14 @@ export function PromptDialog({
   onCancel: () => void;
 }) {
   const [current, setCurrent] = useState(value);
+  const [syncedValue, setSyncedValue] = useState(value);
+
+  // 外部 value 变化（如重新打开对话框时清空/回填）时同步内部状态；
+  // 在渲染期间调整 state，避免 effect 内同步 setState 引发级联渲染
+  if (syncedValue !== value) {
+    setSyncedValue(value);
+    setCurrent(value);
+  }
 
   function submit(event: FormEvent) {
     event.preventDefault();

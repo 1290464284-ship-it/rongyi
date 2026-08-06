@@ -1,13 +1,14 @@
 import { Router, type Request } from 'express';
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
-import { AppError, ConflictError, NotFoundError, ValidationError } from '../infrastructure/errors';
+import { AppError, ConflictError, NotFoundError } from '../infrastructure/errors';
 import { SqliteRepository } from '../infrastructure/repository';
 import { validatePayload } from './validation';
 import type { ResourceDefinition } from '../../domain/contracts';
 import { resolveResource } from '../infrastructure/legacy-registry';
 import { stripProtectedWriteFields } from '../infrastructure/security';
 import { withIdempotency } from '../infrastructure/idempotency';
+import { parsePagination } from './pagination';
 
 export function createResourceRouter(db: Database.Database): Router {
   const router = Router();
@@ -36,16 +37,10 @@ export function createResourceRouter(db: Database.Database): Router {
     try {
       const resource = res.locals.resource as ResourceDefinition;
       const repo = new SqliteRepository(db, resource);
-      const rawPage = req.query.page ?? 1;
-      const rawPageSize = req.query.pageSize ?? 20;
-      const page = typeof rawPage === 'string' && rawPage.trim() !== '' ? Number(rawPage) : 1;
-      const pageSize = typeof rawPageSize === 'string' && rawPageSize.trim() !== '' ? Number(rawPageSize) : 20;
-      if (!Number.isInteger(page) || page < 1) throw new ValidationError('page must be a positive integer');
-      if (!Number.isInteger(pageSize) || pageSize < 1) throw new ValidationError('pageSize must be an integer between 1 and 200');
-      const cappedPageSize = Math.min(200, pageSize);
+      const { page, pageSize } = parsePagination(req);
       const result = await repo.findMany({
         page,
-        pageSize: cappedPageSize,
+        pageSize,
         search: typeof req.query.search === 'string' ? req.query.search : undefined,
         filters: parseFilters(req),
         sortBy: typeof req.query.sortBy === 'string' ? req.query.sortBy : undefined,
