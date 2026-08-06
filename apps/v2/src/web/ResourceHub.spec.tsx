@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ResourceHub } from './ResourceHub';
@@ -88,4 +88,51 @@ it('hides boss-only analytics tabs from non-BOSS roles', async () => {
   render(<ResourceHub title="Analytics" tabs={tabs} />, { wrapper });
   expect(await screen.findByText('RFM')).toBeDefined();
   await waitFor(() => expect(screen.queryByText(/\u591a\u95e8\u5e97/)).toBeNull());
+});
+
+it('keeps each tab panel mounted so tab switching preserves state', async () => {
+  const mountCounts: Record<string, number> = {};
+  function Counter({ id }: { id: string }) {
+    useEffect(() => {
+      mountCounts[id] = (mountCounts[id] ?? 0) + 1;
+    }, []);
+    return <div>{id} panel</div>;
+  }
+  const tabs: HubTab[] = [
+    { id: 'a', label: 'A', kind: 'custom', component: () => <Counter id="a" /> },
+    { id: 'b', label: 'B', kind: 'custom', component: () => <Counter id="b" /> },
+  ];
+  render(<ResourceHub title="Hub" tabs={tabs} />, { wrapper });
+  expect(mountCounts.a).toBe(1);
+  fireEvent.click(screen.getByRole('tab', { name: 'B' }));
+  expect(mountCounts.b).toBe(1);
+  fireEvent.click(screen.getByRole('tab', { name: 'A' }));
+  expect(mountCounts.a).toBe(1); // 切回不重新挂载
+  expect(screen.getByText('a panel')).toBeDefined();
+});
+
+it('exposes selected tab state and supports arrow key navigation', async () => {
+  const tabs: HubTab[] = [
+    { id: 'one', label: 'One', kind: 'custom', component: () => <div>One panel</div> },
+    { id: 'two', label: 'Two', kind: 'custom', component: () => <div>Two panel</div> },
+    { id: 'three', label: 'Three', kind: 'custom', component: () => <div>Three panel</div> },
+  ];
+  render(<ResourceHub title="Hub" tabs={tabs} />, { wrapper });
+  const first = screen.getByRole('tab', { name: 'One' });
+  expect(first.getAttribute('aria-selected')).toBe('true');
+  expect(screen.getByRole('tab', { name: 'Two' }).getAttribute('aria-selected')).toBe('false');
+  expect(first.getAttribute('aria-controls')).toBe('hub-panel-one');
+
+  fireEvent.keyDown(first, { key: 'ArrowRight' });
+  const second = screen.getByRole('tab', { name: 'Two' });
+  expect(second.getAttribute('aria-selected')).toBe('true');
+  expect(document.activeElement).toBe(second);
+  expect(screen.getByText('Two panel')).toBeDefined();
+
+  fireEvent.keyDown(second, { key: 'ArrowLeft' });
+  expect(screen.getByRole('tab', { name: 'One' }).getAttribute('aria-selected')).toBe('true');
+  fireEvent.keyDown(screen.getByRole('tab', { name: 'One' }), { key: 'End' });
+  expect(screen.getByRole('tab', { name: 'Three' }).getAttribute('aria-selected')).toBe('true');
+  fireEvent.keyDown(screen.getByRole('tab', { name: 'Three' }), { key: 'Home' });
+  expect(screen.getByRole('tab', { name: 'One' }).getAttribute('aria-selected')).toBe('true');
 });

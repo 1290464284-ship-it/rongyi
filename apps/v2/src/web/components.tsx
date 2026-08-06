@@ -1,8 +1,11 @@
-import { Component, useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { Component, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import type { Page } from './types';
 import { friendlyError } from './messages';
+
+const FOCUSABLE_SELECTOR =
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export interface SearchableSelectRow extends Record<string, unknown> {
   id: string;
@@ -222,7 +225,54 @@ export function Dialog({
   onClose: () => void;
   children: ReactNode;
 }) {
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  const previouslyFocused = useRef<HTMLElement | null>(null);
+
+  // 打开时记录触发元素并把焦点移入弹窗；关闭/卸载时还原焦点
+  useEffect(() => {
+    if (!open) return;
+    previouslyFocused.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const modal = modalRef.current;
+    if (modal) {
+      const firstFocusable = modal.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
+      (firstFocusable ?? modal).focus();
+    }
+    return () => {
+      previouslyFocused.current?.focus();
+      previouslyFocused.current = null;
+    };
+  }, [open]);
+
   if (!open) return null;
+
+  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      onClose();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    // 焦点陷阱：Tab/Shift+Tab 在弹窗内循环，焦点逃逸到弹窗外时拉回第一个可聚焦元素
+    const modal = modalRef.current;
+    if (!modal) return;
+    const focusables = Array.from(modal.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
+    if (focusables.length === 0) {
+      event.preventDefault();
+      modal.focus();
+      return;
+    }
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const active = document.activeElement;
+    if (event.shiftKey && (active === first || !modal.contains(active))) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && (active === last || !modal.contains(active))) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
   return (
     <div
       className="modal-backdrop"
@@ -230,7 +280,15 @@ export function Dialog({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="modal" role="dialog" aria-modal="true" aria-label={title}>
+      <div
+        ref={modalRef}
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        tabIndex={-1}
+        onKeyDown={handleKeyDown}
+      >
         <div className="modal-head">
           <h2>{title}</h2>
         </div>

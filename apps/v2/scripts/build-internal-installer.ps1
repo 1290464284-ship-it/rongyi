@@ -76,7 +76,29 @@ try {
     }
 
     Push-Location -LiteralPath $appRoot
+    $pkgJsonPath = Join-Path $appRoot "package.json"
+    $originalPkgJson = [System.IO.File]::ReadAllText($pkgJsonPath)
+    $internalVersion = ""
     try {
+        # 内部构建版本号策略（审计中危项）：内部版与公开版同版本号且非
+        # prerelease 时，electron-updater 永远认为"已是最新"，内部 feed 更新
+        # 永不生效。这里在打包前把版本临时改写为 <base>-internal.<UTC时间戳>，
+        # 同基线版本下每次内部构建严格递增；打包完成后精确还原 package.json。
+        $baseVersion = ($originalPkgJson | ConvertFrom-Json).version
+        $buildStamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddHHmmss")
+        $internalVersion = "$baseVersion-internal.$buildStamp"
+        $patchedPkgJson = [regex]::Replace(
+            $originalPkgJson,
+            '("version"\s*:\s*")[^"]+(")',
+            ('${1}' + $internalVersion + '${2}'),
+            1
+        )
+        [System.IO.File]::WriteAllText(
+            $pkgJsonPath,
+            $patchedPkgJson,
+            [System.Text.UTF8Encoding]::new($false)
+        )
+        Write-Host "Internal build version: $internalVersion"
         Invoke-OrFail "pnpm electron:dist"
         Invoke-OrFail "pnpm run verify:package"
         Invoke-OrFail "pnpm run update:metadata"
@@ -85,6 +107,7 @@ try {
             Invoke-OrFail "pnpm run installer:smoke"
         }
     } finally {
+        [System.IO.File]::WriteAllBytes($pkgJsonPath, [System.Text.Encoding]::UTF8.GetBytes($originalPkgJson))
         Pop-Location
     }
 
