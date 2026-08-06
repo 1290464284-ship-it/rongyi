@@ -2,6 +2,7 @@ name: V2 CI
 
 on:
   push:
+    branches: [main]
     tags:
       - 'v2-*'
     paths:
@@ -16,6 +17,7 @@ on:
 
 jobs:
   verify:
+    name: Lint, Build, Type Check, Test & E2E
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
