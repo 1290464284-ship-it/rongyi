@@ -615,6 +615,17 @@ const resources: ResourceDefinition[] = [
     f('remark', 'longText'),
   ], { roles: reception, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
+  crud('wechatReminders', 'WechatReminder', [
+    f('patientId', 'relation', { required: true, relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
+    f('scene', 'enum', { required: true, enumValues: ['APPOINTMENT_REMINDER', 'TREATMENT_RECALL', 'FIRST_EXAM_NUDGE'] }),
+    f('scheduledDate', 'date', { required: true }),
+    f('sourceId', 'text'),
+    f('content', 'longText'),
+    f('status', 'enum', { required: true, enumValues: ['PENDING', 'SENT', 'DISMISSED'] }),
+    f('sentAt', 'datetime'),
+    f('sentBy', 'text'),
+  ], { roles: reception, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
+
   crud('satisfactionSurveys', 'SatisfactionSurvey', [
     f('patientId', 'relation', { relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
     f('doctorId', 'relation', { relation: { resource: 'users', foreignKey: 'doctorId', labelField: 'name' } }),

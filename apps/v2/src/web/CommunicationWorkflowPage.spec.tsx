@@ -25,6 +25,9 @@ describe('CommunicationWorkflowPage', () => {
       if (path === '/wechat/status') {
         return { configured: true, provider: 'http' };
       }
+      if (path === '/wechat-reminders/today') {
+        return { date: '2026-08-05', config: { enabled: true, appointmentDaysBefore: 1, recallDaysAfter: 3, firstExamDaysAfter: 3 }, items: [] };
+      }
       if (path === '/resources/wechatMessages?page=1&pageSize=100') {
         return {
           items: [
@@ -51,6 +54,9 @@ describe('CommunicationWorkflowPage', () => {
       if (path === '/wechat/status') {
         return { configured: true, provider: 'http' };
       }
+      if (path === '/wechat-reminders/today') {
+        return { date: '2026-08-05', config: { enabled: true, appointmentDaysBefore: 1, recallDaysAfter: 3, firstExamDaysAfter: 3 }, items: [] };
+      }
       if (path === '/resources/wechatMessages?page=1&pageSize=100') {
         return { items: [{ id: 'w-1', patientId: 'p-1', status: 'PENDING' }], total: 1 };
       }
@@ -65,6 +71,9 @@ describe('CommunicationWorkflowPage', () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/wechat/status') {
         return { configured: true, provider: 'http' };
+      }
+      if (path === '/wechat-reminders/today') {
+        return { date: '2026-08-05', config: { enabled: true, appointmentDaysBefore: 1, recallDaysAfter: 3, firstExamDaysAfter: 3 }, items: [] };
       }
       if (path === '/resources/wechatMessages?page=1&pageSize=100') {
         return { items: [{ id: 'w-1', patientId: 'p-1', status: 'PENDING' }], total: 1 };

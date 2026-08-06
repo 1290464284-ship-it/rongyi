@@ -1255,6 +1255,16 @@ export const migrations: Migration[] = [
       ]);
     },
   },
+  {
+    version: 143,
+    name: 'v2-wechat-reminder-indexes',
+    up(db) {
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_v2_wechat_reminder_due ON WechatReminder(clinicId, scheduledDate, status);
+        CREATE INDEX IF NOT EXISTS idx_v2_wechat_reminder_source ON WechatReminder(sourceId);
+      `);
+    },
+  },
 ];
 
 function addColumns(db: Database.Database, table: string, columns: Array<[string, string]>): void {

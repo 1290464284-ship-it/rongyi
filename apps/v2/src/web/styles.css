@@ -559,3 +559,65 @@ th {
   gap: 6px;
   align-items: center;
 }
+
+/* 微信提醒（今日待发清单） */
+.reminder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 0 20px;
+}
+
+.reminder-card {
+  border: 1px solid #dfe4ea;
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: #fff;
+}
+
+.reminder-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.reminder-head .tag {
+  font-size: 12px;
+  padding: 2px 10px;
+  border-radius: 10px;
+  background: #e8f1ff;
+  color: #1a56db;
+}
+
+.reminder-head .tag.recall {
+  background: #e6f7ee;
+  color: #0e7a45;
+}
+
+.reminder-head .tag.nudge {
+  background: #fff3e0;
+  color: #b25e09;
+}
+
+.reminder-content {
+  margin: 0 0 10px;
+  color: #333;
+  line-height: 1.6;
+}
+
+.reminder-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.reminder-muted {
+  color: #8892a0;
+  font-size: 13px;
+}
+
+.reminder-empty {
+  color: #98a2b3;
+  padding: 12px 0;
+}
