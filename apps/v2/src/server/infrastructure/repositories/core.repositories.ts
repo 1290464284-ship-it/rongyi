@@ -375,9 +375,9 @@ export class SqlitePurchaseOrderRepository implements PurchaseOrderRepository {
     this.db.prepare(
       `INSERT INTO PurchaseOrder (
          id, clinicId, createdAt, updatedAt, deletedAt,
-         number, supplierId, totalAmount, status
-       ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
-    ).run(input.id, input.clinicId ?? null, input.createdAt, input.updatedAt, input.number, input.supplierId ?? null, input.totalAmount, input.status);
+         number, supplierId, totalAmount, status, reviewStatus
+       ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
+    ).run(input.id, input.clinicId ?? null, input.createdAt, input.updatedAt, input.number, input.supplierId ?? null, input.totalAmount, input.status, input.reviewStatus ?? 'PENDING');
   }
 
   createItem(input: PurchaseOrderItemRecord): void {
@@ -416,8 +416,8 @@ export class SqliteProcessingOrderRepository implements ProcessingOrderRepositor
       `INSERT INTO ProcessingOrder (
          id, clinicId, createdAt, updatedAt, deletedAt,
          patientId, visitId, factoryId, doctorId, number, shade,
-         teethNumbers, totalFee, status, expectedAt, remark
-       ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         teethNumbers, totalFee, status, settleStatus, expectedAt, remark
+       ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       input.id,
       input.clinicId ?? null,
@@ -432,6 +432,7 @@ export class SqliteProcessingOrderRepository implements ProcessingOrderRepositor
       JSON.stringify(input.teethNumbers),
       input.totalFee,
       input.status,
+      input.settleStatus ?? 'UNSETTLED',
       input.expectedAt ?? null,
       input.remark ?? null,
     );

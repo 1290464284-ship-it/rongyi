@@ -79,9 +79,13 @@ export function maskSensitiveFields<T>(row: T, depth = 0): T {
   return row;
 }
 
-export function stripProtectedWriteFields(payload: Record<string, unknown>): Record<string, unknown> {
+export function stripProtectedWriteFields(
+  payload: Record<string, unknown>,
+  exemptFields?: ReadonlySet<string>,
+): Record<string, unknown> {
   const result = { ...payload };
   for (const field of PROTECTED_WRITE_FIELDS) {
+    if (exemptFields?.has(field)) continue;
     delete result[field];
   }
   delete result.clinicId;

@@ -516,6 +516,7 @@ export class PurchaseOrderService {
           supplierId: input.supplierId ?? null,
           totalAmount,
           status: 'PENDING',
+          reviewStatus: 'PENDING',
           createdAt: now,
           updatedAt: now,
         });
@@ -680,6 +681,7 @@ export class ProcessingOrderService {
           teethNumbers: Array.isArray(input.teethNumbers) ? input.teethNumbers : [],
           totalFee: Math.round(Number(input.totalFee)),
           status: 'DRAFT',
+          settleStatus: 'UNSETTLED',
           expectedAt: input.expectedAt ?? null,
           remark: input.remark ?? null,
           createdAt: now,

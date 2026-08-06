@@ -45,6 +45,8 @@ import {
   WechatService,
 } from './workflow-services';
 import { StocktakeService } from './service-modules/stocktake';
+import { ProcessingSettleService } from './service-modules/processing-settle';
+import { PurchaseReviewService } from './service-modules/purchase-review';
 import type { AuthRepository } from './ports';
 import type { AppContext } from '../../domain/contracts';
 
@@ -320,6 +322,13 @@ describe('service edge coverage', () => {
       items: [{ itemId: 'inventory-demo-001', name: 'Dental Material', quantity: 2, unitPrice: 100 }],
     }, context);
     expect(createdPo).toMatchObject({ status: 'PENDING', totalAmount: 200 });
+    // 全新库回归：服务建单必须显式落 reviewStatus='PENDING'（不能依赖 DB 列默认值，
+    // 资源注册表建表不带 DEFAULT，迁移 addColumns 会因列已存在而跳过）。
+    const poRow = db.prepare('SELECT reviewStatus FROM PurchaseOrder WHERE id = ?').get(String(createdPo.id)) as { reviewStatus: string | null };
+    expect(poRow.reviewStatus).toBe('PENDING');
+    const review = new PurchaseReviewService(db);
+    expect(review.submit(String(createdPo.id), context).reviewStatus).toBe('SUBMITTED');
+    expect(review.approve(String(createdPo.id), context).reviewStatus).toBe('APPROVED');
     expect(purchase.items(String(createdPo.id), context)).toHaveLength(1);
 
     await expect(purchase.create({ items: [{ name: 'X', quantity: 1, unitPrice: 1 }] } as unknown as Parameters<typeof purchase.create>[0], context)).rejects.toThrow('number is required');
@@ -350,6 +359,9 @@ describe('service edge coverage', () => {
       items: [{ name: 'Crown', quantity: 1, unitPrice: 500 }],
     }, context);
     expect(createdProc).toMatchObject({ status: 'DRAFT' });
+    // 全新库回归：建单必须显式落 settleStatus='UNSETTLED'，否则对账统计漏计新单。
+    const procRow = db.prepare('SELECT settleStatus FROM ProcessingOrder WHERE id = ?').get(String(createdProc.id)) as { settleStatus: string | null };
+    expect(procRow.settleStatus).toBe('UNSETTLED');
     await expect(processing.create({
       patientId: 'patient-demo-001',
       number: 'PROC-BAD-ITEM',
@@ -393,6 +405,16 @@ describe('service edge coverage', () => {
       totalFee: 1,
       items: [],
     }, context)).rejects.toThrow('1 to 500');
+    // 加工单结算全链路（全新库）：COMPLETED 后结算 → 对账统计计入已结算。
+    const procId = String(createdProc.id);
+    processing.transition(procId, 'SENT', context);
+    processing.transition(procId, 'IN_PROGRESS', context);
+    processing.transition(procId, 'COMPLETED', context);
+    const settle = new ProcessingSettleService(db);
+    expect(settle.settle(procId, { amount: 500 }, context).settleStatus).toBe('SETTLED');
+    expect(Number((settle.stats(context) as { settled: { count: number } }).settled.count)).toBeGreaterThanOrEqual(1);
+    expect(settle.unsettle(procId, context).settleStatus).toBe('UNSETTLED');
+    expect(Number((settle.stats(context) as { unsettled: { count: number } }).unsettled.count)).toBeGreaterThanOrEqual(1);
   });
 
   it('covers audit logs with nullish optional fields', () => {
