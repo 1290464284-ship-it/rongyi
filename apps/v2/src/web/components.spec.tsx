@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import {
   ConfirmDialog,
   DataTable,
@@ -17,6 +17,7 @@ import { formatDate, formatDateTime, formatDisplayValue, formatMoney } from './f
 describe('shared web components', () => {
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
   });
 
   it('renders table columns and values', () => {
@@ -94,6 +95,7 @@ describe('shared web components', () => {
   });
 
   it('opens and closes dialogs and confirms destructive actions', () => {
+    vi.useFakeTimers();
     const onClose = vi.fn();
     const onConfirm = vi.fn();
     const { rerender } = render(
@@ -108,10 +110,13 @@ describe('shared web components', () => {
     fireEvent.click(screen.getByText('删除'));
     expect(onConfirm).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByText('取消'));
+    // 关闭先播 120ms 淡出动画，动画结束后才通知父组件
+    act(() => vi.advanceTimersByTime(150));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('submits prompt values and supports textarea and number inputs', () => {
+    vi.useFakeTimers();
     const onSubmit = vi.fn();
     const onCancel = vi.fn();
     const { rerender } = render(
@@ -126,6 +131,7 @@ describe('shared web components', () => {
     );
     expect(screen.getByRole('spinbutton')).toBeDefined();
     fireEvent.click(screen.getByText('取消'));
+    act(() => vi.advanceTimersByTime(150));
     expect(onCancel).toHaveBeenCalledTimes(1);
 
     rerender(
@@ -167,6 +173,7 @@ describe('shared web components', () => {
   });
 
   it('closes dialogs when the backdrop is clicked', () => {
+    vi.useFakeTimers();
     const onClose = vi.fn();
     render(
       <Dialog open title="弹窗" onClose={onClose}>
@@ -174,6 +181,9 @@ describe('shared web components', () => {
       </Dialog>,
     );
     fireEvent.mouseDown(document.querySelector('.modal-backdrop')!);
+    expect(onClose).not.toHaveBeenCalled();
+    // 关闭动画 120ms 播放完成后才移除
+    act(() => vi.advanceTimersByTime(150));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -198,6 +208,7 @@ describe('shared web components', () => {
   });
 
   it('closes the dialog with Escape and restores focus to the opener', () => {
+    vi.useFakeTimers();
     const onClose = vi.fn();
     function Harness() {
       const [open, setOpen] = useState(false);
@@ -217,6 +228,8 @@ describe('shared web components', () => {
     // 打开后焦点移入弹窗
     expect(document.activeElement).toBe(screen.getByText('弹窗内按钮'));
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    // 关闭动画 120ms 播放完成后才移除并还原焦点
+    act(() => vi.advanceTimersByTime(150));
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('dialog')).toBeNull();
     // 关闭后焦点还原到打开弹窗的元素

@@ -7,6 +7,9 @@ import { friendlyError } from './messages';
 const FOCUSABLE_SELECTOR =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
+/** 关闭动画时长 120ms，移除延时须大于动画时长（防闪回：fill-mode forwards） */
+const DIALOG_CLOSE_MS = 140;
+
 export interface SearchableSelectRow extends Record<string, unknown> {
   id: string;
 }
@@ -227,10 +230,13 @@ export function Dialog({
 }) {
   const modalRef = useRef<HTMLDivElement | null>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [closing, setClosing] = useState(false);
 
-  // 打开时记录触发元素并把焦点移入弹窗；关闭/卸载时还原焦点
+  // 打开时记录触发元素并把焦点移入弹窗；关闭/卸载时还原焦点并清理关闭定时器
   useEffect(() => {
     if (!open) return;
+    setClosing(false);
     previouslyFocused.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const modal = modalRef.current;
     if (modal) {
@@ -238,6 +244,10 @@ export function Dialog({
       (firstFocusable ?? modal).focus();
     }
     return () => {
+      if (closeTimerRef.current) {
+        clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+      }
       previouslyFocused.current?.focus();
       previouslyFocused.current = null;
     };
@@ -245,10 +255,20 @@ export function Dialog({
 
   if (!open) return null;
 
+  // 统一关闭出口：先播 120ms 对称淡出动画，动画结束后才真正通知父组件
+  function requestClose() {
+    if (closing) return;
+    setClosing(true);
+    closeTimerRef.current = setTimeout(() => {
+      closeTimerRef.current = null;
+      onClose();
+    }, DIALOG_CLOSE_MS);
+  }
+
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key === 'Escape') {
       event.preventDefault();
-      onClose();
+      requestClose();
       return;
     }
     if (event.key !== 'Tab') return;
@@ -275,9 +295,9 @@ export function Dialog({
 
   return (
     <div
-      className="modal-backdrop"
+      className={`modal-backdrop${closing ? ' closing' : ''}`}
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget) requestClose();
       }}
     >
       <div
@@ -321,7 +341,7 @@ export function ConfirmDialog({
     <Dialog open={open} title={title} onClose={onCancel}>
       <p>{message}</p>
       <div className="modal-actions">
-        <button type="button" onClick={onCancel}>{cancelText}</button>
+        <button type="button" className="btn-secondary" onClick={onCancel}>{cancelText}</button>
         <button type="button" className={danger ? 'danger' : undefined} onClick={onConfirm}>{confirmText}</button>
       </div>
     </Dialog>
@@ -374,7 +394,7 @@ export function PromptDialog({
           />
         )}
         <div className="modal-actions">
-          <button type="button" onClick={onCancel}>{cancelText}</button>
+          <button type="button" className="btn-secondary" onClick={onCancel}>{cancelText}</button>
           <button type="submit">{confirmText}</button>
         </div>
       </form>
