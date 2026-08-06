@@ -61,6 +61,15 @@ describe('RefundFlowService', () => {
     return String(card.id);
   }
 
+  async function createCharge(total: number): Promise<string> {
+    const chargeService = new ChargeService(db);
+    const charge = await chargeService.create({
+      patientId: 'patient-demo-001',
+      items: [{ name: '综合治疗', category: 'SERVICE', price: total, quantity: 1 }],
+    }, context);
+    return String(charge.id);
+  }
+
   it('链1：会员卡退款走通 申请→审批通过→确认退款，资金状态保持', async () => {
     const chargeService = new ChargeService(db);
 
@@ -200,6 +209,139 @@ describe('RefundFlowService', () => {
     const charge = db.prepare('SELECT * FROM Charge WHERE id = ?').get(chargeId) as Record<string, unknown>;
     expect(charge.refundedAmount).toBe(0);
     expect(charge.status).toBe('PAID');
+  });
+
+  it('链5：混合支付（现金50+卡50）全额退款只回充卡 50，不再整单按 payMethod 回充', async () => {
+    const chargeService = new ChargeService(db);
+    const cardId = await createCardWithBalance(10000);
+    const chargeId = await createCharge(10000);
+    await chargeService.pay(chargeId, 5000, 'CASH', undefined, context);
+    await chargeService.pay(chargeId, 5000, 'MEMBER_CARD', undefined, context);
+    const chargeRow = db.prepare('SELECT payMethod, memberCardId FROM Charge WHERE id = ?').get(chargeId) as
+      { payMethod: string | null; memberCardId: string | null };
+    // COALESCE(?, payMethod) 由最后一次支付覆盖：payMethod='MEMBER_CARD'。
+    // 旧代码因此整单按 MEMBER_CARD 回充 100（多回充 50）。
+    expect(chargeRow.payMethod).toBe('MEMBER_CARD');
+    expect(chargeRow.memberCardId).toBe(String(cardId));
+    const afterPay = db.prepare('SELECT balance FROM MemberCard WHERE id = ?').get(cardId) as { balance: number };
+    expect(afterPay.balance).toBe(5000);
+
+    const refundResult = await chargeService.refund(chargeId, 10000, '混合支付全额退款', context);
+    const refundId = String(refundResult.id);
+    expect(refundResult.status).toBe('REFUNDED');
+    const credited = db.prepare('SELECT balance FROM MemberCard WHERE id = ?').get(cardId) as { balance: number };
+    expect(credited.balance).toBe(10000); // 只回充卡付的 50，现金 50 不回充
+
+    // 流水账断言：1 条 PAY(MEMBER_CARD, 5000) + 1 条 REFUND(allocations=[{amount:5000}])
+    const payRows = db.prepare(
+      `SELECT * FROM PaymentLedger WHERE chargeId = ? AND type = 'PAY' ORDER BY createdAt, rowid`,
+    ).all(chargeId) as Array<{ method: string; amount: number; reversedAmount: number }>;
+    expect(payRows).toHaveLength(2);
+    expect(payRows[0].method).toBe('CASH');
+    expect(payRows[1].method).toBe('MEMBER_CARD');
+    expect(payRows[1].reversedAmount).toBe(5000);
+    const refundLedger = db.prepare(
+      `SELECT * FROM PaymentLedger WHERE relatedId = ? AND type = 'REFUND'`,
+    ).get(refundId) as { allocations: string; amount: number };
+    expect(refundLedger.amount).toBe(10000);
+    const allocations = JSON.parse(refundLedger.allocations) as Array<{ ledgerId: string; cardId: string; amount: number }>;
+    expect(allocations).toHaveLength(1);
+    expect(allocations[0].amount).toBe(5000);
+    expect(allocations[0].cardId).toBe(String(cardId));
+  });
+
+  it('链6：多笔部分支付（卡50+卡50）全额退款逐笔 LIFO 冲销共 100', async () => {
+    const chargeService = new ChargeService(db);
+    const cardId = await createCardWithBalance(20000);
+    const chargeId = await createCharge(10000);
+    await chargeService.pay(chargeId, 5000, 'MEMBER_CARD', undefined, context);
+    await chargeService.pay(chargeId, 5000, 'MEMBER_CARD', undefined, context);
+    const afterPay = db.prepare('SELECT balance FROM MemberCard WHERE id = ?').get(cardId) as { balance: number };
+    expect(afterPay.balance).toBe(10000);
+
+    const refundResult = await chargeService.refund(chargeId, 10000, '多笔部分支付退款', context);
+    const credited = db.prepare('SELECT balance FROM MemberCard WHERE id = ?').get(cardId) as { balance: number };
+    expect(credited.balance).toBe(20000); // 两笔各回充 50，共 100
+    expect(refundResult.status).toBe('REFUNDED');
+
+    // 两笔 PAY 行 reversedAmount 各 5000
+    const payRows = db.prepare(
+      `SELECT * FROM PaymentLedger WHERE chargeId = ? AND type = 'PAY' AND deletedAt IS NULL ORDER BY createdAt, rowid`,
+    ).all(chargeId) as Array<{ reversedAmount: number }>;
+    expect(payRows).toHaveLength(2);
+    expect(payRows.every((row) => row.reversedAmount === 5000)).toBe(true);
+  });
+
+  it('链7：混合支付退款被驳回后按 allocations 精确回滚（多卡只回原卡）', async () => {
+    const chargeService = new ChargeService(db);
+    const memberCardService = new MemberCardService(db);
+    db.prepare('UPDATE MemberCard SET deletedAt = ? WHERE patientId = ? AND deletedAt IS NULL')
+      .run(now, 'patient-demo-001');
+    const cardA = memberCardService.create({
+      patientId: 'patient-demo-001',
+      cardNo: `RF-CARD-MIX-A-${Math.random().toString(36).slice(2, 8)}`,
+      status: 'ACTIVE',
+      level: 'NORMAL',
+    }, context);
+    await memberCardService.recharge(String(cardA.id), 10000, context);
+    const cardB = memberCardService.create({
+      patientId: 'patient-demo-001',
+      cardNo: `RF-CARD-MIX-B-${Math.random().toString(36).slice(2, 8)}`,
+      status: 'ACTIVE',
+      level: 'NORMAL',
+    }, context);
+    await memberCardService.recharge(String(cardB.id), 10000, context);
+
+    // 卡A 支付 50（此时 A 是查询到的卡）→ 冻结 A → 卡B 支付 50
+    const chargeId = await createCharge(10000);
+    await chargeService.pay(chargeId, 5000, 'MEMBER_CARD', undefined, context);
+    const firstPay = db.prepare('SELECT cardId FROM PaymentLedger WHERE chargeId = ? AND type = \'PAY\' ORDER BY createdAt LIMIT 1').get(chargeId) as { cardId: string };
+    expect(firstPay.cardId).toBe(String(cardA.id));
+    db.prepare('UPDATE MemberCard SET status = ? WHERE id = ?').run('FROZEN', cardA.id);
+    await chargeService.pay(chargeId, 5000, 'MEMBER_CARD', undefined, context);
+    const secondPay = db.prepare('SELECT cardId FROM PaymentLedger WHERE chargeId = ? AND type = \'PAY\' ORDER BY createdAt DESC LIMIT 1').get(chargeId) as { cardId: string };
+    expect(secondPay.cardId).toBe(String(cardB.id));
+
+    const refundResult = await chargeService.refund(chargeId, 5000, '混合卡退款驳回', context);
+    const refundId = String(refundResult.id);
+    // 回充先冲销 LIFO：卡B +5000（5000 → 10000）；卡A 未被触碰（5000）
+    expect((db.prepare('SELECT balance FROM MemberCard WHERE id = ?').get(String(cardB.id)) as { balance: number }).balance).toBe(10000);
+
+    const service = new RefundFlowService(db);
+    expect(service.reject(refundId, context)).toEqual({ id: refundId, status: 'REJECTED' });
+    // 驳回后卡B 精确扣回 5000；卡A 始终未被触碰（5000）
+    expect((db.prepare('SELECT balance FROM MemberCard WHERE id = ?').get(String(cardA.id)) as { balance: number }).balance).toBe(5000);
+    expect((db.prepare('SELECT balance FROM MemberCard WHERE id = ?').get(String(cardB.id)) as { balance: number }).balance).toBe(5000);
+    // 流水冲销额度回滚
+    const payRows = db.prepare(
+      `SELECT cardId, reversedAmount FROM PaymentLedger WHERE chargeId = ? AND type = 'PAY' ORDER BY createdAt, rowid`,
+    ).all(chargeId) as Array<{ cardId: string; reversedAmount: number }>;
+    expect(payRows[0]).toEqual({ cardId: String(cardA.id), reversedAmount: 0 });
+    expect(payRows[1]).toEqual({ cardId: String(cardB.id), reversedAmount: 0 });
+  });
+
+  it('链8：历史回填流水（ledger-backfill-）参与退款冲销且不超扣', async () => {
+    const chargeService = new ChargeService(db);
+    const cardId = await createCardWithBalance(10000);
+    // 模拟迁移 146 回填的历史支付：不调用 pay()，直接插入 Charge + 回填流水
+    const chargeId = await createCharge(10000);
+    db.prepare(
+      `UPDATE Charge SET paidAmount = 10000, payMethod = 'MEMBER_CARD', memberCardId = ?, status = 'PAID', paidAt = ?
+       WHERE id = ?`,
+    ).run(cardId, now, chargeId);
+    db.prepare(
+      `INSERT INTO PaymentLedger (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         chargeId, patientId, type, method, amount, cardId, operatorId, reversedAmount, relatedId, allocations
+       ) VALUES ('ledger-backfill-' || ?, ?, ?, ?, NULL, ?, 'patient-demo-001', 'PAY', 'MEMBER_CARD', 10000, ?, NULL, 0, NULL, NULL)`,
+    ).run(chargeId, 'clinic-v2-001', now, now, chargeId, cardId);
+
+    const refundResult = await chargeService.refund(chargeId, 10000, '历史单退款', context);
+    expect(refundResult.status).toBe('REFUNDED');
+    const credited = db.prepare('SELECT balance FROM MemberCard WHERE id = ?').get(cardId) as { balance: number };
+    expect(credited.balance).toBe(20000); // 回充上限 = paidAmount = 10000，不超扣
+    const backfilled = db.prepare('SELECT reversedAmount FROM PaymentLedger WHERE id = ?').get(`ledger-backfill-${chargeId}`) as { reversedAmount: number };
+    expect(backfilled.reversedAmount).toBe(10000);
   });
 
   it('收费单已删除时驳回仅更新退款状态、不抛错', async () => {

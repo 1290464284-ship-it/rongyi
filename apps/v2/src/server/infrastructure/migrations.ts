@@ -1317,6 +1317,57 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 146,
+    name: 'v2-payment-ledger-and-query-indexes',
+    up(db) {
+      // 收款/退款流水账：记录每一笔支付与退款（含会员卡逐笔冲销依据），
+      // 修复混合支付/多笔部分支付退款时会员卡余额回充错误的根因。
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS PaymentLedger (
+          id TEXT PRIMARY KEY,
+          clinicId TEXT,
+          createdAt TEXT NOT NULL,
+          updatedAt TEXT NOT NULL,
+          deletedAt TEXT,
+          chargeId TEXT NOT NULL,
+          patientId TEXT NOT NULL,
+          type TEXT NOT NULL CHECK (type IN ('PAY', 'REFUND')),
+          method TEXT NOT NULL,
+          amount INTEGER NOT NULL,
+          cardId TEXT,
+          operatorId TEXT,
+          reversedAmount INTEGER NOT NULL DEFAULT 0,
+          relatedId TEXT,
+          allocations TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_v2_payment_ledger_charge ON PaymentLedger(chargeId, createdAt);
+        CREATE INDEX IF NOT EXISTS idx_v2_payment_ledger_related ON PaymentLedger(relatedId);
+      `);
+      // 回填历史已收款数据（单条有界：最多可冲销 paidAmount，绝不超扣）。
+      db.exec(`
+        INSERT INTO PaymentLedger (
+          id, clinicId, createdAt, updatedAt, deletedAt,
+          chargeId, patientId, type, method, amount, cardId, operatorId,
+          reversedAmount, relatedId, allocations
+        )
+        SELECT 'ledger-backfill-' || id, clinicId, COALESCE(paidAt, createdAt), COALESCE(paidAt, createdAt), NULL,
+               id, patientId, 'PAY', COALESCE(payMethod, 'CASH'), paidAmount, memberCardId, NULL,
+               0, NULL, NULL
+        FROM Charge
+        WHERE deletedAt IS NULL AND paidAmount > 0
+      `);
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_v2_dispense_item_dispense ON DispenseItem(dispenseId);
+        CREATE INDEX IF NOT EXISTS idx_v2_narcotic_registry_clinic_date ON NarcoticRegistry(clinicId, recordDate);
+        CREATE INDEX IF NOT EXISTS idx_v2_attendance_work_date_clinic ON Attendance(workDate, clinicId);
+        CREATE INDEX IF NOT EXISTS idx_v2_purchase_order_item_order ON PurchaseOrderItem(orderId);
+        CREATE INDEX IF NOT EXISTS idx_v2_processing_order_item_order ON ProcessingOrderItem(orderId);
+        CREATE INDEX IF NOT EXISTS idx_v2_prescription_item_prescription ON PrescriptionItem(prescriptionId);
+        CREATE INDEX IF NOT EXISTS idx_v2_charge_clinic_paid_at ON Charge(clinicId, paidAt);
+      `);
+    },
+  },
 ];
 
 function addColumns(db: Database.Database, table: string, columns: Array<[string, string]>): void {
@@ -1550,17 +1601,28 @@ function snapshotDatabase(db: Database.Database, snapshotDir: string): void {
   const dest = path.join(dir, `pre-${new Date().toISOString().replace(/[:.]/g, '-')}.sqlite`);
   // VACUUM INTO 不能在事务内执行；runMigrations 开始时无事务，安全。
   db.exec(`VACUUM INTO '${dest.replace(/'/g, "''")}'`);
-}
-
-export function runMigrations(db: Database.Database, options?: { snapshotDir?: string }): void {
-  if (options?.snapshotDir) {
+  // 只保留最近 SNAPSHOT_KEEP 份，避免长期运行累积磁盘占用。
+  const SNAPSHOT_KEEP = 3;
+  const snapshots = fs.readdirSync(dir)
+    .filter((name) => name.startsWith('pre-') && name.endsWith('.sqlite'))
+    .sort()
+    .reverse();
+  for (const stale of snapshots.slice(SNAPSHOT_KEEP)) {
     try {
-      snapshotDatabase(db, options.snapshotDir);
+      fs.rmSync(path.join(dir, stale), { force: true });
     } catch (error) {
-      // 快照失败不阻断启动；迁移本身仍会继续。
-      console.warn('[migrations] pre-migration snapshot failed, continuing', error);
+      console.warn(`[migrations] failed to remove stale snapshot ${stale}`, error);
     }
   }
+}
+
+/**
+ * Applies pending schema migrations and records them in schema_migrations.
+ * Returns the number of migrations applied in this run (0 when the schema is
+ * already up to date). The pre-migration snapshot is only taken when there is
+ * actually something to migrate, and failures to snapshot never block startup.
+ */
+export function runMigrations(db: Database.Database, options?: { snapshotDir?: string }): number {
   db.exec(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       version TEXT PRIMARY KEY,
@@ -1571,6 +1633,15 @@ export function runMigrations(db: Database.Database, options?: { snapshotDir?: s
   const applied = new Set(
     (db.prepare('SELECT version FROM schema_migrations').all() as Array<{ version: number | string }>).map((row) => Number(row.version)),
   );
+  const pending = migrations.filter((migration) => !applied.has(migration.version));
+  if (options?.snapshotDir && pending.length > 0) {
+    try {
+      snapshotDatabase(db, options.snapshotDir);
+    } catch (error) {
+      // 快照失败不阻断启动；迁移本身仍会继续。
+      console.warn('[migrations] pre-migration snapshot failed, continuing', error);
+    }
+  }
   // 121 将 NULL clinicId 回填为最早诊所；旧库 (NULL, 同唯一键) 重复行会撞 118 的唯一索引。
   // 在应用 121 前对带 clinicId 列与唯一字段的表执行去重（不动 121 内容本身）。
   if (!applied.has(121)) {
@@ -1583,13 +1654,15 @@ export function runMigrations(db: Database.Database, options?: { snapshotDir?: s
       dedupNullClinicRows(db, resource.table, uniqueField.name);
     }
   }
-  for (const migration of migrations) {
-    if (applied.has(migration.version)) continue;
+  let appliedCount = 0;
+  for (const migration of pending) {
     const run = db.transaction(() => {
       migration.up(db);
       db.prepare('INSERT INTO schema_migrations (version, name, appliedAt) VALUES (?, ?, ?)')
         .run(String(migration.version), migration.name, new Date().toISOString());
     });
     run();
+    appliedCount++;
   }
+  return appliedCount;
 }
