@@ -19,11 +19,18 @@ export class InventoryService {
   private readonly db: Database.Database;
   private readonly inventoryRepository: InventoryRepository;
   private readonly unitOfWork: IUnitOfWork;
+  private readonly lockGuard?: (itemId: string, clinicId?: string | null) => void;
 
-  constructor(db: Database.Database, inventoryRepository?: InventoryRepository, unitOfWork?: IUnitOfWork) {
+  constructor(
+    db: Database.Database,
+    inventoryRepository?: InventoryRepository,
+    unitOfWork?: IUnitOfWork,
+    lockGuard?: (itemId: string, clinicId?: string | null) => void,
+  ) {
     this.db = db;
     this.inventoryRepository = inventoryRepository ?? new SqliteInventoryRepository(db);
     this.unitOfWork = unitOfWork ?? new SqliteUnitOfWork(db);
+    this.lockGuard = lockGuard;
   }
 
   async createTransaction(
@@ -46,6 +53,7 @@ export class InventoryService {
       if (input.type !== 'ADJUST' && input.quantity < 0) {
         throw new ValidationError('Inventory transaction quantity must be positive');
       }
+      this.lockGuard?.(input.itemId, context.clinicId);
       const item = this.inventoryRepository.findItem(input.itemId, context.clinicId);
       if (!item) throw new NotFoundError('Inventory item not found');
       const before = Number(item.stock);

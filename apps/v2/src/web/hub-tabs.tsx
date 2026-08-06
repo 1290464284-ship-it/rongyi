@@ -38,6 +38,7 @@ const TreatmentPlansPage = lazy(() => import('./TreatmentPlansPage').then((m) =>
 const CephalometricPage = lazy(() => import('./CephalometricPage').then((m) => ({ default: m.CephalometricPage })));
 const AnalyticsDashboardPage = lazy(() => import('./AnalyticsDashboardPage').then((m) => ({ default: m.AnalyticsDashboardPage })));
 const RefundsPage = lazy(() => import('./RefundsPage').then((m) => ({ default: m.RefundsPage })));
+const DispenseWorkbenchPage = lazy(() => import('./DispenseWorkbenchPage').then((m) => ({ default: m.DispenseWorkbenchPage })));
 
 function CostShareTab() {
   const query = useQuery({
@@ -105,6 +106,7 @@ export const financeHubTabs: HubTab[] = [
 export const inventoryHubTabs: HubTab[] = [
   { id: 'items', label: '\u5e93\u5b58', kind: 'custom', component: InventoryPage },
   { id: 'itemMaster', label: '\u5e93\u5b58\u9879\u76ee', kind: 'resource', resource: 'inventoryItems' },
+  { id: 'pharmacy', label: '\u836f\u623f\u5de5\u4f5c\u53f0', kind: 'custom', component: DispenseWorkbenchPage },
   { id: 'workflow', label: '\u91c7\u8d2d\u52a0\u5de5', kind: 'custom', component: InventoryWorkflowPage },
   { id: 'suppliers', label: '\u4f9b\u5e94\u5546', kind: 'resource', resource: 'suppliers' },
   { id: 'purchaseOrders', label: '\u91c7\u8d2d\u5355', kind: 'custom', component: PurchaseOrdersPage },

@@ -195,6 +195,11 @@ export interface PurchaseOrderRecord {
   supplierId?: string | null;
   totalAmount: number;
   status: string;
+  reviewStatus?: string | null;
+  approvedById?: string | null;
+  approvedAt?: string | null;
+  rejectionReason?: string | null;
+  receivedById?: string | null;
   receivedAt?: string | null;
   createdAt: string;
   updatedAt: string;
