@@ -188,7 +188,7 @@ export class DispenseService {
     return { id, number, status: 'PENDING', items: rows.length };
   }
 
-  list(context: AppContext, filter?: { status?: string }): Array<Record<string, unknown>> {
+  list(context: AppContext, filter?: { status?: string; page?: number; pageSize?: number }): Array<Record<string, unknown>> {
     const status = typeof filter?.status === 'string' ? filter.status.trim() : '';
     if (status !== '' && !(DISPENSE_STATUSES as readonly string[]).includes(status)) {
       throw new ValidationError('发药单状态筛选无效');
@@ -197,6 +197,9 @@ export class DispenseService {
     const params = status !== ''
       ? [status, ...tenantParams(context.clinicId)]
       : [...tenantParams(context.clinicId)];
+    const page = Math.max(1, Number(filter?.page ?? 1));
+    const pageSize = Math.min(200, Math.max(1, Number(filter?.pageSize ?? 200)));
+    const offset = (page - 1) * pageSize;
     return this.db.prepare(
       `SELECT D.id, D.number, D.patientId, P.name AS patientName, P.phone AS patientPhone,
               D.doctorId, D.pharmacistId, U.name AS pharmacistName,
@@ -208,8 +211,22 @@ export class DispenseService {
        LEFT JOIN User U ON U.id = D.pharmacistId
        WHERE D.deletedAt IS NULL${statusClause}${tenantAnd(context.clinicId, 'D.clinicId')}
        ORDER BY D.createdAt DESC
-       LIMIT 200`,
-    ).all(...params) as Array<Record<string, unknown>>;
+       LIMIT ? OFFSET ?`,
+    ).all(...params, pageSize, offset) as Array<Record<string, unknown>>;
+  }
+
+  count(context: AppContext, filter?: { status?: string }): number {
+    const status = typeof filter?.status === 'string' ? filter.status.trim() : '';
+    const statusClause = status !== '' ? ' AND D.status = ?' : '';
+    const params = status !== ''
+      ? [status, ...tenantParams(context.clinicId)]
+      : [...tenantParams(context.clinicId)];
+    const row = this.db.prepare(
+      `SELECT COUNT(*) AS total
+       FROM Dispense D
+       WHERE D.deletedAt IS NULL${statusClause}${tenantAnd(context.clinicId, 'D.clinicId')}`,
+    ).get(...params) as { total: number };
+    return Number(row.total);
   }
 
   detail(id: string, context: AppContext): Record<string, unknown> {

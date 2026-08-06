@@ -116,6 +116,7 @@ describe('PermissionsPage', () => {
     await screen.findByText('patients');
 
     fireEvent.click(screen.getAllByRole('button', { name: '删除' })[0]);
+    fireEvent.click(await screen.findByText('确认删除'));
     await waitFor(() => expect(vi.mocked(apiRequest)).toHaveBeenCalledWith(
       '/resources/rolePermissions/p1',
       expect.objectContaining({ method: 'DELETE' }),

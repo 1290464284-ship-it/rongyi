@@ -23,7 +23,10 @@ interface RefundRow {
 export class RefundFlowService {
   constructor(private readonly db: Database.Database) {}
 
-  list(context: AppContext): Array<Record<string, unknown>> {
+  list(context: AppContext, options?: { page?: number; pageSize?: number }): Array<Record<string, unknown>> {
+    const page = Math.max(1, Number(options?.page ?? 1));
+    const pageSize = Math.min(200, Math.max(1, Number(options?.pageSize ?? 200)));
+    const offset = (page - 1) * pageSize;
     // Refund 与 Charge/Patient 均有 clinicId，tenantAnd 需显式使用 Refund 列前缀。
     const rows = this.db.prepare(
       `SELECT r.id, r.amount, r.reason, r.status, r.createdAt, r.approvedAt, r.processedAt,
@@ -35,9 +38,18 @@ export class RefundFlowService {
        LEFT JOIN Charge c ON c.id = r.chargeId
        WHERE r.deletedAt IS NULL${tenantAnd(context.clinicId, 'r.clinicId')}
        ORDER BY r.createdAt DESC
-       LIMIT 200`,
-    ).all(...tenantParams(context.clinicId));
+       LIMIT ? OFFSET ?`,
+    ).all(...tenantParams(context.clinicId), pageSize, offset);
     return rows as Array<Record<string, unknown>>;
+  }
+
+  count(context: AppContext): number {
+    const row = this.db.prepare(
+      `SELECT COUNT(*) AS total
+       FROM Refund r
+       WHERE r.deletedAt IS NULL${tenantAnd(context.clinicId, 'r.clinicId')}`,
+    ).get(...tenantParams(context.clinicId)) as { total: number };
+    return Number(row.total);
   }
 
   approve(id: string, context: AppContext): Record<string, unknown> {

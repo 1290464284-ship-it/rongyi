@@ -4,11 +4,11 @@ import { useParams } from 'react-router';
 import { apiRequest, downloadCsv } from './api';
 import type { Page, ResourceDefinition, ResourceField } from './types';
 import { ConfirmDialog, Dialog, EmptyState, LoadingState, PageError } from './components';
-import { formatDisplayValue } from './format';
+import { formatDisplayValue, toCents, toLocalInput } from './format';
 import { FormBuilder } from './FormBuilder';
 import { friendlyError } from './messages';
+import { useDebouncedValue } from './use-debounce';
 import { useToast } from './toast-context';
-import { toCents } from './format';
 
 const PROTECTED_UI_FIELDS = new Set([
   'passwordHash',
@@ -50,6 +50,7 @@ function fieldToForm(field: ResourceField, value: unknown): string | boolean {
   if (field.type === 'boolean') return Boolean(value);
   if (field.type === 'json') return JSON.stringify(value ?? '', null, 2);
   if (value === null || value === undefined) return '';
+  if (field.type === 'datetime' && typeof value === 'string' && value) return toLocalInput(value);
   if (field.type === 'money' && Number.isFinite(Number(value))) return String((Number(value) / 100).toFixed(2));
   return String(value);
 }
@@ -59,6 +60,7 @@ export function ResourcePage({ resource: fixedResource }: { resource?: string })
   const params = useParams<{ resource: string }>();
   const resource = fixedResource ?? params.resource ?? 'patients';
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search, 300);
   const [page, setPage] = useState(1);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -74,9 +76,9 @@ export function ResourcePage({ resource: fixedResource }: { resource?: string })
   const definition = metaQuery.data?.find((item) => item.name === resource);
 
   const listQuery = useQuery({
-    queryKey: ['resource', resource, search, page],
+    queryKey: ['resource', resource, debouncedSearch, page],
     queryFn: () => apiRequest<Page<Record<string, unknown>>>(
-      `/resources/${resource}?page=${page}&pageSize=20${search ? `&search=${encodeURIComponent(search)}` : ''}`,
+      `/resources/${resource}?page=${page}&pageSize=20${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}`,
     ),
     enabled: Boolean(definition),
   });

@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
+import { useDebouncedValue } from './use-debounce';
 import type { Page, ResourceField } from './types';
 
 interface FormBuilderProps {
@@ -35,7 +36,7 @@ function renderField(field: ResourceField, value: unknown, onChange: (value: unk
   }
   if (field.type === 'enum') {
     return (
-      <select value={String(value ?? '')} onChange={(event) => onChange(event.target.value)}>
+      <select value={String(value ?? '')} required={field.required} onChange={(event) => onChange(event.target.value)}>
         <option value="">请选择...</option>
         {field.enumValues?.map((option) => (
           <option key={option} value={option}>{field.enumLabels?.[option] ?? option}</option>
@@ -44,10 +45,17 @@ function renderField(field: ResourceField, value: unknown, onChange: (value: unk
     );
   }
   if (field.type === 'relation' && field.relation) {
-    return <RelationSelect fieldId={field.name} relation={field.relation} value={value} onChange={onChange} />;
+    return <RelationSelect fieldId={field.name} relation={field.relation} value={value} required={field.required} onChange={onChange} />;
   }
   if (field.inputType === 'textarea' || field.type === 'longText' || field.type === 'json') {
-    return <textarea value={String(value ?? '')} onChange={(event) => onChange(event.target.value)} />;
+    return (
+      <textarea
+        value={String(value ?? '')}
+        required={field.required}
+        maxLength={field.maxLength}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    );
   }
   const inputType = field.inputType === 'datetime' || field.type === 'datetime'
     ? 'datetime-local'
@@ -60,6 +68,8 @@ function renderField(field: ResourceField, value: unknown, onChange: (value: unk
     <input
       type={inputType}
       value={String(value ?? '')}
+      required={field.required}
+      maxLength={field.maxLength}
       step={field.type === 'money' || field.type === 'decimal' ? '0.01' : undefined}
       placeholder={field.placeholder}
       onChange={(event) => onChange(event.target.value)}
@@ -71,23 +81,39 @@ function RelationSelect({
   fieldId,
   relation,
   value,
+  required,
   onChange,
 }: {
   fieldId: string;
   relation: { resource: string; labelField: string };
   value: unknown;
+  required?: boolean;
   onChange: (value: unknown) => void;
 }) {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [accumulated, setAccumulated] = useState<Record<string, unknown>[]>([]);
+  const debouncedSearch = useDebouncedValue(search, 300);
   const query = useQuery({
-    queryKey: ['relation-options', relation.resource, search, page],
+    queryKey: ['relation-options', relation.resource, debouncedSearch, page],
     queryFn: () => apiRequest<Page<Record<string, unknown>>>(
-      `/resources/${relation.resource}?page=${page}&pageSize=50${search ? `&search=${encodeURIComponent(search)}` : ''}`,
+      `/resources/${relation.resource}?page=${page}&pageSize=50${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}`,
     ),
+    placeholderData: (previous) => previous,
   });
-  const items = query.data?.items ?? [];
-  const total = query.data?.total ?? items.length;
+  // Accumulate options across pages so「加载更多」never drops previously selected rows.
+  useEffect(() => {
+    const incoming = query.data?.items;
+    if (!incoming) return;
+    setAccumulated((current) => {
+      if (page === 1 || current.length === 0) return incoming;
+      const seen = new Set(current.map((item) => String(item.id)));
+      const fresh = incoming.filter((item) => !seen.has(String(item.id)));
+      return fresh.length > 0 ? [...current, ...fresh] : current;
+    });
+  }, [query.data, page]);
+  const items = accumulated;
+  const total = query.data?.total ?? accumulated.length;
 
   return (
     <>
@@ -102,7 +128,7 @@ function RelationSelect({
           setPage(1);
         }}
       />
-      <select id={fieldId} value={String(value ?? '')} onChange={(event) => onChange(event.target.value)}>
+      <select id={fieldId} value={String(value ?? '')} required={required} onChange={(event) => onChange(event.target.value)}>
         <option value="">请选择...</option>
         {items.map((item) => (
           <option key={String(item.id)} value={String(item.id)}>{String(item[relation.labelField] ?? item.id)}</option>

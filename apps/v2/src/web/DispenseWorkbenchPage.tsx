@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
+import type { Page } from './types';
 import {
   ConfirmDialog,
   DataTable,
@@ -124,10 +125,11 @@ export function DispenseWorkbenchPage() {
   const [deleteDispenseTarget, setDeleteDispenseTarget] = useState<DispenseRow | null>(null);
   const [editNarcotic, setEditNarcotic] = useState<Record<string, unknown> | null>(null);
   const [deleteNarcoticTarget, setDeleteNarcoticTarget] = useState<Record<string, unknown> | null>(null);
+  const [dispensePage, setDispensePage] = useState(1);
 
   const dispenses = useQuery({
-    queryKey: ['dispenses'],
-    queryFn: () => apiRequest<DispenseRow[]>('/dispenses'),
+    queryKey: ['dispenses', dispensePage],
+    queryFn: () => apiRequest<Page<DispenseRow>>(`/dispenses?page=${dispensePage}&pageSize=20`),
   });
   const narcotics = useQuery({
     queryKey: ['narcotic-registry'],
@@ -305,8 +307,18 @@ export function DispenseWorkbenchPage() {
         ) : dispenses.error ? (
           <PageError message={errorMessage(dispenses.error, '加载发药单失败')} />
         ) : (
-          <DataTable columns={dispenseColumns} rows={dispenses.data ?? []} keyField="id" emptyText="暂无发药单" />
+          <DataTable columns={dispenseColumns} rows={dispenses.data?.items ?? []} keyField="id" emptyText="暂无发药单" />
         )}
+        <div className="pager">
+          <button disabled={dispensePage <= 1} onClick={() => setDispensePage((value) => value - 1)}>上一页</button>
+          <span>第 {dispensePage} 页</span>
+          <button
+            disabled={!dispenses.data || dispensePage * 20 >= dispenses.data.total}
+            onClick={() => setDispensePage((value) => value + 1)}
+          >
+            下一页
+          </button>
+        </div>
         {action && (
           <DispenseActionPanel
             mode={action.mode}

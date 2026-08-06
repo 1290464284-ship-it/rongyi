@@ -2,8 +2,9 @@ import { FormEvent, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import type { Page } from './types';
-import { DataTable, LoadingState, PageError } from './components';
+import { ConfirmDialog, DataTable, LoadingState, PageError } from './components';
 import { errorMessage } from './messages';
+import { useAsyncAction } from './use-async-action';
 import { useToast } from './toast-context';
 
 const ROLE_LABELS: Record<string, string> = {
@@ -35,9 +36,11 @@ const emptyForm: PermissionForm = {
 
 export function PermissionsPage() {
   const { showToast } = useToast();
+  const { busy, run } = useAsyncAction();
   const [activeRole, setActiveRole] = useState('DOCTOR');
   const [form, setForm] = useState<PermissionForm>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<PermissionRow | null>(null);
 
   const permissions = useQuery({
     queryKey: ['role-permissions', activeRole],
@@ -47,17 +50,19 @@ export function PermissionsPage() {
   if (permissions.isLoading) return <LoadingState />;
   if (permissions.error) return <PageError message={(permissions.error as Error).message} />;
 
-  async function toggleAllowed(row: PermissionRow) {
-    try {
-      await apiRequest(`/resources/rolePermissions/${row.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ allowed: !row.allowed }),
-      });
-      showToast('权限已更新', 'success');
-      await permissions.refetch();
-    } catch (error) {
-      showToast(errorMessage(error, '更新失败'), 'error');
-    }
+  function toggleAllowed(row: PermissionRow) {
+    void run(async () => {
+      try {
+        await apiRequest(`/resources/rolePermissions/${row.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ allowed: !row.allowed }),
+        });
+        showToast('权限已更新', 'success');
+        await permissions.refetch();
+      } catch (error) {
+        showToast(errorMessage(error, '更新失败'), 'error');
+      }
+    });
   }
 
   function openEdit(row: PermissionRow) {
@@ -69,52 +74,58 @@ export function PermissionsPage() {
     });
   }
 
-  async function addPermission(event: FormEvent) {
+  function addPermission(event: FormEvent) {
     event.preventDefault();
     const resource = form.resource.trim();
     if (!resource) {
       showToast('请填写资源名', 'error');
       return;
     }
-    try {
-      if (editingId) {
-        await apiRequest(`/resources/rolePermissions/${editingId}`, {
-          method: 'PATCH',
-          body: JSON.stringify({
-            resource,
-            permission: form.permission,
-            allowed: form.allowed,
-          }),
-        });
-        showToast('权限已更新', 'success');
-      } else {
-        await apiRequest('/resources/rolePermissions', {
-          method: 'POST',
-          body: JSON.stringify({
-            role: activeRole,
-            resource,
-            permission: form.permission,
-            allowed: form.allowed,
-          }),
-        });
-        showToast('权限已添加', 'success');
+    void run(async () => {
+      try {
+        if (editingId) {
+          await apiRequest(`/resources/rolePermissions/${editingId}`, {
+            method: 'PATCH',
+            body: JSON.stringify({
+              resource,
+              permission: form.permission,
+              allowed: form.allowed,
+            }),
+          });
+          showToast('权限已更新', 'success');
+        } else {
+          await apiRequest('/resources/rolePermissions', {
+            method: 'POST',
+            body: JSON.stringify({
+              role: activeRole,
+              resource,
+              permission: form.permission,
+              allowed: form.allowed,
+            }),
+          });
+          showToast('权限已添加', 'success');
+        }
+        setEditingId(null);
+        setForm(emptyForm);
+        await permissions.refetch();
+      } catch (error) {
+        showToast(errorMessage(error, editingId ? '更新失败' : '添加失败'), 'error');
       }
-      setEditingId(null);
-      setForm(emptyForm);
-      await permissions.refetch();
-    } catch (error) {
-      showToast(errorMessage(error, editingId ? '更新失败' : '添加失败'), 'error');
-    }
+    });
   }
 
-  async function removePermission(row: PermissionRow) {
-    try {
-      await apiRequest(`/resources/rolePermissions/${row.id}`, { method: 'DELETE' });
-      showToast('权限已删除', 'success');
-      await permissions.refetch();
-    } catch (error) {
-      showToast(errorMessage(error, '删除失败'), 'error');
-    }
+  function removePermission(row: PermissionRow) {
+    void run(async () => {
+      try {
+        await apiRequest(`/resources/rolePermissions/${row.id}`, { method: 'DELETE' });
+        showToast('权限已删除', 'success');
+        await permissions.refetch();
+      } catch (error) {
+        showToast(errorMessage(error, '删除失败'), 'error');
+      } finally {
+        setDeleteTarget(null);
+      }
+    });
   }
 
   const columns = [
@@ -124,7 +135,7 @@ export function PermissionsPage() {
       key: 'allowed',
       label: '允许',
       render: (row: PermissionRow) => (
-        <button onClick={() => void toggleAllowed(row)}>{row.allowed ? '允许' : '禁止'}</button>
+        <button disabled={busy} onClick={() => toggleAllowed(row)}>{row.allowed ? '允许' : '禁止'}</button>
       ),
     },
     {
@@ -132,8 +143,8 @@ export function PermissionsPage() {
       label: '操作',
       render: (row: PermissionRow) => (
         <>
-          <button onClick={() => openEdit(row)}>编辑</button>
-          <button className="danger" onClick={() => void removePermission(row)}>删除</button>
+          <button disabled={busy} onClick={() => openEdit(row)}>编辑</button>
+          <button className="danger" disabled={busy} onClick={() => setDeleteTarget(row)}>删除</button>
         </>
       ),
     },
@@ -190,12 +201,22 @@ export function PermissionsPage() {
             />
             允许
           </label>
-          <button type="submit">{editingId ? '保存修改' : '添加权限'}</button>
+          <button type="submit" disabled={busy}>{editingId ? '保存修改' : '添加权限'}</button>
           {editingId && (
             <button type="button" onClick={() => { setEditingId(null); setForm(emptyForm); }}>取消编辑</button>
           )}
         </form>
       </div>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="删除确认"
+        message={`确定删除资源「${deleteTarget?.resource ?? ''}」的「${deleteTarget?.permission ?? ''}」权限吗？`}
+        confirmText="确认删除"
+        danger
+        onConfirm={() => deleteTarget && removePermission(deleteTarget)}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

@@ -76,7 +76,9 @@ const refundRows = [
 
 function mockApi() {
   vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-    if (path === '/refunds') return refundRows;
+    if (path.startsWith('/refunds')) {
+        return { items: refundRows, total: refundRows.length, page: 1, pageSize: 20 };
+        }
     return {};
   });
 }
@@ -115,8 +117,8 @@ describe('RefundsPage', () => {
     expect(screen.getByText('驳回')).toBeDefined();
     expect(screen.getByText('取消')).toBeDefined();
     expect(screen.getByText('确认退款')).toBeDefined();
-    // 已完成/已驳回/已取消行不渲染操作按钮：页面仅应有 4 个操作按钮
-    expect(screen.getAllByRole('button')).toHaveLength(4);
+    // 已完成/已驳回/已取消行不渲染操作按钮：4 个操作按钮 + 分页 2 个按钮
+    expect(screen.getAllByRole('button')).toHaveLength(6);
   });
 
   it('approves a REQUESTED refund and reloads the list', async () => {
@@ -130,7 +132,7 @@ describe('RefundsPage', () => {
     });
     expect(await screen.findByText('退款已通过审批')).toBeDefined();
     await waitFor(() => {
-      expect(vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/refunds').length).toBeGreaterThanOrEqual(2);
+      expect(vi.mocked(apiRequest).mock.calls.filter(([path]) => path.startsWith('/refunds')).length).toBeGreaterThanOrEqual(2);
     });
   });
 
@@ -165,8 +167,10 @@ describe('RefundsPage', () => {
   });
 
   it('shows an error toast when the action fails', async () => {
-    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/refunds') return refundRows;
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path.startsWith('/refunds') && (!init || init.method === undefined || init.method === 'GET')) {
+        return { items: refundRows, total: refundRows.length, page: 1, pageSize: 20 };
+      }
       throw new Error('Request failed (409)');
     });
     render(<RefundsPage />, { wrapper });

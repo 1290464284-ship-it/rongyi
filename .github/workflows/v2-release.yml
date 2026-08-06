@@ -11,6 +11,7 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    environment: production
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4

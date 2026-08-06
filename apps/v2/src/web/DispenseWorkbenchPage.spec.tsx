@@ -27,12 +27,17 @@ function mockData() {
     if (method === 'DELETE' && path === '/dispenses/disp-1') return { id: 'disp-1', deleted: true };
     if (method === 'PATCH' && path === '/narcotic-registry/n-1') return { id: 'n-1' };
     if (method === 'DELETE' && path === '/narcotic-registry/n-1') return { id: 'n-1', deleted: true };
-    if (path === '/dispenses') {
-      return [
-        { id: 'disp-1', number: 'DISP-001', patientId: 'patient-demo-001', patientName: 'Demo Patient', status: 'PENDING', itemsCount: 2, createdAt: '2026-08-01T10:00:00.000Z' },
-        { id: 'disp-2', number: 'DISP-002', patientId: 'patient-demo-001', patientName: 'Demo Patient', status: 'DISPENSED', itemsCount: 1, createdAt: '2026-08-02T10:00:00.000Z' },
-        { id: 'disp-3', number: 'DISP-003', patientId: 'patient-demo-001', patientName: 'Demo Patient', status: 'RETURNED', itemsCount: 1, createdAt: '2026-08-03T10:00:00.000Z' },
-      ];
+    if (path.startsWith('/dispenses?')) {
+      return {
+        items: [
+          { id: 'disp-1', number: 'DISP-001', patientId: 'patient-demo-001', patientName: 'Demo Patient', status: 'PENDING', itemsCount: 2, createdAt: '2026-08-01T10:00:00.000Z' },
+          { id: 'disp-2', number: 'DISP-002', patientId: 'patient-demo-001', patientName: 'Demo Patient', status: 'DISPENSED', itemsCount: 1, createdAt: '2026-08-02T10:00:00.000Z' },
+          { id: 'disp-3', number: 'DISP-003', patientId: 'patient-demo-001', patientName: 'Demo Patient', status: 'RETURNED', itemsCount: 1, createdAt: '2026-08-03T10:00:00.000Z' },
+        ],
+        total: 3,
+        page: 1,
+        pageSize: 20,
+      };
     }
     if (path === '/dispenses/disp-1') {
       return {

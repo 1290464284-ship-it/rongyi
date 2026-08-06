@@ -1295,6 +1295,28 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 145,
+    name: 'v2-query-index-gaps',
+    up(db) {
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_v2_appointment_clinic_start ON Appointment(clinicId, startTime);
+        CREATE INDEX IF NOT EXISTS idx_v2_medical_record_clinic_created ON MedicalRecord(clinicId, createdAt);
+        CREATE INDEX IF NOT EXISTS idx_v2_charge_clinic_created ON Charge(clinicId, createdAt);
+        CREATE INDEX IF NOT EXISTS idx_v2_operation_log_created ON OperationLog(createdAt);
+        CREATE INDEX IF NOT EXISTS idx_v2_notification_clinic_created ON Notification(clinicId, createdAt);
+        CREATE INDEX IF NOT EXISTS idx_v2_business_alert_clinic_created ON BusinessAlert(clinicId, createdAt);
+        CREATE INDEX IF NOT EXISTS idx_v2_attendance_clinic_created ON Attendance(clinicId, createdAt);
+        CREATE INDEX IF NOT EXISTS idx_v2_file_record_clinic_creator ON FileRecord(clinicId, createdBy);
+        CREATE INDEX IF NOT EXISTS idx_v2_debt_charge ON Debt(chargeId);
+        CREATE INDEX IF NOT EXISTS idx_v2_charge_item_charge ON ChargeItem(chargeId);
+        CREATE INDEX IF NOT EXISTS idx_v2_refund_charge ON Refund(chargeId);
+        CREATE INDEX IF NOT EXISTS idx_v2_dispense_clinic_created ON Dispense(clinicId, createdAt);
+        CREATE INDEX IF NOT EXISTS idx_v2_member_card_log_card ON MemberCardLog(cardId, createdAt);
+        CREATE INDEX IF NOT EXISTS idx_v2_member_point_log_card ON MemberPointLog(cardId, createdAt);
+      `);
+    },
+  },
 ];
 
 function addColumns(db: Database.Database, table: string, columns: Array<[string, string]>): void {

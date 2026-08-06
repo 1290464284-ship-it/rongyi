@@ -2,6 +2,8 @@ name: V2 CI
 
 on:
   push:
+    tags:
+      - 'v2-*'
     paths:
       - 'apps/v2/**'
       - 'docs/refactor-v2-*'

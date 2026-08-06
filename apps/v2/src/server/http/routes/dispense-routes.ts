@@ -27,7 +27,11 @@ export function registerDispenseRoutes(
     const status = typeof req.query.status === 'string' && req.query.status
       ? String(req.query.status)
       : undefined;
-    res.json({ success: true, data: service.list(req.context!, status ? { status } : undefined) });
+    const page = Number(req.query.page ?? 1);
+    const pageSize = Number(req.query.pageSize ?? 200);
+    const items = service.list(req.context!, { status, page, pageSize });
+    const total = service.count(req.context!, { status });
+    res.json({ success: true, data: { items, total, page, pageSize } });
   }));
 
   app.get('/api/v2/dispenses/:id', wrapAsync(async (req, res) => {

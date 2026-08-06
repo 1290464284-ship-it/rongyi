@@ -3,6 +3,7 @@ import { apiRequest } from './api';
 import { CrudPage } from './CrudPage';
 import { SearchableSelect, type DataTableColumn } from './components';
 import { errorMessage } from './messages';
+import { toLocalInput } from './format';
 import { useToast } from './toast-context';
 
 const STATUS_LABELS: Record<string, string> = {
@@ -92,8 +93,8 @@ export function VisitsPage() {
       formFromRow={(row) => ({
         patientId: String(row.patientId ?? ''),
         doctorId: String(row.doctorId ?? ''),
-        startTime: toDatetimeLocal(row.startTime),
-        endTime: toDatetimeLocal(row.endTime),
+        startTime: toLocalInput(row.startTime),
+        endTime: toLocalInput(row.endTime),
         status: String(row.status ?? 'IN_PROGRESS'),
         chiefComplaint: String(row.chiefComplaint ?? ''),
         diagnosis: String(row.diagnosis ?? ''),
@@ -143,14 +144,6 @@ async function transitionVisit(
   } catch (error) {
     showToast(errorMessage(error, '状态更新失败'), 'error');
   }
-}
-
-function toDatetimeLocal(iso: unknown): string {
-  if (typeof iso !== 'string' || !iso) return '';
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 function VisitForm({ form, update }: { form: VisitForm; update: (patch: Partial<VisitForm>) => void }) {
