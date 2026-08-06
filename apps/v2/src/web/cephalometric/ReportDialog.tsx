@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../api';
 import { Dialog } from '../components';
@@ -18,10 +18,10 @@ export function ReportDialog({
   onClose: () => void;
 }) {
   const { showToast } = useToast();
-  const [jsonText, setJsonText] = useState(DEFAULT_REPORT_JSON);
-  const [outlineColor, setOutlineColor] = useState('#2563eb');
-  const [lineColor, setLineColor] = useState('#dc2626');
-  const [hydrated, setHydrated] = useState(false);
+  // 编辑态：null 表示未编辑，渲染时派生自服务端数据；用户编辑后锁定本地值（无 effect setState）
+  const [jsonText, setJsonText] = useState<string | null>(null);
+  const [outlineColor, setOutlineColor] = useState<string | null>(null);
+  const [lineColor, setLineColor] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const reportQuery = useQuery({
@@ -29,27 +29,22 @@ export function ReportDialog({
     queryFn: () => apiRequest<CephalometricReportResponse>(`/cephalometric/${row.id}/report`),
   });
 
-  // 进入页面/刷新后回显已保存的报告。
-  useEffect(() => {
-    if (hydrated || !reportQuery.data) return;
-    const report = reportQuery.data.reportJson ?? {};
-    setJsonText(JSON.stringify(report, null, 2));
-    setOutlineColor(typeof report.outlineColor === 'string' ? report.outlineColor : '#2563eb');
-    setLineColor(typeof report.lineColor === 'string' ? report.lineColor : '#dc2626');
-    setHydrated(true);
-  }, [hydrated, reportQuery.data]);
+  const loadedReport = reportQuery.data?.reportJson ?? {};
+  const effectiveJsonText = jsonText ?? (reportQuery.data ? JSON.stringify(loadedReport, null, 2) : DEFAULT_REPORT_JSON);
+  const effectiveOutlineColor = outlineColor ?? (typeof loadedReport.outlineColor === 'string' ? loadedReport.outlineColor : '#2563eb');
+  const effectiveLineColor = lineColor ?? (typeof loadedReport.lineColor === 'string' ? loadedReport.lineColor : '#dc2626');
 
   const previewReport = useMemo<CephalometricReportJson>(() => {
     try {
-      const parsed = JSON.parse(jsonText || '{}') as CephalometricReportJson;
+      const parsed = JSON.parse(effectiveJsonText || '{}') as CephalometricReportJson;
       if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-        return { ...parsed, outlineColor, lineColor };
+        return { ...parsed, outlineColor: effectiveOutlineColor, lineColor: effectiveLineColor };
       }
-      return { outline: [], polylines: [], outlineColor, lineColor };
+      return { outline: [], polylines: [], outlineColor: effectiveOutlineColor, lineColor: effectiveLineColor };
     } catch {
-      return { outline: [], polylines: [], outlineColor, lineColor };
+      return { outline: [], polylines: [], outlineColor: effectiveOutlineColor, lineColor: effectiveLineColor };
     }
-  }, [jsonText, outlineColor, lineColor]);
+  }, [effectiveJsonText, effectiveOutlineColor, effectiveLineColor]);
 
   async function handleSave() {
     let parsed: unknown;
@@ -63,7 +58,7 @@ export function ReportDialog({
       showToast('报告 JSON 必须是对象', 'error');
       return;
     }
-    const reportJson = { ...(parsed as Record<string, unknown>), outlineColor, lineColor };
+    const reportJson = { ...(parsed as Record<string, unknown>), outlineColor: effectiveOutlineColor, lineColor: effectiveLineColor };
     setSaving(true);
     try {
       await apiRequest(`/cephalometric/${row.id}/report`, {
@@ -89,7 +84,7 @@ export function ReportDialog({
         <form onSubmit={(event) => { event.preventDefault(); void handleSave(); }}>
           <label>
             轮廓色
-            <select aria-label="轮廓色" value={outlineColor} onChange={(event) => setOutlineColor(event.target.value)}>
+            <select aria-label="轮廓色" value={effectiveOutlineColor} onChange={(event) => setOutlineColor(event.target.value)}>
               {COLOR_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
@@ -97,7 +92,7 @@ export function ReportDialog({
           </label>
           <label>
             折线色
-            <select aria-label="折线色" value={lineColor} onChange={(event) => setLineColor(event.target.value)}>
+            <select aria-label="折线色" value={effectiveLineColor} onChange={(event) => setLineColor(event.target.value)}>
               {COLOR_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
@@ -106,7 +101,7 @@ export function ReportDialog({
           <OutlineSvg report={previewReport} />
           <label>
             报告数据 JSON（轮廓点 outline / 折线 polylines）
-            <textarea aria-label="报告 JSON" value={jsonText} onChange={(event) => setJsonText(event.target.value)} spellCheck={false} />
+            <textarea aria-label="报告 JSON" value={effectiveJsonText} onChange={(event) => setJsonText(event.target.value)} spellCheck={false} />
           </label>
           {reportQuery.data?.metricsJson && Object.keys(reportQuery.data.metricsJson).length > 0 && (
             <label>

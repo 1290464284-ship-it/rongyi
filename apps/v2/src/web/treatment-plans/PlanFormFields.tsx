@@ -22,20 +22,22 @@ export function PlanFormFields({
   onItemsLoaded: () => void;
 }) {
   const { showToast } = useToast();
-  const [itemsLoading, setItemsLoading] = useState(false);
-  // 效果只依赖 editing/planId（对话框每次打开组件都会重挂载），回调一律走 ref 避免陈旧闭包
+  // loading 派生：编辑打开且明细尚未加载完成；加载完成后 setItemsLoaded(true)
+  const [itemsLoaded, setItemsLoaded] = useState(false);
+  const itemsLoading = editing && Boolean(planId) && !itemsLoaded;
+  // 效果只依赖 editing/planId（对话框每次打开组件都会重挂载），回调一律走 ref 避免陈旧闭包；
+  // ref 在 effect 中更新（每次渲染后），回填 effect 按声明顺序在其后执行，读到的是最新值
   const updateRef = useRef(update);
-  updateRef.current = update;
   const onItemsLoadedRef = useRef(onItemsLoaded);
-  onItemsLoadedRef.current = onItemsLoaded;
   const showToastRef = useRef(showToast);
-  showToastRef.current = showToast;
+  useEffect(() => { updateRef.current = update; });
+  useEffect(() => { onItemsLoadedRef.current = onItemsLoaded; });
+  useEffect(() => { showToastRef.current = showToast; });
 
   // 编辑打开时异步回填明细行（formFromRow 是同步的，无法在其中 await）
   useEffect(() => {
     if (!editing || !planId) return;
     let cancelled = false;
-    setItemsLoading(true);
     (async () => {
       try {
         const page = await apiRequest<Page<PlanItemRow>>(`/resources/treatmentPlanItems?planId=${planId}&page=1&pageSize=100`);
@@ -57,7 +59,7 @@ export function PlanFormFields({
         if (!cancelled) showToastRef.current(errorMessage(error, '加载明细失败'), 'error');
       } finally {
         if (!cancelled) {
-          setItemsLoading(false);
+          setItemsLoaded(true);
           onItemsLoadedRef.current();
         }
       }

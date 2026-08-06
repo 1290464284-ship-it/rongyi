@@ -4,7 +4,7 @@ import { apiRequest } from '../api';
 import { SearchableSelect } from '../components';
 import type { Page } from '../types';
 import { newItem } from './items';
-import type { ProcessingItemForm, ProcessingOrderForm, ProcessingOrderItemRow } from './types';
+import type { ProcessingOrderForm, ProcessingOrderItemRow } from './types';
 
 export function ProcessingOrderFormFields({
   form,
