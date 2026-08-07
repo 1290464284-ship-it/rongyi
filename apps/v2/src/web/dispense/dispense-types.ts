@@ -1,4 +1,4 @@
-import { todayLocalDate } from '../format';
+import { todayLocalDate } from '../lib/format';
 
 export interface DispenseRow extends Record<string, unknown> {
   id: string;

@@ -1,5 +1,5 @@
 // label 字典统一集中在 ../labels.ts（M-03），此处 re-export 保持旧导入路径不变。
-export { CHARGE_STATUS_LABELS as STATUS_LABELS, PAY_METHOD_LABELS as METHOD_LABELS } from '../labels';
+export { CHARGE_STATUS_LABELS as STATUS_LABELS, PAY_METHOD_LABELS as METHOD_LABELS } from '../lib/labels';
 
 export interface ChargeRow extends Record<string, unknown> {
   id: string;

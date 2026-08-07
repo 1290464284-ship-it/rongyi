@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest } from '../api';
+import { apiRequest } from '../lib/api';
 import { LoadingState, PageError } from '../components';
-import { formatMoney } from '../format';
-import { errorMessage } from '../messages';
-import { useToast } from '../toast-context';
-import type { Page } from '../types';
+import { formatMoney } from '../lib/format';
+import { errorMessage } from '../lib/messages';
+import { useToast } from '../lib/toast-context';
+import type { Page } from '../lib/types';
 import { PLAN_DISCOUNT_LABELS, type PlanItemRow, type PlanRow } from './plan-types';
 
 export function PlanBillingDialog({

@@ -4,4 +4,4 @@ export {
   FOLLOW_UP_STATUS_LABELS,
   DENTITION_LABELS,
   CHIEF_MARK_LABELS,
-} from '../labels';
+} from '../lib/labels';

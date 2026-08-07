@@ -1,7 +1,7 @@
 import { useState, type Dispatch, type SetStateAction } from 'react';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
-import { apiRequest } from '../api';
-import type { Page } from '../types';
+import { apiRequest } from '../lib/api';
+import type { Page } from '../lib/types';
 import {
   ConfirmDialog,
   DataTable,
@@ -9,12 +9,12 @@ import {
   PageError,
   type DataTableColumn,
 } from '../components';
-import { formatDateTime } from '../format';
-import { errorMessage } from '../messages';
-import { useToast } from '../toast-context';
+import { formatDateTime } from '../lib/format';
+import { errorMessage } from '../lib/messages';
+import { useToast } from '../lib/toast-context';
 import { BatchSelect, DispenseEditDialog } from './DispenseEditDialog';
 import type { DispenseDetail, DispenseDetailItem, DispenseRow } from './dispense-types';
-import { DISPENSE_STATUS_LABELS } from '../labels';
+import { DISPENSE_STATUS_LABELS } from '../lib/labels';
 
 /** 发药单列表区：分页、行内发药/退药面板、编辑与删除确认；列表查询与分页状态由页面传入。 */
 export function DispenseListPanel({

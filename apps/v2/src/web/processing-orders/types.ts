@@ -2,7 +2,7 @@
 export {
   PROCESSING_ORDER_STATUS_LABELS as STATUS_LABELS,
   PROCESSING_FLOW_STATUS_LABELS as FLOW_STATUS_LABELS,
-} from '../labels';
+} from '../lib/labels';
 
 // FLOW_STATUSES 是枚举值列表（供类型推导与遍历使用），不属于 label 文案，保留在本文件。
 export const FLOW_STATUSES = ['PENDING', 'IN_PROGRESS', 'DONE'] as const;

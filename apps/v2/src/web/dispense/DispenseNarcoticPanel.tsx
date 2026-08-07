@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest } from '../api';
+import { apiRequest } from '../lib/api';
 import {
   ConfirmDialog,
   DataTable,
@@ -10,8 +10,8 @@ import {
   SearchableSelect,
   type DataTableColumn,
 } from '../components';
-import { errorMessage } from '../messages';
-import { useToast } from '../toast-context';
+import { errorMessage } from '../lib/messages';
+import { useToast } from '../lib/toast-context';
 import { emptyNarcoticForm, type NarcoticForm } from './dispense-types';
 
 /** 麻药登记面板：登记表单与登记记录列表，narcotics 查询、表单状态与删除/编辑逻辑均在本面板内部。 */

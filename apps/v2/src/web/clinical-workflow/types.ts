@@ -1,5 +1,5 @@
 // label 字典统一集中在 ../labels.ts（M-03），此处 re-export 保持旧导入路径不变。
-export { CLINICAL_STATUS_LABELS as STATUS_LABELS } from '../labels';
+export { CLINICAL_STATUS_LABELS as STATUS_LABELS } from '../lib/labels';
 
 export interface TodayData {
   date?: string;
