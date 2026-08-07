@@ -843,6 +843,11 @@ describe('application services', () => {
     expect(session.refreshToken).toBeDefined();
     const refreshed = await service.refresh(session.refreshToken);
     expect(refreshed.refreshToken).not.toBe(session.refreshToken);
+    // B-M9：轮换成功后旧 token 进入 5 秒窗口缓存（并发刷新共享同一新会话），
+    // 窗口内重复 refresh 返回同一会话；窗口过后重放才触发 RFC 6819 吊销。
+    const replayed = await service.refresh(session.refreshToken);
+    expect(replayed.refreshToken).toBe(refreshed.refreshToken);
+    await new Promise((resolve) => setTimeout(resolve, 5100));
     const versionBeforeReplay = (db.prepare("SELECT tokenVersion FROM User WHERE username = 'admin'").get() as { tokenVersion: number }).tokenVersion;
     await expect(service.refresh(session.refreshToken)).rejects.toThrow('Invalid refresh token');
     // M5：重用检测后按 RFC 6819 吊销整个会话族——轮换出的 refresh token 也失效，且当前 refresh token 被清除、tokenVersion 递增
@@ -855,7 +860,7 @@ describe('application services', () => {
     expect(afterReplay.tokenVersion).toBe(versionBeforeReplay + 1);
     await service.logout(refreshed.refreshToken);
     await expect(service.refresh(refreshed.refreshToken)).rejects.toThrow('Invalid refresh token');
-  });
+  }, 15000);
 
   it('maps create-user unique races to conflict errors', async () => {
     const repo = {
@@ -883,6 +888,41 @@ describe('application services', () => {
       name: 'Down User',
       role: 'DOCTOR',
     }, context)).rejects.toThrow('database down');
+  });
+
+  it('restricts non-BOSS user creation to the creator clinic scope (S-L6)', async () => {
+    const auth = new AuthService(db);
+    // 第二个诊所（BOSS 可跨诊所创建并分配成员）
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+       VALUES ('clinic-v2-002', NULL, ?, ?, NULL, 'B', 'Branch Clinic', 1)`,
+    ).run(now, now);
+    // BOSS 在 clinic-v2-001 创建 DOCTOR（仅属于本诊所；BOSS 为全局管理员）
+    const doctor = await auth.createUser({
+      username: 'doctor-local',
+      password: 'password123',
+      name: 'Local Doctor',
+      role: 'DOCTOR',
+      clinicIds: ['clinic-v2-001'],
+    }, context);
+    // 负向：会话上下文指向自己未加入的诊所（例如被错误切换的 currentClinic）→ FORBIDDEN
+    const outsiderContext: AppContext = { ...context, userId: doctor.id, clinicId: 'clinic-v2-002', role: 'DOCTOR' };
+    await expect(auth.createUser({
+      username: 'outsider-user',
+      password: 'password123',
+      name: 'Outsider User',
+      role: 'DOCTOR',
+    }, outsiderContext)).rejects.toThrow('Cannot create users outside your clinic scope');
+    // 正向：DOCTOR 在自己的诊所范围内创建用户成功
+    const doctorInOwnClinic: AppContext = { ...context, userId: doctor.id, clinicId: 'clinic-v2-001', role: 'DOCTOR' };
+    const created = await auth.createUser({
+      username: 'inner-user',
+      password: 'password123',
+      name: 'Inner User',
+      role: 'DOCTOR',
+    }, doctorInOwnClinic);
+    expect(created.username).toBe('inner-user');
   });
 
   it('writes operation log entries', () => {

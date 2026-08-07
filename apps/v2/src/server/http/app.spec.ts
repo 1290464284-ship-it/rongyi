@@ -235,8 +235,14 @@ describe('HTTP app', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ clinicId: 'clinic-v2-002' })
       .expect(200);
+    // S-L8：上传响应里的签名 URL 是短期能力凭证，切换诊所后仍可读取（签名本身即授权）；
+    // 未签名 URL 仍走受保护路由，按租户隔离 → 诊所二看不到诊所一的文件。
     await request(app)
       .get(upload.body.data.url as string)
+      .set('Authorization', `Bearer ${switched.body.data.token}`)
+      .expect(200);
+    await request(app)
+      .get(`/api/v2/files/${upload.body.data.filename as string}`)
       .set('Authorization', `Bearer ${switched.body.data.token}`)
       .expect(404);
     const back = await request(app)
@@ -253,6 +259,55 @@ describe('HTTP app', () => {
       .set('x-file-name', 'fake.png')
       .send(Buffer.from('not-a-png'))
       .expect(400);
+  });
+
+  it('issues short-lived signed file URLs and rejects forged or expired signatures', async () => {
+    const upload = await request(app)
+      .post('/api/v2/files')
+      .set('Authorization', `Bearer ${token}`)
+      .set('content-type', 'image/png')
+      .set('x-file-name', 'signed.png')
+      .send(Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+      .expect(201);
+    const filename = upload.body.data.filename as string;
+
+    // 未认证无法签发签名 URL
+    await request(app).get(`/api/v2/files/${filename}/sign`).expect(401);
+
+    // 认证后可签发：返回签名 URL，且公共 GET（无需 Bearer）可直接读取
+    const signed = await request(app)
+      .get(`/api/v2/files/${filename}/sign`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(signed.body.data.url).toMatch(/^\/api\/v2\/files\/[a-f0-9-]{36}\.png\?exp=\d+&sig=[0-9a-f]{64}$/);
+    await request(app)
+      .get(signed.body.data.url as string)
+      .expect(200);
+
+    // 伪造签名：公共路由放行失败 → 落回受保护路由（无凭据 → 401）
+    await request(app)
+      .get(`/api/v2/files/${filename}?exp=${Date.now() + 60_000}&sig=deadbeef`)
+      .expect(401);
+    // 过期签名：同样落回受保护路由
+    await request(app)
+      .get(`/api/v2/files/${filename}?exp=${Date.now() - 60_000}&sig=deadbeef`)
+      .expect(401);
+
+    // 跨诊所无法签发（签发端点按租户过滤）
+    const switched = await request(app)
+      .post('/api/v2/auth/switch-clinic')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ clinicId: 'clinic-v2-002' })
+      .expect(200);
+    await request(app)
+      .get(`/api/v2/files/${filename}/sign`)
+      .set('Authorization', `Bearer ${switched.body.data.token}`)
+      .expect(404);
+    await request(app)
+      .post('/api/v2/auth/switch-clinic')
+      .set('Authorization', `Bearer ${switched.body.data.token}`)
+      .send({ clinicId: 'clinic-v2-001' })
+      .expect(200);
   });
 
   it('rejects unsupported file uploads and invalid file names', async () => {
@@ -458,6 +513,39 @@ describe('HTTP app', () => {
       .set('Authorization', `Bearer ${receptionToken}`)
       .send({})
       .expect(409);
+  });
+
+  it('forces wechatMessages created via generic CRUD to PENDING and strips send fields (S-L7)', async () => {
+    // 伪造"已发送"记录：客户端即使直传 status=SENT + sentAt/result 也必须被剥离，
+    // 落库状态恒为 PENDING，只有 send 服务能推进到 SENT/IN_PROGRESS。
+    const forged = await request(app)
+      .post('/api/v2/resources/wechatMessages')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        patientId: 'patient-demo-001',
+        type: 'TEXT',
+        content: 'forged sent record',
+        status: 'SENT',
+        sentAt: '2026-01-01T00:00:00.000Z',
+        result: 'ok:forged',
+      })
+      .expect(201);
+    const row = db.prepare('SELECT status, sentAt, result FROM WechatMessage WHERE id = ?').get(forged.body.data.id) as {
+      status: string;
+      sentAt: string | null;
+      result: string | null;
+    };
+    expect(row.status).toBe('PENDING');
+    expect(row.sentAt).toBeNull();
+    expect(row.result).toBeNull();
+    // 不带 status 创建也能成功（默认 PENDING），保持前端兼容
+    const bare = await request(app)
+      .post('/api/v2/resources/wechatMessages')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ patientId: 'patient-demo-001', type: 'TEXT', content: 'no status' })
+      .expect(201);
+    const bareRow = db.prepare('SELECT status FROM WechatMessage WHERE id = ?').get(bare.body.data.id) as { status: string };
+    expect(bareRow.status).toBe('PENDING');
   });
 
   it('sends a wechat message only once per Idempotency-Key', async () => {
@@ -802,8 +890,9 @@ describe('HTTP app', () => {
     await request(app).get('/api/v2/analytics/churn').set('Authorization', `Bearer ${token}`).expect(200);
     await request(app).get('/api/v2/analytics/doctor-anomalies').set('Authorization', `Bearer ${token}`).expect(200);
     await request(app).get('/api/v2/analytics/clinic-overview').set('Authorization', `Bearer ${token}`).expect(200);
-    await request(app).get(`/api/v2/sync/pull?since=2020-01-01T00:00:00.000Z&deviceId=http&deviceToken=${encodeURIComponent(deviceToken)}`)
+    await request(app).get(`/api/v2/sync/pull?since=2020-01-01T00:00:00.000Z&deviceId=http`)
       .set('Authorization', `Bearer ${token}`)
+      .set('X-Device-Token', deviceToken)
       .expect(200);
     await request(app).get('/api/v2/hr/attendance').set('Authorization', `Bearer ${token}`).expect(200);
     await request(app).get('/api/v2/system/business-alerts').set('Authorization', `Bearer ${token}`).expect(200);
@@ -1170,7 +1259,8 @@ describe('HTTP app', () => {
 
     await request(app).post('/api/v2/sync/push')
       .set('Authorization', `Bearer ${token}`)
-      .send({ deviceId: 'http', deviceToken, changes: [] })
+      .set('X-Device-Token', deviceToken)
+      .send({ deviceId: 'http', changes: [] })
       .expect(200);
   });
 

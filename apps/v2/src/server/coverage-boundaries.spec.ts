@@ -292,7 +292,11 @@ describe('coverage boundaries', () => {
     source.close();
     const logger = new Logger({ logDir: dataDir });
     const infoSpy = vi.spyOn(logger, 'info');
-    fs.writeFileSync(targetPath, 'existing');
+    // B-L6：backupSqliteFile 只对合法 SQLite 文件做 checkpoint + VACUUM INTO 备份；
+    // target 必须先是一个有效数据库，否则备份直接抛错（不再裸拷贝）。
+    const target = new DatabaseClass(targetPath);
+    target.exec('CREATE TABLE OldData (id TEXT PRIMARY KEY)');
+    target.close();
     const result = importLegacyDatabase(sourcePath, targetPath, logger);
     expect(result.imported).toBe(true);
     expect(result.backupCreated).toBeDefined();
