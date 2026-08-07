@@ -483,7 +483,7 @@ export function InventoryPage() {
         title="删除确认"
         message="确定删除该批次吗？"
         danger
-        onConfirm={() => void confirmDeleteBatch()}
+        onConfirm={() => confirmDeleteBatch()}
         onCancel={() => setDeleteTarget(null)}
       />
     </div>

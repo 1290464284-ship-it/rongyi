@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import { CrudPage } from './CrudPage';
-import { SearchableSelect, type DataTableColumn, type SearchableSelectRow } from './components';
+import { SearchableSelect, PromptDialog, type DataTableColumn, type SearchableSelectRow } from './components';
 import { formatMoney, centsToYuanString, toCents } from './format';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
@@ -290,6 +290,7 @@ function ReviewRowActions({
   showToast: (message: string, kind?: 'success' | 'error' | 'info') => void;
   onChanged: () => void;
 }) {
+  const [rejectOpen, setRejectOpen] = useState(false);
   const reviewStatus = String(row.reviewStatus ?? '');
   if (reviewStatus === 'PENDING') {
     return (
@@ -303,17 +304,38 @@ function ReviewRowActions({
   }
   if (reviewStatus === 'SUBMITTED') {
     return (
-      <span>
-        <button
-          disabled={reviewing}
-          onClick={() => void reviewAction(showToast, reload, setReviewing, onChanged, row.id, 'approve', '已通过审核')}
-        >
-          通过
-        </button>
-        <button disabled={reviewing} onClick={() => void rejectOrder(showToast, reload, setReviewing, onChanged, row.id)}>
-          驳回
-        </button>
-      </span>
+      <>
+        <span>
+          <button
+            disabled={reviewing}
+            onClick={() => void reviewAction(showToast, reload, setReviewing, onChanged, row.id, 'approve', '已通过审核')}
+          >
+            通过
+          </button>
+          <button disabled={reviewing} onClick={() => setRejectOpen(true)}>
+            驳回
+          </button>
+        </span>
+        <PromptDialog
+          key={rejectOpen ? 'open' : 'closed'}
+          open={rejectOpen}
+          title="驳回采购单"
+          message="请输入驳回原因"
+          value=""
+          placeholder="驳回原因"
+          confirmText="确认驳回"
+          cancelText="取消"
+          onSubmit={(reason) => {
+            if (!reason.trim()) {
+              showToast('驳回原因必填', 'error');
+              return;
+            }
+            setRejectOpen(false);
+            void reviewAction(showToast, reload, setReviewing, onChanged, row.id, 'reject', '已驳回', { reason: reason.trim() });
+          }}
+          onCancel={() => setRejectOpen(false)}
+        />
+      </>
     );
   }
   if (reviewStatus === 'REJECTED') {
@@ -353,22 +375,6 @@ async function reviewAction(
   } finally {
     setReviewing(false);
   }
-}
-
-function rejectOrder(
-  showToast: (message: string, kind?: 'success' | 'error' | 'info') => void,
-  reload: () => Promise<unknown>,
-  setReviewing: (value: boolean) => void,
-  onChanged: () => void,
-  id: string,
-) {
-  const reason = window.prompt('请输入驳回原因', '');
-  if (reason === null) return;
-  if (!reason.trim()) {
-    showToast('驳回原因必填', 'error');
-    return;
-  }
-  void reviewAction(showToast, reload, setReviewing, onChanged, id, 'reject', '已驳回', { reason: reason.trim() });
 }
 
 async function receivePurchase(

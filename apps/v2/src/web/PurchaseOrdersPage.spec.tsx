@@ -142,8 +142,9 @@ describe('PurchaseOrdersPage', () => {
     mockData('PENDING', 'SUBMITTED');
     render(<PurchaseOrdersPage />, { wrapper });
     await screen.findByText('PO-1');
-    const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('单价过高');
     fireEvent.click(screen.getByRole('button', { name: '驳回' }));
+    fireEvent.change(screen.getByPlaceholderText('驳回原因'), { target: { value: '单价过高' } });
+    fireEvent.click(screen.getByText('确认驳回'));
     await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith(
         '/purchase-orders/po-1/reject',
@@ -151,24 +152,24 @@ describe('PurchaseOrdersPage', () => {
       );
     });
     expect(await screen.findByText('已驳回')).toBeDefined();
-    promptSpy.mockRestore();
   });
 
-  it('skips rejection when prompt is cancelled and rejects empty reason', async () => {
+  it('skips rejection when the dialog is cancelled and rejects empty reason', async () => {
     mockData('PENDING', 'SUBMITTED');
     render(<PurchaseOrdersPage />, { wrapper });
     await screen.findByText('PO-1');
 
-    const cancelSpy = vi.spyOn(window, 'prompt').mockReturnValue(null);
+    // 取消：关闭对话框且不发起请求
     fireEvent.click(screen.getByRole('button', { name: '驳回' }));
+    fireEvent.click(screen.getByText('取消'));
+    expect(screen.queryByRole('dialog')).toBeNull();
     expect(apiRequest).not.toHaveBeenCalledWith('/purchase-orders/po-1/reject', expect.anything());
-    cancelSpy.mockRestore();
 
-    const emptySpy = vi.spyOn(window, 'prompt').mockReturnValue('   ');
+    // 空原因：提示必填且不发起请求，对话框保持打开
     fireEvent.click(screen.getByRole('button', { name: '驳回' }));
+    fireEvent.click(screen.getByText('确认驳回'));
     expect(await screen.findByText('驳回原因必填')).toBeDefined();
     expect(apiRequest).not.toHaveBeenCalledWith('/purchase-orders/po-1/reject', expect.anything());
-    emptySpy.mockRestore();
   });
 
   it('reopens a rejected order', async () => {

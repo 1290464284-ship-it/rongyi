@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router';
 import { apiRequest } from './api';
 import type { Page } from './types';
 import { LoadingState, PageError, SearchableSelect, type SearchableSelectRow } from './components';
+import { formatMoney } from './format';
 
 interface TimelineEvent {
   id: string;
@@ -128,7 +129,7 @@ export function PatientTimelinePage() {
               <time>{event.time}</time>
             </div>
             <strong>{event.title}</strong>
-            <p>{event.status ?? ''}{event.amount === undefined ? '' : ` · ${String(event.amount)}`}</p>
+            <p>{event.status ?? ''}{event.amount === undefined || event.amount === null ? '' : ` · ${formatMoney(event.amount)}`}</p>
           </article>
         ))}
         {events.length === 0 && <p className="empty-board">暂无时间线记录</p>}
