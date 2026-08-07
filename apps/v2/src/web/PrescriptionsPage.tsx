@@ -207,9 +207,12 @@ export function PrescriptionsPage() {
             ? '请选择患者、医生并至少填写一条有效处方明细'
             : null
         }
-        submitOverride={({ form, editing }) =>
-          editing ? updatePrescription(form, editingIdRef.current) : createPrescription(form)
-        }
+        submitOverride={({ form, editing }) => {
+          // L1：与采购单一致，填了名称但数量/单价无效的明细会被静默丢弃，提交前提示
+          const dropped = form.items.filter((item) => item.name.trim()).length - validItems(form).length;
+          if (dropped > 0) showToast(`${dropped} 条明细因数量或单价无效将被忽略`, 'info');
+          return editing ? updatePrescription(form, editingIdRef.current) : createPrescription(form);
+        }}
         messages={{ create: '处方已创建', update: '处方已更新', delete: '处方已删除' }}
         errorMessages={{ create: '创建处方失败', update: '更新处方失败', delete: '删除处方失败' }}
         deleteOverride={async (row) => {
@@ -457,9 +460,16 @@ function PrescriptionForm({ form, update, editing }: { form: PrescriptionForm; u
         患者
         <SearchableSelect resource="patients" value={form.patientId} onChange={(id) => update({ patientId: id })} ariaLabel="患者" placeholder="选择患者" />
       </label>
+      {/* L4：/doctors 加载失败时行内提示并支持重试，避免静默空列表 */}
+      {doctors.isError && (
+        <div className="query-section-error">
+          <p className="error">医生列表加载失败</p>
+          <button type="button" onClick={() => void doctors.refetch()}>重试</button>
+        </div>
+      )}
       <label>
         医生
-        <select value={form.doctorId} onChange={(event) => update({ doctorId: event.target.value })}>
+        <select value={form.doctorId} onChange={(event) => update({ doctorId: event.target.value })} disabled={doctors.isError}>
           <option value="">选择医生</option>
           {doctors.data?.map((row) => (
             <option key={String(row.id)} value={String(row.id)}>{String(row.name ?? row.id)}</option>

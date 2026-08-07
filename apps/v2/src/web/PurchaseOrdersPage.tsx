@@ -273,8 +273,9 @@ function ReviewSummaryBar({ refreshKey }: { refreshKey: number }) {
   });
   return (
     <div className="tracking-overview" aria-label="采购审核汇总">
-      <span className="tracking-chip">待审核 {query.data?.submitted ?? 0} 单</span>
-      <span className="tracking-chip">待收货 {query.data?.approved ?? 0} 单</span>
+      {/* L3：首屏加载中显示占位符，避免「0 单」闪烁误导；刷新期间沿用旧数据 */}
+      <span className="tracking-chip">待审核 {query.isLoading ? '—' : `${query.data?.submitted ?? 0} 单`}</span>
+      <span className="tracking-chip">待收货 {query.isLoading ? '—' : `${query.data?.approved ?? 0} 单`}</span>
     </div>
   );
 }
@@ -418,11 +419,14 @@ function PurchaseOrderFormFields({
 }) {
   const loadedItemsForRef = useRef<string | null>(null);
   const [itemsError, setItemsError] = useState<string | null>(null);
+  // L2：明细异步回填完成前禁用编辑区，避免整表覆盖用户正在输入的内容（竞态）
+  const [itemsLoading, setItemsLoading] = useState(false);
   useEffect(() => {
     if (!editing || !editingId || loadedItemsForRef.current === editingId) return;
     let cancelled = false;
     loadedItemsForRef.current = editingId;
     setItemsError(null);
+    setItemsLoading(true);
     fetchAllPages<PurchaseOrderItemRow>(`/resources/purchaseOrderItems?orderId=${editingId}`)
       .then((rows) => {
         if (cancelled) return;
@@ -440,6 +444,9 @@ function PurchaseOrderFormFields({
       })
       .catch(() => {
         if (!cancelled) setItemsError('明细加载失败，请关闭后重试');
+      })
+      .finally(() => {
+        if (!cancelled) setItemsLoading(false);
       });
     return () => {
       cancelled = true;
@@ -462,7 +469,8 @@ function PurchaseOrderFormFields({
         />
       </label>
       {itemsError && <p className="error">{itemsError}</p>}
-      {form.items.map((item) => (
+      {itemsLoading && <p className="page-state">明细加载中...</p>}
+      {!itemsLoading && form.items.map((item) => (
         <div className="charge-item-row" key={item.id}>
           <SearchableSelect
             resource="inventoryItems"
@@ -477,7 +485,7 @@ function PurchaseOrderFormFields({
           <button type="button" onClick={() => update({ items: form.items.filter((entry) => entry.id !== item.id) })}>移除</button>
         </div>
       ))}
-      <button type="button" onClick={() => update({ items: [...form.items, newItem()] })}>添加明细</button>
+      <button type="button" disabled={itemsLoading} onClick={() => update({ items: [...form.items, newItem()] })}>添加明细</button>
     </>
   );
 }
