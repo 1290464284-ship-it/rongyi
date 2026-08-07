@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>登录 · 蓉易口腔诊所</title>
+<link rel="stylesheet" href="assets/css/styles.css">
+</head>
+<body data-page="login">
+<div class="login-wrap">
+  <!-- 左：品牌区 -->
+  <div class="login-brand">
+    <span class="logo" style="margin-bottom:20px;"></span>
+    <h1>蓉易口腔诊所</h1>
+    <p>洁净口腔 · 专业呵护，让每一次就诊都安心</p>
+  </div>
+  <!-- 右：登录卡 -->
+  <div class="login-panel">
+    <div class="card login-card">
+      <h3 style="font-size:18px;font-weight:700;margin-bottom:4px;">登录</h3>
+      <p style="font-size:11.5px;color:var(--muted);margin-bottom:20px;">请使用诊所账号登录管理系统</p>
+      <form id="login-form" onsubmit="event.preventDefault(); location.href='dashboard.html';">
+        <div class="field" style="margin-bottom:14px;">
+          <label>账号</label>
+          <input type="text" id="login-account" value="admin" autocomplete="username">
+        </div>
+        <div class="field" style="margin-bottom:6px;">
+          <label>密码</label>
+          <input type="password" id="login-password" value="REDACTED" autocomplete="current-password">
+        </div>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);margin:10px 0 18px;cursor:pointer;">
+          <input type="checkbox" checked style="accent-color:var(--primary);width:14px;height:14px;"> 记住我
+        </label>
+        <button type="submit" class="btn btn-primary" style="width:100%;height:36px;">登 录</button>
+        <p style="text-align:center;font-size:11px;color:var(--muted);margin-top:20px;">蓉易口腔诊所 · 管理系统</p>
+      </form>
+    </div>
+  </div>
+</div>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/app.js"></script>
+</body>
+</html>

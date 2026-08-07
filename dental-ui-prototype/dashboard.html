@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>今日工作台 · 蓉易口腔诊所</title>
+<link rel="stylesheet" href="assets/css/styles.css">
+</head>
+<body data-page="dashboard">
+<div class="layout">
+
+  <!-- ===== 侧边导航（9 顶级菜单） ===== -->
+  <aside class="sidebar">
+    <div class="sidebar-brand"><span class="logo"></span>蓉易口腔诊所</div>
+    <div class="sidebar-group">常用</div>
+    <a class="nav-item" data-nav="dashboard" href="dashboard.html">工作台</a>
+    <a class="nav-item" data-nav="patients" href="patients.html">患者与预约</a>
+    <a class="nav-item" data-nav="treatment-plan" href="treatment-plan.html">临床记录</a>
+    <a class="nav-item" data-nav="billing" href="billing.html">财务中心</a>
+    <a class="nav-item" href="#">库存与采购</a>
+    <div class="sidebar-group">更多</div>
+    <a class="nav-item" href="#">经营分析</a>
+    <a class="nav-item" href="#">随访与沟通</a>
+    <a class="nav-item" href="#">人事与设备</a>
+    <a class="nav-item" href="#">系统管理</a>
+  </aside>
+
+  <div style="flex:1;display:flex;flex-direction:column;min-width:0;">
+
+    <!-- ===== 顶栏 ===== -->
+    <header class="topbar">
+      <div>
+        <div class="topbar-title">今日工作台</div>
+        <div class="topbar-sub">2026年8月6日 周四 · 3 位医生出诊 · 2 间诊室可用</div>
+      </div>
+      <input class="topbar-search" type="search" placeholder="搜索患者 / 项目 / 单号…">
+      <button class="btn btn-primary" data-open-modal="#modal-appointment" style="margin-left:auto;">+ 新建预约</button>
+      <div class="topbar-user"><span class="avatar"></span>前台 · 王丽</div>
+    </header>
+
+    <main class="content">
+
+      <!-- ===== 4 张统计卡 ===== -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;">
+        <div class="stat-card"><div class="stat-value num">18</div><div class="stat-label">今日预约</div></div>
+        <div class="stat-card"><div class="stat-value num">12</div><div class="stat-label">已接诊</div></div>
+        <div class="stat-card"><div class="stat-value num">6</div><div class="stat-label">待接诊</div></div>
+        <div class="stat-card"><div class="stat-value num">¥8,640</div><div class="stat-label">今日营收 <span class="stat-trend">▲ 12%</span></div></div>
+      </div>
+
+      <!-- ===== 时间线 + 提醒 ===== -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+            <h3 style="margin:0;">接下来 1 小时 · 预约</h3>
+            <a class="btn btn-text btn-sm" href="schedule.html">查看全部排班 →</a>
+          </div>
+          <ul class="timeline" id="today-timeline"></ul>
+        </div>
+        <div class="card">
+          <h3>今日提醒</h3>
+          <div class="reminder-row warn"><span class="reminder-dot"></span><div><div>3 位患者等待缴费</div><div class="reminder-text">共 ¥3,650，已超过 1 天未处理</div></div></div>
+          <div class="reminder-row warn"><span class="reminder-dot"></span><div><div>库存：麻药余量偏低</div><div class="reminder-text">阿替卡因 4% 余 12 支，低于安全库存 20 支</div></div></div>
+          <div class="reminder-row danger"><span class="reminder-dot"></span><div><div>2 条回访待跟进</div><div class="reminder-text">种植术后第 7 天电话回访（王秀英 / 周建军）</div></div></div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- ===== 新建预约弹窗 ===== -->
+<div class="modal-mask" id="modal-appointment">
+  <div class="modal">
+    <div class="modal-head"><h3>新建预约</h3><button class="btn btn-text" data-close-modal="modal-appointment">✕</button></div>
+    <form id="appointment-form" class="modal-body" style="display:block;">
+      <div class="form-grid">
+        <div class="field"><label>患者 <span class="req">*</span></label><input placeholder="姓名或手机号"></div>
+        <div class="field"><label>医生 <span class="req">*</span></label><select id="appt-doctor"><option>王建国</option><option>刘敏</option><option>陈晓东</option></select></div>
+        <div class="field"><label>日期 <span class="req">*</span></label><input type="date" value="2026-08-06"></div>
+        <div class="field"><label>时间 <span class="req">*</span></label><input type="time" value="09:00"></div>
+        <div class="field"><label>项目 <span class="req">*</span></label><input placeholder="如：洁牙、根管治疗"></div>
+        <div class="field"><label>时长</label><select><option>20 分钟</option><option>30 分钟</option><option>40 分钟</option><option selected>60 分钟</option></select></div>
+      </div>
+    </form>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" data-close-modal="modal-appointment">取消</button>
+      <button class="btn btn-primary" id="appointment-save">保存预约</button>
+    </div>
+  </div>
+</div>
+
+<script src="assets/js/data.js"></script>
+<script src="assets/js/app.js"></script>
+<script>
+/* 时间线渲染：DATA.appointments 前 3 条 */
+(function () {
+  const STATUS = { done: ['badge-success', '已完成'], active: ['badge-active', '治疗中'], info: ['badge-info', '待接诊'] };
+  const tl = document.getElementById('today-timeline');
+  DATA.appointments.slice(0, 3).forEach(a => {
+    const li = document.createElement('li');
+    li.className = 'tl-row';
+    const [b, txt] = STATUS[a.status];
+    li.innerHTML = '<span class="tl-time">' + a.time + '</span>' +
+      '<span class="tl-name">' + a.name + '</span>' +
+      '<span class="tl-desc">' + a.item + ' · ' + a.doctor + '</span>' +
+      '<span class="badge ' + b + '">' + txt + '</span>';
+    tl.appendChild(li);
+  });
+
+  /* 新建预约：保存 → toast + 关闭 */
+  document.getElementById('appointment-save').addEventListener('click', () => {
+    showToast('预约已创建（原型演示）');
+    closeModal('modal-appointment');
+  });
+})();
+</script>
+</body>
+</html>
