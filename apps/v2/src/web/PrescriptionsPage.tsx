@@ -307,25 +307,29 @@ async function updatePrescription(form: PrescriptionForm, prescriptionId: string
     .filter((item) => item.name.trim() && item.days && item.quantity && item.price)
     .map((item) => ({ id: item.id, payload: itemPayload(item) }))
     .filter((entry) => entry.payload.days > 0 && entry.payload.quantity > 0 && entry.payload.price >= 0);
-  for (const { id, payload } of items) {
-    if (existingIds.has(id)) {
-      await apiRequest(`/resources/prescriptionItems/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify(payload),
-      });
-    } else {
-      await apiRequest('/resources/prescriptionItems', {
-        method: 'POST',
-        body: JSON.stringify({ prescriptionId, ...payload }),
-      });
+  try {
+    for (const { id, payload } of items) {
+      if (existingIds.has(id)) {
+        await apiRequest(`/resources/prescriptionItems/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        });
+      } else {
+        await apiRequest('/resources/prescriptionItems', {
+          method: 'POST',
+          body: JSON.stringify({ prescriptionId, ...payload, requestId: crypto.randomUUID() }),
+        });
+      }
     }
-  }
-  // 表单中已移除的明细 → DELETE
-  for (const row of existing) {
-    const id = String(row.id);
-    if (!form.items.some((item) => item.id === id)) {
-      await apiRequest(`/resources/prescriptionItems/${id}`, { method: 'DELETE' });
+    // 表单中已移除的明细 → DELETE
+    for (const row of existing) {
+      const id = String(row.id);
+      if (!form.items.some((item) => item.id === id)) {
+        await apiRequest(`/resources/prescriptionItems/${id}`, { method: 'DELETE' });
+      }
     }
+  } catch (error) {
+    throw new Error(`${errorMessage(error, '同步处方明细失败')}；部分明细可能未保存，请核对后重试`);
   }
 }
 

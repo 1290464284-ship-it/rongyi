@@ -74,6 +74,7 @@ export async function reconcileProcessingItems(orderId: string, items: Processin
           unitPrice,
           subtotal: Math.round(unitPrice * quantity),
           status: 'DRAFT',
+          requestId: crypto.randomUUID(),
         }),
       });
     }
