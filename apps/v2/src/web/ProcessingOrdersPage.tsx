@@ -231,19 +231,23 @@ export function ProcessingOrdersPage() {
           if (editing) {
             const orderId = editingIdRef.current;
             if (!orderId) throw new Error('缺少编辑记录 ID');
-            await apiRequest(`/resources/processingOrders/${orderId}`, {
-              method: 'PATCH',
-              body: JSON.stringify({
-                patientId: form.patientId,
-                doctorId: form.doctorId || undefined,
-                number: form.number.trim(),
-                shade: form.shade || undefined,
-                teethNumbers: splitList(form.teethNumbers),
-                totalFee: toCents(form.totalFee) || calculatedTotalFee,
-                status: editingStatusRef.current ?? 'DRAFT',
-              }),
-            });
-            await reconcileProcessingItems(orderId, form.items);
+            try {
+              await apiRequest(`/resources/processingOrders/${orderId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({
+                  patientId: form.patientId,
+                  doctorId: form.doctorId || undefined,
+                  number: form.number.trim(),
+                  shade: form.shade || undefined,
+                  teethNumbers: splitList(form.teethNumbers),
+                  totalFee: toCents(form.totalFee) || calculatedTotalFee,
+                  status: editingStatusRef.current ?? 'DRAFT',
+                }),
+              });
+              await reconcileProcessingItems(orderId, form.items);
+            } catch (error) {
+              throw new Error(`${errorMessage(error, '更新加工单失败')}；部分明细可能未保存，请核对后重试`);
+            }
             return;
           }
           await apiRequest('/processing-orders', {
