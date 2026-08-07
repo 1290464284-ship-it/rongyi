@@ -514,9 +514,13 @@ a {
 }
 
 .page > h1:first-child,
-.hub > h1:first-child,
 .page > .page-head:first-child {
   margin-bottom: 16px;
+}
+
+.hub > h1:first-child,
+.hub > .page-head:first-child {
+  margin-bottom: 4px;
 }
 
 .page-head h1 {
@@ -548,6 +552,10 @@ a {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   margin-bottom: 16px;
+}
+
+.hub .tabs {
+  margin-bottom: 12px;
 }
 
 .tab {

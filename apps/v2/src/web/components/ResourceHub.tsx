@@ -41,7 +41,7 @@ export function ResourceHub({ title, tabs }: { title: string; tabs: HubTab[] }) 
 
   return (
     <div className="hub">
-      <h1>{title}</h1>
+      <div className="page-head"><h1>{title}</h1></div>
       <div className="tabs" role="tablist" aria-label={title}>
         {visibleTabs.map((tab, index) => (
           <button

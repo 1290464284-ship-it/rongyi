@@ -100,7 +100,7 @@ function ReadOnlyListPage({ title, endpoint }: { title: string; endpoint: string
   }));
   return (
     <div className="page">
-      <h1>{title}</h1>
+      <div className="page-head"><h1>{title}</h1></div>
       <DataTable columns={dataColumns} rows={rows} emptyText="暂无数据" />
     </div>
   );
