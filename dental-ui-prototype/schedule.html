@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>预约排班 · 蓉易口腔诊所</title>
+<link rel="stylesheet" href="assets/css/styles.css">
+</head>
+<body data-page="schedule">
+<div class="layout">
+
+  <!-- ===== 侧边导航（9 顶级菜单） ===== -->
+  <aside class="sidebar">
+    <div class="sidebar-brand"><span class="logo"></span>蓉易口腔诊所</div>
+    <div class="sidebar-group">常用</div>
+    <a class="nav-item" data-nav="dashboard" href="dashboard.html">工作台</a>
+    <a class="nav-item" data-nav="patients" href="patients.html">患者与预约</a>
+    <a class="nav-item" data-nav="treatment-plan" href="treatment-plan.html">临床记录</a>
+    <a class="nav-item" data-nav="billing" href="billing.html">财务中心</a>
+    <a class="nav-item" href="#">库存与采购</a>
+    <div class="sidebar-group">更多</div>
+    <a class="nav-item" href="#">经营分析</a>
+    <a class="nav-item" href="#">随访与沟通</a>
+    <a class="nav-item" href="#">人事与设备</a>
+    <a class="nav-item" href="#">系统管理</a>
+  </aside>
+
+  <div style="flex:1;display:flex;flex-direction:column;min-width:0;">
+
+    <!-- ===== 顶栏 ===== -->
+    <header class="topbar">
+      <div>
+        <div class="topbar-title">预约排班</div>
+        <div class="topbar-sub">医生日程 · 诊室安排</div>
+      </div>
+      <input class="topbar-search" type="search" placeholder="搜索患者 / 项目 / 单号…">
+      <div class="topbar-user" style="margin-left:auto;"><span class="avatar"></span>前台 · 王丽</div>
+    </header>
+
+    <main class="content">
+
+      <!-- ===== 工具行：日期切换 + 日/周 + 筛选 + 新建 ===== -->
+      <div class="page-head">
+        <div style="display:flex;align-items:center;gap:6px;">
+          <button class="btn btn-text" style="font-size:15px;">←</button>
+          <span style="font-size:14px;font-weight:600;">2026年8月6日 周四</span>
+          <button class="btn btn-text" style="font-size:15px;">→</button>
+          <div class="tabs" data-tab-group="view" style="margin:0 0 0 14px;border-bottom:none;">
+            <button class="tab active" data-tab="day">日</button>
+            <button class="tab" data-tab="week">周</button>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <select style="height:32px;border:1px solid var(--border);border-radius:8px;padding:0 10px;font-size:13px;font-family:var(--font);color:var(--text);background:var(--surface);outline:none;">
+            <option>全部医生</option><option>王建国</option><option>刘敏</option><option>陈晓东</option>
+          </select>
+          <select style="height:32px;border:1px solid var(--border);border-radius:8px;padding:0 10px;font-size:13px;font-family:var(--font);color:var(--text);background:var(--surface);outline:none;">
+            <option>全部诊室</option><option>诊室 1</option><option>诊室 2</option>
+          </select>
+          <button class="btn btn-primary" data-open-modal="#modal-appointment">+ 新建预约</button>
+        </div>
+      </div>
+
+      <!-- ===== 日视图：医生分栏时间轴 ===== -->
+      <div data-panel-group="view" data-panel="day">
+        <div class="schedule" id="schedule-grid"></div>
+      </div>
+
+      <!-- ===== 周视图（占位） ===== -->
+      <div data-panel-group="view" data-panel="week" style="display:none;">
+        <div class="card"><div class="empty">周视图（原型演示）· 将展示一周 7 天的医生排班总览</div></div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- ===== 新建预约弹窗 ===== -->
+<div class="modal-mask" id="modal-appointment">
+  <div class="modal">
+    <div class="modal-head"><h3>新建预约</h3><button class="btn btn-text" data-close-modal="modal-appointment">✕</button></div>
+    <form id="appointment-form" class="modal-body" style="display:block;" novalidate>
+      <div class="form-grid">
+        <div class="field"><label>患者 <span class="req">*</span></label><input placeholder="姓名或手机号"></div>
+        <div class="field"><label>医生 <span class="req">*</span></label><select><option>王建国</option><option>刘敏</option><option>陈晓东</option></select></div>
+        <div class="field"><label>日期 <span class="req">*</span></label><input type="date" value="2026-08-06"></div>
+        <div class="field"><label>时间 <span class="req">*</span></label><input type="time" value="09:00"></div>
+        <div class="field"><label>项目 <span class="req">*</span></label><input placeholder="如：洁牙、根管治疗"></div>
+        <div class="field"><label>时长</label><select><option>20 分钟</option><option>30 分钟</option><option>40 分钟</option><option selected>60 分钟</option></select></div>
+      </div>
+    </form>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" data-close-modal="modal-appointment">取消</button>
+      <button class="btn btn-primary" id="appointment-save">保存预约</button>
+    </div>
+  </div>
+</div>
+
+<script src="assets/js/data.js"></script>
+<script src="assets/js/app.js"></script>
+<script>
+/* 排班渲染：3 位医生分栏，08:00–18:00 每小时一行，预约块按状态着色 */
+(function () {
+  const STATUS = { done: 'done', active: 'active', info: '' };
+  const grid = document.getElementById('schedule-grid');
+  const HOURS = [];
+  for (let h = 8; h <= 18; h++) HOURS.push((h < 10 ? '0' : '') + h + ':00');
+
+  DATA.doctors.forEach(doc => {
+    const col = document.createElement('div');
+    col.className = 'sched-col';
+    const hours = document.createElement('div');
+    hours.className = 'sched-hours';
+    const rows = {};
+    HOURS.forEach(hh => {
+      const row = document.createElement('div');
+      row.className = 'sched-hour';
+      row.innerHTML = '<span class="h">' + hh + '</span><div class="sched-blocks"></div>';
+      rows[hh.slice(0, 2)] = row.querySelector('.sched-blocks');
+      hours.appendChild(row);
+    });
+    DATA.appointments
+      .filter(a => a.doctor === doc.name)
+      .forEach(a => {
+        const b = document.createElement('span');
+        b.className = 'appt-block ' + STATUS[a.status];
+        b.innerHTML = '<span class="t">' + a.time + '</span> ' + a.name + ' · ' + a.item + ' · ' + a.dur + 'min';
+        const key = a.time.slice(0, 2);
+        if (rows[key]) rows[key].appendChild(b);
+      });
+    col.innerHTML = '<div class="sched-doc"><span class="name">' + doc.name + '</span><span class="title">' + doc.title + ' · ' + doc.dept + '</span><span class="dot" title="出诊中"></span></div>';
+    col.appendChild(hours);
+    grid.appendChild(col);
+  });
+
+  /* 新建预约：保存 → toast + 关闭 */
+  document.getElementById('appointment-save').addEventListener('click', () => {
+    showToast('预约已创建（原型演示）');
+    closeModal('modal-appointment');
+  });
+})();
+</script>
+</body>
+</html>

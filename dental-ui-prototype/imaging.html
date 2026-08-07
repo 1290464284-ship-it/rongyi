@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>影像查看 · 蓉易口腔诊所</title>
+<link rel="stylesheet" href="assets/css/styles.css">
+</head>
+<body data-page="imaging">
+<div class="layout">
+
+  <!-- ===== 侧边导航（9 顶级菜单） ===== -->
+  <aside class="sidebar">
+    <div class="sidebar-brand"><span class="logo"></span>蓉易口腔诊所</div>
+    <div class="sidebar-group">常用</div>
+    <a class="nav-item" data-nav="dashboard" href="dashboard.html">工作台</a>
+    <a class="nav-item" data-nav="patients" href="patients.html">患者与预约</a>
+    <a class="nav-item" data-nav="treatment-plan" href="treatment-plan.html">临床记录</a>
+    <a class="nav-item" data-nav="billing" href="billing.html">财务中心</a>
+    <a class="nav-item" href="#">库存与采购</a>
+    <div class="sidebar-group">更多</div>
+    <a class="nav-item" href="#">经营分析</a>
+    <a class="nav-item" href="#">随访与沟通</a>
+    <a class="nav-item" href="#">人事与设备</a>
+    <a class="nav-item" href="#">系统管理</a>
+  </aside>
+
+  <div style="flex:1;display:flex;flex-direction:column;min-width:0;">
+
+    <!-- ===== 顶栏 ===== -->
+    <header class="topbar">
+      <div>
+        <div class="topbar-title">影像查看</div>
+        <div class="topbar-sub">患者：张丽华（P001）· 影像资料</div>
+      </div>
+      <input class="topbar-search" type="search" placeholder="搜索患者 / 项目 / 单号…">
+      <div class="topbar-user" style="margin-left:auto;"><span class="avatar"></span>前台 · 王丽</div>
+    </header>
+
+    <main class="content">
+
+      <div class="img-layout">
+
+        <!-- ===== 左：分组缩略图 ===== -->
+        <div class="card img-thumbs">
+          <div class="thumbs-head"><h3>影像列表</h3></div>
+          <div class="img-thumbs-body" id="img-thumbs-body"></div>
+        </div>
+
+        <!-- ===== 右：大图查看 ===== -->
+        <div class="card img-viewer">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <h3 style="margin:0;" id="viewer-title">全景片 2026-08-02</h3>
+            <span class="badge badge-info">全景片</span>
+          </div>
+          <div class="img-viewer-canvas" id="viewer-canvas">
+            <span class="ph-icon">🦷</span>
+            <span class="ph-title" id="viewer-ph-title">全景片 2026-08-02</span>
+            <span class="ph-note">影像示意（原型）· 实际接入 PACS 后显示 DICOM 影像</span>
+          </div>
+          <div class="img-info-row">
+            <span><span class="k">检查日期</span><span class="v" id="info-date">2026-08-02</span></span>
+            <span><span class="k">检查类型</span><span class="v" id="info-type">全景片</span></span>
+            <span><span class="k">牙位</span><span class="v" id="info-tooth">全口</span></span>
+            <span><span class="k">检查医生</span><span class="v">王建国</span></span>
+            <span style="flex:1;"></span>
+          </div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:12px;" id="info-note">全口情况良好，26 嵌体在位</div>
+          <div class="img-controls">
+            <button class="btn btn-sm btn-secondary" data-tool="缩小">缩放 −</button>
+            <button class="btn btn-sm btn-secondary" data-tool="放大">放大</button>
+            <button class="btn btn-sm btn-secondary" data-tool="旋转">旋转</button>
+            <button class="btn btn-sm btn-secondary" data-tool="对比度">对比度</button>
+            <span class="sep"></span>
+            <button class="btn btn-sm btn-primary" data-tool="导出">导出</button>
+            <button class="btn btn-sm btn-secondary">关闭查看</button>
+          </div>
+        </div>
+
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script src="assets/js/data.js"></script>
+<script src="assets/js/app.js"></script>
+<script>
+/* 影像查看：分组缩略图渲染 + 点击切换大图 + 控件提示 */
+(function () {
+  const body = document.getElementById('img-thumbs-body');
+
+  DATA.images.forEach((g, gi) => {
+    const group = document.createElement('div');
+    group.className = 'img-group';
+    group.innerHTML = '<div class="g-name">' + g.group + '</div>';
+    g.files.forEach((f, fi) => {
+      const b = document.createElement('button');
+      b.className = 'img-thumb' + (gi === 0 && fi === 0 ? ' active' : '');
+      b.innerHTML = '<div class="th-name">' + f.name + '</div><div class="th-date">' + f.date + '</div>';
+      b.addEventListener('click', () => {
+        document.querySelectorAll('.img-thumb').forEach(t => t.classList.toggle('active', t === b));
+        document.getElementById('viewer-title').textContent = f.name;
+        document.getElementById('viewer-ph-title').textContent = f.name;
+        document.getElementById('info-date').textContent = f.date;
+        document.getElementById('info-type').textContent = g.group;
+        document.getElementById('info-tooth').textContent = f.id === 'X1' ? '全口' : (f.id === 'X2' ? '全口' : (f.id === 'X3' ? '26' : (f.id === 'X4' ? '36' : '头颅侧位')));
+        document.getElementById('info-note').textContent = f.note || '—';
+        const badge = document.querySelector('.img-viewer .badge');
+        badge.textContent = g.group;
+        badge.className = 'badge badge-info';
+      });
+      group.appendChild(b);
+    });
+    body.appendChild(group);
+  });
+
+  /* 控件按钮：原型演示 toast */
+  document.querySelectorAll('[data-tool]').forEach(btn => {
+    btn.addEventListener('click', () => showToast(btn.dataset.tool + '（原型演示）'));
+  });
+})();
+</script>
+</body>
+</html>

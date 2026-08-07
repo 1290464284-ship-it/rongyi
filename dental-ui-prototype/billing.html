@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>收费工作台 · 蓉易口腔诊所</title>
+<link rel="stylesheet" href="assets/css/styles.css">
+</head>
+<body data-page="billing">
+<div class="layout">
+
+  <!-- ===== 侧边导航（9 顶级菜单） ===== -->
+  <aside class="sidebar">
+    <div class="sidebar-brand"><span class="logo"></span>蓉易口腔诊所</div>
+    <div class="sidebar-group">常用</div>
+    <a class="nav-item" data-nav="dashboard" href="dashboard.html">工作台</a>
+    <a class="nav-item" data-nav="patients" href="patients.html">患者与预约</a>
+    <a class="nav-item" data-nav="treatment-plan" href="treatment-plan.html">临床记录</a>
+    <a class="nav-item" data-nav="billing" href="billing.html">财务中心</a>
+    <a class="nav-item" href="#">库存与采购</a>
+    <div class="sidebar-group">更多</div>
+    <a class="nav-item" href="#">经营分析</a>
+    <a class="nav-item" href="#">随访与沟通</a>
+    <a class="nav-item" href="#">人事与设备</a>
+    <a class="nav-item" href="#">系统管理</a>
+  </aside>
+
+  <div style="flex:1;display:flex;flex-direction:column;min-width:0;">
+
+    <!-- ===== 顶栏 ===== -->
+    <header class="topbar">
+      <div>
+        <div class="topbar-title">收费工作台</div>
+        <div class="topbar-sub">待缴费处理 · 收款方式 · 挂账管理</div>
+      </div>
+      <input class="topbar-search" type="search" placeholder="搜索患者 / 项目 / 单号…">
+      <div class="topbar-user" style="margin-left:auto;"><span class="avatar"></span>前台 · 王丽</div>
+    </header>
+
+    <main class="content">
+
+      <div class="bill-layout">
+
+        <!-- ===== 左：待缴费列表 ===== -->
+        <div class="card bill-list">
+          <div class="list-head">
+            <h3>待缴费</h3>
+            <span class="cnt" id="wait-count"></span>
+          </div>
+          <div id="bill-list-body"></div>
+        </div>
+
+        <!-- ===== 右：收费详情 ===== -->
+        <div class="card">
+          <div class="bill-detail-head">
+            <div>
+              <div class="p-name" id="detail-name">—</div>
+              <div class="p-meta" id="detail-meta">—</div>
+            </div>
+            <span class="badge badge-warning" id="detail-badge">待缴费</span>
+          </div>
+          <table class="table" style="border:1px solid var(--border);border-radius:8px;overflow:hidden;">
+            <thead><tr><th>项目</th><th>数量</th><th>单价</th><th style="text-align:right;">金额</th></tr></thead>
+            <tbody id="detail-lines"></tbody>
+          </table>
+          <div class="bill-total-row">
+            <span class="label">合计（含材料费）</span>
+            <span class="total" id="detail-total">¥0.00</span>
+          </div>
+          <div style="font-size:11.5px;color:var(--muted);">收款方式</div>
+          <div class="pay-methods" id="pay-methods">
+            <button class="pay-method active" data-pay="现金">现金<span class="pm-sub">当面收付</span></button>
+            <button class="pay-method" data-pay="微信">微信<span class="pm-sub">扫码支付</span></button>
+            <button class="pay-method" data-pay="支付宝">支付宝<span class="pm-sub">扫码支付</span></button>
+          </div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;">
+            <button class="btn btn-secondary">挂账</button>
+            <button class="btn btn-primary" id="confirm-charge">确认收费</button>
+          </div>
+        </div>
+
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script src="assets/js/data.js"></script>
+<script src="assets/js/app.js"></script>
+<script>
+/* 收费工作台交互：选中 → 填充详情 → 确认收费 → 徽章变已缴费 */
+(function () {
+  const DETAILS = {
+    '李志强': { items: '根管治疗（完成）', date: '2026-08-06', lines: [['根管治疗（完成）', 1, 1150], ['一次性耗材', 1, 30], ['诊查费', 1, 20]], total: 1200 },
+    '周建军': { items: '牙周刮治（2 次）', date: '2026-08-06', lines: [['牙周刮治（第 1 次）', 1, 1200], ['牙周刮治（第 2 次）', 1, 1120], ['麻药（阿替卡因）', 1, 80]], total: 2400 },
+    '赵明':   { items: '初诊检查费',       date: '2026-08-06', lines: [['初诊检查', 1, 30], ['口腔检查器械', 1, 10], ['挂号费', 1, 10]], total: 50 },
+  };
+  const fmt = n => '¥' + n.toLocaleString('zh-CN', { minimumFractionDigits: 2 });
+  const listBody = document.getElementById('bill-list-body');
+  const rows = [];
+
+  DATA.billing.filter(b => b.status === 'wait').forEach(b => {
+    const btn = document.createElement('button');
+    btn.className = 'bill-row';
+    btn.innerHTML =
+      '<div class="row-top"><span class="row-name">' + b.name + '</span><span class="row-amt num">' + fmt(b.amount) + '</span></div>' +
+      '<div class="row-items">' + b.items + '</div>' +
+      '<div class="row-meta"><span class="row-date num">' + b.date + '</span>' +
+      '<span class="row-action"><span class="badge badge-warning">待缴费</span>' +
+      '<span class="btn btn-sm btn-primary">收费</span></span></div>';
+    btn.addEventListener('click', () => selectRow(btn, b));
+    listBody.appendChild(btn);
+    rows.push({ el: btn, data: b });
+  });
+  document.getElementById('wait-count').textContent = rows.length + ' 笔';
+
+  function selectRow(el, b) {
+    rows.forEach(r => r.el.classList.toggle('selected', r.el === el));
+    const d = DETAILS[b.name];
+    document.getElementById('detail-name').textContent = b.name;
+    document.getElementById('detail-meta').textContent = d.items + ' · 就诊日期 ' + d.date;
+    const tbody = document.getElementById('detail-lines');
+    tbody.innerHTML = '';
+    d.lines.forEach(l => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td>' + l[0] + '</td><td class="num">' + l[1] + '</td><td class="num">' + fmt(l[2]) + '</td><td class="num" style="text-align:right;">' + fmt(l[2] * l[1]) + '</td>';
+      tbody.appendChild(tr);
+    });
+    document.getElementById('detail-total').textContent = fmt(d.total);
+  }
+  if (rows.length) selectRow(rows[0].el, rows[0].data);
+
+  /* 收款方式：四选一 */
+  document.getElementById('pay-methods').addEventListener('click', e => {
+    const m = e.target.closest('.pay-method');
+    if (!m) return;
+    document.querySelectorAll('.pay-method').forEach(p => p.classList.toggle('active', p === m));
+  });
+
+  /* 确认收费 */
+  document.getElementById('confirm-charge').addEventListener('click', () => {
+    const cur = rows.find(r => r.el.classList.contains('selected'));
+    if (!cur) return;
+    const d = DETAILS[cur.data.name];
+    const pay = document.querySelector('.pay-method.active').dataset.pay;
+    showConfirm('收费确认', '向 ' + cur.data.name + ' 收取 ' + fmt(d.total) + '（' + pay + '）？', () => {
+      showToast('收费成功（原型演示）');
+      cur.el.querySelector('.badge').className = 'badge badge-success';
+      cur.el.querySelector('.badge').textContent = '已缴费';
+      cur.el.querySelector('.btn-sm').style.display = 'none';
+      cur.el.style.opacity = '.72';
+      document.getElementById('detail-badge').className = 'badge badge-success';
+      document.getElementById('detail-badge').textContent = '已缴费';
+    });
+  });
+})();
+</script>
+</body>
+</html>
