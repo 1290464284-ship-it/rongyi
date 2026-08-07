@@ -51,7 +51,8 @@
     "verify:signature": "powershell -ExecutionPolicy Bypass -File scripts/verify-signature.ps1",
     "generate:legacy-resources": "node scripts/generate-legacy-resources.mjs",
     "wait:services": "node scripts/wait-for-services.mjs",
-    "artifact:name": "node scripts/artifact-name.mjs"
+    "artifact:name": "node scripts/artifact-name.mjs",
+    "clean:artifacts": "node scripts/clean-artifacts.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",
