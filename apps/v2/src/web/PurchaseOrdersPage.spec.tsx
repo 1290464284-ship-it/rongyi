@@ -8,7 +8,16 @@ import { PurchaseOrdersPage } from './PurchaseOrdersPage';
 import { apiRequest } from './api';
 import { ToastProvider } from './toast';
 
-vi.mock('./api', () => ({ apiRequest: vi.fn() }));
+vi.mock('./api', () => {
+  const apiRequest = vi.fn();
+  return {
+    apiRequest,
+    fetchAllPages: vi.fn(async (path: string) => {
+      const data = await apiRequest(`${path}&page=1&pageSize=100`);
+      return data?.items ?? [];
+    }),
+  };
+});
 
 const wrapper = ({ children }: { children: ReactNode }) => (
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -142,8 +151,9 @@ describe('PurchaseOrdersPage', () => {
     mockData('PENDING', 'SUBMITTED');
     render(<PurchaseOrdersPage />, { wrapper });
     await screen.findByText('PO-1');
-    const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('单价过高');
     fireEvent.click(screen.getByRole('button', { name: '驳回' }));
+    fireEvent.change(screen.getByPlaceholderText('驳回原因'), { target: { value: '单价过高' } });
+    fireEvent.click(screen.getByText('确认驳回'));
     await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith(
         '/purchase-orders/po-1/reject',
@@ -151,24 +161,24 @@ describe('PurchaseOrdersPage', () => {
       );
     });
     expect(await screen.findByText('已驳回')).toBeDefined();
-    promptSpy.mockRestore();
   });
 
-  it('skips rejection when prompt is cancelled and rejects empty reason', async () => {
+  it('skips rejection when the dialog is cancelled and rejects empty reason', async () => {
     mockData('PENDING', 'SUBMITTED');
     render(<PurchaseOrdersPage />, { wrapper });
     await screen.findByText('PO-1');
 
-    const cancelSpy = vi.spyOn(window, 'prompt').mockReturnValue(null);
+    // 取消：关闭对话框且不发起请求
     fireEvent.click(screen.getByRole('button', { name: '驳回' }));
+    fireEvent.click(screen.getByText('取消'));
+    expect(screen.queryByRole('dialog')).toBeNull();
     expect(apiRequest).not.toHaveBeenCalledWith('/purchase-orders/po-1/reject', expect.anything());
-    cancelSpy.mockRestore();
 
-    const emptySpy = vi.spyOn(window, 'prompt').mockReturnValue('   ');
+    // 空原因：提示必填且不发起请求，对话框保持打开
     fireEvent.click(screen.getByRole('button', { name: '驳回' }));
+    fireEvent.click(screen.getByText('确认驳回'));
     expect(await screen.findByText('驳回原因必填')).toBeDefined();
     expect(apiRequest).not.toHaveBeenCalledWith('/purchase-orders/po-1/reject', expect.anything());
-    emptySpy.mockRestore();
   });
 
   it('reopens a rejected order', async () => {
@@ -216,10 +226,12 @@ describe('PurchaseOrdersPage', () => {
         };
       }
       return {};
-    });
+    });
+
 
     render(<PurchaseOrdersPage />, { wrapper });
-    await screen.findByText('PO-1');
+    await screen.findByText('PO-1');
+
 
     fireEvent.click(screen.getByRole('button', { name: '编辑' }));
     await waitFor(() => {
@@ -234,7 +246,8 @@ describe('PurchaseOrdersPage', () => {
     });
     expect((screen.getByLabelText('采购数量') as HTMLInputElement).value).toBe('3');
     expect((screen.getByLabelText('采购单价') as HTMLInputElement).value).toBe('100.00');
-    fireEvent.click(screen.getByText('保存'));
+    fireEvent.click(screen.getByText('保存'));
+
 
     await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith('/resources/purchaseOrders/po-1', expect.objectContaining({ method: 'PATCH' }));
@@ -272,5 +285,57 @@ describe('PurchaseOrdersPage', () => {
       expect(apiRequest).toHaveBeenCalledWith('/resources/purchaseOrders/po-1', expect.objectContaining({ method: 'DELETE' }));
     });
     expect(await screen.findByText('采购单已删除')).toBeDefined();
+  });
+  it('shows a placeholder in the review summary bar while stats are loading', async () => {
+    let resolveStats: ((value: unknown) => void) | undefined;
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/purchase-orders/review-stats') {
+        return await new Promise((resolve) => { resolveStats = resolve; });
+      }
+      if (path === '/resources/purchaseOrders?page=1&pageSize=50') {
+        return { items: [{ id: 'po-1', number: 'PO-1', supplierId: 's-1', totalAmount: 200, status: 'PENDING' }], total: 1, page: 1, pageSize: 50 };
+      }
+      return {};
+    });
+    render(<PurchaseOrdersPage />, { wrapper });
+    await screen.findByText('PO-1');
+    // L3：首屏加载中显示占位符，不显示「0 单」误导
+    expect(screen.getByText('待审核 —')).toBeDefined();
+    expect(screen.getByText('待收货 —')).toBeDefined();
+    resolveStats?.({ submitted: 2, approved: 3 });
+    expect(await screen.findByText('待审核 2 单')).toBeDefined();
+    expect(await screen.findByText('待收货 3 单')).toBeDefined();
+  });
+
+  it('locks the item editor while edit backfill is loading', async () => {
+    let resolveItems: ((value: unknown) => void) | undefined;
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/purchase-orders/review-stats') return {};
+      if (path === '/resources/purchaseOrders?page=1&pageSize=50') {
+        return { items: [{ id: 'po-1', number: 'PO-1', supplierId: 's-1', totalAmount: 200, status: 'PENDING' }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/suppliers?page=1&pageSize=100') {
+        return { items: [{ id: 's-1', name: '供应商甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/resources/inventoryItems?page=1&pageSize=100') {
+        return { items: [{ id: 'i-1', name: '耗材' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/resources/purchaseOrderItems?orderId=po-1&page=1&pageSize=100') {
+        return await new Promise((resolve) => { resolveItems = resolve; });
+      }
+      return {};
+    });
+    render(<PurchaseOrdersPage />, { wrapper });
+    await screen.findByText('PO-1');
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    // L2：回填未完成前隐藏明细编辑区并禁用添加按钮，避免整表覆盖用户输入
+    expect(screen.getByText('明细加载中...')).toBeDefined();
+    expect(screen.queryByLabelText('采购项目')).toBeNull();
+    expect((screen.getByRole('button', { name: '添加明细' }) as HTMLButtonElement).disabled).toBe(true);
+    resolveItems?.({ items: [{ id: 'poi-1', itemId: 'i-1', name: '耗材', spec: 'S', quantity: 3, unitPrice: 10000, subtotal: 30000 }], total: 1, page: 1, pageSize: 100 });
+    await waitFor(() => {
+      expect((screen.getByLabelText('采购项目') as HTMLSelectElement).value).toBe('i-1');
+    });
+    expect((screen.getByRole('button', { name: '添加明细' }) as HTMLButtonElement).disabled).toBe(false);
   });
 });

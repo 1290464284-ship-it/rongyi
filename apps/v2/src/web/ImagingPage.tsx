@@ -359,7 +359,7 @@ export function ImagingPage() {
         message={`确定删除影像分类“${String(deleteCategoryTarget?.name ?? '')}”吗？`}
         confirmText="确认删除"
         danger
-        onConfirm={() => void confirmDeleteCategory()}
+        onConfirm={() => confirmDeleteCategory()}
         onCancel={() => setDeleteCategoryTarget(null)}
       />
 

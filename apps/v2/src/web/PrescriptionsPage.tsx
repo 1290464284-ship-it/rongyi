@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest } from './api';
-import type { Page } from './types';
+import { apiRequest, fetchAllPages } from './api';
 import { CrudPage } from './CrudPage';
 import { Dialog, LoadingState, PageError, SearchableSelect, type DataTableColumn } from './components';
 import { formatDateTime, centsToYuanString, toCents } from './format';
 import { errorMessage } from './messages';
+import { useAsyncAction } from './use-async-action';
 import { useToast, type ToastKind } from './toast-context';
 
 interface PrescriptionRow extends Record<string, unknown> {
@@ -168,10 +168,10 @@ export function PrescriptionsPage() {
     let cancelled = false;
     (async () => {
       try {
-        const page = await apiRequest<Page<Record<string, unknown>>>(
-          `/resources/prescriptionItems?prescriptionId=${prescriptionId}&page=1&pageSize=100`,
+        const items = await fetchAllPages<Record<string, unknown>>(
+          `/resources/prescriptionItems?prescriptionId=${prescriptionId}`,
         );
-        if (!cancelled) updateFormRef.current?.({ items: page.items.map(itemRowToForm) });
+        if (!cancelled) updateFormRef.current?.({ items: items.map(itemRowToForm) });
       } catch (error) {
         showToast(errorMessage(error, '加载处方明细失败'), 'error');
       }
@@ -207,19 +207,22 @@ export function PrescriptionsPage() {
             ? '请选择患者、医生并至少填写一条有效处方明细'
             : null
         }
-        submitOverride={({ form, editing }) =>
-          editing ? updatePrescription(form, editingIdRef.current) : createPrescription(form)
-        }
+        submitOverride={({ form, editing }) => {
+          // L1：与采购单一致，填了名称但数量/单价无效的明细会被静默丢弃，提交前提示
+          const dropped = form.items.filter((item) => item.name.trim()).length - validItems(form).length;
+          if (dropped > 0) showToast(`${dropped} 条明细因数量或单价无效将被忽略`, 'info');
+          return editing ? updatePrescription(form, editingIdRef.current) : createPrescription(form);
+        }}
         messages={{ create: '处方已创建', update: '处方已更新', delete: '处方已删除' }}
         errorMessages={{ create: '创建处方失败', update: '更新处方失败', delete: '删除处方失败' }}
         deleteOverride={async (row) => {
           // 服务端 DELETE 为软删除且不级联：先删全部明细，再删主记录（明细删除失败仅告警）
           const prescriptionId = String(row.id);
           try {
-            const page = await apiRequest<Page<Record<string, unknown>>>(
-              `/resources/prescriptionItems?prescriptionId=${prescriptionId}&page=1&pageSize=100`,
+            const items = await fetchAllPages<Record<string, unknown>>(
+              `/resources/prescriptionItems?prescriptionId=${prescriptionId}`,
             );
-            for (const item of page.items) {
+            for (const item of items) {
               await apiRequest(`/resources/prescriptionItems/${String(item.id)}`, { method: 'DELETE' });
             }
           } catch (error) {
@@ -235,13 +238,19 @@ export function PrescriptionsPage() {
           row.status === 'PROCESSED' ? (
             <button onClick={() => setStatusTarget({ row, reload: ctx.reload })}>查看状态</button>
           ) : (
-            <button onClick={() => void processPrescription(row, ctx.reload, showToast)}>处理</button>
+            <ProcessPrescriptionButton
+              row={row}
+              reload={ctx.reload}
+              showToast={showToast}
+            />
           )
         }
-        renderForm={(ctx) => {
-          updateFormRef.current = ctx.update;
-          return <PrescriptionForm form={ctx.form} update={ctx.update} editing={ctx.editing} />;
-        }}
+        renderForm={(ctx) => (
+          <>
+            <FormUpdateSync update={ctx.update} onUpdate={(update) => { updateFormRef.current = update; }} />
+            <PrescriptionForm form={ctx.form} update={ctx.update} editing={ctx.editing} />
+          </>
+        )}
       />
 
       <Dialog open={statusTarget !== null} title="处方状态" onClose={() => setStatusTarget(null)}>
@@ -254,6 +263,24 @@ export function PrescriptionsPage() {
         )}
       </Dialog>
     </>
+  );
+}
+
+/** 行内“处理”按钮：busy 期间禁用，防止双击重复生成划价单与领药单。 */
+function ProcessPrescriptionButton({
+  row,
+  reload,
+  showToast,
+}: {
+  row: PrescriptionRow;
+  reload: () => Promise<unknown>;
+  showToast: (message: string, kind?: ToastKind) => void;
+}) {
+  const { busy, run } = useAsyncAction();
+  return (
+    <button disabled={busy} onClick={() => run(() => processPrescription(row, reload, showToast))}>
+      {busy ? '处理中...' : '处理'}
+    </button>
   );
 }
 
@@ -298,10 +325,9 @@ async function updatePrescription(form: PrescriptionForm, prescriptionId: string
       status: form.status,
     }),
   });
-  const page = await apiRequest<Page<Record<string, unknown>>>(
-    `/resources/prescriptionItems?prescriptionId=${prescriptionId}&page=1&pageSize=100`,
+  const existing = await fetchAllPages<Record<string, unknown>>(
+    `/resources/prescriptionItems?prescriptionId=${prescriptionId}`,
   );
-  const existing = page.items;
   const existingIds = new Set(existing.map((row) => String(row.id)));
   // 保留的明细（有服务端 id）→ PATCH；新增的明细 → POST（带 prescriptionId）。
   // 与 validItems 同一套有效性过滤，但保留本地 id 用于判断服务端存在性。
@@ -309,25 +335,29 @@ async function updatePrescription(form: PrescriptionForm, prescriptionId: string
     .filter((item) => item.name.trim() && item.days && item.quantity && item.price)
     .map((item) => ({ id: item.id, payload: itemPayload(item) }))
     .filter((entry) => entry.payload.days > 0 && entry.payload.quantity > 0 && entry.payload.price >= 0);
-  for (const { id, payload } of items) {
-    if (existingIds.has(id)) {
-      await apiRequest(`/resources/prescriptionItems/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify(payload),
-      });
-    } else {
-      await apiRequest('/resources/prescriptionItems', {
-        method: 'POST',
-        body: JSON.stringify({ prescriptionId, ...payload }),
-      });
+  try {
+    for (const { id, payload } of items) {
+      if (existingIds.has(id)) {
+        await apiRequest(`/resources/prescriptionItems/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        });
+      } else {
+        await apiRequest('/resources/prescriptionItems', {
+          method: 'POST',
+          body: JSON.stringify({ prescriptionId, ...payload, requestId: crypto.randomUUID() }),
+        });
+      }
     }
-  }
-  // 表单中已移除的明细 → DELETE
-  for (const row of existing) {
-    const id = String(row.id);
-    if (!form.items.some((item) => item.id === id)) {
-      await apiRequest(`/resources/prescriptionItems/${id}`, { method: 'DELETE' });
+    // 表单中已移除的明细 → DELETE
+    for (const row of existing) {
+      const id = String(row.id);
+      if (!form.items.some((item) => item.id === id)) {
+        await apiRequest(`/resources/prescriptionItems/${id}`, { method: 'DELETE' });
+      }
     }
+  } catch (error) {
+    throw new Error(`${errorMessage(error, '同步处方明细失败')}；部分明细可能未保存，请核对后重试`);
   }
 }
 
@@ -363,9 +393,15 @@ function PrescriptionStatusDialog({
     queryFn: () => apiRequest<PrescriptionStatusResult>(`/prescriptions/${row.id}/status`),
   });
 
-  async function refresh(): Promise<void> {
-    await query.refetch();
-    await onChanged();
+  async function refresh(): Promise<boolean> {
+    try {
+      await query.refetch();
+      await onChanged();
+      return true;
+    } catch (error) {
+      console.warn('刷新处方状态失败:', error);
+      return false;
+    }
   }
 
   if (query.isLoading) return <LoadingState label="状态加载中..." />;
@@ -397,9 +433,9 @@ function PrescriptionStatusDialog({
       <div className="modal-actions">
         <button
           type="button"
-          onClick={() => {
-            void refresh();
-            showToast('状态已刷新', 'success');
+          onClick={async () => {
+            const ok = await refresh();
+            showToast(ok ? '状态已刷新' : '刷新失败，请稍后重试', ok ? 'success' : 'error');
           }}
         >
           刷新
@@ -424,9 +460,16 @@ function PrescriptionForm({ form, update, editing }: { form: PrescriptionForm; u
         患者
         <SearchableSelect resource="patients" value={form.patientId} onChange={(id) => update({ patientId: id })} ariaLabel="患者" placeholder="选择患者" />
       </label>
+      {/* L4：/doctors 加载失败时行内提示并支持重试，避免静默空列表 */}
+      {doctors.isError && (
+        <div className="query-section-error">
+          <p className="error">医生列表加载失败</p>
+          <button type="button" onClick={() => void doctors.refetch()}>重试</button>
+        </div>
+      )}
       <label>
         医生
-        <select value={form.doctorId} onChange={(event) => update({ doctorId: event.target.value })}>
+        <select value={form.doctorId} onChange={(event) => update({ doctorId: event.target.value })} disabled={doctors.isError}>
           <option value="">选择医生</option>
           {doctors.data?.map((row) => (
             <option key={String(row.id)} value={String(row.id)}>{String(row.name ?? row.id)}</option>
@@ -482,4 +525,20 @@ async function cleanupOrphanPrescription(prescriptionId: string, createdItemIds:
   } catch (error) {
     console.warn(`删除孤儿处方失败：${prescriptionId}`, error);
   }
+}
+
+// M9：渲染期写 ref 是反模式（StrictMode 双渲染/对话框切换时 ref 可能指向上一表单实例）。
+// 将 ctx.update 赋值移到 effect 提交后执行（子组件 effect 先于父组件回填 effect 运行，
+// 保证 editLoadKey 回填能拿到与当前渲染一致的 update）。
+function FormUpdateSync({
+  update,
+  onUpdate,
+}: {
+  update: (patch: Partial<PrescriptionForm>) => void;
+  onUpdate: (update: (patch: Partial<PrescriptionForm>) => void) => void;
+}) {
+  useEffect(() => {
+    onUpdate(update);
+  }, [update, onUpdate]);
+  return null;
 }

@@ -1,5 +1,12 @@
 # Dental Clinic V2 - Release Artifacts
 
+## 部署方式（Round7 I1）
+
+本项目是桌面应用，**没有常规部署目标，也没有 deploy.yml**——"发布 = 打
+`v2-*` tag"，由 `.github/workflows/v2-release.yml` 构建 NSIS 安装包并上传到
+GitHub Release（即更新渠道）。内部通道由 `v2-internal-release.yml` 手动
+触发（workflow_dispatch）。请不要寻找/创建 deploy.yml。
+
 ## Generated Artifacts
 
 - `release-v2/Dental Clinic V2 Setup <version>.exe`

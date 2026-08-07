@@ -3,6 +3,7 @@ import { apiRequest } from './api';
 import type { Page } from './types';
 import { DataTable, LoadingState, PageError, type DataTableColumn } from './components';
 import { errorMessage } from './messages';
+import { useAsyncAction } from './use-async-action';
 import { useToast } from './toast-context';
 
 const LEAVE_STATUS_LABELS: Record<string, string> = {
@@ -54,12 +55,7 @@ export function HrWorkflowPage() {
     {
       key: 'actions',
       label: '操作',
-      render: (row) => (
-        <>
-          <button onClick={() => approve(String(row.id), true)}>批准</button>
-          <button className="danger" onClick={() => approve(String(row.id), false)}>驳回</button>
-        </>
-      ),
+      render: (row) => <ApproveButtons id={String(row.id)} onDone={approve} />,
     },
   ];
 
@@ -73,5 +69,16 @@ export function HrWorkflowPage() {
         emptyText="暂无待审批请假"
       />
     </div>
+  );
+}
+
+/** 行内审批按钮：busy 期间同时禁用批准/驳回，防止双击重复审批。 */
+function ApproveButtons({ id, onDone }: { id: string; onDone: (id: string, approved: boolean) => Promise<void> }) {
+  const { busy, run } = useAsyncAction();
+  return (
+    <>
+      <button disabled={busy} onClick={() => run(() => onDone(id, true))}>批准</button>
+      <button className="danger" disabled={busy} onClick={() => run(() => onDone(id, false))}>驳回</button>
+    </>
   );
 }

@@ -1,5 +1,6 @@
 import type { FormEvent } from 'react';
 import { SearchableSelect } from '../components';
+import { formatMoney, toCents } from '../format';
 import { useToast } from '../toast-context';
 import type { ChargeForm, ChargeItemForm } from './charge-types';
 import { buildValidItems, newItem } from './charge-utils';
@@ -30,8 +31,15 @@ export function ChargeCreateForm({
   function handleSubmit(event: FormEvent) {
     // 已填写（有名称）但价格/数量无效的明细会被静默丢弃，提交前提示
     const filled = form.items.filter((item) => item.name.trim()).length;
-    const valid = buildValidItems(form.items).length;
-    if (filled - valid > 0) showToast(`${filled - valid} 条明细因缺少有效价格或数量将被忽略`, 'info');
+    const valid = buildValidItems(form.items);
+    if (filled - valid.length > 0) showToast(`${filled - valid.length} 条明细因缺少有效价格或数量将被忽略`, 'info');
+    // M10：优惠金额必须落在 [0, 应收总额] 区间，超限即时提示并阻止提交
+    const subtotal = valid.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const discount = toCents(form.discount);
+    if (discount < 0 || discount > subtotal) {
+      showToast(`优惠金额需在 0 与应收总额 ${formatMoney(subtotal)} 之间`, 'error');
+      return;
+    }
     return onSubmit(event);
   }
 

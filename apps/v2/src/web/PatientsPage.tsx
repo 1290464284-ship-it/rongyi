@@ -98,7 +98,6 @@ export function PatientsPage() {
   const urlSearch = searchParams.get('q') ?? undefined;
   return (
     <CrudPage<PatientRow, PatientForm>
-      key={urlSearch ?? ''}
       title="患者档案"
       createLabel="新建患者"
       emptyMessage="暂无患者"
