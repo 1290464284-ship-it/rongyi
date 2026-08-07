@@ -1,5 +1,6 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
+import { DEFAULT_API_PORT, DEFAULT_WEB_DEV_PORT } from './src/shared/constants';
 
 function devCsp(): { name: string; apply: 'serve'; transformIndexHtml(html: string): string } {
   return {
@@ -48,10 +49,10 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5180,
+    port: DEFAULT_WEB_DEV_PORT,
     proxy: {
-      // P1-7/P1-8：后端端口不再硬编码，跟随 V2_PORT 环境变量（默认 3180）
-      '/api': `http://localhost:${process.env.V2_PORT ?? 3180}`,
+      // P1-7/P1-8：后端端口不再硬编码，跟随 V2_PORT 环境变量（默认 DEFAULT_API_PORT）
+      '/api': `http://localhost:${process.env.V2_PORT ?? DEFAULT_API_PORT}`,
     },
   },
 });

@@ -8,7 +8,13 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   },
-  "include": ["src/server/**/*.ts", "src/domain/**/*.ts"]
+  "include": [
+    "src/server/**/*.ts",
+    "src/domain/**/*.ts",
+    "src/shared/**/*.ts"
+  ]
 }

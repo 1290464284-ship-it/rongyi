@@ -12,6 +12,11 @@ import { importLegacyDatabase } from './infrastructure/legacy-import';
 import { applyStagedRestore } from './infrastructure/restore-apply';
 import { AlertService, AuditService, BackupService } from './application/services';
 import { startSchedulers } from './scheduler';
+import {
+  DEFAULT_API_PORT,
+  DEFAULT_AUTO_BACKUP_INTERVAL_MS,
+  DEFAULT_AUTO_BACKUP_KEEP,
+} from '../shared/constants';
 
 const projectRoot = process.cwd();
 // T2R-17 / R2-P0-04: dental.sqlite is no longer bundled in the repository (the
@@ -185,7 +190,7 @@ const dbPath = process.env.V2_DB_PATH ?? v2DbPath;
 const dataDir = path.dirname(dbPath);
 const cleanExitMarker = path.join(dataDir, '.clean-exit');
 const backupDir = process.env.V2_BACKUP_DIR ?? path.join(dataDir, 'backups');
-const port = Number(process.env.V2_PORT ?? 3180);
+const port = Number(process.env.V2_PORT ?? DEFAULT_API_PORT);
 const host = process.env.V2_HOST ?? '127.0.0.1';
 if (!Number.isInteger(port) || port < 1 || port > 65_535) {
   throw new Error('V2_PORT must be an integer between 1 and 65535');
@@ -244,14 +249,14 @@ server.on('error', (error) => {
 const backups = new BackupService(db, dbPath, backupDir);
 const audit = new AuditService(db);
 const alerts = new AlertService(db);
-const configuredAutoBackupInterval = Number(process.env.V2_AUTO_BACKUP_INTERVAL_MS ?? 24 * 60 * 60 * 1000);
+const configuredAutoBackupInterval = Number(process.env.V2_AUTO_BACKUP_INTERVAL_MS ?? DEFAULT_AUTO_BACKUP_INTERVAL_MS);
 const autoBackupIntervalMs = Number.isFinite(configuredAutoBackupInterval) && configuredAutoBackupInterval >= 60_000
   ? configuredAutoBackupInterval
-  : 24 * 60 * 60 * 1000;
-const configuredAutoBackupKeep = Number(process.env.V2_AUTO_BACKUP_KEEP ?? 30);
+  : DEFAULT_AUTO_BACKUP_INTERVAL_MS;
+const configuredAutoBackupKeep = Number(process.env.V2_AUTO_BACKUP_KEEP ?? DEFAULT_AUTO_BACKUP_KEEP);
 const autoBackupKeep = Number.isFinite(configuredAutoBackupKeep)
   ? Math.min(365, Math.max(1, Math.floor(configuredAutoBackupKeep)))
-  : 30;
+  : DEFAULT_AUTO_BACKUP_KEEP;
 
 // ── 定时任务统一收敛到 scheduler 模块 ──────────────────────────────────────────
 // 原内联的三组定时器（自动备份 5min 首延迟 + interval、审计日志清理每日、
