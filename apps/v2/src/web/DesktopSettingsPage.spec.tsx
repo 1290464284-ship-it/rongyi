@@ -12,6 +12,7 @@ interface TestBridge {
   getAutoLaunch: ReturnType<typeof vi.fn>;
   checkUpdates: ReturnType<typeof vi.fn>;
   installUpdate?: ReturnType<typeof vi.fn>;
+  downloadUpdate?: ReturnType<typeof vi.fn>;
   onUpdateEvent?: ReturnType<typeof vi.fn>;
   onApiStatus?: ReturnType<typeof vi.fn>;
 }
@@ -23,6 +24,7 @@ function installBridge(overrides: Partial<TestBridge> = {}) {
     setAutoLaunch: vi.fn().mockResolvedValue(true),
     getAutoLaunch: vi.fn().mockResolvedValue(true),
     checkUpdates: vi.fn().mockResolvedValue({ status: 'available', version: '2.0.0' }),
+    downloadUpdate: vi.fn().mockResolvedValue({ status: 'done' }),
     ...overrides,
   };
   Object.defineProperty(window, 'desktop', { value: bridge, configurable: true });
@@ -57,7 +59,10 @@ describe('DesktopSettingsPage', () => {
     expect(screen.getByText('API 已重启')).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: '检查更新' }));
-    expect(await screen.findByText('发现新版本 2.0.0')).toBeDefined();
+    expect(await screen.findByText('发现新版本 2.0.0，点击"下载更新"按钮开始下载')).toBeDefined();
+    expect(screen.getByRole('button', { name: '下载更新' })).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '下载更新' }));
+    expect(bridge.downloadUpdate).toHaveBeenCalled();
     expect(bridge.getApiPort).toHaveBeenCalled();
   });
 
@@ -126,7 +131,7 @@ describe('DesktopSettingsPage', () => {
     updateCallback?.({ type: 'progress' });
     expect(await screen.findByText('更新下载中：%')).toBeDefined();
     updateCallback?.({ type: 'available' });
-    expect(await screen.findByText('发现新版本 ，正在下载')).toBeDefined();
+    expect(await screen.findByText('发现新版本 ，点击"下载更新"按钮开始下载')).toBeDefined();
     updateCallback?.({ type: 'error' });
     expect(await screen.findByText('更新失败')).toBeDefined();
     apiCallback?.({});
@@ -138,7 +143,9 @@ describe('DesktopSettingsPage', () => {
     updateCallback?.({ type: 'progress', percent: 42 });
     expect(await screen.findByText('更新下载中：42%')).toBeDefined();
     updateCallback?.({ type: 'available', version: '2.2.0' });
-    expect(await screen.findByText('发现新版本 2.2.0，正在下载')).toBeDefined();
+    expect(await screen.findByText('发现新版本 2.2.0，点击"下载更新"按钮开始下载')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '下载更新' }));
+    expect(bridge.downloadUpdate).toHaveBeenCalled();
     updateCallback?.({ type: 'none' });
     expect(await screen.findByText('当前已是最新版本')).toBeDefined();
     updateCallback?.({ type: 'error', message: 'update event error' });

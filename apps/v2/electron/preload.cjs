@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('desktop', {
   setAutoLaunch: (enabled) => ipcRenderer.invoke('desktop:set-auto-launch', Boolean(enabled)),
   getAutoLaunch: () => ipcRenderer.invoke('desktop:get-auto-launch'),
   checkUpdates: () => ipcRenderer.invoke('desktop:check-updates'),
+  // S-H1: 用户确认后显式触发更新包下载（autoDownload=false，下载不再自动开始）。
+  downloadUpdate: () => ipcRenderer.invoke('desktop:download-update'),
   installUpdate: () => ipcRenderer.invoke('desktop:install-update'),
   onUpdateEvent: (callback) => {
     const listener = (_event, payload) => callback(payload);
