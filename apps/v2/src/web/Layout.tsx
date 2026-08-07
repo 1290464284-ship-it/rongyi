@@ -117,7 +117,7 @@ export function Layout() {
   if (resourceName !== null) {
     const definition = resourceMeta.data?.find((entry) => entry.name === resourceName);
     const role = navigation.data?.role ?? '';
-    resourceAllowed = Boolean(definition && definition.roles?.includes(role));
+    resourceAllowed = Boolean(definition && (definition.roles ?? []).some((allowed) => allowed === role));
   }
   const currentAllowed = resourceName !== null
     ? resourceAllowed

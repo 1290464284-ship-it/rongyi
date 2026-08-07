@@ -1,30 +1,9 @@
 import type { Page as DomainPage } from '../domain/contracts';
-import type { FieldFormat, FieldInputType } from '../domain/contracts';
+import type { FieldFormat, FieldInputType, ResourceDefinition, ResourceField } from '../domain/contracts';
 
 export type Page<T> = DomainPage<T>;
 
-export interface ResourceField {
-  name: string;
-  type: 'text' | 'longText' | 'number' | 'money' | 'date' | 'datetime' | 'boolean' | 'enum' | 'json' | 'relation' | 'decimal';
-  required?: boolean;
-  enumValues?: readonly string[];
-  relation?: { resource: string; labelField: string };
-  maxLength?: number;
-  label?: string;
-  enumLabels?: Readonly<Record<string, string>>;
-  format?: FieldFormat;
-  inputType?: FieldInputType;
-  hidden?: boolean;
-  readOnly?: boolean;
-  placeholder?: string;
-  helpText?: string;
-}
-
-export interface ResourceDefinition {
-  name: string;
-  label?: string;
-  table: string;
-  fields: ResourceField[];
-  capabilities: { create: boolean; update: boolean; delete: boolean; softDelete: boolean };
-  roles?: string[];
-}
+// ResourceField / ResourceDefinition 直接复用 domain/contracts 的唯一声明，
+// 避免前后端 DTO 双写漂移（round7 H-02）。前端不再维护自有副本。
+export type { ResourceField, ResourceDefinition };
+export type { FieldFormat, FieldInputType };
