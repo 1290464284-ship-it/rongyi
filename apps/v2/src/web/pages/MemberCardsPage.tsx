@@ -1,4 +1,4 @@
-import { FormEvent, useRef, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { apiRequest } from '../lib/api';
 import { CrudPage } from '../components/CrudPage';
 import { Dialog, SearchableSelect, type DataTableColumn } from '../components';
@@ -124,17 +124,16 @@ export function MemberCardsPage() {
         canEdit
         canDelete
         dialogTitle={(editing) => (editing ? '编辑会员卡' : '新建会员卡')}
-        rowActions={(row, ctx) => {
-          reloadRef.current = ctx.reload;
-          return (
+        rowActions={(row, ctx) => (
           <>
+            <ReloadSync reload={ctx.reload} onReload={(reload) => { reloadRef.current = reload; }} />
             <button onClick={() => openAction(row.id, 'RECHARGE')}>充值</button>
             <button onClick={() => openAction(row.id, 'CONSUME')}>消费</button>
             <button onClick={() => openAction(row.id, 'POINTS')}>积分</button>
             <button onClick={() => openPlan(row)}>折扣方案</button>
             <button onClick={() => openQuote(row)}>报价试算</button>
-          </>);
-        }}
+          </>
+        )}
         renderForm={(ctx) => (
           <>
             <label>
@@ -344,4 +343,19 @@ export function MemberCardsPage() {
       setActionBusy(false);
     }
   }
+}
+
+// M9：渲染期写 ref 是反模式（StrictMode 双渲染/行集合变化时 ref 可能指向旧实例）。
+// 将 ctx.reload 赋值移到 effect 提交后执行，使 ref 与最终提交的渲染一致。
+function ReloadSync({
+  reload,
+  onReload,
+}: {
+  reload: () => Promise<unknown>;
+  onReload: (reload: () => Promise<unknown>) => void;
+}) {
+  useEffect(() => {
+    onReload(reload);
+  }, [reload, onReload]);
+  return null;
 }

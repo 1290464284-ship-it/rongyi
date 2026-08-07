@@ -15,6 +15,7 @@ export function InventoryPage() {
   const [searchParams] = useSearchParams();
   const urlItemId = searchParams.get('id');
   const [itemId, setItemId] = useState<string | null>(urlItemId);
+  const [itemIdError, setItemIdError] = useState<string | null>(null);
   const [type, setType] = useState<'IN' | 'OUT' | 'ADJUST'>('IN');
   const [quantity, setQuantity] = useState('1');
   const [submitting, setSubmitting] = useState(false);
@@ -95,6 +96,12 @@ export function InventoryPage() {
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (submitting) return;
+    // M13：itemId 必填，提交前字段级校验（避免报错延迟到服务端）
+    if (!itemId || !itemId.trim()) {
+      setItemIdError('请填写库存项目 ID');
+      return;
+    }
+    setItemIdError(null);
     const qty = Number(quantity);
     if (!Number.isFinite(qty) || qty <= 0) {
       showToast('请输入有效的库存数量', 'error');
@@ -291,7 +298,16 @@ export function InventoryPage() {
       ) : (
         <>
           <form className="inline-form" onSubmit={submit}>
-            <input aria-label="库存项目 ID" value={itemId ?? ''} onChange={(event) => setItemId(event.target.value)} />
+            <input
+              aria-label="库存项目 ID"
+              className={itemIdError ? 'error' : undefined}
+              value={itemId ?? ''}
+              onChange={(event) => {
+                setItemId(event.target.value);
+                if (itemIdError) setItemIdError(null);
+              }}
+            />
+            {itemIdError && <span className="field-error">{itemIdError}</span>}
             <select value={type} onChange={(event) => setType(event.target.value as typeof type)}>
               <option value="IN">IN</option>
               <option value="OUT">OUT</option>
@@ -397,7 +413,7 @@ export function InventoryPage() {
         title="删除确认"
         message="确定删除该批次吗？"
         danger
-        onConfirm={() => void confirmDeleteBatch()}
+        onConfirm={() => confirmDeleteBatch()}
         onCancel={() => setDeleteTarget(null)}
       />
     </div>

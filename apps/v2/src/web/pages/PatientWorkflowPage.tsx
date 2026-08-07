@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../lib/api';
 import type { Page } from '../lib/types';
-import { DataTable, LoadingState, PageError, type DataTableColumn } from '../components';
+import { DataTable, QuerySection, type DataTableColumn } from '../components';
 import { errorMessage } from '../lib/messages';
+import { useAsyncAction } from '../hooks/use-async-action';
 import { useToast } from '../lib/toast-context';
 
 export function PatientWorkflowPage() {
@@ -15,20 +16,6 @@ export function PatientWorkflowPage() {
     queryKey: ['risk-workflow'],
     queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/patientRiskScores?page=1&pageSize=100'),
   });
-
-  if (patients.isLoading || scores.isLoading) return <LoadingState label="患者数据加载中..." />;
-  const loadError = patients.error ?? scores.error;
-  if (loadError) {
-    return (
-      <div className="page">
-        <PageError message={loadError instanceof Error ? loadError.message : String(loadError)} />
-        <button onClick={() => {
-          void patients.refetch();
-          void scores.refetch();
-        }}>重试</button>
-      </div>
-    );
-  }
 
   async function calculate(patientId: string) {
     try {
@@ -46,7 +33,7 @@ export function PatientWorkflowPage() {
     {
       key: 'actions',
       label: '操作',
-      render: (row) => <button onClick={() => calculate(String(row.id))}>计算风险</button>,
+      render: (row) => <CalculateRiskButton patientId={String(row.id)} onDone={calculate} />,
     },
   ];
 
@@ -60,9 +47,25 @@ export function PatientWorkflowPage() {
   return (
     <div className="page">
       <h1>患者风险评分</h1>
-      <DataTable columns={patientColumns} rows={patients.data?.items ?? []} keyField="id" emptyText="暂无患者" />
+      <QuerySection
+        query={patients}
+        render={(data) => <DataTable columns={patientColumns} rows={data?.items ?? []} keyField="id" emptyText="暂无患者" />}
+      />
       <h2>历史评分</h2>
-      <DataTable columns={scoreColumns} rows={scores.data?.items ?? []} keyField="id" emptyText="暂无评分记录" />
+      <QuerySection
+        query={scores}
+        render={(data) => <DataTable columns={scoreColumns} rows={data?.items ?? []} keyField="id" emptyText="暂无评分记录" />}
+      />
     </div>
+  );
+}
+
+/** 行内“计算风险”按钮：busy 期间禁用，防止双击重复触发评分计算。 */
+function CalculateRiskButton({ patientId, onDone }: { patientId: string; onDone: (patientId: string) => Promise<void> }) {
+  const { busy, run } = useAsyncAction();
+  return (
+    <button disabled={busy} onClick={() => run(() => onDone(patientId))}>
+      {busy ? '计算中...' : '计算风险'}
+    </button>
   );
 }

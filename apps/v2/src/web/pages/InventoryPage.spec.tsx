@@ -98,11 +98,13 @@ describe('InventoryPage', () => {
     });
 
     render(<InventoryPage />, { wrapper });
-    fireEvent.click(await screen.findByRole('button', { name: '保存库存流水' }));
-    expect(await screen.findByText('inventory failed')).toBeDefined();
+    // M13：itemId 必填校验，先填项目 ID 再提交以触达失败路径
+    fireEvent.change(await screen.findByLabelText('库存项目 ID'), { target: { value: 'item-1' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存库存流水' }));
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: '生成补货建议' }));
-    expect(await screen.findByText('inventory failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
   });
 
   it('uses generic fallback messages for non-error failures', async () => {
@@ -117,7 +119,7 @@ describe('InventoryPage', () => {
 
     render(<InventoryPage />, { wrapper });
     fireEvent.click(await screen.findByRole('button', { name: '保存库存流水' }));
-    expect(await screen.findByText('保存库存流水失败')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: '生成补货建议' }));
     expect(await screen.findByText('生成补货建议失败')).toBeDefined();
@@ -365,7 +367,7 @@ describe('InventoryPage', () => {
 
     render(<InventoryPage />, { wrapper });
     fireEvent.click(await screen.findByRole('tab', { name: '库存明细报表' }));
-    expect(await screen.findByText('report failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
     expect(screen.getByRole('button', { name: '重试' })).toBeDefined();
   });
 

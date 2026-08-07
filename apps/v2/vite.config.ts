@@ -1,5 +1,6 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
+import { randomBytes } from 'node:crypto';
 import { DEFAULT_API_PORT, DEFAULT_WEB_DEV_PORT } from './src/shared/constants';
 
 function devCsp(): { name: string; apply: 'serve'; transformIndexHtml(html: string): string } {
@@ -7,13 +8,37 @@ function devCsp(): { name: string; apply: 'serve'; transformIndexHtml(html: stri
     name: 'dev-csp',
     apply: 'serve',
     transformIndexHtml(html: string): string {
-      return html.replace("script-src 'self';", "script-src 'self' 'unsafe-inline';");
+      // dev 下 React Refresh/HMR 需要内联脚本与样式，将构建期 nonce 占位还原为 'unsafe-inline'
+      return html
+        .replace("script-src 'self' 'nonce-__CSP_NONCE__';", "script-src 'self' 'unsafe-inline';")
+        .replace("style-src 'self' 'nonce-__CSP_NONCE__';", "style-src 'self' 'unsafe-inline';");
+    },
+  };
+}
+
+// 审计 M7：nonce 迁移。构建期生成一次性随机 nonce，替换 index.html 中 meta CSP
+// 与入口 script 的 __CSP_NONCE__ 占位符（order: 'post'，在 Vite 重写 script 标签后执行，
+// 确保产物中 script 一定带 nonce 属性），彻底移除 'unsafe-inline'。
+function cspNonce(): { name: string; apply: 'build'; transformIndexHtml: { order: 'post'; handler(html: string): string } } {
+  return {
+    name: 'csp-nonce',
+    apply: 'build',
+    transformIndexHtml: {
+      order: 'post',
+      handler(html: string): string {
+        const nonce = randomBytes(16).toString('hex');
+        return html
+          .replaceAll('__CSP_NONCE__', nonce)
+          .replace(/<script([^>]*?)>/g, (_match, attrs: string) =>
+            attrs.includes('nonce=') ? `<script${attrs}>` : `<script${attrs} nonce="${nonce}">`,
+          );
+      },
     },
   };
 }
 
 export default defineConfig({
-  plugins: [react(), devCsp()],
+  plugins: [react(), devCsp(), cspNonce()],
   test: {
     coverage: {
       provider: 'v8',

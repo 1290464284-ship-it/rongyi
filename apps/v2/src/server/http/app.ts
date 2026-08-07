@@ -49,7 +49,7 @@ import { registerReadRoutes } from './read-routes';
 import { registerAdminRoutes, registerPublicAuthRoutes } from './routes/auth-admin';
 import { registerWorkflowRoutes } from './routes/workflow';
 import { registerSystemRoutes } from './routes/system';
-import { registerFileRoutes } from './routes/files';
+import { registerFileRoutes, registerPublicFileRoutes } from './routes/files';
 import { registerWorkbenchRoutes } from './routes/workbench-routes';
 import { registerMedicalRecordEditRoutes } from './routes/medical-record-edit-routes';
 import { registerFirstExamTrackingRoutes } from './routes/first-exam-tracking-routes';
@@ -97,7 +97,6 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
   app.locals.audit = audit.push;
   app.locals.flushAuditNow = audit.flushNow;
   app.set('flushAudit', audit.flushNow);
-
   // 盘点锁定守卫：LOCKED 盘点单覆盖的物品在盘点期间禁止出入库。
   const stocktakes = new StocktakeService(db);
   const stocktakeLockGuard = (itemId: string, clinicId?: string | null) => stocktakes.assertNotLocked(itemId, clinicId);
@@ -166,11 +165,13 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
       try {
         const url = new URL(origin);
         const isLoopback = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
-        if (
-          isLoopback &&
-          url.protocol === 'http:' &&
-          (Number(url.port) === Number(process.env.V2_PORT ?? 3180) || Number(url.port) === 5180)
-        ) {
+        // B-L5：显式端口缺失时按协议默认端口计算（http→80/https→443），否则
+        // Number('') = NaN 会让 http://localhost 这类来源被误拒；开发模式额外
+        // 放行 Vite 常用端口（5173/5180），方便本地前端直连 API。
+        const port = url.port === '' ? (url.protocol === 'https:' ? 443 : 80) : Number(url.port);
+        const apiPort = Number(process.env.V2_PORT ?? 3180);
+        const isAllowedPort = port === apiPort || (process.env.NODE_ENV !== 'production' && (port === 5173 || port === 5180));
+        if (isLoopback && url.protocol === 'http:' && isAllowedPort) {
           callback(null, true);
           return;
         }
@@ -214,6 +215,11 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
   }));
 
   registerPublicAuthRoutes(app, deps);
+
+  // S-L8：文件签名 GET 必须在 authMiddleware 之前注册——<img> 请求无法携带
+  // Authorization 头，只能凭短期签名（exp+sig）访问；无效签名 next() 落回
+  // 受保护路由（JWT 认证的常规 GET）。
+  registerPublicFileRoutes(app, deps);
 
   app.use('/api/v2', authMiddleware(deps.authService));
   // 审计中间件必须位于角色规则中间件之前：角色规则短路 403（next(error) 跳过

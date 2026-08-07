@@ -198,7 +198,7 @@ export function DispenseNarcoticPanel() {
         message="确定删除该麻药登记吗？"
         confirmText="删除"
         danger
-        onConfirm={() => void confirmDeleteNarcotic()}
+        onConfirm={() => confirmDeleteNarcotic()}
         onCancel={() => setDeleteNarcoticTarget(null)}
       />
     </>

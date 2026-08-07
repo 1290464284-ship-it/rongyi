@@ -191,7 +191,7 @@ export function ChargesPage() {
         message={`确定删除该收费单吗？此操作不可恢复。${deleteTarget ? `（${deleteTarget.number ?? deleteTarget.id}）` : ''}`}
         confirmText="确认删除"
         danger
-        onConfirm={() => void deleteCharge()}
+        onConfirm={() => deleteCharge()}
         onCancel={() => setDeleteTarget(null)}
       />
     </div>

@@ -5,6 +5,7 @@ import type { Page } from '../lib/types';
 import { ConfirmDialog, DataTable, Dialog, LoadingState, PageError, SearchableSelect } from '../components';
 import { errorMessage } from '../lib/messages';
 import { toLocalInput } from '../lib/format';
+import { useAsyncAction } from '../hooks/use-async-action';
 import { useToast } from '../lib/toast-context';
 import { APPOINTMENT_TYPE_LABELS } from '../lib/labels';
 import { parseLocalDateTime } from '../appointments/date';
@@ -345,9 +346,7 @@ export function AppointmentsPage() {
           {(purposes.data?.items ?? []).map((row) => (
             <li key={row.id}>
               <span>{String(row.name ?? row.id)}</span>
-              <button type="button" onClick={() => void togglePurpose(row)}>
-                {Number(row.active) === 1 ? '停用' : '启用'}
-              </button>
+              <TogglePurposeButton row={row} onToggle={togglePurpose} />
               <button type="button" onClick={() => openEditPurpose(row)}>编辑</button>
               <button type="button" className="danger" onClick={() => setPurposeDeleteTarget(row)}>删除</button>
             </li>
@@ -403,7 +402,7 @@ export function AppointmentsPage() {
         message={`确定删除该预约吗？删除后不可恢复。`}
         confirmText="删除"
         danger
-        onConfirm={() => void deleteAppointment()}
+        onConfirm={() => deleteAppointment()}
         onCancel={() => setDeleteTarget(null)}
       />
 
@@ -438,9 +437,19 @@ export function AppointmentsPage() {
         message={`确定删除事项「${purposeDeleteTarget?.name ?? ''}」吗？`}
         confirmText="删除"
         danger
-        onConfirm={() => void deletePurpose()}
+        onConfirm={() => deletePurpose()}
         onCancel={() => setPurposeDeleteTarget(null)}
       />
     </div>
+  );
+}
+
+/** 事项启用/停用按钮：busy 期间禁用，防止双击导致状态来回切换。 */
+function TogglePurposeButton({ row, onToggle }: { row: PurposeRow; onToggle: (row: PurposeRow) => Promise<void> }) {
+  const { busy, run } = useAsyncAction();
+  return (
+    <button type="button" disabled={busy} onClick={() => run(() => onToggle(row))}>
+      {Number(row.active) === 1 ? '停用' : '启用'}
+    </button>
   );
 }

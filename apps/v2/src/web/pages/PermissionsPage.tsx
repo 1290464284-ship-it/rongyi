@@ -214,7 +214,9 @@ export function PermissionsPage() {
         message={`确定删除资源「${deleteTarget?.resource ?? ''}」的「${deleteTarget?.permission ?? ''}」权限吗？`}
         confirmText="确认删除"
         danger
-        onConfirm={() => deleteTarget && removePermission(deleteTarget)}
+        onConfirm={() => {
+          if (deleteTarget) removePermission(deleteTarget);
+        }}
         onCancel={() => setDeleteTarget(null)}
       />
     </div>

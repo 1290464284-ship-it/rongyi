@@ -306,7 +306,14 @@ describe('core repositories', () => {
          patientId, type, content, status
        ) VALUES (?, ?, ?, ?, NULL, 'patient', 'TEXT', 'hello', 'PENDING')`,
     ).run('wechat-repo', null, now, now);
-    wechat.markSent('wechat-repo', now, now);
+    // B-M2/B-M8 并发守卫：markSent 只接受已抢占为 IN_PROGRESS 的消息，
+    // 先模拟发送流程的原子抢占（PENDING -> IN_PROGRESS），再标记为已发送。
+    expect(wechat.markSent('wechat-repo', now, now)).toBe(0);
+    db.prepare(
+      `UPDATE WechatMessage SET status = 'IN_PROGRESS', updatedAt = ?
+       WHERE id = ? AND deletedAt IS NULL`,
+    ).run(now, 'wechat-repo');
+    expect(wechat.markSent('wechat-repo', now, now)).toBe(1);
     const message = db.prepare('SELECT * FROM WechatMessage WHERE id = ?').get('wechat-repo') as Record<string, unknown>;
     expect(message.status).toBe('SENT');
     db.prepare(
@@ -660,6 +667,11 @@ describe('core repositories', () => {
     const wechat = new SqliteWechatMessageRepository(db);
     expect(wechat.findById('wechat-scope', 'clinic-v2-001')).not.toBeNull();
     expect(wechat.findById('wechat-scope')).not.toBeNull();
+    // markSent 只接受已抢占为 IN_PROGRESS 的消息（B-M2/B-M8 并发守卫）。
+    db.prepare(
+      `UPDATE WechatMessage SET status = 'IN_PROGRESS', updatedAt = ?
+       WHERE id = ? AND deletedAt IS NULL AND clinicId = ?`,
+    ).run(now, 'wechat-scope', 'clinic-v2-001');
     expect(wechat.markSent('wechat-scope', now, now, 'clinic-v2-001')).toBe(1);
 
     db.prepare(

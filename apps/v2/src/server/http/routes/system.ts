@@ -16,7 +16,9 @@ export function registerSystemRoutes(app: Express, deps: RouteDependencies): voi
         data: sync.pull(
           String(req.query.since ?? new Date(0).toISOString()),
           String(req.query.deviceId ?? 'desktop'),
-          String(req.query.deviceToken ?? ''),
+          // S-L3：设备令牌优先从 X-Device-Token 头读取（避免 token 出现在 URL
+          // query string 而泄漏进访问日志/历史记录）；query 参数仅作旧客户端兼容回退。
+          String(req.header('x-device-token') ?? req.query.deviceToken ?? ''),
           req.context!,
         ),
       });
@@ -34,7 +36,12 @@ export function registerSystemRoutes(app: Express, deps: RouteDependencies): voi
   }));
 
   app.post('/api/v2/sync/push', syncLimiter, wrapAsync(async (req, res) => {
-      res.json({ success: true, data: await sync.push(req.body, req.context!) });
+      const payload = { ...(req.body ?? {}) };
+      // S-L3：设备令牌优先从 X-Device-Token 头读取；body 字段仅作旧客户端兼容回退。
+      if (!payload.deviceToken && req.header('x-device-token')) {
+        payload.deviceToken = req.header('x-device-token');
+      }
+      res.json({ success: true, data: await sync.push(payload, req.context!) });
   }));
 
   app.post('/api/v2/sync/cleanup', syncLimiter, wrapAsync(async (req, res) => {

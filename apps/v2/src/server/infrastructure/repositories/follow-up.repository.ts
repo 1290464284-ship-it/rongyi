@@ -81,7 +81,7 @@ export class SqliteWechatMessageRepository implements WechatMessageRepository {
   markSent(id: string, sentAt: string, updatedAt: string, clinicId?: string | null): number {
     return this.db.prepare(
       `UPDATE WechatMessage SET status = ?, sentAt = ?, result = ?, updatedAt = ?
-       WHERE id = ? AND deletedAt IS NULL AND status IN ('PENDING', 'DRAFT', 'IN_PROGRESS')${tenantAnd(clinicId)}`,
+       WHERE id = ? AND deletedAt IS NULL AND status = 'IN_PROGRESS'${tenantAnd(clinicId)}`,
     ).run('SENT', sentAt, null, updatedAt, id, ...(clinicId ? [clinicId] : [])).changes;
   }
 }

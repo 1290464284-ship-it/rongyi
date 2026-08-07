@@ -10,7 +10,7 @@ import type {
   ResourceField,
 } from '../../domain/contracts';
 import { maskSensitiveFields } from './security';
-import { tenantAnd, tenantParams } from './tenant';
+import { tenantAnd, tenantParams, tenantWhere } from './tenant';
 import { buildFtsQuery, upsertSearchRow, removeSearchRow, refreshPatientChildSearchRows } from './search-index';
 import { recordSyncChange } from './sync-change';
 
@@ -48,7 +48,8 @@ function serialize(field: ResourceField, value: unknown): unknown {
     return typeof value === 'string' ? value : JSON.stringify(value);
   }
   if (field.type === 'boolean') {
-    return value === true || value === 1 || value === 'true' ? 1 : 0;
+    // B-L4：字符串 '1'（表单/CSV/同步客户端）与布尔 true 等价；与 validation.ts 一致。
+    return value === true || value === 1 || value === 'true' || value === '1' ? 1 : 0;
   }
   return value;
 }
@@ -197,8 +198,6 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
 
   async update(entity: Record<string, unknown>, context: AppContext): Promise<void> {
     const id = String(entity.id);
-    const existing = await this.findById(id, context);
-    if (!existing) throw new NotFoundError(`${this.resource.name} not found`);
 
     const sets: string[] = ['updatedAt = ?'];
     const values: unknown[] = [context.now().toISOString()];
@@ -209,13 +208,25 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
       }
     }
     this.assertRelations(entity, context);
+    // B-M5：条件 UPDATE（id + deletedAt IS NULL + 租户），changes===0 即目标行
+    // 不存在/已删除/跨租户 → NotFoundError。相比先 findById 再 UPDATE 的
+    // check-then-act 模式，消除并发删除窗口下"误报更新成功"的竞态。
+    const whereParts = ['id = ?', 'deletedAt IS NULL'];
     values.push(id);
     /* v8 ignore start -- all registry tables include clinicId today; false branch is defensive for future schemas. */
-    const clinicWhere = this.hasClinicColumn() ? tenantAnd(context.clinicId) : '';
-    if (this.hasClinicColumn()) values.push(...tenantParams(context.clinicId));
+    if (this.hasClinicColumn()) {
+      const tenantClause = tenantWhere(context.clinicId).sql;
+      if (tenantClause) {
+        whereParts.push(tenantClause);
+        values.push(...tenantParams(context.clinicId));
+      }
+    }
     /* v8 ignore stop */
     try {
-      this.db.prepare(`UPDATE ${this.resource.table} SET ${sets.join(', ')} WHERE id = ?${clinicWhere}`).run(...values);
+      const result = this.db.prepare(
+        `UPDATE ${this.resource.table} SET ${sets.join(', ')} WHERE ${whereParts.join(' AND ')}`,
+      ).run(...values);
+      if (Number(result.changes) === 0) throw new NotFoundError(`${this.resource.name} not found`);
     } catch (error) {
       if (isUniqueConstraintError(error)) throw new ConflictError(`${this.resource.name} violates a unique field constraint`);
       throw error;
@@ -234,13 +245,21 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
       const params = [now, now, id, ...(this.hasClinicColumn() ? tenantParams(context.clinicId) : [])];
       const clinicWhere = this.hasClinicColumn() ? tenantAnd(context.clinicId) : '';
       /* v8 ignore stop */
-      this.db.prepare(`UPDATE ${this.resource.table} SET deletedAt = ?, updatedAt = ? WHERE id = ?${clinicWhere}`).run(...params);
+      // B-M5：与 update 一致的守卫——目标行不存在/已删除/跨租户时 changes===0 → NotFound，
+      // 避免对他人/已删记录"静默成功"。
+      const result = this.db.prepare(
+        `UPDATE ${this.resource.table} SET deletedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${clinicWhere}`,
+      ).run(...params);
+      if (Number(result.changes) === 0) throw new NotFoundError(`${this.resource.name} not found`);
     } else {
       /* v8 ignore start -- all registry tables include clinicId today; false branch is defensive for future schemas. */
       const params = [id, ...(this.hasClinicColumn() ? tenantParams(context.clinicId) : [])];
       const clinicWhere = this.hasClinicColumn() ? tenantAnd(context.clinicId) : '';
       /* v8 ignore stop */
-      this.db.prepare(`DELETE FROM ${this.resource.table} WHERE id = ?${clinicWhere}`).run(...params);
+      const result = this.db.prepare(
+        `DELETE FROM ${this.resource.table} WHERE id = ?${clinicWhere}`,
+      ).run(...params);
+      if (Number(result.changes) === 0) throw new NotFoundError(`${this.resource.name} not found`);
     }
     if (this.resource.searchIndexResource) removeSearchRow(this.db, this.resource.searchIndexResource, id);
     if (this.emitSyncChange && context.clinicId) {
@@ -301,7 +320,7 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
   }
 }
 
-function isUniqueConstraintError(error: unknown): boolean {
+export function isUniqueConstraintError(error: unknown): boolean {
   const code = error instanceof Error ? String((error as { code?: unknown }).code ?? '') : '';
   const message = error instanceof Error ? error.message : '';
   return code.includes('UNIQUE') || message.includes('UNIQUE constraint failed');

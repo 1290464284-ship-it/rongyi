@@ -77,6 +77,17 @@ const PROTECTED_WRITE_FIELDS = new Set([
   'billedChargeId',
 ]);
 
+/**
+ * 按资源追加的写保护字段（S-L7）：status/sentAt/result 等字段只在部分资源里
+ * 属于"仅专用服务可写"，其他资源（appointments/treatments 等）仍允许经通用
+ * CRUD 正常维护 status，因此不能进全局 PROTECTED_WRITE_FIELDS。
+ * wechatMessages：发送状态仅允许 send 服务写入——通用 CRUD/sync/批量导入不得
+ * 直接创建"已发送"记录（防伪造通知/随访记录）。
+ */
+const RESOURCE_PROTECTED_WRITE_FIELDS: Record<string, ReadonlySet<string>> = {
+  wechatMessages: new Set(['status', 'sentAt', 'result']),
+};
+
 /** 递归掩码：数组逐项、对象逐键；深度 >5 时原样返回（防深层嵌套拖垮审计）。 */
 export function maskSensitiveFields<T>(row: T, depth = 0): T {
   if (depth > 5) return row;
@@ -94,11 +105,19 @@ export function maskSensitiveFields<T>(row: T, depth = 0): T {
 export function stripProtectedWriteFields(
   payload: Record<string, unknown>,
   exemptFields?: ReadonlySet<string>,
+  resourceName?: string,
 ): Record<string, unknown> {
   const result = { ...payload };
   for (const field of PROTECTED_WRITE_FIELDS) {
     if (exemptFields?.has(field)) continue;
     delete result[field];
+  }
+  const resourceProtected = resourceName ? RESOURCE_PROTECTED_WRITE_FIELDS[resourceName] : undefined;
+  if (resourceProtected) {
+    for (const field of resourceProtected) {
+      if (exemptFields?.has(field)) continue;
+      delete result[field];
+    }
   }
   delete result.clinicId;
   delete result.createdAt;

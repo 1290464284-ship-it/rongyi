@@ -1,14 +1,64 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import express, { type Express } from 'express';
 import { wrapAsync } from '../middleware';
 import { AppError, NotFoundError, ValidationError } from '../../infrastructure/errors';
+import { secretFileValue } from '../../infrastructure/secret-file';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import type { RouteDependencies } from './deps';
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.pdf']);
+// S-L8：签名 URL 有效期（毫秒）。<img> 无法携带 Authorization 头，公共 GET
+// 仅对持有短期签名（≤5 分钟）的请求放行，防 URL 泄露后被长期滥用。
+const SIGNED_URL_TTL_MS = 5 * 60 * 1000;
+
+// S-L8：签名密钥派生。files 路由位于 http 层，不 import application 层
+// common.ts；与 restore marker 同源派生（密钥缺失时用空密钥，使未启用
+// 加密备份的环境仍能自洽校验），用途域用独立常量区分。S-L2 后 Electron
+// 场景密钥经 V2_SECRET_FILE 提供（infrastructure 层读取器，密钥来源唯一）。
+function fileUrlKey(): Buffer {
+  const backupKey = process.env.V2_BACKUP_KEY ?? secretFileValue('backupKey') ?? '';
+  return createHmac('sha256', 'file-url-v1').update(backupKey).digest();
+}
+
+function signFileUrl(filename: string, exp: number): string {
+  return createHmac('sha256', fileUrlKey()).update(`${filename}:${exp}`).digest('hex');
+}
+
+function verifyFileUrl(filename: string, exp: number, signature: string): boolean {
+  if (!Number.isFinite(exp) || typeof signature !== 'string' || signature.length === 0) return false;
+  const expected = Buffer.from(signFileUrl(filename, exp), 'hex');
+  const actual = Buffer.from(signature, 'hex');
+  if (expected.length !== actual.length) return false;
+  return timingSafeEqual(expected, actual);
+}
+
+// S-L8：公共签名 GET（注册于 authMiddleware 之前）。仅当 query 携带有效且
+// 未过期的 exp+sig 时直接发文件；否则 next() 落回受保护路由（需要 JWT）。
+export function registerPublicFileRoutes(app: Express, deps: RouteDependencies): void {
+  const filesDir = path.join(path.dirname(deps.dbPath), 'files');
+  app.get('/api/v2/files/:name', wrapAsync((req, res, next) => {
+      const name = String(req.params.name);
+      if (!/^[a-f0-9-]{36}\.(jpg|jpeg|png|webp|pdf)$/i.test(name)) return next();
+      const rawExp = req.query.exp;
+      const rawSig = req.query.sig;
+      const exp = typeof rawExp === 'string' ? Number(rawExp) : NaN;
+      const sig = typeof rawSig === 'string' ? rawSig : '';
+      // 有效窗口：exp 必须 > now 且 < now + 5 分钟（防重放与长期滥用）。
+      if (!verifyFileUrl(name, exp, sig) || exp <= Date.now() || exp - Date.now() > SIGNED_URL_TTL_MS) {
+        return next();
+      }
+      const record = deps.db.prepare(
+        `SELECT id FROM FileRecord WHERE filename = ? AND deletedAt IS NULL`,
+      ).get(name) as { id: string } | undefined;
+      if (!record) return next();
+      res.sendFile(path.join(filesDir, name), (error) => {
+        if (error) next(error);
+      });
+  }));
+}
 
 export function registerFileRoutes(app: Express, deps: RouteDependencies): void {
   const filesDir = path.join(path.dirname(deps.dbPath), 'files');
@@ -69,12 +119,31 @@ export function registerFileRoutes(app: Express, deps: RouteDependencies): void 
           if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
           throw error;
         }
+        // S-L8：上传响应附带短期签名 URL，供 <img> 直接加载（无法携带 Bearer）。
+        const exp = Date.now() + SIGNED_URL_TTL_MS;
+        const signed = `/api/v2/files/${filename}?exp=${exp}&sig=${signFileUrl(filename, exp)}`;
         res.status(201).json({
           success: true,
-          data: { id, filename, url: `/api/v2/files/${filename}` },
+          data: { id, filename, url: signed },
         });
     }),
   );
+
+  // S-L8：受保护的签名 URL 签发端点（需 JWT；<img> 加载前由前端先换取签名）。
+  app.get('/api/v2/files/:name/sign', wrapAsync((req, res) => {
+      const name = String(req.params.name);
+      if (!/^[a-f0-9-]{36}\.(jpg|jpeg|png|webp|pdf)$/i.test(name)) throw new NotFoundError('File not found');
+      const context = req.context!;
+      const record = deps.db.prepare(
+        `SELECT id FROM FileRecord WHERE filename = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+      ).get(name, ...tenantParams(context.clinicId)) as { id: string } | undefined;
+      if (!record) throw new NotFoundError('File not found');
+      const exp = Date.now() + SIGNED_URL_TTL_MS;
+      res.json({
+        success: true,
+        data: { url: `/api/v2/files/${name}?exp=${exp}&sig=${signFileUrl(name, exp)}` },
+      });
+  }));
 
   app.get('/api/v2/files/:name', wrapAsync((req, res, next) => {
       const name = String(req.params.name);

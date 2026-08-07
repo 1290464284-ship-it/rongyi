@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { apiRequest, downloadCsvPath } from '../lib/api';
 import { DataTable, Dialog, LoadingState, PageError, PromptDialog, type DataTableColumn } from '../components';
 import { errorMessage } from '../lib/messages';
+import { useAsyncAction } from '../hooks/use-async-action';
 import { useToast } from '../lib/toast-context';
 import { FollowUpDictsTab } from '../follow-ups/FollowUpDictsTab';
 import { DEFAULT_EXECUTION_FORM, type CompletionTarget, type ExecutionFormState, type FollowUpNps } from '../follow-ups/types';
@@ -14,6 +15,10 @@ export function FollowUpsPage() {
   const [executionId, setExecutionId] = useState<string | null>(null);
   const [executionForm, setExecutionForm] = useState<ExecutionFormState>(DEFAULT_EXECUTION_FORM);
   const [activeTab, setActiveTab] = useState<'list' | 'dicts'>('list');
+  // 写请求 busy 守卫：防止双击/连按重复创建执行记录或重复完成
+  const { busy: generating, run: runGenerate } = useAsyncAction();
+  const { busy: completing, run: runCompletion } = useAsyncAction();
+  const { busy: executing, run: runExecution } = useAsyncAction();
   const query = useQuery({
     queryKey: ['followup-reminders'],
     queryFn: () => apiRequest<Array<Record<string, unknown>>>('/follow-ups/reminders'),
@@ -161,7 +166,7 @@ export function FollowUpsPage() {
         <h1>随访管理</h1>
         {activeTab === 'list' && (
           <>
-            <button onClick={batchGenerate}>批量生成随访</button>
+            <button onClick={() => void runGenerate(batchGenerate)} disabled={generating}>{generating ? '生成中...' : '批量生成随访'}</button>
             <button onClick={() => setCompletion({ kind: 'batch' })} disabled={selectedIds.length === 0}>
               批量完成
             </button>
@@ -219,7 +224,7 @@ export function FollowUpsPage() {
             <form
               onSubmit={(event) => {
                 event.preventDefault();
-                void submitExecution();
+                void runExecution(() => submitExecution());
               }}
             >
               <label>
@@ -276,8 +281,8 @@ export function FollowUpsPage() {
                 />
               </label>
               <div className="modal-actions">
-                <button type="button" onClick={() => setExecutionId(null)}>取消</button>
-                <button type="submit">确认执行</button>
+                <button type="button" onClick={() => setExecutionId(null)} disabled={executing}>取消</button>
+                <button type="submit" disabled={executing}>{executing ? '提交中...' : '确认执行'}</button>
               </div>
             </form>
           </Dialog>
@@ -287,8 +292,8 @@ export function FollowUpsPage() {
             title="完成随访"
             message="填写完成结果，可选"
             placeholder="例如：已电话回访，患者情况正常"
-            confirmText="确认完成"
-            onSubmit={(value) => void submitCompletion(value)}
+            confirmText={completing ? '提交中...' : '确认完成'}
+            onSubmit={(value) => void runCompletion(() => submitCompletion(value))}
             onCancel={() => setCompletion(null)}
           />
         </>

@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { apiRequest } from '../lib/api';
-import type { Page } from '../lib/types';
+import { apiRequest, fetchAllPages } from '../lib/api';
 import { CrudPage } from '../components/CrudPage';
 import { Dialog } from '../components';
 import { errorMessage } from '../lib/messages';
-import { useToast } from '../lib/toast-context';
+import { useAsyncAction } from '../hooks/use-async-action';
+import { useToast, type ToastKind } from '../lib/toast-context';
 import { createPrescription, processPrescription, updatePrescription } from '../prescriptions/api';
 import { prescriptionColumns } from '../prescriptions/columns';
 import { emptyForm, itemRowToForm, validItems } from '../prescriptions/form';
@@ -27,10 +27,10 @@ export function PrescriptionsPage() {
     let cancelled = false;
     (async () => {
       try {
-        const page = await apiRequest<Page<Record<string, unknown>>>(
-          `/resources/prescriptionItems?prescriptionId=${prescriptionId}&page=1&pageSize=100`,
+        const items = await fetchAllPages<Record<string, unknown>>(
+          `/resources/prescriptionItems?prescriptionId=${prescriptionId}`,
         );
-        if (!cancelled) updateFormRef.current?.({ items: page.items.map(itemRowToForm) });
+        if (!cancelled) updateFormRef.current?.({ items: items.map(itemRowToForm) });
       } catch (error) {
         showToast(errorMessage(error, '加载处方明细失败'), 'error');
       }
@@ -66,19 +66,22 @@ export function PrescriptionsPage() {
             ? '请选择患者、医生并至少填写一条有效处方明细'
             : null
         }
-        submitOverride={({ form, editing }) =>
-          editing ? updatePrescription(form, editingIdRef.current) : createPrescription(form)
-        }
+        submitOverride={({ form, editing }) => {
+          // L1：与采购单一致，填了名称但数量/单价无效的明细会被静默丢弃，提交前提示
+          const dropped = form.items.filter((item) => item.name.trim()).length - validItems(form).length;
+          if (dropped > 0) showToast(`${dropped} 条明细因数量或单价无效将被忽略`, 'info');
+          return editing ? updatePrescription(form, editingIdRef.current) : createPrescription(form);
+        }}
         messages={{ create: '处方已创建', update: '处方已更新', delete: '处方已删除' }}
         errorMessages={{ create: '创建处方失败', update: '更新处方失败', delete: '删除处方失败' }}
         deleteOverride={async (row) => {
           // 服务端 DELETE 为软删除且不级联：先删全部明细，再删主记录（明细删除失败仅告警）
           const prescriptionId = String(row.id);
           try {
-            const page = await apiRequest<Page<Record<string, unknown>>>(
-              `/resources/prescriptionItems?prescriptionId=${prescriptionId}&page=1&pageSize=100`,
+            const items = await fetchAllPages<Record<string, unknown>>(
+              `/resources/prescriptionItems?prescriptionId=${prescriptionId}`,
             );
-            for (const item of page.items) {
+            for (const item of items) {
               await apiRequest(`/resources/prescriptionItems/${String(item.id)}`, { method: 'DELETE' });
             }
           } catch (error) {
@@ -94,7 +97,7 @@ export function PrescriptionsPage() {
           row.status === 'PROCESSED' ? (
             <button onClick={() => setStatusTarget({ row, reload: ctx.reload })}>查看状态</button>
           ) : (
-            <button onClick={() => void processPrescription(row, ctx.reload, showToast)}>处理</button>
+            <ProcessPrescriptionButton row={row} reload={ctx.reload} showToast={showToast} />
           )
         }
         renderForm={(ctx) => {
@@ -113,5 +116,23 @@ export function PrescriptionsPage() {
         )}
       </Dialog>
     </>
+  );
+}
+
+/** 行内“处理”按钮：busy 期间禁用，防止双击重复生成划价单与领药单。 */
+function ProcessPrescriptionButton({
+  row,
+  reload,
+  showToast,
+}: {
+  row: PrescriptionRow;
+  reload: () => Promise<unknown>;
+  showToast: (message: string, kind?: ToastKind) => void;
+}) {
+  const { busy, run } = useAsyncAction();
+  return (
+    <button disabled={busy} onClick={() => run(() => processPrescription(row, reload, showToast))}>
+      {busy ? '处理中...' : '处理'}
+    </button>
   );
 }

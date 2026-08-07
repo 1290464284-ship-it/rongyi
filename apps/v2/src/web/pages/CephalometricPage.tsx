@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest, getApiOrigin, uploadFile } from '../lib/api';
+import { apiRequest, uploadFile } from '../lib/api';
 import { CrudPage } from '../components/CrudPage';
 import { errorMessage } from '../lib/messages';
 import { useToast } from '../lib/toast-context';
@@ -18,27 +18,16 @@ export function CephalometricPage() {
   const { showToast } = useToast();
   const editingIdRef = useRef<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [apiOrigin, setApiOrigin] = useState('');
   const [reportTarget, setReportTarget] = useState<CephalometricRow | null>(null);
   const [sendTarget, setSendTarget] = useState<CephalometricRow | null>(null);
   const [compareTargets, setCompareTargets] = useState<Set<string>>(new Set());
   const [compareResult, setCompareResult] = useState<CephalometricCompareResult | null>(null);
   const [comparing, setComparing] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    void getApiOrigin().then((origin) => {
-      if (!cancelled) setApiOrigin(origin);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // 与 CrudPage 列表共享查询缓存（useCrudResource 将 queryKey 展开为 ['cephalometric', page, search]）。
-  // 使用独立键 'caseList' 避免与列表查询键冲突（列表键可能被误认为二维分页参数）。
+  // 与 CrudPage 列表共享查询缓存：useCrudResource 将 queryKey 展开为 ['cephalometric', page, search]，
+  // 这里使用同一形态的键（page=1、search=''），同一份列表数据只拉取一次，且随列表分页/搜索联动。
   const caseList = useQuery({
-    queryKey: ['cephalometric', 'caseList', 1, ''],
+    queryKey: ['cephalometric', 1, ''],
     queryFn: () => apiRequest<Page<CephalometricRow>>('/resources/cephalometricCases?page=1&pageSize=50'),
   });
   const compareOptions = caseList.data?.items ?? [];
@@ -143,7 +132,7 @@ export function CephalometricPage() {
         }}
         messages={{ create: '头影测量已创建', update: '头影测量已更新', delete: '头影测量已删除' }}
         errorMessages={{ create: '创建头影测量失败', update: '更新头影测量失败', delete: '删除头影测量失败' }}
-        columns={cephalometricColumns(apiOrigin)}
+        columns={cephalometricColumns()}
         canEdit
         canDelete
         rowActions={(row, ctx) => (

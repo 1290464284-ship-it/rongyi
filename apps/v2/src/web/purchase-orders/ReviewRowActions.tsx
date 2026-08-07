@@ -1,5 +1,7 @@
+import { useState } from 'react';
+import { PromptDialog } from '../components';
 import type { ToastKind } from '../lib/toast-context';
-import { rejectOrder, reviewAction } from './api';
+import { reviewAction } from './api';
 import type { PurchaseRow } from './types';
 
 export function ReviewRowActions({
@@ -17,6 +19,7 @@ export function ReviewRowActions({
   showToast: (message: string, kind?: ToastKind) => void;
   onChanged: () => void;
 }) {
+  const [rejectOpen, setRejectOpen] = useState(false);
   const reviewStatus = String(row.reviewStatus ?? '');
   if (reviewStatus === 'PENDING') {
     return (
@@ -30,17 +33,38 @@ export function ReviewRowActions({
   }
   if (reviewStatus === 'SUBMITTED') {
     return (
-      <span>
-        <button
-          disabled={reviewing}
-          onClick={() => void reviewAction(showToast, reload, setReviewing, onChanged, row.id, 'approve', '已通过审核')}
-        >
-          通过
-        </button>
-        <button disabled={reviewing} onClick={() => void rejectOrder(showToast, reload, setReviewing, onChanged, row.id)}>
-          驳回
-        </button>
-      </span>
+      <>
+        <span>
+          <button
+            disabled={reviewing}
+            onClick={() => void reviewAction(showToast, reload, setReviewing, onChanged, row.id, 'approve', '已通过审核')}
+          >
+            通过
+          </button>
+          <button disabled={reviewing} onClick={() => setRejectOpen(true)}>
+            驳回
+          </button>
+        </span>
+        <PromptDialog
+          key={rejectOpen ? 'open' : 'closed'}
+          open={rejectOpen}
+          title="驳回采购单"
+          message="请输入驳回原因"
+          value=""
+          placeholder="驳回原因"
+          confirmText="确认驳回"
+          cancelText="取消"
+          onSubmit={(reason) => {
+            if (!reason.trim()) {
+              showToast('驳回原因必填', 'error');
+              return;
+            }
+            setRejectOpen(false);
+            void reviewAction(showToast, reload, setReviewing, onChanged, row.id, 'reject', '已驳回', { reason: reason.trim() });
+          }}
+          onCancel={() => setRejectOpen(false)}
+        />
+      </>
     );
   }
   if (reviewStatus === 'REJECTED') {

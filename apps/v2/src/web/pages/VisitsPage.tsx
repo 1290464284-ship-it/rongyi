@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../lib/api';
 import { CrudPage } from '../components/CrudPage';
@@ -108,20 +109,7 @@ export function VisitsPage() {
       errorMessages={{ create: '创建就诊失败' }}
       columns={visitColumns}
       rowActions={(row, ctx) => (
-        <select
-          defaultValue=""
-          aria-label="变更就诊状态"
-          onChange={(event) => {
-            const status = event.target.value;
-            if (!status) return;
-            void transitionVisit(showToast, ctx.reload, row.id, status);
-          }}
-        >
-          <option value="">变更状态</option>
-          {Object.entries(STATUS_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>{label}</option>
-          ))}
-        </select>
+        <VisitStatusSelect rowId={row.id} onTransition={(id, status) => void transitionVisit(showToast, ctx.reload, id, status)} />
       )}
       renderForm={(ctx) => <VisitForm form={ctx.form} update={ctx.update} />}
     />
@@ -144,6 +132,30 @@ async function transitionVisit(
   } catch (error) {
     showToast(errorMessage(error, '状态更新失败'), 'error');
   }
+}
+
+/** M12：行内受控状态下拉：选中后立即复位为占位项，避免非受控 select 在行复用后残留旧值（对齐 TreatmentsPage 复位模式）。 */
+function VisitStatusSelect({ rowId, onTransition }: {
+  rowId: string;
+  onTransition: (id: string, status: string) => void;
+}) {
+  const [value, setValue] = useState('');
+  return (
+    <select
+      value={value}
+      aria-label="变更就诊状态"
+      onChange={(event) => {
+        const next = event.target.value;
+        setValue('');
+        if (next) onTransition(rowId, next);
+      }}
+    >
+      <option value="">变更状态</option>
+      {Object.entries(STATUS_LABELS).map(([value, label]) => (
+        <option key={value} value={value}>{label}</option>
+      ))}
+    </select>
+  );
 }
 
 function VisitForm({ form, update }: { form: VisitForm; update: (patch: Partial<VisitForm>) => void }) {

@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { apiRequest } from '../lib/api';
+import { fetchAllPages } from '../lib/api';
 import { SearchableSelect, type SearchableSelectRow } from '../components';
 import { centsToYuanString } from '../lib/format';
-import type { Page } from '../lib/types';
 import { newItem } from './form';
 import type { PurchaseOrderForm, PurchaseOrderItemRow } from './types';
 
@@ -23,16 +22,19 @@ export function PurchaseOrderFormFields({
 }) {
   const loadedItemsForRef = useRef<string | null>(null);
   const [itemsError, setItemsError] = useState<string | null>(null);
+  // L2：明细异步回填完成前禁用编辑区，避免整表覆盖用户正在输入的内容（竞态）
+  const [itemsLoading, setItemsLoading] = useState(false);
   useEffect(() => {
     if (!editing || !editingId || loadedItemsForRef.current === editingId) return;
     let cancelled = false;
     loadedItemsForRef.current = editingId;
     setItemsError(null);
-    apiRequest<Page<PurchaseOrderItemRow>>(`/resources/purchaseOrderItems?orderId=${editingId}&page=1&pageSize=100`)
-      .then((data) => {
+    setItemsLoading(true);
+    fetchAllPages<PurchaseOrderItemRow>(`/resources/purchaseOrderItems?orderId=${editingId}`)
+      .then((rows) => {
         if (cancelled) return;
         update({
-          items: (data.items ?? []).map((row) => ({
+          items: (rows ?? []).map((row) => ({
             id: String(row.id),
             itemId: String(row.itemId ?? ''),
             name: String(row.name ?? ''),
@@ -45,6 +47,9 @@ export function PurchaseOrderFormFields({
       })
       .catch(() => {
         if (!cancelled) setItemsError('明细加载失败，请关闭后重试');
+      })
+      .finally(() => {
+        if (!cancelled) setItemsLoading(false);
       });
     return () => {
       cancelled = true;
@@ -67,7 +72,8 @@ export function PurchaseOrderFormFields({
         />
       </label>
       {itemsError && <p className="error">{itemsError}</p>}
-      {form.items.map((item) => (
+      {itemsLoading && <p className="page-state">明细加载中...</p>}
+      {!itemsLoading && form.items.map((item) => (
         <div className="charge-item-row" key={item.id}>
           <SearchableSelect
             resource="inventoryItems"
@@ -82,7 +88,7 @@ export function PurchaseOrderFormFields({
           <button type="button" onClick={() => update({ items: form.items.filter((entry) => entry.id !== item.id) })}>移除</button>
         </div>
       ))}
-      <button type="button" onClick={() => update({ items: [...form.items, newItem()] })}>添加明细</button>
+      <button type="button" disabled={itemsLoading} onClick={() => update({ items: [...form.items, newItem()] })}>添加明细</button>
     </>
   );
 }

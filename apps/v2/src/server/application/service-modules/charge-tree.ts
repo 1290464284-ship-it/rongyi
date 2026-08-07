@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
+import { upsertSearchRow } from '../../infrastructure/search-index';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { generateDocumentNumber } from './common';
 import type { AppContext } from '../../../domain/contracts';
@@ -163,6 +164,8 @@ export class ChargeTreeService {
         now,
         now,
       );
+      // 直写搜索索引：Charge 行创建后同步其可检索内容（含患者姓名）。
+      upsertSearchRow(this.db, 'Charge', chargeId);
     });
     chargeRun();
 

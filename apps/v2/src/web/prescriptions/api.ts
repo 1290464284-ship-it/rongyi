@@ -1,5 +1,4 @@
-import { apiRequest } from '../lib/api';
-import type { Page } from '../lib/types';
+import { apiRequest, fetchAllPages } from '../lib/api';
 import { errorMessage } from '../lib/messages';
 import type { ToastKind } from '../lib/toast-context';
 import { itemPayload, validItems } from './form';
@@ -46,10 +45,9 @@ export async function updatePrescription(form: PrescriptionForm, prescriptionId:
       status: form.status,
     }),
   });
-  const page = await apiRequest<Page<Record<string, unknown>>>(
-    `/resources/prescriptionItems?prescriptionId=${prescriptionId}&page=1&pageSize=100`,
+  const existing = await fetchAllPages<Record<string, unknown>>(
+    `/resources/prescriptionItems?prescriptionId=${prescriptionId}`,
   );
-  const existing = page.items;
   const existingIds = new Set(existing.map((row) => String(row.id)));
   // 保留的明细（有服务端 id）→ PATCH；新增的明细 → POST（带 prescriptionId）。
   // 与 validItems 同一套有效性过滤，但保留本地 id 用于判断服务端存在性。

@@ -91,7 +91,7 @@ describe('FinanceWorkflowPage', () => {
     render(<FinanceWorkflowPage />, { wrapper });
     fireEvent.click((await screen.findAllByRole('button', { name: '充值' }))[0]);
     await submitAmount('1');
-    expect(await screen.findByText('finance failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
 
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/memberCards?page=1&pageSize=100') {

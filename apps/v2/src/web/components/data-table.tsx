@@ -18,6 +18,9 @@ export function DataTable<T extends Record<string, unknown>>({
   emptyText?: string;
 }) {
   if (rows.length === 0) return <div className="table-empty">{emptyText}</div>;
+  // M2：行数上限（500），超限仅渲染前 500 行并提示，避免千行级列表全量 DOM 渲染
+  const MAX_RENDER_ROWS = 500;
+  const visibleRows = rows.length > MAX_RENDER_ROWS ? rows.slice(0, MAX_RENDER_ROWS) : rows;
   const tableContent = (
     <table>
       <thead>
@@ -30,7 +33,7 @@ export function DataTable<T extends Record<string, unknown>>({
         </tr>
       </thead>
       <tbody>
-        {rows.map((row, index) => (
+        {visibleRows.map((row, index) => (
           <tr key={keyField ? String(row[keyField] ?? '') : index}>
             {columns.map((column) => (
               <td key={column.key}>
@@ -44,6 +47,9 @@ export function DataTable<T extends Record<string, unknown>>({
   );
   return (
     <div className="table-wrap">
+      {rows.length > MAX_RENDER_ROWS && (
+        <div className="table-note">仅显示前 {MAX_RENDER_ROWS} 行（共 {rows.length} 行），请使用搜索或筛选缩小范围</div>
+      )}
       {rows.length > 100 ? (
         <div style={{ maxHeight: '60vh', overflowY: 'auto' }}>
           {tableContent}

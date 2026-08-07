@@ -3,17 +3,19 @@ import os from 'node:os';
 import path from 'node:path';
 import express, { type Express } from 'express';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
 import { registerWechatReminderRoutes } from './wechat-reminder-routes';
 import { buildRouteDeps } from './route-deps.helper';
+import { WechatReminderService } from '../../application/service-modules/wechat-reminder';
 
 describe('wechat reminder routes', () => {
   let dataDir: string;
   let db: Database.Database;
   let app: Express;
+  let service: WechatReminderService;
   const nowIso = '2026-08-05T10:00:00.000Z';
 
   beforeAll(() => {
@@ -36,7 +38,13 @@ describe('wechat reminder routes', () => {
       };
       next();
     });
-    registerWechatReminderRoutes(app, buildRouteDeps(db));
+    service = new WechatReminderService(db);
+    registerWechatReminderRoutes(app, buildRouteDeps(db), service);
+  });
+
+  beforeEach(() => {
+    // B-L8：清除今日生成缓存，保证每个用例插入的数据都会重新扫描生成。
+    service.clearTodayGeneratedCache();
   });
 
   afterAll(() => {

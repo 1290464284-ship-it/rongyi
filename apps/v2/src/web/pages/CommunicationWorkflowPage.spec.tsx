@@ -66,7 +66,7 @@ describe('CommunicationWorkflowPage', () => {
     render(<CommunicationWorkflowPage />, { wrapper });
     await screen.findByText('微信通道已开通');
     fireEvent.click(await screen.findByRole('button', { name: '发送' }));
-    expect(await screen.findByText('send failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
 
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/wechat/status') {

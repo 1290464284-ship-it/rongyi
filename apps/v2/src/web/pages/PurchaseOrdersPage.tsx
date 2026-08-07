@@ -3,6 +3,7 @@ import { apiRequest } from '../lib/api';
 import { CrudPage } from '../components/CrudPage';
 import type { SearchableSelectRow } from '../components';
 import { useToast } from '../lib/toast-context';
+import { errorMessage } from '../lib/messages';
 import { receivePurchase, reconcilePurchaseItems } from '../purchase-orders/api';
 import { purchaseColumns } from '../purchase-orders/columns';
 import { buildValidItems, emptyPurchaseForm, newItem } from '../purchase-orders/form';
@@ -58,16 +59,20 @@ export function PurchaseOrdersPage() {
           const orderId = editingIdRef.current;
           if (!orderId) throw new Error('缺少编辑记录 ID');
           const totalAmount = validItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
-          await apiRequest(`/resources/purchaseOrders/${orderId}`, {
-            method: 'PATCH',
-            body: JSON.stringify({
-              number: form.number.trim(),
-              supplierId: form.supplierId || undefined,
-              totalAmount,
-              status: editingStatusRef.current ?? 'PENDING',
-            }),
-          });
-          await reconcilePurchaseItems(orderId, form.items, inventoryRows);
+          try {
+            await apiRequest(`/resources/purchaseOrders/${orderId}`, {
+              method: 'PATCH',
+              body: JSON.stringify({
+                number: form.number.trim(),
+                supplierId: form.supplierId || undefined,
+                totalAmount,
+                status: editingStatusRef.current ?? 'PENDING',
+              }),
+            });
+            await reconcilePurchaseItems(orderId, form.items, inventoryRows);
+          } catch (error) {
+            throw new Error(`${errorMessage(error, '更新采购单失败')}；部分明细可能未保存，请核对后重试`);
+          }
           return;
         }
         await apiRequest('/purchase-orders', {

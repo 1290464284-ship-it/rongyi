@@ -3,6 +3,13 @@
      历史版本记录如需保留，移入 docs/archive/，本文件只维护当前流程。 -->
 # Dental Clinic V2 - Release Artifacts
 
+## 部署方式（Round7 I1）
+
+本项目是桌面应用，**没有常规部署目标，也没有 deploy.yml**——"发布 = 打
+`v2-*` tag"，由 `.github/workflows/v2-release.yml` 构建 NSIS 安装包并上传到
+GitHub Release（即更新渠道）。内部通道由 `v2-internal-release.yml` 手动
+触发（workflow_dispatch）。请不要寻找/创建 deploy.yml。
+
 ## Generated Artifacts
 
 - `release-v2/Dental Clinic V2 Setup <version>.exe`
@@ -97,6 +104,18 @@ the upgrade baseline.
 The `v2-release.yml` workflow requires `CSC_LINK` and `CSC_KEY_PASSWORD` GitHub
 Secrets. `CSC_LINK` must be a PKCS12 certificate file or its base64 content.
 The workflow fails before packaging when either secret is missing.
+
+> **S-H1 update integrity (Round 7):** `autoUpdater.autoDownload` is disabled —
+> the app only *notifies* about a new version and downloads the installer after
+> the user explicitly confirms on the desktop settings page ("下载更新"), then
+> requires a second confirmation to install. On Windows, electron-updater's
+> `NsisUpdater` only enforces Authenticode publisher verification when the
+> electron-builder config sets `build.win.publisherName`. Configure it (e.g.
+> `"publisherName": ["CN=<your company name>"]`) **only after** a CA-issued
+> code-signing certificate is in place via `CSC_LINK`/`CSC_KEY_PASSWORD`;
+> setting a publisher name that does not match the actual certificate will
+> make every update fail signature verification. Keep the default
+> `verifyUpdateCodeSignature` behavior — never assign it a boolean value.
 
 The repository ships a local development certificate (`certs/signing-cert.pfx`)
 so local packaging works without secrets. The release pipeline deliberately

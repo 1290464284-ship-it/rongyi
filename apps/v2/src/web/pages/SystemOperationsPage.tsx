@@ -112,7 +112,8 @@ export function SystemOperationsPage() {
             <thead><tr>{Object.keys(searchResults[0]).map((key) => <th key={key}>{key}</th>)}</tr></thead>
             <tbody>
               {searchResults.map((row, index) => (
-                <tr key={index}>{Object.values(row).map((value, cellIndex) => <td key={cellIndex}>{String(value)}</td>)}</tr>
+                // L5：用行 id 作 key；搜索跨资源（患者/库存/供应商），无 id 时回退索引
+                <tr key={String(row.id ?? index)}>{Object.values(row).map((value, cellIndex) => <td key={cellIndex}>{String(value)}</td>)}</tr>
               ))}
             </tbody>
           </table>

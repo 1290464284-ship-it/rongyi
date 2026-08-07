@@ -156,7 +156,7 @@ export function TemplateSection({ templates, reload }: { templates?: ShiftTempla
         message={`确定删除模板「${deleteTarget?.name ?? ''}」吗？`}
         confirmText="删除"
         danger
-        onConfirm={() => void deleteTemplate()}
+        onConfirm={() => deleteTemplate()}
         onCancel={() => setDeleteTarget(null)}
       />
     </section>

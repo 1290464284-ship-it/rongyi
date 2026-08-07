@@ -41,7 +41,7 @@ describe('LoginPage', () => {
     fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'admin' } });
     fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'wrong' } });
     fireEvent.click(screen.getByRole('button', { name: '登录' }));
-    expect(await screen.findByText('invalid credentials')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
 
     vi.mocked(login).mockRejectedValue('boom');
     fireEvent.click(screen.getByRole('button', { name: '登录' }));
