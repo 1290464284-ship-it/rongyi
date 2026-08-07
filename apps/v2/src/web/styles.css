@@ -602,6 +602,7 @@ a {
 
 .tab-panel {
   min-height: 60vh;
+  padding-top: 4px;
 }
 
 .page-head {
