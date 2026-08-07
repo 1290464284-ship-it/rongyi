@@ -82,7 +82,7 @@ describe('ClinicalWorkflowPage', () => {
   it('shows a loading state while workflow data loads', () => {
     vi.mocked(apiRequest).mockImplementation(() => new Promise(() => {}));
     render(<ClinicalWorkflowPage />, { wrapper });
-    expect(screen.getByText('加载中...')).toBeDefined();
+    expect(screen.getAllByText('加载中...').length).toBeGreaterThanOrEqual(1);
   });
 
   it('shows an error when workflow data fails to load', async () => {

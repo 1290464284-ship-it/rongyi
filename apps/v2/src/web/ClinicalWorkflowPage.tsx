@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import type { Page } from './types';
-import { DataTable, LoadingState, PageError } from './components';
+import { DataTable, QuerySection } from './components';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
 import { STATUS_LABELS, type TodayData, type WorkbenchDialog } from './clinical-workflow/types';
@@ -67,10 +67,6 @@ export function ClinicalWorkflowPage() {
   const queries = { registrations, visits, firstExams, treatments } as Record<typeof resources[number], ResourcePageQuery>;
   const [activeDialog, setActiveDialog] = useState<WorkbenchDialog | null>(null);
 
-  if (today.isLoading || Object.values(queries).some((query) => query.isLoading)) return <LoadingState />;
-  const firstError = [today, ...Object.values(queries)].find((query) => query.error);
-  if (firstError) return <PageError message={(firstError.error as Error).message} />;
-
   async function transition(resource: string, id: string, status: string) {
     try {
       const endpoint = resource === 'registrations'
@@ -96,11 +92,10 @@ export function ClinicalWorkflowPage() {
   return (
     <div className="page">
       <h1>就诊工作台</h1>
-      <TodayOverview data={today.data} />
+      <QuerySection query={today} render={(data) => <TodayOverview data={data} />} />
       <TriageQueuePanel onStartVisit={(id) => transition('registrations', id, 'IN_PROGRESS')} />
       {resources.map((resource) => {
         const query = queries[resource];
-        const rows = query.data?.items ?? [];
         const columns = [
           { key: 'id', label: 'ID', render: (row: Record<string, unknown>) => String(row.id).slice(0, 8) },
           {
@@ -136,7 +131,10 @@ export function ClinicalWorkflowPage() {
         return (
           <section key={resource}>
             <h2>{RESOURCE_LABELS[resource]}</h2>
-            <DataTable columns={columns} rows={rows} keyField="id" emptyText="暂无记录" />
+            <QuerySection
+              query={query}
+              render={(data) => <DataTable columns={columns} rows={data?.items ?? []} keyField="id" emptyText="暂无记录" />}
+            />
           </section>
         );
       })}
