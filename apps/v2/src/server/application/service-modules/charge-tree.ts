@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
+import { generateDocumentNumber } from './common';
 import type { AppContext } from '../../../domain/contracts';
 
 export interface ChargeTreeNode {
@@ -122,7 +123,7 @@ export class ChargeTreeService {
 
     const totalAmount = Number(catalog.price) * quantity;
     const chargeId = randomUUID();
-    const number = `CHG-${Date.now().toString(36).toUpperCase()}-${randomUUID().slice(0, 8).toUpperCase()}`;
+    const number = generateDocumentNumber('CHG');
     const remark = input.remark ?? `快捷划价：${catalog.name}`;
 
     const chargeRun = this.db.transaction(() => {

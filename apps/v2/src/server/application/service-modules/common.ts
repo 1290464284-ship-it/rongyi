@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import type { User, UserRole } from '../../../domain/contracts';
 import { NotFoundError } from '../../infrastructure/errors';
@@ -18,6 +18,18 @@ export const JWT_SECRET = _resolveJwtSecret();
 export const TOKEN_TTL = '8h';
 export const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const BACKUP_MAGIC = Buffer.from('DENTALV2ENC1');
+
+/**
+ * Generates a human-readable document number: `${prefix}-<base36 timestamp>-<8 hex chars>`.
+ *
+ * Single shared implementation of the charge/dispense/purchase/inventory document
+ * number format (prefix, base-36 timestamp, truncated UUID, uppercase). All
+ * business modules must use this function so format changes (clinic prefix,
+ * length, collision retry) apply in one place.
+ */
+export function generateDocumentNumber(prefix: string): string {
+  return `${prefix}-${Date.now().toString(36).toUpperCase()}-${randomUUID().slice(0, 8).toUpperCase()}`;
+}
 
 export interface TokenPayload {
   sub: string;
