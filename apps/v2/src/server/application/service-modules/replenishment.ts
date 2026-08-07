@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
+import { generateDocumentNumber } from './common';
 import type { AppContext } from '../../../domain/contracts';
 
 export class ReplenishmentService {
@@ -122,7 +123,7 @@ export class ReplenishmentService {
       for (const [supplierId, group] of groups) {
         index += 1;
         const orderId = randomUUID();
-        const orderNumber = `PO-${Date.now().toString(36).toUpperCase()}-${randomUUID().slice(0, 8).toUpperCase()}-${index}`;
+        const orderNumber = `${generateDocumentNumber('PO')}-${index}`;
         /* v8 ignore start -- inventory rows and suggestedQty are schema-required; fallbacks are defensive. */
         const totalAmount = group.reduce((sum, suggestion) => {
           const item = inventory.get(String(suggestion.inventoryId));

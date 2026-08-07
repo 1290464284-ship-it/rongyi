@@ -26,6 +26,7 @@ import {
   assertDoctorExists,
   assertPatientExists,
   assertVisitExists,
+  generateDocumentNumber,
 } from './common';
 
 const PAY_METHODS = new Set([
@@ -105,7 +106,7 @@ export class ChargeService {
     }
     const now = context.now().toISOString();
     const id = randomUUID();
-    const number = `CHG-${Date.now().toString(36).toUpperCase()}-${randomUUID().slice(0, 8).toUpperCase()}`;
+    const number = generateDocumentNumber('CHG');
     const baseTotal = input.items.reduce((sum, item) => sum + assertSafeSubtotal(item.price, item.quantity), 0);
     const discount = Math.round(input.discount ?? 0);
     if (!Number.isInteger(input.discount ?? 0) || discount < 0 || discount > baseTotal) {
