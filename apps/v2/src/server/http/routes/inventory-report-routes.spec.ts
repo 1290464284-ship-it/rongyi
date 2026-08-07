@@ -9,6 +9,7 @@ import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
 import { AppError } from '../../infrastructure/errors';
 import { registerInventoryReportRoutes } from './inventory-report-routes';
+import { buildRouteDeps } from './route-deps.helper';
 
 describe('inventory report routes', () => {
   let db: Database.Database;
@@ -50,7 +51,7 @@ describe('inventory report routes', () => {
       };
       next();
     });
-    registerInventoryReportRoutes(app, db);
+    registerInventoryReportRoutes(app, buildRouteDeps(db));
     app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
       const appError = error instanceof AppError
         ? error

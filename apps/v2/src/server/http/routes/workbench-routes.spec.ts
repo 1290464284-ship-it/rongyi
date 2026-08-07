@@ -8,6 +8,7 @@ import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
 import { registerWorkbenchRoutes } from './workbench-routes';
+import { buildRouteDeps } from './route-deps.helper';
 
 describe('workbench routes', () => {
   let dataDir: string;
@@ -37,7 +38,7 @@ describe('workbench routes', () => {
       };
       next();
     });
-    registerWorkbenchRoutes(app, db);
+    registerWorkbenchRoutes(app, buildRouteDeps(db));
   });
 
   afterAll(() => {

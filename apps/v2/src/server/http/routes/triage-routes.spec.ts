@@ -9,6 +9,7 @@ import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
 import { AppError } from '../../infrastructure/errors';
 import { registerTriageRoutes } from './triage-routes';
+import { buildRouteDeps } from './route-deps.helper';
 
 describe('triage routes', () => {
   let dataDir: string;
@@ -37,7 +38,7 @@ describe('triage routes', () => {
       };
       next();
     });
-    registerTriageRoutes(app, db);
+    registerTriageRoutes(app, buildRouteDeps(db));
     app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
       const appError = error instanceof AppError
         ? error

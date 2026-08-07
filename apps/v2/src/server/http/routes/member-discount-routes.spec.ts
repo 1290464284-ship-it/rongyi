@@ -9,6 +9,7 @@ import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
 import { AppError } from '../../infrastructure/errors';
 import { registerMemberDiscountRoutes } from './member-discount-routes';
+import { buildRouteDeps } from './route-deps.helper';
 
 describe('member discount routes', () => {
   let db: Database.Database;
@@ -82,7 +83,7 @@ describe('member discount routes', () => {
       };
       next();
     });
-    registerMemberDiscountRoutes(app, db);
+    registerMemberDiscountRoutes(app, buildRouteDeps(db));
     // 注意：errorMiddleware 声明 5 参（含 logger），router@2.2 按 fn.length === 4 判定错误中间件，
     // 因此这里必须用 4 参包装。
     app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

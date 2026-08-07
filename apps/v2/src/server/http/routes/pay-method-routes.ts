@@ -6,11 +6,13 @@
  * 路径策略 /pay-methods → financeStaff 已由 route-policy 覆盖。
  */
 import type { Express } from 'express';
-import type Database from 'better-sqlite3';
+
 import { wrapAsync } from '../middleware';
 import { PayMethodService } from '../../application/service-modules/pay-method';
+import type { RouteDependencies } from './deps';
 
-export function registerPayMethodRoutes(app: Express, db: Database.Database): void {
+export function registerPayMethodRoutes(app: Express, deps: RouteDependencies): void {
+  const { db } = deps;
   const service = new PayMethodService(db);
 
   app.get('/api/v2/pay-methods/tree', wrapAsync(async (req, res) => {

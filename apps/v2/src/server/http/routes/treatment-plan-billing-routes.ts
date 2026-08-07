@@ -8,11 +8,13 @@
  * 路径前缀 /api/v2/treatment-plans 由调用方在 route-policy.ts 挂接鉴权规则（clinical）。
  */
 import type { Express } from 'express';
-import type Database from 'better-sqlite3';
+
 import { wrapAsync } from '../middleware';
 import { TreatmentPlanBillingService } from '../../application/service-modules/treatment-plan-billing';
+import type { RouteDependencies } from './deps';
 
-export function registerTreatmentPlanBillingRoutes(app: Express, db: Database.Database): void {
+export function registerTreatmentPlanBillingRoutes(app: Express, deps: RouteDependencies): void {
+  const { db } = deps;
   const service = new TreatmentPlanBillingService(db);
 
   app.post('/api/v2/treatment-plans/:id/discount', wrapAsync(async (req, res) => {

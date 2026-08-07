@@ -9,6 +9,7 @@ import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
 import { registerMedicalRecordEditRoutes } from './medical-record-edit-routes';
 import { errorMiddleware } from '../middleware';
+import { buildRouteDeps } from './route-deps.helper';
 
 describe('medical record edit routes', () => {
   let db: Database.Database;
@@ -65,7 +66,7 @@ describe('medical record edit routes', () => {
       };
       next();
     });
-    registerMedicalRecordEditRoutes(app, db);
+    registerMedicalRecordEditRoutes(app, buildRouteDeps(db));
     app.use((error: unknown, req: express.Request, res: express.Response, next: express.NextFunction) => {
       errorMiddleware(error, req, res, next);
     });

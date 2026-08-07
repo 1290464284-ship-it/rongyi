@@ -5,11 +5,13 @@
  * 规则由调用方在 route-policy.ts 集成时添加。
  */
 import type { Express } from 'express';
-import type Database from 'better-sqlite3';
+
 import { wrapAsync } from '../middleware';
 import { ChargeComboService } from '../../application/service-modules/charge-combo';
+import type { RouteDependencies } from './deps';
 
-export function registerChargeComboRoutes(app: Express, db: Database.Database): void {
+export function registerChargeComboRoutes(app: Express, deps: RouteDependencies): void {
+  const { db } = deps;
   const service = new ChargeComboService(db);
 
   app.get('/api/v2/charge-combos', wrapAsync(async (req, res) => {

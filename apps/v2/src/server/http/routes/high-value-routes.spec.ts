@@ -9,6 +9,7 @@ import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
 import { AppError } from '../../infrastructure/errors';
 import { registerHighValueRoutes } from './high-value-routes';
+import { buildRouteDeps } from './route-deps.helper';
 
 describe('high value routes', () => {
   let dataDir: string;
@@ -43,7 +44,7 @@ describe('high value routes', () => {
       };
       next();
     });
-    registerHighValueRoutes(app, db);
+    registerHighValueRoutes(app, buildRouteDeps(db));
     app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
       const appError = error instanceof AppError
         ? error
