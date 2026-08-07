@@ -1,0 +1,38 @@
+{
+  "mode": "light",
+  "login": {
+    "url": "http://localhost:4173/#/login",
+    "innerWidth": 1586,
+    "bodyBg": "rgb(245, 249, 248)",
+    "cardBg": "rgb(255, 255, 255)",
+    "cardRadius": "10px",
+    "cardWidth": "380px",
+    "cardRect": {
+      "x": 1050,
+      "y": 279,
+      "w": 380,
+      "h": 380
+    },
+    "brandBg": "linear-gradient(160deg, rgb(234, 246, 244) 0%, rgb(245, 249, 248) 60%)",
+    "logoSize": "40pxx40px",
+    "logoBg": "rgb(14, 138, 138)",
+    "h1": "rgb(14, 138, 138) 30px/700"
+  },
+  "app": {
+    "url": "http://localhost:4173/#/",
+    "sidebarWidth": "240px",
+    "sidebarBg": "rgb(255, 255, 255)",
+    "topbar": "工作台 18px/700",
+    "search": "280pxx32px",
+    "statCards": 6,
+    "statValue": "24px/700",
+    "groups": [
+      "常用",
+      "更多"
+    ],
+    "navItems": 9,
+    "bodyBg": "rgb(245, 249, 248)",
+    "sidebarItemCount": 9
+  },
+  "capturedAt": "2026-08-06T17:41:31.919Z"
+}
