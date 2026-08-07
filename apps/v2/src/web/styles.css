@@ -139,6 +139,11 @@ body {
   line-height: 1.45;
 }
 
+a {
+  color: var(--primary);
+  text-decoration: none;
+}
+
 .shell {
   display: grid;
   grid-template-columns: 174px minmax(0, 1fr);
@@ -496,6 +501,11 @@ body {
   font-size: 18px;
   font-weight: 700;
   letter-spacing: -0.01em;
+}
+
+.page,
+.hub {
+  min-width: 0;
 }
 
 /* 区块标题：14px/600（设计稿 B+A 层级） */
@@ -1060,6 +1070,7 @@ small {
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   padding: 12px;
+  min-width: 0;
   min-height: 320px;
   display: grid;
   align-content: start;
@@ -1430,6 +1441,12 @@ button:hover {
 
 button:active {
   transform: scale(0.97);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
 }
 
 /* 按钮档位：primary（默认）/ secondary / danger / ghost */
