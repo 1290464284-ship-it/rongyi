@@ -5,7 +5,7 @@
  * 规则由调用方在 route-policy.ts 集成时添加，本文件不触碰策略层。
  */
 import type { Express } from 'express';
-import type Database from 'better-sqlite3';
+
 import { wrapAsync } from '../middleware';
 import { parsePagination } from '../pagination';
 import {
@@ -16,12 +16,14 @@ import {
   type NarcoticCreateInput,
   type ReturnItemInput,
 } from '../../application/service-modules/dispense';
+import type { RouteDependencies } from './deps';
 
 export function registerDispenseRoutes(
   app: Express,
-  db: Database.Database,
+  deps: RouteDependencies,
   options?: { lockGuard?: (itemId: string, clinicId?: string | null) => void },
 ): void {
+  const { db } = deps;
   const service = new DispenseService(db, options?.lockGuard);
 
   app.get('/api/v2/dispenses', wrapAsync(async (req, res) => {

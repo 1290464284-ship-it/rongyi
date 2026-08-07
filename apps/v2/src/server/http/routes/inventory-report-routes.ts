@@ -3,11 +3,13 @@
  * supplierId 目前不参与过滤，但透传回响应供前端展示。
  */
 import type { Express } from 'express';
-import type Database from 'better-sqlite3';
+
 import { wrapAsync } from '../middleware';
 import { InventoryReportService } from '../../application/service-modules/inventory-reports';
+import type { RouteDependencies } from './deps';
 
-export function registerInventoryReportRoutes(app: Express, db: Database.Database): void {
+export function registerInventoryReportRoutes(app: Express, deps: RouteDependencies): void {
+  const { db } = deps;
   const service = new InventoryReportService(db);
 
   app.get('/api/v2/inventory-reports/:type', wrapAsync(async (req, res) => {

@@ -9,6 +9,7 @@ import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
 import { AppError } from '../../infrastructure/errors';
 import { registerDispenseRoutes } from './dispense-routes';
+import { buildRouteDeps } from './route-deps.helper';
 
 describe('dispense routes', () => {
   let db: Database.Database;
@@ -47,7 +48,7 @@ describe('dispense routes', () => {
       };
       next();
     });
-    registerDispenseRoutes(app, db);
+    registerDispenseRoutes(app, buildRouteDeps(db));
     app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
       const appError = error instanceof AppError
         ? error

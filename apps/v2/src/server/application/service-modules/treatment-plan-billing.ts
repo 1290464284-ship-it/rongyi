@@ -14,6 +14,7 @@ import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { upsertSearchRow } from '../../infrastructure/search-index';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
+import { generateDocumentNumber } from './common';
 import type { AppContext } from '../../../domain/contracts';
 
 const PLAN_DISCOUNT_TYPES = new Set(['NONE', 'WHOLE', 'DOUBLE']);
@@ -211,7 +212,7 @@ export class TreatmentPlanBillingService {
 
     const now = context.now().toISOString();
     const chargeId = randomUUID();
-    const number = `CHG-${Date.now().toString(36).toUpperCase()}-${randomUUID().slice(0, 8).toUpperCase()}`;
+    const number = generateDocumentNumber('CHG');
     const clinicId = context.clinicId ?? null;
 
     // ChargeItem.treatmentId 带指向 Treatment 的外键；计划明细的 treatmentId

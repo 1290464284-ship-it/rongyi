@@ -8,6 +8,7 @@ import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
 import { registerPayMethodRoutes } from './pay-method-routes';
+import { buildRouteDeps } from './route-deps.helper';
 
 describe('pay method routes', () => {
   let dataDir: string;
@@ -51,7 +52,7 @@ describe('pay method routes', () => {
       };
       next();
     });
-    registerPayMethodRoutes(app, db);
+    registerPayMethodRoutes(app, buildRouteDeps(db));
   });
 
   afterAll(() => {

@@ -1,5 +1,5 @@
 import type { DataTableColumn } from '../components';
-import { formatMoney } from '../format';
+import { formatMoney } from '../lib/format';
 import { STATUS_LABELS, type ProcessingFlowStatRow, type ProcessingRow } from './types';
 
 export const flowStatsColumns: DataTableColumn<ProcessingFlowStatRow>[] = [

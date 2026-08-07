@@ -36,6 +36,16 @@ let apiHeartbeatTimer = null;
 const API_MAX_RESTARTS = 5;
 const API_BACKOFF_BASE_MS = 30_000;
 const API_BACKOFF_MAX_MS = 300_000;
+// L-01：端口与 URL 默认值唯一副本。main.cjs 是纯 CJS、不经 TS 编译，无法
+// import src/shared/constants.ts（DEFAULT_WEB_DEV_PORT=5180），故在此保留
+// 数值副本；V2_WEB_DEV_PORT / V2_WEB_URL 可覆盖，与 vite.config.ts 同源。
+const V2_WEB_DEV_PORT = Number(process.env.V2_WEB_DEV_PORT) || 5180;
+const WEB_DEV_ORIGIN = process.env.V2_WEB_URL || `http://localhost:${V2_WEB_DEV_PORT}`;
+// L-03：魔法数字命名化。
+const CRASH_LOG_TIMEOUT_MS = 3000;
+const RANDOM_API_PORT_MIN = 30000;
+const RANDOM_API_PORT_MAX = 50000;
+const API_READY_TIMEOUT_MS = 30000;
 // T2R-13 / R2-P1-09: parent-side heartbeat. Must stay well below the child's
 // PARENT_HEARTBEAT_TIMEOUT_MS (10s) so a hard-killed main process stops pinging
 // and the API child exits on its own instead of running as an orphan.
@@ -105,7 +115,7 @@ function crashLog(message, error) {
         {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          timeout: 3000,
+          timeout: CRASH_LOG_TIMEOUT_MS,
         },
         (response) => response.resume(),
       );
@@ -214,7 +224,7 @@ process.on('uncaughtException', (error) => crashLog('uncaughtException', error))
 process.on('unhandledRejection', (reason) => crashLog('unhandledRejection', reason));
 
 function randomPort() {
-  return randomInt(30000, 50000);
+  return randomInt(RANDOM_API_PORT_MIN, RANDOM_API_PORT_MAX);
 }
 
 // Round7 M6：随机端口可能落入 Windows 排除端口保留段（README 已记录 3180
@@ -238,7 +248,7 @@ async function pickFreePort() {
   throw new Error('无法在 30000-50000 段找到可用端口（连续 10 次探测均被占用）');
 }
 
-function waitForApi(port, timeoutMs = 30000) {
+function waitForApi(port, timeoutMs = API_READY_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
     const startedAt = Date.now();
     let lastError = null;
@@ -606,7 +616,7 @@ function createWindow() {
   });
 
   const url = isDev
-    ? process.env.V2_WEB_URL || 'http://localhost:5180'
+    ? WEB_DEV_ORIGIN
     : pathToFileURL(path.join(__dirname, '..', 'dist-web', 'index.html')).toString();
   mainWindow.loadURL(url);
   mainWindow.on('close', (event) => {
@@ -799,7 +809,7 @@ app.whenReady().then(async () => {
     // connect-src 精确到运行时 API 端口（meta 为 http://127.0.0.1:* 通配，取交集后收紧）；
     // WebSocket 仅 dev 下放行 vite HMR 的 ws://localhost:<devPort>。
     const apiOrigin = apiPort ? `http://127.0.0.1:${apiPort}` : '';
-    const devWs = isDev ? ` ws://localhost:${new URL(process.env.V2_WEB_URL || 'http://localhost:5180').port}` : '';
+    const devWs = isDev ? ` ws://localhost:${new URL(WEB_DEV_ORIGIN).port}` : '';
     callback({
       responseHeaders: {
         ...details.responseHeaders,

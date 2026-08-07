@@ -5,11 +5,13 @@
  * 规则由调用方在 route-policy.ts 集成时添加。
  */
 import type { Express } from 'express';
-import type Database from 'better-sqlite3';
+
 import { wrapAsync } from '../middleware';
 import { StocktakeService } from '../../application/service-modules/stocktake';
+import type { RouteDependencies } from './deps';
 
-export function registerStocktakeRoutes(app: Express, db: Database.Database): void {
+export function registerStocktakeRoutes(app: Express, deps: RouteDependencies): void {
+  const { db } = deps;
   const service = new StocktakeService(db);
 
   app.get('/api/v2/stocktakes', wrapAsync(async (req, res) => {

@@ -9,6 +9,7 @@ import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
 import { AppError } from '../../infrastructure/errors';
 import { registerTreatmentPlanBillingRoutes } from './treatment-plan-billing-routes';
+import { buildRouteDeps } from './route-deps.helper';
 
 describe('treatment plan billing routes', () => {
   let dataDir: string;
@@ -37,7 +38,7 @@ describe('treatment plan billing routes', () => {
       };
       next();
     });
-    registerTreatmentPlanBillingRoutes(app, db);
+    registerTreatmentPlanBillingRoutes(app, buildRouteDeps(db));
     app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
       const appError = error instanceof AppError
         ? error

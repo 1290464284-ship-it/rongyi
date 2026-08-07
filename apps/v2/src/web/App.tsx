@@ -1,10 +1,10 @@
 import { Navigate, Route, Routes, useParams } from 'react-router';
-import { Layout } from './Layout';
-import { LoginPage } from './LoginPage';
-import { DashboardPage } from './DashboardPage';
-import { ResourceHub } from './ResourceHub';
-import { patientHubTabs, clinicalHubTabs, financeHubTabs, inventoryHubTabs, communicationHubTabs, hrHubTabs, systemHubTabs, analyticsHubTabs } from './hub-tabs';
-import { ResourcePage } from './ResourcePage';
+import { Layout } from './components/Layout';
+import { LoginPage } from './pages/LoginPage';
+import { DashboardPage } from './pages/DashboardPage';
+import { ResourceHub } from './components/ResourceHub';
+import { patientHubTabs, clinicalHubTabs, financeHubTabs, inventoryHubTabs, communicationHubTabs, hrHubTabs, systemHubTabs, analyticsHubTabs } from './components/hub-tabs';
+import { ResourcePage } from './components/ResourcePage';
 import { ErrorBoundary } from './components';
 
 function DynamicResourcePage() {

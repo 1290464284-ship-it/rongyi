@@ -9,6 +9,7 @@ import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
 import { AppError } from '../../infrastructure/errors';
 import { registerInventoryBatchRoutes } from './inventory-batch-routes';
+import { buildRouteDeps } from './route-deps.helper';
 
 describe('inventory batch routes', () => {
   let db: Database.Database;
@@ -41,7 +42,7 @@ describe('inventory batch routes', () => {
       };
       next();
     });
-    registerInventoryBatchRoutes(app, db);
+    registerInventoryBatchRoutes(app, buildRouteDeps(db));
     app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
       const appError = error instanceof AppError
         ? error

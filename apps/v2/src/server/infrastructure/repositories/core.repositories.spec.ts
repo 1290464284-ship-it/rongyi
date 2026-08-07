@@ -1,3 +1,7 @@
+// L-04 索引：核心仓储测试聚合（约 719 行），覆盖会员卡、库存、债务、
+// 收费、采购、加工、随访各域 repository 的持久化与软删除/租户过滤，
+// 以及 nullish/boolean/auth 映射等公共分支。仓储按域拆分见
+// src/server/infrastructure/repositories/（M-04），断言可随域文件迁移。
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';

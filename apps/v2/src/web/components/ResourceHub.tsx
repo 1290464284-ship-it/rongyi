@@ -1,0 +1,88 @@
+import { Suspense, useRef, useState, type KeyboardEvent } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { ResourcePage } from './ResourcePage';
+import type { HubTab } from './hub-tabs';
+import { apiRequest } from '../lib/api';
+import { ErrorBoundary, LoadingState } from '.';
+
+export function ResourceHub({ title, tabs }: { title: string; tabs: HubTab[] }) {
+  const [activeId, setActiveId] = useState(tabs[0]?.id ?? '');
+  // M3：只渲染当前活动 tab，切换即卸载非活动页面（display:none 常驻会累积 useQuery 订阅与组件实例）
+  const tabRefs = useRef(new Map<string, HTMLButtonElement>());
+  const hasBossOnly = tabs.some((tab) => tab.bossOnly);
+  const navigation = useQuery({
+    queryKey: ['resource-hub-navigation'],
+    queryFn: () => apiRequest<{ role?: string }>('/auth/navigation'),
+    enabled: hasBossOnly,
+  });
+  const visibleTabs = hasBossOnly
+    ? tabs.filter((tab) => !tab.bossOnly || navigation.data?.role === 'BOSS')
+    : tabs;
+  const active = visibleTabs.find((tab) => tab.id === activeId) ?? visibleTabs[0];
+  const effectiveActiveId = active?.id ?? '';
+
+  function selectTab(id: string) {
+    setActiveId(id);
+  }
+
+  function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+    let next = index;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') next = (index + 1) % visibleTabs.length;
+    else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') next = (index - 1 + visibleTabs.length) % visibleTabs.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = visibleTabs.length - 1;
+    else return;
+    event.preventDefault();
+    const target = visibleTabs[next];
+    if (!target) return;
+    selectTab(target.id);
+    tabRefs.current.get(target.id)?.focus();
+  }
+
+  return (
+    <div className="hub">
+      <h1>{title}</h1>
+      <div className="tabs" role="tablist" aria-label={title}>
+        {visibleTabs.map((tab, index) => (
+          <button
+            key={tab.id}
+            ref={(node) => {
+              if (node) tabRefs.current.set(tab.id, node);
+              else tabRefs.current.delete(tab.id);
+            }}
+            id={`hub-tab-${tab.id}`}
+            role="tab"
+            type="button"
+            aria-selected={tab.id === effectiveActiveId}
+            aria-controls={`hub-panel-${tab.id}`}
+            tabIndex={tab.id === effectiveActiveId ? 0 : -1}
+            className={tab.id === effectiveActiveId ? 'tab active' : 'tab'}
+            onClick={() => selectTab(tab.id)}
+            onKeyDown={(event) => handleTabKeyDown(event, index)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      {active && (
+        <div
+          key={active.id}
+          id={`hub-panel-${active.id}`}
+          role="tabpanel"
+          aria-labelledby={`hub-tab-${active.id}`}
+          className="tab-panel"
+        >
+          <ErrorBoundary>
+            {active.kind === 'resource' ? (
+              <ResourcePage resource={active.resource} />
+            ) : active.kind === 'custom' ? (
+              <Suspense fallback={<LoadingState label="页面加载中" />}>
+                <active.component />
+              </Suspense>
+            ) : null}
+          </ErrorBoundary>
+        </div>
+      )}
+    </div>
+  );
+}

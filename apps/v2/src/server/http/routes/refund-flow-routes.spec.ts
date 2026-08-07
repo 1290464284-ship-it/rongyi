@@ -9,6 +9,7 @@ import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
 import { AppError } from '../../infrastructure/errors';
 import { registerRefundFlowRoutes } from './refund-flow-routes';
+import { buildRouteDeps } from './route-deps.helper';
 
 describe('refund flow routes', () => {
   let db: Database.Database;
@@ -34,7 +35,7 @@ describe('refund flow routes', () => {
       };
       next();
     });
-    registerRefundFlowRoutes(app, db);
+    registerRefundFlowRoutes(app, buildRouteDeps(db));
     app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
       const appError = error instanceof AppError
         ? error

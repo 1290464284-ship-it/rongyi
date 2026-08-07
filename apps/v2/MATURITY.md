@@ -1,3 +1,5 @@
+<!-- L-05 文档定位：本文件 = 生产就绪成熟度清单（Done / Remaining），逐项追加验证过的能力。
+     使用与开发入口见 README.md；发布产物/签名/更新通道见 RELEASE.md。 -->
 # V2 Maturity Checklist
 
 ## Done

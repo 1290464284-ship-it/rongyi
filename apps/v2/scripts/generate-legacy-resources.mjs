@@ -5,6 +5,18 @@ import Database from 'better-sqlite3';
 const appRoot = path.resolve(import.meta.dirname, '..');
 const dbPath = path.join(appRoot, 'legacy', 'dental.sqlite');
 const outputPath = path.join(appRoot, 'src', 'domain', 'legacy-resources.generated.ts');
+
+// M-07 降级路径：legacy/dental.sqlite 已从仓库移除（见 .env.example R2-P0-04）。
+// 干净克隆/CI 上缺失该输入时，保留已提交的生成物并打印警告，而不是让
+// better-sqlite3 抛出难读的打开失败。需要重新生成时先恢复 dental.sqlite。
+if (!fs.existsSync(dbPath)) {
+  console.warn(
+    `[generate-legacy-resources] legacy/dental.sqlite not found (removed from repo, see .env.example R2-P0-04).\n` +
+    `  Keeping committed ${path.relative(appRoot, outputPath)} unchanged. ` +
+    'Restore legacy/dental.sqlite to regenerate legacy resource definitions.',
+  );
+  process.exit(0);
+}
 const db = new Database(dbPath, { readonly: true });
 
 const BASE_COLUMNS = new Set(['id', 'clinicId', 'createdAt', 'updatedAt', 'deletedAt']);

@@ -8,11 +8,13 @@
  * 路径前缀 /api/v2/cephalometric 由调用方在 route-policy.ts 挂接鉴权规则（clinical）。
  */
 import type { Express } from 'express';
-import type Database from 'better-sqlite3';
+
 import { wrapAsync } from '../middleware';
 import { CephalometricReportService } from '../../application/service-modules/cephalometric-report';
+import type { RouteDependencies } from './deps';
 
-export function registerCephalometricReportRoutes(app: Express, db: Database.Database): void {
+export function registerCephalometricReportRoutes(app: Express, deps: RouteDependencies): void {
+  const { db } = deps;
   const service = new CephalometricReportService(db);
 
   app.post('/api/v2/cephalometric/compare', wrapAsync(async (req, res) => {

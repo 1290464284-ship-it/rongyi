@@ -1,8 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import type { ReactNode } from 'react';
-import { apiRequest } from '../api';
-import { errorMessage } from '../messages';
-import { useToast } from '../toast-context';
+import { apiRequest } from '../lib/api';
+import { errorMessage } from '../lib/messages';
+import { useToast } from '../lib/toast-context';
 
 export function SignForm({
   planId,

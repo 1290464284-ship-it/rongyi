@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
+import { generateDocumentNumber } from './common';
 import type { AppContext } from '../../../domain/contracts';
 
 interface ReturnSupplierItemInput {
@@ -45,10 +46,6 @@ interface ItemStockRow {
   stock: number;
 }
 
-function docNumber(prefix: string): string {
-  return `${prefix}-${Date.now().toString(36).toUpperCase()}-${randomUUID().slice(0, 8).toUpperCase()}`;
-}
-
 function positiveQuantity(value: unknown): number {
   const quantity = Number(value);
   if (!Number.isSafeInteger(quantity) || quantity <= 0) {
@@ -83,7 +80,7 @@ export class InventoryDocService {
     const stocks = items.map((entry) => this.requireItemWithStock(entry.itemId, entry.quantity, context));
     const now = context.now().toISOString();
     const docId = randomUUID();
-    const number = docNumber('RTS');
+    const number = generateDocumentNumber('RTS');
 
     const run = this.db.transaction(() => {
       this.insertDoc(docId, number, 'RETURN_SUPPLIER', input.supplierId, now, input.remark, context);
@@ -105,7 +102,7 @@ export class InventoryDocService {
     const stocks = items.map((entry) => this.requireItemWithStock(entry.itemId, entry.quantity, context));
     const now = context.now().toISOString();
     const docId = randomUUID();
-    const number = docNumber('LSS');
+    const number = generateDocumentNumber('LSS');
 
     const run = this.db.transaction(() => {
       this.insertDoc(docId, number, 'LOSS', null, now, input.remark, context);
@@ -142,7 +139,7 @@ export class InventoryDocService {
     const toStocks = items.map((entry) => this.requireItem(entry.toItemId, context));
     const now = context.now().toISOString();
     const docId = randomUUID();
-    const number = docNumber('TRF');
+    const number = generateDocumentNumber('TRF');
 
     const run = this.db.transaction(() => {
       this.insertDoc(docId, number, 'TRANSFER', null, now, input.remark, context);

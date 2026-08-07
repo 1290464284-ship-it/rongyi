@@ -5,11 +5,13 @@
  * 无需新增规则。
  */
 import type { Express } from 'express';
-import type Database from 'better-sqlite3';
+
 import { wrapAsync } from '../middleware';
 import { MemberDiscountService, type QuoteInput } from '../../application/service-modules/member-discount';
+import type { RouteDependencies } from './deps';
 
-export function registerMemberDiscountRoutes(app: Express, db: Database.Database): void {
+export function registerMemberDiscountRoutes(app: Express, deps: RouteDependencies): void {
+  const { db } = deps;
   const service = new MemberDiscountService(db);
 
   app.get('/api/v2/member-cards/:id/discount-plan', wrapAsync(async (req, res) => {

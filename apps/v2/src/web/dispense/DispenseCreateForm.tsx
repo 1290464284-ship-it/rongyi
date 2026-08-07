@@ -1,8 +1,8 @@
 import { useState, type FormEvent } from 'react';
-import { apiRequest } from '../api';
+import { apiRequest } from '../lib/api';
 import { SearchableSelect } from '../components';
-import { errorMessage } from '../messages';
-import { useToast } from '../toast-context';
+import { errorMessage } from '../lib/messages';
+import { useToast } from '../lib/toast-context';
 import { BatchSelect } from './DispenseEditDialog';
 import { emptyCreateForm, newCreateItem, type CreateForm, type CreateItemRow } from './dispense-types';
 

@@ -1,0 +1,168 @@
+import type { ResourceDefinition } from '../contracts';
+import { f, crud, boss, clinical, reception } from './shared';
+
+/** coreResources：13 个资源定义（见原 resources.ts 分组） */
+export const coreResources: ResourceDefinition[] = [
+  crud('clinics', 'Clinic', [
+    f('code', 'text', { required: true, unique: true, searchable: true, maxLength: 64 }),
+    f('name', 'text', { required: true, searchable: true, maxLength: 128 }),
+    f('address', 'longText'),
+    f('phone', 'text'),
+    f('active', 'boolean', { default: true }),
+  ], { roles: boss }),
+
+  crud('users', 'User', [
+    f('username', 'text', { required: true, unique: true, searchable: true, maxLength: 64 }),
+    f('passwordHash', 'text', { required: true, maxLength: 200 }),
+    f('name', 'text', { required: true, searchable: true, maxLength: 64 }),
+    f('role', 'enum', { required: true, enumValues: ['BOSS', 'DOCTOR'] }),
+    f('phone', 'text'),
+    f('active', 'boolean', { default: true }),
+    f('loginAttempts', 'number', { default: 0 }),
+    f('lockedUntil', 'datetime'),
+    f('tokenVersion', 'number', { default: 0 }),
+  ], { roles: boss, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
+
+  crud('patients', 'Patient', [
+    f('code', 'text', { required: true, unique: true, searchable: true, maxLength: 64 }),
+    f('name', 'text', { required: true, searchable: true, maxLength: 64 }),
+    f('gender', 'enum', { required: true, enumValues: ['MALE', 'FEMALE', 'UNKNOWN'] }),
+    f('phone', 'text', { searchable: true, maxLength: 32 }),
+    f('birthDate', 'date'),
+    f('idCard', 'text'),
+    f('address', 'longText'),
+    f('occupation', 'text'),
+    f('remark', 'longText'),
+    f('avatar', 'text'),
+    f('tags', 'json', { default: '[]' }),
+    f('allergies', 'json', { default: '[]' }),
+    f('medicalHistory', 'json', { default: '[]' }),
+    f('medicationHistory', 'json', { default: '[]' }),
+    f('systemicDiseases', 'json', { default: '[]' }),
+    f('source', 'enum', { required: true, enumValues: ['WALK_IN', 'REFERRAL', 'ONLINE', 'OTHER'] }),
+    f('active', 'boolean', { default: true }),
+    f('isTempPatient', 'boolean', { default: false }),
+  ], { roles: reception, searchIndexResource: 'Patient' }),
+
+  crud('familyMembers', 'FamilyMember', [
+    f('patientId', 'relation', { required: true, relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
+    f('name', 'text', { required: true, searchable: true }),
+    f('relationship', 'text', { required: true }),
+    f('phone', 'text'),
+  ], { roles: reception }),
+
+  crud('patientRiskScores', 'PatientRiskScore', [
+    f('patientId', 'relation', { required: true, relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
+    f('cariesScore', 'number', { required: true, min: 0, max: 100 }),
+    f('periodontalScore', 'number', { required: true, min: 0, max: 100 }),
+    f('implantScore', 'number', { required: true, min: 0, max: 100 }),
+    f('cariesLevel', 'enum', { required: true, enumValues: ['LOW', 'MEDIUM', 'HIGH', 'EXTREME'] }),
+    f('periodontalLevel', 'enum', { required: true, enumValues: ['LOW', 'MEDIUM', 'HIGH', 'EXTREME'] }),
+    f('implantLevel', 'enum', { required: true, enumValues: ['LOW', 'MEDIUM', 'HIGH', 'EXTREME'] }),
+    f('factorSnapshotJson', 'json', { required: true }),
+    f('assessedById', 'relation', { relation: { resource: 'users', foreignKey: 'assessedById', labelField: 'name' } }),
+  ], { roles: clinical, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
+
+  crud('chairs', 'Chair', [
+    f('name', 'text', { required: true, searchable: true, maxLength: 64 }),
+    f('location', 'text'),
+    f('active', 'boolean', { default: true }),
+  ], { roles: reception }),
+
+  crud('appointments', 'Appointment', [
+    f('patientId', 'relation', { required: true, relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
+    f('doctorId', 'relation', { required: true, relation: { resource: 'users', foreignKey: 'doctorId', labelField: 'name' } }),
+    f('chairId', 'relation', { relation: { resource: 'chairs', foreignKey: 'chairId', labelField: 'name' } }),
+    f('startTime', 'datetime', { required: true }),
+    f('endTime', 'datetime', { required: true }),
+    f('status', 'enum', { required: true, enumValues: ['BOOKED', 'ARRIVED', 'IN_CHAIR', 'COMPLETED', 'CANCELLED', 'NO_SHOW'] }),
+    f('type', 'enum', { required: true, enumValues: ['REGULAR', 'FOLLOW_UP', 'EMERGENCY', 'CONSULTATION'] }),
+    f('remark', 'longText'),
+    f('visitId', 'relation', { relation: { resource: 'visits', foreignKey: 'visitId', labelField: 'id' } }),
+    f('purpose', 'text'),
+    f('tempPatientName', 'text'),
+    f('tempPatientPhone', 'text'),
+  ], { roles: reception, capabilities: { list: true, create: true, update: true, delete: true, softDelete: true }, searchIndexResource: 'Appointment' }),
+
+  crud('registrations', 'Registration', [
+    f('patientId', 'relation', { required: true, relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
+    f('doctorId', 'relation', { relation: { resource: 'users', foreignKey: 'doctorId', labelField: 'name' } }),
+    f('departmentId', 'relation', { relation: { resource: 'departments', foreignKey: 'departmentId', labelField: 'name' } }),
+    f('type', 'enum', { required: true, enumValues: ['REGULAR', 'EMERGENCY', 'FOLLOW_UP'] }),
+    f('status', 'enum', { required: true, enumValues: ['REGISTERED', 'TRIAGED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'] }),
+    f('visitId', 'relation', { relation: { resource: 'visits', foreignKey: 'visitId', labelField: 'id' } }),
+    f('appointmentId', 'relation', { relation: { resource: 'appointments', foreignKey: 'appointmentId', labelField: 'id' } }),
+    f('triageNote', 'longText'),
+    f('chiefComplaint', 'longText'),
+    f('registeredBy', 'relation', { relation: { resource: 'users', foreignKey: 'registeredBy', labelField: 'name' } }),
+    f('registeredAt', 'datetime', { required: true }),
+    f('triagedAt', 'datetime'),
+    f('startedAt', 'datetime'),
+    f('completedAt', 'datetime'),
+  ], { roles: reception, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
+
+  crud('visits', 'Visit', [
+    f('patientId', 'relation', { required: true, relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
+    f('appointmentId', 'relation', { relation: { resource: 'appointments', foreignKey: 'appointmentId', labelField: 'id' } }),
+    f('doctorId', 'relation', { required: true, relation: { resource: 'users', foreignKey: 'doctorId', labelField: 'name' } }),
+    f('chiefComplaint', 'longText'),
+    f('diagnosis', 'longText'),
+    f('treatmentPlan', 'longText'),
+    f('summary', 'longText'),
+    f('startTime', 'datetime', { required: true }),
+    f('endTime', 'datetime'),
+    f('status', 'enum', { required: true, enumValues: ['IN_PROGRESS', 'COMPLETED', 'CANCELLED'] }),
+    f('nextReminder', 'date'),
+  ], { roles: clinical, capabilities: { list: true, create: true, update: true, delete: true, softDelete: true } }),
+
+  crud('firstExams', 'FirstExam', [
+    f('patientId', 'relation', { required: true, relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
+    f('doctorId', 'relation', { relation: { resource: 'users', foreignKey: 'doctorId', labelField: 'name' } }),
+    f('consultantId', 'relation', { relation: { resource: 'users', foreignKey: 'consultantId', labelField: 'name' } }),
+    f('chiefComplaint', 'longText'),
+    f('presentIllness', 'longText'),
+    f('pastHistory', 'longText'),
+    f('oralExam', 'longText'),
+    f('auxiliaryExam', 'longText'),
+    f('diagnosis', 'longText'),
+    f('treatmentSuggestion', 'longText'),
+    f('status', 'text', { required: true }),
+    f('remark', 'longText'),
+    f('followUpStatus', 'enum', { enumValues: ['NONE', 'PENDING', 'HORIZONTAL_SHOULD', 'HORIZONTAL_DONE', 'LOST'] }),
+    f('lossReasonType', 'text'),
+    f('lossReason', 'longText'),
+    f('nextFollowUpAt', 'date'),
+    f('trackingNote', 'longText'),
+    f('dentition', 'enum', { enumValues: ['DECIDUOUS', 'PERMANENT', 'MIXED'] }),
+    f('previousExamId', 'text'),
+    f('restartedAt', 'datetime'),
+  ], { roles: clinical, capabilities: { list: true, create: true, update: true, delete: true, softDelete: true } }),
+
+  crud('firstExamTeeth', 'FirstExamTooth', [
+    f('examId', 'relation', { required: true, relation: { resource: 'firstExams', foreignKey: 'examId', labelField: 'id' } }),
+    f('toothNumber', 'number', { required: true }),
+    f('toothStatus', 'text', { required: true }),
+    f('diseases', 'json', { default: '[]' }),
+    f('isChief', 'boolean', { default: false }),
+    f('chiefMark', 'enum', { enumValues: ['NONE', 'HORIZONTAL_SHOULD', 'HORIZONTAL_DONE'] }),
+    f('treatmentPlan', 'longText'),
+    f('remark', 'longText'),
+  ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
+
+  crud('oralExaminations', 'OralExamination', [
+    f('patientId', 'relation', { required: true, relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
+    f('examDate', 'date', { required: true }),
+    f('data', 'json', { required: true }),
+    f('remark', 'longText'),
+  ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
+
+  crud('periodontalRecords', 'PeriodontalRecord', [
+    f('patientId', 'relation', { required: true, relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
+    f('examDate', 'date', { required: true }),
+    f('data', 'json', { required: true }),
+    f('plaqueIndex', 'number'),
+    f('boneLoss', 'text'),
+    f('remark', 'longText'),
+  ], { roles: clinical, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
+
+];

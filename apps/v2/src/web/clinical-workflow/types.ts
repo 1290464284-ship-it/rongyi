@@ -1,19 +1,5 @@
-export const STATUS_LABELS: Record<string, string> = {
-  REGISTERED: '已挂号',
-  TRIAGED: '已分诊',
-  IN_PROGRESS: '进行中',
-  COMPLETED: '已完成',
-  CANCELLED: '已取消',
-  DRAFT: '草稿',
-  SUBMITTED: '已提交',
-  APPROVED: '已审核',
-  PLANNED: '已计划',
-  BOOKED: '已预约',
-  ARRIVED: '已到诊',
-  IN_CHAIR: '就诊中',
-  NO_SHOW: '未到诊',
-  PENDING: '待处理',
-};
+// label 字典统一集中在 ../labels.ts（M-03），此处 re-export 保持旧导入路径不变。
+export { CLINICAL_STATUS_LABELS as STATUS_LABELS } from '../lib/labels';
 
 export interface TodayData {
   date?: string;

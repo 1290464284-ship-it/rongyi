@@ -5,15 +5,17 @@
  * 无需新增规则；注册由调用方在 app.ts 集成时完成。
  */
 import type { Express } from 'express';
-import type Database from 'better-sqlite3';
+
 import { wrapAsync } from '../middleware';
 import { InventoryBatchService } from '../../application/service-modules/inventory-batch';
+import type { RouteDependencies } from './deps';
 
 export function registerInventoryBatchRoutes(
   app: Express,
-  db: Database.Database,
+  deps: RouteDependencies,
   options?: { lockGuard?: (itemId: string, clinicId?: string | null) => void },
 ): void {
+  const { db } = deps;
   const service = new InventoryBatchService(db, options?.lockGuard);
 
   app.get('/api/v2/inventory-batches', wrapAsync((req, res) => {

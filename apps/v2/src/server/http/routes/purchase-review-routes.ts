@@ -5,11 +5,13 @@
  * 已覆盖本文件全部端点，本文件不触碰策略层、不注册到 app.ts。
  */
 import type { Express } from 'express';
-import type Database from 'better-sqlite3';
+
 import { wrapAsync } from '../middleware';
 import { PurchaseReviewService } from '../../application/service-modules/purchase-review';
+import type { RouteDependencies } from './deps';
 
-export function registerPurchaseReviewRoutes(app: Express, db: Database.Database): void {
+export function registerPurchaseReviewRoutes(app: Express, deps: RouteDependencies): void {
+  const { db } = deps;
   const service = new PurchaseReviewService(db);
 
   app.get('/api/v2/purchase-orders/review', wrapAsync(async (req, res) => {

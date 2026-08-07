@@ -5,12 +5,14 @@
  * route-policy.ts 中集成，本文件不触碰策略层。
  */
 import type { Express } from 'express';
-import type Database from 'better-sqlite3';
+
 import { wrapAsync } from '../middleware';
 import { parsePagination } from '../pagination';
 import { RefundFlowService } from '../../application/service-modules/refund-flow';
+import type { RouteDependencies } from './deps';
 
-export function registerRefundFlowRoutes(app: Express, db: Database.Database): void {
+export function registerRefundFlowRoutes(app: Express, deps: RouteDependencies): void {
+  const { db } = deps;
   const service = new RefundFlowService(db);
 
   app.get('/api/v2/refunds', wrapAsync(async (req, res) => {

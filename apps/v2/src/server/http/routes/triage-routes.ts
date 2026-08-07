@@ -9,11 +9,13 @@
  * /registrations 已有既有规则，无需在本文件内重复鉴权。
  */
 import type { Express } from 'express';
-import type Database from 'better-sqlite3';
+
 import { wrapAsync } from '../middleware';
 import { TriageService } from '../../application/service-modules/triage';
+import type { RouteDependencies } from './deps';
 
-export function registerTriageRoutes(app: Express, db: Database.Database): void {
+export function registerTriageRoutes(app: Express, deps: RouteDependencies): void {
+  const { db } = deps;
   const service = new TriageService(db);
 
   app.post('/api/v2/registrations/:id/triage', wrapAsync(async (req, res) => {

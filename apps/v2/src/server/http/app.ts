@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import cors from 'cors';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import helmet from 'helmet';
@@ -80,6 +79,9 @@ import { registerPayMethodRoutes } from './routes/pay-method-routes';
 import { registerChargeTreeRoutes } from './routes/charge-tree-routes';
 import { registerHighValueRoutes } from './routes/high-value-routes';
 import type { RouteDependencies } from './routes/deps';
+import { createAuditBuffer } from './audit-buffer';
+
+export type { AuditInput } from './audit-buffer';
 
 export interface AppDependencies {
   db: Database.Database;
@@ -89,148 +91,12 @@ export interface AppDependencies {
   logDir: string;
 }
 
-export interface AuditInput {
-  userId?: string | null;
-  userName?: string | null;
-  action: string;
-  target?: string | null;
-  detail?: string | null;
-  ip?: string | null;
-  traceId?: string | null;
-  clinicId?: string | null;
-  statusCode?: number | null;
-}
-
 export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependencies): Express {
   const app = express();
-  const auditBuffer: AuditInput[] = [];
-  const AUDIT_FLUSH_INTERVAL = 1000;
-  const AUDIT_BUFFER_MAX = 50;
-  const insertAuditStmt = db.prepare(
-    `INSERT INTO OperationLog (
-       id, userId, userName, action, target, detail, ip, traceId,
-       clinicId, statusCode, createdAt, updatedAt, deletedAt
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
-  );
-  const flushAudit = db.transaction((rows: typeof auditBuffer) => {
-    for (const input of rows) {
-      const now = new Date().toISOString();
-      insertAuditStmt.run(
-        randomUUID(),
-        input.userId ?? null,
-        input.userName ?? null,
-        input.action,
-        input.target ?? null,
-        input.detail ?? null,
-        input.ip ?? null,
-        input.traceId ?? null,
-        input.clinicId ?? null,
-        input.statusCode == null ? null : String(input.statusCode),
-        now,
-        now,
-      );
-    }
-  });
-  let _auditFlushScheduled = false;
-  let _auditRetryScheduled = false;
-  function scheduleAuditFlush(): void {
-    if (_auditFlushScheduled) return;
-    _auditFlushScheduled = true;
-    setTimeout(() => {
-      _auditFlushScheduled = false;
-      if (auditBuffer.length === 0) return;
-      const rows = auditBuffer.splice(0, auditBuffer.length);
-      try {
-        flushAudit(rows);
-      } catch (error) {
-        if (logger) logger.error('audit batch flush failed', { error });
-        else console.error('audit batch flush failed', error);
-        scheduleAuditRetry(rows);
-      }
-    }, AUDIT_FLUSH_INTERVAL).unref();
-  }
-  // M6-edge: flush 失败后恰好重试一次。_auditRetryScheduled 保证同一时间最多
-  // 一轮重试在途（已有重试则放弃，仅记日志）；重试定时器到点时把失败行（已
-  // 放回队首）与期间新入缓冲的行一起刷出；重试再失败只记日志，不再入队，
-  // 避免无限重试。
-  function scheduleAuditRetry(rows: typeof auditBuffer): void {
-    if (_auditRetryScheduled) return;
-    if (auditBuffer.length + rows.length > AUDIT_BUFFER_MAX * 2) {
-      // B-H5：超限静默丢弃审计行会掩盖合规痕迹；丢弃前必须留告警日志。
-      const dropped = rows.length;
-      if (logger) logger.error('audit rows dropped (retry buffer over capacity)', { action: 'audit-drop', dropped });
-      else console.error('audit rows dropped (retry buffer over capacity)', dropped);
-      return;
-    }
-    auditBuffer.unshift(...rows);
-    _auditRetryScheduled = true;
-    setTimeout(() => {
-      _auditRetryScheduled = false;
-      if (auditBuffer.length === 0) return;
-      const pending = auditBuffer.splice(0, auditBuffer.length);
-      try {
-        flushAudit(pending);
-      } catch (error) {
-        if (logger) logger.error('audit batch retry flush failed', { error });
-        else console.error('audit batch retry flush failed', error);
-      }
-    }, AUDIT_FLUSH_INTERVAL).unref();
-  }
-  function pushAudit(input: typeof auditBuffer[number]): void {
-    if (process.env.NODE_ENV === 'test') {
-      // 测试模式直写；数据库已关闭（closed-database 边界用例）时审计属
-      // 尽力而为，吞掉错误避免 finish 回调里产生 uncaught exception。
-      try {
-        const now = new Date().toISOString();
-        insertAuditStmt.run(
-          randomUUID(),
-          input.userId ?? null,
-          input.userName ?? null,
-          input.action,
-          input.target ?? null,
-          input.detail ?? null,
-          input.ip ?? null,
-          input.traceId ?? null,
-          input.clinicId ?? null,
-          input.statusCode == null ? null : String(input.statusCode),
-          now,
-          now,
-        );
-      } catch {
-        // 审计写入失败不影响请求结果。
-      }
-      return;
-    }
-    auditBuffer.push(input);
-    if (auditBuffer.length >= AUDIT_BUFFER_MAX) {
-      const rows = auditBuffer.splice(0, AUDIT_BUFFER_MAX);
-      try {
-        flushAudit(rows);
-      } catch (error) {
-        if (logger) logger.error('audit batch flush failed', { error });
-        else console.error('audit batch flush failed', error);
-        scheduleAuditRetry(rows);
-      }
-    } else {
-      scheduleAuditFlush();
-    }
-  }
-  app.locals.audit = pushAudit;
-  app.locals.flushAuditNow = shutdownFlushAudit;
-  function shutdownFlushAudit(): void {
-    if (auditBuffer.length === 0) return;
-    const rows = auditBuffer.splice(0, auditBuffer.length);
-    try {
-      flushAudit(rows);
-    } catch (error) {
-      if (logger) logger.error('audit shutdown flush failed', { error });
-      else console.error('audit shutdown flush failed', error);
-    }
-  }
-  process.once('SIGINT', shutdownFlushAudit);
-  process.once('SIGTERM', shutdownFlushAudit);
-  app.set('flushAudit', shutdownFlushAudit);
-
+  const audit = createAuditBuffer(db, logger);
+  app.locals.audit = audit.push;
+  app.locals.flushAuditNow = audit.flushNow;
+  app.set('flushAudit', audit.flushNow);
   // 盘点锁定守卫：LOCKED 盘点单覆盖的物品在盘点期间禁止出入库。
   const stocktakes = new StocktakeService(db);
   const stocktakeLockGuard = (itemId: string, clinicId?: string | null) => stocktakes.assertNotLocked(itemId, clinicId);
@@ -355,20 +221,18 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
   // 受保护路由（JWT 认证的常规 GET）。
   registerPublicFileRoutes(app, deps);
 
-  // 审计中间件位于 authMiddleware 之前：未认证（401）与被角色规则拒绝（403）的
-  // 请求同样留痕（finish 时 req.context 已由 authMiddleware 填充，未认证则为 null）。
-  // 公开认证路由（login/refresh/logout）已有显式 LOGIN_*/LOGOUT 审计，此处跳过避免重复。
-  const AUDIT_EXPLICIT_PATHS = new Set(['/api/v2/auth/login', '/api/v2/auth/refresh', '/api/v2/auth/logout']);
+  app.use('/api/v2', authMiddleware(deps.authService));
+  // 审计中间件必须位于角色规则中间件之前：角色规则短路 403（next(error) 跳过
+  // 后继中间件）时，只有已注册的 res.on('finish') 监听才能捕获越权尝试。
   app.use('/api/v2', (req, res, next) => {
     res.on('finish', () => {
       if (req.method === 'GET') return;
-      if (AUDIT_EXPLICIT_PATHS.has(req.path)) return;
       const params = req.params as Record<string, string | undefined>;
       const auditOverride = res.locals.audit as
         | { action?: string; target?: string | null; detail?: string | null; clinicId?: string | null }
         | undefined;
-      pushAudit({
-        userId: req.context?.userId ?? null,
+      audit.push({
+        userId: req.context!.userId,
         action: auditOverride?.action ?? `${req.method} ${req.path}`,
         target: auditOverride?.target ?? params.id ?? params.resource ?? null,
         detail: auditOverride?.detail ?? (params.resource
@@ -376,13 +240,12 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
           : null),
         ip: req.ip,
         traceId: req.traceId,
-        clinicId: auditOverride?.clinicId ?? req.context?.clinicId ?? null,
+        clinicId: auditOverride?.clinicId ?? req.context!.clinicId,
         statusCode: res.statusCode,
       });
     });
     next();
   });
-  app.use('/api/v2', authMiddleware(deps.authService));
   app.use('/api/v2', (req, res, next) => {
     const rule = routeRoleRules.find((candidate) => candidate.pattern.test(req.originalUrl));
     if (rule) {
@@ -410,34 +273,34 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
   registerAdminRoutes(app, deps);
   registerWorkflowRoutes(app, deps);
   registerSystemRoutes(app, deps);
-  registerWorkbenchRoutes(app, db);
-  registerMedicalRecordEditRoutes(app, db);
-  registerFirstExamTrackingRoutes(app, db);
-  registerTreatmentPlanRoutes(app, db);
-  registerFollowUpExecutionRoutes(app, db);
-  registerMemberDiscountRoutes(app, db);
-  registerChargeComboRoutes(app, db);
-  registerRefundFlowRoutes(app, db);
-  registerCostShareRoutes(app, db);
-  registerProcessingSettleRoutes(app, db);
-  registerInventoryBatchRoutes(app, db, { lockGuard: stocktakeLockGuard });
-  registerStocktakeRoutes(app, db);
-  registerDispenseRoutes(app, db, { lockGuard: stocktakeLockGuard });
-  registerPurchaseReviewRoutes(app, db);
-  registerShiftTemplateRoutes(app, db);
-  registerUserRoleRoutes(app, db);
-  registerWechatReminderRoutes(app, db);
-  registerInventoryReportRoutes(app, db);
-  registerInventoryDocRoutes(app, db);
-  registerTreatmentPlanBillingRoutes(app, db);
-  registerPrescriptionProcessRoutes(app, db);
-  registerFirstExamRestartRoutes(app, db);
-  registerCephalometricReportRoutes(app, db);
-  registerProcessingFlowRoutes(app, db);
-  registerTriageRoutes(app, db);
-  registerPayMethodRoutes(app, db);
-  registerChargeTreeRoutes(app, db);
-  registerHighValueRoutes(app, db);
+  registerWorkbenchRoutes(app, deps);
+  registerMedicalRecordEditRoutes(app, deps);
+  registerFirstExamTrackingRoutes(app, deps);
+  registerTreatmentPlanRoutes(app, deps);
+  registerFollowUpExecutionRoutes(app, deps);
+  registerMemberDiscountRoutes(app, deps);
+  registerChargeComboRoutes(app, deps);
+  registerRefundFlowRoutes(app, deps);
+  registerCostShareRoutes(app, deps);
+  registerProcessingSettleRoutes(app, deps);
+  registerInventoryBatchRoutes(app, deps, { lockGuard: stocktakeLockGuard });
+  registerStocktakeRoutes(app, deps);
+  registerDispenseRoutes(app, deps, { lockGuard: stocktakeLockGuard });
+  registerPurchaseReviewRoutes(app, deps);
+  registerShiftTemplateRoutes(app, deps);
+  registerUserRoleRoutes(app, deps);
+  registerWechatReminderRoutes(app, deps);
+  registerInventoryReportRoutes(app, deps);
+  registerInventoryDocRoutes(app, deps);
+  registerTreatmentPlanBillingRoutes(app, deps);
+  registerPrescriptionProcessRoutes(app, deps);
+  registerFirstExamRestartRoutes(app, deps);
+  registerCephalometricReportRoutes(app, deps);
+  registerProcessingFlowRoutes(app, deps);
+  registerTriageRoutes(app, deps);
+  registerPayMethodRoutes(app, deps);
+  registerChargeTreeRoutes(app, deps);
+  registerHighValueRoutes(app, deps);
   // file:// (打包版 Electron 渲染器) 以 <img> 加载 API 图片时,
   // 不受同源策略约束, 但 helmet 默认 Cross-Origin-Resource-Policy: same-origin
   // 会阻断响应; 仅对 files 路由放开 CORP。
