@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { errorMessage, friendlyError } from './messages';
 
 describe('friendlyError', () => {
-  it('translates common server errors and preserves unknown messages', () => {
+  it('translates common server errors and falls back to a Chinese message for unknown ones', () => {
     expect(friendlyError(new Error('Patient not found'))).toBe('患者不存在');
     expect(friendlyError(new Error('Invalid payment method'))).toBe('支付方式无效');
-    expect(friendlyError(new Error('custom error'))).toBe('custom error');
-    expect(friendlyError('plain text')).toBe('plain text');
+    // M5：未命中的英文/内部消息不再原样暴露，统一兜底中文文案
+    expect(friendlyError(new Error('custom error'))).toBe('操作失败，请稍后重试');
+    expect(friendlyError('plain text')).toBe('操作失败，请稍后重试');
+    // 中文消息已可读，直接透传（H4「部分明细可能未保存」提示依赖该行为）
+    expect(friendlyError(new Error('更新采购单失败；部分明细可能未保存，请核对后重试'))).toBe('更新采购单失败；部分明细可能未保存，请核对后重试');
   });
 
   it('translates network, state transition, and dynamic unique errors', () => {

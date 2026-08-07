@@ -132,7 +132,10 @@ export function friendlyError(error: unknown): string {
   if (/^[A-Za-z][A-Za-z ]* is required$/.test(message)) return '请填写必填项';
   if (/^[A-Za-z][A-Za-z ]* must be /.test(message)) return '输入内容格式不正确';
   if (/exceeds max length/.test(message)) return '输入内容超过长度限制';
-  return message;
+  // M5：未命中映射时兜底中文文案；中文（CJK）消息本身已可读，直接透传（H4 提示依赖该行为）
+  if (/[\u4e00-\u9fff]/.test(message)) return message;
+  console.warn('未映射的错误消息:', message);
+  return '操作失败，请稍后重试';
 }
 
 function resourceName(value: string): string {

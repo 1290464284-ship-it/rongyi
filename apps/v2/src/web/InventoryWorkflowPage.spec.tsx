@@ -112,7 +112,7 @@ describe('InventoryWorkflowPage', () => {
     await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith('/inventory/replenishment/apply', expect.objectContaining({ method: 'POST' }));
     });
-    expect(await screen.findByText('apply failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
   });
 
   it('uses a generic message for non-error workflow failures', async () => {

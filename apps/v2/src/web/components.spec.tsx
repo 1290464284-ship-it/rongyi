@@ -84,7 +84,7 @@ describe('shared web components', () => {
 
   it('renders page errors', () => {
     render(<PageError message="Request failed" />);
-    expect(screen.getByText('Request failed')).toBeDefined();
+    expect(screen.getByText('操作失败，请稍后重试')).toBeDefined();
   });
 
   it('renders loading and empty states', () => {

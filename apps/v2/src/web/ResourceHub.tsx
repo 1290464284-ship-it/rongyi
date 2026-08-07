@@ -7,8 +7,7 @@ import { ErrorBoundary, LoadingState } from './components';
 
 export function ResourceHub({ title, tabs }: { title: string; tabs: HubTab[] }) {
   const [activeId, setActiveId] = useState(tabs[0]?.id ?? '');
-  // 已访问过的 tab 保持挂载（display 由 hidden 控制），切走再切回不丢搜索/分页/表单状态
-  const [visitedIds, setVisitedIds] = useState<Set<string>>(() => new Set([tabs[0]?.id ?? '']));
+  // M3：只渲染当前活动 tab，切换即卸载非活动页面（display:none 常驻会累积 useQuery 订阅与组件实例）
   const tabRefs = useRef(new Map<string, HTMLButtonElement>());
   const hasBossOnly = tabs.some((tab) => tab.bossOnly);
   const navigation = useQuery({
@@ -24,12 +23,6 @@ export function ResourceHub({ title, tabs }: { title: string; tabs: HubTab[] }) 
 
   function selectTab(id: string) {
     setActiveId(id);
-    setVisitedIds((current) => {
-      if (current.has(id)) return current;
-      const next = new Set(current);
-      next.add(id);
-      return next;
-    });
   }
 
   function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
@@ -45,14 +38,6 @@ export function ResourceHub({ title, tabs }: { title: string; tabs: HubTab[] }) 
     selectTab(target.id);
     tabRefs.current.get(target.id)?.focus();
   }
-
-  // bossOnly 过滤后 active tab 不可见时回退到第一个可见 tab（并补记 visited）
-  // 渲染期调整（React 官方模式）：条件化 setState，避免在 effect 里同步 setState 造成级联渲染
-  if (effectiveActiveId && !visitedIds.has(effectiveActiveId)) {
-    setVisitedIds((current) => new Set(current).add(effectiveActiveId));
-  }
-
-  const renderedTabs = visibleTabs.filter((tab) => visitedIds.has(tab.id));
 
   return (
     <div className="hub">
@@ -79,26 +64,25 @@ export function ResourceHub({ title, tabs }: { title: string; tabs: HubTab[] }) 
           </button>
         ))}
       </div>
-      {renderedTabs.map((tab) => (
+      {active && (
         <div
-          key={tab.id}
-          id={`hub-panel-${tab.id}`}
+          key={active.id}
+          id={`hub-panel-${active.id}`}
           role="tabpanel"
-          aria-labelledby={`hub-tab-${tab.id}`}
+          aria-labelledby={`hub-tab-${active.id}`}
           className="tab-panel"
-          hidden={tab.id !== effectiveActiveId}
         >
           <ErrorBoundary>
-            {tab.kind === 'resource' ? (
-              <ResourcePage resource={tab.resource} />
-            ) : tab.kind === 'custom' ? (
+            {active.kind === 'resource' ? (
+              <ResourcePage resource={active.resource} />
+            ) : active.kind === 'custom' ? (
               <Suspense fallback={<LoadingState label="页面加载中" />}>
-                <tab.component />
+                <active.component />
               </Suspense>
             ) : null}
           </ErrorBoundary>
         </div>
-      ))}
+      )}
     </div>
   );
 }
