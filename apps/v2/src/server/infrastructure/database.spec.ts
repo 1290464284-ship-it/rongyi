@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import Database from 'better-sqlite3';
-import { createDatabase, seedDatabase, syncLegacySchema, uniqueIndexColumns } from './database';
+import { createDatabase, extractCreateTableStatements, seedDatabase, syncLegacySchema, uniqueIndexColumns } from './database';
 
 describe('database bootstrap', () => {
   let db: Database.Database;
@@ -52,6 +52,38 @@ describe('database bootstrap', () => {
 
   it('is safe when the legacy schema directory is missing', () => {
     expect(() => syncLegacySchema(db, path.join(os.tmpdir(), 'missing-v2-schema'))).not.toThrow();
+  });
+
+  it('parses every CREATE TABLE statement from all legacy schema files (format drift guard)', () => {
+    // Round7 H-03: syncLegacySchema executes regex-extracted CREATE TABLE text
+    // from legacy/schema/*.tables.ts at runtime. This assertion pins the implicit
+    // contract that the parser captures every statement in the checked-in files,
+    // so a formatting change (comments, indentation, template-string style) that
+    // would silently alter the created schema fails here instead of at runtime.
+    const schemaDir = path.resolve(import.meta.dirname, '..', '..', '..', 'legacy', 'schema');
+    const files = fs.readdirSync(schemaDir).filter((name) => name.endsWith('.tables.ts'));
+    expect(files.length).toBeGreaterThan(0);
+    const parsedTables: string[] = [];
+    for (const file of files) {
+      const content = fs.readFileSync(path.join(schemaDir, file), 'utf8');
+      const occurrences = content.match(/CREATE TABLE IF NOT EXISTS/g) ?? [];
+      const statements = extractCreateTableStatements(content);
+      expect(statements.length, `${file} parse count`).toBe(occurrences.length);
+      for (const statement of statements) {
+        const name = /CREATE TABLE IF NOT EXISTS\s+([A-Za-z_][A-Za-z0-9_]*)/.exec(statement)?.[1];
+        expect(name, `${file} statement table name`).toBeTruthy();
+        expect(statement.endsWith(')'), `${file} statement terminates with ')'`).toBe(true);
+        parsedTables.push(name ?? '');
+      }
+    }
+    // 每个表名在源码中出现且被捕获，且捕获结果与源码文本中的表名集合完全一致。
+    const sourceNames = new Set(
+      [...fs.readdirSync(schemaDir).filter((n) => n.endsWith('.tables.ts')).flatMap((file) => {
+        const content = fs.readFileSync(path.join(schemaDir, file), 'utf8');
+        return [...content.matchAll(/CREATE TABLE IF NOT EXISTS\s+([A-Za-z_][A-Za-z0-9_]*)/g)].map((match) => match[1]);
+      })],
+    );
+    expect(new Set(parsedTables)).toEqual(sourceNames);
   });
 
   it('tolerates malformed legacy schema statements', () => {

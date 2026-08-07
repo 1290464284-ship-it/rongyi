@@ -247,7 +247,7 @@ function createChildTables(db: Database.Database): void {
   `);
 }
 
-function extractCreateTableStatements(text: string): string[] {
+export function extractCreateTableStatements(text: string): string[] {
   const statements: string[] = [];
   let cursor = 0;
   while (cursor < text.length) {
