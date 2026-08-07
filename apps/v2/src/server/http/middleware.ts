@@ -65,8 +65,16 @@ export function authMiddleware(authService: AuthService) {
       const payload = authService.verifyToken(token);
       const user = await authService.getUserById(payload.sub);
       if (!user.active) throw new AppError('UNAUTHORIZED', 'User is disabled', 401);
-      if (user.lockedUntil && new Date(user.lockedUntil).getTime() > Date.now()) {
-        throw new AppError('UNAUTHORIZED', 'Account is temporarily locked', 401);
+      if (user.lockedUntil) {
+        const lockedTime = new Date(user.lockedUntil).getTime();
+        // B-L3：lockedUntil 无法解析（NaN）时 fail-closed——视为锁定并告警，
+        // 避免损坏/篡改的时间戳绕过账户锁。
+        if (lockedTime > Date.now() || Number.isNaN(lockedTime)) {
+          if (Number.isNaN(lockedTime)) {
+            console.warn('user lockedUntil is not a valid date; treating account as locked', { userId: user.id });
+          }
+          throw new AppError('UNAUTHORIZED', 'Account is temporarily locked', 401);
+        }
       }
       if (user.tokenVersion !== payload.tokenVersion) {
         throw new AppError('UNAUTHORIZED', 'Token is no longer valid', 401);

@@ -9,6 +9,8 @@ import { resolveResource } from '../infrastructure/legacy-registry';
 import { stripProtectedWriteFields } from '../infrastructure/security';
 import { withIdempotency } from '../infrastructure/idempotency';
 import { parsePagination } from './pagination';
+import { tenantAnd, tenantParams } from '../infrastructure/tenant';
+import { recordSyncChange } from '../infrastructure/sync-change';
 
 export function createResourceRouter(db: Database.Database): Router {
   const router = Router();
@@ -58,7 +60,7 @@ export function createResourceRouter(db: Database.Database): Router {
     try {
       const resource = res.locals.resource as ResourceDefinition;
       if (!resource.capabilities.create) throw new NotFoundError('Create is not supported for this resource');
-      const payload = stripProtectedWriteFields(validatePayload(resource, req.body ?? {}), roleExempt(resource));
+      const payload = stripProtectedWriteFields(validatePayload(resource, req.body ?? {}), roleExempt(resource), resource.name);
       const requestId = typeof req.header('idempotency-key') === 'string' ? req.header('idempotency-key')! : '';
       const result = await withIdempotency(db, {
         operation: `resource.create.${resource.name}`,
@@ -118,14 +120,53 @@ export function createResourceRouter(db: Database.Database): Router {
     try {
       const resource = res.locals.resource as ResourceDefinition;
       if (!resource.capabilities.update) throw new NotFoundError('Update is not supported for this resource');
-      const payload = stripProtectedWriteFields(validatePayload(resource, req.body ?? {}, { partial: true }), roleExempt(resource));
+      const payload = stripProtectedWriteFields(validatePayload(resource, req.body ?? {}, { partial: true }), roleExempt(resource), resource.name);
       const repo = new SqliteRepository(db, resource);
       // 治疗计划明细：price/quantity 允许经通用 CRUD 维护（前端计划编辑器写未划价明细），
       // 但已划价明细（billed=1）服务端强制不可改价/改量，与 TreatmentPlanBillingService 状态机一致。
       if (resource.name === 'treatmentPlanItems' && (Object.prototype.hasOwnProperty.call(payload, 'price') || Object.prototype.hasOwnProperty.call(payload, 'quantity'))) {
-        const existing = await repo.findById(req.params.id, req.context!);
-        if (existing && Number(existing.billed) === 1) {
+        // B-M6：原子守卫——billed=0 直接并入 UPDATE 条件，消除 check-then-update
+        // 竞态（并发划价与改价同时到达时只有一个生效）；成功后手动记 SyncChange，
+        // 与 repo.update 的变更传播保持一致。
+        const sets: string[] = ['updatedAt = ?'];
+        const values: unknown[] = [req.context!.now().toISOString()];
+        if (Object.prototype.hasOwnProperty.call(payload, 'price')) {
+          sets.push('price = ?');
+          values.push(payload.price);
+        }
+        if (Object.prototype.hasOwnProperty.call(payload, 'quantity')) {
+          sets.push('quantity = ?');
+          values.push(payload.quantity);
+        }
+        values.push(req.params.id);
+        values.push(...tenantParams(req.context!.clinicId));
+        const guardResult = db.prepare(
+          `UPDATE TreatmentPlanItem SET ${sets.join(', ')} WHERE id = ? AND billed = 0 AND deletedAt IS NULL${tenantAnd(req.context!.clinicId)}`,
+        ).run(...values);
+        if (Number(guardResult.changes) === 0) {
+          const existing = await repo.findById(req.params.id, req.context!);
+          if (!existing) throw new NotFoundError('treatmentPlanItems not found');
           throw new ConflictError(Object.prototype.hasOwnProperty.call(payload, 'price') ? '已划价明细不可改价' : '已划价明细不可修改');
+        }
+        if (req.context!.clinicId) {
+          recordSyncChange(db, {
+            tableName: 'TreatmentPlanItem',
+            recordId: req.params.id,
+            operation: 'UPDATE',
+            clinicId: req.context!.clinicId,
+          });
+        }
+        delete payload.price;
+        delete payload.quantity;
+      }
+      // S-M7：治疗计划费用/优惠/状态字段在存在已划价明细后锁定（金额凭证防篡改）。
+      if (resource.name === 'treatmentPlans') {
+        const LOCKED_PLAN_FIELDS = ['totalFee', 'discountRate', 'discountType', 'status'] as const;
+        if (LOCKED_PLAN_FIELDS.some((field) => Object.prototype.hasOwnProperty.call(payload, field))) {
+          const billedItem = db.prepare(
+            'SELECT 1 FROM TreatmentPlanItem WHERE planId = ? AND billed = 1 AND deletedAt IS NULL LIMIT 1',
+          ).get(req.params.id);
+          if (billedItem) throw new ConflictError('治疗计划已划价，费用与状态字段不可修改');
         }
       }
       await repo.update({ id: req.params.id, ...payload }, req.context!);
