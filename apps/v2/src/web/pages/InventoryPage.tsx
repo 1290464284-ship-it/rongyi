@@ -3,98 +3,12 @@ import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router';
 import { apiRequest } from '../lib/api';
 import type { Page } from '../lib/types';
-import { ConfirmDialog, DataTable, Dialog, LoadingState, PageError, SearchableSelect, type DataTableColumn } from '../components';
-import { formatDateTime } from '../lib/format';
+import { ConfirmDialog, DataTable, Dialog, LoadingState, PageError, SearchableSelect } from '../components';
 import { errorMessage } from '../lib/messages';
 import { useToast } from '../lib/toast-context';
-
-interface BatchRow {
-  id: string;
-  batchNo: string | null;
-  productionDate: string | null;
-  expiryDate: string | null;
-  initialQuantity: number;
-  remainingQuantity: number;
-  itemName?: string | null;
-  itemCode?: string | null;
-  supplierId?: string | null;
-}
-
-interface BatchListData {
-  batches: BatchRow[];
-  expiring: BatchRow[];
-}
-
-const REPORT_TYPES = [
-  { value: 'IN', label: 'IN 入库' },
-  { value: 'OUT', label: 'OUT 出库' },
-  { value: 'DISPENSE_RETURN', label: 'DISPENSE_RETURN 退药' },
-  { value: 'RETURN_SUPPLIER', label: 'RETURN_SUPPLIER 退回厂商' },
-  { value: 'LOSS', label: 'LOSS 库损' },
-  { value: 'STOCKTAKE', label: 'STOCKTAKE 盘点' },
-  { value: 'TRANSFER_OUT', label: 'TRANSFER_OUT 调拨出' },
-  { value: 'TRANSFER_IN', label: 'TRANSFER_IN 调拨入' },
-  { value: 'SUMMARY', label: 'SUMMARY 汇总' },
-] as const;
-
-const REPORT_TYPE_LABELS: Record<string, string> = Object.fromEntries(REPORT_TYPES.map((entry) => [entry.value, entry.label]));
-
-interface InventoryReportRow extends Record<string, unknown> {
-  id?: string;
-  itemId?: string;
-  itemName?: string | null;
-  spec?: string | null;
-  category?: string | null;
-  unit?: string | null;
-  type?: string | null;
-  quantity?: number;
-  beforeStock?: number;
-  afterStock?: number;
-  referenceType?: string | null;
-  referenceId?: string | null;
-  remark?: string | null;
-  createdAt?: string | null;
-  // SUMMARY 聚合行
-  name?: string | null;
-  currentStock?: number;
-  inQuantity?: number;
-  outQuantity?: number;
-  adjustQuantity?: number;
-}
-
-interface InventoryReportData {
-  type: string;
-  from: string | null;
-  to: string | null;
-  total: number;
-  items: InventoryReportRow[];
-  supplierId?: string | null;
-}
-
-const detailReportColumns: DataTableColumn<InventoryReportRow>[] = [
-  { key: 'createdAt', label: '时间', render: (row) => formatDateTime(row.createdAt) },
-  { key: 'itemName', label: '物料', render: (row) => String(row.itemName ?? row.itemId ?? '') },
-  { key: 'spec', label: '规格' },
-  { key: 'category', label: '分类' },
-  { key: 'unit', label: '单位' },
-  { key: 'type', label: '类型' },
-  { key: 'quantity', label: '数量' },
-  { key: 'beforeStock', label: '变动前' },
-  { key: 'afterStock', label: '变动后' },
-  { key: 'referenceType', label: '参照类型' },
-  { key: 'remark', label: '备注' },
-];
-
-const summaryReportColumns: DataTableColumn<InventoryReportRow>[] = [
-  { key: 'name', label: '物料', render: (row) => String(row.name ?? row.itemId ?? '') },
-  { key: 'spec', label: '规格' },
-  { key: 'category', label: '分类' },
-  { key: 'unit', label: '单位' },
-  { key: 'currentStock', label: '当前库存' },
-  { key: 'inQuantity', label: '入库量' },
-  { key: 'outQuantity', label: '出库量' },
-  { key: 'adjustQuantity', label: '调整量' },
-];
+import { REPORT_TYPES, REPORT_TYPE_LABELS } from '../inventory/constants';
+import { detailReportColumns, summaryReportColumns } from '../inventory/columns';
+import type { BatchRow, BatchListData, InventoryReportData } from '../inventory/types';
 
 export function InventoryPage() {
   const { showToast } = useToast();
