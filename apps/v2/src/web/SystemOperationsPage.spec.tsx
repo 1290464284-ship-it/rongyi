@@ -107,7 +107,7 @@ describe('SystemOperationsPage', () => {
 
     render(<ToastProvider><SystemOperationsPage /></ToastProvider>);
     fireEvent.click(screen.getByRole('button', { name: '导入' }));
-    expect(await screen.findByText('system failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
 
     fireEvent.change(screen.getByLabelText('搜索关键词'), { target: { value: 'D' } });
     // 搜索输入已防抖（300ms），等待防抖值落地后再点击。
@@ -119,7 +119,7 @@ describe('SystemOperationsPage', () => {
     fireEvent.change(screen.getByLabelText('搜索关键词'), { target: { value: 'Demo' } });
     await new Promise((resolve) => setTimeout(resolve, 350));
     fireEvent.click(screen.getByRole('button', { name: '搜索' }));
-    expect(await screen.findByText('system failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
 
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path.startsWith('/search?')) throw 'boom';

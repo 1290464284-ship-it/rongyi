@@ -337,18 +337,18 @@ function ReceiveButton({ id, onDone }: { id: string; onDone: (id: string) => Pro
   );
 }
 
-/** 行内加工状态流转下拉：选中即触发，busy 期间禁用，防止连选重复流转。 */
+/** 行内加工状态流转下拉：选中即触发，busy 期间禁用，防止连选重复流转。M12：受控 value + 选中后复位占位项。 */
 function StatusFlowSelect({ id, onDone }: { id: string; onDone: (id: string, status: string) => Promise<void> }) {
   const { busy, run } = useAsyncAction();
+  const [value, setValue] = useState('');
   return (
     <select
       disabled={busy}
-      defaultValue=""
+      value={value}
       onChange={(event) => {
         const next = event.target.value;
-        if (!next) return;
-        event.target.value = '';
-        void run(() => onDone(id, next));
+        setValue('');
+        if (next) void run(() => onDone(id, next));
       }}
     >
       <option value="">流转</option>

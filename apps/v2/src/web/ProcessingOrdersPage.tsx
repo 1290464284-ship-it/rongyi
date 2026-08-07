@@ -148,8 +148,9 @@ export function ProcessingOrdersPage() {
     event.preventDefault();
     if (settleBusy || !settleTarget) return;
     const amount = toCents(settleAmount);
-    if (!settleAmount.trim() || !Number.isFinite(amount) || amount < 0) {
-      showToast('请输入有效的结算金额', 'error');
+    // M11：金额必须 > 0，0 元空单不允许进入已结算状态
+    if (!settleAmount.trim() || !Number.isFinite(amount) || amount <= 0) {
+      showToast('请输入有效的结算金额（需大于 0）', 'error');
       return;
     }
     setSettleBusy(true);

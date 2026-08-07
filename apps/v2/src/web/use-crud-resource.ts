@@ -95,6 +95,13 @@ export function useCrudResource<
 >(options: CrudResourceOptions<TRow, TForm>): CrudResourceResult<TRow, TForm> {
   const { showToast } = useToast();
   const [searchInput, setSearchInput] = useState(options.initialSearch ?? '');
+  // M4：initialSearch（如顶栏全局搜索 ?q=）变化时同步搜索词，调用方不再用 key 整页重挂载。
+  // 采用 React 官方"渲染期调整 state"模式（避免 set-state-in-effect 级联渲染）。
+  const [prevInitialSearch, setPrevInitialSearch] = useState(options.initialSearch);
+  if (options.initialSearch !== prevInitialSearch) {
+    setPrevInitialSearch(options.initialSearch);
+    setSearchInput(options.initialSearch ?? '');
+  }
   const search = useDebouncedValue(searchInput, 300);
   const [page, setPage] = useState(1);
   const [showForm, setShowForm] = useState(false);

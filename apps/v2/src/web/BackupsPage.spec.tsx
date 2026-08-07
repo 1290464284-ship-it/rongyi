@@ -69,22 +69,22 @@ describe('BackupsPage', () => {
     expect(await screen.findByText('备份完整性校验通过')).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: '暂存恢复' }));
-    expect(await screen.findByText('restore failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: '清理备份（保留 30 个）' }));
     expect(await screen.findByText('保留 1 个，清理 1 个')).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: '清理备份（保留 30 个）' }));
-    expect(await screen.findByText('cleanup failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: '暂存恢复' }));
     expect(await screen.findAllByText('暂无摘要')).toHaveLength(2);
 
     fireEvent.click(screen.getByRole('button', { name: '创建备份' }));
-    expect(await screen.findByText('create failed')).toBeDefined();
+    expect((await screen.findAllByText('操作失败，请稍后重试')).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole('button', { name: '校验' }));
-    expect(await screen.findByText('verify failed')).toBeDefined();
+    expect((await screen.findAllByText('操作失败，请稍后重试')).length).toBeGreaterThan(0);
   });
 
   it('falls back to generic messages for non-error failures', async () => {

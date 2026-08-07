@@ -242,10 +242,12 @@ export function PrescriptionsPage() {
             />
           )
         }
-        renderForm={(ctx) => {
-          updateFormRef.current = ctx.update;
-          return <PrescriptionForm form={ctx.form} update={ctx.update} editing={ctx.editing} />;
-        }}
+        renderForm={(ctx) => (
+          <>
+            <FormUpdateSync update={ctx.update} onUpdate={(update) => { updateFormRef.current = update; }} />
+            <PrescriptionForm form={ctx.form} update={ctx.update} editing={ctx.editing} />
+          </>
+        )}
       />
 
       <Dialog open={statusTarget !== null} title="处方状态" onClose={() => setStatusTarget(null)}>
@@ -388,9 +390,15 @@ function PrescriptionStatusDialog({
     queryFn: () => apiRequest<PrescriptionStatusResult>(`/prescriptions/${row.id}/status`),
   });
 
-  async function refresh(): Promise<void> {
-    await query.refetch();
-    await onChanged();
+  async function refresh(): Promise<boolean> {
+    try {
+      await query.refetch();
+      await onChanged();
+      return true;
+    } catch (error) {
+      console.warn('刷新处方状态失败:', error);
+      return false;
+    }
   }
 
   if (query.isLoading) return <LoadingState label="状态加载中..." />;
@@ -422,9 +430,9 @@ function PrescriptionStatusDialog({
       <div className="modal-actions">
         <button
           type="button"
-          onClick={() => {
-            void refresh();
-            showToast('状态已刷新', 'success');
+          onClick={async () => {
+            const ok = await refresh();
+            showToast(ok ? '状态已刷新' : '刷新失败，请稍后重试', ok ? 'success' : 'error');
           }}
         >
           刷新
@@ -507,4 +515,20 @@ async function cleanupOrphanPrescription(prescriptionId: string, createdItemIds:
   } catch (error) {
     console.warn(`删除孤儿处方失败：${prescriptionId}`, error);
   }
+}
+
+// M9：渲染期写 ref 是反模式（StrictMode 双渲染/对话框切换时 ref 可能指向上一表单实例）。
+// 将 ctx.update 赋值移到 effect 提交后执行（子组件 effect 先于父组件回填 effect 运行，
+// 保证 editLoadKey 回填能拿到与当前渲染一致的 update）。
+function FormUpdateSync({
+  update,
+  onUpdate,
+}: {
+  update: (patch: Partial<PrescriptionForm>) => void;
+  onUpdate: (update: (patch: Partial<PrescriptionForm>) => void) => void;
+}) {
+  useEffect(() => {
+    onUpdate(update);
+  }, [update, onUpdate]);
+  return null;
 }
