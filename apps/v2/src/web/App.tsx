@@ -1,7 +1,7 @@
 import { Navigate, Route, Routes, useParams } from 'react-router';
 import { Layout } from './components/Layout';
-import { LoginPage } from './pages/LoginPage';
-import { DashboardPage } from './pages/DashboardPage';
+import { LoginPage } from './pages/auth/LoginPage';
+import { DashboardPage } from './pages/analytics/DashboardPage';
 import { ResourceHub } from './components/ResourceHub';
 import { patientHubTabs, clinicalHubTabs, financeHubTabs, inventoryHubTabs, communicationHubTabs, hrHubTabs, systemHubTabs, analyticsHubTabs } from './components/hub-tabs';
 import { ResourcePage } from './components/ResourcePage';

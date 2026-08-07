@@ -61,6 +61,21 @@ export function removeSearchRow(db: Database.Database, resource: string, id: str
   db.prepare(`DELETE FROM SearchIndex WHERE resource = ? AND recordId = ?`).run(resource, id);
 }
 
+/**
+ * Unified search-index write facade: every app write path goes through this
+ * function instead of calling upsert/remove directly, so future writers only
+ * need to know one API and one operation name.
+ */
+export function touchSearchIndex(
+  db: Database.Database,
+  resource: string,
+  id: string,
+  operation: 'INSERT' | 'UPDATE' | 'DELETE',
+): void {
+  if (operation === 'DELETE') removeSearchRow(db, resource, id);
+  else upsertSearchRow(db, resource, id);
+}
+
 export function refreshPatientChildSearchRows(db: Database.Database, patientId: string): void {
   for (const { table, resource } of CHILD_SEARCH_TABLES) {
     // 精简/异构 schema 可能缺 patientId 列或整表缺失，跳过该表。

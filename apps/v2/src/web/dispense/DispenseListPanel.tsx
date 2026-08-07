@@ -13,7 +13,7 @@ import { formatDateTime } from '../lib/format';
 import { errorMessage } from '../lib/messages';
 import { useToast } from '../lib/toast-context';
 import { BatchSelect, DispenseEditDialog } from './DispenseEditDialog';
-import type { DispenseDetail, DispenseDetailItem, DispenseRow } from './dispense-types';
+import type { DispenseDetail, DispenseDetailItem, DispenseRow } from './types';
 import { DISPENSE_STATUS_LABELS } from '../lib/labels';
 
 /** 发药单列表区：分页、行内发药/退药面板、编辑与删除确认；列表查询与分页状态由页面传入。 */

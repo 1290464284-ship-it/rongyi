@@ -73,6 +73,15 @@ jobs:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
 
+      - name: Require expected certificate thumbprint
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:V2_EXPECTED_CERT_THUMBPRINT)) {
+            Write-Error "V2_EXPECTED_CERT_THUMBPRINT variable is not configured; public releases must pin the signing certificate"
+          }
+        env:
+          V2_EXPECTED_CERT_THUMBPRINT: ${{ vars.V2_EXPECTED_CERT_THUMBPRINT }}
+
       - name: Package
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}

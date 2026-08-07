@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { apiRequest } from '../lib/api';
 import { errorMessage } from '../lib/messages';
 import { useToast } from '../lib/toast-context';
-import { FOLLOW_UP_LABELS, type PlanRow } from './plan-types';
+import { FOLLOW_UP_LABELS, type PlanRow } from './types';
 
 export function FollowUpDialog({
   plan,

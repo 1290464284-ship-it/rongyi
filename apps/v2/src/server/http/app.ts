@@ -80,6 +80,7 @@ import { registerChargeTreeRoutes } from './routes/charge-tree-routes';
 import { registerHighValueRoutes } from './routes/high-value-routes';
 import type { RouteDependencies } from './routes/deps';
 import { createAuditBuffer } from './audit-buffer';
+import { SqliteRateLimitStore } from '../infrastructure/rate-limit-store';
 
 export type { AuditInput } from './audit-buffer';
 
@@ -94,6 +95,12 @@ export interface AppDependencies {
 export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependencies): Express {
   const app = express();
   const audit = createAuditBuffer(db, logger);
+  // Test suites share one database across many login cases; use the in-memory
+  // limiter there so per-request windows reset with each app. Production uses
+  // the DB-backed store so multiple processes share the same windows.
+  const rateLimitStore = process.env.NODE_ENV === 'test'
+    ? undefined
+    : new SqliteRateLimitStore(db);
   app.locals.audit = audit.push;
   app.locals.flushAuditNow = audit.flushNow;
   app.set('flushAudit', audit.flushNow);
@@ -106,6 +113,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
     dbPath,
     logger,
     logDir,
+    rateLimitStore,
     authService: new AuthService(db),
     audit: new AuditService(db),
     appointments: new AppointmentService(db),

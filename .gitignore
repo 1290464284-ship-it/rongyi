@@ -3,6 +3,7 @@ dist
 dist-web
 dist-electron
 coverage
+coverage-web
 release-v2/
 apps/v2/data/
 apps/v2/logs/
@@ -15,3 +16,9 @@ certs/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+*.sqlite.bak
+*.sqlite.bak-wal
+*.sqlite.bak-shm
+.qoder/
+.superpowers/
+.playwright-cli/

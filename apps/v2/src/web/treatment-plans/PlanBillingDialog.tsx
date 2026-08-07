@@ -7,7 +7,7 @@ import { formatMoney } from '../lib/format';
 import { errorMessage } from '../lib/messages';
 import { useToast } from '../lib/toast-context';
 import type { Page } from '../lib/types';
-import { PLAN_DISCOUNT_LABELS, type PlanItemRow, type PlanRow } from './plan-types';
+import { PLAN_DISCOUNT_LABELS, type PlanItemRow, type PlanRow } from './types';
 
 export function PlanBillingDialog({
   plan,

@@ -6,7 +6,7 @@ import { centsToYuanString } from '../lib/format';
 import { errorMessage } from '../lib/messages';
 import { useToast } from '../lib/toast-context';
 import type { Page } from '../lib/types';
-import type { PlanItemForm, PlanItemRow, TreatmentPlanForm } from './plan-types';
+import type { PlanItemForm, PlanItemRow, TreatmentPlanForm } from './types';
 import { newItem } from './plan-utils';
 
 export function PlanFormFields({

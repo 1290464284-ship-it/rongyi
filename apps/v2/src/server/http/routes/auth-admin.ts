@@ -8,9 +8,9 @@ import type { RouteDependencies } from './deps';
 
 export function registerPublicAuthRoutes(app: Express, deps: RouteDependencies): void {
   const { authService } = deps;
-  const loginLimiter = createRateLimit({ windowMs: 60_000, max: 20 });
-  const ipLoginLimiter = createIpRateLimit({ windowMs: 60_000, max: 10 });
-  const refreshLimiter = createRateLimit({ windowMs: 60_000, max: 30 });
+  const loginLimiter = createRateLimit({ windowMs: 60_000, max: 20 }, deps.rateLimitStore);
+  const ipLoginLimiter = createIpRateLimit({ windowMs: 60_000, max: 10 }, deps.rateLimitStore);
+  const refreshLimiter = createRateLimit({ windowMs: 60_000, max: 30 }, deps.rateLimitStore);
 
   app.post('/api/v2/auth/login', loginLimiter, ipLoginLimiter, wrapAsync(async (req, res, next) => {
       const username = String(req.body?.username ?? '');

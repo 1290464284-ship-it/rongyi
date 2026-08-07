@@ -12,7 +12,7 @@ import {
 } from '../components';
 import { errorMessage } from '../lib/messages';
 import { useToast } from '../lib/toast-context';
-import { emptyNarcoticForm, type NarcoticForm } from './dispense-types';
+import { emptyNarcoticForm, type NarcoticForm } from './types';
 
 /** 麻药登记面板：登记表单与登记记录列表，narcotics 查询、表单状态与删除/编辑逻辑均在本面板内部。 */
 export function DispenseNarcoticPanel() {

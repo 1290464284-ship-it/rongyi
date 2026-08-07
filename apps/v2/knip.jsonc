@@ -5,9 +5,10 @@
   // - src/domain/contracts/**：域契约唯一来源（96 个文件从它导入）。knip 实测报告 82 个导出无引用（18 常量 + 64 类型），
   //   属于保留的领域公共词汇表（审计 round7 H-04），刻意保留；如需死代码证明，以本文件注释为准
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "ignore": [
-    "src/domain/contracts/**",
-    "legacy/schema/**",
+  "entry": [
+    "src/domain/contracts/index.ts",
+    "legacy/schema/**/*.ts",
     "electron/preload.cjs"
-  ]
+  ],
+  "ignore": []
 }

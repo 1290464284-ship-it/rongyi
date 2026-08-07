@@ -33,12 +33,14 @@ import type {
 } from '../../application/workflow-services';
 import type { Logger } from '../../infrastructure/logger';
 import type Database from 'better-sqlite3';
+import type { RateLimitStore } from '../rate-limit';
 
 export interface RouteDependencies {
   db: Database.Database;
   dbPath: string;
   logger: Logger;
   logDir: string;
+  rateLimitStore?: RateLimitStore;
   authService: AuthService;
   audit: AuditService;
   appointments: AppointmentService;
