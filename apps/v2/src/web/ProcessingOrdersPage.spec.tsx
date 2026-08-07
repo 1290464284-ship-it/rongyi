@@ -9,7 +9,16 @@ import { apiRequest } from './api';
 import { formatDateTime } from './format';
 import { ToastProvider } from './toast';
 
-vi.mock('./api', () => ({ apiRequest: vi.fn() }));
+vi.mock('./api', () => {
+  const apiRequest = vi.fn();
+  return {
+    apiRequest,
+    fetchAllPages: vi.fn(async (path: string) => {
+      const data = await apiRequest(`${path}&page=1&pageSize=100`);
+      return data?.items ?? [];
+    }),
+  };
+});
 
 const wrapper = ({ children }: { children: ReactNode }) => (
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>

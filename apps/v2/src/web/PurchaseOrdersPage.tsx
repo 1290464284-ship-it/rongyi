@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest } from './api';
+import { apiRequest, fetchAllPages } from './api';
 import { CrudPage } from './CrudPage';
 import { SearchableSelect, PromptDialog, type DataTableColumn, type SearchableSelectRow } from './components';
 import { formatMoney, centsToYuanString, toCents } from './format';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
-import type { Page } from './types';
 
 const REVIEW_STATUS_LABELS: Record<string, string> = {
   PENDING: '待提交',
@@ -210,10 +209,10 @@ async function reconcilePurchaseItems(
   items: PurchaseItemForm[],
   inventoryRows: SearchableSelectRow[],
 ): Promise<void> {
-  const existing = await apiRequest<Page<PurchaseOrderItemRow>>(
-    `/resources/purchaseOrderItems?orderId=${orderId}&page=1&pageSize=100`,
+  const existing = await fetchAllPages<PurchaseOrderItemRow>(
+    `/resources/purchaseOrderItems?orderId=${orderId}`,
   );
-  const existingById = new Map(existing.items.map((row) => [String(row.id), row]));
+  const existingById = new Map(existing.map((row) => [String(row.id), row]));
   const keptIds = new Set<string>();
   for (const item of items) {
     if (!item.quantity || !item.unitPrice) continue;
@@ -248,7 +247,7 @@ async function reconcilePurchaseItems(
       });
     }
   }
-  for (const row of existing.items) {
+  for (const row of existing) {
     if (!keptIds.has(String(row.id))) {
       await apiRequest(`/resources/purchaseOrderItems/${String(row.id)}`, { method: 'DELETE' });
     }
@@ -419,11 +418,11 @@ function PurchaseOrderFormFields({
     let cancelled = false;
     loadedItemsForRef.current = editingId;
     setItemsError(null);
-    apiRequest<Page<PurchaseOrderItemRow>>(`/resources/purchaseOrderItems?orderId=${editingId}&page=1&pageSize=100`)
-      .then((data) => {
+    fetchAllPages<PurchaseOrderItemRow>(`/resources/purchaseOrderItems?orderId=${editingId}`)
+      .then((rows) => {
         if (cancelled) return;
         update({
-          items: (data.items ?? []).map((row) => ({
+          items: (rows ?? []).map((row) => ({
             id: String(row.id),
             itemId: String(row.itemId ?? ''),
             name: String(row.name ?? ''),
