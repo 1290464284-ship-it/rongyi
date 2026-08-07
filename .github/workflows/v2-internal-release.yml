@@ -1,5 +1,11 @@
 name: V2 Internal Release
 
+# Round7 H4：本 workflow 是手动内部发布通道（workflow_dispatch 专用），
+# 截至 Round7 审计从未在 Actions runner 上运行过（v2-internal-2.1.4 是早期
+# 手工产物）。首次触发前需确认：C1（legacy/dental.sqlite 已随仓库恢复）、
+# C2（package.json 版本与 inputs.version 一致，本 job 会强制校验）。
+# 内部版使用临时自签名证书打包（build-internal-installer.ps1），仅供
+# 受控环境分发，不对外发布。
 on:
   workflow_dispatch:
     inputs:
@@ -13,23 +19,31 @@ on:
         type: boolean
         default: true
 
+# 发布需要写 Release；携带签名 secret，所有第三方 action 一律 pin SHA（H1）。
 permissions:
   contents: write
+
+# Round7 M3：同一时间只允许一个 internal release 构建。
+concurrency:
+  group: v2-internal-release
+  cancel-in-progress: false
 
 jobs:
   build:
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24 runtime, Round7 M4)
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
           version: 11.15.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install
         run: pnpm install --frozen-lockfile
@@ -59,23 +73,45 @@ jobs:
         shell: bash
         run: echo "version=$(node -p "require('./apps/v2/package.json').version")" >> "$GITHUB_OUTPUT"
 
+      # Round7 M12：输入经 env 传递，避免 ${{ }} 直接插值进 shell；先做
+      # pattern 校验再与 package.json 比较。
       - name: Validate version input matches package.json
         shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          PKG_VERSION: ${{ steps.pkg_version.outputs.version }}
         run: |
-          if [ "${{ inputs.version }}" != "${{ steps.pkg_version.outputs.version }}" ]; then
-            echo "::error::input version (${{ inputs.version }}) does not match package.json version (${{ steps.pkg_version.outputs.version }})"
+          if [[ ! "$INPUT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::input version must match ^[0-9]+\.[0-9]+\.[0-9]+$, got '$INPUT_VERSION'"
+            exit 1
+          fi
+          if [ "$INPUT_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::input version ($INPUT_VERSION) does not match package.json version ($PKG_VERSION)"
             exit 1
           fi
 
+      # Round7 M7：内部版 installer 使用 <base>-internal.<UTC时间戳> 命名且
+      # package.json 打包后被还原，不能直接用 artifact-name.mjs；取 release-v2
+      # 下最新生成的 exe（本 job 内唯一产物），避免 *.exe 通配符污染资产。
+      - name: Resolve release asset names
+        id: assets
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -LiteralPath apps/v2/release-v2 -Filter '*.exe' |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $exe) { throw "No installer produced under apps/v2/release-v2" }
+          "installer=$($exe.Name)" >> $env:GITHUB_OUTPUT
+          "blockmap=$($exe.Name).blockmap" >> $env:GITHUB_OUTPUT
+
       - name: Publish internal release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: v2-internal-${{ steps.pkg_version.outputs.version }}
           name: Dental Clinic V2 Internal ${{ steps.pkg_version.outputs.version }}
           prerelease: true
           files: |
-            apps/v2/release-v2/*.exe
-            apps/v2/release-v2/*.blockmap
+            apps/v2/release-v2/${{ steps.assets.outputs.installer }}
+            apps/v2/release-v2/${{ steps.assets.outputs.blockmap }}
             apps/v2/release-v2/latest.yml
 
       - name: Verify remote internal release
