@@ -9,6 +9,8 @@ interface DesktopBridge {
   setAutoLaunch: (enabled: boolean) => Promise<boolean>;
   getAutoLaunch: () => Promise<boolean>;
   checkUpdates: () => Promise<{ status: string; version?: string; message?: string }>;
+  // S-H1: 用户确认后显式触发下载（autoDownload=false，发现新版本不再自动下载）。
+  downloadUpdate?: () => Promise<{ status: string; message?: string }>;
   installUpdate?: () => Promise<boolean>;
   onUpdateEvent?: (callback: (event: Record<string, unknown>) => void) => () => void;
   onApiStatus?: (callback: (event: Record<string, unknown>) => void) => () => void;
@@ -20,6 +22,7 @@ export function DesktopSettingsPage() {
   const [apiPort, setApiPort] = useState<number | null>(null);
   const [autoLaunch, setAutoLaunch] = useState<boolean | null>(null);
   const [updateStatus, setUpdateStatus] = useState('');
+  const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
   const [apiStatus, setApiStatus] = useState('');
 
   useEffect(() => {
@@ -31,10 +34,22 @@ export function DesktopSettingsPage() {
       unsubscribers.push(desktop.onUpdateEvent((event) => {
         const type = String(event.type ?? '');
         if (type === 'progress') setUpdateStatus(`更新下载中：${String(event.percent ?? '')}%`);
-        else if (type === 'available') setUpdateStatus(`发现新版本 ${String(event.version ?? '')}，正在下载`);
-        else if (type === 'downloaded') setUpdateStatus('更新已下载，可重启安装');
-        else if (type === 'none') setUpdateStatus('当前已是最新版本');
-        else if (type === 'error') setUpdateStatus(friendlyError(String(event.message ?? '更新失败')));
+        else if (type === 'available') {
+          setUpdateAvailable(String(event.version ?? ''));
+          setUpdateStatus(`发现新版本 ${String(event.version ?? '')}，点击"下载更新"按钮开始下载`);
+        }
+        else if (type === 'downloaded') {
+          setUpdateAvailable(null);
+          setUpdateStatus('更新已下载，可重启安装');
+        }
+        else if (type === 'none') {
+          setUpdateAvailable(null);
+          setUpdateStatus('当前已是最新版本');
+        }
+        else if (type === 'error') {
+          setUpdateAvailable(null);
+          setUpdateStatus(friendlyError(String(event.message ?? '更新失败')));
+        }
         else if (type === 'checking') setUpdateStatus('正在检查更新');
       }));
     }
@@ -85,11 +100,30 @@ export function DesktopSettingsPage() {
       } else if (result.status === 'disabled') {
         setUpdateStatus('当前环境不支持在线更新');
       } else {
-        setUpdateStatus(result.status === 'available' ? `发现新版本 ${result.version}` : result.status === 'none' ? '当前已是最新版本' : result.message ?? '检查失败');
+        if (result.status === 'available') setUpdateAvailable(result.version ?? '');
+        setUpdateStatus(result.status === 'available' ? `发现新版本 ${result.version}，点击"下载更新"按钮开始下载` : result.status === 'none' ? '当前已是最新版本' : result.message ?? '检查失败');
       }
     } catch (error) {
       showToast(errorMessage(error, '检查失败'), 'error');
       setUpdateStatus('');
+    }
+  }
+
+  // S-H1: 用户确认后显式触发下载（autoDownload=false 不再自动下载）。
+  async function downloadUpdate() {
+    try {
+      if (!bridge.downloadUpdate) {
+        showToast('当前环境不支持自动下载更新', 'info');
+        return;
+      }
+      const result = await bridge.downloadUpdate();
+      if (result.status === 'error') {
+        showToast(result.message ? friendlyError(result.message) : '下载失败', 'error');
+        setUpdateStatus('');
+      }
+      // 下载开始后由 progress/downloaded 事件驱动状态更新
+    } catch (error) {
+      showToast(errorMessage(error, '下载更新失败'), 'error');
     }
   }
 
@@ -118,6 +152,7 @@ export function DesktopSettingsPage() {
         <button onClick={toggleAutoLaunch}>切换开机自启</button>
         <button onClick={restartApi}>重启 API</button>
         <button onClick={checkUpdates}>检查更新</button>
+        {updateAvailable !== null && !updateStatus.includes('下载中') && !updateStatus.includes('已下载') && <button onClick={downloadUpdate}>下载更新</button>}
         {updateStatus.includes('已下载') && <button onClick={installUpdate}>立即重启安装</button>}
       </div>
       {updateStatus && <p className="info">{updateStatus}</p>}

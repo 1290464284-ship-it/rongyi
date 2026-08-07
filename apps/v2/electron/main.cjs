@@ -16,6 +16,7 @@ const { spawn, spawnSync } = require('node:child_process');
 const crypto = require('node:crypto');
 const http = require('node:http');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
@@ -257,6 +258,14 @@ async function startApi() {
   if (apiProcess && !apiProcess.killed) return apiPort;
   apiPort = randomPort();
   const userDataDir = app.getPath('userData');
+  // S-L2（第七轮）：JWT/备份密钥不再经 spawn env 透传（Windows 上同用户进程
+  // 可枚举子进程环境块），改为写入 os.tmpdir() 下随机名临时文件（mode 0o600，
+  // 仅当前用户可读），经 V2_SECRET_FILE 传递路径；startApi 退出（成功或失败）
+  // 后立即删除，密钥只短暂落在受保护文件中。
+  const jwtSecret = getOrCreateSecret();
+  const backupKey = getOrCreateSecret('backup-key');
+  const secretFilePath = path.join(os.tmpdir(), `v2-secrets-${crypto.randomUUID()}.json`);
+  fs.writeFileSync(secretFilePath, JSON.stringify({ jwt: jwtSecret, backupKey }), { mode: 0o600 });
   // LEGACY: 旧版 Prisma 时代的 SQLite 数据库与 schema 目录。
   // 打包时需确保 resourcesPath/legacy/ 下存在 dental.sqlite 和 schema/ 目录。
   // TODO: 迁移完成后移除 legacy 环境变量与相关导入逻辑。
@@ -274,8 +283,7 @@ async function startApi() {
       V2_LOG_DIR: path.join(userDataDir, 'logs'),
       V2_LEGACY_DB_PATH: path.join(legacyBase, 'dental.sqlite'),
       V2_LEGACY_SCHEMA_DIR: path.join(legacyBase, 'schema'),
-      V2_JWT_SECRET: getOrCreateSecret(),
-      V2_BACKUP_KEY: getOrCreateSecret('backup-key'),
+      V2_SECRET_FILE: secretFilePath,
       ELECTRON_RUN_AS_NODE: '1',
     },
     stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
@@ -321,6 +329,13 @@ async function startApi() {
       apiProcess.kill();
     }
     throw error;
+  } finally {
+    // S-L2: API 已读到密钥（health 200 即代表启动成功）或失败/超时，都删除临时密钥文件。
+    try {
+      fs.rmSync(secretFilePath, { force: true });
+    } catch {
+      // best effort: 删除失败只留下 tmpdir 中的 0o600 文件，不阻塞启动
+    }
   }
 }
 
@@ -489,11 +504,23 @@ const ALLOWED_SECRET_KEYS = new Set(['v2.token', 'v2.refreshToken']);
 // T2R-22: 渲染器经 HashRouter 导航后 URL 恒带 #/... 片段（dev 下还有 ?/ # 查询），
 // 错误窗经 loadFile 带 ?msg= 查询串；这些都属于同文档导航，不引入新来源，
 // 因此放行 [?#] 后缀并显式放行 error.html，否则受保护 IPC 全部被误拒。
-const TRUSTED_RENDERER_PATTERN = /(^file:\/\/.*dist-web[\\/]index\.html(?:[?#].*)?$)|(^file:\/\/.*error\.html(?:[?#].*)?$)|(^http:\/\/localhost:5180\/?(?:[?#].*)?$)/;
+// S-L1（第七轮）：不再用 `^file:\/\/.*dist-web[\\/]index\.html` 的 `.*` 前缀通配
+// （任意路径下的同名文件都会被当作可信渲染器），改为按打包/开发实际加载路径
+// 生成的精确 file:// URL 前缀匹配：生产 index.html 与错误窗 error.html 均以
+// __dirname 为基准计算（与 createWindow/showApiErrorWindow 的加载路径同源），
+// dev 保留 localhost:5180（V2_WEB_URL 覆盖时亦沿用历史行为）。
+const INDEX_HTML_FILE_URL = pathToFileURL(path.join(__dirname, '..', 'dist-web', 'index.html')).href;
+const ERROR_HTML_FILE_URL = pathToFileURL(path.join(__dirname, 'error.html')).href;
+const DEV_WEB_URL_PATTERN = /^http:\/\/localhost:5180\/?(?:[?#].*)?$/;
+
+function isTrustedRendererUrl(url) {
+  if (url.startsWith(INDEX_HTML_FILE_URL) || url.startsWith(ERROR_HTML_FILE_URL)) return true;
+  return DEV_WEB_URL_PATTERN.test(url);
+}
 
 function assertTrustedRenderer(event) {
   const url = event.senderFrame?.url ?? '';
-  if (!TRUSTED_RENDERER_PATTERN.test(url)) throw new Error('Untrusted IPC sender');
+  if (!isTrustedRendererUrl(url)) throw new Error('Untrusted IPC sender');
 }
 
 function isAllowedNavigation(url) {
@@ -694,7 +721,10 @@ app.on('second-instance', () => {
 // 打包，版本形如 2.2.0-internal.<UTC时间戳>）必须允许 prerelease，electron-updater
 // 才会把内部 feed 的新构建视为可更新；公开版保持 allowPrerelease=false，只收正式版。
 const isInternalBuild = /-internal\./.test(app.getVersion());
-autoUpdater.autoDownload = true;
+// S-H1（第七轮）：不再自动下载。发现新版本后仅提示（update:event available），
+// 由用户在设置页显式点击"下载更新"（desktop:download-update → downloadUpdate()），
+// 避免未经用户确认即在后台下载并写入安装包；下载完成后仍需用户点击安装。
+autoUpdater.autoDownload = false;
 autoUpdater.allowPrerelease = isInternalBuild;
 // T2R-22: 不要给 verifyUpdateCodeSignature 赋布尔值！NsisUpdater 把它实现为
 // getter/setter（包装 windowsExecutableCodeSignatureVerifier.verifySignature），
@@ -793,9 +823,18 @@ app.whenReady().then(async () => {
       return false;
     }
   });
-  ipcMain.handle('desktop:version', () => app.getVersion());
-  ipcMain.handle('desktop:quit', () => app.quit());
-  ipcMain.handle('desktop:api-port', () => apiPort);
+  ipcMain.handle('desktop:version', (_event) => {
+    assertTrustedRenderer(_event);
+    return app.getVersion();
+  });
+  ipcMain.handle('desktop:quit', (_event) => {
+    assertTrustedRenderer(_event);
+    app.quit();
+  });
+  ipcMain.handle('desktop:api-port', (_event) => {
+    assertTrustedRenderer(_event);
+    return apiPort;
+  });
   ipcMain.handle('desktop:restart-api', async (_event) => {
     assertTrustedRenderer(_event);
     apiRestartCount = 0;
@@ -812,13 +851,27 @@ app.whenReady().then(async () => {
     app.setLoginItemSettings({ openAtLogin: Boolean(enabled) });
     return true;
   });
-  ipcMain.handle('desktop:get-auto-launch', () => app.getLoginItemSettings().openAtLogin);
+  ipcMain.handle('desktop:get-auto-launch', (_event) => {
+    assertTrustedRenderer(_event);
+    return app.getLoginItemSettings().openAtLogin;
+  });
   ipcMain.handle('desktop:check-updates', async (_event) => {
     assertTrustedRenderer(_event);
     if (isDev) return { status: 'disabled' };
     try {
       const result = await autoUpdater.checkForUpdates();
       return { status: result?.updateInfo ? 'available' : 'none', version: result?.updateInfo?.version };
+    } catch (error) {
+      return { status: 'error', message: error instanceof Error ? error.message : String(error) };
+    }
+  });
+  // S-H1: autoDownload=false 后需要显式触发下载（用户确认后由设置页调用）。
+  ipcMain.handle('desktop:download-update', async (_event) => {
+    assertTrustedRenderer(_event);
+    if (isDev) return { status: 'disabled' };
+    try {
+      await autoUpdater.downloadUpdate();
+      return { status: 'done' };
     } catch (error) {
       return { status: 'error', message: error instanceof Error ? error.message : String(error) };
     }
