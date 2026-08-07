@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- 所有命令在 `D:/Desktop/rongyi/source/` 下执行：`pnpm --filter @dental/v2 <script>`。
+- 所有命令在 `D:/Desktop/rongyi/` 下执行：`pnpm --filter @dental/v2 <script>`。
 - 数据库只允许 better-sqlite3 + 参数化 SQL；禁止 ORM、新框架、新依赖（本计划不引入任何新包）。
 - 迁移**只增不改**：已有迁移（≤121）不得编辑；新迁移从 122 开始编号（118–121 已占用），名称 `v2-<kebab-name>`。
 - 提交信息必须符合 conventional commits（仓库配置了 commitlint + husky）。
@@ -2309,7 +2309,7 @@ git commit -m "refactor(v2): reuse wait-for-services helper across smoke scripts
 
 **Files:**
 - Modify: `D:/Desktop/rongyi/AGENTS.md`（外层，目录树删掉 apps/api、apps/web、packages/shared 行）
-- Modify: `source/apps/v2/README.md`（"约 20k 行"等过时描述、dev seed 说明已由 Task 3.6 加）
+- Modify: `apps/v2/README.md`（"约 20k 行"等过时描述、dev seed 说明已由 Task 3.6 加）
 - Modify: `source/package.json`（root version 2.1.4 → 2.2.0，与 apps/v2 对齐）
 
 - [ ] **Step 1: 外层 AGENTS.md**

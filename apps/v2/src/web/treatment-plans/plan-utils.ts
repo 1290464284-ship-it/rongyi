@@ -1,7 +1,7 @@
 import { apiRequest } from '../lib/api';
 import { splitList, toCents } from '../lib/format';
 import type { Page } from '../lib/types';
-import type { PlanItemForm, PlanItemRow, TreatmentPlanForm, ValidPlanItem } from './plan-types';
+import type { PlanItemForm, PlanItemRow, TreatmentPlanForm, ValidPlanItem } from './types';
 
 export function newItem(): PlanItemForm {
   return { id: crypto.randomUUID(), code: '', name: '', category: '', price: '', quantity: '1', teethNumbers: '', status: 'PLANNED', billed: false };

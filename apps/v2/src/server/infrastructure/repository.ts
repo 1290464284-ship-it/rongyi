@@ -11,7 +11,7 @@ import type {
 } from '../../domain/contracts';
 import { maskSensitiveFields } from './security';
 import { tenantAnd, tenantParams, tenantWhere } from './tenant';
-import { buildFtsQuery, upsertSearchRow, removeSearchRow, refreshPatientChildSearchRows } from './search-index';
+import { buildFtsQuery, touchSearchIndex, refreshPatientChildSearchRows } from './search-index';
 import { recordSyncChange } from './sync-change';
 
 export interface RelationLabelJoin {
@@ -190,7 +190,7 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
       if (isUniqueConstraintError(error)) throw new ConflictError(`${this.resource.name} violates a unique field constraint`);
       throw error;
     }
-    if (this.resource.searchIndexResource) upsertSearchRow(this.db, this.resource.searchIndexResource, id);
+    if (this.resource.searchIndexResource) touchSearchIndex(this.db, this.resource.searchIndexResource, id, 'INSERT');
     if (this.emitSyncChange && context.clinicId) {
       recordSyncChange(this.db, { tableName: this.resource.table, recordId: id, operation: 'INSERT', clinicId: context.clinicId });
     }
@@ -231,7 +231,7 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
       if (isUniqueConstraintError(error)) throw new ConflictError(`${this.resource.name} violates a unique field constraint`);
       throw error;
     }
-    if (this.resource.searchIndexResource) upsertSearchRow(this.db, this.resource.searchIndexResource, id);
+    if (this.resource.searchIndexResource) touchSearchIndex(this.db, this.resource.searchIndexResource, id, 'UPDATE');
     if (this.resource.name === 'patients') refreshPatientChildSearchRows(this.db, id);
     if (this.emitSyncChange && context.clinicId) {
       recordSyncChange(this.db, { tableName: this.resource.table, recordId: id, operation: 'UPDATE', clinicId: context.clinicId });
@@ -261,7 +261,7 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
       ).run(...params);
       if (Number(result.changes) === 0) throw new NotFoundError(`${this.resource.name} not found`);
     }
-    if (this.resource.searchIndexResource) removeSearchRow(this.db, this.resource.searchIndexResource, id);
+    if (this.resource.searchIndexResource) touchSearchIndex(this.db, this.resource.searchIndexResource, id, 'DELETE');
     if (this.emitSyncChange && context.clinicId) {
       recordSyncChange(this.db, { tableName: this.resource.table, recordId: id, operation: 'DELETE', clinicId: context.clinicId });
     }
@@ -271,7 +271,7 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
       for (const childTable of ['Appointment', 'Charge', 'FollowUp']) {
         if (!this.tableHasColumn(childTable, 'patientId')) continue;
         const childRows = this.db.prepare(`SELECT id FROM ${childTable} WHERE patientId = ?`).all(id) as Array<{ id: string }>;
-        for (const child of childRows) removeSearchRow(this.db, childTable, String(child.id));
+        for (const child of childRows) touchSearchIndex(this.db, childTable, String(child.id), 'DELETE');
       }
     }
   }

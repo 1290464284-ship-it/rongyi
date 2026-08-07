@@ -1,7 +1,7 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { randomBytes } from 'node:crypto';
-import { DEFAULT_API_PORT, DEFAULT_WEB_DEV_PORT } from './src/shared/constants';
+import { DEFAULT_API_PORT, DEFAULT_WEB_DEV_PORT } from './src/shared/constants.ts';
 
 function devCsp(): { name: string; apply: 'serve'; transformIndexHtml(html: string): string } {
   return {
@@ -11,7 +11,8 @@ function devCsp(): { name: string; apply: 'serve'; transformIndexHtml(html: stri
       // dev 下 React Refresh/HMR 需要内联脚本与样式，将构建期 nonce 占位还原为 'unsafe-inline'
       return html
         .replace("script-src 'self' 'nonce-__CSP_NONCE__';", "script-src 'self' 'unsafe-inline';")
-        .replace("style-src 'self' 'nonce-__CSP_NONCE__';", "style-src 'self' 'unsafe-inline';");
+        .replace("style-src 'self' 'nonce-__CSP_NONCE__';", "style-src 'self' 'unsafe-inline';")
+        .replace('ws://localhost:__CSP_DEV_WS_PORT__', `ws://localhost:${DEFAULT_WEB_DEV_PORT}`);
     },
   };
 }
@@ -29,6 +30,7 @@ function cspNonce(): { name: string; apply: 'build'; transformIndexHtml: { order
         const nonce = randomBytes(16).toString('hex');
         return html
           .replaceAll('__CSP_NONCE__', nonce)
+          .replaceAll(' ws://localhost:__CSP_DEV_WS_PORT__', '')
           .replace(/<script([^>]*?)>/g, (_match, attrs: string) =>
             attrs.includes('nonce=') ? `<script${attrs}>` : `<script${attrs} nonce="${nonce}">`,
           );
@@ -42,6 +44,7 @@ export default defineConfig({
   test: {
     coverage: {
       provider: 'v8',
+      reportsDirectory: 'coverage',
       include: ['src/server/**/*.ts', 'src/domain/**/*.ts', 'src/server/scheduler.ts'],
       exclude: ['src/server/main.ts'],
       // CI 实测基线（2026-08-07，v8 provider）：lines 97.45 / functions 99 /
@@ -63,13 +66,7 @@ export default defineConfig({
     rollupOptions: {
       output: {
         // Vite 8（Rolldown 内核）移除了 manualChunks 对象形式，改用 advancedChunks.groups
-        advancedChunks: {
-          includeDependenciesRecursively: true,
-          groups: [
-            { name: 'react-vendor', test: /node_modules\/(react|react-dom|react-router)\// },
-            { name: 'query-vendor', test: /node_modules\/@tanstack\/react-query\// },
-          ],
-        },
+        // advancedChunks is deprecated in Vite 8; rely on default splitting.
       },
     },
   },

@@ -1,4 +1,5 @@
 data/
+build/internal-signing.pfx.cer
 dist-web/
 dist-electron/
 release-v2/

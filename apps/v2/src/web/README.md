@@ -18,7 +18,6 @@
 - 通用组件 `Xxx.tsx`（PascalCase），放 `components/`。
 - 通用 hooks `use-xxx.ts`（kebab-case），放 `hooks/`。
 - 类型文件统一 `types.ts`（模块内共享类型）；跨模块共享类型放 `lib/types.ts`。
-  - 历史遗留：`charge-types.ts`、`dispense-types.ts`、`plan-types.ts` 是旧的 `*-types.ts` 命名，新增代码一律用 `types.ts`，迁移存量时顺带改名。
 - 中文 label 文案一律集中在 `lib/labels.ts`（M-03），页面与领域模块从那里导入或 re-export，禁止在页面内重新定义字典导致文案分叉。
 
 ## 导入约定

@@ -10,6 +10,8 @@ Set-StrictMode -Version Latest
 
 $appRoot = Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")
 $generatedCertificatePath = ""
+$manualSignCertPath = ""
+$manualSignCertPassword = ""
 
 function Invoke-OrFail {
     param(
@@ -26,53 +28,21 @@ function Invoke-OrFail {
 try {
     if ([string]::IsNullOrWhiteSpace($env:CSC_LINK)) {
         if ([string]::IsNullOrWhiteSpace($CertificatePath)) {
-            $passwordBytes = New-Object byte[] 24
-            $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-            try {
-                $rng.GetBytes($passwordBytes)
-            } finally {
-                $rng.Dispose()
+            $CertificatePath = "certs\internal-signing.pfx"
+            $passwordPath = Join-Path $appRoot "certs\internal-signing.pfx-password.txt"
+            if (-not (Test-Path -LiteralPath (Join-Path $appRoot $CertificatePath)) -or -not (Test-Path -LiteralPath $passwordPath)) {
+                & (Join-Path $PSScriptRoot "create-internal-signing-cert.ps1")
             }
-            $CertificatePassword = [Convert]::ToBase64String($passwordBytes)
-            $generatedCertificatePath = Join-Path `
-                ([System.IO.Path]::GetTempPath()) `
-                "dental-v2-internal-$([guid]::NewGuid().ToString('N')).pfx"
-
-            $cert = New-SelfSignedCertificate `
-                -Type CodeSigningCert `
-                -Subject "CN=Dental Clinic V2 Internal" `
-                -KeyAlgorithm RSA `
-                -KeyLength 2048 `
-                -HashAlgorithm SHA256 `
-                -CertStoreLocation "Cert:\CurrentUser\My" `
-                -NotAfter (Get-Date).AddYears(1)
-
-            try {
-                $securePassword = ConvertTo-SecureString `
-                    -String $CertificatePassword `
-                    -Force `
-                    -AsPlainText
-                Export-PfxCertificate `
-                    -Cert $cert `
-                    -FilePath $generatedCertificatePath `
-                    -Password $securePassword | Out-Null
-            } finally {
-                Remove-Item `
-                    -LiteralPath "Cert:\CurrentUser\My\$($cert.Thumbprint)" `
-                    -Force `
-                    -ErrorAction SilentlyContinue
-            }
-
-            $env:CSC_LINK = $generatedCertificatePath
-            $env:CSC_KEY_PASSWORD = $CertificatePassword
-        } else {
-            $env:CSC_LINK = (Resolve-Path -LiteralPath $CertificatePath).Path
-            $env:CSC_KEY_PASSWORD = $CertificatePassword
+            $CertificatePassword = Get-Content -LiteralPath $passwordPath -Raw
         }
-    }
-
-    if ([string]::IsNullOrWhiteSpace($env:CSC_LINK)) {
-        throw "CSC_LINK is still empty; provide -CertificatePath or set CSC_LINK before running this script."
+        $manualSignCertPath = (Resolve-Path -LiteralPath (Join-Path $appRoot $CertificatePath)).Path
+        $manualSignCertPassword = $CertificatePassword
+        $buildCertDir = Join-Path $appRoot "build"
+        New-Item -ItemType Directory -Path $buildCertDir -Force | Out-Null
+        Copy-Item `
+            -LiteralPath "$manualSignCertPath.cer" `
+            -Destination (Join-Path $buildCertDir "internal-signing.pfx.cer") `
+            -Force
     }
 
     Push-Location -LiteralPath $appRoot
@@ -100,6 +70,29 @@ try {
         )
         Write-Host "Internal build version: $internalVersion"
         Invoke-OrFail "pnpm electron:dist"
+        if ($manualSignCertPath) {
+            $signCert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
+                $manualSignCertPath,
+                $manualSignCertPassword
+            )
+            $installerBeforeVerify = Get-ChildItem `
+                -LiteralPath (Join-Path $appRoot "release-v2") `
+                -Filter "*.exe" |
+                Sort-Object LastWriteTime -Descending |
+                Select-Object -First 1 -ExpandProperty FullName
+            $signTargets = @(
+                (Join-Path $appRoot "release-v2\win-unpacked\Dental Clinic V2.exe"),
+                (Join-Path $appRoot "release-v2\win-unpacked\resources\elevate.exe"),
+                $installerBeforeVerify
+            ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and (Test-Path -LiteralPath $_) }
+            foreach ($target in $signTargets) {
+                Set-AuthenticodeSignature `
+                    -FilePath $target `
+                    -Certificate $signCert `
+                    -HashAlgorithm SHA256 | Out-Null
+                Write-Host "Signed: $target"
+            }
+        }
         Invoke-OrFail "pnpm run verify:package"
         Invoke-OrFail "pnpm run update:metadata"
         Invoke-OrFail "pnpm run verify:update"

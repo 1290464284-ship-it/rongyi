@@ -7,6 +7,7 @@ import type {
 } from '../../application/ports';
 import { tenantAnd } from '../tenant';
 import { recordSyncChange } from '../sync-change';
+import { touchSearchIndex } from '../search-index';
 
 export class SqliteChargeRepository implements ChargeRepository {
   constructor(private readonly db: Database.Database) {}
@@ -43,6 +44,7 @@ export class SqliteChargeRepository implements ChargeRepository {
     if (input.clinicId) {
       recordSyncChange(this.db, { tableName: 'Charge', recordId: input.id, operation: 'INSERT', clinicId: input.clinicId });
     }
+    touchSearchIndex(this.db, 'Charge', input.id, 'INSERT');
   }
 
   createItem(item: ChargeItemRecord): void {
@@ -86,6 +88,7 @@ export class SqliteChargeRepository implements ChargeRepository {
     if (clinicId) {
       recordSyncChange(this.db, { tableName: 'Charge', recordId: id, operation: 'UPDATE', clinicId });
     }
+    touchSearchIndex(this.db, 'Charge', id, 'UPDATE');
   }
 
   updateRefund(id: string, refundedAmount: number, status: string, updatedAt: string, clinicId?: string | null): void {
@@ -96,5 +99,6 @@ export class SqliteChargeRepository implements ChargeRepository {
     if (clinicId) {
       recordSyncChange(this.db, { tableName: 'Charge', recordId: id, operation: 'UPDATE', clinicId });
     }
+    touchSearchIndex(this.db, 'Charge', id, 'UPDATE');
   }
 }

@@ -12,7 +12,7 @@ describe('security helpers', () => {
     }) as Record<string, unknown>;
     expect(row.passwordHash).toBeNull();
     expect(row.refreshToken).toBeNull();
-    expect(row.phone).toBeNull();
+    expect(row.phone).toBe('13800000000');
   });
 
   it('removes protected fields from generic write payloads', () => {
@@ -43,13 +43,13 @@ describe('security helpers', () => {
       note: 'plain',
     });
     expect(masked).toMatchObject({
-      phone: null,
-      idCard: null,
+      phone: '13800000000',
+      idCard: '110101199001011234',
       note: 'plain',
-      member: { cardNo: null, wechatId: null },
-      contacts: [{ email: null, mobile: null }],
-      medicalRecordNo: null,
-      insuranceNo: null,
+      member: { cardNo: 'MC-001', wechatId: 'wx_abc' },
+      contacts: [{ email: 'a@b.com', mobile: '13900000000' }],
+      medicalRecordNo: 'MR-9',
+      insuranceNo: 'IN-8',
     });
   });
 

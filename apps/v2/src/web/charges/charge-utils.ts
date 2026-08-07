@@ -1,5 +1,5 @@
 import { toCents } from '../lib/format';
-import { METHOD_LABELS, type ChargeForm, type ChargeItemForm, type ValidChargeItem } from './charge-types';
+import { METHOD_LABELS, type ChargeForm, type ChargeItemForm, type ValidChargeItem } from './types';
 
 export function newItem(): ChargeItemForm {
   return { id: crypto.randomUUID(), name: '', category: '', price: '', quantity: '1', costType: 'SERVICE' };
