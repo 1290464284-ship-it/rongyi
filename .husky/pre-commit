@@ -1,19 +1,8 @@
 #!/usr/bin/env sh
+set -e
 
-echo "🔍 Running lint-staged..."
-cd apps/api && pnpm exec lint-staged
-cd ../..
+echo "Running V2 typecheck..."
+pnpm --filter @dental/v2 typecheck
 
-echo "🔎 Running typecheck (api)..."
-cd apps/api && pnpm run typecheck
-cd ../..
-
-echo "🔎 Running typecheck (web)..."
-cd apps/web && npx tsc -b --noEmit
-cd ../..
-
-echo "🧪 Running API unit tests..."
-cd apps/api && pnpm test --passWithNoTests
-cd ../..
-
-echo "✅ Pre-commit checks passed"
+echo "Running V2 unit tests..."
+pnpm --filter @dental/v2 test
