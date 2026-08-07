@@ -1,6 +1,6 @@
-import { apiRequest } from '../api';
-import { splitList, toCents } from '../format';
-import type { Page } from '../types';
+import { apiRequest } from '../lib/api';
+import { splitList, toCents } from '../lib/format';
+import type { Page } from '../lib/types';
 import type { PlanItemForm, PlanItemRow, TreatmentPlanForm, ValidPlanItem } from './plan-types';
 
 export function newItem(): PlanItemForm {

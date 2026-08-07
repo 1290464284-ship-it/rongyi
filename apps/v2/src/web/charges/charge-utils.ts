@@ -1,4 +1,4 @@
-import { toCents } from '../format';
+import { toCents } from '../lib/format';
 import { METHOD_LABELS, type ChargeForm, type ChargeItemForm, type ValidChargeItem } from './charge-types';
 
 export function newItem(): ChargeItemForm {

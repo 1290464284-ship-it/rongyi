@@ -1,6 +1,6 @@
-import { apiRequest } from '../api';
-import { toCents } from '../format';
-import type { Page } from '../types';
+import { apiRequest } from '../lib/api';
+import { toCents } from '../lib/format';
+import type { Page } from '../lib/types';
 import type { ProcessingItemForm, ProcessingOrderForm, ProcessingOrderItemRow } from './types';
 
 export function newItem(): ProcessingItemForm {

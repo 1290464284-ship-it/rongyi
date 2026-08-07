@@ -1,5 +1,5 @@
 import type { DataTableColumn } from '../components';
-import { formatDateTime } from '../format';
+import { formatDateTime } from '../lib/format';
 import { DENTITION_LABELS, FOLLOW_UP_STATUS_LABELS, STATUS_LABELS } from './constants';
 import type { FirstExamRow } from './types';
 

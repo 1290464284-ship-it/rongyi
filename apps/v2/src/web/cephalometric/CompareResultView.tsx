@@ -1,4 +1,4 @@
-import { formatDateTime } from '../format';
+import { formatDateTime } from '../lib/format';
 import { COMPARE_COLORS } from './constants';
 import { landmarksOutline, viewBoxFor } from './utils';
 import type { CephalometricCompareResult } from './types';

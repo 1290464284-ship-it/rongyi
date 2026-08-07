@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest } from '../api';
+import { apiRequest } from '../lib/api';
 import { SearchableSelect } from '../components';
-import { centsToYuanString } from '../format';
-import { errorMessage } from '../messages';
-import { useToast } from '../toast-context';
-import type { Page } from '../types';
+import { centsToYuanString } from '../lib/format';
+import { errorMessage } from '../lib/messages';
+import { useToast } from '../lib/toast-context';
+import type { Page } from '../lib/types';
 import type { PlanItemForm, PlanItemRow, TreatmentPlanForm } from './plan-types';
 import { newItem } from './plan-utils';
 

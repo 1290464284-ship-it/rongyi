@@ -1,0 +1,491 @@
+import { FormEvent, useEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router';
+import { apiRequest } from '../lib/api';
+import type { Page } from '../lib/types';
+import { ConfirmDialog, DataTable, Dialog, LoadingState, PageError, SearchableSelect, type DataTableColumn } from '../components';
+import { formatDateTime } from '../lib/format';
+import { errorMessage } from '../lib/messages';
+import { useToast } from '../lib/toast-context';
+
+interface BatchRow {
+  id: string;
+  batchNo: string | null;
+  productionDate: string | null;
+  expiryDate: string | null;
+  initialQuantity: number;
+  remainingQuantity: number;
+  itemName?: string | null;
+  itemCode?: string | null;
+  supplierId?: string | null;
+}
+
+interface BatchListData {
+  batches: BatchRow[];
+  expiring: BatchRow[];
+}
+
+const REPORT_TYPES = [
+  { value: 'IN', label: 'IN 入库' },
+  { value: 'OUT', label: 'OUT 出库' },
+  { value: 'DISPENSE_RETURN', label: 'DISPENSE_RETURN 退药' },
+  { value: 'RETURN_SUPPLIER', label: 'RETURN_SUPPLIER 退回厂商' },
+  { value: 'LOSS', label: 'LOSS 库损' },
+  { value: 'STOCKTAKE', label: 'STOCKTAKE 盘点' },
+  { value: 'TRANSFER_OUT', label: 'TRANSFER_OUT 调拨出' },
+  { value: 'TRANSFER_IN', label: 'TRANSFER_IN 调拨入' },
+  { value: 'SUMMARY', label: 'SUMMARY 汇总' },
+] as const;
+
+const REPORT_TYPE_LABELS: Record<string, string> = Object.fromEntries(REPORT_TYPES.map((entry) => [entry.value, entry.label]));
+
+interface InventoryReportRow extends Record<string, unknown> {
+  id?: string;
+  itemId?: string;
+  itemName?: string | null;
+  spec?: string | null;
+  category?: string | null;
+  unit?: string | null;
+  type?: string | null;
+  quantity?: number;
+  beforeStock?: number;
+  afterStock?: number;
+  referenceType?: string | null;
+  referenceId?: string | null;
+  remark?: string | null;
+  createdAt?: string | null;
+  // SUMMARY 聚合行
+  name?: string | null;
+  currentStock?: number;
+  inQuantity?: number;
+  outQuantity?: number;
+  adjustQuantity?: number;
+}
+
+interface InventoryReportData {
+  type: string;
+  from: string | null;
+  to: string | null;
+  total: number;
+  items: InventoryReportRow[];
+  supplierId?: string | null;
+}
+
+const detailReportColumns: DataTableColumn<InventoryReportRow>[] = [
+  { key: 'createdAt', label: '时间', render: (row) => formatDateTime(row.createdAt) },
+  { key: 'itemName', label: '物料', render: (row) => String(row.itemName ?? row.itemId ?? '') },
+  { key: 'spec', label: '规格' },
+  { key: 'category', label: '分类' },
+  { key: 'unit', label: '单位' },
+  { key: 'type', label: '类型' },
+  { key: 'quantity', label: '数量' },
+  { key: 'beforeStock', label: '变动前' },
+  { key: 'afterStock', label: '变动后' },
+  { key: 'referenceType', label: '参照类型' },
+  { key: 'remark', label: '备注' },
+];
+
+const summaryReportColumns: DataTableColumn<InventoryReportRow>[] = [
+  { key: 'name', label: '物料', render: (row) => String(row.name ?? row.itemId ?? '') },
+  { key: 'spec', label: '规格' },
+  { key: 'category', label: '分类' },
+  { key: 'unit', label: '单位' },
+  { key: 'currentStock', label: '当前库存' },
+  { key: 'inQuantity', label: '入库量' },
+  { key: 'outQuantity', label: '出库量' },
+  { key: 'adjustQuantity', label: '调整量' },
+];
+
+export function InventoryPage() {
+  const { showToast } = useToast();
+  const [searchParams] = useSearchParams();
+  const urlItemId = searchParams.get('id');
+  const [itemId, setItemId] = useState<string | null>(urlItemId);
+  const [type, setType] = useState<'IN' | 'OUT' | 'ADJUST'>('IN');
+  const [quantity, setQuantity] = useState('1');
+  const [submitting, setSubmitting] = useState(false);
+  const [batchNo, setBatchNo] = useState('');
+  const [productionDate, setProductionDate] = useState('');
+  const [expiryDate, setExpiryDate] = useState('');
+  const [batchQuantity, setBatchQuantity] = useState('');
+  const [supplierId, setSupplierId] = useState('');
+  const [editTarget, setEditTarget] = useState<BatchRow | null>(null);
+  const [editBatchNo, setEditBatchNo] = useState('');
+  const [editProductionDate, setEditProductionDate] = useState('');
+  const [editExpiryDate, setEditExpiryDate] = useState('');
+  const [editSupplierId, setEditSupplierId] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<BatchRow | null>(null);
+  const [activeTab, setActiveTab] = useState<'overview' | 'report'>('overview');
+  const [reportType, setReportType] = useState('IN');
+  const [reportFrom, setReportFrom] = useState('');
+  const [reportTo, setReportTo] = useState('');
+  const query = useQuery({
+    queryKey: ['inventory'],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/inventoryItems?page=1&pageSize=20'),
+  });
+  const derivedFromList = useRef(false);
+  useEffect(() => {
+    if (derivedFromList.current || !query.data) return;
+    derivedFromList.current = true;
+    const first = query.data.items[0];
+    setItemId((current) => current ?? (first ? String(first.id) : null));
+  }, [query.data]);
+  const lowStock = useQuery({
+    queryKey: ['inventory-low'],
+    queryFn: () => apiRequest<Array<Record<string, unknown>>>('/inventory/low-stock'),
+  });
+  const expiring = useQuery({
+    queryKey: ['inventory-expiring'],
+    queryFn: () => apiRequest<Array<Record<string, unknown>>>('/inventory/expiring?days=30'),
+  });
+  const batches = useQuery({
+    queryKey: ['inventory-batches', itemId ?? ''],
+    queryFn: () => apiRequest<BatchListData>(
+      itemId ? `/inventory-batches?itemId=${encodeURIComponent(itemId)}` : '/inventory-batches',
+    ),
+  });
+  const expiringBatches = useQuery({
+    queryKey: ['inventory-batches-expiring'],
+    queryFn: () => apiRequest<BatchListData>('/inventory-batches?days=30'),
+  });
+  const report = useQuery({
+    queryKey: ['inventory-report', reportType, reportFrom, reportTo],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (reportFrom) params.set('from', reportFrom);
+      if (reportTo) params.set('to', reportTo);
+      const queryString = params.toString();
+      return apiRequest<InventoryReportData>(
+        `/inventory-reports/${reportType}${queryString ? `?${queryString}` : ''}`,
+      );
+    },
+    enabled: activeTab === 'report',
+  });
+
+  if (query.isLoading || lowStock.isLoading || expiring.isLoading) return <LoadingState label="库存数据加载中..." />;
+  const loadError = query.error ?? lowStock.error ?? expiring.error;
+  if (loadError) {
+    return (
+      <div className="page">
+        <PageError message={loadError instanceof Error ? loadError.message : String(loadError)} />
+        <button onClick={() => {
+          void query.refetch();
+          void lowStock.refetch();
+          void expiring.refetch();
+        }}>重试</button>
+      </div>
+    );
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (submitting) return;
+    const qty = Number(quantity);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      showToast('请输入有效的库存数量', 'error');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await apiRequest('/inventory/transactions', {
+        method: 'POST',
+        body: JSON.stringify({ itemId, type, quantity: qty, requestId: crypto.randomUUID() }),
+      });
+      showToast('库存流水已记录', 'success');
+      await Promise.all([query.refetch(), lowStock.refetch(), expiring.refetch()]);
+    } catch (error) {
+      showToast(errorMessage(error, '保存库存流水失败'), 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function generateReplenishment() {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await apiRequest('/inventory/replenishment/generate', { method: 'POST', body: JSON.stringify({}) });
+      showToast('补货建议已生成', 'success');
+      await lowStock.refetch();
+    } catch (error) {
+      showToast(errorMessage(error, '生成补货建议失败'), 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function submitBatch(event: FormEvent) {
+    event.preventDefault();
+    if (submitting) return;
+    if (!itemId) {
+      showToast('请先填写库存项目 ID', 'error');
+      return;
+    }
+    const qty = Number(batchQuantity);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      showToast('请输入有效的入库数量', 'error');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await apiRequest('/inventory-batches', {
+        method: 'POST',
+        body: JSON.stringify({
+          itemId,
+          batchNo: batchNo || undefined,
+          productionDate: productionDate || undefined,
+          expiryDate: expiryDate || undefined,
+          initialQuantity: qty,
+          supplierId: supplierId || undefined,
+        }),
+      });
+      showToast('批次已入库', 'success');
+      setBatchNo('');
+      setProductionDate('');
+      setExpiryDate('');
+      setBatchQuantity('');
+      setSupplierId('');
+      await Promise.all([query.refetch(), batches.refetch(), expiringBatches.refetch()]);
+    } catch (error) {
+      showToast(errorMessage(error, '批次入库失败'), 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function generateExpiryAlerts() {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await apiRequest('/inventory-batches/expiry-alerts', { method: 'POST', body: JSON.stringify({ days: 30 }) });
+      showToast('到期提醒已生成', 'success');
+      await expiringBatches.refetch();
+    } catch (error) {
+      showToast(errorMessage(error, '生成到期提醒失败'), 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function openEditBatch(batch: BatchRow) {
+    setEditBatchNo(batch.batchNo ?? '');
+    setEditProductionDate(batch.productionDate ?? '');
+    setEditExpiryDate(batch.expiryDate ?? '');
+    setEditSupplierId(batch.supplierId ?? '');
+    setEditTarget(batch);
+  }
+
+  async function submitEditBatch(event: FormEvent) {
+    event.preventDefault();
+    if (!editTarget || editing) return;
+    setEditing(true);
+    try {
+      await apiRequest(`/inventory-batches/${editTarget.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          batchNo: editBatchNo,
+          productionDate: editProductionDate,
+          expiryDate: editExpiryDate,
+          supplierId: editSupplierId,
+        }),
+      });
+      showToast('批次已更新', 'success');
+      setEditTarget(null);
+      await Promise.all([batches.refetch(), expiringBatches.refetch()]);
+    } catch (error) {
+      showToast(errorMessage(error, '批次更新失败'), 'error');
+    } finally {
+      setEditing(false);
+    }
+  }
+
+  async function confirmDeleteBatch() {
+    if (!deleteTarget || submitting) return;
+    setSubmitting(true);
+    try {
+      await apiRequest(`/inventory-batches/${deleteTarget.id}`, { method: 'DELETE' });
+      showToast('批次已删除', 'success');
+      setDeleteTarget(null);
+      await Promise.all([batches.refetch(), expiringBatches.refetch()]);
+    } catch (error) {
+      showToast(errorMessage(error, '删除批次失败'), 'error');
+      setDeleteTarget(null);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="page">
+      <div className="page-head">
+        <h1>库存管理</h1>
+        <button onClick={generateReplenishment}>生成补货建议</button>
+      </div>
+      <div className="tabs" role="tablist">
+        <button
+          role="tab"
+          className={activeTab === 'overview' ? 'tab active' : 'tab'}
+          onClick={() => setActiveTab('overview')}
+        >
+          库存概览
+        </button>
+        <button
+          role="tab"
+          className={activeTab === 'report' ? 'tab active' : 'tab'}
+          onClick={() => setActiveTab('report')}
+        >
+          库存明细报表
+        </button>
+      </div>
+      {activeTab === 'report' ? (
+        <div className="tab-panel">
+          <h2>库存明细报表</h2>
+          <div className="inline-form">
+            <select aria-label="报表类型" value={reportType} onChange={(event) => setReportType(event.target.value)}>
+              {REPORT_TYPES.map((entry) => (
+                <option key={entry.value} value={entry.value}>{entry.label}</option>
+              ))}
+            </select>
+            <input aria-label="报表开始日期" type="date" value={reportFrom} onChange={(event) => setReportFrom(event.target.value)} />
+            <input aria-label="报表结束日期" type="date" value={reportTo} onChange={(event) => setReportTo(event.target.value)} />
+          </div>
+          {report.isLoading && <LoadingState label="报表加载中..." />}
+          {report.error && (
+            <>
+              <PageError message={report.error instanceof Error ? report.error.message : String(report.error)} />
+              <button onClick={() => void report.refetch()}>重试</button>
+            </>
+          )}
+          {report.data && (
+            <>
+              <div className="stat-row">
+                <span>{REPORT_TYPE_LABELS[report.data.type] ?? report.data.type}</span>
+                <span>共 {report.data.total} 条</span>
+                {report.data.from && <span>从 {report.data.from}</span>}
+                {report.data.to && <span>至 {report.data.to}</span>}
+              </div>
+              <DataTable
+                columns={report.data.type === 'SUMMARY' ? summaryReportColumns : detailReportColumns}
+                rows={report.data.items}
+                keyField={report.data.type === 'SUMMARY' ? 'itemId' : 'id'}
+                emptyText="暂无报表数据"
+              />
+            </>
+          )}
+        </div>
+      ) : (
+        <>
+          <form className="inline-form" onSubmit={submit}>
+            <input aria-label="库存项目 ID" value={itemId ?? ''} onChange={(event) => setItemId(event.target.value)} />
+            <select value={type} onChange={(event) => setType(event.target.value as typeof type)}>
+              <option value="IN">IN</option>
+              <option value="OUT">OUT</option>
+              <option value="ADJUST">ADJUST</option>
+            </select>
+            <input type="number" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
+            <button type="submit" disabled={submitting}>{submitting ? '保存中...' : '保存库存流水'}</button>
+          </form>
+          <div className="cards">
+            {query.data?.items.map((row) => (
+              <div className="card" key={String(row.id)}>
+                <strong>{String(row.name ?? row.code ?? '')}</strong>
+                <span>库存：{String(row.stock ?? '')} / 最低 {String(row.minStock ?? '')}</span>
+              </div>
+            ))}
+          </div>
+          <h2>低库存</h2>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>名称</th><th>库存</th><th>最低</th></tr></thead>
+              <tbody>
+                {lowStock.data?.map((row) => (
+                  <tr key={String(row.id)}><td>{String(row.name)}</td><td>{String(row.stock)}</td><td>{String(row.minStock)}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <h2>30 天内到期</h2>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>名称</th><th>到期日期</th><th>库存</th></tr></thead>
+              <tbody>
+                {expiring.data?.map((row) => (
+                  <tr key={String(row.id)}><td>{String(row.name ?? row.code ?? '')}</td><td>{String(row.expireDate ?? '')}</td><td>{String(row.stock ?? '')}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <h2>批次管理</h2>
+          <form className="inline-form" onSubmit={submitBatch}>
+            <input aria-label="批次号" placeholder="批次号" value={batchNo} onChange={(event) => setBatchNo(event.target.value)} />
+            <input aria-label="生产日期" type="date" value={productionDate} onChange={(event) => setProductionDate(event.target.value)} />
+            <input aria-label="效期日期" type="date" value={expiryDate} onChange={(event) => setExpiryDate(event.target.value)} />
+            <input aria-label="入库数量" type="number" value={batchQuantity} onChange={(event) => setBatchQuantity(event.target.value)} />
+            <SearchableSelect resource="suppliers" ariaLabel="供应商" value={supplierId} onChange={setSupplierId} placeholder="供应商（可选）" />
+            <button type="submit" disabled={submitting}>{submitting ? '入库中...' : '新增批次'}</button>
+          </form>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>批次号</th><th>生产日期</th><th>效期</th><th>入库量</th><th>剩余量</th><th>操作</th></tr></thead>
+              <tbody>
+                {(batches.data?.batches ?? []).map((batch) => (
+                  <tr key={String(batch.id)}>
+                    <td>{String(batch.batchNo ?? '')}</td>
+                    <td>{String(batch.productionDate ?? '')}</td>
+                    <td>{String(batch.expiryDate ?? '')}</td>
+                    <td>{String(batch.initialQuantity ?? '')}</td>
+                    <td>{String(batch.remainingQuantity ?? '')}</td>
+                    <td>
+                      <button type="button" onClick={() => openEditBatch(batch)}>编辑</button>
+                      <button type="button" onClick={() => setDeleteTarget(batch)}>删除</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="page-head">
+            <h2>批次效期提醒</h2>
+            <button onClick={generateExpiryAlerts} disabled={submitting}>{submitting ? '生成中...' : '生成到期提醒'}</button>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>物料</th><th>批次号</th><th>效期</th><th>剩余量</th></tr></thead>
+              <tbody>
+                {(expiringBatches.data?.expiring ?? []).map((batch) => (
+                  <tr key={String(batch.id)}>
+                    <td>{String(batch.itemName ?? batch.itemCode ?? '')}</td>
+                    <td>{String(batch.batchNo ?? '')}</td>
+                    <td>{String(batch.expiryDate ?? '')}</td>
+                    <td>{String(batch.remainingQuantity ?? '')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+      <Dialog open={editTarget !== null} title="编辑批次" onClose={() => setEditTarget(null)}>
+        <form onSubmit={submitEditBatch}>
+          <input aria-label="编辑批次号" placeholder="批次号" value={editBatchNo} onChange={(event) => setEditBatchNo(event.target.value)} />
+          <input aria-label="编辑生产日期" type="date" value={editProductionDate} onChange={(event) => setEditProductionDate(event.target.value)} />
+          <input aria-label="编辑效期日期" type="date" value={editExpiryDate} onChange={(event) => setEditExpiryDate(event.target.value)} />
+          <SearchableSelect resource="suppliers" ariaLabel="编辑供应商" value={editSupplierId} onChange={setEditSupplierId} placeholder="供应商（可选）" />
+          <div className="modal-actions">
+            <button type="button" onClick={() => setEditTarget(null)}>取消</button>
+            <button type="submit" disabled={editing}>{editing ? '保存中...' : '保存'}</button>
+          </div>
+        </form>
+      </Dialog>
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="删除确认"
+        message="确定删除该批次吗？"
+        danger
+        onConfirm={() => void confirmDeleteBatch()}
+        onCancel={() => setDeleteTarget(null)}
+      />
+    </div>
+  );
+}

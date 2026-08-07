@@ -1,5 +1,5 @@
-import { apiRequest } from '../api';
-import { errorMessage } from '../messages';
+import { apiRequest } from '../lib/api';
+import { errorMessage } from '../lib/messages';
 
 export async function transitionFirstExam(
   showToast: (message: string, kind?: 'success' | 'error' | 'info') => void,
