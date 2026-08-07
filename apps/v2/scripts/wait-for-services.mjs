@@ -27,6 +27,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 
   await waitForService({ url: apiUrl, text: '', timeoutMs });
   console.log('api ready');
-  await waitForService({ url: webUrl, text: 'root', timeoutMs });
+  // Round7 I3：用固定标记 <div id="root"（index.html 的实际挂载点）代替
+  // 模糊的 'root' 子串，避免把错误页/任意含 root 文本的响应误判为就绪。
+  await waitForService({ url: webUrl, text: '<div id="root"', timeoutMs });
   console.log('web ready');
 }
