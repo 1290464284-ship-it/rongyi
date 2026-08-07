@@ -10,6 +10,19 @@ import { friendlyError } from '../lib/messages';
 import { useDebouncedValue } from '../hooks/use-debounce';
 import { useToast } from '../lib/toast-context';
 
+/**
+ * 元数据驱动的通用资源 CRUD 页（Round7 M-02 职责说明）。
+ * 通过 GET /resources/meta/:resource 读取字段定义（ResourceDefinition），
+ * 由 FormBuilder 生成表单、按字段类型渲染表格列，支持搜索/分页/导出。
+ * 被 App.tsx 的 `resources/:resource` 路由与 ResourceHub.tsx 使用。
+ *
+ * 与另外两个通用列表组件如何选型：
+ * - ResourcePage：通用资源管理页（元数据驱动，字段随后端 meta 变化）→ 用它；
+ * - CrudPage：业务页需要自定义列/行操作/表单体 → 用它；
+ * - SimpleListPage：只读统计端点表格（hub-tabs 的 5 个统计 Tab 专用）→ 用它。
+ * 三者均经 useDebouncedValue（hooks/use-debounce）统一防抖，勿手写 setTimeout。
+ */
+
 const PROTECTED_UI_FIELDS = new Set([
   'passwordHash',
   'refreshToken',

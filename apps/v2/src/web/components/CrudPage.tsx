@@ -2,6 +2,18 @@ import { useState, type ReactNode } from 'react';
 import { useCrudResource, type CrudResourceOptions } from '../hooks/use-crud-resource';
 import { ConfirmDialog, DataTable, Dialog, EmptyState, LoadingState, PageError, type DataTableColumn } from '.';
 
+/**
+ * 泛型 CRUD 页面基座（Round7 M-02 职责说明）。
+ * 承载「搜索 → 分页列表 → 新建/编辑 Dialog → 删除确认 → 行操作」的完整 CRUD 交互，
+ * 数据访问经 useCrudResource 走通用 /resources/:resource API。
+ * 被 12 个业务页使用（Cephalometric/FirstExams/Imaging/MedicalRecords/MemberCards/
+ * Patients/Prescriptions/ProcessingOrders/PurchaseOrders/TreatmentPlans/Treatments/Visits）。
+ *
+ * 与另外两个通用列表组件如何选型：
+ * - CrudPage：业务页需要增删改 + 业务行操作 → 用它；
+ * - ResourcePage：通用资源管理页（读 /resources/meta 元数据驱动表单与表格）→ 用它；
+ * - SimpleListPage：只读统计端点表格（hub-tabs 的 5 个统计 Tab 专用）→ 用它。
+ */
 interface CrudRenderContext<TForm extends object> {
   form: TForm;
   update: (patch: Partial<TForm>) => void;
