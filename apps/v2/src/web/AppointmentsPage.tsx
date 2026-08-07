@@ -5,6 +5,7 @@ import type { Page } from './types';
 import { ConfirmDialog, DataTable, Dialog, LoadingState, PageError, SearchableSelect } from './components';
 import { errorMessage } from './messages';
 import { toLocalInput } from './format';
+import { useAsyncAction } from './use-async-action';
 import { useToast } from './toast-context';
 
 const STATUSES = ['BOOKED', 'ARRIVED', 'IN_CHAIR', 'COMPLETED', 'CANCELLED', 'NO_SHOW'];
@@ -88,17 +89,19 @@ function parseLocalDateTime(value: string): Date | null {
 /** 行内受控状态下拉：选中后立即复位为占位项，避免非受控 select 在行复用后残留旧值。 */
 function StatusTransitionSelect({ row, onTransition }: {
   row: AppointmentRow;
-  onTransition: (id: string, status: string) => void;
+  onTransition: (id: string, status: string) => Promise<void>;
 }) {
+  const { busy, run } = useAsyncAction();
   const [value, setValue] = useState('');
   return (
     <select
       value={value}
       aria-label="变更预约状态"
+      disabled={busy}
       onChange={(event) => {
         const next = event.target.value;
         setValue('');
-        if (next) onTransition(row.id, next);
+        if (next) void run(() => onTransition(row.id, next));
       }}
     >
       <option value="">变更状态</option>
@@ -461,9 +464,7 @@ export function AppointmentsPage() {
           {(purposes.data?.items ?? []).map((row) => (
             <li key={row.id}>
               <span>{String(row.name ?? row.id)}</span>
-              <button type="button" onClick={() => void togglePurpose(row)}>
-                {Number(row.active) === 1 ? '停用' : '启用'}
-              </button>
+              <TogglePurposeButton row={row} onToggle={togglePurpose} />
               <button type="button" onClick={() => openEditPurpose(row)}>编辑</button>
               <button type="button" className="danger" onClick={() => setPurposeDeleteTarget(row)}>删除</button>
             </li>
@@ -558,5 +559,15 @@ export function AppointmentsPage() {
         onCancel={() => setPurposeDeleteTarget(null)}
       />
     </div>
+  );
+}
+
+/** 事项启用/停用按钮：busy 期间禁用，防止双击导致状态来回切换。 */
+function TogglePurposeButton({ row, onToggle }: { row: PurposeRow; onToggle: (row: PurposeRow) => Promise<void> }) {
+  const { busy, run } = useAsyncAction();
+  return (
+    <button type="button" disabled={busy} onClick={() => run(() => onToggle(row))}>
+      {Number(row.active) === 1 ? '停用' : '启用'}
+    </button>
   );
 }

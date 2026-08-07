@@ -3,6 +3,7 @@ import { apiRequest } from './api';
 import type { Page } from './types';
 import { DataTable, LoadingState, PageError, type DataTableColumn } from './components';
 import { errorMessage } from './messages';
+import { useAsyncAction } from './use-async-action';
 import { useToast } from './toast-context';
 
 interface ReminderItem {
@@ -120,9 +121,7 @@ export function CommunicationWorkflowPage() {
       key: 'actions',
       label: '操作',
       render: (row) => (
-        <button disabled={status.data?.configured === false} onClick={() => void send(String(row.id))}>
-          发送
-        </button>
+        <SendButton id={String(row.id)} configured={status.data?.configured !== false} onDone={send} />
       ),
     },
   ];
@@ -151,8 +150,11 @@ export function CommunicationWorkflowPage() {
               <p className="reminder-content">{item.content}</p>
               <div className="reminder-actions">
                 <button onClick={() => void copyReminderContent(item.content)}>复制话术</button>
-                <button onClick={() => void markReminderSent(item.id)}>已发微信</button>
-                <button onClick={() => void dismissReminder(item.id)}>忽略</button>
+                <ReminderActionButtons
+                  id={item.id}
+                  onMarkSent={markReminderSent}
+                  onDismiss={dismissReminder}
+                />
               </div>
             </div>
           ))}
@@ -167,5 +169,34 @@ export function CommunicationWorkflowPage() {
       </div>
       <DataTable columns={columns} rows={wechat.data?.items ?? []} keyField="id" emptyText="暂无微信消息" />
     </div>
+  );
+}
+
+/** 行内“发送”按钮：busy 期间禁用，防止双击重复发送微信消息。 */
+function SendButton({ id, configured, onDone }: {
+  id: string;
+  configured: boolean;
+  onDone: (id: string) => Promise<void>;
+}) {
+  const { busy, run } = useAsyncAction();
+  return (
+    <button disabled={!configured || busy} onClick={() => run(() => onDone(id))}>
+      {busy ? '发送中...' : '发送'}
+    </button>
+  );
+}
+
+/** 提醒卡片操作按钮：busy 期间同时禁用“已发微信/忽略”，防止双击重复写请求。 */
+function ReminderActionButtons({ id, onMarkSent, onDismiss }: {
+  id: string;
+  onMarkSent: (id: string) => Promise<void>;
+  onDismiss: (id: string) => Promise<void>;
+}) {
+  const { busy, run } = useAsyncAction();
+  return (
+    <>
+      <button disabled={busy} onClick={() => run(() => onMarkSent(id))}>已发微信</button>
+      <button disabled={busy} onClick={() => run(() => onDismiss(id))}>忽略</button>
+    </>
   );
 }

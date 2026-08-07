@@ -5,6 +5,7 @@ import { CrudPage } from './CrudPage';
 import { DataTable, Dialog, LoadingState, PageError } from './components';
 import { formatDateTime, formatMoney, toCents, centsToYuanString } from './format';
 import { errorMessage } from './messages';
+import { useAsyncAction } from './use-async-action';
 import { useToast } from './toast-context';
 import {
   FLOW_STATUSES,
@@ -274,10 +275,10 @@ export function ProcessingOrdersPage() {
             <button onClick={() => void openFlow(row)}>流程</button>
             <ProcessingStatusSelect
               rowId={row.id}
-              onTransition={(id, status) => void transitionProcessingOrder(showToast, ctx.reload, id, status)}
+              onTransition={(id, status) => transitionProcessingOrder(showToast, ctx.reload, id, status)}
             />
             {row.settleStatus === 'SETTLED' ? (
-              <button onClick={() => void unsettleProcessingOrder(row, ctx.reload)}>撤销结算</button>
+              <UnsettleButton onDone={() => unsettleProcessingOrder(row, ctx.reload)} />
             ) : (
               <button onClick={() => openSettle(row, ctx.reload)}>结算</button>
             )}
@@ -394,20 +395,22 @@ async function transitionProcessingOrder(
   }
 }
 
-/** 行内受控状态下拉：选中后立即复位为占位项，避免非受控 select 在行复用后残留旧值。 */
+/** 行内受控状态下拉：选中后立即复位为占位项，避免非受控 select 在行复用后残留旧值；busy 期间禁用。 */
 function ProcessingStatusSelect({ rowId, onTransition }: {
   rowId: string;
-  onTransition: (id: string, status: string) => void;
+  onTransition: (id: string, status: string) => Promise<void>;
 }) {
+  const { busy, run } = useAsyncAction();
   const [value, setValue] = useState('');
   return (
     <select
       value={value}
       aria-label="变更加工状态"
+      disabled={busy}
       onChange={(event) => {
         const next = event.target.value;
         setValue('');
-        if (next) onTransition(rowId, next);
+        if (next) void run(() => onTransition(rowId, next));
       }}
     >
       <option value="">变更状态</option>
@@ -415,5 +418,15 @@ function ProcessingStatusSelect({ rowId, onTransition }: {
         <option key={value} value={value}>{label}</option>
       ))}
     </select>
+  );
+}
+
+/** 行内“撤销结算”按钮：busy 期间禁用，防止双击重复撤销。 */
+function UnsettleButton({ onDone }: { onDone: () => Promise<void> }) {
+  const { busy, run } = useAsyncAction();
+  return (
+    <button disabled={busy} onClick={() => run(onDone)}>
+      {busy ? '撤销中...' : '撤销结算'}
+    </button>
   );
 }

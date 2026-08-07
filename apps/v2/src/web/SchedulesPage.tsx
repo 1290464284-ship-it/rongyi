@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import { ConfirmDialog, DataTable, LoadingState, type DataTableColumn } from './components';
 import { errorMessage } from './messages';
+import { useAsyncAction } from './use-async-action';
 import { useToast } from './toast-context';
 
 const WEEKDAY_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
@@ -333,7 +334,7 @@ function GenerateSection({
 }
 
 function templateColumns(
-  toggleActive: (template: ShiftTemplate) => void,
+  toggleActive: (template: ShiftTemplate) => Promise<void> | void,
   openEdit: (template: ShiftTemplate) => void,
   requestDelete: (template: ShiftTemplate) => void,
 ): DataTableColumn<ShiftTemplate>[] {
@@ -347,13 +348,26 @@ function templateColumns(
       label: '操作',
       render: (row) => (
         <>
-          <button onClick={() => void toggleActive(row)}>{Number(row.active) === 1 ? '停用' : '启用'}</button>
+          <ToggleActiveButton template={row} onToggle={toggleActive} />
           <button onClick={() => openEdit(row)}>编辑</button>
           <button className="danger" onClick={() => requestDelete(row)}>删除</button>
         </>
       ),
     },
   ];
+}
+
+/** 模板启用/停用按钮：busy 期间禁用，防止双击导致状态来回切换。 */
+function ToggleActiveButton({ template, onToggle }: {
+  template: ShiftTemplate;
+  onToggle: (template: ShiftTemplate) => Promise<void> | void;
+}) {
+  const { busy, run } = useAsyncAction();
+  return (
+    <button disabled={busy} onClick={() => run(async () => { await onToggle(template); })}>
+      {Number(template.active) === 1 ? '停用' : '启用'}
+    </button>
+  );
 }
 
 /** 解析模板工作日（优先 workDaysJson 数组，兼容行内已展开的 workDays）。 */
