@@ -1,8 +1,8 @@
 import { Component, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import type { Page } from './types';
-import { friendlyError } from './messages';
+import { errorMessage, friendlyError } from './messages';
 
 const FOCUSABLE_SELECTOR =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -198,6 +198,30 @@ export function QueryBoundary({
   if (error) return <PageError message={errorLabel ?? (error instanceof Error ? error.message : String(error))} />;
   if (data === undefined) return <PageError message={errorLabel ?? '数据加载失败'} />;
   return <>{children}</>;
+}
+
+/**
+ * H1 分区渲染：按单个查询独立渲染区块。
+ * 任一子查询失败只降级该区块（"该区块加载失败 + 重试"），不影响页面其余部分。
+ */
+export function QuerySection<T>({
+  query,
+  render,
+}: {
+  query: UseQueryResult<T, Error>;
+  render: (data: T | undefined) => ReactNode;
+}) {
+  if (query.isLoading) return <LoadingState label="加载中..." />;
+  if (query.error) {
+    return (
+      <div className="query-section-error">
+        <p className="error">该区块加载失败</p>
+        <PageError message={errorMessage(query.error, '数据加载失败')} />
+        <button type="button" onClick={() => void query.refetch()}>重试</button>
+      </div>
+    );
+  }
+  return <>{render(query.data)}</>;
 }
 
 export class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {

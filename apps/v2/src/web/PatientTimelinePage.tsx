@@ -48,23 +48,10 @@ export function PatientTimelinePage() {
     enabled: patientId !== null,
   });
 
-  if (visits.isLoading || treatments.isLoading || charges.isLoading || followUps.isLoading) {
-    return <LoadingState label="患者时间线加载中..." />;
-  }
-  const loadError = visits.error ?? treatments.error ?? charges.error ?? followUps.error;
-  if (loadError) {
-    return (
-      <div className="page">
-        <PageError message={loadError instanceof Error ? loadError.message : String(loadError)} />
-        <button onClick={() => {
-          void visits.refetch();
-          void treatments.refetch();
-          void charges.refetch();
-          void followUps.refetch();
-        }}>重试</button>
-      </div>
-    );
-  }
+  // H1 分区渲染：任一子查询失败只降级对应区块，不影响其余事件与患者选择器
+  const timelineQueries = [visits, treatments, charges, followUps] as const;
+  const timelineLoading = timelineQueries.some((query) => query.isLoading);
+  const failedQueries = timelineQueries.filter((query) => query.error != null);
 
   const events: TimelineEvent[] = [
     ...(visits.data?.items ?? []).map((row) => ({
@@ -121,6 +108,14 @@ export function PatientTimelinePage() {
           </div>
         ))}
       </div>
+      {timelineLoading && <LoadingState label="时间线加载中..." />}
+      {failedQueries.map((query, index) => (
+        <div className="query-section-error" key={`failed-${index}`}>
+          <p className="error">该区块加载失败</p>
+          <PageError message={query.error instanceof Error ? query.error.message : String(query.error)} />
+          <button type="button" onClick={() => void query.refetch()}>重试</button>
+        </div>
+      ))}
       <div className="timeline">
         {events.map((event) => (
           <article className="timeline-item" key={`${event.type}-${event.id}`}>
@@ -132,7 +127,7 @@ export function PatientTimelinePage() {
             <p>{event.status ?? ''}{event.amount === undefined || event.amount === null ? '' : ` · ${formatMoney(event.amount)}`}</p>
           </article>
         ))}
-        {events.length === 0 && <p className="empty-board">暂无时间线记录</p>}
+        {events.length === 0 && !timelineLoading && failedQueries.length === 0 && <p className="empty-board">暂无时间线记录</p>}
       </div>
     </div>
   );

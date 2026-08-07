@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import type { Page } from './types';
-import { DataTable, LoadingState, PageError, type DataTableColumn } from './components';
+import { DataTable, QuerySection, type DataTableColumn } from './components';
 import { errorMessage } from './messages';
 import { useAsyncAction } from './use-async-action';
 import { useToast } from './toast-context';
@@ -16,20 +16,6 @@ export function PatientWorkflowPage() {
     queryKey: ['risk-workflow'],
     queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/patientRiskScores?page=1&pageSize=100'),
   });
-
-  if (patients.isLoading || scores.isLoading) return <LoadingState label="患者数据加载中..." />;
-  const loadError = patients.error ?? scores.error;
-  if (loadError) {
-    return (
-      <div className="page">
-        <PageError message={loadError instanceof Error ? loadError.message : String(loadError)} />
-        <button onClick={() => {
-          void patients.refetch();
-          void scores.refetch();
-        }}>重试</button>
-      </div>
-    );
-  }
 
   async function calculate(patientId: string) {
     try {
@@ -61,9 +47,15 @@ export function PatientWorkflowPage() {
   return (
     <div className="page">
       <h1>患者风险评分</h1>
-      <DataTable columns={patientColumns} rows={patients.data?.items ?? []} keyField="id" emptyText="暂无患者" />
+      <QuerySection
+        query={patients}
+        render={(data) => <DataTable columns={patientColumns} rows={data?.items ?? []} keyField="id" emptyText="暂无患者" />}
+      />
       <h2>历史评分</h2>
-      <DataTable columns={scoreColumns} rows={scores.data?.items ?? []} keyField="id" emptyText="暂无评分记录" />
+      <QuerySection
+        query={scores}
+        render={(data) => <DataTable columns={scoreColumns} rows={data?.items ?? []} keyField="id" emptyText="暂无评分记录" />}
+      />
     </div>
   );
 }
