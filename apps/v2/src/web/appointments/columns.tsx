@@ -4,7 +4,7 @@ import { APPOINTMENT_STATUS_LABELS } from '../lib/labels';
 import type { AppointmentRow } from './types';
 
 /** 行内受控状态下拉：选中后立即复位为占位项，避免非受控 select 在行复用后残留旧值。 */
-export function StatusTransitionSelect({ row, onTransition }: {
+function StatusTransitionSelect({ row, onTransition }: {
   row: AppointmentRow;
   onTransition: (id: string, status: string) => void;
 }) {

@@ -57,7 +57,7 @@ export function ensureForeignKeys(
  * verbatim in `MigrationRepairQuarantine` and removed from the source table so
  * the INSERT SELECT cannot fail.
  */
-export function repairLegacyData(db: Database.Database, table: string): void {
+function repairLegacyData(db: Database.Database, table: string): void {
   db.exec(`CREATE TABLE IF NOT EXISTS MigrationRepairLog (
     id TEXT PRIMARY KEY,
     tableName TEXT NOT NULL,

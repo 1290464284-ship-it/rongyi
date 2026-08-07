@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
 import bcrypt from 'bcryptjs';
-import { INTERNAL_RESOURCE_TABLES, resourceRegistry } from '../../domain/resources';
+import { resourceRegistry } from '../../domain/resources';
 import type { ResourceField } from '../../domain/contracts';
 
 function columnType(field: ResourceField): string {

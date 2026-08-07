@@ -2,7 +2,7 @@ import type { ResourceField, ResourceDefinition, UserRole } from '../contracts';
 
 /** 角色常量：资源定义中的默认角色集合 */
 export const boss: UserRole[] = ['BOSS'];
-export const staff: UserRole[] = ['BOSS', 'DOCTOR'];
+const staff: UserRole[] = ['BOSS', 'DOCTOR'];
 export const clinical: UserRole[] = ['BOSS', 'DOCTOR'];
 export const reception: UserRole[] = ['BOSS', 'DOCTOR'];
 

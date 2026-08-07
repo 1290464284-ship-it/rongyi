@@ -96,7 +96,7 @@ export async function processPrescription(
   }
 }
 
-export async function cleanupOrphanPrescription(prescriptionId: string, createdItemIds: string[]): Promise<void> {
+async function cleanupOrphanPrescription(prescriptionId: string, createdItemIds: string[]): Promise<void> {
   // 服务端 DELETE 为软删除且不级联：先删已建明细，再删主记录
   for (const itemId of createdItemIds) {
     try {
