@@ -1,0 +1,11 @@
+# Core application paths require extra review.
+
+apps/v2/src/domain/ @rongyi/core
+apps/v2/src/server/ @rongyi/core
+apps/v2/electron/ @rongyi/core
+apps/v2/scripts/ @rongyi/core
+
+# Release and governance assets.
+.github/workflows/v2-release.yml @rongyi/governance
+.github/workflows/v2-ci.yml @rongyi/governance
+AGENTS.md @rongyi/governance

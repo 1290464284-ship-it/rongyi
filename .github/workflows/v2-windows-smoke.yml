@@ -1,0 +1,69 @@
+name: V2 Windows Installer Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      previous_installer_url:
+        description: Optional previous installer URL for upgrade smoke
+        required: false
+        type: string
+  pull_request:
+    paths:
+      - 'apps/v2/**'
+      - '.github/workflows/v2-windows-smoke.yml'
+
+jobs:
+  windows-smoke:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.15.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm --filter @dental/v2 typecheck
+
+      - name: Build and pack installer
+        run: pnpm --filter @dental/v2 electron:dist
+
+      - name: Resolve current installer
+        id: current-installer
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -LiteralPath apps/v2/release-v2 -Filter "*.exe" |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $exe) { throw "No installer produced by electron:dist" }
+          "path=$exe" >> $env:GITHUB_OUTPUT
+
+      - name: Run installer smoke
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File apps/v2/scripts/installer-smoke.ps1
+
+      - name: Download previous installer for upgrade smoke
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.previous_installer_url != ''
+        shell: pwsh
+        env:
+          V2_PREVIOUS_INSTALLER_URL: ${{ github.event.inputs.previous_installer_url }}
+        run: |
+          Invoke-WebRequest -Uri $env:V2_PREVIOUS_INSTALLER_URL -OutFile apps/v2/release-v2/previous-installer.exe
+
+      - name: Run upgrade smoke
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.previous_installer_url != ''
+        shell: pwsh
+        env:
+          V2_PREVIOUS_INSTALLER: apps/v2/release-v2/previous-installer.exe
+          V2_CURRENT_INSTALLER: ${{ steps.current-installer.outputs.path }}
+        run: |
+          powershell -ExecutionPolicy Bypass -File apps/v2/scripts/upgrade-smoke.ps1 `
+            -CurrentInstallerPath $env:V2_CURRENT_INSTALLER `
+            -PreviousInstallerPath $env:V2_PREVIOUS_INSTALLER

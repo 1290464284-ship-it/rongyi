@@ -1,96 +1,26 @@
-## 类型标签
+## Summary
 
-<!-- 请勾选适用的类型，可多选 -->
+Describe the change and why it is needed.
 
-- [ ] feat: 新功能
-- [ ] fix: 修复 bug
-- [ ] refactor: 代码重构（不影响功能）
-- [ ] docs: 文档更新
-- [ ] test: 测试相关
-- [ ] chore: 构建/工具/依赖更新
-
-## 变更描述
-
-<!-- 请简要描述做了什么变更 -->
-
-## 关联 Issue
-
-<!-- 请关联相关 Issue，例如：#123 -->
+## Related Issue
 
 Closes #
 
-## 测试
+## Test Plan
 
-- [ ] 后端单元测试通过（`pnpm test` in apps/api）
-- [ ] 后端 E2E 测试通过（`pnpm test:e2e` in apps/api）
-- [ ] 前端单元测试通过（`pnpm test` in apps/web）
-- [ ] 前端 E2E 测试通过（`pnpm test:e2e` in apps/web）
-- [ ] 添加了新测试（单元测试 / E2E 测试）
+- [ ] `pnpm --filter @dental/v2 typecheck`
+- [ ] `pnpm --filter @dental/v2 test`
+- [ ] `pnpm --filter @dental/v2 build`
+- [ ] `pnpm --filter @dental/v2 electron:compile`
+- [ ] `pnpm --filter @dental/v2 run verify:package`
+- [ ] `pnpm --filter @dental/v2 smoke:api`
+- [ ] `pnpm --filter @dental/v2 smoke:ui`
+- [ ] `pnpm --filter @dental/v2 test:load`
 
-## 自检清单（提交前必须完成）
+## Quality Checklist
 
-### 安全与隐私
-
-- [ ] 没有硬编码的密码、密钥、Token 等敏感信息
-- [ ] 所有 SQL 查询都使用参数化查询（`?` 占位符），无 SQL 注入风险
-- [ ] 患者敏感数据（身份证号、手机号、病历）在日志中已脱敏
-- [ ] API 返回值中敏感字段已脱敏（使用 `mask` 工具函数）
-- [ ] 认证授权正确，接口有适当的角色权限控制
-- [ ] 输入数据已做 sanitize 处理，防止 XSS
-
-### 多租户隔离
-
-- [ ] 所有查询都有 `clinicId` 过滤条件
-- [ ] 创建/更新操作都设置了正确的 `clinicId`
-- [ ] 没有跨诊所数据泄露的风险
-- [ ] 全局操作（如搜索）也正确应用了诊所隔离
-
-### 数据一致性
-
-- [ ] 需要事务的地方都使用了事务（`db.transaction()`）
-- [ ] 财务相关操作（收费、退款、会员卡充值）都在事务内执行
-- [ ] 并发场景下没有竞态条件（如库存扣减、余额更新）
-- [ ] 金额计算使用 `Money` 值对象，没有浮点数精度问题
-
-### 错误处理
-
-- [ ] 处理了所有可能的错误路径
-- [ ] 使用 `BusinessException` 抛出业务异常，而不是直接 throw Error
-- [ ] 异常有明确的错误码和错误信息
-- [ ] 数据库操作失败时有适当的回滚或错误处理
-
-### 边界条件
-
-- [ ] 空值/undefined 情况已处理
-- [ ] 分页参数边界（page=0, pageSize 过大）已处理
-- [ ] 日期范围边界已处理
-- [ ] 金额为 0 或负数的情况已处理
-- [ ] 字符串长度限制、枚举值合法性已校验
-
-### 代码质量
-
-- [ ] 有适当的 TypeScript 类型定义
-- [ ] 没有使用 `any` 类型（除非必要且有注释说明）
-- [ ] 没有遗留的 `console.log` / `debugger`
-- [ ] 命名清晰，符合项目命名规范
-- [ ] 函数/方法不要过长，职责单一
-
-### 前端专属
-
-- [ ] 没有直接操作 DOM（使用 React 状态管理）
-- [ ] 列表渲染有正确的 `key` 属性
-- [ ] 异步操作有 loading 状态和错误提示
-- [ ] 表单有验证和错误提示
-- [ ] 响应式布局在不同屏幕尺寸下正常
-
-## 截图/录屏（前端相关）
-
-<!-- 前端变更请附上截图或录屏 -->
-
-## 风险评估
-
-<!-- 请评估本次变更的风险等级 -->
-
-- [ ] 低风险：文档更新、小的 UI 调整、非核心功能
-- [ ] 中风险：新功能、一般 bug 修复
-- [ ] 高风险：核心业务逻辑变更、数据库 schema 变更、安全相关
+- [ ] No production `any`
+- [ ] SQL is parameterized
+- [ ] Sensitive data is masked
+- [ ] Failure paths return structured errors
+- [ ] No unintended files or generated artifacts are committed

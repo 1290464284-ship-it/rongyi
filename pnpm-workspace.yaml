@@ -1,12 +1,57 @@
 packages:
-  - 'apps/*'
-  - 'packages/*'
+  - 'apps/v2'
+overrides:
+  '@electron/get': '^3.1.0'
+  dot-prop: 5.1.1
+  semver: 7.7.2
+  tmp: 0.2.7
+  ejs: 3.1.10
+  tar: 7.5.21
+  shell-quote: 1.10.0
+  js-yaml: 5.2.2
+  postcss: 8.5.25
+  fast-uri: 3.1.5
+  undici@>=7.0.0 <7.29.0: 7.29.0
+  undici@>=6.0.0 <6.28.0: 6.28.0
+  brace-expansion@<1.1.18: 1.1.18
+  brace-expansion@>=2.0.0 <2.1.4: 2.1.4
+  brace-expansion@>=4.0.0 <5.0.9: 5.0.9
+# typescript@7（Go 原生编译器）移除了经典 JS API，typescript-eslint 运行时需要
+# TS JS API 解析源码（其 peer 仍要求 <6.1.0 且会主动拒绝 TS7）。给各 tseslint
+# 包注入 typescript@6.0.3 作为 optionalDependencies（官方 side-by-side 方案），
+# 运行时它们使用自身的 6.0.3；importer 的 typescript@7.0.2 继续供 tsc CLI 使用。
+# 注意：packageExtensions 的 dependencies 字段在 pnpm 11 不生效，必须用 optionalDependencies。
+packageExtensions:
+  '@typescript-eslint/eslint-plugin':
+    optionalDependencies:
+      typescript: 6.0.3
+  '@typescript-eslint/parser':
+    optionalDependencies:
+      typescript: 6.0.3
+  '@typescript-eslint/project-service':
+    optionalDependencies:
+      typescript: 6.0.3
+  '@typescript-eslint/tsconfig-utils':
+    optionalDependencies:
+      typescript: 6.0.3
+  '@typescript-eslint/type-utils':
+    optionalDependencies:
+      typescript: 6.0.3
+  '@typescript-eslint/typescript-estree':
+    optionalDependencies:
+      typescript: 6.0.3
+  '@typescript-eslint/utils':
+    optionalDependencies:
+      typescript: 6.0.3
+  typescript-eslint:
+    optionalDependencies:
+      typescript: 6.0.3
 allowBuilds:
-  '@scarf/scarf': set this to true or false
-  better-sqlite3: set this to true or false
-  electron-winstaller: set this to true or false
+  '@scarf/scarf': false
+  better-sqlite3: true
+  electron-winstaller: true
   esbuild: true
-  unrs-resolver: set this to true or false
+  unrs-resolver: true
 minimumReleaseAgeExclude:
   - '@tanstack/query-core@5.101.4'
   - '@tanstack/react-query@5.101.4'
@@ -15,3 +60,4 @@ minimumReleaseAgeExclude:
   - postcss@8.5.21
   - react-dom@19.2.8
   - react@19.2.8
+  - vite@8.2.1
