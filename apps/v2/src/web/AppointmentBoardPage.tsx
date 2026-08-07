@@ -6,15 +6,10 @@ import { LoadingState, PageError } from './components';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
 import { todayLocalDate } from './format';
+import { APPOINTMENT_STATUS_LABELS } from './labels';
 
-const BOARD_STATUSES = [
-  { key: 'BOOKED', label: '已预约' },
-  { key: 'ARRIVED', label: '已到店' },
-  { key: 'IN_CHAIR', label: '就诊中' },
-  { key: 'COMPLETED', label: '已完成' },
-  { key: 'CANCELLED', label: '已取消' },
-  { key: 'NO_SHOW', label: '未到' },
-] as const;
+// 与 AppointmentsPage 共用同一字典（M-03），文案保持"已到诊/未到诊"一致。
+const BOARD_STATUSES = Object.entries(APPOINTMENT_STATUS_LABELS).map(([key, label]) => ({ key, label }));
 
 type AppointmentRow = Record<string, unknown> & {
   id: string;

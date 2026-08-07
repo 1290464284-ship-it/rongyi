@@ -4,13 +4,7 @@ import type { Page } from './types';
 import { DataTable, LoadingState, PageError, type DataTableColumn } from './components';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
-
-const LEAVE_STATUS_LABELS: Record<string, string> = {
-  PENDING: '待审批',
-  APPROVED: '已批准',
-  REJECTED: '已驳回',
-  CANCELLED: '已取消',
-};
+import { LEAVE_STATUS_LABELS } from './labels';
 
 export function HrWorkflowPage() {
   const { showToast } = useToast();

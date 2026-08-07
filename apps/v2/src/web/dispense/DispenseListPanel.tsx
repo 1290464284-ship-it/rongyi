@@ -14,13 +14,7 @@ import { errorMessage } from '../messages';
 import { useToast } from '../toast-context';
 import { BatchSelect, DispenseEditDialog } from './DispenseEditDialog';
 import type { DispenseDetail, DispenseDetailItem, DispenseRow } from './dispense-types';
-
-const DISPENSE_STATUS_LABELS: Record<string, string> = {
-  PENDING: '待发药',
-  PARTIAL: '部分发药',
-  DISPENSED: '已发药',
-  RETURNED: '已退药',
-};
+import { DISPENSE_STATUS_LABELS } from '../labels';
 
 /** 发药单列表区：分页、行内发药/退药面板、编辑与删除确认；列表查询与分页状态由页面传入。 */
 export function DispenseListPanel({

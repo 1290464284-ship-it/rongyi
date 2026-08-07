@@ -6,23 +6,7 @@ import { ConfirmDialog, DataTable, Dialog, LoadingState, PageError, SearchableSe
 import { errorMessage } from './messages';
 import { toLocalInput } from './format';
 import { useToast } from './toast-context';
-
-const STATUSES = ['BOOKED', 'ARRIVED', 'IN_CHAIR', 'COMPLETED', 'CANCELLED', 'NO_SHOW'];
-const STATUS_LABELS: Record<string, string> = {
-  BOOKED: '已预约',
-  ARRIVED: '已到诊',
-  IN_CHAIR: '就诊中',
-  COMPLETED: '已完成',
-  CANCELLED: '已取消',
-  NO_SHOW: '未到诊',
-};
-
-const TYPE_LABELS: Record<string, string> = {
-  REGULAR: '常规预约',
-  FOLLOW_UP: '随访预约',
-  EMERGENCY: '急诊',
-  CONSULTATION: '咨询',
-};
+import { APPOINTMENT_STATUS_LABELS, APPOINTMENT_TYPE_LABELS } from './labels';
 
 type LookupRow = Record<string, unknown> & { id: string; name?: string };
 type AppointmentRow = Record<string, unknown> & {
@@ -102,8 +86,8 @@ function StatusTransitionSelect({ row, onTransition }: {
       }}
     >
       <option value="">变更状态</option>
-      {STATUSES.map((status) => (
-        <option key={status} value={status}>{STATUS_LABELS[status]}</option>
+      {Object.keys(APPOINTMENT_STATUS_LABELS).map((status) => (
+        <option key={status} value={status}>{APPOINTMENT_STATUS_LABELS[status]}</option>
       ))}
     </select>
   );
@@ -411,7 +395,7 @@ export function AppointmentsPage() {
     {
       key: 'status',
       label: '状态',
-      render: (row: AppointmentRow) => STATUS_LABELS[String(row.status ?? '')] ?? String(row.status ?? ''),
+      render: (row: AppointmentRow) => APPOINTMENT_STATUS_LABELS[String(row.status ?? '')] ?? String(row.status ?? ''),
     },
     {
       key: 'actions',
@@ -439,7 +423,7 @@ export function AppointmentsPage() {
         </select>
         <SearchableSelect resource="chairs" value={chairId} onChange={setChairId} ariaLabel="椅位" placeholder="不指定椅位" />
         <select aria-label="预约类型" value={type} onChange={(event) => setType(event.target.value)}>
-          {Object.entries(TYPE_LABELS).map(([value, label]) => (
+          {Object.entries(APPOINTMENT_TYPE_LABELS).map(([value, label]) => (
             <option key={value} value={value}>{label}</option>
           ))}
         </select>
@@ -492,7 +476,7 @@ export function AppointmentsPage() {
           </select>
           <SearchableSelect resource="chairs" value={editForm.chairId} onChange={(value) => setEditForm((current) => ({ ...current, chairId: value }))} ariaLabel="椅位" placeholder="不指定椅位" />
           <select aria-label="预约类型" value={editForm.type} onChange={(event) => setEditForm((current) => ({ ...current, type: event.target.value }))}>
-            {Object.entries(TYPE_LABELS).map(([value, label]) => (
+            {Object.entries(APPOINTMENT_TYPE_LABELS).map(([value, label]) => (
               <option key={value} value={value}>{label}</option>
             ))}
           </select>

@@ -1,22 +1,5 @@
-export const STATUS_LABELS: Record<string, string> = {
-  UNPAID: '未付款',
-  PARTIAL: '部分付款',
-  PAID: '已付款',
-  REFUNDED: '已退款',
-  CANCELLED: '已取消',
-};
-
-export const METHOD_LABELS: Record<string, string> = {
-  CASH: '现金',
-  WECHAT: '微信',
-  ALIPAY: '支付宝',
-  CARD: '银行卡',
-  DEBT: '欠费',
-  MEMBER_CARD: '会员卡',
-  UNIONPAY: '银联',
-  INSURANCE: '医保',
-  OTHER: '其他',
-};
+// label 字典统一集中在 ../labels.ts（M-03），此处 re-export 保持旧导入路径不变。
+export { CHARGE_STATUS_LABELS as STATUS_LABELS, PAY_METHOD_LABELS as METHOD_LABELS } from '../labels';
 
 export interface ChargeRow extends Record<string, unknown> {
   id: string;
