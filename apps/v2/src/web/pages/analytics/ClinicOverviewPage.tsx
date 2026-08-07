@@ -56,7 +56,7 @@ function ClinicOverviewContent({ data: rows }: { data: Array<Record<string, unkn
 
   return (
     <div className="page">
-      <h1>多门店经营概览</h1>
+      <div className="page-head"><h1>多门店经营概览</h1></div>
       <div className="stat-row">
         <span>患者：{totals.patients}</span>
         <span>预约：{totals.appointments}</span>

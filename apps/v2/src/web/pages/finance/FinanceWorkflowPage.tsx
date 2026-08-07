@@ -81,7 +81,7 @@ export function FinanceWorkflowPage() {
 
   return (
     <div className="page">
-      <h1>财务操作</h1>
+      <div className="page-head"><h1>财务操作</h1></div>
       <h2>会员卡</h2>
       <QuerySection
         query={cards}

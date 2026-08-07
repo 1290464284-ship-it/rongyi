@@ -64,7 +64,7 @@ export function DesktopSettingsPage() {
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, [desktop]);
 
-  if (!desktop) return <div className="page"><h1>桌面端设置</h1><p>当前运行在浏览器预览模式。</p></div>;
+  if (!desktop) return <div className="page"><div className="page-head"><h1>桌面端设置</h1></div><p>当前运行在浏览器预览模式。</p></div>;
   const bridge = desktop;
 
   async function toggleAutoLaunch() {

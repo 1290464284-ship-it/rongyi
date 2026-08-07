@@ -106,7 +106,7 @@ export function ChargesPage() {
 
   return (
     <div className="page">
-      <h1>收费管理</h1>
+      <div className="page-head"><h1>收费管理</h1></div>
       <ChargeCreateForm
         form={crud.form}
         update={crud.updateForm}

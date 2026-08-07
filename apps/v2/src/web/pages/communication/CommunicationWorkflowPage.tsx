@@ -109,7 +109,7 @@ export function CommunicationWorkflowPage() {
 
   return (
     <div className="page">
-      <h1>微信消息</h1>
+      <div className="page-head"><h1>微信消息</h1></div>
 
       <QuerySection
         query={reminders}

@@ -46,7 +46,7 @@ export function PatientWorkflowPage() {
 
   return (
     <div className="page">
-      <h1>患者风险评分</h1>
+      <div className="page-head"><h1>患者风险评分</h1></div>
       <QuerySection
         query={patients}
         render={(data) => <DataTable columns={patientColumns} rows={data?.items ?? []} keyField="id" emptyText="暂无患者" />}

@@ -91,7 +91,7 @@ export function ClinicalWorkflowPage() {
 
   return (
     <div className="page">
-      <h1>就诊工作台</h1>
+      <div className="page-head"><h1>就诊工作台</h1></div>
       <QuerySection query={today} render={(data) => <TodayOverview data={data} />} />
       <TriageQueuePanel onStartVisit={(id) => transition('registrations', id, 'IN_PROGRESS')} />
       {resources.map((resource) => {

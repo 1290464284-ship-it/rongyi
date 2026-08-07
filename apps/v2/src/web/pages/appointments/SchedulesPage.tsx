@@ -31,7 +31,7 @@ export function SchedulesPage() {
 
   return (
     <div className="page">
-      <h1>排班中心</h1>
+      <div className="page-head"><h1>排班中心</h1></div>
       <TemplateSection templates={templatesQuery.data} reload={reloadTemplates} />
       <GenerateSection
         templates={templatesQuery.data}

@@ -74,7 +74,7 @@ export function SystemOperationsPage() {
 
   return (
     <div className="page">
-      <h1>{'\u7cfb\u7edf\u64cd\u4f5c'}</h1>
+      <div className="page-head"><h1>{'\u7cfb\u7edf\u64cd\u4f5c'}</h1></div>
       <h2>批量导入</h2>
       <form className="inline-form" onSubmit={submit}>
         <select value={resource} onChange={(event) => setResource(event.target.value)}>

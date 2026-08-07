@@ -17,7 +17,7 @@ export function FollowUpReportPage() {
   return (
     <QueryBoundary isLoading={query.isLoading} error={query.error} data={query.data} errorLabel="无法加载随访到诊率">
       <div className="page">
-        <h1>随访到诊率</h1>
+        <div className="page-head"><h1>随访到诊率</h1></div>
         <div className="board-summary">
           <div className="summary-item"><span>随访总数</span><strong>{data.total}</strong></div>
           <div className="summary-item"><span>按时完成</span><strong>{data.onTime}</strong></div>

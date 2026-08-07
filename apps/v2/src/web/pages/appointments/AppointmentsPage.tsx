@@ -313,7 +313,7 @@ export function AppointmentsPage() {
 
   return (
     <div className="page">
-      <h1>预约管理</h1>
+      <div className="page-head"><h1>预约管理</h1></div>
       <form className="inline-form" onSubmit={create}>
         <SearchableSelect resource="patients" value={patientId} onChange={setPatientId} ariaLabel="患者" placeholder="选择患者" />
         <select aria-label="医生" value={doctorId} onChange={(event) => setDoctorId(event.target.value)}>

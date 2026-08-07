@@ -229,7 +229,7 @@ export function InventoryWorkflowPage() {
 
   return (
     <div className="page">
-      <h1>库存与采购操作</h1>
+      <div className="page-head"><h1>库存与采购操作</h1></div>
       <h2>采购单</h2>
       <QuerySection
         query={purchase}

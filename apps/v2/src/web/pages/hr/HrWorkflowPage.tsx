@@ -55,7 +55,7 @@ export function HrWorkflowPage() {
 
   return (
     <div className="page">
-      <h1>人事审批</h1>
+      <div className="page-head"><h1>人事审批</h1></div>
       <DataTable
         columns={columns}
         rows={leaves.data?.items.filter((row) => String(row.status) === 'PENDING') ?? []}
