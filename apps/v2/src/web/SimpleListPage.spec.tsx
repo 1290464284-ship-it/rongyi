@@ -52,6 +52,6 @@ describe('SimpleListPage', () => {
   it('renders error state', async () => {
     vi.mocked(apiRequest).mockRejectedValue(new Error('report failed'));
     render(<SimpleListPage title="Error" endpoint="/stats/error" />, { wrapper });
-    expect(await screen.findByText('report failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
   });
 });

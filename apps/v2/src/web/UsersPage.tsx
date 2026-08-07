@@ -336,7 +336,7 @@ export function UsersPage() {
         message={`确定删除员工「${deleteTarget?.name ?? ''}」吗？删除后该账号将无法登录。`}
         confirmText="删除"
         danger
-        onConfirm={() => void deleteUser()}
+        onConfirm={() => deleteUser()}
         onCancel={() => setDeleteTarget(null)}
       />
 

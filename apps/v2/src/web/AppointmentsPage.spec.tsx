@@ -93,7 +93,7 @@ await waitFor(() => {
       return {};
     });
     render(<AppointmentsPage />, { wrapper });
-    expect(await screen.findByText('appointments failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
   });
 
   it('renders an empty state when no appointments are returned', async () => {
@@ -153,10 +153,10 @@ await waitFor(() => {
     fireEvent.change(screen.getByLabelText('开始时间'), { target: { value: '2026-08-05T09:00' } });
     fireEvent.change(screen.getByLabelText('结束时间'), { target: { value: '2026-08-05T10:00' } });
     fireEvent.click(screen.getByRole('button', { name: '创建预约' }));
-    expect(await screen.findByText('appointment failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
 
     fireEvent.change((await screen.findAllByLabelText('变更预约状态'))[0], { target: { value: 'ARRIVED' } });
-    expect(await screen.findByText('appointment failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
   });
   it('renders relation labels instead of raw ids when present', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {

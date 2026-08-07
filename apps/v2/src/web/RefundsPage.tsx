@@ -5,6 +5,7 @@ import type { Page } from './types';
 import { DataTable, EmptyState, LoadingState, PageError, type DataTableColumn } from './components';
 import { formatDateTime, formatMoney } from './format';
 import { errorMessage } from './messages';
+import { useAsyncAction } from './use-async-action';
 import { useToast } from './toast-context';
 
 const STATUS_LABELS: Record<string, string> = {
@@ -130,16 +131,17 @@ function RefundRowActions({
   showToast: (message: string, kind?: 'success' | 'error' | 'info') => void;
 }) {
   const status = String(row.status ?? '');
+  const { busy, run } = useAsyncAction();
   if (status === 'REQUESTED') {
     return (
       <span>
-        <button onClick={() => void transitionRefund(showToast, reload, row.id, 'approve', '退款已通过审批')}>
+        <button disabled={busy} onClick={() => run(() => transitionRefund(showToast, reload, row.id, 'approve', '退款已通过审批'))}>
           通过审批
         </button>
-        <button onClick={() => void transitionRefund(showToast, reload, row.id, 'reject', '退款已驳回')}>
+        <button disabled={busy} onClick={() => run(() => transitionRefund(showToast, reload, row.id, 'reject', '退款已驳回'))}>
           驳回
         </button>
-        <button onClick={() => void transitionRefund(showToast, reload, row.id, 'cancel', '退款已取消')}>
+        <button disabled={busy} onClick={() => run(() => transitionRefund(showToast, reload, row.id, 'cancel', '退款已取消'))}>
           取消
         </button>
       </span>
@@ -148,7 +150,7 @@ function RefundRowActions({
   if (status === 'PENDING_REFUND') {
     return (
       <span>
-        <button onClick={() => void transitionRefund(showToast, reload, row.id, 'process', '退款已完成')}>
+        <button disabled={busy} onClick={() => run(() => transitionRefund(showToast, reload, row.id, 'process', '退款已完成'))}>
           确认退款
         </button>
       </span>

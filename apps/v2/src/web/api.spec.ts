@@ -461,7 +461,7 @@ describe('friendlyError 映射', () => {
     expect(friendlyError('RandomName not found')).toBe('RandomName不存在');
   });
 
-  it('未命中映射时原样返回', () => {
-    expect(friendlyError('a completely unexpected message')).toBe('a completely unexpected message');
+  it('未命中映射的英文错误返回通用兜底文案（M5）', () => {
+    expect(friendlyError('a completely unexpected message')).toBe('操作失败，请稍后重试');
   });
 });

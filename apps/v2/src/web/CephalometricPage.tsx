@@ -35,10 +35,10 @@ export function CephalometricPage() {
     };
   }, []);
 
-  // 与 CrudPage 列表共享查询缓存（useCrudResource 将 queryKey 展开为 ['cephalometric', page, search]）。
-  // 使用独立键 'caseList' 避免与列表查询键冲突（列表键可能被误认为二维分页参数）。
+  // 与 CrudPage 列表共享查询缓存：useCrudResource 将 queryKey 展开为 ['cephalometric', page, search]，
+  // 这里使用同一形态的键（page=1、search=''），同一份列表数据只拉取一次，且随列表分页/搜索联动。
   const caseList = useQuery({
-    queryKey: ['cephalometric', 'caseList', 1, ''],
+    queryKey: ['cephalometric', 1, ''],
     queryFn: () => apiRequest<Page<CephalometricRow>>('/resources/cephalometricCases?page=1&pageSize=50'),
   });
   const compareOptions = caseList.data?.items ?? [];

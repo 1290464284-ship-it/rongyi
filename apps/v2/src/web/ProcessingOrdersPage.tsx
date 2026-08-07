@@ -5,6 +5,7 @@ import { CrudPage } from './CrudPage';
 import { DataTable, Dialog, LoadingState, PageError } from './components';
 import { formatDateTime, formatMoney, toCents, centsToYuanString } from './format';
 import { errorMessage } from './messages';
+import { useAsyncAction } from './use-async-action';
 import { useToast } from './toast-context';
 import {
   FLOW_STATUSES,
@@ -147,8 +148,9 @@ export function ProcessingOrdersPage() {
     event.preventDefault();
     if (settleBusy || !settleTarget) return;
     const amount = toCents(settleAmount);
-    if (!settleAmount.trim() || !Number.isFinite(amount) || amount < 0) {
-      showToast('请输入有效的结算金额', 'error');
+    // M11：金额必须 > 0，0 元空单不允许进入已结算状态
+    if (!settleAmount.trim() || !Number.isFinite(amount) || amount <= 0) {
+      showToast('请输入有效的结算金额（需大于 0）', 'error');
       return;
     }
     setSettleBusy(true);
@@ -231,19 +233,23 @@ export function ProcessingOrdersPage() {
           if (editing) {
             const orderId = editingIdRef.current;
             if (!orderId) throw new Error('缺少编辑记录 ID');
-            await apiRequest(`/resources/processingOrders/${orderId}`, {
-              method: 'PATCH',
-              body: JSON.stringify({
-                patientId: form.patientId,
-                doctorId: form.doctorId || undefined,
-                number: form.number.trim(),
-                shade: form.shade || undefined,
-                teethNumbers: splitList(form.teethNumbers),
-                totalFee: toCents(form.totalFee) || calculatedTotalFee,
-                status: editingStatusRef.current ?? 'DRAFT',
-              }),
-            });
-            await reconcileProcessingItems(orderId, form.items);
+            try {
+              await apiRequest(`/resources/processingOrders/${orderId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({
+                  patientId: form.patientId,
+                  doctorId: form.doctorId || undefined,
+                  number: form.number.trim(),
+                  shade: form.shade || undefined,
+                  teethNumbers: splitList(form.teethNumbers),
+                  totalFee: toCents(form.totalFee) || calculatedTotalFee,
+                  status: editingStatusRef.current ?? 'DRAFT',
+                }),
+              });
+              await reconcileProcessingItems(orderId, form.items);
+            } catch (error) {
+              throw new Error(`${errorMessage(error, '更新加工单失败')}；部分明细可能未保存，请核对后重试`);
+            }
             return;
           }
           await apiRequest('/processing-orders', {
@@ -270,10 +276,10 @@ export function ProcessingOrdersPage() {
             <button onClick={() => void openFlow(row)}>流程</button>
             <ProcessingStatusSelect
               rowId={row.id}
-              onTransition={(id, status) => void transitionProcessingOrder(showToast, ctx.reload, id, status)}
+              onTransition={(id, status) => transitionProcessingOrder(showToast, ctx.reload, id, status)}
             />
             {row.settleStatus === 'SETTLED' ? (
-              <button onClick={() => void unsettleProcessingOrder(row, ctx.reload)}>撤销结算</button>
+              <UnsettleButton onDone={() => unsettleProcessingOrder(row, ctx.reload)} />
             ) : (
               <button onClick={() => openSettle(row, ctx.reload)}>结算</button>
             )}
@@ -390,20 +396,22 @@ async function transitionProcessingOrder(
   }
 }
 
-/** 行内受控状态下拉：选中后立即复位为占位项，避免非受控 select 在行复用后残留旧值。 */
+/** 行内受控状态下拉：选中后立即复位为占位项，避免非受控 select 在行复用后残留旧值；busy 期间禁用。 */
 function ProcessingStatusSelect({ rowId, onTransition }: {
   rowId: string;
-  onTransition: (id: string, status: string) => void;
+  onTransition: (id: string, status: string) => Promise<void>;
 }) {
+  const { busy, run } = useAsyncAction();
   const [value, setValue] = useState('');
   return (
     <select
       value={value}
       aria-label="变更加工状态"
+      disabled={busy}
       onChange={(event) => {
         const next = event.target.value;
         setValue('');
-        if (next) onTransition(rowId, next);
+        if (next) void run(() => onTransition(rowId, next));
       }}
     >
       <option value="">变更状态</option>
@@ -411,5 +419,15 @@ function ProcessingStatusSelect({ rowId, onTransition }: {
         <option key={value} value={value}>{label}</option>
       ))}
     </select>
+  );
+}
+
+/** 行内“撤销结算”按钮：busy 期间禁用，防止双击重复撤销。 */
+function UnsettleButton({ onDone }: { onDone: () => Promise<void> }) {
+  const { busy, run } = useAsyncAction();
+  return (
+    <button disabled={busy} onClick={() => run(onDone)}>
+      {busy ? '撤销中...' : '撤销结算'}
+    </button>
   );
 }
