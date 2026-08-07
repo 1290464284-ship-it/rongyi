@@ -458,21 +458,38 @@ body {
 
 .tabs {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  gap: 4px;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 4px;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   margin-bottom: 16px;
 }
 
 .tab {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  border-radius: var(--radius-xs);
+  padding: 8px 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
+}
+
+.tab:hover {
   background: var(--surface);
   color: var(--text);
-  border: 1px solid var(--border-strong);
 }
 
 .tab.active {
-  background: var(--primary);
-  color: white;
-  border-color: var(--primary);
+  background: var(--surface);
+  color: var(--primary);
+  box-shadow: var(--shadow-pressed);
 }
 
 .tab-panel {
@@ -634,6 +651,109 @@ small {
   color: var(--success);
 }
 
+.stat-card-top {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+.stat-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-xs);
+  background: var(--soft);
+  color: var(--primary);
+}
+
+.dashboard-page .page-head {
+  align-items: flex-end;
+  margin-bottom: 4px;
+}
+
+.dashboard-page .page-head p {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.quick-action-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.quick-action-list a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-weight: 600;
+  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.quick-action-list a:hover {
+  background: var(--soft);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.todo-list {
+  display: grid;
+  gap: 8px;
+}
+
+.todo-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface-muted);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+
+.todo-icon {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border-radius: var(--radius-xs);
+}
+
+.todo-icon.warning {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.todo-icon.primary {
+  background: var(--soft);
+  color: var(--primary);
+}
+
+.todo-item strong {
+  display: block;
+  font-size: 13px;
+}
+
+.todo-item span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -769,6 +889,10 @@ small {
 
   .content {
     padding: 14px;
+  }
+
+  .dashboard-grid {
+    grid-template-columns: 1fr;
   }
 
   .analytics-grid {
