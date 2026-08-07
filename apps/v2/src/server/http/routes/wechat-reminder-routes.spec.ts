@@ -8,6 +8,7 @@ import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
 import { registerWechatReminderRoutes } from './wechat-reminder-routes';
+import { buildRouteDeps } from './route-deps.helper';
 
 describe('wechat reminder routes', () => {
   let dataDir: string;
@@ -35,7 +36,7 @@ describe('wechat reminder routes', () => {
       };
       next();
     });
-    registerWechatReminderRoutes(app, db);
+    registerWechatReminderRoutes(app, buildRouteDeps(db));
   });
 
   afterAll(() => {

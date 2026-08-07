@@ -4,11 +4,13 @@
  * 路由策略已覆盖 /processing-orders 与 /processing-flow-stats（financeStaff）。
  */
 import type { Express } from 'express';
-import type Database from 'better-sqlite3';
+
 import { wrapAsync } from '../middleware';
 import { ProcessingFlowService } from '../../application/service-modules/processing-flow';
+import type { RouteDependencies } from './deps';
 
-export function registerProcessingFlowRoutes(app: Express, db: Database.Database): void {
+export function registerProcessingFlowRoutes(app: Express, deps: RouteDependencies): void {
+  const { db } = deps;
   const service = new ProcessingFlowService(db);
 
   app.get('/api/v2/processing-orders/:id/steps', wrapAsync(async (req, res) => {

@@ -5,11 +5,13 @@
  * 无需新增规则。
  */
 import type { Express } from 'express';
-import type Database from 'better-sqlite3';
+
 import { wrapAsync } from '../middleware';
 import { ProcessingSettleService } from '../../application/service-modules/processing-settle';
+import type { RouteDependencies } from './deps';
 
-export function registerProcessingSettleRoutes(app: Express, db: Database.Database): void {
+export function registerProcessingSettleRoutes(app: Express, deps: RouteDependencies): void {
+  const { db } = deps;
   const service = new ProcessingSettleService(db);
 
   app.post('/api/v2/processing-orders/:id/settle', wrapAsync(async (req, res) => {

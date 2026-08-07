@@ -11,11 +11,13 @@
  * 统一 `{ success: true, data }` 响应；错误由 wrapAsync + app 级错误中间件处理。
  */
 import type { Express } from 'express';
-import type Database from 'better-sqlite3';
+
 import { wrapAsync } from '../middleware';
 import { ShiftTemplateService } from '../../application/service-modules/shift-template';
+import type { RouteDependencies } from './deps';
 
-export function registerShiftTemplateRoutes(app: Express, db: Database.Database): void {
+export function registerShiftTemplateRoutes(app: Express, deps: RouteDependencies): void {
+  const { db } = deps;
   const service = new ShiftTemplateService(db);
 
   app.get('/api/v2/shift-templates', wrapAsync((req, res) => {

@@ -9,6 +9,7 @@ import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
 import { AppError } from '../../infrastructure/errors';
 import { registerFirstExamTrackingRoutes } from './first-exam-tracking-routes';
+import { buildRouteDeps } from './route-deps.helper';
 
 describe('first exam tracking routes', () => {
   let db: Database.Database;
@@ -33,7 +34,7 @@ describe('first exam tracking routes', () => {
       };
       next();
     });
-    registerFirstExamTrackingRoutes(app, db);
+    registerFirstExamTrackingRoutes(app, buildRouteDeps(db));
     app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
       const appError = error instanceof AppError
         ? error

@@ -9,6 +9,7 @@ import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
 import { AppError } from '../../infrastructure/errors';
 import { registerFollowUpExecutionRoutes } from './follow-up-execution-routes';
+import { buildRouteDeps } from './route-deps.helper';
 
 describe('follow-up execution routes', () => {
   let db: Database.Database;
@@ -33,7 +34,7 @@ describe('follow-up execution routes', () => {
       };
       next();
     });
-    registerFollowUpExecutionRoutes(app, db);
+    registerFollowUpExecutionRoutes(app, buildRouteDeps(db));
     app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
       const appError = error instanceof AppError
         ? error

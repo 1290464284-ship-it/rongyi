@@ -5,11 +5,13 @@
  *   { pattern: /^\/api\/v2\/wechat-reminders/, roles: ['BOSS', 'ADMIN', 'DOCTOR', 'RECEPTIONIST', 'NURSE'] }
  */
 import type { Express } from 'express';
-import type Database from 'better-sqlite3';
+
 import { wrapAsync } from '../middleware';
 import { WechatReminderService } from '../../application/service-modules/wechat-reminder';
+import type { RouteDependencies } from './deps';
 
-export function registerWechatReminderRoutes(app: Express, db: Database.Database): void {
+export function registerWechatReminderRoutes(app: Express, deps: RouteDependencies): void {
+  const { db } = deps;
   const service = new WechatReminderService(db);
 
   app.get('/api/v2/wechat-reminders/today', wrapAsync(async (req, res) => {

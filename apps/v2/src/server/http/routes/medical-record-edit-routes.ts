@@ -1,7 +1,8 @@
 import type { Express } from 'express';
-import type Database from 'better-sqlite3';
+
 import { wrapAsync } from '../middleware';
 import { MedicalRecordEditService } from '../../application/service-modules/medical-record-edit';
+import type { RouteDependencies } from './deps';
 
 /**
  * 病历修改申请与审核端点。
@@ -10,7 +11,8 @@ import { MedicalRecordEditService } from '../../application/service-modules/medi
  * （/^\/api\/v2\/(registrations|visits|first-exams|treatments|medical-records|...)/），
  * 无需新增规则。
  */
-export function registerMedicalRecordEditRoutes(app: Express, db: Database.Database): void {
+export function registerMedicalRecordEditRoutes(app: Express, deps: RouteDependencies): void {
+  const { db } = deps;
   const service = new MedicalRecordEditService(db);
 
   app.post('/api/v2/medical-records/:id/edit-request', wrapAsync(async (req, res) => {

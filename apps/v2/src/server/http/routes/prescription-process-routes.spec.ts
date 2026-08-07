@@ -9,6 +9,7 @@ import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
 import { AppError } from '../../infrastructure/errors';
 import { registerPrescriptionProcessRoutes } from './prescription-process-routes';
+import { buildRouteDeps } from './route-deps.helper';
 
 describe('prescription process routes', () => {
   let db: Database.Database;
@@ -68,7 +69,7 @@ describe('prescription process routes', () => {
       };
       next();
     });
-    registerPrescriptionProcessRoutes(app, db);
+    registerPrescriptionProcessRoutes(app, buildRouteDeps(db));
     app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
       const appError = error instanceof AppError
         ? error

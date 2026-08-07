@@ -9,6 +9,7 @@ import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
 import { errorMiddleware } from '../middleware';
 import { registerTreatmentPlanRoutes } from './treatment-plan-routes';
+import { buildRouteDeps } from './route-deps.helper';
 
 describe('treatment plan routes', () => {
   let db: Database.Database;
@@ -39,7 +40,7 @@ describe('treatment plan routes', () => {
       };
       next();
     });
-    registerTreatmentPlanRoutes(app, db);
+    registerTreatmentPlanRoutes(app, buildRouteDeps(db));
     // errorMiddleware 声明 5 个参数，router@2 仅将 fn.length === 4 的中间件视为错误处理器，故用 4 参包装
     app.use((error: unknown, req: express.Request, res: express.Response, next: express.NextFunction) => {
       errorMiddleware(error, req, res, next);

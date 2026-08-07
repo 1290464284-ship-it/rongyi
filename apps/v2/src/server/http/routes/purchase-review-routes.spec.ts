@@ -9,6 +9,7 @@ import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
 import { AppError } from '../../infrastructure/errors';
 import { registerPurchaseReviewRoutes } from './purchase-review-routes';
+import { buildRouteDeps } from './route-deps.helper';
 
 describe('purchase review routes', () => {
   let db: Database.Database;
@@ -35,7 +36,7 @@ describe('purchase review routes', () => {
       };
       next();
     });
-    registerPurchaseReviewRoutes(app, db);
+    registerPurchaseReviewRoutes(app, buildRouteDeps(db));
     app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
       const appError = error instanceof AppError
         ? error
