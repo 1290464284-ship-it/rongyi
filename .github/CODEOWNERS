@@ -8,4 +8,6 @@ apps/v2/scripts/ @rongyi/core
 # Release and governance assets.
 .github/workflows/v2-release.yml @rongyi/governance
 .github/workflows/v2-ci.yml @rongyi/governance
+.github/workflows/v2-internal-release.yml @rongyi/governance
+.github/workflows/v2-windows-smoke.yml @rongyi/governance
 AGENTS.md @rongyi/governance

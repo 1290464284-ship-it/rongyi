@@ -102,6 +102,35 @@ describe('database bootstrap', () => {
     helper.close();
   });
 
+  it('aligns legacy tables missing declared columns so unique index creation succeeds (round7 smoke fix)', () => {
+    // The installer-shipped legacy dental.sqlite (2.1.x era) has ChargeCombo
+    // without the `code` column that V2 declares as unique; createUniqueIndexes
+    // used to crash with "no such column: code" on every fresh import.
+    const legacyDir = path.join(dataDir, 'legacy-chargecombo');
+    fs.mkdirSync(legacyDir, { recursive: true });
+    const legacyPath = path.join(legacyDir, 'v2.sqlite');
+    const legacy = new Database(legacyPath);
+    legacy.exec(
+      `CREATE TABLE ChargeCombo (
+         id TEXT PRIMARY KEY, name TEXT, category TEXT, isPublic INTEGER,
+         creatorId TEXT, clinicId TEXT, createdAt TEXT, updatedAt TEXT, deletedAt TEXT
+       )`,
+    );
+    legacy
+      .prepare(`INSERT INTO ChargeCombo (id, name, clinicId, createdAt, updatedAt) VALUES (?, '洗牙套餐', 'c1', '2026-01-01', '2026-01-01')`)
+      .run('combo-1');
+    legacy.close();
+
+    const db = createDatabase(legacyDir, legacyPath);
+    const row = db.prepare('SELECT code FROM ChargeCombo WHERE id = ?').get('combo-1') as { code: string };
+    expect(row.code).toMatch(/^LEGACY-\d{8}$/);
+    const index = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'idx_v2_unique_chargeCombos_code'").get() as
+      | { sql: string }
+      | undefined;
+    expect(index?.sql ?? '').toContain('ON ChargeCombo');
+    db.close();
+  });
+
   it('honors the configured data directory default and production seed guard', () => {
     const envDataDir = path.join(dataDir, 'env-data');
     process.env.V2_DATA_DIR = envDataDir;

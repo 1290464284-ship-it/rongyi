@@ -12,20 +12,43 @@ on:
       - 'apps/v2/**'
       - '.github/workflows/v2-windows-smoke.yml'
 
+# Round7 H2：本 workflow 只读（不需要写仓库权限）。
+permissions:
+  contents: read
+
+# Round7 M3：同一 PR 重复 push 时取消进行中的旧 smoke。
+concurrency:
+  group: v2-windows-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   windows-smoke:
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24 runtime, Round7 M4)
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
           version: 11.15.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      # Round7 M14：缓存 electron-builder 的 Electron / NSIS 下载
+      # （%LOCALAPPDATA%\electron\Cache 与 %LOCALAPPDATA%\electron-builder\Cache），
+      # 降低每个 PR 全量 electron:dist 的成本；仍做完整 NSIS 安装验证，smoke
+      # 有效性不变。继续保留 PR 触发：本 job 是 required check（Round7 H3）。
+      - name: Cache Electron binaries
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ${{ runner.temp }}/../electron/Cache
+            ${{ runner.temp }}/../electron-builder/Cache
+          key: electron-builder-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -55,13 +78,17 @@ jobs:
         env:
           V2_PREVIOUS_INSTALLER_URL: ${{ github.event.inputs.previous_installer_url }}
         run: |
-          Invoke-WebRequest -Uri $env:V2_PREVIOUS_INSTALLER_URL -OutFile apps/v2/release-v2/previous-installer.exe
+          # Round7 M7：下载到 RUNNER_TEMP，避免 previous-installer.exe 残留
+          # 在 release-v2/ 被后续 *.exe 通配/资产逻辑误收录。
+          $dir = Join-Path $env:RUNNER_TEMP 'v2-upgrade'
+          New-Item -ItemType Directory -Path $dir -Force | Out-Null
+          Invoke-WebRequest -Uri $env:V2_PREVIOUS_INSTALLER_URL -OutFile (Join-Path $dir 'previous-installer.exe')
 
       - name: Run upgrade smoke
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.previous_installer_url != ''
         shell: pwsh
         env:
-          V2_PREVIOUS_INSTALLER: apps/v2/release-v2/previous-installer.exe
+          V2_PREVIOUS_INSTALLER: ${{ runner.temp }}/v2-upgrade/previous-installer.exe
           V2_CURRENT_INSTALLER: ${{ steps.current-installer.outputs.path }}
         run: |
           powershell -ExecutionPolicy Bypass -File apps/v2/scripts/upgrade-smoke.ps1 `
