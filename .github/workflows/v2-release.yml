@@ -5,27 +5,54 @@ on:
     tags:
       - 'v2-[0-9]*'
 
+# 发布需要写 Release（contents: write）。注意：本 workflow 携带
+# CSC_LINK / CSC_KEY_PASSWORD 签名证书 secrets，所有第三方 action 一律
+# pin 40 位 commit SHA（Round7 H1），防 tag 被上游改写导致供应链 RCE。
 permissions:
   contents: write
+
+# Round7 M3：同一时间只允许一个 release 构建，避免 latest.yml / 资产互相覆盖。
+concurrency:
+  group: v2-release
+  cancel-in-progress: false
 
 jobs:
   build:
     runs-on: windows-latest
+    # Round7 M1：production environment 必须配置 required reviewers 才能算
+    # 受保护发布。GitHub 设置层面（Settings > Environments > production）
+    # 需人工配置 reviewers + 部署保护；未配置前 tag push 即直接发布
+    # （默认行为），发布前应人工核对 tag 与 release 内容。
     environment: production
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24 runtime, Round7 M4)
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
           version: 11.15.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install
         run: pnpm install --frozen-lockfile
+
+      # Round7 C2：tag 与 package.json 版本一致性门禁（internal-release 已有，
+      # 正式 release 补齐），避免 2.2.0 式版本漂移再次发生。
+      - name: Validate tag matches package.json version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          PKG_VERSION=$(node -p "require('./apps/v2/package.json').version")
+          if [ "$RELEASE_TAG" != "v2-$PKG_VERSION" ]; then
+            echo "::error::tag $RELEASE_TAG does not match package.json version $PKG_VERSION"
+            exit 1
+          fi
 
       - name: Verify
         run: |
@@ -57,6 +84,11 @@ jobs:
         run: pnpm --filter @dental/v2 run verify:package
 
       - name: Verify trusted signature
+        env:
+          # Round7 M5：白名单优先——把正式签名证书指纹配置到仓库
+          # Settings > Variables > V2_EXPECTED_CERT_THUMBPRINT；未配置时
+          # 脚本退化为信任链校验（非自签名 + X509 链构建 + 有效期）。
+          V2_EXPECTED_CERT_THUMBPRINT: ${{ vars.V2_EXPECTED_CERT_THUMBPRINT }}
         run: pnpm --filter @dental/v2 run verify:signature
 
       - name: Installer smoke
@@ -68,12 +100,16 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           V2_RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          $releases = @(gh release list --json tagName --jq '.[].tagName' |
-            Where-Object { $_ -match '^v2-\d+\.\d+\.\d+$' })
+          # Round7 H9：显式 --limit 200 + semver 排序，避免默认 30 条分页与
+          # 隐式创建时间排序导致 previous 找错/找不到；skip 时输出
+          # ::warning:: 便于审计，而不是静默 exit 0。
+          $releases = @(gh release list --limit 200 --json tagName --jq '.[].tagName' |
+            Where-Object { $_ -match '^v2-\d+\.\d+\.\d+$' } |
+            Sort-Object { [version](($_ -replace '^v2-', '')) } -Descending)
           $current = $env:V2_RELEASE_TAG
           $index = [array]::IndexOf($releases, $current)
           if ($index -lt 0 -or $index -ge $releases.Count - 1) {
-            Write-Host "No previous release available; skipping upgrade smoke"
+            Write-Host "::warning::No previous release available; skipping upgrade smoke (current=$current, releases=$($releases.Count))"
             exit 0
           }
           $previous = $releases[$index + 1]
@@ -85,9 +121,9 @@ jobs:
           gh release download $previous --pattern '*.exe' --dir $dir
           $previousExe = Get-ChildItem -LiteralPath $dir -Filter '*.exe' |
             Select-Object -First 1 -ExpandProperty FullName
-          $currentExe = Get-ChildItem -LiteralPath apps/v2/release-v2 -Filter '*.exe' |
-            Sort-Object LastWriteTime -Descending |
-            Select-Object -First 1 -ExpandProperty FullName
+          # Round7 M7：用 artifact-name.mjs 精确计算当前 installer 文件名，
+          # 不依赖通配符（release-v2 中可能残留旧 exe）。
+          $currentExe = Join-Path $PWD ("apps/v2/release-v2/" + (node apps/v2/scripts/artifact-name.mjs))
           powershell -ExecutionPolicy Bypass -File apps/v2/scripts/upgrade-smoke.ps1 `
             -CurrentInstallerPath $currentExe `
             -PreviousInstallerPath $previousExe
@@ -97,12 +133,21 @@ jobs:
           pnpm --filter @dental/v2 run update:metadata
           pnpm --filter @dental/v2 run verify:update
 
+      # Round7 M7：解析精确资产名（替代 *.exe 通配符）。
+      - name: Resolve release asset names
+        id: assets
+        shell: bash
+        run: |
+          INSTALLER=$(node apps/v2/scripts/artifact-name.mjs)
+          echo "installer=$INSTALLER" >> "$GITHUB_OUTPUT"
+          echo "blockmap=$INSTALLER.blockmap" >> "$GITHUB_OUTPUT"
+
       - name: Publish release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: |
-            apps/v2/release-v2/*.exe
-            apps/v2/release-v2/*.blockmap
+            apps/v2/release-v2/${{ steps.assets.outputs.installer }}
+            apps/v2/release-v2/${{ steps.assets.outputs.blockmap }}
             apps/v2/release-v2/latest.yml
 
       - name: Verify remote release

@@ -1,5 +1,21 @@
 /**
  * Uniform application error type.
+ *
+ * 错误码注册表（Round7 M9）——新增错误码时必须同步登记：
+ *
+ * | code                 | status | 可重试 | 说明 |
+ * |----------------------|--------|--------|------|
+ * | VALIDATION_ERROR     | 400    | 否     | 参数/请求体校验失败（details 白名单暴露） |
+ * | PAYLOAD_TOO_LARGE    | 413    | 否     | 请求体超过大小限制 |
+ * | UNAUTHORIZED         | 401    | 否     | 未认证 / 凭证无效 / 会话失效 |
+ * | FORBIDDEN            | 403    | 否     | 权限不足 |
+ * | NOT_FOUND            | 404    | 否     | 资源不存在 |
+ * | CONFLICT             | 409    | 否     | 状态冲突（重复创建、唯一键冲突等） |
+ * | INTERNAL_ERROR       | 500    | 是     | 未知内部错误（响应不泄露细节，凭 traceId 检索日志） |
+ *
+ * 约定：5xx 只暴露 INTERNAL_ERROR + traceId；业务层可用更多 5xx 子类码
+ * （如 DB_UNAVAILABLE / BACKUP_FAILED）但 message 必须保持用户可读且不含
+ * 内部细节。前端按上表判断可重试性；排障凭 traceId 在 v2.log 中检索。
  */
 
 export class AppError extends Error {
