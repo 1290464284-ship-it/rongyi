@@ -3,6 +3,7 @@ import { apiRequest } from './api';
 import type { Page } from './types';
 import { DataTable, LoadingState, PageError, type DataTableColumn } from './components';
 import { errorMessage } from './messages';
+import { useAsyncAction } from './use-async-action';
 import { useToast } from './toast-context';
 
 export function PatientWorkflowPage() {
@@ -46,7 +47,7 @@ export function PatientWorkflowPage() {
     {
       key: 'actions',
       label: '操作',
-      render: (row) => <button onClick={() => calculate(String(row.id))}>计算风险</button>,
+      render: (row) => <CalculateRiskButton patientId={String(row.id)} onDone={calculate} />,
     },
   ];
 
@@ -64,5 +65,15 @@ export function PatientWorkflowPage() {
       <h2>历史评分</h2>
       <DataTable columns={scoreColumns} rows={scores.data?.items ?? []} keyField="id" emptyText="暂无评分记录" />
     </div>
+  );
+}
+
+/** 行内“计算风险”按钮：busy 期间禁用，防止双击重复触发评分计算。 */
+function CalculateRiskButton({ patientId, onDone }: { patientId: string; onDone: (patientId: string) => Promise<void> }) {
+  const { busy, run } = useAsyncAction();
+  return (
+    <button disabled={busy} onClick={() => run(() => onDone(patientId))}>
+      {busy ? '计算中...' : '计算风险'}
+    </button>
   );
 }

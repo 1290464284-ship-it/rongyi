@@ -5,6 +5,7 @@ import { CrudPage } from './CrudPage';
 import { Dialog, LoadingState, PageError, SearchableSelect, type DataTableColumn } from './components';
 import { formatDateTime, centsToYuanString, toCents } from './format';
 import { errorMessage } from './messages';
+import { useAsyncAction } from './use-async-action';
 import { useToast, type ToastKind } from './toast-context';
 
 interface PrescriptionRow extends Record<string, unknown> {
@@ -234,7 +235,11 @@ export function PrescriptionsPage() {
           row.status === 'PROCESSED' ? (
             <button onClick={() => setStatusTarget({ row, reload: ctx.reload })}>查看状态</button>
           ) : (
-            <button onClick={() => void processPrescription(row, ctx.reload, showToast)}>处理</button>
+            <ProcessPrescriptionButton
+              row={row}
+              reload={ctx.reload}
+              showToast={showToast}
+            />
           )
         }
         renderForm={(ctx) => {
@@ -253,6 +258,24 @@ export function PrescriptionsPage() {
         )}
       </Dialog>
     </>
+  );
+}
+
+/** 行内“处理”按钮：busy 期间禁用，防止双击重复生成划价单与领药单。 */
+function ProcessPrescriptionButton({
+  row,
+  reload,
+  showToast,
+}: {
+  row: PrescriptionRow;
+  reload: () => Promise<unknown>;
+  showToast: (message: string, kind?: ToastKind) => void;
+}) {
+  const { busy, run } = useAsyncAction();
+  return (
+    <button disabled={busy} onClick={() => run(() => processPrescription(row, reload, showToast))}>
+      {busy ? '处理中...' : '处理'}
+    </button>
   );
 }
 
