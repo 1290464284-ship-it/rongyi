@@ -508,6 +508,16 @@ a {
   min-width: 0;
 }
 
+.page > h1:first-child,
+.hub > h1:first-child,
+.page > .page-head:first-child {
+  margin-bottom: 16px;
+}
+
+.page-head h1 {
+  margin: 0;
+}
+
 /* 区块标题：14px/600（设计稿 B+A 层级） */
 .content h2,
 .content h3 {
