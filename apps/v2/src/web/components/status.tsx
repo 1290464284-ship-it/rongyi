@@ -8,7 +8,17 @@ export function PageError({ message }: { message: string }) {
 }
 
 export function LoadingState({ label = '加载中...' }: { label?: string }) {
-  return <div className="page-state">{label}</div>;
+  return (
+    <div className="page-state skeleton-state">
+      <span className="visually-hidden">{label}</span>
+      <div className="skeleton-block">
+        <div className="skeleton-line w60" />
+        <div className="skeleton-line w90" />
+        <div className="skeleton-line w75" />
+        <div className="skeleton-line w40" />
+      </div>
+    </div>
+  );
 }
 
 export function EmptyState({ message = '暂无数据' }: { message?: string }) {
