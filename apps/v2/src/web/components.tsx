@@ -1,6 +1,6 @@
 import { Component, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
-import { apiRequest } from './api';
+import { apiRequest, getSignedFileUrl } from './api';
 import type { Page } from './types';
 import { errorMessage, friendlyError } from './messages';
 
@@ -188,6 +188,55 @@ export function LoadingState({ label = '加载中...' }: { label?: string }) {
 
 export function EmptyState({ message = '暂无数据' }: { message?: string }) {
   return <div className="table-empty">{message}</div>;
+}
+
+/**
+ * S-L8：需要鉴权的文件图片。`<img>` 无法携带 Authorization 头，
+ * 组件先用带会话的请求向 /files/:name/sign 换取短期签名 URL 再渲染；
+ * 无 path 时渲染 fallback，换取失败时显示占位错误。
+ */
+export function SignedImage({
+  path,
+  alt,
+  className,
+  fallback = null,
+  loadingLabel = '图片加载中…',
+}: {
+  path?: string | null;
+  alt: string;
+  className?: string;
+  fallback?: ReactNode;
+  loadingLabel?: string;
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  // 渲染期调整：path 变化时复位异步状态，避免 effect 内同步 setState 级联渲染
+  const [currentPath, setCurrentPath] = useState<string | null | undefined>(path);
+  if (currentPath !== path) {
+    setCurrentPath(path);
+    setUrl(null);
+    setFailed(false);
+  }
+
+  useEffect(() => {
+    if (!path) return;
+    let cancelled = false;
+    void getSignedFileUrl(path)
+      .then((signed) => {
+        if (!cancelled) setUrl(signed);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [path]);
+
+  if (!path) return <>{fallback}</>;
+  if (failed) return <span className="error">{loadingLabel.replace('…', '失败')}</span>;
+  if (!url) return <span className="imaging-thumb-loading">{loadingLabel}</span>;
+  return <img className={className} src={url} alt={alt} />;
 }
 
 export function QueryBoundary({

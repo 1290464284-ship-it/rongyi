@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest, getApiOrigin, uploadFile } from './api';
+import { apiRequest, uploadFile } from './api';
 import { CrudPage } from './CrudPage';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
@@ -18,22 +18,11 @@ export function CephalometricPage() {
   const { showToast } = useToast();
   const editingIdRef = useRef<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [apiOrigin, setApiOrigin] = useState('');
   const [reportTarget, setReportTarget] = useState<CephalometricRow | null>(null);
   const [sendTarget, setSendTarget] = useState<CephalometricRow | null>(null);
   const [compareTargets, setCompareTargets] = useState<Set<string>>(new Set());
   const [compareResult, setCompareResult] = useState<CephalometricCompareResult | null>(null);
   const [comparing, setComparing] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    void getApiOrigin().then((origin) => {
-      if (!cancelled) setApiOrigin(origin);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   // 与 CrudPage 列表共享查询缓存：useCrudResource 将 queryKey 展开为 ['cephalometric', page, search]，
   // 这里使用同一形态的键（page=1、search=''），同一份列表数据只拉取一次，且随列表分页/搜索联动。
@@ -143,7 +132,7 @@ export function CephalometricPage() {
         }}
         messages={{ create: '头影测量已创建', update: '头影测量已更新', delete: '头影测量已删除' }}
         errorMessages={{ create: '创建头影测量失败', update: '更新头影测量失败', delete: '删除头影测量失败' }}
-        columns={cephalometricColumns(apiOrigin)}
+        columns={cephalometricColumns()}
         canEdit
         canDelete
         rowActions={(row, ctx) => (

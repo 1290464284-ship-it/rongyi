@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { withIdempotency } from '../../infrastructure/idempotency';
+import { removeSearchRow, upsertSearchRow } from '../../infrastructure/search-index';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { recordSyncChange } from '../../infrastructure/sync-change';
 import { SqliteChargeRepository } from '../../infrastructure/repositories/charge.repository';
@@ -128,6 +129,8 @@ export class ChargeService {
         status: 'UNPAID',
         remark: input.remark ?? null,
       });
+      // 直写搜索索引：Charge 行创建后同步其可检索内容（含患者姓名）。
+      upsertSearchRow(this.db, 'Charge', id);
       const insertItem = this.db.prepare(
         `INSERT INTO ChargeItem (
            id, chargeId, name, category, price, quantity, teethNumbers, subtotal, costType,
@@ -183,6 +186,8 @@ export class ChargeService {
       this.db.prepare(
         `UPDATE ChargeItem SET deletedAt = ?, updatedAt = ? WHERE chargeId = ? AND deletedAt IS NULL`,
       ).run(now, now, id);
+      // 直写搜索索引：软删后移除可检索内容，避免搜索命中已作废收费单。
+      removeSearchRow(this.db, 'Charge', id);
       // P2-3：取消收费单要通知同步端（删除记录）
       if (context.clinicId) {
         recordSyncChange(this.db, { tableName: 'Charge', recordId: id, operation: 'DELETE', clinicId: context.clinicId });
@@ -841,6 +846,8 @@ export class DebtService {
            SET paidAmount = ?, status = ?, updatedAt = ?
            WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
         ).run(chargePaid, chargeStatus, context.now().toISOString(), charge.id, ...tenantParams(context.clinicId));
+        // 直写搜索索引：Charge 状态变更后刷新其可检索内容。
+        upsertSearchRow(this.db, 'Charge', charge.id);
         // P2-3：直接改库的路径也必须进同步队列
         if (context.clinicId) {
           recordSyncChange(this.db, { tableName: 'Charge', recordId: charge.id, operation: 'UPDATE', clinicId: context.clinicId });

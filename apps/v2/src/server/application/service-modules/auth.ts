@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import type Database from 'better-sqlite3';
 import { AppError, ConflictError, NotFoundError, UnauthorizedError, ValidationError } from '../../infrastructure/errors';
 import { SqliteAuthRepository } from '../../infrastructure/repositories/core.repositories';
+import { upsertSearchRow } from '../../infrastructure/search-index';
 import { tenantAnd, tenantMatches, tenantParams, tenantWhere } from '../../infrastructure/tenant';
 import type { AppContext, User } from '../../../domain/contracts';
 import type { AuthRepository, AuthUserRecord } from '../ports';
@@ -27,6 +28,11 @@ const DUMMY_HASH = '$2a$10$CwTycUXWue0Thq9StjUM0uJ8cG5fVb55Qk9X7pL5Nh4bKj1R8f69y
 export class AuthService {
   private readonly db: Database.Database;
   private readonly authRepository: AuthRepository;
+  /** B-M9：refresh token 轮换的 5 秒窗口内存缓存（并发刷新共享同一新 token，
+   *  避免"两个并发请求互判重用"误吊销会话族）。logout 与重用检测时整表清空。 */
+  private readonly refreshCache = new Map<string, { expiresAt: number; session: AuthSession }>();
+  private static readonly REFRESH_CACHE_TTL_MS = 5_000;
+  private static readonly REFRESH_CACHE_MAX = 1_000;
 
   constructor(db: Database.Database, authRepository?: AuthRepository) {
     this.db = db;
@@ -54,12 +60,21 @@ export class AuthService {
       if (!row) throw new UnauthorizedError('Invalid username or password');
       const user = rowToUser(row);
       if (!user.active) throw new UnauthorizedError('User is disabled');
-      if (user.lockedUntil && new Date(user.lockedUntil).getTime() > Date.now()) {
-        throw new UnauthorizedError('Account is temporarily locked');
+      if (user.lockedUntil) {
+        const lockedTime = new Date(user.lockedUntil).getTime();
+        // B-L3：lockedUntil 不可解析（NaN）时 fail-closed，视为锁定并告警。
+        if (lockedTime > Date.now() || Number.isNaN(lockedTime)) {
+          if (Number.isNaN(lockedTime)) {
+            console.warn('user lockedUntil is not a valid date; treating account as locked', { userId: user.id });
+          }
+          throw new UnauthorizedError('Account is temporarily locked');
+        }
       }
       if (!valid) {
+        // S-M1：逐次退避锁定（1s,2s,4s,... 上限 60s），替代固定 5 次锁 15 分钟。
+        // 合法用户输入错误密码时只短暂等待，攻击者每次尝试成本随时间递增。
         const attempts = user.loginAttempts + 1;
-        const lockedUntil = attempts >= 5 ? new Date(Date.now() + 15 * 60_000).toISOString() : null;
+        const lockedUntil = new Date(Date.now() + Math.min(2 ** (attempts - 1) * 1000, 60_000)).toISOString();
         this.authRepository.updateLoginAttempts(user.id, attempts, lockedUntil, new Date().toISOString());
         throw new UnauthorizedError('Invalid username or password');
       }
@@ -81,6 +96,10 @@ export class AuthService {
   async refresh(refreshToken: string): Promise<AuthSession> {
     if (!refreshToken) throw new UnauthorizedError('Refresh token is required');
     const tokenHash = hashRefreshToken(refreshToken);
+    // B-M9：5 秒窗口内同一 token 的并发/重复 refresh 直接返回同一新会话，
+    // 避免竞态触发 RFC 6819 会话族误吊销。
+    const cached = this.refreshCache.get(tokenHash);
+    if (cached && cached.expiresAt > Date.now()) return cached.session;
     this.authRepository.cleanupUsedRefreshTokens(new Date(Date.now() - 90 * 86_400_000).toISOString());
     if (this.authRepository.isRefreshTokenUsed(tokenHash)) {
       // M5：refresh token 重用（被盗/重放）→ 按 RFC 6819 吊销整个会话族
@@ -98,8 +117,15 @@ export class AuthService {
       if (!row) throw new UnauthorizedError('Invalid refresh token');
       const user = rowToUser(row);
       if (!user.active) throw new UnauthorizedError('User is disabled');
-      if (user.lockedUntil && new Date(user.lockedUntil).getTime() > Date.now()) {
-        throw new UnauthorizedError('Account is temporarily locked');
+      if (user.lockedUntil) {
+        const lockedTime = new Date(user.lockedUntil).getTime();
+        // B-L3：lockedUntil 不可解析（NaN）时 fail-closed，视为锁定并告警。
+        if (lockedTime > Date.now() || Number.isNaN(lockedTime)) {
+          if (Number.isNaN(lockedTime)) {
+            console.warn('user lockedUntil is not a valid date; treating account as locked', { userId: user.id });
+          }
+          throw new UnauthorizedError('Account is temporarily locked');
+        }
       }
       const expiresAt = row.refreshTokenExpiresAt ? new Date(row.refreshTokenExpiresAt).getTime() : 0;
       if (!expiresAt || expiresAt <= Date.now()) {
@@ -117,7 +143,10 @@ export class AuthService {
       );
       const token = this.sign({ sub: user.id, clinicId: this.resolveClinicId(user), role: user.role, tokenVersion: user.tokenVersion });
       const { passwordHash: _passwordHash, ...safeUser } = user;
-      return { token, refreshToken: nextRefreshToken, expiresIn: 8 * 60 * 60, user: safeUser };
+      const session: AuthSession = { token, refreshToken: nextRefreshToken, expiresIn: 8 * 60 * 60, user: safeUser };
+      this.refreshCache.set(tokenHash, { expiresAt: Date.now() + AuthService.REFRESH_CACHE_TTL_MS, session });
+      if (this.refreshCache.size > AuthService.REFRESH_CACHE_MAX) this.refreshCache.clear();
+      return session;
     });
   }
 
@@ -125,6 +154,8 @@ export class AuthService {
   async logout(refreshToken: string): Promise<string | null> {
     if (!refreshToken) return null;
     const tokenHash = hashRefreshToken(refreshToken);
+    // B-M9：注销后同一 token 的缓存会话立即失效（防 5s 窗口内重放）。
+    this.refreshCache.clear();
     const row = this.authRepository.findByRefreshTokenHash(tokenHash);
     if (!row) return null;
     const now = new Date().toISOString();
@@ -135,6 +166,8 @@ export class AuthService {
 
   /** 重用检测后的会话族吊销（RFC 6819）：清除用户当前 refresh token 并使所有 access token 失效。 */
   private revokeReplayedFamily(tokenHash: string): void {
+    // B-M9：重用即视为会话被攻破，清空所有缓存会话，杜绝 5s 窗口内的缓存重放。
+    this.refreshCache.clear();
     try {
       const used = this.authRepository.findUsedRefreshToken(tokenHash);
       if (used?.userId) {
@@ -282,6 +315,15 @@ export class AuthService {
     const clinicIds = role === 'BOSS'
       ? [...new Set([...tenantParams(context.clinicId), ...(input.clinicIds ?? [])])]
       : [...tenantParams(context.clinicId)];
+    // S-L6：非 BOSS 创建者只能在其所属诊所范围内创建用户（防越权跨诊所开户/分配成员）。
+    // BOSS 为全局管理员，可跨诊所创建与分配（clinicIds 任意合法诊所）。
+    if (context.role !== 'BOSS') {
+      const creatorClinics = new Set(this.authRepository.clinicMemberships(context.userId).map((membership) => membership.clinicId));
+      // clinicIds 来自 tenantParams（DbParam[]）；非字符串视作不在创建者诊所范围内（fail-closed）。
+      if (!clinicIds.every((clinicId) => typeof clinicId === 'string' && creatorClinics.has(clinicId))) {
+        throw new AppError('FORBIDDEN', 'Cannot create users outside your clinic scope', 403);
+      }
+    }
     if (clinicIds.length > 0) {
       const placeholders = clinicIds.map(() => '?').join(',');
       const clinics = this.db.prepare(
@@ -312,17 +354,21 @@ export class AuthService {
       updatedAt: now,
       deletedAt: null,
     };
-    try {
-      this.authRepository.insertUser(record);
-    } catch (error) {
-      if (error instanceof Error && /UNIQUE constraint failed/.test(error.message)) {
-        throw new ConflictError('Username already exists');
+    // B-H6：用户插入与诊所成员关系必须同事务，避免"用户已建但成员关系缺失"
+    // 的中间态（半成品账号无法登录但占用用户名）。
+    this.runTx(() => {
+      try {
+        this.authRepository.insertUser(record);
+      } catch (error) {
+        if (error instanceof Error && /UNIQUE constraint failed/.test(error.message)) {
+          throw new ConflictError('Username already exists');
+        }
+        throw error;
       }
-      throw error;
-    }
-    for (const clinicId of clinicIds as string[]) {
-      this.authRepository.addClinicMembership(record.id, clinicId, role, now, now);
-    }
+      for (const clinicId of clinicIds as string[]) {
+        this.authRepository.addClinicMembership(record.id, clinicId, role, now, now);
+      }
+    });
     const { passwordHash: _passwordHash, ...safeUser } = rowToUser(record);
     return safeUser;
   }
@@ -505,6 +551,8 @@ export class AppointmentService {
           tempPatientName,
           tempPatientPhone || null,
         );
+        // B-H4：直写 Patient（临时患者建档）绕过 repository，需同步维护搜索索引。
+        upsertSearchRow(this.db, 'Patient', resolvedPatientId);
       }
       this.assertNoConflict(input.doctorId, input.chairId, input.startTime, input.endTime, context.clinicId);
       this.db.prepare(
@@ -529,6 +577,8 @@ export class AppointmentService {
         input.patientId ? null : (tempPatientName || null),
         input.patientId ? null : (tempPatientPhone || null),
       );
+      // B-H4：直写 Appointment（绕过 repository）需同步维护搜索索引。
+      upsertSearchRow(this.db, 'Appointment', id);
     });
     return { id, status: 'BOOKED' };
   }
@@ -545,6 +595,8 @@ export class AppointmentService {
     this.db.prepare(
       `UPDATE Appointment SET status = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).run(nextStatus, context.now().toISOString(), id, ...tenantParams(context.clinicId));
+    // B-H4：状态变更影响 Appointment 索引内容（含 status 字段）。
+    upsertSearchRow(this.db, 'Appointment', id);
     return { id, status: nextStatus };
   }
 

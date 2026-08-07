@@ -107,8 +107,13 @@ export function registerReadRoutes(app: Express, deps: ReadRouteDependencies): v
       res.json({ success: true, data: deps.stats.memberStats(req.context!) });
   }));
 
+  const PRINT_KINDS = ['report', 'analytics'] as const;
+
   app.get('/api/v2/print', wrapAsync(async (req, res) => {
       const kind = String(req.query.kind ?? 'report');
+      if (!(PRINT_KINDS as readonly string[]).includes(kind)) {
+        throw new ValidationError('unsupported print kind');
+      }
       let data: Record<string, unknown>;
       try {
         data = JSON.parse(String(req.query.data ?? '{}')) as Record<string, unknown>;
@@ -120,6 +125,9 @@ export function registerReadRoutes(app: Express, deps: ReadRouteDependencies): v
 
   app.post('/api/v2/print', wrapAsync(async (req, res) => {
       const kind = String(req.body?.kind ?? 'report');
+      if (!(PRINT_KINDS as readonly string[]).includes(kind)) {
+        throw new ValidationError('unsupported print kind');
+      }
       const rawData = req.body?.data;
       let data: Record<string, unknown>;
       if (rawData === undefined || rawData === null) {

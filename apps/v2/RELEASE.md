@@ -102,6 +102,18 @@ The `v2-release.yml` workflow requires `CSC_LINK` and `CSC_KEY_PASSWORD` GitHub
 Secrets. `CSC_LINK` must be a PKCS12 certificate file or its base64 content.
 The workflow fails before packaging when either secret is missing.
 
+> **S-H1 update integrity (Round 7):** `autoUpdater.autoDownload` is disabled —
+> the app only *notifies* about a new version and downloads the installer after
+> the user explicitly confirms on the desktop settings page ("下载更新"), then
+> requires a second confirmation to install. On Windows, electron-updater's
+> `NsisUpdater` only enforces Authenticode publisher verification when the
+> electron-builder config sets `build.win.publisherName`. Configure it (e.g.
+> `"publisherName": ["CN=<your company name>"]`) **only after** a CA-issued
+> code-signing certificate is in place via `CSC_LINK`/`CSC_KEY_PASSWORD`;
+> setting a publisher name that does not match the actual certificate will
+> make every update fail signature verification. Keep the default
+> `verifyUpdateCodeSignature` behavior — never assign it a boolean value.
+
 The repository ships a local development certificate (`certs/signing-cert.pfx`)
 so local packaging works without secrets. The release pipeline deliberately
 rejects it: `verify:signature` fails when the installer is signed with a

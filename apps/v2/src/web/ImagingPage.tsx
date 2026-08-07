@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest, getApiOrigin, uploadFile } from './api';
+import { apiRequest, uploadFile } from './api';
 import { CrudPage } from './CrudPage';
-import { ConfirmDialog, DataTable, SearchableSelect, type DataTableColumn } from './components';
+import { ConfirmDialog, DataTable, SearchableSelect, SignedImage, type DataTableColumn } from './components';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
 import type { Page } from './types';
@@ -113,22 +113,11 @@ export function ImagingPage() {
   const { showToast } = useToast();
   const editingIdRef = useRef<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [apiOrigin, setApiOrigin] = useState('');
   const [categoryForm, setCategoryForm] = useState({ name: '', type: 'ORTHODONTIC', sortOrder: 0, active: true });
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [deleteCategoryTarget, setDeleteCategoryTarget] = useState<ImagingCategoryRow | null>(null);
   const [compareLeftId, setCompareLeftId] = useState('');
   const [compareRightId, setCompareRightId] = useState('');
-
-  useEffect(() => {
-    let cancelled = false;
-    void getApiOrigin().then((origin) => {
-      if (!cancelled) setApiOrigin(origin);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const categories = useQuery({
     queryKey: ['imaging-categories'],
@@ -297,7 +286,7 @@ export function ImagingPage() {
         }}
         messages={{ create: '影像记录已创建', update: '影像记录已更新', delete: '影像记录已删除' }}
         errorMessages={{ create: '创建影像失败', update: '更新影像失败', delete: '删除影像失败' }}
-        columns={imagingColumns(apiOrigin, categoryOptions)}
+        columns={imagingColumns(categoryOptions)}
         canEdit
         canDelete
         renderForm={(ctx) => (
@@ -400,7 +389,7 @@ export function ImagingPage() {
         {canCompare ? (
           <div className="imaging-compare-view">
             <figure className="imaging-compare-item">
-              <img src={`${apiOrigin}${selectedLeft?.imageUrl ?? ''}`} alt={String(selectedLeft?.title ?? '影像')} />
+              <SignedImage path={selectedLeft?.imageUrl} alt={String(selectedLeft?.title ?? '影像')} />
               <figcaption>
                 <div>标题：{selectedLeft?.title ?? ''}</div>
                 <div>类型：{selectedLeft?.type ?? ''}</div>
@@ -409,7 +398,7 @@ export function ImagingPage() {
               </figcaption>
             </figure>
             <figure className="imaging-compare-item">
-              <img src={`${apiOrigin}${selectedRight?.imageUrl ?? ''}`} alt={String(selectedRight?.title ?? '影像')} />
+              <SignedImage path={selectedRight?.imageUrl} alt={String(selectedRight?.title ?? '影像')} />
               <figcaption>
                 <div>标题：{selectedRight?.title ?? ''}</div>
                 <div>类型：{selectedRight?.type ?? ''}</div>
@@ -426,15 +415,19 @@ export function ImagingPage() {
   );
 }
 
-function imagingColumns(apiOrigin: string, categories: ImagingCategoryRow[]): DataTableColumn<ImagingRow>[] {
+function imagingColumns(categories: ImagingCategoryRow[]): DataTableColumn<ImagingRow>[] {
   return [
     {
       key: 'preview',
       label: '预览',
-      render: (row) => {
-        const url = row.imageUrl ? `${apiOrigin}${row.imageUrl}` : '';
-        return url ? <img className="imaging-thumb" src={url} alt={String(row.title ?? '影像')} /> : '无图片';
-      },
+      render: (row) => (
+        <SignedImage
+          path={row.imageUrl}
+          alt={String(row.title ?? '影像')}
+          className="imaging-thumb"
+          fallback="无图片"
+        />
+      ),
     },
     { key: 'title', label: '标题' },
     { key: 'type', label: '类型' },

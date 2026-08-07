@@ -2,10 +2,15 @@ import { createHash, randomBytes } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import type { User, UserRole } from '../../../domain/contracts';
 import { NotFoundError } from '../../infrastructure/errors';
+import { secretFileValue } from '../../infrastructure/secret-file';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import type { AuthUserRecord } from '../ports';
 
 function _resolveJwtSecret(): string {
+  // S-L2：Electron 场景优先读 V2_SECRET_FILE（主进程注入的 0o600 临时文件），
+  // 其次兼容直跑环境（pnpm dev:api / 测试）的 V2_JWT_SECRET env。
+  const fileSecret = secretFileValue('jwt');
+  if (fileSecret) return fileSecret;
   const envSecret = process.env.V2_JWT_SECRET;
   if (envSecret) return envSecret;
   const nodeEnv = process.env.NODE_ENV ?? 'development';
@@ -57,7 +62,8 @@ export function newRefreshToken(): string {
 }
 
 export function backupEncryptionKey(): Buffer {
-  const key = process.env.V2_BACKUP_KEY;
+  // S-L2：优先 V2_SECRET_FILE（Electron），其次兼容直跑的 V2_BACKUP_KEY env。
+  const key = process.env.V2_BACKUP_KEY ?? secretFileValue('backupKey');
   if (!key) {
     throw new Error('V2_BACKUP_KEY is required for encrypted backups');
   }

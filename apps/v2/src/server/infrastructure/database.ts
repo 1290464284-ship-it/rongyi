@@ -10,6 +10,7 @@ function columnType(field: ResourceField): string {
     case 'money':
       return 'INTEGER';
     case 'number':
+    case 'decimal':
       return 'REAL';
     case 'boolean':
       return 'INTEGER';
@@ -22,8 +23,9 @@ function columnType(field: ResourceField): string {
     case 'relation':
       return 'TEXT';
     default: {
+      // B-L1：删掉死代码。未登记的类型直接抛错，避免未来新增类型被静默降级为 TEXT
+      // （列类型与元数据不一致会造成查询/校验行为漂移，且难以排查）。
       const unsupportedType: string = field.type as string;
-      return 'TEXT';
       throw new Error(`Unsupported column type: ${unsupportedType}`);
     }
   }
@@ -413,10 +415,11 @@ export function seedDatabase(db: Database.Database): void {
          username, passwordHash, name, role, active, loginAttempts, tokenVersion
        ) VALUES (?, ?, ?, ?, NULL, 'admin', ?, 'System Administrator', 'BOSS', 1, 0, 0)`,
     ).run(userId, clinicId, now, now, passwordHash);
-  } else if (process.env.NODE_ENV === 'development' && process.env.V2_ALLOW_DEV_SEED === '1') {
-    const passwordHash = bcrypt.hashSync(seedPassword, 10);
-    db.prepare('UPDATE User SET passwordHash = ?, active = 1, lockedUntil = NULL, updatedAt = ? WHERE id = ?')
-      .run(passwordHash, now, userId);
+  }
+  // 非生产且未显式配置 V2_ADMIN_PASSWORD 时，提醒默认管理员口令已生效；
+  // 测试环境静默，避免测试输出噪音。
+  if (!isProduction && !process.env.V2_ADMIN_PASSWORD && process.env.NODE_ENV !== 'test') {
+    console.warn('[seed] V2_ADMIN_PASSWORD not set: admin user uses the default seed password. Set V2_ADMIN_PASSWORD before first launch to harden credentials.');
   }
 
   const doctorRow = db.prepare("SELECT id FROM User WHERE username = 'doctor'").get() as { id: string } | undefined;

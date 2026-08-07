@@ -83,7 +83,8 @@ function validateField(field: ResourceField, raw: unknown): unknown {
       return value;
     }
     case 'boolean':
-      return raw === true || raw === 1 || raw === 'true';
+      // B-L4：'1' 字符串（表单/CSV/同步客户端常见）与布尔 true 等价，与 repository.serialize 保持一致。
+      return raw === true || raw === 1 || raw === 'true' || raw === '1';
     case 'enum':
       if (typeof raw !== 'string' || !field.enumValues?.includes(raw)) {
         throw new ValidationError(`${field.name} must be one of ${field.enumValues?.join(', ')}`);
