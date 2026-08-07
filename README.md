@@ -6,7 +6,7 @@ Express, and SQLite.
 ## Run
 
 ```powershell
-cd D:\Desktop\rongyi\source
+cd <repo-root>\apps\v2
 pnpm install
 pnpm dev
 ```
@@ -30,8 +30,16 @@ username: admin
 password: ry0801
 ```
 
+> Round7 I4：`admin/ry0801` 仅为开发环境默认账号（生产启动拒绝 seed 默认
+> 账号）。首次进入任何非开发环境必须先创建/修改管理员密码，禁止沿用默认
+> 密码。
+
 开发环境如需自动重置 admin 密码（默认 `ry0801`，可用 `V2_ADMIN_PASSWORD`
 覆盖），需显式设置 `V2_ALLOW_DEV_SEED=1`。
+
+> Round7 H6：仓库根 `apps/v2` 是 GitHub 实际生效的唯一副本。历史遗留的
+> `source/` 嵌套副本（含独立 `.git`）已废弃并在合并后删除；请勿再在其中
+> 开发，避免"本地过了、CI 红"的漂移问题。
 
 ## Desktop
 

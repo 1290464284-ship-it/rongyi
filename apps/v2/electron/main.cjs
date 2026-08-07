@@ -21,6 +21,7 @@ const { pathToFileURL } = require('node:url');
 
 const { randomInt } = require('node:crypto');
 const { shell } = require('electron');
+const net = require('node:net');
 
 const isDev = !app.isPackaged;
 let apiProcess = null;
@@ -215,6 +216,27 @@ function randomPort() {
   return randomInt(30000, 50000);
 }
 
+// Round7 M6：随机端口可能落入 Windows 排除端口保留段（README 已记录 3180
+// 的同类问题）或恰被其他进程占用。spawn 前先临时 bind 探测，失败换端口，
+// 最多尝试 10 次，避免 API 子进程 EADDRINUSE 后走重启退避、首次启动失败。
+function isPortFree(port) {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once('error', () => resolve(false));
+    server.listen({ port, host: '127.0.0.1' }, () => {
+      server.close(() => resolve(true));
+    });
+  });
+}
+
+async function pickFreePort() {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const candidate = randomPort();
+    if (await isPortFree(candidate)) return candidate;
+  }
+  throw new Error('无法在 30000-50000 段找到可用端口（连续 10 次探测均被占用）');
+}
+
 function waitForApi(port, timeoutMs = 30000) {
   return new Promise((resolve, reject) => {
     const startedAt = Date.now();
@@ -255,7 +277,7 @@ function apiScript() {
 
 async function startApi() {
   if (apiProcess && !apiProcess.killed) return apiPort;
-  apiPort = randomPort();
+  apiPort = await pickFreePort();
   const userDataDir = app.getPath('userData');
   // LEGACY: 旧版 Prisma 时代的 SQLite 数据库与 schema 目录。
   // 打包时需确保 resourcesPath/legacy/ 下存在 dental.sqlite 和 schema/ 目录。

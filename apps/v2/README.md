@@ -5,10 +5,14 @@ Refactored desktop-first implementation of the dental clinic management system.
 ## Run
 
 ```powershell
-cd D:\Desktop\rongyi\source
+cd <repo-root>\apps\v2
 pnpm install
 pnpm --filter @dental/v2 dev
 ```
+
+> Round7 H6：仓库根 `apps/v2` 是 GitHub 实际生效的唯一副本。历史遗留的
+> `source/` 嵌套副本（含独立 `.git`）已废弃并在合并后删除；请勿再在其中
+> 开发，避免"本地过了、CI 红"的漂移问题。
 
 Open the renderer at:
 
@@ -22,6 +26,10 @@ Default login:
 username: admin
 password: ry0801
 ```
+
+> Round7 I4：`admin/ry0801` 仅为开发环境默认账号（生产路径拒绝 seed 默认
+> 账号）。首次进入任何非开发环境必须先创建/修改管理员密码，禁止沿用默认
+> 密码。
 
 The API listens on:
 
@@ -56,9 +64,15 @@ existing data and fields remain available.
 
 ### Legacy database migration (老克隆升级)
 
-`apps/v2/legacy/dental.sqlite` has been removed from the repository (R2-P0-04):
-the patient database is no longer tracked by git, so fresh clones and upgraded
-clones do not contain it. Upgraders of an older clone should:
+`apps/v2/legacy/dental.sqlite`（约 2.4MB）随仓库跟踪（Round7 C1 从
+`v2-2.1.4` tag 恢复；发布打包与 installer/upgrade smoke 均依赖它）。新克隆
+开箱即可导入；老克隆若该文件曾被删除，先恢复：
+
+```powershell
+git show v2-2.1.4:apps/v2/legacy/dental.sqlite > apps/v2/legacy/dental.sqlite
+```
+
+如需改用仓库外的 legacy 文件（覆盖内置版本）：
 
 1. Move the old `apps/v2/legacy/dental.sqlite` to any path outside the
    repository, e.g. `D:\legacy\dental.sqlite`.
