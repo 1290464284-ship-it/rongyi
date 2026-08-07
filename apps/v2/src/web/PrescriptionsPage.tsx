@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest } from './api';
-import type { Page } from './types';
+import { apiRequest, fetchAllPages } from './api';
 import { CrudPage } from './CrudPage';
 import { Dialog, LoadingState, PageError, SearchableSelect, type DataTableColumn } from './components';
 import { formatDateTime, centsToYuanString, toCents } from './format';
@@ -168,10 +167,10 @@ export function PrescriptionsPage() {
     let cancelled = false;
     (async () => {
       try {
-        const page = await apiRequest<Page<Record<string, unknown>>>(
-          `/resources/prescriptionItems?prescriptionId=${prescriptionId}&page=1&pageSize=100`,
+        const items = await fetchAllPages<Record<string, unknown>>(
+          `/resources/prescriptionItems?prescriptionId=${prescriptionId}`,
         );
-        if (!cancelled) updateFormRef.current?.({ items: page.items.map(itemRowToForm) });
+        if (!cancelled) updateFormRef.current?.({ items: items.map(itemRowToForm) });
       } catch (error) {
         showToast(errorMessage(error, '加载处方明细失败'), 'error');
       }
@@ -216,10 +215,10 @@ export function PrescriptionsPage() {
           // 服务端 DELETE 为软删除且不级联：先删全部明细，再删主记录（明细删除失败仅告警）
           const prescriptionId = String(row.id);
           try {
-            const page = await apiRequest<Page<Record<string, unknown>>>(
-              `/resources/prescriptionItems?prescriptionId=${prescriptionId}&page=1&pageSize=100`,
+            const items = await fetchAllPages<Record<string, unknown>>(
+              `/resources/prescriptionItems?prescriptionId=${prescriptionId}`,
             );
-            for (const item of page.items) {
+            for (const item of items) {
               await apiRequest(`/resources/prescriptionItems/${String(item.id)}`, { method: 'DELETE' });
             }
           } catch (error) {
@@ -298,10 +297,9 @@ async function updatePrescription(form: PrescriptionForm, prescriptionId: string
       status: form.status,
     }),
   });
-  const page = await apiRequest<Page<Record<string, unknown>>>(
-    `/resources/prescriptionItems?prescriptionId=${prescriptionId}&page=1&pageSize=100`,
+  const existing = await fetchAllPages<Record<string, unknown>>(
+    `/resources/prescriptionItems?prescriptionId=${prescriptionId}`,
   );
-  const existing = page.items;
   const existingIds = new Set(existing.map((row) => String(row.id)));
   // 保留的明细（有服务端 id）→ PATCH；新增的明细 → POST（带 prescriptionId）。
   // 与 validItems 同一套有效性过滤，但保留本地 id 用于判断服务端存在性。
