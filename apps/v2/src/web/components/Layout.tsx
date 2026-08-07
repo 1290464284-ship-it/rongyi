@@ -17,6 +17,7 @@ import {
   UserCog,
   Users,
 } from 'lucide-react';
+import { Logo } from './Logo';
 import { logout, onSessionExpired, switchClinic } from '../lib/api';
 import { apiRequest } from '../lib/api';
 import { useToast } from '../lib/toast-context';
@@ -51,10 +52,15 @@ function titleForPath(pathname: string): string {
   return item?.label ?? '蓉易口腔诊所';
 }
 
-function groupLabelForPath(pathname: string): string {
-  const active = NAV_ITEMS.find((entry) => (entry.to === '/' ? pathname === '/' : pathname.startsWith(entry.to)));
-  if (!active) return '蓉易口腔诊所';
-  return NAV_GROUPS.find((group) => group.keys.includes(active.key))?.label ?? '常用';
+function backupTimeLabel(value: unknown): string {
+  if (!value) return '暂无备份时间';
+  const timestamp = Date.parse(String(value));
+  if (Number.isNaN(timestamp)) return String(value);
+  const diff = Date.now() - timestamp;
+  if (diff < 60_000) return '刚刚';
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
+  return `${Math.floor(diff / 86_400_000)} 天前`;
 }
 
 export function Layout() {
@@ -96,6 +102,15 @@ export function Layout() {
     queryKey: ['me'],
     queryFn: () => apiRequest<{ name?: string; username: string }>('/auth/me'),
   });
+  const backups = useQuery({
+    queryKey: ['backups'],
+    queryFn: () => apiRequest<Array<Record<string, unknown>>>('/backups'),
+    enabled: navigation.data?.role === 'BOSS',
+    retry: false,
+  });
+  const latestBackup = [...(backups.data ?? [])]
+    .sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')))[0];
+  const backupTime = backupTimeLabel(latestBackup?.createdAt);
   const visibleKeys = navigation.data?.permissions ?? [];
   const visibleItems = NAV_ITEMS.filter((item) => visibleKeys.includes(item.key));
 
@@ -148,11 +163,8 @@ export function Layout() {
     <div className={`shell${collapsed ? ' collapsed' : ''}`}>
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <span className="sidebar-logo" aria-hidden="true" />
-          <div className="sidebar-brand-text">
-            <strong>蓉易口腔诊所</strong>
-            <span>Clinic OS</span>
-          </div>
+          <Logo variant="sidebar" width={190} height={40} className="sidebar-logo" />
+          <span className="visually-hidden">蓉易口腔诊所</span>
         </div>
         {clinics.data && clinics.data.clinics.length > 1 && (
           <select
@@ -200,9 +212,14 @@ export function Layout() {
           })}
         </nav>
         <div className="sidebar-card">
-          <div className="sidebar-card-icon"><Cloud size={18} /></div>
-          <strong>数据已同步</strong>
-          <span>上次备份 10 分钟前</span>
+          <div className="sidebar-card-row">
+            <span className="sidebar-card-icon"><Cloud size={16} /></span>
+            <div>
+              <strong>{backups.data?.length ? '数据已同步' : '暂无备份'}</strong>
+              <span>{backups.isLoading ? '读取中...' : backups.isError ? '备份状态不可用' : backupTime}</span>
+            </div>
+            <span className="sync-status-dot" aria-hidden="true"></span>
+          </div>
           <button className="sidebar-card-btn" onClick={() => navigate('/system')}>备份设置</button>
         </div>
         <button
@@ -222,7 +239,6 @@ export function Layout() {
               <PanelLeft size={18} />
             </button>
             <div>
-              <span className="page-crumb">{groupLabelForPath(location.pathname)}</span>
               <div className="topbar-title">{titleForPath(location.pathname)}</div>
             </div>
           </div>

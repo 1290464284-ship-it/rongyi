@@ -13,20 +13,39 @@ interface DashboardData {
   pendingFollowUps: number;
 }
 
+interface WorkbenchAppointment {
+  id: string;
+  patientName?: string | null;
+  doctorName?: string | null;
+  startTime?: string | null;
+  status?: string | null;
+  type?: string | null;
+}
+
+interface WorkbenchData {
+  date?: string;
+  appointments?: WorkbenchAppointment[];
+}
+
 export function DashboardPage() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['dashboard'],
     queryFn: () => apiRequest<DashboardData>('/stats/dashboard'),
   });
+  const workbench = useQuery({
+    queryKey: ['workbench', 'today'],
+    queryFn: () => apiRequest<WorkbenchData>('/workbench/today'),
+  });
 
   return (
     <QueryBoundary isLoading={isLoading} error={error} data={data} errorLabel="无法加载工作台数据">
-      <DashboardContent data={data!} />
+      <DashboardContent data={data!} workbench={workbench.data} workbenchLoading={workbench.isLoading} />
     </QueryBoundary>
   );
 }
 
-function DashboardContent({ data }: { data: DashboardData }) {
+function DashboardContent({ data, workbench, workbenchLoading }: { data: DashboardData; workbench?: WorkbenchData; workbenchLoading: boolean }) {
+  const appointments = Array.isArray(workbench?.appointments) ? workbench.appointments : [];
   const stats = [
     { label: '患者数', value: String(data.patients), icon: Users },
     { label: '预约数', value: String(data.appointments), icon: CalendarDays },
@@ -76,6 +95,30 @@ function DashboardContent({ data }: { data: DashboardData }) {
               <div><strong>库存项目 {data.inventoryItems} 项</strong><span>当前在库项目数</span></div>
             </div>
           </div>
+        </div>
+      </div>
+      <div className="card today-appointments-card">
+        <div className="card-head">
+          <h2>今日预约</h2>
+          <span className="sub">{appointments.length} 位患者</span>
+        </div>
+        <div className="appointment-scroll">
+          {workbenchLoading ? (
+            <div className="table-empty">加载中...</div>
+          ) : appointments.length === 0 ? (
+            <div className="table-empty">今日暂无预约</div>
+          ) : (
+            appointments.map((item) => (
+              <div className="appointment-row" key={item.id}>
+                <span className="appointment-time">{item.startTime?.slice(11, 16) ?? '--:--'}</span>
+                <div className="appointment-main">
+                  <strong>{item.patientName ?? '未知患者'}</strong>
+                  <span>{item.doctorName ?? '未分配医生'} · {item.type ?? '预约'}</span>
+                </div>
+                <span className="status arrived">{item.status ?? '已预约'}</span>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>
