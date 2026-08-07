@@ -325,10 +325,43 @@ export function createDatabase(
       db.exec(createTableSql(resource.table, resource.fields));
     }
     createChildTables(db);
+    alignLegacyTables(db);
     createUniqueIndexes(db);
   });
   createSchema();
   return db;
+}
+
+/**
+ * Round7 smoke fix: the legacy database shipped with the installer (and any
+ * real 2.1.x installation) predates the V2 resource schema. `CREATE TABLE IF
+ * NOT EXISTS` only creates missing tables, so existing legacy tables keep
+ * their old columns — e.g. ChargeCombo has no `code` column — and
+ * createUniqueIndexes() then fails with "no such column: code", which crashed
+ * every fresh install / 2.1.x upgrade at startup. This step aligns existing
+ * resource tables with the declared schema: it adds missing columns and
+ * backfills unique columns with deterministic per-row values (LEGACY-<rowid>)
+ * so the subsequent unique index creation succeeds. Non-unique columns are
+ * added as nullable; required-ness is enforced by the application layer.
+ */
+function alignLegacyTables(db: Database.Database): void {
+  for (const resource of resourceRegistry.all()) {
+    const table = resource.table;
+    const tableExists = db
+      .prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`)
+      .get(table);
+    if (!tableExists) continue;
+    const existingColumns = new Set(
+      (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((c) => c.name),
+    );
+    for (const field of resource.fields) {
+      if (existingColumns.has(field.name)) continue;
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${field.name} ${columnType(field)}`);
+      if (field.unique) {
+        db.exec(`UPDATE ${table} SET ${field.name} = 'LEGACY-' || printf('%08d', rowid) WHERE ${field.name} IS NULL`);
+      }
+    }
+  }
 }
 
 export function uniqueIndexColumns(db: Database.Database, table: string, fieldName: string): string {

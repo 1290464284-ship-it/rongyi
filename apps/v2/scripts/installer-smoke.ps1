@@ -63,9 +63,14 @@ $env:V2_BACKUP_KEY = "installer-backup-key-0123456789abcdef"
 $env:NODE_ENV = "development"
 
 $apiScript = Join-Path $installDir "resources\app.asar\dist-electron\server.cjs"
-$api = Start-Process -FilePath $appExe -ArgumentList "`"$apiScript`"" -PassThru -WindowStyle Hidden
+# Round7 H3: capture API stdout/stderr so a failed smoke is diagnosable from CI logs.
+$apiOut = Join-Path $env:TEMP ("v2-api-" + [guid]::NewGuid().ToString("N") + ".out.log")
+$apiErr = Join-Path $env:TEMP ("v2-api-" + [guid]::NewGuid().ToString("N") + ".err.log")
+$api = Start-Process -FilePath $appExe -ArgumentList "`"$apiScript`"" -PassThru -WindowStyle Hidden -RedirectStandardOutput $apiOut -RedirectStandardError $apiErr
 try {
-  $deadline = (Get-Date).AddSeconds(30)
+  # 90s: first launch on a fresh runner includes Defender scan of the unsigned exe,
+  # legacy import, full migration and search-index rebuild; 30s was too tight.
+  $deadline = (Get-Date).AddSeconds(90)
   $healthy = $false
   while ((Get-Date) -lt $deadline) {
     try {
@@ -79,6 +84,14 @@ try {
     }
   }
   if (-not $healthy) {
+    if ($api -and -not $api.HasExited) {
+      Stop-Process -Id $api.Id -Force -ErrorAction SilentlyContinue
+    }
+    Start-Sleep -Milliseconds 500
+    Write-Host "=== API stdout tail ==="
+    if (Test-Path -LiteralPath $apiOut) { Get-Content -LiteralPath $apiOut -Tail 80 }
+    Write-Host "=== API stderr tail ==="
+    if (Test-Path -LiteralPath $apiErr) { Get-Content -LiteralPath $apiErr -Tail 80 }
     throw "Installed API did not become healthy"
   }
   Write-Host "Installed API health check passed"
@@ -86,6 +99,7 @@ try {
   if ($api -and -not $api.HasExited) {
     Stop-Process -Id $api.Id -Force -ErrorAction SilentlyContinue
   }
+  Remove-Item -LiteralPath $apiOut, $apiErr -Force -ErrorAction SilentlyContinue
 }
 
 $uninstaller = Get-ChildItem -LiteralPath $installDir -Filter "Uninstall*.exe" |
