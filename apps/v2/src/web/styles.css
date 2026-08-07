@@ -620,6 +620,17 @@ a {
   margin-top: 16px;
 }
 
+.pager button {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.pager button:hover:not(:disabled) {
+  background: var(--surface-muted);
+  color: var(--primary);
+}
+
 .danger {
   background: var(--danger);
 }
