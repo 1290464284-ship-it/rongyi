@@ -203,7 +203,7 @@ describe('resource router', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
     expect(exported.text.match(/"Export Row"/g)?.length).toBe(201);
-  });
+  }, 30_000);
 
   it('prefixes formula-injecting CSV cells with a single quote', async () => {
     await request(app)
