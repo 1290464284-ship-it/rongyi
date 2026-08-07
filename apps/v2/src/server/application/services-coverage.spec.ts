@@ -309,4 +309,21 @@ describe('service coverage', () => {
     });
     expect(created.status).toBe('OPEN');
   });
+
+  it('rejects re-registering a device already owned by another user (S-L4)', () => {
+    const sync = new SyncService(db);
+    const ownerContext: AppContext = { ...context, userId: 'user-doctor-001' };
+    const otherContext: AppContext = { ...context, userId: 'user-staff-002' };
+    // 设备先由 A 注册
+    const device = sync.registerDevice('device-owner-check', 'Owner Desktop', ownerContext);
+    expect(device.token).toBeTruthy();
+    // 同一用户可重复注册（轮换令牌）
+    const reRegister = sync.registerDevice('device-owner-check', 'Owner Desktop', ownerContext);
+    expect(reRegister.token).toBeTruthy();
+    // 其他用户注册同一设备 → ConflictError（409）
+    expect(() => sync.registerDevice('device-owner-check', 'Intruder', otherContext))
+      .toThrowError(/already registered to another user/);
+    // 未被抢占：轮换后的新令牌仍可正常拉取
+    expect(sync.pull(now, 'device-owner-check', reRegister.token, context).changes).toBeInstanceOf(Array);
+  });
 });
