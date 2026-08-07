@@ -349,15 +349,39 @@ export function ConfirmDialog({
   confirmText?: string;
   cancelText?: string;
   danger?: boolean;
-  onConfirm: () => void;
+  onConfirm: () => Promise<void> | void;
   onCancel: () => void;
 }) {
+  // submitting：确认按钮可返回 Promise（异步删除/切换），pending 期间两按钮禁用，
+  // 防止双击双发（删除双 DELETE、toggle 双 PATCH 状态来回）。
+  const [submitting, setSubmitting] = useState(false);
+  // 渲染期调整：关闭时复位 submitting，避免下一次打开仍处于禁用态
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (!open) setSubmitting(false);
+  }
+
+  async function handleConfirm() {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await onConfirm();
+    } catch {
+      // 调用方负责错误提示；这里只复位按钮状态
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <Dialog open={open} title={title} onClose={onCancel}>
       <p>{message}</p>
       <div className="modal-actions">
-        <button type="button" className="btn-secondary" onClick={onCancel}>{cancelText}</button>
-        <button type="button" className={danger ? 'danger' : undefined} onClick={onConfirm}>{confirmText}</button>
+        <button type="button" className="btn-secondary" disabled={submitting} onClick={onCancel}>{cancelText}</button>
+        <button type="button" className={danger ? 'danger' : undefined} disabled={submitting} onClick={() => void handleConfirm()}>
+          {submitting ? '处理中...' : confirmText}
+        </button>
       </div>
     </Dialog>
   );

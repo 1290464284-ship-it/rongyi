@@ -519,7 +519,7 @@ export function AppointmentsPage() {
         message={`确定删除该预约吗？删除后不可恢复。`}
         confirmText="删除"
         danger
-        onConfirm={() => void deleteAppointment()}
+        onConfirm={() => deleteAppointment()}
         onCancel={() => setDeleteTarget(null)}
       />
 
@@ -554,7 +554,7 @@ export function AppointmentsPage() {
         message={`确定删除事项「${purposeDeleteTarget?.name ?? ''}」吗？`}
         confirmText="删除"
         danger
-        onConfirm={() => void deletePurpose()}
+        onConfirm={() => deletePurpose()}
         onCancel={() => setPurposeDeleteTarget(null)}
       />
     </div>

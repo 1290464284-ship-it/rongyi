@@ -94,7 +94,7 @@ describe('shared web components', () => {
     expect(screen.getByText('没有记录')).toBeDefined();
   });
 
-  it('opens and closes dialogs and confirms destructive actions', () => {
+  it('opens and closes dialogs and confirms destructive actions', async () => {
     vi.useFakeTimers();
     const onClose = vi.fn();
     const onConfirm = vi.fn();
@@ -109,6 +109,8 @@ describe('shared web components', () => {
     expect(screen.getByRole('dialog')).toBeDefined();
     fireEvent.click(screen.getByText('删除'));
     expect(onConfirm).toHaveBeenCalledTimes(1);
+    // pending 期间两按钮禁用；等异步 onConfirm 的微任务完成、状态复位后再点取消
+    await act(async () => {});
     fireEvent.click(screen.getByText('取消'));
     // 关闭先播 120ms 淡出动画，动画结束后才通知父组件
     act(() => vi.advanceTimersByTime(150));

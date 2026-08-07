@@ -166,7 +166,7 @@ function FollowUpDictsTab() {
         message="确定删除该词典项吗？"
         confirmText="确认删除"
         danger
-        onConfirm={() => void crud.confirmDelete()}
+        onConfirm={() => crud.confirmDelete()}
         onCancel={crud.cancelDelete}
       />
     </>
