@@ -1,18 +1,10 @@
-export const STATUS_LABELS: Record<string, string> = {
-  DRAFT: '草稿',
-  SENT: '已发送',
-  IN_PROGRESS: '加工中',
-  COMPLETED: '已完成',
-  RECEIVED: '已收货',
-  CANCELLED: '已取消',
-};
+// label 字典统一集中在 ../labels.ts（M-03），此处 re-export 保持旧导入路径不变。
+export {
+  PROCESSING_ORDER_STATUS_LABELS as STATUS_LABELS,
+  PROCESSING_FLOW_STATUS_LABELS as FLOW_STATUS_LABELS,
+} from '../lib/labels';
 
-export const FLOW_STATUS_LABELS: Record<string, string> = {
-  PENDING: '待处理',
-  IN_PROGRESS: '进行中',
-  DONE: '已完成',
-};
-
+// FLOW_STATUSES 是枚举值列表（供类型推导与遍历使用），不属于 label 文案，保留在本文件。
 export const FLOW_STATUSES = ['PENDING', 'IN_PROGRESS', 'DONE'] as const;
 
 export interface ProcessingRow extends Record<string, unknown> {

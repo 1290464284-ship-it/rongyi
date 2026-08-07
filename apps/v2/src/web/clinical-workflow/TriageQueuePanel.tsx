@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest } from '../api';
-import { formatDateTime } from '../format';
-import type { Page } from '../types';
+import { apiRequest } from '../lib/api';
+import { formatDateTime } from '../lib/format';
+import type { Page } from '../lib/types';
 import { STATUS_LABELS } from './types';
 
 export function TriageQueuePanel({ onStartVisit }: { onStartVisit: (id: string) => void | Promise<void> }) {

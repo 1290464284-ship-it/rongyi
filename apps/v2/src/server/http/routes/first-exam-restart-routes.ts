@@ -7,11 +7,13 @@
  * - GET  /api/v2/first-exams/history?patientId=xxx          患者首诊历史（按创建时间倒序）
  */
 import type { Express } from 'express';
-import type Database from 'better-sqlite3';
+
 import { wrapAsync } from '../middleware';
 import { FirstExamRestartService } from '../../application/service-modules/first-exam-restart';
+import type { RouteDependencies } from './deps';
 
-export function registerFirstExamRestartRoutes(app: Express, db: Database.Database): void {
+export function registerFirstExamRestartRoutes(app: Express, deps: RouteDependencies): void {
+  const { db } = deps;
   const service = new FirstExamRestartService(db);
 
   app.post('/api/v2/first-exams/:id/restart', wrapAsync(async (req, res) => {

@@ -9,6 +9,7 @@ import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
 import { AppError } from '../../infrastructure/errors';
 import { registerProcessingSettleRoutes } from './processing-settle-routes';
+import { buildRouteDeps } from './route-deps.helper';
 
 describe('processing settle routes', () => {
   let db: Database.Database;
@@ -33,7 +34,7 @@ describe('processing settle routes', () => {
       };
       next();
     });
-    registerProcessingSettleRoutes(app, db);
+    registerProcessingSettleRoutes(app, buildRouteDeps(db));
     app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
       const appError = error instanceof AppError
         ? error

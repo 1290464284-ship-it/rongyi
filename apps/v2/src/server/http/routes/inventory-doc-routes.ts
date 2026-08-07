@@ -3,11 +3,13 @@
  * 写操作走 InventoryDocService（事务 + 租户隔离），不走通用资源 CRUD。
  */
 import type { Express } from 'express';
-import type Database from 'better-sqlite3';
+
 import { wrapAsync } from '../middleware';
 import { InventoryDocService } from '../../application/service-modules/inventory-docs';
+import type { RouteDependencies } from './deps';
 
-export function registerInventoryDocRoutes(app: Express, db: Database.Database): void {
+export function registerInventoryDocRoutes(app: Express, deps: RouteDependencies): void {
+  const { db } = deps;
   const service = new InventoryDocService(db);
 
   app.post('/api/v2/inventory-docs/return-supplier', wrapAsync(async (req, res) => {

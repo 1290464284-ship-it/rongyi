@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest } from '../api';
+import { apiRequest } from '../lib/api';
 import { Dialog } from '../components';
-import { errorMessage } from '../messages';
-import { useToast } from '../toast-context';
+import { errorMessage } from '../lib/messages';
+import { useToast } from '../lib/toast-context';
 import { COLOR_OPTIONS, DEFAULT_REPORT_JSON } from './constants';
 import { OutlineSvg } from './OutlineSvg';
 import type { CephalometricReportJson, CephalometricReportResponse, CephalometricRow } from './types';

@@ -6,11 +6,13 @@
  * 临床角色可见），无需新增规则。
  */
 import type { Express } from 'express';
-import type Database from 'better-sqlite3';
+
 import { wrapAsync } from '../middleware';
 import { FirstExamTrackingService } from '../../application/service-modules/first-exam-tracking';
+import type { RouteDependencies } from './deps';
 
-export function registerFirstExamTrackingRoutes(app: Express, db: Database.Database): void {
+export function registerFirstExamTrackingRoutes(app: Express, deps: RouteDependencies): void {
+  const { db } = deps;
   const service = new FirstExamTrackingService(db);
 
   app.patch('/api/v2/first-exams/:id/tracking', wrapAsync(async (req, res) => {

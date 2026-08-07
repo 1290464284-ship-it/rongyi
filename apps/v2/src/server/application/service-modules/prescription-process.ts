@@ -11,6 +11,7 @@ import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { upsertSearchRow } from '../../infrastructure/search-index';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
+import { generateDocumentNumber } from './common';
 import type { AppContext } from '../../../domain/contracts';
 
 export interface PrescriptionProcessInput {
@@ -98,8 +99,8 @@ export class PrescriptionProcessService {
     const now = context.now().toISOString();
     const chargeId = randomUUID();
     const dispenseId = randomUUID();
-    const chargeNumber = `CHG-${Date.now().toString(36).toUpperCase()}-${randomUUID().slice(0, 8).toUpperCase()}`;
-    const dispenseNumber = `DSP-${Date.now().toString(36).toUpperCase()}-${randomUUID().slice(0, 8).toUpperCase()}`;
+    const chargeNumber = generateDocumentNumber('CHG');
+    const dispenseNumber = generateDocumentNumber('DSP');
     const chargeTotalAmount = dispensePlans.reduce((sum, plan) => sum + plan.subtotal, 0);
 
     const run = this.db.transaction(() => {

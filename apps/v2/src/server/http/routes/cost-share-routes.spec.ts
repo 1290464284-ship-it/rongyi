@@ -11,6 +11,7 @@ import { AppError } from '../../infrastructure/errors';
 import type { AppContext } from '../../../domain/contracts';
 import { ChargeService } from '../../application/service-modules/financial';
 import { registerCostShareRoutes } from './cost-share-routes';
+import { buildRouteDeps } from './route-deps.helper';
 
 describe('cost-share routes', () => {
   let db: Database.Database;
@@ -35,7 +36,7 @@ describe('cost-share routes', () => {
       };
       next();
     });
-    registerCostShareRoutes(app, db);
+    registerCostShareRoutes(app, buildRouteDeps(db));
     app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
       const appError = error instanceof AppError
         ? error

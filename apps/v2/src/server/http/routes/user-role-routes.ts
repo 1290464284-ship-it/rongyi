@@ -5,14 +5,16 @@
  * 故提供专用路由；注册与 route-policy 挂载由调用方在 app.ts 集成时完成。
  */
 import type { Express } from 'express';
-import type Database from 'better-sqlite3';
+
 import { wrapAsync } from '../middleware';
 import { UserRoleService } from '../../application/service-modules/multi-role';
+import type { RouteDependencies } from './deps';
 
 export function registerUserRoleRoutes(
   app: Express,
-  db: Database.Database,
+  deps: RouteDependencies,
 ): void {
+  const { db } = deps;
   const service = new UserRoleService(db);
 
   app.get('/api/v2/user-roles', wrapAsync((req, res) => {

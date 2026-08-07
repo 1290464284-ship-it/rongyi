@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest } from '../api';
+import { apiRequest } from '../lib/api';
 import { SearchableSelect } from '../components';
 import { STATUS_LABELS } from './constants';
 import type { FirstExamForm } from './types';

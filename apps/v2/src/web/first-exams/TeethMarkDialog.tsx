@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest } from '../api';
+import { apiRequest } from '../lib/api';
 import { Dialog } from '../components';
-import { errorMessage } from '../messages';
-import { useToast } from '../toast-context';
-import type { Page } from '../types';
+import { errorMessage } from '../lib/messages';
+import { useToast } from '../lib/toast-context';
+import type { Page } from '../lib/types';
 import { CHIEF_MARK_LABELS } from './constants';
 import type { FirstExamRow, FirstExamToothRow } from './types';
 

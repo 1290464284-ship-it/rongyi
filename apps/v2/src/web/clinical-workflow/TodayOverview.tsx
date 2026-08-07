@@ -1,4 +1,4 @@
-import { formatDateTime } from '../format';
+import { formatDateTime } from '../lib/format';
 import { STATUS_LABELS, type TodayData } from './types';
 
 export function TodayOverview({ data }: { data?: TodayData | null }) {

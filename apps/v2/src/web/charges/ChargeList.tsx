@@ -1,5 +1,5 @@
 import { DataTable, EmptyState, type DataTableColumn } from '../components';
-import { formatMoney } from '../format';
+import { formatMoney } from '../lib/format';
 import { STATUS_LABELS, type ChargeRow } from './charge-types';
 
 export function ChargeList({

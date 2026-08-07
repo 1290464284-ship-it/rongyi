@@ -70,6 +70,30 @@ export class BackupService {
       } else {
         fs.renameSync(tempPath, finalPath);
       }
+      // M-05 备份收尾：把源库 WAL 帧 checkpoint 回主库并截断，避免备份后
+      // 源库与备份文件残留非空 -wal/-shm 侧车（磁盘浪费 + 备份流程缺陷信号）。
+      // Windows 上连接仍打开时侧车文件被占用，物理删除会 EPERM —— 忽略即可，
+      // 校验规则见下（-shm 是 WAL 模式活动连接的索引文件，非空属正常）。
+      this.db.pragma('wal_checkpoint(TRUNCATE)');
+      for (const sidecarPath of [`${this.dbPath}-wal`, `${this.dbPath}-shm`, `${finalPath}-wal`, `${finalPath}-shm`]) {
+        if (fs.existsSync(sidecarPath)) {
+          try {
+            fs.rmSync(sidecarPath, { force: true });
+          } catch (error) {
+            const code = (error as NodeJS.ErrnoException).code;
+            if (code !== 'EPERM' && code !== 'EBUSY') throw error;
+          }
+        }
+      }
+      // 校验无侧车残留：备份文件不得带任何侧车；源库 -wal 若仍在必须为 0
+      // 字节（已截断，无非 checkpoint 帧）；源库 -shm 允许存在。
+      const backupSidecars = [`${finalPath}-wal`, `${finalPath}-shm`].filter((p) => fs.existsSync(p));
+      const sourceWalSidecar = `${this.dbPath}-wal`;
+      const sourceWalNonEmpty = fs.existsSync(sourceWalSidecar) && fs.statSync(sourceWalSidecar).size > 0;
+      if (backupSidecars.length > 0 || sourceWalNonEmpty) {
+        const leftovers = [...backupSidecars, ...(sourceWalNonEmpty ? [sourceWalSidecar] : [])];
+        throw new Error(`backup finished but sqlite sidecars remain: ${leftovers.join(', ')}`);
+      }
       const fileSize = fs.statSync(finalPath).size;
       this.db.prepare(
         `INSERT INTO BackupRecord (

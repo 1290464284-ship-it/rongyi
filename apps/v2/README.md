@@ -1,3 +1,6 @@
+<!-- L-05 文档定位：本文件 = 使用与开发入口（启动、端口、API 示例、冒烟测试、项目结构）。
+     生产就绪成熟度清单见 MATURITY.md；发布产物/签名/更新通道见 RELEASE.md。
+     三者按各自角色维护，避免重复铺陈交叉内容。 -->
 # Dental Clinic V2
 
 Refactored desktop-first implementation of the dental clinic management system.
@@ -160,6 +163,11 @@ pnpm --filter @dental/v2 smoke:ui
 ## Maturity
 
 See `MATURITY.md` for the current production-readiness checklist.
+
+## Release
+
+Packaging, signing, update channel, internal builds, and post-install
+verification are documented in `RELEASE.md`.
 
 ## Layout
 

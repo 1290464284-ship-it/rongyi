@@ -1,3 +1,9 @@
+// L-04 索引：本文件是早期聚合的"边缘/异常分支"测试（约 1898 行），覆盖
+// auth、多诊所、医生、采购/加工、审计、预约、收费、库存、随访、备份、
+// 统计/打印/搜索、同步、租户隔离、用户管理、HR、会员卡、处方、头颅测量、
+// 进度、导入、债务、通知、满意度等 20+ 服务的边界路径。
+// 各服务的常规路径已有独立 spec（src/server/application/service-modules/
+// *.spec.ts）；本文件的断言可逐步迁移到对应模块 spec 后删除，迁移前保持聚合。
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';

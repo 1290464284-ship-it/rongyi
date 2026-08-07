@@ -8,6 +8,7 @@ import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
 import { registerFirstExamRestartRoutes } from './first-exam-restart-routes';
+import { buildRouteDeps } from './route-deps.helper';
 
 describe('first exam restart routes', () => {
   let dataDir: string;
@@ -36,7 +37,7 @@ describe('first exam restart routes', () => {
       };
       next();
     });
-    registerFirstExamRestartRoutes(app, db);
+    registerFirstExamRestartRoutes(app, buildRouteDeps(db));
   });
 
   afterAll(() => {

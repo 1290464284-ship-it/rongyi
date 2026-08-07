@@ -7,11 +7,13 @@
  * 路由策略已覆盖 /api/v2/prescriptions 前缀（clinical），无需新增规则。
  */
 import type { Express } from 'express';
-import type Database from 'better-sqlite3';
+
 import { wrapAsync } from '../middleware';
 import { PrescriptionProcessService } from '../../application/service-modules/prescription-process';
+import type { RouteDependencies } from './deps';
 
-export function registerPrescriptionProcessRoutes(app: Express, db: Database.Database): void {
+export function registerPrescriptionProcessRoutes(app: Express, deps: RouteDependencies): void {
+  const { db } = deps;
   const service = new PrescriptionProcessService(db);
 
   app.post('/api/v2/prescriptions/:id/process', wrapAsync(async (req, res) => {

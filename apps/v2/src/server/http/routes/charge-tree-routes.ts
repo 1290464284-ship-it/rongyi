@@ -7,11 +7,13 @@
  * 路径策略 /charge-trees → financeStaff 已由 route-policy 覆盖。
  */
 import type { Express } from 'express';
-import type Database from 'better-sqlite3';
+
 import { wrapAsync } from '../middleware';
 import { ChargeTreeService } from '../../application/service-modules/charge-tree';
+import type { RouteDependencies } from './deps';
 
-export function registerChargeTreeRoutes(app: Express, db: Database.Database): void {
+export function registerChargeTreeRoutes(app: Express, deps: RouteDependencies): void {
+  const { db } = deps;
   const service = new ChargeTreeService(db);
 
   app.get('/api/v2/charge-trees', wrapAsync(async (req, res) => {

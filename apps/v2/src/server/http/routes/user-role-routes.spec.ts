@@ -9,6 +9,7 @@ import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
 import { AppError } from '../../infrastructure/errors';
 import { registerUserRoleRoutes } from './user-role-routes';
+import { buildRouteDeps } from './route-deps.helper';
 
 describe('user role routes', () => {
   let db: Database.Database;
@@ -41,7 +42,7 @@ describe('user role routes', () => {
       };
       next();
     });
-    registerUserRoleRoutes(app, db);
+    registerUserRoleRoutes(app, buildRouteDeps(db));
     app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
       const appError = error instanceof AppError
         ? error

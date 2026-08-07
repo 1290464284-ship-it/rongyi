@@ -5,11 +5,13 @@
  * 无需新增规则。
  */
 import type { Express } from 'express';
-import type Database from 'better-sqlite3';
+
 import { wrapAsync } from '../middleware';
 import { FollowUpExecutionService } from '../../application/service-modules/follow-up-execution';
+import type { RouteDependencies } from './deps';
 
-export function registerFollowUpExecutionRoutes(app: Express, db: Database.Database): void {
+export function registerFollowUpExecutionRoutes(app: Express, deps: RouteDependencies): void {
+  const { db } = deps;
   const service = new FollowUpExecutionService(db);
 
   app.post('/api/v2/follow-ups/:id/execute', wrapAsync(async (req, res) => {

@@ -5,11 +5,13 @@
  *   { pattern: /^\/api\/v2\/workbench/, roles: ['BOSS', 'ADMIN', 'DOCTOR', 'NURSE'] }
  */
 import type { Express } from 'express';
-import type Database from 'better-sqlite3';
+
 import { wrapAsync } from '../middleware';
 import { ClinicalWorkbenchService } from '../../application/service-modules/workbench';
+import type { RouteDependencies } from './deps';
 
-export function registerWorkbenchRoutes(app: Express, db: Database.Database): void {
+export function registerWorkbenchRoutes(app: Express, deps: RouteDependencies): void {
+  const { db } = deps;
   const service = new ClinicalWorkbenchService(db);
 
   app.get('/api/v2/workbench/today', wrapAsync(async (req, res) => {

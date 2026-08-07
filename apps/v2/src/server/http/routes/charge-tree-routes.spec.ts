@@ -9,6 +9,7 @@ import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
 import { AppError } from '../../infrastructure/errors';
 import { registerChargeTreeRoutes } from './charge-tree-routes';
+import { buildRouteDeps } from './route-deps.helper';
 
 describe('charge tree routes', () => {
   let dataDir: string;
@@ -56,7 +57,7 @@ describe('charge tree routes', () => {
       };
       next();
     });
-    registerChargeTreeRoutes(app, db);
+    registerChargeTreeRoutes(app, buildRouteDeps(db));
     app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
       const appError = error instanceof AppError
         ? error

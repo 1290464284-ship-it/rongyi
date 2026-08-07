@@ -1,3 +1,6 @@
+<!-- L-05 文档定位：本文件 = 发布产物、签名、更新通道、安装验证与内部发布流程。
+     使用与开发入口见 README.md；生产就绪成熟度清单见 MATURITY.md。
+     历史版本记录如需保留，移入 docs/archive/，本文件只维护当前流程。 -->
 # Dental Clinic V2 - Release Artifacts
 
 ## 部署方式（Round7 I1）
