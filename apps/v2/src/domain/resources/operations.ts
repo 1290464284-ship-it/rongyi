@@ -54,7 +54,9 @@ export const operationsResources: ResourceDefinition[] = [
     f('patientId', 'relation', { required: true, relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
     f('type', 'text', { required: true }),
     f('content', 'longText'),
-    f('status', 'text', { required: true }),
+    // S-L7：status 由通用写路径强制为 PENDING/DRAFT（security.ts 按资源剥离
+    // status/sentAt/result，仅 send 服务可写 SENT/IN_PROGRESS），故不再必填。
+    f('status', 'text', { default: 'PENDING' }),
     f('templateId', 'text'),
     f('sentAt', 'datetime'),
     f('result', 'longText'),

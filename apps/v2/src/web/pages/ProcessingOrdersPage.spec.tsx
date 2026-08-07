@@ -9,7 +9,16 @@ import { apiRequest } from '../lib/api';
 import { formatDateTime } from '../lib/format';
 import { ToastProvider } from '../components/toast';
 
-vi.mock('../lib/api', () => ({ apiRequest: vi.fn() }));
+vi.mock('../lib/api', () => {
+  const apiRequest = vi.fn();
+  return {
+    apiRequest,
+    fetchAllPages: vi.fn(async (path: string) => {
+      const data = await apiRequest(`${path}&page=1&pageSize=100`);
+      return data?.items ?? [];
+    }),
+  };
+});
 
 const wrapper = ({ children }: { children: ReactNode }) => (
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -176,7 +185,7 @@ describe('ProcessingOrdersPage', () => {
     fireEvent.change(screen.getByLabelText('结算金额（元）'), { target: { value: '' } });
     fireEvent.click(screen.getByText('确认结算'));
 
-    expect(await screen.findByText('请输入有效的结算金额')).toBeDefined();
+    expect(await screen.findByText('请输入有效的结算金额（需大于 0）')).toBeDefined();
     expect(apiRequest).not.toHaveBeenCalledWith('/processing-orders/proc-1/settle', expect.anything());
   });
 

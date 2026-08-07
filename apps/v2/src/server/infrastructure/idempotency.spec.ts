@@ -80,22 +80,32 @@ describe('withIdempotency', () => {
     expect(calls).toBe(2);
   });
 
-  it('supports async operations and removes failed processing records', async () => {
+  it('keeps the PROCESSING record when an async operation fails, blocking retries', async () => {
     let calls = 0;
     await expect(withIdempotency(db, scope('async-fail'), async () => {
       calls += 1;
       throw new Error('async boom');
     })).rejects.toThrow('async boom');
+    // The failed async operation may have partially taken effect and cannot be
+    // rolled back, so a retry must not re-run it: the PROCESSING record is kept.
+    expect(() => withIdempotency(db, scope('async-fail'), async () => {
+      calls += 1;
+      return { ok: true };
+    })).toThrow('Operation is already in progress');
+    const row = db.prepare('SELECT status FROM IdempotencyRecord WHERE key = ?').get(scopeKey(scope('async-fail')));
+    expect(row).toEqual({ status: 'PROCESSING' });
+    expect(calls).toBe(1);
+    // Cleanup reclaims the stuck record after the processing timeout.
+    db.prepare(
+      `UPDATE IdempotencyRecord SET updatedAt = ? WHERE key = ?`,
+    ).run(new Date(Date.now() - 60 * 60 * 1000).toISOString(), scopeKey(scope('async-fail')));
+    const { deleted } = cleanupIdempotencyRecords(db);
+    expect(deleted).toBeGreaterThanOrEqual(1);
     const result = await withIdempotency(db, scope('async-fail'), async () => {
       calls += 1;
       return { ok: true };
     });
-    const replay = await withIdempotency(db, scope('async-fail'), async () => {
-      calls += 1;
-      return { ok: false };
-    });
     expect(result.ok).toBe(true);
-    expect(replay.ok).toBe(true);
     expect(calls).toBe(2);
   });
 
@@ -186,7 +196,8 @@ describe('withIdempotency', () => {
     } as unknown as Database.Database;
     expect(() => withIdempotency(failingDb, scope('update-failure'), () => ({ ok: true })))
       .toThrow('update failed');
-    expect(deleteRun).toHaveBeenCalledTimes(2);
+    // Only the single-key cleanup DELETE runs — the hot-path table sweep was removed.
+    expect(deleteRun).toHaveBeenCalledTimes(1);
   });
 
   it('rolls back business side effects when the completed update fails', () => {

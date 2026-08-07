@@ -10,6 +10,7 @@ import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:
 import Database from 'better-sqlite3';
 import { AppError, NotFoundError } from '../../infrastructure/errors';
 import { removeSqliteSidecars, summarizeSqliteFile } from '../../infrastructure/sqlite-files';
+import { signRestoreMarker } from '../../infrastructure/restore-apply';
 import { BACKUP_MAGIC, backupEncryptionKey } from './common';
 
 export interface BackupCreateOptions {
@@ -174,7 +175,9 @@ export class BackupService {
     const backupSummary = verified.summary as Record<string, number | string | null> | undefined;
     const currentSummary = fs.existsSync(this.dbPath) ? summarizeSqliteFile(this.dbPath) : undefined;
     const markerPath = path.join(path.dirname(this.dbPath), '.restore-pending.json');
-    fs.writeFileSync(markerPath, JSON.stringify({ stagedPath }), 'utf8');
+    // S-L5：marker 写入 HMAC 签名（V2_BACKUP_KEY 派生），restore-apply 侧校验后
+    // 才执行恢复，防止本地 marker 被篡改指向任意文件。
+    fs.writeFileSync(markerPath, JSON.stringify({ stagedPath, sig: signRestoreMarker(stagedPath) }), 'utf8');
     return {
       filename,
       stagedPath,

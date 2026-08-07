@@ -10,6 +10,7 @@ function columnType(field: ResourceField): string {
     case 'money':
       return 'INTEGER';
     case 'number':
+    case 'decimal':
       return 'REAL';
     case 'boolean':
       return 'INTEGER';
@@ -22,8 +23,9 @@ function columnType(field: ResourceField): string {
     case 'relation':
       return 'TEXT';
     default: {
+      // B-L1：删掉死代码。未登记的类型直接抛错，避免未来新增类型被静默降级为 TEXT
+      // （列类型与元数据不一致会造成查询/校验行为漂移，且难以排查）。
       const unsupportedType: string = field.type as string;
-      return 'TEXT';
       throw new Error(`Unsupported column type: ${unsupportedType}`);
     }
   }
@@ -275,10 +277,43 @@ export function createDatabase(
       db.exec(createTableSql(resource.table, resource.fields));
     }
     createChildTables(db);
+    alignLegacyTables(db);
     createUniqueIndexes(db);
   });
   createSchema();
   return db;
+}
+
+/**
+ * Round7 smoke fix: the legacy database shipped with the installer (and any
+ * real 2.1.x installation) predates the V2 resource schema. `CREATE TABLE IF
+ * NOT EXISTS` only creates missing tables, so existing legacy tables keep
+ * their old columns — e.g. ChargeCombo has no `code` column — and
+ * createUniqueIndexes() then fails with "no such column: code", which crashed
+ * every fresh install / 2.1.x upgrade at startup. This step aligns existing
+ * resource tables with the declared schema: it adds missing columns and
+ * backfills unique columns with deterministic per-row values (LEGACY-<rowid>)
+ * so the subsequent unique index creation succeeds. Non-unique columns are
+ * added as nullable; required-ness is enforced by the application layer.
+ */
+function alignLegacyTables(db: Database.Database): void {
+  for (const resource of resourceRegistry.all()) {
+    const table = resource.table;
+    const tableExists = db
+      .prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`)
+      .get(table);
+    if (!tableExists) continue;
+    const existingColumns = new Set(
+      (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((c) => c.name),
+    );
+    for (const field of resource.fields) {
+      if (existingColumns.has(field.name)) continue;
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${field.name} ${columnType(field)}`);
+      if (field.unique) {
+        db.exec(`UPDATE ${table} SET ${field.name} = 'LEGACY-' || printf('%08d', rowid) WHERE ${field.name} IS NULL`);
+      }
+    }
+  }
 }
 
 export function uniqueIndexColumns(db: Database.Database, table: string, fieldName: string): string {
@@ -330,10 +365,11 @@ export function seedDatabase(db: Database.Database): void {
          username, passwordHash, name, role, active, loginAttempts, tokenVersion
        ) VALUES (?, ?, ?, ?, NULL, 'admin', ?, 'System Administrator', 'BOSS', 1, 0, 0)`,
     ).run(userId, clinicId, now, now, passwordHash);
-  } else if (process.env.NODE_ENV === 'development' && process.env.V2_ALLOW_DEV_SEED === '1') {
-    const passwordHash = bcrypt.hashSync(seedPassword, 10);
-    db.prepare('UPDATE User SET passwordHash = ?, active = 1, lockedUntil = NULL, updatedAt = ? WHERE id = ?')
-      .run(passwordHash, now, userId);
+  }
+  // 非生产且未显式配置 V2_ADMIN_PASSWORD 时，提醒默认管理员口令已生效；
+  // 测试环境静默，避免测试输出噪音。
+  if (!isProduction && !process.env.V2_ADMIN_PASSWORD && process.env.NODE_ENV !== 'test') {
+    console.warn('[seed] V2_ADMIN_PASSWORD not set: admin user uses the default seed password. Set V2_ADMIN_PASSWORD before first launch to harden credentials.');
   }
 
   const doctorRow = db.prepare("SELECT id FROM User WHERE username = 'doctor'").get() as { id: string } | undefined;

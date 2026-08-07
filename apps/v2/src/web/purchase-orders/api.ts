@@ -1,8 +1,7 @@
-import { apiRequest } from '../lib/api';
+import { apiRequest, fetchAllPages } from '../lib/api';
 import { toCents } from '../lib/format';
 import { errorMessage } from '../lib/messages';
 import type { ToastKind } from '../lib/toast-context';
-import type { Page } from '../lib/types';
 import type { SearchableSelectRow } from '../components';
 import type { PurchaseItemForm, PurchaseOrderItemRow } from './types';
 
@@ -12,10 +11,10 @@ export async function reconcilePurchaseItems(
   items: PurchaseItemForm[],
   inventoryRows: SearchableSelectRow[],
 ): Promise<void> {
-  const existing = await apiRequest<Page<PurchaseOrderItemRow>>(
-    `/resources/purchaseOrderItems?orderId=${orderId}&page=1&pageSize=100`,
+  const existing = await fetchAllPages<PurchaseOrderItemRow>(
+    `/resources/purchaseOrderItems?orderId=${orderId}`,
   );
-  const existingById = new Map(existing.items.map((row) => [String(row.id), row]));
+  const existingById = new Map(existing.map((row) => [String(row.id), row]));
   const keptIds = new Set<string>();
   for (const item of items) {
     if (!item.quantity || !item.unitPrice) continue;
@@ -46,11 +45,12 @@ export async function reconcilePurchaseItems(
           quantity,
           unitPrice,
           subtotal: Math.round(unitPrice * quantity),
+          requestId: crypto.randomUUID(),
         }),
       });
     }
   }
-  for (const row of existing.items) {
+  for (const row of existing) {
     if (!keptIds.has(String(row.id))) {
       await apiRequest(`/resources/purchaseOrderItems/${String(row.id)}`, { method: 'DELETE' });
     }
@@ -81,22 +81,6 @@ export async function reviewAction(
   } finally {
     setReviewing(false);
   }
-}
-
-export function rejectOrder(
-  showToast: (message: string, kind?: ToastKind) => void,
-  reload: () => Promise<unknown>,
-  setReviewing: (value: boolean) => void,
-  onChanged: () => void,
-  id: string,
-): void {
-  const reason = window.prompt('请输入驳回原因', '');
-  if (reason === null) return;
-  if (!reason.trim()) {
-    showToast('驳回原因必填', 'error');
-    return;
-  }
-  void reviewAction(showToast, reload, setReviewing, onChanged, id, 'reject', '已驳回', { reason: reason.trim() });
 }
 
 export async function receivePurchase(

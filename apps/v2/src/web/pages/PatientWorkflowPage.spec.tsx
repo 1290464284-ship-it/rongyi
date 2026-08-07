@@ -64,7 +64,7 @@ describe('PatientWorkflowPage', () => {
 
     render(<PatientWorkflowPage />, { wrapper });
     fireEvent.click(await screen.findByRole('button', { name: '计算风险' }));
-    expect(await screen.findByText('risk failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
 
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/patients?page=1&pageSize=100') {

@@ -57,7 +57,7 @@ export const r2Resources: ResourceDefinition[] = [
     f('type', 'enum', { required: true, enumValues: ['PUBLIC', 'PRIVATE'] }),
     f('ownerId', 'relation', { relation: { resource: 'users', foreignKey: 'ownerId', labelField: 'name' } }),
     f('active', 'boolean', { default: true }),
-  ], { roles: ['BOSS', 'DOCTOR'], capabilities: { list: true, create: true, update: true, delete: false, softDelete: false } }),
+  ], { roles: boss, audit: true, capabilities: { list: true, create: true, update: true, delete: false, softDelete: false } }),
 
   crud('chargeComboItems', 'ChargeComboItem', [
     f('comboId', 'relation', { required: true, relation: { resource: 'chargeCombos', foreignKey: 'comboId', labelField: 'name' } }),
@@ -67,7 +67,7 @@ export const r2Resources: ResourceDefinition[] = [
     f('price', 'money', { required: true }),
     f('quantity', 'number', { required: true, min: 1 }),
     f('costType', 'enum', { enumValues: ['SERVICE', 'MATERIAL'] }),
-  ], { roles: ['BOSS', 'DOCTOR'], capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
+  ], { roles: boss, audit: true, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   // 预约事项自定义
   crud('appointmentPurposes', 'AppointmentPurpose', [

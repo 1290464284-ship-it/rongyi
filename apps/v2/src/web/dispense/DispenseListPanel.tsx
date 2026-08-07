@@ -125,7 +125,7 @@ export function DispenseListPanel({
         message="确定删除该发药单吗？"
         confirmText="删除"
         danger
-        onConfirm={() => void confirmDeleteDispense()}
+        onConfirm={() => confirmDeleteDispense()}
         onCancel={() => setDeleteDispenseTarget(null)}
       />
     </>

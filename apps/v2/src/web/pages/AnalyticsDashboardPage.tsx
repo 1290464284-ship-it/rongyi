@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest, fetchPrintHtml } from '../lib/api';
-import { EmptyState, LoadingState, PageError } from '../components';
+import { EmptyState, QuerySection } from '../components';
 import { formatMoney } from '../lib/format';
 import { errorMessage } from '../lib/messages';
 import { useToast } from '../lib/toast-context';
@@ -212,22 +212,6 @@ export function AnalyticsDashboardPage() {
     }
   }
 
-  const loading = dashboard.isLoading || revenue.isLoading || patientGrowth.isLoading
-    || inventory.isLoading || satisfaction.isLoading || doctors.isLoading;
-  const error = dashboard.error || revenue.error || patientGrowth.error
-    || inventory.error || satisfaction.error || doctors.error;
-  if (loading) return <LoadingState label="经营分析加载中..." />;
-  if (error) return <PageError message={(error as Error).message} />;
-
-  const cards = [
-    ['患者数', dashboard.data?.patients ?? 0],
-    ['预约数', dashboard.data?.appointments ?? 0],
-    ['已收金额', formatMoney(dashboard.data?.paidAmount ?? 0)],
-    ['未收金额', formatMoney(dashboard.data?.unpaidAmount ?? 0)],
-    ['库存项目', dashboard.data?.inventoryItems ?? 0],
-    ['待随访', dashboard.data?.pendingFollowUps ?? 0],
-  ];
-
   return (
     <div className="page analytics-page">
       <div className="page-head">
@@ -246,130 +230,167 @@ export function AnalyticsDashboardPage() {
           <button onClick={() => void printReport()}>打印/PDF</button>
         </div>
       </div>
-      <div className="cards">
-        {cards.map(([label, value]) => (
-          <div className="card" key={String(label)}>
-            <strong>{label}</strong>
-            <span>{String(value)}</span>
+      <QuerySection
+        query={dashboard}
+        render={(data) => (
+          <div className="cards">
+            {[
+              ['患者数', data?.patients ?? 0],
+              ['预约数', data?.appointments ?? 0],
+              ['已收金额', formatMoney(data?.paidAmount ?? 0)],
+              ['未收金额', formatMoney(data?.unpaidAmount ?? 0)],
+              ['库存项目', data?.inventoryItems ?? 0],
+              ['待随访', data?.pendingFollowUps ?? 0],
+            ].map(([label, value]) => (
+              <div className="card" key={String(label)}>
+                <strong>{label}</strong>
+                <span>{String(value)}</span>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        )}
+      />
 
       <section className="analytics-grid">
-        <div className="analytics-panel">
-          <h2>月度收入趋势</h2>
-          {revenue.data?.length ? (
-            <div className="bar-chart">
-              {revenue.data.map((row) => (
-                <div className="bar-row" key={String(row.period)}>
-                  <span className="bar-label">{String(row.period ?? '')}</span>
-                  <div className="bar-track">
-                    <div
-                      className="bar-fill"
-                      style={{ width: `${Math.round((Number(row.amount || 0) / 100 / revenueMax) * 100)}%` }}
-                      title={`${formatMoney(row.amount)} / ${row.count} 单`}
-                    />
-                  </div>
-                  <span className="bar-value">{formatMoney(row.amount)}</span>
+        <QuerySection
+          query={revenue}
+          render={(data) => (
+            <div className="analytics-panel">
+              <h2>月度收入趋势</h2>
+              {data?.length ? (
+                <div className="bar-chart">
+                  {data.map((row) => (
+                    <div className="bar-row" key={String(row.period)}>
+                      <span className="bar-label">{String(row.period ?? '')}</span>
+                      <div className="bar-track">
+                        <div
+                          className="bar-fill"
+                          style={{ width: `${Math.round((Number(row.amount || 0) / 100 / revenueMax) * 100)}%` }}
+                          title={`${formatMoney(row.amount)} / ${row.count} 单`}
+                        />
+                      </div>
+                      <span className="bar-value">{formatMoney(row.amount)}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              ) : (
+                <EmptyState message="所选日期内暂无收入数据" />
+              )}
             </div>
-          ) : (
-            <EmptyState message="所选日期内暂无收入数据" />
           )}
-        </div>
+        />
 
-        <div className="analytics-panel">
-          <h2>患者增长</h2>
-          {patientGrowth.data?.length ? (
-            <div className="bar-chart compact">
-              {patientGrowth.data.slice(-60).map((row) => (
-                <div className="bar-row" key={String(row.day)}>
-                  <span className="bar-label">{String(row.day ?? '')}</span>
-                  <div className="bar-track">
-                    <div
-                      className="bar-fill growth"
-                      style={{ width: `${Math.round((Number(row.count || 0) / growthMax) * 100)}%` }}
-                      title={`${row.day}：${row.count} 人`}
-                    />
-                  </div>
-                  <span className="bar-value">{String(row.count ?? 0)}</span>
+        <QuerySection
+          query={patientGrowth}
+          render={(data) => (
+            <div className="analytics-panel">
+              <h2>患者增长</h2>
+              {data?.length ? (
+                <div className="bar-chart compact">
+                  {data.slice(-60).map((row) => (
+                    <div className="bar-row" key={String(row.day)}>
+                      <span className="bar-label">{String(row.day ?? '')}</span>
+                      <div className="bar-track">
+                        <div
+                          className="bar-fill growth"
+                          style={{ width: `${Math.round((Number(row.count || 0) / growthMax) * 100)}%` }}
+                          title={`${row.day}：${row.count} 人`}
+                        />
+                      </div>
+                      <span className="bar-value">{String(row.count ?? 0)}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              ) : (
+                <EmptyState message="所选日期内暂无患者增长数据" />
+              )}
             </div>
-          ) : (
-            <EmptyState message="所选日期内暂无患者增长数据" />
           )}
-        </div>
+        />
 
-        <div className="analytics-panel">
-          <h2>库存分类</h2>
-          {inventory.data?.length ? (
-            <div className="bar-chart compact">
-              {inventory.data.map((row) => (
-                <div className="bar-row" key={String(row.category)}>
-                  <span className="bar-label">{String(row.category ?? '未分类')}</span>
-                  <div className="bar-track">
-                    <div
-                      className="bar-fill inventory"
-                      style={{ width: `${Math.round((Number(row.totalStock || 0) / inventoryMax) * 100)}%` }}
-                      title={`${row.category}：库存 ${row.totalStock} / 最低 ${row.minStock}`}
-                    />
-                  </div>
-                  <span className="bar-value">{String(row.totalStock ?? 0)}</span>
+        <QuerySection
+          query={inventory}
+          render={(data) => (
+            <div className="analytics-panel">
+              <h2>库存分类</h2>
+              {data?.length ? (
+                <div className="bar-chart compact">
+                  {data.map((row) => (
+                    <div className="bar-row" key={String(row.category)}>
+                      <span className="bar-label">{String(row.category ?? '未分类')}</span>
+                      <div className="bar-track">
+                        <div
+                          className="bar-fill inventory"
+                          style={{ width: `${Math.round((Number(row.totalStock || 0) / inventoryMax) * 100)}%` }}
+                          title={`${row.category}：库存 ${row.totalStock} / 最低 ${row.minStock}`}
+                        />
+                      </div>
+                      <span className="bar-value">{String(row.totalStock ?? 0)}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              ) : (
+                <EmptyState message="暂无库存数据" />
+              )}
             </div>
-          ) : (
-            <EmptyState message="暂无库存数据" />
           )}
-        </div>
+        />
 
-        <div className="analytics-panel">
-          <h2>满意度趋势</h2>
-          {satisfaction.data?.length ? (
-            <div className="bar-chart compact">
-              {satisfaction.data.slice(-60).map((row) => (
-                <div className="bar-row" key={String(row.surveyDate)}>
-                  <span className="bar-label">{String(row.surveyDate ?? '')}</span>
-                  <div className="bar-track">
-                    <div
-                      className="bar-fill satisfaction"
-                      style={{ width: `${Math.round((Number(row.avgScore || 0) / satisfactionMax) * 100)}%` }}
-                      title={`${row.surveyDate}：${row.avgScore} 分 / ${row.count} 份`}
-                    />
-                  </div>
-                  <span className="bar-value">{String(row.avgScore ?? '')}</span>
+        <QuerySection
+          query={satisfaction}
+          render={(data) => (
+            <div className="analytics-panel">
+              <h2>满意度趋势</h2>
+              {data?.length ? (
+                <div className="bar-chart compact">
+                  {data.slice(-60).map((row) => (
+                    <div className="bar-row" key={String(row.surveyDate)}>
+                      <span className="bar-label">{String(row.surveyDate ?? '')}</span>
+                      <div className="bar-track">
+                        <div
+                          className="bar-fill satisfaction"
+                          style={{ width: `${Math.round((Number(row.avgScore || 0) / satisfactionMax) * 100)}%` }}
+                          title={`${row.surveyDate}：${row.avgScore} 分 / ${row.count} 份`}
+                        />
+                      </div>
+                      <span className="bar-value">{String(row.avgScore ?? '')}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              ) : (
+                <EmptyState message="暂无满意度数据" />
+              )}
             </div>
-          ) : (
-            <EmptyState message="暂无满意度数据" />
           )}
-        </div>
+        />
 
-        <div className="analytics-panel wide">
-          <h2>医生绩效与满意度</h2>
-          {doctors.data?.length ? (
-            <div className="bar-chart">
-              {doctors.data.map((row) => (
-                <div className="bar-row" key={String(row.doctorId ?? row.doctorName)}>
-                  <span className="bar-label">{String(row.doctorName ?? '未分配')}</span>
-                  <div className="bar-track">
-                    <div
-                      className="bar-fill doctor"
-                      style={{ width: `${Math.min(100, Math.round((Number(row.avgScore || 0) / 100) * 100))}%` }}
-                      title={`${row.doctorName}：平均 ${row.avgScore} 分 / ${row.surveyCount} 份`}
-                    />
-                  </div>
-                  <span className="bar-value">{String(row.avgScore ?? '')} 分</span>
+        <QuerySection
+          query={doctors}
+          render={(data) => (
+            <div className="analytics-panel wide">
+              <h2>医生绩效与满意度</h2>
+              {data?.length ? (
+                <div className="bar-chart">
+                  {data.map((row) => (
+                    <div className="bar-row" key={String(row.doctorId ?? row.doctorName)}>
+                      <span className="bar-label">{String(row.doctorName ?? '未分配')}</span>
+                      <div className="bar-track">
+                        <div
+                          className="bar-fill doctor"
+                          style={{ width: `${Math.min(100, Math.round((Number(row.avgScore || 0) / 100) * 100))}%` }}
+                          title={`${row.doctorName}：平均 ${row.avgScore} 分 / ${row.surveyCount} 份`}
+                        />
+                      </div>
+                      <span className="bar-value">{String(row.avgScore ?? '')} 分</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              ) : (
+                <EmptyState message="暂无医生满意度数据" />
+              )}
             </div>
-          ) : (
-            <EmptyState message="暂无医生满意度数据" />
           )}
-        </div>
+        />
       </section>
     </div>
   );

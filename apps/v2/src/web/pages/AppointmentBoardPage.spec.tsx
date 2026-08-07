@@ -144,7 +144,7 @@ describe('AppointmentBoardPage', () => {
 
     render(<AppointmentBoardPage />, { wrapper });
     fireEvent.change(await screen.findByLabelText('已预约状态'), { target: { value: 'ARRIVED' } });
-    expect(await screen.findByText('board failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
 
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === `/appointments/by-date?date=${today}`) {

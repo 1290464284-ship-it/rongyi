@@ -58,7 +58,7 @@ describe('HrWorkflowPage', () => {
 
     render(<HrWorkflowPage />, { wrapper });
     fireEvent.click(await screen.findByRole('button', { name: '批准' }));
-    expect(await screen.findByText('approve failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
 
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/leaveRequests?page=1&pageSize=100') {
@@ -73,6 +73,6 @@ describe('HrWorkflowPage', () => {
 it('renders an error state with retry when leave data is unavailable', async () => {
   vi.mocked(apiRequest).mockRejectedValueOnce(new Error('leaves failed'));
   render(<HrWorkflowPage />, { wrapper });
-  expect(await screen.findByText('leaves failed')).toBeDefined();
+  expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
   expect(screen.getByRole('button', { name: '重试' })).toBeDefined();
 });

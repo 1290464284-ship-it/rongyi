@@ -1,17 +1,21 @@
-import type { DataTableColumn } from '../components';
+import { SignedImage, type DataTableColumn } from '../components';
 import { CATEGORY_TYPE_LABELS } from './constants';
 import { categoryName, formatDateTime, phaseLabel } from './format';
 import type { ImagingCategoryRow, ImagingRow } from './types';
 
-export function imagingColumns(apiOrigin: string, categories: ImagingCategoryRow[]): DataTableColumn<ImagingRow>[] {
+export function imagingColumns(categories: ImagingCategoryRow[]): DataTableColumn<ImagingRow>[] {
   return [
     {
       key: 'preview',
       label: '预览',
-      render: (row) => {
-        const url = row.imageUrl ? `${apiOrigin}${row.imageUrl}` : '';
-        return url ? <img className="imaging-thumb" src={url} alt={String(row.title ?? '影像')} /> : '无图片';
-      },
+      render: (row) => (
+        <SignedImage
+          path={row.imageUrl}
+          alt={String(row.title ?? '影像')}
+          className="imaging-thumb"
+          fallback="无图片"
+        />
+      ),
     },
     { key: 'title', label: '标题' },
     { key: 'type', label: '类型' },

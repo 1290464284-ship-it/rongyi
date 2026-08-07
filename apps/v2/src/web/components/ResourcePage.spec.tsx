@@ -61,7 +61,7 @@ describe('ResourcePage', () => {
     vi.mocked(downloadCsv).mockRejectedValueOnce(new Error('export failed'));
     render(<ResourcePage resource="patients" />, { wrapper });
     fireEvent.click(await screen.findByText('导出'));
-    expect(await screen.findByText('export failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
   });
 
   it('renders rows and hides write controls for read-only resources', async () => {
@@ -230,7 +230,7 @@ describe('ResourcePage', () => {
         </QueryClientProvider>
       </MemoryRouter>,
     );
-    expect(await screen.findByText('list failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
   });
 
   it('edits complex fields and skips empty optional values', async () => {
@@ -303,7 +303,7 @@ describe('ResourcePage', () => {
     vi.mocked(apiRequest).mockRejectedValueOnce(new Error('save failed'));
     fireEvent.change(screen.getByLabelText('name'), { target: { value: 'Bob' } });
     fireEvent.click(screen.getByText('保存'));
-    expect(await screen.findByText('save failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
   });
 
   it('shows delete failures as toast', async () => {
@@ -314,7 +314,7 @@ describe('ResourcePage', () => {
     fireEvent.click(await screen.findByText('删除'));
     vi.mocked(apiRequest).mockRejectedValueOnce(new Error('delete failed'));
     fireEvent.click(await screen.findByText('确认删除'));
-    expect(await screen.findByText(/delete failed/)).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
   });
 
   it('hides hidden fields, keeps read-only fields out of forms, and renders help text', async () => {
@@ -346,7 +346,7 @@ describe('ResourcePage', () => {
         <ResourcePage resource="patients" />
       </QueryClientProvider>,
     );
-    expect(await screen.findByText('meta failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
     expect(screen.getByText('重试')).toBeDefined();
     fireEvent.click(screen.getByText('重试'));
   });
@@ -372,7 +372,7 @@ describe('ResourcePage', () => {
     vi.mocked(downloadCsv).mockRejectedValueOnce(new Error('export failed'));
     render(<ResourcePage resource="patients" />, { wrapper });
     fireEvent.click(await screen.findByText('导出'));
-    expect(await screen.findByText('export failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
   });
 
   it('converts datetime-local form values to ISO before submitting', async () => {

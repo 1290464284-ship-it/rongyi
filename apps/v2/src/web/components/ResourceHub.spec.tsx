@@ -90,7 +90,7 @@ it('hides boss-only analytics tabs from non-BOSS roles', async () => {
   await waitFor(() => expect(screen.queryByText(/\u591a\u95e8\u5e97/)).toBeNull());
 });
 
-it('keeps each tab panel mounted so tab switching preserves state', async () => {
+it('unmounts inactive tab panels so hub state does not accumulate', async () => {
   const mountCounts: Record<string, number> = {};
   function Counter({ id }: { id: string }) {
     useEffect(() => {
@@ -106,8 +106,10 @@ it('keeps each tab panel mounted so tab switching preserves state', async () => 
   expect(mountCounts.a).toBe(1);
   fireEvent.click(screen.getByRole('tab', { name: 'B' }));
   expect(mountCounts.b).toBe(1);
+  // M3：非活动面板已卸载，不再常驻（useQuery 订阅与组件实例随之释放）
+  expect(screen.queryByText('a panel')).toBeNull();
   fireEvent.click(screen.getByRole('tab', { name: 'A' }));
-  expect(mountCounts.a).toBe(1); // 切回不重新挂载
+  expect(mountCounts.a).toBe(2); // 切回重新挂载
   expect(screen.getByText('a panel')).toBeDefined();
 });
 

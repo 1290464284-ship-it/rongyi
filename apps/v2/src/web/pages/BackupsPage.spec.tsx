@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -15,10 +15,6 @@ const wrapper = ({ children }: { children: ReactNode }) => (
 );
 
 describe('BackupsPage', () => {
-  beforeEach(() => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
-  });
-
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
@@ -36,6 +32,8 @@ describe('BackupsPage', () => {
 
     render(<BackupsPage />, { wrapper });
     fireEvent.click(await screen.findByRole('button', { name: '暂存恢复' }));
+    // L6：统一 ConfirmDialog，确认后才发起请求
+    fireEvent.click(screen.getByRole('button', { name: '确认' }));
 
     await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith('/backups/backup-1.sqlite/restore', expect.objectContaining({ method: 'POST' }));
@@ -69,22 +67,26 @@ describe('BackupsPage', () => {
     expect(await screen.findByText('备份完整性校验通过')).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: '暂存恢复' }));
-    expect(await screen.findByText('restore failed')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '确认' }));
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: '清理备份（保留 30 个）' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认' }));
     expect(await screen.findByText('保留 1 个，清理 1 个')).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: '清理备份（保留 30 个）' }));
-    expect(await screen.findByText('cleanup failed')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '确认' }));
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: '暂存恢复' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认' }));
     expect(await screen.findAllByText('暂无摘要')).toHaveLength(2);
 
     fireEvent.click(screen.getByRole('button', { name: '创建备份' }));
-    expect(await screen.findByText('create failed')).toBeDefined();
+    expect((await screen.findAllByText('操作失败，请稍后重试')).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole('button', { name: '校验' }));
-    expect(await screen.findByText('verify failed')).toBeDefined();
+    expect((await screen.findAllByText('操作失败，请稍后重试')).length).toBeGreaterThan(0);
   });
 
   it('falls back to generic messages for non-error failures', async () => {
@@ -103,24 +105,25 @@ describe('BackupsPage', () => {
     expect(await screen.findByText('校验备份失败')).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: '暂存恢复' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认' }));
     expect(await screen.findByText('暂存恢复失败')).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: '清理备份（保留 30 个）' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认' }));
     expect(await screen.findByText('清理备份失败')).toBeDefined();
   });
 
   it('does not stage restore or clean up when the confirm dialog is cancelled', async () => {
     vi.mocked(apiRequest).mockResolvedValueOnce([{ filename: 'backup-1.sqlite', encrypted: false, fileSize: 100, createdAt: '2026-08-04' }]);
-    vi.mocked(window.confirm).mockReturnValue(false);
 
     render(<BackupsPage />, { wrapper });
     fireEvent.click(await screen.findByRole('button', { name: '暂存恢复' }));
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
     fireEvent.click(screen.getByRole('button', { name: '清理备份（保留 30 个）' }));
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(apiRequest).not.toHaveBeenCalledWith('/backups/backup-1.sqlite/restore', expect.anything());
     expect(apiRequest).not.toHaveBeenCalledWith('/backups/cleanup', expect.anything());
-    expect(window.confirm).toHaveBeenCalledWith('确认暂存恢复备份“backup-1.sqlite”？重启应用后生效。');
-    expect(window.confirm).toHaveBeenCalledWith('确认清理过期备份（保留最近 30 个）？此操作不可撤销。');
   });
 });

@@ -69,7 +69,7 @@ describe('ClinicalWorkflowPage', () => {
 
     render(<ClinicalWorkflowPage />, { wrapper });
     fireEvent.click((await screen.findAllByRole('button', { name: '已分诊' }))[0]);
-    expect(await screen.findByText('transition failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
 
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path in resourceData()) return resourceData()[path];
@@ -82,7 +82,7 @@ describe('ClinicalWorkflowPage', () => {
   it('shows a loading state while workflow data loads', () => {
     vi.mocked(apiRequest).mockImplementation(() => new Promise(() => {}));
     render(<ClinicalWorkflowPage />, { wrapper });
-    expect(screen.getByText('加载中...')).toBeDefined();
+    expect(screen.getAllByText('加载中...').length).toBeGreaterThanOrEqual(1);
   });
 
   it('shows an error when workflow data fails to load', async () => {
@@ -91,7 +91,7 @@ describe('ClinicalWorkflowPage', () => {
       return resourceData()[path] ?? {};
     });
     render(<ClinicalWorkflowPage />, { wrapper });
-    expect(await screen.findByText('workflow failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
   });
 
   it('renders fallback status text for unknown values', async () => {

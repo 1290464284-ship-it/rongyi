@@ -20,18 +20,41 @@ export function backupSqliteFile(
   try {
     current = new Database(sourcePath);
     // 先 checkpoint(TRUNCATE)：把 WAL 中已提交帧刷回主库文件并截断 WAL。
-    // 这样即使 VACUUM INTO 失败回退到裸 copyFileSync，副本也包含全部已提交
-    // 数据（否则裸拷贝会静默丢掉未 checkpoint 的 WAL 帧）。
-    current.pragma('wal_checkpoint(TRUNCATE)');
-    current.prepare('VACUUM INTO ?').run(backupPath);
+    // checkpoint 返回 (busy, log, checkpointed)；只要 busy != 0 或仍有未
+    // checkpoint 的 WAL 帧（checkpointed < log），说明有活跃读连接占用，
+    // 此时任何"备份"都可能缺数据，直接抛错而不是裸拷贝回退。
+    const checkpointRows = current.pragma('wal_checkpoint(TRUNCATE)') as Array<{ busy: number; log: number; checkpointed: number }>;
+    const cp = checkpointRows[checkpointRows.length - 1];
+    if (!cp || Number(cp.busy) !== 0 || Number(cp.checkpointed) < Number(cp.log)) {
+      throw new Error(
+        `WAL checkpoint not clean: busy=${cp?.busy ?? 'n/a'}, log=${cp?.log ?? 'n/a'}, checkpointed=${cp?.checkpointed ?? 'n/a'}`,
+      );
+    }
+    try {
+      current.prepare('VACUUM INTO ?').run(backupPath);
+    } catch (err) {
+      // checkpoint 已成功（主库文件已含全部已提交数据），此时 VACUUM INTO
+      // 失败可以安全回退到裸文件拷贝：副本与 checkpoint 后的主库一致，
+      // 不会静默丢掉 WAL 帧。
+      logger?.warn('VACUUM INTO backup failed, falling back to plain file copy (checkpoint already completed)', {
+        action: 'sqlite-backup',
+        source: sourcePath,
+        target: backupPath,
+        error: err,
+      });
+      fs.copyFileSync(sourcePath, backupPath);
+    }
   } catch (err) {
-    logger?.warn('VACUUM INTO backup failed, falling back to plain file copy (backup may be inconsistent with WAL)', {
-      action: 'sqlite-backup',
-      source: sourcePath,
-      target: backupPath,
-      error: err,
-    });
-    fs.copyFileSync(sourcePath, backupPath);
+    if (err instanceof Error && err.message.startsWith('WAL checkpoint not clean')) {
+      logger?.warn('SQLite backup skipped: WAL checkpoint busy (another connection is reading); no partial copy created', {
+        action: 'sqlite-backup',
+        source: sourcePath,
+        target: backupPath,
+        error: err.message,
+      });
+      throw err;
+    }
+    throw err;
   } finally {
     current?.close();
   }

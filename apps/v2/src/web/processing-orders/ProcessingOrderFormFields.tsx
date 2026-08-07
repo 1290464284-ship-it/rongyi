@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest } from '../lib/api';
+import { apiRequest, fetchAllPages } from '../lib/api';
 import { SearchableSelect } from '../components';
 import { centsToYuanString } from '../lib/format';
-import type { Page } from '../lib/types';
 import { newItem } from './items';
 import type { ProcessingOrderForm, ProcessingOrderItemRow } from './types';
 
@@ -29,11 +28,11 @@ export function ProcessingOrderFormFields({
     let cancelled = false;
     loadedItemsForRef.current = editingId;
     setItemsError(null);
-    apiRequest<Page<ProcessingOrderItemRow>>(`/resources/processingOrderItems?orderId=${editingId}&page=1&pageSize=100`)
-      .then((data) => {
+    fetchAllPages<ProcessingOrderItemRow>(`/resources/processingOrderItems?orderId=${editingId}`)
+      .then((rows) => {
         if (cancelled) return;
         update({
-          items: (data.items ?? []).map((row) => ({
+          items: (rows ?? []).map((row) => ({
             id: String(row.id),
             name: String(row.name ?? ''),
             spec: String(row.spec ?? ''),

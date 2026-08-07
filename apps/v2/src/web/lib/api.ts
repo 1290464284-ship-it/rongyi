@@ -1,4 +1,5 @@
 import { friendlyError } from './messages';
+import type { Page } from './types';
 
 let apiBase: string | null = null;
 let memoryToken: string | null = null;
@@ -246,6 +247,24 @@ export async function apiRequest<T>(
   return body.data as T;
 }
 
+/**
+ * 分页聚合拉取：循环请求直到取回全部记录（每页 100 条，与服务端默认页大小一致）。
+ * path 不应携带 page/pageSize 参数；某页返回 0 条时提前终止，避免死循环。
+ */
+export async function fetchAllPages<T>(path: string): Promise<T[]> {
+  const pageSize = 100;
+  const separator = path.includes('?') ? '&' : '?';
+  let page = 1;
+  const items: T[] = [];
+  for (;;) {
+    const data = await apiRequest<Page<T>>(`${path}${separator}page=${page}&pageSize=${pageSize}`);
+    items.push(...data.items);
+    if (data.items.length === 0 || items.length >= data.total) break;
+    page += 1;
+  }
+  return items;
+}
+
 export async function login(username: string, password: string): Promise<{ token: string; user: Record<string, unknown> }> {
   const result = await apiRequest<{ token: string; refreshToken: string; user: Record<string, unknown> }>('/auth/login', {
     method: 'POST',
@@ -320,6 +339,22 @@ export async function fetchPrintHtml(path: string, body: Record<string, unknown>
     throw new ClientError(friendlyError(errorBody?.message ?? `打印请求失败 (${response.status})`));
   }
   return response.text();
+}
+
+/**
+ * S-L8：为受保护文件换取短期签名 URL（/files/:name/sign 需 Bearer）。
+ * `<img>` 无法携带 Authorization 头，必须先用带会话的请求换取签名 URL 再渲染。
+ * 返回完整 URL（含 origin），签名 5 分钟内有效。
+ */
+export async function getSignedFileUrl(path: string): Promise<string> {
+  const base = await resolveApiBase();
+  const response = await fetchAuthenticated(`${base}${path}/sign`);
+  const body = await response.json().catch(() => null) as { success?: boolean; data?: { url?: string }; message?: string } | null;
+  if (!response.ok || !body?.success || !body.data?.url) {
+    throw new ClientError(friendlyError(body?.message ?? '获取图片链接失败'));
+  }
+  const origin = new URL(base, window.location.href).origin;
+  return `${origin}${body.data.url}`;
 }
 
 export async function uploadFile(file: File): Promise<{ id: string; filename: string; url: string }> {

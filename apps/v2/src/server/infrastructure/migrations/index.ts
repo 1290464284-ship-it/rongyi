@@ -21,6 +21,14 @@ export interface Migration {
  * - 版本 101 起是本 registry 拥有的 V2 自有迁移，追加新迁移时在
  *   v141-146.ts 之后新建 `v<next>-<max>.ts` 并在下方数组展开，或按区间
  *   并入现有文件，保持单一扁平数组（按 version 升序）。
+ *
+ * 回滚约定（Round7 M11）：迁移只有 up、没有 down——schema 迁移是前向
+ * 不可逆变更，坏迁移的回滚路径 = 启动前自动快照
+ * （见 snapshotDatabase：<snapshotDir>/pre-migration/pre-<ts>.sqlite，
+ * 保留最近 3 份）+ 手工 restore-backup.mjs / delivery-drill 演练
+ * （详见 docs/delivery/rollback.md）。编写破坏性迁移（删列/改约束/数据
+ * 回填）时，必须在 up 前先做数据保全或回填，并在 name 中标注"不可逆"；
+ * 禁止在生产库上直接删除仍被读取的数据列。
  */
 export const migrations: Migration[] = [
   ...migrations101to120,

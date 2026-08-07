@@ -71,7 +71,10 @@ export function SearchableSelect({
   }, [loaded, query.data]);
 
   const total = query.data?.total ?? 0;
-  const hasMore = total > loaded.length;
+  // M1：滚动加载设页数上限（10 页），超限停止自动加载并提示改用搜索，避免大资源全量持有
+  const MAX_LOAD_PAGES = 10;
+  const canLoadMore = total > loaded.length;
+  const loadCapped = canLoadMore && page >= MAX_LOAD_PAGES;
   const selectedMissing = value !== '' && !loaded.some((row) => String(row.id) === value);
 
   return (
@@ -98,11 +101,13 @@ export function SearchableSelect({
           if (event.key === 'Enter') event.preventDefault();
         }}
       />
-      {hasMore && (
+      {canLoadMore && (loadCapped ? (
+        <span className="searchable-select-cap">数据较多，仅展示前 {loaded.length} 条，请使用搜索筛选</span>
+      ) : (
         <button type="button" disabled={query.isFetching} onClick={() => setPage((current) => current + 1)}>
           加载更多（已加载 {loaded.length} 条）
         </button>
-      )}
+      ))}
       {query.error && <span className="error">{friendlyError(query.error)}</span>}
     </span>
   );

@@ -15,8 +15,9 @@ export function ReviewSummaryBar({ refreshKey }: { refreshKey: number }) {
   });
   return (
     <div className="tracking-overview" aria-label="采购审核汇总">
-      <span className="tracking-chip">待审核 {query.data?.submitted ?? 0} 单</span>
-      <span className="tracking-chip">待收货 {query.data?.approved ?? 0} 单</span>
+      {/* L3：首屏加载中显示占位符，避免「0 单」闪烁误导；刷新期间沿用旧数据 */}
+      <span className="tracking-chip">待审核 {query.isLoading ? '—' : `${query.data?.submitted ?? 0} 单`}</span>
+      <span className="tracking-chip">待收货 {query.isLoading ? '—' : `${query.data?.approved ?? 0} 单`}</span>
     </div>
   );
 }

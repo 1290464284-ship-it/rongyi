@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest, getApiOrigin, uploadFile } from '../lib/api';
+import { apiRequest, uploadFile } from '../lib/api';
 import { CrudPage } from '../components/CrudPage';
-import { ConfirmDialog, DataTable } from '../components';
+import { ConfirmDialog, DataTable, SignedImage } from '../components';
 import { errorMessage } from '../lib/messages';
 import { useToast } from '../lib/toast-context';
 import type { Page } from '../lib/types';
@@ -17,22 +17,11 @@ export function ImagingPage() {
   const { showToast } = useToast();
   const editingIdRef = useRef<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [apiOrigin, setApiOrigin] = useState('');
   const [categoryForm, setCategoryForm] = useState({ name: '', type: 'ORTHODONTIC', sortOrder: 0, active: true });
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [deleteCategoryTarget, setDeleteCategoryTarget] = useState<ImagingCategoryRow | null>(null);
   const [compareLeftId, setCompareLeftId] = useState('');
   const [compareRightId, setCompareRightId] = useState('');
-
-  useEffect(() => {
-    let cancelled = false;
-    void getApiOrigin().then((origin) => {
-      if (!cancelled) setApiOrigin(origin);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const categories = useQuery({
     queryKey: ['imaging-categories'],
@@ -183,7 +172,7 @@ export function ImagingPage() {
         }}
         messages={{ create: '影像记录已创建', update: '影像记录已更新', delete: '影像记录已删除' }}
         errorMessages={{ create: '创建影像失败', update: '更新影像失败', delete: '删除影像失败' }}
-        columns={imagingColumns(apiOrigin, categoryOptions)}
+        columns={imagingColumns(categoryOptions)}
         canEdit
         canDelete
         renderForm={(ctx) => (
@@ -256,7 +245,7 @@ export function ImagingPage() {
         message={`确定删除影像分类“${String(deleteCategoryTarget?.name ?? '')}”吗？`}
         confirmText="确认删除"
         danger
-        onConfirm={() => void confirmDeleteCategory()}
+        onConfirm={() => confirmDeleteCategory()}
         onCancel={() => setDeleteCategoryTarget(null)}
       />
 
@@ -286,7 +275,7 @@ export function ImagingPage() {
         {canCompare ? (
           <div className="imaging-compare-view">
             <figure className="imaging-compare-item">
-              <img src={`${apiOrigin}${selectedLeft?.imageUrl ?? ''}`} alt={String(selectedLeft?.title ?? '影像')} />
+              <SignedImage path={selectedLeft?.imageUrl} alt={String(selectedLeft?.title ?? '影像')} />
               <figcaption>
                 <div>标题：{selectedLeft?.title ?? ''}</div>
                 <div>类型：{selectedLeft?.type ?? ''}</div>
@@ -295,7 +284,7 @@ export function ImagingPage() {
               </figcaption>
             </figure>
             <figure className="imaging-compare-item">
-              <img src={`${apiOrigin}${selectedRight?.imageUrl ?? ''}`} alt={String(selectedRight?.title ?? '影像')} />
+              <SignedImage path={selectedRight?.imageUrl} alt={String(selectedRight?.title ?? '影像')} />
               <figcaption>
                 <div>标题：{selectedRight?.title ?? ''}</div>
                 <div>类型：{selectedRight?.type ?? ''}</div>

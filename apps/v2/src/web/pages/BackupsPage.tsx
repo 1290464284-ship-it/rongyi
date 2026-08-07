@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { apiRequest } from '../lib/api';
-import { DataTable, LoadingState, PageError, type DataTableColumn } from '../components';
+import { DataTable, ConfirmDialog, LoadingState, PageError, type DataTableColumn } from '../components';
 import { errorMessage } from '../lib/messages';
 import { useToast } from '../lib/toast-context';
 
@@ -52,6 +52,9 @@ export function BackupsPage() {
   const { showToast } = useToast();
   const [busy, setBusy] = useState(false);
   const [comparison, setComparison] = useState<{ backup?: DatabaseSummary; current?: DatabaseSummary } | null>(null);
+  // L6：暂存恢复 / 清理备份走统一 ConfirmDialog（danger 样式），替代原生 window.confirm
+  const [restoreTarget, setRestoreTarget] = useState<string | null>(null);
+  const [cleanupOpen, setCleanupOpen] = useState(false);
   const query = useQuery({
     queryKey: ['backups'],
     queryFn: () => apiRequest<Array<Record<string, unknown>>>('/backups'),
@@ -94,9 +97,13 @@ export function BackupsPage() {
     }
   }
 
-  async function stageRestore(filename: string) {
-    if (busy) return;
-    if (!window.confirm(`确认暂存恢复备份“${filename}”？重启应用后生效。`)) return;
+  function stageRestore(filename: string) {
+    setRestoreTarget(filename);
+  }
+
+  async function confirmStageRestore() {
+    const filename = restoreTarget;
+    if (!filename || busy) return;
     setBusy(true);
     try {
       const result = await apiRequest<RestoreStagingResult>(`/backups/${encodeURIComponent(filename)}/restore`, {
@@ -109,12 +116,16 @@ export function BackupsPage() {
       showToast(errorMessage(error, '暂存恢复失败'), 'error');
     } finally {
       setBusy(false);
+      setRestoreTarget(null);
     }
   }
 
-  async function cleanup() {
+  function cleanup() {
+    setCleanupOpen(true);
+  }
+
+  async function confirmCleanup() {
     if (busy) return;
-    if (!window.confirm('确认清理过期备份（保留最近 30 个）？此操作不可撤销。')) return;
     setBusy(true);
     try {
       const result = await apiRequest<{ kept: number; deleted: Array<{ filename: string }> }>('/backups/cleanup', {
@@ -127,6 +138,7 @@ export function BackupsPage() {
       showToast(errorMessage(error, '清理备份失败'), 'error');
     } finally {
       setBusy(false);
+      setCleanupOpen(false);
     }
   }
 
@@ -161,6 +173,22 @@ export function BackupsPage() {
         </div>
       )}
       <DataTable columns={backupColumns} rows={query.data ?? []} keyField="filename" emptyText="暂无备份" />
+      <ConfirmDialog
+        open={restoreTarget !== null}
+        title="暂存恢复备份"
+        message={restoreTarget ? `确认暂存恢复备份“${restoreTarget}”？重启应用后生效。` : ''}
+        danger
+        onConfirm={() => confirmStageRestore()}
+        onCancel={() => setRestoreTarget(null)}
+      />
+      <ConfirmDialog
+        open={cleanupOpen}
+        title="清理过期备份"
+        message="确认清理过期备份（保留最近 30 个）？此操作不可撤销。"
+        danger
+        onConfirm={() => confirmCleanup()}
+        onCancel={() => setCleanupOpen(false)}
+      />
     </div>
   );
 }

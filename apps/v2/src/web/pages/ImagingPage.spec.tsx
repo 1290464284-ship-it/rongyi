@@ -5,12 +5,16 @@ import type { ReactNode } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ImagingPage } from './ImagingPage';
-import { apiRequest, uploadFile } from '../lib/api';
+import { apiRequest, getSignedFileUrl, uploadFile } from '../lib/api';
 import { ToastProvider } from '../components/toast';
 
 vi.mock('../lib/api', () => ({
   apiRequest: vi.fn(),
-  getApiOrigin: vi.fn().mockResolvedValue('http://127.0.0.1:3180'),
+  // S-L8：默认实现让 SignedImage 始终能拿到签名 URL；afterEach 用 mockClear 保留此实现
+  getSignedFileUrl: vi.fn(async (path: string) => {
+    const name = path.split('/').pop() ?? 'file';
+    return `http://127.0.0.1:3180${path}?exp=1750000000000&sig=sig-${name}`;
+  }),
   uploadFile: vi.fn(),
 }));
 
@@ -56,14 +60,27 @@ describe('ImagingPage', () => {
   afterEach(() => {
     cleanup();
     vi.mocked(apiRequest).mockReset();
+    vi.mocked(getSignedFileUrl).mockClear();
     vi.mocked(uploadFile).mockReset();
   });
 
+  // S-L8：SignedImage 先向 /files/:name/sign 换取短期签名 URL 再渲染 <img>
+  function mockSignedUrls() {
+    vi.mocked(getSignedFileUrl).mockImplementation(async (path: string) => {
+      const name = path.split('/').pop() ?? 'file';
+      return `http://127.0.0.1:3180${path}?exp=1750000000000&sig=sig-${name}`;
+    });
+  }
+
   it('lists imaging records with previews', async () => {
     mockData();
+    mockSignedUrls();
     render(<ImagingPage />, { wrapper });
     expect(await screen.findByText('全景片')).toBeDefined();
-    expect(screen.getByAltText('全景片').getAttribute('src')).toBe('http://127.0.0.1:3180/api/v2/files/a.png');
+    expect(await screen.findByAltText('全景片')).toBeDefined();
+    expect(screen.getByAltText('全景片').getAttribute('src')).toBe(
+      'http://127.0.0.1:3180/api/v2/files/a.png?exp=1750000000000&sig=sig-a.png',
+    );
   });
 
   it('uploads a file and creates an imaging record', async () => {
@@ -218,6 +235,7 @@ describe('ImagingPage', () => {
 
   it('renders two images side by side with metadata when two are selected for comparison', async () => {
     mockData();
+    mockSignedUrls();
     render(<ImagingPage />, { wrapper });
     await screen.findByText('全景片');
     const compareSection = screen.getByLabelText('影像对比');
@@ -228,9 +246,9 @@ describe('ImagingPage', () => {
     await waitFor(() => {
       const images = within(compareSection).getAllByRole('img');
       expect(images).toHaveLength(2);
-      expect(images[0].getAttribute('src')).toBe('http://127.0.0.1:3180/api/v2/files/a.png');
+      expect(images[0].getAttribute('src')).toBe('http://127.0.0.1:3180/api/v2/files/a.png?exp=1750000000000&sig=sig-a.png');
       expect(images[0].getAttribute('alt')).toBe('全景片');
-      expect(images[1].getAttribute('src')).toBe('http://127.0.0.1:3180/api/v2/files/b.png');
+      expect(images[1].getAttribute('src')).toBe('http://127.0.0.1:3180/api/v2/files/b.png?exp=1750000000000&sig=sig-b.png');
       expect(images[1].getAttribute('alt')).toBe('侧位片');
     });
     expect(within(compareSection).getByText('标题：全景片')).toBeDefined();
@@ -315,7 +333,8 @@ describe('ImagingPage', () => {
     const panel = screen.getByLabelText('影像分类管理');
 
     // 编辑：预填分类表单 → PATCH /resources/imagingCategories/:id
-    const categoryRow = within(panel).getByText('正畸类').closest('tr') as HTMLElement;
+    // 分类列表异步加载，须等待数据行出现（避免与 h2 同步渲染竞态）
+    const categoryRow = (await waitFor(() => within(panel).getByText('正畸类'))).closest('tr') as HTMLElement;
     fireEvent.click(within(categoryRow).getByText('编辑'));
     await waitFor(() => {
       expect((within(panel).getByLabelText('名称') as HTMLInputElement).value).toBe('正畸类');

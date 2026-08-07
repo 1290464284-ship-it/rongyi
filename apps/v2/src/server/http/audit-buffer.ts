@@ -80,7 +80,13 @@ export function createAuditBuffer(db: Database.Database, logger: Logger): AuditB
   // 避免无限重试。
   function scheduleAuditRetry(rows: AuditInput[]): void {
     if (_auditRetryScheduled) return;
-    if (auditBuffer.length + rows.length > AUDIT_BUFFER_MAX * 2) return;
+    if (auditBuffer.length + rows.length > AUDIT_BUFFER_MAX * 2) {
+      // B-H5：超限静默丢弃审计行会掩盖合规痕迹；丢弃前必须留告警日志。
+      const dropped = rows.length;
+      if (logger) logger.error('audit rows dropped (retry buffer over capacity)', { action: 'audit-drop', dropped });
+      else console.error('audit rows dropped (retry buffer over capacity)', dropped);
+      return;
+    }
     auditBuffer.unshift(...rows);
     _auditRetryScheduled = true;
     setTimeout(() => {
