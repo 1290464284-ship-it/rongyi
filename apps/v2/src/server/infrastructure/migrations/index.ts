@@ -14,8 +14,13 @@ export interface Migration {
 /**
  * Versioned schema migrations for V2（M-04：按版本区间拆分自 migrations.ts）.
  *
- * Baseline legacy table synchronization is intentionally separate. This
- * registry owns future schema changes and records them in schema_migrations.
+ * 版本双轨说明（M-06）：
+ * - 版本 1-100 不在此 registry 中——它们对应 legacy 基线表结构，由
+ *   `syncLegacySchema`（src/server/infrastructure/legacy-schema.ts，经
+ *   database.ts re-export）在开库时同步建立，schema_migrations 不记录；
+ * - 版本 101 起是本 registry 拥有的 V2 自有迁移，追加新迁移时在
+ *   v141-146.ts 之后新建 `v<next>-<max>.ts` 并在下方数组展开，或按区间
+ *   并入现有文件，保持单一扁平数组（按 version 升序）。
  */
 export const migrations: Migration[] = [
   ...migrations101to120,
