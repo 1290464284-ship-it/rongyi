@@ -2,112 +2,16 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest, getApiOrigin, uploadFile } from '../lib/api';
 import { CrudPage } from '../components/CrudPage';
-import { ConfirmDialog, DataTable, SearchableSelect, type DataTableColumn } from '../components';
+import { ConfirmDialog, DataTable } from '../components';
 import { errorMessage } from '../lib/messages';
 import { useToast } from '../lib/toast-context';
 import type { Page } from '../lib/types';
-
-const CATEGORY_TYPE_LABELS: Record<string, string> = {
-  ORTHODONTIC: '正畸',
-  AESTHETIC: '美学',
-  PLASTER: '石膏',
-  OTHER: '其他',
-};
-
-const PHASE_LABELS: Record<string, string> = {
-  INITIAL: '初诊',
-  IN_PROGRESS: '治疗中',
-  FINISHED: '完成',
-  RETENTION: '保持期',
-  OTHER: '其他',
-};
-
-const PHASE_OPTIONS = [
-  { value: 'INITIAL', label: '初诊' },
-  { value: 'IN_PROGRESS', label: '治疗中' },
-  { value: 'FINISHED', label: '完成' },
-  { value: 'RETENTION', label: '保持期' },
-  { value: 'OTHER', label: '其他' },
-];
-
-const CATEGORIES_LIST_PATH = '/resources/imagingCategories?page=1&pageSize=100';
-const IMAGING_LIST_PATH = '/resources/imaging?page=1&pageSize=50';
-
-interface ImagingRow extends Record<string, unknown> {
-  id: string;
-  patientId?: string | null;
-  patientIdLabel?: string | null;
-  doctorId?: string | null;
-  doctorIdLabel?: string | null;
-  type?: string | null;
-  title?: string | null;
-  imageUrl?: string | null;
-  takenAt?: string | null;
-  categoryId?: string | null;
-  phase?: string | null;
-}
-
-interface ImagingForm {
-  patientId: string;
-  doctorId: string;
-  type: string;
-  title: string;
-  description: string;
-  takenAt: string;
-  remark: string;
-  categoryId: string;
-  phase: string;
-  imageUrl: string;
-}
-
-const emptyForm: ImagingForm = {
-  patientId: '',
-  doctorId: '',
-  type: '',
-  title: '',
-  description: '',
-  takenAt: '',
-  remark: '',
-  categoryId: '',
-  phase: '',
-  imageUrl: '',
-};
-
-interface ImagingCategoryRow extends Record<string, unknown> {
-  id: string;
-  name?: string | null;
-  type?: string | null;
-  sortOrder?: number | null;
-  active?: boolean | null;
-}
-
-function formatDateTime(value?: string | null): string {
-  return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '';
-}
-
-function toLocalDatetime(value: unknown): string {
-  if (!value) return '';
-  const date = new Date(String(value));
-  if (Number.isNaN(date.getTime())) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-function phaseLabel(phase?: string | null): string {
-  if (!phase) return '';
-  return PHASE_LABELS[phase] ?? phase;
-}
-
-function imagingOptionLabel(row: ImagingRow): string {
-  const takenAt = formatDateTime(row.takenAt);
-  return takenAt ? `${String(row.title ?? row.id)}（${takenAt}）` : String(row.title ?? row.id);
-}
-
-function categoryName(row: ImagingRow, categories: ImagingCategoryRow[]): string {
-  if (!row.categoryId) return '';
-  const category = categories.find((item) => item.id === row.categoryId);
-  return category?.name ?? row.categoryId;
-}
+import { CATEGORY_TYPE_LABELS, CATEGORIES_LIST_PATH, IMAGING_LIST_PATH } from '../imaging/constants';
+import { imagingColumns, categoryColumns } from '../imaging/columns';
+import { formatDateTime, imagingOptionLabel, phaseLabel, toLocalDatetime } from '../imaging/format';
+import { ImagingFormFields } from '../imaging/ImagingFormFields';
+import { emptyForm } from '../imaging/types';
+import type { ImagingRow, ImagingForm, ImagingCategoryRow } from '../imaging/types';
 
 export function ImagingPage() {
   const { showToast } = useToast();
@@ -216,29 +120,11 @@ export function ImagingPage() {
     }
   }
 
-  const categoryColumns: DataTableColumn<ImagingCategoryRow>[] = [
-    { key: 'name', label: '名称' },
-    {
-      key: 'type',
-      label: '类型',
-      render: (row) => CATEGORY_TYPE_LABELS[String(row.type ?? '')] ?? String(row.type ?? ''),
-    },
-    { key: 'sortOrder', label: '排序', render: (row) => String(row.sortOrder ?? 0) },
-    { key: 'active', label: '状态', render: (row) => (row.active ? '启用' : '停用') },
-    {
-      key: 'actions',
-      label: '操作',
-      render: (row) => (
-        <>
-          <button type="button" onClick={() => editCategory(row)}>编辑</button>
-          <button type="button" onClick={() => void toggleCategory(row)}>
-            {row.active ? '停用' : '启用'}
-          </button>
-          <button type="button" className="danger" onClick={() => setDeleteCategoryTarget(row)}>删除</button>
-        </>
-      ),
-    },
-  ];
+  const categoryColumnDefs = categoryColumns({
+    onEdit: editCategory,
+    onToggle: toggleCategory,
+    onDelete: setDeleteCategoryTarget,
+  });
 
   return (
     <>
@@ -313,7 +199,7 @@ export function ImagingPage() {
 
       <section className="card" aria-label="影像分类管理">
         <h2>影像分类管理</h2>
-        <DataTable columns={categoryColumns} rows={categoryOptions} keyField="id" emptyText="暂无影像分类" />
+        <DataTable columns={categoryColumnDefs} rows={categoryOptions} keyField="id" emptyText="暂无影像分类" />
         <form className="imaging-category-form" onSubmit={saveCategory}>
           <label>
             名称
@@ -422,112 +308,6 @@ export function ImagingPage() {
           <p className="imaging-compare-hint">请选择两张影像进行对比</p>
         )}
       </section>
-    </>
-  );
-}
-
-function imagingColumns(apiOrigin: string, categories: ImagingCategoryRow[]): DataTableColumn<ImagingRow>[] {
-  return [
-    {
-      key: 'preview',
-      label: '预览',
-      render: (row) => {
-        const url = row.imageUrl ? `${apiOrigin}${row.imageUrl}` : '';
-        return url ? <img className="imaging-thumb" src={url} alt={String(row.title ?? '影像')} /> : '无图片';
-      },
-    },
-    { key: 'title', label: '标题' },
-    { key: 'type', label: '类型' },
-    { key: 'categoryId', label: '分类', render: (row) => categoryName(row, categories) },
-    { key: 'phase', label: '阶段', render: (row) => phaseLabel(row.phase) },
-    { key: 'patientId', label: '患者', render: (row) => row.patientIdLabel ?? row.patientId ?? '' },
-    { key: 'doctorId', label: '医生', render: (row) => row.doctorIdLabel ?? row.doctorId ?? '' },
-    {
-      key: 'takenAt',
-      label: '拍摄时间',
-      render: (row) => formatDateTime(row.takenAt),
-    },
-  ];
-}
-
-function ImagingFormFields({
-  form,
-  update,
-  file: _file,
-  setFile,
-  categories,
-}: {
-  form: ImagingForm;
-  update: (patch: Partial<ImagingForm>) => void;
-  file: File | null;
-  setFile: (file: File | null) => void;
-  categories: ImagingCategoryRow[];
-}) {
-  const doctors = useQuery({
-    queryKey: ['imaging-doctors'],
-    queryFn: () => apiRequest<Array<Record<string, unknown>>>('/doctors'),
-  });
-  return (
-    <>
-      <label>
-        患者
-        <SearchableSelect resource="patients" value={form.patientId} onChange={(id) => update({ patientId: id })} ariaLabel="患者" placeholder="选择患者" />
-      </label>
-      <label>
-        医生
-        <select value={form.doctorId} onChange={(event) => update({ doctorId: event.target.value })}>
-          <option value="">选择医生</option>
-          {doctors.data?.map((row) => (
-            <option key={String(row.id)} value={String(row.id)}>{String(row.name ?? row.id)}</option>
-          ))}
-        </select>
-      </label>
-      <label>
-        影像类型
-        <input value={form.type} onChange={(event) => update({ type: event.target.value })} />
-      </label>
-      <label>
-        分类
-        <select value={form.categoryId} onChange={(event) => update({ categoryId: event.target.value })}>
-          <option value="">不分类</option>
-          {categories.map((category) => (
-            <option key={category.id} value={category.id}>{category.name ?? category.id}</option>
-          ))}
-        </select>
-      </label>
-      <label>
-        阶段
-        <select value={form.phase} onChange={(event) => update({ phase: event.target.value })}>
-          <option value="">不指定</option>
-          {PHASE_OPTIONS.map((phase) => (
-            <option key={phase.value} value={phase.value}>{phase.label}</option>
-          ))}
-        </select>
-      </label>
-      <label>
-        标题
-        <input value={form.title} onChange={(event) => update({ title: event.target.value })} />
-      </label>
-      <label>
-        描述
-        <textarea value={form.description} onChange={(event) => update({ description: event.target.value })} />
-      </label>
-      <label>
-        拍摄时间
-        <input type="datetime-local" value={form.takenAt} onChange={(event) => update({ takenAt: event.target.value })} />
-      </label>
-      <label>
-        图片文件
-        <input
-          type="file"
-          accept="image/png,image/jpeg,image/webp,application/pdf"
-          onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-        />
-      </label>
-      <label>
-        备注
-        <textarea value={form.remark} onChange={(event) => update({ remark: event.target.value })} />
-      </label>
     </>
   );
 }

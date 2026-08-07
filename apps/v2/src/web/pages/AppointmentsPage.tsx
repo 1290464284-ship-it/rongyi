@@ -6,92 +6,10 @@ import { ConfirmDialog, DataTable, Dialog, LoadingState, PageError, SearchableSe
 import { errorMessage } from '../lib/messages';
 import { toLocalInput } from '../lib/format';
 import { useToast } from '../lib/toast-context';
-import { APPOINTMENT_STATUS_LABELS, APPOINTMENT_TYPE_LABELS } from '../lib/labels';
-
-type LookupRow = Record<string, unknown> & { id: string; name?: string };
-type AppointmentRow = Record<string, unknown> & {
-  id: string;
-  patientId?: string | null;
-  patientIdLabel?: string | null;
-  doctorId?: string | null;
-  doctorIdLabel?: string | null;
-  chairId?: string | null;
-  startTime?: string | null;
-  endTime?: string | null;
-  status?: string | null;
-  type?: string | null;
-  purpose?: string | null;
-  remark?: string | null;
-  tempPatientName?: string | null;
-  tempPatientPhone?: string | null;
-};
-type PurposeRow = Record<string, unknown> & { id: string; name?: string; color?: string; sortOrder?: unknown; active?: unknown };
-
-interface AppointmentForm {
-  patientId: string;
-  doctorId: string;
-  chairId: string;
-  type: string;
-  purpose: string;
-  tempPatientName: string;
-  tempPatientPhone: string;
-  startTime: string;
-  endTime: string;
-}
-
-interface PurposeForm {
-  name: string;
-  color: string;
-  sortOrder: string;
-  active: boolean;
-}
-
-/** 将 datetime-local 值按本地时区解析；非法或会被 Date 滚转的日期（如 2 月 30 日）返回 null。 */
-function parseLocalDateTime(value: string): Date | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
-  if (!match) return null;
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const hour = Number(match[4]);
-  const minute = Number(match[5]);
-  const date = new Date(year, month - 1, day, hour, minute);
-  // 回检各分量一致，拒绝浏览器自动滚转出的“假合法”日期
-  if (
-    date.getFullYear() !== year ||
-    date.getMonth() !== month - 1 ||
-    date.getDate() !== day ||
-    date.getHours() !== hour ||
-    date.getMinutes() !== minute
-  ) {
-    return null;
-  }
-  return date;
-}
-
-/** 行内受控状态下拉：选中后立即复位为占位项，避免非受控 select 在行复用后残留旧值。 */
-function StatusTransitionSelect({ row, onTransition }: {
-  row: AppointmentRow;
-  onTransition: (id: string, status: string) => void;
-}) {
-  const [value, setValue] = useState('');
-  return (
-    <select
-      value={value}
-      aria-label="变更预约状态"
-      onChange={(event) => {
-        const next = event.target.value;
-        setValue('');
-        if (next) onTransition(row.id, next);
-      }}
-    >
-      <option value="">变更状态</option>
-      {Object.keys(APPOINTMENT_STATUS_LABELS).map((status) => (
-        <option key={status} value={status}>{APPOINTMENT_STATUS_LABELS[status]}</option>
-      ))}
-    </select>
-  );
-}
+import { APPOINTMENT_TYPE_LABELS } from '../lib/labels';
+import { parseLocalDateTime } from '../appointments/date';
+import { appointmentColumns } from '../appointments/columns';
+import type { AppointmentRow, AppointmentForm, PurposeRow, PurposeForm, LookupRow } from '../appointments/types';
 
 export function AppointmentsPage() {
   const { showToast } = useToast();
@@ -383,32 +301,14 @@ export function AppointmentsPage() {
     }
   }
 
-  const columns = [
-    { key: 'patientId', label: '患者', render: (row: AppointmentRow) => row.patientIdLabel ?? row.tempPatientName ?? row.patientId ?? '' },
-    { key: 'doctorId', label: '医生', render: (row: AppointmentRow) => row.doctorIdLabel ?? row.doctorId ?? '' },
-    { key: 'purpose', label: '预约事项', render: (row: AppointmentRow) => String(row.purpose ?? '') },
-    {
-      key: 'startTime',
-      label: '开始时间',
-      render: (row: AppointmentRow) => row.startTime ? new Date(row.startTime).toLocaleString('zh-CN', { hour12: false }) : '',
-    },
-    {
-      key: 'status',
-      label: '状态',
-      render: (row: AppointmentRow) => APPOINTMENT_STATUS_LABELS[String(row.status ?? '')] ?? String(row.status ?? ''),
-    },
-    {
-      key: 'actions',
-      label: '操作',
-      render: (row: AppointmentRow) => (
-        <>
-          <StatusTransitionSelect row={row} onTransition={transition} />
-          <button onClick={() => openEditAppointment(row)}>编辑</button>
-          <button className="danger" onClick={() => setDeleteTarget(row)}>删除</button>
-        </>
-      ),
-    },
-  ];
+  // appointmentColumns 仅存储回调供 DataTable 行点击时调用；ref 读取发生在事件处理器中，
+  // 不在渲染期 —— react-hooks/refs 静态分析无法区分，属误报
+  // eslint-disable-next-line react-hooks/refs
+  const columns = appointmentColumns({
+    onTransition: (id, status) => void transition(id, status),
+    onEdit: (row) => openEditAppointment(row),
+    onDelete: (row) => setDeleteTarget(row),
+  });
 
   return (
     <div className="page">
