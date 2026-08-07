@@ -6,26 +6,7 @@ import { DataTable, LoadingState, PageError, type DataTableColumn } from './comp
 import { formatMoney } from './format';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
-
-const PROCESSING_STATUS_LABELS: Record<string, string> = {
-  SENT: '已发送',
-  IN_PROGRESS: '加工中',
-  COMPLETED: '已完成',
-  RECEIVED: '已收货',
-};
-
-const PURCHASE_STATUS_LABELS: Record<string, string> = {
-  PENDING: '待收货',
-  RECEIVED: '已收货',
-  CANCELLED: '已取消',
-};
-
-const STOCKTAKE_STATUS_LABELS: Record<string, string> = {
-  IN_PROGRESS: '进行中',
-  LOCKED: '已锁定',
-  COMPLETED: '已完成',
-  CANCELLED: '已取消',
-};
+import { INVENTORY_PROCESSING_STATUS_LABELS, PURCHASE_STATUS_LABELS, STOCKTAKE_STATUS_LABELS } from './labels';
 
 export function InventoryWorkflowPage() {
   const { showToast } = useToast();
@@ -125,7 +106,7 @@ export function InventoryWorkflowPage() {
 
   const processingColumns: DataTableColumn<Record<string, unknown>>[] = [
     { key: 'id', label: 'ID', render: (row) => String(row.id).slice(0, 8) },
-    { key: 'status', label: '状态', render: (row) => PROCESSING_STATUS_LABELS[String(row.status)] ?? String(row.status) },
+    { key: 'status', label: '状态', render: (row) => INVENTORY_PROCESSING_STATUS_LABELS[String(row.status)] ?? String(row.status) },
     {
       key: 'actions',
       label: '操作',

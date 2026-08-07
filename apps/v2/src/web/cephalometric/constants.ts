@@ -1,8 +1,5 @@
-export const REPORT_STATUS_LABELS: Record<string, string> = {
-  DRAFT: '草稿',
-  COMPLETED: '已完成',
-  FINAL: '最终',
-};
+// label 字典统一集中在 ../labels.ts（M-03），此处 re-export 保持旧导入路径不变。
+export { REPORT_STATUS_LABELS } from '../labels';
 
 export const COLOR_OPTIONS = [
   { value: '#2563eb', label: '蓝色' },
