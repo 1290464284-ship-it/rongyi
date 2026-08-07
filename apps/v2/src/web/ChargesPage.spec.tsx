@@ -126,7 +126,7 @@ describe('ChargesPage', () => {
       return {};
     });
     render(<ChargesPage />, { wrapper });
-    expect(await screen.findByText('charges failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
   });
 
   it('reports create, payment, and refund failures', async () => {
@@ -148,17 +148,17 @@ describe('ChargesPage', () => {
     fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: '洁牙' } });
     fireEvent.change(screen.getByLabelText('单价'), { target: { value: '100' } });
     fireEvent.click(screen.getByRole('button', { name: '新建收费单' }));
-    expect((await screen.findAllByText('charge failed')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('操作失败，请稍后重试')).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole('button', { name: '收款' }));
     fireEvent.change(screen.getByLabelText('收款金额（元）'), { target: { value: '10' } });
     fireEvent.click(screen.getByRole('button', { name: '确认收款' }));
-    expect((await screen.findAllByText('charge failed')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('操作失败，请稍后重试')).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole('button', { name: '退款' }));
     fireEvent.change(screen.getByLabelText('退款金额（元）'), { target: { value: '10' } });
     fireEvent.click(screen.getByRole('button', { name: '确认退款' }));
-    expect((await screen.findAllByText('charge failed')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('操作失败，请稍后重试')).length).toBeGreaterThan(0);
   });
 
   it('validates payment and refund amounts', async () => {

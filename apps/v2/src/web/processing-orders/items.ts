@@ -1,6 +1,5 @@
-import { apiRequest } from '../api';
+import { apiRequest, fetchAllPages } from '../api';
 import { toCents } from '../format';
-import type { Page } from '../types';
 import type { ProcessingItemForm, ProcessingOrderForm, ProcessingOrderItemRow } from './types';
 
 export function newItem(): ProcessingItemForm {
@@ -43,10 +42,10 @@ function validFormItems(items: ProcessingItemForm[]): ProcessingItemForm[] {
 
 /** 编辑保存时的明细 reconcile：有 id 的行 PATCH，新行 POST（带 orderId），被移除的行 DELETE。 */
 export async function reconcileProcessingItems(orderId: string, items: ProcessingItemForm[]): Promise<void> {
-  const existing = await apiRequest<Page<ProcessingOrderItemRow>>(
-    `/resources/processingOrderItems?orderId=${orderId}&page=1&pageSize=100`,
+  const existing = await fetchAllPages<ProcessingOrderItemRow>(
+    `/resources/processingOrderItems?orderId=${orderId}`,
   );
-  const existingById = new Map(existing.items.map((row) => [String(row.id), row]));
+  const existingById = new Map(existing.map((row) => [String(row.id), row]));
   const keptIds = new Set<string>();
   for (const item of validFormItems(items)) {
     const quantity = Number(item.quantity);
@@ -75,11 +74,12 @@ export async function reconcileProcessingItems(orderId: string, items: Processin
           unitPrice,
           subtotal: Math.round(unitPrice * quantity),
           status: 'DRAFT',
+          requestId: crypto.randomUUID(),
         }),
       });
     }
   }
-  for (const row of existing.items) {
+  for (const row of existing) {
     if (!keptIds.has(String(row.id))) {
       await apiRequest(`/resources/processingOrderItems/${String(row.id)}`, { method: 'DELETE' });
     }

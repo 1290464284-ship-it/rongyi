@@ -1,8 +1,8 @@
 import { Component, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { apiRequest, getSignedFileUrl } from './api';
 import type { Page } from './types';
-import { friendlyError } from './messages';
+import { errorMessage, friendlyError } from './messages';
 
 const FOCUSABLE_SELECTOR =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -77,7 +77,10 @@ export function SearchableSelect({
   }, [loaded, query.data]);
 
   const total = query.data?.total ?? 0;
-  const hasMore = total > loaded.length;
+  // M1：滚动加载设页数上限（10 页），超限停止自动加载并提示改用搜索，避免大资源全量持有
+  const MAX_LOAD_PAGES = 10;
+  const canLoadMore = total > loaded.length;
+  const loadCapped = canLoadMore && page >= MAX_LOAD_PAGES;
   const selectedMissing = value !== '' && !loaded.some((row) => String(row.id) === value);
 
   return (
@@ -104,11 +107,13 @@ export function SearchableSelect({
           if (event.key === 'Enter') event.preventDefault();
         }}
       />
-      {hasMore && (
+      {canLoadMore && (loadCapped ? (
+        <span className="searchable-select-cap">数据较多，仅展示前 {loaded.length} 条，请使用搜索筛选</span>
+      ) : (
         <button type="button" disabled={query.isFetching} onClick={() => setPage((current) => current + 1)}>
           加载更多（已加载 {loaded.length} 条）
         </button>
-      )}
+      ))}
       {query.error && <span className="error">{friendlyError(query.error)}</span>}
     </span>
   );
@@ -132,6 +137,9 @@ export function DataTable<T extends Record<string, unknown>>({
   emptyText?: string;
 }) {
   if (rows.length === 0) return <div className="table-empty">{emptyText}</div>;
+  // M2：行数上限（500），超限仅渲染前 500 行并提示，避免千行级列表全量 DOM 渲染
+  const MAX_RENDER_ROWS = 500;
+  const visibleRows = rows.length > MAX_RENDER_ROWS ? rows.slice(0, MAX_RENDER_ROWS) : rows;
   const tableContent = (
     <table>
       <thead>
@@ -144,7 +152,7 @@ export function DataTable<T extends Record<string, unknown>>({
         </tr>
       </thead>
       <tbody>
-        {rows.map((row, index) => (
+        {visibleRows.map((row, index) => (
           <tr key={keyField ? String(row[keyField] ?? '') : index}>
             {columns.map((column) => (
               <td key={column.key}>
@@ -158,6 +166,9 @@ export function DataTable<T extends Record<string, unknown>>({
   );
   return (
     <div className="table-wrap">
+      {rows.length > MAX_RENDER_ROWS && (
+        <div className="table-note">仅显示前 {MAX_RENDER_ROWS} 行（共 {rows.length} 行），请使用搜索或筛选缩小范围</div>
+      )}
       {rows.length > 100 ? (
         <div style={{ maxHeight: '60vh', overflowY: 'auto' }}>
           {tableContent}
@@ -247,6 +258,30 @@ export function QueryBoundary({
   if (error) return <PageError message={errorLabel ?? (error instanceof Error ? error.message : String(error))} />;
   if (data === undefined) return <PageError message={errorLabel ?? '数据加载失败'} />;
   return <>{children}</>;
+}
+
+/**
+ * H1 分区渲染：按单个查询独立渲染区块。
+ * 任一子查询失败只降级该区块（"该区块加载失败 + 重试"），不影响页面其余部分。
+ */
+export function QuerySection<T>({
+  query,
+  render,
+}: {
+  query: UseQueryResult<T, Error>;
+  render: (data: T | undefined) => ReactNode;
+}) {
+  if (query.isLoading) return <LoadingState label="加载中..." />;
+  if (query.error) {
+    return (
+      <div className="query-section-error">
+        <p className="error">该区块加载失败</p>
+        <PageError message={errorMessage(query.error, '数据加载失败')} />
+        <button type="button" onClick={() => void query.refetch()}>重试</button>
+      </div>
+    );
+  }
+  return <>{render(query.data)}</>;
 }
 
 export class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
@@ -398,15 +433,39 @@ export function ConfirmDialog({
   confirmText?: string;
   cancelText?: string;
   danger?: boolean;
-  onConfirm: () => void;
+  onConfirm: () => Promise<void> | void;
   onCancel: () => void;
 }) {
+  // submitting：确认按钮可返回 Promise（异步删除/切换），pending 期间两按钮禁用，
+  // 防止双击双发（删除双 DELETE、toggle 双 PATCH 状态来回）。
+  const [submitting, setSubmitting] = useState(false);
+  // 渲染期调整：关闭时复位 submitting，避免下一次打开仍处于禁用态
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (!open) setSubmitting(false);
+  }
+
+  async function handleConfirm() {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await onConfirm();
+    } catch {
+      // 调用方负责错误提示；这里只复位按钮状态
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <Dialog open={open} title={title} onClose={onCancel}>
       <p>{message}</p>
       <div className="modal-actions">
-        <button type="button" className="btn-secondary" onClick={onCancel}>{cancelText}</button>
-        <button type="button" className={danger ? 'danger' : undefined} onClick={onConfirm}>{confirmText}</button>
+        <button type="button" className="btn-secondary" disabled={submitting} onClick={onCancel}>{cancelText}</button>
+        <button type="button" className={danger ? 'danger' : undefined} disabled={submitting} onClick={() => void handleConfirm()}>
+          {submitting ? '处理中...' : confirmText}
+        </button>
       </div>
     </Dialog>
   );

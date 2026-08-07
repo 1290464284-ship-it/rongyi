@@ -16,26 +16,46 @@ on:
       - 'docs/refactor-v2-*'
       - '.github/workflows/v2-ci.yml'
 
-# CI 专用环境变量（非生产密钥）：加密备份必需 V2_BACKUP_KEY，
-# 否则 POST /backups 在无 key 且非 test 环境时返回 500，导致 API smoke 失败。
+# Round7 H2：CI 只读，不需要写权限。
+permissions:
+  contents: read
+
+# Round7 M3：同一分支连续 push 时取消进行中的旧 CI，避免并行浪费 Actions 分钟。
+concurrency:
+  group: v2-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Round7 M13：CI 专用备份密钥从仓库变量读取（非生产密钥），不再硬编码入库。
+# 需在仓库 Settings > Variables 配置 V2_BACKUP_KEY；缺失时 API smoke 的
+# 备份用例会失败（无 key 且非 test 环境时 POST /backups 返回 500）。
 env:
-  V2_BACKUP_KEY: ci-backup-key-0123456789abcdef
+  V2_BACKUP_KEY: ${{ vars.V2_BACKUP_KEY }}
 
 jobs:
   verify:
     name: Lint, Build, Type Check, Test & E2E
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # Round7 H8：25 分钟余量太小，放宽到 40 分钟。
+    timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24 runtime, Round7 M4)
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
           version: 11.15.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
+          # Round7 H8：pnpm store 缓存，避免每次全量下载依赖。
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -94,6 +114,18 @@ jobs:
       - name: Load benchmark
         run: pnpm --filter @dental/v2 benchmark:load
 
+      # Round7 H5：数据完整性验证进入 CI 门禁。此时 dev 库已有 smoke 产生的
+      # 数据，可真实覆盖外键孤儿 / 完整性 / 备份恢复全链路（delivery-drill
+      # 使用独立临时数据目录与自启 server，不干扰上面的 dev server）。
+      - name: Verify database integrity
+        run: pnpm --filter @dental/v2 verify:database
+
+      - name: Verify foreign keys
+        run: pnpm --filter @dental/v2 verify:foreign-keys
+
+      - name: Delivery drill
+        run: pnpm --filter @dental/v2 delivery:drill
+
       - name: Dump dev server logs on failure
         if: failure()
         run: |
@@ -105,3 +137,15 @@ jobs:
           else
             echo "No /tmp/v2-dev.log found"
           fi
+
+      # Round7 H8：失败时上传 coverage / dev server 日志，便于定位。
+      - name: Upload test artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: v2-ci-artifacts
+          if-no-files-found: ignore
+          path: |
+            apps/v2/coverage
+            apps/v2/coverage-web
+            /tmp/v2-dev.log

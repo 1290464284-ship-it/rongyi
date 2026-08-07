@@ -76,13 +76,13 @@ describe('DesktopSettingsPage', () => {
     await screen.findByText('3180');
 
     fireEvent.click(screen.getByRole('button', { name: '切换开机自启' }));
-    expect(await screen.findByText('auto failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: '重启 API' }));
-    expect(await screen.findByText('restart failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: '检查更新' }));
-    expect(await screen.findByText('update failed')).toBeDefined();
+    expect((await screen.findAllByText('操作失败，请稍后重试')).length).toBeGreaterThan(0);
 
     bridge.setAutoLaunch.mockRejectedValueOnce('boom');
     fireEvent.click(screen.getByRole('button', { name: '切换开机自启' }));
@@ -100,9 +100,9 @@ describe('DesktopSettingsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '检查更新' }));
     expect(await screen.findByText('当前已是最新版本')).toBeDefined();
 
-    bridge.checkUpdates.mockResolvedValueOnce({ status: 'error', message: 'custom update message' });
+    bridge.checkUpdates.mockResolvedValueOnce({ status: 'error', message: '自定义更新检查失败' });
     fireEvent.click(screen.getByRole('button', { name: '检查更新' }));
-    expect(await screen.findByText('custom update message')).toBeDefined();
+    expect(await screen.findByText('自定义更新检查失败')).toBeDefined();
 
     bridge.checkUpdates.mockResolvedValueOnce({ status: 'error' });
     fireEvent.click(screen.getByRole('button', { name: '检查更新' }));
@@ -149,7 +149,7 @@ describe('DesktopSettingsPage', () => {
     updateCallback?.({ type: 'none' });
     expect(await screen.findByText('当前已是最新版本')).toBeDefined();
     updateCallback?.({ type: 'error', message: 'update event error' });
-    expect(await screen.findByText('update event error')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
     updateCallback?.({ type: 'downloaded', version: '2.1.0' });
     expect(await screen.findByText('更新已下载，可重启安装')).toBeDefined();
     apiCallback?.({ status: 'crashed' });
@@ -197,7 +197,7 @@ describe('DesktopSettingsPage', () => {
     await screen.findByText('3180');
     updateCallback?.({ type: 'downloaded', version: '2.5.0' });
     fireEvent.click(await screen.findByRole('button', { name: '立即重启安装' }));
-    expect(await screen.findByText('install failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
 
     bridge.installUpdate?.mockRejectedValueOnce('boom');
     fireEvent.click(screen.getByRole('button', { name: '立即重启安装' }));

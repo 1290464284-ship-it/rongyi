@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import type { Page } from './types';
-import { DataTable, LoadingState, PageError, type DataTableColumn } from './components';
+import { DataTable, LoadingState, PageError, QuerySection, type DataTableColumn } from './components';
 import { formatMoney } from './format';
 import { errorMessage } from './messages';
+import { useAsyncAction } from './use-async-action';
 import { useToast } from './toast-context';
 
 const PROCESSING_STATUS_LABELS: Record<string, string> = {
@@ -34,6 +35,8 @@ export function InventoryWorkflowPage() {
   const [stocktakeNote, setStocktakeNote] = useState('');
   const [expandedStocktakeId, setExpandedStocktakeId] = useState<string | null>(null);
   const [countedInputs, setCountedInputs] = useState<Record<string, string>>({});
+  // 写请求 busy 守卫：防止双击重复创建盘点单
+  const { busy: creatingStocktake, run: runCreateStocktake } = useAsyncAction();
   const purchase = useQuery({
     queryKey: ['po-workflow'],
     queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/purchaseOrders?page=1&pageSize=100'),
@@ -60,24 +63,6 @@ export function InventoryWorkflowPage() {
     enabled: expandedStocktakeId !== null,
   });
 
-  if (purchase.isLoading || purchaseItems.isLoading || processing.isLoading || suggestions.isLoading) {
-    return <LoadingState label="库存与采购数据加载中..." />;
-  }
-  const loadError = purchase.error ?? purchaseItems.error ?? processing.error ?? suggestions.error;
-  if (loadError) {
-    return (
-      <div className="page">
-        <PageError message={loadError instanceof Error ? loadError.message : String(loadError)} />
-        <button onClick={() => {
-          void purchase.refetch();
-          void purchaseItems.refetch();
-          void processing.refetch();
-          void suggestions.refetch();
-        }}>重试</button>
-      </div>
-    );
-  }
-
   async function run(path: string, method: 'PATCH' | 'POST', body: Record<string, unknown>) {
     try {
       await apiRequest(path, { method, body: JSON.stringify(body) });
@@ -98,11 +83,6 @@ export function InventoryWorkflowPage() {
     await run('/inventory/replenishment/generate', 'POST', {});
   }
 
-  const openSuggestions = suggestions.data?.items.filter((row) => {
-    const status = row.status === null || row.status === undefined ? 'OPEN' : String(row.status);
-    return status === 'OPEN';
-  }) ?? [];
-
   const purchaseColumns: DataTableColumn<Record<string, unknown>>[] = [
     { key: 'number', label: '单号', render: (row) => String(row.number ?? row.id ?? '').slice(0, 14) },
     { key: 'supplierId', label: '供应商', render: (row) => String(row.supplierId ?? '') },
@@ -111,7 +91,7 @@ export function InventoryWorkflowPage() {
     {
       key: 'actions',
       label: '操作',
-      render: (row) => <button onClick={() => run(`/purchase-orders/${String(row.id)}/receive`, 'PATCH', {})}>收货</button>,
+      render: (row) => <ReceiveButton id={String(row.id)} onDone={(id) => run(`/purchase-orders/${id}/receive`, 'PATCH', {})} />,
     },
   ];
 
@@ -130,13 +110,7 @@ export function InventoryWorkflowPage() {
       key: 'actions',
       label: '操作',
       render: (row) => (
-        <select defaultValue="" onChange={(event) => event.target.value && run(`/processing-orders/${String(row.id)}/status`, 'PATCH', { status: event.target.value })}>
-          <option value="">流转</option>
-          <option value="SENT">已发送</option>
-          <option value="IN_PROGRESS">加工中</option>
-          <option value="COMPLETED">已完成</option>
-          <option value="RECEIVED">已收货</option>
-        </select>
+        <StatusFlowSelect id={String(row.id)} onDone={(id, status) => run(`/processing-orders/${id}/status`, 'PATCH', { status })} />
       ),
     },
   ];
@@ -203,10 +177,6 @@ export function InventoryWorkflowPage() {
     }
   }
 
-  const lockStocktake = (id: string) => stocktakeAction(`/stocktakes/${id}/lock`, 'POST');
-  const completeStocktake = (id: string) => stocktakeAction(`/stocktakes/${id}/complete`, 'POST');
-  const cancelStocktake = (id: string) => stocktakeAction(`/stocktakes/${id}/cancel`, 'POST');
-
   const stocktakeColumns: DataTableColumn<Record<string, unknown>>[] = [
     { key: 'number', label: '单号', render: (row) => String(row.number ?? '') },
     { key: 'status', label: '状态', render: (row) => STOCKTAKE_STATUS_LABELS[String(row.status)] ?? String(row.status) },
@@ -224,16 +194,21 @@ export function InventoryWorkflowPage() {
           return (
             <span className="inline-form">
               <button onClick={() => toggleStocktakeItems(id)}>{expandedStocktakeId === id ? '收起' : '录入'}</button>
-              <button onClick={() => lockStocktake(id)}>锁定</button>
-              <button onClick={() => cancelStocktake(id)}>取消</button>
+              <StocktakeRowActions
+                id={id}
+                onDone={stocktakeAction}
+              />
             </span>
           );
         }
         if (status === 'LOCKED') {
           return (
             <span className="inline-form">
-              <button onClick={() => completeStocktake(id)}>完成盘点</button>
-              <button onClick={() => cancelStocktake(id)}>取消</button>
+              <StocktakeRowActions
+                id={id}
+                onDone={stocktakeAction}
+                locked
+              />
             </span>
           );
         }
@@ -275,22 +250,46 @@ export function InventoryWorkflowPage() {
     <div className="page">
       <h1>库存与采购操作</h1>
       <h2>采购单</h2>
-      <DataTable
-        columns={purchaseColumns}
-        rows={purchase.data?.items.filter((row) => String(row.status) === 'PENDING') ?? []}
-        keyField="id"
-        emptyText="暂无待收货采购单"
+      <QuerySection
+        query={purchase}
+        render={(data) => (
+          <DataTable
+            columns={purchaseColumns}
+            rows={data?.items.filter((row) => String(row.status) === 'PENDING') ?? []}
+            keyField="id"
+            emptyText="暂无待收货采购单"
+          />
+        )}
       />
       <h2>采购单明细</h2>
-      <DataTable columns={purchaseItemColumns} rows={purchaseItems.data?.items ?? []} keyField="id" emptyText="暂无采购明细" />
+      <QuerySection
+        query={purchaseItems}
+        render={(data) => <DataTable columns={purchaseItemColumns} rows={data?.items ?? []} keyField="id" emptyText="暂无采购明细" />}
+      />
       <h2>加工单</h2>
-      <DataTable columns={processingColumns} rows={processing.data?.items ?? []} keyField="id" emptyText="暂无加工单" />
+      <QuerySection
+        query={processing}
+        render={(data) => <DataTable columns={processingColumns} rows={data?.items ?? []} keyField="id" emptyText="暂无加工单" />}
+      />
       <h2>补货建议</h2>
-      <div className="inline-form">
-        <button onClick={generateSuggestions}>生成补货建议</button>
-        <button onClick={applySuggestions}>应用选中建议</button>
-      </div>
-      <DataTable columns={suggestionColumns} rows={openSuggestions} keyField="id" emptyText="暂无待应用补货建议" />
+      <QuerySection
+        query={suggestions}
+        render={(data) => {
+          const openSuggestions = data?.items.filter((row) => {
+            const status = row.status === null || row.status === undefined ? 'OPEN' : String(row.status);
+            return status === 'OPEN';
+          }) ?? [];
+          return (
+            <>
+              <div className="inline-form">
+                <button onClick={generateSuggestions}>生成补货建议</button>
+                <button onClick={applySuggestions}>应用选中建议</button>
+              </div>
+              <DataTable columns={suggestionColumns} rows={openSuggestions} keyField="id" emptyText="暂无待应用补货建议" />
+            </>
+          );
+        }}
+      />
       <h2>库存盘点</h2>
       <div className="inline-form">
         <input
@@ -305,7 +304,9 @@ export function InventoryWorkflowPage() {
           placeholder="备注"
           aria-label="备注"
         />
-        <button onClick={createStocktake}>开始盘点</button>
+        <button onClick={() => void runCreateStocktake(createStocktake)} disabled={creatingStocktake}>
+          {creatingStocktake ? '创建中...' : '开始盘点'}
+        </button>
       </div>
       {stocktakes.isLoading ? <LoadingState label="盘点数据加载中..." /> : null}
       {stocktakes.error ? <PageError message={stocktakes.error instanceof Error ? stocktakes.error.message : String(stocktakes.error)} /> : null}
@@ -323,5 +324,61 @@ export function InventoryWorkflowPage() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** 行内“收货”按钮：busy 期间禁用，防止双击重复收货。 */
+function ReceiveButton({ id, onDone }: { id: string; onDone: (id: string) => Promise<void> }) {
+  const { busy, run } = useAsyncAction();
+  return (
+    <button disabled={busy} onClick={() => run(() => onDone(id))}>
+      {busy ? '收货中...' : '收货'}
+    </button>
+  );
+}
+
+/** 行内加工状态流转下拉：选中即触发，busy 期间禁用，防止连选重复流转。M12：受控 value + 选中后复位占位项。 */
+function StatusFlowSelect({ id, onDone }: { id: string; onDone: (id: string, status: string) => Promise<void> }) {
+  const { busy, run } = useAsyncAction();
+  const [value, setValue] = useState('');
+  return (
+    <select
+      disabled={busy}
+      value={value}
+      onChange={(event) => {
+        const next = event.target.value;
+        setValue('');
+        if (next) void run(() => onDone(id, next));
+      }}
+    >
+      <option value="">流转</option>
+      <option value="SENT">已发送</option>
+      <option value="IN_PROGRESS">加工中</option>
+      <option value="COMPLETED">已完成</option>
+      <option value="RECEIVED">已收货</option>
+    </select>
+  );
+}
+
+/** 盘点单行内操作（锁定/完成/取消）：busy 期间全部禁用，防止双击重复状态迁移。 */
+function StocktakeRowActions({ id, onDone, locked = false }: {
+  id: string;
+  onDone: (path: string, method: 'PATCH' | 'POST', body?: Record<string, unknown>) => Promise<void>;
+  locked?: boolean;
+}) {
+  const { busy, run } = useAsyncAction();
+  if (locked) {
+    return (
+      <span className="inline-form">
+        <button disabled={busy} onClick={() => run(() => onDone(`/stocktakes/${id}/complete`, 'POST'))}>完成盘点</button>
+        <button disabled={busy} onClick={() => run(() => onDone(`/stocktakes/${id}/cancel`, 'POST'))}>取消</button>
+      </span>
+    );
+  }
+  return (
+    <span className="inline-form">
+      <button disabled={busy} onClick={() => run(() => onDone(`/stocktakes/${id}/lock`, 'POST'))}>锁定</button>
+      <button disabled={busy} onClick={() => run(() => onDone(`/stocktakes/${id}/cancel`, 'POST'))}>取消</button>
+    </span>
   );
 }

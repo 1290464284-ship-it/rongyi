@@ -22,6 +22,7 @@ const { pathToFileURL } = require('node:url');
 
 const { randomInt } = require('node:crypto');
 const { shell } = require('electron');
+const net = require('node:net');
 
 const isDev = !app.isPackaged;
 let apiProcess = null;
@@ -216,6 +217,27 @@ function randomPort() {
   return randomInt(30000, 50000);
 }
 
+// Round7 M6：随机端口可能落入 Windows 排除端口保留段（README 已记录 3180
+// 的同类问题）或恰被其他进程占用。spawn 前先临时 bind 探测，失败换端口，
+// 最多尝试 10 次，避免 API 子进程 EADDRINUSE 后走重启退避、首次启动失败。
+function isPortFree(port) {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once('error', () => resolve(false));
+    server.listen({ port, host: '127.0.0.1' }, () => {
+      server.close(() => resolve(true));
+    });
+  });
+}
+
+async function pickFreePort() {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const candidate = randomPort();
+    if (await isPortFree(candidate)) return candidate;
+  }
+  throw new Error('无法在 30000-50000 段找到可用端口（连续 10 次探测均被占用）');
+}
+
 function waitForApi(port, timeoutMs = 30000) {
   return new Promise((resolve, reject) => {
     const startedAt = Date.now();
@@ -256,7 +278,7 @@ function apiScript() {
 
 async function startApi() {
   if (apiProcess && !apiProcess.killed) return apiPort;
-  apiPort = randomPort();
+  apiPort = await pickFreePort();
   const userDataDir = app.getPath('userData');
   // S-L2（第七轮）：JWT/备份密钥不再经 spawn env 透传（Windows 上同用户进程
   // 可枚举子进程环境块），改为写入 os.tmpdir() 下随机名临时文件（mode 0o600，
@@ -772,18 +794,18 @@ app.whenReady().then(async () => {
 
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    // 审计 L3：CSP 端口收紧。API 端口运行时随机（startApi 后 apiPort 已确定），
-    // 只放行精确的 http://127.0.0.1:<apiPort>，不再使用 http://127.0.0.1:* 通配；
+    // 审计 L3/M7：CSP 收敛为单一来源——静态部分由 index.html 的 meta 提供
+    // （构建期注入 nonce，无 'unsafe-inline'）；本处仅补充 meta 无法表达的动态边界：
+    // connect-src 精确到运行时 API 端口（meta 为 http://127.0.0.1:* 通配，取交集后收紧）；
     // WebSocket 仅 dev 下放行 vite HMR 的 ws://localhost:<devPort>。
     const apiOrigin = apiPort ? `http://127.0.0.1:${apiPort}` : '';
     const devWs = isDev ? ` ws://localhost:${new URL(process.env.V2_WEB_URL || 'http://localhost:5180').port}` : '';
-    const csp = `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:${apiOrigin ? ` ${apiOrigin}` : ''}; connect-src 'self'${apiOrigin ? ` ${apiOrigin}` : ''}${devWs}; font-src 'self' data:; media-src 'self' blob: data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self';`;
     callback({
       responseHeaders: {
         ...details.responseHeaders,
         'X-Content-Type-Options': ['nosniff'],
         'X-Frame-Options': ['DENY'],
-        'Content-Security-Policy': [csp],
+        'Content-Security-Policy': [`connect-src 'self'${apiOrigin ? ` ${apiOrigin}` : ''}${devWs};`],
       },
     });
   });

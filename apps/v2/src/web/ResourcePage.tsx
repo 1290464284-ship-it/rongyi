@@ -278,7 +278,7 @@ export function ResourcePage({ resource: fixedResource }: { resource?: string })
         message={`确定删除该${label}记录吗？`}
         confirmText="确认删除"
         danger
-        onConfirm={() => void remove()}
+        onConfirm={() => remove()}
         onCancel={() => setDeleteTarget(null)}
       />
     </div>

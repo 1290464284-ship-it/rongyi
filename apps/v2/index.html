@@ -3,19 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- 审计 L3：CSP 收紧。meta 与 Electron 响应头 CSP 取交集生效：
-         meta 需保留 http://127.0.0.1:*（API 端口运行时随机，静态 meta 无法写死），
-         实际边界由 main.cjs 响应头注入的精确 http://127.0.0.1:<apiPort> 决定；
-         WebSocket 收紧为 vite HMR 固定端口 ws://localhost:5180（server.port 5180）。 -->
+    <!-- 审计 L3/M7：CSP 收紧并收敛为单一来源。
+         静态部分以本 meta 为唯一来源：构建期由 vite.config.ts 的 cspNonce 插件
+         将 nonce 占位符替换为随机 nonce（script/style 均不再使用 'unsafe-inline'）；
+         dev 下由 devCsp 插件还原为 'unsafe-inline' 以支持 React Refresh/HMR。
+         Electron 侧 main.cjs 仅补充 meta 无法表达的动态边界：connect-src 精确到运行时
+         API 端口（meta 为 http://127.0.0.1:* 通配，两者取交集后收紧为精确端口）。 -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http://127.0.0.1:*; connect-src 'self' http://127.0.0.1:* ws://localhost:5180; font-src 'self' data:; media-src 'self' blob: data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self';"
+      content="default-src 'self'; script-src 'self' 'nonce-__CSP_NONCE__'; style-src 'self' 'nonce-__CSP_NONCE__'; img-src 'self' data: blob: http://127.0.0.1:*; connect-src 'self' http://127.0.0.1:* ws://localhost:5180; font-src 'self' data:; media-src 'self' blob: data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self';"
     />
-    <!-- TODO: 迁移 nonce-based 移除 unsafe-inline -->
     <title>口腔诊所管理系统</title>
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/web/main.tsx"></script>
+    <script type="module" src="/src/web/main.tsx" nonce="__CSP_NONCE__"></script>
   </body>
 </html>
