@@ -21,6 +21,7 @@ import { SystemClock } from '../../infrastructure/clock';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { ConflictError, NotFoundError } from '../../infrastructure/errors';
 import { maskPhoneForExport } from './operations';
+import { CLINIC_TZ_OFFSET_HOURS } from '../../../domain/contracts';
 import type { AppContext } from '../../../domain/contracts';
 
 type WechatReminderScene = 'APPOINTMENT_REMINDER' | 'TREATMENT_RECALL' | 'FIRST_EXAM_NUDGE';
@@ -30,6 +31,10 @@ const WECHAT_REMINDER_SCENE_LABELS: Record<WechatReminderScene, string> = {
   TREATMENT_RECALL: '治疗后回访',
   FIRST_EXAM_NUDGE: '首诊跟进',
 };
+
+/** B-L8：同一诊所同一天的提醒生成结果 5 分钟内不重复扫描/插入（生成幂等的第二道闸）：
+ *  高频轮询今日清单（如前端每 30s 刷新）不会反复跑三张大表扫描。 */
+const TODAY_GENERATED_CACHE_TTL_MS = 5 * 60 * 1000;
 
 export interface WechatReminderConfig {
   enabled: boolean;
@@ -88,9 +93,12 @@ function shiftDate(dateText: string, deltaDays: number): string {
 }
 
 function formatLocalTime(iso: string): string {
+  // 诊所时区固定 +8h（与 SystemClock.clinicDate 一致）：直接用 UTC 偏移换算，
+  // 避免依赖服务器本地时区导致同一预约在不同机器上显示不同时间（B-H3）。
   const date = new Date(iso);
-  const hh = String(date.getHours()).padStart(2, '0');
-  const mm = String(date.getMinutes()).padStart(2, '0');
+  const shifted = new Date(date.getTime() + CLINIC_TZ_OFFSET_HOURS * 3_600_000);
+  const hh = String(shifted.getUTCHours()).padStart(2, '0');
+  const mm = String(shifted.getUTCMinutes()).padStart(2, '0');
   return `${hh}:${mm}`;
 }
 
@@ -102,7 +110,16 @@ function boundedDays(value: unknown, fallback: number): number {
 }
 
 export class WechatReminderService {
+  /** B-L8：实例级生成缓存（clinicId:date → 最近生成时刻）。服务按单例注入，
+   *  生产环境共享同一缓存；测试按用例新建实例则互不污染。 */
+  private readonly todayGeneratedCache = new Map<string, { date: string; generatedAt: number }>();
+
   constructor(private readonly db: Database.Database) {}
+
+  /** 清除今日生成缓存（测试隔离/规则变更后强制重新生成用）。 */
+  clearTodayGeneratedCache(): void {
+    this.todayGeneratedCache.clear();
+  }
 
   config(context: AppContext): WechatReminderConfig {
     const rows = this.db.prepare(
@@ -123,12 +140,20 @@ export class WechatReminderService {
     return config;
   }
 
-  /** 返回今日清单；首次调用会按当前规则幂等生成当天的 PENDING 提醒。 */
+  /** 返回今日清单；首次调用会按当前规则幂等生成当天的 PENDING 提醒（5 分钟 TTL 缓存生成标志）。 */
   today(context: AppContext): { date: string; config: WechatReminderConfig; items: WechatReminderItem[] } {
     const now = context.now();
     const today = new SystemClock().clinicDate(now);
     const config = this.config(context);
-    if (config.enabled) this.generateDue(context, config, today);
+    if (config.enabled) {
+      const cacheKey = `${context.clinicId ?? 'global'}:${today}`;
+      const cached = this.todayGeneratedCache.get(cacheKey);
+      const nowMs = Date.now();
+      if (!cached || cached.date !== today || nowMs - cached.generatedAt >= TODAY_GENERATED_CACHE_TTL_MS) {
+        this.generateDue(context, config, today);
+        this.todayGeneratedCache.set(cacheKey, { date: today, generatedAt: nowMs });
+      }
+    }
     return { date: today, config, items: this.listPending(context, today) };
   }
 
@@ -183,7 +208,7 @@ export class WechatReminderService {
       `SELECT a.id AS sourceId, a.patientId, p.name AS patientName, a.startTime
        FROM Appointment a
        JOIN Patient p ON p.id = a.patientId AND p.deletedAt IS NULL
-       WHERE a.deletedAt IS NULL AND substr(a.startTime, 1, 10) = ?
+       WHERE a.deletedAt IS NULL AND substr(datetime(a.startTime, '+8 hours'), 1, 10) = ?
          AND a.status IN ('BOOKED', 'ARRIVED')${tenantAnd(clinicId, 'a.clinicId')}
        ORDER BY a.startTime ASC
        LIMIT 200`,
@@ -194,7 +219,7 @@ export class WechatReminderService {
        FROM Visit v
        JOIN Patient p ON p.id = v.patientId AND p.deletedAt IS NULL
        WHERE v.deletedAt IS NULL AND v.status = 'COMPLETED'
-         AND substr(COALESCE(v.endTime, v.startTime), 1, 10) = ?${tenantAnd(clinicId, 'v.clinicId')}
+         AND substr(datetime(COALESCE(v.endTime, v.startTime), '+8 hours'), 1, 10) = ?${tenantAnd(clinicId, 'v.clinicId')}
        ORDER BY v.endTime ASC
        LIMIT 200`,
     ).all(recallDate, ...tenantParams(clinicId)) as ReminderCandidate[];
@@ -203,7 +228,7 @@ export class WechatReminderService {
       `SELECT e.id AS sourceId, e.patientId, p.name AS patientName
        FROM FirstExam e
        JOIN Patient p ON p.id = e.patientId AND p.deletedAt IS NULL
-       WHERE e.deletedAt IS NULL AND substr(e.createdAt, 1, 10) = ?
+       WHERE e.deletedAt IS NULL AND substr(datetime(e.createdAt, '+8 hours'), 1, 10) = ?
          AND (e.followUpStatus IS NULL OR e.followUpStatus IN ('NONE', 'PENDING'))${tenantAnd(clinicId, 'e.clinicId')}
        ORDER BY e.createdAt ASC
        LIMIT 200`,

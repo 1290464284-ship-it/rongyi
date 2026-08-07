@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError } from '../../infrastructure/errors';
+import { upsertSearchRow } from '../../infrastructure/search-index';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import type { AppContext } from '../../../domain/contracts';
 
@@ -140,6 +141,8 @@ export class RefundFlowService {
     this.db.prepare(
       `UPDATE Charge SET refundedAmount = ?, status = ?, updatedAt = ? WHERE id = ?`,
     ).run(newRefunded, chargeStatus, now, charge.id);
+    // 直写搜索索引：Charge 状态变更后刷新其可检索内容。
+    upsertSearchRow(this.db, 'Charge', String(charge.id));
 
     // 新退款（迁移 146 后）在 PaymentLedger 留有 REFUND 行与逐笔 allocations：
     // 按流水精确回退对应卡余额并回退 reversedAmount。旧退款（无 allocations）
