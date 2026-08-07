@@ -542,6 +542,10 @@ a {
   margin: 0;
 }
 
+.page > h2 {
+  margin: 18px 0 10px;
+}
+
 /* 区块标题：14px/600（设计稿 B+A 层级） */
 .content h2,
 .content h3 {
