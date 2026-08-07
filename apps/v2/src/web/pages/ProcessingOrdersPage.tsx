@@ -9,7 +9,6 @@ import { useToast } from '../lib/toast-context';
 import {
   FLOW_STATUSES,
   FLOW_STATUS_LABELS,
-  STATUS_LABELS,
   type ProcessingFlowStatsData,
   type ProcessingOrderForm,
   type ProcessingOrderStepRow,
@@ -20,6 +19,8 @@ import { buildValidItems, emptyProcessingForm, joinList, newItem, reconcileProce
 import { splitList } from '../lib/format';
 import { flowStatsColumns, processingColumns } from '../processing-orders/columns';
 import { ProcessingOrderFormFields } from '../processing-orders/ProcessingOrderFormFields';
+import { transitionProcessingOrder } from '../processing-orders/api';
+import { ProcessingStatusSelect } from '../processing-orders/ProcessingStatusSelect';
 
 export function ProcessingOrdersPage() {
   const { showToast } = useToast();
@@ -372,44 +373,3 @@ export function ProcessingOrdersPage() {
   );
 }
 
-async function transitionProcessingOrder(
-  showToast: (message: string, kind?: 'success' | 'error' | 'info') => void,
-  reload: () => Promise<unknown>,
-  id: string,
-  status: string,
-) {
-  try {
-    await apiRequest(`/processing-orders/${id}/status`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status }),
-    });
-    showToast('加工单状态已更新', 'success');
-    await reload();
-  } catch (error) {
-    showToast(errorMessage(error, '状态更新失败'), 'error');
-  }
-}
-
-/** 行内受控状态下拉：选中后立即复位为占位项，避免非受控 select 在行复用后残留旧值。 */
-function ProcessingStatusSelect({ rowId, onTransition }: {
-  rowId: string;
-  onTransition: (id: string, status: string) => void;
-}) {
-  const [value, setValue] = useState('');
-  return (
-    <select
-      value={value}
-      aria-label="变更加工状态"
-      onChange={(event) => {
-        const next = event.target.value;
-        setValue('');
-        if (next) onTransition(rowId, next);
-      }}
-    >
-      <option value="">变更状态</option>
-      {Object.entries(STATUS_LABELS).map(([value, label]) => (
-        <option key={value} value={value}>{label}</option>
-      ))}
-    </select>
-  );
-}
