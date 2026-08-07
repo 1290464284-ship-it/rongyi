@@ -1,9 +1,16 @@
 import type { NextFunction, Request, Response } from 'express';
 import { AppError } from '../infrastructure/errors';
 
-interface Window {
+export interface RateLimitWindow {
   count: number;
   resetAt: number;
+}
+
+export interface RateLimitStore {
+  get(key: string): RateLimitWindow | undefined;
+  set(key: string, window: RateLimitWindow): void;
+  delete?(key: string): void;
+  pruneIfStale?(now?: number): void;
 }
 
 export interface RateLimitOptions {
@@ -13,6 +20,7 @@ export interface RateLimitOptions {
 
 interface RateLimiterConfig extends RateLimitOptions {
   keyFor: (req: Request) => string;
+  store?: RateLimitStore;
 }
 
 /**
@@ -20,15 +28,16 @@ interface RateLimiterConfig extends RateLimitOptions {
  * 所有限流中间件（按路由+IP、按 IP、按用户名等）共用同一份窗口逻辑，
  * 避免窗口裁剪/计数/429 语义在多处拷贝中漂移。
  */
-function createLimiter({ windowMs, max, keyFor }: RateLimiterConfig) {
-  const windows = new Map<string, Window>();
+function createLimiter({ windowMs, max, keyFor, store }: RateLimiterConfig) {
+  const windows = store ? null : new Map<string, RateLimitWindow>();
   const MAX_WINDOWS = 10_000;
 
   return (req: Request, res: Response, next: NextFunction): void => {
     const key = keyFor(req);
     const now = Date.now();
+    store?.pruneIfStale?.(now);
     /* v8 ignore start -- bounded-window pruning is a performance safeguard. */
-    if (windows.size >= MAX_WINDOWS && !windows.has(key)) {
+    if (windows && windows.size >= MAX_WINDOWS && !windows.has(key)) {
       for (const [candidateKey, candidate] of windows) {
         if (candidate.resetAt <= now) windows.delete(candidateKey);
       }
@@ -38,9 +47,11 @@ function createLimiter({ windowMs, max, keyFor }: RateLimiterConfig) {
       }
     }
     /* v8 ignore stop */
-    const current = windows.get(key);
+    const current = store ? store.get(key) : windows?.get(key);
     if (!current || current.resetAt <= now) {
-      windows.set(key, { count: 1, resetAt: now + windowMs });
+      const fresh: RateLimitWindow = { count: 1, resetAt: now + windowMs };
+      if (store) store.set(key, fresh);
+      else windows?.set(key, fresh);
       next();
       return;
     }
@@ -50,7 +61,8 @@ function createLimiter({ windowMs, max, keyFor }: RateLimiterConfig) {
       next(new AppError('RATE_LIMITED', 'Too many requests', 429));
       return;
     }
-    windows.set(key, current);
+    if (store) store.set(key, current);
+    else windows?.set(key, current);
     next();
   };
 }
@@ -59,9 +71,10 @@ function createLimiter({ windowMs, max, keyFor }: RateLimiterConfig) {
  * 默认限流器：键 = IP + 方法 + 路由路径；
  * 登录接口额外带上 username 维度，同一账户的爆破共享一个预算。
  */
-export function createRateLimit(options: RateLimitOptions) {
+export function createRateLimit(options: RateLimitOptions, store?: RateLimitStore) {
   return createLimiter({
     ...options,
+    store,
     keyFor: (req) => {
       const routePath = req.route?.path ?? req.path;
       const base = `${req.ip ?? 'unknown'}:${req.method}:${routePath}`;
@@ -76,6 +89,6 @@ export function createRateLimit(options: RateLimitOptions) {
  * IP-only 限流器：键 = 客户端 IP 本身（无方法/路径/用户名维度），
  * 任意路由组合的突发共享一个 IP 预算。常叠加在 createRateLimit 之上。
  */
-export function createIpRateLimit(options: RateLimitOptions) {
-  return createLimiter({ ...options, keyFor: (req) => req.ip ?? 'unknown' });
+export function createIpRateLimit(options: RateLimitOptions, store?: RateLimitStore) {
+  return createLimiter({ ...options, store, keyFor: (req) => req.ip ?? 'unknown' });
 }

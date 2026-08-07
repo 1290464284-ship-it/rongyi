@@ -1,7 +1,7 @@
 import { EmptyState, LoadingState } from '../components';
 import { formatMoney } from '../lib/format';
 import { errorMessage } from '../lib/messages';
-import type { ChargeTreeNode } from './charge-types';
+import type { ChargeTreeNode } from './types';
 
 export function ChargeTreePanel({
   isLoading,

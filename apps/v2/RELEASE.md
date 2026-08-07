@@ -130,6 +130,13 @@ Verify a local installer locally:
 
 ```powershell
 pnpm --filter @dental/v2 run verify:signature
+
+Public release now requires the `V2_EXPECTED_CERT_THUMBPRINT` repository
+variable in addition to `CSC_LINK`/`CSC_KEY_PASSWORD`. `v2-release.yml` fails
+fast when the thumbprint is not configured, and `verify:signature.ps1` pins it
+when present. Configure `publisherName` in `package.json` build only after the
+CA-issued certificate is available; the internal/self-signed path keeps the
+default signature verification behavior.
 ```
 
 ## Internal Build
@@ -145,8 +152,48 @@ It generates a temporary self-signed certificate, packages the installer
 under an `-internal.<UTC timestamp>` version suffix (so internal-feed updates
 always apply), verifies package/update metadata, and runs the installer smoke.
 Windows will warn about the unknown publisher; do not treat this as a public
-signed release. See [docs/release-modes.md](../../docs/release-modes.md) for
+signed release. See [docs/release/release-modes.md](../../docs/release/release-modes.md) for
 the full comparison.
+
+The internal path signs with `Set-AuthenticodeSignature` and skips the remote
+timestamp server, so it works on machines without internet access. Signatures
+without a timestamp rely on the installed certificate for trust.
+
+For a reusable free certificate (so controlled machines can install it once
+and stop seeing the unknown-publisher warning):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/create-internal-signing-cert.ps1
+```
+
+This writes `certs/internal-signing.pfx`, its public `.cer` and a password file
+(all gitignored). Install the `.cer` into Trusted Root Certification
+Authorities and Trusted Publishers on each controlled machine, then pass the
+certificate to the internal build:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build-internal-installer.ps1 `
+  -CertificatePath certs/internal-signing.pfx `
+  -CertificatePassword (Get-Content certs/internal-signing.pfx-password.txt)
+```
+
+On each controlled machine, run this once (CurrentUser stores, no admin needed):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/install-internal-cert.ps1
+```
+
+Trust does not travel with the installer: a self-signed certificate is only
+trusted after it is installed on that specific machine. Never copy the `.pfx`
+(private key) to other machines; distribute only the `.cer`.
+
+The app also auto-trusts the bundled certificate on startup: the internal
+installer ships `build/internal-signing.pfx.cer`, and Electron installs it into
+the CurrentUser `Root` and `TrustedPublisher` stores the first time the app
+opens on a machine. Subsequent launches and installs on that machine are
+trusted without extra steps. If Windows SmartScreen blocks the very first
+launch of a downloaded copy, click "More info" then "Run anyway" once; the
+next launch is automatic.
 
 ### GitHub Internal Release
 

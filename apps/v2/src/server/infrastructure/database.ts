@@ -356,15 +356,33 @@ export function seedDatabase(db: Database.Database): void {
   const userId = adminRow?.id ?? 'user-admin-001';
   if (!adminRow) {
     if (isProduction) {
-      throw new Error('Production database must contain an admin user; refusing to seed default credentials');
+      // Production bootstrap: an operator-provided V2_ADMIN_PASSWORD creates
+      // the first admin. Without it the app refuses to start, so no default
+      // credentials are ever shipped.
+      const bootstrapPassword = process.env.V2_ADMIN_PASSWORD;
+      if (!bootstrapPassword || bootstrapPassword.length < 6) {
+        throw new Error(
+          'Production database must contain an admin user; ' +
+            'set V2_ADMIN_PASSWORD (min 6 chars) to bootstrap one on first start',
+        );
+      }
+      const passwordHash = bcrypt.hashSync(bootstrapPassword, 10);
+      db.prepare(
+        `INSERT INTO User (
+           id, clinicId, createdAt, updatedAt, deletedAt,
+           username, passwordHash, name, role, active, loginAttempts, tokenVersion
+         ) VALUES (?, ?, ?, ?, NULL, 'admin', ?, 'System Administrator', 'BOSS', 1, 0, 0)`,
+      ).run(userId, clinicId, now, now, passwordHash);
+      console.warn('[seed] production admin bootstrap: admin created from V2_ADMIN_PASSWORD; change the password after first login');
+    } else {
+      const passwordHash = bcrypt.hashSync(seedPassword, 10);
+      db.prepare(
+        `INSERT INTO User (
+           id, clinicId, createdAt, updatedAt, deletedAt,
+           username, passwordHash, name, role, active, loginAttempts, tokenVersion
+         ) VALUES (?, ?, ?, ?, NULL, 'admin', ?, 'System Administrator', 'BOSS', 1, 0, 0)`,
+      ).run(userId, clinicId, now, now, passwordHash);
     }
-    const passwordHash = bcrypt.hashSync(seedPassword, 10);
-    db.prepare(
-      `INSERT INTO User (
-         id, clinicId, createdAt, updatedAt, deletedAt,
-         username, passwordHash, name, role, active, loginAttempts, tokenVersion
-       ) VALUES (?, ?, ?, ?, NULL, 'admin', ?, 'System Administrator', 'BOSS', 1, 0, 0)`,
-    ).run(userId, clinicId, now, now, passwordHash);
   }
   // 非生产且未显式配置 V2_ADMIN_PASSWORD 时，提醒默认管理员口令已生效；
   // 测试环境静默，避免测试输出噪音。

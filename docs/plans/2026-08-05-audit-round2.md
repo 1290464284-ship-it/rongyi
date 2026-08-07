@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- 所有命令在 `D:/Desktop/rongyi/source/` 下执行：`pnpm --filter @dental/v2 <script>`。
+- 所有命令在 `D:/Desktop/rongyi/` 下执行：`pnpm --filter @dental/v2 <script>`。
 - 迁移**只增不改**：已有迁移（≤121）不得编辑；新迁移从 **122** 开始编号，名称 `v2-<kebab-name>`；写新迁移前先 `grep 'version:' src/server/infrastructure/migrations.ts | tail` 确认最大号。
 - 数据库只允许 better-sqlite3 + 参数化 SQL；**本计划不引入任何新依赖**。
 - 提交信息符合 conventional commits（commitlint + husky）；husky 会自动跑全量测试（约 15s），提交前先手动跑目标测试。

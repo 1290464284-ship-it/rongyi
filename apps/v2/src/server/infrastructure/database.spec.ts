@@ -183,8 +183,21 @@ describe('database bootstrap', () => {
     const productionDir = path.join(dataDir, 'production-data');
     process.env.NODE_ENV = 'production';
     const productionDb = createDatabase(productionDir);
-    expect(() => seedDatabase(productionDb)).toThrow('refusing to seed default credentials');
+    delete process.env.V2_ADMIN_PASSWORD;
+    expect(() => seedDatabase(productionDb)).toThrow('set V2_ADMIN_PASSWORD');
     productionDb.close();
+
+    const bootstrapDir = path.join(dataDir, 'production-bootstrap');
+    process.env.V2_ADMIN_PASSWORD = 'prod-bootstrap-123';
+    const bootstrapDb = createDatabase(bootstrapDir);
+    seedDatabase(bootstrapDb);
+    const bootstrapped = bootstrapDb.prepare(
+      "SELECT username, passwordHash FROM User WHERE username = 'admin'",
+    ).get() as { username: string; passwordHash: string };
+    expect(bootstrapped.username).toBe('admin');
+    expect(bootstrapped.passwordHash).toMatch(/^\$2/);
+    bootstrapDb.close();
+    delete process.env.V2_ADMIN_PASSWORD;
 
     const existingAdminDir = path.join(dataDir, 'production-existing-admin');
     const existingAdminDb = createDatabase(existingAdminDir);

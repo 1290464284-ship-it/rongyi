@@ -10,6 +10,7 @@ export default tseslint.config(
       'dist-electron/**',
       'release-v2/**',
       'coverage/**',
+      'coverage-web/**',
       'data/**',
       'logs/**',
       'legacy/**',

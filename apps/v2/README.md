@@ -30,6 +30,12 @@ username: admin
 password: ry0801
 ```
 
+Production first start bootstraps the admin account from `V2_ADMIN_PASSWORD`
+(min 6 chars). The bundled legacy database is generated at build time
+(`ensure:legacy`), sanitized, and ships without users, password hashes or
+refresh tokens. See
+[docs/delivery/admin-bootstrap.md](../../docs/delivery/admin-bootstrap.md).
+
 > Round7 I4：`admin/ry0801` 仅为开发环境默认账号（生产路径拒绝 seed 默认
 > 账号）。首次进入任何非开发环境必须先创建/修改管理员密码，禁止沿用默认
 > 密码。
@@ -65,6 +71,12 @@ Electron `userData/data/v2.sqlite` in packaged mode. The original database is
 never modified. All legacy tables are synchronized into the V2 working copy so
 existing data and fields remain available.
 
+The bundled `apps/v2/legacy/dental.sqlite` is generated before release by
+`pnpm --filter @dental/v2 ensure:legacy`: it keeps the legacy schema but
+contains no users, password hashes, refresh tokens, or audit rows. Run
+`pnpm --filter @dental/v2 sanitize:legacy` after replacing it with a real
+legacy copy.
+
 ### Legacy database migration (老克隆升级)
 
 `apps/v2/legacy/dental.sqlite`（约 2.4MB）随仓库跟踪（Round7 C1 从
@@ -72,8 +84,11 @@ existing data and fields remain available.
 开箱即可导入；老克隆若该文件曾被删除，先恢复：
 
 ```powershell
-git show v2-2.1.4:apps/v2/legacy/dental.sqlite > apps/v2/legacy/dental.sqlite
+pnpm --filter @dental/v2 ensure:legacy
 ```
+
+The file is no longer tracked in git; `preelectron:dist` generates it
+automatically before packaging.
 
 如需改用仓库外的 legacy 文件（覆盖内置版本）：
 

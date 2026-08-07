@@ -11,7 +11,7 @@
 import type Database from 'better-sqlite3';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
-import { upsertSearchRow } from '../../infrastructure/search-index';
+import { touchSearchIndex } from '../../infrastructure/search-index';
 import type { AppContext } from '../../../domain/contracts';
 
 export interface TriageInput {
@@ -175,7 +175,7 @@ export class TriageService {
          WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
       ).run(...params, appointmentId, ...tenantParams(clinicId));
       // 直写搜索索引：预约起止时间变化后刷新其可检索内容。
-      upsertSearchRow(this.db, 'Appointment', appointmentId);
+      touchSearchIndex(this.db, 'Appointment', appointmentId, 'INSERT');
     });
     run();
 

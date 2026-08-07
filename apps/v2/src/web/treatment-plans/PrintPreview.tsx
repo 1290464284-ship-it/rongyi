@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { formatMoney } from '../lib/format';
-import type { TreatmentPlanPrintResult } from './plan-types';
+import type { TreatmentPlanPrintResult } from './types';
 
 export function PrintPreview({ payload, onClose }: { payload: TreatmentPlanPrintResult; onClose: () => void }): ReactNode {
   return (

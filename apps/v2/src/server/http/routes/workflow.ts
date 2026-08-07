@@ -24,8 +24,8 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
     treatmentProgress,
     wechat,
   } = deps;
-  const writeLimiter = createRateLimit({ windowMs: 60_000, max: 120 });
-  const batchLimiter = createRateLimit({ windowMs: 60_000, max: 60 });
+  const writeLimiter = createRateLimit({ windowMs: 60_000, max: 120 }, deps.rateLimitStore);
+  const batchLimiter = createRateLimit({ windowMs: 60_000, max: 60 }, deps.rateLimitStore);
 
   app.post('/api/v2/appointments', writeLimiter, wrapAsync(async (req, res) => {
       const result = await withIdempotency(deps.db, {

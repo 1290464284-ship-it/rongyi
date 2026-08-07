@@ -1,27 +1,27 @@
 # AGENTS.md - Dental Clinic V2
 
-This workspace is now a single desktop application package. The legacy
+This workspace is a single desktop application package. The legacy
 `apps/api`, `apps/web`, and `packages/shared` code has been removed. The only
 application workspace is `apps/v2`.
 
 ## Project Layout
 
 ```text
-source/
-  apps/v2/
-    electron/        Electron main process, preload, tray, updater
-    legacy/          Read-only legacy schema metadata and compatibility DB
-    scripts/         Smoke, load, audit, package and update verification
-    src/
-      domain/        Entities, resource registry, repository contracts
-      server/        Express API, application services, repositories
-      web/           React desktop renderer
-  .github/workflows/ v2-ci and v2-release only
+apps/v2/
+  electron/        Electron main process, preload, tray, updater
+  legacy/          Read-only legacy schema metadata and compatibility DB
+  scripts/         Smoke, load, audit, package and update verification
+  src/
+    domain/        Entities, resource registry, repository contracts
+    server/        Express API, application services, repositories
+    web/           React desktop renderer
+docs/              Architecture, delivery, plans, specs, audits and evidence
+.github/workflows/ v2-ci and v2-release only
 ```
 
 ## Commands
 
-Run all commands from `source/`:
+Run all commands from the repository root:
 
 ```powershell
 pnpm install

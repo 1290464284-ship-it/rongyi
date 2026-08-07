@@ -210,7 +210,7 @@ describe('SqliteRepository', () => {
     }, context)).rejects.toMatchObject({ status: 409 });
   });
 
-  it('masks sensitive user fields returned by generic repository', async () => {
+  it('masks credential fields while keeping business PII in generic repository', async () => {
     const repo = new SqliteRepository(db, resourceRegistry.get('users')!);
     await repo.insert({
       id: 'repo-user-1',
@@ -218,12 +218,14 @@ describe('SqliteRepository', () => {
       passwordHash: 'secret-hash',
       name: 'Repo Admin',
       role: 'BOSS',
+      phone: '13911112222',
       active: true,
       loginAttempts: 0,
       tokenVersion: 0,
     }, context);
     const user = await repo.findById('repo-user-1', context);
     expect(user?.passwordHash).toBeNull();
+    expect(user?.phone).toBe('13911112222');
   });
 
   it('serializes nullish JSON, invalid JSON, unknown filters, and missing updates', async () => {

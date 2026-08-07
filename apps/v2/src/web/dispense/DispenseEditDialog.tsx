@@ -4,7 +4,7 @@ import { apiRequest } from '../lib/api';
 import { Dialog, LoadingState, PageError, SearchableSelect } from '../components';
 import { errorMessage } from '../lib/messages';
 import { useToast } from '../lib/toast-context';
-import { newCreateItem, type CreateForm, type CreateItemRow, type DispenseDetail } from './dispense-types';
+import { newCreateItem, type CreateForm, type CreateItemRow, type DispenseDetail } from './types';
 
 /** 编辑发药单弹窗：拉取详情回填表单（明细行携带服务端 id），提交 PATCH /dispenses/:id。 */
 export function DispenseEditDialog({
