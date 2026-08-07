@@ -1,5 +1,5 @@
 import { EmptyState, LoadingState } from '../components';
-import type { ChargeComboRow } from './charge-types';
+import type { ChargeComboRow } from './types';
 
 export function ComboDialog({
   combos,

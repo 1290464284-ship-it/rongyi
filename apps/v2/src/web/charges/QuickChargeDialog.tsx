@@ -1,6 +1,6 @@
 import type { FormEvent } from 'react';
 import { SearchableSelect } from '../components';
-import type { ChargeTreeNode } from './charge-types';
+import type { ChargeTreeNode } from './types';
 
 export function QuickChargeDialog({
   target,

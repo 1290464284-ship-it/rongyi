@@ -16,17 +16,11 @@ const SENSITIVE_FIELDS = new Set([
   'newPassword',
   'token',
   'creditCard',
-  'idCard',
-  'phoneNumber',
-  'email',
-  'phone',
-  'mobile',
-  'cardNo',
-  'idCardNo',
-  'wechatId',
-  'medicalRecordNo',
-  'insuranceNo',
 ]);
+
+// Business PII (phone/email/idCard/cardNo) is intentionally not masked here:
+// authorized clinic staff need these values in lists, edit forms and
+// duplicate checks. Masking them to null wiped phone numbers on edit.
 
 /**
  * 通用资源写路径禁止客户端写入的系统字段（凭据/审计/金额/库存类）。

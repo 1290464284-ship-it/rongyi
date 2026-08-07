@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
-import { upsertSearchRow } from '../../infrastructure/search-index';
+import { touchSearchIndex } from '../../infrastructure/search-index';
 import { tenantAnd, tenantParams, tenantWhere } from '../../infrastructure/tenant';
 import type { AppContext } from '../../../domain/contracts';
 import {
@@ -78,7 +78,7 @@ export class AppointmentService {
           tempPatientPhone || null,
         );
         // B-H4：直写 Patient（临时患者建档）绕过 repository，需同步维护搜索索引。
-        upsertSearchRow(this.db, 'Patient', resolvedPatientId);
+        touchSearchIndex(this.db, 'Patient', resolvedPatientId, 'INSERT');
       }
       this.assertNoConflict(input.doctorId, input.chairId, input.startTime, input.endTime, context.clinicId);
       this.db.prepare(
@@ -104,7 +104,7 @@ export class AppointmentService {
         input.patientId ? null : (tempPatientPhone || null),
       );
       // B-H4：直写 Appointment（绕过 repository）需同步维护搜索索引。
-      upsertSearchRow(this.db, 'Appointment', id);
+      touchSearchIndex(this.db, 'Appointment', id, 'INSERT');
     });
     return { id, status: 'BOOKED' };
   }
@@ -122,7 +122,7 @@ export class AppointmentService {
       `UPDATE Appointment SET status = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).run(nextStatus, context.now().toISOString(), id, ...tenantParams(context.clinicId));
     // B-H4：状态变更影响 Appointment 索引内容（含 status 字段）。
-    upsertSearchRow(this.db, 'Appointment', id);
+    touchSearchIndex(this.db, 'Appointment', id, 'UPDATE');
     return { id, status: nextStatus };
   }
 

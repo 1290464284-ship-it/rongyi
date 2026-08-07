@@ -11,10 +11,10 @@
 // V2_AUTO_BACKUP_INTERVAL_MS / V2_AUTO_BACKUP_KEEP）。
 
 /** V2 API 默认监听端口（V2_PORT 可覆盖；Windows 上若被 excludedportranges 占用请改值）。 */
-export const DEFAULT_API_PORT = 3180;
+export const DEFAULT_API_PORT = Number(process.env.V2_PORT) || 3180;
 
 /** Vite dev server 默认端口（V2_WEB_DEV_PORT 可覆盖；electron dev 模式与 CSP 白名单同源）。 */
-export const DEFAULT_WEB_DEV_PORT = 5180;
+export const DEFAULT_WEB_DEV_PORT = Number(process.env.V2_WEB_DEV_PORT) || 5180;
 
 /** 自动备份默认间隔：24 小时（V2_AUTO_BACKUP_INTERVAL_MS 可覆盖，下限 60s）。 */
 export const DEFAULT_AUTO_BACKUP_INTERVAL_MS = 24 * 60 * 60 * 1000;

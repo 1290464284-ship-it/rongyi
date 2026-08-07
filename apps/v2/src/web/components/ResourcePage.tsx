@@ -3,12 +3,13 @@ import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'react-router';
 import { apiRequest, downloadCsv } from '../lib/api';
 import type { Page, ResourceDefinition, ResourceField } from '../lib/types';
-import { ConfirmDialog, Dialog, EmptyState, LoadingState, PageError } from '.';
-import { formatDisplayValue, centsToYuanString, toCents, toLocalInput } from '../lib/format';
+import { ConfirmDialog, DataTable, Dialog, EmptyState, LoadingState, PageError } from '.';
+import { formatDisplayValue, formatDate, formatDateTime, formatMoney, centsToYuanString, toCents, toLocalInput } from '../lib/format';
 import { FormBuilder } from './FormBuilder';
 import { friendlyError } from '../lib/messages';
 import { useDebouncedValue } from '../hooks/use-debounce';
 import { useToast } from '../lib/toast-context';
+import { SIMPLE_LIST_COLUMN_LABELS } from '../lib/labels';
 
 /**
  * 元数据驱动的通用资源 CRUD 页（Round7 M-02 职责说明）。
@@ -68,7 +69,49 @@ function fieldToForm(field: ResourceField, value: unknown): string | boolean {
   return String(value);
 }
 
-export function ResourcePage({ resource: fixedResource }: { resource?: string }) {
+function formatStatValue(column: string, value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'object') return JSON.stringify(value);
+  if (['revenue', 'amount', 'totalAmount', 'paidAmount', 'unpaidAmount', 'monetary', 'price', 'unitPrice', 'subtotal'].includes(column)) {
+    return formatMoney(value);
+  }
+  if (['createdAt', 'updatedAt', 'paidAt', 'completedAt', 'sentAt', 'receivedAt', 'deliveredAt', 'issuedAt', 'startTime', 'endTime'].includes(column)) {
+    return formatDateTime(value);
+  }
+  if (['birthDate', 'planDate', 'expireDate', 'workDate', 'startDate', 'endDate', 'purchaseDate', 'examDate', 'surveyDate'].includes(column)) {
+    return formatDate(value);
+  }
+  return formatDisplayValue(value);
+}
+
+function ReadOnlyListPage({ title, endpoint }: { title: string; endpoint: string }) {
+  const query = useQuery({
+    queryKey: ['stat', endpoint],
+    queryFn: () => apiRequest<unknown[]>(endpoint),
+  });
+  if (query.isLoading) return <LoadingState />;
+  if (query.error) return <PageError message={(query.error as Error).message} />;
+  const rows = (query.data ?? []) as Array<Record<string, unknown>>;
+  const columns = rows.length ? Object.keys(rows[0]) : [];
+  const dataColumns = columns.map((column) => ({
+    key: column,
+    label: SIMPLE_LIST_COLUMN_LABELS[column] ?? column,
+    render: (row: Record<string, unknown>) => formatStatValue(column, row[column]),
+  }));
+  return (
+    <div className="page">
+      <h1>{title}</h1>
+      <DataTable columns={dataColumns} rows={rows} emptyText="暂无数据" />
+    </div>
+  );
+}
+
+export function ResourcePage({ resource, title, endpoint }: { resource?: string; title?: string; endpoint?: string }) {
+  if (endpoint) return <ReadOnlyListPage title={title ?? '报表'} endpoint={endpoint} />;
+  return <ResourceCrudPage resource={resource} />;
+}
+
+function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
   const { showToast } = useToast();
   const params = useParams<{ resource: string }>();
   const resource = fixedResource ?? params.resource ?? 'patients';

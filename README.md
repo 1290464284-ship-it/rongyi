@@ -3,6 +3,17 @@
 Desktop-first dental clinic management application built with Electron, React,
 Express, and SQLite.
 
+## Layout
+
+```text
+apps/v2/                 Electron desktop application (the only app workspace)
+docs/                    Architecture, delivery, plans, specs and audit reports
+docs/audits/             Audit reports, including historical rounds
+docs/evidence/           Archived verification evidence and walkthroughs
+docs/prototypes/         Standalone UI design prototypes
+.github/workflows/       v2-ci and v2-release only
+```
+
 ## Run
 
 ```powershell
@@ -29,6 +40,11 @@ Default development login:
 username: admin
 password: REDACTED
 ```
+
+Production first start bootstraps the admin account from `V2_ADMIN_PASSWORD`
+(min 6 chars). The bundled legacy database is sanitized and ships without
+users, password hashes or refresh tokens. See
+[docs/delivery/admin-bootstrap.md](docs/delivery/admin-bootstrap.md).
 
 > Round7 I4：`admin/REDACTED` 仅为开发环境默认账号（生产启动拒绝 seed 默认
 > 账号）。首次进入任何非开发环境必须先创建/修改管理员密码，禁止沿用默认
@@ -78,9 +94,9 @@ pnpm --filter @dental/v2 electron:dist:internal
 ```
 
 Public release still requires a CA-issued code signing certificate; see
-[docs/release-modes.md](docs/release-modes.md).
+[docs/release/release-modes.md](docs/release/release-modes.md).
 
 ## Release
 
 See [apps/v2/RELEASE.md](apps/v2/RELEASE.md) and
-[docs/refactor-v2-release.md](docs/refactor-v2-release.md).
+[docs/release/refactor-v2-release.md](docs/release/refactor-v2-release.md).

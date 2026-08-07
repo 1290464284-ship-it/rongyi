@@ -8,12 +8,14 @@ on:
       - 'v2-*'
     paths:
       - 'apps/v2/**'
-      - 'docs/refactor-v2-*'
+      - 'docs/architecture/**'
+      - 'docs/release/**'
       - '.github/workflows/v2-ci.yml'
   pull_request:
     paths:
       - 'apps/v2/**'
-      - 'docs/refactor-v2-*'
+      - 'docs/architecture/**'
+      - 'docs/release/**'
       - '.github/workflows/v2-ci.yml'
 
 # Round7 H2：CI 只读，不需要写权限。
@@ -122,6 +124,9 @@ jobs:
 
       - name: Verify foreign keys
         run: pnpm --filter @dental/v2 verify:foreign-keys
+
+      - name: Ensure sanitized legacy database
+        run: pnpm --filter @dental/v2 ensure:legacy
 
       - name: Delivery drill
         run: pnpm --filter @dental/v2 delivery:drill

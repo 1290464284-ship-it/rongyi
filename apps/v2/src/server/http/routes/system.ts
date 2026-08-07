@@ -7,8 +7,8 @@ import type { RouteDependencies } from './deps';
 
 export function registerSystemRoutes(app: Express, deps: RouteDependencies): void {
   const { alerts, audit, backups, db, hr, sync } = deps;
-  const syncLimiter = createRateLimit({ windowMs: 60_000, max: 120 });
-  const backupLimiter = createRateLimit({ windowMs: 60_000, max: 60 });
+  const syncLimiter = createRateLimit({ windowMs: 60_000, max: 120 }, deps.rateLimitStore);
+  const backupLimiter = createRateLimit({ windowMs: 60_000, max: 60 }, deps.rateLimitStore);
 
   app.get('/api/v2/sync/pull', syncLimiter, wrapAsync(async (req, res) => {
       res.json({
@@ -104,5 +104,5 @@ export function registerSystemRoutes(app: Express, deps: RouteDependencies): voi
       res.json({ success: true, data: await backups.verify(String(req.params.filename), req.context!.clinicId) });
   }));
 
-  app.use('/api/v2/resources', createRateLimit({ windowMs: 60_000, max: 300 }), createResourceRouter(db));
+  app.use('/api/v2/resources', createRateLimit({ windowMs: 60_000, max: 300 }, deps.rateLimitStore), createResourceRouter(db));
 }

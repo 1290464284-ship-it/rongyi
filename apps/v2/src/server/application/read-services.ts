@@ -264,12 +264,11 @@ export class SearchService {
 
     for (const search of searches) {
       for (const row of search.rows) {
-        const maskedPhone = row.phone ? this.maskPhone(String(row.phone)) : undefined;
         results.push({
           resource: search.resource,
           id: row.id,
           label: search.label(row),
-          detail: { ...row, phone: maskedPhone ?? row.phone },
+          detail: row,
         });
       }
     }
@@ -292,10 +291,6 @@ export class SearchService {
     return this.db.prepare(sql).all(...ids, ...tenantParams(context.clinicId)) as Array<Record<string, unknown>>;
   }
 
-  private maskPhone(phone: string): string {
-    if (phone.length < 7) return '****';
-    return `${phone.slice(0, 3)}****${phone.slice(-4)}`;
-  }
 }
 
 export class SatisfactionService {

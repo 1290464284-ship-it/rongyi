@@ -792,6 +792,22 @@ describe('HTTP app', () => {
       .expect(200);
   });
 
+  it('indexes charges created through the financial service for search', async () => {
+    const charge = await request(app).post('/api/v2/charges')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        patientId: 'patient-demo-001',
+        items: [{ name: 'Searchable Charge', category: 'EXAM', price: 100, quantity: 1 }],
+      })
+      .expect(201);
+    const search = await request(app)
+      .get(`/api/v2/search?q=${encodeURIComponent(String(charge.body.data.number))}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(search.body.data.some((item: { resource: string; id: string }) =>
+      item.resource === 'charges' && item.id === charge.body.data.id)).toBe(true);
+  });
+
   it('creates an inventory transaction and returns dashboard stats', async () => {
     await request(app).post('/api/v2/inventory/transactions')
       .set('Authorization', `Bearer ${token}`)
@@ -1131,7 +1147,7 @@ describe('HTTP app', () => {
     const patientResult = search.body.data.find((item: { resource: string; id: string }) =>
       item.resource === 'patients' && item.id === 'patient-searchable');
     expect(patientResult).toBeDefined();
-    expect(patientResult.detail.phone).toContain('****');
+    expect(patientResult.detail.phone).toBe('13900001111');
   });
 
   it('supports clinical workflows and system actions', async () => {

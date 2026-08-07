@@ -11,9 +11,9 @@ const outputPath = path.join(appRoot, 'src', 'domain', 'legacy-resources.generat
 // better-sqlite3 抛出难读的打开失败。需要重新生成时先恢复 dental.sqlite。
 if (!fs.existsSync(dbPath)) {
   console.warn(
-    `[generate-legacy-resources] legacy/dental.sqlite not found (removed from repo, see .env.example R2-P0-04).\n` +
+    `[generate-legacy-resources] legacy/dental.sqlite not found (no longer tracked).\n` +
     `  Keeping committed ${path.relative(appRoot, outputPath)} unchanged. ` +
-    'Restore legacy/dental.sqlite to regenerate legacy resource definitions.',
+    'Run pnpm --filter @dental/v2 ensure:legacy to generate a sanitized copy before regenerating definitions.',
   );
   process.exit(0);
 }

@@ -1,5 +1,5 @@
 import type { FormEvent } from 'react';
-import { METHOD_LABELS, type PayMethodNode } from './charge-types';
+import { METHOD_LABELS, type PayMethodNode } from './types';
 
 export function PaymentDialog({
   amount,

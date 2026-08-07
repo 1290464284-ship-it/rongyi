@@ -4,7 +4,7 @@ import { SearchableSelect } from '../components';
 import { errorMessage } from '../lib/messages';
 import { useToast } from '../lib/toast-context';
 import { BatchSelect } from './DispenseEditDialog';
-import { emptyCreateForm, newCreateItem, type CreateForm, type CreateItemRow } from './dispense-types';
+import { emptyCreateForm, newCreateItem, type CreateForm, type CreateItemRow } from './types';
 
 /** 新建发药单表单区：createForm 状态与提交逻辑均在本面板内部，提交成功后经 onCreated 通知页面刷新列表。 */
 export function DispenseCreateForm({ onCreated }: { onCreated: () => void }) {
