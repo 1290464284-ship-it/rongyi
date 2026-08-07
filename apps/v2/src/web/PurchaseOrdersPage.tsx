@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest } from './api';
+import { apiRequest, fetchAllPages } from './api';
 import { CrudPage } from './CrudPage';
-import { SearchableSelect, type DataTableColumn, type SearchableSelectRow } from './components';
+import { SearchableSelect, PromptDialog, type DataTableColumn, type SearchableSelectRow } from './components';
 import { formatMoney, centsToYuanString, toCents } from './format';
 import { errorMessage } from './messages';
 import { useToast } from './toast-context';
-import type { Page } from './types';
 
 const REVIEW_STATUS_LABELS: Record<string, string> = {
   PENDING: '待提交',
@@ -148,16 +147,20 @@ export function PurchaseOrdersPage() {
           const orderId = editingIdRef.current;
           if (!orderId) throw new Error('缺少编辑记录 ID');
           const totalAmount = validItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
-          await apiRequest(`/resources/purchaseOrders/${orderId}`, {
-            method: 'PATCH',
-            body: JSON.stringify({
-              number: form.number.trim(),
-              supplierId: form.supplierId || undefined,
-              totalAmount,
-              status: editingStatusRef.current ?? 'PENDING',
-            }),
-          });
-          await reconcilePurchaseItems(orderId, form.items, inventoryRows);
+          try {
+            await apiRequest(`/resources/purchaseOrders/${orderId}`, {
+              method: 'PATCH',
+              body: JSON.stringify({
+                number: form.number.trim(),
+                supplierId: form.supplierId || undefined,
+                totalAmount,
+                status: editingStatusRef.current ?? 'PENDING',
+              }),
+            });
+            await reconcilePurchaseItems(orderId, form.items, inventoryRows);
+          } catch (error) {
+            throw new Error(`${errorMessage(error, '更新采购单失败')}；部分明细可能未保存，请核对后重试`);
+          }
           return;
         }
         await apiRequest('/purchase-orders', {
@@ -210,10 +213,10 @@ async function reconcilePurchaseItems(
   items: PurchaseItemForm[],
   inventoryRows: SearchableSelectRow[],
 ): Promise<void> {
-  const existing = await apiRequest<Page<PurchaseOrderItemRow>>(
-    `/resources/purchaseOrderItems?orderId=${orderId}&page=1&pageSize=100`,
+  const existing = await fetchAllPages<PurchaseOrderItemRow>(
+    `/resources/purchaseOrderItems?orderId=${orderId}`,
   );
-  const existingById = new Map(existing.items.map((row) => [String(row.id), row]));
+  const existingById = new Map(existing.map((row) => [String(row.id), row]));
   const keptIds = new Set<string>();
   for (const item of items) {
     if (!item.quantity || !item.unitPrice) continue;
@@ -244,11 +247,12 @@ async function reconcilePurchaseItems(
           quantity,
           unitPrice,
           subtotal: Math.round(unitPrice * quantity),
+          requestId: crypto.randomUUID(),
         }),
       });
     }
   }
-  for (const row of existing.items) {
+  for (const row of existing) {
     if (!keptIds.has(String(row.id))) {
       await apiRequest(`/resources/purchaseOrderItems/${String(row.id)}`, { method: 'DELETE' });
     }
@@ -269,8 +273,9 @@ function ReviewSummaryBar({ refreshKey }: { refreshKey: number }) {
   });
   return (
     <div className="tracking-overview" aria-label="采购审核汇总">
-      <span className="tracking-chip">待审核 {query.data?.submitted ?? 0} 单</span>
-      <span className="tracking-chip">待收货 {query.data?.approved ?? 0} 单</span>
+      {/* L3：首屏加载中显示占位符，避免「0 单」闪烁误导；刷新期间沿用旧数据 */}
+      <span className="tracking-chip">待审核 {query.isLoading ? '—' : `${query.data?.submitted ?? 0} 单`}</span>
+      <span className="tracking-chip">待收货 {query.isLoading ? '—' : `${query.data?.approved ?? 0} 单`}</span>
     </div>
   );
 }
@@ -290,6 +295,7 @@ function ReviewRowActions({
   showToast: (message: string, kind?: 'success' | 'error' | 'info') => void;
   onChanged: () => void;
 }) {
+  const [rejectOpen, setRejectOpen] = useState(false);
   const reviewStatus = String(row.reviewStatus ?? '');
   if (reviewStatus === 'PENDING') {
     return (
@@ -303,17 +309,38 @@ function ReviewRowActions({
   }
   if (reviewStatus === 'SUBMITTED') {
     return (
-      <span>
-        <button
-          disabled={reviewing}
-          onClick={() => void reviewAction(showToast, reload, setReviewing, onChanged, row.id, 'approve', '已通过审核')}
-        >
-          通过
-        </button>
-        <button disabled={reviewing} onClick={() => void rejectOrder(showToast, reload, setReviewing, onChanged, row.id)}>
-          驳回
-        </button>
-      </span>
+      <>
+        <span>
+          <button
+            disabled={reviewing}
+            onClick={() => void reviewAction(showToast, reload, setReviewing, onChanged, row.id, 'approve', '已通过审核')}
+          >
+            通过
+          </button>
+          <button disabled={reviewing} onClick={() => setRejectOpen(true)}>
+            驳回
+          </button>
+        </span>
+        <PromptDialog
+          key={rejectOpen ? 'open' : 'closed'}
+          open={rejectOpen}
+          title="驳回采购单"
+          message="请输入驳回原因"
+          value=""
+          placeholder="驳回原因"
+          confirmText="确认驳回"
+          cancelText="取消"
+          onSubmit={(reason) => {
+            if (!reason.trim()) {
+              showToast('驳回原因必填', 'error');
+              return;
+            }
+            setRejectOpen(false);
+            void reviewAction(showToast, reload, setReviewing, onChanged, row.id, 'reject', '已驳回', { reason: reason.trim() });
+          }}
+          onCancel={() => setRejectOpen(false)}
+        />
+      </>
     );
   }
   if (reviewStatus === 'REJECTED') {
@@ -355,22 +382,6 @@ async function reviewAction(
   }
 }
 
-function rejectOrder(
-  showToast: (message: string, kind?: 'success' | 'error' | 'info') => void,
-  reload: () => Promise<unknown>,
-  setReviewing: (value: boolean) => void,
-  onChanged: () => void,
-  id: string,
-) {
-  const reason = window.prompt('请输入驳回原因', '');
-  if (reason === null) return;
-  if (!reason.trim()) {
-    showToast('驳回原因必填', 'error');
-    return;
-  }
-  void reviewAction(showToast, reload, setReviewing, onChanged, id, 'reject', '已驳回', { reason: reason.trim() });
-}
-
 async function receivePurchase(
   showToast: (message: string, kind?: 'success' | 'error' | 'info') => void,
   reload: () => Promise<unknown>,
@@ -408,16 +419,19 @@ function PurchaseOrderFormFields({
 }) {
   const loadedItemsForRef = useRef<string | null>(null);
   const [itemsError, setItemsError] = useState<string | null>(null);
+  // L2：明细异步回填完成前禁用编辑区，避免整表覆盖用户正在输入的内容（竞态）
+  const [itemsLoading, setItemsLoading] = useState(false);
   useEffect(() => {
     if (!editing || !editingId || loadedItemsForRef.current === editingId) return;
     let cancelled = false;
     loadedItemsForRef.current = editingId;
     setItemsError(null);
-    apiRequest<Page<PurchaseOrderItemRow>>(`/resources/purchaseOrderItems?orderId=${editingId}&page=1&pageSize=100`)
-      .then((data) => {
+    setItemsLoading(true);
+    fetchAllPages<PurchaseOrderItemRow>(`/resources/purchaseOrderItems?orderId=${editingId}`)
+      .then((rows) => {
         if (cancelled) return;
         update({
-          items: (data.items ?? []).map((row) => ({
+          items: (rows ?? []).map((row) => ({
             id: String(row.id),
             itemId: String(row.itemId ?? ''),
             name: String(row.name ?? ''),
@@ -430,6 +444,9 @@ function PurchaseOrderFormFields({
       })
       .catch(() => {
         if (!cancelled) setItemsError('明细加载失败，请关闭后重试');
+      })
+      .finally(() => {
+        if (!cancelled) setItemsLoading(false);
       });
     return () => {
       cancelled = true;
@@ -452,7 +469,8 @@ function PurchaseOrderFormFields({
         />
       </label>
       {itemsError && <p className="error">{itemsError}</p>}
-      {form.items.map((item) => (
+      {itemsLoading && <p className="page-state">明细加载中...</p>}
+      {!itemsLoading && form.items.map((item) => (
         <div className="charge-item-row" key={item.id}>
           <SearchableSelect
             resource="inventoryItems"
@@ -467,7 +485,7 @@ function PurchaseOrderFormFields({
           <button type="button" onClick={() => update({ items: form.items.filter((entry) => entry.id !== item.id) })}>移除</button>
         </div>
       ))}
-      <button type="button" onClick={() => update({ items: [...form.items, newItem()] })}>添加明细</button>
+      <button type="button" disabled={itemsLoading} onClick={() => update({ items: [...form.items, newItem()] })}>添加明细</button>
     </>
   );
 }

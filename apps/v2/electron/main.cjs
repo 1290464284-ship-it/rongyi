@@ -764,18 +764,18 @@ app.whenReady().then(async () => {
 
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    // 审计 L3：CSP 端口收紧。API 端口运行时随机（startApi 后 apiPort 已确定），
-    // 只放行精确的 http://127.0.0.1:<apiPort>，不再使用 http://127.0.0.1:* 通配；
+    // 审计 L3/M7：CSP 收敛为单一来源——静态部分由 index.html 的 meta 提供
+    // （构建期注入 nonce，无 'unsafe-inline'）；本处仅补充 meta 无法表达的动态边界：
+    // connect-src 精确到运行时 API 端口（meta 为 http://127.0.0.1:* 通配，取交集后收紧）；
     // WebSocket 仅 dev 下放行 vite HMR 的 ws://localhost:<devPort>。
     const apiOrigin = apiPort ? `http://127.0.0.1:${apiPort}` : '';
     const devWs = isDev ? ` ws://localhost:${new URL(process.env.V2_WEB_URL || 'http://localhost:5180').port}` : '';
-    const csp = `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:${apiOrigin ? ` ${apiOrigin}` : ''}; connect-src 'self'${apiOrigin ? ` ${apiOrigin}` : ''}${devWs}; font-src 'self' data:; media-src 'self' blob: data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self';`;
     callback({
       responseHeaders: {
         ...details.responseHeaders,
         'X-Content-Type-Options': ['nosniff'],
         'X-Frame-Options': ['DENY'],
-        'Content-Security-Policy': [csp],
+        'Content-Security-Policy': [`connect-src 'self'${apiOrigin ? ` ${apiOrigin}` : ''}${devWs};`],
       },
     });
   });
@@ -815,9 +815,18 @@ app.whenReady().then(async () => {
       return false;
     }
   });
-  ipcMain.handle('desktop:version', () => app.getVersion());
-  ipcMain.handle('desktop:quit', () => app.quit());
-  ipcMain.handle('desktop:api-port', () => apiPort);
+  ipcMain.handle('desktop:version', (_event) => {
+    assertTrustedRenderer(_event);
+    return app.getVersion();
+  });
+  ipcMain.handle('desktop:quit', (_event) => {
+    assertTrustedRenderer(_event);
+    app.quit();
+  });
+  ipcMain.handle('desktop:api-port', (_event) => {
+    assertTrustedRenderer(_event);
+    return apiPort;
+  });
   ipcMain.handle('desktop:restart-api', async (_event) => {
     assertTrustedRenderer(_event);
     apiRestartCount = 0;
@@ -834,7 +843,10 @@ app.whenReady().then(async () => {
     app.setLoginItemSettings({ openAtLogin: Boolean(enabled) });
     return true;
   });
-  ipcMain.handle('desktop:get-auto-launch', () => app.getLoginItemSettings().openAtLogin);
+  ipcMain.handle('desktop:get-auto-launch', (_event) => {
+    assertTrustedRenderer(_event);
+    return app.getLoginItemSettings().openAtLogin;
+  });
   ipcMain.handle('desktop:check-updates', async (_event) => {
     assertTrustedRenderer(_event);
     if (isDev) return { status: 'disabled' };

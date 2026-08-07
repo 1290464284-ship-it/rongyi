@@ -65,7 +65,7 @@ describe('FollowUpsPage', () => {
 
     render(<FollowUpsPage />, { wrapper });
     fireEvent.click(await screen.findByRole('button', { name: '批量生成随访' }));
-    expect(await screen.findByText('batch failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
 
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/follow-ups/reminders') return [];
@@ -87,7 +87,7 @@ describe('FollowUpsPage', () => {
     render(<FollowUpsPage />, { wrapper });
     fireEvent.click(await screen.findByRole('button', { name: '完成随访' }));
     await submitDialog();
-    expect(await screen.findByText('complete failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
   });
 
   it('uses generic fallback messages for non-error failures', async () => {
@@ -154,10 +154,10 @@ describe('FollowUpsPage', () => {
     fireEvent.click(await screen.findByRole('checkbox'));
     fireEvent.click(screen.getByRole('button', { name: '批量完成' }));
     await submitDialog();
-    expect(await screen.findByText('batch complete failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: '导出逾期' }));
-    expect(await screen.findByText('export failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
   });
 
   it('completes with an empty result and covers missing summary data', async () => {
@@ -303,7 +303,7 @@ describe('FollowUpsPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: '执行随访' }));
     fireEvent.change(screen.getByLabelText('患者评分（0-10）'), { target: { value: '9' } });
     fireEvent.click(screen.getByRole('button', { name: '确认执行' }));
-    expect(await screen.findByText('execute failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
   });
 
   it('switches to dict management and lists follow-up dictionary entries', async () => {

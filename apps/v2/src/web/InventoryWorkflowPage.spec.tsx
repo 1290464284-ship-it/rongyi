@@ -112,7 +112,7 @@ describe('InventoryWorkflowPage', () => {
     await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith('/inventory/replenishment/apply', expect.objectContaining({ method: 'POST' }));
     });
-    expect(await screen.findByText('apply failed')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
   });
 
   it('uses a generic message for non-error workflow failures', async () => {
@@ -254,11 +254,16 @@ describe('InventoryWorkflowPage', () => {
     render(<InventoryWorkflowPage />, { wrapper });
     fireEvent.click(await screen.findByRole('button', { name: '锁定' }));
     fireEvent.click(screen.getByRole('button', { name: '完成盘点' }));
-    fireEvent.click(screen.getAllByRole('button', { name: '取消' })[0]);
 
+    // busy 守卫：等待锁定请求完成后再操作同一行的取消按钮
     await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith('/stocktakes/st-2/lock', expect.objectContaining({ method: 'POST' }));
       expect(apiRequest).toHaveBeenCalledWith('/stocktakes/st-3/complete', expect.objectContaining({ method: 'POST' }));
+    });
+
+    fireEvent.click(screen.getAllByRole('button', { name: '取消' })[0]);
+
+    await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith('/stocktakes/st-2/cancel', expect.objectContaining({ method: 'POST' }));
     });
   });

@@ -1,4 +1,5 @@
 import { friendlyError } from './messages';
+import type { Page } from './types';
 
 let apiBase: string | null = null;
 let memoryToken: string | null = null;
@@ -244,6 +245,24 @@ export async function apiRequest<T>(
     throw new ClientError(friendlyError(body?.message ?? `Request failed (${response.status})`), body?.code, body?.traceId);
   }
   return body.data as T;
+}
+
+/**
+ * 分页聚合拉取：循环请求直到取回全部记录（每页 100 条，与服务端默认页大小一致）。
+ * path 不应携带 page/pageSize 参数；某页返回 0 条时提前终止，避免死循环。
+ */
+export async function fetchAllPages<T>(path: string): Promise<T[]> {
+  const pageSize = 100;
+  const separator = path.includes('?') ? '&' : '?';
+  let page = 1;
+  const items: T[] = [];
+  for (;;) {
+    const data = await apiRequest<Page<T>>(`${path}${separator}page=${page}&pageSize=${pageSize}`);
+    items.push(...data.items);
+    if (data.items.length === 0 || items.length >= data.total) break;
+    page += 1;
+  }
+  return items;
 }
 
 export async function login(username: string, password: string): Promise<{ token: string; user: Record<string, unknown> }> {
