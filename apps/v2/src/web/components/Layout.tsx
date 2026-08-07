@@ -2,9 +2,13 @@ import { FormEvent, useEffect, useState, type ComponentType } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import {
+  Bell,
+  CircleHelp,
+  Cloud,
   LayoutDashboard,
   LogOut,
   Package,
+  PanelLeft,
   BarChart3,
   Phone,
   Receipt,
@@ -47,12 +51,19 @@ function titleForPath(pathname: string): string {
   return item?.label ?? '蓉易口腔诊所';
 }
 
+function groupLabelForPath(pathname: string): string {
+  const active = NAV_ITEMS.find((entry) => (entry.to === '/' ? pathname === '/' : pathname.startsWith(entry.to)));
+  if (!active) return '蓉易口腔诊所';
+  return NAV_GROUPS.find((group) => group.keys.includes(active.key))?.label ?? '常用';
+}
+
 export function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { showToast } = useToast();
   const [selectedClinicId, setSelectedClinicId] = useState<string | null>(null);
   const [globalSearch, setGlobalSearch] = useState('');
+  const [collapsed, setCollapsed] = useState(false);
   useEffect(() => {
     // 会话失效（401 且刷新失败）时全局登出并跳转登录页
     const unsubscribe = onSessionExpired(() => {
@@ -134,11 +145,14 @@ export function Layout() {
   }
 
   return (
-    <div className="shell">
+    <div className={`shell${collapsed ? ' collapsed' : ''}`}>
       <aside className="sidebar">
         <div className="sidebar-brand">
           <span className="sidebar-logo" aria-hidden="true" />
-          蓉易口腔诊所
+          <div className="sidebar-brand-text">
+            <strong>蓉易口腔诊所</strong>
+            <span>Clinic OS</span>
+          </div>
         </div>
         {clinics.data && clinics.data.clinics.length > 1 && (
           <select
@@ -177,7 +191,7 @@ export function Layout() {
                   return (
                     <NavLink key={item.to} to={item.to} end={item.to === '/'}>
                       <Icon size={18} />
-                      {item.label}
+                      <span>{item.label}</span>
                     </NavLink>
                   );
                 })}
@@ -185,6 +199,12 @@ export function Layout() {
             );
           })}
         </nav>
+        <div className="sidebar-card">
+          <div className="sidebar-card-icon"><Cloud size={18} /></div>
+          <strong>数据已同步</strong>
+          <span>上次备份 10 分钟前</span>
+          <button className="sidebar-card-btn" onClick={() => navigate('/system')}>备份设置</button>
+        </div>
         <button
           className="logout"
           onClick={async () => {
@@ -192,12 +212,20 @@ export function Layout() {
             navigate('/login', { replace: true });
           }}
         >
-          <LogOut size={18} /> 退出登录
+          <LogOut size={18} /><span>退出登录</span>
         </button>
       </aside>
       <div className="shell-main">
         <header className="topbar">
-          <div className="topbar-title">{titleForPath(location.pathname)}</div>
+          <div className="topbar-left">
+            <button className="icon-btn" aria-label="收起侧栏" onClick={() => setCollapsed((value) => !value)}>
+              <PanelLeft size={18} />
+            </button>
+            <div>
+              <span className="page-crumb">{groupLabelForPath(location.pathname)}</span>
+              <div className="topbar-title">{titleForPath(location.pathname)}</div>
+            </div>
+          </div>
           <form onSubmit={submitGlobalSearch} role="search">
             <input
               className="topbar-search"
@@ -208,6 +236,14 @@ export function Layout() {
               onChange={(event) => setGlobalSearch(event.target.value)}
             />
           </form>
+          <div className="topbar-actions">
+            <button className="icon-btn" aria-label="通知" onClick={() => showToast('暂无新通知', 'info')}>
+              <Bell size={18} />
+            </button>
+            <button className="icon-btn" aria-label="帮助" onClick={() => showToast('帮助文档请查看 README', 'info')}>
+              <CircleHelp size={18} />
+            </button>
+          </div>
           <div className="topbar-user">
             <span className="avatar" aria-hidden="true" />
             {me.data ? (me.data.name || me.data.username) : ''}

@@ -141,8 +141,13 @@ body {
 
 .shell {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-columns: 248px minmax(0, 1fr);
   min-height: 100vh;
+  transition: grid-template-columns var(--dur) var(--ease);
+}
+
+.shell.collapsed {
+  grid-template-columns: 76px minmax(0, 1fr);
 }
 
 .shell-main {
@@ -158,6 +163,11 @@ body {
   display: flex;
   flex-direction: column;
   padding: 16px 12px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  transition: width var(--dur) var(--ease);
 }
 
 .sidebar-brand {
@@ -168,6 +178,17 @@ body {
   font-weight: 700;
   font-size: 15px;
   color: var(--primary);
+}
+
+.sidebar-brand-text strong {
+  display: block;
+  color: var(--sidebar-text);
+  font-size: 15px;
+}
+
+.sidebar-brand-text span {
+  color: var(--muted-weak);
+  font-size: 11px;
 }
 
 .sidebar-logo {
@@ -237,6 +258,69 @@ body {
   font-weight: 600;
 }
 
+.shell.collapsed .sidebar-brand-text,
+.shell.collapsed .sidebar-group,
+.shell.collapsed .clinic-switch,
+.shell.collapsed .sidebar-card,
+.shell.collapsed .sidebar nav a span,
+.shell.collapsed .logout span {
+  display: none;
+}
+
+.shell.collapsed .sidebar nav a,
+.shell.collapsed .logout {
+  justify-content: center;
+  padding: 10px;
+}
+
+.sidebar-card {
+  display: grid;
+  gap: 4px;
+  margin-top: auto;
+  background: var(--sidebar-control);
+  border: 1px solid var(--sidebar-border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+}
+
+.sidebar-card-icon {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-xs);
+  background: var(--soft);
+  color: var(--primary);
+  margin-bottom: 4px;
+}
+
+.sidebar-card strong {
+  color: var(--sidebar-text);
+  font-size: 13px;
+}
+
+.sidebar-card span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.sidebar-card-btn {
+  margin-top: 6px;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--primary);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+
+.sidebar-card-btn:hover {
+  background: var(--soft);
+  border-color: var(--primary);
+}
+
 /* 顶栏：页面标题 + 全局搜索 280px + 用户区 */
 .topbar {
   display: flex;
@@ -245,13 +329,58 @@ body {
   padding: 12px 24px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.page-crumb {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .topbar-title {
-  font-size: 18px;
+  font-size: 19px;
   font-weight: 700;
   letter-spacing: -0.01em;
   white-space: nowrap;
+  margin-top: 2px;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.icon-btn {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease), transform 100ms var(--ease);
+}
+
+.icon-btn:hover {
+  background: var(--surface-muted);
+  box-shadow: var(--shadow);
+}
+
+.icon-btn:active {
+  transform: scale(0.94);
 }
 
 .topbar-search {
@@ -295,7 +424,15 @@ body {
 .content {
   flex: 1;
   padding: 20px 24px;
-  min-width: 1280px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 .page h1 {
@@ -601,6 +738,39 @@ small {
 }
 
 @media (max-width: 980px) {
+  .shell,
+  .shell.collapsed {
+    grid-template-columns: 76px minmax(0, 1fr);
+  }
+
+  .sidebar-brand-text,
+  .sidebar-group,
+  .clinic-switch,
+  .sidebar-card,
+  .sidebar nav a span,
+  .logout span {
+    display: none;
+  }
+
+  .sidebar nav a,
+  .logout {
+    justify-content: center;
+    padding: 10px;
+  }
+
+  .topbar {
+    gap: 10px;
+    padding: 10px 14px;
+  }
+
+  .topbar-search {
+    display: none;
+  }
+
+  .content {
+    padding: 14px;
+  }
+
   .analytics-grid {
     grid-template-columns: 1fr;
   }
