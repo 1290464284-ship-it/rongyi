@@ -137,6 +137,11 @@ body {
   color: var(--text);
   font-size: 13px;
   line-height: 1.45;
+  overflow-x: hidden;
+}
+
+img {
+  max-width: 100%;
 }
 
 a {
