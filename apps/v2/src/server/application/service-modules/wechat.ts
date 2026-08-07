@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { SqliteWechatMessageRepository } from '../../infrastructure/repositories/core.repositories';
+import { tenantAnd } from '../../infrastructure/tenant';
 import type { AppContext } from '../../../domain/contracts';
 import type { WechatMessageRepository } from '../ports';
 import type { Logger } from '../../infrastructure/logger';
@@ -14,6 +15,8 @@ export interface WechatMessagePayload {
   type?: string | null;
   content?: string | null;
   templateId?: string | null;
+  /** 上游网关幂等键（B-M8）：同一消息重试不会在网关侧重复下发。 */
+  idempotencyKey?: string | null;
 }
 
 export interface WechatSendResult {
@@ -64,7 +67,13 @@ export class HttpWechatProvider implements WechatProvider {
       const response = await fetch(this.url, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ appId: this.appId, appSecret: this.appSecret, message: payload }),
+        body: JSON.stringify({
+          appId: this.appId,
+          appSecret: this.appSecret,
+          message: payload,
+          // B-M8：以消息 id 作为网关幂等键，重试不会在网关侧重复下发
+          idempotencyKey: payload.idempotencyKey ?? payload.id,
+        }),
         signal: controller.signal,
       });
       if (!response.ok) return { ok: false, result: `http_${response.status}`, detail: `status ${response.status}` };
@@ -164,6 +173,23 @@ export class WechatService {
     if (!this.provider.isConfigured()) {
       throw new ConflictError('Wechat channel is not configured');
     }
+    // B-M2 并发守卫：原子抢占，只有 PENDING/DRAFT 能被本次发送认领。
+    // 两个并发请求同时进来时只有一个 UPDATE 成功，另一个在下方按最新状态处理。
+    const now = context.now().toISOString();
+    const claimed = this.db.prepare(
+      `UPDATE WechatMessage SET status = 'IN_PROGRESS', updatedAt = ?
+       WHERE id = ? AND deletedAt IS NULL AND status IN ('PENDING', 'DRAFT')${tenantAnd(context.clinicId)}`,
+    ).run(now, messageId, ...(context.clinicId ? [context.clinicId] : [])).changes;
+    if (claimed === 0) {
+      const fresh = this.wechatRepository.findById(messageId, context.clinicId);
+      if (fresh?.status === 'SENT') return { id: messageId, status: 'SENT' };
+      if (fresh?.status === 'IN_PROGRESS') throw new ConflictError('Wechat message is already being sent');
+      // 状态仍为 PENDING/DRAFT（行刚被并发删除或测试用仓库无真实行）：继续发送，
+      // markSent 仍会在状态不匹配时以 0 changes 拒绝。
+      if (!fresh || !SENDABLE_WECHAT_STATUSES.has(fresh.status)) {
+        throw new ConflictError('Wechat message cannot be sent from current status');
+      }
+    }
     const delivery = await this.provider.send({
       id: row.id,
       clinicId: row.clinicId,
@@ -171,6 +197,7 @@ export class WechatService {
       type: row.type,
       content: row.content,
       templateId: row.templateId,
+      idempotencyKey: row.id,
     });
     if (!delivery.ok) {
       this.logger?.error('wechat send failed', {
@@ -180,9 +207,13 @@ export class WechatService {
         detail: delivery.detail,
         traceId: context.traceId,
       });
+      // 回退到发送前状态，允许后续重试
+      this.db.prepare(
+        `UPDATE WechatMessage SET status = ?, updatedAt = ?
+         WHERE id = ? AND deletedAt IS NULL AND status = 'IN_PROGRESS'${tenantAnd(context.clinicId)}`,
+      ).run(row.status === 'DRAFT' ? 'DRAFT' : 'PENDING', now, messageId, ...(context.clinicId ? [context.clinicId] : []));
       return { id: messageId, status: 'FAILED', result: delivery.result, detail: delivery.detail };
     }
-    const now = context.now().toISOString();
     const changes = this.wechatRepository.markSent(messageId, now, now, context.clinicId);
     if (changes === 0) throw new ConflictError('Wechat message cannot be sent from current status');
     return { id: messageId, status: 'SENT', result: delivery.result ?? 'sent' };

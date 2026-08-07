@@ -341,6 +341,22 @@ export async function fetchPrintHtml(path: string, body: Record<string, unknown>
   return response.text();
 }
 
+/**
+ * S-L8：为受保护文件换取短期签名 URL（/files/:name/sign 需 Bearer）。
+ * `<img>` 无法携带 Authorization 头，必须先用带会话的请求换取签名 URL 再渲染。
+ * 返回完整 URL（含 origin），签名 5 分钟内有效。
+ */
+export async function getSignedFileUrl(path: string): Promise<string> {
+  const base = await resolveApiBase();
+  const response = await fetchAuthenticated(`${base}${path}/sign`);
+  const body = await response.json().catch(() => null) as { success?: boolean; data?: { url?: string }; message?: string } | null;
+  if (!response.ok || !body?.success || !body.data?.url) {
+    throw new ClientError(friendlyError(body?.message ?? '获取图片链接失败'));
+  }
+  const origin = new URL(base, window.location.href).origin;
+  return `${origin}${body.data.url}`;
+}
+
 export async function uploadFile(file: File): Promise<{ id: string; filename: string; url: string }> {
   const base = await resolveApiBase();
   const response = await fetchAuthenticated(`${base}/files`, {

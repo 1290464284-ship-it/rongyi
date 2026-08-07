@@ -24,7 +24,10 @@ export class StatsService {
   }
 
   dashboard(context: AppContext): Record<string, unknown> {
-    return this.getCached(`dashboard:${context.clinicId ?? 'none'}`, 30_000, () => {
+    // 缓存键含 role：DOCTOR 与 BOSS 返回结构不同（金额字段裁剪），不可混用缓存。
+    const role = context.role;
+    const isDoctor = role === 'DOCTOR';
+    return this.getCached(`dashboard:${context.clinicId ?? 'none'}:${role}`, 30_000, () => {
       const tenant = tenantWhere(context.clinicId);
       const where = tenant.sql ? `WHERE ${tenant.sql} AND deletedAt IS NULL` : 'WHERE deletedAt IS NULL';
       const wherePending = tenant.sql
@@ -40,7 +43,7 @@ export class StatsService {
                 (SELECT COUNT(*) FROM FollowUp ${wherePending}) AS f`,
       ).get(...tenant.params, ...tenant.params, ...tenant.params, ...tenant.params, ...tenant.params, ...tenant.params) as
         { p: number; a: number; paid: number; unpaid: number; i: number; f: number };
-      return {
+      const result: Record<string, unknown> = {
         patients: row.p,
         appointments: row.a,
         paidAmount: row.paid,
@@ -48,6 +51,12 @@ export class StatsService {
         inventoryItems: row.i,
         pendingFollowUps: row.f,
       };
+      if (isDoctor) {
+        // DOCTOR 角色裁剪营收/待收金额，避免营业数据越权可见。
+        delete result.paidAmount;
+        delete result.unpaidAmount;
+      }
+      return result;
     });
   }
 

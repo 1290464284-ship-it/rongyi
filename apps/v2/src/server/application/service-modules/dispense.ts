@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
+import { isUniqueConstraintError } from '../../infrastructure/repository';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import type { AppContext } from '../../../domain/contracts';
 
@@ -183,7 +184,12 @@ export class DispenseService {
         );
       }
     });
-    run();
+    try {
+      run();
+    } catch (error) {
+      if (isUniqueConstraintError(error)) throw new ConflictError('发药单号已存在');
+      throw error;
+    }
     return { id, number, status: 'PENDING', items: rows.length };
   }
 
@@ -196,8 +202,16 @@ export class DispenseService {
     const params = status !== ''
       ? [status, ...tenantParams(context.clinicId)]
       : [...tenantParams(context.clinicId)];
-    const page = Math.max(1, Number(filter?.page ?? 1));
-    const pageSize = Math.min(200, Math.max(1, Number(filter?.pageSize ?? 200)));
+    const pageRaw = filter?.page === undefined || filter.page === null ? 1 : Number(filter.page);
+    const pageSizeRaw = filter?.pageSize === undefined || filter.pageSize === null ? 200 : Number(filter.pageSize);
+    if (!Number.isFinite(pageRaw) || pageRaw < 1 || !Number.isInteger(pageRaw)) {
+      throw new ValidationError('分页参数无效');
+    }
+    if (!Number.isFinite(pageSizeRaw) || pageSizeRaw < 1 || !Number.isInteger(pageSizeRaw)) {
+      throw new ValidationError('分页大小无效');
+    }
+    const page = Math.max(1, pageRaw);
+    const pageSize = Math.min(200, Math.max(1, pageSizeRaw));
     const offset = (page - 1) * pageSize;
     return this.db.prepare(
       `SELECT D.id, D.number, D.patientId, P.name AS patientName, P.phone AS patientPhone,

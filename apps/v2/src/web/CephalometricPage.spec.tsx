@@ -5,12 +5,16 @@ import type { ReactNode } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { CephalometricPage } from './CephalometricPage';
-import { apiRequest, uploadFile } from './api';
+import { apiRequest, getSignedFileUrl, uploadFile } from './api';
 import { ToastProvider } from './toast';
 
 vi.mock('./api', () => ({
   apiRequest: vi.fn(),
-  getApiOrigin: vi.fn().mockResolvedValue('http://127.0.0.1:3180'),
+  // S-L8：默认实现让 SignedImage 始终能拿到签名 URL；afterEach 用 mockClear 保留此实现
+  getSignedFileUrl: vi.fn(async (path: string) => {
+    const name = path.split('/').pop() ?? 'file';
+    return `http://127.0.0.1:3180${path}?exp=1750000000000&sig=sig-${name}`;
+  }),
   uploadFile: vi.fn(),
 }));
 
@@ -61,6 +65,7 @@ describe('CephalometricPage', () => {
   afterEach(() => {
     cleanup();
     vi.mocked(apiRequest).mockReset();
+    vi.mocked(getSignedFileUrl).mockClear();
     vi.mocked(uploadFile).mockReset();
   });
 

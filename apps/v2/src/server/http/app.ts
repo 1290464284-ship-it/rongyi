@@ -50,7 +50,7 @@ import { registerReadRoutes } from './read-routes';
 import { registerAdminRoutes, registerPublicAuthRoutes } from './routes/auth-admin';
 import { registerWorkflowRoutes } from './routes/workflow';
 import { registerSystemRoutes } from './routes/system';
-import { registerFileRoutes } from './routes/files';
+import { registerFileRoutes, registerPublicFileRoutes } from './routes/files';
 import { registerWorkbenchRoutes } from './routes/workbench-routes';
 import { registerMedicalRecordEditRoutes } from './routes/medical-record-edit-routes';
 import { registerFirstExamTrackingRoutes } from './routes/first-exam-tracking-routes';
@@ -155,7 +155,13 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
   // 避免无限重试。
   function scheduleAuditRetry(rows: typeof auditBuffer): void {
     if (_auditRetryScheduled) return;
-    if (auditBuffer.length + rows.length > AUDIT_BUFFER_MAX * 2) return;
+    if (auditBuffer.length + rows.length > AUDIT_BUFFER_MAX * 2) {
+      // B-H5：超限静默丢弃审计行会掩盖合规痕迹；丢弃前必须留告警日志。
+      const dropped = rows.length;
+      if (logger) logger.error('audit rows dropped (retry buffer over capacity)', { action: 'audit-drop', dropped });
+      else console.error('audit rows dropped (retry buffer over capacity)', dropped);
+      return;
+    }
     auditBuffer.unshift(...rows);
     _auditRetryScheduled = true;
     setTimeout(() => {
@@ -172,21 +178,27 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
   }
   function pushAudit(input: typeof auditBuffer[number]): void {
     if (process.env.NODE_ENV === 'test') {
-      const now = new Date().toISOString();
-      insertAuditStmt.run(
-        randomUUID(),
-        input.userId ?? null,
-        input.userName ?? null,
-        input.action,
-        input.target ?? null,
-        input.detail ?? null,
-        input.ip ?? null,
-        input.traceId ?? null,
-        input.clinicId ?? null,
-        input.statusCode == null ? null : String(input.statusCode),
-        now,
-        now,
-      );
+      // 测试模式直写；数据库已关闭（closed-database 边界用例）时审计属
+      // 尽力而为，吞掉错误避免 finish 回调里产生 uncaught exception。
+      try {
+        const now = new Date().toISOString();
+        insertAuditStmt.run(
+          randomUUID(),
+          input.userId ?? null,
+          input.userName ?? null,
+          input.action,
+          input.target ?? null,
+          input.detail ?? null,
+          input.ip ?? null,
+          input.traceId ?? null,
+          input.clinicId ?? null,
+          input.statusCode == null ? null : String(input.statusCode),
+          now,
+          now,
+        );
+      } catch {
+        // 审计写入失败不影响请求结果。
+      }
       return;
     }
     auditBuffer.push(input);
@@ -287,11 +299,13 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
       try {
         const url = new URL(origin);
         const isLoopback = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
-        if (
-          isLoopback &&
-          url.protocol === 'http:' &&
-          (Number(url.port) === Number(process.env.V2_PORT ?? 3180) || Number(url.port) === 5180)
-        ) {
+        // B-L5：显式端口缺失时按协议默认端口计算（http→80/https→443），否则
+        // Number('') = NaN 会让 http://localhost 这类来源被误拒；开发模式额外
+        // 放行 Vite 常用端口（5173/5180），方便本地前端直连 API。
+        const port = url.port === '' ? (url.protocol === 'https:' ? 443 : 80) : Number(url.port);
+        const apiPort = Number(process.env.V2_PORT ?? 3180);
+        const isAllowedPort = port === apiPort || (process.env.NODE_ENV !== 'production' && (port === 5173 || port === 5180));
+        if (isLoopback && url.protocol === 'http:' && isAllowedPort) {
           callback(null, true);
           return;
         }
@@ -336,18 +350,25 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
 
   registerPublicAuthRoutes(app, deps);
 
-  app.use('/api/v2', authMiddleware(deps.authService));
-  // 审计中间件必须位于角色规则中间件之前：角色规则短路 403（next(error) 跳过
-  // 后继中间件）时，只有已注册的 res.on('finish') 监听才能捕获越权尝试。
+  // S-L8：文件签名 GET 必须在 authMiddleware 之前注册——<img> 请求无法携带
+  // Authorization 头，只能凭短期签名（exp+sig）访问；无效签名 next() 落回
+  // 受保护路由（JWT 认证的常规 GET）。
+  registerPublicFileRoutes(app, deps);
+
+  // 审计中间件位于 authMiddleware 之前：未认证（401）与被角色规则拒绝（403）的
+  // 请求同样留痕（finish 时 req.context 已由 authMiddleware 填充，未认证则为 null）。
+  // 公开认证路由（login/refresh/logout）已有显式 LOGIN_*/LOGOUT 审计，此处跳过避免重复。
+  const AUDIT_EXPLICIT_PATHS = new Set(['/api/v2/auth/login', '/api/v2/auth/refresh', '/api/v2/auth/logout']);
   app.use('/api/v2', (req, res, next) => {
     res.on('finish', () => {
       if (req.method === 'GET') return;
+      if (AUDIT_EXPLICIT_PATHS.has(req.path)) return;
       const params = req.params as Record<string, string | undefined>;
       const auditOverride = res.locals.audit as
         | { action?: string; target?: string | null; detail?: string | null; clinicId?: string | null }
         | undefined;
       pushAudit({
-        userId: req.context!.userId,
+        userId: req.context?.userId ?? null,
         action: auditOverride?.action ?? `${req.method} ${req.path}`,
         target: auditOverride?.target ?? params.id ?? params.resource ?? null,
         detail: auditOverride?.detail ?? (params.resource
@@ -355,12 +376,13 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
           : null),
         ip: req.ip,
         traceId: req.traceId,
-        clinicId: auditOverride?.clinicId ?? req.context!.clinicId,
+        clinicId: auditOverride?.clinicId ?? req.context?.clinicId ?? null,
         statusCode: res.statusCode,
       });
     });
     next();
   });
+  app.use('/api/v2', authMiddleware(deps.authService));
   app.use('/api/v2', (req, res, next) => {
     const rule = routeRoleRules.find((candidate) => candidate.pattern.test(req.originalUrl));
     if (rule) {

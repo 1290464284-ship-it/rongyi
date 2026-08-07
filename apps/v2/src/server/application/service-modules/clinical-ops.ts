@@ -151,7 +151,7 @@ export class BulkImportService {
       try {
         for (const row of chunk) {
           try {
-            const payload = stripProtectedWriteFields(validatePayload(definition, row));
+            const payload = stripProtectedWriteFields(validatePayload(definition, row), undefined, resourceName);
             await repository.insert({ id: randomUUID(), ...payload }, context);
             imported += 1;
           } catch (error) {

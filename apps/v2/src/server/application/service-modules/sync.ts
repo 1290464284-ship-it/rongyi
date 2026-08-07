@@ -120,6 +120,7 @@ export class SyncService {
             continue;
           }
           /* v8 ignore stop */
+          let wrote = false;
           try {
             const repo = new SqliteRepository(this.db, definition, { emitSyncChange: false });
             if (change.operation === 'DELETE') {
@@ -136,11 +137,14 @@ export class SyncService {
                 definition,
                 change.data,
                 existing ? { partial: true } : {},
-              ));
+              ), undefined, resourceName);
               const entity = { id: change.recordId, ...payloadRow };
               if (existing) await repo.update(entity, context);
               else await repo.insert(entity, context);
             }
+            // B-M1：业务写入已完成（批事务内），此后 record() 若失败，客户端
+            // 收到错误后不应盲目重试——写入可能已生效，重试可能造成重复变更。
+            wrote = true;
             this.record(change.tableName, change.recordId, change.operation, payload.deviceId, context.clinicId);
             batchAccepted += 1;
           } catch (error) {
@@ -148,7 +152,11 @@ export class SyncService {
             if (error instanceof Error && 'code' in error) throw error;
             /* v8 ignore stop */
             /* v8 ignore start -- non-Error rejection is defensive; current repositories throw Error instances. */
-            errors.push({ recordId: change.recordId, error: error instanceof Error ? error.message : String(error) });
+            const baseMessage = error instanceof Error ? error.message : String(error);
+            errors.push({
+              recordId: change.recordId,
+              error: wrote ? `${baseMessage}（业务写入可能已生效，请勿直接重试）` : baseMessage,
+            });
             /* v8 ignore stop */
             failedIndexes.add(index);
           }
@@ -183,6 +191,15 @@ export class SyncService {
     if (!context.clinicId) throw new AppError('FORBIDDEN', 'Sync requires a clinic scope', 403);
     if (!['BOSS'].includes(context.role)) {
       throw new AppError('FORBIDDEN', 'Sync requires BOSS', 403);
+    }
+    // S-L4：两段式注册——设备已存在且属于其他用户时拒绝重绑（防止跨用户
+    // 抢占设备令牌），随后再执行 upsert 轮换令牌。
+    const existing = this.db.prepare(
+      `SELECT id, userId FROM SyncDevice
+       WHERE deviceId = ? AND active = 1 AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    ).get(deviceId, ...tenantParams(context.clinicId)) as { id: string; userId: string } | undefined;
+    if (existing && existing.userId !== context.userId) {
+      throw new AppError('CONFLICT', 'Device is already registered to another user', 409);
     }
     const token = newRefreshToken();
     const now = new Date().toISOString();

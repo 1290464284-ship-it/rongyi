@@ -20,8 +20,12 @@ const IDEMPOTENCY_PROCESSING_TIMEOUT_MS = 30 * 60 * 1000;
  *
  * The key is scoped to the operation, user, clinic, and client request id so
  * the same request id cannot be replayed across unrelated operations.
- * Completed records are returned as-is until they expire. If the operation
- * throws, the processing record is removed so the client can retry.
+ * Completed records are returned as-is until they expire. Expired completed
+ * records are deleted lazily for the touched key only (no hot-path table
+ * sweep). If the operation throws, the processing record is removed so the
+ * client can retry — except on the async path, where business side effects
+ * cannot be rolled back: the processing record is kept so a retry cannot
+ * duplicate them (it stays until cleanupIdempotencyRecords removes it).
  */
 export function withIdempotency<T>(
   db: Database.Database,
@@ -31,14 +35,18 @@ export function withIdempotency<T>(
   if (!scope?.requestId) return fn();
 
   const startedAt = new Date().toISOString();
-  db.prepare('DELETE FROM IdempotencyRecord WHERE expiresAt IS NOT NULL AND expiresAt <= ?').run(startedAt);
   const key = scopeKey(scope);
-  const existing = db.prepare('SELECT responseJson, status, updatedAt FROM IdempotencyRecord WHERE key = ?').get(key) as
-    | { responseJson: string; status: string; updatedAt: string }
+  const existing = db.prepare('SELECT responseJson, status, expiresAt, updatedAt FROM IdempotencyRecord WHERE key = ?').get(key) as
+    | { responseJson: string; status: string; expiresAt: string | null; updatedAt: string }
     | undefined;
   if (existing) {
     if (existing.status !== 'COMPLETED') throw new ConflictError('Operation is already in progress');
-    return JSON.parse(existing.responseJson) as T;
+    if (existing.expiresAt !== null && existing.expiresAt <= startedAt) {
+      // Lazy single-key cleanup: an expired COMPLETED record is a retry, not a replay.
+      db.prepare('DELETE FROM IdempotencyRecord WHERE key = ? AND status = ?').run(key, 'COMPLETED');
+    } else {
+      return JSON.parse(existing.responseJson) as T;
+    }
   }
 
   try {
@@ -62,14 +70,20 @@ export function withIdempotency<T>(
 
   // Async operations cannot be wrapped in a better-sqlite3 transaction
   // (db.transaction rejects promise returns with a TypeError), so the async
-  // path keeps the legacy completion semantics: UPDATE on success, DELETE +
-  // rethrow on failure. No current call site uses it, but the spec covers it.
+  // path keeps the legacy completion semantics: UPDATE on success. On failure
+  // the PROCESSING record is intentionally KEPT (not deleted): the async
+  // business writes may have partially taken effect and cannot be rolled
+  // back, so a retry must not re-run the operation. cleanupIdempotencyRecords
+  // removes the stuck PROCESSING record after the processing timeout.
   if (isAsyncFunction(fn)) {
     let result: T | Promise<T>;
     try {
       result = fn();
     } catch (error) {
-      db.prepare('DELETE FROM IdempotencyRecord WHERE key = ?').run(key);
+      console.error('[idempotency] async operation failed; keeping PROCESSING record so a retry cannot duplicate side effects', {
+        key,
+        error: error instanceof Error ? error.message : String(error),
+      });
       throw error;
     }
     if (!isPromise(result)) return result;
@@ -82,7 +96,10 @@ export function withIdempotency<T>(
         return value;
       },
       (error: unknown) => {
-        db.prepare('DELETE FROM IdempotencyRecord WHERE key = ?').run(key);
+        console.error('[idempotency] async operation rejected; keeping PROCESSING record so a retry cannot duplicate side effects', {
+          key,
+          error: error instanceof Error ? error.message : String(error),
+        });
         throw error;
       },
     );
@@ -116,14 +133,19 @@ function scopeKey(scope: IdempotencyScope): string {
 }
 
 /**
- * Deletes idempotency records stuck in a non-COMPLETED state past the
- * processing timeout. Runs off the write hot path (daily scheduled task).
+ * Deletes idempotency records that are no longer meaningful:
+ *  - COMPLETED records past their TTL (expiresAt <= now)
+ *  - non-COMPLETED (PROCESSING) records stuck past the processing timeout
+ * Runs off the write hot path (daily scheduled task).
  */
 export function cleanupIdempotencyRecords(db: Database.Database): { deleted: number } {
+  const now = new Date().toISOString();
   const staleBefore = new Date(Date.now() - IDEMPOTENCY_PROCESSING_TIMEOUT_MS).toISOString();
   const result = db.prepare(
-    "DELETE FROM IdempotencyRecord WHERE status != 'COMPLETED' AND updatedAt IS NOT NULL AND updatedAt <= ?",
-  ).run(staleBefore);
+    `DELETE FROM IdempotencyRecord
+     WHERE (status = 'COMPLETED' AND expiresAt IS NOT NULL AND expiresAt <= ?)
+        OR (status != 'COMPLETED' AND updatedAt IS NOT NULL AND updatedAt <= ?)`,
+  ).run(now, staleBefore);
   return { deleted: result.changes };
 }
 

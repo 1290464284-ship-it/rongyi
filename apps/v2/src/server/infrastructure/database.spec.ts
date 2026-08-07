@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import Database from 'better-sqlite3';
 import { createDatabase, seedDatabase, syncLegacySchema, uniqueIndexColumns } from './database';
 
@@ -170,7 +170,7 @@ describe('database bootstrap', () => {
     delete process.env.NODE_ENV;
   });
 
-  it('gates dev admin password reset behind V2_ALLOW_DEV_SEED', () => {
+  it('never resets an existing admin password, even with dev seed flags (S-M4)', () => {
     const dir = path.join(dataDir, 'dev-seed-gate');
     const gateDb = createDatabase(dir);
     const now = new Date().toISOString();
@@ -182,21 +182,23 @@ describe('database bootstrap', () => {
     ).run(now, now);
     const prevNodeEnv = process.env.NODE_ENV;
     const prevSeed = process.env.V2_ALLOW_DEV_SEED;
+    const prevPassword = process.env.V2_ADMIN_PASSWORD;
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
-      // development 但未显式授权：不重置密码
+      // development 且显式授权（旧版 V2_ALLOW_DEV_SEED=1 曾重置密码）：现在一律不重置
       process.env.NODE_ENV = 'development';
-      delete process.env.V2_ALLOW_DEV_SEED;
+      process.env.V2_ALLOW_DEV_SEED = '1';
+      delete process.env.V2_ADMIN_PASSWORD;
       seedDatabase(gateDb);
       const unchanged = (gateDb.prepare("SELECT passwordHash FROM User WHERE username = 'admin'").get() as { passwordHash: string }).passwordHash;
       expect(unchanged).toBe('custom-hash');
-      // development + 显式授权：重置为 ry0801
-      process.env.V2_ALLOW_DEV_SEED = '1';
-      seedDatabase(gateDb);
-      const reset = (gateDb.prepare("SELECT passwordHash FROM User WHERE username = 'admin'").get() as { passwordHash: string }).passwordHash;
-      expect(reset).not.toBe('custom-hash');
+      // 未配置 V2_ADMIN_PASSWORD 时应给出默认口令告警
+      expect(warnSpy).toHaveBeenCalled();
     } finally {
+      warnSpy.mockRestore();
       if (prevNodeEnv === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = prevNodeEnv;
       if (prevSeed === undefined) delete process.env.V2_ALLOW_DEV_SEED; else process.env.V2_ALLOW_DEV_SEED = prevSeed;
+      if (prevPassword === undefined) delete process.env.V2_ADMIN_PASSWORD; else process.env.V2_ADMIN_PASSWORD = prevPassword;
       gateDb.close();
     }
   });

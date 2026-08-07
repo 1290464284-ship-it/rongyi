@@ -632,7 +632,9 @@ const resources: ResourceDefinition[] = [
     f('patientId', 'relation', { required: true, relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
     f('type', 'text', { required: true }),
     f('content', 'longText'),
-    f('status', 'text', { required: true }),
+    // S-L7：status 由通用写路径强制为 PENDING/DRAFT（security.ts 按资源剥离
+    // status/sentAt/result，仅 send 服务可写 SENT/IN_PROGRESS），故不再必填。
+    f('status', 'text', { default: 'PENDING' }),
     f('templateId', 'text'),
     f('sentAt', 'datetime'),
     f('result', 'longText'),
@@ -832,7 +834,7 @@ const resources: ResourceDefinition[] = [
     f('type', 'enum', { required: true, enumValues: ['PUBLIC', 'PRIVATE'] }),
     f('ownerId', 'relation', { relation: { resource: 'users', foreignKey: 'ownerId', labelField: 'name' } }),
     f('active', 'boolean', { default: true }),
-  ], { roles: ['BOSS', 'DOCTOR'], capabilities: { list: true, create: true, update: true, delete: false, softDelete: false } }),
+  ], { roles: boss, audit: true, capabilities: { list: true, create: true, update: true, delete: false, softDelete: false } }),
 
   crud('chargeComboItems', 'ChargeComboItem', [
     f('comboId', 'relation', { required: true, relation: { resource: 'chargeCombos', foreignKey: 'comboId', labelField: 'name' } }),
@@ -842,7 +844,7 @@ const resources: ResourceDefinition[] = [
     f('price', 'money', { required: true }),
     f('quantity', 'number', { required: true, min: 1 }),
     f('costType', 'enum', { enumValues: ['SERVICE', 'MATERIAL'] }),
-  ], { roles: ['BOSS', 'DOCTOR'], capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
+  ], { roles: boss, audit: true, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
 
   // 预约事项自定义
   crud('appointmentPurposes', 'AppointmentPurpose', [

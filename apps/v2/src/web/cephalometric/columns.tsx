@@ -1,8 +1,8 @@
-import type { DataTableColumn } from '../components';
+import { SignedImage, type DataTableColumn } from '../components';
 import { REPORT_STATUS_LABELS } from './constants';
 import type { CephalometricRow } from './types';
 
-export function cephalometricColumns(apiOrigin: string): DataTableColumn<CephalometricRow>[] {
+export function cephalometricColumns(): DataTableColumn<CephalometricRow>[] {
   return [
     { key: 'patientId', label: '患者', render: (row) => row.patientIdLabel ?? row.patientId ?? '' },
     { key: 'status', label: '状态' },
@@ -14,7 +14,9 @@ export function cephalometricColumns(apiOrigin: string): DataTableColumn<Cephalo
     {
       key: 'preview',
       label: '影像',
-      render: (row) => (row.imageUrl ? <img className="imaging-thumb" src={`${apiOrigin}${row.imageUrl}`} alt="头影影像" /> : '无影像'),
+      render: (row) => (
+        <SignedImage path={row.imageUrl} alt="头影影像" className="imaging-thumb" fallback="无影像" />
+      ),
     },
   ];
 }

@@ -52,6 +52,22 @@ export class ChargeComboService {
     const combo = this.comboWithItems(comboId, context);
     const items = combo.items as ChargeComboItemRow[];
     if (items.length === 0) throw new ValidationError('收费组合没有明细');
+    // 引用了目录（catalogId 非空）的明细必须在划价时与 TreatmentCatalog 现行
+    // 价目一致，防止组合价与目录价脱节造成错收费；目录缺失同样视为组合失效。
+    const catalogStmt = this.db.prepare(
+      `SELECT id, price FROM TreatmentCatalog WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    );
+    for (const item of items) {
+      if (item.catalogId) {
+        const catalog = catalogStmt.get(item.catalogId, ...tenantParams(context.clinicId)) as
+          | { id: string; price: number }
+          | undefined;
+        if (!catalog) throw new ValidationError(`收费组合明细引用的目录项不存在: ${item.name}`);
+        if (Number(catalog.price) !== Number(item.price)) {
+          throw new ValidationError(`收费组合明细价格与目录不一致: ${item.name}`);
+        }
+      }
+    }
     const chargeService = new ChargeService(this.db);
     const created = await chargeService.create({
       patientId,
