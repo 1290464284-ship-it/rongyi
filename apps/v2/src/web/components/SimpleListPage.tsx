@@ -2,20 +2,16 @@ import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../lib/api';
 import { DataTable, LoadingState, PageError } from '.';
 import { formatDate, formatDateTime, formatDisplayValue, formatMoney } from '../lib/format';
+import { SIMPLE_LIST_COLUMN_LABELS } from '../lib/labels';
 
-const COLUMN_LABELS: Record<string, string> = {
-  period: '期间',
-  revenue: '收入',
-  totalAmount: '金额',
-  patientId: '患者',
-  doctorId: '医生',
-  itemName: '项目',
-  category: '分类',
-  count: '数量',
-  rate: '比率',
-  score: '评分',
-};
-
+/**
+ * 只读统计端点表格（Round7 M-02 职责说明）。
+ * 仅用于 hub-tabs.tsx 的 5 个统计 Tab（/stats/revenue、/stats/inventory、
+ * /analytics/rfm、/analytics/churn、/analytics/doctor-anomalies）：
+ * 请求一个返回数组的只读端点，首行字段即列，值按列名智能格式化。
+ * 不提供增删改/搜索/分页（统计端点由后端聚合）。
+ * 列名中文标签集中在 lib/labels.ts 的 SIMPLE_LIST_COLUMN_LABELS（M-02）。
+ */
 export function SimpleListPage({ title, endpoint }: { title: string; endpoint: string }) {
   const query = useQuery({
     queryKey: [endpoint],
@@ -27,7 +23,7 @@ export function SimpleListPage({ title, endpoint }: { title: string; endpoint: s
   const columns = rows.length ? Object.keys(rows[0]) : [];
   const dataColumns = columns.map((column) => ({
     key: column,
-    label: COLUMN_LABELS[column] ?? column,
+    label: SIMPLE_LIST_COLUMN_LABELS[column] ?? column,
     render: (row: Record<string, unknown>) => format(column, row[column]),
   }));
   return (
