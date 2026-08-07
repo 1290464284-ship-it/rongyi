@@ -10,6 +10,7 @@ import { runMigrations } from './infrastructure/migrations';
 import { rebuildSearchIndex } from './infrastructure/search-index';
 import { importLegacyDatabase } from './infrastructure/legacy-import';
 import { applyStagedRestore } from './infrastructure/restore-apply';
+import { secretFileValue } from './infrastructure/secret-file';
 import { AlertService, AuditService, BackupService } from './application/services';
 import { startSchedulers } from './scheduler';
 
@@ -186,6 +187,12 @@ const dataDir = path.dirname(dbPath);
 const cleanExitMarker = path.join(dataDir, '.clean-exit');
 const backupDir = process.env.V2_BACKUP_DIR ?? path.join(dataDir, 'backups');
 const port = Number(process.env.V2_PORT ?? 3180);
+// S-M5（第七轮，部署层文档项）：本服务不实现 TLS 终止。默认仅监听
+// 127.0.0.1 回环（Electron 打包版强制回环）；只有显式设置 V2_HOST=0.0.0.0
+// 的局域网部署才暴露监听，此时 JWT/刷新令牌/患者数据全链路明文。局域网
+// 部署必须在前置代理（nginx/caddy HTTPS 终结）后转发，或保持回环并仅经
+// TLS 隧道访问；Electron 客户端若需信任自签/内部 CA，须在 main.cjs 的
+// webRequest/证书校验处显式放行（当前未实现，视为不支持项）。
 const host = process.env.V2_HOST ?? '127.0.0.1';
 if (!Number.isInteger(port) || port < 1 || port > 65_535) {
   throw new Error('V2_PORT must be an integer between 1 and 65535');
@@ -193,7 +200,10 @@ if (!Number.isInteger(port) || port < 1 || port > 65_535) {
 const nodeEnv = process.env.NODE_ENV ?? 'development';
 let jwtSecret: string;
 {
-  const envSecret = process.env.V2_JWT_SECRET;
+  // S-L2：Electron 主进程经 V2_SECRET_FILE 传入密钥（0o600 临时文件，不落 env）；
+  // 直跑环境仍兼容 V2_JWT_SECRET。生产缺密钥/长度不足时 fail-closed。
+  const fileSecret = process.env.V2_SECRET_FILE ? secretFileValue('jwt') : null;
+  const envSecret = fileSecret ?? process.env.V2_JWT_SECRET;
   if (envSecret) {
     jwtSecret = envSecret;
   } else if (nodeEnv === 'production') {
