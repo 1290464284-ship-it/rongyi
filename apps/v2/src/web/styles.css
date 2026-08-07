@@ -577,6 +577,7 @@ a {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .search {
@@ -1425,6 +1426,21 @@ select:focus {
   outline: none;
   border-color: var(--primary);
   box-shadow: 0 0 0 3px var(--soft);
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--primary);
+}
+
+input:disabled,
+textarea:disabled,
+select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background: var(--surface-muted);
 }
 
 textarea {
