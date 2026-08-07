@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import cors from 'cors';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import helmet from 'helmet';
@@ -80,6 +79,9 @@ import { registerPayMethodRoutes } from './routes/pay-method-routes';
 import { registerChargeTreeRoutes } from './routes/charge-tree-routes';
 import { registerHighValueRoutes } from './routes/high-value-routes';
 import type { RouteDependencies } from './routes/deps';
+import { createAuditBuffer } from './audit-buffer';
+
+export type { AuditInput } from './audit-buffer';
 
 export interface AppDependencies {
   db: Database.Database;
@@ -89,135 +91,12 @@ export interface AppDependencies {
   logDir: string;
 }
 
-export interface AuditInput {
-  userId?: string | null;
-  userName?: string | null;
-  action: string;
-  target?: string | null;
-  detail?: string | null;
-  ip?: string | null;
-  traceId?: string | null;
-  clinicId?: string | null;
-  statusCode?: number | null;
-}
-
 export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependencies): Express {
   const app = express();
-  const auditBuffer: AuditInput[] = [];
-  const AUDIT_FLUSH_INTERVAL = 1000;
-  const AUDIT_BUFFER_MAX = 50;
-  const insertAuditStmt = db.prepare(
-    `INSERT INTO OperationLog (
-       id, userId, userName, action, target, detail, ip, traceId,
-       clinicId, statusCode, createdAt, updatedAt, deletedAt
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
-  );
-  const flushAudit = db.transaction((rows: typeof auditBuffer) => {
-    for (const input of rows) {
-      const now = new Date().toISOString();
-      insertAuditStmt.run(
-        randomUUID(),
-        input.userId ?? null,
-        input.userName ?? null,
-        input.action,
-        input.target ?? null,
-        input.detail ?? null,
-        input.ip ?? null,
-        input.traceId ?? null,
-        input.clinicId ?? null,
-        input.statusCode == null ? null : String(input.statusCode),
-        now,
-        now,
-      );
-    }
-  });
-  let _auditFlushScheduled = false;
-  let _auditRetryScheduled = false;
-  function scheduleAuditFlush(): void {
-    if (_auditFlushScheduled) return;
-    _auditFlushScheduled = true;
-    setTimeout(() => {
-      _auditFlushScheduled = false;
-      if (auditBuffer.length === 0) return;
-      const rows = auditBuffer.splice(0, auditBuffer.length);
-      try {
-        flushAudit(rows);
-      } catch (error) {
-        if (logger) logger.error('audit batch flush failed', { error });
-        else console.error('audit batch flush failed', error);
-        scheduleAuditRetry(rows);
-      }
-    }, AUDIT_FLUSH_INTERVAL).unref();
-  }
-  // M6-edge: flush 失败后恰好重试一次。_auditRetryScheduled 保证同一时间最多
-  // 一轮重试在途（已有重试则放弃，仅记日志）；重试定时器到点时把失败行（已
-  // 放回队首）与期间新入缓冲的行一起刷出；重试再失败只记日志，不再入队，
-  // 避免无限重试。
-  function scheduleAuditRetry(rows: typeof auditBuffer): void {
-    if (_auditRetryScheduled) return;
-    if (auditBuffer.length + rows.length > AUDIT_BUFFER_MAX * 2) return;
-    auditBuffer.unshift(...rows);
-    _auditRetryScheduled = true;
-    setTimeout(() => {
-      _auditRetryScheduled = false;
-      if (auditBuffer.length === 0) return;
-      const pending = auditBuffer.splice(0, auditBuffer.length);
-      try {
-        flushAudit(pending);
-      } catch (error) {
-        if (logger) logger.error('audit batch retry flush failed', { error });
-        else console.error('audit batch retry flush failed', error);
-      }
-    }, AUDIT_FLUSH_INTERVAL).unref();
-  }
-  function pushAudit(input: typeof auditBuffer[number]): void {
-    if (process.env.NODE_ENV === 'test') {
-      const now = new Date().toISOString();
-      insertAuditStmt.run(
-        randomUUID(),
-        input.userId ?? null,
-        input.userName ?? null,
-        input.action,
-        input.target ?? null,
-        input.detail ?? null,
-        input.ip ?? null,
-        input.traceId ?? null,
-        input.clinicId ?? null,
-        input.statusCode == null ? null : String(input.statusCode),
-        now,
-        now,
-      );
-      return;
-    }
-    auditBuffer.push(input);
-    if (auditBuffer.length >= AUDIT_BUFFER_MAX) {
-      const rows = auditBuffer.splice(0, AUDIT_BUFFER_MAX);
-      try {
-        flushAudit(rows);
-      } catch (error) {
-        if (logger) logger.error('audit batch flush failed', { error });
-        else console.error('audit batch flush failed', error);
-        scheduleAuditRetry(rows);
-      }
-    } else {
-      scheduleAuditFlush();
-    }
-  }
-  app.locals.audit = pushAudit;
-  app.locals.flushAuditNow = shutdownFlushAudit;
-  function shutdownFlushAudit(): void {
-    if (auditBuffer.length === 0) return;
-    const rows = auditBuffer.splice(0, auditBuffer.length);
-    try {
-      flushAudit(rows);
-    } catch (error) {
-      if (logger) logger.error('audit shutdown flush failed', { error });
-      else console.error('audit shutdown flush failed', error);
-    }
-  }
-  process.once('SIGINT', shutdownFlushAudit);
-  process.once('SIGTERM', shutdownFlushAudit);
-  app.set('flushAudit', shutdownFlushAudit);
+  const audit = createAuditBuffer(db, logger);
+  app.locals.audit = audit.push;
+  app.locals.flushAuditNow = audit.flushNow;
+  app.set('flushAudit', audit.flushNow);
 
   // 盘点锁定守卫：LOCKED 盘点单覆盖的物品在盘点期间禁止出入库。
   const stocktakes = new StocktakeService(db);
@@ -346,7 +225,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
       const auditOverride = res.locals.audit as
         | { action?: string; target?: string | null; detail?: string | null; clinicId?: string | null }
         | undefined;
-      pushAudit({
+      audit.push({
         userId: req.context!.userId,
         action: auditOverride?.action ?? `${req.method} ${req.path}`,
         target: auditOverride?.target ?? params.id ?? params.resource ?? null,
