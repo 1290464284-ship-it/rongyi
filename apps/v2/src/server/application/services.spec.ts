@@ -1,3 +1,9 @@
+// L-04 索引：早期聚合的"主路径"测试（约 1217 行），覆盖 ChargeService、
+// DebtService、MemberCardService、FollowUpService、PatientRiskService、
+// BulkImportService、AppointmentService 等的主流程（创建/支付/退款/折扣/
+// 余额/随访/导入/冲突分支）。多数模块已有独立 spec
+// （src/server/application/service-modules/*.spec.ts），断言可逐步迁移后
+// 删除本文件，迁移前保持聚合。
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';

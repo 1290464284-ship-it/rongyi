@@ -1,3 +1,8 @@
+// L-04 索引：HTTP 层集成测试（约 1457 行），对 createApp 全链路验证：
+// health/CORS 来源白名单、文件上传配额与隔离、角色权限、幂等发送、
+// 审计/校验日志、备份接口、资源 CRUD、收费/库存/随访等业务路由的成功分支。
+// 各业务路由的独立行为见 src/server/http/routes/*.spec.ts；本文件聚焦
+// 组合根与中间件（auth、CORS、helmet、限流、错误处理）的集成行为。
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';

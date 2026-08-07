@@ -1,3 +1,6 @@
+// L-04 索引：DispenseService 单服务全量测试（约 766 行）：create/dispense/
+// returnItems/update-delete/麻药登记/列表详情/租户隔离。DispenseService 是
+// 单一服务类（见 M-04 决策，不拆分），测试与之对齐保持单文件聚合。
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';

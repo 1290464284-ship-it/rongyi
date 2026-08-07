@@ -1,5 +1,13 @@
 // @vitest-environment jsdom
 
+// L-04 索引：本文件是治疗计划页面的全量交互测试（643 行，21 个用例），覆盖
+// 计划创建（item 明细、中途失败孤儿清理、totalFee 计算）、打印（fallback
+// 模板名、失败 toast）、签署（必填校验与失败）、折扣（整单/单项、0-100
+// 范围校验）、计费（选中/全选、已计费禁用保护）、随访、编辑（回填+PATCH+
+// items 对账、计费保护）与删除确认等完整用户路径。
+// 组件实现位于 src/web/pages/TreatmentPlansPage.tsx；服务端计费/折扣规则见
+// src/server/application/service-modules/treatment-plan-billing.spec.ts。
+
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
