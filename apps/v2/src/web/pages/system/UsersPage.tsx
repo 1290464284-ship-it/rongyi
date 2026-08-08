@@ -13,6 +13,7 @@ import {
 import { formatDisplayValue } from '../../lib/format';
 import { errorMessage } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
+import { ChangeOwnPasswordForm } from './ChangeOwnPasswordForm';
 
 const ROLE_LABELS: Record<string, string> = {
   BOSS: '老板',
@@ -59,9 +60,6 @@ export function UsersPage() {
   const [passwordTarget, setPasswordTarget] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<UserRow | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [oldPassword, setOldPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [additionalRoles, setAdditionalRoles] = useState<string[]>([]);
 
   const me = useQuery({
@@ -184,29 +182,6 @@ export function UsersPage() {
       setPasswordTarget(null);
     } catch (error) {
       showToast(errorMessage(error, '重置密码失败'), 'error');
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function changeOwnPassword(event: FormEvent) {
-    event.preventDefault();
-    if (newPassword !== confirmPassword) {
-      showToast('两次输入的新密码不一致', 'error');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await apiRequest('/auth/password', {
-        method: 'PATCH',
-        body: JSON.stringify({ oldPassword, newPassword }),
-      });
-      showToast('密码已修改，请重新登录', 'success');
-      setOldPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
-    } catch (error) {
-      showToast(errorMessage(error, '修改密码失败'), 'error');
     } finally {
       setSubmitting(false);
     }
@@ -340,13 +315,7 @@ export function UsersPage() {
         onCancel={() => setDeleteTarget(null)}
       />
 
-      <h2>修改我的密码</h2>
-      <form className="inline-form" onSubmit={changeOwnPassword}>
-        <input type="password" value={oldPassword} placeholder="旧密码" aria-label="旧密码" onChange={(event) => setOldPassword(event.target.value)} />
-        <input type="password" value={newPassword} placeholder="新密码" aria-label="新密码" onChange={(event) => setNewPassword(event.target.value)} />
-        <input type="password" value={confirmPassword} placeholder="确认新密码" aria-label="确认新密码" onChange={(event) => setConfirmPassword(event.target.value)} />
-        <button type="submit" disabled={submitting}>修改密码</button>
-      </form>
+      <ChangeOwnPasswordForm showToast={showToast} />
     </div>
   );
 }
