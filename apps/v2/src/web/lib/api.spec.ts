@@ -453,6 +453,7 @@ describe('friendlyError 映射', () => {
   it('模式匹配错误消息', () => {
     expect(friendlyError('Failed to fetch')).toBe('无法连接本地服务，请检查应用是否正常运行');
     expect(friendlyError('Failed to fetch xyz')).toBe('无法连接本地服务，请检查应用是否正常运行');
+    expect(friendlyError('fetchAllPages exceeded the page cap; refusing to continue')).toBe('分页数据量异常，已停止继续加载');
     expect(friendlyError('Request failed (500)')).toBe('请求失败，请稍后重试');
     expect(friendlyError('Forbidden resource: backups')).toBe('无权访问该资源');
     expect(friendlyError('Unknown filter field: bad')).toBe('筛选条件无效');

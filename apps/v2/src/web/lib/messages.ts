@@ -31,6 +31,7 @@ export function friendlyError(error: unknown): string {
     'Encrypted backup header is invalid': '加密备份文件无效',
     'endTime must be later than startTime': '结束时间必须晚于开始时间',
     'Failed to fetch': '无法连接本地服务，请检查应用是否正常运行',
+    'fetchAllPages exceeded the page cap; refusing to continue': '分页数据量异常，已停止继续加载',
     'File upload failed': '文件上传失败，请稍后重试',
     'Follow-up cannot be completed from current status': '当前状态不能完成随访',
     'Follow-up export scope must be overdue, today, upcoming, or all': '随访导出范围无效',

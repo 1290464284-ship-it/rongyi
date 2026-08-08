@@ -423,6 +423,27 @@ describe('RefundFlowService', () => {
     expect(balance.balance).toBe(4000);
   });
 
+  it('旧退款（无 REFUND 流水）驳回时同步回退 PAY 流水 reversedAmount', async () => {
+    const chargeService = new ChargeService(db);
+    await createCardWithBalance(10000);
+    const chargeId = await createPaidCharge(10000, 'MEMBER_CARD');
+    const refundResult = await chargeService.refund(chargeId, 4000, '旧退款流水测试', context);
+    const refundId = String(refundResult.id);
+    db.prepare("UPDATE PaymentLedger SET allocations = NULL WHERE relatedId = ? AND type = 'REFUND'")
+      .run(refundId);
+    const payBefore = db.prepare(
+      "SELECT reversedAmount FROM PaymentLedger WHERE chargeId = ? AND type = 'PAY' AND deletedAt IS NULL",
+    ).get(chargeId) as { reversedAmount: number };
+    expect(payBefore.reversedAmount).toBe(4000);
+
+    const service = new RefundFlowService(db);
+    expect(service.reject(refundId, context)).toEqual({ id: refundId, status: 'REJECTED' });
+    const payAfter = db.prepare(
+      "SELECT reversedAmount FROM PaymentLedger WHERE chargeId = ? AND type = 'PAY' AND deletedAt IS NULL",
+    ).get(chargeId) as { reversedAmount: number };
+    expect(payAfter.reversedAmount).toBe(0);
+  });
+
   it('状态机：非 REQUESTED 记录不可审批/驳回/取消，非 PENDING_REFUND 不可确认完成', async () => {
     const chargeService = new ChargeService(db);
     const chargeId = await createPaidCharge(10000, 'CASH');

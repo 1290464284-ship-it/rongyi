@@ -78,17 +78,31 @@ export class InventoryService {
     });
   }
 
-  lowStock(context: AppContext): Array<Record<string, unknown>> {
-    return this.inventoryRepository.lowStock(context.clinicId).map((row) => ({ ...row }));
+  lowStock(context: AppContext): { items: Array<Record<string, unknown>>; truncated: boolean } {
+    const tenant = tenantWhere(context.clinicId);
+    const total = Number((this.db.prepare(
+      `SELECT COUNT(*) AS total FROM InventoryItem
+       WHERE deletedAt IS NULL AND stock <= minStock${tenant.sql ? ` AND ${tenant.sql}` : ''}`,
+    ).get(...tenant.params) as { total: number }).total);
+    const items = this.inventoryRepository.lowStock(context.clinicId).map((row) => ({ ...row }));
+    return { items, truncated: total > items.length };
   }
 
-  expiringSoon(days = 30, context: AppContext): Array<Record<string, unknown>> {
+  expiringSoon(days = 30, context: AppContext): { items: Array<Record<string, unknown>>; truncated: boolean } {
     const clock = new SystemClock();
     const today = clock.clinicDate();
     const cutoff = clock.clinicDate(Date.now() + Math.max(1, days) * 86_400_000);
     const tenant = tenantWhere(context.clinicId);
     const params = [today, cutoff, ...tenant.params];
-    return this.db.prepare(
+    const total = Number((this.db.prepare(
+      `SELECT COUNT(*) AS total FROM InventoryItem
+       WHERE deletedAt IS NULL
+         AND expireDate IS NOT NULL
+         AND expireDate >= ?
+         AND expireDate <= ?
+         ${tenant.sql ? `AND ${tenant.sql}` : ''}`,
+    ).get(...params) as { total: number }).total);
+    const items = this.db.prepare(
       `SELECT * FROM InventoryItem
        WHERE deletedAt IS NULL
          AND expireDate IS NOT NULL
@@ -98,5 +112,6 @@ export class InventoryService {
        ORDER BY expireDate ASC
        LIMIT 100`,
     ).all(...params) as Array<Record<string, unknown>>;
+    return { items, truncated: total > items.length };
   }
 }

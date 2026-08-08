@@ -44,11 +44,11 @@ export function InventoryPage() {
   }, [query.data]);
   const lowStock = useQuery({
     queryKey: ['inventory-low'],
-    queryFn: () => apiRequest<Array<Record<string, unknown>>>('/inventory/low-stock'),
+    queryFn: () => apiRequest<{ items: Array<Record<string, unknown>>; truncated: boolean }>('/inventory/low-stock'),
   });
   const expiring = useQuery({
     queryKey: ['inventory-expiring'],
-    queryFn: () => apiRequest<Array<Record<string, unknown>>>('/inventory/expiring?days=30'),
+    queryFn: () => apiRequest<{ items: Array<Record<string, unknown>>; truncated: boolean }>('/inventory/expiring?days=30'),
   });
   const batches = useQuery({
     queryKey: ['inventory-batches', itemId ?? ''],
@@ -75,6 +75,11 @@ export function InventoryPage() {
       </div>
     );
   }
+  // 兼容旧接口直接返回数组的响应；新接口返回 { items, truncated }。
+  const lowItems = Array.isArray(lowStock.data) ? lowStock.data : lowStock.data?.items ?? [];
+  const expiringItems = Array.isArray(expiring.data) ? expiring.data : expiring.data?.items ?? [];
+  const lowTruncated = !Array.isArray(lowStock.data) && Boolean(lowStock.data?.truncated);
+  const expiringTruncated = !Array.isArray(expiring.data) && Boolean(expiring.data?.truncated);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -274,22 +279,24 @@ export function InventoryPage() {
             ))}
           </div>
           <h2>低库存</h2>
+          {lowTruncated && <p className="reminder-muted">低库存超过 100 条，仅显示前 100 条</p>}
           <div className="table-wrap">
             <table>
               <thead><tr><th>名称</th><th>库存</th><th>最低</th></tr></thead>
               <tbody>
-                {lowStock.data?.map((row) => (
+                {lowItems.map((row) => (
                   <tr key={String(row.id)}><td>{String(row.name)}</td><td>{String(row.stock)}</td><td>{String(row.minStock)}</td></tr>
                 ))}
               </tbody>
             </table>
           </div>
           <h2>30 天内到期</h2>
+          {expiringTruncated && <p className="reminder-muted">临期项目超过 100 条，仅显示前 100 条</p>}
           <div className="table-wrap">
             <table>
               <thead><tr><th>名称</th><th>到期日期</th><th>库存</th></tr></thead>
               <tbody>
-                {expiring.data?.map((row) => (
+                {expiringItems.map((row) => (
                   <tr key={String(row.id)}><td>{String(row.name ?? row.code ?? '')}</td><td>{String(row.expireDate ?? '')}</td><td>{String(row.stock ?? '')}</td></tr>
                 ))}
               </tbody>

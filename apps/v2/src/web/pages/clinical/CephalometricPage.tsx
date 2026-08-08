@@ -93,8 +93,16 @@ export function CephalometricPage() {
           return null;
         }}
         submitOverride={async ({ form, editing }) => {
-          const parsedLandmarks = JSON.parse(form.landmarksJson || '{}') as Record<string, unknown>;
-          const parsedMetrics = JSON.parse(form.metricsJson || '{}') as Record<string, unknown>;
+          const parseJsonObject = (raw: string): Record<string, unknown> => {
+            try {
+              const parsed = JSON.parse(raw || '{}') as unknown;
+              return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+            } catch {
+              return {};
+            }
+          };
+          const parsedLandmarks = parseJsonObject(form.landmarksJson);
+          const parsedMetrics = parseJsonObject(form.metricsJson);
           const imageUrl = file ? (await uploadFile(file)).url : undefined;
           const payload = {
             patientId: form.patientId,

@@ -1155,7 +1155,7 @@ describe('HTTP app', () => {
     const expiring = await request(app).get('/api/v2/inventory/expiring?days=30')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
-    expect(expiring.body.data.some((item: { id: string }) => item.id === 'inventory-expiring')).toBe(true);
+    expect(expiring.body.data.items.some((item: { id: string }) => item.id === 'inventory-expiring')).toBe(true);
 
     db.prepare(
       `INSERT INTO Patient (

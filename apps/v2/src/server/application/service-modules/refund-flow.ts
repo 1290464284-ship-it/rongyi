@@ -225,6 +225,10 @@ export class RefundFlowService {
         newBalance,
         '退款驳回/取消回滚',
       );
+      this.db.prepare(
+        `UPDATE PaymentLedger SET reversedAmount = MAX(0, reversedAmount - ?), updatedAt = ?
+         WHERE chargeId = ? AND cardId = ? AND type = 'PAY' AND deletedAt IS NULL`,
+      ).run(amount, now, refundRow.chargeId, card.id);
     }
 
     const debt = this.db.prepare(

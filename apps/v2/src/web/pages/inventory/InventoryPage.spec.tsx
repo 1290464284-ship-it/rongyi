@@ -58,6 +58,24 @@ describe('InventoryPage', () => {
     expect(screen.getByText('Expiring')).toBeDefined();
   });
 
+  it('shows truncation notices when low stock or expiring exceed the cap', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/inventoryItems?page=1&pageSize=20') {
+        return { items: [], total: 0 };
+      }
+      if (path === '/inventory/low-stock') {
+        return { items: [{ id: 'l1', name: 'Low', stock: 1, minStock: 2 }], truncated: true };
+      }
+      if (path === '/inventory/expiring?days=30') {
+        return { items: [], truncated: false };
+      }
+      return {};
+    });
+
+    render(<InventoryPage />, { wrapper });
+    expect(await screen.findByText('低库存超过 100 条，仅显示前 100 条')).toBeDefined();
+  });
+
   it('submits inventory transactions and generates replenishment', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/inventoryItems?page=1&pageSize=20') {

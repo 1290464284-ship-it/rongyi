@@ -740,7 +740,7 @@ describe('service edge coverage', () => {
          code, name, category, unit, stock, minStock, price
        ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, 'SEARCHCAT', 'box', 1, 0, 100)`,
     ).run('inventory-null-label', context.clinicId, now, now);
-    expect(service.lowStock(context)).toBeInstanceOf(Array);
+    expect(service.lowStock(context).items).toBeInstanceOf(Array);
   });
 
   it('blocks stock transactions for items under a locked stocktake and releases after completion', async () => {
@@ -1297,7 +1297,7 @@ describe('service edge coverage', () => {
     const inventory = new InventoryService(db);
     await expect(inventory.createTransaction({ itemId: 'inventory-other', type: 'IN', quantity: 1 }, context))
       .rejects.toThrow('Inventory item not found');
-    expect(inventory.expiringSoon(30, { ...context, clinicId: null })).toBeInstanceOf(Array);
+    expect(inventory.expiringSoon(30, { ...context, clinicId: null }).items).toBeInstanceOf(Array);
   });
 
   it('keeps analytics, search, and replenishment scoped to the active clinic', () => {
@@ -1345,7 +1345,7 @@ describe('service edge coverage', () => {
     expect(search.search('Isolation Secret', nullContext).some((row) => row.id === 'patient-read-other')).toBe(true);
 
     const inventory = new InventoryService(db);
-    expect(inventory.lowStock(context).some((row) => row.id === 'inventory-read-other')).toBe(false);
+    expect(inventory.lowStock(context).items.some((row) => row.id === 'inventory-read-other')).toBe(false);
 
     const replenishment = new ReplenishmentService(db);
     replenishment.generate(context);
