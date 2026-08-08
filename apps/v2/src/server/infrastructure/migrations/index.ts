@@ -2,7 +2,8 @@ import type Database from 'better-sqlite3';
 import { resourceRegistry } from '../../../domain/resources';
 import { migrations101to110 } from './v101-110';
 import { migrations111to120 } from './v111-120';
-import { migrations121to140 } from './v121-140';
+import { migrations121to130 } from './v121-130';
+import { migrations131to140 } from './v131-140';
 import { migrations141to146 } from './v141-146';
 import { dedupNullClinicRows, snapshotDatabase } from './helpers';
 
@@ -34,7 +35,8 @@ export interface Migration {
 export const migrations: Migration[] = [
   ...migrations101to110,
   ...migrations111to120,
-  ...migrations121to140,
+  ...migrations121to130,
+  ...migrations131to140,
   ...migrations141to146,
 ];
 
