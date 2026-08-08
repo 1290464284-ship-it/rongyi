@@ -14,6 +14,7 @@ interface MultiSelectProps {
 
 export function MultiSelect({ value, options, onChange, placeholder = '请选择' }: MultiSelectProps) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -32,10 +33,14 @@ export function MultiSelect({ value, options, onChange, placeholder = '请选择
   }
 
   const selected = options.filter((option) => value.includes(option.value));
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleOptions = normalizedQuery
+    ? options.filter((option) => option.label.toLowerCase().includes(normalizedQuery))
+    : options;
 
   return (
     <div className="ui-multiselect" ref={rootRef}>
-      <div className="ui-multiselect-input" onClick={() => setOpen((current) => !current)}>
+      <div className="ui-multiselect-input" onClick={() => { setOpen((current) => !current); setQuery(''); }}>
         {selected.map((option) => (
           <span key={option.value} className="ui-chip">{option.label}</span>
         ))}
@@ -43,7 +48,15 @@ export function MultiSelect({ value, options, onChange, placeholder = '请选择
       </div>
       {open && (
         <div className="ui-multiselect-menu">
-          {options.map((option) => (
+          <input
+            className="ui-multiselect-search"
+            type="search"
+            placeholder="搜索"
+            aria-label="筛选选项"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          {visibleOptions.map((option) => (
             <label key={option.value} className="ui-multiselect-option">
               <input
                 type="checkbox"

@@ -109,6 +109,17 @@ describe('UI primitives', () => {
     expect(onChange).toHaveBeenCalledWith(['a']);
   });
 
+  it('filters MultiSelect options by search', () => {
+    const onChange = vi.fn();
+    render(<MultiSelect value={[]} onChange={onChange} options={[{ value: 'a', label: '洁牙' }, { value: 'b', label: '补牙' }]} />);
+    fireEvent.click(screen.getByText('请选择'));
+    fireEvent.change(screen.getByLabelText('筛选选项'), { target: { value: '洁' } });
+    expect(screen.getByText('洁牙')).toBeDefined();
+    expect(screen.queryByText('补牙')).toBeNull();
+    fireEvent.click(screen.getByText('洁牙'));
+    expect(onChange).toHaveBeenCalledWith(['a']);
+  });
+
   it('updates DateRange values', () => {
     const onChange = vi.fn();
     render(<DateRange onChange={onChange} />);

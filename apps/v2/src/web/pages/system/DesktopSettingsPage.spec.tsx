@@ -142,8 +142,10 @@ describe('DesktopSettingsPage', () => {
     expect(await screen.findByText('正在检查更新')).toBeDefined();
     updateCallback?.({ type: 'progress', percent: 42 });
     expect(await screen.findByText('更新下载中：42%')).toBeDefined();
+    expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('42');
     updateCallback?.({ type: 'available', version: '2.2.0' });
     expect(await screen.findByText('发现新版本 2.2.0，点击"下载更新"按钮开始下载')).toBeDefined();
+    expect(screen.queryByRole('progressbar')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '下载更新' }));
     expect(bridge.downloadUpdate).toHaveBeenCalled();
     updateCallback?.({ type: 'none' });

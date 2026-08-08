@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { resetApiBase } from '../../lib/api';
 import { errorMessage, friendlyError } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
+import { Progress } from '../../components';
 
 interface DesktopBridge {
   getApiPort: () => Promise<number>;
@@ -22,6 +23,7 @@ export function DesktopSettingsPage() {
   const [apiPort, setApiPort] = useState<number | null>(null);
   const [autoLaunch, setAutoLaunch] = useState<boolean | null>(null);
   const [updateStatus, setUpdateStatus] = useState('');
+  const [updatePercent, setUpdatePercent] = useState<number | null>(null);
   const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
   const [apiStatus, setApiStatus] = useState('');
 
@@ -33,24 +35,35 @@ export function DesktopSettingsPage() {
     if (desktop.onUpdateEvent) {
       unsubscribers.push(desktop.onUpdateEvent((event) => {
         const type = String(event.type ?? '');
-        if (type === 'progress') setUpdateStatus(`更新下载中：${String(event.percent ?? '')}%`);
+        if (type === 'progress') {
+          setUpdateStatus(`更新下载中：${String(event.percent ?? '')}%`);
+          const percent = Number(event.percent);
+          setUpdatePercent(Number.isFinite(percent) ? percent : null);
+        }
         else if (type === 'available') {
           setUpdateAvailable(String(event.version ?? ''));
           setUpdateStatus(`发现新版本 ${String(event.version ?? '')}，点击"下载更新"按钮开始下载`);
+          setUpdatePercent(null);
         }
         else if (type === 'downloaded') {
           setUpdateAvailable(null);
           setUpdateStatus('更新已下载，可重启安装');
+          setUpdatePercent(null);
         }
         else if (type === 'none') {
           setUpdateAvailable(null);
           setUpdateStatus('当前已是最新版本');
+          setUpdatePercent(null);
         }
         else if (type === 'error') {
           setUpdateAvailable(null);
           setUpdateStatus(friendlyError(String(event.message ?? '更新失败')));
+          setUpdatePercent(null);
         }
-        else if (type === 'checking') setUpdateStatus('正在检查更新');
+        else if (type === 'checking') {
+          setUpdateStatus('正在检查更新');
+          setUpdatePercent(null);
+        }
       }));
     }
     if (desktop.onApiStatus) {
@@ -156,6 +169,7 @@ export function DesktopSettingsPage() {
         {updateStatus.includes('已下载') && <button onClick={installUpdate}>立即重启安装</button>}
       </div>
       {updateStatus && <p className="info">{updateStatus}</p>}
+      {updatePercent !== null && <Progress value={updatePercent} />}
     </div>
   );
 }

@@ -2670,6 +2670,7 @@ tbody tr:hover {
 .ui-chip { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; background: var(--soft); color: var(--primary); padding: 4px 9px; font-size: 12px; font-weight: 600; }
 .ui-multiselect-placeholder { color: var(--muted-weak); font-size: 12px; }
 .ui-multiselect-menu { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 50; display: grid; gap: 2px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow-hover); padding: 6px; }
+.ui-multiselect-search { width: 100%; margin-bottom: 4px; }
 .ui-multiselect-option { display: flex; align-items: center; gap: 8px; border-radius: var(--radius-xs); padding: 8px 9px; cursor: pointer; }
 .ui-multiselect-option:hover { background: var(--surface-muted); }
 

@@ -22,6 +22,7 @@ import { logout, onSessionExpired, switchClinic } from '../lib/api';
 import { apiRequest } from '../lib/api';
 import { useToast } from '../lib/toast-context';
 import type { ResourceDefinition } from '../lib/types';
+import { Tooltip } from './Tooltip';
 
 interface NavItem {
   key: string;
@@ -253,12 +254,16 @@ export function Layout() {
             />
           </form>
           <div className="topbar-actions">
-            <button className="icon-btn" aria-label="通知" onClick={() => showToast('暂无新通知', 'info')}>
-              <Bell size={18} />
-            </button>
-            <button className="icon-btn" aria-label="帮助" onClick={() => showToast('帮助文档请查看 README', 'info')}>
-              <CircleHelp size={18} />
-            </button>
+            <Tooltip content="通知">
+              <button className="icon-btn" aria-label="通知" onClick={() => showToast('暂无新通知', 'info')}>
+                <Bell size={18} />
+              </button>
+            </Tooltip>
+            <Tooltip content="帮助">
+              <button className="icon-btn" aria-label="帮助" onClick={() => showToast('帮助文档请查看 README', 'info')}>
+                <CircleHelp size={18} />
+              </button>
+            </Tooltip>
           </div>
           <div className="topbar-user">
             <span className="avatar" aria-hidden="true" />
