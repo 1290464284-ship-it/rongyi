@@ -120,6 +120,9 @@ jobs:
       - name: HTTP fuzz smoke
         run: pnpm --filter @dental/v2 smoke:http-fuzz
 
+      - name: Multi-instance smoke
+        run: pnpm --filter @dental/v2 smoke:multi-instance
+
       # Round7 H5：数据完整性验证进入 CI 门禁。此时 dev 库已有 smoke 产生的
       # 数据，可真实覆盖外键孤儿 / 完整性 / 备份恢复全链路（delivery-drill
       # 使用独立临时数据目录与自启 server，不干扰上面的 dev server）。

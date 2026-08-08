@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase } from './database';
-import { migrations, runMigrations } from './migrations';
+import { migrations, runMigrations, withMigrationBusyRetry } from './migrations';
 
 describe('migrations', () => {
   let db: Database.Database;
@@ -30,6 +30,32 @@ describe('migrations', () => {
     expect(rows.map((row) => ({ version: Number(row.version), name: row.name }))).toEqual(
       migrations.map((migration) => ({ version: migration.version, name: migration.name })),
     );
+  });
+
+  it('retries migrations when another process holds the schema lock', () => {
+    const attempts: number[] = [];
+    const run = () => {
+      attempts.push(attempts.length + 1);
+      if (attempts.length < 3) {
+        const error = new Error('database is locked');
+        (error as { code?: string }).code = 'SQLITE_BUSY';
+        throw error;
+      }
+      return 42;
+    };
+    const wait = vi.spyOn(Atomics, 'wait').mockImplementation(() => 'ok' as const);
+    try {
+      expect(withMigrationBusyRetry(run)).toBe(42);
+      expect(attempts).toEqual([1, 2, 3]);
+    } finally {
+      wait.mockRestore();
+    }
+  });
+
+  it('rethrows non-busy migration errors immediately', () => {
+    expect(() => withMigrationBusyRetry(() => {
+      throw new Error('boom');
+    })).toThrow('boom');
   });
 
   it('adds missing migration columns when legacy schema lacks them', () => {

@@ -39,6 +39,7 @@ pnpm --filter @dental/v2 smoke:api
 pnpm --filter @dental/v2 smoke:ui
 pnpm --filter @dental/v2 smoke:packaged-ui
 pnpm --filter @dental/v2 smoke:http-fuzz
+pnpm --filter @dental/v2 smoke:multi-instance
 pnpm --filter @dental/v2 test:load
 pnpm --filter @dental/v2 run verify:package
 pnpm --filter @dental/v2 run verify:update

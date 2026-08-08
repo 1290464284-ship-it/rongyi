@@ -40,7 +40,18 @@ export const migrations: Migration[] = [
   ...migrations141to146,
 ];
 
-export function runMigrations(db: Database.Database, options?: { snapshotDir?: string }): number {
+const MIGRATION_BUSY_RETRY_DELAYS_MS = [200, 400, 800, 1500, 3000, 5000, 5000];
+
+function isMigrationBusy(error: unknown): boolean {
+  return error instanceof Error && /SQLITE_(BUSY|LOCKED)/.test(String((error as { code?: unknown }).code ?? ''));
+}
+
+function sleepSync(milliseconds: number): void {
+  const shared = new Int32Array(new SharedArrayBuffer(4));
+  Atomics.wait(shared, 0, 0, milliseconds);
+}
+
+function runMigrationsOnce(db: Database.Database, options?: { snapshotDir?: string }): number {
   db.exec(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       version TEXT PRIMARY KEY,
@@ -83,4 +94,28 @@ export function runMigrations(db: Database.Database, options?: { snapshotDir?: s
     appliedCount++;
   }
   return appliedCount;
+}
+
+/**
+ * Two API processes may start against the same SQLite file at once (e.g. LAN
+ * deployment or a double launch). Concurrent DDL during migrations then fails
+ * immediately with SQLITE_BUSY/SQLITE_LOCKED; retry with backoff so the second
+ * process waits for the first migration transaction instead of crashing.
+ */
+export function withMigrationBusyRetry<T>(run: () => T): T {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= MIGRATION_BUSY_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      return run();
+    } catch (error) {
+      lastError = error;
+      if (!isMigrationBusy(error) || attempt === MIGRATION_BUSY_RETRY_DELAYS_MS.length) throw error;
+      sleepSync(MIGRATION_BUSY_RETRY_DELAYS_MS[attempt]);
+    }
+  }
+  throw lastError;
+}
+
+export function runMigrations(db: Database.Database, options?: { snapshotDir?: string }): number {
+  return withMigrationBusyRetry(() => runMigrationsOnce(db, options));
 }
