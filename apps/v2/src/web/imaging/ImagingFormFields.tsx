@@ -1,8 +1,21 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../lib/api';
-import { SearchableSelect } from '../components';
+import { SearchableSelect, UploadPreview } from '../components';
 import { PHASE_OPTIONS } from './constants';
 import type { ImagingCategoryRow, ImagingForm } from './types';
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ['KB', 'MB', 'GB'];
+  let value = bytes;
+  let unit = '';
+  for (const next of units) {
+    value /= 1024;
+    unit = next;
+    if (value < 1024) break;
+  }
+  return `${value.toFixed(1)} ${unit}`;
+}
 
 export function ImagingFormFields({
   form,
@@ -78,6 +91,12 @@ export function ImagingFormFields({
           onChange={(event) => setFile(event.target.files?.[0] ?? null)}
         />
       </label>
+      {_file && (
+        <UploadPreview
+          files={[{ id: 'selected-file', name: _file.name, size: formatFileSize(_file.size) }]}
+          onRemove={() => setFile(null)}
+        />
+      )}
       <label>
         备注
         <textarea value={form.remark} onChange={(event) => update({ remark: event.target.value })} />

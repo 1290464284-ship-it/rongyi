@@ -124,6 +124,21 @@ describe('ImagingPage', () => {
     expect(await screen.findByText('影像记录已创建')).toBeDefined();
   });
 
+  it('previews and removes the selected imaging file', async () => {
+    mockData();
+    render(<ImagingPage />, { wrapper });
+    await screen.findByText('全景片');
+
+    fireEvent.click(screen.getByText('上传影像'));
+    const file = new File(['x'], 'root.png', { type: 'image/png' });
+    fireEvent.change(screen.getByLabelText('图片文件'), { target: { files: [file] } });
+    expect(screen.getByText('root.png')).toBeDefined();
+    expect(screen.getByText('1 B')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: '移除 root.png' }));
+    expect(screen.queryByText('root.png')).toBeNull();
+  });
+
   it('validates required fields', async () => {
     mockData();
     render(<ImagingPage />, { wrapper });
