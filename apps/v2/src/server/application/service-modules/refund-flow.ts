@@ -170,8 +170,6 @@ export class RefundFlowService {
            WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
         ).get(allocation.cardId, ...tenantParams(context.clinicId)) as { id: string; balance: number } | undefined;
         if (!card) {
-          // 卡已被删除等极端情况：告警并跳过，避免冲销失败阻塞审批状态流转。
-          console.warn(`[refund-flow] 退款冲销原卡 ${allocation.cardId} 不可用，跳过该笔 ${allocation.amount} 分`);
           throw new ConflictError(`退款冲销原卡 ${allocation.cardId} 不可用，请恢复会员卡后重试`);
         }
         const newBalance = Math.max(0, Number(card.balance) - allocation.amount);

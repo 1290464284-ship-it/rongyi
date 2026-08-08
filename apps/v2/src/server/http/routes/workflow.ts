@@ -1,6 +1,7 @@
 import type { Express } from 'express';
 import { createRateLimit } from '../rate-limit';
 import { wrapAsync } from '../middleware';
+import { parsePagination } from '../pagination';
 import type { RouteDependencies } from './deps';
 import { withIdempotency } from '../../infrastructure/idempotency';
 
@@ -297,7 +298,8 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
   }));
 
   app.get('/api/v2/follow-ups/reminders', wrapAsync(async (req, res) => {
-      res.json({ success: true, data: followUps.reminders(req.context!) });
+      const { page, pageSize } = parsePagination(req, { defaultPageSize: 100 });
+      res.json({ success: true, data: followUps.reminders(req.context!, { page, pageSize }) });
   }));
 
   app.get('/api/v2/follow-ups/reminders/summary', wrapAsync(async (req, res) => {

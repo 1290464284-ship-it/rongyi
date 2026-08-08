@@ -5,6 +5,7 @@ import { DataTable, Dialog, LoadingState, PageError, PromptDialog, type DataTabl
 import { errorMessage } from '../../lib/messages';
 import { useAsyncAction } from '../../hooks/use-async-action';
 import { useToast } from '../../lib/toast-context';
+import type { Page } from '../../lib/types';
 import { FollowUpDictsTab } from '../../follow-ups/FollowUpDictsTab';
 import { DEFAULT_EXECUTION_FORM, type CompletionTarget, type ExecutionFormState, type FollowUpNps } from '../../follow-ups/types';
 
@@ -21,7 +22,7 @@ export function FollowUpsPage() {
   const { busy: executing, run: runExecution } = useAsyncAction();
   const query = useQuery({
     queryKey: ['followup-reminders'],
-    queryFn: () => apiRequest<Array<Record<string, unknown>>>('/follow-ups/reminders'),
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/follow-ups/reminders'),
   });
   const summary = useQuery({
     queryKey: ['followup-summary'],
@@ -153,7 +154,7 @@ export function FollowUpsPage() {
 
   const now = new Date();
   const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const rows = query.data ?? [];
+  const rows = Array.isArray(query.data) ? query.data : query.data?.items ?? [];
   const groups = [
     { title: '已逾期', rows: rows.filter((row) => String(row.planDate ?? '') < todayKey) },
     { title: '今日待随访', rows: rows.filter((row) => String(row.planDate ?? '') === todayKey) },
@@ -213,6 +214,11 @@ export function FollowUpsPage() {
               <span>平均评分：{nps.data.average}</span>
             </div>
           )}
+          {!Array.isArray(query.data) && query.data?.truncated ? (
+            <p className="reminder-muted">
+              随访提醒超过 {query.data.pageSize} 条，仅显示前 {query.data.items.length} 条
+            </p>
+          ) : null}
           {rows.length === 0 && <DataTable columns={columns} rows={[]} keyField="id" emptyText="暂无随访" />}
           {groups.map((group) => (
             <section key={group.title}>

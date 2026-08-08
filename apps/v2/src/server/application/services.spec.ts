@@ -521,7 +521,7 @@ describe('application services', () => {
     expect(() => service.complete('missing-followup', context)).toThrow('Follow-up not found');
 
     const failingRepository = new FollowUpService(db, {
-      reminders: () => [],
+      reminders: () => ({ items: [], total: 0, page: 1, pageSize: 100 }),
       insert: () => undefined,
       complete: () => 0,
     });
@@ -596,7 +596,7 @@ describe('application services', () => {
     expect(batch.errors.join(' ')).toContain('随访记录不存在');
     insert('followup-batch-zero', '2026-08-01');
     const failingBatch = new FollowUpService(db, {
-      reminders: () => [],
+      reminders: () => ({ items: [], total: 0, page: 1, pageSize: 100 }),
       insert: () => undefined,
       complete: () => 0,
     });

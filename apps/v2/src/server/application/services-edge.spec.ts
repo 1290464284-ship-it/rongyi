@@ -1479,7 +1479,7 @@ describe('service edge coverage', () => {
     expect(() => failingHr.approveLeave('leave-edge-race', 'user-admin-001', true, context)).toThrow('cannot be approved');
 
     const alerts = new AlertService(db);
-    expect(alerts.open()).toBeInstanceOf(Array);
+    expect(alerts.open().items).toBeInstanceOf(Array);
     expect(() => alerts.setStatus('missing-alert', 'RESOLVED', 'user-admin-001')).toThrow('Business alert not found');
     expect(() => alerts.setStatus('missing-alert', 'RESOLVED')).toThrow('Business alert not found');
     const alertEdge = alerts.create({
@@ -1504,7 +1504,10 @@ describe('service edge coverage', () => {
       source: 'edge-race',
       clinicId: context.clinicId,
     });
-    const failingAlerts = new AlertService(db, { open: () => [], setStatus: () => 0 });
+    const failingAlerts = new AlertService(db, {
+      open: () => ({ items: [], total: 0, page: 1, pageSize: 100 }),
+      setStatus: () => 0,
+    });
     expect(() => failingAlerts.setStatus(String(alertRace.id), 'RESOLVED', 'user-admin-001', context)).toThrow('status update failed');
     const nullAlertRace = alerts.create({
       alertType: 'TEST',
@@ -1514,7 +1517,10 @@ describe('service edge coverage', () => {
       message: 'Null',
       source: 'edge-null-race',
     });
-    const failingNullAlerts = new AlertService(db, { open: () => [], setStatus: () => 0 });
+    const failingNullAlerts = new AlertService(db, {
+      open: () => ({ items: [], total: 0, page: 1, pageSize: 100 }),
+      setStatus: () => 0,
+    });
     expect(() => failingNullAlerts.setStatus(String(nullAlertRace.id), 'RESOLVED')).toThrow('status update failed');
     expect(() => alerts.setStatus('missing-alert', 'RESOLVED', 'user-admin-001', context)).toThrow('Business alert not found');
 

@@ -345,7 +345,8 @@ describe('core repositories', () => {
       createdAt: now,
       updatedAt: now,
     });
-    expect(repo.reminders().length).toBeGreaterThanOrEqual(1);
+    expect(repo.reminders().items.length).toBeGreaterThanOrEqual(1);
+    expect(repo.reminders(undefined, { page: 1, pageSize: 1 }).pageSize).toBe(1);
     expect(repo.complete('followup-repo', now, now)).toBe(1);
     expect(repo.complete('followup-repo', now, now)).toBe(0);
     expect(repo.complete('followup-repo', now, now, 'clinic-v2-001')).toBe(0);
@@ -681,10 +682,10 @@ describe('core repositories', () => {
        ) VALUES (?, ?, ?, ?, NULL, 'WARNING', 'T', 'M', 'scope', 'OPEN')`,
     ).run('alert-scope', 'clinic-v2-001', now, now);
     const alert = new SqliteAlertRepository(db);
-    expect(alert.open('clinic-v2-001').length).toBeGreaterThanOrEqual(1);
+    expect(alert.open('clinic-v2-001').items.length).toBeGreaterThanOrEqual(1);
     expect(alert.setStatus('alert-scope', 'RESOLVED', 'user', now, 'clinic-v2-001')).toBe(1);
     expect(alert.setStatus('alert-scope', 'OPEN', 'user', now, 'clinic-v2-001')).toBe(0);
-    expect(alert.open()).toBeInstanceOf(Array);
+    expect(alert.open().items).toBeInstanceOf(Array);
     expect(alert.setStatus('missing-alert', 'RESOLVED', 'user', now)).toBe(0);
 
     db.prepare(

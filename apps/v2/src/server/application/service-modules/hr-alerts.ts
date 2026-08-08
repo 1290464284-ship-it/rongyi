@@ -49,8 +49,11 @@ export class AlertService {
     this.alertRepository = alertRepository ?? new SqliteAlertRepository(db);
   }
 
-  open(context?: AppContext): Array<Record<string, unknown>> {
-    return this.alertRepository.open(context?.clinicId ?? null);
+  open(
+    context?: AppContext,
+    options?: { page?: number; pageSize?: number },
+  ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean } {
+    return this.alertRepository.open(context?.clinicId ?? null, options);
   }
 
   create(input: {

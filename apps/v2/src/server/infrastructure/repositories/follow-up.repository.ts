@@ -7,18 +7,32 @@ import type { FollowUpRecord, FollowUpRepository, WechatMessageRepository } from
 export class SqliteFollowUpRepository implements FollowUpRepository {
   constructor(private readonly db: Database.Database) {}
 
-  reminders(clinicId?: string | null): Array<Record<string, unknown>> {
+  reminders(
+    clinicId?: string | null,
+    options?: { page?: number; pageSize?: number },
+  ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean } {
     const future = new SystemClock().clinicDate(Date.now() + 14 * 86_400_000);
-    const params = clinicId ? [future, clinicId] : [future];
-    return this.db.prepare(
+    const rawPage = Number(options?.page);
+    const rawPageSize = Number(options?.pageSize);
+    const page = Number.isFinite(rawPage) && rawPage >= 1 ? Math.floor(rawPage) : 1;
+    const pageSize = Number.isFinite(rawPageSize) && rawPageSize >= 1 ? Math.min(100, Math.floor(rawPageSize)) : 100;
+    const offset = (page - 1) * pageSize;
+    const params: Array<string | number> = clinicId ? [future, clinicId] : [future];
+    const tenantClause = tenantAnd(clinicId, 'F.clinicId');
+    const where = `WHERE F.status = 'PENDING' AND F.deletedAt IS NULL AND F.planDate <= ?${tenantClause}`;
+    const total = Number((this.db.prepare(
+      `SELECT COUNT(*) AS total FROM FollowUp F ${where}`,
+    ).get(...params) as { total: number }).total);
+    const items = this.db.prepare(
       `SELECT F.id, F.patientId, F.planDate, F.content, F.status,
               P.name AS patientName, P.phone AS patientPhone
        FROM FollowUp F
        LEFT JOIN Patient P ON P.id = F.patientId
-       WHERE F.status = 'PENDING' AND F.deletedAt IS NULL AND F.planDate <= ?${tenantAnd(clinicId, 'F.clinicId')}
+       ${where}
        ORDER BY F.planDate ASC
-       LIMIT 100`,
-    ).all(...params) as Array<Record<string, unknown>>;
+       LIMIT ? OFFSET ?`,
+    ).all(...params, pageSize, offset) as Array<Record<string, unknown>>;
+    return { items, total, page, pageSize, truncated: total > offset + items.length };
   }
 
   insert(record: FollowUpRecord): void {

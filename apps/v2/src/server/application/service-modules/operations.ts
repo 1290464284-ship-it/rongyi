@@ -115,8 +115,11 @@ export class FollowUpService {
     this.followUpRepository = followUpRepository ?? new SqliteFollowUpRepository(db);
   }
 
-  reminders(context: AppContext): Array<Record<string, unknown>> {
-    return this.followUpRepository.reminders(context.clinicId);
+  reminders(
+    context: AppContext,
+    options?: { page?: number; pageSize?: number },
+  ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean } {
+    return this.followUpRepository.reminders(context.clinicId, options);
   }
 
   summary(context: AppContext): { total: number; overdue: number; today: number; upcoming: number } {

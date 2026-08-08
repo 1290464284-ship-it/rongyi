@@ -289,7 +289,10 @@ export interface FollowUpRecord {
 }
 
 export interface FollowUpRepository {
-  reminders(clinicId?: string | null): Array<Record<string, unknown>>;
+  reminders(
+    clinicId?: string | null,
+    options?: { page?: number; pageSize?: number },
+  ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean };
   insert(record: FollowUpRecord): void;
   complete(id: string, completedAt: string, updatedAt: string, clinicId?: string | null, result?: string | null): number;
 }
@@ -308,7 +311,10 @@ export interface WechatMessageRepository {
 }
 
 export interface AlertRepository {
-  open(clinicId?: string | null): Array<Record<string, unknown>>;
+  open(
+    clinicId?: string | null,
+    options?: { page?: number; pageSize?: number },
+  ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean };
   setStatus(id: string, status: string, userId: string | null, now: string, clinicId?: string | null): number;
 }
 

@@ -68,7 +68,8 @@ export function registerSystemRoutes(app: Express, deps: RouteDependencies): voi
   }));
 
   app.get('/api/v2/system/business-alerts', wrapAsync(async (req, res) => {
-      res.json({ success: true, data: alerts.open(req.context!) });
+      const { page, pageSize } = parsePagination(req, { defaultPageSize: 100 });
+      res.json({ success: true, data: alerts.open(req.context!, { page, pageSize }) });
   }));
 
   app.patch('/api/v2/system/business-alerts/:id/status', wrapAsync(async (req, res) => {

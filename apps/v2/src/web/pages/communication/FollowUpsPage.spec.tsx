@@ -224,6 +224,26 @@ describe('FollowUpsPage', () => {
     expect(screen.getByText('后续患者')).toBeDefined();
   });
 
+  it('shows a truncation hint when reminders exceed the page size', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/follow-ups/reminders') {
+        return {
+          items: [{ id: 'fu-trunc', patientName: '截断患者', planDate: dateKey(new Date()), status: 'PENDING' }],
+          total: 150,
+          page: 1,
+          pageSize: 100,
+          truncated: true,
+        };
+      }
+      if (path === '/follow-ups/reminders/summary') return { total: 150, overdue: 150, today: 0, upcoming: 0 };
+      if (path === '/follow-ups/nps') return { total: 0, promoters: 0, passives: 0, detractors: 0, nps: 0, average: 0, breakdown: [] };
+      return {};
+    });
+
+    render(<FollowUpsPage />, { wrapper });
+    expect(await screen.findByText('随访提醒超过 100 条，仅显示前 1 条')).toBeDefined();
+  });
+
   it('cancels the completion dialog without changing state', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/follow-ups/reminders') return [{ id: 'fu-cancel', planDate: dateKey(new Date()), status: 'PENDING' }];

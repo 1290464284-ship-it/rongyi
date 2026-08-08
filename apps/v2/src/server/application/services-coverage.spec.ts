@@ -290,7 +290,7 @@ describe('service coverage', () => {
     ).run('leave-workflow', context.clinicId, now, now, 'user-admin-001', '2026-08-01', '2026-08-03');
     expect(hr.approveLeave('leave-workflow', context.userId, true, context).status).toBe('APPROVED');
     const alerts = new AlertService(db);
-    expect(alerts.open(context)).toBeInstanceOf(Array);
+    expect(alerts.open(context).items).toBeInstanceOf(Array);
     db.prepare(
       `INSERT INTO BusinessAlert (
          id, clinicId, createdAt, updatedAt, deletedAt,
