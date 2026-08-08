@@ -32,6 +32,21 @@ const v2DbPath = path.join(v2DataDir, 'v2.sqlite');
 const logDir = process.env.V2_LOG_DIR ?? path.join(projectRoot, 'logs');
 const logger = new Logger({ logDir });
 
+process.on('uncaughtException', (error) => {
+  try {
+    logger.error('uncaught exception', { action: 'process-crash', error });
+  } finally {
+    process.exit(1);
+  }
+});
+process.on('unhandledRejection', (reason) => {
+  logger.error('unhandled rejection', {
+    action: 'process-crash',
+    error: reason instanceof Error ? reason : new Error(String(reason)),
+  });
+  process.exit(1);
+});
+
 // ── T2R-13 / R2-P1-09: orphan protection ─────────────────────────────────────
 // If the Electron main process is hard-killed (crash / SIGKILL / taskkill), no
 // graceful shutdown message can be sent. This API child must detect the loss of
