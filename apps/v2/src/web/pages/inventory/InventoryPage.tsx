@@ -3,12 +3,11 @@ import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router';
 import { apiRequest } from '../../lib/api';
 import type { Page } from '../../lib/types';
-import { ConfirmDialog, DataTable, Dialog, LoadingState, PageError, SearchableSelect } from '../../components';
+import { ConfirmDialog, Dialog, LoadingState, PageError, SearchableSelect } from '../../components';
 import { errorMessage } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
-import { REPORT_TYPES, REPORT_TYPE_LABELS } from '../../inventory/constants';
-import { detailReportColumns, summaryReportColumns } from '../../inventory/columns';
-import type { BatchRow, BatchListData, InventoryReportData } from '../../inventory/types';
+import type { BatchRow, BatchListData } from '../../inventory/types';
+import { InventoryReportPanel } from './InventoryReportPanel';
 
 export function InventoryPage() {
   const { showToast } = useToast();
@@ -32,9 +31,6 @@ export function InventoryPage() {
   const [editing, setEditing] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<BatchRow | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'report'>('overview');
-  const [reportType, setReportType] = useState('IN');
-  const [reportFrom, setReportFrom] = useState('');
-  const [reportTo, setReportTo] = useState('');
   const query = useQuery({
     queryKey: ['inventory'],
     queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/inventoryItems?page=1&pageSize=20'),
@@ -63,19 +59,6 @@ export function InventoryPage() {
   const expiringBatches = useQuery({
     queryKey: ['inventory-batches-expiring'],
     queryFn: () => apiRequest<BatchListData>('/inventory-batches?days=30'),
-  });
-  const report = useQuery({
-    queryKey: ['inventory-report', reportType, reportFrom, reportTo],
-    queryFn: () => {
-      const params = new URLSearchParams();
-      if (reportFrom) params.set('from', reportFrom);
-      if (reportTo) params.set('to', reportTo);
-      const queryString = params.toString();
-      return apiRequest<InventoryReportData>(
-        `/inventory-reports/${reportType}${queryString ? `?${queryString}` : ''}`,
-      );
-    },
-    enabled: activeTab === 'report',
   });
 
   if (query.isLoading || lowStock.isLoading || expiring.isLoading) return <LoadingState label="库存数据加载中..." />;
@@ -260,41 +243,7 @@ export function InventoryPage() {
         </button>
       </div>
       {activeTab === 'report' ? (
-        <div className="tab-panel">
-          <h2>库存明细报表</h2>
-          <div className="inline-form">
-            <select aria-label="报表类型" value={reportType} onChange={(event) => setReportType(event.target.value)}>
-              {REPORT_TYPES.map((entry) => (
-                <option key={entry.value} value={entry.value}>{entry.label}</option>
-              ))}
-            </select>
-            <input aria-label="报表开始日期" type="date" value={reportFrom} onChange={(event) => setReportFrom(event.target.value)} />
-            <input aria-label="报表结束日期" type="date" value={reportTo} onChange={(event) => setReportTo(event.target.value)} />
-          </div>
-          {report.isLoading && <LoadingState label="报表加载中..." />}
-          {report.error && (
-            <>
-              <PageError message={report.error instanceof Error ? report.error.message : String(report.error)} />
-              <button onClick={() => void report.refetch()}>重试</button>
-            </>
-          )}
-          {report.data && (
-            <>
-              <div className="stat-row">
-                <span>{REPORT_TYPE_LABELS[report.data.type] ?? report.data.type}</span>
-                <span>共 {report.data.total} 条</span>
-                {report.data.from && <span>从 {report.data.from}</span>}
-                {report.data.to && <span>至 {report.data.to}</span>}
-              </div>
-              <DataTable
-                columns={report.data.type === 'SUMMARY' ? summaryReportColumns : detailReportColumns}
-                rows={report.data.items}
-                keyField={report.data.type === 'SUMMARY' ? 'itemId' : 'id'}
-                emptyText="暂无报表数据"
-              />
-            </>
-          )}
-        </div>
+        <InventoryReportPanel />
       ) : (
         <>
           <form className="inline-form" onSubmit={submit}>
