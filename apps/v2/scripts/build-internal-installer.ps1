@@ -43,6 +43,9 @@ try {
             -LiteralPath "$manualSignCertPath.cer" `
             -Destination (Join-Path $buildCertDir "internal-signing.pfx.cer") `
             -Force
+    } else {
+        $manualSignCertPath = $env:CSC_LINK
+        $manualSignCertPassword = $env:CSC_KEY_PASSWORD
     }
 
     Push-Location -LiteralPath $appRoot
@@ -69,6 +72,12 @@ try {
             [System.Text.UTF8Encoding]::new($false)
         )
         Write-Host "Internal build version: $internalVersion"
+        if ($manualSignCertPath) {
+            & (Join-Path $PSScriptRoot "inject-publisher-name.ps1") `
+                -PackageJson $pkgJsonPath `
+                -CertificatePath $manualSignCertPath `
+                -CertificatePassword $manualSignCertPassword
+        }
         if ($manualSignCertPath) {
             # 让 electron-builder 在打包阶段签名，app-update.yml 才会写入
             # publisherName，electron-updater 运行时才能强制校验发布者。
