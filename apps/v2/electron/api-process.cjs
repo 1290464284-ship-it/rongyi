@@ -96,7 +96,22 @@ function apiScript() {
   return path.join(__dirname, '..', 'dist-electron', 'server.cjs');
 }
 
+let apiStartPromise = null;
+
+// Serializes concurrent start requests (second-instance, activate, manual
+// restart) so they cannot spawn two API children for the same app instance.
 async function startApi() {
+  if (state.apiProcess && !state.apiProcess.killed) return state.apiPort;
+  if (apiStartPromise) return apiStartPromise;
+  apiStartPromise = doStartApi();
+  try {
+    return await apiStartPromise;
+  } finally {
+    apiStartPromise = null;
+  }
+}
+
+async function doStartApi() {
   if (state.apiProcess && !state.apiProcess.killed) return state.apiPort;
   state.apiPort = await pickFreePort();
   const userDataDir = app.getPath('userData');

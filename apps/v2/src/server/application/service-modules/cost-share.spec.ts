@@ -189,6 +189,32 @@ describe('CostShareService', () => {
     expect(result.summary.MATERIAL.total).toBe(66000); // 不含 clinic-other 的 12345
     expect(result.summary.grandTotal).toBe(107111);
   });
+
+  it('uses the +8 clinic day boundary for date-only filters', () => {
+    const beforeFrom = stats({ from: '2026-08-05' }).summary.SERVICE.total;
+    const beforeTo = stats({ to: '2026-08-04' }).summary.SERVICE.total;
+    const insertCharge = (id: string, createdAt: string, subtotal: number): void => {
+      db.prepare(
+        `INSERT INTO Charge (
+           id, clinicId, createdAt, updatedAt, deletedAt,
+           patientId, number, totalAmount, paidAmount, refundedAmount, discount, status
+         ) VALUES (?, 'clinic-v2-001', ?, ?, NULL, 'patient-demo-001', ?, ?, 0, 0, 0, 'PAID')`,
+      ).run(id, createdAt, createdAt, id, subtotal);
+      db.prepare(
+        `INSERT INTO ChargeItem (
+           id, chargeId, clinicId, createdAt, updatedAt, deletedAt,
+           name, category, price, quantity, subtotal, costType
+         ) VALUES (?, ?, 'clinic-v2-001', ?, ?, NULL, 'Boundary', 'BOUNDARY', ?, 1, ?, 'SERVICE')`,
+      ).run(`ci-${id}`, id, createdAt, createdAt, subtotal, subtotal);
+    };
+    insertCharge('charge-boundary-include', '2026-08-04T16:00:00.000Z', 12345);
+    insertCharge('charge-boundary-exclude', '2026-08-04T15:59:59.000Z', 999);
+
+    const fromAug5 = stats({ from: '2026-08-05' });
+    expect(fromAug5.summary.SERVICE.total).toBe(beforeFrom + 12345);
+    const toAug4 = stats({ to: '2026-08-04' });
+    expect(toAug4.summary.SERVICE.total).toBe(beforeTo + 999);
+  });
 });
 
 describe('CostShareService (empty database)', () => {

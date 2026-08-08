@@ -20,7 +20,10 @@ describe('assertHostAllowed', () => {
     expect(() => assertHostAllowed('0.0.0.0', 'production')).not.toThrow();
   });
 
-  it('allows non-loopback outside production', () => {
+  it('refuses non-loopback outside production unless explicitly allowed', () => {
+    delete process.env.V2_ALLOW_INSECURE_LAN;
+    expect(() => assertHostAllowed('0.0.0.0', 'development')).toThrow(/TLS reverse proxy/);
+    process.env.V2_ALLOW_INSECURE_LAN = '1';
     expect(() => assertHostAllowed('0.0.0.0', 'development')).not.toThrow();
   });
 });

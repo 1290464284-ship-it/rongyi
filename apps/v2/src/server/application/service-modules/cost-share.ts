@@ -6,6 +6,7 @@
  */
 import type Database from 'better-sqlite3';
 import { ValidationError } from '../../infrastructure/errors';
+import { clinicDayEndUtc, clinicDayStartUtc } from '../../infrastructure/clock';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import type { AppContext } from '../../../domain/contracts';
 
@@ -60,13 +61,15 @@ export class CostShareService {
 
     let windowSql = '';
     const params: Array<string | number | null> = [];
-    if (from) {
+    const fromBoundary = from ? clinicDayStartUtc(from) ?? from : null;
+    const toBoundary = to ? clinicDayEndUtc(to) ?? to : null;
+    if (fromBoundary) {
       windowSql += ' AND c.createdAt >= ?';
-      params.push(from);
+      params.push(fromBoundary);
     }
-    if (to) {
+    if (toBoundary) {
       windowSql += ' AND c.createdAt <= ?';
-      params.push(to);
+      params.push(toBoundary);
     }
 
     const rows = this.db.prepare(

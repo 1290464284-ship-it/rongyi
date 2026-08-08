@@ -23,6 +23,7 @@ vi.mock('./database', () => ({
     prepare: vi.fn(() => ({ get: vi.fn(() => undefined), all: vi.fn(() => []) })),
   })),
   seedDatabase: vi.fn(),
+  createPerformanceIndexes: vi.fn(),
   syncLegacySchema: vi.fn(),
 }));
 vi.mock('./idempotency', () => ({

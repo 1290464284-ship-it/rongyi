@@ -3,6 +3,7 @@ import type { AppContext } from '../../domain/contracts';
 import { escapeHtml } from '../shared/html';
 import { tenantAnd, tenantParams, tenantWhere } from '../infrastructure/tenant';
 import { buildFtsQuery } from '../infrastructure/search-index';
+import { clinicDayEndUtc, clinicDayStartUtc } from '../infrastructure/clock';
 import { computeNps } from './nps';
 
 export class StatsService {
@@ -75,13 +76,15 @@ export class StatsService {
           : "strftime('%Y-%m-%d', paidAt, '+8 hours')";
         const where: string[] = ['deletedAt IS NULL', 'paidAt IS NOT NULL'];
         const params: unknown[] = [];
-        if (startDate) {
+        const startBoundary = startDate ? clinicDayStartUtc(startDate) ?? startDate : undefined;
+        const endBoundary = endDate ? clinicDayEndUtc(endDate) ?? endDate : undefined;
+        if (startBoundary) {
           where.push('paidAt >= ?');
-          params.push(startDate);
+          params.push(startBoundary);
         }
-        if (endDate) {
+        if (endBoundary) {
           where.push('paidAt <= ?');
-          params.push(endDate);
+          params.push(endBoundary);
         }
         const tenant = tenantWhere(context?.clinicId);
         if (tenant.sql) {
@@ -106,13 +109,15 @@ export class StatsService {
       () => {
         const where: string[] = ['deletedAt IS NULL'];
         const params: unknown[] = [];
-        if (startDate) {
+        const startBoundary = startDate ? clinicDayStartUtc(startDate) ?? startDate : undefined;
+        const endBoundary = endDate ? clinicDayEndUtc(endDate) ?? endDate : undefined;
+        if (startBoundary) {
           where.push('createdAt >= ?');
-          params.push(startDate);
+          params.push(startBoundary);
         }
-        if (endDate) {
+        if (endBoundary) {
           where.push('createdAt <= ?');
-          params.push(endDate);
+          params.push(endBoundary);
         }
         const tenant = tenantWhere(context?.clinicId);
         if (tenant.sql) {

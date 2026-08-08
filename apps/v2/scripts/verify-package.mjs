@@ -55,4 +55,10 @@ if (fs.existsSync(devCert)) {
   process.exit(1);
 }
 
+const internalCert = path.join(appRoot, 'build', 'internal-signing.pfx.cer');
+if (!pkg.version.includes('-internal.') && fs.existsSync(internalCert)) {
+  console.error(`internal signing certificate must not be bundled in a public release: ${internalCert}`);
+  process.exit(1);
+}
+
 console.log(`package verification passed: ${exePath}`);

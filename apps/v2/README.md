@@ -79,16 +79,13 @@ legacy copy.
 
 ### Legacy database migration (老克隆升级)
 
-`apps/v2/legacy/dental.sqlite`（约 2.4MB）随仓库跟踪（Round7 C1 从
-`v2-2.1.4` tag 恢复；发布打包与 installer/upgrade smoke 均依赖它）。新克隆
-开箱即可导入；老克隆若该文件曾被删除，先恢复：
+`apps/v2/legacy/dental.sqlite`（约 2.4MB）不再随仓库跟踪；发布打包与
+installer/upgrade smoke 均通过 `ensure:legacy` 在本地或 CI 生成。新克隆
+或该文件缺失时先执行：
 
 ```powershell
 pnpm --filter @dental/v2 ensure:legacy
 ```
-
-The file is no longer tracked in git; `preelectron:dist` generates it
-automatically before packaging.
 
 如需改用仓库外的 legacy 文件（覆盖内置版本）：
 

@@ -25,7 +25,6 @@ flowchart LR
 
   subgraph Application
     USE_CASES[Use Cases]
-    EVENT_BUS[Domain Event Bus]
   end
 
   subgraph Domain
@@ -47,11 +46,9 @@ flowchart LR
   USE_CASES --> ENTITIES
   USE_CASES --> RULES
   USE_CASES --> PORTS
-  USE_CASES --> EVENT_BUS
   PORTS --> REPOS
   REPOS --> SQLITE
   USE_CASES --> FILES
-  EVENT_BUS --> USE_CASES
 ```
 
 ## Module Dependency Graph
@@ -101,7 +98,7 @@ sequenceDiagram
   Middleware->>Router: normalized context
   Router->>UseCase: typed command/query
   UseCase->>Domain: load aggregate and validate rules
-  Domain->>UseCase: result/domain event
+  Domain->>UseCase: result
   UseCase->>Repository: persist aggregate
   Repository->>Sqlite: parameterized transaction
   Sqlite-->>Repository: rows
@@ -128,7 +125,9 @@ apps/v2/
 1. **Modular monolith**: one deployable backend, clear module boundaries, no hidden cross-module service calls.
 2. **Hexagonal ports**: use cases depend on interfaces, not SQL or Express.
 3. **Type-first contracts**: a single domain package defines entities, enums, commands, queries, and DTOs.
-4. **Event bus**: side effects such as audit logs, cache invalidation, alerts, and sync changes subscribe to domain events.
+4. **Direct side-effect wiring**: audit logs, alerts, search index and sync
+   changes are invoked by services directly; an event bus can be introduced
+   later if fan-out grows.
 5. **Data-driven CRUD**: simple resources share a generic router and repository; complex workflows get explicit use cases.
 6. **Soft delete and idempotency are infrastructure invariants**, not per-module conventions.
 7. **Fixed timezone**: all business dates are normalized to `Asia/Shanghai`.

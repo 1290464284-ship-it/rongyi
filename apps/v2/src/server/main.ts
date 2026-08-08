@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import { createApp } from './http/app';
-import { createDatabase, seedDatabase, syncLegacySchema } from './infrastructure/database';
+import { createDatabase, createPerformanceIndexes, seedDatabase, syncLegacySchema } from './infrastructure/database';
 import { cleanupIdempotencyRecords } from './infrastructure/idempotency';
 import { Logger } from './infrastructure/logger';
 import { runMigrations } from './infrastructure/migrations';
@@ -230,6 +230,7 @@ if (wasCleanExit) fs.rmSync(cleanExitMarker, { force: true });
 const db = createDatabase(dataDir, dbPath, { fullIntegrityCheck: !wasCleanExit });
 syncLegacySchema(db, legacySchemaDir);
 const appliedMigrations = runMigrations(db, { snapshotDir: dataDir });
+createPerformanceIndexes(db);
 // 搜索索引由单行 upsertSearchRow 增量维护（repository/search-index 同源 SQL）；
 // 仅当本次启动了迁移（可能改动被索引表结构）或索引为空（首次/被清空）时全量重建，
 // 避免每次启动全表扫描拖慢启动。

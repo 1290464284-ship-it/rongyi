@@ -119,6 +119,14 @@ describe('resource router', () => {
       .expect(404);
   });
 
+  it('rejects repeated filter query values instead of silently mis-binding them', async () => {
+    const res = await request(app)
+      .get('/api/v2/resources/patients?name=a&name=b')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
   it('rejects patient deletion from non-BOSS roles', async () => {
     const created = await request(app)
       .post('/api/v2/resources/patients')

@@ -10,7 +10,6 @@ import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import type { AppContext } from '../../../domain/contracts';
 import type { PatientRiskRepository } from '../ports';
 import { FORBIDDEN_BULK_IMPORT_RESOURCES, assertPatientExists } from './common';
-import { rebuildSearchIndex } from '../../infrastructure/search-index';
 
 export class PatientRiskService {
   private readonly db: Database.Database;
@@ -178,7 +177,6 @@ export class BulkImportService {
         throw e;
       }
     }
-    rebuildSearchIndex(this.db);
     return { imported, failed: errors.length, errors, chunks: Math.ceil(rows.length / size) };
   }
 }

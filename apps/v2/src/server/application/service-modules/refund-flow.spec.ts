@@ -371,6 +371,41 @@ describe('RefundFlowService', () => {
     expect(row.status).toBe('REQUESTED');
   });
 
+  it('原支付卡缺失但患者还有其它卡时驳回抛错并保持 REQUESTED，不扣其它卡', async () => {
+    const chargeService = new ChargeService(db);
+    const memberCardService = new MemberCardService(db);
+    db.prepare('UPDATE MemberCard SET deletedAt = ? WHERE patientId = ? AND deletedAt IS NULL')
+      .run(now, 'patient-demo-001');
+    const cardA = memberCardService.create({
+      patientId: 'patient-demo-001',
+      cardNo: `RF-CARD-STRICT-A-${Math.random().toString(36).slice(2, 8)}`,
+      status: 'ACTIVE',
+      level: 'NORMAL',
+    }, context);
+    await memberCardService.recharge(String(cardA.id), 10000, context);
+    const cardB = memberCardService.create({
+      patientId: 'patient-demo-001',
+      cardNo: `RF-CARD-STRICT-B-${Math.random().toString(36).slice(2, 8)}`,
+      status: 'ACTIVE',
+      level: 'NORMAL',
+    }, context);
+    await memberCardService.recharge(String(cardB.id), 10000, context);
+    db.prepare('UPDATE MemberCard SET status = ? WHERE id = ?').run('FROZEN', cardA.id);
+    const chargeId = await createPaidCharge(10000, 'MEMBER_CARD');
+    expect((db.prepare('SELECT memberCardId FROM Charge WHERE id = ?').get(chargeId) as { memberCardId: string }).memberCardId)
+      .toBe(String(cardB.id));
+    const refundResult = await chargeService.refund(chargeId, 4000, '缺原卡测试', context);
+    const refundId = String(refundResult.id);
+    db.prepare('UPDATE MemberCard SET deletedAt = ? WHERE id = ?').run(now, cardB.id);
+
+    const service = new RefundFlowService(db);
+    expect(() => service.reject(refundId, context)).toThrow(ConflictError);
+    const row = db.prepare('SELECT status FROM Refund WHERE id = ?').get(refundId) as { status: string };
+    expect(row.status).toBe('REQUESTED');
+    const balanceA = db.prepare('SELECT balance FROM MemberCard WHERE id = ?').get(String(cardA.id)) as { balance: number };
+    expect(balanceA.balance).toBe(10000);
+  });
+
   it('状态机：非 REQUESTED 记录不可审批/驳回/取消，非 PENDING_REFUND 不可确认完成', async () => {
     const chargeService = new ChargeService(db);
     const chargeId = await createPaidCharge(10000, 'CASH');

@@ -322,6 +322,35 @@ export function uniqueIndexColumns(db: Database.Database, table: string, fieldNa
   return hasClinicColumn ? `clinicId, ${fieldName}` : fieldName;
 }
 
+/**
+ * Non-unique indexes for the analytics/pagination hot paths. Called after
+ * migrations so tables created by migration steps are covered too; each
+ * definition is skipped when its table or a referenced column is absent.
+ */
+export function createPerformanceIndexes(db: Database.Database): void {
+  const indexDefs: Array<{ name: string; table: string; columns: string[] }> = [
+    { name: 'idx_v2_perf_charge_patient', table: 'Charge', columns: ['patientId', 'deletedAt'] },
+    { name: 'idx_v2_perf_charge_patient_paid', table: 'Charge', columns: ['patientId', 'paidAt', 'deletedAt'] },
+    { name: 'idx_v2_perf_charge_clinic_created', table: 'Charge', columns: ['clinicId', 'createdAt'] },
+    { name: 'idx_v2_perf_charge_doctor', table: 'Charge', columns: ['doctorId', 'deletedAt'] },
+    { name: 'idx_v2_perf_visit_patient', table: 'Visit', columns: ['patientId', 'deletedAt'] },
+    { name: 'idx_v2_perf_followup_status_plan', table: 'FollowUp', columns: ['status', 'planDate', 'deletedAt'] },
+    { name: 'idx_v2_perf_chargeitem_charge', table: 'ChargeItem', columns: ['chargeId', 'deletedAt'] },
+    { name: 'idx_v2_perf_chargeitem_cost', table: 'ChargeItem', columns: ['costType', 'deletedAt'] },
+    { name: 'idx_v2_perf_notification_user', table: 'Notification', columns: ['userId', 'createdAt'] },
+    { name: 'idx_v2_perf_syncchange_cursor', table: 'SyncChange', columns: ['clinicId', 'createdAt', 'rowid'] },
+  ];
+  for (const def of indexDefs) {
+    const tableExists = db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`).get(def.table);
+    if (!tableExists) continue;
+    const columns = new Set(
+      (db.prepare(`PRAGMA table_info(${def.table})`).all() as Array<{ name: string }>).map((column) => column.name),
+    );
+    if (!def.columns.every((column) => columns.has(column))) continue;
+    db.exec(`CREATE INDEX IF NOT EXISTS ${def.name} ON ${def.table} (${def.columns.join(', ')})`);
+  }
+}
+
 function createUniqueIndexes(db: Database.Database): void {
   for (const resource of resourceRegistry.all()) {
     for (const field of resource.fields) {

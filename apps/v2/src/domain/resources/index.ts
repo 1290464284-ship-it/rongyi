@@ -16,11 +16,9 @@ import { r2Resources } from './r2';
  * 资源定义按业务域拆分为本目录子模块（core/clinical/finance/inventory/operations/r2），
  * 聚合后与 legacyResources（生成物）合并注册。
  *
- * TODO: 统一 entityName 映射说明
- * 当前 registry 中的 resource.name 与对应实体表名存在两套命名约定：
- * - 多数资源：resource.name（复数形式，如 patients / appointments）→ 通过 contracts 中 ResourceDefinition.table 映射到实体类名（如 Patient / Appointment）
- * - 少数例外：imaging（无 s）、firstExamTeeth、memberCardLogs、memberPointLogs 等名称与 table 不一致
- * 迁移时需梳理所有 name→table 的映射，统一为单一命名策略（建议始终以 domain entity 名为准），并在 resourceRegistry 中提供 name↔entity 双向查询辅助函数。
+ * 命名约定：resource.name 是路由/前端使用的复数资源名，table 是领域实体表名。
+ * 少量例外（imaging / firstExamTeeth / memberCardLogs / memberPointLogs）由
+ * ResourceDefinition.table 显式声明；新增资源时保持 name→table 一一映射即可。
  */
 
 const resources: ResourceDefinition[] = [
