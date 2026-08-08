@@ -20,6 +20,9 @@ const SIGNED_URL_TTL_MS = 5 * 60 * 1000;
 // 场景密钥经 V2_SECRET_FILE 提供（infrastructure 层读取器，密钥来源唯一）。
 function fileUrlKey(): Buffer {
   const backupKey = process.env.V2_BACKUP_KEY ?? secretFileValue('backupKey') ?? '';
+  if (!backupKey && process.env.NODE_ENV === 'production') {
+    throw new Error('V2_BACKUP_KEY must be set in production for signed file URLs');
+  }
   return createHmac('sha256', 'file-url-v1').update(backupKey).digest();
 }
 

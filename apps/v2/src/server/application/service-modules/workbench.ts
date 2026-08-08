@@ -85,6 +85,10 @@ export class ClinicalWorkbenchService {
         appointments: Number(appointmentTotal?.count ?? 0),
         inProgressVisits: Number(inProgressVisits?.count ?? 0),
       },
+      truncated: {
+        registrations: registrations.length < Number(registrationTotal?.count ?? 0),
+        appointments: appointments.length < Number(appointmentTotal?.count ?? 0),
+      },
     };
   }
 }

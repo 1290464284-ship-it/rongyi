@@ -17,6 +17,9 @@ export interface ApplyRestoreResult {
 // Electron 场景密钥经 V2_SECRET_FILE 提供（本层 secret-file 读取器）。
 function restoreMarkerKey(): Buffer {
   const backupKey = process.env.V2_BACKUP_KEY ?? secretFileValue('backupKey') ?? '';
+  if (!backupKey && process.env.NODE_ENV === 'production') {
+    throw new Error('V2_BACKUP_KEY must be set in production for restore markers');
+  }
   return createHmac('sha256', 'restore-marker-v1').update(backupKey).digest();
 }
 
