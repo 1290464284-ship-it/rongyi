@@ -70,7 +70,7 @@ describe('PatientTimelinePage', () => {
     expect(screen.getByText('Follow C')).toBeDefined();
     expect(screen.getByText('Demo Patient')).toBeDefined();
     // C2：收费金额以「分」存储，渲染为元字符串（100 分 → ¥1.00）
-    expect(screen.getByText('PAID · ¥1.00')).toBeDefined();
+    expect(screen.getByText('收费 · PAID · ¥1.00')).toBeDefined();
   });
 
   it('renders fallback labels for incomplete timeline rows', async () => {

@@ -88,9 +88,36 @@ describe('UI primitives', () => {
   it('expands Tree and selects a node', () => {
     const onSelect = vi.fn();
     render(<Tree nodes={[{ id: 'root', label: '根', children: [{ id: 'leaf', label: '叶子' }] }]} onSelect={onSelect} />);
-    fireEvent.click(screen.getByRole('button', { name: '+' }));
+    fireEvent.click(screen.getByRole('button', { name: '展开 根' }));
     fireEvent.click(screen.getByText('叶子'));
     expect(onSelect).toHaveBeenCalledWith('leaf');
+  });
+
+  it('supports controlled Tree expansion and node actions', () => {
+    const onToggle = vi.fn();
+    const onAction = vi.fn();
+    render(
+      <Tree
+        nodes={[{
+          id: 'root',
+          label: '根',
+          children: [{
+            id: 'leaf',
+            label: '叶子',
+            meta: '¥50.00',
+            action: '划价',
+            actionAriaLabel: '快捷划价 叶子',
+          }],
+        }]}
+        expandedIds={{ root: true }}
+        onToggle={onToggle}
+        onAction={onAction}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '收起 根' }));
+    expect(onToggle).toHaveBeenCalledWith('root');
+    fireEvent.click(screen.getByRole('button', { name: '快捷划价 叶子' }));
+    expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ id: 'leaf', label: '叶子' }));
   });
 
   it('opens Dropdown and triggers item action', () => {

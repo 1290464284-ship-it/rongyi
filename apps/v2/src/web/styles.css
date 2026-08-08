@@ -2623,6 +2623,17 @@ tbody tr:hover {
 }
 .ui-tree-toggle:hover { background: transparent; color: var(--primary); }
 .ui-tree-label { flex: 1; }
+.ui-tree-meta { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.ui-tree-action {
+  border: 0;
+  background: var(--primary);
+  color: #fff;
+  border-radius: var(--radius-xs);
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.ui-tree-action:hover { background: var(--primary-hover); }
 
 .ui-kanban {
   display: grid;
@@ -2652,6 +2663,17 @@ tbody tr:hover {
 .ui-kanban-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow); padding: 10px 12px; cursor: grab; }
 .ui-kanban-card strong { display: block; font-size: 13px; }
 .ui-kanban-card span { color: var(--muted); font-size: 12px; }
+.ui-kanban-card .kanban-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.ui-kanban-card .kanban-actions button {
+  padding: 4px 8px;
+  font-size: 12px;
+  border-radius: var(--radius-xs);
+}
 
 .ui-upload-list { display: grid; gap: 8px; }
 .ui-upload-item { display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; }
@@ -2680,6 +2702,53 @@ tbody tr:hover {
 .ui-tooth.issue { border-color: var(--warning); background: var(--warning-soft); color: var(--warning); }
 .ui-tooth.done { border-color: var(--success); background: var(--success-soft); color: var(--success); }
 .ui-tooth-divider { height: 1px; background: var(--border); }
+.dental-legend {
+  display: flex;
+  gap: 14px;
+  margin: 10px 0;
+  color: var(--muted);
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+.dental-legend i {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  margin-right: 4px;
+  vertical-align: -2px;
+}
+.dental-mark-panel {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  flex-wrap: wrap;
+}
+.dental-mark-tooth {
+  min-width: 52px;
+  padding: 0 8px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--primary);
+  border-radius: 6px 6px 10px 10px;
+  background: var(--soft);
+  color: var(--primary);
+  font-weight: 700;
+  font-size: 13px;
+}
+.dental-mark-fields {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 13px;
+}
 
 /* ===== 通用组件：MultiSelect / DateRange / Progress / Badge ===== */
 .ui-multiselect { position: relative; min-width: 0; }

@@ -1,9 +1,10 @@
-import { useState, type DragEvent } from 'react';
+import { useState, type DragEvent, type ReactNode } from 'react';
 
 interface KanbanCard {
   id: string;
   title: string;
   subtitle?: string;
+  footer?: ReactNode;
 }
 
 interface KanbanColumn {
@@ -60,6 +61,7 @@ export function KanbanBoard({ columns, onChange }: KanbanBoardProps) {
             >
               <strong>{card.title}</strong>
               {card.subtitle && <span>{card.subtitle}</span>}
+              {card.footer}
             </div>
           ))}
         </div>

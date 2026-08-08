@@ -1,35 +1,55 @@
 import { useState } from 'react';
 
-interface TreeNode {
+export interface TreeNode {
   id: string;
   label: string;
   badge?: string;
+  badgeTone?: 'neutral' | 'warning' | 'success' | 'danger';
+  meta?: string;
+  action?: string;
+  actionAriaLabel?: string;
   children?: TreeNode[];
 }
 
 interface TreeProps {
   nodes: TreeNode[];
   selectedId?: string | null;
+  expandedIds?: Record<string, boolean>;
+  onToggle?: (id: string) => void;
   onSelect?: (id: string) => void;
+  onAction?: (node: TreeNode) => void;
 }
 
 function TreeNodeView({
   node,
   depth,
   selectedId,
+  expandedIds,
+  onToggle,
   onSelect,
+  onAction,
   openIds,
   toggle,
 }: {
   node: TreeNode;
   depth: number;
   selectedId?: string | null;
+  expandedIds?: Record<string, boolean>;
+  onToggle?: (id: string) => void;
   onSelect?: (id: string) => void;
+  onAction?: (node: TreeNode) => void;
   openIds: Set<string>;
   toggle: (id: string) => void;
 }) {
   const hasChildren = Boolean(node.children?.length);
-  const open = openIds.has(node.id);
+  const open = expandedIds ? Boolean(expandedIds[node.id]) : openIds.has(node.id);
+
+  function handleToggle() {
+    if (!hasChildren) return;
+    if (expandedIds && onToggle) onToggle(node.id);
+    else toggle(node.id);
+  }
+
   return (
     <div className="ui-tree-node">
       <div
@@ -39,13 +59,28 @@ function TreeNodeView({
         <button
           type="button"
           className="ui-tree-toggle"
-          onClick={() => hasChildren && toggle(node.id)}
+          onClick={handleToggle}
           aria-expanded={open}
+          aria-label={hasChildren ? (open ? `收起 ${node.label}` : `展开 ${node.label}`) : undefined}
         >
-          {hasChildren ? (open ? '−' : '+') : ''}
+          {hasChildren ? (open ? '▼' : '+') : ''}
         </button>
         <span className="ui-tree-label" onClick={() => onSelect?.(node.id)}>{node.label}</span>
-        {node.badge && <span className="tag">{node.badge}</span>}
+        {node.badge && <span className={`ui-badge ${node.badgeTone ?? 'neutral'}`}>{node.badge}</span>}
+        {node.meta && <span className="ui-tree-meta">{node.meta}</span>}
+        {node.action && (
+          <button
+            type="button"
+            className="ui-tree-action"
+            aria-label={node.actionAriaLabel}
+            onClick={(event) => {
+              event.stopPropagation();
+              onAction?.(node);
+            }}
+          >
+            {node.action}
+          </button>
+        )}
       </div>
       {hasChildren && open && (
         <div className="ui-tree-children">
@@ -55,7 +90,10 @@ function TreeNodeView({
               node={child}
               depth={depth + 1}
               selectedId={selectedId}
+              expandedIds={expandedIds}
+              onToggle={onToggle}
               onSelect={onSelect}
+              onAction={onAction}
               openIds={openIds}
               toggle={toggle}
             />
@@ -66,7 +104,14 @@ function TreeNodeView({
   );
 }
 
-export function Tree({ nodes, selectedId, onSelect }: TreeProps) {
+export function Tree({
+  nodes,
+  selectedId,
+  expandedIds,
+  onToggle,
+  onSelect,
+  onAction,
+}: TreeProps) {
   const [openIds, setOpenIds] = useState<Set<string>>(() => new Set());
   function toggle(id: string) {
     setOpenIds((current) => {
@@ -84,7 +129,10 @@ export function Tree({ nodes, selectedId, onSelect }: TreeProps) {
           node={node}
           depth={0}
           selectedId={selectedId}
+          expandedIds={expandedIds}
+          onToggle={onToggle}
           onSelect={onSelect}
+          onAction={onAction}
           openIds={openIds}
           toggle={toggle}
         />

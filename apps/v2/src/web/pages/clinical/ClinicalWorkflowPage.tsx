@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import type { Page } from '../../lib/types';
-import { DataTable, QuerySection } from '../../components';
+import { DataTable, KanbanBoard, QuerySection } from '../../components';
 import { errorMessage } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
 import { STATUS_LABELS, type TodayData, type WorkbenchDialog } from '../../clinical-workflow/types';
@@ -89,6 +89,36 @@ export function ClinicalWorkflowPage() {
     void queries.registrations.refetch();
   }
 
+  function registrationKanbanColumns(
+    rows: Array<Record<string, unknown>>,
+    footerForRow: (row: Record<string, unknown>) => ReactNode,
+  ) {
+    const statusOf = (row: Record<string, unknown>) => String(row.status ?? '');
+    const card = (row: Record<string, unknown>) => ({
+      id: String(row.id),
+      title: String(row.patientIdLabel ?? row.patientId ?? row.id),
+      subtitle: STATUS_LABELS[statusOf(row)] ?? statusOf(row),
+      footer: footerForRow(row),
+    });
+    return [
+      {
+        id: 'waiting',
+        title: '候诊',
+        cards: rows.filter((row) => !['IN_PROGRESS', 'COMPLETED', 'CANCELLED'].includes(statusOf(row))).map(card),
+      },
+      {
+        id: 'in-progress',
+        title: '就诊中',
+        cards: rows.filter((row) => statusOf(row) === 'IN_PROGRESS').map(card),
+      },
+      {
+        id: 'done',
+        title: '已完成',
+        cards: rows.filter((row) => ['COMPLETED', 'CANCELLED'].includes(statusOf(row))).map(card),
+      },
+    ];
+  }
+
   return (
     <div className="page">
       <div className="page-head"><h1>就诊工作台</h1></div>
@@ -131,10 +161,59 @@ export function ClinicalWorkflowPage() {
         return (
           <section key={resource}>
             <h2>{RESOURCE_LABELS[resource]}</h2>
-            <QuerySection
-              query={query}
-              render={(data) => <DataTable columns={columns} rows={data?.items ?? []} keyField="id" emptyText="暂无记录" />}
-            />
+            {resource === 'registrations' ? (
+              <QuerySection
+                query={query}
+                render={(data) => {
+                  const rows = data?.items ?? [];
+                  if (rows.length === 0) return <div className="table-empty">暂无记录</div>;
+                  const boardColumns = registrationKanbanColumns(rows, (row) => (
+                    <div className="kanban-actions">
+                      {(transitions.registrations?.[String(row.status)] ?? []).map((next) => (
+                        <button key={next} onClick={() => transition('registrations', String(row.id), next)}>
+                          {STATUS_LABELS[next] ?? next}
+                        </button>
+                      ))}
+                      {row.status === 'REGISTERED' && (
+                        <button onClick={() => setActiveDialog({ kind: 'triage', row })}>分诊</button>
+                      )}
+                      {row.status === 'TRIAGED' && <span className="triage-badge">已分诊</span>}
+                      <button onClick={() => setActiveDialog({ kind: 'charge', row })}>划价</button>
+                      <button onClick={() => setActiveDialog({ kind: 'record', row })}>病历</button>
+                      <button onClick={() => setActiveDialog({ kind: 'followup', row })}>回访</button>
+                    </div>
+                  ));
+                  const beforeMap = new Map(
+                    boardColumns.map((column) => [column.id, new Set(column.cards.map((card) => card.id))]),
+                  );
+                  return (
+                    <KanbanBoard
+                      columns={boardColumns}
+                      onChange={(next) => {
+                        for (const column of next) {
+                          for (const card of column.cards) {
+                            if (!beforeMap.get(column.id)?.has(card.id)) {
+                              const nextStatus = column.id === 'in-progress'
+                                ? 'IN_PROGRESS'
+                                : column.id === 'done'
+                                  ? 'COMPLETED'
+                                  : 'REGISTERED';
+                              void transition('registrations', card.id, nextStatus);
+                              return;
+                            }
+                          }
+                        }
+                      }}
+                    />
+                  );
+                }}
+              />
+            ) : (
+              <QuerySection
+                query={query}
+                render={(data) => <DataTable columns={columns} rows={data?.items ?? []} keyField="id" emptyText="暂无记录" />}
+              />
+            )}
           </section>
         );
       })}

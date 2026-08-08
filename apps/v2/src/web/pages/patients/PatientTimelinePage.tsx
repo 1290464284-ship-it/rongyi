@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router';
 import { apiRequest } from '../../lib/api';
 import type { Page } from '../../lib/types';
-import { LoadingState, PageError, SearchableSelect, type SearchableSelectRow } from '../../components';
+import { LoadingState, PageError, SearchableSelect, Timeline, type SearchableSelectRow } from '../../components';
 import { formatMoney } from '../../lib/format';
 
 interface TimelineEvent {
@@ -13,6 +13,13 @@ interface TimelineEvent {
   title: string;
   status?: string | null;
   amount?: unknown;
+}
+
+function timelineTone(status?: string | null): 'done' | 'current' | 'pending' | undefined {
+  const value = String(status ?? '');
+  if (['COMPLETED', 'PAID', 'SUBMITTED', 'APPROVED'].includes(value)) return 'done';
+  if (['IN_PROGRESS', 'TRIAGED', 'REGISTERED'].includes(value)) return 'current';
+  return 'pending';
 }
 
 export function PatientTimelinePage() {
@@ -84,6 +91,14 @@ export function PatientTimelinePage() {
       status: row.status ? String(row.status) : null,
     })),
   ].sort((a, b) => String(b.time).localeCompare(String(a.time)) || a.type.localeCompare(b.type));
+  const timelineItems = events.map((event) => ({
+    title: event.title,
+    time: event.time,
+    description: `${event.type} · ${event.status ?? ''}${
+      event.amount === undefined || event.amount === null ? '' : ` · ${formatMoney(event.amount)}`
+    }`,
+    tone: timelineTone(event.status),
+  }));
 
   return (
     <div className="page">
@@ -117,16 +132,7 @@ export function PatientTimelinePage() {
         </div>
       ))}
       <div className="timeline">
-        {events.map((event) => (
-          <article className="timeline-item" key={`${event.type}-${event.id}`}>
-            <div className="timeline-meta">
-              <span>{event.type}</span>
-              <time>{event.time}</time>
-            </div>
-            <strong>{event.title}</strong>
-            <p>{event.status ?? ''}{event.amount === undefined || event.amount === null ? '' : ` · ${formatMoney(event.amount)}`}</p>
-          </article>
-        ))}
+        <Timeline items={timelineItems} />
         {events.length === 0 && !timelineLoading && failedQueries.length === 0 && <p className="empty-board">暂无时间线记录</p>}
       </div>
     </div>
