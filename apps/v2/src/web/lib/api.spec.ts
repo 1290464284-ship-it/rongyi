@@ -456,6 +456,7 @@ describe('friendlyError 映射', () => {
     expect(friendlyError('Request failed (500)')).toBe('请求失败，请稍后重试');
     expect(friendlyError('Forbidden resource: backups')).toBe('无权访问该资源');
     expect(friendlyError('Unknown filter field: bad')).toBe('筛选条件无效');
+    expect(friendlyError('Search query must be at most 200 characters')).toBe('搜索关键词不能超过 200 个字符');
     expect(friendlyError('The operation was aborted due to timeout')).toBe('请求超时，请重试');
     expect(friendlyError('Something timed out')).toBe('请求超时，请重试');
     expect(friendlyError('Create is not supported for this resource')).toBe('该资源不支持新建');

@@ -86,6 +86,7 @@ export function friendlyError(error: unknown): string {
     'Refresh token has expired': '登录状态已过期，请重新登录',
     'Refresh token is required': '登录状态已失效，请重新登录',
     'Route not found': '接口不存在',
+    'Search query must be at most 200 characters': '搜索关键词不能超过 200 个字符',
     'Send batch ids must be an array with at most 500 items': '批量发送选择无效',
     'Session is missing refresh token': '登录状态已失效，请重新登录',
     'The database connection is not open': '数据库连接异常，请重启应用',
