@@ -111,6 +111,11 @@ pnpm --filter @dental/v2 ensure:legacy
   credentials (overridable via `V2_ADMIN_PASSWORD`). Provision the
   admin user through the packaged database or migration tooling before
   production startup.
+- Listening outside loopback (`V2_HOST=0.0.0.0`) is refused in every
+  environment unless `V2_ALLOW_INSECURE_LAN=1`; route LAN deployments through
+  a TLS reverse proxy and keep the default `127.0.0.1` for local work.
+- Development seeds demo users and data only for local debugging; they stay
+  behind the loopback guard above.
 - Sync push/pull requires a registered device token. Register a device with
   `POST /api/v2/sync/devices` and pass `deviceToken` to sync requests.
 - Business workflows enforce tenant scope for the current user's `clinicId`.
