@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import { resourceRegistry } from '../../../domain/resources';
-import { migrations101to120 } from './v101-120';
+import { migrations101to110 } from './v101-110';
+import { migrations111to120 } from './v111-120';
 import { migrations121to140 } from './v121-140';
 import { migrations141to146 } from './v141-146';
 import { dedupNullClinicRows, snapshotDatabase } from './helpers';
@@ -31,7 +32,8 @@ export interface Migration {
  * 禁止在生产库上直接删除仍被读取的数据列。
  */
 export const migrations: Migration[] = [
-  ...migrations101to120,
+  ...migrations101to110,
+  ...migrations111to120,
   ...migrations121to140,
   ...migrations141to146,
 ];
@@ -80,4 +82,3 @@ export function runMigrations(db: Database.Database, options?: { snapshotDir?: s
   }
   return appliedCount;
 }
-
