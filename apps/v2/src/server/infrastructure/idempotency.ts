@@ -40,18 +40,8 @@ export function withIdempotency<T>(
     | { responseJson: string; status: string; expiresAt: string | null; updatedAt: string }
     | undefined;
   if (existing) {
-    if (existing.status !== 'COMPLETED') throw new ConflictError('Operation is already in progress');
-    if (existing.expiresAt !== null && existing.expiresAt <= startedAt) {
-      // Lazy single-key cleanup: an expired COMPLETED record is a retry, not a replay.
-      db.prepare('DELETE FROM IdempotencyRecord WHERE key = ? AND status = ?').run(key, 'COMPLETED');
-    } else {
-      const replayed = parseStoredResponse<T>(existing.responseJson);
-      if (replayed !== undefined) return replayed;
-      // 损坏的 COMPLETED 记录无法安全重放：删除并重跑，让操作恢复而不是永久 500。
-      // 风险：原始写入可能已生效，仅在数据库被人工/异常改坏时走到这里。
-      console.error('[idempotency] completed response is corrupt; deleting record and retrying operation', { key });
-      db.prepare('DELETE FROM IdempotencyRecord WHERE key = ?').run(key);
-    }
+    const replayed = replayCompletedOrDelete<T>(db, key, existing, startedAt);
+    if (replayed !== undefined) return replayed;
   }
 
   try {
@@ -67,11 +57,8 @@ export function withIdempotency<T>(
       | { responseJson: string; status: string; updatedAt: string }
       | undefined;
     if (concurrent) {
-      if (concurrent.status !== 'COMPLETED') throw new ConflictError('Operation is already in progress');
-      const replayed = parseStoredResponse<T>(concurrent.responseJson);
+      const replayed = replayCompletedOrDelete<T>(db, key, concurrent, startedAt);
       if (replayed !== undefined) return replayed;
-      console.error('[idempotency] concurrent completed response is corrupt; deleting record and retrying operation', { key });
-      db.prepare('DELETE FROM IdempotencyRecord WHERE key = ?').run(key);
     }
     throw error;
   }
@@ -171,4 +158,25 @@ function parseStoredResponse<T>(raw: string): T | undefined {
   } catch {
     return undefined;
   }
+}
+
+function replayCompletedOrDelete<T>(
+  db: Database.Database,
+  key: string,
+  row: { responseJson: string; status: string; expiresAt?: string | null },
+  now: string,
+): T | undefined {
+  if (row.status !== 'COMPLETED') throw new ConflictError('Operation is already in progress');
+  // Lazy single-key cleanup: an expired COMPLETED record is a retry, not a replay.
+  if (row.expiresAt !== null && row.expiresAt !== undefined && row.expiresAt <= now) {
+    db.prepare('DELETE FROM IdempotencyRecord WHERE key = ? AND status = ?').run(key, 'COMPLETED');
+    return undefined;
+  }
+  const replayed = parseStoredResponse<T>(row.responseJson);
+  if (replayed !== undefined) return replayed;
+  // 损坏的 COMPLETED 记录无法安全重放：删除并重跑，让操作恢复而不是永久 500。
+  // 风险：原始写入可能已生效，仅在数据库被人工/异常改坏时走到这里。
+  console.error('[idempotency] completed response is corrupt; deleting record and retrying operation', { key });
+  db.prepare('DELETE FROM IdempotencyRecord WHERE key = ?').run(key);
+  return undefined;
 }
