@@ -2653,6 +2653,43 @@ tbody tr:hover {
 .ui-tooth.done { border-color: var(--success); background: var(--success-soft); color: var(--success); }
 .ui-tooth-divider { height: 1px; background: var(--border); }
 
+/* ===== 通用组件：MultiSelect / DateRange / Progress / Badge ===== */
+.ui-multiselect { position: relative; min-width: 0; }
+.ui-multiselect-input {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  padding: 6px 8px;
+  cursor: pointer;
+}
+.ui-chip { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; background: var(--soft); color: var(--primary); padding: 4px 9px; font-size: 12px; font-weight: 600; }
+.ui-multiselect-placeholder { color: var(--muted-weak); font-size: 12px; }
+.ui-multiselect-menu { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 50; display: grid; gap: 2px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow-hover); padding: 6px; }
+.ui-multiselect-option { display: flex; align-items: center; gap: 8px; border-radius: var(--radius-xs); padding: 8px 9px; cursor: pointer; }
+.ui-multiselect-option:hover { background: var(--surface-muted); }
+
+.ui-date-range { display: flex; align-items: center; gap: 8px; }
+.ui-date-range input { flex: 1; min-width: 0; }
+.ui-date-range-sep { color: var(--muted-weak); }
+
+.ui-progress { height: 8px; overflow: hidden; border-radius: 999px; background: var(--border-soft); }
+.ui-progress-fill { height: 100%; border-radius: 999px; background: var(--primary); transition: width var(--dur) var(--ease); }
+.ui-progress-fill.success { background: var(--success); }
+.ui-progress-fill.warning { background: var(--warning); }
+.ui-progress-fill.danger { background: var(--danger); }
+
+.ui-badge { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; padding: 3px 9px; font-size: 12px; font-weight: 600; }
+.ui-badge.neutral { background: var(--surface-muted); color: var(--muted); }
+.ui-badge.primary { background: var(--soft); color: var(--primary); }
+.ui-badge.success { background: var(--success-soft); color: var(--success); }
+.ui-badge.warning { background: var(--warning-soft); color: var(--warning); }
+.ui-badge.danger { background: var(--danger-soft); color: var(--danger); }
+
 /* ===== 无障碍：系统开启"减弱动态效果"时动画瞬间完成（保留淡入淡出终态） ===== */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

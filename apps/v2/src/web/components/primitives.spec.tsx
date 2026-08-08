@@ -3,10 +3,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { Accordion } from './Accordion';
+import { Badge } from './Badge';
 import { BatchBar } from './BatchBar';
+import { DateRange } from './DateRange';
 import { DentalChart } from './DentalChart';
 import { Dropdown } from './Dropdown';
 import { Drawer } from './Drawer';
+import { MultiSelect } from './MultiSelect';
+import { Progress } from './Progress';
 import { Segmented } from './Segmented';
 import { Steps } from './Steps';
 import { Switch } from './Switch';
@@ -95,5 +99,27 @@ describe('UI primitives', () => {
     render(<BatchBar count={2} onDelete={onDelete} />);
     fireEvent.click(screen.getByText('批量删除'));
     expect(onDelete).toHaveBeenCalled();
+  });
+
+  it('toggles a MultiSelect option', () => {
+    const onChange = vi.fn();
+    render(<MultiSelect value={[]} onChange={onChange} options={[{ value: 'a', label: '洁牙' }, { value: 'b', label: '补牙' }]} />);
+    fireEvent.click(screen.getByText('请选择'));
+    fireEvent.click(screen.getByText('洁牙'));
+    expect(onChange).toHaveBeenCalledWith(['a']);
+  });
+
+  it('updates DateRange values', () => {
+    const onChange = vi.fn();
+    render(<DateRange onChange={onChange} />);
+    fireEvent.change(screen.getByLabelText('开始日期'), { target: { value: '2026-08-01' } });
+    expect(onChange).toHaveBeenCalledWith('2026-08-01', undefined);
+  });
+
+  it('renders Progress and Badge', () => {
+    render(<Progress value={40} />);
+    expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('40');
+    render(<Badge tone="success">已完成</Badge>);
+    expect(screen.getByText('已完成')).toBeDefined();
   });
 });
