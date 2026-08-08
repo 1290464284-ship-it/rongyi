@@ -99,6 +99,25 @@ The public release workflow only considers numeric `v2-<major>.<minor>.<patch>`
 releases for upgrade smoke, so internal `v2-internal-*` releases never become
 the upgrade baseline.
 
+## Automated Smoke Matrix
+
+The following self-contained smokes are wired into CI and cover the packaged
+and multi-process paths:
+
+```powershell
+pnpm --filter @dental/v2 smoke:packaged-ui
+pnpm --filter @dental/v2 smoke:http-fuzz
+pnpm --filter @dental/v2 smoke:multi-instance
+```
+
+- `smoke:packaged-ui` launches the real `win-unpacked` Electron app, logs in,
+  navigates to patients, and saves a screenshot under `data/`.
+- `smoke:http-fuzz` starts a temporary API process and asserts malformed
+  JSON, invalid types/pagination, oversized bodies, and CORS rejections return
+  4xx without crashing the server.
+- `smoke:multi-instance` starts two API processes on one SQLite file, writes
+  concurrently from both, and verifies cross-instance visibility.
+
 ## Signing
 
 The `v2-release.yml` workflow requires `CSC_LINK` and `CSC_KEY_PASSWORD` GitHub
@@ -110,11 +129,11 @@ The workflow fails before packaging when either secret is missing.
 > the user explicitly confirms on the desktop settings page ("下载更新"), then
 > requires a second confirmation to install. On Windows, electron-updater's
 > `NsisUpdater` only enforces Authenticode publisher verification when the
-> electron-builder config sets `build.win.publisherName`. Configure it (e.g.
-> `"publisherName": ["CN=<your company name>"]`) **only after** a CA-issued
-> code-signing certificate is in place via `CSC_LINK`/`CSC_KEY_PASSWORD`;
-> setting a publisher name that does not match the actual certificate will
-> make every update fail signature verification. Keep the default
+> electron-builder config sets `build.win.signtoolOptions.publisherName`.
+> `inject-publisher-name.ps1` derives this value from the actual `CSC_LINK`
+> certificate before packaging, so it always matches the signing subject.
+> Do not hardcode a publisher name that does not match the actual certificate;
+> that makes every update fail signature verification. Keep the default
 > `verifyUpdateCodeSignature` behavior — never assign it a boolean value.
 
 The repository ships a local development certificate (`certs/signing-cert.pfx`)
