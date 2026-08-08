@@ -518,6 +518,20 @@ describe('api helper functions', () => {
     expect(String(fetchMock.mock.calls[0][0])).toBe('http://127.0.0.1:9999/api/v2/resources/patients?page=1&pageSize=100');
   });
 
+  it('fetchAllPages stops at the page cap instead of looping forever', async () => {
+    fetchMock.mockImplementation(() =>
+      Promise.resolve(new Response(
+        JSON.stringify({
+          success: true,
+          data: { items: [{ id: 'x' }], total: 999999, page: 1, pageSize: 100 },
+        }),
+        { status: 200 },
+      )),
+    );
+    await expect(mod.fetchAllPages('/resources/patients')).rejects.toThrow('page cap');
+    expect(fetchMock.mock.calls.length).toBe(1000);
+  });
+
   it('downloadCsv downloads a blob', async () => {
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     const createSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:csv');

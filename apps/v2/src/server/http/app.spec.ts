@@ -942,6 +942,13 @@ describe('HTTP app', () => {
     await request(app).get('/api/v2/search?q=Demo').set('Authorization', `Bearer ${token}`).expect(200);
   });
 
+  it('rejects oversized search queries', async () => {
+    await request(app)
+      .get(`/api/v2/search?q=${'a'.repeat(201)}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(400);
+  });
+
   it('queries appointments by local date through the read endpoint', async () => {
     const now = new Date().toISOString();
     db.prepare(

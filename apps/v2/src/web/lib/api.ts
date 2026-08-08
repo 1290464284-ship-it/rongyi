@@ -254,13 +254,15 @@ export async function apiRequest<T>(
 export async function fetchAllPages<T>(path: string): Promise<T[]> {
   const pageSize = 100;
   const separator = path.includes('?') ? '&' : '?';
-  let page = 1;
+  const MAX_PAGES = 1000;
   const items: T[] = [];
-  for (;;) {
+  for (let page = 1; page <= MAX_PAGES; page += 1) {
     const data = await apiRequest<Page<T>>(`${path}${separator}page=${page}&pageSize=${pageSize}`);
     items.push(...data.items);
     if (data.items.length === 0 || items.length >= data.total) break;
-    page += 1;
+    if (page === MAX_PAGES) {
+      throw new Error('fetchAllPages exceeded the page cap; refusing to continue');
+    }
   }
   return items;
 }

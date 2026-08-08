@@ -170,6 +170,9 @@ export function registerReadRoutes(app: Express, deps: ReadRouteDependencies): v
         res.json({ success: true, data: [] });
         return;
       }
+      if (q.length > 200) {
+        throw new ValidationError('Search query must be at most 200 characters');
+      }
       res.json({ success: true, data: deps.search.search(q, req.context!) });
   }));
 }
