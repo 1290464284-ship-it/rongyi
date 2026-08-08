@@ -2,8 +2,8 @@
 
 ## Why
 
-Historical commits contain development default passwords such as `REDACTED` and
-`REDACTED`. The current worktree is clean, but anyone with access to the
+Historical commits contain development default passwords that were removed from
+the current worktree. Anyone with access to the
 repository history can still read those strings. Run this procedure before the
 repository is shared publicly.
 
@@ -35,8 +35,8 @@ python -m pip install git-filter-repo
 Create a temporary replacement file, for example `history-redact.txt`:
 
 ```text
-REDACTED==>REDACTED
-REDACTED==>REDACTED
+<old-default-password>==>REDACTED
+<another-old-default-password>==>REDACTED
 ```
 
 Then rewrite history from a fresh clone (never run this against a working
@@ -58,8 +58,8 @@ git log --all -G'AKIA[0-9A-Z]{16}' -- .
 ## Verify the rewrite
 
 ```powershell
-git log --all -S'REDACTED' --oneline -- .
-git log --all -S'REDACTED' --oneline -- .
+git log --all -S'<old-default-password>' --oneline -- .
+git log --all -S'<another-old-default-password>' --oneline -- .
 ```
 
 Both commands must return no output. Also confirm the current branch still
