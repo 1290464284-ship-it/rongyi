@@ -16,7 +16,7 @@ export function seedDatabase(db: Database.Database): void {
   const clinicId = clinicRow ? String(clinicRow.id) : 'clinic-v2-001';
   if (!clinicRow) {
     db.prepare(
-      `INSERT INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+      `INSERT OR IGNORE INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
        VALUES (?, NULL, ?, ?, NULL, 'V2', 'Refactored Clinic', 1)`,
     ).run(clinicId, now, now);
   }
@@ -38,22 +38,24 @@ export function seedDatabase(db: Database.Database): void {
         );
       }
       const passwordHash = bcrypt.hashSync(bootstrapPassword, 10);
-      db.prepare(
-        `INSERT INTO User (
+      const created = db.prepare(
+        `INSERT OR IGNORE INTO User (
            id, clinicId, createdAt, updatedAt, deletedAt,
            username, passwordHash, name, role, active, loginAttempts, tokenVersion
          ) VALUES (?, ?, ?, ?, NULL, 'admin', ?, 'System Administrator', 'BOSS', 1, 0, 0)`,
       ).run(userId, clinicId, now, now, passwordHash);
-      console.warn('[seed] production admin bootstrap: admin created from V2_ADMIN_PASSWORD; change the password after first login');
+      if (created.changes > 0) {
+        console.warn('[seed] production admin bootstrap: admin created from V2_ADMIN_PASSWORD; change the password after first login');
+      }
     } else {
       const passwordHash = bcrypt.hashSync(seedPassword, 10);
-      db.prepare(
-        `INSERT INTO User (
+      const created = db.prepare(
+        `INSERT OR IGNORE INTO User (
            id, clinicId, createdAt, updatedAt, deletedAt,
            username, passwordHash, name, role, active, loginAttempts, tokenVersion
          ) VALUES (?, ?, ?, ?, NULL, 'admin', ?, 'System Administrator', 'BOSS', 1, 0, 0)`,
       ).run(userId, clinicId, now, now, passwordHash);
-      if (!process.env.V2_ADMIN_PASSWORD && nodeEnv !== 'test') {
+      if (created.changes > 0 && !process.env.V2_ADMIN_PASSWORD && nodeEnv !== 'test') {
         console.warn(`[seed] V2_ADMIN_PASSWORD not set; admin created with temporary password: ${seedPassword}`);
       }
     }
@@ -68,7 +70,7 @@ export function seedDatabase(db: Database.Database): void {
   if (!doctorRow && !isProduction) {
     const doctorHash = bcrypt.hashSync('REDACTED', 10);
     db.prepare(
-      `INSERT INTO User (
+      `INSERT OR IGNORE INTO User (
          id, clinicId, createdAt, updatedAt, deletedAt,
          username, passwordHash, name, role, active, loginAttempts, tokenVersion
        ) VALUES (?, ?, ?, ?, NULL, 'doctor', ?, 'Default Doctor', 'DOCTOR', 1, 0, 0)`,
