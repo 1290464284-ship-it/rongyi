@@ -334,10 +334,13 @@ export function createPerformanceIndexes(db: Database.Database): void {
     { name: 'idx_v2_perf_charge_clinic_created', table: 'Charge', columns: ['clinicId', 'createdAt'] },
     { name: 'idx_v2_perf_charge_doctor', table: 'Charge', columns: ['doctorId', 'deletedAt'] },
     { name: 'idx_v2_perf_visit_patient', table: 'Visit', columns: ['patientId', 'deletedAt'] },
+    { name: 'idx_v2_perf_appointment_start_clinic', table: 'Appointment', columns: ['clinicId', 'startTime'] },
+    { name: 'idx_v2_perf_registration_start_clinic', table: 'Registration', columns: ['clinicId', 'registeredAt'] },
     { name: 'idx_v2_perf_followup_status_plan', table: 'FollowUp', columns: ['status', 'planDate', 'deletedAt'] },
     { name: 'idx_v2_perf_chargeitem_charge', table: 'ChargeItem', columns: ['chargeId', 'deletedAt'] },
     { name: 'idx_v2_perf_chargeitem_cost', table: 'ChargeItem', columns: ['costType', 'deletedAt'] },
     { name: 'idx_v2_perf_notification_user', table: 'Notification', columns: ['userId', 'createdAt'] },
+    { name: 'idx_v2_perf_attendance_clinic_date', table: 'Attendance', columns: ['clinicId', 'workDate'] },
     { name: 'idx_v2_perf_syncchange_cursor', table: 'SyncChange', columns: ['clinicId', 'createdAt', 'rowid'] },
   ];
   for (const def of indexDefs) {

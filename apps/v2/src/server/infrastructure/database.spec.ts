@@ -280,6 +280,9 @@ describe('database bootstrap', () => {
     const chargeIndexes = (perfDb.prepare("PRAGMA index_list('Charge')").all() as Array<{ name: string }>)
       .map((row) => row.name);
     expect(chargeIndexes).toContain('idx_v2_perf_charge_patient');
+    const appointmentIndexes = (perfDb.prepare("PRAGMA index_list('Appointment')").all() as Array<{ name: string }>)
+      .map((row) => row.name);
+    expect(appointmentIndexes).toContain('idx_v2_perf_appointment_start_clinic');
     expect(() => createPerformanceIndexes(perfDb)).not.toThrow();
     perfDb.close();
   });
