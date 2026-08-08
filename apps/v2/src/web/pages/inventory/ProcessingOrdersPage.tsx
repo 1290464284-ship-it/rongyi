@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import { CrudPage } from '../../components/CrudPage';
@@ -22,6 +22,7 @@ import { flowStatsColumns, processingColumns } from '../../processing-orders/col
 import { ProcessingOrderFormFields } from '../../processing-orders/ProcessingOrderFormFields';
 import { transitionProcessingOrder } from '../../processing-orders/api';
 import { ProcessingStatusSelect } from '../../processing-orders/ProcessingStatusSelect';
+import { ProcessingSettleDialog } from './ProcessingSettleDialog';
 
 export function ProcessingOrdersPage() {
   const { showToast } = useToast();
@@ -31,10 +32,6 @@ export function ProcessingOrdersPage() {
   const flowRequestIdRef = useRef(0);
   const [settleTarget, setSettleTarget] = useState<ProcessingRow | null>(null);
   const [settleReload, setSettleReload] = useState<(() => Promise<unknown>) | null>(null);
-  const [settleAmount, setSettleAmount] = useState('');
-  const [settleRef, setSettleRef] = useState('');
-  const [settleNote, setSettleNote] = useState('');
-  const [settleBusy, setSettleBusy] = useState(false);
   const [flowTarget, setFlowTarget] = useState<ProcessingRow | null>(null);
   const [flowSteps, setFlowSteps] = useState<ProcessingOrderStepRow[]>([]);
   const [flowLoading, setFlowLoading] = useState(false);
@@ -132,47 +129,6 @@ export function ProcessingOrdersPage() {
   function openSettle(row: ProcessingRow, reload: () => Promise<unknown>) {
     setSettleTarget(row);
     setSettleReload(() => reload);
-    setSettleAmount(centsToYuanString(row.totalFee));
-    setSettleRef('');
-    setSettleNote('');
-  }
-
-  function closeSettle() {
-    setSettleTarget(null);
-    setSettleReload(null);
-    setSettleAmount('');
-    setSettleRef('');
-    setSettleNote('');
-  }
-
-  async function submitSettle(event: FormEvent) {
-    event.preventDefault();
-    if (settleBusy || !settleTarget) return;
-    const amount = toCents(settleAmount);
-    // M11：金额必须 > 0，0 元空单不允许进入已结算状态
-    if (!settleAmount.trim() || !Number.isFinite(amount) || amount <= 0) {
-      showToast('请输入有效的结算金额（需大于 0）', 'error');
-      return;
-    }
-    setSettleBusy(true);
-    try {
-      await apiRequest(`/processing-orders/${settleTarget.id}/settle`, {
-        method: 'POST',
-        body: JSON.stringify({
-          amount,
-          ref: settleRef.trim() || undefined,
-          note: settleNote.trim() || undefined,
-        }),
-      });
-      showToast('加工单已结算', 'success');
-      closeSettle();
-      await settleReload?.();
-      void stats.refetch();
-    } catch (error) {
-      showToast(errorMessage(error, '结算失败'), 'error');
-    } finally {
-      setSettleBusy(false);
-    }
   }
 
   async function unsettleProcessingOrder(row: ProcessingRow, reload: () => Promise<unknown>) {
@@ -308,26 +264,17 @@ export function ProcessingOrdersPage() {
           emptyText="暂无流程统计数据"
         />
       </section>
-      <Dialog open={settleTarget !== null} title="结算加工单" onClose={closeSettle}>
-        <form onSubmit={submitSettle}>
-          <label>
-            结算金额（元）
-            <input type="number" min="0" step="0.01" value={settleAmount} onChange={(event) => setSettleAmount(event.target.value)} />
-          </label>
-          <label>
-            结算单号
-            <input value={settleRef} onChange={(event) => setSettleRef(event.target.value)} />
-          </label>
-          <label>
-            备注
-            <textarea value={settleNote} onChange={(event) => setSettleNote(event.target.value)} />
-          </label>
-          <div className="modal-actions">
-            <button type="button" onClick={closeSettle}>取消</button>
-            <button type="submit" disabled={settleBusy}>{settleBusy ? '结算中...' : '确认结算'}</button>
-          </div>
-        </form>
-      </Dialog>
+      <ProcessingSettleDialog
+        key={settleTarget?.id ?? 'closed'}
+        target={settleTarget}
+        reload={settleReload}
+        onSettled={() => void stats.refetch()}
+        onClose={() => {
+          setSettleTarget(null);
+          setSettleReload(null);
+        }}
+        showToast={showToast}
+      />
       <Dialog open={flowTarget !== null} title={`加工流程 - ${flowTarget?.number ?? ''}`} onClose={closeFlow}>
         {flowLoading && <LoadingState label="流程加载中..." />}
         {flowError && !flowLoading && (
