@@ -140,15 +140,21 @@ export const migrations101to110: Migration[] = [
     name: 'v2-base-column-sync',
     up(db) {
       const tables = db.prepare(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name != 'schema_migrations'",
-      ).all() as Array<{ name: string }>;
+        "SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name != 'schema_migrations'",
+      ).all() as Array<{ name: string; sql: string | null }>;
+      const virtualTables = tables
+        .filter((row) => String(row.sql ?? '').toUpperCase().includes('CREATE VIRTUAL TABLE'))
+        .map((row) => row.name);
       const baseColumns: Array<[string, string]> = [
         ['clinicId', 'TEXT'],
         ['createdAt', 'TEXT'],
         ['updatedAt', 'TEXT'],
         ['deletedAt', 'TEXT'],
       ];
-      for (const { name } of tables) {
+      for (const row of tables) {
+        // FTS5 virtual tables and their shadow tables cannot be altered with ADD COLUMN.
+        if (virtualTables.some((virtual) => row.name === virtual || row.name.startsWith(`${virtual}_`))) continue;
+        const name = row.name;
         const existing = new Set(
           (db.prepare(`PRAGMA table_info(${name})`).all() as Array<{ name: string }>).map((column) => column.name),
         );

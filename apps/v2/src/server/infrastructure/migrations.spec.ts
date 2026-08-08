@@ -32,6 +32,17 @@ describe('migrations', () => {
     );
   });
 
+  it('skips virtual tables during base column sync', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-mig-vtab-'));
+    const fresh = createDatabase(dir);
+    fresh.exec('CREATE VIRTUAL TABLE IF NOT EXISTS DummyFts USING fts5(content)');
+    const migration = migrations.find((item) => item.version === 107);
+    expect(migration).toBeDefined();
+    expect(() => migration?.up(fresh)).not.toThrow();
+    fresh.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('retries migrations when another process holds the schema lock', () => {
     const attempts: number[] = [];
     const run = () => {
