@@ -7,3 +7,8 @@ export * from './searchable-select';
 export * from './data-table';
 export * from './status';
 export * from './dialog';
+export * from './Drawer';
+export * from './Switch';
+export * from './Segmented';
+export * from './Tooltip';
+export * from './Accordion';
