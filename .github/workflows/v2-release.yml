@@ -114,6 +114,9 @@ jobs:
       - name: Installer smoke
         run: pnpm --filter @dental/v2 run installer:smoke
 
+      - name: Packaged UI smoke
+        run: pnpm --filter @dental/v2 smoke:packaged-ui
+
       - name: Upgrade smoke
         shell: pwsh
         env:
