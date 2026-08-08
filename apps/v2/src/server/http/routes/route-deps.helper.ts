@@ -55,6 +55,7 @@ export function buildRouteDeps(
     dbPath: options.dbPath ?? 'v2.sqlite',
     logger: new Logger(),
     logDir: '',
+    stocktakeLockGuard: () => undefined,
     authService: new AuthService(db),
     audit: new AuditService(db),
     appointments: new AppointmentService(db),

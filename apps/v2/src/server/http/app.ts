@@ -2,41 +2,7 @@ import cors from 'cors';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import helmet from 'helmet';
 import type Database from 'better-sqlite3';
-import {
-  AlertService,
-  AppointmentService,
-  AuditService,
-  AuthService,
-  BackupService,
-  BulkImportService,
-  CephalometricService,
-  ChargeService,
-  DebtService,
-  FollowUpService,
-  HrService,
-  InventoryService,
-  MemberCardService,
-  NotificationService,
-  PatientRiskService,
-  PrescriptionSafetyService,
-  PrintService,
-  ProcessingOrderService,
-  PurchaseOrderService,
-  SearchService,
-  SatisfactionService,
-  StatsService,
-  SyncService,
-  TreatmentProgressService,
-} from '../application/services';
-import {
-  AnalyticsService,
-  ChargeAssistantService,
-  ClinicalWorkflowService,
-  PrintTemplateService,
-  ReplenishmentService,
-  WechatService,
-} from '../application/workflow-services';
-import { StocktakeService } from '../application/service-modules/stocktake';
+import { PrintService } from '../application/services';
 import { authMiddleware, errorMiddleware, roleMiddleware, traceMiddleware, wrapAsync } from './middleware';
 import { AppError } from '../infrastructure/errors';
 import { listAllResources } from '../infrastructure/legacy-registry';
@@ -78,7 +44,7 @@ import { registerTriageRoutes } from './routes/triage-routes';
 import { registerPayMethodRoutes } from './routes/pay-method-routes';
 import { registerChargeTreeRoutes } from './routes/charge-tree-routes';
 import { registerHighValueRoutes } from './routes/high-value-routes';
-import type { RouteDependencies } from './routes/deps';
+import { createRouteDependencies, type RouteDependencies } from './routes/deps';
 import { createAuditBuffer } from './audit-buffer';
 import { SqliteRateLimitStore } from '../infrastructure/rate-limit-store';
 
@@ -104,46 +70,14 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
   app.locals.audit = audit.push;
   app.locals.flushAuditNow = audit.flushNow;
   app.set('flushAudit', audit.flushNow);
-  // 盘点锁定守卫：LOCKED 盘点单覆盖的物品在盘点期间禁止出入库。
-  const stocktakes = new StocktakeService(db);
-  const stocktakeLockGuard = (itemId: string, clinicId?: string | null) => stocktakes.assertNotLocked(itemId, clinicId);
-
-  const deps: RouteDependencies = {
+  const deps: RouteDependencies = createRouteDependencies({
     db,
     dbPath,
+    backupDir,
     logger,
     logDir,
     rateLimitStore,
-    authService: new AuthService(db),
-    audit: new AuditService(db),
-    appointments: new AppointmentService(db),
-    charges: new ChargeService(db),
-    inventory: new InventoryService(db, undefined, undefined, stocktakeLockGuard),
-    followUps: new FollowUpService(db),
-    backups: new BackupService(db, dbPath, backupDir),
-    stats: new StatsService(db),
-    sync: new SyncService(db),
-    hr: new HrService(db),
-    alerts: new AlertService(db),
-    memberCards: new MemberCardService(db),
-    purchaseOrders: new PurchaseOrderService(db),
-    processingOrders: new ProcessingOrderService(db),
-    patientRisk: new PatientRiskService(db),
-    prescriptionSafety: new PrescriptionSafetyService(db),
-    cephalometric: new CephalometricService(db),
-    treatmentProgress: new TreatmentProgressService(db),
-    bulkImport: new BulkImportService(db),
-    debts: new DebtService(db),
-    notifications: new NotificationService(db),
-    satisfaction: new SatisfactionService(db),
-    clinicalWorkflow: new ClinicalWorkflowService(db),
-    replenishment: new ReplenishmentService(db),
-    wechat: new WechatService(db, undefined, undefined, logger),
-    analytics: new AnalyticsService(db),
-    chargeAssistant: new ChargeAssistantService(db),
-    printTemplates: new PrintTemplateService(db),
-    search: new SearchService(db),
-  };
+  });
 
   app.disable('x-powered-by');
   app.use(helmet());
@@ -299,9 +233,9 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
   registerRefundFlowRoutes(app, deps);
   registerCostShareRoutes(app, deps);
   registerProcessingSettleRoutes(app, deps);
-  registerInventoryBatchRoutes(app, deps, { lockGuard: stocktakeLockGuard });
+  registerInventoryBatchRoutes(app, deps, { lockGuard: deps.stocktakeLockGuard });
   registerStocktakeRoutes(app, deps);
-  registerDispenseRoutes(app, deps, { lockGuard: stocktakeLockGuard });
+  registerDispenseRoutes(app, deps, { lockGuard: deps.stocktakeLockGuard });
   registerPurchaseReviewRoutes(app, deps);
   registerShiftTemplateRoutes(app, deps);
   registerUserRoleRoutes(app, deps);
