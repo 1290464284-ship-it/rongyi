@@ -51,6 +51,28 @@ describe('database bootstrap', () => {
     expect(count).toBe(1);
   });
 
+  it('generates a temporary admin password without V2_ADMIN_PASSWORD in development', () => {
+    const dir = path.join(dataDir, 'dev-random-seed');
+    const fresh = createDatabase(dir);
+    const prevNodeEnv = process.env.NODE_ENV;
+    const prevPassword = process.env.V2_ADMIN_PASSWORD;
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      process.env.NODE_ENV = 'development';
+      delete process.env.V2_ADMIN_PASSWORD;
+      seedDatabase(fresh);
+      const admin = fresh.prepare("SELECT passwordHash FROM User WHERE username = 'admin'").get() as { passwordHash: string };
+      expect(admin.passwordHash).toMatch(/^\$2[aby]\$/);
+      expect(warnSpy).toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+      if (prevNodeEnv === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = prevNodeEnv;
+      if (prevPassword === undefined) delete process.env.V2_ADMIN_PASSWORD; else process.env.V2_ADMIN_PASSWORD = prevPassword;
+      fresh.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('synchronizes legacy schema tables from the existing schema files', () => {
     const schemaDir = path.resolve(import.meta.dirname, '..', '..', '..', 'legacy', 'schema');
     syncLegacySchema(db, schemaDir);

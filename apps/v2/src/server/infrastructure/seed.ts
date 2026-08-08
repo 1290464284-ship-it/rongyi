@@ -1,12 +1,14 @@
 // 开发/生产种子数据（M-04：由 database.ts 拆分）
 import type Database from 'better-sqlite3';
 import bcrypt from 'bcryptjs';
+import { randomBytes } from 'node:crypto';
 
 export function seedDatabase(db: Database.Database): void {
   const now = new Date().toISOString();
   const isProduction = process.env.NODE_ENV === 'production';
-  // 默认密码与 smoke 脚本共享；CI/本地可通过 V2_ADMIN_PASSWORD 覆盖。
-  const seedPassword = process.env.V2_ADMIN_PASSWORD ?? 'REDACTED';
+  const nodeEnv = process.env.NODE_ENV ?? 'development';
+  const seedPassword = process.env.V2_ADMIN_PASSWORD
+    ?? (nodeEnv === 'test' ? 'REDACTED' : randomBytes(18).toString('base64url'));
   const clinicRow = db.prepare('SELECT id FROM Clinic LIMIT 1').get() as { id: string } | undefined;
   const clinicId = clinicRow ? String(clinicRow.id) : 'clinic-v2-001';
   if (!clinicRow) {
@@ -48,12 +50,15 @@ export function seedDatabase(db: Database.Database): void {
            username, passwordHash, name, role, active, loginAttempts, tokenVersion
          ) VALUES (?, ?, ?, ?, NULL, 'admin', ?, 'System Administrator', 'BOSS', 1, 0, 0)`,
       ).run(userId, clinicId, now, now, passwordHash);
+      if (!process.env.V2_ADMIN_PASSWORD && nodeEnv !== 'test') {
+        console.warn(`[seed] V2_ADMIN_PASSWORD not set; admin created with temporary password: ${seedPassword}`);
+      }
     }
   }
   // 非生产且未显式配置 V2_ADMIN_PASSWORD 时，提醒默认管理员口令已生效；
   // 测试环境静默，避免测试输出噪音。
   if (!isProduction && !process.env.V2_ADMIN_PASSWORD && process.env.NODE_ENV !== 'test') {
-    console.warn('[seed] V2_ADMIN_PASSWORD not set: admin user uses the default seed password. Set V2_ADMIN_PASSWORD before first launch to harden credentials.');
+    console.warn('[seed] V2_ADMIN_PASSWORD not set: admin uses a temporary generated password. Set V2_ADMIN_PASSWORD before first launch to make it stable.');
   }
 
   const doctorRow = db.prepare("SELECT id FROM User WHERE username = 'doctor'").get() as { id: string } | undefined;
