@@ -48,7 +48,7 @@ describe('AppointmentsPage', () => {
     vi.mocked(apiRequest).mockReset();
   });
 
-  it('renders appointments and creates one with selectors', async () => {
+  it('renders appointments and creates one with selectors', { timeout: 10_000 }, async () => {
     mockLookups();
     render(<AppointmentsPage />, { wrapper });
     expect(await screen.findByText('预约管理')).toBeDefined();

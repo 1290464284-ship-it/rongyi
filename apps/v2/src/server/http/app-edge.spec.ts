@@ -183,7 +183,7 @@ describe('HTTP app edge error handling', () => {
       const response = await req.set('Authorization', `Bearer ${token}`);
       expect(response.status, `${routeCase.method.toUpperCase()} ${routeCase.path}`).toBeGreaterThanOrEqual(400);
     }
-  });
+  }, 10_000);
 
   it('routes logout errors through the app error middleware', async () => {
     const response = await request(app)

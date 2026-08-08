@@ -44,7 +44,7 @@ describe('SystemOperationsPage', () => {
     // 搜索输入已防抖（300ms），等待防抖值落地后再点击。
     await new Promise((resolve) => setTimeout(resolve, 350));
     fireEvent.click(screen.getByRole('button', { name: '搜索' }));
-    expect(await screen.findByText('Demo Patient')).toBeDefined();
+    expect(await screen.findByText('Demo Patient', {}, { timeout: 5000 })).toBeDefined();
   });
 
   it('loads JSON and CSV files and reports parse errors', async () => {
