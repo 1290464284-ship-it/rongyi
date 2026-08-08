@@ -3,6 +3,7 @@
 export * from './shared';
 export * from './enums';
 export * from './entities';
+export * from './entities-clinical';
 export * from './entities-finance';
 export * from './entities-inventory';
 export * from './entities-operations';
