@@ -24,3 +24,4 @@ export * from './MultiSelect';
 export * from './DateRange';
 export * from './Progress';
 export * from './Badge';
+export * from './Radio';

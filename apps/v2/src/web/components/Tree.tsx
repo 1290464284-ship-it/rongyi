@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-export interface TreeNode {
+interface TreeNode {
   id: string;
   label: string;
   badge?: string;

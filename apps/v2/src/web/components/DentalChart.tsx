@@ -1,4 +1,4 @@
-export type ToothStatus = 'normal' | 'issue' | 'done' | 'selected';
+type ToothStatus = 'normal' | 'issue' | 'done' | 'selected';
 
 interface DentalChartProps {
   upper: number[];

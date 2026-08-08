@@ -1,4 +1,4 @@
-export interface StepItem {
+interface StepItem {
   label: string;
 }
 

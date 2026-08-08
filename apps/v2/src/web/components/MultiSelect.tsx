@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-export interface SelectOption {
+interface SelectOption {
   value: string;
   label: string;
 }

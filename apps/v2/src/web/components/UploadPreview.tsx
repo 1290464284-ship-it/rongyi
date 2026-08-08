@@ -1,4 +1,4 @@
-export interface UploadFile {
+interface UploadFile {
   id: string;
   name: string;
   size: string;

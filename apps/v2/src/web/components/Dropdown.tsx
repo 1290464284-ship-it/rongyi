@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-export interface DropdownItem {
+interface DropdownItem {
   label: string;
   danger?: boolean;
   onClick?: () => void;

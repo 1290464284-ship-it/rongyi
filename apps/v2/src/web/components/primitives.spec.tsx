@@ -12,6 +12,7 @@ import { Drawer } from './Drawer';
 import { KanbanBoard } from './KanbanBoard';
 import { MultiSelect } from './MultiSelect';
 import { Progress } from './Progress';
+import { Radio } from './Radio';
 import { Segmented } from './Segmented';
 import { Steps } from './Steps';
 import { Switch } from './Switch';
@@ -41,6 +42,20 @@ describe('UI primitives', () => {
     );
     fireEvent.click(screen.getByText('本周'));
     expect(onChange).toHaveBeenCalledWith('week');
+  });
+
+  it('selects a Radio option', () => {
+    const onChange = vi.fn();
+    render(
+      <Radio
+        name="source"
+        value="shop"
+        onChange={onChange}
+        options={[{ value: 'shop', label: '到店' }, { value: 'online', label: '线上' }]}
+      />,
+    );
+    fireEvent.click(screen.getByRole('radio', { name: '线上' }));
+    expect(onChange).toHaveBeenCalledWith('online');
   });
 
   it('opens and closes an Accordion item', () => {

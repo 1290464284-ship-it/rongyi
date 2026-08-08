@@ -1,12 +1,12 @@
 import { useState, type DragEvent } from 'react';
 
-export interface KanbanCard {
+interface KanbanCard {
   id: string;
   title: string;
   subtitle?: string;
 }
 
-export interface KanbanColumn {
+interface KanbanColumn {
   id: string;
   title: string;
   cards: KanbanCard[];

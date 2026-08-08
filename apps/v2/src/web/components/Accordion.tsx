@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 
-export interface AccordionItem {
+interface AccordionItem {
   title: string;
   content: ReactNode;
 }

@@ -2397,6 +2397,20 @@ tbody tr:hover {
   transform: translateX(18px);
 }
 
+.ui-radio-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ui-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--text);
+}
+
 .ui-segmented {
   display: inline-flex;
   gap: 3px;

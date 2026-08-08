@@ -1,4 +1,4 @@
-export interface TimelineItem {
+interface TimelineItem {
   title: string;
   time?: string;
   description?: string;
