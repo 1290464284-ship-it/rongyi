@@ -72,23 +72,32 @@ jobs:
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File apps/v2/scripts/installer-smoke.ps1
 
-      - name: Download previous installer for upgrade smoke
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.previous_installer_url != ''
+      - name: Build previous installer for upgrade smoke
+        if: github.event_name == 'workflow_dispatch'
+        id: previous-installer
         shell: pwsh
-        env:
-          V2_PREVIOUS_INSTALLER_URL: ${{ github.event.inputs.previous_installer_url }}
         run: |
           # Round7 M7：下载到 RUNNER_TEMP，避免 previous-installer.exe 残留
           # 在 release-v2/ 被后续 *.exe 通配/资产逻辑误收录。
-          $dir = Join-Path $env:RUNNER_TEMP 'v2-upgrade'
-          New-Item -ItemType Directory -Path $dir -Force | Out-Null
-          Invoke-WebRequest -Uri $env:V2_PREVIOUS_INSTALLER_URL -OutFile (Join-Path $dir 'previous-installer.exe')
+          $pkgPath = (Resolve-Path 'apps/v2/package.json').Path
+          $original = [System.IO.File]::ReadAllText($pkgPath, [System.Text.Encoding]::UTF8)
+          try {
+            $patched = [regex]::Replace($original, '("version"\s*:\s*")[^"]+(")', '${1}2.1.4${2}', 1)
+            [System.IO.File]::WriteAllText($pkgPath, $patched, [System.Text.UTF8Encoding]::new($false))
+            pnpm --filter @dental/v2 electron:dist
+            $exe = Get-ChildItem -LiteralPath apps/v2/release-v2 -Filter 'Dental-Clinic-V2-Setup-2.1.4.exe' |
+              Select-Object -First 1 -ExpandProperty FullName
+            if (-not $exe) { throw 'previous installer not produced' }
+            "path=$exe" >> $env:GITHUB_OUTPUT
+          } finally {
+            [System.IO.File]::WriteAllText($pkgPath, $original, [System.Text.UTF8Encoding]::new($false))
+          }
 
       - name: Run upgrade smoke
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.previous_installer_url != ''
+        if: github.event_name == 'workflow_dispatch'
         shell: pwsh
         env:
-          V2_PREVIOUS_INSTALLER: ${{ runner.temp }}/v2-upgrade/previous-installer.exe
+          V2_PREVIOUS_INSTALLER: ${{ steps.previous-installer.outputs.path }}
           V2_CURRENT_INSTALLER: ${{ steps.current-installer.outputs.path }}
           V2_ADMIN_PASSWORD: v2-windows-smoke-admin
         run: |
