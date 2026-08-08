@@ -14,10 +14,12 @@ export interface KanbanColumn {
 
 interface KanbanBoardProps {
   columns: KanbanColumn[];
+  onChange?: (columns: KanbanColumn[]) => void;
 }
 
-export function KanbanBoard({ columns }: KanbanBoardProps) {
+export function KanbanBoard({ columns, onChange }: KanbanBoardProps) {
   const [items, setItems] = useState<KanbanColumn[]>(columns);
+  const visibleColumns = onChange ? columns : items;
 
   function allowDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
@@ -32,26 +34,15 @@ export function KanbanBoard({ columns }: KanbanBoardProps) {
     event.preventDefault();
     event.currentTarget.classList.remove('drag-over');
     const cardId = event.dataTransfer.getData('text/plain');
-    setItems((current) => current.map((column) => {
-      const card = column.cards.find((item) => item.id === cardId);
-      if (card && column.id !== columnId) {
-        return {
-          ...column,
-          cards: column.cards.filter((item) => item.id !== cardId),
-        };
-      }
-      return column;
-    }).map((column) => {
-      if (column.id !== columnId) return column;
-      const source = items.flatMap((col) => col.cards).find((card) => card.id === cardId);
-      if (!source || column.cards.some((card) => card.id === cardId)) return column;
-      return { ...column, cards: [...column.cards, source] };
-    }));
+    const next = moveCard(visibleColumns, cardId, columnId);
+    if (!next) return;
+    if (onChange) onChange(next);
+    else setItems(next);
   }
 
   return (
     <div className="ui-kanban">
-      {items.map((column) => (
+      {visibleColumns.map((column) => (
         <div
           key={column.id}
           className="ui-kanban-col"
@@ -75,4 +66,15 @@ export function KanbanBoard({ columns }: KanbanBoardProps) {
       ))}
     </div>
   );
+}
+
+function moveCard(columns: KanbanColumn[], cardId: string, targetColumnId: string): KanbanColumn[] | null {
+  const source = columns.find((column) => column.cards.some((card) => card.id === cardId));
+  const card = source?.cards.find((item) => item.id === cardId);
+  if (!source || !card || source.id === targetColumnId) return null;
+  return columns.map((column) => {
+    if (column.id === source.id) return { ...column, cards: column.cards.filter((item) => item.id !== cardId) };
+    if (column.id === targetColumnId) return { ...column, cards: [...column.cards, card] };
+    return column;
+  });
 }

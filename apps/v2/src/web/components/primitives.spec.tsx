@@ -9,6 +9,7 @@ import { DateRange } from './DateRange';
 import { DentalChart } from './DentalChart';
 import { Dropdown } from './Dropdown';
 import { Drawer } from './Drawer';
+import { KanbanBoard } from './KanbanBoard';
 import { MultiSelect } from './MultiSelect';
 import { Progress } from './Progress';
 import { Segmented } from './Segmented';
@@ -99,6 +100,22 @@ describe('UI primitives', () => {
     render(<BatchBar count={2} onDelete={onDelete} />);
     fireEvent.click(screen.getByText('批量删除'));
     expect(onDelete).toHaveBeenCalled();
+  });
+
+  it('moves a Kanban card between columns', () => {
+    const onChange = vi.fn();
+    const columns = [
+      { id: 'todo', title: '待办', cards: [{ id: 'c1', title: '卡1' }] },
+      { id: 'done', title: '完成', cards: [] },
+    ];
+    render(<KanbanBoard columns={columns} onChange={onChange} />);
+    const dataTransfer = { setData: vi.fn(), getData: () => 'c1' };
+    fireEvent.dragStart(screen.getByText('卡1'), { dataTransfer });
+    fireEvent.drop(screen.getByText('完成'), { dataTransfer });
+    expect(onChange).toHaveBeenCalledWith([
+      { id: 'todo', title: '待办', cards: [] },
+      { id: 'done', title: '完成', cards: [{ id: 'c1', title: '卡1' }] },
+    ]);
   });
 
   it('toggles a MultiSelect option', () => {
