@@ -5,30 +5,18 @@ import { tenantAnd, tenantParams, tenantWhere } from '../infrastructure/tenant';
 import { buildFtsQuery } from '../infrastructure/search-index';
 import { clinicDayEndUtc, clinicDayStartUtc } from '../infrastructure/clock';
 import { computeNps } from './nps';
+import { TtlCache } from './ttl-cache';
 
 export class StatsService {
   constructor(private readonly db: Database.Database) {}
 
-  private readonly statsCache = new Map<string, { at: number; data: unknown }>();
-
-  private getCached<T>(key: string, ttlMs: number, compute: () => T): T {
-    const now = Date.now();
-    const hit = this.statsCache.get(key);
-    if (hit && now - hit.at < ttlMs) return hit.data as T;
-    const data = compute();
-    this.statsCache.set(key, { at: now, data });
-    if (this.statsCache.size > 200) {
-      const oldest = this.statsCache.keys().next().value;
-      if (oldest !== undefined) this.statsCache.delete(oldest);
-    }
-    return data;
-  }
+  private readonly cache = new TtlCache(30_000);
 
   dashboard(context: AppContext): Record<string, unknown> {
     // 缓存键含 role：DOCTOR 与 BOSS 返回结构不同（金额字段裁剪），不可混用缓存。
     const role = context.role;
     const isDoctor = role === 'DOCTOR';
-    return this.getCached(`dashboard:${context.clinicId ?? 'none'}:${role}`, 30_000, () => {
+    return this.cache.get(`dashboard:${context.clinicId ?? 'none'}:${role}`, () => {
       const tenant = tenantWhere(context.clinicId);
       const where = tenant.sql ? `WHERE ${tenant.sql} AND deletedAt IS NULL` : 'WHERE deletedAt IS NULL';
       const wherePending = tenant.sql
@@ -67,9 +55,8 @@ export class StatsService {
     groupBy: 'day' | 'month' = 'day',
     context?: AppContext,
   ): Array<Record<string, unknown>> {
-    return this.getCached(
+    return this.cache.get(
       `revenue:${context?.clinicId ?? 'none'}:${startDate ?? ''}:${endDate ?? ''}:${groupBy}`,
-      30_000,
       () => {
         const groupExpr = groupBy === 'month'
           ? "strftime('%Y-%m', paidAt, '+8 hours')"
@@ -103,9 +90,8 @@ export class StatsService {
   }
 
   patientGrowth(startDate?: string, endDate?: string, context?: AppContext): Array<Record<string, unknown>> {
-    return this.getCached(
+    return this.cache.get(
       `patientGrowth:${context?.clinicId ?? 'none'}:${startDate ?? ''}:${endDate ?? ''}`,
-      30_000,
       () => {
         const where: string[] = ['deletedAt IS NULL'];
         const params: unknown[] = [];
@@ -136,7 +122,7 @@ export class StatsService {
   }
 
   inventoryStats(context: AppContext): Array<Record<string, unknown>> {
-    return this.getCached(`inventoryStats:${context.clinicId ?? 'none'}`, 30_000, () => {
+    return this.cache.get(`inventoryStats:${context.clinicId ?? 'none'}`, () => {
       const tenant = tenantWhere(context.clinicId);
       const params: unknown[] = tenant.params;
       return this.db.prepare(
@@ -150,7 +136,7 @@ export class StatsService {
   }
 
   memberStats(context: AppContext): Record<string, unknown> {
-    return this.getCached(`memberStats:${context.clinicId ?? 'none'}`, 30_000, () => {
+    return this.cache.get(`memberStats:${context.clinicId ?? 'none'}`, () => {
       const tenant = tenantWhere(context.clinicId);
       const clinicClause = tenant.sql ? `WHERE ${tenant.sql} AND deletedAt IS NULL` : 'WHERE deletedAt IS NULL';
       const params: unknown[] = tenant.params;
