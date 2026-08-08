@@ -340,7 +340,6 @@ export function createPerformanceIndexes(db: Database.Database): void {
     { name: 'idx_v2_perf_chargeitem_cost', table: 'ChargeItem', columns: ['costType', 'deletedAt'] },
     { name: 'idx_v2_perf_notification_user', table: 'Notification', columns: ['userId', 'createdAt'] },
     { name: 'idx_v2_perf_attendance_clinic_date', table: 'Attendance', columns: ['clinicId', 'workDate'] },
-    { name: 'idx_v2_perf_syncchange_cursor', table: 'SyncChange', columns: ['clinicId', 'createdAt', 'rowid'] },
   ];
   for (const def of indexDefs) {
     const tableExists = db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`).get(def.table);

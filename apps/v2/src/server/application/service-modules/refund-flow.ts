@@ -156,10 +156,7 @@ export class RefundFlowService {
         const parsed = JSON.parse(refundLedger.allocations) as unknown;
         allocations = Array.isArray(parsed) ? parsed as Array<{ ledgerId: string; cardId: string; amount: number }> : [];
       } catch {
-        console.warn('[refund-flow] refund allocations JSON is corrupt; skipping allocation reversal', {
-          refundId: refundRow.id,
-          chargeId: refundRow.chargeId,
-        });
+        throw new ConflictError('退款冲销分配数据损坏，请恢复 PaymentLedger 后重试');
       }
     }
     if (allocations.length > 0) {

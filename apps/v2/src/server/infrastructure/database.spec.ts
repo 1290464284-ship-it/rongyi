@@ -283,6 +283,9 @@ describe('database bootstrap', () => {
     const appointmentIndexes = (perfDb.prepare("PRAGMA index_list('Appointment')").all() as Array<{ name: string }>)
       .map((row) => row.name);
     expect(appointmentIndexes).toContain('idx_v2_perf_appointment_start_clinic');
+    const syncIndexes = (perfDb.prepare("PRAGMA index_list('SyncChange')").all() as Array<{ name: string }>)
+      .map((row) => row.name);
+    expect(syncIndexes).toContain('idx_v2_sync_change_clinic_created');
     expect(() => createPerformanceIndexes(perfDb)).not.toThrow();
     perfDb.close();
   });
