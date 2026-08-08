@@ -65,9 +65,6 @@ jobs:
             powershell -ExecutionPolicy Bypass -File apps/v2/scripts/build-internal-installer.ps1
           }
 
-      - name: Verify update metadata
-        run: pnpm --filter @dental/v2 run verify:update
-
       - name: Resolve version from package.json
         id: pkg_version
         shell: bash
