@@ -83,24 +83,37 @@ export function createResourceRouter(db: Database.Database): Router {
     try {
       const resource = res.locals.resource as ResourceDefinition;
       const repo = new SqliteRepository(db, resource);
-      const rows: Array<Record<string, unknown>> = [];
-      let page = 1;
-      const pageSize = 200;
-      for (;;) {
-        const result = await repo.findMany({
-          page,
-          pageSize,
-          filters: parseFilters(req),
-        }, req.context!);
-        rows.push(...result.items);
-        if (rows.length >= result.total) break;
-        page += 1;
-      }
+      const firstPage = await repo.findMany({
+        page: 1,
+        pageSize: 200,
+        filters: parseFilters(req),
+      }, req.context!);
       res.setHeader('content-type', 'text/csv; charset=utf-8');
       res.setHeader('content-disposition', `attachment; filename="${resource.name}-${Date.now()}.csv"`);
-      res.send(`\uFEFF${toCsv(rows, resource)}`);
+      res.write('\uFEFF');
+      if (firstPage.items.length === 0) {
+        res.end();
+        return;
+      }
+      res.write(`${csvHeader(firstPage.items, resource)}\r\n`);
+      res.write(`${csvLines(firstPage.items)}\r\n`);
+      let page = 2;
+      for (;;) {
+        if (firstPage.total <= 200) break;
+        const result = await repo.findMany({
+          page,
+          pageSize: 200,
+          filters: parseFilters(req),
+        }, req.context!);
+        if (result.items.length === 0) break;
+        res.write(`${csvLines(result.items)}\r\n`);
+        if (page * 200 >= result.total) break;
+        page += 1;
+      }
+      res.end();
     } catch (error) {
-      next(error);
+      if (!res.headersSent) next(error);
+      else res.end();
     }
   });
 
@@ -215,8 +228,7 @@ function parseFilters(req: Request): Record<string, unknown> {
   return result;
 }
 
-function toCsv(rows: Array<Record<string, unknown>>, resource: ResourceDefinition): string {
-  if (rows.length === 0) return '';
+function csvHeader(rows: Array<Record<string, unknown>>, resource: ResourceDefinition): string {
   const headers = [...new Set(rows.flatMap((row) => Object.keys(row)))];
   const labels = new Map(resource.fields.map((field) => [field.name, field.label ?? field.name]));
   const systemLabels: Record<string, string> = {
@@ -226,11 +238,13 @@ function toCsv(rows: Array<Record<string, unknown>>, resource: ResourceDefinitio
     updatedAt: '更新时间',
     deletedAt: '删除时间',
   };
-  const lines = [
-    headers.map((header) => csvCell(labels.get(header) ?? systemLabels[header] ?? header)).join(','),
-    ...rows.map((row) => headers.map((header) => csvCell(row[header])).join(',')),
-  ];
-  return lines.join('\r\n');
+  return headers.map((header) => csvCell(labels.get(header) ?? systemLabels[header] ?? header)).join(',');
+}
+
+function csvLines(rows: Array<Record<string, unknown>>): string {
+  if (rows.length === 0) return '';
+  const headers = [...new Set(rows.flatMap((row) => Object.keys(row)))];
+  return rows.map((row) => headers.map((header) => csvCell(row[header])).join(',')).join('\r\n');
 }
 
 function csvCell(value: unknown): string {
