@@ -1,13 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { apiRequest, downloadCsvPath } from '../../lib/api';
-import { DataTable, Dialog, LoadingState, PageError, PromptDialog, type DataTableColumn } from '../../components';
+import { DataTable, LoadingState, PageError, PromptDialog, type DataTableColumn } from '../../components';
 import { errorMessage } from '../../lib/messages';
 import { useAsyncAction } from '../../hooks/use-async-action';
 import { useToast } from '../../lib/toast-context';
 import type { Page } from '../../lib/types';
 import { FollowUpDictsTab } from '../../follow-ups/FollowUpDictsTab';
 import { DEFAULT_EXECUTION_FORM, type CompletionTarget, type ExecutionFormState, type FollowUpNps } from '../../follow-ups/types';
+import { FollowUpExecutionDialog } from './FollowUpExecutionDialog';
 
 export function FollowUpsPage() {
   const { showToast } = useToast();
@@ -226,72 +227,14 @@ export function FollowUpsPage() {
               <DataTable columns={columns} rows={group.rows} keyField="id" emptyText="暂无" />
             </section>
           ))}
-          <Dialog open={executionId !== null} title="执行随访" onClose={() => setExecutionId(null)}>
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                void runExecution(() => submitExecution());
-              }}
-            >
-              <label>
-                执行状态
-                <select
-                  value={executionForm.executionStatus}
-                  onChange={(event) => setExecutionForm((current) => ({ ...current, executionStatus: event.target.value }))}
-                >
-                  <option value="DONE">DONE 已完成</option>
-                  <option value="SKIPPED">SKIPPED 已跳过</option>
-                </select>
-              </label>
-              <label>
-                患者评分（0-10）
-                <input
-                  type="number"
-                  min={0}
-                  max={10}
-                  value={executionForm.patientRating}
-                  onChange={(event) => setExecutionForm((current) => ({ ...current, patientRating: event.target.value }))}
-                />
-              </label>
-              <label>
-                疼痛度（0-10）
-                <input
-                  type="number"
-                  min={0}
-                  max={10}
-                  value={executionForm.painLevel}
-                  onChange={(event) => setExecutionForm((current) => ({ ...current, painLevel: event.target.value }))}
-                />
-              </label>
-              <label>
-                反馈
-                <textarea
-                  value={executionForm.feedback}
-                  onChange={(event) => setExecutionForm((current) => ({ ...current, feedback: event.target.value }))}
-                />
-              </label>
-              <label>
-                联系时间
-                <input
-                  type="datetime-local"
-                  value={executionForm.contactedAt}
-                  onChange={(event) => setExecutionForm((current) => ({ ...current, contactedAt: event.target.value }))}
-                />
-              </label>
-              <label>
-                下次随访日期
-                <input
-                  type="date"
-                  value={executionForm.nextPlanDate}
-                  onChange={(event) => setExecutionForm((current) => ({ ...current, nextPlanDate: event.target.value }))}
-                />
-              </label>
-              <div className="modal-actions">
-                <button type="button" onClick={() => setExecutionId(null)} disabled={executing}>取消</button>
-                <button type="submit" disabled={executing}>{executing ? '提交中...' : '确认执行'}</button>
-              </div>
-            </form>
-          </Dialog>
+          <FollowUpExecutionDialog
+            open={executionId !== null}
+            form={executionForm}
+            busy={executing}
+            onFormChange={(patch) => setExecutionForm((current) => ({ ...current, ...patch }))}
+            onSubmit={() => void runExecution(() => submitExecution())}
+            onClose={() => setExecutionId(null)}
+          />
           <PromptDialog
             key={completion !== null ? 'open' : 'closed'}
             open={completion !== null}
