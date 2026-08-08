@@ -2,14 +2,12 @@ import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import { CrudPage } from '../../components/CrudPage';
-import { DataTable, Dialog, LoadingState, PageError } from '../../components';
-import { formatDateTime, formatMoney, toCents, centsToYuanString } from '../../lib/format';
+import { DataTable } from '../../components';
+import { formatMoney, toCents, centsToYuanString } from '../../lib/format';
 import { errorMessage } from '../../lib/messages';
 import { useAsyncAction } from '../../hooks/use-async-action';
 import { useToast } from '../../lib/toast-context';
 import {
-  FLOW_STATUSES,
-  FLOW_STATUS_LABELS,
   type ProcessingFlowStatsData,
   type ProcessingOrderForm,
   type ProcessingOrderStepRow,
@@ -23,6 +21,7 @@ import { ProcessingOrderFormFields } from '../../processing-orders/ProcessingOrd
 import { transitionProcessingOrder } from '../../processing-orders/api';
 import { ProcessingStatusSelect } from '../../processing-orders/ProcessingStatusSelect';
 import { ProcessingSettleDialog } from './ProcessingSettleDialog';
+import { ProcessingFlowDialog } from './ProcessingFlowDialog';
 
 export function ProcessingOrdersPage() {
   const { showToast } = useToast();
@@ -275,53 +274,16 @@ export function ProcessingOrdersPage() {
         }}
         showToast={showToast}
       />
-      <Dialog open={flowTarget !== null} title={`加工流程 - ${flowTarget?.number ?? ''}`} onClose={closeFlow}>
-        {flowLoading && <LoadingState label="流程加载中..." />}
-        {flowError && !flowLoading && (
-          <>
-            <PageError message={flowError} />
-            <div className="modal-actions">
-              <button type="button" onClick={closeFlow}>关闭</button>
-            </div>
-          </>
-        )}
-        {!flowLoading && !flowError && (
-          <>
-            <div className="table-wrap">
-              <table>
-                <thead><tr><th>步骤</th><th>状态</th><th>完成时间</th><th>调整</th></tr></thead>
-                <tbody>
-                  {flowSteps.map((step) => (
-                    <tr key={String(step.id)}>
-                      <td>{step.stepName}</td>
-                      <td>{FLOW_STATUS_LABELS[step.status] ?? step.status}</td>
-                      <td>{step.completedAt ? formatDateTime(step.completedAt) : '—'}</td>
-                      <td>
-                        <select
-                          aria-label={`调整${step.stepName}`}
-                          value={step.status}
-                          disabled={flowBusy}
-                          onChange={(event) => void adjustStep(step, event.target.value)}
-                        >
-                          {FLOW_STATUSES.map((status) => (
-                            <option key={status} value={status}>{FLOW_STATUS_LABELS[status]}</option>
-                          ))}
-                        </select>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="modal-actions">
-              <button type="button" onClick={closeFlow}>关闭</button>
-              <button type="button" onClick={() => void advanceFlow()} disabled={flowBusy}>
-                {flowBusy ? '推进中...' : '推进'}
-              </button>
-            </div>
-          </>
-        )}
-      </Dialog>
+      <ProcessingFlowDialog
+        target={flowTarget}
+        steps={flowSteps}
+        loading={flowLoading}
+        busy={flowBusy}
+        error={flowError}
+        onClose={closeFlow}
+        onAdvance={advanceFlow}
+        onAdjust={adjustStep}
+      />
     </>
   );
 }
