@@ -120,13 +120,13 @@ export function QuerySection<T>({
 }
 
 export class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
-  state = { error: null as Error | null };
+  override state = { error: null as Error | null };
 
   static getDerivedStateFromError(error: unknown) {
     return { error: error instanceof Error ? error : new Error(String(error)) };
   }
 
-  render() {
+  override render() {
     if (this.state.error) {
       return (
         <div className="page error-state">
