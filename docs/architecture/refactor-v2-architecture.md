@@ -113,11 +113,10 @@ sequenceDiagram
 apps/v2/
   src/
     domain/          Entities, enums, value objects, repository ports
-    application/     Use cases, commands, queries, event handlers
+    application/     Use cases, commands, queries, service modules
     infrastructure/  SQLite, repositories, file/backup adapters
     http/            Express app, middleware, feature routers, DTO validation
     web/             Vite React application
-  docs/              Architecture and contract documentation
 ```
 
 ## Key Decisions

@@ -23,8 +23,8 @@ infrastructure/
 2. Legacy table metadata is produced from `PRAGMA table_info`, not copied from old service code.
 3. Generic CRUD is driven by declarative `ResourceDefinition`; old table names and columns are only metadata.
 4. Complex workflows are explicit use cases in `application/`, not hidden SQL inside old controllers.
-5. The original `apps/api/data/dental.sqlite` is never modified. V2 works on a copy.
-6. Domain contracts in `apps/v2/src/domain/contracts.ts` remain the source of truth for new code.
+5. The legacy `dental.sqlite` is never modified. V2 works on a copy under its own data directory.
+6. Domain contracts in `apps/v2/src/domain/contracts/` remain the source of truth for new code.
 
 ## Quality Gates
 
