@@ -3,6 +3,7 @@ import type { AuditService } from './application/service-modules/auth';
 import type { Logger } from './infrastructure/logger';
 
 const AUDIT_RETENTION_MS = 365 * 24 * 60 * 60 * 1000;
+const SYNC_CHANGE_RETENTION_DAYS = 90;
 const DAILY_MS = 24 * 60 * 60 * 1000;
 
 interface StartSchedulersOptions {
@@ -28,6 +29,9 @@ interface StartSchedulersOptions {
    * absent no idempotency timer is registered.
    */
   idempotencyCleanup?: () => { deleted: number };
+  /** Daily sync-change retention cleanup; receives the UTC cutoff string. */
+  syncChangeCleanup?: (beforeIso: string) => { deleted: number };
+  syncChangeRetentionDays?: number;
 }
 
 export function startSchedulers(options: StartSchedulersOptions): { stop(): void } {
@@ -39,6 +43,8 @@ export function startSchedulers(options: StartSchedulersOptions): { stop(): void
     logger,
     onAlertCreate,
     idempotencyCleanup,
+    syncChangeCleanup,
+    syncChangeRetentionDays,
   } = options;
   // Clamp preserved from main.ts: never back up more often than once a minute.
   const intervalMs = Math.max(60_000, autoBackupIntervalMs);
@@ -102,6 +108,20 @@ export function startSchedulers(options: StartSchedulersOptions): { stop(): void
     }
   }
 
+  function runSyncChangeCleanup(): void {
+    if (!syncChangeCleanup) return;
+    try {
+      const retentionDays = Number.isFinite(Number(syncChangeRetentionDays))
+        ? Math.min(3650, Math.max(1, Math.floor(Number(syncChangeRetentionDays))))
+        : SYNC_CHANGE_RETENTION_DAYS;
+      const before = new Date(Date.now() - retentionDays * DAILY_MS).toISOString();
+      const { deleted } = syncChangeCleanup(before);
+      if (deleted > 0) logger.info('sync change cleanup completed', { action: 'sync-change-cleanup', deleted });
+    } catch (error) {
+      logger.error('sync change cleanup failed', { action: 'sync-change-cleanup', error });
+    }
+  }
+
   // 首执行延迟 5 分钟（恢复原 main.ts 的首延迟行为），避免每次启动立即执行
   // 全量备份拖慢启动；此后按 intervalMs 周期执行。
   scheduleOnce(() => void runAutoBackup(), 5 * 60 * 1000);
@@ -114,6 +134,11 @@ export function startSchedulers(options: StartSchedulersOptions): { stop(): void
   // interval; keep that behavior.
   if (idempotencyCleanup) {
     schedule(runIdempotencyCleanup, DAILY_MS);
+  }
+
+  if (syncChangeCleanup) {
+    runSyncChangeCleanup();
+    schedule(runSyncChangeCleanup, DAILY_MS);
   }
 
   return {

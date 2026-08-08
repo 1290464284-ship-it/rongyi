@@ -11,6 +11,7 @@ import { rebuildSearchIndex } from './infrastructure/search-index';
 import { importLegacyDatabase } from './infrastructure/legacy-import';
 import { applyStagedRestore } from './infrastructure/restore-apply';
 import { secretFileValue } from './infrastructure/secret-file';
+import { cleanupSyncChanges } from './infrastructure/sync-change';
 import { assertHostAllowed } from './infrastructure/host-policy';
 import { AlertService, AuditService, BackupService } from './application/services';
 import { startSchedulers } from './scheduler';
@@ -270,6 +271,10 @@ const configuredAutoBackupKeep = Number(process.env.V2_AUTO_BACKUP_KEEP ?? DEFAU
 const autoBackupKeep = Number.isFinite(configuredAutoBackupKeep)
   ? Math.min(365, Math.max(1, Math.floor(configuredAutoBackupKeep)))
   : DEFAULT_AUTO_BACKUP_KEEP;
+const configuredSyncRetentionDays = Number(process.env.V2_SYNC_CHANGE_RETENTION_DAYS);
+const syncChangeRetentionDays = Number.isFinite(configuredSyncRetentionDays)
+  ? Math.min(3650, Math.max(1, Math.floor(configuredSyncRetentionDays)))
+  : undefined;
 
 // ── 定时任务统一收敛到 scheduler 模块 ──────────────────────────────────────────
 // 原内联的三组定时器（自动备份 5min 首延迟 + interval、审计日志清理每日、
@@ -283,6 +288,8 @@ const schedulers = startSchedulers({
   logger,
   onAlertCreate: (input) => alerts.create(input),
   idempotencyCleanup: () => cleanupIdempotencyRecords(db),
+  syncChangeCleanup: (beforeIso) => cleanupSyncChanges(db, beforeIso),
+  syncChangeRetentionDays,
 });
 
 function shutdown(): void {

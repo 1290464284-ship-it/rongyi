@@ -19,3 +19,9 @@ export function recordSyncChange(db: Database.Database, change: SyncChangeInput)
      VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
   ).run(randomUUID(), change.clinicId, now, now, change.tableName, change.recordId, change.operation, change.deviceId ?? 'server');
 }
+
+/** Deletes sync change rows older than the given UTC ISO cutoff (scheduled daily). */
+export function cleanupSyncChanges(db: Database.Database, beforeIso: string): { deleted: number } {
+  const result = db.prepare('DELETE FROM SyncChange WHERE createdAt < ?').run(beforeIso);
+  return { deleted: result.changes };
+}

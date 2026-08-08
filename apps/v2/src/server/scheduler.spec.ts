@@ -150,6 +150,59 @@ describe('startSchedulers', () => {
     expect(onAlertCreate).not.toHaveBeenCalled();
   });
 
+  it('runs sync change cleanup at startup with a clamped retention window', () => {
+    const backups = makeBackups();
+    const audit = makeAudit();
+    const logger = makeLogger();
+    const onAlertCreate = vi.fn();
+    const syncCleanup = vi.fn().mockReturnValue({ deleted: 7 });
+
+    const { stop } = startSchedulers({
+      backups,
+      audit,
+      autoBackupIntervalMs: 60_000,
+      autoBackupKeep: 30,
+      logger,
+      onAlertCreate,
+      syncChangeCleanup: syncCleanup,
+      syncChangeRetentionDays: 30,
+    });
+
+    expect(syncCleanup).toHaveBeenCalledTimes(1);
+    expect(logger.info).toHaveBeenCalledWith(
+      'sync change cleanup completed',
+      expect.objectContaining({ action: 'sync-change-cleanup', deleted: 7 }),
+    );
+    stop();
+  });
+
+  it('logs sync change cleanup failures without raising an alert', () => {
+    const backups = makeBackups();
+    const audit = makeAudit();
+    const logger = makeLogger();
+    const onAlertCreate = vi.fn();
+    const syncCleanup = vi.fn().mockImplementation(() => {
+      throw new Error('sync db locked');
+    });
+
+    const { stop } = startSchedulers({
+      backups,
+      audit,
+      autoBackupIntervalMs: 60_000,
+      autoBackupKeep: 30,
+      logger,
+      onAlertCreate,
+      syncChangeCleanup: syncCleanup,
+    });
+
+    expect(logger.error).toHaveBeenCalledWith(
+      'sync change cleanup failed',
+      expect.objectContaining({ action: 'sync-change-cleanup' }),
+    );
+    expect(onAlertCreate).not.toHaveBeenCalled();
+    stop();
+  });
+
   it('runAutoBackup 失败时调用 onAlertCreate', async () => {
     vi.useFakeTimers();
     ensureTimers();
