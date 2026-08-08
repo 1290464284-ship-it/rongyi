@@ -3,10 +3,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { Accordion } from './Accordion';
+import { BatchBar } from './BatchBar';
+import { DentalChart } from './DentalChart';
+import { Dropdown } from './Dropdown';
 import { Drawer } from './Drawer';
 import { Segmented } from './Segmented';
+import { Steps } from './Steps';
 import { Switch } from './Switch';
+import { Timeline } from './Timeline';
 import { Tooltip } from './Tooltip';
+import { Tree } from './Tree';
 
 afterEach(cleanup);
 
@@ -50,5 +56,44 @@ describe('UI primitives', () => {
     render(<Drawer open title="抽屉" onClose={onClose}>内容</Drawer>);
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('steps through Steps and invokes onChange', () => {
+    const onChange = vi.fn();
+    render(<Steps current={1} onChange={onChange} items={[{ label: '第一步' }, { label: '第二步' }]} />);
+    fireEvent.click(screen.getByText('第二步'));
+    expect(onChange).toHaveBeenCalledWith(1);
+  });
+
+  it('expands Tree and selects a node', () => {
+    const onSelect = vi.fn();
+    render(<Tree nodes={[{ id: 'root', label: '根', children: [{ id: 'leaf', label: '叶子' }] }]} onSelect={onSelect} />);
+    fireEvent.click(screen.getByRole('button', { name: '+' }));
+    fireEvent.click(screen.getByText('叶子'));
+    expect(onSelect).toHaveBeenCalledWith('leaf');
+  });
+
+  it('opens Dropdown and triggers item action', () => {
+    const onClick = vi.fn();
+    render(<Dropdown label="更多" items={[{ label: '删除', danger: true, onClick }]} />);
+    fireEvent.click(screen.getByText('更多'));
+    fireEvent.click(screen.getByText('删除'));
+    expect(onClick).toHaveBeenCalled();
+  });
+
+  it('renders DentalChart and forwards tooth clicks', () => {
+    const onClick = vi.fn();
+    render(<DentalChart upper={[11]} lower={[41]} onToothClick={onClick} />);
+    fireEvent.click(screen.getByText('11'));
+    expect(onClick).toHaveBeenCalledWith(11);
+  });
+
+  it('renders Timeline and BatchBar', () => {
+    const onDelete = vi.fn();
+    render(<Timeline items={[{ title: '登记', time: '09:00', tone: 'done' }]} />);
+    expect(screen.getByText('登记')).toBeDefined();
+    render(<BatchBar count={2} onDelete={onDelete} />);
+    fireEvent.click(screen.getByText('批量删除'));
+    expect(onDelete).toHaveBeenCalled();
   });
 });
