@@ -931,8 +931,8 @@ describe('service edge coverage', () => {
     expect(print.render('report', { note: 'Note' })).toContain('report');
 
     const analytics = new AnalyticsService(db);
-    expect(analytics.rfm(nullContext)).toBeInstanceOf(Array);
-    expect(analytics.churn(nullContext)).toBeInstanceOf(Array);
+    expect(analytics.rfm(nullContext)).toMatchObject({ items: expect.any(Array), truncated: expect.any(Boolean) });
+    expect(analytics.churn(nullContext)).toMatchObject({ items: expect.any(Array), truncated: expect.any(Boolean) });
     expect(analytics.doctorAnomalies(nullContext)).toBeInstanceOf(Array);
     const satisfaction = new SatisfactionService(db);
     expect(satisfaction.nps(nullContext).score).toBeGreaterThanOrEqual(0);

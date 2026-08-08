@@ -17,11 +17,11 @@ export class AnalyticsService {
     this.analyticsRepository = analyticsRepository ?? new SqliteAnalyticsRepository(db);
   }
 
-  rfm(context: AppContext): Array<Record<string, unknown>> {
+  rfm(context: AppContext): { items: Array<Record<string, unknown>>; truncated: boolean } {
     return this.cache.get(`rfm:${context.clinicId ?? 'none'}`, () => this.analyticsRepository.rfm(context.clinicId));
   }
 
-  churn(context: AppContext): Array<Record<string, unknown>> {
+  churn(context: AppContext): { items: Array<Record<string, unknown>>; truncated: boolean } {
     return this.cache.get(`churn:${context.clinicId ?? 'none'}`, () => this.analyticsRepository.churn(context.clinicId));
   }
 

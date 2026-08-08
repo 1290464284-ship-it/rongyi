@@ -249,8 +249,8 @@ describe('service coverage', () => {
 
   it('returns analytics, sync, print, HR, and alert data', async () => {
     const analytics = new AnalyticsService(db);
-    expect(analytics.rfm(context)).toBeInstanceOf(Array);
-    expect(analytics.churn(context)).toBeInstanceOf(Array);
+    expect(analytics.rfm(context)).toMatchObject({ items: expect.any(Array), truncated: expect.any(Boolean) });
+    expect(analytics.churn(context)).toMatchObject({ items: expect.any(Array), truncated: expect.any(Boolean) });
     expect(analytics.doctorAnomalies(context)).toBeInstanceOf(Array);
     const sync = new SyncService(db);
     const device = sync.registerDevice('desktop', 'Desktop', context);
@@ -316,13 +316,13 @@ describe('service coverage', () => {
     try {
       analytics.rfm(context);
       analytics.rfm(context);
-      expect(prepare).toHaveBeenCalledTimes(1);
-      analytics.churn(context);
-      analytics.churn(context);
       expect(prepare).toHaveBeenCalledTimes(2);
+      analytics.churn(context);
+      analytics.churn(context);
+      expect(prepare).toHaveBeenCalledTimes(4);
       analytics.doctorAnomalies(context);
       analytics.doctorAnomalies(context);
-      expect(prepare).toHaveBeenCalledTimes(3);
+      expect(prepare).toHaveBeenCalledTimes(5);
     } finally {
       prepare.mockRestore();
     }

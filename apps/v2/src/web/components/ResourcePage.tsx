@@ -87,11 +87,13 @@ function formatStatValue(column: string, value: unknown): string {
 function ReadOnlyListPage({ title, endpoint }: { title: string; endpoint: string }) {
   const query = useQuery({
     queryKey: ['stat', endpoint],
-    queryFn: () => apiRequest<unknown[]>(endpoint),
+    queryFn: () => apiRequest<Array<Record<string, unknown>> | { items: Array<Record<string, unknown>>; truncated?: boolean }>(endpoint),
   });
   if (query.isLoading) return <LoadingState />;
   if (query.error) return <PageError message={(query.error as Error).message} />;
-  const rows = (query.data ?? []) as Array<Record<string, unknown>>;
+  const raw = (query.data ?? []) as Array<Record<string, unknown>> | { items?: Array<Record<string, unknown>>; truncated?: boolean };
+  const rows = Array.isArray(raw) ? raw : (raw.items ?? []);
+  const truncated = !Array.isArray(raw) && Boolean(raw.truncated);
   const columns = rows.length ? Object.keys(rows[0]) : [];
   const dataColumns = columns.map((column) => ({
     key: column,
@@ -101,6 +103,7 @@ function ReadOnlyListPage({ title, endpoint }: { title: string; endpoint: string
   return (
     <div className="page">
       <div className="page-head"><h1>{title}</h1></div>
+      {truncated && <p className="reminder-muted">{'\u8d85\u8fc7\u663e\u793a\u4e0a\u9650\uff0c\u4ec5\u663e\u793a\u90e8\u5206\u6570\u636e'}</p>}
       <DataTable columns={dataColumns} rows={rows} emptyText="暂无数据" />
     </div>
   );

@@ -43,6 +43,13 @@ describe('SimpleListPage', () => {
     expect(await screen.findByText('暂无数据')).toBeDefined();
   });
 
+  it('shows a truncation notice for wrapped list responses', async () => {
+    vi.mocked(apiRequest).mockResolvedValue({ items: [{ id: 'r-1', name: 'Row' }], truncated: true });
+    render(<SimpleListPage title="RFM" endpoint="/analytics/rfm" />, { wrapper });
+    expect(await screen.findByText('\u8d85\u8fc7\u663e\u793a\u4e0a\u9650\uff0c\u4ec5\u663e\u793a\u90e8\u5206\u6570\u636e')).toBeDefined();
+    expect(screen.getByText('Row')).toBeDefined();
+  });
+
   it('renders empty state', async () => {
     vi.mocked(apiRequest).mockResolvedValue([]);
     render(<SimpleListPage title="Empty" endpoint="/stats/empty" />, { wrapper });
