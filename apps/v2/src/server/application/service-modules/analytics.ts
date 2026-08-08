@@ -5,10 +5,12 @@ import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { escapeHtml } from '../../shared/html';
 import type { AppContext } from '../../../domain/contracts';
 import type { AnalyticsRepository } from '../ports';
+import { TtlCache } from '../ttl-cache';
 
 export class AnalyticsService {
   private readonly db: Database.Database;
   private readonly analyticsRepository: AnalyticsRepository;
+  private readonly cache = new TtlCache(30_000);
 
   constructor(db: Database.Database, analyticsRepository?: AnalyticsRepository) {
     this.db = db;
@@ -16,19 +18,19 @@ export class AnalyticsService {
   }
 
   rfm(context: AppContext): Array<Record<string, unknown>> {
-    return this.analyticsRepository.rfm(context.clinicId);
+    return this.cache.get(`rfm:${context.clinicId ?? 'none'}`, () => this.analyticsRepository.rfm(context.clinicId));
   }
 
   churn(context: AppContext): Array<Record<string, unknown>> {
-    return this.analyticsRepository.churn(context.clinicId);
+    return this.cache.get(`churn:${context.clinicId ?? 'none'}`, () => this.analyticsRepository.churn(context.clinicId));
   }
 
   doctorAnomalies(context: AppContext): Array<Record<string, unknown>> {
-    return this.analyticsRepository.doctorAnomalies(context.clinicId);
+    return this.cache.get(`doctorAnomalies:${context.clinicId ?? 'none'}`, () => this.analyticsRepository.doctorAnomalies(context.clinicId));
   }
 
   clinicOverview(context: AppContext): Array<Record<string, unknown>> {
-    return this.db.prepare(
+    return this.cache.get(`clinicOverview:${context.userId}`, () => this.db.prepare(
       `WITH metrics AS (
          SELECT clinicId, 'patients' AS metric, COUNT(*) AS value
          FROM Patient WHERE deletedAt IS NULL GROUP BY clinicId
@@ -71,24 +73,28 @@ export class AnalyticsService {
        LEFT JOIN metrics M ON (C.id IS NULL AND M.clinicId IS NULL) OR M.clinicId = C.id
        GROUP BY C.id, C.name
        ORDER BY patients DESC, clinicName ASC`,
-    ).all(context.userId) as Array<Record<string, unknown>>;
+    ).all(context.userId) as Array<Record<string, unknown>>);
   }
 }
 
 export class ChargeAssistantService {
+  private readonly cache = new TtlCache(30_000);
+
   constructor(private readonly db: Database.Database) {}
 
   frequentItems(context: AppContext): Array<Record<string, unknown>> {
-    const tenantClause = tenantAnd(context.clinicId);
-    const params: unknown[] = tenantParams(context.clinicId);
-    return this.db.prepare(
+    return this.cache.get(`frequentItems:${context.clinicId ?? 'none'}`, () => {
+      const tenantClause = tenantAnd(context.clinicId);
+      const params: unknown[] = tenantParams(context.clinicId);
+      return this.db.prepare(
       `SELECT category, name, COUNT(*) AS count
        FROM ChargeItem
        WHERE deletedAt IS NULL${tenantClause}
        GROUP BY category, name
        ORDER BY count DESC
        LIMIT 50`,
-    ).all(...params) as Array<Record<string, unknown>>;
+      ).all(...params) as Array<Record<string, unknown>>;
+    });
   }
 }
 

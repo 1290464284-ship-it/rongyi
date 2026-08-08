@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../infrastructure/database';
 import { runMigrations } from '../infrastructure/migrations';
@@ -308,6 +308,24 @@ describe('service coverage', () => {
       clinicId: context.clinicId,
     });
     expect(created.status).toBe('OPEN');
+  });
+
+  it('caches analytics aggregates within the TTL', () => {
+    const analytics = new AnalyticsService(db);
+    const prepare = vi.spyOn(db, 'prepare');
+    try {
+      analytics.rfm(context);
+      analytics.rfm(context);
+      expect(prepare).toHaveBeenCalledTimes(1);
+      analytics.churn(context);
+      analytics.churn(context);
+      expect(prepare).toHaveBeenCalledTimes(2);
+      analytics.doctorAnomalies(context);
+      analytics.doctorAnomalies(context);
+      expect(prepare).toHaveBeenCalledTimes(3);
+    } finally {
+      prepare.mockRestore();
+    }
   });
 
   it('rejects re-registering a device already owned by another user (S-L4)', () => {
