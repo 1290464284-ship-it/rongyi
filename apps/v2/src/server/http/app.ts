@@ -151,6 +151,10 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
+  // P0-CORS: 打包版 Electron 渲染器以 file:// 加载，跨源请求的 Origin 可能为
+  // file:// 或 opaque null。仅当 API 由 Electron 主进程拉起（V2_ELECTRON_RENDERER=1）
+  // 时放行，避免打包版 UI 的所有 API 调用被浏览器 CORS 拦截。
+  const isElectronRenderer = process.env.V2_ELECTRON_RENDERER === '1';
   app.use(cors({
     origin(origin, callback) {
       if (!origin || configuredCorsOrigins.includes(origin)) {
@@ -159,7 +163,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
       }
       // P2-4：'null' origin（沙盒/iframe/数据页）一律不放行；file:// 仅开发环境允许
       if (origin.startsWith('file://')) {
-        if (process.env.NODE_ENV !== 'production') {
+        if (process.env.NODE_ENV !== 'production' || isElectronRenderer) {
           callback(null, true);
           return;
         }
@@ -167,6 +171,10 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
         return;
       }
       if (origin === 'null') {
+        if (isElectronRenderer) {
+          callback(null, true);
+          return;
+        }
         callback(new Error('Not allowed by CORS'));
         return;
       }

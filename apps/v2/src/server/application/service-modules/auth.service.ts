@@ -22,6 +22,12 @@ import {
 
 const DUMMY_HASH = '$2a$10$CwTycUXWue0Thq9StjUM0uJ8cG5fVb55Qk9X7pL5Nh4bKj1R8f69y';
 
+function assertPasswordLength(password: unknown): asserts password is string {
+  if (typeof password !== 'string' || password.length < 6) {
+    throw new ValidationError('Password must be at least 6 characters');
+  }
+}
+
 export class AuthService {
   private readonly db: Database.Database;
   private readonly authRepository: AuthRepository;
@@ -285,7 +291,7 @@ export class AuthService {
     if (!(await bcrypt.compare(oldPassword, user.passwordHash))) {
       throw new UnauthorizedError('Old password is incorrect');
     }
-    if (newPassword.length < 6) throw new ValidationError('New password must be at least 6 characters');
+    assertPasswordLength(newPassword);
     const hash = await bcrypt.hash(newPassword, 10);
     const now = new Date().toISOString();
     this.runTx(() => {
@@ -303,7 +309,7 @@ export class AuthService {
     const name = String(input.name ?? '').trim();
     const role = String(input.role ?? '');
     if (!username || !name) throw new ValidationError('Username and name are required');
-    if (input.password.length < 6) throw new ValidationError('Password must be at least 6 characters');
+    assertPasswordLength(input.password);
     if (!isUserRole(role)) throw new ValidationError(`Invalid user role: ${role}`);
     if (input.clinicIds !== undefined && (!Array.isArray(input.clinicIds) || input.clinicIds.some((id) => typeof id !== 'string'))) {
       throw new ValidationError('clinicIds must be an array of strings');
@@ -404,7 +410,7 @@ export class AuthService {
   async resetPassword(id: string, newPassword: string, context: AppContext): Promise<{ id: string }> {
     const row = this.authRepository.findById(id);
     if (!row || !tenantMatches(row.clinicId, context.clinicId)) throw new NotFoundError('User not found');
-    if (newPassword.length < 6) throw new ValidationError('Password must be at least 6 characters');
+    assertPasswordLength(newPassword);
     const passwordHash = await bcrypt.hash(newPassword, 10);
     const now = new Date().toISOString();
     this.runTx(() => {

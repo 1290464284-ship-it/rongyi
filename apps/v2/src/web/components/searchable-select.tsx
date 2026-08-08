@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../lib/api';
 import type { Page } from '../lib/types';
@@ -66,8 +66,12 @@ export function SearchableSelect({
     }
   }
 
+  const onLoadedRef = useRef(onLoaded);
   useEffect(() => {
-    if (query.data) onLoaded?.(loaded);
+    onLoadedRef.current = onLoaded;
+  });
+  useEffect(() => {
+    if (query.data) onLoadedRef.current?.(loaded);
   }, [loaded, query.data]);
 
   const total = query.data?.total ?? 0;

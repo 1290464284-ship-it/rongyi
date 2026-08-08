@@ -104,8 +104,16 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
   }));
 
   app.post('/api/v2/charges', writeLimiter, wrapAsync(async (req, res) => {
-      const result = await charges.create(req.body, req.context!);
-      res.status(201).json({ success: true, data: result });
+      const result = await withIdempotency(deps.db, {
+        operation: 'charge.create',
+        userId: req.context!.userId,
+        clinicId: req.context!.clinicId,
+        requestId: req.header('idempotency-key') ?? '',
+      }, async () => {
+        const created = await charges.create(req.body, req.context!);
+        return { success: true, data: created };
+      });
+      res.status(201).json(result);
   }));
 
   app.patch('/api/v2/charges/:id/pay', writeLimiter, wrapAsync(async (req, res) => {

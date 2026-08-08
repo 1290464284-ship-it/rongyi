@@ -95,7 +95,7 @@ it('unmounts inactive tab panels so hub state does not accumulate', async () => 
   function Counter({ id }: { id: string }) {
     useEffect(() => {
       mountCounts[id] = (mountCounts[id] ?? 0) + 1;
-    }, []);
+    }, [id]);
     return <div>{id} panel</div>;
   }
   const tabs: HubTab[] = [

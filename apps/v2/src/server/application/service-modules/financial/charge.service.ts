@@ -4,6 +4,7 @@ import { ConflictError, NotFoundError, ValidationError } from '../../../infrastr
 import { withIdempotency } from '../../../infrastructure/idempotency';
 import { tenantAnd, tenantParams } from '../../../infrastructure/tenant';
 import { recordSyncChange } from '../../../infrastructure/sync-change';
+import { touchSearchIndex } from '../../../infrastructure/search-index';
 import { SqliteChargeRepository } from '../../../infrastructure/repositories/charge.repository';
 import {
   SqliteDebtRepository,
@@ -174,6 +175,7 @@ export class ChargeService {
       this.db.prepare(
         `UPDATE Charge SET deletedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL`,
       ).run(now, now, id);
+      touchSearchIndex(this.db, 'Charge', id, 'DELETE');
       this.db.prepare(
         `UPDATE ChargeItem SET deletedAt = ?, updatedAt = ? WHERE chargeId = ? AND deletedAt IS NULL`,
       ).run(now, now, id);

@@ -185,14 +185,16 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
     this.assertRelations(entity, context);
     const placeholders = columns.map(() => '?').join(', ');
     try {
-      this.db.prepare(`INSERT INTO ${this.resource.table} (${columns.join(', ')}) VALUES (${placeholders})`).run(...values);
+      this.runWrite(() => {
+        this.db.prepare(`INSERT INTO ${this.resource.table} (${columns.join(', ')}) VALUES (${placeholders})`).run(...values);
+        if (this.resource.searchIndexResource) touchSearchIndex(this.db, this.resource.searchIndexResource, id, 'INSERT');
+        if (this.emitSyncChange && context.clinicId) {
+          recordSyncChange(this.db, { tableName: this.resource.table, recordId: id, operation: 'INSERT', clinicId: context.clinicId });
+        }
+      });
     } catch (error) {
       if (isUniqueConstraintError(error)) throw new ConflictError(`${this.resource.name} violates a unique field constraint`);
       throw error;
-    }
-    if (this.resource.searchIndexResource) touchSearchIndex(this.db, this.resource.searchIndexResource, id, 'INSERT');
-    if (this.emitSyncChange && context.clinicId) {
-      recordSyncChange(this.db, { tableName: this.resource.table, recordId: id, operation: 'INSERT', clinicId: context.clinicId });
     }
   }
 
@@ -223,22 +225,25 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
     }
     /* v8 ignore stop */
     try {
-      const result = this.db.prepare(
-        `UPDATE ${this.resource.table} SET ${sets.join(', ')} WHERE ${whereParts.join(' AND ')}`,
-      ).run(...values);
-      if (Number(result.changes) === 0) throw new NotFoundError(`${this.resource.name} not found`);
+      this.runWrite(() => {
+        const result = this.db.prepare(
+          `UPDATE ${this.resource.table} SET ${sets.join(', ')} WHERE ${whereParts.join(' AND ')}`,
+        ).run(...values);
+        if (Number(result.changes) === 0) throw new NotFoundError(`${this.resource.name} not found`);
+        if (this.resource.searchIndexResource) touchSearchIndex(this.db, this.resource.searchIndexResource, id, 'UPDATE');
+        if (this.resource.name === 'patients') refreshPatientChildSearchRows(this.db, id);
+        if (this.emitSyncChange && context.clinicId) {
+          recordSyncChange(this.db, { tableName: this.resource.table, recordId: id, operation: 'UPDATE', clinicId: context.clinicId });
+        }
+      });
     } catch (error) {
       if (isUniqueConstraintError(error)) throw new ConflictError(`${this.resource.name} violates a unique field constraint`);
       throw error;
     }
-    if (this.resource.searchIndexResource) touchSearchIndex(this.db, this.resource.searchIndexResource, id, 'UPDATE');
-    if (this.resource.name === 'patients') refreshPatientChildSearchRows(this.db, id);
-    if (this.emitSyncChange && context.clinicId) {
-      recordSyncChange(this.db, { tableName: this.resource.table, recordId: id, operation: 'UPDATE', clinicId: context.clinicId });
-    }
   }
 
   async softDelete(id: string, context: AppContext): Promise<void> {
+    this.runWrite(() => {
     if (this.resource.capabilities.softDelete) {
       const now = context.now().toISOString();
       /* v8 ignore start -- all registry tables include clinicId today; false branch is defensive for future schemas. */
@@ -274,10 +279,17 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
         for (const child of childRows) touchSearchIndex(this.db, childTable, String(child.id), 'DELETE');
       }
     }
+    });
   }
 
   private field(name: string): ResourceField | undefined {
     return this.resource.fields.find((field) => field.name === name);
+  }
+
+  private runWrite<T>(fn: () => T): T {
+    const tx = (this.db as unknown as { transaction?: <U>(cb: () => U) => () => U }).transaction;
+    if (typeof tx === 'function') return tx.call(this.db, fn)() as T;
+    return fn();
   }
 
   private hasClinicColumn(): boolean {

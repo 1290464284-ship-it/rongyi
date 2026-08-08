@@ -128,6 +128,26 @@ describe('dispense routes', () => {
     ]);
   });
 
+  it('rejects malformed dispense payloads and dangling references', async () => {
+    await request(app)
+      .post('/api/v2/dispenses')
+      .send({ number: 'PF-BAD-1', items: [{ itemId: 'inventory-demo-001', quantity: 1 }] })
+      .expect(400);
+    await request(app)
+      .post('/api/v2/dispenses')
+      .send({ number: 'PF-BAD-2', patientId: 'patient-demo-001', items: [{ quantity: 1 }] })
+      .expect(400);
+    await request(app)
+      .post('/api/v2/dispenses')
+      .send({
+        number: 'PF-BAD-3',
+        patientId: 'patient-demo-001',
+        chargeId: 'missing-charge',
+        items: [{ itemId: 'inventory-demo-001', quantity: 1 }],
+      })
+      .expect(404);
+  });
+
   it('GET /api/v2/dispenses lists orders and filters by status', async () => {
     await createDispense('PF-LIST-1', [{ itemId: 'inventory-demo-001', quantity: 1 }]);
     const list = await request(app).get('/api/v2/dispenses').expect(200);

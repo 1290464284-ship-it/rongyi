@@ -74,7 +74,15 @@ function sendApiStatus(payload) {
   sendToRenderers('api:status', payload);
 }
 
-process.on('uncaughtException', (error) => crashLog('uncaughtException', error));
+process.on('uncaughtException', (error) => {
+  crashLog('uncaughtException', error);
+  // 未捕获异常后进程状态不可信，记完日志必须退出，避免带病继续运行。
+  try {
+    app.exit(1);
+  } catch {
+    process.exit(1);
+  }
+});
 process.on('unhandledRejection', (reason) => crashLog('unhandledRejection', reason));
 
 

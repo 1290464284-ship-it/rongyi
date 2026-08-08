@@ -30,6 +30,7 @@ interface RemindersData {
   date: string;
   config: ReminderConfig;
   items: ReminderItem[];
+  truncated?: boolean;
 }
 
 function reminderTagClass(scene: string): string {
@@ -148,6 +149,9 @@ export function CommunicationWorkflowPage() {
                   ))}
                 </div>
               )}
+              {reminderData?.truncated ? (
+                <p className="reminder-muted">今日提醒超过 1000 条，仅显示前 1000 条</p>
+              ) : null}
             </>
           );
         }}

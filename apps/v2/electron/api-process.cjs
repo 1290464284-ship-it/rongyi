@@ -9,6 +9,7 @@ const path = require('node:path');
 const { randomInt } = require('node:crypto');
 const state = require('./state.cjs');
 const {
+  isDev,
   API_MAX_RESTARTS,
   API_BACKOFF_BASE_MS,
   API_BACKOFF_MAX_MS,
@@ -21,6 +22,7 @@ const {
 } = require('./constants.cjs');
 const { crashLog, notify, sendApiStatus } = require('./logging.cjs');
 const { getOrCreateSecret } = require('./secrets.cjs');
+const { showApiErrorWindow } = require('./window.cjs');
 
 function apiReadinessWindowMs({ firstCheck }) {
   return firstCheck ? API_READY_WINDOW_FIRST_MS : API_READY_WINDOW_STRICT_MS;
@@ -118,6 +120,8 @@ async function startApi() {
       V2_PORT: String(state.apiPort),
       V2_HOST: '127.0.0.1',
       NODE_ENV: app.isPackaged ? 'production' : 'development',
+      // P0-CORS: 打包版渲染器来源是 file:///opaque null，API 需据此放行 CORS。
+      V2_ELECTRON_RENDERER: app.isPackaged ? '1' : '0',
       V2_DATA_DIR: path.join(userDataDir, 'data'),
       V2_BACKUP_DIR: path.join(userDataDir, 'backups'),
       V2_LOG_DIR: path.join(userDataDir, 'logs'),

@@ -1,4 +1,5 @@
 const { app, BrowserWindow, shell } = require('electron');
+const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const state = require('./state.cjs');

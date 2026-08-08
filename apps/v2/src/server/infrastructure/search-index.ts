@@ -52,8 +52,10 @@ export function upsertSearchRow(db: Database.Database, resource: string, id: str
   const sql = SEARCH_UPSERT_SQL[resource];
   if (!sql) return; // 未知 resource：无可维护的索引内容，直接返回。
   if (!hasSearchIndex(db)) return; // 无 FTS 表（未应用迁移 115 的库）时跳过，避免误伤精简环境。
-  db.prepare(`DELETE FROM SearchIndex WHERE resource = ? AND recordId = ?`).run(resource, id);
-  db.prepare(sql).run(id);
+  db.transaction(() => {
+    db.prepare(`DELETE FROM SearchIndex WHERE resource = ? AND recordId = ?`).run(resource, id);
+    db.prepare(sql).run(id);
+  })();
 }
 
 export function removeSearchRow(db: Database.Database, resource: string, id: string): void {
@@ -94,7 +96,8 @@ export function rebuildSearchIndex(db: Database.Database): void {
     `SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'SearchIndex'`,
   ).get();
   if (!hasFts) return;
-  db.exec('DELETE FROM SearchIndex');
+  db.transaction(() => {
+    db.exec('DELETE FROM SearchIndex');
   // SQL 与迁移 115（v2-fts-search-index）回填段逐字一致。
   db.exec(`
     INSERT INTO SearchIndex(resource, recordId, clinicId, content)
@@ -122,4 +125,5 @@ export function rebuildSearchIndex(db: Database.Database): void {
     FROM FollowUp F LEFT JOIN Patient P ON P.id = F.patientId
     WHERE F.deletedAt IS NULL;
   `);
+  })();
 }

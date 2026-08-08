@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter, Route, Routes } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { Layout } from './Layout';
 import { apiRequest, logout, onSessionExpired, switchClinic } from '../lib/api';
 import { ToastProvider } from './toast';
@@ -164,5 +164,81 @@ describe('Layout clinic switcher', () => {
     });
     expect(await screen.findByText('Login Page')).toBeDefined();
     expect(screen.getByText('登录状态已失效，请重新登录')).toBeDefined();
+  });
+
+  it('renders navigation and submits global search', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce({ permissions: ['dashboard', 'patients'] })
+      .mockResolvedValueOnce({
+        currentClinicId: 'clinic-1',
+        clinics: [{ clinicId: 'clinic-1', name: 'Clinic 1' }],
+      })
+      .mockResolvedValueOnce({ name: '王丽', username: 'wangli' });
+    function SearchProbe() {
+      const location = useLocation();
+      return <div>search:{location.search}</div>;
+    }
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route path="/" element={<div>Home</div>} />
+            <Route path="/patients" element={<SearchProbe />} />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+      { wrapper },
+    );
+    expect(await screen.findByText('蓉易口腔诊所')).toBeDefined();
+    expect(screen.getByRole('link', { name: /患者与预约/ })).toBeDefined();
+    fireEvent.change(screen.getByLabelText('全局搜索'), { target: { value: '张三' } });
+    fireEvent.submit(screen.getByRole('search'));
+    expect(await screen.findByText('search:?q=%E5%BC%A0%E4%B8%89')).toBeDefined();
+  });
+
+  it('toggles the sidebar and shows notification and help toasts', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce({ permissions: ['dashboard'] })
+      .mockResolvedValueOnce({
+        currentClinicId: 'clinic-1',
+        clinics: [{ clinicId: 'clinic-1', name: 'Clinic 1' }],
+      })
+      .mockResolvedValueOnce({ name: '王丽', username: 'wangli' });
+    const { container } = renderLayout();
+    await screen.findByText('蓉易口腔诊所');
+    const shell = container.querySelector('.shell') as HTMLElement | null;
+    expect(shell?.className ?? '').not.toContain('collapsed');
+    fireEvent.click(screen.getByRole('button', { name: '收起侧栏' }));
+    expect((container.querySelector('.shell') as HTMLElement | null)?.className ?? '').toContain('collapsed');
+    fireEvent.click(screen.getByRole('button', { name: '通知' }));
+    expect(await screen.findByText('暂无新通知')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '帮助' }));
+    expect(await screen.findByText('帮助文档请查看 README')).toBeDefined();
+  });
+
+  it('denies resource routes outside the current role', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/auth/navigation') return { permissions: ['dashboard'], role: 'BOSS' };
+      if (path === '/auth/clinics') {
+        return {
+          currentClinicId: 'clinic-1',
+          clinics: [{ clinicId: 'clinic-1', name: 'Clinic 1' }],
+        };
+      }
+      if (path === '/auth/me') return { name: '王丽', username: 'wangli' };
+      if (path === '/resource-meta') return [{ name: 'patients', roles: ['DOCTOR'] }];
+      return {};
+    });
+    render(
+      <MemoryRouter initialEntries={['/resources/patients']}>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route path="/resources/patients" element={<div>Resource Page</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+      { wrapper },
+    );
+    expect(await screen.findByText('无访问权限')).toBeDefined();
   });
 });

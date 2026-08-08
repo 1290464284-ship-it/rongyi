@@ -108,6 +108,9 @@ export class DispenseService {
   ) {}
 
   create(input: DispenseCreateInput, context: AppContext): Record<string, unknown> {
+    if (typeof input.patientId !== 'string' || input.patientId.trim() === '') {
+      throw new ValidationError('Patient is required');
+    }
     const number = typeof input.number === 'string' ? input.number.trim() : '';
     if (!number) throw new ValidationError('发药单号不能为空');
     if (!Array.isArray(input.items) || input.items.length < 1 || input.items.length > 200) {
@@ -120,7 +123,31 @@ export class DispenseService {
 
     // 校验每条明细，并按 (itemId, batchId) 合并重复项
     const merged = new Map<string, { itemId: string; quantity: number; batchId: string | null; name: string; spec: string | null }>();
+    if (input.chargeId !== undefined && input.chargeId !== null && input.chargeId !== '') {
+      if (typeof input.chargeId !== 'string' || !this.db.prepare(
+        `SELECT id FROM Charge WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+      ).get(input.chargeId, ...tenantParams(context.clinicId))) {
+        throw new NotFoundError('Charge not found');
+      }
+    }
+    if (input.prescriptionId !== undefined && input.prescriptionId !== null && input.prescriptionId !== '') {
+      if (typeof input.prescriptionId !== 'string' || !this.db.prepare(
+        `SELECT id FROM Prescription WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+      ).get(input.prescriptionId, ...tenantParams(context.clinicId))) {
+        throw new NotFoundError('Prescription not found');
+      }
+    }
+    if (input.doctorId !== undefined && input.doctorId !== null && input.doctorId !== '') {
+      if (typeof input.doctorId !== 'string' || !this.db.prepare(
+        `SELECT id FROM User WHERE id = ? AND role IN ('DOCTOR', 'BOSS') AND active = 1 AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+      ).get(input.doctorId, ...tenantParams(context.clinicId))) {
+        throw new NotFoundError('Doctor not found');
+      }
+    }
     for (const entry of input.items) {
+      if (typeof entry.itemId !== 'string' || entry.itemId.trim() === '') {
+        throw new ValidationError('Dispense item is required');
+      }
       const quantity = Number(entry.quantity);
       if (!Number.isSafeInteger(quantity) || quantity <= 0) {
         throw new ValidationError('发药数量必须为正整数');
@@ -542,6 +569,9 @@ export class DispenseService {
    * 无 id 的行新增，服务端有而表单没有的行软删。全程在一个事务内完成。
    */
   updateDispense(id: string, input: DispenseUpdateInput, context: AppContext): Record<string, unknown> {
+    if (typeof input.patientId !== 'string' || input.patientId.trim() === '') {
+      throw new ValidationError('Patient is required');
+    }
     const dispense = this.db.prepare(
       `SELECT id, status FROM Dispense WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).get(id, ...tenantParams(context.clinicId)) as DispenseRow | undefined;
@@ -568,6 +598,9 @@ export class DispenseService {
       spec: string | null;
     }>();
     for (const entry of input.items) {
+      if (typeof entry.itemId !== 'string' || entry.itemId.trim() === '') {
+        throw new ValidationError('Dispense item is required');
+      }
       const quantity = Number(entry.quantity);
       if (!Number.isSafeInteger(quantity) || quantity <= 0) {
         throw new ValidationError('发药数量必须为正整数');
@@ -703,8 +736,20 @@ export class DispenseService {
 
   recordNarcotic(input: NarcoticCreateInput, context: AppContext): Record<string, unknown> {
     const recordDate = typeof input.recordDate === 'string' ? input.recordDate.trim() : '';
+    if (recordDate !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(recordDate)) {
+      throw new ValidationError('Record date must be YYYY-MM-DD');
+    }
+    if (typeof input.itemId !== 'string' || input.itemId.trim() === '') {
+      throw new ValidationError('Inventory item is required');
+    }
     if (!recordDate) throw new ValidationError('登记日期不能为空');
     const quantity = Number(input.quantity);
+    for (const key of ['balanceBefore', 'balanceAfter'] as const) {
+      const value = input[key];
+      if (value !== undefined && value !== null && !Number.isFinite(Number(value))) {
+        throw new ValidationError(`${key} must be a number`);
+      }
+    }
     if (!Number.isSafeInteger(quantity) || quantity < 0) {
       throw new ValidationError('数量必须为非负整数');
     }
@@ -742,6 +787,19 @@ export class DispenseService {
 
   /** 编辑麻药登记：可编辑登记日期/物品/批号/数量/用途/余量前/余量后/备注，patientId/doctorId 保持不变。 */
   updateNarcotic(id: string, input: NarcoticUpdateInput, context: AppContext): Record<string, unknown> {
+    const trimmedRecordDate = typeof input.recordDate === 'string' ? input.recordDate.trim() : '';
+    if (trimmedRecordDate !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(trimmedRecordDate)) {
+      throw new ValidationError('Record date must be YYYY-MM-DD');
+    }
+    if (typeof input.itemId !== 'string' || input.itemId.trim() === '') {
+      throw new ValidationError('Inventory item is required');
+    }
+    for (const key of ['balanceBefore', 'balanceAfter'] as const) {
+      const value = input[key];
+      if (value !== undefined && value !== null && !Number.isFinite(Number(value))) {
+        throw new ValidationError(`${key} must be a number`);
+      }
+    }
     const record = this.db.prepare(
       `SELECT id FROM NarcoticRegistry WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).get(id, ...tenantParams(context.clinicId));

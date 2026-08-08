@@ -152,6 +152,20 @@ describe('workflow services', () => {
     await expect(wechat.sendBatch(null as unknown as string[], context)).rejects.toThrow('array');
     await expect(wechat.sendBatch(Array.from({ length: 501 }, () => 'x'), context)).rejects.toThrow('at most');
 
+    db.prepare(
+      `INSERT INTO WechatMessage (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, type, content, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'TEXT', 'stale', 'IN_PROGRESS')`,
+    ).run(
+      'wechat-stale',
+      context.clinicId,
+      new Date(Date.now() - 120_000).toISOString(),
+      new Date(Date.now() - 120_000).toISOString(),
+    );
+    expect(await new WechatService(db, undefined, provider).send('wechat-stale', context))
+      .toMatchObject({ status: 'SENT' });
+
     const fakeWechat = {
       findById: () => ({ id: 'missing-update', status: 'PENDING' }),
       markSent: () => 0,

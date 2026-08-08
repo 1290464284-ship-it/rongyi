@@ -298,4 +298,32 @@ await waitFor(() => {
     expect(body.active).toBe(false);
   });
 
+  it('edits an existing appointment', async () => {
+    mockLookups();
+    render(<AppointmentsPage />, { wrapper });
+    await screen.findByText('预约管理');
+    fireEvent.click((await screen.findAllByRole('button', { name: '编辑' }))[2]);
+    const startInputs = screen.getAllByLabelText('开始时间');
+    const endInputs = screen.getAllByLabelText('结束时间');
+    fireEvent.change(startInputs[startInputs.length - 1], { target: { value: '2026-08-05T09:00' } });
+    fireEvent.change(endInputs[endInputs.length - 1], { target: { value: '2026-08-05T10:00' } });
+    vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'a-1' });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/appointments/a-1', expect.objectContaining({ method: 'PATCH' }));
+    });
+  });
+
+  it('deletes an appointment after confirmation', async () => {
+    mockLookups();
+    render(<AppointmentsPage />, { wrapper });
+    await screen.findByText('预约管理');
+    fireEvent.click((await screen.findAllByRole('button', { name: '删除' }))[2]);
+    const confirmButtons = screen.getAllByRole('button', { name: '删除' });
+    fireEvent.click(confirmButtons[confirmButtons.length - 1]);
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/appointments/a-1', expect.objectContaining({ method: 'DELETE' }));
+    });
+  });
+
 });

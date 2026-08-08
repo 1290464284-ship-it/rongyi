@@ -83,4 +83,37 @@ describe('CommunicationWorkflowPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
     expect(await screen.findByText('发送失败')).toBeDefined();
   });
+
+  it('marks a reminder sent and dismisses another', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/wechat/status') {
+        return { configured: true, provider: 'http' };
+      }
+      if (path === '/wechat-reminders/today') {
+        return {
+          date: '2026-08-05',
+          config: { enabled: true, appointmentDaysBefore: 1, recallDaysAfter: 3, firstExamDaysAfter: 3 },
+          items: [
+            { id: 'r-1', patientName: '张三', patientPhone: '13800000000', scene: 'TREATMENT_RECALL', sceneLabel: '治疗后回访', content: '复诊提醒内容一' },
+            { id: 'r-2', patientName: '李四', patientPhone: '13900000000', scene: 'FIRST_EXAM_NUDGE', sceneLabel: '首诊跟进', content: '复诊提醒内容二' },
+          ],
+        };
+      }
+      if (path === '/resources/wechatMessages?page=1&pageSize=100') {
+        return { items: [], total: 0 };
+      }
+      return {};
+    });
+
+    render(<CommunicationWorkflowPage />, { wrapper });
+    expect(await screen.findByText('张三')).toBeDefined();
+    fireEvent.click(screen.getAllByRole('button', { name: '已发微信' })[0]);
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/wechat-reminders/r-1/mark-sent', expect.objectContaining({ method: 'POST' }));
+    });
+    fireEvent.click(screen.getAllByRole('button', { name: '忽略' })[1]);
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/wechat-reminders/r-2/dismiss', expect.objectContaining({ method: 'POST' }));
+    });
+  });
 });

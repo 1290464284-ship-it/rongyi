@@ -118,11 +118,21 @@ export class AppointmentService {
     if (!APPOINTMENT_TRANSITIONS[current]?.includes(nextStatus)) {
       throw new ConflictError(`Cannot transition appointment from ${current} to ${nextStatus}`);
     }
-    this.db.prepare(
-      `UPDATE Appointment SET status = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
-    ).run(nextStatus, context.now().toISOString(), id, ...tenantParams(context.clinicId));
+    this.db.transaction(() => {
+    const now = context.now().toISOString();
+    const updated = this.db.prepare(
+      `UPDATE Appointment SET status = ?, updatedAt = ? WHERE id = ? AND status = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    ).run(nextStatus, now, id, current, ...tenantParams(context.clinicId));
+    if (updated.changes === 0) {
+      const fresh = this.db.prepare(
+        `SELECT status FROM Appointment WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+      ).get(id, ...tenantParams(context.clinicId)) as { status: string } | undefined;
+      if (!fresh) throw new NotFoundError('Appointment not found');
+      throw new ConflictError(`Cannot transition appointment from ${fresh.status} to ${nextStatus}`);
+    }
     // B-H4：状态变更影响 Appointment 索引内容（含 status 字段）。
     touchSearchIndex(this.db, 'Appointment', id, 'UPDATE');
+    })();
     return { id, status: nextStatus };
   }
 

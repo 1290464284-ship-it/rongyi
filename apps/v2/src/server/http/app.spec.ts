@@ -792,6 +792,25 @@ describe('HTTP app', () => {
       .expect(200);
   });
 
+  it('replays charge creation with the same idempotency key', async () => {
+    const payload = {
+      patientId: 'patient-demo-001',
+      items: [{ name: 'Idem Charge', category: 'EXAM', price: 120, quantity: 1 }],
+    };
+    const first = await request(app).post('/api/v2/charges')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', 'http-charge-create-idem')
+      .send(payload)
+      .expect(201);
+    const second = await request(app).post('/api/v2/charges')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', 'http-charge-create-idem')
+      .send(payload)
+      .expect(201);
+    expect(first.body.data.id).toBe(second.body.data.id);
+    expect(first.body.data.number).toBe(second.body.data.number);
+  });
+
   it('indexes charges created through the financial service for search', async () => {
     const charge = await request(app).post('/api/v2/charges')
       .set('Authorization', `Bearer ${token}`)

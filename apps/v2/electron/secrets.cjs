@@ -1,4 +1,4 @@
-const { app, safeStorage } = require('electron');
+const { app, dialog, safeStorage } = require('electron');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');

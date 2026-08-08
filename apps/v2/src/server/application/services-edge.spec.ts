@@ -475,6 +475,20 @@ describe('service edge coverage', () => {
     await expect(service.create(base, context)).rejects.toThrow('already booked');
   });
 
+  it('guards appointment transitions against stale status', async () => {
+    const service = new AppointmentService(db);
+    const created = await service.create({
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      startTime: new Date(Date.now() + 11 * 86_400_000).toISOString(),
+      endTime: new Date(Date.now() + 11 * 86_400_000 + 3_600_000).toISOString(),
+      type: 'REGULAR',
+    }, context);
+    await service.transition(String(created.id), 'ARRIVED', context);
+    await expect(service.transition(String(created.id), 'NO_SHOW', context))
+      .rejects.toThrow('Cannot transition appointment from ARRIVED to NO_SHOW');
+  });
+
   it('covers charge creation, payment, refund, member-card, and debt branches', async () => {
     const service = new ChargeService(db);
     await expect(service.create({ patientId: 'patient-demo-001', items: [] }, context)).rejects.toThrow('At least one');

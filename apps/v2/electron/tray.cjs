@@ -1,4 +1,5 @@
 const { app, Tray, Menu, nativeImage, BrowserWindow } = require('electron');
+const fs = require('node:fs');
 const path = require('node:path');
 const state = require('./state.cjs');
 const { ensureApiServerRunning } = require('./api-process.cjs');

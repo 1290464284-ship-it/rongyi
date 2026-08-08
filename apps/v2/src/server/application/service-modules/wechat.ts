@@ -116,6 +116,7 @@ export interface WechatSendBatchResult {
 }
 
 const WECHAT_BATCH_CHUNK_SIZE = 10;
+const STALE_IN_PROGRESS_MS = 60_000;
 
 export class WechatService {
   private readonly db: Database.Database;
@@ -176,10 +177,12 @@ export class WechatService {
     // B-M2 并发守卫：原子抢占，只有 PENDING/DRAFT 能被本次发送认领。
     // 两个并发请求同时进来时只有一个 UPDATE 成功，另一个在下方按最新状态处理。
     const now = context.now().toISOString();
+    const staleInProgressCutoff = new Date(Date.now() - STALE_IN_PROGRESS_MS).toISOString();
     const claimed = this.db.prepare(
       `UPDATE WechatMessage SET status = 'IN_PROGRESS', updatedAt = ?
-       WHERE id = ? AND deletedAt IS NULL AND status IN ('PENDING', 'DRAFT')${tenantAnd(context.clinicId)}`,
-    ).run(now, messageId, ...(context.clinicId ? [context.clinicId] : [])).changes;
+       WHERE id = ? AND deletedAt IS NULL
+         AND (status IN ('PENDING', 'DRAFT') OR (status = 'IN_PROGRESS' AND updatedAt <= ?))${tenantAnd(context.clinicId)}`,
+    ).run(now, messageId, staleInProgressCutoff, ...(context.clinicId ? [context.clinicId] : [])).changes;
     if (claimed === 0) {
       const fresh = this.wechatRepository.findById(messageId, context.clinicId);
       if (fresh?.status === 'SENT') return { id: messageId, status: 'SENT' };

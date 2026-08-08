@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 function makeMockStorage(initial: Record<string, string> = {}) {
@@ -463,5 +465,106 @@ describe('friendlyError 映射', () => {
 
   it('未命中映射的英文错误返回通用兜底文案（M5）', () => {
     expect(friendlyError('a completely unexpected message')).toBe('操作失败，请稍后重试');
+  });
+});
+
+describe('api helper functions', () => {
+  const originalWindow = globalThis.window;
+  const originalLocalStorage = (globalThis as unknown as { localStorage?: Storage }).localStorage;
+  const originalFetch = globalThis.fetch;
+
+  let mod: typeof import('./api');
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    const { storage } = makeMockStorage();
+    vi.stubGlobal('location', new URL('http://127.0.0.1:5180/'));
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, writable: true, value: storage });
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      writable: true,
+      value: {
+        location: globalThis.location,
+        localStorage: storage,
+        desktop: { getApiPort: vi.fn().mockResolvedValue(9999) },
+      },
+    });
+    delete (globalThis as unknown as { import?: { meta?: Record<string, unknown> } }).import;
+    (globalThis as unknown as { import: { meta: { env: Record<string, unknown> } } }).import = {
+      meta: { env: {} },
+    };
+    fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    mod = await import('./api');
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    Object.defineProperty(globalThis, 'window', { configurable: true, writable: true, value: originalWindow });
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, writable: true, value: originalLocalStorage });
+    globalThis.fetch = originalFetch;
+  });
+
+  it('fetchAllPages aggregates every page', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ success: true, data: { items: [{ id: 'a' }, { id: 'b' }], total: 2, page: 1, pageSize: 100 } }),
+        { status: 200 },
+      ),
+    );
+    const rows = await mod.fetchAllPages('/resources/patients');
+    expect(rows).toEqual([{ id: 'a' }, { id: 'b' }]);
+    expect(String(fetchMock.mock.calls[0][0])).toBe('http://127.0.0.1:9999/api/v2/resources/patients?page=1&pageSize=100');
+  });
+
+  it('downloadCsv downloads a blob', async () => {
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const createSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:csv');
+    fetchMock.mockResolvedValueOnce(new Response('a,b\n1,2', { status: 200 }));
+    await mod.downloadCsv('patients');
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/resources/patients/export');
+    expect(createSpy).toHaveBeenCalled();
+    clickSpy.mockRestore();
+    createSpy.mockRestore();
+  });
+
+  it('getSignedFileUrl returns an absolute signed URL', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ success: true, data: { url: '/api/v2/files/x.png?exp=1&sig=s' } }),
+        { status: 200 },
+      ),
+    );
+    const url = await mod.getSignedFileUrl('/api/v2/files/x.png');
+    expect(url).toBe('http://127.0.0.1:9999/api/v2/files/x.png?exp=1&sig=s');
+  });
+
+  it('uploadFile posts the raw file', async () => {
+    const file = new File(['png'], 'x.png', { type: 'image/png' });
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ success: true, data: { id: 'f1', filename: 'x.png', url: '/api/v2/files/x.png?exp=1&sig=s' } }),
+        { status: 201 },
+      ),
+    );
+    const result = await mod.uploadFile(file);
+    expect(result.id).toBe('f1');
+    const call = fetchMock.mock.calls[0];
+    expect(String(call[0])).toBe('http://127.0.0.1:9999/api/v2/files');
+    expect((call[1] as RequestInit).body).toBe(file);
+  });
+
+  it('logout clears the session even when the remote call fails', async () => {
+    await mod.setTokens('tok', 'refresh');
+    fetchMock.mockRejectedValueOnce(new Error('network down'));
+    await expect(mod.logout()).resolves.toBeUndefined();
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ success: true, data: 'ok' }), { status: 200 }),
+    );
+    await mod.apiRequest('/after-logout');
+    const call = fetchMock.mock.calls[0];
+    const auth = String(new Request(call[0], call[1]).headers.get('Authorization') ?? '');
+    expect(auth).toBe('');
   });
 });

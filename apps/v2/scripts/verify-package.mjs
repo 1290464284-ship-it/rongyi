@@ -36,6 +36,15 @@ if (fs.existsSync(unpackedDir)) {
     console.error(`missing packaged legacy schema: ${legacySchema}`);
     process.exit(1);
   }
+  const appUpdateYml = path.join(unpackedDir, 'resources', 'app-update.yml');
+  if (fs.existsSync(appUpdateYml)) {
+    const updateContent = fs.readFileSync(appUpdateYml, 'utf8');
+    const publisherLine = updateContent.match(/^publisherName\s*:\s*(.+)$/m)?.[1]?.trim();
+    if (!publisherLine || publisherLine === '[]' || publisherLine === "''" || publisherLine === '""') {
+      console.error(`app-update.yml is missing a non-empty publisherName (${appUpdateYml})`);
+      process.exit(1);
+    }
+  }
 } else {
   console.log('win-unpacked not present; skipping unpacked resource checks');
 }

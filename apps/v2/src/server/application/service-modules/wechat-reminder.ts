@@ -35,6 +35,8 @@ const WECHAT_REMINDER_SCENE_LABELS: Record<WechatReminderScene, string> = {
 /** B-L8：同一诊所同一天的提醒生成结果 5 分钟内不重复扫描/插入（生成幂等的第二道闸）：
  *  高频轮询今日清单（如前端每 30s 刷新）不会反复跑三张大表扫描。 */
 const TODAY_GENERATED_CACHE_TTL_MS = 5 * 60 * 1000;
+/** 单日提醒列表上限；超过时通过 today() 的 truncated 标志显式暴露截断。 */
+const WECHAT_REMINDER_LIMIT = 1000;
 
 export interface WechatReminderConfig {
   enabled: boolean;
@@ -154,7 +156,8 @@ export class WechatReminderService {
         this.todayGeneratedCache.set(cacheKey, { date: today, generatedAt: nowMs });
       }
     }
-    return { date: today, config, items: this.listPending(context, today) };
+    const pending = this.listPending(context, today);
+    return { date: today, config, ...pending };
   }
 
   markSent(id: string, context: AppContext): Record<string, unknown> {
@@ -211,7 +214,7 @@ export class WechatReminderService {
        WHERE a.deletedAt IS NULL AND substr(datetime(a.startTime, '+8 hours'), 1, 10) = ?
          AND a.status IN ('BOOKED', 'ARRIVED')${tenantAnd(clinicId, 'a.clinicId')}
        ORDER BY a.startTime ASC
-       LIMIT 200`,
+       LIMIT ${WECHAT_REMINDER_LIMIT}`,
     ).all(appointmentDate, ...tenantParams(clinicId)) as ReminderCandidate[];
 
     const recallCandidates = this.db.prepare(
@@ -221,7 +224,7 @@ export class WechatReminderService {
        WHERE v.deletedAt IS NULL AND v.status = 'COMPLETED'
          AND substr(datetime(COALESCE(v.endTime, v.startTime), '+8 hours'), 1, 10) = ?${tenantAnd(clinicId, 'v.clinicId')}
        ORDER BY v.endTime ASC
-       LIMIT 200`,
+       LIMIT ${WECHAT_REMINDER_LIMIT}`,
     ).all(recallDate, ...tenantParams(clinicId)) as ReminderCandidate[];
 
     const firstExamCandidates = this.db.prepare(
@@ -231,7 +234,7 @@ export class WechatReminderService {
        WHERE e.deletedAt IS NULL AND substr(datetime(e.createdAt, '+8 hours'), 1, 10) = ?
          AND (e.followUpStatus IS NULL OR e.followUpStatus IN ('NONE', 'PENDING'))${tenantAnd(clinicId, 'e.clinicId')}
        ORDER BY e.createdAt ASC
-       LIMIT 200`,
+       LIMIT ${WECHAT_REMINDER_LIMIT}`,
     ).all(firstExamDate, ...tenantParams(clinicId)) as ReminderCandidate[];
 
     const insert = this.db.prepare(
@@ -268,7 +271,11 @@ export class WechatReminderService {
     run();
   }
 
-  private listPending(context: AppContext, today: string): WechatReminderItem[] {
+  private listPending(context: AppContext, today: string): { items: WechatReminderItem[]; truncated: boolean } {
+    const totalRow = this.db.prepare(
+      `SELECT COUNT(*) AS total FROM WechatReminder r
+       WHERE r.deletedAt IS NULL AND r.status = 'PENDING' AND r.scheduledDate = ?${tenantAnd(context.clinicId, 'r.clinicId')}`,
+    ).get(today, ...tenantParams(context.clinicId)) as { total: number };
     const rows = this.db.prepare(
       `SELECT r.id, r.patientId, r.scene, r.scheduledDate, r.sourceId, r.content, r.status,
               p.name AS patientName, p.phone AS patientPhone
@@ -276,7 +283,7 @@ export class WechatReminderService {
        LEFT JOIN Patient p ON p.id = r.patientId AND p.deletedAt IS NULL
        WHERE r.deletedAt IS NULL AND r.status = 'PENDING' AND r.scheduledDate = ?${tenantAnd(context.clinicId, 'r.clinicId')}
        ORDER BY r.createdAt ASC
-       LIMIT 200`,
+       LIMIT ${WECHAT_REMINDER_LIMIT}`,
     ).all(today, ...tenantParams(context.clinicId)) as Array<{
       id: string;
       patientId: string;
@@ -288,7 +295,8 @@ export class WechatReminderService {
       patientName: string | null;
       patientPhone: string | null;
     }>;
-    return rows.map((row) => ({
+    return {
+      items: rows.map((row) => ({
       id: row.id,
       patientId: row.patientId,
       patientName: row.patientName,
@@ -299,6 +307,8 @@ export class WechatReminderService {
       sourceId: row.sourceId,
       content: row.content,
       status: row.status,
-    }));
+      })),
+      truncated: Number(totalRow.total) > WECHAT_REMINDER_LIMIT,
+    };
   }
 }

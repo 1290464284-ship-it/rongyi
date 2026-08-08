@@ -11,7 +11,7 @@
     "electron:pack": "pnpm --filter @dental/v2 electron:pack",
     "electron:dist": "pnpm --filter @dental/v2 electron:dist",
     "electron:dist:internal": "pnpm --filter @dental/v2 electron:dist:internal",
-    "audit": "pnpm audit --audit-level=high",
+    "audit": "pnpm audit --registry=https://registry.npmjs.org --audit-level=high",
     "test": "pnpm --filter @dental/v2 test",
     "test:cov": "pnpm --filter @dental/v2 test:coverage",
     "typecheck": "pnpm --filter @dental/v2 typecheck",

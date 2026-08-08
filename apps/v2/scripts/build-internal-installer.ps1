@@ -69,6 +69,12 @@ try {
             [System.Text.UTF8Encoding]::new($false)
         )
         Write-Host "Internal build version: $internalVersion"
+        if ($manualSignCertPath) {
+            # 让 electron-builder 在打包阶段签名，app-update.yml 才会写入
+            # publisherName，electron-updater 运行时才能强制校验发布者。
+            $env:CSC_LINK = $manualSignCertPath
+            $env:CSC_KEY_PASSWORD = $manualSignCertPassword
+        }
         Invoke-OrFail "pnpm electron:dist"
         if ($manualSignCertPath) {
             $signCert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(

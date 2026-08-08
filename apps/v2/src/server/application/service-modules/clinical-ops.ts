@@ -147,6 +147,7 @@ export class BulkImportService {
     for (let offset = 0; offset < rows.length; offset += size) {
       const chunk = rows.slice(offset, offset + size);
       const chunkStartImported = imported;
+      const chunkStartErrors = errors.length;
       this.db.exec('BEGIN IMMEDIATE');
       try {
         for (const row of chunk) {
@@ -168,6 +169,7 @@ export class BulkImportService {
         // P2-11：chunk 整体回滚，imported 计数必须退回 chunk 起点，
         // 否则错误消息里的"前 N 条已导入"会夸大真实导入数量。
         imported = chunkStartImported;
+        errors.length = chunkStartErrors;
         if (e instanceof AppError) throw e;
         if (isSystematicError(e)) {
           const message = e instanceof Error ? e.message : String(e);

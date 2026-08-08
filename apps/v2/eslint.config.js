@@ -19,8 +19,29 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   {
     files: ['**/*.cjs'],
+    languageOptions: {
+      globals: {
+        Buffer: 'readonly',
+        URL: 'readonly',
+        __dirname: 'readonly',
+        __filename: 'readonly',
+        clearInterval: 'readonly',
+        clearTimeout: 'readonly',
+        console: 'readonly',
+        exports: 'writable',
+        fetch: 'readonly',
+        global: 'readonly',
+        module: 'writable',
+        process: 'readonly',
+        require: 'readonly',
+        setImmediate: 'readonly',
+        setInterval: 'readonly',
+        setTimeout: 'readonly',
+      },
+    },
     rules: {
       '@typescript-eslint/no-require-imports': 'off',
+      'no-undef': 'error',
     },
   },
   {

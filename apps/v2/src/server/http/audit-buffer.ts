@@ -21,6 +21,7 @@ export interface AuditBuffer {
 
 const AUDIT_FLUSH_INTERVAL = 1000;
 const AUDIT_BUFFER_MAX = 50;
+let shutdownFlushInstalled = false;
 
 /**
  * 审计日志写缓冲：批量写入 OperationLog，避免每个请求一次事务。
@@ -144,7 +145,10 @@ export function createAuditBuffer(db: Database.Database, logger: Logger): AuditB
       else console.error('audit shutdown flush failed', error);
     }
   }
-  process.once('SIGINT', shutdownFlushAudit);
-  process.once('SIGTERM', shutdownFlushAudit);
+  if (!shutdownFlushInstalled) {
+    shutdownFlushInstalled = true;
+    process.once('SIGINT', shutdownFlushAudit);
+    process.once('SIGTERM', shutdownFlushAudit);
+  }
   return { push: pushAudit, flushNow: shutdownFlushAudit };
 }
