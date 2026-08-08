@@ -1,7 +1,11 @@
 import { chromium } from '@playwright/test';
 
 const base = process.env.V2_WEB_URL ?? 'http://localhost:5180';
-const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'REDACTED';
+const adminPassword = process.env.V2_ADMIN_PASSWORD;
+if (!adminPassword) {
+  console.error('V2_ADMIN_PASSWORD must be set to run UI smoke');
+  process.exit(1);
+}
 
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage();

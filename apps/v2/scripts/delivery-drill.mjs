@@ -18,7 +18,11 @@ const logDir = path.join(dataDir, 'logs');
 const port = 33000 + Math.floor(Math.random() * 2000);
 const jwtSecret = 'delivery-drill-secret-0123456789abcdef0123456789abcdef';
 const backupKey = 'delivery-drill-backup-key-0123456789abcdef';
-const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'REDACTED';
+const adminPassword = process.env.V2_ADMIN_PASSWORD;
+if (!adminPassword) {
+  console.error('V2_ADMIN_PASSWORD must be set to run the delivery drill');
+  process.exit(1);
+}
 
 let apiProcess = null;
 
@@ -36,6 +40,7 @@ function baseEnv() {
     V2_DB_PATH: dbPath,
     V2_JWT_SECRET: jwtSecret,
     V2_BACKUP_KEY: backupKey,
+    V2_ADMIN_PASSWORD: adminPassword,
   };
 }
 

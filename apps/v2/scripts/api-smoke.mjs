@@ -1,5 +1,9 @@
 const base = process.env.V2_BASE_URL ?? 'http://localhost:3180/api/v2';
-const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'REDACTED';
+const adminPassword = process.env.V2_ADMIN_PASSWORD;
+if (!adminPassword) {
+  console.error('V2_ADMIN_PASSWORD must be set to run API smoke');
+  process.exit(1);
+}
 
 async function request(path, options = {}) {
   const response = await fetch(`${base}${path}`, {

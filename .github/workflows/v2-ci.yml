@@ -32,6 +32,7 @@ concurrency:
 # 备份用例会失败（无 key 且非 test 环境时 POST /backups 返回 500）。
 env:
   V2_BACKUP_KEY: ${{ vars.V2_BACKUP_KEY }}
+  V2_ADMIN_PASSWORD: v2-ci-admin-${{ github.run_id }}
 
 jobs:
   verify:

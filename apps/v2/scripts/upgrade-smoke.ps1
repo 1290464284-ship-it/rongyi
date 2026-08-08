@@ -81,12 +81,15 @@ $env:V2_LEGACY_SCHEMA_DIR = Join-Path $installDir "resources\legacy\schema"
 $env:V2_JWT_SECRET = "upgrade-smoke-secret-0123456789abcdef0123456789abcdef"
 $env:V2_BACKUP_KEY = "upgrade-backup-key-0123456789abcdef"
 $env:NODE_ENV = "development"
+if (-not $env:V2_ADMIN_PASSWORD) {
+  throw "V2_ADMIN_PASSWORD must be set to run the upgrade smoke"
+}
 
 $apiScript = Join-Path $installDir "resources\app.asar\dist-electron\server.cjs"
 $previousApi = Start-Process -FilePath (Join-Path $installDir "Dental Clinic V2.exe") -ArgumentList "`"$apiScript`"" -PassThru -WindowStyle Hidden
 try {
   Wait-ApiHealthy -Port $smokePort
-  $login = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:$smokePort/api/v2/auth/login" -ContentType "application/json" -Body (@{ username = "admin"; password = $(if ($env:V2_ADMIN_PASSWORD) { $env:V2_ADMIN_PASSWORD } else { "REDACTED" }) } | ConvertTo-Json)
+  $login = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:$smokePort/api/v2/auth/login" -ContentType "application/json" -Body (@{ username = "admin"; password = $env:V2_ADMIN_PASSWORD } | ConvertTo-Json)
   $headers = @{ Authorization = "Bearer $($login.data.token)" }
   $backup = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:$smokePort/api/v2/backups" -Headers $headers -ContentType "application/json" -Body "{}"
   $filename = [uri]::EscapeDataString([string]$backup.data.filename)

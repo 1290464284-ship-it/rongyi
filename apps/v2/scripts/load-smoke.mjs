@@ -1,5 +1,9 @@
 const base = process.env.V2_BASE_URL ?? 'http://localhost:3180/api/v2';
-const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'REDACTED';
+const adminPassword = process.env.V2_ADMIN_PASSWORD;
+if (!adminPassword) {
+  console.error('V2_ADMIN_PASSWORD must be set to run load smoke');
+  process.exit(1);
+}
 const iterations = Number(process.env.V2_LOAD_ITERATIONS ?? 100);
 
 async function request(path, options = {}) {
@@ -30,4 +34,3 @@ const average = total / samples.length;
 const p95 = samples[Math.min(samples.length - 1, Math.floor(samples.length * 0.95))];
 if (p95 > 2000) throw new Error(`p95 too high: ${p95.toFixed(1)}ms`);
 console.log(`load smoke passed avg=${average.toFixed(1)}ms p95=${p95.toFixed(1)}ms n=${samples.length}`);
-
