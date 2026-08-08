@@ -2,6 +2,12 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
+const REQUEST_TIMEOUT_MS = 300_000;
+
+function timedFetch(url, init = {}) {
+  return fetch(url, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+}
+
 // Round7 I2：GitHub 不提供 GITHUB_REPOSITORY_NAME，从 GITHUB_REPOSITORY
 // （owner/repo）解析；仓库改名/迁移后仍能指向正确仓库。
 const ghRepo = process.env.GITHUB_REPOSITORY ?? '';
@@ -18,7 +24,7 @@ const tagExplicitlySet = Boolean(process.env.V2_RELEASE_TAG);
 const tag = process.env.V2_RELEASE_TAG ?? `v2-${pkg.version}`;
 
 async function api(pathname) {
-  const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/${pathname}`, {
+  const response = await timedFetch(`https://api.github.com/repos/${owner}/${repo}/${pathname}`, {
     headers: {
       accept: 'application/vnd.github+json',
       'x-github-api-version': '2022-11-28',
@@ -49,7 +55,8 @@ const assets = new Map(release.assets.map((asset) => [asset.name, asset]));
 const latestAsset = assets.get('latest.yml');
 if (!latestAsset) throw new Error('latest.yml asset is missing');
 
-const latestResponse = await fetch(latestAsset.browser_download_url, {
+console.log(`downloading latest.yml from ${latestAsset.browser_download_url}`);
+const latestResponse = await timedFetch(latestAsset.browser_download_url, {
   headers: { connection: 'close' },
 });
 if (!latestResponse.ok) throw new Error('latest.yml download failed');
@@ -75,7 +82,8 @@ if (!assets.has(blockmapName)) throw new Error(`Blockmap asset not found: ${bloc
 
 // Round7 H7：下载安装包并校验 sha512 与 latest.yml 一致（校验闭环）。
 // 只比对 size 无法发现"元数据生成后被替换/上传错误产物"的场景。
-const installerResponse = await fetch(installerAsset.browser_download_url, {
+console.log(`downloading installer ${installerName} (${installerSize} bytes)`);
+const installerResponse = await timedFetch(installerAsset.browser_download_url, {
   headers: { connection: 'close' },
 });
 if (!installerResponse.ok) {
