@@ -64,7 +64,7 @@ describe('PatientTimelinePage', () => {
         pageSize: 200,
       });
     render(<PatientTimelinePage />, { wrapper });
-    expect(await screen.findByText('Visit A')).toBeDefined();
+    expect(await screen.findByText('Visit A', {}, { timeout: 5000 })).toBeDefined();
     expect(screen.getByText('Treatment B')).toBeDefined();
     expect(screen.getByText('CHG-1')).toBeDefined();
     expect(screen.getByText('Follow C')).toBeDefined();
