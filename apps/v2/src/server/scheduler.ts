@@ -90,35 +90,51 @@ export function startSchedulers(options: StartSchedulersOptions): { stop(): void
   }
 
   function cleanupAuditLogs(): void {
-    try {
-      const deleted = audit.cleanup(new Date(Date.now() - AUDIT_RETENTION_MS).toISOString());
-      if (deleted > 0) logger.info('audit log cleanup completed', { action: 'audit-cleanup', deleted });
-    } catch (error) {
-      logger.error('audit log cleanup failed', { action: 'audit-cleanup', error });
-    }
+    runDailyCleanup(
+      'audit-cleanup',
+      'audit log cleanup completed',
+      'audit log cleanup failed',
+      () => ({ deleted: audit.cleanup(new Date(Date.now() - AUDIT_RETENTION_MS).toISOString()) }),
+    );
   }
 
   function runIdempotencyCleanup(): void {
     if (!idempotencyCleanup) return;
-    try {
-      const { deleted } = idempotencyCleanup();
-      if (deleted > 0) logger.info('idempotency cleanup completed', { action: 'idempotency-cleanup', deleted });
-    } catch (error) {
-      logger.error('idempotency cleanup failed', { action: 'idempotency-cleanup', error });
-    }
+    runDailyCleanup(
+      'idempotency-cleanup',
+      'idempotency cleanup completed',
+      'idempotency cleanup failed',
+      () => idempotencyCleanup!(),
+    );
   }
 
   function runSyncChangeCleanup(): void {
     if (!syncChangeCleanup) return;
+    runDailyCleanup(
+      'sync-change-cleanup',
+      'sync change cleanup completed',
+      'sync change cleanup failed',
+      () => {
+        const retentionDays = Number.isFinite(Number(syncChangeRetentionDays))
+          ? Math.min(3650, Math.max(1, Math.floor(Number(syncChangeRetentionDays))))
+          : SYNC_CHANGE_RETENTION_DAYS;
+        const before = new Date(Date.now() - retentionDays * DAILY_MS).toISOString();
+        return syncChangeCleanup!(before);
+      },
+    );
+  }
+
+  function runDailyCleanup(
+    action: string,
+    infoMessage: string,
+    errorMessage: string,
+    run: () => { deleted: number },
+  ): void {
     try {
-      const retentionDays = Number.isFinite(Number(syncChangeRetentionDays))
-        ? Math.min(3650, Math.max(1, Math.floor(Number(syncChangeRetentionDays))))
-        : SYNC_CHANGE_RETENTION_DAYS;
-      const before = new Date(Date.now() - retentionDays * DAILY_MS).toISOString();
-      const { deleted } = syncChangeCleanup(before);
-      if (deleted > 0) logger.info('sync change cleanup completed', { action: 'sync-change-cleanup', deleted });
+      const { deleted } = run();
+      if (deleted > 0) logger.info(infoMessage, { action, deleted });
     } catch (error) {
-      logger.error('sync change cleanup failed', { action: 'sync-change-cleanup', error });
+      logger.error(errorMessage, { action, error });
     }
   }
 
