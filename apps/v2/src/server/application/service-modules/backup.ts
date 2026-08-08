@@ -113,7 +113,13 @@ export class BackupService {
       );
       return { filename, fileSize, encrypted, type: options.type ?? 'MANUAL', message: 'Backup created' };
     } finally {
-      if (fs.existsSync(tempPath)) fs.rmSync(tempPath, { force: true });
+      if (fs.existsSync(tempPath)) {
+        try {
+          fs.rmSync(tempPath, { force: true });
+        } catch {
+          // best effort: keep the original backup result/error instead of masking it
+        }
+      }
     }
   }
 
@@ -145,7 +151,13 @@ export class BackupService {
         removeSqliteSidecars(sqlitePath);
       }
     } finally {
-      if (tempPath && fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+      if (tempPath && fs.existsSync(tempPath)) {
+        try {
+          fs.unlinkSync(tempPath);
+        } catch {
+          // best effort: keep the original verification result/error
+        }
+      }
     }
   }
 

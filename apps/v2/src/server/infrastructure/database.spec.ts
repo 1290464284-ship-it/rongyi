@@ -3,7 +3,15 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import Database from 'better-sqlite3';
-import { createDatabase, extractCreateTableStatements, seedDatabase, syncLegacySchema, uniqueIndexColumns } from './database';
+import {
+  createDatabase,
+  createPerformanceIndexes,
+  extractCreateTableStatements,
+  seedDatabase,
+  syncLegacySchema,
+  uniqueIndexColumns,
+} from './database';
+import { runMigrations } from './migrations';
 
 describe('database bootstrap', () => {
   let db: Database.Database;
@@ -262,6 +270,18 @@ describe('database bootstrap', () => {
     const fullDb = createDatabase(fullDir, undefined, { fullIntegrityCheck: true });
     expect(fullDb.pragma('integrity_check')).toEqual([{ integrity_check: 'ok' }]);
     fullDb.close();
+  });
+
+  it('creates performance indexes idempotently after migrations', () => {
+    const perfDir = path.join(dataDir, 'perf-indexes');
+    const perfDb = createDatabase(perfDir);
+    runMigrations(perfDb);
+    createPerformanceIndexes(perfDb);
+    const chargeIndexes = (perfDb.prepare("PRAGMA index_list('Charge')").all() as Array<{ name: string }>)
+      .map((row) => row.name);
+    expect(chargeIndexes).toContain('idx_v2_perf_charge_patient');
+    expect(() => createPerformanceIndexes(perfDb)).not.toThrow();
+    perfDb.close();
   });
 
   it('full integrity check rejects a database file corrupted with garbage bytes', () => {
