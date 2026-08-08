@@ -31,6 +31,7 @@
     "smoke:api": "node scripts/api-smoke.mjs",
     "smoke:ui": "node scripts/ui-smoke.mjs",
     "smoke:packaged-ui": "node scripts/packaged-ui-smoke.mjs",
+    "smoke:http-fuzz": "node scripts/http-fuzz-smoke.mjs",
     "test:load": "node scripts/load-smoke.mjs",
     "benchmark:load": "tsx scripts/benchmark-load.ts",
     "smoke:all": "node scripts/run-smokes.mjs",
