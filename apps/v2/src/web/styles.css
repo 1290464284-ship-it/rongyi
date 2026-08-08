@@ -169,7 +169,6 @@ a {
 .sidebar {
   background: var(--sidebar-bg);
   color: var(--sidebar-text);
-  border-right: 1px solid var(--sidebar-border);
   display: flex;
   flex-direction: column;
   padding: 16px 12px;
@@ -180,11 +179,26 @@ a {
   transition: width var(--dur) var(--ease);
 }
 
+.sidebar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 10px;
+  width: 1px;
+  background: var(--sidebar-border);
+  pointer-events: none;
+}
+
+.shell.collapsed .sidebar::after {
+  right: 0;
+}
+
 .sidebar-brand {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 4px 2px 16px;
+  padding: 4px 2px 16px 10px;
   position: relative;
   z-index: 5;
   font-weight: 700;
