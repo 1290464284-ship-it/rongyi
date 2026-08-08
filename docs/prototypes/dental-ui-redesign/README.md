@@ -29,7 +29,7 @@ cd docs/prototypes/dental-ui-redesign
 python -m http.server 8900
 ```
 
-然后打开 `http://localhost:8900`。演示账号：`admin` / `REDACTED`。
+然后打开 `http://localhost:8900`。演示账号：`admin`（任意密码即可进入演示）。
 
 ## 文件
 

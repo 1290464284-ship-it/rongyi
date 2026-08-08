@@ -15,7 +15,7 @@ npx http-server . -p 8000
 # 浏览器打开 http://localhost:8000/index.html
 ```
 
-登录页预填演示账号：`admin` / `REDACTED`（任意提交即进入工作台）。
+登录页预填演示账号：`admin`（任意密码提交即进入工作台）。
 
 ## 页面清单（8 页）
 
