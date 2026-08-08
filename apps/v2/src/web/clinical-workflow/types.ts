@@ -6,6 +6,7 @@ export interface TodayData {
   registrations?: Array<Record<string, unknown>>;
   appointments?: Array<Record<string, unknown>>;
   totals?: { registrations?: number; appointments?: number; inProgressVisits?: number };
+  truncated?: { registrations?: boolean; appointments?: boolean };
 }
 
 export type RegistrationRow = Record<string, unknown>;

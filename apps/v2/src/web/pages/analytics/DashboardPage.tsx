@@ -25,6 +25,7 @@ interface WorkbenchAppointment {
 interface WorkbenchData {
   date?: string;
   appointments?: WorkbenchAppointment[];
+  truncated?: { appointments?: boolean };
 }
 
 export function DashboardPage() {
@@ -101,6 +102,7 @@ function DashboardContent({ data, workbench, workbenchLoading }: { data: Dashboa
         <div className="card-head">
           <h2>今日预约</h2>
           <span className="sub">{appointments.length} 位患者</span>
+          {workbench?.truncated?.appointments && <span className="reminder-muted">超过 100 条，仅显示前 100 条</span>}
         </div>
         <div className="appointment-scroll">
           {workbenchLoading ? (

@@ -16,6 +16,7 @@ export function TodayOverview({ data }: { data?: TodayData | null }) {
       <div className="today-lists">
         <div className="today-list">
           <h3>今日挂号</h3>
+          {data?.truncated?.registrations && <p className="reminder-muted">挂号超过 100 条，仅显示前 100 条</p>}
           {registrations.length === 0 ? (
             <div className="table-empty">今日暂无挂号</div>
           ) : (
@@ -33,6 +34,7 @@ export function TodayOverview({ data }: { data?: TodayData | null }) {
         </div>
         <div className="today-list">
           <h3>今日预约</h3>
+          {data?.truncated?.appointments && <p className="reminder-muted">预约超过 100 条，仅显示前 100 条</p>}
           {appointments.length === 0 ? (
             <div className="table-empty">今日暂无预约</div>
           ) : (
