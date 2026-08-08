@@ -220,7 +220,7 @@ if (!Number.isInteger(port) || port < 1 || port > 65_535) {
   throw new Error('V2_PORT must be an integer between 1 and 65535');
 }
 const nodeEnv = process.env.NODE_ENV ?? 'development';
-assertHostAllowed(host, nodeEnv);
+assertHostAllowed(host);
 let jwtSecret: string;
 {
   // S-L2：Electron 主进程经 V2_SECRET_FILE 传入密钥（0o600 临时文件，不落 env）；

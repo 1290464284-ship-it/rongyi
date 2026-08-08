@@ -1,4 +1,4 @@
-export function assertHostAllowed(host: string, _nodeEnv: string): void {
+export function assertHostAllowed(host: string): void {
   const normalized = host.trim().toLowerCase();
   const loopback = normalized === '127.0.0.1' || normalized === 'localhost' || normalized === '::1';
   if (!loopback && process.env.V2_ALLOW_INSECURE_LAN !== '1') {
