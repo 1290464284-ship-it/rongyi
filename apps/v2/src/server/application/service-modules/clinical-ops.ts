@@ -184,10 +184,22 @@ export class BulkImportService {
 export class NotificationService {
   constructor(private readonly db: Database.Database) {}
 
-  list(userId: string): Array<Record<string, unknown>> {
-    return this.db.prepare(
-      'SELECT * FROM Notification WHERE userId = ? AND deletedAt IS NULL ORDER BY createdAt DESC LIMIT 100',
-    ).all(userId) as Array<Record<string, unknown>>;
+  list(
+    userId: string,
+    options?: { page?: number; pageSize?: number },
+  ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean } {
+    const rawPage = Number(options?.page);
+    const rawPageSize = Number(options?.pageSize);
+    const page = Number.isFinite(rawPage) && rawPage >= 1 ? Math.floor(rawPage) : 1;
+    const pageSize = Number.isFinite(rawPageSize) && rawPageSize >= 1 ? Math.min(100, Math.floor(rawPageSize)) : 100;
+    const offset = (page - 1) * pageSize;
+    const total = Number((this.db.prepare(
+      'SELECT COUNT(*) AS total FROM Notification WHERE userId = ? AND deletedAt IS NULL',
+    ).get(userId) as { total: number }).total);
+    const items = this.db.prepare(
+      'SELECT * FROM Notification WHERE userId = ? AND deletedAt IS NULL ORDER BY createdAt DESC LIMIT ? OFFSET ?',
+    ).all(userId, pageSize, offset) as Array<Record<string, unknown>>;
+    return { items, total, page, pageSize, truncated: total > offset + items.length };
   }
 
   markRead(id: string, userId: string): Record<string, unknown> {

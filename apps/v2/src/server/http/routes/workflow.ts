@@ -270,7 +270,8 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
   }));
 
   app.get('/api/v2/notifications', wrapAsync(async (req, res) => {
-      res.json({ success: true, data: notifications.list(req.context!.userId) });
+      const { page, pageSize } = parsePagination(req);
+      res.json({ success: true, data: notifications.list(req.context!.userId, { page, pageSize }) });
   }));
 
   app.patch('/api/v2/notifications/:id/read', wrapAsync(async (req, res) => {

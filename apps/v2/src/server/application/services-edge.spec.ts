@@ -1881,7 +1881,7 @@ describe('service edge coverage', () => {
     expect((await debt.pay('debt-edge-pay', 500, context)).status).toBe('PAID');
 
     const notifications = new NotificationService(db);
-    expect(notifications.list('user-admin-001')).toBeInstanceOf(Array);
+    expect(notifications.list('user-admin-001').items).toBeInstanceOf(Array);
     expect(() => notifications.markRead('missing-notification', context.userId)).toThrow('Notification not found');
 
     const satisfaction = new SatisfactionService(db);
