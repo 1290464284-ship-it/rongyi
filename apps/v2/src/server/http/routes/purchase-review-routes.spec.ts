@@ -88,7 +88,8 @@ describe('purchase review routes', () => {
   it('GET /api/v2/purchase-orders/review lists orders with review fields', async () => {
     const res = await request(app).get('/api/v2/purchase-orders/review').expect(200);
     expect(res.body.success).toBe(true);
-    const data = res.body.data as Array<Record<string, unknown>>;
+    expect(res.body.data).toMatchObject({ total: 4, page: 1, pageSize: 200, truncated: false });
+    const data = (res.body.data as { items: Array<Record<string, unknown>> }).items;
     expect(data.map((entry) => entry.id)).toEqual(expect.arrayContaining([
       'route-po-pending',
       'route-po-submitted',
@@ -105,7 +106,7 @@ describe('purchase review routes', () => {
   it('GET /api/v2/purchase-orders/review filters by reviewStatus', async () => {
     const res = await request(app).get('/api/v2/purchase-orders/review?reviewStatus=REJECTED').expect(200);
     expect(res.body.success).toBe(true);
-    const data = res.body.data as Array<Record<string, unknown>>;
+    const data = (res.body.data as { items: Array<Record<string, unknown>> }).items;
     expect(data.map((entry) => entry.id)).toEqual(['route-po-rejected']);
     expect(data[0].rejectionReason).toBe('价格过高');
   });
@@ -114,6 +115,15 @@ describe('purchase review routes', () => {
     const res = await request(app).get('/api/v2/purchase-orders/review?reviewStatus=INVALID').expect(400);
     expect(res.body.success).toBe(false);
     expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('GET /api/v2/purchase-orders/review paginates and rejects invalid pages', async () => {
+    const paged = await request(app).get('/api/v2/purchase-orders/review?page=1&pageSize=2').expect(200);
+    expect((paged.body.data as { items: unknown[]; pageSize: number; truncated: boolean }).items).toHaveLength(2);
+    expect(paged.body.data.pageSize).toBe(2);
+    expect(paged.body.data.truncated).toBe(true);
+    const bad = await request(app).get('/api/v2/purchase-orders/review?page=abc').expect(400);
+    expect(bad.body.code).toBe('VALIDATION_ERROR');
   });
 
   it('GET /api/v2/purchase-orders/review-stats returns status counts', async () => {

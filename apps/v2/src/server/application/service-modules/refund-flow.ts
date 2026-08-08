@@ -172,7 +172,7 @@ export class RefundFlowService {
         if (!card) {
           // 卡已被删除等极端情况：告警并跳过，避免冲销失败阻塞审批状态流转。
           console.warn(`[refund-flow] 退款冲销原卡 ${allocation.cardId} 不可用，跳过该笔 ${allocation.amount} 分`);
-          continue;
+          throw new ConflictError(`退款冲销原卡 ${allocation.cardId} 不可用，请恢复会员卡后重试`);
         }
         const newBalance = Math.max(0, Number(card.balance) - allocation.amount);
         this.db.prepare(
@@ -220,6 +220,7 @@ export class RefundFlowService {
           console.warn(`[refund-flow] 原支付卡 ${String(charge.memberCardId ?? '')} 不可用，退款冲销回退到患者卡 ${card.id}`);
         }
       }
+      if (!card) throw new ConflictError('退款冲销原支付卡不可用，请恢复会员卡后重试');
       if (card) {
         const newBalance = Math.max(0, Number(card.balance) - amount);
         this.db.prepare(

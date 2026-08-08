@@ -174,8 +174,9 @@ describe('PurchaseReviewService', () => {
     insertItem('po-list-1-item-1', id, { name: '树脂', quantity: 3, unitPrice: 800, subtotal: 2400 });
     insertItem('po-list-1-item-2', id, { name: '托槽', quantity: 1, unitPrice: 400, subtotal: 400 });
 
-    const rows = service.list(context);
-    const row = rows.find((entry) => entry.id === id) as Record<string, unknown>;
+    const listed = service.list(context);
+    expect(listed).toMatchObject({ page: 1, pageSize: 200, truncated: false });
+    const row = listed.items.find((entry) => entry.id === id) as Record<string, unknown>;
     expect(row).toBeDefined();
     expect(row.reviewStatus).toBe('PENDING');
     expect(row.supplierName).toBe('供应商甲');
@@ -188,10 +189,10 @@ describe('PurchaseReviewService', () => {
     expect(row).toHaveProperty('receivedById');
 
     const filtered = service.list(context, { reviewStatus: 'PENDING' });
-    expect(filtered.some((entry) => entry.id === id)).toBe(true);
-    expect(filtered.every((entry) => entry.reviewStatus === 'PENDING')).toBe(true);
+    expect(filtered.items.some((entry) => entry.id === id)).toBe(true);
+    expect(filtered.items.every((entry) => entry.reviewStatus === 'PENDING')).toBe(true);
     const approvedFiltered = service.list(context, { reviewStatus: 'APPROVED' });
-    expect(approvedFiltered.some((entry) => entry.id === id)).toBe(false);
+    expect(approvedFiltered.items.some((entry) => entry.id === id)).toBe(false);
   });
 
   it('list：非法 reviewStatus 过滤值 → ValidationError', () => {
@@ -220,7 +221,7 @@ describe('PurchaseReviewService', () => {
     const id = 'po-other-tenant';
     insertOrder(id, { clinicId: 'clinic-v2-999' });
     const rows = service.list(context);
-    expect(rows.some((entry) => entry.id === id)).toBe(false);
+    expect(rows.items.some((entry) => entry.id === id)).toBe(false);
     expect(() => service.submit(id, context)).toThrow(NotFoundError);
     expect(() => service.approve(id, context)).toThrow(NotFoundError);
   });

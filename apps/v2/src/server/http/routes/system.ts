@@ -1,6 +1,7 @@
 import type { Express } from 'express';
 import { createResourceRouter } from '../router';
 import { wrapAsync } from '../middleware';
+import { parsePagination } from '../pagination';
 import { createRateLimit } from '../rate-limit';
 import { ValidationError } from '../../infrastructure/errors';
 import type { RouteDependencies } from './deps';
@@ -50,9 +51,14 @@ export function registerSystemRoutes(app: Express, deps: RouteDependencies): voi
   }));
 
   app.get('/api/v2/hr/attendance', wrapAsync(async (req, res) => {
+      const { page, pageSize } = parsePagination(req, { defaultPageSize: 200 });
       res.json({
         success: true,
-        data: hr.attendance(typeof req.query.workDate === 'string' ? req.query.workDate : undefined, req.context!),
+        data: hr.attendance(
+          typeof req.query.workDate === 'string' ? req.query.workDate : undefined,
+          req.context!,
+          { page, pageSize },
+        ),
       });
   }));
 

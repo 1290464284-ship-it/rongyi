@@ -73,8 +73,20 @@ export class StocktakeService {
     return { id: result.id, number, status: 'IN_PROGRESS', itemCount: result.itemCount };
   }
 
-  /** 盘点单列表（含明细数与差异项数），按创建时间倒序。 */
-  list(context: AppContext): Array<Record<string, unknown>> {
+  /** 盘点单列表（含明细数与差异项数），按创建时间倒序，支持分页。 */
+  list(
+    context: AppContext,
+    options: { page?: number; pageSize?: number } = {},
+  ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean } {
+    const rawPage = Number(options.page);
+    const rawPageSize = Number(options.pageSize);
+    const page = Number.isFinite(rawPage) && rawPage >= 1 ? Math.floor(rawPage) : 1;
+    const pageSize = Number.isFinite(rawPageSize) && rawPageSize >= 1 ? Math.min(200, Math.floor(rawPageSize)) : 200;
+    const offset = (page - 1) * pageSize;
+    const clinicWhere = tenantAnd(context.clinicId, 's.clinicId');
+    const total = Number((this.db.prepare(
+      `SELECT COUNT(*) AS total FROM Stocktake s WHERE s.deletedAt IS NULL${clinicWhere}`,
+    ).get(...tenantParams(context.clinicId)) as { total: number }).total);
     const rows = this.db.prepare(
       `SELECT s.id, s.number, s.status, s.startedById, s.startedAt,
               s.completedById, s.completedAt, s.note,
@@ -83,15 +95,21 @@ export class StocktakeService {
               (SELECT COUNT(*) FROM StocktakeItem si
                 WHERE si.stocktakeId = s.id AND si.deletedAt IS NULL AND si.difference != 0) AS differenceCount
        FROM Stocktake s
-       WHERE s.deletedAt IS NULL${tenantAnd(context.clinicId, 's.clinicId')}
+       WHERE s.deletedAt IS NULL${clinicWhere}
        ORDER BY s.createdAt DESC, s.id
-       LIMIT 200`,
-    ).all(...tenantParams(context.clinicId)) as Array<Record<string, unknown>>;
-    return rows.map((row) => ({
-      ...row,
-      itemCount: Number(row.itemCount ?? 0),
-      differenceCount: Number(row.differenceCount ?? 0),
-    }));
+       LIMIT ? OFFSET ?`,
+    ).all(...tenantParams(context.clinicId), pageSize, offset) as Array<Record<string, unknown>>;
+    return {
+      items: rows.map((row) => ({
+        ...row,
+        itemCount: Number(row.itemCount ?? 0),
+        differenceCount: Number(row.differenceCount ?? 0),
+      })),
+      total,
+      page,
+      pageSize,
+      truncated: total > offset + rows.length,
+    };
   }
 
   /** 盘点单明细（关联物品名称/编码/规格/单位）。 */

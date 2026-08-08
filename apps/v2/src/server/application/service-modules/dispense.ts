@@ -708,15 +708,28 @@ export class DispenseService {
     return { id, deleted: true };
   }
 
-  narcoticList(context: AppContext, filter?: { recordDate?: string }): Array<Record<string, unknown>> {
-    const recordDate = typeof filter?.recordDate === 'string' && filter.recordDate.trim() !== ''
-      ? filter.recordDate.trim()
+  narcoticList(
+    context: AppContext,
+    options?: { recordDate?: string; page?: number; pageSize?: number },
+  ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean } {
+    const recordDate = typeof options?.recordDate === 'string' && options.recordDate.trim() !== ''
+      ? options.recordDate.trim()
       : '';
     const dateClause = recordDate !== '' ? ' AND N.recordDate = ?' : '';
     const params = recordDate !== ''
       ? [recordDate, ...tenantParams(context.clinicId)]
       : [...tenantParams(context.clinicId)];
-    return this.db.prepare(
+    const rawPage = Number(options?.page);
+    const rawPageSize = Number(options?.pageSize);
+    const page = Number.isFinite(rawPage) && rawPage >= 1 ? Math.floor(rawPage) : 1;
+    const pageSize = Number.isFinite(rawPageSize) && rawPageSize >= 1 ? Math.min(200, Math.floor(rawPageSize)) : 200;
+    const offset = (page - 1) * pageSize;
+    const total = Number((this.db.prepare(
+      `SELECT COUNT(*) AS total
+       FROM NarcoticRegistry N
+       WHERE N.deletedAt IS NULL${dateClause}${tenantAnd(context.clinicId, 'N.clinicId')}`,
+    ).get(...params) as { total: number }).total);
+    const rows = this.db.prepare(
       `SELECT N.id, N.recordDate, N.patientId, P.name AS patientName,
               N.doctorId, D.name AS doctorName,
               N.pharmacistId, PH.name AS pharmacistName,
@@ -730,8 +743,9 @@ export class DispenseService {
        LEFT JOIN InventoryItem I ON I.id = N.itemId
        WHERE N.deletedAt IS NULL${dateClause}${tenantAnd(context.clinicId, 'N.clinicId')}
        ORDER BY N.recordDate DESC, N.createdAt DESC
-       LIMIT 200`,
-    ).all(...params) as Array<Record<string, unknown>>;
+       LIMIT ? OFFSET ?`,
+    ).all(...params, pageSize, offset) as Array<Record<string, unknown>>;
+    return { items: rows, total, page, pageSize, truncated: total > offset + rows.length };
   }
 
   recordNarcotic(input: NarcoticCreateInput, context: AppContext): Record<string, unknown> {

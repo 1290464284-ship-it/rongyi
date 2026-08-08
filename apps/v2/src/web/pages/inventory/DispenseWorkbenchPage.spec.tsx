@@ -57,23 +57,28 @@ function mockData() {
         items: [{ id: 'di-2', itemId: 'inventory-demo-001', batchId: null, name: 'Dental Material', spec: null, quantity: 1, returnedQuantity: 0, batchManaged: 0, stock: 90 }],
       };
     }
-    if (path === '/narcotic-registry') {
-      return [
-        {
-          id: 'n-1',
-          recordDate: '2026-08-05',
-          patientId: 'patient-demo-001',
-          itemId: 'inventory-demo-001',
-          itemName: 'Dental Material',
-          batchNo: 'N-001',
-          quantity: 1,
-          usage: '局部麻醉',
-          balanceBefore: 20,
-          balanceAfter: 19,
-          remark: '备注',
-          createdAt: '2026-08-05T10:00:00.000Z',
-        },
-      ];
+    if (path === '/narcotic-registry?page=1&pageSize=200') {
+      return {
+        items: [
+          {
+            id: 'n-1',
+            recordDate: '2026-08-05',
+            patientId: 'patient-demo-001',
+            itemId: 'inventory-demo-001',
+            itemName: 'Dental Material',
+            batchNo: 'N-001',
+            quantity: 1,
+            usage: '局部麻醉',
+            balanceBefore: 20,
+            balanceAfter: 19,
+            remark: '备注',
+            createdAt: '2026-08-05T10:00:00.000Z',
+          },
+        ],
+        total: 1,
+        page: 1,
+        pageSize: 200,
+      };
     }
     if (path.startsWith('/inventory-batches?itemId=')) {
       return { batches: [{ id: 'batch-1', batchNo: 'B-2026', remainingQuantity: 10 }], expiring: [] };

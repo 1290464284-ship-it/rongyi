@@ -30,6 +30,8 @@ export interface Page<T> {
   total: number;
   page: number;
   pageSize: number;
+  /** 列表是否因服务端上限被截断（例如管理台账超过单页上限）。 */
+  truncated?: boolean;
 }
 
 export type Result<T> =

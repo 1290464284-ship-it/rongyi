@@ -74,9 +74,10 @@ export function registerDispenseRoutes(
     const recordDate = typeof req.query.recordDate === 'string' && req.query.recordDate
       ? String(req.query.recordDate)
       : undefined;
+    const { page, pageSize } = parsePagination(req, { defaultPageSize: 200 });
     res.json({
       success: true,
-      data: service.narcoticList(req.context!, recordDate ? { recordDate } : undefined),
+      data: service.narcoticList(req.context!, { ...(recordDate ? { recordDate } : {}), page, pageSize }),
     });
   }));
 

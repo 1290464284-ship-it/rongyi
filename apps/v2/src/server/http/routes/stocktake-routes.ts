@@ -7,6 +7,7 @@
 import type { Express } from 'express';
 
 import { wrapAsync } from '../middleware';
+import { parsePagination } from '../pagination';
 import { StocktakeService } from '../../application/service-modules/stocktake';
 import type { RouteDependencies } from './deps';
 
@@ -15,7 +16,11 @@ export function registerStocktakeRoutes(app: Express, deps: RouteDependencies): 
   const service = new StocktakeService(db);
 
   app.get('/api/v2/stocktakes', wrapAsync(async (req, res) => {
-    res.json({ success: true, data: service.list(req.context!) });
+    const { page, pageSize } = parsePagination(req, { defaultPageSize: 200 });
+    res.json({
+      success: true,
+      data: service.list(req.context!, { page, pageSize }),
+    });
   }));
 
   app.post('/api/v2/stocktakes', wrapAsync(async (req, res) => {

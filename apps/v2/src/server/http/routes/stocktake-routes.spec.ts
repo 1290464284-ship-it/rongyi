@@ -96,13 +96,31 @@ describe('stocktake routes', () => {
 
     const res = await request(app).get('/api/v2/stocktakes').expect(200);
     expect(res.body.success).toBe(true);
-    const data = res.body.data as Array<Record<string, unknown>>;
-    expect(data).toHaveLength(1);
+    expect(res.body.data.items).toHaveLength(1);
+    expect(res.body.data.total).toBe(1);
+    expect(res.body.data.page).toBe(1);
+    expect(res.body.data.pageSize).toBe(200);
     // itemCount = 该租户全部在库物品数（跨用例累积），动态计算
     const totalItems = (db.prepare(
       'SELECT COUNT(*) AS c FROM InventoryItem WHERE deletedAt IS NULL AND clinicId = ?',
     ).get('clinic-v2-001') as { c: number }).c;
-    expect(data[0]).toMatchObject({ id: stocktakeId, number: 'PD-ROUTE-004', status: 'IN_PROGRESS', itemCount: totalItems, differenceCount: 1 });
+    expect(res.body.data.items[0]).toMatchObject({ id: stocktakeId, number: 'PD-ROUTE-004', status: 'IN_PROGRESS', itemCount: totalItems, differenceCount: 1 });
+  });
+
+  it('GET /api/v2/stocktakes paginates, flags truncation and rejects invalid pages', async () => {
+    const first = await request(app).post('/api/v2/stocktakes').send({ number: 'PD-PAGE-001' }).expect(201);
+    await request(app).post(`/api/v2/stocktakes/${String(first.body.data.id)}/cancel`).expect(200);
+    await request(app).post('/api/v2/stocktakes').send({ number: 'PD-PAGE-002' }).expect(201);
+
+    const paged = await request(app).get('/api/v2/stocktakes?page=1&pageSize=1').expect(200);
+    expect(paged.body.data.items).toHaveLength(1);
+    expect(paged.body.data.total).toBe(2);
+    expect(paged.body.data.page).toBe(1);
+    expect(paged.body.data.pageSize).toBe(1);
+    expect(paged.body.data.truncated).toBe(true);
+
+    const bad = await request(app).get('/api/v2/stocktakes?page=abc').expect(400);
+    expect(bad.body.code).toBe('VALIDATION_ERROR');
   });
 
   it('GET /api/v2/stocktakes/:id/items 返回明细与物品信息；不存在 → 404', async () => {

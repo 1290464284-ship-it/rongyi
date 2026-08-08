@@ -126,7 +126,7 @@ describe('core repositories', () => {
          userId, workDate, status
        ) VALUES (?, NULL, ?, ?, ?, 'user-deleted', '2026-08-03', 'PRESENT')`,
     ).run('attendance-deleted', now, now, now);
-    expect(hr.attendance('2026-08-03').some((row) => row.id === 'attendance-deleted')).toBe(false);
+    expect(hr.attendance('2026-08-03').items.some((row) => row.id === 'attendance-deleted')).toBe(false);
 
     db.prepare(
       `INSERT INTO LeaveRequest (
@@ -694,10 +694,10 @@ describe('core repositories', () => {
        ) VALUES (?, ?, ?, ?, NULL, 'user', ?, 'PRESENT')`,
     ).run('attendance-scope', 'clinic-v2-001', now, now, now.slice(0, 10));
     const hr = new SqliteHrRepository(db);
-    expect(hr.attendance(now.slice(0, 10), 'clinic-v2-001')).toBeInstanceOf(Array);
-    expect(hr.attendance(undefined, 'clinic-v2-001')).toBeInstanceOf(Array);
-    expect(hr.attendance(now.slice(0, 10))).toBeInstanceOf(Array);
-    expect(hr.attendance()).toBeInstanceOf(Array);
+    expect(hr.attendance(now.slice(0, 10), 'clinic-v2-001').items).toBeInstanceOf(Array);
+    expect(hr.attendance(undefined, 'clinic-v2-001').items).toBeInstanceOf(Array);
+    expect(hr.attendance(now.slice(0, 10)).items).toBeInstanceOf(Array);
+    expect(hr.attendance().items).toBeInstanceOf(Array);
     db.prepare(
       `INSERT INTO LeaveRequest (
          id, clinicId, createdAt, updatedAt, deletedAt,

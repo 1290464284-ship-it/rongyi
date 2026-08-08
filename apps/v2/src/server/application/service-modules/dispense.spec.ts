@@ -583,17 +583,17 @@ describe('DispenseService', () => {
       expect(row.balanceAfter).toBe(8);
       expect(row.clinicId).toBe('clinic-v2-001');
 
-      const listed = service().narcoticList(context) as Array<Record<string, unknown>>;
-      const found = listed.find((entry) => entry.id === created.id);
+      const listed = service().narcoticList(context);
+      const found = listed.items.find((entry) => entry.id === created.id);
       expect(found).toBeDefined();
       expect(found?.patientName).toBe('Demo Patient');
       expect(found?.itemName).toBe('Dental Material');
       expect(found?.doctorName).toBe('System Administrator');
 
-      const filtered = service().narcoticList(context, { recordDate: '2026-08-05' }) as Array<Record<string, unknown>>;
-      expect(filtered.map((entry) => entry.id)).toContain(created.id);
-      const filteredOut = service().narcoticList(context, { recordDate: '2020-01-01' }) as Array<Record<string, unknown>>;
-      expect(filteredOut.map((entry) => entry.id)).not.toContain(created.id);
+      const filtered = service().narcoticList(context, { recordDate: '2026-08-05' });
+      expect(filtered.items.map((entry) => entry.id)).toContain(created.id);
+      const filteredOut = service().narcoticList(context, { recordDate: '2020-01-01' });
+      expect(filteredOut.items.map((entry) => entry.id)).not.toContain(created.id);
     });
 
     it('rejects missing dates, unknown items, and negative quantities', () => {
@@ -658,8 +658,8 @@ describe('DispenseService', () => {
       expect(row.patientId).toBe('patient-demo-001');
       expect(row.doctorId).toBe('user-admin-001');
 
-      const listed = service().narcoticList(context) as Array<Record<string, unknown>>;
-      const found = listed.find((entry) => entry.id === created.id);
+      const listed = service().narcoticList(context);
+      const found = listed.items.find((entry) => entry.id === created.id);
       expect(found?.batchNo).toBe('B-002');
     });
 
@@ -688,8 +688,8 @@ describe('DispenseService', () => {
 
       const row = db.prepare('SELECT deletedAt FROM NarcoticRegistry WHERE id = ?').get(String(created.id)) as Record<string, unknown>;
       expect(row.deletedAt).not.toBeNull();
-      const listed = service().narcoticList(context) as Array<Record<string, unknown>>;
-      expect(listed.map((entry) => String(entry.id))).not.toContain(String(created.id));
+      const listed = service().narcoticList(context);
+      expect(listed.items.map((entry) => String(entry.id))).not.toContain(String(created.id));
       expect(() => service().deleteNarcotic('narcotic-missing', context)).toThrow(NotFoundError);
     });
   });

@@ -131,7 +131,7 @@ export function TreatmentPlansPage() {
             if (planId) {
               try {
                 await cleanupOrphanPlan(planId, createdItemIds, showToast);
-              } catch (cleanupError) {
+              } catch {
                 showToast('清理孤儿治疗计划失败，请检查未完成数据', 'error');
               }
             }

@@ -36,7 +36,7 @@ export function InventoryWorkflowPage() {
   });
   const stocktakes = useQuery({
     queryKey: ['stocktakes-workflow'],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/stocktakes'),
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/stocktakes?page=1&pageSize=200'),
   });
   const stocktakeItems = useQuery({
     queryKey: ['stocktake-items', expandedStocktakeId ?? ''],
@@ -292,7 +292,14 @@ export function InventoryWorkflowPage() {
       {stocktakes.isLoading ? <LoadingState label="盘点数据加载中..." /> : null}
       {stocktakes.error ? <PageError message={stocktakes.error instanceof Error ? stocktakes.error.message : String(stocktakes.error)} /> : null}
       {!stocktakes.isLoading && !stocktakes.error ? (
-        <DataTable columns={stocktakeColumns} rows={stocktakes.data?.items ?? []} keyField="id" emptyText="暂无盘点单" />
+        <>
+          <DataTable columns={stocktakeColumns} rows={stocktakes.data?.items ?? []} keyField="id" emptyText="暂无盘点单" />
+          {stocktakes.data?.truncated ? (
+            <p className="reminder-muted">
+              盘点单超过 {stocktakes.data.pageSize} 条，仅显示前 {stocktakes.data.items.length} 条
+            </p>
+          ) : null}
+        </>
       ) : null}
       {expandedStocktakeId ? (
         <div>

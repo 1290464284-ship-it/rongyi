@@ -29,7 +29,7 @@ export async function createPrescription(
     if (prescriptionId) {
       try {
         await cleanupOrphanPrescription(prescriptionId, createdItemIds, showToast);
-      } catch (cleanupError) {
+      } catch {
         showToast?.('清理孤儿处方失败，请检查未完成数据', 'error');
       }
     }
@@ -106,13 +106,13 @@ async function cleanupOrphanPrescription(
   for (const itemId of createdItemIds) {
     try {
       await apiRequest(`/resources/prescriptionItems/${itemId}`, { method: 'DELETE' });
-    } catch (error) {
+    } catch {
       showToast?.(`删除处方明细 ${itemId} 失败，请检查未完成数据`, 'error');
     }
   }
   try {
     await apiRequest(`/resources/prescriptions/${prescriptionId}`, { method: 'DELETE' });
-  } catch (error) {
+  } catch {
     showToast?.(`删除孤儿处方 ${prescriptionId} 失败，请检查未完成数据`, 'error');
   }
 }

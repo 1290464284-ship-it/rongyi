@@ -218,8 +218,8 @@ describe('StocktakeService', () => {
     ).run(now, now);
 
     const list = service.list(context);
-    expect(list.map((row) => row.number)).toEqual(['PD-2026-010']);
-    expect(list.some((row) => row.id === 'st-other-1')).toBe(false);
+    expect(list.items.map((row) => row.number)).toEqual(['PD-2026-010']);
+    expect(list.items.some((row) => row.id === 'st-other-1')).toBe(false);
 
     expect(() => service.recordCount('st-other-1', 'stock-item-j', 9, context)).toThrow(NotFoundError);
     expect(() => service.lock('st-other-1', context)).toThrow(NotFoundError);
@@ -238,13 +238,13 @@ describe('StocktakeService', () => {
     service.recordCount(String(second.id), 'stock-item-k', 11, context);
 
     const list = service.list(context);
-    expect(list.map((row) => row.number)).toEqual(['PD-2026-012', 'PD-2026-011']);
+    expect(list.items.map((row) => row.number)).toEqual(['PD-2026-012', 'PD-2026-011']);
     // itemCount = 该租户全部在库物品数（跨用例累积），动态计算
     const totalItems = (db.prepare(
       'SELECT COUNT(*) AS c FROM InventoryItem WHERE deletedAt IS NULL AND clinicId = ?',
     ).get('clinic-v2-001') as { c: number }).c;
-    expect(list[0]).toMatchObject({ status: 'IN_PROGRESS', itemCount: totalItems, differenceCount: 1 });
-    expect(list[1]).toMatchObject({ status: 'CANCELLED', itemCount: totalItems, differenceCount: 0 });
+    expect(list.items[0]).toMatchObject({ status: 'IN_PROGRESS', itemCount: totalItems, differenceCount: 1 });
+    expect(list.items[1]).toMatchObject({ status: 'CANCELLED', itemCount: totalItems, differenceCount: 0 });
 
     const items = service.items(String(second.id), context);
     const k = items.find((row) => row.itemId === 'stock-item-k');

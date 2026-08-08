@@ -14,11 +14,12 @@ const MAX_PAGE_SIZE = 200;
  * 合法但超过 200 的 pageSize 自动封顶为 200。
  * 所有列表路由共用同一口径，避免多套解析边界漂移。
  */
-export function parsePagination(req: Request): ParsedPagination {
+export function parsePagination(req: Request, options?: { defaultPageSize?: number }): ParsedPagination {
   const rawPage = req.query.page ?? 1;
-  const rawPageSize = req.query.pageSize ?? 20;
+  const defaultPageSize = options?.defaultPageSize ?? 20;
+  const rawPageSize = req.query.pageSize ?? defaultPageSize;
   const page = typeof rawPage === 'string' && rawPage.trim() !== '' ? Number(rawPage) : 1;
-  const pageSize = typeof rawPageSize === 'string' && rawPageSize.trim() !== '' ? Number(rawPageSize) : 20;
+  const pageSize = typeof rawPageSize === 'string' && rawPageSize.trim() !== '' ? Number(rawPageSize) : defaultPageSize;
   if (!Number.isInteger(page) || page < 1) throw new ValidationError('page must be a positive integer');
   if (!Number.isInteger(pageSize) || pageSize < 1) {
     throw new ValidationError(`pageSize must be an integer between 1 and ${MAX_PAGE_SIZE}`);

@@ -1455,8 +1455,8 @@ describe('service edge coverage', () => {
 
   it('covers HR, alerts, member cards, purchase, processing, risk, prescription, ceph, progress, import, debt, notifications, satisfaction branches', async () => {
     const hr = new HrService(db);
-    expect(hr.attendance(now.slice(0, 10), context)).toBeInstanceOf(Array);
-    expect(hr.attendance()).toBeInstanceOf(Array);
+    expect(hr.attendance(now.slice(0, 10), context).items).toBeInstanceOf(Array);
+    expect(hr.attendance().items).toBeInstanceOf(Array);
     db.prepare(
       `INSERT INTO LeaveRequest (
          id, clinicId, createdAt, updatedAt, deletedAt,
@@ -1472,7 +1472,10 @@ describe('service edge coverage', () => {
          userId, startDate, endDate, type, reason, status
        ) VALUES (?, ?, ?, ?, NULL, 'user-admin-001', '2026-08-01', '2026-08-02', 'ANNUAL', 'race', 'PENDING')`,
     ).run('leave-edge-race', context.clinicId, now, now);
-    const failingHr = new HrService(db, { attendance: () => [], approveLeave: () => 0 });
+    const failingHr = new HrService(db, {
+      attendance: () => ({ items: [], total: 0, page: 1, pageSize: 200 }),
+      approveLeave: () => 0,
+    });
     expect(() => failingHr.approveLeave('leave-edge-race', 'user-admin-001', true, context)).toThrow('cannot be approved');
 
     const alerts = new AlertService(db);

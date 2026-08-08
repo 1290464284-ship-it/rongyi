@@ -110,13 +110,13 @@ export async function cleanupOrphanPlan(
   for (const itemId of createdItemIds) {
     try {
       await apiRequest(`/resources/treatmentPlanItems/${itemId}`, { method: 'DELETE' });
-    } catch (error) {
+    } catch {
       showToast?.(`删除治疗计划明细 ${itemId} 失败，请检查未完成数据`, 'error');
     }
   }
   try {
     await apiRequest(`/resources/treatmentPlans/${planId}`, { method: 'DELETE' });
-  } catch (error) {
+  } catch {
     showToast?.(`删除孤儿治疗计划 ${planId} 失败，请检查未完成数据`, 'error');
   }
 }

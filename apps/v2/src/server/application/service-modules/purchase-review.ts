@@ -31,23 +31,40 @@ export class PurchaseReviewService {
    * 列出该租户未删除的采购单，附供应商名与明细条数，含全部审核列。
    * filter.reviewStatus 非空时必须为合法审核状态之一。
    */
-  list(context: AppContext, filter?: { reviewStatus?: string }): Array<Record<string, unknown>> {
-    const reviewStatus = filter?.reviewStatus?.trim() ?? '';
+  list(
+    context: AppContext,
+    options?: { reviewStatus?: string; page?: number; pageSize?: number },
+  ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean } {
+    const reviewStatus = options?.reviewStatus?.trim() ?? '';
     if (reviewStatus && !(PURCHASE_REVIEW_STATUSES as readonly string[]).includes(reviewStatus)) {
       throw new ValidationError('reviewStatus 必须为 PENDING/SUBMITTED/APPROVED/REJECTED 之一');
     }
+    const rawPage = Number(options?.page);
+    const rawPageSize = Number(options?.pageSize);
+    const page = Number.isFinite(rawPage) && rawPage >= 1 ? Math.floor(rawPage) : 1;
+    const pageSize = Number.isFinite(rawPageSize) && rawPageSize >= 1 ? Math.min(200, Math.floor(rawPageSize)) : 200;
+    const offset = (page - 1) * pageSize;
+    const baseParams: DbParam[] = [
+      ...tenantParams(context.clinicId),
+      ...(reviewStatus ? [reviewStatus] : []),
+    ];
+    const where = `WHERE po.deletedAt IS NULL${tenantAnd(context.clinicId, 'po.clinicId')}${
+      reviewStatus ? ' AND po.reviewStatus = ?' : ''
+    }`;
+    const total = Number((this.db.prepare(
+      `SELECT COUNT(*) AS total FROM PurchaseOrder po ${where}`,
+    ).get(...baseParams) as { total: number }).total);
     const rows = this.db.prepare(
       `SELECT po.*, s.name AS supplierName,
               (SELECT COUNT(*) FROM PurchaseOrderItem poi
                 WHERE poi.orderId = po.id AND poi.deletedAt IS NULL) AS itemsCount
        FROM PurchaseOrder po
        LEFT JOIN Supplier s ON s.id = po.supplierId AND s.deletedAt IS NULL
-       WHERE po.deletedAt IS NULL${tenantAnd(context.clinicId, 'po.clinicId')}
-         ${reviewStatus ? 'AND po.reviewStatus = ?' : ''}
+       ${where}
        ORDER BY po.createdAt DESC
-       LIMIT 200`,
-    ).all(...tenantParams(context.clinicId), ...(reviewStatus ? [reviewStatus] : []));
-    return rows as Array<Record<string, unknown>>;
+       LIMIT ? OFFSET ?`,
+    ).all(...baseParams, pageSize, offset) as Array<Record<string, unknown>>;
+    return { items: rows, total, page, pageSize, truncated: total > offset + rows.length };
   }
 
   /** 提交审核：PENDING → SUBMITTED。 */

@@ -7,6 +7,7 @@
 import type { Express } from 'express';
 
 import { wrapAsync } from '../middleware';
+import { parsePagination } from '../pagination';
 import { PurchaseReviewService } from '../../application/service-modules/purchase-review';
 import type { RouteDependencies } from './deps';
 
@@ -18,7 +19,11 @@ export function registerPurchaseReviewRoutes(app: Express, deps: RouteDependenci
     const reviewStatus = typeof req.query?.reviewStatus === 'string' && req.query.reviewStatus
       ? req.query.reviewStatus
       : undefined;
-    res.json({ success: true, data: service.list(req.context!, reviewStatus ? { reviewStatus } : undefined) });
+    const { page, pageSize } = parsePagination(req, { defaultPageSize: 200 });
+    res.json({
+      success: true,
+      data: service.list(req.context!, { ...(reviewStatus ? { reviewStatus } : {}), page, pageSize }),
+    });
   }));
 
   app.get('/api/v2/purchase-orders/review-stats', wrapAsync(async (req, res) => {

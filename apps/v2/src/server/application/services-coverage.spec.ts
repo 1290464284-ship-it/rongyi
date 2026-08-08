@@ -281,7 +281,7 @@ describe('service coverage', () => {
     const print = new PrintService();
     expect(print.render('report', { title: 'R' })).toContain('R');
     const hr = new HrService(db);
-    expect(hr.attendance(undefined, context)).toBeInstanceOf(Array);
+    expect(hr.attendance(undefined, context).items).toBeInstanceOf(Array);
     db.prepare(
       `INSERT INTO LeaveRequest (
          id, clinicId, createdAt, updatedAt, deletedAt,

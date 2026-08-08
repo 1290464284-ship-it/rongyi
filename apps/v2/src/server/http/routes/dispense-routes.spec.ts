@@ -305,7 +305,8 @@ describe('dispense routes', () => {
 
     const list = await request(app).get('/api/v2/narcotic-registry').expect(200);
     expect(list.body.success).toBe(true);
-    const rows = list.body.data as Array<Record<string, unknown>>;
+    expect(list.body.data).toMatchObject({ page: 1, pageSize: 200, truncated: false });
+    const rows = (list.body.data as { items: Array<Record<string, unknown>> }).items;
     expect(rows.some((row) => row.batchNo === 'N-001')).toBe(true);
     const row = rows.find((entry) => entry.batchNo === 'N-001');
     expect(row).toMatchObject({
@@ -322,9 +323,9 @@ describe('dispense routes', () => {
     });
 
     const filtered = await request(app).get('/api/v2/narcotic-registry?recordDate=2026-08-05').expect(200);
-    expect((filtered.body.data as Array<Record<string, unknown>>).every((entry) => entry.recordDate === '2026-08-05')).toBe(true);
+    expect((filtered.body.data as { items: Array<Record<string, unknown>> }).items.every((entry) => entry.recordDate === '2026-08-05')).toBe(true);
     const empty = await request(app).get('/api/v2/narcotic-registry?recordDate=2026-01-01').expect(200);
-    expect(empty.body.data).toEqual([]);
+    expect((empty.body.data as { items: unknown[] }).items).toEqual([]);
   });
 
   it('POST /api/v2/narcotic-registry rejects missing items and empty dates', async () => {
@@ -482,7 +483,7 @@ describe('dispense routes', () => {
     expect(row.doctorId).toBe('user-admin-001');
 
     const list = await request(app).get('/api/v2/narcotic-registry').expect(200);
-    const listed = (list.body.data as Array<Record<string, unknown>>).find((entry) => String(entry.id) === id);
+    const listed = (list.body.data as { items: Array<Record<string, unknown>> }).items.find((entry) => String(entry.id) === id);
     expect(listed?.batchNo).toBe('N-002');
 
     const bad = await request(app)
@@ -512,7 +513,7 @@ describe('dispense routes', () => {
     const row = db.prepare('SELECT deletedAt FROM NarcoticRegistry WHERE id = ?').get(id) as Record<string, unknown>;
     expect(row.deletedAt).not.toBeNull();
     const list = await request(app).get('/api/v2/narcotic-registry').expect(200);
-    expect((list.body.data as Array<Record<string, unknown>>).map((entry) => String(entry.id))).not.toContain(id);
+    expect((list.body.data as { items: Array<Record<string, unknown>> }).items.map((entry) => String(entry.id))).not.toContain(id);
 
     const missing = await request(app).delete('/api/v2/narcotic-registry/route-missing').expect(404);
     expect(missing.body.code).toBe('NOT_FOUND');

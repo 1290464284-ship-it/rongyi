@@ -325,7 +325,11 @@ export interface AnalyticsRepository {
 }
 
 export interface HrRepository {
-  attendance(workDate?: string, clinicId?: string | null): Array<Record<string, unknown>>;
+  attendance(
+    workDate?: string,
+    clinicId?: string | null,
+    options?: { page?: number; pageSize?: number },
+  ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean };
   approveLeave(id: string, status: string, reviewerId: string, now: string, clinicId?: string | null): number;
 }
 

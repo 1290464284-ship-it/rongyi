@@ -357,6 +357,20 @@ describe('RefundFlowService', () => {
     expect(row.status).toBe('REJECTED');
   });
 
+  it('会员卡缺失时驳回会抛错并回滚退款状态，避免静默跳过冲销', async () => {
+    const chargeService = new ChargeService(db);
+    const cardId = await createCardWithBalance(10000);
+    const chargeId = await createPaidCharge(10000, 'MEMBER_CARD');
+    const refundResult = await chargeService.refund(chargeId, 4000, '缺卡回滚测试', context);
+    const refundId = String(refundResult.id);
+    db.prepare('UPDATE MemberCard SET deletedAt = ? WHERE id = ?').run(now, cardId);
+
+    const service = new RefundFlowService(db);
+    expect(() => service.reject(refundId, context)).toThrow(ConflictError);
+    const row = db.prepare('SELECT status FROM Refund WHERE id = ?').get(refundId) as { status: string };
+    expect(row.status).toBe('REQUESTED');
+  });
+
   it('状态机：非 REQUESTED 记录不可审批/驳回/取消，非 PENDING_REFUND 不可确认完成', async () => {
     const chargeService = new ChargeService(db);
     const chargeId = await createPaidCharge(10000, 'CASH');

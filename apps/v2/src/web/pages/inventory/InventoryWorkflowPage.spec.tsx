@@ -100,7 +100,7 @@ describe('InventoryWorkflowPage', () => {
       if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') {
         return { items: [{ id: 's-2', inventoryId: 'item-2', rop: 5, suggestedQty: 3, status: 'OPEN' }], total: 1 };
       }
-      if (path === '/stocktakes') {
+      if (path === '/stocktakes?page=1&pageSize=200') {
         return { items: [], total: 0 };
       }
       throw new Error('apply failed');
@@ -144,7 +144,7 @@ describe('InventoryWorkflowPage', () => {
       if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 0 };
       if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0 };
       if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') return { items: [], total: 0 };
-      if (path === '/stocktakes') {
+      if (path === '/stocktakes?page=1&pageSize=200') {
         return {
           items: [
             { id: 'st-1', number: 'PD-001', status: 'IN_PROGRESS', startedById: 'user-1', startedAt: '2026-08-05T10:00:00.000Z', itemCount: 2, differenceCount: 0 },
@@ -179,7 +179,7 @@ describe('InventoryWorkflowPage', () => {
       if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 0 };
       if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0 };
       if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') return { items: [], total: 0 };
-      if (path === '/stocktakes') return { items: [], total: 0 };
+      if (path === '/stocktakes?page=1&pageSize=200') return { items: [], total: 0 };
       return {};
     });
 
@@ -203,7 +203,7 @@ describe('InventoryWorkflowPage', () => {
       if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 0 };
       if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0 };
       if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') return { items: [], total: 0 };
-      if (path === '/stocktakes') {
+      if (path === '/stocktakes?page=1&pageSize=200') {
         return { items: [{ id: 'st-1', number: 'PD-001', status: 'IN_PROGRESS', startedById: 'user-1', startedAt: '2026-08-05T10:00:00.000Z', itemCount: 2, differenceCount: 0 }], total: 1 };
       }
       if (path === '/stocktakes/st-1/items') {
@@ -239,7 +239,7 @@ describe('InventoryWorkflowPage', () => {
       if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 0 };
       if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0 };
       if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') return { items: [], total: 0 };
-      if (path === '/stocktakes') {
+      if (path === '/stocktakes?page=1&pageSize=200') {
         return {
           items: [
             { id: 'st-2', number: 'PD-002', status: 'IN_PROGRESS', startedById: 'user-1', startedAt: '2026-08-05T10:00:00.000Z', itemCount: 2, differenceCount: 0 },

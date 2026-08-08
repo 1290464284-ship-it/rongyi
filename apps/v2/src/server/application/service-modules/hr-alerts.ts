@@ -18,8 +18,12 @@ export class HrService {
     this.hrRepository = hrRepository ?? new SqliteHrRepository(db);
   }
 
-  attendance(workDate?: string, context?: AppContext): Array<Record<string, unknown>> {
-    return this.hrRepository.attendance(workDate, context?.clinicId ?? null);
+  attendance(
+    workDate?: string,
+    context?: AppContext,
+    options?: { page?: number; pageSize?: number },
+  ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean } {
+    return this.hrRepository.attendance(workDate, context?.clinicId ?? null, options);
   }
 
   approveLeave(id: string, reviewerId: string, approved: boolean, context: AppContext): Record<string, unknown> {

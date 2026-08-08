@@ -12,6 +12,7 @@ import {
 } from '../components';
 import { errorMessage } from '../lib/messages';
 import { useToast } from '../lib/toast-context';
+import type { Page } from '../lib/types';
 import { emptyNarcoticForm, type NarcoticForm } from './types';
 
 /** 麻药登记面板：登记表单与登记记录列表，narcotics 查询、表单状态与删除/编辑逻辑均在本面板内部。 */
@@ -24,7 +25,7 @@ export function DispenseNarcoticPanel() {
 
   const narcotics = useQuery({
     queryKey: ['narcotic-registry'],
-    queryFn: () => apiRequest<Array<Record<string, unknown>>>('/narcotic-registry'),
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/narcotic-registry?page=1&pageSize=200'),
   });
 
   async function submitNarcotic(event: FormEvent) {
@@ -181,7 +182,14 @@ export function DispenseNarcoticPanel() {
         ) : narcotics.error ? (
           <PageError message={errorMessage(narcotics.error, '加载麻药登记失败')} />
         ) : (
-          <DataTable columns={narcoticColumns} rows={narcotics.data ?? []} keyField="id" emptyText="暂无麻药登记" />
+          <>
+            <DataTable columns={narcoticColumns} rows={narcotics.data?.items ?? []} keyField="id" emptyText="暂无麻药登记" />
+            {narcotics.data?.truncated ? (
+              <p className="reminder-muted">
+                麻药登记超过 {narcotics.data.pageSize} 条，仅显示前 {narcotics.data.items.length} 条
+              </p>
+            ) : null}
+          </>
         )}
       </section>
 
