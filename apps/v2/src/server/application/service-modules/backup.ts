@@ -39,14 +39,19 @@ export class BackupService {
       .filter((name) => name.endsWith('.sqlite') || name.endsWith('.enc'))
       .filter((name) => !name.startsWith('.staged-'))
       .filter((name) => name.startsWith(`${prefix}backup-`))
-      .map((name) => {
-        const stat = fs.statSync(path.join(this.backupDir, name));
-        return {
-          filename: name,
-          fileSize: stat.size,
-          createdAt: stat.mtime.toISOString(),
-          encrypted: name.endsWith('.enc'),
-        };
+      .flatMap((name) => {
+        try {
+          const stat = fs.statSync(path.join(this.backupDir, name));
+          return [{
+            filename: name,
+            fileSize: stat.size,
+            createdAt: stat.mtime.toISOString(),
+            encrypted: name.endsWith('.enc'),
+          }];
+        } catch {
+          // File disappeared between readdir and stat; skip it instead of failing the listing.
+          return [];
+        }
       })
       .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
   }
@@ -229,7 +234,13 @@ export class BackupService {
     // 数量上限 3 份，超出即清理最旧的。
     const stagedEntries = fs.readdirSync(this.backupDir)
       .filter((name) => name.startsWith('.staged-') || name.endsWith('.tmp'))
-      .map((name) => ({ name, mtimeMs: fs.statSync(path.join(this.backupDir, name)).mtimeMs }))
+      .flatMap((name) => {
+        try {
+          return [{ name, mtimeMs: fs.statSync(path.join(this.backupDir, name)).mtimeMs }];
+        } catch {
+          return [];
+        }
+      })
       .sort((a, b) => b.mtimeMs - a.mtimeMs);
     const MAX_STAGED = 3;
     const STAGED_TTL_MS = 6 * 60 * 60 * 1000; // 6 小时
