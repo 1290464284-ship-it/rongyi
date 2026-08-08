@@ -67,7 +67,7 @@ describe('HTTP app', () => {
     const response = await request(app)
       .get('/api/v2/health')
       .set('Origin', 'null')
-      .expect(500);
+      .expect(403);
     expect(response.headers['access-control-allow-origin']).toBeUndefined();
   });
 

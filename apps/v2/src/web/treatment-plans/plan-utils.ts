@@ -101,18 +101,22 @@ export async function updatePlanWithItems(form: TreatmentPlanForm, planId: strin
   }
 }
 
-export async function cleanupOrphanPlan(planId: string, createdItemIds: string[]): Promise<void> {
+export async function cleanupOrphanPlan(
+  planId: string,
+  createdItemIds: string[],
+  showToast?: (message: string, kind?: 'success' | 'error' | 'info') => void,
+): Promise<void> {
   // 服务端 DELETE 为软删除且不级联：先删已建明细，再删主记录
   for (const itemId of createdItemIds) {
     try {
       await apiRequest(`/resources/treatmentPlanItems/${itemId}`, { method: 'DELETE' });
     } catch (error) {
-      console.warn(`删除治疗计划明细失败（继续清理主记录）：${itemId}`, error);
+      showToast?.(`删除治疗计划明细 ${itemId} 失败，请检查未完成数据`, 'error');
     }
   }
   try {
     await apiRequest(`/resources/treatmentPlans/${planId}`, { method: 'DELETE' });
   } catch (error) {
-    console.warn(`删除孤儿治疗计划失败：${planId}`, error);
+    showToast?.(`删除孤儿治疗计划 ${planId} 失败，请检查未完成数据`, 'error');
   }
 }

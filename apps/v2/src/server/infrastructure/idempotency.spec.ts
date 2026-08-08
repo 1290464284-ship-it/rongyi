@@ -51,6 +51,29 @@ describe('withIdempotency', () => {
     expect(calls).toBe(1);
   });
 
+  it('recovers from a corrupt completed response by deleting the record and re-running', async () => {
+    const key = scopeKey(scope('corrupt-response'));
+    db.prepare(
+      `INSERT INTO IdempotencyRecord (
+         id, key, type, status, responseJson, result, userId, clinicId, operation,
+         createdAt, updatedAt, deletedAt, expiresAt
+       ) VALUES (?, ?, 'GENERIC', 'COMPLETED', 'not-json', '{}', 'user-1', 'clinic-1', 'charge.pay', ?, ?, NULL, ?)`,
+    ).run(
+      'idem-corrupt-response',
+      key,
+      new Date().toISOString(),
+      new Date().toISOString(),
+      new Date(Date.now() + 86_400_000).toISOString(),
+    );
+    let calls = 0;
+    const result = await withIdempotency(db, scope('corrupt-response'), () => {
+      calls += 1;
+      return { recovered: true };
+    });
+    expect(result).toEqual({ recovered: true });
+    expect(calls).toBe(1);
+  });
+
   it('isolates keys by operation, user, clinic, and request id', async () => {
     let calls = 0;
     const first = await withIdempotency(db, scope('shared', { operation: 'charge.pay' }), () => {

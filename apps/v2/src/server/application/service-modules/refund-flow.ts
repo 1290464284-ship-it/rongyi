@@ -150,9 +150,18 @@ export class RefundFlowService {
     const refundLedger = this.db.prepare(
       `SELECT allocations FROM PaymentLedger WHERE relatedId = ? AND type = 'REFUND' AND deletedAt IS NULL`,
     ).get(refundRow.id) as { allocations: string | null } | undefined;
-    const allocations = refundLedger?.allocations
-      ? (JSON.parse(refundLedger.allocations) as Array<{ ledgerId: string; cardId: string; amount: number }>)
-      : [];
+    let allocations: Array<{ ledgerId: string; cardId: string; amount: number }> = [];
+    if (refundLedger?.allocations) {
+      try {
+        const parsed = JSON.parse(refundLedger.allocations) as unknown;
+        allocations = Array.isArray(parsed) ? parsed as Array<{ ledgerId: string; cardId: string; amount: number }> : [];
+      } catch {
+        console.warn('[refund-flow] refund allocations JSON is corrupt; skipping allocation reversal', {
+          refundId: refundRow.id,
+          chargeId: refundRow.chargeId,
+        });
+      }
+    }
     if (allocations.length > 0) {
       for (const allocation of allocations) {
         const card = this.db.prepare(

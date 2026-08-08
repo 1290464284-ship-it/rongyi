@@ -130,9 +130,9 @@ export function TreatmentPlansPage() {
             // 主记录已创建但明细中途失败：清理孤儿记录（清理失败仅告警，不掩盖原始错误）
             if (planId) {
               try {
-                await cleanupOrphanPlan(planId, createdItemIds);
+                await cleanupOrphanPlan(planId, createdItemIds, showToast);
               } catch (cleanupError) {
-                console.warn('清理孤儿治疗计划失败', cleanupError);
+                showToast('清理孤儿治疗计划失败，请检查未完成数据', 'error');
               }
             }
             throw error;

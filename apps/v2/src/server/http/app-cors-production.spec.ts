@@ -57,7 +57,7 @@ describe('HTTP app production CORS for packaged Electron renderer', () => {
   it('rejects file:// and null origins in production without the Electron flag', async () => {
     for (const origin of ['null', 'file://C:/app/dist-web/index.html']) {
       const res = await request(appProduction).get('/api/v2/health').set('Origin', origin);
-      expect(res.status).toBe(500);
+      expect(res.status).toBe(403);
       expect(res.headers['access-control-allow-origin']).toBeUndefined();
     }
   });

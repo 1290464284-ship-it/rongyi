@@ -65,6 +65,9 @@ export function asAppError(error: unknown): AppError {
   if (error instanceof Error && 'type' in error && String((error as { type?: unknown }).type) === 'entity.too.large') {
     return new AppError('PAYLOAD_TOO_LARGE', '请求内容过大', 413);
   }
+  if (error instanceof Error && error.message === 'Not allowed by CORS') {
+    return new AppError('FORBIDDEN', 'Not allowed by CORS', 403);
+  }
   if (error instanceof Error) {
     return new AppError('INTERNAL_ERROR', error.message, 500);
   }

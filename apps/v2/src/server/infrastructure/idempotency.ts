@@ -45,7 +45,12 @@ export function withIdempotency<T>(
       // Lazy single-key cleanup: an expired COMPLETED record is a retry, not a replay.
       db.prepare('DELETE FROM IdempotencyRecord WHERE key = ? AND status = ?').run(key, 'COMPLETED');
     } else {
-      return JSON.parse(existing.responseJson) as T;
+      const replayed = parseStoredResponse<T>(existing.responseJson);
+      if (replayed !== undefined) return replayed;
+      // 损坏的 COMPLETED 记录无法安全重放：删除并重跑，让操作恢复而不是永久 500。
+      // 风险：原始写入可能已生效，仅在数据库被人工/异常改坏时走到这里。
+      console.error('[idempotency] completed response is corrupt; deleting record and retrying operation', { key });
+      db.prepare('DELETE FROM IdempotencyRecord WHERE key = ?').run(key);
     }
   }
 
@@ -63,7 +68,10 @@ export function withIdempotency<T>(
       | undefined;
     if (concurrent) {
       if (concurrent.status !== 'COMPLETED') throw new ConflictError('Operation is already in progress');
-      return JSON.parse(concurrent.responseJson) as T;
+      const replayed = parseStoredResponse<T>(concurrent.responseJson);
+      if (replayed !== undefined) return replayed;
+      console.error('[idempotency] concurrent completed response is corrupt; deleting record and retrying operation', { key });
+      db.prepare('DELETE FROM IdempotencyRecord WHERE key = ?').run(key);
     }
     throw error;
   }
@@ -155,4 +163,12 @@ function isPromise(value: unknown): value is Promise<unknown> {
 
 function isAsyncFunction(value: unknown): value is () => Promise<unknown> {
   return typeof value === 'function' && value.constructor?.name === 'AsyncFunction';
+}
+
+function parseStoredResponse<T>(raw: string): T | undefined {
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return undefined;
+  }
 }

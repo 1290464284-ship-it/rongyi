@@ -34,24 +34,23 @@ start, use another port, e.g. `$env:V2_PORT = '3980'` before `pnpm dev`. The
 Vite dev proxy reads the same `V2_PORT` (default 3180) and forwards `/api`
 automatically, so no extra proxy configuration is needed.
 
-Default development login:
+Local development login:
 
-```text
-username: admin
-password: REDACTED
-```
+`username: admin`; the password is provided by `V2_ADMIN_PASSWORD` in the
+development seed. Production refuses to create a default account without
+`V2_ADMIN_PASSWORD`.
 
 Production first start bootstraps the admin account from `V2_ADMIN_PASSWORD`
 (min 6 chars). The bundled legacy database is sanitized and ships without
 users, password hashes or refresh tokens. See
 [docs/delivery/admin-bootstrap.md](docs/delivery/admin-bootstrap.md).
 
-> Round7 I4：`admin/REDACTED` 仅为开发环境默认账号（生产启动拒绝 seed 默认
+> Round7 I4：开发环境默认账号仅供本地调试（生产启动拒绝 seed 默认
 > 账号）。首次进入任何非开发环境必须先创建/修改管理员密码，禁止沿用默认
 > 密码。
 
-开发环境如需自动重置 admin 密码（默认 `REDACTED`，可用 `V2_ADMIN_PASSWORD`
-覆盖），需显式设置 `V2_ALLOW_DEV_SEED=1`。
+开发环境如需自动重置 admin 密码（可用 `V2_ADMIN_PASSWORD` 覆盖），需显式
+设置 `V2_ALLOW_DEV_SEED=1`。
 
 > Round7 H6：仓库根 `apps/v2` 是 GitHub 实际生效的唯一副本。历史遗留的
 > `source/` 嵌套副本（含独立 `.git`）已废弃并在合并后删除；请勿再在其中

@@ -19,11 +19,11 @@
 
 ```text
 用户名：admin
-密码：REDACTED
+密码：首次启动时通过 `V2_ADMIN_PASSWORD` 环境变量设置
 ```
 
-> 默认密码来自代码 `V2_ADMIN_PASSWORD ?? 'REDACTED'`（`src/server/infrastructure/database.ts`）；
-> 生产部署建议通过 `V2_ADMIN_PASSWORD` 显式覆盖。
+> 生产部署必须通过 `V2_ADMIN_PASSWORD` 提供初始管理员密码；生产路径不会自动
+> 创建默认账号。
 
 首次登录后立即修改密码，并按 `admin-init.md` 完成员工、角色和业务字典核对。
 

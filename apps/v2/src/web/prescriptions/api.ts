@@ -4,7 +4,10 @@ import type { ToastKind } from '../lib/toast-context';
 import { itemPayload, validItems } from './form';
 import type { PrescriptionForm, PrescriptionProcessResult, PrescriptionRow } from './types';
 
-export async function createPrescription(form: PrescriptionForm): Promise<void> {
+export async function createPrescription(
+  form: PrescriptionForm,
+  showToast?: (message: string, kind?: ToastKind) => void,
+): Promise<void> {
   const items = validItems(form);
   let prescriptionId: string | null = null;
   const createdItemIds: string[] = [];
@@ -25,9 +28,9 @@ export async function createPrescription(form: PrescriptionForm): Promise<void> 
     // 主记录已创建但明细中途失败：清理孤儿记录（清理失败仅告警，不掩盖原始错误）
     if (prescriptionId) {
       try {
-        await cleanupOrphanPrescription(prescriptionId, createdItemIds);
+        await cleanupOrphanPrescription(prescriptionId, createdItemIds, showToast);
       } catch (cleanupError) {
-        console.warn('清理孤儿处方失败', cleanupError);
+        showToast?.('清理孤儿处方失败，请检查未完成数据', 'error');
       }
     }
     throw error;
@@ -94,18 +97,22 @@ export async function processPrescription(
   }
 }
 
-async function cleanupOrphanPrescription(prescriptionId: string, createdItemIds: string[]): Promise<void> {
+async function cleanupOrphanPrescription(
+  prescriptionId: string,
+  createdItemIds: string[],
+  showToast?: (message: string, kind?: ToastKind) => void,
+): Promise<void> {
   // 服务端 DELETE 为软删除且不级联：先删已建明细，再删主记录
   for (const itemId of createdItemIds) {
     try {
       await apiRequest(`/resources/prescriptionItems/${itemId}`, { method: 'DELETE' });
     } catch (error) {
-      console.warn(`删除处方明细失败（继续清理主记录）：${itemId}`, error);
+      showToast?.(`删除处方明细 ${itemId} 失败，请检查未完成数据`, 'error');
     }
   }
   try {
     await apiRequest(`/resources/prescriptions/${prescriptionId}`, { method: 'DELETE' });
   } catch (error) {
-    console.warn(`删除孤儿处方失败：${prescriptionId}`, error);
+    showToast?.(`删除孤儿处方 ${prescriptionId} 失败，请检查未完成数据`, 'error');
   }
 }

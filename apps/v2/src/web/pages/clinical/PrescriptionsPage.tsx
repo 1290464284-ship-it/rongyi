@@ -70,7 +70,7 @@ export function PrescriptionsPage() {
           // L1：与采购单一致，填了名称但数量/单价无效的明细会被静默丢弃，提交前提示
           const dropped = form.items.filter((item) => item.name.trim()).length - validItems(form).length;
           if (dropped > 0) showToast(`${dropped} 条明细因数量或单价无效将被忽略`, 'info');
-          return editing ? updatePrescription(form, editingIdRef.current) : createPrescription(form);
+          return editing ? updatePrescription(form, editingIdRef.current) : createPrescription(form, showToast);
         }}
         messages={{ create: '处方已创建', update: '处方已更新', delete: '处方已删除' }}
         errorMessages={{ create: '创建处方失败', update: '更新处方失败', delete: '删除处方失败' }}

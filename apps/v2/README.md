@@ -27,7 +27,7 @@ Default login:
 
 ```text
 username: admin
-password: REDACTED
+password: set via V2_ADMIN_PASSWORD (development seed only)
 ```
 
 Production first start bootstraps the admin account from `V2_ADMIN_PASSWORD`
@@ -36,7 +36,7 @@ Production first start bootstraps the admin account from `V2_ADMIN_PASSWORD`
 refresh tokens. See
 [docs/delivery/admin-bootstrap.md](../../docs/delivery/admin-bootstrap.md).
 
-> Round7 I4：`admin/REDACTED` 仅为开发环境默认账号（生产路径拒绝 seed 默认
+> Round7 I4：开发环境默认账号仅供本地调试（生产路径拒绝 seed 默认
 > 账号）。首次进入任何非开发环境必须先创建/修改管理员密码，禁止沿用默认
 > 密码。
 
@@ -111,7 +111,7 @@ automatically before packaging.
   `printTemplates`. Legacy SQLite table names such as `User` or `Charge` are not
   exposed as generic resource routes.
 - Production refuses to seed a default `admin` account with development
-  credentials (`REDACTED`; overridable via `V2_ADMIN_PASSWORD`). Provision the
+  credentials (overridable via `V2_ADMIN_PASSWORD`). Provision the
   admin user through the packaged database or migration tooling before
   production startup.
 - Sync push/pull requires a registered device token. Register a device with
@@ -135,7 +135,7 @@ pnpm --filter @dental/v2 exec electron .
 Login:
 
 ```powershell
-$body = @{ username = 'admin'; password = 'REDACTED' } | ConvertTo-Json
+$body = @{ username = 'admin'; password = $env:V2_ADMIN_PASSWORD } | ConvertTo-Json
 $login = Invoke-RestMethod -Method Post `
   -Uri 'http://localhost:3180/api/v2/auth/login' `
   -ContentType 'application/json' -Body $body
