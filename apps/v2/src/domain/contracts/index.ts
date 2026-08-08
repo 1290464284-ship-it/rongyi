@@ -3,5 +3,6 @@
 export * from './shared';
 export * from './enums';
 export * from './entities';
+export * from './entities-operations';
 export * from './ports';
 export * from './resources';
