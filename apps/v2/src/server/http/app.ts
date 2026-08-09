@@ -7,6 +7,7 @@ import { authMiddleware, errorMiddleware, roleMiddleware, traceMiddleware, wrapA
 import { AppError } from '../infrastructure/errors';
 import { listAllResources } from '../infrastructure/legacy-registry';
 import { metricsMiddleware, metricsSnapshot, persistMetrics } from './metrics';
+import { persistStabilityMetrics, stabilitySnapshot } from './stability';
 import { deepHealth } from './health';
 import type { Logger } from '../infrastructure/logger';
 import { maskSensitiveFields } from '../infrastructure/security';
@@ -164,7 +165,9 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
   app.get('/api/v2/metrics', authMiddleware(deps.authService), roleMiddleware('BOSS'), wrapAsync(async (req, res) => {
       const snapshot = metricsSnapshot();
       persistMetrics(logDir, snapshot);
-      res.json({ success: true, data: snapshot });
+      const stability = stabilitySnapshot(dbPath, backupDir, logDir);
+      persistStabilityMetrics(logDir, stability);
+      res.json({ success: true, data: { metrics: snapshot, stability } });
   }));
 
   registerPublicAuthRoutes(app, deps);
