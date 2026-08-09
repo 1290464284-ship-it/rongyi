@@ -11,9 +11,9 @@
 | 项目 | 结果 |
 |---|---|
 | typecheck / lint / knip | 通过 |
-| 单元测试 | 163 个文件 / 1409 个用例全部通过 |
-| 服务端覆盖率 | 语句 95.43% / 分支 87.31% / 函数 98.99% / 行 96.90% |
-| 前端覆盖率 | 语句 83.46% / 分支 72.22% / 函数 81.54% / 行 87.07% |
+| 单元测试 | 166 个文件 / 1416 个用例全部通过 |
+| 服务端覆盖率 | 语句 95.47% / 分支 86.74% / 函数 98.97% / 行 97.04% |
+| 前端覆盖率 | 语句 81.21% / 分支 70.90% / 函数 79.10% / 行 84.76% |
 | build + electron:compile | 通过 |
 | 内部安装包构建与签名 | 通过，自签名内部证书 |
 | verify:package / update:metadata / verify:update | 通过 |
@@ -59,8 +59,8 @@
 
 ## 交付产物
 
-- 安装包：`apps/v2/release-v2/Dental-Clinic-V2-Setup-2.2.0-internal.20260809093727.exe`
-- 更新元数据：`apps/v2/release-v2/latest.yml`
+- 安装包：`apps/v2/release-v2-internal/`（内部构建产物，文件名含 `-internal.<UTC时间戳>`）
+- 更新元数据：`apps/v2/release-v2-internal/latest.yml`
 - 打包 UI 截图：`apps/v2/data/packaged-ui-smoke.png`、`apps/v2/data/packaged-ui-simulated-smoke.png`
 - 本报告：`docs/delivery/final-delivery-status-2026-08-09.md`
 
