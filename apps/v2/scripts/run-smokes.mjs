@@ -82,6 +82,7 @@ try {
   runSmoke(['run', 'smoke:api']);
   runSmoke(['run', 'smoke:ui']);
   runSmoke(['run', 'test:load']);
+  runSmoke(['run', 'smoke:wechat-gateway']);
   console.log('full smoke passed');
 } finally {
   stopDev();

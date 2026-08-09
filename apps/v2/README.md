@@ -177,6 +177,10 @@ pnpm --filter @dental/v2 smoke:ui
 
 `smoke:api` verifies login, generic CRUD, appointments, charges, inventory, member cards, patient risk, follow-ups, backups, stats, satisfaction, sync, HR, alerts, notifications, search, print, and bulk import. `smoke:ui` verifies that the desktop renderer reaches login, dashboard, appointments, charges, inventory, follow-ups, backups, and patient resource pages.
 
+`smoke:wechat-gateway` starts a local HTTPS mock WeChat gateway and verifies that
+configured sends reach the gateway, success marks messages `SENT`, and gateway
+failures leave messages `PENDING` for retry.
+
 ## Maturity
 
 See `MATURITY.md` for the current production-readiness checklist.
