@@ -1051,6 +1051,7 @@ describe('service edge coverage', () => {
 
   it('covers sync push error branches', async () => {
     const service = new SyncService(db);
+    const freshIso = new Date(Date.now() + 60_000).toISOString();
     expect(() => service.pull(now, '', 'bad-token', context)).toThrow('Device credentials');
     await expect(service.push({
       deviceId: 'device-1',
@@ -1134,7 +1135,7 @@ describe('service edge coverage', () => {
         tableName: 'Patient',
         recordId: 'patient-sync-edge',
         operation: 'INSERT',
-        updatedAt: now,
+        updatedAt: freshIso,
         data: { name: 'Sync Edge Updated' },
       }],
     }, context);
@@ -1154,7 +1155,7 @@ describe('service edge coverage', () => {
     const deleteExisting = await service.push({
       deviceId: 'device-1',
       deviceToken: device.token,
-      changes: [{ tableName: 'Patient', recordId: 'patient-sync-delete', operation: 'DELETE', updatedAt: now }],
+      changes: [{ tableName: 'Patient', recordId: 'patient-sync-delete', operation: 'DELETE', updatedAt: freshIso }],
     }, context);
     expect(deleteExisting.accepted).toBe(1);
     const deletedRow = db.prepare('SELECT deletedAt FROM Patient WHERE id = ?').get('patient-sync-delete') as { deletedAt: string | null } | undefined;

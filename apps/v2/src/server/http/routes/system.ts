@@ -50,6 +50,21 @@ export function registerSystemRoutes(app: Express, deps: RouteDependencies): voi
       res.json({ success: true, data: sync.cleanup(before, req.context!) });
   }));
 
+  app.get('/api/v2/sync/conflicts', syncLimiter, wrapAsync(async (req, res) => {
+      res.json({ success: true, data: sync.listConflicts(req.context!) });
+  }));
+
+  app.post('/api/v2/sync/conflicts/:id/resolve', syncLimiter, wrapAsync(async (req, res) => {
+      res.json({
+        success: true,
+        data: await sync.resolveConflict(
+          String(req.params.id),
+          String(req.body?.resolution ?? ''),
+          req.context!,
+        ),
+      });
+  }));
+
   app.get('/api/v2/hr/attendance', wrapAsync(async (req, res) => {
       const { page, pageSize } = parsePagination(req, { defaultPageSize: 200 });
       res.json({

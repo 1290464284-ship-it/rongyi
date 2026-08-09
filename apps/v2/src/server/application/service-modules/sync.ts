@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
-import { AppError } from '../../infrastructure/errors';
+import { AppError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { SqliteRepository } from '../../infrastructure/repository';
 import { stripProtectedWriteFields } from '../../infrastructure/security';
 import { validatePayload } from '../../http/validation';
@@ -73,6 +73,7 @@ export class SyncService {
     accepted: number;
     failed: number;
     errors: Array<{ recordId: string; error: string }>;
+    conflicts: Array<{ recordId: string; message: string }>;
   }> {
     if (!context.clinicId) throw new AppError('FORBIDDEN', 'Sync requires a clinic scope', 403);
     if (!['BOSS'].includes(context.role)) {
@@ -81,6 +82,7 @@ export class SyncService {
     this.assertDevice(payload.deviceId, payload.deviceToken, context);
     let accepted = 0;
     const errors: Array<{ recordId: string; error: string }> = [];
+    const conflicts: Array<{ recordId: string; message: string }> = [];
     // 每 500 条一个事务批。注意：better-sqlite3 的 db.transaction 会拒绝返回 Promise 的
     // 回调（TypeError: Transaction function cannot return a promise），而 apply 路径是
     // async repository 方法（其 SQL 在已 resolve 的微任务链中同步执行），因此这里用显式
@@ -124,8 +126,15 @@ export class SyncService {
           try {
             const repo = new SqliteRepository(this.db, definition, { emitSyncChange: false });
             if (change.operation === 'DELETE') {
-              if (!(await repo.findById(change.recordId, context))) {
+              const existingForDelete = await repo.findById(change.recordId, context);
+              if (!existingForDelete) {
                 throw new Error(`Sync record not found: ${change.recordId}`);
+              }
+              if (this.isStaleRemote(change, existingForDelete)) {
+                this.registerConflict(change, existingForDelete, payload.deviceId, context);
+                conflicts.push({ recordId: change.recordId, message: 'Conflict: remote delete is older than local version' });
+                failedIndexes.add(index);
+                continue;
               }
               await repo.softDelete(change.recordId, context);
             } else {
@@ -133,6 +142,12 @@ export class SyncService {
                 throw new Error('Sync change requires row data');
               }
               const existing = await repo.findById(change.recordId, context);
+              if (existing && this.isStaleRemote(change, existing)) {
+                this.registerConflict(change, existing, payload.deviceId, context);
+                conflicts.push({ recordId: change.recordId, message: 'Conflict: remote change is older than local version' });
+                failedIndexes.add(index);
+                continue;
+              }
               const payloadRow = stripProtectedWriteFields(validatePayload(
                 definition,
                 change.data,
@@ -184,7 +199,113 @@ export class SyncService {
         /* v8 ignore stop */
       }
     }
-    return { accepted, failed: errors.length, errors };
+    return { accepted, failed: errors.length, errors, conflicts };
+  }
+
+  listConflicts(context: AppContext): Array<Record<string, unknown>> {
+    if (!context.clinicId) throw new AppError('FORBIDDEN', 'Sync requires a clinic scope', 403);
+    if (!['BOSS'].includes(context.role)) {
+      throw new AppError('FORBIDDEN', 'Sync requires BOSS', 403);
+    }
+    const rows = this.db.prepare(
+      `SELECT * FROM SyncConflict
+       WHERE status = 'PENDING' AND deletedAt IS NULL${tenantAnd(context.clinicId)}
+       ORDER BY createdAt ASC`,
+    ).all(...tenantParams(context.clinicId)) as Array<Record<string, unknown>>;
+    return rows.map((row) => ({
+      ...row,
+      localSnapshot: JSON.parse(String(row.localSnapshotJson ?? '{}')),
+      remoteSnapshot: JSON.parse(String(row.remoteSnapshotJson ?? '{}')),
+    }));
+  }
+
+  async resolveConflict(id: string, resolution: string, context: AppContext): Promise<Record<string, unknown>> {
+    if (!context.clinicId) throw new AppError('FORBIDDEN', 'Sync requires a clinic scope', 403);
+    if (!['BOSS'].includes(context.role)) {
+      throw new AppError('FORBIDDEN', 'Sync requires BOSS', 403);
+    }
+    if (!['KEEP_LOCAL', 'KEEP_REMOTE'].includes(resolution)) {
+      throw new ValidationError('resolution must be KEEP_LOCAL or KEEP_REMOTE');
+    }
+    const row = this.db.prepare(
+      `SELECT * FROM SyncConflict
+       WHERE id = ? AND status = 'PENDING' AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    ).get(id, ...tenantParams(context.clinicId)) as Record<string, unknown> | undefined;
+    if (!row) throw new NotFoundError('Sync conflict not found');
+
+    const resourceName = SYNC_RESOURCES[String(row.tableName)];
+    const definition = resourceRegistry.get(resourceName);
+    if (!definition) throw new NotFoundError('Sync conflict table is not supported');
+
+    if (resolution === 'KEEP_REMOTE') {
+      const remoteSnapshot = JSON.parse(String(row.remoteSnapshotJson ?? '{}')) as Record<string, unknown>;
+      const repo = new SqliteRepository(this.db, definition, { emitSyncChange: false });
+      if (String(row.remoteOperation) === 'DELETE') {
+        const existing = await repo.findById(String(row.recordId), context);
+        if (existing) await repo.softDelete(String(row.recordId), context);
+      } else {
+        const payloadRow = stripProtectedWriteFields(validatePayload(
+          definition,
+          remoteSnapshot,
+          { partial: true },
+        ), undefined, resourceName);
+        const existing = await repo.findById(String(row.recordId), context);
+        if (existing) await repo.update({ id: String(row.recordId), ...payloadRow }, context);
+        else await repo.insert({ id: String(row.recordId), ...payloadRow }, context);
+      }
+      this.record(String(row.tableName), String(row.recordId), String(row.remoteOperation), 'server', context.clinicId);
+    } else {
+      this.record(String(row.tableName), String(row.recordId), String(row.localOperation), 'server', context.clinicId);
+    }
+
+    const now = new Date().toISOString();
+    this.db.prepare(
+      `UPDATE SyncConflict
+       SET status = 'RESOLVED', resolution = ?, resolvedAt = ?, resolvedById = ?, updatedAt = ?, deletedAt = ?
+       WHERE id = ? AND status = 'PENDING'${tenantAnd(context.clinicId)}`,
+    ).run(resolution, now, context.userId, now, now, id, ...tenantParams(context.clinicId));
+    return { ...row, resolution, resolvedAt: now, resolvedById: context.userId };
+  }
+
+  private isStaleRemote(
+    change: { updatedAt?: string },
+    existing: Record<string, unknown>,
+  ): boolean {
+    const local = String(existing.updatedAt ?? '');
+    const remote = String(change.updatedAt ?? '');
+    if (!local || !remote) return false;
+    const localTime = Date.parse(local);
+    const remoteTime = Date.parse(remote);
+    return Number.isFinite(localTime) && Number.isFinite(remoteTime) && remoteTime < localTime;
+  }
+
+  private registerConflict(
+    change: { tableName: string; recordId: string; operation: string; updatedAt?: string; data?: Record<string, unknown> },
+    existing: Record<string, unknown>,
+    deviceId: string,
+    context: AppContext,
+  ): void {
+    const now = new Date().toISOString();
+    this.db.prepare(
+      `INSERT OR IGNORE INTO SyncConflict (
+         id, clinicId, tableName, recordId, deviceId, localOperation, remoteOperation,
+         localSnapshotJson, remoteSnapshotJson, localUpdatedAt, remoteUpdatedAt,
+         status, resolution, resolvedAt, resolvedById, createdAt, updatedAt, deletedAt
+       ) VALUES (?, ?, ?, ?, ?, 'UPDATE', ?, ?, ?, ?, ?, 'PENDING', NULL, NULL, NULL, ?, ?, NULL)`,
+    ).run(
+      randomUUID(),
+      context.clinicId,
+      change.tableName,
+      change.recordId,
+      deviceId,
+      change.operation,
+      JSON.stringify(existing),
+      JSON.stringify(change.data ?? {}),
+      String(existing.updatedAt ?? ''),
+      String(change.updatedAt ?? ''),
+      now,
+      now,
+    );
   }
 
   registerDevice(deviceId: string, name: string, context: AppContext): { deviceId: string; token: string } {

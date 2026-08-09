@@ -27,6 +27,7 @@ const PatientWorkflowPage = lazy(() => import('../pages/patients/PatientWorkflow
 const ClinicOverviewPage = lazy(() => import('../pages/analytics/ClinicOverviewPage').then((m) => ({ default: m.ClinicOverviewPage })));
 const UsersPage = lazy(() => import('../pages/system/UsersPage').then((m) => ({ default: m.UsersPage })));
 const CustomFieldsPage = lazy(() => import('../pages/system/CustomFieldsPage').then((m) => ({ default: m.CustomFieldsPage })));
+const SyncConflictsPage = lazy(() => import('../pages/system/SyncConflictsPage').then((m) => ({ default: m.SyncConflictsPage })));
 const PatientsPage = lazy(() => import('../pages/patients/PatientsPage').then((m) => ({ default: m.PatientsPage })));
 const VisitsPage = lazy(() => import('../pages/clinical/VisitsPage').then((m) => ({ default: m.VisitsPage })));
 const FirstExamsPage = lazy(() => import('../pages/clinical/FirstExamsPage').then((m) => ({ default: m.FirstExamsPage })));
@@ -148,6 +149,7 @@ export const systemHubTabs: HubTab[] = [
   { id: 'alerts', label: '\u544a\u8b66', kind: 'resource', resource: 'businessAlerts' },
   { id: 'logs', label: '\u64cd\u4f5c\u65e5\u5fd7', kind: 'resource', resource: 'operationLogs' },
   { id: 'sync', label: '\u540c\u6b65\u8bb0\u5f55', kind: 'resource', resource: 'syncChanges' },
+  { id: 'syncConflicts', label: '\u540c\u6b65\u51b2\u7a81', kind: 'custom', component: SyncConflictsPage },
   { id: 'printTemplates', label: '\u6253\u5370\u6a21\u677f', kind: 'resource', resource: 'printTemplates' },
   { id: 'importJobs', label: '\u5bfc\u5165\u4efb\u52a1', kind: 'resource', resource: 'dataImportJobs' },
 ];
