@@ -32,6 +32,7 @@ import { registerDispenseRoutes } from './routes/dispense-routes';
 import { registerPurchaseReviewRoutes } from './routes/purchase-review-routes';
 import { registerShiftTemplateRoutes } from './routes/shift-template-routes';
 import { registerUserRoleRoutes } from './routes/user-role-routes';
+import { registerUserPermissionRoutes } from './routes/user-permission-routes';
 import { registerWechatReminderRoutes } from './routes/wechat-reminder-routes';
 import { registerInventoryReportRoutes } from './routes/inventory-report-routes';
 import { registerInventoryDocRoutes } from './routes/inventory-doc-routes';
@@ -199,6 +200,17 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
   app.use('/api/v2', (req, res, next) => {
     const rule = routeRoleRules.find((candidate) => candidate.pattern.test(req.originalUrl));
     if (rule) {
+      if (rule.permission) {
+        const permissions = req.context?.permissions;
+        if (permissions) {
+          if (!permissions.includes(rule.permission)) {
+            next(new AppError('FORBIDDEN', 'Insufficient permissions', 403));
+            return;
+          }
+          next();
+          return;
+        }
+      }
       roleMiddleware(...rule.roles)(req, res, next);
       return;
     }
@@ -239,6 +251,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
   registerPurchaseReviewRoutes(app, deps);
   registerShiftTemplateRoutes(app, deps);
   registerUserRoleRoutes(app, deps);
+  registerUserPermissionRoutes(app, deps);
   registerWechatReminderRoutes(app, deps);
   registerInventoryReportRoutes(app, deps);
   registerInventoryDocRoutes(app, deps);

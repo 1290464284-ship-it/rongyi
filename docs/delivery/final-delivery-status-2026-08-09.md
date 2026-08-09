@@ -11,7 +11,7 @@
 | 项目 | 结果 |
 |---|---|
 | typecheck / lint / knip | 通过 |
-| 单元测试 | 154 个文件 / 1380 个用例全部通过 |
+| 单元测试 | 156 个文件 / 1389 个用例全部通过 |
 | 服务端覆盖率 | 语句 95.43% / 分支 87.31% / 函数 98.99% / 行 96.90% |
 | 前端覆盖率 | 语句 83.46% / 分支 72.22% / 函数 81.54% / 行 87.07% |
 | build + electron:compile | 通过 |
@@ -38,6 +38,7 @@
 
 - `b3a4c0f`：新增权限冒烟、10 万级仿真规模、磁盘/只读环境演练，CI 接入权限冒烟与全部 drill，长列表表格滚动 CSS 化。
 - `ba6843a`：修复崩溃演练中 kill 兜底定时器误杀重启后新 API 进程的真实缺陷（10 万级库复测暴露，修复后通过）。
+- 新增用户级模块权限：BOSS 在“员工管理”中按用户勾选/取消 9 个模块权限，导航、通用资源路由与专用模块路由立即生效；权限冒烟覆盖授权与撤销全链路。
 - 前序已提交：旧库导入 CHECK 约束 fail-closed（`eef2187`）、崩溃/断电恢复演练（`3089e28`）、RFM/启动性能优化、脏数据模式、打包 UI 仿真、微信信息模板、患者联系方式/微信号、提醒前置天数、全局复制粘贴等。
 
 ## 10 万级仿真结果
@@ -51,7 +52,7 @@
 
 ## 交付产物
 
-- 安装包：`apps/v2/release-v2/Dental-Clinic-V2-Setup-2.2.0-internal.20260809080837.exe`
+- 安装包：`apps/v2/release-v2/Dental-Clinic-V2-Setup-2.2.0-internal.20260809083613.exe`
 - 更新元数据：`apps/v2/release-v2/latest.yml`
 - 打包 UI 截图：`apps/v2/data/packaged-ui-smoke.png`、`apps/v2/data/packaged-ui-simulated-smoke.png`
 - 本报告：`docs/delivery/final-delivery-status-2026-08-09.md`

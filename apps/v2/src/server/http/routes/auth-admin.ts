@@ -93,7 +93,7 @@ export function registerAdminRoutes(app: Express, deps: RouteDependencies): void
       res.json({
         success: true,
         data: {
-          permissions: navigationForRole(req.context!.role),
+          permissions: req.context!.permissions ?? navigationForRole(req.context!.role),
           role: req.context!.role,
         },
       });

@@ -7,6 +7,8 @@ export interface AppContext {
   userId: ID;
   clinicId: ID | null;
   role: UserRole;
+  /** 用户生效的模块权限键；BOSS 可逐用户覆盖。 */
+  permissions?: string[];
   traceId: string;
   now: () => Date;
 }

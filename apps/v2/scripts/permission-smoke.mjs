@@ -183,7 +183,32 @@ try {
   }, doctorToken);
   assert(createUser.status === 403, `DOCTOR must be denied creating users, got ${createUser.status}`);
 
-  console.log('permission smoke passed: DOCTOR clinical access allowed, finance/inventory/system/analytics/admin denied');
+  const doctorId = created.body.data.id;
+  const grant = await rawRequest(`/user-permissions/${doctorId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ permissions: [{ permission: 'finance', allowed: true }] }),
+  }, bossToken);
+  assert(grant.status === 200, `BOSS grant finance failed: ${grant.status} ${JSON.stringify(grant.body)}`);
+
+  const navGranted = await rawRequest('/auth/navigation', {}, doctorToken);
+  assert(navGranted.status === 200 && navGranted.body.data.permissions.includes('finance'),
+    'finance grant must appear in navigation permissions');
+  const financeGranted = await rawRequest('/charge-assistant/frequent-items', {}, doctorToken);
+  assert(financeGranted.status === 200, `granted finance route must return 200, got ${financeGranted.status}`);
+
+  const revoke = await rawRequest(`/user-permissions/${doctorId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ permissions: [{ permission: 'finance', allowed: false }] }),
+  }, bossToken);
+  assert(revoke.status === 200, `BOSS revoke finance failed: ${revoke.status} ${JSON.stringify(revoke.body)}`);
+
+  const navRevoked = await rawRequest('/auth/navigation', {}, doctorToken);
+  assert(!navRevoked.body.data.permissions.includes('finance'),
+    'finance revoke must disappear from navigation permissions');
+  const financeRevoked = await rawRequest('/charge-assistant/frequent-items', {}, doctorToken);
+  assert(financeRevoked.status === 403, `revoked finance route must return 403, got ${financeRevoked.status}`);
+
+  console.log('permission smoke passed: DOCTOR clinical access allowed, finance/inventory/system/analytics/admin denied, grant/revoke effective');
 } finally {
   await stopApi();
   fs.rmSync(tempRoot, { recursive: true, force: true });

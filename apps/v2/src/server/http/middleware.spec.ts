@@ -83,6 +83,7 @@ describe('middleware', () => {
         role: 'ADMIN',
       }),
       isClinicAccessible: () => true,
+      effectivePermissions: () => [],
     } as unknown as AuthService;
     const req = {
       header: () => 'Bearer signed-token',
@@ -111,6 +112,7 @@ describe('middleware', () => {
         role: 'ADMIN',
       }),
       isClinicAccessible: () => false,
+      effectivePermissions: () => [],
     } as unknown as AuthService;
     const req = {
       header: () => 'Bearer signed-token',

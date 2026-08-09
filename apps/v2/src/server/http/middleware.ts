@@ -88,6 +88,7 @@ export function authMiddleware(authService: AuthService) {
         userId: user.id,
         clinicId: payload.clinicId ?? null,
         role: user.role as UserRole,
+        permissions: authService.effectivePermissions(user.id, payload.clinicId ?? null, user.role as UserRole),
         traceId: req.traceId,
         now: () => new Date(),
       };

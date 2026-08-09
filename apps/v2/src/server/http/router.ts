@@ -11,6 +11,7 @@ import { withIdempotency } from '../infrastructure/idempotency';
 import { parsePagination } from './pagination';
 import { tenantAnd, tenantParams } from '../infrastructure/tenant';
 import { recordSyncChange } from '../infrastructure/sync-change';
+import { RESOURCE_PERMISSION_MAP } from '../application/service-modules/permissions';
 
 export function createResourceRouter(db: Database.Database): Router {
   const router = Router();
@@ -28,6 +29,11 @@ export function createResourceRouter(db: Database.Database): Router {
       return;
     }
     if (!req.context || !resource.roles.includes(req.context.role)) {
+      next(new AppError('FORBIDDEN', `Forbidden resource: ${req.params.resource}`, 403));
+      return;
+    }
+    const requiredPermission = RESOURCE_PERMISSION_MAP[resource.name];
+    if (requiredPermission && req.context.permissions && !req.context.permissions.includes(requiredPermission)) {
       next(new AppError('FORBIDDEN', `Forbidden resource: ${req.params.resource}`, 403));
       return;
     }

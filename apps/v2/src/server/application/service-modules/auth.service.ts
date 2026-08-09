@@ -6,7 +6,7 @@ import type Database from 'better-sqlite3';
 import { AppError, ConflictError, NotFoundError, UnauthorizedError, ValidationError } from '../../infrastructure/errors';
 import { SqliteAuthRepository } from '../../infrastructure/repositories/core.repositories';
 import { tenantAnd, tenantMatches, tenantParams } from '../../infrastructure/tenant';
-import type { AppContext, User } from '../../../domain/contracts';
+import type { AppContext, User, UserRole } from '../../../domain/contracts';
 import type { AuthRepository, AuthUserRecord } from '../ports';
 import {
   AuthSession,
@@ -19,6 +19,7 @@ import {
   newRefreshToken,
   rowToUser,
 } from './common';
+import { computeEffectivePermissions } from './permissions';
 
 const DUMMY_HASH = '$2a$10$CwTycUXWue0Thq9StjUM0uJ8cG5fVb55Qk9X7pL5Nh4bKj1R8f69y';
 
@@ -262,6 +263,10 @@ export class AuthService {
        ORDER BY name ASC`,
     ).all(...tenantParams(context.clinicId)) as Array<{ id: string; name: string; phone: string | null; role: string }>;
     return rows;
+  }
+
+  effectivePermissions(userId: string, clinicId: string | null, role: UserRole): string[] {
+    return computeEffectivePermissions(this.db, userId, clinicId, role);
   }
 
   switchClinic(userId: string, role: User['role'], clinicId: string): { token: string; clinicId: string } {

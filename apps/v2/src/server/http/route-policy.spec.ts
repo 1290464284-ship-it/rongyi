@@ -68,6 +68,7 @@ function samplePathForPattern(pattern: RegExp, index: number): string {
     ['/api/v2/triage/queue'],
     ['/api/v2/pay-methods', '/api/v2/pay-methods/abc'],
     ['/api/v2/charge-trees', '/api/v2/charge-trees/c1/quick-charge'],
+    ['/api/v2/user-permissions/u-1', '/api/v2/user-permissions/u-1'],
   ];
   const arr = samples[index] ?? ['/api/v2/placeholder'];
   return arr[0];

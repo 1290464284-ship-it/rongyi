@@ -20,6 +20,30 @@ const ROLE_LABELS: Record<string, string> = {
   DOCTOR: '医生',
 };
 
+const PERMISSION_KEYS = [
+  'dashboard',
+  'patients',
+  'clinical',
+  'finance',
+  'inventory',
+  'analytics',
+  'communication',
+  'hr',
+  'system',
+];
+
+const PERMISSION_LABELS: Record<string, string> = {
+  dashboard: '经营报表',
+  patients: '患者与预约',
+  clinical: '临床诊疗',
+  finance: '收费财务',
+  inventory: '库存采购',
+  analytics: '经营分析',
+  communication: '随访微信',
+  hr: '人事排班',
+  system: '系统管理',
+};
+
 type UserRow = Record<string, unknown> & {
   id: string;
   username: string;
@@ -61,6 +85,9 @@ export function UsersPage() {
   const [deleteTarget, setDeleteTarget] = useState<UserRow | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [additionalRoles, setAdditionalRoles] = useState<string[]>([]);
+  const [permissionTarget, setPermissionTarget] = useState<UserRow | null>(null);
+  const [permissionForm, setPermissionForm] = useState<Record<string, boolean>>({});
+  const [permissionBusy, setPermissionBusy] = useState(false);
 
   const me = useQuery({
     queryKey: ['auth-me'],
@@ -187,6 +214,43 @@ export function UsersPage() {
     }
   }
 
+  async function openPermissions(row: UserRow) {
+    setPermissionTarget(row);
+    setPermissionBusy(true);
+    try {
+      const data = await apiRequest<{ effective: string[] }>(`/user-permissions/${row.id}`);
+      const effective = new Set(data.effective ?? []);
+      setPermissionForm(Object.fromEntries(PERMISSION_KEYS.map((key) => [key, effective.has(key)])));
+    } catch (error) {
+      showToast(errorMessage(error, '加载权限失败'), 'error');
+      setPermissionTarget(null);
+    } finally {
+      setPermissionBusy(false);
+    }
+  }
+
+  async function savePermissions() {
+    if (!permissionTarget || permissionBusy) return;
+    setPermissionBusy(true);
+    try {
+      await apiRequest(`/user-permissions/${permissionTarget.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          permissions: PERMISSION_KEYS.map((key) => ({
+            permission: key,
+            allowed: Boolean(permissionForm[key]),
+          })),
+        }),
+      });
+      showToast('用户权限已更新', 'success');
+      setPermissionTarget(null);
+    } catch (error) {
+      showToast(errorMessage(error, '保存权限失败'), 'error');
+    } finally {
+      setPermissionBusy(false);
+    }
+  }
+
   const columns = [
     { key: 'username', label: '用户名' },
     { key: 'name', label: '姓名' },
@@ -219,6 +283,7 @@ export function UsersPage() {
       render: (row: UserRow) => (
         <>
           <button onClick={() => openEdit(row)}>编辑</button>
+          <button onClick={() => void openPermissions(row)}>权限</button>
           <button onClick={() => setPasswordTarget(row.id)}>重置密码</button>
           <button className="danger" onClick={() => setDeleteTarget(row)}>删除</button>
         </>
@@ -293,6 +358,32 @@ export function UsersPage() {
             <button type="submit" disabled={submitting}>{submitting ? '保存中...' : '保存'}</button>
           </div>
         </form>
+      </Dialog>
+
+      <Dialog
+        open={permissionTarget !== null}
+        title={`设置「${permissionTarget?.name ?? ''}」的权限`}
+        onClose={() => setPermissionTarget(null)}
+      >
+        <div className="role-checkbox-group">
+          {PERMISSION_KEYS.map((key) => (
+            <label key={key}>
+              <input
+                type="checkbox"
+                checked={Boolean(permissionForm[key])}
+                disabled={permissionBusy}
+                onChange={(event) => setPermissionForm((current) => ({ ...current, [key]: event.target.checked }))}
+              />
+              {PERMISSION_LABELS[key] ?? key}
+            </label>
+          ))}
+        </div>
+        <div className="modal-actions">
+          <button type="button" onClick={() => setPermissionTarget(null)}>取消</button>
+          <button disabled={permissionBusy} onClick={() => void savePermissions()}>
+            {permissionBusy ? '保存中...' : '保存权限'}
+          </button>
+        </div>
       </Dialog>
 
       <PromptDialog
