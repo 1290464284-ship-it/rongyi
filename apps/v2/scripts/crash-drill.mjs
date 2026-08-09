@@ -91,31 +91,33 @@ function startApi() {
 
 function stopApi() {
   return new Promise((resolve) => {
-    if (!apiProcess || apiProcess.killed || apiProcess.exitCode !== null) {
+    const target = apiProcess;
+    if (!target || target.killed || target.exitCode !== null) {
       resolve();
       return;
     }
-    apiProcess.once('exit', resolve);
-    apiProcess.kill();
+    target.once('exit', resolve);
+    target.kill();
     setTimeout(() => {
-      if (apiProcess && apiProcess.exitCode === null) apiProcess.kill('SIGKILL');
+      if (target && target.exitCode === null) target.kill('SIGKILL');
     }, 5000).unref();
   });
 }
 
 function forceKillApi() {
-  if (!apiProcess || apiProcess.exitCode !== null) return Promise.resolve();
-  const pid = apiProcess.pid;
+  const target = apiProcess;
+  if (!target || target.exitCode !== null) return Promise.resolve();
+  const pid = target.pid;
   if (pid == null) return Promise.resolve();
   return new Promise((resolve) => {
-    apiProcess.once('exit', resolve);
+    target.once('exit', resolve);
     if (process.platform === 'win32') {
       spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
     } else {
-      apiProcess.kill('SIGKILL');
+      target.kill('SIGKILL');
     }
     setTimeout(() => {
-      if (apiProcess && apiProcess.exitCode === null) apiProcess.kill('SIGKILL');
+      if (target && target.exitCode === null && apiProcess === target) target.kill('SIGKILL');
     }, 5000).unref();
   });
 }
