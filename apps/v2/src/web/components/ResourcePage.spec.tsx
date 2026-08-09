@@ -81,6 +81,35 @@ describe('ResourcePage', () => {
     expect(vi.mocked(downloadTextFile).mock.calls[0][1]).toContain('Alice');
   });
 
+  it('supports batch delete with row selection', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([writable])
+      .mockResolvedValueOnce({
+        items: [{ id: 'p1', name: 'A' }, { id: 'p2', name: 'B' }],
+        total: 2,
+        page: 1,
+        pageSize: 20,
+      })
+      .mockResolvedValueOnce({ success: true })
+      .mockResolvedValueOnce({ success: true })
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 20 });
+    render(<ResourcePage resource="patients" />, { wrapper });
+    await screen.findByText('A');
+    const checkboxes = screen.getAllByRole('checkbox');
+    fireEvent.click(checkboxes[1]);
+    fireEvent.click(checkboxes[2]);
+    fireEvent.click(screen.getByText('删除选中'));
+    fireEvent.click(screen.getByText('批量删除'));
+    await waitFor(() => expect(vi.mocked(apiRequest)).toHaveBeenCalledWith(
+      '/resources/patients/p1',
+      expect.objectContaining({ method: 'DELETE' }),
+    ));
+    expect(vi.mocked(apiRequest)).toHaveBeenCalledWith(
+      '/resources/patients/p2',
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+  });
+
   it('renders rows and hides write controls for read-only resources', async () => {
     vi.mocked(apiRequest)
       .mockResolvedValueOnce([readOnly])

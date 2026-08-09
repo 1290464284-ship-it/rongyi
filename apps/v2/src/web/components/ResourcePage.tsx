@@ -138,6 +138,9 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
   const [form, setForm] = useState<Record<string, unknown>>({});
   const [submitting, setSubmitting] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
+  const [batchBusy, setBatchBusy] = useState(false);
 
   const metaQuery = useQuery({
     queryKey: ['resource-meta'],
@@ -255,6 +258,40 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
     }
   }
 
+  function toggleSelect(id: string, checked: boolean) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll(checked: boolean) {
+    setSelectedIds(new Set(checked ? rows.map((row) => String(row.id)) : []));
+  }
+
+  async function confirmBatchDelete() {
+    if (batchBusy || selectedIds.size === 0) return;
+    setBatchBusy(true);
+    let deleted = 0;
+    try {
+      for (const id of selectedIds) {
+        await apiRequest(`/resources/${resource}/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        deleted += 1;
+      }
+      showToast(`已删除 ${deleted} 项`, 'success');
+      setSelectedIds(new Set());
+      setBatchDeleteOpen(false);
+      await listQuery.refetch();
+    } catch (error) {
+      showToast(friendlyError(error), 'error');
+      setBatchDeleteOpen(false);
+    } finally {
+      setBatchBusy(false);
+    }
+  }
+
   if (metaQuery.isLoading || listQuery.isLoading) return <LoadingState />;
   if (metaQuery.error || listQuery.error) {
     return (
@@ -289,8 +326,16 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
         onChange={(event) => {
           setSearch(event.target.value);
           setPage(1);
+          setSelectedIds(new Set());
         }}
       />
+      {selectedIds.size > 0 && (
+        <div className="ui-batch-bar">
+          <span>已选 {selectedIds.size} 项</span>
+          <button className="danger" disabled={batchBusy} onClick={() => setBatchDeleteOpen(true)}>删除选中</button>
+          <button disabled={batchBusy} onClick={() => setSelectedIds(new Set())}>取消选择</button>
+        </div>
+      )}
       {rows.length === 0 ? (
         <EmptyState message="暂无记录" />
       ) : (
@@ -299,6 +344,16 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
             <thead>
               <tr>
                 {tableColumns.map((column) => <th key={column.key}>{column.label}</th>)}
+                {definition.capabilities.delete && (
+                  <th>
+                    <input
+                      type="checkbox"
+                      aria-label="全选当前页"
+                      checked={rows.length > 0 && rows.every((row) => selectedIds.has(String(row.id)))}
+                      onChange={(event) => toggleSelectAll(event.target.checked)}
+                    />
+                  </th>
+                )}
                 <th>操作</th>
               </tr>
             </thead>
@@ -306,6 +361,16 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
               {rows.map((row, index) => (
                 <tr key={String(row.id ?? index)}>
                   {tableColumns.map((column) => <td key={column.key}>{column.render(row)}</td>)}
+                  {definition.capabilities.delete && (
+                    <td>
+                      <input
+                        type="checkbox"
+                        aria-label={`选择 ${String(row.id)}`}
+                        checked={selectedIds.has(String(row.id))}
+                        onChange={(event) => toggleSelect(String(row.id), event.target.checked)}
+                      />
+                    </td>
+                  )}
                   <td>
                     {definition.capabilities.update && (
                       <button onClick={() => openEdit(row)}>编辑</button>
@@ -321,9 +386,9 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
         </div>
       )}
       <div className="pager">
-        <button disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>上一页</button>
+        <button disabled={page <= 1} onClick={() => { setPage((value) => value - 1); setSelectedIds(new Set()); }}>上一页</button>
         <span>第 {page} 页</span>
-        <button disabled={!listQuery.data || page * 20 >= listQuery.data.total} onClick={() => setPage((value) => value + 1)}>下一页</button>
+        <button disabled={!listQuery.data || page * 20 >= listQuery.data.total} onClick={() => { setPage((value) => value + 1); setSelectedIds(new Set()); }}>下一页</button>
       </div>
 
       <Dialog
@@ -352,6 +417,15 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
         danger
         onConfirm={() => remove()}
         onCancel={() => setDeleteTarget(null)}
+      />
+      <ConfirmDialog
+        open={batchDeleteOpen}
+        title="批量删除确认"
+        message={`确定删除选中的 ${selectedIds.size} 条${label}记录吗？此操作不可撤销。`}
+        confirmText="批量删除"
+        danger
+        onConfirm={() => void confirmBatchDelete()}
+        onCancel={() => setBatchDeleteOpen(false)}
       />
     </div>
   );

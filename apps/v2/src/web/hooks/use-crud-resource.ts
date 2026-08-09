@@ -54,6 +54,8 @@ export interface CrudResourceOptions<
   deleteOverride?: (row: TRow) => Promise<void>;
   /** 创建成功后、关闭/重置表单前回调。 */
   onAfterCreate?: (form: TForm) => void;
+  /** 保存成功后回调，携带记录 id（新建时来自创建接口返回）。 */
+  onSaved?: (id: string | null, editing: boolean, form: TForm) => Promise<void> | void;
 }
 
 export interface CrudResourceResult<
@@ -167,6 +169,7 @@ export function useCrudResource<
     }
     setSubmitting(true);
     try {
+      let savedId: string | null = editingId;
       if (options.submitOverride) {
         await options.submitOverride({ form, editing });
       } else {
@@ -177,14 +180,16 @@ export function useCrudResource<
             body: JSON.stringify(payload),
           });
         } else {
-          await apiRequest(options.endpoint, {
+          const created = await apiRequest<{ id?: string }>(options.endpoint, {
             method: 'POST',
             body: JSON.stringify(payload),
           });
+          savedId = created?.id ?? null;
         }
       }
       // 契约：onAfterCreate 仅在创建成功后回调（编辑路径不触发）
       if (!editing) options.onAfterCreate?.(form);
+      await options.onSaved?.(savedId, editing, form);
       const message = editing ? options.messages?.update ?? DEFAULT_MESSAGES.update : options.messages?.create ?? DEFAULT_MESSAGES.create;
       showToast(message, 'success');
       setShowForm(false);

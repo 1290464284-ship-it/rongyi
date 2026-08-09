@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState, type ComponentType } from 'react';
+import { FormEvent, useEffect, useRef, useState, type ComponentType } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -23,6 +23,7 @@ import { apiRequest } from '../lib/api';
 import { useToast } from '../lib/toast-context';
 import type { ResourceDefinition } from '../lib/types';
 import { Tooltip } from './Tooltip';
+import { Dialog } from './dialog';
 
 interface NavItem {
   key: string;
@@ -71,6 +72,9 @@ export function Layout() {
   const [selectedClinicId, setSelectedClinicId] = useState<string | null>(null);
   const [globalSearch, setGlobalSearch] = useState('');
   const [collapsed, setCollapsed] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(() => localStorage.getItem('v2-onboarding-done') !== '1');
   useEffect(() => {
     // 会话失效（401 且刷新失败）时全局登出并跳转登录页
     const unsubscribe = onSessionExpired(() => {
@@ -80,6 +84,23 @@ export function Layout() {
     });
     return unsubscribe;
   }, [navigate, showToast]);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+        return;
+      }
+      const tag = (event.target as HTMLElement | null)?.tagName ?? '';
+      if (event.key === '?' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) {
+        event.preventDefault();
+        setShowHelp(true);
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
   const navigation = useQuery({
     queryKey: ['navigation'],
     queryFn: () => apiRequest<{ permissions: string[]; role?: string }>('/auth/navigation'),
@@ -160,8 +181,10 @@ export function Layout() {
     );
   }
 
-  return (
-    <div className={`shell${collapsed ? ' collapsed' : ''}`}>
+return (
+    <>
+      <a className="skip-link" href="#main-content">跳到主内容</a>
+      <div className={`shell${collapsed ? ' collapsed' : ''}`}>
       <aside className="sidebar">
         <div className="sidebar-brand">
           <Logo variant="sidebar" width={190} height={40} className="sidebar-logo" />
@@ -233,7 +256,7 @@ export function Layout() {
           <LogOut size={18} /><span>退出登录</span>
         </button>
       </aside>
-      <div className="shell-main">
+      <div className="shell-main" id="main-content" role="main">
         <header className="topbar">
           <div className="topbar-left">
             <button className="icon-btn" aria-label="收起侧栏" onClick={() => setCollapsed((value) => !value)}>
@@ -245,6 +268,7 @@ export function Layout() {
           </div>
           <form onSubmit={submitGlobalSearch} role="search">
             <input
+              ref={searchInputRef}
               className="topbar-search"
               type="search"
               placeholder="搜索患者…"
@@ -260,7 +284,7 @@ export function Layout() {
               </button>
             </Tooltip>
             <Tooltip content="帮助">
-              <button className="icon-btn" aria-label="帮助" onClick={() => showToast('帮助文档请查看 README', 'info')}>
+              <button className="icon-btn" aria-label="帮助" onClick={() => setShowHelp(true)}>
                 <CircleHelp size={18} />
               </button>
             </Tooltip>
@@ -275,5 +299,52 @@ export function Layout() {
         </main>
       </div>
     </div>
+      <Dialog open={showHelp} title="快捷键与帮助" onClose={() => setShowHelp(false)}>
+        <ul className="help-list">
+          <li>Ctrl+K：聚焦全局搜索</li>
+          <li>？：打开快捷键帮助</li>
+          <li>Tab / Shift+Tab：表单和弹窗内焦点移动</li>
+          <li>Esc：关闭弹窗</li>
+        </ul>
+        <div className="modal-actions">
+          <button
+            type="button"
+            onClick={() => {
+              setShowHelp(false);
+              setShowOnboarding(true);
+            }}
+          >
+            重新查看新手引导
+          </button>
+          <button type="button" onClick={() => setShowHelp(false)}>关闭</button>
+        </div>
+      </Dialog>
+      <Dialog
+        open={showOnboarding}
+        title="新手引导"
+        onClose={() => {
+          localStorage.setItem('v2-onboarding-done', '1');
+          setShowOnboarding(false);
+        }}
+      >
+        <ol className="help-list">
+          <li>从左侧菜单进入患者、临床、财务、库存等模块。</li>
+          <li>患者档案支持联系方式、微信号和自定义字段。</li>
+          <li>系统会按提醒设置生成随访，可到“随访微信”查看。</li>
+          <li>重要操作前建议先做一次加密备份。</li>
+        </ol>
+        <div className="modal-actions">
+          <button
+            type="button"
+            onClick={() => {
+              localStorage.setItem('v2-onboarding-done', '1');
+              setShowOnboarding(false);
+            }}
+          >
+            完成
+          </button>
+        </div>
+      </Dialog>
+    </>
   );
 }

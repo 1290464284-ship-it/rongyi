@@ -26,6 +26,7 @@ const FollowUpReportPage = lazy(() => import('../pages/communication/FollowUpRep
 const PatientWorkflowPage = lazy(() => import('../pages/patients/PatientWorkflowPage').then((m) => ({ default: m.PatientWorkflowPage })));
 const ClinicOverviewPage = lazy(() => import('../pages/analytics/ClinicOverviewPage').then((m) => ({ default: m.ClinicOverviewPage })));
 const UsersPage = lazy(() => import('../pages/system/UsersPage').then((m) => ({ default: m.UsersPage })));
+const CustomFieldsPage = lazy(() => import('../pages/system/CustomFieldsPage').then((m) => ({ default: m.CustomFieldsPage })));
 const PatientsPage = lazy(() => import('../pages/patients/PatientsPage').then((m) => ({ default: m.PatientsPage })));
 const VisitsPage = lazy(() => import('../pages/clinical/VisitsPage').then((m) => ({ default: m.VisitsPage })));
 const FirstExamsPage = lazy(() => import('../pages/clinical/FirstExamsPage').then((m) => ({ default: m.FirstExamsPage })));
@@ -143,6 +144,7 @@ export const systemHubTabs: HubTab[] = [
   { id: 'desktop', label: '\u684c\u9762\u7aef', kind: 'custom', component: DesktopSettingsPage },
   { id: 'operations', label: '\u7cfb\u7edf\u64cd\u4f5c', kind: 'custom', component: SystemOperationsPage },
   { id: 'settings', label: '\u8bbe\u7f6e', kind: 'resource', resource: 'settings' },
+  { id: 'customFields', label: '\u81ea\u5b9a\u4e49\u5b57\u6bb5', kind: 'custom', component: CustomFieldsPage },
   { id: 'alerts', label: '\u544a\u8b66', kind: 'resource', resource: 'businessAlerts' },
   { id: 'logs', label: '\u64cd\u4f5c\u65e5\u5fd7', kind: 'resource', resource: 'operationLogs' },
   { id: 'sync', label: '\u540c\u6b65\u8bb0\u5f55', kind: 'resource', resource: 'syncChanges' },

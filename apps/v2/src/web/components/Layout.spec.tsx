@@ -213,7 +213,7 @@ describe('Layout clinic switcher', () => {
     fireEvent.click(screen.getByRole('button', { name: '通知' }));
     expect(await screen.findByText('暂无新通知')).toBeDefined();
     fireEvent.click(screen.getByRole('button', { name: '帮助' }));
-    expect(await screen.findByText('帮助文档请查看 README')).toBeDefined();
+    expect(await screen.findByRole('heading', { name: '快捷键与帮助' })).toBeDefined();
   });
 
   it('denies resource routes outside the current role', async () => {

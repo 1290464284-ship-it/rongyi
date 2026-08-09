@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router';
 import { apiRequest } from '../../lib/api';
+import { errorMessage } from '../../lib/messages';
+import { useToast } from '../../lib/toast-context';
 import type { Page } from '../../lib/types';
 import { LoadingState, PageError, SearchableSelect, Timeline, type SearchableSelectRow } from '../../components';
 import { formatMoney } from '../../lib/format';
@@ -54,6 +56,26 @@ export function PatientTimelinePage() {
     queryFn: () => apiRequest<Page<Record<string, unknown>>>(`/resources/followUps?page=1&pageSize=200&patientId=${encodeURIComponent(patientId ?? '')}`),
     enabled: patientId !== null,
   });
+  const customFields = useQuery({
+    queryKey: ['custom-fields', patientId],
+    queryFn: () => apiRequest<Array<{
+      id: string;
+      label: string;
+      fieldName: string;
+      fieldType: string;
+      optionsJson?: string;
+      required?: boolean;
+    }>>('/custom-fields?entity=patient'),
+    enabled: patientId !== null,
+  });
+  const customFieldValues = useQuery({
+    queryKey: ['custom-fields-values', patientId],
+    queryFn: () => apiRequest<{ values: Record<string, string | null> }>(
+      `/custom-fields/values?entity=patient&entityId=${encodeURIComponent(patientId ?? '')}`,
+    ),
+    enabled: patientId !== null,
+  });
+  const [customDraft, setCustomDraft] = useState<Record<string, string | boolean>>({});
 
   // H1 分区渲染：任一子查询失败只降级对应区块，不影响其余事件与患者选择器
   const timelineQueries = [visits, treatments, charges, followUps] as const;
@@ -99,6 +121,36 @@ export function PatientTimelinePage() {
     }`,
     tone: timelineTone(event.status),
   }));
+  const { showToast } = useToast();
+  const loadedCustomValues = customFieldValues.data?.values ?? {};
+  function customValue(fieldId: string, fieldType: string): string | boolean {
+    if (Object.prototype.hasOwnProperty.call(customDraft, fieldId)) return customDraft[fieldId] ?? '';
+    const value = loadedCustomValues[fieldId];
+    if (fieldType === 'BOOLEAN') return value === '1';
+    return value ?? '';
+  }
+  async function saveCustomFields() {
+    const definitions = customFields.data ?? [];
+    if (definitions.length === 0 || !patientId) return;
+    try {
+      await apiRequest('/custom-fields/values', {
+        method: 'PUT',
+        body: JSON.stringify({
+          entity: 'patient',
+          entityId: patientId,
+          values: definitions.map((field) => ({
+            fieldId: field.id,
+            value: customValue(field.id, field.fieldType),
+          })),
+        }),
+      });
+      showToast('自定义信息已保存', 'success');
+      setCustomDraft({});
+      await customFieldValues.refetch();
+    } catch (error) {
+      showToast(errorMessage(error, '保存自定义信息失败'), 'error');
+    }
+  }
 
   return (
     <div className="page">
@@ -135,6 +187,48 @@ export function PatientTimelinePage() {
         <Timeline items={timelineItems} />
         {events.length === 0 && !timelineLoading && failedQueries.length === 0 && <p className="empty-board">暂无时间线记录</p>}
       </div>
+      {customFields.data?.length ? (
+        <section className="page-section">
+          <div className="page-head">
+            <h2>自定义信息</h2>
+            <button onClick={() => void saveCustomFields()}>保存自定义信息</button>
+          </div>
+          <div className="form-grid">
+            {customFields.data.map((field) => {
+              const value = customValue(field.id, field.fieldType);
+              const options = JSON.parse(String(field.optionsJson ?? '[]')) as string[];
+              return (
+                <label key={field.id}>
+                  {field.label}{field.required ? ' *' : ''}
+                  {field.fieldType === 'BOOLEAN' ? (
+                    <input
+                      type="checkbox"
+                      checked={Boolean(value)}
+                      onChange={(event) => setCustomDraft((current) => ({ ...current, [field.id]: event.target.checked }))}
+                    />
+                  ) : field.fieldType === 'SELECT' ? (
+                    <select
+                      value={String(value ?? '')}
+                      onChange={(event) => setCustomDraft((current) => ({ ...current, [field.id]: event.target.value }))}
+                    >
+                      <option value="">请选择</option>
+                      {options.map((option) => (
+                        <option key={String(option)} value={String(option)}>{String(option)}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type={field.fieldType === 'NUMBER' ? 'number' : 'text'}
+                      value={String(value ?? '')}
+                      onChange={(event) => setCustomDraft((current) => ({ ...current, [field.id]: event.target.value }))}
+                    />
+                  )}
+                </label>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }
