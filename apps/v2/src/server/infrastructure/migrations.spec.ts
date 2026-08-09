@@ -43,6 +43,20 @@ describe('migrations', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it('adds the barcode column when migration 151 runs on a table without it', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-mig-barcode-'));
+    const fresh = createDatabase(dir);
+    const columns = (fresh.prepare('PRAGMA table_info(InventoryItem)').all() as Array<{ name: string }>).map((c) => c.name);
+    if (columns.includes('barcode')) fresh.exec('ALTER TABLE InventoryItem DROP COLUMN barcode');
+    const migration = migrations.find((item) => item.version === 151);
+    expect(migration).toBeDefined();
+    migration?.up(fresh);
+    const after = (fresh.prepare('PRAGMA table_info(InventoryItem)').all() as Array<{ name: string }>).map((c) => c.name);
+    expect(after).toContain('barcode');
+    fresh.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('retries migrations when another process holds the schema lock', () => {
     const attempts: number[] = [];
     const run = () => {

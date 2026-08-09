@@ -78,4 +78,38 @@ describe('custom field routes', () => {
       .expect(200);
     expect(saved.body.data[field.id]).toBe('ok');
   });
+
+  it('BOSS updates, reads values, and deletes definitions', async () => {
+    currentRole = 'BOSS';
+    const created = await request(app)
+      .post('/api/v2/custom-fields')
+      .send({ entity: 'patient', label: '更新偏好', fieldName: 'updatePreference', fieldType: 'TEXT' })
+      .expect(201);
+    const id = created.body.data.id as string;
+
+    await request(app)
+      .patch(`/api/v2/custom-fields/${id}`)
+      .send({ label: '已更新偏好', fieldName: 'updatePreference', fieldType: 'TEXT' })
+      .expect(200);
+
+    const values = await request(app)
+      .get('/api/v2/custom-fields/values?entity=patient&entityId=patient-route-2')
+      .expect(200);
+    expect(values.body.success).toBe(true);
+
+    await request(app)
+      .delete(`/api/v2/custom-fields/${id}`)
+      .expect(200);
+  });
+
+  it('DOCTOR cannot update or delete definitions', async () => {
+    currentRole = 'DOCTOR';
+    await request(app)
+      .patch('/api/v2/custom-fields/not-found')
+      .send({ label: 'x' })
+      .expect(403);
+    await request(app)
+      .delete('/api/v2/custom-fields/not-found')
+      .expect(403);
+  });
 });
