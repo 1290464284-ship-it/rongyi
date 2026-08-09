@@ -50,6 +50,7 @@ export const inventoryResources: ResourceDefinition[] = [
 
   crud('inventoryItems', 'InventoryItem', [
     f('code', 'text', { required: true, unique: true, searchable: true }),
+    f('barcode', 'text', { searchable: true }),
     f('name', 'text', { required: true, searchable: true }),
     f('spec', 'text'),
     f('category', 'text', { required: true }),

@@ -552,6 +552,28 @@ a {
   gap: 6px;
 }
 
+.barcode-svg {
+  display: block;
+  color: var(--text);
+  background: #fff;
+}
+
+.barcode-print {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  padding: 16px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.barcode-print-text {
+  display: grid;
+  gap: 2px;
+  text-align: center;
+}
+
 .page h1 {
   margin-top: 0;
   font-size: 18px;

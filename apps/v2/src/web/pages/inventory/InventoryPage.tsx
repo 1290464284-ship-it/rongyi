@@ -8,6 +8,7 @@ import { errorMessage } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
 import type { BatchRow, BatchListData } from '../../inventory/types';
 import { InventoryReportPanel } from './InventoryReportPanel';
+import { BarcodeView } from '../../inventory/BarcodeView';
 
 export function InventoryPage() {
   const { showToast } = useToast();
@@ -31,6 +32,8 @@ export function InventoryPage() {
   const [editing, setEditing] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<BatchRow | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'report'>('overview');
+  const [barcodeSearch, setBarcodeSearch] = useState('');
+  const [barcodeTarget, setBarcodeTarget] = useState<Record<string, unknown> | null>(null);
   const query = useQuery({
     queryKey: ['inventory'],
     queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/inventoryItems?page=1&pageSize=20'),
@@ -121,6 +124,29 @@ export function InventoryPage() {
       showToast(errorMessage(error, '生成补货建议失败'), 'error');
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function searchByBarcode() {
+    const value = barcodeSearch.trim();
+    if (!value) {
+      showToast('请输入条码或编码', 'error');
+      return;
+    }
+    try {
+      const result = await apiRequest<Page<Record<string, unknown>>>(
+        `/resources/inventoryItems?page=1&pageSize=20&search=${encodeURIComponent(value)}`,
+      );
+      const match = (result.items ?? []).find((row) =>
+        String(row.barcode ?? '') === value || String(row.code ?? '') === value);
+      if (!match) {
+        showToast('未找到匹配的库存项目', 'error');
+        return;
+      }
+      setItemId(String(match.id));
+      showToast(`已定位：${String(match.name ?? match.code ?? '')}`, 'success');
+    } catch (error) {
+      showToast(errorMessage(error, '扫码定位失败'), 'error');
     }
   }
 
@@ -231,6 +257,21 @@ export function InventoryPage() {
         <h1>库存管理</h1>
         <button onClick={generateReplenishment}>生成补货建议</button>
       </div>
+      <form
+        className="inline-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void searchByBarcode();
+        }}
+      >
+        <input
+          aria-label="条码扫码"
+          placeholder="扫描条码或输入编码"
+          value={barcodeSearch}
+          onChange={(event) => setBarcodeSearch(event.target.value)}
+        />
+        <button type="submit">扫码定位</button>
+      </form>
       <div className="tabs" role="tablist">
         <button
           role="tab"
@@ -275,6 +316,8 @@ export function InventoryPage() {
               <div className="card" key={String(row.id)}>
                 <strong>{String(row.name ?? row.code ?? '')}</strong>
                 <span>库存：{String(row.stock ?? '')} / 最低 {String(row.minStock ?? '')}</span>
+                {row.barcode ? <BarcodeView value={String(row.barcode)} height={40} /> : null}
+                <button type="button" onClick={() => setBarcodeTarget(row)}>条码</button>
               </div>
             ))}
           </div>
@@ -363,6 +406,22 @@ export function InventoryPage() {
             <button type="submit" disabled={editing}>{editing ? '保存中...' : '保存'}</button>
           </div>
         </form>
+      </Dialog>
+      <Dialog
+        open={barcodeTarget !== null}
+        title={`条码标签：${String(barcodeTarget?.name ?? barcodeTarget?.code ?? '')}`}
+        onClose={() => setBarcodeTarget(null)}
+      >
+        <div className="barcode-print">
+          <BarcodeView value={String(barcodeTarget?.barcode ?? barcodeTarget?.code ?? '')} height={96} />
+          <div className="barcode-print-text">
+            <strong>{String(barcodeTarget?.name ?? '')}</strong>
+            <span>{String(barcodeTarget?.barcode ?? barcodeTarget?.code ?? '')}</span>
+          </div>
+        </div>
+        <div className="modal-actions">
+          <button type="button" onClick={() => setBarcodeTarget(null)}>关闭</button>
+        </div>
       </Dialog>
       <ConfirmDialog
         open={deleteTarget !== null}

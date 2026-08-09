@@ -193,6 +193,7 @@ export const fieldLabels: Record<string, string> = {
   bankAccount: '银行账号',
   supplierId: '供应商',
   spec: '规格',
+  barcode: '条码',
   stock: '库存',
   minStock: '最低库存',
   expireDate: '有效期至',
