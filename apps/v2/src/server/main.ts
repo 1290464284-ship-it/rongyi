@@ -257,18 +257,23 @@ let searchIndexEmpty = false;
 if (hasSearchIndexTable) {
   searchIndexEmpty = Number((db.prepare('SELECT COUNT(*) AS total FROM SearchIndex').get() as { total: number }).total) === 0;
 }
-if (appliedMigrations > 0 || searchIndexEmpty) {
-  try {
-    rebuildSearchIndex(db);
-  } catch (error) {
-    logger.error('search index rebuild failed at startup', { action: 'search-index-rebuild', error });
-  }
-}
+const needsSearchRebuild = appliedMigrations > 0 || searchIndexEmpty;
 seedDatabase(db);
 const app = createApp({ db, dbPath, backupDir, logger, logDir });
 
 const server = app.listen(port, host, () => {
   logger.info('server started', { action: 'listen', host, port });
+  if (needsSearchRebuild) {
+    // 大库全量重建放监听之后再跑，避免首启卡在 Electron 健康检查窗口内。
+    setImmediate(() => {
+      try {
+        rebuildSearchIndex(db);
+        logger.info('search index rebuild finished', { action: 'search-index-rebuild' });
+      } catch (error) {
+        logger.error('search index rebuild failed at startup', { action: 'search-index-rebuild', error });
+      }
+    });
+  }
 });
 server.on('error', (error) => {
   logger.error('server failed to start', { action: 'listen', host, port, error });

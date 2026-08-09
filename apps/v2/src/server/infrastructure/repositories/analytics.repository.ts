@@ -11,11 +11,10 @@ export class SqliteAnalyticsRepository implements AnalyticsRepository {
     const chargeClause = tenantAnd(clinicId, 'C.clinicId');
     const params: unknown[] = clinicId ? [clinicId, clinicId] : [];
     const total = Number((this.db.prepare(
-      `SELECT COUNT(DISTINCT P.id) AS total
+      `SELECT COUNT(*) AS total
        FROM Patient P
-       LEFT JOIN Charge C ON C.patientId = P.id AND C.deletedAt IS NULL AND C.paidAt IS NOT NULL${chargeClause}
        WHERE P.deletedAt IS NULL${patientClause}`,
-    ).get(...params) as { total: number }).total);
+    ).get(...(clinicId ? [clinicId] : [])) as { total: number }).total);
     const items = this.db.prepare(
       `SELECT P.id AS patientId, P.name,
               COUNT(C.id) AS frequency,
