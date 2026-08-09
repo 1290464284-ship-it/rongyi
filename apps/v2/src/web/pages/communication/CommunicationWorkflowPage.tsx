@@ -5,13 +5,16 @@ import { DataTable, QuerySection, type DataTableColumn } from '../../components'
 import { errorMessage } from '../../lib/messages';
 import { useAsyncAction } from '../../hooks/use-async-action';
 import { useToast } from '../../lib/toast-context';
+import { copyText } from '../../lib/clipboard';
 import { WechatTemplateLibrary, type WechatTemplateConfig } from './WechatTemplateLibrary';
+import { WechatReminderSettings } from './WechatReminderSettings';
 
 interface ReminderItem {
   id: string;
   patientId: string;
   patientName: string | null;
   patientPhone: string | null;
+  patientWechatId: string | null;
   scene: string;
   sceneLabel: string;
   scheduledDate: string;
@@ -67,7 +70,7 @@ export function CommunicationWorkflowPage() {
 
   async function copyReminderContent(content: string) {
     try {
-      await navigator.clipboard.writeText(content);
+      await copyText(content);
       showToast('话术已复制', 'success');
     } catch {
       showToast('复制失败，请手动选择复制', 'error');
@@ -113,6 +116,8 @@ export function CommunicationWorkflowPage() {
     <div className="page">
       <div className="page-head"><h1>微信消息</h1></div>
 
+      <WechatReminderSettings />
+
       <QuerySection
         query={reminders}
         render={(reminderData) => {
@@ -136,6 +141,9 @@ export function CommunicationWorkflowPage() {
                       <div className="reminder-head">
                         <strong>{item.patientName ?? ''}</strong>
                         {item.patientPhone ? <span className="reminder-muted">{item.patientPhone}</span> : null}
+                        {item.patientWechatId
+                          ? <span className="reminder-muted">微信：{item.patientWechatId}</span>
+                          : <span className="reminder-muted">未填微信号</span>}
                         <span className={reminderTagClass(item.scene)}>{item.sceneLabel}</span>
                       </div>
                       <p className="reminder-content">{item.content}</p>

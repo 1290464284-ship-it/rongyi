@@ -26,6 +26,9 @@ const patientList = {
     name: '张三',
     gender: 'MALE',
     phone: '13800000000',
+    wechatId: 'wx_zhang',
+    preferredContact: 'WECHAT',
+    contactNote: '下午联系',
     birthDate: '1990-01-01',
     source: 'WALK_IN',
     active: true,
@@ -55,6 +58,9 @@ describe('PatientsPage', () => {
     fireEvent.change(screen.getByLabelText('患者编号'), { target: { value: 'P002' } });
     fireEvent.change(screen.getByLabelText('姓名'), { target: { value: '李四' } });
     fireEvent.change(screen.getByLabelText('手机号'), { target: { value: '13900000000' } });
+    fireEvent.change(screen.getByLabelText('微信号'), { target: { value: 'wx_lisi' } });
+    fireEvent.change(screen.getByLabelText('首选联系方式'), { target: { value: 'WECHAT' } });
+    fireEvent.change(screen.getByLabelText('联系方式备注'), { target: { value: '周末联系' } });
     fireEvent.change(screen.getByLabelText('过敏史（每行一条）'), { target: { value: '花生\n鸡蛋' } });
     fireEvent.click(screen.getByText('保存'));
 
@@ -66,6 +72,9 @@ describe('PatientsPage', () => {
       code: 'P002',
       name: '李四',
       phone: '13900000000',
+      wechatId: 'wx_lisi',
+      preferredContact: 'WECHAT',
+      contactNote: '周末联系',
       allergies: ['花生', '鸡蛋'],
       active: true,
       source: 'WALK_IN',

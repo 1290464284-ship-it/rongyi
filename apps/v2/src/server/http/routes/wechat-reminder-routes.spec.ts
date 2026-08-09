@@ -28,6 +28,7 @@ describe('wechat reminder routes', () => {
     ).run('2099-01-01T00:00:00.000Z', '2099-01-01T01:00:00.000Z', nowIso);
 
     app = express();
+    app.use(express.json());
     app.use((req, _res, next) => {
       (req as unknown as { context: unknown }).context = {
         userId: 'user-admin-001',
@@ -40,6 +41,14 @@ describe('wechat reminder routes', () => {
     });
     service = new WechatReminderService(db);
     registerWechatReminderRoutes(app, buildRouteDeps(db), service);
+    app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+      const status = error instanceof Error && 'status' in error ? Number((error as { status?: number }).status) : 500;
+      res.status(status >= 400 && status < 600 ? status : 500).json({
+        success: false,
+        code: 'ERROR',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    });
   });
 
   beforeEach(() => {
@@ -59,6 +68,30 @@ describe('wechat reminder routes', () => {
     expect(res.body.data.recallDaysAfter).toBe(3);
     expect(res.body.data.firstExamDaysAfter).toBe(3);
     expect(res.body.data.enabled).toBe(true);
+  });
+
+  it('updates reminder timing settings', async () => {
+    const res = await request(app)
+      .patch('/api/v2/wechat-reminders/config')
+      .send({ appointmentDaysBefore: 2, recallDaysAfter: 5, firstExamDaysAfter: 7 })
+      .expect(200);
+    expect(res.body.data.appointmentDaysBefore).toBe(2);
+    expect(res.body.data.recallDaysAfter).toBe(5);
+    expect(res.body.data.firstExamDaysAfter).toBe(7);
+    const config = await request(app).get('/api/v2/wechat-reminders/config').expect(200);
+    expect(config.body.data.recallDaysAfter).toBe(5);
+    await request(app)
+      .patch('/api/v2/wechat-reminders/config')
+      .send({ appointmentDaysBefore: 1, recallDaysAfter: 3, firstExamDaysAfter: 3 })
+      .expect(200);
+  });
+
+  it('rejects invalid reminder timing settings', async () => {
+    const res = await request(app)
+      .patch('/api/v2/wechat-reminders/config')
+      .send({ appointmentDaysBefore: 999 })
+      .expect(400);
+    expect(res.body.success).toBe(false);
   });
 
   it('returns an empty today list when nothing is due', async () => {

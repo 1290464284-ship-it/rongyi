@@ -19,7 +19,7 @@ import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { SystemClock } from '../../infrastructure/clock';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
-import { ConflictError, NotFoundError } from '../../infrastructure/errors';
+import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { maskPhoneForExport } from './operations';
 import { CLINIC_TZ_OFFSET_HOURS } from '../../../domain/contracts';
 import type { AppContext } from '../../../domain/contracts';
@@ -80,6 +80,7 @@ export interface WechatReminderItem {
   patientId: string;
   patientName: string | null;
   patientPhone: string | null;
+  patientWechatId: string | null;
   scene: WechatReminderScene;
   sceneLabel: string;
   scheduledDate: string;
@@ -140,6 +141,61 @@ export class WechatReminderService {
       if (value !== undefined && value.trim() !== '') config[key] = value;
     }
     return config;
+  }
+
+  updateConfig(
+    input: Partial<Pick<WechatReminderConfig, 'enabled' | 'appointmentDaysBefore' | 'recallDaysAfter' | 'firstExamDaysAfter' | 'appointmentContent' | 'recallContent' | 'firstExamContent'>>,
+    context: AppContext,
+  ): WechatReminderConfig {
+    const clinicId = context.clinicId;
+    const now = context.now().toISOString();
+    const findSetting = this.db.prepare(
+      `SELECT id FROM Setting WHERE key = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
+    );
+    const updateSetting = this.db.prepare(
+      `UPDATE Setting SET value = ?, updatedAt = ? WHERE id = ?`,
+    );
+    const insertSetting = this.db.prepare(
+      `INSERT INTO Setting (id, clinicId, createdAt, updatedAt, deletedAt, key, value)
+       VALUES (?, ?, ?, ?, NULL, ?, ?)`,
+    );
+    const writeSetting = (key: string, value: string): void => {
+      const row = findSetting.get(key, ...tenantParams(clinicId)) as { id: string } | undefined;
+      if (row) updateSetting.run(value, now, row.id);
+      else insertSetting.run(randomUUID(), clinicId, now, now, key, value);
+    };
+    const run = this.db.transaction(() => {
+      if (input.enabled !== undefined) {
+        writeSetting('wechatReminder.enabled', input.enabled ? 'true' : 'false');
+      }
+      for (const [settingKey, field] of [
+        ['wechatReminder.appointmentDaysBefore', 'appointmentDaysBefore'],
+        ['wechatReminder.recallDaysAfter', 'recallDaysAfter'],
+        ['wechatReminder.firstExamDaysAfter', 'firstExamDaysAfter'],
+      ] as const) {
+        const value = input[field];
+        if (value === undefined) continue;
+        if (!Number.isInteger(value) || value < 0 || value > 365) {
+          throw new ValidationError(`${field} must be an integer between 0 and 365`);
+        }
+        writeSetting(settingKey, String(value));
+      }
+      for (const [settingKey, field] of [
+        ['wechatReminder.appointmentContent', 'appointmentContent'],
+        ['wechatReminder.recallContent', 'recallContent'],
+        ['wechatReminder.firstExamContent', 'firstExamContent'],
+      ] as const) {
+        const value = input[field];
+        if (value === undefined) continue;
+        if (typeof value !== 'string' || value.length > 2000) {
+          throw new ValidationError(`${field} must be a string up to 2000 characters`);
+        }
+        writeSetting(settingKey, value);
+      }
+    });
+    run();
+    this.todayGeneratedCache.clear();
+    return this.config(context);
   }
 
   /** 返回今日清单；首次调用会按当前规则幂等生成当天的 PENDING 提醒（5 分钟 TTL 缓存生成标志）。 */
@@ -278,7 +334,7 @@ export class WechatReminderService {
     ).get(today, ...tenantParams(context.clinicId)) as { total: number };
     const rows = this.db.prepare(
       `SELECT r.id, r.patientId, r.scene, r.scheduledDate, r.sourceId, r.content, r.status,
-              p.name AS patientName, p.phone AS patientPhone
+              p.name AS patientName, p.phone AS patientPhone, p.wechatId AS patientWechatId
        FROM WechatReminder r
        LEFT JOIN Patient p ON p.id = r.patientId AND p.deletedAt IS NULL
        WHERE r.deletedAt IS NULL AND r.status = 'PENDING' AND r.scheduledDate = ?${tenantAnd(context.clinicId, 'r.clinicId')}
@@ -294,6 +350,7 @@ export class WechatReminderService {
       status: string;
       patientName: string | null;
       patientPhone: string | null;
+      patientWechatId: string | null;
     }>;
     return {
       items: rows.map((row) => ({
@@ -301,6 +358,7 @@ export class WechatReminderService {
       patientId: row.patientId,
       patientName: row.patientName,
       patientPhone: maskPhoneForExport(row.patientPhone),
+      patientWechatId: row.patientWechatId,
       scene: row.scene,
       sceneLabel: WECHAT_REMINDER_SCENE_LABELS[row.scene] ?? row.scene,
       scheduledDate: row.scheduledDate,

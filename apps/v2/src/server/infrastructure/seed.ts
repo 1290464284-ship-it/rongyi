@@ -81,9 +81,10 @@ export function seedDatabase(db: Database.Database): void {
     db.prepare(
       `INSERT OR IGNORE INTO Patient (
          id, clinicId, createdAt, updatedAt, deletedAt,
-         code, name, gender, phone, tags, allergies, medicalHistory,
+         code, name, gender, phone, wechatId, preferredContact, contactNote, tags, allergies, medicalHistory,
          medicationHistory, systemicDiseases, source, active
        ) VALUES (?, ?, ?, ?, NULL, 'P001', 'Demo Patient', 'UNKNOWN', '13800000000',
+         'demo-wechat-id', 'WECHAT', NULL,
          '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
     ).run('patient-demo-001', clinicId, now, now);
 

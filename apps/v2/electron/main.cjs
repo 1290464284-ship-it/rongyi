@@ -1,7 +1,9 @@
 const {
   app,
   BrowserWindow,
+  clipboard,
   ipcMain,
+  Menu,
   safeStorage,
   session,
   crashReporter: nativeCrashReporter,
@@ -102,7 +104,23 @@ app.whenReady().then(async () => {
     });
   }
 
-  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    callback(permission === 'clipboard-sanitized-write' || permission === 'clipboard-read');
+  });
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    {
+      label: '编辑',
+      submenu: [
+        { role: 'undo', label: '撤销' },
+        { role: 'redo', label: '重做' },
+        { type: 'separator' },
+        { role: 'cut', label: '剪切' },
+        { role: 'copy', label: '复制' },
+        { role: 'paste', label: '粘贴' },
+        { role: 'selectAll', label: '全选' },
+      ],
+    },
+  ]));
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const apiOrigin = state.apiPort ? `http://127.0.0.1:${state.apiPort}` : '';
     const devWs = isDev ? ` ws://localhost:${new URL(WEB_DEV_ORIGIN).port}` : '';
@@ -154,6 +172,11 @@ app.whenReady().then(async () => {
   ipcMain.handle('desktop:version', (_event) => {
     assertTrustedRenderer(_event);
     return app.getVersion();
+  });
+  ipcMain.handle('desktop:clipboard:write', (_event, text) => {
+    assertTrustedRenderer(_event);
+    clipboard.writeText(String(text ?? ''));
+    return true;
   });
   ipcMain.handle('desktop:quit', (_event) => {
     assertTrustedRenderer(_event);

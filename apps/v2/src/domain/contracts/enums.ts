@@ -21,6 +21,14 @@ export const PatientSource = {
 } as const;
 export type PatientSource = (typeof PatientSource)[keyof typeof PatientSource];
 
+export const PatientPreferredContact = {
+  PHONE: 'PHONE',
+  WECHAT: 'WECHAT',
+  SMS: 'SMS',
+  OTHER: 'OTHER',
+} as const;
+export type PatientPreferredContact = (typeof PatientPreferredContact)[keyof typeof PatientPreferredContact];
+
 export const AppointmentStatus = {
   BOOKED: 'BOOKED',
   ARRIVED: 'ARRIVED',

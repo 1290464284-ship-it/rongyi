@@ -1,7 +1,7 @@
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { SqliteWechatMessageRepository } from '../../infrastructure/repositories/core.repositories';
-import { tenantAnd } from '../../infrastructure/tenant';
+import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import type { AppContext } from '../../../domain/contracts';
 import type { WechatMessageRepository } from '../ports';
 import type { Logger } from '../../infrastructure/logger';
@@ -12,6 +12,7 @@ export interface WechatMessagePayload {
   id: string;
   clinicId?: string | null;
   patientId?: string | null;
+  wechatId?: string | null;
   type?: string | null;
   content?: string | null;
   templateId?: string | null;
@@ -177,6 +178,13 @@ export class WechatService {
     // B-M2 并发守卫：原子抢占，只有 PENDING/DRAFT 能被本次发送认领。
     // 两个并发请求同时进来时只有一个 UPDATE 成功，另一个在下方按最新状态处理。
     const now = context.now().toISOString();
+    let wechatId: string | null = null;
+    if (row.patientId) {
+      const patient = this.db.prepare(
+        `SELECT wechatId FROM Patient WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+      ).get(row.patientId, ...tenantParams(context.clinicId)) as { wechatId?: string | null } | undefined;
+      wechatId = patient?.wechatId ?? null;
+    }
     const staleInProgressCutoff = new Date(Date.now() - STALE_IN_PROGRESS_MS).toISOString();
     const claimed = this.db.prepare(
       `UPDATE WechatMessage SET status = 'IN_PROGRESS', updatedAt = ?
@@ -197,6 +205,7 @@ export class WechatService {
       id: row.id,
       clinicId: row.clinicId,
       patientId: row.patientId,
+      wechatId,
       type: row.type,
       content: row.content,
       templateId: row.templateId,

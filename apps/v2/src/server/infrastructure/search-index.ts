@@ -11,7 +11,7 @@ export function buildFtsQuery(query: string): string {
 // `WHERE 主表.id = ? AND 主表.deletedAt IS NULL` 限定单行。
 const SEARCH_UPSERT_SQL: Record<string, string> = {
   Patient: `INSERT INTO SearchIndex(resource, recordId, clinicId, content)
-            SELECT 'Patient', id, clinicId, trim(COALESCE(name, '') || ' ' || COALESCE(code, '') || ' ' || COALESCE(phone, ''))
+            SELECT 'Patient', id, clinicId, trim(COALESCE(name, '') || ' ' || COALESCE(code, '') || ' ' || COALESCE(phone, '') || ' ' || COALESCE(wechatId, ''))
             FROM Patient WHERE id = ? AND deletedAt IS NULL`,
   InventoryItem: `INSERT INTO SearchIndex(resource, recordId, clinicId, content)
             SELECT 'InventoryItem', id, clinicId, trim(COALESCE(name, '') || ' ' || COALESCE(code, '') || ' ' || COALESCE(category, ''))

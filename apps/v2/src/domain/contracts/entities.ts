@@ -4,6 +4,7 @@ import type {
   UserRole,
   Gender,
   PatientSource,
+  PatientPreferredContact,
   RiskLevel,
 } from './enums';
 
@@ -56,6 +57,9 @@ export interface Patient extends Entity, SoftDeletable {
   name: string;
   gender: Gender;
   phone: string;
+  wechatId?: string;
+  preferredContact?: PatientPreferredContact;
+  contactNote?: string;
   birthDate?: ClinicDate | null;
   idCard?: string;
   address?: string;

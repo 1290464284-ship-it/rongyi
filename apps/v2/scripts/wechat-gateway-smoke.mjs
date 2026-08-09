@@ -182,6 +182,7 @@ async function main() {
     assert(gatewayRequests.length === 1, `gateway should receive one request, got ${gatewayRequests.length}`);
     assert(gatewayRequests[0].appId === 'mock-wechat-app', 'gateway should receive the configured appId');
     assert(gatewayRequests[0].idempotencyKey === created.id, 'gateway should receive the message id as idempotency key');
+    assert(gatewayRequests[0].message?.wechatId === 'demo-wechat-id', 'gateway should receive the patient wechatId');
 
     const failed = await request('/resources/wechatMessages', {
       method: 'POST',

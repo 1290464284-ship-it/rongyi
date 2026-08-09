@@ -212,4 +212,31 @@ describe('WechatReminderService', () => {
     const row = db.prepare('SELECT 1 FROM WechatReminder WHERE sourceId = ?').get('appt-rem-disabled');
     expect(row).toBeUndefined();
   });
+
+  it('exposes patient wechat id on reminders', () => {
+    db.prepare(
+      `DELETE FROM Setting WHERE clinicId = ? AND key IN (
+         'wechatReminder.enabled',
+         'wechatReminder.appointmentDaysBefore',
+         'wechatReminder.recallDaysAfter',
+         'wechatReminder.firstExamDaysAfter'
+       )`,
+    ).run(context.clinicId);
+    db.prepare(
+      `INSERT INTO Patient (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, wechatId, preferredContact, source, active
+       ) VALUES (?, ?, ?, ?, NULL, 'P-WX-REM', 'Wechat Reminder Patient', 'UNKNOWN', '13900000000', 'wx_rem', 'WECHAT', 'WALK_IN', 1)`,
+    ).run('patient-wechat-rem', context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO Appointment (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, startTime, endTime, status, type
+       ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, 'BOOKED', 'REGULAR')`,
+    ).run('appt-wechat-id-rem', context.clinicId, now, now, 'patient-wechat-rem', 'user-admin-001', '2026-08-06T09:00:00.000Z', '2026-08-06T10:00:00.000Z');
+    const service = new WechatReminderService(db);
+    const result = service.today(context);
+    const item = result.items.find((row) => row.sourceId === 'appt-wechat-id-rem');
+    expect(item?.patientWechatId).toBe('wx_rem');
+  });
 });

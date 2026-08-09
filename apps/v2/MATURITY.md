@@ -230,6 +230,14 @@
 - The communication page includes a built-in WeChat message template library
   (appointment reminder, treatment recall, first-exam follow-up) with copy and
   sample rendering; content comes from `wechatReminder.*Content` settings.
+- Patient records support `wechatId`, `preferredContact` and `contactNote`;
+  WeChat sends include the patient `wechatId` in the gateway payload.
+- WeChat reminder timing (`appointmentDaysBefore`, `recallDaysAfter`,
+  `firstExamDaysAfter`) is editable from the communication page and persisted
+  through `PATCH /wechat-reminders/config`.
+- Electron provides an edit menu and native clipboard bridge; copy buttons use
+  `window.desktop.copyText` when available and fall back to
+  `navigator.clipboard`.
 - Treatment-plan print preview supports browser print/PDF output with A4 page
   rules and print-only layout cleanup.
 

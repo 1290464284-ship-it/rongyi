@@ -187,6 +187,26 @@ describe('workflow services', () => {
     expect(escaped).not.toContain('<script>');
   });
 
+  it('includes the patient wechatId in the provider payload', async () => {
+    db.prepare(
+      `INSERT INTO WechatMessage (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, type, content, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'TEXT', 'wechat-id-check', 'PENDING')`,
+    ).run('wechat-wf-id', context.clinicId, now, now);
+    let received: { wechatId?: string | null } | undefined;
+    const provider = {
+      name: 'capture',
+      isConfigured: () => true,
+      send: async (payload: { wechatId?: string | null }) => {
+        received = payload;
+        return { ok: true, result: 'sent' };
+      },
+    };
+    await new WechatService(db, undefined, provider).send('wechat-wf-id', context);
+    expect(received?.wechatId).toBe('demo-wechat-id');
+  });
+
   it('never fakes wechat delivery when the channel is not configured', async () => {
     db.prepare(
       `INSERT INTO WechatMessage (

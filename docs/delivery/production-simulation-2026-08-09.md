@@ -26,8 +26,8 @@
 
 ## 产物
 
-- `apps/v2/release-v2/Dental-Clinic-V2-Setup-2.2.0-internal.20260809031305.exe`
-- `apps/v2/release-v2/Dental-Clinic-V2-Setup-2.2.0-internal.20260809031305.exe.blockmap`
+- `apps/v2/release-v2/Dental-Clinic-V2-Setup-2.2.0-internal.20260809060235.exe`
+- `apps/v2/release-v2/Dental-Clinic-V2-Setup-2.2.0-internal.20260809060235.exe.blockmap`
 - `apps/v2/release-v2/latest.yml`
 - `apps/v2/data/packaged-ui-smoke.png`
 

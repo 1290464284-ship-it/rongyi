@@ -1,4 +1,5 @@
 import { Copy } from 'lucide-react';
+import { copyText } from '../../lib/clipboard';
 import { useToast } from '../../lib/toast-context';
 
 export interface WechatTemplateConfig {
@@ -60,7 +61,7 @@ export function WechatTemplateLibrary({ config }: { config?: WechatTemplateConfi
 
   async function copyTemplate(text: string) {
     try {
-      await navigator.clipboard.writeText(text);
+      await copyText(text);
       showToast('模板已复制', 'success');
     } catch {
       showToast('复制失败，请手动选择复制', 'error');

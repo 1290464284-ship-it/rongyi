@@ -19,12 +19,22 @@ const SOURCE_LABELS: Record<string, string> = {
   OTHER: '其他',
 };
 
+const PREFERRED_CONTACT_LABELS: Record<string, string> = {
+  PHONE: '电话',
+  WECHAT: '微信',
+  SMS: '短信',
+  OTHER: '其他',
+};
+
 type PatientRow = Record<string, unknown> & {
   id: string;
   code?: string;
   name?: string;
   gender?: string;
   phone?: string;
+  wechatId?: string;
+  preferredContact?: string;
+  contactNote?: string;
   birthDate?: string;
   source?: string;
   active?: boolean;
@@ -35,6 +45,9 @@ interface PatientForm {
   name: string;
   gender: string;
   phone: string;
+  wechatId: string;
+  preferredContact: string;
+  contactNote: string;
   birthDate: string;
   idCard: string;
   address: string;
@@ -55,6 +68,9 @@ const emptyForm: PatientForm = {
   name: '',
   gender: 'UNKNOWN',
   phone: '',
+  wechatId: '',
+  preferredContact: 'PHONE',
+  contactNote: '',
   birthDate: '',
   idCard: '',
   address: '',
@@ -79,6 +95,12 @@ const patientColumns: DataTableColumn<PatientRow>[] = [
     render: (row) => GENDER_LABELS[String(row.gender ?? '')] ?? String(row.gender ?? ''),
   },
   { key: 'phone', label: '电话' },
+  { key: 'wechatId', label: '微信号' },
+  {
+    key: 'preferredContact',
+    label: '首选联系',
+    render: (row) => PREFERRED_CONTACT_LABELS[String(row.preferredContact ?? 'PHONE')] ?? String(row.preferredContact ?? 'PHONE'),
+  },
   { key: 'birthDate', label: '出生日期' },
   {
     key: 'source',
@@ -116,6 +138,9 @@ export function PatientsPage() {
           name: String(row.name ?? ''),
           gender: String(row.gender ?? 'UNKNOWN'),
           phone: String(row.phone ?? ''),
+          wechatId: String(row.wechatId ?? ''),
+          preferredContact: String(row.preferredContact ?? 'PHONE'),
+          contactNote: String(row.contactNote ?? ''),
           birthDate: String(row.birthDate ?? ''),
           idCard: String(row.idCard ?? ''),
           address: String(row.address ?? ''),
@@ -136,6 +161,9 @@ export function PatientsPage() {
         name: form.name,
         gender: form.gender,
         phone: form.phone,
+        wechatId: form.wechatId || undefined,
+        preferredContact: form.preferredContact,
+        contactNote: form.contactNote || undefined,
         birthDate: form.birthDate || undefined,
         idCard: form.idCard || undefined,
         address: form.address || undefined,
@@ -202,6 +230,22 @@ export function PatientsPage() {
             <label>
               手机号
               <input value={form.phone} onChange={(event) => update({ phone: event.target.value })} />
+            </label>
+            <label>
+              微信号
+              <input value={form.wechatId} onChange={(event) => update({ wechatId: event.target.value })} />
+            </label>
+            <label>
+              首选联系方式
+              <select value={form.preferredContact} onChange={(event) => update({ preferredContact: event.target.value })}>
+                {Object.entries(PREFERRED_CONTACT_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              联系方式备注
+              <textarea value={form.contactNote} onChange={(event) => update({ contactNote: event.target.value })} />
             </label>
             <label>
               出生日期

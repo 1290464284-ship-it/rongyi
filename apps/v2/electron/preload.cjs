@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('desktop', {
   version: () => ipcRenderer.invoke('desktop:version'),
+  copyText: (text) => ipcRenderer.invoke('desktop:clipboard:write', String(text ?? '')),
   quit: () => ipcRenderer.invoke('desktop:quit'),
   getApiPort: () => ipcRenderer.invoke('desktop:api-port'),
   restartApi: () => ipcRenderer.invoke('desktop:restart-api'),

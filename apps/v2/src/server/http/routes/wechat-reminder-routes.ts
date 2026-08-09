@@ -26,6 +26,10 @@ export function registerWechatReminderRoutes(
     res.json({ success: true, data: reminderService.config(req.context!) });
   }));
 
+  app.patch('/api/v2/wechat-reminders/config', wrapAsync(async (req, res) => {
+    res.json({ success: true, data: reminderService.updateConfig(req.body ?? {}, req.context!) });
+  }));
+
   app.post('/api/v2/wechat-reminders/:id/mark-sent', wrapAsync(async (req, res) => {
     res.json({ success: true, data: reminderService.markSent(String(req.params.id), req.context!) });
   }));
