@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import net from 'node:net';
-import os from 'node:os';
 import path from 'node:path';
 import { _electron as electron } from '@playwright/test';
+import { resolveSimulatedDataDir } from './simulated-data.mjs';
 
 const appRoot = path.resolve(import.meta.dirname, '..');
 const exePath = path.join(appRoot, 'release-v2', 'win-unpacked', 'Dental Clinic V2.exe');
@@ -11,17 +11,8 @@ if (!fs.existsSync(exePath)) {
   process.exit(1);
 }
 
-function latestSimulatedDir() {
-  const dirs = fs.readdirSync(os.tmpdir())
-    .filter((name) => name.startsWith('v2-sim-data-'))
-    .map((name) => path.join(os.tmpdir(), name))
-    .filter((dir) => fs.statSync(dir).isDirectory())
-    .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-  return dirs[0];
-}
-
-const sourceSimDir = process.env.V2_SIM_DATA_DIR ? path.resolve(process.env.V2_SIM_DATA_DIR) : latestSimulatedDir();
-if (!sourceSimDir || !fs.existsSync(path.join(sourceSimDir, 'v2.sqlite'))) {
+const sourceSimDir = resolveSimulatedDataDir();
+if (!sourceSimDir) {
   console.error('Simulated clinic database not found. Run simulate:clinic-data first.');
   process.exit(1);
 }
@@ -45,7 +36,7 @@ function freePort() {
 const port = await freePort();
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-packaged-ui-sim-'));
 const userDataDir = path.join(dataDir, 'user-data');
-const adminPassword = 'REDACTED';
+const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'REDACTED';
 for (const suffix of ['', '-wal', '-shm']) {
   const source = path.join(sourceSimDir, `v2.sqlite${suffix}`);
   if (fs.existsSync(source)) fs.copyFileSync(source, path.join(dataDir, `v2.sqlite${suffix}`));

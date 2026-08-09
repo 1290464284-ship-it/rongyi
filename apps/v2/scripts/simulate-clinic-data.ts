@@ -11,6 +11,9 @@ const targetDir = process.env.V2_SIM_DATA_DIR
   ? path.resolve(process.env.V2_SIM_DATA_DIR)
   : path.resolve('data', 'simulated-clinic');
 fs.mkdirSync(targetDir, { recursive: true });
+for (const suffix of ['', '-wal', '-shm']) {
+  fs.rmSync(path.join(targetDir, `v2.sqlite${suffix}`), { force: true });
+}
 
 const db = createDatabase(targetDir);
 seedDatabase(db);

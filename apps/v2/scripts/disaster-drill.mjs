@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveSimulatedDataDir } from './simulated-data.mjs';
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const serverScript = path.join(appRoot, 'dist-electron', 'server.cjs');
@@ -19,19 +20,10 @@ const port = 40000 + Math.floor(Math.random() * 1000);
 const jwtSecret = 'disaster-drill-secret-0123456789abcdef0123456789abcdef';
 const goodKey = 'disaster-good-key-0123456789abcdef';
 const wrongKey = 'disaster-wrong-key-9876543210abcdef';
-const adminPassword = 'REDACTED';
+const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'REDACTED';
 
-function latestSimulatedDir() {
-  const dirs = fs.readdirSync(os.tmpdir())
-    .filter((name) => name.startsWith('v2-sim-data-'))
-    .map((name) => path.join(os.tmpdir(), name))
-    .filter((dir) => fs.statSync(dir).isDirectory())
-    .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-  return dirs[0];
-}
-
-const sourceSimDir = process.env.V2_SIM_DATA_DIR ? path.resolve(process.env.V2_SIM_DATA_DIR) : latestSimulatedDir();
-if (!sourceSimDir || !fs.existsSync(path.join(sourceSimDir, 'v2.sqlite'))) {
+const sourceSimDir = resolveSimulatedDataDir();
+if (!sourceSimDir) {
   console.error('Simulated clinic database not found. Run simulate:clinic-data first.');
   process.exit(1);
 }

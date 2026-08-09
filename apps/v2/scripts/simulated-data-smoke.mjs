@@ -1,7 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
-import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
+import { resolveSimulatedDataDir } from './simulated-data.mjs';
 
 const appRoot = path.resolve(import.meta.dirname, '..');
 const serverScript = path.join(appRoot, 'dist-electron', 'server.cjs');
@@ -12,17 +11,8 @@ const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'REDACTED';
 const backupKey = 'simulated-data-backup-key-0123456789abcdef';
 const jwtSecret = 'simulated-data-jwt-0123456789abcdef0123456789abcdef';
 
-function latestSimulatedDir() {
-  const dirs = fs.readdirSync(os.tmpdir())
-    .filter((name) => name.startsWith('v2-sim-data-'))
-    .map((name) => path.join(os.tmpdir(), name))
-    .filter((dir) => fs.statSync(dir).isDirectory())
-    .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-  return dirs[0];
-}
-
-const simDir = process.env.V2_SIM_DATA_DIR ? path.resolve(process.env.V2_SIM_DATA_DIR) : latestSimulatedDir();
-if (!simDir || !fs.existsSync(path.join(simDir, 'v2.sqlite'))) {
+const simDir = resolveSimulatedDataDir();
+if (!simDir) {
   console.error('Simulated clinic database not found. Run simulate:clinic-data first.');
   process.exit(1);
 }
