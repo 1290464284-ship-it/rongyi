@@ -255,6 +255,9 @@
   fails closed with a clear integrity error instead of crashing later.
   `legacy-import` now validates the copied target with a read-write connection
   so readonly `integrity_check` can no longer skip those constraints.
+- `drill:crash` writes data, force-kills the API process, restarts it, and
+  verifies the patient survives and the database integrity check passes,
+  simulating power loss / abrupt termination recovery.
 - Analytics query indexes (Charge patient/paid, ChargeItem category, Visit
   patient/created) plus a simpler RFM total query cut the simulated 2000-patient
   RFM response from roughly 1.2s to 6ms.

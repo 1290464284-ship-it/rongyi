@@ -22,6 +22,7 @@
 | `smoke:all` API + UI + 负载冒烟 | 通过 |
 | `smoke:wechat-gateway` 本地 HTTPS 假网关 | 通过（发送落 SENT，网关 500 后保持 PENDING） |
 | `drill:legacy-dirty` 脏旧库迁移 | 通过（CHECK 违规在导入阶段 fail-closed） |
+| `drill:crash` 强杀/断电恢复 | 通过（写入数据保留，重启后完整性 ok） |
 | `benchmark:load` 10 万患者/10 万收费基准 | 通过 |
 | typecheck / 1379 单测 / 覆盖率 / lint / knip / build / electron:compile | 通过 |
 
