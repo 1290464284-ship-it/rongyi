@@ -24,7 +24,7 @@ export const PERMISSION_KEYS = [
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
 
-export const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, readonly PermissionKey[]> = {
+const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, readonly PermissionKey[]> = {
   BOSS: PERMISSION_KEYS,
   DOCTOR: ['dashboard', 'patients', 'clinical', 'communication'],
 };
@@ -121,7 +121,7 @@ export interface UserPermissionInput {
   allowed: boolean;
 }
 
-export function isPermissionKey(value: string): value is PermissionKey {
+function isPermissionKey(value: string): value is PermissionKey {
   return (PERMISSION_KEYS as readonly string[]).includes(value);
 }
 
