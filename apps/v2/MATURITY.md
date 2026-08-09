@@ -245,6 +245,11 @@
   (patients, appointments, visits, charges, inventory, member cards, purchase
   orders, follow-ups) and `smoke:simulated-data` runs the API suite against it;
   the generated database passes `integrity_check` and the foreign-key scan.
+- `smoke:packaged-ui-simulated` launches the packaged desktop app against the
+  simulated clinic database and verifies login plus the patient list render.
+- `disaster:drill` verifies that restoring with the wrong backup key or a
+  corrupt backup fails closed without writing the target database, then
+  restores the good backup and confirms integrity.
 - Treatment-plan print preview supports browser print/PDF output with A4 page
   rules and print-only layout cleanup.
 
