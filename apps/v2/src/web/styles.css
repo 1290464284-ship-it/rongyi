@@ -1154,6 +1154,21 @@ small {
   }
 }
 
+@page {
+  size: A4;
+  margin: 12mm;
+}
+
+@media print {
+  .print-preview {
+    border: 0;
+    box-shadow: none;
+    padding: 0;
+    color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
 .board {
   display: grid;
   grid-template-columns: repeat(6, minmax(190px, 1fr));
@@ -1784,6 +1799,75 @@ tbody tr:hover {
 .reminder-empty {
   color: var(--muted-weak);
   padding: 12px 0;
+}
+
+/* 微信信息模板库 */
+.wechat-template-section {
+  margin: 4px 0 20px;
+}
+
+.wechat-template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.wechat-template-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.wechat-template-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.wechat-template-head .tag {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: var(--radius-xs);
+  background: var(--soft);
+  color: var(--primary);
+}
+
+.wechat-template-content {
+  margin: 0 0 8px;
+  padding: 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-xs);
+  background: var(--surface-muted);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.wechat-template-sample {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.wechat-template-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.wechat-template-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 /* === 补齐类（审计 P1-11：用了没样式） === */

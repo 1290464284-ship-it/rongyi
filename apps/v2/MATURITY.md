@@ -209,7 +209,7 @@
   explicitly show “未开通”, disable send, and never mark messages as sent;
   HTTP provider failures leave the message in a sendable state.
 - API listens on `127.0.0.1` by default; deep health and metrics endpoints now
-  require an authenticated BOSS/ADMIN role.
+  require an authenticated BOSS role.
 - Renderer CSP was added in the built HTML with a dev-only relaxed CSP for Vite
   HMR, plus Electron navigation whitelist, sandboxed web preferences, denied
   permission requests, and disabled webview attachment.
@@ -227,11 +227,17 @@
   checklist, and delivery drill documentation.
 - `delivery:drill` automates the legacy import -> create data -> encrypted
   backup -> verify -> corrupt -> restore -> restart -> consistency check path.
+- The communication page includes a built-in WeChat message template library
+  (appointment reminder, treatment recall, first-exam follow-up) with copy and
+  sample rendering; content comes from `wechatReminder.*Content` settings.
+- Treatment-plan print preview supports browser print/PDF output with A4 page
+  rules and print-only layout cleanup.
 
 ## Remaining
 
 No P0 blockers for internal controlled delivery. Remaining work is tracked as
-P1 follow-up: real WeChat template messaging, cephalometric calibration tools,
-standalone PDF report styling, performance/commission rule configuration, and
-cloud/mobile/multi-clinic editions. Public CA signing, SmartScreen
-elimination, and public update channels are explicitly deferred to P8.
+P1 follow-up: real WeChat official-account template push, cephalometric
+calibration tools, standalone multi-template PDF report styling,
+performance/commission rule configuration, and cloud/mobile/multi-clinic
+editions. Public CA signing, SmartScreen elimination, and public update
+channels are explicitly deferred to P8.

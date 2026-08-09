@@ -12,6 +12,9 @@
 - `acceptance-checklist.md`：交付验收清单。
 - `delivery-drill.md`：真实数据演练说明。
 - `trial-run.md`：受控试运行记录与 2.2.0 冻结流程。
+- `operations-runbook.md`：日常运维、备份制度、日志与支持交接。
+- `production-simulation-2026-08-09.md`：生产环境模拟记录。
+- `real-data-onboarding-plan.md`：真实数据迁移与试运行执行方案。
 
 ## 当前范围
 

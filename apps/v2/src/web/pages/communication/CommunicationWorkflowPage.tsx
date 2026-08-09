@@ -5,6 +5,7 @@ import { DataTable, QuerySection, type DataTableColumn } from '../../components'
 import { errorMessage } from '../../lib/messages';
 import { useAsyncAction } from '../../hooks/use-async-action';
 import { useToast } from '../../lib/toast-context';
+import { WechatTemplateLibrary, type WechatTemplateConfig } from './WechatTemplateLibrary';
 
 interface ReminderItem {
   id: string;
@@ -19,7 +20,7 @@ interface ReminderItem {
   status: string;
 }
 
-interface ReminderConfig {
+interface ReminderConfig extends WechatTemplateConfig {
   enabled: boolean;
   appointmentDaysBefore: number;
   recallDaysAfter: number;
@@ -119,6 +120,7 @@ export function CommunicationWorkflowPage() {
           const config = reminderData?.config;
           return (
             <>
+              <WechatTemplateLibrary config={config} />
               <h2>今日微信提醒</h2>
               <p className="reminder-muted">
                 {config?.enabled === false

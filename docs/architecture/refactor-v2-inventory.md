@@ -5,7 +5,9 @@ This document is derived from the legacy application only as a feature checklist
 ## 1. Identity and Access
 
 - User login with password and refresh-token flow.
-- Role-based authorization: BOSS, ADMIN, DOCTOR, RECEPTIONIST, NURSE, TECHNICIAN.
+- Role-based authorization: BOSS and DOCTOR. Legacy documentation historically
+  listed six roles, but the current v2 codebase uses two role types plus a
+  resource-level permission table.
 - Current-user profile, password change, token invalidation.
 - Login lockout and login-attempt tracking.
 
