@@ -13,9 +13,12 @@ import {
   type DispenseAssignInput,
   type DispenseCreateInput,
   type DispenseUpdateInput,
-  type NarcoticCreateInput,
   type ReturnItemInput,
 } from '../../application/service-modules/dispense';
+import {
+  NarcoticRegistryService,
+  type NarcoticCreateInput,
+} from '../../application/service-modules/narcotic-registry';
 import type { RouteDependencies } from './deps';
 
 export function registerDispenseRoutes(
@@ -25,6 +28,7 @@ export function registerDispenseRoutes(
 ): void {
   const { db } = deps;
   const service = new DispenseService(db, options?.lockGuard);
+  const narcoticService = new NarcoticRegistryService(db);
 
   app.get('/api/v2/dispenses', wrapAsync(async (req, res) => {
     const status = typeof req.query.status === 'string' && req.query.status
@@ -77,22 +81,22 @@ export function registerDispenseRoutes(
     const { page, pageSize } = parsePagination(req, { defaultPageSize: 200 });
     res.json({
       success: true,
-      data: service.narcoticList(req.context!, { ...(recordDate ? { recordDate } : {}), page, pageSize }),
+      data: narcoticService.narcoticList(req.context!, { ...(recordDate ? { recordDate } : {}), page, pageSize }),
     });
   }));
 
   app.post('/api/v2/narcotic-registry', wrapAsync(async (req, res) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
-    res.status(201).json({ success: true, data: service.recordNarcotic(parseNarcoticInput(body), req.context!) });
+    res.status(201).json({ success: true, data: narcoticService.recordNarcotic(parseNarcoticInput(body), req.context!) });
   }));
 
   app.patch('/api/v2/narcotic-registry/:id', wrapAsync(async (req, res) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
-    res.json({ success: true, data: service.updateNarcotic(String(req.params.id), parseNarcoticInput(body), req.context!) });
+    res.json({ success: true, data: narcoticService.updateNarcotic(String(req.params.id), parseNarcoticInput(body), req.context!) });
   }));
 
   app.delete('/api/v2/narcotic-registry/:id', wrapAsync(async (req, res) => {
-    res.json({ success: true, data: service.deleteNarcotic(String(req.params.id), req.context!) });
+    res.json({ success: true, data: narcoticService.deleteNarcotic(String(req.params.id), req.context!) });
   }));
 }
 
