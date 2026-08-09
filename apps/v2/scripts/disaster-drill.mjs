@@ -20,7 +20,7 @@ const port = 40000 + Math.floor(Math.random() * 1000);
 const jwtSecret = 'disaster-drill-secret-0123456789abcdef0123456789abcdef';
 const goodKey = 'disaster-good-key-0123456789abcdef';
 const wrongKey = 'disaster-wrong-key-9876543210abcdef';
-const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'REDACTED';
+const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'v2-sim-admin-password';
 
 const sourceSimDir = resolveSimulatedDataDir();
 if (!sourceSimDir) {

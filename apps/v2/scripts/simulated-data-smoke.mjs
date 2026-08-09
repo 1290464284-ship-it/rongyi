@@ -7,7 +7,7 @@ const serverScript = path.join(appRoot, 'dist-electron', 'server.cjs');
 const legacyDb = path.join(appRoot, 'legacy', 'dental.sqlite');
 const legacySchemaDir = path.join(appRoot, 'legacy', 'schema');
 const port = 38000 + Math.floor(Math.random() * 1000);
-const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'REDACTED';
+const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'v2-sim-admin-password';
 const backupKey = 'simulated-data-backup-key-0123456789abcdef';
 const jwtSecret = 'simulated-data-jwt-0123456789abcdef0123456789abcdef';
 

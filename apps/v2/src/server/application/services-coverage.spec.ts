@@ -51,10 +51,10 @@ describe('service coverage', () => {
 
   it('authenticates users and changes passwords', async () => {
     const auth = new AuthService(db);
-    const login = await auth.login('admin', 'REDACTED');
+    const login = await auth.login('admin', 'v2-test-seed-password');
     expect(login.user.username).toBe('admin');
     await expect(auth.login('admin', 'wrong')).rejects.toThrow('Invalid username or password');
-    await auth.changePassword('user-admin-001', 'REDACTED', 'newpass123');
+    await auth.changePassword('user-admin-001', 'v2-test-seed-password', 'newpass123');
     await expect(auth.refresh(login.refreshToken)).rejects.toThrow('Invalid refresh token');
     await expect(auth.login('admin', 'newpass123')).resolves.toBeDefined();
   });

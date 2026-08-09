@@ -17,7 +17,7 @@ const dataDir = path.join(tempRoot, 'data');
 const backupDir = path.join(dataDir, 'backups');
 const logDir = path.join(dataDir, 'logs');
 const port = 41000 + Math.floor(Math.random() * 1000);
-const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'REDACTED';
+const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'v2-sim-admin-password';
 
 fs.copyFileSync(sanitizedLegacy, dirtyLegacy);
 const now = new Date().toISOString();

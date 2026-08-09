@@ -38,7 +38,7 @@ describe('HTTP app', () => {
       logDir: dataDir,
       logger: new Logger({ logDir: dataDir }),
     });
-    const login = await request(app).post('/api/v2/auth/login').send({ username: 'admin', password: 'REDACTED' });
+    const login = await request(app).post('/api/v2/auth/login').send({ username: 'admin', password: 'v2-test-seed-password' });
     token = login.body.data.token;
     const device = await request(app)
       .post('/api/v2/sync/devices')
@@ -375,7 +375,7 @@ describe('HTTP app', () => {
     ).run('user-file-null', 'clinic-v2-001', now, now);
     const nullLogin = await request(app)
       .post('/api/v2/auth/login')
-      .send({ username: 'file-null-clinic', password: 'REDACTED' })
+      .send({ username: 'file-null-clinic', password: 'v2-test-seed-password' })
       .expect(200);
     await request(app)
       .post('/api/v2/files')
@@ -864,7 +864,7 @@ describe('HTTP app', () => {
     expect(me.body.data.username).toBe('admin');
     await request(app).patch('/api/v2/auth/password')
       .set('Authorization', `Bearer ${token}`)
-      .send({ oldPassword: 'REDACTED', newPassword: 'newpass123' })
+      .send({ oldPassword: 'v2-test-seed-password', newPassword: 'newpass123' })
       .expect(200);
     const relogin = await request(app).post('/api/v2/auth/login').send({ username: 'admin', password: 'newpass123' }).expect(200);
     token = relogin.body.data.token;

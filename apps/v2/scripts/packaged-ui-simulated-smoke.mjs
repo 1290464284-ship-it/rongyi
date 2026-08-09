@@ -36,7 +36,7 @@ function freePort() {
 const port = await freePort();
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-packaged-ui-sim-'));
 const userDataDir = path.join(dataDir, 'user-data');
-const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'REDACTED';
+const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'v2-sim-admin-password';
 for (const suffix of ['', '-wal', '-shm']) {
   const source = path.join(sourceSimDir, `v2.sqlite${suffix}`);
   if (fs.existsSync(source)) fs.copyFileSync(source, path.join(dataDir, `v2.sqlite${suffix}`));

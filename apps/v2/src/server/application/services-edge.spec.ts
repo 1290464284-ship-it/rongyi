@@ -128,9 +128,9 @@ describe('service edge coverage', () => {
   it('covers auth login, refresh, logout, me, and password branches', async () => {
     const auth = new AuthService(db);
     insertUser('edge-disabled', { active: 0 });
-    await expect(auth.login('user-edge-disabled', 'REDACTED')).rejects.toThrow('disabled');
+    await expect(auth.login('user-edge-disabled', 'v2-test-seed-password')).rejects.toThrow('disabled');
     insertUser('edge-locked', { lockedUntil: new Date(Date.now() + 60_000).toISOString() });
-    await expect(auth.login('user-edge-locked', 'REDACTED')).rejects.toThrow('locked');
+    await expect(auth.login('user-edge-locked', 'v2-test-seed-password')).rejects.toThrow('locked');
     insertUser('edge-lockout', { passwordHash: bcrypt.hashSync('correct', 10) });
     for (let i = 0; i < 5; i += 1) {
       await expect(auth.login('user-edge-lockout', 'wrong')).rejects.toThrow();
@@ -138,7 +138,7 @@ describe('service edge coverage', () => {
 
     await expect(auth.refresh('')).rejects.toThrow('Refresh token is required');
     await expect(auth.refresh('unknown')).rejects.toThrow('Invalid refresh token');
-    const session = await auth.login('admin', 'REDACTED');
+    const session = await auth.login('admin', 'v2-test-seed-password');
     const tokenPayload: TokenPayload = {
       sub: 'user-admin-001',
       clinicId: 'clinic-v2-001',
@@ -153,7 +153,7 @@ describe('service edge coverage', () => {
     await expect(auth.getUserById('missing-user')).rejects.toThrow('User not found');
     await expect(auth.changePassword('missing-user', 'x', 'newpass123')).rejects.toThrow('User not found');
     await expect(auth.changePassword('user-admin-001', 'wrong', 'newpass123')).rejects.toThrow('Old password is incorrect');
-    await expect(auth.changePassword('user-admin-001', 'REDACTED', 'short')).rejects.toThrow('at least 6');
+    await expect(auth.changePassword('user-admin-001', 'v2-test-seed-password', 'short')).rejects.toThrow('at least 6');
 
     await auth.logout('');
     await auth.logout('unknown-token');

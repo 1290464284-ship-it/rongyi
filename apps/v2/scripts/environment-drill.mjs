@@ -11,7 +11,7 @@ const legacySchemaDir = path.join(appRoot, 'legacy', 'schema');
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-environment-drill-'));
 const dataDir = path.join(tempRoot, 'data');
 const logDir = path.join(tempRoot, 'logs');
-const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'REDACTED';
+const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'v2-sim-admin-password';
 const jwtSecret = 'environment-drill-secret-0123456789abcdef0123456789abcdef';
 const backupKey = 'environment-drill-backup-key-0123456789abcdef';
 

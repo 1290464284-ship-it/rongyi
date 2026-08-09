@@ -41,16 +41,15 @@ Create a temporary replacement file, for example `history-redact.txt`:
 
 ## Scan results (2026-08-09)
 
-`git log --all -S` confirmed these development/test credentials exist in
-history (all removed from the current worktree):
+`git log --all -S` confirmed development/test credentials exist in history
+(all removed from the current worktree; exact strings were redacted by the
+history rewrite on 2026-08-09). The scan also verified no AWS keys or private
+key blocks are present: `AKIA[0-9A-Z]{16}` and
+`BEGIN (RSA|EC|OPENSSH) PRIVATE KEY` patterns returned no matches, and neither
+did `ry0801` or `admin123`.
 
-- `123456` (seeded doctor password and smoke scripts)
-- `REDACTED` (simulated data and drill scripts)
-- `REDACTED` (test seed password)
-
-No matches were found for `ry0801`, `admin123`, `AKIA[0-9A-Z]{16}`, or
-`BEGIN (RSA|EC|OPENSSH) PRIVATE KEY`. Use the replacement file above to redact
-the three confirmed strings before sharing the repository publicly.
+Use the replacement file above to redact any remaining strings before sharing
+the repository publicly.
 
 Then rewrite history from a fresh clone (never run this against a working
 checkout that must keep its current remote):

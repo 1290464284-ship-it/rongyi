@@ -5,7 +5,7 @@ import { createDatabase, seedDatabase } from '../src/server/infrastructure/datab
 import { runMigrations } from '../src/server/infrastructure/migrations';
 import { rebuildSearchIndex } from '../src/server/infrastructure/search-index';
 
-process.env.V2_ADMIN_PASSWORD ??= 'REDACTED';
+process.env.V2_ADMIN_PASSWORD ??= 'v2-sim-admin-password';
 
 const targetDir = process.env.V2_SIM_DATA_DIR
   ? path.resolve(process.env.V2_SIM_DATA_DIR)

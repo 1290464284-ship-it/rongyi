@@ -845,7 +845,7 @@ describe('application services', () => {
 
   it('rotates refresh tokens and rejects reused tokens', async () => {
     const service = new AuthService(db);
-    const session = await service.login('admin', 'REDACTED');
+    const session = await service.login('admin', 'v2-test-seed-password');
     expect(session.refreshToken).toBeDefined();
     const refreshed = await service.refresh(session.refreshToken);
     expect(refreshed.refreshToken).not.toBe(session.refreshToken);

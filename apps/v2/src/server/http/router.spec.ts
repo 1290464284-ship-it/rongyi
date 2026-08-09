@@ -31,7 +31,7 @@ describe('resource router', () => {
       logDir: dataDir,
       logger: new Logger({ logDir: dataDir }),
     });
-    const admin = await request(app).post('/api/v2/auth/login').send({ username: 'admin', password: 'REDACTED' }).expect(200);
+    const admin = await request(app).post('/api/v2/auth/login').send({ username: 'admin', password: 'v2-test-seed-password' }).expect(200);
     adminToken = admin.body.data.token as string;
 
     db.prepare(

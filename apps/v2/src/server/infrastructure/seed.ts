@@ -10,7 +10,7 @@ export function seedDatabase(db: Database.Database): void {
   // Test runs must stay deterministic even when CI injects V2_ADMIN_PASSWORD
   // for smoke scripts; production/dev read the env or generate a temp password.
   const seedPassword = nodeEnv === 'test'
-    ? 'REDACTED'
+    ? 'v2-test-seed-password'
     : process.env.V2_ADMIN_PASSWORD ?? randomBytes(18).toString('base64url');
   const clinicRow = db.prepare('SELECT id FROM Clinic LIMIT 1').get() as { id: string } | undefined;
   const clinicId = clinicRow ? String(clinicRow.id) : 'clinic-v2-001';

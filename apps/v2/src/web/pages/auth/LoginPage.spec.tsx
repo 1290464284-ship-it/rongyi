@@ -28,10 +28,10 @@ describe('LoginPage', () => {
     vi.mocked(login).mockResolvedValue({ token: 't', user: { id: 'u' } });
     renderPage();
     fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'admin' } });
-    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'REDACTED' } });
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'v2-test-seed-password' } });
     fireEvent.click(screen.getByRole('button', { name: '登录' }));
     await waitFor(() => {
-      expect(login).toHaveBeenCalledWith('admin', 'REDACTED');
+      expect(login).toHaveBeenCalledWith('admin', 'v2-test-seed-password');
     });
   });
 
@@ -52,11 +52,11 @@ describe('LoginPage', () => {
     vi.mocked(login).mockResolvedValue({ token: 't', user: { id: 'u' } });
     renderPage();
     fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'admin' } });
-    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'REDACTED' } });
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'v2-test-seed-password' } });
     fireEvent.click(screen.getByRole('checkbox', { name: '记住我' }));
     fireEvent.click(screen.getByRole('button', { name: '登录' }));
     await waitFor(() => {
-      expect(login).toHaveBeenCalledWith('admin', 'REDACTED');
+      expect(login).toHaveBeenCalledWith('admin', 'v2-test-seed-password');
     });
     expect(localStorage.getItem('ry-remember')).toBe('1');
     expect(localStorage.getItem('ry-username')).toBe('admin');
@@ -70,10 +70,10 @@ describe('LoginPage', () => {
     // 预勾选状态下取消勾选
     fireEvent.click(screen.getByRole('checkbox', { name: '记住我' }));
     fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'other' } });
-    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'REDACTED' } });
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'v2-test-seed-password' } });
     fireEvent.click(screen.getByRole('button', { name: '登录' }));
     await waitFor(() => {
-      expect(login).toHaveBeenCalledWith('other', 'REDACTED');
+      expect(login).toHaveBeenCalledWith('other', 'v2-test-seed-password');
     });
     expect(localStorage.getItem('ry-remember')).toBeNull();
     expect(localStorage.getItem('ry-username')).toBeNull();
