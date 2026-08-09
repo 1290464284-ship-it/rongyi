@@ -36,6 +36,8 @@
     "smoke:wechat-gateway": "node scripts/wechat-gateway-smoke.mjs",
     "test:load": "node scripts/load-smoke.mjs",
     "benchmark:load": "tsx scripts/benchmark-load.ts",
+    "simulate:clinic-data": "tsx scripts/simulate-clinic-data.ts",
+    "smoke:simulated-data": "node scripts/simulated-data-smoke.mjs",
     "smoke:all": "node scripts/run-smokes.mjs",
     "audit:security": "node scripts/audit.mjs",
     "verify:database": "node scripts/verify-database.mjs",
