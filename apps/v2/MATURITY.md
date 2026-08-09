@@ -250,6 +250,11 @@
 - `disaster:drill` verifies that restoring with the wrong backup key or a
   corrupt backup fails closed without writing the target database, then
   restores the good backup and confirms integrity.
+- `drill:legacy-dirty` injects CHECK-constraint violations (negative balances,
+  zero refunds, zero quantities) into a legacy copy and verifies the import
+  fails closed with a clear integrity error instead of crashing later.
+  `legacy-import` now validates the copied target with a read-write connection
+  so readonly `integrity_check` can no longer skip those constraints.
 - Analytics query indexes (Charge patient/paid, ChargeItem category, Visit
   patient/created) plus a simpler RFM total query cut the simulated 2000-patient
   RFM response from roughly 1.2s to 6ms.

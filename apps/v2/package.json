@@ -44,6 +44,7 @@
     "verify:database": "node scripts/verify-database.mjs",
     "delivery:drill": "node scripts/delivery-drill.mjs",
     "disaster:drill": "node scripts/disaster-drill.mjs",
+    "drill:legacy-dirty": "node scripts/legacy-dirty-drill.mjs",
     "verify:foreign-keys": "node scripts/verify-foreign-keys.mjs",
     "repair:database": "node scripts/repair-database.mjs",
     "security:scan": "node scripts/security-scan.mjs",

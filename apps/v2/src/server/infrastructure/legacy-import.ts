@@ -51,7 +51,9 @@ export function importLegacyDatabase(
   if (fs.existsSync(targetPath)) fs.rmSync(targetPath, { force: true });
   backupSqliteFile(sourcePath, targetPath, logger);
 
-  const targetDb = new Database(targetPath, { readonly: true });
+  // 只读连接的 integrity_check 会跳过 CHECK 约束（实测 better-sqlite3），
+  // 因此目标库必须用读写连接复查，避免脏旧库被放行后启动阶段才崩溃。
+  const targetDb = new Database(targetPath);
   try {
     const integrity = targetDb.pragma('integrity_check') as Array<{ integrity_check: string }>;
     if (integrity.length !== 1 || integrity[0].integrity_check !== 'ok') {

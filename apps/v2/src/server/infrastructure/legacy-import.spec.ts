@@ -147,6 +147,17 @@ describe('importLegacyDatabase', () => {
     expect(() => importLegacyDatabase(validSource, targetPath)).toThrow('imported database integrity check failed');
     delete process.env.V2_CORRUPT_LEGACY_BACKUP;
   });
+
+  it('rejects a legacy database with CHECK constraint violations', () => {
+    const dirtySource = path.join(dataDir, 'dirty-source.sqlite');
+    const dirtyDb = new Database(dirtySource);
+    dirtyDb.exec('CREATE TABLE MemberCard (id TEXT PRIMARY KEY, balance INTEGER NOT NULL CHECK (balance >= 0))');
+    dirtyDb.pragma('ignore_check_constraints = ON');
+    dirtyDb.prepare('INSERT INTO MemberCard (id, balance) VALUES (?, ?)').run('m1', -100);
+    dirtyDb.close();
+    expect(() => importLegacyDatabase(dirtySource, path.join(dataDir, 'dirty-target.sqlite')))
+      .toThrow('imported database integrity check failed');
+  });
 });
 
 describe('shouldImportLegacyDb (T2R-15 / R2-P1-12)', () => {
