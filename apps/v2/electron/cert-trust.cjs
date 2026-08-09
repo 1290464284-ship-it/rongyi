@@ -13,6 +13,9 @@ function certFilePath() {
  * failures in production.
  */
 function ensureInternalCertTrusted() {
+  if (process.env.V2_DISABLE_CERT_TRUST === '1') {
+    return { ok: false, reason: 'disabled' };
+  }
   const file = certFilePath();
   if (!fs.existsSync(file)) return { ok: false, reason: 'cert-missing' };
   const escapedPath = String(file).replaceAll("'", "''");

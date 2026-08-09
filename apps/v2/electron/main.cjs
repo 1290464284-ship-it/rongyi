@@ -78,13 +78,17 @@ autoUpdater.on('error', (error) => {
 app.whenReady().then(async () => {
   if (!gotSingleInstanceLock) return;
 
-  try {
-    const trustResult = ensureInternalCertTrusted();
-    if (trustResult.ok) {
-      console.log('[cert-trust] internal signing certificate is trusted');
+  // 仅 internal 构建自动信任自签名证书；公开构建不修改系统证书存储，
+  // V2_DISABLE_CERT_TRUST=1 可在受控环境显式关闭。
+  if (isInternalBuild) {
+    try {
+      const trustResult = ensureInternalCertTrusted();
+      if (trustResult.ok) {
+        console.log('[cert-trust] internal signing certificate is trusted');
+      }
+    } catch (error) {
+      crashLog('internal-cert-trust-failed', error);
     }
-  } catch (error) {
-    crashLog('internal-cert-trust-failed', error);
   }
 
   if (process.env.V2_CRASH_REPORT_URL) {

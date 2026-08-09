@@ -39,6 +39,19 @@ Create a temporary replacement file, for example `history-redact.txt`:
 <another-old-default-password>==>REDACTED
 ```
 
+## Scan results (2026-08-09)
+
+`git log --all -S` confirmed these development/test credentials exist in
+history (all removed from the current worktree):
+
+- `123456` (seeded doctor password and smoke scripts)
+- `REDACTED` (simulated data and drill scripts)
+- `REDACTED` (test seed password)
+
+No matches were found for `ry0801`, `admin123`, `AKIA[0-9A-Z]{16}`, or
+`BEGIN (RSA|EC|OPENSSH) PRIVATE KEY`. Use the replacement file above to redact
+the three confirmed strings before sharing the repository publicly.
+
 Then rewrite history from a fresh clone (never run this against a working
 checkout that must keep its current remote):
 
