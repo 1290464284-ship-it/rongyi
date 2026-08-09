@@ -9,6 +9,8 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $appRoot = Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")
+$releaseDir = Join-Path $appRoot "release-v2-internal"
+$env:V2_RELEASE_DIR = $releaseDir
 $generatedCertificatePath = ""
 $manualSignCertPath = ""
 $manualSignCertPassword = ""
@@ -84,20 +86,22 @@ try {
             $env:CSC_LINK = $manualSignCertPath
             $env:CSC_KEY_PASSWORD = $manualSignCertPassword
         }
-        Invoke-OrFail "pnpm electron:dist"
+        Invoke-OrFail "pnpm build"
+        Invoke-OrFail "pnpm electron:compile"
+        Invoke-OrFail "electron-builder --publish never --config.directories.output=$releaseDir"
         if ($manualSignCertPath) {
             $signCert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
                 $manualSignCertPath,
                 $manualSignCertPassword
             )
             $installerBeforeVerify = Get-ChildItem `
-                -LiteralPath (Join-Path $appRoot "release-v2") `
+                -LiteralPath $releaseDir `
                 -Filter "*.exe" |
                 Sort-Object LastWriteTime -Descending |
                 Select-Object -First 1 -ExpandProperty FullName
             $signTargets = @(
-                (Join-Path $appRoot "release-v2\win-unpacked\Dental Clinic V2.exe"),
-                (Join-Path $appRoot "release-v2\win-unpacked\resources\elevate.exe"),
+                (Join-Path $releaseDir "win-unpacked\Dental Clinic V2.exe"),
+                (Join-Path $releaseDir "win-unpacked\resources\elevate.exe"),
                 $installerBeforeVerify
             ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and (Test-Path -LiteralPath $_) }
             foreach ($target in $signTargets) {
@@ -120,13 +124,13 @@ try {
     }
 
     $installer = Get-ChildItem `
-        -LiteralPath (Join-Path $appRoot "release-v2") `
+        -LiteralPath $releaseDir `
         -Filter "*.exe" |
         Sort-Object LastWriteTime -Descending |
         Select-Object -First 1 -ExpandProperty FullName
 
     if (-not $installer) {
-        throw "Installer was not produced under apps/v2/release-v2"
+        throw "Installer was not produced under $releaseDir"
     }
 
     Write-Host "Internal installer ready: $installer"

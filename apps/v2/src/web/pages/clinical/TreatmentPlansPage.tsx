@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { apiRequest } from '../../lib/api';
+import { apiRequest, fetchAllPages } from '../../lib/api';
 import { CrudPage } from '../../components/CrudPage';
 import { Dialog, type DataTableColumn } from '../../components';
 import { formatMoney, toCents } from '../../lib/format';
@@ -143,6 +143,22 @@ export function TreatmentPlansPage() {
         columns={planColumns}
         canEdit
         canDelete
+        deleteOverride={async (row) => {
+          // 服务端 DELETE 为软删除且不级联：先删全部明细，再删主记录（明细删除失败仅告警）
+          const planId = String(row.id);
+          try {
+            const items = await fetchAllPages<Record<string, unknown>>(
+              `/resources/treatmentPlanItems?planId=${planId}`,
+            );
+            for (const item of items) {
+              await apiRequest(`/resources/treatmentPlanItems/${String(item.id)}`, { method: 'DELETE' });
+            }
+          } catch (error) {
+            console.warn(`删除治疗计划明细失败（继续删除主记录）：${planId}`, error);
+            showToast('删除部分治疗计划明细失败，已继续删除主记录', 'error');
+          }
+          await apiRequest(`/resources/treatmentPlans/${planId}`, { method: 'DELETE' });
+        }}
         rowActions={(row, ctx) => (
           <>
             <button onClick={() => setBillingTarget({ row, reload: ctx.reload })}>折扣</button>

@@ -88,15 +88,15 @@ jobs:
           fi
 
       # Round7 M7：内部版 installer 使用 <base>-internal.<UTC时间戳> 命名且
-      # package.json 打包后被还原，不能直接用 artifact-name.mjs；取 release-v2
-      # 下最新生成的 exe（本 job 内唯一产物），避免 *.exe 通配符污染资产。
+      # package.json 打包后被还原，不能直接用 artifact-name.mjs；取
+      # release-v2-internal 下最新生成的 exe（本 job 内唯一产物）。
       - name: Resolve release asset names
         id: assets
         shell: pwsh
         run: |
-          $exe = Get-ChildItem -LiteralPath apps/v2/release-v2 -Filter '*.exe' |
+          $exe = Get-ChildItem -LiteralPath apps/v2/release-v2-internal -Filter '*.exe' |
             Sort-Object LastWriteTime -Descending | Select-Object -First 1
-          if (-not $exe) { throw "No installer produced under apps/v2/release-v2" }
+          if (-not $exe) { throw "No installer produced under apps/v2/release-v2-internal" }
           "installer=$($exe.Name)" >> $env:GITHUB_OUTPUT
           "blockmap=$($exe.Name).blockmap" >> $env:GITHUB_OUTPUT
 
@@ -107,9 +107,9 @@ jobs:
           name: Dental Clinic V2 Internal ${{ steps.pkg_version.outputs.version }}
           prerelease: true
           files: |
-            apps/v2/release-v2/${{ steps.assets.outputs.installer }}
-            apps/v2/release-v2/${{ steps.assets.outputs.blockmap }}
-            apps/v2/release-v2/latest.yml
+            apps/v2/release-v2-internal/${{ steps.assets.outputs.installer }}
+            apps/v2/release-v2-internal/${{ steps.assets.outputs.blockmap }}
+            apps/v2/release-v2-internal/latest.yml
 
       - name: Verify remote internal release
         env:

@@ -5,7 +5,7 @@ import { installerFileName } from './artifact-name.mjs';
 
 const appRoot = path.resolve(import.meta.dirname, '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(appRoot, 'package.json'), 'utf8'));
-const releaseDir = path.join(appRoot, 'release-v2');
+const releaseDir = path.resolve(process.env.V2_RELEASE_DIR ?? path.join(appRoot, 'release-v2'));
 const installer = path.join(releaseDir, installerFileName(pkg));
 const blockMap = `${installer}.blockmap`;
 

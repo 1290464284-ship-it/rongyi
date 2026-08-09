@@ -3,4 +3,5 @@ build/internal-signing.pfx.cer
 dist-web/
 dist-electron/
 release-v2/
+release-v2-internal/
 *.log

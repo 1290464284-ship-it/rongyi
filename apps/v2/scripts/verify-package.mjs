@@ -5,7 +5,9 @@ import { filesExist } from './lib/artifact-utils.mjs';
 
 const appRoot = path.resolve(import.meta.dirname, '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(appRoot, 'package.json'), 'utf8'));
-const releaseDir = path.resolve(import.meta.dirname, '..', 'release-v2');
+const releaseDir = path.resolve(
+  process.env.V2_RELEASE_DIR ?? path.join(import.meta.dirname, '..', 'release-v2'),
+);
 const productName = pkg.build.productName;
 const exePath = path.join(releaseDir, installerFileName(pkg));
 const blockMap = `${exePath}.blockmap`;

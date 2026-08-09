@@ -16,7 +16,16 @@ import { TreatmentPlansPage } from './TreatmentPlansPage';
 import { apiRequest } from '../../lib/api';
 import { ToastProvider } from '../../components/toast';
 
-vi.mock('../../lib/api', () => ({ apiRequest: vi.fn() }));
+vi.mock('../../lib/api', () => {
+  const apiRequest = vi.fn();
+  return {
+    apiRequest,
+    fetchAllPages: vi.fn(async (path: string) => {
+      const data = await apiRequest(`${path}&page=1&pageSize=100`);
+      return data?.items ?? [];
+    }),
+  };
+});
 
 const wrapper = ({ children }: { children: ReactNode }) => (
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -639,11 +648,22 @@ describe('TreatmentPlansPage', () => {
     render(<TreatmentPlansPage />, { wrapper });
     await screen.findByText('正畸计划');
 
+    vi.mocked(apiRequest).mockResolvedValueOnce({
+      items: [
+        { id: 'item-1', name: '种植体' },
+        { id: 'item-2', name: '基台' },
+      ],
+      total: 2,
+      page: 1,
+      pageSize: 200,
+    });
     fireEvent.click(screen.getAllByRole('button', { name: '删除' })[0]);
     expect(await screen.findByText('确定删除该记录吗？')).toBeDefined();
     fireEvent.click(screen.getByText('确认删除'));
 
     await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/treatmentPlanItems/item-1', expect.objectContaining({ method: 'DELETE' }));
+      expect(apiRequest).toHaveBeenCalledWith('/resources/treatmentPlanItems/item-2', expect.objectContaining({ method: 'DELETE' }));
       expect(apiRequest).toHaveBeenCalledWith('/resources/treatmentPlans/p-1', expect.objectContaining({ method: 'DELETE' }));
     });
     expect(await screen.findByText('治疗计划已删除')).toBeDefined();

@@ -16,7 +16,11 @@ function Get-FreePort {
 }
 $smokePort = Get-FreePort
 
-$releaseDir = Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..\release-v2")
+$releaseDir = if ($env:V2_RELEASE_DIR) {
+    $env:V2_RELEASE_DIR
+} else {
+    Join-Path $PSScriptRoot "..\release-v2"
+}
 if (-not $InstallerPath) {
   $InstallerPath = Get-ChildItem -LiteralPath $releaseDir -Filter "*.exe" |
     Sort-Object LastWriteTime -Descending |
