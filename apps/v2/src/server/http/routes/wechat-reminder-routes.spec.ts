@@ -94,6 +94,27 @@ describe('wechat reminder routes', () => {
     expect(res.body.success).toBe(false);
   });
 
+  it('updates enabled and message content settings', async () => {
+    const res = await request(app)
+      .patch('/api/v2/wechat-reminders/config')
+      .send({ enabled: false, recallContent: '{patientName} recovery check' })
+      .expect(200);
+    expect(res.body.data.enabled).toBe(false);
+    expect(res.body.data.recallContent).toBe('{patientName} recovery check');
+    await request(app)
+      .patch('/api/v2/wechat-reminders/config')
+      .send({ enabled: true, recallContent: '{patientName} default recall' })
+      .expect(200);
+  });
+
+  it('rejects overlong message content', async () => {
+    const res = await request(app)
+      .patch('/api/v2/wechat-reminders/config')
+      .send({ appointmentContent: 'x'.repeat(2001) })
+      .expect(400);
+    expect(res.body.success).toBe(false);
+  });
+
   it('returns an empty today list when nothing is due', async () => {
     const res = await request(app).get('/api/v2/wechat-reminders/today').expect(200);
     expect(res.body.success).toBe(true);
