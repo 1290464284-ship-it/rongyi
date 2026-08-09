@@ -14,13 +14,14 @@
 | `verify:package` 安装包校验 | 通过 |
 | `update:metadata` + `verify:update` 更新元数据 | 通过 |
 | `installer:smoke` 静默安装/健康检查/卸载 | 通过 |
+| `upgrade:smoke` 上一版内部包覆盖升级 | 通过（userData 保留 + 升级后 API 健康） |
 | `smoke:packaged-ui` 打包版 UI | 通过（含 userData 隔离修复） |
 | `delivery:drill` 迁移/备份/损坏/恢复演练 | 通过 |
 | `smoke:http-fuzz` 异常输入容错 | 通过（11 项 4xx） |
 | `smoke:multi-instance` 双实例并发 | 通过 |
 | `smoke:all` API + UI + 负载冒烟 | 通过 |
 | `benchmark:load` 10 万患者/10 万收费基准 | 通过 |
-| typecheck / 1354 单测 / 覆盖率 / lint / knip / build / electron:compile | 通过 |
+| typecheck / 1356 单测 / 覆盖率 / lint / knip / build / electron:compile | 通过 |
 
 ## 产物
 
