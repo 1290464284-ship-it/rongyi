@@ -81,6 +81,7 @@ export const routeRoleRules: RouteRoleRule[] = [
   { pattern: /^\/api\/v2\/pay-methods/, roles: financeStaff, permission: 'finance' },
   { pattern: /^\/api\/v2\/charge-trees/, roles: financeStaff, permission: 'finance' },
   { pattern: /^\/api\/v2\/user-permissions/, roles: ['BOSS'] },
+  { pattern: /^\/api\/v2\/role-permissions/, roles: ['BOSS'] },
 ];
 
 const navigationRules: Array<{ key: string; roles: UserRole[] }> = [

@@ -18,21 +18,37 @@ const wrapper = ({ children }: { children: ReactNode }) => (
 
 const doctorPermissions = {
   items: [
-    { id: 'p1', role: 'DOCTOR', resource: 'patients', permission: 'list', allowed: true },
-    { id: 'p2', role: 'DOCTOR', resource: 'charges', permission: 'update', allowed: false },
+    { resource: 'finance', allowed: true },
+    { resource: 'patients', allowed: false },
   ],
-  total: 2,
-  page: 1,
-  pageSize: 20,
+  defaults: ['dashboard', 'patients', 'clinical', 'communication'],
+  effective: ['dashboard', 'clinical', 'communication', 'finance'],
 };
 
-const receptionPermissions = {
-  items: [
-    { id: 'p3', role: 'BOSS', resource: 'appointments', permission: 'create', allowed: true },
+const bossPermissions = {
+  items: [],
+  defaults: [
+    'dashboard',
+    'patients',
+    'clinical',
+    'finance',
+    'inventory',
+    'analytics',
+    'communication',
+    'hr',
+    'system',
   ],
-  total: 1,
-  page: 1,
-  pageSize: 20,
+  effective: [
+    'dashboard',
+    'patients',
+    'clinical',
+    'finance',
+    'inventory',
+    'analytics',
+    'communication',
+    'hr',
+    'system',
+  ],
 };
 
 describe('PermissionsPage', () => {
@@ -41,95 +57,44 @@ describe('PermissionsPage', () => {
     vi.mocked(apiRequest).mockReset();
   });
 
-  it('loads permissions for the active role and refetches when switching tabs', async () => {
+  it('loads role permissions and renders module checkboxes from effective permissions', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/rolePermissions?role=DOCTOR&page=1&pageSize=200') return doctorPermissions;
-      if (path === '/resources/rolePermissions?role=BOSS&page=1&pageSize=200') return receptionPermissions;
-      return { items: [], total: 0, page: 1, pageSize: 20 };
+      if (path === '/role-permissions/DOCTOR') return doctorPermissions;
+      return {};
     });
     render(<PermissionsPage />, { wrapper });
-    expect(await screen.findByText('patients')).toBeDefined();
+    expect(await screen.findByText('医生默认模块权限')).toBeDefined();
+    expect(screen.getByLabelText('收费财务')).toHaveProperty('checked', true);
+    expect(screen.getByLabelText('患者与预约')).toHaveProperty('checked', false);
+    expect(screen.getByLabelText('临床诊疗')).toHaveProperty('checked', true);
+  });
 
+  it('switches role tabs and refetches permissions', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/role-permissions/DOCTOR') return doctorPermissions;
+      if (path === '/role-permissions/BOSS') return bossPermissions;
+      return {};
+    });
+    render(<PermissionsPage />, { wrapper });
+    await screen.findByText('医生默认模块权限');
     fireEvent.click(screen.getByRole('tab', { name: '老板' }));
+    expect(await screen.findByText('老板默认模块权限')).toBeDefined();
+    expect(screen.getByLabelText('人事排班')).toHaveProperty('checked', true);
+  });
+
+  it('saves the full module permission set for the active role', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/role-permissions/DOCTOR') return doctorPermissions;
+      return {};
+    });
+    render(<PermissionsPage />, { wrapper });
+    await screen.findByText('医生默认模块权限');
+    fireEvent.click(screen.getByLabelText('患者与预约'));
+    fireEvent.click(screen.getByText('保存角色权限'));
     await waitFor(() => expect(vi.mocked(apiRequest)).toHaveBeenCalledWith(
-      '/resources/rolePermissions?role=BOSS&page=1&pageSize=200',
+      '/role-permissions/DOCTOR',
+      expect.objectContaining({ method: 'PUT' }),
     ));
-    expect(await screen.findByText('appointments')).toBeDefined();
-  });
-
-  it('renders the permission table with allow toggle and delete buttons', async () => {
-    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path.startsWith('/resources/rolePermissions')) return doctorPermissions;
-      return { items: [], total: 0, page: 1, pageSize: 20 };
-    });
-    render(<PermissionsPage />, { wrapper });
-    expect(await screen.findByText('patients')).toBeDefined();
-    expect(screen.getByText('charges')).toBeDefined();
-    expect(screen.getByRole('button', { name: '允许' })).toBeDefined();
-    expect(screen.getByRole('button', { name: '禁止' })).toBeDefined();
-    expect(screen.getAllByRole('button', { name: '删除' })).toHaveLength(2);
-  });
-
-  it('toggles allowed via PATCH with the inverted value', async () => {
-    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path.startsWith('/resources/rolePermissions')) return doctorPermissions;
-      return { items: [], total: 0, page: 1, pageSize: 20 };
-    });
-    render(<PermissionsPage />, { wrapper });
-    await screen.findByText('patients');
-
-    fireEvent.click(screen.getByRole('button', { name: '允许' }));
-    await waitFor(() => expect(vi.mocked(apiRequest)).toHaveBeenCalledWith(
-      '/resources/rolePermissions/p1',
-      expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ allowed: false }) }),
-    ));
-    expect(await screen.findByText('权限已更新')).toBeDefined();
-  });
-
-  it('adds a permission via POST with the active role', async () => {
-    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path.startsWith('/resources/rolePermissions')) return doctorPermissions;
-      return { items: [], total: 0, page: 1, pageSize: 20 };
-    });
-    render(<PermissionsPage />, { wrapper });
-    await screen.findByText('patients');
-
-    fireEvent.change(screen.getByLabelText('资源名'), { target: { value: 'treatmentPlans' } });
-    fireEvent.change(screen.getByLabelText('权限'), { target: { value: 'delete' } });
-    fireEvent.click(screen.getByRole('button', { name: '添加权限' }));
-    await waitFor(() => expect(vi.mocked(apiRequest)).toHaveBeenCalledWith(
-      '/resources/rolePermissions',
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({ role: 'DOCTOR', resource: 'treatmentPlans', permission: 'delete', allowed: true }),
-      }),
-    ));
-    expect(await screen.findByText('权限已添加')).toBeDefined();
-  });
-
-  it('deletes a permission via DELETE', async () => {
-    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path.startsWith('/resources/rolePermissions')) return doctorPermissions;
-      return { items: [], total: 0, page: 1, pageSize: 20 };
-    });
-    render(<PermissionsPage />, { wrapper });
-    await screen.findByText('patients');
-
-    fireEvent.click(screen.getAllByRole('button', { name: '删除' })[0]);
-    fireEvent.click(await screen.findByText('确认删除'));
-    await waitFor(() => expect(vi.mocked(apiRequest)).toHaveBeenCalledWith(
-      '/resources/rolePermissions/p1',
-      expect.objectContaining({ method: 'DELETE' }),
-    ));
-    expect(await screen.findByText('权限已删除')).toBeDefined();
-  });
-
-  it('shows the empty state when the role has no permissions', async () => {
-    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path.startsWith('/resources/rolePermissions')) return { items: [], total: 0, page: 1, pageSize: 20 };
-      return { items: [], total: 0, page: 1, pageSize: 20 };
-    });
-    render(<PermissionsPage />, { wrapper });
-    expect(await screen.findByText('该角色暂无权限配置')).toBeDefined();
+    expect(await screen.findByText('角色权限已更新')).toBeDefined();
   });
 });

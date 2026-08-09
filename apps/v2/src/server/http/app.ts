@@ -33,6 +33,7 @@ import { registerPurchaseReviewRoutes } from './routes/purchase-review-routes';
 import { registerShiftTemplateRoutes } from './routes/shift-template-routes';
 import { registerUserRoleRoutes } from './routes/user-role-routes';
 import { registerUserPermissionRoutes } from './routes/user-permission-routes';
+import { registerRolePermissionRoutes } from './routes/role-permission-routes';
 import { registerWechatReminderRoutes } from './routes/wechat-reminder-routes';
 import { registerInventoryReportRoutes } from './routes/inventory-report-routes';
 import { registerInventoryDocRoutes } from './routes/inventory-doc-routes';
@@ -252,6 +253,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
   registerShiftTemplateRoutes(app, deps);
   registerUserRoleRoutes(app, deps);
   registerUserPermissionRoutes(app, deps);
+  registerRolePermissionRoutes(app, deps);
   registerWechatReminderRoutes(app, deps);
   registerInventoryReportRoutes(app, deps);
   registerInventoryDocRoutes(app, deps);

@@ -8,6 +8,7 @@ import { runMigrations } from '../../infrastructure/migrations';
 import { AppError } from '../../infrastructure/errors';
 import {
   PERMISSION_KEYS,
+  RoleModulePermissionService,
   UserPermissionService,
   computeEffectivePermissions,
 } from './permissions';
@@ -34,6 +35,12 @@ describe('user module permissions', () => {
          id, clinicId, createdAt, updatedAt, deletedAt,
          username, passwordHash, name, role, phone, active, loginAttempts, tokenVersion
        ) VALUES ('perm-user-001', 'clinic-v2-001', ?, ?, NULL, 'permuser', 'x', 'Perm User', 'DOCTOR', NULL, 1, 0, 0)`,
+    ).run(now, now);
+    db.prepare(
+      `INSERT INTO User (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         username, passwordHash, name, role, phone, active, loginAttempts, tokenVersion
+       ) VALUES ('perm-user-002', 'clinic-v2-001', ?, ?, NULL, 'permuser2', 'x', 'Perm User 2', 'DOCTOR', NULL, 1, 0, 0)`,
     ).run(now, now);
   });
 
@@ -96,5 +103,24 @@ describe('user module permissions', () => {
       expect(error).toBeInstanceOf(AppError);
       expect((error as AppError).status).toBe(404);
     }
+  });
+
+  it('applies role-level module overrides to every user of that role', () => {
+    const roleService = new RoleModulePermissionService(db);
+    roleService.setForRole('DOCTOR', [
+      { resource: 'finance', allowed: true },
+      { resource: 'patients', allowed: false },
+    ], context);
+
+    const effective = computeEffectivePermissions(db, 'perm-user-002', 'clinic-v2-001', 'DOCTOR');
+    expect(effective).toContain('finance');
+    expect(effective).not.toContain('patients');
+    expect(effective).toContain('clinical');
+
+    const listed = roleService.listForRole('DOCTOR', context);
+    expect(listed.items).toEqual([
+      { resource: 'finance', allowed: true },
+      { resource: 'patients', allowed: false },
+    ]);
   });
 });

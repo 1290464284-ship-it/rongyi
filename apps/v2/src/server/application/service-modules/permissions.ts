@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3';
+import { randomUUID } from 'node:crypto';
 import { NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import type { AppContext, UserRole } from '../../../domain/contracts';
@@ -146,6 +147,18 @@ export function computeEffectivePermissions(
     for (const key of ROLE_DEFAULT_PERMISSIONS[role]) effective.add(key);
   }
 
+  const roleOverrides = db.prepare(
+    `SELECT role, resource, allowed FROM RolePermission
+     WHERE permission = 'access' AND deletedAt IS NULL${tenantAnd(clinicId)}`,
+  ).all(...tenantParams(clinicId)) as Array<{ role: string; resource: string; allowed: number }>;
+  for (const role of roles) {
+    for (const row of roleOverrides) {
+      if (row.role !== role || !isPermissionKey(row.resource)) continue;
+      if (Number(row.allowed) === 1) effective.add(row.resource);
+      else effective.delete(row.resource);
+    }
+  }
+
   const overrides = db.prepare(
     `SELECT permission, allowed FROM UserPermission
      WHERE userId = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
@@ -230,5 +243,95 @@ export class UserPermissionService {
     ).get(userId, ...tenantParams(context.clinicId)) as { id: string; role: UserRole } | undefined;
     if (!user) throw new NotFoundError('User not found');
     return user;
+  }
+}
+
+export interface RoleModulePermissionInput {
+  resource: string;
+  allowed: boolean;
+}
+
+export class RoleModulePermissionService {
+  constructor(private readonly db: Database.Database) {}
+
+  listForRole(role: string, context: AppContext): {
+    items: Array<{ resource: string; allowed: boolean }>;
+    defaults: string[];
+    effective: string[];
+  } {
+    const validRole = this.validateRole(role);
+    const items = this.db.prepare(
+      `SELECT resource, allowed FROM RolePermission
+       WHERE role = ? AND permission = 'access' AND deletedAt IS NULL${tenantAnd(context.clinicId)}
+       ORDER BY resource ASC`,
+    ).all(role, ...tenantParams(context.clinicId)) as Array<{ resource: string; allowed: number }>;
+    return {
+      items: items.map((row) => ({ resource: row.resource, allowed: Number(row.allowed) === 1 })),
+      defaults: [...ROLE_DEFAULT_PERMISSIONS[validRole]],
+      effective: this.effectiveForRole(role, context),
+    };
+  }
+
+  setForRole(role: string, inputs: RoleModulePermissionInput[], context: AppContext): {
+    items: Array<{ resource: string; allowed: boolean }>;
+    effective: string[];
+  } {
+    this.validateRole(role);
+    if (!Array.isArray(inputs) || inputs.some((input) => !input || typeof input !== 'object')) {
+      throw new ValidationError('permissions must be an array');
+    }
+    const seen = new Set<string>();
+    const normalized: RoleModulePermissionInput[] = [];
+    for (const input of inputs) {
+      const resource = String(input.resource ?? '');
+      if (!isPermissionKey(resource)) {
+        throw new ValidationError(`Invalid permission key: ${resource}`);
+      }
+      if (seen.has(resource)) throw new ValidationError(`Duplicate permission key: ${resource}`);
+      seen.add(resource);
+      normalized.push({ resource, allowed: Boolean(input.allowed) });
+    }
+
+    const now = context.now().toISOString();
+    const run = this.db.transaction(() => {
+      this.db.prepare(
+        `DELETE FROM RolePermission
+         WHERE role = ? AND permission = 'access' AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+      ).run(role, ...tenantParams(context.clinicId));
+      const insert = this.db.prepare(
+        `INSERT INTO RolePermission (id, role, resource, permission, allowed, clinicId, createdAt, updatedAt, deletedAt)
+         VALUES (?, ?, ?, 'access', ?, ?, ?, ?, NULL)`,
+      );
+      for (const input of normalized) {
+        insert.run(randomUUID(), role, input.resource, input.allowed ? 1 : 0, context.clinicId ?? null, now, now);
+      }
+    });
+    run();
+
+    return {
+      items: normalized,
+      effective: this.effectiveForRole(role, context),
+    };
+  }
+
+  private effectiveForRole(role: string, context: AppContext): string[] {
+    const effective = new Set<string>(ROLE_DEFAULT_PERMISSIONS[this.validateRole(role)]);
+    const rows = this.db.prepare(
+      `SELECT resource, allowed FROM RolePermission
+       WHERE role = ? AND permission = 'access' AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    ).all(role, ...tenantParams(context.clinicId)) as Array<{ resource: string; allowed: number }>;
+    for (const row of rows) {
+      if (!isPermissionKey(row.resource)) continue;
+      if (Number(row.allowed) === 1) effective.add(row.resource);
+      else effective.delete(row.resource);
+    }
+    return PERMISSION_KEYS.filter((key) => effective.has(key));
+  }
+
+  private validateRole(role: string): UserRole {
+    if (!Object.prototype.hasOwnProperty.call(ROLE_DEFAULT_PERMISSIONS, role)) {
+      throw new ValidationError(`Invalid role: ${role}`);
+    }
+    return role as UserRole;
   }
 }
