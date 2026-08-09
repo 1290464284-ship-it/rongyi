@@ -29,6 +29,7 @@ function freePort() {
 
 const port = await freePort();
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-packaged-ui-'));
+const userDataDir = path.join(dataDir, 'user-data');
 const adminPassword = 'PackagedUiSmoke123!';
 const env = {
   ...process.env,
@@ -47,7 +48,11 @@ const env = {
 
 let electronApp;
 try {
-  electronApp = await electron.launch({ executablePath: exePath, env, args: [] });
+  electronApp = await electron.launch({
+    executablePath: exePath,
+    env,
+    args: [`--user-data-dir=${userDataDir}`],
+  });
   const window = await electronApp.firstWindow({ timeout: 90_000 });
   await window.waitForLoadState('domcontentloaded');
   await window.waitForTimeout(5000);
@@ -56,9 +61,12 @@ try {
   const loginHeading = await window.getByRole('heading').allTextContents();
   console.log('packaged login window', { title, loginHeading });
 
-  await window.fill('input', 'admin');
-  await window.fill('input[type="password"]', adminPassword);
-  await window.getByRole('button', { name: /\u767b\u5f55/ }).click();
+  const passwordInput = window.locator('input[type="password"]');
+  if ((await passwordInput.count()) > 0) {
+    await window.fill('input', 'admin');
+    await passwordInput.fill(adminPassword);
+    await window.getByRole('button', { name: /\u767b\u5f55/ }).click();
+  }
   await window.getByText(/\u5de5\u4f5c\u53f0/).first().waitFor({ timeout: 60_000 });
 
   await window.evaluate(() => {

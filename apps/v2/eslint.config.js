@@ -58,4 +58,17 @@ export default tseslint.config(
       '@typescript-eslint/no-namespace': 'off',
     },
   },
+  {
+    // 路由/配置桶和表格列文件不是可独立热更新的组件模块，
+    // react-refresh 规则在这里产生的是误报，定向关闭而不是全局关闭。
+    files: [
+      'src/web/components/hub-tabs.tsx',
+      'src/web/components/index.tsx',
+      'src/web/appointments/columns.tsx',
+      'src/web/schedules/columns.tsx',
+    ],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
 );
