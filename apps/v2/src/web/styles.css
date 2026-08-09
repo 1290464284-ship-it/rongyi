@@ -1671,6 +1671,12 @@ select.error:focus {
   box-shadow: var(--shadow);
 }
 
+.data-table-scroll {
+  max-height: 62vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 table {
   border-collapse: collapse;
   width: 100%;

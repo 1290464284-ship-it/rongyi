@@ -135,6 +135,24 @@ jobs:
       - name: Ensure sanitized legacy database
         run: pnpm --filter @dental/v2 ensure:legacy
 
+      - name: Simulate clinic data
+        run: pnpm --filter @dental/v2 simulate:clinic-data
+
+      - name: Permission smoke
+        run: pnpm --filter @dental/v2 smoke:permissions
+
+      - name: Disaster drill
+        run: pnpm --filter @dental/v2 disaster:drill
+
+      - name: Crash recovery drill
+        run: pnpm --filter @dental/v2 drill:crash
+
+      - name: Legacy dirty database drill
+        run: pnpm --filter @dental/v2 drill:legacy-dirty
+
+      - name: Environment failure drill
+        run: pnpm --filter @dental/v2 drill:environment
+
       - name: Delivery drill
         run: pnpm --filter @dental/v2 delivery:drill
 

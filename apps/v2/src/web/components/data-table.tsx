@@ -26,7 +26,7 @@ export function DataTable<T extends Record<string, unknown>>({
       <thead>
         <tr>
           {columns.map((column) => (
-            <th key={column.key} style={rows.length > 100 ? { position: 'sticky', top: 0, zIndex: 1 } : undefined}>
+            <th key={column.key}>
               {column.label}
             </th>
           ))}
@@ -51,7 +51,7 @@ export function DataTable<T extends Record<string, unknown>>({
         <div className="table-note">仅显示前 {MAX_RENDER_ROWS} 行（共 {rows.length} 行），请使用搜索或筛选缩小范围</div>
       )}
       {rows.length > 100 ? (
-        <div style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+        <div className="data-table-scroll">
           {tableContent}
         </div>
       ) : tableContent}
