@@ -301,9 +301,10 @@ export async function switchClinic(clinicId: string): Promise<void> {
   await setTokens(result.token, currentRefresh);
 }
 
-export async function downloadCsv(resource: string): Promise<void> {
+export async function downloadCsv(resource: string, search = ''): Promise<void> {
   const base = await resolveApiBase();
-  const response = await fetchAuthenticated(`${base}/resources/${encodeURIComponent(resource)}/export`);
+  const query = search ? `?search=${encodeURIComponent(search)}` : '';
+  const response = await fetchAuthenticated(`${base}/resources/${encodeURIComponent(resource)}/export${query}`);
   if (!response.ok) throw new ClientError(friendlyError('CSV export failed'));
   const blob = await response.blob();
   const url = URL.createObjectURL(blob);

@@ -8,8 +8,13 @@ import { MemoryRouter, Route, Routes } from 'react-router';
 import { ResourcePage } from './ResourcePage';
 import { apiRequest, downloadCsv } from '../lib/api';
 import { ToastProvider } from './toast';
+import { downloadTextFile } from '../pages/analytics/analytics-utils';
 
 vi.mock('../lib/api', () => ({ apiRequest: vi.fn(), downloadCsv: vi.fn() }));
+vi.mock('../pages/analytics/analytics-utils', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../pages/analytics/analytics-utils')>();
+  return { ...actual, downloadTextFile: vi.fn() };
+});
 
 const writable = {
   name: 'patients',
@@ -43,6 +48,7 @@ describe('ResourcePage', () => {
     vi.useRealTimers();
     vi.mocked(apiRequest).mockReset();
     vi.mocked(downloadCsv).mockReset();
+    vi.mocked(downloadTextFile).mockReset();
   });
 
   it('exports the current resource as CSV', async () => {
@@ -62,6 +68,17 @@ describe('ResourcePage', () => {
     render(<ResourcePage resource="patients" />, { wrapper });
     fireEvent.click(await screen.findByText('导出'));
     expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+  });
+
+  it('exports endpoint reports as CSV', async () => {
+    vi.mocked(apiRequest).mockResolvedValue([{ id: 'p1', name: 'Alice', rfm: 'CHAMPION' }]);
+    render(<ResourcePage title="RFM" endpoint="/analytics/rfm" />, { wrapper });
+    fireEvent.click(await screen.findByText('导出'));
+    expect(vi.mocked(downloadTextFile)).toHaveBeenCalledWith(
+      'RFM.csv',
+      expect.stringContaining('"id","name","rfm"'),
+    );
+    expect(vi.mocked(downloadTextFile).mock.calls[0][1]).toContain('Alice');
   });
 
   it('renders rows and hides write controls for read-only resources', async () => {

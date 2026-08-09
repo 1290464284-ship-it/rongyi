@@ -10,6 +10,7 @@ import { friendlyError } from '../lib/messages';
 import { useDebouncedValue } from '../hooks/use-debounce';
 import { useToast } from '../lib/toast-context';
 import { SIMPLE_LIST_COLUMN_LABELS } from '../lib/labels';
+import { csvCell, downloadTextFile } from '../pages/analytics/analytics-utils';
 
 /**
  * 元数据驱动的通用资源 CRUD 页（Round7 M-02 职责说明）。
@@ -100,9 +101,20 @@ function ReadOnlyListPage({ title, endpoint }: { title: string; endpoint: string
     label: SIMPLE_LIST_COLUMN_LABELS[column] ?? column,
     render: (row: Record<string, unknown>) => formatStatValue(column, row[column]),
   }));
+  function exportCsv() {
+    const lines: string[] = [];
+    lines.push(columns.map((column) => csvCell(SIMPLE_LIST_COLUMN_LABELS[column] ?? column)).join(','));
+    for (const row of rows) {
+      lines.push(columns.map((column) => csvCell(row[column])).join(','));
+    }
+    downloadTextFile(`${title}.csv`, lines.join('\n'));
+  }
   return (
     <div className="page">
-      <div className="page-head"><h1>{title}</h1></div>
+      <div className="page-head">
+        <h1>{title}</h1>
+        <button onClick={exportCsv}>导出</button>
+      </div>
       {truncated && <p className="reminder-muted">{'\u8d85\u8fc7\u663e\u793a\u4e0a\u9650\uff0c\u4ec5\u663e\u793a\u90e8\u5206\u6570\u636e'}</p>}
       <DataTable columns={dataColumns} rows={rows} emptyText="暂无数据" />
     </div>
@@ -234,7 +246,8 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
 
   async function exportCsv() {
     try {
-      await downloadCsv(resource);
+      if (search) await downloadCsv(resource, search);
+      else await downloadCsv(resource);
       showToast('导出成功', 'success');
     } catch (error) {
       const message = friendlyError(error);
