@@ -309,6 +309,59 @@ db.transaction(() => {
   }
 })();
 
+if (process.env.V2_SIM_DIRTY === '1') {
+  db.transaction(() => {
+    const existingPhone = (db.prepare('SELECT phone FROM Patient WHERE phone IS NOT NULL LIMIT 1').get() as { phone: string }).phone;
+    const insertDirtyPatient = db.prepare(
+      `INSERT INTO Patient (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, wechatId, preferredContact, contactNote,
+         birthDate, idCard, address, occupation, remark, avatar,
+         tags, allergies, medicalHistory, medicationHistory, systemicDiseases,
+         source, active, isTempPatient
+       ) VALUES (?, ?, ?, ?, NULL, ?, ?, 'UNKNOWN', ?, NULL, 'PHONE', NULL,
+         NULL, NULL, NULL, NULL, '脏数据备注', NULL,
+         '[]', '[]', '[]', '[]', '[]', 'OTHER', 1, 0)`,
+    );
+    for (let i = 0; i < 30; i += 1) {
+      insertDirtyPatient.run(
+        `sim-dirty-patient-${i}`, clinicId, now, now, `P-DIRTY-${i}`, `脏数据患者${i}`, existingPhone,
+      );
+    }
+
+    const base = db.prepare(
+      `SELECT patientId, doctorId, startTime, endTime FROM Appointment LIMIT 1`,
+    ).get() as { patientId: string; doctorId: string; startTime: string; endTime: string };
+    const insertDirtyAppointment = db.prepare(
+      `INSERT INTO Appointment (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, startTime, endTime, status, type, remark
+       ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, 'BOOKED', 'REGULAR', '脏数据重叠预约')`,
+    );
+    for (let i = 0; i < 20; i += 1) {
+      const start = new Date(new Date(base.startTime).getTime() + (15 + i) * 60_000);
+      const end = new Date(start.getTime() + 45 * 60_000);
+      insertDirtyAppointment.run(
+        `sim-dirty-appt-${i}`, clinicId, now, now, base.patientId, base.doctorId,
+        start.toISOString(), end.toISOString(),
+      );
+    }
+
+    const insertDirtyFollowUp = db.prepare(
+      `INSERT INTO FollowUp (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, planDate, content, status, result, assigneeId, templateId, completedAt
+       ) VALUES (?, ?, ?, ?, NULL, ?, ?, '历史逾期未处理', 'PENDING', NULL, ?, NULL, NULL)`,
+    );
+    for (let i = 0; i < 10; i += 1) {
+      insertDirtyFollowUp.run(
+        `sim-dirty-followup-${i}`, clinicId, now, now, patientIds[Math.floor(rand() * patientIds.length)],
+        daysAgoIso(10 + i).slice(0, 10), doctorIds[Math.floor(rand() * doctorIds.length)],
+      );
+    }
+  })();
+}
+
 rebuildSearchIndex(db);
 const counts = {
   patients: (db.prepare('SELECT COUNT(*) AS c FROM Patient').get() as { c: number }).c,

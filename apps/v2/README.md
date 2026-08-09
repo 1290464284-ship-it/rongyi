@@ -181,6 +181,10 @@ pnpm --filter @dental/v2 smoke:ui
 configured sends reach the gateway, success marks messages `SENT`, and gateway
 failures leave messages `PENDING` for retry.
 
+`simulate:clinic-data` builds a realistic relational clinic database for
+downstream smokes; `V2_SIM_DIRTY=1` adds duplicate phones, overlapping
+appointments and overdue follow-ups to approximate dirty legacy data.
+
 ## Maturity
 
 See `MATURITY.md` for the current production-readiness checklist.

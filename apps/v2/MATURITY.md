@@ -245,6 +245,8 @@
   (patients, appointments, visits, charges, inventory, member cards, purchase
   orders, follow-ups) and `smoke:simulated-data` runs the API suite against it;
   the generated database passes `integrity_check` and the foreign-key scan.
+  `V2_SIM_DIRTY=1` also injects duplicate phones, overlapping appointments and
+  overdue follow-ups to simulate dirty legacy data.
 - `smoke:packaged-ui-simulated` launches the packaged desktop app against the
   simulated clinic database and verifies login plus the patient list render.
 - `disaster:drill` verifies that restoring with the wrong backup key or a
