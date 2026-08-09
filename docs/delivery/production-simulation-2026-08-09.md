@@ -22,7 +22,7 @@
 | `smoke:all` API + UI + 负载冒烟 | 通过 |
 | `smoke:wechat-gateway` 本地 HTTPS 假网关 | 通过（发送落 SENT，网关 500 后保持 PENDING） |
 | `benchmark:load` 10 万患者/10 万收费基准 | 通过 |
-| typecheck / 1356 单测 / 覆盖率 / lint / knip / build / electron:compile | 通过 |
+| typecheck / 1379 单测 / 覆盖率 / lint / knip / build / electron:compile | 通过 |
 
 ## 产物
 

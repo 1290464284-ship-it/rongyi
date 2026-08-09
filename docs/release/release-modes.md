@@ -15,7 +15,7 @@
 内部自用版免费，适合自己诊所或受控电脑安装，不要求 CA 证书。
 
 ```powershell
-cd D:\Desktop\rongyi\source
+cd D:\Desktop\rongyi
 pnpm --filter @dental/v2 electron:dist:internal
 ```
 
@@ -31,15 +31,15 @@ pnpm --filter @dental/v2 electron:dist:internal
 
 如果希望把内部版放到 GitHub Release 上，方便多台受控电脑下载，可以在 GitHub Actions 页面手动运行 `V2 Internal Release` workflow：
 
-1. 输入 `version`，例如 `2.1.4`。
+1. 输入 `version`，例如 `2.2.0`。
 2. 保持 `run_installer_smoke` 为 `true`。
-3. 运行后会在 `v2-internal-2.1.4` tag 下生成安装包、blockmap 和 `latest.yml`。
+3. 运行后会在 `v2-internal-2.2.0` tag 下生成安装包、blockmap 和 `latest.yml`。
 
 该 workflow 不需要 CA 证书或付费签名服务，但发布的是自签名内部版，Windows 仍会显示未知发布者。
 
 当前已验证的内部 Release：
 
-[v2-internal-2.1.4](https://github.com/1290464284-ship-it/rongyi/releases/tag/v2-internal-2.1.4)
+[v2-internal-2.2.0](https://github.com/1290464284-ship-it/rongyi/releases/tag/v2-internal-2.2.0)
 
 如果 `electron-builder` 从 GitHub 下载 Electron/签名工具超时，可先设置国内镜像再执行：
 

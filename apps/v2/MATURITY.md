@@ -37,11 +37,9 @@
 - Coverage threshold raised to 75/55/85/80 after reaching the line coverage target.
 - Coverage final target reached at 81.19% statements / 64.83% branches /
   91.43% functions / 84.6% lines, and the gate was raised to 80/60/90/84.
-- Coverage raised to 100% statements, 100% branches, 100% functions, and
-  100% lines through service, HTTP, router, repository, migration, and boundary
-  tests. The delivery gate is now 100/100/100/100; only schema- or
-  SQL-guaranteed defensive branches are explicitly ignored with documented
-  rationale.
+- Coverage gates are enforced at 95/85/97/95 for server and domain code and
+  80/69/77/83 for web code based on v8 measurements; schema- or SQL-guaranteed
+  defensive branches are explicitly excluded with documented rationale.
 - Metrics persistence to `logs/metrics.json` and Electron crash log file.
 - Electron `win-unpacked` directory package verified with electron-builder.
 - NSIS Windows installer `Dental Clinic V2 Setup 2.0.0.exe` generated successfully.
@@ -82,7 +80,7 @@
   verification, update metadata, and installer smoke.
 - GitHub Actions internal release workflow publishes self-signed installers to
   `v2-internal-*` tags without CA secrets or public-signature verification.
-- Remote internal release `v2-internal-2.1.4` published to GitHub with
+- Remote internal release `v2-internal-2.2.0` published to GitHub with
   installer, blockmap, and `latest.yml`, and remote update metadata verified.
 - Local full smoke runner that starts API and Web, then runs API smoke, UI
   smoke, and load smoke.
