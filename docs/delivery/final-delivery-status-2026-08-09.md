@@ -11,7 +11,7 @@
 | 项目 | 结果 |
 |---|---|
 | typecheck / lint / knip | 通过 |
-| 单元测试 | 157 个文件 / 1392 个用例全部通过 |
+| 单元测试 | 163 个文件 / 1409 个用例全部通过 |
 | 服务端覆盖率 | 语句 95.43% / 分支 87.31% / 函数 98.99% / 行 96.90% |
 | 前端覆盖率 | 语句 83.46% / 分支 72.22% / 函数 81.54% / 行 87.07% |
 | build + electron:compile | 通过 |
@@ -25,6 +25,7 @@
 | smoke:permissions | 通过；DOCTOR 临床可访问，财务/库存/系统/分析/建用户全部 403 |
 | smoke:http-fuzz | 通过；11 项对抗请求全部 4xx，服务保持健康 |
 | smoke:multi-instance | 通过；双实例并发写共享 SQLite |
+| soak:smoke | 通过；30 秒持续读写，创建 p95 18.2ms、dashboard p95 15.3ms，完整性 ok |
 | disaster:drill | 通过；错误密钥、损坏备份拒绝，正确备份恢复后完整性 ok |
 | drill:crash | 通过；强杀后重启，写入数据保留，完整性 ok |
 | drill:legacy-dirty | 通过；脏旧库导入 fail-closed，启动前拒绝 |
@@ -40,6 +41,11 @@
 - `ba6843a`：修复崩溃演练中 kill 兜底定时器误杀重启后新 API 进程的真实缺陷（10 万级库复测暴露，修复后通过）。
 - 新增用户级模块权限：BOSS 在“员工管理”中按用户勾选/取消 9 个模块权限，导航、通用资源路由与专用模块路由立即生效；权限冒烟覆盖授权与撤销全链路。
 - 角色级模块权限同步生效：“权限配置”页按角色维护 9 个模块默认权限，角色覆盖与用户覆盖按“默认 + 角色 + 用户”逐层叠加。
+- 批次1 导出补齐：资源导出支持搜索条件，RFM/流失/库存报表等 endpoint 页可导出 CSV，随访到诊率页可导出随访明细。
+- 批次2 体验与无障碍：skip-link、焦点/aria 基础、Ctrl+K 全局搜索、帮助弹窗、新手引导、批量删除、患者自定义字段管理页与时间线填写。
+- 批次3 库存条码：库存项新增 barcode 字段，支持扫码定位和 Code39 条码标签展示。
+- 批次4 稳定性观测：新增库/WAL/日志/备份/运行时长快照并落盘 stability.json，新增 soak 浸泡冒烟。
+- 批次5 多机同步：新增 SyncConflict 冲突表、push 冲突检测、保留本地/采用远端人工合并接口与页面。
 - 前序已提交：旧库导入 CHECK 约束 fail-closed（`eef2187`）、崩溃/断电恢复演练（`3089e28`）、RFM/启动性能优化、脏数据模式、打包 UI 仿真、微信信息模板、患者联系方式/微信号、提醒前置天数、全局复制粘贴等。
 
 ## 10 万级仿真结果
@@ -53,7 +59,7 @@
 
 ## 交付产物
 
-- 安装包：`apps/v2/release-v2/Dental-Clinic-V2-Setup-2.2.0-internal.20260809084201.exe`
+- 安装包：`apps/v2/release-v2/Dental-Clinic-V2-Setup-2.2.0-internal.20260809093727.exe`
 - 更新元数据：`apps/v2/release-v2/latest.yml`
 - 打包 UI 截图：`apps/v2/data/packaged-ui-smoke.png`、`apps/v2/data/packaged-ui-simulated-smoke.png`
 - 本报告：`docs/delivery/final-delivery-status-2026-08-09.md`

@@ -85,6 +85,9 @@ try {
     await window.getByRole('button', { name: /\u767b\u5f55/ }).click();
   }
   await window.getByText(/\u5de5\u4f5c\u53f0/).first().waitFor({ timeout: 60_000 });
+  if (await window.getByRole('heading', { name: '新手引导' }).count()) {
+    await window.getByRole('button', { name: '完成' }).click();
+  }
 
   await window.evaluate(() => {
     window.location.hash = '#/patients';

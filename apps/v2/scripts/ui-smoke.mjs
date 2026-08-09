@@ -21,6 +21,9 @@ try {
   await page.getByRole('button', { name: '登录' }).click();
   await page.waitForURL('**/#/');
   await page.getByText('工作台').first().waitFor();
+  if (await page.getByRole('heading', { name: '新手引导' }).count()) {
+    await page.getByRole('button', { name: '完成' }).click();
+  }
 
   await page.goto(`${base}/#/patients`, { waitUntil: 'domcontentloaded' });
   await page.getByRole('heading', { name: '患者与预约' }).waitFor();
