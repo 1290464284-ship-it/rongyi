@@ -238,6 +238,9 @@
 - Electron provides an edit menu and native clipboard bridge; copy buttons use
   `window.desktop.copyText` when available and fall back to
   `navigator.clipboard`.
+- Electron main-process unit tests cover secrets, renderer trust boundary,
+  logging, cert trust, tray setup, and API child shutdown with mocked
+  `electron`; packaged UI smoke remains the end-to-end desktop check.
 - Treatment-plan print preview supports browser print/PDF output with A4 page
   rules and print-only layout cleanup.
 
