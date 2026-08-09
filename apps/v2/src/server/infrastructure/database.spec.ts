@@ -13,6 +13,17 @@ import {
 } from './database';
 import { runMigrations } from './migrations';
 
+function withLegacySyncEnv(fn: () => void): void {
+  const previous = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'development';
+  try {
+    fn();
+  } finally {
+    if (previous === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previous;
+  }
+}
+
 describe('database bootstrap', () => {
   let db: Database.Database;
   let dataDir: string;
@@ -74,14 +85,18 @@ describe('database bootstrap', () => {
   });
 
   it('synchronizes legacy schema tables from the existing schema files', () => {
-    const schemaDir = path.resolve(import.meta.dirname, '..', '..', '..', 'legacy', 'schema');
-    syncLegacySchema(db, schemaDir);
-    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>;
-    expect(tables.some((table) => table.name === 'PrintTemplate')).toBe(true);
+    withLegacySyncEnv(() => {
+      const schemaDir = path.resolve(import.meta.dirname, '..', '..', '..', 'legacy', 'schema');
+      syncLegacySchema(db, schemaDir);
+      const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>;
+      expect(tables.some((table) => table.name === 'PrintTemplate')).toBe(true);
+    });
   });
 
   it('is safe when the legacy schema directory is missing', () => {
-    expect(() => syncLegacySchema(db, path.join(os.tmpdir(), 'missing-v2-schema'))).not.toThrow();
+    withLegacySyncEnv(() => {
+      expect(() => syncLegacySchema(db, path.join(os.tmpdir(), 'missing-v2-schema'))).not.toThrow();
+    });
   });
 
   it('parses every CREATE TABLE statement from all legacy schema files (format drift guard)', () => {
@@ -117,24 +132,28 @@ describe('database bootstrap', () => {
   });
 
   it('tolerates malformed legacy schema statements', () => {
-    const malformedDir = path.join(dataDir, 'malformed-schema');
-    fs.mkdirSync(malformedDir, { recursive: true });
-    fs.writeFileSync(path.join(malformedDir, 'no-paren.tables.ts'), 'CREATE TABLE IF NOT EXISTS MissingParen');
-    fs.writeFileSync(path.join(malformedDir, 'no-close.tables.ts'), 'CREATE TABLE IF NOT EXISTS MissingClose (id TEXT');
-    expect(() => syncLegacySchema(db, malformedDir)).not.toThrow();
+    withLegacySyncEnv(() => {
+      const malformedDir = path.join(dataDir, 'malformed-schema');
+      fs.mkdirSync(malformedDir, { recursive: true });
+      fs.writeFileSync(path.join(malformedDir, 'no-paren.tables.ts'), 'CREATE TABLE IF NOT EXISTS MissingParen');
+      fs.writeFileSync(path.join(malformedDir, 'no-close.tables.ts'), 'CREATE TABLE IF NOT EXISTS MissingClose (id TEXT');
+      expect(() => syncLegacySchema(db, malformedDir)).not.toThrow();
+    });
   });
 
   it('skips legacy schema tables that are not registered', () => {
-    const filteredDir = path.join(dataDir, 'filtered-schema');
-    fs.mkdirSync(filteredDir, { recursive: true });
-    fs.writeFileSync(
-      path.join(filteredDir, 'filtered.tables.ts'),
-      'CREATE TABLE IF NOT EXISTS Patient (id TEXT); CREATE TABLE IF NOT EXISTS UnregisteredDeadTable (id TEXT);',
-    );
-    syncLegacySchema(db, filteredDir);
-    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>;
-    expect(tables.some((table) => table.name === 'Patient')).toBe(true);
-    expect(tables.some((table) => table.name === 'UnregisteredDeadTable')).toBe(false);
+    withLegacySyncEnv(() => {
+      const filteredDir = path.join(dataDir, 'filtered-schema');
+      fs.mkdirSync(filteredDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(filteredDir, 'filtered.tables.ts'),
+        'CREATE TABLE IF NOT EXISTS Patient (id TEXT); CREATE TABLE IF NOT EXISTS UnregisteredDeadTable (id TEXT);',
+      );
+      syncLegacySchema(db, filteredDir);
+      const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>;
+      expect(tables.some((table) => table.name === 'Patient')).toBe(true);
+      expect(tables.some((table) => table.name === 'UnregisteredDeadTable')).toBe(false);
+    });
   });
 
   it('creates unique indexes without clinicId when a legacy table lacks the column', () => {
