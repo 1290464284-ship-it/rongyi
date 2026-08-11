@@ -77,6 +77,26 @@ describe('migrations', () => {
     }
   });
 
+  it('retries migrations when another process records the same schema version', () => {
+    const attempts: number[] = [];
+    const run = () => {
+      attempts.push(attempts.length + 1);
+      if (attempts.length < 2) {
+        const error = new Error('UNIQUE constraint failed: schema_migrations.version');
+        (error as { code?: string }).code = 'SQLITE_CONSTRAINT_PRIMARYKEY';
+        throw error;
+      }
+      return 7;
+    };
+    const wait = vi.spyOn(Atomics, 'wait').mockImplementation(() => 'ok' as const);
+    try {
+      expect(withMigrationBusyRetry(run)).toBe(7);
+      expect(attempts).toEqual([1, 2]);
+    } finally {
+      wait.mockRestore();
+    }
+  });
+
   it('rethrows non-busy migration errors immediately', () => {
     expect(() => withMigrationBusyRetry(() => {
       throw new Error('boom');

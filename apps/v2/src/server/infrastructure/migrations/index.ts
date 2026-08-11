@@ -61,7 +61,14 @@ export const migrations: Migration[] = [
 const MIGRATION_BUSY_RETRY_DELAYS_MS = [200, 400, 800, 1500, 3000, 5000, 5000];
 
 function isMigrationBusy(error: unknown): boolean {
-  return error instanceof Error && /SQLITE_(BUSY|LOCKED)/.test(String((error as { code?: unknown }).code ?? ''));
+  if (!(error instanceof Error)) return false;
+  const code = String((error as { code?: unknown }).code ?? '');
+  // SQLITE_CONSTRAINT_* covers two processes racing to record the same
+  // migration version (schema_migrations.version PRIMARY KEY). Retrying the
+  // whole run re-reads applied versions and skips the already-recorded one.
+  return /SQLITE_(BUSY|LOCKED)/.test(code)
+    || code === 'SQLITE_CONSTRAINT_UNIQUE'
+    || code === 'SQLITE_CONSTRAINT_PRIMARYKEY';
 }
 
 function sleepSync(milliseconds: number): void {
@@ -105,7 +112,7 @@ function runMigrationsOnce(db: Database.Database, options?: { snapshotDir?: stri
   for (const migration of pending) {
     const run = db.transaction(() => {
       migration.up(db);
-      db.prepare('INSERT INTO schema_migrations (version, name, appliedAt) VALUES (?, ?, ?)')
+      db.prepare('INSERT OR IGNORE INTO schema_migrations (version, name, appliedAt) VALUES (?, ?, ?)')
         .run(String(migration.version), migration.name, new Date().toISOString());
     });
     run();
