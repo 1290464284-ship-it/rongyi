@@ -1,5 +1,6 @@
 import { apiRequest, fetchAllPages } from '../lib/api';
 import { splitList, toCents } from '../lib/format';
+import { errorMessage } from '../lib/messages';
 import type { PlanItemForm, PlanItemRow, TreatmentPlanForm, ValidPlanItem } from './types';
 
 export function newItem(): PlanItemForm {
@@ -60,6 +61,8 @@ export async function updatePlanWithItems(form: TreatmentPlanForm, planId: strin
     .map((item) => ({ id: item.id, billed: item.billed, payload: buildItemPayload(item) }))
     .filter((entry) => entry.payload.price > 0 && entry.payload.quantity > 0);
   const calculatedFee = validEntries.reduce((sum, entry) => sum + entry.payload.price * entry.payload.quantity, 0);
+  // 先读服务端明细再改主表：明细读失败时中止，避免“主表已保存、明细没拉到”的半套状态。
+  const serverItems = await fetchAllPages<PlanItemRow>(`/resources/treatmentPlanItems?planId=${planId}`);
   await apiRequest(`/resources/treatmentPlans/${planId}`, {
     method: 'PATCH',
     body: JSON.stringify({
@@ -71,32 +74,34 @@ export async function updatePlanWithItems(form: TreatmentPlanForm, planId: strin
       remark: form.remark || undefined,
     }),
   });
-  // 明细可能超过单页上限：用 fetchAllPages 取全量，避免隐藏行被误删/漏改。
-  const serverItems = await fetchAllPages<PlanItemRow>(`/resources/treatmentPlanItems?planId=${planId}`);
   const serverById = new Map(serverItems.map((row) => [String(row.id), row]));
-  const keptIds = new Set<string>();
-  for (const entry of validEntries) {
-    const existing = serverById.get(entry.id);
-    if (!existing) {
-      // 新增行（表单里无服务端 id 的行）
-      await apiRequest('/resources/treatmentPlanItems', {
-        method: 'POST',
-        body: JSON.stringify({ planId, ...entry.payload }),
+  try {
+    const keptIds = new Set<string>();
+    for (const entry of validEntries) {
+      const existing = serverById.get(entry.id);
+      if (!existing) {
+        // 新增行（表单里无服务端 id 的行）
+        await apiRequest('/resources/treatmentPlanItems', {
+          method: 'POST',
+          body: JSON.stringify({ planId, ...entry.payload }),
+        });
+        continue;
+      }
+      keptIds.add(entry.id);
+      if (Number(existing.billed) === 1) continue; // billed 保护：不修改已划价明细
+      if (isItemUnchanged(existing, entry.payload)) continue;
+      await apiRequest(`/resources/treatmentPlanItems/${entry.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(entry.payload),
       });
-      continue;
     }
-    keptIds.add(entry.id);
-    if (Number(existing.billed) === 1) continue; // billed 保护：不修改已划价明细
-    if (isItemUnchanged(existing, entry.payload)) continue;
-    await apiRequest(`/resources/treatmentPlanItems/${entry.id}`, {
-      method: 'PATCH',
-      body: JSON.stringify(entry.payload),
-    });
-  }
-  for (const row of serverItems) {
-    if (keptIds.has(String(row.id))) continue;
-    if (Number(row.billed) === 1) continue; // billed 保护：不删除已划价明细
-    await apiRequest(`/resources/treatmentPlanItems/${String(row.id)}`, { method: 'DELETE' });
+    for (const row of serverItems) {
+      if (keptIds.has(String(row.id))) continue;
+      if (Number(row.billed) === 1) continue; // billed 保护：不删除已划价明细
+      await apiRequest(`/resources/treatmentPlanItems/${String(row.id)}`, { method: 'DELETE' });
+    }
+  } catch (error) {
+    throw new Error(`${errorMessage(error, '更新治疗计划明细失败')}；主记录已保存，请核对明细后重试`);
   }
 }
 

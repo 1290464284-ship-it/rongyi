@@ -44,4 +44,13 @@ describe('prescriptions/api', () => {
     await expect(updatePrescription(validForm() as never, null)).rejects.toThrow('处方 ID 缺失');
     expect(apiRequest).not.toHaveBeenCalled();
   });
+
+  it('aborts the master update when existing details cannot be loaded', async () => {
+    vi.mocked(fetchAllPages).mockRejectedValue(new Error('items failed'));
+    await expect(updatePrescription(validForm() as never, 'pres-1')).rejects.toThrow('items failed');
+    expect(apiRequest).not.toHaveBeenCalledWith(
+      '/resources/prescriptions/pres-1',
+      expect.objectContaining({ method: 'PATCH' }),
+    );
+  });
 });

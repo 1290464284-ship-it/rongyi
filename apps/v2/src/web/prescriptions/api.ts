@@ -39,6 +39,10 @@ export async function createPrescription(
 
 export async function updatePrescription(form: PrescriptionForm, prescriptionId: string | null): Promise<void> {
   if (!prescriptionId) throw new Error('处方 ID 缺失');
+  // 先读服务端明细再改主表：明细读失败时中止，避免主表已保存而明细未同步。
+  const existing = await fetchAllPages<Record<string, unknown>>(
+    `/resources/prescriptionItems?prescriptionId=${prescriptionId}`,
+  );
   await apiRequest(`/resources/prescriptions/${prescriptionId}`, {
     method: 'PATCH',
     body: JSON.stringify({
@@ -48,35 +52,36 @@ export async function updatePrescription(form: PrescriptionForm, prescriptionId:
       status: form.status,
     }),
   });
-  const existing = await fetchAllPages<Record<string, unknown>>(
-    `/resources/prescriptionItems?prescriptionId=${prescriptionId}`,
-  );
   const existingIds = new Set(existing.map((row) => String(row.id)));
-  // 保留的明细（有服务端 id）→ PATCH；新增的明细 → POST（带 prescriptionId）。
-  // 与 validItems 同一套有效性过滤，但保留本地 id 用于判断服务端存在性。
-  const items = form.items
-    .filter((item) => item.name.trim() && item.days && item.quantity && item.price)
-    .map((item) => ({ id: item.id, payload: itemPayload(item) }))
-    .filter((entry) => entry.payload.days > 0 && entry.payload.quantity > 0 && entry.payload.price >= 0);
-  for (const { id, payload } of items) {
-    if (existingIds.has(id)) {
-      await apiRequest(`/resources/prescriptionItems/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify(payload),
-      });
-    } else {
-      await apiRequest('/resources/prescriptionItems', {
-        method: 'POST',
-        body: JSON.stringify({ prescriptionId, ...payload }),
-      });
+  try {
+    // 保留的明细（有服务端 id）→ PATCH；新增的明细 → POST（带 prescriptionId）。
+    // 与 validItems 同一套有效性过滤，但保留本地 id 用于判断服务端存在性。
+    const items = form.items
+      .filter((item) => item.name.trim() && item.days && item.quantity && item.price)
+      .map((item) => ({ id: item.id, payload: itemPayload(item) }))
+      .filter((entry) => entry.payload.days > 0 && entry.payload.quantity > 0 && entry.payload.price >= 0);
+    for (const { id, payload } of items) {
+      if (existingIds.has(id)) {
+        await apiRequest(`/resources/prescriptionItems/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        });
+      } else {
+        await apiRequest('/resources/prescriptionItems', {
+          method: 'POST',
+          body: JSON.stringify({ prescriptionId, ...payload }),
+        });
+      }
     }
-  }
-  // 表单中已移除的明细 → DELETE
-  for (const row of existing) {
-    const id = String(row.id);
-    if (!form.items.some((item) => item.id === id)) {
-      await apiRequest(`/resources/prescriptionItems/${id}`, { method: 'DELETE' });
+    // 表单中已移除的明细 → DELETE
+    for (const row of existing) {
+      const id = String(row.id);
+      if (!form.items.some((item) => item.id === id)) {
+        await apiRequest(`/resources/prescriptionItems/${id}`, { method: 'DELETE' });
+      }
     }
+  } catch (error) {
+    throw new Error(`${errorMessage(error, '更新处方明细失败')}；主记录已保存，请核对明细后重试`);
   }
 }
 
