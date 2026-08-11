@@ -59,8 +59,8 @@
 
 第 15-19 轮审计与修复全部收口：所有可自主实施的问题均已修复并通过门禁
 （单测 222/2248、typecheck/lint/knip、security:scan 685、build/electron:dist/
-verify:package/smoke:delivery/multi-instance）。剩余仅两项需要产品/架构决策：
+verify:package/smoke:delivery/multi-instance）。原两项待决事项已按推荐默认落地：
 
-- processing-flow 手动改态是否收敛为状态机（当前产品语义允许任意改）。
-- dashboard/replenishment 是否启动增量聚合（当前 10 万级冷态基准全部 PASS，
-  基线见 `../delivery/large-db-baseline-2026-08-12.md`）。
+- processing-flow 手动改态：按推荐保留手动语义并补 `changes` 校验，不再需要决策。
+- dashboard/replenishment 增量聚合：按推荐暂不启动，`replenishment.generate` 已改有界分块事务，
+  10 万级冷态基准全部 PASS（`../delivery/large-db-baseline-2026-08-12.md`），超阈值再启动。

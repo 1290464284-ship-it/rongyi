@@ -185,10 +185,11 @@ export class ProcessingFlowService {
     updates.push('updatedAt = ?');
     params.push(now);
 
-    this.db.prepare(
+    const result = this.db.prepare(
       `UPDATE ProcessingOrderStep SET ${updates.join(', ')}
        WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
     ).run(...params, step.id, ...tenantParams(clinicId));
+    if (Number(result.changes) === 0) throw new NotFoundError('Processing order step not found');
 
     return this.listStepsForOrder(orderId, clinicId).find((row) => row.id === step.id) ?? step;
   }

@@ -45,42 +45,50 @@ export class ReplenishmentService {
     const orderCost = 50;
     const holdingCostRate = 0.1;
     let generated = 0;
-    for (const item of items) {
-      const stock = Number(item.stock ?? 0);
-      const minStock = Number(item.minStock ?? 0);
-      const consumed = consumptionByItem.get(String(item.id)) ?? 0;
-      const avgDaily = Math.max(0.01, consumed / 90);
-      const safetyStock = Math.ceil(avgDaily * safetyFactor * 2);
-      const rop = Math.ceil(avgDaily * leadTimeDays + safetyStock);
-      const annualDemand = Math.max(1, avgDaily * 365);
-      const eoq = Math.ceil(Math.sqrt((2 * annualDemand * orderCost) / holdingCostRate));
-      if (stock <= rop) {
-        const suggestedQty = Math.max(1, Math.ceil(rop - stock + 1), eoq);
-        const snapshot = {
-          avgDaily,
-          leadTimeDays,
-          safetyFactor,
-          safetyStock,
-          rop,
-          eoq,
-          consumedLast90Days: consumed,
-          consumptionWindowDays: 90,
-          stockAtCalculation: stock,
-          minStockAtCalculation: minStock,
-          reason: consumed > 0 ? 'DEMAND_BASED_ROP' : 'MIN_STOCK_BASELINE',
-        };
-        this.db.prepare(
-          `INSERT INTO InventoryReplenishmentSuggestion (
-             id, clinicId, inventoryId, avgDailyConsumption, leadTimeDays,
-             safetyFactor, rop, suggestedQty, calculationSnapshotJson,
-             createdAt, updatedAt, deletedAt
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
-        ).run(
-          randomUUID(), context.clinicId ?? null, item.id, avgDaily, leadTimeDays, safetyFactor, rop, suggestedQty,
-          JSON.stringify(snapshot), now, now,
-        );
-        generated += 1;
+    const insertSuggestion = this.db.prepare(
+      `INSERT INTO InventoryReplenishmentSuggestion (
+         id, clinicId, inventoryId, avgDailyConsumption, leadTimeDays,
+         safetyFactor, rop, suggestedQty, calculationSnapshotJson,
+         createdAt, updatedAt, deletedAt
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+    );
+    // 有界分块事务：大库下避免单个长事务占用写锁过久，同时保持每块原子性。
+    const runChunk = this.db.transaction((chunk: Array<Record<string, unknown>>) => {
+      for (const item of chunk) {
+        const stock = Number(item.stock ?? 0);
+        const minStock = Number(item.minStock ?? 0);
+        const consumed = consumptionByItem.get(String(item.id)) ?? 0;
+        const avgDaily = Math.max(0.01, consumed / 90);
+        const safetyStock = Math.ceil(avgDaily * safetyFactor * 2);
+        const rop = Math.ceil(avgDaily * leadTimeDays + safetyStock);
+        const annualDemand = Math.max(1, avgDaily * 365);
+        const eoq = Math.ceil(Math.sqrt((2 * annualDemand * orderCost) / holdingCostRate));
+        if (stock <= rop) {
+          const suggestedQty = Math.max(1, Math.ceil(rop - stock + 1), eoq);
+          const snapshot = {
+            avgDaily,
+            leadTimeDays,
+            safetyFactor,
+            safetyStock,
+            rop,
+            eoq,
+            consumedLast90Days: consumed,
+            consumptionWindowDays: 90,
+            stockAtCalculation: stock,
+            minStockAtCalculation: minStock,
+            reason: consumed > 0 ? 'DEMAND_BASED_ROP' : 'MIN_STOCK_BASELINE',
+          };
+          insertSuggestion.run(
+            randomUUID(), context.clinicId ?? null, item.id, avgDaily, leadTimeDays, safetyFactor, rop, suggestedQty,
+            JSON.stringify(snapshot), now, now,
+          );
+          generated += 1;
+        }
       }
+    });
+    const CHUNK_SIZE = 200;
+    for (let offset = 0; offset < items.length; offset += CHUNK_SIZE) {
+      runChunk(items.slice(offset, offset + CHUNK_SIZE));
     }
     return { generated };
   }
