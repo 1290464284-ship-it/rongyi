@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import path from 'node:path';
 import { loadElectronModule } from './load-electron';
 
 interface ApiProcessModule {
@@ -105,7 +106,7 @@ describe('electron api process', () => {
       expect(env.V2_WECHAT_APP_SECRET).toBeUndefined();
       expect(env.V2_ADMIN_PASSWORD).toBeUndefined();
       expect(env.V2_HOST).toBe('127.0.0.1');
-      expect(env.V2_DATA_DIR).toBe('C:\\user-data\\data');
+      expect(env.V2_DATA_DIR).toBe(path.join('C:\\user-data', 'data'));
       expect(env.V2_PORT).toBe('3180');
       expect(env.NODE_ENV).toBe('production');
       expect(env.V2_ELECTRON_RENDERER).toBe('1');
