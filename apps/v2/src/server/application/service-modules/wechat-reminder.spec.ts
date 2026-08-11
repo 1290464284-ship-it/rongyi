@@ -198,6 +198,30 @@ describe('WechatReminderService', () => {
     expect(item?.content).toBe('Demo Patient，恢复如何？');
   });
 
+  it('treats dollar replacement patterns in patient names literally', () => {
+    db.prepare(
+      `INSERT INTO Patient (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active
+       ) VALUES (?, ?, ?, ?, NULL, 'DOLLAR', '$&', 'UNKNOWN', '13700000009',
+         '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
+    ).run('patient-dollar', context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO Appointment (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, startTime, endTime, status, type
+       ) VALUES (?, ?, ?, ?, NULL, ?, 'user-admin-001',
+         '2026-08-06T09:00:00.000Z', '2026-08-06T10:00:00.000Z', 'BOOKED', 'REGULAR')`,
+    ).run('appt-rem-dollar', context.clinicId, now, now, 'patient-dollar');
+
+    const service = new WechatReminderService(db);
+    const item = service.today(context).items.find((row) => row.sourceId === 'appt-rem-dollar');
+    expect(item).toBeDefined();
+    expect(item?.content).toContain('$&');
+    expect(item?.content).not.toContain('{patientName}');
+  });
+
   it('stops generating when disabled', () => {
     db.prepare(
       `INSERT INTO Setting (id, clinicId, createdAt, updatedAt, deletedAt, key, value)

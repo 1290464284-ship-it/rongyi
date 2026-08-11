@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { generateDocumentNumber } from './common';
+import { canManageUser, generateDocumentNumber, ROLE_MANAGEMENT_LEVEL } from './common';
+import { UserRole } from '../../../domain/contracts';
 
 describe('generateDocumentNumber', () => {
   it('returns a document number in the shared format prefix-<base36 timestamp>-<8 hex chars>', () => {
@@ -30,5 +31,30 @@ describe('generateDocumentNumber', () => {
       expect(seen.has(number)).toBe(false);
       seen.add(number);
     }
+  });
+});
+
+describe('role management hierarchy', () => {
+  it('defines a strict three-level hierarchy', () => {
+    expect(ROLE_MANAGEMENT_LEVEL.BOSS).toBeGreaterThan(ROLE_MANAGEMENT_LEVEL.ADMIN);
+    expect(ROLE_MANAGEMENT_LEVEL.ADMIN).toBeGreaterThan(ROLE_MANAGEMENT_LEVEL.DOCTOR);
+  });
+
+  it('allows same-level management for BOSS/ADMIN but never for DOCTOR', () => {
+    for (const role of Object.values(UserRole)) {
+      if (role === 'DOCTOR') {
+        expect(canManageUser(role, role)).toBe(false);
+      } else {
+        expect(canManageUser(role, role)).toBe(true);
+      }
+    }
+  });
+
+  it('blocks lower tiers from managing higher tiers and ADMIN from managing BOSS', () => {
+    expect(canManageUser('ADMIN', 'BOSS')).toBe(false);
+    expect(canManageUser('DOCTOR', 'BOSS')).toBe(false);
+    expect(canManageUser('DOCTOR', 'ADMIN')).toBe(false);
+    expect(canManageUser('BOSS', 'ADMIN')).toBe(true);
+    expect(canManageUser('ADMIN', 'DOCTOR')).toBe(true);
   });
 });

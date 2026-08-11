@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import { NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
+import { trackResourceWrite } from '../../infrastructure/write-tracking';
 import type { AppContext } from '../../../domain/contracts';
 
 /**
@@ -38,6 +39,7 @@ export class HighValueService {
     this.db.prepare(
       `UPDATE InventoryItem SET isHighValue = ?, catalogId = ?, updatedAt = ? WHERE id = ?`,
     ).run(isHighValue ? 1 : 0, catalogId, now, itemId);
+    trackResourceWrite(this.db, { tableName: 'InventoryItem', recordId: itemId, operation: 'UPDATE', clinicId: context.clinicId, searchResource: null });
 
     return { itemId, isHighValue, catalogId };
   }

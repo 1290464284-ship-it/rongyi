@@ -148,4 +148,157 @@ describe('VisitsPage', () => {
     });
     expect(await screen.findByText('就诊记录已删除')).toBeDefined();
   });
+
+  it('shows loading, error, and empty states', async () => {
+    vi.mocked(apiRequest).mockImplementation(() => new Promise(() => {}));
+    render(<VisitsPage />, { wrapper });
+    expect(screen.getByText('加载中...')).toBeDefined();
+    cleanup();
+
+    vi.mocked(apiRequest).mockRejectedValue(new Error('visits failed'));
+    render(<VisitsPage />, { wrapper });
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+    cleanup();
+
+    vi.mocked(apiRequest).mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 50 });
+    render(<VisitsPage />, { wrapper });
+    expect(await screen.findByText('暂无就诊')).toBeDefined();
+  });
+
+  it('keeps the visit when delete confirmation is cancelled', async () => {
+    mockData();
+    render(<VisitsPage />, { wrapper });
+    await screen.findByText('牙痛');
+
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(apiRequest).not.toHaveBeenCalledWith(
+      '/resources/visits/v-1',
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+  });
+
+  it('reports create, update and delete failures', async () => {
+    mockData();
+    const base = vi.mocked(apiRequest).getMockImplementation();
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = String(init?.method ?? 'GET').toUpperCase();
+      if (method === 'POST' && path === '/resources/visits') throw new Error('');
+      if (method === 'PATCH' && path === '/resources/visits/v-1') throw new Error('');
+      if (method === 'DELETE' && path === '/resources/visits/v-1') throw new Error('');
+      return base?.(path, init);
+    });
+    render(<VisitsPage />, { wrapper });
+    await screen.findByText('牙痛');
+
+    fireEvent.click(screen.getByText('新建就诊'));
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
+    fireEvent.change(screen.getByLabelText('开始时间'), { target: { value: '2026-08-05T09:00' } });
+    fireEvent.click(screen.getByText('保存'));
+    expect(await screen.findByText('创建就诊失败')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    await screen.findByLabelText('主诉');
+    fireEvent.change(screen.getByLabelText('主诉'), { target: { value: '补牙' } });
+    fireEvent.click(screen.getByText('保存'));
+    expect(await screen.findByText('更新失败')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    fireEvent.click(await screen.findByText('确认删除'));
+    expect(await screen.findByText('删除失败')).toBeDefined();
+  });
+
+  it('reports status transition failures', async () => {
+    mockData();
+    const base = vi.mocked(apiRequest).getMockImplementation();
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/visits/v-1/status' && String(init?.method ?? 'GET').toUpperCase() === 'PATCH') throw new Error('');
+      return base?.(path, init);
+    });
+    render(<VisitsPage />, { wrapper });
+    fireEvent.change(await screen.findByLabelText('变更就诊状态'), { target: { value: 'COMPLETED' } });
+    expect(await screen.findByText('状态更新失败')).toBeDefined();
+  });
+
+  it('renders sparse rows and unknown statuses', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/visits?page=1&pageSize=50') {
+        return {
+          items: [
+            { id: 'v-9', patientIdLabel: null, patientId: 'p-9', doctorIdLabel: null, doctorId: null, startTime: null, status: 'WEIRD', chiefComplaint: null },
+          ],
+          total: 1,
+          page: 1,
+          pageSize: 50,
+        };
+      }
+      return {};
+    });
+    render(<VisitsPage />, { wrapper });
+    expect(await screen.findByText('p-9')).toBeDefined();
+    expect(screen.getByText('WEIRD')).toBeDefined();
+  });
+
+  it('edits a sparse visit with blank fallbacks', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/visits?page=1&pageSize=50') {
+        return {
+          items: [{ id: 'v-9', patientId: null, doctorId: null, startTime: null, endTime: null, status: null, chiefComplaint: null }],
+          total: 1,
+          page: 1,
+          pageSize: 50,
+        };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') return { items: [], total: 0, page: 1, pageSize: 200 };
+      if (path === '/doctors') return [];
+      return {};
+    });
+    render(<VisitsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '编辑' }));
+    expect(await screen.findByLabelText('开始时间')).toBeDefined();
+    expect((screen.getByLabelText('患者') as HTMLSelectElement).value).toBe('');
+    expect((screen.getByLabelText('医生') as HTMLSelectElement).value).toBe('');
+    expect((screen.getByLabelText('状态') as HTMLSelectElement).value).toBe('IN_PROGRESS');
+    expect((screen.getByLabelText('主诉') as HTMLTextAreaElement).value).toBe('');
+  });
+
+  it('submits an end time with the create payload', async () => {
+    mockData();
+    render(<VisitsPage />, { wrapper });
+    await screen.findByText('牙痛');
+    fireEvent.click(screen.getByText('新建就诊'));
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
+    fireEvent.change(screen.getByLabelText('开始时间'), { target: { value: '2026-08-05T09:00' } });
+    fireEvent.change(screen.getByLabelText('结束时间'), { target: { value: '2026-08-05T10:00' } });
+    vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'v-2' });
+    fireEvent.click(screen.getByText('保存'));
+    await waitFor(() => {
+      const postCall = vi.mocked(apiRequest).mock.calls.find(
+        (call) => call[0] === '/resources/visits' && (call[1] as RequestInit)?.method === 'POST',
+      );
+      expect(postCall).toBeDefined();
+      const body = JSON.parse(String((postCall?.[1] as RequestInit)?.body));
+      expect(body.endTime).toBe(new Date('2026-08-05T10:00').toISOString());
+    });
+  });
+
+  it('resets the status select without transitioning', async () => {
+    mockData();
+    render(<VisitsPage />, { wrapper });
+    const select = await screen.findByLabelText('变更就诊状态');
+    fireEvent.change(select, { target: { value: '' } });
+    expect(apiRequest).not.toHaveBeenCalledWith('/visits/v-1/status', expect.anything());
+  });
 });

@@ -77,6 +77,26 @@ describe('migrations', () => {
     }
   });
 
+  it('retries migrations when another process records the same schema version', () => {
+    const attempts: number[] = [];
+    const run = () => {
+      attempts.push(attempts.length + 1);
+      if (attempts.length < 2) {
+        const error = new Error('UNIQUE constraint failed: schema_migrations.version');
+        (error as { code?: string }).code = 'SQLITE_CONSTRAINT_PRIMARYKEY';
+        throw error;
+      }
+      return 7;
+    };
+    const wait = vi.spyOn(Atomics, 'wait').mockImplementation(() => 'ok' as const);
+    try {
+      expect(withMigrationBusyRetry(run)).toBe(7);
+      expect(attempts).toEqual([1, 2]);
+    } finally {
+      wait.mockRestore();
+    }
+  });
+
   it('rethrows non-busy migration errors immediately', () => {
     expect(() => withMigrationBusyRetry(() => {
       throw new Error('boom');
@@ -445,6 +465,24 @@ describe('migrations', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it('fails migration 121 loudly when Clinic is empty but NULL clinic rows exist', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-mig-121-empty-clinic-'));
+    const freshDb = createDatabase(dir);
+    const now = new Date().toISOString();
+    const migrate121 = migrations.find((migration) => migration.version === 121);
+    expect(migrate121).toBeDefined();
+    freshDb.prepare(
+      `INSERT INTO Patient (id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active)
+       VALUES ('patient-null-empty-clinic', NULL, ?, ?, NULL, 'P-NULL-EMPTY', 'Null Patient', 'UNKNOWN', '13000000005',
+         '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
+    ).run(now, now);
+    expect(() => migrate121!.up(freshDb)).toThrow('requires at least one Clinic');
+    freshDb.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('backs users off UserClinic membership before the earliest clinic (121)', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-mig-121-user-'));
     const freshDb = createDatabase(dir);
@@ -611,6 +649,24 @@ describe('migrations', () => {
     // 幂等：再跑一遍不抛错、数据不变。
     expect(() => runMigrations(db)).not.toThrow();
     db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('uses clinic-scoped primary keys for UserRole and UserPermission', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-mig-permission-pk-'));
+    const localDb = createDatabase(dir);
+    runMigrations(localDb);
+
+    const role = localDb.prepare(
+      `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'UserRole'`,
+    ).get() as { sql: string };
+    const permission = localDb.prepare(
+      `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'UserPermission'`,
+    ).get() as { sql: string };
+    expect(role.sql).toContain('PRIMARY KEY (clinicId, userId, role)');
+    expect(permission.sql).toContain('PRIMARY KEY (clinicId, userId, permission)');
+
+    localDb.close();
     fs.rmSync(dir, { recursive: true, force: true });
   });
 });

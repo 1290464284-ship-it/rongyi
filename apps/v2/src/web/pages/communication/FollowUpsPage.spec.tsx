@@ -470,4 +470,56 @@ describe('FollowUpsPage', () => {
     });
     expect(await screen.findByText('满意')).toBeDefined();
   });
+
+  it('shows an error state and retries the follow-up queries', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/follow-ups/reminders') throw 'load failed';
+      return {};
+    });
+    render(<FollowUpsPage />, { wrapper });
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/follow-ups/reminders') return [];
+      if (path === '/follow-ups/reminders/summary') return { total: 0, overdue: 0, today: 0, upcoming: 0 };
+      if (path === '/follow-ups/nps') return { total: 0, promoters: 0, passives: 0, detractors: 0, nps: 0, average: 0, breakdown: [] };
+      return {};
+    });
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    expect(await screen.findByText('随访管理')).toBeDefined();
+  });
+
+  it('switches back to the follow-up list tab', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/follow-ups/reminders') return [];
+      if (path === '/follow-ups/reminders/summary') return { total: 0, overdue: 0, today: 0, upcoming: 0 };
+      if (path === '/follow-ups/nps') return { total: 0, promoters: 0, passives: 0, detractors: 0, nps: 0, average: 0, breakdown: [] };
+      if (path === '/resources/followUpDicts?page=1&pageSize=200') return { items: [], total: 0 };
+      return {};
+    });
+    render(<FollowUpsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('tab', { name: '词典管理' }));
+    await screen.findByText('暂无词典项');
+    fireEvent.click(screen.getByRole('tab', { name: '回访列表' }));
+    expect(screen.getByRole('button', { name: '批量生成随访' })).toBeDefined();
+  });
+
+  it('closes the execution dialog without submitting', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/follow-ups/reminders') {
+        return [{ id: 'f-1', patientName: '执行患者', planDate: dateKey(new Date()), status: 'PENDING', content: '回访' }];
+      }
+      if (path === '/follow-ups/reminders/summary') return { total: 1, overdue: 0, today: 1, upcoming: 0 };
+      if (path === '/follow-ups/nps') return { total: 1, promoters: 1, passives: 0, detractors: 0, nps: 100, average: 9, breakdown: [] };
+      return {};
+    });
+    render(<FollowUpsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '执行随访' }));
+    expect(await screen.findByRole('dialog', { name: '执行随访' })).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+    expect(apiRequest).not.toHaveBeenCalledWith('/follow-ups/f-1/execute', expect.anything());
+  });
 });

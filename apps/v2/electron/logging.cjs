@@ -1,6 +1,6 @@
 const { app, BrowserWindow, Notification } = require('electron');
 const fs = require('node:fs');
-const http = require('node:http');
+const https = require('node:https');
 const path = require('node:path');
 const { CRASH_LOG_TIMEOUT_MS } = require('./constants.cjs');
 
@@ -33,7 +33,7 @@ function crashLog(message, error) {
   }
   if (endpoint && endpoint.startsWith('https://')) {
     try {
-      const request = http.request(
+      const request = https.request(
         endpoint,
         {
           method: 'POST',

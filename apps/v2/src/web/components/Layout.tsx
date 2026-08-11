@@ -3,8 +3,8 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import {
   Bell,
+  CalendarDays,
   CircleHelp,
-  Cloud,
   LayoutDashboard,
   LogOut,
   Package,
@@ -23,7 +23,9 @@ import { apiRequest } from '../lib/api';
 import { useToast } from '../lib/toast-context';
 import type { ResourceDefinition } from '../lib/types';
 import { Tooltip } from './Tooltip';
-import { Dialog } from './dialog';
+import { GlobalSearchForm } from './GlobalSearchForm';
+import { BackupStatusCard } from './BackupStatusCard';
+import { HelpDialogs } from './HelpDialogs';
 
 interface NavItem {
   key: string;
@@ -34,7 +36,8 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { key: 'dashboard', label: '工作台', to: '/', icon: LayoutDashboard },
-  { key: 'patients', label: '患者与预约', to: '/patients', icon: Users },
+  { key: 'frontDesk', label: '前台工作', to: '/front-desk', icon: CalendarDays },
+  { key: 'patients', label: '患者档案', to: '/patients', icon: Users },
   { key: 'clinical', label: '临床记录', to: '/clinical', icon: Stethoscope },
   { key: 'finance', label: '财务中心', to: '/finance', icon: Receipt },
   { key: 'inventory', label: '库存与采购', to: '/inventory', icon: Package },
@@ -45,8 +48,9 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 const NAV_GROUPS: Array<{ label: string; keys: string[] }> = [
-  { label: '常用', keys: ['dashboard', 'patients', 'clinical', 'finance', 'inventory'] },
-  { label: '更多', keys: ['analytics', 'communication', 'hr', 'system'] },
+  { label: '常用', keys: ['dashboard', 'frontDesk', 'patients', 'clinical'] },
+  { label: '运营', keys: ['finance', 'inventory', 'analytics', 'communication'] },
+  { label: '管理', keys: ['hr', 'system'] },
 ];
 
 function titleForPath(pathname: string): string {
@@ -127,7 +131,7 @@ export function Layout() {
   const backups = useQuery({
     queryKey: ['backups'],
     queryFn: () => apiRequest<Array<Record<string, unknown>>>('/backups'),
-    enabled: navigation.data?.role === 'BOSS',
+    enabled: navigation.data?.role === 'BOSS' || navigation.data?.role === 'ADMIN',
     retry: false,
   });
   const latestBackup = [...(backups.data ?? [])]
@@ -235,17 +239,13 @@ return (
             );
           })}
         </nav>
-        <div className="sidebar-card">
-          <div className="sidebar-card-row">
-            <span className="sidebar-card-icon"><Cloud size={16} /></span>
-            <div>
-              <strong>{backups.data?.length ? '数据已同步' : '暂无备份'}</strong>
-              <span>{backups.isLoading ? '读取中...' : backups.isError ? '备份状态不可用' : backupTime}</span>
-            </div>
-            <span className="sync-status-dot" aria-hidden="true"></span>
-          </div>
-          <button className="sidebar-card-btn" onClick={() => navigate('/system')}>备份设置</button>
-        </div>
+        <BackupStatusCard
+          hasBackups={Boolean(backups.data?.length)}
+          isLoading={backups.isLoading}
+          isError={backups.isError}
+          timeLabel={backupTime}
+          onOpenBackups={() => navigate('/system')}
+        />
         <button
           className="logout"
           onClick={async () => {
@@ -266,17 +266,12 @@ return (
               <div className="topbar-title">{titleForPath(location.pathname)}</div>
             </div>
           </div>
-          <form onSubmit={submitGlobalSearch} role="search">
-            <input
-              ref={searchInputRef}
-              className="topbar-search"
-              type="search"
-              placeholder="搜索患者…"
-              aria-label="全局搜索"
-              value={globalSearch}
-              onChange={(event) => setGlobalSearch(event.target.value)}
-            />
-          </form>
+          <GlobalSearchForm
+            value={globalSearch}
+            onChange={setGlobalSearch}
+            onSubmit={submitGlobalSearch}
+            inputRef={searchInputRef}
+          />
           <div className="topbar-actions">
             <Tooltip content="通知">
               <button className="icon-btn" aria-label="通知" onClick={() => showToast('暂无新通知', 'info')}>
@@ -299,52 +294,19 @@ return (
         </main>
       </div>
     </div>
-      <Dialog open={showHelp} title="快捷键与帮助" onClose={() => setShowHelp(false)}>
-        <ul className="help-list">
-          <li>Ctrl+K：聚焦全局搜索</li>
-          <li>？：打开快捷键帮助</li>
-          <li>Tab / Shift+Tab：表单和弹窗内焦点移动</li>
-          <li>Esc：关闭弹窗</li>
-        </ul>
-        <div className="modal-actions">
-          <button
-            type="button"
-            onClick={() => {
-              setShowHelp(false);
-              setShowOnboarding(true);
-            }}
-          >
-            重新查看新手引导
-          </button>
-          <button type="button" onClick={() => setShowHelp(false)}>关闭</button>
-        </div>
-      </Dialog>
-      <Dialog
-        open={showOnboarding}
-        title="新手引导"
-        onClose={() => {
+      <HelpDialogs
+        showHelp={showHelp}
+        showOnboarding={showOnboarding}
+        onCloseHelp={() => setShowHelp(false)}
+        onCloseOnboarding={() => {
           localStorage.setItem('v2-onboarding-done', '1');
           setShowOnboarding(false);
         }}
-      >
-        <ol className="help-list">
-          <li>从左侧菜单进入患者、临床、财务、库存等模块。</li>
-          <li>患者档案支持联系方式、微信号和自定义字段。</li>
-          <li>系统会按提醒设置生成随访，可到“随访微信”查看。</li>
-          <li>重要操作前建议先做一次加密备份。</li>
-        </ol>
-        <div className="modal-actions">
-          <button
-            type="button"
-            onClick={() => {
-              localStorage.setItem('v2-onboarding-done', '1');
-              setShowOnboarding(false);
-            }}
-          >
-            完成
-          </button>
-        </div>
-      </Dialog>
+        onReopenOnboarding={() => {
+          setShowHelp(false);
+          setShowOnboarding(true);
+        }}
+      />
     </>
   );
 }

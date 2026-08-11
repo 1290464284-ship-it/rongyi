@@ -1,8 +1,8 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { ShieldCheck } from 'lucide-react';
 import { Logo } from '../../components/Logo';
-import { login } from '../../lib/api';
+import { apiRequest, login } from '../../lib/api';
 import { errorMessage } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
 
@@ -32,6 +32,24 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(remembered);
   const [loading, setLoading] = useState(false);
+  const [setupRequired, setSetupRequired] = useState(false);
+  const [setupPassword, setSetupPassword] = useState('');
+  const [setupConfirm, setSetupConfirm] = useState('');
+  const [setupBusy, setSetupBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void apiRequest<{ setupRequired?: boolean }>('/auth/setup-status')
+      .then((data) => {
+        if (!cancelled) setSetupRequired(Boolean(data?.setupRequired));
+      })
+      .catch(() => {
+        // 探测失败时保持登录页；真实启动后 setup-status 会返回 200。
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -58,8 +76,93 @@ export function LoginPage() {
     }
   }
 
+  async function submitSetup(event: FormEvent) {
+    event.preventDefault();
+    if (setupBusy) return;
+    const password = setupPassword;
+    if (password.length < 6) {
+      showToast('管理员密码至少需要 6 位', 'error');
+      return;
+    }
+    if (password !== setupConfirm) {
+      showToast('两次输入的密码不一致', 'error');
+      return;
+    }
+    setSetupBusy(true);
+    try {
+      await apiRequest('/auth/setup', {
+        method: 'POST',
+        body: JSON.stringify({ password }),
+      });
+      await login('admin', password);
+      try {
+        localStorage.setItem(REMEMBER_KEY, '1');
+        localStorage.setItem(USERNAME_KEY, 'admin');
+      } catch {
+        // localStorage 不可用时静默跳过。
+      }
+      navigate('/', { replace: true });
+    } catch (err) {
+      showToast(errorMessage(err, '创建管理员失败'), 'error');
+    } finally {
+      setSetupBusy(false);
+    }
+  }
+
+  if (setupRequired) {
+    return (
+      <main className="login-page">
+        <div className="login-d-center">
+          <div className="login-d-brand">
+            <Logo width={200} height={80} className="login-logo" />
+            <p>诊所经营管理系统</p>
+          </div>
+          <div className="login-d-card">
+            <form className="login-card" onSubmit={submitSetup}>
+              <div className="login-card-head">
+                <span className="eyebrow">FIRST RUN</span>
+                <h2>设置初始管理员</h2>
+                <p className="login-sub">首次启动需要创建管理员账号，之后请妥善保管密码</p>
+              </div>
+              <div className="field">
+                <label htmlFor="setup-password">新管理员密码</label>
+                <div className="input-wrap">
+                  <input
+                    id="setup-password"
+                    type="password"
+                    value={setupPassword}
+                    onChange={(event) => setSetupPassword(event.target.value)}
+                    autoComplete="new-password"
+                    placeholder="至少 6 位"
+                  />
+                </div>
+              </div>
+              <div className="field">
+                <label htmlFor="setup-confirm">确认密码</label>
+                <div className="input-wrap">
+                  <input
+                    id="setup-confirm"
+                    type="password"
+                    value={setupConfirm}
+                    onChange={(event) => setSetupConfirm(event.target.value)}
+                    autoComplete="new-password"
+                    placeholder="再次输入密码"
+                  />
+                </div>
+              </div>
+              <button className="btn-login" disabled={setupBusy}>
+                {setupBusy ? '创建中...' : '创建管理员并登录'}
+              </button>
+              <p className="login-meta">本地数据 · 自动备份</p>
+            </form>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   return (
-    <main className="login-page login-page-d3">
+    <main className="login-page">
       <div className="login-d-center">
         <div className="login-d-brand">
           <Logo width={200} height={80} className="login-logo" />

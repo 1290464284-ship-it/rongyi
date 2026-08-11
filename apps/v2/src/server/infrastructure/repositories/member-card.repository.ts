@@ -1,5 +1,6 @@
 // 会员卡仓储（M-04：由 core.repositories.ts 拆分）
 import type Database from 'better-sqlite3';
+import { ConflictError } from '../errors';
 import { tenantAnd } from '../tenant';
 import type { MemberCardRecord, MemberCardRepository } from '../../application/ports';
 
@@ -44,26 +45,31 @@ export class SqliteMemberCardRepository implements MemberCardRepository {
     return (this.db.prepare(`SELECT * FROM MemberCard WHERE patientId = ? AND deletedAt IS NULL${tenantAnd(clinicId)} LIMIT 1`).get(...params) as MemberCardRecord | undefined) ?? null;
   }
 
-  updateBalanceRefund(id: string, balance: number, updatedAt: string, clinicId?: string | null): void {
-    const params = clinicId ? [balance, updatedAt, id, clinicId] : [balance, updatedAt, id];
-    this.db.prepare(`UPDATE MemberCard SET balance = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`).run(...params);
+  updateBalanceRefund(id: string, amount: number, updatedAt: string, clinicId?: string | null): void {
+    const params = clinicId ? [amount, updatedAt, id, clinicId] : [amount, updatedAt, id];
+    this.db.prepare(`UPDATE MemberCard SET balance = balance + ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`).run(...params);
   }
 
-  updateRecharge(id: string, balance: number, amount: number, updatedAt: string, clinicId?: string | null): void {
-    const params = clinicId ? [balance, amount, updatedAt, id, clinicId] : [balance, amount, updatedAt, id];
-    this.db.prepare(`UPDATE MemberCard SET balance = ?, totalRecharge = totalRecharge + ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`)
+  updateRecharge(id: string, amount: number, updatedAt: string, clinicId?: string | null): void {
+    const params = clinicId ? [amount, amount, updatedAt, id, clinicId] : [amount, amount, updatedAt, id];
+    this.db.prepare(`UPDATE MemberCard SET balance = balance + ?, totalRecharge = totalRecharge + ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`)
       .run(...params);
   }
 
-  updateConsume(id: string, balance: number, amount: number, updatedAt: string, clinicId?: string | null): void {
-    const params = clinicId ? [balance, amount, updatedAt, id, clinicId] : [balance, amount, updatedAt, id];
-    this.db.prepare(`UPDATE MemberCard SET balance = ?, totalConsume = totalConsume + ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`)
-      .run(...params);
+  updateConsume(id: string, amount: number, updatedAt: string, clinicId?: string | null): void {
+    const params = clinicId ? [amount, amount, updatedAt, id, amount, clinicId] : [amount, amount, updatedAt, id, amount];
+    const result = this.db.prepare(
+      `UPDATE MemberCard SET balance = balance - ?, totalConsume = totalConsume + ?, updatedAt = ?
+       WHERE id = ? AND deletedAt IS NULL AND balance >= ?${tenantAnd(clinicId)}`,
+    ).run(...params);
+    if (result.changes === 0) {
+      throw new ConflictError('Insufficient member card balance');
+    }
   }
 
-  updatePoints(id: string, points: number, totalPoints: number, updatedAt: string, clinicId?: string | null): void {
-    const params = clinicId ? [points, totalPoints, updatedAt, id, clinicId] : [points, totalPoints, updatedAt, id];
-    this.db.prepare(`UPDATE MemberCard SET points = ?, totalPoints = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`)
+  updatePoints(id: string, pointsDelta: number, totalPointsDelta: number, updatedAt: string, clinicId?: string | null): void {
+    const params = clinicId ? [pointsDelta, totalPointsDelta, updatedAt, id, clinicId] : [pointsDelta, totalPointsDelta, updatedAt, id];
+    this.db.prepare(`UPDATE MemberCard SET points = points + ?, totalPoints = totalPoints + ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`)
       .run(...params);
   }
 

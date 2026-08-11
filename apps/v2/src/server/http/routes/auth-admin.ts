@@ -10,6 +10,8 @@ export function registerPublicAuthRoutes(app: Express, deps: RouteDependencies):
   const { authService } = deps;
   const loginLimiter = createRateLimit({ windowMs: 60_000, max: 20 }, deps.rateLimitStore);
   const ipLoginLimiter = createIpRateLimit({ windowMs: 60_000, max: 10 }, deps.rateLimitStore);
+  const setupLimiter = createRateLimit({ windowMs: 600_000, max: 5 }, deps.rateLimitStore);
+  const ipSetupLimiter = createIpRateLimit({ windowMs: 600_000, max: 3 }, deps.rateLimitStore);
   const refreshLimiter = createRateLimit({ windowMs: 60_000, max: 30 }, deps.rateLimitStore);
 
   app.post('/api/v2/auth/login', loginLimiter, ipLoginLimiter, wrapAsync(async (req, res, next) => {
@@ -36,6 +38,15 @@ export function registerPublicAuthRoutes(app: Express, deps: RouteDependencies):
         });
         next(error);
       }
+  }));
+
+  app.get('/api/v2/auth/setup-status', wrapAsync(async (_req, res) => {
+      res.json({ success: true, data: { setupRequired: authService.setupRequired() } });
+  }));
+
+  app.post('/api/v2/auth/setup', setupLimiter, ipSetupLimiter, wrapAsync(async (req, res) => {
+      const result = await authService.setupInitialAdmin(req.body?.password);
+      res.json({ success: true, data: result });
   }));
 
   app.post('/api/v2/auth/refresh', refreshLimiter, wrapAsync(async (req, res, next) => {

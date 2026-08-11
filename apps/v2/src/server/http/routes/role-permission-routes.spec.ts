@@ -92,4 +92,13 @@ describe('role permission routes', () => {
       .send({ permissions: [{ resource: 'nope', allowed: true }] })
       .expect(400);
   });
+
+  it('treats missing or non-array permissions as an empty list', async () => {
+    const res = await request(app)
+      .put('/api/v2/role-permissions/DOCTOR')
+      .send({ permissions: 'not-an-array' })
+      .expect(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.effective).toEqual(['dashboard', 'patients', 'clinical', 'communication']);
+  });
 });

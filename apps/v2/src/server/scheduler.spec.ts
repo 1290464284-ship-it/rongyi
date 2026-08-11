@@ -120,6 +120,38 @@ describe('startSchedulers', () => {
     expect(onAlertCreate).not.toHaveBeenCalled();
   }, 15_000);
 
+  it('stop awaits an in-flight automatic backup before resolving', async () => {
+    vi.useFakeTimers();
+    ensureTimers();
+    const backups = makeBackups();
+    let resolveBackup: ((value: Record<string, unknown>) => void) | undefined;
+    vi.mocked(backups.create).mockImplementationOnce(
+      () => new Promise<Record<string, unknown>>((resolve) => { resolveBackup = resolve; }),
+    );
+    const audit = makeAudit();
+    const logger = makeLogger();
+    const { stop } = startSchedulers({
+      backups,
+      audit,
+      autoBackupIntervalMs: 24 * 60 * 60 * 1000,
+      autoBackupKeep: 30,
+      logger,
+      onAlertCreate: vi.fn(),
+    });
+
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 1);
+    await vi.waitFor(() => expect(backups.create).toHaveBeenCalledTimes(1));
+
+    let stopped = false;
+    const stopPromise = stop().then(() => { stopped = true; });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(stopped).toBe(false);
+
+    resolveBackup?.({ filename: 'b.sqlite', fileSize: 1, encrypted: false, type: 'AUTO', message: 'ok' });
+    await stopPromise;
+    expect(stopped).toBe(true);
+  }, 15_000);
+
   it('cleanupAuditLogs 异常时吞错仅记录日志', async () => {
     vi.useRealTimers();
     ensureTimers();
@@ -377,6 +409,21 @@ describe('startSchedulers', () => {
     );
     expect(onAlertCreate).not.toHaveBeenCalled();
 
+    stop();
+  });
+
+  it('works without idempotency or sync cleanup callbacks', () => {
+    vi.useFakeTimers();
+    ensureTimers();
+    const { stop } = startSchedulers({
+      backups: makeBackups(),
+      audit: makeAudit(),
+      autoBackupIntervalMs: 24 * 60 * 60 * 1000,
+      autoBackupKeep: 30,
+      logger: makeLogger(),
+      onAlertCreate: vi.fn(),
+    });
+    expect(() => vi.advanceTimersByTime(24 * 60 * 60 * 1000)).not.toThrow();
     stop();
   });
 });

@@ -30,10 +30,11 @@ username: admin
 password: set via V2_ADMIN_PASSWORD (development seed only)
 ```
 
-Production first start bootstraps the admin account from `V2_ADMIN_PASSWORD`
-(min 6 chars). The bundled legacy database is generated at build time
-(`ensure:legacy`), sanitized, and ships without users, password hashes or
-refresh tokens. See
+On first start with an empty database the desktop shows a setup wizard where
+the clinic operator creates the `admin` password; alternatively set
+`V2_ADMIN_PASSWORD` (min 6 chars) before the first launch to pre-provision it.
+The bundled legacy database is generated at build time (`ensure:legacy`),
+sanitized, and ships without users, password hashes or refresh tokens. See
 [docs/delivery/admin-bootstrap.md](../../docs/delivery/admin-bootstrap.md).
 
 > Round7 I4：开发环境默认账号仅供本地调试（生产路径拒绝 seed 默认
@@ -108,9 +109,8 @@ pnpm --filter @dental/v2 ensure:legacy
   `printTemplates`. Legacy SQLite table names such as `User` or `Charge` are not
   exposed as generic resource routes.
 - Production refuses to seed a default `admin` account with development
-  credentials (overridable via `V2_ADMIN_PASSWORD`). Provision the
-  admin user through the packaged database or migration tooling before
-  production startup.
+  credentials. The first-run setup wizard creates the initial admin, or an
+  operator can pre-provision it via `V2_ADMIN_PASSWORD`.
 - Listening outside loopback (`V2_HOST=0.0.0.0`) is refused in every
   environment unless `V2_ALLOW_INSECURE_LAN=1`; route LAN deployments through
   a TLS reverse proxy and keep the default `127.0.0.1` for local work.
@@ -209,22 +209,23 @@ electron/           Electron main and preload
 
 ## Project Scale
 
-Verified 2026-08-05:
+Verified 2026-08-11:
 
-- 约 3.5 万行 TypeScript/TSX（`src/`，含测试代码）
-- 139 个测试文件（90 个服务端 `*.spec.ts` + 48 个 Web `*.spec.tsx` + 1 个领域 `*.spec.ts`）
-- 1259 个测试用例（服务端 877 + Web 380 + 领域 2，最近一次 vitest 全量运行记录）
+- 约 8.9 万行 TypeScript/TSX（`src/`，含测试代码）
+- 217 个测试文件
+- 2165 个测试用例（最近一次 vitest 全量运行记录）
 
 ## Sidebar Groups
 
 The desktop sidebar exposes large business areas only. Each area opens one Hub page with tabs:
 
 - 工作台: dashboard
-- 患者与预约: patient files, appointments, appointment board, patient timeline, family members, risk scores
-- 临床记录: visits, first exams, treatments, records, plans, imaging, cephalometric, prescriptions
-- 财务中心: charges, member cards, refunds, debts, invoices
-- 库存与采购: inventory, suppliers, purchase orders, processing orders
-- 经营分析: dashboard, monthly report, inventory report, RFM, churn warning, doctor anomalies, satisfaction
-- 随访与沟通: follow-ups, follow-up adherence, WeChat, satisfaction
-- 人事与设备: staff, schedules, attendance, leaves, equipment
-- 系统管理: backups, settings, alerts, operation logs, sync records
+- 患者档案: patient files, timeline, risk scores, family members
+- 前台工作: registration/triage, appointments, appointment board, departments
+- 临床记录: workflow, visits, first exams, treatments, records, plans, imaging, cephalometric, prescriptions
+- 财务中心: cashier, charges, member cards, treatment catalogs, pay methods, refunds, debts, invoices
+- 库存与采购: inventory workbench, pharmacy, purchase workflow, inventory items, suppliers, purchase orders, processing orders, return/loss docs
+- 经营分析: dashboard, monthly report, inventory report, cost share, RFM, churn warning, clinic overview
+- 随访与沟通: WeChat send, follow-ups, adherence report, follow-up dicts/templates, WeChat messages, satisfaction
+- 人事与设备: approvals, staff, schedules, attendance, leaves, commission, doctor anomalies, permissions, equipment
+- 系统管理: operations (backups, alerts, logs, sync, imports) and configuration (desktop, settings, custom fields, print templates, system operations)

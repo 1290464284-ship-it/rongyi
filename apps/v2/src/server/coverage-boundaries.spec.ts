@@ -270,6 +270,7 @@ describe('coverage boundaries', () => {
     logger.info('info message');
     logger.warn('warn message');
     logger.error('error message');
+    logger.flush();
     expect(infoSpy).toHaveBeenCalledOnce();
     expect(warnSpy).toHaveBeenCalledOnce();
     expect(fs.existsSync(path.join(dataDir, 'v2.log'))).toBe(true);
@@ -277,12 +278,14 @@ describe('coverage boundaries', () => {
     const bigLog = path.join(dataDir, 'v2.log');
     fs.writeFileSync(bigLog, 'x'.repeat(5 * 1024 * 1024 + 1), 'utf8');
     logger.info('rotated');
+    logger.flush();
     expect(fs.existsSync(`${bigLog}.1`)).toBe(true);
 
     vi.spyOn(fs, 'appendFileSync').mockImplementation(() => {
       throw new Error('append failed');
     });
     expect(() => logger.info('silent')).not.toThrow();
+    expect(() => logger.flush()).not.toThrow();
   });
 
   it('covers legacy import logging and backup creation branches', () => {

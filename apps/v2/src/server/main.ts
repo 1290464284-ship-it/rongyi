@@ -13,6 +13,7 @@ import { applyStagedRestore } from './infrastructure/restore-apply';
 import { secretFileValue } from './infrastructure/secret-file';
 import { cleanupSyncChanges } from './infrastructure/sync-change';
 import { assertHostAllowed } from './infrastructure/host-policy';
+import { assertProductionBackupKeyConfigured } from './infrastructure/security';
 import { AlertService, AuditService, BackupService } from './application/services';
 import { startSchedulers } from './scheduler';
 import {
@@ -119,7 +120,10 @@ if (parentHeartbeatEnabled) {
       return;
     }
     if (Date.now() - lastParentMessageAt > PARENT_HEARTBEAT_TIMEOUT_MS) {
-      exitAsOrphanGuard('heartbeat-timeout');
+      // 长时间同步 SQL（legacy 导入、搜索重建、备份/恢复）可能阻塞事件循环
+      // 超过 10s；恢复后先探测父进程 PID，父进程仍存活时不算孤儿，避免误杀。
+      if (!parentProcessAlive()) exitAsOrphanGuard('heartbeat-timeout');
+      else lastParentMessageAt = Date.now();
     }
   }, PARENT_HEARTBEAT_CHECK_MS).unref();
 }
@@ -239,6 +243,7 @@ let jwtSecret: string;
 if (nodeEnv === 'production' && jwtSecret.length < 32) {
   throw new Error('V2_JWT_SECRET must be set to a random secret of at least 32 characters in production');
 }
+assertProductionBackupKeyConfigured(nodeEnv);
 
 applyStagedRestore(dbPath, [dataDir, backupDir], logger);
 const wasCleanExit = fs.existsSync(cleanExitMarker);
@@ -258,7 +263,7 @@ if (hasSearchIndexTable) {
   searchIndexEmpty = Number((db.prepare('SELECT COUNT(*) AS total FROM SearchIndex').get() as { total: number }).total) === 0;
 }
 const needsSearchRebuild = appliedMigrations > 0 || searchIndexEmpty;
-seedDatabase(db);
+seedDatabase(db, logger);
 const app = createApp({ db, dbPath, backupDir, logger, logDir });
 
 const server = app.listen(port, host, () => {
@@ -280,7 +285,11 @@ server.on('error', (error) => {
   process.exit(1);
 });
 
-const backups = new BackupService(db, dbPath, backupDir);
+const backups = new BackupService(db, dbPath, backupDir, logger);
+const stagedCleanup = backups.cleanupStaged();
+if (stagedCleanup.removed > 0) {
+  logger.info('stale staged restore files cleaned at startup', { action: 'staged-cleanup', removed: stagedCleanup.removed });
+}
 const audit = new AuditService(db);
 const alerts = new AlertService(db);
 const configuredAutoBackupInterval = Number(process.env.V2_AUTO_BACKUP_INTERVAL_MS ?? DEFAULT_AUTO_BACKUP_INTERVAL_MS);
@@ -312,10 +321,14 @@ const schedulers = startSchedulers({
   syncChangeRetentionDays,
 });
 
-function shutdown(): void {
+let shuttingDown = false;
+async function shutdown(): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
   try {
-    // 先停所有定时器，确保关闭数据库期间没有任何调度回调触碰 db。
-    schedulers.stop();
+    // 先停所有定时器并等待正在执行的自动备份结束，确保关闭数据库期间
+    // 没有任何调度回调触碰 db，备份 API 也不会读到已关闭的连接。
+    await schedulers.stop();
     db.pragma('wal_checkpoint(PASSIVE)');
     db.close();
     try {
@@ -327,5 +340,5 @@ function shutdown(): void {
   process.exit(0);
 }
 
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+process.on('SIGINT', () => { void shutdown(); });
+process.on('SIGTERM', () => { void shutdown(); });

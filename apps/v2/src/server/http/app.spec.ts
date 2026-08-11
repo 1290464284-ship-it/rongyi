@@ -4,6 +4,7 @@
 // 各业务路由的独立行为见 src/server/http/routes/*.spec.ts；本文件聚焦
 // 组合根与中间件（auth、CORS、helmet、限流、错误处理）的集成行为。
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import request from 'supertest';
@@ -285,9 +286,10 @@ describe('HTTP app', () => {
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
     expect(signed.body.data.url).toMatch(/^\/api\/v2\/files\/[a-f0-9-]{36}\.png\?exp=\d+&sig=[0-9a-f]{64}$/);
-    await request(app)
+    const fileResponse = await request(app)
       .get(signed.body.data.url as string)
       .expect(200);
+    expect(fileResponse.headers['cross-origin-resource-policy']).toBe('cross-origin');
 
     // 伪造签名：公共路由放行失败 → 落回受保护路由（无凭据 → 401）
     await request(app)
@@ -313,6 +315,53 @@ describe('HTTP app', () => {
       .set('Authorization', `Bearer ${switched.body.data.token}`)
       .send({ clinicId: 'clinic-v2-001' })
       .expect(200);
+  });
+
+  it('deletes uploaded files physically and rejects non-owner deletes', async () => {
+    const upload = await request(app)
+      .post('/api/v2/files')
+      .set('Authorization', `Bearer ${token}`)
+      .set('content-type', 'image/png')
+      .set('x-file-name', 'delete-me.png')
+      .send(Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+      .expect(201);
+    const filename = upload.body.data.filename as string;
+
+    const created = await request(app)
+      .post('/api/v2/admin/users')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ username: 'file-delete-doctor', password: 'password123', name: 'File Delete Doctor', role: 'DOCTOR' })
+      .expect(201);
+    const doctorId = created.body.data.id as string;
+    const refreshToken = 'file-delete-refresh-token';
+    const future = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    db.prepare(
+      `UPDATE User SET refreshToken = ?, refreshTokenExpiresAt = ? WHERE id = ?`,
+    ).run(createHash('sha256').update(refreshToken).digest('hex'), future, doctorId);
+    const login = await request(app)
+      .post('/api/v2/auth/refresh')
+      .send({ refreshToken })
+      .expect(200);
+    const doctorToken = login.body.data.token as string;
+
+    await request(app)
+      .delete(`/api/v2/files/${filename}`)
+      .set('Authorization', `Bearer ${doctorToken}`)
+      .expect(403);
+    await request(app)
+      .delete(`/api/v2/files/${filename}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(204);
+
+    expect(fs.existsSync(path.join(dataDir, 'files', filename))).toBe(false);
+    const record = db.prepare('SELECT deletedAt FROM FileRecord WHERE filename = ?').get(filename) as
+      | { deletedAt: string | null }
+      | undefined;
+    expect(record?.deletedAt).not.toBeNull();
+    await request(app)
+      .get(`/api/v2/files/${filename}/sign`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(404);
   });
 
   it('rejects unsupported file uploads and invalid file names', async () => {
@@ -488,6 +537,56 @@ describe('HTTP app', () => {
       .expect(200);
     expect(bossNav.body.data.permissions).toContain('analytics');
     expect(bossNav.body.data.permissions).toContain('system');
+  });
+
+  it('blocks direct permission-bypass endpoints after module revoke', async () => {
+    const upload = await request(app)
+      .post('/api/v2/files')
+      .set('Authorization', `Bearer ${token}`)
+      .set('content-type', 'image/png')
+      .set('x-file-name', 'perm-bypass.png')
+      .send(Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+      .expect(201);
+    const filename = upload.body.data.filename as string;
+
+    const created = await request(app)
+      .post('/api/v2/admin/users')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ username: 'perm-bypass', password: 'password123', name: 'Perm Bypass', role: 'DOCTOR' })
+      .expect(201);
+    const doctorId = created.body.data.id as string;
+
+    await request(app)
+      .put(`/api/v2/user-permissions/${doctorId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        permissions: [
+          { permission: 'patients', allowed: false },
+          { permission: 'clinical', allowed: false },
+          { permission: 'dashboard', allowed: false },
+        ],
+      })
+      .expect(200);
+
+    const refreshToken = 'perm-bypass-refresh-token';
+    const future = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    db.prepare(
+      `UPDATE User SET refreshToken = ?, refreshTokenExpiresAt = ? WHERE id = ?`,
+    ).run(createHash('sha256').update(refreshToken).digest('hex'), future, doctorId);
+    const login = await request(app)
+      .post('/api/v2/auth/refresh')
+      .send({ refreshToken })
+      .expect(200);
+    const doctorToken = login.body.data.token as string;
+
+    for (const path of [
+      '/api/v2/search?q=Demo',
+      '/api/v2/workbench/today',
+      '/api/v2/stats/dashboard',
+      `/api/v2/files/${filename}/sign`,
+    ]) {
+      await request(app).get(path).set('Authorization', `Bearer ${doctorToken}`).expect(403);
+    }
   });
 
   it('restricts wechat send-batch to BOSS but keeps single send for operational staff', async () => {

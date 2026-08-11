@@ -11,8 +11,9 @@
 import type Database from 'better-sqlite3';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
-import { touchSearchIndex } from '../../infrastructure/search-index';
+import { trackResourceWrite } from '../../infrastructure/write-tracking';
 import type { AppContext } from '../../../domain/contracts';
+import { assertChairExists, assertDoctorExists } from './common';
 
 export interface TriageInput {
   doctorId?: string;
@@ -67,10 +68,12 @@ export class TriageService {
       if (!department) throw new ValidationError('科室不存在');
     }
     if (input.doctorId !== undefined) {
-      const doctor = this.db.prepare(
-        `SELECT id FROM User WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
-      ).get(input.doctorId, ...tenantParams(clinicId));
-      if (!doctor) throw new ValidationError('医生不存在');
+      try {
+        assertDoctorExists(this.db, input.doctorId, clinicId);
+      } catch (error) {
+        if (error instanceof NotFoundError) throw new ValidationError('医生不存在');
+        throw error;
+      }
     }
 
     const now = context.now().toISOString();
@@ -142,6 +145,9 @@ export class TriageService {
       `SELECT * FROM Appointment WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
     ).get(appointmentId, ...tenantParams(clinicId)) as Record<string, unknown> | undefined;
     if (!appointment) throw new NotFoundError('Appointment not found');
+    if (['CANCELLED', 'NO_SHOW'].includes(String(appointment.status))) {
+      throw new ConflictError('已取消或未到的预约不能改期');
+    }
 
     if (input.startTime === undefined || input.startTime === null || input.startTime === '') {
       throw new ValidationError('startTime 必填');
@@ -152,13 +158,26 @@ export class TriageService {
     if (input.endTime !== undefined && Number.isNaN(new Date(input.endTime).getTime())) {
       throw new ValidationError('endTime 必须是合法时间');
     }
+    const startIso = new Date(input.startTime).toISOString();
+    const endIso = input.endTime === undefined
+      ? new Date(String(appointment.endTime)).toISOString()
+      : new Date(input.endTime).toISOString();
+    if (new Date(endIso).getTime() <= new Date(startIso).getTime()) {
+      throw new ValidationError('endTime 必须晚于 startTime');
+    }
+    if (input.doctorId !== undefined) {
+      assertDoctorExists(this.db, input.doctorId, clinicId);
+    }
+    if (input.chairId !== undefined && input.chairId !== null && input.chairId !== '') {
+      assertChairExists(this.db, input.chairId, clinicId);
+    }
 
     const now = context.now().toISOString();
     const sets = ['startTime = ?', 'updatedAt = ?'];
-    const params: Array<string | null> = [new Date(input.startTime).toISOString(), now];
+    const params: Array<string | null> = [startIso, now];
     if (input.endTime !== undefined) {
       sets.push('endTime = ?');
-      params.push(new Date(input.endTime).toISOString());
+      params.push(endIso);
     }
     if (input.doctorId !== undefined) {
       sets.push('doctorId = ?');
@@ -170,17 +189,45 @@ export class TriageService {
     }
 
     const run = this.db.transaction(() => {
+      this.assertNoAppointmentConflict(
+        appointmentId,
+        input.doctorId ?? String(appointment.doctorId ?? ''),
+        input.chairId === undefined ? (appointment.chairId == null ? null : String(appointment.chairId)) : (input.chairId === '' ? null : input.chairId),
+        startIso,
+        endIso,
+        clinicId,
+      );
       this.db.prepare(
         `UPDATE Appointment SET ${sets.join(', ')}
          WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
       ).run(...params, appointmentId, ...tenantParams(clinicId));
-      // 直写搜索索引：预约起止时间变化后刷新其可检索内容。
-      touchSearchIndex(this.db, 'Appointment', appointmentId, 'INSERT');
+      // 预约改期统一维护同步与搜索索引。
+      trackResourceWrite(this.db, { tableName: 'Appointment', recordId: appointmentId, operation: 'UPDATE', clinicId: clinicId ?? null });
     });
     run();
 
     return this.db.prepare(
       `SELECT * FROM Appointment WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
     ).get(appointmentId, ...tenantParams(clinicId)) as Record<string, unknown>;
+  }
+
+  private assertNoAppointmentConflict(
+    appointmentId: string,
+    doctorId: string,
+    chairId: string | null,
+    startTime: string,
+    endTime: string,
+    clinicId: string | null,
+  ): void {
+    const tenant = tenantAnd(clinicId);
+    const params = [appointmentId, doctorId, chairId, endTime, startTime, ...tenantParams(clinicId)];
+    const row = this.db.prepare(
+      `SELECT id FROM Appointment
+       WHERE id != ? AND deletedAt IS NULL
+         AND status NOT IN ('CANCELLED', 'NO_SHOW')
+         AND ((doctorId = ?) OR (chairId IS NOT NULL AND chairId = ?))
+         AND startTime < ? AND endTime > ?${tenant}`,
+    ).get(...params);
+    if (row) throw new ConflictError('医生或椅位在该时段已被占用');
   }
 }

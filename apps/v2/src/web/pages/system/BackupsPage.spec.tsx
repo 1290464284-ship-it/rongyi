@@ -11,7 +11,9 @@ import { ToastProvider } from '../../components/toast';
 vi.mock('../../lib/api', () => ({ apiRequest: vi.fn(), downloadCsv: vi.fn() }));
 
 const wrapper = ({ children }: { children: ReactNode }) => (
-  <QueryClientProvider client={new QueryClient()}><ToastProvider>{children}</ToastProvider></QueryClientProvider>
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <ToastProvider>{children}</ToastProvider>
+  </QueryClientProvider>
 );
 
 describe('BackupsPage', () => {
@@ -125,5 +127,93 @@ describe('BackupsPage', () => {
 
     expect(apiRequest).not.toHaveBeenCalledWith('/backups/backup-1.sqlite/restore', expect.anything());
     expect(apiRequest).not.toHaveBeenCalledWith('/backups/cleanup', expect.anything());
+  });
+
+  it('shows the loading state', () => {
+    vi.mocked(apiRequest).mockImplementation(() => new Promise(() => {}));
+    render(<BackupsPage />, { wrapper });
+    expect(screen.getByText('备份数据加载中...')).toBeDefined();
+  });
+
+  it('shows the error state with retry', async () => {
+    vi.mocked(apiRequest).mockRejectedValue(new Error('backups failed'));
+    render(<BackupsPage />, { wrapper });
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+    expect(screen.getByRole('button', { name: '重试' })).toBeDefined();
+  });
+
+  it('clicks retry after a load error and guards duplicate create/verify clicks', async () => {
+    let resolveCreate: ((value: unknown) => void) | undefined;
+    let resolveVerify: ((value: unknown) => void) | undefined;
+    let fail = true;
+    vi.mocked(apiRequest).mockImplementation(async (path: string, options?: RequestInit) => {
+      const method = String(options?.method ?? 'GET').toUpperCase();
+      if (path === '/backups' && method === 'GET') {
+        if (fail) throw new Error('backups failed');
+        return [{ filename: 'backup-1.sqlite', encrypted: false, fileSize: 100, createdAt: '2026-08-04' }];
+      }
+      if (path === '/backups' && method === 'POST') {
+        return await new Promise((resolve) => { resolveCreate = resolve; });
+      }
+      if (path === '/backups/backup-1.sqlite/verify') {
+        return await new Promise((resolve) => { resolveVerify = resolve; });
+      }
+      return {};
+    });
+    render(<BackupsPage />, { wrapper });
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+    fail = false;
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    fireEvent.click(await screen.findByRole('button', { name: '创建备份' }));
+    fireEvent.click(screen.getByRole('button', { name: '创建备份' }));
+
+    const createCalls = vi.mocked(apiRequest).mock.calls.filter(
+      ([path, options]) => path === '/backups' && (options as RequestInit)?.method === 'POST',
+    );
+    expect(createCalls).toHaveLength(1);
+    resolveCreate?.({ filename: 'backup-1.sqlite', encrypted: false });
+    expect(await screen.findByText('备份已创建：backup-1.sqlite')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: '校验' }));
+    fireEvent.click(screen.getByRole('button', { name: '校验' }));
+    const verifyCalls = vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/backups/backup-1.sqlite/verify');
+    expect(verifyCalls).toHaveLength(1);
+    resolveVerify?.({ integrity: 'corrupt' });
+    expect(await screen.findByText('备份完整性校验结果：corrupt')).toBeDefined();
+  });
+
+  it('shows staged restore fallback messages and unknown summary keys', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([{ filename: 'backup-1.sqlite', encrypted: false, fileSize: 100, createdAt: '2026-08-04' }])
+      .mockResolvedValueOnce({
+        message: '需要人工确认',
+        backupSummary: { Patient: 1, CustomKey: 7 },
+        currentSummary: { Patient: 3 },
+      });
+    render(<BackupsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '暂存恢复' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认' }));
+    expect(await screen.findByText('需要人工确认')).toBeDefined();
+    expect(screen.getByText('CustomKey')).toBeDefined();
+    expect(screen.getByText('7')).toBeDefined();
+  });
+
+  it('shows the staged restore success message when staged is true', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([{ filename: 'backup-1.sqlite', encrypted: false, fileSize: 100, createdAt: '2026-08-04' }])
+      .mockResolvedValueOnce({ staged: true, message: 'ignored', backupSummary: { Patient: 1 }, currentSummary: { Patient: 3 } });
+    render(<BackupsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '暂存恢复' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认' }));
+    expect(await screen.findByText('恢复已暂存，重启应用后生效')).toBeDefined();
+  });
+
+  it('shows the error page for non-Error list failures', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/backups') throw 'boom';
+      return {};
+    });
+    render(<BackupsPage />, { wrapper });
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
   });
 });

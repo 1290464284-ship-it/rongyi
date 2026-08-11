@@ -2,6 +2,7 @@
 import type Database from 'better-sqlite3';
 import { SystemClock } from '../clock';
 import { tenantAnd } from '../tenant';
+import { trackResourceWrite } from '../write-tracking';
 import type { FollowUpRecord, FollowUpRepository, WechatMessageRepository } from '../../application/ports';
 
 export class SqliteFollowUpRepository implements FollowUpRepository {
@@ -53,16 +54,21 @@ export class SqliteFollowUpRepository implements FollowUpRepository {
       record.assigneeId ?? null,
       record.templateId ?? null,
     );
+    trackResourceWrite(this.db, { tableName: 'FollowUp', recordId: record.id, operation: 'INSERT', clinicId: record.clinicId ?? null });
   }
 
   complete(id: string, completedAt: string, updatedAt: string, clinicId?: string | null, result?: string | null): number {
     const params = clinicId
       ? [completedAt, updatedAt, result ?? null, id, clinicId]
       : [completedAt, updatedAt, result ?? null, id];
-    return this.db.prepare(
+    const changes = this.db.prepare(
       `UPDATE FollowUp SET status = 'COMPLETED', completedAt = ?, updatedAt = ?, result = ?
        WHERE id = ? AND deletedAt IS NULL AND status IN ('PENDING', 'IN_PROGRESS')${tenantAnd(clinicId)}`,
     ).run(...params).changes;
+    if (changes > 0) {
+      trackResourceWrite(this.db, { tableName: 'FollowUp', recordId: id, operation: 'UPDATE', clinicId: clinicId ?? null });
+    }
+    return changes;
   }
 }
 

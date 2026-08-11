@@ -126,4 +126,26 @@ describe('processing flow routes', () => {
     expect(res.body.success).toBe(false);
     expect(res.body.code).toBe('NOT_FOUND');
   });
+
+  it('POST register-step and set-step tolerate non-string body fields', async () => {
+    const res = await request(app)
+      .post('/api/v2/processing-orders/route-po-1/register-step')
+      .send({ stepId: 123 })
+      .expect(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data[0].status).toBe('DONE');
+
+    const setRes = await request(app)
+      .post('/api/v2/processing-orders/route-po-1/set-step')
+      .send({ stepId: { nested: true }, status: 'IN_PROGRESS' })
+      .expect(404);
+    expect(setRes.body.success).toBe(false);
+  });
+
+  it('GET stats tolerates empty date filters', async () => {
+    const res = await request(app).get('/api/v2/processing-flow-stats').expect(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.from).toBeNull();
+    expect(res.body.data.to).toBeNull();
+  });
 });

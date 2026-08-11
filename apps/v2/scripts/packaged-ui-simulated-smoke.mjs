@@ -36,21 +36,23 @@ function freePort() {
 const port = await freePort();
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-packaged-ui-sim-'));
 const userDataDir = path.join(dataDir, 'user-data');
+// 打包版 API 使用 Electron userData/data/v2.sqlite，模拟库必须复制到该位置，
+// 而不是 dataDir 根目录（api-env 白名单也不会转发 V2_DB_PATH/V2_DATA_DIR）。
+const appDataDir = path.join(userDataDir, 'data');
+fs.mkdirSync(appDataDir, { recursive: true });
 const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'v2-sim-admin-password';
 for (const suffix of ['', '-wal', '-shm']) {
   const source = path.join(sourceSimDir, `v2.sqlite${suffix}`);
-  if (fs.existsSync(source)) fs.copyFileSync(source, path.join(dataDir, `v2.sqlite${suffix}`));
+  if (fs.existsSync(source)) fs.copyFileSync(source, path.join(appDataDir, `v2.sqlite${suffix}`));
 }
 
 const env = {
   ...process.env,
   V2_PORT: String(port),
-  V2_DATA_DIR: dataDir,
   V2_BACKUP_DIR: path.join(dataDir, 'backups'),
   V2_LOG_DIR: path.join(dataDir, 'logs'),
   V2_LEGACY_DB_PATH: path.join(appRoot, 'legacy', 'dental.sqlite'),
   V2_LEGACY_SCHEMA_DIR: path.join(appRoot, 'legacy', 'schema'),
-  V2_DB_PATH: path.join(dataDir, 'v2.sqlite'),
   V2_JWT_SECRET: 'packaged-ui-sim-jwt-0123456789abcdef0123456789abcdef',
   V2_BACKUP_KEY: 'packaged-ui-sim-backup-key-0123456789abcdef',
   V2_ADMIN_PASSWORD: adminPassword,

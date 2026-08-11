@@ -13,6 +13,7 @@ import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
+import { userBelongsToClinic } from './common';
 import type { AppContext } from '../../../domain/contracts';
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -152,10 +153,9 @@ export class ShiftTemplateService {
     if (!template) throw new NotFoundError('Shift template not found');
     if (Number(template.active) !== 1) throw new ConflictError('班次模板已停用，无法生成排班');
 
-    const user = this.db.prepare(
-      `SELECT id FROM User WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
-    ).get(input.userId, ...tenantParams(context.clinicId)) as { id: string } | undefined;
-    if (!user) throw new NotFoundError('User not found');
+    if (!userBelongsToClinic(this.db, input.userId, context.clinicId)) {
+      throw new NotFoundError('User not found');
+    }
 
     const weekStart = normalizeWeekStart(input.weekStart);
     const workDays = parseWorkDays(template.workDaysJson as string | null | undefined);

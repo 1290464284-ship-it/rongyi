@@ -319,6 +319,6 @@
 - [ ] 所有新 SQL 参数化：搜索代码 `\$\{` 无直接字符串拼接（遵循 `.qoder/rules/sql-parameterization.md`）
 - [ ] 不引入需要 SLA 的第三方外部 API 服务（纯 npm 包依赖除外）
 - [ ] 交付可验证文件路径：
-  - [spec.md](file:///d:/Desktop/rongyi/.trae/specs/aident-style-features/spec.md)
-  - [tasks.md](file:///d:/Desktop/rongyi/.trae/specs/aident-style-features/tasks.md)
-  - [checklist.md](file:///d:/Desktop/rongyi/.trae/specs/aident-style-features/checklist.md)
+  - [spec.md](spec.md)
+  - [tasks.md](tasks.md)
+  - [checklist.md](checklist.md)

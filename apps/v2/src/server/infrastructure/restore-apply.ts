@@ -3,7 +3,7 @@ import path from 'node:path';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Logger } from './logger';
 import { secretFileValue } from './secret-file';
-import { backupSqliteFile, removeSqliteSidecars } from './sqlite-files';
+import { backupSqliteFile, removeSqliteSidecars, sha256File } from './sqlite-files';
 
 export interface ApplyRestoreResult {
   applied: boolean;
@@ -23,13 +23,13 @@ function restoreMarkerKey(): Buffer {
   return createHmac('sha256', 'restore-marker-v1').update(backupKey).digest();
 }
 
-export function signRestoreMarker(stagedPath: string): string {
-  return createHmac('sha256', restoreMarkerKey()).update(stagedPath).digest('hex');
+export function signRestoreMarker(stagedPath: string, sha256 = ''): string {
+  return createHmac('sha256', restoreMarkerKey()).update(`${stagedPath}\0${sha256}`).digest('hex');
 }
 
-function verifyRestoreMarker(stagedPath: string, signature: unknown): boolean {
+function verifyRestoreMarker(stagedPath: string, sha256: string, signature: unknown): boolean {
   if (typeof signature !== 'string' || signature.length === 0) return false;
-  const expected = Buffer.from(signRestoreMarker(stagedPath), 'hex');
+  const expected = Buffer.from(signRestoreMarker(stagedPath, sha256), 'hex');
   const actual = Buffer.from(signature, 'hex');
   if (expected.length !== actual.length) return false;
   return timingSafeEqual(expected, actual);
@@ -43,18 +43,19 @@ export function applyStagedRestore(
   const markerPath = path.join(path.dirname(dbPath), '.restore-pending.json');
   if (!fs.existsSync(markerPath)) return { applied: false };
 
-  let marker: { stagedPath?: unknown; sig?: unknown };
+  let marker: { stagedPath?: unknown; sha256?: unknown; sig?: unknown };
   try {
-    marker = JSON.parse(fs.readFileSync(markerPath, 'utf8')) as { stagedPath?: unknown; sig?: unknown };
+    marker = JSON.parse(fs.readFileSync(markerPath, 'utf8')) as { stagedPath?: unknown; sha256?: unknown; sig?: unknown };
   } catch {
     fs.rmSync(markerPath, { force: true });
-    console.warn('restore marker is invalid JSON, discarded:', markerPath);
+    logger?.warn('restore marker is invalid JSON, discarded', { markerPath });
     return { applied: false };
   }
   const stagedPath = typeof marker.stagedPath === 'string' ? marker.stagedPath : '';
+  const stagedSha256 = typeof marker.sha256 === 'string' ? marker.sha256 : '';
   // S-L5：签名校验失败视为 marker 被篡改/伪造，丢弃并告警，绝不按未经验证
   // 的路径执行恢复（本地文件替换即数据篡改面）。
-  if (stagedPath === '' || !verifyRestoreMarker(stagedPath, marker.sig)) {
+  if (stagedPath === '' || stagedSha256 === '' || !verifyRestoreMarker(stagedPath, stagedSha256, marker.sig)) {
     fs.rmSync(markerPath, { force: true });
     logger?.warn('staged restore marker signature is invalid; discarding marker', {
       action: 'restore-apply',
@@ -72,6 +73,24 @@ export function applyStagedRestore(
       fs.rmSync(markerPath, { force: true });
     }
     logger?.warn('staged restore marker is invalid or staged file is missing; skipping restore', {
+      action: 'restore-apply',
+      markerPath: invalidPath,
+      stagedPath: resolvedStaged,
+    });
+    return { applied: false };
+  }
+
+  // The staged file was integrity-checked when the marker was created. Verify
+  // the content hash again immediately before apply so a file swapped or
+  // truncated after staging can never replace the working database.
+  if (sha256File(resolvedStaged) !== stagedSha256) {
+    const invalidPath = `${markerPath}.invalid-${Date.now()}`;
+    try {
+      fs.renameSync(markerPath, invalidPath);
+    } catch {
+      fs.rmSync(markerPath, { force: true });
+    }
+    logger?.warn('staged restore content hash mismatch; discarding marker', {
       action: 'restore-apply',
       markerPath: invalidPath,
       stagedPath: resolvedStaged,

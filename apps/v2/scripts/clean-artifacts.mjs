@@ -1,7 +1,8 @@
 // M-05: 统一清理运行时产物（本地开发机用，CI 无需运行）。
 //
 // 默认删除的安全集（全部被 git 忽略）：
-//   coverage/  dist/  dist-web/  dist-electron/  release-v2/  logs/v2.log
+//   coverage/  coverage-web/  dist/  dist-web/  dist-electron/
+//   release-v2/  release-v2-internal/  logs/v2.log
 //   根目录 v2.sqlite / v2.sqlite-wal / v2.sqlite-shm
 // data/ 与 pre-migration/ 单独处理（可能含用户数据/迁移快照，默认只报告占用，
 // 需显式 --include-data / --include-pre-migration 才删除）。
@@ -57,7 +58,16 @@ function removeEntry(relative) {
 let freed = 0;
 
 // 安全集：直接删除。
-const safeEntries = ['coverage', 'dist', 'dist-web', 'dist-electron', 'release-v2', 'logs/v2.log'];
+const safeEntries = [
+  'coverage',
+  'coverage-web',
+  'dist',
+  'dist-web',
+  'dist-electron',
+  'release-v2',
+  'release-v2-internal',
+  'logs/v2.log',
+];
 for (const entry of safeEntries) {
   if (fs.existsSync(path.join(appRoot, entry))) freed += removeEntry(entry);
 }

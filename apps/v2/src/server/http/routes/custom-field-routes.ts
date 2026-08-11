@@ -6,7 +6,7 @@ import { CustomFieldService } from '../../application/service-modules/custom-fie
 import type { RouteDependencies } from './deps';
 
 function requireBoss(context: { role: string }): void {
-  if (context.role !== 'BOSS') {
+  if (!['BOSS', 'ADMIN'].includes(context.role)) {
     throw new AppError('FORBIDDEN', 'Only BOSS can manage custom field definitions', 403);
   }
 }

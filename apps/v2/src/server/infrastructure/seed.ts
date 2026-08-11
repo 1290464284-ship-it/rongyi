@@ -2,8 +2,14 @@
 import type Database from 'better-sqlite3';
 import bcrypt from 'bcryptjs';
 import { randomBytes } from 'node:crypto';
+import type { Logger } from './logger';
+import { secretFileValue } from './secret-file';
 
-export function seedDatabase(db: Database.Database): void {
+export function seedDatabase(db: Database.Database, logger?: Logger): void {
+  const warn = (message: string, meta?: Record<string, unknown>): void => {
+    if (logger) logger.warn(message, meta);
+    else console.warn(`[seed] ${message}`);
+  };
   const now = new Date().toISOString();
   const isProduction = process.env.NODE_ENV === 'production';
   const nodeEnv = process.env.NODE_ENV ?? 'development';
@@ -11,7 +17,7 @@ export function seedDatabase(db: Database.Database): void {
   // for smoke scripts; production/dev read the env or generate a temp password.
   const seedPassword = nodeEnv === 'test'
     ? 'v2-test-seed-password'
-    : process.env.V2_ADMIN_PASSWORD ?? randomBytes(18).toString('base64url');
+    : process.env.V2_ADMIN_PASSWORD ?? secretFileValue('adminPassword') ?? randomBytes(18).toString('base64url');
   const clinicRow = db.prepare('SELECT id FROM Clinic LIMIT 1').get() as { id: string } | undefined;
   const clinicId = clinicRow ? String(clinicRow.id) : 'clinic-v2-001';
   if (!clinicRow) {
@@ -28,24 +34,26 @@ export function seedDatabase(db: Database.Database): void {
   if (!adminRow) {
     if (isProduction) {
       // Production bootstrap: an operator-provided V2_ADMIN_PASSWORD creates
-      // the first admin. Without it the app refuses to start, so no default
+      // the first admin. Without it the app starts normally and the renderer's
+      // first-run setup wizard creates the initial admin, so no default
       // credentials are ever shipped.
-      const bootstrapPassword = process.env.V2_ADMIN_PASSWORD;
-      if (!bootstrapPassword || bootstrapPassword.length < 6) {
-        throw new Error(
-          'Production database must contain an admin user; ' +
-            'set V2_ADMIN_PASSWORD (min 6 chars) to bootstrap one on first start',
-        );
-      }
-      const passwordHash = bcrypt.hashSync(bootstrapPassword, 10);
-      const created = db.prepare(
-        `INSERT OR IGNORE INTO User (
-           id, clinicId, createdAt, updatedAt, deletedAt,
-           username, passwordHash, name, role, active, loginAttempts, tokenVersion
-         ) VALUES (?, ?, ?, ?, NULL, 'admin', ?, 'System Administrator', 'BOSS', 1, 0, 0)`,
-      ).run(userId, clinicId, now, now, passwordHash);
-      if (created.changes > 0) {
-        console.warn('[seed] production admin bootstrap: admin created from V2_ADMIN_PASSWORD; change the password after first login');
+      const bootstrapPassword = process.env.V2_ADMIN_PASSWORD ?? secretFileValue('adminPassword');
+      if (bootstrapPassword) {
+        if (bootstrapPassword.length < 6) {
+          throw new Error('V2_ADMIN_PASSWORD must be at least 6 characters');
+        }
+        const passwordHash = bcrypt.hashSync(bootstrapPassword, 10);
+        const created = db.prepare(
+          `INSERT OR IGNORE INTO User (
+             id, clinicId, createdAt, updatedAt, deletedAt,
+             username, passwordHash, name, role, active, loginAttempts, tokenVersion
+           ) VALUES (?, ?, ?, ?, NULL, 'admin', ?, 'System Administrator', 'BOSS', 1, 0, 0)`,
+        ).run(userId, clinicId, now, now, passwordHash);
+        if (created.changes > 0) {
+          warn('[seed] production admin bootstrap: admin created from V2_ADMIN_PASSWORD; change the password after first login');
+        }
+      } else {
+        warn('[seed] production first run: no admin user yet; use the setup wizard to create the initial admin');
       }
     } else {
       const passwordHash = bcrypt.hashSync(seedPassword, 10);
@@ -56,14 +64,18 @@ export function seedDatabase(db: Database.Database): void {
          ) VALUES (?, ?, ?, ?, NULL, 'admin', ?, 'System Administrator', 'BOSS', 1, 0, 0)`,
       ).run(userId, clinicId, now, now, passwordHash);
       if (created.changes > 0 && !process.env.V2_ADMIN_PASSWORD && nodeEnv !== 'test') {
-        console.warn(`[seed] V2_ADMIN_PASSWORD not set; admin created with temporary password: ${seedPassword}`);
+        warn('[seed] V2_ADMIN_PASSWORD not set; admin created with a temporary password. Set V2_ADMIN_PASSWORD before first launch to control it.');
+        // 仅开发模式在控制台给出可登录密码；不写入日志文件，生产路径也不会触发。
+        if (nodeEnv === 'development') {
+          console.warn(`[seed] development admin temporary password: ${seedPassword}`);
+        }
       }
     }
   }
   // 非生产且未显式配置 V2_ADMIN_PASSWORD 时，提醒默认管理员口令已生效；
   // 测试环境静默，避免测试输出噪音。
   if (!isProduction && !process.env.V2_ADMIN_PASSWORD && process.env.NODE_ENV !== 'test') {
-    console.warn('[seed] V2_ADMIN_PASSWORD not set: admin uses a temporary generated password. Set V2_ADMIN_PASSWORD before first launch to make it stable.');
+    warn('[seed] V2_ADMIN_PASSWORD not set: admin uses a temporary generated password. Set V2_ADMIN_PASSWORD before first launch to make it stable.');
   }
 
   const doctorRow = db.prepare("SELECT id FROM User WHERE username = 'doctor'").get() as { id: string } | undefined;

@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { useCrudResource, type CrudResourceOptions } from '../hooks/use-crud-resource';
-import { ConfirmDialog, DataTable, Dialog, EmptyState, LoadingState, PageError, type DataTableColumn } from '.';
+import { ConfirmDialog, DataTable, Dialog, EmptyState, LoadingState, PageError, PagePager, SearchInput, type DataTableColumn } from '.';
 
 /**
  * 泛型 CRUD 页面基座（Round7 M-02 职责说明）。
@@ -12,7 +12,7 @@ import { ConfirmDialog, DataTable, Dialog, EmptyState, LoadingState, PageError, 
  * 与另外两个通用列表组件如何选型：
  * - CrudPage：业务页需要增删改 + 业务行操作 → 用它；
  * - ResourcePage：通用资源管理页（读 /resources/meta 元数据驱动表单与表格）→ 用它；
- * - SimpleListPage：只读统计端点表格（hub-tabs 的 5 个统计 Tab 专用）→ 用它。
+ * - 只读统计端点表格：ResourcePage 的 endpoint 只读模式（hub-tabs 的 5 个统计 Tab 专用）→ 用它。
  */
 interface CrudRenderContext<TForm extends object> {
   form: TForm;
@@ -31,6 +31,8 @@ export interface CrudPageProps<
   createLabel?: string;
   /** 空列表文案，默认 '暂无数据'。 */
   emptyMessage?: string;
+  /** 新建/编辑 Dialog 关闭（取消/成功）后的回调；用于清空页面级残留状态（如已选文件）。 */
+  onFormClose?: () => void;
   /** 表格列（不含操作列；操作列由 rowActions/canEdit/canDelete 自动追加）。 */
   columns: DataTableColumn<TRow>[];
   /** 行操作内容（如状态变更下拉、收款/退款按钮）。 */
@@ -69,6 +71,10 @@ export function CrudPage<
     crud.openEdit(row);
     setDialogEpoch((current) => current + 1);
   }
+  function closeForm() {
+    crud.closeForm();
+    props.onFormClose?.();
+  }
 
   if (query.isLoading) return <LoadingState />;
   if (query.error) return <PageError message={(query.error as Error).message} />;
@@ -103,12 +109,11 @@ export function CrudPage<
         <button onClick={openCreate}>{props.createLabel ?? '新建'}</button>
       </div>
       {props.searchable && (
-        <input
-          className="search"
-          placeholder={props.searchPlaceholder ?? '搜索...'}
-          aria-label={props.searchAriaLabel ?? '搜索'}
+        <SearchInput
           value={searchInput}
-          onChange={(event) => setSearch(event.target.value)}
+          onChange={setSearch}
+          placeholder={props.searchPlaceholder ?? '搜索...'}
+          ariaLabel={props.searchAriaLabel ?? '搜索'}
         />
       )}
       {rows.length === 0 ? (
@@ -117,18 +122,18 @@ export function CrudPage<
         <DataTable columns={columns} rows={rows} keyField="id" />
       )}
       {props.paged && (
-        <div className="pager">
-          <button disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</button>
-          <span>第 {page} 页</span>
-          <button disabled={!query.data || page * (props.pageSize ?? 50) >= query.data.total} onClick={() => setPage(page + 1)}>下一页</button>
-        </div>
+        <PagePager
+          page={page}
+          hasNext={Boolean(query.data) && page * (props.pageSize ?? 50) < query.data!.total}
+          onPageChange={setPage}
+        />
       )}
 
-      <Dialog key={dialogEpoch} open={showForm} title={title} onClose={crud.closeForm}>
+      <Dialog key={dialogEpoch} open={showForm} title={title} onClose={closeForm}>
         <form onSubmit={crud.submit}>
           {props.renderForm(ctx)}
           <div className="modal-actions">
-            <button type="button" onClick={crud.closeForm}>取消</button>
+            <button type="button" onClick={closeForm}>取消</button>
             <button type="submit" disabled={crud.submitting}>{crud.submitting ? '保存中...' : '保存'}</button>
           </div>
         </form>

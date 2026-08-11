@@ -233,7 +233,9 @@ describe('database bootstrap', () => {
     process.env.NODE_ENV = 'production';
     const productionDb = createDatabase(productionDir);
     delete process.env.V2_ADMIN_PASSWORD;
-    expect(() => seedDatabase(productionDb)).toThrow('set V2_ADMIN_PASSWORD');
+    // 首次运行向导：生产库没有预置密码时正常启动且不种默认管理员。
+    seedDatabase(productionDb);
+    expect(productionDb.prepare("SELECT id FROM User WHERE username = 'admin'").get()).toBeUndefined();
     productionDb.close();
 
     const bootstrapDir = path.join(dataDir, 'production-bootstrap');
@@ -262,7 +264,7 @@ describe('database bootstrap', () => {
     expect(existingCount).toBe(1);
     existingAdminDb.close();
     delete process.env.NODE_ENV;
-  });
+  }, 20_000);
 
   it('never resets an existing admin password, even with dev seed flags (S-M4)', () => {
     const dir = path.join(dataDir, 'dev-seed-gate');

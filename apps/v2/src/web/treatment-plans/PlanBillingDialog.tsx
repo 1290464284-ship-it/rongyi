@@ -1,12 +1,11 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest } from '../lib/api';
+import { apiRequest, fetchAllPages } from '../lib/api';
 import { LoadingState, PageError } from '../components';
 import { formatMoney } from '../lib/format';
 import { errorMessage } from '../lib/messages';
 import { useToast } from '../lib/toast-context';
-import type { Page } from '../lib/types';
 import { PLAN_DISCOUNT_LABELS, type PlanItemRow, type PlanRow } from './types';
 
 export function PlanBillingDialog({
@@ -29,9 +28,9 @@ export function PlanBillingDialog({
 
   const itemsQuery = useQuery({
     queryKey: ['treatment-plan-items', plan.id],
-    queryFn: () => apiRequest<Page<PlanItemRow>>(`/resources/treatmentPlanItems?planId=${plan.id}&page=1&pageSize=200`),
+    queryFn: () => fetchAllPages<PlanItemRow>(`/resources/treatmentPlanItems?planId=${plan.id}`),
   });
-  const items = itemsQuery.data?.items ?? [];
+  const items = itemsQuery.data ?? [];
   const hasBilled = items.some((item) => Number(item.billed) === 1);
 
   async function refresh(): Promise<void> {

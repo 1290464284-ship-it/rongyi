@@ -185,6 +185,9 @@ describe('workflow services', () => {
     const escaped = print.render('T-1', { title: '<script>alert(1)</script>' }, context);
     expect(escaped).toContain('&lt;script&gt;');
     expect(escaped).not.toContain('<script>');
+    const dollar = print.render('T-1', { title: '$&' }, context);
+    expect(dollar).toContain('$&');
+    expect(dollar).not.toContain('{{title}}');
   });
 
   it('includes the patient wechatId in the provider payload', async () => {

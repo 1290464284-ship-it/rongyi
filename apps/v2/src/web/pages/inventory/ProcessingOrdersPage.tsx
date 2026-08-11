@@ -27,6 +27,7 @@ export function ProcessingOrdersPage() {
   const { showToast } = useToast();
   const editingIdRef = useRef<string | null>(null);
   const editingStatusRef = useRef<string | null>(null);
+  const itemsLoadedRef = useRef(false);
   // 流程对话框请求序号守卫：关闭/重开时使在途响应失效，避免旧响应覆盖新状态
   const flowRequestIdRef = useRef(0);
   const [settleTarget, setSettleTarget] = useState<ProcessingRow | null>(null);
@@ -158,11 +159,13 @@ export function ProcessingOrdersPage() {
         initialForm={() => {
           editingIdRef.current = null;
           editingStatusRef.current = null;
+          itemsLoadedRef.current = false;
           return emptyProcessingForm();
         }}
         formFromRow={(row) => {
           editingIdRef.current = String(row.id);
           editingStatusRef.current = String(row.status ?? '');
+          itemsLoadedRef.current = false;
           return {
             patientId: String(row.patientId ?? ''),
             doctorId: String(row.doctorId ?? ''),
@@ -174,6 +177,9 @@ export function ProcessingOrdersPage() {
           };
         }}
         validate={(form) => {
+          if (editingIdRef.current && !itemsLoadedRef.current) {
+            return '明细加载中，请稍候再保存';
+          }
           const validItems = buildValidItems(form.items);
           if (!form.patientId || !form.number.trim() || validItems.length === 0) {
             return '请选择患者、填写加工单号并至少添加一条有效明细';
@@ -247,6 +253,7 @@ export function ProcessingOrdersPage() {
             update={ctx.update}
             editing={ctx.editing}
             editingId={editingIdRef.current}
+            onItemsLoaded={() => { itemsLoadedRef.current = true; }}
           />
         )}
       />

@@ -11,8 +11,8 @@ import type {
 } from '../../domain/contracts';
 import { maskSensitiveFields } from './security';
 import { tenantAnd, tenantParams, tenantWhere } from './tenant';
-import { buildFtsQuery, touchSearchIndex, refreshPatientChildSearchRows } from './search-index';
-import { recordSyncChange } from './sync-change';
+import { buildFtsQuery, refreshPatientChildSearchRows, removeSearchRowsByRecordIds } from './search-index';
+import { trackResourceWrite } from './write-tracking';
 
 export interface RelationLabelJoin {
   select: string;
@@ -190,10 +190,14 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
     try {
       this.runWrite(() => {
         this.db.prepare(`INSERT INTO ${this.resource.table} (${columns.join(', ')}) VALUES (${placeholders})`).run(...values);
-        if (this.resource.searchIndexResource) touchSearchIndex(this.db, this.resource.searchIndexResource, id, 'INSERT');
-        if (this.emitSyncChange && context.clinicId) {
-          recordSyncChange(this.db, { tableName: this.resource.table, recordId: id, operation: 'INSERT', clinicId: context.clinicId });
-        }
+        trackResourceWrite(this.db, {
+          tableName: this.resource.table,
+          recordId: id,
+          operation: 'INSERT',
+          clinicId: context.clinicId,
+          searchResource: this.resource.searchIndexResource ?? null,
+          emitSyncChange: this.emitSyncChange,
+        });
       });
     } catch (error) {
       if (isUniqueConstraintError(error)) throw new ConflictError(`${this.resource.name} violates a unique field constraint`);
@@ -233,11 +237,15 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
           `UPDATE ${this.resource.table} SET ${sets.join(', ')} WHERE ${whereParts.join(' AND ')}`,
         ).run(...values);
         if (Number(result.changes) === 0) throw new NotFoundError(`${this.resource.name} not found`);
-        if (this.resource.searchIndexResource) touchSearchIndex(this.db, this.resource.searchIndexResource, id, 'UPDATE');
+        trackResourceWrite(this.db, {
+          tableName: this.resource.table,
+          recordId: id,
+          operation: 'UPDATE',
+          clinicId: context.clinicId,
+          searchResource: this.resource.searchIndexResource ?? null,
+          emitSyncChange: this.emitSyncChange,
+        });
         if (this.resource.name === 'patients') refreshPatientChildSearchRows(this.db, id);
-        if (this.emitSyncChange && context.clinicId) {
-          recordSyncChange(this.db, { tableName: this.resource.table, recordId: id, operation: 'UPDATE', clinicId: context.clinicId });
-        }
       });
     } catch (error) {
       if (isUniqueConstraintError(error)) throw new ConflictError(`${this.resource.name} violates a unique field constraint`);
@@ -269,17 +277,22 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
       ).run(...params);
       if (Number(result.changes) === 0) throw new NotFoundError(`${this.resource.name} not found`);
     }
-    if (this.resource.searchIndexResource) touchSearchIndex(this.db, this.resource.searchIndexResource, id, 'DELETE');
-    if (this.emitSyncChange && context.clinicId) {
-      recordSyncChange(this.db, { tableName: this.resource.table, recordId: id, operation: 'DELETE', clinicId: context.clinicId });
-    }
+    trackResourceWrite(this.db, {
+      tableName: this.resource.table,
+      recordId: id,
+      operation: 'DELETE',
+      clinicId: context.clinicId,
+      searchResource: this.resource.searchIndexResource ?? null,
+      emitSyncChange: this.emitSyncChange,
+    });
     if (this.resource.name === 'patients') {
-      // 患者删除后其子记录（Appointment/Charge/FollowUp）索引行不再有意义，逐个清理。
+      // 患者删除后其子记录（Appointment/Charge/FollowUp）索引行不再有意义；
+      // 一次查询 + 批量删除，避免大患者历史逐行触达 FTS 表。
       // 子表可能缺 patientId 列（精简/异构 schema），按实际列结构跳过。
       for (const childTable of ['Appointment', 'Charge', 'FollowUp']) {
         if (!this.tableHasColumn(childTable, 'patientId')) continue;
         const childRows = this.db.prepare(`SELECT id FROM ${childTable} WHERE patientId = ?`).all(id) as Array<{ id: string }>;
-        for (const child of childRows) touchSearchIndex(this.db, childTable, String(child.id), 'DELETE');
+        removeSearchRowsByRecordIds(this.db, childTable, childRows.map((row) => String(row.id)));
       }
     }
     });

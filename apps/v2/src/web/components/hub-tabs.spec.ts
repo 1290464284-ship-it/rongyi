@@ -4,6 +4,7 @@ import {
   clinicalHubTabs,
   communicationHubTabs,
   financeHubTabs,
+  frontDeskHubTabs,
   hrHubTabs,
   inventoryHubTabs,
   patientHubTabs,
@@ -16,6 +17,7 @@ const allTabs = [
   ...clinicalHubTabs,
   ...communicationHubTabs,
   ...financeHubTabs,
+  ...frontDeskHubTabs,
   ...hrHubTabs,
   ...inventoryHubTabs,
   ...patientHubTabs,
@@ -32,7 +34,16 @@ describe('hub tab configuration', () => {
   });
 
   it('uses the canonical satisfaction resource name', () => {
-    const satisfaction = analyticsHubTabs.find((tab) => tab.id === 'satisfaction');
+    const satisfaction = allTabs.find((tab) => tab.id === 'satisfaction');
     expect(satisfaction?.kind === 'resource' && satisfaction.resource).toBe('satisfactionSurveys');
+  });
+
+  it('keeps doctor-anomalies in the HR hub instead of analytics', () => {
+    expect(hrHubTabs.some((tab) => tab.id === 'anomalies')).toBe(true);
+    expect(analyticsHubTabs.some((tab) => tab.id === 'anomalies')).toBe(false);
+  });
+
+  it('removes the duplicated workbench tab from analytics', () => {
+    expect(analyticsHubTabs.some((tab) => tab.id === 'workbench')).toBe(false);
   });
 });

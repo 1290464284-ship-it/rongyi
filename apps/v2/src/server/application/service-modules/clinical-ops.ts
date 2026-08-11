@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
-import { AppError, NotFoundError, ValidationError } from '../../infrastructure/errors';
+import { AppError, NotFoundError, ValidationError, isSystematicSqliteError } from '../../infrastructure/errors';
 import { SqliteRepository } from '../../infrastructure/repository';
 import { stripProtectedWriteFields } from '../../infrastructure/security';
 import { validatePayload } from '../../http/validation';
@@ -10,6 +10,7 @@ import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import type { AppContext } from '../../../domain/contracts';
 import type { PatientRiskRepository } from '../ports';
 import { FORBIDDEN_BULK_IMPORT_RESOURCES, assertPatientExists } from './common';
+import { sharedDbWriteQueue } from './serial-queue';
 
 export class PatientRiskService {
   private readonly db: Database.Database;
@@ -127,6 +128,15 @@ export class BulkImportService {
     context: AppContext,
     chunkSize = 100,
   ): Promise<{ imported: number; failed: number; errors: string[]; chunks: number }> {
+    return sharedDbWriteQueue(this.db)(() => this.doImport(resourceName, rows, context, chunkSize));
+  }
+
+  private async doImport(
+    resourceName: string,
+    rows: Array<Record<string, unknown>>,
+    context: AppContext,
+    chunkSize = 100,
+  ): Promise<{ imported: number; failed: number; errors: string[]; chunks: number }> {
     const definition = resourceRegistry.get(resourceName);
     if (!definition) throw new ValidationError(`Resource cannot import: ${resourceName}`);
     if (FORBIDDEN_BULK_IMPORT_RESOURCES.has(resourceName)) {
@@ -155,7 +165,7 @@ export class BulkImportService {
             await repository.insert({ id: randomUUID(), ...payload }, context);
             imported += 1;
           } catch (error) {
-            if (isSystematicError(error)) {
+            if (isSystematicSqliteError(error)) {
               throw new AppError('IMPORT_SYSTEM_ERROR', `批量导入中止：${error instanceof Error ? error.message : String(error)}`, 500);
             }
             errors.push(error instanceof Error ? error.message : String(error));
@@ -170,7 +180,7 @@ export class BulkImportService {
         imported = chunkStartImported;
         errors.length = chunkStartErrors;
         if (e instanceof AppError) throw e;
-        if (isSystematicError(e)) {
+        if (isSystematicSqliteError(e)) {
           const message = e instanceof Error ? e.message : String(e);
           throw new AppError('IMPORT_SYSTEM_ERROR', `批量导入中止：前 ${imported} 条已导入，请人工核对后重试（${message}）`, 500);
         }
@@ -237,12 +247,4 @@ function parseLandmarks(value: unknown): Record<string, { x: number; y: number }
   } catch {
     return {};
   }
-}
-
-function isSystematicError(error: unknown): boolean {
-  if (error instanceof Error && 'code' in error) {
-    const code = String((error as { code?: unknown }).code ?? '');
-    if (/SQLITE_(FULL|BUSY|IOERR|CORRUPT|CANTOPEN|NOMEM)/.test(code)) return true;
-  }
-  return false;
 }

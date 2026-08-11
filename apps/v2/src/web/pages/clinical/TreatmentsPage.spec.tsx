@@ -139,4 +139,151 @@ describe('TreatmentsPage', () => {
     fireEvent.click(screen.getByText('保存'));
     expect(await screen.findByText('请选择患者、医生并填写治疗名称、价格和数量')).toBeDefined();
   });
+
+  it('shows loading, error, and empty states', async () => {
+    vi.mocked(apiRequest).mockImplementation(() => new Promise(() => {}));
+    render(<TreatmentsPage />, { wrapper });
+    expect(screen.getByText('加载中...')).toBeDefined();
+    cleanup();
+
+    vi.mocked(apiRequest).mockRejectedValue(new Error('treatments failed'));
+    render(<TreatmentsPage />, { wrapper });
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+    cleanup();
+
+    vi.mocked(apiRequest).mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 50 });
+    render(<TreatmentsPage />, { wrapper });
+    expect(await screen.findByText('暂无治疗')).toBeDefined();
+  });
+
+  it('keeps the treatment when delete confirmation is cancelled', async () => {
+    mockData();
+    render(<TreatmentsPage />, { wrapper });
+    await screen.findByText('补牙');
+
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(apiRequest).not.toHaveBeenCalledWith(
+      '/resources/treatments/t-1',
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+  });
+
+  it('fills every treatment field and rejects zero price', async () => {
+    mockData();
+    render(<TreatmentsPage />, { wrapper });
+    await screen.findByText('补牙');
+
+    fireEvent.click(screen.getByText('新建治疗'));
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
+    fireEvent.change(screen.getByLabelText('项目编码'), { target: { value: 'T-001' } });
+    fireEvent.change(screen.getByLabelText('治疗名称'), { target: { value: '全瓷冠' } });
+    fireEvent.change(screen.getByLabelText('分类'), { target: { value: 'PROSTHETIC' } });
+    fireEvent.change(screen.getByLabelText('价格'), { target: { value: '0' } });
+    fireEvent.change(screen.getByLabelText('数量'), { target: { value: '2' } });
+    fireEvent.click(screen.getByText('保存'));
+    expect(await screen.findByText('请选择患者、医生并填写治疗名称、价格和数量')).toBeDefined();
+
+    fireEvent.change(screen.getByLabelText('价格'), { target: { value: '300' } });
+    fireEvent.change(screen.getByLabelText('状态'), { target: { value: 'IN_PROGRESS' } });
+    fireEvent.change(screen.getByLabelText('计划日期'), { target: { value: '2026-08-10' } });
+    fireEvent.change(screen.getByLabelText('完成日期'), { target: { value: '2026-08-12' } });
+    fireEvent.change(screen.getByLabelText('备注'), { target: { value: '两日后复诊' } });
+    vi.mocked(apiRequest).mockResolvedValueOnce({ id: 't-3' });
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/treatments', expect.objectContaining({ method: 'POST' }));
+    });
+    const call = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/resources/treatments');
+    const body = JSON.parse(String((call?.[1] as RequestInit)?.body));
+    expect(body).toMatchObject({
+      code: 'T-001',
+      category: 'PROSTHETIC',
+      price: 30000,
+      quantity: 2,
+      status: 'IN_PROGRESS',
+      plannedDate: '2026-08-10',
+      completedDate: '2026-08-12',
+      remark: '两日后复诊',
+    });
+    expect(await screen.findByText('治疗记录已创建')).toBeDefined();
+  });
+
+  it('renders fallback labels and prefills sparse rows', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/treatments?page=1&pageSize=50') {
+        return { items: [{ id: 't-x', status: 'UNKNOWN' }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      return {};
+    });
+    render(<TreatmentsPage />, { wrapper });
+    expect(await screen.findByText('UNKNOWN')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    await waitFor(() => {
+      expect((screen.getByLabelText('项目编码') as HTMLInputElement).value).toBe('');
+      expect((screen.getByLabelText('数量') as HTMLInputElement).value).toBe('1');
+    });
+  });
+
+  it('rejects zero quantity', async () => {
+    mockData();
+    render(<TreatmentsPage />, { wrapper });
+    await screen.findByText('补牙');
+    fireEvent.click(screen.getByText('新建治疗'));
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
+    fireEvent.change(screen.getByLabelText('治疗名称'), { target: { value: '洁牙' } });
+    fireEvent.change(screen.getByLabelText('价格'), { target: { value: '100' } });
+    fireEvent.change(screen.getByLabelText('数量'), { target: { value: '0' } });
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.submit(dialog.querySelector('form') as HTMLFormElement);
+    expect(await screen.findByText('请选择患者、医生并填写治疗名称、价格和数量')).toBeDefined();
+    expect(apiRequest).not.toHaveBeenCalledWith('/resources/treatments', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('joins array teeth numbers when editing and falls back to ids for unnamed doctors', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/treatments?page=1&pageSize=50') {
+        return { items: [{ id: 't-1', patientId: 'p-1', doctorId: 'd-9', name: '补牙', price: 10000, status: 'COMPLETED', teethNumbers: ['11', '21'] }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-9' }];
+      return {};
+    });
+    render(<TreatmentsPage />, { wrapper });
+    await screen.findByText('补牙');
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    await waitFor(() => {
+      expect((screen.getByLabelText('牙位（逗号分隔）') as HTMLInputElement).value).toBe('11, 21');
+    });
+    await waitFor(() => {
+      expect((screen.getByRole('option', { name: 'd-9' }) as HTMLOptionElement).value).toBe('d-9');
+    });
+    expect((screen.getByLabelText('状态') as HTMLSelectElement).value).toBe('COMPLETED');
+  });
+
+  it('ignores an empty status transition selection', async () => {
+    mockData();
+    render(<TreatmentsPage />, { wrapper });
+    await screen.findByText('补牙');
+    const select = screen.getByLabelText('变更治疗状态') as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: '' } });
+    expect(apiRequest).not.toHaveBeenCalledWith('/treatments/t-1/status', expect.anything());
+  });
 });

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import Database from 'better-sqlite3';
 import type DatabaseType from 'better-sqlite3';
@@ -9,6 +10,25 @@ export function removeSqliteSidecars(dbPath: string): void {
       fs.rmSync(sidecar, { force: true });
     }
   }
+}
+
+/**
+ * Copies a SQLite database without ever opening the source for writing.
+ * `VACUUM INTO` on a read-only connection writes only the destination file,
+ * so the legacy source and its WAL/SHM sidecars stay byte-for-byte untouched.
+ */
+export function copySqliteFileReadonly(sourcePath: string, targetPath: string): void {
+  const source = new Database(sourcePath, { readonly: true });
+  try {
+    source.prepare('VACUUM INTO ?').run(targetPath);
+  } finally {
+    source.close();
+  }
+}
+
+/** SHA-256 hex digest of a file; used to bind restore markers to file content. */
+export function sha256File(filePath: string): string {
+  return createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
 }
 
 export function backupSqliteFile(

@@ -48,4 +48,78 @@ describe('DashboardPage', () => {
     render(<DashboardPage />, { wrapper });
     expect(await screen.findByText('无法加载工作台数据')).toBeDefined();
   });
+
+  it('renders today appointments with patient and doctor names', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/stats/dashboard') {
+        return {
+          patients: 10,
+          appointments: 20,
+          paidAmount: 100,
+          unpaidAmount: 200,
+          inventoryItems: 30,
+          pendingFollowUps: 5,
+        };
+      }
+      if (path === '/workbench/today') {
+        return {
+          date: '2026-08-10',
+          truncated: { appointments: true },
+          appointments: [
+            { id: 'a-1', patientName: '患者甲', doctorName: '张医生', startTime: '2026-08-10T09:30:00.000Z', status: 'BOOKED', type: 'REGULAR' },
+            { id: 'a-2', patientName: null, doctorName: null, startTime: null, status: null, type: null },
+          ],
+        };
+      }
+      return {};
+    });
+    render(<DashboardPage />, { wrapper });
+
+    expect(await screen.findByText('患者甲')).toBeDefined();
+    expect(screen.getByText((content) => content.includes('张医生') && content.includes('常规预约'))).toBeDefined();
+    expect(screen.getByText('09:30')).toBeDefined();
+    expect(screen.getAllByText('已预约').length).toBeGreaterThan(0);
+    expect(screen.getByText('未知患者')).toBeDefined();
+    expect(screen.getByText((content) => content.includes('未分配医生') && content.includes('预约'))).toBeDefined();
+    expect(screen.getByText('超过 100 条，仅显示前 100 条')).toBeDefined();
+  });
+
+  it('shows the empty and loading states for today appointments', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/stats/dashboard') {
+        return {
+          patients: 0,
+          appointments: 0,
+          paidAmount: 0,
+          unpaidAmount: 0,
+          inventoryItems: 0,
+          pendingFollowUps: 0,
+        };
+      }
+      if (path === '/workbench/today') {
+        return { date: '2026-08-10', appointments: [] };
+      }
+      return {};
+    });
+    render(<DashboardPage />, { wrapper });
+    expect(await screen.findByText('今日暂无预约')).toBeDefined();
+
+    cleanup();
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/stats/dashboard') {
+        return {
+          patients: 0,
+          appointments: 0,
+          paidAmount: 0,
+          unpaidAmount: 0,
+          inventoryItems: 0,
+          pendingFollowUps: 0,
+        };
+      }
+      if (path === '/workbench/today') return new Promise(() => {});
+      return {};
+    });
+    render(<DashboardPage />, { wrapper });
+    expect(await screen.findByText('加载中...')).toBeDefined();
+  });
 });

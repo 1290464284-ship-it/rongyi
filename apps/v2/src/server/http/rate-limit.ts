@@ -9,6 +9,8 @@ export interface RateLimitWindow {
 export interface RateLimitStore {
   get(key: string): RateLimitWindow | undefined;
   set(key: string, window: RateLimitWindow): void;
+  /** Atomically increments a window and returns the new count/resetAt. */
+  increment?(key: string, windowMs: number, now?: number): RateLimitWindow;
   delete?(key: string): void;
   pruneIfStale?(now?: number): void;
 }
@@ -47,6 +49,16 @@ function createLimiter({ windowMs, max, keyFor, store }: RateLimiterConfig) {
       }
     }
     /* v8 ignore stop */
+    if (store?.increment) {
+      const current = store.increment(key, windowMs, now);
+      if (current.count > max) {
+        res.setHeader('retry-after', String(Math.ceil((current.resetAt - now) / 1000)));
+        next(new AppError('RATE_LIMITED', 'Too many requests', 429));
+        return;
+      }
+      next();
+      return;
+    }
     const current = store ? store.get(key) : windows?.get(key);
     if (!current || current.resetAt <= now) {
       const fresh: RateLimitWindow = { count: 1, resetAt: now + windowMs };

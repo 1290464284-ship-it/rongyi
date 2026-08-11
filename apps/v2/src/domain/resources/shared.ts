@@ -1,10 +1,10 @@
 import type { ResourceField, ResourceDefinition, UserRole } from '../contracts';
 
 /** 角色常量：资源定义中的默认角色集合 */
-export const boss: UserRole[] = ['BOSS'];
-const staff: UserRole[] = ['BOSS', 'DOCTOR'];
-export const clinical: UserRole[] = ['BOSS', 'DOCTOR'];
-export const reception: UserRole[] = ['BOSS', 'DOCTOR'];
+export const boss: UserRole[] = ['BOSS', 'ADMIN'];
+export const staff: UserRole[] = ['BOSS', 'ADMIN', 'DOCTOR'];
+export const clinical: UserRole[] = ['BOSS', 'ADMIN', 'DOCTOR'];
+export const reception: UserRole[] = ['BOSS', 'ADMIN', 'DOCTOR'];
 
 /** 字段声明辅助：{ name, type, ...options } */
 export function f(

@@ -100,4 +100,13 @@ describe('user role routes', () => {
     expect(res.body.success).toBe(false);
     expect(res.body.code).toBe('VALIDATION_ERROR');
   });
+
+  it('PUT /api/v2/user-roles/:userId treats non-array roles as an empty list', async () => {
+    const res = await request(app)
+      .put('/api/v2/user-roles/route-user-001')
+      .send({ roles: 'BOSS' })
+      .expect(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.roles).toEqual([]);
+  });
 });

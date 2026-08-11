@@ -8,9 +8,21 @@ import fs from 'node:fs';
 // common.ts（JWT_SECRET / backupEncryptionKey）以及 http 层 files.ts、
 // infrastructure 层 restore-apply.ts（S-L8 签名 URL / S-L5 restore marker
 // 同源派生）复用，保证密钥来源唯一。
-let _cache: { jwt: string; backupKey: string } | null = null;
+let _cache: {
+  jwt: string;
+  backupKey: string;
+  wechatAppId?: string;
+  wechatAppSecret?: string;
+  adminPassword?: string;
+} | null = null;
 
-export function secretFileValue(key: 'jwt' | 'backupKey'): string | null {
+export function resetSecretFileCache(): void {
+  _cache = null;
+}
+
+export function secretFileValue(
+  key: 'jwt' | 'backupKey' | 'wechatAppId' | 'wechatAppSecret' | 'adminPassword',
+): string | null {
   const file = process.env.V2_SECRET_FILE;
   if (!file) return null;
   if (!_cache) {
@@ -19,10 +31,13 @@ export function secretFileValue(key: 'jwt' | 'backupKey'): string | null {
       _cache = {
         jwt: typeof raw.jwt === 'string' ? raw.jwt : '',
         backupKey: typeof raw.backupKey === 'string' ? raw.backupKey : '',
+        wechatAppId: typeof raw.wechatAppId === 'string' ? raw.wechatAppId : undefined,
+        wechatAppSecret: typeof raw.wechatAppSecret === 'string' ? raw.wechatAppSecret : undefined,
+        adminPassword: typeof raw.adminPassword === 'string' ? raw.adminPassword : undefined,
       };
     } catch {
       // 文件缺失/损坏：视为无密钥，调用方走各自回退（dev 随机 / production 抛错）
-      _cache = { jwt: '', backupKey: '' };
+      _cache = { jwt: '', backupKey: '', wechatAppId: undefined, wechatAppSecret: undefined, adminPassword: undefined };
     }
   }
   return _cache[key] || null;

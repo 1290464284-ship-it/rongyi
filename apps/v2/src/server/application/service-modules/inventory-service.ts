@@ -1,7 +1,7 @@
 // 库存服务（M-04：由 operations.ts 拆分）
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
-import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
+import { NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { SqliteUnitOfWork } from '../../infrastructure/unit-of-work';
 import { SqliteInventoryRepository } from '../../infrastructure/repositories/core.repositories';
 import { withIdempotency } from '../../infrastructure/idempotency';
@@ -52,14 +52,17 @@ export class InventoryService {
       this.lockGuard?.(input.itemId, context.clinicId);
       const item = this.inventoryRepository.findItem(input.itemId, context.clinicId);
       if (!item) throw new NotFoundError('Inventory item not found');
-      const before = Number(item.stock);
       const delta = input.type === 'IN' ? input.quantity : input.type === 'OUT' ? -input.quantity : input.quantity;
-      const after = before + delta;
-      if (after < 0) throw new ConflictError('Insufficient stock');
       const now = context.now().toISOString();
       const id = randomUUID();
+      let before = 0;
+      let after = 0;
       this.unitOfWork.run(() => {
-        this.inventoryRepository.updateStock(input.itemId, after, now, context.clinicId);
+        this.inventoryRepository.adjustStock(input.itemId, delta, now, context.clinicId);
+        const afterRow = this.inventoryRepository.findItem(input.itemId, context.clinicId);
+        if (!afterRow) throw new NotFoundError('Inventory item not found');
+        after = Number(afterRow.stock);
+        before = after - delta;
         this.inventoryRepository.createTransaction({
           id,
           clinicId: context.clinicId ?? null,

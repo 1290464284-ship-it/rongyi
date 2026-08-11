@@ -144,6 +144,139 @@ async function createPatients(port, token, prefix, count) {
   }
 }
 
+async function verifyConcurrentChargePayments(portA, portB, tokenA, tokenB, listA) {
+  const patient = (listA.body?.data?.items ?? []).find((row) => String(row.code ?? '').startsWith('MI-A-'));
+  if (!patient?.id) throw new Error('concurrent charge test needs a patient from instance A');
+  const charge = await request(portA, '/charges', {
+    method: 'POST',
+    body: JSON.stringify({
+      patientId: patient.id,
+      items: [{ name: 'Concurrent Exam', category: 'EXAM', price: 10000, quantity: 1 }],
+    }),
+  }, tokenA);
+  if (charge.status !== 201 || !charge.body?.success) {
+    throw new Error(`charge create failed: ${charge.status} ${charge.bodyText}`);
+  }
+  const chargeId = charge.body.data.id;
+  const pays = await Promise.all([
+    request(portA, `/charges/${chargeId}/pay`, {
+      method: 'PATCH',
+      body: JSON.stringify({ amount: 6000, method: 'CASH', requestId: 'mi-pay-a' }),
+    }, tokenA),
+    request(portB, `/charges/${chargeId}/pay`, {
+      method: 'PATCH',
+      body: JSON.stringify({ amount: 6000, method: 'CASH', requestId: 'mi-pay-b' }),
+    }, tokenB),
+  ]);
+  const ok = pays.filter((result) => result.status === 200 && result.body?.success).length;
+  const rejected = pays.filter((result) => result.status === 400 || result.status === 409).length;
+  const serverError = pays.filter((result) => result.status >= 500).length;
+  if (ok !== 1 || rejected !== 1 || serverError !== 0) {
+    throw new Error(`concurrent payment lost-update guard failed: ok=${ok} rejected=${rejected} serverError=${serverError} ${pays.map((p) => p.status).join(',')}`);
+  }
+  const chargeRow = await request(portA, `/resources/charges/${chargeId}`, {}, tokenA);
+  if (Number(chargeRow.body?.data?.paidAmount ?? 0) !== 6000) {
+    throw new Error(`concurrent payment produced wrong balance: ${JSON.stringify(chargeRow.body?.data)}`);
+  }
+  console.log('concurrent charge payment guard passed: exactly one success, one 400/409, no 500, final paid 6000');
+}
+
+function syncChange(recordId, prefix, index) {
+  return {
+    tableName: 'Patient',
+    recordId,
+    operation: 'INSERT',
+    updatedAt: new Date().toISOString(),
+    data: {
+      code: `${prefix}-${index}`,
+      name: `Sync ${prefix} ${index}`,
+      gender: 'UNKNOWN',
+      phone: `139${String(10000000 + index).padStart(8, '0')}`,
+      source: 'OTHER',
+      active: true,
+    },
+  };
+}
+
+async function verifyConcurrentSyncPushAndIdempotent(portA, portB, tokenA, tokenB, listA) {
+  const patient = (listA.body?.data?.items ?? []).find((row) => String(row.code ?? '').startsWith('MI-A-'));
+  if (!patient?.id) throw new Error('concurrent sync test needs a patient from instance A');
+
+  const processing = await request(portA, '/processing-orders', {
+    method: 'POST',
+    body: JSON.stringify({
+      patientId: patient.id,
+      number: 'MI-PROC-1',
+      totalFee: 100,
+      items: [{ name: '加工', quantity: 1, unitPrice: 100 }],
+    }),
+  }, tokenA);
+  if (processing.status !== 201 || !processing.body?.success) {
+    throw new Error(`processing create failed: ${processing.status} ${processing.bodyText}`);
+  }
+  const processingId = processing.body.data.id;
+
+  const device = await request(portA, '/sync/devices', {
+    method: 'POST',
+    body: JSON.stringify({ deviceId: 'mi-sync-device', name: 'Multi Instance' }),
+  }, tokenA);
+  if (device.status !== 201 || !device.body?.success) {
+    throw new Error(`sync device register failed: ${device.status} ${device.bodyText}`);
+  }
+  const deviceToken = device.body.data.token;
+
+  // 场景 1：同一设备 token 从两个 API 进程同时 push，SQLite 跨进程锁必须兜底，
+  // 不能出现嵌套 BEGIN 500。
+  const changesA = Array.from({ length: 50 }, (_, index) => syncChange(`mi-push-a-${index}`, 'MI-PUSH-A', index));
+  const changesB = Array.from({ length: 50 }, (_, index) => syncChange(`mi-push-b-${index}`, 'MI-PUSH-B', index));
+  const pushes = await Promise.all([
+    request(portA, '/sync/push', {
+      method: 'POST',
+      headers: { 'x-device-token': deviceToken },
+      body: JSON.stringify({ deviceId: 'mi-sync-device', changes: changesA }),
+    }, tokenA),
+    request(portB, '/sync/push', {
+      method: 'POST',
+      headers: { 'x-device-token': deviceToken },
+      body: JSON.stringify({ deviceId: 'mi-sync-device', changes: changesB }),
+    }, tokenB),
+  ]);
+  for (const result of pushes) {
+    if (result.status >= 500) {
+      throw new Error(`cross-process sync push returned 5xx: ${result.status} ${result.bodyText}`);
+    }
+    if (!result.body?.success || Number(result.body?.data?.accepted ?? 0) !== 50) {
+      throw new Error(`cross-process sync push not fully accepted: ${result.status} ${result.bodyText}`);
+    }
+  }
+
+  // 场景 2：sync push 持显式事务期间，同进程的同步幂等写入必须拿到 DB_BUSY 503
+  // 或等事务结束后成功，绝不嵌套 BEGIN。
+  const busyChanges = Array.from({ length: 100 }, (_, index) => syncChange(`mi-idem-sync-${index}`, 'MI-IDEM-SYNC', index));
+  const [pushResult, transitionResult] = await Promise.all([
+    request(portA, '/sync/push', {
+      method: 'POST',
+      headers: { 'x-device-token': deviceToken },
+      body: JSON.stringify({ deviceId: 'mi-sync-device', changes: busyChanges }),
+    }, tokenA),
+    request(portB, `/processing-orders/${processingId}/status`, {
+      method: 'PATCH',
+      headers: { 'idempotency-key': 'mi-idem-sync-transition' },
+      body: JSON.stringify({ status: 'SENT' }),
+    }, tokenB),
+  ]);
+  if (pushResult.status !== 200 || !pushResult.body?.success) {
+    throw new Error(`sync push during idempotent race failed: ${pushResult.status} ${pushResult.bodyText}`);
+  }
+  if (transitionResult.status >= 500) {
+    throw new Error(`sync idempotent write during push returned 5xx: ${transitionResult.status} ${transitionResult.bodyText}`);
+  }
+  if (transitionResult.status !== 200 && transitionResult.status !== 503) {
+    throw new Error(`sync idempotent write expected 200/503, got ${transitionResult.status}: ${transitionResult.bodyText}`);
+  }
+  console.log('cross-process sync push + idempotent write guard passed: no 5xx, no nested BEGIN');
+}
+
 async function main() {
   const portA = 35000 + Math.floor(Math.random() * 1000);
   const portB = portA + 1;
@@ -167,6 +300,8 @@ async function main() {
     if (countA < 100 || countA !== countB) {
       throw new Error(`cross-instance visibility failed: A=${countA} B=${countB}`);
     }
+    await verifyConcurrentChargePayments(portA, portB, tokenA, tokenB, listA);
+    await verifyConcurrentSyncPushAndIdempotent(portA, portB, tokenA, tokenB, listA);
 
     console.log(`multi-instance smoke passed: A=${countA} B=${countB} shared sqlite`);
   } finally {

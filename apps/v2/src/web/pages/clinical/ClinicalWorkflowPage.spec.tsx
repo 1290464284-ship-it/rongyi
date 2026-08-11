@@ -19,7 +19,7 @@ function resourceData() {
   return {
     '/workbench/today': {},
     '/resources/registrations?page=1&pageSize=100': {
-      items: [{ id: 'r-1', status: 'REGISTERED', patientId: 'p-1', patientIdLabel: '张三' }],
+      items: [{ id: 'r-1', status: 'TRIAGED', patientId: 'p-1', patientIdLabel: '张四' }],
       total: 1,
     },
     '/resources/visits?page=1&pageSize=100': { items: [{ id: 'v-1', status: 'IN_PROGRESS' }], total: 1 },
@@ -38,7 +38,7 @@ describe('ClinicalWorkflowPage', () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => resourceData()[path] ?? {});
 
     render(<ClinicalWorkflowPage />, { wrapper });
-    fireEvent.click((await screen.findAllByRole('button', { name: '已分诊' }))[0]);
+    fireEvent.click((await screen.findAllByRole('button', { name: '进行中' }))[0]);
     await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith('/registrations/r-1/status', expect.objectContaining({ method: 'PATCH' }));
     });
@@ -68,14 +68,14 @@ describe('ClinicalWorkflowPage', () => {
     });
 
     render(<ClinicalWorkflowPage />, { wrapper });
-    fireEvent.click((await screen.findAllByRole('button', { name: '已分诊' }))[0]);
+    fireEvent.click((await screen.findAllByRole('button', { name: '进行中' }))[0]);
     expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
 
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path in resourceData()) return resourceData()[path];
       throw 'boom';
     });
-    fireEvent.click(screen.getAllByRole('button', { name: '已分诊' })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: '进行中' })[0]);
     expect(await screen.findByText('状态更新失败')).toBeDefined();
   });
 
@@ -103,13 +103,14 @@ describe('ClinicalWorkflowPage', () => {
     });
     render(<ClinicalWorkflowPage />, { wrapper });
     expect(await screen.findByText('WEIRD')).toBeDefined();
-    expect(screen.getAllByText('暂无记录').length).toBeGreaterThanOrEqual(3);
+    expect(screen.getAllByText('暂无记录')).toHaveLength(3);
   });
 
   it('handles null workflow query data', async () => {
     vi.mocked(apiRequest).mockResolvedValue(null as unknown as Page<Record<string, unknown>>);
     render(<ClinicalWorkflowPage />, { wrapper });
-    expect(await screen.findAllByText('暂无记录')).toHaveLength(4);
+    expect(await screen.findAllByText('暂无已分诊患者')).toHaveLength(1);
+    expect(screen.getAllByText('暂无记录')).toHaveLength(3);
   });
 
   it('renders today overview totals and lists', async () => {
@@ -178,31 +179,7 @@ describe('ClinicalWorkflowPage', () => {
     expect(screen.getByText('今日暂无预约')).toBeDefined();
   });
 
-  it('submits a charge from the registration row', async () => {
-    vi.mocked(apiRequest).mockImplementation(async (path: string) => resourceData()[path] ?? {});
-
-    render(<ClinicalWorkflowPage />, { wrapper });
-    fireEvent.click((await screen.findAllByRole('button', { name: '划价' }))[0]);
-
-    fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: '洁牙' } });
-    fireEvent.change(screen.getByLabelText('分类'), { target: { value: 'GENERAL' } });
-    fireEvent.change(screen.getByLabelText('单价(元)'), { target: { value: '100' } });
-    fireEvent.change(screen.getByLabelText('数量'), { target: { value: '2' } });
-    fireEvent.click(screen.getByText('提交划价'));
-
-    await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/charges', expect.objectContaining({ method: 'POST' }));
-    });
-    const call = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/charges');
-    const body = JSON.parse(String(call?.[1]?.body));
-    expect(body).toMatchObject({
-      patientId: 'p-1',
-      items: [{ name: '洁牙', category: 'GENERAL', price: 10000, quantity: 2 }],
-    });
-    expect(await screen.findByText('划价已提交')).toBeDefined();
-  });
-
-  it('submits a medical record from the registration row', async () => {
+  it('submits a medical record from the triaged registration row', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
       return resourceData()[path] ?? {};
@@ -239,7 +216,7 @@ describe('ClinicalWorkflowPage', () => {
     expect(await screen.findByText('病历已创建')).toBeDefined();
   });
 
-  it('submits a follow-up from the registration row', async () => {
+  it('submits a follow-up from the triaged registration row', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => resourceData()[path] ?? {});
 
     render(<ClinicalWorkflowPage />, { wrapper });
@@ -263,108 +240,7 @@ describe('ClinicalWorkflowPage', () => {
     expect(await screen.findByText('回访已创建')).toBeDefined();
   });
 
-  it('triages a registration from the row', async () => {
-    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/departments?page=1&pageSize=100') {
-        return { items: [{ id: 'dep-1', name: '正畸科' }], total: 1 };
-      }
-      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
-      return resourceData()[path] ?? {};
-    });
-
-    render(<ClinicalWorkflowPage />, { wrapper });
-    fireEvent.click((await screen.findAllByRole('button', { name: '分诊' }))[0]);
-
-    await waitFor(() => {
-      expect((screen.getByLabelText('分诊科室') as HTMLSelectElement).options.length).toBeGreaterThan(1);
-    });
-    fireEvent.change(screen.getByLabelText('分诊科室'), { target: { value: 'dep-1' } });
-    fireEvent.change(screen.getByLabelText('分诊医生'), { target: { value: 'd-1' } });
-    fireEvent.change(screen.getByLabelText('分诊备注'), { target: { value: '牙体牙髓' } });
-    fireEvent.click(screen.getByText('提交分诊'));
-
-    await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/registrations/r-1/triage', expect.objectContaining({ method: 'POST' }));
-    });
-    const call = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/registrations/r-1/triage');
-    const body = JSON.parse(String(call?.[1]?.body));
-    expect(body).toMatchObject({ departmentId: 'dep-1', doctorId: 'd-1', triageNote: '牙体牙髓' });
-    expect(await screen.findByText('分诊已提交')).toBeDefined();
-  });
-
-  it('renders the triage queue with department filter and start visit', async () => {
-    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/departments?page=1&pageSize=100') {
-        return { items: [{ id: 'dep-1', name: '正畸科' }, { id: 'dep-2', name: '种植科' }], total: 2 };
-      }
-      if (path === '/triage/queue') {
-        return {
-          items: [
-            {
-              id: 'q-1',
-              patientName: '李四',
-              departmentName: '正畸科',
-              doctorName: '张医生',
-              status: 'REGISTERED',
-              registeredAt: '2026-08-06T01:00:00.000Z',
-              triagedAt: null,
-            },
-            {
-              id: 'q-2',
-              patientName: '王五',
-              departmentName: '种植科',
-              doctorName: '李医生',
-              status: 'TRIAGED',
-              registeredAt: '2026-08-06T02:00:00.000Z',
-              triagedAt: '2026-08-06T02:30:00.000Z',
-            },
-          ],
-          total: 2,
-        };
-      }
-      if (path === '/triage/queue?departmentId=dep-1') {
-        return {
-          items: [
-            {
-              id: 'q-1',
-              patientName: '李四',
-              departmentName: '正畸科',
-              doctorName: '张医生',
-              status: 'REGISTERED',
-              registeredAt: '2026-08-06T01:00:00.000Z',
-              triagedAt: null,
-            },
-          ],
-          total: 1,
-        };
-      }
-      return resourceData()[path] ?? {};
-    });
-
-    render(<ClinicalWorkflowPage />, { wrapper });
-    expect(await screen.findByText('分诊队列')).toBeDefined();
-    expect(screen.getByText('李四')).toBeDefined();
-    expect(screen.getByText('王五')).toBeDefined();
-    expect(screen.getAllByText('已分诊').length).toBeGreaterThanOrEqual(1);
-
-    fireEvent.click(screen.getAllByRole('button', { name: '开始就诊' })[0]);
-    await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/registrations/q-1/status', expect.objectContaining({ method: 'PATCH' }));
-    });
-    const call = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/registrations/q-1/status');
-    expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({ status: 'IN_PROGRESS' });
-
-    fireEvent.change(screen.getByLabelText('科室筛选'), { target: { value: 'dep-1' } });
-    await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/triage/queue?departmentId=dep-1');
-    });
-    await waitFor(() => {
-      expect(screen.queryByText('王五')).toBeNull();
-    });
-    expect(await screen.findByText('李四')).toBeDefined();
-  });
-
-  it('shows triage entry only for REGISTERED rows and a badge for TRIAGED rows', async () => {
+  it('hides REGISTERED rows and triage actions from the doctor view', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/registrations?page=1&pageSize=100') {
         return {
@@ -379,8 +255,30 @@ describe('ClinicalWorkflowPage', () => {
     });
 
     render(<ClinicalWorkflowPage />, { wrapper });
-    expect((await screen.findAllByText('已分诊')).length).toBeGreaterThanOrEqual(2);
-    expect(screen.getAllByRole('button', { name: '分诊' })).toHaveLength(1);
+    expect(await screen.findByText('赵六')).toBeDefined();
+    expect(screen.queryByText('张三')).toBeNull();
+    expect(screen.queryByRole('button', { name: '分诊' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '划价' })).toBeNull();
     expect(document.querySelectorAll('.triage-badge')).toHaveLength(1);
+  });
+
+  it('renders sparse workflow rows with blank statuses', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      const map: Record<string, unknown> = {
+        '/workbench/today': {},
+        '/resources/registrations?page=1&pageSize=100': {
+          items: [{ id: 'r-9', status: null, patientId: null, patientIdLabel: null }],
+          total: 1,
+        },
+        '/resources/visits?page=1&pageSize=100': { items: [{ id: 'v-9', status: null }], total: 1 },
+        '/resources/firstExams?page=1&pageSize=100': { items: [{ id: 'f-9', status: null }], total: 1 },
+        '/resources/treatments?page=1&pageSize=100': { items: [{ id: 't-9', status: null }], total: 1 },
+      };
+      return map[path] ?? {};
+    });
+    render(<ClinicalWorkflowPage />, { wrapper });
+    expect(await screen.findByText('候诊')).toBeDefined();
+    expect(screen.getByText('就诊工作台')).toBeDefined();
+    expect(await screen.findByRole('button', { name: '病历' })).toBeDefined();
   });
 });

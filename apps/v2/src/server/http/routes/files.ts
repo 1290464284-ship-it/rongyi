@@ -99,6 +99,11 @@ export function registerFileRoutes(app: Express, deps: RouteDependencies): void 
         const id = randomUUID();
         const filename = `${id}${extension}`;
         const fullPath = path.join(filesDir, filename);
+        // 生产缺少备份密钥时先失败，避免“文件已落盘/记录已插入、签名 URL 才抛错”
+        // 的半提交状态。密钥存在后再执行写入，签名步骤理论上不会再失败；若仍
+        // 有异常，catch 会同时清理文件与软删 FileRecord。
+        fileUrlKey();
+        let recordId: string | null = null;
         try {
           fs.writeFileSync(fullPath, req.body);
           deps.db.prepare(
@@ -118,17 +123,48 @@ export function registerFileRoutes(app: Express, deps: RouteDependencies): void 
             now,
             now,
           );
+          recordId = id;
+          // 配额在多实例并发下可能在写盘前通过、写盘后超限；落盘后复核一次，
+          // 超限时抛错走 catch，统一软删记录并清理文件，避免配额被并发打穿。
+          const usageAfter = deps.db.prepare(
+            `SELECT COUNT(*) AS count, COALESCE(SUM(fileSize), 0) AS totalBytes
+             FROM FileRecord WHERE createdBy = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+          ).get(context.userId, ...tenantParams(context.clinicId)) as { count: number; totalBytes: number };
+          if (usageAfter.count > MAX_FILES_PER_USER || Number(usageAfter.totalBytes) > MAX_BYTES_PER_USER) {
+            throw new AppError('QUOTA_EXCEEDED', 'File quota exceeded for this user', 413);
+          }
+          // S-L8：上传响应附带短期签名 URL，供 <img> 直接加载（无法携带 Bearer）。
+          const exp = Date.now() + SIGNED_URL_TTL_MS;
+          const signed = `/api/v2/files/${filename}?exp=${exp}&sig=${signFileUrl(filename, exp)}`;
+          res.status(201).json({
+            success: true,
+            data: { id, filename, url: signed },
+          });
         } catch (error) {
-          if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+          if (recordId) {
+            try {
+              deps.db.prepare(
+                `UPDATE FileRecord SET deletedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL`,
+              ).run(now, now, recordId);
+            } catch (cleanupError) {
+              deps.logger?.warn('failed to soft-delete FileRecord after upload failure', {
+                action: 'file-upload-rollback',
+                recordId,
+                error: cleanupError instanceof Error ? cleanupError.message : cleanupError,
+              });
+            }
+          }
+          try {
+            if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+          } catch (cleanupError) {
+            deps.logger?.warn('failed to remove uploaded file after upload failure', {
+              action: 'file-upload-rollback',
+              filename,
+              error: cleanupError instanceof Error ? cleanupError.message : cleanupError,
+            });
+          }
           throw error;
         }
-        // S-L8：上传响应附带短期签名 URL，供 <img> 直接加载（无法携带 Bearer）。
-        const exp = Date.now() + SIGNED_URL_TTL_MS;
-        const signed = `/api/v2/files/${filename}?exp=${exp}&sig=${signFileUrl(filename, exp)}`;
-        res.status(201).json({
-          success: true,
-          data: { id, filename, url: signed },
-        });
     }),
   );
 
@@ -159,6 +195,37 @@ export function registerFileRoutes(app: Express, deps: RouteDependencies): void 
       res.sendFile(path.join(filesDir, name), (error) => {
         if (error) next(error);
       });
+  }));
+
+  app.delete('/api/v2/files/:name', wrapAsync((req, res) => {
+      const name = String(req.params.name);
+      if (!/^[a-f0-9-]{36}\.(jpg|jpeg|png|webp|pdf)$/i.test(name)) throw new NotFoundError('File not found');
+      const context = req.context!;
+      const record = deps.db.prepare(
+        `SELECT id, createdBy FROM FileRecord
+         WHERE filename = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+      ).get(name, ...tenantParams(context.clinicId)) as { id: string; createdBy: string } | undefined;
+      if (!record) throw new NotFoundError('File not found');
+      if (record.createdBy !== context.userId && !['BOSS', 'ADMIN'].includes(context.role)) {
+        throw new AppError('FORBIDDEN', 'Only the uploader or a BOSS can delete this file', 403);
+      }
+      // 先物理删除再软删记录；unlink 失败时记录保持可见，避免“记录已删但文件仍在”。
+      const now = context.now().toISOString();
+      deps.db.prepare(
+        `UPDATE FileRecord SET deletedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL`,
+      ).run(now, now, record.id);
+      // 先软删记录再删物理文件：DB 更新失败时记录保持可见，绝不出现
+      // “记录存在但文件已丢”；unlink 失败只留孤儿文件并告警，不影响删除语义。
+      try {
+        fs.rmSync(path.join(filesDir, name), { force: true });
+      } catch (error) {
+        deps.logger?.warn('failed to remove file after soft-delete', {
+          action: 'file-delete',
+          filename: name,
+          error: error instanceof Error ? error.message : error,
+        });
+      }
+      res.status(204).end();
   }));
 }
 

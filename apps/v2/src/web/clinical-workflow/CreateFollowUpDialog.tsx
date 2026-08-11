@@ -5,7 +5,7 @@ import { errorMessage } from '../lib/messages';
 import { useToast } from '../lib/toast-context';
 import { rowPatientName, type RegistrationRow } from './types';
 
-export function FollowUpDialog({
+export function CreateFollowUpDialog({
   row,
   onClose,
   onSaved,
@@ -18,7 +18,10 @@ export function FollowUpDialog({
   const patientId = String(row.patientId ?? '');
   const patientName = rowPatientName(row);
   // 默认随访日期在挂载时计算一次（惰性初始化，避免渲染期调用 Date.now 的非纯函数）
-  const [planDate, setPlanDate] = useState(() => new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10));
+  const [planDate, setPlanDate] = useState(() => {
+    const date = new Date(Date.now() + 7 * 86_400_000);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  });
   const [content, setContent] = useState('');
   const [busy, setBusy] = useState(false);
 

@@ -66,17 +66,36 @@ export function serializeValue(value: unknown, depth = 0): unknown {
 /**
  * Structured JSON logger with optional local file output.
  *
- * The file output is intentionally simple: a single log file with size-based
- * rotation. Production integrations can replace this class with a transport
- * without changing call sites.
+ * Console output stays synchronous; file output is buffered and flushed on a
+ * short timer plus process exit, so hot request paths do not pay a synchronous
+ * disk write per line. A single log file with size-based rotation is kept.
  */
+const FLUSH_INTERVAL_MS = 500;
+const liveLoggers = new Set<Logger>();
+let exitFlushInstalled = false;
+
 export class Logger {
   private readonly logDir?: string;
   private readonly maxFileBytes = 5 * 1024 * 1024;
+  private readonly buffer: Array<{ filePath: string; line: string }> = [];
+  private flushTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(options: { logDir?: string } = {}) {
     this.logDir = options.logDir;
     if (this.logDir) fs.mkdirSync(this.logDir, { recursive: true });
+    liveLoggers.add(this);
+    if (!exitFlushInstalled) {
+      exitFlushInstalled = true;
+      process.once('exit', () => {
+        for (const logger of liveLoggers) {
+          try {
+            logger.flush();
+          } catch {
+            // best effort at process exit
+          }
+        }
+      });
+    }
   }
 
   info(message: string, meta: LogMeta = {}): void {
@@ -105,7 +124,31 @@ export class Logger {
     if (this.logDir) this.append(path.join(this.logDir, 'v2.log'), line);
   }
 
+  /** 同步写空缓冲区（测试/退出兜底用）。 */
+  flush(): void {
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
+    if (this.buffer.length === 0) return;
+    const pending = this.buffer.splice(0, this.buffer.length);
+    for (const { filePath, line } of pending) {
+      this.appendLine(filePath, line);
+    }
+  }
+
   private append(filePath: string, line: string): void {
+    this.buffer.push({ filePath, line });
+    if (!this.flushTimer) {
+      this.flushTimer = setTimeout(() => {
+        this.flushTimer = null;
+        this.flush();
+      }, FLUSH_INTERVAL_MS);
+      this.flushTimer.unref?.();
+    }
+  }
+
+  private appendLine(filePath: string, line: string): void {
     try {
       if (fs.existsSync(filePath) && fs.statSync(filePath).size >= this.maxFileBytes) {
         if (fs.existsSync(`${filePath}.4`)) {

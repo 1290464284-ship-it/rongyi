@@ -233,4 +233,15 @@ describe('CrudPage', () => {
     expect(await screen.findByText('名称重复')).toBeDefined();
     expect(apiRequest).not.toHaveBeenCalledWith('/resources/things', expect.objectContaining({ method: 'POST' }));
   });
+
+  it('calls onFormClose when the form dialog is cancelled', async () => {
+    mockData();
+    const onFormClose = vi.fn();
+    render(<CrudPage {...baseProps()} onFormClose={onFormClose} />, { wrapper });
+    await screen.findByText('物品甲');
+    fireEvent.click(screen.getByText('新建物品'));
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(onFormClose).toHaveBeenCalledTimes(1);
+  });
 });

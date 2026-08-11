@@ -11,6 +11,9 @@ import { migrations149 } from './v149-149';
 import { migrations150 } from './v150-150';
 import { migrations151 } from './v151-151';
 import { migrations152 } from './v152-152';
+import { migrations153 } from './v153-153';
+import { migrations154 } from './v154-154';
+import { migrations155 } from './v155-155';
 import { dedupNullClinicRows, snapshotDatabase } from './helpers';
 
 export interface Migration {
@@ -50,12 +53,22 @@ export const migrations: Migration[] = [
   ...migrations150,
   ...migrations151,
   ...migrations152,
+  ...migrations153,
+  ...migrations154,
+  ...migrations155,
 ];
 
 const MIGRATION_BUSY_RETRY_DELAYS_MS = [200, 400, 800, 1500, 3000, 5000, 5000];
 
 function isMigrationBusy(error: unknown): boolean {
-  return error instanceof Error && /SQLITE_(BUSY|LOCKED)/.test(String((error as { code?: unknown }).code ?? ''));
+  if (!(error instanceof Error)) return false;
+  const code = String((error as { code?: unknown }).code ?? '');
+  // SQLITE_CONSTRAINT_* covers two processes racing to record the same
+  // migration version (schema_migrations.version PRIMARY KEY). Retrying the
+  // whole run re-reads applied versions and skips the already-recorded one.
+  return /SQLITE_(BUSY|LOCKED)/.test(code)
+    || code === 'SQLITE_CONSTRAINT_UNIQUE'
+    || code === 'SQLITE_CONSTRAINT_PRIMARYKEY';
 }
 
 function sleepSync(milliseconds: number): void {
@@ -99,7 +112,7 @@ function runMigrationsOnce(db: Database.Database, options?: { snapshotDir?: stri
   for (const migration of pending) {
     const run = db.transaction(() => {
       migration.up(db);
-      db.prepare('INSERT INTO schema_migrations (version, name, appliedAt) VALUES (?, ?, ?)')
+      db.prepare('INSERT OR IGNORE INTO schema_migrations (version, name, appliedAt) VALUES (?, ?, ?)')
         .run(String(migration.version), migration.name, new Date().toISOString());
     });
     run();

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
+import { addInventoryStock, deductInventoryStock, recordInventoryTransaction } from './inventory-ledger';
 import { generateDocumentNumber } from './common';
 import type { AppContext } from '../../../domain/contracts';
 
@@ -89,7 +90,7 @@ export class InventoryDocService {
         const before = Number(stocks[index].stock ?? 0);
         this.insertDocItem(docId, entry.itemId, null, entry.quantity, entry.unitPrice, entry.remark, context);
         this.insertTransaction(entry.itemId, 'OUT', entry.quantity, before, before - entry.quantity, 'RETURN_SUPPLIER', docId, '退回厂商', context);
-        this.deductStock(entry.itemId, entry.quantity, now, context);
+        deductInventoryStock(this.db, entry.itemId, entry.quantity, now, context.clinicId, `库存不足：${entry.itemId}`);
       }
     });
     run();
@@ -111,7 +112,7 @@ export class InventoryDocService {
         const before = Number(stocks[index].stock ?? 0);
         this.insertDocItem(docId, entry.itemId, null, entry.quantity, undefined, entry.remark, context);
         this.insertTransaction(entry.itemId, 'OUT', entry.quantity, before, before - entry.quantity, 'LOSS', docId, '库损', context);
-        this.deductStock(entry.itemId, entry.quantity, now, context);
+        deductInventoryStock(this.db, entry.itemId, entry.quantity, now, context.clinicId, `库存不足：${entry.itemId}`);
       }
     });
     run();
@@ -150,8 +151,8 @@ export class InventoryDocService {
         this.insertDocItem(docId, entry.fromItemId, entry.toItemId, entry.quantity, undefined, entry.remark, context);
         this.insertTransaction(entry.fromItemId, 'OUT', entry.quantity, fromBefore, fromBefore - entry.quantity, 'TRANSFER', docId, '调拨出库', context);
         this.insertTransaction(entry.toItemId, 'IN', entry.quantity, toBefore, toBefore + entry.quantity, 'TRANSFER', docId, '调拨入库', context);
-        this.deductStock(entry.fromItemId, entry.quantity, now, context);
-        this.addStock(entry.toItemId, entry.quantity, now, context);
+        deductInventoryStock(this.db, entry.fromItemId, entry.quantity, now, context.clinicId, `库存不足：${entry.fromItemId}`);
+        addInventoryStock(this.db, entry.toItemId, entry.quantity, now, context.clinicId);
       }
     });
     run();
@@ -224,32 +225,22 @@ export class InventoryDocService {
 
   private insertTransaction(itemId: string, type: 'IN' | 'OUT' | 'ADJUST', quantity: number, beforeStock: number, afterStock: number, referenceType: string, referenceId: string, remark: string, context: AppContext): void {
     const now = context.now().toISOString();
-    this.db.prepare(
-      `INSERT INTO InventoryTransaction (
-         id, clinicId, createdAt, updatedAt, deletedAt, itemId, type, quantity,
-         beforeStock, afterStock, referenceType, referenceId, operatorId, remark, batchId
-       ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
-    ).run(
-      randomUUID(), context.clinicId ?? null, now, now, itemId, type, quantity,
-      beforeStock, afterStock, referenceType, referenceId, context.userId, remark,
-    );
-  }
-
-  private deductStock(itemId: string, quantity: number, now: string, context: AppContext): void {
-    const result = this.db.prepare(
-      `UPDATE InventoryItem SET stock = stock - ?, updatedAt = ?
-       WHERE id = ? AND deletedAt IS NULL AND stock >= ?${tenantAnd(context.clinicId)}`,
-    ).run(quantity, now, itemId, quantity, ...tenantParams(context.clinicId));
-    if (result.changes === 0) {
-      throw new ConflictError(`库存不足：${itemId}`);
-    }
-  }
-
-  private addStock(itemId: string, quantity: number, now: string, context: AppContext): void {
-    this.db.prepare(
-      `UPDATE InventoryItem SET stock = stock + ?, updatedAt = ?
-       WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
-    ).run(quantity, now, itemId, ...tenantParams(context.clinicId));
+    recordInventoryTransaction(this.db, {
+      id: randomUUID(),
+      clinicId: context.clinicId ?? null,
+      itemId,
+      type,
+      quantity,
+      beforeStock,
+      afterStock,
+      operatorId: context.userId,
+      remark,
+      createdAt: now,
+      updatedAt: now,
+      referenceType,
+      referenceId,
+      batchId: null,
+    });
   }
 
   private loadDoc(docId: string): Record<string, unknown> {

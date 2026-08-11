@@ -25,7 +25,9 @@ describe('ToastProvider', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: '显示提示' }));
     expect(screen.getByText('保存成功')).toBeDefined();
-    act(() => vi.advanceTimersByTime(4300));
+    act(() => vi.advanceTimersByTime(4200));
+    expect(screen.getByText('保存成功').className).toContain('leaving');
+    act(() => vi.advanceTimersByTime(200));
     expect(screen.queryByText('保存成功')).toBeNull();
   });
 });

@@ -29,13 +29,13 @@
 > **迁移说明（第三轮审计更新）**：以下路径均已迁移至 monorepo 的
 > `apps/v2/`（Electron + 本地 SQLite + Express，无独立 apps/api、apps/web）。
 现有代码基线能力评估：
-1. **数据库 Schema 完备度高**：患者/预约/诊疗/收费/库存/处方/影像/回访/设备/统计十大模块已齐全（见 [apps/v2/src/server/infrastructure/database.ts](file:///d:/Desktop/rongyi/apps/v2/src/server/infrastructure/database.ts) 与 [migrations.ts](file:///d:/Desktop/rongyi/apps/v2/src/server/infrastructure/migrations.ts)）。
+1. **数据库 Schema 完备度高**：患者/预约/诊疗/收费/库存/处方/影像/回访/设备/统计十大模块已齐全（见 [apps/v2/src/server/infrastructure/database.ts](../../../apps/v2/src/server/infrastructure/database.ts) 与 [migrations.ts](../../../apps/v2/src/server/infrastructure/migrations/index.ts)）。
 2. **已有基础设施可复用**：
-   - 定时器机制：`startSchedulers` 已用 `setInterval` 实现 24h 自动备份/审计清理等周期任务（[apps/v2/src/server/scheduler.ts](file:///d:/Desktop/rongyi/apps/v2/src/server/scheduler.ts)），可复用为每日 cron 调度器模式。
+   - 定时器机制：`startSchedulers` 已用 `setInterval` 实现 24h 自动备份/审计清理等周期任务（[apps/v2/src/server/scheduler.ts](../../../apps/v2/src/server/scheduler.ts)），可复用为每日 cron 调度器模式。
    - 审计日志/操作日志：避免新增功能跳过审计。
-   - 软删除与诊所隔离：遵循现有 `tenantAnd`/`tenantParams` + `deletedAt` 模式（[apps/v2/src/server/infrastructure/tenant.ts](file:///d:/Desktop/rongyi/apps/v2/src/server/infrastructure/tenant.ts)）。
-3. **Electron 壳能力**：[apps/v2/electron/main.cjs](file:///d:/Desktop/rongyi/apps/v2/electron/main.cjs) 已有窗口管理（createWindow/loadWindowState/saveWindowState），可扩展托盘。
-4. **加密基础**：已有 [apps/v2/src/server/infrastructure/security.ts](file:///d:/Desktop/rongyi/apps/v2/src/server/infrastructure/security.ts) 工具模块（备份库加密在 backup.ts 中）。
+   - 软删除与诊所隔离：遵循现有 `tenantAnd`/`tenantParams` + `deletedAt` 模式（[apps/v2/src/server/infrastructure/tenant.ts](../../../apps/v2/src/server/infrastructure/tenant.ts)）。
+3. **Electron 壳能力**：[apps/v2/electron/main.cjs](../../../apps/v2/electron/main.cjs) 已有窗口管理（createWindow/loadWindowState/saveWindowState），可扩展托盘。
+4. **加密基础**：已有 [apps/v2/src/server/infrastructure/security.ts](../../../apps/v2/src/server/infrastructure/security.ts) 工具模块（备份库加密在 backup.ts 中）。
 
 艾登特智能功能的技术路线分析（与博恩登特深度学习路线的关键区别）：
 - 基于口腔医学教科书已有的**几何公式/正常值数据库/配伍禁忌表**硬编码。

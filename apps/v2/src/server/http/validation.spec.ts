@@ -56,5 +56,7 @@ describe('validatePayload', () => {
 
   it('rejects invalid datetime values', () => {
     expect(() => validatePayload(definition, { name: 'A', startsAt: 'not-a-date' })).toThrow('valid date-time');
+    expect(() => validatePayload(definition, { name: 'A', startsAt: '2026-02-30T10:00:00.000Z' })).toThrow('valid date-time');
+    expect(() => validatePayload(definition, { name: 'A', startsAt: '2026-02-29T10:00:00.000Z' })).toThrow('valid date-time');
   });
 });

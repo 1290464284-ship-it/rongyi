@@ -3,7 +3,7 @@ import { Layout } from './components/Layout';
 import { LoginPage } from './pages/auth/LoginPage';
 import { DashboardPage } from './pages/analytics/DashboardPage';
 import { ResourceHub } from './components/ResourceHub';
-import { patientHubTabs, clinicalHubTabs, financeHubTabs, inventoryHubTabs, communicationHubTabs, hrHubTabs, systemHubTabs, analyticsHubTabs } from './components/hub-tabs';
+import { patientHubTabs, frontDeskHubTabs, clinicalHubTabs, financeHubTabs, inventoryHubTabs, communicationHubTabs, hrHubTabs, systemHubTabs, analyticsHubTabs } from './components/hub-tabs';
 import { ResourcePage } from './components/ResourcePage';
 import { ErrorBoundary } from './components';
 
@@ -18,7 +18,8 @@ export default function App() {
       <Route path="/login" element={<ErrorBoundary><LoginPage /></ErrorBoundary>} />
       <Route path="/" element={<ErrorBoundary><Layout /></ErrorBoundary>}>
         <Route index element={<ErrorBoundary><DashboardPage /></ErrorBoundary>} />
-        <Route path="patients" element={<ErrorBoundary><ResourceHub title="患者与预约" tabs={patientHubTabs} /></ErrorBoundary>} />
+        <Route path="patients" element={<ErrorBoundary><ResourceHub title="患者档案" tabs={patientHubTabs} /></ErrorBoundary>} />
+        <Route path="front-desk" element={<ErrorBoundary><ResourceHub title="前台工作" tabs={frontDeskHubTabs} /></ErrorBoundary>} />
         <Route path="clinical" element={<ErrorBoundary><ResourceHub title="临床记录" tabs={clinicalHubTabs} /></ErrorBoundary>} />
         <Route path="finance" element={<ErrorBoundary><ResourceHub title="财务中心" tabs={financeHubTabs} /></ErrorBoundary>} />
         <Route path="inventory" element={<ErrorBoundary><ResourceHub title="库存与采购" tabs={inventoryHubTabs} /></ErrorBoundary>} />

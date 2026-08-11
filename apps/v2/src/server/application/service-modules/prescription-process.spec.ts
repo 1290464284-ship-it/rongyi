@@ -262,6 +262,15 @@ describe('PrescriptionProcessService', () => {
     expect(() => service.process('rx-own', { itemIds: ['missing-item'] }, context)).toThrow(NotFoundError);
   });
 
+  it('rejects non-array itemIds', () => {
+    insertPrescription('rx-item-bad');
+    insertInventory('rx-inv-item-bad', 'Rx Drug Bad');
+    insertPrescriptionItem('rx-item-bad-1', 'rx-item-bad', 'Rx Drug Bad');
+
+    const service = new PrescriptionProcessService(db);
+    expect(() => service.process('rx-item-bad', { itemIds: 'rx-item-bad-1' as unknown as string[] }, context)).toThrow('itemIds 格式无效');
+  });
+
   it('resolves inventory by drugId when the drug name differs', () => {
     insertPrescription('rx-drug-id');
     insertInventory('rx-inv-item-7', 'Rx Drug G');

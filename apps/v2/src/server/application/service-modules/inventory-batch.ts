@@ -3,6 +3,7 @@ import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { SystemClock } from '../../infrastructure/clock';
 import { tenantAnd, tenantParams, tenantWhere } from '../../infrastructure/tenant';
+import { addInventoryStock, recordInventoryTransaction } from './inventory-ledger';
 import type { AppContext } from '../../../domain/contracts';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -116,8 +117,7 @@ export class InventoryBatchService {
     const now = context.now().toISOString();
     const id = randomUUID();
     const batchNo = typeof input.batchNo === 'string' && input.batchNo.trim() ? input.batchNo.trim() : null;
-    const beforeStock = Number(item.stock ?? 0);
-    const afterStock = beforeStock + quantity;
+    let stockAfter = Number(item.stock ?? 0);
     const run = this.db.transaction(() => {
       this.db.prepare(
         `INSERT INTO InventoryBatch (
@@ -134,22 +134,30 @@ export class InventoryBatchService {
         context.clinicId ?? null, now, now,
       );
       if (quantity > 0) {
-        this.db.prepare(
-          `UPDATE InventoryItem SET stock = ?, updatedAt = ? WHERE id = ?${tenantAnd(context.clinicId)}`,
-        ).run(afterStock, now, input.itemId, ...tenantParams(context.clinicId));
-        this.db.prepare(
-          `INSERT INTO InventoryTransaction (
-             id, clinicId, itemId, type, quantity, beforeStock, afterStock,
-             operatorId, remark, batchId, createdAt, updatedAt, deletedAt
-           ) VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, '批次入库', ?, ?, ?, NULL)`,
-        ).run(
-          randomUUID(), context.clinicId ?? null, input.itemId, quantity,
-          beforeStock, afterStock, context.userId, id, now, now,
-        );
+        addInventoryStock(this.db, input.itemId, quantity, now, context.clinicId);
+        const afterRow = this.db.prepare(
+          `SELECT stock FROM InventoryItem WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+        ).get(input.itemId, ...tenantParams(context.clinicId)) as { stock: number } | undefined;
+        stockAfter = Number(afterRow?.stock ?? 0);
+        const beforeStock = stockAfter - quantity;
+        recordInventoryTransaction(this.db, {
+          id: randomUUID(),
+          clinicId: context.clinicId ?? null,
+          itemId: input.itemId,
+          type: 'IN',
+          quantity,
+          beforeStock,
+          afterStock: stockAfter,
+          operatorId: context.userId,
+          remark: '批次入库',
+          createdAt: now,
+          updatedAt: now,
+          batchId: id,
+        });
       }
     });
     run();
-    return { id, batchNo, remainingQuantity: quantity, stockAfter: afterStock };
+    return { id, batchNo, remainingQuantity: quantity, stockAfter };
   }
 
   /** 修正批次剩余量（盘点/纠错），仅限 active 批次。 */
@@ -279,14 +287,22 @@ export class InventoryBatchService {
     let remaining = qty;
     const allocations: Array<{ batchId: string; quantity: number }> = [];
     const run = this.db.transaction(() => {
+      this.lockGuard?.(itemId, context.clinicId);
       for (const batch of batches) {
         if (remaining <= 0) break;
-        const available = Number(batch.remainingQuantity ?? 0);
+        const fresh = this.db.prepare(
+          `SELECT remainingQuantity FROM InventoryBatch
+           WHERE id = ? AND itemId = ? AND deletedAt IS NULL AND active = 1${tenantAnd(context.clinicId)}`,
+        ).get(batch.id, itemId, ...tenantParams(context.clinicId)) as { remainingQuantity: number } | undefined;
+        if (!fresh) throw new ConflictError('批次不存在或不属于该物品');
+        const available = Number(fresh.remainingQuantity ?? 0);
+        if (available <= 0) continue;
         const take = Math.min(available, remaining);
-        this.db.prepare(
+        const result = this.db.prepare(
           `UPDATE InventoryBatch SET remainingQuantity = remainingQuantity - ?, updatedAt = ?
-           WHERE id = ? AND deletedAt IS NULL AND active = 1${tenantAnd(context.clinicId)}`,
-        ).run(take, now, batch.id, ...tenantParams(context.clinicId));
+           WHERE id = ? AND itemId = ? AND deletedAt IS NULL AND active = 1 AND remainingQuantity >= ?${tenantAnd(context.clinicId)}`,
+        ).run(take, now, batch.id, itemId, take, ...tenantParams(context.clinicId));
+        if (result.changes === 0) throw new ConflictError('批次库存不足');
         allocations.push({ batchId: batch.id, quantity: take });
         remaining -= take;
       }

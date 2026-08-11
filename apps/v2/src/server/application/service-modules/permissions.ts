@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
-import { NotFoundError, ValidationError } from '../../infrastructure/errors';
+import { AppError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import type { AppContext, UserRole } from '../../../domain/contracts';
 
@@ -12,6 +12,7 @@ import type { AppContext, UserRole } from '../../../domain/contracts';
  */
 export const PERMISSION_KEYS = [
   'dashboard',
+  'frontDesk',
   'patients',
   'clinical',
   'finance',
@@ -24,8 +25,9 @@ export const PERMISSION_KEYS = [
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
 
-const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, readonly PermissionKey[]> = {
+export const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, readonly PermissionKey[]> = {
   BOSS: PERMISSION_KEYS,
+  ADMIN: PERMISSION_KEYS,
   DOCTOR: ['dashboard', 'patients', 'clinical', 'communication'],
 };
 
@@ -181,6 +183,9 @@ export class UserPermissionService {
     effective: string[];
   } {
     const user = this.findUser(userId, context);
+    if (context.role !== 'BOSS' && user.role === 'BOSS') {
+      throw new AppError('FORBIDDEN', '管理员不能修改老板的权限', 403);
+    }
     const items = this.db.prepare(
       `SELECT userId, permission, allowed, clinicId, createdAt, updatedAt, deletedAt
        FROM UserPermission
@@ -238,9 +243,20 @@ export class UserPermissionService {
   }
 
   private findUser(userId: string, context: AppContext): { id: string; role: UserRole } {
-    const user = this.db.prepare(
-      `SELECT id, role FROM User WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
-    ).get(userId, ...tenantParams(context.clinicId)) as { id: string; role: UserRole } | undefined;
+    // 多诊所用户以 UserClinic 成员关系为准，User.clinicId 只是历史回退字段。
+    let user = context.clinicId
+      ? (this.db.prepare(
+          `SELECT u.id, u.role FROM User u
+           JOIN UserClinic uc ON uc.userId = u.id AND uc.clinicId = @clinicId AND uc.deletedAt IS NULL
+           WHERE u.id = @userId AND u.deletedAt IS NULL
+           LIMIT 1`,
+        ).get({ clinicId: context.clinicId, userId }) as { id: string; role: UserRole } | undefined)
+      : undefined;
+    if (!user) {
+      user = this.db.prepare(
+        `SELECT id, role FROM User WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+      ).get(userId, ...tenantParams(context.clinicId)) as { id: string; role: UserRole } | undefined;
+    }
     if (!user) throw new NotFoundError('User not found');
     return user;
   }
@@ -277,6 +293,9 @@ export class RoleModulePermissionService {
     effective: string[];
   } {
     this.validateRole(role);
+    if (context.role !== 'BOSS' && role === 'BOSS') {
+      throw new AppError('FORBIDDEN', '管理员不能修改老板角色的权限', 403);
+    }
     if (!Array.isArray(inputs) || inputs.some((input) => !input || typeof input !== 'object')) {
       throw new ValidationError('permissions must be an array');
     }

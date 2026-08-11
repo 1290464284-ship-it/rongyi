@@ -7,7 +7,7 @@
 | 目录 | 职责 | 内容约定 |
 |---|---|---|
 | `pages/` | 业务页面 | 一个文件一个页面，命名 `XxxPage.tsx`（对应 spec 为 `XxxPage.spec.tsx`） |
-| `components/` | 通用组件 | `index.tsx` 是共享组件库（历史遗留的 `components.tsx` 迁入后改名）；`CrudPage`、`ResourcePage`、`SimpleListPage`、`FormBuilder`、`Layout`、`ResourceHub`、`hub-tabs`、`toast` 等通用 UI 都在这里 |
+| `components/` | 通用组件 | `index.tsx` 是共享组件库（历史遗留的 `components.tsx` 迁入后改名）；`CrudPage`、`ResourcePage`、`FormBuilder`、`Layout`、`ResourceHub`、`hub-tabs`、`toast` 等通用 UI 都在这里 |
 | `hooks/` | 通用 React hooks | `use-xxx.ts`（kebab-case），对应 spec `use-xxx.spec.tsx` |
 | `lib/` | 共享工具/类型/字典 | `api`、`format`、`messages`、`toast-context`、`types`（web 共享类型）、`labels`（集中式中文 label 字典，M-03） |
 | 领域子目录（`cephalometric/`、`charges/`、`clinical-workflow/`、`dispense/`、`first-exams/`、`processing-orders/`、`treatment-plans/`） | 领域模块 | 该领域专属的页面片段、组件、类型与常量都放在模块内；领域模块之间通过 `lib/`、`components/` 共享 |

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useCrudResource } from './use-crud-resource';
@@ -116,5 +116,174 @@ describe('useCrudResource', () => {
     fireEvent.click(screen.getByText('submit'));
     expect(await screen.findByText('请填写名称')).toBeDefined();
     expect(apiRequest).not.toHaveBeenCalledWith('/resources/things', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('syncs the search input when initialSearch changes', async () => {
+    mockApi();
+    function SyncHarness() {
+      const [initial, setInitial] = useState('a');
+      const crud = useCrudResource<HookRow, HookForm>({
+        queryKey: ['hook-items'],
+        endpoint: '/resources/things',
+        initialForm: { name: '', note: '' },
+        initialSearch: initial,
+      });
+      return (
+        <div>
+          <button onClick={() => setInitial('b')}>change-initial</button>
+          <button onClick={() => crud.setPage(2)}>page-2</button>
+          <span data-testid="search">{crud.searchInput}</span>
+          <span data-testid="page">{crud.page}</span>
+        </div>
+      );
+    }
+    render(<SyncHarness />, { wrapper });
+    expect(screen.getByTestId('search').textContent).toBe('a');
+    fireEvent.click(screen.getByText('page-2'));
+    expect(screen.getByTestId('page').textContent).toBe('2');
+    fireEvent.click(screen.getByText('change-initial'));
+    expect(screen.getByTestId('search').textContent).toBe('b');
+    expect(screen.getByTestId('page').textContent).toBe('1');
+  });
+
+  it('resets the submit lock when validation throws unexpectedly', async () => {
+    mockApi();
+    function ThrowingValidateHarness() {
+      const crud = useCrudResource<HookRow, HookForm>({
+        queryKey: ['hook-items'],
+        endpoint: '/resources/things',
+        initialForm: { name: '', note: '' },
+        validate: (form) => {
+          if (form.name === 'boom') throw new Error('validator crashed');
+          return form.name ? null : '请填写名称';
+        },
+      });
+      return (
+        <div>
+          <button onClick={crud.openCreate}>open-create</button>
+          <button onClick={() => crud.updateForm({ name: 'boom' })}>set-boom</button>
+          <button onClick={() => crud.updateForm({ name: 'ok' })}>set-ok</button>
+          <button onClick={() => void crud.submit()}>submit</button>
+        </div>
+      );
+    }
+    render(<ThrowingValidateHarness />, { wrapper });
+    fireEvent.click(screen.getByText('open-create'));
+    fireEvent.click(screen.getByText('set-boom'));
+    fireEvent.click(screen.getByText('submit'));
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+
+    fireEvent.click(screen.getByText('set-ok'));
+    fireEvent.click(screen.getByText('submit'));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/things', expect.objectContaining({ method: 'POST' }));
+    });
+  });
+
+  it('submits without validation and stores a null id when create omits it', async () => {
+    const onSaved = vi.fn();
+    function NoValidateHarness() {
+      const crud = useCrudResource<HookRow, HookForm>({
+        queryKey: ['hook-items'],
+        endpoint: '/resources/things',
+        initialForm: { name: '', note: '' },
+        onSaved,
+      });
+      return (
+        <div>
+          <button onClick={crud.openCreate}>open-create</button>
+          <button onClick={() => void crud.submit()}>submit</button>
+        </div>
+      );
+    }
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (init?.method === 'POST') return {};
+      return { items: [], total: 0, page: 1, pageSize: 50 };
+    });
+    render(<NoValidateHarness />, { wrapper });
+    fireEvent.click(screen.getByText('open-create'));
+    fireEvent.click(screen.getByText('submit'));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/things', expect.objectContaining({ method: 'POST' }));
+    });
+    expect(await screen.findByText('创建成功')).toBeDefined();
+    expect(onSaved).toHaveBeenCalledWith(null, false, expect.any(Object));
+  });
+
+  it('honours onBeforeSubmit blocking and deleteOverride paths', async () => {
+    const deleteOverride = vi.fn().mockResolvedValue(undefined);
+    function ExtendedHarness() {
+      const crud = useCrudResource<HookRow, HookForm>({
+        queryKey: ['hook-items'],
+        endpoint: '/resources/things',
+        initialForm: { name: '', note: '' },
+        onBeforeSubmit: async () => 'blocked by rule',
+        deleteOverride,
+      });
+      return (
+        <div>
+          <button onClick={crud.openCreate}>open-create</button>
+          <button onClick={() => void crud.submit()}>submit</button>
+          <button onClick={() => crud.requestDelete({ id: 'r-1' })}>request-delete</button>
+          <button onClick={() => void crud.confirmDelete()}>confirm-delete</button>
+        </div>
+      );
+    }
+    mockApi();
+    render(<ExtendedHarness />, { wrapper });
+    fireEvent.click(screen.getByText('open-create'));
+    fireEvent.click(screen.getByText('submit'));
+    expect(await screen.findByText('blocked by rule')).toBeDefined();
+    expect(apiRequest).not.toHaveBeenCalledWith('/resources/things', expect.objectContaining({ method: 'POST' }));
+
+    fireEvent.click(screen.getByText('request-delete'));
+    fireEvent.click(screen.getByText('confirm-delete'));
+    await waitFor(() => {
+      expect(deleteOverride).toHaveBeenCalledWith({ id: 'r-1' });
+    });
+    expect(await screen.findByText('删除成功')).toBeDefined();
+    expect(apiRequest).not.toHaveBeenCalledWith('/resources/things/r-1', expect.objectContaining({ method: 'DELETE' }));
+  });
+
+  it('steps back a page after deleting the last row', async () => {
+    function PagedHarness() {
+      const crud = useCrudResource<HookRow, HookForm>({
+        queryKey: ['hook-items'],
+        endpoint: '/resources/things',
+        initialForm: { name: '', note: '' },
+      });
+      return (
+        <div>
+          <button onClick={() => crud.setPage(2)}>page-2</button>
+          <button onClick={() => crud.requestDelete({ id: 'r-1' })}>request-delete</button>
+          <button onClick={() => void crud.confirmDelete()}>confirm-delete</button>
+          <span data-testid="page">{crud.page}</span>
+        </div>
+      );
+    }
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (init?.method === 'DELETE') return { deleted: true };
+      if (String(path).includes('page=2')) return { items: [], total: 0, page: 2, pageSize: 50 };
+      return { items: [{ id: 'r-1' }], total: 1, page: 1, pageSize: 50 };
+    });
+    render(<PagedHarness />, { wrapper });
+    fireEvent.click(screen.getByText('page-2'));
+    fireEvent.click(screen.getByText('request-delete'));
+    fireEvent.click(screen.getByText('confirm-delete'));
+    await waitFor(() => {
+      expect(screen.getByTestId('page').textContent).toBe('1');
+    });
+
+    fireEvent.click(screen.getByText('page-2'));
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (init?.method === 'DELETE') return { deleted: true };
+      if (String(path).includes('page=2')) return { items: [{ id: 'r-2' }], total: 1, page: 2, pageSize: 50 };
+      return { items: [], total: 0, page: 1, pageSize: 50 };
+    });
+    fireEvent.click(screen.getByText('request-delete'));
+    fireEvent.click(screen.getByText('confirm-delete'));
+    await waitFor(() => {
+      expect(screen.getByTestId('page').textContent).toBe('2');
+    });
   });
 });

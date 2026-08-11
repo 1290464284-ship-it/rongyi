@@ -205,4 +205,31 @@ describe('DesktopSettingsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '立即重启安装' }));
     expect(await screen.findByText('安装更新失败')).toBeDefined();
   });
+
+  it('shows the disabled update state', async () => {
+    installBridge({ checkUpdates: vi.fn().mockResolvedValue({ status: 'disabled' }) });
+    render(<ToastProvider><DesktopSettingsPage /></ToastProvider>);
+    await screen.findByText('3180');
+
+    fireEvent.click(screen.getByRole('button', { name: '检查更新' }));
+    expect(await screen.findByText('当前环境不支持在线更新')).toBeDefined();
+  });
+
+  it('reports download update failures', async () => {
+    const bridge = installBridge({
+      checkUpdates: vi.fn().mockResolvedValue({ status: 'available', version: '3.0.0' }),
+      downloadUpdate: vi.fn().mockRejectedValue(new Error('download failed')),
+    });
+    render(<ToastProvider><DesktopSettingsPage /></ToastProvider>);
+    await screen.findByText('3180');
+
+    fireEvent.click(screen.getByRole('button', { name: '检查更新' }));
+    expect(await screen.findByText('发现新版本 3.0.0，点击"下载更新"按钮开始下载')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '下载更新' }));
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+
+    bridge.downloadUpdate?.mockResolvedValueOnce({ status: 'error', message: '自定义下载失败' });
+    fireEvent.click(screen.getByRole('button', { name: '下载更新' }));
+    expect(await screen.findByText('自定义下载失败')).toBeDefined();
+  });
 });

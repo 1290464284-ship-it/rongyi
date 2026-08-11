@@ -125,4 +125,13 @@ describe('charge tree routes', () => {
       .expect(404);
     expect(res.body.code).toBe('NOT_FOUND');
   });
+
+  it('POST quick-charge accepts missing optional visit, doctor and remark fields', async () => {
+    const res = await request(app)
+      .post('/api/v2/charge-trees/route-cat-root/quick-charge')
+      .send({ patientId: 'patient-demo-001', quantity: 1 })
+      .expect(201);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.chargeId).toBeTruthy();
+  });
 });

@@ -1,6 +1,5 @@
-import { apiRequest } from '../lib/api';
+import { apiRequest, fetchAllPages } from '../lib/api';
 import { splitList, toCents } from '../lib/format';
-import type { Page } from '../lib/types';
 import type { PlanItemForm, PlanItemRow, TreatmentPlanForm, ValidPlanItem } from './types';
 
 export function newItem(): PlanItemForm {
@@ -72,8 +71,8 @@ export async function updatePlanWithItems(form: TreatmentPlanForm, planId: strin
       remark: form.remark || undefined,
     }),
   });
-  const page = await apiRequest<Page<PlanItemRow>>(`/resources/treatmentPlanItems?planId=${planId}&page=1&pageSize=100`);
-  const serverItems = page.items ?? [];
+  // 明细可能超过单页上限：用 fetchAllPages 取全量，避免隐藏行被误删/漏改。
+  const serverItems = await fetchAllPages<PlanItemRow>(`/resources/treatmentPlanItems?planId=${planId}`);
   const serverById = new Map(serverItems.map((row) => [String(row.id), row]));
   const keptIds = new Set<string>();
   for (const entry of validEntries) {

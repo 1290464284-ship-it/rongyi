@@ -2,13 +2,13 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import { LoginPage } from './LoginPage';
-import { login } from '../../lib/api';
+import { apiRequest, login } from '../../lib/api';
 import { ToastProvider } from '../../components/toast';
 
 vi.mock('../../lib/api', () => ({
-  apiRequest: vi.fn(),
+  apiRequest: vi.fn().mockResolvedValue({ setupRequired: false }),
   downloadCsv: vi.fn(),
   login: vi.fn(),
 }));
@@ -17,10 +17,24 @@ function renderPage() {
   return render(<MemoryRouter><ToastProvider><LoginPage /></ToastProvider></MemoryRouter>);
 }
 
+function renderNavigablePage() {
+  return render(
+    <MemoryRouter initialEntries={['/login']}>
+      <Routes>
+        <Route path="/login" element={<ToastProvider><LoginPage /></ToastProvider>} />
+        <Route path="/" element={<div>工作台</div>} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
 describe('LoginPage', () => {
   afterEach(() => {
     cleanup();
     vi.mocked(login).mockReset();
+    vi.mocked(apiRequest).mockReset();
+    vi.mocked(apiRequest).mockResolvedValue({ setupRequired: false });
+    vi.restoreAllMocks();
     localStorage.clear();
   });
 
@@ -85,5 +99,65 @@ describe('LoginPage', () => {
     renderPage();
     expect((screen.getByLabelText('用户名') as HTMLInputElement).value).toBe('dr-li');
     expect((screen.getByRole('checkbox', { name: '记住我' }) as HTMLInputElement).checked).toBe(true);
+  });
+
+  it('ignores a second submit while login is already in flight', async () => {
+    let resolveLogin: ((value: { token: string; user: Record<string, unknown> }) => void) | undefined;
+    vi.mocked(login).mockImplementation(
+      () => new Promise((resolve) => { resolveLogin = resolve; }),
+    );
+    const { container } = renderNavigablePage();
+    fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'admin' } });
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'v2-test-seed-password' } });
+    const form = container.querySelector('form') as HTMLFormElement;
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    expect(login).toHaveBeenCalledTimes(1);
+    resolveLogin?.({ token: 't', user: { id: 'u' } });
+    expect(await screen.findByText('工作台')).toBeDefined();
+  });
+
+  it('shows the first-run setup wizard and creates the initial admin', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce({ setupRequired: true })
+      .mockResolvedValueOnce({ created: true });
+    vi.mocked(login).mockResolvedValue({ token: 't', user: { id: 'u' } });
+    renderNavigablePage();
+    expect(await screen.findByText('设置初始管理员')).toBeDefined();
+    fireEvent.change(screen.getByLabelText('新管理员密码'), { target: { value: 'first-run-123' } });
+    fireEvent.change(screen.getByLabelText('确认密码'), { target: { value: 'first-run-123' } });
+    fireEvent.click(screen.getByRole('button', { name: '创建管理员并登录' }));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith(
+        '/auth/setup',
+        expect.objectContaining({ method: 'POST', body: JSON.stringify({ password: 'first-run-123' }) }),
+      );
+    });
+    expect(login).toHaveBeenCalledWith('admin', 'first-run-123');
+    expect(await screen.findByText('工作台')).toBeDefined();
+  });
+
+  it('rejects mismatched setup passwords', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce({ setupRequired: true });
+    renderNavigablePage();
+    await screen.findByText('设置初始管理员');
+    fireEvent.change(screen.getByLabelText('新管理员密码'), { target: { value: 'first-run-123' } });
+    fireEvent.change(screen.getByLabelText('确认密码'), { target: { value: 'other-456' } });
+    fireEvent.click(screen.getByRole('button', { name: '创建管理员并登录' }));
+    expect(await screen.findByText('两次输入的密码不一致')).toBeDefined();
+    expect(apiRequest).not.toHaveBeenCalledWith('/auth/setup', expect.anything());
+  });
+
+  it('continues when localStorage writes fail while remembering login', async () => {
+    vi.mocked(login).mockResolvedValue({ token: 't', user: { id: 'u' } });
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('quota exceeded');
+    });
+    renderNavigablePage();
+    fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'admin' } });
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'v2-test-seed-password' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: '记住我' }));
+    fireEvent.click(screen.getByRole('button', { name: '登录' }));
+    expect(await screen.findByText('工作台')).toBeDefined();
   });
 });

@@ -9,7 +9,15 @@ import { PatientTimelinePage } from './PatientTimelinePage';
 import { apiRequest } from '../../lib/api';
 import { ToastProvider } from '../../components/toast';
 
-vi.mock('../../lib/api', () => ({ apiRequest: vi.fn(), downloadCsv: vi.fn() }));
+const { mockApiRequest } = vi.hoisted(() => ({ mockApiRequest: vi.fn() }));
+vi.mock('../../lib/api', () => ({
+  apiRequest: mockApiRequest,
+  fetchAllPages: vi.fn(async (path: string) => {
+    const page = await mockApiRequest(path);
+    return Array.isArray(page) ? page : ((page as { items?: unknown[] })?.items ?? []);
+  }),
+  downloadCsv: vi.fn(),
+}));
 
 const wrapper = ({ children }: { children: ReactNode }) => (
   <MemoryRouter>
@@ -164,5 +172,229 @@ describe('PatientTimelinePage', () => {
     await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith(expect.stringContaining('patientId=url-patient-7'));
     });
+  });
+
+  it('degrades a failed timeline block without hiding other blocks', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.includes('/resources/visits?')) throw new Error('visits failed');
+      if (path.includes('/resources/treatments?')) {
+        return { items: [{ id: 't1', completedDate: '2026-08-05', name: 'Treatment OK', status: 'COMPLETED' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path.includes('/resources/charges?') || path.includes('/resources/followUps?')) {
+        return { items: [], total: 0, page: 1, pageSize: 200 };
+      }
+      if (path.includes('/custom-fields')) return [];
+      return { items: [{ id: 'patient-demo-001', name: 'Demo Patient' }], total: 1, page: 1, pageSize: 200 };
+    });
+
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+          <ToastProvider><PatientTimelinePage /></ToastProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('Treatment OK')).toBeDefined();
+    expect(await screen.findByText('该区块加载失败')).toBeDefined();
+  });
+
+  it('saves custom field values', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string, options?: RequestInit) => {
+      if (path.includes('/resources/visits?') || path.includes('/resources/treatments?')
+        || path.includes('/resources/charges?') || path.includes('/resources/followUps?')) {
+        return { items: [], total: 0, page: 1, pageSize: 200 };
+      }
+      if (path === '/custom-fields?entity=patient') {
+        return [{ id: 'cf-1', label: '过敏史', fieldName: 'allergy', fieldType: 'TEXT' }];
+      }
+      if (path.includes('/custom-fields/values?entity=patient&entityId=')) return { values: {} };
+      if (path === '/custom-fields/values' && options?.method === 'PUT') return {};
+      return { items: [{ id: 'patient-demo-001', name: 'Demo Patient' }], total: 1, page: 1, pageSize: 200 };
+    });
+
+    render(<PatientTimelinePage />, { wrapper });
+    const input = await screen.findByLabelText(/过敏史/);
+    fireEvent.change(input, { target: { value: '青霉素' } });
+    fireEvent.click(screen.getByText('保存自定义信息'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/custom-fields/values', expect.objectContaining({ method: 'PUT' }));
+    });
+    const call = vi.mocked(apiRequest).mock.calls.find(
+      ([path, options]) => path === '/custom-fields/values' && (options as RequestInit)?.method === 'PUT',
+    );
+    const body = JSON.parse(String((call?.[1] as RequestInit)?.body)) as { values: Array<{ fieldId: string; value: string }> };
+    expect(body.values).toEqual([{ fieldId: 'cf-1', value: '青霉素' }]);
+    expect(await screen.findByText('自定义信息已保存')).toBeDefined();
+  });
+
+  it('shows the timeline loading state', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.includes('/resources/visits?') || path.includes('/resources/treatments?')
+        || path.includes('/resources/charges?') || path.includes('/resources/followUps?')) {
+        return new Promise(() => {});
+      }
+      return { items: [{ id: 'patient-demo-001', name: 'Demo Patient' }], total: 1, page: 1, pageSize: 200 };
+    });
+    render(<PatientTimelinePage />, { wrapper });
+    expect(await screen.findByText('时间线加载中...')).toBeDefined();
+  });
+
+  it('reports custom field save failures', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string, options?: RequestInit) => {
+      if (path.includes('/resources/visits?') || path.includes('/resources/treatments?')
+        || path.includes('/resources/charges?') || path.includes('/resources/followUps?')) {
+        return { items: [], total: 0, page: 1, pageSize: 200 };
+      }
+      if (path === '/custom-fields?entity=patient') {
+        return [{ id: 'cf-1', label: '过敏史', fieldName: 'allergy', fieldType: 'TEXT' }];
+      }
+      if (path.includes('/custom-fields/values?entity=patient&entityId=')) return { values: {} };
+      if (path === '/custom-fields/values' && options?.method === 'PUT') throw new Error('save failed');
+      return { items: [{ id: 'patient-demo-001', name: 'Demo Patient' }], total: 1, page: 1, pageSize: 200 };
+    });
+    render(<PatientTimelinePage />, { wrapper });
+
+    const input = await screen.findByLabelText(/过敏史/);
+    fireEvent.change(input, { target: { value: '青霉素' } });
+    fireEvent.click(screen.getByText('保存自定义信息'));
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+  });
+
+  it('renders BOOLEAN custom fields as checkboxes with saved values', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.includes('/resources/visits?') || path.includes('/resources/treatments?')
+        || path.includes('/resources/charges?') || path.includes('/resources/followUps?')) {
+        return { items: [], total: 0, page: 1, pageSize: 200 };
+      }
+      if (path === '/custom-fields?entity=patient') {
+        return [{ id: 'cf-flag', label: '是否吸烟', fieldName: 'smoker', fieldType: 'BOOLEAN' }];
+      }
+      if (path.includes('/custom-fields/values?entity=patient&entityId=')) {
+        return { values: { 'cf-flag': '1' } };
+      }
+      return { items: [{ id: 'patient-demo-001', name: 'Demo Patient' }], total: 1, page: 1, pageSize: 200 };
+    });
+    render(<PatientTimelinePage />, { wrapper });
+
+    const checkbox = await screen.findByRole('checkbox', { name: /是否吸烟/ });
+    expect((checkbox as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(checkbox);
+    expect((checkbox as HTMLInputElement).checked).toBe(false);
+  });
+
+  it('renders SELECT and NUMBER custom fields and saves their values', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string, options?: RequestInit) => {
+      if (path.includes('/resources/visits?') || path.includes('/resources/treatments?')
+        || path.includes('/resources/charges?') || path.includes('/resources/followUps?')) {
+        return { items: [], total: 0, page: 1, pageSize: 200 };
+      }
+      if (path === '/custom-fields?entity=patient') {
+        return [
+          { id: 'cf-sel', label: '来源', fieldName: 'source', fieldType: 'SELECT', optionsJson: '["线上","到店"]' },
+          { id: 'cf-num', label: '年龄', fieldName: 'age', fieldType: 'NUMBER' },
+        ];
+      }
+      if (path.includes('/custom-fields/values?entity=patient&entityId=')) {
+        return { values: { 'cf-sel': '到店', 'cf-num': '30' } };
+      }
+      if (path === '/custom-fields/values' && options?.method === 'PUT') return {};
+      return { items: [{ id: 'patient-demo-001', name: 'Demo Patient' }], total: 1, page: 1, pageSize: 200 };
+    });
+    render(<PatientTimelinePage />, { wrapper });
+
+    const select = await screen.findByLabelText(/来源/);
+    expect((select as HTMLSelectElement).value).toBe('到店');
+    fireEvent.change(select, { target: { value: '线上' } });
+    const number = screen.getByLabelText(/年龄/) as HTMLInputElement;
+    expect(number.value).toBe('30');
+    fireEvent.change(number, { target: { value: '31' } });
+    fireEvent.click(screen.getByText('保存自定义信息'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/custom-fields/values', expect.objectContaining({ method: 'PUT' }));
+    });
+    const call = vi.mocked(apiRequest).mock.calls.find(
+      ([path, options]) => path === '/custom-fields/values' && (options as RequestInit)?.method === 'PUT',
+    );
+    const body = JSON.parse(String((call?.[1] as RequestInit)?.body)) as { values: Array<{ fieldId: string; value: string }> };
+    expect(body.values).toEqual([
+      { fieldId: 'cf-sel', value: '线上' },
+      { fieldId: 'cf-num', value: '31' },
+    ]);
+  });
+
+  it('renders current tones, tie-broken sorting, null amounts and required labels', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.includes('/resources/visits?')) {
+        return {
+          items: [{ id: 'v1', startTime: '2026-08-04T09:00:00.000Z', summary: 'Visit A', status: 'IN_PROGRESS' }],
+          total: 1,
+          page: 1,
+          pageSize: 200,
+        };
+      }
+      if (path.includes('/resources/treatments?')) return { items: [], total: 0, page: 1, pageSize: 200 };
+      if (path.includes('/resources/charges?')) {
+        return {
+          items: [
+            { id: 'c1', paidAt: '2026-08-04T09:00:00.000Z', number: 'CHG-1', status: 'PAID', totalAmount: 100 },
+            { id: 'c2', paidAt: '2026-08-04T09:00:00.000Z', number: 'CHG-2', status: 'PAID', totalAmount: null },
+          ],
+          total: 2,
+          page: 1,
+          pageSize: 200,
+        };
+      }
+      if (path.includes('/resources/followUps?')) return { items: [], total: 0, page: 1, pageSize: 200 };
+      if (path === '/custom-fields?entity=patient') {
+        return [{ id: 'cf-1', label: '过敏史', fieldName: 'allergy', fieldType: 'TEXT', required: true }];
+      }
+      if (path.includes('/custom-fields/values?entity=patient&entityId=')) return { values: {} };
+      return { items: [{ id: 'patient-demo-001', name: 'Demo Patient' }], total: 1, page: 1, pageSize: 200 };
+    });
+    render(<PatientTimelinePage />, { wrapper });
+
+    expect(await screen.findByText('Visit A')).toBeDefined();
+    expect(screen.getByText('就诊 · IN_PROGRESS')).toBeDefined();
+    expect(screen.getByText('CHG-1')).toBeDefined();
+    expect(screen.getByText('CHG-2')).toBeDefined();
+    expect(screen.getByText('收费 · PAID · ¥1.00')).toBeDefined();
+    expect(screen.getByText('收费 · PAID')).toBeDefined();
+    const label = (await screen.findByLabelText(/过敏史/)).closest('label') as HTMLElement;
+    expect(label.textContent).toContain('*');
+  });
+
+  it('renders non-Error timeline failures and null custom field values', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.includes('/resources/visits?')) throw 'visits boom';
+      if (path.includes('/resources/treatments?') || path.includes('/resources/charges?') || path.includes('/resources/followUps?')) {
+        return { items: [], total: 0, page: 1, pageSize: 200 };
+      }
+      if (path === '/custom-fields?entity=patient') {
+        return [
+          { id: 'cf-sel', label: '来源', fieldName: 'source', fieldType: 'SELECT', optionsJson: '["线上","到店"]' },
+          { id: 'cf-num', label: '年龄', fieldName: 'age', fieldType: 'NUMBER' },
+        ];
+      }
+      if (path.includes('/custom-fields/values?entity=patient&entityId=')) {
+        return { values: { 'cf-sel': null, 'cf-num': null } };
+      }
+      if (path === '/custom-fields?entity=patient') return [];
+      return { items: [{ id: 'patient-demo-001', name: 'Demo Patient' }], total: 1, page: 1, pageSize: 200 };
+    });
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+          <ToastProvider><PatientTimelinePage /></ToastProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+    const select = await screen.findByLabelText(/来源/);
+    expect((select as HTMLSelectElement).value).toBe('');
+    fireEvent.change(select, { target: { value: '线上' } });
+    expect((screen.getByLabelText(/年龄/) as HTMLInputElement).value).toBe('');
   });
 });

@@ -1,7 +1,6 @@
 /* ============================================================
    蓉易口腔诊所 v2 — 青蓝×薄荷 UI（token 换肤，第 1 层）
-   设计规格：docs/superpowers/specs/2026-08-06-dental-ui-design.md
-   命名与原型站 dental-ui-prototype 保持一致
+   设计 token 以本文件 :root / prefers-color-scheme 为准
    ============================================================ */
 
 /* ---------- 亮色 Token（设计稿确认值） ---------- */
@@ -12,7 +11,6 @@
   /* 亮色主色较设计稿加深一档（#0D8282），保证白字按钮/链接达 WCAG AA 4.5:1 */
   --primary: #0D8282;
   --primary-hover: #0B7474;
-  --accent: #3CC89A;
   --accent-strong: #28A87E;
   --soft: #E6F4F1;
 
@@ -46,6 +44,9 @@
   /* 登录页品牌区浅渐变（青蓝×薄荷） */
   --login-grad-a: #EAF6F4;
   --login-grad-b: #F5F9F8;
+  --login-card-border: rgba(13, 130, 130, 0.2);
+  --login-card-shadow: 0 12px 32px rgba(13, 130, 130, 0.1);
+  --btn-login-shadow: 0 4px 12px rgba(14, 138, 138, 0.28);
 
   /* 图表系列色 */
   --chart-purple: #7C3AED;
@@ -59,6 +60,7 @@
   --shadow: 0 1px 2px rgba(16, 44, 50, 0.04), 0 2px 10px rgba(16, 44, 50, 0.06);
   --shadow-hover: 0 2px 6px rgba(16, 44, 50, 0.06), 0 6px 18px rgba(16, 44, 50, 0.08);
   --shadow-toast: 0 8px 20px rgba(16, 44, 50, 0.18);
+  --shadow-pressed: inset 0 1px 2px rgba(16, 44, 50, 0.1), 0 1px 1px rgba(16, 44, 50, 0.04);
   --backdrop: rgba(16, 44, 50, 0.4);
 
   /* 字体：B 的字体 + A 的大小 */
@@ -68,6 +70,7 @@
   --dur-fast: 120ms;
   --dur: 200ms;
   --dur-slow: 250ms;
+  --dur-press: 100ms;
   --ease: cubic-bezier(0.2, 0.6, 0.25, 1);
 
   font-family: var(--font);
@@ -81,7 +84,6 @@
     /* 品牌色：暗色下主色提亮一档（#14A0A0），保证文字/按钮达 WCAG AA */
     --primary: #14A0A0;
     --primary-hover: #17B4B4;
-    --accent: #3CC89A;
     --accent-strong: #28A87E;
     --soft: #163238;
 
@@ -115,6 +117,9 @@
     /* 登录页品牌区深青渐变 */
     --login-grad-a: #0F1F24;
     --login-grad-b: #0C171A;
+    --login-card-border: rgba(20, 160, 160, 0.35);
+    --login-card-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+    --btn-login-shadow: 0 4px 12px rgba(20, 160, 160, 0.35);
 
     /* 图表系列色 */
     --chart-purple: #A78BFA;
@@ -123,6 +128,7 @@
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 2px 10px rgba(0, 0, 0, 0.3);
     --shadow-hover: 0 2px 6px rgba(0, 0, 0, 0.35), 0 6px 18px rgba(0, 0, 0, 0.4);
     --shadow-toast: 0 8px 20px rgba(0, 0, 0, 0.45);
+    --shadow-pressed: inset 0 1px 2px rgba(0, 0, 0, 0.45);
     --backdrop: rgba(0, 0, 0, 0.6);
   }
 }
@@ -447,7 +453,7 @@ a {
   color: var(--text);
   cursor: pointer;
   transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease),
-    box-shadow var(--dur-fast) var(--ease), transform 100ms var(--ease);
+    box-shadow var(--dur-fast) var(--ease), transform var(--dur-press) var(--ease);
 }
 
 .icon-btn svg {
@@ -621,6 +627,8 @@ a {
 .tabs {
   display: flex;
   gap: 4px;
+  flex-wrap: wrap;
+  align-items: center;
   width: max-content;
   max-width: 100%;
   overflow-x: auto;
@@ -629,6 +637,28 @@ a {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   margin-bottom: 16px;
+}
+
+.hub-toolbar {
+  margin-bottom: 8px;
+}
+
+.hub-toolbar input {
+  width: 240px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.tab-group {
+  align-self: center;
+  margin: 0 4px 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  white-space: nowrap;
 }
 
 .hub .tabs {
@@ -669,6 +699,10 @@ a {
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.page-section {
+  margin-top: 18px;
 }
 
 .search {
@@ -810,6 +844,17 @@ a {
   color: var(--danger);
 }
 
+.query-section-error {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  margin: 12px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
 small {
   color: var(--muted);
 }
@@ -873,6 +918,24 @@ small {
   border-radius: var(--radius-xs);
   background: var(--soft);
   color: var(--primary);
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: -2px 0 12px;
+}
+
+.card-head h2 {
+  margin: 0;
+}
+
+.sub {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .dashboard-page .page-head {
@@ -1249,6 +1312,12 @@ small {
   padding: 10px;
   display: grid;
   gap: 6px;
+  transition: opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+}
+
+.board-card.dragging {
+  opacity: 0.55;
+  transform: scale(0.98);
 }
 
 .board-card time {
@@ -1323,7 +1392,7 @@ small {
   display: grid;
   place-items: center;
   padding: 32px 20px;
-  background: linear-gradient(135deg, #E6F4F1 0%, #F5F9F8 55%, #EAF6F4 100%);
+  background: linear-gradient(135deg, var(--login-grad-a) 0%, var(--bg) 55%, var(--login-grad-b) 100%);
 }
 
 .login-d-center {
@@ -1367,9 +1436,9 @@ small {
 
 .login-d-card {
   background: var(--surface);
-  border: 1px solid rgba(13, 130, 130, 0.2);
+  border: 1px solid var(--login-card-border);
   border-radius: var(--radius);
-  box-shadow: 0 12px 32px rgba(13, 130, 130, 0.1);
+  box-shadow: var(--login-card-shadow);
   padding: 32px;
   text-align: left;
 }
@@ -1516,13 +1585,13 @@ small {
   font-weight: 600;
   letter-spacing: 0.08em;
   cursor: pointer;
-  transition: background var(--dur) var(--ease), transform 100ms var(--ease),
+  transition: background var(--dur) var(--ease), transform var(--dur-press) var(--ease),
     box-shadow var(--dur) var(--ease);
 }
 
 .btn-login:hover {
   background: var(--primary-hover);
-  box-shadow: 0 4px 12px rgba(14, 138, 138, 0.28);
+  box-shadow: var(--btn-login-shadow);
 }
 
 .btn-login:active {
@@ -1563,7 +1632,7 @@ button {
   color: var(--text);
   transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease),
     background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
-    transform 100ms var(--ease);
+    transform var(--dur-press) var(--ease);
 }
 
 input:focus,
@@ -1706,6 +1775,15 @@ select.error:focus {
   background: var(--primary);
 }
 
+.toast.leaving {
+  animation: toastOut 180ms var(--ease) forwards;
+}
+
+@keyframes toastOut {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-6px); }
+}
+
 .table-wrap {
   overflow: auto;
   max-width: 100%;
@@ -1713,6 +1791,14 @@ select.error:focus {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow);
+}
+
+.table-note {
+  padding: 8px 12px;
+  color: var(--muted);
+  font-size: 12px;
+  background: var(--surface-muted);
+  border-bottom: 1px solid var(--border-soft);
 }
 
 .data-table-scroll {
@@ -1766,6 +1852,18 @@ tbody tr:hover {
   object-fit: cover;
   border-radius: var(--radius-xs);
   border: 1px solid var(--border);
+}
+
+.imaging-thumb-loading {
+  display: inline-flex;
+  align-items: center;
+  min-height: 64px;
+  padding: 0 12px;
+  color: var(--muted);
+  font-size: 12px;
+  background: var(--surface-muted);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-xs);
 }
 
 .charge-items {
@@ -2197,6 +2295,12 @@ tbody tr:hover {
   width: 100%;
 }
 
+.searchable-select-cap {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 /* 收费项目树 */
 .charge-tree-panel {
   background: var(--surface);
@@ -2473,6 +2577,11 @@ tbody tr:hover {
   position: absolute;
   inset: 0;
   background: var(--backdrop);
+  animation: uiDrawerMaskIn 150ms var(--ease);
+}
+
+.ui-drawer-layer.closing .ui-drawer-mask {
+  animation: uiDrawerMaskOut 120ms var(--ease) forwards;
 }
 
 .ui-drawer-panel {
@@ -2489,9 +2598,28 @@ tbody tr:hover {
   animation: uiDrawerIn 200ms var(--ease);
 }
 
+.ui-drawer-layer.closing .ui-drawer-panel {
+  animation: uiDrawerOut 140ms var(--ease) forwards;
+}
+
+@keyframes uiDrawerMaskIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes uiDrawerMaskOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
 @keyframes uiDrawerIn {
   from { transform: translateX(100%); }
   to { transform: translateX(0); }
+}
+
+@keyframes uiDrawerOut {
+  from { transform: translateX(0); }
+  to { transform: translateX(100%); }
 }
 
 .ui-drawer-head {
@@ -2684,7 +2812,9 @@ tbody tr:hover {
 }
 
 .ui-accordion-item.open .ui-accordion-body {
-  max-height: 160px;
+  max-height: 40rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 0 14px 12px;
 }
 
@@ -2858,10 +2988,23 @@ tbody tr:hover {
 .ui-batch-count { color: var(--primary); font-weight: 600; font-size: 12px; }
 
 .ui-dropdown { position: relative; display: inline-flex; }
-.ui-dropdown-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 50; display: grid; gap: 2px; min-width: 150px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow-hover); padding: 6px; }
+.ui-dropdown-trigger { display: inline-flex; align-items: center; gap: 6px; background: var(--surface); color: var(--text); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); padding: 8px 12px; font-weight: 600; cursor: pointer; transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
+.ui-dropdown-trigger:hover { background: var(--surface-muted); border-color: var(--primary); color: var(--primary); }
+.ui-dropdown-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 50; display: grid; gap: 2px; min-width: 150px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow-hover); padding: 6px; transform-origin: top left; animation: uiMenuIn 140ms var(--ease); }
+.ui-dropdown-menu.closing { animation: uiMenuOut 120ms var(--ease) forwards; pointer-events: none; }
 .ui-dropdown-menu button { display: flex; width: 100%; border: 0; background: transparent; color: var(--text); padding: 8px 10px; border-radius: var(--radius-xs); text-align: left; cursor: pointer; }
 .ui-dropdown-menu button:hover { background: var(--soft); color: var(--primary); }
 .ui-dropdown-menu button.danger { color: var(--danger); }
+
+@keyframes uiMenuIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes uiMenuOut {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-4px); }
+}
 
 .ui-dental-chart { display: grid; gap: 6px; }
 .ui-tooth-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
@@ -2936,7 +3079,8 @@ tbody tr:hover {
 }
 .ui-chip { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; background: var(--soft); color: var(--primary); padding: 4px 9px; font-size: 12px; font-weight: 600; }
 .ui-multiselect-placeholder { color: var(--muted-weak); font-size: 12px; }
-.ui-multiselect-menu { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 50; display: grid; gap: 2px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow-hover); padding: 6px; }
+.ui-multiselect-menu { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 50; display: grid; gap: 2px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow-hover); padding: 6px; transform-origin: top center; animation: uiMenuIn 140ms var(--ease); }
+.ui-multiselect-menu.closing { animation: uiMenuOut 120ms var(--ease) forwards; pointer-events: none; }
 .ui-multiselect-search { width: 100%; margin-bottom: 4px; }
 .ui-multiselect-option { display: flex; align-items: center; gap: 8px; border-radius: var(--radius-xs); padding: 8px 9px; cursor: pointer; }
 .ui-multiselect-option:hover { background: var(--surface-muted); }

@@ -73,3 +73,13 @@ export function asAppError(error: unknown): AppError {
   }
   return new AppError('INTERNAL_ERROR', String(error), 500);
 }
+
+/**
+ * 只有 SQLite 的系统级错误（磁盘满、忙、IO 损坏等）才允许中止整批事务；
+ * AppError/ValidationError 等业务错误必须按单行失败继续处理。
+ */
+export function isSystematicSqliteError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const code = String((error as { code?: unknown }).code ?? '');
+  return /^SQLITE_(FULL|BUSY|IOERR|CORRUPT|CANTOPEN|NOMEM|LOCKED)/.test(code);
+}

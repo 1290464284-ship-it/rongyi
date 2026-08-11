@@ -46,6 +46,9 @@ vi.mock('../application/services', () => ({
     cleanup(): Record<string, never> {
       return {};
     }
+    cleanupStaged(): { removed: number } {
+      return { removed: 0 };
+    }
   },
   AuditService: class {
     cleanup(): number {
@@ -63,6 +66,18 @@ vi.mock('./sqlite-files', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./sqlite-files')>();
   return {
     ...actual,
+    copySqliteFileReadonly: vi.fn((source: string, backup: string) => {
+      if (process.env.V2_CORRUPT_LEGACY_BACKUP === '1') {
+        const temp = `${backup}.tmp`;
+        actual.copySqliteFileReadonly(source, temp);
+        const data = fs.readFileSync(temp);
+        data[20] ^= 0xff;
+        fs.writeFileSync(backup, data);
+        fs.unlinkSync(temp);
+        return;
+      }
+      return actual.copySqliteFileReadonly(source, backup);
+    }),
     backupSqliteFile: vi.fn((source: string, backup: string) => {
       if (process.env.V2_CORRUPT_LEGACY_BACKUP === '1') {
         const temp = `${backup}.tmp`;
@@ -98,6 +113,7 @@ describe('importLegacyDatabase', () => {
   });
 
   it('imports a valid legacy database without modifying the source', () => {
+    const sourceBytesBefore = fs.readFileSync(sourcePath);
     const result = importLegacyDatabase(sourcePath, targetPath);
     expect(result.imported).toBe(true);
     expect(result.integrityOk).toBe(true);
@@ -108,6 +124,7 @@ describe('importLegacyDatabase', () => {
     const source = new Database(sourcePath, { readonly: true });
     expect(source.prepare('SELECT COUNT(*) AS c FROM Patient').get()).toEqual({ c: 1 });
     source.close();
+    expect(fs.readFileSync(sourcePath)).toEqual(sourceBytesBefore);
   });
 
   it('reports a missing source without creating a target', () => {

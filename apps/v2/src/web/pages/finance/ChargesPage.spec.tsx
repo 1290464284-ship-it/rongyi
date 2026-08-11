@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ChargesPage } from './ChargesPage';
 import { apiRequest } from '../../lib/api';
@@ -36,6 +36,7 @@ function mockData() {
 describe('ChargesPage', () => {
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
     vi.mocked(apiRequest).mockReset();
   });
 
@@ -528,5 +529,557 @@ describe('ChargesPage', () => {
     const payCalls = vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/charges/c-1/pay');
     const secondBody = JSON.parse(String(payCalls[1]?.[1]?.body));
     expect(secondBody).toMatchObject({ amount: 1000, method: 'OTHER', payMethodName: '医美分期' });
+  });
+
+  it('keeps the unpaid charge after cancelling the delete confirmation', async () => {
+    const unpaidList = { ...chargeList, items: [{ ...chargeList.items[0], status: 'UNPAID' }] };
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/charges?page=1&pageSize=50') return unpaidList;
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      return {};
+    });
+    render(<ChargesPage />, { wrapper });
+    await screen.findByText('N-1');
+
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    expect(await screen.findByText('删除收费单确认')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(apiRequest).not.toHaveBeenCalledWith('/charges/c-1', expect.objectContaining({ method: 'DELETE' }));
+  });
+
+  it('deletes an unpaid charge after confirmation and refreshes the list', async () => {
+    const unpaidList = { ...chargeList, items: [{ ...chargeList.items[0], status: 'UNPAID' }] };
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/charges?page=1&pageSize=50') return unpaidList;
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      return {};
+    });
+    render(<ChargesPage />, { wrapper });
+    await screen.findByText('N-1');
+
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    fireEvent.click(await screen.findByRole('button', { name: '确认删除' }));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/charges/c-1', expect.objectContaining({ method: 'DELETE' }));
+    });
+    expect(await screen.findByText('收费单已删除')).toBeDefined();
+  });
+
+  it('reports delete failures and closes the confirmation', async () => {
+    const unpaidList = { ...chargeList, items: [{ ...chargeList.items[0], status: 'UNPAID' }] };
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/charges?page=1&pageSize=50') return unpaidList;
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/charges/c-1') throw new Error('delete failed');
+      return {};
+    });
+    render(<ChargesPage />, { wrapper });
+    await screen.findByText('N-1');
+
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    fireEvent.click(await screen.findByRole('button', { name: '确认删除' }));
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+    await waitFor(() => {
+      expect(screen.queryByText('删除收费单确认')).toBeNull();
+    });
+  });
+
+  it('shows an empty state when no charge combos are configured', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/charges?page=1&pageSize=50') return chargeList;
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/charge-combos') return [];
+      return {};
+    });
+    render(<ChargesPage />, { wrapper });
+    await screen.findByText('N-1');
+
+    fireEvent.click(screen.getByRole('button', { name: '调出收费组合' }));
+    expect(await screen.findByText('暂无可用收费组合')).toBeDefined();
+  });
+
+  it('lazily loads combo items from the detail endpoint when applying', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/charges?page=1&pageSize=50') return chargeList;
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/charge-combos') {
+        return [{ id: 'combo-1', code: 'CB-01', name: '洁牙套餐', type: 'PUBLIC' }];
+      }
+      if (path === '/charge-combos/combo-1/items') {
+        return {
+          id: 'combo-1',
+          code: 'CB-01',
+          name: '洁牙套餐',
+          type: 'PUBLIC',
+          items: [{ id: 'i-1', comboId: 'combo-1', catalogId: null, name: '洁牙', category: 'CLEAN', price: 30000, quantity: 1, costType: 'SERVICE' }],
+        };
+      }
+      return {};
+    });
+    render(<ChargesPage />, { wrapper });
+    await screen.findByText('N-1');
+
+    fireEvent.click(screen.getByRole('button', { name: '调出收费组合' }));
+    expect(await screen.findByText('洁牙套餐')).toBeDefined();
+    expect(screen.getByText('0 项')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '载入组合 洁牙套餐' }));
+
+    expect(await screen.findByText('收费组合「洁牙套餐」已载入')).toBeDefined();
+    expect(apiRequest).toHaveBeenCalledWith('/charge-combos/combo-1/items');
+    expect((screen.getAllByLabelText('项目名称') as HTMLInputElement[]).map((input) => input.value)).toEqual(['洁牙']);
+    expect((screen.getAllByLabelText('单价') as HTMLInputElement[]).map((input) => input.value)).toEqual(['300']);
+  });
+
+  it('reports failures when loading combo detail items', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/charges?page=1&pageSize=50') return chargeList;
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/charge-combos') {
+        return [{ id: 'combo-1', code: 'CB-01', name: '洁牙套餐', type: 'PUBLIC' }];
+      }
+      if (path === '/charge-combos/combo-1/items') throw new Error('detail failed');
+      return {};
+    });
+    render(<ChargesPage />, { wrapper });
+    await screen.findByText('N-1');
+
+    fireEvent.click(screen.getByRole('button', { name: '调出收费组合' }));
+    fireEvent.click(await screen.findByRole('button', { name: '载入组合 洁牙套餐' }));
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+    expect(screen.getByText('洁牙套餐')).toBeDefined();
+  });
+
+  it('reports the no-plan branch when quoting a member discount', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/charges?page=1&pageSize=50') return chargeList;
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/member-cards/quote') return { applied: false, reason: 'NO_PLAN' };
+      return {};
+    });
+    render(<ChargesPage />, { wrapper });
+    await screen.findByText('N-1');
+
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: '洁牙' } });
+    fireEvent.change(screen.getByLabelText('单价'), { target: { value: '100' } });
+    fireEvent.click(screen.getByRole('button', { name: '会员折扣试算' }));
+    expect(await screen.findByText('该患者没有可用会员方案')).toBeDefined();
+  });
+
+  it('reports a generic member discount quote message', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/charges?page=1&pageSize=50') return chargeList;
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/member-cards/quote') return { applied: false, message: '会员规则未生效' };
+      return {};
+    });
+    render(<ChargesPage />, { wrapper });
+    await screen.findByText('N-1');
+
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: '洁牙' } });
+    fireEvent.change(screen.getByLabelText('单价'), { target: { value: '100' } });
+    fireEvent.click(screen.getByRole('button', { name: '会员折扣试算' }));
+    expect(await screen.findByText('会员规则未生效')).toBeDefined();
+  });
+
+  it('reports member discount quote failures', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/charges?page=1&pageSize=50') return chargeList;
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/member-cards/quote') throw new Error('quote failed');
+      return {};
+    });
+    render(<ChargesPage />, { wrapper });
+    await screen.findByText('N-1');
+
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: '洁牙' } });
+    fireEvent.change(screen.getByLabelText('单价'), { target: { value: '100' } });
+    fireEvent.click(screen.getByRole('button', { name: '会员折扣试算' }));
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+  });
+
+  it('falls back to built-in pay methods when the pay method tree is empty', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/charges?page=1&pageSize=50') return chargeList;
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/pay-methods/tree') return { items: [] };
+      return {};
+    });
+    render(<ChargesPage />, { wrapper });
+    await screen.findByText('N-1');
+
+    fireEvent.click(screen.getByRole('button', { name: '收款' }));
+    expect(screen.queryByLabelText('支付方式大类')).toBeNull();
+    const methodSelect = screen.getByLabelText('支付方式') as HTMLSelectElement;
+    expect(Array.from(methodSelect.options).map((option) => option.value)).toContain('WECHAT');
+    fireEvent.change(methodSelect, { target: { value: 'WECHAT' } });
+    fireEvent.change(screen.getByLabelText('收款金额（元）'), { target: { value: '50' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认收款' }));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/charges/c-1/pay', expect.objectContaining({ method: 'PATCH' }));
+    });
+    const payCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/charges/c-1/pay');
+    expect(JSON.parse(String(payCall?.[1]?.body))).toMatchObject({
+      amount: 5000,
+      method: 'WECHAT',
+      payMethodName: '微信',
+    });
+  });
+
+  it('shows a charge tree panel error without breaking the page', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/charges?page=1&pageSize=50') return chargeList;
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/charge-trees') throw new Error('tree failed');
+      return {};
+    });
+    render(<ChargesPage />, { wrapper });
+
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+    expect(screen.getByText('N-1')).toBeDefined();
+  });
+
+  it('reports quick charge failures', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/charges?page=1&pageSize=50') return chargeList;
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/charge-trees') {
+        return {
+          items: [{
+            id: 'cat-root', code: 'CAT-1', name: '正畸项目', category: 'GENERAL', price: 10000,
+            costType: 'SERVICE', anesthesia: false, businessCategory: null, parentId: null,
+            children: [{
+              id: 'cat-leaf', code: 'CAT-1-1', name: '初诊检查', category: 'GENERAL', price: 3000,
+              costType: 'SERVICE', anesthesia: false, businessCategory: null, parentId: 'cat-root', children: [],
+            }],
+          }],
+        };
+      }
+      if (path === '/charge-trees/cat-leaf/quick-charge') throw new Error('quick failed');
+      return {};
+    });
+    render(<ChargesPage />, { wrapper });
+    await screen.findByText('收费项目');
+    fireEvent.click(screen.getByRole('button', { name: '展开 正畸项目' }));
+    fireEvent.click(screen.getByRole('button', { name: '快捷划价 初诊检查' }));
+    await screen.findByText('快捷收费');
+
+    fireEvent.change(screen.getByLabelText('快捷收费数量'), { target: { value: '1' } });
+    await waitFor(() => {
+      expect((screen.getByLabelText('快捷收费患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('快捷收费患者'), { target: { value: 'p-1' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认快捷收费' }));
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+  });
+
+  it('requires a patient and valid items before quoting a member discount', async () => {
+    mockData();
+    render(<ChargesPage />, { wrapper });
+    await screen.findByText('N-1');
+    fireEvent.click(screen.getByRole('button', { name: '会员折扣试算' }));
+    expect(await screen.findByText('请先选择患者并填写有效明细')).toBeDefined();
+    expect(apiRequest).not.toHaveBeenCalledWith('/member-cards/quote', expect.anything());
+  });
+
+  it('reuses already loaded combos when the dialog is reopened', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/charges?page=1&pageSize=50') return chargeList;
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/charge-combos') {
+        return [{ id: 'combo-1', code: 'CB-01', name: '洁牙套餐', type: 'PUBLIC', items: [] }];
+      }
+      return {};
+    });
+    render(<ChargesPage />, { wrapper });
+    await screen.findByText('N-1');
+
+    fireEvent.click(screen.getByRole('button', { name: '调出收费组合' }));
+    expect(await screen.findByText('洁牙套餐')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    await waitFor(() => {
+      expect(screen.queryByText('洁牙套餐')).toBeNull();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '调出收费组合' }));
+    expect(await screen.findByText('洁牙套餐')).toBeDefined();
+    expect(vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/charge-combos')).toHaveLength(1);
+  });
+
+  it('reports failures when loading charge combos', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/charges?page=1&pageSize=50') return chargeList;
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/charge-combos') throw 'combo load failed';
+      return {};
+    });
+    render(<ChargesPage />, { wrapper });
+    await screen.findByText('N-1');
+    fireEvent.click(screen.getByRole('button', { name: '调出收费组合' }));
+    expect(await screen.findByText('加载收费组合失败')).toBeDefined();
+  });
+
+  it('shows the fallback message when no member discount rule applies', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/charges?page=1&pageSize=50') return chargeList;
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/member-cards/quote') return { applied: false };
+      return {};
+    });
+    render(<ChargesPage />, { wrapper });
+    await screen.findByText('N-1');
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: '洁牙' } });
+    fireEvent.change(screen.getByLabelText('单价'), { target: { value: '100' } });
+    fireEvent.click(screen.getByRole('button', { name: '会员折扣试算' }));
+    expect(await screen.findByText('暂无可用会员折扣')).toBeDefined();
+  });
+
+  it('loads combo items without a cost type as SERVICE', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/charges?page=1&pageSize=50') return chargeList;
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/charge-combos') {
+        return [{ id: 'combo-1', code: 'CB-01', name: '洁牙套餐', type: 'PUBLIC', items: [] }];
+      }
+      if (path === '/charge-combos/combo-1/items') {
+        return {
+          id: 'combo-1',
+          code: 'CB-01',
+          name: '洁牙套餐',
+          type: 'PUBLIC',
+          items: [{ id: 'i-1', comboId: 'combo-1', catalogId: null, name: '洁牙', category: 'CLEAN', price: 30000, quantity: 1 }],
+        };
+      }
+      return {};
+    });
+    render(<ChargesPage />, { wrapper });
+    await screen.findByText('N-1');
+    fireEvent.click(screen.getByRole('button', { name: '调出收费组合' }));
+    fireEvent.click(await screen.findByRole('button', { name: '载入组合 洁牙套餐' }));
+    await waitFor(() => {
+      expect((screen.getAllByLabelText('类型')[0] as HTMLSelectElement).value).toBe('SERVICE');
+    });
+  });
+
+  it('closes payment, refund, quick charge and combo dialogs through the dialog close path', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/charges?page=1&pageSize=50') return chargeList;
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/charge-trees') {
+        return {
+          items: [{
+            id: 'cat-root', code: 'CAT-1', name: '正畸项目', category: 'GENERAL', price: 10000,
+            costType: 'SERVICE', anesthesia: false, businessCategory: null, parentId: null,
+            children: [{
+              id: 'cat-leaf', code: 'CAT-1-1', name: '初诊检查', category: 'GENERAL', price: 3000,
+              costType: 'SERVICE', anesthesia: false, businessCategory: null, parentId: 'cat-root', children: [],
+            }],
+          }],
+        };
+      }
+      if (path === '/charge-combos') {
+        return [{ id: 'combo-1', code: 'CB-01', name: '洁牙套餐', type: 'PUBLIC', items: [] }];
+      }
+      return {};
+    });
+    render(<ChargesPage />, { wrapper });
+    await screen.findByText('N-1');
+
+    async function closeDialog(name: string) {
+      vi.useFakeTimers();
+      fireEvent.keyDown(document.querySelector('.modal')!, { key: 'Escape' });
+      act(() => vi.advanceTimersByTime(150));
+      expect(screen.queryByRole('dialog', { name })).toBeNull();
+      vi.useRealTimers();
+    }
+
+    fireEvent.click(screen.getByRole('button', { name: '收款' }));
+    await screen.findByRole('dialog', { name: '收款' });
+    await closeDialog('收款');
+
+    fireEvent.click(screen.getByRole('button', { name: '退款' }));
+    await screen.findByRole('dialog', { name: '退款' });
+    await closeDialog('退款');
+
+    fireEvent.click(screen.getByRole('button', { name: '展开 正畸项目' }));
+    fireEvent.click(screen.getByRole('button', { name: '快捷划价 初诊检查' }));
+    await screen.findByRole('dialog', { name: '快捷收费' });
+    await closeDialog('快捷收费');
+
+    fireEvent.click(screen.getByRole('button', { name: '调出收费组合' }));
+    await screen.findByText('洁牙套餐');
+    await closeDialog('调出收费组合');
+  });
+
+  it('closes the quick charge dialog through its own cancel button', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/charges?page=1&pageSize=50') return chargeList;
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/charge-trees') {
+        return {
+          items: [{
+            id: 'cat-root', code: 'CAT-1', name: '正畸项目', category: 'GENERAL', price: 10000,
+            costType: 'SERVICE', anesthesia: false, businessCategory: null, parentId: null,
+            children: [{
+              id: 'cat-leaf', code: 'CAT-1-1', name: '初诊检查', category: 'GENERAL', price: 3000,
+              costType: 'SERVICE', anesthesia: false, businessCategory: null, parentId: 'cat-root', children: [],
+            }],
+          }],
+        };
+      }
+      return {};
+    });
+    render(<ChargesPage />, { wrapper });
+    await screen.findByText('N-1');
+    fireEvent.click(screen.getByRole('button', { name: '展开 正畸项目' }));
+    fireEvent.click(screen.getByRole('button', { name: '快捷划价 初诊检查' }));
+    expect(await screen.findByRole('dialog', { name: '快捷收费' })).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: '快捷收费' })).toBeNull();
+    });
+  });
+
+  it('loads a combo without items as an empty selection', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/charges?page=1&pageSize=50') return chargeList;
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/charge-combos') {
+        return [{ id: 'combo-1', code: 'CB-01', name: '洁牙套餐', type: 'PUBLIC', items: [] }];
+      }
+      if (path === '/charge-combos/combo-1/items') {
+        return { id: 'combo-1', code: 'CB-01', name: '洁牙套餐', type: 'PUBLIC' };
+      }
+      return {};
+    });
+    render(<ChargesPage />, { wrapper });
+    await screen.findByText('N-1');
+    fireEvent.click(screen.getByRole('button', { name: '调出收费组合' }));
+    fireEvent.click(await screen.findByRole('button', { name: '载入组合 洁牙套餐' }));
+    expect(await screen.findByText('收费组合「洁牙套餐」已载入')).toBeDefined();
+    expect(screen.queryByLabelText('项目名称')).toBeNull();
+  });
+
+  it('ignores a duplicate quick charge submit while one is pending', async () => {
+    let resolveQuick: ((value: unknown) => void) | undefined;
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/resources/charges?page=1&pageSize=50') return chargeList;
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/charge-trees') {
+        return {
+          items: [{
+            id: 'cat-leaf', code: 'CAT-1', name: '初诊检查', category: 'GENERAL', price: 3000,
+            costType: 'SERVICE', anesthesia: false, businessCategory: null, parentId: null, children: [],
+          }],
+        };
+      }
+      if (path === '/charge-trees/cat-leaf/quick-charge' && String(init?.method ?? 'GET').toUpperCase() === 'POST') {
+        return await new Promise((resolve) => { resolveQuick = resolve; });
+      }
+      return {};
+    });
+    render(<ChargesPage />, { wrapper });
+    await screen.findByText('N-1');
+    fireEvent.click(screen.getByRole('button', { name: '快捷划价 初诊检查' }));
+    await screen.findByRole('dialog', { name: '快捷收费' });
+    await waitFor(() => {
+      expect((screen.getByLabelText('快捷收费患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('快捷收费患者'), { target: { value: 'p-1' } });
+    const confirm = screen.getByRole('button', { name: '确认快捷收费' });
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    expect(vi.mocked(apiRequest).mock.calls.filter(([path, options]) =>
+      path === '/charge-trees/cat-leaf/quick-charge' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'POST',
+    )).toHaveLength(1);
+    resolveQuick?.({ chargeId: 'c-new', number: 'N-NEW', totalAmount: 3000 });
+  });
+
+  it('replaces form items from a combo after the last manual row is removed', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/charges?page=1&pageSize=50') return chargeList;
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/charge-combos') {
+        return [{
+          id: 'combo-1',
+          code: 'CB-01',
+          name: '洁牙套餐',
+          type: 'PUBLIC',
+          items: [
+            { id: 'i-1', comboId: 'combo-1', catalogId: null, name: '洁牙', category: 'CLEAN', price: 30000, quantity: 1, costType: 'SERVICE' },
+            { id: 'i-2', comboId: 'combo-1', catalogId: null, name: '抛光', category: 'MATERIAL', price: 5000, quantity: 2, costType: 'MATERIAL' },
+          ],
+        }];
+      }
+      return {};
+    });
+    render(<ChargesPage />, { wrapper });
+    await screen.findByText('N-1');
+    fireEvent.click(screen.getByRole('button', { name: '移除' }));
+    expect(screen.queryByLabelText('项目名称')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '调出收费组合' }));
+    fireEvent.click(await screen.findByRole('button', { name: '载入组合 洁牙套餐' }));
+    expect((screen.getAllByLabelText('项目名称') as HTMLInputElement[]).map((input) => input.value)).toEqual(['洁牙', '抛光']);
   });
 });

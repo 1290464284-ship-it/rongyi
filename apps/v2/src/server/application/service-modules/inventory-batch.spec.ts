@@ -185,6 +185,17 @@ describe('InventoryBatchService', () => {
     expect(batchRow('batch-fifo-over-b').remainingQuantity).toBe(2);
   });
 
+  it('calls the stocktake lock guard while consuming FIFO', () => {
+    insertItem('item-lock-fifo', { code: 'LOCK-FIFO' });
+    insertBatch('batch-lock-fifo', { itemId: 'item-lock-fifo', batchNo: 'LOCK', initialQuantity: 5, remainingQuantity: 5 });
+    const lockGuard = vi.fn();
+    const service = new InventoryBatchService(db, lockGuard);
+
+    service.consumeFifo('item-lock-fifo', 1, context);
+
+    expect(lockGuard).toHaveBeenCalledWith('item-lock-fifo', 'clinic-v2-001');
+  });
+
   it('rejects consume for non-batch-managed or missing items and invalid quantities', () => {
     insertItem('item-nonbatch', { code: 'NONBATCH-001', batchManaged: 0 });
     const service = new InventoryBatchService(db);

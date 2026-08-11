@@ -109,7 +109,7 @@ function repairLegacyData(db: Database.Database, table: string): void {
     for (const row of rows) log(table, field, row.id, row.beforeValue, null, reason);
   }
 
-  // 唯一键去重：保留组内 MAX(id) 一行，其余追加 -dup-N 后缀。
+  // 唯一键去重：保留组内插入顺序最新一行（rowid DESC），其余追加 -dup-N 后缀。
   const uniqueColumns: Record<string, string> = {
     MemberCard: 'cardNo',
     ProcessingOrder: 'number',
@@ -124,8 +124,9 @@ function repairLegacyData(db: Database.Database, table: string): void {
            WHERE t2.clinicId = t.clinicId AND t2.${uniqueColumn} = t.${uniqueColumn} AND t2.id != t.id
          )
          AND t.id != (
-           SELECT MAX(id) FROM "${table}" t3
+           SELECT t3.id FROM "${table}" t3
            WHERE t3.clinicId = t.clinicId AND t3.${uniqueColumn} = t.${uniqueColumn}
+           ORDER BY t3.rowid DESC LIMIT 1
          )`,
     ).all() as Array<{ id: string; value: string; clinicId: string | null }>;
     let n = 1;
@@ -184,7 +185,7 @@ function repairLegacyData(db: Database.Database, table: string): void {
 /**
  * T2R-03 兜底：迁移 121 把 NULL clinicId 统一回填为最早诊所，旧库中
  * (NULL, 同唯一键) 的重复行回填后会撞 118 建立的 (clinicId, 唯一字段)
- * 唯一索引。在 121 之前把 NULL clinicId 组内除 MAX(id) 外的重复行追加
+ * 唯一索引。在 121 之前把 NULL clinicId 组内除最新插入行（rowid DESC）外的重复行追加
  * -dup-N 后缀，模式与 repairLegacyData 的去重保持一致，每处修改留痕
  * MigrationRepairLog。返回修复行数。
  */
@@ -207,8 +208,9 @@ export function dedupNullClinicRows(db: Database.Database, table: string, unique
          WHERE t2.clinicId IS NULL AND t2."${uniqueColumn}" = t."${uniqueColumn}" AND t2.id != t.id
        )
        AND t.id != (
-         SELECT MAX(id) FROM "${table}" t3
+         SELECT t3.id FROM "${table}" t3
          WHERE t3.clinicId IS NULL AND t3."${uniqueColumn}" = t."${uniqueColumn}"
+         ORDER BY t3.rowid DESC LIMIT 1
        )`,
   ).all() as Array<{ id: string; value: string }>;
   let repaired = 0;

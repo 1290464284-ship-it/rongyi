@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase } from './database';
 import { cleanupIdempotencyRecords, withIdempotency, type IdempotencyScope } from './idempotency';
+import { isDbWriteActive, sharedDbWriteQueue } from './db-write-queue';
 
 const scope = (requestId: string, overrides: Partial<IdempotencyScope> = {}): IdempotencyScope => ({
   operation: 'charge.pay',
@@ -216,6 +217,7 @@ describe('withIdempotency', () => {
     const failingDb = {
       prepare,
       transaction: (fn: () => unknown) => fn(),
+      exec: vi.fn(),
     } as unknown as Database.Database;
     expect(() => withIdempotency(failingDb, scope('update-failure'), () => ({ ok: true })))
       .toThrow('update failed');
@@ -317,6 +319,28 @@ describe('cleanupIdempotencyRecords', () => {
     expect(deleted).toBe(0);
     expect(db.prepare('SELECT status FROM IdempotencyRecord WHERE key = ?').get(freshKey)).toEqual({ status: 'PROCESSING' });
     expect(db.prepare('SELECT status FROM IdempotencyRecord WHERE key = ?').get(completedKey)).toEqual({ status: 'COMPLETED' });
+  });
+
+  it('rejects sync writes with a retryable error while another writer holds the db queue', async () => {
+    const queue = sharedDbWriteQueue(db);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const pending = queue(async () => {
+      await gate;
+      return 'done';
+    });
+    // 队列在微任务中启动，等一拍让 active 计数生效。
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(isDbWriteActive(db)).toBe(true);
+    expect(() => withIdempotency(db, scope('busy'), () => ({ ok: true })))
+      .toThrow('Database write is in progress');
+    release();
+    await pending;
+    expect(isDbWriteActive(db)).toBe(false);
+    const result = await withIdempotency(db, scope('busy'), () => ({ ok: true }));
+    expect(result).toEqual({ ok: true });
   });
 });
 

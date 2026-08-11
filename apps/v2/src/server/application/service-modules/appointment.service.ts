@@ -2,13 +2,14 @@
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
-import { touchSearchIndex } from '../../infrastructure/search-index';
+import { trackResourceWrite } from '../../infrastructure/write-tracking';
 import { tenantAnd, tenantParams, tenantWhere } from '../../infrastructure/tenant';
 import type { AppContext } from '../../../domain/contracts';
 import {
   assertChairExists,
   assertDoctorExists,
   assertPatientExists,
+  runInTransaction,
 } from './common';
 
 const APPOINTMENT_TRANSITIONS: Record<string, readonly string[]> = {
@@ -22,14 +23,6 @@ const APPOINTMENT_TRANSITIONS: Record<string, readonly string[]> = {
 
 export class AppointmentService {
   constructor(private readonly db: Database.Database) {}
-
-  private runTx<T>(fn: () => T): T {
-    const tx = (this.db as unknown as { transaction?: <U>(cb: () => U) => () => U }).transaction;
-    if (typeof tx === 'function') {
-      return tx.call(this.db, fn)() as T;
-    }
-    return fn();
-  }
 
   async create(input: {
     patientId?: string;
@@ -59,7 +52,7 @@ export class AppointmentService {
     this.assertTimeRange(input.startTime, input.endTime);
     const now = context.now().toISOString();
     const id = randomUUID();
-    this.runTx(() => {
+    runInTransaction(this.db, () => {
       let resolvedPatientId = input.patientId;
       if (!resolvedPatientId) {
         resolvedPatientId = randomUUID();
@@ -77,8 +70,8 @@ export class AppointmentService {
           tempPatientName,
           tempPatientPhone || null,
         );
-        // B-H4：直写 Patient（临时患者建档）绕过 repository，需同步维护搜索索引。
-        touchSearchIndex(this.db, 'Patient', resolvedPatientId, 'INSERT');
+        // B-H4：直写 Patient（临时患者建档）绕过 repository，统一维护同步与索引。
+        trackResourceWrite(this.db, { tableName: 'Patient', recordId: resolvedPatientId, operation: 'INSERT', clinicId: context.clinicId });
       }
       this.assertNoConflict(input.doctorId, input.chairId, input.startTime, input.endTime, context.clinicId);
       this.db.prepare(
@@ -103,8 +96,8 @@ export class AppointmentService {
         input.patientId ? null : (tempPatientName || null),
         input.patientId ? null : (tempPatientPhone || null),
       );
-      // B-H4：直写 Appointment（绕过 repository）需同步维护搜索索引。
-      touchSearchIndex(this.db, 'Appointment', id, 'INSERT');
+      // B-H4：直写 Appointment（绕过 repository）统一维护同步与索引。
+      trackResourceWrite(this.db, { tableName: 'Appointment', recordId: id, operation: 'INSERT', clinicId: context.clinicId });
     });
     return { id, status: 'BOOKED' };
   }
@@ -130,8 +123,8 @@ export class AppointmentService {
       if (!fresh) throw new NotFoundError('Appointment not found');
       throw new ConflictError(`Cannot transition appointment from ${fresh.status} to ${nextStatus}`);
     }
-    // B-H4：状态变更影响 Appointment 索引内容（含 status 字段）。
-    touchSearchIndex(this.db, 'Appointment', id, 'UPDATE');
+    // B-H4：状态变更统一维护同步与索引。
+    trackResourceWrite(this.db, { tableName: 'Appointment', recordId: id, operation: 'UPDATE', clinicId: context.clinicId });
     })();
     return { id, status: nextStatus };
   }

@@ -248,21 +248,30 @@ export async function apiRequest<T>(
 }
 
 /**
- * 分页聚合拉取：循环请求直到取回全部记录（每页 100 条，与服务端默认页大小一致）。
- * path 不应携带 page/pageSize 参数；某页返回 0 条时提前终止，避免死循环。
+ * 分页聚合拉取：先取第一页，再按 8 个并发分批拉取剩余页（每页 100 条）。
+ * path 不应携带 page/pageSize 参数；超过页数上限时显式失败，避免死循环。
  */
 export async function fetchAllPages<T>(path: string): Promise<T[]> {
   const pageSize = 100;
   const separator = path.includes('?') ? '&' : '?';
   const MAX_PAGES = 1000;
-  const items: T[] = [];
-  for (let page = 1; page <= MAX_PAGES; page += 1) {
-    const data = await apiRequest<Page<T>>(`${path}${separator}page=${page}&pageSize=${pageSize}`);
-    items.push(...data.items);
-    if (data.items.length === 0 || items.length >= data.total) break;
-    if (page === MAX_PAGES) {
-      throw new Error('fetchAllPages exceeded the page cap; refusing to continue');
-    }
+  const CONCURRENCY = 8;
+  const first = await apiRequest<Page<T>>(`${path}${separator}page=1&pageSize=${pageSize}`);
+  const items: T[] = [...first.items];
+  if (first.items.length === 0 || items.length >= first.total) return items;
+
+  const totalPages = Math.min(MAX_PAGES, Math.ceil(first.total / pageSize));
+  const pages: number[] = [];
+  for (let page = 2; page <= totalPages; page += 1) pages.push(page);
+  for (let offset = 0; offset < pages.length; offset += CONCURRENCY) {
+    const batch = pages.slice(offset, offset + CONCURRENCY);
+    const results = await Promise.all(
+      batch.map((page) => apiRequest<Page<T>>(`${path}${separator}page=${page}&pageSize=${pageSize}`)),
+    );
+    for (const data of results) items.push(...data.items);
+  }
+  if (first.total > MAX_PAGES * pageSize || items.length < first.total) {
+    throw new Error('fetchAllPages exceeded the page cap; refusing to continue');
   }
   return items;
 }

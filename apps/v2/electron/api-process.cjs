@@ -20,6 +20,7 @@ const {
   API_READY_WINDOW_STRICT_MS,
   API_HEARTBEAT_INTERVAL_MS,
 } = require('./constants.cjs');
+const { buildApiChildEnv } = require('./api-env.cjs');
 const { crashLog, notify, sendApiStatus } = require('./logging.cjs');
 const { getOrCreateSecret } = require('./secrets.cjs');
 const { showApiErrorWindow } = require('./window.cjs');
@@ -122,7 +123,18 @@ async function doStartApi() {
   const jwtSecret = getOrCreateSecret();
   const backupKey = getOrCreateSecret('backup-key');
   const secretFilePath = path.join(os.tmpdir(), `v2-secrets-${crypto.randomUUID()}.json`);
-  fs.writeFileSync(secretFilePath, JSON.stringify({ jwt: jwtSecret, backupKey }), { mode: 0o600 });
+  // 微信 AppSecret 和首启管理密码也经 secret file 传给 API，避免出现在
+  // 子进程环境块中；生产打包版不注入 V2_ADMIN_PASSWORD（管理员已存在）。
+  try {
+  fs.writeFileSync(secretFilePath, JSON.stringify({
+    jwt: jwtSecret,
+    backupKey,
+    wechatAppId: process.env.V2_WECHAT_APP_ID ?? undefined,
+    wechatAppSecret: process.env.V2_WECHAT_APP_SECRET ?? undefined,
+    // 首次启动引导密码经 secret file 传给 API：不暴露在子进程环境块，
+    // 但仍支持打包版/开发版在全新数据目录上创建初始管理员。
+    adminPassword: process.env.V2_ADMIN_PASSWORD ?? undefined,
+  }), { mode: 0o600 });
   // LEGACY: 旧版 Prisma 时代的 SQLite 数据库与 schema 目录。
   // 打包时需确保 resourcesPath/legacy/ 下存在 dental.sqlite 和 schema/ 目录。
   // TODO: 迁移完成后移除 legacy 环境变量与相关导入逻辑。
@@ -130,21 +142,13 @@ async function doStartApi() {
     ? path.join(__dirname, '..', 'legacy')
     : path.join(process.resourcesPath, 'legacy');
   state.apiProcess = spawn(process.execPath, [apiScript()], {
-    env: {
-      ...process.env,
-      V2_PORT: String(state.apiPort),
-      V2_HOST: '127.0.0.1',
-      NODE_ENV: app.isPackaged ? 'production' : 'development',
-      // P0-CORS: 打包版渲染器来源是 file:///opaque null，API 需据此放行 CORS。
-      V2_ELECTRON_RENDERER: app.isPackaged ? '1' : '0',
-      V2_DATA_DIR: path.join(userDataDir, 'data'),
-      V2_BACKUP_DIR: path.join(userDataDir, 'backups'),
-      V2_LOG_DIR: path.join(userDataDir, 'logs'),
-      V2_LEGACY_DB_PATH: path.join(legacyBase, 'dental.sqlite'),
-      V2_LEGACY_SCHEMA_DIR: path.join(legacyBase, 'schema'),
-      V2_SECRET_FILE: secretFilePath,
-      ELECTRON_RUN_AS_NODE: '1',
-    },
+    env: buildApiChildEnv({
+      userDataDir,
+      legacyBase,
+      secretFilePath,
+      apiPort: state.apiPort,
+      isPackaged: app.isPackaged,
+    }),
     stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
     windowsHide: true,
   });
@@ -155,8 +159,11 @@ async function doStartApi() {
   attachApiHeartbeat(startedProcess);
   state.apiProcess.on('error', (error) => crashLog('api-spawn-error', error));
   state.apiProcess.on('exit', (code, signal) => {
-    state.apiProcess = null;
+    if (state.apiProcess === startedProcess) state.apiProcess = null;
     if (state.isQuitting || startedProcess.manualStop) return;
+    // A health-check restart may already have spawned a replacement child;
+    // a stale exit event from this older process must not null the new one.
+    if (state.apiProcess && state.apiProcess !== startedProcess) return;
     state.apiLastCrashAt = Date.now();
     state.apiRestartCount += 1;
     crashLog('api-exit', new Error(`code=${code} signal=${String(signal)} lastCrashAt=${state.apiLastCrashAt}`));
@@ -177,6 +184,15 @@ async function doStartApi() {
       });
     }, delayMs);
   });
+  } catch (error) {
+    // S-L2：即使 spawn/监听器装配抛错，也绝不让含密钥的临时文件残留在 tmpdir。
+    try {
+      fs.rmSync(secretFilePath, { force: true });
+    } catch {
+      // best effort
+    }
+    throw error;
+  }
   try {
     await waitForApi(state.apiPort);
     state.apiEverReady = true;

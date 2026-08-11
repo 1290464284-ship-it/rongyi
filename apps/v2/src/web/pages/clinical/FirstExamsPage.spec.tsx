@@ -255,4 +255,153 @@ describe('FirstExamsPage', () => {
     });
     expect(await screen.findByText('首诊记录已删除')).toBeDefined();
   });
+
+  it('reports create, update and delete failures', async () => {
+    mockData();
+    const base = vi.mocked(apiRequest).getMockImplementation();
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = String(init?.method ?? 'GET').toUpperCase();
+      if (method === 'POST' && path === '/resources/firstExams') throw new Error('');
+      if (method === 'PATCH' && path === '/resources/firstExams/f-1') throw new Error('');
+      if (method === 'DELETE' && path === '/resources/firstExams/f-1') throw new Error('');
+      return base?.(path, init);
+    });
+    render(<FirstExamsPage />, { wrapper });
+    await screen.findByText('牙痛');
+
+    fireEvent.click(screen.getByText('新建首诊'));
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
+    fireEvent.click(screen.getByText('保存'));
+    expect(await screen.findByText('创建首诊失败')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    await screen.findByLabelText('主诉');
+    fireEvent.change(screen.getByLabelText('主诉'), { target: { value: '补牙' } });
+    fireEvent.click(screen.getByText('保存'));
+    expect(await screen.findByText('更新失败')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认删除' }));
+    expect(await screen.findByText('删除失败')).toBeDefined();
+  });
+
+  it('reports status, dentition and restart failures', async () => {
+    mockData();
+    const base = vi.mocked(apiRequest).getMockImplementation();
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = String(init?.method ?? 'GET').toUpperCase();
+      if (method === 'PATCH' && path === '/first-exams/f-1/status') throw new Error('');
+      if (method === 'POST' && path === '/first-exams/f-1/dentition') throw new Error('');
+      if (method === 'POST' && path === '/first-exams/f-1/restart') throw new Error('');
+      return base?.(path, init);
+    });
+    render(<FirstExamsPage />, { wrapper });
+    await screen.findByText('牙痛');
+
+    fireEvent.change(await screen.findByLabelText('变更首诊状态'), { target: { value: 'SUBMITTED' } });
+    expect(await screen.findByText('状态更新失败')).toBeDefined();
+    fireEvent.change(screen.getByLabelText('切换牙列'), { target: { value: 'PERMANENT' } });
+    expect(await screen.findByText('牙列更新失败')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '重启检查' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认重启' }));
+    expect(await screen.findByText('重启检查失败')).toBeDefined();
+  });
+
+  it('reports tracking and teeth mark failures', async () => {
+    mockData();
+    const base = vi.mocked(apiRequest).getMockImplementation();
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = String(init?.method ?? 'GET').toUpperCase();
+      if (method === 'PATCH' && path === '/first-exams/f-1/tracking') throw new Error('');
+      if (method === 'POST' && path === '/first-exams/f-1/teeth/t-1/chief-mark') throw new Error('');
+      return base?.(path, init);
+    });
+    render(<FirstExamsPage />, { wrapper });
+    await screen.findByText('牙痛');
+
+    fireEvent.click(screen.getByRole('button', { name: '追踪' }));
+    fireEvent.click(await screen.findByRole('button', { name: '保存' }));
+    expect(await screen.findByText('更新失败')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: '牙齿标记' }));
+    const select = await screen.findByLabelText('牙齿 16 主诉标记');
+    fireEvent.change(select, { target: { value: 'HORIZONTAL_DONE' } });
+    expect(await screen.findByText('主诉标记更新失败')).toBeDefined();
+  });
+
+  it('closes the teeth, history and restart dialogs through cancel paths', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/firstExams?page=1&pageSize=50') {
+        return { items: [{ id: 'fe-1', patientId: 'p-1', status: 'DRAFT' }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') return { items: [], total: 0, page: 1, pageSize: 200 };
+      if (path === '/doctors') return [];
+      if (path === '/first-exams/overview') return { total: 0, today: 0, pending: 0 };
+      return {};
+    });
+    render(<FirstExamsPage />, { wrapper });
+    await screen.findByLabelText('变更首诊状态');
+
+    fireEvent.click(screen.getByRole('button', { name: '牙齿标记' }));
+    expect(await screen.findByRole('dialog', { name: '主诉牙齿标记' })).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: '主诉牙齿标记' })).toBeNull();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '历史' }));
+    expect(await screen.findByRole('dialog', { name: '首诊历史' })).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: '首诊历史' })).toBeNull();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '重启检查' }));
+    expect(await screen.findByRole('dialog', { name: '重启检查' })).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: '重启检查' })).toBeNull();
+    });
+    expect(apiRequest).not.toHaveBeenCalledWith('/first-exams/fe-1/restart', expect.anything());
+  });
+
+  it('edits a sparse first exam with blank fallbacks', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/firstExams?page=1&pageSize=50') {
+        return { items: [{ id: 'fe-9', patientId: null, doctorId: null, consultantId: null, status: null }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') return { items: [], total: 0, page: 1, pageSize: 200 };
+      if (path === '/doctors') return [];
+      if (path === '/first-exams/overview') return { total: 0, today: 0, pending: 0 };
+      return {};
+    });
+    render(<FirstExamsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '编辑' }));
+    expect(await screen.findByLabelText('主诉')).toBeDefined();
+    expect((screen.getByLabelText('患者') as HTMLSelectElement).value).toBe('');
+    expect((screen.getByLabelText('医生') as HTMLSelectElement).value).toBe('');
+    expect((screen.getByLabelText('状态') as HTMLSelectElement).value).toBe('DRAFT');
+    expect((screen.getByLabelText('主诉') as HTMLTextAreaElement).value).toBe('');
+  });
+
+  it('resets the status and dentition selects without calling the API', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/firstExams?page=1&pageSize=50') {
+        return { items: [{ id: 'fe-1', patientId: 'p-1', status: 'DRAFT', dentition: 'PERMANENT' }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') return { items: [], total: 0, page: 1, pageSize: 200 };
+      if (path === '/doctors') return [];
+      if (path === '/first-exams/overview') return { total: 0, today: 0, pending: 0 };
+      return {};
+    });
+    render(<FirstExamsPage />, { wrapper });
+    fireEvent.change(await screen.findByLabelText('变更首诊状态'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('切换牙列'), { target: { value: '' } });
+    expect(apiRequest).not.toHaveBeenCalledWith('/first-exams/fe-1/status', expect.anything());
+    expect(apiRequest).not.toHaveBeenCalledWith('/first-exams/fe-1/dentition', expect.anything());
+  });
 });

@@ -12,6 +12,8 @@ import { appointmentColumns } from '../../appointments/columns';
 import type { AppointmentRow, AppointmentForm, PurposeRow, LookupRow } from '../../appointments/types';
 import { AppointmentPurposePanel } from './AppointmentPurposePanel';
 
+const transitionInFlight = new Set<string>();
+
 export function AppointmentsPage() {
   const { showToast } = useToast();
   const [patientId, setPatientId] = useState('');
@@ -97,6 +99,8 @@ export function AppointmentsPage() {
   }
 
   async function transition(id: string, status: string) {
+    if (transitionInFlight.has(id)) return;
+    transitionInFlight.add(id);
     try {
       await apiRequest(`/appointments/${id}/status`, {
         method: 'PATCH',
@@ -106,6 +110,8 @@ export function AppointmentsPage() {
       await query.refetch();
     } catch (error) {
       showToast(errorMessage(error, '状态更新失败'), 'error');
+    } finally {
+      transitionInFlight.delete(id);
     }
   }
 

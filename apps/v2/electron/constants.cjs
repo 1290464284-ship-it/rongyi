@@ -45,8 +45,12 @@ const INDEX_HTML_FILE_URL = pathToFileURL(path.join(__dirname, '..', 'dist-web',
 const ERROR_HTML_FILE_URL = pathToFileURL(path.join(__dirname, 'error.html')).href;
 // Round8 fix: derive the trusted dev renderer URL from WEB_DEV_ORIGIN so
 // V2_WEB_DEV_PORT / V2_WEB_URL overrides keep IPC handlers working.
+// V2_WEB_URL 可带路径（如 http://localhost:5180/app）；按 origin + pathname
+// 精确匹配，避免只信任根路径导致配置了子路径的开发源被误拒。
+const devUrl = new URL(WEB_DEV_ORIGIN);
+const devBase = `${devUrl.origin}${devUrl.pathname === '/' ? '' : devUrl.pathname}`;
 const DEV_WEB_URL_PATTERN = new RegExp(
-  `^${String(new URL(WEB_DEV_ORIGIN).origin).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:/(?:[?#].*)?)?$`,
+  `^${devBase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:[/?#].*)?$`,
 );
 
 

@@ -16,6 +16,7 @@ export function PurchaseOrdersPage() {
   const { showToast } = useToast();
   const editingIdRef = useRef<string | null>(null);
   const editingStatusRef = useRef<string | null>(null);
+  const itemsLoadedRef = useRef(false);
   const [receiving, setReceiving] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [summaryTick, setSummaryTick] = useState(0);
@@ -30,11 +31,13 @@ export function PurchaseOrdersPage() {
       initialForm={() => {
         editingIdRef.current = null;
         editingStatusRef.current = null;
+        itemsLoadedRef.current = false;
         return emptyPurchaseForm();
       }}
       formFromRow={(row) => {
         editingIdRef.current = String(row.id);
         editingStatusRef.current = String(row.status ?? '');
+        itemsLoadedRef.current = false;
         return {
           number: String(row.number ?? ''),
           supplierId: String(row.supplierId ?? ''),
@@ -42,6 +45,9 @@ export function PurchaseOrdersPage() {
         };
       }}
       validate={(form) => {
+        if (editingIdRef.current && !itemsLoadedRef.current) {
+          return '明细加载中，请稍候再保存';
+        }
         const validItems = buildValidItems(form.items, inventoryRows);
         if (!form.number.trim() || validItems.length === 0) {
           return '请填写采购单号并至少添加一条有效明细';
@@ -113,6 +119,7 @@ export function PurchaseOrdersPage() {
           setInventoryRows={setInventoryRows}
           editing={ctx.editing}
           editingId={editingIdRef.current}
+          onItemsLoaded={() => { itemsLoadedRef.current = true; }}
         />
       )}
     />

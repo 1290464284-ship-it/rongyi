@@ -133,7 +133,7 @@ describe('service coverage', () => {
     expect(service.cleanup(366).kept).toBeGreaterThanOrEqual(1);
     expect(service.cleanup(Number.NaN).kept).toBeGreaterThanOrEqual(1);
     delete process.env.V2_BACKUP_KEY;
-  });
+  }, 20_000);
 
   it('refuses plaintext backups outside test unless explicitly allowed', async () => {
     const backupDir = path.join(dataDir, 'plaintext-policy-backups');

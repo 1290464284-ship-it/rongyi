@@ -27,4 +27,19 @@ describe('SqliteRateLimitStore', () => {
     expect(store.get('fresh')).toBeUndefined();
     db.close();
   });
+
+  it('increments atomically across store instances and resets expired windows', () => {
+    const db = new Database(':memory:');
+    const first = new SqliteRateLimitStore(db);
+    const second = new SqliteRateLimitStore(db);
+    const now = Date.now();
+    const firstWindow = first.increment('k', 60_000, now);
+    const secondWindow = second.increment('k', 60_000, now);
+    expect(secondWindow.count).toBe(2);
+    expect(secondWindow.resetAt).toBe(firstWindow.resetAt);
+    const afterExpiry = first.increment('k', 60_000, now + 61_000);
+    expect(afterExpiry.count).toBe(1);
+    expect(afterExpiry.resetAt).toBe(now + 61_000 + 60_000);
+    db.close();
+  });
 });

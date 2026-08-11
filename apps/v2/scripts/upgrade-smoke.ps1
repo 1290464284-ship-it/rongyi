@@ -87,10 +87,25 @@ if (-not $env:V2_ADMIN_PASSWORD) {
 
 $apiScript = Join-Path $installDir "resources\app.asar\dist-electron\server.cjs"
 $previousApi = Start-Process -FilePath (Join-Path $installDir "Dental Clinic V2.exe") -ArgumentList "`"$apiScript`"" -PassThru -WindowStyle Hidden
+$patientId = $null
 try {
   Wait-ApiHealthy -Port $smokePort
   $login = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:$smokePort/api/v2/auth/login" -ContentType "application/json" -Body (@{ username = "admin"; password = $env:V2_ADMIN_PASSWORD } | ConvertTo-Json)
   $headers = @{ Authorization = "Bearer $($login.data.token)" }
+  # 升级前写入一条患者记录，升级后必须能通过同一数据库读回，才能证明
+  # userData 数据库真的在升级后被复用，而不是启动了一份全新数据。
+  $patientBody = @{
+    code = "UPGRADE-SMOKE-$([guid]::NewGuid().ToString('N').Substring(0, 8))"
+    name = "Upgrade Smoke Patient"
+    gender = "UNKNOWN"
+    phone = "1390000$(Get-Random -Minimum 1000 -Maximum 9999)"
+    source = "WALK_IN"
+  } | ConvertTo-Json
+  $createdPatient = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:$smokePort/api/v2/resources/patients" -Headers $headers -ContentType "application/json" -Body $patientBody
+  $patientId = [string]$createdPatient.data.id
+  if (-not $patientId) {
+    throw "Failed to create the pre-upgrade patient marker"
+  }
   $backup = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:$smokePort/api/v2/backups" -Headers $headers -ContentType "application/json" -Body "{}"
   $filename = [uri]::EscapeDataString([string]$backup.data.filename)
   $verify = Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:$smokePort/api/v2/backups/$filename/verify" -Headers $headers
@@ -128,6 +143,13 @@ Write-Host "User data preserved after upgrade"
 $api = Start-Process -FilePath $appExe -ArgumentList "`"$apiScript`"" -PassThru -WindowStyle Hidden
 try {
   Wait-ApiHealthy -Port $smokePort
+  $login = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:$smokePort/api/v2/auth/login" -ContentType "application/json" -Body (@{ username = "admin"; password = $env:V2_ADMIN_PASSWORD } | ConvertTo-Json)
+  $headers = @{ Authorization = "Bearer $($login.data.token)" }
+  $patient = Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:$smokePort/api/v2/resources/patients/$patientId" -Headers $headers
+  if ([string]$patient.data.id -ne $patientId) {
+    throw "Pre-upgrade patient data was not preserved across upgrade"
+  }
+  Write-Host "Pre-upgrade patient data preserved after upgrade"
   Write-Host "Upgraded API health check passed"
 } finally {
   if ($api -and -not $api.HasExited) {

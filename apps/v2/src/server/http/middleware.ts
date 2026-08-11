@@ -36,7 +36,7 @@ export function errorMiddleware(
   if (appError.status >= 500) {
     const entry = { traceId: req.traceId, error: appError.message, stack: appError.stack };
     if (logger) logger.error('request failed', entry);
-    else console.error(JSON.stringify(entry));
+    else console.error('[http] request failed', JSON.stringify(entry));
   }
   const message = appError.status >= 500 ? 'Internal server error' : appError.message;
   const body: Record<string, unknown> = {
@@ -53,7 +53,7 @@ export function errorMiddleware(
   res.status(appError.status).json(body);
 }
 
-export function authMiddleware(authService: AuthService) {
+export function authMiddleware(authService: AuthService, logger?: Logger) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const header = req.header('authorization') ?? '';
     const token = header.startsWith('Bearer ') ? header.slice(7) : '';
@@ -71,7 +71,7 @@ export function authMiddleware(authService: AuthService) {
         // 避免损坏/篡改的时间戳绕过账户锁。
         if (lockedTime > Date.now() || Number.isNaN(lockedTime)) {
           if (Number.isNaN(lockedTime)) {
-            console.warn('user lockedUntil is not a valid date; treating account as locked', { userId: user.id });
+            logger?.warn('user lockedUntil is not a valid date; treating account as locked', { userId: user.id });
           }
           throw new AppError('UNAUTHORIZED', 'Account is temporarily locked', 401);
         }

@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError } from '../../infrastructure/errors';
-import { touchSearchIndex } from '../../infrastructure/search-index';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
+import { trackResourceWrite } from '../../infrastructure/write-tracking';
 import type { AppContext } from '../../../domain/contracts';
 
 /**
@@ -57,11 +57,12 @@ export class RefundFlowService {
     const row = this.findRefund(id, context);
     if (row.status !== 'REQUESTED') throw new ConflictError('仅待审核的退款可审批通过');
     const now = context.now().toISOString();
-    this.db.prepare(
+    const result = this.db.prepare(
       `UPDATE Refund
        SET status = 'PENDING_REFUND', approvedById = ?, approvedAt = ?, updatedAt = ?
-       WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+       WHERE id = ? AND status = 'REQUESTED' AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).run(context.userId, now, now, id, ...tenantParams(context.clinicId));
+    if (result.changes === 0) throw new ConflictError('仅待审核的退款可审批通过');
     return { id, status: 'PENDING_REFUND', approvedAt: now };
   }
 
@@ -70,11 +71,12 @@ export class RefundFlowService {
     if (row.status !== 'REQUESTED') throw new ConflictError('仅待审核的退款可驳回');
     const now = context.now().toISOString();
     const run = this.db.transaction(() => {
-      this.db.prepare(
+      const result = this.db.prepare(
         `UPDATE Refund
          SET status = 'REJECTED', approvedById = ?, approvedAt = ?, updatedAt = ?
-         WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+         WHERE id = ? AND status = 'REQUESTED' AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
       ).run(context.userId, now, now, id, ...tenantParams(context.clinicId));
+      if (result.changes === 0) throw new ConflictError('仅待审核的退款可驳回');
       this.reversal(row, context, now);
     });
     run();
@@ -86,11 +88,12 @@ export class RefundFlowService {
     if (row.status !== 'REQUESTED') throw new ConflictError('仅待审核的退款可取消');
     const now = context.now().toISOString();
     const run = this.db.transaction(() => {
-      this.db.prepare(
+      const result = this.db.prepare(
         `UPDATE Refund
          SET status = 'CANCELLED', updatedAt = ?
-         WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+         WHERE id = ? AND status = 'REQUESTED' AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
       ).run(now, id, ...tenantParams(context.clinicId));
+      if (result.changes === 0) throw new ConflictError('仅待审核的退款可取消');
       this.reversal(row, context, now);
     });
     run();
@@ -101,11 +104,12 @@ export class RefundFlowService {
     const row = this.findRefund(id, context);
     if (row.status !== 'PENDING_REFUND') throw new ConflictError('仅待退款的记录可确认完成');
     const now = context.now().toISOString();
-    this.db.prepare(
+    const result = this.db.prepare(
       `UPDATE Refund
        SET status = 'COMPLETED', processedById = ?, processedAt = ?, updatedAt = ?
-       WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+       WHERE id = ? AND status = 'PENDING_REFUND' AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).run(context.userId, now, now, id, ...tenantParams(context.clinicId));
+    if (result.changes === 0) throw new ConflictError('仅待退款的记录可确认完成');
     return { id, status: 'COMPLETED', processedAt: now };
   }
 
@@ -141,8 +145,13 @@ export class RefundFlowService {
     this.db.prepare(
       `UPDATE Charge SET refundedAmount = ?, status = ?, updatedAt = ? WHERE id = ?`,
     ).run(newRefunded, chargeStatus, now, charge.id);
-    // 直写搜索索引：Charge 状态变更后刷新其可检索内容。
-    touchSearchIndex(this.db, 'Charge', String(charge.id), 'INSERT');
+    // Charge 状态变更统一维护同步与搜索索引。
+    trackResourceWrite(this.db, {
+      tableName: 'Charge',
+      recordId: String(charge.id),
+      operation: 'UPDATE',
+      clinicId: charge.clinicId ? String(charge.clinicId) : null,
+    });
 
     // 新退款（迁移 146 后）在 PaymentLedger 留有 REFUND 行与逐笔 allocations：
     // 按流水精确回退对应卡余额并回退 reversedAmount。旧退款（无 allocations）

@@ -65,7 +65,20 @@ function TreeNodeView({
         >
           {hasChildren ? (open ? '▼' : '+') : ''}
         </button>
-        <span className="ui-tree-label" onClick={() => onSelect?.(node.id)}>{node.label}</span>
+        <span
+          className="ui-tree-label"
+          role="button"
+          tabIndex={0}
+          onClick={() => onSelect?.(node.id)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              onSelect?.(node.id);
+            }
+          }}
+        >
+          {node.label}
+        </span>
         {node.badge && <span className={`ui-badge ${node.badgeTone ?? 'neutral'}`}>{node.badge}</span>}
         {node.meta && <span className="ui-tree-meta">{node.meta}</span>}
         {node.action && (

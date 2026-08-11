@@ -96,4 +96,13 @@ describe('user permission routes', () => {
       .send({ permissions: [{ permission: 'nope', allowed: true }] })
       .expect(400);
   });
+
+  it('treats missing or non-array permissions as an empty list', async () => {
+    const res = await request(app)
+      .put('/api/v2/user-permissions/route-perm-001')
+      .send({ permissions: { invalid: true } })
+      .expect(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.effective).toEqual(['dashboard', 'patients', 'clinical', 'communication']);
+  });
 });

@@ -11,27 +11,35 @@ export function ProcessingOrderFormFields({
   update,
   editing,
   editingId,
+  onItemsLoaded,
 }: {
   form: ProcessingOrderForm;
   update: (patch: Partial<ProcessingOrderForm>) => void;
   editing: boolean;
   editingId: string | null;
+  onItemsLoaded?: () => void;
 }) {
   const doctors = useQuery({
     queryKey: ['processing-doctors'],
     queryFn: () => apiRequest<Array<Record<string, unknown>>>('/doctors'),
   });
   const loadedItemsForRef = useRef<string | null>(null);
+  const updateRef = useRef(update);
+  const onItemsLoadedRef = useRef(onItemsLoaded);
+  useEffect(() => { updateRef.current = update; });
+  useEffect(() => { onItemsLoadedRef.current = onItemsLoaded; });
   const [itemsError, setItemsError] = useState<string | null>(null);
+  const [itemsLoading, setItemsLoading] = useState(false);
   useEffect(() => {
     if (!editing || !editingId || loadedItemsForRef.current === editingId) return;
     let cancelled = false;
     loadedItemsForRef.current = editingId;
     setItemsError(null);
+    setItemsLoading(true);
     fetchAllPages<ProcessingOrderItemRow>(`/resources/processingOrderItems?orderId=${editingId}`)
       .then((rows) => {
         if (cancelled) return;
-        update({
+        updateRef.current({
           items: (rows ?? []).map((row) => ({
             id: String(row.id),
             name: String(row.name ?? ''),
@@ -42,14 +50,20 @@ export function ProcessingOrderFormFields({
             status: String(row.status ?? 'DRAFT'),
           })),
         });
+        onItemsLoadedRef.current?.();
       })
       .catch(() => {
-        if (!cancelled) setItemsError('明细加载失败，请关闭后重试');
+        if (!cancelled) {
+          setItemsError('明细加载失败，请关闭后重试');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setItemsLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [editing, editingId, update]);
+  }, [editing, editingId]);
   return (
     <>
       <label>
@@ -82,15 +96,16 @@ export function ProcessingOrderFormFields({
         <input type="number" min="0" value={form.totalFee} onChange={(event) => update({ totalFee: event.target.value })} />
       </label>
       {itemsError && <p className="error">{itemsError}</p>}
+      {itemsLoading && <p className="page-state">明细加载中...</p>}
       {form.items.map((item) => (
         <div className="charge-item-row" key={item.id}>
-          <input aria-label="加工项目" value={item.name} placeholder="项目名称" onChange={(event) => update({ items: form.items.map((entry) => entry.id === item.id ? { ...entry, name: event.target.value } : entry) })} />
-          <input aria-label="加工数量" type="number" min="1" value={item.quantity} onChange={(event) => update({ items: form.items.map((entry) => entry.id === item.id ? { ...entry, quantity: event.target.value } : entry) })} />
-          <input aria-label="加工单价" type="number" min="0" value={item.unitPrice} onChange={(event) => update({ items: form.items.map((entry) => entry.id === item.id ? { ...entry, unitPrice: event.target.value } : entry) })} />
-          <button type="button" onClick={() => update({ items: form.items.filter((entry) => entry.id !== item.id) })}>移除</button>
+          <input aria-label="加工项目" disabled={itemsLoading} value={item.name} placeholder="项目名称" onChange={(event) => update({ items: form.items.map((entry) => entry.id === item.id ? { ...entry, name: event.target.value } : entry) })} />
+          <input aria-label="加工数量" disabled={itemsLoading} type="number" min="1" value={item.quantity} onChange={(event) => update({ items: form.items.map((entry) => entry.id === item.id ? { ...entry, quantity: event.target.value } : entry) })} />
+          <input aria-label="加工单价" disabled={itemsLoading} type="number" min="0" value={item.unitPrice} onChange={(event) => update({ items: form.items.map((entry) => entry.id === item.id ? { ...entry, unitPrice: event.target.value } : entry) })} />
+          <button type="button" disabled={itemsLoading} onClick={() => update({ items: form.items.filter((entry) => entry.id !== item.id) })}>移除</button>
         </div>
       ))}
-      <button type="button" onClick={() => update({ items: [...form.items, newItem()] })}>添加明细</button>
+      <button type="button" disabled={itemsLoading} onClick={() => update({ items: [...form.items, newItem()] })}>添加明细</button>
     </>
   );
 }

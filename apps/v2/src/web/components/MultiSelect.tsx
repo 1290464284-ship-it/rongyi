@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
+
+const MULTISELECT_CLOSE_MS = 140;
 
 interface SelectOption {
   value: string;
@@ -14,17 +16,53 @@ interface MultiSelectProps {
 
 export function MultiSelect({ value, options, onChange, placeholder = '请选择' }: MultiSelectProps) {
   const [open, setOpen] = useState(false);
+  const [closing, setClosing] = useState(false);
   const [query, setQuery] = useState('');
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const requestClose = useCallback(() => {
+    if (closing) return;
+    setClosing(true);
+    closeTimerRef.current = setTimeout(() => {
+      closeTimerRef.current = null;
+      setOpen(false);
+      setClosing(false);
+    }, MULTISELECT_CLOSE_MS);
+  }, [closing]);
+
+  function toggleOpen() {
+    if (open) {
+      requestClose();
+      return;
+    }
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+    setClosing(false);
+    setOpen(true);
+    setQuery('');
+  }
 
   useEffect(() => {
     if (!open) return;
     const onDown = (event: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false);
+      if (rootRef.current && !rootRef.current.contains(event.target as Node) && !closing) requestClose();
     };
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
-  }, [open]);
+  }, [open, closing, requestClose]);
+
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current) {
+        clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+      }
+    };
+  }, []);
 
   function toggle(optionValue: string) {
     onChange(value.includes(optionValue)
@@ -40,14 +78,42 @@ export function MultiSelect({ value, options, onChange, placeholder = '请选择
 
   return (
     <div className="ui-multiselect" ref={rootRef}>
-      <div className="ui-multiselect-input" onClick={() => { setOpen((current) => !current); setQuery(''); }}>
+      <div
+        ref={triggerRef}
+        className="ui-multiselect-input"
+        role="button"
+        tabIndex={0}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={placeholder}
+        onClick={toggleOpen}
+        onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
+          if (event.key === 'Enter' || event.key === ' ' || event.key === 'ArrowDown') {
+            event.preventDefault();
+            toggleOpen();
+          } else if (event.key === 'Escape' && open) {
+            event.preventDefault();
+            requestClose();
+          }
+        }}
+      >
         {selected.map((option) => (
           <span key={option.value} className="ui-chip">{option.label}</span>
         ))}
         <span className="ui-multiselect-placeholder">{selected.length === 0 ? placeholder : ''}</span>
       </div>
       {open && (
-        <div className="ui-multiselect-menu">
+        <div
+          className={`ui-multiselect-menu${closing ? ' closing' : ''}`}
+          role="listbox"
+          onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              requestClose();
+              triggerRef.current?.focus();
+            }
+          }}
+        >
           <input
             className="ui-multiselect-search"
             type="search"

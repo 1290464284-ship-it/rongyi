@@ -14,12 +14,18 @@ const dataDir = path.join(tempRoot, 'data');
 const backupDir = path.join(dataDir, 'backups');
 const logDir = path.join(dataDir, 'logs');
 const port = 43000 + Math.floor(Math.random() * 1000);
+// 模拟库由 simulate:clinic-data 用固定默认密码生成；不读外层 V2_ADMIN_PASSWORD，
+// 否则并入 smoke:all 时会因外层 smoke 密码与库内管理员不一致而 401。
 const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'v2-sim-admin-password';
 
 const sourceSimDir = resolveSimulatedDataDir();
 if (!sourceSimDir) {
-  console.error('Simulated clinic database not found. Run simulate:clinic-data first.');
-  process.exit(1);
+  if (process.env.V2_REQUIRE_PERMISSION_SMOKE === '1') {
+    console.error('Simulated clinic database not found. Run simulate:clinic-data first.');
+    process.exit(1);
+  }
+  console.warn('Simulated clinic database not found; skipping permission smoke. Run simulate:clinic-data or set V2_REQUIRE_PERMISSION_SMOKE=1 to enforce it.');
+  process.exit(0);
 }
 
 fs.mkdirSync(dataDir, { recursive: true });

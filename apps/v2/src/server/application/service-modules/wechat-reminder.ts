@@ -307,20 +307,20 @@ export class WechatReminderService {
       for (const candidate of appointmentCandidates) {
         if (exists.get(candidate.patientId, 'APPOINTMENT_REMINDER', today, candidate.sourceId, ...tenantParams(clinicId))) continue;
         const content = config.appointmentContent
-          .replaceAll('{patientName}', candidate.patientName ?? '')
-          .replaceAll('{appointmentTime}', candidate.startTime ? formatLocalTime(candidate.startTime) : '');
+          .replaceAll('{patientName}', () => candidate.patientName ?? '')
+          .replaceAll('{appointmentTime}', () => candidate.startTime ? formatLocalTime(candidate.startTime) : '');
         insert.run(randomUUID(), clinicId, candidate.patientId, 'APPOINTMENT_REMINDER', today, candidate.sourceId, content, now, now);
       }
       for (const candidate of recallCandidates) {
         if (exists.get(candidate.patientId, 'TREATMENT_RECALL', today, candidate.sourceId, ...tenantParams(clinicId))) continue;
         const content = config.recallContent
-          .replaceAll('{patientName}', candidate.patientName ?? '')
-          .replaceAll('{days}', String(config.recallDaysAfter));
+          .replaceAll('{patientName}', () => candidate.patientName ?? '')
+          .replaceAll('{days}', () => String(config.recallDaysAfter));
         insert.run(randomUUID(), clinicId, candidate.patientId, 'TREATMENT_RECALL', today, candidate.sourceId, content, now, now);
       }
       for (const candidate of firstExamCandidates) {
         if (exists.get(candidate.patientId, 'FIRST_EXAM_NUDGE', today, candidate.sourceId, ...tenantParams(clinicId))) continue;
-        const content = config.firstExamContent.replaceAll('{patientName}', candidate.patientName ?? '');
+        const content = config.firstExamContent.replaceAll('{patientName}', () => candidate.patientName ?? '');
         insert.run(randomUUID(), clinicId, candidate.patientId, 'FIRST_EXAM_NUDGE', today, candidate.sourceId, content, now, now);
       }
     });

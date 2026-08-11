@@ -185,4 +185,73 @@ describe('RefundsPage', () => {
     render(<RefundsPage />, { wrapper });
     expect(await screen.findByText('暂无退款记录')).toBeDefined();
   });
+
+  it('navigates between refund pages', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.startsWith('/refunds?page=2')) {
+        return { items: refundRows, total: refundRows.length + 20, page: 2, pageSize: 20 };
+      }
+      return { items: refundRows, total: refundRows.length + 20, page: 1, pageSize: 20 };
+    });
+    render(<RefundsPage />, { wrapper });
+    await screen.findByText('CHG-1');
+
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+    expect(await screen.findByText('第 2 页')).toBeDefined();
+    expect((screen.getByRole('button', { name: '上一页' }) as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(screen.getByRole('button', { name: '上一页' }));
+    expect(await screen.findByText('第 1 页')).toBeDefined();
+    expect((screen.getByRole('button', { name: '上一页' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('shows loading and error states with retry', async () => {
+    vi.mocked(apiRequest).mockImplementation(() => new Promise(() => {}));
+    render(<RefundsPage />, { wrapper });
+    expect(screen.getByText('退款记录加载中...')).toBeDefined();
+    cleanup();
+
+    vi.mocked(apiRequest).mockRejectedValue(new Error('refunds failed'));
+    render(<RefundsPage />, { wrapper });
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+    expect(screen.getByRole('button', { name: '重试' })).toBeDefined();
+  });
+
+  it('renders fallback values for missing refund fields and zero-count status chips', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.startsWith('/refunds')) {
+        return {
+          items: [
+            { id: 'r-null', patientId: 'p-9', amount: null, reason: null, status: null, createdAt: null },
+            { id: 'r-unknown', patientName: '乙', chargeNumber: 'X-1', amount: 100, reason: '其它', status: 'UNKNOWN_STATUS', createdAt: '2026-08-05T10:00:00.000Z' },
+          ],
+          total: 2,
+          page: 1,
+          pageSize: 20,
+        };
+      }
+      return {};
+    });
+    render(<RefundsPage />, { wrapper });
+    expect(await screen.findByText('p-9')).toBeDefined();
+    expect(screen.getByText('UNKNOWN_STATUS')).toBeDefined();
+    expect(screen.getByText('待审核 0')).toBeDefined();
+    expect(screen.getByText('待退款 0')).toBeDefined();
+  });
+
+  it('clicks retry after a load error and handles non-Error failures', async () => {
+    let fail = true;
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.startsWith('/refunds')) {
+        if (fail) throw 'boom';
+        return { items: refundRows, total: refundRows.length, page: 1, pageSize: 20 };
+      }
+      return {};
+    });
+    render(<RefundsPage />, { wrapper });
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+    fail = false;
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    expect(await screen.findByText('CHG-1')).toBeDefined();
+  });
 });

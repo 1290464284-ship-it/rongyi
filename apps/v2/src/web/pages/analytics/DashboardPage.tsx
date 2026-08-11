@@ -3,6 +3,7 @@ import { CalendarDays, Clock, Package, PhoneCall, Stethoscope, Users, Wallet } f
 import { apiRequest } from '../../lib/api';
 import { formatMoney } from '../../lib/format';
 import { QueryBoundary } from '../../components';
+import { APPOINTMENT_STATUS_LABELS, APPOINTMENT_TYPE_LABELS } from '../../lib/labels';
 
 interface DashboardData {
   patients: number;
@@ -78,7 +79,7 @@ function DashboardContent({ data, workbench, workbenchLoading }: { data: Dashboa
         <div className="card">
           <div className="card-head"><h2>快捷操作</h2></div>
           <div className="quick-action-list">
-            <a href="#/patients"><Users size={18} />患者与预约</a>
+            <a href="#/patients"><Users size={18} />患者档案</a>
             <a href="#/clinical"><Stethoscope size={18} />临床记录</a>
             <a href="#/finance"><Wallet size={18} />财务中心</a>
             <a href="#/inventory"><Package size={18} />库存与采购</a>
@@ -115,9 +116,13 @@ function DashboardContent({ data, workbench, workbenchLoading }: { data: Dashboa
                 <span className="appointment-time">{item.startTime?.slice(11, 16) ?? '--:--'}</span>
                 <div className="appointment-main">
                   <strong>{item.patientName ?? '未知患者'}</strong>
-                  <span>{item.doctorName ?? '未分配医生'} · {item.type ?? '预约'}</span>
+                  <span>
+                    {item.doctorName ?? '未分配医生'} · {APPOINTMENT_TYPE_LABELS[String(item.type ?? '')] ?? item.type ?? '预约'}
+                  </span>
                 </div>
-                <span className="status arrived">{item.status ?? '已预约'}</span>
+                <span className="status arrived">
+                  {APPOINTMENT_STATUS_LABELS[String(item.status ?? '')] ?? item.status ?? '已预约'}
+                </span>
               </div>
             ))
           )}

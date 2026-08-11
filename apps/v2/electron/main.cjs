@@ -55,6 +55,7 @@ app.on('second-instance', () => {
 
 const isInternalBuild = /-internal\./.test(app.getVersion());
 autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = false;
 autoUpdater.allowPrerelease = isInternalBuild;
 autoUpdater.on('checking-for-update', () => sendUpdateEvent({ type: 'checking' }));
 autoUpdater.on('update-available', (info) => sendUpdateEvent({ type: 'available', version: info?.version }));
@@ -128,12 +129,20 @@ app.whenReady().then(async () => {
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const apiOrigin = state.apiPort ? `http://127.0.0.1:${state.apiPort}` : '';
     const devWs = isDev ? ` ws://localhost:${new URL(WEB_DEV_ORIGIN).port}` : '';
+    // Vite dev 的 react-refresh 会注入内联模块脚本；生产构建没有内联脚本，
+    // 保持严格 script-src 'self'，避免 XSS 加载远程脚本。
+    const scriptSrc = isDev ? `script-src 'self' 'unsafe-inline'` : `script-src 'self'`;
     callback({
       responseHeaders: {
         ...details.responseHeaders,
         'X-Content-Type-Options': ['nosniff'],
         'X-Frame-Options': ['DENY'],
-        'Content-Security-Policy': [`connect-src 'self'${apiOrigin ? ` ${apiOrigin}` : ''}${devWs};`],
+        'Content-Security-Policy': [
+          `default-src 'self'; ${scriptSrc}; style-src 'self' 'unsafe-inline'; ` +
+          `img-src 'self' data: blob:; font-src 'self' data:; object-src 'none'; base-uri 'none'; ` +
+          `form-action 'self'; frame-ancestors 'none'; ` +
+          `connect-src 'self'${apiOrigin ? ` ${apiOrigin}` : ''}${devWs};`,
+        ],
       },
     });
   });

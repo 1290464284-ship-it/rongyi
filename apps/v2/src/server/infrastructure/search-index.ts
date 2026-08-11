@@ -9,7 +9,7 @@ export function buildFtsQuery(query: string): string {
 
 // 单行 INSERT 与 rebuildSearchIndex 的 6 段 SQL 同源（逐字一致），每段追加
 // `WHERE 主表.id = ? AND 主表.deletedAt IS NULL` 限定单行。
-const SEARCH_UPSERT_SQL: Record<string, string> = {
+export const SEARCH_UPSERT_SQL: Record<string, string> = {
   Patient: `INSERT INTO SearchIndex(resource, recordId, clinicId, content)
             SELECT 'Patient', id, clinicId, trim(COALESCE(name, '') || ' ' || COALESCE(code, '') || ' ' || COALESCE(phone, '') || ' ' || COALESCE(wechatId, ''))
             FROM Patient WHERE id = ? AND deletedAt IS NULL`,
@@ -53,9 +53,39 @@ export function upsertSearchRow(db: Database.Database, resource: string, id: str
   if (!sql) return; // 未知 resource：无可维护的索引内容，直接返回。
   if (!hasSearchIndex(db)) return; // 无 FTS 表（未应用迁移 115 的库）时跳过，避免误伤精简环境。
   db.transaction(() => {
-    db.prepare(`DELETE FROM SearchIndex WHERE resource = ? AND recordId = ?`).run(resource, id);
-    db.prepare(sql).run(id);
+    upsertSearchRowUnwrapped(db, resource, id, sql);
   })();
+}
+
+function upsertSearchRowUnwrapped(
+  db: Database.Database,
+  resource: string,
+  id: string,
+  sql: string,
+): void {
+  db.prepare(`DELETE FROM SearchIndex WHERE resource = ? AND recordId = ?`).run(resource, id);
+  db.prepare(sql).run(id);
+}
+
+/**
+ * 批量删除同一资源的索引行；按 500 一组分块，避免超过 SQLite 变量上限。
+ * 用于患者删除后清理全部子记录索引，替代逐行 touchSearchIndex。
+ */
+export function removeSearchRowsByRecordIds(
+  db: Database.Database,
+  resource: string,
+  recordIds: string[],
+): void {
+  if (recordIds.length === 0) return;
+  if (!hasSearchIndex(db)) return;
+  const CHUNK = 500;
+  const stmt = db.prepare(
+    `DELETE FROM SearchIndex WHERE resource = ? AND recordId IN (${recordIds.map(() => '?').join(', ')})`,
+  );
+  for (let offset = 0; offset < recordIds.length; offset += CHUNK) {
+    const chunk = recordIds.slice(offset, offset + CHUNK);
+    stmt.run(resource, ...chunk);
+  }
 }
 
 export function removeSearchRow(db: Database.Database, resource: string, id: string): void {
@@ -79,15 +109,19 @@ export function touchSearchIndex(
 }
 
 export function refreshPatientChildSearchRows(db: Database.Database, patientId: string): void {
-  for (const { table, resource } of CHILD_SEARCH_TABLES) {
-    // 精简/异构 schema 可能缺 patientId 列或整表缺失，跳过该表。
-    const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
-    if (!columns.some((column) => column.name === 'patientId')) continue;
-    const rows = db.prepare(`SELECT id FROM ${table} WHERE patientId = ? AND deletedAt IS NULL`).all(patientId) as Array<{ id: string }>;
-    for (const row of rows) {
-      upsertSearchRow(db, resource, String(row.id));
+  db.transaction(() => {
+    for (const { table, resource } of CHILD_SEARCH_TABLES) {
+      // 精简/异构 schema 可能缺 patientId 列或整表缺失，跳过该表。
+      const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+      if (!columns.some((column) => column.name === 'patientId')) continue;
+      const sql = SEARCH_UPSERT_SQL[resource];
+      if (!sql) continue;
+      const rows = db.prepare(`SELECT id FROM ${table} WHERE patientId = ? AND deletedAt IS NULL`).all(patientId) as Array<{ id: string }>;
+      for (const row of rows) {
+        upsertSearchRowUnwrapped(db, resource, String(row.id), sql);
+      }
     }
-  }
+  })();
 }
 
 export function rebuildSearchIndex(db: Database.Database): void {
@@ -101,7 +135,8 @@ export function rebuildSearchIndex(db: Database.Database): void {
   // SQL 与迁移 115（v2-fts-search-index）回填段逐字一致。
   db.exec(`
     INSERT INTO SearchIndex(resource, recordId, clinicId, content)
-    SELECT 'Patient', id, clinicId, trim(COALESCE(name, '') || ' ' || COALESCE(code, '') || ' ' || COALESCE(phone, ''))
+    SELECT 'Patient', id, clinicId,
+           trim(COALESCE(name, '') || ' ' || COALESCE(code, '') || ' ' || COALESCE(phone, '') || ' ' || COALESCE(wechatId, ''))
     FROM Patient WHERE deletedAt IS NULL;
     INSERT INTO SearchIndex(resource, recordId, clinicId, content)
     SELECT 'InventoryItem', id, clinicId, trim(COALESCE(name, '') || ' ' || COALESCE(code, '') || ' ' || COALESCE(category, ''))

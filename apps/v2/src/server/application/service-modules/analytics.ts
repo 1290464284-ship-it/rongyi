@@ -118,7 +118,7 @@ export class PrintTemplateService {
     // B-M7：模板正文原样输出（模板本身即 HTML，escapeHtml 会破坏排版），
     // 仅对插值变量值做转义，防止 {{name}} 等变量注入脚本。
     return Object.entries(variables).reduce(
-      (html, [key, value]) => html.replaceAll(`{{${key}}}`, escapeHtml(String(value ?? ''))),
+      (html, [key, value]) => html.replaceAll(`{{${key}}}`, () => escapeHtml(String(value ?? ''))),
       String(row.content),
     );
   }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import type { Page } from '../../lib/types';
@@ -16,6 +16,8 @@ type MoneyAction =
 export function FinanceWorkflowPage() {
   const { showToast } = useToast();
   const [action, setAction] = useState<MoneyAction>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const cards = useQuery({
     queryKey: ['member-cards'],
     queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/memberCards?page=1&pageSize=100'),
@@ -36,21 +38,28 @@ export function FinanceWorkflowPage() {
   }
 
   async function submitAmount(value: string) {
-    if (!action) return;
+    if (!action || submittingRef.current) return;
     const amount = toCents(value);
     if (!value.trim() || !Number.isFinite(amount) || amount <= 0) {
       showToast('请输入有效金额', 'error');
       setAction(null);
       return;
     }
-    if (action.kind === 'recharge') {
-      await run(`/member-cards/${action.id}/recharge`, action.id, { amount, requestId: crypto.randomUUID() });
-    } else if (action.kind === 'consume') {
-      await run(`/member-cards/${action.id}/consume`, action.id, { amount, requestId: crypto.randomUUID() });
-    } else if (action.kind === 'debt') {
-      await run(`/debts/${action.id}/pay`, action.id, { amount, requestId: crypto.randomUUID() }, 'PATCH');
+    setSubmitting(true);
+    submittingRef.current = true;
+    try {
+      if (action.kind === 'recharge') {
+        await run(`/member-cards/${action.id}/recharge`, action.id, { amount, requestId: crypto.randomUUID() });
+      } else if (action.kind === 'consume') {
+        await run(`/member-cards/${action.id}/consume`, action.id, { amount, requestId: crypto.randomUUID() });
+      } else if (action.kind === 'debt') {
+        await run(`/debts/${action.id}/pay`, action.id, { amount, requestId: crypto.randomUUID() }, 'PATCH');
+      }
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
+      setAction(null);
     }
-    setAction(null);
   }
 
   const cardColumns: DataTableColumn<Record<string, unknown>>[] = [
@@ -101,6 +110,7 @@ export function FinanceWorkflowPage() {
         inputType="number"
         placeholder="例如：100"
         confirmText="确认"
+        pending={submitting}
         onSubmit={(value) => void submitAmount(value)}
         onCancel={() => setAction(null)}
       />

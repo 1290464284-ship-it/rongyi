@@ -74,8 +74,8 @@ export class MemberCardService {
       this.assertActive(card);
       if (!Number.isSafeInteger(amount) || amount <= 0) throw new ValidationError('Recharge amount must be a positive integer in cents');
       const now = context.now().toISOString();
-      const balance = Number(card.balance) + amount;
-      this.memberCardRepository.updateRecharge(cardId, balance, amount, now, context.clinicId);
+      this.memberCardRepository.updateRecharge(cardId, amount, now, context.clinicId);
+      const balance = Number(this.card(cardId, context).balance);
       this.log(cardId, 'RECHARGE', amount, balance, now, context.clinicId, null);
       return { cardId, balance, amount };
     });
@@ -92,10 +92,9 @@ export class MemberCardService {
       const card = this.card(cardId, context);
       this.assertActive(card);
       if (!Number.isSafeInteger(amount) || amount <= 0) throw new ValidationError('Consume amount must be a positive integer in cents');
-      const balance = Number(card.balance) - amount;
-      if (balance < 0) throw new ConflictError('Insufficient member card balance');
       const now = context.now().toISOString();
-      this.memberCardRepository.updateConsume(cardId, balance, amount, now, context.clinicId);
+      this.memberCardRepository.updateConsume(cardId, amount, now, context.clinicId);
+      const balance = Number(this.card(cardId, context).balance);
       this.log(cardId, 'CONSUME', -amount, balance, now, context.clinicId, null);
       return { cardId, balance, amount };
     });
@@ -114,10 +113,10 @@ export class MemberCardService {
       if (!Number.isSafeInteger(points) || points === 0) {
         throw new ValidationError('Points must be a non-zero integer');
       }
-      const after = Number(card.points) + points;
-      if (after < 0) throw new ConflictError('Insufficient points');
+      if (Number(card.points) + points < 0) throw new ConflictError('Insufficient points');
       const now = context.now().toISOString();
-      this.memberCardRepository.updatePoints(cardId, after, Number(card.totalPoints) + Math.max(0, points), now, context.clinicId);
+      this.memberCardRepository.updatePoints(cardId, points, Math.max(0, points), now, context.clinicId);
+      const after = Number(this.card(cardId, context).points);
       this.memberCardRepository.insertPointLog({
         id: randomUUID(),
         clinicId: context.clinicId ?? null,

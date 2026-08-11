@@ -13,15 +13,18 @@ export class PurchaseOrderService {
   private readonly db: Database.Database;
   private readonly purchaseOrderRepository: PurchaseOrderRepository;
   private readonly inventoryRepository: InventoryRepository;
+  private readonly lockGuard?: (itemId: string, clinicId?: string | null) => void;
 
   constructor(
     db: Database.Database,
     purchaseOrderRepository?: PurchaseOrderRepository,
     inventoryRepository?: InventoryRepository,
+    lockGuard?: (itemId: string, clinicId?: string | null) => void,
   ) {
     this.db = db;
     this.purchaseOrderRepository = purchaseOrderRepository ?? new SqlitePurchaseOrderRepository(db);
     this.inventoryRepository = inventoryRepository ?? new SqliteInventoryRepository(db);
+    this.lockGuard = lockGuard;
   }
 
   async create(
@@ -120,8 +123,11 @@ export class PurchaseOrderService {
           missing.push(item.name);
           continue;
         }
-        const before = Number(current.stock);
-        const after = before + Number(item.quantity);
+        this.lockGuard?.(item.itemId, context.clinicId);
+        this.inventoryRepository.adjustStock(item.itemId, Number(item.quantity), now, context.clinicId);
+        const afterRow = this.inventoryRepository.findItem(item.itemId, context.clinicId);
+        const after = Number(afterRow?.stock ?? Number(current.stock) + Number(item.quantity));
+        const before = after - Number(item.quantity);
         receivedItems.push({
           itemId: item.itemId,
           name: item.name,
@@ -131,7 +137,6 @@ export class PurchaseOrderService {
           beforeStock: before,
           afterStock: after,
         });
-        this.inventoryRepository.updateStock(item.itemId, after, now, context.clinicId);
         this.inventoryRepository.createTransaction({
           id: randomUUID(),
           clinicId: context.clinicId ?? null,

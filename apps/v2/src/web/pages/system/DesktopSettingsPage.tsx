@@ -26,6 +26,17 @@ export function DesktopSettingsPage() {
   const [updatePercent, setUpdatePercent] = useState<number | null>(null);
   const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
   const [apiStatus, setApiStatus] = useState('');
+  const [busyAction, setBusyAction] = useState<string | null>(null);
+
+  async function runAction(key: string, fn: () => Promise<void>) {
+    if (busyAction) return;
+    setBusyAction(key);
+    try {
+      await fn();
+    } finally {
+      setBusyAction(null);
+    }
+  }
 
   useEffect(() => {
     if (!desktop) return;
@@ -162,11 +173,11 @@ export function DesktopSettingsPage() {
         <div className="card"><strong>本地服务</strong><span>{apiStatus || '正常'}</span></div>
       </div>
       <div className="inline-form">
-        <button onClick={toggleAutoLaunch}>切换开机自启</button>
-        <button onClick={restartApi}>重启 API</button>
-        <button onClick={checkUpdates}>检查更新</button>
-        {updateAvailable !== null && !updateStatus.includes('下载中') && !updateStatus.includes('已下载') && <button onClick={downloadUpdate}>下载更新</button>}
-        {updateStatus.includes('已下载') && <button onClick={installUpdate}>立即重启安装</button>}
+        <button disabled={busyAction !== null} onClick={() => void runAction('autolaunch', toggleAutoLaunch)}>切换开机自启</button>
+        <button disabled={busyAction !== null} onClick={() => void runAction('restart', restartApi)}>重启 API</button>
+        <button disabled={busyAction !== null} onClick={() => void runAction('check', checkUpdates)}>检查更新</button>
+        {updateAvailable !== null && !updateStatus.includes('下载中') && !updateStatus.includes('已下载') && <button disabled={busyAction !== null} onClick={() => void runAction('download', downloadUpdate)}>下载更新</button>}
+        {updateStatus.includes('已下载') && <button disabled={busyAction !== null} onClick={() => void runAction('install', installUpdate)}>立即重启安装</button>}
       </div>
       {updateStatus && <p className="info">{updateStatus}</p>}
       {updatePercent !== null && <Progress value={updatePercent} />}

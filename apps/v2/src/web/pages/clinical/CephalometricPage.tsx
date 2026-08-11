@@ -7,7 +7,7 @@ import { useToast } from '../../lib/toast-context';
 import type { Page } from '../../lib/types';
 import { cephalometricColumns } from '../../cephalometric/columns';
 import { CompareResultView } from '../../cephalometric/CompareResultView';
-import { CephalometricFormFields } from '../../cephalometric/FormFields';
+import { CephalometricFormFields } from '../../cephalometric/CephalometricFormFields';
 import { ReportDialog } from '../../cephalometric/ReportDialog';
 import { SendWechatDialog } from '../../cephalometric/SendWechatDialog';
 import { jsonToText } from '../../cephalometric/utils';
@@ -126,8 +126,10 @@ export function CephalometricPage() {
           }
         }}
         onAfterCreate={() => setFile(null)}
+        onFormClose={() => setFile(null)}
         formFromRow={(row) => {
           editingIdRef.current = String(row.id);
+          setFile(null);
           return {
             patientId: String(row.patientId ?? ''),
             status: String(row.status ?? 'DRAFT'),

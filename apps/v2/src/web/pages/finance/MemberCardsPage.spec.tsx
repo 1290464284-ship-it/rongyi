@@ -2,9 +2,11 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemberCardsPage } from './MemberCardsPage';
+import { MemberCardPlanDialog } from './MemberCardPlanDialog';
+import { MemberCardQuoteDialog } from './MemberCardQuoteDialog';
 import { apiRequest } from '../../lib/api';
 import { ToastProvider } from '../../components/toast';
 
@@ -168,6 +170,109 @@ describe('MemberCardsPage', () => {
     expect(vi.mocked(apiRequest).mock.calls.some(([path]) => path === '/member-cards/card-1/discount-plan')).toBe(false);
   });
 
+  it('does not save a discount plan without a card id and reports save failures', async () => {
+    const onSaved = vi.fn();
+    const onClose = vi.fn();
+    const showToast = vi.fn();
+    const { rerender } = render(
+      <MemberCardPlanDialog open cardId={null} onSaved={onSaved} onClose={onClose} showToast={showToast} />,
+      { wrapper },
+    );
+    fireEvent.click(screen.getByText('保存'));
+    expect(apiRequest).not.toHaveBeenCalledWith(expect.stringContaining('/discount-plan'), expect.anything());
+
+    vi.mocked(apiRequest).mockRejectedValueOnce(new Error(''));
+    rerender(
+      <MemberCardPlanDialog open cardId="card-1" onSaved={onSaved} onClose={onClose} showToast={showToast} />,
+    );
+    fireEvent.click(screen.getByText('保存'));
+    await waitFor(() => {
+      expect(showToast).toHaveBeenCalledWith('保存折扣方案失败', 'error');
+    });
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it('changes the status field when editing and closes action dialogs', async () => {
+    mockData();
+    render(<MemberCardsPage />, { wrapper });
+    await screen.findByText('C001');
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('状态'), { target: { value: 'FROZEN' } });
+    vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'card-1' });
+    fireEvent.click(screen.getByText('保存'));
+    await waitFor(() => {
+      const call = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/resources/memberCards/card-1');
+      expect(call).toBeDefined();
+      expect(JSON.parse(String((call?.[1] as RequestInit)?.body))).toMatchObject({ status: 'FROZEN' });
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '充值' }));
+    fireEvent.keyDown(await screen.findByRole('dialog'), { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '积分' }));
+    await screen.findByRole('dialog');
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '报价试算' }));
+    const quoteDialog = (await screen.findByLabelText('原价金额（元）')).closest('[role="dialog"]') as HTMLElement;
+    fireEvent.keyDown(quoteDialog, { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByLabelText('原价金额（元）')).toBeNull();
+    });
+  });
+
+  it('reports member card action failures', async () => {
+    mockData();
+    render(<MemberCardsPage />, { wrapper });
+    await screen.findByText('C001');
+    vi.mocked(apiRequest).mockRejectedValueOnce(new Error(''));
+    fireEvent.click(screen.getByRole('button', { name: '充值' }));
+    fireEvent.change(screen.getByLabelText('金额（元）'), { target: { value: '100' } });
+    fireEvent.click(screen.getByText('确认'));
+    expect(await screen.findByText('会员卡操作失败')).toBeDefined();
+  });
+
+  it('renders fallback labels for sparse card rows and prefills missing fields', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/memberCards?page=1&pageSize=100') {
+        return {
+          items: [
+            { id: 'card-null', status: null, level: null },
+            { id: 'card-weird', status: 'WEIRD', level: 'CUSTOM' },
+          ],
+          total: 2,
+          page: 1,
+          pageSize: 100,
+        };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      return {};
+    });
+    render(<MemberCardsPage />, { wrapper });
+    expect(await screen.findByText('WEIRD')).toBeDefined();
+    expect(screen.getByText('CUSTOM')).toBeDefined();
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getAllByRole('button', { name: '编辑' })[0]);
+    await waitFor(() => {
+      expect((screen.getByLabelText('卡号') as HTMLInputElement).value).toBe('');
+      expect((screen.getByLabelText('状态') as HTMLSelectElement).value).toBe('ACTIVE');
+      expect((screen.getByLabelText('等级') as HTMLSelectElement).value).toBe('NORMAL');
+    });
+  });
+
   it('runs a quote from the quote dialog', async () => {
     mockData();
     render(<MemberCardsPage />, { wrapper });
@@ -242,5 +347,69 @@ describe('MemberCardsPage', () => {
       expect(apiRequest).toHaveBeenCalledWith('/resources/memberCards/card-1', expect.objectContaining({ method: 'DELETE' }));
     });
     expect(await screen.findByText('会员卡已删除')).toBeDefined();
+  });
+
+  it('shows loading, error, and empty states', async () => {
+    vi.mocked(apiRequest).mockImplementation(() => new Promise(() => {}));
+    render(<MemberCardsPage />, { wrapper });
+    expect(screen.getByText('加载中...')).toBeDefined();
+    cleanup();
+
+    vi.mocked(apiRequest).mockRejectedValue(new Error('cards failed'));
+    render(<MemberCardsPage />, { wrapper });
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+    cleanup();
+
+    vi.mocked(apiRequest).mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 100 });
+    render(<MemberCardsPage />, { wrapper });
+    expect(await screen.findByText('暂无会员卡')).toBeDefined();
+  });
+});
+
+describe('MemberCardQuoteDialog', () => {
+  afterEach(() => {
+    cleanup();
+    vi.mocked(apiRequest).mockReset();
+  });
+
+  it('rejects invalid and negative quote amounts', async () => {
+    const showToast = vi.fn();
+    const { container } = render(
+      <MemberCardQuoteDialog open cardId="card-1" onClose={vi.fn()} showToast={showToast} />,
+      { wrapper },
+    );
+    fireEvent.change(screen.getByLabelText('原价金额（元）'), { target: { value: '-5' } });
+    await act(async () => {});
+    fireEvent.submit(container.querySelector('form') as HTMLFormElement);
+    expect(showToast).toHaveBeenCalledWith('请输入有效金额', 'error');
+    expect(apiRequest).not.toHaveBeenCalled();
+  });
+
+  it('ignores a second quote request while one is pending', async () => {
+    let resolveQuote: ((value: unknown) => void) | undefined;
+    vi.mocked(apiRequest).mockImplementation(
+      () => new Promise((resolve) => { resolveQuote = resolve; }),
+    );
+    const showToast = vi.fn();
+    const { container } = render(
+      <MemberCardQuoteDialog open cardId="card-1" onClose={vi.fn()} showToast={showToast} />,
+      { wrapper },
+    );
+    fireEvent.change(screen.getByLabelText('原价金额（元）'), { target: { value: '100' } });
+    const form = container.querySelector('form') as HTMLFormElement;
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    expect(apiRequest).toHaveBeenCalledTimes(1);
+    resolveQuote?.({ applied: false, reason: 'NO_PLAN' });
+  });
+
+  it('closes the dialog through the cancel button', async () => {
+    const onClose = vi.fn();
+    render(
+      <MemberCardQuoteDialog open cardId="card-1" onClose={onClose} showToast={vi.fn()} />,
+      { wrapper },
+    );
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

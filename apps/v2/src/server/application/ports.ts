@@ -61,8 +61,8 @@ export interface ChargeRepository {
   findById(id: string, clinicId?: string | null): ChargeRecord | null;
   create(input: CreateChargeInput): void;
   createItem(item: ChargeItemRecord): void;
-  updatePayment(id: string, paidAmount: number, status: string, paidAt: string, payMethod?: string, memberCardId?: string | null, clinicId?: string | null): void;
-  updateRefund(id: string, refundedAmount: number, status: string, updatedAt: string, clinicId?: string | null): void;
+  updatePayment(id: string, paidAmount: number, status: string, paidAt: string, previousPaidAmount: number, payMethod?: string, memberCardId?: string | null, clinicId?: string | null): void;
+  updateRefund(id: string, refundedAmount: number, status: string, updatedAt: string, previousRefundedAmount: number, clinicId?: string | null): void;
 }
 
 export interface MemberCardRecord {
@@ -87,10 +87,10 @@ export interface MemberCardRepository {
   findById(id: string, clinicId?: string | null): MemberCardRecord | null;
   findByPatient(patientId: string, clinicId?: string | null): MemberCardRecord | null;
   findByPatientForRefund(patientId: string, clinicId?: string | null): MemberCardRecord | null;
-  updateBalanceRefund(id: string, balance: number, updatedAt: string, clinicId?: string | null): void;
-  updateRecharge(id: string, balance: number, amount: number, updatedAt: string, clinicId?: string | null): void;
-  updateConsume(id: string, balance: number, amount: number, updatedAt: string, clinicId?: string | null): void;
-  updatePoints(id: string, points: number, totalPoints: number, updatedAt: string, clinicId?: string | null): void;
+  updateBalanceRefund(id: string, amount: number, updatedAt: string, clinicId?: string | null): void;
+  updateRecharge(id: string, amount: number, updatedAt: string, clinicId?: string | null): void;
+  updateConsume(id: string, amount: number, updatedAt: string, clinicId?: string | null): void;
+  updatePoints(id: string, pointsDelta: number, totalPointsDelta: number, updatedAt: string, clinicId?: string | null): void;
   insertLog(input: Record<string, unknown>): void;
   insertPointLog(input: Record<string, unknown>): void;
 }
@@ -124,7 +124,7 @@ export interface InventoryTransactionRecord {
 
 export interface InventoryRepository {
   findItem(id: string, clinicId?: string | null): InventoryItemRecord | null;
-  updateStock(id: string, stock: number, updatedAt: string, clinicId?: string | null): void;
+  adjustStock(id: string, delta: number, updatedAt: string, clinicId?: string | null): void;
   createTransaction(record: InventoryTransactionRecord): void;
   lowStock(clinicId?: string | null): InventoryItemRecord[];
 }
@@ -145,7 +145,7 @@ export interface DebtRecord {
 export interface DebtRepository {
   findById(id: string, clinicId?: string | null): DebtRecord | null;
   findByCharge(chargeId: string, clinicId?: string | null): DebtRecord | null;
-  updatePaid(id: string, paidAmount: number, status: string, updatedAt: string, clinicId?: string | null): void;
+  updatePaid(id: string, paidAmount: number, status: string, updatedAt: string, previousPaidAmount: number, clinicId?: string | null): void;
 }
 
 export interface AuthUserRecord {

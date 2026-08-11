@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
+import { setInventoryStock } from './inventory-ledger';
 import type { AppContext } from '../../../domain/contracts';
 
 /**
@@ -191,9 +192,6 @@ export class StocktakeService {
         name: string | null;
       }>;
 
-      const updateItem = this.db.prepare(
-        `UPDATE InventoryItem SET stock = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
-      );
       const insertTx = this.db.prepare(
         `INSERT INTO InventoryTransaction (
            id, clinicId, createdAt, updatedAt, deletedAt,
@@ -204,7 +202,7 @@ export class StocktakeService {
       for (const diff of diffs) {
         const systemStock = Number(diff.systemStock);
         const countedStock = Number(diff.countedStock ?? systemStock);
-        updateItem.run(countedStock, now, diff.itemId, ...tenantParams(context.clinicId));
+        setInventoryStock(this.db, diff.itemId, countedStock, now, context.clinicId);
         insertTx.run(
           randomUUID(),
           context.clinicId ?? null,
