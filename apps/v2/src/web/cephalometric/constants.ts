@@ -9,6 +9,9 @@ export const COLOR_OPTIONS = [
   { value: '#d97706', label: '橙色' },
 ];
 
+export const DEFAULT_OUTLINE_COLOR = COLOR_OPTIONS[0].value;
+export const DEFAULT_LINE_COLOR = COLOR_OPTIONS[2].value;
+
 export const COMPARE_COLORS = [
   '#2563eb',
   '#dc2626',
@@ -25,7 +28,7 @@ export const COMPARE_COLORS = [
 export const DEFAULT_REPORT_JSON = `{
   "outline": [],
   "polylines": [],
-  "outlineColor": "#2563eb",
-  "lineColor": "#dc2626",
+  "outlineColor": "${DEFAULT_OUTLINE_COLOR}",
+  "lineColor": "${DEFAULT_LINE_COLOR}",
   "conclusion": ""
 }`;

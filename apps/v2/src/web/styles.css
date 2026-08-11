@@ -50,6 +50,19 @@
 
   /* 图表系列色 */
   --chart-purple: #7C3AED;
+  --chart-1: #2563eb;
+  --chart-2: #dc2626;
+  --chart-3: #16a34a;
+  --chart-4: #9333ea;
+  --chart-5: #d97706;
+  --chart-6: #0f766e;
+  --chart-7: #db2777;
+  --chart-8: #4f46e5;
+  --chart-9: #65a30d;
+  --chart-10: #b45309;
+  --chart-grid: #c9d3de;
+  --chart-bg: #f8fafc;
+  --chart-muted: #6b7280;
 
   /* 圆角：卡片/弹窗 10、按钮/输入 8、徽章 5 */
   --radius: 10px;
@@ -123,6 +136,19 @@
 
     /* 图表系列色 */
     --chart-purple: #A78BFA;
+    --chart-1: #60A5FA;
+    --chart-2: #F87171;
+    --chart-3: #4ADE80;
+    --chart-4: #C084FC;
+    --chart-5: #FBBF24;
+    --chart-6: #2DD4BF;
+    --chart-7: #F472B6;
+    --chart-8: #818CF8;
+    --chart-9: #A3E635;
+    --chart-10: #FB923C;
+    --chart-grid: #2A3F46;
+    --chart-bg: #132124;
+    --chart-muted: #8FA8B0;
 
     /* 阴影：更深、扩散更小 */
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 2px 10px rgba(0, 0, 0, 0.3);
