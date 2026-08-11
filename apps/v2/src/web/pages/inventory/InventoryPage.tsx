@@ -19,6 +19,7 @@ export function InventoryPage() {
   const [type, setType] = useState<'IN' | 'OUT' | 'ADJUST'>('IN');
   const [quantity, setQuantity] = useState('1');
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const [batchNo, setBatchNo] = useState('');
   const [productionDate, setProductionDate] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
@@ -86,7 +87,7 @@ export function InventoryPage() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (submitting) return;
+    if (submitting || submittingRef.current) return;
     // M13：itemId 必填，提交前字段级校验（避免报错延迟到服务端）
     if (!itemId || !itemId.trim()) {
       setItemIdError('请填写库存项目 ID');
@@ -98,6 +99,7 @@ export function InventoryPage() {
       showToast('请输入有效的库存数量', 'error');
       return;
     }
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       await apiRequest('/inventory/transactions', {
@@ -109,12 +111,14 @@ export function InventoryPage() {
     } catch (error) {
       showToast(errorMessage(error, '保存库存流水失败'), 'error');
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   }
 
   async function generateReplenishment() {
-    if (submitting) return;
+    if (submitting || submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       await apiRequest('/inventory/replenishment/generate', { method: 'POST', body: JSON.stringify({}) });
@@ -123,6 +127,7 @@ export function InventoryPage() {
     } catch (error) {
       showToast(errorMessage(error, '生成补货建议失败'), 'error');
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   }
@@ -152,7 +157,7 @@ export function InventoryPage() {
 
   async function submitBatch(event: FormEvent) {
     event.preventDefault();
-    if (submitting) return;
+    if (submitting || submittingRef.current) return;
     if (!itemId) {
       showToast('请先填写库存项目 ID', 'error');
       return;
@@ -162,6 +167,7 @@ export function InventoryPage() {
       showToast('请输入有效的入库数量', 'error');
       return;
     }
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       await apiRequest('/inventory-batches', {
@@ -185,12 +191,14 @@ export function InventoryPage() {
     } catch (error) {
       showToast(errorMessage(error, '批次入库失败'), 'error');
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   }
 
   async function generateExpiryAlerts() {
-    if (submitting) return;
+    if (submitting || submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       await apiRequest('/inventory-batches/expiry-alerts', { method: 'POST', body: JSON.stringify({ days: 30 }) });
@@ -199,6 +207,7 @@ export function InventoryPage() {
     } catch (error) {
       showToast(errorMessage(error, '生成到期提醒失败'), 'error');
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   }
@@ -236,7 +245,8 @@ export function InventoryPage() {
   }
 
   async function confirmDeleteBatch() {
-    if (!deleteTarget || submitting) return;
+    if (!deleteTarget || submitting || submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       await apiRequest(`/inventory-batches/${deleteTarget.id}`, { method: 'DELETE' });
@@ -247,6 +257,7 @@ export function InventoryPage() {
       showToast(errorMessage(error, '删除批次失败'), 'error');
       setDeleteTarget(null);
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   }
@@ -274,24 +285,48 @@ export function InventoryPage() {
       </form>
       <div className="tabs" role="tablist">
         <button
+          id="inventory-tab-overview"
           role="tab"
+          aria-selected={activeTab === 'overview'}
+          aria-controls="inventory-panel-overview"
+          tabIndex={activeTab === 'overview' ? 0 : -1}
           className={activeTab === 'overview' ? 'tab active' : 'tab'}
           onClick={() => setActiveTab('overview')}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowRight') {
+              event.preventDefault();
+              setActiveTab('report');
+              document.getElementById('inventory-tab-report')?.focus();
+            }
+          }}
         >
           库存概览
         </button>
         <button
+          id="inventory-tab-report"
           role="tab"
+          aria-selected={activeTab === 'report'}
+          aria-controls="inventory-panel-report"
+          tabIndex={activeTab === 'report' ? 0 : -1}
           className={activeTab === 'report' ? 'tab active' : 'tab'}
           onClick={() => setActiveTab('report')}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowLeft') {
+              event.preventDefault();
+              setActiveTab('overview');
+              document.getElementById('inventory-tab-overview')?.focus();
+            }
+          }}
         >
           库存明细报表
         </button>
       </div>
       {activeTab === 'report' ? (
-        <InventoryReportPanel />
+        <div id="inventory-panel-report" role="tabpanel" aria-labelledby="inventory-tab-report">
+          <InventoryReportPanel />
+        </div>
       ) : (
-        <>
+        <div id="inventory-panel-overview" role="tabpanel" aria-labelledby="inventory-tab-overview">
           <form className="inline-form" onSubmit={submit}>
             <input
               aria-label="库存项目 ID"
@@ -393,7 +428,7 @@ export function InventoryPage() {
               </tbody>
             </table>
           </div>
-        </>
+        </div>
       )}
       <Dialog open={editTarget !== null} title="编辑批次" onClose={() => setEditTarget(null)}>
         <form onSubmit={submitEditBatch}>

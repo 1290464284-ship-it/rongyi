@@ -17,11 +17,13 @@ import { ChangeOwnPasswordForm } from './ChangeOwnPasswordForm';
 
 const ROLE_LABELS: Record<string, string> = {
   BOSS: '老板',
+  ADMIN: '管理员',
   DOCTOR: '医生',
 };
 
 const PERMISSION_KEYS = [
   'dashboard',
+  'frontDesk',
   'patients',
   'clinical',
   'finance',
@@ -34,7 +36,8 @@ const PERMISSION_KEYS = [
 
 const PERMISSION_LABELS: Record<string, string> = {
   dashboard: '经营报表',
-  patients: '患者与预约',
+  frontDesk: '前台工作',
+  patients: '患者档案',
   clinical: '临床诊疗',
   finance: '收费财务',
   inventory: '库存采购',
@@ -96,18 +99,19 @@ export function UsersPage() {
   const users = useQuery({
     queryKey: ['users'],
     queryFn: () => apiRequest<Page<UserRow>>('/resources/users?page=1&pageSize=100'),
-    enabled: me.data?.role === 'BOSS',
+    enabled: me.data?.role === 'BOSS' || me.data?.role === 'ADMIN',
   });
   const userRoles = useQuery({
     queryKey: ['user-roles'],
     queryFn: () => apiRequest<{ items: UserRoleRow[] }>('/user-roles'),
-    enabled: me.data?.role === 'BOSS',
+    enabled: me.data?.role === 'BOSS' || me.data?.role === 'ADMIN',
   });
 
   if (me.isLoading) return <LoadingState />;
-  if (me.error || me.data?.role !== 'BOSS') {
-    return <PageError message="仅老板可管理员工账号" />;
+  if (me.error || !['BOSS', 'ADMIN'].includes(me.data?.role ?? '')) {
+    return <PageError message="仅老板或管理员可管理员工账号" />;
   }
+  const isBoss = me.data?.role === 'BOSS';
   if (users.isLoading) return <LoadingState />;
   if (users.error) return <PageError message={(users.error as Error).message} />;
 
@@ -281,12 +285,16 @@ export function UsersPage() {
       key: 'actions',
       label: '操作',
       render: (row: UserRow) => (
-        <>
-          <button onClick={() => openEdit(row)}>编辑</button>
-          <button onClick={() => void openPermissions(row)}>权限</button>
-          <button onClick={() => setPasswordTarget(row.id)}>重置密码</button>
-          <button className="danger" onClick={() => setDeleteTarget(row)}>删除</button>
-        </>
+        isBoss || row.role !== 'BOSS' ? (
+          <>
+            <button onClick={() => openEdit(row)}>编辑</button>
+            <button onClick={() => void openPermissions(row)}>权限</button>
+            <button onClick={() => setPasswordTarget(row.id)}>重置密码</button>
+            <button className="danger" onClick={() => setDeleteTarget(row)}>删除</button>
+          </>
+        ) : (
+          <span>老板账号</span>
+        )
       ),
     },
   ];
@@ -319,9 +327,11 @@ export function UsersPage() {
           <label>
             角色
             <select value={form.role} onChange={(event) => setForm((current) => ({ ...current, role: event.target.value }))}>
-              {Object.entries(ROLE_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
+              {Object.entries(ROLE_LABELS)
+                .filter(([value]) => isBoss || value !== 'BOSS')
+                .map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
             </select>
           </label>
           <label>
@@ -331,7 +341,7 @@ export function UsersPage() {
           <fieldset className="role-checkbox-group">
             <legend>附加岗位</legend>
             {Object.entries(ROLE_LABELS)
-              .filter(([value]) => value !== form.role)
+              .filter(([value]) => value !== form.role && (isBoss || value !== 'BOSS'))
               .map(([value, label]) => (
                 <label key={value}>
                   <input

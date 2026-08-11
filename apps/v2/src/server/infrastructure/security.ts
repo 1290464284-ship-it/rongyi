@@ -1,6 +1,7 @@
 /**
  * Security helpers shared by HTTP and repository adapters.
  */
+import { resetSecretFileCache, secretFileValue } from './secret-file';
 
 /** 审计日志/响应脱敏字段（掩码用途；含业务敏感字段，如患者手机号、身份证号、会员卡号）。 */
 const SENSITIVE_FIELDS = new Set([
@@ -82,9 +83,9 @@ const RESOURCE_PROTECTED_WRITE_FIELDS: Record<string, ReadonlySet<string>> = {
   wechatMessages: new Set(['status', 'sentAt', 'result']),
 };
 
-/** 递归掩码：数组逐项、对象逐键；深度 >5 时原样返回（防深层嵌套拖垮审计）。 */
+/** 递归掩码：数组逐项、对象逐键；深度 >5 时截断为占位值，避免深层嵌套泄露敏感键。 */
 export function maskSensitiveFields<T>(row: T, depth = 0): T {
-  if (depth > 5) return row;
+  if (depth > 5) return '[MaxDepth]' as unknown as T;
   if (Array.isArray(row)) return row.map((item) => maskSensitiveFields(item, depth + 1)) as unknown as T;
   if (row && typeof row === 'object') {
     const result: Record<string, unknown> = {};
@@ -118,4 +119,20 @@ export function stripProtectedWriteFields(
   delete result.updatedAt;
   delete result.deletedAt;
   return result;
+}
+
+/**
+ * 生产环境必须配置备份密钥：加密备份、文件签名 URL、restore marker 都依赖
+ * 它。缺少时在启动阶段 fail-closed，避免运行中途出现“文件已写入但签名失败”
+ * 或“备份已创建但无法加密”的半提交状态。
+ */
+export function assertProductionBackupKeyConfigured(nodeEnv = process.env.NODE_ENV ?? 'development'): void {
+  if (nodeEnv !== 'production') return;
+  // 测试会临时替换 V2_SECRET_FILE；清缓存确保读取的是当前环境，而不是
+  // 模块首次加载时缓存的旧文件。
+  resetSecretFileCache();
+  const key = process.env.V2_BACKUP_KEY ?? secretFileValue('backupKey');
+  if (!key) {
+    throw new Error('V2_BACKUP_KEY must be set in production for encrypted backups, signed file URLs, and restore markers');
+  }
 }

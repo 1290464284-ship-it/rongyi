@@ -17,6 +17,7 @@ describe('electron logging', () => {
   afterEach(() => {
     if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
     vi.restoreAllMocks();
+    delete process.env.V2_CRASH_REPORT_URL;
   });
 
   it('writes crash logs to userData and rotates by size', () => {
@@ -31,6 +32,41 @@ describe('electron logging', () => {
     const log = fs.readFileSync(path.join(tempDir, 'logs', 'desktop.log'), 'utf8');
     expect(log).toContain('boom');
     expect(log).toContain('failure');
+  });
+
+  it('uploads crash reports over https using the https transport', () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-logging-https-test-'));
+    const sent: Array<{ url: string; body: string }> = [];
+    const requestMock = vi.fn((url: string, _options: unknown, _callback: unknown) => {
+      const req = {
+        on: vi.fn(() => req),
+        end: vi.fn((body: string) => {
+          sent.push({ url, body });
+        }),
+        destroy: vi.fn(),
+      };
+      return req;
+    });
+    const electron = {
+      app: { getPath: () => tempDir },
+      BrowserWindow: { getAllWindows: () => [] },
+      Notification: { isSupported: () => false },
+    };
+    process.env.V2_CRASH_REPORT_URL = 'https://crash.example/report';
+    const mod = loadElectronModule<LoggingModule>('../../../electron/logging.cjs', {
+      electron,
+      'node:https': { request: requestMock },
+    });
+
+    mod.crashLog('boom', new Error('failure'));
+
+    expect(requestMock).toHaveBeenCalledWith(
+      'https://crash.example/report',
+      expect.objectContaining({ method: 'POST' }),
+      expect.any(Function),
+    );
+    expect(sent[0]?.body).toContain('boom');
+    expect(sent[0]?.body).toContain('failure');
   });
 
   it('sends events only to live windows', () => {

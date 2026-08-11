@@ -63,7 +63,7 @@ function assertTrustedRenderer(event) {
 function isAllowedNavigation(url) {
   try {
     const parsed = new URL(url);
-    if (parsed.protocol === 'file:' && parsed.pathname.endsWith('/dist-web/index.html')) return true;
+    if (url === INDEX_HTML_FILE_URL || url.startsWith(`${INDEX_HTML_FILE_URL}#`)) return true;
     if (parsed.protocol === 'blob:' && isDev) return true;
     if (parsed.protocol === 'http:' && parsed.hostname === '127.0.0.1' && parsed.port === String(state.apiPort)) return true;
     if (isDev && parsed.protocol === 'http:' && parsed.hostname === 'localhost') return true;
@@ -90,14 +90,14 @@ function secureWindowPreferences() {
 }
 
 function createWindow() {
-  const state = loadWindowState();
+  const windowState = loadWindowState();
   const mainWindow = new BrowserWindow({
-    width: state.width,
-    height: state.height,
-    ...(state.x !== undefined && state.y !== undefined ? { x: state.x, y: state.y } : {}),
+    width: windowState.width,
+    height: windowState.height,
+    ...(windowState.x !== undefined && windowState.y !== undefined ? { x: windowState.x, y: windowState.y } : {}),
     webPreferences: secureWindowPreferences(),
   });
-  if (state.maximized) mainWindow.maximize();
+  if (windowState.maximized) mainWindow.maximize();
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (isAllowedNavigation(url)) {

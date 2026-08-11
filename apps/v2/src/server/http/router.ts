@@ -10,7 +10,7 @@ import { stripProtectedWriteFields } from '../infrastructure/security';
 import { withIdempotency } from '../infrastructure/idempotency';
 import { parsePagination } from './pagination';
 import { tenantAnd, tenantParams } from '../infrastructure/tenant';
-import { recordSyncChange } from '../infrastructure/sync-change';
+import { trackResourceWrite } from '../infrastructure/write-tracking';
 import { RESOURCE_PERMISSION_MAP } from '../application/service-modules/permissions';
 
 export function createResourceRouter(db: Database.Database): Router {
@@ -167,14 +167,13 @@ export function createResourceRouter(db: Database.Database): Router {
           if (!existing) throw new NotFoundError('treatmentPlanItems not found');
           throw new ConflictError(Object.prototype.hasOwnProperty.call(payload, 'price') ? '已划价明细不可改价' : '已划价明细不可修改');
         }
-        if (req.context!.clinicId) {
-          recordSyncChange(db, {
-            tableName: 'TreatmentPlanItem',
-            recordId: req.params.id,
-            operation: 'UPDATE',
-            clinicId: req.context!.clinicId,
-          });
-        }
+        trackResourceWrite(db, {
+          tableName: 'TreatmentPlanItem',
+          recordId: req.params.id,
+          operation: 'UPDATE',
+          clinicId: req.context!.clinicId ?? null,
+          searchResource: null,
+        });
         delete payload.price;
         delete payload.quantity;
       }
@@ -200,7 +199,7 @@ export function createResourceRouter(db: Database.Database): Router {
       const resource = res.locals.resource as ResourceDefinition;
       if (!resource.capabilities.delete) throw new NotFoundError('Delete is not supported for this resource');
       // M2：患者主档删除限 BOSS（医生/前台可误删患者）；病历删除须未锁定（绕过审批流）。
-      if (resource.name === 'patients' && req.context!.role !== 'BOSS') {
+      if (resource.name === 'patients' && !['BOSS', 'ADMIN'].includes(req.context!.role)) {
         throw new AppError('FORBIDDEN', 'Deleting patients requires BOSS', 403);
       }
       const repo = new SqliteRepository(db, resource);

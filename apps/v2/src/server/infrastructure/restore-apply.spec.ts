@@ -5,6 +5,12 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import Database from 'better-sqlite3';
 import type { Logger } from './logger';
 import { applyStagedRestore, signRestoreMarker } from './restore-apply';
+import { sha256File } from './sqlite-files';
+
+function markerFor(stagedPath: string, fileExists = true): { stagedPath: string; sha256: string; sig: string } {
+  const sha256 = fileExists ? sha256File(stagedPath) : '0'.repeat(64);
+  return { stagedPath, sha256, sig: signRestoreMarker(stagedPath, sha256) };
+}
 
 describe('applyStagedRestore', () => {
   let dir: string;
@@ -32,7 +38,7 @@ describe('applyStagedRestore', () => {
     current.prepare('INSERT INTO marker_sample VALUES (?)').run('before');
     current.close();
     fs.writeFileSync(stagedPath, 'staged-db');
-    fs.writeFileSync(path.join(dir, '.restore-pending.json'), JSON.stringify({ stagedPath, sig: signRestoreMarker(stagedPath) }));
+    fs.writeFileSync(path.join(dir, '.restore-pending.json'), JSON.stringify(markerFor(stagedPath)));
 
     const result = applyStagedRestore(dbPath, [dir, path.dirname(stagedPath)]);
     expect(result.applied).toBe(true);
@@ -52,7 +58,7 @@ describe('applyStagedRestore', () => {
     fs.writeFileSync(`${dbPath}-wal`, 'stale-wal');
     fs.writeFileSync(`${dbPath}-shm`, 'stale-shm');
     fs.writeFileSync(stagedPath, 'fresh-db');
-    fs.writeFileSync(path.join(dir, '.restore-pending.json'), JSON.stringify({ stagedPath, sig: signRestoreMarker(stagedPath) }));
+    fs.writeFileSync(path.join(dir, '.restore-pending.json'), JSON.stringify(markerFor(stagedPath)));
 
     applyStagedRestore(dbPath, [dir]);
     expect(fs.readFileSync(dbPath, 'utf8')).toBe('fresh-db');
@@ -71,7 +77,7 @@ describe('applyStagedRestore', () => {
     current.prepare('INSERT INTO backup_sample VALUES (?)').run('kept');
     current.close();
     fs.writeFileSync(stagedPath, 'fresh-db');
-    fs.writeFileSync(path.join(dir, '.restore-pending.json'), JSON.stringify({ stagedPath, sig: signRestoreMarker(stagedPath) }));
+    fs.writeFileSync(path.join(dir, '.restore-pending.json'), JSON.stringify(markerFor(stagedPath)));
 
     const result = applyStagedRestore(dbPath, [dir]);
     const backupDb = new Database(result.backupPath as string, { readonly: true });
@@ -84,7 +90,7 @@ describe('applyStagedRestore', () => {
     const caseDir = path.join(dir, 'unsafe-case');
     fs.mkdirSync(caseDir, { recursive: true });
     const dbPath = path.join(caseDir, 'unsafe.sqlite');
-    fs.writeFileSync(path.join(caseDir, '.restore-pending.json'), JSON.stringify({ stagedPath: 'C:/Windows/system32/evil.sqlite', sig: signRestoreMarker('C:/Windows/system32/evil.sqlite') }));
+    fs.writeFileSync(path.join(caseDir, '.restore-pending.json'), JSON.stringify(markerFor('C:/Windows/system32/evil.sqlite', false)));
 
     const result = applyStagedRestore(dbPath, [caseDir]);
 
@@ -99,7 +105,7 @@ describe('applyStagedRestore', () => {
     fs.mkdirSync(caseDir, { recursive: true });
     const dbPath = path.join(caseDir, 'missing-staged.sqlite');
     const stagedPath = path.join(caseDir, 'backups', 'missing.sqlite');
-    fs.writeFileSync(path.join(caseDir, '.restore-pending.json'), JSON.stringify({ stagedPath, sig: signRestoreMarker(stagedPath) }));
+    fs.writeFileSync(path.join(caseDir, '.restore-pending.json'), JSON.stringify(markerFor(stagedPath, false)));
 
     const result = applyStagedRestore(dbPath, [caseDir]);
 
@@ -136,9 +142,11 @@ describe('applyStagedRestore', () => {
     fs.mkdirSync(path.dirname(stagedPath), { recursive: true });
     fs.writeFileSync(stagedPath, 'staged-db');
     // 对另一路径签名的 marker：即使 stagedPath 合法且文件存在，也必须被丢弃。
+    const otherPath = path.join(caseDir, 'backups', 'other.sqlite');
     fs.writeFileSync(path.join(caseDir, '.restore-pending.json'), JSON.stringify({
       stagedPath,
-      sig: signRestoreMarker(path.join(caseDir, 'backups', 'other.sqlite')),
+      sha256: sha256File(stagedPath),
+      sig: signRestoreMarker(otherPath, sha256File(stagedPath)),
     }));
     const warn = vi.fn();
     const logger = { warn } as unknown as Logger;
@@ -156,11 +164,35 @@ describe('applyStagedRestore', () => {
     const newDbPath = path.join(dir, 'new-v2.sqlite');
     const stagedPath = path.join(dir, 'new-staged.sqlite');
     fs.writeFileSync(stagedPath, 'new-db');
-    fs.writeFileSync(path.join(dir, '.restore-pending.json'), JSON.stringify({ stagedPath, sig: signRestoreMarker(stagedPath) }));
+    fs.writeFileSync(path.join(dir, '.restore-pending.json'), JSON.stringify(markerFor(stagedPath)));
 
     const result = applyStagedRestore(newDbPath, [dir]);
     expect(result.applied).toBe(true);
     expect(result.backupPath).toBeUndefined();
     expect(fs.readFileSync(newDbPath, 'utf8')).toBe('new-db');
+  });
+
+  it('discards the marker when the staged file content changed after staging', () => {
+    const caseDir = path.join(dir, 'hash-case');
+    fs.mkdirSync(caseDir, { recursive: true });
+    const dbPath = path.join(caseDir, 'hash.sqlite');
+    const stagedPath = path.join(caseDir, 'backups', 'hash.sqlite');
+    fs.mkdirSync(path.dirname(stagedPath), { recursive: true });
+    fs.writeFileSync(stagedPath, 'original');
+    const marker = markerFor(stagedPath);
+    fs.writeFileSync(stagedPath, 'tampered');
+    fs.writeFileSync(path.join(caseDir, '.restore-pending.json'), JSON.stringify(marker));
+    const warn = vi.fn();
+
+    const result = applyStagedRestore(dbPath, [caseDir], { warn } as unknown as Logger);
+
+    expect(result).toEqual({ applied: false });
+    expect(fs.existsSync(dbPath)).toBe(false);
+    const renamed = fs.readdirSync(caseDir).filter((name) => name.startsWith('.restore-pending.json.invalid-'));
+    expect(renamed).toHaveLength(1);
+    expect(warn).toHaveBeenCalledWith(
+      'staged restore content hash mismatch; discarding marker',
+      expect.objectContaining({ action: 'restore-apply' }),
+    );
   });
 });

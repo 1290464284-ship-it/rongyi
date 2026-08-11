@@ -185,6 +185,9 @@ describe('service edge coverage', () => {
     // 无诊所作用域（clinicId NULL 且无 UserClinic 成员关系）的用户登录/刷新必须被拒绝。
     await expect(auth.login('user-edge-null-clinic', 'nullpass')).rejects.toThrow('No clinic scope assigned to this account');
     await expect(auth.login('user-edge-null-clinic', 'nullpass')).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
+    // 无 clinicId 的 token 也必须 fail-closed，不能以“全诊所可见”作用域通过校验。
+    expect(auth.isClinicAccessible('user-admin-001', null)).toBe(false);
+    expect(auth.isClinicAccessible('user-admin-001', 'clinic-v2-001')).toBe(true);
 
     const mockAuthRepository = {
       findByUsername: () => ({
@@ -279,13 +282,13 @@ describe('service edge coverage', () => {
       clinicIds: ['clinic-v2-other'],
     }, { ...context, clinicId: 'clinic-v2-001' });
     expect(auth.listAccessibleClinics(nurse.id, 'DOCTOR').clinics).toHaveLength(1);
-    expect(() => auth.switchClinic(nurse.id, 'DOCTOR', 'clinic-v2-other')).toThrow('Only BOSS can switch clinics');
+    expect(() => auth.switchClinic(nurse.id, 'DOCTOR', 'clinic-v2-other')).toThrow('Only administrators can switch clinics');
 
     const bossNull = await auth.createUser({
       username: 'boss-null-clinic',
       password: 'password123',
       name: 'Boss Null Clinic',
-      role: 'BOSS',
+      role: 'ADMIN',
     }, { ...context, clinicId: null });
     const nurseNull = await auth.createUser({
       username: 'nurse-null-clinic',
@@ -328,6 +331,9 @@ describe('service edge coverage', () => {
       items: [{ itemId: 'inventory-demo-001', name: 'Dental Material', quantity: 2, unitPrice: 100 }],
     }, context);
     expect(createdPo).toMatchObject({ status: 'PENDING', totalAmount: 200 });
+    expect(db.prepare(
+      `SELECT 1 FROM SyncChange WHERE tableName = 'PurchaseOrder' AND recordId = ? AND operation = 'INSERT' AND clinicId = ?`,
+    ).get(String(createdPo.id), context.clinicId)).toBeDefined();
     // 全新库回归：服务建单必须显式落 reviewStatus='PENDING'（不能依赖 DB 列默认值，
     // 资源注册表建表不带 DEFAULT，迁移 addColumns 会因列已存在而跳过）。
     const poRow = db.prepare('SELECT reviewStatus FROM PurchaseOrder WHERE id = ?').get(String(createdPo.id)) as { reviewStatus: string | null };
@@ -335,6 +341,9 @@ describe('service edge coverage', () => {
     const review = new PurchaseReviewService(db);
     expect(review.submit(String(createdPo.id), context).reviewStatus).toBe('SUBMITTED');
     expect(review.approve(String(createdPo.id), context).reviewStatus).toBe('APPROVED');
+    expect(db.prepare(
+      `SELECT 1 FROM SyncChange WHERE tableName = 'PurchaseOrder' AND recordId = ? AND operation = 'UPDATE' AND clinicId = ?`,
+    ).get(String(createdPo.id), context.clinicId)).toBeDefined();
     expect(purchase.items(String(createdPo.id), context)).toHaveLength(1);
 
     await expect(purchase.create({ items: [{ name: 'X', quantity: 1, unitPrice: 1 }] } as unknown as Parameters<typeof purchase.create>[0], context)).rejects.toThrow('number is required');
@@ -469,6 +478,9 @@ describe('service edge coverage', () => {
     await expect(service.create({ ...base, chairId: 'missing-chair' }, context))
       .rejects.toThrow('Chair not found');
     const created = await service.create({ ...base, chairId: 'chair-1', remark: 'r' }, context);
+    expect(db.prepare(
+      `SELECT 1 FROM SyncChange WHERE tableName = 'Appointment' AND recordId = ? AND operation = 'INSERT' AND clinicId = ?`,
+    ).get(String(created.id), context.clinicId)).toBeDefined();
     await expect(service.transition('missing-appointment', 'ARRIVED', context)).rejects.toThrow('Appointment not found');
     await expect(service.transition(String(created.id), 'INVALID', context)).rejects.toThrow('Cannot transition');
     await expect(service.create({ ...base, startTime: 'bad', endTime: 'worse' }, context)).rejects.toThrow('endTime');
@@ -485,6 +497,9 @@ describe('service edge coverage', () => {
       type: 'REGULAR',
     }, context);
     await service.transition(String(created.id), 'ARRIVED', context);
+    expect(db.prepare(
+      `SELECT 1 FROM SyncChange WHERE tableName = 'Appointment' AND recordId = ? AND operation = 'UPDATE' AND clinicId = ?`,
+    ).get(String(created.id), context.clinicId)).toBeDefined();
     await expect(service.transition(String(created.id), 'NO_SHOW', context))
       .rejects.toThrow('Cannot transition appointment from ARRIVED to NO_SHOW');
   });
@@ -1211,6 +1226,19 @@ describe('service edge coverage', () => {
     expect(pulled.changes.some((row) => row.id === 'sync-isolation-b')).toBe(false);
   });
 
+  it('provides a full resync snapshot scoped to the active clinic', () => {
+    const service = new SyncService(db);
+    const metadata = service.fullSnapshot(context);
+    expect(metadata.tables?.Patient.total).toBeGreaterThanOrEqual(1);
+    const page = service.fullSnapshot(context, { table: 'Patient', limit: 1, offset: 0 });
+    expect(page.rows?.some((row) => row.id === 'patient-demo-001')).toBe(true);
+    expect(page.truncated).toBe(true);
+    const otherPage = service.fullSnapshot({ ...context, clinicId: 'clinic-v2-sync-other' }, { table: 'Patient' });
+    expect(otherPage.rows?.some((row) => row.id === 'patient-demo-001')).toBe(false);
+    expect(() => service.fullSnapshot(context, { table: 'NotATable' })).toThrow('Sync table is not allowed');
+    expect(() => service.fullSnapshot({ ...context, role: 'DOCTOR' })).toThrow('Sync requires BOSS');
+  });
+
   it('pulls server-originated changes to other devices and keeps push single-row', async () => {
     const service = new SyncService(db);
     const device = service.registerDevice('sync-server-origin-device', 'Server Origin', context);
@@ -1406,6 +1434,14 @@ describe('service edge coverage', () => {
     await expect(auth.resetPassword('missing-user', 'password123', context)).rejects.toThrow('User not found');
     await expect(auth.resetPassword(created.id, 'short', context)).rejects.toThrow('at least 6 characters');
     await expect(auth.resetPassword(created.id, 'newpassword123', context)).resolves.toEqual({ id: created.id });
+    db.prepare('UPDATE User SET lockedUntil = ?, loginAttempts = ? WHERE id = ?').run('not-a-date', 5, created.id);
+    await auth.resetPassword(created.id, 'newpassword123', context);
+    const unlocked = db.prepare('SELECT lockedUntil, loginAttempts FROM User WHERE id = ?').get(created.id) as {
+      lockedUntil: string | null;
+      loginAttempts: number;
+    };
+    expect(unlocked.lockedUntil).toBeNull();
+    expect(Number(unlocked.loginAttempts)).toBe(0);
 
     const now = new Date().toISOString();
     db.prepare(
@@ -1453,6 +1489,89 @@ describe('service edge coverage', () => {
     // 非 BOSS 用户不受保护影响。
     insertUserAt('user-last-doctor', 'lastdoctor', 'DOCTOR');
     await expect(auth.updateUser('user-last-doctor', { active: false }, loneContext)).resolves.toMatchObject({ id: 'user-last-doctor' });
+  });
+
+  it('lists and edits cross-clinic users through UserClinic membership', async () => {
+    const auth = new AuthService(db);
+    const t = new Date().toISOString();
+    const clinicB = 'clinic-v2-cross-b';
+    db.prepare(
+      `INSERT OR IGNORE INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+       VALUES (?, NULL, ?, ?, NULL, 'V2-CROSS-B', 'Cross Clinic B', 1)`,
+    ).run(clinicB, t, t);
+    const doctor = await auth.createUser({
+      username: 'cross-doctor-b',
+      password: 'password123',
+      name: 'Cross Doctor B',
+      role: 'DOCTOR',
+      clinicIds: [clinicB],
+    }, context);
+    const clinicBContext: AppContext = { ...context, clinicId: clinicB };
+    expect(auth.listDoctors(clinicBContext).some((entry) => entry.id === doctor.id)).toBe(true);
+    const updated = await auth.updateUser(doctor.id, { name: 'Cross Doctor B Updated' }, clinicBContext);
+    expect(updated.name).toBe('Cross Doctor B Updated');
+    await expect(auth.resetPassword(doctor.id, 'newpassword123', clinicBContext)).resolves.toEqual({ id: doctor.id });
+  });
+
+  it('allows an admin to create another admin', async () => {
+    const auth = new AuthService(db);
+    const firstAdmin = await auth.createUser({
+      username: 'first-admin',
+      password: 'password123',
+      name: 'First Admin',
+      role: 'ADMIN',
+    }, context);
+    expect(firstAdmin.role).toBe('ADMIN');
+    const adminContext: AppContext = { ...context, role: 'ADMIN', userId: firstAdmin.id };
+    const secondAdmin = await auth.createUser({
+      username: 'second-admin',
+      password: 'password123',
+      name: 'Second Admin',
+      role: 'ADMIN',
+    }, adminContext);
+    expect(secondAdmin.role).toBe('ADMIN');
+    const membership = db.prepare(
+      'SELECT role FROM UserClinic WHERE userId = ? AND clinicId = ? AND deletedAt IS NULL',
+    ).get(secondAdmin.id, context.clinicId) as { role: string } | undefined;
+    expect(membership?.role).toBe('ADMIN');
+    await expect(auth.createUser({
+      username: 'forbidden-boss',
+      password: 'password123',
+      name: 'Forbidden Boss',
+      role: 'BOSS',
+    }, adminContext)).rejects.toThrow('管理员不能创建老板账号');
+    await expect(auth.updateUser(context.userId, { name: 'Hacked' }, adminContext))
+      .rejects.toThrow('管理员不能管理老板账号');
+    await expect(auth.resetPassword(context.userId, 'newpassword123', adminContext))
+      .rejects.toThrow('管理员不能管理老板账号');
+    await expect(auth.deleteUser(context.userId, adminContext))
+      .rejects.toThrow('管理员不能管理老板账号');
+  });
+
+  it('calls the stocktake lock guard while receiving a purchase order', async () => {
+    const lockGuard = vi.fn();
+    const purchase = new PurchaseOrderService(db, undefined, undefined, lockGuard);
+    db.prepare(
+      `INSERT INTO InventoryItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, category, unit, stock, minStock, price
+       ) VALUES (?, ?, ?, ?, NULL, 'PO-LOCK-ITEM', 'Lock Item', 'MAT', 'box', 1, 0, 100)`,
+    ).run('inventory-po-lock', context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO PurchaseOrder (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         number, supplierId, totalAmount, status, reviewStatus
+       ) VALUES (?, ?, ?, ?, NULL, 'PO-LOCK', NULL, 0, 'PENDING', 'APPROVED')`,
+    ).run('po-lock', context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO PurchaseOrderItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         orderId, itemId, name, quantity, unitPrice, subtotal
+       ) VALUES (?, ?, ?, ?, NULL, 'po-lock', 'inventory-po-lock', 'Lock Item', 1, 100, 100)`,
+    ).run('poi-lock', context.clinicId, now, now);
+
+    await purchase.receive('po-lock', context);
+    expect(lockGuard).toHaveBeenCalledWith('inventory-po-lock', 'clinic-v2-001');
   });
 
   it('covers HR, alerts, member cards, purchase, processing, risk, prescription, ceph, progress, import, debt, notifications, satisfaction branches', async () => {

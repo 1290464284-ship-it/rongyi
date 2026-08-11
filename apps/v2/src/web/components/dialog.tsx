@@ -181,6 +181,7 @@ export function PromptDialog({
   placeholder = '',
   confirmText = '确认',
   cancelText = '取消',
+  pending = false,
   onSubmit,
   onCancel,
 }: {
@@ -192,6 +193,7 @@ export function PromptDialog({
   placeholder?: string;
   confirmText?: string;
   cancelText?: string;
+  pending?: boolean;
   onSubmit: (value: string) => void;
   onCancel: () => void;
 }) {
@@ -226,8 +228,8 @@ export function PromptDialog({
           />
         )}
         <div className="modal-actions">
-          <button type="button" className="btn-secondary" onClick={onCancel}>{cancelText}</button>
-          <button type="submit">{confirmText}</button>
+          <button type="button" className="btn-secondary" disabled={pending} onClick={onCancel}>{cancelText}</button>
+          <button type="submit" disabled={pending}>{pending ? '处理中...' : confirmText}</button>
         </div>
       </form>
     </Dialog>

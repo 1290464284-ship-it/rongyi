@@ -111,6 +111,7 @@ export function friendlyError(error: unknown): string {
   };
   const exact = translations[message];
   if (exact) return exact;
+  if (/^Operation is already in progress/.test(message)) return '操作正在进行中，请勿重复提交';
   if (/^Failed to fetch/.test(message)) return '无法连接本地服务，请检查应用是否正常运行';
   if (/^Request failed \(\d+\)$/.test(message)) return '请求失败，请稍后重试';
   if (/^Forbidden resource: /.test(message)) return '无权访问该资源';

@@ -8,10 +8,11 @@
  * - 附加角色不包含用户主角色（User.role），setRoles 会自动跳过主角色值。
  */
 import type Database from 'better-sqlite3';
-import { NotFoundError, ValidationError } from '../../infrastructure/errors';
+import { AppError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams, tenantWhere } from '../../infrastructure/tenant';
 import type { AppContext } from '../../../domain/contracts';
 import { UserRole as USER_ROLES } from '../../../domain/contracts';
+import { assertCanManageUser } from './common';
 
 export interface UserRoleRow {
   userId: string;
@@ -54,10 +55,25 @@ export class UserRoleService {
         throw new ValidationError(`非法的角色值: ${role}`);
       }
     }
-    const user = this.db.prepare(
-      `SELECT id, role FROM User WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
-    ).get(userId, ...tenantParams(context.clinicId)) as { id: string; role: string } | undefined;
+    // 多诊所用户以 UserClinic 成员关系为准，User.clinicId 只是历史回退字段。
+    let user = context.clinicId
+      ? (this.db.prepare(
+          `SELECT u.id, u.role FROM User u
+           JOIN UserClinic uc ON uc.userId = u.id AND uc.clinicId = @clinicId AND uc.deletedAt IS NULL
+           WHERE u.id = @userId AND u.deletedAt IS NULL
+           LIMIT 1`,
+        ).get({ clinicId: context.clinicId, userId }) as { id: string; role: string } | undefined)
+      : undefined;
+    if (!user) {
+      user = this.db.prepare(
+        `SELECT id, role FROM User WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+      ).get(userId, ...tenantParams(context.clinicId)) as { id: string; role: string } | undefined;
+    }
     if (!user) throw new NotFoundError('User not found');
+    assertCanManageUser(context.role, user.role as (typeof USER_ROLES)[keyof typeof USER_ROLES]);
+    if (context.role !== 'BOSS' && roles.includes('BOSS')) {
+      throw new AppError('FORBIDDEN', '管理员不能授予老板角色', 403);
+    }
 
     const desired = Array.from(new Set(roles)).filter((role) => role !== user.role);
     const existingRows = this.db.prepare(

@@ -471,6 +471,24 @@ describe('RefundFlowService', () => {
     expect(() => service.process(refundId, context)).toThrow('仅待退款的记录可确认完成');
   });
 
+  it('链9：欠费单退款被驳回后 Debt.paidAmount 恢复并回到 PARTIAL', async () => {
+    const chargeService = new ChargeService(db);
+    const chargeId = await createCharge(10000);
+    await chargeService.pay(chargeId, 3000, 'DEBT', undefined, context);
+
+    const refundResult = await chargeService.refund(chargeId, 1000, '欠费部分退款驳回', context);
+    const refundId = String(refundResult.id);
+    const debtBefore = db.prepare('SELECT * FROM Debt WHERE chargeId = ?').get(chargeId) as Record<string, unknown>;
+    expect(debtBefore.paidAmount).toBe(2000);
+    expect(debtBefore.status).toBe('PARTIAL');
+
+    const service = new RefundFlowService(db);
+    expect(service.reject(refundId, context)).toEqual({ id: refundId, status: 'REJECTED' });
+    const debtAfter = db.prepare('SELECT * FROM Debt WHERE chargeId = ?').get(chargeId) as Record<string, unknown>;
+    expect(debtAfter.paidAmount).toBe(3000);
+    expect(debtAfter.status).toBe('PARTIAL');
+  });
+
   it('不存在的退款返回 NotFoundError', () => {
     const service = new RefundFlowService(db);
     expect(() => service.approve('missing-refund', context)).toThrow(NotFoundError);

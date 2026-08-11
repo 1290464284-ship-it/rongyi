@@ -70,7 +70,7 @@ export function createAuditBuffer(db: Database.Database, logger: Logger): AuditB
         flushAudit(rows);
       } catch (error) {
         if (logger) logger.error('audit batch flush failed', { error });
-        else console.error('audit batch flush failed', error);
+        else console.error('[audit-buffer] audit batch flush failed', error);
         scheduleAuditRetry(rows);
       }
     }, AUDIT_FLUSH_INTERVAL).unref();
@@ -80,12 +80,18 @@ export function createAuditBuffer(db: Database.Database, logger: Logger): AuditB
   // 放回队首）与期间新入缓冲的行一起刷出；重试再失败只记日志，不再入队，
   // 避免无限重试。
   function scheduleAuditRetry(rows: AuditInput[]): void {
-    if (_auditRetryScheduled) return;
+    if (_auditRetryScheduled) {
+      // 上一轮重试仍在途时再失败的行无法安全入队，必须留痕，不能静默丢弃。
+      const dropped = rows.length;
+      if (logger) logger.error('audit rows dropped (retry already in flight)', { action: 'audit-drop', dropped });
+      else console.error('[audit-buffer] audit rows dropped (retry already in flight)', dropped);
+      return;
+    }
     if (auditBuffer.length + rows.length > AUDIT_BUFFER_MAX * 2) {
       // B-H5：超限静默丢弃审计行会掩盖合规痕迹；丢弃前必须留告警日志。
       const dropped = rows.length;
       if (logger) logger.error('audit rows dropped (retry buffer over capacity)', { action: 'audit-drop', dropped });
-      else console.error('audit rows dropped (retry buffer over capacity)', dropped);
+      else console.error('[audit-buffer] audit rows dropped (retry buffer over capacity)', dropped);
       return;
     }
     auditBuffer.unshift(...rows);
@@ -98,7 +104,7 @@ export function createAuditBuffer(db: Database.Database, logger: Logger): AuditB
         flushAudit(pending);
       } catch (error) {
         if (logger) logger.error('audit batch retry flush failed', { error });
-        else console.error('audit batch retry flush failed', error);
+        else console.error('[audit-buffer] audit batch retry flush failed', error);
       }
     }, AUDIT_FLUSH_INTERVAL).unref();
   }
@@ -128,7 +134,7 @@ export function createAuditBuffer(db: Database.Database, logger: Logger): AuditB
         flushAudit(rows);
       } catch (error) {
         if (logger) logger.error('audit batch flush failed', { error });
-        else console.error('audit batch flush failed', error);
+        else console.error('[audit-buffer] audit batch flush failed', error);
         scheduleAuditRetry(rows);
       }
     } else {
@@ -142,7 +148,7 @@ export function createAuditBuffer(db: Database.Database, logger: Logger): AuditB
       flushAudit(rows);
     } catch (error) {
       if (logger) logger.error('audit shutdown flush failed', { error });
-      else console.error('audit shutdown flush failed', error);
+      else console.error('[audit-buffer] audit shutdown flush failed', error);
     }
   }
   if (!shutdownFlushInstalled) {

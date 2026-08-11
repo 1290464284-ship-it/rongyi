@@ -1,8 +1,17 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import https from 'node:https';
 import os from 'node:os';
 import path from 'node:path';
+
+process.on('unhandledRejection', (reason) => {
+  console.error(reason instanceof Error ? reason.stack ?? reason.message : reason);
+  setTimeout(() => process.exit(1), 250);
+});
+process.on('uncaughtException', (error) => {
+  console.error(error instanceof Error ? error.stack ?? error.message : error);
+  setTimeout(() => process.exit(1), 250);
+});
 
 const appRoot = path.resolve(import.meta.dirname, '..');
 const serverScript = path.join(appRoot, 'dist-electron', 'server.cjs');
@@ -51,9 +60,31 @@ function waitForApi(timeoutMs = 30_000) {
 }
 
 async function startGateway() {
-  const pfx = fs.readFileSync(path.join(appRoot, 'certs', 'internal-signing.pfx'));
-  const passphrase = fs.readFileSync(path.join(appRoot, 'certs', 'internal-signing.pfx-password.txt'), 'utf8').trim();
-  gateway = https.createServer({ pfx, passphrase }, (req, res) => {
+  const pfxPath = path.join(appRoot, 'certs', 'internal-signing.pfx');
+  const passwordPath = path.join(appRoot, 'certs', 'internal-signing.pfx-password.txt');
+  let tlsOptions;
+  if (fs.existsSync(pfxPath) && fs.existsSync(passwordPath)) {
+    tlsOptions = {
+      pfx: fs.readFileSync(pfxPath),
+      passphrase: fs.readFileSync(passwordPath, 'utf8').trim(),
+    };
+  } else {
+    // 干净检出没有签名证书：现场生成一次性自签名证书；openssl 也不可用时
+    // 明确跳过，避免“必须依赖 gitignored 文件才能跑 smoke”。
+    const keyPath = path.join(tempRoot, 'gateway-key.pem');
+    const certPath = path.join(tempRoot, 'gateway-cert.pem');
+    const generated = spawnSync('openssl', [
+      'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
+      '-keyout', keyPath, '-out', certPath, '-days', '1',
+      '-subj', '/CN=localhost',
+    ], { encoding: 'utf8' });
+    if (generated.status !== 0 || !fs.existsSync(keyPath) || !fs.existsSync(certPath)) {
+      console.warn('internal-signing.pfx and openssl are both unavailable; skipping WeChat gateway smoke');
+      process.exit(0);
+    }
+    tlsOptions = { key: fs.readFileSync(keyPath), cert: fs.readFileSync(certPath) };
+  }
+  gateway = https.createServer(tlsOptions, (req, res) => {
     let raw = '';
     req.on('data', (chunk) => {
       raw += String(chunk);

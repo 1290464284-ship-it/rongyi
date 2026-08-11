@@ -108,4 +108,43 @@ describe('custom fields', () => {
     const listed = service.listValues('patient', 'patient-custom-2', context);
     expect(listed.values[target.id]).toBeUndefined();
   });
+
+  it('validates definition and value edge cases', () => {
+    const service = new CustomFieldService(db);
+    expect(() => service.createDefinition('patient', {
+      label: '',
+      fieldName: 'noLabel',
+      fieldType: 'TEXT',
+    }, context)).toThrow('label and fieldName are required');
+    expect(() => service.createDefinition('patient', {
+      label: '坏字段名',
+      fieldName: '1bad-name',
+      fieldType: 'TEXT',
+    }, context)).toThrow();
+    expect(() => service.createDefinition('patient', {
+      label: '空选项下拉',
+      fieldName: 'emptySelect',
+      fieldType: 'SELECT',
+      options: [],
+    }, context)).toThrow('SELECT fields require at least one option');
+    expect(() => service.createDefinition('unknownEntity', {
+      label: 'x',
+      fieldName: 'xField',
+      fieldType: 'TEXT',
+    }, context)).toThrow();
+    expect(() => service.setValues('patient', '', [], context)).toThrow('entityId is required');
+
+    const field = service.createDefinition('patient', {
+      label: '值校验',
+      fieldName: 'valueCheck',
+      fieldType: 'TEXT',
+    }, context);
+    expect(() => service.setValues('patient', 'patient-custom-3', [
+      { fieldId: 'missing-field', value: 'x' },
+    ], context)).toThrow('Unknown custom field');
+    expect(() => service.setValues('patient', 'patient-custom-3', [
+      { fieldId: field.id, value: 'a' },
+      { fieldId: field.id, value: 'b' },
+    ], context)).toThrow('Duplicate custom field');
+  });
 });

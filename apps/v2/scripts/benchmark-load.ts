@@ -5,6 +5,7 @@ import { performance } from 'node:perf_hooks';
 import { createDatabase, seedDatabase } from '../src/server/infrastructure/database';
 import { runMigrations } from '../src/server/infrastructure/migrations';
 import { SearchService, StatsService } from '../src/server/application/read-services';
+import { SyncService } from '../src/server/application/service-modules/sync';
 import type { AppContext } from '../src/domain/contracts';
 
 const patientCount = 100_000;
@@ -16,6 +17,8 @@ const THRESHOLDS = {
   insertChargesMs: 30_000,
   searchMs: 5_000,
   dashboardMs: 10_000,
+  syncFullMetadataMs: 5_000,
+  syncFullPageMs: 5_000,
 } as const;
 const failures: string[] = [];
 function report(label: string, elapsedMs: number, limitMs: number): void {
@@ -111,6 +114,16 @@ const stats = new StatsService(db);
 const dashboardTiming = performance.now();
 stats.dashboard(context);
 report('dashboard', performance.now() - dashboardTiming, THRESHOLDS.dashboardMs);
+
+const sync = new SyncService(db);
+const syncMetadataTiming = performance.now();
+sync.fullSnapshot(context);
+report('sync full metadata', performance.now() - syncMetadataTiming, THRESHOLDS.syncFullMetadataMs);
+
+const syncPageTiming = performance.now();
+const syncPage = sync.fullSnapshot(context, { table: 'Patient', limit: 5_000, offset: 0 });
+report('sync full Patient page (5000)', performance.now() - syncPageTiming, THRESHOLDS.syncFullPageMs);
+console.log(`  page rows ${syncPage.rows?.length ?? 0} total ${syncPage.total ?? 0}`);
 
 db.close();
 fs.rmSync(dataDir, { recursive: true, force: true });

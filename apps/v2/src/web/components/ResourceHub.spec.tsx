@@ -5,7 +5,7 @@ import { useEffect, type ReactNode } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ResourceHub } from './ResourceHub';
-import { analyticsHubTabs, type HubTab } from './hub-tabs';
+import { analyticsHubTabs, systemHubTabs, type HubTab } from './hub-tabs';
 import { apiRequest } from '../lib/api';
 import { ToastProvider } from './toast';
 
@@ -76,8 +76,21 @@ describe('ResourceHub', () => {
     fireEvent.click(screen.getByRole('tab', { name: '库存报表' }));
     fireEvent.click(screen.getByRole('tab', { name: 'RFM' }));
     fireEvent.click(screen.getByRole('tab', { name: '流失预警' }));
-    fireEvent.click(screen.getByRole('tab', { name: '医生异常' }));
   });
+});
+
+it('renders grouped tabs and filters tabs by label', async () => {
+  vi.mocked(apiRequest).mockResolvedValue([]);
+  render(<ResourceHub title="System" tabs={systemHubTabs} />, { wrapper });
+  expect(await screen.findByText('运维')).toBeDefined();
+  expect(screen.getByText('配置')).toBeDefined();
+
+  fireEvent.change(screen.getByLabelText('System筛选'), { target: { value: '备份' } });
+  expect(screen.getByRole('tab', { name: '备份' })).toBeDefined();
+  expect(screen.queryByRole('tab', { name: '告警' })).toBeNull();
+
+  fireEvent.change(screen.getByLabelText('System筛选'), { target: { value: '' } });
+  expect(screen.getByRole('tab', { name: '告警' })).toBeDefined();
 });
 it('hides boss-only analytics tabs from non-BOSS roles', async () => {
   const tabs = analyticsHubTabs.filter((tab) => tab.id !== 'dashboard' && tab.id !== 'satisfaction');

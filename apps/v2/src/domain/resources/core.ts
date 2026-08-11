@@ -15,7 +15,7 @@ export const coreResources: ResourceDefinition[] = [
     f('username', 'text', { required: true, unique: true, searchable: true, maxLength: 64 }),
     f('passwordHash', 'text', { required: true, maxLength: 200 }),
     f('name', 'text', { required: true, searchable: true, maxLength: 64 }),
-    f('role', 'enum', { required: true, enumValues: ['BOSS', 'DOCTOR'] }),
+    f('role', 'enum', { required: true, enumValues: ['BOSS', 'ADMIN', 'DOCTOR'] }),
     f('phone', 'text'),
     f('active', 'boolean', { default: true }),
     f('loginAttempts', 'number', { default: 0 }),

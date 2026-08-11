@@ -22,6 +22,7 @@ export * from './Dropdown';
 export * from './DentalChart';
 export * from './MultiSelect';
 export * from './DateRange';
+export * from './list-controls';
 export * from './Progress';
 export * from './Badge';
 export * from './Radio';

@@ -7,6 +7,7 @@ import {
   DataTable,
   LoadingState,
   PageError,
+  PagePager,
   type DataTableColumn,
 } from '../components';
 import { formatDateTime } from '../lib/format';
@@ -93,16 +94,11 @@ export function DispenseListPanel({
         ) : (
           <DataTable columns={dispenseColumns} rows={dispenses.data?.items ?? []} keyField="id" emptyText="暂无发药单" />
         )}
-        <div className="pager">
-          <button disabled={dispensePage <= 1} onClick={() => setDispensePage((value) => value - 1)}>上一页</button>
-          <span>第 {dispensePage} 页</span>
-          <button
-            disabled={!dispenses.data || dispensePage * 20 >= dispenses.data.total}
-            onClick={() => setDispensePage((value) => value + 1)}
-          >
-            下一页
-          </button>
-        </div>
+        <PagePager
+          page={dispensePage}
+          hasNext={Boolean(dispenses.data) && dispensePage * 20 < dispenses.data!.total}
+          onPageChange={setDispensePage}
+        />
         {action && (
           <DispenseActionPanel
             mode={action.mode}

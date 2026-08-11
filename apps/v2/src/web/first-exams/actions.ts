@@ -1,12 +1,16 @@
 import { apiRequest } from '../lib/api';
 import { errorMessage } from '../lib/messages';
 
+const transitionInFlight = new Set<string>();
+
 export async function transitionFirstExam(
   showToast: (message: string, kind?: 'success' | 'error' | 'info') => void,
   reload: () => Promise<unknown>,
   id: string,
   status: string,
 ) {
+  if (transitionInFlight.has(id)) return;
+  transitionInFlight.add(id);
   try {
     await apiRequest(`/first-exams/${id}/status`, {
       method: 'PATCH',
@@ -16,6 +20,8 @@ export async function transitionFirstExam(
     await reload();
   } catch (error) {
     showToast(errorMessage(error, '状态更新失败'), 'error');
+  } finally {
+    transitionInFlight.delete(id);
   }
 }
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { routeRoleRules, navigationForRole } from './route-policy';
 import type { UserRole } from '../../domain/contracts';
 
-const ALL_ROLES: readonly UserRole[] = ['BOSS', 'DOCTOR'];
+const ALL_ROLES: readonly UserRole[] = ['BOSS', 'ADMIN', 'DOCTOR'];
 
 function pickDenied(allowed: readonly UserRole[]): UserRole | null {
   return ALL_ROLES.find((r) => !allowed.includes(r)) ?? null;
@@ -68,6 +68,7 @@ function samplePathForPattern(pattern: RegExp, index: number): string {
     ['/api/v2/triage/queue'],
     ['/api/v2/pay-methods', '/api/v2/pay-methods/abc'],
     ['/api/v2/charge-trees', '/api/v2/charge-trees/c1/quick-charge'],
+    ['/api/v2/commission/rules', '/api/v2/commission/statements?period=2026-08', '/api/v2/commission/calculate'],
     ['/api/v2/user-permissions/u-1', '/api/v2/user-permissions/u-1'],
     ['/api/v2/role-permissions/DOCTOR', '/api/v2/role-permissions/BOSS'],
     ['/api/v2/custom-fields?entity=patient', '/api/v2/custom-fields/values'],
@@ -102,14 +103,22 @@ describe('routeRoleRules', () => {
     }
   });
 
-  it('wechat send-batch 规则收窄为 BOSS 且优先于通用 wechat 规则', () => {
+  it('wechat send-batch 规则收窄为 老板/管理员 且优先于通用 wechat 规则', () => {
     const sendBatch = routeRoleRules.find((r) => r.pattern.test('/api/v2/wechat/send-batch') && r.pattern.source.includes('send-batch'));
     const generic = routeRoleRules.find((r) => r.pattern.test('/api/v2/wechat/status'));
     expect(sendBatch).toBeDefined();
-    expect(sendBatch!.roles).toEqual(['BOSS']);
+    expect(sendBatch!.roles).toEqual(['BOSS', 'ADMIN']);
     expect(sendBatch!.pattern.test('/api/v2/wechat/send-batch')).toBe(true);
     expect(generic).toBeDefined();
     expect(routeRoleRules.indexOf(sendBatch!)).toBeLessThan(routeRoleRules.indexOf(generic!));
+  });
+
+  it('permission-gated routes require the matching module permission', () => {
+    const permissionFor = (path: string) => routeRoleRules.find((rule) => rule.pattern.test(path))?.permission;
+    expect(permissionFor('/api/v2/search?q=Demo')).toBe('patients');
+    expect(permissionFor('/api/v2/workbench/today')).toBe('clinical');
+    expect(permissionFor('/api/v2/files/abc/sign')).toBe('patients');
+    expect(permissionFor('/api/v2/stats/dashboard')).toBe('dashboard');
   });
 });
 
@@ -125,5 +134,12 @@ describe('navigationForRole', () => {
   it('DOCTOR 仅访问 allStaff 导航项', () => {
     const nav = navigationForRole('DOCTOR');
     expect(nav).toEqual(expect.arrayContaining(['dashboard', 'patients']));
+    expect(nav).not.toContain('frontDesk');
+  });
+
+  it('BOSS/ADMIN 可访问前台导航，DOCTOR 不可', () => {
+    expect(navigationForRole('BOSS')).toContain('frontDesk');
+    expect(navigationForRole('ADMIN')).toContain('frontDesk');
+    expect(navigationForRole('DOCTOR')).not.toContain('frontDesk');
   });
 });

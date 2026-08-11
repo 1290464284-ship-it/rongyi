@@ -155,8 +155,10 @@ export function ImagingPage() {
           }
         }}
         onAfterCreate={() => setFile(null)}
+        onFormClose={() => setFile(null)}
         formFromRow={(row) => {
           editingIdRef.current = String(row.id);
+          setFile(null);
           return {
             patientId: String(row.patientId ?? ''),
             doctorId: String(row.doctorId ?? ''),

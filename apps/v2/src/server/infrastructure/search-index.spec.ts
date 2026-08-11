@@ -9,6 +9,7 @@ import {
   rebuildSearchIndex,
   upsertSearchRow,
   removeSearchRow,
+  removeSearchRowsByRecordIds,
   refreshPatientChildSearchRows,
 } from './search-index';
 
@@ -16,7 +17,7 @@ describe('rebuildSearchIndex', () => {
   it('clears stale rows and rebuilds SearchIndex content for all six resources', () => {
     const db = new Database(':memory:');
     db.exec(`
-      CREATE TABLE Patient (id TEXT PRIMARY KEY, clinicId TEXT, name TEXT, code TEXT, phone TEXT, deletedAt TEXT);
+      CREATE TABLE Patient (id TEXT PRIMARY KEY, clinicId TEXT, name TEXT, code TEXT, phone TEXT, wechatId TEXT, deletedAt TEXT);
       CREATE TABLE InventoryItem (id TEXT PRIMARY KEY, clinicId TEXT, name TEXT, code TEXT, category TEXT, deletedAt TEXT);
       CREATE TABLE Supplier (id TEXT PRIMARY KEY, clinicId TEXT, name TEXT, code TEXT, phone TEXT, deletedAt TEXT);
       CREATE TABLE Appointment (id TEXT PRIMARY KEY, clinicId TEXT, patientId TEXT, startTime TEXT, status TEXT, deletedAt TEXT);
@@ -24,13 +25,15 @@ describe('rebuildSearchIndex', () => {
       CREATE TABLE FollowUp (id TEXT PRIMARY KEY, clinicId TEXT, patientId TEXT, content TEXT, status TEXT, planDate TEXT, deletedAt TEXT);
       CREATE VIRTUAL TABLE SearchIndex USING fts5(resource UNINDEXED, recordId UNINDEXED, clinicId UNINDEXED, content);
     `);
-    db.prepare(`INSERT INTO Patient (id, clinicId, name, code, phone) VALUES ('p1', 'c1', '张三', 'P001', '13800000000')`).run();
+    db.prepare(`INSERT INTO Patient (id, clinicId, name, code, phone, wechatId) VALUES ('p1', 'c1', '张三', 'P001', '13800000000', 'wx-001')`).run();
     db.prepare(`INSERT INTO SearchIndex(resource, recordId, clinicId, content) VALUES ('Patient', 'stale', 'c1', '旧数据')`).run();
     rebuildSearchIndex(db);
     const stale = db.prepare(`SELECT resource, recordId FROM SearchIndex WHERE recordId = 'stale'`).all();
     expect(stale).toHaveLength(0);
     const fresh = db.prepare(`SELECT recordId FROM SearchIndex WHERE resource = 'Patient' AND recordId = 'p1'`).all();
     expect(fresh).toHaveLength(1);
+    const content = db.prepare(`SELECT content FROM SearchIndex WHERE resource = 'Patient' AND recordId = 'p1'`).get() as { content: string };
+    expect(content.content).toContain('wx-001');
     db.close();
   });
 
@@ -112,6 +115,16 @@ describe('runtime SearchIndex maintenance', () => {
     expect(searchRows('Patient', 'si-p-del')).toHaveLength(1);
     removeSearchRow(db, 'Patient', 'si-p-del');
     expect(searchRows('Patient', 'si-p-del')).toHaveLength(0);
+  });
+
+  it('removes multiple index rows in one batch', () => {
+    insertPatient('si-p-batch-a', '批量甲', 'P-SI-05', '13800000005');
+    insertPatient('si-p-batch-b', '批量乙', 'P-SI-06', '13800000006');
+    upsertSearchRow(db, 'Patient', 'si-p-batch-a');
+    upsertSearchRow(db, 'Patient', 'si-p-batch-b');
+    removeSearchRowsByRecordIds(db, 'Patient', ['si-p-batch-a', 'si-p-batch-b']);
+    expect(searchRows('Patient', 'si-p-batch-a')).toHaveLength(0);
+    expect(searchRows('Patient', 'si-p-batch-b')).toHaveLength(0);
   });
 
   it('refreshes child Appointment rows after a patient rename', () => {

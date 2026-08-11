@@ -78,4 +78,47 @@ describe('PatientWorkflowPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '计算风险' }));
     expect(await screen.findByText('计算失败')).toBeDefined();
   });
+
+  it('shows empty states for patients and scores', async () => {
+    vi.mocked(apiRequest).mockResolvedValue({ items: [], total: 0 });
+    render(<PatientWorkflowPage />, { wrapper });
+    expect(await screen.findByText('暂无患者')).toBeDefined();
+    expect(screen.getByText('暂无评分记录')).toBeDefined();
+  });
+
+  it('renders section errors with retry without breaking the page', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: 'Patient A' }], total: 1 };
+      }
+      throw new Error('scores failed');
+    });
+    render(<PatientWorkflowPage />, { wrapper });
+
+    expect(await screen.findByText('该区块加载失败')).toBeDefined();
+    expect(screen.getByRole('button', { name: '重试' })).toBeDefined();
+    expect(screen.getByText('Patient A')).toBeDefined();
+    expect(screen.getByRole('button', { name: '计算风险' })).toBeDefined();
+  });
+
+  it('renders the loading state for both sections', () => {
+    vi.mocked(apiRequest).mockImplementation(() => new Promise(() => {}));
+    render(<PatientWorkflowPage />, { wrapper });
+    expect(screen.getAllByText('加载中...').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('falls back to empty tables when responses omit items', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { total: 0, page: 1, pageSize: 100 };
+      }
+      if (path === '/resources/patientRiskScores?page=1&pageSize=100') {
+        return { total: 0, page: 1, pageSize: 100 };
+      }
+      return {};
+    });
+    render(<PatientWorkflowPage />, { wrapper });
+    expect(await screen.findByText('暂无患者')).toBeDefined();
+    expect(screen.getByText('暂无评分记录')).toBeDefined();
+  });
 });

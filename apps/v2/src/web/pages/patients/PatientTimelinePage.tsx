@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router';
-import { apiRequest } from '../../lib/api';
+import { apiRequest, fetchAllPages } from '../../lib/api';
 import { errorMessage } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
 import type { Page } from '../../lib/types';
@@ -24,6 +24,15 @@ function timelineTone(status?: string | null): 'done' | 'current' | 'pending' | 
   return 'pending';
 }
 
+function safeStringArray(value: unknown): string[] {
+  try {
+    const parsed = JSON.parse(String(value ?? '[]')) as unknown;
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
 export function PatientTimelinePage() {
   const [searchParams] = useSearchParams();
   const urlPatientId = searchParams.get('id');
@@ -38,22 +47,34 @@ export function PatientTimelinePage() {
   }, [patientRows]);
   const visits = useQuery({
     queryKey: ['visits-timeline', patientId],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>(`/resources/visits?page=1&pageSize=200&patientId=${encodeURIComponent(patientId ?? '')}`),
+    queryFn: async () => {
+      const items = await fetchAllPages<Record<string, unknown>>(`/resources/visits?patientId=${encodeURIComponent(patientId ?? '')}`);
+      return { items, total: items.length, page: 1, pageSize: items.length } as Page<Record<string, unknown>>;
+    },
     enabled: patientId !== null,
   });
   const treatments = useQuery({
     queryKey: ['treatments-timeline', patientId],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>(`/resources/treatments?page=1&pageSize=200&patientId=${encodeURIComponent(patientId ?? '')}`),
+    queryFn: async () => {
+      const items = await fetchAllPages<Record<string, unknown>>(`/resources/treatments?patientId=${encodeURIComponent(patientId ?? '')}`);
+      return { items, total: items.length, page: 1, pageSize: items.length } as Page<Record<string, unknown>>;
+    },
     enabled: patientId !== null,
   });
   const charges = useQuery({
     queryKey: ['charges-timeline', patientId],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>(`/resources/charges?page=1&pageSize=200&patientId=${encodeURIComponent(patientId ?? '')}`),
+    queryFn: async () => {
+      const items = await fetchAllPages<Record<string, unknown>>(`/resources/charges?patientId=${encodeURIComponent(patientId ?? '')}`);
+      return { items, total: items.length, page: 1, pageSize: items.length } as Page<Record<string, unknown>>;
+    },
     enabled: patientId !== null,
   });
   const followUps = useQuery({
     queryKey: ['followUps-timeline', patientId],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>(`/resources/followUps?page=1&pageSize=200&patientId=${encodeURIComponent(patientId ?? '')}`),
+    queryFn: async () => {
+      const items = await fetchAllPages<Record<string, unknown>>(`/resources/followUps?patientId=${encodeURIComponent(patientId ?? '')}`);
+      return { items, total: items.length, page: 1, pageSize: items.length } as Page<Record<string, unknown>>;
+    },
     enabled: patientId !== null,
   });
   const customFields = useQuery({
@@ -76,6 +97,12 @@ export function PatientTimelinePage() {
     enabled: patientId !== null,
   });
   const [customDraft, setCustomDraft] = useState<Record<string, string | boolean>>({});
+  // 渲染期调整：切换患者时清空草稿，避免把上一个患者的自定义字段值写入新患者。
+  const [prevPatientId, setPrevPatientId] = useState(patientId);
+  if (patientId !== prevPatientId) {
+    setPrevPatientId(patientId);
+    setCustomDraft({});
+  }
 
   // H1 分区渲染：任一子查询失败只降级对应区块，不影响其余事件与患者选择器
   const timelineQueries = [visits, treatments, charges, followUps] as const;
@@ -196,7 +223,7 @@ export function PatientTimelinePage() {
           <div className="form-grid">
             {customFields.data.map((field) => {
               const value = customValue(field.id, field.fieldType);
-              const options = JSON.parse(String(field.optionsJson ?? '[]')) as string[];
+              const options = safeStringArray(field.optionsJson);
               return (
                 <label key={field.id}>
                   {field.label}{field.required ? ' *' : ''}

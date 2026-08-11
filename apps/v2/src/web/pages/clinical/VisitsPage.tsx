@@ -113,12 +113,16 @@ export function VisitsPage() {
   );
 }
 
+const transitionInFlight = new Set<string>();
+
 async function transitionVisit(
   showToast: (message: string, kind?: 'success' | 'error' | 'info') => void,
   reload: () => Promise<unknown>,
   id: string,
   status: string,
 ) {
+  if (transitionInFlight.has(id)) return;
+  transitionInFlight.add(id);
   try {
     await apiRequest(`/visits/${id}/status`, {
       method: 'PATCH',
@@ -128,6 +132,8 @@ async function transitionVisit(
     await reload();
   } catch (error) {
     showToast(errorMessage(error, '状态更新失败'), 'error');
+  } finally {
+    transitionInFlight.delete(id);
   }
 }
 

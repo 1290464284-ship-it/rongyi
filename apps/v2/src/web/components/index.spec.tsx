@@ -71,6 +71,20 @@ describe('shared web components', () => {
     expect(screen.getByText('2026-08')).toBeDefined();
   });
 
+  it('caps rendering at 500 rows and shows the truncation notice', () => {
+    const rows = Array.from({ length: 501 }, (_, index) => ({ id: `r-${index}`, name: `行 ${index}` }));
+    render(
+      <DataTable
+        columns={[{ key: 'name', label: '名称' }]}
+        rows={rows}
+        keyField="id"
+      />,
+    );
+    expect(screen.getByText('仅显示前 500 行（共 501 行），请使用搜索或筛选缩小范围')).toBeDefined();
+    expect(screen.queryByText('行 500')).toBeNull();
+    expect(screen.getByText('行 499')).toBeDefined();
+  });
+
   it('renders rows when the key field value is null', () => {
     render(
       <DataTable

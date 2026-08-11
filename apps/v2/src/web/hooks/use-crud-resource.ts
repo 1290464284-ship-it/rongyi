@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { apiRequest } from '../lib/api';
 import type { Page } from '../lib/types';
@@ -100,17 +100,21 @@ export function useCrudResource<
   // M4：initialSearch（如顶栏全局搜索 ?q=）变化时同步搜索词，调用方不再用 key 整页重挂载。
   // 采用 React 官方"渲染期调整 state"模式（避免 set-state-in-effect 级联渲染）。
   const [prevInitialSearch, setPrevInitialSearch] = useState(options.initialSearch);
+  const search = useDebouncedValue(searchInput, 300);
+  const [page, setPage] = useState(1);
   if (options.initialSearch !== prevInitialSearch) {
     setPrevInitialSearch(options.initialSearch);
     setSearchInput(options.initialSearch ?? '');
+    // 全局搜索带 ?q= 跳转时回到第一页，避免停留在旧页导致空结果。
+    setPage(1);
   }
-  const search = useDebouncedValue(searchInput, 300);
-  const [page, setPage] = useState(1);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<TForm>(() => freshInitial(options.initialForm));
   const [submitting, setSubmitting] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<TRow | null>(null);
+  // ref 级 in-flight 守卫：setState 是异步的，onBeforeSubmit 查重期间双击会漏进第二个请求
+  const submittingRef = useRef(false);
 
   const pageSize = options.pageSize ?? 50;
   const staticListPath = typeof options.listPath === 'function' ? undefined : options.listPath;
@@ -151,24 +155,25 @@ export function useCrudResource<
 
   async function submit(event?: FormEvent) {
     event?.preventDefault();
-    if (submitting) return;
-    const editing = editingId !== null;
-    if (options.validate) {
-      const error = options.validate(form);
-      if (error) {
-        showToast(error, 'error');
-        return;
-      }
-    }
-    if (options.onBeforeSubmit) {
-      const error = await options.onBeforeSubmit(form, editing);
-      if (error) {
-        showToast(error, 'error');
-        return;
-      }
-    }
+    if (submitting || submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
+    const editing = editingId !== null;
     try {
+      if (options.validate) {
+        const error = options.validate(form);
+        if (error) {
+          showToast(error, 'error');
+          return;
+        }
+      }
+      if (options.onBeforeSubmit) {
+        const error = await options.onBeforeSubmit(form, editing);
+        if (error) {
+          showToast(error, 'error');
+          return;
+        }
+      }
       let savedId: string | null = editingId;
       if (options.submitOverride) {
         await options.submitOverride({ form, editing });
@@ -201,6 +206,7 @@ export function useCrudResource<
         : options.errorMessages?.create ?? DEFAULT_ERROR_MESSAGES.create;
       showToast(errorMessage(error, fallback), 'error');
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   }
@@ -214,7 +220,8 @@ export function useCrudResource<
   }
 
   async function confirmDelete() {
-    if (!deleteTarget || submitting) return;
+    if (!deleteTarget || submitting || submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       if (options.deleteOverride) {
@@ -232,6 +239,7 @@ export function useCrudResource<
     } catch (error) {
       showToast(errorMessage(error, options.errorMessages?.delete ?? DEFAULT_ERROR_MESSAGES.delete), 'error');
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   }

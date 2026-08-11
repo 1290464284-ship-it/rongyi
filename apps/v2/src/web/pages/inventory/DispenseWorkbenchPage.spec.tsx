@@ -259,6 +259,23 @@ describe('DispenseWorkbenchPage', () => {
     expect(await screen.findByText('发药单已删除')).toBeDefined();
   });
 
+  it('does not delete a dispense when confirmation is cancelled', async () => {
+    mockData();
+    render(<DispenseWorkbenchPage />, { wrapper });
+    await screen.findByText('DISP-001');
+    const tables = screen.getAllByRole('table');
+    fireEvent.click(within(tables[0]).getByText('删除'));
+
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByText('取消'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(apiRequest).not.toHaveBeenCalledWith(
+      '/dispenses/disp-1',
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+  });
+
   it('edits a narcotic registry entry: PATCHes /narcotic-registry/n-1', async () => {
     mockData();
     render(<DispenseWorkbenchPage />, { wrapper });
@@ -318,5 +335,23 @@ describe('DispenseWorkbenchPage', () => {
       expect(apiRequest).toHaveBeenCalledWith('/narcotic-registry/n-1', expect.objectContaining({ method: 'DELETE' }));
     });
     expect(await screen.findByText('麻药登记已删除')).toBeDefined();
+  });
+
+  it('does not delete a narcotic entry when confirmation is cancelled', async () => {
+    mockData();
+    render(<DispenseWorkbenchPage />, { wrapper });
+    await screen.findByText('DISP-001');
+    await screen.findByText('N-001');
+    const tables = screen.getAllByRole('table');
+    fireEvent.click(within(tables[1]).getByText('删除'));
+
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByText('取消'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(apiRequest).not.toHaveBeenCalledWith(
+      '/narcotic-registry/n-1',
+      expect.objectContaining({ method: 'DELETE' }),
+    );
   });
 });

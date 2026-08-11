@@ -1,5 +1,6 @@
 // 库存仓储（M-04：由 core.repositories.ts 拆分）
 import type Database from 'better-sqlite3';
+import { ConflictError } from '../errors';
 import { tenantAnd } from '../tenant';
 import { recordSyncChange } from '../sync-change';
 import type {
@@ -16,9 +17,15 @@ export class SqliteInventoryRepository implements InventoryRepository {
     return (this.db.prepare(`SELECT * FROM InventoryItem WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`).get(...params) as InventoryItemRecord | undefined) ?? null;
   }
 
-  updateStock(id: string, stock: number, updatedAt: string, clinicId?: string | null): void {
-    const params = clinicId ? [stock, updatedAt, id, clinicId] : [stock, updatedAt, id];
-    this.db.prepare(`UPDATE InventoryItem SET stock = ?, updatedAt = ? WHERE id = ?${tenantAnd(clinicId)}`).run(...params);
+  adjustStock(id: string, delta: number, updatedAt: string, clinicId?: string | null): void {
+    const params = clinicId ? [delta, updatedAt, id, delta, clinicId] : [delta, updatedAt, id, delta];
+    const result = this.db.prepare(
+      `UPDATE InventoryItem SET stock = stock + ?, updatedAt = ?
+       WHERE id = ? AND deletedAt IS NULL AND stock + ? >= 0${tenantAnd(clinicId)}`,
+    ).run(...params);
+    if (result.changes === 0) {
+      throw new ConflictError('Insufficient stock');
+    }
     // P2-3：库存变更必须进入同步队列，否则离线端永远收不到库存更新
     if (clinicId) {
       recordSyncChange(this.db, { tableName: 'InventoryItem', recordId: id, operation: 'UPDATE', clinicId });

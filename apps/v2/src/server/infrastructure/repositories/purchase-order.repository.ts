@@ -1,6 +1,8 @@
 // 采购单仓储（M-04：由 core.repositories.ts 拆分）
 import type Database from 'better-sqlite3';
+import { ConflictError } from '../errors';
 import { tenantAnd } from '../tenant';
+import { trackResourceWrite } from '../write-tracking';
 import type {
   PurchaseOrderItemRecord,
   PurchaseOrderRecord,
@@ -27,6 +29,7 @@ export class SqlitePurchaseOrderRepository implements PurchaseOrderRepository {
          number, supplierId, totalAmount, status, reviewStatus
        ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
     ).run(input.id, input.clinicId ?? null, input.createdAt, input.updatedAt, input.number, input.supplierId ?? null, input.totalAmount, input.status, input.reviewStatus ?? 'PENDING');
+    trackResourceWrite(this.db, { tableName: 'PurchaseOrder', recordId: input.id, operation: 'INSERT', clinicId: input.clinicId ?? null });
   }
 
   createItem(input: PurchaseOrderItemRecord): void {
@@ -40,7 +43,13 @@ export class SqlitePurchaseOrderRepository implements PurchaseOrderRepository {
 
   markReceived(id: string, receivedAt: string, updatedAt: string, clinicId?: string | null): void {
     const params = clinicId ? [receivedAt, updatedAt, id, clinicId] : [receivedAt, updatedAt, id];
-    this.db.prepare(`UPDATE PurchaseOrder SET status = 'RECEIVED', receivedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`)
-      .run(...params);
+    const result = this.db.prepare(
+      `UPDATE PurchaseOrder SET status = 'RECEIVED', receivedAt = ?, updatedAt = ?
+       WHERE id = ? AND status = 'PENDING' AND deletedAt IS NULL${tenantAnd(clinicId)}`,
+    ).run(...params);
+    // 多实例并发收货时只有第一个能拿到 PENDING → RECEIVED 转移；
+    // 第二个 changes = 0，在调用方事务内抛错即可整体回滚，避免重复入库。
+    if (result.changes === 0) throw new ConflictError('Purchase order is not pending');
+    trackResourceWrite(this.db, { tableName: 'PurchaseOrder', recordId: id, operation: 'UPDATE', clinicId: clinicId ?? null });
   }
 }

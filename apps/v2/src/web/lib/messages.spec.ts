@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { errorMessage, friendlyError } from './messages';
 
 describe('friendlyError', () => {
@@ -27,5 +27,37 @@ describe('friendlyError', () => {
   it('uses a stable Chinese fallback for non-error failures', () => {
     expect(errorMessage('boom', '操作失败，请稍后重试')).toBe('操作失败，请稍后重试');
     expect(errorMessage(new Error('Patient not found'), '操作失败')).toBe('患者不存在');
+  });
+
+  it('covers pattern and resource-name fallbacks', () => {
+    expect(friendlyError('Username is required')).toBe('请填写必填项');
+    expect(friendlyError('Name must be unique')).toBe('输入内容格式不正确');
+    expect(friendlyError('Remark exceeds max length')).toBe('输入内容超过长度限制');
+    expect(friendlyError('Medical record not found')).toBe('病历不存在');
+    expect(friendlyError('Processing order not found')).toBe('加工单不存在');
+    expect(friendlyError('Sync record not found')).toBe('同步记录不存在');
+    expect(friendlyError('Wechat message not found')).toBe('微信消息不存在');
+    expect(friendlyError('Member card not found')).toBe('会员卡不存在');
+    expect(friendlyError('Cephalometric case not found')).toBe('头影测量记录不存在');
+    expect(friendlyError('Resource cannot import: patients')).toBe('该资源不支持批量导入');
+    expect(friendlyError('Bulk import is disabled for patients')).toBe('该资源已禁用批量导入');
+    expect(friendlyError('Invalid user role: X')).toBe('用户角色无效');
+    expect(friendlyError('Purchase order contains missing inventory items: i-1')).toBe('采购单包含不存在的库存项目');
+    expect(friendlyError('Sync change requires row data')).toBe('同步数据格式不正确');
+    expect(friendlyError('Sync record not found: r-1')).toBe('同步记录不存在');
+    expect(friendlyError('Table is not allowed for sync')).toBe('同步表不允许');
+    expect(friendlyError('Sync operation must be INSERT, UPDATE, or DELETE')).toBe('同步操作类型无效');
+  });
+
+  it('warns and falls back for unknown English messages', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(friendlyError('a completely unexpected message')).toBe('操作失败，请稍后重试');
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('uses the fallback when the error has no message', () => {
+    expect(errorMessage(new Error(''))).toBe('操作失败，请稍后重试');
+    expect(errorMessage('')).toBe('操作失败，请稍后重试');
   });
 });

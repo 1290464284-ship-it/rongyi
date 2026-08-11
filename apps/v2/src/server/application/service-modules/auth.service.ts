@@ -1,13 +1,13 @@
-// 认证/用户服务（M-04：由 auth.ts 拆分）
-import { randomUUID } from 'node:crypto';
+// 认证/会话服务（M-04：由 auth.ts 拆分；账号管理见 user-management.service.ts）
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { AppError, ConflictError, NotFoundError, UnauthorizedError, ValidationError } from '../../infrastructure/errors';
+import type { Logger } from '../../infrastructure/logger';
 import { SqliteAuthRepository } from '../../infrastructure/repositories/core.repositories';
-import { tenantAnd, tenantMatches, tenantParams } from '../../infrastructure/tenant';
 import type { AppContext, User, UserRole } from '../../../domain/contracts';
-import type { AuthRepository, AuthUserRecord } from '../ports';
+import type { AuthRepository } from '../ports';
 import {
   AuthSession,
   JWT_SECRET,
@@ -15,11 +15,12 @@ import {
   TOKEN_TTL,
   TokenPayload,
   hashRefreshToken,
-  isUserRole,
   newRefreshToken,
   rowToUser,
+  runInTransaction,
 } from './common';
 import { computeEffectivePermissions } from './permissions';
+import { UserManagementService } from './user-management.service';
 
 const DUMMY_HASH = '$2a$10$CwTycUXWue0Thq9StjUM0uJ8cG5fVb55Qk9X7pL5Nh4bKj1R8f69y';
 
@@ -32,23 +33,44 @@ function assertPasswordLength(password: unknown): asserts password is string {
 export class AuthService {
   private readonly db: Database.Database;
   private readonly authRepository: AuthRepository;
+  private readonly userManagement: UserManagementService;
   /** B-M9：refresh token 轮换的 5 秒窗口内存缓存（并发刷新共享同一新 token，
    *  避免"两个并发请求互判重用"误吊销会话族）。logout 与重用检测时整表清空。 */
   private readonly refreshCache = new Map<string, { expiresAt: number; session: AuthSession }>();
   private static readonly REFRESH_CACHE_TTL_MS = 5_000;
   private static readonly REFRESH_CACHE_MAX = 1_000;
 
-  constructor(db: Database.Database, authRepository?: AuthRepository) {
+  constructor(db: Database.Database, authRepository?: AuthRepository, private readonly logger?: Logger) {
     this.db = db;
     this.authRepository = authRepository ?? new SqliteAuthRepository(db);
+    this.userManagement = new UserManagementService(db, this.authRepository);
   }
 
-  private runTx<T>(fn: () => T): T {
-    const tx = (this.db as unknown as { transaction?: <U>(cb: () => U) => () => U }).transaction;
-    if (typeof tx === 'function') {
-      return tx.call(this.db, fn)() as T;
-    }
-    return fn();
+  /** True when no active built-in admin exists and the first-run setup wizard should be shown. */
+  setupRequired(): boolean {
+    return !this.db.prepare(
+      `SELECT 1 FROM User WHERE username = 'admin' AND deletedAt IS NULL LIMIT 1`,
+    ).get();
+  }
+
+  /** Creates the initial admin from the first-run setup wizard; safe to call only once. */
+  async setupInitialAdmin(password: unknown): Promise<{ created: true }> {
+    if (!this.setupRequired()) throw new ConflictError('Initial admin already configured');
+    assertPasswordLength(password);
+    const now = new Date().toISOString();
+    const clinicRow = this.db.prepare(
+      `SELECT id FROM Clinic ORDER BY createdAt ASC LIMIT 1`,
+    ).get() as { id: string } | undefined;
+    const clinicId = clinicRow?.id ?? 'clinic-v2-001';
+    const passwordHash = await bcrypt.hash(password, 10);
+    const created = this.db.prepare(
+      `INSERT OR IGNORE INTO User (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         username, passwordHash, name, role, active, loginAttempts, tokenVersion
+       ) VALUES (?, ?, ?, ?, NULL, 'admin', ?, 'System Administrator', 'BOSS', 1, 0, 0)`,
+    ).run(randomUUID(), clinicId, now, now, passwordHash);
+    if (created.changes === 0) throw new ConflictError('Initial admin already configured');
+    return { created: true };
   }
 
   async login(username: string, password: string): Promise<AuthSession> {
@@ -59,7 +81,7 @@ export class AuthService {
     }
     const preUser = rowToUser(preRow);
     const valid = await bcrypt.compare(password, preUser.passwordHash);
-    return this.runTx(() => {
+    return runInTransaction(this.db, () => {
       const row = this.authRepository.findByUsername(username);
       if (!row) throw new UnauthorizedError('Invalid username or password');
       const user = rowToUser(row);
@@ -69,7 +91,7 @@ export class AuthService {
         // B-L3：lockedUntil 不可解析（NaN）时 fail-closed，视为锁定并告警。
         if (lockedTime > Date.now() || Number.isNaN(lockedTime)) {
           if (Number.isNaN(lockedTime)) {
-            console.warn('user lockedUntil is not a valid date; treating account as locked', { userId: user.id });
+            this.logger?.warn('user lockedUntil is not a valid date; treating account as locked', { userId: user.id });
           }
           throw new UnauthorizedError('Account is temporarily locked');
         }
@@ -112,7 +134,7 @@ export class AuthService {
     }
     const preRow = this.authRepository.findByRefreshTokenHash(tokenHash);
     if (!preRow) throw new UnauthorizedError('Invalid refresh token');
-    return this.runTx(() => {
+    return runInTransaction(this.db, () => {
       if (this.authRepository.isRefreshTokenUsed(tokenHash)) {
         this.revokeReplayedFamily(tokenHash);
         throw new UnauthorizedError('Invalid refresh token (refresh token reuse detected)');
@@ -126,7 +148,7 @@ export class AuthService {
         // B-L3：lockedUntil 不可解析（NaN）时 fail-closed，视为锁定并告警。
         if (lockedTime > Date.now() || Number.isNaN(lockedTime)) {
           if (Number.isNaN(lockedTime)) {
-            console.warn('user lockedUntil is not a valid date; treating account as locked', { userId: user.id });
+            this.logger?.warn('user lockedUntil is not a valid date; treating account as locked', { userId: user.id });
           }
           throw new UnauthorizedError('Account is temporarily locked');
         }
@@ -212,7 +234,7 @@ export class AuthService {
    * 历史数据兜底：无 UserClinic 行时回退到 User.clinicId/currentClinicId。
    */
   isClinicAccessible(userId: string, clinicId: string | null | undefined): boolean {
-    if (!clinicId) return true; // 无诊所作用域（legacy 路径）不做成员校验
+    if (!clinicId) return false; // 无诊所作用域一律 fail-closed，避免旧 token 绕过租户过滤
     const row = this.authRepository.findById(userId);
     if (!row) return false;
     const memberships = this.authRepository.clinicMemberships(userId);
@@ -235,7 +257,7 @@ export class AuthService {
   } {
     const row = this.authRepository.findById(userId);
     if (!row) throw new NotFoundError('User not found');
-    if (role !== 'BOSS') {
+    if (!['BOSS', 'ADMIN'].includes(role)) {
       const clinicId = row.currentClinicId ?? row.clinicId ?? null;
       return {
         currentClinicId: clinicId,
@@ -258,10 +280,16 @@ export class AuthService {
 
   listDoctors(context: AppContext): Array<{ id: string; name: string; phone: string | null; role: string }> {
     const rows = this.db.prepare(
-      `SELECT id, name, phone, role FROM User
-       WHERE role = 'DOCTOR' AND active = 1 AND deletedAt IS NULL${tenantAnd(context.clinicId)}
-       ORDER BY name ASC`,
-    ).all(...tenantParams(context.clinicId)) as Array<{ id: string; name: string; phone: string | null; role: string }>;
+      `SELECT u.id, u.name, u.phone, u.role FROM User u
+       WHERE u.role = 'DOCTOR' AND u.active = 1 AND u.deletedAt IS NULL
+         ${context.clinicId
+           ? `AND (EXISTS (
+                 SELECT 1 FROM UserClinic uc
+                 WHERE uc.userId = u.id AND uc.clinicId = ? AND uc.deletedAt IS NULL
+               ) OR u.clinicId = ?)`
+           : ''}
+       ORDER BY u.name ASC`,
+    ).all(...(context.clinicId ? [context.clinicId, context.clinicId] : [])) as Array<{ id: string; name: string; phone: string | null; role: string }>;
     return rows;
   }
 
@@ -270,8 +298,8 @@ export class AuthService {
   }
 
   switchClinic(userId: string, role: User['role'], clinicId: string): { token: string; clinicId: string } {
-    if (role !== 'BOSS') {
-      throw new AppError('FORBIDDEN', 'Only BOSS can switch clinics', 403);
+    if (!['BOSS', 'ADMIN'].includes(role)) {
+      throw new AppError('FORBIDDEN', 'Only administrators can switch clinics', 403);
     }
     const row = this.authRepository.findById(userId);
     if (!row) throw new NotFoundError('User not found');
@@ -299,151 +327,34 @@ export class AuthService {
     assertPasswordLength(newPassword);
     const hash = await bcrypt.hash(newPassword, 10);
     const now = new Date().toISOString();
-    this.runTx(() => {
+    runInTransaction(this.db, () => {
       this.authRepository.updatePassword(userId, hash, now);
       this.authRepository.clearRefreshToken(userId, now);
       this.db.prepare?.('UPDATE User SET tokenVersion = tokenVersion + 1, updatedAt = ? WHERE id = ?')?.run(now, userId);
     });
   }
 
-  async createUser(
-    input: { username: string; password: string; name: string; role: string; phone?: string; active?: boolean; clinicIds?: string[] },
+  createUser(
+    input: Parameters<UserManagementService['createUser']>[0],
     context: AppContext,
   ): Promise<Omit<User, 'passwordHash'>> {
-    const username = String(input.username ?? '').trim();
-    const name = String(input.name ?? '').trim();
-    const role = String(input.role ?? '');
-    if (!username || !name) throw new ValidationError('Username and name are required');
-    assertPasswordLength(input.password);
-    if (!isUserRole(role)) throw new ValidationError(`Invalid user role: ${role}`);
-    if (input.clinicIds !== undefined && (!Array.isArray(input.clinicIds) || input.clinicIds.some((id) => typeof id !== 'string'))) {
-      throw new ValidationError('clinicIds must be an array of strings');
-    }
-    if (this.authRepository.findByUsername(username)) throw new ConflictError('Username already exists');
-    const clinicIds = role === 'BOSS'
-      ? [...new Set([...tenantParams(context.clinicId), ...(input.clinicIds ?? [])])]
-      : [...tenantParams(context.clinicId)];
-    // S-L6：非 BOSS 创建者只能在其所属诊所范围内创建用户（防越权跨诊所开户/分配成员）。
-    // BOSS 为全局管理员，可跨诊所创建与分配（clinicIds 任意合法诊所）。
-    if (context.role !== 'BOSS') {
-      const creatorClinics = new Set(this.authRepository.clinicMemberships(context.userId).map((membership) => membership.clinicId));
-      // clinicIds 来自 tenantParams（DbParam[]）；非字符串视作不在创建者诊所范围内（fail-closed）。
-      if (!clinicIds.every((clinicId) => typeof clinicId === 'string' && creatorClinics.has(clinicId))) {
-        throw new AppError('FORBIDDEN', 'Cannot create users outside your clinic scope', 403);
-      }
-    }
-    if (clinicIds.length > 0) {
-      const placeholders = clinicIds.map(() => '?').join(',');
-      const clinics = this.db.prepare(
-        `SELECT id FROM Clinic WHERE id IN (${placeholders}) AND active = 1 AND deletedAt IS NULL`,
-      ).all(...clinicIds) as Array<{ id: string }>;
-      if (clinics.length !== clinicIds.length) {
-        throw new ValidationError('clinicIds must reference existing clinics');
-      }
-    }
-    const passwordHash = await bcrypt.hash(input.password, 10);
-    const now = new Date().toISOString();
-    const record: AuthUserRecord = {
-      id: randomUUID(),
-      clinicId: context.clinicId,
-      currentClinicId: context.clinicId,
-      username,
-      passwordHash,
-      name,
-      role,
-      phone: input.phone ?? null,
-      active: input.active ?? true,
-      loginAttempts: 0,
-      lockedUntil: null,
-      tokenVersion: 0,
-      refreshToken: null,
-      refreshTokenExpiresAt: null,
-      createdAt: now,
-      updatedAt: now,
-      deletedAt: null,
-    };
-    // B-H6：用户插入与诊所成员关系必须同事务，避免"用户已建但成员关系缺失"
-    // 的中间态（半成品账号无法登录但占用用户名）。
-    this.runTx(() => {
-      try {
-        this.authRepository.insertUser(record);
-      } catch (error) {
-        if (error instanceof Error && /UNIQUE constraint failed/.test(error.message)) {
-          throw new ConflictError('Username already exists');
-        }
-        throw error;
-      }
-      for (const clinicId of clinicIds as string[]) {
-        this.authRepository.addClinicMembership(record.id, clinicId, role, now, now);
-      }
-    });
-    const { passwordHash: _passwordHash, ...safeUser } = rowToUser(record);
-    return safeUser;
+    return this.userManagement.createUser(input, context);
   }
 
-  async updateUser(
+  updateUser(
     id: string,
     input: { name?: string; phone?: string; role?: string; active?: boolean },
     context: AppContext,
   ): Promise<Omit<User, 'passwordHash'>> {
-    const row = this.authRepository.findById(id);
-    if (!row || !tenantMatches(row.clinicId, context.clinicId)) throw new NotFoundError('User not found');
-    if (input.role !== undefined && !isUserRole(input.role)) throw new ValidationError(`Invalid user role: ${input.role}`);
-    if (row.role === 'BOSS' && (input.active === false || (input.role !== undefined && input.role !== 'BOSS'))) {
-      const boss = this.db.prepare(
-        `SELECT COUNT(*) AS count FROM User WHERE role = 'BOSS' AND active = 1 AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
-      ).get(...tenantParams(context.clinicId)) as { count: number };
-      if (Number(boss.count) <= 1) throw new ValidationError('不能禁用或降级最后一个管理员(BOSS)账号');
-    }
-    const now = new Date().toISOString();
-    const bumpToken = input.active === false;
-    this.runTx(() => {
-      const changes = this.authRepository.updateUser(id, {
-        name: input.name,
-        phone: input.phone,
-        role: input.role,
-        active: input.active,
-      }, now, context.clinicId);
-      if (changes === 0) throw new NotFoundError('User not found');
-      if (bumpToken) {
-        this.db.prepare?.('UPDATE User SET tokenVersion = tokenVersion + 1, updatedAt = ? WHERE id = ?')?.run(now, id);
-      }
-    });
-    return this.getUserById(id);
+    return this.userManagement.updateUser(id, input, context);
   }
 
-  async resetPassword(id: string, newPassword: string, context: AppContext): Promise<{ id: string }> {
-    const row = this.authRepository.findById(id);
-    if (!row || !tenantMatches(row.clinicId, context.clinicId)) throw new NotFoundError('User not found');
-    assertPasswordLength(newPassword);
-    const passwordHash = await bcrypt.hash(newPassword, 10);
-    const now = new Date().toISOString();
-    this.runTx(() => {
-      const changes = this.authRepository.resetPassword(id, passwordHash, now, context.clinicId);
-      if (changes === 0) throw new NotFoundError('User not found');
-      this.db.prepare?.('UPDATE User SET tokenVersion = tokenVersion + 1, updatedAt = ? WHERE id = ?')?.run(now, id);
-    });
-    return { id };
+  resetPassword(id: string, newPassword: string, context: AppContext): Promise<{ id: string }> {
+    return this.userManagement.resetPassword(id, newPassword, context);
   }
 
-  async deleteUser(id: string, context: AppContext): Promise<{ id: string }> {
-    if (id === context.userId) throw new ValidationError('不能删除当前登录账号');
-    const row = this.authRepository.findById(id);
-    if (!row || !tenantMatches(row.clinicId, context.clinicId)) throw new NotFoundError('User not found');
-    if (row.role === 'BOSS') {
-      const boss = this.db.prepare(
-        `SELECT COUNT(*) AS count FROM User WHERE role = 'BOSS' AND active = 1 AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
-      ).get(...tenantParams(context.clinicId)) as { count: number };
-      if (Number(boss.count) <= 1) throw new ValidationError('不能删除最后一个管理员(BOSS)账号');
-    }
-    const now = new Date().toISOString();
-    this.runTx(() => {
-      const changes = this.db.prepare(
-        'UPDATE User SET deletedAt = ?, updatedAt = ?, tokenVersion = tokenVersion + 1, refreshToken = NULL, refreshTokenExpiresAt = NULL WHERE id = ? AND deletedAt IS NULL',
-      ).run(now, now, id);
-      if (changes.changes === 0) throw new NotFoundError('User not found');
-    });
-    return { id };
+  deleteUser(id: string, context: AppContext): Promise<{ id: string }> {
+    return this.userManagement.deleteUser(id, context);
   }
 
   private sign(payload: TokenPayload): string {

@@ -31,8 +31,14 @@ export function splitList(value: string): string[] {
 
 export function formatDate(value: unknown): string {
   if (!value) return '';
-  const date = new Date(`${String(value)}T00:00:00.000Z`);
-  if (Number.isNaN(date.getTime())) return String(value);
+  const text = String(value);
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (dateOnly) {
+    const local = new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]));
+    if (!Number.isNaN(local.getTime())) return local.toLocaleDateString('zh-CN');
+  }
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) return text;
   return date.toLocaleDateString('zh-CN');
 }
 

@@ -53,7 +53,7 @@ const SCENES: TemplateScene[] = [
 ];
 
 function renderSample(content: string, placeholders: TemplateScene['placeholders']): string {
-  return placeholders.reduce((acc, placeholder) => acc.replaceAll(placeholder.token, placeholder.example), content);
+  return placeholders.reduce((acc, placeholder) => acc.replaceAll(placeholder.token, () => placeholder.example), content);
 }
 
 export function WechatTemplateLibrary({ config }: { config?: WechatTemplateConfig }) {

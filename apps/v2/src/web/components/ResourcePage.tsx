@@ -1,9 +1,9 @@
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'react-router';
 import { apiRequest, downloadCsv } from '../lib/api';
 import type { Page, ResourceDefinition, ResourceField } from '../lib/types';
-import { ConfirmDialog, DataTable, Dialog, EmptyState, LoadingState, PageError } from '.';
+import { ConfirmDialog, DataTable, Dialog, EmptyState, LoadingState, PageError, PagePager, SearchInput } from '.';
 import { formatDisplayValue, formatDate, formatDateTime, formatMoney, centsToYuanString, toCents, toLocalInput } from '../lib/format';
 import { FormBuilder } from './FormBuilder';
 import { friendlyError } from '../lib/messages';
@@ -21,7 +21,7 @@ import { csvCell, downloadTextFile } from '../pages/analytics/analytics-utils';
  * 与另外两个通用列表组件如何选型：
  * - ResourcePage：通用资源管理页（元数据驱动，字段随后端 meta 变化）→ 用它；
  * - CrudPage：业务页需要自定义列/行操作/表单体 → 用它；
- * - SimpleListPage：只读统计端点表格（hub-tabs 的 5 个统计 Tab 专用）→ 用它。
+ * - 只读统计端点表格：本组件 endpoint 只读模式（hub-tabs 的 5 个统计 Tab 专用）。
  * 三者均经 useDebouncedValue（hooks/use-debounce）统一防抖，勿手写 setTimeout。
  */
 
@@ -137,10 +137,12 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<Record<string, unknown>>({});
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
   const [batchBusy, setBatchBusy] = useState(false);
+  const batchBusyRef = useRef(false);
 
   const metaQuery = useQuery({
     queryKey: ['resource-meta'],
@@ -197,7 +199,8 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (submitting) return;
+    if (submitting || submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       const payload: Record<string, unknown> = {};
@@ -223,12 +226,14 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
       const message = friendlyError(error);
       showToast(message, 'error');
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   }
 
   async function remove() {
-    if (!deleteTarget || submitting) return;
+    if (!deleteTarget || submitting || submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       await apiRequest(`/resources/${resource}/${deleteTarget}`, { method: 'DELETE' });
@@ -243,6 +248,7 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
       const message = friendlyError(error);
       showToast(message, 'error');
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   }
@@ -272,22 +278,30 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
   }
 
   async function confirmBatchDelete() {
-    if (batchBusy || selectedIds.size === 0) return;
+    if (batchBusy || batchBusyRef.current || selectedIds.size === 0) return;
     setBatchBusy(true);
-    let deleted = 0;
+    batchBusyRef.current = true;
     try {
-      for (const id of selectedIds) {
-        await apiRequest(`/resources/${resource}/${encodeURIComponent(id)}`, { method: 'DELETE' });
-        deleted += 1;
+      // 并行删除但限制并发（20），并在全部结束后统一汇总：某条失败不影响其余项，
+      // 避免大选择集串行等待，也不会一次性打爆连接数。
+      const ids = [...selectedIds];
+      const BATCH_DELETE_CONCURRENCY = 20;
+      const results: PromiseSettledResult<unknown>[] = [];
+      for (let offset = 0; offset < ids.length; offset += BATCH_DELETE_CONCURRENCY) {
+        const chunk = ids.slice(offset, offset + BATCH_DELETE_CONCURRENCY);
+        results.push(...await Promise.allSettled(
+          chunk.map((id) => apiRequest(`/resources/${resource}/${encodeURIComponent(id)}`, { method: 'DELETE' })),
+        ));
       }
-      showToast(`已删除 ${deleted} 项`, 'success');
+      const deleted = results.filter((result) => result.status === 'fulfilled').length;
+      const firstError = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+      if (deleted > 0) showToast(`已删除 ${deleted} 项`, 'success');
+      if (firstError) showToast(friendlyError(firstError.reason), 'error');
       setSelectedIds(new Set());
       setBatchDeleteOpen(false);
       await listQuery.refetch();
-    } catch (error) {
-      showToast(friendlyError(error), 'error');
-      setBatchDeleteOpen(false);
     } finally {
+      batchBusyRef.current = false;
       setBatchBusy(false);
     }
   }
@@ -318,16 +332,15 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
         <button onClick={() => void exportCsv()}>导出</button>
         {definition.capabilities.create && <button onClick={openCreate}>新建</button>}
       </div>
-      <input
-        className="search"
-        placeholder="搜索..."
-        aria-label="搜索"
+      <SearchInput
         value={search}
-        onChange={(event) => {
-          setSearch(event.target.value);
+        onChange={(value) => {
+          setSearch(value);
           setPage(1);
           setSelectedIds(new Set());
         }}
+        placeholder="搜索..."
+        aria-label="搜索"
       />
       {selectedIds.size > 0 && (
         <div className="ui-batch-bar">
@@ -385,11 +398,14 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
           </table>
         </div>
       )}
-      <div className="pager">
-        <button disabled={page <= 1} onClick={() => { setPage((value) => value - 1); setSelectedIds(new Set()); }}>上一页</button>
-        <span>第 {page} 页</span>
-        <button disabled={!listQuery.data || page * 20 >= listQuery.data.total} onClick={() => { setPage((value) => value + 1); setSelectedIds(new Set()); }}>下一页</button>
-      </div>
+      <PagePager
+        page={page}
+        hasNext={Boolean(listQuery.data) && page * 20 < listQuery.data!.total}
+        onPageChange={(next) => {
+          setPage(next);
+          setSelectedIds(new Set());
+        }}
+      />
 
       <Dialog
         open={showForm}

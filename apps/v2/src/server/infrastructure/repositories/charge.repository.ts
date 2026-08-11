@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3';
+import { ConflictError } from '../errors';
 import type {
   ChargeItemRecord,
   ChargeRecord,
@@ -6,8 +7,7 @@ import type {
   CreateChargeInput,
 } from '../../application/ports';
 import { tenantAnd } from '../tenant';
-import { recordSyncChange } from '../sync-change';
-import { touchSearchIndex } from '../search-index';
+import { trackResourceWrite } from '../write-tracking';
 
 export class SqliteChargeRepository implements ChargeRepository {
   constructor(private readonly db: Database.Database) {}
@@ -41,10 +41,7 @@ export class SqliteChargeRepository implements ChargeRepository {
       input.status,
       input.remark ?? null,
     );
-    if (input.clinicId) {
-      recordSyncChange(this.db, { tableName: 'Charge', recordId: input.id, operation: 'INSERT', clinicId: input.clinicId });
-    }
-    touchSearchIndex(this.db, 'Charge', input.id, 'INSERT');
+    trackResourceWrite(this.db, { tableName: 'Charge', recordId: input.id, operation: 'INSERT', clinicId: input.clinicId ?? null });
   }
 
   createItem(item: ChargeItemRecord): void {
@@ -74,31 +71,32 @@ export class SqliteChargeRepository implements ChargeRepository {
     paidAmount: number,
     status: string,
     paidAt: string,
+    previousPaidAmount: number,
     payMethod?: string,
     memberCardId?: string | null,
     clinicId?: string | null,
   ): void {
     const params = clinicId
-      ? [paidAmount, status, paidAt, payMethod ?? null, memberCardId ?? null, paidAt, id, clinicId]
-      : [paidAmount, status, paidAt, payMethod ?? null, memberCardId ?? null, paidAt, id];
-    this.db.prepare(
+      ? [paidAmount, status, paidAt, payMethod ?? null, memberCardId ?? null, paidAt, id, previousPaidAmount, clinicId]
+      : [paidAmount, status, paidAt, payMethod ?? null, memberCardId ?? null, paidAt, id, previousPaidAmount];
+    const result = this.db.prepare(
       `UPDATE Charge SET paidAmount = ?, status = ?, paidAt = ?, payMethod = COALESCE(?, payMethod),
-       memberCardId = COALESCE(?, memberCardId), updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
+       memberCardId = COALESCE(?, memberCardId), updatedAt = ? WHERE id = ? AND deletedAt IS NULL AND paidAmount = ?${tenantAnd(clinicId)}`,
     ).run(...params);
-    if (clinicId) {
-      recordSyncChange(this.db, { tableName: 'Charge', recordId: id, operation: 'UPDATE', clinicId });
+    if (result.changes === 0) {
+      throw new ConflictError('Charge payment state changed; retry');
     }
-    touchSearchIndex(this.db, 'Charge', id, 'UPDATE');
+    trackResourceWrite(this.db, { tableName: 'Charge', recordId: id, operation: 'UPDATE', clinicId: clinicId ?? null });
   }
 
-  updateRefund(id: string, refundedAmount: number, status: string, updatedAt: string, clinicId?: string | null): void {
-    const params = clinicId ? [refundedAmount, status, updatedAt, id, clinicId] : [refundedAmount, status, updatedAt, id];
-    this.db.prepare(
-      `UPDATE Charge SET refundedAmount = ?, status = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
+  updateRefund(id: string, refundedAmount: number, status: string, updatedAt: string, previousRefundedAmount: number, clinicId?: string | null): void {
+    const params = clinicId ? [refundedAmount, status, updatedAt, id, previousRefundedAmount, clinicId] : [refundedAmount, status, updatedAt, id, previousRefundedAmount];
+    const result = this.db.prepare(
+      `UPDATE Charge SET refundedAmount = ?, status = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL AND refundedAmount = ?${tenantAnd(clinicId)}`,
     ).run(...params);
-    if (clinicId) {
-      recordSyncChange(this.db, { tableName: 'Charge', recordId: id, operation: 'UPDATE', clinicId });
+    if (result.changes === 0) {
+      throw new ConflictError('Charge refund state changed; retry');
     }
-    touchSearchIndex(this.db, 'Charge', id, 'UPDATE');
+    trackResourceWrite(this.db, { tableName: 'Charge', recordId: id, operation: 'UPDATE', clinicId: clinicId ?? null });
   }
 }

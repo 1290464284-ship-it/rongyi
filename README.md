@@ -9,7 +9,7 @@ Express, and SQLite.
 apps/v2/                 Electron desktop application (the only app workspace)
 docs/                    Architecture, delivery, plans, specs and audit reports
 docs/audits/             Audit reports, including historical rounds
-.github/workflows/       v2-ci and v2-release only
+.github/workflows/       v2-ci / v2-release / v2-internal-release / v2-windows-smoke
 ```
 
 ## Run

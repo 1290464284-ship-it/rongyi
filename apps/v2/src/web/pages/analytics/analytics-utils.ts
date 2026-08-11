@@ -45,5 +45,6 @@ export function downloadTextFile(filename: string, content: string, mime = 'text
   anchor.href = url;
   anchor.download = filename;
   anchor.click();
-  URL.revokeObjectURL(url);
+  // 延迟释放，避免 Firefox 等在下载尚未开始时 revoke 导致空文件。
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

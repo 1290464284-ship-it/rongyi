@@ -5,7 +5,7 @@ import { errorMessage } from '../lib/messages';
 import { useToast } from '../lib/toast-context';
 import { FOLLOW_UP_LABELS, type PlanRow } from './types';
 
-export function FollowUpDialog({
+export function PlanFollowUpDialog({
   plan,
   onClose,
   onSaved,

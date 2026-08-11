@@ -81,11 +81,17 @@ describe('core repositories', () => {
          status, points, totalPoints, level
        ) VALUES (?, ?, ?, ?, NULL, ?, 'CARD', 0, 0, 0, 'ACTIVE', 0, 0, 'NORMAL')`,
     ).run('card-repo', null, now, now, 'patient-repo');
-    repo.updateRecharge('card-repo', 500, 500, now);
-    repo.updateConsume('card-repo', 300, 200, now);
+    repo.updateRecharge('card-repo', 500, now);
+    repo.updateConsume('card-repo', 200, now);
+    repo.updatePoints('card-repo', 30, 30, now);
     const card = repo.findById('card-repo');
     expect(card?.balance).toBe(300);
     expect(card?.totalConsume).toBe(200);
+    expect(card?.points).toBe(30);
+    expect(card?.totalPoints).toBe(30);
+    repo.updatePoints('card-repo', -5, 0, now);
+    expect(repo.findById('card-repo')?.points).toBe(25);
+    expect(() => repo.updateConsume('card-repo', 999, now)).toThrow('Insufficient member card balance');
   });
 
   it('filters soft-deleted rows and supports member-card refund lookups', () => {
@@ -145,7 +151,7 @@ describe('core repositories', () => {
          code, name, category, unit, stock, minStock, price
        ) VALUES (?, ?, ?, ?, NULL, 'LOW', 'Low Item', 'MAT', 'box', 1, 5, 100)`,
     ).run('inventory-repo', null, now, now);
-    repo.updateStock('inventory-repo', 10, now);
+    repo.adjustStock('inventory-repo', 9, now);
     repo.createTransaction({
       id: 'tx-repo',
       clinicId: null,
@@ -160,6 +166,7 @@ describe('core repositories', () => {
     const item = repo.findItem('inventory-repo');
     expect(item?.stock).toBe(10);
     expect(repo.lowStock().length).toBe(0);
+    expect(() => repo.adjustStock('inventory-repo', -999, now)).toThrow('Insufficient stock');
   });
 
   it('updates debt payment', () => {
@@ -170,8 +177,9 @@ describe('core repositories', () => {
          chargeId, patientId, totalAmount, paidAmount, status
        ) VALUES (?, ?, ?, ?, NULL, 'charge', 'patient', 1000, 0, 'UNPAID')`,
     ).run('debt-repo', null, now, now);
-    repo.updatePaid('debt-repo', 400, 'PARTIAL', now);
+    repo.updatePaid('debt-repo', 400, 'PARTIAL', now, 0);
     expect(repo.findById('debt-repo')?.paidAmount).toBe(400);
+    expect(() => repo.updatePaid('debt-repo', 500, 'PAID', now, 0)).toThrow('Debt payment state changed');
   });
 
   it('creates and updates charge records', () => {
@@ -195,8 +203,8 @@ describe('core repositories', () => {
       createdAt: now,
       updatedAt: now,
     });
-    repo.updatePayment('charge-repo', 400, 'PARTIAL', now, 'CASH', undefined, null);
-    repo.updateRefund('charge-repo', 100, 'PARTIAL', now, null);
+    repo.updatePayment('charge-repo', 400, 'PARTIAL', now, 0, 'CASH', undefined, null);
+    repo.updateRefund('charge-repo', 100, 'PARTIAL', now, 0, null);
     const charge = repo.findById('charge-repo');
     expect(charge?.paidAmount).toBe(400);
     expect(charge?.refundedAmount).toBe(100);
@@ -228,14 +236,18 @@ describe('core repositories', () => {
       createdAt: now,
       updatedAt: now,
     });
-    repo.updatePayment('charge-repo', 500, 'PAID', now, 'MEMBER_CARD', 'card-repo', null);
+    repo.updatePayment('charge-repo', 500, 'PAID', now, 400, 'MEMBER_CARD', 'card-repo', null);
     const paidCharge = repo.findById('charge-repo');
     expect(paidCharge?.payMethod).toBe('MEMBER_CARD');
     expect(paidCharge?.memberCardId).toBe('card-repo');
-    repo.updatePayment('charge-repo', 600, 'PAID', now, undefined, null, null);
+    repo.updatePayment('charge-repo', 600, 'PAID', now, 500, undefined, null, null);
     const cashCharge = repo.findById('charge-repo');
     expect(cashCharge?.payMethod).toBe('MEMBER_CARD');
     expect(cashCharge?.memberCardId).toBe('card-repo');
+    expect(() => repo.updatePayment('charge-repo', 700, 'PAID', now, 0, 'CASH', undefined, null))
+      .toThrow('Charge payment state changed');
+    expect(() => repo.updateRefund('charge-repo', 200, 'REFUNDED', now, 0, null))
+      .toThrow('Charge refund state changed');
   });
 
   it('does not update charges from another clinic through direct repository writes', () => {
@@ -246,9 +258,10 @@ describe('core repositories', () => {
          patientId, number, totalAmount, discount, status
        ) VALUES (?, ?, ?, ?, NULL, 'charge-patient', 'CHG-OTHER-CLINIC', 1000, 0, 'UNPAID')`,
     ).run('charge-other-clinic', 'clinic-v2-other', now, now);
-    repo.updatePayment('charge-other-clinic', 100, 'PARTIAL', now, 'CASH', undefined, 'clinic-v2-001');
-    repo.updatePayment('charge-other-clinic', 0, 'UNPAID', now, undefined, 'card-other', 'clinic-v2-001');
-    repo.updateRefund('charge-other-clinic', 50, 'PARTIAL', now, 'clinic-v2-001');
+    expect(() => repo.updatePayment('charge-other-clinic', 100, 'PARTIAL', now, 0, 'CASH', undefined, 'clinic-v2-001'))
+      .toThrow('Charge payment state changed');
+    expect(() => repo.updateRefund('charge-other-clinic', 50, 'PARTIAL', now, 0, 'clinic-v2-001'))
+      .toThrow('Charge refund state changed');
     const row = db.prepare('SELECT paidAmount, refundedAmount, status FROM Charge WHERE id = ?').get('charge-other-clinic') as {
       paidAmount: number;
       refundedAmount: number;
@@ -286,6 +299,7 @@ describe('core repositories', () => {
     repo.markReceived('po-repo', now, now);
     expect(repo.findById('po-repo')?.status).toBe('RECEIVED');
     expect(repo.itemsByOrder('po-repo').length).toBe(1);
+    expect(() => repo.markReceived('po-repo', now, now)).toThrow('Purchase order is not pending');
   });
 
   it('transitions processing orders and sends wechat messages', () => {

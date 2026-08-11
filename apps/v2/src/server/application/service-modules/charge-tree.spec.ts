@@ -107,6 +107,10 @@ describe('ChargeTreeService', () => {
     expect(result).toMatchObject({ catalogId: 'cat-qc-1', totalAmount: 30000, itemId: null });
     expect(result.chargeId).toBeDefined();
     expect(result.number).toMatch(/^CHG-[A-Z0-9]+-[A-Z0-9]{8}$/);
+    expect(() => service.quickCharge('cat-qc-1', { patientId: 'patient-demo-001', visitId: 'missing-visit' }, context))
+      .toThrow(NotFoundError);
+    expect(() => service.quickCharge('cat-qc-1', { patientId: 'patient-demo-001', doctorId: 'missing-doctor' }, context))
+      .toThrow(NotFoundError);
 
     const charge = db.prepare('SELECT * FROM Charge WHERE id = ?').get(result.chargeId) as Record<string, unknown>;
     expect(charge.patientId).toBe('patient-demo-001');

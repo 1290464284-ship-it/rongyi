@@ -143,4 +143,20 @@ describe('SystemOperationsPage', () => {
       expect.objectContaining({ method: 'POST', body: expect.stringContaining('"retentionDays":30') }),
     );
   });
+
+  it('validates the audit retention window and reports cleanup failures', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/system/audit/cleanup') throw new Error('cleanup failed');
+      return {};
+    });
+    render(<ToastProvider><SystemOperationsPage /></ToastProvider>);
+
+    fireEvent.change(screen.getByLabelText('日志保留天数'), { target: { value: '10' } });
+    fireEvent.click(screen.getByRole('button', { name: '立即清理' }));
+    expect(await screen.findByText('日志保留天数必须在 30 到 3650 之间')).toBeDefined();
+
+    fireEvent.change(screen.getByLabelText('日志保留天数'), { target: { value: '30' } });
+    fireEvent.click(screen.getByRole('button', { name: '立即清理' }));
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+  });
 });

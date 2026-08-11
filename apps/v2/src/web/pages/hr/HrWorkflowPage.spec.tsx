@@ -69,10 +69,34 @@ describe('HrWorkflowPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '驳回' }));
     expect(await screen.findByText('审批失败')).toBeDefined();
   });
-});
-it('renders an error state with retry when leave data is unavailable', async () => {
-  vi.mocked(apiRequest).mockRejectedValueOnce(new Error('leaves failed'));
-  render(<HrWorkflowPage />, { wrapper });
-  expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
-  expect(screen.getByRole('button', { name: '重试' })).toBeDefined();
+
+  it('renders an error state with retry when leave data is unavailable', async () => {
+    vi.mocked(apiRequest).mockRejectedValueOnce(new Error('leaves failed'));
+    render(<HrWorkflowPage />, { wrapper });
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+    expect(screen.getByRole('button', { name: '重试' })).toBeDefined();
+  });
+
+  it('retries the leave list after clicking retry', async () => {
+    vi.mocked(apiRequest)
+      .mockRejectedValueOnce(new Error('leaves failed'))
+      .mockResolvedValueOnce({
+        items: [{ id: 'l-1', userId: 'u-1', startDate: '2026-08-01', endDate: '2026-08-02', status: 'PENDING' }],
+        total: 1,
+      });
+    render(<HrWorkflowPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '重试' }));
+    expect(await screen.findByText('u-1')).toBeDefined();
+  });
+
+  it('shows loading and empty states', async () => {
+    vi.mocked(apiRequest).mockImplementation(() => new Promise(() => {}));
+    render(<HrWorkflowPage />, { wrapper });
+    expect(screen.getByText('请假数据加载中...')).toBeDefined();
+    cleanup();
+
+    vi.mocked(apiRequest).mockResolvedValue({ items: [], total: 0 });
+    render(<HrWorkflowPage />, { wrapper });
+    expect(await screen.findByText('暂无待审批请假')).toBeDefined();
+  });
 });

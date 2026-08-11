@@ -5,6 +5,7 @@ import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import type { AppContext } from '../../../domain/contracts';
 import type { WechatMessageRepository } from '../ports';
 import type { Logger } from '../../infrastructure/logger';
+import { secretFileValue } from '../../infrastructure/secret-file';
 
 const SENDABLE_WECHAT_STATUSES = new Set(['PENDING', 'DRAFT', 'IN_PROGRESS']);
 
@@ -90,8 +91,8 @@ export class HttpWechatProvider implements WechatProvider {
 
 export function createWechatProvider(): WechatProvider {
   const url = process.env.V2_WECHAT_API_URL?.trim() ?? '';
-  const appId = process.env.V2_WECHAT_APP_ID?.trim() ?? '';
-  const appSecret = process.env.V2_WECHAT_APP_SECRET?.trim() ?? '';
+  const appId = process.env.V2_WECHAT_APP_ID?.trim() ?? secretFileValue('wechatAppId')?.trim() ?? '';
+  const appSecret = process.env.V2_WECHAT_APP_SECRET?.trim() ?? secretFileValue('wechatAppSecret')?.trim() ?? '';
   if (url && appId && appSecret) {
     // 环境变量入口强制 TLS：http 网关一律视为未配置，避免 appSecret 明文转发（审计 L2）
     if (!/^https:\/\//i.test(url)) {

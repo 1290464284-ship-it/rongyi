@@ -12,6 +12,7 @@ export function PurchaseOrderFormFields({
   setInventoryRows,
   editing,
   editingId,
+  onItemsLoaded,
 }: {
   form: PurchaseOrderForm;
   update: (patch: Partial<PurchaseOrderForm>) => void;
@@ -19,8 +20,13 @@ export function PurchaseOrderFormFields({
   setInventoryRows: (rows: SearchableSelectRow[]) => void;
   editing: boolean;
   editingId: string | null;
+  onItemsLoaded?: () => void;
 }) {
   const loadedItemsForRef = useRef<string | null>(null);
+  const updateRef = useRef(update);
+  const onItemsLoadedRef = useRef(onItemsLoaded);
+  useEffect(() => { updateRef.current = update; });
+  useEffect(() => { onItemsLoadedRef.current = onItemsLoaded; });
   const [itemsError, setItemsError] = useState<string | null>(null);
   // L2：明细异步回填完成前禁用编辑区，避免整表覆盖用户正在输入的内容（竞态）
   const [itemsLoading, setItemsLoading] = useState(false);
@@ -33,7 +39,7 @@ export function PurchaseOrderFormFields({
     fetchAllPages<PurchaseOrderItemRow>(`/resources/purchaseOrderItems?orderId=${editingId}`)
       .then((rows) => {
         if (cancelled) return;
-        update({
+        updateRef.current({
           items: (rows ?? []).map((row) => ({
             id: String(row.id),
             itemId: String(row.itemId ?? ''),
@@ -44,6 +50,7 @@ export function PurchaseOrderFormFields({
             subtotal: centsToYuanString(row.subtotal ?? 0),
           })),
         });
+        onItemsLoadedRef.current?.();
       })
       .catch(() => {
         if (!cancelled) setItemsError('明细加载失败，请关闭后重试');
@@ -54,7 +61,7 @@ export function PurchaseOrderFormFields({
     return () => {
       cancelled = true;
     };
-  }, [editing, editingId, update]);
+  }, [editing, editingId]);
   return (
     <>
       <label>

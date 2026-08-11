@@ -34,7 +34,7 @@ interface StartSchedulersOptions {
   syncChangeRetentionDays?: number;
 }
 
-export function startSchedulers(options: StartSchedulersOptions): { stop(): void } {
+export function startSchedulers(options: StartSchedulersOptions): { stop(): Promise<void> } {
   const {
     backups,
     audit,
@@ -50,6 +50,7 @@ export function startSchedulers(options: StartSchedulersOptions): { stop(): void
   const intervalMs = Math.max(60_000, autoBackupIntervalMs);
 
   let isRunning = false;
+  let currentBackup: Promise<void> | null = null;
   const timers: Array<ReturnType<typeof setInterval>> = [];
 
   function schedule(callback: () => void, ms: number): void {
@@ -67,25 +68,33 @@ export function startSchedulers(options: StartSchedulersOptions): { stop(): void
   async function runAutoBackup(): Promise<void> {
     if (isRunning) return;
     isRunning = true;
+    const task = (async () => {
+      try {
+        const result = await backups.create({ type: 'AUTO' });
+        const cleanup = backups.cleanup(autoBackupKeep);
+        logger.info('automatic backup completed', { action: 'auto-backup', ...result, cleanup });
+      } catch (error) {
+        logger.error('automatic backup failed', { action: 'auto-backup', error });
+        onAlertCreate({
+          alertType: 'SCHEDULER_TASK_FAILURE',
+          level: 'CRITICAL',
+          severity: 'CRITICAL',
+          title: '自动备份失败',
+          message: error instanceof Error ? error.message : String(error),
+          source: 'BACKUP_AUTO',
+          metricName: 'automatic_backup',
+          suggestion: '请检查磁盘空间、备份目录权限和备份密钥。',
+          clinicId: null,
+        });
+      } finally {
+        isRunning = false;
+      }
+    })();
+    currentBackup = task;
     try {
-      const result = await backups.create({ type: 'AUTO' });
-      const cleanup = backups.cleanup(autoBackupKeep);
-      logger.info('automatic backup completed', { action: 'auto-backup', ...result, cleanup });
-    } catch (error) {
-      logger.error('automatic backup failed', { action: 'auto-backup', error });
-      onAlertCreate({
-        alertType: 'SCHEDULER_TASK_FAILURE',
-        level: 'CRITICAL',
-        severity: 'CRITICAL',
-        title: '自动备份失败',
-        message: error instanceof Error ? error.message : String(error),
-        source: 'BACKUP_AUTO',
-        metricName: 'automatic_backup',
-        suggestion: '请检查磁盘空间、备份目录权限和备份密钥。',
-        clinicId: null,
-      });
+      await task;
     } finally {
-      isRunning = false;
+      if (currentBackup === task) currentBackup = null;
     }
   }
 
@@ -158,9 +167,18 @@ export function startSchedulers(options: StartSchedulersOptions): { stop(): void
   }
 
   return {
-    stop() {
+    async stop(): Promise<void> {
       for (const timer of timers) clearInterval(timer);
       timers.length = 0;
+      // shutdown 会在 stop() 后关闭数据库，必须等正在执行的自动备份结束，
+      // 否则备份 API 会读到已被关闭的 SQLite 连接。
+      if (currentBackup) {
+        try {
+          await currentBackup;
+        } catch {
+          // runAutoBackup 已记录失败并创建告警；stop 不再吞掉原始流程。
+        }
+      }
     },
   };
 }

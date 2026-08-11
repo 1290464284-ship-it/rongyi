@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import { Dialog, ConfirmDialog, LoadingState, PageError } from '../../components';
@@ -34,6 +34,7 @@ export function ChargesPage() {
   const [refundAmount, setRefundAmount] = useState('');
   const [refundReason, setRefundReason] = useState('');
   const [actionBusy, setActionBusy] = useState(false);
+  const actionBusyRef = useRef(false);
   const [comboOpen, setComboOpen] = useState(false);
   const [combos, setCombos] = useState<ChargeComboRow[] | null>(null);
   const [comboLoading, setComboLoading] = useState(false);
@@ -204,10 +205,11 @@ export function ChargesPage() {
   async function pay(event: FormEvent) {
     event.preventDefault();
     const amount = toCents(paymentAmount);
-    if (actionBusy || !paymentTarget || amount <= 0) {
+    if (actionBusy || actionBusyRef.current || !paymentTarget || amount <= 0) {
       showToast('请输入有效的收款金额', 'error');
       return;
     }
+    actionBusyRef.current = true;
     setActionBusy(true);
     try {
       let method = effectivePayLeaf;
@@ -230,6 +232,7 @@ export function ChargesPage() {
     } catch (error) {
       showToast(errorMessage(error, '收款失败'), 'error');
     } finally {
+      actionBusyRef.current = false;
       setActionBusy(false);
     }
   }
@@ -237,10 +240,11 @@ export function ChargesPage() {
   async function refund(event: FormEvent) {
     event.preventDefault();
     const amount = toCents(refundAmount);
-    if (actionBusy || !refundTarget || amount <= 0) {
+    if (actionBusy || actionBusyRef.current || !refundTarget || amount <= 0) {
       showToast('请输入有效的退款金额', 'error');
       return;
     }
+    actionBusyRef.current = true;
     setActionBusy(true);
     try {
       await apiRequest(`/charges/${refundTarget}/refund`, {
@@ -255,12 +259,14 @@ export function ChargesPage() {
     } catch (error) {
       showToast(errorMessage(error, '退款失败'), 'error');
     } finally {
+      actionBusyRef.current = false;
       setActionBusy(false);
     }
   }
 
   async function deleteCharge() {
-    if (actionBusy || !deleteTarget) return;
+    if (actionBusy || actionBusyRef.current || !deleteTarget) return;
+    actionBusyRef.current = true;
     setActionBusy(true);
     try {
       await apiRequest(`/charges/${deleteTarget.id}`, { method: 'DELETE' });
@@ -275,6 +281,7 @@ export function ChargesPage() {
       showToast(errorMessage(error, '删除收费单失败'), 'error');
       setDeleteTarget(null);
     } finally {
+      actionBusyRef.current = false;
       setActionBusy(false);
     }
   }
@@ -360,10 +367,11 @@ export function ChargesPage() {
   async function quoteMemberDiscount() {
     const validItems = buildValidItems(crud.form.items);
     const baseTotal = validItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    if (actionBusy || !crud.form.patientId || baseTotal <= 0) {
+    if (actionBusy || actionBusyRef.current || !crud.form.patientId || baseTotal <= 0) {
       showToast('请先选择患者并填写有效明细', 'error');
       return;
     }
+    actionBusyRef.current = true;
     setActionBusy(true);
     try {
       const data = await apiRequest<{ applied?: boolean; reason?: string; baseTotal?: number; total?: number; message?: string }>('/member-cards/quote', {
@@ -383,6 +391,7 @@ export function ChargesPage() {
     } catch (error) {
       showToast(errorMessage(error, '会员折扣试算失败'), 'error');
     } finally {
+      actionBusyRef.current = false;
       setActionBusy(false);
     }
   }

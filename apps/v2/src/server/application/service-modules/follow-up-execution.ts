@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
+import { trackResourceWrite } from '../../infrastructure/write-tracking';
 import { computeNps, computeAverage } from '../nps';
 import type { AppContext } from '../../../domain/contracts';
 
@@ -59,12 +60,13 @@ export class FollowUpExecutionService {
     this.db.prepare(
       `UPDATE FollowUp
        SET executionStatus = ?, patientRating = ?, painLevel = ?, feedback = ?,
-           contactedAt = ?, nextPlanDate = ?, status = 'COMPLETED', completedAt = ?, updatedAt = ?
+            contactedAt = ?, nextPlanDate = ?, status = 'COMPLETED', completedAt = ?, updatedAt = ?
        WHERE id = ?${tenantAnd(context.clinicId)}`,
     ).run(
-      executionStatus, patientRating, painLevel, feedback, contactedAt, nextPlanDate, now, now, id,
-      ...tenantParams(context.clinicId),
+       executionStatus, patientRating, painLevel, feedback, contactedAt, nextPlanDate, now, now, id,
+       ...tenantParams(context.clinicId),
     );
+    trackResourceWrite(this.db, { tableName: 'FollowUp', recordId: id, operation: 'UPDATE', clinicId: context.clinicId ?? null });
     return { id, executionStatus, patientRating, painLevel, nextPlanDate };
   }
 

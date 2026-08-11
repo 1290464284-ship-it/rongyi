@@ -9,7 +9,7 @@ import { PlanBillingDialog } from '../../treatment-plans/PlanBillingDialog';
 import { PlanFormFields } from '../../treatment-plans/PlanFormFields';
 import { PrintPreview } from '../../treatment-plans/PrintPreview';
 import { SignForm } from '../../treatment-plans/SignForm';
-import { FollowUpDialog } from '../../treatment-plans/FollowUpDialog';
+import { PlanFollowUpDialog } from '../../treatment-plans/PlanFollowUpDialog';
 import {
   FOLLOW_UP_LABELS,
   PLAN_DISCOUNT_LABELS,
@@ -204,7 +204,7 @@ export function TreatmentPlansPage() {
 
       <Dialog open={followUpTarget !== null} title="计划回访" onClose={() => setFollowUpTarget(null)}>
         {followUpTarget && (
-          <FollowUpDialog
+          <PlanFollowUpDialog
             plan={followUpTarget.row}
             onClose={() => setFollowUpTarget(null)}
             onSaved={followUpTarget.reload}

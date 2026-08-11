@@ -25,6 +25,10 @@ describe('triage routes', () => {
     db.prepare(
       `UPDATE Appointment SET startTime = ?, endTime = ?, updatedAt = ? WHERE id = 'appointment-demo-001'`,
     ).run('2099-01-01T00:00:00.000Z', '2099-01-01T01:00:00.000Z', nowIso);
+    db.prepare(
+      `INSERT OR IGNORE INTO Chair (id, clinicId, createdAt, updatedAt, deletedAt, name, location, active)
+       VALUES ('chair-route-1', 'clinic-v2-001', ?, ?, NULL, 'Route Chair', 'Room 1', 1)`,
+    ).run(nowIso, nowIso);
 
     app = express();
     app.use(express.json());

@@ -12,7 +12,9 @@ import { ToastProvider } from '../../components/toast';
 vi.mock('../../lib/api', () => ({ apiRequest: vi.fn(), downloadCsv: vi.fn() }));
 
 const wrapper = ({ children }: { children: ReactNode }) => (
-  <QueryClientProvider client={new QueryClient()}><ToastProvider>{children}</ToastProvider></QueryClientProvider>
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <ToastProvider>{children}</ToastProvider>
+  </QueryClientProvider>
 );
 
 describe('AppointmentBoardPage', () => {
@@ -225,5 +227,52 @@ describe('AppointmentBoardPage', () => {
     fireEvent.dragStart(document.querySelector('[data-id="a1"]')!);
     fireEvent.drop(document.querySelector('[data-status="BOOKED"]')!);
     expect(vi.mocked(apiRequest)).not.toHaveBeenCalledWith('/appointments/a1/status', expect.anything());
+  });
+
+  it('shows loading and error states with retry', async () => {
+    vi.mocked(apiRequest).mockImplementation(() => new Promise(() => {}));
+    render(<AppointmentBoardPage />, { wrapper });
+    expect(screen.getByText('预约看板加载中...')).toBeDefined();
+    cleanup();
+
+    vi.mocked(apiRequest).mockRejectedValue(new Error('board failed'));
+    render(<AppointmentBoardPage />, { wrapper });
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+    expect(screen.getByRole('button', { name: '重试' })).toBeDefined();
+  });
+
+  it('clears the drag-over highlight when leaving a column', async () => {
+    const today = todayLocalDate();
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === `/appointments/by-date?date=${today}`) {
+        return {
+          items: [{ id: 'a1', patientId: 'P1', doctorId: 'D1', startTime: '2026-08-04T09:00:00.000Z', status: 'BOOKED' }],
+          total: 1,
+          page: 1,
+          pageSize: 200,
+        };
+      }
+      return {};
+    });
+    render(<AppointmentBoardPage />, { wrapper });
+    expect(await screen.findByText('P1')).toBeDefined();
+
+    const arrivedColumn = document.querySelector('[data-status="ARRIVED"]')!;
+    fireEvent.dragOver(arrivedColumn);
+    expect(arrivedColumn.className).toContain('drag-over');
+    fireEvent.dragLeave(arrivedColumn);
+    expect(arrivedColumn.className).not.toContain('drag-over');
+  });
+
+  it('renders an empty board when the response has no items', async () => {
+    const today = todayLocalDate();
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === `/appointments/by-date?date=${today}`) {
+        return { total: 0, page: 1, pageSize: 200 };
+      }
+      return {};
+    });
+    render(<AppointmentBoardPage />, { wrapper });
+    expect((await screen.findAllByText('暂无预约')).length).toBeGreaterThan(0);
   });
 });

@@ -16,7 +16,7 @@ apps/v2/
     server/        Express API, application services, repositories
     web/           React desktop renderer
 docs/              Architecture, delivery, plans, specs, audits and evidence
-.github/workflows/ v2-ci and v2-release only
+.github/workflows/ v2-ci, v2-release, v2-internal-release, v2-windows-smoke
 ```
 
 ## Commands

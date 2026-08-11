@@ -10,6 +10,7 @@ import type { RateLimitStore, RateLimitWindow } from '../http/rate-limit';
 export class SqliteRateLimitStore implements RateLimitStore {
   private readonly getStmt: Statement;
   private readonly setStmt: Statement;
+  private readonly incrementStmt: Statement;
   private readonly deleteStmt: Statement;
   private readonly pruneStmt: Statement;
   private lastPrunedAt = 0;
@@ -31,6 +32,18 @@ export class SqliteRateLimitStore implements RateLimitStore {
        VALUES (?, ?, ?, ?)
        ON CONFLICT(key) DO UPDATE SET count = excluded.count, resetAt = excluded.resetAt, updatedAt = excluded.updatedAt`,
     );
+    // Atomic cross-process increment: read-modify-write happens inside one
+    // SQLite statement, so two API processes sharing the database cannot both
+    // persist the same stale count and overshoot the configured limit.
+    this.incrementStmt = db.prepare(
+      `INSERT INTO RateLimitWindow (key, count, resetAt, updatedAt)
+       VALUES (?, 1, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET
+         count = CASE WHEN RateLimitWindow.resetAt <= ? THEN 1 ELSE RateLimitWindow.count + 1 END,
+         resetAt = CASE WHEN RateLimitWindow.resetAt <= ? THEN excluded.resetAt ELSE RateLimitWindow.resetAt END,
+         updatedAt = excluded.updatedAt
+       RETURNING count, resetAt`,
+    );
     this.deleteStmt = db.prepare('DELETE FROM RateLimitWindow WHERE key = ?');
     this.pruneStmt = db.prepare('DELETE FROM RateLimitWindow WHERE resetAt <= ?');
   }
@@ -43,6 +56,12 @@ export class SqliteRateLimitStore implements RateLimitStore {
 
   set(key: string, window: RateLimitWindow): void {
     this.setStmt.run(key, window.count, window.resetAt, Date.now());
+  }
+
+  increment(key: string, windowMs: number, now = Date.now()): RateLimitWindow {
+    this.pruneIfStale(now);
+    const row = this.incrementStmt.get(key, now + windowMs, now, now, now) as { count: number; resetAt: number };
+    return { count: row.count, resetAt: row.resetAt };
   }
 
   delete(key: string): void {

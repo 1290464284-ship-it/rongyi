@@ -178,26 +178,48 @@ export function FollowUpsPage() {
       </div>
       <div className="tabs" role="tablist">
         <button
+          id="followup-tab-list"
           role="tab"
+          aria-selected={activeTab === 'list'}
+          aria-controls="followup-panel-list"
+          tabIndex={activeTab === 'list' ? 0 : -1}
           className={activeTab === 'list' ? 'tab active' : 'tab'}
           onClick={() => setActiveTab('list')}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowRight') {
+              event.preventDefault();
+              setActiveTab('dicts');
+              document.getElementById('followup-tab-dicts')?.focus();
+            }
+          }}
         >
           回访列表
         </button>
         <button
+          id="followup-tab-dicts"
           role="tab"
+          aria-selected={activeTab === 'dicts'}
+          aria-controls="followup-panel-dicts"
+          tabIndex={activeTab === 'dicts' ? 0 : -1}
           className={activeTab === 'dicts' ? 'tab active' : 'tab'}
           onClick={() => setActiveTab('dicts')}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowLeft') {
+              event.preventDefault();
+              setActiveTab('list');
+              document.getElementById('followup-tab-list')?.focus();
+            }
+          }}
         >
           词典管理
         </button>
       </div>
       {activeTab === 'dicts' ? (
-        <div className="tab-panel">
+        <div id="followup-panel-dicts" className="tab-panel" role="tabpanel" aria-labelledby="followup-tab-dicts">
           <FollowUpDictsTab />
         </div>
       ) : (
-        <>
+        <div id="followup-panel-list" role="tabpanel" aria-labelledby="followup-tab-list">
           {summary.data && (
             <div className="stat-row">
               <span>总计：{summary.data.total}</span>
@@ -245,7 +267,7 @@ export function FollowUpsPage() {
             onSubmit={(value) => void runCompletion(() => submitCompletion(value))}
             onCancel={() => setCompletion(null)}
           />
-        </>
+        </div>
       )}
     </div>
   );

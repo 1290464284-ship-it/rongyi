@@ -25,6 +25,23 @@ export function registerSystemRoutes(app: Express, deps: RouteDependencies): voi
       });
   }));
 
+  app.get('/api/v2/sync/full', syncLimiter, wrapAsync(async (req, res) => {
+      const table = typeof req.query.table === 'string' && req.query.table !== '' ? req.query.table : undefined;
+      const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
+      const offset = typeof req.query.offset === 'string' ? Number(req.query.offset) : undefined;
+      const data = sync.fullSnapshot(req.context!, { table, limit, offset });
+      deps.logger.info('sync full snapshot', {
+        action: 'sync-full-snapshot',
+        clinicId: req.context!.clinicId,
+        table,
+        offset: data.offset,
+        limit: data.limit,
+        total: data.total,
+        rows: data.rows?.length,
+      });
+      res.json({ success: true, data });
+  }));
+
   app.post('/api/v2/sync/devices', syncLimiter, wrapAsync(async (req, res) => {
       res.status(201).json({
         success: true,

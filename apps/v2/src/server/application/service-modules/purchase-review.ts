@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams, type DbParam } from '../../infrastructure/tenant';
+import { trackResourceWrite } from '../../infrastructure/write-tracking';
 import type { AppContext } from '../../../domain/contracts';
 
 /**
@@ -85,6 +86,7 @@ export class PurchaseReviewService {
        SET reviewStatus = 'APPROVED', approvedById = ?, approvedAt = ?, rejectionReason = NULL, updatedAt = ?
        WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).run(context.userId, now, now, id, ...tenantParams(context.clinicId));
+    trackResourceWrite(this.db, { tableName: 'PurchaseOrder', recordId: id, operation: 'UPDATE', clinicId: context.clinicId ?? null });
     return { id, reviewStatus: 'APPROVED', approvedById: context.userId, approvedAt: now };
   }
 
@@ -101,6 +103,7 @@ export class PurchaseReviewService {
        SET reviewStatus = 'REJECTED', rejectionReason = ?, approvedById = ?, approvedAt = ?, updatedAt = ?
        WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).run(reason, context.userId, now, now, id, ...tenantParams(context.clinicId));
+    trackResourceWrite(this.db, { tableName: 'PurchaseOrder', recordId: id, operation: 'UPDATE', clinicId: context.clinicId ?? null });
     return { id, reviewStatus: 'REJECTED', rejectionReason: reason };
   }
 
@@ -169,5 +172,6 @@ export class PurchaseReviewService {
       `UPDATE PurchaseOrder SET ${sets.join(', ')}
        WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).run(...params);
+    trackResourceWrite(this.db, { tableName: 'PurchaseOrder', recordId: id, operation: 'UPDATE', clinicId: context.clinicId ?? null });
   }
 }

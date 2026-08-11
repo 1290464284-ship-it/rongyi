@@ -31,6 +31,12 @@ describe('TriageService', () => {
     db.prepare(
       `UPDATE Appointment SET startTime = ?, endTime = ?, updatedAt = ? WHERE id = 'appointment-demo-001'`,
     ).run('2099-01-01T00:00:00.000Z', '2099-01-01T01:00:00.000Z', now);
+    for (const [id, name] of [['chair-1', '椅位 1'], ['chair-2', '椅位 2'], ['chair-9', '椅位 9']] as const) {
+      db.prepare(
+        `INSERT OR IGNORE INTO Chair (id, clinicId, createdAt, updatedAt, deletedAt, name, location, active)
+         VALUES (?, ?, ?, ?, NULL, ?, 'Triage Room', 1)`,
+      ).run(id, context.clinicId, now, now, name);
+    }
   });
 
   afterAll(() => {
@@ -248,13 +254,13 @@ describe('TriageService', () => {
   });
 
   it('keeps endTime/doctorId/chairId untouched when not provided', () => {
-    insertAppointment('appt-reschedule-2', { chairId: 'chair-9', startTime: '2099-04-01T09:00:00.000Z' });
+    insertAppointment('appt-reschedule-2', { chairId: 'chair-9', startTime: '2099-04-01T09:00:00.000Z', endTime: '2099-04-03T10:00:00.000Z' });
 
     const service = new TriageService(db);
     const result = service.rescheduleAppointment('appt-reschedule-2', { startTime: '2099-04-02T10:00:00.000Z' }, context);
 
     expect(result.startTime).toBe('2099-04-02T10:00:00.000Z');
-    expect(result.endTime).toBe('2099-02-01T10:00:00.000Z');
+    expect(result.endTime).toBe('2099-04-03T10:00:00.000Z');
     expect(result.doctorId).toBe('user-admin-001');
     expect(result.chairId).toBe('chair-9');
   });
@@ -278,5 +284,46 @@ describe('TriageService', () => {
   it('throws NotFound for an unknown appointment', () => {
     const service = new TriageService(db);
     expect(() => service.rescheduleAppointment('appt-missing', { startTime: '2099-05-01T09:00:00.000Z' }, context)).toThrow(NotFoundError);
+  });
+
+  it('rejects reschedule when endTime is not later than startTime', () => {
+    insertAppointment('appt-reschedule-range');
+    const service = new TriageService(db);
+    expect(() => service.rescheduleAppointment('appt-reschedule-range', {
+      startTime: '2099-06-01T09:00:00.000Z',
+      endTime: '2099-06-01T09:00:00.000Z',
+    }, context)).toThrow(ValidationError);
+  });
+
+  it('rejects reschedule with unknown doctor or chair', () => {
+    insertAppointment('appt-reschedule-references', { startTime: '2099-07-01T09:30:00.000Z', endTime: '2099-07-01T10:30:00.000Z' });
+    const service = new TriageService(db);
+    expect(() => service.rescheduleAppointment('appt-reschedule-references', {
+      startTime: '2099-07-01T09:00:00.000Z',
+      doctorId: 'missing-doctor',
+    }, context)).toThrow(NotFoundError);
+    expect(() => service.rescheduleAppointment('appt-reschedule-references', {
+      startTime: '2099-07-01T09:00:00.000Z',
+      chairId: 'missing-chair',
+    }, context)).toThrow(NotFoundError);
+  });
+
+  it('rejects reschedule that conflicts with another appointment', () => {
+    insertAppointment('appt-reschedule-base', { chairId: 'chair-1', startTime: '2099-08-01T09:00:00.000Z', endTime: '2099-08-01T10:00:00.000Z' });
+    insertAppointment('appt-reschedule-conflict', { chairId: 'chair-1', startTime: '2099-08-01T09:00:00.000Z', endTime: '2099-08-01T10:00:00.000Z' });
+    const service = new TriageService(db);
+    expect(() => service.rescheduleAppointment('appt-reschedule-conflict', {
+      startTime: '2099-08-01T09:30:00.000Z',
+      endTime: '2099-08-01T10:30:00.000Z',
+    }, context)).toThrow(ConflictError);
+  });
+
+  it('rejects rescheduling cancelled or no-show appointments', () => {
+    insertAppointment('appt-reschedule-cancelled', { status: 'CANCELLED' });
+    insertAppointment('appt-reschedule-noshow', { status: 'NO_SHOW' });
+
+    const service = new TriageService(db);
+    expect(() => service.rescheduleAppointment('appt-reschedule-cancelled', { startTime: '2099-03-05T09:00:00.000Z' }, context)).toThrow('已取消或未到的预约不能改期');
+    expect(() => service.rescheduleAppointment('appt-reschedule-noshow', { startTime: '2099-03-05T09:00:00.000Z' }, context)).toThrow(ConflictError);
   });
 });

@@ -912,23 +912,21 @@ describe('application services', () => {
       role: 'DOCTOR',
       clinicIds: ['clinic-v2-001'],
     }, context);
-    // 负向：会话上下文指向自己未加入的诊所（例如被错误切换的 currentClinic）→ FORBIDDEN
+    // 医生在服务层也不允许创建员工账号（HTTP 路由同样拒绝）
     const outsiderContext: AppContext = { ...context, userId: doctor.id, clinicId: 'clinic-v2-002', role: 'DOCTOR' };
     await expect(auth.createUser({
       username: 'outsider-user',
       password: 'password123',
       name: 'Outsider User',
       role: 'DOCTOR',
-    }, outsiderContext)).rejects.toThrow('Cannot create users outside your clinic scope');
-    // 正向：DOCTOR 在自己的诊所范围内创建用户成功
+    }, outsiderContext)).rejects.toThrow('医生不能管理员工账号');
     const doctorInOwnClinic: AppContext = { ...context, userId: doctor.id, clinicId: 'clinic-v2-001', role: 'DOCTOR' };
-    const created = await auth.createUser({
+    await expect(auth.createUser({
       username: 'inner-user',
       password: 'password123',
       name: 'Inner User',
       role: 'DOCTOR',
-    }, doctorInOwnClinic);
-    expect(created.username).toBe('inner-user');
+    }, doctorInOwnClinic)).rejects.toThrow('医生不能管理员工账号');
   });
 
   it('writes operation log entries', () => {

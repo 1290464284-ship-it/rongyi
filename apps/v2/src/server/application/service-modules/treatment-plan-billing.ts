@@ -12,7 +12,7 @@
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
-import { touchSearchIndex } from '../../infrastructure/search-index';
+import { trackResourceWrite } from '../../infrastructure/write-tracking';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { generateDocumentNumber } from './common';
 import type { AppContext } from '../../../domain/contracts';
@@ -248,8 +248,8 @@ export class TreatmentPlanBillingService {
         discount,
         `治疗计划划价：${plan.name}`,
       );
-      // 直写搜索索引：Charge 行创建后同步其可检索内容（含患者姓名）。
-      touchSearchIndex(this.db, 'Charge', chargeId, 'INSERT');
+      // 直写 Charge：统一维护同步与搜索索引。
+      trackResourceWrite(this.db, { tableName: 'Charge', recordId: chargeId, operation: 'INSERT', clinicId: context.clinicId });
       const insertItem = this.db.prepare(
         `INSERT INTO ChargeItem (
            id, chargeId, treatmentId, name, category, price, quantity, teethNumbers, subtotal,

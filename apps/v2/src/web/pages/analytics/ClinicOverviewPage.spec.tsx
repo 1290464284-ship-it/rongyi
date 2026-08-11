@@ -63,4 +63,18 @@ describe('ClinicOverviewPage', () => {
     render(<ClinicOverviewPage />, { wrapper });
     expect(await screen.findByText('无法加载多门店经营概览')).toBeDefined();
   });
+
+  it('falls back to an empty name when a clinic has neither name nor id', async () => {
+    vi.mocked(apiRequest).mockResolvedValue([{ patients: 1 }]);
+    render(<ClinicOverviewPage />, { wrapper });
+    expect(await screen.findByText('患者：1')).toBeDefined();
+    const table = document.querySelector('.data-table') ?? document.body;
+    expect(table.textContent).toContain('诊所');
+  });
+
+  it('renders the loading state', () => {
+    vi.mocked(apiRequest).mockImplementation(() => new Promise(() => {}));
+    render(<ClinicOverviewPage />, { wrapper });
+    expect(screen.getByText('加载中...')).toBeDefined();
+  });
 });

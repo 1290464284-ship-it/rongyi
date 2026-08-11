@@ -48,6 +48,7 @@ import { registerTriageRoutes } from './routes/triage-routes';
 import { registerPayMethodRoutes } from './routes/pay-method-routes';
 import { registerChargeTreeRoutes } from './routes/charge-tree-routes';
 import { registerHighValueRoutes } from './routes/high-value-routes';
+import { registerCommissionRoutes } from './routes/commission-routes';
 import { createRouteDependencies, type RouteDependencies } from './routes/deps';
 import { createAuditBuffer } from './audit-buffer';
 import { SqliteRateLimitStore } from '../infrastructure/rate-limit-store';
@@ -158,11 +159,11 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
     res.json({ success: true, data: { status: 'ok', time: new Date().toISOString() } });
   });
 
-  app.get('/api/v2/health/deep', authMiddleware(deps.authService), roleMiddleware('BOSS'), wrapAsync(async (req, res) => {
+  app.get('/api/v2/health/deep', authMiddleware(deps.authService, logger), roleMiddleware('BOSS'), wrapAsync(async (req, res) => {
       res.json({ success: true, data: deepHealth(db, backupDir) });
   }));
 
-  app.get('/api/v2/metrics', authMiddleware(deps.authService), roleMiddleware('BOSS'), wrapAsync(async (req, res) => {
+  app.get('/api/v2/metrics', authMiddleware(deps.authService, logger), roleMiddleware('BOSS'), wrapAsync(async (req, res) => {
       const snapshot = metricsSnapshot();
       persistMetrics(logDir, snapshot);
       const stability = stabilitySnapshot(dbPath, backupDir, logDir);
@@ -172,12 +173,20 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
 
   registerPublicAuthRoutes(app, deps);
 
+  // file://（打包版 Electron 渲染器）以 <img> 加载 API 图片时,
+  // 不受同源策略约束, 但 helmet 默认 Cross-Origin-Resource-Policy: same-origin
+  // 会阻断响应; 必须放在 registerPublicFileRoutes 之前，公共签名 GET 也要覆盖。
+  app.use('/api/v2/files', (req, res, next) => {
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    next();
+  });
+
   // S-L8：文件签名 GET 必须在 authMiddleware 之前注册——<img> 请求无法携带
   // Authorization 头，只能凭短期签名（exp+sig）访问；无效签名 next() 落回
   // 受保护路由（JWT 认证的常规 GET）。
   registerPublicFileRoutes(app, deps);
 
-  app.use('/api/v2', authMiddleware(deps.authService));
+  app.use('/api/v2', authMiddleware(deps.authService, logger));
   // 审计中间件必须位于角色规则中间件之前：角色规则短路 403（next(error) 跳过
   // 后继中间件）时，只有已注册的 res.on('finish') 监听才能捕获越权尝试。
   app.use('/api/v2', (req, res, next) => {
@@ -271,13 +280,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
   registerPayMethodRoutes(app, deps);
   registerChargeTreeRoutes(app, deps);
   registerHighValueRoutes(app, deps);
-  // file:// (打包版 Electron 渲染器) 以 <img> 加载 API 图片时,
-  // 不受同源策略约束, 但 helmet 默认 Cross-Origin-Resource-Policy: same-origin
-  // 会阻断响应; 仅对 files 路由放开 CORP。
-  app.use('/api/v2/files', (req, res, next) => {
-    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-    next();
-  });
+  registerCommissionRoutes(app, deps);
   registerFileRoutes(app, deps);
 
   app.use((req, res) => {

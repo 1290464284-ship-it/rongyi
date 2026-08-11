@@ -42,6 +42,12 @@ describe('user module permissions', () => {
          username, passwordHash, name, role, phone, active, loginAttempts, tokenVersion
        ) VALUES ('perm-user-002', 'clinic-v2-001', ?, ?, NULL, 'permuser2', 'x', 'Perm User 2', 'DOCTOR', NULL, 1, 0, 0)`,
     ).run(now, now);
+    db.prepare(
+      `INSERT INTO User (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         username, passwordHash, name, role, phone, active, loginAttempts, tokenVersion
+       ) VALUES ('perm-user-boss', 'clinic-v2-001', ?, ?, NULL, 'permboss', 'x', 'Perm Boss', 'BOSS', NULL, 1, 0, 0)`,
+    ).run(now, now);
   });
 
   afterAll(() => {
@@ -77,6 +83,18 @@ describe('user module permissions', () => {
     expect(effective).toContain('clinical');
   });
 
+  it('blocks ADMIN from editing BOSS permissions', () => {
+    const adminContext = { ...context, role: 'ADMIN' as const };
+    const userService = new UserPermissionService(db);
+    expect(() => userService.setPermissions('perm-user-boss', [
+      { permission: 'system', allowed: false },
+    ], adminContext)).toThrow('管理员不能修改老板的权限');
+    const roleService = new RoleModulePermissionService(db);
+    expect(() => roleService.setForRole('BOSS', [
+      { resource: 'system', allowed: false },
+    ], adminContext)).toThrow('管理员不能修改老板角色的权限');
+  });
+
   it('replaces the whole override set on PUT semantics', () => {
     const service = new UserPermissionService(db);
     const result = service.setPermissions('perm-user-001', [
@@ -85,6 +103,36 @@ describe('user module permissions', () => {
     expect(result.items.map((row) => row.permission)).toEqual(['inventory']);
     expect(result.effective).toContain('inventory');
     expect(result.effective).toContain('finance');
+  });
+
+  it('stores per-clinic user permission overrides independently', () => {
+    const secondClinic = 'clinic-v2-002';
+    db.prepare(
+      `INSERT OR IGNORE INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+       VALUES (?, NULL, ?, ?, NULL, 'C2', 'Second Clinic', 1)`,
+    ).run(secondClinic, now, now);
+    db.prepare(
+      `INSERT OR IGNORE INTO UserClinic (userId, clinicId, role, createdAt, updatedAt, deletedAt)
+       VALUES (?, ?, 'DOCTOR', ?, ?, NULL)`,
+    ).run('perm-user-002', secondClinic, now, now);
+
+    const service = new UserPermissionService(db);
+    service.setPermissions(
+      'perm-user-002',
+      [{ permission: 'analytics', allowed: true }],
+      { ...context, clinicId: secondClinic },
+    );
+
+    const firstClinic = computeEffectivePermissions(db, 'perm-user-002', 'clinic-v2-001', 'DOCTOR');
+    const second = computeEffectivePermissions(db, 'perm-user-002', secondClinic, 'DOCTOR');
+    expect(firstClinic).not.toContain('analytics');
+    expect(second).toContain('analytics');
+    const rows = db.prepare(
+      `SELECT clinicId FROM UserPermission
+       WHERE userId = ? AND permission = 'analytics' AND deletedAt IS NULL`,
+    ).all('perm-user-002') as Array<{ clinicId: string }>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].clinicId).toBe(secondClinic);
   });
 
   it('rejects invalid permission keys and unknown users', () => {

@@ -121,12 +121,16 @@ export function TreatmentsPage() {
   );
 }
 
+const transitionInFlight = new Set<string>();
+
 async function transitionTreatment(
   showToast: (message: string, kind?: 'success' | 'error' | 'info') => void,
   reload: () => Promise<unknown>,
   id: string,
   status: string,
 ) {
+  if (transitionInFlight.has(id)) return;
+  transitionInFlight.add(id);
   try {
     await apiRequest(`/treatments/${id}/status`, {
       method: 'PATCH',
@@ -136,6 +140,8 @@ async function transitionTreatment(
     await reload();
   } catch (error) {
     showToast(errorMessage(error, '状态更新失败'), 'error');
+  } finally {
+    transitionInFlight.delete(id);
   }
 }
 

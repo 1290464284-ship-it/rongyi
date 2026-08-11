@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { maskSensitiveFields, stripProtectedWriteFields } from './security';
+import { assertProductionBackupKeyConfigured, maskSensitiveFields, stripProtectedWriteFields } from './security';
 
 describe('security helpers', () => {
   it('masks sensitive fields before returning rows', () => {
@@ -53,10 +53,10 @@ describe('security helpers', () => {
     });
   });
 
-  it('stops recursion beyond depth 5', () => {
+  it('truncates recursion beyond depth 5 instead of leaking nested values', () => {
     const deep = { a: { b: { c: { d: { e: { f: { phone: 'x' } } } } } } };
     const masked = maskSensitiveFields(deep);
-    expect(masked.a.b.c.d.e.f.phone).toBe('x');
+    expect(masked.a.b.c.d.e.f).toBe('[MaxDepth]');
   });
 
   it('keeps business fields writable while blocking credentials', () => {
@@ -74,5 +74,23 @@ describe('security helpers', () => {
     expect(payload.passwordHash).toBeUndefined();
     expect(payload.role).toBeUndefined();
     expect(payload.balance).toBeUndefined();
+  });
+
+  it('fails closed in production when the backup key is missing', () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    const previousBackupKey = process.env.V2_BACKUP_KEY;
+    try {
+      process.env.NODE_ENV = 'production';
+      delete process.env.V2_BACKUP_KEY;
+      expect(() => assertProductionBackupKeyConfigured('production')).toThrow('V2_BACKUP_KEY must be set');
+      process.env.V2_BACKUP_KEY = 'production-backup-key';
+      expect(() => assertProductionBackupKeyConfigured('production')).not.toThrow();
+      expect(() => assertProductionBackupKeyConfigured('development')).not.toThrow();
+    } finally {
+      if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previousNodeEnv;
+      if (previousBackupKey === undefined) delete process.env.V2_BACKUP_KEY;
+      else process.env.V2_BACKUP_KEY = previousBackupKey;
+    }
   });
 });

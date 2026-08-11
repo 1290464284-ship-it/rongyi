@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
+import { trackResourceWrite } from '../../infrastructure/write-tracking';
 import { generateDocumentNumber } from './common';
 import type { AppContext } from '../../../domain/contracts';
 
@@ -136,6 +137,7 @@ export class ReplenishmentService {
              number, supplierId, totalAmount, status
            ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, 'PENDING')`,
         ).run(orderId, clinicId ?? null, now, now, orderNumber, supplierId, totalAmount);
+        trackResourceWrite(this.db, { tableName: 'PurchaseOrder', recordId: orderId, operation: 'INSERT', clinicId: clinicId ?? null });
         for (const suggestion of group) {
           const item = inventory.get(String(suggestion.inventoryId));
           /* v8 ignore start -- inventory rows and suggestedQty are schema-required; fallbacks are defensive. */

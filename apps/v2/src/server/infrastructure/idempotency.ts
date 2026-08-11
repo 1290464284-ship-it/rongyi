@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
-import { ConflictError } from './errors';
+import { AppError, ConflictError } from './errors';
+import { isDbWriteActive } from './db-write-queue';
 
 export interface IdempotencyScope {
   operation: string;
@@ -14,6 +15,12 @@ export interface IdempotencyScope {
 
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 const IDEMPOTENCY_PROCESSING_TIMEOUT_MS = 30 * 60 * 1000;
+
+function logIdempotency(message: string, meta: Record<string, unknown>): void {
+  // 幂等是跨请求的基础设施路径，单独接 Logger 会引入额外依赖；统一前缀 + 结构化
+  // 元数据，保证与 [idempotency] 相关的输出可 grep、可进日志采集。
+  console.error(`[idempotency] ${message}`, meta);
+}
 
 /**
  * Executes a write operation at most once for a client-provided key.
@@ -33,6 +40,11 @@ export function withIdempotency<T>(
   fn: () => T | Promise<T>,
 ): T | Promise<T> {
   if (!scope?.requestId) return fn();
+  if (isDbWriteActive(db)) {
+    // 同一连接上已有显式 BEGIN（sync push / bulk import / resolveConflict）时，
+    // 任何幂等写都必须直接 503：先写 PROCESSING 记录会混入外层事务。
+    throw new AppError('DB_BUSY', 'Database write is in progress; retry the request', 503);
+  }
 
   const startedAt = new Date().toISOString();
   const key = scopeKey(scope);
@@ -75,7 +87,7 @@ export function withIdempotency<T>(
     try {
       result = fn();
     } catch (error) {
-      console.error('[idempotency] async operation failed; keeping PROCESSING record so a retry cannot duplicate side effects', {
+      logIdempotency('async operation failed; keeping PROCESSING record so a retry cannot duplicate side effects', {
         key,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -91,7 +103,7 @@ export function withIdempotency<T>(
         return value;
       },
       (error: unknown) => {
-        console.error('[idempotency] async operation rejected; keeping PROCESSING record so a retry cannot duplicate side effects', {
+        logIdempotency('async operation rejected; keeping PROCESSING record so a retry cannot duplicate side effects', {
           key,
           error: error instanceof Error ? error.message : String(error),
         });
@@ -101,20 +113,31 @@ export function withIdempotency<T>(
   }
 
   // Sync path: run the operation and the COMPLETED update inside one
-  // transaction. If fn() or the update fails, better-sqlite3 rolls the whole
-  // transaction back (including business writes fn committed through nested
-  // transactions / SAVEPOINTs), the processing record is deleted, and the
-  // error is rethrown so the client can retry without duplicating side effects.
+  // BEGIN IMMEDIATE transaction. Acquiring the write lock up front avoids
+  // SQLITE_BUSY_SNAPSHOT on multi-process writers and lets the business-layer
+  // optimistic guards (paidAmount/stock/balance) surface as 409 instead of 500.
+  // If fn() or the update fails, ROLLBACK reverts business writes (including
+  // nested transactions / SAVEPOINTs), the processing record is deleted, and
+  // the error is rethrown so the client can retry without duplicating effects.
   try {
-    const runWithCompletion = db.transaction(() => {
+    if (isDbWriteActive(db)) {
+      // 同一连接上已有 async 写路径持有显式 BEGIN（sync push / bulk import /
+      // resolveConflict），同步路径此时 BEGIN 会嵌套并污染事务；返回可重试 503。
+      throw new AppError('DB_BUSY', 'Database write is in progress; retry the request', 503);
+    }
+    db.exec('BEGIN IMMEDIATE');
+    try {
       const value = fn();
       const completedAt = new Date().toISOString();
       db.prepare(
         `UPDATE IdempotencyRecord SET responseJson = ?, result = ?, status = 'COMPLETED', updatedAt = ? WHERE key = ?`,
       ).run(JSON.stringify(value), JSON.stringify(value), completedAt, key);
+      db.exec('COMMIT');
       return value;
-    });
-    return runWithCompletion();
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
   } catch (error) {
     db.prepare('DELETE FROM IdempotencyRecord WHERE key = ?').run(key);
     throw error;
@@ -166,7 +189,9 @@ function replayCompletedOrDelete<T>(
   row: { responseJson: string; status: string; expiresAt?: string | null },
   now: string,
 ): T | undefined {
-  if (row.status !== 'COMPLETED') throw new ConflictError('Operation is already in progress');
+  if (row.status !== 'COMPLETED') {
+    throw new ConflictError('Operation is already in progress; use a new requestId or wait for the current operation to finish');
+  }
   // Lazy single-key cleanup: an expired COMPLETED record is a retry, not a replay.
   if (row.expiresAt !== null && row.expiresAt !== undefined && row.expiresAt <= now) {
     db.prepare('DELETE FROM IdempotencyRecord WHERE key = ? AND status = ?').run(key, 'COMPLETED');
@@ -176,7 +201,7 @@ function replayCompletedOrDelete<T>(
   if (replayed !== undefined) return replayed;
   // 损坏的 COMPLETED 记录无法安全重放：删除并重跑，让操作恢复而不是永久 500。
   // 风险：原始写入可能已生效，仅在数据库被人工/异常改坏时走到这里。
-  console.error('[idempotency] completed response is corrupt; deleting record and retrying operation', { key });
+  logIdempotency('completed response is corrupt; deleting record and retrying operation', { key });
   db.prepare('DELETE FROM IdempotencyRecord WHERE key = ?').run(key);
   return undefined;
 }

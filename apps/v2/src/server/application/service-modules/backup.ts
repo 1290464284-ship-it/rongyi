@@ -9,7 +9,9 @@ import { pipeline } from 'node:stream/promises';
 import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { AppError, NotFoundError } from '../../infrastructure/errors';
-import { removeSqliteSidecars, summarizeSqliteFile } from '../../infrastructure/sqlite-files';
+import { removeSqliteSidecars, sha256File, summarizeSqliteFile } from '../../infrastructure/sqlite-files';
+import type { Logger } from '../../infrastructure/logger';
+import { secretFileValue } from '../../infrastructure/secret-file';
 import { signRestoreMarker } from '../../infrastructure/restore-apply';
 import { BACKUP_MAGIC, backupEncryptionKey } from './common';
 
@@ -25,11 +27,20 @@ function clinicPrefix(clinicId?: string | null): string {
   return clinicId ? `clinic-${clinicId}-` : 'clinic-null-';
 }
 
+export function shouldEncryptBackup(
+  options: { encrypted?: boolean },
+  allowPlaintext: boolean,
+  hasBackupKey: boolean,
+): boolean {
+  return options.encrypted ?? (hasBackupKey || !allowPlaintext);
+}
+
 export class BackupService {
   constructor(
     private readonly db: Database.Database,
     private readonly dbPath: string,
     private readonly backupDir: string,
+    private readonly logger?: Logger,
   ) {}
 
   list(clinicId: string | null = null): Array<Record<string, unknown>> {
@@ -59,18 +70,23 @@ export class BackupService {
   async create(options: BackupCreateOptions = {}): Promise<Record<string, unknown>> {
     fs.mkdirSync(this.backupDir, { recursive: true });
     const allowPlaintext = process.env.NODE_ENV === 'test' || process.env.V2_ALLOW_PLAINTEXT_BACKUP === '1';
-    const encrypted = options.encrypted ?? (Boolean(process.env.V2_BACKUP_KEY) || !allowPlaintext);
+    const hasBackupKey = Boolean(process.env.V2_BACKUP_KEY || secretFileValue('backupKey'));
+    const encrypted = shouldEncryptBackup(options, allowPlaintext, hasBackupKey);
     if (!encrypted && !allowPlaintext) {
       throw new Error('Refusing to create plaintext backup: set V2_BACKUP_KEY or V2_ALLOW_PLAINTEXT_BACKUP=1');
     }
     const base = `${clinicPrefix(options.clinicId)}backup-${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`;
     const filename = encrypted ? `${base}.enc` : `${base}.sqlite`;
-    const tempPath = path.join(this.backupDir, `${base}.tmp`);
+    const tempPath = path.join(this.backupDir, `${base}.partial`);
     const finalPath = path.join(this.backupDir, filename);
+    const encryptTempPath = `${finalPath}.partial`;
     try {
       await this.db.backup(tempPath);
       if (encrypted) {
-        await this.encryptFile(tempPath, finalPath);
+        // 先写 .partial 再 rename：加密中途失败不会在正式目录留下可见的损坏 .enc，
+        // 且 .partial 不被 over-limit 清理误删（只按 6h 过期清理）。
+        await this.encryptFile(tempPath, encryptTempPath);
+        fs.renameSync(encryptTempPath, finalPath);
         fs.unlinkSync(tempPath);
       } else {
         fs.renameSync(tempPath, finalPath);
@@ -100,29 +116,53 @@ export class BackupService {
         throw new Error(`backup finished but sqlite sidecars remain: ${leftovers.join(', ')}`);
       }
       const fileSize = fs.statSync(finalPath).size;
-      this.db.prepare(
-        `INSERT INTO BackupRecord (
-           id, clinicId, createdAt, updatedAt, deletedAt,
-           filename, fileSize, type, operatorId, operatorName
-         ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
-      ).run(
-        randomUUID(),
-        options.clinicId ?? null,
-        new Date().toISOString(),
-        new Date().toISOString(),
-        filename,
-        fileSize,
-        options.type ?? 'MANUAL',
-        options.operatorId ?? null,
-        options.operatorName ?? null,
-      );
+      try {
+        this.db.prepare(
+          `INSERT INTO BackupRecord (
+             id, clinicId, createdAt, updatedAt, deletedAt,
+             filename, fileSize, type, operatorId, operatorName
+           ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
+        ).run(
+          randomUUID(),
+          options.clinicId ?? null,
+          new Date().toISOString(),
+          new Date().toISOString(),
+          filename,
+          fileSize,
+          options.type ?? 'MANUAL',
+          options.operatorId ?? null,
+          options.operatorName ?? null,
+        );
+      } catch (error) {
+        // 记录插入失败时删除已完成文件，避免“无记录但有正式备份”的孤儿文件。
+        fs.rmSync(finalPath, { force: true });
+        throw error;
+      }
       return { filename, fileSize, encrypted, type: options.type ?? 'MANUAL', message: 'Backup created' };
+    } catch (error) {
+      // rename 成功后任何后续步骤（checkpoint / sidecar 校验 / 记录插入）失败，
+      // 都必须删除正式文件，避免“有文件无记录”的孤儿备份。
+      if (fs.existsSync(finalPath)) {
+        try {
+          fs.rmSync(finalPath, { force: true });
+        } catch {
+          // best effort: 保留原始错误
+        }
+      }
+      throw error;
     } finally {
       if (fs.existsSync(tempPath)) {
         try {
           fs.rmSync(tempPath, { force: true });
         } catch {
           // best effort: keep the original backup result/error instead of masking it
+        }
+      }
+      if (fs.existsSync(encryptTempPath)) {
+        try {
+          fs.rmSync(encryptTempPath, { force: true });
+        } catch {
+          // best effort
         }
       }
     }
@@ -167,6 +207,10 @@ export class BackupService {
   }
 
   async stageRestore(filename: string, clinicId: string | null = null): Promise<Record<string, unknown>> {
+    const markerPath = path.join(path.dirname(this.dbPath), '.restore-pending.json');
+    // 本次 stage 失败时旧 marker 绝不能残留，否则重启会恢复上一次请求的备份；
+    // 因此在 verify/解密等任何可能失败的操作之前就清掉旧 marker。
+    if (fs.existsSync(markerPath)) fs.rmSync(markerPath, { force: true });
     const verified = await this.verify(filename, clinicId);
     if (verified.integrity !== 'ok') throw new Error('Backup integrity check failed before restore');
     const source = this.safePath(filename);
@@ -174,35 +218,60 @@ export class BackupService {
       this.backupDir,
       `.staged-${path.basename(filename).replace(/\.[^.]+$/, '')}-${Date.now()}.sqlite`,
     );
-    if (source.endsWith('.enc')) {
-      await this.decryptFile(source, stagedPath);
-    } else {
-      fs.copyFileSync(source, stagedPath);
-    }
-    const staged = new Database(stagedPath, { readonly: true });
+    let keepStaged = false;
     try {
-      const integrity = staged.pragma('integrity_check') as Array<{ integrity_check: string }>;
-      if (integrity.length !== 1 || integrity[0].integrity_check !== 'ok') {
-        throw new Error('staged restore integrity check failed');
+      if (source.endsWith('.enc')) {
+        await this.decryptFile(source, stagedPath);
+      } else {
+        fs.copyFileSync(source, stagedPath);
       }
+      const staged = new Database(stagedPath, { readonly: true });
+      try {
+        const integrity = staged.pragma('integrity_check') as Array<{ integrity_check: string }>;
+        if (integrity.length !== 1 || integrity[0].integrity_check !== 'ok') {
+          throw new Error('staged restore integrity check failed');
+        }
+      } finally {
+        staged.close();
+        removeSqliteSidecars(stagedPath);
+      }
+      const backupSummary = verified.summary as Record<string, number | string | null> | undefined;
+      const currentSummary = fs.existsSync(this.dbPath) ? summarizeSqliteFile(this.dbPath) : undefined;
+      // S-L5：marker 写入内容哈希 + HMAC 签名（V2_BACKUP_KEY 派生），restore-apply
+      // 侧校验后才会执行恢复，防止 marker 被篡改指向任意文件或 staged 文件被换包。
+      const stagedHash = sha256File(stagedPath);
+      fs.writeFileSync(
+        markerPath,
+        JSON.stringify({ stagedPath, sha256: stagedHash, sig: signRestoreMarker(stagedPath, stagedHash) }),
+        'utf8',
+      );
+      keepStaged = true;
+      return {
+        filename,
+        stagedPath,
+        backupSummary,
+        currentSummary,
+        staged: true,
+        message: 'Backup verified and staged. Restart the application to activate this restore.',
+      };
     } finally {
-      staged.close();
-      removeSqliteSidecars(stagedPath);
+      if (!keepStaged) {
+        if (fs.existsSync(stagedPath)) {
+          try {
+            fs.rmSync(stagedPath, { force: true });
+          } catch {
+            // best effort: 保留原始错误
+          }
+        }
+        if (fs.existsSync(markerPath)) {
+          try {
+            fs.rmSync(markerPath, { force: true });
+          } catch {
+            // best effort
+          }
+        }
+      }
     }
-    const backupSummary = verified.summary as Record<string, number | string | null> | undefined;
-    const currentSummary = fs.existsSync(this.dbPath) ? summarizeSqliteFile(this.dbPath) : undefined;
-    const markerPath = path.join(path.dirname(this.dbPath), '.restore-pending.json');
-    // S-L5：marker 写入 HMAC 签名（V2_BACKUP_KEY 派生），restore-apply 侧校验后
-    // 才执行恢复，防止本地 marker 被篡改指向任意文件。
-    fs.writeFileSync(markerPath, JSON.stringify({ stagedPath, sig: signRestoreMarker(stagedPath) }), 'utf8');
-    return {
-      filename,
-      stagedPath,
-      backupSummary,
-      currentSummary,
-      staged: true,
-      message: 'Backup verified and staged. Restart the application to activate this restore.',
-    };
   }
 
   cleanup(maxKeep = 30, clinicId: string | null = null): { kept: number; deleted: Array<{ filename: string; fileSize: number }> } {
@@ -220,7 +289,10 @@ export class BackupService {
         removedFilenames.push(file.filename);
         deleted.push({ filename: file.filename, fileSize: file.fileSize });
       } catch (error) {
-        console.warn('[backup] failed to delete backup file during cleanup:', file.filename, error instanceof Error ? error.message : error);
+        this.logger?.warn('[backup] failed to delete backup file during cleanup', {
+          filename: file.filename,
+          error: error instanceof Error ? error.message : error,
+        });
       }
     }
     if (removedFilenames.length > 0) {
@@ -230,10 +302,26 @@ export class BackupService {
       });
       deleteTxn(removedFilenames);
     }
-    // P2-11：staged 中间文件（还原验证暂存）只保留短期，避免占用磁盘；
-    // 数量上限 3 份，超出即清理最旧的。
+    // P2-11：staged 中间文件（还原验证暂存）只保留短期，避免占用磁盘。
+    this.cleanupStagedEntries();
+    return {
+      kept: Math.min(files.length, keep),
+      deleted,
+    };
+  }
+
+  /** 启动/定时入口：清理过期或超量的 staged/tmp 中间文件，不动正式备份。 */
+  cleanupStaged(): { removed: number } {
+    return { removed: this.cleanupStagedEntries() };
+  }
+
+  private cleanupStagedEntries(): number {
+    const backupDir = this.backupDir;
+    if (!fs.existsSync(backupDir)) return 0;
     const stagedEntries = fs.readdirSync(this.backupDir)
-      .filter((name) => name.startsWith('.staged-') || name.endsWith('.tmp'))
+      .filter((name) => (
+        name.startsWith('.staged-') || name.startsWith('.verify-') || name.endsWith('.tmp') || name.endsWith('.partial')
+      ))
       .flatMap((name) => {
         try {
           return [{ name, mtimeMs: fs.statSync(path.join(this.backupDir, name)).mtimeMs }];
@@ -244,16 +332,31 @@ export class BackupService {
       .sort((a, b) => b.mtimeMs - a.mtimeMs);
     const MAX_STAGED = 3;
     const STAGED_TTL_MS = 6 * 60 * 60 * 1000; // 6 小时
+    const FRESH_GRACE_MS = 60 * 1000; // 正在写入的 temp 不被超量清理误删
     const nowMs = Date.now();
+    let removed = 0;
     stagedEntries.forEach((entry, index) => {
       const expired = nowMs - entry.mtimeMs > STAGED_TTL_MS;
       const overLimit = index >= MAX_STAGED;
-      if (expired || overLimit) fs.rmSync(path.join(this.backupDir, entry.name), { force: true });
+      const overLimitAndStale = overLimit && nowMs - entry.mtimeMs > FRESH_GRACE_MS;
+      // .partial 是正在写入的备份文件（新命名），只按 6h 过期清理，避免超量
+      // 清理误删长备份或另一实例正在写入的临时文件；旧 .tmp 仍兼容清理。
+      const partialOnlyExpired = entry.name.endsWith('.partial') || entry.name.startsWith('.verify-');
+      if (expired || (overLimitAndStale && !partialOnlyExpired)) {
+        try {
+          fs.rmSync(path.join(this.backupDir, entry.name), { force: true });
+          removed += 1;
+        } catch (error) {
+          // 单个文件被占用不应中断整轮清理，更不能让启动失败。
+          this.logger?.warn('failed to remove stale staged backup file', {
+            action: 'staged-cleanup',
+            filename: entry.name,
+            error: error instanceof Error ? error.message : error,
+          });
+        }
+      }
     });
-    return {
-      kept: Math.min(files.length, keep),
-      deleted,
-    };
+    return removed;
   }
 
   private safePath(filename: string): string {

@@ -10,5 +10,6 @@
     "legacy/schema/**/*.ts",
     "electron/preload.cjs"
   ],
-  "ignore": []
+  "ignore": [],
+  "ignoreBinaries": ["openssl"]
 }

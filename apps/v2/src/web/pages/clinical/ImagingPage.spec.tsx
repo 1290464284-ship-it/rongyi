@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ImagingPage } from './ImagingPage';
 import { apiRequest, getSignedFileUrl, uploadFile } from '../../lib/api';
@@ -59,6 +59,7 @@ function mockData() {
 describe('ImagingPage', () => {
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
     vi.mocked(apiRequest).mockReset();
     vi.mocked(getSignedFileUrl).mockClear();
     vi.mocked(uploadFile).mockReset();
@@ -383,6 +384,375 @@ describe('ImagingPage', () => {
       expect(apiRequest).toHaveBeenCalledWith('/resources/imagingCategories/c-2', expect.objectContaining({ method: 'DELETE' }));
     });
     expect(await screen.findByText('影像分类已删除')).toBeDefined();
+  });
+
+  it('validates the category name and reports category failures', async () => {
+    mockData();
+    render(<ImagingPage />, { wrapper });
+    await screen.findByText('影像分类管理');
+    fireEvent.click(screen.getByText('新增分类'));
+    expect(await screen.findByText('请填写分类名称')).toBeDefined();
+
+    const base = vi.mocked(apiRequest).getMockImplementation();
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/resources/imagingCategories' && String(init?.method ?? 'GET').toUpperCase() === 'POST') throw new Error('');
+      return base?.(path, init);
+    });
+    fireEvent.change(screen.getByLabelText('名称'), { target: { value: '石膏模型' } });
+    fireEvent.click(screen.getByText('新增分类'));
+    expect(await screen.findByText('创建影像分类失败')).toBeDefined();
+  });
+
+  it('reports category toggle and delete failures', async () => {
+    mockData();
+    const base = vi.mocked(apiRequest).getMockImplementation();
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = String(init?.method ?? 'GET').toUpperCase();
+      if (method === 'PATCH' && path === '/resources/imagingCategories/c-1') throw new Error('');
+      if (method === 'DELETE' && path === '/resources/imagingCategories/c-2') throw new Error('');
+      return base?.(path, init);
+    });
+    render(<ImagingPage />, { wrapper });
+    await screen.findByText('影像分类管理');
+    const panel = screen.getByLabelText('影像分类管理');
+    const row = (await waitFor(() => within(panel).getByText('正畸类'))).closest('tr') as HTMLElement;
+    fireEvent.click(within(row).getByText('停用'));
+    expect(await screen.findByText('更新影像分类失败')).toBeDefined();
+
+    const row2 = within(panel).getByText('美学类').closest('tr') as HTMLElement;
+    fireEvent.click(within(row2).getByText('删除'));
+    fireEvent.click(await screen.findByText('确认删除'));
+    expect(await screen.findByText('删除影像分类失败')).toBeDefined();
+  });
+
+  it('reports create failures with and without an uploaded file', async () => {
+    mockData();
+    const base = vi.mocked(apiRequest).getMockImplementation();
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/resources/imaging' && String(init?.method ?? 'GET').toUpperCase() === 'POST') throw new Error('');
+      return base?.(path, init);
+    });
+    render(<ImagingPage />, { wrapper });
+    await screen.findByText('全景片');
+    fireEvent.click(screen.getByText('上传影像'));
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
+    fireEvent.change(screen.getByLabelText('标题'), { target: { value: '根尖片' } });
+    fireEvent.click(screen.getByText('保存'));
+    expect(await screen.findByText('创建影像失败')).toBeDefined();
+
+    cleanup();
+    mockData();
+    vi.mocked(uploadFile).mockRejectedValue(new Error(''));
+    render(<ImagingPage />, { wrapper });
+    await screen.findByText('全景片');
+    fireEvent.click(screen.getByText('上传影像'));
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
+    fireEvent.change(screen.getByLabelText('标题'), { target: { value: '根尖片' } });
+    const file = new File(['x'], 'root.png', { type: 'image/png' });
+    fireEvent.change(screen.getByLabelText('图片文件'), { target: { files: [file] } });
+    fireEvent.click(screen.getByText('保存'));
+    expect(await screen.findByText('创建影像失败')).toBeDefined();
+  });
+
+  it('enables an inactive imaging category', async () => {
+    mockData();
+    render(<ImagingPage />, { wrapper });
+    await screen.findByText('影像分类管理');
+    const panel = screen.getByLabelText('影像分类管理');
+
+    await waitFor(() => {
+      expect(within(panel).getByRole('button', { name: '启用' })).toBeDefined();
+    });
+    vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'c-2' });
+    fireEvent.click(within(panel).getByRole('button', { name: '启用' }));
+
+    await waitFor(() => {
+      const patchCall = vi.mocked(apiRequest).mock.calls.find(
+        (call) => call[0] === '/resources/imagingCategories/c-2' && (call[1] as RequestInit)?.method === 'PATCH',
+      );
+      expect(patchCall).toBeDefined();
+      expect(JSON.parse(String((patchCall?.[1] as RequestInit)?.body))).toEqual({ active: true });
+    });
+    expect(await screen.findByText('影像分类已启用')).toBeDefined();
+  });
+
+  it('edits a category with missing fields using safe fallbacks', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/imaging?page=1&pageSize=50') {
+        return { items: [], total: 0, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/imagingCategories?page=1&pageSize=100') {
+        return {
+          items: [{ id: 'c-null', name: null, type: null, sortOrder: null, active: undefined }],
+          total: 1,
+          page: 1,
+          pageSize: 100,
+        };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [], total: 0, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [];
+      return {};
+    });
+    render(<ImagingPage />, { wrapper });
+    await screen.findByText('影像分类管理');
+    const panel = screen.getByLabelText('影像分类管理');
+    const row = (await waitFor(() => within(panel).getByText('停用'))).closest('tr') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button', { name: '编辑' }));
+
+    expect(await screen.findByLabelText('名称')).toBeDefined();
+    expect((screen.getByLabelText('名称') as HTMLInputElement).value).toBe('');
+    expect((screen.getByLabelText('类型') as HTMLSelectElement).value).toBe('ORTHODONTIC');
+    expect((screen.getByLabelText('排序') as HTMLInputElement).value).toBe('0');
+    expect((screen.getByLabelText('启用') as HTMLInputElement).checked).toBe(false);
+  });
+
+  it('falls back to a placeholder alt and empty metadata for sparse imaging rows', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/imaging?page=1&pageSize=50') {
+        return {
+          items: [
+            {
+              id: 'i-empty',
+              title: null,
+              type: null,
+              patientId: null,
+              doctorId: null,
+              imageUrl: '/api/v2/files/empty.png',
+              takenAt: null,
+              phase: null,
+              categoryId: null,
+            },
+            {
+              id: 'i-1',
+              title: '全景片',
+              type: 'PANORAMIC',
+              patientId: 'p-1',
+              doctorId: 'd-1',
+              imageUrl: '/api/v2/files/a.png',
+              takenAt: '2026-01-02T03:04:00.000Z',
+              phase: 'INITIAL',
+              categoryId: 'c-1',
+            },
+          ],
+          total: 2,
+          page: 1,
+          pageSize: 50,
+        };
+      }
+      if (path === '/resources/imagingCategories?page=1&pageSize=100') {
+        return { items: [], total: 0, page: 1, pageSize: 100 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [], total: 0, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [];
+      return {};
+    });
+    mockSignedUrls();
+    render(<ImagingPage />, { wrapper });
+    expect(await screen.findByAltText('影像')).toBeDefined();
+
+    const compareSection = screen.getByLabelText('影像对比');
+    fireEvent.change(within(compareSection).getByLabelText('影像一'), { target: { value: 'i-empty' } });
+    fireEvent.change(within(compareSection).getByLabelText('影像二'), { target: { value: 'i-1' } });
+    await waitFor(() => {
+      expect(within(compareSection).getByText('标题：')).toBeDefined();
+      expect(within(compareSection).getByText('类型：')).toBeDefined();
+      expect(within(compareSection).getByText('拍摄时间：')).toBeDefined();
+    });
+  });
+
+  it('submits an explicit imaging type when the form provides one', async () => {
+    mockData();
+    render(<ImagingPage />, { wrapper });
+    await screen.findByText('全景片');
+    fireEvent.click(screen.getByText('上传影像'));
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
+    fireEvent.change(screen.getByLabelText('影像类型'), { target: { value: 'PANORAMIC' } });
+    fireEvent.change(screen.getByLabelText('标题'), { target: { value: '根尖片' } });
+    vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'i-2' });
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => {
+      const postCall = vi.mocked(apiRequest).mock.calls.find(
+        (call) => call[0] === '/resources/imaging' && (call[1] as RequestInit)?.method === 'POST',
+      );
+      expect(postCall).toBeDefined();
+      expect(JSON.parse(String((postCall?.[1] as RequestInit)?.body))).toMatchObject({ type: 'PANORAMIC' });
+    });
+  });
+
+  it('reports update failures for categories', async () => {
+    mockData();
+    const base = vi.mocked(apiRequest).getMockImplementation();
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = String(init?.method ?? 'GET').toUpperCase();
+      if (method === 'PATCH' && path === '/resources/imagingCategories/c-1') throw new Error('');
+      return base?.(path, init);
+    });
+    render(<ImagingPage />, { wrapper });
+    await screen.findByText('影像分类管理');
+    const panel = screen.getByLabelText('影像分类管理');
+    const row = (await waitFor(() => within(panel).getByText('正畸类'))).closest('tr') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button', { name: '编辑' }));
+    await screen.findByRole('button', { name: '保存修改' });
+    fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
+    expect(await screen.findByText('更新影像分类失败')).toBeDefined();
+  });
+
+  it('toggles the category form checkbox and cancels editing', async () => {
+    mockData();
+    render(<ImagingPage />, { wrapper });
+    await screen.findByText('影像分类管理');
+    const panel = screen.getByLabelText('影像分类管理');
+    const row = (await waitFor(() => within(panel).getByText('正畸类'))).closest('tr') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button', { name: '编辑' }));
+
+    const activeCheckbox = await screen.findByLabelText('启用');
+    expect((activeCheckbox as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(activeCheckbox);
+    expect((activeCheckbox as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: '取消编辑' }));
+    expect(screen.getByRole('button', { name: '新增分类' })).toBeDefined();
+  });
+
+  it('cancels the delete-category dialog through the dialog close path', async () => {
+    mockData();
+    render(<ImagingPage />, { wrapper });
+    await screen.findByText('影像分类管理');
+    const panel = screen.getByLabelText('影像分类管理');
+    const row = (await waitFor(() => within(panel).getByText('正畸类'))).closest('tr') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button', { name: '删除' }));
+    expect(await screen.findByRole('dialog', { name: '删除影像分类' })).toBeDefined();
+
+    vi.useFakeTimers();
+    fireEvent.keyDown(document.querySelector('.modal')!, { key: 'Escape' });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByRole('dialog', { name: '删除影像分类' })).toBeNull();
+    vi.useRealTimers();
+    expect(apiRequest).not.toHaveBeenCalledWith('/resources/imagingCategories/c-1', expect.objectContaining({ method: 'DELETE' }));
+  });
+
+  it('edits a sparse imaging record with blank fallbacks', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/imaging?page=1&pageSize=50') {
+        return {
+          items: [{
+            id: 'i-sparse',
+            patientId: null,
+            doctorId: null,
+            type: null,
+            title: null,
+            description: null,
+            takenAt: null,
+            remark: null,
+            categoryId: null,
+            phase: null,
+            imageUrl: null,
+          }],
+          total: 1,
+          page: 1,
+          pageSize: 50,
+        };
+      }
+      if (path === '/resources/imagingCategories?page=1&pageSize=100') return { items: [], total: 0, page: 1, pageSize: 100 };
+      if (path === '/resources/patients?page=1&pageSize=100') return { items: [], total: 0, page: 1, pageSize: 200 };
+      if (path === '/doctors') return [];
+      return {};
+    });
+    render(<ImagingPage />, { wrapper });
+    const row = (await screen.findByText('无图片')).closest('tr') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button', { name: '编辑' }));
+    await screen.findByRole('button', { name: '保存' });
+    expect((screen.getByLabelText('影像类型') as HTMLInputElement).value).toBe('');
+    expect((screen.getByLabelText('标题') as HTMLInputElement).value).toBe('');
+    expect((screen.getByLabelText('分类') as HTMLSelectElement).value).toBe('');
+    expect((screen.getByLabelText('阶段') as HTMLSelectElement).value).toBe('');
+  });
+
+  it('replaces the image when editing with a new file', async () => {
+    mockData();
+    vi.mocked(uploadFile).mockResolvedValue({ id: 'file-new', filename: 'new.png', url: '/api/v2/files/new.png' });
+    render(<ImagingPage />, { wrapper });
+    await screen.findByText('全景片');
+    const recordRow = screen.getByText('全景片').closest('tr') as HTMLElement;
+    fireEvent.click(within(recordRow).getByText('编辑'));
+    const file = new File(['x'], 'new.png', { type: 'image/png' });
+    fireEvent.change(await screen.findByLabelText('图片文件'), { target: { files: [file] } });
+    vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'i-1' });
+    fireEvent.click(screen.getByText('保存'));
+    await waitFor(() => {
+      expect(uploadFile).toHaveBeenCalledWith(file);
+      const patchCall = vi.mocked(apiRequest).mock.calls.find(
+        (call) => call[0] === '/resources/imaging/i-1' && (call[1] as RequestInit)?.method === 'PATCH',
+      );
+      expect(patchCall).toBeDefined();
+      expect(JSON.parse(String((patchCall?.[1] as RequestInit)?.body))).toMatchObject({ imageUrl: '/api/v2/files/new.png' });
+    });
+  });
+
+  it('applies placeholder alt and empty metadata to the right compare image', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/imaging?page=1&pageSize=50') {
+        return {
+          items: [
+            {
+              id: 'i-1',
+              title: '全景片',
+              type: 'PANORAMIC',
+              patientId: 'p-1',
+              doctorId: 'd-1',
+              imageUrl: '/api/v2/files/a.png',
+              takenAt: '2026-01-02T03:04:00.000Z',
+              phase: 'INITIAL',
+              categoryId: 'c-1',
+            },
+            {
+              id: 'i-empty',
+              title: null,
+              type: null,
+              patientId: null,
+              doctorId: null,
+              imageUrl: '/api/v2/files/empty.png',
+              takenAt: null,
+              phase: null,
+              categoryId: null,
+            },
+          ],
+          total: 2,
+          page: 1,
+          pageSize: 50,
+        };
+      }
+      if (path === '/resources/imagingCategories?page=1&pageSize=100') return { items: [], total: 0, page: 1, pageSize: 100 };
+      if (path === '/resources/patients?page=1&pageSize=100') return { items: [], total: 0, page: 1, pageSize: 200 };
+      if (path === '/doctors') return [];
+      return {};
+    });
+    mockSignedUrls();
+    render(<ImagingPage />, { wrapper });
+    await screen.findByText('全景片');
+    const compareSection = screen.getByLabelText('影像对比');
+    fireEvent.change(within(compareSection).getByLabelText('影像一'), { target: { value: 'i-1' } });
+    fireEvent.change(within(compareSection).getByLabelText('影像二'), { target: { value: 'i-empty' } });
+    await waitFor(() => {
+      expect(within(compareSection).getByAltText('影像')).toBeDefined();
+      expect(within(compareSection).getAllByText('标题：').length).toBeGreaterThan(0);
+    });
   });
 });
 

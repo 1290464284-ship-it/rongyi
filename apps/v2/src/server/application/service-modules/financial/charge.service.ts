@@ -3,8 +3,7 @@ import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../../infrastructure/errors';
 import { withIdempotency } from '../../../infrastructure/idempotency';
 import { tenantAnd, tenantParams } from '../../../infrastructure/tenant';
-import { recordSyncChange } from '../../../infrastructure/sync-change';
-import { touchSearchIndex } from '../../../infrastructure/search-index';
+import { trackResourceWrite } from '../../../infrastructure/write-tracking';
 import { SqliteChargeRepository } from '../../../infrastructure/repositories/charge.repository';
 import {
   SqliteDebtRepository,
@@ -44,6 +43,46 @@ function assertSafeSubtotal(price: number, quantity: number): number {
     throw new ValidationError('Charge item subtotal exceeds maximum allowed amount');
   }
   return subtotal;
+}
+
+interface PaymentLedgerInput {
+  id: string;
+  clinicId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  chargeId: string;
+  patientId: string;
+  type: 'PAY' | 'REFUND';
+  method: string;
+  amount: number;
+  operatorId: string | null;
+  relatedId?: string | null;
+  allocations?: unknown;
+  cardId?: string | null;
+}
+
+function recordPaymentLedger(db: Database.Database, input: PaymentLedgerInput): void {
+  db.prepare(
+    `INSERT INTO PaymentLedger (
+       id, clinicId, createdAt, updatedAt, deletedAt,
+       chargeId, patientId, type, method, amount, cardId, operatorId,
+       reversedAmount, relatedId, allocations
+     ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+  ).run(
+    input.id,
+    input.clinicId,
+    input.createdAt,
+    input.updatedAt,
+    input.chargeId,
+    input.patientId,
+    input.type,
+    input.method,
+    input.amount,
+    input.cardId ?? null,
+    input.operatorId,
+    input.relatedId ?? null,
+    input.allocations ?? null,
+  );
 }
 
 export class ChargeService {
@@ -150,10 +189,8 @@ export class ChargeService {
         this.db.prepare(
           `UPDATE Charge SET discountPlanSnapshotJson = ? WHERE id = ?`,
         ).run(JSON.stringify(input.discountPlanSnapshot), id);
-        // P2-3：直接改库的路径也必须进同步队列
-        if (context.clinicId) {
-          recordSyncChange(this.db, { tableName: 'Charge', recordId: id, operation: 'UPDATE', clinicId: context.clinicId });
-        }
+        // P2-3：直接改库的路径统一维护同步（快照不进搜索索引）。
+        trackResourceWrite(this.db, { tableName: 'Charge', recordId: id, operation: 'UPDATE', clinicId: context.clinicId ?? null, searchResource: null });
       }
     });
     chargeRun();
@@ -172,17 +209,16 @@ export class ChargeService {
     }
     const now = context.now().toISOString();
     this.db.transaction(() => {
-      this.db.prepare(
-        `UPDATE Charge SET deletedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL`,
+      const result = this.db.prepare(
+        `UPDATE Charge SET deletedAt = ?, updatedAt = ?
+         WHERE id = ? AND status = 'UNPAID' AND paidAmount = 0 AND refundedAmount = 0 AND deletedAt IS NULL`,
       ).run(now, now, id);
-      touchSearchIndex(this.db, 'Charge', id, 'DELETE');
+      if (result.changes === 0) throw new ConflictError('Only unpaid charges can be deleted');
       this.db.prepare(
         `UPDATE ChargeItem SET deletedAt = ?, updatedAt = ? WHERE chargeId = ? AND deletedAt IS NULL`,
       ).run(now, now, id);
-      // P2-3：取消收费单要通知同步端（删除记录）
-      if (context.clinicId) {
-        recordSyncChange(this.db, { tableName: 'Charge', recordId: id, operation: 'DELETE', clinicId: context.clinicId });
-      }
+      // P2-3：取消收费单统一维护同步与搜索索引。
+      trackResourceWrite(this.db, { tableName: 'Charge', recordId: id, operation: 'DELETE', clinicId: context.clinicId ?? null });
     })();
     return { id, status: 'CANCELLED' };
   }
@@ -219,7 +255,7 @@ export class ChargeService {
           const balance = Number(memberCard.balance) - amount;
           if (balance < 0) throw new ConflictError('Insufficient member card balance');
           memberCardId = memberCard.id;
-          this.memberCardRepository.updateConsume(memberCard.id, balance, amount, now, context?.clinicId ?? null);
+          this.memberCardRepository.updateConsume(memberCard.id, amount, now, context?.clinicId ?? null);
           this.memberCardRepository.insertLog({
             id: randomUUID(),
             clinicId: row.clinicId ?? null,
@@ -232,38 +268,31 @@ export class ChargeService {
             remark: `Charge ${id}`,
           });
         }
-        this.chargeRepository.updatePayment(id, newPaid, newStatus, now, method, memberCardId, context?.clinicId ?? null);
-        this.db.prepare(
-          `INSERT INTO PaymentLedger (
-             id, clinicId, createdAt, updatedAt, deletedAt,
-             chargeId, patientId, type, method, amount, cardId, operatorId,
-             reversedAmount, relatedId, allocations
-           ) VALUES (?, ?, ?, ?, NULL, ?, ?, 'PAY', ?, ?, ?, ?, 0, NULL, NULL)`,
-        ).run(
-          randomUUID(),
-          row.clinicId ?? null,
-          now,
-          now,
-          id,
-          String(row.patientId),
+        this.chargeRepository.updatePayment(id, newPaid, newStatus, now, paid, method, memberCardId, context?.clinicId ?? null);
+        recordPaymentLedger(this.db, {
+          id: randomUUID(),
+          clinicId: row.clinicId ?? null,
+          createdAt: now,
+          updatedAt: now,
+          chargeId: id,
+          patientId: String(row.patientId),
+          type: 'PAY',
           method,
           amount,
-          memberCardId,
-          context?.userId ?? null,
-        );
+          operatorId: context?.userId ?? null,
+          cardId: memberCardId,
+        });
         if (typeof payMethodName === 'string' && payMethodName.trim() !== '') {
           this.db.prepare(
             `UPDATE Charge SET payMethodName = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(context?.clinicId ?? null)}`,
           ).run(payMethodName.trim(), now, id, ...tenantParams(context?.clinicId ?? null));
-          // P2-3：直接改库的路径也必须进同步队列
-          if (context?.clinicId) {
-            recordSyncChange(this.db, { tableName: 'Charge', recordId: id, operation: 'UPDATE', clinicId: context.clinicId });
-          }
+          // P2-3：直接改库的路径统一维护同步（支付方式名不进搜索索引）。
+          trackResourceWrite(this.db, { tableName: 'Charge', recordId: id, operation: 'UPDATE', clinicId: context?.clinicId ?? null, searchResource: null });
         }
         const debt = this.debtRepository.findByCharge(id, context?.clinicId ?? null);
         if (debt) {
           const debtStatus = newPaid >= Number(debt.totalAmount) ? 'PAID' : newPaid > 0 ? 'PARTIAL' : 'UNPAID';
-          this.debtRepository.updatePaid(debt.id, newPaid, debtStatus, now, context?.clinicId ?? null);
+          this.debtRepository.updatePaid(debt.id, newPaid, debtStatus, now, Number(debt.paidAmount), context?.clinicId ?? null);
         } else if (method === 'DEBT' && newStatus === 'PARTIAL') {
           this.db.prepare(
             `INSERT INTO Debt (
@@ -315,7 +344,7 @@ export class ChargeService {
       const now = context.now().toISOString();
       const refundId = randomUUID();
       const run = this.db.transaction(() => {
-        this.chargeRepository.updateRefund(id, newRefunded, newStatus, now, context.clinicId);
+        this.chargeRepository.updateRefund(id, newRefunded, newStatus, now, refunded, context.clinicId);
         // 按 PaymentLedger LIFO 逐笔冲销会员卡支付（修复混合支付/多笔部分支付
         // 退款时整单按单一 payMethod 回充、导致卡余额回充金额错误的缺陷）。
         // 旧数据（迁移 146 前）已回填为单条合并流水，冲销上限 = paidAmount，有界安全。
@@ -338,7 +367,7 @@ export class ChargeService {
             : this.memberCardRepository.findByPatientForRefund(String(row.patientId), context.clinicId);
           if (!memberCard) throw new ConflictError('Member card used for payment is not found');
           const balance = Number(memberCard.balance) + take;
-          this.memberCardRepository.updateBalanceRefund(memberCard.id, balance, now, context.clinicId);
+          this.memberCardRepository.updateBalanceRefund(memberCard.id, take, now, context.clinicId);
           this.memberCardRepository.insertLog({
             id: randomUUID(),
             clinicId: row.clinicId ?? null,
@@ -356,32 +385,27 @@ export class ChargeService {
           allocations.push({ ledgerId: payRow.id, cardId: memberCard.id, amount: take });
           remaining -= take;
         }
-        this.db.prepare(
-          `INSERT INTO PaymentLedger (
-             id, clinicId, createdAt, updatedAt, deletedAt,
-             chargeId, patientId, type, method, amount, cardId, operatorId,
-             reversedAmount, relatedId, allocations
-           ) VALUES (?, ?, ?, ?, NULL, ?, ?, 'REFUND', ?, ?, NULL, ?, 0, ?, ?)`,
-        ).run(
-          randomUUID(),
-          row.clinicId ?? null,
-          now,
-          now,
-          id,
-          String(row.patientId),
-          'REFUND',
+        recordPaymentLedger(this.db, {
+          id: randomUUID(),
+          clinicId: row.clinicId ?? null,
+          createdAt: now,
+          updatedAt: now,
+          chargeId: id,
+          patientId: String(row.patientId),
+          type: 'REFUND',
+          method: 'REFUND',
           amount,
-          context.userId,
-          refundId,
-          allocations.length > 0 ? JSON.stringify(allocations) : null,
-        );
+          operatorId: context.userId,
+          relatedId: refundId,
+          allocations: allocations.length > 0 ? JSON.stringify(allocations) : null,
+        });
         const debt = this.debtRepository.findByCharge(id, context.clinicId);
         if (debt && Number(debt.paidAmount) > 0) {
           const newDebtPaid = Math.max(0, Number(debt.paidAmount) - amount);
           const debtStatus = newDebtPaid >= Number(debt.totalAmount)
             ? 'PAID'
             : newDebtPaid > 0 ? 'PARTIAL' : 'UNPAID';
-          this.debtRepository.updatePaid(debt.id, newDebtPaid, debtStatus, now, context.clinicId);
+          this.debtRepository.updatePaid(debt.id, newDebtPaid, debtStatus, now, Number(debt.paidAmount), context.clinicId);
         }
         this.db.prepare(
           `INSERT INTO Refund (

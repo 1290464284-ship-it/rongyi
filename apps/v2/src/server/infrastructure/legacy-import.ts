@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import type { Logger } from './logger';
-import { backupSqliteFile, removeSqliteSidecars } from './sqlite-files';
+import { backupSqliteFile, copySqliteFileReadonly, removeSqliteSidecars } from './sqlite-files';
 
 export interface LegacyImportResult {
   imported: boolean;
@@ -14,9 +14,9 @@ export interface LegacyImportResult {
 
 /**
  * Imports the legacy SQLite database into the V2 working copy with preflight
- * integrity checks. The original source database is never logically modified:
- * backupSqliteFile 只对源库做安全的 wal_checkpoint(TRUNCATE)（已提交帧刷回主
- * 文件，不改变任何数据），绝不删除源库的 -wal/-shm 侧车。
+ * integrity checks. The original source database is never opened for writing:
+ * the import uses a read-only connection plus `VACUUM INTO`, so neither the
+ * source file nor its WAL/SHM sidecars are checkpointed, modified, or deleted.
  */
 export function importLegacyDatabase(
   sourcePath: string,
@@ -49,7 +49,7 @@ export function importLegacyDatabase(
   }
   removeSqliteSidecars(targetPath);
   if (fs.existsSync(targetPath)) fs.rmSync(targetPath, { force: true });
-  backupSqliteFile(sourcePath, targetPath, logger);
+  copySqliteFileReadonly(sourcePath, targetPath);
 
   // 只读连接的 integrity_check 会跳过 CHECK 约束（实测 better-sqlite3），
   // 因此目标库必须用读写连接复查，避免脏旧库被放行后启动阶段才崩溃。

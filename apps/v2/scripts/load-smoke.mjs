@@ -1,3 +1,12 @@
+process.on('unhandledRejection', (reason) => {
+  console.error(reason instanceof Error ? reason.stack ?? reason.message : reason);
+  setTimeout(() => process.exit(1), 250);
+});
+process.on('uncaughtException', (error) => {
+  console.error(error instanceof Error ? error.stack ?? error.message : error);
+  setTimeout(() => process.exit(1), 250);
+});
+
 const base = process.env.V2_BASE_URL ?? 'http://localhost:3180/api/v2';
 const adminPassword = process.env.V2_ADMIN_PASSWORD;
 if (!adminPassword) {

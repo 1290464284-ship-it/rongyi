@@ -4,6 +4,15 @@ import os from 'node:os';
 import path from 'node:path';
 import { _electron as electron } from '@playwright/test';
 
+process.on('unhandledRejection', (reason) => {
+  console.error(reason instanceof Error ? reason.stack ?? reason.message : reason);
+  setTimeout(() => process.exit(1), 250);
+});
+process.on('uncaughtException', (error) => {
+  console.error(error instanceof Error ? error.stack ?? error.message : error);
+  setTimeout(() => process.exit(1), 250);
+});
+
 const appRoot = path.resolve(import.meta.dirname, '..');
 const exePath = path.join(appRoot, 'release-v2', 'win-unpacked', 'Dental Clinic V2.exe');
 if (!fs.existsSync(exePath)) {
@@ -45,6 +54,8 @@ const env = {
   NODE_ENV: 'development',
   ELECTRON_ENABLE_LOGGING: '1',
 };
+// 打包版运行时数据固定放在临时 userData，外层 V2_DB_PATH 不允许泄漏进来。
+delete env.V2_DB_PATH;
 
 let electronApp;
 try {

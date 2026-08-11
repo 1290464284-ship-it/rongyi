@@ -1,5 +1,14 @@
 import { chromium } from '@playwright/test';
 
+process.on('unhandledRejection', (reason) => {
+  console.error(reason instanceof Error ? reason.stack ?? reason.message : reason);
+  setTimeout(() => process.exit(1), 250);
+});
+process.on('uncaughtException', (error) => {
+  console.error(error instanceof Error ? error.stack ?? error.message : error);
+  setTimeout(() => process.exit(1), 250);
+});
+
 const base = process.env.V2_WEB_URL ?? 'http://localhost:5180';
 const adminPassword = process.env.V2_ADMIN_PASSWORD;
 if (!adminPassword) {
@@ -26,10 +35,14 @@ try {
   }
 
   await page.goto(`${base}/#/patients`, { waitUntil: 'domcontentloaded' });
-  await page.getByRole('heading', { name: '患者与预约' }).waitFor();
-  await page.getByRole('tab', { name: '预约', exact: true }).click();
+  await page.getByRole('heading', { name: '患者档案' }).waitFor();
   await page.getByRole('tab', { name: '风险评分' }).click();
   await page.getByRole('heading', { name: '患者风险评分' }).waitFor();
+
+  await page.goto(`${base}/#/front-desk`, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('heading', { name: '前台工作' }).waitFor();
+  await page.getByRole('tab', { name: '挂号分诊' }).click();
+  await page.getByRole('heading', { name: '挂号分诊工作台' }).waitFor();
 
   await page.goto(`${base}/#/clinical`, { waitUntil: 'domcontentloaded' });
   await page.getByRole('heading', { name: '临床记录' }).waitFor();
@@ -38,12 +51,12 @@ try {
 
   await page.goto(`${base}/#/finance`, { waitUntil: 'domcontentloaded' });
   await page.getByRole('heading', { name: '财务中心' }).waitFor();
-  await page.getByRole('tab', { name: '操作' }).click();
+  await page.getByRole('tab', { name: '收银' }).click();
   await page.getByRole('heading', { name: '财务操作' }).waitFor();
 
   await page.goto(`${base}/#/inventory`, { waitUntil: 'domcontentloaded' });
   await page.getByRole('heading', { name: '库存与采购', exact: true }).waitFor();
-  await page.getByRole('tab', { name: '采购加工' }).click();
+  await page.getByRole('tab', { name: '采购工作台' }).click();
   await page.getByRole('heading', { name: '库存与采购操作' }).waitFor();
 
   await page.goto(`${base}/#/analytics`, { waitUntil: 'domcontentloaded' });

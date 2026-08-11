@@ -265,4 +265,203 @@ describe('CephalometricPage', () => {
     });
     expect(await screen.findByText('头影测量已删除')).toBeDefined();
   });
+
+  it('reports create and upload failures', async () => {
+    mockData();
+    vi.mocked(uploadFile).mockResolvedValue({ id: 'file-1', filename: 'file-1.png', url: '/api/v2/files/file-1.png' });
+    const base = vi.mocked(apiRequest).getMockImplementation();
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/resources/cephalometricCases' && String(init?.method ?? 'GET').toUpperCase() === 'POST') throw new Error('');
+      return base?.(path, init);
+    });
+    render(<CephalometricPage />, { wrapper });
+    await screen.findByText('DRAFT');
+    fireEvent.click(screen.getByText('新建测量'));
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    fireEvent.change(screen.getByLabelText('标记点 JSON'), { target: { value: '{"sella":[1,2]}' } });
+    fireEvent.click(screen.getByText('保存'));
+    expect(await screen.findByText('创建头影测量失败')).toBeDefined();
+
+    cleanup();
+    mockData();
+    vi.mocked(uploadFile).mockRejectedValue(new Error(''));
+    render(<CephalometricPage />, { wrapper });
+    await screen.findByText('DRAFT');
+    fireEvent.click(screen.getByText('新建测量'));
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    const file = new File(['x'], 'ceph.png', { type: 'image/png' });
+    fireEvent.change(screen.getByLabelText('影像文件'), { target: { files: [file] } });
+    fireEvent.click(screen.getByText('保存'));
+    expect(await screen.findByText('创建头影测量失败')).toBeDefined();
+  });
+
+  it('reports report save, send and compare failures', async () => {
+    mockData();
+    const base = vi.mocked(apiRequest).getMockImplementation();
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = String(init?.method ?? 'GET').toUpperCase();
+      if (method === 'POST' && path === '/cephalometric/c-1/report') throw new Error('');
+      if (method === 'POST' && path === '/cephalometric/c-1/send') throw new Error('');
+      if (method === 'POST' && path === '/cephalometric/compare') throw new Error('');
+      return base?.(path, init);
+    });
+    render(<CephalometricPage />, { wrapper });
+    await screen.findByText('DRAFT');
+
+    fireEvent.click(screen.getByRole('button', { name: '测量报告' }));
+    await screen.findByLabelText('报告 JSON');
+    fireEvent.click(screen.getByText('保存报告'));
+    expect(await screen.findByText('保存报告失败')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: '发送微信' }));
+    fireEvent.click(await screen.findByRole('button', { name: '发送' }));
+    expect(await screen.findByText('微信发送失败')).toBeDefined();
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: /患者甲/ }));
+    fireEvent.click(screen.getByText('开始比较'));
+    expect(await screen.findByText('轮廓比较失败')).toBeDefined();
+  });
+
+  it('unchecks a compare selection and blocks more than ten selections', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/cephalometricCases?page=1&pageSize=50') {
+        return {
+          items: Array.from({ length: 11 }, (_, index) => ({
+            id: `c-${index + 1}`,
+            patientId: `p-${index + 1}`,
+            patientIdLabel: `患者${index + 1}`,
+            status: 'DRAFT',
+            imageUrl: `/api/v2/files/x${index + 1}.png`,
+          })),
+          total: 11,
+          page: 1,
+          pageSize: 50,
+        };
+      }
+      if (path === '/cephalometric/compare') {
+        return {
+          cases: Array.from({ length: 10 }, (_, index) => ({
+            id: `c-${index + 1}`,
+            patientId: `p-${index + 1}`,
+            imageUrl: `/api/v2/files/x${index + 1}.png`,
+            landmarksJson: { sella: [index, index + 1] },
+            metricsJson: {},
+            createdAt: '2026-08-01T02:00:00.000Z',
+            remark: '',
+          })),
+        };
+      }
+      return {};
+    });
+    render(<CephalometricPage />, { wrapper });
+    await waitFor(() => {
+      expect(screen.getAllByRole('checkbox')).toHaveLength(11);
+    });
+
+    const checkboxes = screen.getAllByRole('checkbox');
+    fireEvent.click(checkboxes[0]);
+    expect((checkboxes[0] as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(checkboxes[0]);
+    expect((checkboxes[0] as HTMLInputElement).checked).toBe(false);
+    checkboxes.slice(0, 10).forEach((checkbox) => fireEvent.click(checkbox));
+    fireEvent.click(checkboxes[10]);
+    expect(await screen.findByText('最多选择 10 个病例进行比较')).toBeDefined();
+
+    fireEvent.click(screen.getByText('开始比较'));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/cephalometric/compare', expect.objectContaining({ method: 'POST' }));
+    });
+    const compareCall = vi.mocked(apiRequest).mock.calls.find((entry) => entry[0] === '/cephalometric/compare');
+    const body = JSON.parse(String((compareCall?.[1] as RequestInit)?.body));
+    expect(body.caseIds).toHaveLength(10);
+  });
+
+  it('closes the report dialog through its own cancel button', async () => {
+    mockData();
+    render(<CephalometricPage />, { wrapper });
+    await screen.findByText('DRAFT');
+
+    fireEvent.click(screen.getByRole('button', { name: '测量报告' }));
+    await screen.findByLabelText('报告 JSON');
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    await waitFor(() => {
+      expect(screen.queryByLabelText('报告 JSON')).toBeNull();
+    });
+  });
+
+  it('falls back to patient id and case id in compare options', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/cephalometricCases?page=1&pageSize=50') {
+        return {
+          items: [
+            { id: 'c-9', patientId: 'p-9', status: 'DRAFT', imageUrl: '/api/v2/files/x.png' },
+            { id: 'c-10', status: 'DRAFT', imageUrl: '/api/v2/files/y.png' },
+          ],
+          total: 2,
+          page: 1,
+          pageSize: 50,
+        };
+      }
+      return {};
+    });
+    render(<CephalometricPage />, { wrapper });
+    expect(await screen.findByText('p-9（c-9）')).toBeDefined();
+    expect(screen.getByText('c-10（c-10）')).toBeDefined();
+  });
+
+  it('normalises non-object JSON and submits metrics with the create payload', async () => {
+    mockData();
+    vi.mocked(uploadFile).mockResolvedValue({ id: 'file-1', filename: 'file-1.png', url: '/api/v2/files/file-1.png' });
+    render(<CephalometricPage />, { wrapper });
+    await screen.findByText('DRAFT');
+    fireEvent.click(screen.getByText('新建测量'));
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    const file = new File(['x'], 'ceph.png', { type: 'image/png' });
+    fireEvent.change(screen.getByLabelText('影像文件'), { target: { files: [file] } });
+    fireEvent.change(screen.getByLabelText('标记点 JSON'), { target: { value: '[]' } });
+    fireEvent.change(screen.getByLabelText('测量结果 JSON'), { target: { value: '{"snLength":71.2}' } });
+    vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'c-3' });
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => {
+      const postCall = vi.mocked(apiRequest).mock.calls.find(
+        (call) => call[0] === '/resources/cephalometricCases' && (call[1] as RequestInit)?.method === 'POST',
+      );
+      expect(postCall).toBeDefined();
+      const body = JSON.parse(String((postCall?.[1] as RequestInit)?.body));
+      expect(body).toMatchObject({ landmarksJson: '{}', metricsJson: '{"snLength":71.2}' });
+    });
+  });
+
+  it('edits a sparse cephalometric case with blank fallbacks', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/cephalometricCases?page=1&pageSize=50') {
+        return {
+          items: [{ id: 'c-9', patientId: null, status: null, templateId: null, landmarksJson: null, metricsJson: null, remark: null, imageUrl: null }],
+          total: 1,
+          page: 1,
+          pageSize: 50,
+        };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') return { items: [], total: 0, page: 1, pageSize: 200 };
+      if (path === '/doctors') return [];
+      return {};
+    });
+    render(<CephalometricPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '编辑' }));
+    expect(await screen.findByLabelText('备注')).toBeDefined();
+    expect((screen.getByLabelText('患者') as HTMLSelectElement).value).toBe('');
+    expect((screen.getByLabelText('标记点 JSON') as HTMLTextAreaElement).value).toBe('{}');
+    expect((screen.getByLabelText('测量结果 JSON') as HTMLTextAreaElement).value).toBe('{}');
+    expect((screen.getByLabelText('状态') as HTMLSelectElement).value).toBe('DRAFT');
+  });
 });

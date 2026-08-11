@@ -7,7 +7,7 @@ import { useToast } from '../../lib/toast-context';
 import { changeDentition, restartFirstExam, transitionFirstExam } from '../../first-exams/actions';
 import { firstExamColumns } from '../../first-exams/columns';
 import { DENTITION_LABELS, STATUS_LABELS } from '../../first-exams/constants';
-import { FirstExamFormFields } from '../../first-exams/FormFields';
+import { FirstExamFormFields } from '../../first-exams/FirstExamFormFields';
 import { HistoryDialog } from '../../first-exams/HistoryDialog';
 import { TeethMarkDialog } from '../../first-exams/TeethMarkDialog';
 import { TrackingDialog } from '../../first-exams/TrackingDialog';

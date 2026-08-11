@@ -96,9 +96,46 @@ describe('UserRoleService', () => {
     expect(() => service.setRoles('user-doctor-004', 'BOSS' as unknown as string[], context)).toThrow(ValidationError);
   });
 
+  it('blocks ADMIN from assigning BOSS role or managing a BOSS user', () => {
+    const service = new UserRoleService(db);
+    insertUser('user-admin-role', 'ADMIN');
+    insertUser('user-boss-role', 'BOSS');
+    const adminContext: AppContext = { ...context, role: 'ADMIN', userId: 'user-admin-role' };
+    expect(() => service.setRoles('user-doctor-001', ['BOSS'], adminContext))
+      .toThrow('管理员不能授予老板角色');
+    expect(() => service.setRoles('user-boss-role', ['DOCTOR'], adminContext))
+      .toThrow('管理员不能管理老板账号');
+  });
+
   it('setRoles throws NotFoundError for an unknown user in this clinic', () => {
     const service = new UserRoleService(db);
     expect(() => service.setRoles('user-missing-001', ['DOCTOR'], context)).toThrow(NotFoundError);
+  });
+
+  it('stores per-clinic additional roles independently', () => {
+    const secondClinic = 'clinic-v2-002';
+    db.prepare(
+      `INSERT OR IGNORE INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+       VALUES (?, NULL, ?, ?, NULL, 'C2', 'Second Clinic', 1)`,
+    ).run(secondClinic, now, now);
+
+    const service = new UserRoleService(db);
+    insertUser('user-doctor-006', 'DOCTOR');
+    db.prepare(
+      `INSERT OR IGNORE INTO UserClinic (userId, clinicId, role, createdAt, updatedAt, deletedAt)
+       VALUES (?, ?, 'DOCTOR', ?, ?, NULL)`,
+    ).run('user-doctor-006', secondClinic, now, now);
+
+    service.setRoles('user-doctor-006', ['BOSS'], context);
+    service.setRoles('user-doctor-006', ['BOSS'], { ...context, clinicId: secondClinic });
+
+    const firstClinicRows = service.listAll(context).filter((row) => row.userId === 'user-doctor-006');
+    const secondClinicRows = service.listAll({ ...context, clinicId: secondClinic })
+      .filter((row) => row.userId === 'user-doctor-006');
+    expect(firstClinicRows).toHaveLength(1);
+    expect(secondClinicRows).toHaveLength(1);
+    expect(firstClinicRows[0].clinicId).toBe('clinic-v2-001');
+    expect(secondClinicRows[0].clinicId).toBe(secondClinic);
   });
 
   it('listAll is tenant-scoped and hides deleted rows', () => {

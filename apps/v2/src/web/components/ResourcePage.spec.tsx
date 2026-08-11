@@ -446,4 +446,288 @@ describe('ResourcePage', () => {
       );
     });
   });
+
+  it('round-trips datetime and number values in edit forms', async () => {
+    const typedResource = {
+      name: 'appointments',
+      table: 'Appointment',
+      fields: [
+        { name: 'name', type: 'text', required: true },
+        { name: 'startTime', type: 'datetime' },
+        { name: 'price', type: 'number' },
+      ],
+      capabilities: { create: true, update: true, delete: false, softDelete: false },
+    };
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([typedResource])
+      .mockResolvedValueOnce({
+        items: [{
+          id: 'a1',
+          name: 'Appt',
+          startTime: '2026-08-05T02:00:00.000Z',
+          price: 12,
+        }],
+        total: 1,
+        page: 1,
+        pageSize: 20,
+      });
+    render(<ResourcePage resource="appointments" />, { wrapper });
+    fireEvent.click(await screen.findByText('编辑'));
+    expect((screen.getByLabelText('startTime') as HTMLInputElement).value).toMatch(/^2026-08-05T/);
+    expect((screen.getByLabelText('price') as HTMLInputElement).value).toBe('12');
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce({ success: true, data: { id: 'a1' } })
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 20 });
+    fireEvent.change(screen.getByLabelText('price'), { target: { value: '15' } });
+    fireEvent.click(screen.getByText('保存'));
+    await waitFor(() => {
+      const call = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/resources/appointments/a1');
+      expect(call).toBeDefined();
+      const body = JSON.parse(String((call?.[1] as RequestInit)?.body));
+      expect(body.price).toBe(15);
+    });
+  });
+
+  it('renders endpoint report tables with formatted columns and errors', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/stats/demo') {
+        return [{
+          id: 's1',
+          label: 'demo',
+          revenue: 123456,
+          createdAt: '2026-08-01T02:00:00.000Z',
+          planDate: '2026-08-05',
+          nested: { a: 1 },
+          empty: null,
+        }];
+      }
+      return [];
+    });
+    render(<ResourcePage title="报表" endpoint="/stats/demo" />, { wrapper });
+    expect(await screen.findByText('¥1234.56')).toBeDefined();
+    expect(screen.getByText('2026/8/1 10:00:00')).toBeDefined();
+    expect(screen.getByText('2026/8/5')).toBeDefined();
+    expect(screen.getByText('{"a":1}')).toBeDefined();
+
+    cleanup();
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/stats/demo') throw new Error('report failed');
+      return [];
+    });
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+          <ToastProvider>
+            <ResourcePage title="报表" endpoint="/stats/demo" />
+          </ToastProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+  });
+
+  it('selects all rows, cancels selection and cancels the batch dialog', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([writable])
+      .mockResolvedValueOnce({ items: [{ id: 'p1', name: 'A' }, { id: 'p2', name: 'B' }], total: 2, page: 1, pageSize: 20 });
+    render(<ResourcePage resource="patients" />, { wrapper });
+    await screen.findByText('A');
+    const checkboxes = screen.getAllByRole('checkbox');
+    fireEvent.click(checkboxes[0]);
+    expect(screen.getByText('已选 2 项')).toBeDefined();
+    fireEvent.click(checkboxes[0]);
+    expect(screen.queryByText('已选 2 项')).toBeNull();
+    fireEvent.click(checkboxes[1]);
+    expect(screen.getByText('已选 1 项')).toBeDefined();
+    fireEvent.click(screen.getByText('取消选择'));
+    expect(screen.queryByText('删除选中')).toBeNull();
+
+    fireEvent.click(checkboxes[1]);
+    fireEvent.click(checkboxes[2]);
+    fireEvent.click(screen.getByText('删除选中'));
+    fireEvent.click(await screen.findByText('取消'));
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+    expect(vi.mocked(apiRequest)).not.toHaveBeenCalledWith(
+      '/resources/patients/p1',
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+  });
+
+  it('reports partial batch delete failures', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([writable])
+      .mockResolvedValueOnce({ items: [{ id: 'p1', name: 'A' }, { id: 'p2', name: 'B' }], total: 2, page: 1, pageSize: 20 })
+      .mockResolvedValueOnce({ success: true })
+      .mockRejectedValueOnce(new Error('batch failed'))
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 20 });
+    render(<ResourcePage resource="patients" />, { wrapper });
+    await screen.findByText('A');
+    const checkboxes = screen.getAllByRole('checkbox');
+    fireEvent.click(checkboxes[1]);
+    fireEvent.click(checkboxes[2]);
+    fireEvent.click(screen.getByText('删除选中'));
+    fireEvent.click(screen.getByText('批量删除'));
+    expect(await screen.findByText('已删除 1 项')).toBeDefined();
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+  });
+
+  it('falls back one page after deleting the last row on a later page', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([writable])
+      .mockResolvedValueOnce({ items: [{ id: 'p1', name: 'A' }], total: 30, page: 1, pageSize: 20 })
+      .mockResolvedValueOnce({ items: [{ id: 'p1', name: 'A' }], total: 30, page: 2, pageSize: 20 })
+      .mockResolvedValueOnce({ success: true })
+      .mockResolvedValueOnce({ items: [], total: 30, page: 2, pageSize: 20 })
+      .mockResolvedValueOnce({ items: [], total: 30, page: 1, pageSize: 20 });
+    render(<ResourcePage resource="patients" />, { wrapper });
+    await screen.findByText('A');
+    fireEvent.click(screen.getByText('下一页'));
+    await screen.findByText('第 2 页');
+    fireEvent.click(screen.getByText('删除'));
+    fireEvent.click(await screen.findByText('确认删除'));
+    await waitFor(() => expect(vi.mocked(apiRequest)).toHaveBeenCalledWith(
+      '/resources/patients/p1',
+      expect.objectContaining({ method: 'DELETE' }),
+    ));
+    expect(await screen.findByText('第 1 页')).toBeDefined();
+  });
+
+  it('exports the current resource as CSV with search', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([writable])
+      .mockResolvedValueOnce({ items: [{ id: 'p1', name: 'Alice' }], total: 1, page: 1, pageSize: 20 })
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 20 });
+    render(<ResourcePage resource="patients" />, { wrapper });
+    fireEvent.change(await screen.findByPlaceholderText('搜索...'), { target: { value: 'Alice' } });
+    await waitFor(() => expect(vi.mocked(apiRequest)).toHaveBeenCalledWith(expect.stringContaining('search=Alice')));
+    fireEvent.click(screen.getByText('导出'));
+    expect(vi.mocked(downloadCsv)).toHaveBeenCalledWith('patients', 'Alice');
+  });
+
+  it('renders paged endpoint reports with truncated notices', async () => {
+    vi.mocked(apiRequest).mockResolvedValue({
+      items: [{ id: 's1', name: 'Alice' }],
+      total: 250,
+      page: 1,
+      pageSize: 200,
+      truncated: true,
+    });
+    render(<ResourcePage title="报表" endpoint="/stats/demo" />, { wrapper });
+    expect(await screen.findByText('Alice')).toBeDefined();
+    expect(screen.getByText('超过显示上限，仅显示部分数据')).toBeDefined();
+  });
+
+  it('steps back a page when the refreshed list omits items', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([writable])
+      .mockResolvedValueOnce({ items: [{ id: 'p1', name: 'A' }], total: 30, page: 2, pageSize: 20 })
+      .mockResolvedValueOnce({ items: [{ id: 'p1', name: 'A' }], total: 30, page: 2, pageSize: 20 })
+      .mockResolvedValueOnce({ success: true })
+      .mockResolvedValueOnce({ total: 30, page: 2, pageSize: 20 })
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 20 });
+    render(<ResourcePage resource="patients" />, { wrapper });
+    await screen.findByText('A');
+    fireEvent.click(screen.getByText('下一页'));
+    await screen.findByText('第 2 页');
+    fireEvent.click(screen.getByText('删除'));
+    fireEvent.click(await screen.findByText('确认删除'));
+    await waitFor(() => {
+      expect(vi.mocked(apiRequest)).toHaveBeenCalledWith('/resources/patients/p1', expect.objectContaining({ method: 'DELETE' }));
+    });
+    expect(await screen.findByText('第 1 页')).toBeDefined();
+  });
+
+  it('shows the fallback message for non-Error query failures', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([writable])
+      .mockRejectedValueOnce('boom');
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <ResourcePage resource="patients" />
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByText('加载失败')).toBeDefined();
+  });
+
+  it('falls back to the resource name when the definition has no label', async () => {
+    const noLabel = { ...writable, label: undefined };
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([noLabel])
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 20 });
+    render(<ResourcePage resource="patients" />, { wrapper });
+    expect(await screen.findByRole('heading', { name: 'patients' })).toBeDefined();
+  });
+
+  it('renders rows without ids using their index as the key', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([writable])
+      .mockResolvedValueOnce({ items: [{ name: 'NoId' }], total: 1, page: 1, pageSize: 20 });
+    render(<ResourcePage resource="patients" />, { wrapper });
+    expect(await screen.findByText('NoId')).toBeDefined();
+  });
+
+  it('renders truncated endpoint reports without an items array', async () => {
+    vi.mocked(apiRequest).mockResolvedValue({ truncated: true });
+    render(<ResourcePage title="报表" endpoint="/stats/demo" />, { wrapper });
+    expect(await screen.findByText('超过显示上限，仅显示部分数据')).toBeDefined();
+    expect(screen.getByText('暂无数据')).toBeDefined();
+  });
+
+  it('round-trips number fields and renders invalid datetime values as blank', async () => {
+    const typedResource = {
+      name: 'typed',
+      table: 'Typed',
+      fields: [
+        { name: 'name', type: 'text', required: true },
+        { name: 'price', type: 'number' },
+        { name: 'startTime', type: 'datetime' },
+      ],
+      capabilities: { create: true, update: true, delete: false, softDelete: false },
+    };
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([typedResource])
+      .mockResolvedValueOnce({
+        items: [{ id: 't1', name: 'Item', price: 12, startTime: 'not-a-date' }],
+        total: 1,
+        page: 1,
+        pageSize: 20,
+      });
+    render(<ResourcePage resource="typed" />, { wrapper });
+    fireEvent.click(await screen.findByText('编辑'));
+    expect((screen.getByLabelText('price') as HTMLInputElement).value).toBe('12');
+    expect((screen.getByLabelText('startTime') as HTMLInputElement).value).toBe('');
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce({ success: true, data: { id: 't1' } })
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 20 });
+    fireEvent.click(screen.getByText('保存'));
+    await waitFor(() => {
+      const call = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/resources/typed/t1');
+      expect(call).toBeDefined();
+      const body = JSON.parse(String((call?.[1] as RequestInit)?.body));
+      expect(body.price).toBe(12);
+      expect(body.startTime).toBeUndefined();
+    });
+  });
+
+  it('guards batch delete when the selection is cleared before confirming', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([writable])
+      .mockResolvedValueOnce({ items: [{ id: 'p1', name: 'A' }], total: 1, page: 1, pageSize: 20 });
+    render(<ResourcePage resource="patients" />, { wrapper });
+    await screen.findByText('A');
+    fireEvent.click(screen.getAllByRole('checkbox')[1]);
+    fireEvent.click(screen.getByText('删除选中'));
+    fireEvent.click(screen.getByText('取消选择'));
+    fireEvent.click(screen.getByRole('button', { name: '批量删除' }));
+    expect(apiRequest).not.toHaveBeenCalledWith('/resources/patients/p1', expect.objectContaining({ method: 'DELETE' }));
+    expect(screen.getByRole('dialog', { name: '批量删除确认' })).toBeDefined();
+  });
+
+  it('uses the default report title when none is provided', async () => {
+    vi.mocked(apiRequest).mockResolvedValue([]);
+    render(<ResourcePage endpoint="/stats/demo" />, { wrapper });
+    expect(await screen.findByRole('heading', { name: '报表' })).toBeDefined();
+  });
 });

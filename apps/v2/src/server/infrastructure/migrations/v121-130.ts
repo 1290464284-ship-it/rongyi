@@ -11,7 +11,19 @@ export const migrations121to130: Migration[] = [
         'Treatment', 'Visit', 'FollowUp', 'InventoryItem', 'InventoryTransaction', 'Supplier',
         'PurchaseOrder', 'PurchaseOrderItem', 'ProcessingOrder', 'Debt', 'OperationLog', 'Alert', 'Notification'];
       const defaultClinic = db.prepare(`SELECT id FROM Clinic ORDER BY createdAt ASC LIMIT 1`).get() as { id: string } | undefined;
-      if (!defaultClinic) return; // 无诊所数据时跳过
+      if (!defaultClinic) {
+        // 无 Clinic 行但仍有 NULL clinicId 数据时，静默跳过会让这些行永久不可见，
+        // 必须显式失败让运维先建诊所/恢复数据。
+        const hasNullRows = tables.some((table) => {
+          const cols = (db.prepare(`PRAGMA table_info("${table}")`).all() as Array<{ name: string }>).map((c) => c.name);
+          if (!cols.includes('clinicId')) return false;
+          return Boolean(db.prepare(`SELECT 1 FROM "${table}" WHERE "clinicId" IS NULL LIMIT 1`).get());
+        });
+        if (hasNullRows) {
+          throw new Error('Migration 121 requires at least one Clinic row to backfill NULL clinicId rows');
+        }
+        return;
+      }
       // 用户特殊处理：优先取 UserClinic 第一个成员关系。
       // 必须先于通用回填执行，否则 User 的 NULL 已被填为最早诊所，COALESCE 永不生效。
       const userCols = (db.prepare('PRAGMA table_info("User")').all() as Array<{ name: string }>).map((c) => c.name);

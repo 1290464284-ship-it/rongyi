@@ -157,7 +157,7 @@ export const STOCKTAKE_STATUS_LABELS: Record<string, string> = {
   CANCELLED: '已取消',
 };
 
-/** SimpleListPage 统计端点表格的列名中文标签（M-02：由 SimpleListPage 本地字典并入） */
+/** 只读统计端点表格的列名中文标签（M-02：由本地字典并入） */
 export const SIMPLE_LIST_COLUMN_LABELS: Record<string, string> = {
   period: '期间',
   revenue: '收入',

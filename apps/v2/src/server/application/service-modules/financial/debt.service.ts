@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3';
 import { NotFoundError, ValidationError } from '../../../infrastructure/errors';
 import { withIdempotency } from '../../../infrastructure/idempotency';
 import { tenantAnd, tenantParams } from '../../../infrastructure/tenant';
-import { recordSyncChange } from '../../../infrastructure/sync-change';
+import { trackResourceWrite } from '../../../infrastructure/write-tracking';
 import { SqliteDebtRepository } from '../../../infrastructure/repositories/core.repositories';
 import type { AppContext } from '../../../../domain/contracts';
 import type { DebtRepository } from '../../ports';
@@ -24,7 +24,7 @@ export class DebtService {
       if (!Number.isSafeInteger(amount) || amount <= 0 || amount > remaining) throw new ValidationError('Invalid debt payment amount');
       const paid = Number(debt.paidAmount) + amount;
       const status = paid >= Number(debt.totalAmount) ? 'PAID' : 'PARTIAL';
-      this.debtRepository.updatePaid(debtId, paid, status, context.now().toISOString(), context.clinicId);
+      this.debtRepository.updatePaid(debtId, paid, status, context.now().toISOString(), Number(debt.paidAmount), context.clinicId);
       const charge = this.db.prepare(
         `SELECT id, totalAmount, paidAmount
          FROM Charge WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
@@ -41,10 +41,8 @@ export class DebtService {
            SET paidAmount = ?, status = ?, updatedAt = ?
            WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
         ).run(chargePaid, chargeStatus, context.now().toISOString(), charge.id, ...tenantParams(context.clinicId));
-        // P2-3：直接改库的路径也必须进同步队列
-        if (context.clinicId) {
-          recordSyncChange(this.db, { tableName: 'Charge', recordId: charge.id, operation: 'UPDATE', clinicId: context.clinicId });
-        }
+        // P2-3：直接改库的路径统一维护同步与搜索索引。
+        trackResourceWrite(this.db, { tableName: 'Charge', recordId: charge.id, operation: 'UPDATE', clinicId: context.clinicId ?? null });
       }
       return { id: debtId, paidAmount: paid, status };
     });

@@ -40,14 +40,23 @@ export const INTERNAL_RESOURCE_TABLES = new Set([
 ]);
 
 const registry = new Map(resources.map((resource) => [resource.name, resource]));
+function withAdminRole(definition: ResourceDefinition): ResourceDefinition {
+  return definition.roles.includes('BOSS') && !definition.roles.includes('ADMIN')
+    ? { ...definition, roles: [...definition.roles, 'ADMIN'] }
+    : definition;
+}
 /* v8 ignore start -- generated legacy definitions are pre-pruned; duplicate/internal rows are intentionally never registered. */
 for (const resource of legacyResources) {
   const tableAlreadyDeclared = resources.some((candidate) => candidate.table === resource.table);
   if (!registry.has(resource.name) && !tableAlreadyDeclared && !INTERNAL_RESOURCE_TABLES.has(resource.table)) {
-    registry.set(resource.name, resource);
+    registry.set(resource.name, withAdminRole(resource));
   }
 }
 /* v8 ignore stop */
+
+for (const [name, definition] of [...registry]) {
+  registry.set(name, withAdminRole(definition));
+}
 
 export const resourceRegistry: ResourceRegistry = {
   get(name) {

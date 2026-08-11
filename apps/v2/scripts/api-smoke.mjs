@@ -245,7 +245,11 @@ async function main() {
   console.log('API smoke passed', { resources: resources.length, patient: patient.id, charge: charge.id });
 }
 
-main().catch((error) => {
+main().catch(async (error) => {
   console.error(error);
+  // Node 24 + undici on Windows: exiting immediately after a failed fetch can
+  // trigger a libuv UV_HANDLE_CLOSING assertion while keep-alive sockets are
+  // still closing. Give the event loop a moment before exit.
+  await new Promise((resolve) => setTimeout(resolve, 250));
   process.exit(1);
 });

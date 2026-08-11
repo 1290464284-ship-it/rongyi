@@ -1,6 +1,5 @@
 // 认证/用户仓储（M-04：由 core.repositories.ts 拆分）
 import type Database from 'better-sqlite3';
-import { tenantAnd } from '../tenant';
 import type { AuthRepository, AuthUserRecord } from '../../application/ports';
 
 export class SqliteAuthRepository implements AuthRepository {
@@ -119,16 +118,29 @@ export class SqliteAuthRepository implements AuthRepository {
       params.push(fields.active ? 1 : 0);
     }
     params.push(id);
-    if (clinicId) params.push(clinicId);
+    if (clinicId) params.push(clinicId, clinicId);
     return this.db.prepare(
-      `UPDATE User SET ${sets.join(', ')} WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
+      `UPDATE User SET ${sets.join(', ')} WHERE id = ? AND deletedAt IS NULL
+       ${clinicId
+         ? `AND (EXISTS (
+               SELECT 1 FROM UserClinic uc
+               WHERE uc.userId = User.id AND uc.clinicId = ? AND uc.deletedAt IS NULL
+             ) OR User.clinicId = ?)`
+         : ''}`,
     ).run(...params).changes;
   }
 
   resetPassword(id: string, passwordHash: string, updatedAt: string, clinicId?: string | null): number {
-    const params = clinicId ? [passwordHash, updatedAt, id, clinicId] : [passwordHash, updatedAt, id];
+    const params = clinicId ? [passwordHash, updatedAt, id, clinicId, clinicId] : [passwordHash, updatedAt, id];
     return this.db.prepare(
-      `UPDATE User SET passwordHash = ?, tokenVersion = tokenVersion + 1, refreshToken = NULL, refreshTokenExpiresAt = NULL, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
+      `UPDATE User SET passwordHash = ?, loginAttempts = 0, lockedUntil = NULL, tokenVersion = tokenVersion + 1, refreshToken = NULL, refreshTokenExpiresAt = NULL, updatedAt = ?
+       WHERE id = ? AND deletedAt IS NULL
+       ${clinicId
+         ? `AND (EXISTS (
+               SELECT 1 FROM UserClinic uc
+               WHERE uc.userId = User.id AND uc.clinicId = ? AND uc.deletedAt IS NULL
+             ) OR User.clinicId = ?)`
+         : ''}`,
     ).run(...params).changes;
   }
 

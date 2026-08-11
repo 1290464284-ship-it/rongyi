@@ -338,4 +338,182 @@ describe('PurchaseOrdersPage', () => {
     });
     expect((screen.getByRole('button', { name: '添加明细' }) as HTMLButtonElement).disabled).toBe(false);
   });
+
+  it('reports create failures', async () => {
+    mockData();
+    const base = vi.mocked(apiRequest).getMockImplementation();
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/purchase-orders' && String(init?.method ?? 'GET').toUpperCase() === 'POST') throw new Error('');
+      return base?.(path, init);
+    });
+    render(<PurchaseOrdersPage />, { wrapper });
+    await screen.findByText('PO-1');
+    fireEvent.click(screen.getByText('新建采购单'));
+    await waitFor(() => {
+      expect((screen.getByLabelText('采购项目') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('采购单号'), { target: { value: 'PO-NEW' } });
+    fireEvent.change(screen.getByLabelText('采购项目'), { target: { value: 'i-1' } });
+    fireEvent.change(screen.getByLabelText('采购数量'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('采购单价'), { target: { value: '100' } });
+    fireEvent.click(screen.getByText('保存'));
+    expect(await screen.findByText('创建采购单失败')).toBeDefined();
+  });
+
+  it('reports receive failures', async () => {
+    mockData();
+    const base = vi.mocked(apiRequest).getMockImplementation();
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/purchase-orders/po-1/receive' && String(init?.method ?? 'GET').toUpperCase() === 'PATCH') throw new Error('');
+      return base?.(path, init);
+    });
+    render(<PurchaseOrdersPage />, { wrapper });
+    await screen.findByText('PO-1');
+    fireEvent.click(screen.getByRole('button', { name: '收货' }));
+    expect(await screen.findByText('收货失败')).toBeDefined();
+  });
+
+  it('reports review action failures', async () => {
+    mockData('PENDING', 'PENDING');
+    const base = vi.mocked(apiRequest).getMockImplementation();
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/purchase-orders/po-1/submit' && String(init?.method ?? 'GET').toUpperCase() === 'POST') throw new Error('');
+      return base?.(path, init);
+    });
+    render(<PurchaseOrdersPage />, { wrapper });
+    await screen.findByText('PO-1');
+    fireEvent.click(screen.getByRole('button', { name: '提交审核' }));
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+  });
+
+  it('reports delete failures', async () => {
+    mockData();
+    const base = vi.mocked(apiRequest).getMockImplementation();
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/resources/purchaseOrders/po-1' && String(init?.method ?? 'GET').toUpperCase() === 'DELETE') throw new Error('');
+      return base?.(path, init);
+    });
+    render(<PurchaseOrdersPage />, { wrapper });
+    await screen.findByText('PO-1');
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    fireEvent.click(screen.getByText('确认删除'));
+    expect(await screen.findByText('删除采购单失败')).toBeDefined();
+  });
+
+  it('reports update failure with the partial-save hint', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/purchase-orders/review-stats') return {};
+      if (path === '/resources/purchaseOrders?page=1&pageSize=50') {
+        return { items: [{ id: 'po-1', number: 'PO-1', supplierId: 's-1', totalAmount: 200, status: 'PENDING' }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/suppliers?page=1&pageSize=100') {
+        return { items: [{ id: 's-1', name: '供应商甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/resources/inventoryItems?page=1&pageSize=100') {
+        return { items: [{ id: 'i-1', name: '耗材' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/resources/purchaseOrderItems?orderId=po-1&page=1&pageSize=100') {
+        return { items: [{ id: 'poi-1', itemId: 'i-1', name: '耗材', spec: 'S', quantity: 3, unitPrice: 10000, subtotal: 30000 }], total: 1, page: 1, pageSize: 100 };
+      }
+      if (path === '/resources/purchaseOrders/po-1' && String(init?.method ?? 'GET').toUpperCase() === 'PATCH') {
+        throw new Error('');
+      }
+      return {};
+    });
+    render(<PurchaseOrdersPage />, { wrapper });
+    await screen.findByText('PO-1');
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    await waitFor(() => {
+      expect((screen.getByLabelText('采购单号') as HTMLInputElement).value).toBe('PO-1');
+    });
+    fireEvent.click(screen.getByText('保存'));
+    expect(await screen.findByText('更新采购单失败；部分明细可能未保存，请核对后重试')).toBeDefined();
+  });
+
+  it('warns about dropped invalid detail rows', async () => {
+    mockData();
+    render(<PurchaseOrdersPage />, { wrapper });
+    await screen.findByText('PO-1');
+    fireEvent.click(screen.getByText('新建采购单'));
+    await waitFor(() => {
+      expect((screen.getByLabelText('采购项目') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('采购单号'), { target: { value: 'PO-NEW' } });
+    fireEvent.change(screen.getByLabelText('采购项目'), { target: { value: 'i-1' } });
+    fireEvent.change(screen.getByLabelText('采购数量'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('采购单价'), { target: { value: '100' } });
+    fireEvent.click(screen.getByRole('button', { name: '添加明细' }));
+    await waitFor(() => {
+      expect(screen.getAllByLabelText('采购项目')).toHaveLength(2);
+    });
+    fireEvent.change(screen.getAllByLabelText('采购项目')[1], { target: { value: 'i-1' } });
+    fireEvent.change(screen.getAllByLabelText('采购数量')[1], { target: { value: '' } });
+    fireEvent.change(screen.getAllByLabelText('采购单价')[1], { target: { value: '100' } });
+    fireEvent.click(screen.getByText('保存'));
+
+    expect(await screen.findByText('1 条明细因数量或单价无效将被忽略')).toBeDefined();
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/purchase-orders', expect.objectContaining({ method: 'POST' }));
+    });
+    const createCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/purchase-orders');
+    const body = JSON.parse(String(createCall?.[1]?.body));
+    expect(body.items).toHaveLength(1);
+  });
+
+  it('reports approve and reopen failures', async () => {
+    mockData('PENDING', 'SUBMITTED');
+    const base = vi.mocked(apiRequest).getMockImplementation();
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/purchase-orders/po-1/approve' && String(init?.method ?? 'GET').toUpperCase() === 'POST') throw new Error('');
+      return base?.(path, init);
+    });
+    render(<PurchaseOrdersPage />, { wrapper });
+    await screen.findByText('PO-1');
+    fireEvent.click(screen.getByRole('button', { name: '通过' }));
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+
+    cleanup();
+    mockRows([
+      { id: 'po-1', number: 'PO-1', supplierId: 's-1', totalAmount: 200, status: 'PENDING', reviewStatus: 'REJECTED', rejectionReason: '价格过高' },
+    ]);
+    const base2 = vi.mocked(apiRequest).getMockImplementation();
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/purchase-orders/po-1/reopen' && String(init?.method ?? 'GET').toUpperCase() === 'POST') throw new Error('');
+      return base2?.(path, init);
+    });
+    render(<PurchaseOrdersPage />, { wrapper });
+    await screen.findByText('PO-1');
+    fireEvent.click(screen.getByRole('button', { name: '重新提交' }));
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+  });
+
+  it('ignores a stale item backfill after closing the edit dialog', async () => {
+    let resolveItems: ((value: unknown) => void) | undefined;
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/purchase-orders/review-stats') return {};
+      if (path === '/resources/purchaseOrders?page=1&pageSize=50') {
+        return { items: [{ id: 'po-1', number: 'PO-1', supplierId: 's-1', totalAmount: 200, status: 'PENDING' }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/suppliers?page=1&pageSize=100') {
+        return { items: [{ id: 's-1', name: '供应商甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/resources/inventoryItems?page=1&pageSize=100') {
+        return { items: [{ id: 'i-1', name: '耗材' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/resources/purchaseOrderItems?orderId=po-1&page=1&pageSize=100') {
+        return await new Promise((resolve) => { resolveItems = resolve; });
+      }
+      return {};
+    });
+    render(<PurchaseOrdersPage />, { wrapper });
+    await screen.findByText('PO-1');
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    await screen.findByRole('dialog');
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+    resolveItems?.({ items: [{ id: 'poi-1', itemId: 'i-1', name: '耗材', quantity: 1, unitPrice: 10000, subtotal: 10000 }], total: 1, page: 1, pageSize: 100 });
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
 });

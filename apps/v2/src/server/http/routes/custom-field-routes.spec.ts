@@ -112,4 +112,13 @@ describe('custom field routes', () => {
       .delete('/api/v2/custom-fields/not-found')
       .expect(403);
   });
+
+  it('rejects non-array custom field values', async () => {
+    currentRole = 'BOSS';
+    const res = await request(app)
+      .put('/api/v2/custom-fields/values')
+      .send({ entity: 'patient', entityId: 'patient-route-3', values: 'not-an-array' })
+      .expect(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
 });

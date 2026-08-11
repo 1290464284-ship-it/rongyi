@@ -48,6 +48,21 @@ function validateField(field: ResourceField, raw: unknown): unknown {
       if (typeof raw !== 'string' || Number.isNaN(Date.parse(raw))) {
         throw new ValidationError(`${field.name} must be a valid date-time`);
       }
+      // Date.parse 会把 2026-02-30 / 非闰年 02-29 静默规范化，必须先拒绝不存在的日历日期。
+      const calendarMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+      if (calendarMatch) {
+        const year = Number(calendarMatch[1]);
+        const month = Number(calendarMatch[2]);
+        const day = Number(calendarMatch[3]);
+        const probe = new Date(Date.UTC(year, month - 1, day));
+        if (
+          probe.getUTCFullYear() !== year
+          || probe.getUTCMonth() !== month - 1
+          || probe.getUTCDate() !== day
+        ) {
+          throw new ValidationError(`${field.name} must be a valid date-time`);
+        }
+      }
       const normalized = new Date(raw).toISOString();
       if (Number.isNaN(new Date(normalized).getTime())) {
         throw new ValidationError(`${field.name} must be a valid date-time`);

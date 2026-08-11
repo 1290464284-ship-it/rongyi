@@ -29,7 +29,8 @@ blocker for internal delivery.
 ## Post-Install Verification
 
 1. Start the app.
-2. Log in with the configured clinic credentials.
+2. On a fresh install, complete the first-run setup wizard to create the
+   `admin` password, then log in; on upgrades, log in with existing credentials.
 3. Confirm the API starts on a random local port.
 4. Confirm the bundled legacy compatibility database is copied from
    `resources/legacy/dental.sqlite` into Electron `userData/data`.
@@ -149,6 +150,7 @@ Verify a local installer locally:
 
 ```powershell
 pnpm --filter @dental/v2 run verify:signature
+```
 
 Public release now requires the `V2_EXPECTED_CERT_THUMBPRINT` repository
 variable in addition to `CSC_LINK`/`CSC_KEY_PASSWORD`. `v2-release.yml` fails
@@ -156,7 +158,6 @@ fast when the thumbprint is not configured, and `verify:signature.ps1` pins it
 when present. Configure `publisherName` in `package.json` build only after the
 CA-issued certificate is available; the internal/self-signed path keeps the
 default signature verification behavior.
-```
 
 ## Internal Build
 

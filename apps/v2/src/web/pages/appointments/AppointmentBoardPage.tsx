@@ -85,9 +85,6 @@ export function AppointmentBoardPage() {
         {BOARD_STATUSES.map((status) => (
           <section
             className={`board-column${dragOverColumn === status.key ? ' drag-over' : ''}`}
-            style={dragOverColumn === status.key
-              ? { borderColor: '#2f80ed', boxShadow: '0 0 0 2px rgba(47, 128, 237, 0.25)' }
-              : undefined}
             data-status={status.key}
             key={status.key}
             onDragOver={(event) => {
@@ -109,7 +106,6 @@ export function AppointmentBoardPage() {
               .map((row) => (
                 <article
                   className={`board-card${draggingId === row.id ? ' dragging' : ''}`}
-                  style={draggingId === row.id ? { opacity: 0.55 } : undefined}
                   draggable
                   data-id={row.id}
                   key={row.id}
