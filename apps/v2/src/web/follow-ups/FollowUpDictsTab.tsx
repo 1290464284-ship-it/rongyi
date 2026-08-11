@@ -70,6 +70,7 @@ export function FollowUpDictsTab() {
         ))}
       </select>
       <DataTable columns={columns} rows={crud.rows} keyField="id" emptyText="暂无词典项" />
+      {crud.query.data?.truncated && <p className="reminder-muted">词典项超过 200 条，仅显示部分数据</p>}
       <Dialog open={crud.showForm} title={crud.editing ? '编辑词典项' : '新建词典项'} onClose={crud.closeForm}>
         <form onSubmit={crud.submit}>
           <label>

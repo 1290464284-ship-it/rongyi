@@ -72,7 +72,9 @@ export function RefundsPage() {
       render: (row) => (
         <RefundRowActions
           row={row}
-          reload={() => query.refetch()}
+          reload={async () => {
+            await Promise.all([query.refetch(), summary.refetch()]);
+          }}
           showToast={showToast}
         />
       ),
@@ -84,7 +86,14 @@ export function RefundsPage() {
       <div className="page-head">
         <h1>退款管理</h1>
       </div>
-      <RefundStatusChips rows={summary.data?.items ?? []} />
+      {summary.data && (
+        <>
+          <RefundStatusChips rows={summary.data?.items ?? []} />
+          {summary.data?.truncated && (
+            <p className="reminder-muted">退款汇总超过 200 条，仅显示部分数据</p>
+          )}
+        </>
+      )}
       {rows.length === 0 ? (
         <EmptyState message="暂无退款记录" />
       ) : (

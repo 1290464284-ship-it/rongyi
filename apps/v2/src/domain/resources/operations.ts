@@ -143,7 +143,7 @@ export const operationsResources: ResourceDefinition[] = [
   ], { roles: boss, capabilities: { list: true, create: true, update: true, delete: true, softDelete: false } }),
 
   crud('businessAlerts', 'BusinessAlert', [
-    f('alertType', 'enum', { required: true, enumValues: ['REVENUE_DROP', 'NEW_PATIENTS', 'NO_SHOW_RATE', 'AOV', 'INVENTORY_STOCKOUT', 'SCHEDULER_TASK_FAILURE', 'PERFORMANCE_ANOMALY', 'SATISFACTION_NEGATIVE'] }),
+    f('alertType', 'enum', { required: true, enumValues: ['REVENUE_DROP', 'NEW_PATIENTS', 'NO_SHOW_RATE', 'AOV', 'INVENTORY_STOCKOUT', 'SCHEDULER_TASK_FAILURE', 'PERFORMANCE_ANOMALY', 'SATISFACTION_NEGATIVE', 'BATCH_EXPIRY'] }),
     f('level', 'enum', { required: true, enumValues: ['INFO', 'WARNING', 'CRITICAL'] }),
     f('severity', 'enum', { required: true, enumValues: ['INFO', 'WARN', 'CRITICAL'] }),
     f('metricName', 'text'),

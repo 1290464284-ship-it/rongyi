@@ -69,7 +69,7 @@ export function FirstExamsPage() {
         rowActions={(row, ctx) => (
           <>
             <select
-              defaultValue=""
+              value={String(row.status ?? '')}
               aria-label="变更首诊状态"
               onChange={(event) => {
                 if (event.target.value) void transitionFirstExam(showToast, ctx.reload, row.id, event.target.value);
@@ -82,7 +82,7 @@ export function FirstExamsPage() {
             </select>
             <button onClick={() => setDialogTarget({ kind: 'tracking', row })}>追踪</button>
             <select
-              defaultValue={String(row.dentition ?? '')}
+              value={String(row.dentition ?? '')}
               aria-label="切换牙列"
               onChange={(event) => {
                 if (event.target.value) void changeDentition(showToast, ctx.reload, row.id, event.target.value);

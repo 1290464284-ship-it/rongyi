@@ -18,6 +18,8 @@ export function InventoryWorkflowPage() {
   const [countedInputs, setCountedInputs] = useState<Record<string, string>>({});
   // 写请求 busy 守卫：防止双击重复创建盘点单
   const { busy: creatingStocktake, run: runCreateStocktake } = useAsyncAction();
+  const { busy: suggestionsBusy, run: runSuggestions } = useAsyncAction();
+  const { busy: savingCounted, run: runSavingCounted } = useAsyncAction();
   const purchase = useQuery({
     queryKey: ['po-workflow'],
     queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/purchaseOrders?page=1&pageSize=100'),
@@ -56,12 +58,16 @@ export function InventoryWorkflowPage() {
 
   async function applySuggestions() {
     if (!selectedSuggestions.length) return;
-    await run('/inventory/replenishment/apply', 'POST', { ids: selectedSuggestions });
-    setSelectedSuggestions([]);
+    await runSuggestions(async () => {
+      await run('/inventory/replenishment/apply', 'POST', { ids: selectedSuggestions });
+      setSelectedSuggestions([]);
+    });
   }
 
   async function generateSuggestions() {
-    await run('/inventory/replenishment/generate', 'POST', {});
+    await runSuggestions(async () => {
+      await run('/inventory/replenishment/generate', 'POST', {});
+    });
   }
 
   const purchaseColumns: DataTableColumn<Record<string, unknown>>[] = [
@@ -146,16 +152,18 @@ export function InventoryWorkflowPage() {
       showToast('录入数量必须是非负整数', 'error');
       return;
     }
-    try {
-      await apiRequest(`/stocktakes/${stocktakeId}/items/${itemId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ countedStock }),
-      });
-      showToast('操作成功', 'success');
-      await Promise.all([stocktakes.refetch(), stocktakeItems.refetch()]);
-    } catch (error) {
-      showToast(errorMessage(error, '操作失败'), 'error');
-    }
+    await runSavingCounted(async () => {
+      try {
+        await apiRequest(`/stocktakes/${stocktakeId}/items/${itemId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ countedStock }),
+        });
+        showToast('操作成功', 'success');
+        await Promise.all([stocktakes.refetch(), stocktakeItems.refetch()]);
+      } catch (error) {
+        showToast(errorMessage(error, '操作失败'), 'error');
+      }
+    });
   }
 
   const stocktakeColumns: DataTableColumn<Record<string, unknown>>[] = [
@@ -223,7 +231,11 @@ export function InventoryWorkflowPage() {
     {
       key: 'actions',
       label: '操作',
-      render: (row) => (<button onClick={() => saveCountedStock(String(expandedStocktakeId), String(row.itemId))}>保存</button>),
+      render: (row) => (
+        <button disabled={savingCounted} onClick={() => saveCountedStock(String(expandedStocktakeId), String(row.itemId))}>
+          {savingCounted ? '保存中...' : '保存'}
+        </button>
+      ),
     },
   ];
 
@@ -242,6 +254,7 @@ export function InventoryWorkflowPage() {
           />
         )}
       />
+      {purchase.data?.truncated && <p className="reminder-muted">采购单超过 100 条，仅显示部分数据</p>}
       <h2>采购单明细</h2>
       <QuerySection
         query={purchaseItems}
@@ -252,6 +265,7 @@ export function InventoryWorkflowPage() {
         query={processing}
         render={(data) => <DataTable columns={processingColumns} rows={data?.items ?? []} keyField="id" emptyText="暂无加工单" />}
       />
+      {processing.data?.truncated && <p className="reminder-muted">加工单超过 100 条，仅显示部分数据</p>}
       <h2>补货建议</h2>
       <QuerySection
         query={suggestions}
@@ -263,8 +277,8 @@ export function InventoryWorkflowPage() {
           return (
             <>
               <div className="inline-form">
-                <button onClick={generateSuggestions}>生成补货建议</button>
-                <button onClick={applySuggestions}>应用选中建议</button>
+                <button disabled={suggestionsBusy} onClick={generateSuggestions}>{suggestionsBusy ? '处理中...' : '生成补货建议'}</button>
+                <button disabled={suggestionsBusy || selectedSuggestions.length === 0} onClick={applySuggestions}>{suggestionsBusy ? '处理中...' : '应用选中建议'}</button>
               </div>
               <DataTable columns={suggestionColumns} rows={openSuggestions} keyField="id" emptyText="暂无待应用补货建议" />
             </>

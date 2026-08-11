@@ -57,15 +57,18 @@ export class FollowUpExecutionService {
     }
 
     const now = context.now().toISOString();
-    this.db.prepare(
+    const result = this.db.prepare(
       `UPDATE FollowUp
        SET executionStatus = ?, patientRating = ?, painLevel = ?, feedback = ?,
             contactedAt = ?, nextPlanDate = ?, status = 'COMPLETED', completedAt = ?, updatedAt = ?
-       WHERE id = ?${tenantAnd(context.clinicId)}`,
+       WHERE id = ? AND (executionStatus IS NULL OR executionStatus = 'PENDING')${tenantAnd(context.clinicId)}`,
     ).run(
        executionStatus, patientRating, painLevel, feedback, contactedAt, nextPlanDate, now, now, id,
        ...tenantParams(context.clinicId),
     );
+    if (Number(result.changes) === 0) {
+      throw new ConflictError('该随访已完成执行');
+    }
     trackResourceWrite(this.db, { tableName: 'FollowUp', recordId: id, operation: 'UPDATE', clinicId: context.clinicId ?? null });
     return { id, executionStatus, patientRating, painLevel, nextPlanDate };
   }

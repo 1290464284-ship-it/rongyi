@@ -102,6 +102,7 @@ function ReadOnlyListPage({ title, endpoint }: { title: string; endpoint: string
     render: (row: Record<string, unknown>) => formatStatValue(column, row[column]),
   }));
   function exportCsv() {
+    if (truncated) return;
     const lines: string[] = [];
     lines.push(columns.map((column) => csvCell(SIMPLE_LIST_COLUMN_LABELS[column] ?? column)).join(','));
     for (const row of rows) {
@@ -113,7 +114,7 @@ function ReadOnlyListPage({ title, endpoint }: { title: string; endpoint: string
     <div className="page">
       <div className="page-head">
         <h1>{title}</h1>
-        <button onClick={exportCsv}>导出</button>
+        <button onClick={exportCsv} disabled={truncated}>导出</button>
       </div>
       {truncated && <p className="reminder-muted">{'\u8d85\u8fc7\u663e\u793a\u4e0a\u9650\uff0c\u4ec5\u663e\u793a\u90e8\u5206\u6570\u636e'}</p>}
       <DataTable columns={dataColumns} rows={rows} emptyText="暂无数据" />
@@ -295,11 +296,17 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
       }
       const deleted = results.filter((result) => result.status === 'fulfilled').length;
       const firstError = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+      const failedIds: string[] = [];
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') failedIds.push(ids[index]);
+      });
       if (deleted > 0) showToast(`已删除 ${deleted} 项`, 'success');
       if (firstError) showToast(friendlyError(firstError.reason), 'error');
-      setSelectedIds(new Set());
-      setBatchDeleteOpen(false);
-      await listQuery.refetch();
+      setSelectedIds(new Set(failedIds));
+      setBatchDeleteOpen(failedIds.length === 0);
+      await listQuery.refetch().catch(() => {
+        showToast('删除后刷新列表失败', 'error');
+      });
     } finally {
       batchBusyRef.current = false;
       setBatchBusy(false);

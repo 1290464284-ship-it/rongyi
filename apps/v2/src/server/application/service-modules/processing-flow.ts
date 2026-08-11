@@ -70,29 +70,28 @@ export class ProcessingFlowService {
     ).get(orderId, ...tenantParams(clinicId)) as { id: string } | undefined;
     if (!order) throw new NotFoundError('Processing order not found');
 
-    const existing = this.db.prepare(
-      `SELECT COUNT(*) AS c FROM ProcessingOrderStep WHERE orderId = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
-    ).get(orderId, ...tenantParams(clinicId)) as { c: number };
-    if (existing.c === 0) {
-      const dictSteps = this.db.prepare(
-        `SELECT id, name FROM ProcessingFlowStep
-         WHERE deletedAt IS NULL AND active = 1${tenantAnd(clinicId)}
-         ORDER BY sortOrder, createdAt`,
-      ).all(...tenantParams(clinicId)) as Array<{ id: string; name: string }>;
-      if (dictSteps.length > 0) {
-        const now = context.now().toISOString();
-        const insert = this.db.prepare(
-          `INSERT INTO ProcessingOrderStep (id, clinicId, createdAt, updatedAt, deletedAt, orderId, stepId, stepName, status, sortOrder)
-           VALUES (?, ?, ?, ?, NULL, ?, ?, ?, 'PENDING', ?)`,
-        );
-        const copy = this.db.transaction((steps: Array<{ id: string; name: string }>) => {
-          steps.forEach((step, index) => {
+    this.db.transaction(() => {
+      const existing = this.db.prepare(
+        `SELECT COUNT(*) AS c FROM ProcessingOrderStep WHERE orderId = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
+      ).get(orderId, ...tenantParams(clinicId)) as { c: number };
+      if (existing.c === 0) {
+        const dictSteps = this.db.prepare(
+          `SELECT id, name FROM ProcessingFlowStep
+           WHERE deletedAt IS NULL AND active = 1${tenantAnd(clinicId)}
+           ORDER BY sortOrder, createdAt`,
+        ).all(...tenantParams(clinicId)) as Array<{ id: string; name: string }>;
+        if (dictSteps.length > 0) {
+          const now = context.now().toISOString();
+          const insert = this.db.prepare(
+            `INSERT INTO ProcessingOrderStep (id, clinicId, createdAt, updatedAt, deletedAt, orderId, stepId, stepName, status, sortOrder)
+             VALUES (?, ?, ?, ?, NULL, ?, ?, ?, 'PENDING', ?)`,
+          );
+          dictSteps.forEach((step, index) => {
             insert.run(randomUUID(), clinicId, now, now, orderId, step.id, step.name, index);
           });
-        });
-        copy(dictSteps);
+        }
       }
-    }
+    })();
     return this.listStepsForOrder(orderId, clinicId);
   }
 
@@ -129,10 +128,11 @@ export class ProcessingFlowService {
     }
 
     const now = context.now().toISOString();
-    this.db.prepare(
+    const result = this.db.prepare(
       `UPDATE ProcessingOrderStep SET status = 'DONE', completedAt = ?, operatorId = ?, updatedAt = ?
-       WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
+       WHERE id = ? AND status = 'PENDING' AND deletedAt IS NULL${tenantAnd(clinicId)}`,
     ).run(now, context.userId, now, pending.id, ...tenantParams(clinicId));
+    if (Number(result.changes) === 0) throw new ConflictError('步骤已完成后不可重复登记');
     return this.listStepsForOrder(orderId, clinicId);
   }
 

@@ -160,7 +160,7 @@ describe('InventoryBatchService', () => {
   });
 
   it('consumes FIFO across batches by expiry date and rolls back on insufficient stock', () => {
-    insertItem('item-fifo', { code: 'FIFO-001', name: '正畸弓丝' });
+    insertItem('item-fifo', { code: 'FIFO-001', name: '正畸弓丝', stock: 20 });
     insertBatch('batch-fifo-early', { itemId: 'item-fifo', batchNo: 'EARLY', expiryDate: '2026-08-10', initialQuantity: 5, remainingQuantity: 5 });
     insertBatch('batch-fifo-late', { itemId: 'item-fifo', batchNo: 'LATE', expiryDate: '2026-09-10', initialQuantity: 10, remainingQuantity: 10 });
     const service = new InventoryBatchService(db);
@@ -175,6 +175,10 @@ describe('InventoryBatchService', () => {
     });
     expect(batchRow('batch-fifo-early').remainingQuantity).toBe(0);
     expect(batchRow('batch-fifo-late').remainingQuantity).toBe(8);
+    const itemStock = (itemId: string): number => Number(
+      (db.prepare('SELECT stock FROM InventoryItem WHERE id = ?').get(itemId) as { stock: number }).stock,
+    );
+    expect(itemStock('item-fifo')).toBe(13);
 
     insertBatch('batch-fifo-over-a', { itemId: 'item-fifo', batchNo: 'OVER-A', expiryDate: '2026-09-20', initialQuantity: 3, remainingQuantity: 3 });
     insertBatch('batch-fifo-over-b', { itemId: 'item-fifo', batchNo: 'OVER-B', expiryDate: '2026-09-30', initialQuantity: 2, remainingQuantity: 2 });
@@ -183,10 +187,11 @@ describe('InventoryBatchService', () => {
     // 超量时整体回滚：不产生部分扣减
     expect(batchRow('batch-fifo-over-a').remainingQuantity).toBe(3);
     expect(batchRow('batch-fifo-over-b').remainingQuantity).toBe(2);
+    expect(itemStock('item-fifo')).toBe(13);
   });
 
   it('calls the stocktake lock guard while consuming FIFO', () => {
-    insertItem('item-lock-fifo', { code: 'LOCK-FIFO' });
+    insertItem('item-lock-fifo', { code: 'LOCK-FIFO', stock: 10 });
     insertBatch('batch-lock-fifo', { itemId: 'item-lock-fifo', batchNo: 'LOCK', initialQuantity: 5, remainingQuantity: 5 });
     const lockGuard = vi.fn();
     const service = new InventoryBatchService(db, lockGuard);
@@ -194,6 +199,10 @@ describe('InventoryBatchService', () => {
     service.consumeFifo('item-lock-fifo', 1, context);
 
     expect(lockGuard).toHaveBeenCalledWith('item-lock-fifo', 'clinic-v2-001');
+    const lockStock = Number(
+      (db.prepare('SELECT stock FROM InventoryItem WHERE id = ?').get('item-lock-fifo') as { stock: number }).stock,
+    );
+    expect(lockStock).toBe(9);
   });
 
   it('rejects consume for non-batch-managed or missing items and invalid quantities', () => {

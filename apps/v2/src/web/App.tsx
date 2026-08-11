@@ -9,7 +9,7 @@ import { ErrorBoundary } from './components';
 
 function DynamicResourcePage() {
   const { resource } = useParams<{ resource: string }>();
-  return <ResourcePage resource={resource} />;
+  return <ResourcePage key={resource} resource={resource} />;
 }
 
 export default function App() {

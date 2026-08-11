@@ -272,11 +272,11 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
 
   app.get('/api/v2/notifications', wrapAsync(async (req, res) => {
       const { page, pageSize } = parsePagination(req);
-      res.json({ success: true, data: notifications.list(req.context!.userId, { page, pageSize }) });
+      res.json({ success: true, data: notifications.list(req.context!.userId, req.context!.clinicId, { page, pageSize }) });
   }));
 
   app.patch('/api/v2/notifications/:id/read', wrapAsync(async (req, res) => {
-      res.json({ success: true, data: notifications.markRead(String(req.params.id), req.context!.userId) });
+      res.json({ success: true, data: notifications.markRead(String(req.params.id), req.context!.userId, req.context!.clinicId) });
   }));
 
   app.post('/api/v2/inventory/transactions', writeLimiter, wrapAsync(async (req, res) => {

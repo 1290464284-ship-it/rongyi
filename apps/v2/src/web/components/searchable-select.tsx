@@ -33,9 +33,18 @@ export function SearchableSelect({
   const [page, setPage] = useState(1);
   // 已加载并去重的条目：搜索变化时清空，加载更多时按 id 追加合并。
   const [loaded, setLoaded] = useState<SearchableSelectRow[]>([]);
+  const filterKey = JSON.stringify(filterParams ?? {});
+  const scopeKey = `${resource}:${filterKey}`;
+  const [prevScope, setPrevScope] = useState(scopeKey);
+  if (prevScope !== scopeKey) {
+    setPrevScope(scopeKey);
+    setSearch('');
+    setPage(1);
+    setLoaded([]);
+  }
 
   const query = useQuery({
-    queryKey: ['searchable-select', resource, search, page, filterParams],
+    queryKey: ['searchable-select', resource, search, page, filterKey],
     queryFn: () => {
       const params = new URLSearchParams();
       params.set('page', String(page));

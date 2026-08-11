@@ -75,17 +75,21 @@ export function startSchedulers(options: StartSchedulersOptions): { stop(): Prom
         logger.info('automatic backup completed', { action: 'auto-backup', ...result, cleanup });
       } catch (error) {
         logger.error('automatic backup failed', { action: 'auto-backup', error });
-        onAlertCreate({
-          alertType: 'SCHEDULER_TASK_FAILURE',
-          level: 'CRITICAL',
-          severity: 'CRITICAL',
-          title: '自动备份失败',
-          message: error instanceof Error ? error.message : String(error),
-          source: 'BACKUP_AUTO',
-          metricName: 'automatic_backup',
-          suggestion: '请检查磁盘空间、备份目录权限和备份密钥。',
-          clinicId: null,
-        });
+        try {
+          onAlertCreate({
+            alertType: 'SCHEDULER_TASK_FAILURE',
+            level: 'CRITICAL',
+            severity: 'CRITICAL',
+            title: '自动备份失败',
+            message: error instanceof Error ? error.message : String(error),
+            source: 'BACKUP_AUTO',
+            metricName: 'automatic_backup',
+            suggestion: '请检查磁盘空间、备份目录权限和备份密钥。',
+            clinicId: null,
+          });
+        } catch (alertError) {
+          logger.error('automatic backup alert creation failed', { action: 'auto-backup-alert', error: alertError });
+        }
       } finally {
         isRunning = false;
       }

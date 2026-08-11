@@ -187,7 +187,9 @@ describe('StocktakeService', () => {
     insertItem('stock-item-i', 'ST-I', '物品I', 6);
     const { id } = service.start({ number: 'PD-2026-009' }, context);
 
-    service.assertNotLocked('stock-item-h', context.clinicId); // 未锁定不抛
+    // IN_PROGRESS 即冻结，避免完成时覆盖盘点期间发生的库存变动
+    expect(() => service.assertNotLocked('stock-item-h', context.clinicId)).toThrow(ConflictError);
+    expect(() => service.assertNotLocked('stock-item-h', context.clinicId)).toThrow('库存盘点进行中');
 
     service.lock(String(id), context);
     // 盘点单快照覆盖该租户全部在库物品，锁定后全部进入锁定集合
@@ -196,7 +198,7 @@ describe('StocktakeService', () => {
     ).all('clinic-v2-001') as Array<{ id: string }>).map((row) => row.id).sort();
     expect(service.lockedItemIds(context.clinicId).sort()).toEqual(allItemIds);
     expect(() => service.assertNotLocked('stock-item-h', context.clinicId)).toThrow(ConflictError);
-    expect(() => service.assertNotLocked('stock-item-h', context.clinicId)).toThrow('库存盘点锁定中');
+    expect(() => service.assertNotLocked('stock-item-h', context.clinicId)).toThrow('库存盘点进行中');
 
     service.complete(String(id), context);
     expect(service.lockedItemIds(context.clinicId)).toEqual([]);

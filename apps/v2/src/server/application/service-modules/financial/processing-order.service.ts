@@ -2,10 +2,11 @@ import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../../infrastructure/errors';
 import { withIdempotency } from '../../../infrastructure/idempotency';
+import { tenantAnd, tenantParams } from '../../../infrastructure/tenant';
 import { SqliteProcessingOrderRepository } from '../../../infrastructure/repositories/core.repositories';
 import type { AppContext } from '../../../../domain/contracts';
 import type { ProcessingOrderRepository } from '../../ports';
-import { assertPatientExists } from '../common';
+import { assertDoctorExists, assertPatientExists } from '../common';
 
 const PROCESSING_TRANSITIONS: Record<string, readonly string[]> = {
   DRAFT: ['SENT', 'CANCELLED'],
@@ -48,6 +49,13 @@ export class ProcessingOrderService {
       requestId: requestId ?? '',
     }, () => {
       assertPatientExists(this.db, input.patientId, context.clinicId);
+      if (input.doctorId) assertDoctorExists(this.db, input.doctorId, context.clinicId);
+      if (input.factoryId) {
+        const factory = this.db.prepare(
+          `SELECT id FROM ProcessingFactory WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+        ).get(input.factoryId, ...tenantParams(context.clinicId));
+        if (!factory) throw new NotFoundError('Processing factory not found');
+      }
       if (!input.number?.trim()) throw new ValidationError('Processing order number is required');
       if (!Number.isSafeInteger(Number(input.totalFee)) || Number(input.totalFee) < 0) {
         throw new ValidationError('Processing order total fee must be non-negative');
@@ -64,7 +72,11 @@ export class ProcessingOrderService {
         if (!name || !Number.isSafeInteger(quantity) || quantity <= 0 || !Number.isSafeInteger(unitPrice) || unitPrice < 0) {
           throw new ValidationError('Each processing item requires a name, positive quantity, and non-negative unit price');
         }
-        const subtotal = Math.round(unitPrice * quantity);
+        const rawSubtotal = unitPrice * quantity;
+        if (!Number.isSafeInteger(rawSubtotal) || rawSubtotal > 1_000_000_000_000) {
+          throw new ValidationError('Processing item subtotal exceeds the allowed amount');
+        }
+        const subtotal = Math.round(rawSubtotal);
         return {
           id: randomUUID(),
           clinicId: context.clinicId ?? null,

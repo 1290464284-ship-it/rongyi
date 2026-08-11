@@ -163,7 +163,7 @@ describe('ImagingPage', () => {
     });
   });
 
-  it('keeps the uploaded file when creating the imaging record fails with a server error', async () => {
+  it('deletes the uploaded file when creating the imaging record fails with a server error', async () => {
     mockData();
     vi.mocked(uploadFile).mockResolvedValue({ id: 'file-1', filename: 'file-1.png', url: '/api/v2/files/file-1.png' });
     render(<ImagingPage />, { wrapper });
@@ -191,9 +191,8 @@ describe('ImagingPage', () => {
     fireEvent.click(screen.getByText('保存'));
 
     await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/resources/imaging', expect.objectContaining({ method: 'POST' }));
+      expect(apiRequest).toHaveBeenCalledWith('/files/file-1.png', expect.objectContaining({ method: 'DELETE' }));
     });
-    expect(apiRequest).not.toHaveBeenCalledWith('/files/file-1.png', expect.objectContaining({ method: 'DELETE' }));
   });
 
   it('previews and removes the selected imaging file', async () => {

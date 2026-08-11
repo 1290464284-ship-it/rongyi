@@ -345,7 +345,12 @@ export class DispenseService {
         ...tenantParams(context.clinicId),
       );
     });
-    run();
+    try {
+      run();
+    } catch (error) {
+      if (isUniqueConstraintError(error)) throw new ConflictError('发药单号已存在');
+      throw error;
+    }
     return { id, number, status: 'PENDING', items: merged.size };
   }
 

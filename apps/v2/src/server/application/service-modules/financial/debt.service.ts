@@ -38,9 +38,9 @@ export class DebtService {
         const chargeStatus = chargePaid >= Number(charge.totalAmount) ? 'PAID' : chargePaid > 0 ? 'PARTIAL' : 'UNPAID';
         this.db.prepare(
           `UPDATE Charge
-           SET paidAmount = ?, status = ?, updatedAt = ?
+           SET paidAmount = ?, status = ?, paidAt = COALESCE(paidAt, ?), updatedAt = ?
            WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
-        ).run(chargePaid, chargeStatus, context.now().toISOString(), charge.id, ...tenantParams(context.clinicId));
+        ).run(chargePaid, chargeStatus, context.now().toISOString(), context.now().toISOString(), charge.id, ...tenantParams(context.clinicId));
         // P2-3：直接改库的路径统一维护同步与搜索索引。
         trackResourceWrite(this.db, { tableName: 'Charge', recordId: charge.id, operation: 'UPDATE', clinicId: context.clinicId ?? null });
       }

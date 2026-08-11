@@ -126,7 +126,13 @@ export class AuthService {
     // B-M9：5 秒窗口内同一 token 的并发/重复 refresh 直接返回同一新会话，
     // 避免竞态触发 RFC 6819 会话族误吊销。
     const cached = this.refreshCache.get(tokenHash);
-    if (cached && cached.expiresAt > Date.now()) return cached.session;
+    if (cached && cached.expiresAt > Date.now()) {
+      const current = this.authRepository.findById(cached.session.user.id);
+      if (current) {
+        const user = rowToUser(current);
+        if (user.active && user.tokenVersion === cached.session.user.tokenVersion) return cached.session;
+      }
+    }
     this.authRepository.cleanupUsedRefreshTokens(new Date(Date.now() - 90 * 86_400_000).toISOString());
     if (this.authRepository.isRefreshTokenUsed(tokenHash)) {
       // M5：refresh token 重用（被盗/重放）→ 按 RFC 6819 吊销整个会话族

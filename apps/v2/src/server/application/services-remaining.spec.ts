@@ -101,8 +101,8 @@ describe('remaining services', () => {
        ) VALUES (?, ?, ?, ?, NULL, 'user-admin-001', 'system', 'Title', 'Content')`,
     ).run('notification-remaining', context.clinicId, now, now);
     const notifications = new NotificationService(db);
-    expect(notifications.list('user-admin-001').items.length).toBeGreaterThanOrEqual(1);
-    const paged = notifications.list('user-admin-001', { page: 1, pageSize: 5 });
+    expect(notifications.list('user-admin-001', null).items.length).toBeGreaterThanOrEqual(1);
+    const paged = notifications.list('user-admin-001', null, { page: 1, pageSize: 5 });
     expect(paged.items.length).toBeGreaterThanOrEqual(1);
     expect(paged.total).toBeGreaterThanOrEqual(paged.items.length);
     expect(notifications.markRead('notification-remaining', 'user-admin-001').read).toBe(true);

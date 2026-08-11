@@ -50,7 +50,9 @@ describe('FollowUpDictsTab', () => {
 
     fireEvent.change(screen.getByLabelText('词典分类筛选'), { target: { value: 'CONTENT' } });
     expect(await screen.findByText('回访内容')).toBeDefined();
-    expect(screen.queryByText('初诊类型')).toBeNull();
+    await waitFor(() => {
+      expect(screen.queryByText('初诊类型')).toBeNull();
+    });
   });
 
   it('creates and validates dictionary entries', async () => {

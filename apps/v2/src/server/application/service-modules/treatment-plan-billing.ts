@@ -118,38 +118,37 @@ export class TreatmentPlanBillingService {
     input: SetPlanDiscountInput,
     context: AppContext,
   ): { id: string; discountType: string; discountRate: number | null; totalFee: number } {
-    this.findPlan(planId, context); // 校验计划存在且属于当前租户（plan 变量本身此处用不到）
-    const billedItem = this.db.prepare(
-      `SELECT 1 FROM TreatmentPlanItem
-       WHERE planId = ? AND billed = 1 AND deletedAt IS NULL${tenantAnd(context.clinicId)}
-       LIMIT 1`,
-    ).get(planId, ...tenantParams(context.clinicId));
-    if (billedItem) {
-      throw new ConflictError('治疗计划已划价，整单折扣不可修改');
-    }
-    const discountType = input?.discountType;
-    if (typeof discountType !== 'string' || !PLAN_DISCOUNT_TYPES.has(discountType)) {
-      throw new ValidationError('折扣类型无效');
-    }
-    const discountRate = discountType === 'NONE'
-      ? null
-      : (() => {
-          const rate = validateDiscountRate(input?.discountRate);
-          if (rate === null) throw new ValidationError('折扣率须在 0-100 之间');
-          return rate;
-        })();
+    const run = this.db.transaction(() => {
+      this.findPlan(planId, context);
+      const discountType = input?.discountType;
+      if (typeof discountType !== 'string' || !PLAN_DISCOUNT_TYPES.has(discountType)) {
+        throw new ValidationError('折扣类型无效');
+      }
+      const discountRate = discountType === 'NONE'
+        ? null
+        : (() => {
+            const rate = validateDiscountRate(input?.discountRate);
+            if (rate === null) throw new ValidationError('折扣率须在 0-100 之间');
+            return rate;
+          })();
 
-    const items = this.listPlanItems(planId, context);
-    const totalFee = planTotal(items, planRate({ discountType, discountRate }));
+      const items = this.listPlanItems(planId, context);
+      const totalFee = planTotal(items, planRate({ discountType, discountRate }));
 
-    const now = context.now().toISOString();
-    this.db.prepare(
-      `UPDATE TreatmentPlan
-       SET discountType = ?, discountRate = ?, totalFee = ?, updatedAt = ?
-       WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
-    ).run(discountType, discountRate, totalFee, now, planId, ...tenantParams(context.clinicId));
-
-    return { id: planId, discountType, discountRate, totalFee };
+      const now = context.now().toISOString();
+      const result = this.db.prepare(
+        `UPDATE TreatmentPlan
+         SET discountType = ?, discountRate = ?, totalFee = ?, updatedAt = ?
+         WHERE id = ? AND deletedAt IS NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM TreatmentPlanItem i
+             WHERE i.planId = TreatmentPlan.id AND i.billed = 1 AND i.deletedAt IS NULL
+           )${tenantAnd(context.clinicId)}`,
+      ).run(discountType, discountRate, totalFee, now, planId, ...tenantParams(context.clinicId));
+      if (Number(result.changes) === 0) throw new ConflictError('治疗计划已划价，整单折扣不可修改');
+      return { id: planId, discountType, discountRate, totalFee };
+    });
+    return run();
   }
 
   setItemDiscount(
@@ -191,6 +190,7 @@ export class TreatmentPlanBillingService {
     input: BillInput,
     context: AppContext,
   ): { chargeId: string; number: string; totalAmount: number; itemCount: number; billedItemIds: string[] } {
+    const run = this.db.transaction((): { chargeId: string; number: string; totalAmount: number; itemCount: number; billedItemIds: string[] } => {
     const plan = this.findPlan(planId, context);
 
     const items = this.listPlanItems(planId, context);
@@ -239,7 +239,6 @@ export class TreatmentPlanBillingService {
       ).get(item.treatmentId, ...tenantParams(context.clinicId)) as { id: string } | undefined;
       if (row) existingTreatmentIds.add(item.treatmentId);
     }
-    const run = this.db.transaction(() => {
       this.db.prepare(
         `INSERT INTO Charge (
            id, clinicId, createdAt, updatedAt, deletedAt,
@@ -299,16 +298,15 @@ export class TreatmentPlanBillingService {
       this.db.prepare(
         `UPDATE TreatmentPlan SET totalFee = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
       ).run(totalAmount, now, planId, ...tenantParams(context.clinicId));
+      return {
+        chargeId,
+        number,
+        totalAmount,
+        itemCount: selected.length,
+        billedItemIds: selected.map((item) => item.id),
+      };
     });
-    run();
-
-    return {
-      chargeId,
-      number,
-      totalAmount,
-      itemCount: selected.length,
-      billedItemIds: selected.map((item) => item.id),
-    };
+    return run.immediate();
   }
 
   planFollowUp(

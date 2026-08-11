@@ -178,7 +178,11 @@ export class RefundFlowService {
         if (!card) {
           throw new ConflictError(`退款冲销原卡 ${allocation.cardId} 不可用，请恢复会员卡后重试`);
         }
-        const newBalance = Math.max(0, Number(card.balance) - allocation.amount);
+        const currentBalance = Number(card.balance);
+        if (currentBalance < allocation.amount) {
+          throw new ConflictError('退款冲销会员卡余额不足，请先充值后再驳回/取消');
+        }
+        const newBalance = currentBalance - allocation.amount;
         this.db.prepare(
           `UPDATE MemberCard SET balance = ?, updatedAt = ? WHERE id = ?`,
         ).run(newBalance, now, card.id);
@@ -213,7 +217,11 @@ export class RefundFlowService {
           ).get(String(charge.memberCardId), ...tenantParams(context.clinicId)) as { id: string; balance: number } | undefined)
         : undefined;
       if (!card) throw new ConflictError('退款冲销原支付卡不可用，请恢复会员卡后重试');
-      const newBalance = Math.max(0, Number(card.balance) - amount);
+      const currentBalance = Number(card.balance);
+      if (currentBalance < amount) {
+        throw new ConflictError('退款冲销会员卡余额不足，请先充值后再驳回/取消');
+      }
+      const newBalance = currentBalance - amount;
       this.db.prepare(
         `UPDATE MemberCard SET balance = ?, updatedAt = ? WHERE id = ?`,
       ).run(newBalance, now, card.id);

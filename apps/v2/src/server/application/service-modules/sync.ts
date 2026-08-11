@@ -403,17 +403,15 @@ export class SyncService {
     }
     const token = newRefreshToken();
     const now = new Date().toISOString();
-    this.db.prepare(
-      `INSERT INTO SyncDevice (
-         id, clinicId, userId, deviceId, tokenHash, name, active,
-         createdAt, updatedAt, deletedAt
-       ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, NULL)
-       ON CONFLICT(clinicId, deviceId) DO UPDATE SET
-         tokenHash = excluded.tokenHash,
-         name = excluded.name,
-         active = 1,
-         updatedAt = excluded.updatedAt`,
+    const result = this.db.prepare(
+      `INSERT INTO SyncDevice (id, clinicId, userId, deviceId, tokenHash, name, active, createdAt, updatedAt, deletedAt)
+       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, NULL)
+       ON CONFLICT(clinicId, deviceId) DO UPDATE SET tokenHash = excluded.tokenHash, name = excluded.name, active = 1, updatedAt = excluded.updatedAt
+       WHERE SyncDevice.userId = excluded.userId`,
     ).run(randomUUID(), context.clinicId, context.userId, deviceId, hashRefreshToken(token), name, now, now);
+    if (Number(result.changes) === 0) {
+      throw new AppError('CONFLICT', 'Device is already registered to another user', 409);
+    }
     return { deviceId, token };
   }
 

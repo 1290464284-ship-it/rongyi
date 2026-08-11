@@ -9,7 +9,6 @@ import {
   assertChairExists,
   assertDoctorExists,
   assertPatientExists,
-  runInTransaction,
 } from './common';
 
 const APPOINTMENT_TRANSITIONS: Record<string, readonly string[]> = {
@@ -52,7 +51,7 @@ export class AppointmentService {
     this.assertTimeRange(input.startTime, input.endTime);
     const now = context.now().toISOString();
     const id = randomUUID();
-    runInTransaction(this.db, () => {
+    const run = this.db.transaction(() => {
       let resolvedPatientId = input.patientId;
       if (!resolvedPatientId) {
         resolvedPatientId = randomUUID();
@@ -99,6 +98,7 @@ export class AppointmentService {
       // B-H4：直写 Appointment（绕过 repository）统一维护同步与索引。
       trackResourceWrite(this.db, { tableName: 'Appointment', recordId: id, operation: 'INSERT', clinicId: context.clinicId });
     });
+    run.immediate();
     return { id, status: 'BOOKED' };
   }
 

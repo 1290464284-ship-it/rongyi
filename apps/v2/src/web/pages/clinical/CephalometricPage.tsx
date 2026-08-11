@@ -135,10 +135,10 @@ export function CephalometricPage() {
                 body: JSON.stringify(payload),
               });
             }
+            setFile(null);
           } catch (error) {
             // 记录创建/更新失败时清理已上传的孤儿文件，避免占用配额和磁盘。
-            const status = (error as { status?: number }).status;
-            if (uploadedFilename && status !== undefined && status >= 400 && status < 500) {
+            if (uploadedFilename) {
               try {
                 await apiRequest(`/files/${uploadedFilename}`, { method: 'DELETE' });
               } catch {

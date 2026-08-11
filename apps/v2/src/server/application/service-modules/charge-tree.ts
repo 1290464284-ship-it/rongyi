@@ -87,6 +87,10 @@ export class ChargeTreeService {
     context: AppContext,
   ): { chargeId: string; number: string; totalAmount: number; catalogId: string; itemId: string | null } {
     const now = context.now().toISOString();
+    const patientId = input.patientId;
+    if (typeof patientId !== 'string' || patientId.trim() === '') {
+      throw new ValidationError('Patient id is required');
+    }
 
     const catalog = this.db.prepare(
       `SELECT id, name, category, price, costType
@@ -104,7 +108,7 @@ export class ChargeTreeService {
 
     const patient = this.db.prepare(
       `SELECT id FROM Patient WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
-    ).get(input.patientId, ...tenantParams(context.clinicId));
+    ).get(patientId, ...tenantParams(context.clinicId));
     if (!patient) throw new NotFoundError('Patient not found');
     if (input.visitId) {
       assertVisitExists(this.db, input.visitId, input.patientId, context.clinicId);
@@ -149,7 +153,7 @@ export class ChargeTreeService {
         context.clinicId ?? null,
         now,
         now,
-        input.patientId,
+        patientId,
         input.visitId ?? null,
         input.doctorId ?? null,
         number,

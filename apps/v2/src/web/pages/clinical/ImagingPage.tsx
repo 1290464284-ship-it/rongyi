@@ -24,6 +24,7 @@ export function ImagingPage() {
   const [compareRightId, setCompareRightId] = useState('');
   const [compareSearch, setCompareSearch] = useState('');
   const [comparePage, setComparePage] = useState(1);
+  const [selectedRows, setSelectedRows] = useState<Record<string, ImagingRow>>({});
 
   const categories = useQuery({
     queryKey: ['imaging-categories'],
@@ -40,9 +41,18 @@ export function ImagingPage() {
   const imagingOptions = compareOptionsQuery.data?.items ?? [];
   const compareTotal = compareOptionsQuery.data?.total ?? 0;
   const compareTotalPages = Math.max(1, Math.ceil(compareTotal / 50));
-  const selectedLeft = imagingOptions.find((row) => row.id === compareLeftId) ?? null;
-  const selectedRight = imagingOptions.find((row) => row.id === compareRightId) ?? null;
+  const selectedLeft = selectedRows[compareLeftId] ?? imagingOptions.find((row) => row.id === compareLeftId) ?? null;
+  const selectedRight = selectedRows[compareRightId] ?? imagingOptions.find((row) => row.id === compareRightId) ?? null;
   const canCompare = selectedLeft !== null && selectedRight !== null && compareLeftId !== compareRightId;
+
+  function selectCompare(side: 'left' | 'right', id: string) {
+    const row = imagingOptions.find((candidate) => candidate.id === id) ?? null;
+    if (row) {
+      setSelectedRows((current) => ({ ...current, [id]: row }));
+    }
+    if (side === 'left') setCompareLeftId(id);
+    else setCompareRightId(id);
+  }
 
   async function saveCategory(event: FormEvent) {
     event.preventDefault();
@@ -165,10 +175,10 @@ export function ImagingPage() {
                 body: JSON.stringify(payload),
               });
             }
+            setFile(null);
           } catch (error) {
             // 记录创建/更新失败时清理已上传的孤儿文件，避免占用配额和磁盘。
-            const status = (error as { status?: number }).status;
-            if (uploadedFilename && status !== undefined && status >= 400 && status < 500) {
+            if (uploadedFilename) {
               try {
                 await apiRequest(`/files/${uploadedFilename}`, { method: 'DELETE' });
               } catch {
@@ -299,7 +309,7 @@ export function ImagingPage() {
         <div className="imaging-compare-controls">
           <label>
             影像一
-            <select value={compareLeftId} onChange={(event) => setCompareLeftId(event.target.value)}>
+            <select value={compareLeftId} onChange={(event) => selectCompare('left', event.target.value)}>
               <option value="">选择影像</option>
               {imagingOptions.map((row) => (
                 <option key={row.id} value={row.id}>{imagingOptionLabel(row)}</option>
@@ -308,14 +318,23 @@ export function ImagingPage() {
           </label>
           <label>
             影像二
-            <select value={compareRightId} onChange={(event) => setCompareRightId(event.target.value)}>
+            <select value={compareRightId} onChange={(event) => selectCompare('right', event.target.value)}>
               <option value="">选择影像</option>
               {imagingOptions.map((row) => (
                 <option key={row.id} value={row.id}>{imagingOptionLabel(row)}</option>
               ))}
             </select>
           </label>
-          <button type="button" onClick={() => { setCompareLeftId(''); setCompareRightId(''); }}>清空对比</button>
+          <button type="button" onClick={() => {
+            setSelectedRows((current) => {
+              const next = { ...current };
+              delete next[compareLeftId];
+              delete next[compareRightId];
+              return next;
+            });
+            setCompareLeftId('');
+            setCompareRightId('');
+          }}>清空对比</button>
         </div>
         {canCompare ? (
           <div className="imaging-compare-view">

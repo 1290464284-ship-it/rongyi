@@ -3,7 +3,7 @@ import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { SystemClock } from '../../infrastructure/clock';
 import { tenantAnd, tenantParams, tenantWhere } from '../../infrastructure/tenant';
-import { addInventoryStock, recordInventoryTransaction } from './inventory-ledger';
+import { addInventoryStock, deductInventoryStock, inventoryStockAfter, recordInventoryTransaction } from './inventory-ledger';
 import type { AppContext } from '../../../domain/contracts';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -274,6 +274,9 @@ export class InventoryBatchService {
     if (!Number.isSafeInteger(qty) || qty <= 0) {
       throw new ValidationError('出库数量必须为正整数');
     }
+    if (qty > 1_000_000_000) {
+      throw new ValidationError('出库数量超出上限');
+    }
     const item = this.db.prepare(
       `SELECT id, batchManaged FROM InventoryItem WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).get(itemId, ...tenantParams(context.clinicId)) as { id: string; batchManaged: number } | undefined;
@@ -312,6 +315,25 @@ export class InventoryBatchService {
       if (remaining > 0) {
         throw new ConflictError('批次库存不足');
       }
+      const beforeStock = inventoryStockAfter(this.db, itemId, context.clinicId);
+      deductInventoryStock(this.db, itemId, qty, now, context.clinicId);
+      const afterStock = inventoryStockAfter(this.db, itemId, context.clinicId);
+      recordInventoryTransaction(this.db, {
+        id: randomUUID(),
+        clinicId: context.clinicId ?? null,
+        itemId,
+        type: 'OUT',
+        quantity: qty,
+        beforeStock,
+        afterStock,
+        operatorId: context.userId,
+        remark: '批次 FIFO 出库',
+        createdAt: now,
+        updatedAt: now,
+        referenceType: 'INVENTORY_BATCH',
+        referenceId: allocations.map((allocation) => allocation.batchId).join(','),
+        batchId: null,
+      });
     });
     run();
     return { allocations, itemId };

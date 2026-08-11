@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../../infrastructure/errors';
 import { withIdempotency } from '../../../infrastructure/idempotency';
+import { tenantAnd, tenantParams } from '../../../infrastructure/tenant';
 import {
   SqliteInventoryRepository,
   SqlitePurchaseOrderRepository,
@@ -46,6 +47,12 @@ export class PurchaseOrderService {
       if (!Array.isArray(input.items) || input.items.length === 0 || input.items.length > 500) {
         throw new ValidationError('Purchase order items must contain 1 to 500 entries');
       }
+      if (input.supplierId) {
+        const supplier = this.db.prepare(
+          `SELECT id FROM Supplier WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+        ).get(input.supplierId, ...tenantParams(context.clinicId));
+        if (!supplier) throw new NotFoundError('Supplier not found');
+      }
       const now = context.now().toISOString();
       const id = randomUUID();
       let totalAmount = 0;
@@ -59,8 +66,15 @@ export class PurchaseOrderService {
         if (item.itemId && !this.inventoryRepository.findItem(item.itemId, context.clinicId)) {
           throw new NotFoundError(`Inventory item not found: ${item.itemId}`);
         }
-        const subtotal = Math.round(unitPrice * quantity);
+        const rawSubtotal = unitPrice * quantity;
+        if (!Number.isSafeInteger(rawSubtotal) || rawSubtotal > 1_000_000_000_000) {
+          throw new ValidationError('Purchase item subtotal exceeds the allowed amount');
+        }
+        const subtotal = Math.round(rawSubtotal);
         totalAmount += subtotal;
+        if (totalAmount > 1_000_000_000_000) {
+          throw new ValidationError('Purchase order total exceeds the allowed amount');
+        }
         return {
           id: randomUUID(),
           clinicId: context.clinicId ?? null,

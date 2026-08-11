@@ -6,7 +6,7 @@ import { stripProtectedWriteFields } from '../../infrastructure/security';
 import { validatePayload } from '../../http/validation';
 import { SqlitePatientRiskRepository } from '../../infrastructure/repositories/core.repositories';
 import { resourceRegistry } from '../../../domain/resources';
-import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
+import { tenantAnd, tenantParams, tenantWhere } from '../../infrastructure/tenant';
 import type { AppContext } from '../../../domain/contracts';
 import type { PatientRiskRepository } from '../ports';
 import { FORBIDDEN_BULK_IMPORT_RESOURCES, assertPatientExists } from './common';
@@ -196,6 +196,7 @@ export class NotificationService {
 
   list(
     userId: string,
+    clinicId?: string | null,
     options?: { page?: number; pageSize?: number },
   ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean } {
     const rawPage = Number(options?.page);
@@ -203,18 +204,24 @@ export class NotificationService {
     const page = Number.isFinite(rawPage) && rawPage >= 1 ? Math.floor(rawPage) : 1;
     const pageSize = Number.isFinite(rawPageSize) && rawPageSize >= 1 ? Math.min(100, Math.floor(rawPageSize)) : 100;
     const offset = (page - 1) * pageSize;
+    const clinicFilter = tenantWhere(clinicId, 'Notification.clinicId');
+    const clinicClause = clinicFilter.sql ? ` AND ${clinicFilter.sql}` : '';
+    const clinicParams = clinicFilter.params;
     const total = Number((this.db.prepare(
-      'SELECT COUNT(*) AS total FROM Notification WHERE userId = ? AND deletedAt IS NULL',
-    ).get(userId) as { total: number }).total);
+      `SELECT COUNT(*) AS total FROM Notification WHERE userId = ? AND deletedAt IS NULL${clinicClause}`,
+    ).get(userId, ...clinicParams) as { total: number }).total);
     const items = this.db.prepare(
-      'SELECT * FROM Notification WHERE userId = ? AND deletedAt IS NULL ORDER BY createdAt DESC LIMIT ? OFFSET ?',
-    ).all(userId, pageSize, offset) as Array<Record<string, unknown>>;
+      `SELECT * FROM Notification WHERE userId = ? AND deletedAt IS NULL${clinicClause} ORDER BY createdAt DESC LIMIT ? OFFSET ?`,
+    ).all(userId, ...clinicParams, pageSize, offset) as Array<Record<string, unknown>>;
     return { items, total, page, pageSize, truncated: total > offset + items.length };
   }
 
-  markRead(id: string, userId: string): Record<string, unknown> {
-    const result = this.db.prepare('UPDATE Notification SET readAt = ?, updatedAt = ? WHERE id = ? AND userId = ? AND deletedAt IS NULL')
-      .run(new Date().toISOString(), new Date().toISOString(), id, userId);
+  markRead(id: string, userId: string, clinicId?: string | null): Record<string, unknown> {
+    const clinicFilter = tenantWhere(clinicId, 'Notification.clinicId');
+    const clinicClause = clinicFilter.sql ? ` AND ${clinicFilter.sql}` : '';
+    const clinicParams = clinicFilter.params;
+    const result = this.db.prepare(`UPDATE Notification SET readAt = ?, updatedAt = ? WHERE id = ? AND userId = ? AND deletedAt IS NULL${clinicClause}`)
+      .run(new Date().toISOString(), new Date().toISOString(), id, userId, ...clinicParams);
     if (result.changes === 0) throw new NotFoundError('Notification not found');
     return { id, read: true };
   }

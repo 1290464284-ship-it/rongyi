@@ -126,6 +126,7 @@ export function useCrudResource<
     queryKey: [...options.queryKey, page, search],
     queryFn: () => apiRequest<Page<TRow>>(resolveListPath({ page, search })),
     enabled: options.enabled,
+    placeholderData: (previous) => previous,
   });
 
   function setSearch(value: string) {

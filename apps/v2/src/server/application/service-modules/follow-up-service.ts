@@ -179,7 +179,6 @@ export class FollowUpService {
 
   async batchGenerate(limit = 50, context: AppContext): Promise<{ processed: number; generated: number }> {
     const maxLimit = Math.min(200, Math.max(1, Math.floor(Number(limit) || 50)));
-    const _tenant = tenantWhere(context.clinicId);
     const tenantV = tenantWhere(context.clinicId, 'V.clinicId');
     const tenantTpl = tenantWhere(context.clinicId);
     const rowParams = [...tenantV.params, maxLimit];

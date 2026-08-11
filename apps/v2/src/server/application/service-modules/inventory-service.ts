@@ -46,6 +46,9 @@ export class InventoryService {
       if (!Number.isSafeInteger(input.quantity) || input.quantity === 0) {
         throw new ValidationError('Inventory transaction quantity must be a non-zero number');
       }
+      if (Math.abs(input.quantity) > 1_000_000_000) {
+        throw new ValidationError('Inventory transaction quantity exceeds the allowed upper bound');
+      }
       if (input.type !== 'ADJUST' && input.quantity < 0) {
         throw new ValidationError('Inventory transaction quantity must be positive');
       }

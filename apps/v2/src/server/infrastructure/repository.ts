@@ -201,10 +201,10 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
       }
     }
 
-    this.assertRelations(entity, context);
     const placeholders = columns.map(() => '?').join(', ');
     try {
       this.runWrite(() => {
+        this.assertRelations(entity, context);
         this.db.prepare(`INSERT INTO ${this.resource.table} (${columns.join(', ')}) VALUES (${placeholders})`).run(...values);
         trackResourceWrite(this.db, {
           tableName: this.resource.table,
@@ -232,7 +232,6 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
         values.push(serialize(field, entity[field.name]));
       }
     }
-    this.assertRelations(entity, context);
     // B-M5：条件 UPDATE（id + deletedAt IS NULL + 租户），changes===0 即目标行
     // 不存在/已删除/跨租户 → NotFoundError。相比先 findById 再 UPDATE 的
     // check-then-act 模式，消除并发删除窗口下"误报更新成功"的竞态。
@@ -250,6 +249,7 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
     /* v8 ignore stop */
     try {
       this.runWrite(() => {
+        this.assertRelations(entity, context);
         const result = this.db.prepare(
           `UPDATE ${this.resource.table} SET ${sets.join(', ')} WHERE ${whereParts.join(' AND ')}`,
         ).run(...values);

@@ -264,10 +264,10 @@ export class StocktakeService {
        FROM StocktakeItem si
        JOIN Stocktake s ON s.id = si.stocktakeId
        WHERE si.itemId = ? AND si.deletedAt IS NULL
-         AND s.status = 'LOCKED' AND s.deletedAt IS NULL${tenantAnd(clinicId ?? null, 'si.clinicId')}
+         AND s.status IN ('IN_PROGRESS', 'LOCKED') AND s.deletedAt IS NULL${tenantAnd(clinicId ?? null, 'si.clinicId')}
        LIMIT 1`,
     ).get(itemId, ...tenantParams(clinicId ?? null)) as { id: string } | undefined;
-    if (row) throw new ConflictError('库存盘点锁定中，该物品暂不能出入库');
+    if (row) throw new ConflictError('库存盘点进行中，该物品暂不能出入库');
   }
 
   /** 返回被 LOCKED 盘点单覆盖的物品 id 列表。 */
@@ -276,7 +276,7 @@ export class StocktakeService {
       `SELECT DISTINCT si.itemId
        FROM StocktakeItem si
        JOIN Stocktake s ON s.id = si.stocktakeId
-       WHERE si.deletedAt IS NULL AND s.deletedAt IS NULL AND s.status = 'LOCKED'
+       WHERE si.deletedAt IS NULL AND s.deletedAt IS NULL AND s.status IN ('IN_PROGRESS', 'LOCKED')
          ${tenantAnd(clinicId ?? null, 'si.clinicId')}`,
     ).all(...tenantParams(clinicId ?? null)) as Array<{ itemId: string }>;
     return rows.map((row) => row.itemId);

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { apiRequest, downloadCsvPath } from '../../lib/api';
 import { DataTable, LoadingState, PageError, PromptDialog, type DataTableColumn } from '../../components';
 import { errorMessage } from '../../lib/messages';
@@ -18,7 +18,6 @@ export function FollowUpsPage() {
   const [executionForm, setExecutionForm] = useState<ExecutionFormState>(DEFAULT_EXECUTION_FORM);
   const [activeTab, setActiveTab] = useState<'list' | 'dicts'>('list');
   const [page, setPage] = useState(1);
-  const totalPagesRef = useRef(1);
   // 写请求 busy 守卫：防止双击/连按重复创建执行记录或重复完成
   const { busy: generating, run: runGenerate } = useAsyncAction();
   const { busy: completing, run: runCompletion } = useAsyncAction();
@@ -26,12 +25,7 @@ export function FollowUpsPage() {
   const query = useQuery({
     queryKey: ['followup-reminders', page],
     queryFn: async () => {
-      const fetchPage = Math.min(page, Math.max(1, totalPagesRef.current));
-      const data = await apiRequest<Page<Record<string, unknown>>>(`/follow-ups/reminders?page=${fetchPage}&pageSize=100`);
-      if (!Array.isArray(data)) {
-        totalPagesRef.current = Math.max(1, Math.ceil((data?.total ?? 0) / Math.max(1, data?.pageSize ?? 0)));
-      }
-      return data;
+      return apiRequest<Page<Record<string, unknown>>>(`/follow-ups/reminders?page=${page}&pageSize=100`);
     },
   });
   const summary = useQuery({

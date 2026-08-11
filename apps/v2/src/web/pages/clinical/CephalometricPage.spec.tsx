@@ -140,7 +140,7 @@ describe('CephalometricPage', () => {
     });
   });
 
-  it('keeps the uploaded file when creating the cephalometric case fails with a server error', async () => {
+  it('deletes the uploaded file when creating the cephalometric case fails with a server error', async () => {
     mockData();
     vi.mocked(uploadFile).mockResolvedValue({ id: 'file-1', filename: 'file-1.png', url: '/api/v2/files/file-1.png' });
     render(<CephalometricPage />, { wrapper });
@@ -166,9 +166,8 @@ describe('CephalometricPage', () => {
     fireEvent.click(screen.getByText('保存'));
 
     await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/resources/cephalometricCases', expect.objectContaining({ method: 'POST' }));
+      expect(apiRequest).toHaveBeenCalledWith('/files/file-1.png', expect.objectContaining({ method: 'DELETE' }));
     });
-    expect(apiRequest).not.toHaveBeenCalledWith('/files/file-1.png', expect.objectContaining({ method: 'DELETE' }));
   });
 
   it('validates JSON input', async () => {

@@ -130,6 +130,7 @@ function RelationSelect({
         onChange={(event) => {
           setSearch(event.target.value);
           setPage(1);
+          setAccumulated([]);
         }}
       />
       <select id={fieldId} value={String(value ?? '')} required={required} onChange={(event) => onChange(event.target.value)}>

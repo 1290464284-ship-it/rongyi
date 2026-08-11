@@ -96,7 +96,7 @@ describe('inventory batch routes', () => {
       `INSERT INTO InventoryItem (
          id, clinicId, createdAt, updatedAt, deletedAt,
          code, name, category, unit, stock, minStock, price, batchManaged
-       ) VALUES (?, 'clinic-v2-001', ?, ?, NULL, ?, ?, 'CONSUMABLE', 'box', 0, 0, 100, 1)`,
+       ) VALUES (?, 'clinic-v2-001', ?, ?, NULL, ?, ?, 'CONSUMABLE', 'box', 20, 0, 100, 1)`,
     ).run('route-item-2', now, now, 'ROUTE-002', '另一物料');
     const res = await request(app).get('/api/v2/inventory-batches?itemId=route-item-2').expect(200);
     expect(res.body.success).toBe(true);
@@ -120,7 +120,7 @@ describe('inventory batch routes', () => {
       `INSERT INTO InventoryItem (
          id, clinicId, createdAt, updatedAt, deletedAt,
          code, name, category, unit, stock, minStock, price, batchManaged
-       ) VALUES (?, 'clinic-v2-001', ?, ?, NULL, ?, ?, 'CONSUMABLE', 'box', 0, 0, 100, 1)`,
+       ) VALUES (?, 'clinic-v2-001', ?, ?, NULL, ?, ?, 'CONSUMABLE', 'box', 20, 0, 100, 1)`,
     ).run('route-item-fifo', now, now, 'ROUTE-FIFO-ITEM', 'FIFO 物料');
     db.prepare(
       `INSERT INTO InventoryBatch (
