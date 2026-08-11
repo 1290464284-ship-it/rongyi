@@ -1,19 +1,24 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest, fetchAllPages } from '../lib/api';
-import { SearchableSelect } from '../components';
+import { apiRequest } from '../lib/api';
+import { PagePager, SearchableSelect } from '../components';
+import type { Page } from '../lib/types';
 import type { RecordForm } from './types';
 
+const VISIT_PAGE_SIZE = 100;
+
 export function RecordFormFields({ form, update }: { form: RecordForm; update: (patch: Partial<RecordForm>) => void }) {
+  const [visitPage, setVisitPage] = useState(1);
   const doctors = useQuery({
     queryKey: ['record-doctors'],
     queryFn: () => apiRequest<Array<Record<string, unknown>>>('/doctors'),
   });
   const visits = useQuery({
-    queryKey: ['record-visits'],
-    queryFn: async () => {
-      const items = await fetchAllPages<Record<string, unknown>>('/resources/visits?page=1&pageSize=100');
-      return { items, total: items.length, page: 1, pageSize: Math.max(items.length, 1) };
-    },
+    queryKey: ['record-visits', visitPage],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(
+      `/resources/visits?page=${visitPage}&pageSize=${VISIT_PAGE_SIZE}`,
+    ),
+    placeholderData: (previous) => previous,
   });
   return (
     <>
@@ -39,6 +44,11 @@ export function RecordFormFields({ form, update }: { form: RecordForm; update: (
           ))}
         </select>
       </label>
+      <PagePager
+        page={visitPage}
+        hasNext={visitPage * VISIT_PAGE_SIZE < (visits.data?.total ?? 0)}
+        onPageChange={setVisitPage}
+      />
       <label>
         分类
         <input value={form.category} onChange={(event) => update({ category: event.target.value })} />

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
+import { registerModalLayer } from '../lib/modal-a11y';
 
 /** 关闭动画时长 140ms，卸载延时须大于动画时长（防闪回：fill-mode forwards） */
 const DRAWER_CLOSE_MS = 160;
@@ -48,11 +49,13 @@ export function Drawer({ open, title, onClose, children, footer }: DrawerProps) 
     if (!open) return;
     previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
     const panel = drawerRef.current;
+    const cleanupInert = panel ? registerModalLayer(panel) : null;
     const focusable = panel?.querySelector<HTMLElement>(
       'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
     );
     focusable?.focus();
     return () => {
+      cleanupInert?.();
       previouslyFocusedRef.current?.focus?.();
     };
   }, [open]);

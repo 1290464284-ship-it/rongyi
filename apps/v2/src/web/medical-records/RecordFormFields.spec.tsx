@@ -112,4 +112,27 @@ describe('RecordFormFields', () => {
     fireEvent.change(screen.getByLabelText('签名'), { target: { value: '张医生' } });
     expect(update).toHaveBeenCalledWith({ signature: '张医生' });
   });
+
+  it('pages the linked visit options server-side', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/doctors') return [];
+      if (path === '/resources/visits?page=1&pageSize=100') {
+        return { items: [{ id: 'visit-1' }], total: 150, page: 1, pageSize: 100 };
+      }
+      if (path === '/resources/visits?page=2&pageSize=100') {
+        return { items: [{ id: 'visit-2' }], total: 150, page: 2, pageSize: 100 };
+      }
+      if (path.startsWith('/resources/patients?')) return { items: [], total: 0, page: 1, pageSize: 100 };
+      return {};
+    });
+    const update = vi.fn();
+    render(<RecordFormFields form={{ ...emptyForm, patientId: 'patient-1' }} update={update} />, { wrapper });
+    await waitFor(() => {
+      expect((screen.getByRole('option', { name: 'visit-1' }) as HTMLOptionElement).value).toBe('visit-1');
+    });
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+    await waitFor(() => {
+      expect((screen.getByRole('option', { name: 'visit-2' }) as HTMLOptionElement).value).toBe('visit-2');
+    });
+  });
 });

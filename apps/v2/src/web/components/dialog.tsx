@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
+import { registerModalLayer } from '../lib/modal-a11y';
 
 const FOCUSABLE_SELECTOR =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -36,11 +37,13 @@ export function Dialog({
     closeEpochRef.current += 1;
     previouslyFocused.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const modal = modalRef.current;
+    const cleanupInert = modal ? registerModalLayer(modal) : null;
     if (modal) {
       const firstFocusable = modal.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
       (firstFocusable ?? modal).focus();
     }
     return () => {
+      cleanupInert?.();
       if (closeTimerRef.current) {
         clearTimeout(closeTimerRef.current);
         closeTimerRef.current = null;

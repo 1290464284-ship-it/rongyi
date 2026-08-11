@@ -61,6 +61,8 @@ describe('UI primitives', () => {
   it('navigates pages with the shared PagePager', () => {
     const onPageChange = vi.fn();
     render(<PagePager page={2} hasNext onPageChange={onPageChange} />);
+    expect(screen.getByRole('button', { name: '上一页' }).getAttribute('type')).toBe('button');
+    expect(screen.getByRole('button', { name: '下一页' }).getAttribute('type')).toBe('button');
     fireEvent.click(screen.getByRole('button', { name: '上一页' }));
     fireEvent.click(screen.getByRole('button', { name: '下一页' }));
     expect(onPageChange).toHaveBeenNthCalledWith(1, 1);
@@ -371,6 +373,24 @@ describe('UI primitives', () => {
     act(() => vi.advanceTimersByTime(170));
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(document.activeElement).toBe(opener);
+  });
+
+  it('marks background siblings inert while Drawer is open', () => {
+    const { rerender } = render(
+      <div>
+        <button type="button">background</button>
+        <Drawer open title="抽屉" onClose={vi.fn()}>内容</Drawer>
+      </div>,
+    );
+    const background = document.querySelector<HTMLElement>('button');
+    expect(background?.hasAttribute('inert')).toBe(true);
+    rerender(
+      <div>
+        <button type="button">background</button>
+        <Drawer open={false} title="抽屉" onClose={vi.fn()}>内容</Drawer>
+      </div>,
+    );
+    expect(background?.hasAttribute('inert')).toBe(false);
   });
 });
 

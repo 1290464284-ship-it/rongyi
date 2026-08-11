@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router';
-import { apiRequest, fetchAllPages } from '../../lib/api';
+import { apiRequest } from '../../lib/api';
 import { errorMessage } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
 import type { Page } from '../../lib/types';
 import { LoadingState, PageError, SearchableSelect, Timeline, type SearchableSelectRow } from '../../components';
 import { formatMoney } from '../../lib/format';
+
+const TIMELINE_PAGE_SIZE = 50;
 
 interface TimelineEvent {
   id: string;
@@ -33,6 +35,26 @@ function safeStringArray(value: unknown): string[] {
   }
 }
 
+function useTimelineResource(resource: string, patientId: string | null, generationRef: { current: number }) {
+  return useInfiniteQuery({
+    queryKey: [`${resource}-timeline`, patientId],
+    initialPageParam: 1,
+    queryFn: async ({ pageParam }) => {
+      const generation = generationRef.current;
+      const page = await apiRequest<Page<Record<string, unknown>>>(
+        `/resources/${resource}?patientId=${encodeURIComponent(patientId ?? '')}&page=${pageParam}&pageSize=${TIMELINE_PAGE_SIZE}`,
+      );
+      if (generation !== generationRef.current) {
+        return { items: [], total: 0, page: pageParam, pageSize: TIMELINE_PAGE_SIZE };
+      }
+      return page;
+    },
+    enabled: patientId !== null,
+    getNextPageParam: (last) => (last.page * last.pageSize < last.total ? last.page + 1 : undefined),
+    placeholderData: (previous) => previous,
+  });
+}
+
 export function PatientTimelinePage() {
   const [searchParams] = useSearchParams();
   const urlPatientId = searchParams.get('id');
@@ -49,46 +71,10 @@ export function PatientTimelinePage() {
     const first = patientRows[0];
     setPatientId((current) => current ?? (first ? String(first.id) : null));
   }, [patientRows]);
-  const visits = useQuery({
-    queryKey: ['visits-timeline', patientId],
-    queryFn: async () => {
-      const generation = generationRef.current;
-      const items = await fetchAllPages<Record<string, unknown>>(`/resources/visits?patientId=${encodeURIComponent(patientId ?? '')}`);
-      if (generation !== generationRef.current) return { items: [], total: 0, page: 1, pageSize: 1 };
-      return { items, total: items.length, page: 1, pageSize: items.length } as Page<Record<string, unknown>>;
-    },
-    enabled: patientId !== null,
-  });
-  const treatments = useQuery({
-    queryKey: ['treatments-timeline', patientId],
-    queryFn: async () => {
-      const generation = generationRef.current;
-      const items = await fetchAllPages<Record<string, unknown>>(`/resources/treatments?patientId=${encodeURIComponent(patientId ?? '')}`);
-      if (generation !== generationRef.current) return { items: [], total: 0, page: 1, pageSize: 1 };
-      return { items, total: items.length, page: 1, pageSize: items.length } as Page<Record<string, unknown>>;
-    },
-    enabled: patientId !== null,
-  });
-  const charges = useQuery({
-    queryKey: ['charges-timeline', patientId],
-    queryFn: async () => {
-      const generation = generationRef.current;
-      const items = await fetchAllPages<Record<string, unknown>>(`/resources/charges?patientId=${encodeURIComponent(patientId ?? '')}`);
-      if (generation !== generationRef.current) return { items: [], total: 0, page: 1, pageSize: 1 };
-      return { items, total: items.length, page: 1, pageSize: items.length } as Page<Record<string, unknown>>;
-    },
-    enabled: patientId !== null,
-  });
-  const followUps = useQuery({
-    queryKey: ['followUps-timeline', patientId],
-    queryFn: async () => {
-      const generation = generationRef.current;
-      const items = await fetchAllPages<Record<string, unknown>>(`/resources/followUps?patientId=${encodeURIComponent(patientId ?? '')}`);
-      if (generation !== generationRef.current) return { items: [], total: 0, page: 1, pageSize: 1 };
-      return { items, total: items.length, page: 1, pageSize: items.length } as Page<Record<string, unknown>>;
-    },
-    enabled: patientId !== null,
-  });
+  const visits = useTimelineResource('visits', patientId, generationRef);
+  const treatments = useTimelineResource('treatments', patientId, generationRef);
+  const charges = useTimelineResource('charges', patientId, generationRef);
+  const followUps = useTimelineResource('followUps', patientId, generationRef);
   const customFields = useQuery({
     queryKey: ['custom-fields', patientId],
     queryFn: () => apiRequest<Array<{
@@ -120,23 +106,29 @@ export function PatientTimelinePage() {
   const timelineQueries = [visits, treatments, charges, followUps] as const;
   const timelineLoading = timelineQueries.some((query) => query.isLoading);
   const failedQueries = timelineQueries.filter((query) => query.error != null);
+  const hasMoreTimeline = timelineQueries.some((query) => Boolean(query.hasNextPage));
+  const loadingMore = timelineQueries.some((query) => query.isFetchingNextPage);
+  async function loadMoreTimeline() {
+    if (loadingMore) return;
+    await Promise.all(timelineQueries.map((query) => query.fetchNextPage().catch(() => undefined)));
+  }
 
   const events: TimelineEvent[] = [
-    ...(visits.data?.items ?? []).map((row) => ({
+    ...(visits.data?.pages?.flatMap((page) => page.items) ?? []).map((row) => ({
       id: String(row.id),
       type: '就诊',
       time: String(row.startTime ?? row.createdAt ?? ''),
       title: String(row.summary ?? '就诊记录'),
       status: row.status ? String(row.status) : null,
     })),
-    ...(treatments.data?.items ?? []).map((row) => ({
+    ...(treatments.data?.pages?.flatMap((page) => page.items) ?? []).map((row) => ({
       id: String(row.id),
       type: '治疗',
       time: String(row.completedDate ?? row.createdAt ?? ''),
       title: String(row.name ?? row.code ?? '治疗记录'),
       status: row.status ? String(row.status) : null,
     })),
-    ...(charges.data?.items ?? []).map((row) => ({
+    ...(charges.data?.pages?.flatMap((page) => page.items) ?? []).map((row) => ({
       id: String(row.id),
       type: '收费',
       time: String(row.paidAt ?? row.createdAt ?? ''),
@@ -144,7 +136,7 @@ export function PatientTimelinePage() {
       status: row.status ? String(row.status) : null,
       amount: row.totalAmount,
     })),
-    ...(followUps.data?.items ?? []).map((row) => ({
+    ...(followUps.data?.pages?.flatMap((page) => page.items) ?? []).map((row) => ({
       id: String(row.id),
       type: '随访',
       time: String(row.planDate ?? row.createdAt ?? ''),
@@ -226,6 +218,11 @@ export function PatientTimelinePage() {
         <Timeline items={timelineItems} />
         {events.length === 0 && !timelineLoading && failedQueries.length === 0 && <p className="empty-board">暂无时间线记录</p>}
       </div>
+      {hasMoreTimeline && (
+        <button type="button" className="btn-secondary" disabled={loadingMore} onClick={() => void loadMoreTimeline()}>
+          {loadingMore ? '加载中...' : '加载更多'}
+        </button>
+      )}
       {customFields.data?.length ? (
         <section className="page-section">
           <div className="page-head">

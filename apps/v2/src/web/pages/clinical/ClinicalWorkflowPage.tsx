@@ -1,8 +1,8 @@
 import { useState, type ReactNode } from 'react';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
-import { apiRequest, fetchAllPages } from '../../lib/api';
+import { apiRequest } from '../../lib/api';
 import type { Page } from '../../lib/types';
-import { DataTable, QuerySection } from '../../components';
+import { DataTable, PagePager, QuerySection } from '../../components';
 import { errorMessage } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
 import { STATUS_LABELS, type TodayData, type WorkbenchDialog } from '../../clinical-workflow/types';
@@ -17,6 +17,8 @@ const RESOURCE_LABELS: Record<string, string> = {
   firstExams: '首诊',
   treatments: '治疗',
 };
+
+const WORKFLOW_PAGE_SIZE = 100;
 
 const transitions: Record<string, Record<string, string[]>> = {
   registrations: {
@@ -41,37 +43,43 @@ type ResourcePageQuery = UseQueryResult<Page<Record<string, unknown>>, Error>;
 
 export function ClinicalWorkflowPage() {
   const { showToast } = useToast();
+  const [resourcePage, setResourcePage] = useState<Record<typeof resources[number], number>>({
+    registrations: 1,
+    visits: 1,
+    firstExams: 1,
+    treatments: 1,
+  });
   const today = useQuery({
     queryKey: ['workbench', 'today'],
     queryFn: () => apiRequest<TodayData>('/workbench/today'),
   });
   const registrations = useQuery({
-    queryKey: ['workflow', 'registrations'],
-    queryFn: async () => {
-      const items = await fetchAllPages<Record<string, unknown>>('/resources/registrations?page=1&pageSize=100');
-      return { items, total: items.length, page: 1, pageSize: Math.max(items.length, 1) };
-    },
+    queryKey: ['workflow', 'registrations', resourcePage.registrations],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(
+      `/resources/registrations?page=${resourcePage.registrations}&pageSize=${WORKFLOW_PAGE_SIZE}`,
+    ),
+    placeholderData: (previous) => previous,
   });
   const visits = useQuery({
-    queryKey: ['workflow', 'visits'],
-    queryFn: async () => {
-      const items = await fetchAllPages<Record<string, unknown>>('/resources/visits?page=1&pageSize=100');
-      return { items, total: items.length, page: 1, pageSize: Math.max(items.length, 1) };
-    },
+    queryKey: ['workflow', 'visits', resourcePage.visits],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(
+      `/resources/visits?page=${resourcePage.visits}&pageSize=${WORKFLOW_PAGE_SIZE}`,
+    ),
+    placeholderData: (previous) => previous,
   });
   const firstExams = useQuery({
-    queryKey: ['workflow', 'firstExams'],
-    queryFn: async () => {
-      const items = await fetchAllPages<Record<string, unknown>>('/resources/firstExams?page=1&pageSize=100');
-      return { items, total: items.length, page: 1, pageSize: Math.max(items.length, 1) };
-    },
+    queryKey: ['workflow', 'firstExams', resourcePage.firstExams],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(
+      `/resources/firstExams?page=${resourcePage.firstExams}&pageSize=${WORKFLOW_PAGE_SIZE}`,
+    ),
+    placeholderData: (previous) => previous,
   });
   const treatments = useQuery({
-    queryKey: ['workflow', 'treatments'],
-    queryFn: async () => {
-      const items = await fetchAllPages<Record<string, unknown>>('/resources/treatments?page=1&pageSize=100');
-      return { items, total: items.length, page: 1, pageSize: Math.max(items.length, 1) };
-    },
+    queryKey: ['workflow', 'treatments', resourcePage.treatments],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(
+      `/resources/treatments?page=${resourcePage.treatments}&pageSize=${WORKFLOW_PAGE_SIZE}`,
+    ),
+    placeholderData: (previous) => previous,
   });
   const queries = { registrations, visits, firstExams, treatments } as Record<typeof resources[number], ResourcePageQuery>;
   const [activeDialog, setActiveDialog] = useState<WorkbenchDialog | null>(null);
@@ -132,6 +140,11 @@ export function ClinicalWorkflowPage() {
           filterRows={(row) => String(row.status ?? '') !== 'REGISTERED'}
           emptyText="暂无已分诊患者"
         />
+        <PagePager
+          page={resourcePage.registrations}
+          hasNext={resourcePage.registrations * WORKFLOW_PAGE_SIZE < (registrations.data?.total ?? 0)}
+          onPageChange={(page) => setResourcePage((current) => ({ ...current, registrations: page }))}
+        />
       </section>
       {resources.slice(1).map((resource) => {
         const query = queries[resource];
@@ -162,6 +175,11 @@ export function ClinicalWorkflowPage() {
             <QuerySection
               query={query}
               render={(data) => <DataTable columns={columns} rows={data?.items ?? []} keyField="id" emptyText="暂无记录" />}
+            />
+            <PagePager
+              page={resourcePage[resource]}
+              hasNext={resourcePage[resource] * WORKFLOW_PAGE_SIZE < (query.data?.total ?? 0)}
+              onPageChange={(page) => setResourcePage((current) => ({ ...current, [resource]: page }))}
             />
           </section>
         );

@@ -286,4 +286,31 @@ describe('ClinicalWorkflowPage', () => {
     expect(screen.getByText('就诊工作台')).toBeDefined();
     expect(await screen.findByRole('button', { name: '病历' })).toBeDefined();
   });
+
+  it('pages the registration board server-side', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/registrations?page=1&pageSize=100') {
+        return {
+          items: [{ id: 'r-1', status: 'TRIAGED', patientId: 'p-1', patientIdLabel: '张四' }],
+          total: 150,
+          page: 1,
+          pageSize: 100,
+        };
+      }
+      if (path === '/resources/registrations?page=2&pageSize=100') {
+        return {
+          items: [{ id: 'r-2', status: 'TRIAGED', patientId: 'p-2', patientIdLabel: '李五' }],
+          total: 150,
+          page: 2,
+          pageSize: 100,
+        };
+      }
+      return { items: [], total: 0, page: 1, pageSize: 100 };
+    });
+    render(<ClinicalWorkflowPage />, { wrapper });
+    expect(await screen.findByText('张四')).toBeDefined();
+    fireEvent.click(screen.getAllByRole('button', { name: '下一页' })[0]);
+    expect(await screen.findByText('李五')).toBeDefined();
+    expect(screen.getByText('第 2 页')).toBeDefined();
+  });
 });

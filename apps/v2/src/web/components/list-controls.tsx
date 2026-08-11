@@ -36,9 +36,9 @@ export function PagePager({
 }) {
   return (
     <div className="pager">
-      <button disabled={page <= 1} onClick={() => onPageChange(page - 1)}>上一页</button>
+      <button type="button" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>上一页</button>
       <span>第 {page} 页</span>
-      <button disabled={!hasNext} onClick={() => onPageChange(page + 1)}>下一页</button>
+      <button type="button" disabled={!hasNext} onClick={() => onPageChange(page + 1)}>下一页</button>
     </div>
   );
 }

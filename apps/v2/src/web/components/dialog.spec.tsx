@@ -67,6 +67,48 @@ describe('Dialog', () => {
     fireEvent.keyDown(modal, { key: 'Tab' });
     expect(document.activeElement).toBe(modal);
   });
+
+  it('marks background siblings inert while open and restores them on close', () => {
+    const onClose = vi.fn();
+    const { rerender } = render(
+      <div>
+        <button type="button">background</button>
+        <Dialog open title="T" onClose={onClose}><p>content</p></Dialog>
+      </div>,
+    );
+    const background = document.querySelector<HTMLElement>('button');
+    expect(background?.hasAttribute('inert')).toBe(true);
+    rerender(
+      <div>
+        <button type="button">background</button>
+        <Dialog open={false} title="T" onClose={onClose}><p>content</p></Dialog>
+      </div>,
+    );
+    expect(background?.hasAttribute('inert')).toBe(false);
+  });
+
+  it('keeps only the topmost of stacked dialogs non-inert', () => {
+    const { rerender } = render(
+      <div>
+        <button type="button">background</button>
+        <Dialog open title="A" onClose={vi.fn()}><p>a</p></Dialog>
+        <Dialog open title="B" onClose={vi.fn()}><p>b</p></Dialog>
+      </div>,
+    );
+    const backdrops = document.querySelectorAll<HTMLElement>('.modal-backdrop');
+    expect(backdrops).toHaveLength(2);
+    expect(backdrops[0].hasAttribute('inert')).toBe(true);
+    expect(backdrops[1].hasAttribute('inert')).toBe(false);
+    rerender(
+      <div>
+        <button type="button">background</button>
+        <Dialog open title="A" onClose={vi.fn()}><p>a</p></Dialog>
+      </div>,
+    );
+    const remaining = document.querySelector<HTMLElement>('.modal-backdrop');
+    expect(remaining?.hasAttribute('inert')).toBe(false);
+    expect(document.querySelector<HTMLElement>('button')?.hasAttribute('inert')).toBe(true);
+  });
 });
 
 describe('ConfirmDialog', () => {
