@@ -7,6 +7,7 @@ import type Database from 'better-sqlite3';
 import { createDatabase } from './database';
 import { cleanupIdempotencyRecords, withIdempotency, type IdempotencyScope } from './idempotency';
 import { isDbWriteActive, sharedDbWriteQueue } from './db-write-queue';
+import { ValidationError } from './errors';
 
 const scope = (requestId: string, overrides: Partial<IdempotencyScope> = {}): IdempotencyScope => ({
   operation: 'charge.pay',
@@ -167,6 +168,13 @@ describe('withIdempotency', () => {
     expect(calls).toBe(0);
     const row = db.prepare('SELECT status FROM IdempotencyRecord WHERE key = ?').get(key);
     expect(row).toEqual({ status: 'PROCESSING' });
+  });
+
+  it('deletes the PROCESSING record when an async operation fails with a known business error', async () => {
+    await expect(withIdempotency(db, scope('async-validation'), async () => {
+      throw new ValidationError('bad input');
+    })).rejects.toThrow('bad input');
+    await expect(withIdempotency(db, scope('async-validation'), async () => 'ok')).resolves.toBe('ok');
   });
 
   it('treats expired completed records as retryable', async () => {

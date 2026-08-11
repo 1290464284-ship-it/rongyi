@@ -78,6 +78,7 @@ export class ChargeComboService {
         price: Number(item.price),
         quantity: Number(item.quantity),
         costType: item.costType ?? undefined,
+        catalogId: item.catalogId ?? undefined,
       })),
       remark: `收费组合 ${String(combo.name)}`,
     }, context);

@@ -9,10 +9,11 @@ import { useToast } from '../../lib/toast-context';
 import { APPOINTMENT_TYPE_LABELS } from '../../lib/labels';
 import { parseLocalDateTime } from '../../appointments/date';
 import { appointmentColumns } from '../../appointments/columns';
+import { createInFlightGuard } from '../../lib/in-flight';
 import type { AppointmentRow, AppointmentForm, PurposeRow, LookupRow } from '../../appointments/types';
 import { AppointmentPurposePanel } from './AppointmentPurposePanel';
 
-const transitionInFlight = new Set<string>();
+const transitionGuard = createInFlightGuard();
 
 export function AppointmentsPage() {
   const { showToast } = useToast();
@@ -104,8 +105,7 @@ export function AppointmentsPage() {
   }
 
   async function transition(id: string, status: string) {
-    if (transitionInFlight.has(id)) return;
-    transitionInFlight.add(id);
+    if (!transitionGuard.start(id)) return;
     try {
       await apiRequest(`/appointments/${id}/status`, {
         method: 'PATCH',
@@ -116,7 +116,7 @@ export function AppointmentsPage() {
     } catch (error) {
       showToast(errorMessage(error, '状态更新失败'), 'error');
     } finally {
-      transitionInFlight.delete(id);
+      transitionGuard.finish(id);
     }
   }
 

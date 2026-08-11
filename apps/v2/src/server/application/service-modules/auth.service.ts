@@ -1,7 +1,7 @@
 // 认证/会话服务（M-04：由 auth.ts 拆分；账号管理见 user-management.service.ts）
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { AppError, ConflictError, NotFoundError, UnauthorizedError, ValidationError } from '../../infrastructure/errors';
 import type { Logger } from '../../infrastructure/logger';
@@ -134,21 +134,38 @@ export class AuthService {
       }
     }
     this.authRepository.cleanupUsedRefreshTokens(new Date(Date.now() - 90 * 86_400_000).toISOString());
+    const preRow = this.authRepository.findByRefreshTokenHash(tokenHash);
+    const usedRow = preRow ? null : this.authRepository.findUsedRefreshToken(tokenHash);
+    const claimUserId = preRow?.id ?? usedRow?.userId ?? null;
+    const dbCached = claimUserId ? this.readRefreshClaim(tokenHash, claimUserId) : null;
+    if (dbCached) return dbCached;
     if (this.authRepository.isRefreshTokenUsed(tokenHash)) {
       // M5：refresh token 重用（被盗/重放）→ 按 RFC 6819 吊销整个会话族
       this.revokeReplayedFamily(tokenHash);
       throw new UnauthorizedError('Invalid refresh token (refresh token reuse detected)');
     }
-    const preRow = this.authRepository.findByRefreshTokenHash(tokenHash);
     if (!preRow) throw new UnauthorizedError('Invalid refresh token');
     return runInTransactionImmediate(this.db, () => {
+      const rowInTx = this.authRepository.findByRefreshTokenHash(tokenHash);
+      if (!rowInTx) {
+        const usedInTx = this.authRepository.findUsedRefreshToken(tokenHash);
+        if (usedInTx?.userId) {
+          const dbCachedInTx = this.readRefreshClaim(tokenHash, usedInTx.userId);
+          if (dbCachedInTx) return dbCachedInTx;
+        }
+        if (this.authRepository.isRefreshTokenUsed(tokenHash)) {
+          this.revokeReplayedFamily(tokenHash);
+          throw new UnauthorizedError('Invalid refresh token (refresh token reuse detected)');
+        }
+        throw new UnauthorizedError('Invalid refresh token');
+      }
+      const dbCachedInTx = this.readRefreshClaim(tokenHash, rowInTx.id);
+      if (dbCachedInTx) return dbCachedInTx;
       if (this.authRepository.isRefreshTokenUsed(tokenHash)) {
         this.revokeReplayedFamily(tokenHash);
         throw new UnauthorizedError('Invalid refresh token (refresh token reuse detected)');
       }
-      const row = this.authRepository.findByRefreshTokenHash(tokenHash);
-      if (!row) throw new UnauthorizedError('Invalid refresh token');
-      const user = rowToUser(row);
+      const user = rowToUser(rowInTx);
       if (!user.active) throw new UnauthorizedError('User is disabled');
       if (user.lockedUntil) {
         const lockedTime = new Date(user.lockedUntil).getTime();
@@ -160,7 +177,7 @@ export class AuthService {
           throw new UnauthorizedError('Account is temporarily locked');
         }
       }
-      const expiresAt = row.refreshTokenExpiresAt ? new Date(row.refreshTokenExpiresAt).getTime() : 0;
+      const expiresAt = rowInTx.refreshTokenExpiresAt ? new Date(rowInTx.refreshTokenExpiresAt).getTime() : 0;
       if (!expiresAt || expiresAt <= Date.now()) {
         this.authRepository.clearRefreshToken(user.id, new Date().toISOString());
         throw new UnauthorizedError('Refresh token has expired');
@@ -177,6 +194,7 @@ export class AuthService {
       const token = this.sign({ sub: user.id, clinicId: this.resolveClinicId(user), role: user.role, tokenVersion: user.tokenVersion });
       const { passwordHash: _passwordHash, ...safeUser } = user;
       const session: AuthSession = { token, refreshToken: nextRefreshToken, expiresIn: 8 * 60 * 60, user: safeUser };
+      this.writeRefreshClaim(tokenHash, user.id, session);
       this.refreshCache.set(tokenHash, { expiresAt: Date.now() + AuthService.REFRESH_CACHE_TTL_MS, session });
       if (this.refreshCache.size > AuthService.REFRESH_CACHE_MAX) this.refreshCache.clear();
       return session;
@@ -191,6 +209,7 @@ export class AuthService {
     this.refreshCache.clear();
     const row = this.authRepository.findByRefreshTokenHash(tokenHash);
     if (!row) return null;
+    this.clearUserRefreshClaims(row.id);
     const now = new Date().toISOString();
     this.authRepository.markRefreshTokenUsed(tokenHash, row.id, now);
     this.authRepository.clearRefreshToken(row.id, now);
@@ -205,10 +224,63 @@ export class AuthService {
       const used = this.authRepository.findUsedRefreshToken(tokenHash);
       if (used?.userId) {
         this.authRepository.revokeSessionFamily(used.userId, new Date().toISOString());
+        this.clearUserRefreshClaims(used.userId);
       }
     } catch {
       // 重用已被拒绝；吊销为尽力而为
     }
+  }
+
+  /** 跨实例共享的 refresh 轮换缓存：以 DB 原子 claim 替代仅进程内缓存。 */
+  private readRefreshClaim(tokenHash: string, userId: string): AuthSession | null {
+    const key = this.refreshClaimKey(tokenHash, userId);
+    const row = this.db.prepare(
+      `SELECT responseJson, expiresAt FROM IdempotencyRecord
+       WHERE key = ? AND operation = 'auth.refresh' AND status = 'COMPLETED'
+       ORDER BY createdAt DESC LIMIT 1`,
+    ).get(key) as { responseJson: string; expiresAt: string | null } | undefined;
+    if (!row?.expiresAt || new Date(row.expiresAt).getTime() <= Date.now()) return null;
+    try {
+      const session = JSON.parse(row.responseJson) as AuthSession;
+      const current = this.authRepository.findById(userId);
+      if (!current) return null;
+      const user = rowToUser(current);
+      if (!user.active || user.tokenVersion !== session.user.tokenVersion) return null;
+      return session;
+    } catch {
+      return null;
+    }
+  }
+
+  private writeRefreshClaim(tokenHash: string, userId: string, session: AuthSession): void {
+    const key = this.refreshClaimKey(tokenHash, userId);
+    const now = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + AuthService.REFRESH_CACHE_TTL_MS).toISOString();
+    this.db.prepare(
+      `DELETE FROM IdempotencyRecord WHERE key = ? AND operation = 'auth.refresh'`,
+    ).run(key);
+    this.db.prepare(
+      `INSERT INTO IdempotencyRecord (
+         id, key, type, status, responseJson, result, userId, clinicId, operation,
+         createdAt, updatedAt, deletedAt, expiresAt
+       ) VALUES (?, ?, 'GENERIC', 'COMPLETED', ?, ?, ?, NULL, 'auth.refresh', ?, ?, NULL, ?)`,
+    ).run(randomUUID(), key, JSON.stringify(session), JSON.stringify(session), userId, now, now, expiresAt);
+  }
+
+  private clearUserRefreshClaims(userId: string): void {
+    try {
+      this.db.prepare(
+        `DELETE FROM IdempotencyRecord WHERE operation = 'auth.refresh' AND userId = ?`,
+      ).run(userId);
+    } catch {
+      // 缓存清理为尽力而为；会话族吊销与标记已用是权威路径
+    }
+  }
+
+  private refreshClaimKey(tokenHash: string, userId: string): string {
+    return createHash('sha256')
+      .update(['auth.refresh', tokenHash, userId].join('\0'))
+      .digest('hex');
   }
 
   verifyToken(token: string): TokenPayload {

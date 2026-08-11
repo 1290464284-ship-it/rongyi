@@ -1,12 +1,26 @@
 import { Fragment, Suspense, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router';
 import { ResourcePage } from './ResourcePage';
 import type { HubTab } from './hub-tabs';
 import { apiRequest } from '../lib/api';
 import { ErrorBoundary, LoadingState } from '.';
 
 export function ResourceHub({ title, tabs }: { title: string; tabs: HubTab[] }) {
-  const [activeId, setActiveId] = useState(tabs[0]?.id ?? '');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const defaultResourceTabId = tabs.find((tab) => tab.kind === 'resource')?.id ?? tabs[0]?.id ?? '';
+  const urlTab = searchParams.get('tab');
+  const [activeId, setActiveId] = useState(
+    urlTab ?? (searchParams.get('q') ? defaultResourceTabId : tabs[0]?.id ?? ''),
+  );
+  const [prevUrlTab, setPrevUrlTab] = useState(urlTab);
+  const [prevHasQuery, setPrevHasQuery] = useState(searchParams.has('q'));
+  if (prevUrlTab !== urlTab || prevHasQuery !== searchParams.has('q')) {
+    setPrevUrlTab(urlTab);
+    setPrevHasQuery(searchParams.has('q'));
+    if (urlTab) setActiveId(urlTab);
+    else if (searchParams.get('q')) setActiveId(defaultResourceTabId);
+  }
   const [filter, setFilter] = useState('');
   // M3：只渲染当前活动 tab，切换即卸载非活动页面（display:none 常驻会累积 useQuery 订阅与组件实例）
   const tabRefs = useRef(new Map<string, HTMLButtonElement>());
@@ -27,6 +41,9 @@ export function ResourceHub({ title, tabs }: { title: string; tabs: HubTab[] }) 
 
   function selectTab(id: string) {
     setActiveId(id);
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', id);
+    setSearchParams(next, { replace: true });
   }
 
   function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {

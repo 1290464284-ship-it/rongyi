@@ -14,6 +14,7 @@ import { migrations152 } from './v152-152';
 import { migrations153 } from './v153-153';
 import { migrations154 } from './v154-154';
 import { migrations155 } from './v155-155';
+import { migrations156 } from './v156-156';
 import { dedupNullClinicRows, snapshotDatabase } from './helpers';
 
 export interface Migration {
@@ -56,6 +57,7 @@ export const migrations: Migration[] = [
   ...migrations153,
   ...migrations154,
   ...migrations155,
+  ...migrations156,
 ];
 
 const MIGRATION_BUSY_RETRY_DELAYS_MS = [200, 400, 800, 1500, 3000, 5000, 5000];

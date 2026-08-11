@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useEffect, type ReactNode } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ResourceHub } from './ResourceHub';
 import { analyticsHubTabs, systemHubTabs, type HubTab } from './hub-tabs';
@@ -21,7 +22,9 @@ const definition = {
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
 const wrapper = ({ children }: { children: ReactNode }) => (
-  <QueryClientProvider client={queryClient}><ToastProvider>{children}</ToastProvider></QueryClientProvider>
+  <MemoryRouter>
+    <QueryClientProvider client={queryClient}><ToastProvider>{children}</ToastProvider></QueryClientProvider>
+  </MemoryRouter>
 );
 
 afterEach(() => {
@@ -51,6 +54,38 @@ describe('ResourceHub', () => {
       .mockResolvedValueOnce([{ ...definition, capabilities: { create: true, update: false, delete: false, softDelete: false } }])
       .mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 20 });
     render(<ResourceHub title="Hub" tabs={[{ id: 'resource', label: 'Resource', kind: 'resource', resource: 'patients' }]} />, { wrapper });
+    expect(await screen.findByText('新建')).toBeDefined();
+  });
+
+  it('selects the resource tab when a global query arrives without a tab parameter', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resource-meta') {
+        return [{
+          ...definition,
+          capabilities: { create: true, update: false, delete: false, softDelete: false },
+        }];
+      }
+      if (path.startsWith('/resources/patients?')) {
+        return { items: [], total: 0, page: 1, pageSize: 20 };
+      }
+      return {};
+    });
+    const tabs: HubTab[] = [
+      { id: 'custom', label: 'Custom', kind: 'custom', component: () => <div>Custom tab</div> },
+      { id: 'resource', label: 'Resource', kind: 'resource', resource: 'patients' },
+    ];
+    render(
+      <MemoryRouter initialEntries={['/patients?q=张三']}>
+        <QueryClientProvider client={queryClient}>
+          <ToastProvider>
+            <ResourceHub title="Hub" tabs={tabs} />
+          </ToastProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: 'Resource' }).getAttribute('aria-selected')).toBe('true');
+    });
     expect(await screen.findByText('新建')).toBeDefined();
   });
 

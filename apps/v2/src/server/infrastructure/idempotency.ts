@@ -87,10 +87,15 @@ export function withIdempotency<T>(
     try {
       result = fn();
     } catch (error) {
-      logIdempotency('async operation failed; keeping PROCESSING record so a retry cannot duplicate side effects', {
-        key,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      if (error instanceof AppError) {
+        // 已知业务错误（校验/冲突/未找到）对应的写路径在事务内回滚，可安全删除 PROCESSING 供重试。
+        db.prepare('DELETE FROM IdempotencyRecord WHERE key = ?').run(key);
+      } else {
+        logIdempotency('async operation failed; keeping PROCESSING record so a retry cannot duplicate side effects', {
+          key,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
       throw error;
     }
     if (!isPromise(result)) return result;
@@ -103,10 +108,15 @@ export function withIdempotency<T>(
         return value;
       },
       (error: unknown) => {
-        logIdempotency('async operation rejected; keeping PROCESSING record so a retry cannot duplicate side effects', {
-          key,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        if (error instanceof AppError) {
+          // 已知业务错误一定伴随事务回滚，删除 PROCESSING 避免 30 分钟假锁。
+          db.prepare('DELETE FROM IdempotencyRecord WHERE key = ?').run(key);
+        } else {
+          logIdempotency('async operation rejected; keeping PROCESSING record so a retry cannot duplicate side effects', {
+            key,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
         throw error;
       },
     );

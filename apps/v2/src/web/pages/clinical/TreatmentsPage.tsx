@@ -5,6 +5,7 @@ import { CrudPage } from '../../components/CrudPage';
 import { SearchableSelect, type DataTableColumn } from '../../components';
 import { formatMoney, centsToYuanString, splitList, toCents } from '../../lib/format';
 import { errorMessage } from '../../lib/messages';
+import { createInFlightGuard } from '../../lib/in-flight';
 import { TREATMENT_STATUS_LABELS } from '../../lib/status-extra-labels';
 import { useToast } from '../../lib/toast-context';
 
@@ -121,7 +122,7 @@ export function TreatmentsPage() {
   );
 }
 
-const transitionInFlight = new Set<string>();
+const transitionGuard = createInFlightGuard();
 
 async function transitionTreatment(
   showToast: (message: string, kind?: 'success' | 'error' | 'info') => void,
@@ -129,8 +130,7 @@ async function transitionTreatment(
   id: string,
   status: string,
 ) {
-  if (transitionInFlight.has(id)) return;
-  transitionInFlight.add(id);
+  if (!transitionGuard.start(id)) return;
   try {
     await apiRequest(`/treatments/${id}/status`, {
       method: 'PATCH',
@@ -141,7 +141,7 @@ async function transitionTreatment(
   } catch (error) {
     showToast(errorMessage(error, '状态更新失败'), 'error');
   } finally {
-    transitionInFlight.delete(id);
+    transitionGuard.finish(id);
   }
 }
 

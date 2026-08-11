@@ -1,7 +1,8 @@
 import { apiRequest } from '../lib/api';
 import { errorMessage } from '../lib/messages';
+import { createInFlightGuard } from '../lib/in-flight';
 
-const transitionInFlight = new Set<string>();
+const transitionGuard = createInFlightGuard();
 
 export async function transitionFirstExam(
   showToast: (message: string, kind?: 'success' | 'error' | 'info') => void,
@@ -9,8 +10,7 @@ export async function transitionFirstExam(
   id: string,
   status: string,
 ) {
-  if (transitionInFlight.has(id)) return;
-  transitionInFlight.add(id);
+  if (!transitionGuard.start(id)) return;
   try {
     await apiRequest(`/first-exams/${id}/status`, {
       method: 'PATCH',
@@ -21,7 +21,7 @@ export async function transitionFirstExam(
   } catch (error) {
     showToast(errorMessage(error, '状态更新失败'), 'error');
   } finally {
-    transitionInFlight.delete(id);
+    transitionGuard.finish(id);
   }
 }
 

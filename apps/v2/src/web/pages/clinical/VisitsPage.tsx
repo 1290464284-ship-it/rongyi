@@ -4,6 +4,7 @@ import { apiRequest } from '../../lib/api';
 import { CrudPage } from '../../components/CrudPage';
 import { SearchableSelect, type DataTableColumn } from '../../components';
 import { errorMessage } from '../../lib/messages';
+import { createInFlightGuard } from '../../lib/in-flight';
 import { VISIT_STATUS_LABELS } from '../../lib/status-extra-labels';
 import { toLocalInput } from '../../lib/format';
 import { useToast } from '../../lib/toast-context';
@@ -113,7 +114,7 @@ export function VisitsPage() {
   );
 }
 
-const transitionInFlight = new Set<string>();
+const transitionGuard = createInFlightGuard();
 
 async function transitionVisit(
   showToast: (message: string, kind?: 'success' | 'error' | 'info') => void,
@@ -121,8 +122,7 @@ async function transitionVisit(
   id: string,
   status: string,
 ) {
-  if (transitionInFlight.has(id)) return;
-  transitionInFlight.add(id);
+  if (!transitionGuard.start(id)) return;
   try {
     await apiRequest(`/visits/${id}/status`, {
       method: 'PATCH',
@@ -133,7 +133,7 @@ async function transitionVisit(
   } catch (error) {
     showToast(errorMessage(error, '状态更新失败'), 'error');
   } finally {
-    transitionInFlight.delete(id);
+    transitionGuard.finish(id);
   }
 }
 

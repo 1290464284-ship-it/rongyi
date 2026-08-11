@@ -97,7 +97,15 @@ export class ChargeService {
     patientId: string;
     visitId?: string;
     doctorId?: string;
-    items: Array<{ name: string; category: string; price: number; quantity: number; teethNumbers?: string[]; costType?: 'SERVICE' | 'MATERIAL' }>;
+    items: Array<{
+      name: string;
+      category: string;
+      price: number;
+      quantity: number;
+      teethNumbers?: string[];
+      costType?: 'SERVICE' | 'MATERIAL';
+      catalogId?: string;
+    }>;
     discount?: number;
     remark?: string;
     discountPlanSnapshot?: Record<string, unknown> | null;
@@ -138,6 +146,21 @@ export class ChargeService {
     const totalAmount = baseTotal - discount;
 
     const chargeRun = this.db.transaction(() => {
+      // 目录价必须在开单事务内复验，避免组合价校验与落库之间的 TOCTOU。
+      const catalogStmt = this.db.prepare(
+        `SELECT id, price FROM TreatmentCatalog
+         WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+      );
+      for (const item of input.items) {
+        if (!item.catalogId) continue;
+        const catalog = catalogStmt.get(item.catalogId, ...tenantParams(context.clinicId)) as
+          | { id: string; price: number }
+          | undefined;
+        if (!catalog) throw new ValidationError(`收费项目引用的目录项不存在: ${item.name}`);
+        if (Number(catalog.price) !== item.price) {
+          throw new ValidationError(`收费项目价格与目录不一致: ${item.name}`);
+        }
+      }
       this.chargeRepository.create({
         id,
         clinicId: context.clinicId ?? null,

@@ -886,6 +886,17 @@ describe('application services', () => {
     await expect(service.refresh(refreshed.refreshToken)).rejects.toThrow('Invalid refresh token');
   }, 15000);
 
+  it('shares the refresh rotation window across service instances via the DB claim', async () => {
+    const first = new AuthService(db);
+    const session = await first.login('admin', 'v2-test-seed-password');
+    const refreshed = await first.refresh(session.refreshToken);
+    // 第二个实例没有进程内缓存，必须命中数据库 claim 并返回同一新会话，不能触发会话族吊销。
+    const second = new AuthService(db);
+    const replayed = await second.refresh(session.refreshToken);
+    expect(replayed.refreshToken).toBe(refreshed.refreshToken);
+    expect(replayed.token).toBe(refreshed.token);
+  });
+
   it('maps create-user unique races to conflict errors', async () => {
     const repo = {
       findByUsername: () => null,
