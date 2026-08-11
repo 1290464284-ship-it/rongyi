@@ -5,19 +5,27 @@ import { registerModalLayer } from './modal-a11y';
 
 describe('modal-a11y', () => {
   afterEach(() => {
-    document.body.innerHTML = '';
+    document.body.replaceChildren();
   });
 
   it('marks background inert and keeps only the top layer interactive', () => {
-    document.body.innerHTML = `
-      <div id="app">
-        <button type="button">background</button>
-        <div class="modal-backdrop"><div class="modal"></div></div>
-        <div class="modal-backdrop"><div class="modal"></div></div>
-      </div>`;
-    const layers = Array.from(document.querySelectorAll<HTMLElement>('.modal'));
-    const backdrops = Array.from(document.querySelectorAll<HTMLElement>('.modal-backdrop'));
-    const background = document.querySelector<HTMLElement>('button')!;
+    const app = document.createElement('div');
+    app.id = 'app';
+    const background = document.createElement('button');
+    background.type = 'button';
+    background.textContent = 'background';
+    app.append(background);
+    for (let index = 0; index < 2; index += 1) {
+      const backdrop = document.createElement('div');
+      backdrop.className = 'modal-backdrop';
+      const modal = document.createElement('div');
+      modal.className = 'modal';
+      backdrop.append(modal);
+      app.append(backdrop);
+    }
+    document.body.append(app);
+    const layers = Array.from(app.querySelectorAll<HTMLElement>('.modal'));
+    const backdrops = Array.from(app.querySelectorAll<HTMLElement>('.modal-backdrop'));
 
     const unregisterFirst = registerModalLayer(layers[0]);
     expect(background.hasAttribute('inert')).toBe(true);
