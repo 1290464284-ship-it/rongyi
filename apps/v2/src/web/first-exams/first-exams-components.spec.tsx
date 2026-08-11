@@ -12,6 +12,7 @@ import { TrackingOverviewBar } from './TrackingOverviewBar';
 import { firstExamColumns } from './columns';
 import { changeDentition, restartFirstExam, transitionFirstExam } from './actions';
 import { apiRequest } from '../lib/api';
+import { formatDateTime } from '../lib/format';
 import { ToastProvider } from '../components/toast';
 import { emptyForm, type FirstExamForm, type FirstExamRow } from './types';
 
@@ -232,7 +233,7 @@ describe('HistoryDialog', () => {
     ]);
     render(<HistoryDialog row={{ id: 'f-1', patientId: 'p-1' }} onClose={vi.fn()} />, { wrapper });
     expect(await screen.findByText('由 f-0 重启')).toBeDefined();
-    expect(screen.getByText((_content, element) => element?.textContent === '2026/8/1 10:00:00（当前）')).toBeDefined();
+    expect(screen.getByText((_content, element) => element?.textContent === `${formatDateTime('2026-08-01T02:00:00.000Z')}（当前）`)).toBeDefined();
   });
 });
 

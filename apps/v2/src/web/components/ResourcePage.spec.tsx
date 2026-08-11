@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { ResourcePage } from './ResourcePage';
 import { apiRequest, downloadCsv } from '../lib/api';
+import { formatDateTime } from '../lib/format';
 import { ToastProvider } from './toast';
 import { downloadTextFile } from '../pages/analytics/analytics-utils';
 
@@ -505,7 +506,7 @@ describe('ResourcePage', () => {
     });
     render(<ResourcePage title="报表" endpoint="/stats/demo" />, { wrapper });
     expect(await screen.findByText('¥1234.56')).toBeDefined();
-    expect(screen.getByText('2026/8/1 10:00:00')).toBeDefined();
+    expect(screen.getByText(formatDateTime('2026-08-01T02:00:00.000Z'))).toBeDefined();
     expect(screen.getByText('2026/8/5')).toBeDefined();
     expect(screen.getByText('{"a":1}')).toBeDefined();
 
