@@ -111,7 +111,7 @@ describe('EditSaveService', () => {
       items: [
         { id: 'item-2', code: 'B', name: 'B', category: 'GENERAL', price: 200, quantity: 1, teethNumbers: [], status: 'PLANNED' },
         { id: 'item-1', code: 'A', name: 'A改', category: 'GENERAL', price: 100, quantity: 1, teethNumbers: ['11'], status: 'PLANNED' },
-        { code: 'NEW', name: '新增', category: 'GENERAL', price: 300, quantity: 1, teethNumbers: [], status: 'PLANNED' },
+        { id: 'new-local-1', code: 'NEW', name: '新增', category: 'GENERAL', price: 300, quantity: 1, teethNumbers: [], status: 'PLANNED' },
       ],
     }, context);
 
@@ -126,7 +126,8 @@ describe('EditSaveService', () => {
     expect(updated.name).toBe('A改');
     const removed = db.prepare('SELECT deletedAt FROM TreatmentPlanItem WHERE id = ?').get('item-3') as { deletedAt: string | null };
     expect(removed.deletedAt).not.toBeNull();
-    const created = db.prepare('SELECT name FROM TreatmentPlanItem WHERE name = ?').get('新增') as { name: string };
+    const created = db.prepare('SELECT id, name FROM TreatmentPlanItem WHERE name = ?').get('新增') as { id: string; name: string };
+    expect(created.id).toBe('new-local-1');
     expect(created.name).toBe('新增');
   });
 
@@ -157,7 +158,7 @@ describe('EditSaveService', () => {
       status: 'SUBMITTED',
       items: [
         { id: 'pi-1', name: '阿莫西林', specification: '0.25g', days: 5, quantity: 2, price: 1200 },
-        { name: '布洛芬', days: 3, quantity: 1, price: 800 },
+        { id: 'pi-new', name: '布洛芬', days: 3, quantity: 1, price: 800 },
       ],
     }, context);
     expect(result.items).toBe(2);
@@ -168,7 +169,8 @@ describe('EditSaveService', () => {
     expect(main.status).toBe('SUBMITTED');
     const updated = db.prepare('SELECT price FROM PrescriptionItem WHERE id = ?').get('pi-1') as { price: number };
     expect(updated.price).toBe(1200);
-    const created = db.prepare('SELECT name FROM PrescriptionItem WHERE name = ?').get('布洛芬') as { name: string };
+    const created = db.prepare('SELECT id, name FROM PrescriptionItem WHERE name = ?').get('布洛芬') as { id: string; name: string };
+    expect(created.id).toBe('pi-new');
     expect(created.name).toBe('布洛芬');
   });
 

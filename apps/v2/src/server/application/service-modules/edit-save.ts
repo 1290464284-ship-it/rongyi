@@ -71,6 +71,8 @@ export class EditSaveService {
     if (!Number.isSafeInteger(input.totalFee) || input.totalFee < 0) {
       throw new ValidationError('总费用必须为非负整数（分）');
     }
+    if (typeof input.patientId !== 'string' || input.patientId.trim() === '') throw new ValidationError('患者必填');
+    if (typeof input.doctorId !== 'string' || input.doctorId.trim() === '') throw new ValidationError('医生必填');
     assertPatientExists(this.db, input.patientId, clinicId);
     assertDoctorExists(this.db, input.doctorId, clinicId);
     if (!Array.isArray(input.items)) throw new ValidationError('明细格式无效');
@@ -137,7 +139,7 @@ export class EditSaveService {
             clinicId: clinicId ?? null,
           });
         } else {
-          const newId = randomUUID();
+          const newId = item.id ?? randomUUID();
           insertItem.run(
             newId, clinicId ?? null, now, now, planId, item.code, item.name, item.category,
             item.price, item.quantity, JSON.stringify(item.teethNumbers), item.status,
@@ -174,6 +176,8 @@ export class EditSaveService {
     if (!row) throw new NotFoundError('处方不存在');
 
     if (!PRESCRIPTION_STATUSES.has(input.status)) throw new ValidationError('处方状态无效');
+    if (typeof input.patientId !== 'string' || input.patientId.trim() === '') throw new ValidationError('患者必填');
+    if (typeof input.doctorId !== 'string' || input.doctorId.trim() === '') throw new ValidationError('医生必填');
     assertPatientExists(this.db, input.patientId, clinicId);
     assertDoctorExists(this.db, input.doctorId, clinicId);
     if (!Array.isArray(input.items)) throw new ValidationError('明细格式无效');
@@ -233,7 +237,7 @@ export class EditSaveService {
             clinicId: clinicId ?? null,
           });
         } else {
-          const newId = randomUUID();
+          const newId = item.id ?? randomUUID();
           insertItem.run(
             newId, clinicId ?? null, now, now, prescriptionId, item.name,
             item.specification ?? null, item.dosage ?? null, item.frequency ?? null,
