@@ -145,10 +145,8 @@ export class SyncService {
     let accepted = 0;
     const errors: Array<{ recordId: string; error: string }> = [];
     const conflicts: Array<{ recordId: string; message: string }> = [];
-    // 每 500 条一个事务批。注意：better-sqlite3 的 db.transaction 会拒绝返回 Promise 的
-    // 回调（TypeError: Transaction function cannot return a promise），而 apply 路径是
-    // async repository 方法（其 SQL 在已 resolve 的微任务链中同步执行），因此这里用显式
-    // BEGIN/COMMIT/ROLLBACK 实现等价的批事务：整批要么全部生效、要么整体回滚。
+    // 每 500 条一个事务批。批内只允许同步仓储方法（*Sync），禁止 await 任何业务/仓储调用，
+    // 避免真实异步 I/O 嵌套或污染显式 BEGIN/COMMIT/ROLLBACK 事务。
     for (let offset = 0; offset < payload.changes.length; offset += 500) {
       const batch = payload.changes.slice(offset, offset + 500);
       // 本批已记录单条 error 的下标；系统性错误回滚后按此去重，避免重复记账。
@@ -188,7 +186,7 @@ export class SyncService {
           try {
             const repo = new SqliteRepository(this.db, definition, { emitSyncChange: false });
             if (change.operation === 'DELETE') {
-              const existingForDelete = await repo.findById(change.recordId, context);
+              const existingForDelete = repo.findByIdSync(change.recordId, context);
               if (!existingForDelete) {
                 throw new Error(`Sync record not found: ${change.recordId}`);
               }
@@ -198,12 +196,12 @@ export class SyncService {
                 failedIndexes.add(index);
                 continue;
               }
-              await repo.softDelete(change.recordId, context);
+              repo.softDeleteSync(change.recordId, context);
             } else {
               if (!change.data || typeof change.data !== 'object') {
                 throw new Error('Sync change requires row data');
               }
-              const existing = await repo.findById(change.recordId, context);
+              const existing = repo.findByIdSync(change.recordId, context);
               if (existing && this.isStaleRemote(change, existing)) {
                 this.registerConflict(change, existing, payload.deviceId, context);
                 conflicts.push({ recordId: change.recordId, message: 'Conflict: remote change is older than local version' });
@@ -216,8 +214,8 @@ export class SyncService {
                 existing ? { partial: true } : {},
               ), undefined, resourceName);
               const entity = { id: change.recordId, ...payloadRow };
-              if (existing) await repo.update(entity, context);
-              else await repo.insert(entity, context);
+              if (existing) repo.updateSync(entity, context);
+              else repo.insertSync(entity, context);
             }
             // B-M1：业务写入已完成（批事务内），此后 record() 若失败，客户端
             // 收到错误后不应盲目重试——写入可能已生效，重试可能造成重复变更。
@@ -309,17 +307,17 @@ export class SyncService {
         const remoteSnapshot = safeJsonObject(row.remoteSnapshotJson);
         const repo = new SqliteRepository(this.db, definition, { emitSyncChange: false });
         if (String(row.remoteOperation) === 'DELETE') {
-          const existing = await repo.findById(String(row.recordId), context);
-          if (existing) await repo.softDelete(String(row.recordId), context);
+          const existing = repo.findByIdSync(String(row.recordId), context);
+          if (existing) repo.softDeleteSync(String(row.recordId), context);
         } else {
           const payloadRow = stripProtectedWriteFields(validatePayload(
             definition,
             remoteSnapshot,
             { partial: true },
           ), undefined, resourceName);
-          const existing = await repo.findById(String(row.recordId), context);
-          if (existing) await repo.update({ id: String(row.recordId), ...payloadRow }, context);
-          else await repo.insert({ id: String(row.recordId), ...payloadRow }, context);
+          const existing = repo.findByIdSync(String(row.recordId), context);
+          if (existing) repo.updateSync({ id: String(row.recordId), ...payloadRow }, context);
+          else repo.insertSync({ id: String(row.recordId), ...payloadRow }, context);
         }
         this.record(String(row.tableName), String(row.recordId), String(row.remoteOperation), 'server', context.clinicId);
       } else {

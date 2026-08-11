@@ -1,6 +1,6 @@
 # sync 批事务“零 await”改造方案
 
-状态：已登记待实施（第 15-18 轮保留项）。
+状态：已实施（第 18 轮后续批次）。
 
 ## 现状与为什么现在能工作
 
@@ -35,6 +35,11 @@
 - `executePush` 批内：用 `findByIdSync` / `insertSync` / `updateSync` / `softDeleteSync`，删除批内所有 `await`。
 - `executeResolveConflict`：同样改为同步变体。
 - 保持显式 `BEGIN IMMEDIATE` / `COMMIT` / `ROLLBACK`，或改用 `db.transaction` 包裹（同步回调）。
+
+实施结果：
+- `SqliteRepository` 新增 `findByIdSync` / `insertSync` / `updateSync` / `softDeleteSync`，async 公共方法委托同步实现。
+- `sync.ts` 的 `executePush` / `executeResolveConflict` 批内已移除全部 `await` 仓储调用。
+- 新增防回归测试：sync push 期间断言 async 仓储方法未被调用，且变更成功落库。
 
 ### 3. 防回归守卫
 

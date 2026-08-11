@@ -90,6 +90,11 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
   }
 
   async findById(id: string, context: AppContext): Promise<Record<string, unknown> | null> {
+    return this.findByIdSync(id, context);
+  }
+
+  /** sync 批事务专用同步读取；async 公共方法委托本方法，避免 SQL 逻辑双写。 */
+  findByIdSync(id: string, context: AppContext): Record<string, unknown> | null {
     /* v8 ignore start -- all registry tables include clinicId today; false branch is defensive for future schemas. */
     const tenantClause = this.hasClinicColumn() ? tenantAnd(context.clinicId) : '';
     const params = [id, ...(this.hasClinicColumn() ? tenantParams(context.clinicId) : [])];
@@ -186,6 +191,11 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
   }
 
   async insert(entity: Record<string, unknown>, context: AppContext): Promise<void> {
+    return this.insertSync(entity, context);
+  }
+
+  /** sync 批事务专用同步写入；async 公共方法委托本方法。 */
+  insertSync(entity: Record<string, unknown>, context: AppContext): void {
     const now = context.now().toISOString();
     const id = String(entity.id);
     const columns = ['id', 'clinicId', 'createdAt', 'updatedAt', 'deletedAt'];
@@ -222,6 +232,11 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
   }
 
   async update(entity: Record<string, unknown>, context: AppContext): Promise<void> {
+    return this.updateSync(entity, context);
+  }
+
+  /** sync 批事务专用同步更新；async 公共方法委托本方法。 */
+  updateSync(entity: Record<string, unknown>, context: AppContext): void {
     const id = String(entity.id);
 
     const sets: string[] = ['updatedAt = ?'];
@@ -271,6 +286,11 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
   }
 
   async softDelete(id: string, context: AppContext): Promise<void> {
+    return this.softDeleteSync(id, context);
+  }
+
+  /** sync 批事务专用同步软删；async 公共方法委托本方法。 */
+  softDeleteSync(id: string, context: AppContext): void {
     this.runWrite(() => {
     if (this.resource.capabilities.softDelete && this.hasDeletedAtColumn()) {
       const now = context.now().toISOString();

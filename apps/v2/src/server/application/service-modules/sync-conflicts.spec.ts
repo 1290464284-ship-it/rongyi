@@ -1,10 +1,11 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
+import { SqliteRepository } from '../../infrastructure/repository';
 import { SyncService } from './sync';
 
 describe('sync conflict detection and resolution', () => {
@@ -35,6 +36,10 @@ describe('sync conflict detection and resolution', () => {
   afterAll(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('defers a stale remote update as a pending conflict', async () => {
@@ -163,5 +168,31 @@ describe('sync conflict detection and resolution', () => {
 
     db.prepare(`DELETE FROM SyncConflict WHERE recordId = ?`).run(patientId);
     db.prepare(`DELETE FROM Patient WHERE id = ?`).run(patientId);
+  });
+
+  it('applies sync changes with synchronous repository methods only', async () => {
+    const findSpy = vi.spyOn(SqliteRepository.prototype, 'findById');
+    const insertSpy = vi.spyOn(SqliteRepository.prototype, 'insert');
+    const updateSpy = vi.spyOn(SqliteRepository.prototype, 'update');
+    const deleteSpy = vi.spyOn(SqliteRepository.prototype, 'softDelete');
+    const device = service.registerDevice('sync-device-sync-only', 'Device Sync Only', context);
+    const result = await service.push({
+      deviceId: device.deviceId,
+      deviceToken: device.token,
+      changes: [{
+        tableName: 'Patient',
+        recordId: 'sync-patient-1',
+        operation: 'UPDATE',
+        updatedAt: '2026-08-09T14:00:00.000Z',
+        data: { name: 'Sync Name', updatedAt: '2026-08-09T14:00:00.000Z' },
+      }],
+    }, context);
+    expect(result.accepted).toBe(1);
+    expect(findSpy).not.toHaveBeenCalled();
+    expect(insertSpy).not.toHaveBeenCalled();
+    expect(updateSpy).not.toHaveBeenCalled();
+    expect(deleteSpy).not.toHaveBeenCalled();
+    const row = db.prepare('SELECT name FROM Patient WHERE id = ?').get('sync-patient-1') as { name: string };
+    expect(row.name).toBe('Sync Name');
   });
 });

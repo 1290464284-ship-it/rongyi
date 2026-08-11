@@ -50,4 +50,4 @@
 
 第 17 轮基线 `a635559`，本地复核仅发现 1 条测试夹具问题（modal-a11y.spec 的 innerHTML），已修复；另新增处方/治疗计划原子保存端点（`EditSaveService` + `/treatment-plans/:id/save` + `/prescriptions/:id/save`），前端改为单请求事务保存，billed 明细修改/删除拒绝并整体回滚。安全扫描 682 文件通过，门禁 222/2247 全绿。保留项为 sync 事务零 await、processing-flow 手动改态语义、大库全表聚合。
 
-第 18 轮基线 `d029963`，本地复核修复 2 条：edit-save 缺患者/医生字段 500（改为显式 400），新增明细改用客户端 UUID 保证断网重试幂等。门禁 222/2247 全绿。保留项同上。
+第 18 轮基线 `d029963`，本地复核修复 2 条：edit-save 缺患者/医生字段 500（改为显式 400），新增明细改用客户端 UUID 保证断网重试幂等；随后实施 sync 零 await（仓储 `*Sync` 同步变体 + 批事务去 await + 防回归测试）。门禁 222/2248 全绿。保留项为 processing-flow 手动改态语义、大库全表聚合。
