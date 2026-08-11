@@ -24,7 +24,7 @@ const wrapper = ({ children }: { children: ReactNode }) => (
 function mockApi() {
   vi.mocked(apiRequest).mockImplementation(async (path: string) => {
     if (path === '/doctors') return [{ id: 'doc-1', name: '张医生' }];
-    if (path === '/resources/visits?page=1&pageSize=100') {
+    if (path === '/resources/visits?patientId=patient-1&page=1&pageSize=100') {
       return { items: [{ id: 'visit-1' }], total: 1, page: 1, pageSize: 100 };
     }
     if (path.startsWith('/resources/patients?')) {
@@ -116,10 +116,10 @@ describe('RecordFormFields', () => {
   it('pages the linked visit options server-side', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/doctors') return [];
-      if (path === '/resources/visits?page=1&pageSize=100') {
+      if (path === '/resources/visits?patientId=patient-1&page=1&pageSize=100') {
         return { items: [{ id: 'visit-1' }], total: 150, page: 1, pageSize: 100 };
       }
-      if (path === '/resources/visits?page=2&pageSize=100') {
+      if (path === '/resources/visits?patientId=patient-1&page=2&pageSize=100') {
         return { items: [{ id: 'visit-2' }], total: 150, page: 2, pageSize: 100 };
       }
       if (path.startsWith('/resources/patients?')) return { items: [], total: 0, page: 1, pageSize: 100 };
@@ -134,5 +134,31 @@ describe('RecordFormFields', () => {
     await waitFor(() => {
       expect((screen.getByRole('option', { name: 'visit-2' }) as HTMLOptionElement).value).toBe('visit-2');
     });
+  });
+
+  it('filters linked visits by patient and clears visitId when the patient changes', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/doctors') return [];
+      if (path === '/resources/visits?patientId=patient-1&page=1&pageSize=100') {
+        return { items: [{ id: 'visit-1' }], total: 1, page: 1, pageSize: 100 };
+      }
+      if (path === '/resources/visits?patientId=patient-2&page=1&pageSize=100') {
+        return { items: [{ id: 'visit-2' }], total: 1, page: 1, pageSize: 100 };
+      }
+      if (path.startsWith('/resources/patients?')) {
+        return { items: [{ id: 'patient-2', name: '李患者' }], total: 1, page: 1, pageSize: 100 };
+      }
+      return {};
+    });
+    let form: RecordForm = { ...emptyForm, patientId: 'patient-1', visitId: 'visit-1' };
+    const update = vi.fn((patch: Partial<RecordForm>) => {
+      form = { ...form, ...patch };
+    });
+    render(<RecordFormFields form={form} update={update} />, { wrapper });
+    await waitFor(() => {
+      expect((screen.getByRole('option', { name: 'visit-1' }) as HTMLOptionElement).value).toBe('visit-1');
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'patient-2' } });
+    expect(update).toHaveBeenCalledWith({ patientId: 'patient-2', visitId: '' });
   });
 });

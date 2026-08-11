@@ -16,6 +16,7 @@ export function SystemOperationsPage() {
   const search = useDebouncedValue(searchInput, 300);
   const [searchResults, setSearchResults] = useState<Array<Record<string, unknown>>>([]);
   const [importBusy, setImportBusy] = useState(false);
+  const importBusyRef = useRef(false);
   const [searchBusy, setSearchBusy] = useState(false);
   const searchGenerationRef = useRef(0);
 
@@ -36,7 +37,7 @@ export function SystemOperationsPage() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (importBusy) return;
+    if (importBusy || importBusyRef.current) return;
     let rows: Array<Record<string, unknown>>;
     try {
       rows = parseRows(rowsJson) as Array<Record<string, unknown>>;
@@ -44,6 +45,7 @@ export function SystemOperationsPage() {
       showToast(errorMessage(error, '导入数据格式错误'), 'error');
       return;
     }
+    importBusyRef.current = true;
     setImportBusy(true);
     try {
       const result = await apiRequest<{ imported: number; failed: number; errors: string[]; chunks: number }>(
@@ -54,6 +56,7 @@ export function SystemOperationsPage() {
     } catch (error) {
       showToast(errorMessage(error, '导入失败'), 'error');
     } finally {
+      importBusyRef.current = false;
       setImportBusy(false);
     }
   }

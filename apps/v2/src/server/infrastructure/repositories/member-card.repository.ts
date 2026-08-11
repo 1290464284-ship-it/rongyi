@@ -68,9 +68,17 @@ export class SqliteMemberCardRepository implements MemberCardRepository {
   }
 
   updatePoints(id: string, pointsDelta: number, totalPointsDelta: number, updatedAt: string, clinicId?: string | null): void {
-    const params = clinicId ? [pointsDelta, totalPointsDelta, updatedAt, id, clinicId] : [pointsDelta, totalPointsDelta, updatedAt, id];
-    this.db.prepare(`UPDATE MemberCard SET points = points + ?, totalPoints = totalPoints + ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`)
-      .run(...params);
+    const params = clinicId
+      ? [pointsDelta, totalPointsDelta, updatedAt, id, pointsDelta, clinicId]
+      : [pointsDelta, totalPointsDelta, updatedAt, id, pointsDelta];
+    const result = this.db.prepare(
+      `UPDATE MemberCard
+       SET points = points + ?, totalPoints = totalPoints + ?, updatedAt = ?
+       WHERE id = ? AND deletedAt IS NULL AND points + ? >= 0${tenantAnd(clinicId)}`,
+    ).run(...params);
+    if (result.changes === 0) {
+      throw new ConflictError('Insufficient points');
+    }
   }
 
   insertLog(input: Record<string, unknown>): void {

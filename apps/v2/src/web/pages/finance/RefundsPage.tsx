@@ -51,6 +51,7 @@ export function RefundsPage() {
   const query = useQuery({
     queryKey: ['refunds', page],
     queryFn: () => apiRequest<Page<RefundRow>>(`/refunds?page=${page}&pageSize=20`),
+    placeholderData: (previous) => previous,
   });
 
   if (query.isLoading) return <LoadingState label="退款记录加载中..." />;

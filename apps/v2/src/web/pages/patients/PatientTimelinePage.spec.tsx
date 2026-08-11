@@ -21,7 +21,9 @@ vi.mock('../../lib/api', () => ({
 
 const wrapper = ({ children }: { children: ReactNode }) => (
   <MemoryRouter>
-    <QueryClientProvider client={new QueryClient()}><ToastProvider>{children}</ToastProvider></QueryClientProvider>
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <ToastProvider>{children}</ToastProvider>
+    </QueryClientProvider>
   </MemoryRouter>
 );
 
@@ -414,5 +416,40 @@ describe('PatientTimelinePage', () => {
     expect(await screen.findByText('Visit A')).toBeDefined();
     fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
     expect(await screen.findByText('Visit B')).toBeDefined();
+  });
+
+  it('clears the previous patient timeline when the patient is cleared', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.includes('/resources/visits?')) {
+        return { items: [{ id: 'v1', startTime: '2026-08-04T09:00:00.000Z', summary: 'Visit A', status: 'COMPLETED' }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path.includes('/resources/treatments?') || path.includes('/resources/charges?') || path.includes('/resources/followUps?')) {
+        return { items: [], total: 0, page: 1, pageSize: 50 };
+      }
+      return { items: [{ id: 'patient-demo-001', name: 'Demo Patient' }], total: 1, page: 1, pageSize: 200 };
+    });
+    render(<PatientTimelinePage />, { wrapper });
+    expect(await screen.findByText('Visit A')).toBeDefined();
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: '' } });
+    await waitFor(() => {
+      expect(screen.queryByText('Visit A')).toBeNull();
+    });
+  });
+
+  it('reports load-more failures', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.includes('page=2')) throw new Error('load failed');
+      if (path.includes('/resources/visits?')) {
+        return { items: [{ id: 'v1', startTime: '2026-08-04T09:00:00.000Z', summary: 'Visit A', status: 'COMPLETED' }], total: 150, page: 1, pageSize: 50 };
+      }
+      if (path.includes('/resources/treatments?') || path.includes('/resources/charges?') || path.includes('/resources/followUps?')) {
+        return { items: [], total: 0, page: 1, pageSize: 50 };
+      }
+      return { items: [{ id: 'patient-demo-001', name: 'Demo Patient' }], total: 1, page: 1, pageSize: 200 };
+    });
+    render(<PatientTimelinePage />, { wrapper });
+    expect(await screen.findByText('Visit A')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
   });
 });

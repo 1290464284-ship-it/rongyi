@@ -794,9 +794,9 @@ describe('TreatmentPlansPage', () => {
     await screen.findByText('正畸计划');
     fireEvent.click(screen.getAllByRole('button', { name: '删除' })[0]);
     fireEvent.click(await screen.findByText('确认删除'));
-    expect(await screen.findByText('删除部分治疗计划明细失败，已继续删除主记录')).toBeDefined();
+    expect(await screen.findByText('删除治疗计划明细失败，已中止删除主记录')).toBeDefined();
     await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/resources/treatmentPlans/p-1', expect.objectContaining({ method: 'DELETE' }));
+      expect(apiRequest).not.toHaveBeenCalledWith('/resources/treatmentPlans/p-1', expect.objectContaining({ method: 'DELETE' }));
     });
   });
 

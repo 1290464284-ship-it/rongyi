@@ -49,6 +49,8 @@ export class AppointmentService {
     }
     if (input.patientId) assertPatientExists(this.db, input.patientId, context.clinicId);
     this.assertTimeRange(input.startTime, input.endTime);
+    const startIso = new Date(input.startTime).toISOString();
+    const endIso = new Date(input.endTime).toISOString();
     const now = context.now().toISOString();
     const id = randomUUID();
     const run = this.db.transaction(() => {
@@ -72,7 +74,7 @@ export class AppointmentService {
         // B-H4：直写 Patient（临时患者建档）绕过 repository，统一维护同步与索引。
         trackResourceWrite(this.db, { tableName: 'Patient', recordId: resolvedPatientId, operation: 'INSERT', clinicId: context.clinicId });
       }
-      this.assertNoConflict(input.doctorId, input.chairId, input.startTime, input.endTime, context.clinicId);
+      this.assertNoConflict(input.doctorId, input.chairId, startIso, endIso, context.clinicId);
       this.db.prepare(
         `INSERT INTO Appointment (
            id, clinicId, createdAt, updatedAt, deletedAt,
@@ -87,8 +89,8 @@ export class AppointmentService {
         resolvedPatientId as string,
         input.doctorId,
         input.chairId ?? null,
-        input.startTime,
-        input.endTime,
+        startIso,
+        endIso,
         input.type,
         input.remark ?? null,
         input.purpose ?? null,

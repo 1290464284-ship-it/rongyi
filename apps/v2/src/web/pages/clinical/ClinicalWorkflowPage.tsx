@@ -100,6 +100,10 @@ export function ClinicalWorkflowPage() {
       await apiRequest(endpoint, { method: 'PATCH', body: JSON.stringify({ status }) });
       showToast(`${RESOURCE_LABELS[resource]}已更新为${STATUS_LABELS[status] ?? status}`, 'success');
       await queries[resource as typeof resources[number]].refetch();
+      if (resource === 'registrations' && (status === 'IN_PROGRESS' || status === 'COMPLETED')) {
+        void queries.visits.refetch();
+        void today.refetch();
+      }
     } catch (error) {
       showToast(errorMessage(error, '状态更新失败'), 'error');
     } finally {
@@ -110,6 +114,7 @@ export function ClinicalWorkflowPage() {
   function refreshAfterAction() {
     void today.refetch();
     void queries.registrations.refetch();
+    void queries.visits.refetch();
   }
 
   function registrationActions(row: Record<string, unknown>): ReactNode {

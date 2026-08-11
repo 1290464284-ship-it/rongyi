@@ -27,11 +27,10 @@ describe('HrWorkflowPage', () => {
 
   it('renders pending leaves and approves or rejects them', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/leaveRequests?page=1&pageSize=100') {
+      if (path === '/resources/leaveRequests?status=PENDING&page=1&pageSize=100') {
         return {
           items: [
             { id: 'l-1', userId: 'u-1', startDate: '2026-08-01', endDate: '2026-08-02', status: 'PENDING' },
-            { id: 'l-2', userId: null, startDate: null, endDate: null, status: 'APPROVED' },
             { id: 'l-3', userId: null, startDate: null, endDate: null, status: 'PENDING' },
           ],
           total: 2,
@@ -55,7 +54,7 @@ describe('HrWorkflowPage', () => {
 
   it('reports approval failures', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/leaveRequests?page=1&pageSize=100') {
+      if (path === '/resources/leaveRequests?status=PENDING&page=1&pageSize=100') {
         return { items: [{ id: 'l-1', userId: 'u-1', startDate: '2026-08-01', endDate: '2026-08-02', status: 'PENDING' }], total: 1 };
       }
       throw new Error('approve failed');
@@ -66,7 +65,7 @@ describe('HrWorkflowPage', () => {
     expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
 
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/leaveRequests?page=1&pageSize=100') {
+      if (path === '/resources/leaveRequests?status=PENDING&page=1&pageSize=100') {
         return { items: [{ id: 'l-1', userId: 'u-1', startDate: '2026-08-01', endDate: '2026-08-02', status: 'PENDING' }], total: 1 };
       }
       throw 'boom';

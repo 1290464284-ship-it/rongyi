@@ -4,17 +4,9 @@ import { apiRequest } from '../../lib/api';
 import { ConfirmDialog, DataTable, Dialog, LoadingState, PageError } from '../../components';
 import { errorMessage } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
+import { parseStringArray } from '../../lib/parse';
 
 const FIELD_TYPES = ['TEXT', 'NUMBER', 'BOOLEAN', 'SELECT'] as const;
-
-function safeStringArray(value: unknown): string[] {
-  try {
-    const parsed = JSON.parse(String(value ?? '[]')) as unknown;
-    return Array.isArray(parsed) ? parsed.map(String) : [];
-  } catch {
-    return [];
-  }
-}
 
 interface CustomFieldRow extends Record<string, unknown> {
   id: string;
@@ -69,7 +61,7 @@ export function CustomFieldsPage() {
 
   function openEdit(row: CustomFieldRow) {
     setEditingId(row.id);
-    const options = safeStringArray(row.optionsJson);
+    const options = parseStringArray(row.optionsJson);
     setForm({
       label: row.label,
       fieldName: row.fieldName,

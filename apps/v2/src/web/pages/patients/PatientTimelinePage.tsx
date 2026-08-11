@@ -7,6 +7,7 @@ import { useToast } from '../../lib/toast-context';
 import type { Page } from '../../lib/types';
 import { LoadingState, PageError, SearchableSelect, Timeline, type SearchableSelectRow } from '../../components';
 import { formatMoney } from '../../lib/format';
+import { parseStringArray } from '../../lib/parse';
 
 const TIMELINE_PAGE_SIZE = 50;
 
@@ -26,15 +27,6 @@ function timelineTone(status?: string | null): 'done' | 'current' | 'pending' | 
   return 'pending';
 }
 
-function safeStringArray(value: unknown): string[] {
-  try {
-    const parsed = JSON.parse(String(value ?? '[]')) as unknown;
-    return Array.isArray(parsed) ? parsed.map(String) : [];
-  } catch {
-    return [];
-  }
-}
-
 function useTimelineResource(resource: string, patientId: string | null, generationRef: { current: number }) {
   return useInfiniteQuery({
     queryKey: [`${resource}-timeline`, patientId],
@@ -51,17 +43,22 @@ function useTimelineResource(resource: string, patientId: string | null, generat
     },
     enabled: patientId !== null,
     getNextPageParam: (last) => (last.page * last.pageSize < last.total ? last.page + 1 : undefined),
-    placeholderData: (previous) => previous,
   });
 }
 
 export function PatientTimelinePage() {
+  const { showToast } = useToast();
   const [searchParams] = useSearchParams();
   const urlPatientId = searchParams.get('id');
   const [patientId, setPatientId] = useState<string | null>(urlPatientId);
   const [patientRows, setPatientRows] = useState<SearchableSelectRow[]>([]);
   const derivedFromList = useRef(false);
   const generationRef = useRef(0);
+  const [prevUrlPatientId, setPrevUrlPatientId] = useState(urlPatientId);
+  if (prevUrlPatientId !== urlPatientId) {
+    setPrevUrlPatientId(urlPatientId);
+    if (urlPatientId) setPatientId(urlPatientId);
+  }
   useEffect(() => {
     generationRef.current += 1;
   }, [patientId]);
@@ -110,10 +107,14 @@ export function PatientTimelinePage() {
   const loadingMore = timelineQueries.some((query) => query.isFetchingNextPage);
   async function loadMoreTimeline() {
     if (loadingMore) return;
-    await Promise.all(timelineQueries.map((query) => query.fetchNextPage().catch(() => undefined)));
+    const results = await Promise.allSettled(timelineQueries.map((query) => query.fetchNextPage()));
+    const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+    if (failed) {
+      showToast(errorMessage(failed.reason, '加载更多失败'), 'error');
+    }
   }
 
-  const events: TimelineEvent[] = [
+  const events: TimelineEvent[] = patientId ? [
     ...(visits.data?.pages?.flatMap((page) => page.items) ?? []).map((row) => ({
       id: String(row.id),
       type: '就诊',
@@ -143,7 +144,7 @@ export function PatientTimelinePage() {
       title: String(row.content ?? '随访记录'),
       status: row.status ? String(row.status) : null,
     })),
-  ].sort((a, b) => String(b.time).localeCompare(String(a.time)) || a.type.localeCompare(b.type));
+  ].sort((a, b) => String(b.time).localeCompare(String(a.time)) || a.type.localeCompare(b.type)) : [];
   const timelineItems = events.map((event) => ({
     title: event.title,
     time: event.time,
@@ -152,7 +153,6 @@ export function PatientTimelinePage() {
     }`,
     tone: timelineTone(event.status),
   }));
-  const { showToast } = useToast();
   const loadedCustomValues = customFieldValues.data?.values ?? {};
   function customValue(fieldId: string, fieldType: string): string | boolean {
     if (Object.prototype.hasOwnProperty.call(customDraft, fieldId)) return customDraft[fieldId] ?? '';
@@ -232,7 +232,7 @@ export function PatientTimelinePage() {
           <div className="form-grid">
             {customFields.data.map((field) => {
               const value = customValue(field.id, field.fieldType);
-              const options = safeStringArray(field.optionsJson);
+              const options = parseStringArray(field.optionsJson);
               return (
                 <label key={field.id}>
                   {field.label}{field.required ? ' *' : ''}

@@ -341,7 +341,7 @@ export interface HrRepository {
 
 export interface ClinicalWorkflowRepository {
   getRow(table: string, id: string, clinicId?: string | null): Record<string, unknown> | null;
-  updateStatus(table: string, id: string, status: string, now: string, extra?: Record<string, unknown>, clinicId?: string | null): void;
+  updateStatus(table: string, id: string, status: string, now: string, extra?: Record<string, unknown>, clinicId?: string | null, fromStatus?: string): number;
   createVisit(input: Record<string, unknown>): string;
   lockMedicalRecord(id: string, locked: boolean, userId: string, now: string, clinicId?: string | null): void;
 }

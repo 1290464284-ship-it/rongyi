@@ -31,6 +31,7 @@ export function AppointmentBoardPage() {
   const query = useQuery({
     queryKey: ['appointment-board', date],
     queryFn: () => apiRequest<Page<AppointmentRow>>(`/appointments/by-date?date=${encodeURIComponent(date)}`),
+    placeholderData: (previous) => previous,
   });
 
   if (query.isLoading) return <LoadingState label="预约看板加载中..." />;

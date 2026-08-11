@@ -27,20 +27,31 @@ export class ClinicalWorkflowService {
     this.assertTransition(row, allowed, status);
     const now = context.now().toISOString();
     let visitId = row.visitId ? String(row.visitId) : null;
-    if ((status === 'IN_PROGRESS' || status === 'COMPLETED') && !visitId) {
-      visitId = randomUUID();
-      this.clinicalRepository.createVisit({
-        id: visitId,
-        clinicId: context.clinicId ?? null,
-        createdAt: now,
-        updatedAt: now,
-        patientId: row.patientId,
-        doctorId: row.doctorId ?? context.userId,
-        userId: context.userId,
-      });
-      this.clinicalRepository.updateStatus('Registration', id, row.status as string, now, { visitId }, context.clinicId);
-    }
-    this.clinicalRepository.updateStatus('Registration', id, status, now, {}, context.clinicId);
+    const run = this.db.transaction(() => {
+      if ((status === 'IN_PROGRESS' || status === 'COMPLETED') && !visitId) {
+        visitId = randomUUID();
+        this.clinicalRepository.createVisit({
+          id: visitId,
+          clinicId: context.clinicId ?? null,
+          createdAt: now,
+          updatedAt: now,
+          patientId: row.patientId,
+          doctorId: row.doctorId ?? context.userId,
+          userId: context.userId,
+        });
+      }
+      const changes = this.clinicalRepository.updateStatus(
+        'Registration',
+        id,
+        status,
+        now,
+        visitId ? { visitId } : {},
+        context.clinicId,
+        row.status as string,
+      );
+      if (changes === 0) throw new ConflictError('挂号状态已变化，请刷新后重试');
+    });
+    run();
     return { id, status, visitId };
   }
 
@@ -53,14 +64,16 @@ export class ClinicalWorkflowService {
     };
     this.assertTransition(row, allowed, status);
     const now = context.now().toISOString();
-    this.clinicalRepository.updateStatus(
+    const changes = this.clinicalRepository.updateStatus(
       'Visit',
       id,
       status,
       now,
       status === 'COMPLETED' ? { endTime: now } : {},
       context.clinicId,
+      row.status as string,
     );
+    if (changes === 0) throw new ConflictError('就诊状态已变化，请刷新后重试');
     return { id, status };
   }
 
@@ -73,7 +86,16 @@ export class ClinicalWorkflowService {
       CANCELLED: [],
     };
     this.assertTransition(row, allowed, status);
-    this.clinicalRepository.updateStatus('FirstExam', id, status, context.now().toISOString(), {}, context.clinicId);
+    const changes = this.clinicalRepository.updateStatus(
+      'FirstExam',
+      id,
+      status,
+      context.now().toISOString(),
+      {},
+      context.clinicId,
+      row.status as string,
+    );
+    if (changes === 0) throw new ConflictError('首诊状态已变化，请刷新后重试');
     return { id, status };
   }
 
@@ -88,14 +110,16 @@ export class ClinicalWorkflowService {
     this.assertTransition(row, allowed, status);
     const now = context.now().toISOString();
     const completedDate = status === 'COMPLETED' ? new SystemClock().clinicDate(context.now()) : null;
-    this.clinicalRepository.updateStatus(
+    const changes = this.clinicalRepository.updateStatus(
       'Treatment',
       id,
       status,
       now,
       completedDate ? { completedDate } : {},
       context.clinicId,
+      row.status as string,
     );
+    if (changes === 0) throw new ConflictError('治疗状态已变化，请刷新后重试');
     return { id, status };
   }
 

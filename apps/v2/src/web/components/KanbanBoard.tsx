@@ -68,8 +68,8 @@ export function KanbanBoard({ columns, onChange }: KanbanBoardProps) {
               className="ui-kanban-card"
               draggable
               tabIndex={0}
-              role="button"
-              aria-label={`移动 ${card.title}`}
+              role="listitem"
+              aria-label={`卡片 ${card.title}`}
               onDragStart={(event) => event.dataTransfer.setData('text/plain', card.id)}
               onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
                 if (event.key === 'ArrowRight') {

@@ -1,12 +1,14 @@
 import { FormEvent, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest, fetchAllPages } from '../../lib/api';
+import { apiRequest } from '../../lib/api';
+import type { Page } from '../../lib/types';
 import {
   ConfirmDialog,
   DataTable,
   Dialog,
   LoadingState,
   PageError,
+  PagePager,
   PromptDialog,
 } from '../../components';
 import { formatDisplayValue } from '../../lib/format';
@@ -78,6 +80,8 @@ const emptyForm: UserForm = {
   active: true,
 };
 
+const USER_PAGE_SIZE = 100;
+
 export function UsersPage() {
   const { showToast } = useToast();
   const [form, setForm] = useState<UserForm>(emptyForm);
@@ -90,17 +94,16 @@ export function UsersPage() {
   const [permissionTarget, setPermissionTarget] = useState<UserRow | null>(null);
   const [permissionForm, setPermissionForm] = useState<Record<string, boolean>>({});
   const [permissionBusy, setPermissionBusy] = useState(false);
+  const [page, setPage] = useState(1);
 
   const me = useQuery({
     queryKey: ['auth-me'],
     queryFn: () => apiRequest<{ role?: string }>('/auth/me'),
   });
   const users = useQuery({
-    queryKey: ['users'],
-    queryFn: async () => {
-      const items = await fetchAllPages<UserRow>('/resources/users?page=1&pageSize=100');
-      return { items, total: items.length, page: 1, pageSize: Math.max(items.length, 1) };
-    },
+    queryKey: ['users', page],
+    queryFn: () => apiRequest<Page<UserRow>>(`/resources/users?page=${page}&pageSize=${USER_PAGE_SIZE}`),
+    placeholderData: (previous) => previous,
     enabled: me.data?.role === 'BOSS' || me.data?.role === 'ADMIN',
   });
   const userRoles = useQuery({
@@ -308,6 +311,11 @@ export function UsersPage() {
         <button onClick={openCreate}>新建员工</button>
       </div>
       <DataTable columns={columns} rows={users.data?.items ?? []} keyField="id" emptyText="暂无员工" />
+      <PagePager
+        page={page}
+        hasNext={page * USER_PAGE_SIZE < (users.data?.total ?? 0)}
+        onPageChange={setPage}
+      />
 
       <Dialog open={showForm} title={editingId ? '编辑员工' : '新建员工'} onClose={() => setShowForm(false)}>
         <form onSubmit={submit}>

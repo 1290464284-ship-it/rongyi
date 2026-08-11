@@ -154,8 +154,9 @@ export function TreatmentPlansPage() {
               await apiRequest(`/resources/treatmentPlanItems/${String(item.id)}`, { method: 'DELETE' });
             }
           } catch (error) {
-            console.warn(`删除治疗计划明细失败（继续删除主记录）：${planId}`, error);
-            showToast('删除部分治疗计划明细失败，已继续删除主记录', 'error');
+            console.warn(`删除治疗计划明细失败（已中止删除主记录）：${planId}`, error);
+            showToast('删除治疗计划明细失败，已中止删除主记录', 'error');
+            throw error;
           }
           await apiRequest(`/resources/treatmentPlans/${planId}`, { method: 'DELETE' });
         }}

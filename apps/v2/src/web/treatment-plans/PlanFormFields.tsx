@@ -61,8 +61,6 @@ export function PlanFormFields({
       } catch (error) {
         if (!cancelled) {
           setItemsError(errorMessage(error, '加载明细失败'));
-          // 进入终态，避免 itemsLoading 永久为 true 导致表单卡死。
-          setItemsLoaded(true);
           showToastRef.current(errorMessage(error, '加载明细失败'), 'error');
         }
       }

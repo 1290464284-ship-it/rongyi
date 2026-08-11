@@ -1,25 +1,31 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest, fetchAllPages } from '../../lib/api';
-import { DataTable, QuerySection, type DataTableColumn } from '../../components';
+import { apiRequest } from '../../lib/api';
+import type { Page } from '../../lib/types';
+import { DataTable, PagePager, QuerySection, type DataTableColumn } from '../../components';
 import { errorMessage } from '../../lib/messages';
 import { useAsyncAction } from '../../hooks/use-async-action';
 import { useToast } from '../../lib/toast-context';
 
+const WORKFLOW_PAGE_SIZE = 100;
+
 export function PatientWorkflowPage() {
   const { showToast } = useToast();
+  const [patientPage, setPatientPage] = useState(1);
+  const [scorePage, setScorePage] = useState(1);
   const patients = useQuery({
-    queryKey: ['patients-workflow'],
-    queryFn: async () => {
-      const items = await fetchAllPages<Record<string, unknown>>('/resources/patients?page=1&pageSize=100');
-      return { items, total: items.length, page: 1, pageSize: Math.max(items.length, 1) };
-    },
+    queryKey: ['patients-workflow', patientPage],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(
+      `/resources/patients?page=${patientPage}&pageSize=${WORKFLOW_PAGE_SIZE}`,
+    ),
+    placeholderData: (previous) => previous,
   });
   const scores = useQuery({
-    queryKey: ['risk-workflow'],
-    queryFn: async () => {
-      const items = await fetchAllPages<Record<string, unknown>>('/resources/patientRiskScores?page=1&pageSize=100');
-      return { items, total: items.length, page: 1, pageSize: Math.max(items.length, 1) };
-    },
+    queryKey: ['risk-workflow', scorePage],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(
+      `/resources/patientRiskScores?page=${scorePage}&pageSize=${WORKFLOW_PAGE_SIZE}`,
+    ),
+    placeholderData: (previous) => previous,
   });
 
   async function calculate(patientId: string) {
@@ -56,10 +62,20 @@ export function PatientWorkflowPage() {
         query={patients}
         render={(data) => <DataTable columns={patientColumns} rows={data?.items ?? []} keyField="id" emptyText="暂无患者" />}
       />
+      <PagePager
+        page={patientPage}
+        hasNext={patientPage * WORKFLOW_PAGE_SIZE < (patients.data?.total ?? 0)}
+        onPageChange={setPatientPage}
+      />
       <h2>历史评分</h2>
       <QuerySection
         query={scores}
         render={(data) => <DataTable columns={scoreColumns} rows={data?.items ?? []} keyField="id" emptyText="暂无评分记录" />}
+      />
+      <PagePager
+        page={scorePage}
+        hasNext={scorePage * WORKFLOW_PAGE_SIZE < (scores.data?.total ?? 0)}
+        onPageChange={setScorePage}
       />
     </div>
   );

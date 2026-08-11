@@ -27,6 +27,7 @@ export function FollowUpsPage() {
     queryFn: async () => {
       return apiRequest<Page<Record<string, unknown>>>(`/follow-ups/reminders?page=${page}&pageSize=100`);
     },
+    placeholderData: (previous) => previous,
   });
   const summary = useQuery({
     queryKey: ['followup-summary'],
@@ -54,7 +55,7 @@ export function FollowUpsPage() {
     try {
       await apiRequest('/follow-ups/batch-generate', { method: 'POST', body: JSON.stringify({ limit: 50 }) });
       showToast('批量生成完成', 'success');
-      await query.refetch();
+      await Promise.all([query.refetch(), summary.refetch()]);
     } catch (error) {
       showToast(errorMessage(error, '批量生成失败'), 'error');
     }
@@ -69,7 +70,7 @@ export function FollowUpsPage() {
           body: JSON.stringify({ result }),
         });
         showToast('随访已完成', 'success');
-        await query.refetch();
+        await Promise.all([query.refetch(), summary.refetch()]);
       } else if (completion?.kind === 'batch') {
         const data = await apiRequest<{ completed: number; skipped: number; errors: string[] }>(
           '/follow-ups/batch-complete',
@@ -117,7 +118,7 @@ export function FollowUpsPage() {
       await apiRequest(`/follow-ups/${executionId}/execute`, { method: 'POST', body: JSON.stringify(body) });
       showToast('随访执行已记录', 'success');
       setExecutionId(null);
-      await Promise.all([query.refetch(), nps.refetch()]);
+      await Promise.all([query.refetch(), summary.refetch(), nps.refetch()]);
     } catch (error) {
       showToast(errorMessage(error, '执行失败'), 'error');
     }

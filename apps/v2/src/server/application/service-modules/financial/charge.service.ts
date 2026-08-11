@@ -9,7 +9,7 @@ import {
   SqliteDebtRepository,
   SqliteMemberCardRepository,
 } from '../../../infrastructure/repositories/core.repositories';
-import type { AppContext } from '../../../../domain/contracts';
+import { PayMethod, type AppContext } from '../../../../domain/contracts';
 import type {
   ChargeRepository,
   DebtRepository,
@@ -22,17 +22,7 @@ import {
   generateDocumentNumber,
 } from '../common';
 
-const PAY_METHODS = new Set([
-  'CASH',
-  'WECHAT',
-  'ALIPAY',
-  'CARD',
-  'DEBT',
-  'MEMBER_CARD',
-  'UNIONPAY',
-  'INSURANCE',
-  'OTHER',
-]);
+const PAY_METHODS: ReadonlySet<string> = new Set(Object.values(PayMethod));
 
 /** 防御性兜底上限：1 亿元（分） */
 const MAX_CHARGE_SUBTOTAL = 100_000_000_00;
@@ -61,7 +51,7 @@ interface PaymentLedgerInput {
   cardId?: string | null;
 }
 
-function recordPaymentLedger(db: Database.Database, input: PaymentLedgerInput): void {
+export function recordPaymentLedger(db: Database.Database, input: PaymentLedgerInput): void {
   db.prepare(
     `INSERT INTO PaymentLedger (
        id, clinicId, createdAt, updatedAt, deletedAt,

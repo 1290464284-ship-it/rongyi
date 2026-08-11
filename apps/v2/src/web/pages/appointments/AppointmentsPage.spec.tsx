@@ -655,7 +655,7 @@ await waitFor(() => {
       if (path === '/resources/appointments?page=2&pageSize=20') {
         return deleted
           ? { items: [], total: 21, page: 2, pageSize: 20 }
-          : { items: [{ id: 'a-9', patientId: 'p-1', doctorId: 'd-1', startTime: '2026-08-04T09:00:00.000Z', status: 'BOOKED' }], total: 21, page: 2, pageSize: 20 };
+          : { items: [{ id: 'a-9', patientId: 'p-9', doctorId: 'd-1', startTime: '2026-08-04T09:00:00.000Z', status: 'BOOKED' }], total: 21, page: 2, pageSize: 20 };
       }
       if (path === '/resources/appointments?page=1&pageSize=20') {
         return { items: appointmentList.items, total: 21, page: 1, pageSize: 20 };
@@ -680,7 +680,7 @@ await waitFor(() => {
     render(<AppointmentsPage />, { wrapper });
     await screen.findByText('预约管理');
     fireEvent.click(screen.getByRole('button', { name: '下一页' }));
-    await screen.findByText('第 2 页');
+    await screen.findByText('p-9');
     fireEvent.click(screen.getAllByRole('button', { name: '删除' })[0]);
     const confirmButtons = screen.getAllByRole('button', { name: '删除' });
     fireEvent.click(confirmButtons[confirmButtons.length - 1]);

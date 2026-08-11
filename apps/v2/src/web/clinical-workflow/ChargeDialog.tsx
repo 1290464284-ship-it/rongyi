@@ -66,7 +66,14 @@ export function ChargeDialog({
     try {
       // 注意：/api/v2/charges 的 route-policy 只允许财务角色，医生点击会得到 403 ——
       // 这是既有权限设计，页面只负责把错误 toast 出来，不做绕过。
-      await apiRequest('/charges', { method: 'POST', body: JSON.stringify({ patientId, items: validItems }) });
+      await apiRequest('/charges', {
+        method: 'POST',
+        body: JSON.stringify({
+          patientId,
+          visitId: row.visitId ? String(row.visitId) : undefined,
+          items: validItems,
+        }),
+      });
       showToast('划价已提交', 'success');
       onSaved();
       onClose();

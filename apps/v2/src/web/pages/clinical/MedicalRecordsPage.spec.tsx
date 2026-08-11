@@ -58,7 +58,7 @@ function mockData() {
       return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
     }
     if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
-    if (path === '/resources/visits?page=1&pageSize=100') {
+    if (path === '/resources/visits?patientId=p-1&page=1&pageSize=100') {
       return { items: [{ id: 'v-1' }], total: 1, page: 1, pageSize: 100 };
     }
     return {};
@@ -82,6 +82,9 @@ describe('MedicalRecordsPage', () => {
     });
     fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
     fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
+    await waitFor(() => {
+      expect((screen.getByRole('option', { name: 'v-1' }) as HTMLOptionElement).value).toBe('v-1');
+    });
     fireEvent.change(screen.getByLabelText('关联就诊'), { target: { value: 'v-1' } });
     fireEvent.change(screen.getByLabelText('诊断'), { target: { value: '牙周炎' } });
     fireEvent.change(screen.getByLabelText('涉及牙位（逗号分隔）'), { target: { value: '11, 21' } });

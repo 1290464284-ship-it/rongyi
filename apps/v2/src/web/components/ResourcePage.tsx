@@ -157,6 +157,7 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
     queryFn: () => apiRequest<Page<Record<string, unknown>>>(
       `/resources/${resource}?page=${page}&pageSize=20${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}`,
     ),
+    placeholderData: (previous) => previous,
     enabled: Boolean(definition),
   });
 

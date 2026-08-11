@@ -27,6 +27,7 @@ export function AppointmentsPage() {
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const createBusyRef = useRef(false);
   const [editingAppointment, setEditingAppointment] = useState<AppointmentRow | null>(null);
   // 编辑回填用原始电话缓存（列表行可能被服务端掩码，详情接口返回原始值）
   const [rawPhoneCache, setRawPhoneCache] = useState<Record<string, string>>({});
@@ -55,6 +56,7 @@ export function AppointmentsPage() {
   const query = useQuery({
     queryKey: ['appointments', page],
     queryFn: () => apiRequest<Page<AppointmentRow>>(`/resources/appointments?page=${page}&pageSize=20`),
+    placeholderData: (previous) => previous,
   });
 
   if (query.isLoading) return <LoadingState />;
@@ -62,10 +64,11 @@ export function AppointmentsPage() {
 
   async function create(event: FormEvent) {
     event.preventDefault();
+    if (createBusyRef.current) return;
     const tempName = tempPatientName.trim();
     const startDate = parseLocalDateTime(startTime);
     const endDate = parseLocalDateTime(endTime);
-    if (submitting || !(patientId || tempName) || !doctorId || !startTime || !endTime || !startDate || !endDate) {
+    if (!(patientId || tempName) || !doctorId || !startTime || !endTime || !startDate || !endDate) {
       showToast('请选择患者、医生并填写开始和结束时间', 'error');
       return;
     }
@@ -73,6 +76,7 @@ export function AppointmentsPage() {
       showToast('结束时间必须晚于开始时间', 'error');
       return;
     }
+    createBusyRef.current = true;
     setSubmitting(true);
     try {
       await apiRequest('/appointments', {
@@ -94,6 +98,7 @@ export function AppointmentsPage() {
     } catch (error) {
       showToast(errorMessage(error, '创建预约失败'), 'error');
     } finally {
+      createBusyRef.current = false;
       setSubmitting(false);
     }
   }

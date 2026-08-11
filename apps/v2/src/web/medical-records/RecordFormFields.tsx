@@ -9,22 +9,37 @@ const VISIT_PAGE_SIZE = 100;
 
 export function RecordFormFields({ form, update }: { form: RecordForm; update: (patch: Partial<RecordForm>) => void }) {
   const [visitPage, setVisitPage] = useState(1);
+  const [prevPatientId, setPrevPatientId] = useState(form.patientId);
+  if (prevPatientId !== form.patientId) {
+    setPrevPatientId(form.patientId);
+    setVisitPage(1);
+  }
   const doctors = useQuery({
     queryKey: ['record-doctors'],
     queryFn: () => apiRequest<Array<Record<string, unknown>>>('/doctors'),
   });
   const visits = useQuery({
-    queryKey: ['record-visits', visitPage],
+    queryKey: ['record-visits', form.patientId, visitPage],
     queryFn: () => apiRequest<Page<Record<string, unknown>>>(
-      `/resources/visits?page=${visitPage}&pageSize=${VISIT_PAGE_SIZE}`,
+      `/resources/visits?patientId=${encodeURIComponent(form.patientId ?? '')}&page=${visitPage}&pageSize=${VISIT_PAGE_SIZE}`,
     ),
+    enabled: Boolean(form.patientId),
     placeholderData: (previous) => previous,
   });
   return (
     <>
       <label>
         患者
-        <SearchableSelect resource="patients" value={form.patientId} onChange={(id) => update({ patientId: id })} ariaLabel="患者" placeholder="选择患者" />
+        <SearchableSelect
+          resource="patients"
+          value={form.patientId}
+          onChange={(id) => {
+            if (id !== form.patientId) update({ patientId: id, visitId: '' });
+            else update({ patientId: id });
+          }}
+          ariaLabel="患者"
+          placeholder="选择患者"
+        />
       </label>
       <label>
         医生
@@ -39,16 +54,18 @@ export function RecordFormFields({ form, update }: { form: RecordForm; update: (
         关联就诊
         <select value={form.visitId} onChange={(event) => update({ visitId: event.target.value })}>
           <option value="">不关联</option>
-          {visits.data?.items.map((row) => (
+          {(visits.data?.items ?? []).map((row) => (
             <option key={String(row.id)} value={String(row.id)}>{String(row.id)}</option>
           ))}
         </select>
       </label>
-      <PagePager
-        page={visitPage}
-        hasNext={visitPage * VISIT_PAGE_SIZE < (visits.data?.total ?? 0)}
-        onPageChange={setVisitPage}
-      />
+      {form.patientId && (
+        <PagePager
+          page={visitPage}
+          hasNext={visitPage * VISIT_PAGE_SIZE < (visits.data?.total ?? 0)}
+          onPageChange={setVisitPage}
+        />
+      )}
       <label>
         分类
         <input value={form.category} onChange={(event) => update({ category: event.target.value })} />

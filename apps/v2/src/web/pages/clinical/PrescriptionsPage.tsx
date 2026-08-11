@@ -85,8 +85,9 @@ export function PrescriptionsPage() {
               await apiRequest(`/resources/prescriptionItems/${String(item.id)}`, { method: 'DELETE' });
             }
           } catch (error) {
-            console.warn(`删除处方明细失败（继续删除主记录）：${prescriptionId}`, error);
-            showToast('删除部分处方明细失败，已继续删除主记录', 'error');
+            console.warn(`删除处方明细失败（已中止删除主记录）：${prescriptionId}`, error);
+            showToast('删除处方明细失败，已中止删除主记录', 'error');
+            throw error;
           }
           await apiRequest(`/resources/prescriptions/${prescriptionId}`, { method: 'DELETE' });
         }}

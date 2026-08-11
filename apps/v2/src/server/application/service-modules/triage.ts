@@ -197,10 +197,11 @@ export class TriageService {
         endIso,
         clinicId,
       );
-      this.db.prepare(
+      const updated = this.db.prepare(
         `UPDATE Appointment SET ${sets.join(', ')}
-         WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
+         WHERE id = ? AND status NOT IN ('CANCELLED', 'NO_SHOW') AND deletedAt IS NULL${tenantAnd(clinicId)}`,
       ).run(...params, appointmentId, ...tenantParams(clinicId));
+      if (updated.changes === 0) throw new ConflictError('已取消或未到的预约不能改期');
       // 预约改期统一维护同步与搜索索引。
       trackResourceWrite(this.db, { tableName: 'Appointment', recordId: appointmentId, operation: 'UPDATE', clinicId: clinicId ?? null });
     });

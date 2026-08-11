@@ -11,11 +11,20 @@ export class SqliteClinicalWorkflowRepository implements ClinicalWorkflowReposit
     return (this.db.prepare(`SELECT * FROM ${table} WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`).get(...params) as Record<string, unknown> | undefined) ?? null;
   }
 
-  updateStatus(table: string, id: string, status: string, now: string, extra: Record<string, unknown> = {}, clinicId?: string | null): void {
+  updateStatus(table: string, id: string, status: string, now: string, extra: Record<string, unknown> = {}, clinicId?: string | null, fromStatus?: string): number {
     const setClause = Object.keys(extra).map((key) => `${key} = ?`).join(', ');
     const params = Object.values(extra).map((value) => value ?? null);
-    const sql = `UPDATE ${table} SET status = ?, updatedAt = ?${setClause ? `, ${setClause}` : ''} WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`;
-    this.db.prepare(sql).run(status, now, ...params, id, ...(clinicId ? [clinicId] : []));
+    const fromClause = fromStatus !== undefined ? ' AND status = ?' : '';
+    const sql = `UPDATE ${table} SET status = ?, updatedAt = ?${setClause ? `, ${setClause}` : ''} WHERE id = ? AND deletedAt IS NULL${fromClause}${tenantAnd(clinicId)}`;
+    const result = this.db.prepare(sql).run(
+      status,
+      now,
+      ...params,
+      id,
+      ...(fromStatus !== undefined ? [fromStatus] : []),
+      ...(clinicId ? [clinicId] : []),
+    );
+    return result.changes;
   }
 
   createVisit(input: Record<string, unknown>): string {

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
-import { NotFoundError, ValidationError } from '../../infrastructure/errors';
+import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { trackResourceWrite } from '../../infrastructure/write-tracking';
 import { generateDocumentNumber } from './common';
@@ -162,9 +162,14 @@ export class ReplenishmentService {
             unitPrice,
             quantity * unitPrice,
           );
-          this.db.prepare(
-            `UPDATE InventoryReplenishmentSuggestion SET status = ?, updatedAt = ? WHERE id = ?${tenantAnd(clinicId)}`,
+          const claimed = this.db.prepare(
+            `UPDATE InventoryReplenishmentSuggestion
+             SET status = ?, updatedAt = ?
+             WHERE id = ? AND deletedAt IS NULL AND (status IS NULL OR status = 'OPEN')${tenantAnd(clinicId)}`,
           ).run('APPLIED', now, suggestion.id, ...(clinicId ? [clinicId] : []));
+          if (claimed.changes === 0) {
+            throw new ConflictError('补货建议已被处理，请刷新后重试');
+          }
         }
         orders.push({ id: orderId, number: orderNumber, supplierId, totalAmount, items: group.length });
       }

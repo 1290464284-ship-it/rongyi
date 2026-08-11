@@ -1,19 +1,24 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest, fetchAllPages } from '../../lib/api';
-import { DataTable, LoadingState, PageError, type DataTableColumn } from '../../components';
+import { apiRequest } from '../../lib/api';
+import type { Page } from '../../lib/types';
+import { DataTable, LoadingState, PageError, PagePager, type DataTableColumn } from '../../components';
 import { errorMessage } from '../../lib/messages';
 import { useAsyncAction } from '../../hooks/use-async-action';
 import { useToast } from '../../lib/toast-context';
 import { LEAVE_STATUS_LABELS } from '../../lib/labels';
 
+const WORKFLOW_PAGE_SIZE = 100;
+
 export function HrWorkflowPage() {
   const { showToast } = useToast();
+  const [page, setPage] = useState(1);
   const leaves = useQuery({
-    queryKey: ['leaves'],
-    queryFn: async () => {
-      const items = await fetchAllPages<Record<string, unknown>>('/resources/leaveRequests?page=1&pageSize=100');
-      return { items, total: items.length, page: 1, pageSize: Math.max(items.length, 1) };
-    },
+    queryKey: ['leaves', page],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(
+      `/resources/leaveRequests?status=PENDING&page=${page}&pageSize=${WORKFLOW_PAGE_SIZE}`,
+    ),
+    placeholderData: (previous) => previous,
   });
 
   if (leaves.isLoading) return <LoadingState label="请假数据加载中..." />;
@@ -60,9 +65,14 @@ export function HrWorkflowPage() {
       <div className="page-head"><h1>人事审批</h1></div>
       <DataTable
         columns={columns}
-        rows={leaves.data?.items.filter((row) => String(row.status) === 'PENDING') ?? []}
+        rows={leaves.data?.items ?? []}
         keyField="id"
         emptyText="暂无待审批请假"
+      />
+      <PagePager
+        page={page}
+        hasNext={page * WORKFLOW_PAGE_SIZE < (leaves.data?.total ?? 0)}
+        onPageChange={setPage}
       />
     </div>
   );

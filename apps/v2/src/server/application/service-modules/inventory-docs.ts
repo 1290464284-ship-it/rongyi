@@ -49,8 +49,8 @@ interface ItemStockRow {
 
 function positiveQuantity(value: unknown): number {
   const quantity = Number(value);
-  if (!Number.isSafeInteger(quantity) || quantity <= 0) {
-    throw new ValidationError('数量必须为正整数');
+  if (!Number.isSafeInteger(quantity) || quantity <= 0 || quantity > 1_000_000_000) {
+    throw new ValidationError('数量必须为不超过 10 亿的正整数');
   }
   return quantity;
 }

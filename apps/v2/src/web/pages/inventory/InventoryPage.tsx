@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router';
 import { apiRequest } from '../../lib/api';
 import type { Page } from '../../lib/types';
-import { ConfirmDialog, Dialog, LoadingState, PageError, SearchableSelect } from '../../components';
+import { ConfirmDialog, Dialog, LoadingState, PageError, PagePager, SearchableSelect } from '../../components';
 import { errorMessage } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
 import type { BatchRow, BatchListData } from '../../inventory/types';
@@ -15,6 +15,11 @@ export function InventoryPage() {
   const [searchParams] = useSearchParams();
   const urlItemId = searchParams.get('id');
   const [itemId, setItemId] = useState<string | null>(urlItemId);
+  const [prevUrlItemId, setPrevUrlItemId] = useState(urlItemId);
+  if (prevUrlItemId !== urlItemId) {
+    setPrevUrlItemId(urlItemId);
+    if (urlItemId) setItemId(urlItemId);
+  }
   const [itemIdError, setItemIdError] = useState<string | null>(null);
   const [type, setType] = useState<'IN' | 'OUT' | 'ADJUST'>('IN');
   const [quantity, setQuantity] = useState('1');
@@ -33,11 +38,15 @@ export function InventoryPage() {
   const [editing, setEditing] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<BatchRow | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'report'>('overview');
+  const [page, setPage] = useState(1);
   const [barcodeSearch, setBarcodeSearch] = useState('');
   const [barcodeTarget, setBarcodeTarget] = useState<Record<string, unknown> | null>(null);
   const query = useQuery({
-    queryKey: ['inventory'],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/inventoryItems?page=1&pageSize=20'),
+    queryKey: ['inventory', page],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(
+      `/resources/inventoryItems?page=${page}&pageSize=20`,
+    ),
+    placeholderData: (previous) => previous,
   });
   const derivedFromList = useRef(false);
   useEffect(() => {
@@ -356,6 +365,11 @@ export function InventoryPage() {
               </div>
             ))}
           </div>
+          <PagePager
+            page={page}
+            hasNext={page * 20 < (query.data?.total ?? 0)}
+            onPageChange={setPage}
+          />
           <h2>低库存</h2>
           {lowTruncated && <p className="reminder-muted">低库存超过 100 条，仅显示前 100 条</p>}
           <div className="table-wrap">

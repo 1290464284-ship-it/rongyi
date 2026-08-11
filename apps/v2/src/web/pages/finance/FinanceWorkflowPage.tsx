@@ -1,10 +1,13 @@
 import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest, fetchAllPages } from '../../lib/api';
-import { DataTable, PromptDialog, QuerySection, type DataTableColumn } from '../../components';
+import { apiRequest } from '../../lib/api';
+import type { Page } from '../../lib/types';
+import { DataTable, PagePager, PromptDialog, QuerySection, type DataTableColumn } from '../../components';
 import { formatMoney, toCents } from '../../lib/format';
 import { errorMessage } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
+
+const WORKFLOW_PAGE_SIZE = 100;
 
 type MoneyAction =
   | { kind: 'recharge'; id: string; title: string }
@@ -17,19 +20,21 @@ export function FinanceWorkflowPage() {
   const [action, setAction] = useState<MoneyAction>(null);
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
+  const [cardPage, setCardPage] = useState(1);
+  const [debtPage, setDebtPage] = useState(1);
   const cards = useQuery({
-    queryKey: ['member-cards'],
-    queryFn: async () => {
-      const items = await fetchAllPages<Record<string, unknown>>('/resources/memberCards?page=1&pageSize=100');
-      return { items, total: items.length, page: 1, pageSize: Math.max(items.length, 1) };
-    },
+    queryKey: ['member-cards', cardPage],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(
+      `/resources/memberCards?page=${cardPage}&pageSize=${WORKFLOW_PAGE_SIZE}`,
+    ),
+    placeholderData: (previous) => previous,
   });
   const debts = useQuery({
-    queryKey: ['debts'],
-    queryFn: async () => {
-      const items = await fetchAllPages<Record<string, unknown>>('/resources/debtRecords?page=1&pageSize=100');
-      return { items, total: items.length, page: 1, pageSize: Math.max(items.length, 1) };
-    },
+    queryKey: ['debts', debtPage],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(
+      `/resources/debtRecords?page=${debtPage}&pageSize=${WORKFLOW_PAGE_SIZE}`,
+    ),
+    placeholderData: (previous) => previous,
   });
 
   async function run(path: string, id: string, body: Record<string, unknown>, method: 'POST' | 'PATCH' = 'POST') {
@@ -101,10 +106,20 @@ export function FinanceWorkflowPage() {
         query={cards}
         render={(data) => <DataTable columns={cardColumns} rows={data?.items ?? []} keyField="id" emptyText="暂无会员卡" />}
       />
+      <PagePager
+        page={cardPage}
+        hasNext={cardPage * WORKFLOW_PAGE_SIZE < (cards.data?.total ?? 0)}
+        onPageChange={setCardPage}
+      />
       <h2>欠费</h2>
       <QuerySection
         query={debts}
         render={(data) => <DataTable columns={debtColumns} rows={data?.items ?? []} keyField="id" emptyText="暂无欠费" />}
+      />
+      <PagePager
+        page={debtPage}
+        hasNext={debtPage * WORKFLOW_PAGE_SIZE < (debts.data?.total ?? 0)}
+        onPageChange={setDebtPage}
       />
       <PromptDialog
         key={action !== null ? 'open' : 'closed'}

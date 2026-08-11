@@ -46,21 +46,23 @@ export function InventoryWorkflowPage() {
     enabled: expandedStocktakeId !== null,
   });
 
-  async function run(path: string, method: 'PATCH' | 'POST', body: Record<string, unknown>) {
+  async function run(path: string, method: 'PATCH' | 'POST', body: Record<string, unknown>): Promise<boolean> {
     try {
       await apiRequest(path, { method, body: JSON.stringify(body) });
       showToast('操作成功', 'success');
-      await Promise.all([purchase.refetch(), processing.refetch(), suggestions.refetch()]);
+      await Promise.all([purchase.refetch(), purchaseItems.refetch(), processing.refetch(), suggestions.refetch()]);
+      return true;
     } catch (error) {
       showToast(errorMessage(error, '操作失败'), 'error');
+      return false;
     }
   }
 
   async function applySuggestions() {
     if (!selectedSuggestions.length) return;
     await runSuggestions(async () => {
-      await run('/inventory/replenishment/apply', 'POST', { ids: selectedSuggestions });
-      setSelectedSuggestions([]);
+      const applied = await run('/inventory/replenishment/apply', 'POST', { ids: selectedSuggestions });
+      if (applied) setSelectedSuggestions([]);
     });
   }
 
@@ -78,7 +80,14 @@ export function InventoryWorkflowPage() {
     {
       key: 'actions',
       label: '操作',
-      render: (row) => <ReceiveButton id={String(row.id)} onDone={(id) => run(`/purchase-orders/${id}/receive`, 'PATCH', {})} />,
+      render: (row) => (
+        <ReceiveButton
+          id={String(row.id)}
+          onDone={async (id) => {
+            await run(`/purchase-orders/${id}/receive`, 'PATCH', {});
+          }}
+        />
+      ),
     },
   ];
 
@@ -97,7 +106,12 @@ export function InventoryWorkflowPage() {
       key: 'actions',
       label: '操作',
       render: (row) => (
-        <StatusFlowSelect id={String(row.id)} onDone={(id, status) => run(`/processing-orders/${id}/status`, 'PATCH', { status })} />
+        <StatusFlowSelect
+          id={String(row.id)}
+          onDone={async (id, status) => {
+            await run(`/processing-orders/${id}/status`, 'PATCH', { status });
+          }}
+        />
       ),
     },
   ];
@@ -260,6 +274,9 @@ export function InventoryWorkflowPage() {
         query={purchaseItems}
         render={(data) => <DataTable columns={purchaseItemColumns} rows={data?.items ?? []} keyField="id" emptyText="暂无采购明细" />}
       />
+      {purchaseItems.data && (purchaseItems.data.total ?? 0) > (purchaseItems.data.items?.length ?? 0) && (
+        <p className="reminder-muted">采购明细超过 200 条，仅显示部分数据</p>
+      )}
       <h2>加工单</h2>
       <QuerySection
         query={processing}
@@ -281,6 +298,9 @@ export function InventoryWorkflowPage() {
                 <button disabled={suggestionsBusy || selectedSuggestions.length === 0} onClick={applySuggestions}>{suggestionsBusy ? '处理中...' : '应用选中建议'}</button>
               </div>
               <DataTable columns={suggestionColumns} rows={openSuggestions} keyField="id" emptyText="暂无待应用补货建议" />
+              {(data?.total ?? 0) > (data?.items?.length ?? 0) && (
+                <p className="reminder-muted">补货建议超过 100 条，仅显示部分数据</p>
+              )}
             </>
           );
         }}

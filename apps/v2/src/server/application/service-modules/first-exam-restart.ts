@@ -13,6 +13,7 @@ import type Database from 'better-sqlite3';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { NotFoundError, ValidationError } from '../../infrastructure/errors';
 import type { AppContext } from '../../../domain/contracts';
+import { assertDoctorExists } from './common';
 
 export type Dentition = 'DECIDUOUS' | 'PERMANENT' | 'MIXED';
 export type ChiefMark = 'NONE' | 'HORIZONTAL_SHOULD' | 'HORIZONTAL_DONE';
@@ -58,6 +59,9 @@ export class FirstExamRestartService {
 
     if (input.dentition !== undefined && !DENTITIONS.includes(input.dentition)) {
       throw new ValidationError('Invalid dentition');
+    }
+    if (input.doctorId !== undefined) {
+      assertDoctorExists(this.db, input.doctorId, clinicId);
     }
 
     const now = context.now().toISOString();

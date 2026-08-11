@@ -23,6 +23,7 @@ export function PurchaseOrderFormFields({
   onItemsLoaded?: () => void;
 }) {
   const loadedItemsForRef = useRef<string | null>(null);
+  const rowOptionsRef = useRef(new Map<string, SearchableSelectRow[]>());
   const updateRef = useRef(update);
   const onItemsLoadedRef = useRef(onItemsLoaded);
   useEffect(() => { updateRef.current = update; });
@@ -87,10 +88,20 @@ export function PurchaseOrderFormFields({
           <SearchableSelect
             resource="inventoryItems"
             value={item.itemId}
-            onChange={(id) => update({ items: form.items.map((entry) => entry.id === item.id ? { ...entry, itemId: id } : entry) })}
+            onChange={(id) => {
+              const selected = (rowOptionsRef.current.get(item.id) ?? []).find((row) => String(row.id) === id);
+              update({
+                items: form.items.map((entry) => entry.id === item.id
+                  ? { ...entry, itemId: id, name: selected ? String(selected.name ?? '') : entry.name }
+                  : entry),
+              });
+            }}
             ariaLabel="采购项目"
             placeholder="选择项目"
-            onLoaded={(rows) => setInventoryRows(rows)}
+            onLoaded={(rows) => {
+              rowOptionsRef.current.set(item.id, rows);
+              setInventoryRows(rows);
+            }}
           />
           <input aria-label="采购数量" type="number" min="1" value={item.quantity} onChange={(event) => update({ items: form.items.map((entry) => entry.id === item.id ? { ...entry, quantity: event.target.value } : entry) })} />
           <input aria-label="采购单价" type="number" min="0" value={item.unitPrice} onChange={(event) => update({ items: form.items.map((entry) => entry.id === item.id ? { ...entry, unitPrice: event.target.value } : entry) })} />

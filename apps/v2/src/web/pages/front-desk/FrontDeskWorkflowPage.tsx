@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest, fetchAllPages } from '../../lib/api';
+import { apiRequest } from '../../lib/api';
+import type { Page } from '../../lib/types';
+import { PagePager } from '../../components';
 import { RegistrationBoard } from '../../clinical-workflow/RegistrationBoard';
 import { ChargeDialog } from '../../clinical-workflow/ChargeDialog';
 import { CreateFollowUpDialog } from '../../clinical-workflow/CreateFollowUpDialog';
@@ -16,16 +18,19 @@ const registrationTransitions: Record<string, string[]> = {
   IN_PROGRESS: ['COMPLETED', 'CANCELLED'],
 };
 
+const WORKFLOW_PAGE_SIZE = 100;
+
 export function FrontDeskWorkflowPage() {
   const { showToast } = useToast();
   const [activeDialog, setActiveDialog] = useState<WorkbenchDialog | null>(null);
   const [transitionKey, setTransitionKey] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
   const registrations = useQuery({
-    queryKey: ['front-desk', 'registrations'],
-    queryFn: async () => {
-      const items = await fetchAllPages<Record<string, unknown>>('/resources/registrations?page=1&pageSize=100');
-      return { items, total: items.length, page: 1, pageSize: Math.max(items.length, 1) };
-    },
+    queryKey: ['front-desk', 'registrations', page],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(
+      `/resources/registrations?page=${page}&pageSize=${WORKFLOW_PAGE_SIZE}`,
+    ),
+    placeholderData: (previous) => previous,
   });
 
   async function transition(id: string, status: string) {
@@ -71,6 +76,11 @@ export function FrontDeskWorkflowPage() {
               <button onClick={() => setActiveDialog({ kind: 'followup', row })}>回访</button>
             </div>
           )}
+        />
+        <PagePager
+          page={page}
+          hasNext={page * WORKFLOW_PAGE_SIZE < (registrations.data?.total ?? 0)}
+          onPageChange={setPage}
         />
       </section>
       {activeDialog?.kind === 'charge' && (

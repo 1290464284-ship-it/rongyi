@@ -138,8 +138,8 @@ describe('FirstExamRestartService', () => {
   it('restart honors explicit doctorId and dentition overrides', () => {
     insertExam('exam-orig-2', { doctorId: 'user-admin-001', dentition: 'MIXED' });
     const service = new FirstExamRestartService(db);
-    const created = service.restart('exam-orig-2', { doctorId: 'user-doctor-002', dentition: 'PERMANENT' }, context);
-    expect(created.doctorId).toBe('user-doctor-002');
+    const created = service.restart('exam-orig-2', { doctorId: 'user-seed-doctor-001', dentition: 'PERMANENT' }, context);
+    expect(created.doctorId).toBe('user-seed-doctor-001');
     expect(created.dentition).toBe('PERMANENT');
     expect(created.previousExamId).toBe('exam-orig-2');
     expect(created.status).toBe('IN_PROGRESS');

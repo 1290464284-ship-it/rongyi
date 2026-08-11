@@ -19,6 +19,7 @@ export function ImagingPage() {
   const [file, setFile] = useState<File | null>(null);
   const [categoryForm, setCategoryForm] = useState({ name: '', type: 'ORTHODONTIC', sortOrder: 0, active: true });
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const categoryBusyRef = useRef(false);
   const [deleteCategoryTarget, setDeleteCategoryTarget] = useState<ImagingCategoryRow | null>(null);
   const [compareLeftId, setCompareLeftId] = useState('');
   const [compareRightId, setCompareRightId] = useState('');
@@ -56,6 +57,7 @@ export function ImagingPage() {
 
   async function saveCategory(event: FormEvent) {
     event.preventDefault();
+    if (categoryBusyRef.current) return;
     if (!categoryForm.name.trim()) {
       showToast('请填写分类名称', 'error');
       return;
@@ -66,6 +68,7 @@ export function ImagingPage() {
       sortOrder: categoryForm.sortOrder,
       active: categoryForm.active,
     };
+    categoryBusyRef.current = true;
     try {
       if (editingCategoryId) {
         await apiRequest(`/resources/imagingCategories/${editingCategoryId}`, {
@@ -85,6 +88,8 @@ export function ImagingPage() {
       await categories.refetch();
     } catch (error) {
       showToast(errorMessage(error, editingCategoryId ? '更新影像分类失败' : '创建影像分类失败'), 'error');
+    } finally {
+      categoryBusyRef.current = false;
     }
   }
 

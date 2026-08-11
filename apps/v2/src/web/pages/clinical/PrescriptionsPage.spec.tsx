@@ -521,7 +521,7 @@ describe('PrescriptionsPage', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('continues deleting the master when prescription detail deletes fail', async () => {
+  it('aborts deleting the master when prescription detail deletes fail', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/prescriptions?page=1&pageSize=50') {
         return { items: [{ id: 'pres-1', patientId: 'p-1', doctorId: 'd-1', remark: '饭后服用' }], total: 1, page: 1, pageSize: 50 };
@@ -532,9 +532,9 @@ describe('PrescriptionsPage', () => {
     render(<PrescriptionsPage />, { wrapper });
     fireEvent.click(await screen.findByRole('button', { name: '删除' }));
     fireEvent.click(screen.getByRole('button', { name: '确认删除' }));
-    expect(await screen.findByText('删除部分处方明细失败，已继续删除主记录')).toBeDefined();
+    expect(await screen.findByText('删除处方明细失败，已中止删除主记录')).toBeDefined();
     await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/resources/prescriptions/pres-1', expect.objectContaining({ method: 'DELETE' }));
+      expect(apiRequest).not.toHaveBeenCalledWith('/resources/prescriptions/pres-1', expect.objectContaining({ method: 'DELETE' }));
     });
   });
 
