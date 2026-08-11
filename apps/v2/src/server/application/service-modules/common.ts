@@ -157,6 +157,19 @@ export function runInTransaction<T>(db: Database.Database, fn: () => T): T {
   return fn();
 }
 
+/** 与 runInTransaction 相同的回退语义，但使用 BEGIN IMMEDIATE 提前获取写锁。 */
+export function runInTransactionImmediate<T>(db: Database.Database, fn: () => T): T {
+  const tx = (db as unknown as { transaction?: <U>(cb: () => U) => () => U }).transaction;
+  if (typeof tx === 'function') {
+    const runner = tx.call(db, fn);
+    if (typeof (runner as { immediate?: () => T }).immediate === 'function') {
+      return (runner as unknown as { immediate: () => T }).immediate();
+    }
+    return runner() as T;
+  }
+  return fn();
+}
+
 export function assertPatientExists(db: Database.Database, patientId: string, clinicId: string | null): void {
   const row = db.prepare(
     `SELECT id FROM Patient WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,

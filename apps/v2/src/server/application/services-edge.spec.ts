@@ -1237,6 +1237,14 @@ describe('service edge coverage', () => {
     expect(otherPage.rows?.some((row) => row.id === 'patient-demo-001')).toBe(false);
     expect(() => service.fullSnapshot(context, { table: 'NotATable' })).toThrow('Sync table is not allowed');
     expect(() => service.fullSnapshot({ ...context, role: 'DOCTOR' })).toThrow('Sync requires BOSS');
+    const bounded = service.fullSnapshot(context, {
+      table: 'Patient',
+      limit: Number.POSITIVE_INFINITY,
+      offset: Number.POSITIVE_INFINITY,
+    });
+    expect(Number.isFinite(bounded.limit)).toBe(true);
+    expect(Number(bounded.limit)).toBeLessThanOrEqual(50_000);
+    expect(Number.isFinite(bounded.offset)).toBe(true);
   });
 
   it('pulls server-originated changes to other devices and keeps push single-row', async () => {

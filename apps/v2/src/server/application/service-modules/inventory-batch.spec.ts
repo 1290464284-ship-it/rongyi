@@ -220,6 +220,16 @@ describe('InventoryBatchService', () => {
     expect(() => service.adjust('batch-adjust', { remainingQuantity: -1 }, context)).toThrow(ValidationError);
   });
 
+  it('blocks adjusting a batch while its item is locked by a stocktake', () => {
+    insertItem('item-adjust-lock', { code: 'ADJUST-LOCK' });
+    insertBatch('batch-adjust-lock', { itemId: 'item-adjust-lock', batchNo: 'LOCK', initialQuantity: 5, remainingQuantity: 5 });
+    const lockGuard = vi.fn(() => { throw new ConflictError('盘点已锁定'); });
+    const service = new InventoryBatchService(db, lockGuard);
+    expect(() => service.adjust('batch-adjust-lock', { remainingQuantity: 2 }, context)).toThrow(ConflictError);
+    expect(lockGuard).toHaveBeenCalledWith('item-adjust-lock', 'clinic-v2-001');
+    expect(batchRow('batch-adjust-lock').remainingQuantity).toBe(5);
+  });
+
   it('updates batch metadata without touching quantities and clears fields on empty strings', () => {
     insertItem('item-update', { code: 'UPDATE-001' });
     insertBatch('batch-update', { itemId: 'item-update', batchNo: 'OLD', expiryDate: '2026-09-01', initialQuantity: 7, remainingQuantity: 7 });

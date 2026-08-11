@@ -33,7 +33,15 @@ function mockLookups() {
   });
 }
 
-function FormHarness({ editing = false, editingId = null }: { editing?: boolean; editingId?: string | null }) {
+function FormHarness({
+  editing = false,
+  editingId = null,
+  onItemsLoaded,
+}: {
+  editing?: boolean;
+  editingId?: string | null;
+  onItemsLoaded?: () => void;
+}) {
   const [form, setForm] = useState<PurchaseOrderForm>(() => emptyPurchaseForm());
   const [inventoryRows, setInventoryRows] = useState<SearchableSelectRow[]>([]);
   return (
@@ -44,6 +52,7 @@ function FormHarness({ editing = false, editingId = null }: { editing?: boolean;
       setInventoryRows={setInventoryRows}
       editing={editing}
       editingId={editingId}
+      onItemsLoaded={onItemsLoaded}
     />
   );
 }
@@ -96,8 +105,10 @@ describe('PurchaseOrderFormFields', () => {
 
   it('reports backfill failures', async () => {
     vi.mocked(fetchAllPages).mockRejectedValue(new Error(''));
-    render(<FormHarness editing editingId="po-1" />, { wrapper });
+    const onItemsLoaded = vi.fn();
+    render(<FormHarness editing editingId="po-1" onItemsLoaded={onItemsLoaded} />, { wrapper });
     expect(await screen.findByText('明细加载失败，请关闭后重试')).toBeDefined();
+    expect(onItemsLoaded).not.toHaveBeenCalled();
   });
 
   it('backfills sparse rows with blank and default fallbacks', async () => {

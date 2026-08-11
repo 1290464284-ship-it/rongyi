@@ -135,6 +135,9 @@
         "to": "legacy"
       }
     ],
+    "asarUnpack": [
+      "build/internal-signing.pfx.cer"
+    ],
     "win": {
       "verifyUpdateCodeSignature": true,
       "icon": "build/icon.ico",

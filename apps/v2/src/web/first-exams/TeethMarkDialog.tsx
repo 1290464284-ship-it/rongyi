@@ -20,6 +20,7 @@ export function TeethMarkDialog({
   const { showToast } = useToast();
   const [marks, setMarks] = useState<Record<string, string>>({});
   const [selectedToothId, setSelectedToothId] = useState<string | null>(null);
+  const [markingToothId, setMarkingToothId] = useState<string | null>(null);
   const teethQuery = useQuery({
     queryKey: ['first-exam-teeth', row.id],
     queryFn: () => apiRequest<Page<FirstExamToothRow>>(`/resources/firstExamTeeth?examId=${encodeURIComponent(row.id)}&page=1&pageSize=200`),
@@ -32,8 +33,10 @@ export function TeethMarkDialog({
     : 'NONE';
 
   async function setChiefMark(tooth: FirstExamToothRow, mark: string) {
+    if (markingToothId === tooth.id) return;
     const previous = String(tooth.chiefMark ?? 'NONE');
     setMarks((current) => ({ ...current, [tooth.id]: mark }));
+    setMarkingToothId(tooth.id);
     try {
       await apiRequest(`/first-exams/${row.id}/teeth/${tooth.id}/chief-mark`, {
         method: 'POST',
@@ -44,6 +47,8 @@ export function TeethMarkDialog({
     } catch (error) {
       setMarks((current) => ({ ...current, [tooth.id]: previous }));
       showToast(errorMessage(error, '主诉标记更新失败'), 'error');
+    } finally {
+      setMarkingToothId(null);
     }
   }
 
@@ -100,6 +105,7 @@ export function TeethMarkDialog({
                   主诉标记
                   <select
                     aria-label={`牙齿 ${selectedNumber} 主诉标记`}
+                    disabled={markingToothId === selectedTooth.id}
                     value={selectedMark}
                     onChange={(event) => void setChiefMark(selectedTooth, event.target.value)}
                   >

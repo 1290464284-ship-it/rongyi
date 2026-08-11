@@ -27,6 +27,15 @@ export function WechatReminderSettings() {
   if (query.isLoading) {
     return <div className="reminder-muted">提醒设置加载中...</div>;
   }
+  if (query.error) {
+    return (
+      <section className="wechat-reminder-settings">
+        <h2>提醒设置</h2>
+        <p className="error">加载提醒设置失败</p>
+        <button type="button" onClick={() => void query.refetch()}>重试</button>
+      </section>
+    );
+  }
 
   return (
     <ReminderSettingsForm

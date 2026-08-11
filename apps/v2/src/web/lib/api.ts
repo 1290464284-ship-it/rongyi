@@ -92,7 +92,7 @@ function desktopSecretStore(): DesktopSecretStore | null {
 }
 
 class ClientError extends Error {
-  constructor(message: string, readonly code = 'REQUEST_FAILED', readonly traceId?: string) {
+  constructor(message: string, readonly code = 'REQUEST_FAILED', readonly traceId?: string, readonly status?: number) {
     super(message);
   }
 }
@@ -242,7 +242,7 @@ export async function apiRequest<T>(
   }
   const body = await response.json().catch(() => null) as { success?: boolean; data?: T; code?: string; message?: string; traceId?: string } | null;
   if (!response.ok || body?.success === false || body === null) {
-    throw new ClientError(friendlyError(body?.message ?? `Request failed (${response.status})`), body?.code, body?.traceId);
+    throw new ClientError(friendlyError(body?.message ?? `Request failed (${response.status})`), body?.code, body?.traceId, response.status);
   }
   return body.data as T;
 }
@@ -253,10 +253,9 @@ export async function apiRequest<T>(
  */
 export async function fetchAllPages<T>(path: string): Promise<T[]> {
   const pageSize = 100;
-  const separator = path.includes('?') ? '&' : '?';
   const MAX_PAGES = 1000;
   const CONCURRENCY = 8;
-  const first = await apiRequest<Page<T>>(`${path}${separator}page=1&pageSize=${pageSize}`);
+  const first = await apiRequest<Page<T>>(pagedPath(path, 1, pageSize));
   const items: T[] = [...first.items];
   if (first.items.length === 0 || items.length >= first.total) return items;
 
@@ -266,7 +265,7 @@ export async function fetchAllPages<T>(path: string): Promise<T[]> {
   for (let offset = 0; offset < pages.length; offset += CONCURRENCY) {
     const batch = pages.slice(offset, offset + CONCURRENCY);
     const results = await Promise.all(
-      batch.map((page) => apiRequest<Page<T>>(`${path}${separator}page=${page}&pageSize=${pageSize}`)),
+      batch.map((page) => apiRequest<Page<T>>(pagedPath(path, page, pageSize))),
     );
     for (const data of results) items.push(...data.items);
   }
@@ -274,6 +273,15 @@ export async function fetchAllPages<T>(path: string): Promise<T[]> {
     throw new Error('fetchAllPages exceeded the page cap; refusing to continue');
   }
   return items;
+}
+
+function pagedPath(path: string, page: number, pageSize: number): string {
+  const [base, query = ''] = path.split('?', 2);
+  const params = new URLSearchParams(query);
+  params.set('page', String(page));
+  params.set('pageSize', String(pageSize));
+  const qs = params.toString();
+  return qs ? `${base}?${qs}` : base;
 }
 
 export async function login(username: string, password: string): Promise<{ token: string; user: Record<string, unknown> }> {

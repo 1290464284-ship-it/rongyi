@@ -755,6 +755,38 @@ describe('HTTP app', () => {
     expect(row.statusCode).toBe('400');
   });
 
+  it('masks business PII and caps audit detail for generic resource writes', async () => {
+    const before = (db.prepare('SELECT COUNT(*) AS c FROM OperationLog').get() as { c: number }).c;
+    await request(app)
+      .post('/api/v2/resources/patients')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        code: 'AUDIT-MASK-001',
+        name: 'Audit Mask',
+        gender: 'UNKNOWN',
+        phone: '13912345678',
+        idCard: '110101199001011234',
+        source: 'OTHER',
+        remark: 'x'.repeat(5000),
+      })
+      .expect(201);
+    const after = (db.prepare('SELECT COUNT(*) AS c FROM OperationLog').get() as { c: number }).c;
+    expect(after).toBe(before + 1);
+    const row = db.prepare(
+      'SELECT detail FROM OperationLog ORDER BY createdAt DESC, rowid DESC LIMIT 1',
+    ).get() as { detail: string | null };
+    expect(String(row.detail)).not.toContain('13912345678');
+    expect(String(row.detail)).not.toContain('110101199001011234');
+    expect(String(row.detail).length).toBeLessThanOrEqual(4000);
+    const parsed = JSON.parse(String(row.detail)) as { body: Record<string, unknown> };
+    if (parsed.body.truncated === true) {
+      expect(parsed.body.keys).toBeGreaterThan(0);
+    } else {
+      expect(parsed.body.phone).toBeNull();
+      expect(parsed.body.idCard).toBeNull();
+    }
+  });
+
   it('rejects malformed print query data with a validation error', async () => {
     const response = await request(app)
       .get('/api/v2/print?kind=report&data=%7B%22bad%22')

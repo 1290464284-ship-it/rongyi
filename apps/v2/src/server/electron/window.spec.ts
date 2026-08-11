@@ -34,6 +34,7 @@ describe('electron window trust boundary', () => {
     const mod = loadElectronModule<WindowModule>('../../../electron/window.cjs', { electron });
     expect(() => mod.assertTrustedRenderer({ senderFrame: { url: `${indexUrl}#/patients` } })).not.toThrow();
     expect(() => mod.assertTrustedRenderer({ senderFrame: { url: `${errorUrl}?msg=x` } })).not.toThrow();
+    expect(() => mod.assertTrustedRenderer({ senderFrame: { url: `${indexUrl}.evil` } })).toThrow('Untrusted IPC sender');
   });
 
   it('rejects untrusted renderer URLs', () => {
@@ -47,6 +48,40 @@ describe('electron window trust boundary', () => {
     const mod = loadElectronModule<WindowModule>('../../../electron/window.cjs', { electron });
     expect(() => mod.assertTrustedRenderer({ senderFrame: { url: 'https://evil.example' } })).toThrow('Untrusted IPC sender');
     expect(() => mod.assertTrustedRenderer({ senderFrame: {} })).toThrow('Untrusted IPC sender');
+  });
+
+  it('allows about:blank popups and renderer blob URLs but denies external links', async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-window-popup-test-'));
+    let openHandler: ((details: { url: string }) => { action: string }) | null = null;
+    class BrowserWindowMock {
+      loadURL = vi.fn();
+      maximize = vi.fn();
+      isMaximized = () => false;
+      getNormalBounds = () => ({ x: 0, y: 0, width: 1280, height: 820 });
+      webContents = {
+        setWindowOpenHandler: vi.fn((handler: (details: { url: string }) => { action: string }) => {
+          openHandler = handler;
+        }),
+        on: vi.fn(),
+      };
+      isDestroyed = () => false;
+      hide = vi.fn();
+      on = vi.fn();
+    }
+    const electron = {
+      app: { getPath: () => tempDir, isPackaged: true },
+      BrowserWindow: BrowserWindowMock,
+      shell: { openExternal: vi.fn() },
+      Notification: { isSupported: () => false },
+    };
+    const mod = loadElectronModule<WindowModule>('../../../electron/window.cjs', { electron });
+    mod.createWindow();
+    expect(openHandler).not.toBeNull();
+    expect(openHandler!({ url: 'about:blank' }).action).toBe('allow');
+    expect(openHandler!({ url: 'blob:http://127.0.0.1:1234/print' }).action).toBe('allow');
+    expect(openHandler!({ url: 'https://evil.example' }).action).toBe('deny');
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(electron.shell.openExternal).toHaveBeenCalledWith('https://evil.example');
   });
 
   it('hides the window to tray instead of closing when tray exists', () => {

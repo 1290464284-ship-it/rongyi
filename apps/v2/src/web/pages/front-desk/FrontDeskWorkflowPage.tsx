@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest } from '../../lib/api';
-import type { Page } from '../../lib/types';
+import { apiRequest, fetchAllPages } from '../../lib/api';
 import { RegistrationBoard } from '../../clinical-workflow/RegistrationBoard';
 import { ChargeDialog } from '../../clinical-workflow/ChargeDialog';
 import { CreateFollowUpDialog } from '../../clinical-workflow/CreateFollowUpDialog';
@@ -23,7 +22,10 @@ export function FrontDeskWorkflowPage() {
   const [transitionKey, setTransitionKey] = useState<string | null>(null);
   const registrations = useQuery({
     queryKey: ['front-desk', 'registrations'],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/registrations?page=1&pageSize=100'),
+    queryFn: async () => {
+      const items = await fetchAllPages<Record<string, unknown>>('/resources/registrations?page=1&pageSize=100');
+      return { items, total: items.length, page: 1, pageSize: Math.max(items.length, 1) };
+    },
   });
 
   async function transition(id: string, status: string) {

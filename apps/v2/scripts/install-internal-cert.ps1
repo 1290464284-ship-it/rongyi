@@ -1,3 +1,6 @@
+# DEPRECATED / MANUAL ONLY: 仅用于受控终端手动信任内部证书，禁止在 CI 中运行。
+# 需要自动信任时使用 Electron 主进程的 cert-trust.cjs，并通过
+# V2_EXPECTED_INTERNAL_CERT_THUMBPRINT 做指纹校验。
 [CmdletBinding()]
 param(
     [string]$CertificatePath = "certs/internal-signing.pfx.cer",

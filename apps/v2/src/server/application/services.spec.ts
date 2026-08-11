@@ -624,6 +624,24 @@ describe('application services', () => {
     expect(() => service.remindersCsv('bad-scope', context)).toThrow('overdue, today, upcoming, or all');
   });
 
+  it('caps follow-up CSV exports and marks truncation', () => {
+    const service = new FollowUpService(db);
+    const now = new Date().toISOString();
+    const today = new SystemClock().clinicDate();
+    for (let index = 0; index < 7; index += 1) {
+      db.prepare(
+        `INSERT INTO FollowUp (
+           id, clinicId, createdAt, updatedAt, deletedAt,
+           patientId, planDate, content, status
+         ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', ?, ?, 'PENDING')`,
+      ).run(`followup-csv-cap-${index}`, context.clinicId, now, now, today, `cap-${index}`);
+    }
+    const csv = service.remindersCsv('today', context, 5);
+    const dataLines = csv.split('\n').filter((line) => line !== '' && !line.startsWith('#'));
+    expect(dataLines.length).toBe(6);
+    expect(csv).toContain('# truncated');
+  });
+
   it('masks phones and guards formula injection in follow-up CSV exports', () => {
     const service = new FollowUpService(db);
     const now = new Date().toISOString();

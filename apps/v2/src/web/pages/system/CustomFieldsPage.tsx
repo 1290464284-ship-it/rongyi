@@ -83,13 +83,24 @@ export function CustomFieldsPage() {
 
   async function submit() {
     if (busy) return;
+    const label = form.label.trim();
+    const fieldName = form.fieldName.trim();
+    const options = form.options.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+    if (!label || !fieldName) {
+      showToast('请填写显示名称和字段名', 'error');
+      return;
+    }
+    if (form.fieldType === 'SELECT' && options.length === 0) {
+      showToast('SELECT 类型至少需要一个选项', 'error');
+      return;
+    }
     setBusy(true);
     try {
       const body = {
-        label: form.label,
-        fieldName: form.fieldName,
+        label,
+        fieldName,
         fieldType: form.fieldType,
-        options: form.options.split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
+        options,
         required: form.required,
         sortOrder: Number(form.sortOrder || 0),
       };

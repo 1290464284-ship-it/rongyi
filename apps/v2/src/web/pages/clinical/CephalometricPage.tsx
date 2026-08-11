@@ -4,7 +4,6 @@ import { apiRequest, uploadFile } from '../../lib/api';
 import { CrudPage } from '../../components/CrudPage';
 import { errorMessage } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
-import type { Page } from '../../lib/types';
 import { cephalometricColumns } from '../../cephalometric/columns';
 import { CompareResultView } from '../../cephalometric/CompareResultView';
 import { CephalometricFormFields } from '../../cephalometric/CephalometricFormFields';
@@ -13,6 +12,7 @@ import { SendWechatDialog } from '../../cephalometric/SendWechatDialog';
 import { jsonToText } from '../../cephalometric/utils';
 import { emptyForm } from '../../cephalometric/types';
 import type { CephalometricCompareResult, CephalometricForm, CephalometricRow } from '../../cephalometric/types';
+import type { Page } from '../../lib/types';
 
 export function CephalometricPage() {
   const { showToast } = useToast();
@@ -23,14 +23,18 @@ export function CephalometricPage() {
   const [compareTargets, setCompareTargets] = useState<Set<string>>(new Set());
   const [compareResult, setCompareResult] = useState<CephalometricCompareResult | null>(null);
   const [comparing, setComparing] = useState(false);
+  const [compareSearch, setCompareSearch] = useState('');
+  const [comparePage, setComparePage] = useState(1);
 
-  // 与 CrudPage 列表共享查询缓存：useCrudResource 将 queryKey 展开为 ['cephalometric', page, search]，
-  // 这里使用同一形态的键（page=1、search=''），同一份列表数据只拉取一次，且随列表分页/搜索联动。
-  const caseList = useQuery({
-    queryKey: ['cephalometric', 1, ''],
-    queryFn: () => apiRequest<Page<CephalometricRow>>('/resources/cephalometricCases?page=1&pageSize=50'),
+  const compareOptionsQuery = useQuery({
+    queryKey: ['cephalometric-options', compareSearch, comparePage],
+    queryFn: () => apiRequest<Page<CephalometricRow>>(
+      `/resources/cephalometricCases?page=${comparePage}&pageSize=50${compareSearch ? `&search=${encodeURIComponent(compareSearch)}` : ''}`,
+    ),
   });
-  const compareOptions = caseList.data?.items ?? [];
+  const compareOptions = compareOptionsQuery.data?.items ?? [];
+  const compareTotal = compareOptionsQuery.data?.total ?? 0;
+  const compareTotalPages = Math.max(1, Math.ceil(compareTotal / 50));
 
   function toggleCompare(id: string, checked: boolean) {
     setCompareResult(null);
@@ -103,26 +107,45 @@ export function CephalometricPage() {
           };
           const parsedLandmarks = parseJsonObject(form.landmarksJson);
           const parsedMetrics = parseJsonObject(form.metricsJson);
-          const imageUrl = file ? (await uploadFile(file)).url : undefined;
+          let uploadedFilename: string | null = null;
+          let imageUrl = String(form.imageUrl ?? '');
+          if (file) {
+            const uploaded = await uploadFile(file);
+            uploadedFilename = uploaded.filename;
+            imageUrl = uploaded.url;
+          }
           const payload = {
             patientId: form.patientId,
-            imageUrl: imageUrl ?? String(form.imageUrl ?? ''),
+            imageUrl,
             landmarksJson: JSON.stringify(parsedLandmarks),
             metricsJson: JSON.stringify(parsedMetrics),
             templateId: form.templateId || undefined,
             status: form.status,
             remark: form.remark || undefined,
           };
-          if (editing) {
-            await apiRequest(`/resources/cephalometricCases/${editingIdRef.current}`, {
-              method: 'PATCH',
-              body: JSON.stringify(payload),
-            });
-          } else {
-            await apiRequest('/resources/cephalometricCases', {
-              method: 'POST',
-              body: JSON.stringify(payload),
-            });
+          try {
+            if (editing) {
+              await apiRequest(`/resources/cephalometricCases/${editingIdRef.current}`, {
+                method: 'PATCH',
+                body: JSON.stringify(payload),
+              });
+            } else {
+              await apiRequest('/resources/cephalometricCases', {
+                method: 'POST',
+                body: JSON.stringify(payload),
+              });
+            }
+          } catch (error) {
+            // 记录创建/更新失败时清理已上传的孤儿文件，避免占用配额和磁盘。
+            const status = (error as { status?: number }).status;
+            if (uploadedFilename && status !== undefined && status >= 400 && status < 500) {
+              try {
+                await apiRequest(`/files/${uploadedFilename}`, { method: 'DELETE' });
+              } catch {
+                // 清理失败不掩盖原始错误。
+              }
+            }
+            throw error;
           }
         }}
         onAfterCreate={() => setFile(null)}
@@ -164,11 +187,30 @@ export function CephalometricPage() {
 
       <section className="card" aria-label="轮廓重叠比较">
         <h2>轮廓重叠比较</h2>
+        <div className="ceph-compare-controls">
+          <input
+            aria-label="对比选项搜索"
+            type="search"
+            placeholder="搜索病例"
+            value={compareSearch}
+            onChange={(event) => {
+              setCompareSearch(event.target.value);
+              setComparePage(1);
+            }}
+          />
+          {compareTotalPages > 1 && (
+            <div className="pager">
+              <button type="button" disabled={comparePage <= 1} onClick={() => setComparePage((current) => Math.max(1, current - 1))}>上一页</button>
+              <span>第 {comparePage} / {compareTotalPages} 页（共 {compareTotal} 条）</span>
+              <button type="button" disabled={comparePage >= compareTotalPages} onClick={() => setComparePage((current) => current + 1)}>下一页</button>
+            </div>
+          )}
+        </div>
         {compareOptions.length === 0 ? (
           <p>暂无测量病例可选</p>
         ) : (
           <>
-            <div className="ceph-compare-controls">
+            <div className="ceph-compare-options">
               {compareOptions.map((row) => (
                 <label key={row.id} className="ceph-compare-option">
                   <input

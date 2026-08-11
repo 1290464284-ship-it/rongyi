@@ -2,6 +2,7 @@ import type { Express } from 'express';
 import { createRateLimit } from '../rate-limit';
 import { wrapAsync } from '../middleware';
 import { parsePagination } from '../pagination';
+import { ValidationError } from '../../infrastructure/errors';
 import type { RouteDependencies } from './deps';
 import { withIdempotency } from '../../infrastructure/idempotency';
 
@@ -300,7 +301,18 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
 
   app.get('/api/v2/follow-ups/reminders', wrapAsync(async (req, res) => {
       const { page, pageSize } = parsePagination(req, { defaultPageSize: 100 });
-      res.json({ success: true, data: followUps.reminders(req.context!, { page, pageSize }) });
+      const rawScope = typeof req.query.scope === 'string' && req.query.scope !== '' ? req.query.scope : undefined;
+      if (rawScope !== undefined && !['overdue', 'today', 'upcoming', 'all'].includes(rawScope)) {
+        throw new ValidationError('Follow-up scope must be overdue, today, upcoming, or all');
+      }
+      res.json({
+        success: true,
+        data: followUps.reminders(req.context!, {
+          page,
+          pageSize,
+          scope: rawScope as 'overdue' | 'today' | 'upcoming' | 'all' | undefined,
+        }),
+      });
   }));
 
   app.get('/api/v2/follow-ups/reminders/summary', wrapAsync(async (req, res) => {

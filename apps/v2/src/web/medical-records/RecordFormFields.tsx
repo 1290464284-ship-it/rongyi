@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest } from '../lib/api';
+import { apiRequest, fetchAllPages } from '../lib/api';
 import { SearchableSelect } from '../components';
-import type { Page } from '../lib/types';
 import type { RecordForm } from './types';
 
 export function RecordFormFields({ form, update }: { form: RecordForm; update: (patch: Partial<RecordForm>) => void }) {
@@ -11,7 +10,10 @@ export function RecordFormFields({ form, update }: { form: RecordForm; update: (
   });
   const visits = useQuery({
     queryKey: ['record-visits'],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/visits?page=1&pageSize=100'),
+    queryFn: async () => {
+      const items = await fetchAllPages<Record<string, unknown>>('/resources/visits?page=1&pageSize=100');
+      return { items, total: items.length, page: 1, pageSize: Math.max(items.length, 1) };
+    },
   });
   return (
     <>

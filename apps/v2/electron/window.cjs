@@ -51,7 +51,12 @@ function saveWindowState(win) {
 }
 
 function isTrustedRendererUrl(url) {
-  if (url.startsWith(INDEX_HTML_FILE_URL) || url.startsWith(ERROR_HTML_FILE_URL)) return true;
+  // IPC 信任边界与导航白名单同口径：精确 URL 或仅允许 #/ ? 片段后缀，
+  // 避免 index.html.evil、index.html/.. 等同前缀文件被当作可信发送方。
+  const trustedFileUrl = (candidate, base) => (
+    candidate === base || candidate.startsWith(`${base}#`) || candidate.startsWith(`${base}?`)
+  );
+  if (trustedFileUrl(url, INDEX_HTML_FILE_URL) || trustedFileUrl(url, ERROR_HTML_FILE_URL)) return true;
   return DEV_WEB_URL_PATTERN.test(url);
 }
 
@@ -64,7 +69,9 @@ function isAllowedNavigation(url) {
   try {
     const parsed = new URL(url);
     if (url === INDEX_HTML_FILE_URL || url.startsWith(`${INDEX_HTML_FILE_URL}#`)) return true;
-    if (parsed.protocol === 'blob:' && isDev) return true;
+    if (url === 'about:blank') return true;
+    // blob: 仅可由渲染器自身创建（打印报表场景），且新窗口沿用沙箱/隔离 prefs。
+    if (parsed.protocol === 'blob:') return true;
     if (parsed.protocol === 'http:' && parsed.hostname === '127.0.0.1' && parsed.port === String(state.apiPort)) return true;
     if (isDev && parsed.protocol === 'http:' && parsed.hostname === 'localhost') return true;
     if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
@@ -109,9 +116,6 @@ function createWindow() {
       };
     }
     return { action: 'deny' };
-  });
-  mainWindow.webContents.on('will-navigate', (event, url) => {
-    if (!isAllowedNavigation(url)) event.preventDefault();
   });
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     crashLog('render-process-gone', new Error(`reason=${details.reason} exitCode=${details.exitCode}`));
@@ -178,5 +182,6 @@ function showApiErrorWindow(message) {
 module.exports = {
   assertTrustedRenderer,
   createWindow,
+  isAllowedNavigation,
   showApiErrorWindow,
 };

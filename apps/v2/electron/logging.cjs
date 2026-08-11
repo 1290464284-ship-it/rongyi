@@ -2,7 +2,7 @@ const { app, BrowserWindow, Notification } = require('electron');
 const fs = require('node:fs');
 const https = require('node:https');
 const path = require('node:path');
-const { CRASH_LOG_TIMEOUT_MS } = require('./constants.cjs');
+const { CRASH_LOG_TIMEOUT_MS, isAllowedCrashReportUrl } = require('./constants.cjs');
 
 function crashLog(message, error) {
   const entry = {
@@ -28,10 +28,10 @@ function crashLog(message, error) {
     // best effort
   }
   const endpoint = process.env.V2_CRASH_REPORT_URL;
-  if (endpoint && !endpoint.startsWith('https://')) {
-    console.warn('V2_CRASH_REPORT_URL must be an HTTPS endpoint; crash report upload skipped');
+  if (endpoint && !isAllowedCrashReportUrl(endpoint)) {
+    console.warn('V2_CRASH_REPORT_URL must be HTTPS and match V2_ALLOWED_CRASH_REPORT_HOSTS; crash report upload skipped');
   }
-  if (endpoint && endpoint.startsWith('https://')) {
+  if (endpoint && isAllowedCrashReportUrl(endpoint)) {
     try {
       const request = https.request(
         endpoint,
@@ -83,7 +83,16 @@ process.on('uncaughtException', (error) => {
     process.exit(1);
   }
 });
-process.on('unhandledRejection', (reason) => crashLog('unhandledRejection', reason));
+process.on('unhandledRejection', (reason) => {
+  crashLog('unhandledRejection', reason instanceof Error ? reason : new Error(String(reason)));
+  // 与 uncaughtException 一致：异步链路 reject 后状态不可信，记录后退出，
+  // 避免 IPC/更新/托盘残留半初始化状态长期运行。
+  try {
+    app.exit(1);
+  } catch {
+    process.exit(1);
+  }
+});
 
 
 module.exports = { crashLog, notify, sendUpdateEvent, sendApiStatus };

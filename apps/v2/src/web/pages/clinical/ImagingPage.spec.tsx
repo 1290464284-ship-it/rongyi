@@ -5,11 +5,12 @@ import type { ReactNode } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ImagingPage } from './ImagingPage';
-import { apiRequest, getSignedFileUrl, uploadFile } from '../../lib/api';
+import { apiRequest, fetchAllPages, getSignedFileUrl, uploadFile } from '../../lib/api';
 import { ToastProvider } from '../../components/toast';
 
 vi.mock('../../lib/api', () => ({
   apiRequest: vi.fn(),
+  fetchAllPages: vi.fn(),
   // S-L8：默认实现让 SignedImage 始终能拿到签名 URL；afterEach 用 mockClear 保留此实现
   getSignedFileUrl: vi.fn(async (path: string) => {
     const name = path.split('/').pop() ?? 'file';
@@ -17,6 +18,11 @@ vi.mock('../../lib/api', () => ({
   }),
   uploadFile: vi.fn(),
 }));
+
+vi.mocked(fetchAllPages).mockImplementation(async (path: string) => {
+  const data = await vi.mocked(apiRequest)(path) as { items?: unknown[] } | unknown[];
+  return Array.isArray(data) ? data : (data as { items?: unknown[] })?.items ?? [];
+});
 
 const wrapper = ({ children }: { children: ReactNode }) => (
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -123,6 +129,71 @@ describe('ImagingPage', () => {
     });
     expect(body.takenAt).toBeUndefined();
     expect(await screen.findByText('影像记录已创建')).toBeDefined();
+  });
+
+  it('deletes the uploaded file when creating the imaging record fails', async () => {
+    mockData();
+    vi.mocked(uploadFile).mockResolvedValue({ id: 'file-1', filename: 'file-1.png', url: '/api/v2/files/file-1.png' });
+    render(<ImagingPage />, { wrapper });
+    await screen.findByText('全景片');
+
+    fireEvent.click(screen.getByText('上传影像'));
+    await waitFor(() => {
+      expect(Array.from((screen.getByLabelText('医生') as HTMLSelectElement).options).some((option) => option.value === 'd-1')).toBe(true);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
+    fireEvent.change(screen.getByLabelText('标题'), { target: { value: '根尖片' } });
+    fireEvent.change(screen.getByLabelText('图片文件'), {
+      target: { files: [new File(['x'], 'root.png', { type: 'image/png' })] },
+    });
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = String(init?.method ?? 'GET').toUpperCase();
+      if (method === 'POST' && path === '/resources/imaging') {
+        const error = new Error('create failed');
+        (error as { status?: number }).status = 409;
+        throw error;
+      }
+      return {};
+    });
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/files/file-1.png', expect.objectContaining({ method: 'DELETE' }));
+    });
+  });
+
+  it('keeps the uploaded file when creating the imaging record fails with a server error', async () => {
+    mockData();
+    vi.mocked(uploadFile).mockResolvedValue({ id: 'file-1', filename: 'file-1.png', url: '/api/v2/files/file-1.png' });
+    render(<ImagingPage />, { wrapper });
+    await screen.findByText('全景片');
+
+    fireEvent.click(screen.getByText('上传影像'));
+    await waitFor(() => {
+      expect(Array.from((screen.getByLabelText('医生') as HTMLSelectElement).options).some((option) => option.value === 'd-1')).toBe(true);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
+    fireEvent.change(screen.getByLabelText('标题'), { target: { value: '根尖片' } });
+    fireEvent.change(screen.getByLabelText('图片文件'), {
+      target: { files: [new File(['x'], 'root.png', { type: 'image/png' })] },
+    });
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = String(init?.method ?? 'GET').toUpperCase();
+      if (method === 'POST' && path === '/resources/imaging') {
+        const error = new Error('server exploded');
+        (error as { status?: number }).status = 500;
+        throw error;
+      }
+      return {};
+    });
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/imaging', expect.objectContaining({ method: 'POST' }));
+    });
+    expect(apiRequest).not.toHaveBeenCalledWith('/files/file-1.png', expect.objectContaining({ method: 'DELETE' }));
   });
 
   it('previews and removes the selected imaging file', async () => {

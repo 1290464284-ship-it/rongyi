@@ -229,16 +229,24 @@ export class DispenseExecutionService {
           batchId: plan.batchId,
         });
         if (plan.batchId) {
-          this.db.prepare(
+          const batchResult = this.db.prepare(
             `UPDATE InventoryBatch
              SET remainingQuantity = remainingQuantity + ?, updatedAt = ?
              WHERE id = ? AND itemId = ? AND deletedAt IS NULL AND active = 1${tenantAnd(context.clinicId)}`,
           ).run(plan.quantity, now, plan.batchId, plan.itemId, ...tenantParams(context.clinicId));
+          if (Number(batchResult.changes) === 0) {
+            // 批次在发药后被删除/停用：回补到批次会丢账，回滚整笔退药。
+            throw new ConflictError('批次不存在或已停用，退药已回滚');
+          }
         }
-        this.db.prepare(
+        const returnedResult = this.db.prepare(
           `UPDATE DispenseItem SET returnedQuantity = returnedQuantity + ?, updatedAt = ?
-           WHERE id = ? AND dispenseId = ?`,
-        ).run(plan.quantity, now, plan.dispenseItemId, id);
+           WHERE id = ? AND dispenseId = ? AND deletedAt IS NULL AND returnedQuantity + ? <= quantity`,
+        ).run(plan.quantity, now, plan.dispenseItemId, id, plan.quantity);
+        if (Number(returnedResult.changes) === 0) {
+          // 并发退药已耗尽未退数量：条件更新失败，整笔回滚防止超退。
+          throw new ConflictError('退回数量超过未退数量，退药已回滚');
+        }
       }
       const left = this.db.prepare(
         `SELECT COUNT(*) AS count FROM DispenseItem

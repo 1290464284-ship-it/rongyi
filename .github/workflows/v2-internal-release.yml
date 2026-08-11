@@ -111,11 +111,33 @@ jobs:
           "installer=$($exe.Name)" >> $env:GITHUB_OUTPUT
           "blockmap=$($exe.Name).blockmap" >> $env:GITHUB_OUTPUT
 
+      - name: Resolve internal version from latest.yml
+        id: internal_version
+        shell: pwsh
+        run: |
+          $latest = Get-Content -LiteralPath apps/v2/release-v2-internal/latest.yml -Raw
+          if ($latest -match '(?m)^version:\s*(.+)$') {
+            $version = $Matches[1].Trim()
+          } else {
+            throw "latest.yml is missing version"
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Validate latest.yml version matches package.json
+        shell: pwsh
+        env:
+          LATEST_VERSION: ${{ steps.internal_version.outputs.version }}
+          PKG_VERSION: ${{ steps.pkg_version.outputs.version }}
+        run: |
+          if ($env:LATEST_VERSION -ne $env:PKG_VERSION) {
+            throw "latest.yml version ($env:LATEST_VERSION) does not match package.json version ($env:PKG_VERSION)"
+          }
+
       - name: Publish internal release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
-          tag_name: v2-internal-${{ steps.pkg_version.outputs.version }}
-          name: Dental Clinic V2 Internal ${{ steps.pkg_version.outputs.version }}
+          tag_name: v2-internal-${{ steps.internal_version.outputs.version }}
+          name: Dental Clinic V2 Internal ${{ steps.internal_version.outputs.version }}
           prerelease: true
           files: |
             apps/v2/release-v2-internal/${{ steps.assets.outputs.installer }}
@@ -125,5 +147,5 @@ jobs:
       - name: Verify remote internal release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          V2_RELEASE_TAG: v2-internal-${{ steps.pkg_version.outputs.version }}
+          V2_RELEASE_TAG: v2-internal-${{ steps.internal_version.outputs.version }}
         run: pnpm --filter @dental/v2 run verify:remote

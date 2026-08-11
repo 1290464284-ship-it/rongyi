@@ -4,6 +4,7 @@ import { NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import type { AppContext } from '../../../domain/contracts';
 import type { NarcoticCreateInput, NarcoticUpdateInput } from './dispense-types';
+import { assertDoctorExists, assertPatientExists } from './common';
 
 export type { NarcoticCreateInput, NarcoticUpdateInput } from './dispense-types';
 
@@ -79,6 +80,12 @@ export class NarcoticRegistryService {
       `SELECT id FROM InventoryItem WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).get(input.itemId, ...tenantParams(context.clinicId));
     if (!item) throw new NotFoundError('Inventory item not found');
+    if (input.patientId !== undefined && input.patientId !== null && input.patientId !== '') {
+      assertPatientExists(this.db, String(input.patientId), context.clinicId);
+    }
+    if (input.doctorId !== undefined && input.doctorId !== null && input.doctorId !== '') {
+      assertDoctorExists(this.db, String(input.doctorId), context.clinicId);
+    }
     const now = context.now().toISOString();
     const id = randomUUID();
     this.db.prepare(

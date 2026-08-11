@@ -34,14 +34,26 @@ async function api(pathname) {
       ...(process.env.GH_TOKEN ? { authorization: `Bearer ${process.env.GH_TOKEN}` } : {}),
     },
   });
-  if (!response.ok) throw new Error(`GitHub API ${pathname} failed: ${response.status}`);
+  if (!response.ok) {
+    const error = new Error(`GitHub API ${pathname} failed: ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
   return response.json();
 }
 
-const releases = await api('releases?per_page=100');
-const release = releases.find((item) => item.tag_name === tag);
+let release;
+try {
+  release = await api(`releases/tags/${encodeURIComponent(tag)}`);
+} catch (error) {
+  if (error?.status === 404) {
+    release = undefined;
+  } else {
+    throw error;
+  }
+}
 if (!release) {
-  const message = `Release ${tag} not found (latest remote: ${releases[0]?.tag_name ?? 'none'})`;
+  const message = `Release ${tag} not found`;
   if (tagExplicitlySet) {
     throw new Error(`${message}; V2_RELEASE_TAG was set explicitly — this is a real failure`);
   }
@@ -64,11 +76,16 @@ const latestYml = await latestResponse.text();
 const pathMatch = latestYml.match(/^path:\s*(.+)$/m);
 const sizeMatch = latestYml.match(/^\s+size:\s*(\d+)$/m);
 const sha512Match = latestYml.match(/^\s*sha512:\s*([A-Za-z0-9+/=]+)$/m);
-if (!pathMatch || !sizeMatch || !sha512Match) {
-  throw new Error('latest.yml is missing path, size or sha512');
+const versionMatch = latestYml.match(/^version:\s*(.+)$/m);
+if (!pathMatch || !sizeMatch || !sha512Match || !versionMatch) {
+  throw new Error('latest.yml is missing path, size, sha512 or version');
 }
 
 const installerName = pathMatch[1].trim();
+const ymlVersion = versionMatch[1].trim();
+if (ymlVersion && !installerName.includes(ymlVersion)) {
+  throw new Error(`latest.yml version ${ymlVersion} does not match installer name ${installerName}`);
+}
 const installerSize = Number(sizeMatch[1]);
 const expectedSha512 = sha512Match[1];
 const installerAsset = assets.get(installerName);

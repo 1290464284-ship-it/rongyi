@@ -167,13 +167,16 @@ export class InventoryBatchService {
       throw new ValidationError('剩余数量必须为非负整数');
     }
     const row = this.db.prepare(
-      `SELECT id FROM InventoryBatch WHERE id = ? AND deletedAt IS NULL AND active = 1${tenantAnd(context.clinicId)}`,
-    ).get(id, ...tenantParams(context.clinicId)) as { id: string } | undefined;
+      `SELECT id, itemId FROM InventoryBatch WHERE id = ? AND deletedAt IS NULL AND active = 1${tenantAnd(context.clinicId)}`,
+    ).get(id, ...tenantParams(context.clinicId)) as { id: string; itemId: string } | undefined;
     if (!row) throw new NotFoundError('Inventory batch not found');
+    this.lockGuard?.(row.itemId, context.clinicId);
     const now = context.now().toISOString();
-    this.db.prepare(
-      `UPDATE InventoryBatch SET remainingQuantity = ?, updatedAt = ? WHERE id = ?${tenantAnd(context.clinicId)}`,
+    const result = this.db.prepare(
+      `UPDATE InventoryBatch SET remainingQuantity = ?, updatedAt = ?
+       WHERE id = ? AND deletedAt IS NULL AND active = 1${tenantAnd(context.clinicId)}`,
     ).run(quantity, now, id, ...tenantParams(context.clinicId));
+    if (Number(result.changes) === 0) throw new NotFoundError('Inventory batch not found');
     return { id, remainingQuantity: quantity };
   }
 

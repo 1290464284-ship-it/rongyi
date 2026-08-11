@@ -145,9 +145,15 @@ export class StocktakeService {
     const systemStock = Number(row.systemStock);
     const difference = value - systemStock;
     const now = context.now().toISOString();
-    this.db.prepare(
-      `UPDATE StocktakeItem SET countedStock = ?, difference = ?, updatedAt = ? WHERE id = ?`,
-    ).run(value, difference, now, row.id);
+    const result = this.db.prepare(
+      `UPDATE StocktakeItem SET countedStock = ?, difference = ?, updatedAt = ?
+       WHERE id = ? AND deletedAt IS NULL AND stocktakeId = ?
+         AND EXISTS (
+           SELECT 1 FROM Stocktake s
+           WHERE s.id = StocktakeItem.stocktakeId AND s.status = 'IN_PROGRESS' AND s.deletedAt IS NULL
+         )`,
+    ).run(value, difference, now, row.id, stocktakeId);
+    if (Number(result.changes) === 0) throw new ConflictError('仅进行中的盘点单可录入数量');
     return { id: row.id, systemStock, countedStock: value, difference };
   }
 
@@ -157,9 +163,11 @@ export class StocktakeService {
     if (row.status !== 'IN_PROGRESS') throw new ConflictError('仅进行中的盘点单可锁定');
     if (!row.startedAt) throw new ConflictError('盘点单缺少开始时间');
     const now = context.now().toISOString();
-    this.db.prepare(
-      `UPDATE Stocktake SET status = 'LOCKED', updatedAt = ? WHERE id = ? AND deletedAt IS NULL`,
-    ).run(now, stocktakeId);
+    const result = this.db.prepare(
+      `UPDATE Stocktake SET status = 'LOCKED', updatedAt = ?
+       WHERE id = ? AND status = 'IN_PROGRESS' AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    ).run(now, stocktakeId, ...tenantParams(context.clinicId));
+    if (Number(result.changes) === 0) throw new ConflictError('仅进行中的盘点单可锁定');
     return { id: stocktakeId, status: 'LOCKED' };
   }
 
@@ -173,10 +181,11 @@ export class StocktakeService {
     const now = context.now().toISOString();
 
     const run = this.db.transaction((): { adjustedCount: number; items: Array<Record<string, unknown>> } => {
-      this.db.prepare(
+      const statusResult = this.db.prepare(
         `UPDATE Stocktake SET status = 'COMPLETED', completedById = ?, completedAt = ?, updatedAt = ?
-         WHERE id = ? AND deletedAt IS NULL`,
-      ).run(context.userId, now, now, stocktakeId);
+         WHERE id = ? AND status = 'LOCKED' AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+      ).run(context.userId, now, now, stocktakeId, ...tenantParams(context.clinicId));
+      if (Number(statusResult.changes) === 0) throw new ConflictError('仅已锁定的盘点单可完成');
 
       const diffs = this.db.prepare(
         `SELECT si.itemId, si.systemStock, si.countedStock, si.difference, i.name
@@ -237,9 +246,11 @@ export class StocktakeService {
       throw new ConflictError('仅进行中或已锁定的盘点单可取消');
     }
     const now = context.now().toISOString();
-    this.db.prepare(
-      `UPDATE Stocktake SET status = 'CANCELLED', updatedAt = ? WHERE id = ? AND deletedAt IS NULL`,
-    ).run(now, stocktakeId);
+    const result = this.db.prepare(
+      `UPDATE Stocktake SET status = 'CANCELLED', updatedAt = ?
+       WHERE id = ? AND status IN ('IN_PROGRESS', 'LOCKED') AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    ).run(now, stocktakeId, ...tenantParams(context.clinicId));
+    if (Number(result.changes) === 0) throw new ConflictError('仅进行中或已锁定的盘点单可取消');
     return { id: stocktakeId, status: 'CANCELLED' };
   }
 

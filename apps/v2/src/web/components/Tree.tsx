@@ -56,15 +56,17 @@ function TreeNodeView({
         className={`ui-tree-item${selectedId === node.id ? ' selected' : ''}`}
         style={{ paddingLeft: depth * 16 + 8 }}
       >
-        <button
-          type="button"
-          className="ui-tree-toggle"
-          onClick={handleToggle}
-          aria-expanded={open}
-          aria-label={hasChildren ? (open ? `收起 ${node.label}` : `展开 ${node.label}`) : undefined}
-        >
-          {hasChildren ? (open ? '▼' : '+') : ''}
-        </button>
+        {hasChildren && (
+          <button
+            type="button"
+            className="ui-tree-toggle"
+            onClick={handleToggle}
+            aria-expanded={open}
+            aria-label={open ? `收起 ${node.label}` : `展开 ${node.label}`}
+          >
+            {open ? '▼' : '+'}
+          </button>
+        )}
         <span
           className="ui-tree-label"
           role="button"

@@ -31,6 +31,25 @@ describe('MultiSelect', () => {
     expect(onChange).toHaveBeenLastCalledWith(['1', '2']);
   });
 
+  it('exposes options with listbox semantics', () => {
+    render(<MultiSelect value={['1']} options={options} onChange={onChange} />);
+    fireEvent.click(screen.getByRole('button', { name: '请选择' }));
+    expect(screen.getByRole('option', { name: /根管治疗/ }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('option', { name: /正畸/ }).getAttribute('aria-selected')).toBe('false');
+  });
+
+  it('supports keyboard navigation with arrow keys and Enter', () => {
+    render(<MultiSelect value={[]} options={options} onChange={onChange} />);
+    fireEvent.click(screen.getByRole('button', { name: '请选择' }));
+    const search = screen.getByRole('searchbox', { name: '筛选选项' }) as HTMLInputElement;
+    search.focus();
+    expect(search.getAttribute('aria-activedescendant')).toContain('multiselect-option-1');
+    fireEvent.keyDown(search, { key: 'ArrowDown' });
+    expect(search.getAttribute('aria-activedescendant')).toContain('multiselect-option-2');
+    fireEvent.keyDown(search, { key: 'Enter' });
+    expect(onChange).toHaveBeenCalledWith(['2']);
+  });
+
   it('filters options by search query', () => {
     render(<MultiSelect value={[]} options={options} onChange={onChange} />);
     fireEvent.click(screen.getByText('请选择'));

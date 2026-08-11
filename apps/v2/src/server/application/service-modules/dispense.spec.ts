@@ -390,6 +390,31 @@ describe('DispenseService', () => {
       expect(stockOf('ret-plain-201')).toBe(100);
     });
 
+    it('rolls back the return when the referenced batch was deleted after dispense', async () => {
+      insertItem('ret-batch-203', 50, 1);
+      insertBatch('ret-batch-203-b', 'ret-batch-203', 10);
+      const created = service().create({
+        number: 'PF-203',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'ret-batch-203', quantity: 4 }],
+      }, context);
+      const di = db.prepare('SELECT id FROM DispenseItem WHERE dispenseId = ?').get(String(created.id)) as { id: string };
+      await service().dispense(String(created.id), context, {
+        items: [{ dispenseItemId: di.id, batchId: 'ret-batch-203-b' }],
+      });
+      expect(stockOf('ret-batch-203')).toBe(46);
+
+      // 模拟另一进程在发药后删除了该批次（remaining=0 时允许删除）。
+      db.prepare('UPDATE InventoryBatch SET deletedAt = ? WHERE id = ?').run(now, 'ret-batch-203-b');
+
+      await expect(service().returnItems(String(created.id), {
+        items: [{ dispenseItemId: di.id, quantity: 1 }],
+      }, context)).rejects.toThrow(ConflictError);
+      expect(stockOf('ret-batch-203')).toBe(46);
+      const diRow = db.prepare('SELECT returnedQuantity FROM DispenseItem WHERE id = ?').get(di.id) as { returnedQuantity: number };
+      expect(diRow.returnedQuantity).toBe(0);
+    });
+
     it('rejects over-return, unknown items, invalid quantities, and returns on PENDING orders', async () => {
       insertItem('ret-plain-202', 100, 0);
       const created = service().create({

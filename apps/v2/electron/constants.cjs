@@ -53,6 +53,20 @@ const DEV_WEB_URL_PATTERN = new RegExp(
   `^${devBase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:[/?#].*)?$`,
 );
 
+function isAllowedCrashReportUrl(url) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:') return false;
+    const allowed = String(process.env.V2_ALLOWED_CRASH_REPORT_HOSTS ?? '')
+      .split(',')
+      .map((host) => host.trim())
+      .filter(Boolean);
+    return allowed.length === 0 ? true : allowed.includes(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
 
 module.exports = {
   isDev,
@@ -72,4 +86,5 @@ module.exports = {
   INDEX_HTML_FILE_URL,
   ERROR_HTML_FILE_URL,
   DEV_WEB_URL_PATTERN,
+  isAllowedCrashReportUrl,
 };

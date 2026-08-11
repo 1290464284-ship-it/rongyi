@@ -56,6 +56,7 @@ const env = {
   V2_JWT_SECRET: 'packaged-ui-sim-jwt-0123456789abcdef0123456789abcdef',
   V2_BACKUP_KEY: 'packaged-ui-sim-backup-key-0123456789abcdef',
   V2_ADMIN_PASSWORD: adminPassword,
+  V2_DISABLE_AUTO_UPDATE: '1',
   NODE_ENV: 'development',
   ELECTRON_ENABLE_LOGGING: '1',
 };

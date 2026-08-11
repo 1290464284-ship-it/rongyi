@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
-import { apiRequest } from '../../lib/api';
+import { apiRequest, fetchAllPages } from '../../lib/api';
 import type { Page } from '../../lib/types';
 import { DataTable, QuerySection } from '../../components';
 import { errorMessage } from '../../lib/messages';
@@ -47,19 +47,31 @@ export function ClinicalWorkflowPage() {
   });
   const registrations = useQuery({
     queryKey: ['workflow', 'registrations'],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/registrations?page=1&pageSize=100'),
+    queryFn: async () => {
+      const items = await fetchAllPages<Record<string, unknown>>('/resources/registrations?page=1&pageSize=100');
+      return { items, total: items.length, page: 1, pageSize: Math.max(items.length, 1) };
+    },
   });
   const visits = useQuery({
     queryKey: ['workflow', 'visits'],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/visits?page=1&pageSize=100'),
+    queryFn: async () => {
+      const items = await fetchAllPages<Record<string, unknown>>('/resources/visits?page=1&pageSize=100');
+      return { items, total: items.length, page: 1, pageSize: Math.max(items.length, 1) };
+    },
   });
   const firstExams = useQuery({
     queryKey: ['workflow', 'firstExams'],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/firstExams?page=1&pageSize=100'),
+    queryFn: async () => {
+      const items = await fetchAllPages<Record<string, unknown>>('/resources/firstExams?page=1&pageSize=100');
+      return { items, total: items.length, page: 1, pageSize: Math.max(items.length, 1) };
+    },
   });
   const treatments = useQuery({
     queryKey: ['workflow', 'treatments'],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/treatments?page=1&pageSize=100'),
+    queryFn: async () => {
+      const items = await fetchAllPages<Record<string, unknown>>('/resources/treatments?page=1&pageSize=100');
+      return { items, total: items.length, page: 1, pageSize: Math.max(items.length, 1) };
+    },
   });
   const queries = { registrations, visits, firstExams, treatments } as Record<typeof resources[number], ResourcePageQuery>;
   const [activeDialog, setActiveDialog] = useState<WorkbenchDialog | null>(null);

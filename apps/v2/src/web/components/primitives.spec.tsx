@@ -113,6 +113,16 @@ describe('UI primitives', () => {
     expect(screen.getByRole('tooltip').textContent).toBe('帮助');
   });
 
+  it('shows Tooltip on focus and hides on blur', () => {
+    render(<Tooltip content="帮助"><button type="button">按钮</button></Tooltip>);
+    const button = screen.getByRole('button', { name: '按钮' });
+    expect(button.getAttribute('aria-describedby')).toBeTruthy();
+    fireEvent.focus(button);
+    expect(screen.getByRole('tooltip').className).toContain('visible');
+    fireEvent.blur(button);
+    expect(screen.getByRole('tooltip').className).not.toContain('visible');
+  });
+
   it('closes Drawer with Escape', () => {
     vi.useFakeTimers();
     const onClose = vi.fn();
@@ -136,6 +146,13 @@ describe('UI primitives', () => {
     fireEvent.click(screen.getByRole('button', { name: '展开 根' }));
     fireEvent.click(screen.getByText('叶子'));
     expect(onSelect).toHaveBeenCalledWith('leaf');
+  });
+
+  it('does not render a focusable toggle button for leaf nodes', () => {
+    render(<Tree nodes={[{ id: 'root', label: '根', children: [{ id: 'leaf', label: '叶子' }] }]} onSelect={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: '展开 根' }));
+    expect(screen.getByText('叶子')).toBeDefined();
+    expect(document.querySelectorAll('.ui-tree-toggle')).toHaveLength(1);
   });
 
   it('supports controlled Tree expansion and node actions', () => {

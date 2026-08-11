@@ -53,6 +53,23 @@ const NAV_GROUPS: Array<{ label: string; keys: string[] }> = [
   { label: '管理', keys: ['hr', 'system'] },
 ];
 
+function readOnboardingDone(): boolean {
+  try {
+    return localStorage.getItem('v2-onboarding-done') === '1';
+  } catch {
+    // 隐私模式/存储被禁用时按“未完成新手引导”处理，不阻塞应用。
+    return false;
+  }
+}
+
+function markOnboardingDone(): void {
+  try {
+    localStorage.setItem('v2-onboarding-done', '1');
+  } catch {
+    // 存储不可用时忽略，不影响主流程。
+  }
+}
+
 function titleForPath(pathname: string): string {
   const item = NAV_ITEMS.find((entry) => (entry.to === '/' ? pathname === '/' : pathname.startsWith(entry.to)));
   return item?.label ?? '蓉易口腔诊所';
@@ -78,7 +95,7 @@ export function Layout() {
   const [collapsed, setCollapsed] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [showHelp, setShowHelp] = useState(false);
-  const [showOnboarding, setShowOnboarding] = useState(() => localStorage.getItem('v2-onboarding-done') !== '1');
+  const [showOnboarding, setShowOnboarding] = useState(readOnboardingDone);
   useEffect(() => {
     // 会话失效（401 且刷新失败）时全局登出并跳转登录页
     const unsubscribe = onSessionExpired(() => {
@@ -299,7 +316,7 @@ return (
         showOnboarding={showOnboarding}
         onCloseHelp={() => setShowHelp(false)}
         onCloseOnboarding={() => {
-          localStorage.setItem('v2-onboarding-done', '1');
+          markOnboardingDone();
           setShowOnboarding(false);
         }}
         onReopenOnboarding={() => {

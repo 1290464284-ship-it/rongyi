@@ -10,7 +10,7 @@ import { metricsMiddleware, metricsSnapshot, persistMetrics } from './metrics';
 import { persistStabilityMetrics, stabilitySnapshot } from './stability';
 import { deepHealth } from './health';
 import type { Logger } from '../infrastructure/logger';
-import { maskSensitiveFields } from '../infrastructure/security';
+import { maskAuditFields } from '../infrastructure/security';
 import { routeRoleRules } from './route-policy';
 import { registerReadRoutes } from './read-routes';
 import { registerAdminRoutes, registerPublicAuthRoutes } from './routes/auth-admin';
@@ -201,7 +201,18 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
         action: auditOverride?.action ?? `${req.method} ${req.path}`,
         target: auditOverride?.target ?? params.id ?? params.resource ?? null,
         detail: auditOverride?.detail ?? (params.resource
-          ? JSON.stringify({ resource: params.resource, body: maskSensitiveFields(req.body ?? {}) })
+          ? (() => {
+              const masked = maskAuditFields(req.body ?? {});
+              const serialized = JSON.stringify({ resource: params.resource, body: masked });
+              if (serialized.length <= 4000) return serialized;
+              return JSON.stringify({
+                resource: params.resource,
+                body: {
+                  truncated: true,
+                  keys: typeof masked === 'object' && masked !== null ? Object.keys(masked).length : 0,
+                },
+              });
+            })()
           : null),
         ip: req.ip,
         traceId: req.traceId,
@@ -270,7 +281,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
   registerCustomFieldRoutes(app, deps);
   registerWechatReminderRoutes(app, deps);
   registerInventoryReportRoutes(app, deps);
-  registerInventoryDocRoutes(app, deps);
+  registerInventoryDocRoutes(app, deps, { lockGuard: deps.stocktakeLockGuard });
   registerTreatmentPlanBillingRoutes(app, deps);
   registerPrescriptionProcessRoutes(app, deps);
   registerFirstExamRestartRoutes(app, deps);

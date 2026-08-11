@@ -109,7 +109,16 @@ export class ProcessingOrderService {
     if (!PROCESSING_TRANSITIONS[row.status]?.includes(status)) {
       throw new ConflictError(`Cannot transition processing order from ${row.status} to ${status}`);
     }
-    this.processingOrderRepository.updateStatus(id, status, context.now().toISOString(), context.clinicId);
+    const changes = this.processingOrderRepository.updateStatus(
+      id,
+      status,
+      context.now().toISOString(),
+      context.clinicId,
+      row.status,
+    );
+    if (changes === 0) {
+      throw new ConflictError(`Cannot transition processing order from ${row.status} to ${status}`);
+    }
     return { id, status };
   }
 }

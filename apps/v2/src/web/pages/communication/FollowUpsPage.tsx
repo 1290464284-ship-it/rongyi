@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { apiRequest, downloadCsvPath } from '../../lib/api';
 import { DataTable, LoadingState, PageError, PromptDialog, type DataTableColumn } from '../../components';
 import { errorMessage } from '../../lib/messages';
@@ -17,13 +17,22 @@ export function FollowUpsPage() {
   const [executionId, setExecutionId] = useState<string | null>(null);
   const [executionForm, setExecutionForm] = useState<ExecutionFormState>(DEFAULT_EXECUTION_FORM);
   const [activeTab, setActiveTab] = useState<'list' | 'dicts'>('list');
+  const [page, setPage] = useState(1);
+  const totalPagesRef = useRef(1);
   // 写请求 busy 守卫：防止双击/连按重复创建执行记录或重复完成
   const { busy: generating, run: runGenerate } = useAsyncAction();
   const { busy: completing, run: runCompletion } = useAsyncAction();
   const { busy: executing, run: runExecution } = useAsyncAction();
   const query = useQuery({
-    queryKey: ['followup-reminders'],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/follow-ups/reminders'),
+    queryKey: ['followup-reminders', page],
+    queryFn: async () => {
+      const fetchPage = Math.min(page, Math.max(1, totalPagesRef.current));
+      const data = await apiRequest<Page<Record<string, unknown>>>(`/follow-ups/reminders?page=${fetchPage}&pageSize=100`);
+      if (!Array.isArray(data)) {
+        totalPagesRef.current = Math.max(1, Math.ceil((data?.total ?? 0) / Math.max(1, data?.pageSize ?? 0)));
+      }
+      return data;
+    },
   });
   const summary = useQuery({
     queryKey: ['followup-summary'],
@@ -33,7 +42,6 @@ export function FollowUpsPage() {
     queryKey: ['followup-nps'],
     queryFn: () => apiRequest<FollowUpNps>('/follow-ups/nps'),
   });
-
   if (query.isLoading) return <LoadingState label="随访数据加载中..." />;
   if (query.error) {
     return (
@@ -76,7 +84,10 @@ export function FollowUpsPage() {
             body: JSON.stringify({ ids: selectedIds, result }),
           },
         );
-        showToast(`完成 ${data.completed} 条，跳过 ${data.skipped} 条`, 'success');
+        const errorSummary = Array.isArray(data.errors) && data.errors.length > 0
+          ? `（${data.errors.slice(0, 3).join('；')}）`
+          : '';
+        showToast(`完成 ${data.completed} 条，跳过 ${data.skipped} 条${errorSummary}`, 'success');
         setSelectedIds([]);
         await Promise.all([query.refetch(), summary.refetch()]);
       }
@@ -156,6 +167,14 @@ export function FollowUpsPage() {
   const now = new Date();
   const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const rows = Array.isArray(query.data) ? query.data : query.data?.items ?? [];
+  const total = Array.isArray(query.data) ? 0 : query.data?.total ?? 0;
+  const pageSize = Array.isArray(query.data) ? 0 : query.data?.pageSize ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / Math.max(1, pageSize)));
+  const displayPage = Math.min(page, totalPages);
+  function goToPage(next: number) {
+    setSelectedIds([]);
+    setPage(Math.max(1, Math.min(next, totalPages)));
+  }
   const groups = [
     { title: '已逾期', rows: rows.filter((row) => String(row.planDate ?? '') < todayKey) },
     { title: '今日待随访', rows: rows.filter((row) => String(row.planDate ?? '') === todayKey) },
@@ -242,6 +261,21 @@ export function FollowUpsPage() {
               随访提醒超过 {query.data.pageSize} 条，仅显示前 {query.data.items.length} 条
             </p>
           ) : null}
+          {query.data && !Array.isArray(query.data) && query.data.total > query.data.pageSize && (
+            <div className="pager">
+              <button type="button" disabled={displayPage <= 1} onClick={() => goToPage(displayPage - 1)}>上一页</button>
+              <span>
+                第 {displayPage} / {totalPages} 页（共 {total} 条）
+              </span>
+              <button
+                type="button"
+                disabled={displayPage >= totalPages}
+                onClick={() => goToPage(displayPage + 1)}
+              >
+                下一页
+              </button>
+            </div>
+          )}
           {rows.length === 0 && <DataTable columns={columns} rows={[]} keyField="id" emptyText="暂无随访" />}
           {groups.map((group) => (
             <section key={group.title}>

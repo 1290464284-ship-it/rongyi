@@ -296,6 +296,39 @@ describe('TeethMarkDialog', () => {
     });
   });
 
+  it('ignores a second mark change for the same tooth while the first is in flight', async () => {
+    const resolveMark: Array<() => void> = [];
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = String(init?.method ?? 'GET').toUpperCase();
+      if (method === 'POST' && path === '/first-exams/f-1/teeth/t-1/chief-mark') {
+        return new Promise<void>((resolve) => {
+          resolveMark.push(() => resolve());
+        });
+      }
+      if (path === '/resources/firstExamTeeth?examId=f-1&page=1&pageSize=200') {
+        return {
+          items: [{ id: 't-1', examId: 'f-1', toothNumber: 16, toothStatus: 'CARIES', chiefMark: 'NONE' }],
+          total: 1,
+          page: 1,
+          pageSize: 200,
+        };
+      }
+      return {};
+    });
+
+    render(<TeethMarkDialog row={{ id: 'f-1' }} reload={vi.fn()} onClose={vi.fn()} />, { wrapper });
+    const select = (await screen.findByLabelText('牙齿 16 主诉标记')) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: 'HORIZONTAL_SHOULD' } });
+    fireEvent.change(select, { target: { value: 'HORIZONTAL_DONE' } });
+    await waitFor(() => {
+      const markCalls = vi.mocked(apiRequest).mock.calls.filter(
+        ([path]) => path === '/first-exams/f-1/teeth/t-1/chief-mark',
+      );
+      expect(markCalls).toHaveLength(1);
+    });
+    resolveMark[0]?.();
+  });
+
   it('handles lower teeth, non-numeric numbers, issue marks and tooth clicks', async () => {
     vi.mocked(apiRequest).mockResolvedValue({
       items: [

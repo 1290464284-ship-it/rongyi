@@ -5,11 +5,16 @@ import type { ReactNode } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ClinicalWorkflowPage } from './ClinicalWorkflowPage';
-import { apiRequest } from '../../lib/api';
+import { apiRequest, fetchAllPages } from '../../lib/api';
 import type { Page } from '../../lib/types';
 import { ToastProvider } from '../../components/toast';
 
-vi.mock('../../lib/api', () => ({ apiRequest: vi.fn(), downloadCsv: vi.fn() }));
+vi.mock('../../lib/api', () => ({ apiRequest: vi.fn(), fetchAllPages: vi.fn(), downloadCsv: vi.fn() }));
+
+vi.mocked(fetchAllPages).mockImplementation(async (path: string) => {
+  const data = await vi.mocked(apiRequest)(path) as { items?: unknown[] } | unknown[];
+  return Array.isArray(data) ? data : (data as { items?: unknown[] })?.items ?? [];
+});
 
 const wrapper = ({ children }: { children: ReactNode }) => (
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ToastProvider>{children}</ToastProvider></QueryClientProvider>

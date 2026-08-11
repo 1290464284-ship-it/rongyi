@@ -5,10 +5,15 @@ import type { ReactNode } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { UsersPage } from './UsersPage';
-import { apiRequest } from '../../lib/api';
+import { apiRequest, fetchAllPages } from '../../lib/api';
 import { ToastProvider } from '../../components/toast';
 
-vi.mock('../../lib/api', () => ({ apiRequest: vi.fn() }));
+vi.mock('../../lib/api', () => ({ apiRequest: vi.fn(), fetchAllPages: vi.fn() }));
+
+vi.mocked(fetchAllPages).mockImplementation(async (path: string) => {
+  const data = await vi.mocked(apiRequest)(path) as { items?: unknown[] } | unknown[];
+  return Array.isArray(data) ? data : (data as { items?: unknown[] })?.items ?? [];
+});
 
 const wrapper = ({ children }: { children: ReactNode }) => (
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>

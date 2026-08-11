@@ -183,5 +183,7 @@ function resourceName(value: string): string {
 
 export function errorMessage(error: unknown, fallback = '操作失败，请稍后重试'): string {
   const raw = error instanceof Error ? error.message : '';
-  return raw ? friendlyError(raw) : fallback;
+  const traceId = error instanceof Error ? (error as { traceId?: string }).traceId : undefined;
+  const base = raw ? friendlyError(raw) : fallback;
+  return traceId ? `${base}（trace: ${traceId}）` : base;
 }

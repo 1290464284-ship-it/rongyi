@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useRef, useState } from 'react';
 import { apiRequest } from '../../lib/api';
 import { errorMessage } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
@@ -15,6 +15,9 @@ export function SystemOperationsPage() {
   const [searchInput, setSearchInput] = useState('');
   const search = useDebouncedValue(searchInput, 300);
   const [searchResults, setSearchResults] = useState<Array<Record<string, unknown>>>([]);
+  const [importBusy, setImportBusy] = useState(false);
+  const [searchBusy, setSearchBusy] = useState(false);
+  const searchGenerationRef = useRef(0);
 
   function loadFile(file: File) {
     const reader = new FileReader();
@@ -33,8 +36,16 @@ export function SystemOperationsPage() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (importBusy) return;
+    let rows: Array<Record<string, unknown>>;
     try {
-      const rows = JSON.parse(rowsJson) as Array<Record<string, unknown>>;
+      rows = parseRows(rowsJson) as Array<Record<string, unknown>>;
+    } catch (error) {
+      showToast(errorMessage(error, '导入数据格式错误'), 'error');
+      return;
+    }
+    setImportBusy(true);
+    try {
       const result = await apiRequest<{ imported: number; failed: number; errors: string[]; chunks: number }>(
         `/bulk-import/${resource}`,
         { method: 'POST', body: JSON.stringify({ rows, chunkSize: Number(chunkSize) }) },
@@ -42,16 +53,26 @@ export function SystemOperationsPage() {
       showToast(`导入完成：成功 ${result.imported}，失败 ${result.failed}，分片 ${result.chunks}`, 'success');
     } catch (error) {
       showToast(errorMessage(error, '导入失败'), 'error');
+    } finally {
+      setImportBusy(false);
     }
   }
 
   async function runSearch() {
-    if (search.length < 2) return;
+    if (search.length < 2 || searchBusy) return;
+    const generation = searchGenerationRef.current + 1;
+    searchGenerationRef.current = generation;
+    setSearchBusy(true);
     try {
-      setSearchResults(await apiRequest<Array<Record<string, unknown>>>(`/search?q=${encodeURIComponent(search)}`));
+      const results = await apiRequest<Array<Record<string, unknown>>>(`/search?q=${encodeURIComponent(search)}`);
+      if (generation === searchGenerationRef.current) setSearchResults(results);
       showToast('搜索完成', 'success');
     } catch (error) {
-      showToast(errorMessage(error, '搜索失败'), 'error');
+      if (generation === searchGenerationRef.current) {
+        showToast(errorMessage(error, '搜索失败'), 'error');
+      }
+    } finally {
+      if (generation === searchGenerationRef.current) setSearchBusy(false);
     }
   }
 
@@ -99,12 +120,12 @@ export function SystemOperationsPage() {
             if (file) loadFile(file);
           }}
         />
-        <button type="submit">导入</button>
+        <button type="submit" disabled={importBusy}>{importBusy ? '导入中...' : '导入'}</button>
       </form>
       <h2>全局搜索</h2>
       <div className="inline-form">
         <input aria-label="搜索关键词" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} />
-        <button onClick={runSearch}>搜索</button>
+        <button disabled={searchBusy} onClick={() => void runSearch()}>{searchBusy ? '搜索中...' : '搜索'}</button>
       </div>
       {searchResults.length > 0 && (
         <div className="table-wrap">

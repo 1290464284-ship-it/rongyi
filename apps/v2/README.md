@@ -212,8 +212,8 @@ electron/           Electron main and preload
 Verified 2026-08-11:
 
 - 约 8.9 万行 TypeScript/TSX（`src/`，含测试代码）
-- 217 个测试文件
-- 2165 个测试用例（最近一次 vitest 全量运行记录）
+- 220 个测试文件
+- 2220 个测试用例（最近一次 vitest 全量运行记录）
 
 ## Sidebar Groups
 

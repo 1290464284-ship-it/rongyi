@@ -179,8 +179,19 @@ describe('ProcessingOrderFormFields', () => {
     cleanup();
     vi.mocked(apiRequest).mockResolvedValue([]);
     vi.mocked(fetchAllPages).mockRejectedValue(new Error(''));
-    render(<ProcessingOrderFormFields form={emptyProcessingForm()} update={vi.fn()} editing editingId="po-2" />, { wrapper });
+    const onItemsLoaded = vi.fn();
+    render(
+      <ProcessingOrderFormFields
+        form={emptyProcessingForm()}
+        update={vi.fn()}
+        onItemsLoaded={onItemsLoaded}
+        editing
+        editingId="po-2"
+      />,
+      { wrapper },
+    );
     expect(await screen.findByText('明细加载失败，请关闭后重试')).toBeDefined();
+    expect(onItemsLoaded).not.toHaveBeenCalled();
   });
 
   it('backfills sparse processing items with blank and default fallbacks', async () => {

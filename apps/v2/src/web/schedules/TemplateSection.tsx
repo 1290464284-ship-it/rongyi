@@ -12,6 +12,7 @@ export function TemplateSection({ templates, reload }: { templates?: ShiftTempla
   const { showToast } = useToast();
   const [form, setForm] = useState<TemplateForm>({ name: '', startTime: '', endTime: '', workDays: [1, 2, 3, 4, 5], color: '', active: true });
   const [submitting, setSubmitting] = useState(false);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
   const [editingTemplate, setEditingTemplate] = useState<ShiftTemplate | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ShiftTemplate | null>(null);
   const update = (patch: Partial<TemplateForm>) => setForm((current) => ({ ...current, ...patch }));
@@ -32,6 +33,10 @@ export function TemplateSection({ templates, reload }: { templates?: ShiftTempla
     event.preventDefault();
     if (!form.name.trim() || !form.startTime || !form.endTime || form.workDays.length === 0) {
       showToast('请填写模板名称、时间并至少选择一个工作日', 'error');
+      return;
+    }
+    if (form.endTime <= form.startTime) {
+      showToast('结束时间必须晚于开始时间', 'error');
       return;
     }
     setSubmitting(true);
@@ -84,6 +89,8 @@ export function TemplateSection({ templates, reload }: { templates?: ShiftTempla
   }
 
   async function toggleActive(template: ShiftTemplate) {
+    if (togglingId === template.id) return;
+    setTogglingId(template.id);
     try {
       await apiRequest(`/shift-templates/${template.id}`, {
         method: 'PATCH',
@@ -93,6 +100,8 @@ export function TemplateSection({ templates, reload }: { templates?: ShiftTempla
       await reload();
     } catch (error) {
       showToast(errorMessage(error, '更新模板状态失败'), 'error');
+    } finally {
+      setTogglingId(null);
     }
   }
 

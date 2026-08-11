@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -153,6 +153,23 @@ describe('InventoryDocService', () => {
     expect(stockOf('inventory-demo-001')).toBe(92);
   });
 
+  it('invokes the stocktake lock guard and rolls back when the item is locked', () => {
+    insertSupplier('sup-lock', 'SUP-LOCK', '锁定供应商');
+    const lockGuard = vi.fn(() => { throw new ConflictError('盘点已锁定'); });
+    const ServiceWithGuard = InventoryDocService as unknown as new (
+      db: Database.Database,
+      lockGuard?: (itemId: string, clinicId?: string | null) => void,
+    ) => InventoryDocService;
+    const service = new ServiceWithGuard(db, lockGuard);
+
+    expect(() => service.createLoss({ items: [{ itemId: 'inventory-demo-001', quantity: 1 }] }, context))
+      .toThrow(ConflictError);
+    expect(lockGuard).toHaveBeenCalledWith('inventory-demo-001', 'clinic-v2-001');
+    const docRows = db.prepare("SELECT COUNT(*) AS c FROM InventoryDoc WHERE type = 'LOSS'").get() as { c: number };
+    expect(docRows.c).toBe(1);
+    expect(stockOf('inventory-demo-001')).toBe(92);
+  });
+
   it('creates a transfer doc with OUT and IN transactions', () => {
     insertItem('inventory-demo-002', 'MAT-002', 10);
     const service = new InventoryDocService(db);
@@ -218,5 +235,6 @@ describe('InventoryDocService', () => {
     expect(() => service.createLoss({ items: [{ itemId: 'inventory-demo-001', quantity: 0 }] }, context)).toThrow(ValidationError);
     expect(() => service.createTransfer({ items: [{ fromItemId: 'inventory-demo-001', toItemId: 'inventory-demo-002', quantity: -1 }] }, context)).toThrow(ValidationError);
     expect(() => service.createTransfer({ items: [{ fromItemId: '', toItemId: 'inventory-demo-002', quantity: 1 }] }, context)).toThrow(ValidationError);
+    expect(() => service.createTransfer({ items: [{ fromItemId: 'inventory-demo-001', toItemId: 'inventory-demo-001', quantity: 1 }] }, context)).toThrow(ValidationError);
   });
 });

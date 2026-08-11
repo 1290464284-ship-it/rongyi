@@ -119,6 +119,14 @@ export class TreatmentPlanBillingService {
     context: AppContext,
   ): { id: string; discountType: string; discountRate: number | null; totalFee: number } {
     this.findPlan(planId, context); // 校验计划存在且属于当前租户（plan 变量本身此处用不到）
+    const billedItem = this.db.prepare(
+      `SELECT 1 FROM TreatmentPlanItem
+       WHERE planId = ? AND billed = 1 AND deletedAt IS NULL${tenantAnd(context.clinicId)}
+       LIMIT 1`,
+    ).get(planId, ...tenantParams(context.clinicId));
+    if (billedItem) {
+      throw new ConflictError('治疗计划已划价，整单折扣不可修改');
+    }
     const discountType = input?.discountType;
     if (typeof discountType !== 'string' || !PLAN_DISCOUNT_TYPES.has(discountType)) {
       throw new ValidationError('折扣类型无效');
@@ -150,6 +158,7 @@ export class TreatmentPlanBillingService {
     input: SetItemDiscountInput,
     context: AppContext,
   ): { itemId: string; discountRate: number | null; planTotalFee: number } {
+    const run = this.db.transaction(() => {
     this.findPlan(planId, context);
     const item = this.findPlanItem(planId, itemId, context);
     if (item.billed === 1) {
@@ -158,11 +167,12 @@ export class TreatmentPlanBillingService {
     const discountRate = validateDiscountRate(input?.discountRate);
 
     const now = context.now().toISOString();
-    this.db.prepare(
+    const updateResult = this.db.prepare(
       `UPDATE TreatmentPlanItem
        SET discountRate = ?, updatedAt = ?
-       WHERE id = ? AND planId = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+       WHERE id = ? AND planId = ? AND (billed IS NULL OR billed = 0) AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).run(discountRate, now, itemId, planId, ...tenantParams(context.clinicId));
+    if (Number(updateResult.changes) === 0) throw new ConflictError('已划价明细不可改价');
 
     const items = this.listPlanItems(planId, context);
     const plan = this.findPlan(planId, context);
@@ -172,6 +182,8 @@ export class TreatmentPlanBillingService {
     ).run(planTotalFee, now, planId, ...tenantParams(context.clinicId));
 
     return { itemId, discountRate, planTotalFee };
+    });
+    return run();
   }
 
   bill(
@@ -275,10 +287,14 @@ export class TreatmentPlanBillingService {
       const updateItem = this.db.prepare(
         `UPDATE TreatmentPlanItem
          SET billed = 1, billedChargeId = ?, updatedAt = ?
-         WHERE id = ? AND planId = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+         WHERE id = ? AND planId = ? AND (billed = 0 OR billed IS NULL) AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
       );
       for (const item of selected) {
-        updateItem.run(chargeId, now, item.id, planId, ...tenantParams(context.clinicId));
+        const result = updateItem.run(chargeId, now, item.id, planId, ...tenantParams(context.clinicId));
+        if (Number(result.changes) === 0) {
+          // 并发划价：另一进程已把该明细置为 billed=1，整笔回滚，防止重复生成 Charge。
+          throw new ConflictError('已划价明细不可重复划价');
+        }
       }
       this.db.prepare(
         `UPDATE TreatmentPlan SET totalFee = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,

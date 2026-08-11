@@ -28,7 +28,20 @@ const INTERNAL_TABLES = new Set([
   'UsedRefreshToken',
   'UserClinic',
 ]);
-const resourcesSource = fs.readFileSync(path.join(appRoot, 'src', 'domain', 'resources.ts'), 'utf8');
+// 资源定义已按域拆分为 resources/*.ts（core/clinical/finance/inventory/
+// operations/r2/shared）；生成器改为扫描目录，避免继续读取已删除的
+// src/domain/resources.ts 导致 ENOENT 后产物静默失联。
+const resourceDir = path.join(appRoot, 'src', 'domain', 'resources');
+function listTsFiles(dir) {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name);
+    return entry.isDirectory() ? listTsFiles(full) : entry.name.endsWith('.ts') ? [full] : [];
+  });
+}
+const resourcesSource = listTsFiles(resourceDir)
+  .sort()
+  .map((file) => fs.readFileSync(file, 'utf8'))
+  .join('\n');
 const explicitTables = new Set(
   [...resourcesSource.matchAll(/crud\('([^']+)',\s*'([^']+)'/g)].map((match) => match[2]),
 );

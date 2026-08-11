@@ -79,6 +79,24 @@ describe('CustomFieldsPage', () => {
     expect(await screen.findByText('字段已创建')).toBeDefined();
   });
 
+  it('blocks saving fields with missing names or SELECT options', async () => {
+    mockApi();
+    render(<CustomFieldsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '新建字段' }));
+
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    expect(await screen.findByText('请填写显示名称和字段名')).toBeDefined();
+
+    fireEvent.change(screen.getByLabelText('显示名称'), { target: { value: '医保类型' } });
+    fireEvent.change(screen.getByLabelText('字段名（字母开头）'), { target: { value: 'insuranceType' } });
+    fireEvent.change(screen.getByLabelText('类型'), { target: { value: 'SELECT' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    expect(await screen.findByText('SELECT 类型至少需要一个选项')).toBeDefined();
+
+    const postCalls = vi.mocked(apiRequest).mock.calls.filter(([, options]) => options?.method === 'POST');
+    expect(postCalls).toHaveLength(0);
+  });
+
   it('edits an existing field', async () => {
     mockApi();
     render(<CustomFieldsPage />, { wrapper });

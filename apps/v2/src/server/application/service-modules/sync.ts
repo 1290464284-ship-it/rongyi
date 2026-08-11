@@ -101,8 +101,16 @@ export class SyncService {
       if (!SYNC_ALLOWED_TABLES.has(options.table) || !tableExists(options.table)) {
         throw new ValidationError('Sync table is not allowed');
       }
-      const limit = Math.min(50_000, Math.max(1, Math.floor(Number(options.limit) || 5_000)));
-      const offset = Math.max(0, Math.floor(Number(options.offset) || 0));
+      // 非有限/非法 limit/offset（NaN/Infinity/负数）统一回落默认值，避免绑定
+      // Infinity 时 SQLite 抛 500 或产生超大 OFFSET 扫描。
+      const rawLimit = Number(options.limit);
+      const rawOffset = Number(options.offset);
+      const limit = Number.isFinite(rawLimit) && rawLimit >= 1
+        ? Math.min(50_000, Math.floor(rawLimit))
+        : 5_000;
+      const offset = Number.isFinite(rawOffset) && rawOffset >= 0
+        ? Math.floor(rawOffset)
+        : 0;
       const total = tableTotal(options.table);
       const rows = this.db.prepare(
         `SELECT * FROM "${options.table}" WHERE deletedAt IS NULL${tenantAnd(context.clinicId)}

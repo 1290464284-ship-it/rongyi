@@ -147,6 +147,13 @@ describe('ChargeTreeService', () => {
     expect(charge.remark).toBe('快捷划价：洁牙');
   });
 
+  it('rejects quick charge subtotals above the maximum allowed amount', () => {
+    insertCatalog('cat-qc-over', 'CAT-QC-OVER', '超限项目', 60_000_000, { costType: 'SERVICE' });
+    const service = new ChargeTreeService(db);
+    expect(() => service.quickCharge('cat-qc-over', { patientId: 'patient-demo-001', quantity: 2 }, context))
+      .toThrow(ValidationError);
+  });
+
   it('rejects non-positive or non-integer quantities with ValidationError', () => {
     insertCatalog('cat-qc-3', 'CAT-QC-3', '拍片', 20000, { costType: 'SERVICE' });
     const service = new ChargeTreeService(db);

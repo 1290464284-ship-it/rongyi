@@ -7,12 +7,18 @@ on:
     tags:
       - 'v2-*'
     paths:
+      - 'pnpm-lock.yaml'
+      - 'package.json'
+      - 'pnpm-workspace.yaml'
       - 'apps/v2/**'
       - 'docs/architecture/**'
       - 'docs/release/**'
       - '.github/workflows/v2-ci.yml'
   pull_request:
     paths:
+      - 'pnpm-lock.yaml'
+      - 'package.json'
+      - 'pnpm-workspace.yaml'
       - 'apps/v2/**'
       - 'docs/architecture/**'
       - 'docs/release/**'
@@ -139,6 +145,11 @@ jobs:
 
       - name: Ensure sanitized legacy database
         run: pnpm --filter @dental/v2 ensure:legacy
+
+      - name: Verify legacy resource generator output
+        run: |
+          pnpm --filter @dental/v2 run generate:legacy-resources
+          git diff --exit-code -- apps/v2/src/domain/legacy-resources.generated.ts
 
       - name: Simulate clinic data
         run: pnpm --filter @dental/v2 simulate:clinic-data

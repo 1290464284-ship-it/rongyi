@@ -44,9 +44,12 @@ process.env.V2_BACKUP_DIR = path.join(smokeRoot, 'backups');
 process.env.V2_LOG_DIR = path.join(smokeRoot, 'logs');
 
 function shellCommand(args) {
-  return ['pnpm', '--filter', '@dental/v2', ...args]
-    .map((part) => (/[\s"]/.test(part) ? `"${part.replaceAll('"', '\\"')}"` : part))
-    .join(' ');
+  // Windows 下 spawn 需要 shell 解析 pnpm.cmd，因此保留 shell 但参数必须
+  // 是固定字面量：含空白/引号的参数直接拒绝，避免脆弱转义变成注入面。
+  for (const part of args) {
+    if (/[\s"'&|$`<>;()]/.test(part)) throw new Error(`unsafe smoke argument: ${part}`);
+  }
+  return ['pnpm', '--filter', '@dental/v2', ...args].join(' ');
 }
 
 function isPortFree(port) {

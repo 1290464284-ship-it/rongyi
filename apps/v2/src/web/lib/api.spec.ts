@@ -803,6 +803,25 @@ describe('api helper functions', () => {
     expect(String(fetchMock.mock.calls[1][0])).toContain('&page=2');
   });
 
+  it('fetchAllPages overrides existing page/pageSize params instead of duplicating them', async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      expect(url.searchParams.getAll('page')).toEqual(['1']);
+      expect(url.searchParams.getAll('pageSize')).toEqual(['100']);
+      expect(url.searchParams.get('clinic')).toBe('1');
+      return new Response(
+        JSON.stringify({ success: true, data: { items: [{ id: 'a' }], total: 1, page: 1, pageSize: 100 } }),
+        { status: 200 },
+      );
+    });
+    const rows = await mod.fetchAllPages('/resources/patients?page=3&pageSize=50&clinic=1');
+    expect(rows).toEqual([{ id: 'a' }]);
+    const callUrl = new URL(String(fetchMock.mock.calls[0][0]));
+    expect(callUrl.searchParams.get('page')).toBe('1');
+    expect(callUrl.searchParams.get('pageSize')).toBe('100');
+    expect(callUrl.searchParams.get('clinic')).toBe('1');
+  });
+
   it('fetchAllPages returns early for empty first pages', async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(

@@ -343,6 +343,17 @@ describe('dispense routes', () => {
       .expect(400);
     expect(noDate.body.code).toBe('VALIDATION_ERROR');
     expect(noDate.body.message).toBe('登记日期不能为空');
+
+    const missingPatient = await request(app)
+      .post('/api/v2/narcotic-registry')
+      .send({ recordDate: '2026-08-05', patientId: 'patient-missing', doctorId: 'user-admin-001', itemId: 'inventory-demo-001', quantity: 1 })
+      .expect(404);
+    expect(missingPatient.body.code).toBe('NOT_FOUND');
+    const missingDoctor = await request(app)
+      .post('/api/v2/narcotic-registry')
+      .send({ recordDate: '2026-08-05', patientId: 'patient-demo-001', doctorId: 'doctor-missing', itemId: 'inventory-demo-001', quantity: 1 })
+      .expect(404);
+    expect(missingDoctor.body.code).toBe('NOT_FOUND');
   });
 
   it('PATCH /api/v2/dispenses/:id updates a PENDING dispense and reconciles items', async () => {

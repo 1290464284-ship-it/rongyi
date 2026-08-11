@@ -191,6 +191,40 @@ describe('resource router', () => {
       .expect(200);
   });
 
+  it('rejects generic writes to state-machine resources (inventory/stocktake/dispense/narcotic)', async () => {
+    const cases: Array<{ method: 'post' | 'patch'; path: string; body: Record<string, unknown> }> = [
+      {
+        method: 'post',
+        path: '/api/v2/resources/inventoryBatches',
+        body: { itemId: 'inventory-demo-001', batchNo: 'ROUTER-B-1', initialQuantity: 100, remainingQuantity: 100 },
+      },
+      { method: 'post', path: '/api/v2/resources/stocktakes', body: { number: 'ROUTER-ST-1', status: 'IN_PROGRESS' } },
+      { method: 'patch', path: '/api/v2/resources/stocktakeItems/whatever', body: { countedStock: 1 } },
+      {
+        method: 'post',
+        path: '/api/v2/resources/dispenses',
+        body: { number: 'ROUTER-DS-1', patientId: 'patient-demo-001', status: 'DISPENSED' },
+      },
+      {
+        method: 'post',
+        path: '/api/v2/resources/dispenseItems',
+        body: { dispenseId: 'route-missing', itemId: 'inventory-demo-001', quantity: 1 },
+      },
+      {
+        method: 'post',
+        path: '/api/v2/resources/narcoticRegistry',
+        body: { recordDate: '2026-08-05', itemId: 'inventory-demo-001', quantity: 1 },
+      },
+    ];
+    for (const entry of cases) {
+      const res = await request(app)[entry.method](entry.path)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send(entry.body);
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('NOT_FOUND');
+    }
+  });
+
   it('exports more than one page of rows', async () => {
     for (let index = 0; index < 201; index += 1) {
       await request(app)

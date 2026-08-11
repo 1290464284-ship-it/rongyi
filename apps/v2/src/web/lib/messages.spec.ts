@@ -60,4 +60,10 @@ describe('friendlyError', () => {
     expect(errorMessage(new Error(''))).toBe('操作失败，请稍后重试');
     expect(errorMessage('')).toBe('操作失败，请稍后重试');
   });
+
+  it('appends the trace id when the error carries one', () => {
+    const error = new Error('Patient not found');
+    (error as { traceId?: string }).traceId = 'trace-abc';
+    expect(errorMessage(error)).toBe('患者不存在（trace: trace-abc）');
+  });
 });

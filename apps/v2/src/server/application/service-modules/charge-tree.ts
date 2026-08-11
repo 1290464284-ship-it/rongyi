@@ -128,7 +128,11 @@ export class ChargeTreeService {
       itemId = input.itemId;
     }
 
-    const totalAmount = Number(catalog.price) * quantity;
+    const rawTotal = Math.round(Number(catalog.price) * quantity);
+    if (!Number.isSafeInteger(rawTotal) || rawTotal > 100_000_000) {
+      throw new ValidationError('Charge item subtotal exceeds maximum allowed amount');
+    }
+    const totalAmount = rawTotal;
     const chargeId = randomUUID();
     const number = generateDocumentNumber('CHG');
     const remark = input.remark ?? `快捷划价：${catalog.name}`;

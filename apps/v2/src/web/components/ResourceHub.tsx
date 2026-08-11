@@ -12,7 +12,8 @@ export function ResourceHub({ title, tabs }: { title: string; tabs: HubTab[] }) 
   const tabRefs = useRef(new Map<string, HTMLButtonElement>());
   const hasBossOnly = tabs.some((tab) => tab.bossOnly);
   const navigation = useQuery({
-    queryKey: ['resource-hub-navigation'],
+    // 与 Layout 共用同一键，避免同一 /auth/navigation 被重复请求。
+    queryKey: ['navigation'],
     queryFn: () => apiRequest<{ role?: string }>('/auth/navigation'),
     enabled: hasBossOnly,
   });
@@ -56,51 +57,57 @@ export function ResourceHub({ title, tabs }: { title: string; tabs: HubTab[] }) 
           />
         </div>
       )}
-      <div className="tabs" role="tablist" aria-label={title}>
-        {filteredTabs.map((tab, index) => {
-          const showGroup = tab.group !== undefined && (index === 0 || filteredTabs[index - 1]?.group !== tab.group);
-          return (
-            <Fragment key={tab.id}>
-              {showGroup && <span className="tab-group" aria-hidden="true">{tab.group}</span>}
-              <button
-                ref={(node) => {
-                  if (node) tabRefs.current.set(tab.id, node);
-                  else tabRefs.current.delete(tab.id);
-                }}
-                id={`hub-tab-${tab.id}`}
-                role="tab"
-                type="button"
-                aria-selected={tab.id === effectiveActiveId}
-                aria-controls={`hub-panel-${tab.id}`}
-                tabIndex={tab.id === effectiveActiveId ? 0 : -1}
-                className={tab.id === effectiveActiveId ? 'tab active' : 'tab'}
-                onClick={() => selectTab(tab.id)}
-                onKeyDown={(event) => handleTabKeyDown(event, index)}
-              >
-                {tab.label}
-              </button>
-            </Fragment>
-          );
-        })}
-      </div>
-      {active && (
-        <div
-          key={active.id}
-          id={`hub-panel-${active.id}`}
-          role="tabpanel"
-          aria-labelledby={`hub-tab-${active.id}`}
-          className="tab-panel"
-        >
-          <ErrorBoundary>
-            {active.kind === 'resource' ? (
-              <ResourcePage resource={active.resource} />
-            ) : active.kind === 'custom' ? (
-              <Suspense fallback={<LoadingState label="页面加载中" />}>
-                <active.component />
-              </Suspense>
-            ) : null}
-          </ErrorBoundary>
-        </div>
+      {filteredTabs.length === 0 ? (
+        <div className="table-empty">没有匹配的页面</div>
+      ) : (
+        <>
+          <div className="tabs" role="tablist" aria-label={title}>
+            {filteredTabs.map((tab, index) => {
+              const showGroup = tab.group !== undefined && (index === 0 || filteredTabs[index - 1]?.group !== tab.group);
+              return (
+                <Fragment key={tab.id}>
+                  {showGroup && <span className="tab-group" aria-hidden="true">{tab.group}</span>}
+                  <button
+                    ref={(node) => {
+                      if (node) tabRefs.current.set(tab.id, node);
+                      else tabRefs.current.delete(tab.id);
+                    }}
+                    id={`hub-tab-${tab.id}`}
+                    role="tab"
+                    type="button"
+                    aria-selected={tab.id === effectiveActiveId}
+                    aria-controls={`hub-panel-${tab.id}`}
+                    tabIndex={tab.id === effectiveActiveId ? 0 : -1}
+                    className={tab.id === effectiveActiveId ? 'tab active' : 'tab'}
+                    onClick={() => selectTab(tab.id)}
+                    onKeyDown={(event) => handleTabKeyDown(event, index)}
+                  >
+                    {tab.label}
+                  </button>
+                </Fragment>
+              );
+            })}
+          </div>
+          {active && (
+            <div
+              key={active.id}
+              id={`hub-panel-${active.id}`}
+              role="tabpanel"
+              aria-labelledby={`hub-tab-${active.id}`}
+              className="tab-panel"
+            >
+              <ErrorBoundary>
+                {active.kind === 'resource' ? (
+                  <ResourcePage resource={active.resource} />
+                ) : active.kind === 'custom' ? (
+                  <Suspense fallback={<LoadingState label="页面加载中" />}>
+                    <active.component />
+                  </Suspense>
+                ) : null}
+              </ErrorBoundary>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

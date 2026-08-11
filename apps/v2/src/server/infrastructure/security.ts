@@ -19,6 +19,25 @@ const SENSITIVE_FIELDS = new Set([
   'creditCard',
 ]);
 
+/** 审计日志专用脱敏集合：额外覆盖业务 PII（响应里医生需要，审计里不应明文留存）。 */
+const AUDIT_SENSITIVE_FIELDS = new Set([
+  ...SENSITIVE_FIELDS,
+  'phone',
+  'phoneNumber',
+  'email',
+  'idCard',
+  'cardNo',
+  'wechatId',
+  'birthDate',
+  'address',
+  'allergies',
+  'medicalHistory',
+  'medicationHistory',
+  'systemicDiseases',
+  'occupation',
+  'bankAccount',
+]);
+
 // Business PII (phone/email/idCard/cardNo) is intentionally not masked here:
 // authorized clinic staff need these values in lists, edit forms and
 // duplicate checks. Masking them to null wiped phone numbers on edit.
@@ -81,20 +100,31 @@ const PROTECTED_WRITE_FIELDS = new Set([
  */
 const RESOURCE_PROTECTED_WRITE_FIELDS: Record<string, ReadonlySet<string>> = {
   wechatMessages: new Set(['status', 'sentAt', 'result']),
+  purchaseOrders: new Set(['status', 'reviewStatus', 'receivedAt', 'approvedById', 'approvedAt', 'rejectionReason', 'receivedById']),
+  processingOrders: new Set(['status', 'sentAt', 'receivedAt', 'deliveredAt', 'settleStatus', 'settledAmount', 'settledAt', 'settlementNote', 'settlementRef']),
 };
 
 /** 递归掩码：数组逐项、对象逐键；深度 >5 时截断为占位值，避免深层嵌套泄露敏感键。 */
-export function maskSensitiveFields<T>(row: T, depth = 0): T {
+function maskWith<T>(row: T, sensitive: ReadonlySet<string>, depth = 0): T {
   if (depth > 5) return '[MaxDepth]' as unknown as T;
-  if (Array.isArray(row)) return row.map((item) => maskSensitiveFields(item, depth + 1)) as unknown as T;
+  if (Array.isArray(row)) return row.map((item) => maskWith(item, sensitive, depth + 1)) as unknown as T;
   if (row && typeof row === 'object') {
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(row as Record<string, unknown>)) {
-      result[key] = SENSITIVE_FIELDS.has(key) ? null : maskSensitiveFields(value, depth + 1);
+      result[key] = sensitive.has(key) ? null : maskWith(value, sensitive, depth + 1);
     }
     return result as unknown as T;
   }
   return row;
+}
+
+export function maskSensitiveFields<T>(row: T, depth = 0): T {
+  return maskWith(row, SENSITIVE_FIELDS, depth);
+}
+
+/** 审计入账专用掩码：PII 也置空，避免 OperationLog 长期明文留存手机/证件号。 */
+export function maskAuditFields<T>(row: T, depth = 0): T {
+  return maskWith(row, AUDIT_SENSITIVE_FIELDS, depth);
 }
 
 export function stripProtectedWriteFields(

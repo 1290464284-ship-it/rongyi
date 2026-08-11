@@ -1,7 +1,6 @@
 import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest } from '../../lib/api';
-import type { Page } from '../../lib/types';
+import { apiRequest, fetchAllPages } from '../../lib/api';
 import { DataTable, PromptDialog, QuerySection, type DataTableColumn } from '../../components';
 import { formatMoney, toCents } from '../../lib/format';
 import { errorMessage } from '../../lib/messages';
@@ -20,11 +19,17 @@ export function FinanceWorkflowPage() {
   const submittingRef = useRef(false);
   const cards = useQuery({
     queryKey: ['member-cards'],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/memberCards?page=1&pageSize=100'),
+    queryFn: async () => {
+      const items = await fetchAllPages<Record<string, unknown>>('/resources/memberCards?page=1&pageSize=100');
+      return { items, total: items.length, page: 1, pageSize: Math.max(items.length, 1) };
+    },
   });
   const debts = useQuery({
     queryKey: ['debts'],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/debtRecords?page=1&pageSize=100'),
+    queryFn: async () => {
+      const items = await fetchAllPages<Record<string, unknown>>('/resources/debtRecords?page=1&pageSize=100');
+      return { items, total: items.length, page: 1, pageSize: Math.max(items.length, 1) };
+    },
   });
 
   async function run(path: string, id: string, body: Record<string, unknown>, method: 'POST' | 'PATCH' = 'POST') {

@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase } from '../database';
 import { runMigrations } from '../migrations';
+import { SystemClock } from '../clock';
 import {
   SqliteAlertRepository,
   SqliteAuthRepository,
@@ -310,7 +311,7 @@ describe('core repositories', () => {
          number, patientId, status
        ) VALUES (?, ?, ?, ?, NULL, 'PO-PROC', 'patient', 'DRAFT')`,
     ).run('proc-repo', null, now, now);
-    processing.updateStatus('proc-repo', 'SENT', now);
+    processing.updateStatus('proc-repo', 'SENT', now, undefined, 'DRAFT');
     expect(processing.findById('proc-repo')?.status).toBe('SENT');
 
     const wechat = new SqliteWechatMessageRepository(db);
@@ -379,6 +380,36 @@ describe('core repositories', () => {
     expect(repo.complete('followup-repo-result', now, now, null, '已回访')).toBe(1);
     const resultRow = db.prepare('SELECT result FROM FollowUp WHERE id = ?').get('followup-repo-result') as { result: string | null };
     expect(resultRow.result).toBe('已回访');
+  });
+
+  it('filters reminders by overdue/today/upcoming scope', () => {
+    const repo = new SqliteFollowUpRepository(db);
+    const today = new SystemClock().clinicDate();
+    const yesterday = new SystemClock().clinicDate(Date.now() - 86_400_000);
+    const tomorrow = new SystemClock().clinicDate(Date.now() + 86_400_000);
+    for (const [id, date] of [
+      ['scope-overdue', yesterday],
+      ['scope-today', today],
+      ['scope-upcoming', tomorrow],
+    ] as const) {
+      repo.insert({
+        id,
+        clinicId: null,
+        patientId: 'followup-patient',
+        planDate: date,
+        content: id,
+        status: 'PENDING',
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+    const overdue = repo.reminders(undefined, { scope: 'overdue' } as never);
+    const todayList = repo.reminders(undefined, { scope: 'today' } as never);
+    const upcoming = repo.reminders(undefined, { scope: 'upcoming' } as never);
+    expect(overdue.items.some((row) => row.id === 'scope-overdue')).toBe(true);
+    expect(overdue.items.some((row) => row.id === 'scope-today')).toBe(false);
+    expect(todayList.items.some((row) => row.id === 'scope-today')).toBe(true);
+    expect(upcoming.items.some((row) => row.id === 'scope-upcoming')).toBe(true);
   });
 
   it('covers repository nullish, boolean, and auth mapping branches', () => {

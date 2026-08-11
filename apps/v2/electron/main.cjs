@@ -13,7 +13,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const state = require('./state.cjs');
-const { isDev, WEB_DEV_ORIGIN, ALLOWED_SECRET_KEYS } = require('./constants.cjs');
+const { isDev, WEB_DEV_ORIGIN, ALLOWED_SECRET_KEYS, isAllowedCrashReportUrl } = require('./constants.cjs');
 const { crashLog, notify, sendUpdateEvent } = require('./logging.cjs');
 const { secretPath } = require('./secrets.cjs');
 const { ensureInternalCertTrusted } = require('./cert-trust.cjs');
@@ -27,6 +27,7 @@ const {
   createWindow,
   showApiErrorWindow,
   assertTrustedRenderer,
+  isAllowedNavigation,
 } = require('./window.cjs');
 const { setupTray } = require('./tray.cjs');
 
@@ -92,11 +93,16 @@ app.whenReady().then(async () => {
     }
   }
 
-  if (process.env.V2_CRASH_REPORT_URL) {
+  const crashReportUrl = process.env.V2_CRASH_REPORT_URL;
+  const crashReportUploads = crashReportUrl ? isAllowedCrashReportUrl(crashReportUrl) : false;
+  if (crashReportUrl && !crashReportUploads) {
+    console.warn('V2_CRASH_REPORT_URL must be HTTPS and match V2_ALLOWED_CRASH_REPORT_HOSTS; crash report upload disabled');
+  }
+  if (crashReportUploads) {
     nativeCrashReporter.start({
       productName: 'Dental Clinic V2',
       companyName: 'Dental Clinic V2',
-      submitURL: process.env.V2_CRASH_REPORT_URL,
+      submitURL: crashReportUrl,
       uploadToServer: true,
       compress: true,
     });
@@ -139,7 +145,7 @@ app.whenReady().then(async () => {
         'X-Frame-Options': ['DENY'],
         'Content-Security-Policy': [
           `default-src 'self'; ${scriptSrc}; style-src 'self' 'unsafe-inline'; ` +
-          `img-src 'self' data: blob:; font-src 'self' data:; object-src 'none'; base-uri 'none'; ` +
+          `img-src 'self' data: blob:${apiOrigin ? ` ${apiOrigin}` : ''}; font-src 'self' data:; object-src 'none'; base-uri 'none'; ` +
           `form-action 'self'; frame-ancestors 'none'; ` +
           `connect-src 'self'${apiOrigin ? ` ${apiOrigin}` : ''}${devWs};`,
         ],
@@ -148,6 +154,9 @@ app.whenReady().then(async () => {
   });
   app.on('web-contents-created', (_event, contents) => {
     contents.on('will-attach-webview', (event) => event.preventDefault());
+    contents.on('will-navigate', (event, url) => {
+      if (!isAllowedNavigation(url)) event.preventDefault();
+    });
   });
 
   ipcMain.handle('desktop:secret:get', (_event, key) => {

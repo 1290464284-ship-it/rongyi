@@ -392,6 +392,39 @@ describe('DispenseListPanel', () => {
     expect(apiRequest).not.toHaveBeenCalledWith('/dispenses/disp-1/return', expect.objectContaining({ method: 'POST' }));
   });
 
+  it('rejects a return quantity above the pending quantity', async () => {
+    mockApi(detailRow({
+      status: 'DISPENSED',
+      items: [
+        {
+          id: 'di-1',
+          itemId: 'item-1',
+          batchId: null,
+          name: '麻药',
+          spec: null,
+          quantity: 5,
+          returnedQuantity: 3,
+          batchManaged: 0,
+          stock: 90,
+        },
+      ],
+    }));
+    render(
+      <DispenseListPanel
+        dispenses={queryResult({ data: { items: [returnRow], total: 1, page: 1, pageSize: 20 } })}
+        dispensePage={1}
+        setDispensePage={vi.fn()}
+      />,
+      { wrapper },
+    );
+    fireEvent.click(screen.getByRole('button', { name: '退药' }));
+    const input = (await screen.findByLabelText('退回数量')) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '3' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认退药' }));
+    expect(await screen.findByText('退回数量不能超过未退数量')).toBeDefined();
+    expect(apiRequest).not.toHaveBeenCalledWith('/dispenses/disp-1/return', expect.objectContaining({ method: 'POST' }));
+  });
+
   it('shows an error toast when return fails', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
       const method = String(init?.method ?? 'GET').toUpperCase();

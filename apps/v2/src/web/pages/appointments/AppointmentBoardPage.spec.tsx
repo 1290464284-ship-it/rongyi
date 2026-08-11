@@ -163,6 +163,46 @@ describe('AppointmentBoardPage', () => {
     expect(await screen.findByText('状态更新失败')).toBeDefined();
   });
 
+  it('ignores a concurrent transition for the same appointment while one is in flight', async () => {
+    const today = todayLocalDate();
+    const resolveStatus: Array<() => void> = [];
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === `/appointments/by-date?date=${today}`) {
+        return {
+          items: [{ id: 'a1', patientId: 'P1', doctorId: 'D1', startTime: '2026-08-04T09:00:00.000Z', status: 'BOOKED' }],
+          total: 1,
+          page: 1,
+          pageSize: 200,
+        };
+      }
+      if (path === '/appointments/a1/status') {
+        return new Promise<void>((resolve) => {
+          resolveStatus.push(() => resolve());
+        });
+      }
+      return {};
+    });
+
+    render(<AppointmentBoardPage />, { wrapper });
+    await screen.findByText('P1');
+    const card = document.querySelector('[data-id="a1"]')!;
+    const cancelledColumn = document.querySelector('[data-status="CANCELLED"]')!;
+
+    fireEvent.dragStart(card);
+    fireEvent.change(screen.getByLabelText('已预约状态'), { target: { value: 'ARRIVED' } });
+    fireEvent.drop(cancelledColumn);
+
+    await waitFor(() => {
+      const statusCalls = vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/appointments/a1/status');
+      expect(statusCalls).toHaveLength(1);
+      expect(apiRequest).toHaveBeenCalledWith(
+        '/appointments/a1/status',
+        expect.objectContaining({ body: expect.stringContaining('"status":"ARRIVED"') }),
+      );
+    });
+    resolveStatus[0]?.();
+  });
+
   it('moves a card to another status column via drag and drop', async () => {
     const today = todayLocalDate();
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {

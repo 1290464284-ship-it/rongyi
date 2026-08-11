@@ -25,7 +25,11 @@ export interface RelationLabelJoin {
  * 不拼接任何用户输入，杜绝 SQL 注入面。目标行须未软删除且与主行同诊所。
  * 输出形如：`rel0.name AS patientIdLabel` / `LEFT JOIN Patient rel0 ON rel0.id = t.patientId ...`。
  */
-export function buildRelationLabelJoins(resource: ResourceDefinition): RelationLabelJoin[] {
+export function buildRelationLabelJoins(
+  resource: ResourceDefinition,
+  hasDeletedAt?: (table: string) => boolean,
+  hasClinicId?: (table: string) => boolean,
+): RelationLabelJoin[] {
   const joins: RelationLabelJoin[] = [];
   let index = 0;
   for (const field of resource.fields) {
@@ -34,9 +38,11 @@ export function buildRelationLabelJoins(resource: ResourceDefinition): RelationL
     if (!target) continue;
     const alias = `rel${index}`;
     index += 1;
+    const deletedClause = hasDeletedAt?.(target.table) === false ? '' : ` AND ${alias}.deletedAt IS NULL`;
+    const clinicClause = hasClinicId?.(target.table) === false ? '' : ` AND ${alias}.clinicId = t.clinicId`;
     joins.push({
       select: `${alias}.${field.relation.labelField} AS ${field.name}Label`,
-      join: `LEFT JOIN ${target.table} ${alias} ON ${alias}.id = t.${field.relation.foreignKey} AND ${alias}.deletedAt IS NULL AND ${alias}.clinicId = t.clinicId`,
+      join: `LEFT JOIN ${target.table} ${alias} ON ${alias}.id = t.${field.relation.foreignKey}${deletedClause}${clinicClause}`,
     });
   }
   return joins;
@@ -88,8 +94,9 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
     const tenantClause = this.hasClinicColumn() ? tenantAnd(context.clinicId) : '';
     const params = [id, ...(this.hasClinicColumn() ? tenantParams(context.clinicId) : [])];
     /* v8 ignore stop */
+    const deletedClause = this.hasDeletedAtColumn() ? ' AND deletedAt IS NULL' : '';
     const rows = this.queryRows(
-      `SELECT * FROM ${this.resource.table} WHERE id = ? AND deletedAt IS NULL${tenantClause}`,
+      `SELECT * FROM ${this.resource.table} WHERE id = ?${deletedClause}${tenantClause}`,
       params,
     );
     if (rows.length === 0) return null;
@@ -101,7 +108,12 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
     const rawPageSize = typeof query.pageSize === 'number' && Number.isFinite(query.pageSize) ? query.pageSize : 20;
     const page = Math.max(1, Math.floor(rawPage));
     const pageSize = Math.min(200, Math.max(1, Math.floor(rawPageSize)));
-    const where: string[] = ['t.deletedAt IS NULL'];
+    const search = typeof query.search === 'string' ? query.search.trim() : '';
+    if (typeof query.search === 'string' && search === '') {
+      // 显式传入纯空格搜索时不退化为“未过滤第一页”，避免用户误以为在搜索。
+      return { items: [], total: 0, page, pageSize };
+    }
+    const where: string[] = this.hasDeletedAtColumn() ? ['t.deletedAt IS NULL'] : ['1 = 1'];
     const params: unknown[] = [];
 
     /* v8 ignore start -- all registry tables include clinicId today; false branch is defensive for future schemas. */
@@ -124,8 +136,8 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
       params.push(serialize(field, value));
     }
 
-    if (query.search && this.resource.searchIndexResource) {
-      const ftsQuery = buildFtsQuery(query.search);
+    if (search && this.resource.searchIndexResource) {
+      const ftsQuery = buildFtsQuery(search);
       if (ftsQuery) {
         // SearchIndex 是独立于主表的 FTS 表，外层 WHERE 的 clinicId 过滤不作用于该子查询；
         // 必须显式追加 clinicId 条件，否则跨诊所记录会进入 IN 列表（R2-P2-04）。
@@ -135,16 +147,20 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
         params.push(ftsQuery, this.resource.searchIndexResource);
         if (ftsTenant) params.push(...tenantParams(context.clinicId));
       }
-    } else if (query.search && (this.resource.searchableFields?.length ?? 0) > 0) {
+    } else if (search && (this.resource.searchableFields?.length ?? 0) > 0) {
       const searchClauses = this.resource.searchableFields!.map((field) => `t.${field} LIKE ? ESCAPE '\\'`);
       where.push(`(${searchClauses.join(' OR ')})`);
-      const escaped = query.search.replace(/[\\%_]/g, '\\$&');
+      const escaped = search.replace(/[\\%_]/g, '\\$&');
       for (let i = 0; i < searchClauses.length; i += 1) params.push(`%${escaped}%`);
     }
 
     // relation 字段 LEFT JOIN 目标表取 labelField，作为 `<field>Label` 附加列返回；
     // 无关联目标/表缺失时 LEFT JOIN 安全回退为 NULL label（前端回退显示原 UUID）。
-    const labelJoins = buildRelationLabelJoins(this.resource);
+    const labelJoins = buildRelationLabelJoins(
+      this.resource,
+      (table) => this.tableHasColumn(table, 'deletedAt'),
+      (table) => this.tableHasColumn(table, 'clinicId'),
+    );
     const labelSelect = labelJoins.length > 0 ? `, ${labelJoins.map((join) => join.select).join(', ')}` : '';
     const labelJoinSql = labelJoins.map((join) => join.join).join(' ');
 
@@ -220,7 +236,8 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
     // B-M5：条件 UPDATE（id + deletedAt IS NULL + 租户），changes===0 即目标行
     // 不存在/已删除/跨租户 → NotFoundError。相比先 findById 再 UPDATE 的
     // check-then-act 模式，消除并发删除窗口下"误报更新成功"的竞态。
-    const whereParts = ['id = ?', 'deletedAt IS NULL'];
+    const whereParts = ['id = ?'];
+    if (this.hasDeletedAtColumn()) whereParts.push('deletedAt IS NULL');
     values.push(id);
     /* v8 ignore start -- all registry tables include clinicId today; false branch is defensive for future schemas. */
     if (this.hasClinicColumn()) {
@@ -255,7 +272,7 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
 
   async softDelete(id: string, context: AppContext): Promise<void> {
     this.runWrite(() => {
-    if (this.resource.capabilities.softDelete) {
+    if (this.resource.capabilities.softDelete && this.hasDeletedAtColumn()) {
       const now = context.now().toISOString();
       /* v8 ignore start -- all registry tables include clinicId today; false branch is defensive for future schemas. */
       const params = [now, now, id, ...(this.hasClinicColumn() ? tenantParams(context.clinicId) : [])];
@@ -312,6 +329,10 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
     return this.columns.has('clinicId');
   }
 
+  private hasDeletedAtColumn(): boolean {
+    return this.columns.has('deletedAt');
+  }
+
   private tableHasColumn(table: string, column: string): boolean {
     const rows = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
     return rows.some((row) => row.name === column);
@@ -324,9 +345,11 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
       }
       const target = resourceRegistry.get(field.relation.resource);
       if (!target) continue;
-      const params = [String(entity[field.name]), ...tenantParams(context.clinicId)];
+      const targetHasClinic = this.tableHasColumn(target.table, 'clinicId');
+      const params = [String(entity[field.name]), ...(targetHasClinic ? tenantParams(context.clinicId) : [])];
+      const deletedClause = this.tableHasColumn(target.table, 'deletedAt') ? ' AND deletedAt IS NULL' : '';
       const row = this.db.prepare(
-        `SELECT id FROM ${target.table} WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+        `SELECT id FROM ${target.table} WHERE id = ?${deletedClause}${targetHasClinic ? tenantAnd(context.clinicId) : ''}`,
       ).get(...params) as { id: string } | undefined;
       if (!row) throw new NotFoundError(`${field.relation.resource} not found for ${field.name}`);
     }
@@ -343,7 +366,7 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
         result[field.name] = deserialize(field, result[field.name]);
       }
     }
-    result.deletedAt = row.deletedAt ?? null;
+    if (this.hasDeletedAtColumn()) result.deletedAt = row.deletedAt ?? null;
     return maskSensitiveFields(result);
   }
 }

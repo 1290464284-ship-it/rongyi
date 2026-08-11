@@ -4,10 +4,10 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase } from './database';
-import { SqliteRepository } from './repository';
+import { SqliteRepository, buildRelationLabelJoins } from './repository';
 import { rebuildSearchIndex, upsertSearchRow } from './search-index';
 import { resourceRegistry } from '../../domain/resources';
-import type { AppContext } from '../../domain/contracts';
+import type { AppContext, ResourceDefinition } from '../../domain/contracts';
 
 describe('SqliteRepository', () => {
   let db: Database.Database;
@@ -66,6 +66,22 @@ describe('SqliteRepository', () => {
 
     await repo.softDelete('repo-patient-1', context);
     expect(await repo.findById('repo-patient-1', context)).toBeNull();
+  });
+
+  it('treats whitespace-only search as an empty result instead of an unfiltered list', async () => {
+    const repo = new SqliteRepository(db, resourceRegistry.get('patients')!);
+    await repo.insert({
+      id: 'repo-ws-1',
+      code: 'WS-001',
+      name: 'Whitespace Search',
+      gender: 'UNKNOWN',
+      phone: '13100000000',
+      source: 'WALK_IN',
+      active: true,
+    }, context);
+    const page = await repo.findMany({ page: 1, pageSize: 10, search: '   ' }, context);
+    expect(page.items).toEqual([]);
+    expect(page.total).toBe(0);
   });
 
   it('applies declared defaults and hides null-clinic rows from scoped queries', async () => {
@@ -573,5 +589,44 @@ describe('SqliteRepository', () => {
     });
     // 分页计数不受 JOIN 影响（LEFT JOIN 主键不产生行倍增）。
     expect(page.total).toBe(page.items.length);
+  });
+
+  it('lists legacy tables that have no deletedAt column', async () => {
+    db.exec(`CREATE TABLE IF NOT EXISTS LegacyNoDeleted (
+      id TEXT PRIMARY KEY,
+      clinicId TEXT,
+      createdAt TEXT,
+      updatedAt TEXT,
+      name TEXT
+    )`);
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO LegacyNoDeleted (id, clinicId, createdAt, updatedAt, name)
+       VALUES ('legacy-1', 'clinic-v2-001', ?, ?, 'Legacy Row')`,
+    ).run(now, now);
+    const resource = {
+      name: 'legacyNoDeleted',
+      table: 'LegacyNoDeleted',
+      fields: [{ name: 'name', type: 'text' }],
+      audit: false,
+      searchableFields: ['name'],
+      defaultSort: { field: 'id', order: 'ASC' },
+      capabilities: { list: true, create: false, update: false, delete: false, softDelete: false },
+      roles: ['BOSS'],
+    } as ResourceDefinition;
+    const repo = new SqliteRepository(db, resource);
+    const page = await repo.findMany({ page: 1, pageSize: 10, search: 'Legacy' }, context);
+    expect(page.items.some((row) => row.id === 'legacy-1')).toBe(true);
+    const row = await repo.findById('legacy-1', context);
+    expect(row?.name).toBe('Legacy Row');
+    expect(row).not.toHaveProperty('deletedAt');
+  });
+
+  it('omits deletedAt/clinicId join clauses for legacy relation targets without those columns', () => {
+    const base = resourceRegistry.get('appointments')!;
+    const resource = { ...base, name: 'legacyAppointments' } as ResourceDefinition;
+    const joins = buildRelationLabelJoins(resource, () => false, () => false);
+    expect(joins.length).toBeGreaterThan(0);
+    expect(joins.every((join) => !join.join.includes('deletedAt') && !join.join.includes('clinicId'))).toBe(true);
   });
 });

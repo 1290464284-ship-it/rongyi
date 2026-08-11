@@ -18,6 +18,7 @@ export function MultiSelect({ value, options, onChange, placeholder = '请选择
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
   const [query, setQuery] = useState('');
+  const [activeIndex, setActiveIndex] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLDivElement>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -44,6 +45,7 @@ export function MultiSelect({ value, options, onChange, placeholder = '请选择
     setClosing(false);
     setOpen(true);
     setQuery('');
+    setActiveIndex(0);
   }
 
   useEffect(() => {
@@ -75,6 +77,7 @@ export function MultiSelect({ value, options, onChange, placeholder = '请选择
   const visibleOptions = normalizedQuery
     ? options.filter((option) => option.label.toLowerCase().includes(normalizedQuery))
     : options;
+  const activeOption = visibleOptions[activeIndex] ?? null;
 
   return (
     <div className="ui-multiselect" ref={rootRef}>
@@ -119,11 +122,37 @@ export function MultiSelect({ value, options, onChange, placeholder = '请选择
             type="search"
             placeholder="搜索"
             aria-label="筛选选项"
+            aria-activedescendant={activeOption ? `multiselect-option-${activeOption.value}` : undefined}
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setActiveIndex(0);
+            }}
+            onKeyDown={(event: KeyboardEvent<HTMLInputElement>) => {
+              if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                setActiveIndex((current) => Math.min(visibleOptions.length - 1, current + 1));
+              } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                setActiveIndex((current) => Math.max(0, current - 1));
+              } else if (event.key === 'Enter') {
+                event.preventDefault();
+                if (activeOption) toggle(activeOption.value);
+              } else if (event.key === 'Escape') {
+                event.preventDefault();
+                requestClose();
+                triggerRef.current?.focus();
+              }
+            }}
           />
           {visibleOptions.map((option) => (
-            <label key={option.value} className="ui-multiselect-option">
+            <label
+              key={option.value}
+              id={`multiselect-option-${option.value}`}
+              className="ui-multiselect-option"
+              role="option"
+              aria-selected={value.includes(option.value)}
+            >
               <input
                 type="checkbox"
                 checked={value.includes(option.value)}

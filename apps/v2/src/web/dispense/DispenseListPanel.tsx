@@ -192,6 +192,14 @@ function DispenseActionPanel({
       showToast('请填写退回数量', 'error');
       return;
     }
+    const overReturn = detail.data.items.find((item) => {
+      const quantity = Number(returnQuantities[item.id] ?? '');
+      return Number.isSafeInteger(quantity) && quantity > 0 && quantity > pendingQuantity(item);
+    });
+    if (overReturn) {
+      showToast('退回数量不能超过未退数量', 'error');
+      return;
+    }
     setBusy(true);
     try {
       const result = await apiRequest<{ status?: string }>(`/dispenses/${row.id}/return`, {

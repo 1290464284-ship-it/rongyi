@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest } from '../../lib/api';
-import type { Page } from '../../lib/types';
+import { apiRequest, fetchAllPages } from '../../lib/api';
 import { DataTable, LoadingState, PageError, type DataTableColumn } from '../../components';
 import { errorMessage } from '../../lib/messages';
 import { useAsyncAction } from '../../hooks/use-async-action';
@@ -11,7 +10,10 @@ export function HrWorkflowPage() {
   const { showToast } = useToast();
   const leaves = useQuery({
     queryKey: ['leaves'],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/leaveRequests?page=1&pageSize=100'),
+    queryFn: async () => {
+      const items = await fetchAllPages<Record<string, unknown>>('/resources/leaveRequests?page=1&pageSize=100');
+      return { items, total: items.length, page: 1, pageSize: Math.max(items.length, 1) };
+    },
   });
 
   if (leaves.isLoading) return <LoadingState label="请假数据加载中..." />;

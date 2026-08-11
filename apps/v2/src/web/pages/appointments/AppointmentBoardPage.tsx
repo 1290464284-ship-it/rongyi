@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import type { Page } from '../../lib/types';
@@ -26,6 +26,8 @@ export function AppointmentBoardPage() {
   const [date, setDate] = useState(todayLocalDate());
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
+  const [inFlightIds, setInFlightIds] = useState<ReadonlySet<string>>(new Set());
+  const inFlightRef = useRef<Set<string>>(new Set());
   const query = useQuery({
     queryKey: ['appointment-board', date],
     queryFn: () => apiRequest<Page<AppointmentRow>>(`/appointments/by-date?date=${encodeURIComponent(date)}`),
@@ -45,6 +47,9 @@ export function AppointmentBoardPage() {
   const countFor = (status: string): number => rows.filter((row) => String(row.status ?? '') === status).length;
 
   async function transition(id: string, status: string) {
+    if (inFlightRef.current.has(id)) return;
+    inFlightRef.current.add(id);
+    setInFlightIds((current) => new Set(current).add(id));
     try {
       await apiRequest(`/appointments/${id}/status`, {
         method: 'PATCH',
@@ -54,6 +59,13 @@ export function AppointmentBoardPage() {
       await query.refetch();
     } catch (error) {
       showToast(errorMessage(error, '状态更新失败'), 'error');
+    } finally {
+      inFlightRef.current.delete(id);
+      setInFlightIds((current) => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
     }
   }
 
@@ -124,6 +136,7 @@ export function AppointmentBoardPage() {
                   <select
                     defaultValue=""
                     aria-label={`${status.label}状态`}
+                    disabled={inFlightIds.has(row.id)}
                     onChange={(event) => event.target.value && transition(row.id, event.target.value)}
                   >
                     <option value="">变更状态</option>

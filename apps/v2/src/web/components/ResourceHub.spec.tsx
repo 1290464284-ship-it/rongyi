@@ -95,6 +95,14 @@ it('renders grouped tabs and filters tabs by label', async () => {
   fireEvent.change(screen.getByLabelText('System筛选'), { target: { value: '' } });
   expect(screen.getByRole('tab', { name: '告警' })).toBeDefined();
 });
+it('shows an empty state when the page filter matches nothing', async () => {
+  vi.mocked(apiRequest).mockResolvedValue([]);
+  render(<ResourceHub title="System" tabs={systemHubTabs} />, { wrapper });
+  await screen.findByText('运维');
+  fireEvent.change(screen.getByLabelText('System筛选'), { target: { value: '不存在的页面' } });
+  expect(await screen.findByText('没有匹配的页面')).toBeDefined();
+  expect(screen.queryByRole('tablist')).toBeNull();
+});
 it('hides boss-only analytics tabs from non-BOSS roles', async () => {
   const tabs = analyticsHubTabs.filter((tab) => tab.id !== 'dashboard' && tab.id !== 'satisfaction');
   vi.mocked(apiRequest).mockImplementation(async (path: string) => {

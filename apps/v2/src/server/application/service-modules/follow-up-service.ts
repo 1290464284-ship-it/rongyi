@@ -19,7 +19,7 @@ export class FollowUpService {
 
   reminders(
     context: AppContext,
-    options?: { page?: number; pageSize?: number },
+    options?: { page?: number; pageSize?: number; scope?: 'overdue' | 'today' | 'upcoming' | 'all' },
   ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean } {
     return this.followUpRepository.reminders(context.clinicId, options);
   }
@@ -108,7 +108,7 @@ export class FollowUpService {
     return { completed, skipped: errors.length, errors };
   }
 
-  remindersCsv(scope: string, context: AppContext): string {
+  remindersCsv(scope: string, context: AppContext, maxRows = 50_000): string {
     const allowed = new Set(['overdue', 'today', 'upcoming', 'all']);
     if (!allowed.has(scope)) {
       throw new ValidationError('Follow-up export scope must be overdue, today, upcoming, or all');
@@ -124,18 +124,18 @@ export class FollowUpService {
     const params = scope === 'all'
       ? [...tenantParams(context.clinicId)]
       : [today, ...tenantParams(context.clinicId)];
-    const rows = this.db.prepare(
-      `SELECT F.id, P.name AS patientName, P.phone AS patientPhone,
-              F.planDate, F.status, F.content, F.completedAt, F.result
-       FROM FollowUp F
-       LEFT JOIN Patient P ON P.id = F.patientId
-       WHERE F.status IN ('PENDING', 'IN_PROGRESS')
+    const tenantClause = tenantAnd(context.clinicId, 'F.clinicId');
+    const baseWhere = `F.status IN ('PENDING', 'IN_PROGRESS')
          AND F.deletedAt IS NULL
          AND ${scopeClause}
-         ${tenantAnd(context.clinicId, 'F.clinicId')}
-       ORDER BY F.planDate ASC, P.name ASC`,
-    ).all(...params) as Array<Record<string, unknown>>;
-    const masked: Array<Record<string, unknown>> = rows.map((row) => ({ ...row, patientPhone: maskPhoneForExport(row.patientPhone as string | null | undefined) }));
+         ${tenantClause}`;
+    const totalRow = this.db.prepare(
+      `SELECT COUNT(*) AS c FROM FollowUp F
+       LEFT JOIN Patient P ON P.id = F.patientId
+       WHERE ${baseWhere}`,
+    ).get(...params) as { c: number };
+    const total = Number(totalRow.c);
+    const cap = Math.max(1, Math.min(50_000, Math.floor(Number(maxRows) || 50_000)));
     const headers: Array<{ key: string; label: string }> = [
       { key: 'id', label: 'id' },
       { key: 'patientName', label: '患者' },
@@ -146,10 +146,35 @@ export class FollowUpService {
       { key: 'completedAt', label: '完成时间' },
       { key: 'result', label: '结果' },
     ];
-    return [
-      headers.map((header) => csvCell(header.label)).join(','),
-      ...masked.map((row) => headers.map((header) => csvCell(row[header.key])).join(',')),
-    ].join('\n');
+    const lines = [headers.map((header) => csvCell(header.label)).join(',')];
+    const PAGE = 1000;
+    let offset = 0;
+    let included = 0;
+    for (;;) {
+      const rows = this.db.prepare(
+        `SELECT F.id, P.name AS patientName, P.phone AS patientPhone,
+                F.planDate, F.status, F.content, F.completedAt, F.result
+         FROM FollowUp F
+         LEFT JOIN Patient P ON P.id = F.patientId
+         WHERE ${baseWhere}
+         ORDER BY F.planDate ASC, P.name ASC
+         LIMIT ? OFFSET ?`,
+      ).all(...params, PAGE, offset) as Array<Record<string, unknown>>;
+      if (rows.length === 0) break;
+      for (const row of rows) {
+        if (included >= cap) break;
+        const masked: Record<string, unknown> = {
+          ...row,
+          patientPhone: maskPhoneForExport(row.patientPhone as string | null | undefined),
+        };
+        lines.push(headers.map((header) => csvCell(masked[header.key])).join(','));
+        included += 1;
+      }
+      if (included >= cap || rows.length < PAGE) break;
+      offset += rows.length;
+    }
+    if (included < total) lines.push('# truncated');
+    return lines.join('\n');
   }
 
   async batchGenerate(limit = 50, context: AppContext): Promise<{ processed: number; generated: number }> {

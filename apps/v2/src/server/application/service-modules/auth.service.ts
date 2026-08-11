@@ -18,6 +18,7 @@ import {
   newRefreshToken,
   rowToUser,
   runInTransaction,
+  runInTransactionImmediate,
 } from './common';
 import { computeEffectivePermissions } from './permissions';
 import { UserManagementService } from './user-management.service';
@@ -76,12 +77,10 @@ export class AuthService {
   async login(username: string, password: string): Promise<AuthSession> {
     const preRow = this.authRepository.findByUsername(username);
     if (!preRow) {
-      await bcrypt.compare(password, DUMMY_HASH);
+      bcrypt.compareSync(password, DUMMY_HASH);
       throw new UnauthorizedError('Invalid username or password');
     }
-    const preUser = rowToUser(preRow);
-    const valid = await bcrypt.compare(password, preUser.passwordHash);
-    return runInTransaction(this.db, () => {
+    return runInTransactionImmediate(this.db, () => {
       const row = this.authRepository.findByUsername(username);
       if (!row) throw new UnauthorizedError('Invalid username or password');
       const user = rowToUser(row);
@@ -96,6 +95,8 @@ export class AuthService {
           throw new UnauthorizedError('Account is temporarily locked');
         }
       }
+      // 在事务内基于最新行校验密码，避免“预读旧哈希 → 密码被重置 → 旧密码仍签发会话”的 TOCTOU。
+      const valid = bcrypt.compareSync(password, user.passwordHash);
       if (!valid) {
         // S-M1：逐次退避锁定（1s,2s,4s,... 上限 60s），替代固定 5 次锁 15 分钟。
         // 合法用户输入错误密码时只短暂等待，攻击者每次尝试成本随时间递增。
@@ -134,7 +135,7 @@ export class AuthService {
     }
     const preRow = this.authRepository.findByRefreshTokenHash(tokenHash);
     if (!preRow) throw new UnauthorizedError('Invalid refresh token');
-    return runInTransaction(this.db, () => {
+    return runInTransactionImmediate(this.db, () => {
       if (this.authRepository.isRefreshTokenUsed(tokenHash)) {
         this.revokeReplayedFamily(tokenHash);
         throw new UnauthorizedError('Invalid refresh token (refresh token reuse detected)');

@@ -110,6 +110,26 @@ describe('ChargeDialog', () => {
     expect(await screen.findByText('提交划价失败')).toBeDefined();
   });
 
+  it('blocks submission when a filled row has invalid price or quantity', async () => {
+    mockLookups();
+    const onSaved = vi.fn();
+    render(<ChargeDialog row={row} onClose={vi.fn()} onSaved={onSaved} />, { wrapper });
+
+    fireEvent.change(screen.getAllByLabelText('项目名称')[0], { target: { value: '洁牙' } });
+    fireEvent.change(screen.getAllByLabelText('单价(元)')[0], { target: { value: '100' } });
+    fireEvent.change(screen.getAllByLabelText('数量')[0], { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: '添加明细' }));
+
+    fireEvent.change(screen.getAllByLabelText('项目名称')[1], { target: { value: '无效项' } });
+    fireEvent.change(screen.getAllByLabelText('单价(元)')[1], { target: { value: '0' } });
+    fireEvent.change(screen.getAllByLabelText('数量')[1], { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: '提交划价' }));
+
+    expect(await screen.findByText('存在无效收费明细，请检查数量与单价')).toBeDefined();
+    expect(apiRequest).not.toHaveBeenCalledWith('/charges', expect.objectContaining({ method: 'POST' }));
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
   it('requires a patient before submitting a charge', async () => {
     mockLookups();
     render(<ChargeDialog row={{ id: 'r-1', patientName: '临时患者' }} onClose={vi.fn()} onSaved={vi.fn()} />, { wrapper });
@@ -463,7 +483,7 @@ describe('TriageQueuePanel', () => {
     });
   });
 
-  it('hides the panel while the queue loads or errors', async () => {
+  it('shows an error state with retry when the queue fails to load', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/departments?page=1&pageSize=100') {
         return { items: [], total: 0, page: 1, pageSize: 100 };
@@ -472,8 +492,24 @@ describe('TriageQueuePanel', () => {
       return {};
     });
     render(<TriageQueuePanel onStartVisit={vi.fn()} />, { wrapper });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(screen.queryByText('分诊队列')).toBeNull();
+    expect(await screen.findByText('加载分诊队列失败')).toBeDefined();
+    const retry = screen.getByRole('button', { name: '重试' });
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/departments?page=1&pageSize=100') {
+        return { items: [], total: 0, page: 1, pageSize: 100 };
+      }
+      if (path === '/triage/queue') {
+        return {
+          items: [{ id: 'q-retry', patientName: '重试患者', status: 'REGISTERED' }],
+          total: 1,
+          page: 1,
+          pageSize: 50,
+        };
+      }
+      return {};
+    });
+    fireEvent.click(retry);
+    expect(await screen.findByText('重试患者')).toBeDefined();
   });
 
   it('only shows start buttons for REGISTERED rows', async () => {

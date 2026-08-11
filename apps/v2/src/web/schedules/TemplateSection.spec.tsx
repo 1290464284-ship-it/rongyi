@@ -74,6 +74,17 @@ describe('TemplateSection', () => {
     expect(apiRequest).not.toHaveBeenCalledWith('/shift-templates', expect.objectContaining({ method: 'POST' }));
   });
 
+  it('rejects an end time not later than the start time', async () => {
+    render(<TemplateSection templates={[]} reload={vi.fn()} />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '新增模板' }));
+    fireEvent.change(screen.getByLabelText('模板名称'), { target: { value: '晚班' } });
+    fireEvent.change(screen.getByLabelText('开始时间'), { target: { value: '14:00' } });
+    fireEvent.change(screen.getByLabelText('结束时间'), { target: { value: '13:00' } });
+    fireEvent.click(screen.getByRole('button', { name: '新增模板' }));
+    expect(await screen.findByText('结束时间必须晚于开始时间')).toBeDefined();
+    expect(apiRequest).not.toHaveBeenCalledWith('/shift-templates', expect.objectContaining({ method: 'POST' }));
+  });
+
   it('edits an existing template and PATCHes the row', async () => {
     const reload = vi.fn().mockResolvedValue(undefined);
     render(<TemplateSection templates={[templateFixture()]} reload={reload} />, { wrapper });
@@ -131,6 +142,30 @@ describe('TemplateSection', () => {
     render(<TemplateSection templates={[templateFixture()]} reload={vi.fn()} />, { wrapper });
     fireEvent.click(await screen.findByRole('button', { name: '停用' }));
     expect(await screen.findByText('更新模板状态失败')).toBeDefined();
+  });
+
+  it('ignores duplicate active toggles while one is in flight', async () => {
+    const resolvers: Array<() => void> = [];
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = String(init?.method ?? 'GET').toUpperCase();
+      if (method === 'PATCH' && path === '/shift-templates/t1') {
+        return new Promise<void>((resolve) => {
+          resolvers.push(() => resolve());
+        });
+      }
+      return {};
+    });
+    render(<TemplateSection templates={[templateFixture()]} reload={vi.fn()} />, { wrapper });
+    const toggle = await screen.findByRole('button', { name: '停用' });
+    fireEvent.click(toggle);
+    fireEvent.click(toggle);
+    await waitFor(() => {
+      const patchCalls = vi.mocked(apiRequest).mock.calls.filter(
+        ([path, options]) => path === '/shift-templates/t1' && options?.method === 'PATCH',
+      );
+      expect(patchCalls).toHaveLength(1);
+    });
+    resolvers[0]?.();
   });
 
   it('deletes a template after confirmation and supports cancelling', async () => {

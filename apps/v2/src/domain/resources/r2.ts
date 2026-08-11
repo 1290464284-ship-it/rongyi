@@ -28,7 +28,7 @@ export const r2Resources: ResourceDefinition[] = [
     f('supplierId', 'relation', { relation: { resource: 'suppliers', foreignKey: 'supplierId', labelField: 'name' } }),
     f('purchaseOrderId', 'text'),
     f('active', 'boolean', { default: true }),
-  ], { roles: boss, capabilities: { list: true, create: true, update: true, delete: false, softDelete: false } }),
+  ], { roles: boss, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
 
   // 库存盘点（开启锁定→差异→结束解锁）
   crud('stocktakes', 'Stocktake', [
@@ -39,7 +39,7 @@ export const r2Resources: ResourceDefinition[] = [
     f('completedById', 'relation', { relation: { resource: 'users', foreignKey: 'completedById', labelField: 'name' } }),
     f('completedAt', 'datetime'),
     f('note', 'longText'),
-  ], { roles: boss, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
+  ], { roles: boss, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
 
   crud('stocktakeItems', 'StocktakeItem', [
     f('stocktakeId', 'relation', { required: true, relation: { resource: 'stocktakes', foreignKey: 'stocktakeId', labelField: 'number' } }),
@@ -48,7 +48,7 @@ export const r2Resources: ResourceDefinition[] = [
     f('countedStock', 'number', { min: 0 }),
     f('difference', 'number', { default: 0 }),
     f('note', 'longText'),
-  ], { roles: boss, capabilities: { list: true, create: true, update: true, delete: false, softDelete: false } }),
+  ], { roles: boss, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
 
   // 收费组合（公有/私有，划价一键调出）
   crud('chargeCombos', 'ChargeCombo', [
@@ -99,7 +99,7 @@ export const r2Resources: ResourceDefinition[] = [
     f('dispensedAt', 'datetime'),
     f('returnedAt', 'datetime'),
     f('note', 'longText'),
-  ], { roles: staff, capabilities: { list: true, create: true, update: true, delete: false, softDelete: false } }),
+  ], { roles: staff, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
 
   crud('dispenseItems', 'DispenseItem', [
     f('dispenseId', 'relation', { required: true, relation: { resource: 'dispenses', foreignKey: 'dispenseId', labelField: 'number' } }),
@@ -109,7 +109,7 @@ export const r2Resources: ResourceDefinition[] = [
     f('spec', 'text'),
     f('quantity', 'number', { required: true, min: 1 }),
     f('returnedQuantity', 'number', { default: 0, min: 0 }),
-  ], { roles: staff, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
+  ], { roles: staff, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
 
   // 麻药登记表
   crud('narcoticRegistry', 'NarcoticRegistry', [
@@ -125,7 +125,7 @@ export const r2Resources: ResourceDefinition[] = [
     f('balanceBefore', 'number', { min: 0 }),
     f('balanceAfter', 'number', { min: 0 }),
     f('remark', 'longText'),
-  ], { roles: boss, capabilities: { list: true, create: true, update: false, delete: false, softDelete: false } }),
+  ], { roles: boss, capabilities: { list: true, create: false, update: false, delete: false, softDelete: false } }),
 
   // 影像分类（正畸/美学/石膏）
   crud('imagingCategories', 'ImagingCategory', [

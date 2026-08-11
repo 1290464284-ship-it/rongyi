@@ -39,6 +39,10 @@ export function PatientTimelinePage() {
   const [patientId, setPatientId] = useState<string | null>(urlPatientId);
   const [patientRows, setPatientRows] = useState<SearchableSelectRow[]>([]);
   const derivedFromList = useRef(false);
+  const generationRef = useRef(0);
+  useEffect(() => {
+    generationRef.current += 1;
+  }, [patientId]);
   useEffect(() => {
     if (derivedFromList.current || patientRows.length === 0) return;
     derivedFromList.current = true;
@@ -48,7 +52,9 @@ export function PatientTimelinePage() {
   const visits = useQuery({
     queryKey: ['visits-timeline', patientId],
     queryFn: async () => {
+      const generation = generationRef.current;
       const items = await fetchAllPages<Record<string, unknown>>(`/resources/visits?patientId=${encodeURIComponent(patientId ?? '')}`);
+      if (generation !== generationRef.current) return { items: [], total: 0, page: 1, pageSize: 1 };
       return { items, total: items.length, page: 1, pageSize: items.length } as Page<Record<string, unknown>>;
     },
     enabled: patientId !== null,
@@ -56,7 +62,9 @@ export function PatientTimelinePage() {
   const treatments = useQuery({
     queryKey: ['treatments-timeline', patientId],
     queryFn: async () => {
+      const generation = generationRef.current;
       const items = await fetchAllPages<Record<string, unknown>>(`/resources/treatments?patientId=${encodeURIComponent(patientId ?? '')}`);
+      if (generation !== generationRef.current) return { items: [], total: 0, page: 1, pageSize: 1 };
       return { items, total: items.length, page: 1, pageSize: items.length } as Page<Record<string, unknown>>;
     },
     enabled: patientId !== null,
@@ -64,7 +72,9 @@ export function PatientTimelinePage() {
   const charges = useQuery({
     queryKey: ['charges-timeline', patientId],
     queryFn: async () => {
+      const generation = generationRef.current;
       const items = await fetchAllPages<Record<string, unknown>>(`/resources/charges?patientId=${encodeURIComponent(patientId ?? '')}`);
+      if (generation !== generationRef.current) return { items: [], total: 0, page: 1, pageSize: 1 };
       return { items, total: items.length, page: 1, pageSize: items.length } as Page<Record<string, unknown>>;
     },
     enabled: patientId !== null,
@@ -72,7 +82,9 @@ export function PatientTimelinePage() {
   const followUps = useQuery({
     queryKey: ['followUps-timeline', patientId],
     queryFn: async () => {
+      const generation = generationRef.current;
       const items = await fetchAllPages<Record<string, unknown>>(`/resources/followUps?patientId=${encodeURIComponent(patientId ?? '')}`);
+      if (generation !== generationRef.current) return { items: [], total: 0, page: 1, pageSize: 1 };
       return { items, total: items.length, page: 1, pageSize: items.length } as Page<Record<string, unknown>>;
     },
     enabled: patientId !== null,

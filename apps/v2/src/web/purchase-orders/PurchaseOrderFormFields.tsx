@@ -53,7 +53,9 @@ export function PurchaseOrderFormFields({
         onItemsLoadedRef.current?.();
       })
       .catch(() => {
-        if (!cancelled) setItemsError('明细加载失败，请关闭后重试');
+        if (!cancelled) {
+          setItemsError('明细加载失败，请关闭后重试');
+        }
       })
       .finally(() => {
         if (!cancelled) setItemsLoading(false);

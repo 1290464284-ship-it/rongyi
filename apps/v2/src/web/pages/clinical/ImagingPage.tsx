@@ -6,7 +6,7 @@ import { ConfirmDialog, DataTable, SignedImage } from '../../components';
 import { errorMessage } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
 import type { Page } from '../../lib/types';
-import { CATEGORY_TYPE_LABELS, CATEGORIES_LIST_PATH, IMAGING_LIST_PATH } from '../../imaging/constants';
+import { CATEGORY_TYPE_LABELS, CATEGORIES_LIST_PATH } from '../../imaging/constants';
 import { imagingColumns, categoryColumns } from '../../imaging/columns';
 import { formatDateTime, imagingOptionLabel, phaseLabel, toLocalDatetime } from '../../imaging/format';
 import { ImagingFormFields } from '../../imaging/ImagingFormFields';
@@ -22,19 +22,24 @@ export function ImagingPage() {
   const [deleteCategoryTarget, setDeleteCategoryTarget] = useState<ImagingCategoryRow | null>(null);
   const [compareLeftId, setCompareLeftId] = useState('');
   const [compareRightId, setCompareRightId] = useState('');
+  const [compareSearch, setCompareSearch] = useState('');
+  const [comparePage, setComparePage] = useState(1);
 
   const categories = useQuery({
     queryKey: ['imaging-categories'],
     queryFn: () => apiRequest<Page<ImagingCategoryRow>>(CATEGORIES_LIST_PATH),
   });
-  // 与 CrudPage 列表使用同一查询键，共享缓存，避免重复请求。
-  const imagingList = useQuery({
-    queryKey: ['imaging', 1, ''],
-    queryFn: () => apiRequest<Page<ImagingRow>>(IMAGING_LIST_PATH),
+  const compareOptionsQuery = useQuery({
+    queryKey: ['imaging-options', compareSearch, comparePage],
+    queryFn: () => apiRequest<Page<ImagingRow>>(
+      `/resources/imaging?page=${comparePage}&pageSize=50${compareSearch ? `&search=${encodeURIComponent(compareSearch)}` : ''}`,
+    ),
   });
 
   const categoryOptions = categories.data?.items ?? [];
-  const imagingOptions = imagingList.data?.items ?? [];
+  const imagingOptions = compareOptionsQuery.data?.items ?? [];
+  const compareTotal = compareOptionsQuery.data?.total ?? 0;
+  const compareTotalPages = Math.max(1, Math.ceil(compareTotal / 50));
   const selectedLeft = imagingOptions.find((row) => row.id === compareLeftId) ?? null;
   const selectedRight = imagingOptions.find((row) => row.id === compareRightId) ?? null;
   const canCompare = selectedLeft !== null && selectedRight !== null && compareLeftId !== compareRightId;
@@ -129,29 +134,48 @@ export function ImagingPage() {
         }}
         validate={(form) => (!form.patientId || !form.doctorId || !form.title ? '请选择患者、医生并填写影像标题' : null)}
         submitOverride={async ({ form, editing }) => {
-          const imageUrl = file ? (await uploadFile(file)).url : undefined;
+          let uploadedFilename: string | null = null;
+          let imageUrl = String(form.imageUrl ?? '');
+          if (file) {
+            const uploaded = await uploadFile(file);
+            uploadedFilename = uploaded.filename;
+            imageUrl = uploaded.url;
+          }
           const payload = {
             patientId: form.patientId,
             doctorId: form.doctorId,
             type: form.type || 'UNKNOWN',
             title: form.title,
             description: form.description || undefined,
-            imageUrl: imageUrl ?? String(form.imageUrl ?? ''),
+            imageUrl,
             takenAt: form.takenAt ? new Date(form.takenAt).toISOString() : undefined,
             remark: form.remark || undefined,
             categoryId: form.categoryId || undefined,
             phase: form.phase || undefined,
           };
-          if (editing) {
-            await apiRequest(`/resources/imaging/${editingIdRef.current}`, {
-              method: 'PATCH',
-              body: JSON.stringify(payload),
-            });
-          } else {
-            await apiRequest('/resources/imaging', {
-              method: 'POST',
-              body: JSON.stringify(payload),
-            });
+          try {
+            if (editing) {
+              await apiRequest(`/resources/imaging/${editingIdRef.current}`, {
+                method: 'PATCH',
+                body: JSON.stringify(payload),
+              });
+            } else {
+              await apiRequest('/resources/imaging', {
+                method: 'POST',
+                body: JSON.stringify(payload),
+              });
+            }
+          } catch (error) {
+            // 记录创建/更新失败时清理已上传的孤儿文件，避免占用配额和磁盘。
+            const status = (error as { status?: number }).status;
+            if (uploadedFilename && status !== undefined && status >= 400 && status < 500) {
+              try {
+                await apiRequest(`/files/${uploadedFilename}`, { method: 'DELETE' });
+              } catch {
+                // 清理失败不掩盖原始错误。
+              }
+            }
+            throw error;
           }
         }}
         onAfterCreate={() => setFile(null)}
@@ -253,6 +277,25 @@ export function ImagingPage() {
 
       <section className="card" aria-label="影像对比">
         <h2>影像对比</h2>
+        <div className="imaging-compare-toolbar">
+          <input
+            aria-label="对比选项搜索"
+            type="search"
+            placeholder="搜索影像"
+            value={compareSearch}
+            onChange={(event) => {
+              setCompareSearch(event.target.value);
+              setComparePage(1);
+            }}
+          />
+          {compareTotalPages > 1 && (
+            <div className="pager">
+              <button type="button" disabled={comparePage <= 1} onClick={() => setComparePage((current) => Math.max(1, current - 1))}>上一页</button>
+              <span>第 {comparePage} / {compareTotalPages} 页（共 {compareTotal} 条）</span>
+              <button type="button" disabled={comparePage >= compareTotalPages} onClick={() => setComparePage((current) => current + 1)}>下一页</button>
+            </div>
+          )}
+        </div>
         <div className="imaging-compare-controls">
           <label>
             影像一

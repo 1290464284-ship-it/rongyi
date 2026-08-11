@@ -130,6 +130,18 @@ describe('TreatmentPlanBillingService', () => {
     expect(planRow('plan-double').totalFee).toBe(16000);
   });
 
+  it('setPlanDiscount rejects a plan that already has billed items', () => {
+    insertPlan('plan-billed-discount', '已划价计划');
+    insertItem('plan-billed-discount', 'plan-billed-discount-i1', { price: 10000, quantity: 1, billed: 1 });
+
+    const service = new TreatmentPlanBillingService(db);
+    expect(() => service.setPlanDiscount('plan-billed-discount', { discountType: 'WHOLE', discountRate: 10 }, context))
+      .toThrow(ConflictError);
+    const row = planRow('plan-billed-discount');
+    expect(row.discountType).toBeNull();
+    expect(row.discountRate).toBeNull();
+  });
+
   it('setPlanDiscount treats NONE as no discount and stores null rate', () => {
     insertPlan('plan-none', '无折扣计划');
     insertItem('plan-none', 'plan-none-i1', { price: 10000, quantity: 1 });

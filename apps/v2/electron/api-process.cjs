@@ -20,6 +20,7 @@ const {
   API_READY_WINDOW_STRICT_MS,
   API_HEARTBEAT_INTERVAL_MS,
 } = require('./constants.cjs');
+const API_CONSOLE_MAX_BYTES = 5 * 1024 * 1024;
 const { buildApiChildEnv } = require('./api-env.cjs');
 const { crashLog, notify, sendApiStatus } = require('./logging.cjs');
 const { getOrCreateSecret } = require('./secrets.cjs');
@@ -149,12 +150,42 @@ async function doStartApi() {
       apiPort: state.apiPort,
       isPackaged: app.isPackaged,
     }),
-    stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+    // stdout/stderr 接管道并落盘：idempotency/audit-buffer 等基础设施仍走
+    // console，打包版不能把它们的诊断输出丢弃（stdio: ignore 会彻底消失）。
+    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     windowsHide: true,
   });
   state.apiSpawnedAt = Date.now();
   state.apiEverReady = false;
   const startedProcess = state.apiProcess;
+  const apiConsolePath = path.join(userDataDir, 'logs', 'api-console.log');
+  try {
+    fs.mkdirSync(path.dirname(apiConsolePath), { recursive: true });
+  } catch {
+    // best effort: 日志目录不可写时仅丢失控制台侧输出，不阻塞启动
+  }
+  const appendApiConsole = (chunk) => {
+    try {
+      let size = 0;
+      try {
+        size = fs.statSync(apiConsolePath).size;
+      } catch {
+        // first write or missing file
+      }
+      if (size + chunk.length > API_CONSOLE_MAX_BYTES) {
+        try {
+          fs.renameSync(apiConsolePath, `${apiConsolePath}.1`);
+        } catch {
+          // rotation is best effort; append into the original file otherwise
+        }
+      }
+      fs.appendFileSync(apiConsolePath, chunk);
+    } catch {
+      // best effort
+    }
+  };
+  startedProcess.stdout?.on('data', appendApiConsole);
+  startedProcess.stderr?.on('data', appendApiConsole);
   startedProcess.manualStop = false;
   attachApiHeartbeat(startedProcess);
   state.apiProcess.on('error', (error) => crashLog('api-spawn-error', error));

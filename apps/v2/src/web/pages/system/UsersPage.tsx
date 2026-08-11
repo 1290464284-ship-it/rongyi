@@ -1,7 +1,6 @@
 import { FormEvent, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest } from '../../lib/api';
-import type { Page } from '../../lib/types';
+import { apiRequest, fetchAllPages } from '../../lib/api';
 import {
   ConfirmDialog,
   DataTable,
@@ -98,7 +97,10 @@ export function UsersPage() {
   });
   const users = useQuery({
     queryKey: ['users'],
-    queryFn: () => apiRequest<Page<UserRow>>('/resources/users?page=1&pageSize=100'),
+    queryFn: async () => {
+      const items = await fetchAllPages<UserRow>('/resources/users?page=1&pageSize=100');
+      return { items, total: items.length, page: 1, pageSize: Math.max(items.length, 1) };
+    },
     enabled: me.data?.role === 'BOSS' || me.data?.role === 'ADMIN',
   });
   const userRoles = useQuery({

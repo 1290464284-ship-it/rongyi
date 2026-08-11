@@ -129,6 +129,40 @@ describe('SystemOperationsPage', () => {
     expect(await screen.findByText('搜索失败')).toBeDefined();
   });
 
+  it('ignores duplicate import and search submissions while a request is in flight', async () => {
+    const pending: Array<() => void> = [];
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.startsWith('/bulk-import/') || path.startsWith('/search?')) {
+        return new Promise((resolve) => {
+          pending.push(() => resolve(
+            path.startsWith('/bulk-import/')
+              ? { imported: 1, failed: 0, errors: [], chunks: 1 }
+              : [],
+          ));
+        });
+      }
+      return {};
+    });
+
+    render(<ToastProvider><SystemOperationsPage /></ToastProvider>);
+    const importButton = screen.getByRole('button', { name: '导入' });
+    fireEvent.click(importButton);
+    fireEvent.click(importButton);
+
+    fireEvent.change(screen.getByLabelText('搜索关键词'), { target: { value: 'Demo' } });
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    const searchButton = screen.getByRole('button', { name: '搜索' });
+    fireEvent.click(searchButton);
+    fireEvent.click(searchButton);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const importCalls = vi.mocked(apiRequest).mock.calls.filter(([path]) => String(path).startsWith('/bulk-import/'));
+    const searchCalls = vi.mocked(apiRequest).mock.calls.filter(([path]) => String(path).startsWith('/search?'));
+    expect(importCalls).toHaveLength(1);
+    expect(searchCalls).toHaveLength(1);
+    pending.forEach((resolve) => resolve());
+  });
+
   it('cleans audit logs with a configured retention window', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/system/audit/cleanup') return { deleted: 3 };

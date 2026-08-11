@@ -127,6 +127,11 @@ describe('MemberCardsPage', () => {
     fireEvent.change(screen.getByLabelText('积分数量'), { target: { value: '0' } });
     fireEvent.click(screen.getByText('确认'));
     expect(await screen.findByText('请输入有效积分')).toBeDefined();
+
+    fireEvent.change(screen.getByLabelText('积分数量'), { target: { value: '-5' } });
+    fireEvent.click(screen.getByText('确认'));
+    expect(await screen.findByText('请输入有效积分')).toBeDefined();
+    expect(vi.mocked(apiRequest).mock.calls.filter(([path]) => String(path).includes('/points')).length).toBe(0);
   });
 
   it('saves a discount plan from the plan dialog', async () => {
