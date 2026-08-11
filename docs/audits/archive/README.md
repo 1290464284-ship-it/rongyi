@@ -54,3 +54,13 @@
 第 18 轮基线 `d029963`，本地复核修复 2 条：edit-save 缺患者/医生字段 500（改为显式 400），新增明细改用客户端 UUID 保证断网重试幂等；随后实施 sync 零 await（仓储 `*Sync` 同步变体 + 批事务去 await + 防回归测试）。门禁 222/2248 全绿。保留项为 processing-flow 手动改态语义、大库全表聚合。
 
 第 19 轮基线 `10f64aa`，本地复核无新 P1/P2：热点表索引已齐备，剩余两项（processing-flow 手动改态语义、大库增量聚合）为产品/架构决策项。门禁 222/2248 全绿。
+
+## 当前状态
+
+第 15-19 轮审计与修复全部收口：所有可自主实施的问题均已修复并通过门禁
+（单测 222/2248、typecheck/lint/knip、security:scan 685、build/electron:dist/
+verify:package/smoke:delivery/multi-instance）。剩余仅两项需要产品/架构决策：
+
+- processing-flow 手动改态是否收敛为状态机（当前产品语义允许任意改）。
+- dashboard/replenishment 是否启动增量聚合（当前 10 万级冷态基准全部 PASS，
+  基线见 `../delivery/large-db-baseline-2026-08-12.md`）。
