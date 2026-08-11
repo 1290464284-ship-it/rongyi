@@ -103,19 +103,21 @@ describe('plan-utils', () => {
           billed: false,
         } as unknown as TreatmentPlanForm['items'][number],
         { id: 'keep', code: 'A', name: 'A', category: 'GENERAL', price: '1', quantity: '1', teethNumbers: '11', status: 'PLANNED', billed: false },
-        { id: 'bill', code: 'B', name: 'B2', category: 'GENERAL', price: '1', quantity: '1', teethNumbers: '', status: 'PLANNED', billed: true },
+        { id: 'bill', code: 'B', name: 'B', category: 'GENERAL', price: '1', quantity: '1', teethNumbers: '', status: 'PLANNED', billed: true },
       ],
     };
     await updatePlanWithItems(form, 'plan-1');
 
-    const patch = vi.mocked(apiRequest).mock.calls.find((entry) => entry[0] === '/resources/treatmentPlans/plan-1');
-    expect(JSON.parse(String((patch?.[1] as RequestInit)?.body))).toMatchObject({
+    const patch = vi.mocked(apiRequest).mock.calls.find((entry) => entry[0] === '/treatment-plans/plan-1/save');
+    expect(patch?.[1]?.method).toBe('PATCH');
+    const body = JSON.parse(String((patch?.[1] as RequestInit)?.body)) as { items: Array<{ id?: string }> };
+    expect(body).toMatchObject({
       patientId: 'p-1',
       name: '计划',
       totalFee: 10200,
     });
-    expect(apiRequest).toHaveBeenCalledWith('/resources/treatmentPlanItems', expect.objectContaining({ method: 'POST' }));
-    expect(apiRequest).toHaveBeenCalledWith('/resources/treatmentPlanItems/remove', expect.objectContaining({ method: 'DELETE' }));
+    expect(body.items).toHaveLength(3);
+    expect(body.items.map((item) => item.id)).toEqual(expect.arrayContaining([undefined, 'keep', 'bill']));
     expect(apiRequest).not.toHaveBeenCalledWith('/resources/treatmentPlanItems/keep', expect.objectContaining({ method: 'PATCH' }));
     expect(apiRequest).not.toHaveBeenCalledWith('/resources/treatmentPlanItems/bill', expect.objectContaining({ method: 'PATCH' }));
   });

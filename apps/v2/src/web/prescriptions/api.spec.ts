@@ -45,12 +45,35 @@ describe('prescriptions/api', () => {
     expect(apiRequest).not.toHaveBeenCalled();
   });
 
-  it('aborts the master update when existing details cannot be loaded', async () => {
-    vi.mocked(fetchAllPages).mockRejectedValue(new Error('items failed'));
-    await expect(updatePrescription(validForm() as never, 'pres-1')).rejects.toThrow('items failed');
-    expect(apiRequest).not.toHaveBeenCalledWith(
-      '/resources/prescriptions/pres-1',
-      expect.objectContaining({ method: 'PATCH' }),
-    );
+  it('sends the master and items in one atomic save request', async () => {
+    vi.mocked(apiRequest).mockResolvedValue({ id: 'pres-1' });
+    const form = {
+      ...validForm(),
+      items: [{
+        id: 'local-1',
+        name: '阿莫西林',
+        spec: '0.25g',
+        dosage: '1粒',
+        frequency: '每日三次',
+        days: '5',
+        quantity: '2',
+        price: '12',
+      }],
+    };
+    await updatePrescription(form as never, 'pres-1');
+    expect(apiRequest).toHaveBeenCalledWith('/prescriptions/pres-1/save', expect.objectContaining({ method: 'PATCH' }));
+    const body = JSON.parse(String(
+      vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/prescriptions/pres-1/save')?.[1]?.body,
+    ));
+    expect(body).toMatchObject({
+      patientId: 'p-1',
+      status: 'DRAFT',
+      items: [{ id: 'local-1', name: '阿莫西林', days: 5, quantity: 2, price: 1200 }],
+    });
+  });
+
+  it('rethrows save endpoint failures', async () => {
+    vi.mocked(apiRequest).mockRejectedValue(new Error('save failed'));
+    await expect(updatePrescription(validForm() as never, 'pres-1')).rejects.toThrow('save failed');
   });
 });

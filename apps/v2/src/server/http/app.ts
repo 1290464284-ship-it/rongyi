@@ -49,6 +49,7 @@ import { registerPayMethodRoutes } from './routes/pay-method-routes';
 import { registerChargeTreeRoutes } from './routes/charge-tree-routes';
 import { registerHighValueRoutes } from './routes/high-value-routes';
 import { registerCommissionRoutes } from './routes/commission-routes';
+import { registerEditSaveRoutes } from './routes/edit-save-routes';
 import { createRouteDependencies, type RouteDependencies } from './routes/deps';
 import { createAuditBuffer } from './audit-buffer';
 import { SqliteRateLimitStore } from '../infrastructure/rate-limit-store';
@@ -285,6 +286,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
   registerTreatmentPlanBillingRoutes(app, deps);
   registerPrescriptionProcessRoutes(app, deps);
   registerFirstExamRestartRoutes(app, deps);
+  registerEditSaveRoutes(app, deps);
   registerCephalometricReportRoutes(app, deps);
   registerProcessingFlowRoutes(app, deps);
   registerTriageRoutes(app, deps);

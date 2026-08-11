@@ -1,7 +1,6 @@
-import { apiRequest, fetchAllPages } from '../lib/api';
+import { apiRequest } from '../lib/api';
 import { splitList, toCents } from '../lib/format';
-import { errorMessage } from '../lib/messages';
-import type { PlanItemForm, PlanItemRow, TreatmentPlanForm, ValidPlanItem } from './types';
+import type { PlanItemForm, TreatmentPlanForm, ValidPlanItem } from './types';
 
 export function newItem(): PlanItemForm {
   return { id: crypto.randomUUID(), code: '', name: '', category: '', price: '', quantity: '1', teethNumbers: '', status: 'PLANNED', billed: false };
@@ -30,24 +29,6 @@ export function buildValidItems(items: PlanItemForm[]): ValidPlanItem[] {
     .filter((item) => item.price > 0 && item.quantity > 0);
 }
 
-/** 服务端明细行与表单 payload 是否完全一致（一致则编辑保存时跳过 PATCH）。 */
-function isItemUnchanged(row: PlanItemRow, payload: ValidPlanItem): boolean {
-  return (
-    String(row.code ?? '') === payload.code &&
-    String(row.name ?? '') === payload.name &&
-    String(row.category ?? 'GENERAL') === payload.category &&
-    Number(row.price ?? 0) === payload.price &&
-    Number(row.quantity ?? 1) === payload.quantity &&
-    String(row.status ?? 'PLANNED') === payload.status &&
-    listEquals(row.teethNumbers, payload.teethNumbers)
-  );
-}
-
-function listEquals(value: unknown, expected: string[]): boolean {
-  const actual = Array.isArray(value) ? value.map(String) : [];
-  return actual.length === expected.length && actual.every((entry, index) => entry === expected[index]);
-}
-
 /**
  * 编辑提交：PATCH 主记录 + 明细 reconcile。
  * 以服务端当前明细为基准：有 id 且未变更 → 跳过；有 id 且已变更 → PATCH；
@@ -61,9 +42,7 @@ export async function updatePlanWithItems(form: TreatmentPlanForm, planId: strin
     .map((item) => ({ id: item.id, billed: item.billed, payload: buildItemPayload(item) }))
     .filter((entry) => entry.payload.price > 0 && entry.payload.quantity > 0);
   const calculatedFee = validEntries.reduce((sum, entry) => sum + entry.payload.price * entry.payload.quantity, 0);
-  // 先读服务端明细再改主表：明细读失败时中止，避免“主表已保存、明细没拉到”的半套状态。
-  const serverItems = await fetchAllPages<PlanItemRow>(`/resources/treatmentPlanItems?planId=${planId}`);
-  await apiRequest(`/resources/treatmentPlans/${planId}`, {
+  await apiRequest(`/treatment-plans/${planId}/save`, {
     method: 'PATCH',
     body: JSON.stringify({
       patientId: form.patientId,
@@ -72,37 +51,12 @@ export async function updatePlanWithItems(form: TreatmentPlanForm, planId: strin
       status: form.status,
       totalFee: toCents(form.totalFee) || calculatedFee,
       remark: form.remark || undefined,
+      items: validEntries.map((entry) => ({
+        id: entry.id || undefined,
+        ...entry.payload,
+      })),
     }),
   });
-  const serverById = new Map(serverItems.map((row) => [String(row.id), row]));
-  try {
-    const keptIds = new Set<string>();
-    for (const entry of validEntries) {
-      const existing = serverById.get(entry.id);
-      if (!existing) {
-        // 新增行（表单里无服务端 id 的行）
-        await apiRequest('/resources/treatmentPlanItems', {
-          method: 'POST',
-          body: JSON.stringify({ planId, ...entry.payload }),
-        });
-        continue;
-      }
-      keptIds.add(entry.id);
-      if (Number(existing.billed) === 1) continue; // billed 保护：不修改已划价明细
-      if (isItemUnchanged(existing, entry.payload)) continue;
-      await apiRequest(`/resources/treatmentPlanItems/${entry.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify(entry.payload),
-      });
-    }
-    for (const row of serverItems) {
-      if (keptIds.has(String(row.id))) continue;
-      if (Number(row.billed) === 1) continue; // billed 保护：不删除已划价明细
-      await apiRequest(`/resources/treatmentPlanItems/${String(row.id)}`, { method: 'DELETE' });
-    }
-  } catch (error) {
-    throw new Error(`${errorMessage(error, '更新治疗计划明细失败')}；主记录已保存，请核对明细后重试`);
-  }
 }
 
 export async function cleanupOrphanPlan(

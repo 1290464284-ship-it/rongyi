@@ -325,17 +325,18 @@ describe('PrescriptionsPage', () => {
     fireEvent.click(screen.getByText('保存'));
 
     await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/resources/prescriptions/pres-1', expect.objectContaining({ method: 'PATCH' }));
+      expect(apiRequest).toHaveBeenCalledWith('/prescriptions/pres-1/save', expect.objectContaining({ method: 'PATCH' }));
     });
-    const masterCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/resources/prescriptions/pres-1');
-    expect(JSON.parse(String(masterCall?.[1]?.body))).toMatchObject({
+    const saveCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/prescriptions/pres-1/save');
+    const saveBody = JSON.parse(String(saveCall?.[1]?.body)) as { items: Array<Record<string, unknown>> };
+    expect(saveBody).toMatchObject({
       patientId: 'p-1',
       doctorId: 'd-1',
       remark: '饭后半小时服用',
       status: 'DRAFT',
     });
-    const itemPatchCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/resources/prescriptionItems/item-1');
-    expect(JSON.parse(String(itemPatchCall?.[1]?.body))).toMatchObject({
+    expect(saveBody.items[0]).toMatchObject({
+      id: 'item-1',
       name: '阿莫西林',
       specification: '0.25g',
       dosage: '1粒',
@@ -367,17 +368,13 @@ describe('PrescriptionsPage', () => {
     fireEvent.click(screen.getByText('保存'));
 
     await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/resources/prescriptionItems', expect.objectContaining({ method: 'POST' }));
-      expect(apiRequest).toHaveBeenCalledWith('/resources/prescriptionItems/item-1', expect.objectContaining({ method: 'DELETE' }));
+      expect(apiRequest).toHaveBeenCalledWith('/prescriptions/pres-1/save', expect.objectContaining({ method: 'PATCH' }));
     });
-    const postCall = vi.mocked(apiRequest).mock.calls.find((call) => call[0] === '/resources/prescriptionItems' && call[1]?.method === 'POST');
-    expect(JSON.parse(String(postCall?.[1]?.body))).toMatchObject({
-      prescriptionId: 'pres-1',
-      name: '布洛芬',
-      days: 3,
-      quantity: 1,
-      price: 800,
-    });
+    const saveCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/prescriptions/pres-1/save');
+    const saveBody = JSON.parse(String(saveCall?.[1]?.body)) as { items: Array<Record<string, unknown>> };
+    expect(saveBody.items).toEqual([
+      expect.objectContaining({ name: '布洛芬', days: 3, quantity: 1, price: 800 }),
+    ]);
     expect(await screen.findByText('处方已更新')).toBeDefined();
   });
 

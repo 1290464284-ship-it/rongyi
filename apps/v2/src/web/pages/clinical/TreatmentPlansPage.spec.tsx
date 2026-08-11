@@ -613,49 +613,26 @@ describe('TreatmentPlansPage', () => {
     fireEvent.change(afterPriceInputs[2], { target: { value: '1000' } });
     fireEvent.click(screen.getByText('保存'));
 
-    // 主记录 PATCH
+    // 主记录 + 明细在一次事务端点中保存
     await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/resources/treatmentPlans/p-1', expect.objectContaining({ method: 'PATCH' }));
+      expect(apiRequest).toHaveBeenCalledWith('/treatment-plans/p-1/save', expect.objectContaining({ method: 'PATCH' }));
     });
-    const planCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/resources/treatmentPlans/p-1');
-    expect(JSON.parse(String(planCall?.[1]?.body))).toMatchObject({
+    const saveCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/treatment-plans/p-1/save');
+    const saveBody = JSON.parse(String(saveCall?.[1]?.body)) as { items: Array<Record<string, unknown>> };
+    expect(saveBody).toMatchObject({
       patientId: 'p-1',
       doctorId: 'd-1',
       name: '正畸计划-改',
       status: 'APPROVED',
       totalFee: 20000,
     });
-    // 变更明细 PATCH
-    await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/resources/treatmentPlanItems/item-2', expect.objectContaining({ method: 'PATCH' }));
-    });
-    const item2Call = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/resources/treatmentPlanItems/item-2');
-    expect(JSON.parse(String(item2Call?.[1]?.body))).toMatchObject({
-      code: 'CODE-2',
-      name: '基台-改',
-      category: 'GENERAL',
-      price: 5000,
-      quantity: 2,
-      teethNumbers: [],
-      status: 'PLANNED',
-    });
-    // 移除明细 DELETE
-    expect(apiRequest).toHaveBeenCalledWith('/resources/treatmentPlanItems/item-1', expect.objectContaining({ method: 'DELETE' }));
-    // 新增明细 POST（带 planId）
-    const postCalls = vi.mocked(apiRequest).mock.calls.filter(([path, options]) => path === '/resources/treatmentPlanItems' && options?.method === 'POST');
-    expect(postCalls.length).toBe(1);
-    expect(JSON.parse(String(postCalls[0]?.[1]?.body))).toMatchObject({
-      planId: 'p-1',
-      name: '新项目',
-      category: 'GENERAL',
-      price: 100000,
-      quantity: 1,
-      teethNumbers: [],
-      status: 'PLANNED',
-    });
-    // billed 保护：已划价明细 item-3 不做 PATCH、不做 DELETE
-    const billedCalls = vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/resources/treatmentPlanItems/item-3');
-    expect(billedCalls.length).toBe(0);
+    expect(saveBody.items).toHaveLength(3);
+    expect(saveBody.items.map((item) => item.id)).toEqual(['item-2', 'item-3', expect.any(String)]);
+    expect(saveBody.items[0]).toMatchObject({ name: '基台-改', price: 5000, quantity: 2 });
+    expect(saveBody.items[1]).toMatchObject({ id: 'item-3', name: '牙冠', price: 30000, quantity: 1 });
+    expect(saveBody.items[2]).toMatchObject({ name: '新项目', price: 100000, quantity: 1 });
+    expect(apiRequest).not.toHaveBeenCalledWith('/resources/treatmentPlanItems/item-2', expect.objectContaining({ method: 'PATCH' }));
+    expect(apiRequest).not.toHaveBeenCalledWith('/resources/treatmentPlanItems/item-1', expect.objectContaining({ method: 'DELETE' }));
     expect(await screen.findByText('治疗计划已更新')).toBeDefined();
   });
 
