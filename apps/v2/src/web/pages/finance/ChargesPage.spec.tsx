@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ChargesPage } from './ChargesPage';
 import { apiRequest } from '../../lib/api';
@@ -939,11 +939,10 @@ describe('ChargesPage', () => {
     await screen.findByText('N-1');
 
     async function closeDialog(name: string) {
-      vi.useFakeTimers();
       fireEvent.keyDown(document.querySelector('.modal')!, { key: 'Escape' });
-      act(() => vi.advanceTimersByTime(150));
-      expect(screen.queryByRole('dialog', { name })).toBeNull();
-      vi.useRealTimers();
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog', { name })).toBeNull();
+      });
     }
 
     fireEvent.click(screen.getByRole('button', { name: '收款' }));
