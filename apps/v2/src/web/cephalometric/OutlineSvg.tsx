@@ -1,4 +1,5 @@
 import { pointsAttr, toPoint, viewBoxFor } from './utils';
+import { DEFAULT_LINE_COLOR, DEFAULT_OUTLINE_COLOR } from './constants';
 import type { CephalometricReportJson } from './types';
 
 export function OutlineSvg({ report }: { report: CephalometricReportJson }) {
@@ -8,8 +9,8 @@ export function OutlineSvg({ report }: { report: CephalometricReportJson }) {
     for (const point of line.points ?? []) points.push(toPoint(point));
   }
   const viewBox = viewBoxFor(points);
-  const outlineColor = report.outlineColor ?? '#2563eb';
-  const lineColor = report.lineColor ?? '#dc2626';
+  const outlineColor = report.outlineColor ?? DEFAULT_OUTLINE_COLOR;
+  const lineColor = report.lineColor ?? DEFAULT_LINE_COLOR;
   return (
     <svg
       className="ceph-outline-svg"
@@ -18,10 +19,10 @@ export function OutlineSvg({ report }: { report: CephalometricReportJson }) {
       height={300}
       role="img"
       aria-label="轮廓图预览"
-      style={{ border: '1px solid var(--border-strong, #c9d3de)', borderRadius: 8, background: 'var(--surface, #f8fafc)' }}
+      style={{ border: '1px solid var(--chart-grid)', borderRadius: 'var(--radius-sm)', background: 'var(--chart-bg)' }}
     >
       {points.length === 0 && (
-        <text x={12} y={20} style={{ fontSize: 12, fill: '#6b7280' }}>暂无轮廓数据</text>
+        <text x={12} y={20} style={{ fontSize: 12, fill: 'var(--chart-muted)' }}>暂无轮廓数据</text>
       )}
       {points.length > 1 && (
         <polyline points={pointsAttr(report.outline)} fill="none" stroke={outlineColor} strokeWidth={1.5} />

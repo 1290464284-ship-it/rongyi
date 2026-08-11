@@ -4,7 +4,7 @@ import { apiRequest } from '../lib/api';
 import { Dialog } from '../components';
 import { errorMessage } from '../lib/messages';
 import { useToast } from '../lib/toast-context';
-import { COLOR_OPTIONS, DEFAULT_REPORT_JSON } from './constants';
+import { COLOR_OPTIONS, DEFAULT_LINE_COLOR, DEFAULT_OUTLINE_COLOR, DEFAULT_REPORT_JSON } from './constants';
 import { OutlineSvg } from './OutlineSvg';
 import type { CephalometricReportJson, CephalometricReportResponse, CephalometricRow } from './types';
 
@@ -31,8 +31,8 @@ export function ReportDialog({
 
   const loadedReport = reportQuery.data?.reportJson ?? {};
   const effectiveJsonText = jsonText ?? (reportQuery.data ? JSON.stringify(loadedReport, null, 2) : DEFAULT_REPORT_JSON);
-  const effectiveOutlineColor = outlineColor ?? (typeof loadedReport.outlineColor === 'string' ? loadedReport.outlineColor : '#2563eb');
-  const effectiveLineColor = lineColor ?? (typeof loadedReport.lineColor === 'string' ? loadedReport.lineColor : '#dc2626');
+  const effectiveOutlineColor = outlineColor ?? (typeof loadedReport.outlineColor === 'string' ? loadedReport.outlineColor : DEFAULT_OUTLINE_COLOR);
+  const effectiveLineColor = lineColor ?? (typeof loadedReport.lineColor === 'string' ? loadedReport.lineColor : DEFAULT_LINE_COLOR);
 
   const previewReport = useMemo<CephalometricReportJson>(() => {
     try {
