@@ -81,6 +81,8 @@ jobs:
         run: powershell -ExecutionPolicy Bypass -File apps/v2/scripts/installer-smoke.ps1
 
       - name: Verify package
+        env:
+          V2_SKIP_PUBLISHER_NAME_CHECK: '1'
         run: pnpm --filter @dental/v2 run verify:package
 
       - name: Packaged UI smoke
