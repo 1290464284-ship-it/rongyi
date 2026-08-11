@@ -18,16 +18,19 @@ const definition = {
   capabilities: { create: false, update: false, delete: false, softDelete: false },
 };
 
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
 const wrapper = ({ children }: { children: ReactNode }) => (
-  <QueryClientProvider client={new QueryClient()}><ToastProvider>{children}</ToastProvider></QueryClientProvider>
+  <QueryClientProvider client={queryClient}><ToastProvider>{children}</ToastProvider></QueryClientProvider>
 );
 
-describe('ResourceHub', () => {
-  afterEach(() => {
-    cleanup();
-    vi.mocked(apiRequest).mockReset();
-  });
+afterEach(() => {
+  cleanup();
+  queryClient.clear();
+  vi.mocked(apiRequest).mockReset();
+});
 
+describe('ResourceHub', () => {
   it('renders custom tabs and hides write controls for read-only resources', async () => {
     vi.mocked(apiRequest)
       .mockResolvedValueOnce([definition])
