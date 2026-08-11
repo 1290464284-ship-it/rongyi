@@ -48,9 +48,20 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      - name: Ensure legacy database
+        run: pnpm --filter @dental/v2 ensure:legacy
+
       - name: Verify
         run: |
+          pnpm --filter @dental/v2 run lint
+          pnpm --filter @dental/v2 run knip
           pnpm --filter @dental/v2 typecheck
+          pnpm --filter @dental/v2 test
+          pnpm --filter @dental/v2 test:coverage
+          pnpm --filter @dental/v2 test:coverage:web
+          pnpm --filter @dental/v2 run audit:security
+          pnpm --filter @dental/v2 security:scan
+          pnpm --filter @dental/v2 run license:check
           pnpm --filter @dental/v2 build
           pnpm --filter @dental/v2 electron:compile
 

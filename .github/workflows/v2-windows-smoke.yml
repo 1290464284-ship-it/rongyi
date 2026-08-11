@@ -40,6 +40,12 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
+      - name: Resolve Electron cache paths
+        shell: pwsh
+        run: |
+          "ELECTRON_CACHE=$env:LOCALAPPDATA\electron\Cache" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8
+          "ELECTRON_BUILDER_CACHE=$env:LOCALAPPDATA\electron-builder\Cache" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8
+
       # Round7 M14：缓存 electron-builder 的 Electron / NSIS 下载
       # （%LOCALAPPDATA%\electron\Cache 与 %LOCALAPPDATA%\electron-builder\Cache），
       # 降低每个 PR 全量 electron:dist 的成本；仍做完整 NSIS 安装验证，smoke
@@ -48,8 +54,8 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
-            ${{ runner.temp }}/../electron/Cache
-            ${{ runner.temp }}/../electron-builder/Cache
+            ${{ env.ELECTRON_CACHE }}
+            ${{ env.ELECTRON_BUILDER_CACHE }}
           key: electron-builder-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install dependencies
@@ -74,29 +80,32 @@ jobs:
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File apps/v2/scripts/installer-smoke.ps1
 
-      - name: Build previous installer for upgrade smoke
-        if: github.event_name == 'workflow_dispatch'
+      - name: Verify package
+        env:
+          V2_SKIP_PUBLISHER_NAME_CHECK: '1'
+        run: pnpm --filter @dental/v2 run verify:package
+
+      - name: Packaged UI smoke
+        env:
+          V2_ADMIN_PASSWORD: smoke-packaged-ui-001
+          V2_BACKUP_KEY: smoke-packaged-ui-backup-001
+        run: pnpm --filter @dental/v2 smoke:packaged-ui
+
+      - name: Download previous installer for upgrade smoke
+        if: github.event_name == 'workflow_dispatch' && inputs.previous_installer_url != ''
         id: previous-installer
         shell: pwsh
+        env:
+          PREVIOUS_URL: ${{ inputs.previous_installer_url }}
         run: |
-          # Round7 M7：下载到 RUNNER_TEMP，避免 previous-installer.exe 残留
-          # 在 release-v2/ 被后续 *.exe 通配/资产逻辑误收录。
-          $pkgPath = (Resolve-Path 'apps/v2/package.json').Path
-          $original = [System.IO.File]::ReadAllText($pkgPath, [System.Text.Encoding]::UTF8)
-          try {
-            $patched = [regex]::Replace($original, '("version"\s*:\s*")[^"]+(")', '${1}2.1.4${2}', 1)
-            [System.IO.File]::WriteAllText($pkgPath, $patched, [System.Text.UTF8Encoding]::new($false))
-            pnpm --filter @dental/v2 electron:dist
-            $exe = Get-ChildItem -LiteralPath apps/v2/release-v2 -Filter 'Dental-Clinic-V2-Setup-2.1.4.exe' |
-              Select-Object -First 1 -ExpandProperty FullName
-            if (-not $exe) { throw 'previous installer not produced' }
-            "path=$exe" >> $env:GITHUB_OUTPUT
-          } finally {
-            [System.IO.File]::WriteAllText($pkgPath, $original, [System.Text.UTF8Encoding]::new($false))
-          }
+          $dir = Join-Path $env:RUNNER_TEMP 'v2-previous'
+          New-Item -ItemType Directory -Path $dir -Force | Out-Null
+          $dest = Join-Path $dir 'previous-setup.exe'
+          Invoke-WebRequest -Uri $env:PREVIOUS_URL -OutFile $dest
+          "path=$dest" >> $env:GITHUB_OUTPUT
 
       - name: Run upgrade smoke
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && steps.previous-installer.outputs.path != ''
         shell: pwsh
         env:
           V2_PREVIOUS_INSTALLER: ${{ steps.previous-installer.outputs.path }}

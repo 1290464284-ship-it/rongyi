@@ -63,6 +63,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Regenerate legacy schema SQL
+        run: |
+          pnpm --filter @dental/v2 run generate:legacy-schema
+          git diff --exit-code -- apps/v2/legacy/schema/legacy-schema.generated.sql
+
       - name: Typecheck
         run: pnpm --filter @dental/v2 typecheck
 

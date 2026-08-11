@@ -56,9 +56,21 @@ jobs:
 
       - name: Verify
         run: |
+          # 正式发布不能只依赖并发运行的 v2-ci（tag push 可能先到 release），
+          # 核心门禁必须在发布 job 内同步执行。
+          pnpm --filter @dental/v2 run lint
+          pnpm --filter @dental/v2 run knip
           pnpm --filter @dental/v2 typecheck
+          pnpm --filter @dental/v2 test
+          pnpm --filter @dental/v2 test:coverage
+          pnpm --filter @dental/v2 run audit:security
+          pnpm --filter @dental/v2 security:scan
+          pnpm --filter @dental/v2 run license:check
           pnpm --filter @dental/v2 build
           pnpm --filter @dental/v2 electron:compile
+          # 自包含 smoke（各自拉起独立 API 进程），不依赖 v2-ci 并行结果。
+          pnpm --filter @dental/v2 smoke:http-fuzz
+          pnpm --filter @dental/v2 smoke:multi-instance
 
       - name: Require signing secrets
         shell: pwsh
@@ -122,6 +134,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           V2_RELEASE_TAG: ${{ github.ref_name }}
+          V2_ADMIN_PASSWORD: ${{ vars.V2_UPGRADE_ADMIN_PASSWORD }}
         run: |
           # Round7 H9：显式 --limit 200 + semver 排序，避免默认 30 条分页与
           # 隐式创建时间排序导致 previous 找错/找不到；skip 时输出
@@ -130,12 +143,12 @@ jobs:
             Where-Object { $_ -match '^v2-\d+\.\d+\.\d+$' } |
             Sort-Object { [version](($_ -replace '^v2-', '')) } -Descending)
           $current = $env:V2_RELEASE_TAG
-          $index = [array]::IndexOf($releases, $current)
-          if ($index -lt 0 -or $index -ge $releases.Count - 1) {
+          $currentVersion = [version]($current -replace '^v2-', '')
+          $previous = $releases | Where-Object { [version]($_ -replace '^v2-', '') -lt $currentVersion } | Select-Object -First 1
+          if (-not $previous) {
             Write-Host "::warning::No previous release available; skipping upgrade smoke (current=$current, releases=$($releases.Count))"
             exit 0
           }
-          $previous = $releases[$index + 1]
           $dir = Join-Path $env:RUNNER_TEMP 'v2-upgrade'
           if (Test-Path -LiteralPath $dir) {
             [System.IO.Directory]::Delete($dir, $true)
