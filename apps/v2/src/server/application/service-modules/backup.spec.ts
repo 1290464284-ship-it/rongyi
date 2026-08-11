@@ -44,6 +44,12 @@ describe('BackupService staged cleanup', () => {
     expect(fs.existsSync(freshTmp)).toBe(true);
   });
 
+  it('does not throw when the backup path is blocked by a regular file', () => {
+    const backupsDir = path.join(dir, 'backups');
+    fs.writeFileSync(backupsDir, 'not a directory');
+    expect(service.cleanupStaged()).toEqual({ removed: 0 });
+  });
+
   it('encrypts whenever a backup key exists, even when plaintext is allowed', () => {
     expect(shouldEncryptBackup({}, true, true)).toBe(true);
     expect(shouldEncryptBackup({}, true, false)).toBe(false);

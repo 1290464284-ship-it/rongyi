@@ -317,7 +317,11 @@ export class BackupService {
 
   private cleanupStagedEntries(): number {
     const backupDir = this.backupDir;
-    if (!fs.existsSync(backupDir)) return 0;
+    try {
+      if (!fs.statSync(backupDir).isDirectory()) return 0;
+    } catch {
+      return 0;
+    }
     const stagedEntries = fs.readdirSync(this.backupDir)
       .filter((name) => (
         name.startsWith('.staged-') || name.startsWith('.verify-') || name.endsWith('.tmp') || name.endsWith('.partial')
