@@ -78,6 +78,7 @@
 | 第 67 轮 | 2026-08-13 | 自动质量评分聚合脚本 | `../深度审计报告-第六十七轮-主报告.md` |
 | 第 68 轮 | 2026-08-13 | 全量 OpenAPI 骨架生成 | `../深度审计报告-第六十八轮-主报告.md` |
 | 第 69 轮 | 2026-08-13 | inventory-ledger mutation 覆盖 + 生成物忽略 | `../深度审计报告-第六十九轮-主报告.md` |
+| 第 70 轮 | 2026-08-13 | 质量评分 mutation/OpenAPI 指标修复 | `../深度审计报告-第七十轮-主报告.md` |
 
 ## 其他归档
 
@@ -95,7 +96,7 @@
 
 ## 当前状态
 
-最新一轮为第 69 轮（`9650851`），单测 238 文件 / 2403 用例；mutation score 59.59，完整 sequence.shuffle 全绿，typecheck/lint/knip/unit 均通过。
+最新一轮为第 70 轮（`1a5a515`），单测 239 文件 / 2409 用例；mutation score 59.59，route path coverage 100%，完整 sequence.shuffle 全绿，typecheck/lint/knip/unit 均通过。
 历史轮次请以上方轮次索引为准；各轮详情见 `../深度审计报告-第N轮-主报告.md`。
 已收敛的长期决策项：processing-flow 手动改态保留并补 `changes` 校验；大库增量聚合
 暂不启动，`replenishment.generate` 已用有界分块事务，10 万级冷态基准持续 PASS。
