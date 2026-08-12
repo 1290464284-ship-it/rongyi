@@ -266,6 +266,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
     stats: deps.stats,
     print: new PrintService(),
     search: deps.search,
+    rateLimitStore,
   });
 
   app.get('/api/v2/resource-meta', wrapAsync(async (req, res) => {

@@ -69,8 +69,6 @@ jobs:
           pnpm --filter @dental/v2 run license:check
           pnpm --filter @dental/v2 build
           pnpm --filter @dental/v2 electron:compile
-          pnpm --filter @dental/v2 verify:database
-          pnpm --filter @dental/v2 verify:foreign-keys
           # 自包含 smoke（各自拉起独立 API 进程），不依赖 v2-ci 并行结果。
           pnpm --filter @dental/v2 smoke:http-fuzz
           pnpm --filter @dental/v2 smoke:multi-instance
@@ -79,7 +77,16 @@ jobs:
         env:
           V2_ADMIN_PASSWORD: v2-release-smoke-admin
           V2_BACKUP_KEY: v2-release-smoke-backup
+          V2_SMOKE_USE_EXISTING_DATA: '1'
+          V2_DATA_DIR: ${{ runner.temp }}/v2-release-smoke-data
         run: pnpm --filter @dental/v2 smoke:all
+
+      - name: Verify smoke database
+        env:
+          V2_DATA_DIR: ${{ runner.temp }}/v2-release-smoke-data
+        run: |
+          pnpm --filter @dental/v2 verify:database
+          pnpm --filter @dental/v2 verify:foreign-keys
 
       - name: Require signing secrets
         shell: pwsh

@@ -128,6 +128,10 @@ export function UsersPage() {
   }
 
   function openEdit(row: UserRow) {
+    if (userRoles.error) {
+      showToast('角色数据加载失败，请刷新后重试', 'error');
+      return;
+    }
     setEditingId(row.id);
     setForm({
       username: row.username,
@@ -146,6 +150,10 @@ export function UsersPage() {
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (submitting) return;
+    if (editingId && userRoles.error) {
+      showToast('角色数据加载失败，请刷新后重试', 'error');
+      return;
+    }
     setSubmitting(true);
     try {
       let targetId = editingId;
@@ -310,6 +318,7 @@ export function UsersPage() {
         <h1>员工管理</h1>
         <button onClick={openCreate}>新建员工</button>
       </div>
+      {userRoles.error && <p className="error">角色数据加载失败，请刷新后重试</p>}
       <DataTable columns={columns} rows={users.data?.items ?? []} keyField="id" emptyText="暂无员工" />
       <PagePager
         page={page}

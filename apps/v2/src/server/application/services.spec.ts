@@ -901,6 +901,7 @@ describe('application services', () => {
     const repo = {
       findByUsername: () => null,
       insertUser: () => { throw new Error('UNIQUE constraint failed: User.username'); },
+      clinicMemberships: () => [],
     } as unknown as AuthRepository;
     const auth = new AuthService(db, repo);
     await expect(auth.createUser({
@@ -915,6 +916,7 @@ describe('application services', () => {
     const repo = {
       findByUsername: () => null,
       insertUser: () => { throw new Error('database down'); },
+      clinicMemberships: () => [],
     } as unknown as AuthRepository;
     const auth = new AuthService(db, repo);
     await expect(auth.createUser({

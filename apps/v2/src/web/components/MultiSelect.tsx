@@ -21,6 +21,7 @@ export function MultiSelect({ value, options, onChange, placeholder = '请选择
   const [activeIndex, setActiveIndex] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const requestClose = useCallback(() => {
@@ -91,9 +92,13 @@ export function MultiSelect({ value, options, onChange, placeholder = '请选择
         aria-label={placeholder}
         onClick={toggleOpen}
         onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
-          if (event.key === 'Enter' || event.key === ' ' || event.key === 'ArrowDown') {
+          if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault();
             toggleOpen();
+          } else if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            if (open) searchRef.current?.focus();
+            else toggleOpen();
           } else if (event.key === 'Escape' && open) {
             event.preventDefault();
             requestClose();
@@ -118,6 +123,7 @@ export function MultiSelect({ value, options, onChange, placeholder = '请选择
           }}
         >
           <input
+            ref={searchRef}
             className="ui-multiselect-search"
             type="search"
             placeholder="搜索"

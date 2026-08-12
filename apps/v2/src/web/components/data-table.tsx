@@ -34,7 +34,7 @@ export function DataTable<T extends Record<string, unknown>>({
       </thead>
       <tbody>
         {visibleRows.map((row, index) => (
-          <tr key={keyField ? String(row[keyField] ?? '') : index}>
+          <tr key={keyField && row[keyField] != null ? String(row[keyField]) : `row-${index}`}>
             {columns.map((column) => (
               <td key={column.key}>
                 {column.render ? column.render(row) : String(row[column.key] ?? '')}

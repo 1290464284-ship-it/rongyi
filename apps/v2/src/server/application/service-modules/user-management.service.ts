@@ -59,12 +59,20 @@ export class UserManagementService {
       throw new ValidationError('clinicIds must be an array of strings');
     }
     if (this.authRepository.findByUsername(username)) throw new ConflictError('Username already exists');
-    const clinicIds = ['BOSS', 'ADMIN'].includes(context.role)
-      ? [...new Set([...tenantParams(context.clinicId), ...(input.clinicIds ?? [])])]
-      : [...tenantParams(context.clinicId)];
-    if (!['BOSS', 'ADMIN'].includes(context.role)) {
-      const creatorClinics = new Set(this.authRepository.clinicMemberships(context.userId).map((membership) => membership.clinicId));
-      if (!clinicIds.every((clinicId) => typeof clinicId === 'string' && creatorClinics.has(clinicId))) {
+    const creatorClinics = new Set(
+      this.authRepository.clinicMemberships(context.userId).map((membership) => membership.clinicId),
+    );
+    let clinicIds: string[];
+    if (['BOSS', 'ADMIN'].includes(context.role)) {
+      const requested = [...new Set(input.clinicIds ?? [])];
+      // BOSS/ADMIN 也只能把新账号挂到自身实际所属的诊所，禁止跨诊所建号提权。
+      if (!requested.every((clinicId) => creatorClinics.has(clinicId))) {
+        throw new AppError('FORBIDDEN', 'Cannot create users outside your clinic scope', 403);
+      }
+      clinicIds = [...new Set([...(tenantParams(context.clinicId) as string[]), ...requested])];
+    } else {
+      clinicIds = [...tenantParams(context.clinicId)] as string[];
+      if (!clinicIds.every((clinicId) => creatorClinics.has(clinicId))) {
         throw new AppError('FORBIDDEN', 'Cannot create users outside your clinic scope', 403);
       }
     }

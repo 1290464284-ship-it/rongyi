@@ -10,6 +10,7 @@ import { tenantAnd, tenantParams, tenantWhere } from '../../infrastructure/tenan
 import type { AppContext } from '../../../domain/contracts';
 import type { PatientRiskRepository } from '../ports';
 import { FORBIDDEN_BULK_IMPORT_RESOURCES, assertPatientExists } from './common';
+import { RESOURCE_PERMISSION_MAP } from './permissions';
 import { sharedDbWriteQueue } from './serial-queue';
 
 export class PatientRiskService {
@@ -144,6 +145,11 @@ export class BulkImportService {
     }
     if (!definition.capabilities.create) throw new ValidationError(`Resource cannot import: ${resourceName}`);
     if (!definition.roles.includes(context.role)) {
+      throw new AppError('FORBIDDEN', `Forbidden resource: ${resourceName}`, 403);
+    }
+    const requiredPermission = RESOURCE_PERMISSION_MAP[resourceName];
+    // 与通用资源路由一致：模块权限在角色之上收口，避免只授予 system 的账号越权导入业务表。
+    if (requiredPermission && context.permissions && !context.permissions.includes(requiredPermission)) {
       throw new AppError('FORBIDDEN', `Forbidden resource: ${resourceName}`, 403);
     }
     if (!Array.isArray(rows) || rows.length > 10_000) {

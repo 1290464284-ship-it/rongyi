@@ -222,12 +222,20 @@ describe('service edge coverage', () => {
       `INSERT OR IGNORE INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
        VALUES (?, NULL, ?, ?, NULL, 'V2-2', 'Clinic 2', 1)`,
     ).run('clinic-v2-other', now, now);
+    db.prepare(
+      `INSERT OR IGNORE INTO UserClinic (userId, clinicId, role, createdAt, updatedAt, deletedAt)
+       VALUES ('user-admin-001', 'clinic-v2-other', 'BOSS', ?, ?, NULL)`,
+    ).run(now, now);
     const auth = new AuthService(db);
     expect(() => auth.listAccessibleClinics('missing-user', 'BOSS')).toThrow('User not found');
     db.prepare(
       `INSERT OR IGNORE INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
        VALUES (?, NULL, ?, ?, NULL, 'V2-EMPTY', '', 1)`,
     ).run('clinic-v2-empty', now, now);
+    db.prepare(
+      `INSERT OR IGNORE INTO UserClinic (userId, clinicId, role, createdAt, updatedAt, deletedAt)
+       VALUES ('user-admin-001', 'clinic-v2-empty', 'BOSS', ?, ?, NULL)`,
+    ).run(now, now);
     const boss = await auth.createUser({
       username: 'boss-multi',
       password: 'password123',
@@ -265,7 +273,7 @@ describe('service edge coverage', () => {
       name: 'Missing Clinic',
       role: 'BOSS',
       clinicIds: ['clinic-v2-missing'],
-    }, context)).rejects.toThrow('clinicIds must reference existing clinics');
+    }, context)).rejects.toThrow('Cannot create users outside your clinic scope');
     db.prepare(
       `INSERT OR IGNORE INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
        VALUES ('clinic-v2-disabled', NULL, ?, ?, NULL, 'V2-DISABLED', 'Disabled Clinic', 0)`,
@@ -1530,6 +1538,10 @@ describe('service edge coverage', () => {
     db.prepare(
       `INSERT OR IGNORE INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
        VALUES (?, NULL, ?, ?, NULL, 'V2-CROSS-B', 'Cross Clinic B', 1)`,
+    ).run(clinicB, t, t);
+    db.prepare(
+      `INSERT OR IGNORE INTO UserClinic (userId, clinicId, role, createdAt, updatedAt, deletedAt)
+       VALUES ('user-admin-001', ?, 'BOSS', ?, ?, NULL)`,
     ).run(clinicB, t, t);
     const doctor = await auth.createUser({
       username: 'cross-doctor-b',

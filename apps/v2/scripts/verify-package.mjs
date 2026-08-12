@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import Database from 'better-sqlite3';
 import { installerFileName } from './artifact-name.mjs';
 import { filesExist } from './lib/artifact-utils.mjs';
 
@@ -49,6 +50,28 @@ if (fs.existsSync(unpackedDir)) {
   if (!fs.existsSync(legacySchema) || !fs.readdirSync(legacySchema).some((name) => name.endsWith('.tables.ts'))) {
     console.error(`missing packaged legacy schema: ${legacySchema}`);
     process.exit(1);
+  }
+  const packagedLegacyDb = path.join(unpackedDir, 'resources', 'legacy', 'dental.sqlite');
+  if (fs.existsSync(packagedLegacyDb)) {
+    const legacyDb = new Database(packagedLegacyDb, { readonly: true });
+    try {
+      const sensitiveTables = ['User', 'RefreshToken', 'UsedRefreshToken', 'AuditLog', 'OperationLog'];
+      const dirty = [];
+      for (const table of sensitiveTables) {
+        const exists = legacyDb.prepare(
+          `SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`,
+        ).get(table);
+        if (!exists) continue;
+        const row = legacyDb.prepare(`SELECT COUNT(*) AS c FROM "${table}"`).get();
+        if (Number(row.c) > 0) dirty.push(`${table}=${row.c}`);
+      }
+      if (dirty.length > 0) {
+        console.error(`packaged legacy database must be sanitized; non-empty sensitive tables: ${dirty.join(', ')}`);
+        process.exit(1);
+      }
+    } finally {
+      legacyDb.close();
+    }
   }
   const appUpdateYml = path.join(unpackedDir, 'resources', 'app-update.yml');
   if (hasLatestYml) {

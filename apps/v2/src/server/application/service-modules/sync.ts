@@ -9,6 +9,7 @@ import type { AppContext } from '../../../domain/contracts';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { recordSyncChange, type SyncChangeOperation } from '../../infrastructure/sync-change';
 import { hashRefreshToken, newRefreshToken, safeJsonObject } from './common';
+import { assertSyncTablePermission, SYNC_RESOURCES } from './sync-permissions';
 import type { SyncPushPayload, SyncPushResult } from './sync-push-queue';
 import { sharedDbWriteQueue } from './serial-queue';
 
@@ -22,16 +23,6 @@ const SYNC_ALLOWED_TABLES = new Set([
   'PurchaseOrder',
 ]);
 
-const SYNC_RESOURCES: Record<string, string> = {
-  Patient: 'patients',
-  Appointment: 'appointments',
-  Treatment: 'treatments',
-  Charge: 'charges',
-  InventoryItem: 'inventoryItems',
-  FollowUp: 'followUps',
-  PurchaseOrder: 'purchaseOrders',
-};
-
 export class SyncService {
   constructor(private readonly db: Database.Database) {}
 
@@ -44,6 +35,7 @@ export class SyncService {
     if (!['BOSS', 'ADMIN'].includes(context.role)) {
       throw new AppError('FORBIDDEN', 'Sync requires BOSS', 403);
     }
+    for (const table of SYNC_ALLOWED_TABLES) assertSyncTablePermission(context, table);
     this.assertDevice(deviceId, deviceToken, context);
     // 游标支持两种格式：新格式 `createdAt|rowid`（复合键），旧格式为纯 createdAt
     // 时间戳。旧格式按 rowid 开区间（-1）解析：同毫秒的行可能被重复投递一次，但
@@ -87,6 +79,7 @@ export class SyncService {
     if (!['BOSS', 'ADMIN'].includes(context.role)) {
       throw new AppError('FORBIDDEN', 'Sync requires BOSS', 403);
     }
+    for (const table of SYNC_ALLOWED_TABLES) assertSyncTablePermission(context, table);
     const tableExists = (table: string): boolean => Boolean(
       this.db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`).get(table),
     );
@@ -140,6 +133,9 @@ export class SyncService {
     if (!context.clinicId) throw new AppError('FORBIDDEN', 'Sync requires a clinic scope', 403);
     if (!['BOSS', 'ADMIN'].includes(context.role)) {
       throw new AppError('FORBIDDEN', 'Sync requires BOSS', 403);
+    }
+    for (const change of payload.changes) {
+      if (SYNC_ALLOWED_TABLES.has(change.tableName)) assertSyncTablePermission(context, change.tableName);
     }
     this.assertDevice(payload.deviceId, payload.deviceToken, context);
     let accepted = 0;
@@ -296,6 +292,7 @@ export class SyncService {
        WHERE id = ? AND status = 'PENDING' AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).get(id, ...tenantParams(context.clinicId)) as Record<string, unknown> | undefined;
     if (!row) throw new NotFoundError('Sync conflict not found');
+    assertSyncTablePermission(context, String(row.tableName));
 
     const resourceName = SYNC_RESOURCES[String(row.tableName)];
     const definition = resourceRegistry.get(resourceName);

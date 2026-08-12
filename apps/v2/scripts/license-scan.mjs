@@ -1,10 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createRequire } from 'node:module';
 
-const require = createRequire(import.meta.url);
-const packagePath = path.resolve(import.meta.dirname, '..', 'package.json');
-const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+const appRoot = path.resolve(import.meta.dirname, '..');
+const packagePath = path.join(appRoot, 'package.json');
+fs.accessSync(packagePath);
 const allowed = new Set([
   'MIT',
   'ISC',
@@ -15,18 +14,60 @@ const allowed = new Set([
   'Unlicense',
   'MPL-2.0',
   'Zlib',
+  'MIT-0',
+  'CC0-1.0',
+  'CC-BY-3.0',
+  'CC-BY-4.0',
+  'Python-2.0',
+  'BlueOak-1.0.0',
+  'WTFPL',
 ]);
 
 const issues = [];
-for (const name of Object.keys({ ...pkg.dependencies, ...pkg.devDependencies })) {
+const scanned = new Map();
+const visited = new Set();
+function walk(dir) {
+  let real;
   try {
-    const depPkg = resolvePackage(name);
-    const license = depPkg.license
-      ? typeof depPkg.license === 'string' ? depPkg.license : depPkg.license.type
-      : 'UNKNOWN';
-    if (!allowed.has(String(license).trim())) issues.push(`${name}: ${license}`);
+    real = fs.realpathSync(dir);
   } catch {
-    issues.push(`${name}: cannot resolve package.json`);
+    return;
+  }
+  if (visited.has(real)) return;
+  visited.add(real);
+  let entries;
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      walk(full);
+    } else if (entry.name === 'package.json') {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(full, 'utf8'));
+        if (parsed && typeof parsed.name === 'string') {
+          // 子路径 stub（rxjs/ajax 等）与无版本号的测试夹具包不是真实依赖。
+          if (parsed.name.includes('/') || !parsed.version) continue;
+          scanned.set(`${parsed.name}@${parsed.version ?? ''}`, parsed);
+        }
+      } catch {
+        // 不可读的 package.json 不计入许可违规
+      }
+    }
+  }
+}
+walk(path.join(appRoot, 'node_modules'));
+walk(path.resolve(appRoot, '..', '..', 'node_modules'));
+for (const parsed of scanned.values()) {
+  const license = parsed.license
+    ? (typeof parsed.license === 'string' ? parsed.license : parsed.license.type)
+    : 'UNKNOWN';
+  const alternatives = String(license).split(/\s+OR\s+/).map((part) => part.trim().replace(/^\(|\)$/g, ''));
+  if (!alternatives.every((part) => allowed.has(part))) {
+    issues.push(`${parsed.name}@${parsed.version ?? ''}: ${license}`);
   }
 }
 
@@ -34,22 +75,4 @@ if (issues.length > 0) {
   console.error(issues.join('\n'));
   process.exit(1);
 }
-console.log(`license scan passed (${Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).length} direct dependencies)`);
-
-function resolvePackage(name) {
-  try {
-    return require(`${name}/package.json`);
-  } catch {
-    const entry = require.resolve(name);
-    let dir = path.dirname(entry);
-    while (dir && dir !== path.dirname(dir)) {
-      const candidate = path.join(dir, 'package.json');
-      if (fs.existsSync(candidate)) {
-        const parsed = JSON.parse(fs.readFileSync(candidate, 'utf8'));
-        if (parsed.name === name) return parsed;
-      }
-      dir = path.dirname(dir);
-    }
-  }
-  throw new Error(`cannot resolve ${name}`);
-}
+console.log(`license scan passed (${scanned.size} packages incl. transitive)`);

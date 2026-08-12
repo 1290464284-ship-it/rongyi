@@ -13,6 +13,7 @@ describe('MedicalRecordEditService', () => {
   let db: Database.Database;
   let dataDir: string;
   let context: AppContext;
+  let reviewContext: AppContext;
   const now = '2026-08-03T00:00:00.000Z';
 
   function insertRecord(
@@ -58,6 +59,10 @@ describe('MedicalRecordEditService', () => {
       role: 'BOSS',
       traceId: 'trace-edit',
       now: () => new Date('2026-08-03T08:00:00.000Z'),
+    };
+    reviewContext = {
+      ...context,
+      userId: 'user-admin-002',
     };
   });
 
@@ -168,7 +173,7 @@ describe('MedicalRecordEditService', () => {
       },
     }, context);
 
-    const result = service.review('r-edit-approve', { approve: true, reviewNote: '同意修改' }, context);
+    const result = service.review('r-edit-approve', { approve: true, reviewNote: '同意修改' }, reviewContext);
     expect(result).toEqual({ id: 'r-edit-approve', editRequestStatus: 'APPROVED', applied: true });
 
     const row = getRecord('r-edit-approve');
@@ -180,11 +185,29 @@ describe('MedicalRecordEditService', () => {
     expect(row.lockedAt).toBeNull();
     expect(row.lockedBy).toBeNull();
     expect(row.editRequestStatus).toBe('APPROVED');
-    expect(row.reviewedById).toBe('user-admin-001');
+    expect(row.reviewedById).toBe('user-admin-002');
     expect(row.reviewedAt).toBe('2026-08-03T08:00:00.000Z');
     expect(row.reviewNote).toBe('同意修改');
     // 未出现在 proposedContent 中的字段保持不变
     expect(row.category).toBe('GENERAL');
+  });
+
+  it('rejects self-approval and non-admin reviewers', () => {
+    insertRecord('r-edit-self', {
+      editRequestStatus: 'PENDING',
+      editRequestedById: 'user-admin-001',
+      proposedContentJson: JSON.stringify({ diagnosis: 'x' }),
+    });
+    const service = new MedicalRecordEditService(db);
+    expect(() => service.review('r-edit-self', { approve: true }, context))
+      .toThrow('不能审核自己的修改申请');
+    const doctorReviewer: AppContext = {
+      ...context,
+      userId: 'user-doctor-other',
+      role: 'DOCTOR',
+    };
+    expect(() => service.review('r-edit-self', { approve: true }, doctorReviewer))
+      .toThrow('仅管理员可审核病历修改申请');
   });
 
   it('only merges whitelisted keys even when proposed content targets other columns', () => {
@@ -200,7 +223,7 @@ describe('MedicalRecordEditService', () => {
         id: 'r-edit-whitelist',
       },
     }, context);
-    service.review('r-edit-whitelist', { approve: true }, context);
+    service.review('r-edit-whitelist', { approve: true }, reviewContext);
 
     const row = getRecord('r-edit-whitelist');
     expect(row.diagnosis).toBe('白名单后诊断');
@@ -218,9 +241,9 @@ describe('MedicalRecordEditService', () => {
       reason: '坏数组',
       proposedContent: { teethInvolved: '11,21' },
     }, context);
-    expect(() => service.review('r-edit-bad-array', { approve: true }, context))
+    expect(() => service.review('r-edit-bad-array', { approve: true }, reviewContext))
       .toThrow(ValidationError);
-    expect(() => service.review('r-edit-bad-array', { approve: true }, context))
+    expect(() => service.review('r-edit-bad-array', { approve: true }, reviewContext))
       .toThrow('teethInvolved 必须为数组');
   });
 
@@ -230,7 +253,7 @@ describe('MedicalRecordEditService', () => {
       proposedContentJson: 'not-json{{{',
     });
     const service = new MedicalRecordEditService(db);
-    expect(() => service.review('r-edit-bad-json', { approve: true }, context))
+    expect(() => service.review('r-edit-bad-json', { approve: true }, reviewContext))
       .toThrow(ValidationError);
   });
 
@@ -247,7 +270,7 @@ describe('MedicalRecordEditService', () => {
       proposedContent: { diagnosis: '不应合并' },
     }, context);
 
-    const result = service.review('r-edit-reject', { approve: false, reviewNote: '证据不足' }, context);
+    const result = service.review('r-edit-reject', { approve: false, reviewNote: '证据不足' }, reviewContext);
     expect(result).toEqual({ id: 'r-edit-reject', editRequestStatus: 'REJECTED', applied: false });
 
     const row = getRecord('r-edit-reject');
@@ -256,7 +279,7 @@ describe('MedicalRecordEditService', () => {
     expect(row.isLocked).toBe(1);
     expect(row.lockedAt).toBe('2026-08-01T00:00:00.000Z');
     expect(row.lockedBy).toBe('user-admin-001');
-    expect(row.reviewedById).toBe('user-admin-001');
+    expect(row.reviewedById).toBe('user-admin-002');
     expect(row.reviewNote).toBe('证据不足');
   });
 
@@ -269,18 +292,18 @@ describe('MedicalRecordEditService', () => {
     }, context);
     expect(result.editRequestStatus).toBe('PENDING');
     // 非 PENDING（这里已重新变为 PENDING；先审核掉）
-    service.review('r-edit-reject', { approve: false }, context);
+    service.review('r-edit-reject', { approve: false }, reviewContext);
     // APPROVED 状态不可再审核
-    expect(() => service.review('r-edit-approve', { approve: false }, context))
+    expect(() => service.review('r-edit-approve', { approve: false }, reviewContext))
       .toThrow(ConflictError);
-    expect(() => service.review('r-edit-approve', { approve: false }, context))
+    expect(() => service.review('r-edit-approve', { approve: false }, reviewContext))
       .toThrow('该病历没有待审核的修改申请');
   });
 
   it('returns only PENDING records with parsed proposed content', () => {
     // r-edit-1 自首个用例起一直处于 PENDING，先审核掉避免干扰
     const service = new MedicalRecordEditService(db);
-    service.review('r-edit-1', { approve: false }, context);
+    service.review('r-edit-1', { approve: false }, reviewContext);
     insertRecord('r-edit-pending-1', {
       editRequestStatus: 'PENDING',
       proposedContentJson: JSON.stringify({ diagnosis: '待审诊断' }),

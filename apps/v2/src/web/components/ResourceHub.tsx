@@ -34,6 +34,15 @@ export function ResourceHub({ title, tabs }: { title: string; tabs: HubTab[] }) 
   const visibleTabs = hasBossOnly
     ? tabs.filter((tab) => !tab.bossOnly || navigation.data?.role === 'BOSS' || navigation.data?.role === 'ADMIN')
     : tabs;
+  if (hasBossOnly && navigation.error) {
+    return (
+      <div className="hub">
+        <div className="page-head"><h1>{title}</h1></div>
+        <div className="error">导航权限加载失败，无法确定可访问模块</div>
+        <button type="button" onClick={() => void navigation.refetch()}>重试</button>
+      </div>
+    );
+  }
   const query = filter.trim().toLowerCase();
   const filteredTabs = query === '' ? visibleTabs : visibleTabs.filter((tab) => tab.label.toLowerCase().includes(query));
   const active = filteredTabs.find((tab) => tab.id === activeId) ?? filteredTabs[0];

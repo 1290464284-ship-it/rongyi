@@ -19,10 +19,17 @@ export function SystemOperationsPage() {
   const importBusyRef = useRef(false);
   const [searchBusy, setSearchBusy] = useState(false);
   const searchGenerationRef = useRef(0);
+  const [auditCleanupBusy, setAuditCleanupBusy] = useState(false);
+  const auditCleanupBusyRef = useRef(false);
+  const fileLoadGenerationRef = useRef(0);
 
   function loadFile(file: File) {
+    const generation = fileLoadGenerationRef.current + 1;
+    fileLoadGenerationRef.current = generation;
     const reader = new FileReader();
     reader.onload = () => {
+      // 用户快速连续选择多个文件时，只应用最后一次读取结果。
+      if (generation !== fileLoadGenerationRef.current) return;
       try {
         const text = String(reader.result ?? '');
         const rows = parseRows(text);
@@ -80,11 +87,14 @@ export function SystemOperationsPage() {
   }
 
   async function cleanupAuditLogs() {
+    if (auditCleanupBusy || auditCleanupBusyRef.current) return;
     const retentionDays = Number(auditRetentionDays);
     if (!Number.isInteger(retentionDays) || retentionDays < 30 || retentionDays > 3650) {
       showToast('日志保留天数必须在 30 到 3650 之间', 'error');
       return;
     }
+    auditCleanupBusyRef.current = true;
+    setAuditCleanupBusy(true);
     try {
       const result = await apiRequest<{ deleted: number }>('/system/audit/cleanup', {
         method: 'POST',
@@ -93,6 +103,9 @@ export function SystemOperationsPage() {
       showToast(`已清理 ${result.deleted} 条过期日志`, 'success');
     } catch (error) {
       showToast(errorMessage(error, '清理日志失败'), 'error');
+    } finally {
+      auditCleanupBusyRef.current = false;
+      setAuditCleanupBusy(false);
     }
   }
 
@@ -153,7 +166,9 @@ export function SystemOperationsPage() {
           value={auditRetentionDays}
           onChange={(event) => setAuditRetentionDays(event.target.value)}
         />
-        <button onClick={cleanupAuditLogs}>立即清理</button>
+        <button disabled={auditCleanupBusy} onClick={cleanupAuditLogs}>
+          {auditCleanupBusy ? '清理中...' : '立即清理'}
+        </button>
       </div>
     </div>
   );

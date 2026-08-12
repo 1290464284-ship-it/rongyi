@@ -9,8 +9,8 @@ import { isPortFree, pnpmCommand, stopProcessTree } from './lib/smoke-runtime.mj
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const root = path.resolve(appRoot, '..', '..');
 const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
-const apiUrl = process.env.V2_API_URL ?? 'http://localhost:3180/api/v2/health';
-const webUrl = process.env.V2_WEB_URL ?? 'http://localhost:5180';
+let apiUrl = process.env.V2_API_URL ?? '';
+let webUrl = process.env.V2_WEB_URL ?? '';
 const timeoutMs = Number(process.env.V2_WAIT_TIMEOUT_MS ?? 90_000);
 const children = [];
 const logFds = [];
@@ -103,8 +103,15 @@ function runSmoke(args) {
 }
 
 async function main() {
-  const apiPort = Number(process.env.V2_PORT ?? 3180);
-  const webPort = Number(process.env.V2_WEB_DEV_PORT ?? 5180);
+  const configuredApiPort = Number(process.env.V2_PORT ?? 0);
+  const configuredWebPort = Number(process.env.V2_WEB_DEV_PORT ?? 0);
+  const apiPort = configuredApiPort || (await pickFreePort());
+  const webPort = configuredWebPort || (await pickFreePort());
+  // 未显式指定端口时动态挑选空闲端口，避免固定 3180/5180 撞上 Windows 保留端口段。
+  process.env.V2_PORT = String(apiPort);
+  process.env.V2_WEB_DEV_PORT = String(webPort);
+  apiUrl = apiUrl || `http://localhost:${apiPort}/api/v2/health`;
+  webUrl = webUrl || `http://localhost:${webPort}`;
   for (const [label, port] of [['API', apiPort], ['web', webPort]]) {
     if (!(await isPortFree(port))) {
       throw new Error(
@@ -132,6 +139,14 @@ async function main() {
   runSmoke(['run', 'smoke:http-fuzz']);
   runSmoke(['run', 'smoke:permissions']);
   console.log('full smoke passed');
+}
+
+async function pickFreePort() {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const candidate = 30_000 + Math.floor(Math.random() * 20_000);
+    if (await isPortFree(candidate)) return candidate;
+  }
+  throw new Error('no free smoke port available');
 }
 
 function cleanupSmokeEnvironment() {

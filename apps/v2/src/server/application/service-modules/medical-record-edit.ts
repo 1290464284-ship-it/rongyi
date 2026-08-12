@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
+import { AppError, ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import type { AppContext } from '../../../domain/contracts';
 
@@ -75,6 +75,12 @@ export class MedicalRecordEditService {
     context: AppContext,
   ): Record<string, unknown> {
     const row = this.getRecord(id, context.clinicId);
+    if (!['BOSS', 'ADMIN'].includes(context.role)) {
+      throw new AppError('FORBIDDEN', '仅管理员可审核病历修改申请', 403);
+    }
+    if (context.userId === String(row.editRequestedById ?? '')) {
+      throw new AppError('FORBIDDEN', '不能审核自己的修改申请', 403);
+    }
     if (String(row.editRequestStatus ?? '') !== 'PENDING') {
       throw new ConflictError('该病历没有待审核的修改申请');
     }

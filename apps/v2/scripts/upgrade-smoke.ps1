@@ -70,6 +70,8 @@ $previous = Start-Process -FilePath $PreviousInstallerPath -ArgumentList "/S", "
 if ($previous.ExitCode -ne 0) {
   throw "Previous installer exited with code $($previous.ExitCode)"
 }
+$previousVersion = (Get-Item -LiteralPath (Join-Path $installDir "Dental Clinic V2.exe")).VersionInfo.ProductVersion
+Write-Host "Previous installed version: $previousVersion"
 
 $env:ELECTRON_RUN_AS_NODE = "1"
 $env:V2_PORT = [string]$smokePort
@@ -129,6 +131,16 @@ if ($current.ExitCode -ne 0) {
   throw "Current installer exited with code $($current.ExitCode)"
 }
 
+$currentVersion = (Get-Item -LiteralPath (Join-Path $installDir "Dental Clinic V2.exe")).VersionInfo.ProductVersion
+Write-Host "Current installed version: $currentVersion"
+if ($currentVersion -and $previousVersion) {
+  if ($currentVersion -le $previousVersion) {
+    throw "Upgrade smoke did not increase the installed version: $previousVersion -> $currentVersion"
+  }
+} elseif ($currentVersion -eq $previousVersion) {
+  throw "Upgrade smoke could not prove a version increase (both empty)"
+}
+
 $appExe = Join-Path $installDir "Dental Clinic V2.exe"
 if (-not (Test-Path -LiteralPath $appExe)) {
   throw "Upgraded executable not found"
@@ -156,6 +168,13 @@ try {
     Stop-Process -Id $api.Id -Force -ErrorAction SilentlyContinue
   }
 }
+
+$env:V2_DB_PATH = Join-Path $env:V2_DATA_DIR "v2.sqlite"
+& node (Join-Path $PSScriptRoot "verify-database.mjs")
+if ($LASTEXITCODE -ne 0) {
+  throw "Upgraded database integrity verification failed"
+}
+Write-Host "Upgraded database integrity ok"
 
 $uninstaller = Get-ChildItem -LiteralPath $installDir -Filter "Uninstall*.exe" |
   Select-Object -First 1 -ExpandProperty FullName

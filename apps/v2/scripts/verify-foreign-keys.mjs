@@ -125,6 +125,108 @@ const checks = [
           LEFT JOIN Charge C ON C.id = PO.chargeId
           WHERE PO.chargeId IS NOT NULL AND C.id IS NULL`,
   },
+  {
+    name: 'Appointment.patientId -> Patient',
+    sql: `SELECT COUNT(*) AS c FROM Appointment A
+          LEFT JOIN Patient P ON P.id = A.patientId
+          WHERE A.patientId IS NOT NULL AND P.id IS NULL`,
+  },
+  {
+    name: 'Appointment.doctorId -> User',
+    sql: `SELECT COUNT(*) AS c FROM Appointment A
+          LEFT JOIN User U ON U.id = A.doctorId
+          WHERE A.doctorId IS NOT NULL AND U.id IS NULL`,
+  },
+  {
+    name: 'Appointment.chairId -> Chair',
+    sql: `SELECT COUNT(*) AS c FROM Appointment A
+          LEFT JOIN Chair C ON C.id = A.chairId
+          WHERE A.chairId IS NOT NULL AND C.id IS NULL`,
+  },
+  {
+    name: 'Visit.patientId -> Patient',
+    sql: `SELECT COUNT(*) AS c FROM Visit V
+          LEFT JOIN Patient P ON P.id = V.patientId
+          WHERE V.patientId IS NOT NULL AND P.id IS NULL`,
+  },
+  {
+    name: 'Visit.doctorId -> User',
+    sql: `SELECT COUNT(*) AS c FROM Visit V
+          LEFT JOIN User U ON U.id = V.doctorId
+          WHERE V.doctorId IS NOT NULL AND U.id IS NULL`,
+  },
+  {
+    name: 'Charge.visitId -> Visit',
+    sql: `SELECT COUNT(*) AS c FROM Charge C
+          LEFT JOIN Visit V ON V.id = C.visitId
+          WHERE C.visitId IS NOT NULL AND V.id IS NULL`,
+  },
+  {
+    name: 'Charge.doctorId -> User',
+    sql: `SELECT COUNT(*) AS c FROM Charge C
+          LEFT JOIN User U ON U.id = C.doctorId
+          WHERE C.doctorId IS NOT NULL AND U.id IS NULL`,
+  },
+  {
+    name: 'Charge.memberCardId -> MemberCard',
+    sql: `SELECT COUNT(*) AS c FROM Charge C
+          LEFT JOIN MemberCard M ON M.id = C.memberCardId
+          WHERE C.memberCardId IS NOT NULL AND M.id IS NULL`,
+  },
+  {
+    name: 'PaymentLedger.chargeId -> Charge',
+    sql: `SELECT COUNT(*) AS c FROM PaymentLedger PL
+          LEFT JOIN Charge C ON C.id = PL.chargeId
+          WHERE PL.chargeId IS NOT NULL AND C.id IS NULL`,
+  },
+  {
+    name: 'PaymentLedger.cardId -> MemberCard',
+    sql: `SELECT COUNT(*) AS c FROM PaymentLedger PL
+          LEFT JOIN MemberCard M ON M.id = PL.cardId
+          WHERE PL.cardId IS NOT NULL AND M.id IS NULL`,
+  },
+  {
+    name: 'Dispense.patientId -> Patient',
+    sql: `SELECT COUNT(*) AS c FROM Dispense D
+          LEFT JOIN Patient P ON P.id = D.patientId
+          WHERE D.patientId IS NOT NULL AND P.id IS NULL`,
+  },
+  {
+    name: 'MedicalRecord.patientId -> Patient',
+    sql: `SELECT COUNT(*) AS c FROM MedicalRecord MR
+          LEFT JOIN Patient P ON P.id = MR.patientId
+          WHERE MR.patientId IS NOT NULL AND P.id IS NULL`,
+  },
+  {
+    name: 'MedicalRecord.visitId -> Visit',
+    sql: `SELECT COUNT(*) AS c FROM MedicalRecord MR
+          LEFT JOIN Visit V ON V.id = MR.visitId
+          WHERE MR.visitId IS NOT NULL AND V.id IS NULL`,
+  },
+  {
+    name: 'InventoryBatch.itemId -> InventoryItem',
+    sql: `SELECT COUNT(*) AS c FROM InventoryBatch B
+          LEFT JOIN InventoryItem I ON I.id = B.itemId
+          WHERE B.itemId IS NOT NULL AND I.id IS NULL`,
+  },
+  {
+    name: 'PurchaseOrder.supplierId -> Supplier',
+    sql: `SELECT COUNT(*) AS c FROM PurchaseOrder PO
+          LEFT JOIN Supplier S ON S.id = PO.supplierId
+          WHERE PO.supplierId IS NOT NULL AND S.id IS NULL`,
+  },
+  {
+    name: 'TreatmentPlanItem.planId -> TreatmentPlan',
+    sql: `SELECT COUNT(*) AS c FROM TreatmentPlanItem TPI
+          LEFT JOIN TreatmentPlan TP ON TP.id = TPI.planId
+          WHERE TPI.planId IS NOT NULL AND TP.id IS NULL`,
+  },
+  {
+    name: 'PrescriptionItem.prescriptionId -> Prescription',
+    sql: `SELECT COUNT(*) AS c FROM PrescriptionItem PI
+          LEFT JOIN Prescription P ON P.id = PI.prescriptionId
+          WHERE PI.prescriptionId IS NOT NULL AND P.id IS NULL`,
+  },
 ];
 
 const dbPath = resolveDatabasePath();
