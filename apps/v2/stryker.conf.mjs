@@ -11,6 +11,7 @@ export default {
     'src/server/application/service-modules/common.ts:36:1-37:40',
     'src/server/application/service-modules/common.ts:69:1-87:3',
     'src/server/application/service-modules/common.ts:116:1-147:3',
+    'src/server/application/service-modules/inventory-ledger.ts',
   ],
   testFiles: [
     'src/server/http/pagination.property.spec.ts',
@@ -20,6 +21,7 @@ export default {
     'src/server/shared/csv.spec.ts',
     'src/server/shared/html.spec.ts',
     'src/server/application/service-modules/common.spec.ts',
+    'src/server/application/service-modules/inventory-ledger.spec.ts',
   ],
   reporters: ['clear-text', 'json'],
   coverageAnalysis: 'off',
