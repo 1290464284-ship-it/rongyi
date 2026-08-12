@@ -19,14 +19,29 @@ export interface RelationLabelJoin {
   join: string;
 }
 
-const tableColumnCache = new WeakMap<Database.Database, Map<string, ReadonlySet<string>>>();
+const tableColumnCache = new WeakMap<
+  Database.Database,
+  { schemaVersion: number; tables: Map<string, ReadonlySet<string>> }
+>();
+
+function currentSchemaVersion(db: Database.Database): number {
+  try {
+    const statement = db.prepare('PRAGMA schema_version') as unknown as { get?: () => { schema_version: number } };
+    const row = statement?.get?.();
+    return Number(row?.schema_version ?? 0);
+  } catch {
+    return 0;
+  }
+}
 
 function cachedTableColumns(db: Database.Database, table: string): ReadonlySet<string> {
-  let tables = tableColumnCache.get(db);
-  if (!tables) {
-    tables = new Map();
-    tableColumnCache.set(db, tables);
+  const schemaVersion = currentSchemaVersion(db);
+  let entry = tableColumnCache.get(db);
+  if (!entry || entry.schemaVersion !== schemaVersion) {
+    entry = { schemaVersion, tables: new Map() };
+    tableColumnCache.set(db, entry);
   }
+  const tables = entry.tables;
   let columns = tables.get(table);
   if (!columns) {
     columns = new Set(
