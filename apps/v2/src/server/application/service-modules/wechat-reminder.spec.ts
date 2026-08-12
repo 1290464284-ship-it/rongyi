@@ -179,6 +179,25 @@ describe('WechatReminderService', () => {
     expect(() => service.dismiss('missing-id', context)).toThrow(NotFoundError);
   });
 
+  it('does not let another clinic mark or dismiss a reminder', () => {
+    insertAppointment('appt-rem-cross-clinic', '2026-08-06T12:00:00.000Z');
+    // 新实例不共享 5 分钟生成缓存，保证今天列表里存在刚生成的 PENDING 提醒。
+    const service = new WechatReminderService(db);
+    const item = service.today(context).items.find((row) => row.sourceId === 'appt-rem-cross-clinic');
+    expect(item).toBeDefined();
+    const otherContext: AppContext = {
+      userId: 'user-other',
+      clinicId: 'clinic-other',
+      role: 'BOSS',
+      traceId: 'trace-other',
+      now: () => new Date(now),
+    };
+    expect(() => service.markSent(item!.id, otherContext)).toThrow(NotFoundError);
+    expect(() => service.dismiss(item!.id, otherContext)).toThrow(NotFoundError);
+    const row = db.prepare('SELECT status FROM WechatReminder WHERE id = ?').get(item!.id) as { status: string };
+    expect(row.status).toBe('PENDING');
+  });
+
   it('honors overridden days and content from settings', () => {
     db.prepare(
       `INSERT INTO Setting (id, clinicId, createdAt, updatedAt, deletedAt, key, value)

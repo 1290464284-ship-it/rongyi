@@ -283,6 +283,28 @@ describe('MemberDiscountService', () => {
     expect(() => service.quote(cardId, { baseTotal: 100, items: [{ subtotal: 1.5 }] }, context)).toThrow(ValidationError);
   });
 
+  it('quote never returns a negative total when item subtotals exceed the base total', () => {
+    const cardId = createCard('MD-CARD-CLAMP');
+    const service = new MemberDiscountService(db);
+    service.savePlan(cardId, { discountRate: 50, roundingMode: 'FLOOR' }, context);
+    // 明细小计 20000，但调用方传入 baseTotal=100；折扣按明细计算会超过原价，
+    // 修复后总价与优惠都必须落回 [0, baseTotal]。
+    const result = service.quote(cardId, {
+      baseTotal: 100,
+      items: [{ category: 'IMPLANT', subtotal: 20000 }],
+    }, context);
+    expect(result.total).toBe(0);
+    expect(result.discount).toBe(100);
+  });
+
+  it('quote validates baseTotal even when the card has no discount plan', () => {
+    const cardId = createCard('MD-CARD-NOPLAN');
+    const service = new MemberDiscountService(db);
+    expect(() => service.quote(cardId, { baseTotal: 1.5 }, context)).toThrow(ValidationError);
+    expect(() => service.quote(cardId, { baseTotal: -10 }, context)).toThrow(ValidationError);
+    expect(service.quote(cardId, { baseTotal: 0 }, context).applied).toBe(false);
+  });
+
   it('savePlan rejects invalid plan fields', () => {
     const cardId = createCard('MD-CARD-10');
     const service = new MemberDiscountService(db);

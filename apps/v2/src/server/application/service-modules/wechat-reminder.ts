@@ -229,8 +229,8 @@ export class WechatReminderService {
     const run = this.db.transaction(() => {
       const changes = this.db.prepare(
         `UPDATE WechatReminder SET status = 'SENT', sentAt = ?, sentBy = ?, updatedAt = ?
-         WHERE id = ? AND status = 'PENDING' AND deletedAt IS NULL`,
-      ).run(now, context.userId, now, id).changes;
+         WHERE id = ? AND status = 'PENDING' AND deletedAt IS NULL${tenantAnd(clinicId)}`,
+      ).run(now, context.userId, now, id, ...tenantParams(clinicId)).changes;
       if (changes === 0) throw new ConflictError('Wechat reminder is not pending');
       this.db.prepare(
         `INSERT INTO WechatMessage (id, clinicId, createdAt, updatedAt, deletedAt, patientId, type, content, status, sentAt)
@@ -249,8 +249,8 @@ export class WechatReminderService {
     if (!row) throw new NotFoundError('Wechat reminder not found');
     const changes = this.db.prepare(
       `UPDATE WechatReminder SET status = 'DISMISSED', updatedAt = ?
-       WHERE id = ? AND status = 'PENDING' AND deletedAt IS NULL`,
-    ).run(context.now().toISOString(), id).changes;
+       WHERE id = ? AND status = 'PENDING' AND deletedAt IS NULL${tenantAnd(clinicId)}`,
+    ).run(context.now().toISOString(), id, ...tenantParams(clinicId)).changes;
     if (changes === 0) throw new ConflictError('Wechat reminder is not pending');
     return { id, status: 'DISMISSED' };
   }
@@ -294,7 +294,7 @@ export class WechatReminderService {
     ).all(firstExamDate, ...tenantParams(clinicId)) as ReminderCandidate[];
 
     const insert = this.db.prepare(
-      `INSERT INTO WechatReminder (id, clinicId, patientId, scene, scheduledDate, sourceId, content, status, createdAt, updatedAt, deletedAt)
+      `INSERT OR IGNORE INTO WechatReminder (id, clinicId, patientId, scene, scheduledDate, sourceId, content, status, createdAt, updatedAt, deletedAt)
        VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, NULL)`,
     );
     const exists = this.db.prepare(
@@ -324,7 +324,9 @@ export class WechatReminderService {
         insert.run(randomUUID(), clinicId, candidate.patientId, 'FIRST_EXAM_NUDGE', today, candidate.sourceId, content, now, now);
       }
     });
-    run();
+    // BEGIN IMMEDIATE 使并发触发的生成串行化：后到的事务能看到先到事务已提交的
+    // 提醒行并跳过；唯一索引兜底 + INSERT OR IGNORE 避免并发窗口下整批 500。
+    run.immediate();
   }
 
   private listPending(context: AppContext, today: string): { items: WechatReminderItem[]; truncated: boolean } {

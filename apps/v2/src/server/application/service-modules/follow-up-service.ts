@@ -257,7 +257,9 @@ export class FollowUpService {
         }
       }
     });
-    run();
+    // BEGIN IMMEDIATE 使并发 batch-generate 串行化：后到的事务能看到先到事务
+    // 已插入的 FollowUp 行，alreadyExists 检查随即生效，避免并发生成重复随访。
+    run.immediate();
     return { processed: rows.length, generated };
   }
 

@@ -168,22 +168,20 @@ export class MemberDiscountService {
   quote(cardId: string, input: QuoteInput, context: AppContext): Record<string, unknown> {
     const card = this.findCard(cardId, context, true);
     const specials = parseStoredSpecialDiscounts(card.specialDiscountsJson);
-    const passedBaseTotal = Number(input?.baseTotal ?? 0);
+    const baseTotal = input?.baseTotal;
+    if (typeof baseTotal !== 'number' || !Number.isSafeInteger(baseTotal) || baseTotal < 0) {
+      throw new ValidationError('原价金额必须为不小于 0 的整数（分）');
+    }
     if (card.discountRate === null && !specials) {
       return {
         cardId: card.id,
         cardNo: card.cardNo,
         applied: false,
-        baseTotal: passedBaseTotal,
+        baseTotal,
         discount: 0,
-        total: passedBaseTotal,
+        total: baseTotal,
         reason: 'NO_PLAN',
       };
-    }
-
-    const baseTotal = input.baseTotal;
-    if (typeof baseTotal !== 'number' || !Number.isSafeInteger(baseTotal) || baseTotal < 0) {
-      throw new ValidationError('原价金额必须为不小于 0 的整数（分）');
     }
 
     const items: QuoteItem[] = [];
@@ -235,7 +233,9 @@ export class MemberDiscountService {
     }
 
     const roundingMode = card.roundingMode ?? 'FLOOR';
-    const rawTotal = baseTotal - discount;
+    // 明细维度折扣按 items 小计计算，而 baseTotal 由调用方传入；两者不一致时
+    // 折扣可能超过原价，这里兜底保证报价总价与优惠金额都不会为负。
+    const rawTotal = Math.max(0, baseTotal - discount);
     const total = roundTotal(rawTotal, roundingMode);
     const finalDiscount = baseTotal - total;
 
