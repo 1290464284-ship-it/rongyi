@@ -114,4 +114,38 @@ describe('FormBuilder', () => {
     expect(await screen.findByRole('option', { name: '甲' })).toBeDefined();
     expect(screen.queryByRole('option', { name: '乙' })).toBeNull();
   });
+
+  it('shows relation option query errors', async () => {
+    vi.mocked(apiRequest).mockRejectedValue(new Error('relation options failed'));
+    const fields: ResourceField[] = [
+      { name: 'patientId', type: 'relation', label: '患者', relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } },
+    ];
+    render(<FormBuilder fields={fields} values={{ patientId: '' }} onChange={vi.fn()} />, { wrapper });
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+  });
+
+  it('caps relation load more at ten pages', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      const url = new URL(path, 'http://localhost');
+      const page = Number(url.searchParams.get('page') ?? 1);
+      if (page >= 10) return { items: [], total: 9999, page, pageSize: 50 };
+      return {
+        items: Array.from({ length: 50 }, (_, index) => ({ id: `p${page}-${index}`, name: `项目${page}-${index}` })),
+        total: 9999,
+        page,
+        pageSize: 50,
+      };
+    });
+    const fields: ResourceField[] = [
+      { name: 'patientId', type: 'relation', label: '患者', relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } },
+    ];
+    render(<FormBuilder fields={fields} values={{ patientId: '' }} onChange={vi.fn()} />, { wrapper });
+    await screen.findByRole('option', { name: '项目1-0' });
+    for (let index = 0; index < 9; index += 1) {
+      const button = await screen.findByRole('button', { name: '加载更多' });
+      fireEvent.click(button);
+    }
+    expect(await screen.findByText(/数据较多/)).toBeDefined();
+    expect(screen.queryByRole('button', { name: '加载更多' })).toBeNull();
+  });
 });

@@ -54,6 +54,7 @@ describe('electron logging', () => {
       Notification: { isSupported: () => false },
     };
     process.env.V2_CRASH_REPORT_URL = 'https://crash.example/report';
+    process.env.V2_ALLOWED_CRASH_REPORT_HOSTS = 'crash.example';
     const mod = loadElectronModule<LoggingModule>('../../../electron/logging.cjs', {
       electron,
       'node:https': { request: requestMock },

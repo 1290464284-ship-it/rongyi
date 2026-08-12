@@ -6,7 +6,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { MemoryRouter } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ResourceHub } from './ResourceHub';
-import { analyticsHubTabs, systemHubTabs, type HubTab } from './hub-tabs';
+import { analyticsHubTabs, inventoryHubTabs, systemHubTabs, type HubTab } from './hub-tabs';
 import { apiRequest } from '../lib/api';
 import { ToastProvider } from './toast';
 
@@ -140,6 +140,10 @@ describe('ResourceHub', () => {
     await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith('/resources/inventoryItems?page=1&pageSize=20&search=%E5%BC%A0%E4%B8%89');
     });
+  });
+
+  it('declares the item master resource as the inventory search tab', () => {
+    expect(inventoryHubTabs.find((tab) => tab.searchTab)?.id).toBe('itemMaster');
   });
 
   it('renders empty tab lists without crashing', () => {

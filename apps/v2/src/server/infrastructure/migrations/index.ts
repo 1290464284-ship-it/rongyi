@@ -66,15 +66,20 @@ export const migrations: Migration[] = [
 
 const MIGRATION_BUSY_RETRY_DELAYS_MS = [200, 400, 800, 1500, 3000, 5000, 5000];
 
-function isMigrationBusy(error: unknown): boolean {
+export function isMigrationBusy(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   const code = String((error as { code?: unknown }).code ?? '');
+  const message = error.message ?? '';
   // SQLITE_CONSTRAINT_* covers two processes racing to record the same
   // migration version (schema_migrations.version PRIMARY KEY). Retrying the
   // whole run re-reads applied versions and skips the already-recorded one.
+  // 双进程并发 ALTER 时后到者会抛 duplicate column/table already exists，
+  // 同样整轮重试：重读 schema_migrations 后已应用版本会被跳过。
   return /SQLITE_(BUSY|LOCKED)/.test(code)
     || code === 'SQLITE_CONSTRAINT_UNIQUE'
-    || code === 'SQLITE_CONSTRAINT_PRIMARYKEY';
+    || code === 'SQLITE_CONSTRAINT_PRIMARYKEY'
+    || /duplicate column name/i.test(message)
+    || /already exists/i.test(message);
 }
 
 function sleepSync(milliseconds: number): void {

@@ -21,7 +21,7 @@ describe('secret file', () => {
     const file = path.join(dir, 'secrets.json');
     process.env.V2_SECRET_FILE = file;
 
-    fs.writeFileSync(file, '{bad json', 'utf8');
+    fs.writeFileSync(file, '{bad json', { encoding: 'utf8', mode: 0o600 });
     expect(secretFileValue('jwt')).toBeNull();
     fs.rmSync(dir, { recursive: true, force: true });
   });
@@ -32,7 +32,7 @@ describe('secret file', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-secret-file-'));
     const file = path.join(dir, 'secrets.json');
     process.env.V2_SECRET_FILE = file;
-    fs.writeFileSync(file, JSON.stringify({ jwt: 'jwt-value', backupKey: 'backup-value' }), 'utf8');
+    fs.writeFileSync(file, JSON.stringify({ jwt: 'jwt-value', backupKey: 'backup-value' }), { encoding: 'utf8', mode: 0o600 });
     expect(secretFileValue('jwt')).toBe('jwt-value');
     expect(secretFileValue('backupKey')).toBe('backup-value');
 

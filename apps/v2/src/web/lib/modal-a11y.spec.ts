@@ -43,4 +43,26 @@ describe('modal-a11y', () => {
     unregisterFirst();
     expect(background.hasAttribute('inert')).toBe(false);
   });
+
+  it('inerts whole app branches that do not contain the top layer', () => {
+    const root = document.createElement('div');
+    root.id = 'root';
+    const sidebar = document.createElement('button');
+    sidebar.type = 'button';
+    const page = document.createElement('div');
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    backdrop.append(modal);
+    page.append(backdrop);
+    root.append(sidebar, page);
+    document.body.append(root);
+
+    const unregister = registerModalLayer(modal);
+    expect(sidebar.hasAttribute('inert')).toBe(true);
+    expect(page.hasAttribute('inert')).toBe(false);
+    unregister();
+    expect(sidebar.hasAttribute('inert')).toBe(false);
+  });
 });

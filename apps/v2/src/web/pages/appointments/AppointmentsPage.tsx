@@ -2,10 +2,11 @@ import { FormEvent, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import type { Page } from '../../lib/types';
-import { ConfirmDialog, DataTable, Dialog, LoadingState, PageError, SearchableSelect } from '../../components';
+import { ConfirmDialog, DataTable, Dialog, LoadingState, PageError, SearchInput, SearchableSelect } from '../../components';
 import { errorMessage } from '../../lib/messages';
 import { toLocalInput } from '../../lib/format';
 import { useToast } from '../../lib/toast-context';
+import { useDebouncedValue } from '../../hooks/use-debounce';
 import { APPOINTMENT_TYPE_LABELS } from '../../lib/labels';
 import { parseLocalDateTime } from '../../appointments/date';
 import { appointmentColumns } from '../../appointments/columns';
@@ -15,8 +16,10 @@ import { AppointmentPurposePanel } from './AppointmentPurposePanel';
 
 const transitionGuard = createInFlightGuard();
 
-export function AppointmentsPage() {
+export function AppointmentsPage({ initialSearch }: { initialSearch?: string } = {}) {
   const { showToast } = useToast();
+  const [searchInput, setSearchInput] = useState(initialSearch ?? '');
+  const debouncedSearch = useDebouncedValue(searchInput, 300);
   const [patientId, setPatientId] = useState('');
   const [doctorId, setDoctorId] = useState('');
   const [chairId, setChairId] = useState('');
@@ -55,8 +58,10 @@ export function AppointmentsPage() {
     queryFn: () => apiRequest<Page<PurposeRow>>('/resources/appointmentPurposes?page=1&pageSize=100'),
   });
   const query = useQuery({
-    queryKey: ['appointments', page],
-    queryFn: () => apiRequest<Page<AppointmentRow>>(`/resources/appointments?page=${page}&pageSize=20`),
+    queryKey: ['appointments', page, debouncedSearch],
+    queryFn: () => apiRequest<Page<AppointmentRow>>(
+      `/resources/appointments?page=${page}&pageSize=20${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}`,
+    ),
     placeholderData: (previous) => previous,
   });
 
@@ -228,7 +233,15 @@ export function AppointmentsPage() {
 
   return (
     <div className="page">
-      <div className="page-head"><h1>预约管理</h1></div>
+      <div className="page-head">
+        <h1>预约管理</h1>
+        <SearchInput
+          value={searchInput}
+          onChange={setSearchInput}
+          placeholder="搜索预约..."
+          ariaLabel="搜索预约"
+        />
+      </div>
       <form className="inline-form" onSubmit={create}>
         <SearchableSelect resource="patients" value={patientId} onChange={setPatientId} ariaLabel="患者" placeholder="选择患者" />
         <select aria-label="医生" value={doctorId} onChange={(event) => setDoctorId(event.target.value)}>

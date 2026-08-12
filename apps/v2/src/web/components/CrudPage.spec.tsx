@@ -82,6 +82,21 @@ describe('CrudPage', () => {
     expect(await screen.findByText('列表加载失败')).toBeDefined();
   });
 
+  it('disables row write actions while placeholder data is shown for a new search', async () => {
+    const pendingSearch = new Promise<never>(() => {});
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      const url = new URL(path, 'http://localhost');
+      if (url.searchParams.get('search')) return pendingSearch;
+      return { items: [{ id: 't-1', name: '物品甲', note: '说明一' }], total: 120, page: 1, pageSize: 50 };
+    });
+    render(<CrudPage<ThingRow, ThingForm> {...baseProps()} />, { wrapper });
+    await screen.findByText('物品甲');
+    fireEvent.change(screen.getByLabelText('搜索'), { target: { value: '甲' } });
+    const editButton = await screen.findByRole('button', { name: '编辑' });
+    await waitFor(() => expect((editButton as HTMLButtonElement).disabled).toBe(true));
+    expect((screen.getByRole('button', { name: '删除' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it('shows the empty state when there are no rows', async () => {
     vi.mocked(apiRequest).mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 50 });
     render(<CrudPage<ThingRow, ThingForm> {...baseProps()} />, { wrapper });

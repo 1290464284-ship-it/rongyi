@@ -80,6 +80,31 @@ await waitFor(() => {
     expect(screen.getByText('加载中...')).toBeDefined();
   });
 
+  it('applies initialSearch from a deep link', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/appointments?page=1&pageSize=20&search=%E5%BC%A0%E4%B8%89') {
+        return { items: [{ id: 'a-9', patientId: 'p-9', doctorId: 'd-9', startTime: null, status: null }], total: 1, page: 1, pageSize: 20 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-9', name: '患者九' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-9', name: '张医生' }];
+      if (path === '/resources/chairs?page=1&pageSize=100') {
+        return { items: [], total: 0, page: 1, pageSize: 200 };
+      }
+      if (path === '/resources/appointmentPurposes?page=1&pageSize=100') {
+        return { items: [], total: 0, page: 1, pageSize: 100 };
+      }
+      return {};
+    });
+    render(<AppointmentsPage initialSearch="张三" />, { wrapper });
+    expect(await screen.findByText('预约管理')).toBeDefined();
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/appointments?page=1&pageSize=20&search=%E5%BC%A0%E4%B8%89');
+    });
+    expect((screen.getByLabelText('搜索预约') as HTMLInputElement).value).toBe('张三');
+  });
+
   it('shows an error when appointments fail to load', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/appointments?page=1&pageSize=20') throw new Error('appointments failed');

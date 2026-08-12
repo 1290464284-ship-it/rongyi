@@ -82,7 +82,13 @@ describe('shared web components', () => {
     );
     expect(screen.getByText('仅显示前 500 行（共 501 行），请使用搜索或筛选缩小范围')).toBeDefined();
     expect(screen.queryByText('行 500')).toBeNull();
-    expect(screen.getByText('行 499')).toBeDefined();
+    const container = document.querySelector('.data-table-scroll') as HTMLElement;
+    Object.defineProperty(container, 'scrollHeight', { value: 20000, configurable: true });
+    Object.defineProperty(container, 'clientHeight', { value: 500, configurable: true });
+    Object.defineProperty(container, 'scrollTop', { value: 19500, configurable: true });
+    for (let index = 0; index < 5; index += 1) fireEvent.scroll(container);
+    expect(screen.queryByText('行 499')).not.toBeNull();
+    expect(screen.queryByText('行 500')).toBeNull();
   });
 
   it('renders rows when the key field value is null', () => {

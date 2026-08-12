@@ -65,6 +65,8 @@ export interface CrudResourceResult<
   TForm extends object,
 > {
   query: UseQueryResult<Page<TRow>>;
+  /** 列表当前展示的是旧数据占位（新查询键加载中），行写操作应禁用。 */
+  isStale: boolean;
   rows: TRow[];
   reload: () => Promise<unknown>;
   /** 防抖后的搜索词（查询用）。 */
@@ -190,6 +192,7 @@ export function useCrudResource<
   }
 
   function openEdit(row: TRow) {
+    if (query.isPlaceholderData) return;
     setEditingId(String(row.id));
     setForm(options.formFromRow ? options.formFromRow(row) : pickFormFromRow(options.initialForm, row));
     setShowForm(true);
@@ -258,6 +261,7 @@ export function useCrudResource<
   }
 
   function requestDelete(row: TRow) {
+    if (query.isPlaceholderData) return;
     setDeleteTarget(row);
   }
 
@@ -266,7 +270,7 @@ export function useCrudResource<
   }
 
   async function confirmDelete() {
-    if (!deleteTarget || submitting || submittingRef.current) return;
+    if (!deleteTarget || submitting || submittingRef.current || query.isPlaceholderData) return;
     submittingRef.current = true;
     setSubmitting(true);
     try {
@@ -294,6 +298,7 @@ export function useCrudResource<
 
   return {
     query,
+    isStale: query.isPlaceholderData,
     rows: query.data?.items ?? [],
     reload: () => query.refetch(),
     search,

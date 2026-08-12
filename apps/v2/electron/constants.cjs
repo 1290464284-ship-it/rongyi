@@ -61,7 +61,8 @@ function isAllowedCrashReportUrl(url) {
       .split(',')
       .map((host) => host.trim())
       .filter(Boolean);
-    return allowed.length === 0 ? true : allowed.includes(parsed.hostname);
+    // 未配置允许名单时 fail-closed：崩溃报告可能包含栈与本地路径，绝不默认外发。
+    return allowed.includes(parsed.hostname);
   } catch {
     return false;
   }

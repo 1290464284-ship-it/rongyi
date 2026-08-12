@@ -115,10 +115,10 @@ export const financeHubTabs: HubTab[] = [
 ];
 
 export const inventoryHubTabs: HubTab[] = [
-  { id: 'items', label: '\u5e93\u5b58\u5de5\u4f5c\u53f0', kind: 'custom', component: InventoryPage, group: '\u5e38\u7528', searchTab: true },
+  { id: 'items', label: '\u5e93\u5b58\u5de5\u4f5c\u53f0', kind: 'custom', component: InventoryPage, group: '\u5e38\u7528' },
   { id: 'pharmacy', label: '\u836f\u623f\u5de5\u4f5c\u53f0', kind: 'custom', component: DispenseWorkbenchPage, group: '\u5e38\u7528' },
   { id: 'workflow', label: '\u91c7\u8d2d\u5de5\u4f5c\u53f0', kind: 'custom', component: InventoryWorkflowPage, group: '\u5e38\u7528' },
-  { id: 'itemMaster', label: '\u5e93\u5b58\u9879\u76ee', kind: 'resource', resource: 'inventoryItems', group: '\u8d44\u6599' },
+  { id: 'itemMaster', label: '\u5e93\u5b58\u9879\u76ee', kind: 'resource', resource: 'inventoryItems', group: '\u8d44\u6599', searchTab: true },
   { id: 'suppliers', label: '\u4f9b\u5e94\u5546', kind: 'resource', resource: 'suppliers', group: '\u8d44\u6599' },
   { id: 'purchaseOrders', label: '\u91c7\u8d2d\u5355', kind: 'custom', component: PurchaseOrdersPage, group: '\u8d44\u6599' },
   { id: 'processingOrders', label: '\u52a0\u5de5\u5355', kind: 'custom', component: ProcessingOrdersPage, group: '\u8d44\u6599' },

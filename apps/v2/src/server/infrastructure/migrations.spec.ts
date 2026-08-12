@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase } from './database';
-import { migrations, runMigrations, withMigrationBusyRetry } from './migrations';
+import { isMigrationBusy, migrations, runMigrations, withMigrationBusyRetry } from './migrations';
 
 describe('migrations', () => {
   let db: Database.Database;
@@ -101,6 +101,15 @@ describe('migrations', () => {
     expect(() => withMigrationBusyRetry(() => {
       throw new Error('boom');
     })).toThrow('boom');
+  });
+
+  it('classifies duplicate-column and already-exists races as retryable', () => {
+    const duplicate = new Error('SQLITE_ERROR: duplicate column name: barcode');
+    const alreadyExists = new Error('table AlreadyExists already exists');
+    const other = new Error('boom');
+    expect(isMigrationBusy(duplicate)).toBe(true);
+    expect(isMigrationBusy(alreadyExists)).toBe(true);
+    expect(isMigrationBusy(other)).toBe(false);
   });
 
   it('adds missing migration columns when legacy schema lacks them', () => {

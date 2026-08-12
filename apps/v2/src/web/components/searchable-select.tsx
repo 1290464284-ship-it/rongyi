@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../lib/api';
 import type { Page } from '../lib/types';
 import { friendlyError } from '../lib/messages';
+import { useDebouncedValue } from '../hooks/use-debounce';
 
 export interface SearchableSelectRow extends Record<string, unknown> {
   id: string;
@@ -30,28 +31,31 @@ export function SearchableSelect({
   onLoaded?: (rows: SearchableSelectRow[]) => void;
 }) {
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search, 300);
   const [page, setPage] = useState(1);
   // 已加载并去重的条目：搜索变化时清空，加载更多时按 id 追加合并。
   const [loaded, setLoaded] = useState<SearchableSelectRow[]>([]);
   const filterKey = JSON.stringify(filterParams ?? {});
   const scopeKey = `${resource}:${filterKey}`;
   const [prevScope, setPrevScope] = useState(scopeKey);
-  const [prevQueryData, setPrevQueryData] = useState<Page<SearchableSelectRow> | undefined>(undefined);
+  const queryKey = ['searchable-select', resource, debouncedSearch, page, filterKey];
+  const queryKeyJson = JSON.stringify(queryKey);
+  const [prevSnapshot, setPrevSnapshot] = useState<{ key: string; data: Page<SearchableSelectRow> | undefined } | undefined>(undefined);
   if (prevScope !== scopeKey) {
     setPrevScope(scopeKey);
     setSearch('');
     setPage(1);
     setLoaded([]);
-    setPrevQueryData(undefined);
+    setPrevSnapshot(undefined);
   }
 
   const query = useQuery({
-    queryKey: ['searchable-select', resource, search, page, filterKey],
+    queryKey,
     queryFn: () => {
       const params = new URLSearchParams();
       params.set('page', String(page));
       params.set('pageSize', String(pageSize));
-      const trimmed = search.trim();
+      const trimmed = debouncedSearch.trim();
       if (trimmed !== '') params.set('search', trimmed);
       if (filterParams) {
         for (const [key, value] of Object.entries(filterParams)) {
@@ -62,17 +66,21 @@ export function SearchableSelect({
     },
   });
 
-  // 渲染期调整（React 官方模式）：新数据到达时合并，避免在 effect 里同步 setState 造成级联渲染
-  if (prevQueryData !== query.data) {
-    setPrevQueryData(query.data);
-    const incomingItems = query.data?.items ?? [];
-    if (incomingItems.length > 0) {
+  // 渲染期调整（React 官方模式）：仅同一查询键的新数据到达时合并；
+  // 搜索/翻页/作用域变化后的旧数据不再被合并回来。
+  if (!prevSnapshot || prevSnapshot.key !== queryKeyJson || prevSnapshot.data !== query.data) {
+    const previous = prevSnapshot;
+    setPrevSnapshot({ key: queryKeyJson, data: query.data });
+    if ((previous === undefined || previous.key === queryKeyJson) && query.data) {
+      const incomingItems = query.data.items ?? [];
+      if (incomingItems.length > 0) {
       setLoaded((current) => {
         const byId = new Map<string, SearchableSelectRow>();
         for (const row of current) byId.set(String(row.id), row);
         for (const row of incomingItems) byId.set(String(row.id), row);
         return Array.from(byId.values());
       });
+      }
     }
   }
 
@@ -110,7 +118,6 @@ export function SearchableSelect({
           setSearch(event.target.value);
           setPage(1);
           setLoaded([]);
-          setPrevQueryData(undefined);
         }}
         onKeyDown={(event) => {
           if (event.key === 'Enter') event.preventDefault();

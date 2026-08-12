@@ -66,6 +66,21 @@ describe('ChargesPage', () => {
     expect(await screen.findByText('收费单已创建')).toBeDefined();
   });
 
+  it('applies initialSearch from a deep link', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/charges?page=1&pageSize=50&search=%E5%BC%A0%E4%B8%89') {
+        return { items: [{ id: 'c-9', number: 'N-9', totalAmount: 100, paidAmount: 0, status: 'UNPAID' }], total: 1, page: 1, pageSize: 50 };
+      }
+      return {};
+    });
+    render(<ChargesPage initialSearch="张三" />, { wrapper });
+    expect(await screen.findByText('N-9')).toBeDefined();
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/charges?page=1&pageSize=50&search=%E5%BC%A0%E4%B8%89');
+    });
+    expect((screen.getByLabelText('搜索收费单') as HTMLInputElement).value).toBe('张三');
+  });
+
   it('records payment and refund with dialogs', async () => {
     mockData();
     render(<ChargesPage />, { wrapper });

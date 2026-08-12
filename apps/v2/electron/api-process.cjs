@@ -39,7 +39,10 @@ function sweepStaleSecretFiles() {
       const fullPath = path.join(tmpDir, entry);
       try {
         const stat = fs.statSync(fullPath);
-        if (stat.isFile() && stat.mtimeMs < cutoff) fs.rmSync(fullPath, { force: true });
+        if (!stat.isFile() || stat.mtimeMs >= cutoff) continue;
+        // POSIX 上只清理当前用户属主的文件，避免误删其他用户/实例的密钥文件。
+        if (process.platform !== 'win32' && stat.uid !== process.getuid()) continue;
+        fs.rmSync(fullPath, { force: true });
       } catch {
         // 单个文件清理失败不阻塞启动
       }

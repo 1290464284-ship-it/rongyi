@@ -129,8 +129,8 @@ jobs:
           LATEST_VERSION: ${{ steps.internal_version.outputs.version }}
           PKG_VERSION: ${{ steps.pkg_version.outputs.version }}
         run: |
-          if ($env:LATEST_VERSION -ne $env:PKG_VERSION) {
-            throw "latest.yml version ($env:LATEST_VERSION) does not match package.json version ($env:PKG_VERSION)"
+          if ($env:LATEST_VERSION -notlike "$env:PKG_VERSION-internal.*") {
+            throw "latest.yml version ($env:LATEST_VERSION) must be $env:PKG_VERSION-internal.*"
           }
 
       - name: Publish internal release

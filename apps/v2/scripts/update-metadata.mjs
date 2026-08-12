@@ -9,19 +9,34 @@ const releaseDir = path.resolve(process.env.V2_RELEASE_DIR ?? path.join(appRoot,
 const installer = path.join(releaseDir, installerFileName(pkg));
 const blockMap = `${installer}.blockmap`;
 
+function sha512File(filePath) {
+  const hash = crypto.createHash('sha512');
+  const fd = fs.openSync(filePath, 'r');
+  const buffer = Buffer.alloc(64 * 1024);
+  try {
+    let bytesRead = 0;
+    while ((bytesRead = fs.readSync(fd, buffer, 0, buffer.length, null)) > 0) {
+      hash.update(buffer.subarray(0, bytesRead));
+    }
+  } finally {
+    fs.closeSync(fd);
+  }
+  return hash.digest('base64');
+}
+
 if (!fs.existsSync(installer) || !fs.existsSync(blockMap)) {
   console.error('installer and blockmap are required');
   process.exit(1);
 }
 
-const buffer = fs.readFileSync(installer);
-const sha512 = crypto.createHash('sha512').update(buffer).digest('base64');
+const size = fs.statSync(installer).size;
+const sha512 = sha512File(installer);
 const latestYml = [
   `version: ${pkg.version}`,
   `files:`,
   `  - url: ${path.basename(installer)}`,
   `    sha512: ${sha512}`,
-  `    size: ${buffer.length}`,
+  `    size: ${size}`,
   `path: ${path.basename(installer)}`,
   `sha512: ${sha512}`,
   `releaseDate: ${new Date().toISOString()}`,

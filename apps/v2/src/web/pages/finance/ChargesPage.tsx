@@ -1,7 +1,7 @@
 import { FormEvent, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
-import { Dialog, ConfirmDialog, LoadingState, PageError } from '../../components';
+import { Dialog, ConfirmDialog, LoadingState, PageError, SearchInput } from '../../components';
 import { formatMoney, centsToYuanString, toCents } from '../../lib/format';
 import { errorMessage } from '../../lib/messages';
 import { useCrudResource } from '../../hooks/use-crud-resource';
@@ -24,7 +24,7 @@ import {
 } from '../../charges/types';
 import { buildValidItems, emptyChargeForm, methodCodeForName } from '../../charges/charge-utils';
 
-export function ChargesPage() {
+export function ChargesPage({ initialSearch }: { initialSearch?: string } = {}) {
   const { showToast } = useToast();
   const [paymentTarget, setPaymentTarget] = useState<string | null>(null);
   const [paymentAmount, setPaymentAmount] = useState('');
@@ -48,7 +48,8 @@ export function ChargesPage() {
   const crud = useCrudResource<ChargeRow, ChargeForm>({
     queryKey: ['charges'],
     endpoint: '/charges',
-    listPath: ({ page }) => `/resources/charges?page=${page}&pageSize=50`,
+    listPath: ({ page, search }) => `/resources/charges?page=${page}&pageSize=50${search ? `&search=${encodeURIComponent(search)}` : ''}`,
+    initialSearch,
     initialForm: emptyChargeForm,
     validate: (form) => {
       const validItems = buildValidItems(form.items);
@@ -107,7 +108,15 @@ export function ChargesPage() {
 
   return (
     <div className="page">
-      <div className="page-head"><h1>收费管理</h1></div>
+      <div className="page-head">
+        <h1>收费管理</h1>
+        <SearchInput
+          value={crud.searchInput}
+          onChange={crud.setSearch}
+          placeholder="搜索收费单..."
+          ariaLabel="搜索收费单"
+        />
+      </div>
       <ChargeCreateForm
         form={crud.form}
         update={crud.updateForm}

@@ -13,6 +13,22 @@ const installer = path.join(releaseDir, installerFileName(pkg));
 const blockMap = `${installer}.blockmap`;
 const latestYml = path.join(releaseDir, 'latest.yml');
 filesExist([installer, blockMap, latestYml]);
+
+function sha512File(filePath) {
+  const hash = crypto.createHash('sha512');
+  const fd = fs.openSync(filePath, 'r');
+  const buffer = Buffer.alloc(64 * 1024);
+  try {
+    let bytesRead = 0;
+    while ((bytesRead = fs.readSync(fd, buffer, 0, buffer.length, null)) > 0) {
+      hash.update(buffer.subarray(0, bytesRead));
+    }
+  } finally {
+    fs.closeSync(fd);
+  }
+  return hash.digest('base64');
+}
+
 const content = fs.readFileSync(latestYml, 'utf8');
 if (!content.includes(`version: ${pkg.version}`) || !content.includes('sha512:') || !content.includes('path:')) {
   console.error('latest.yml is incomplete');
@@ -27,8 +43,7 @@ if (!sha512Match) {
   process.exit(1);
 }
 const expectedSha512 = sha512Match[1];
-const installerBuffer = fs.readFileSync(installer);
-const actualSha512 = crypto.createHash('sha512').update(installerBuffer).digest('base64');
+const actualSha512 = sha512File(installer);
 if (actualSha512 !== expectedSha512) {
   console.error(`sha512 mismatch: latest.yml=${expectedSha512}, installer=${actualSha512}`);
   process.exit(1);

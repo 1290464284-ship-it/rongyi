@@ -1,10 +1,13 @@
 /**
  * 弹窗层可访问性辅助：同一容器内只让最上层弹窗保持可交互，
- * 其余兄弟节点（包括更早打开的弹窗）进入 inert，避免键盘/读屏进入后台。
+ * 其余兄弟节点（包括更早打开的弹窗）进入 inert；同时把整页根节点中
+ * 不包含当前最上层弹窗的分支也置为 inert，避免侧栏/顶栏等跨容器背景
+ * 仍可被键盘进入。
  */
 const SKIPPED_TAGS = new Set(['HEAD', 'SCRIPT', 'STYLE', 'LINK', 'META', 'TITLE', 'NOSCRIPT']);
 
 const containerLayers = new Map<Element, HTMLElement[]>();
+const layerOrder: HTMLElement[] = [];
 
 function refreshContainer(container: Element): void {
   const layers = containerLayers.get(container) ?? [];
@@ -14,6 +17,18 @@ function refreshContainer(container: Element): void {
     const element = child as HTMLElement;
     const activeModal = layers.includes(element);
     const shouldBeInert = activeModal ? element !== top : layers.length > 0;
+    if (shouldBeInert) element.setAttribute('inert', '');
+    else element.removeAttribute('inert');
+  }
+}
+
+function refreshRoot(): void {
+  const root = document.getElementById('root') ?? document.body;
+  const top = layerOrder[layerOrder.length - 1] ?? null;
+  for (const child of Array.from(root.children)) {
+    if (!(child instanceof HTMLElement) || SKIPPED_TAGS.has(child.tagName)) continue;
+    const element = child as HTMLElement;
+    const shouldBeInert = top ? !element.contains(top) : false;
     if (shouldBeInert) element.setAttribute('inert', '');
     else element.removeAttribute('inert');
   }
@@ -31,12 +46,19 @@ export function registerModalLayer(layer: HTMLElement): () => void {
   if (existing >= 0) layers.splice(existing, 1);
   layers.push(layerRoot);
   containerLayers.set(container, layers);
+  const orderExisting = layerOrder.indexOf(layerRoot);
+  if (orderExisting >= 0) layerOrder.splice(orderExisting, 1);
+  layerOrder.push(layerRoot);
   refreshContainer(container);
+  refreshRoot();
   return () => {
     const current = containerLayers.get(container) ?? [];
     const index = current.indexOf(layerRoot);
     if (index >= 0) current.splice(index, 1);
     if (current.length === 0) containerLayers.delete(container);
+    const orderIndex = layerOrder.indexOf(layerRoot);
+    if (orderIndex >= 0) layerOrder.splice(orderIndex, 1);
     refreshContainer(container);
+    refreshRoot();
   };
 }

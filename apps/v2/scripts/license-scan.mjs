@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { isSubpathStub } from './lib/license-classify.mjs';
 
 const appRoot = path.resolve(import.meta.dirname, '..');
 const packagePath = path.join(appRoot, 'package.json');
@@ -26,6 +27,7 @@ const allowed = new Set([
 const issues = [];
 const scanned = new Map();
 const visited = new Set();
+
 function walk(dir) {
   let real;
   try {
@@ -50,7 +52,7 @@ function walk(dir) {
         const parsed = JSON.parse(fs.readFileSync(full, 'utf8'));
         if (parsed && typeof parsed.name === 'string') {
           // 子路径 stub（rxjs/ajax 等）与无版本号的测试夹具包不是真实依赖。
-          if (parsed.name.includes('/') || !parsed.version) continue;
+          if (isSubpathStub(parsed.name) || !parsed.version) continue;
           scanned.set(`${parsed.name}@${parsed.version ?? ''}`, parsed);
         }
       } catch {
