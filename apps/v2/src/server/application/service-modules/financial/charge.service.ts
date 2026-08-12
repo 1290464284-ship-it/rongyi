@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../../infrastructure/errors';
-import { withIdempotency } from '../../../infrastructure/idempotency';
+import { stableRequestBodyHash, withIdempotency } from '../../../infrastructure/idempotency';
 import { tenantAnd, tenantParams } from '../../../infrastructure/tenant';
 import { trackResourceWrite } from '../../../infrastructure/write-tracking';
 import { SqliteChargeRepository } from '../../../infrastructure/repositories/charge.repository';
@@ -241,6 +241,7 @@ export class ChargeService {
       userId: context?.userId ?? null,
       clinicId: context?.clinicId ?? null,
       requestId: requestId ?? '',
+      requestBodyHash: stableRequestBodyHash({ amount, method, payMethodName }),
     }, () => {
       const row = this.chargeRepository.findById(id, context?.clinicId ?? null);
       if (!row) throw new NotFoundError('Charge not found');
@@ -341,6 +342,7 @@ export class ChargeService {
       userId: context.userId,
       clinicId: context.clinicId,
       requestId: requestId ?? '',
+      requestBodyHash: stableRequestBodyHash({ amount, reason }),
     }, () => {
       const row = this.chargeRepository.findById(id, context.clinicId);
       if (!row) throw new NotFoundError('Charge not found');

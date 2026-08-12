@@ -4,7 +4,7 @@ import Database from 'better-sqlite3';
 import { NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { SqliteUnitOfWork } from '../../infrastructure/unit-of-work';
 import { SqliteInventoryRepository } from '../../infrastructure/repositories/core.repositories';
-import { withIdempotency } from '../../infrastructure/idempotency';
+import { stableRequestBodyHash, withIdempotency } from '../../infrastructure/idempotency';
 import { SystemClock } from '../../infrastructure/clock';
 import { tenantWhere } from '../../infrastructure/tenant';
 import type { AppContext, IUnitOfWork } from '../../../domain/contracts';
@@ -39,6 +39,7 @@ export class InventoryService {
       userId: context.userId,
       clinicId: context.clinicId,
       requestId: requestId ?? '',
+      requestBodyHash: stableRequestBodyHash(input),
     }, () => {
       if (!['IN', 'OUT', 'ADJUST'].includes(input.type)) {
         throw new ValidationError('Inventory transaction type must be IN, OUT, or ADJUST');

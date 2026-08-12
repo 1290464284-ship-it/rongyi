@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { NotFoundError, ValidationError } from '../../../infrastructure/errors';
-import { withIdempotency } from '../../../infrastructure/idempotency';
+import { stableRequestBodyHash, withIdempotency } from '../../../infrastructure/idempotency';
 import { tenantAnd, tenantParams } from '../../../infrastructure/tenant';
 import { trackResourceWrite } from '../../../infrastructure/write-tracking';
 import { SqliteDebtRepository } from '../../../infrastructure/repositories/core.repositories';
@@ -69,6 +69,7 @@ export class DebtService {
       userId: context.userId,
       clinicId: context.clinicId,
       requestId: requestId ?? '',
+      requestBodyHash: stableRequestBodyHash({ amount }),
     }, () => executePay(debtId, amount, context));
   }
 }

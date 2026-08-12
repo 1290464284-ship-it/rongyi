@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../../infrastructure/errors';
-import { withIdempotency } from '../../../infrastructure/idempotency';
+import { stableRequestBodyHash, withIdempotency } from '../../../infrastructure/idempotency';
 import { tenantAnd, tenantParams } from '../../../infrastructure/tenant';
 import { SqliteMemberCardRepository } from '../../../infrastructure/repositories/core.repositories';
 import type { AppContext } from '../../../../domain/contracts';
@@ -71,6 +71,7 @@ export class MemberCardService {
       userId: context.userId,
       clinicId: context.clinicId,
       requestId: requestId ?? '',
+      requestBodyHash: stableRequestBodyHash({ amount }),
     }, () => {
       const card = this.card(cardId, context);
       this.assertActive(card);
@@ -93,6 +94,7 @@ export class MemberCardService {
       userId: context.userId,
       clinicId: context.clinicId,
       requestId: requestId ?? '',
+      requestBodyHash: stableRequestBodyHash({ amount }),
     }, () => {
       const card = this.card(cardId, context);
       this.assertActive(card);
@@ -113,6 +115,7 @@ export class MemberCardService {
       userId: context.userId,
       clinicId: context.clinicId,
       requestId: requestId ?? '',
+      requestBodyHash: stableRequestBodyHash({ points }),
     }, () => {
       const card = this.card(cardId, context);
       this.assertActive(card);

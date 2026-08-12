@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../../infrastructure/errors';
-import { withIdempotency } from '../../../infrastructure/idempotency';
+import { stableRequestBodyHash, withIdempotency } from '../../../infrastructure/idempotency';
 import { tenantAnd, tenantParams } from '../../../infrastructure/tenant';
 import {
   SqliteInventoryRepository,
@@ -43,6 +43,7 @@ export class PurchaseOrderService {
       userId: context.userId,
       clinicId: context.clinicId,
       requestId: requestId ?? '',
+      requestBodyHash: stableRequestBodyHash(input),
     }, () => {
       if (!input.number?.trim()) throw new ValidationError('Purchase order number is required');
       if (!Array.isArray(input.items) || input.items.length === 0 || input.items.length > 500) {

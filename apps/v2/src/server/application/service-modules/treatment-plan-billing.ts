@@ -190,6 +190,20 @@ export class TreatmentPlanBillingService {
     return run();
   }
 
+  /**
+   * Recomputes the plan total after generic treatmentPlanItems CRUD changes.
+   * Only intended for unbilled items; callers already guard billed rows.
+   */
+  reconcilePlanTotal(planId: string, context: AppContext): number {
+    const plan = this.findPlan(planId, context);
+    const items = this.listPlanItems(planId, context);
+    const totalFee = planTotal(items, planRate(plan));
+    this.db.prepare(
+      `UPDATE TreatmentPlan SET totalFee = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    ).run(totalFee, context.now().toISOString(), planId, ...tenantParams(context.clinicId));
+    return totalFee;
+  }
+
   bill(
     planId: string,
     input: BillInput,

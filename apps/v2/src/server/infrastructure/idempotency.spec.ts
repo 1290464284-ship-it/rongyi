@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase } from './database';
-import { cleanupIdempotencyRecords, withIdempotency, type IdempotencyScope } from './idempotency';
+import { cleanupIdempotencyRecords, stableRequestBodyHash, withIdempotency, type IdempotencyScope } from './idempotency';
 import { isDbWriteActive, sharedDbWriteQueue } from './db-write-queue';
 import { ValidationError } from './errors';
 
@@ -20,7 +20,14 @@ const scope = (requestId: string, overrides: Partial<IdempotencyScope> = {}): Id
 
 function scopeKey(input: IdempotencyScope): string {
   return createHash('sha256')
-    .update([input.operation, input.resourceId ?? '', input.userId ?? '', input.clinicId ?? '', input.requestId].join('\0'))
+    .update([
+      input.operation,
+      input.resourceId ?? '',
+      input.userId ?? '',
+      input.clinicId ?? '',
+      input.requestId,
+      input.requestBodyHash ?? '',
+    ].join('\0'))
     .digest('hex');
 }
 
@@ -88,6 +95,21 @@ describe('withIdempotency', () => {
     });
     expect(first.operation).toBe('pay');
     expect(second.operation).toBe('refund');
+    expect(calls).toBe(2);
+  });
+
+  it('separates identical request ids when the request body differs', async () => {
+    let calls = 0;
+    const first = await withIdempotency(db, scope('body-hash', { requestBodyHash: stableRequestBodyHash({ amount: 100 }) }), () => {
+      calls += 1;
+      return { amount: 100 };
+    });
+    const second = await withIdempotency(db, scope('body-hash', { requestBodyHash: stableRequestBodyHash({ amount: 200 }) }), () => {
+      calls += 1;
+      return { amount: 200 };
+    });
+    expect(first.amount).toBe(100);
+    expect(second.amount).toBe(200);
     expect(calls).toBe(2);
   });
 

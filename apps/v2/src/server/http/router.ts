@@ -7,12 +7,13 @@ import { validatePayload } from './validation';
 import type { ResourceDefinition } from '../../domain/contracts';
 import { resolveResource } from '../infrastructure/legacy-registry';
 import { STATE_MACHINE_DEFAULT_STATUS, applyStateMachineDefaults, stripProtectedWriteFields } from '../infrastructure/security';
-import { withIdempotency } from '../infrastructure/idempotency';
+import { stableRequestBodyHash, withIdempotency } from '../infrastructure/idempotency';
 import { parsePagination } from './pagination';
 import { tenantAnd, tenantParams } from '../infrastructure/tenant';
 import { trackResourceWrite } from '../infrastructure/write-tracking';
 import { RESOURCE_PERMISSION_MAP } from '../application/service-modules/permissions';
 import { maskPhoneForExport } from '../application/service-modules/operations';
+import { TreatmentPlanBillingService } from '../application/service-modules/treatment-plan-billing';
 
 const EXPORT_PAGE_SIZE = 200;
 const EXPORT_MAX_ROWS = 1_000_000;
@@ -92,10 +93,14 @@ export function createResourceRouter(db: Database.Database): Router {
         userId: req.context!.userId,
         clinicId: req.context!.clinicId,
         requestId,
+        requestBodyHash: stableRequestBodyHash(rawPayload),
       }, async () => {
         const id = randomUUID();
         const repo = new SqliteRepository(db, resource);
         await repo.insert({ id, ...payload }, req.context!);
+        if (resource.name === 'treatmentPlanItems' && payload.planId) {
+          new TreatmentPlanBillingService(db).reconcilePlanTotal(String(payload.planId), req.context!);
+        }
         return { success: true, data: { id } };
       });
       res.status(201).json(result);
@@ -187,6 +192,9 @@ export function createResourceRouter(db: Database.Database): Router {
         { protectStateMachine: true },
       );
       const repo = new SqliteRepository(db, resource);
+      const treatmentPlanId = resource.name === 'treatmentPlanItems'
+        ? String((await repo.findById(req.params.id, req.context!))?.planId ?? '')
+        : '';
       // 治疗计划明细：price/quantity 允许经通用 CRUD 维护（前端计划编辑器写未划价明细），
       // 但已划价明细（billed=1）服务端强制不可改价/改量，与 TreatmentPlanBillingService 状态机一致。
       if (resource.name === 'treatmentPlanItems' && (Object.prototype.hasOwnProperty.call(payload, 'price') || Object.prototype.hasOwnProperty.call(payload, 'quantity'))) {
@@ -234,6 +242,9 @@ export function createResourceRouter(db: Database.Database): Router {
         }
       }
       await repo.update({ id: req.params.id, ...payload }, req.context!);
+      if (resource.name === 'treatmentPlanItems' && treatmentPlanId) {
+        new TreatmentPlanBillingService(db).reconcilePlanTotal(treatmentPlanId, req.context!);
+      }
       res.json({ success: true, data: { id: req.params.id } });
     } catch (error) {
       next(error);
@@ -261,6 +272,9 @@ export function createResourceRouter(db: Database.Database): Router {
         throw new ConflictError('已划价明细不可删除');
       }
       await repo.softDelete(req.params.id, req.context!);
+      if (resource.name === 'treatmentPlanItems' && existing.planId) {
+        new TreatmentPlanBillingService(db).reconcilePlanTotal(String(existing.planId), req.context!);
+      }
       res.json({ success: true, data: { id: req.params.id } });
     } catch (error) {
       next(error);

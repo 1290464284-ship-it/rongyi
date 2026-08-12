@@ -12,7 +12,7 @@ import type { Express } from 'express';
 import { wrapAsync } from '../middleware';
 import { CephalometricReportService } from '../../application/service-modules/cephalometric-report';
 import type { RouteDependencies } from './deps';
-import { withIdempotency } from '../../infrastructure/idempotency';
+import { stableRequestBodyHash, withIdempotency } from '../../infrastructure/idempotency';
 
 export function registerCephalometricReportRoutes(app: Express, deps: RouteDependencies): void {
   const { db } = deps;
@@ -45,6 +45,7 @@ export function registerCephalometricReportRoutes(app: Express, deps: RouteDepen
       userId: req.context!.userId,
       clinicId: req.context!.clinicId,
       requestId: req.header('idempotency-key') ?? '',
+      requestBodyHash: stableRequestBodyHash(body),
     }, async () => {
       return {
         success: true,

@@ -596,6 +596,8 @@ describe('resource router', () => {
         .set(auth)
         .send({ price: 150 })
         .expect(200);
+      const planAfterPrice = db.prepare('SELECT totalFee FROM TreatmentPlan WHERE id = ?').get(planId) as { totalFee: number };
+      expect(Number(planAfterPrice.totalFee)).toBe(350);
       // 已划价明细不可改价（服务端强制，与 TreatmentPlanBillingService 一致）
       const rejected = await request(app)
         .patch('/api/v2/resources/treatmentPlanItems/router-item-billed')
@@ -635,6 +637,8 @@ describe('resource router', () => {
       const deletedRow = db.prepare('SELECT deletedAt FROM TreatmentPlanItem WHERE id = ?')
         .get('router-item-unbilled') as { deletedAt: string | null };
       expect(deletedRow.deletedAt).not.toBeNull();
+      const planAfterDelete = db.prepare('SELECT totalFee FROM TreatmentPlan WHERE id = ?').get(planId) as { totalFee: number };
+      expect(Number(planAfterDelete.totalFee)).toBe(200);
     } finally {
       db.prepare('DELETE FROM TreatmentPlanItem WHERE planId = ?').run(planId);
       db.prepare('DELETE FROM TreatmentPlan WHERE id = ?').run(planId);

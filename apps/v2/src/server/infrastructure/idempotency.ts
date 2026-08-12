@@ -8,6 +8,7 @@ export interface IdempotencyScope {
   userId?: string | null;
   clinicId?: string | null;
   requestId: string;
+  requestBodyHash?: string;
   /** 业务资源 ID（charge/card/debt/item 等）。同一个 requestId 用于不同资源时必须
    *  传不同的 resourceId，否则后一个操作会命中前一个操作的缓存响应（串号）。 */
   resourceId?: string | null;
@@ -186,8 +187,35 @@ export function withIdempotency<T>(
 
 function scopeKey(scope: IdempotencyScope): string {
   return createHash('sha256')
-    .update([scope.operation, scope.resourceId ?? '', scope.userId ?? '', scope.clinicId ?? '', scope.requestId].join('\0'))
+    .update([
+      scope.operation,
+      scope.resourceId ?? '',
+      scope.userId ?? '',
+      scope.clinicId ?? '',
+      scope.requestId,
+      scope.requestBodyHash ?? '',
+    ].join('\0'))
     .digest('hex');
+}
+
+/** 对 JSON 请求体做稳定序列化后再计算 sha256，避免对象键序影响。 */
+export function stableRequestBodyHash(value: unknown): string {
+  return createHash('sha256').update(stableJsonStringify(value)).digest('hex');
+}
+
+function stableJsonStringify(value: unknown): string {
+  if (value === null || value === undefined) return 'null';
+  if (typeof value === 'string') return JSON.stringify(value);
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : 'null';
+  if (typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) return `[${value.map(stableJsonStringify).join(',')}]`;
+  if (typeof value === 'object') {
+    const entries = Object.keys(value as Record<string, unknown>)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJsonStringify((value as Record<string, unknown>)[key])}`);
+    return `{${entries.join(',')}}`;
+  }
+  return JSON.stringify(String(value));
 }
 
 /**

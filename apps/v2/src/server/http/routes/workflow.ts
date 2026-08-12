@@ -5,7 +5,7 @@ import { parsePagination } from '../pagination';
 import { ValidationError } from '../../infrastructure/errors';
 import { parseBooleanStrict } from '../validation';
 import type { RouteDependencies } from './deps';
-import { withIdempotency } from '../../infrastructure/idempotency';
+import { stableRequestBodyHash, withIdempotency } from '../../infrastructure/idempotency';
 
 export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): void {
   const {
@@ -36,6 +36,7 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
         userId: req.context!.userId,
         clinicId: req.context!.clinicId,
         requestId: req.header('idempotency-key') ?? '',
+        requestBodyHash: stableRequestBodyHash(req.body ?? {}),
       }, async () => {
         const created = await appointments.create(req.body, req.context!);
         return { success: true, data: created };
@@ -87,6 +88,7 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
         userId: req.context!.userId,
         clinicId: req.context!.clinicId,
         requestId: req.header('idempotency-key') ?? '',
+        requestBodyHash: stableRequestBodyHash(req.body ?? {}),
       }, async () => {
         const sent = await wechat.send(String(req.params.id), req.context!);
         return { success: true, data: sent };
@@ -100,6 +102,7 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
         userId: req.context!.userId,
         clinicId: req.context!.clinicId,
         requestId: req.header('idempotency-key') ?? '',
+        requestBodyHash: stableRequestBodyHash(req.body ?? {}),
       }, async () => {
         const sent = await wechat.sendBatch(req.body?.ids ?? [], req.context!);
         return { success: true, data: sent };
@@ -113,6 +116,7 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
         userId: req.context!.userId,
         clinicId: req.context!.clinicId,
         requestId: req.header('idempotency-key') ?? '',
+        requestBodyHash: stableRequestBodyHash(req.body ?? {}),
       }, async () => {
         const created = await charges.create(req.body, req.context!);
         return { success: true, data: created };
@@ -201,6 +205,7 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
         userId: req.context!.userId,
         clinicId: req.context!.clinicId,
         requestId: req.header('idempotency-key') ?? '',
+        requestBodyHash: stableRequestBodyHash(req.body ?? {}),
       }, async () => {
         const received = await purchaseOrders.receive(String(req.params.id), req.context!);
         return { success: true, data: received };
@@ -225,6 +230,7 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
         userId: req.context!.userId,
         clinicId: req.context!.clinicId,
         requestId: req.header('idempotency-key') ?? '',
+        requestBodyHash: stableRequestBodyHash(req.body ?? {}),
       }, () => ({
         success: true,
         data: processingOrders.transition(String(req.params.id), String(req.body?.status ?? ''), req.context!),
@@ -254,6 +260,7 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
         userId: req.context!.userId,
         clinicId: req.context!.clinicId,
         requestId: typeof req.body?.requestId === 'string' ? req.body.requestId : '',
+        requestBodyHash: stableRequestBodyHash(req.body ?? {}),
       }, async () => ({
         success: true,
         data: await bulkImport.importRows(
@@ -341,6 +348,7 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
         userId: req.context!.userId,
         clinicId: req.context!.clinicId,
         requestId: req.header('idempotency-key') ?? '',
+        requestBodyHash: stableRequestBodyHash(req.body ?? {}),
       }, () => ({
         success: true,
         data: followUps.batchComplete(
@@ -358,6 +366,7 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
         userId: req.context!.userId,
         clinicId: req.context!.clinicId,
         requestId: req.header('idempotency-key') ?? '',
+        requestBodyHash: stableRequestBodyHash(req.body ?? {}),
       }, () => ({
         success: true,
         data: followUps.complete(
