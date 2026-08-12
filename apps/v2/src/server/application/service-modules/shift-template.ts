@@ -134,11 +134,12 @@ export class ShiftTemplateService {
     const color = patch.color === undefined ? existing.color : (patch.color ?? null);
     const active = patch.active === undefined ? Number(existing.active) : (patch.active ? 1 : 0);
     const now = context.now().toISOString();
-    this.db.prepare(
+    const updated = this.db.prepare(
       `UPDATE ShiftTemplate
        SET name = ?, startTime = ?, endTime = ?, workDaysJson = ?, color = ?, active = ?, updatedAt = ?
-       WHERE id = ?${tenantAnd(context.clinicId)}`,
+       WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).run(name, startTime, endTime, workDaysJson, color, active, now, id, ...tenantParams(context.clinicId));
+    if (Number(updated.changes) === 0) throw new NotFoundError('Shift template not found');
     return this.getById(id, context)!;
   }
 

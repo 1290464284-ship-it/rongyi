@@ -61,7 +61,8 @@ export class FollowUpExecutionService {
       `UPDATE FollowUp
        SET executionStatus = ?, patientRating = ?, painLevel = ?, feedback = ?,
             contactedAt = ?, nextPlanDate = ?, status = 'COMPLETED', completedAt = ?, updatedAt = ?
-       WHERE id = ? AND (executionStatus IS NULL OR executionStatus = 'PENDING')${tenantAnd(context.clinicId)}`,
+       WHERE id = ? AND deletedAt IS NULL
+         AND (executionStatus IS NULL OR executionStatus = 'PENDING')${tenantAnd(context.clinicId)}`,
     ).run(
        executionStatus, patientRating, painLevel, feedback, contactedAt, nextPlanDate, now, now, id,
        ...tenantParams(context.clinicId),

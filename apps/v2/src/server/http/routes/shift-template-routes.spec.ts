@@ -105,6 +105,19 @@ describe('shift template routes', () => {
     expect(ids).not.toContain(id);
   });
 
+  it('PATCH rejects a soft-deleted shift template', async () => {
+    const created = await request(app)
+      .post('/api/v2/shift-templates')
+      .send({ name: '待删除班次', startTime: '08:00', endTime: '12:00' })
+      .expect(201);
+    const id = String(created.body.data.id);
+    db.prepare('UPDATE ShiftTemplate SET deletedAt = ?, updatedAt = ? WHERE id = ?').run(now, now, id);
+    await request(app)
+      .patch(`/api/v2/shift-templates/${id}`)
+      .send({ name: '不应生效' })
+      .expect(404);
+  });
+
   it('POST /api/v2/shift-templates/generate creates one FIXED schedule per work day of the week', async () => {
     const template = await request(app)
       .post('/api/v2/shift-templates')

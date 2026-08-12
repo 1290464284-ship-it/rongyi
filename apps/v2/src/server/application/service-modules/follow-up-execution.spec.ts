@@ -183,6 +183,16 @@ describe('FollowUpExecutionService', () => {
     }, context)).toThrow(NotFoundError);
   });
 
+  it('throws NotFoundError for a soft-deleted follow-up', () => {
+    insertFollowUp('fu-deleted');
+    db.prepare('UPDATE FollowUp SET deletedAt = ?, updatedAt = ? WHERE id = ?').run(now, now, 'fu-deleted');
+    const service = new FollowUpExecutionService(db);
+    expect(() => service.execute('fu-deleted', {
+      executionStatus: 'DONE',
+      contactedAt: '2026-08-05T09:30:00.000Z',
+    }, context)).toThrow(NotFoundError);
+  });
+
   it('computes NPS groups, average and breakdown from rated follow-ups', () => {
     db.prepare('DELETE FROM FollowUp WHERE patientRating IS NOT NULL').run();
     const ratings: Array<[string, number]> = [['nps-9', 9], ['nps-10', 10], ['nps-7', 7], ['nps-5', 5], ['nps-3', 3]];
