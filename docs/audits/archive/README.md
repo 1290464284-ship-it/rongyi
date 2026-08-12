@@ -71,6 +71,7 @@
 | 第 60 轮 | 2026-08-13 | OpenAPI live 响应校验 + mutation score 56.58 | `../深度审计报告-第六十轮-主报告.md` |
 | 第 61 轮 | 2026-08-13 | HTML 转义 mutation 覆盖 + ratchet 57 | `../深度审计报告-第六十一轮-主报告.md` |
 | 第 62 轮 | 2026-08-13 | SQLite 文件工具低覆盖分支补强 | `../深度审计报告-第六十二轮-主报告.md` |
+| 第 63 轮 | 2026-08-13 | common 纯函数 mutation 覆盖 + ratchet 59 | `../深度审计报告-第六十三轮-主报告.md` |
 
 ## 其他归档
 
@@ -88,7 +89,7 @@
 
 ## 当前状态
 
-最新一轮为第 62 轮（`27a5e7a`），单测 237 文件 / 2397 用例；mutation score 57.39，完整 sequence.shuffle 全绿，typecheck/lint/knip/unit 均通过。
+最新一轮为第 63 轮，单测 237 文件 / 2401 用例；mutation score 59.38，完整 sequence.shuffle 全绿，typecheck/lint/knip/unit 均通过。
 历史轮次请以上方轮次索引为准；各轮详情见 `../深度审计报告-第N轮-主报告.md`。
 已收敛的长期决策项：processing-flow 手动改态保留并补 `changes` 校验；大库增量聚合
 暂不启动，`replenishment.generate` 已用有界分块事务，10 万级冷态基准持续 PASS。
