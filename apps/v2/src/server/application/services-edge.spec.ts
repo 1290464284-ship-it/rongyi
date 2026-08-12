@@ -725,6 +725,27 @@ describe('service edge coverage', () => {
     await service.refund(String(paidOverCharge.id), 50, 'paid over debt refund', context);
   });
 
+  it('keeps the first payment time when a charge is paid in parts', async () => {
+    const service = new ChargeService(db);
+    const created = await service.create({
+      patientId: 'patient-edge',
+      items: [{ name: 'PaidAt Edge', category: 'EXAM', price: 100, quantity: 1 }],
+    }, context);
+    let tick = new Date('2026-08-04T00:00:00.000Z');
+    const tickingContext: AppContext = {
+      ...context,
+      now: () => {
+        const value = new Date(tick);
+        tick = new Date(tick.getTime() + 1000);
+        return value;
+      },
+    };
+    await service.pay(String(created.id), 40, 'CASH', undefined, tickingContext);
+    await service.pay(String(created.id), 60, 'CASH', undefined, tickingContext);
+    const row = db.prepare('SELECT paidAt FROM Charge WHERE id = ?').get(String(created.id)) as { paidAt: string };
+    expect(row.paidAt).toBe('2026-08-04T00:00:00.000Z');
+  });
+
   it('covers inventory transaction and stock branches', async () => {
     const service = new InventoryService(db);
     await expect(service.createTransaction({ itemId: 'x', type: 'BAD' as 'OUT', quantity: 1 }, context))

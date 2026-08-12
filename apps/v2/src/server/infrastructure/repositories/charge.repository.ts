@@ -80,7 +80,7 @@ export class SqliteChargeRepository implements ChargeRepository {
       ? [paidAmount, status, paidAt, payMethod ?? null, memberCardId ?? null, paidAt, id, previousPaidAmount, clinicId]
       : [paidAmount, status, paidAt, payMethod ?? null, memberCardId ?? null, paidAt, id, previousPaidAmount];
     const result = this.db.prepare(
-      `UPDATE Charge SET paidAmount = ?, status = ?, paidAt = ?, payMethod = COALESCE(?, payMethod),
+      `UPDATE Charge SET paidAmount = ?, status = ?, paidAt = COALESCE(paidAt, ?), payMethod = COALESCE(?, payMethod),
        memberCardId = COALESCE(?, memberCardId), updatedAt = ? WHERE id = ? AND deletedAt IS NULL AND paidAmount = ?${tenantAnd(clinicId)}`,
     ).run(...params);
     if (result.changes === 0) {
