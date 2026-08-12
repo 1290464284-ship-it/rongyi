@@ -5,7 +5,15 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createApp } from './app';
-import { errorEnvelopeSchema, healthEnvelopeSchema, resourceListEnvelopeSchema, validateContract } from './contract-schemas';
+import {
+  errorEnvelopeSchema,
+  healthEnvelopeSchema,
+  loginEnvelopeSchema,
+  resourceDetailEnvelopeSchema,
+  resourceListEnvelopeSchema,
+  resourceMetaEnvelopeSchema,
+  validateContract,
+} from './contract-schemas';
 import { createDatabase, seedDatabase } from '../infrastructure/database';
 import { runMigrations } from '../infrastructure/migrations';
 import { Logger } from '../infrastructure/logger';
@@ -32,6 +40,7 @@ describe('public HTTP contract', () => {
       .post('/api/v2/auth/login')
       .send({ username: 'admin', password: 'v2-test-seed-password' })
       .expect(200);
+    expect(validateContract(loginEnvelopeSchema, login.body)).toEqual([]);
     token = login.body.data.token as string;
   });
 
@@ -104,5 +113,25 @@ describe('public HTTP contract', () => {
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
     expect(validateContract(resourceListEnvelopeSchema, res.body)).toEqual([]);
+  });
+
+  it('validates resource meta and detail envelopes against their schemas', async () => {
+    const meta = await request(app)
+      .get('/api/v2/resource-meta')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(validateContract(resourceMetaEnvelopeSchema, meta.body)).toEqual([]);
+
+    const list = await request(app)
+      .get('/api/v2/resources/patients?page=1&pageSize=1')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const patientId = (list.body.data.items?.[0] as { id?: string } | undefined)?.id;
+    expect(patientId).toBeTruthy();
+    const detail = await request(app)
+      .get(`/api/v2/resources/patients/${patientId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(validateContract(resourceDetailEnvelopeSchema, detail.body)).toEqual([]);
   });
 });

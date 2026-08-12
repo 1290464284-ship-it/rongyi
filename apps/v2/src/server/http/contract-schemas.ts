@@ -53,6 +53,67 @@ export const resourceListEnvelopeSchema = {
   },
 };
 
+export const loginEnvelopeSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['success', 'data'],
+  properties: {
+    success: { const: true },
+    data: {
+      type: 'object',
+      additionalProperties: true,
+      required: ['token', 'refreshToken', 'user'],
+      properties: {
+        token: { type: 'string', minLength: 1 },
+        refreshToken: { type: 'string', minLength: 1 },
+        user: {
+          type: 'object',
+          additionalProperties: true,
+          required: ['id', 'username', 'role'],
+          properties: {
+            id: { type: 'string', minLength: 1 },
+            username: { type: 'string', minLength: 1 },
+            role: { type: 'string', minLength: 1 },
+          },
+        },
+      },
+    },
+  },
+};
+
+export const resourceMetaEnvelopeSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['success', 'data'],
+  properties: {
+    success: { const: true },
+    data: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: true,
+        required: ['name'],
+        properties: { name: { type: 'string', minLength: 1 } },
+      },
+    },
+  },
+};
+
+export const resourceDetailEnvelopeSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['success', 'data'],
+  properties: {
+    success: { const: true },
+    data: {
+      type: 'object',
+      additionalProperties: true,
+      required: ['id'],
+      properties: { id: { type: 'string', minLength: 1 } },
+    },
+  },
+};
+
 const ajv = new Ajv({ allErrors: true, strict: false });
 
 export function validateContract(schema: object, data: unknown): string[] {

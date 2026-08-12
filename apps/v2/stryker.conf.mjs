@@ -1,10 +1,17 @@
 export default {
   plugins: ['@stryker-mutator/vitest-runner'],
   testRunner: 'vitest',
-  mutate: ['src/server/http/pagination.ts', 'src/server/http/validation.ts'],
+  mutate: [
+    'src/server/http/pagination.ts',
+    'src/server/http/validation.ts',
+    'src/server/infrastructure/tenant.ts',
+    'src/server/infrastructure/errors.ts',
+  ],
   testFiles: [
     'src/server/http/pagination.property.spec.ts',
     'src/server/http/validation.property.spec.ts',
+    'src/server/infrastructure/tenant.spec.ts',
+    'src/server/infrastructure/errors.spec.ts',
   ],
   reporters: ['clear-text'],
   coverageAnalysis: 'off',
@@ -12,6 +19,6 @@ export default {
   timeoutMS: 30_000,
   // Ratchet from the measured pilot score. Keep this above the current score
   // to prevent silently regressing the property-based verification strength.
-  thresholds: { high: 60, low: 40, break: 35 },
+  thresholds: { high: 60, low: 45, break: 40 },
   cleanTempDir: 'always',
 };
