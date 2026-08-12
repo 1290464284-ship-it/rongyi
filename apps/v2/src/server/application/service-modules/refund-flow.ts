@@ -61,6 +61,30 @@ export class RefundFlowService {
     return Number(row.total);
   }
 
+  /** 按状态汇总全部未删除退款，避免“只统计前 200 条”的口径偏差。 */
+  summary(context: AppContext): { counts: Record<string, number>; total: number } {
+    const rows = this.db.prepare(
+      `SELECT status, COUNT(*) AS count
+       FROM Refund r
+       WHERE r.deletedAt IS NULL${tenantAnd(context.clinicId, 'r.clinicId')}
+       GROUP BY status`,
+    ).all(...tenantParams(context.clinicId)) as Array<{ status: string | null; count: number }>;
+    const counts: Record<string, number> = {
+      REQUESTED: 0,
+      PENDING_REFUND: 0,
+      COMPLETED: 0,
+      REJECTED: 0,
+      CANCELLED: 0,
+    };
+    let total = 0;
+    for (const row of rows) {
+      const status = String(row.status ?? '');
+      counts[status] = Number(row.count ?? 0);
+      total += Number(row.count ?? 0);
+    }
+    return { counts, total };
+  }
+
   approve(id: string, context: AppContext): Record<string, unknown> {
     const row = this.findRefund(id, context);
     if (row.status !== 'REQUESTED') throw new ConflictError('仅待审核的退款可审批通过');

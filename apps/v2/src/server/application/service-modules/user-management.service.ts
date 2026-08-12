@@ -77,7 +77,7 @@ export class UserManagementService {
         throw new ValidationError('clinicIds must reference existing clinics');
       }
     }
-    const passwordHash = await bcrypt.hash(input.password, 10);
+    const passwordHash = await bcrypt.hash(input.password, 12);
     const now = new Date().toISOString();
     const record: AuthUserRecord = {
       id: randomUUID(),
@@ -152,7 +152,7 @@ export class UserManagementService {
     if (!row || !userBelongsToClinic(this.db, id, context.clinicId)) throw new NotFoundError('User not found');
     assertCanManageUser(context.role, row.role as UserRole);
     assertPasswordLength(newPassword);
-    const passwordHash = await bcrypt.hash(newPassword, 10);
+    const passwordHash = await bcrypt.hash(newPassword, 12);
     const now = new Date().toISOString();
     runInTransaction(this.db, () => {
       const changes = this.authRepository.resetPassword(id, passwordHash, now, context.clinicId);

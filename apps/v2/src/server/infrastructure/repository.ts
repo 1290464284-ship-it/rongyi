@@ -120,6 +120,7 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
     }
     const where: string[] = this.hasDeletedAtColumn() ? ['t.deletedAt IS NULL'] : ['1 = 1'];
     const params: unknown[] = [];
+    const cursor = typeof query.cursor === 'string' && query.cursor !== '' ? query.cursor : null;
 
     /* v8 ignore start -- all registry tables include clinicId today; false branch is defensive for future schemas. */
     if (this.hasClinicColumn()) {
@@ -169,24 +170,39 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
     const labelSelect = labelJoins.length > 0 ? `, ${labelJoins.map((join) => join.select).join(', ')}` : '';
     const labelJoinSql = labelJoins.map((join) => join.join).join(' ');
 
+    // keyset 模式：按 id ASC 拉取 id > cursor 的下一页，避免深分页 offset 扫描；
+    // total 仍按过滤集整体统计（不含游标条件），与第一页口径一致。
     const whereSql = where.join(' AND ');
     const totalRow = this.db.prepare(`SELECT COUNT(*) AS total FROM ${this.resource.table} t WHERE ${whereSql}`).get(...params) as { total: number };
-    const sortField = query.sortBy && this.field(query.sortBy) ? query.sortBy : this.resource.defaultSort?.field ?? 'createdAt';
-    const sortOrder = query.sortOrder === 'ASC' ? 'ASC' : 'DESC';
+    let sortField = query.sortBy && this.field(query.sortBy) ? query.sortBy : this.resource.defaultSort?.field ?? 'createdAt';
+    let sortOrder = query.sortOrder === 'ASC' ? 'ASC' : 'DESC';
+    let rowParams = params;
+    let rowWhere = whereSql;
+    if (cursor) {
+      rowWhere = `${whereSql} AND t.id > ?`;
+      rowParams = [...params, cursor];
+      sortField = 'id';
+      sortOrder = 'ASC';
+    }
     const offset = (page - 1) * pageSize;
     const rows = this.queryRows(
       `SELECT t.*${labelSelect} FROM ${this.resource.table} t ${labelJoinSql}
-       WHERE ${whereSql}
+       WHERE ${rowWhere}
        ORDER BY t.${sortField} ${sortOrder}
        LIMIT ? OFFSET ?`,
-      [...params, pageSize, offset],
+      [...rowParams, pageSize, offset],
     );
 
+    let nextCursor: string | undefined;
+    if (cursor && rows.length === pageSize) {
+      nextCursor = String((rows[rows.length - 1] as Record<string, unknown>).id ?? '');
+    }
     return {
       items: rows.map((row) => this.mapRow(row)),
       total: totalRow.total,
       page,
       pageSize,
+      nextCursor,
     };
   }
 

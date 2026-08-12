@@ -50,6 +50,7 @@ export function createResourceRouter(db: Database.Database): Router {
         page,
         pageSize,
         search: typeof req.query.search === 'string' ? req.query.search : undefined,
+        cursor: typeof req.query.cursor === 'string' ? req.query.cursor : undefined,
         filters: parseFilters(req),
         sortBy: typeof req.query.sortBy === 'string' ? req.query.sortBy : undefined,
         sortOrder: req.query.sortOrder === 'ASC' ? 'ASC' : 'DESC',
@@ -227,7 +228,7 @@ export function createResourceRouter(db: Database.Database): Router {
 function parseFilters(req: Request): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(req.query)) {
-    if (['page', 'pageSize', 'search', 'sortBy', 'sortOrder'].includes(key)) continue;
+    if (['page', 'pageSize', 'search', 'sortBy', 'sortOrder', 'cursor'].includes(key)) continue;
     result[key] = typeof value === 'string' ? value : value;
   }
   return result;

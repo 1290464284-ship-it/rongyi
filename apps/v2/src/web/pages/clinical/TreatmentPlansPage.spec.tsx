@@ -388,7 +388,7 @@ describe('TreatmentPlansPage', () => {
     expect(JSON.parse(String(calls[1]?.[1]?.body))).toEqual({ discountRate: null });
   });
 
-  it('bills selected items, then bills all items when nothing is selected', async () => {
+  it('bills selected items and disables billing when nothing is selected', async () => {
     mockData();
     render(<TreatmentPlansPage />, { wrapper });
     await screen.findByText('正畸计划');
@@ -401,16 +401,11 @@ describe('TreatmentPlansPage', () => {
       expect(apiRequest).toHaveBeenCalledWith('/treatment-plans/p-1/bill', expect.objectContaining({ method: 'POST' }));
     });
     expect(await screen.findByText('已生成划价单 CHG-ABC123')).toBeDefined();
-    let billCalls = vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/treatment-plans/p-1/bill');
+    const billCalls = vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/treatment-plans/p-1/bill');
     expect(JSON.parse(String(billCalls[0]?.[1]?.body))).toEqual({ itemIds: ['item-1'] });
 
-    // 勾选在划价后被清空：再次划价应发送全量（空 body）
-    fireEvent.click(screen.getByRole('button', { name: '划价' }));
-    await waitFor(() => {
-      billCalls = vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/treatment-plans/p-1/bill');
-      expect(billCalls.length).toBe(2);
-    });
-    expect(JSON.parse(String(billCalls[1]?.[1]?.body))).toEqual({});
+    // 勾选在划价后被清空：未勾选明细时按钮应禁用，避免无意义请求
+    expect((screen.getByRole('button', { name: '划价' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('disables discount and billing controls when items are already billed', async () => {

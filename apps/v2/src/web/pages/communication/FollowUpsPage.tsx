@@ -108,9 +108,23 @@ export function FollowUpsPage() {
 
   async function submitExecution() {
     if (!executionId) return;
+    const patientRating = executionForm.patientRating === '' ? null : Number(executionForm.patientRating);
+    const painLevel = executionForm.painLevel === '' ? null : Number(executionForm.painLevel);
+    if (executionForm.executionStatus === 'DONE' && executionForm.contactedAt.trim() === '') {
+      showToast('请填写联系时间', 'error');
+      return;
+    }
+    if (patientRating !== null && (!Number.isInteger(patientRating) || patientRating < 0 || patientRating > 10)) {
+      showToast('评分须在 0-10 之间', 'error');
+      return;
+    }
+    if (painLevel !== null && (!Number.isInteger(painLevel) || painLevel < 0 || painLevel > 10)) {
+      showToast('疼痛度须在 0-10 之间', 'error');
+      return;
+    }
     const body: Record<string, unknown> = { executionStatus: executionForm.executionStatus };
-    if (executionForm.patientRating !== '') body.patientRating = Number(executionForm.patientRating);
-    if (executionForm.painLevel !== '') body.painLevel = Number(executionForm.painLevel);
+    if (patientRating !== null) body.patientRating = patientRating;
+    if (painLevel !== null) body.painLevel = painLevel;
     if (executionForm.feedback.trim() !== '') body.feedback = executionForm.feedback.trim();
     if (executionForm.contactedAt !== '') body.contactedAt = executionForm.contactedAt;
     if (executionForm.nextPlanDate !== '') body.nextPlanDate = executionForm.nextPlanDate;

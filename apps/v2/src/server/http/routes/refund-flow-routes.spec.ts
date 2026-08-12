@@ -100,6 +100,21 @@ describe('refund flow routes', () => {
     expect(row.reason).toBe('原因-route-refund-1');
   });
 
+  it('GET /api/v2/refunds/summary returns full status counts', async () => {
+    const res = await request(app).get('/api/v2/refunds/summary').expect(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toEqual({
+      counts: {
+        REQUESTED: 4,
+        PENDING_REFUND: 1,
+        COMPLETED: 1,
+        REJECTED: 0,
+        CANCELLED: 0,
+      },
+      total: 6,
+    });
+  });
+
   it('GET /api/v2/refunds honors page/pageSize', async () => {
     const res = await request(app).get('/api/v2/refunds?page=1&pageSize=3').expect(200);
     expect(res.body.success).toBe(true);

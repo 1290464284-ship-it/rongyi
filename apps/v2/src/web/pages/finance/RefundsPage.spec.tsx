@@ -76,6 +76,18 @@ const refundRows = [
 
 function mockApi() {
   vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+    if (path === '/refunds/summary') {
+      return {
+        counts: {
+          REQUESTED: 1,
+          PENDING_REFUND: 1,
+          COMPLETED: 1,
+          REJECTED: 1,
+          CANCELLED: 1,
+        },
+        total: 5,
+      };
+    }
     if (path.startsWith('/refunds')) {
         return { items: refundRows, total: refundRows.length, page: 1, pageSize: 20 };
         }
@@ -168,6 +180,12 @@ describe('RefundsPage', () => {
 
   it('shows an error toast when the action fails', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/refunds/summary') {
+        return {
+          counts: { REQUESTED: 1, PENDING_REFUND: 1, COMPLETED: 1, REJECTED: 1, CANCELLED: 1 },
+          total: 5,
+        };
+      }
       if (path.startsWith('/refunds') && (!init || init.method === undefined || init.method === 'GET')) {
         return { items: refundRows, total: refundRows.length, page: 1, pageSize: 20 };
       }
@@ -181,13 +199,24 @@ describe('RefundsPage', () => {
   });
 
   it('renders an empty state when there are no refunds', async () => {
-    vi.mocked(apiRequest).mockResolvedValue([]);
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/refunds/summary') {
+        return { counts: { REQUESTED: 0, PENDING_REFUND: 0, COMPLETED: 0, REJECTED: 0, CANCELLED: 0 }, total: 0 };
+      }
+      return { items: [], total: 0, page: 1, pageSize: 20 };
+    });
     render(<RefundsPage />, { wrapper });
     expect(await screen.findByText('暂无退款记录')).toBeDefined();
   });
 
   it('navigates between refund pages', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/refunds/summary') {
+        return {
+          counts: { REQUESTED: 1, PENDING_REFUND: 1, COMPLETED: 1, REJECTED: 1, CANCELLED: 1 },
+          total: 5,
+        };
+      }
       if (path.startsWith('/refunds?page=2')) {
         return { items: refundRows, total: refundRows.length + 20, page: 2, pageSize: 20 };
       }
@@ -219,6 +248,12 @@ describe('RefundsPage', () => {
 
   it('renders fallback values for missing refund fields and zero-count status chips', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/refunds/summary') {
+        return {
+          counts: { REQUESTED: 0, PENDING_REFUND: 0, COMPLETED: 0, REJECTED: 0, CANCELLED: 0 },
+          total: 0,
+        };
+      }
       if (path.startsWith('/refunds')) {
         return {
           items: [
@@ -242,6 +277,12 @@ describe('RefundsPage', () => {
   it('clicks retry after a load error and handles non-Error failures', async () => {
     let fail = true;
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/refunds/summary') {
+        return {
+          counts: { REQUESTED: 0, PENDING_REFUND: 0, COMPLETED: 0, REJECTED: 0, CANCELLED: 0 },
+          total: 0,
+        };
+      }
       if (path.startsWith('/refunds')) {
         if (fail) throw 'boom';
         return { items: refundRows, total: refundRows.length, page: 1, pageSize: 20 };

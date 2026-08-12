@@ -17,7 +17,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
-import { SystemClock } from '../../infrastructure/clock';
+import { SystemClock, clinicDayEndUtc, clinicDayStartUtc } from '../../infrastructure/clock';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { maskPhoneForExport } from './operations';
@@ -263,35 +263,45 @@ export class WechatReminderService {
     const recallDate = shiftDate(today, -config.recallDaysAfter);
     const firstExamDate = shiftDate(today, -config.firstExamDaysAfter);
 
+    const dayRange = (dateText: string): [string, string] => {
+      const start = clinicDayStartUtc(dateText);
+      const end = clinicDayEndUtc(dateText);
+      if (start === null || end === null) throw new ValidationError(`Invalid reminder date: ${dateText}`);
+      return [start, end];
+    };
+    const appointmentRange = dayRange(appointmentDate);
+    const recallRange = dayRange(recallDate);
+    const firstExamRange = dayRange(firstExamDate);
+
     const appointmentCandidates = this.db.prepare(
       `SELECT a.id AS sourceId, a.patientId, p.name AS patientName, a.startTime
        FROM Appointment a
        JOIN Patient p ON p.id = a.patientId AND p.deletedAt IS NULL
-       WHERE a.deletedAt IS NULL AND substr(datetime(a.startTime, '+8 hours'), 1, 10) = ?
+       WHERE a.deletedAt IS NULL AND a.startTime >= ? AND a.startTime <= ?
          AND a.status IN ('BOOKED', 'ARRIVED')${tenantAnd(clinicId, 'a.clinicId')}
        ORDER BY a.startTime ASC
        LIMIT ${WECHAT_REMINDER_LIMIT}`,
-    ).all(appointmentDate, ...tenantParams(clinicId)) as ReminderCandidate[];
+    ).all(...appointmentRange, ...tenantParams(clinicId)) as ReminderCandidate[];
 
     const recallCandidates = this.db.prepare(
       `SELECT v.id AS sourceId, v.patientId, p.name AS patientName
        FROM Visit v
        JOIN Patient p ON p.id = v.patientId AND p.deletedAt IS NULL
        WHERE v.deletedAt IS NULL AND v.status = 'COMPLETED'
-         AND substr(datetime(COALESCE(v.endTime, v.startTime), '+8 hours'), 1, 10) = ?${tenantAnd(clinicId, 'v.clinicId')}
+         AND COALESCE(v.endTime, v.startTime) >= ? AND COALESCE(v.endTime, v.startTime) <= ?${tenantAnd(clinicId, 'v.clinicId')}
        ORDER BY v.endTime ASC
        LIMIT ${WECHAT_REMINDER_LIMIT}`,
-    ).all(recallDate, ...tenantParams(clinicId)) as ReminderCandidate[];
+    ).all(...recallRange, ...tenantParams(clinicId)) as ReminderCandidate[];
 
     const firstExamCandidates = this.db.prepare(
       `SELECT e.id AS sourceId, e.patientId, p.name AS patientName
        FROM FirstExam e
        JOIN Patient p ON p.id = e.patientId AND p.deletedAt IS NULL
-       WHERE e.deletedAt IS NULL AND substr(datetime(e.createdAt, '+8 hours'), 1, 10) = ?
+       WHERE e.deletedAt IS NULL AND e.createdAt >= ? AND e.createdAt <= ?
          AND (e.followUpStatus IS NULL OR e.followUpStatus IN ('NONE', 'PENDING'))${tenantAnd(clinicId, 'e.clinicId')}
        ORDER BY e.createdAt ASC
        LIMIT ${WECHAT_REMINDER_LIMIT}`,
-    ).all(firstExamDate, ...tenantParams(clinicId)) as ReminderCandidate[];
+    ).all(...firstExamRange, ...tenantParams(clinicId)) as ReminderCandidate[];
 
     const insert = this.db.prepare(
       `INSERT OR IGNORE INTO WechatReminder (id, clinicId, patientId, scene, scheduledDate, sourceId, content, status, createdAt, updatedAt, deletedAt)

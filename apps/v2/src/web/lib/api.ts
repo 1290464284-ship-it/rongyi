@@ -257,6 +257,22 @@ export async function fetchAllPages<T>(path: string): Promise<T[]> {
   const CONCURRENCY = 8;
   const first = await apiRequest<Page<T>>(pagedPath(path, 1, pageSize));
   const items: T[] = [...first.items];
+  // keyset 游标优先：服务端返回 nextCursor 时按 id 游标逐页拉取，避免深分页 offset 扫描。
+  if (first.nextCursor !== undefined) {
+    let cursor: string | undefined = first.nextCursor;
+    let pagesFetched = 1;
+    while (pagesFetched < MAX_PAGES) {
+      if (cursor === undefined) break;
+      const next: Page<T> = await apiRequest<Page<T>>(cursorPath(path, cursor, pageSize));
+      items.push(...next.items);
+      cursor = next.nextCursor;
+      pagesFetched += 1;
+    }
+    if (cursor !== undefined) {
+      throw new Error('fetchAllPages exceeded the page cap; refusing to continue');
+    }
+    return items;
+  }
   if (first.items.length === 0 || items.length >= first.total) return items;
 
   const totalPages = Math.min(MAX_PAGES, Math.ceil(first.total / pageSize));
@@ -280,6 +296,15 @@ function pagedPath(path: string, page: number, pageSize: number): string {
   const params = new URLSearchParams(query);
   params.set('page', String(page));
   params.set('pageSize', String(pageSize));
+  const qs = params.toString();
+  return qs ? `${base}?${qs}` : base;
+}
+
+function cursorPath(path: string, cursor: string, pageSize: number): string {
+  const [base, query = ''] = path.split('?', 2);
+  const params = new URLSearchParams(query);
+  params.set('pageSize', String(pageSize));
+  params.set('cursor', cursor);
   const qs = params.toString();
   return qs ? `${base}?${qs}` : base;
 }

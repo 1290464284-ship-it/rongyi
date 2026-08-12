@@ -160,7 +160,7 @@ export function Layout() {
   function submitGlobalSearch(event: FormEvent) {
     event.preventDefault();
     const q = globalSearch.trim();
-    navigate(q ? `/patients?q=${encodeURIComponent(q)}` : '/patients');
+    navigate(q ? `/search?q=${encodeURIComponent(q)}` : '/search');
     setGlobalSearch('');
   }
 
@@ -190,9 +190,10 @@ export function Layout() {
   }
   const currentAllowed = resourceName !== null
     ? resourceAllowed
-    : visibleItems.some((group) => group.to === '/'
-      ? location.pathname === '/'
-      : location.pathname.startsWith(group.to));
+    : location.pathname === '/search'
+      || visibleItems.some((group) => group.to === '/'
+        ? location.pathname === '/'
+        : location.pathname.startsWith(group.to));
   if (!currentAllowed) {
     return (
       <div className="page">

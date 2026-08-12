@@ -54,6 +54,7 @@
 - `./architecture-audit-2026.md` / `./ARCHITECTURE_REVIEW.md` /
   `./ARCHITECTURE_CONSTRAINTS_ENFORCEMENT_STRATEGY.md`：架构专项。
 - `./NEXT_STEPS.md`：早期后续事项。
+- `./优化报告-2026-08-12-第一批.md`：六项性能/体验/维护性优化落地报告。
 
 ## 当前状态
 

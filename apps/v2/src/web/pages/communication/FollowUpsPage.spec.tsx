@@ -347,6 +347,7 @@ describe('FollowUpsPage', () => {
     render(<FollowUpsPage />, { wrapper });
     fireEvent.click(await screen.findByRole('button', { name: '执行随访' }));
     fireEvent.change(screen.getByLabelText('患者评分（0-10）'), { target: { value: '9' } });
+    fireEvent.change(screen.getByLabelText('联系时间'), { target: { value: '2026-08-05T09:30' } });
     fireEvent.click(screen.getByRole('button', { name: '确认执行' }));
     expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
   });

@@ -1,10 +1,10 @@
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
-import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { waitForService } from './wait-for-services.mjs';
+import { isPortFree, pnpmCommand, stopProcessTree } from './lib/smoke-runtime.mjs';
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const root = path.resolve(appRoot, '..', '..');
@@ -49,17 +49,7 @@ function shellCommand(args) {
   for (const part of args) {
     if (/[\s"'&|$`<>;()]/.test(part)) throw new Error(`unsafe smoke argument: ${part}`);
   }
-  return ['pnpm', '--filter', '@dental/v2', ...args].join(' ');
-}
-
-function isPortFree(port) {
-  return new Promise((resolve) => {
-    const server = net.createServer();
-    server.once('error', () => resolve(false));
-    server.listen({ port, host: '127.0.0.1' }, () => {
-      server.close(() => resolve(true));
-    });
-  });
+  return pnpmCommand(args);
 }
 
 function startDev(label, args) {
@@ -92,19 +82,7 @@ function startDev(label, args) {
 function stopDev() {
   for (const child of children.splice(0)) {
     if (!child || typeof child.pid !== 'number') continue;
-    if (process.platform === 'win32') {
-      spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
-    } else {
-      try {
-        process.kill(-child.pid, 'SIGTERM');
-      } catch {
-        try {
-          child.kill('SIGTERM');
-        } catch {
-          // process already exited
-        }
-      }
-    }
+    stopProcessTree(child.pid);
   }
 }
 

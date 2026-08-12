@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { waitForService } from './wait-for-services.mjs';
+import { pnpmCommand, stopProcessTree } from './lib/smoke-runtime.mjs';
 
 const apiPort = Number(process.env.V2_SMOKE_API_PORT ?? 31871);
 const webPort = Number(process.env.V2_SMOKE_WEB_PORT ?? 51871);
@@ -46,17 +47,7 @@ const baseEnv = {
   V2_CONCURRENCY_SCALE: String(concurrencyScale),
 };
 
-const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
 const children = [];
-
-function pnpmCommand(args) {
-  // 与 run-smokes.mjs 保持同一安全约束：Windows 下 shell 拼接命令时，
-  // 拒绝含空白/引号/元字符的参数，避免脆弱的转义变成注入面。
-  for (const part of args) {
-    if (/[\s"'&|$`<>;()]/.test(part)) throw new Error(`unsafe smoke argument: ${part}`);
-  }
-  return [pnpm, '--filter', '@dental/v2', ...args].join(' ');
-}
 
 function start(label, args) {
   const child = label === 'api'
@@ -94,19 +85,7 @@ function runSmoke(args) {
 function stopAll() {
   for (const child of children.splice(0)) {
     if (!child || typeof child.pid !== 'number') continue;
-    if (process.platform === 'win32') {
-      spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
-    } else {
-      try {
-        process.kill(-child.pid, 'SIGTERM');
-      } catch {
-        try {
-          child.kill('SIGTERM');
-        } catch {
-          // already exited
-        }
-      }
-    }
+    stopProcessTree(child.pid);
   }
 }
 

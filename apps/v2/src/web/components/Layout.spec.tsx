@@ -46,6 +46,7 @@ function renderLayoutAt(path: string) {
         <Route element={<Layout />}>
           <Route path="/" element={<div>Home</div>} />
           <Route path="/patients" element={<div>Patients</div>} />
+          <Route path="/search" element={<div>Search</div>} />
         </Route>
       </Routes>
     </MemoryRouter>,
@@ -217,7 +218,7 @@ describe('Layout clinic switcher', () => {
         <Routes>
           <Route element={<Layout />}>
             <Route path="/" element={<div>Home</div>} />
-            <Route path="/patients" element={<SearchProbe />} />
+            <Route path="/search" element={<SearchProbe />} />
           </Route>
         </Routes>
       </MemoryRouter>,
@@ -501,7 +502,7 @@ describe('Layout clinic switcher', () => {
     });
   });
 
-  it('submits an empty global search to the patients page', async () => {
+  it('submits an empty global search to the search page', async () => {
     vi.mocked(apiRequest)
       .mockResolvedValueOnce({ permissions: ['dashboard', 'patients'] })
       .mockResolvedValueOnce({
@@ -512,7 +513,7 @@ describe('Layout clinic switcher', () => {
     renderLayoutAt('/');
     await screen.findByText('蓉易口腔诊所');
     fireEvent.submit(screen.getByRole('search'));
-    expect(await screen.findByText('Patients')).toBeDefined();
+    expect(await screen.findByText('Search')).toBeDefined();
   });
 
   it('renders the username when the display name is empty and sorts backups without timestamps', async () => {

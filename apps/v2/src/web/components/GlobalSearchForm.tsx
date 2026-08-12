@@ -14,7 +14,7 @@ export function GlobalSearchForm({ value, onChange, onSubmit, inputRef }: Global
         ref={inputRef}
         className="topbar-search"
         type="search"
-        placeholder="搜索患者…"
+        placeholder="全局搜索…"
         aria-label="全局搜索"
         value={value}
         onChange={(event) => onChange(event.target.value)}

@@ -5,6 +5,7 @@ import { DashboardPage } from './pages/analytics/DashboardPage';
 import { ResourceHub } from './components/ResourceHub';
 import { patientHubTabs, frontDeskHubTabs, clinicalHubTabs, financeHubTabs, inventoryHubTabs, communicationHubTabs, hrHubTabs, systemHubTabs, analyticsHubTabs } from './components/hub-tabs';
 import { ResourcePage } from './components/ResourcePage';
+import { GlobalSearchPage } from './pages/system/GlobalSearchPage';
 import { ErrorBoundary } from './components';
 
 function DynamicResourcePage() {
@@ -27,6 +28,7 @@ export default function App() {
         <Route path="hr" element={<ErrorBoundary><ResourceHub title="人事与设备" tabs={hrHubTabs} /></ErrorBoundary>} />
         <Route path="system" element={<ErrorBoundary><ResourceHub title="系统管理" tabs={systemHubTabs} /></ErrorBoundary>} />
         <Route path="analytics" element={<ErrorBoundary><ResourceHub title="经营分析" tabs={analyticsHubTabs} /></ErrorBoundary>} />
+        <Route path="search" element={<ErrorBoundary><GlobalSearchPage /></ErrorBoundary>} />
         <Route path="resources/:resource" element={<ErrorBoundary><DynamicResourcePage /></ErrorBoundary>} />
         <Route path="appointments" element={<Navigate to="/patients" replace />} />
         <Route path="charges" element={<Navigate to="/finance" replace />} />

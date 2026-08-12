@@ -110,6 +110,27 @@ describe('SqliteRepository', () => {
     expect(page.total).toBeGreaterThanOrEqual(1);
   });
 
+  it('supports keyset cursor pagination on id order', async () => {
+    const repo = new SqliteRepository(db, resourceRegistry.get('patients')!);
+    for (let i = 0; i < 5; i += 1) {
+      await repo.insert({
+        id: `cursor-test-${i}`,
+        code: `CURSOR-TEST-${i}`,
+        name: `CursorZetaOnly ${i}`,
+        gender: 'UNKNOWN',
+        source: 'OTHER',
+      }, context);
+    }
+    const first = await repo.findMany({ page: 1, pageSize: 2, search: 'CursorZetaOnly', sortBy: 'id', sortOrder: 'ASC' }, context);
+    expect(first.items.map((row) => row.id)).toEqual(['cursor-test-0', 'cursor-test-1']);
+    const second = await repo.findMany({ page: 1, pageSize: 2, search: 'CursorZetaOnly', cursor: 'cursor-test-1' }, context);
+    expect(second.items.map((row) => row.id)).toEqual(['cursor-test-2', 'cursor-test-3']);
+    expect(second.nextCursor).toBe('cursor-test-3');
+    const third = await repo.findMany({ page: 1, pageSize: 2, search: 'CursorZetaOnly', cursor: 'cursor-test-3' }, context);
+    expect(third.items.map((row) => row.id)).toEqual(['cursor-test-4']);
+    expect(third.nextCursor).toBeUndefined();
+  });
+
   it('rejects generic writes with missing relation targets', async () => {
     const repo = new SqliteRepository(db, resourceRegistry.get('wechatMessages')!);
     await expect(repo.insert({

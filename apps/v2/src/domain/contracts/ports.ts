@@ -25,6 +25,8 @@ export interface RepositoryQuery extends PageQuery {
   filters?: Record<string, unknown>;
   sortBy?: string;
   sortOrder?: 'ASC' | 'DESC';
+  /** keyset 分页游标：按 id ASC 拉取 id > cursor 的下一页。 */
+  cursor?: string;
 }
 
 export interface IUnitOfWork {

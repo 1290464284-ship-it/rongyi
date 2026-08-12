@@ -27,6 +27,11 @@ interface RefundRow extends Record<string, unknown> {
   createdAt?: string | null;
 }
 
+interface RefundSummary {
+  counts: Record<string, number>;
+  total: number;
+}
+
 const columns: DataTableColumn<RefundRow>[] = [
   { key: 'patient', label: '患者', render: (row) => row.patientName ?? row.patientId ?? '' },
   { key: 'chargeNumber', label: '收费单号', render: (row) => row.chargeNumber ?? '' },
@@ -45,7 +50,7 @@ export function RefundsPage() {
   const [page, setPage] = useState(1);
   const summary = useQuery({
     queryKey: ['refunds-summary'],
-    queryFn: () => apiRequest<Page<RefundRow>>('/refunds?page=1&pageSize=200'),
+    queryFn: () => apiRequest<RefundSummary>('/refunds/summary'),
     staleTime: 30_000,
   });
   const query = useQuery({
@@ -88,12 +93,7 @@ export function RefundsPage() {
         <h1>退款管理</h1>
       </div>
       {summary.data && (
-        <>
-          <RefundStatusChips rows={summary.data?.items ?? []} />
-          {summary.data?.truncated && (
-            <p className="reminder-muted">退款汇总超过 200 条，仅显示部分数据</p>
-          )}
-        </>
+        <RefundStatusChips counts={summary.data.counts} total={summary.data.total} />
       )}
       {rows.length === 0 ? (
         <EmptyState message="暂无退款记录" />
@@ -109,17 +109,12 @@ export function RefundsPage() {
   );
 }
 
-function RefundStatusChips({ rows }: { rows: RefundRow[] }) {
-  const counts = new Map<string, number>();
-  for (const row of rows) {
-    const status = String(row.status ?? '');
-    counts.set(status, (counts.get(status) ?? 0) + 1);
-  }
+function RefundStatusChips({ counts, total }: { counts: Record<string, number>; total: number }) {
   return (
-    <div className="tracking-overview" aria-label="退款状态汇总">
+    <div className="tracking-overview" aria-label="退款状态汇总" data-total={total}>
       {STATUS_ORDER.map((status) => (
         <span className="tracking-chip" key={status}>
-          {STATUS_LABELS[status]} {counts.get(status) ?? 0}
+          {STATUS_LABELS[status]} {counts[status] ?? 0}
         </span>
       ))}
     </div>

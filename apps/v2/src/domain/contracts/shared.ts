@@ -32,6 +32,8 @@ export interface Page<T> {
   pageSize: number;
   /** 列表是否因服务端上限被截断（例如管理台账超过单页上限）。 */
   truncated?: boolean;
+  /** keyset 分页的下一页游标；没有更多数据时省略。 */
+  nextCursor?: string;
 }
 
 export type Result<T> =

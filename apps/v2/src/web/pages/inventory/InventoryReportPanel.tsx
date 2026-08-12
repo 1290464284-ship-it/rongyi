@@ -35,14 +35,14 @@ export function InventoryReportPanel() {
         <input aria-label="报表开始日期" type="date" value={reportFrom} onChange={(event) => setReportFrom(event.target.value)} />
         <input aria-label="报表结束日期" type="date" value={reportTo} onChange={(event) => setReportTo(event.target.value)} />
       </div>
-      {report.isLoading && <LoadingState label="报表加载中..." />}
-      {report.error && (
+      {(report.isLoading || report.isFetching) && <LoadingState label="报表加载中..." />}
+      {!report.isFetching && report.error && (
         <>
           <PageError message={report.error instanceof Error ? report.error.message : String(report.error)} />
           <button onClick={() => void report.refetch()}>重试</button>
         </>
       )}
-      {report.data && (
+      {!report.isFetching && report.data && (
         <>
           <div className="stat-row">
             <span>{REPORT_TYPE_LABELS[report.data.type] ?? report.data.type}</span>

@@ -142,12 +142,20 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
   app.use(metricsMiddleware);
   app.use((req, res, next) => {
     res.on('finish', () => {
+      const durationMs = Date.now() - Number(res.locals.startedAt);
+      // 高频读采样：仅记录慢请求（>200ms）、写请求、错误请求与 1% 的普通 GET，
+      // 避免大库/高频查询时请求日志无限膨胀；健康检查默认不再逐条记录。
+      const shouldLog = res.statusCode >= 400
+        || req.method !== 'GET'
+        || durationMs > 200
+        || (req.path !== '/api/v2/health' && Math.random() < 0.01);
+      if (!shouldLog) return;
       logger.info('request', {
         traceId: req.traceId,
         method: req.method,
         path: req.path,
         statusCode: res.statusCode,
-        durationMs: Date.now() - Number(res.locals.startedAt),
+        durationMs,
         userId: req.context?.userId,
         clinicId: req.context?.clinicId ?? null,
       });

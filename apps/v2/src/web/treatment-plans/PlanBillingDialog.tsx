@@ -147,7 +147,11 @@ export function PlanBillingDialog({
         </button>
       </div>
       <div className="modal-actions">
-        <button type="button" disabled={billBusy || items.length === 0} onClick={() => void bill()}>
+        <button
+          type="button"
+          disabled={billBusy || items.length === 0 || items.filter((item) => selected[item.id]).length === 0}
+          onClick={() => void bill()}
+        >
           {billBusy ? '划价中...' : '划价'}
         </button>
       </div>

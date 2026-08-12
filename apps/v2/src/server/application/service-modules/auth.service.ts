@@ -23,7 +23,8 @@ import {
 import { computeEffectivePermissions } from './permissions';
 import { UserManagementService } from './user-management.service';
 
-const DUMMY_HASH = '$2a$10$CwTycUXWue0Thq9StjUM0uJ8cG5fVb55Qk9X7pL5Nh4bKj1R8f69y';
+// 与真实哈希同成本（12 轮），避免“用户不存在”与“密码错误”的响应时间差泄漏用户存在性。
+const DUMMY_HASH = '$2b$12$pExdCVEdrVrgBiDGFD8SYexajzEX.TQjKOhHCte3D1XEW1.lYPrdS';
 
 function assertPasswordLength(password: unknown): asserts password is string {
   if (typeof password !== 'string' || password.length < 6) {
@@ -63,7 +64,7 @@ export class AuthService {
       `SELECT id FROM Clinic ORDER BY createdAt ASC LIMIT 1`,
     ).get() as { id: string } | undefined;
     const clinicId = clinicRow?.id ?? 'clinic-v2-001';
-    const passwordHash = await bcrypt.hash(password, 10);
+    const passwordHash = await bcrypt.hash(password, 12);
     const created = this.db.prepare(
       `INSERT OR IGNORE INTO User (
          id, clinicId, createdAt, updatedAt, deletedAt,
@@ -409,7 +410,7 @@ export class AuthService {
       throw new UnauthorizedError('Old password is incorrect');
     }
     assertPasswordLength(newPassword);
-    const hash = await bcrypt.hash(newPassword, 10);
+    const hash = await bcrypt.hash(newPassword, 12);
     const now = new Date().toISOString();
     runInTransaction(this.db, () => {
       this.authRepository.updatePassword(userId, hash, now);

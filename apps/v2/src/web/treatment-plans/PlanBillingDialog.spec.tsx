@@ -130,7 +130,7 @@ describe('PlanBillingDialog', () => {
     expect(await screen.findByText('明细折扣已保存，总费用 ¥90.00')).toBeDefined();
   });
 
-  it('bills selected items and falls back to an empty body without selection', async () => {
+  it('bills selected items and disables billing without selection', async () => {
     mockItems();
     render(<PlanBillingDialog plan={planFixture()} onClose={vi.fn()} onChanged={vi.fn()} />, { wrapper });
     await screen.findByText('洁牙');
@@ -146,14 +146,7 @@ describe('PlanBillingDialog', () => {
     expect(await screen.findByText('已生成划价单 CB-1')).toBeDefined();
     expect((screen.getByRole('checkbox', { name: '勾选划价 洁牙' }) as HTMLInputElement).checked).toBe(false);
 
-    vi.mocked(apiRequest).mockResolvedValueOnce({ chargeId: 'ch-2', number: 'CB-2', totalAmount: 10000, itemCount: 0, billedItemIds: [] });
-    fireEvent.click(screen.getByRole('button', { name: '划价' }));
-    await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith(
-        '/treatment-plans/p1/bill',
-        expect.objectContaining({ body: JSON.stringify({}) }),
-      );
-    });
+    expect((screen.getByRole('button', { name: '划价' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('locks whole-plan discount controls once an item is billed', async () => {
