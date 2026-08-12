@@ -1,4 +1,6 @@
 import { chromium } from '@playwright/test';
+import fs from 'node:fs';
+import path from 'node:path';
 
 process.on('unhandledRejection', (reason) => {
   console.error(reason instanceof Error ? reason.stack ?? reason.message : reason);
@@ -17,7 +19,13 @@ if (!adminPassword) {
 }
 
 const browser = await chromium.launch({ headless: true });
-const page = await browser.newPage();
+const resultsDir = path.resolve('apps/v2/test-results');
+const tracePath = path.join(resultsDir, 'ui-smoke-trace.zip');
+const screenshotPath = path.join(resultsDir, 'ui-smoke-failure.png');
+const context = await browser.newContext();
+const page = await context.newPage();
+await context.tracing.start({ screenshots: true, snapshots: true });
+let failed = false;
 
 try {
   await page.goto(`${base}/#/login`, { waitUntil: 'domcontentloaded' });
@@ -80,6 +88,16 @@ try {
   await page.getByRole('heading', { name: '系统操作' }).waitFor();
 
   console.log('UI smoke passed');
+} catch (error) {
+  failed = true;
+  await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
+  throw error;
 } finally {
+  if (failed) {
+    await context.tracing.stop({ path: tracePath }).catch(() => {});
+  } else {
+    await context.tracing.stop().catch(() => {});
+  }
+  await context.close();
   await browser.close();
 }

@@ -72,6 +72,16 @@ describe('api baseUrl 解析', () => {
     expect(String(call[0])).toBe('http://127.0.0.1:9999/api/v2/ping');
   });
 
+  it('sends a W3C traceparent header on API requests', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ success: true, data: 'ok' }), { status: 200 }),
+    );
+    await apiRequest<string>('/ping');
+    const call = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    const request = new Request(new URL(String(call[0]), 'http://127.0.0.1:5180/'), call[1]);
+    expect(request.headers.get('traceparent')).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
+  });
+
   it('无 desktop 时 fallback 到 VITE_API_BASE_URL 或 /api/v2', async () => {
     const targetEnv = (globalThis as unknown as { import: { meta: { env: Record<string, string> } } }).import.meta.env;
     targetEnv.VITE_API_BASE_URL = 'http://fallback.example:8888/api/v2';

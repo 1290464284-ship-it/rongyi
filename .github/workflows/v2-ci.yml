@@ -89,6 +89,9 @@ jobs:
       - name: Mutation pilot
         run: pnpm --filter @dental/v2 run test:mutation
 
+      - name: Flaky report
+        run: pnpm --filter @dental/v2 run test:flaky:report
+
       - name: Coverage
         run: pnpm --filter @dental/v2 test:coverage
 
@@ -103,6 +106,9 @@ jobs:
 
       - name: License scan
         run: pnpm --filter @dental/v2 run license:check
+
+      - name: SBOM
+        run: pnpm --filter @dental/v2 run sbom
 
       - name: Build
         run: pnpm --filter @dental/v2 build
@@ -128,8 +134,8 @@ jobs:
       - name: Load smoke
         run: pnpm --filter @dental/v2 test:load
 
-      - name: Load benchmark
-        run: pnpm --filter @dental/v2 benchmark:load
+      - name: Performance history
+        run: pnpm --filter @dental/v2 run test:performance-history
 
       - name: HTTP fuzz smoke
         run: pnpm --filter @dental/v2 smoke:http-fuzz

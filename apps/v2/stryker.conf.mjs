@@ -10,8 +10,8 @@ export default {
   coverageAnalysis: 'off',
   concurrency: 1,
   timeoutMS: 30_000,
-  // This is a pilot gate. Do not let a low mutation score break CI until the
-  // property-based suites are broadened to the rest of the resource validators.
-  thresholds: { high: 80, low: 60, break: null },
+  // Ratchet from the measured pilot score. Keep this above the current score
+  // to prevent silently regressing the property-based verification strength.
+  thresholds: { high: 60, low: 40, break: 35 },
   cleanTempDir: 'always',
 };

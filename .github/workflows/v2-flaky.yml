@@ -37,3 +37,8 @@ jobs:
         run: pnpm --filter @dental/v2 run test:flaky
         env:
           FLAKY_RUNS: 2
+
+      - name: Large DB concurrency smoke
+        run: pnpm --filter @dental/v2 run test:large-db-concurrency
+        env:
+          V2_SIM_SCALE: large

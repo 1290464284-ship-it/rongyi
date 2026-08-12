@@ -5,6 +5,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createApp } from './app';
+import { errorEnvelopeSchema, healthEnvelopeSchema, resourceListEnvelopeSchema, validateContract } from './contract-schemas';
 import { createDatabase, seedDatabase } from '../infrastructure/database';
 import { runMigrations } from '../infrastructure/migrations';
 import { Logger } from '../infrastructure/logger';
@@ -41,6 +42,7 @@ describe('public HTTP contract', () => {
 
   it('returns a consistent success envelope with request id for health', async () => {
     const res = await request(app).get('/api/v2/health').expect(200);
+    expect(validateContract(healthEnvelopeSchema, res.body)).toEqual([]);
     expect(res.body).toEqual({
       success: true,
       data: { status: 'ok', time: expect.any(String) },
@@ -52,6 +54,7 @@ describe('public HTTP contract', () => {
     const res = await request(app)
       .get('/not-found')
       .expect(404);
+    expect(validateContract(errorEnvelopeSchema, res.body)).toEqual([]);
     expect(res.body).toEqual({
       success: false,
       code: 'NOT_FOUND',
@@ -61,6 +64,7 @@ describe('public HTTP contract', () => {
 
   it('returns the public unauthorized envelope without leaking stack details', async () => {
     const res = await request(app).get('/api/v2/resources/patients').expect(401);
+    expect(validateContract(errorEnvelopeSchema, res.body)).toEqual([]);
     expect(res.body).toMatchObject({
       success: false,
       code: 'UNAUTHORIZED',
@@ -76,6 +80,7 @@ describe('public HTTP contract', () => {
       .get('/api/v2/resources/patients?page=abc')
       .set('Authorization', `Bearer ${token}`)
       .expect(400);
+    expect(validateContract(errorEnvelopeSchema, res.body)).toEqual([]);
     expect(res.body).toMatchObject({
       success: false,
       code: 'VALIDATION_ERROR',
@@ -91,5 +96,13 @@ describe('public HTTP contract', () => {
     expect(res.headers['content-type']).toContain('text/csv');
     expect(res.headers['content-disposition']).toContain('attachment; filename="patients-');
     expect(res.text.startsWith('\uFEFF')).toBe(true);
+  });
+
+  it('validates the authenticated resource list envelope against the published schema', async () => {
+    const res = await request(app)
+      .get('/api/v2/resources/patients?page=1&pageSize=20')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(validateContract(resourceListEnvelopeSchema, res.body)).toEqual([]);
   });
 });
