@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { NextFunction, Request, Response } from 'express';
 import { AuthService } from '../application/services';
 import { AppError, ValidationError } from '../infrastructure/errors';
-import { authMiddleware, errorMiddleware, roleMiddleware, traceMiddleware } from './middleware';
+import { authMiddleware, errorMiddleware, roleMiddleware, traceMiddleware, traceparentTraceId } from './middleware';
 
 function fakeResponse(): Response {
   const res = { statusCode: 200, setHeader: () => {}, status: () => res, json: () => res } as unknown as Response;
@@ -36,6 +36,20 @@ describe('middleware', () => {
     const statusSpy = { status: () => statusSpy, json: () => statusSpy };
     const res = statusSpy as unknown as Response;
     errorMiddleware(new AppError('TEST', 'msg', 422), req, res, () => {});
+  });
+
+  it('falls back to a W3C traceparent when no x-request-id is present', () => {
+    const traceId = '4bf92f3577b34da6a3ce929d0e0e4736';
+    const header = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
+    expect(traceparentTraceId(header)).toBe(traceId);
+    const req = { header: (name: string) => (name === 'traceparent' ? header : undefined), traceId: '' } as unknown as Request;
+    traceMiddleware(req, fakeResponse(), () => {});
+    expect(req.traceId).toBe(traceId);
+  });
+
+  it('rejects malformed traceparent headers', () => {
+    expect(traceparentTraceId('00-123-456-01')).toBeUndefined();
+    expect(traceparentTraceId(undefined)).toBeUndefined();
   });
 
   it('does not expose details for 5xx errors', () => {

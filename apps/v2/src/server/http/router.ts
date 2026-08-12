@@ -14,6 +14,7 @@ import { trackResourceWrite } from '../infrastructure/write-tracking';
 import { RESOURCE_PERMISSION_MAP } from '../application/service-modules/permissions';
 import { maskPhoneForExport } from '../application/service-modules/operations';
 import { TreatmentPlanBillingService } from '../application/service-modules/treatment-plan-billing';
+import { csvCell } from '../shared/csv';
 
 const EXPORT_PAGE_SIZE = 200;
 const EXPORT_MAX_ROWS = 1_000_000;
@@ -334,11 +335,4 @@ function csvLines(rows: Array<Record<string, unknown>>): string {
   if (rows.length === 0) return '';
   const headers = [...new Set(rows.flatMap((row) => Object.keys(row)))];
   return rows.map((row) => headers.map((header) => csvCell(row[header])).join(',')).join('\r\n');
-}
-
-function csvCell(value: unknown): string {
-  if (value === null || value === undefined) return '';
-  const text = typeof value === 'object' ? JSON.stringify(value) : String(value);
-  const guarded = /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
-  return `"${guarded.replace(/"/g, '""')}"`;
 }

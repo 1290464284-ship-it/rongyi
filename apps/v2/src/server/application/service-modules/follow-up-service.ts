@@ -7,6 +7,7 @@ import { SystemClock } from '../../infrastructure/clock';
 import { tenantAnd, tenantParams, tenantWhere } from '../../infrastructure/tenant';
 import type { AppContext } from '../../../domain/contracts';
 import type { FollowUpRepository } from '../ports';
+import { csvCell } from '../../shared/csv';
 
 export class FollowUpService {
   private readonly db: Database.Database;
@@ -109,6 +110,24 @@ export class FollowUpService {
   }
 
   remindersCsv(scope: string, context: AppContext, maxRows = 50_000): string {
+    const exportResult = this.remindersCsvExport(scope, context, maxRows);
+    const lines = [exportResult.columns.map((column) => csvCell(column.label)).join(',')];
+    for (const row of exportResult.rows) {
+      lines.push(exportResult.columns.map((column) => csvCell(row[column.key])).join(','));
+    }
+    if (exportResult.truncated) lines.push('# truncated');
+    return lines.join('\n');
+  }
+
+  remindersCsvExport(
+    scope: string,
+    context: AppContext,
+    maxRows = 50_000,
+  ): {
+    columns: Array<{ key: string; label: string }>;
+    rows: Iterable<Record<string, unknown>>;
+    truncated: boolean;
+  } {
     const allowed = new Set(['overdue', 'today', 'upcoming', 'all']);
     if (!allowed.has(scope)) {
       throw new ValidationError('Follow-up export scope must be overdue, today, upcoming, or all');
@@ -146,8 +165,18 @@ export class FollowUpService {
       { key: 'completedAt', label: '完成时间' },
       { key: 'result', label: '结果' },
     ];
-    const lines = [headers.map((header) => csvCell(header.label)).join(',')];
-    const PAGE = 1000;
+    const pageSize = 1000;
+    const rows = this.remindersCsvRows(baseWhere, params, headers, pageSize, cap);
+    return { columns: headers, rows, truncated: cap < total };
+  }
+
+  private *remindersCsvRows(
+    baseWhere: string,
+    params: unknown[],
+    headers: Array<{ key: string; label: string }>,
+    pageSize: number,
+    cap: number,
+  ): Iterable<Record<string, unknown>> {
     let offset = 0;
     let included = 0;
     for (;;) {
@@ -159,22 +188,19 @@ export class FollowUpService {
          WHERE ${baseWhere}
          ORDER BY F.planDate ASC, P.name ASC
          LIMIT ? OFFSET ?`,
-      ).all(...params, PAGE, offset) as Array<Record<string, unknown>>;
+      ).all(...params, pageSize, offset) as Array<Record<string, unknown>>;
       if (rows.length === 0) break;
       for (const row of rows) {
-        if (included >= cap) break;
-        const masked: Record<string, unknown> = {
+        if (included >= cap) return;
+        yield {
           ...row,
           patientPhone: maskPhoneForExport(row.patientPhone as string | null | undefined),
         };
-        lines.push(headers.map((header) => csvCell(masked[header.key])).join(','));
         included += 1;
       }
-      if (included >= cap || rows.length < PAGE) break;
+      if (included >= cap || rows.length < pageSize) break;
       offset += rows.length;
     }
-    if (included < total) lines.push('# truncated');
-    return lines.join('\n');
   }
 
   async batchGenerate(limit = 50, context: AppContext): Promise<{ processed: number; generated: number }> {
@@ -286,14 +312,6 @@ export class FollowUpService {
     /* v8 ignore stop */
     return { total, onTime, rate: total === 0 ? 0 : Math.round((onTime / total) * 100) };
   }
-}
-
-function csvCell(value: unknown): string {
-  if (value === null || value === undefined) return '';
-  const text = typeof value === 'object' ? JSON.stringify(value) : String(value);
-  // CWE-1236：阻止公式注入（Excel 打开时执行 =SUM(...) 等）
-  const guarded = /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
-  return `"${guarded.replaceAll('"', '""')}"`;
 }
 
 /** 导出时掩码手机号：保留前 3 后 4，中间以 * 代替。 */

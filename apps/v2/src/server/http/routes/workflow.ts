@@ -6,6 +6,7 @@ import { ValidationError } from '../../infrastructure/errors';
 import { parseBooleanStrict } from '../validation';
 import type { RouteDependencies } from './deps';
 import { stableRequestBodyHash, withIdempotency } from '../../infrastructure/idempotency';
+import { streamCsvResponse } from '../../shared/csv';
 
 export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): void {
   const {
@@ -336,10 +337,14 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
 
   app.get('/api/v2/follow-ups/reminders/export', wrapAsync(async (req, res) => {
       const scope = String(req.query.scope ?? 'overdue');
-      res
-        .setHeader('content-type', 'text/csv; charset=utf-8')
-        .setHeader('content-disposition', `attachment; filename="follow-ups-${scope}.csv"`)
-        .send(followUps.remindersCsv(scope, req.context!));
+      const exported = followUps.remindersCsvExport(scope, req.context!);
+      await streamCsvResponse(
+        res,
+        `follow-ups-${scope}.csv`,
+        exported.columns,
+        exported.rows,
+        { truncated: exported.truncated },
+      );
   }));
 
   app.post('/api/v2/follow-ups/batch-complete', writeLimiter, wrapAsync(async (req, res) => {
