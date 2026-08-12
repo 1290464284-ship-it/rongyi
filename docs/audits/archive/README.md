@@ -76,6 +76,7 @@
 | 第 65 轮 | 2026-08-13 | OpenAPI auth refresh/logout/setup-status | `../深度审计报告-第六十五轮-主报告.md` |
 | 第 66 轮 | 2026-08-13 | OpenAPI 路由清单全覆盖 | `../深度审计报告-第六十六轮-主报告.md` |
 | 第 67 轮 | 2026-08-13 | 自动质量评分聚合脚本 | `../深度审计报告-第六十七轮-主报告.md` |
+| 第 68 轮 | 2026-08-13 | 全量 OpenAPI 骨架生成 | `../深度审计报告-第六十八轮-主报告.md` |
 
 ## 其他归档
 
@@ -93,7 +94,7 @@
 
 ## 当前状态
 
-最新一轮为第 67 轮（`c2f3ccc`），单测 238 文件 / 2402 用例；mutation score 59.38，完整 sequence.shuffle 全绿，typecheck/lint/knip/unit 均通过。
+最新一轮为第 68 轮，单测 238 文件 / 2402 用例；mutation score 59.38，完整 sequence.shuffle 全绿，typecheck/lint/knip/unit 均通过。
 历史轮次请以上方轮次索引为准；各轮详情见 `../深度审计报告-第N轮-主报告.md`。
 已收敛的长期决策项：processing-flow 手动改态保留并补 `changes` 校验；大库增量聚合
 暂不启动，`replenishment.generate` 已用有界分块事务，10 万级冷态基准持续 PASS。
