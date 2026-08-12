@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -199,6 +199,20 @@ describe('TreatmentPlanBillingService', () => {
     ).run(now);
     expect(() => service.setItemDiscount('plan-a', 'plan-a-i1', { discountRate: 10 }, context))
       .toThrow(new ConflictError('已划价明细不可改价'));
+  });
+
+  it('setItemDiscount reports a conflict when the optimistic update changes zero rows', () => {
+    insertPlan('plan-item-race', 'Race Plan');
+    insertItem('plan-item-race', 'plan-item-race-i1', { price: 10000, quantity: 1 });
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE TreatmentPlanItem') && sql.includes('SET discountRate')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    expect(() => new TreatmentPlanBillingService(db).setItemDiscount('plan-item-race', 'plan-item-race-i1', { discountRate: 10 }, context))
+      .toThrow(ConflictError);
   });
 
   it('bill creates a Charge with plan discount applied for all items by default', () => {
