@@ -888,6 +888,27 @@ describe('HTTP app', () => {
       .expect(200);
   });
 
+  it('rejects non-boolean HR leave approval payloads', async () => {
+    const leave = await request(app)
+      .post('/api/v2/resources/leaveRequests')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        userId: 'user-admin-001',
+        startDate: '2026-08-03',
+        endDate: '2026-08-04',
+        type: 'ANNUAL',
+        reason: 'strict boolean leave',
+        status: 'PENDING',
+      })
+      .expect(201);
+    const response = await request(app)
+      .patch(`/api/v2/hr/leaves/${leave.body.data.id}/approve`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ approved: 'yes' })
+      .expect(400);
+    expect(response.body.code).toBe('VALIDATION_ERROR');
+  });
+
   it('returns resource metadata and creates a patient', async () => {
     const meta = await request(app).get('/api/v2/resource-meta').set('Authorization', `Bearer ${token}`).expect(200);
     expect(meta.body.data.length).toBeGreaterThan(50);

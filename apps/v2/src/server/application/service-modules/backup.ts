@@ -278,7 +278,17 @@ export class BackupService {
     const requested = Number.isFinite(Number(maxKeep)) ? Math.floor(Number(maxKeep)) : 30;
     const keep = requested < 1 ? 1 : requested > 365 ? 365 : requested;
     const files = this.list(clinicId) as Array<{ filename: string; fileSize: number }>;
-    const deleteFiles = files.slice(keep);
+    // 新建备份在 BackupRecord 落库前有短暂窗口；跳过刚创建（<60s）的文件，
+    // 避免并发 cleanup 把“文件已生成、记录未写”的新备份误删。
+    const graceMs = 60_000;
+    const nowMs = Date.now();
+    const deleteFiles = files.slice(keep).filter((file) => {
+      try {
+        return nowMs - fs.statSync(path.join(this.backupDir, file.filename)).mtimeMs >= graceMs;
+      } catch {
+        return true;
+      }
+    });
     const deleted: Array<{ filename: string; fileSize: number }> = [];
     // P2-11：先物理删除文件，unlink 成功后才删 BackupRecord 行；
     // 否则 unlink 失败会留下"记录已删但文件还在"的孤儿文件。

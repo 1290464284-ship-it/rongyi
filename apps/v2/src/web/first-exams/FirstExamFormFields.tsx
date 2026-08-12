@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../lib/api';
 import { SearchableSelect } from '../components';
-import { STATUS_LABELS } from './constants';
 import type { FirstExamForm } from './types';
 
 export function FirstExamFormFields({ form, update }: { form: FirstExamForm; update: (patch: Partial<FirstExamForm>) => void }) {
@@ -30,14 +29,6 @@ export function FirstExamFormFields({ form, update }: { form: FirstExamForm; upd
           <option value="">不指定</option>
           {doctors.data?.map((row) => (
             <option key={String(row.id)} value={String(row.id)}>{String(row.name ?? row.id)}</option>
-          ))}
-        </select>
-      </label>
-      <label>
-        状态
-        <select value={form.status} onChange={(event) => update({ status: event.target.value })}>
-          {Object.entries(STATUS_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>{label}</option>
           ))}
         </select>
       </label>

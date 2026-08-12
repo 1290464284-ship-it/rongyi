@@ -158,6 +158,7 @@ export function ClinicalWorkflowPage() {
           page={resourcePage.registrations}
           hasNext={resourcePage.registrations * WORKFLOW_PAGE_SIZE < (registrations.data?.total ?? 0)}
           onPageChange={(page) => setResourcePage((current) => ({ ...current, registrations: page }))}
+          disabled={stale}
         />
       </section>
       {resources.slice(1).map((resource) => {
@@ -194,14 +195,15 @@ export function ClinicalWorkflowPage() {
               page={resourcePage[resource]}
               hasNext={resourcePage[resource] * WORKFLOW_PAGE_SIZE < (query.data?.total ?? 0)}
               onPageChange={(page) => setResourcePage((current) => ({ ...current, [resource]: page }))}
+              disabled={stale}
             />
           </section>
         );
       })}
-      {activeDialog?.kind === 'record' && (
+      {activeDialog?.kind === 'record' && !stale && (
         <RecordDialog row={activeDialog.row} onClose={() => setActiveDialog(null)} onSaved={refreshAfterAction} />
       )}
-      {activeDialog?.kind === 'followup' && (
+      {activeDialog?.kind === 'followup' && !stale && (
         <CreateFollowUpDialog row={activeDialog.row} onClose={() => setActiveDialog(null)} onSaved={refreshAfterAction} />
       )}
     </div>

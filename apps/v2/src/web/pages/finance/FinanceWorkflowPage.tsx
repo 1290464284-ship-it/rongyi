@@ -112,6 +112,7 @@ export function FinanceWorkflowPage() {
         page={cardPage}
         hasNext={cardPage * WORKFLOW_PAGE_SIZE < (cards.data?.total ?? 0)}
         onPageChange={setCardPage}
+        disabled={stale}
       />
       <h2>欠费</h2>
       <QuerySection
@@ -122,6 +123,7 @@ export function FinanceWorkflowPage() {
         page={debtPage}
         hasNext={debtPage * WORKFLOW_PAGE_SIZE < (debts.data?.total ?? 0)}
         onPageChange={setDebtPage}
+        disabled={stale}
       />
       <PromptDialog
         key={action !== null ? 'open' : 'closed'}

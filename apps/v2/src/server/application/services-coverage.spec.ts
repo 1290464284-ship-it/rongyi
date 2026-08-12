@@ -119,7 +119,10 @@ describe('service coverage', () => {
     const service = new BackupService(db, path.join(dataDir, 'v2.sqlite'), backupDir);
     const backup = await service.create({ type: 'AUTO', encrypted: true });
     expect(String(backup.filename)).toMatch(/\.enc$/);
-    await service.create({ type: 'AUTO', encrypted: true });
+    const secondBackup = await service.create({ type: 'AUTO', encrypted: true });
+    const oldMtime = new Date(Date.now() - 120_000);
+    fs.utimesSync(path.join(backupDir, String(backup.filename)), oldMtime, oldMtime);
+    fs.utimesSync(path.join(backupDir, String(secondBackup.filename)), oldMtime, oldMtime);
     const verified = await service.verify(String(backup.filename));
     expect(verified.integrity).toBe('ok');
     const staged = await service.stageRestore(String(backup.filename));

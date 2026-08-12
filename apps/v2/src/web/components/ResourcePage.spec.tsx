@@ -248,12 +248,32 @@ describe('ResourcePage', () => {
     vi.mocked(apiRequest).mockResolvedValueOnce({ items: [], total: 30, page: 2, pageSize: 20 });
     fireEvent.click(await screen.findByText('下一页'));
     expect(await screen.findByText('第 2 页')).toBeDefined();
+    await waitFor(() => {
+      expect((screen.getByRole('button', { name: '上一页' }) as HTMLButtonElement).disabled).toBe(false);
+    });
     vi.mocked(apiRequest).mockResolvedValueOnce({ items: [{ id: 'p1', name: 'Alice', active: true }], total: 30, page: 1, pageSize: 20 });
     fireEvent.click(screen.getByText('上一页'));
     expect(await screen.findByText('第 1 页')).toBeDefined();
     vi.mocked(apiRequest).mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 20 });
     fireEvent.change(screen.getByPlaceholderText('搜索...'), { target: { value: 'Alice' } });
     expect(await screen.findByText('暂无记录')).toBeDefined();
+  });
+
+  it('does not submit an edit while the list is stale', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([writable])
+      .mockResolvedValueOnce({ items: [{ id: 'p1', name: 'Alice', active: true }], total: 1, page: 1, pageSize: 20 });
+    render(<ResourcePage resource="patients" />, { wrapper });
+    fireEvent.click(await screen.findByText('编辑'));
+    vi.mocked(apiRequest).mockImplementationOnce(() => new Promise(() => {}));
+    fireEvent.change(screen.getByPlaceholderText('搜索...'), { target: { value: 'stale' } });
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/patients?page=1&pageSize=20&search=stale');
+    });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    expect(vi.mocked(apiRequest).mock.calls.some(([path, options]) =>
+      path === '/resources/patients/p1' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'PATCH',
+    )).toBe(false);
   });
 
   it('renders null cell values without crashing', async () => {

@@ -4,6 +4,7 @@ import { wrapAsync } from '../middleware';
 import { parsePagination } from '../pagination';
 import { createRateLimit } from '../rate-limit';
 import { ValidationError } from '../../infrastructure/errors';
+import { parseBooleanStrict } from '../validation';
 import type { RouteDependencies } from './deps';
 
 export function registerSystemRoutes(app: Express, deps: RouteDependencies): void {
@@ -29,7 +30,8 @@ export function registerSystemRoutes(app: Express, deps: RouteDependencies): voi
       const table = typeof req.query.table === 'string' && req.query.table !== '' ? req.query.table : undefined;
       const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
       const offset = typeof req.query.offset === 'string' ? Number(req.query.offset) : undefined;
-      const data = sync.fullSnapshot(req.context!, { table, limit, offset });
+      const afterId = typeof req.query.afterId === 'string' ? req.query.afterId : undefined;
+      const data = sync.fullSnapshot(req.context!, { table, limit, offset, afterId });
       deps.logger.info('sync full snapshot', {
         action: 'sync-full-snapshot',
         clinicId: req.context!.clinicId,
@@ -95,7 +97,7 @@ export function registerSystemRoutes(app: Express, deps: RouteDependencies): voi
   }));
 
   app.patch('/api/v2/hr/leaves/:id/approve', wrapAsync(async (req, res) => {
-      const approved = req.body?.approved !== false;
+      const approved = req.body?.approved === undefined ? true : parseBooleanStrict(req.body.approved, 'approved');
       res.json({ success: true, data: hr.approveLeave(String(req.params.id), req.context!.userId, approved, req.context!) });
   }));
 

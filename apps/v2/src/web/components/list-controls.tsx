@@ -29,16 +29,18 @@ export function PagePager({
   page,
   hasNext,
   onPageChange,
+  disabled,
 }: {
   page: number;
   hasNext: boolean;
   onPageChange: (page: number) => void;
+  disabled?: boolean;
 }) {
   return (
     <div className="pager">
-      <button type="button" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>上一页</button>
+      <button type="button" disabled={disabled || page <= 1} onClick={() => { if (!disabled) onPageChange(page - 1); }}>上一页</button>
       <span>第 {page} 页</span>
-      <button type="button" disabled={!hasNext} onClick={() => onPageChange(page + 1)}>下一页</button>
+      <button type="button" disabled={disabled || !hasNext} onClick={() => { if (!disabled) onPageChange(page + 1); }}>下一页</button>
     </div>
   );
 }

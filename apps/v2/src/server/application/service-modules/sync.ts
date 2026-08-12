@@ -2,25 +2,17 @@ import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { AppError, ConflictError, NotFoundError, ValidationError, isSystematicSqliteError } from '../../infrastructure/errors';
 import { SqliteRepository } from '../../infrastructure/repository';
-import { stripProtectedWriteFields } from '../../infrastructure/security';
 import { validatePayload } from '../../http/validation';
 import { resourceRegistry } from '../../../domain/resources';
 import type { AppContext } from '../../../domain/contracts';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { recordSyncChange, type SyncChangeOperation } from '../../infrastructure/sync-change';
 import { hashRefreshToken, newRefreshToken, safeJsonObject } from './common';
-import { assertSyncPushShape, assertSyncTablePermission, SyncChangeRecordError, SYNC_RESOURCES } from './sync-permissions';
+import { assertSyncPushShape, assertSyncTablePermission, SyncChangeRecordError, SYNC_ALLOWED_TABLES, SYNC_RESOURCES } from './sync-permissions';
+import { STATE_MACHINE_DEFAULT_STATUS, applyStateMachineDefaults, stripProtectedWriteFields } from '../../infrastructure/security';
 import type { SyncPushPayload, SyncPushResult } from './sync-push-queue';
 import { sharedDbWriteQueue } from './serial-queue';
-const SYNC_ALLOWED_TABLES = new Set([
-  'Patient',
-  'Appointment',
-  'Treatment',
-  'Charge',
-  'InventoryItem',
-  'FollowUp',
-  'PurchaseOrder',
-]);
+import { fullSnapshot } from './sync-snapshot';
 export class SyncService {
   constructor(private readonly db: Database.Database) {}
   async push(payload: SyncPushPayload, context: AppContext): Promise<SyncPushResult> {
@@ -55,74 +47,11 @@ export class SyncService {
     const cursor = last ? `${String(last.createdAt)}|${String(last.rowid)}` : since;
     return { changes, cursor, serverTime: new Date().toISOString() };
   }
-  /**
-   * 全量快照：离线超过 SyncChange 保留窗口的设备用它做基线重建。
-   * 不带 table 时返回各表总数元数据；带 table 时按 offset/limit 分页返回，
-   * 避免十万级库一次性构建数百 MB JSON 卡死 API。
-   */
   fullSnapshot(
     context: AppContext,
-    options: { table?: string; limit?: number; offset?: number } = {},
-  ): {
-    serverTime: string;
-    table?: string;
-    rows?: Array<Record<string, unknown>>;
-    total?: number;
-    offset?: number;
-    limit?: number;
-    truncated?: boolean;
-    tables?: Record<string, { total: number; truncated: boolean }>;
-  } {
-    if (!context.clinicId) throw new AppError('FORBIDDEN', 'Sync requires a clinic scope', 403);
-    if (!['BOSS', 'ADMIN'].includes(context.role)) {
-      throw new AppError('FORBIDDEN', 'Sync requires BOSS', 403);
-    }
-    for (const table of SYNC_ALLOWED_TABLES) assertSyncTablePermission(context, table);
-    const tableExists = (table: string): boolean => Boolean(
-      this.db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`).get(table),
-    );
-    const tableTotal = (table: string): number => {
-      const row = this.db.prepare(
-        `SELECT COUNT(*) AS total FROM "${table}" WHERE deletedAt IS NULL${tenantAnd(context.clinicId)}`,
-      ).get(...tenantParams(context.clinicId)) as { total: number };
-      return Number(row.total);
-    };
-    if (options.table) {
-      if (!SYNC_ALLOWED_TABLES.has(options.table) || !tableExists(options.table)) {
-        throw new ValidationError('Sync table is not allowed');
-      }
-      // 非有限/非法 limit/offset（NaN/Infinity/负数）统一回落默认值，避免绑定
-      // Infinity 时 SQLite 抛 500 或产生超大 OFFSET 扫描。
-      const rawLimit = Number(options.limit);
-      const rawOffset = Number(options.offset);
-      const limit = Number.isFinite(rawLimit) && rawLimit >= 1
-        ? Math.min(50_000, Math.floor(rawLimit))
-        : 5_000;
-      const offset = Number.isFinite(rawOffset) && rawOffset >= 0
-        ? Math.floor(rawOffset)
-        : 0;
-      const total = tableTotal(options.table);
-      const rows = this.db.prepare(
-        `SELECT * FROM "${options.table}" WHERE deletedAt IS NULL${tenantAnd(context.clinicId)}
-         ORDER BY id ASC LIMIT ? OFFSET ?`,
-      ).all(...tenantParams(context.clinicId), limit, offset) as Array<Record<string, unknown>>;
-      return {
-        serverTime: new Date().toISOString(),
-        table: options.table,
-        rows,
-        total,
-        offset,
-        limit,
-        truncated: offset + rows.length < total,
-      };
-    }
-    const tables: Record<string, { total: number; truncated: boolean }> = {};
-    for (const table of SYNC_ALLOWED_TABLES) {
-      if (!tableExists(table)) continue;
-      const total = tableTotal(table);
-      tables[table] = { total, truncated: total > 0 };
-    }
-    return { serverTime: new Date().toISOString(), tables };
+    options: { table?: string; limit?: number; offset?: number; afterId?: string } = {},
+  ) {
+    return fullSnapshot(this.db, context, options);
   }
   private async executePush(payload: SyncPushPayload, context: AppContext): Promise<SyncPushResult> {
     if (!context.clinicId) throw new AppError('FORBIDDEN', 'Sync requires a clinic scope', 403);
@@ -200,11 +129,27 @@ export class SyncService {
                 failedIndexes.add(index);
                 continue;
               }
-              const payloadRow = stripProtectedWriteFields(validatePayload(
-                definition,
-                change.data,
-                existing ? { partial: true } : {},
-              ), undefined, resourceName);
+              const rawData = change.data as Record<string, unknown> | undefined;
+              const defaultStatus = STATE_MACHINE_DEFAULT_STATUS[resourceName];
+              // 状态机资源在服务端定义里 status 是必填；INSERT 缺省时先注入初始状态，
+              // 否则 validatePayload 会在默认状态兜底逻辑执行前就拒绝整行。
+              const dataForValidation = defaultStatus && !existing && rawData?.status === undefined
+                ? { ...rawData, status: defaultStatus }
+                : rawData;
+              const rawStatus = (dataForValidation as Record<string, unknown> | undefined)?.status;
+              const payloadRow = stripProtectedWriteFields(
+                validatePayload(definition, dataForValidation ?? change.data, existing ? { partial: true } : {}),
+                undefined,
+                resourceName,
+                { protectStateMachine: true },
+              );
+              if (defaultStatus) {
+                const effectiveStatus = existing ? String(existing.status ?? '') : defaultStatus;
+                if (rawStatus !== undefined && String(rawStatus) !== effectiveStatus) {
+                  throw new Error('状态由服务端状态机管理，不能经 sync 直写');
+                }
+                if (!existing) applyStateMachineDefaults(resourceName, payloadRow);
+              }
               const entity = { id: change.recordId, ...payloadRow };
               if (existing) repo.updateSync(entity, context);
               else repo.insertSync(entity, context);
@@ -314,11 +259,12 @@ export class SyncService {
           const existing = repo.findByIdSync(String(row.recordId), context);
           if (existing) repo.softDeleteSync(String(row.recordId), context);
         } else {
-          const payloadRow = stripProtectedWriteFields(validatePayload(
-            definition,
-            remoteSnapshot,
-            { partial: true },
-          ), undefined, resourceName);
+          const payloadRow = stripProtectedWriteFields(
+            validatePayload(definition, remoteSnapshot, { partial: true }),
+            undefined,
+            resourceName,
+            { protectStateMachine: true },
+          );
           const existing = repo.findByIdSync(String(row.recordId), context);
           if (existing) repo.updateSync({ id: String(row.recordId), ...payloadRow }, context);
           else repo.insertSync({ id: String(row.recordId), ...payloadRow }, context);

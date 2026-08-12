@@ -44,6 +44,16 @@ const PROTECTED_UI_FIELDS = new Set([
   'refundedAmount',
 ]);
 
+const RESOURCE_HIDDEN_EDIT_FIELDS: Record<string, ReadonlySet<string>> = {
+  appointments: new Set(['status']),
+  visits: new Set(['status']),
+  treatments: new Set(['status']),
+  firstExams: new Set(['status']),
+  prescriptions: new Set(['status', 'processedAt', 'chargeId', 'dispenseId']),
+  registrations: new Set(['status']),
+  followUps: new Set(['status', 'executionStatus']),
+};
+
 const TABLE_COLUMN_LIMIT = 10;
 
 function fieldValue(field: ResourceField, value: unknown): unknown {
@@ -167,8 +177,8 @@ function ResourceCrudPage({ resource: fixedResource, initialSearch }: { resource
     [definition],
   );
   const editableFields = useMemo(
-    () => visibleFields.filter((field) => !field.readOnly),
-    [visibleFields],
+    () => visibleFields.filter((field) => !field.readOnly && !RESOURCE_HIDDEN_EDIT_FIELDS[resource]?.has(field.name)),
+    [visibleFields, resource],
   );
   const tableColumns = useMemo(
     () => visibleFields.slice(0, TABLE_COLUMN_LIMIT).map((field) => ({
@@ -204,6 +214,7 @@ function ResourceCrudPage({ resource: fixedResource, initialSearch }: { resource
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (submitting || submittingRef.current) return;
+    if (editingId && staleRows) return;
     submittingRef.current = true;
     setSubmitting(true);
     try {
@@ -347,7 +358,7 @@ function ResourceCrudPage({ resource: fixedResource, initialSearch }: { resource
     <div className="page">
       <div className="page-head">
         <h1>{label}</h1>
-        <button onClick={() => void exportCsv()}>导出</button>
+        <button disabled={staleRows} onClick={() => void exportCsv()}>导出</button>
         {definition.capabilities.create && <button onClick={openCreate}>新建</button>}
       </div>
       <SearchInput
@@ -421,6 +432,7 @@ function ResourceCrudPage({ resource: fixedResource, initialSearch }: { resource
       <PagePager
         page={page}
         hasNext={Boolean(listQuery.data) && page * 20 < listQuery.data!.total}
+        disabled={staleRows}
         onPageChange={(next) => {
           setPage(next);
           setSelectedIds(new Set());
@@ -440,7 +452,7 @@ function ResourceCrudPage({ resource: fixedResource, initialSearch }: { resource
           />
           <div className="modal-actions">
             <button type="button" onClick={() => setShowForm(false)}>取消</button>
-            <button type="submit" disabled={submitting}>{submitting ? '保存中...' : '保存'}</button>
+            <button type="submit" disabled={submitting || (editingId !== null && staleRows)}>{submitting ? '保存中...' : '保存'}</button>
           </div>
         </form>
       </Dialog>

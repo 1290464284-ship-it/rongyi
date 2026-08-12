@@ -238,6 +238,7 @@ export function ProcessingOrdersPage() {
             <button disabled={ctx.stale} onClick={() => { if (ctx.stale) return; void openFlow(row); }}>流程</button>
             <ProcessingStatusSelect
               rowId={row.id}
+              disabled={ctx.stale}
               onTransition={(id, status) => {
                 if (ctx.stale) return;
                 transitionProcessingOrder(showToast, ctx.reload, id, status);

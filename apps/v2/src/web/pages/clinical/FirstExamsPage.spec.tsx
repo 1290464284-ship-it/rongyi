@@ -87,7 +87,6 @@ describe('FirstExamsPage', () => {
       patientId: 'p-1',
       doctorId: 'd-1',
       consultantId: 'd-1',
-      status: 'DRAFT',
       chiefComplaint: '补牙',
     });
     expect(body.presentIllness).toBeUndefined();
@@ -224,7 +223,6 @@ describe('FirstExamsPage', () => {
     });
     expect((screen.getByLabelText('医生') as HTMLSelectElement).value).toBe('d-1');
     expect((screen.getByLabelText('会诊医生') as HTMLSelectElement).value).toBe('');
-    expect((screen.getByLabelText('状态') as HTMLSelectElement).value).toBe('DRAFT');
 
     fireEvent.change(screen.getByLabelText('主诉'), { target: { value: '补牙' } });
     vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'f-1' });
@@ -237,7 +235,7 @@ describe('FirstExamsPage', () => {
       (call) => call[0] === '/resources/firstExams/f-1' && (call[1] as RequestInit)?.method === 'PATCH',
     );
     const body = JSON.parse(String((patchCall?.[1] as RequestInit)?.body));
-    expect(body).toMatchObject({ patientId: 'p-1', doctorId: 'd-1', status: 'DRAFT', chiefComplaint: '补牙' });
+    expect(body).toMatchObject({ patientId: 'p-1', doctorId: 'd-1', chiefComplaint: '补牙' });
     expect(body.consultantId).toBeUndefined();
     expect(await screen.findByText('首诊记录已更新')).toBeDefined();
   });
@@ -384,7 +382,6 @@ describe('FirstExamsPage', () => {
     expect(await screen.findByLabelText('主诉')).toBeDefined();
     expect((screen.getByLabelText('患者') as HTMLSelectElement).value).toBe('');
     expect((screen.getByLabelText('医生') as HTMLSelectElement).value).toBe('');
-    expect((screen.getByLabelText('状态') as HTMLSelectElement).value).toBe('DRAFT');
     expect((screen.getByLabelText('主诉') as HTMLTextAreaElement).value).toBe('');
   });
 

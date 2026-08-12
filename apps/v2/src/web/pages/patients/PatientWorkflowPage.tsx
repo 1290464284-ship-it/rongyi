@@ -68,6 +68,7 @@ export function PatientWorkflowPage() {
         page={patientPage}
         hasNext={patientPage * WORKFLOW_PAGE_SIZE < (patients.data?.total ?? 0)}
         onPageChange={setPatientPage}
+        disabled={stale}
       />
       <h2>历史评分</h2>
       <QuerySection
@@ -78,6 +79,7 @@ export function PatientWorkflowPage() {
         page={scorePage}
         hasNext={scorePage * WORKFLOW_PAGE_SIZE < (scores.data?.total ?? 0)}
         onPageChange={setScorePage}
+        disabled={scores.isPlaceholderData}
       />
     </div>
   );

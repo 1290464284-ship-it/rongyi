@@ -78,6 +78,10 @@ describe('workflow services', () => {
     expect(service.visitStatus('visit-wf', 'COMPLETED', context).status).toBe('COMPLETED');
     expect(service.firstExamStatus('exam-wf', 'SUBMITTED', context).status).toBe('SUBMITTED');
     expect(service.treatmentStatus('treatment-wf', 'IN_PROGRESS', context).status).toBe('IN_PROGRESS');
+    // 状态迁移属于业务写路径，必须记录 SyncChange，否则其他设备收不到 Treatment 状态变化。
+    expect(db.prepare(
+      `SELECT 1 FROM SyncChange WHERE tableName = 'Treatment' AND recordId = ? AND operation = 'UPDATE' AND clinicId = ?`,
+    ).get('treatment-wf', context.clinicId)).toBeDefined();
     expect(service.lockMedicalRecord('record-wf', true, context).isLocked).toBe(true);
   });
 
@@ -170,8 +174,9 @@ describe('workflow services', () => {
       findById: () => ({ id: 'missing-update', status: 'PENDING' }),
       markSent: () => 0,
     };
-    await expect(new WechatService(db, fakeWechat as never, provider).send('missing-update', context))
-      .rejects.toThrow('cannot be sent');
+    // 网关已投递成功；即使补偿写本地行失败，也不允许客户端重试再次调用网关。
+    expect(await new WechatService(db, fakeWechat as never, provider).send('missing-update', context))
+      .toMatchObject({ status: 'SENT' });
 
     db.prepare(
       `INSERT INTO PrintTemplate (

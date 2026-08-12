@@ -48,6 +48,7 @@ export function InventoryPage() {
     ),
     placeholderData: (previous) => previous,
   });
+  const stale = query.isPlaceholderData;
   const derivedFromList = useRef(false);
   useEffect(() => {
     if (derivedFromList.current || !query.data) return;
@@ -96,7 +97,7 @@ export function InventoryPage() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (submitting || submittingRef.current) return;
+    if (submitting || submittingRef.current || stale) return;
     // M13：itemId 必填，提交前字段级校验（避免报错延迟到服务端）
     if (!itemId || !itemId.trim()) {
       setItemIdError('请填写库存项目 ID');
@@ -126,7 +127,7 @@ export function InventoryPage() {
   }
 
   async function generateReplenishment() {
-    if (submitting || submittingRef.current) return;
+    if (submitting || submittingRef.current || stale) return;
     submittingRef.current = true;
     setSubmitting(true);
     try {
@@ -166,7 +167,7 @@ export function InventoryPage() {
 
   async function submitBatch(event: FormEvent) {
     event.preventDefault();
-    if (submitting || submittingRef.current) return;
+    if (submitting || submittingRef.current || stale) return;
     if (!itemId) {
       showToast('请先填写库存项目 ID', 'error');
       return;
@@ -275,7 +276,7 @@ export function InventoryPage() {
     <div className="page">
       <div className="page-head">
         <h1>库存管理</h1>
-        <button onClick={generateReplenishment}>生成补货建议</button>
+        <button disabled={stale} onClick={generateReplenishment}>生成补货建议</button>
       </div>
       <form
         className="inline-form"
@@ -353,7 +354,7 @@ export function InventoryPage() {
               <option value="ADJUST">ADJUST</option>
             </select>
             <input type="number" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
-            <button type="submit" disabled={submitting}>{submitting ? '保存中...' : '保存库存流水'}</button>
+            <button type="submit" disabled={submitting || stale}>{submitting ? '保存中...' : '保存库存流水'}</button>
           </form>
           <div className="cards">
             {query.data?.items.map((row) => (
@@ -369,6 +370,7 @@ export function InventoryPage() {
             page={page}
             hasNext={page * 20 < (query.data?.total ?? 0)}
             onPageChange={setPage}
+            disabled={stale}
           />
           <h2>低库存</h2>
           {lowTruncated && <p className="reminder-muted">低库存超过 100 条，仅显示前 100 条</p>}
@@ -401,7 +403,7 @@ export function InventoryPage() {
             <input aria-label="效期日期" type="date" value={expiryDate} onChange={(event) => setExpiryDate(event.target.value)} />
             <input aria-label="入库数量" type="number" value={batchQuantity} onChange={(event) => setBatchQuantity(event.target.value)} />
             <SearchableSelect resource="suppliers" ariaLabel="供应商" value={supplierId} onChange={setSupplierId} placeholder="供应商（可选）" />
-            <button type="submit" disabled={submitting}>{submitting ? '入库中...' : '新增批次'}</button>
+            <button type="submit" disabled={submitting || stale}>{submitting ? '入库中...' : '新增批次'}</button>
           </form>
           <div className="table-wrap">
             <table>

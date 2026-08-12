@@ -98,8 +98,6 @@ describe('FirstExamFormFields', () => {
     expect(update).toHaveBeenCalledWith({ doctorId: 'd-1' });
     fireEvent.change(screen.getByLabelText('会诊医生'), { target: { value: 'd-1' } });
     expect(update).toHaveBeenCalledWith({ consultantId: 'd-1' });
-    fireEvent.change(screen.getByLabelText('状态'), { target: { value: 'SUBMITTED' } });
-    expect(update).toHaveBeenCalledWith({ status: 'SUBMITTED' });
     fireEvent.change(screen.getByLabelText('主诉'), { target: { value: '牙痛' } });
     expect(update).toHaveBeenCalledWith({ chiefComplaint: '牙痛' });
     fireEvent.change(screen.getByLabelText('现病史'), { target: { value: '三天' } });

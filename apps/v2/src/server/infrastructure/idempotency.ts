@@ -38,6 +38,7 @@ export function withIdempotency<T>(
   db: Database.Database,
   scope: IdempotencyScope,
   fn: () => T | Promise<T>,
+  options?: { keepProcessingOnAppError?: boolean },
 ): T | Promise<T> {
   if (!scope?.requestId) {
     if (isAsyncFunction(fn)) return fn();
@@ -108,7 +109,7 @@ export function withIdempotency<T>(
     try {
       result = fn();
     } catch (error) {
-      if (error instanceof AppError) {
+      if (error instanceof AppError && !options?.keepProcessingOnAppError) {
         // 已知业务错误（校验/冲突/未找到）对应的写路径在事务内回滚，可安全删除 PROCESSING 供重试。
         db.prepare('DELETE FROM IdempotencyRecord WHERE key = ?').run(key);
       } else {
@@ -129,7 +130,7 @@ export function withIdempotency<T>(
         return value;
       },
       (error: unknown) => {
-        if (error instanceof AppError) {
+        if (error instanceof AppError && !options?.keepProcessingOnAppError) {
           // 已知业务错误一定伴随事务回滚，删除 PROCESSING 避免 30 分钟假锁。
           db.prepare('DELETE FROM IdempotencyRecord WHERE key = ?').run(key);
         } else {

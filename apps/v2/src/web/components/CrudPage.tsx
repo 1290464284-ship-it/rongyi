@@ -136,6 +136,7 @@ export function CrudPage<
             page={page}
             hasNext={Boolean(query.data) && page * (props.pageSize ?? 50) < query.data!.total}
             onPageChange={setPage}
+            disabled={isStale}
           />
         )
       )}

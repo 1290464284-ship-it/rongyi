@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { apiRequest, downloadCsvPath } from '../../lib/api';
@@ -38,6 +39,26 @@ export function FollowUpsPage() {
     queryKey: ['followup-nps'],
     queryFn: () => apiRequest<FollowUpNps>('/follow-ups/nps'),
   });
+  const rows = useMemo(
+    () => Array.isArray(query.data) ? query.data : query.data?.items ?? [],
+    [query.data],
+  );
+  const total = Array.isArray(query.data) ? 0 : query.data?.total ?? 0;
+  const pageSize = Array.isArray(query.data) ? 0 : query.data?.pageSize ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / Math.max(1, pageSize)));
+  const displayPage = Math.min(page, totalPages);
+  function goToPage(next: number) {
+    if (stale) return;
+    setSelectedIds([]);
+    setPage(Math.max(1, Math.min(next, totalPages)));
+  }
+  const now = new Date();
+  const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const groups = useMemo(() => [
+    { title: '已逾期', rows: rows.filter((row) => String(row.planDate ?? '') < todayKey) },
+    { title: '今日待随访', rows: rows.filter((row) => String(row.planDate ?? '') === todayKey) },
+    { title: '后续待随访', rows: rows.filter((row) => String(row.planDate ?? '') > todayKey) },
+  ], [rows, todayKey]);
   if (query.isLoading) return <LoadingState label="随访数据加载中..." />;
   if (query.error) {
     return (
@@ -177,23 +198,6 @@ export function FollowUpsPage() {
     },
   ];
 
-  const now = new Date();
-  const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const rows = Array.isArray(query.data) ? query.data : query.data?.items ?? [];
-  const total = Array.isArray(query.data) ? 0 : query.data?.total ?? 0;
-  const pageSize = Array.isArray(query.data) ? 0 : query.data?.pageSize ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / Math.max(1, pageSize)));
-  const displayPage = Math.min(page, totalPages);
-  function goToPage(next: number) {
-    setSelectedIds([]);
-    setPage(Math.max(1, Math.min(next, totalPages)));
-  }
-  const groups = [
-    { title: '已逾期', rows: rows.filter((row) => String(row.planDate ?? '') < todayKey) },
-    { title: '今日待随访', rows: rows.filter((row) => String(row.planDate ?? '') === todayKey) },
-    { title: '后续待随访', rows: rows.filter((row) => String(row.planDate ?? '') > todayKey) },
-  ];
-
   return (
     <div className="page">
       <div className="page-head">
@@ -204,7 +208,7 @@ export function FollowUpsPage() {
             <button onClick={() => setCompletion({ kind: 'batch' })} disabled={selectedIds.length === 0 || stale}>
               批量完成
             </button>
-            <button onClick={exportOverdue}>导出逾期</button>
+            <button onClick={exportOverdue} disabled={stale}>导出逾期</button>
           </>
         )}
       </div>
@@ -276,13 +280,13 @@ export function FollowUpsPage() {
           ) : null}
           {query.data && !Array.isArray(query.data) && query.data.total > query.data.pageSize && (
             <div className="pager">
-              <button type="button" disabled={displayPage <= 1} onClick={() => goToPage(displayPage - 1)}>上一页</button>
+              <button type="button" disabled={stale || displayPage <= 1} onClick={() => goToPage(displayPage - 1)}>上一页</button>
               <span>
                 第 {displayPage} / {totalPages} 页（共 {total} 条）
               </span>
               <button
                 type="button"
-                disabled={displayPage >= totalPages}
+                disabled={stale || displayPage >= totalPages}
                 onClick={() => goToPage(displayPage + 1)}
               >
                 下一页

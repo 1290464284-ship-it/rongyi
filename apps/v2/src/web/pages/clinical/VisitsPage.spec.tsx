@@ -67,7 +67,6 @@ describe('VisitsPage', () => {
       patientId: 'p-1',
       doctorId: 'd-1',
       startTime: new Date('2026-08-05T09:00').toISOString(),
-      status: 'IN_PROGRESS',
       chiefComplaint: '补牙',
     });
     expect(body.endTime).toBeUndefined();
@@ -117,7 +116,6 @@ describe('VisitsPage', () => {
     });
     expect((screen.getByLabelText('医生') as HTMLSelectElement).value).toBe('d-1');
     expect((screen.getByLabelText('主诉') as HTMLTextAreaElement).value).toBe('牙痛');
-    expect((screen.getByLabelText('状态') as HTMLSelectElement).value).toBe('IN_PROGRESS');
 
     fireEvent.change(screen.getByLabelText('主诉'), { target: { value: '牙痛加剧' } });
     vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'v-1' });
@@ -266,7 +264,6 @@ describe('VisitsPage', () => {
     expect(await screen.findByLabelText('开始时间')).toBeDefined();
     expect((screen.getByLabelText('患者') as HTMLSelectElement).value).toBe('');
     expect((screen.getByLabelText('医生') as HTMLSelectElement).value).toBe('');
-    expect((screen.getByLabelText('状态') as HTMLSelectElement).value).toBe('IN_PROGRESS');
     expect((screen.getByLabelText('主诉') as HTMLTextAreaElement).value).toBe('');
   });
 

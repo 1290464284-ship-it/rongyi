@@ -190,6 +190,27 @@ describe('HTTP app edge error handling', () => {
     };
     expect(rxRow.status).toBe('DRAFT');
     expect(rxRow.chargeId).toBeNull();
+
+    const registration = await auth(request(app).post('/api/v2/resources/registrations')).send({
+      patientId: 'patient-demo-001',
+      type: 'REGULAR',
+      registeredAt: new Date().toISOString(),
+      status: 'COMPLETED',
+    }).expect(201);
+    expect((db.prepare('SELECT status FROM Registration WHERE id = ?').get(registration.body.data.id as string) as { status: string }).status)
+      .toBe('REGISTERED');
+
+    const followUp = await auth(request(app).post('/api/v2/resources/followUps')).send({
+      patientId: 'patient-demo-001',
+      planDate: '2026-08-05',
+      content: 'state machine reset',
+      status: 'COMPLETED',
+      executionStatus: 'DONE',
+    }).expect(201);
+    const followUpRow = db.prepare('SELECT status, executionStatus FROM FollowUp WHERE id = ?')
+      .get(followUp.body.data.id as string) as { status: string; executionStatus: string };
+    expect(followUpRow.status).toBe('PENDING');
+    expect(followUpRow.executionStatus).toBe('PENDING');
   });
 
   it('short search terms and unknown routes return safe local responses', async () => {

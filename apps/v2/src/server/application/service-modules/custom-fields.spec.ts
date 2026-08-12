@@ -101,7 +101,7 @@ describe('custom fields', () => {
     const [target] = definitions;
     service.setValues('patient', 'patient-custom-2', definitions.map((field) => ({
       fieldId: field.id,
-      value: field.id === target.id ? 'x' : null,
+      value: field.id === target.id ? (field.fieldType === 'BOOLEAN' ? true : 'x') : null,
     })), context);
     service.deleteDefinition(target.id, context);
     expect(service.listDefinitions('patient', context).some((field) => field.id === target.id)).toBe(false);
@@ -147,5 +147,23 @@ describe('custom fields', () => {
       { fieldId: field.id, value: 'a' },
       { fieldId: field.id, value: 'b' },
     ], context)).toThrow('Duplicate custom field');
+  });
+
+  it('rejects non-boolean strings for boolean values and required flags', () => {
+    const service = new CustomFieldService(db);
+    const bool = service.createDefinition('patient', {
+      label: '严格布尔',
+      fieldName: 'strictBoolValue',
+      fieldType: 'BOOLEAN',
+    }, context);
+    expect(() => service.setValues('patient', 'patient-bool-strict', [
+      { fieldId: bool.id, value: 'yes' },
+    ], context)).toThrow('value must be a boolean');
+    expect(() => service.createDefinition('patient', {
+      label: '严格必填',
+      fieldName: 'strictRequiredFlag',
+      fieldType: 'TEXT',
+      required: 'yes' as unknown as boolean,
+    }, context)).toThrow('required must be a boolean');
   });
 });

@@ -67,7 +67,6 @@ describe('TreatmentsPage', () => {
       price: 20000,
       quantity: 1,
       teethNumbers: ['11', '21'],
-      status: 'PLANNED',
     });
     expect(body.code).toMatch(/^T-\d+$/);
     expect(body.plannedDate).toBeUndefined();
@@ -100,7 +99,6 @@ describe('TreatmentsPage', () => {
     expect((screen.getByLabelText('治疗名称') as HTMLInputElement).value).toBe('补牙');
     expect((screen.getByLabelText('价格') as HTMLInputElement).value).toBe('100.00');
     expect((screen.getByLabelText('牙位（逗号分隔）') as HTMLInputElement).value).toBe('');
-    expect((screen.getByLabelText('状态') as HTMLSelectElement).value).toBe('PLANNED');
 
     fireEvent.change(screen.getByLabelText('治疗名称'), { target: { value: '补牙(升级)' } });
     vi.mocked(apiRequest).mockResolvedValueOnce({ id: 't-1' });
@@ -113,7 +111,7 @@ describe('TreatmentsPage', () => {
       (call) => call[0] === '/resources/treatments/t-1' && (call[1] as RequestInit)?.method === 'PATCH',
     );
     const body = JSON.parse(String((patchCall?.[1] as RequestInit)?.body));
-    expect(body).toMatchObject({ name: '补牙(升级)', price: 10000, quantity: 1, teethNumbers: [], status: 'PLANNED' });
+    expect(body).toMatchObject({ name: '补牙(升级)', price: 10000, quantity: 1, teethNumbers: [] });
     expect(await screen.findByText('治疗记录已更新')).toBeDefined();
   });
 
@@ -191,7 +189,6 @@ describe('TreatmentsPage', () => {
     expect(await screen.findByText('请选择患者、医生并填写治疗名称、价格和数量')).toBeDefined();
 
     fireEvent.change(screen.getByLabelText('价格'), { target: { value: '300' } });
-    fireEvent.change(screen.getByLabelText('状态'), { target: { value: 'IN_PROGRESS' } });
     fireEvent.change(screen.getByLabelText('计划日期'), { target: { value: '2026-08-10' } });
     fireEvent.change(screen.getByLabelText('完成日期'), { target: { value: '2026-08-12' } });
     fireEvent.change(screen.getByLabelText('备注'), { target: { value: '两日后复诊' } });
@@ -208,7 +205,6 @@ describe('TreatmentsPage', () => {
       category: 'PROSTHETIC',
       price: 30000,
       quantity: 2,
-      status: 'IN_PROGRESS',
       plannedDate: '2026-08-10',
       completedDate: '2026-08-12',
       remark: '两日后复诊',
@@ -275,7 +271,6 @@ describe('TreatmentsPage', () => {
     await waitFor(() => {
       expect((screen.getByRole('option', { name: 'd-9' }) as HTMLOptionElement).value).toBe('d-9');
     });
-    expect((screen.getByLabelText('状态') as HTMLSelectElement).value).toBe('COMPLETED');
   });
 
   it('ignores an empty status transition selection', async () => {

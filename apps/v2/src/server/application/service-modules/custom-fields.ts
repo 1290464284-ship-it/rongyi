@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import { NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
+import { parseBooleanStrict } from '../../http/validation';
 import type { AppContext } from '../../../domain/contracts';
 
 const CUSTOM_FIELD_ENTITIES = ['patient'] as const;
@@ -142,7 +143,7 @@ export class CustomFieldService {
       seen.add(fieldId);
       let value: string | null;
       if (input.value === null || input.value === undefined || input.value === '') value = null;
-      else if (field.fieldType === 'BOOLEAN') value = input.value ? '1' : '0';
+      else if (field.fieldType === 'BOOLEAN') value = parseBooleanStrict(input.value, 'value') ? '1' : '0';
       else value = String(input.value);
       normalized.push({ fieldId, value });
     }
@@ -213,7 +214,7 @@ export class CustomFieldService {
       fieldName,
       fieldType,
       options,
-      required: Boolean(input.required),
+      required: input.required === undefined ? false : parseBooleanStrict(input.required, 'required'),
       sortOrder: Number.isFinite(Number(input.sortOrder)) ? Number(input.sortOrder) : 0,
     };
   }

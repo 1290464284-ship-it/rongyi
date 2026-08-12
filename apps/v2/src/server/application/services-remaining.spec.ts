@@ -127,4 +127,22 @@ describe('remaining services', () => {
     expect(result.imported).toBe(0);
     expect(result.failed).toBe(1);
   });
+
+  it('resets state-machine statuses during bulk import', async () => {
+    const service = new BulkImportService(db);
+    const result = await service.importRows('treatments', [{
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      code: 'BULK-T-1',
+      name: 'Bulk Treatment',
+      category: 'GENERAL',
+      price: 10000,
+      quantity: 1,
+      status: 'COMPLETED',
+    }], context);
+    expect(result.imported).toBe(1);
+    const row = db.prepare('SELECT status FROM Treatment WHERE code = ? AND clinicId = ?')
+      .get('BULK-T-1', context.clinicId) as { status: string } | undefined;
+    expect(row?.status).toBe('PLANNED');
+  });
 });

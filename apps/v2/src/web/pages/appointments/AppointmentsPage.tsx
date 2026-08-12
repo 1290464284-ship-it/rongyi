@@ -168,7 +168,7 @@ export function AppointmentsPage({ initialSearch }: { initialSearch?: string } =
 
   async function saveEditAppointment(event: FormEvent) {
     event.preventDefault();
-    if (!editingAppointment || submitting) return;
+    if (!editingAppointment || submitting || stale) return;
     const startDate = parseLocalDateTime(editForm.startTime);
     const endDate = parseLocalDateTime(editForm.endTime);
     if (!editForm.doctorId || !editForm.startTime || !editForm.endTime || !startDate || !endDate) {
@@ -308,7 +308,7 @@ export function AppointmentsPage({ initialSearch }: { initialSearch?: string } =
           <input aria-label="结束时间" type="datetime-local" value={editForm.endTime} onChange={(event) => setEditForm((current) => ({ ...current, endTime: event.target.value }))} />
           <div className="modal-actions">
             <button type="button" onClick={closeEditAppointment}>取消</button>
-            <button type="submit" disabled={submitting}>{submitting ? '保存中...' : '保存'}</button>
+            <button type="submit" disabled={submitting || stale}>{submitting ? '保存中...' : '保存'}</button>
           </div>
         </form>
       </Dialog>

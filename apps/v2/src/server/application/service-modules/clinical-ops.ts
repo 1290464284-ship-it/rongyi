@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { AppError, NotFoundError, ValidationError, isSystematicSqliteError } from '../../infrastructure/errors';
 import { SqliteRepository } from '../../infrastructure/repository';
-import { stripProtectedWriteFields } from '../../infrastructure/security';
+import { applyStateMachineDefaults, stripProtectedWriteFields } from '../../infrastructure/security';
 import { validatePayload } from '../../http/validation';
 import { SqlitePatientRiskRepository } from '../../infrastructure/repositories/core.repositories';
 import { resourceRegistry } from '../../../domain/resources';
@@ -167,7 +167,13 @@ export class BulkImportService {
       try {
         for (const row of chunk) {
           try {
-            const payload = stripProtectedWriteFields(validatePayload(definition, row), undefined, resourceName);
+            const payload = stripProtectedWriteFields(
+              validatePayload(definition, row),
+              undefined,
+              resourceName,
+              { protectStateMachine: true },
+            );
+            applyStateMachineDefaults(resourceName, payload);
             repository.insertSync({ id: randomUUID(), ...payload }, context);
             imported += 1;
           } catch (error) {

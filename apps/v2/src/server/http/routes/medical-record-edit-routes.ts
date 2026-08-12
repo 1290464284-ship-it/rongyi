@@ -2,6 +2,7 @@ import type { Express } from 'express';
 
 import { wrapAsync } from '../middleware';
 import { MedicalRecordEditService } from '../../application/service-modules/medical-record-edit';
+import { parseBooleanStrict } from '../validation';
 import type { RouteDependencies } from './deps';
 
 /**
@@ -34,7 +35,7 @@ export function registerMedicalRecordEditRoutes(app: Express, deps: RouteDepende
     const result = service.review(
       String(req.params.id),
       {
-        approve: req.body?.approve === true,
+        approve: req.body?.approve === undefined ? false : parseBooleanStrict(req.body.approve, 'approve'),
         reviewNote: typeof req.body?.reviewNote === 'string' ? req.body.reviewNote : undefined,
       },
       req.context!,

@@ -82,7 +82,6 @@ export function VisitsPage() {
         doctorId: form.doctorId,
         startTime: new Date(form.startTime).toISOString(),
         endTime: form.endTime ? new Date(form.endTime).toISOString() : undefined,
-        status: form.status,
         chiefComplaint: form.chiefComplaint || undefined,
         diagnosis: form.diagnosis || undefined,
         treatmentPlan: form.treatmentPlan || undefined,
@@ -194,14 +193,6 @@ function VisitForm({ form, update }: { form: VisitForm; update: (patch: Partial<
           )}
         </label>
       ))}
-      <label>
-        状态
-        <select value={form.status} onChange={(event) => update({ status: event.target.value })}>
-          {Object.entries(STATUS_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>{label}</option>
-          ))}
-        </select>
-      </label>
     </>
   );
 }

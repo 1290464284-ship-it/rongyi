@@ -99,11 +99,13 @@ export function DispenseListPanel({
           page={dispensePage}
           hasNext={Boolean(dispenses.data) && dispensePage * 20 < dispenses.data!.total}
           onPageChange={setDispensePage}
+          disabled={stale}
         />
         {action && (
           <DispenseActionPanel
             mode={action.mode}
             row={action.row}
+            stale={stale}
             onClose={() => setAction(null)}
             onDone={() => void dispenses.refetch()}
           />
@@ -112,6 +114,7 @@ export function DispenseListPanel({
       {editDispenseId && (
         <DispenseEditDialog
           dispenseId={editDispenseId}
+          stale={stale}
           onClose={() => setEditDispenseId(null)}
           onDone={() => void dispenses.refetch()}
         />
@@ -133,11 +136,13 @@ export function DispenseListPanel({
 function DispenseActionPanel({
   mode,
   row,
+  stale,
   onClose,
   onDone,
 }: {
   mode: 'dispense' | 'return';
   row: DispenseRow;
+  stale: boolean;
   onClose: () => void;
   onDone: () => void;
 }) {
@@ -154,7 +159,7 @@ function DispenseActionPanel({
     Number(item.quantity ?? 0) - Number(item.returnedQuantity ?? 0);
 
   async function submit() {
-    if (busy || !detail.data) return;
+    if (busy || stale || !detail.data) return;
     if (mode === 'dispense') {
       const missingBatch = detail.data.items.some(
         (item) => Number(item.batchManaged ?? 0) === 1 && !(batchSelections[item.id] ?? item.batchId ?? ''),

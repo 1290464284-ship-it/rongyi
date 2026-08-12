@@ -104,6 +104,28 @@ describe('InventoryPage', () => {
     expect(await screen.findByText('补货建议已生成')).toBeDefined();
   });
 
+  it('does not submit transactions while the inventory list is stale', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/inventoryItems?page=1&pageSize=20') {
+        return { items: [], total: 30, page: 1, pageSize: 20 };
+      }
+      if (path === '/inventory/low-stock') return [];
+      if (path === '/inventory/expiring?days=30') return [];
+      return {};
+    });
+    render(<InventoryPage />, { wrapper });
+    await screen.findByLabelText('库存项目 ID');
+    vi.mocked(apiRequest).mockImplementationOnce(() => new Promise(() => {}));
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+    fireEvent.change(screen.getByLabelText('库存项目 ID'), { target: { value: 'item-new' } });
+    fireEvent.change(screen.getByDisplayValue('IN'), { target: { value: 'OUT' } });
+    fireEvent.change(screen.getByDisplayValue('1'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存库存流水' }));
+    expect(vi.mocked(apiRequest).mock.calls.filter(([path, options]) =>
+      path === '/inventory/transactions' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'POST',
+    )).toHaveLength(0);
+  });
+
   it('reports transaction and generation failures', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/inventoryItems?page=1&pageSize=20') {

@@ -37,7 +37,6 @@ export function FirstExamsPage() {
           patientId: form.patientId,
           doctorId: form.doctorId,
           consultantId: form.consultantId || undefined,
-          status: form.status,
           chiefComplaint: form.chiefComplaint || undefined,
           presentIllness: form.presentIllness || undefined,
           pastHistory: form.pastHistory || undefined,

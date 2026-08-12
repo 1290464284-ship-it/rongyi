@@ -145,6 +145,19 @@ describe('medical record edit routes', () => {
     currentUserId = 'user-admin-001';
   });
 
+  it('rejects non-boolean approve payloads', async () => {
+    insertRecord('r-route-strict-bool');
+    await request(app)
+      .post('/api/v2/medical-records/r-route-strict-bool/edit-request')
+      .send({ reason: '严格布尔', proposedContent: { diagnosis: '新诊断' } })
+      .expect(201);
+    const response = await request(app)
+      .patch('/api/v2/medical-records/r-route-strict-bool/edit-request/review')
+      .send({ approve: 'yes' })
+      .expect(400);
+    expect(response.body.code).toBe('VALIDATION_ERROR');
+  });
+
   it('returns 404 for an unknown record', async () => {
     const response = await request(app)
       .post('/api/v2/medical-records/missing-record/edit-request')

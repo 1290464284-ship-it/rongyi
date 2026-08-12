@@ -88,7 +88,7 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
       }, async () => {
         const sent = await wechat.send(String(req.params.id), req.context!);
         return { success: true, data: sent };
-      });
+      }, { keepProcessingOnAppError: true });
       res.json(result);
   }));
 
@@ -101,7 +101,7 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
       }, async () => {
         const sent = await wechat.sendBatch(req.body?.ids ?? [], req.context!);
         return { success: true, data: sent };
-      });
+      }, { keepProcessingOnAppError: true });
       res.json(result);
   }));
 

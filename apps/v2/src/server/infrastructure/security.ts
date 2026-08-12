@@ -116,7 +116,28 @@ const STATE_MACHINE_PROTECTED_WRITE_FIELDS: Record<string, ReadonlySet<string>> 
   treatments: new Set(['status']),
   firstExams: new Set(['status']),
   prescriptions: new Set(['status', 'processedAt', 'chargeId', 'dispenseId']),
+  registrations: new Set(['status']),
+  followUps: new Set(['status', 'executionStatus']),
 };
+
+export const STATE_MACHINE_DEFAULT_STATUS: Record<string, string> = {
+  appointments: 'BOOKED',
+  visits: 'IN_PROGRESS',
+  treatments: 'PLANNED',
+  firstExams: 'DRAFT',
+  prescriptions: 'DRAFT',
+  registrations: 'REGISTERED',
+  followUps: 'PENDING',
+};
+
+export function applyStateMachineDefaults(resourceName: string, payload: Record<string, unknown>): Record<string, unknown> {
+  const defaultStatus = STATE_MACHINE_DEFAULT_STATUS[resourceName];
+  if (defaultStatus && payload.status === undefined) payload.status = defaultStatus;
+  // followUps.executionStatus 与 status 一样由服务端状态机管理；通用创建/Sync/导入
+  // 缺省时必须显式注入，避免依赖列默认值（新表列默认值可能为空）。
+  if (resourceName === 'followUps' && payload.executionStatus === undefined) payload.executionStatus = 'PENDING';
+  return payload;
+}
 
 /** 递归掩码：数组逐项、对象逐键；深度 >5 时截断为占位值，避免深层嵌套泄露敏感键。 */
 function maskWith<T>(row: T, sensitive: ReadonlySet<string>, depth = 0): T {

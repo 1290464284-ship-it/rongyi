@@ -72,6 +72,7 @@ export function MemberCardsPage() {
   const [actionValue, setActionValue] = useState('');
   const [actionBusy, setActionBusy] = useState(false);
   const reloadRef = useRef<(() => Promise<unknown>) | null>(null);
+  const staleRef = useRef(false);
 
   return (
     <>
@@ -118,6 +119,7 @@ export function MemberCardsPage() {
         dialogTitle={(editing) => (editing ? '编辑会员卡' : '新建会员卡')}
         rowActions={(row, ctx) => (
           <>
+            {(() => { staleRef.current = ctx.stale; return null; })()}
             <ReloadSync reload={ctx.reload} onReload={(reload) => { reloadRef.current = reload; }} />
             <button disabled={ctx.stale} onClick={() => openAction(row.id, 'RECHARGE', ctx.stale)}>充值</button>
             <button disabled={ctx.stale} onClick={() => openAction(row.id, 'CONSUME', ctx.stale)}>消费</button>
@@ -206,7 +208,7 @@ export function MemberCardsPage() {
 
   async function runAction(event: FormEvent) {
     event.preventDefault();
-    if (!actionTarget || !actionKind || actionKind === 'PLAN' || actionKind === 'QUOTE' || actionBusy) return;
+    if (!actionTarget || !actionKind || actionKind === 'PLAN' || actionKind === 'QUOTE' || actionBusy || staleRef.current) return;
     const value = Number(actionValue || 0);
     if (actionKind === 'POINTS' ? !Number.isInteger(value) || value === 0 : value <= 0) {
       showToast(actionKind === 'POINTS' ? '请输入有效积分' : '请输入有效金额', 'error');

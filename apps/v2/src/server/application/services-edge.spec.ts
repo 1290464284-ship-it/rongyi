@@ -937,6 +937,9 @@ describe('service edge coverage', () => {
     expect(String(globalBackup.filename)).toMatch(/^clinic-null-backup-/);
     const clinicB = await service.create({ clinicId: 'clinic-b' });
     expect(String(clinicB.filename)).toMatch(/^clinic-clinic-b-backup-/);
+    // 清理有 60s 新建宽限；把最早一份 clinic-a 备份的 mtime 调旧，确保测试可删除。
+    const oldMtime = new Date(Date.now() - 120_000);
+    fs.utimesSync(path.join(backupDir, String(clinicA.filename)), oldMtime, oldMtime);
 
     const listedA = service.list('clinic-a').map((entry) => String(entry.filename));
     expect(listedA).toContain(String(clinicA.filename));
@@ -1208,6 +1211,75 @@ describe('service edge coverage', () => {
     expect(deleteExisting.accepted).toBe(1);
     const deletedRow = db.prepare('SELECT deletedAt FROM Patient WHERE id = ?').get('patient-sync-delete') as { deletedAt: string | null } | undefined;
     expect(deletedRow?.deletedAt).not.toBeNull();
+    // 状态机资源不能经 sync 直写终态；INSERT 缺省状态时注入初始状态。
+    const terminalTreatment = await service.push({
+      deviceId: 'device-1',
+      deviceToken: device.token,
+      changes: [{
+        tableName: 'Treatment',
+        recordId: 'edge-sync-treatment-terminal',
+        operation: 'INSERT',
+        updatedAt: now,
+        data: {
+          patientId: 'patient-demo-001',
+          doctorId: 'user-admin-001',
+          code: 'T-SYNC-TERMINAL',
+          name: 'Terminal',
+          category: 'GENERAL',
+          price: 100,
+          quantity: 1,
+          status: 'COMPLETED',
+        },
+      }],
+    }, context);
+    expect(terminalTreatment.failed).toBe(1);
+    expect(terminalTreatment.errors[0].error).toContain('状态由服务端状态机管理');
+    const defaultTreatment = await service.push({
+      deviceId: 'device-1',
+      deviceToken: device.token,
+      changes: [{
+        tableName: 'Treatment',
+        recordId: 'edge-sync-treatment-default',
+        operation: 'INSERT',
+        updatedAt: now,
+        data: {
+          patientId: 'patient-demo-001',
+          doctorId: 'user-admin-001',
+          code: 'T-SYNC-DEFAULT',
+          name: 'Default',
+          category: 'GENERAL',
+          price: 100,
+          quantity: 1,
+        },
+      }],
+    }, context);
+    expect(defaultTreatment.accepted).toBe(1);
+    expect((db.prepare('SELECT status FROM Treatment WHERE id = ?').get('edge-sync-treatment-default') as { status: string }).status)
+      .toBe('PLANNED');
+    const mismatchedUpdate = await service.push({
+      deviceId: 'device-1',
+      deviceToken: device.token,
+      changes: [{
+        tableName: 'Treatment',
+        recordId: 'edge-sync-treatment-default',
+        operation: 'UPDATE',
+        updatedAt: freshIso,
+        data: { status: 'COMPLETED' },
+      }],
+    }, context);
+    expect(mismatchedUpdate.failed).toBe(1);
+    const matchedUpdate = await service.push({
+      deviceId: 'device-1',
+      deviceToken: device.token,
+      changes: [{
+        tableName: 'Treatment',
+        recordId: 'edge-sync-treatment-default',
+        operation: 'UPDATE',
+        updatedAt: freshIso,
+        data: { name: 'Default Updated', status: 'PLANNED' },
+      }],
+    }, context);
+    expect(matchedUpdate.accepted).toBe(1);
     const trickyData: Record<string, unknown> = {};
     Object.defineProperty(trickyData, 'code', {
       enumerable: true,
@@ -1277,6 +1349,10 @@ describe('service edge coverage', () => {
     expect(Number.isFinite(bounded.limit)).toBe(true);
     expect(Number(bounded.limit)).toBeLessThanOrEqual(50_000);
     expect(Number.isFinite(bounded.offset)).toBe(true);
+    const first = service.fullSnapshot(context, { table: 'Patient', limit: 1 });
+    const second = service.fullSnapshot(context, { table: 'Patient', limit: 1, afterId: String(first.nextId) });
+    expect(second.offset).toBeUndefined();
+    expect(second.rows?.[0]?.id).not.toBe(first.rows?.[0]?.id);
   });
 
   it('pulls server-originated changes to other devices and keeps push single-row', async () => {

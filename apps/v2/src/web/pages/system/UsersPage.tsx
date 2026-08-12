@@ -329,6 +329,7 @@ export function UsersPage() {
         page={page}
         hasNext={page * USER_PAGE_SIZE < (users.data?.total ?? 0)}
         onPageChange={setPage}
+        disabled={stale}
       />
 
       <Dialog open={showForm} title={editingId ? '编辑员工' : '新建员工'} onClose={() => setShowForm(false)}>

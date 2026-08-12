@@ -11,10 +11,12 @@ export function DispenseEditDialog({
   dispenseId,
   onClose,
   onDone,
+  stale,
 }: {
   dispenseId: string;
   onClose: () => void;
   onDone: () => void;
+  stale?: boolean;
 }) {
   const { showToast } = useToast();
   const [form, setForm] = useState<CreateForm | null>(null);
@@ -62,7 +64,7 @@ export function DispenseEditDialog({
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (busy || !effectiveForm) return;
+    if (busy || stale || !effectiveForm) return;
     const form = effectiveForm;
     const items = form.items
       .filter((item) => item.itemId !== '' && Number.isSafeInteger(Number(item.quantity)) && Number(item.quantity) > 0)

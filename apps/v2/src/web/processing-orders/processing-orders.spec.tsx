@@ -115,6 +115,15 @@ describe('ProcessingStatusSelect', () => {
     fireEvent.change(select, { target: { value: '' } });
     expect(onTransition).toHaveBeenCalledTimes(1);
   });
+
+  it('ignores transitions while disabled', () => {
+    const onTransition = vi.fn();
+    render(<ProcessingStatusSelect rowId="row-1" onTransition={onTransition} disabled />);
+    const select = screen.getByLabelText('变更加工状态') as HTMLSelectElement;
+    expect(select.disabled).toBe(true);
+    fireEvent.change(select, { target: { value: 'SENT' } });
+    expect(onTransition).not.toHaveBeenCalled();
+  });
 });
 
 describe('ProcessingOrderFormFields', () => {

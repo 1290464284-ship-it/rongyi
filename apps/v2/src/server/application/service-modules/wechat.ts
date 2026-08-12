@@ -235,8 +235,12 @@ export class WechatService {
         `UPDATE WechatMessage SET status = 'SENT', sentAt = ?, updatedAt = ?
          WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
       ).run(now, now, messageId, ...(context.clinicId ? [context.clinicId] : [])).changes;
-      if (compensated === 0) throw new ConflictError('Wechat message cannot be sent from current status');
-      this.logger?.warn('wechat markSent race compensated after gateway delivery', { recordId: messageId });
+      if (compensated === 0) {
+        // 投递已发生；行被并发删除也不应让客户端重试再次调用网关，幂等键兜底。
+        this.logger?.error('wechat delivery succeeded but local message row is missing', { recordId: messageId });
+      } else {
+        this.logger?.warn('wechat markSent race compensated after gateway delivery', { recordId: messageId });
+      }
     }
     return { id: messageId, status: 'SENT', result: delivery.result ?? 'sent' };
   }

@@ -6,7 +6,7 @@ import { SqliteRepository } from '../infrastructure/repository';
 import { validatePayload } from './validation';
 import type { ResourceDefinition } from '../../domain/contracts';
 import { resolveResource } from '../infrastructure/legacy-registry';
-import { stripProtectedWriteFields } from '../infrastructure/security';
+import { STATE_MACHINE_DEFAULT_STATUS, applyStateMachineDefaults, stripProtectedWriteFields } from '../infrastructure/security';
 import { withIdempotency } from '../infrastructure/idempotency';
 import { parsePagination } from './pagination';
 import { tenantAnd, tenantParams } from '../infrastructure/tenant';
@@ -16,14 +16,6 @@ import { maskPhoneForExport } from '../application/service-modules/operations';
 
 export function createResourceRouter(db: Database.Database): Router {
   const router = Router();
-  // 状态机资源在通用创建时的默认初始状态；客户端显式传值会被写保护剥掉。
-  const STATE_MACHINE_DEFAULT_STATUS: Record<string, string> = {
-    appointments: 'BOOKED',
-    visits: 'IN_PROGRESS',
-    treatments: 'PLANNED',
-    firstExams: 'DRAFT',
-    prescriptions: 'DRAFT',
-  };
 
   // rolePermissions 的 role 是业务字段（配置某角色的权限），需豁免通用写保护；
   // 其余资源一律禁止客户端写 role 等系统字段（防提权）。
@@ -85,7 +77,7 @@ export function createResourceRouter(db: Database.Database): Router {
         resource.name,
         { protectStateMachine: true },
       );
-      if (defaultStatus && payload.status === undefined) payload.status = defaultStatus;
+      applyStateMachineDefaults(resource.name, payload);
       const requestId = typeof req.header('idempotency-key') === 'string' ? req.header('idempotency-key')! : '';
       const result = await withIdempotency(db, {
         operation: `resource.create.${resource.name}`,

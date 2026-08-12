@@ -1,6 +1,7 @@
 // 临床工作流仓储（M-04：由 core.repositories.ts 拆分）
 import type Database from 'better-sqlite3';
 import { tenantAnd } from '../tenant';
+import { trackResourceWrite } from '../write-tracking';
 import type { ClinicalWorkflowRepository } from '../../application/ports';
 
 export class SqliteClinicalWorkflowRepository implements ClinicalWorkflowRepository {
@@ -24,6 +25,9 @@ export class SqliteClinicalWorkflowRepository implements ClinicalWorkflowReposit
       ...(fromStatus !== undefined ? [fromStatus] : []),
       ...(clinicId ? [clinicId] : []),
     );
+    if (result.changes > 0) {
+      trackResourceWrite(this.db, { tableName: table, recordId: id, operation: 'UPDATE', clinicId: clinicId ?? null });
+    }
     return result.changes;
   }
 

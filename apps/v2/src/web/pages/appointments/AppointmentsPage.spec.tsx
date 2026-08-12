@@ -370,6 +370,22 @@ await waitFor(() => {
     });
   });
 
+  it('does not save an edit while the appointment list is stale', async () => {
+    mockLookups();
+    render(<AppointmentsPage />, { wrapper });
+    await screen.findByText('预约管理');
+    fireEvent.click((await screen.findAllByRole('button', { name: '编辑' }))[2]);
+    vi.mocked(apiRequest).mockImplementationOnce(() => new Promise(() => {}));
+    fireEvent.change(screen.getByLabelText('搜索预约'), { target: { value: 'stale' } });
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/appointments?page=1&pageSize=20&search=stale');
+    });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    expect(vi.mocked(apiRequest).mock.calls.some(([path, options]) =>
+      path === '/resources/appointments/a-1' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'PATCH',
+    )).toBe(false);
+  });
+
   it('deletes an appointment after confirmation', async () => {
     mockLookups();
     render(<AppointmentsPage />, { wrapper });

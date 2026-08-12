@@ -87,15 +87,16 @@ export function FrontDeskWorkflowPage() {
           page={page}
           hasNext={page * WORKFLOW_PAGE_SIZE < (registrations.data?.total ?? 0)}
           onPageChange={setPage}
+          disabled={stale}
         />
       </section>
-      {activeDialog?.kind === 'charge' && (
+      {activeDialog?.kind === 'charge' && !stale && (
         <ChargeDialog row={activeDialog.row} onClose={() => setActiveDialog(null)} onSaved={refreshAfterAction} />
       )}
-      {activeDialog?.kind === 'followup' && (
+      {activeDialog?.kind === 'followup' && !stale && (
         <CreateFollowUpDialog row={activeDialog.row} onClose={() => setActiveDialog(null)} onSaved={refreshAfterAction} />
       )}
-      {activeDialog?.kind === 'triage' && (
+      {activeDialog?.kind === 'triage' && !stale && (
         <TriageDialog row={activeDialog.row} onClose={() => setActiveDialog(null)} onSaved={refreshAfterAction} />
       )}
     </div>

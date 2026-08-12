@@ -87,7 +87,6 @@ export function TreatmentsPage() {
         price: toCents(Number(form.price || 0)),
         quantity: Number(form.quantity || 0),
         teethNumbers: splitList(form.teethNumbers),
-        status: form.status,
         plannedDate: form.plannedDate || undefined,
         completedDate: form.completedDate || undefined,
         remark: form.remark || undefined,
@@ -216,14 +215,6 @@ function TreatmentFormFields({ form, update }: { form: TreatmentForm; update: (p
       <label>
         牙位（逗号分隔）
         <input value={form.teethNumbers} onChange={(event) => update({ teethNumbers: event.target.value })} />
-      </label>
-      <label>
-        状态
-        <select value={form.status} onChange={(event) => update({ status: event.target.value })}>
-          {Object.entries(STATUS_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>{label}</option>
-          ))}
-        </select>
       </label>
       <label>
         计划日期

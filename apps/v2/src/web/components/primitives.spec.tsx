@@ -71,6 +71,12 @@ describe('UI primitives', () => {
     render(<PagePager page={1} hasNext={false} onPageChange={onPageChange} />);
     expect((screen.getByRole('button', { name: '上一页' }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole('button', { name: '下一页' }) as HTMLButtonElement).disabled).toBe(true);
+    cleanup();
+    const disabledChange = vi.fn();
+    render(<PagePager page={2} hasNext disabled onPageChange={disabledChange} />);
+    fireEvent.click(screen.getByRole('button', { name: '上一页' }));
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+    expect(disabledChange).not.toHaveBeenCalled();
   });
 
   it('emits debounced-style search changes through the shared SearchInput', () => {

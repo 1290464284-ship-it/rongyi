@@ -75,6 +75,7 @@ export function HrWorkflowPage() {
         page={page}
         hasNext={page * WORKFLOW_PAGE_SIZE < (leaves.data?.total ?? 0)}
         onPageChange={setPage}
+        disabled={stale}
       />
     </div>
   );

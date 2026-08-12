@@ -20,6 +20,7 @@ export function MedicalRecordsPage() {
   const [reviewNote, setReviewNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const reloadRef = useRef<() => Promise<unknown>>(async () => undefined);
+  const staleRef = useRef(false);
 
   function openEditRequest(row: MedicalRecordRow) {
     setEditForm({
@@ -41,7 +42,7 @@ export function MedicalRecordsPage() {
   }
 
   async function submitEditRequest() {
-    if (!editTarget || submitting) return;
+    if (!editTarget || submitting || staleRef.current) return;
     if (!editForm.reason.trim()) {
       showToast('请填写修改原因', 'error');
       return;
@@ -79,7 +80,7 @@ export function MedicalRecordsPage() {
   }
 
   async function submitReview(approve: boolean) {
-    if (!reviewTarget || submitting) return;
+    if (!reviewTarget || submitting || staleRef.current) return;
     setSubmitting(true);
     try {
       await apiRequest(`/medical-records/${reviewTarget.id}/edit-request/review`, {
@@ -148,6 +149,7 @@ export function MedicalRecordsPage() {
       canEdit
       canDelete
       rowActions={(row, ctx) => {
+        staleRef.current = ctx.stale;
         return (
           <>
             <ReloadSync reload={ctx.reload} onReload={(reload) => { reloadRef.current = reload; }} />
