@@ -282,4 +282,27 @@ describe('sync conflict detection and resolution', () => {
     const row = db.prepare('SELECT name FROM Patient WHERE id = ?').get('sync-patient-missing-remote') as { name: string };
     expect(row.name).toBe('Remote Insert');
   });
+
+  it('swallows rollback failures and rethrows the original conflict error', async () => {
+    db.prepare(
+      `INSERT INTO SyncConflict (
+         id, clinicId, tableName, recordId, deviceId, localOperation, remoteOperation,
+         localSnapshotJson, remoteSnapshotJson, localUpdatedAt, remoteUpdatedAt,
+         status, resolution, resolvedAt, resolvedById, createdAt, updatedAt, deletedAt
+       ) VALUES (?, 'clinic-v2-001', 'Patient', 'sync-patient-rollback', 'sync-device-rollback', 'UPDATE', 'UPDATE',
+         '{}', ?, '2026-08-09T11:00:00.000Z', '2026-08-09T12:00:00.000Z',
+         'PENDING', NULL, NULL, NULL, ?, ?, NULL)`,
+    ).run(
+      'sync-conflict-rollback',
+      JSON.stringify({ code: 123, name: 'Rollback', gender: 'UNKNOWN', phone: '13800000010', source: 'WALK_IN', active: true }),
+      now,
+      now,
+    );
+    const execSpy = vi.spyOn(db, 'exec').mockImplementation((sql: string) => {
+      if (sql === 'ROLLBACK') throw new Error('rollback failed');
+      return db;
+    });
+    await expect(service.resolveConflict('sync-conflict-rollback', 'KEEP_REMOTE', context)).rejects.toThrow();
+    expect(execSpy).toHaveBeenCalledWith('ROLLBACK');
+  });
 });
