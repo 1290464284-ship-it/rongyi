@@ -33,6 +33,7 @@ export function AppointmentBoardPage() {
     queryFn: () => apiRequest<Page<AppointmentRow>>(`/appointments/by-date?date=${encodeURIComponent(date)}`),
     placeholderData: (previous) => previous,
   });
+  const stale = query.isPlaceholderData;
 
   if (query.isLoading) return <LoadingState label="预约看板加载中..." />;
   if (query.error) {
@@ -71,6 +72,7 @@ export function AppointmentBoardPage() {
   }
 
   async function handleDrop(statusKey: string) {
+    if (stale) return;
     const id = draggingId;
     setDraggingId(null);
     setDragOverColumn(null);
@@ -81,7 +83,7 @@ export function AppointmentBoardPage() {
   }
 
   return (
-    <div className="page">
+    <div className="page" aria-busy={stale}>
       <div className="page-head">
         <h1>预约看板</h1>
         <input aria-label="日期" type="date" value={date} onChange={(event) => setDate(event.target.value)} />
@@ -101,11 +103,13 @@ export function AppointmentBoardPage() {
             data-status={status.key}
             key={status.key}
             onDragOver={(event) => {
+              if (stale) return;
               event.preventDefault();
               setDragOverColumn(status.key);
             }}
             onDragLeave={() => setDragOverColumn((current) => (current === status.key ? null : current))}
             onDrop={(event) => {
+              if (stale) return;
               event.preventDefault();
               void handleDrop(status.key);
             }}
@@ -119,10 +123,11 @@ export function AppointmentBoardPage() {
               .map((row) => (
                 <article
                   className={`board-card${draggingId === row.id ? ' dragging' : ''}`}
-                  draggable
+                  draggable={!stale}
                   data-id={row.id}
                   key={row.id}
                   onDragStart={(event) => {
+                    if (stale) return;
                     event.dataTransfer?.setData('text/plain', row.id);
                     setDraggingId(row.id);
                   }}
@@ -138,7 +143,7 @@ export function AppointmentBoardPage() {
                     key={`${row.id}-${row.status}`}
                     value=""
                     aria-label={`${status.label}状态`}
-                    disabled={inFlightIds.has(row.id)}
+                    disabled={stale || inFlightIds.has(row.id)}
                     onChange={(event) => event.target.value && transition(row.id, event.target.value)}
                   >
                     <option value="">变更状态</option>

@@ -318,4 +318,27 @@ describe('AppointmentBoardPage', () => {
     render(<AppointmentBoardPage />, { wrapper });
     expect((await screen.findAllByText('暂无预约')).length).toBeGreaterThan(0);
   });
+
+  it('disables board interactions while showing placeholder data for a new date', async () => {
+    const today = todayLocalDate();
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === `/appointments/by-date?date=${today}`) {
+        return {
+          items: [{ id: 'a1', patientId: 'P1', doctorId: 'D1', startTime: '2026-08-04T09:00:00.000Z', status: 'BOOKED' }],
+          total: 1,
+          page: 1,
+          pageSize: 200,
+        };
+      }
+      return new Promise(() => {});
+    });
+    render(<AppointmentBoardPage />, { wrapper });
+    expect(await screen.findByText('P1')).toBeDefined();
+
+    fireEvent.change(screen.getByLabelText('日期'), { target: { value: '2026-08-05' } });
+    expect(screen.getByText('P1')).toBeDefined();
+    const card = document.querySelector('[data-id="a1"]')!;
+    expect(card.getAttribute('draggable')).toBe('false');
+    expect((screen.getByLabelText('已预约状态') as HTMLSelectElement).disabled).toBe(true);
+  });
 });

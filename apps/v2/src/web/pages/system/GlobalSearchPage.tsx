@@ -8,6 +8,11 @@ export function GlobalSearchPage() {
   const [searchParams] = useSearchParams();
   const q = (searchParams.get('q') ?? '').trim();
   const [filter, setFilter] = useState('all');
+  const [prevQuery, setPrevQuery] = useState(q);
+  if (prevQuery !== q) {
+    setPrevQuery(q);
+    setFilter('all');
+  }
   const query = useQuery({
     queryKey: ['global-search', q],
     queryFn: () => apiRequest<Array<Record<string, unknown>>>(`/search?q=${encodeURIComponent(q)}`),
@@ -54,6 +59,7 @@ export function GlobalSearchPage() {
             key={value}
             type="button"
             className={filter === value ? 'tab active' : 'tab'}
+            aria-pressed={filter === value}
             onClick={() => setFilter(value)}
           >
             {label}

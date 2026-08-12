@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GlobalSearchPage } from './GlobalSearchPage';
@@ -46,5 +46,24 @@ describe('GlobalSearchPage', () => {
     );
     expect(screen.getByText('输入至少 2 个字符开始搜索')).toBeDefined();
     expect(mockApiRequest).not.toHaveBeenCalled();
+  });
+
+  it('marks the active resource filter with aria-pressed', async () => {
+    vi.mocked(mockApiRequest).mockResolvedValue([
+      { id: 'p-1', resource: 'patients', label: '张三' },
+    ]);
+    render(
+      <MemoryRouter initialEntries={['/search?q=张']}>
+        <GlobalSearchPage />
+      </MemoryRouter>,
+      { wrapper },
+    );
+    await waitFor(() => expect(screen.getByText('张三')).toBeDefined());
+    const allButton = screen.getByRole('button', { name: '全部' });
+    const patientButton = screen.getByRole('button', { name: '患者' });
+    expect(allButton.getAttribute('aria-pressed')).toBe('true');
+    expect(patientButton.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(patientButton);
+    expect(patientButton.getAttribute('aria-pressed')).toBe('true');
   });
 });

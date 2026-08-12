@@ -9,17 +9,20 @@ import { ErrorBoundary, LoadingState } from '.';
 export function ResourceHub({ title, tabs }: { title: string; tabs: HubTab[] }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const defaultResourceTabId = tabs.find((tab) => tab.kind === 'resource')?.id ?? tabs[0]?.id ?? '';
+  const searchTabId = tabs.find((tab) => tab.searchTab)?.id ?? defaultResourceTabId;
   const urlTab = searchParams.get('tab');
+  const urlQuery = searchParams.get('q') ?? '';
+  const hasQuery = urlQuery !== '';
   const [activeId, setActiveId] = useState(
-    urlTab ?? (searchParams.get('q') ? defaultResourceTabId : tabs[0]?.id ?? ''),
+    urlTab ?? (hasQuery ? searchTabId : tabs[0]?.id ?? ''),
   );
   const [prevUrlTab, setPrevUrlTab] = useState(urlTab);
-  const [prevHasQuery, setPrevHasQuery] = useState(searchParams.has('q'));
-  if (prevUrlTab !== urlTab || prevHasQuery !== searchParams.has('q')) {
+  const [prevHasQuery, setPrevHasQuery] = useState(hasQuery);
+  if (prevUrlTab !== urlTab || prevHasQuery !== hasQuery) {
     setPrevUrlTab(urlTab);
-    setPrevHasQuery(searchParams.has('q'));
+    setPrevHasQuery(hasQuery);
     if (urlTab) setActiveId(urlTab);
-    else if (searchParams.get('q')) setActiveId(defaultResourceTabId);
+    else if (hasQuery) setActiveId(searchTabId);
   }
   const [filter, setFilter] = useState('');
   // M3：只渲染当前活动 tab，切换即卸载非活动页面（display:none 常驻会累积 useQuery 订阅与组件实例）
@@ -116,7 +119,7 @@ export function ResourceHub({ title, tabs }: { title: string; tabs: HubTab[] }) 
           </div>
           {active && (
             <div
-              key={active.id}
+              key={`${active.id}:${urlQuery}`}
               id={`hub-panel-${active.id}`}
               role="tabpanel"
               aria-labelledby={`hub-tab-${active.id}`}
@@ -124,10 +127,10 @@ export function ResourceHub({ title, tabs }: { title: string; tabs: HubTab[] }) 
             >
               <ErrorBoundary>
                 {active.kind === 'resource' ? (
-                  <ResourcePage resource={active.resource} />
+                  <ResourcePage resource={active.resource} initialSearch={urlQuery || undefined} />
                 ) : active.kind === 'custom' ? (
                   <Suspense fallback={<LoadingState label="页面加载中" />}>
-                    <active.component />
+                    <active.component initialSearch={urlQuery || undefined} />
                   </Suspense>
                 ) : null}
               </ErrorBoundary>

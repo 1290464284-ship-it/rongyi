@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { PromptDialog } from '../components';
 import type { ToastKind } from '../lib/toast-context';
 import { reviewAction } from './api';
@@ -20,12 +20,24 @@ export function ReviewRowActions({
   onChanged: () => void;
 }) {
   const [rejectOpen, setRejectOpen] = useState(false);
+  const busyRef = useRef(false);
   const reviewStatus = String(row.reviewStatus ?? '');
+
+  async function runAction(action: string, successMessage: string, body?: Record<string, unknown>): Promise<void> {
+    if (busyRef.current || reviewing) return;
+    busyRef.current = true;
+    try {
+      await reviewAction(showToast, reload, setReviewing, onChanged, row.id, action, successMessage, body);
+    } finally {
+      busyRef.current = false;
+    }
+  }
+
   if (reviewStatus === 'PENDING') {
     return (
       <button
         disabled={reviewing}
-        onClick={() => void reviewAction(showToast, reload, setReviewing, onChanged, row.id, 'submit', '已提交审核')}
+        onClick={() => void runAction('submit', '已提交审核')}
       >
         提交审核
       </button>
@@ -37,7 +49,7 @@ export function ReviewRowActions({
         <span>
           <button
             disabled={reviewing}
-            onClick={() => void reviewAction(showToast, reload, setReviewing, onChanged, row.id, 'approve', '已通过审核')}
+            onClick={() => void runAction('approve', '已通过审核')}
           >
             通过
           </button>
@@ -60,7 +72,7 @@ export function ReviewRowActions({
               return;
             }
             setRejectOpen(false);
-            void reviewAction(showToast, reload, setReviewing, onChanged, row.id, 'reject', '已驳回', { reason: reason.trim() });
+            void runAction('reject', '已驳回', { reason: reason.trim() });
           }}
           onCancel={() => setRejectOpen(false)}
         />
@@ -71,7 +83,7 @@ export function ReviewRowActions({
     return (
       <button
         disabled={reviewing}
-        onClick={() => void reviewAction(showToast, reload, setReviewing, onChanged, row.id, 'reopen', '已重新提交')}
+        onClick={() => void runAction('reopen', '已重新提交')}
       >
         重新提交
       </button>

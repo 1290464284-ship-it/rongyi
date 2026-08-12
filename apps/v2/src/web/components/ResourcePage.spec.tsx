@@ -586,7 +586,9 @@ describe('ResourcePage', () => {
     await screen.findByText('A');
     fireEvent.click(screen.getByText('下一页'));
     await screen.findByText('第 2 页');
-    fireEvent.click(screen.getByText('删除'));
+    const deleteButton = await screen.findByRole('button', { name: '删除' });
+    await waitFor(() => expect((deleteButton as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(deleteButton);
     fireEvent.click(await screen.findByText('确认删除'));
     await waitFor(() => expect(vi.mocked(apiRequest)).toHaveBeenCalledWith(
       '/resources/patients/p1',
@@ -632,7 +634,9 @@ describe('ResourcePage', () => {
     await screen.findByText('A');
     fireEvent.click(screen.getByText('下一页'));
     await screen.findByText('第 2 页');
-    fireEvent.click(screen.getByText('删除'));
+    const deleteButton = await screen.findByRole('button', { name: '删除' });
+    await waitFor(() => expect((deleteButton as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(deleteButton);
     fireEvent.click(await screen.findByText('确认删除'));
     await waitFor(() => {
       expect(vi.mocked(apiRequest)).toHaveBeenCalledWith('/resources/patients/p1', expect.objectContaining({ method: 'DELETE' }));

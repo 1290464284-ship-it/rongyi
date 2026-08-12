@@ -122,16 +122,16 @@ function ReadOnlyListPage({ title, endpoint }: { title: string; endpoint: string
   );
 }
 
-export function ResourcePage({ resource, title, endpoint }: { resource?: string; title?: string; endpoint?: string }) {
+export function ResourcePage({ resource, title, endpoint, initialSearch }: { resource?: string; title?: string; endpoint?: string; initialSearch?: string }) {
   if (endpoint) return <ReadOnlyListPage title={title ?? '报表'} endpoint={endpoint} />;
-  return <ResourceCrudPage resource={resource} />;
+  return <ResourceCrudPage resource={resource} initialSearch={initialSearch} />;
 }
 
-function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
+function ResourceCrudPage({ resource: fixedResource, initialSearch }: { resource?: string; initialSearch?: string }) {
   const { showToast } = useToast();
   const params = useParams<{ resource: string }>();
   const resource = fixedResource ?? params.resource ?? 'patients';
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(initialSearch ?? '');
   const debouncedSearch = useDebouncedValue(search, 300);
   const [page, setPage] = useState(1);
   const [showForm, setShowForm] = useState(false);
@@ -160,6 +160,7 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
     placeholderData: (previous) => previous,
     enabled: Boolean(definition),
   });
+  const staleRows = listQuery.isPlaceholderData;
 
   const visibleFields = useMemo(
     () => (definition?.fields ?? []).filter((field) => !field.hidden && !PROTECTED_UI_FIELDS.has(field.name)),
@@ -190,6 +191,7 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
   }
 
   function openEdit(row: Record<string, unknown>) {
+    if (staleRows) return;
     const initial: Record<string, unknown> = {};
     for (const field of editableFields) {
       initial[field.name] = fieldToForm(field, row[field.name]);
@@ -234,12 +236,18 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
   }
 
   async function remove() {
-    if (!deleteTarget || submitting || submittingRef.current) return;
+    const target = deleteTarget;
+    if (!target || submitting || submittingRef.current || staleRows) return;
     submittingRef.current = true;
     setSubmitting(true);
     try {
-      await apiRequest(`/resources/${resource}/${deleteTarget}`, { method: 'DELETE' });
+      await apiRequest(`/resources/${resource}/${target}`, { method: 'DELETE' });
       setDeleteTarget(null);
+      setSelectedIds((current) => {
+        const next = new Set(current);
+        next.delete(target);
+        return next;
+      });
       showToast('删除成功', 'success');
       const refreshed = await listQuery.refetch();
       // 删除末页最后一条时回退一页，避免停留在空页
@@ -267,6 +275,7 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
   }
 
   function toggleSelect(id: string, checked: boolean) {
+    if (staleRows) return;
     setSelectedIds((current) => {
       const next = new Set(current);
       if (checked) next.add(id);
@@ -276,11 +285,12 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
   }
 
   function toggleSelectAll(checked: boolean) {
+    if (staleRows) return;
     setSelectedIds(new Set(checked ? rows.map((row) => String(row.id)) : []));
   }
 
   async function confirmBatchDelete() {
-    if (batchBusy || batchBusyRef.current || selectedIds.size === 0) return;
+    if (batchBusy || batchBusyRef.current || selectedIds.size === 0 || staleRows) return;
     setBatchBusy(true);
     batchBusyRef.current = true;
     try {
@@ -353,7 +363,7 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
       {selectedIds.size > 0 && (
         <div className="ui-batch-bar">
           <span>已选 {selectedIds.size} 项</span>
-          <button className="danger" disabled={batchBusy} onClick={() => setBatchDeleteOpen(true)}>删除选中</button>
+          <button className="danger" disabled={batchBusy || staleRows} onClick={() => setBatchDeleteOpen(true)}>删除选中</button>
           <button disabled={batchBusy} onClick={() => setSelectedIds(new Set())}>取消选择</button>
         </div>
       )}
@@ -370,6 +380,7 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
                     <input
                       type="checkbox"
                       aria-label="全选当前页"
+                      disabled={staleRows}
                       checked={rows.length > 0 && rows.every((row) => selectedIds.has(String(row.id)))}
                       onChange={(event) => toggleSelectAll(event.target.checked)}
                     />
@@ -387,6 +398,7 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
                       <input
                         type="checkbox"
                         aria-label={`选择 ${String(row.id)}`}
+                        disabled={staleRows}
                         checked={selectedIds.has(String(row.id))}
                         onChange={(event) => toggleSelect(String(row.id), event.target.checked)}
                       />
@@ -394,10 +406,10 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
                   )}
                   <td>
                     {definition.capabilities.update && (
-                      <button onClick={() => openEdit(row)}>编辑</button>
+                      <button disabled={staleRows} onClick={() => openEdit(row)}>编辑</button>
                     )}
                     {definition.capabilities.delete && (
-                      <button className="danger" onClick={() => setDeleteTarget(String(row.id))}>删除</button>
+                      <button className="danger" disabled={staleRows} onClick={() => setDeleteTarget(String(row.id))}>删除</button>
                     )}
                   </td>
                 </tr>

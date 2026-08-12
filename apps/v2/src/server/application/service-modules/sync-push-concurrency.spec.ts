@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
+import { ValidationError } from '../../infrastructure/errors';
 import { SyncService } from './sync';
 import { BulkImportService } from './clinical-ops';
 
@@ -194,5 +195,13 @@ describe('sync push concurrency', () => {
     expect(validRow).toBeDefined();
     const invalidRow = db.prepare('SELECT id FROM Patient WHERE id = ? AND deletedAt IS NULL').get('push-invalid-row');
     expect(invalidRow).toBeUndefined();
+  });
+
+  it('rejects malformed device credentials with validation errors', async () => {
+    const badPayload = (overrides: Record<string, unknown>) =>
+      ({ deviceId: 'x', deviceToken: 'y', changes: [], ...overrides }) as unknown as Parameters<typeof service.push>[0];
+    await expect(service.push(badPayload({ deviceId: {} }), context)).rejects.toThrow(ValidationError);
+    await expect(service.push(badPayload({ deviceToken: {} }), context)).rejects.toThrow(ValidationError);
+    await expect(service.push(badPayload({ deviceId: '', deviceToken: '' }), context)).rejects.toThrow(ValidationError);
   });
 });

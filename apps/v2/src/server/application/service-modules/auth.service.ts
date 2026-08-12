@@ -226,17 +226,21 @@ export class AuthService {
   private revokeReplayedFamily(tokenHash: string): void {
     // B-M9：重用即视为会话被攻破，清空所有缓存会话，杜绝 5s 窗口内的缓存重放。
     this.refreshCache.clear();
-    try {
-      const used = this.authRepository.findUsedRefreshToken(tokenHash);
-      if (used?.userId) {
-        this.authRepository.revokeSessionFamily(used.userId, new Date().toISOString());
-        this.clearUserRefreshClaims(used.userId);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const used = this.authRepository.findUsedRefreshToken(tokenHash);
+        if (used?.userId) {
+          this.authRepository.revokeSessionFamily(used.userId, new Date().toISOString());
+          this.clearUserRefreshClaims(used.userId);
+        }
+        break;
+      } catch (error) {
+        this.logger?.error(attempt === 0 ? 'session family revocation failed; retrying once' : 'session family revocation retry failed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
-    } catch {
-      // 重用已被拒绝；吊销为尽力而为
     }
   }
-
   /** 跨实例共享的 refresh 轮换缓存：以 DB 原子 claim 替代仅进程内缓存。 */
   private readRefreshClaim(tokenHash: string, userId: string): AuthSession | null {
     const key = this.refreshClaimKey(tokenHash, userId);
@@ -257,7 +261,6 @@ export class AuthService {
       return null;
     }
   }
-
   private writeRefreshClaim(tokenHash: string, userId: string, session: AuthSession): void {
     const key = this.refreshClaimKey(tokenHash, userId);
     const now = new Date().toISOString();
@@ -272,7 +275,6 @@ export class AuthService {
        ) VALUES (?, ?, 'GENERIC', 'COMPLETED', ?, ?, ?, NULL, 'auth.refresh', ?, ?, NULL, ?)`,
     ).run(randomUUID(), key, JSON.stringify(session), JSON.stringify(session), userId, now, now, expiresAt);
   }
-
   private clearUserRefreshClaims(userId: string): void {
     try {
       this.db.prepare(
@@ -282,13 +284,11 @@ export class AuthService {
       // 缓存清理为尽力而为；会话族吊销与标记已用是权威路径
     }
   }
-
   private refreshClaimKey(tokenHash: string, userId: string): string {
     return createHash('sha256')
       .update(['auth.refresh', tokenHash, userId].join('\0'))
       .digest('hex');
   }
-
   verifyToken(token: string): TokenPayload {
     try {
       return jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as TokenPayload;
@@ -296,7 +296,6 @@ export class AuthService {
       throw new UnauthorizedError('Invalid or expired token');
     }
   }
-
   private resolveClinicId(user: User): string {
     if (user.currentClinicId) return user.currentClinicId;
     if (user.clinicId) return user.clinicId;
@@ -306,13 +305,11 @@ export class AuthService {
     }
     return membershipClinicId;
   }
-
   async me(payload: TokenPayload): Promise<Omit<User, 'passwordHash'>> {
     const user = await this.getUserById(payload.sub);
     if (user.tokenVersion !== payload.tokenVersion) throw new UnauthorizedError('Token is no longer valid');
     return user;
   }
-
   /**
    * 校验 clinicId 对当前用户是否仍有效（UserClinic 成员关系未删除且诊所未删除）。
    * 用于 JWT 中 clinicId 的运行时校验（P2-1：用户被移出诊所后旧 token 应立即失效）。
@@ -413,6 +410,10 @@ export class AuthService {
     const hash = await bcrypt.hash(newPassword, 12);
     const now = new Date().toISOString();
     runInTransaction(this.db, () => {
+      const fresh = this.authRepository.findById(userId);
+      if (!fresh || !bcrypt.compareSync(oldPassword, String(fresh.passwordHash))) {
+        throw fresh ? new UnauthorizedError('Old password is incorrect') : new NotFoundError('User not found');
+      }
       this.authRepository.updatePassword(userId, hash, now);
       this.authRepository.clearRefreshToken(userId, now);
       this.db.prepare?.('UPDATE User SET tokenVersion = tokenVersion + 1, updatedAt = ? WHERE id = ?')?.run(now, userId);

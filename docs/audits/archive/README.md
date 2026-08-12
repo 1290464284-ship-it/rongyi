@@ -51,6 +51,7 @@
 | 第 42 轮 | 2026-08-12 | 租户过滤/幂等原子性/文档索引 | `../深度审计报告-第四十二轮-主报告.md` |
 | 第 43 轮 | 2026-08-12 | 权限/前端/脚本 CI 交叉复核 | `../深度审计报告-第四十三轮-主报告.md` |
 | 第 44 轮 | 2026-08-12 | 迁移约束/PII 掩码/校验收口 | `../深度审计报告-第四十四轮-主报告.md` |
+| 第 45 轮 | 2026-08-12 | 前端/后端交叉复核收口 | `../深度审计报告-第四十五轮-主报告.md` |
 
 ## 其他归档
 
@@ -64,58 +65,7 @@
 
 ## 当前状态
 
-第 14 轮全面深度审计已完成，当前工作区 `220 个文件 / 2225 个用例` 全量门禁
-通过（`typecheck` / `lint` / `knip` 全绿）。剩余可选项：
-
-- 头影/影像对比选项已改为分页 + 搜索，不再全量拉取。
-- `ChargesPage` 自定义支付方式归入 `OTHER`（现有测试锁定该行为，保留为文档化设计）。
-
-第 15 轮为只读审计轮，基线 `5447fbf`，发现 39 条问题（后端 20 / 前端 19），尚未开始修复。
-
-第 15 轮后续修复批次已完成大部分：盘点冻结、批次/总库存统一、退款冲销、审核/随访/加工步骤条件更新、通知租户隔离、分页/金额边界、上传清理、资源路由重挂载、牙位锁、分页键一致性、批量删除重试、截断提示、Kanban 键盘移动、公共 UI 原语登记、工作台/时间线/病历表单服务端分页、Dialog/Drawer `inert` 背景隔离与多弹窗层级栈等，门禁 220/2234 全绿。仅剩 3 个人工运维脚本按用途保留为人工入口。
-
-第 16 轮基线 `aab52a8`，确认 40 条（后端 21 / 前端 19），多批修复共落地 37 条：状态机条件更新、债务还款流水、积分防负、退款冲销原子化、跨患者就诊过滤、时间线数据隔离、工作台/用户页分页、placeholderData、删除失败中止主记录、写操作 ref 防重、refresh 数据库级 claim、微信提醒唯一索引、组合价事务内复验、幂等已知业务错误可重试、ResourceHub 深链同步、in-flight 公共守卫、编辑保存先拉明细再改主表等，门禁 221/2241 全绿。保留项为 sync 事务零 await、processing-flow 手动改态语义、大库全表聚合（编辑保存服务端事务化已由第 17 轮完成）。
-
-第 17 轮基线 `a635559`，本地复核仅发现 1 条测试夹具问题（modal-a11y.spec 的 innerHTML），已修复；另新增处方/治疗计划原子保存端点（`EditSaveService` + `/treatment-plans/:id/save` + `/prescriptions/:id/save`），前端改为单请求事务保存，billed 明细修改/删除拒绝并整体回滚。安全扫描 682 文件通过，门禁 222/2247 全绿。保留项为 sync 事务零 await、processing-flow 手动改态语义、大库全表聚合。
-
-第 18 轮基线 `d029963`，本地复核修复 2 条：edit-save 缺患者/医生字段 500（改为显式 400），新增明细改用客户端 UUID 保证断网重试幂等；随后实施 sync 零 await（仓储 `*Sync` 同步变体 + 批事务去 await + 防回归测试）。门禁 222/2248 全绿。保留项为 processing-flow 手动改态语义、大库全表聚合。
-
-第 19 轮基线 `10f64aa`，本地复核无新 P1/P2：热点表索引已齐备，剩余两项（processing-flow 手动改态语义、大库增量聚合）为产品/架构决策项。门禁 222/2248 全绿。
-
-第 20 轮基线 `6ae48d5`，轻量回归复核无新问题：第 15-19 轮全部修复项保持通过，安全扫描 685 文件通过。建议进入受控试点 2-4 周试运行。
-
-第 23 轮基线 `ff00b35`，条件更新专项修复 6 处：high-value/commission/inventory-batch 补软删/租户/active 过滤与 `changes` 兜底，narcotic/custom-fields/first-exam 补 `changes` 兜底，并加强软删后不可再改/删的回归用例。
-
-第 24 轮基线 `cf14829`，脚本/CI/结构专项：delivery runner 复用 `waitForService` 并消除 DEP0190 告警，`smoke:all` 补入 multi-instance/state-machine-concurrency 并改用固定 web 挂载标记；全部脚本均有引用，无逐字节重复。
-
-第 25 轮基线 `a222af5`，并发/多实例专项：共享写队列/幂等/调度防重入无新 P1/P2，补齐 sync push 与 bulk import 交叉并发回归用例；单测 222/2250 全绿。
-
-第 26 轮基线 `3983588`，auth/session 专项：logout 现已在事务内提升 `tokenVersion`，登出后旧 access token 立即失效；其余刷新轮换/重用吊销/诊所失效路径无新 P1/P2。
-
-第 27 轮基线 `1213833`，财务/审计专项：`Charge.paidAt` 改为 `COALESCE` 保留首次支付时间，与债务还款路径一致；支付/退款/会员卡/冲销/审计缓冲无新 P1/P2，单测 222/2251 全绿。
-
-第 28 轮基线 `a4484fb`，库存/批次专项：`InventoryBatchService.adjust` 改为事务内同步物料总库存并落 `ADJUST` 流水，修复批次余量与总库存脱节；出入库/FIFO/发退药/盘点差异路径无新 P1/P2。
-
-第 29 轮基线 `be7a273`，UI 可访问性/性能专项：图标按钮扫描、Dialog/Drawer 焦点陷阱与 inert、列表 500 行渲染上限、Kanban 键盘移动均通过，未发现新 P1/P2。
-
-第 30 轮基线 `e7a5774`，最终收口：单测 222/2251、typecheck/lint/knip、security:scan 685、benchmark:load 10 万级全 PASS、smoke:delivery、multi-instance、electron:dist、verify:package 全部通过；第 17-30 轮审计循环完成，建议进入受控试点 2-4 周。
-
-第 31 轮基线 `1bc6a58`，续开审计循环：首诊/治疗计划文档 UPDATE 补软删过滤与 changes 兜底，sync 冲突解决与 Setting 更新同步加固，files 删除注释统一；单测 222/2253 全绿。
-
-第 32 轮基线 `6750121`，迁移/搜索/权限/统计专项只读复核：迁移存在性检查、FTS 转义、租户过滤、路由权限、原子限流、有界缓存均无新 P1/P2。
-
-第 33 轮基线 `6f0d4b7`，全量回归复核：单测 222/2253、typecheck/lint/knip、security:scan 685、benchmark:load 10 万级、smoke:delivery、multi-instance、electron:dist、verify:package 全部通过；连续两轮无新增问题，审计循环收口。
-
-第 34 轮基线 `bbf8b60`，全量精读续批：修复 ShiftTemplate.update 与 FollowUpExecution.execute 的软删过滤遗漏；迁移 v101-146、全部仓储、通用仓储、基础设施与主要路由精读无新问题；单测 222/2255 全绿。
-
-第 35 轮基线 `d6394ca`，前端第二批精读：修复 MedicalRecordsPage 渲染期写 ref 反模式（改为 effect 提交后同步）；24 个最大页面其余未发现新问题。
-
-## 当前状态
-
-第 15-19 轮审计与修复全部收口：所有可自主实施的问题均已修复并通过门禁
-（单测 222/2248、typecheck/lint/knip、security:scan 685、build/electron:dist/
-verify:package/smoke:delivery/multi-instance）。原两项待决事项已按推荐默认落地：
-
-- processing-flow 手动改态：按推荐保留手动语义并补 `changes` 校验，不再需要决策。
-- dashboard/replenishment 增量聚合：按推荐暂不启动，`replenishment.generate` 已改有界分块事务，
-  10 万级冷态基准全部 PASS（`../delivery/large-db-baseline-2026-08-12.md`），超阈值再启动。
+最新一轮为第 45 轮（`b72a9ab`），单测 226 文件 / 2292 用例，全部交付门禁通过。
+历史轮次请以上方轮次索引为准；各轮详情见 `../深度审计报告-第N轮-主报告.md`。
+已收敛的长期决策项：processing-flow 手动改态保留并补 `changes` 校验；大库增量聚合
+暂不启动，`replenishment.generate` 已用有界分块事务，10 万级冷态基准持续 PASS。

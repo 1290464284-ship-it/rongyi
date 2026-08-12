@@ -26,6 +26,13 @@ export function assertSyncPushShape(payload: unknown): void {
   if (!payload || typeof payload !== 'object' || !Array.isArray((payload as { changes?: unknown }).changes)) {
     throw new ValidationError('changes must be an array');
   }
+  const { deviceId, deviceToken } = payload as { deviceId?: unknown; deviceToken?: unknown };
+  if (typeof deviceId !== 'string' || deviceId.length === 0) {
+    throw new ValidationError('deviceId must be a non-empty string');
+  }
+  if (typeof deviceToken !== 'string' || deviceToken.length === 0) {
+    throw new ValidationError('deviceToken must be a non-empty string');
+  }
   const changes = (payload as { changes: unknown[] }).changes;
   if (changes.length > 5000) throw new ValidationError('changes must be an array with at most 5000 entries');
   for (const change of changes) {

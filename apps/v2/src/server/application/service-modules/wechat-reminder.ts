@@ -199,7 +199,7 @@ export class WechatReminderService {
   }
 
   /** 返回今日清单；首次调用会按当前规则幂等生成当天的 PENDING 提醒（5 分钟 TTL 缓存生成标志）。 */
-  today(context: AppContext): { date: string; config: WechatReminderConfig; items: WechatReminderItem[] } {
+  today(context: AppContext): { date: string; config: WechatReminderConfig; items: WechatReminderItem[]; truncated: boolean } {
     const now = context.now();
     const today = new SystemClock().clinicDate(now);
     const config = this.config(context);
@@ -273,36 +273,6 @@ export class WechatReminderService {
     const recallRange = dayRange(recallDate);
     const firstExamRange = dayRange(firstExamDate);
 
-    const appointmentCandidates = this.db.prepare(
-      `SELECT a.id AS sourceId, a.patientId, p.name AS patientName, a.startTime
-       FROM Appointment a
-       JOIN Patient p ON p.id = a.patientId AND p.deletedAt IS NULL
-       WHERE a.deletedAt IS NULL AND a.startTime >= ? AND a.startTime <= ?
-         AND a.status IN ('BOOKED', 'ARRIVED')${tenantAnd(clinicId, 'a.clinicId')}
-       ORDER BY a.startTime ASC
-       LIMIT ${WECHAT_REMINDER_LIMIT}`,
-    ).all(...appointmentRange, ...tenantParams(clinicId)) as ReminderCandidate[];
-
-    const recallCandidates = this.db.prepare(
-      `SELECT v.id AS sourceId, v.patientId, p.name AS patientName
-       FROM Visit v
-       JOIN Patient p ON p.id = v.patientId AND p.deletedAt IS NULL
-       WHERE v.deletedAt IS NULL AND v.status = 'COMPLETED'
-         AND COALESCE(v.endTime, v.startTime) >= ? AND COALESCE(v.endTime, v.startTime) <= ?${tenantAnd(clinicId, 'v.clinicId')}
-       ORDER BY v.endTime ASC
-       LIMIT ${WECHAT_REMINDER_LIMIT}`,
-    ).all(...recallRange, ...tenantParams(clinicId)) as ReminderCandidate[];
-
-    const firstExamCandidates = this.db.prepare(
-      `SELECT e.id AS sourceId, e.patientId, p.name AS patientName
-       FROM FirstExam e
-       JOIN Patient p ON p.id = e.patientId AND p.deletedAt IS NULL
-       WHERE e.deletedAt IS NULL AND e.createdAt >= ? AND e.createdAt <= ?
-         AND (e.followUpStatus IS NULL OR e.followUpStatus IN ('NONE', 'PENDING'))${tenantAnd(clinicId, 'e.clinicId')}
-       ORDER BY e.createdAt ASC
-       LIMIT ${WECHAT_REMINDER_LIMIT}`,
-    ).all(...firstExamRange, ...tenantParams(clinicId)) as ReminderCandidate[];
-
     const insert = this.db.prepare(
       `INSERT OR IGNORE INTO WechatReminder (id, clinicId, patientId, scene, scheduledDate, sourceId, content, status, createdAt, updatedAt, deletedAt)
        VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, NULL)`,
@@ -313,25 +283,73 @@ export class WechatReminderService {
        LIMIT 1`,
     );
 
+    const appointmentStmt = this.db.prepare(
+      `SELECT a.id AS sourceId, a.patientId, p.name AS patientName, a.startTime
+       FROM Appointment a
+       JOIN Patient p ON p.id = a.patientId AND p.deletedAt IS NULL
+       WHERE a.deletedAt IS NULL AND a.startTime >= ? AND a.startTime <= ?
+         AND a.status IN ('BOOKED', 'ARRIVED') AND a.id > ?${tenantAnd(clinicId, 'a.clinicId')}
+       ORDER BY a.id ASC
+       LIMIT ${WECHAT_REMINDER_LIMIT}`,
+    );
+    const recallStmt = this.db.prepare(
+      `SELECT v.id AS sourceId, v.patientId, p.name AS patientName
+       FROM Visit v
+       JOIN Patient p ON p.id = v.patientId AND p.deletedAt IS NULL
+       WHERE v.deletedAt IS NULL AND v.status = 'COMPLETED'
+         AND COALESCE(v.endTime, v.startTime) >= ? AND COALESCE(v.endTime, v.startTime) <= ?
+         AND v.id > ?${tenantAnd(clinicId, 'v.clinicId')}
+       ORDER BY v.id ASC
+       LIMIT ${WECHAT_REMINDER_LIMIT}`,
+    );
+    const firstExamStmt = this.db.prepare(
+      `SELECT e.id AS sourceId, e.patientId, p.name AS patientName
+       FROM FirstExam e
+       JOIN Patient p ON p.id = e.patientId AND p.deletedAt IS NULL
+       WHERE e.deletedAt IS NULL AND e.createdAt >= ? AND e.createdAt <= ?
+         AND (e.followUpStatus IS NULL OR e.followUpStatus IN ('NONE', 'PENDING')) AND e.id > ?${tenantAnd(clinicId, 'e.clinicId')}
+       ORDER BY e.id ASC
+       LIMIT ${WECHAT_REMINDER_LIMIT}`,
+    );
+
     const run = this.db.transaction(() => {
-      for (const candidate of appointmentCandidates) {
-        if (exists.get(candidate.patientId, 'APPOINTMENT_REMINDER', today, candidate.sourceId, ...tenantParams(clinicId))) continue;
-        const content = config.appointmentContent
-          .replaceAll('{patientName}', () => candidate.patientName ?? '')
-          .replaceAll('{appointmentTime}', () => candidate.startTime ? formatLocalTime(candidate.startTime) : '');
-        insert.run(randomUUID(), clinicId, candidate.patientId, 'APPOINTMENT_REMINDER', today, candidate.sourceId, content, now, now);
+      // 按 id keyset 分页遍历，避免超过 1000 条候选时后续日期永远生成不到。
+      let lastAppointmentId = '';
+      while (true) {
+        const batch = appointmentStmt.all(...appointmentRange, lastAppointmentId, ...tenantParams(clinicId)) as ReminderCandidate[];
+        for (const candidate of batch) {
+          if (exists.get(candidate.patientId, 'APPOINTMENT_REMINDER', today, candidate.sourceId, ...tenantParams(clinicId))) continue;
+          const content = config.appointmentContent
+            .replaceAll('{patientName}', () => candidate.patientName ?? '')
+            .replaceAll('{appointmentTime}', () => candidate.startTime ? formatLocalTime(candidate.startTime) : '');
+          insert.run(randomUUID(), clinicId, candidate.patientId, 'APPOINTMENT_REMINDER', today, candidate.sourceId, content, now, now);
+        }
+        if (batch.length < WECHAT_REMINDER_LIMIT) break;
+        lastAppointmentId = String(batch[batch.length - 1].sourceId);
       }
-      for (const candidate of recallCandidates) {
-        if (exists.get(candidate.patientId, 'TREATMENT_RECALL', today, candidate.sourceId, ...tenantParams(clinicId))) continue;
-        const content = config.recallContent
-          .replaceAll('{patientName}', () => candidate.patientName ?? '')
-          .replaceAll('{days}', () => String(config.recallDaysAfter));
-        insert.run(randomUUID(), clinicId, candidate.patientId, 'TREATMENT_RECALL', today, candidate.sourceId, content, now, now);
+      let lastRecallId = '';
+      while (true) {
+        const batch = recallStmt.all(...recallRange, lastRecallId, ...tenantParams(clinicId)) as ReminderCandidate[];
+        for (const candidate of batch) {
+          if (exists.get(candidate.patientId, 'TREATMENT_RECALL', today, candidate.sourceId, ...tenantParams(clinicId))) continue;
+          const content = config.recallContent
+            .replaceAll('{patientName}', () => candidate.patientName ?? '')
+            .replaceAll('{days}', () => String(config.recallDaysAfter));
+          insert.run(randomUUID(), clinicId, candidate.patientId, 'TREATMENT_RECALL', today, candidate.sourceId, content, now, now);
+        }
+        if (batch.length < WECHAT_REMINDER_LIMIT) break;
+        lastRecallId = String(batch[batch.length - 1].sourceId);
       }
-      for (const candidate of firstExamCandidates) {
-        if (exists.get(candidate.patientId, 'FIRST_EXAM_NUDGE', today, candidate.sourceId, ...tenantParams(clinicId))) continue;
-        const content = config.firstExamContent.replaceAll('{patientName}', () => candidate.patientName ?? '');
-        insert.run(randomUUID(), clinicId, candidate.patientId, 'FIRST_EXAM_NUDGE', today, candidate.sourceId, content, now, now);
+      let lastFirstExamId = '';
+      while (true) {
+        const batch = firstExamStmt.all(...firstExamRange, lastFirstExamId, ...tenantParams(clinicId)) as ReminderCandidate[];
+        for (const candidate of batch) {
+          if (exists.get(candidate.patientId, 'FIRST_EXAM_NUDGE', today, candidate.sourceId, ...tenantParams(clinicId))) continue;
+          const content = config.firstExamContent.replaceAll('{patientName}', () => candidate.patientName ?? '');
+          insert.run(randomUUID(), clinicId, candidate.patientId, 'FIRST_EXAM_NUDGE', today, candidate.sourceId, content, now, now);
+        }
+        if (batch.length < WECHAT_REMINDER_LIMIT) break;
+        lastFirstExamId = String(batch[batch.length - 1].sourceId);
       }
     });
     // BEGIN IMMEDIATE 使并发触发的生成串行化：后到的事务能看到先到事务已提交的

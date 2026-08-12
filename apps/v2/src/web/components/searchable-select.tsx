@@ -36,11 +36,13 @@ export function SearchableSelect({
   const filterKey = JSON.stringify(filterParams ?? {});
   const scopeKey = `${resource}:${filterKey}`;
   const [prevScope, setPrevScope] = useState(scopeKey);
+  const [prevQueryData, setPrevQueryData] = useState<Page<SearchableSelectRow> | undefined>(undefined);
   if (prevScope !== scopeKey) {
     setPrevScope(scopeKey);
     setSearch('');
     setPage(1);
     setLoaded([]);
+    setPrevQueryData(undefined);
   }
 
   const query = useQuery({
@@ -61,7 +63,6 @@ export function SearchableSelect({
   });
 
   // 渲染期调整（React 官方模式）：新数据到达时合并，避免在 effect 里同步 setState 造成级联渲染
-  const [prevQueryData, setPrevQueryData] = useState<Page<SearchableSelectRow> | undefined>(undefined);
   if (prevQueryData !== query.data) {
     setPrevQueryData(query.data);
     const incomingItems = query.data?.items ?? [];
@@ -109,6 +110,7 @@ export function SearchableSelect({
           setSearch(event.target.value);
           setPage(1);
           setLoaded([]);
+          setPrevQueryData(undefined);
         }}
         onKeyDown={(event) => {
           if (event.key === 'Enter') event.preventDefault();

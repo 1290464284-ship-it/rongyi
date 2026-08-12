@@ -1531,7 +1531,7 @@ describe('HTTP app', () => {
   // 'production'（try/finally 恢复）；insertAuditStmt 在 createApp 时一次性
   // prepare，要模拟 flush 失败必须在 createApp 之前包装 db.prepare，故每个用例
   // 使用独立的临时 db + 独立 app，避免影响 beforeAll 的共享 app。
-  function wrapOperationLogInsertFailures(localDb: Database.Database, mode: 'once' | 'always'): () => number {
+  function wrapOperationLogInsertFailures(localDb: Database.Database, mode: 'once' | 'twice' | 'always'): () => number {
     let runCalls = 0;
     const originalPrepare = localDb.prepare.bind(localDb);
     localDb.prepare = ((source: string) => {
@@ -1540,7 +1540,7 @@ describe('HTTP app', () => {
         const originalRun = statement.run.bind(statement);
         statement.run = ((...args: unknown[]) => {
           runCalls += 1;
-          if (mode === 'always' || runCalls === 1) {
+          if (mode === 'always' || (mode === 'once' && runCalls === 1) || (mode === 'twice' && runCalls <= 2)) {
             throw new Error('simulated audit flush failure');
           }
           return originalRun(...args);
@@ -1551,7 +1551,7 @@ describe('HTTP app', () => {
     return () => runCalls;
   }
 
-  function createIsolatedAuditApp(failMode?: 'once' | 'always'): {
+  function createIsolatedAuditApp(failMode?: 'once' | 'twice' | 'always'): {
     app: ReturnType<typeof createApp>;
     db: Database.Database;
     dataDir: string;
@@ -1684,6 +1684,43 @@ describe('HTTP app', () => {
       expect((isolated.db.prepare(
         "SELECT COUNT(*) AS c FROM OperationLog WHERE userId = 'u-audit-max'",
       ).get() as { c: number }).c).toBe(50);
+    } finally {
+      restoreNodeEnv(previousNodeEnv);
+      vi.useRealTimers();
+      if (isolated) {
+        isolated.db.close();
+        fs.rmSync(isolated.dataDir, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it('keeps a second failed flush while a retry is already scheduled', async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    vi.useFakeTimers();
+    let isolated: ReturnType<typeof createIsolatedAuditApp> | undefined;
+    try {
+      process.env.NODE_ENV = 'production';
+      isolated = createIsolatedAuditApp('twice');
+      const audit = isolated.app.locals.audit as (input: AuditInput) => void;
+      for (let i = 0; i < 50; i += 1) {
+        audit({ userId: 'u-audit-coalesce', action: `first-${i}`, statusCode: 200 });
+      }
+      for (let i = 0; i < 50; i += 1) {
+        audit({ userId: 'u-audit-coalesce', action: `second-${i}`, statusCode: 200 });
+      }
+      // 首批失败后重试在途，第二批立即 flush 再失败时并入队列；随后成功 flush 落库，
+      // 无丢弃、无重复。2 次失败 + 100 次成功插入 = 102 次 run。
+      expect(isolated.runCalls()).toBe(102);
+      const rows = isolated.db.prepare(
+        "SELECT action FROM OperationLog WHERE userId = 'u-audit-coalesce' ORDER BY rowid ASC",
+      ).all() as Array<{ action: string }>;
+      expect(rows).toHaveLength(100);
+      expect(rows.map((row) => row.action).slice(0, 50))
+        .toEqual(Array.from({ length: 50 }, (_, index) => `first-${index}`));
+      expect(rows.map((row) => row.action).slice(50))
+        .toEqual(Array.from({ length: 50 }, (_, index) => `second-${index}`));
+      await vi.advanceTimersByTimeAsync(10_000); // 在途重试定时器无残留，不再产生调用
+      expect(isolated.runCalls()).toBe(102);
     } finally {
       restoreNodeEnv(previousNodeEnv);
       vi.useRealTimers();

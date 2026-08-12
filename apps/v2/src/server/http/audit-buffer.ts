@@ -80,14 +80,20 @@ export function createAuditBuffer(db: Database.Database, logger: Logger): AuditB
   // 放回队首）与期间新入缓冲的行一起刷出；重试再失败只记日志，不再入队，
   // 避免无限重试。
   function scheduleAuditRetry(rows: AuditInput[]): void {
+    const capacity = AUDIT_BUFFER_MAX * 2;
     if (_auditRetryScheduled) {
-      // 上一轮重试仍在途时再失败的行无法安全入队，必须留痕，不能静默丢弃。
-      const dropped = rows.length;
-      if (logger) logger.error('audit rows dropped (retry already in flight)', { action: 'audit-drop', dropped });
-      else console.error('[audit-buffer] audit rows dropped (retry already in flight)', dropped);
+      // 已有重试在途时不再丢行：本批按容量入队尾，由在途定时器统一刷出，
+      // 保持 FIFO 且不会重复写入；仅超容量部分留痕丢弃。
+      const room = Math.max(0, capacity - auditBuffer.length);
+      const dropped = Math.max(0, rows.length - room);
+      if (room > 0) auditBuffer.unshift(...rows.slice(0, room));
+      if (dropped > 0) {
+        if (logger) logger.error('audit rows dropped (retry buffer over capacity)', { action: 'audit-drop', dropped });
+        else console.error('[audit-buffer] audit rows dropped (retry buffer over capacity)', dropped);
+      }
       return;
     }
-    if (auditBuffer.length + rows.length > AUDIT_BUFFER_MAX * 2) {
+    if (auditBuffer.length + rows.length > capacity) {
       // B-H5：超限静默丢弃审计行会掩盖合规痕迹；丢弃前必须留告警日志。
       const dropped = rows.length;
       if (logger) logger.error('audit rows dropped (retry buffer over capacity)', { action: 'audit-drop', dropped });

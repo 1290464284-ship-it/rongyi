@@ -89,6 +89,59 @@ describe('ResourceHub', () => {
     expect(await screen.findByText('新建')).toBeDefined();
   });
 
+  it('lands on the declared search tab instead of the first resource tab', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resource-meta') return [definition];
+      if (path.startsWith('/resources/patients?')) return { items: [], total: 0, page: 1, pageSize: 20 };
+      return {};
+    });
+    const tabs: HubTab[] = [
+      { id: 'resource', label: 'Resource', kind: 'resource', resource: 'patients' },
+      { id: 'search', label: 'Search', kind: 'custom', component: () => <div>Search tab</div>, searchTab: true },
+    ];
+    render(
+      <MemoryRouter initialEntries={['/patients?q=张三']}>
+        <QueryClientProvider client={queryClient}>
+          <ToastProvider>
+            <ResourceHub title="Hub" tabs={tabs} />
+          </ToastProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: 'Search' }).getAttribute('aria-selected')).toBe('true');
+    });
+    expect(screen.getByText('Search tab')).toBeDefined();
+  });
+
+  it('forwards q to a resource search tab as the initial search', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resource-meta') {
+        return [{ ...definition, name: 'inventoryItems', capabilities: { create: false, update: false, delete: false, softDelete: false } }];
+      }
+      if (path.startsWith('/resources/inventoryItems?')) {
+        return { items: [], total: 0, page: 1, pageSize: 20 };
+      }
+      return {};
+    });
+    const tabs: HubTab[] = [
+      { id: 'custom', label: 'Custom', kind: 'custom', component: () => <div>Custom tab</div> },
+      { id: 'items', label: 'Items', kind: 'resource', resource: 'inventoryItems', searchTab: true },
+    ];
+    render(
+      <MemoryRouter initialEntries={['/inventory?q=张三']}>
+        <QueryClientProvider client={queryClient}>
+          <ToastProvider>
+            <ResourceHub title="Hub" tabs={tabs} />
+          </ToastProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/inventoryItems?page=1&pageSize=20&search=%E5%BC%A0%E4%B8%89');
+    });
+  });
+
   it('renders empty tab lists without crashing', () => {
     render(<ResourceHub title="Empty" tabs={[]} />, { wrapper });
     expect(screen.getByText('Empty')).toBeDefined();

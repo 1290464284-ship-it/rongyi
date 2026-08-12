@@ -38,4 +38,13 @@ describe('secret file', () => {
 
     fs.rmSync(dir, { recursive: true, force: true });
   });
+
+  it('rejects non-owner-only secret file modes on POSIX', async () => {
+    vi.resetModules();
+    const { assertOwnerOnlySecretFile } = await import('./secret-file');
+    expect(() => assertOwnerOnlySecretFile(0o100644, 'linux')).toThrow(/owner-only/);
+    expect(() => assertOwnerOnlySecretFile(0o100640, 'linux')).toThrow(/owner-only/);
+    expect(() => assertOwnerOnlySecretFile(0o100600, 'linux')).not.toThrow();
+    expect(() => assertOwnerOnlySecretFile(0o100666, 'win32')).not.toThrow();
+  });
 });

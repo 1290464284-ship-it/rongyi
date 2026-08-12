@@ -282,4 +282,21 @@ describe('WechatReminderService', () => {
     const item = result.items.find((row) => row.sourceId === 'appt-wechat-id-rem');
     expect(item?.patientWechatId).toBe('wx_rem');
   });
+
+  it('generates reminders beyond a single 1000-row candidate page', () => {
+    for (let i = 0; i < 1001; i += 1) {
+      const hour = String(Math.floor(i / 60) % 16).padStart(2, '0');
+      const minute = String(i % 60).padStart(2, '0');
+      insertAppointment(`appt-bulk-${i}`, `2026-08-06T${hour}:${minute}:00.000Z`);
+    }
+    const service = new WechatReminderService(db);
+    const result = service.today(context);
+    const count = (db.prepare(
+      `SELECT COUNT(*) AS c FROM WechatReminder
+       WHERE clinicId = ? AND status = 'PENDING' AND sourceId LIKE 'appt-bulk-%'`,
+    ).get(context.clinicId) as { c: number }).c;
+    expect(count).toBe(1001);
+    expect(result.truncated).toBe(true);
+    expect(db.prepare('SELECT 1 FROM WechatReminder WHERE sourceId = ?').get('appt-bulk-1000')).toBeDefined();
+  });
 });

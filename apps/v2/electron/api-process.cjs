@@ -26,6 +26,29 @@ const { crashLog, notify, sendApiStatus } = require('./logging.cjs');
 const { getOrCreateSecret } = require('./secrets.cjs');
 const { showApiErrorWindow } = require('./window.cjs');
 
+const SECRET_FILE_STALE_MS = 10 * 60 * 1000;
+
+// 崩溃/强制终止可能把 v2-secrets-*.json 留在 tmpdir；启动时清扫过期文件，
+// 避免密钥文件堆积。10 分钟保护窗口不会误删另一实例正在使用的新文件。
+function sweepStaleSecretFiles() {
+  try {
+    const tmpDir = os.tmpdir();
+    const cutoff = Date.now() - SECRET_FILE_STALE_MS;
+    for (const entry of fs.readdirSync(tmpDir)) {
+      if (!entry.startsWith('v2-secrets-') || !entry.endsWith('.json')) continue;
+      const fullPath = path.join(tmpDir, entry);
+      try {
+        const stat = fs.statSync(fullPath);
+        if (stat.isFile() && stat.mtimeMs < cutoff) fs.rmSync(fullPath, { force: true });
+      } catch {
+        // 单个文件清理失败不阻塞启动
+      }
+    }
+  } catch {
+    // tmpdir 不可读时作为 best effort 忽略
+  }
+}
+
 function apiReadinessWindowMs({ firstCheck }) {
   return firstCheck ? API_READY_WINDOW_FIRST_MS : API_READY_WINDOW_STRICT_MS;
 }
@@ -115,6 +138,7 @@ async function startApi() {
 
 async function doStartApi() {
   if (state.apiProcess && !state.apiProcess.killed) return state.apiPort;
+  sweepStaleSecretFiles();
   state.apiPort = await pickFreePort();
   const userDataDir = app.getPath('userData');
   // S-L2（第七轮）：JWT/备份密钥不再经 spawn env 透传（Windows 上同用户进程
