@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -533,5 +533,32 @@ describe('RefundFlowService', () => {
     const service = new RefundFlowService(db);
     expect(() => service.list(context, { page: 0 })).toThrow(ValidationError);
     expect(() => service.list(context, { pageSize: 0 })).toThrow(ValidationError);
+  });
+
+  it('rejects approve and process when optimistic status updates change zero rows', async () => {
+    const chargeId = await createPaidCharge(100, 'CASH');
+    db.prepare(
+      `INSERT INTO Refund (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         chargeId, patientId, amount, status, operatorId, reason
+       ) VALUES ('refund-race', 'clinic-v2-001', ?, ?, NULL, ?, 'patient-demo-001', 100, 'REQUESTED', 'user-admin-001', 'race')`,
+    ).run(now, now, chargeId);
+    const service = new RefundFlowService(db);
+    const originalPrepare = db.prepare.bind(db);
+
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes("SET status = 'PENDING_REFUND'")) return { run: () => ({ changes: 0 }) } as never;
+      return originalPrepare(sql);
+    });
+    expect(() => service.approve('refund-race', context)).toThrow(ConflictError);
+    vi.restoreAllMocks();
+
+    db.prepare("UPDATE Refund SET status = 'PENDING_REFUND' WHERE id = 'refund-race'").run();
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes("SET status = 'COMPLETED'")) return { run: () => ({ changes: 0 }) } as never;
+      return originalPrepare(sql);
+    });
+    expect(() => service.process('refund-race', context)).toThrow(ConflictError);
+    vi.restoreAllMocks();
   });
 });
