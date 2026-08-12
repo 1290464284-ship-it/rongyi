@@ -209,13 +209,12 @@ export function registerFileRoutes(app: Express, deps: RouteDependencies): void 
       if (record.createdBy !== context.userId && !['BOSS', 'ADMIN'].includes(context.role)) {
         throw new AppError('FORBIDDEN', 'Only the uploader or a BOSS can delete this file', 403);
       }
-      // 先物理删除再软删记录；unlink 失败时记录保持可见，避免“记录已删但文件仍在”。
+      // 先软删记录再删物理文件：DB 更新失败时记录保持可见，绝不出现
+      // “记录存在但文件已丢”；unlink 失败只留孤儿文件并告警，不影响删除语义。
       const now = context.now().toISOString();
       deps.db.prepare(
         `UPDATE FileRecord SET deletedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL`,
       ).run(now, now, record.id);
-      // 先软删记录再删物理文件：DB 更新失败时记录保持可见，绝不出现
-      // “记录存在但文件已丢”；unlink 失败只留孤儿文件并告警，不影响删除语义。
       try {
         fs.rmSync(path.join(filesDir, name), { force: true });
       } catch (error) {

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
-import { AppError, NotFoundError, ValidationError, isSystematicSqliteError } from '../../infrastructure/errors';
+import { AppError, ConflictError, NotFoundError, ValidationError, isSystematicSqliteError } from '../../infrastructure/errors';
 import { SqliteRepository } from '../../infrastructure/repository';
 import { stripProtectedWriteFields } from '../../infrastructure/security';
 import { validatePayload } from '../../http/validation';
@@ -325,11 +325,12 @@ export class SyncService {
       }
 
       const now = new Date().toISOString();
-      this.db.prepare(
+      const resolved = this.db.prepare(
         `UPDATE SyncConflict
          SET status = 'RESOLVED', resolution = ?, resolvedAt = ?, resolvedById = ?, updatedAt = ?, deletedAt = ?
-         WHERE id = ? AND status = 'PENDING'${tenantAnd(context.clinicId)}`,
+         WHERE id = ? AND status = 'PENDING' AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
       ).run(resolution, now, context.userId, now, now, id, ...tenantParams(context.clinicId));
+      if (Number(resolved.changes) === 0) throw new ConflictError('Sync conflict was already resolved');
       this.db.exec('COMMIT');
       return { ...row, resolution, resolvedAt: now, resolvedById: context.userId };
     } catch (error) {

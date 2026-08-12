@@ -153,7 +153,7 @@ export class WechatReminderService {
       `SELECT id FROM Setting WHERE key = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
     );
     const updateSetting = this.db.prepare(
-      `UPDATE Setting SET value = ?, updatedAt = ? WHERE id = ?`,
+      `UPDATE Setting SET value = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL`,
     );
     const insertSetting = this.db.prepare(
       `INSERT INTO Setting (id, clinicId, createdAt, updatedAt, deletedAt, key, value)

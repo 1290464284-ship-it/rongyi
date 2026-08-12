@@ -48,10 +48,10 @@ export class FirstExamTrackingService {
     }
 
     const now = context.now().toISOString();
-    this.db.prepare(
+    const result = this.db.prepare(
       `UPDATE FirstExam
        SET followUpStatus = ?, lossReasonType = ?, lossReason = ?, nextFollowUpAt = ?, trackingNote = ?, updatedAt = ?
-       WHERE id = ?${tenantAnd(clinicId)}`,
+       WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
     ).run(
       followUpStatus,
       input.lossReasonType ?? null,
@@ -62,6 +62,7 @@ export class FirstExamTrackingService {
       id,
       ...tenantParams(clinicId),
     );
+    if (Number(result.changes) === 0) throw new NotFoundError('FirstExam not found');
     return { id, followUpStatus, nextFollowUpAt: input.nextFollowUpAt ?? null };
   }
 

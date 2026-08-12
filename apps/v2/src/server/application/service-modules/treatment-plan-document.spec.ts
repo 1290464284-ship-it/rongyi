@@ -104,6 +104,18 @@ describe('TreatmentPlanDocumentService', () => {
     expect(() => new TreatmentPlanDocumentService(db).print('plan-other-clinic', context)).toThrow(NotFoundError);
   });
 
+  it('throws NotFoundError for a soft-deleted plan on print and sign', () => {
+    db.prepare(
+      `INSERT INTO TreatmentPlan (
+         id, clinicId, createdAt, updatedAt, deletedAt, patientId, doctorId, name, status, totalFee
+       ) VALUES ('plan-doc-deleted', 'clinic-v2-001', ?, ?, ?, 'patient-demo-001', 'user-admin-001', '已删除计划', 'APPROVED', 100)`,
+    ).run(now, now, now);
+    const service = new TreatmentPlanDocumentService(db);
+    expect(() => service.print('plan-doc-deleted', context)).toThrow(NotFoundError);
+    expect(() => service.sign('plan-doc-deleted', { signature: 'data:image/png;base64,AAAA', signerName: '张三' }, context))
+      .toThrow(NotFoundError);
+  });
+
   it('returns null template when no matching PrintTemplate exists', () => {
     removeTemplate();
     const result = new TreatmentPlanDocumentService(db).print('plan-doc-001', context);

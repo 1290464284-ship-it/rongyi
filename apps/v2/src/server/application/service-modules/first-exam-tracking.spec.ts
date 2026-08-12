@@ -117,4 +117,15 @@ describe('FirstExamTrackingService', () => {
     const service = new FirstExamTrackingService(db);
     expect(() => service.updateTracking('missing-exam', { followUpStatus: 'NONE' }, context)).toThrow(NotFoundError);
   });
+
+  it('throws NotFoundError for a soft-deleted exam', () => {
+    const service = new FirstExamTrackingService(db);
+    db.prepare(
+      `INSERT INTO FirstExam (
+         id, clinicId, createdAt, updatedAt, deletedAt, patientId, doctorId,
+         status, remark, followUpStatus, dentition
+       ) VALUES ('track-deleted', ?, ?, ?, ?, 'patient-demo-001', 'user-admin-001', 'COMPLETED', 'x', 'NONE', 'PERMANENT')`,
+    ).run(context.clinicId, now, now, now);
+    expect(() => service.updateTracking('track-deleted', { followUpStatus: 'NONE' }, context)).toThrow(NotFoundError);
+  });
 });

@@ -111,7 +111,8 @@ export class FirstExamRestartService {
 
     const now = context.now().toISOString();
     const result = this.db.prepare(
-      `UPDATE FirstExam SET dentition = ?, updatedAt = ? WHERE id = ?${tenantAnd(clinicId)}`,
+      `UPDATE FirstExam SET dentition = ?, updatedAt = ?
+       WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
     ).run(dentition, now, examId, ...tenantParams(clinicId));
     if (Number(result.changes) === 0) throw new NotFoundError('First exam not found');
     return { examId, dentition: dentition as Dentition };
@@ -134,7 +135,8 @@ export class FirstExamRestartService {
 
     const now = context.now().toISOString();
     const result = this.db.prepare(
-      `UPDATE FirstExamTooth SET chiefMark = ?, updatedAt = ? WHERE id = ?${tenantAnd(clinicId)}`,
+      `UPDATE FirstExamTooth SET chiefMark = ?, updatedAt = ?
+       WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
     ).run(chiefMark, now, toothId, ...tenantParams(clinicId));
     if (Number(result.changes) === 0) throw new NotFoundError('First exam tooth not found');
     return { toothId, chiefMark: chiefMark as ChiefMark };
