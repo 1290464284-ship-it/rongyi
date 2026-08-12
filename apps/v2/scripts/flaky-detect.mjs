@@ -8,10 +8,10 @@ const testPattern = process.env.FLAKY_TEST_PATTERN;
 const failures = [];
 
 for (let run = 1; run <= runs; run += 1) {
-  const args = ['--filter', '@dental/v2', 'exec', 'vitest', 'run', '--sequence.shuffle'];
+  const args = ['--filter', '@dental/v2', 'exec', 'vitest', 'run', '--sequence.shuffle.files'];
   if (testPattern) args.push(testPattern);
   console.log(`[flaky-detect] run ${run}/${runs}: pnpm ${args.join(' ')}`);
-  const result = spawnSync('pnpm', args, {
+  const result = spawnSync(process.env.ComSpec, ['/c', 'pnpm', ...args], {
     cwd: repoRoot,
     env: process.env,
     stdio: 'inherit',

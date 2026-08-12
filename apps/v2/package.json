@@ -41,6 +41,7 @@
     "soak:smoke": "node scripts/soak-smoke.mjs",
     "smoke:wechat-gateway": "node scripts/wechat-gateway-smoke.mjs",
     "test:load": "node scripts/load-smoke.mjs",
+    "test:large-db-concurrency": "node scripts/large-db-concurrency-smoke.mjs",
     "smoke:state-machine-concurrency": "node scripts/state-machine-concurrency-smoke.mjs",
     "benchmark:load": "tsx scripts/benchmark-load.ts",
     "simulate:clinic-data": "tsx scripts/simulate-clinic-data.ts",
