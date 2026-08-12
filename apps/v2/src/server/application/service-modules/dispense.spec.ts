@@ -656,4 +656,117 @@ describe('DispenseService', () => {
       expect(otherIds).toContain('dispense-other-001');
     });
   });
+
+  describe('validation coverage', () => {
+    it('rejects missing prescriptions, malformed doctors, and oversized quantities', () => {
+      const base = {
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'inventory-demo-001', quantity: 1 }],
+      };
+      expect(() => service().create({ ...base, number: 'PF-500', prescriptionId: 'missing-pres' }, context)).toThrow(NotFoundError);
+      expect(() => service().create({ ...base, number: 'PF-501', doctorId: 123 as unknown as string }, context)).toThrow(NotFoundError);
+      expect(() => service().create({
+        ...base,
+        number: 'PF-502',
+        items: [{ itemId: 'inventory-demo-001', quantity: 1_000_000_001 }],
+      }, context)).toThrow(ValidationError);
+      expect(() => service().create({
+        ...base,
+        number: 'PF-503',
+        items: [
+          { itemId: 'inventory-demo-001', quantity: 600_000_000 },
+          { itemId: 'inventory-demo-001', quantity: 600_000_000 },
+        ],
+      }, context)).toThrow(ValidationError);
+    });
+
+    it('rejects invalid pagination and update shapes', () => {
+      expect(() => service().list(context, { page: 0 })).toThrow(ValidationError);
+      expect(() => service().list(context, { pageSize: 0 })).toThrow(ValidationError);
+
+      const created = service().create({
+        number: 'PF-504',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'inventory-demo-001', quantity: 1 }],
+      }, context);
+      expect(() => service().updateDispense(String(created.id), {
+        number: 'PF-504-U',
+        patientId: '',
+        items: [],
+      }, context)).toThrow(ValidationError);
+
+      const manyItems = Array.from({ length: 201 }, () => ({ itemId: 'inventory-demo-001', quantity: 1 }));
+      expect(() => service().updateDispense(String(created.id), {
+        number: 'PF-504-U',
+        patientId: 'patient-demo-001',
+        items: manyItems,
+      }, context)).toThrow(ValidationError);
+
+      expect(() => service().updateDispense(String(created.id), {
+        number: 'PF-504-U',
+        patientId: 'patient-demo-001',
+        items: [{ quantity: 1 } as unknown as { itemId: string; quantity: number }],
+      }, context)).toThrow(ValidationError);
+
+      expect(() => service().updateDispense(String(created.id), {
+        number: 'PF-504-U',
+        patientId: 'patient-demo-001',
+        items: [
+          { itemId: 'inventory-demo-001', quantity: 600_000_000 },
+          { itemId: 'inventory-demo-001', quantity: 600_000_000 },
+        ],
+      }, context)).toThrow(ValidationError);
+    });
+
+    it('reports duplicate dispense numbers as conflicts', () => {
+      service().create({
+        number: 'PF-505',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'inventory-demo-001', quantity: 1 }],
+      }, context);
+      expect(() => service().create({
+        number: 'PF-505',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'inventory-demo-001', quantity: 1 }],
+      }, context)).toThrow(ConflictError);
+    });
+
+    it('rejects malformed dispense assignments and return inputs', async () => {
+      insertItem('validation-assign-item', 100, 0);
+      const created = service().create({
+        number: 'PF-506',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'validation-assign-item', quantity: 2 }],
+      }, context);
+      await expect(service().dispense(String(created.id), context, { items: 'bad' as never })).rejects.toThrow(ValidationError);
+      await service().dispense(String(created.id), context);
+
+      await expect(service().returnItems(String(created.id), { items: [] }, context)).rejects.toThrow(ValidationError);
+      await expect(service().returnItems(String(created.id), {
+        items: [{ quantity: 1 } as never],
+      }, context)).rejects.toThrow(ValidationError);
+      await expect(service().returnItems(String(created.id), {
+        items: [{ dispenseItemId: firstItemId(String(created.id)), quantity: 1_000_000_001 }],
+      }, context)).rejects.toThrow(ValidationError);
+    });
+
+    it('rejects insufficient stock and empty item lists during dispense', async () => {
+      insertItem('validation-no-stock', 0, 0);
+      const noStock = service().create({
+        number: 'PF-507',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'validation-no-stock', quantity: 1 }],
+      }, context);
+      await expect(service().dispense(String(noStock.id), context)).rejects.toThrow(ConflictError);
+
+      insertItem('validation-empty-item', 100, 0);
+      const empty = service().create({
+        number: 'PF-508',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'validation-empty-item', quantity: 1 }],
+      }, context);
+      db.prepare('UPDATE DispenseItem SET deletedAt = ? WHERE dispenseId = ?').run(now, String(empty.id));
+      await expect(service().dispense(String(empty.id), context)).rejects.toThrow(ValidationError);
+    });
+  });
 });

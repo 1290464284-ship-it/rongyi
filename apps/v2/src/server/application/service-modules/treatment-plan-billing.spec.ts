@@ -342,4 +342,54 @@ describe('TreatmentPlanBillingService', () => {
     expect(() => service.planFollowUp('plan-missing', { followUpStatus: 'NONE' }, context))
       .toThrow(NotFoundError);
   });
+
+  it('validates bill selection shapes, missing patients, and amount limits', () => {
+    insertPlan('plan-shape-bill', 'Shape Bill');
+    insertItem('plan-shape-bill', 'plan-shape-bill-i1', { price: 10000, quantity: 1 });
+    const service = new TreatmentPlanBillingService(db);
+    expect(() => service.bill('plan-shape-bill', { itemIds: 'bad' as never }, context))
+      .toThrow(ValidationError);
+
+    insertPlan('plan-overflow-bill', 'Overflow Bill');
+    insertItem('plan-overflow-bill', 'plan-overflow-bill-i1', { price: 700_000_000_000, quantity: 2 });
+    expect(() => service.bill('plan-overflow-bill', {}, context)).toThrow(ValidationError);
+
+    insertPlan('plan-missing-patient-bill', 'Missing Patient', { visitId: null });
+    db.prepare("UPDATE TreatmentPlan SET patientId = 'patient-missing' WHERE id = 'plan-missing-patient-bill'").run();
+    insertItem('plan-missing-patient-bill', 'plan-missing-patient-bill-i1', { price: 10000, quantity: 1 });
+    expect(() => service.bill('plan-missing-patient-bill', {}, context)).toThrow(NotFoundError);
+  });
+
+  it('rejects selecting an already billed item while unbilled items remain', () => {
+    insertPlan('plan-partial-billed', 'Partial Billed');
+    insertItem('plan-partial-billed', 'plan-partial-billed-i1', { price: 10000, quantity: 1, billed: 1 });
+    insertItem('plan-partial-billed', 'plan-partial-billed-i2', { price: 10000, quantity: 1 });
+    const service = new TreatmentPlanBillingService(db);
+    expect(() => service.bill('plan-partial-billed', { itemIds: ['plan-partial-billed-i1'] }, context))
+      .toThrow(ConflictError);
+  });
+
+  it('writes treatment ids and tolerates corrupt teeth JSON when billing', () => {
+    db.prepare(
+      `INSERT INTO Treatment (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, visitId, doctorId, code, name, category,
+         price, quantity, status, completedDate
+       ) VALUES (?, 'clinic-v2-001', ?, ?, NULL, 'patient-demo-001', 'visit-billing-treatment', 'user-admin-001', 'T-BILL', 'Billing Treatment', 'GENERAL', 100, 1, 'COMPLETED', ?)`,
+    ).run('treatment-billing-1', now, now, now);
+    insertPlan('plan-treatment-ids', 'Treatment Ids');
+    insertItem('plan-treatment-ids', 'plan-treatment-ids-i1', { price: 10000, quantity: 1 });
+    insertItem('plan-treatment-ids', 'plan-treatment-ids-i2', { price: 5000, quantity: 1 });
+    db.prepare("UPDATE TreatmentPlanItem SET treatmentId = 'treatment-billing-1', teethNumbers = 'bad-json' WHERE planId = 'plan-treatment-ids'").run();
+
+    const service = new TreatmentPlanBillingService(db);
+    const result = service.bill('plan-treatment-ids', {}, context);
+    const chargeItems = db.prepare('SELECT treatmentId, teethNumbers FROM ChargeItem WHERE chargeId = ?').all(result.chargeId) as Array<{
+      treatmentId: string | null;
+      teethNumbers: string;
+    }>;
+    expect(chargeItems).toHaveLength(2);
+    expect(chargeItems.every((row) => row.treatmentId === 'treatment-billing-1')).toBe(true);
+    expect(chargeItems.every((row) => row.teethNumbers === '[]')).toBe(true);
+  });
 });

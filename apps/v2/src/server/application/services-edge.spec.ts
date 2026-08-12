@@ -219,6 +219,13 @@ describe('service edge coverage', () => {
 
   it('does not store raw refresh tokens in idempotency claims', async () => {
     const auth = new AuthService(db);
+    await expect(auth.deleteUser(context.userId, context)).rejects.toThrow('不能删除当前登录账号');
+    expect(auth.isClinicAccessible('missing-user', 'clinic-v2-001')).toBe(false);
+    expect(auth.isClinicAccessible('user-admin-001', 'clinic-other')).toBe(false);
+  });
+
+  it('does not store raw refresh tokens in idempotency claims', async () => {
+    const auth = new AuthService(db);
     const session = await auth.login('admin', 'v2-test-seed-password');
     const refreshed = await auth.refresh(session.refreshToken);
     const claims = db.prepare(

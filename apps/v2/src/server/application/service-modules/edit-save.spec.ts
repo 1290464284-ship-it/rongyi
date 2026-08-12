@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
-import { ConflictError, ValidationError } from '../../infrastructure/errors';
+import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import type { AppContext } from '../../../domain/contracts';
 import { EditSaveService } from './edit-save';
 
@@ -186,5 +186,141 @@ describe('EditSaveService', () => {
     }, context)).toThrow(ValidationError);
     const main = db.prepare('SELECT status FROM Prescription WHERE id = ?').get('pres-2') as { status: string };
     expect(main.status).toBe('DRAFT');
+  });
+
+  it('rejects invalid treatment plan totals and item shapes', () => {
+    const service = new EditSaveService(db);
+    const base = {
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      name: 'Invalid Plan',
+      status: 'APPROVED',
+      totalFee: 1000,
+      items: [{ code: 'A', name: 'A', category: 'GENERAL', price: 100, quantity: 1, teethNumbers: [], status: 'PLANNED' }],
+    };
+    insertPlan('plan-invalid-total');
+    expect(() => service.saveTreatmentPlan('plan-invalid-total', { ...base, totalFee: -1 }, context)).toThrow(ValidationError);
+
+    insertPlan('plan-invalid-price');
+    expect(() => service.saveTreatmentPlan('plan-invalid-price', {
+      ...base,
+      items: [{ code: 'A', name: 'A', category: 'GENERAL', price: 0, quantity: 1, teethNumbers: [], status: 'PLANNED' }],
+    }, context)).toThrow(ValidationError);
+
+    insertPlan('plan-missing-code');
+    expect(() => service.saveTreatmentPlan('plan-missing-code', {
+      ...base,
+      items: [{ name: 'A', category: 'GENERAL', price: 100, quantity: 1, teethNumbers: [], status: 'PLANNED' } as never],
+    }, context)).toThrow(ValidationError);
+
+    insertPlan('plan-invalid-quantity');
+    expect(() => service.saveTreatmentPlan('plan-invalid-quantity', {
+      ...base,
+      items: [{ code: 'A', name: 'A', category: 'GENERAL', price: 100, quantity: 0, teethNumbers: [], status: 'PLANNED' }],
+    }, context)).toThrow(ValidationError);
+
+    insertPlan('plan-invalid-subtotal');
+    expect(() => service.saveTreatmentPlan('plan-invalid-subtotal', {
+      ...base,
+      items: [{ code: 'A', name: 'A', category: 'GENERAL', price: 700_000_000_000, quantity: 2, teethNumbers: [], status: 'PLANNED' }],
+    }, context)).toThrow(ValidationError);
+
+    insertPlan('plan-invalid-status');
+    expect(() => service.saveTreatmentPlan('plan-invalid-status', {
+      ...base,
+      items: [{ code: 'A', name: 'A', category: 'GENERAL', price: 100, quantity: 1, teethNumbers: [], status: '' }],
+    }, context)).toThrow(ValidationError);
+  });
+
+  it('rejects invalid prescription item quantities, prices, and subtotals', () => {
+    const service = new EditSaveService(db);
+    const base = {
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      status: 'SUBMITTED',
+      items: [{ name: 'Medicine', days: 3, quantity: 1, price: 100 }],
+    };
+    insertPrescription('pres-invalid-qty');
+    expect(() => service.savePrescription('pres-invalid-qty', { ...base, items: [{ name: 'Medicine', days: 3, quantity: 0, price: 100 }] }, context)).toThrow(ValidationError);
+
+    insertPrescription('pres-invalid-price');
+    expect(() => service.savePrescription('pres-invalid-price', { ...base, items: [{ name: 'Medicine', days: 3, quantity: 1, price: -1 }] }, context)).toThrow(ValidationError);
+
+    insertPrescription('pres-invalid-subtotal');
+    expect(() => service.savePrescription('pres-invalid-subtotal', { ...base, items: [{ name: 'Medicine', days: 3, quantity: 2, price: 700_000_000_000 }] }, context)).toThrow(ValidationError);
+  });
+
+  it('soft-deletes removed prescription items and tolerates corrupt teeth JSON on billed items', () => {
+    insertPrescription('pres-remove');
+    insertPrescriptionItem('pi-keep', 'pres-remove', { name: 'Keep' });
+    insertPrescriptionItem('pi-drop', 'pres-remove', { name: 'Drop' });
+    new EditSaveService(db).savePrescription('pres-remove', {
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      status: 'SUBMITTED',
+      items: [{ id: 'pi-keep', name: 'Keep', days: 3, quantity: 1, price: 100 }],
+    }, context);
+    const removed = db.prepare('SELECT deletedAt FROM PrescriptionItem WHERE id = ?').get('pi-drop') as { deletedAt: string | null };
+    expect(removed.deletedAt).not.toBeNull();
+
+    insertPlan('plan-teeth-corrupt');
+    insertPlanItem('item-teeth-corrupt', 'plan-teeth-corrupt', { code: 'T', name: 'T', billed: 1, teethNumbers: ['11'] });
+    db.prepare('UPDATE TreatmentPlanItem SET teethNumbers = ? WHERE id = ?').run('not-json', 'item-teeth-corrupt');
+    expect(() => new EditSaveService(db).saveTreatmentPlan('plan-teeth-corrupt', {
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      name: 'Teeth Plan',
+      status: 'APPROVED',
+      totalFee: 100,
+      items: [{ id: 'item-teeth-corrupt', code: 'T', name: 'T', category: 'GENERAL', price: 100, quantity: 1, teethNumbers: [], status: 'PLANNED' }],
+    }, context)).not.toThrow();
+  });
+
+  it('rejects missing targets and malformed plan/prescription shapes', () => {
+    const service = new EditSaveService(db);
+    const base = {
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      name: 'Shape Plan',
+      status: 'APPROVED',
+      totalFee: 1000,
+      items: [{ code: 'A', name: 'A', category: 'GENERAL', price: 100, quantity: 1, teethNumbers: [], status: 'PLANNED' }],
+    };
+    expect(() => service.saveTreatmentPlan('missing-plan', base, context)).toThrow(NotFoundError);
+
+    insertPlan('plan-shape-1');
+    expect(() => service.saveTreatmentPlan('plan-shape-1', { ...base, name: '  ' }, context)).toThrow(ValidationError);
+    expect(() => service.saveTreatmentPlan('plan-shape-1', { ...base, status: 'BOGUS' }, context)).toThrow(ValidationError);
+    expect(() => service.saveTreatmentPlan('plan-shape-1', { ...base, patientId: '' }, context)).toThrow(ValidationError);
+    expect(() => service.saveTreatmentPlan('plan-shape-1', { ...base, doctorId: '' }, context)).toThrow(ValidationError);
+    expect(() => service.saveTreatmentPlan('plan-shape-1', { ...base, items: 'bad' as never }, context)).toThrow(ValidationError);
+    expect(() => service.saveTreatmentPlan('plan-shape-1', { ...base, items: [] }, context)).toThrow(ValidationError);
+
+    const prescriptionBase = {
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      status: 'SUBMITTED',
+      items: [{ name: 'Medicine', days: 3, quantity: 1, price: 100 }],
+    };
+    expect(() => service.savePrescription('missing-prescription', prescriptionBase, context)).toThrow(NotFoundError);
+    insertPrescription('pres-shape-1');
+    expect(() => service.savePrescription('pres-shape-1', { ...prescriptionBase, patientId: '' }, context)).toThrow(ValidationError);
+    expect(() => service.savePrescription('pres-shape-1', { ...prescriptionBase, doctorId: '' }, context)).toThrow(ValidationError);
+    expect(() => service.savePrescription('pres-shape-1', { ...prescriptionBase, items: 'bad' as never }, context)).toThrow(ValidationError);
+    expect(() => service.savePrescription('pres-shape-1', { ...prescriptionBase, items: [] }, context)).toThrow(ValidationError);
+    expect(() => service.savePrescription('pres-shape-1', { ...prescriptionBase, items: [{ days: 3, quantity: 1, price: 100 } as never] }, context)).toThrow(ValidationError);
+  });
+
+  it('rejects removing a billed plan item', () => {
+    insertPlan('plan-remove-billed');
+    insertPlanItem('item-remove-billed', 'plan-remove-billed', { code: 'B', name: 'B', billed: 1 });
+    expect(() => new EditSaveService(db).saveTreatmentPlan('plan-remove-billed', {
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      name: 'Keep Other',
+      status: 'APPROVED',
+      totalFee: 100,
+      items: [{ code: 'NEW', name: 'New', category: 'GENERAL', price: 100, quantity: 1, teethNumbers: [], status: 'PLANNED' }],
+    }, context)).toThrow(ConflictError);
   });
 });

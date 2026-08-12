@@ -195,4 +195,91 @@ describe('sync conflict detection and resolution', () => {
     const row = db.prepare('SELECT name FROM Patient WHERE id = ?').get('sync-patient-1') as { name: string };
     expect(row.name).toBe('Sync Name');
   });
+
+  it('rejects invalid cursors and non-BOSS sync roles', async () => {
+    expect(() => service.pull('', 'device', 'token', context)).toThrow(/since/);
+    const doctor = { ...context, role: 'DOCTOR' as const };
+    await expect(service.push({ deviceId: 'device', deviceToken: 'token', changes: [] }, doctor)).rejects.toThrow(/BOSS/);
+    expect(() => service.listConflicts(doctor)).toThrow(/BOSS/);
+    await expect(service.resolveConflict('missing', 'KEEP_LOCAL', doctor)).rejects.toThrow(/BOSS/);
+    expect(() => service.registerDevice('device', 'Device', doctor)).toThrow(/BOSS/);
+  });
+
+  it('rejects sync changes that omit row data', async () => {
+    const device = service.registerDevice('sync-device-missing-data', 'Missing Data', context);
+    const result = await service.push({
+      deviceId: device.deviceId,
+      deviceToken: device.token,
+      changes: [{
+        tableName: 'Patient',
+        recordId: 'sync-patient-1',
+        operation: 'UPDATE',
+        updatedAt: '2099-01-01T00:00:00.000Z',
+      }],
+    }, context);
+    expect(result.accepted).toBe(0);
+    expect(result.errors).toHaveLength(1);
+  });
+
+  it('resolves a remote DELETE conflict by soft-deleting the local row', async () => {
+    const patientId = 'sync-patient-remote-delete';
+    db.prepare(
+      `INSERT INTO Patient (id, clinicId, createdAt, updatedAt, deletedAt, code, name, gender, phone, source, active)
+       VALUES (?, 'clinic-v2-001', ?, '2026-08-09T12:00:00.000Z', NULL, 'SYNC-RDEL', 'Delete Me', 'UNKNOWN', '13800000003', 'WALK_IN', 1)`,
+    ).run(patientId, now);
+    const device = service.registerDevice('sync-device-remote-delete', 'Remote Delete', context);
+    await service.push({
+      deviceId: device.deviceId,
+      deviceToken: device.token,
+      changes: [{
+        tableName: 'Patient',
+        recordId: patientId,
+        operation: 'DELETE',
+        updatedAt: '2026-08-09T11:00:00.000Z',
+      }],
+    }, context);
+    const [conflict] = service.listConflicts(context).filter((row) => String(row.recordId) === patientId);
+    expect(conflict).toBeDefined();
+    await service.resolveConflict(String(conflict.id), 'KEEP_REMOTE', context);
+    const row = db.prepare('SELECT deletedAt FROM Patient WHERE id = ?').get(patientId) as { deletedAt: string | null };
+    expect(row.deletedAt).not.toBeNull();
+  });
+
+  it('rejects registering a device already owned by another user', async () => {
+    db.prepare(
+      `INSERT INTO SyncDevice (id, clinicId, userId, deviceId, tokenHash, name, active, createdAt, updatedAt, deletedAt)
+       VALUES (?, 'clinic-v2-001', 'user-other', 'sync-device-owned', 'hash', 'Owned', 1, ?, ?, NULL)`,
+    ).run('sync-device-owned', now, now);
+    expect(() => service.registerDevice('sync-device-owned', 'Mine', context)).toThrow(/already registered/);
+  });
+
+  it('rejects invalid resolutions and applies KEEP_REMOTE to a missing local row', async () => {
+    await expect(service.resolveConflict('missing', 'BAD', context)).rejects.toThrow(/KEEP_LOCAL or KEEP_REMOTE/);
+
+    db.prepare(
+      `INSERT INTO SyncConflict (
+         id, clinicId, tableName, recordId, deviceId, localOperation, remoteOperation,
+         localSnapshotJson, remoteSnapshotJson, localUpdatedAt, remoteUpdatedAt,
+         status, resolution, resolvedAt, resolvedById, createdAt, updatedAt, deletedAt
+       ) VALUES (?, 'clinic-v2-001', 'Patient', 'sync-patient-missing-remote', 'sync-device-insert', 'UPDATE', 'UPDATE',
+         '{}', ?, '2026-08-09T11:00:00.000Z', '2026-08-09T12:00:00.000Z',
+         'PENDING', NULL, NULL, NULL, ?, ?, NULL)`,
+    ).run(
+      'sync-conflict-insert',
+      JSON.stringify({
+        code: 'SYNC-REMOTE-INSERT',
+        name: 'Remote Insert',
+        gender: 'UNKNOWN',
+        phone: '13800000009',
+        source: 'WALK_IN',
+        active: true,
+        updatedAt: '2026-08-09T12:00:00.000Z',
+      }),
+      now,
+      now,
+    );
+    await service.resolveConflict('sync-conflict-insert', 'KEEP_REMOTE', context);
+    const row = db.prepare('SELECT name FROM Patient WHERE id = ?').get('sync-patient-missing-remote') as { name: string };
+    expect(row.name).toBe('Remote Insert');
+  });
 });

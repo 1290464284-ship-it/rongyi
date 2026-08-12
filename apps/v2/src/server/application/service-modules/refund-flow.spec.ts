@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
-import { ConflictError, NotFoundError } from '../../infrastructure/errors';
+import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import type { AppContext } from '../../../domain/contracts';
 import { ChargeService, MemberCardService } from './financial';
 import { RefundFlowService } from './refund-flow';
@@ -527,5 +527,11 @@ describe('RefundFlowService', () => {
 
     // 跨租户操作其他诊所的退款 → NotFound
     expect(() => service.approve('refund-other-clinic', context)).toThrow(NotFoundError);
+  });
+
+  it('validates refund list pagination', () => {
+    const service = new RefundFlowService(db);
+    expect(() => service.list(context, { page: 0 })).toThrow(ValidationError);
+    expect(() => service.list(context, { pageSize: 0 })).toThrow(ValidationError);
   });
 });

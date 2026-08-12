@@ -3,13 +3,14 @@ import os from 'node:os';
 import path from 'node:path';
 import request from 'supertest';
 import bcrypt from 'bcryptjs';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createApp } from './app';
 import { createDatabase, seedDatabase } from '../infrastructure/database';
 import { runMigrations } from '../infrastructure/migrations';
 import { rebuildSearchIndex } from '../infrastructure/search-index';
 import { Logger } from '../infrastructure/logger';
+import { SqliteRepository } from '../infrastructure/repository';
 
 describe('resource router', () => {
   let dataDir: string;
@@ -44,6 +45,10 @@ describe('resource router', () => {
       .send({ username: 'doctor-router', password: 'reception123' })
       .expect(200);
     receptionToken = reception.body.data.token as string;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   afterAll(() => {
@@ -247,7 +252,94 @@ describe('resource router', () => {
     expect(exported.text.match(/"Export Row"/g)?.length).toBe(201);
   }, 30_000);
 
+  it('forbids resources outside the requesting role', async () => {
+    await request(app)
+      .get('/api/v2/resources/auditLog')
+      .set('Authorization', `Bearer ${receptionToken}`)
+      .expect(403);
+  });
+
+  it('blocks fee and status edits on billed treatment plans', async () => {
+    const planId = 'router-plan-locked-fields';
+    const nowIso = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO TreatmentPlan (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, name, status, totalFee
+       ) VALUES (?, 'clinic-v2-001', ?, ?, NULL, 'patient-demo-001', 'user-router-doctor', 'Locked Plan', 'APPROVED', 100)`,
+    ).run(planId, nowIso, nowIso);
+    db.prepare(
+      `INSERT INTO TreatmentPlanItem (
+         id, planId, code, name, category, price, quantity, teethNumbers, status,
+         discountRate, billed, billedChargeId, clinicId, createdAt, updatedAt, deletedAt
+       ) VALUES (?, ?, 'R-LOCKED', 'Billed', 'SERVICE', 100, 1, '[]', 'PLANNED', NULL, 1, 'charge-locked', 'clinic-v2-001', ?, ?, NULL)`,
+    ).run('router-item-locked-fields', planId, nowIso, nowIso);
+    try {
+      const res = await request(app)
+        .patch(`/api/v2/resources/treatmentPlans/${planId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ status: 'CANCELLED' })
+        .expect(409);
+      expect(res.body.message).toContain('已划价');
+    } finally {
+      db.prepare('DELETE FROM TreatmentPlanItem WHERE planId = ?').run(planId);
+      db.prepare('DELETE FROM TreatmentPlan WHERE id = ?').run(planId);
+    }
+  });
+
+  it('masks identity card exports', async () => {
+    await request(app)
+      .post('/api/v2/resources/patients')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: 'EXPORT-IDCARD',
+        name: 'Identity Card Patient',
+        gender: 'UNKNOWN',
+        phone: '13600009999',
+        idCard: '110101199001011234',
+        source: 'OTHER',
+        active: true,
+      })
+      .expect(201);
+    const exported = await request(app)
+      .get('/api/v2/resources/patients/export?code=EXPORT-IDCARD')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(exported.text).not.toContain('110101199001011234');
+    expect(exported.text).toMatch(/\*{8}1234/);
+  });
+
+  it('ends an export response when streaming fails after headers', async () => {
+    const original = SqliteRepository.prototype.findMany;
+    let calls = 0;
+    vi.spyOn(SqliteRepository.prototype, 'findMany').mockImplementation(async function (
+      this: SqliteRepository,
+      query,
+      context,
+    ) {
+      calls += 1;
+      if (calls > 1) throw new Error('stream failed');
+      return original.call(this, query, context);
+    });
+    const exported = await request(app)
+      .get('/api/v2/resources/patients/export?name=Export Row')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(exported.text).toContain('Export Row');
+  });
+
   it('caps CSV exports and marks truncation', async () => {
+    const insertCap = db.prepare(
+      `INSERT INTO Patient (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active
+       ) VALUES (?, 'clinic-v2-001', ?, ?, NULL, ?, 'Export Row', 'UNKNOWN', ?, '[]', '[]', '[]', '[]', '[]', 'OTHER', 1)`,
+    );
+    const capNow = new Date().toISOString();
+    for (let index = 0; index < 300; index += 1) {
+      insertCap.run(`cap-row-${index}`, capNow, capNow, `EXPORT-CAP-${index}`, `13700000${String(index).padStart(4, '0')}`);
+    }
     process.env.V2_CSV_EXPORT_MAX_ROWS = '5';
     try {
       const small = await request(app)
@@ -268,6 +360,30 @@ describe('resource router', () => {
         .expect(200);
       expect(exact.text).toContain('# truncated');
       expect(exact.text.match(/"Export Row"/g)?.length).toBe(200);
+    } finally {
+      delete process.env.V2_CSV_EXPORT_MAX_ROWS;
+    }
+
+    process.env.V2_CSV_EXPORT_MAX_ROWS = '250';
+    try {
+      const mid = await request(app)
+        .get('/api/v2/resources/patients/export?name=Export Row')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      expect(mid.text).toContain('# truncated');
+      expect(mid.text.match(/"Export Row"/g)?.length).toBe(250);
+    } finally {
+      delete process.env.V2_CSV_EXPORT_MAX_ROWS;
+    }
+
+    process.env.V2_CSV_EXPORT_MAX_ROWS = '400';
+    try {
+      const deep = await request(app)
+        .get('/api/v2/resources/patients/export?name=Export Row')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      expect(deep.text).toContain('# truncated');
+      expect(deep.text.match(/"Export Row"/g)?.length).toBe(400);
     } finally {
       delete process.env.V2_CSV_EXPORT_MAX_ROWS;
     }

@@ -262,4 +262,36 @@ describe('shift template routes', () => {
       .send({ templateId, userId: 'user-doctor-001', weekStart: '2026-02-30' })
       .expect(400);
   });
+
+  it('rejects malformed work day JSON and non-date weekStart values', async () => {
+    await request(app)
+      .post('/api/v2/shift-templates')
+      .send({ name: 'Bad JSON', startTime: '09:00', endTime: '18:00', workDaysJson: 'not-json' })
+      .expect(400);
+    await request(app)
+      .post('/api/v2/shift-templates')
+      .send({ name: 'Bad Shape', startTime: '09:00', endTime: '18:00', workDaysJson: {} })
+      .expect(400);
+
+    const created = await request(app)
+      .post('/api/v2/shift-templates')
+      .send({ name: 'Week Start', startTime: '09:00', endTime: '18:00', workDaysJson: [1, 2, 3, 4, 5] })
+      .expect(201);
+    await request(app)
+      .post('/api/v2/shift-templates/generate')
+      .send({ templateId: String(created.body.data.id), userId: 'user-doctor-001', weekStart: 'garbage' })
+      .expect(400);
+  });
+
+  it('lists templates with non-array workDaysJson as empty work days', async () => {
+    const created = await request(app)
+      .post('/api/v2/shift-templates')
+      .send({ name: 'Object Days', startTime: '09:00', endTime: '18:00', workDaysJson: [1, 2, 3, 4, 5] })
+      .expect(201);
+    const id = String(created.body.data.id);
+    db.prepare('UPDATE ShiftTemplate SET workDaysJson = ? WHERE id = ?').run('{}', id);
+    const list = await request(app).get('/api/v2/shift-templates').expect(200);
+    const row = (list.body.data as Array<Record<string, unknown>>).find((entry) => entry.id === id);
+    expect(row?.workDays).toEqual([]);
+  });
 });

@@ -71,10 +71,12 @@ export class UserManagementService {
       }
       clinicIds = [...new Set([...(tenantParams(context.clinicId) as string[]), ...requested])];
     } else {
+      /* v8 ignore start -- only BOSS/ADMIN/DOCTOR roles exist and DOCTOR is rejected by canManageUser above. */
       clinicIds = [...tenantParams(context.clinicId)] as string[];
       if (!clinicIds.every((clinicId) => creatorClinics.has(clinicId))) {
         throw new AppError('FORBIDDEN', 'Cannot create users outside your clinic scope', 403);
       }
+      /* v8 ignore stop */
     }
     if (clinicIds.length > 0) {
       const placeholders = clinicIds.map(() => '?').join(',');
