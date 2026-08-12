@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import type { Page } from '../../lib/types';
@@ -84,10 +84,13 @@ export function ClinicalWorkflowPage() {
   const queries = { registrations, visits, firstExams, treatments } as Record<typeof resources[number], ResourcePageQuery>;
   const [activeDialog, setActiveDialog] = useState<WorkbenchDialog | null>(null);
   const [transitionKey, setTransitionKey] = useState<string | null>(null);
+  // ref 同步防重：state 更新前同一次点击风暴内连续点击也能被拦下，避免并发 PATCH。
+  const transitionRef = useRef(false);
 
   async function transition(resource: string, id: string, status: string) {
     const key = `${resource}:${id}:${status}`;
-    if (transitionKey) return;
+    if (transitionRef.current) return;
+    transitionRef.current = true;
     setTransitionKey(key);
     try {
       const endpoint = resource === 'registrations'
@@ -107,6 +110,7 @@ export function ClinicalWorkflowPage() {
     } catch (error) {
       showToast(errorMessage(error, '状态更新失败'), 'error');
     } finally {
+      transitionRef.current = false;
       setTransitionKey(null);
     }
   }

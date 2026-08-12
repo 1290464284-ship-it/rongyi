@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import type { Page } from '../../lib/types';
@@ -24,6 +24,8 @@ export function FrontDeskWorkflowPage() {
   const { showToast } = useToast();
   const [activeDialog, setActiveDialog] = useState<WorkbenchDialog | null>(null);
   const [transitionKey, setTransitionKey] = useState<string | null>(null);
+  // ref 同步防重：state 更新前同一次点击风暴内连续点击也能被拦下，避免并发 PATCH。
+  const transitionRef = useRef(false);
   const [page, setPage] = useState(1);
   const registrations = useQuery({
     queryKey: ['front-desk', 'registrations', page],
@@ -35,7 +37,8 @@ export function FrontDeskWorkflowPage() {
 
   async function transition(id: string, status: string) {
     const key = `${id}:${status}`;
-    if (transitionKey) return;
+    if (transitionRef.current) return;
+    transitionRef.current = true;
     setTransitionKey(key);
     try {
       await apiRequest(`/registrations/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
@@ -44,6 +47,7 @@ export function FrontDeskWorkflowPage() {
     } catch (error) {
       showToast(errorMessage(error, '状态更新失败'), 'error');
     } finally {
+      transitionRef.current = false;
       setTransitionKey(null);
     }
   }
