@@ -63,6 +63,7 @@
 
 ## 其他归档
 
+- `../多维度评分-2026-08-12.md`：多维度质量评分。
 - `./软件需求对比与功能取舍报告.md`：需求与功能取舍。
 - `./T2R-20-uuid-labels-report.md`：UUID 标签专项。
 - `./architecture-audit-2026.md` / `./ARCHITECTURE_REVIEW.md` /
