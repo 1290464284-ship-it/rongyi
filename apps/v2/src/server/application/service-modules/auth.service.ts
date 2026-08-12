@@ -211,8 +211,13 @@ export class AuthService {
     if (!row) return null;
     this.clearUserRefreshClaims(row.id);
     const now = new Date().toISOString();
-    this.authRepository.markRefreshTokenUsed(tokenHash, row.id, now);
-    this.authRepository.clearRefreshToken(row.id, now);
+    runInTransactionImmediate(this.db, () => {
+      this.authRepository.markRefreshTokenUsed(tokenHash, row.id, now);
+      this.authRepository.clearRefreshToken(row.id, now);
+      // 登出后立即作废该用户已签发的 access token，避免"登出后旧 token
+      // 仍可调用 API 到自然过期"的会话残留窗口。
+      this.db.prepare?.('UPDATE User SET tokenVersion = tokenVersion + 1, updatedAt = ? WHERE id = ?')?.run(now, row.id);
+    });
     return row.id;
   }
 

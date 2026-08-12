@@ -158,6 +158,8 @@ describe('service edge coverage', () => {
     await auth.logout('');
     await auth.logout('unknown-token');
     await auth.logout(session.refreshToken);
+    // 登出必须立即作废已签发 access token（tokenVersion + 1）。
+    await expect(auth.me(tokenPayload)).rejects.toThrow('Token is no longer valid');
 
     await expect(auth.login('unknown-user', 'wrong')).rejects.toThrow('Invalid username or password');
     expect(() => auth.verifyToken('invalid-token')).toThrow('Invalid or expired token');
