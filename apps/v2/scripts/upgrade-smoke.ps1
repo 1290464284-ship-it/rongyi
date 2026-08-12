@@ -59,6 +59,21 @@ if (Test-Path -LiteralPath $appDataRoot) {
   [System.IO.Directory]::Delete($appDataRoot, $true)
 }
 
+# 失败路径也必须回收子进程并清理临时目录，避免 CI 残留安装器/数据目录。
+trap {
+  foreach ($proc in @($previousApi, $api)) {
+    if ($proc -and -not $proc.HasExited) {
+      Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+    }
+  }
+  foreach ($dir in @($installDir, $appDataRoot)) {
+    if ($dir -and (Test-Path -LiteralPath $dir)) {
+      [System.IO.Directory]::Delete($dir, $true) | Out-Null
+    }
+  }
+  exit 1
+}
+
 $env:APPDATA = $appDataRoot
 foreach ($markerDir in @((Join-Path $appDataRoot "Dental Clinic V2"), (Join-Path $appDataRoot "dental-clinic-v2"))) {
   [System.IO.Directory]::CreateDirectory($markerDir) | Out-Null

@@ -1304,7 +1304,7 @@ describe('HTTP app', () => {
     const patientResult = search.body.data.find((item: { resource: string; id: string }) =>
       item.resource === 'patients' && item.id === 'patient-searchable');
     expect(patientResult).toBeDefined();
-    expect(patientResult.detail.phone).toBe('13900001111');
+    expect(patientResult.detail.phone).toBe('139****1111');
   });
 
   it('supports clinical workflows and system actions', async () => {

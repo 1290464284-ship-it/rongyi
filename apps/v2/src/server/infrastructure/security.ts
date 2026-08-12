@@ -24,6 +24,7 @@ const AUDIT_SENSITIVE_FIELDS = new Set([
   ...SENSITIVE_FIELDS,
   'phone',
   'phoneNumber',
+  'tempPatientPhone',
   'email',
   'idCard',
   'cardNo',

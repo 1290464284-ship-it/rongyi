@@ -1032,7 +1032,7 @@ describe('service edge coverage', () => {
     search.search('UNKNOWNTERM', context);
     expect(search.search('', context)).toEqual([]);
     expect(search.search('XNULL', nullContext).some((row) => row.resource === 'patients' && row.label === 'XNULL')).toBe(true);
-    expect(search.search('SHORT', nullContext).some((row) => (row.detail as Record<string, unknown>).phone === 'SHORT')).toBe(true);
+    expect(search.search('SHORT', nullContext).some((row) => (row.detail as Record<string, unknown>).phone === '*****')).toBe(true);
     expect(search.search('SEARCHCAT', nullContext).some((row) => row.resource === 'inventoryItems' && row.label === '')).toBe(true);
 
     db.prepare(

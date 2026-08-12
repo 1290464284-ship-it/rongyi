@@ -316,6 +316,9 @@ function alignLegacyTables(db: Database.Database): void {
 }
 
 export function uniqueIndexColumns(db: Database.Database, table: string, fieldName: string): string {
+  // Clinic 自身没有有意义的 clinicId（存 NULL），唯一索引必须退化为单列，
+  // 否则 SQLite 把 NULL 视为互不相等，重复 code 也能通过。
+  if (table === 'Clinic') return fieldName;
   const hasClinicColumn = (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>)
     .some((column) => column.name === 'clinicId');
   return hasClinicColumn ? `clinicId, ${fieldName}` : fieldName;
@@ -347,6 +350,8 @@ export function createPerformanceIndexes(db: Database.Database): void {
     { name: 'idx_v2_perf_chargeitem_cost', table: 'ChargeItem', columns: ['costType', 'deletedAt'] },
     { name: 'idx_v2_perf_notification_user', table: 'Notification', columns: ['userId', 'createdAt'] },
     { name: 'idx_v2_perf_attendance_clinic_date', table: 'Attendance', columns: ['clinicId', 'workDate'] },
+    { name: 'idx_v2_perf_business_alert_open', table: 'BusinessAlert', columns: ['clinicId', 'status', 'deletedAt', 'createdAt'] },
+    { name: 'idx_v2_perf_member_card_patient_status', table: 'MemberCard', columns: ['patientId', 'status', 'deletedAt'] },
   ];
   for (const def of indexDefs) {
     const tableExists = db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`).get(def.table);

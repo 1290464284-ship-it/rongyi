@@ -77,7 +77,7 @@ export const operationsResources: ResourceDefinition[] = [
   crud('satisfactionSurveys', 'SatisfactionSurvey', [
     f('patientId', 'relation', { relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } }),
     f('doctorId', 'relation', { relation: { resource: 'users', foreignKey: 'doctorId', labelField: 'name' } }),
-    f('score', 'number', { required: true, min: 0, max: 100 }),
+    f('score', 'number', { required: true, min: 0, max: 10 }),
     f('channel', 'text', { required: true }),
     f('comment', 'longText'),
     f('surveyDate', 'date', { required: true }),

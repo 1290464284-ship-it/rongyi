@@ -155,6 +155,7 @@ describe('ProcessingSettleService', () => {
   });
 
   it('computes settlement stats excluding cancelled and other-tenant orders', () => {
+    db.prepare('DELETE FROM ProcessingOrderItem').run();
     db.prepare('DELETE FROM ProcessingOrder').run();
     insertOrder('stats-u1', { status: 'COMPLETED', settleStatus: 'UNSETTLED', totalFee: 10000 });
     insertOrder('stats-u2', { status: 'RECEIVED', settleStatus: 'UNSETTLED', totalFee: 20000 });

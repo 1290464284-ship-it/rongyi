@@ -291,6 +291,6 @@ function csvCell(value: unknown): string {
 export function maskPhoneForExport(phone: string | null | undefined): string {
   if (!phone) return '';
   const digits = phone.replace(/[^\d]/g, '');
-  if (digits.length < 7) return phone.replace(/./g, '*');
+  if (digits.length <= 7) return phone.replace(/./g, '*');
   return `${digits.slice(0, 3)}****${digits.slice(-4)}`;
 }

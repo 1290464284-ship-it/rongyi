@@ -12,6 +12,7 @@ import { parsePagination } from './pagination';
 import { tenantAnd, tenantParams } from '../infrastructure/tenant';
 import { trackResourceWrite } from '../infrastructure/write-tracking';
 import { RESOURCE_PERMISSION_MAP } from '../application/service-modules/permissions';
+import { maskPhoneForExport } from '../application/service-modules/operations';
 
 export function createResourceRouter(db: Database.Database): Router {
   const router = Router();
@@ -102,8 +103,9 @@ export function createResourceRouter(db: Database.Database): Router {
         res.end();
         return;
       }
-      res.write(`${csvHeader(firstPage.items, resource)}\r\n`);
-      res.write(`${csvLines(firstPage.items)}\r\n`);
+      const maskedFirst = firstPage.items.map((row) => maskExportRow(resource.name, row));
+      res.write(`${csvHeader(maskedFirst, resource)}\r\n`);
+      res.write(`${csvLines(maskedFirst)}\r\n`);
       let page = 2;
       for (;;) {
         if (firstPage.total <= 200) break;
@@ -113,7 +115,7 @@ export function createResourceRouter(db: Database.Database): Router {
           filters: parseFilters(req),
         }, req.context!);
         if (result.items.length === 0) break;
-        res.write(`${csvLines(result.items)}\r\n`);
+        res.write(`${csvLines(result.items.map((row) => maskExportRow(resource.name, row)))}\r\n`);
         if (page * 200 >= result.total) break;
         page += 1;
       }
@@ -245,6 +247,30 @@ function csvHeader(rows: Array<Record<string, unknown>>, resource: ResourceDefin
     deletedAt: '删除时间',
   };
   return headers.map((header) => csvCell(labels.get(header) ?? systemLabels[header] ?? header)).join(',');
+}
+
+const EXPORT_MASK_FIELDS: Record<string, Array<[string, 'phone' | 'idCard' | 'bankAccount' | 'text']>> = {
+  patients: [['phone', 'phone'], ['idCard', 'idCard'], ['wechatId', 'text'], ['address', 'text']],
+  suppliers: [['phone', 'phone'], ['bankAccount', 'bankAccount']],
+  users: [['phone', 'phone']],
+};
+
+/** 通用 CSV 导出脱敏：患者手机/身份证、供应商账号等不得随导出明文外泄。 */
+function maskExportRow(resourceName: string, row: Record<string, unknown>): Record<string, unknown> {
+  const masked = { ...row };
+  for (const [field, kind] of EXPORT_MASK_FIELDS[resourceName] ?? []) {
+    const value = masked[field];
+    if (value === undefined || value === null || value === '') continue;
+    const text = String(value);
+    if (kind === 'phone') {
+      masked[field] = maskPhoneForExport(text);
+    } else if (kind === 'idCard' || kind === 'bankAccount') {
+      masked[field] = text.length > 4 ? `${'*'.repeat(Math.min(8, text.length - 4))}${text.slice(-4)}` : '*'.repeat(text.length);
+    } else {
+      masked[field] = text.length > 4 ? `${text.slice(0, 1)}****${text.slice(-1)}` : text;
+    }
+  }
+  return masked;
 }
 
 function csvLines(rows: Array<Record<string, unknown>>): string {

@@ -415,6 +415,51 @@ describe('migrations', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it('replays migration 146 without throwing or duplicating ledger rows', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-mig-146-replay-'));
+    const freshDb = createDatabase(dir);
+    runMigrations(freshDb);
+    const t = new Date().toISOString();
+    freshDb.prepare(
+      `INSERT INTO Charge (
+         id, clinicId, createdAt, updatedAt, deletedAt, patientId, number,
+         totalAmount, paidAmount, refundedAmount, discount, status, payMethod, paidAt
+       ) VALUES (?, ?, ?, ?, NULL, ?, ?, 1000, 1000, 0, 0, 'PAID', 'CASH', ?)`,
+    ).run('charge-replay-146', 'clinic-v2-001', t, t, 'patient-demo-001', 'CHG-REPLAY', t);
+    const before = freshDb.prepare(
+      'SELECT COUNT(*) AS c FROM PaymentLedger WHERE chargeId = ?',
+    ).get('charge-replay-146') as { c: number };
+    // 初始迁移先于本测试插入收费单，回填不包含该行；重放 146 时才补上。
+    expect(before.c).toBe(0);
+
+    freshDb.prepare("DELETE FROM schema_migrations WHERE version = '146'").run();
+    expect(() => runMigrations(freshDb)).not.toThrow();
+    const after = freshDb.prepare(
+      'SELECT COUNT(*) AS c FROM PaymentLedger WHERE chargeId = ?',
+    ).get('charge-replay-146') as { c: number };
+    expect(after.c).toBe(1);
+
+    freshDb.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('rejects duplicate clinic codes on fresh databases', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-mig-clinic-dup-'));
+    const freshDb = createDatabase(dir);
+    runMigrations(freshDb);
+    const t = new Date().toISOString();
+    freshDb.prepare(
+      `INSERT INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+       VALUES (?, NULL, ?, ?, NULL, 'DUP-CODE', 'Clinic A', 1)`,
+    ).run('clinic-dup-a', t, t);
+    expect(() => freshDb.prepare(
+      `INSERT INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+       VALUES (?, NULL, ?, ?, NULL, 'DUP-CODE', 'Clinic B', 1)`,
+    ).run('clinic-dup-b', t, t)).toThrow(/UNIQUE constraint failed/);
+    freshDb.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('backfills NULL clinicId rows to the earliest clinic and is idempotent (121)', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-mig-121-'));
     const freshDb = createDatabase(dir);

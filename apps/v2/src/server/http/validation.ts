@@ -30,6 +30,7 @@ function validateField(field: ResourceField, raw: unknown): unknown {
     case 'longText':
     case 'relation':
       if (typeof raw !== 'string') throw new ValidationError(`${field.name} must be a string`);
+      if (field.required && raw.trim() === '') throw new ValidationError(`${field.name} is required`);
       if (field.maxLength && raw.length > field.maxLength) {
         throw new ValidationError(`${field.name} exceeds max length ${field.maxLength}`);
       }
@@ -45,7 +46,8 @@ function validateField(field: ResourceField, raw: unknown): unknown {
       }
       return raw;
     case 'datetime': {
-      if (typeof raw !== 'string' || Number.isNaN(Date.parse(raw))) {
+      const isoDatetime = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+      if (typeof raw !== 'string' || !isoDatetime.test(raw) || Number.isNaN(Date.parse(raw))) {
         throw new ValidationError(`${field.name} must be a valid date-time`);
       }
       // Date.parse 会把 2026-02-30 / 非闰年 02-29 静默规范化，必须先拒绝不存在的日历日期。
@@ -98,8 +100,11 @@ function validateField(field: ResourceField, raw: unknown): unknown {
       return value;
     }
     case 'boolean':
-      // B-L4：'1' 字符串（表单/CSV/同步客户端常见）与布尔 true 等价，与 repository.serialize 保持一致。
-      return raw === true || raw === 1 || raw === 'true' || raw === '1';
+      // B-L4：'1' 字符串（表单/CSV/同步客户端常见）与布尔 true 等价，与 repository.serialize 保持一致；
+      // 非法值必须显式拒绝，避免把数组/对象静默当成 false（与权限布尔解析一致）。
+      if (raw === true || raw === 1 || raw === 'true' || raw === '1') return true;
+      if (raw === false || raw === 0 || raw === 'false' || raw === '0') return false;
+      throw new ValidationError(`${field.name} must be a boolean`);
     case 'enum':
       if (typeof raw !== 'string' || !field.enumValues?.includes(raw)) {
         throw new ValidationError(`${field.name} must be one of ${field.enumValues?.join(', ')}`);

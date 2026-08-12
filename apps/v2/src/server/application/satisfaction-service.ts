@@ -12,7 +12,7 @@ export class SatisfactionService {
     const params: unknown[] = tenantParams(context.clinicId);
     const row = this.db.prepare(
       `SELECT COUNT(*) AS total,
-              COALESCE(SUM(CASE WHEN score >= 9 THEN 1 ELSE 0 END), 0) AS promoters,
+              COALESCE(SUM(CASE WHEN score >= 9 AND score <= 10 THEN 1 ELSE 0 END), 0) AS promoters,
               COALESCE(SUM(CASE WHEN score <= 6 THEN 1 ELSE 0 END), 0) AS detractors,
               COALESCE(SUM(CASE WHEN score >= 7 AND score <= 8 THEN 1 ELSE 0 END), 0) AS passive
        FROM SatisfactionSurvey WHERE deletedAt IS NULL${tenantClause}`,

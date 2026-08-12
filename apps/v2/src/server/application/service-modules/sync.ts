@@ -9,7 +9,7 @@ import type { AppContext } from '../../../domain/contracts';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { recordSyncChange, type SyncChangeOperation } from '../../infrastructure/sync-change';
 import { hashRefreshToken, newRefreshToken, safeJsonObject } from './common';
-import { assertSyncTablePermission, SYNC_RESOURCES } from './sync-permissions';
+import { assertSyncPushShape, assertSyncTablePermission, SYNC_RESOURCES } from './sync-permissions';
 import type { SyncPushPayload, SyncPushResult } from './sync-push-queue';
 import { sharedDbWriteQueue } from './serial-queue';
 
@@ -32,6 +32,9 @@ export class SyncService {
 
   pull(since: string, deviceId: string, deviceToken: string, context: AppContext): { changes: Array<Record<string, unknown>>; cursor: string; serverTime: string } {
     if (!context.clinicId) throw new AppError('FORBIDDEN', 'Sync requires a clinic scope', 403);
+    if (typeof since !== 'string' || since.length === 0 || since.length > 200) {
+      throw new ValidationError('since must be a cursor string');
+    }
     if (!['BOSS', 'ADMIN'].includes(context.role)) {
       throw new AppError('FORBIDDEN', 'Sync requires BOSS', 403);
     }
@@ -134,6 +137,7 @@ export class SyncService {
     if (!['BOSS', 'ADMIN'].includes(context.role)) {
       throw new AppError('FORBIDDEN', 'Sync requires BOSS', 403);
     }
+    assertSyncPushShape(payload);
     for (const change of payload.changes) {
       if (SYNC_ALLOWED_TABLES.has(change.tableName)) assertSyncTablePermission(context, change.tableName);
     }

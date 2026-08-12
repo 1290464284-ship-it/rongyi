@@ -116,7 +116,7 @@ export const migrations141to146: Migration[] = [
       `);
       // 回填历史已收款数据（单条有界：最多可冲销 paidAmount，绝不超扣）。
       db.exec(`
-        INSERT INTO PaymentLedger (
+        INSERT OR IGNORE INTO PaymentLedger (
           id, clinicId, createdAt, updatedAt, deletedAt,
           chargeId, patientId, type, method, amount, cardId, operatorId,
           reversedAmount, relatedId, allocations
