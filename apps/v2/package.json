@@ -64,6 +64,7 @@
     "clean:generated": "node scripts/clean-generated.mjs",
     "license:check": "node scripts/license-scan.mjs",
     "sbom": "node scripts/sbom.mjs",
+    "generate:openapi-routes": "tsx scripts/generate-openapi-routes.ts",
     "restore:backup": "node scripts/restore-backup.mjs",
     "installer:smoke": "powershell -ExecutionPolicy Bypass -File scripts/installer-smoke.ps1",
     "upgrade:smoke": "powershell -ExecutionPolicy Bypass -File scripts/upgrade-smoke.ps1",

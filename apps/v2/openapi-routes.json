@@ -1,0 +1,898 @@
+[
+  {
+    "method": "DELETE",
+    "path": "/api/v2/admin/users/:id"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v2/charges/:id"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v2/commission/rules/:id"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v2/custom-fields/:id"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v2/dispenses/:id"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v2/files/:name"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v2/inventory-batches/:id"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v2/narcotic-registry/:id"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v2/resources/:resource/:id"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/analytics/churn"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/analytics/clinic-overview"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/analytics/doctor-anomalies"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/analytics/rfm"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/appointments/by-date"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/auth/clinics"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/auth/me"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/auth/navigation"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/auth/setup-status"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/backups"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/backups/:filename/verify"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/cephalometric/:id/report"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/charge-assistant/frequent-items"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/charge-combos"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/charge-combos/:id/items"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/charge-trees"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/commission/rules"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/commission/statements"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/custom-fields"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/custom-fields/values"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/dispenses"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/dispenses/:id"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/doctors"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/files/:name"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/files/:name"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/files/:name/sign"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/first-exams/history"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/first-exams/tracking-overview"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/follow-ups/adherence"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/follow-ups/nps"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/follow-ups/reminders"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/follow-ups/reminders/export"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/follow-ups/reminders/summary"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/health"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/health/deep"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/hr/attendance"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/inventory-batches"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/inventory-reports/:type"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/inventory/expiring"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/inventory/low-stock"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/member-cards/:id/discount-plan"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/metrics"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/narcotic-registry"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/notifications"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/pay-methods/tree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/prescriptions/:id/safety"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/prescriptions/:id/status"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/print"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/print/templates"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/processing-flow-stats"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/processing-orders/:id/steps"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/processing-orders/settle-stats"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/purchase-orders/:id/items"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/purchase-orders/review"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/purchase-orders/review-stats"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/refunds"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/refunds/summary"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/resource-meta"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/resources/:resource"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/resources/:resource/:id"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/resources/:resource/export"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/role-permissions/:role"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/satisfaction/doctor-rankings"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/satisfaction/nps"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/satisfaction/trend"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/schedules/week"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/search"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/shift-templates"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/stats/cost-share"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/stats/dashboard"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/stats/inventory"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/stats/member-cards"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/stats/patient-growth"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/stats/revenue"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/stocktakes"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/stocktakes/:id/items"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/sync/conflicts"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/sync/full"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/sync/pull"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/system/business-alerts"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/treatment-plans/:id/progress"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/triage/queue"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/user-permissions/:userId"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/user-roles"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/wechat-reminders/config"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/wechat-reminders/today"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/wechat/status"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v2/workbench/today"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v2/admin/users/:id"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v2/admin/users/:id/password"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v2/appointments/:id/status"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v2/auth/password"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v2/charges/:id/pay"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v2/commission/rules/:id"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v2/custom-fields/:id"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v2/debts/:id/pay"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v2/dispenses/:id"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v2/first-exams/:id/status"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v2/first-exams/:id/tracking"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v2/follow-ups/:id/complete"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v2/hr/leaves/:id/approve"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v2/inventory-batches/:id"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v2/medical-records/:id/edit-request/review"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v2/medical-records/:id/lock"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v2/narcotic-registry/:id"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v2/notifications/:id/read"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v2/prescriptions/:id/save"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v2/processing-orders/:id/status"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v2/purchase-orders/:id/receive"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v2/registrations/:id/status"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v2/resources/:resource/:id"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v2/shift-templates/:id"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v2/stocktakes/:id/items/:itemId"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v2/system/business-alerts/:id/status"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v2/treatment-plans/:id/save"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v2/treatments/:id/status"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v2/visits/:id/status"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v2/wechat-reminders/config"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/admin/users"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/appointments"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/appointments/:id/reschedule"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/auth/login"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/auth/logout"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/auth/refresh"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/auth/setup"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/auth/switch-clinic"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/backups"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/backups/:filename/restore"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/backups/cleanup"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/bulk-import/:resource"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/cephalometric/:id/analyze"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/cephalometric/:id/report"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/cephalometric/:id/send"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/cephalometric/compare"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/charge-combos/:id/apply"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/charge-trees/:catalogId/quick-charge"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/charges"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/charges/:id/refund"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/commission/calculate"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/commission/rules"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/custom-fields"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/dispenses"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/dispenses/:id/dispense"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/dispenses/:id/return"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/files"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/first-exams/:id/dentition"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/first-exams/:id/restart"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/first-exams/:id/teeth/:toothId/chief-mark"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/follow-ups/:id/execute"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/follow-ups/batch-complete"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/follow-ups/batch-generate"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/inventory-batches"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/inventory-batches/consume"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/inventory-batches/expiry-alerts"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/inventory-docs/loss"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/inventory-docs/return-supplier"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/inventory-docs/transfer"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/inventory-items/:id/high-value"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/inventory/replenishment/apply"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/inventory/replenishment/generate"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/inventory/transactions"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/medical-records/:id/edit-request"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/member-cards"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/member-cards/:id/consume"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/member-cards/:id/points"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/member-cards/:id/quote"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/member-cards/:id/recharge"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/member-cards/quote"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/narcotic-registry"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/patients/:id/risk"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/prescriptions/:id/process"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/print"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/print/templates/:code/render"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/processing-orders"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/processing-orders/:id/register-step"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/processing-orders/:id/set-step"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/processing-orders/:id/settle"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/processing-orders/:id/unsettle"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/purchase-orders"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/purchase-orders/:id/approve"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/purchase-orders/:id/reject"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/purchase-orders/:id/reopen"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/purchase-orders/:id/submit"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/refunds/:id/approve"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/refunds/:id/cancel"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/refunds/:id/process"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/refunds/:id/reject"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/registrations/:id/triage"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/resources/:resource"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/shift-templates"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/shift-templates/generate"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/stocktakes"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/stocktakes/:id/cancel"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/stocktakes/:id/complete"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/stocktakes/:id/lock"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/sync/cleanup"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/sync/conflicts/:id/resolve"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/sync/devices"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/sync/push"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/system/audit/cleanup"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/treatment-plans/:id/bill"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/treatment-plans/:id/discount"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/treatment-plans/:id/follow-up"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/treatment-plans/:id/items/:itemId/discount"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/treatment-plans/:id/print"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/treatment-plans/:id/sign"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/wechat-reminders/:id/dismiss"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/wechat-reminders/:id/mark-sent"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/wechat/:id/send"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v2/wechat/send-batch"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v2/custom-fields/values"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v2/member-cards/:id/discount-plan"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v2/role-permissions/:role"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v2/user-permissions/:userId"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v2/user-roles/:userId"
+  }
+]

@@ -8,22 +8,7 @@ import { createDatabase, seedDatabase } from '../infrastructure/database';
 import { runMigrations } from '../infrastructure/migrations';
 import { Logger } from '../infrastructure/logger';
 import { routeRoleRules } from './route-policy';
-
-interface RouteLayer {
-  path?: string;
-  route?: {
-    path?: string;
-    methods?: Record<string, boolean>;
-  };
-  handle?: {
-    stack?: unknown[];
-  };
-}
-
-interface RouteEntry {
-  method: string;
-  path: string;
-}
+import { collectRoutes } from './route-inventory';
 
 // 这些路由在通用 route-policy 之前注册，且自带显式 auth/role 或为公开端点。
 const EXCLUDED_ROUTES = new Set([
@@ -36,38 +21,6 @@ const EXCLUDED_ROUTES = new Set([
   '/api/v2/auth/setup-status',
   '/api/v2/auth/setup',
 ]);
-
-function collectRoutes(layers: unknown[], output: RouteEntry[] = []): RouteEntry[] {
-  return collectRoutesWithPrefix(layers, '', output);
-}
-
-function collectRoutesWithPrefix(
-  layers: unknown[],
-  prefix: string,
-  output: RouteEntry[],
-): RouteEntry[] {
-  for (const rawLayer of layers) {
-    const layer = rawLayer as RouteLayer;
-    if (layer.route?.path && layer.route.methods) {
-      const fullPath = prefix
-        ? `${prefix.replace(/\/$/, '')}/${String(layer.route.path).replace(/^\//, '')}`
-        : layer.route.path;
-      for (const [method, enabled] of Object.entries(layer.route.methods)) {
-        if (enabled && method !== 'head') {
-          output.push({ method: method.toUpperCase(), path: fullPath });
-        }
-      }
-    }
-    const nested = layer.handle?.stack;
-    if (nested) {
-      const childPrefix = prefix
-        ? `${prefix.replace(/\/$/, '')}/${String(layer.path ?? '').replace(/^\//, '')}`
-        : layer.path ?? '';
-      collectRoutesWithPrefix(nested, childPrefix, output);
-    }
-  }
-  return output;
-}
 
 describe('route policy coverage', () => {
   let db: Database.Database;
