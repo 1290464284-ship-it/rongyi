@@ -62,6 +62,63 @@
         }
       }
     },
+    "/auth/refresh": {
+      "post": {
+        "summary": "Refresh an existing session",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["refreshToken"],
+                "properties": { "refreshToken": { "type": "string" } }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Refreshed session",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LoginEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "summary": "Log out the current refresh token",
+        "responses": {
+          "200": {
+            "description": "Logged out",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LogoutEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/setup-status": {
+      "get": {
+        "summary": "Check whether initial admin setup is required",
+        "responses": {
+          "200": {
+            "description": "Setup status",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SetupStatusEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/resource-meta": {
       "get": {
         "summary": "List resource metadata",
@@ -159,6 +216,30 @@
                 }
               }
             }
+          }
+        }
+      },
+      "LogoutEnvelope": {
+        "type": "object",
+        "required": ["success", "data"],
+        "properties": {
+          "success": { "const": true },
+          "data": {
+            "type": "object",
+            "required": ["loggedOut"],
+            "properties": { "loggedOut": { "const": true } }
+          }
+        }
+      },
+      "SetupStatusEnvelope": {
+        "type": "object",
+        "required": ["success", "data"],
+        "properties": {
+          "success": { "const": true },
+          "data": {
+            "type": "object",
+            "required": ["setupRequired"],
+            "properties": { "setupRequired": { "type": "boolean" } }
           }
         }
       },

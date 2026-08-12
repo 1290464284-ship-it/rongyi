@@ -17,6 +17,9 @@ describe('OpenAPI contract document', () => {
     expect(spec.paths).toMatchObject({
       '/health': expect.any(Object),
       '/auth/login': expect.any(Object),
+      '/auth/refresh': expect.any(Object),
+      '/auth/logout': expect.any(Object),
+      '/auth/setup-status': expect.any(Object),
       '/resource-meta': expect.any(Object),
       '/resources/patients': expect.any(Object),
       '/resources/patients/{id}': expect.any(Object),
@@ -24,6 +27,8 @@ describe('OpenAPI contract document', () => {
     expect(spec.components?.schemas).toMatchObject({
       HealthEnvelope: expect.any(Object),
       LoginEnvelope: expect.any(Object),
+      LogoutEnvelope: expect.any(Object),
+      SetupStatusEnvelope: expect.any(Object),
       ResourceMetaEnvelope: expect.any(Object),
       ResourceListEnvelope: expect.any(Object),
       ResourceDetailEnvelope: expect.any(Object),
