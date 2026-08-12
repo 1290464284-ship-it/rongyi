@@ -276,9 +276,9 @@ export function AppointmentsPage({ initialSearch }: { initialSearch?: string } =
       <AppointmentPurposePanel purposes={purposes} showToast={showToast} />
       <DataTable columns={columns} rows={query.data?.items ?? []} keyField="id" emptyText="暂无预约" />
       <div className="pager">
-        <button disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>上一页</button>
+        <button disabled={stale || page <= 1} onClick={() => setPage((value) => value - 1)}>上一页</button>
         <span>第 {page} 页</span>
-        <button disabled={!query.data || page * 20 >= query.data.total} onClick={() => setPage((value) => value + 1)}>下一页</button>
+        <button disabled={stale || !query.data || page * 20 >= query.data.total} onClick={() => setPage((value) => value + 1)}>下一页</button>
       </div>
 
       <Dialog open={editingAppointment !== null} title="编辑预约" onClose={closeEditAppointment}>

@@ -227,7 +227,9 @@ describe('RefundsPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '下一页' }));
     expect(await screen.findByText('第 2 页')).toBeDefined();
-    expect((screen.getByRole('button', { name: '上一页' }) as HTMLButtonElement).disabled).toBe(false);
+    await waitFor(() => {
+      expect((screen.getByRole('button', { name: '上一页' }) as HTMLButtonElement).disabled).toBe(false);
+    });
 
     fireEvent.click(screen.getByRole('button', { name: '上一页' }));
     expect(await screen.findByText('第 1 页')).toBeDefined();

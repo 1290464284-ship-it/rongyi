@@ -33,6 +33,8 @@ describe('validatePayload', () => {
     expect(() => validatePayload(definition, { name: 'A', role: 'X' })).toThrow('role must be one of');
     expect(() => validatePayload(definition, { name: 'REDACTED' })).toThrow('exceeds max length');
     expect(() => validatePayload(definition, { name: 'A', amount: 12.5 })).toThrow('integer amount in cents');
+    expect(() => validatePayload(definition, { name: 'A', age: 1e300 })).toThrow('safe integer');
+    expect(() => validatePayload(definition, { name: 'A', age: Number.MAX_SAFE_INTEGER + 1 })).toThrow('safe integer');
     expect(() => validatePayload(definition, { name: 'A', age: true })).toThrow('age must be a number');
     expect(() => validatePayload(definition, { name: 'A', active: [] })).toThrow('active must be a boolean');
     expect(validatePayload(definition, { name: 'A', amount: 1250 }).amount).toBe(1250);

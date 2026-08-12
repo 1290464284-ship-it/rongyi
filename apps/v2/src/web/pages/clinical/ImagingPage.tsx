@@ -312,9 +312,9 @@ export function ImagingPage() {
           />
           {compareTotalPages > 1 && (
             <div className="pager">
-              <button type="button" disabled={comparePage <= 1} onClick={() => setComparePage((current) => Math.max(1, current - 1))}>上一页</button>
+              <button type="button" disabled={compareOptionsQuery.isFetching || comparePage <= 1} onClick={() => setComparePage((current) => Math.max(1, current - 1))}>上一页</button>
               <span>第 {comparePage} / {compareTotalPages} 页（共 {compareTotal} 条）</span>
-              <button type="button" disabled={comparePage >= compareTotalPages} onClick={() => setComparePage((current) => current + 1)}>下一页</button>
+              <button type="button" disabled={compareOptionsQuery.isFetching || comparePage >= compareTotalPages} onClick={() => setComparePage((current) => current + 1)}>下一页</button>
             </div>
           )}
         </div>

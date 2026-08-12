@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../lib/api';
 import {
@@ -20,6 +20,7 @@ export function DispenseNarcoticPanel() {
   const { showToast } = useToast();
   const [narcoticForm, setNarcoticForm] = useState<NarcoticForm>(emptyNarcoticForm);
   const [narcoticBusy, setNarcoticBusy] = useState(false);
+  const narcoticBusyRef = useRef(false);
   const [editNarcotic, setEditNarcotic] = useState<Record<string, unknown> | null>(null);
   const [deleteNarcoticTarget, setDeleteNarcoticTarget] = useState<Record<string, unknown> | null>(null);
 
@@ -30,12 +31,13 @@ export function DispenseNarcoticPanel() {
 
   async function submitNarcotic(event: FormEvent) {
     event.preventDefault();
-    if (narcoticBusy) return;
+    if (narcoticBusy || narcoticBusyRef.current) return;
     const quantity = Number(narcoticForm.quantity);
     if (!narcoticForm.recordDate || !narcoticForm.itemId || !Number.isSafeInteger(quantity) || quantity < 0) {
       showToast('请填写登记日期、麻药物品和有效的麻药数量', 'error');
       return;
     }
+    narcoticBusyRef.current = true;
     setNarcoticBusy(true);
     try {
       await apiRequest('/narcotic-registry', {
@@ -57,12 +59,14 @@ export function DispenseNarcoticPanel() {
     } catch (error) {
       showToast(errorMessage(error, '麻药登记失败'), 'error');
     } finally {
+      narcoticBusyRef.current = false;
       setNarcoticBusy(false);
     }
   }
 
   async function confirmDeleteNarcotic() {
-    if (!deleteNarcoticTarget) return;
+    if (!deleteNarcoticTarget || narcoticBusyRef.current) return;
+    narcoticBusyRef.current = true;
     try {
       await apiRequest(`/narcotic-registry/${String(deleteNarcoticTarget.id)}`, { method: 'DELETE' });
       showToast('麻药登记已删除', 'success');
@@ -70,6 +74,8 @@ export function DispenseNarcoticPanel() {
       void narcotics.refetch();
     } catch (error) {
       showToast(errorMessage(error, '删除麻药登记失败'), 'error');
+    } finally {
+      narcoticBusyRef.current = false;
     }
   }
 

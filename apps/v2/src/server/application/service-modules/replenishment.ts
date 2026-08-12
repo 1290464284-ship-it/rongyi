@@ -23,9 +23,6 @@ export class ReplenishmentService {
        SET status = 'IGNORED', updatedAt = ?
        WHERE deletedAt IS NULL AND (status IS NULL OR status = 'OPEN')${tenantAnd(clinicId)}`,
     ).run(context.now().toISOString(), ...clinicParams);
-    const items = this.db.prepare(
-      `SELECT * FROM InventoryItem WHERE deletedAt IS NULL${tenantAnd(clinicId)}`,
-    ).all(...clinicParams) as Array<Record<string, unknown>>;
     const nowDate = context.now();
     const now = nowDate.toISOString();
     // 快照窗口按 UTC 日对齐，同一自然日内重复生成可复用物化快照；
@@ -98,9 +95,18 @@ export class ReplenishmentService {
         }
       }
     });
+    // 有界 keyset 分批读取：避免十万级库存整表进内存，同时保持每块事务原子性。
     const CHUNK_SIZE = 200;
-    for (let offset = 0; offset < items.length; offset += CHUNK_SIZE) {
-      runChunk(items.slice(offset, offset + CHUNK_SIZE));
+    let lastRowid = 0;
+    for (;;) {
+      const rows = this.db.prepare(
+        `SELECT rowid, * FROM InventoryItem WHERE deletedAt IS NULL AND rowid > ?${tenantAnd(clinicId)}
+         ORDER BY rowid ASC LIMIT ?`,
+      ).all(lastRowid, ...clinicParams, CHUNK_SIZE) as Array<Record<string, unknown>>;
+      if (rows.length === 0) break;
+      runChunk(rows);
+      lastRowid = Number(rows[rows.length - 1].rowid);
+      if (rows.length < CHUNK_SIZE) break;
     }
     return { generated };
   }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import { errorMessage } from '../../lib/messages';
@@ -52,8 +52,10 @@ function ReminderSettingsForm({ initialConfig, onSaved }: {
   const { showToast } = useToast();
   const [form, setForm] = useState<ReminderConfig>(initialConfig);
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
 
   async function save() {
+    if (busyRef.current) return;
     for (const [label, value] of [
       ['复诊提醒天数', form.appointmentDaysBefore],
       ['治疗回访延迟天数', form.recallDaysAfter],
@@ -64,6 +66,7 @@ function ReminderSettingsForm({ initialConfig, onSaved }: {
         return;
       }
     }
+    busyRef.current = true;
     setBusy(true);
     try {
       await apiRequest('/wechat-reminders/config', {
@@ -75,6 +78,7 @@ function ReminderSettingsForm({ initialConfig, onSaved }: {
     } catch (error) {
       showToast(errorMessage(error, '保存提醒设置失败'), 'error');
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }

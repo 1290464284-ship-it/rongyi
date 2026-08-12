@@ -21,9 +21,14 @@ export function registerInventoryBatchRoutes(
   app.get('/api/v2/inventory-batches', wrapAsync((req, res) => {
     const itemId = typeof req.query.itemId === 'string' && req.query.itemId ? String(req.query.itemId) : undefined;
     const days = req.query.days !== undefined ? Number(req.query.days) : undefined;
+    const limit = req.query.limit !== undefined ? Number(req.query.limit) : undefined;
     res.json({
       success: true,
-      data: service.list(req.context!, { itemId, days: Number.isFinite(days) ? days : undefined }),
+      data: service.list(req.context!, {
+        itemId,
+        days: Number.isFinite(days) ? days : undefined,
+        limit: Number.isFinite(limit) ? limit : undefined,
+      }),
     });
   }));
 

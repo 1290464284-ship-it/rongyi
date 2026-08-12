@@ -10,6 +10,7 @@ import { formatMoney } from '../../lib/format';
 import { parseStringArray } from '../../lib/parse';
 
 const TIMELINE_PAGE_SIZE = 50;
+const TIMELINE_RENDER_CAP = 500;
 
 interface TimelineEvent {
   id: string;
@@ -153,6 +154,7 @@ export function PatientTimelinePage() {
     }`,
     tone: timelineTone(event.status),
   }));
+  const renderedTimelineItems = timelineItems.slice(0, TIMELINE_RENDER_CAP);
   const loadedCustomValues = customFieldValues.data?.values ?? {};
   function customValue(fieldId: string, fieldType: string): string | boolean {
     if (Object.prototype.hasOwnProperty.call(customDraft, fieldId)) return customDraft[fieldId] ?? '';
@@ -215,10 +217,13 @@ export function PatientTimelinePage() {
         </div>
       ))}
       <div className="timeline">
-        <Timeline items={timelineItems} />
+        <Timeline items={renderedTimelineItems} />
         {events.length === 0 && !timelineLoading && failedQueries.length === 0 && <p className="empty-board">暂无时间线记录</p>}
       </div>
-      {hasMoreTimeline && (
+      {events.length > TIMELINE_RENDER_CAP && (
+        <p className="reminder-muted">时间线超过 {TIMELINE_RENDER_CAP} 条，仅显示最近 {TIMELINE_RENDER_CAP} 条</p>
+      )}
+      {hasMoreTimeline && events.length < TIMELINE_RENDER_CAP && (
         <button type="button" className="btn-secondary" disabled={loadingMore} onClick={() => void loadMoreTimeline()}>
           {loadingMore ? '加载中...' : '加载更多'}
         </button>

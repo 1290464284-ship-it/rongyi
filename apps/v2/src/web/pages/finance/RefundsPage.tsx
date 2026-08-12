@@ -103,9 +103,9 @@ export function RefundsPage() {
         <DataTable columns={withActions} rows={rows} keyField="id" emptyText="暂无退款记录" />
       )}
       <div className="pager">
-        <button disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>上一页</button>
+        <button disabled={stale || page <= 1} onClick={() => setPage((value) => value - 1)}>上一页</button>
         <span>第 {page} 页</span>
-        <button disabled={!query.data || page * 20 >= query.data.total} onClick={() => setPage((value) => value + 1)}>下一页</button>
+        <button disabled={stale || !query.data || page * 20 >= query.data.total} onClick={() => setPage((value) => value + 1)}>下一页</button>
       </div>
     </div>
   );

@@ -96,7 +96,8 @@ function validateField(field: ResourceField, raw: unknown): unknown {
           ? Number(raw)
           : Number.NaN;
       if (!Number.isFinite(value)) throw new ValidationError(`${field.name} must be a number`);
-      if (!Number.isInteger(value)) throw new ValidationError(`${field.name} must be an integer amount in cents`);
+      if (Math.abs(value) > Number.MAX_SAFE_INTEGER) throw new ValidationError(`${field.name} must be within safe integer range`);
+      if (!Number.isSafeInteger(value)) throw new ValidationError(`${field.name} must be an integer amount in cents`);
       if (field.type === 'money') {
         if (value < 0) throw new ValidationError(`${field.name} must be non-negative`);
         if (value > 1_000_000_00) throw new ValidationError(`${field.name} exceeds maximum amount of 100000000 cents (1000000.00)`);

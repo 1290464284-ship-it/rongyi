@@ -60,8 +60,15 @@ export class InventoryBatchService {
   ) {}
 
   /** 该租户的启用批次（含 item name/code/spec），以及 days 天内到期的子集。 */
-  list(context: AppContext, filter?: { itemId?: string; days?: number }): { batches: InventoryBatchRow[]; expiring: InventoryBatchRow[] } {
+  list(context: AppContext, filter?: { itemId?: string; days?: number; limit?: number }): {
+    batches: InventoryBatchRow[];
+    expiring: InventoryBatchRow[];
+    truncated: boolean;
+  } {
     const days = normalizeDays(filter?.days);
+    const limit = Number.isFinite(Number(filter?.limit)) && Number(filter!.limit) >= 1
+      ? Math.min(5_000, Math.floor(Number(filter!.limit)))
+      : 1_000;
     const conditions = ['B.deletedAt IS NULL', 'B.active = 1'];
     const params: Array<string | number | null> = [];
     if (filter?.itemId) {
@@ -78,17 +85,25 @@ export class InventoryBatchService {
       INNER JOIN InventoryItem I ON I.id = B.itemId AND I.deletedAt IS NULL
       WHERE ${conditions.join(' AND ')}${tenant.sql ? ` AND ${tenant.sql}` : ''}
       ORDER BY B.expiryDate ASC, B.createdAt DESC
+      LIMIT ?
     `;
-    const batches = this.db.prepare(sql).all(...params, ...tenant.params) as InventoryBatchRow[];
+    const batches = this.db.prepare(sql).all(...params, ...tenant.params, limit) as InventoryBatchRow[];
     const now = context.now();
     const today = new SystemClock().clinicDate(now);
     const cutoff = new SystemClock().clinicDate(new Date(now.getTime() + days * 86_400_000));
-    const expiring = batches.filter((batch) => {
-      const expiry = batch.expiryDate;
-      if (!expiry) return false;
-      return expiry >= today && expiry <= cutoff && Number(batch.remainingQuantity) > 0;
-    });
-    return { batches, expiring };
+    const expiring = this.db.prepare(
+      `SELECT B.id, B.itemId, B.batchNo, B.productionDate, B.expiryDate,
+              B.initialQuantity, B.remainingQuantity, B.supplierId, B.purchaseOrderId,
+              B.active, B.clinicId, B.createdAt, B.updatedAt,
+              I.name AS itemName, I.code AS itemCode, I.spec AS itemSpec
+       FROM InventoryBatch B
+       INNER JOIN InventoryItem I ON I.id = B.itemId AND I.deletedAt IS NULL
+       WHERE B.deletedAt IS NULL AND B.active = 1
+         AND B.expiryDate >= ? AND B.expiryDate <= ? AND B.remainingQuantity > 0${tenant.sql ? ` AND ${tenant.sql}` : ''}
+       ORDER BY B.expiryDate ASC
+       LIMIT ?`,
+    ).all(today, cutoff, ...tenant.params, limit) as InventoryBatchRow[];
+    return { batches, expiring, truncated: batches.length === limit };
   }
 
   /** 新建批次：批次入库并同步增加物料库存，落一条 IN 流水（事务）。 */

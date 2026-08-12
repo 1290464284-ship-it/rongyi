@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import { apiRequest } from '../../lib/api';
 import { DataTable, EmptyState, LoadingState, PageError, type DataTableColumn } from '../../components';
 
@@ -18,6 +18,19 @@ export function GlobalSearchPage() {
     queryFn: () => apiRequest<Array<Record<string, unknown>>>(`/search?q=${encodeURIComponent(q)}`),
     enabled: q.length >= 2,
   });
+  const rows = useMemo(() => query.data ?? [], [query.data]);
+  const resources = useMemo(
+    () => Array.from(new Set(rows.map((row) => String(row.resource ?? '')))),
+    [rows],
+  );
+  const filteredRows = useMemo(
+    () => (filter === 'all' ? rows : rows.filter((row) => String(row.resource ?? '') === filter)),
+    [rows, filter],
+  );
+  const keys = useMemo(
+    () => Array.from(new Set(rows.flatMap((row) => Object.keys(row)))),
+    [rows],
+  );
 
   if (q.length < 2) {
     return (
@@ -37,10 +50,6 @@ export function GlobalSearchPage() {
     );
   }
 
-  const rows = query.data ?? [];
-  const resources = Array.from(new Set(rows.map((row) => String(row.resource ?? ''))));
-  const filteredRows = filter === 'all' ? rows : rows.filter((row) => String(row.resource ?? '') === filter);
-  const keys = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
   const columns: DataTableColumn<Record<string, unknown>>[] = keys.map((key) => ({
     key,
     label: key,
@@ -73,7 +82,7 @@ export function GlobalSearchPage() {
           ['收费', `/finance?q=${encodeURIComponent(q)}`],
           ['预约', `/front-desk?q=${encodeURIComponent(q)}`],
         ].map(([label, href]) => (
-          <a key={String(label)} href={`#${href}`} className="btn-secondary">{String(label)}</a>
+          <Link key={String(label)} to={href} className="btn-secondary">{String(label)}</Link>
         ))}
       </div>
       {rows.length === 0

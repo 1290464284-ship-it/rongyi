@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { apiRequest } from '../lib/api';
 import { ConfirmDialog, DataTable } from '../components';
 import { errorMessage } from '../lib/messages';
@@ -12,6 +12,7 @@ export function TemplateSection({ templates, reload }: { templates?: ShiftTempla
   const { showToast } = useToast();
   const [form, setForm] = useState<TemplateForm>({ name: '', startTime: '', endTime: '', workDays: [1, 2, 3, 4, 5], color: '', active: true });
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [editingTemplate, setEditingTemplate] = useState<ShiftTemplate | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ShiftTemplate | null>(null);
@@ -39,6 +40,8 @@ export function TemplateSection({ templates, reload }: { templates?: ShiftTempla
       showToast('结束时间必须晚于开始时间', 'error');
       return;
     }
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       const payload = {
@@ -68,12 +71,14 @@ export function TemplateSection({ templates, reload }: { templates?: ShiftTempla
     } catch (error) {
       showToast(errorMessage(error, editingTemplate ? '更新模板失败' : '创建模板失败'), 'error');
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   }
 
   async function deleteTemplate() {
-    if (!deleteTarget || submitting) return;
+    if (!deleteTarget || submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       await apiRequest(`/resources/shiftTemplates/${deleteTarget.id}`, { method: 'DELETE' });
@@ -84,6 +89,7 @@ export function TemplateSection({ templates, reload }: { templates?: ShiftTempla
       showToast(errorMessage(error, '删除模板失败'), 'error');
       setDeleteTarget(null);
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   }

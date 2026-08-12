@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { apiRequest } from '../lib/api';
 import { errorMessage } from '../lib/messages';
 import { useToast } from '../lib/toast-context';
@@ -22,6 +22,7 @@ export function GenerateSection({
   const [templateId, setTemplateId] = useState('');
   const [userId, setUserId] = useState('');
   const [generating, setGenerating] = useState(false);
+  const generatingRef = useRef(false);
 
   async function handleGenerate(event: FormEvent) {
     event.preventDefault();
@@ -29,6 +30,8 @@ export function GenerateSection({
       showToast('请选择用户、模板和周', 'error');
       return;
     }
+    if (generatingRef.current) return;
+    generatingRef.current = true;
     setGenerating(true);
     try {
       const result = await apiRequest<GenerateResult>('/shift-templates/generate', {
@@ -40,6 +43,7 @@ export function GenerateSection({
     } catch (error) {
       showToast(errorMessage(error, '生成排班失败'), 'error');
     } finally {
+      generatingRef.current = false;
       setGenerating(false);
     }
   }

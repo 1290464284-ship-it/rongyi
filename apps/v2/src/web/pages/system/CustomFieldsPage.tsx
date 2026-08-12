@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import { ConfirmDialog, DataTable, Dialog, LoadingState, PageError } from '../../components';
@@ -43,6 +43,7 @@ export function CustomFieldsPage() {
   const [form, setForm] = useState<FieldForm>(emptyForm);
   const [deleteTarget, setDeleteTarget] = useState<CustomFieldRow | null>(null);
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
 
   const query = useQuery({
     queryKey: ['custom-fields'],
@@ -74,7 +75,7 @@ export function CustomFieldsPage() {
   }
 
   async function submit() {
-    if (busy) return;
+    if (busy || busyRef.current) return;
     const label = form.label.trim();
     const fieldName = form.fieldName.trim();
     const options = form.options.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
@@ -86,6 +87,7 @@ export function CustomFieldsPage() {
       showToast('SELECT 类型至少需要一个选项', 'error');
       return;
     }
+    busyRef.current = true;
     setBusy(true);
     try {
       const body = {
@@ -107,12 +109,14 @@ export function CustomFieldsPage() {
     } catch (error) {
       showToast(errorMessage(error, editingId ? '更新失败' : '创建失败'), 'error');
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }
 
   async function removeField() {
-    if (!deleteTarget || busy) return;
+    if (!deleteTarget || busy || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     try {
       await apiRequest(`/custom-fields/${deleteTarget.id}`, { method: 'DELETE' });
@@ -122,6 +126,7 @@ export function CustomFieldsPage() {
     } catch (error) {
       showToast(errorMessage(error, '删除失败'), 'error');
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }

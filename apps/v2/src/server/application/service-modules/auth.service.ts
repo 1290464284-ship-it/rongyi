@@ -22,6 +22,7 @@ import {
 } from './common';
 import { computeEffectivePermissions } from './permissions';
 import { UserManagementService } from './user-management.service';
+import { decryptRefreshClaim, encryptRefreshClaim, refreshClaimKey } from './auth-refresh-claim';
 
 // 与真实哈希同成本（12 轮），避免“用户不存在”与“密码错误”的响应时间差泄漏用户存在性。
 const DUMMY_HASH = '$2b$12$pExdCVEdrVrgBiDGFD8SYexajzEX.TQjKOhHCte3D1XEW1.lYPrdS';
@@ -243,7 +244,7 @@ export class AuthService {
   }
   /** 跨实例共享的 refresh 轮换缓存：以 DB 原子 claim 替代仅进程内缓存。 */
   private readRefreshClaim(tokenHash: string, userId: string): AuthSession | null {
-    const key = this.refreshClaimKey(tokenHash, userId);
+    const key = refreshClaimKey(tokenHash, userId);
     const row = this.db.prepare(
       `SELECT responseJson, expiresAt FROM IdempotencyRecord
        WHERE key = ? AND operation = 'auth.refresh' AND status = 'COMPLETED'
@@ -251,7 +252,8 @@ export class AuthService {
     ).get(key) as { responseJson: string; expiresAt: string | null } | undefined;
     if (!row?.expiresAt || new Date(row.expiresAt).getTime() <= Date.now()) return null;
     try {
-      const session = JSON.parse(row.responseJson) as AuthSession;
+      const session = decryptRefreshClaim(row.responseJson, tokenHash);
+      if (!session) return null;
       const current = this.authRepository.findById(userId);
       if (!current) return null;
       const user = rowToUser(current);
@@ -262,7 +264,7 @@ export class AuthService {
     }
   }
   private writeRefreshClaim(tokenHash: string, userId: string, session: AuthSession): void {
-    const key = this.refreshClaimKey(tokenHash, userId);
+    const key = refreshClaimKey(tokenHash, userId);
     const now = new Date().toISOString();
     const expiresAt = new Date(Date.now() + AuthService.REFRESH_CACHE_TTL_MS).toISOString();
     this.db.prepare(
@@ -273,7 +275,7 @@ export class AuthService {
          id, key, type, status, responseJson, result, userId, clinicId, operation,
          createdAt, updatedAt, deletedAt, expiresAt
        ) VALUES (?, ?, 'GENERIC', 'COMPLETED', ?, ?, ?, NULL, 'auth.refresh', ?, ?, NULL, ?)`,
-    ).run(randomUUID(), key, JSON.stringify(session), JSON.stringify(session), userId, now, now, expiresAt);
+    ).run(randomUUID(), key, encryptRefreshClaim(session, tokenHash), '{}', userId, now, now, expiresAt);
   }
   private clearUserRefreshClaims(userId: string): void {
     try {
@@ -283,11 +285,6 @@ export class AuthService {
     } catch {
       // 缓存清理为尽力而为；会话族吊销与标记已用是权威路径
     }
-  }
-  private refreshClaimKey(tokenHash: string, userId: string): string {
-    return createHash('sha256')
-      .update(['auth.refresh', tokenHash, userId].join('\0'))
-      .digest('hex');
   }
   verifyToken(token: string): TokenPayload {
     try {

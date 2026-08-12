@@ -1,4 +1,4 @@
-import { lazy, type ComponentType } from 'react';
+import { lazy, useMemo, type ComponentType } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../lib/api';
 import { DataTable, LoadingState, PageError } from './index';
@@ -50,9 +50,13 @@ export function CostShareTab() {
     queryKey: ['stats', 'cost-share'],
     queryFn: () => apiRequest<{ rows: Array<Record<string, unknown>>; summary: { SERVICE?: { total: number; itemCount: number; chargeCount: number }; MATERIAL?: { total: number; itemCount: number; chargeCount: number }; grandTotal?: number } }>('/stats/cost-share'),
   });
+  const { rows, summary } = query.data ?? { rows: [], summary: {} };
+  const tableRows = useMemo(
+    () => rows.map((row) => ({ ...row, id: `${row.costType}-${row.category}` })),
+    [rows],
+  );
   if (query.isLoading) return <LoadingState />;
   if (query.error) return <PageError message={(query.error as Error).message} />;
-  const { rows, summary } = query.data ?? { rows: [], summary: {} };
   const columns = [
     { key: 'costType', label: '类型', render: (row: Record<string, unknown>) => (row.costType === 'SERVICE' ? '技术服务' : row.costType === 'MATERIAL' ? '材料耗材' : String(row.costType ?? '')) },
     { key: 'category', label: '分类' },
@@ -68,7 +72,7 @@ export function CostShareTab() {
         <span>材料耗材合计：{formatMoney(summary.MATERIAL?.total ?? 0)}（{summary.MATERIAL?.itemCount ?? 0} 明细 / {summary.MATERIAL?.chargeCount ?? 0} 单）</span>
         <span>总计：{formatMoney(summary.grandTotal ?? 0)}</span>
       </div>
-      <DataTable columns={columns} rows={rows.map((row) => ({ ...row, id: `${row.costType}-${row.category}` }))} keyField="id" emptyText="暂无收费明细数据" />
+      <DataTable columns={columns} rows={tableRows} keyField="id" emptyText="暂无收费明细数据" />
     </div>
   );
 }

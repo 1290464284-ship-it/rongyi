@@ -91,6 +91,10 @@ export class ProcessingOrderService {
           updatedAt: now,
         };
       });
+      const totalFee = Math.round(Number(input.totalFee));
+      if (totalFee > 1_000_000_000_000) throw new ValidationError('Processing order total fee exceeds the allowed amount');
+      const itemTotal = items.reduce((sum, item) => sum + item.subtotal, 0);
+      if (itemTotal !== totalFee) throw new ValidationError('Processing order total fee must equal the sum of item subtotals');
       this.db.transaction(() => {
         this.processingOrderRepository.createOrder({
           id,
@@ -101,7 +105,7 @@ export class ProcessingOrderService {
           number: input.number.trim(),
           shade: input.shade ?? null,
           teethNumbers: Array.isArray(input.teethNumbers) ? input.teethNumbers : [],
-          totalFee: Math.round(Number(input.totalFee)),
+          totalFee,
           status: 'DRAFT',
           settleStatus: 'UNSETTLED',
           expectedAt: input.expectedAt ?? null,

@@ -217,6 +217,22 @@ describe('service edge coverage', () => {
     expect(mockPayload.clinicId).toBe('clinic-v2-001');
   });
 
+  it('does not store raw refresh tokens in idempotency claims', async () => {
+    const auth = new AuthService(db);
+    const session = await auth.login('admin', 'v2-test-seed-password');
+    const refreshed = await auth.refresh(session.refreshToken);
+    const claims = db.prepare(
+      `SELECT responseJson FROM IdempotencyRecord
+       WHERE operation = 'auth.refresh' AND status = 'COMPLETED'`,
+    ).all() as Array<{ responseJson: string }>;
+    expect(claims.length).toBeGreaterThan(0);
+    for (const claim of claims) {
+      expect(String(claim.responseJson)).not.toContain(refreshed.refreshToken);
+      expect(String(claim.responseJson)).not.toContain(refreshed.token);
+      expect(String(claim.responseJson).split('.')).toHaveLength(3);
+    }
+  });
+
   it('allows only BOSS to access multiple clinics and switch current clinic', async () => {
     db.prepare(
       `INSERT OR IGNORE INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)

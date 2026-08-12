@@ -8,6 +8,9 @@ import type { AppContext } from '../../../../domain/contracts';
 import type { MemberCardRecord, MemberCardRepository } from '../../ports';
 import { assertPatientExists } from '../common';
 
+const MAX_MONEY_CENTS = 1_000_000_000_000;
+const MAX_POINTS = 1_000_000_000_000;
+
 export class MemberCardService {
   private readonly db: Database.Database;
   private readonly memberCardRepository: MemberCardRepository;
@@ -73,6 +76,9 @@ export class MemberCardService {
       const card = this.card(cardId, context);
       this.assertActive(card);
       if (!Number.isSafeInteger(amount) || amount <= 0) throw new ValidationError('Recharge amount must be a positive integer in cents');
+      if (amount > MAX_MONEY_CENTS || Number(card.balance) + amount > MAX_MONEY_CENTS) {
+        throw new ValidationError('Recharge amount exceeds the member card balance limit');
+      }
       const now = context.now().toISOString();
       this.memberCardRepository.updateRecharge(cardId, amount, now, context.clinicId);
       const balance = Number(this.card(cardId, context).balance);
@@ -92,6 +98,7 @@ export class MemberCardService {
       const card = this.card(cardId, context);
       this.assertActive(card);
       if (!Number.isSafeInteger(amount) || amount <= 0) throw new ValidationError('Consume amount must be a positive integer in cents');
+      if (amount > MAX_MONEY_CENTS) throw new ValidationError('Consume amount exceeds the member card limit');
       const now = context.now().toISOString();
       this.memberCardRepository.updateConsume(cardId, amount, now, context.clinicId);
       const balance = Number(this.card(cardId, context).balance);
@@ -112,6 +119,10 @@ export class MemberCardService {
       this.assertActive(card);
       if (!Number.isSafeInteger(points) || points === 0) {
         throw new ValidationError('Points must be a non-zero integer');
+      }
+      if (Math.abs(points) > MAX_POINTS) throw new ValidationError('Points adjustment exceeds the member card points limit');
+      if (Number(card.points) + points > MAX_POINTS || Number(card.totalPoints) + Math.max(0, points) > MAX_POINTS) {
+        throw new ValidationError('Points adjustment exceeds the member card points limit');
       }
       if (Number(card.points) + points < 0) throw new ConflictError('Insufficient points');
       const now = context.now().toISOString();

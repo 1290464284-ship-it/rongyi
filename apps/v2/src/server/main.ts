@@ -37,14 +37,24 @@ process.on('uncaughtException', (error) => {
   try {
     logger.error('uncaught exception', { action: 'process-crash', error });
   } finally {
+    try {
+      (app.locals.flushAuditNow as (() => void) | undefined)?.();
+    } catch {
+      // 崩溃路径审计冲刷是尽力而为；失败时原异常仍会终止进程。
+    }
     process.exit(1);
   }
 });
 process.on('unhandledRejection', (reason) => {
-  logger.error('unhandled rejection', {
-    action: 'process-crash',
-    error: reason instanceof Error ? reason : new Error(String(reason)),
-  });
+  try {
+    logger.error('unhandled rejection', {
+      action: 'process-crash',
+      error: reason instanceof Error ? reason : new Error(String(reason)),
+    });
+    (app.locals.flushAuditNow as (() => void) | undefined)?.();
+  } catch {
+    // 见 uncaughtException：崩溃路径冲刷失败不应覆盖原始错误。
+  }
   process.exit(1);
 });
 

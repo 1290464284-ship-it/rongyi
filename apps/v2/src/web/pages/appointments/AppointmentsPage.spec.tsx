@@ -757,6 +757,9 @@ await waitFor(() => {
     await screen.findByText('预约管理');
     fireEvent.click(screen.getByRole('button', { name: '下一页' }));
     await screen.findByText('第 2 页');
+    await waitFor(() => {
+      expect((screen.getByRole('button', { name: '上一页' }) as HTMLButtonElement).disabled).toBe(false);
+    });
     fireEvent.click(screen.getByRole('button', { name: '上一页' }));
     expect(await screen.findByText('第 1 页')).toBeDefined();
   });
