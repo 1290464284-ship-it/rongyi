@@ -86,6 +86,11 @@ jobs:
       - name: Unit tests
         run: pnpm --filter @dental/v2 test
 
+      - name: Full shuffle tests
+        run: pnpm --filter @dental/v2 run test:flaky
+        env:
+          FLAKY_RUNS: 1
+
       - name: Mutation pilot
         run: pnpm --filter @dental/v2 run test:mutation
 
