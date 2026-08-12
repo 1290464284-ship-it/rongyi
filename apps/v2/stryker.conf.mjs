@@ -8,6 +8,9 @@ export default {
     'src/server/infrastructure/errors.ts',
     'src/server/shared/csv.ts',
     'src/server/shared/html.ts',
+    'src/server/application/service-modules/common.ts:36:1-37:40',
+    'src/server/application/service-modules/common.ts:69:1-87:3',
+    'src/server/application/service-modules/common.ts:116:1-147:3',
   ],
   testFiles: [
     'src/server/http/pagination.property.spec.ts',
@@ -16,6 +19,7 @@ export default {
     'src/server/infrastructure/errors.spec.ts',
     'src/server/shared/csv.spec.ts',
     'src/server/shared/html.spec.ts',
+    'src/server/application/service-modules/common.spec.ts',
   ],
   reporters: ['clear-text'],
   coverageAnalysis: 'off',
@@ -23,6 +27,6 @@ export default {
   timeoutMS: 30_000,
   // Ratchet from the measured pilot score. Keep this above the current score
   // to prevent silently regressing the property-based verification strength.
-  thresholds: { high: 70, low: 58, break: 57 },
+  thresholds: { high: 72, low: 60, break: 59 },
   cleanTempDir: 'always',
 };

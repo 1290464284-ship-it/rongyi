@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { canManageUser, generateDocumentNumber, ROLE_MANAGEMENT_LEVEL } from './common';
+import {
+  assertCanManageUser,
+  canManageUser,
+  generateDocumentNumber,
+  hashRefreshToken,
+  isUserRole,
+  ROLE_MANAGEMENT_LEVEL,
+  safeJsonObject,
+} from './common';
 import { UserRole } from '../../../domain/contracts';
 
 describe('generateDocumentNumber', () => {
@@ -56,5 +64,33 @@ describe('role management hierarchy', () => {
     expect(canManageUser('DOCTOR', 'ADMIN')).toBe(false);
     expect(canManageUser('BOSS', 'ADMIN')).toBe(true);
     expect(canManageUser('ADMIN', 'DOCTOR')).toBe(true);
+  });
+
+  it('asserts management hierarchy with a stable forbidden error', () => {
+    expect(() => assertCanManageUser('ADMIN', 'BOSS')).toThrow('管理员不能管理老板账号');
+    expect(() => assertCanManageUser('DOCTOR', 'DOCTOR')).toThrow('医生不能管理员工账号');
+    expect(() => assertCanManageUser('BOSS', 'ADMIN')).not.toThrow();
+  });
+});
+
+describe('auth and JSON helpers', () => {
+  it('hashes refresh tokens deterministically', () => {
+    const token = 'refresh-token-value';
+    expect(hashRefreshToken(token)).toBe(hashRefreshToken(token));
+    expect(hashRefreshToken(token)).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('recognizes only the three supported user roles', () => {
+    expect(isUserRole('BOSS')).toBe(true);
+    expect(isUserRole('ADMIN')).toBe(true);
+    expect(isUserRole('DOCTOR')).toBe(true);
+    expect(isUserRole('RECEPTIONIST')).toBe(false);
+  });
+
+  it('parses objects defensively', () => {
+    expect(safeJsonObject('{"a":1}')).toEqual({ a: 1 });
+    expect(safeJsonObject('not-json')).toEqual({});
+    expect(safeJsonObject('[1,2]')).toEqual({});
+    expect(safeJsonObject(null)).toEqual({});
   });
 });
