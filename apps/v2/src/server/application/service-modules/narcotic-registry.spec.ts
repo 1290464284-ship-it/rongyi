@@ -170,5 +170,11 @@ describe('NarcoticRegistryService', () => {
     const listed = narcoticService().narcoticList(context);
     expect(listed.items.map((entry) => String(entry.id))).not.toContain(String(created.id));
     expect(() => narcoticService().deleteNarcotic('narcotic-missing', context)).toThrow(NotFoundError);
+    expect(() => narcoticService().updateNarcotic(String(created.id), {
+      recordDate: '2026-08-05',
+      itemId: 'inventory-demo-001',
+      quantity: 1,
+    }, context)).toThrow(NotFoundError);
+    expect(() => narcoticService().deleteNarcotic(String(created.id), context)).toThrow(NotFoundError);
   });
 });

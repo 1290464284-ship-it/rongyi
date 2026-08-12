@@ -94,9 +94,10 @@ export class CustomFieldService {
   deleteDefinition(id: string, context: AppContext): void {
     this.findById(id, context);
     const now = context.now().toISOString();
-    this.db.prepare(
+    const result = this.db.prepare(
       `UPDATE CustomField SET deletedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).run(now, now, id, ...tenantParams(context.clinicId));
+    if (Number(result.changes) === 0) throw new NotFoundError('Custom field not found');
     this.db.prepare(
       `UPDATE CustomFieldValue SET deletedAt = ?, updatedAt = ? WHERE fieldId = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).run(now, now, id, ...tenantParams(context.clinicId));

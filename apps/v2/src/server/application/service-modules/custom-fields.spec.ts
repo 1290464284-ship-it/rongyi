@@ -107,6 +107,7 @@ describe('custom fields', () => {
     expect(service.listDefinitions('patient', context).some((field) => field.id === target.id)).toBe(false);
     const listed = service.listValues('patient', 'patient-custom-2', context);
     expect(listed.values[target.id]).toBeUndefined();
+    expect(() => service.deleteDefinition(target.id, context)).toThrow('Custom field not found');
   });
 
   it('validates definition and value edge cases', () => {

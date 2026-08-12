@@ -98,4 +98,16 @@ describe('HighValueService', () => {
     const service = new HighValueService(db);
     expect(() => service.mark('item-missing', { isHighValue: true, catalogId: 'cat-hv-a' }, context)).toThrow(NotFoundError);
   });
+
+  it('does not mark a soft-deleted item', () => {
+    const service = new HighValueService(db);
+    db.prepare(
+      `INSERT INTO InventoryItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, category, unit, stock, minStock, price, batchManaged
+       ) VALUES (?, ?, ?, ?, ?, 'CODE-HV-DEL', '已删除耗材', 'CONSUMABLE', 'box', 0, 0, 100, 0)`,
+    ).run('inventory-hv-deleted', context.clinicId, now, now, now);
+    expect(() => service.mark('inventory-hv-deleted', { isHighValue: true, catalogId: 'cat-hv-a' }, context))
+      .toThrow(NotFoundError);
+  });
 });

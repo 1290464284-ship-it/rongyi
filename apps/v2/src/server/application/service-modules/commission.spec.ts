@@ -98,6 +98,8 @@ describe('CommissionService', () => {
     expect(() => service.updateRule('missing', { rate: 1 }, context)).toThrow(NotFoundError);
     expect(() => service.deleteRule('missing', context)).toThrow(NotFoundError);
     service.deleteRule(created.id, context);
+    expect(() => service.updateRule(created.id, { rate: 1 }, context)).toThrow(NotFoundError);
+    expect(() => service.deleteRule(created.id, context)).toThrow(NotFoundError);
     expect(service.listRules(context).some((rule) => rule.id === created.id)).toBe(false);
   });
 

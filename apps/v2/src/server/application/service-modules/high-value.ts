@@ -36,9 +36,11 @@ export class HighValueService {
       catalogId = input.catalogId;
     }
 
-    this.db.prepare(
-      `UPDATE InventoryItem SET isHighValue = ?, catalogId = ?, updatedAt = ? WHERE id = ?`,
-    ).run(isHighValue ? 1 : 0, catalogId, now, itemId);
+    const result = this.db.prepare(
+      `UPDATE InventoryItem SET isHighValue = ?, catalogId = ?, updatedAt = ?
+       WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    ).run(isHighValue ? 1 : 0, catalogId, now, itemId, ...tenantParams(context.clinicId));
+    if (Number(result.changes) === 0) throw new NotFoundError('Inventory item not found');
     trackResourceWrite(this.db, { tableName: 'InventoryItem', recordId: itemId, operation: 'UPDATE', clinicId: context.clinicId, searchResource: null });
 
     return { itemId, isHighValue, catalogId };

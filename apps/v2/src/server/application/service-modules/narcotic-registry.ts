@@ -144,7 +144,7 @@ export class NarcoticRegistryService {
     ).get(input.itemId, ...tenantParams(context.clinicId));
     if (!item) throw new NotFoundError('Inventory item not found');
     const now = context.now().toISOString();
-    this.db.prepare(
+    const result = this.db.prepare(
       `UPDATE NarcoticRegistry SET
          recordDate = ?, itemId = ?, batchNo = ?, quantity = ?,
          usage = ?, balanceBefore = ?, balanceAfter = ?, remark = ?, updatedAt = ?
@@ -162,6 +162,7 @@ export class NarcoticRegistryService {
       id,
       ...tenantParams(context.clinicId),
     );
+    if (Number(result.changes) === 0) throw new NotFoundError('麻药登记不存在');
     return { id };
   }
 
@@ -172,10 +173,11 @@ export class NarcoticRegistryService {
     ).get(id, ...tenantParams(context.clinicId));
     if (!record) throw new NotFoundError('麻药登记不存在');
     const now = context.now().toISOString();
-    this.db.prepare(
+    const result = this.db.prepare(
       `UPDATE NarcoticRegistry SET deletedAt = ?, updatedAt = ?
        WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).run(now, now, id, ...tenantParams(context.clinicId));
+    if (Number(result.changes) === 0) throw new NotFoundError('麻药登记不存在');
     return { id, deleted: true };
   }
 }

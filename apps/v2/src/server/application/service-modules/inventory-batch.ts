@@ -229,9 +229,11 @@ export class InventoryBatchService {
     }
     sets.push('updatedAt = ?');
     values.push(now);
-    this.db.prepare(
-      `UPDATE InventoryBatch SET ${sets.join(', ')} WHERE id = ?${tenantAnd(context.clinicId)}`,
+    const result = this.db.prepare(
+      `UPDATE InventoryBatch SET ${sets.join(', ')}
+       WHERE id = ? AND deletedAt IS NULL AND active = 1${tenantAnd(context.clinicId)}`,
     ).run(...values, id, ...tenantParams(context.clinicId));
+    if (Number(result.changes) === 0) throw new NotFoundError('Inventory batch not found');
     return {
       id,
       batchNo: input.batchNo !== undefined
@@ -262,9 +264,11 @@ export class InventoryBatchService {
       throw new ConflictError('批次仍有剩余库存，不能删除');
     }
     const now = context.now().toISOString();
-    this.db.prepare(
-      `UPDATE InventoryBatch SET deletedAt = ?, active = 0, updatedAt = ? WHERE id = ?${tenantAnd(context.clinicId)}`,
+    const result = this.db.prepare(
+      `UPDATE InventoryBatch SET deletedAt = ?, active = 0, updatedAt = ?
+       WHERE id = ? AND deletedAt IS NULL AND active = 1${tenantAnd(context.clinicId)}`,
     ).run(now, now, id, ...tenantParams(context.clinicId));
+    if (Number(result.changes) === 0) throw new NotFoundError('Inventory batch not found');
     return { id };
   }
 

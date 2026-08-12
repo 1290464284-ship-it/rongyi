@@ -124,14 +124,15 @@ export class CommissionService {
       enabled: patch.enabled === undefined ? Number(existing.enabled) === 1 : patch.enabled,
     });
     const now = context.now().toISOString();
-    this.db.prepare(
+    const result = this.db.prepare(
       `UPDATE CommissionRule
        SET name = ?, category = ?, costType = ?, rateType = ?, rate = ?, doctorId = ?, enabled = ?, updatedAt = ?
-       WHERE id = ?${tenantAnd(context.clinicId)}`,
+       WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).run(
       merged.name, merged.category, merged.costType, merged.rateType, merged.rate,
       merged.doctorId, merged.enabled ? 1 : 0, now, id, ...tenantParams(context.clinicId),
     );
+    if (Number(result.changes) === 0) throw new NotFoundError('Commission rule not found');
     return this.getRule(id, context)!;
   }
 
@@ -139,9 +140,10 @@ export class CommissionService {
     const existing = this.getRule(id, context);
     if (!existing) throw new NotFoundError('Commission rule not found');
     const now = context.now().toISOString();
-    this.db.prepare(
-      `UPDATE CommissionRule SET deletedAt = ?, updatedAt = ? WHERE id = ?${tenantAnd(context.clinicId)}`,
+    const result = this.db.prepare(
+      `UPDATE CommissionRule SET deletedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).run(now, now, id, ...tenantParams(context.clinicId));
+    if (Number(result.changes) === 0) throw new NotFoundError('Commission rule not found');
   }
 
   calculate(period: string, context: AppContext): CommissionStatementRow[] {

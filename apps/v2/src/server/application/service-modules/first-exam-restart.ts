@@ -110,9 +110,10 @@ export class FirstExamRestartService {
     if (!DENTITIONS.includes(dentition)) throw new ValidationError('Invalid dentition');
 
     const now = context.now().toISOString();
-    this.db.prepare(
+    const result = this.db.prepare(
       `UPDATE FirstExam SET dentition = ?, updatedAt = ? WHERE id = ?${tenantAnd(clinicId)}`,
     ).run(dentition, now, examId, ...tenantParams(clinicId));
+    if (Number(result.changes) === 0) throw new NotFoundError('First exam not found');
     return { examId, dentition: dentition as Dentition };
   }
 
@@ -132,9 +133,10 @@ export class FirstExamRestartService {
     if (!CHIEF_MARKS.includes(chiefMark)) throw new ValidationError('Invalid chiefMark');
 
     const now = context.now().toISOString();
-    this.db.prepare(
+    const result = this.db.prepare(
       `UPDATE FirstExamTooth SET chiefMark = ?, updatedAt = ? WHERE id = ?${tenantAnd(clinicId)}`,
     ).run(chiefMark, now, toothId, ...tenantParams(clinicId));
+    if (Number(result.changes) === 0) throw new NotFoundError('First exam tooth not found');
     return { toothId, chiefMark: chiefMark as ChiefMark };
   }
 
