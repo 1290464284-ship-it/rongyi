@@ -4,16 +4,19 @@ import { APPOINTMENT_STATUS_LABELS } from '../lib/labels';
 import type { AppointmentRow } from './types';
 
 /** 行内受控状态下拉：选中后立即复位为占位项，避免非受控 select 在行复用后残留旧值。 */
-function StatusTransitionSelect({ row, onTransition }: {
+function StatusTransitionSelect({ row, onTransition, disabled }: {
   row: AppointmentRow;
   onTransition: (id: string, status: string) => void;
+  disabled?: boolean;
 }) {
   const [value, setValue] = useState('');
   return (
     <select
       value={value}
+      disabled={disabled}
       aria-label="变更预约状态"
       onChange={(event) => {
+        if (disabled) return;
         const next = event.target.value;
         setValue('');
         if (next) onTransition(row.id, next);
@@ -31,9 +34,10 @@ export interface AppointmentColumnsActions {
   onTransition: (id: string, status: string) => void;
   onEdit: (row: AppointmentRow) => void;
   onDelete: (row: AppointmentRow) => void;
+  disabled?: boolean;
 }
 
-export function appointmentColumns({ onTransition, onEdit, onDelete }: AppointmentColumnsActions): DataTableColumn<AppointmentRow>[] {
+export function appointmentColumns({ onTransition, onEdit, onDelete, disabled = false }: AppointmentColumnsActions): DataTableColumn<AppointmentRow>[] {
   return [
     { key: 'patientId', label: '患者', render: (row) => row.patientIdLabel ?? row.tempPatientName ?? row.patientId ?? '' },
     { key: 'doctorId', label: '医生', render: (row) => row.doctorIdLabel ?? row.doctorId ?? '' },
@@ -53,9 +57,9 @@ export function appointmentColumns({ onTransition, onEdit, onDelete }: Appointme
       label: '操作',
       render: (row) => (
         <>
-          <StatusTransitionSelect row={row} onTransition={onTransition} />
-          <button onClick={() => onEdit(row)}>编辑</button>
-          <button className="danger" onClick={() => onDelete(row)}>删除</button>
+          <StatusTransitionSelect row={row} onTransition={onTransition} disabled={disabled} />
+          <button disabled={disabled} onClick={() => onEdit(row)}>编辑</button>
+          <button className="danger" disabled={disabled} onClick={() => onDelete(row)}>删除</button>
         </>
       ),
     },

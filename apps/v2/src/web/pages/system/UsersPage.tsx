@@ -111,6 +111,7 @@ export function UsersPage() {
     queryFn: () => apiRequest<{ items: UserRoleRow[] }>('/user-roles'),
     enabled: me.data?.role === 'BOSS' || me.data?.role === 'ADMIN',
   });
+  const stale = users.isPlaceholderData;
 
   if (me.isLoading) return <LoadingState />;
   if (me.error || !['BOSS', 'ADMIN'].includes(me.data?.role ?? '')) {
@@ -149,6 +150,7 @@ export function UsersPage() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (stale) return;
     if (submitting) return;
     if (editingId && userRoles.error) {
       showToast('角色数据加载失败，请刷新后重试', 'error');
@@ -199,6 +201,7 @@ export function UsersPage() {
   }
 
   async function deleteUser() {
+    if (stale) return;
     if (!deleteTarget || submitting) return;
     setSubmitting(true);
     try {
@@ -215,6 +218,7 @@ export function UsersPage() {
   }
 
   async function resetPassword(password: string) {
+    if (stale) return;
     if (!passwordTarget || submitting) return;
     setSubmitting(true);
     try {
@@ -247,6 +251,7 @@ export function UsersPage() {
   }
 
   async function savePermissions() {
+    if (stale) return;
     if (!permissionTarget || permissionBusy) return;
     setPermissionBusy(true);
     try {
@@ -300,10 +305,10 @@ export function UsersPage() {
       render: (row: UserRow) => (
         isBoss || row.role !== 'BOSS' ? (
           <>
-            <button onClick={() => openEdit(row)}>编辑</button>
-            <button onClick={() => void openPermissions(row)}>权限</button>
-            <button onClick={() => setPasswordTarget(row.id)}>重置密码</button>
-            <button className="danger" onClick={() => setDeleteTarget(row)}>删除</button>
+            <button disabled={stale} onClick={() => openEdit(row)}>编辑</button>
+            <button disabled={stale} onClick={() => void openPermissions(row)}>权限</button>
+            <button disabled={stale} onClick={() => setPasswordTarget(row.id)}>重置密码</button>
+            <button className="danger" disabled={stale} onClick={() => setDeleteTarget(row)}>删除</button>
           </>
         ) : (
           <span>老板账号</span>

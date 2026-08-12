@@ -14,6 +14,7 @@ import { ConflictError, NotFoundError, ValidationError } from '../../infrastruct
 import { trackResourceWrite } from '../../infrastructure/write-tracking';
 import type { AppContext } from '../../../domain/contracts';
 import { assertChairExists, assertDoctorExists } from './common';
+import { assertValidDateTimeValue } from '../../http/validation';
 
 export interface TriageInput {
   doctorId?: string;
@@ -152,16 +153,10 @@ export class TriageService {
     if (input.startTime === undefined || input.startTime === null || input.startTime === '') {
       throw new ValidationError('startTime 必填');
     }
-    if (Number.isNaN(new Date(input.startTime).getTime())) {
-      throw new ValidationError('startTime 必须是合法时间');
-    }
-    if (input.endTime !== undefined && Number.isNaN(new Date(input.endTime).getTime())) {
-      throw new ValidationError('endTime 必须是合法时间');
-    }
-    const startIso = new Date(input.startTime).toISOString();
-    const endIso = input.endTime === undefined
+    const startIso = assertValidDateTimeValue(input.startTime, 'startTime');
+    const endIso = input.endTime === undefined || input.endTime === null || input.endTime === ''
       ? new Date(String(appointment.endTime)).toISOString()
-      : new Date(input.endTime).toISOString();
+      : assertValidDateTimeValue(input.endTime, 'endTime');
     if (new Date(endIso).getTime() <= new Date(startIso).getTime()) {
       throw new ValidationError('endTime 必须晚于 startTime');
     }

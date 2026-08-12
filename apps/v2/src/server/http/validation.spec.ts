@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validatePayload } from './validation';
+import { assertValidDateTimeValue, parseBooleanStrict, validatePayload } from './validation';
 import type { ResourceDefinition } from '../../domain/contracts';
 
 const definition: ResourceDefinition = {
@@ -62,5 +62,16 @@ describe('validatePayload', () => {
     expect(() => validatePayload(definition, { name: 'A', startsAt: '2026' })).toThrow('valid date-time');
     expect(() => validatePayload(definition, { name: 'A', startsAt: '2026-02-30T10:00:00.000Z' })).toThrow('valid date-time');
     expect(() => validatePayload(definition, { name: 'A', startsAt: '2026-02-29T10:00:00.000Z' })).toThrow('valid date-time');
+  });
+
+  it('parses booleans strictly', () => {
+    expect(parseBooleanStrict('false')).toBe(false);
+    expect(parseBooleanStrict('0')).toBe(false);
+    expect(parseBooleanStrict(false)).toBe(false);
+    expect(parseBooleanStrict('true')).toBe(true);
+    expect(parseBooleanStrict(1)).toBe(true);
+    expect(() => parseBooleanStrict('yes')).toThrow('must be a boolean');
+    expect(() => parseBooleanStrict([])).toThrow('must be a boolean');
+    expect(() => assertValidDateTimeValue('2026-13-01T10:00:00.000Z', 'startsAt')).toThrow('valid date-time');
   });
 });

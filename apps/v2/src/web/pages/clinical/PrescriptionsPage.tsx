@@ -114,7 +114,7 @@ export function PrescriptionsPage() {
           row.status === 'PROCESSED' ? (
             <button onClick={() => setStatusTarget({ row, reload: ctx.reload })}>查看状态</button>
           ) : (
-            <ProcessPrescriptionButton row={row} reload={ctx.reload} showToast={showToast} />
+            <ProcessPrescriptionButton row={row} reload={ctx.reload} showToast={showToast} disabled={ctx.stale} />
           )
         }
         renderForm={(ctx) => {
@@ -146,14 +146,16 @@ function ProcessPrescriptionButton({
   row,
   reload,
   showToast,
+  disabled,
 }: {
   row: PrescriptionRow;
   reload: () => Promise<unknown>;
   showToast: (message: string, kind?: ToastKind) => void;
+  disabled?: boolean;
 }) {
   const { busy, run } = useAsyncAction();
   return (
-    <button disabled={busy} onClick={() => run(() => processPrescription(row, reload, showToast))}>
+    <button disabled={busy || disabled} onClick={() => { if (disabled) return; run(() => processPrescription(row, reload, showToast)); }}>
       {busy ? '处理中...' : '处理'}
     </button>
   );

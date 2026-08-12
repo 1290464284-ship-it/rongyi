@@ -161,6 +161,37 @@ describe('HTTP app edge error handling', () => {
       .expect(404);
   });
 
+  it('prevents generic resource writes from bypassing state machines', async () => {
+    const auth = (req: request.Test): request.Test => req.set('Authorization', `Bearer ${token}`);
+    const created = await auth(request(app).post('/api/v2/resources/appointments')).send({
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      startTime: '2026-08-10T02:00:00.000Z',
+      endTime: '2026-08-10T03:00:00.000Z',
+      type: 'REGULAR',
+      status: 'COMPLETED',
+    }).expect(201);
+    const appointmentId = created.body.data.id as string;
+    expect((db.prepare('SELECT status FROM Appointment WHERE id = ?').get(appointmentId) as { status: string }).status).toBe('BOOKED');
+    await auth(request(app).patch(`/api/v2/resources/appointments/${appointmentId}`))
+      .send({ status: 'COMPLETED' })
+      .expect(200);
+    expect((db.prepare('SELECT status FROM Appointment WHERE id = ?').get(appointmentId) as { status: string }).status).toBe('BOOKED');
+
+    const rx = await auth(request(app).post('/api/v2/resources/prescriptions')).send({
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      status: 'PROCESSED',
+      chargeId: 'fake-charge',
+    }).expect(201);
+    const rxRow = db.prepare('SELECT status, chargeId FROM Prescription WHERE id = ?').get(rx.body.data.id as string) as {
+      status: string;
+      chargeId: string | null;
+    };
+    expect(rxRow.status).toBe('DRAFT');
+    expect(rxRow.chargeId).toBeNull();
+  });
+
   it('short search terms and unknown routes return safe local responses', async () => {
     const short = await request(app)
       .get('/api/v2/search?q=a')

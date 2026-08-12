@@ -69,9 +69,11 @@ export function FirstExamsPage() {
         rowActions={(row, ctx) => (
           <>
             <select
+              disabled={ctx.stale}
               value={String(row.status ?? '')}
               aria-label="变更首诊状态"
               onChange={(event) => {
+                if (ctx.stale) return;
                 if (event.target.value) void transitionFirstExam(showToast, ctx.reload, row.id, event.target.value);
               }}
             >
@@ -80,11 +82,13 @@ export function FirstExamsPage() {
                 <option key={value} value={value}>{label}</option>
               ))}
             </select>
-            <button onClick={() => setDialogTarget({ kind: 'tracking', row })}>追踪</button>
+            <button disabled={ctx.stale} onClick={() => { if (ctx.stale) return; setDialogTarget({ kind: 'tracking', row }); }}>追踪</button>
             <select
+              disabled={ctx.stale}
               value={String(row.dentition ?? '')}
               aria-label="切换牙列"
               onChange={(event) => {
+                if (ctx.stale) return;
                 if (event.target.value) void changeDentition(showToast, ctx.reload, row.id, event.target.value);
               }}
             >
@@ -93,8 +97,8 @@ export function FirstExamsPage() {
                 <option key={value} value={value}>{label}</option>
               ))}
             </select>
-            <button onClick={() => setDialogTarget({ kind: 'teeth', row })}>牙齿标记</button>
-            <button onClick={() => setDialogTarget({ kind: 'restart', row })}>重启检查</button>
+            <button disabled={ctx.stale} onClick={() => { if (ctx.stale) return; setDialogTarget({ kind: 'teeth', row }); }}>牙齿标记</button>
+            <button disabled={ctx.stale} onClick={() => { if (ctx.stale) return; setDialogTarget({ kind: 'restart', row }); }}>重启检查</button>
             <button onClick={() => setDialogTarget({ kind: 'history', row })}>历史</button>
             {dialogTarget?.kind === 'tracking' && dialogTarget.row.id === row.id && (
               <TrackingDialog

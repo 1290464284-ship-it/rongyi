@@ -67,6 +67,7 @@ export function ChargesPage({ initialSearch }: { initialSearch?: string } = {}) 
     messages: { create: '收费单已创建' },
     errorMessages: { create: '创建收费失败' },
   });
+  const stale = crud.query.isPlaceholderData;
 
   const chargeTreeQuery = useQuery({
     queryKey: ['charge-trees'],
@@ -133,6 +134,7 @@ export function ChargesPage({ initialSearch }: { initialSearch?: string } = {}) 
         onPayment={setPaymentTarget}
         onRefund={setRefundTarget}
         onDelete={setDeleteTarget}
+        disabled={stale}
       />
 
       <section aria-label="收费项目" className="charge-tree-panel">
@@ -212,6 +214,7 @@ export function ChargesPage({ initialSearch }: { initialSearch?: string } = {}) 
   }
 
   async function pay(event: FormEvent) {
+    if (stale) return;
     event.preventDefault();
     const amount = toCents(paymentAmount);
     if (actionBusy || actionBusyRef.current || !paymentTarget || amount <= 0) {
@@ -247,6 +250,7 @@ export function ChargesPage({ initialSearch }: { initialSearch?: string } = {}) 
   }
 
   async function refund(event: FormEvent) {
+    if (stale) return;
     event.preventDefault();
     const amount = toCents(refundAmount);
     if (actionBusy || actionBusyRef.current || !refundTarget || amount <= 0) {
@@ -274,6 +278,7 @@ export function ChargesPage({ initialSearch }: { initialSearch?: string } = {}) 
   }
 
   async function deleteCharge() {
+    if (stale) return;
     if (actionBusy || actionBusyRef.current || !deleteTarget) return;
     actionBusyRef.current = true;
     setActionBusy(true);

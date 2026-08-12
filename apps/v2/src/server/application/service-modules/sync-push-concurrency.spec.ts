@@ -204,4 +204,37 @@ describe('sync push concurrency', () => {
     await expect(service.push(badPayload({ deviceToken: {} }), context)).rejects.toThrow(ValidationError);
     await expect(service.push(badPayload({ deviceId: '', deviceToken: '' }), context)).rejects.toThrow(ValidationError);
   });
+
+  it('rolls back business writes when SyncChange recording fails', async () => {
+    const device = service.registerDevice('sync-syncchange-fail', 'SyncChange Fail Device', context);
+    db.exec(`CREATE TRIGGER IF NOT EXISTS fail_syncchange_insert
+             BEFORE INSERT ON SyncChange
+             BEGIN SELECT RAISE(ABORT, 'syncchange down'); END;`);
+    try {
+      const result = await service.push({
+        deviceId: device.deviceId,
+        deviceToken: device.token,
+        changes: [{
+          tableName: 'Patient',
+          recordId: 'syncchange-rollback',
+          operation: 'INSERT',
+          updatedAt: '2026-08-09T10:00:00.000Z',
+          data: {
+            code: 'SYNC-CHANGE-ROLLBACK',
+            name: 'Rollback Patient',
+            gender: 'UNKNOWN',
+            phone: '13600000009',
+            source: 'OTHER',
+            active: true,
+          },
+        }],
+      }, context);
+      expect(result.accepted).toBe(0);
+      expect(result.failed).toBe(1);
+      const row = db.prepare('SELECT id FROM Patient WHERE id = ? AND deletedAt IS NULL').get('syncchange-rollback');
+      expect(row).toBeUndefined();
+    } finally {
+      db.exec('DROP TRIGGER IF EXISTS fail_syncchange_insert');
+    }
+  });
 });

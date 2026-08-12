@@ -229,4 +229,18 @@ describe('FollowUpExecutionService', () => {
       breakdown: [],
     });
   });
+
+  it('rejects invalid contactedAt and nextPlanDate formats', async () => {
+    insertFollowUp('followup-invalid-date', { executionStatus: 'PENDING' });
+    const service = new FollowUpExecutionService(db);
+    expect(() => service.execute('followup-invalid-date', {
+      executionStatus: 'DONE',
+      contactedAt: 'not-a-date',
+    } as never, context)).toThrow(ValidationError);
+    expect(() => service.execute('followup-invalid-date', {
+      executionStatus: 'DONE',
+      contactedAt: '2026-08-05T10:00:00.000Z',
+      nextPlanDate: '2026-02-30',
+    } as never, context)).toThrow(ValidationError);
+  });
 });

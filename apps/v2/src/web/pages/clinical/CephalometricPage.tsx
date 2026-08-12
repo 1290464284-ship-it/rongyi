@@ -170,8 +170,8 @@ export function CephalometricPage() {
         canDelete
         rowActions={(row, ctx) => (
           <>
-            <button onClick={() => { setSendTarget(null); setReportTarget(row); }}>测量报告</button>
-            <button onClick={() => { setReportTarget(null); setSendTarget(row); }}>发送微信</button>
+            <button disabled={ctx.stale} onClick={() => { if (ctx.stale) return; setSendTarget(null); setReportTarget(row); }}>测量报告</button>
+            <button disabled={ctx.stale} onClick={() => { if (ctx.stale) return; setReportTarget(null); setSendTarget(row); }}>发送微信</button>
             {reportTarget?.id === row.id && (
               <ReportDialog row={row} reload={ctx.reload} onClose={() => setReportTarget(null)} />
             )}

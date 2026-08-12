@@ -205,6 +205,8 @@ export function useCrudResource<
   async function submit(event?: FormEvent) {
     event?.preventDefault();
     if (submitting || submittingRef.current) return;
+    // 编辑弹窗已打开时列表进入 placeholder：旧记录仍可 PATCH，必须拦截。
+    if (editingId !== null && query.isPlaceholderData) return;
     submittingRef.current = true;
     setSubmitting(true);
     const editing = editingId !== null;

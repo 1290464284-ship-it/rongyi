@@ -24,6 +24,44 @@ export function validatePayload(
   return result;
 }
 
+export function isValidCalendarDate(year: number, month: number, day: number): boolean {
+  const probe = new Date(Date.UTC(year, month - 1, day));
+  return probe.getUTCFullYear() === year && probe.getUTCMonth() === month - 1 && probe.getUTCDate() === day;
+}
+
+export function assertValidDateValue(raw: unknown, label: string): string {
+  if (typeof raw !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    throw new ValidationError(`${label} must be a valid YYYY-MM-DD date`);
+  }
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  if (match && !isValidCalendarDate(Number(match[1]), Number(match[2]), Number(match[3]))) {
+    throw new ValidationError(`${label} must be a valid YYYY-MM-DD date`);
+  }
+  return raw;
+}
+
+export function assertValidDateTimeValue(raw: unknown, label: string): string {
+  const isoDatetime = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+  if (typeof raw !== 'string' || !isoDatetime.test(raw) || Number.isNaN(Date.parse(raw))) {
+    throw new ValidationError(`${label} must be a valid date-time`);
+  }
+  const calendarMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+  if (calendarMatch && !isValidCalendarDate(Number(calendarMatch[1]), Number(calendarMatch[2]), Number(calendarMatch[3]))) {
+    throw new ValidationError(`${label} must be a valid date-time`);
+  }
+  const normalized = new Date(raw).toISOString();
+  if (Number.isNaN(new Date(normalized).getTime())) {
+    throw new ValidationError(`${label} must be a valid date-time`);
+  }
+  return normalized;
+}
+
+export function parseBooleanStrict(value: unknown, label = 'boolean'): boolean {
+  if (value === true || value === 1 || value === 'true' || value === '1') return true;
+  if (value === false || value === 0 || value === 'false' || value === '0') return false;
+  throw new ValidationError(`${label} must be a boolean`);
+}
+
 function validateField(field: ResourceField, raw: unknown): unknown {
   switch (field.type) {
     case 'text':
@@ -36,41 +74,9 @@ function validateField(field: ResourceField, raw: unknown): unknown {
       }
       return raw;
     case 'date':
-      if (
-        typeof raw !== 'string'
-        || !/^\d{4}-\d{2}-\d{2}$/.test(raw)
-        || Number.isNaN(new Date(`${raw}T00:00:00.000Z`).getTime())
-        || new Date(`${raw}T00:00:00.000Z`).toISOString().slice(0, 10) !== raw
-      ) {
-        throw new ValidationError(`${field.name} must be a valid YYYY-MM-DD date`);
-      }
-      return raw;
-    case 'datetime': {
-      const isoDatetime = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
-      if (typeof raw !== 'string' || !isoDatetime.test(raw) || Number.isNaN(Date.parse(raw))) {
-        throw new ValidationError(`${field.name} must be a valid date-time`);
-      }
-      // Date.parse 会把 2026-02-30 / 非闰年 02-29 静默规范化，必须先拒绝不存在的日历日期。
-      const calendarMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
-      if (calendarMatch) {
-        const year = Number(calendarMatch[1]);
-        const month = Number(calendarMatch[2]);
-        const day = Number(calendarMatch[3]);
-        const probe = new Date(Date.UTC(year, month - 1, day));
-        if (
-          probe.getUTCFullYear() !== year
-          || probe.getUTCMonth() !== month - 1
-          || probe.getUTCDate() !== day
-        ) {
-          throw new ValidationError(`${field.name} must be a valid date-time`);
-        }
-      }
-      const normalized = new Date(raw).toISOString();
-      if (Number.isNaN(new Date(normalized).getTime())) {
-        throw new ValidationError(`${field.name} must be a valid date-time`);
-      }
-      return normalized;
-    }
+      return assertValidDateValue(raw, field.name);
+    case 'datetime':
+      return assertValidDateTimeValue(raw, field.name);
     case 'decimal': {
       const value = typeof raw === 'number'
         ? raw
@@ -102,9 +108,7 @@ function validateField(field: ResourceField, raw: unknown): unknown {
     case 'boolean':
       // B-L4：'1' 字符串（表单/CSV/同步客户端常见）与布尔 true 等价，与 repository.serialize 保持一致；
       // 非法值必须显式拒绝，避免把数组/对象静默当成 false（与权限布尔解析一致）。
-      if (raw === true || raw === 1 || raw === 'true' || raw === '1') return true;
-      if (raw === false || raw === 0 || raw === 'false' || raw === '0') return false;
-      throw new ValidationError(`${field.name} must be a boolean`);
+      return parseBooleanStrict(raw, field.name);
     case 'enum':
       if (typeof raw !== 'string' || !field.enumValues?.includes(raw)) {
         throw new ValidationError(`${field.name} must be one of ${field.enumValues?.join(', ')}`);

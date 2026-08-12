@@ -105,6 +105,19 @@ const RESOURCE_PROTECTED_WRITE_FIELDS: Record<string, ReadonlySet<string>> = {
   processingOrders: new Set(['status', 'sentAt', 'receivedAt', 'deliveredAt', 'settleStatus', 'settledAmount', 'settledAt', 'settlementNote', 'settlementRef']),
 };
 
+/**
+ * 状态机资源：通用 CRUD（resources router）不得直接写状态字段，否则可绕过
+ * appointment/clinical-workflow 的转移校验（如直接 PATCH 成 COMPLETED 或创建
+ * 终态记录）。sync/bulk-import 仍走各自校验与幂等路径，不受此集合约束。
+ */
+const STATE_MACHINE_PROTECTED_WRITE_FIELDS: Record<string, ReadonlySet<string>> = {
+  appointments: new Set(['status']),
+  visits: new Set(['status']),
+  treatments: new Set(['status']),
+  firstExams: new Set(['status']),
+  prescriptions: new Set(['status', 'processedAt', 'chargeId', 'dispenseId']),
+};
+
 /** 递归掩码：数组逐项、对象逐键；深度 >5 时截断为占位值，避免深层嵌套泄露敏感键。 */
 function maskWith<T>(row: T, sensitive: ReadonlySet<string>, depth = 0): T {
   if (depth > 5) return '[MaxDepth]' as unknown as T;
@@ -132,6 +145,7 @@ export function stripProtectedWriteFields(
   payload: Record<string, unknown>,
   exemptFields?: ReadonlySet<string>,
   resourceName?: string,
+  options?: { protectStateMachine?: boolean },
 ): Record<string, unknown> {
   const result = { ...payload };
   for (const field of PROTECTED_WRITE_FIELDS) {
@@ -141,6 +155,15 @@ export function stripProtectedWriteFields(
   const resourceProtected = resourceName ? RESOURCE_PROTECTED_WRITE_FIELDS[resourceName] : undefined;
   if (resourceProtected) {
     for (const field of resourceProtected) {
+      if (exemptFields?.has(field)) continue;
+      delete result[field];
+    }
+  }
+  const stateMachineProtected = options?.protectStateMachine && resourceName
+    ? STATE_MACHINE_PROTECTED_WRITE_FIELDS[resourceName]
+    : undefined;
+  if (stateMachineProtected) {
+    for (const field of stateMachineProtected) {
       if (exemptFields?.has(field)) continue;
       delete result[field];
     }

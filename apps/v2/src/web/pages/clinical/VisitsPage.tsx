@@ -107,7 +107,7 @@ export function VisitsPage() {
       errorMessages={{ create: '创建就诊失败' }}
       columns={visitColumns}
       rowActions={(row, ctx) => (
-        <VisitStatusSelect rowId={row.id} onTransition={(id, status) => void transitionVisit(showToast, ctx.reload, id, status)} />
+        <VisitStatusSelect rowId={row.id} disabled={ctx.stale} onTransition={(id, status) => void transitionVisit(showToast, ctx.reload, id, status)} />
       )}
       renderForm={(ctx) => <VisitForm form={ctx.form} update={ctx.update} />}
     />
@@ -138,16 +138,19 @@ async function transitionVisit(
 }
 
 /** M12：行内受控状态下拉：选中后立即复位为占位项，避免非受控 select 在行复用后残留旧值（对齐 TreatmentsPage 复位模式）。 */
-function VisitStatusSelect({ rowId, onTransition }: {
+function VisitStatusSelect({ rowId, onTransition, disabled }: {
   rowId: string;
   onTransition: (id: string, status: string) => void;
+  disabled?: boolean;
 }) {
   const [value, setValue] = useState('');
   return (
     <select
       value={value}
+      disabled={disabled}
       aria-label="变更就诊状态"
       onChange={(event) => {
+        if (disabled) return;
         const next = event.target.value;
         setValue('');
         if (next) onTransition(rowId, next);

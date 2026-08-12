@@ -190,6 +190,28 @@ describe('workflow services', () => {
     expect(dollar).not.toContain('{{title}}');
   });
 
+  it('compensates a gateway-delivered message when markSent races to zero', async () => {
+    db.prepare(
+      `INSERT INTO WechatMessage (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, type, content, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'TEXT', 'compensate', 'PENDING')`,
+    ).run('wechat-compensate', context.clinicId, now, now);
+    const provider = {
+      name: 'fake',
+      isConfigured: () => true,
+      send: async () => ({ ok: true, result: 'delivered' }),
+    };
+    const fakeRepo = {
+      findById: () => ({ id: 'wechat-compensate', status: 'PENDING' }),
+      markSent: () => 0,
+    };
+    const wechat = new WechatService(db, fakeRepo as never, provider);
+    expect(await wechat.send('wechat-compensate', context)).toMatchObject({ status: 'SENT', result: 'delivered' });
+    const row = db.prepare("SELECT status FROM WechatMessage WHERE id = 'wechat-compensate'").get() as { status: string };
+    expect(row.status).toBe('SENT');
+  });
+
   it('includes the patient wechatId in the provider payload', async () => {
     db.prepare(
       `INSERT INTO WechatMessage (

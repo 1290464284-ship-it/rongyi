@@ -64,6 +64,7 @@ export function AppointmentsPage({ initialSearch }: { initialSearch?: string } =
     ),
     placeholderData: (previous) => previous,
   });
+  const stale = query.isPlaceholderData;
 
   if (query.isLoading) return <LoadingState />;
   if (query.error) return <PageError message={(query.error as Error).message} />;
@@ -110,6 +111,7 @@ export function AppointmentsPage({ initialSearch }: { initialSearch?: string } =
   }
 
   async function transition(id: string, status: string) {
+    if (stale) return;
     if (!transitionGuard.start(id)) return;
     try {
       await apiRequest(`/appointments/${id}/status`, {
@@ -126,6 +128,7 @@ export function AppointmentsPage({ initialSearch }: { initialSearch?: string } =
   }
 
   function openEditAppointment(row: AppointmentRow) {
+    if (stale) return;
     const appointmentId = String(row.id);
     const cachedPhone = rawPhoneCache[appointmentId];
     setEditForm({
@@ -203,6 +206,7 @@ export function AppointmentsPage({ initialSearch }: { initialSearch?: string } =
   }
 
   async function deleteAppointment() {
+    if (stale) return;
     if (!deleteTarget || submitting) return;
     setSubmitting(true);
     try {
@@ -229,6 +233,7 @@ export function AppointmentsPage({ initialSearch }: { initialSearch?: string } =
     onTransition: (id, status) => void transition(id, status),
     onEdit: (row) => openEditAppointment(row),
     onDelete: (row) => setDeleteTarget(row),
+    disabled: stale,
   });
 
   return (
@@ -237,7 +242,7 @@ export function AppointmentsPage({ initialSearch }: { initialSearch?: string } =
         <h1>预约管理</h1>
         <SearchInput
           value={searchInput}
-          onChange={setSearchInput}
+          onChange={(value) => { setSearchInput(value); setPage(1); }}
           placeholder="搜索预约..."
           ariaLabel="搜索预约"
         />

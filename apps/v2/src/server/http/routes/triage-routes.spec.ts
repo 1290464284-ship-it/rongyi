@@ -133,7 +133,7 @@ describe('triage routes', () => {
       .expect(400);
     expect(res.body.success).toBe(false);
     expect(res.body.code).toBe('VALIDATION_ERROR');
-    expect(res.body.message).toBe('startTime 必须是合法时间');
+    expect(res.body.message).toBe('startTime must be a valid date-time');
   });
 
   it('rejects triaging a missing registration with 404', async () => {

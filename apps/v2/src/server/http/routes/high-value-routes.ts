@@ -9,6 +9,7 @@ import type { Express } from 'express';
 import { wrapAsync } from '../middleware';
 import { HighValueService } from '../../application/service-modules/high-value';
 import type { RouteDependencies } from './deps';
+import { parseBooleanStrict } from '../validation';
 
 export function registerHighValueRoutes(app: Express, deps: RouteDependencies): void {
   const { db } = deps;
@@ -17,7 +18,7 @@ export function registerHighValueRoutes(app: Express, deps: RouteDependencies): 
   app.post('/api/v2/inventory-items/:id/high-value', wrapAsync(async (req, res) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
     const result = service.mark(String(req.params.id), {
-      isHighValue: Boolean(body.isHighValue),
+      isHighValue: parseBooleanStrict(body.isHighValue, 'isHighValue'),
       catalogId: body.catalogId == null ? undefined : String(body.catalogId),
     }, req.context!);
     res.json({ success: true, data: result });

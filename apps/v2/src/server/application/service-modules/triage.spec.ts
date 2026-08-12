@@ -281,6 +281,15 @@ describe('TriageService', () => {
     expect(() => service.rescheduleAppointment('appt-reschedule-bad-end', { startTime: '2099-05-01T09:00:00.000Z', endTime: 'oops' }, context)).toThrow(ValidationError);
   });
 
+  it('rejects impossible calendar dates when rescheduling', () => {
+    insertAppointment('appt-reschedule-calendar');
+    const service = new TriageService(db);
+    expect(() => service.rescheduleAppointment('appt-reschedule-calendar', {
+      startTime: '2026-02-30T10:00:00.000Z',
+      endTime: '2026-02-30T11:00:00.000Z',
+    }, context)).toThrow(ValidationError);
+  });
+
   it('throws NotFound for an unknown appointment', () => {
     const service = new TriageService(db);
     expect(() => service.rescheduleAppointment('appt-missing', { startTime: '2099-05-01T09:00:00.000Z' }, context)).toThrow(NotFoundError);

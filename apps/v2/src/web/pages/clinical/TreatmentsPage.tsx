@@ -114,6 +114,7 @@ export function TreatmentsPage() {
       rowActions={(row, ctx) => (
         <TreatmentStatusSelect
           rowId={row.id}
+          disabled={ctx.stale}
           onTransition={(id, status) => void transitionTreatment(showToast, ctx.reload, id, status)}
         />
       )}
@@ -146,16 +147,19 @@ async function transitionTreatment(
 }
 
 /** 行内受控状态下拉：选中后立即复位为占位项，避免非受控 select 在行复用后残留旧值。 */
-function TreatmentStatusSelect({ rowId, onTransition }: {
+function TreatmentStatusSelect({ rowId, onTransition, disabled }: {
   rowId: string;
   onTransition: (id: string, status: string) => void;
+  disabled?: boolean;
 }) {
   const [value, setValue] = useState('');
   return (
     <select
       value={value}
+      disabled={disabled}
       aria-label="变更治疗状态"
       onChange={(event) => {
+        if (disabled) return;
         const next = event.target.value;
         setValue('');
         if (next) onTransition(rowId, next);

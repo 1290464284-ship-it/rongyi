@@ -27,8 +27,10 @@ export function PatientWorkflowPage() {
     ),
     placeholderData: (previous) => previous,
   });
+  const stale = patients.isPlaceholderData;
 
   async function calculate(patientId: string) {
+    if (stale) return;
     try {
       await apiRequest<Record<string, unknown>>(`/patients/${patientId}/risk`, { method: 'POST', body: JSON.stringify({}) });
       showToast('风险评分已更新', 'success');
@@ -44,7 +46,7 @@ export function PatientWorkflowPage() {
     {
       key: 'actions',
       label: '操作',
-      render: (row) => <CalculateRiskButton patientId={String(row.id)} onDone={calculate} />,
+      render: (row) => <CalculateRiskButton patientId={String(row.id)} onDone={calculate} disabled={stale} />,
     },
   ];
 
@@ -82,10 +84,10 @@ export function PatientWorkflowPage() {
 }
 
 /** 行内“计算风险”按钮：busy 期间禁用，防止双击重复触发评分计算。 */
-function CalculateRiskButton({ patientId, onDone }: { patientId: string; onDone: (patientId: string) => Promise<void> }) {
+function CalculateRiskButton({ patientId, onDone, disabled }: { patientId: string; onDone: (patientId: string) => Promise<void>; disabled?: boolean }) {
   const { busy, run } = useAsyncAction();
   return (
-    <button disabled={busy} onClick={() => run(() => onDone(patientId))}>
+    <button disabled={busy || disabled} onClick={() => run(() => onDone(patientId))}>
       {busy ? '计算中...' : '计算风险'}
     </button>
   );

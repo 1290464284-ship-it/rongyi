@@ -94,7 +94,7 @@ export function PurchaseOrdersPage() {
         <>
           <ReviewRowActions
             row={row}
-            reviewing={reviewing}
+            reviewing={reviewing || ctx.stale}
             setReviewing={setReviewing}
             reload={ctx.reload}
             showToast={showToast}
@@ -102,8 +102,11 @@ export function PurchaseOrdersPage() {
           />
           {/* 收货门禁：仅审核已通过（APPROVED）且未收货（PENDING）可收货；服务端同样校验 */}
           <button
-            disabled={String(row.reviewStatus) !== 'APPROVED' || String(row.status) !== 'PENDING' || receiving}
-            onClick={() => void receivePurchase(showToast, ctx.reload, setReceiving, row.id, () => setSummaryTick((tick) => tick + 1))}
+            disabled={String(row.reviewStatus) !== 'APPROVED' || String(row.status) !== 'PENDING' || receiving || ctx.stale}
+            onClick={() => {
+              if (ctx.stale) return;
+              void receivePurchase(showToast, ctx.reload, setReceiving, row.id, () => setSummaryTick((tick) => tick + 1));
+            }}
           >
             收货
           </button>

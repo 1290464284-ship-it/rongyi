@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 export interface DataTableColumn<T extends Record<string, unknown>> {
   key: string;
@@ -19,6 +19,14 @@ export function DataTable<T extends Record<string, unknown>>({
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [visibleCount, setVisibleCount] = useState(100);
+  const [prevRows, setPrevRows] = useState(rows);
+  if (prevRows !== rows) {
+    setPrevRows(rows);
+    setVisibleCount(100);
+  }
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [rows]);
   if (rows.length === 0) return <div className="table-empty">{emptyText}</div>;
   // M2：行数上限（500），超限仅渲染前 500 行并提示，避免千行级列表全量 DOM 渲染
   const MAX_RENDER_ROWS = 500;

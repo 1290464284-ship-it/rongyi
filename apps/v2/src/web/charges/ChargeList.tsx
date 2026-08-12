@@ -7,11 +7,13 @@ export function ChargeList({
   onPayment,
   onRefund,
   onDelete,
+  disabled,
 }: {
   rows: ChargeRow[];
   onPayment: (id: string) => void;
   onRefund: (id: string) => void;
   onDelete: (row: ChargeRow) => void;
+  disabled?: boolean;
 }) {
   const columns: DataTableColumn<ChargeRow>[] = [
     { key: 'number', label: '收费单号' },
@@ -23,10 +25,10 @@ export function ChargeList({
       label: '操作',
       render: (row) => (
         <>
-          <button onClick={() => onPayment(row.id)}>收款</button>
-          <button className="danger" onClick={() => onRefund(row.id)}>退款</button>
+          <button disabled={disabled} onClick={() => onPayment(row.id)}>收款</button>
+          <button className="danger" disabled={disabled} onClick={() => onRefund(row.id)}>退款</button>
           {String(row.status ?? '') === 'UNPAID' && (
-            <button className="danger" onClick={() => onDelete(row)}>删除</button>
+            <button className="danger" disabled={disabled} onClick={() => onDelete(row)}>删除</button>
           )}
         </>
       ),

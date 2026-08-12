@@ -50,10 +50,12 @@ export function Drawer({ open, title, onClose, children, footer }: DrawerProps) 
     previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
     const panel = drawerRef.current;
     const cleanupInert = panel ? registerModalLayer(panel) : null;
-    const focusable = panel?.querySelector<HTMLElement>(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-    );
-    focusable?.focus();
+    const focusable = panel
+      ? Array.from(panel.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      )).find((element) => !element.hasAttribute('disabled'))
+      : undefined;
+    (focusable ?? panel)?.focus();
     return () => {
       cleanupInert?.();
       previouslyFocusedRef.current?.focus?.();
@@ -86,6 +88,7 @@ export function Drawer({ open, title, onClose, children, footer }: DrawerProps) 
       role="dialog"
       aria-modal="true"
       aria-label={title}
+      tabIndex={-1}
       onKeyDown={(event: ReactKeyboardEvent<HTMLDivElement>) => {
         if (event.key !== 'Tab') return;
         const focusable = Array.from(

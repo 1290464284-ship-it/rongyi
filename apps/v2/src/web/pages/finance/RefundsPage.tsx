@@ -58,6 +58,7 @@ export function RefundsPage() {
     queryFn: () => apiRequest<Page<RefundRow>>(`/refunds?page=${page}&pageSize=20`),
     placeholderData: (previous) => previous,
   });
+  const stale = query.isPlaceholderData;
 
   if (query.isLoading) return <LoadingState label="退款记录加载中..." />;
   if (query.error) {
@@ -78,6 +79,7 @@ export function RefundsPage() {
       render: (row) => (
         <RefundRowActions
           row={row}
+          stale={stale}
           reload={async () => {
             await Promise.all([query.refetch(), summary.refetch()]);
           }}
@@ -123,10 +125,12 @@ function RefundStatusChips({ counts, total }: { counts: Record<string, number>; 
 
 function RefundRowActions({
   row,
+  stale,
   reload,
   showToast,
 }: {
   row: RefundRow;
+  stale: boolean;
   reload: () => Promise<unknown>;
   showToast: (message: string, kind?: 'success' | 'error' | 'info') => void;
 }) {
@@ -135,13 +139,22 @@ function RefundRowActions({
   if (status === 'REQUESTED') {
     return (
       <span>
-        <button disabled={busy} onClick={() => run(() => transitionRefund(showToast, reload, row.id, 'approve', '退款已通过审批'))}>
+        <button disabled={busy || stale} onClick={() => {
+          if (stale) return;
+          run(() => transitionRefund(showToast, reload, row.id, 'approve', '退款已通过审批'));
+        }}>
           通过审批
         </button>
-        <button disabled={busy} onClick={() => run(() => transitionRefund(showToast, reload, row.id, 'reject', '退款已驳回'))}>
+        <button disabled={busy || stale} onClick={() => {
+          if (stale) return;
+          run(() => transitionRefund(showToast, reload, row.id, 'reject', '退款已驳回'));
+        }}>
           驳回
         </button>
-        <button disabled={busy} onClick={() => run(() => transitionRefund(showToast, reload, row.id, 'cancel', '退款已取消'))}>
+        <button disabled={busy || stale} onClick={() => {
+          if (stale) return;
+          run(() => transitionRefund(showToast, reload, row.id, 'cancel', '退款已取消'));
+        }}>
           取消
         </button>
       </span>
@@ -150,7 +163,10 @@ function RefundRowActions({
   if (status === 'PENDING_REFUND') {
     return (
       <span>
-        <button disabled={busy} onClick={() => run(() => transitionRefund(showToast, reload, row.id, 'process', '退款已完成'))}>
+        <button disabled={busy || stale} onClick={() => {
+          if (stale) return;
+          run(() => transitionRefund(showToast, reload, row.id, 'process', '退款已完成'));
+        }}>
           确认退款
         </button>
       </span>

@@ -36,8 +36,10 @@ export function FinanceWorkflowPage() {
     ),
     placeholderData: (previous) => previous,
   });
+  const stale = cards.isPlaceholderData || debts.isPlaceholderData;
 
   async function run(path: string, id: string, body: Record<string, unknown>, method: 'POST' | 'PATCH' = 'POST') {
+    if (stale) return;
     try {
       await apiRequest<Record<string, unknown>>(path, { method, body: JSON.stringify(body) });
       showToast('操作成功', 'success');
@@ -48,7 +50,7 @@ export function FinanceWorkflowPage() {
   }
 
   async function submitAmount(value: string) {
-    if (!action || submittingRef.current) return;
+    if (!action || submittingRef.current || stale) return;
     const amount = toCents(value);
     if (!value.trim() || !Number.isFinite(amount) || amount <= 0) {
       showToast('请输入有效金额', 'error');
@@ -80,8 +82,8 @@ export function FinanceWorkflowPage() {
       label: '操作',
       render: (row) => (
         <>
-          <button onClick={() => setAction({ kind: 'recharge', id: String(row.id), title: '会员卡充值' })}>充值</button>
-          <button onClick={() => setAction({ kind: 'consume', id: String(row.id), title: '会员卡消费' })}>消费</button>
+          <button disabled={stale} onClick={() => setAction({ kind: 'recharge', id: String(row.id), title: '会员卡充值' })}>充值</button>
+          <button disabled={stale} onClick={() => setAction({ kind: 'consume', id: String(row.id), title: '会员卡消费' })}>消费</button>
         </>
       ),
     },
@@ -94,7 +96,7 @@ export function FinanceWorkflowPage() {
     {
       key: 'actions',
       label: '操作',
-      render: (row) => <button onClick={() => setAction({ kind: 'debt', id: String(row.id), title: '欠费还款' })}>还款</button>,
+      render: (row) => <button disabled={stale} onClick={() => setAction({ kind: 'debt', id: String(row.id), title: '欠费还款' })}>还款</button>,
     },
   ];
 

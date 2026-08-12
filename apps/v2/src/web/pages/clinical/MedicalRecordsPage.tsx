@@ -151,9 +151,9 @@ export function MedicalRecordsPage() {
         return (
           <>
             <ReloadSync reload={ctx.reload} onReload={(reload) => { reloadRef.current = reload; }} />
-            <button onClick={() => openEditRequest(row)}>申请修改</button>
+            <button disabled={ctx.stale} onClick={() => { if (ctx.stale) return; openEditRequest(row); }}>申请修改</button>
             {String(row.editRequestStatus ?? '') === 'PENDING' && (
-              <button onClick={() => { setReviewNote(''); setReviewTarget(row); }}>审核</button>
+              <button disabled={ctx.stale} onClick={() => { if (ctx.stale) return; setReviewNote(''); setReviewTarget(row); }}>审核</button>
             )}
           </>
         );

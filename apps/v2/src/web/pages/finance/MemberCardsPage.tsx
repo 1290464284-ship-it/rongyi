@@ -119,11 +119,11 @@ export function MemberCardsPage() {
         rowActions={(row, ctx) => (
           <>
             <ReloadSync reload={ctx.reload} onReload={(reload) => { reloadRef.current = reload; }} />
-            <button onClick={() => openAction(row.id, 'RECHARGE')}>充值</button>
-            <button onClick={() => openAction(row.id, 'CONSUME')}>消费</button>
-            <button onClick={() => openAction(row.id, 'POINTS')}>积分</button>
-            <button onClick={() => openPlan(row)}>折扣方案</button>
-            <button onClick={() => openQuote(row)}>报价试算</button>
+            <button disabled={ctx.stale} onClick={() => openAction(row.id, 'RECHARGE', ctx.stale)}>充值</button>
+            <button disabled={ctx.stale} onClick={() => openAction(row.id, 'CONSUME', ctx.stale)}>消费</button>
+            <button disabled={ctx.stale} onClick={() => openAction(row.id, 'POINTS', ctx.stale)}>积分</button>
+            <button disabled={ctx.stale} onClick={() => openPlan(row, ctx.stale)}>折扣方案</button>
+            <button disabled={ctx.stale} onClick={() => openQuote(row, ctx.stale)}>报价试算</button>
           </>
         )}
         renderForm={(ctx) => (
@@ -185,18 +185,21 @@ export function MemberCardsPage() {
     </>
   );
 
-  function openAction(id: string, kind: 'RECHARGE' | 'CONSUME' | 'POINTS') {
+  function openAction(id: string, kind: 'RECHARGE' | 'CONSUME' | 'POINTS', stale: boolean) {
+    if (stale) return;
     setActionTarget(id);
     setActionKind(kind);
     setActionValue('');
   }
 
-  function openPlan(row: CardRow) {
+  function openPlan(row: CardRow, stale: boolean) {
+    if (stale) return;
     setActionTarget(row.id);
     setActionKind('PLAN');
   }
 
-  function openQuote(row: CardRow) {
+  function openQuote(row: CardRow, stale: boolean) {
+    if (stale) return;
     setActionTarget(row.id);
     setActionKind('QUOTE');
   }

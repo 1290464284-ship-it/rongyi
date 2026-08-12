@@ -8,6 +8,17 @@ const SKIPPED_TAGS = new Set(['HEAD', 'SCRIPT', 'STYLE', 'LINK', 'META', 'TITLE'
 
 const containerLayers = new Map<Element, HTMLElement[]>();
 const layerOrder: HTMLElement[] = [];
+const inertedElements = new Set<HTMLElement>();
+
+function setElementInert(element: HTMLElement, shouldBeInert: boolean): void {
+  if (shouldBeInert) {
+    element.setAttribute('inert', '');
+    inertedElements.add(element);
+  } else {
+    element.removeAttribute('inert');
+    inertedElements.delete(element);
+  }
+}
 
 function refreshContainer(container: Element): void {
   const layers = containerLayers.get(container) ?? [];
@@ -25,12 +36,24 @@ function refreshContainer(container: Element): void {
 function refreshRoot(): void {
   const root = document.getElementById('root') ?? document.body;
   const top = layerOrder[layerOrder.length - 1] ?? null;
-  for (const child of Array.from(root.children)) {
-    if (!(child instanceof HTMLElement) || SKIPPED_TAGS.has(child.tagName)) continue;
-    const element = child as HTMLElement;
-    const shouldBeInert = top ? !element.contains(top) : false;
-    if (shouldBeInert) element.setAttribute('inert', '');
-    else element.removeAttribute('inert');
+  if (!top) {
+    for (const element of inertedElements) element.removeAttribute('inert');
+    inertedElements.clear();
+    return;
+  }
+  // 沿 layer 的父链逐层把不含最上层弹窗的兄弟分支置 inert，
+  // 覆盖 root > shell > sidebar + page 这类嵌套布局，而不只是根直接子节点。
+  const ancestors: Element[] = [root];
+  let node: Element | null = top.parentElement;
+  while (node && node !== root) {
+    ancestors.unshift(node);
+    node = node.parentElement;
+  }
+  for (const container of ancestors) {
+    for (const child of Array.from(container.children)) {
+      if (!(child instanceof HTMLElement) || SKIPPED_TAGS.has(child.tagName)) continue;
+      setElementInert(child as HTMLElement, !child.contains(top));
+    }
   }
 }
 

@@ -13,6 +13,9 @@ export const SYNC_RESOURCES: Record<string, string> = {
   PurchaseOrder: 'purchaseOrders',
 };
 
+/** SyncChange 落库失败必须回滚整批业务写入，否则其他设备永远拉不到该变更。 */
+export class SyncChangeRecordError extends Error {}
+
 export function assertSyncTablePermission(context: AppContext, table: string): void {
   const resource = SYNC_RESOURCES[table];
   const permission = resource ? RESOURCE_PERMISSION_MAP[resource] : undefined;

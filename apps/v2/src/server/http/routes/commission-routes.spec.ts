@@ -193,4 +193,22 @@ describe('commission routes', () => {
       .expect(200);
     expect(filtered.body.data.every((row: { doctorId: string }) => row.doctorId === 'user-admin-001')).toBe(true);
   });
+
+  it('parses string booleans strictly for enabled', async () => {
+    const created = await request(app)
+      .post('/api/v2/commission/rules')
+      .send({ name: '关闭规则', rateType: 'PERCENT', rate: 100, enabled: 'false' })
+      .expect(201);
+    expect(created.body.data.enabled).toBe(0);
+    const ruleId = created.body.data.id as string;
+    await request(app)
+      .patch(`/api/v2/commission/rules/${ruleId}`)
+      .send({ enabled: '0' })
+      .expect(200);
+    expect((db.prepare('SELECT enabled FROM CommissionRule WHERE id = ?').get(ruleId) as { enabled: number }).enabled).toBe(0);
+    await request(app)
+      .post('/api/v2/commission/rules')
+      .send({ name: '非法布尔', rateType: 'PERCENT', rate: 100, enabled: 'yes' })
+      .expect(400);
+  });
 });

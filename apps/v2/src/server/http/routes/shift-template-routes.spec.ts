@@ -244,4 +244,22 @@ describe('shift template routes', () => {
       .expect(409);
     expect(inactive.body.code).toBe('CONFLICT');
   });
+
+  it('parses string booleans strictly for active and rejects impossible weekStart dates', async () => {
+    const created = await request(app)
+      .post('/api/v2/shift-templates')
+      .send({ name: '晚班', startTime: '14:00', endTime: '22:00', active: 'false' })
+      .expect(201);
+    const templateId = created.body.data.id as string;
+    expect((db.prepare('SELECT active FROM ShiftTemplate WHERE id = ?').get(templateId) as { active: number }).active).toBe(0);
+    await request(app).patch(`/api/v2/shift-templates/${templateId}`).send({ active: true }).expect(200);
+    await request(app)
+      .post('/api/v2/shift-templates')
+      .send({ name: '非法布尔', startTime: '09:00', endTime: '10:00', active: 'yes' })
+      .expect(400);
+    await request(app)
+      .post('/api/v2/shift-templates/generate')
+      .send({ templateId, userId: 'user-doctor-001', weekStart: '2026-02-30' })
+      .expect(400);
+  });
 });

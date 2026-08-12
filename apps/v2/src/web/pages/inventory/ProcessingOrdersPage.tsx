@@ -235,15 +235,18 @@ export function ProcessingOrdersPage() {
         canDelete
         rowActions={(row, ctx) => (
           <>
-            <button onClick={() => void openFlow(row)}>流程</button>
+            <button disabled={ctx.stale} onClick={() => { if (ctx.stale) return; void openFlow(row); }}>流程</button>
             <ProcessingStatusSelect
               rowId={row.id}
-              onTransition={(id, status) => transitionProcessingOrder(showToast, ctx.reload, id, status)}
+              onTransition={(id, status) => {
+                if (ctx.stale) return;
+                transitionProcessingOrder(showToast, ctx.reload, id, status);
+              }}
             />
             {row.settleStatus === 'SETTLED' ? (
-              <UnsettleButton onDone={() => unsettleProcessingOrder(row, ctx.reload)} />
+              <UnsettleButton disabled={ctx.stale} onDone={() => unsettleProcessingOrder(row, ctx.reload)} />
             ) : (
-              <button onClick={() => openSettle(row, ctx.reload)}>结算</button>
+              <button disabled={ctx.stale} onClick={() => { if (ctx.stale) return; openSettle(row, ctx.reload); }}>结算</button>
             )}
           </>
         )}
@@ -296,10 +299,10 @@ export function ProcessingOrdersPage() {
 }
 
 /** 行内“撤销结算”按钮：busy 期间禁用，防止双击重复撤销。 */
-function UnsettleButton({ onDone }: { onDone: () => Promise<void> }) {
+function UnsettleButton({ onDone, disabled }: { onDone: () => Promise<void>; disabled?: boolean }) {
   const { busy, run } = useAsyncAction();
   return (
-    <button disabled={busy} onClick={() => run(onDone)}>
+    <button disabled={busy || disabled} onClick={() => { if (disabled) return; run(onDone); }}>
       {busy ? '撤销中...' : '撤销结算'}
     </button>
   );

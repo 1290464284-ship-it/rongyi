@@ -9,10 +9,9 @@ import type { AppContext } from '../../../domain/contracts';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { recordSyncChange, type SyncChangeOperation } from '../../infrastructure/sync-change';
 import { hashRefreshToken, newRefreshToken, safeJsonObject } from './common';
-import { assertSyncPushShape, assertSyncTablePermission, SYNC_RESOURCES } from './sync-permissions';
+import { assertSyncPushShape, assertSyncTablePermission, SyncChangeRecordError, SYNC_RESOURCES } from './sync-permissions';
 import type { SyncPushPayload, SyncPushResult } from './sync-push-queue';
 import { sharedDbWriteQueue } from './serial-queue';
-
 const SYNC_ALLOWED_TABLES = new Set([
   'Patient',
   'Appointment',
@@ -22,14 +21,11 @@ const SYNC_ALLOWED_TABLES = new Set([
   'FollowUp',
   'PurchaseOrder',
 ]);
-
 export class SyncService {
   constructor(private readonly db: Database.Database) {}
-
   async push(payload: SyncPushPayload, context: AppContext): Promise<SyncPushResult> {
     return sharedDbWriteQueue(this.db)(() => this.executePush(payload, context));
   }
-
   pull(since: string, deviceId: string, deviceToken: string, context: AppContext): { changes: Array<Record<string, unknown>>; cursor: string; serverTime: string } {
     if (!context.clinicId) throw new AppError('FORBIDDEN', 'Sync requires a clinic scope', 403);
     if (typeof since !== 'string' || since.length === 0 || since.length > 200) {
@@ -59,7 +55,6 @@ export class SyncService {
     const cursor = last ? `${String(last.createdAt)}|${String(last.rowid)}` : since;
     return { changes, cursor, serverTime: new Date().toISOString() };
   }
-
   /**
    * 全量快照：离线超过 SyncChange 保留窗口的设备用它做基线重建。
    * 不带 table 时返回各表总数元数据；带 table 时按 offset/limit 分页返回，
@@ -92,7 +87,6 @@ export class SyncService {
       ).get(...tenantParams(context.clinicId)) as { total: number };
       return Number(row.total);
     };
-
     if (options.table) {
       if (!SYNC_ALLOWED_TABLES.has(options.table) || !tableExists(options.table)) {
         throw new ValidationError('Sync table is not allowed');
@@ -122,7 +116,6 @@ export class SyncService {
         truncated: offset + rows.length < total,
       };
     }
-
     const tables: Record<string, { total: number; truncated: boolean }> = {};
     for (const table of SYNC_ALLOWED_TABLES) {
       if (!tableExists(table)) continue;
@@ -131,7 +124,6 @@ export class SyncService {
     }
     return { serverTime: new Date().toISOString(), tables };
   }
-
   private async executePush(payload: SyncPushPayload, context: AppContext): Promise<SyncPushResult> {
     if (!context.clinicId) throw new AppError('FORBIDDEN', 'Sync requires a clinic scope', 403);
     if (!['BOSS', 'ADMIN'].includes(context.role)) {
@@ -217,12 +209,17 @@ export class SyncService {
               if (existing) repo.updateSync(entity, context);
               else repo.insertSync(entity, context);
             }
-            // B-M1：业务写入已完成（批事务内），此后 record() 若失败，客户端
-            // 收到错误后不应盲目重试——写入可能已生效，重试可能造成重复变更。
+            // B-M1：record() 失败必须回滚本批，否则 SyncChange 缺失且业务已生效。
             wrote = true;
-            this.record(change.tableName, change.recordId, change.operation, payload.deviceId, context.clinicId);
+            try {
+              this.record(change.tableName, change.recordId, change.operation, payload.deviceId, context.clinicId);
+            } catch (error) {
+              if (isSystematicSqliteError(error)) throw error;
+              throw new SyncChangeRecordError(error instanceof Error ? error.message : String(error));
+            }
             batchAccepted += 1;
           } catch (error) {
+            if (error instanceof SyncChangeRecordError) throw error;
             /* v8 ignore start -- systematic SQLite errors carry a `code` (SQLITE_FULL/BUSY/IOERR/...) and abort the batch */
             if (isSystematicSqliteError(error)) throw error;
             /* v8 ignore stop */
@@ -248,6 +245,13 @@ export class SyncService {
             // Preserve the original error if ROLLBACK itself fails.
           }
         }
+        if (error instanceof SyncChangeRecordError) {
+          const message = `SyncChange record failed; batch rolled back: ${error.message}`;
+          for (let index = 0; index < batch.length; index += 1) {
+            if (!failedIndexes.has(index)) errors.push({ recordId: batch[index].recordId, error: message });
+          }
+          return { accepted, failed: errors.length, errors, conflicts };
+        }
         if (!(error instanceof Error) || !isSystematicSqliteError(error)) throw error;
         const message = error.message;
         for (let index = 0; index < batch.length; index += 1) {
@@ -261,7 +265,6 @@ export class SyncService {
     }
     return { accepted, failed: errors.length, errors, conflicts };
   }
-
   listConflicts(context: AppContext): Array<Record<string, unknown>> {
     if (!context.clinicId) throw new AppError('FORBIDDEN', 'Sync requires a clinic scope', 403);
     if (!['BOSS', 'ADMIN'].includes(context.role)) {

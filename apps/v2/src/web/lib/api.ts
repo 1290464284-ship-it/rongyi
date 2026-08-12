@@ -216,6 +216,8 @@ async function fetchAuthenticated(
   if (response.status === 401 && retry) {
     const refreshed = await refreshAccessToken();
     if (refreshed) return fetchAuthenticated(input, init, false);
+    // 刷新失败且原请求为 401：会话确实已失效，全局通知 UI 登出（与 apiRequest 一致）。
+    notifySessionExpired();
   }
   return response;
 }

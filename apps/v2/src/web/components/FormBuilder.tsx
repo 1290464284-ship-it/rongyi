@@ -123,7 +123,7 @@ function RelationSelect({
     }
   }
   const items = accumulated;
-  const total = query.data?.total ?? accumulated.length;
+  const total = query.isPlaceholderData ? accumulated.length : (query.data?.total ?? accumulated.length);
   const MAX_LOAD_PAGES = 10;
   const canLoadMore = page * 50 < total;
   const loadCapped = canLoadMore && page >= MAX_LOAD_PAGES;

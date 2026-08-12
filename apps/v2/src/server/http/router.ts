@@ -16,6 +16,14 @@ import { maskPhoneForExport } from '../application/service-modules/operations';
 
 export function createResourceRouter(db: Database.Database): Router {
   const router = Router();
+  // 状态机资源在通用创建时的默认初始状态；客户端显式传值会被写保护剥掉。
+  const STATE_MACHINE_DEFAULT_STATUS: Record<string, string> = {
+    appointments: 'BOOKED',
+    visits: 'IN_PROGRESS',
+    treatments: 'PLANNED',
+    firstExams: 'DRAFT',
+    prescriptions: 'DRAFT',
+  };
 
   // rolePermissions 的 role 是业务字段（配置某角色的权限），需豁免通用写保护；
   // 其余资源一律禁止客户端写 role 等系统字段（防提权）。
@@ -68,7 +76,16 @@ export function createResourceRouter(db: Database.Database): Router {
     try {
       const resource = res.locals.resource as ResourceDefinition;
       if (!resource.capabilities.create) throw new NotFoundError('Create is not supported for this resource');
-      const payload = stripProtectedWriteFields(validatePayload(resource, req.body ?? {}), roleExempt(resource), resource.name);
+      const rawPayload = { ...(req.body ?? {}) };
+      const defaultStatus = STATE_MACHINE_DEFAULT_STATUS[resource.name];
+      if (defaultStatus && rawPayload.status === undefined) rawPayload.status = defaultStatus;
+      const payload = stripProtectedWriteFields(
+        validatePayload(resource, rawPayload),
+        roleExempt(resource),
+        resource.name,
+        { protectStateMachine: true },
+      );
+      if (defaultStatus && payload.status === undefined) payload.status = defaultStatus;
       const requestId = typeof req.header('idempotency-key') === 'string' ? req.header('idempotency-key')! : '';
       const result = await withIdempotency(db, {
         operation: `resource.create.${resource.name}`,
@@ -142,7 +159,12 @@ export function createResourceRouter(db: Database.Database): Router {
     try {
       const resource = res.locals.resource as ResourceDefinition;
       if (!resource.capabilities.update) throw new NotFoundError('Update is not supported for this resource');
-      const payload = stripProtectedWriteFields(validatePayload(resource, req.body ?? {}, { partial: true }), roleExempt(resource), resource.name);
+      const payload = stripProtectedWriteFields(
+        validatePayload(resource, req.body ?? {}, { partial: true }),
+        roleExempt(resource),
+        resource.name,
+        { protectStateMachine: true },
+      );
       const repo = new SqliteRepository(db, resource);
       // 治疗计划明细：price/quantity 允许经通用 CRUD 维护（前端计划编辑器写未划价明细），
       // 但已划价明细（billed=1）服务端强制不可改价/改量，与 TreatmentPlanBillingService 状态机一致。

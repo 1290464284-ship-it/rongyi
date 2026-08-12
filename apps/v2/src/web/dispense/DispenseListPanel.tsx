@@ -28,12 +28,13 @@ export function DispenseListPanel({
   setDispensePage: Dispatch<SetStateAction<number>>;
 }) {
   const { showToast } = useToast();
+  const stale = dispenses.isPlaceholderData;
   const [action, setAction] = useState<{ mode: 'dispense' | 'return'; row: DispenseRow } | null>(null);
   const [editDispenseId, setEditDispenseId] = useState<string | null>(null);
   const [deleteDispenseTarget, setDeleteDispenseTarget] = useState<DispenseRow | null>(null);
 
   async function confirmDeleteDispense() {
-    if (!deleteDispenseTarget) return;
+    if (!deleteDispenseTarget || stale) return;
     try {
       await apiRequest(`/dispenses/${deleteDispenseTarget.id}`, { method: 'DELETE' });
       showToast('发药单已删除', 'success');
@@ -66,15 +67,15 @@ export function DispenseListPanel({
         return (
           <span className="row-actions">
             {(status === 'PENDING' || status === 'PARTIAL') && (
-              <button type="button" onClick={() => setAction({ mode: 'dispense', row })}>发药</button>
+              <button type="button" disabled={stale} onClick={() => setAction({ mode: 'dispense', row })}>发药</button>
             )}
             {(status === 'DISPENSED' || status === 'PARTIAL') && (
-              <button type="button" onClick={() => setAction({ mode: 'return', row })}>退药</button>
+              <button type="button" disabled={stale} onClick={() => setAction({ mode: 'return', row })}>退药</button>
             )}
             {status === 'PENDING' && (
               <>
-                <button type="button" onClick={() => setEditDispenseId(row.id)}>编辑</button>
-                <button type="button" onClick={() => setDeleteDispenseTarget(row)}>删除</button>
+                <button type="button" disabled={stale} onClick={() => setEditDispenseId(row.id)}>编辑</button>
+                <button type="button" disabled={stale} onClick={() => setDeleteDispenseTarget(row)}>删除</button>
               </>
             )}
           </span>

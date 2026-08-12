@@ -162,10 +162,10 @@ export function TreatmentPlansPage() {
         }}
         rowActions={(row, ctx) => (
           <>
-            <button onClick={() => setBillingTarget({ row, reload: ctx.reload })}>折扣</button>
-            <button onClick={() => setFollowUpTarget({ row, reload: ctx.reload })}>回访</button>
-            <button onClick={() => void requestPrint(row, showToast, ctx.reload, setPrintResult)}>打印</button>
-            <button onClick={() => setSignTarget({ row, reload: ctx.reload })}>签字</button>
+            <button disabled={ctx.stale} onClick={() => { if (ctx.stale) return; setBillingTarget({ row, reload: ctx.reload }); }}>折扣</button>
+            <button disabled={ctx.stale} onClick={() => { if (ctx.stale) return; setFollowUpTarget({ row, reload: ctx.reload }); }}>回访</button>
+            <button disabled={ctx.stale} onClick={() => { if (ctx.stale) return; void requestPrint(row, showToast, ctx.reload, setPrintResult); }}>打印</button>
+            <button disabled={ctx.stale} onClick={() => { if (ctx.stale) return; setSignTarget({ row, reload: ctx.reload }); }}>签字</button>
           </>
         )}
         renderForm={(ctx) => (

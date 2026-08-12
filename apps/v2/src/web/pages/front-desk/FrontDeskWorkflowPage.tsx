@@ -34,8 +34,10 @@ export function FrontDeskWorkflowPage() {
     ),
     placeholderData: (previous) => previous,
   });
+  const stale = registrations.isPlaceholderData;
 
   async function transition(id: string, status: string) {
+    if (stale) return;
     const key = `${id}:${status}`;
     if (transitionRef.current) return;
     transitionRef.current = true;
@@ -68,16 +70,16 @@ export function FrontDeskWorkflowPage() {
           renderActions={(row) => (
             <div className="kanban-actions">
               {(registrationTransitions[String(row.status)] ?? []).map((next) => (
-                <button key={next} disabled={transitionKey !== null} onClick={() => void transition(String(row.id), next)}>
+                <button key={next} disabled={transitionKey !== null || stale} onClick={() => void transition(String(row.id), next)}>
                   {STATUS_LABELS[next] ?? next}
                 </button>
               ))}
               {row.status === 'REGISTERED' && (
-                <button onClick={() => setActiveDialog({ kind: 'triage', row })}>分诊</button>
+                <button disabled={stale} onClick={() => setActiveDialog({ kind: 'triage', row })}>分诊</button>
               )}
               {row.status === 'TRIAGED' && <span className="triage-badge">已分诊</span>}
-              <button onClick={() => setActiveDialog({ kind: 'charge', row })}>划价</button>
-              <button onClick={() => setActiveDialog({ kind: 'followup', row })}>回访</button>
+              <button disabled={stale} onClick={() => setActiveDialog({ kind: 'charge', row })}>划价</button>
+              <button disabled={stale} onClick={() => setActiveDialog({ kind: 'followup', row })}>回访</button>
             </div>
           )}
         />

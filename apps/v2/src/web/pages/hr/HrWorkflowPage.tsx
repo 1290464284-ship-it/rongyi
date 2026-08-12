@@ -20,6 +20,7 @@ export function HrWorkflowPage() {
     ),
     placeholderData: (previous) => previous,
   });
+  const stale = leaves.isPlaceholderData;
 
   if (leaves.isLoading) return <LoadingState label="请假数据加载中..." />;
   if (leaves.error) {
@@ -32,6 +33,7 @@ export function HrWorkflowPage() {
   }
 
   async function approve(id: string, approved: boolean) {
+    if (stale) return;
     try {
       await apiRequest(`/hr/leaves/${id}/approve`, {
         method: 'PATCH',
@@ -56,7 +58,7 @@ export function HrWorkflowPage() {
     {
       key: 'actions',
       label: '操作',
-      render: (row) => <ApproveButtons id={String(row.id)} onDone={approve} />,
+      render: (row) => <ApproveButtons id={String(row.id)} onDone={approve} disabled={stale} />,
     },
   ];
 
@@ -79,12 +81,12 @@ export function HrWorkflowPage() {
 }
 
 /** 行内审批按钮：busy 期间同时禁用批准/驳回，防止双击重复审批。 */
-function ApproveButtons({ id, onDone }: { id: string; onDone: (id: string, approved: boolean) => Promise<void> }) {
+function ApproveButtons({ id, onDone, disabled }: { id: string; onDone: (id: string, approved: boolean) => Promise<void>; disabled?: boolean }) {
   const { busy, run } = useAsyncAction();
   return (
     <>
-      <button disabled={busy} onClick={() => run(() => onDone(id, true))}>批准</button>
-      <button className="danger" disabled={busy} onClick={() => run(() => onDone(id, false))}>驳回</button>
+      <button disabled={busy || disabled} onClick={() => run(() => onDone(id, true))}>批准</button>
+      <button className="danger" disabled={busy || disabled} onClick={() => run(() => onDone(id, false))}>驳回</button>
     </>
   );
 }

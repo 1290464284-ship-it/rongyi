@@ -82,12 +82,17 @@ export function ClinicalWorkflowPage() {
     placeholderData: (previous) => previous,
   });
   const queries = { registrations, visits, firstExams, treatments } as Record<typeof resources[number], ResourcePageQuery>;
+  const stale = queries.registrations.isPlaceholderData
+    || queries.visits.isPlaceholderData
+    || queries.firstExams.isPlaceholderData
+    || queries.treatments.isPlaceholderData;
   const [activeDialog, setActiveDialog] = useState<WorkbenchDialog | null>(null);
   const [transitionKey, setTransitionKey] = useState<string | null>(null);
   // ref 同步防重：state 更新前同一次点击风暴内连续点击也能被拦下，避免并发 PATCH。
   const transitionRef = useRef(false);
 
   async function transition(resource: string, id: string, status: string) {
+    if (stale) return;
     const key = `${resource}:${id}:${status}`;
     if (transitionRef.current) return;
     transitionRef.current = true;
@@ -125,13 +130,13 @@ export function ClinicalWorkflowPage() {
     return (
       <div className="kanban-actions">
         {(transitions.registrations?.[String(row.status)] ?? []).map((next) => (
-          <button key={next} disabled={transitionKey !== null} onClick={() => transition('registrations', String(row.id), next)}>
+          <button key={next} disabled={transitionKey !== null || stale} onClick={() => transition('registrations', String(row.id), next)}>
             {STATUS_LABELS[next] ?? next}
           </button>
         ))}
         {row.status === 'TRIAGED' && <span className="triage-badge">已分诊</span>}
-        <button onClick={() => setActiveDialog({ kind: 'record', row })}>病历</button>
-        <button onClick={() => setActiveDialog({ kind: 'followup', row })}>回访</button>
+        <button disabled={stale} onClick={() => setActiveDialog({ kind: 'record', row })}>病历</button>
+        <button disabled={stale} onClick={() => setActiveDialog({ kind: 'followup', row })}>回访</button>
       </div>
     );
   }
@@ -170,7 +175,7 @@ export function ClinicalWorkflowPage() {
             render: (row: Record<string, unknown>) => (
               <>
                 {(transitions[resource]?.[String(row.status)] ?? []).map((next) => (
-                  <button key={next} disabled={transitionKey !== null} onClick={() => transition(resource, String(row.id), next)}>
+                  <button key={next} disabled={transitionKey !== null || stale} onClick={() => transition(resource, String(row.id), next)}>
                     {STATUS_LABELS[next] ?? next}
                   </button>
                 ))}

@@ -14,6 +14,7 @@ import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { userBelongsToClinic } from './common';
+import { isValidCalendarDate } from '../../http/validation';
 import type { AppContext } from '../../../domain/contracts';
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -295,6 +296,9 @@ function normalizeWeekStart(value: string): string {
   const match = DATE_RE.exec(trimmed);
   let date: Date;
   if (match) {
+    if (!isValidCalendarDate(Number(match[1]), Number(match[2]), Number(match[3]))) {
+      throw new ValidationError('weekStart 格式应为 YYYY-MM-DD');
+    }
     date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
   } else {
     date = new Date(trimmed);

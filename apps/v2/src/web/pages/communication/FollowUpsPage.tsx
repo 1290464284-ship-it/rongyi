@@ -29,6 +29,7 @@ export function FollowUpsPage() {
     },
     placeholderData: (previous) => previous,
   });
+  const stale = query.isPlaceholderData;
   const summary = useQuery({
     queryKey: ['followup-summary'],
     queryFn: () => apiRequest<{ total: number; overdue: number; today: number; upcoming: number }>('/follow-ups/reminders/summary'),
@@ -52,6 +53,7 @@ export function FollowUpsPage() {
   }
 
   async function batchGenerate() {
+    if (stale) return;
     try {
       await apiRequest('/follow-ups/batch-generate', { method: 'POST', body: JSON.stringify({ limit: 50 }) });
       showToast('批量生成完成', 'success');
@@ -62,6 +64,7 @@ export function FollowUpsPage() {
   }
 
   async function submitCompletion(resultText: string) {
+    if (stale) return;
     const result = resultText.trim() || undefined;
     try {
       if (completion?.kind === 'single') {
@@ -107,7 +110,7 @@ export function FollowUpsPage() {
   }
 
   async function submitExecution() {
-    if (!executionId) return;
+    if (!executionId || stale) return;
     const patientRating = executionForm.patientRating === '' ? null : Number(executionForm.patientRating);
     const painLevel = executionForm.painLevel === '' ? null : Number(executionForm.painLevel);
     if (executionForm.executionStatus === 'DONE' && executionForm.contactedAt.trim() === '') {
@@ -145,7 +148,7 @@ export function FollowUpsPage() {
       render: (row) => (
         <input
           type="checkbox"
-          disabled={query.isFetching}
+          disabled={query.isFetching || stale}
           checked={selectedIds.includes(String(row.id))}
           onChange={(event) => {
             const id = String(row.id);
@@ -167,8 +170,8 @@ export function FollowUpsPage() {
       label: '操作',
       render: (row) => (
         <span>
-          <button onClick={() => setCompletion({ kind: 'single', id: String(row.id) })}>完成随访</button>
-          <button onClick={() => openExecution(String(row.id))}>执行随访</button>
+          <button disabled={stale} onClick={() => setCompletion({ kind: 'single', id: String(row.id) })}>完成随访</button>
+          <button disabled={stale} onClick={() => openExecution(String(row.id))}>执行随访</button>
         </span>
       ),
     },
@@ -197,8 +200,8 @@ export function FollowUpsPage() {
         <h1>随访管理</h1>
         {activeTab === 'list' && (
           <>
-            <button onClick={() => void runGenerate(batchGenerate)} disabled={generating}>{generating ? '生成中...' : '批量生成随访'}</button>
-            <button onClick={() => setCompletion({ kind: 'batch' })} disabled={selectedIds.length === 0}>
+            <button onClick={() => void runGenerate(batchGenerate)} disabled={generating || stale}>{generating ? '生成中...' : '批量生成随访'}</button>
+            <button onClick={() => setCompletion({ kind: 'batch' })} disabled={selectedIds.length === 0 || stale}>
               批量完成
             </button>
             <button onClick={exportOverdue}>导出逾期</button>

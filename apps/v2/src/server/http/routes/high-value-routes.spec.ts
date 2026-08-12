@@ -89,4 +89,16 @@ describe('high value routes', () => {
       .expect(200);
     expect(res.body.data).toEqual({ itemId: 'inventory-demo-001', isHighValue: false, catalogId: null });
   });
+
+  it('parses string booleans strictly for isHighValue', async () => {
+    await request(app)
+      .post('/api/v2/inventory-items/inventory-demo-001/high-value')
+      .send({ isHighValue: 'false', catalogId: 'route-hv-cat' })
+      .expect(200);
+    expect((db.prepare('SELECT isHighValue FROM InventoryItem WHERE id = ?').get('inventory-demo-001') as { isHighValue: number }).isHighValue).toBe(0);
+    await request(app)
+      .post('/api/v2/inventory-items/inventory-demo-001/high-value')
+      .send({ isHighValue: 'maybe' })
+      .expect(400);
+  });
 });
