@@ -48,5 +48,15 @@ describe('OpenAPI route inventory coverage', () => {
     for (const route of live) {
       expect(indexed.has(`${route.method} ${route.path}`), `${route.method} ${route.path}`).toBe(true);
     }
+
+    const generated = JSON.parse(
+      fs.readFileSync(path.resolve(import.meta.dirname, '../../../openapi.generated.json'), 'utf8'),
+    ) as { paths: Record<string, Record<string, unknown>> };
+    for (const route of live) {
+      const key = route.path.startsWith('/api/v2')
+        ? route.path.slice('/api/v2'.length) || '/'
+        : route.path;
+      expect(generated.paths[key]?.[route.method.toLowerCase()], `${route.method} ${key}`).toBeDefined();
+    }
   });
 });

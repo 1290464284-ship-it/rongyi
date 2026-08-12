@@ -32,5 +32,60 @@ const outPath = path.resolve(import.meta.dirname, '../openapi-routes.json');
 fs.writeFileSync(outPath, `${JSON.stringify(routes, null, 2)}\n`);
 console.log(`Wrote ${routes.length} routes to ${outPath}`);
 
+const generatedPath = path.resolve(import.meta.dirname, '../openapi.generated.json');
+const generatedPaths: Record<string, Record<string, unknown>> = {};
+for (const route of routes) {
+  const key = route.path.startsWith('/api/v2')
+    ? route.path.slice('/api/v2'.length) || '/'
+    : route.path;
+  generatedPaths[key] = {
+    ...(generatedPaths[key] ?? {}),
+    [route.method.toLowerCase()]: {
+      summary: `${route.method} ${key}`,
+      responses: {
+        '200': {
+          description: 'Successful response',
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/GenericSuccessEnvelope' },
+            },
+          },
+        },
+        default: {
+          description: 'Error response',
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' },
+            },
+          },
+        },
+      },
+    },
+  };
+}
+fs.writeFileSync(
+  generatedPath,
+  `${JSON.stringify({
+    openapi: '3.0.3',
+    info: { title: 'Dental Clinic V2 Generated Route Inventory', version: '2.2.0' },
+    paths: generatedPaths,
+    components: {
+      schemas: {
+        GenericSuccessEnvelope: {
+          type: 'object',
+          required: ['success', 'data'],
+          properties: { success: { const: true }, data: {} },
+        },
+        ErrorEnvelope: {
+          type: 'object',
+          required: ['success', 'code', 'message'],
+          properties: { success: { const: false }, code: { type: 'string' }, message: { type: 'string' } },
+        },
+      },
+    },
+  }, null, 2)}\n`,
+);
+console.log(`Wrote ${Object.keys(generatedPaths).length} generated OpenAPI paths to ${generatedPath}`);
+
 db.close();
 fs.rmSync(dataDir, { recursive: true, force: true });
