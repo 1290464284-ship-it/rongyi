@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { mutationScore, openApiPathMetrics } from './lib/quality-metrics.mjs';
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -60,25 +61,38 @@ function mutationMetrics() {
   const report = readJson('reports/mutation/mutation.json', null);
   if (!report) return { score: null };
   const files = report.files ? Object.values(report.files) : [];
-  const killed = files.reduce((sum, file) => sum + Number(file.killed ?? 0), 0);
-  const survived = files.reduce((sum, file) => sum + Number(file.survived ?? 0), 0);
-  const noCoverage = files.reduce((sum, file) => sum + Number(file.noCoverage ?? 0), 0);
-  const total = killed + survived + noCoverage;
-  return { score: total ? killed / total : 0 };
+  const summary = files.reduce(
+    (acc, file) => {
+      const fileScore = mutationScore(file.mutants);
+      acc.killed += fileScore.killed;
+      acc.survived += fileScore.survived;
+      acc.noCoverage += fileScore.noCoverage;
+      return acc;
+    },
+    { killed: 0, survived: 0, noCoverage: 0 },
+  );
+  const total = summary.killed + summary.survived + summary.noCoverage;
+  return { ...summary, score: total ? summary.killed / total : null };
 }
 
 const coverage = coverageMetrics();
 const flaky = flakyMetrics();
 const mutation = mutationMetrics();
-const openapiPaths = Object.keys(readJson('openapi.json', { paths: {} }).paths ?? {}).length;
-const routeCount = readJson('openapi-routes.json', []).length;
+const openapi = openApiPathMetrics({
+  coreDoc: readJson('openapi.json', {}),
+  generatedDoc: readJson('openapi.generated.json', {}),
+  routeEntries: readJson('openapi-routes.json', []),
+});
 
 const quality = {
   generatedAt: new Date().toISOString(),
   coverage,
   flaky,
   mutation,
-  openapi: { documentedPaths: openapiPaths, routeInventory: routeCount },
+  openapi: {
+    ...openapi,
+    routeInventory: openapi.routeEntries,
+  },
 };
 
 const outPath = process.env.V2_QUALITY_PATH ?? path.join(appRoot, 'quality-score.json');
