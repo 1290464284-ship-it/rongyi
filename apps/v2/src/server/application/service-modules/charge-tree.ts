@@ -92,15 +92,6 @@ export class ChargeTreeService {
       throw new ValidationError('Patient id is required');
     }
 
-    const catalog = this.db.prepare(
-      `SELECT id, name, category, price, costType
-       FROM TreatmentCatalog
-       WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
-    ).get(catalogId, ...tenantParams(context.clinicId)) as
-      | { id: string; name: string; category: string; price: number; costType: string | null }
-      | undefined;
-    if (!catalog) throw new NotFoundError('Treatment catalog not found');
-
     const quantity = input.quantity ?? 1;
     if (!Number.isSafeInteger(quantity) || quantity <= 0) {
       throw new ValidationError('Quantity must be a positive integer');
@@ -132,16 +123,26 @@ export class ChargeTreeService {
       itemId = input.itemId;
     }
 
-    const rawTotal = Math.round(Number(catalog.price) * quantity);
-    if (!Number.isSafeInteger(rawTotal) || rawTotal > 100_000_000) {
-      throw new ValidationError('Charge item subtotal exceeds maximum allowed amount');
-    }
-    const totalAmount = rawTotal;
     const chargeId = randomUUID();
     const number = generateDocumentNumber('CHG');
-    const remark = input.remark ?? `快捷划价：${catalog.name}`;
+    let totalAmount = 0;
 
     const chargeRun = this.db.transaction(() => {
+      // 目录价格在事务内重新读取，避免“事务外读价 → 价格被改 → 按旧价开单”的 TOCTOU。
+      const catalog = this.db.prepare(
+        `SELECT id, name, category, price, costType
+         FROM TreatmentCatalog
+         WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+      ).get(catalogId, ...tenantParams(context.clinicId)) as
+        | { id: string; name: string; category: string; price: number; costType: string | null }
+        | undefined;
+      if (!catalog) throw new NotFoundError('Treatment catalog not found');
+      const rawTotal = Math.round(Number(catalog.price) * quantity);
+      if (!Number.isSafeInteger(rawTotal) || rawTotal > 100_000_000) {
+        throw new ValidationError('Charge item subtotal exceeds maximum allowed amount');
+      }
+      totalAmount = rawTotal;
+      const remark = input.remark ?? `快捷划价：${catalog.name}`;
       this.db.prepare(
         `INSERT INTO Charge (
            id, clinicId, createdAt, updatedAt, deletedAt,

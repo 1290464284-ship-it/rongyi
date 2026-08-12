@@ -152,6 +152,7 @@ describe('InventoryBatchService', () => {
     const before = db.prepare('SELECT COUNT(*) AS n FROM InventoryBatch').get() as { n: number };
     expect(() => service.create({ itemId: 'item-invalid', initialQuantity: -1 }, context)).toThrow(ValidationError);
     expect(() => service.create({ itemId: 'item-invalid', initialQuantity: 1.5 }, context)).toThrow(ValidationError);
+    expect(() => service.create({ itemId: 'item-invalid', initialQuantity: 1_000_000_001 }, context)).toThrow(ValidationError);
     expect(() => service.create({ itemId: 'item-invalid', initialQuantity: 2, expiryDate: '2026/09/01' }, context)).toThrow(ValidationError);
     expect(() => service.create({ itemId: 'item-invalid', initialQuantity: 2, productionDate: 'not-a-date' }, context)).toThrow(ValidationError);
     expect(() => service.create({ itemId: 'item-missing', initialQuantity: 2 }, context)).toThrow(NotFoundError);
@@ -250,6 +251,18 @@ describe('InventoryBatchService', () => {
 
     expect(() => service.adjust('batch-missing', { remainingQuantity: 1 }, context)).toThrow(NotFoundError);
     expect(() => service.adjust('batch-adjust', { remainingQuantity: -1 }, context)).toThrow(ValidationError);
+    expect(() => service.adjust('batch-adjust', { remainingQuantity: 1_000_000_001 }, context)).toThrow(ValidationError);
+  });
+
+  it('removes only empty batches and rejects non-empty ones', () => {
+    const service = new InventoryBatchService(db);
+    insertItem('item-remove-only', { code: 'REMOVE-ONLY-001', stock: 0 });
+    insertBatch('batch-empty-only', { itemId: 'item-remove-only', batchNo: 'EMPTY-ONLY', initialQuantity: 0, remainingQuantity: 0 });
+    insertBatch('batch-nonempty-only', { itemId: 'item-remove-only', batchNo: 'NONEMPTY-ONLY', initialQuantity: 5, remainingQuantity: 5 });
+
+    expect(service.remove('batch-empty-only', context)).toEqual({ id: 'batch-empty-only' });
+    expect(batchRow('batch-empty-only').active).toBe(0);
+    expect(() => service.remove('batch-nonempty-only', context)).toThrow(ConflictError);
   });
 
   it('blocks adjusting a batch while its item is locked by a stocktake', () => {

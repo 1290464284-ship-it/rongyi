@@ -727,7 +727,7 @@ describe('application services', () => {
     const localDb = createDatabase(localDir);
     seedDatabase(localDb);
     runMigrations(localDb);
-    const insert = vi.spyOn(SqliteRepository.prototype, 'insert');
+    const insert = vi.spyOn(SqliteRepository.prototype, 'insertSync');
     try {
       insert.mockImplementation(() => { throw new Error('row level failure'); });
       const result = await new BulkImportService(localDb).importRows('patients', [
@@ -747,7 +747,7 @@ describe('application services', () => {
     const localDb = createDatabase(localDir);
     seedDatabase(localDb);
     runMigrations(localDb);
-    const insert = vi.spyOn(SqliteRepository.prototype, 'insert');
+    const insert = vi.spyOn(SqliteRepository.prototype, 'insertSync');
     try {
       insert.mockImplementation(() => {
         throw Object.assign(new Error('database or disk is full'), { code: 'SQLITE_FULL' });

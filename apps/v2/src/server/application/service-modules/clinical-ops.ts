@@ -162,7 +162,7 @@ export class BulkImportService {
         for (const row of chunk) {
           try {
             const payload = stripProtectedWriteFields(validatePayload(definition, row), undefined, resourceName);
-            await repository.insert({ id: randomUUID(), ...payload }, context);
+            repository.insertSync({ id: randomUUID(), ...payload }, context);
             imported += 1;
           } catch (error) {
             if (isSystematicSqliteError(error)) {

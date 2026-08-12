@@ -16,6 +16,8 @@ export function PrescriptionsPage() {
   const { showToast } = useToast();
   const [statusTarget, setStatusTarget] = useState<{ row: PrescriptionRow; reload: () => Promise<unknown> } | null>(null);
   const editingIdRef = useRef<string | null>(null);
+  const prescriptionItemsLoadedRef = useRef(false);
+  const [prescriptionItemsError, setPrescriptionItemsError] = useState<string | null>(null);
   const updateFormRef = useRef<((patch: Partial<PrescriptionForm>) => void) | null>(null);
   const [editLoadKey, setEditLoadKey] = useState(0);
 
@@ -30,9 +32,16 @@ export function PrescriptionsPage() {
         const items = await fetchAllPages<Record<string, unknown>>(
           `/resources/prescriptionItems?prescriptionId=${prescriptionId}`,
         );
-        if (!cancelled) updateFormRef.current?.({ items: items.map(itemRowToForm) });
+        if (!cancelled) {
+          prescriptionItemsLoadedRef.current = true;
+          setPrescriptionItemsError(null);
+          updateFormRef.current?.({ items: items.map(itemRowToForm) });
+        }
       } catch (error) {
-        showToast(errorMessage(error, '加载处方明细失败'), 'error');
+        if (!cancelled) {
+          setPrescriptionItemsError(errorMessage(error, '加载处方明细失败'));
+          showToast(errorMessage(error, '加载处方明细失败'), 'error');
+        }
       }
     })();
     return () => { cancelled = true; };
@@ -48,10 +57,14 @@ export function PrescriptionsPage() {
         endpoint="/resources/prescriptions"
         initialForm={() => {
           editingIdRef.current = null;
+          prescriptionItemsLoadedRef.current = false;
+          setPrescriptionItemsError(null);
           return emptyForm();
         }}
         formFromRow={(row) => {
           editingIdRef.current = String(row.id);
+          prescriptionItemsLoadedRef.current = false;
+          setPrescriptionItemsError(null);
           setEditLoadKey((key) => key + 1);
           return {
             patientId: String(row.patientId ?? ''),
@@ -62,7 +75,9 @@ export function PrescriptionsPage() {
           };
         }}
         validate={(form) =>
-          !form.patientId || !form.doctorId || validItems(form).length === 0
+          editingIdRef.current && !prescriptionItemsLoadedRef.current
+            ? (prescriptionItemsError ?? '处方明细加载中，请稍候再保存')
+            : !form.patientId || !form.doctorId || validItems(form).length === 0
             ? '请选择患者、医生并至少填写一条有效处方明细'
             : null
         }
@@ -104,7 +119,12 @@ export function PrescriptionsPage() {
         }
         renderForm={(ctx) => {
           updateFormRef.current = ctx.update;
-          return <PrescriptionFormFields form={ctx.form} update={ctx.update} editing={ctx.editing} />;
+          return (
+            <>
+              {prescriptionItemsError && <p className="error">{prescriptionItemsError}</p>}
+              <PrescriptionFormFields form={ctx.form} update={ctx.update} editing={ctx.editing} />
+            </>
+          );
         }}
       />
 

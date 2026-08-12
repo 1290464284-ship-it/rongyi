@@ -7,7 +7,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { PurchaseOrderFormFields } from './PurchaseOrderFormFields';
 import { emptyPurchaseForm } from './form';
 import { apiRequest, fetchAllPages } from '../lib/api';
-import type { SearchableSelectRow } from '../components';
 import type { PurchaseOrderForm } from './types';
 
 vi.mock('../lib/api', () => ({
@@ -43,13 +42,10 @@ function FormHarness({
   onItemsLoaded?: () => void;
 }) {
   const [form, setForm] = useState<PurchaseOrderForm>(() => emptyPurchaseForm());
-  const [inventoryRows, setInventoryRows] = useState<SearchableSelectRow[]>([]);
   return (
     <PurchaseOrderFormFields
       form={form}
       update={(patch) => setForm((current) => ({ ...current, ...patch }))}
-      inventoryRows={inventoryRows}
-      setInventoryRows={setInventoryRows}
       editing={editing}
       editingId={editingId}
       onItemsLoaded={onItemsLoaded}

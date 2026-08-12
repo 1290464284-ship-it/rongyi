@@ -155,13 +155,13 @@ export class CommissionService {
        WHERE paidAt >= ? AND paidAt < ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).all(start, endExclusive, ...tenantParams(context.clinicId)) as ChargeRow[];
     const chargeIds = charges.map((charge) => charge.id);
-    if (chargeIds.length === 0) return [];
 
-    const placeholders = chargeIds.map(() => '?').join(',');
-    const items = this.db.prepare(
-      `SELECT chargeId, category, COALESCE(costType, 'SERVICE') AS costType, subtotal
-       FROM ChargeItem WHERE chargeId IN (${placeholders}) AND deletedAt IS NULL`,
-    ).all(...chargeIds) as ItemRow[];
+    const items = chargeIds.length > 0
+      ? (this.db.prepare(
+          `SELECT chargeId, category, COALESCE(costType, 'SERVICE') AS costType, subtotal
+           FROM ChargeItem WHERE chargeId IN (${chargeIds.map(() => '?').join(',')}) AND deletedAt IS NULL`,
+        ).all(...chargeIds) as ItemRow[])
+      : [];
 
     const rules = this.listRules(context);
     const lines = buildLines(charges, items);
@@ -185,6 +185,14 @@ export class CommissionService {
          calculatedAt = excluded.calculatedAt`,
     );
     const run = this.db.transaction(() => {
+      // 本期无任何计费（例如全部退款）时，历史生成的提成单必须清空，
+      // 否则报表继续展示早已失效的金额。
+      if (grouped.size === 0) {
+        this.db.prepare(
+          `DELETE FROM CommissionStatement WHERE period = ?${tenantAnd(context.clinicId)}`,
+        ).run(normalizedPeriod, ...tenantParams(context.clinicId));
+        return;
+      }
       for (const [doctorId, bucket] of grouped) {
         const ruleSet = ruleSetForDoctor(rules, doctorId);
         const { total: commission, breakdown } = computeCommission(bucket.rows, ruleSet);
@@ -194,6 +202,13 @@ export class CommissionService {
           bucket.charged, commission, JSON.stringify(breakdown), now,
         );
       }
+      // 医生被移除/规则变化后不再出现在本期结果时，旧提成单必须一并删除。
+      const presentDoctorIds = Array.from(grouped.keys());
+      const doctorPlaceholders = presentDoctorIds.map(() => '?').join(',');
+      this.db.prepare(
+        `DELETE FROM CommissionStatement
+         WHERE period = ? AND deletedAt IS NULL AND doctorId NOT IN (${doctorPlaceholders})${tenantAnd(context.clinicId)}`,
+      ).run(normalizedPeriod, ...presentDoctorIds, ...tenantParams(context.clinicId));
     });
     run();
     return this.statements(normalizedPeriod, context, { doctorId: null });
@@ -339,18 +354,33 @@ function buildLines(charges: ChargeRow[], items: ItemRow[]): CommissionLine[] {
     const effectivePaid = Math.max(0, Number(charge.paidAmount ?? 0) - Number(charge.refundedAmount ?? 0));
     if (effectivePaid <= 0) continue;
     const totalSubtotal = chargeItems.reduce((sum, item) => sum + Math.max(0, Number(item.subtotal ?? 0)), 0);
+    const chargeLines: CommissionLine[] = [];
     for (const item of chargeItems) {
       const paidBase = totalSubtotal > 0
         ? Math.round((effectivePaid * Math.max(0, Number(item.subtotal ?? 0))) / totalSubtotal)
         : Math.floor(effectivePaid / chargeItems.length);
       if (paidBase <= 0) continue;
-      lines.push({
+      chargeLines.push({
         doctorId,
         chargeId: charge.id,
         category: String(item.category ?? ''),
         costType: String(item.costType ?? 'SERVICE'),
         paidBase,
       });
+    }
+    // 独立四舍五入可能让各明细分摊之和超过 effectivePaid（例如 101 分两行
+    // 各 50 分得到 51+51=102），从末行回退溢出，保证总额不越界。
+    const allocated = chargeLines.reduce((sum, line) => sum + line.paidBase, 0);
+    if (allocated > effectivePaid) {
+      let overshoot = allocated - effectivePaid;
+      for (let i = chargeLines.length - 1; i >= 0 && overshoot > 0; i -= 1) {
+        const reduce = Math.min(chargeLines[i].paidBase, overshoot);
+        chargeLines[i].paidBase -= reduce;
+        overshoot -= reduce;
+      }
+    }
+    for (const line of chargeLines) {
+      if (line.paidBase > 0) lines.push(line);
     }
   }
   return lines;

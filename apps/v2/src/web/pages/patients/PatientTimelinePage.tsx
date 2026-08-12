@@ -57,7 +57,7 @@ export function PatientTimelinePage() {
   const [prevUrlPatientId, setPrevUrlPatientId] = useState(urlPatientId);
   if (prevUrlPatientId !== urlPatientId) {
     setPrevUrlPatientId(urlPatientId);
-    if (urlPatientId) setPatientId(urlPatientId);
+    setPatientId(urlPatientId);
   }
   useEffect(() => {
     generationRef.current += 1;

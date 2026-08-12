@@ -8,16 +8,12 @@ import type { PurchaseOrderForm, PurchaseOrderItemRow } from './types';
 export function PurchaseOrderFormFields({
   form,
   update,
-  inventoryRows: _inventoryRows,
-  setInventoryRows,
   editing,
   editingId,
   onItemsLoaded,
 }: {
   form: PurchaseOrderForm;
   update: (patch: Partial<PurchaseOrderForm>) => void;
-  inventoryRows: SearchableSelectRow[];
-  setInventoryRows: (rows: SearchableSelectRow[]) => void;
   editing: boolean;
   editingId: string | null;
   onItemsLoaded?: () => void;
@@ -100,7 +96,6 @@ export function PurchaseOrderFormFields({
             placeholder="选择项目"
             onLoaded={(rows) => {
               rowOptionsRef.current.set(item.id, rows);
-              setInventoryRows(rows);
             }}
           />
           <input aria-label="采购数量" type="number" min="1" value={item.quantity} onChange={(event) => update({ items: form.items.map((entry) => entry.id === item.id ? { ...entry, quantity: event.target.value } : entry) })} />

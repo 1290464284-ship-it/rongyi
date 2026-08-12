@@ -2,14 +2,12 @@ import { apiRequest, fetchAllPages } from '../lib/api';
 import { toCents } from '../lib/format';
 import { errorMessage } from '../lib/messages';
 import type { ToastKind } from '../lib/toast-context';
-import type { SearchableSelectRow } from '../components';
 import type { PurchaseItemForm, PurchaseOrderItemRow } from './types';
 
 /** 编辑保存时的明细 reconcile：有 id 的行 PATCH，新行 POST（带 orderId），被移除的行 DELETE。 */
 export async function reconcilePurchaseItems(
   orderId: string,
   items: PurchaseItemForm[],
-  inventoryRows: SearchableSelectRow[],
 ): Promise<void> {
   const existing = await fetchAllPages<PurchaseOrderItemRow>(
     `/resources/purchaseOrderItems?orderId=${orderId}`,
@@ -40,7 +38,7 @@ export async function reconcilePurchaseItems(
         body: JSON.stringify({
           orderId,
           itemId: item.itemId || undefined,
-          name: item.itemId ? String(inventoryRows.find((row) => String(row.id) === item.itemId)?.name ?? '') : '自定义项目',
+          name: item.itemId ? (item.name.trim() || '自定义项目') : '自定义项目',
           spec: item.spec.trim() || undefined,
           quantity,
           unitPrice,

@@ -89,6 +89,12 @@ function exitAsOrphanGuard(reason: string): void {
     // best effort
   }
   try {
+    // 父进程丢失属于异常退出：先冲刷审计缓冲，避免最近 1 秒的审计行丢失。
+    (app.locals.flushAuditNow as (() => void) | undefined)?.();
+  } catch {
+    // best effort: the process is going away regardless
+  }
+  try {
     db.pragma('wal_checkpoint(PASSIVE)');
     db.close();
   } catch {

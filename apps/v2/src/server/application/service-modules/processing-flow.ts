@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
+import { runInTransactionImmediate } from './common';
 import type { AppContext } from '../../../domain/contracts';
 
 type ProcessingStepStatus = 'PENDING' | 'IN_PROGRESS' | 'DONE';
@@ -70,7 +71,9 @@ export class ProcessingFlowService {
     ).get(orderId, ...tenantParams(clinicId)) as { id: string } | undefined;
     if (!order) throw new NotFoundError('Processing order not found');
 
-    this.db.transaction(() => {
+    // BEGIN IMMEDIATE 串行化两个实例的 check-then-insert，避免并发首次生成
+    // 重复步骤或一方以 SQLITE_BUSY_SNAPSHOT 500 收场。
+    runInTransactionImmediate(this.db, () => {
       const existing = this.db.prepare(
         `SELECT COUNT(*) AS c FROM ProcessingOrderStep WHERE orderId = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
       ).get(orderId, ...tenantParams(clinicId)) as { c: number };
@@ -91,7 +94,7 @@ export class ProcessingFlowService {
           });
         }
       }
-    })();
+    });
     return this.listStepsForOrder(orderId, clinicId);
   }
 

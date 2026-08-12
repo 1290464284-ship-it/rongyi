@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../lib/api';
 import { PagePager, SearchableSelect } from '../components';
@@ -10,6 +10,7 @@ const VISIT_PAGE_SIZE = 100;
 export function RecordFormFields({ form, update }: { form: RecordForm; update: (patch: Partial<RecordForm>) => void }) {
   const [visitPage, setVisitPage] = useState(1);
   const [prevPatientId, setPrevPatientId] = useState(form.patientId);
+  const visitsPatientRef = useRef<string | null>(null);
   if (prevPatientId !== form.patientId) {
     setPrevPatientId(form.patientId);
     setVisitPage(1);
@@ -20,11 +21,16 @@ export function RecordFormFields({ form, update }: { form: RecordForm; update: (
   });
   const visits = useQuery({
     queryKey: ['record-visits', form.patientId, visitPage],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>(
-      `/resources/visits?patientId=${encodeURIComponent(form.patientId ?? '')}&page=${visitPage}&pageSize=${VISIT_PAGE_SIZE}`,
-    ),
+    queryFn: async () => {
+      const page = await apiRequest<Page<Record<string, unknown>>>(
+        `/resources/visits?patientId=${encodeURIComponent(form.patientId ?? '')}&page=${visitPage}&pageSize=${VISIT_PAGE_SIZE}`,
+      );
+      visitsPatientRef.current = form.patientId ?? null;
+      return page;
+    },
     enabled: Boolean(form.patientId),
-    placeholderData: (previous) => previous,
+    // 仅在同一患者的翻页间复用上一页数据，患者切换/清空时不再显示旧患者就诊。
+    placeholderData: (previous) => (previous && visitsPatientRef.current === form.patientId ? previous : undefined),
   });
   return (
     <>

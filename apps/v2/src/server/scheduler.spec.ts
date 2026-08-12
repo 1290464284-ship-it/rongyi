@@ -321,11 +321,10 @@ describe('startSchedulers', () => {
       idempotencyCleanup,
     });
 
-    // 首启不立即执行自动备份（5 分钟首延迟），审计清理照常首启执行；
-    // idempotency 与原内联行为一致不首启执行。
+    // 首启不立即执行自动备份（5 分钟首延迟），审计与幂等清理照常首启执行。
     expect(backups.create).not.toHaveBeenCalled();
     expect(audit.cleanup).toHaveBeenCalledTimes(1);
-    expect(idempotencyCleanup).not.toHaveBeenCalled();
+    expect(idempotencyCleanup).toHaveBeenCalledTimes(1);
 
     stop();
 
@@ -341,7 +340,7 @@ describe('startSchedulers', () => {
     expect(onAlertCreate).not.toHaveBeenCalled();
   });
 
-  it('idempotencyCleanup 按每日周期被调用，且不首启执行', async () => {
+  it('idempotencyCleanup 首启执行并按 10 分钟周期清理', async () => {
     vi.useFakeTimers();
     const backups = makeBackups();
     const audit = makeAudit();
@@ -359,23 +358,23 @@ describe('startSchedulers', () => {
       idempotencyCleanup,
     });
 
-    expect(idempotencyCleanup).not.toHaveBeenCalled();
-
-    // 24h 前一刻仍未触发
-    await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000 - 1);
-    expect(idempotencyCleanup).not.toHaveBeenCalled();
-
-    // 满 24h 触发一次，并记录删除数量
-    await vi.advanceTimersByTimeAsync(1);
     expect(idempotencyCleanup).toHaveBeenCalledTimes(1);
+
+    // 10 分钟前一刻仍未触发
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000 - 1);
+    expect(idempotencyCleanup).toHaveBeenCalledTimes(1);
+
+    // 满 10 分钟触发第二次，并记录删除数量
+    await vi.advanceTimersByTimeAsync(1);
+    expect(idempotencyCleanup).toHaveBeenCalledTimes(2);
     expect(logger.info).toHaveBeenCalledWith(
       'idempotency cleanup completed',
       expect.objectContaining({ action: 'idempotency-cleanup', deleted: 2 }),
     );
 
-    // 再推 24h：第二次触发
-    await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000);
-    expect(idempotencyCleanup).toHaveBeenCalledTimes(2);
+    // 再推 10 分钟：第三次触发
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+    expect(idempotencyCleanup).toHaveBeenCalledTimes(3);
 
     stop();
   });
@@ -400,13 +399,14 @@ describe('startSchedulers', () => {
       idempotencyCleanup,
     });
 
-    await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000);
-
     expect(idempotencyCleanup).toHaveBeenCalledTimes(1);
     expect(logger.error).toHaveBeenCalledWith(
       'idempotency cleanup failed',
       expect.objectContaining({ action: 'idempotency-cleanup' }),
     );
+
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+    expect(idempotencyCleanup).toHaveBeenCalledTimes(2);
     expect(onAlertCreate).not.toHaveBeenCalled();
 
     stop();

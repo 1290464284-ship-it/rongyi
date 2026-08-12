@@ -161,4 +161,35 @@ describe('RecordFormFields', () => {
     fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'patient-2' } });
     expect(update).toHaveBeenCalledWith({ patientId: 'patient-2', visitId: '' });
   });
+
+  it('does not keep the previous patient visits as placeholder options', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/doctors') return [];
+      if (path === '/resources/visits?patientId=patient-1&page=1&pageSize=100') {
+        return { items: [{ id: 'visit-1' }], total: 1, page: 1, pageSize: 100 };
+      }
+      if (path === '/resources/visits?patientId=patient-2&page=1&pageSize=100') {
+        return new Promise((resolve) => setTimeout(() => {
+          resolve({ items: [{ id: 'visit-2' }], total: 1, page: 1, pageSize: 100 });
+        }, 50));
+      }
+      if (path.startsWith('/resources/patients?')) return { items: [], total: 0, page: 1, pageSize: 100 };
+      return {};
+    });
+    const update = vi.fn();
+    const { rerender } = render(
+      <RecordFormFields form={{ ...emptyForm, patientId: 'patient-1' }} update={update} />,
+      { wrapper },
+    );
+    await waitFor(() => {
+      expect((screen.getByRole('option', { name: 'visit-1' }) as HTMLOptionElement).value).toBe('visit-1');
+    });
+
+    rerender(<RecordFormFields form={{ ...emptyForm, patientId: 'patient-2' }} update={update} />);
+    expect(screen.queryByRole('option', { name: 'visit-1' })).toBeNull();
+    await waitFor(() => {
+      expect((screen.getByRole('option', { name: 'visit-2' }) as HTMLOptionElement).value).toBe('visit-2');
+    });
+    expect(screen.queryByRole('option', { name: 'visit-1' })).toBeNull();
+  });
 });

@@ -1,7 +1,6 @@
 import { useRef, useState } from 'react';
 import { apiRequest } from '../../lib/api';
 import { CrudPage } from '../../components/CrudPage';
-import type { SearchableSelectRow } from '../../components';
 import { useToast } from '../../lib/toast-context';
 import { errorMessage } from '../../lib/messages';
 import { receivePurchase, reconcilePurchaseItems } from '../../purchase-orders/api';
@@ -20,7 +19,6 @@ export function PurchaseOrdersPage() {
   const [receiving, setReceiving] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [summaryTick, setSummaryTick] = useState(0);
-  const [inventoryRows, setInventoryRows] = useState<SearchableSelectRow[]>([]);
   return (
     <CrudPage<PurchaseRow, PurchaseOrderForm>
       title="采购单管理"
@@ -48,14 +46,14 @@ export function PurchaseOrdersPage() {
         if (editingIdRef.current && !itemsLoadedRef.current) {
           return '明细加载中，请稍候再保存';
         }
-        const validItems = buildValidItems(form.items, inventoryRows);
+        const validItems = buildValidItems(form.items);
         if (!form.number.trim() || validItems.length === 0) {
           return '请填写采购单号并至少添加一条有效明细';
         }
         return null;
       }}
       submitOverride={async ({ form, editing }) => {
-        const validItems = buildValidItems(form.items, inventoryRows);
+        const validItems = buildValidItems(form.items);
         // 已选择物料或填写了单价但数量/单价无效的明细会被静默丢弃，提交前提示
         const dropped = form.items
           .filter((item) => Boolean(item.itemId) || item.unitPrice.trim() !== '')
@@ -75,7 +73,7 @@ export function PurchaseOrdersPage() {
                 status: editingStatusRef.current ?? 'PENDING',
               }),
             });
-            await reconcilePurchaseItems(orderId, form.items, inventoryRows);
+            await reconcilePurchaseItems(orderId, form.items);
           } catch (error) {
             throw new Error(`${errorMessage(error, '更新采购单失败')}；部分明细可能未保存，请核对后重试`);
           }
@@ -115,8 +113,6 @@ export function PurchaseOrdersPage() {
         <PurchaseOrderFormFields
           form={ctx.form}
           update={ctx.update}
-          inventoryRows={inventoryRows}
-          setInventoryRows={setInventoryRows}
           editing={ctx.editing}
           editingId={editingIdRef.current}
           onItemsLoaded={() => { itemsLoadedRef.current = true; }}

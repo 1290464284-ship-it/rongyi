@@ -172,4 +172,49 @@ describe('CommissionService', () => {
     const service = new CommissionService(db);
     expect(service.calculate('2026-01', context)).toEqual([]);
   });
+
+  it('recalculating after a full refund removes stale commission statements', () => {
+    const service = new CommissionService(db);
+    service.createRule({ name: '服务 5%', rateType: 'PERCENT', rate: 500 }, context);
+    insertCharge('charge-comm-stale', 'user-doctor-commission', '2026-08-04T09:00:00.000Z');
+    insertItem('charge-comm-stale', 'item-comm-stale', 'TREATMENT', 'SERVICE', 40_000);
+    expect(service.calculate('2026-08', context).some((row) => row.doctorId === 'user-doctor-commission')).toBe(true);
+
+    db.prepare(
+      `UPDATE Charge SET paidAmount = 0, refundedAmount = ?, status = 'REFUNDED' WHERE id = ?`,
+    ).run(40_000, 'charge-comm-stale');
+    expect(service.calculate('2026-08', context)).toEqual([]);
+  });
+
+  it('recalculating after a doctor loses all eligible charges removes their statement', () => {
+    const service = new CommissionService(db);
+    service.createRule({ name: '服务 5%', rateType: 'PERCENT', rate: 500 }, context);
+    insertCharge('charge-comm-d1', 'user-doctor-commission', '2026-08-04T09:00:00.000Z', { totalAmount: 10_000 });
+    insertItem('charge-comm-d1', 'item-comm-d1', 'TREATMENT', 'SERVICE', 10_000);
+    insertCharge('charge-comm-d2', 'user-doctor-commission-2', '2026-08-04T09:00:00.000Z', { totalAmount: 20_000 });
+    insertItem('charge-comm-d2', 'item-comm-d2', 'TREATMENT', 'SERVICE', 20_000);
+    service.calculate('2026-08', context);
+    expect(service.statements('2026-08', context)).toHaveLength(2);
+
+    db.prepare('DELETE FROM Charge WHERE id = ?').run('charge-comm-d1');
+    const statements = service.calculate('2026-08', context);
+    expect(statements).toHaveLength(1);
+    expect(statements[0].doctorId).toBe('user-doctor-commission-2');
+  });
+
+  it('rounds per-item shares without exceeding the paid base', () => {
+    const service = new CommissionService(db);
+    service.createRule({ name: '服务 100%', rateType: 'PERCENT', rate: 10_000 }, context);
+    insertCharge('charge-comm-round', 'user-doctor-commission', '2026-08-04T09:00:00.000Z', {
+      totalAmount: 101,
+      paidAmount: 101,
+    });
+    insertItem('charge-comm-round', 'item-comm-round-1', 'TREATMENT', 'SERVICE', 50);
+    insertItem('charge-comm-round', 'item-comm-round-2', 'TREATMENT', 'SERVICE', 50);
+
+    const statement = service.calculate('2026-08', context)
+      .find((row) => row.doctorId === 'user-doctor-commission');
+    expect(statement?.totalCharged).toBe(101);
+    expect(statement?.breakdown?.reduce((sum, line) => sum + line.charged, 0)).toBe(101);
+  });
 });

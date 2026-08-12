@@ -138,6 +138,11 @@ export function withIdempotency<T>(
     db.exec('BEGIN IMMEDIATE');
     try {
       const value = fn();
+      if (isPromise(value)) {
+        // 非 async 回调返回 Promise 会走同步路径，序列化后会错误标记
+        // COMPLETED；直接失败回滚，要求调用方改用 async 回调。
+        throw new Error('Idempotent write must complete synchronously; use an async callback for promises');
+      }
       const completedAt = new Date().toISOString();
       db.prepare(
         `UPDATE IdempotencyRecord SET responseJson = ?, result = ?, status = 'COMPLETED', updatedAt = ? WHERE key = ?`,

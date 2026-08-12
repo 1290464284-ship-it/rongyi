@@ -378,6 +378,32 @@ describe('PrescriptionsPage', () => {
     expect(await screen.findByText('处方已更新')).toBeDefined();
   });
 
+  it('blocks saving when the item backfill fails so existing items are not deleted', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/prescriptions?page=1&pageSize=50') {
+        return { items: [{ id: 'pres-1', patientId: 'p-1', doctorId: 'd-1', remark: '饭后服用' }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      if (path === '/resources/prescriptionItems?prescriptionId=pres-1&page=1&pageSize=100') {
+        throw new Error('明细加载失败');
+      }
+      return {};
+    });
+    render(<PrescriptionsPage />, { wrapper });
+    await screen.findByText('饭后服用');
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    expect((await screen.findAllByText('明细加载失败')).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => {
+      expect(vi.mocked(apiRequest).mock.calls.some(([path]) => path === '/prescriptions/pres-1/save')).toBe(false);
+    });
+  });
+
   it('deletes a prescription through the generic resource endpoint', async () => {
     mockData();
     render(<PrescriptionsPage />, { wrapper });
@@ -489,7 +515,7 @@ describe('PrescriptionsPage', () => {
     });
     render(<PrescriptionsPage />, { wrapper });
     fireEvent.click(await screen.findByRole('button', { name: '编辑' }));
-    expect(await screen.findByText('加载处方明细失败')).toBeDefined();
+    expect((await screen.findAllByText('加载处方明细失败')).length).toBeGreaterThan(0);
   });
 
   it('ignores prescription item backfill after the dialog is closed', async () => {

@@ -105,6 +105,22 @@ describe('withIdempotency', () => {
     expect(calls).toBe(2);
   });
 
+  it('rejects non-async callbacks that return promises instead of marking them completed', async () => {
+    let calls = 0;
+    expect(() => withIdempotency(db, scope('promise-sync'), () => {
+      calls += 1;
+      return Promise.resolve({ ok: true });
+    })).toThrow('must complete synchronously');
+    expect(calls).toBe(1);
+    // 同步路径失败会回滚并删除 PROCESSING 记录，允许用正确写法重试。
+    const result = await withIdempotency(db, scope('promise-sync'), async () => {
+      calls += 1;
+      return { ok: true };
+    });
+    expect(result).toEqual({ ok: true });
+    expect(calls).toBe(2);
+  });
+
   it('keeps the PROCESSING record when an async operation fails, blocking retries', async () => {
     let calls = 0;
     await expect(withIdempotency(db, scope('async-fail'), async () => {

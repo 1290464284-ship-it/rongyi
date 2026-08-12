@@ -18,7 +18,7 @@ export function InventoryPage() {
   const [prevUrlItemId, setPrevUrlItemId] = useState(urlItemId);
   if (prevUrlItemId !== urlItemId) {
     setPrevUrlItemId(urlItemId);
-    if (urlItemId) setItemId(urlItemId);
+    setItemId(urlItemId);
   }
   const [itemIdError, setItemIdError] = useState<string | null>(null);
   const [type, setType] = useState<'IN' | 'OUT' | 'ADJUST'>('IN');

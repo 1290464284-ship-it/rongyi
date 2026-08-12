@@ -5,6 +5,9 @@ import type { Logger } from './infrastructure/logger';
 const AUDIT_RETENTION_MS = 365 * 24 * 60 * 60 * 1000;
 const SYNC_CHANGE_RETENTION_DAYS = 90;
 const DAILY_MS = 24 * 60 * 60 * 1000;
+// PROCESSING 幂等记录的超时是 30 分钟；清理周期必须远小于一天，
+// 否则一次异常留下的记录会把 key 锁到下一个清理周期。
+const IDEMPOTENCY_CLEANUP_INTERVAL_MS = 10 * 60 * 1000;
 
 interface StartSchedulersOptions {
   backups: BackupService;
@@ -159,10 +162,9 @@ export function startSchedulers(options: StartSchedulersOptions): { stop(): Prom
   cleanupAuditLogs();
   schedule(cleanupAuditLogs, DAILY_MS);
 
-  // main.ts never ran the idempotency cleanup at startup, only on the daily
-  // interval; keep that behavior.
   if (idempotencyCleanup) {
-    schedule(runIdempotencyCleanup, DAILY_MS);
+    runIdempotencyCleanup();
+    schedule(runIdempotencyCleanup, IDEMPOTENCY_CLEANUP_INTERVAL_MS);
   }
 
   if (syncChangeCleanup) {

@@ -128,8 +128,8 @@ export class StocktakeService {
 
   /** 录入盘点数量：仅 IN_PROGRESS 可录入，差异 = 实盘 - 系统库存。 */
   recordCount(stocktakeId: string, itemId: string, countedStock: unknown, context: AppContext): Record<string, unknown> {
-    if (typeof countedStock !== 'number' || !Number.isInteger(countedStock) || countedStock < 0) {
-      throw new ValidationError('录入数量必须是非负整数');
+    if (typeof countedStock !== 'number' || !Number.isSafeInteger(countedStock) || countedStock < 0 || countedStock > 1_000_000_000) {
+      throw new ValidationError('录入数量必须是不超过 10 亿的非负整数');
     }
     const stocktake = this.findStocktake(stocktakeId, context);
     if (stocktake.status !== 'IN_PROGRESS') throw new ConflictError('仅进行中的盘点单可录入数量');
@@ -143,6 +143,15 @@ export class StocktakeService {
 
     const value = Number(countedStock);
     const systemStock = Number(row.systemStock);
+    const item = this.db.prepare(
+      `SELECT batchManaged FROM InventoryItem WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    ).get(itemId, ...tenantParams(context.clinicId)) as { batchManaged: number } | undefined;
+    if (!item) throw new NotFoundError('Inventory item not found');
+    if (Number(item.batchManaged) === 1 && value !== systemStock) {
+      // 批号管理商品的总库存由批次余量求和决定，直接改写主库存会让
+      // InventoryItem.stock 与 InventoryBatch.remainingQuantity 永久背离。
+      throw new ValidationError('批号管理商品不能直接调整库存，请调整批次余量');
+    }
     const difference = value - systemStock;
     const now = context.now().toISOString();
     const result = this.db.prepare(
@@ -188,7 +197,7 @@ export class StocktakeService {
       if (Number(statusResult.changes) === 0) throw new ConflictError('仅已锁定的盘点单可完成');
 
       const diffs = this.db.prepare(
-        `SELECT si.itemId, si.systemStock, si.countedStock, si.difference, i.name
+        `SELECT si.itemId, si.systemStock, si.countedStock, si.difference, i.name, i.batchManaged
          FROM StocktakeItem si
          LEFT JOIN InventoryItem i ON i.id = si.itemId
          WHERE si.stocktakeId = ? AND si.deletedAt IS NULL AND si.difference != 0
@@ -199,18 +208,23 @@ export class StocktakeService {
         countedStock: number | null;
         difference: number;
         name: string | null;
+        batchManaged: number | null;
       }>;
 
       const insertTx = this.db.prepare(
         `INSERT INTO InventoryTransaction (
            id, clinicId, createdAt, updatedAt, deletedAt,
-           itemId, type, quantity, beforeStock, afterStock, operatorId, remark
-         ) VALUES (?, ?, ?, ?, NULL, ?, 'ADJUST', ?, ?, ?, ?, ?)`,
+           itemId, type, quantity, beforeStock, afterStock, operatorId, remark,
+           referenceType, referenceId
+         ) VALUES (?, ?, ?, ?, NULL, ?, 'ADJUST', ?, ?, ?, ?, ?, 'STOCKTAKE', ?)`,
       );
       const items: Array<Record<string, unknown>> = [];
       for (const diff of diffs) {
         const systemStock = Number(diff.systemStock);
         const countedStock = Number(diff.countedStock ?? systemStock);
+        if (Number(diff.batchManaged ?? 0) === 1) {
+          throw new ConflictError('批号管理商品不能通过盘点直接调整库存，请调整批次余量');
+        }
         setInventoryStock(this.db, diff.itemId, countedStock, now, context.clinicId);
         insertTx.run(
           randomUUID(),
@@ -223,6 +237,7 @@ export class StocktakeService {
           countedStock,
           context.userId,
           '盘点差异调整',
+          stocktakeId,
         );
         items.push({
           itemId: diff.itemId,

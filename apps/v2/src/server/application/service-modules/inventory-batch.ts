@@ -4,6 +4,7 @@ import { ConflictError, NotFoundError, ValidationError } from '../../infrastruct
 import { SystemClock } from '../../infrastructure/clock';
 import { tenantAnd, tenantParams, tenantWhere } from '../../infrastructure/tenant';
 import { addInventoryStock, deductInventoryStock, inventoryStockAfter, recordInventoryTransaction } from './inventory-ledger';
+import { runInTransactionImmediate } from './common';
 import type { AppContext } from '../../../domain/contracts';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -94,8 +95,8 @@ export class InventoryBatchService {
   create(input: BatchCreateInput, context: AppContext): { id: string; batchNo: string | null; remainingQuantity: number; stockAfter: number } {
     this.lockGuard?.(input.itemId, context.clinicId);
     const quantity = Number(input.initialQuantity);
-    if (!Number.isSafeInteger(quantity) || quantity < 0) {
-      throw new ValidationError('入库数量必须为非负整数');
+    if (!Number.isSafeInteger(quantity) || quantity < 0 || quantity > 1_000_000_000) {
+      throw new ValidationError('入库数量必须是不超过 10 亿的非负整数');
     }
     if (input.expiryDate !== undefined && input.expiryDate !== null && input.expiryDate !== '') {
       if (typeof input.expiryDate !== 'string' || !DATE_RE.test(input.expiryDate)) {
@@ -163,24 +164,27 @@ export class InventoryBatchService {
   /** 修正批次剩余量（盘点/纠错），仅限 active 批次。 */
   adjust(id: string, input: { remainingQuantity: number; note?: string }, context: AppContext): { id: string; remainingQuantity: number } {
     const quantity = Number(input.remainingQuantity);
-    if (!Number.isSafeInteger(quantity) || quantity < 0) {
-      throw new ValidationError('剩余数量必须为非负整数');
+    if (!Number.isSafeInteger(quantity) || quantity < 0 || quantity > 1_000_000_000) {
+      throw new ValidationError('剩余数量必须是不超过 10 亿的非负整数');
     }
-    const row = this.db.prepare(
-      `SELECT id, itemId, remainingQuantity FROM InventoryBatch WHERE id = ? AND deletedAt IS NULL AND active = 1${tenantAnd(context.clinicId)}`,
-    ).get(id, ...tenantParams(context.clinicId)) as
-      | { id: string; itemId: string; remainingQuantity: number }
-      | undefined;
-    if (!row) throw new NotFoundError('Inventory batch not found');
-    this.lockGuard?.(row.itemId, context.clinicId);
     const now = context.now().toISOString();
-    const delta = quantity - Number(row.remainingQuantity);
-    const run = this.db.transaction(() => {
+    // BEGIN IMMEDIATE 内重新读取批次余量并以 CAS 更新：两个进程并发
+    // adjust 时后到者必须基于最新余量计算 delta，避免库存与批次背离。
+    runInTransactionImmediate(this.db, () => {
+      const row = this.db.prepare(
+        `SELECT id, itemId, remainingQuantity FROM InventoryBatch
+         WHERE id = ? AND deletedAt IS NULL AND active = 1${tenantAnd(context.clinicId)}`,
+      ).get(id, ...tenantParams(context.clinicId)) as
+        | { id: string; itemId: string; remainingQuantity: number }
+        | undefined;
+      if (!row) throw new NotFoundError('Inventory batch not found');
+      this.lockGuard?.(row.itemId, context.clinicId);
+      const delta = quantity - Number(row.remainingQuantity);
       const result = this.db.prepare(
         `UPDATE InventoryBatch SET remainingQuantity = ?, updatedAt = ?
-         WHERE id = ? AND deletedAt IS NULL AND active = 1${tenantAnd(context.clinicId)}`,
-      ).run(quantity, now, id, ...tenantParams(context.clinicId));
-      if (Number(result.changes) === 0) throw new NotFoundError('Inventory batch not found');
+         WHERE id = ? AND deletedAt IS NULL AND active = 1 AND remainingQuantity = ?${tenantAnd(context.clinicId)}`,
+      ).run(quantity, now, id, row.remainingQuantity, ...tenantParams(context.clinicId));
+      if (Number(result.changes) === 0) throw new ConflictError('批次余量已变化，请刷新后重试');
       if (delta === 0) return;
       if (delta > 0) {
         addInventoryStock(this.db, row.itemId, delta, now, context.clinicId);
@@ -205,7 +209,6 @@ export class InventoryBatchService {
         batchId: id,
       });
     });
-    run();
     return { id, remainingQuantity: quantity };
   }
 
@@ -295,9 +298,9 @@ export class InventoryBatchService {
     const now = context.now().toISOString();
     const result = this.db.prepare(
       `UPDATE InventoryBatch SET deletedAt = ?, active = 0, updatedAt = ?
-       WHERE id = ? AND deletedAt IS NULL AND active = 1${tenantAnd(context.clinicId)}`,
+       WHERE id = ? AND deletedAt IS NULL AND active = 1 AND remainingQuantity = 0${tenantAnd(context.clinicId)}`,
     ).run(now, now, id, ...tenantParams(context.clinicId));
-    if (Number(result.changes) === 0) throw new NotFoundError('Inventory batch not found');
+    if (Number(result.changes) === 0) throw new ConflictError('批次已有剩余库存，不能删除');
     return { id };
   }
 

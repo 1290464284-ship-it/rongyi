@@ -145,6 +145,7 @@ export function FollowUpsPage() {
       render: (row) => (
         <input
           type="checkbox"
+          disabled={query.isFetching}
           checked={selectedIds.includes(String(row.id))}
           onChange={(event) => {
             const id = String(row.id);

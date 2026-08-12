@@ -438,6 +438,10 @@ describe('DispenseService', () => {
       await expect(service().returnItems(String(created.id), {
         items: [{ dispenseItemId: di.id, quantity: 0 }],
       }, context)).rejects.toThrow(ValidationError);
+      // 超出数量上界
+      await expect(service().returnItems(String(created.id), {
+        items: [{ dispenseItemId: di.id, quantity: 1_000_000_001 }],
+      }, context)).rejects.toThrow(ValidationError);
       // 明细不属于该发药单
       await expect(service().returnItems(String(created.id), {
         items: [{ dispenseItemId: 'di-missing', quantity: 1 }],

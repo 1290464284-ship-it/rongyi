@@ -138,17 +138,38 @@ describe('StocktakeService', () => {
     expect(e.stock).toBe(5);
 
     const txs = db.prepare(
-      'SELECT itemId, type, quantity, beforeStock, afterStock, operatorId, remark FROM InventoryTransaction ORDER BY itemId',
+      'SELECT itemId, type, quantity, beforeStock, afterStock, operatorId, remark, referenceType, referenceId FROM InventoryTransaction ORDER BY itemId',
     ).all() as Array<Record<string, unknown>>;
     expect(txs).toHaveLength(2);
     expect(txs[0]).toEqual({
       itemId: 'stock-item-d', type: 'ADJUST', quantity: 5, beforeStock: 10, afterStock: 15,
-      operatorId: 'user-admin-001', remark: '盘点差异调整',
+      operatorId: 'user-admin-001', remark: '盘点差异调整', referenceType: 'STOCKTAKE', referenceId: String(id),
     });
     expect(txs[1]).toEqual({
       itemId: 'stock-item-e', type: 'ADJUST', quantity: -3, beforeStock: 8, afterStock: 5,
-      operatorId: 'user-admin-001', remark: '盘点差异调整',
+      operatorId: 'user-admin-001', remark: '盘点差异调整', referenceType: 'STOCKTAKE', referenceId: String(id),
     });
+  });
+
+  it('recordCount：批号管理商品禁止直接调整库存，实盘与系统一致才可录入', () => {
+    db.prepare(
+      `INSERT INTO InventoryItem (
+         id, clinicId, createdAt, updatedAt, deletedAt, code, name, category, unit,
+         stock, minStock, price, batchManaged
+       ) VALUES (?, ?, ?, ?, NULL, 'ST-BM', '批次品', 'CONSUMABLE', 'box', 10, 0, 1000, 1)`,
+    ).run('stock-item-bm', context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO InventoryBatch (
+         id, itemId, batchNo, productionDate, expiryDate, initialQuantity,
+         remainingQuantity, supplierId, purchaseOrderId, active, clinicId,
+         createdAt, updatedAt, deletedAt
+       ) VALUES (?, ?, 'BM-1', NULL, '2026-09-01', 10, 10, NULL, NULL, 1, ?, ?, ?, NULL)`,
+    ).run('batch-bm', 'stock-item-bm', context.clinicId, now, now);
+
+    const { id } = service.start({ number: 'PD-2026-BM' }, context);
+    expect(() => service.recordCount(String(id), 'stock-item-bm', 12, context)).toThrow(ValidationError);
+    const ok = service.recordCount(String(id), 'stock-item-bm', 10, context);
+    expect(ok).toMatchObject({ systemStock: 10, countedStock: 10, difference: 0 });
   });
 
   it('complete：仅 LOCKED 可完成；无差异时库存不变且无流水', () => {

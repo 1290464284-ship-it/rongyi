@@ -1,5 +1,4 @@
 import { toCents } from '../lib/format';
-import type { SearchableSelectRow } from '../components';
 import type { PurchaseItemForm, PurchaseOrderForm, ValidPurchaseItem } from './types';
 
 export function newItem(): PurchaseItemForm {
@@ -10,13 +9,11 @@ export function emptyPurchaseForm(): PurchaseOrderForm {
   return { number: '', supplierId: '', items: [newItem()] };
 }
 
-export function buildValidItems(items: PurchaseItemForm[], inventoryRows: SearchableSelectRow[]): ValidPurchaseItem[] {
+export function buildValidItems(items: PurchaseItemForm[]): ValidPurchaseItem[] {
   return items
     .filter((item) => item.quantity && item.unitPrice)
     .map((item) => {
-      const matchedName = item.itemId
-        ? (item.name.trim() || String(inventoryRows.find((row) => String(row.id) === item.itemId)?.name ?? '')).trim()
-        : '';
+      const matchedName = item.itemId ? (item.name.trim() || '自定义项目').trim() : '';
       return {
         itemId: item.itemId || undefined,
         name: item.itemId ? (matchedName || '自定义项目') : '自定义项目',
