@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { apiRequest } from '../../lib/api';
 import { CrudPage } from '../../components/CrudPage';
 import { Dialog } from '../../components';
@@ -148,9 +148,9 @@ export function MedicalRecordsPage() {
       canEdit
       canDelete
       rowActions={(row, ctx) => {
-        reloadRef.current = ctx.reload;
         return (
           <>
+            <ReloadSync reload={ctx.reload} onReload={(reload) => { reloadRef.current = reload; }} />
             <button onClick={() => openEditRequest(row)}>申请修改</button>
             {String(row.editRequestStatus ?? '') === 'PENDING' && (
               <button onClick={() => { setReviewNote(''); setReviewTarget(row); }}>审核</button>
@@ -242,4 +242,19 @@ export function MedicalRecordsPage() {
       </Dialog>
     </>
   );
+}
+
+// 与 MemberCardsPage 相同的 M9 约定：渲染期写 ref 是反模式（StrictMode 双渲染/
+// 行集合变化时 ref 可能指向旧实例），改到 effect 提交后同步。
+function ReloadSync({
+  reload,
+  onReload,
+}: {
+  reload: () => Promise<unknown>;
+  onReload: (reload: () => Promise<unknown>) => void;
+}) {
+  useEffect(() => {
+    onReload(reload);
+  }, [reload, onReload]);
+  return null;
 }
