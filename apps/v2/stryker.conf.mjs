@@ -21,7 +21,7 @@ export default {
     'src/server/shared/html.spec.ts',
     'src/server/application/service-modules/common.spec.ts',
   ],
-  reporters: ['clear-text'],
+  reporters: ['clear-text', 'json'],
   coverageAnalysis: 'off',
   concurrency: 1,
   timeoutMS: 30_000,

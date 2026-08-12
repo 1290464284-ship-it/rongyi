@@ -26,6 +26,7 @@ certs/
 apps/v2/apps/
 apps/v2/test-results/
 apps/v2/sbom.cdx.json
+apps/v2/quality-score.json
 apps/v2/performance/history.json
 apps/v2/flaky-quarantine/history.json
 apps/v2/.stryker-tmp/

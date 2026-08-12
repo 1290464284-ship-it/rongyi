@@ -30,6 +30,7 @@
     "test:flaky": "node scripts/flaky-detect.mjs",
     "test:flaky:report": "node scripts/flaky-report.mjs",
     "test:flaky:quarantine": "node scripts/flaky-quarantine-manager.mjs",
+    "test:quality-score": "node scripts/quality-score.mjs",
     "test:coverage": "vitest run --coverage",
     "test:coverage:web": "vitest run src/web --coverage --config vite.web-coverage.config.ts",
     "smoke:api": "node scripts/api-smoke.mjs",
