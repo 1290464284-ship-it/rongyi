@@ -3,7 +3,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import Database from 'better-sqlite3';
-import { backupSqliteFile, summarizeSqliteFile } from './sqlite-files';
+import {
+  backupSqliteFile,
+  copySqliteFileReadonly,
+  removeSqliteSidecars,
+  sha256File,
+  summarizeSqliteFile,
+} from './sqlite-files';
 
 describe('sqlite file helpers', () => {
   let dir: string;
@@ -50,6 +56,33 @@ describe('sqlite file helpers', () => {
     db.close();
 
     expect(summarizeSqliteFile(dbPath).lastPaidAt).toBeNull();
+  });
+
+  it('copies a SQLite file read-only and hashes the result', () => {
+    const source = path.join(dir, 'copy-source.sqlite');
+    const target = path.join(dir, 'copy-target.sqlite');
+    const db = new Database(source);
+    db.exec('CREATE TABLE T (id TEXT PRIMARY KEY, value TEXT)');
+    db.prepare('INSERT INTO T (id, value) VALUES (?, ?)').run('c1', 'copied');
+    db.close();
+
+    copySqliteFileReadonly(source, target);
+    const copy = new Database(target, { readonly: true });
+    try {
+      expect(copy.prepare('SELECT value FROM T WHERE id = ?').get('c1')).toEqual({ value: 'copied' });
+    } finally {
+      copy.close();
+    }
+    expect(sha256File(source)).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('removes existing SQLite WAL and SHM sidecars', () => {
+    const dbPath = path.join(dir, 'sidecars.sqlite');
+    fs.writeFileSync(`${dbPath}-wal`, 'wal');
+    fs.writeFileSync(`${dbPath}-shm`, 'shm');
+    removeSqliteSidecars(dbPath);
+    expect(fs.existsSync(`${dbPath}-wal`)).toBe(false);
+    expect(fs.existsSync(`${dbPath}-shm`)).toBe(false);
   });
 
   it('backupSqliteFile includes uncheckpointed WAL frames from a WAL-mode source', () => {
