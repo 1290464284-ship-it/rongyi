@@ -217,13 +217,36 @@ describe('InventoryBatchService', () => {
   });
 
   it('adjusts the remaining quantity and rejects missing batches', () => {
-    insertItem('item-adjust', { code: 'ADJUST-001' });
+    insertItem('item-adjust', { code: 'ADJUST-001', stock: 9 });
     insertBatch('batch-adjust', { itemId: 'item-adjust', batchNo: 'ADJ', initialQuantity: 9, remainingQuantity: 9 });
     const service = new InventoryBatchService(db);
     const result = service.adjust('batch-adjust', { remainingQuantity: 3, note: '盘点修正' }, context);
     expect(result).toEqual({ id: 'batch-adjust', remainingQuantity: 3 });
     expect(batchRow('batch-adjust').remainingQuantity).toBe(3);
     expect(batchRow('batch-adjust').updatedAt).toBe(now);
+    const stockAfter = Number(
+      (db.prepare('SELECT stock FROM InventoryItem WHERE id = ?').get('item-adjust') as { stock: number }).stock,
+    );
+    expect(stockAfter).toBe(3);
+    const transaction = db.prepare(
+      `SELECT type, quantity, beforeStock, afterStock, referenceType, referenceId, batchId
+       FROM InventoryTransaction
+       WHERE itemId = 'item-adjust' AND referenceType = 'INVENTORY_BATCH' AND referenceId = 'batch-adjust'
+       ORDER BY rowid DESC LIMIT 1`,
+    ).get() as { type: string; quantity: number; beforeStock: number; afterStock: number; referenceType: string; referenceId: string; batchId: string };
+    expect(transaction).toMatchObject({
+      type: 'ADJUST',
+      quantity: -6,
+      beforeStock: 9,
+      afterStock: 3,
+      referenceType: 'INVENTORY_BATCH',
+      referenceId: 'batch-adjust',
+      batchId: 'batch-adjust',
+    });
+    service.adjust('batch-adjust', { remainingQuantity: 5 }, context);
+    expect(Number(
+      (db.prepare('SELECT stock FROM InventoryItem WHERE id = ?').get('item-adjust') as { stock: number }).stock,
+    )).toBe(5);
 
     expect(() => service.adjust('batch-missing', { remainingQuantity: 1 }, context)).toThrow(NotFoundError);
     expect(() => service.adjust('batch-adjust', { remainingQuantity: -1 }, context)).toThrow(ValidationError);

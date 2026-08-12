@@ -167,16 +167,45 @@ export class InventoryBatchService {
       throw new ValidationError('剩余数量必须为非负整数');
     }
     const row = this.db.prepare(
-      `SELECT id, itemId FROM InventoryBatch WHERE id = ? AND deletedAt IS NULL AND active = 1${tenantAnd(context.clinicId)}`,
-    ).get(id, ...tenantParams(context.clinicId)) as { id: string; itemId: string } | undefined;
+      `SELECT id, itemId, remainingQuantity FROM InventoryBatch WHERE id = ? AND deletedAt IS NULL AND active = 1${tenantAnd(context.clinicId)}`,
+    ).get(id, ...tenantParams(context.clinicId)) as
+      | { id: string; itemId: string; remainingQuantity: number }
+      | undefined;
     if (!row) throw new NotFoundError('Inventory batch not found');
     this.lockGuard?.(row.itemId, context.clinicId);
     const now = context.now().toISOString();
-    const result = this.db.prepare(
-      `UPDATE InventoryBatch SET remainingQuantity = ?, updatedAt = ?
-       WHERE id = ? AND deletedAt IS NULL AND active = 1${tenantAnd(context.clinicId)}`,
-    ).run(quantity, now, id, ...tenantParams(context.clinicId));
-    if (Number(result.changes) === 0) throw new NotFoundError('Inventory batch not found');
+    const delta = quantity - Number(row.remainingQuantity);
+    const run = this.db.transaction(() => {
+      const result = this.db.prepare(
+        `UPDATE InventoryBatch SET remainingQuantity = ?, updatedAt = ?
+         WHERE id = ? AND deletedAt IS NULL AND active = 1${tenantAnd(context.clinicId)}`,
+      ).run(quantity, now, id, ...tenantParams(context.clinicId));
+      if (Number(result.changes) === 0) throw new NotFoundError('Inventory batch not found');
+      if (delta === 0) return;
+      if (delta > 0) {
+        addInventoryStock(this.db, row.itemId, delta, now, context.clinicId);
+      } else {
+        deductInventoryStock(this.db, row.itemId, -delta, now, context.clinicId, 'Insufficient stock');
+      }
+      const after = inventoryStockAfter(this.db, row.itemId, context.clinicId);
+      recordInventoryTransaction(this.db, {
+        id: randomUUID(),
+        clinicId: context.clinicId ?? null,
+        itemId: row.itemId,
+        type: 'ADJUST',
+        quantity: delta,
+        beforeStock: after - delta,
+        afterStock: after,
+        operatorId: context.userId,
+        remark: `批次余量修正：${String(input.note ?? '').trim()}`,
+        createdAt: now,
+        updatedAt: now,
+        referenceType: 'INVENTORY_BATCH',
+        referenceId: id,
+        batchId: id,
+      });
+    });
+    run();
     return { id, remainingQuantity: quantity };
   }
 
