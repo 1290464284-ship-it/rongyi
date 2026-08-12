@@ -67,6 +67,31 @@ describe('applyUiMeta', () => {
     }
   });
 
+  it('marks state-machine fields read-only for protected resources', () => {
+    const result = applyUiMeta({
+      ...definition([]),
+      name: 'visits',
+      fields: [
+        { name: 'status', type: 'enum', enumValues: ['IN_PROGRESS', 'COMPLETED'] },
+      ],
+    });
+    expect(result.fields[0].readOnly).toBe(true);
+    const followUps = applyUiMeta({
+      ...definition([]),
+      name: 'followUps',
+      fields: [
+        { name: 'status', type: 'enum', enumValues: ['PENDING', 'COMPLETED'] },
+        { name: 'executionStatus', type: 'enum', enumValues: ['PENDING', 'DONE'] },
+      ],
+    });
+    expect(followUps.fields[0].readOnly).toBe(true);
+    expect(followUps.fields[1].readOnly).toBe(true);
+    const patients = applyUiMeta(definition([
+      { name: 'status', type: 'text' },
+    ]));
+    expect(patients.fields[0].readOnly).toBeFalsy();
+  });
+
   it('honors explicit definition and field metadata overrides', () => {
     const result = applyUiMeta({
       name: 'custom',

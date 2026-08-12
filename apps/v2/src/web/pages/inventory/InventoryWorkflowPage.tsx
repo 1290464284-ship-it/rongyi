@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import type { Page } from '../../lib/types';
@@ -28,6 +28,10 @@ export function InventoryWorkflowPage() {
     queryKey: ['po-items-workflow'],
     queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/purchaseOrderItems?page=1&pageSize=200'),
   });
+  const pendingPurchaseRows = useMemo(
+    () => (purchase.data?.items ?? []).filter((row) => String(row.status) === 'PENDING'),
+    [purchase.data],
+  );
   const processing = useQuery({
     queryKey: ['processing-workflow'],
     queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/processingOrders?page=1&pageSize=100'),
@@ -259,10 +263,10 @@ export function InventoryWorkflowPage() {
       <h2>采购单</h2>
       <QuerySection
         query={purchase}
-        render={(data) => (
+        render={() => (
           <DataTable
             columns={purchaseColumns}
-            rows={data?.items.filter((row) => String(row.status) === 'PENDING') ?? []}
+            rows={pendingPurchaseRows}
             keyField="id"
             emptyText="暂无待收货采购单"
           />

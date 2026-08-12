@@ -106,10 +106,13 @@ export function withIdempotency<T>(
   // removes the stuck PROCESSING record after the processing timeout.
   if (isAsyncFunction(fn)) {
     let result: T | Promise<T>;
+    const keepProcessing = (error: unknown): boolean =>
+      (error instanceof AppError && options?.keepProcessingOnAppError === true)
+      || (error instanceof Error && (error as Error & { keepProcessing?: boolean }).keepProcessing === true);
     try {
       result = fn();
     } catch (error) {
-      if (error instanceof AppError && !options?.keepProcessingOnAppError) {
+      if (error instanceof AppError && !keepProcessing(error)) {
         // 已知业务错误（校验/冲突/未找到）对应的写路径在事务内回滚，可安全删除 PROCESSING 供重试。
         db.prepare('DELETE FROM IdempotencyRecord WHERE key = ?').run(key);
       } else {
@@ -130,7 +133,7 @@ export function withIdempotency<T>(
         return value;
       },
       (error: unknown) => {
-        if (error instanceof AppError && !options?.keepProcessingOnAppError) {
+        if (error instanceof AppError && !keepProcessing(error)) {
           // 已知业务错误一定伴随事务回滚，删除 PROCESSING 避免 30 分钟假锁。
           db.prepare('DELETE FROM IdempotencyRecord WHERE key = ?').run(key);
         } else {

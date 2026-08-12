@@ -240,7 +240,6 @@ describe('ClinicalWorkflowPage', () => {
       patientId: 'p-1',
       planDate: '2026-08-12',
       content: '术后回访',
-      status: 'PENDING',
     });
     expect(await screen.findByText('回访已创建')).toBeDefined();
   });

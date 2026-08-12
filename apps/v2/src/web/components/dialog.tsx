@@ -212,6 +212,7 @@ export function PromptDialog({
 
   function submit(event: FormEvent) {
     event.preventDefault();
+    if (pending) return;
     onSubmit(current);
   }
 

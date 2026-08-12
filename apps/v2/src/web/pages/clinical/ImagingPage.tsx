@@ -20,6 +20,7 @@ export function ImagingPage() {
   const [categoryForm, setCategoryForm] = useState({ name: '', type: 'ORTHODONTIC', sortOrder: 0, active: true });
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const categoryBusyRef = useRef(false);
+  const [toggleBusyId, setToggleBusyId] = useState<string | null>(null);
   const [deleteCategoryTarget, setDeleteCategoryTarget] = useState<ImagingCategoryRow | null>(null);
   const [compareLeftId, setCompareLeftId] = useState('');
   const [compareRightId, setCompareRightId] = useState('');
@@ -117,8 +118,11 @@ export function ImagingPage() {
   }
 
   async function toggleCategory(row: ImagingCategoryRow) {
+    const id = String(row.id);
+    if (toggleBusyId === id) return;
+    setToggleBusyId(id);
     try {
-      await apiRequest(`/resources/imagingCategories/${String(row.id)}`, {
+      await apiRequest(`/resources/imagingCategories/${id}`, {
         method: 'PATCH',
         body: JSON.stringify({ active: !row.active }),
       });
@@ -126,6 +130,8 @@ export function ImagingPage() {
       await categories.refetch();
     } catch (error) {
       showToast(errorMessage(error, '更新影像分类失败'), 'error');
+    } finally {
+      setToggleBusyId(null);
     }
   }
 
@@ -133,6 +139,7 @@ export function ImagingPage() {
     onEdit: editCategory,
     onToggle: toggleCategory,
     onDelete: setDeleteCategoryTarget,
+    toggleBusyId,
   });
 
   return (

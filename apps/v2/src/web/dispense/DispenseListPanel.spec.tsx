@@ -165,6 +165,23 @@ describe('DispenseListPanel', () => {
     expect(screen.getAllByText('删除')).toHaveLength(1);
   });
 
+  it('closes the action panel when the page changes', () => {
+    const setDispensePage = vi.fn();
+    render(
+      <DispenseListPanel
+        dispenses={queryResult({ data: { items: rows.slice(0, 1), total: 21, page: 1, pageSize: 20 } })}
+        dispensePage={1}
+        setDispensePage={setDispensePage}
+      />,
+      { wrapper },
+    );
+    fireEvent.click(screen.getByRole('button', { name: '发药' }));
+    expect(screen.getByText(/发药：DISP-001/)).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+    expect(screen.queryByText(/发药：DISP-001/)).toBeNull();
+    expect(setDispensePage).toHaveBeenCalledTimes(1);
+  });
+
   it('opens the edit dialog from a pending row', async () => {
     mockApi();
     render(

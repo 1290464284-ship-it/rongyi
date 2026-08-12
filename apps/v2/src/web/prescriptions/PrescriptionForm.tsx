@@ -42,7 +42,7 @@ export function PrescriptionForm({ form, update, editing }: { form: Prescription
       {editing && (
         <label>
           状态
-          <select value={form.status} onChange={(event) => update({ status: event.target.value })}>
+          <select value={form.status} disabled>
             {Object.entries(PRESCRIPTION_STATUS_LABELS).map(([value, label]) => (
               <option key={value} value={value}>{label}</option>
             ))}

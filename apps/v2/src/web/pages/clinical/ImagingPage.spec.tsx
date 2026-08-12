@@ -307,6 +307,32 @@ describe('ImagingPage', () => {
     });
   });
 
+  it('ignores a second category toggle while one is pending', async () => {
+    mockData();
+    render(<ImagingPage />, { wrapper });
+    await screen.findByText('影像分类管理');
+    const panel = screen.getByLabelText('影像分类管理');
+    await waitFor(() => {
+      expect(within(panel).getByText('正畸类')).toBeDefined();
+    });
+    const categoryRow = within(panel).getByText('正畸类').closest('tr');
+    expect(categoryRow).not.toBeNull();
+    let resolvePatch: (value: unknown) => void = () => {};
+    vi.mocked(apiRequest).mockImplementationOnce(() => new Promise((resolve) => { resolvePatch = resolve; }));
+    const row = categoryRow as HTMLElement;
+    fireEvent.click(within(row).getByText('停用'));
+    fireEvent.click(within(row).getByText('停用'));
+    expect(vi.mocked(apiRequest).mock.calls.filter(([path, options]) =>
+      path === '/resources/imagingCategories/c-1' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'PATCH',
+    )).toHaveLength(1);
+    resolvePatch({ id: 'c-1' });
+    await waitFor(() => {
+      expect(vi.mocked(apiRequest).mock.calls.some(([path, options]) =>
+        path === '/resources/imagingCategories?page=1&pageSize=100' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'GET',
+      )).toBe(true);
+    });
+  });
+
   it('maps categoryId to category names and phase to Chinese labels in the list', async () => {
     mockData();
     render(<ImagingPage />, { wrapper });

@@ -98,7 +98,12 @@ export function DispenseListPanel({
         <PagePager
           page={dispensePage}
           hasNext={Boolean(dispenses.data) && dispensePage * 20 < dispenses.data!.total}
-          onPageChange={setDispensePage}
+          onPageChange={(next) => {
+            setAction(null);
+            setEditDispenseId(null);
+            setDeleteDispenseTarget(null);
+            setDispensePage(next);
+          }}
           disabled={stale}
         />
         {action && (

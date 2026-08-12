@@ -333,7 +333,6 @@ describe('PrescriptionsPage', () => {
       patientId: 'p-1',
       doctorId: 'd-1',
       remark: '饭后半小时服用',
-      status: 'DRAFT',
     });
     expect(saveBody.items[0]).toMatchObject({
       id: 'item-1',

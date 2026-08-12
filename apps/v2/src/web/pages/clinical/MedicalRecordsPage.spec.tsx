@@ -103,7 +103,6 @@ describe('MedicalRecordsPage', () => {
       diagnosis: '牙周炎',
       teethInvolved: ['11', '21'],
       isTemplate: false,
-      status: 'DRAFT',
     });
     expect(await screen.findByText('病历已创建')).toBeDefined();
   });

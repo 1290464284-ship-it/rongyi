@@ -1353,6 +1353,10 @@ describe('service edge coverage', () => {
     const second = service.fullSnapshot(context, { table: 'Patient', limit: 1, afterId: String(first.nextId) });
     expect(second.offset).toBeUndefined();
     expect(second.rows?.[0]?.id).not.toBe(first.rows?.[0]?.id);
+    const exactTotal = Math.max(1, Number(metadata.tables?.Patient.total ?? 0));
+    const exact = service.fullSnapshot(context, { table: 'Patient', limit: exactTotal });
+    expect(exact.truncated).toBe(false);
+    expect(exact.nextId).toBeUndefined();
   });
 
   it('pulls server-originated changes to other devices and keeps push single-row', async () => {

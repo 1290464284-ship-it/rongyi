@@ -224,7 +224,6 @@ describe('CreateFollowUpDialog', () => {
       patientId: 'p-1',
       planDate: '2026-08-20',
       content: '一周后复查',
-      status: 'PENDING',
     });
     expect(await screen.findByText('回访已创建')).toBeDefined();
     expect(onSaved).toHaveBeenCalled();

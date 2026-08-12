@@ -213,6 +213,81 @@ describe('HTTP app edge error handling', () => {
     expect(followUpRow.executionStatus).toBe('PENDING');
   });
 
+  it('rejects non-boolean medical record lock payloads', async () => {
+    const auth = (req: request.Test): request.Test => req.set('Authorization', `Bearer ${token}`);
+    const created = await auth(request(app).post('/api/v2/resources/medicalRecords')).send({
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      status: 'DRAFT',
+    }).expect(201);
+    const response = await auth(request(app).patch(`/api/v2/medical-records/${created.body.data.id as string}/lock`))
+      .send({ locked: 'yes' })
+      .expect(400);
+    expect(response.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('protects medical records, leave requests, and business alerts from generic state writes', async () => {
+    const auth = (req: request.Test): request.Test => req.set('Authorization', `Bearer ${token}`);
+    const medical = await auth(request(app).post('/api/v2/resources/medicalRecords')).send({
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      status: 'DRAFT',
+    }).expect(201);
+    const medicalId = medical.body.data.id as string;
+    const nowIso = new Date().toISOString();
+    db.prepare(
+      `UPDATE MedicalRecord SET isLocked = 1, editRequestStatus = 'NONE', updatedAt = ? WHERE id = ?`,
+    ).run(nowIso, medicalId);
+    await auth(request(app).patch(`/api/v2/resources/medicalRecords/${medicalId}`))
+      .send({ isLocked: false, editRequestStatus: 'APPROVED' })
+      .expect(200);
+    const lockedRow = db.prepare('SELECT isLocked, editRequestStatus FROM MedicalRecord WHERE id = ?').get(medicalId) as {
+      isLocked: number; editRequestStatus: string;
+    };
+    expect(lockedRow.isLocked).toBe(1);
+    expect(lockedRow.editRequestStatus).toBe('NONE');
+    await auth(request(app).delete(`/api/v2/resources/medicalRecords/${medicalId}`)).expect(403);
+
+    const leave = await auth(request(app).post('/api/v2/resources/leaveRequests')).send({
+      userId: 'user-admin-001',
+      startDate: '2026-08-20',
+      endDate: '2026-08-21',
+      type: 'ANNUAL',
+      reason: 'generic create',
+      status: 'APPROVED',
+    }).expect(201);
+    expect((db.prepare('SELECT status FROM LeaveRequest WHERE id = ?').get(leave.body.data.id as string) as { status: string }).status)
+      .toBe('PENDING');
+
+    db.prepare(
+      `INSERT INTO BusinessAlert (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         alertType, level, severity, title, message, source, status, acknowledged
+       ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, 'OPEN', 0)`,
+    ).run('alert-generic-guard', 'clinic-v2-001', nowIso, nowIso, 'BATCH_EXPIRY', 'WARNING', 'WARN', 'A', 'M', 'TEST');
+    await auth(request(app).patch('/api/v2/resources/businessAlerts/alert-generic-guard'))
+      .send({ status: 'RESOLVED', acknowledged: true })
+      .expect(200);
+    const alertRow = db.prepare('SELECT status, acknowledged FROM BusinessAlert WHERE id = ?').get('alert-generic-guard') as {
+      status: string; acknowledged: number;
+    };
+    expect(alertRow.status).toBe('OPEN');
+    expect(alertRow.acknowledged).toBe(0);
+  });
+
+  it('replays bulk import with the same requestId without duplicate writes', async () => {
+    const auth = (req: request.Test): request.Test => req.set('Authorization', `Bearer ${token}`);
+    const payload = {
+      requestId: 'bulk-replay-1',
+      rows: [{ code: 'BULK-REPLAY', name: 'Bulk Replay', gender: 'UNKNOWN', phone: '13500000009', source: 'OTHER' }],
+    };
+    const first = await auth(request(app).post('/api/v2/bulk-import/patients')).send(payload).expect(200);
+    const second = await auth(request(app).post('/api/v2/bulk-import/patients')).send(payload).expect(200);
+    expect(second.body.data.imported).toBe(first.body.data.imported);
+    const count = db.prepare('SELECT COUNT(*) AS c FROM Patient WHERE code = ?').get('BULK-REPLAY') as { c: number };
+    expect(Number(count.c)).toBe(1);
+  });
+
   it('short search terms and unknown routes return safe local responses', async () => {
     const short = await request(app)
       .get('/api/v2/search?q=a')

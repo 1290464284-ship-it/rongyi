@@ -181,4 +181,12 @@ describe('PromptDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: '取消' }));
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
+
+  it('ignores submits while pending', () => {
+    const onSubmit = vi.fn();
+    render(<PromptDialog open title="输入" value="a" pending onSubmit={onSubmit} onCancel={vi.fn()} />);
+    fireEvent.submit(screen.getByRole('textbox').closest('form') as HTMLFormElement);
+    fireEvent.click(screen.getByRole('button', { name: '处理中...' }));
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
 });

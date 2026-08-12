@@ -210,6 +210,20 @@ describe('withIdempotency', () => {
     await expect(withIdempotency(db, scope('async-validation'), async () => 'ok')).resolves.toBe('ok');
   });
 
+  it('keeps PROCESSING only for flagged side-effect errors', async () => {
+    const flagged = new ValidationError('flagged');
+    (flagged as ValidationError & { keepProcessing?: boolean }).keepProcessing = true;
+    await expect(withIdempotency(db, scope('async-flagged'), async () => { throw flagged; }))
+      .rejects.toThrow('flagged');
+    expect(() => withIdempotency(db, scope('async-flagged'), async () => 'ok'))
+      .toThrow('Operation is already in progress');
+    expect(db.prepare('SELECT status FROM IdempotencyRecord WHERE key = ?')
+      .get(scopeKey(scope('async-flagged')))).toEqual({ status: 'PROCESSING' });
+    db.prepare('UPDATE IdempotencyRecord SET updatedAt = ? WHERE key = ?')
+      .run(new Date(Date.now() - 3_600_000).toISOString(), scopeKey(scope('async-flagged')));
+    cleanupIdempotencyRecords(db);
+  });
+
   it('treats expired completed records as retryable', async () => {
     const key = scopeKey(scope('expired'));
     db.prepare(

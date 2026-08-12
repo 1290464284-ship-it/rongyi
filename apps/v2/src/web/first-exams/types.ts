@@ -48,7 +48,6 @@ export interface FirstExamForm {
   patientId: string;
   doctorId: string;
   consultantId: string;
-  status: string;
   chiefComplaint: string;
   presentIllness: string;
   pastHistory: string;
@@ -63,7 +62,6 @@ export const emptyForm: FirstExamForm = {
   patientId: '',
   doctorId: '',
   consultantId: '',
-  status: 'DRAFT',
   chiefComplaint: '',
   presentIllness: '',
   pastHistory: '',

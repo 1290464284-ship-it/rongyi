@@ -61,16 +61,19 @@ export function fullSnapshot(
       : 0;
     const total = tableTotal(options.table);
     const afterId = typeof options.afterId === 'string' && options.afterId !== '' ? options.afterId : undefined;
-    const rows = afterId
+    // keyset 分支多取一行判断是否还有下一页，避免“恰好整页”误报 truncated。
+    const fetched = afterId
       ? db.prepare(
         `SELECT * FROM "${options.table}" WHERE deletedAt IS NULL AND id > ?${tenantAnd(context.clinicId)}
          ORDER BY id ASC LIMIT ?`,
-      ).all(afterId, ...tenantParams(context.clinicId), limit) as Array<Record<string, unknown>>
+      ).all(afterId, ...tenantParams(context.clinicId), limit + 1) as Array<Record<string, unknown>>
       : db.prepare(
         `SELECT * FROM "${options.table}" WHERE deletedAt IS NULL${tenantAnd(context.clinicId)}
          ORDER BY id ASC LIMIT ? OFFSET ?`,
       ).all(...tenantParams(context.clinicId), limit, offset) as Array<Record<string, unknown>>;
-    const nextId = rows.length > 0 ? String(rows[rows.length - 1].id) : undefined;
+    const rows = afterId && fetched.length > limit ? fetched.slice(0, limit) : fetched;
+    const hasMore = afterId ? fetched.length > limit : offset + rows.length < total;
+    const nextId = rows.length > 0 && hasMore ? String(rows[rows.length - 1].id) : undefined;
     return {
       serverTime: new Date().toISOString(),
       table: options.table,
@@ -78,7 +81,7 @@ export function fullSnapshot(
       total,
       offset: afterId ? undefined : offset,
       limit,
-      truncated: afterId ? rows.length >= limit : offset + rows.length < total,
+      truncated: hasMore,
       nextId,
     };
   }

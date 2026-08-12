@@ -46,6 +46,8 @@ describe('validatePayload', () => {
     expect(() => validatePayload(definition, { name: 'A', ratio: 'abc' })).toThrow('ratio must be a number');
     expect(() => validatePayload(definition, { name: 'A', ratio: 11 })).toThrow('ratio must be <= 10');
     expect(validatePayload(definition, { name: 'A' }).ratioDefault).toBe(0.25);
+    expect(() => validatePayload(definition, { name: 'A', data: 'not-json' })).toThrow('data must be valid JSON');
+    expect(validatePayload(definition, { name: 'A', data: '{"a":1}' }).data).toBe('{"a":1}');
   });
 
   it('normalizes datetime values to UTC ISO', () => {

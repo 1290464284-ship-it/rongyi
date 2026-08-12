@@ -27,7 +27,6 @@ interface VisitForm {
   doctorId: string;
   startTime: string;
   endTime: string;
-  status: string;
   chiefComplaint: string;
   diagnosis: string;
   treatmentPlan: string;
@@ -40,7 +39,6 @@ const emptyForm: VisitForm = {
   doctorId: '',
   startTime: '',
   endTime: '',
-  status: 'IN_PROGRESS',
   chiefComplaint: '',
   diagnosis: '',
   treatmentPlan: '',
@@ -93,7 +91,6 @@ export function VisitsPage() {
         doctorId: String(row.doctorId ?? ''),
         startTime: toLocalInput(row.startTime),
         endTime: toLocalInput(row.endTime),
-        status: String(row.status ?? 'IN_PROGRESS'),
         chiefComplaint: String(row.chiefComplaint ?? ''),
         diagnosis: String(row.diagnosis ?? ''),
         treatmentPlan: String(row.treatmentPlan ?? ''),

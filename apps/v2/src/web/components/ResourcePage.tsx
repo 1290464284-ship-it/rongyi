@@ -44,16 +44,6 @@ const PROTECTED_UI_FIELDS = new Set([
   'refundedAmount',
 ]);
 
-const RESOURCE_HIDDEN_EDIT_FIELDS: Record<string, ReadonlySet<string>> = {
-  appointments: new Set(['status']),
-  visits: new Set(['status']),
-  treatments: new Set(['status']),
-  firstExams: new Set(['status']),
-  prescriptions: new Set(['status', 'processedAt', 'chargeId', 'dispenseId']),
-  registrations: new Set(['status']),
-  followUps: new Set(['status', 'executionStatus']),
-};
-
 const TABLE_COLUMN_LIMIT = 10;
 
 function fieldValue(field: ResourceField, value: unknown): unknown {
@@ -177,8 +167,8 @@ function ResourceCrudPage({ resource: fixedResource, initialSearch }: { resource
     [definition],
   );
   const editableFields = useMemo(
-    () => visibleFields.filter((field) => !field.readOnly && !RESOURCE_HIDDEN_EDIT_FIELDS[resource]?.has(field.name)),
-    [visibleFields, resource],
+    () => visibleFields.filter((field) => !field.readOnly),
+    [visibleFields],
   );
   const tableColumns = useMemo(
     () => visibleFields.slice(0, TABLE_COLUMN_LIMIT).map((field) => ({

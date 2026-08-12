@@ -3,6 +3,7 @@ import { createRateLimit } from '../rate-limit';
 import { wrapAsync } from '../middleware';
 import { parsePagination } from '../pagination';
 import { ValidationError } from '../../infrastructure/errors';
+import { parseBooleanStrict } from '../validation';
 import type { RouteDependencies } from './deps';
 import { withIdempotency } from '../../infrastructure/idempotency';
 
@@ -64,7 +65,8 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
   }));
 
   app.patch('/api/v2/medical-records/:id/lock', wrapAsync(async (req, res) => {
-      res.json({ success: true, data: clinicalWorkflow.lockMedicalRecord(String(req.params.id), req.body?.locked !== false, req.context!) });
+      const locked = req.body?.locked === undefined ? true : parseBooleanStrict(req.body.locked, 'locked');
+      res.json({ success: true, data: clinicalWorkflow.lockMedicalRecord(String(req.params.id), locked, req.context!) });
   }));
 
   app.post('/api/v2/inventory/replenishment/generate', writeLimiter, wrapAsync(async (req, res) => {
@@ -88,7 +90,7 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
       }, async () => {
         const sent = await wechat.send(String(req.params.id), req.context!);
         return { success: true, data: sent };
-      }, { keepProcessingOnAppError: true });
+      });
       res.json(result);
   }));
 
@@ -101,7 +103,7 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
       }, async () => {
         const sent = await wechat.sendBatch(req.body?.ids ?? [], req.context!);
         return { success: true, data: sent };
-      }, { keepProcessingOnAppError: true });
+      });
       res.json(result);
   }));
 
@@ -247,7 +249,12 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
   }));
 
   app.post('/api/v2/bulk-import/:resource', batchLimiter, wrapAsync(async (req, res) => {
-      res.json({
+      const result = await withIdempotency(deps.db, {
+        operation: `bulk-import.${String(req.params.resource)}`,
+        userId: req.context!.userId,
+        clinicId: req.context!.clinicId,
+        requestId: typeof req.body?.requestId === 'string' ? req.body.requestId : '',
+      }, async () => ({
         success: true,
         data: await bulkImport.importRows(
           String(req.params.resource),
@@ -255,7 +262,8 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
           req.context!,
           Number(req.body?.chunkSize ?? 100),
         ),
-      });
+      }));
+      res.json(result);
   }));
 
   app.patch('/api/v2/debts/:id/pay', writeLimiter, wrapAsync(async (req, res) => {

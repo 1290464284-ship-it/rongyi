@@ -7,6 +7,7 @@ import {
   readOnlyFields,
   helpTexts,
 } from './ui-meta-data';
+import { STATE_MACHINE_PROTECTED_WRITE_FIELDS } from './security';
 
 function humanize(value: string): string {
   return value
@@ -43,7 +44,7 @@ export function applyUiMeta(definition: ResourceDefinition): ResourceDefinition 
       format: field.format ?? formatFor(field.type),
       inputType: field.inputType ?? inputTypeFor(field.type),
       hidden: field.hidden ?? hiddenFields.has(field.name),
-      readOnly: field.readOnly ?? readOnlyFields.has(field.name),
+      readOnly: field.readOnly ?? (readOnlyFields.has(field.name) || STATE_MACHINE_PROTECTED_WRITE_FIELDS[definition.name]?.has(field.name)),
       placeholder: field.placeholder ?? label,
       helpText: field.helpText ?? helpTexts[field.name],
     };

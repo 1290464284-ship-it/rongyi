@@ -427,6 +427,7 @@ export function UsersPage() {
         title="重置密码"
         message="输入新密码，至少 6 位"
         confirmText="重置"
+        pending={submitting}
         onSubmit={(value) => void resetPassword(value)}
         onCancel={() => setPasswordTarget(null)}
       />

@@ -50,7 +50,6 @@ export function FirstExamsPage() {
           patientId: String(row.patientId ?? ''),
           doctorId: String(row.doctorId ?? ''),
           consultantId: String(row.consultantId ?? ''),
-          status: String(row.status ?? 'DRAFT'),
           chiefComplaint: String(row.chiefComplaint ?? ''),
           presentIllness: String(row.presentIllness ?? ''),
           pastHistory: String(row.pastHistory ?? ''),

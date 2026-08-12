@@ -69,16 +69,16 @@ export function RecordFormFields({ form, update }: { form: RecordForm; update: (
         <PagePager
           page={visitPage}
           hasNext={visitPage * VISIT_PAGE_SIZE < (visits.data?.total ?? 0)}
-          onPageChange={setVisitPage}
+          onPageChange={(next) => {
+            update({ visitId: '' });
+            setVisitPage(next);
+          }}
+          disabled={visits.isPlaceholderData}
         />
       )}
       <label>
         分类
         <input value={form.category} onChange={(event) => update({ category: event.target.value })} />
-      </label>
-      <label>
-        状态
-        <input value={form.status} onChange={(event) => update({ status: event.target.value })} />
       </label>
       <label>
         <input type="checkbox" checked={form.isTemplate} onChange={(event) => update({ isTemplate: event.target.checked })} />

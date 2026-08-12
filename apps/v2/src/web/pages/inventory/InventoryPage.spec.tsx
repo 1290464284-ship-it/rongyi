@@ -126,6 +126,22 @@ describe('InventoryPage', () => {
     )).toHaveLength(0);
   });
 
+  it('clears the item id when paging the inventory list', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/inventoryItems?page=1&pageSize=20') {
+        return { items: [], total: 30, page: 1, pageSize: 20 };
+      }
+      if (path === '/inventory/low-stock') return [];
+      if (path === '/inventory/expiring?days=30') return [];
+      return {};
+    });
+    render(<InventoryPage />, { wrapper });
+    const input = await screen.findByLabelText('库存项目 ID') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'old-item' } });
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+    expect((screen.getByLabelText('库存项目 ID') as HTMLInputElement).value).toBe('');
+  });
+
   it('reports transaction and generation failures', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/inventoryItems?page=1&pageSize=20') {

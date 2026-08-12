@@ -127,9 +127,9 @@ export function CrudPage<
       {props.paged && (
         crud.cursorPagination ? (
           <div className="pager">
-            <button type="button" disabled={!crud.canGoPrev} onClick={crud.goPrev}>上一页</button>
+            <button type="button" disabled={isStale || !crud.canGoPrev} onClick={crud.goPrev}>上一页</button>
             <span>第 {crud.page} 页</span>
-            <button type="button" disabled={!crud.hasNext} onClick={crud.goNext}>下一页</button>
+            <button type="button" disabled={isStale || !crud.hasNext} onClick={crud.goNext}>下一页</button>
           </div>
         ) : (
           <PagePager

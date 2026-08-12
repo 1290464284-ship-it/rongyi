@@ -166,7 +166,8 @@ describe('EditSaveService', () => {
       remark: string | null; status: string;
     };
     expect(main.remark).toBe('饭后服用');
-    expect(main.status).toBe('SUBMITTED');
+    // 编辑保存不能直写状态机：无论客户端传 SUBMITTED 还是 PROCESSED，都只能保持 DRAFT。
+    expect(main.status).toBe('DRAFT');
     const updated = db.prepare('SELECT price FROM PrescriptionItem WHERE id = ?').get('pi-1') as { price: number };
     expect(updated.price).toBe(1200);
     const created = db.prepare('SELECT id, name FROM PrescriptionItem WHERE name = ?').get('布洛芬') as { id: string; name: string };

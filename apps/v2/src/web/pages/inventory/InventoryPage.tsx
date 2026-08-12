@@ -369,7 +369,11 @@ export function InventoryPage() {
           <PagePager
             page={page}
             hasNext={page * 20 < (query.data?.total ?? 0)}
-            onPageChange={setPage}
+            onPageChange={(next) => {
+              setPage(next);
+              setItemId('');
+              setItemIdError('');
+            }}
             disabled={stale}
           />
           <h2>低库存</h2>

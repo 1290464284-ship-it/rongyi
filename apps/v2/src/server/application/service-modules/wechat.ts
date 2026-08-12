@@ -195,7 +195,11 @@ export class WechatService {
     if (claimed === 0) {
       const fresh = this.wechatRepository.findById(messageId, context.clinicId);
       if (fresh?.status === 'SENT') return { id: messageId, status: 'SENT' };
-      if (fresh?.status === 'IN_PROGRESS') throw new ConflictError('Wechat message is already being sent');
+      if (fresh?.status === 'IN_PROGRESS') {
+        const conflict = new ConflictError('Wechat message is already being sent');
+        (conflict as ConflictError & { keepProcessing?: boolean }).keepProcessing = true;
+        throw conflict;
+      }
       // 状态仍为 PENDING/DRAFT（行刚被并发删除或测试用仓库无真实行）：继续发送，
       // markSent 仍会在状态不匹配时以 0 changes 拒绝。
       if (!fresh || !SENDABLE_WECHAT_STATUSES.has(fresh.status)) {

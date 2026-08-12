@@ -115,7 +115,14 @@ function validateField(field: ResourceField, raw: unknown): unknown {
       }
       return raw;
     case 'json':
-      if (typeof raw === 'string') return raw;
+      if (typeof raw === 'string') {
+        try {
+          JSON.parse(raw);
+        } catch {
+          throw new ValidationError(`${field.name} must be valid JSON`);
+        }
+        return raw;
+      }
       if (Array.isArray(raw) || (typeof raw === 'object' && raw !== null)) return raw;
       throw new ValidationError(`${field.name} must be JSON-compatible`);
     default:

@@ -35,7 +35,7 @@ export function CreateFollowUpDialog({
     try {
       await apiRequest('/resources/followUps', {
         method: 'POST',
-        body: JSON.stringify({ patientId, planDate, content: content || undefined, status: 'PENDING' }),
+        body: JSON.stringify({ patientId, planDate, content: content || undefined }),
       });
       showToast('回访已创建', 'success');
       onSaved();

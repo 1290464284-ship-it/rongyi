@@ -104,6 +104,22 @@ describe('cephalometric report routes', () => {
     expect(message.remark).toBe('phone:13800000000');
   });
 
+  it('replays the same send request id without creating another message', async () => {
+    const first = await request(app)
+      .post('/api/v2/cephalometric/route-case-1/send')
+      .set('Idempotency-Key', 'ceph-send-replay')
+      .send({ note: 'replay' })
+      .expect(200);
+    const second = await request(app)
+      .post('/api/v2/cephalometric/route-case-1/send')
+      .set('Idempotency-Key', 'ceph-send-replay')
+      .send({ note: 'replay' })
+      .expect(200);
+    expect(second.body.data.messageId).toBe(first.body.data.messageId);
+    const count = db.prepare('SELECT COUNT(*) AS c FROM WechatMessage WHERE id = ?').get(first.body.data.messageId) as { c: number };
+    expect(Number(count.c)).toBe(1);
+  });
+
   it('POST /api/v2/cephalometric/compare returns overlapping cases', async () => {
     const res = await request(app)
       .post('/api/v2/cephalometric/compare')

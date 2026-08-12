@@ -11,7 +11,6 @@ import { assertDoctorExists, assertPatientExists } from './common';
 import type { AppContext } from '../../../domain/contracts';
 
 const TREATMENT_PLAN_STATUSES = new Set(['PLANNED', 'APPROVED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']);
-const PRESCRIPTION_STATUSES = new Set(['DRAFT', 'SUBMITTED', 'APPROVED', 'PROCESSED', 'CANCELLED']);
 const MAX_ITEM_QUANTITY = 1_000_000;
 const MAX_ITEM_PRICE = 100_000_000_00;
 
@@ -175,7 +174,6 @@ export class EditSaveService {
     ).get(prescriptionId, ...tenantParams(clinicId)) as { id: string } | undefined;
     if (!row) throw new NotFoundError('处方不存在');
 
-    if (!PRESCRIPTION_STATUSES.has(input.status)) throw new ValidationError('处方状态无效');
     if (typeof input.patientId !== 'string' || input.patientId.trim() === '') throw new ValidationError('患者必填');
     if (typeof input.doctorId !== 'string' || input.doctorId.trim() === '') throw new ValidationError('医生必填');
     assertPatientExists(this.db, input.patientId, clinicId);
@@ -185,12 +183,14 @@ export class EditSaveService {
     if (items.length === 0) throw new ValidationError('处方至少需要一条有效明细');
 
     const now = context.now().toISOString();
+    // 处方状态由 process 状态机管理；编辑保存只能保持 DRAFT，不能直接写 PROCESSED。
+    const status = 'DRAFT';
     this.db.transaction(() => {
       const main = this.db.prepare(
         `UPDATE Prescription
          SET patientId = ?, doctorId = ?, remark = ?, status = ?, updatedAt = ?
          WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
-      ).run(input.patientId, input.doctorId, input.remark ?? null, input.status, now, prescriptionId, ...tenantParams(clinicId));
+      ).run(input.patientId, input.doctorId, input.remark ?? null, status, now, prescriptionId, ...tenantParams(clinicId));
       if (main.changes === 0) throw new NotFoundError('处方不存在');
       trackResourceWrite(this.db, {
         tableName: 'Prescription',

@@ -31,7 +31,6 @@ interface TreatmentForm {
   price: string;
   quantity: string;
   teethNumbers: string;
-  status: string;
   plannedDate: string;
   completedDate: string;
   remark: string;
@@ -46,7 +45,6 @@ const emptyForm: TreatmentForm = {
   price: '',
   quantity: '1',
   teethNumbers: '',
-  status: 'PLANNED',
   plannedDate: '',
   completedDate: '',
   remark: '',
@@ -100,7 +98,6 @@ export function TreatmentsPage() {
         price: centsToYuanString(row.price),
         quantity: String(row.quantity ?? '1'),
         teethNumbers: Array.isArray(row.teethNumbers) ? row.teethNumbers.map(String).join(', ') : '',
-        status: String(row.status ?? 'PLANNED'),
         plannedDate: String(row.plannedDate ?? '').slice(0, 10),
         completedDate: String(row.completedDate ?? '').slice(0, 10),
         remark: String(row.remark ?? ''),

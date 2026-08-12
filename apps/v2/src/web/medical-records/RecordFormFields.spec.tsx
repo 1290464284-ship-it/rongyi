@@ -91,8 +91,6 @@ describe('RecordFormFields', () => {
     expect(update).toHaveBeenCalledWith({ visitId: 'visit-1' });
     fireEvent.change(screen.getByLabelText('分类'), { target: { value: '初诊' } });
     expect(update).toHaveBeenCalledWith({ category: '初诊' });
-    fireEvent.change(screen.getByLabelText('状态'), { target: { value: 'SUBMITTED' } });
-    expect(update).toHaveBeenCalledWith({ status: 'SUBMITTED' });
     fireEvent.change(screen.getByLabelText('主诉'), { target: { value: '牙痛三天' } });
     expect(update).toHaveBeenCalledWith({ chiefComplaint: '牙痛三天' });
     fireEvent.change(screen.getByLabelText('现病史'), { target: { value: '夜间加重' } });

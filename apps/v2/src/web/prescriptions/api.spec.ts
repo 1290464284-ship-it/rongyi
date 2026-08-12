@@ -67,9 +67,9 @@ describe('prescriptions/api', () => {
     ));
     expect(body).toMatchObject({
       patientId: 'p-1',
-      status: 'DRAFT',
       items: [{ id: 'local-1', name: '阿莫西林', days: 5, quantity: 2, price: 1200 }],
     });
+    expect(body.status).toBeUndefined();
   });
 
   it('rethrows save endpoint failures', async () => {

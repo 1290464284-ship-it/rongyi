@@ -110,7 +110,7 @@ const RESOURCE_PROTECTED_WRITE_FIELDS: Record<string, ReadonlySet<string>> = {
  * appointment/clinical-workflow 的转移校验（如直接 PATCH 成 COMPLETED 或创建
  * 终态记录）。sync/bulk-import 仍走各自校验与幂等路径，不受此集合约束。
  */
-const STATE_MACHINE_PROTECTED_WRITE_FIELDS: Record<string, ReadonlySet<string>> = {
+export const STATE_MACHINE_PROTECTED_WRITE_FIELDS: Record<string, ReadonlySet<string>> = {
   appointments: new Set(['status']),
   visits: new Set(['status']),
   treatments: new Set(['status']),
@@ -118,6 +118,22 @@ const STATE_MACHINE_PROTECTED_WRITE_FIELDS: Record<string, ReadonlySet<string>> 
   prescriptions: new Set(['status', 'processedAt', 'chargeId', 'dispenseId']),
   registrations: new Set(['status']),
   followUps: new Set(['status', 'executionStatus']),
+  medicalRecords: new Set([
+    'status',
+    'isLocked',
+    'lockedAt',
+    'lockedBy',
+    'editRequestStatus',
+    'editRequestReason',
+    'editRequestedById',
+    'editRequestedAt',
+    'proposedContentJson',
+    'reviewedById',
+    'reviewedAt',
+    'reviewNote',
+  ]),
+  leaveRequests: new Set(['status', 'reviewerId', 'reviewedAt']),
+  businessAlerts: new Set(['status', 'acknowledged', 'acknowledgedBy', 'acknowledgedAt']),
 };
 
 export const STATE_MACHINE_DEFAULT_STATUS: Record<string, string> = {
@@ -128,6 +144,9 @@ export const STATE_MACHINE_DEFAULT_STATUS: Record<string, string> = {
   prescriptions: 'DRAFT',
   registrations: 'REGISTERED',
   followUps: 'PENDING',
+  medicalRecords: 'DRAFT',
+  leaveRequests: 'PENDING',
+  businessAlerts: 'OPEN',
 };
 
 export function applyStateMachineDefaults(resourceName: string, payload: Record<string, unknown>): Record<string, unknown> {

@@ -157,6 +157,7 @@ export function useCrudResource<
   }
 
   function goNext() {
+    if (query.isPlaceholderData) return;
     const next = query.data?.nextCursor;
     if (!next) return;
     setCursorStack((current) => [...current, cursor ?? '']);
@@ -164,6 +165,7 @@ export function useCrudResource<
   }
 
   function goPrev() {
+    if (query.isPlaceholderData) return;
     if (cursorStack.length === 0) return;
     const nextStack = [...cursorStack];
     const previous = nextStack.pop() ?? null;

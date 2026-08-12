@@ -35,6 +35,7 @@ export function categoryColumns(handlers: {
   onEdit: (row: ImagingCategoryRow) => void;
   onToggle: (row: ImagingCategoryRow) => void;
   onDelete: (row: ImagingCategoryRow) => void;
+  toggleBusyId?: string | null;
 }): DataTableColumn<ImagingCategoryRow>[] {
   return [
     { key: 'name', label: '名称' },
@@ -51,7 +52,11 @@ export function categoryColumns(handlers: {
       render: (row) => (
         <>
           <button type="button" onClick={() => handlers.onEdit(row)}>编辑</button>
-          <button type="button" onClick={() => handlers.onToggle(row)}>
+          <button
+            type="button"
+            disabled={handlers.toggleBusyId === String(row.id)}
+            onClick={() => handlers.onToggle(row)}
+          >
             {row.active ? '停用' : '启用'}
           </button>
           <button type="button" className="danger" onClick={() => handlers.onDelete(row)}>删除</button>

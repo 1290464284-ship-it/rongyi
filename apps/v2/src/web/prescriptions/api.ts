@@ -49,7 +49,6 @@ export async function updatePrescription(form: PrescriptionForm, prescriptionId:
       patientId: form.patientId,
       doctorId: form.doctorId,
       remark: form.remark || undefined,
-      status: form.status,
       items: items.map(({ id, payload }) => ({ id, ...payload })),
     }),
   });
