@@ -328,6 +328,7 @@ export function uniqueIndexColumns(db: Database.Database, table: string, fieldNa
  */
 export function createPerformanceIndexes(db: Database.Database): void {
   const indexDefs: Array<{ name: string; table: string; columns: string[] }> = [
+    { name: 'idx_v2_perf_patient_clinic_created', table: 'Patient', columns: ['clinicId', 'createdAt'] },
     { name: 'idx_v2_perf_charge_patient', table: 'Charge', columns: ['patientId', 'deletedAt'] },
     { name: 'idx_v2_perf_charge_patient_paid', table: 'Charge', columns: ['patientId', 'paidAt', 'deletedAt'] },
     { name: 'idx_v2_perf_charge_clinic_created', table: 'Charge', columns: ['clinicId', 'createdAt'] },

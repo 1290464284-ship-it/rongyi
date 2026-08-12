@@ -822,6 +822,34 @@ describe('api helper functions', () => {
     expect(callUrl.searchParams.get('clinic')).toBe('1');
   });
 
+  it('fetchAllPages follows nextCursor when the first page returns one', async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      const cursor = url.searchParams.get('cursor');
+      if (!cursor) {
+        return new Response(JSON.stringify({
+          success: true,
+          data: { items: [{ id: 'r-1' }], total: 3, page: 1, pageSize: 100, nextCursor: 'c-1' },
+        }), { status: 200 });
+      }
+      if (cursor === 'c-1') {
+        expect(url.searchParams.get('page')).toBeNull();
+        return new Response(JSON.stringify({
+          success: true,
+          data: { items: [{ id: 'r-2' }], total: 3, page: 1, pageSize: 100, nextCursor: 'c-2' },
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({
+        success: true,
+        data: { items: [{ id: 'r-3' }], total: 3, page: 1, pageSize: 100 },
+      }), { status: 200 });
+    });
+    const rows = await mod.fetchAllPages('/resources/patients');
+    expect(rows).toEqual([{ id: 'r-1' }, { id: 'r-2' }, { id: 'r-3' }]);
+    expect(String(fetchMock.mock.calls[1][0])).toContain('cursor=c-1');
+    expect(String(fetchMock.mock.calls[2][0])).toContain('cursor=c-2');
+  });
+
   it('fetchAllPages returns early for empty first pages', async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(

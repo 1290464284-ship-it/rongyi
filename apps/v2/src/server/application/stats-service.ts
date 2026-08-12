@@ -64,7 +64,7 @@ export class StatsService {
 
   private computeAndSnapshotDashboard(context: AppContext): Record<string, unknown> {
     const result = this.computeDashboard(context);
-    writeDashboardSnapshot(this.db, context.clinicId, result, new Date().toISOString());
+    writeDashboardSnapshot(this.db, context.clinicId, result, context.now().toISOString());
     return result;
   }
 

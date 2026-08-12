@@ -170,35 +170,60 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
     const labelSelect = labelJoins.length > 0 ? `, ${labelJoins.map((join) => join.select).join(', ')}` : '';
     const labelJoinSql = labelJoins.map((join) => join.join).join(' ');
 
-    // keyset 模式：按 id ASC 拉取 id > cursor 的下一页，避免深分页 offset 扫描；
-    // total 仍按过滤集整体统计（不含游标条件），与第一页口径一致。
+    // keyset 模式：id 游标按 id ASC 拉取；createdAt|id 复合游标按
+    // createdAt DESC + id DESC 拉取。首屏（无 cursor）也会在可 keyset
+    // 的默认排序下返回 nextCursor，让前端直接进入游标路径，避免深分页
+    // offset 扫描。total 仍按过滤集整体统计（不含游标条件）。
     const whereSql = where.join(' AND ');
     const totalRow = this.db.prepare(`SELECT COUNT(*) AS total FROM ${this.resource.table} t WHERE ${whereSql}`).get(...params) as { total: number };
     let sortField = query.sortBy && this.field(query.sortBy) ? query.sortBy : this.resource.defaultSort?.field ?? 'createdAt';
     let sortOrder = query.sortOrder === 'ASC' ? 'ASC' : 'DESC';
     let rowParams = params;
     let rowWhere = whereSql;
-    if (cursor) {
+    let keysetOrder = false;
+    if (cursor && cursor.includes('|')) {
+      const separator = cursor.lastIndexOf('|');
+      const cursorTime = cursor.slice(0, separator);
+      const cursorId = cursor.slice(separator + 1);
+      rowWhere = `${whereSql} AND (t.createdAt < ? OR (t.createdAt = ? AND t.id < ?))`;
+      rowParams = [...params, cursorTime, cursorTime, cursorId];
+      sortField = 'createdAt';
+      sortOrder = 'DESC';
+      keysetOrder = true;
+    } else if (cursor) {
       rowWhere = `${whereSql} AND t.id > ?`;
       rowParams = [...params, cursor];
       sortField = 'id';
       sortOrder = 'ASC';
+      keysetOrder = true;
+    } else if ((sortField === 'id' && sortOrder === 'ASC') || (sortField === 'createdAt' && sortOrder === 'DESC')) {
+      keysetOrder = true;
     }
-    const offset = (page - 1) * pageSize;
+    const offset = cursor ? 0 : (page - 1) * pageSize;
+    const orderSql = sortField === 'createdAt' && sortOrder === 'DESC'
+      ? 'ORDER BY t.createdAt DESC, t.id DESC'
+      : `ORDER BY t.${sortField} ${sortOrder}`;
+    const fetchSize = keysetOrder ? pageSize + 1 : pageSize;
     const rows = this.queryRows(
       `SELECT t.*${labelSelect} FROM ${this.resource.table} t ${labelJoinSql}
        WHERE ${rowWhere}
-       ORDER BY t.${sortField} ${sortOrder}
+       ${orderSql}
        LIMIT ? OFFSET ?`,
-      [...rowParams, pageSize, offset],
+      [...rowParams, fetchSize, offset],
     );
+    const pageRows = rows.slice(0, pageSize);
 
     let nextCursor: string | undefined;
-    if (cursor && rows.length === pageSize) {
-      nextCursor = String((rows[rows.length - 1] as Record<string, unknown>).id ?? '');
+    if (keysetOrder && rows.length > pageSize) {
+      if (sortField === 'createdAt' && sortOrder === 'DESC') {
+        const last = pageRows[pageRows.length - 1] as Record<string, unknown>;
+        nextCursor = `${String(last.createdAt ?? '')}|${String(last.id ?? '')}`;
+      } else {
+        nextCursor = String((pageRows[pageRows.length - 1] as Record<string, unknown>).id ?? '');
+      }
     }
     return {
-      items: rows.map((row) => this.mapRow(row)),
+      items: pageRows.map((row) => this.mapRow(row)),
       total: totalRow.total,
       page,
       pageSize,

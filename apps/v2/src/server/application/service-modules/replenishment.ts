@@ -28,19 +28,26 @@ export class ReplenishmentService {
     ).all(...clinicParams) as Array<Record<string, unknown>>;
     const nowDate = context.now();
     const now = nowDate.toISOString();
-    const since = new Date(nowDate.getTime() - 90 * 86_400_000).toISOString();
+    // 快照窗口按 UTC 日对齐，同一自然日内重复生成可复用物化快照；
+    // 窗口标签为“今日 0 点往前 90 个完整 UTC 日”，新增流水仍由
+    // MAX(createdAt) 二次校验兜底，跨进程/直写路径也不会漏失效。
+    const DAY_MS = 86_400_000;
+    const todayUtcStart = Math.floor(nowDate.getTime() / DAY_MS) * DAY_MS;
+    const windowEnd = new Date(todayUtcStart).toISOString();
+    const since = new Date(todayUtcStart - 90 * DAY_MS).toISOString();
     // 超过阈值后使用惰性物化快照：写路径失效 + 最新流水时间二次校验，避免重复全表聚合。
     let consumptionByItem: Map<string, number>;
     if (clinicId !== null && tableRowCount(this.db, 'InventoryTransaction') > AGGREGATE_THRESHOLD) {
       const latestRow = this.db.prepare(
-        `SELECT MAX(createdAt) AS m FROM InventoryTransaction WHERE createdAt >= ? AND deletedAt IS NULL`,
-      ).get(since) as { m: string | null } | undefined;
-      const cached = readReplenishmentSnapshot(this.db, clinicId, since, now, latestRow?.m ?? null);
+        `SELECT MAX(createdAt) AS m FROM InventoryTransaction
+         WHERE createdAt >= ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
+      ).get(since, ...clinicParams) as { m: string | null } | undefined;
+      const cached = readReplenishmentSnapshot(this.db, clinicId, since, windowEnd, latestRow?.m ?? null);
       if (cached) {
         consumptionByItem = cached;
       } else {
         consumptionByItem = computeConsumption(this.db, clinicId, since);
-        writeReplenishmentSnapshot(this.db, clinicId, since, now, consumptionByItem, now);
+        writeReplenishmentSnapshot(this.db, clinicId, since, windowEnd, consumptionByItem, now);
       }
     } else {
       consumptionByItem = computeConsumption(this.db, clinicId, since);

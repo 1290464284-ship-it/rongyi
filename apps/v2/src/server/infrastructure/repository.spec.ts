@@ -131,6 +131,40 @@ describe('SqliteRepository', () => {
     expect(third.nextCursor).toBeUndefined();
   });
 
+  it('supports composite keyset pagination on createdAt DESC with id tie-break', async () => {
+    const repo = new SqliteRepository(db, resourceRegistry.get('patients')!);
+    const ids = ['composite-cursor-0', 'composite-cursor-1', 'composite-cursor-2', 'composite-cursor-3'];
+    for (let i = 0; i < ids.length; i += 1) {
+      await repo.insert({
+        id: ids[i],
+        code: `COMPOSITE-${i}`,
+        name: `CompositeZetaOnly ${i}`,
+        gender: 'UNKNOWN',
+        source: 'OTHER',
+      }, context);
+    }
+    db.prepare(
+      `UPDATE Patient SET createdAt = ? WHERE id = ?`,
+    ).run('2026-08-01T00:00:00.000Z', 'composite-cursor-0');
+    db.prepare(
+      `UPDATE Patient SET createdAt = ? WHERE id = ?`,
+    ).run('2026-08-02T00:00:00.000Z', 'composite-cursor-1');
+    db.prepare(
+      `UPDATE Patient SET createdAt = ? WHERE id = ?`,
+    ).run('2026-08-03T00:00:00.000Z', 'composite-cursor-2');
+    db.prepare(
+      `UPDATE Patient SET createdAt = ? WHERE id = ?`,
+    ).run('2026-08-04T00:00:00.000Z', 'composite-cursor-3');
+
+    const first = await repo.findMany({ page: 1, pageSize: 2, search: 'CompositeZetaOnly' }, context);
+    expect(first.items.map((row) => row.id)).toEqual(['composite-cursor-3', 'composite-cursor-2']);
+    expect(first.nextCursor).toMatch(/^2026-08-03T00:00:00\.000Z\|composite-cursor-2$/);
+
+    const second = await repo.findMany({ page: 1, pageSize: 2, search: 'CompositeZetaOnly', cursor: first.nextCursor }, context);
+    expect(second.items.map((row) => row.id)).toEqual(['composite-cursor-1', 'composite-cursor-0']);
+    expect(second.nextCursor).toBeUndefined();
+  });
+
   it('rejects generic writes with missing relation targets', async () => {
     const repo = new SqliteRepository(db, resourceRegistry.get('wechatMessages')!);
     await expect(repo.insert({
