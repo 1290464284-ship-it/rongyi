@@ -67,6 +67,7 @@
 | 第 56 轮 | 2026-08-13 | 提分项：契约 Schema/mutation ratchet/quarantine/trace/E2E/SBOM | `../深度审计报告-第五十六轮-主报告.md` |
 | 第 57 轮 | 2026-08-13 | 测试顺序债清零：完整 sequence.shuffle 全绿 | `../深度审计报告-第五十七轮-主报告.md` |
 | 第 58 轮 | 2026-08-13 | 扣分项提升：mutation 范围/契约包络扩展 | `../深度审计报告-第五十八轮-主报告.md` |
+| 第 59 轮 | 2026-08-13 | OpenAPI 契约文件 + mutation score/ratchet 再提升 | `../深度审计报告-第五十九轮-主报告.md` |
 
 ## 其他归档
 
@@ -84,7 +85,7 @@
 
 ## 当前状态
 
-最新一轮为第 58 轮（`7e2c693`），单测 234 文件 / 2382 用例；mutation score 41.81，完整 sequence.shuffle 全绿，typecheck/lint/knip/unit 均通过。
+最新一轮为第 59 轮，单测 235 文件 / 2386 用例；mutation score 47.51，完整 sequence.shuffle 全绿，typecheck/lint/knip/unit 均通过。
 历史轮次请以上方轮次索引为准；各轮详情见 `../深度审计报告-第N轮-主报告.md`。
 已收敛的长期决策项：processing-flow 手动改态保留并补 `changes` 校验；大库增量聚合
 暂不启动，`replenishment.generate` 已用有界分块事务，10 万级冷态基准持续 PASS。
