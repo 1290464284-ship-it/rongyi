@@ -6,12 +6,14 @@ export default {
     'src/server/http/validation.ts',
     'src/server/infrastructure/tenant.ts',
     'src/server/infrastructure/errors.ts',
+    'src/server/shared/csv.ts',
   ],
   testFiles: [
     'src/server/http/pagination.property.spec.ts',
     'src/server/http/validation.property.spec.ts',
     'src/server/infrastructure/tenant.spec.ts',
     'src/server/infrastructure/errors.spec.ts',
+    'src/server/shared/csv.spec.ts',
   ],
   reporters: ['clear-text'],
   coverageAnalysis: 'off',
@@ -19,6 +21,6 @@ export default {
   timeoutMS: 30_000,
   // Ratchet from the measured pilot score. Keep this above the current score
   // to prevent silently regressing the property-based verification strength.
-  thresholds: { high: 60, low: 45, break: 40 },
+  thresholds: { high: 65, low: 50, break: 47 },
   cleanTempDir: 'always',
 };

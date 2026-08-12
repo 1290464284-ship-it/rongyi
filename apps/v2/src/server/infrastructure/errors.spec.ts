@@ -6,6 +6,7 @@ import {
   UnauthorizedError,
   ValidationError,
   asAppError,
+  isSystematicSqliteError,
 } from './errors';
 
 describe('errors', () => {
@@ -31,5 +32,19 @@ describe('errors', () => {
     const tooLarge = new Error('request entity too large') as Error & { type?: string };
     tooLarge.type = 'entity.too.large';
     expect(asAppError(tooLarge)).toMatchObject({ status: 413, code: 'PAYLOAD_TOO_LARGE' });
+  });
+
+  it('normalizes CORS rejections and systematic SQLite errors', () => {
+    expect(asAppError(new Error('Not allowed by CORS'))).toMatchObject({
+      status: 403,
+      code: 'FORBIDDEN',
+    });
+    for (const code of ['SQLITE_BUSY', 'SQLITE_FULL', 'SQLITE_IOERR', 'SQLITE_CORRUPT', 'SQLITE_LOCKED']) {
+      const error = new Error('storage') as Error & { code?: string };
+      error.code = code;
+      expect(isSystematicSqliteError(error)).toBe(true);
+    }
+    expect(isSystematicSqliteError(new Error('storage'))).toBe(false);
+    expect(isSystematicSqliteError('not-an-error')).toBe(false);
   });
 });

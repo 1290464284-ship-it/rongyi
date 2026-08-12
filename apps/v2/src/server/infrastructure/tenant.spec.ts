@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import fc from 'fast-check';
 import { tenantAnd, tenantMatches, tenantParams, tenantWhere } from './tenant';
 
 describe('tenant helpers', () => {
@@ -18,5 +19,22 @@ describe('tenant helpers', () => {
     expect(tenantMatches('clinic-1', 'clinic-1')).toBe(true);
     expect(tenantMatches('clinic-2', 'clinic-1')).toBe(false);
     expect(tenantMatches('clinic-2', null)).toBe(true);
+  });
+
+  it('matches arbitrary non-null clinic ids only when equal', () => {
+    fc.assert(
+      fc.property(
+        fc.oneof(fc.string(), fc.integer(), fc.constant(null), fc.constant(undefined)),
+        fc.string({ minLength: 1 }),
+        (rowClinicId, clinicId) => {
+          const expected = Boolean(clinicId)
+            && rowClinicId !== null
+            && rowClinicId !== undefined
+            && String(rowClinicId) === clinicId;
+          expect(tenantMatches(rowClinicId, clinicId)).toBe(expected);
+        },
+      ),
+      { numRuns: 200 },
+    );
   });
 });

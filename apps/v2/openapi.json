@@ -1,0 +1,221 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Dental Clinic V2 API",
+    "version": "2.2.0",
+    "description": "Core HTTP contract for the Electron desktop application."
+  },
+  "servers": [
+    { "url": "http://127.0.0.1:3180/api/v2" }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Liveness check",
+        "responses": {
+          "200": {
+            "description": "Service is healthy",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HealthEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "summary": "Authenticate with username and password",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["username", "password"],
+                "properties": {
+                  "username": { "type": "string" },
+                  "password": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authenticated session",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LoginEnvelope" }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/resource-meta": {
+      "get": {
+        "summary": "List resource metadata",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Resource definitions",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ResourceMetaEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/resources/patients": {
+      "get": {
+        "summary": "List patients",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Paged patient list",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ResourceListEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/resources/patients/{id}": {
+      "get": {
+        "summary": "Get a patient",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Patient record",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ResourceDetailEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "HealthEnvelope": {
+        "type": "object",
+        "required": ["success", "data"],
+        "properties": {
+          "success": { "const": true },
+          "data": {
+            "type": "object",
+            "required": ["status", "time"],
+            "properties": {
+              "status": { "const": "ok" },
+              "time": { "type": "string", "format": "date-time" }
+            }
+          }
+        }
+      },
+      "LoginEnvelope": {
+        "type": "object",
+        "required": ["success", "data"],
+        "properties": {
+          "success": { "const": true },
+          "data": {
+            "type": "object",
+            "required": ["token", "refreshToken", "user"],
+            "properties": {
+              "token": { "type": "string" },
+              "refreshToken": { "type": "string" },
+              "user": {
+                "type": "object",
+                "required": ["id", "username", "role"],
+                "properties": {
+                  "id": { "type": "string" },
+                  "username": { "type": "string" },
+                  "role": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "ResourceMetaEnvelope": {
+        "type": "object",
+        "required": ["success", "data"],
+        "properties": {
+          "success": { "const": true },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name"],
+              "properties": { "name": { "type": "string" } }
+            }
+          }
+        }
+      },
+      "ResourceListEnvelope": {
+        "type": "object",
+        "required": ["success", "data"],
+        "properties": {
+          "success": { "const": true },
+          "data": {
+            "type": "object",
+            "required": ["items", "total", "page", "pageSize"],
+            "properties": {
+              "items": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+              "total": { "type": "number" },
+              "page": { "type": "number" },
+              "pageSize": { "type": "number" }
+            }
+          }
+        }
+      },
+      "ResourceDetailEnvelope": {
+        "type": "object",
+        "required": ["success", "data"],
+        "properties": {
+          "success": { "const": true },
+          "data": {
+            "type": "object",
+            "required": ["id"],
+            "properties": { "id": { "type": "string" } }
+          }
+        }
+      },
+      "ErrorEnvelope": {
+        "type": "object",
+        "required": ["success", "code", "message"],
+        "properties": {
+          "success": { "const": false },
+          "code": { "type": "string" },
+          "message": { "type": "string" },
+          "traceId": { "type": "string" }
+        }
+      }
+    }
+  }
+}
