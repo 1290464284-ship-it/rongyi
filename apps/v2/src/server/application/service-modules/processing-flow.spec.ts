@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -15,7 +15,7 @@ describe('ProcessingFlowService', () => {
   let context: AppContext;
   const now = '2026-08-05T10:00:00.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-processing-flow-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -31,9 +31,11 @@ describe('ProcessingFlowService', () => {
     db.prepare(
       `UPDATE Appointment SET startTime = ?, endTime = ?, updatedAt = ? WHERE id = 'appointment-demo-001'`,
     ).run('2099-01-01T00:00:00.000Z', '2099-01-01T01:00:00.000Z', now);
+    insertDictStep('step-model', '模型设计', 0);
+    insertDictStep('step-tryon', '试戴', 1);
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -49,7 +51,7 @@ describe('ProcessingFlowService', () => {
 
   function insertDictStep(id: string, name: string, sortOrder: number, active = 1, clinicId = context.clinicId): void {
     db.prepare(
-      `INSERT INTO ProcessingFlowStep (
+      `INSERT OR IGNORE INTO ProcessingFlowStep (
          id, clinicId, createdAt, updatedAt, deletedAt,
          name, sortOrder, active
        ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?)`,
@@ -101,6 +103,7 @@ describe('ProcessingFlowService', () => {
   });
 
   it('重复 ensureSteps 不重复生成步骤', () => {
+    insertOrder('po-flow-001', 'PF-001');
     const service = new ProcessingFlowService(db);
     const first = service.ensureSteps('po-flow-001', context);
     const second = service.ensureSteps('po-flow-001', context);
@@ -109,6 +112,7 @@ describe('ProcessingFlowService', () => {
   });
 
   it('listSteps 返回步骤列表', () => {
+    insertOrder('po-flow-001', 'PF-001');
     const service = new ProcessingFlowService(db);
     const steps = service.listSteps('po-flow-001', context);
     expect(steps.map((step) => step.stepName)).toEqual(['模型设计', '试戴']);
@@ -240,6 +244,8 @@ describe('ProcessingFlowService', () => {
   it('stats 无词典步骤时按出现的 stepName 聚合', () => {
     const other = { ...context, clinicId: 'clinic-other' };
     const otherService = new ProcessingFlowService(db);
+    insertOrder('po-stats-d', 'PF-STD', 'SENT', 'clinic-other');
+    insertOrderStep('po-stats-d', 'ostep-d-1', 'step-model', '模型设计', 'DONE', 0, now, 'clinic-other');
     const result = otherService.stats({ from: '2026-08-05', to: '2026-08-05' }, other);
     // clinic-other 无词典步骤：聚合出现的步骤名（po-stats-d 的 模型设计 DONE）
     expect(result.steps.map((step) => step.stepName)).toEqual(['模型设计']);

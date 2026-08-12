@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -18,7 +18,7 @@ describe('inventory doc routes', () => {
   const now = '2026-08-05T10:00:00.000Z';
   const clinicId = 'clinic-v2-001';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-inventory-doc-routes-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -59,7 +59,7 @@ describe('inventory doc routes', () => {
     });
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -111,6 +111,7 @@ describe('inventory doc routes', () => {
   });
 
   it('creates a loss doc', async () => {
+    db.prepare("UPDATE InventoryItem SET stock = 95 WHERE id = 'inventory-demo-001'").run();
     const res = await request(app)
       .post('/api/v2/inventory-docs/loss')
       .send({ items: [{ itemId: 'inventory-demo-001', quantity: 3, remark: '过期' }] })
@@ -125,6 +126,7 @@ describe('inventory doc routes', () => {
   });
 
   it('creates a transfer doc', async () => {
+    db.prepare("UPDATE InventoryItem SET stock = 92 WHERE id = 'inventory-demo-001'").run();
     const res = await request(app)
       .post('/api/v2/inventory-docs/transfer')
       .send({ items: [{ fromItemId: 'inventory-demo-001', toItemId: 'route-item-2', quantity: 4 }], remark: '路由调拨' })

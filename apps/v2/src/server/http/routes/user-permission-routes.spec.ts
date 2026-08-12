@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -17,7 +17,7 @@ describe('user permission routes', () => {
   let app: express.Express;
   const now = '2026-08-09T10:00:00.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-user-permission-routes-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -51,7 +51,7 @@ describe('user permission routes', () => {
     });
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -20,14 +20,14 @@ describe('inventory-ledger', () => {
   const now = '2026-08-05T10:00:00.000Z';
   const clinicId = 'clinic-v2-001';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-inventory-ledger-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
     runMigrations(db);
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -40,6 +40,7 @@ describe('inventory-ledger', () => {
   });
 
   it('adds and sets stock with tenant scoping', () => {
+    db.prepare('UPDATE InventoryItem SET stock = 98 WHERE id = ?').run('inventory-demo-001');
     addInventoryStock(db, 'inventory-demo-001', 5, now, clinicId);
     expect(inventoryStockAfter(db, 'inventory-demo-001', clinicId)).toBe(103);
     setInventoryStock(db, 'inventory-demo-001', 3, now, clinicId);
@@ -47,6 +48,7 @@ describe('inventory-ledger', () => {
   });
 
   it('records inventory transaction rows with reference metadata', () => {
+    db.prepare('UPDATE InventoryItem SET stock = 3 WHERE id = ?').run('inventory-demo-001');
     recordInventoryTransaction(db, {
       id: 'txn-ledger-001',
       clinicId,

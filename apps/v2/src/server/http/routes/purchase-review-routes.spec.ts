@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -18,7 +18,7 @@ describe('purchase review routes', () => {
   const now = '2026-08-05T10:00:00.000Z';
   const clinicId = 'clinic-v2-001';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-purchase-review-routes-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -80,7 +80,7 @@ describe('purchase review routes', () => {
     insertOrder('route-po-approved', { reviewStatus: 'APPROVED', number: 'ROUTE-PO-4' });
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });

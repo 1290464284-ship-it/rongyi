@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -27,7 +27,7 @@ describe('TreatmentPlanDocumentService', () => {
     db.prepare('DELETE FROM PrintTemplate WHERE id = ?').run('ptpl-001');
   }
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-treatment-plan-doc-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -61,7 +61,7 @@ describe('TreatmentPlanDocumentService', () => {
     ).run(now, now);
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -90,6 +90,7 @@ describe('TreatmentPlanDocumentService', () => {
   });
 
   it('increments printCount to 2 on a second print', () => {
+    new TreatmentPlanDocumentService(db).print('plan-doc-001', context);
     const result = new TreatmentPlanDocumentService(db).print('plan-doc-001', context);
     expect(result.plan).toMatchObject({ printCount: 2 });
     const row = db.prepare('SELECT printCount FROM TreatmentPlan WHERE id = ?').get('plan-doc-001') as { printCount: number };
@@ -139,6 +140,11 @@ describe('TreatmentPlanDocumentService', () => {
   });
 
   it('stores null signatureRemark when remark is omitted', () => {
+    new TreatmentPlanDocumentService(db).sign('plan-doc-001', {
+      signature: 'data:image/png;base64,AAAA',
+      signerName: 'Zhang',
+      remark: 'confirmed',
+    }, context);
     new TreatmentPlanDocumentService(db).sign('plan-doc-001', { signature: 'data:image/png;base64,BBBB', signerName: '李四' }, context);
     const row = db.prepare('SELECT signatureRemark FROM TreatmentPlan WHERE id = ?').get('plan-doc-001') as {
       signatureRemark: string | null;

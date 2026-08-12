@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -15,14 +15,15 @@ describe('custom field routes', () => {
   let db: Database.Database;
   let dataDir: string;
   let app: express.Express;
-  let currentRole = 'BOSS';
+  let currentRole: string;
   const now = '2026-08-09T10:00:00.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-custom-field-routes-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
     runMigrations(db);
+    currentRole = 'BOSS';
 
     app = express();
     app.use(express.json());
@@ -46,7 +47,7 @@ describe('custom field routes', () => {
     });
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -64,6 +65,10 @@ describe('custom field routes', () => {
   });
 
   it('DOCTOR cannot create definitions but can read and write values', async () => {
+    await request(app)
+      .post('/api/v2/custom-fields')
+      .send({ entity: 'patient', label: 'DOCTOR Readable', fieldName: 'doctorReadable', fieldType: 'TEXT' })
+      .expect(201);
     currentRole = 'DOCTOR';
     await request(app)
       .post('/api/v2/custom-fields')
@@ -115,6 +120,10 @@ describe('custom field routes', () => {
 
   it('rejects non-array custom field values', async () => {
     currentRole = 'BOSS';
+    await request(app)
+      .post('/api/v2/custom-fields')
+      .send({ entity: 'patient', label: 'Non-array validation', fieldName: 'nonArrayValidation', fieldType: 'TEXT' })
+      .expect(201);
     const res = await request(app)
       .put('/api/v2/custom-fields/values')
       .send({ entity: 'patient', entityId: 'patient-route-3', values: 'not-an-array' })

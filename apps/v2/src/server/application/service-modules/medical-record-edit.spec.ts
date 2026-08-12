@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -48,7 +48,7 @@ describe('MedicalRecordEditService', () => {
     return db.prepare('SELECT * FROM MedicalRecord WHERE id = ?').get(id) as Record<string, unknown>;
   }
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-medical-record-edit-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -66,7 +66,7 @@ describe('MedicalRecordEditService', () => {
     };
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -96,6 +96,11 @@ describe('MedicalRecordEditService', () => {
   });
 
   it('rejects a second request while PENDING', () => {
+    insertRecord('r-edit-1');
+    new MedicalRecordEditService(db).requestEdit('r-edit-1', {
+      reason: 'first request',
+      proposedContent: { diagnosis: 'X' },
+    }, context);
     const service = new MedicalRecordEditService(db);
     expect(() => service.requestEdit('r-edit-1', {
       reason: '再改一次',
@@ -284,6 +289,31 @@ describe('MedicalRecordEditService', () => {
   });
 
   it('allows re-requesting after rejection and rejects review of non-PENDING records', () => {
+    const setupService = new MedicalRecordEditService(db);
+    insertRecord('r-edit-reject', {
+      diagnosis: 'keep',
+      isLocked: 1,
+      lockedAt: '2026-08-01T00:00:00.000Z',
+      lockedBy: 'user-admin-001',
+    });
+    setupService.requestEdit('r-edit-reject', {
+      reason: 'reject first',
+      proposedContent: { diagnosis: 'no merge' },
+    }, context);
+    setupService.review('r-edit-reject', { approve: false }, reviewContext);
+
+    insertRecord('r-edit-approve', {
+      diagnosis: 'old',
+      isLocked: 1,
+      lockedAt: '2026-08-01T00:00:00.000Z',
+      lockedBy: 'user-admin-001',
+    });
+    setupService.requestEdit('r-edit-approve', {
+      reason: 'approve first',
+      proposedContent: { diagnosis: 'new' },
+    }, context);
+    setupService.review('r-edit-approve', { approve: true }, reviewContext);
+
     const service = new MedicalRecordEditService(db);
     // REJECTED 后可再次申请
     const result = service.requestEdit('r-edit-reject', {
@@ -301,6 +331,13 @@ describe('MedicalRecordEditService', () => {
   });
 
   it('returns only PENDING records with parsed proposed content', () => {
+    insertRecord('r-edit-1', {
+      editRequestStatus: 'PENDING',
+      editRequestedById: 'user-admin-001',
+      proposedContentJson: JSON.stringify({ diagnosis: 'x' }),
+    });
+    insertRecord('r-edit-approve', { editRequestStatus: 'APPROVED' });
+    insertRecord('r-edit-reject', { editRequestStatus: 'REJECTED' });
     // r-edit-1 自首个用例起一直处于 PENDING，先审核掉避免干扰
     const service = new MedicalRecordEditService(db);
     service.review('r-edit-1', { approve: false }, reviewContext);

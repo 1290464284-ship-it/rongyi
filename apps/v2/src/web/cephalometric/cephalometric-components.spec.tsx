@@ -332,6 +332,10 @@ describe('cephalometric columns', () => {
 });
 
 describe('OutlineSvg', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   it('renders empty, labeled and single-point states', () => {
     const { rerender } = render(<OutlineSvg report={{ outline: [], polylines: [] }} />);
     expect(screen.getByText('暂无轮廓数据')).toBeDefined();

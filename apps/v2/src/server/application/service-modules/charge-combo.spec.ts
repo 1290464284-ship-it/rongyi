@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -16,7 +16,7 @@ describe('ChargeComboService', () => {
   let otherContext: AppContext;
   const now = '2026-08-05T10:00:00.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-charge-combo-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -37,7 +37,7 @@ describe('ChargeComboService', () => {
     };
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -131,6 +131,8 @@ describe('ChargeComboService', () => {
   });
 
   it('returns a combo with items; owner can read own PRIVATE combo', () => {
+    insertCombo('combo-private-mine', { name: '我的组合', type: 'PRIVATE', ownerId: 'user-admin-001' });
+    insertComboItem('combo-private-mine-item-1', 'combo-private-mine', { name: '私人项目', price: 8800, costType: null });
     const service = new ChargeComboService(db);
     const result = service.comboWithItems('combo-private-mine', context);
     expect(result.id).toBe('combo-private-mine');
@@ -142,6 +144,8 @@ describe('ChargeComboService', () => {
   });
 
   it('hides PRIVATE combos from other users and rejects missing/inactive combos', () => {
+    insertCombo('combo-private-mine', { type: 'PRIVATE', ownerId: 'user-admin-001' });
+    insertCombo('combo-inactive', { active: 0 });
     const service = new ChargeComboService(db);
     expect(() => service.comboWithItems('combo-private-mine', otherContext)).toThrow(NotFoundError);
     expect(() => service.comboWithItems('combo-private-mine', otherContext)).toThrow('Charge combo not found');
@@ -150,6 +154,9 @@ describe('ChargeComboService', () => {
   });
 
   it('applies a combo to a charge and persists costType on charge items', async () => {
+    insertCombo('combo-public-a', { name: '洁牙套餐' });
+    insertComboItem('combo-public-a-item-1', 'combo-public-a', { name: '洁牙', price: 30000, costType: 'SERVICE' });
+    insertComboItem('combo-public-a-item-2', 'combo-public-a', { name: '抛光膏', price: 5000, quantity: 2, costType: 'MATERIAL' });
     const service = new ChargeComboService(db);
     const result = await service.applyToCharge('combo-public-a', 'patient-demo-001', context);
     expect(result).toMatchObject({

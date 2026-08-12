@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -25,7 +25,7 @@ describe('user module permissions', () => {
     now: () => new Date(now),
   };
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-user-permissions-spec-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -50,7 +50,7 @@ describe('user module permissions', () => {
     ).run(now, now);
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -97,6 +97,10 @@ describe('user module permissions', () => {
 
   it('replaces the whole override set on PUT semantics', () => {
     const service = new UserPermissionService(db);
+    db.prepare(
+      `INSERT INTO RolePermission (id, role, resource, permission, allowed, clinicId, createdAt, updatedAt, deletedAt)
+       VALUES ('role-finance-fixture', 'DOCTOR', 'finance', 'access', 1, 'clinic-v2-001', ?, ?, NULL)`,
+    ).run(now, now);
     const result = service.setPermissions('perm-user-001', [
       { permission: 'inventory', allowed: true },
     ], context);

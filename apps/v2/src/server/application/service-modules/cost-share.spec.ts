@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -20,7 +20,7 @@ describe('CostShareService', () => {
   let outsideContext: AppContext;
   let chargeService: ChargeService;
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-cost-share-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -93,7 +93,7 @@ describe('CostShareService', () => {
     ).run('ci-other-1', NOW, NOW);
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -221,14 +221,14 @@ describe('CostShareService (empty database)', () => {
   let db: Database.Database;
   let dataDir: string;
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-cost-share-empty-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
     runMigrations(db);
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });

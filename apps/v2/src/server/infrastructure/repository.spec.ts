@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase } from './database';
 import { SqliteRepository, buildRelationLabelJoins, clearTableColumnCache } from './repository';
@@ -14,7 +14,7 @@ describe('SqliteRepository', () => {
   let dataDir: string;
   let context: AppContext;
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-repo-'));
     db = createDatabase(dataDir);
     // createDatabase 不跑迁移，按迁移 115 的 DDL 建 FTS 表供 FTS 分支用例使用。
@@ -33,7 +33,7 @@ describe('SqliteRepository', () => {
     };
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });

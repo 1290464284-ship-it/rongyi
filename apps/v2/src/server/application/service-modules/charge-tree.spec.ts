@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -15,7 +15,7 @@ describe('ChargeTreeService', () => {
   let context: AppContext;
   const now = '2026-08-05T10:00:00.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-charge-tree-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -32,7 +32,7 @@ describe('ChargeTreeService', () => {
     ).run('2099-01-01T00:00:00.000Z', '2099-01-01T01:00:00.000Z', now);
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -182,7 +182,7 @@ describe('ChargeTreeService', () => {
   });
 
   it('rejects a high-value item whose catalog does not match', () => {
-    insertCatalog('cat-hv-1', 'CAT-HV-1', '种植体标准', 150000, { costType: 'MATERIAL', businessCategory: 'MATERIAL' });
+    insertCatalog('cat-hv-1', 'CAT-HV-1', 'HV Material', 150000, { costType: 'MATERIAL', businessCategory: 'MATERIAL' });
     insertCatalog('cat-hv-2', 'CAT-HV-2', '种植体特惠', 120000, { costType: 'MATERIAL', businessCategory: 'MATERIAL' });
     db.prepare(
       `UPDATE InventoryItem SET isHighValue = 1, catalogId = ?, updatedAt = ? WHERE id = 'inventory-demo-001'`,
@@ -194,6 +194,10 @@ describe('ChargeTreeService', () => {
   });
 
   it('allows a high-value item when its linked catalog matches', () => {
+    insertCatalog('cat-hv-1', 'CAT-HV-1', '种植体标准', 150000, { costType: 'MATERIAL', businessCategory: 'MATERIAL' });
+    db.prepare(
+      `UPDATE InventoryItem SET isHighValue = 1, catalogId = ?, updatedAt = ? WHERE id = 'inventory-demo-001'`,
+    ).run('cat-hv-1', now);
     const service = new ChargeTreeService(db);
     const result = service.quickCharge('cat-hv-1', { patientId: 'patient-demo-001', itemId: 'inventory-demo-001', quantity: 1 }, context);
     expect(result.itemId).toBe('inventory-demo-001');

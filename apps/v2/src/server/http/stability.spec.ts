@@ -1,13 +1,13 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { persistStabilityMetrics, stabilitySnapshot } from './stability';
 
 describe('stability snapshot', () => {
   let dir: string;
 
-  beforeAll(() => {
+  beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-stability-spec-'));
     fs.writeFileSync(path.join(dir, 'v2.sqlite'), 'db');
     fs.writeFileSync(path.join(dir, 'v2.sqlite-wal'), 'wal');
@@ -16,7 +16,7 @@ describe('stability snapshot', () => {
     fs.writeFileSync(path.join(dir, 'logs', 'v2.log'), 'log');
   });
 
-  afterAll(() => {
+  afterEach(() => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createApp } from './app';
 import { createDatabase, seedDatabase } from '../infrastructure/database';
@@ -108,7 +108,7 @@ describe('HTTP app edge error handling', () => {
   let token: string;
   let refreshToken: string;
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-app-edge-'));
     process.env.V2_CORS_ORIGIN = 'https://trusted.example';
     db = createDatabase(dataDir);
@@ -130,7 +130,7 @@ describe('HTTP app edge error handling', () => {
     fs.writeFileSync(backupDir, 'not a directory');
   });
 
-  afterAll(() => {
+  afterEach(() => {
     delete process.env.V2_CORS_ORIGIN;
     if (db.open) db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
@@ -300,10 +300,10 @@ describe('HTTP app edge error handling', () => {
       .set('Authorization', `Bearer ${token}`)
       .expect(403);
     expect(missing.body.code).toBe('FORBIDDEN');
-    db.close();
   });
 
   it('routes closed-database and invalid-input errors through the app error middleware', async () => {
+    db.close();
     for (const routeCase of errorCases) {
       let req = request(app)[routeCase.method](routeCase.path);
       if (routeCase.body) req = req.send(routeCase.body);
@@ -313,6 +313,7 @@ describe('HTTP app edge error handling', () => {
   }, 10_000);
 
   it('routes logout errors through the app error middleware', async () => {
+    db.close();
     const response = await request(app)
       .post('/api/v2/auth/logout')
       .set('Authorization', `Bearer ${token}`)

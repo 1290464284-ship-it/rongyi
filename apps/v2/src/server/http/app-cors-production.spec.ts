@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createApp } from './app';
 import { createDatabase, seedDatabase } from '../infrastructure/database';
@@ -20,7 +20,7 @@ describe('HTTP app production CORS for packaged Electron renderer', () => {
   const previousBackupKey = process.env.V2_BACKUP_KEY;
   const previousSecretFile = process.env.V2_SECRET_FILE;
 
-  beforeAll(async () => {
+  beforeEach(() => {
     process.env.NODE_ENV = 'production';
     process.env.V2_ADMIN_PASSWORD = 'prod-cors-admin';
     process.env.V2_JWT_SECRET = 'prod-cors-jwt-secret-0123456789abcdef';
@@ -55,7 +55,7 @@ describe('HTTP app production CORS for packaged Electron renderer', () => {
     });
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
     if (previousNodeEnv === undefined) delete process.env.NODE_ENV;

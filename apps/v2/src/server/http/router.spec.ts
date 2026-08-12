@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import request from 'supertest';
 import bcrypt from 'bcryptjs';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createApp } from './app';
 import { createDatabase, seedDatabase } from '../infrastructure/database';
@@ -20,7 +20,7 @@ describe('resource router', () => {
   let receptionToken: string;
   const now = new Date().toISOString();
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-router-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -49,9 +49,6 @@ describe('resource router', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-  });
-
-  afterAll(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -310,6 +307,18 @@ describe('resource router', () => {
   });
 
   it('ends an export response when streaming fails after headers', async () => {
+    const streamNow = new Date().toISOString();
+    const insertStream = db.prepare(
+      `INSERT INTO Patient (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active
+       ) VALUES (?, 'clinic-v2-001', ?, ?, NULL, ?, 'Export Row', 'UNKNOWN', ?, '[]', '[]', '[]', '[]', '[]', 'OTHER', 1)`,
+    );
+    for (let index = 0; index < 2; index += 1) {
+      insertStream.run(`stream-row-${index}`, streamNow, streamNow, `EXPORT-STREAM-${index}`, `13710000${String(index).padStart(4, '0')}`);
+    }
+
     const original = SqliteRepository.prototype.findMany;
     let calls = 0;
     vi.spyOn(SqliteRepository.prototype, 'findMany').mockImplementation(async function (
@@ -339,6 +348,9 @@ describe('resource router', () => {
     const capNow = new Date().toISOString();
     for (let index = 0; index < 300; index += 1) {
       insertCap.run(`cap-row-${index}`, capNow, capNow, `EXPORT-CAP-${index}`, `13700000${String(index).padStart(4, '0')}`);
+    }
+    for (let index = 0; index < 101; index += 1) {
+      insertCap.run(`cap-extra-${index}`, capNow, capNow, `EXPORT-CAP-EXTRA-${index}`, `13720000${String(index).padStart(4, '0')}`);
     }
     process.env.V2_CSV_EXPORT_MAX_ROWS = '5';
     try {

@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -17,7 +17,7 @@ describe('prescription process routes', () => {
   let app: express.Express;
   const now = '2026-08-05T10:00:00.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-prescription-process-routes-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -78,16 +78,20 @@ describe('prescription process routes', () => {
     });
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
-  it('POST /api/v2/prescriptions/:id/process creates a charge and a dispense order', async () => {
-    const res = await request(app)
+  async function processPrescription(): Promise<request.Response> {
+    return request(app)
       .post('/api/v2/prescriptions/route-rx-1/process')
       .send({ itemIds: ['route-rx-1-item-1', 'route-rx-1-item-2'] })
       .expect(200);
+  }
+
+  it('POST /api/v2/prescriptions/:id/process creates a charge and a dispense order', async () => {
+    const res = await processPrescription();
 
     expect(res.body.success).toBe(true);
     expect(res.body.data).toMatchObject({
@@ -119,6 +123,7 @@ describe('prescription process routes', () => {
   });
 
   it('POST process returns 409 for an already processed prescription', async () => {
+    await processPrescription();
     const res = await request(app)
       .post('/api/v2/prescriptions/route-rx-1/process')
       .send({})
@@ -129,6 +134,7 @@ describe('prescription process routes', () => {
   });
 
   it('GET /api/v2/prescriptions/:id/status returns the processing state', async () => {
+    await processPrescription();
     const res = await request(app).get('/api/v2/prescriptions/route-rx-1/status').expect(200);
     expect(res.body.success).toBe(true);
     expect(res.body.data).toMatchObject({

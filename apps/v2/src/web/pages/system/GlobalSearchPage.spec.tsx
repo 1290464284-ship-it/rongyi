@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GlobalSearchPage } from './GlobalSearchPage';
@@ -18,6 +18,7 @@ const wrapper = ({ children }: { children: ReactNode }) => (
 
 describe('GlobalSearchPage', () => {
   afterEach(() => {
+    cleanup();
     vi.mocked(mockApiRequest).mockReset();
   });
 
@@ -53,7 +54,7 @@ describe('GlobalSearchPage', () => {
       { id: 'p-1', resource: 'patients', label: '张三' },
     ]);
     render(
-      <MemoryRouter initialEntries={['/search?q=张']}>
+      <MemoryRouter initialEntries={['/search?q=张三']}>
         <GlobalSearchPage />
       </MemoryRouter>,
       { wrapper },

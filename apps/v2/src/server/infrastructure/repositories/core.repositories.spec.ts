@@ -5,7 +5,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase } from '../database';
 import { runMigrations } from '../migrations';
@@ -31,7 +31,7 @@ describe('core repositories', () => {
   let dataDir: string;
   const now = '2026-08-03T00:00:00.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-core-repo-'));
     db = createDatabase(dataDir);
     runMigrations(db);
@@ -68,10 +68,34 @@ describe('core repositories', () => {
     ).run('user-1', now, now);
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
+
+  const seedDependentFixtures = () => {
+    db.prepare(
+      `INSERT INTO Patient (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active
+       ) VALUES (?, NULL, ?, ?, NULL, 'FU', 'Follow Up Patient', 'UNKNOWN', '13400000000',
+         '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
+    ).run('followup-patient', now, now);
+    db.prepare(
+      `INSERT INTO MemberCard (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, cardNo, balance, totalRecharge, totalConsume,
+         status, points, totalPoints, level
+       ) VALUES (?, ?, ?, ?, NULL, ?, 'CARD', 0, 0, 0, 'ACTIVE', 0, 0, 'NORMAL')`,
+    ).run('card-repo', null, now, now, 'patient-repo');
+    db.prepare(
+      `INSERT INTO InventoryItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, category, unit, stock, minStock, price
+       ) VALUES (?, ?, ?, ?, NULL, 'LOW', 'Low Item', 'MAT', 'box', 1, 5, 100)`,
+    ).run('inventory-repo', null, now, now);
+  };
 
   it('persists member card balance and logs', () => {
     const repo = new SqliteMemberCardRepository(db);
@@ -383,6 +407,7 @@ describe('core repositories', () => {
   });
 
   it('filters reminders by overdue/today/upcoming scope', () => {
+    seedDependentFixtures();
     const repo = new SqliteFollowUpRepository(db);
     const today = new SystemClock().clinicDate();
     const yesterday = new SystemClock().clinicDate(Date.now() - 86_400_000);
@@ -413,6 +438,7 @@ describe('core repositories', () => {
   });
 
   it('covers repository nullish, boolean, and auth mapping branches', () => {
+    seedDependentFixtures();
     const member = new SqliteMemberCardRepository(db);
     member.insertLog({
       id: 'member-log-clinic',

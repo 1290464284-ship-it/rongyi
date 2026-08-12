@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -15,7 +15,7 @@ describe('InventoryDocService', () => {
   let context: AppContext;
   const now = '2026-08-05T10:00:00.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-inventory-docs-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -32,7 +32,7 @@ describe('InventoryDocService', () => {
     ).run('2099-01-01T00:00:00.000Z', '2099-01-01T01:00:00.000Z', now);
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -56,6 +56,19 @@ describe('InventoryDocService', () => {
   function stockOf(itemId: string): number {
     const row = db.prepare('SELECT stock FROM InventoryItem WHERE id = ?').get(itemId) as { stock: number };
     return Number(row.stock);
+  }
+
+  function setStock(itemId: string, stock: number): void {
+    db.prepare('UPDATE InventoryItem SET stock = ? WHERE id = ?').run(stock, itemId);
+  }
+
+  function insertLossDoc(): void {
+    db.prepare(
+      `INSERT INTO InventoryDoc (
+         id, clinicId, createdAt, updatedAt, deletedAt, number, type,
+         supplierId, status, operatorId, operatorName, completedAt, remark
+       ) VALUES ('loss-fixture', ?, ?, ?, NULL, 'LSS-FIXTURE', 'LOSS', NULL, 'COMPLETED', ?, NULL, ?, 'fixture')`,
+    ).run(context.clinicId, now, now, context.userId, now);
   }
 
   it('creates a return-supplier doc, deducts stock and records an OUT transaction', () => {
@@ -115,6 +128,8 @@ describe('InventoryDocService', () => {
   });
 
   it('throws Conflict when stock is insufficient and leaves stock unchanged', () => {
+    insertSupplier('sup-002', 'SUP-002', '渚涘簲鍟嗕箼');
+    setStock('inventory-demo-001', 95);
     const service = new InventoryDocService(db);
     expect(() => service.createReturnSupplier({
       supplierId: 'sup-002',
@@ -124,6 +139,7 @@ describe('InventoryDocService', () => {
   });
 
   it('creates a loss doc, deducts stock and records a LOSS transaction', () => {
+    setStock('inventory-demo-001', 95);
     const service = new InventoryDocService(db);
     const result = service.createLoss({
       items: [{ itemId: 'inventory-demo-001', quantity: 3, remark: '过期报废' }],
@@ -146,6 +162,7 @@ describe('InventoryDocService', () => {
   });
 
   it('throws Conflict when loss quantity exceeds stock', () => {
+    setStock('inventory-demo-001', 92);
     const service = new InventoryDocService(db);
     expect(() => service.createLoss({
       items: [{ itemId: 'inventory-demo-001', quantity: 1000 }],
@@ -156,6 +173,8 @@ describe('InventoryDocService', () => {
   it('invokes the stocktake lock guard and rolls back when the item is locked', () => {
     insertSupplier('sup-lock', 'SUP-LOCK', '锁定供应商');
     const lockGuard = vi.fn(() => { throw new ConflictError('盘点已锁定'); });
+    setStock('inventory-demo-001', 92);
+    insertLossDoc();
     const ServiceWithGuard = InventoryDocService as unknown as new (
       db: Database.Database,
       lockGuard?: (itemId: string, clinicId?: string | null) => void,
@@ -172,6 +191,7 @@ describe('InventoryDocService', () => {
 
   it('creates a transfer doc with OUT and IN transactions', () => {
     insertItem('inventory-demo-002', 'MAT-002', 10);
+    setStock('inventory-demo-001', 92);
     const service = new InventoryDocService(db);
     const result = service.createTransfer({
       items: [{ fromItemId: 'inventory-demo-001', toItemId: 'inventory-demo-002', quantity: 4, remark: '门店调拨' }],
@@ -207,6 +227,8 @@ describe('InventoryDocService', () => {
   });
 
   it('throws Conflict when transfer source stock is insufficient', () => {
+    insertItem('inventory-demo-002', 'MAT-002', 10);
+    setStock('inventory-demo-001', 88);
     const service = new InventoryDocService(db);
     expect(() => service.createTransfer({
       items: [{ fromItemId: 'inventory-demo-001', toItemId: 'inventory-demo-002', quantity: 500 }],
@@ -222,6 +244,7 @@ describe('InventoryDocService', () => {
   });
 
   it('throws NotFound when transfer source item is missing', () => {
+    insertItem('inventory-demo-002', 'MAT-002', 10);
     const service = new InventoryDocService(db);
     expect(() => service.createTransfer({
       items: [{ fromItemId: 'item-missing', toItemId: 'inventory-demo-002', quantity: 1 }],

@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -17,7 +17,7 @@ describe('shift template routes', () => {
   let app: express.Express;
   const now = '2026-08-06T10:00:00.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-shift-template-routes-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -55,7 +55,7 @@ describe('shift template routes', () => {
     insertUser('user-nurse-001', 'nurse01', '李医生', 'DOCTOR');
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -77,6 +77,10 @@ describe('shift template routes', () => {
   });
 
   it('GET /api/v2/shift-templates lists templates and resolves workDaysJson', async () => {
+    await request(app)
+      .post('/api/v2/shift-templates')
+      .send({ name: '早班', startTime: '09:00', endTime: '18:00', workDaysJson: [1, 2, 3, 4, 5], color: '#4F46E5' })
+      .expect(201);
     const res = await request(app).get('/api/v2/shift-templates').expect(200);
     expect(res.body.success).toBe(true);
     const data = res.body.data as Array<Record<string, unknown>>;

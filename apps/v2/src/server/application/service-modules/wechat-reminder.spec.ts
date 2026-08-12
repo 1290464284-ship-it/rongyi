@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -15,7 +15,7 @@ describe('WechatReminderService', () => {
   let context: AppContext;
   const now = '2026-08-05T10:00:00.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-wechat-reminder-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -33,7 +33,7 @@ describe('WechatReminderService', () => {
     ).run('2099-01-01T00:00:00.000Z', '2099-01-01T01:00:00.000Z', now);
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -133,6 +133,7 @@ describe('WechatReminderService', () => {
   });
 
   it('marks a reminder as sent and writes a WechatMessage history record', () => {
+    insertAppointment('appt-rem-1', '2026-08-06T09:00:00.000Z');
     const service = new WechatReminderService(db);
     const item = service.today(context).items.find((row) => row.scene === 'APPOINTMENT_REMINDER');
     expect(item).toBeDefined();
@@ -154,6 +155,7 @@ describe('WechatReminderService', () => {
   });
 
   it('rejects marking a non-pending reminder as sent', () => {
+    insertVisit('visit-rem-1', '2026-08-02T08:00:00.000Z');
     const service = new WechatReminderService(db);
     const item = service.today(context).items.find((row) => row.scene === 'TREATMENT_RECALL');
     expect(item).toBeDefined();
@@ -162,6 +164,7 @@ describe('WechatReminderService', () => {
   });
 
   it('dismisses a reminder and rejects repeated dismissal', () => {
+    insertFirstExam('exam-rem-1', '2026-08-02T02:00:00.000Z', null);
     const service = new WechatReminderService(db);
     const item = service.today(context).items.find((row) => row.scene === 'FIRST_EXAM_NUDGE');
     expect(item).toBeDefined();

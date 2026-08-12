@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../infrastructure/database';
 import {
@@ -23,7 +23,7 @@ describe('workflow services', () => {
   let nullContext: AppContext;
   const now = '2026-08-03T00:00:00.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-workflow-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -43,10 +43,21 @@ describe('workflow services', () => {
     };
   });
 
-  afterAll(() => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
+
+  function insertPrintTemplate(id: string): void {
+    db.prepare(
+      `INSERT INTO PrintTemplate (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, category, content
+       ) VALUES (?, ?, ?, ?, NULL, 'T-1', 'Template', 'REPORT', '<h1>{{title}}</h1>')`,
+    ).run(id, context.clinicId, now, now);
+  }
 
   it('transitions clinical records and locks medical records', () => {
     db.prepare(
@@ -178,12 +189,7 @@ describe('workflow services', () => {
     expect(await new WechatService(db, fakeWechat as never, provider).send('missing-update', context))
       .toMatchObject({ status: 'SENT' });
 
-    db.prepare(
-      `INSERT INTO PrintTemplate (
-         id, clinicId, createdAt, updatedAt, deletedAt,
-         code, name, category, content
-       ) VALUES (?, ?, ?, ?, NULL, 'T-1', 'Template', 'REPORT', '<h1>{{title}}</h1>')`,
-    ).run('print-wf', context.clinicId, now, now);
+    insertPrintTemplate('print-wf');
     const print = new PrintTemplateService(db);
     expect(print.list(context).length).toBeGreaterThanOrEqual(1);
     expect(print.render('T-1', { title: 'Hello' }, context)).toContain('Hello');
@@ -435,6 +441,7 @@ describe('workflow services', () => {
       const applied = replenishment.applyToPurchaseOrder([suggestion.id], nullContext);
       expect(applied).toHaveProperty('orderId');
     }
+    insertPrintTemplate('print-edge');
     const print = new PrintTemplateService(db);
     expect(print.render('T-1', { title: null }, context)).not.toContain('null');
   });

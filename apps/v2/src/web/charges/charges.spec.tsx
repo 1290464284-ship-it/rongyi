@@ -131,6 +131,10 @@ describe('ChargeList', () => {
 });
 
 describe('QuickChargeDialog', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   it('renders empty and busy states', () => {
     const target: ChargeTreeNode = {
       id: 'i1',

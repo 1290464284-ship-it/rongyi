@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -17,7 +17,7 @@ describe('inventory batch routes', () => {
   let app: express.Express;
   const now = '2026-08-05T10:00:00.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-inventory-batch-routes-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -51,13 +51,13 @@ describe('inventory batch routes', () => {
     });
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
-  it('POST /api/v2/inventory-batches creates a batch and persists it', async () => {
-    const res = await request(app)
+  async function createRouteBatchOne(): Promise<request.Response> {
+    return request(app)
       .post('/api/v2/inventory-batches')
       .send({
         itemId: 'route-item-1',
@@ -67,6 +67,10 @@ describe('inventory batch routes', () => {
         initialQuantity: 5,
       })
       .expect(201);
+  }
+
+  it('POST /api/v2/inventory-batches creates a batch and persists it', async () => {
+    const res = await createRouteBatchOne();
     expect(res.body.success).toBe(true);
     expect(res.body.data).toMatchObject({ batchNo: 'ROUTE-B-1', remainingQuantity: 5, stockAfter: 15 });
 
@@ -83,6 +87,7 @@ describe('inventory batch routes', () => {
   });
 
   it('GET /api/v2/inventory-batches lists batches and expiring subsets', async () => {
+    await createRouteBatchOne();
     const res = await request(app).get('/api/v2/inventory-batches?days=30').expect(200);
     expect(res.body.success).toBe(true);
     const data = res.body.data as { batches: Array<Record<string, unknown>>; expiring: Array<Record<string, unknown>> };
@@ -104,6 +109,7 @@ describe('inventory batch routes', () => {
   });
 
   it('PATCH /api/v2/inventory-batches/:id adjusts the remaining quantity', async () => {
+    await createRouteBatchOne();
     const batch = db.prepare("SELECT id FROM InventoryBatch WHERE batchNo = 'ROUTE-B-1'").get() as { id: string };
     const res = await request(app)
       .patch(`/api/v2/inventory-batches/${batch.id}`)
@@ -228,6 +234,13 @@ describe('inventory batch routes', () => {
   });
 
   it('returns 400 for invalid date format when updating batch metadata', async () => {
+    db.prepare(
+      `INSERT INTO InventoryBatch (
+         id, itemId, batchNo, productionDate, expiryDate, initialQuantity,
+         remainingQuantity, supplierId, purchaseOrderId, active, clinicId,
+         createdAt, updatedAt, deletedAt
+       ) VALUES (?, 'route-item-1', 'ROUTE-EDIT', NULL, '2026-09-01', 6, 6, NULL, NULL, 1, 'clinic-v2-001', ?, ?, NULL)`,
+    ).run('route-edit', now, now);
     const res = await request(app)
       .patch('/api/v2/inventory-batches/route-edit')
       .send({ expiryDate: '2026/10/01' })

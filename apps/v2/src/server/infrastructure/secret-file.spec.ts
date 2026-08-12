@@ -5,12 +5,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 describe('secret file', () => {
   const original = process.env.V2_SECRET_FILE;
+  const originalPlatform = process.platform;
 
   afterEach(() => {
     vi.restoreAllMocks();
     if (original === undefined) delete process.env.V2_SECRET_FILE;
     else process.env.V2_SECRET_FILE = original;
-    Object.defineProperty(process, 'platform', { value: process.platform, configurable: true });
+    Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
   });
 
   it('returns null without env or when the file is corrupt', async () => {

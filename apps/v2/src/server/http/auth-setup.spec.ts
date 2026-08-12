@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createApp } from './app';
 import { createDatabase, seedDatabase } from '../infrastructure/database';
@@ -20,12 +20,15 @@ describe('first-run admin setup wizard', () => {
   const previousBackupKey = process.env.V2_BACKUP_KEY;
   const previousSecretFile = process.env.V2_SECRET_FILE;
 
-  beforeAll(async () => {
+  beforeAll(() => {
     process.env.NODE_ENV = 'production';
     delete process.env.V2_ADMIN_PASSWORD;
     delete process.env.V2_BACKUP_KEY;
     delete process.env.V2_SECRET_FILE;
     process.env.V2_JWT_SECRET = 'auth-setup-jwt-secret-0123456789abcdef';
+  });
+
+  beforeEach(() => {
     resetSecretFileCache();
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-auth-setup-'));
     db = createDatabase(dataDir);
@@ -40,9 +43,12 @@ describe('first-run admin setup wizard', () => {
     });
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  afterAll(() => {
     if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
     else process.env.NODE_ENV = previousNodeEnv;
     if (previousAdminPassword === undefined) delete process.env.V2_ADMIN_PASSWORD;
@@ -76,11 +82,13 @@ describe('first-run admin setup wizard', () => {
   });
 
   it('refuses a second setup after the admin exists', async () => {
+    await request(app).post('/api/v2/auth/setup').send({ password: 'first-run-123' }).expect(200);
     const res = await request(app).post('/api/v2/auth/setup').send({ password: 'another-pass-123' });
     expect(res.status).toBe(409);
   });
 
   it('logs in with the wizard-created admin password', async () => {
+    await request(app).post('/api/v2/auth/setup').send({ password: 'first-run-123' }).expect(200);
     const login = await request(app).post('/api/v2/auth/login').send({
       username: 'admin',
       password: 'first-run-123',

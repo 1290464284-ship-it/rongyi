@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -16,7 +16,7 @@ describe('first exam tracking routes', () => {
   let dataDir: string;
   let app: express.Express;
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-first-exam-routes-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -47,7 +47,7 @@ describe('first exam tracking routes', () => {
       { id: 'route-ov-1', followUpStatus: 'PENDING', nextFollowUpAt: '2026-08-05T09:00:00.000Z' },
       { id: 'route-ov-2', followUpStatus: 'LOST', nextFollowUpAt: null },
       { id: 'route-ov-3', followUpStatus: null, nextFollowUpAt: null },
-      { id: 'route-patch-1', followUpStatus: 'NONE', nextFollowUpAt: null },
+      { id: 'route-patch-1', followUpStatus: 'PENDING', nextFollowUpAt: null },
     ]) {
       db.prepare(
         `INSERT INTO FirstExam (
@@ -58,7 +58,7 @@ describe('first exam tracking routes', () => {
     }
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });

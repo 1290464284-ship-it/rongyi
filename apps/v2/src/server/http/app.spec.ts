@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createApp, type AuditInput } from './app';
 import { createDatabase, seedDatabase } from '../infrastructure/database';
@@ -25,7 +25,7 @@ describe('HTTP app', () => {
   let token: string;
   let deviceToken: string;
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-http-'));
     dbPath = path.join(dataDir, 'v2.sqlite');
     backupDir = path.join(dataDir, 'backups');
@@ -49,7 +49,7 @@ describe('HTTP app', () => {
     deviceToken = device.body.data.token;
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -301,6 +301,15 @@ describe('HTTP app', () => {
       .expect(401);
 
     // 跨诊所无法签发（签发端点按租户过滤）
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+       VALUES (?, NULL, ?, ?, NULL, 'V2-2', 'Clinic Two', 1)`,
+    ).run('clinic-v2-002', now, now);
+    db.prepare(
+      `INSERT INTO UserClinic (userId, clinicId, role, createdAt, updatedAt, deletedAt)
+       VALUES (?, ?, 'BOSS', ?, ?, NULL)`,
+    ).run('user-admin-001', 'clinic-v2-002', now, now);
     const switched = await request(app)
       .post('/api/v2/auth/switch-clinic')
       .set('Authorization', `Bearer ${token}`)
@@ -1021,6 +1030,17 @@ describe('HTTP app', () => {
     const relogin = await request(app).post('/api/v2/auth/login').send({ username: 'admin', password: 'newpass123' }).expect(200);
     token = relogin.body.data.token;
     // 资源列表 search 已走 FTS；迁移 119 移除触发器后需显式重建索引（运行时插入的行不会自动入索引）。
+    await request(app).post('/api/v2/resources/patients')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        code: 'HTTP-AUTH-PATIENT',
+        name: 'HTTP Auth Patient',
+        gender: 'UNKNOWN',
+        phone: '13600000000',
+        source: 'OTHER',
+        active: true,
+      })
+      .expect(201);
     rebuildSearchIndex(db);
     const patients = await request(app).get('/api/v2/resources/patients?search=HTTP')
       .set('Authorization', `Bearer ${token}`)
@@ -1198,6 +1218,10 @@ describe('HTTP app', () => {
   });
 
   it('rotates refresh tokens, logs out, and records audit entries', async () => {
+    await request(app).patch('/api/v2/auth/password')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ oldPassword: 'v2-test-seed-password', newPassword: 'newpass123' })
+      .expect(200);
     const login = await request(app).post('/api/v2/auth/login').send({ username: 'admin', password: 'newpass123' }).expect(200);
     const refreshToken = login.body.data.refreshToken as string;
     const refreshed = await request(app).post('/api/v2/auth/refresh').send({ refreshToken }).expect(200);

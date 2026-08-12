@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import bcrypt from 'bcryptjs';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import DatabaseClass from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../infrastructure/database';
@@ -70,7 +70,7 @@ describe('service edge coverage', () => {
   let nullContext: AppContext;
   const now = '2026-08-04T00:00:00.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-service-edge-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -91,7 +91,7 @@ describe('service edge coverage', () => {
     };
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -123,6 +123,17 @@ describe('service edge coverage', () => {
          @lockedUntil
        )`,
     ).run(merged);
+  }
+
+  function insertPatientEdge(): void {
+    db.prepare(
+      `INSERT INTO Patient (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active
+       ) VALUES (?, ?, ?, ?, NULL, 'EDGE-P', 'Edge Patient', 'UNKNOWN', '13600000001',
+         '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
+    ).run('patient-edge', context.clinicId, now, now);
   }
 
   it('covers auth login, refresh, logout, me, and password branches', async () => {
@@ -655,6 +666,7 @@ describe('service edge coverage', () => {
   });
 
   it('covers null clinic context, missing charge context, member-card refund, and full debt refund', async () => {
+    insertPatientEdge();
     const now = new Date().toISOString();
     const service = new ChargeService(db);
     const appointments = new AppointmentService(db);
@@ -757,6 +769,7 @@ describe('service edge coverage', () => {
   });
 
   it('keeps the first payment time when a charge is paid in parts', async () => {
+    insertPatientEdge();
     const service = new ChargeService(db);
     const created = await service.create({
       patientId: 'patient-edge',
@@ -1046,6 +1059,12 @@ describe('service edge coverage', () => {
        ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, 'UNKNOWN', 'SHORT',
          '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
     ).run('patient-short-phone', null, now, now);
+    db.prepare(
+      `INSERT INTO InventoryItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, category, unit, stock, minStock, price
+       ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, 'SEARCHCAT', 'box', 1, 0, 100)`,
+    ).run('inventory-null-label', null, now, now);
     // 迁移 119 已移除 FTS 触发器（按需重建索引），测试需显式重建。
     rebuildSearchIndex(db);
     const search = new SearchService(db);
@@ -1354,6 +1373,14 @@ describe('service edge coverage', () => {
   });
 
   it('provides a full resync snapshot scoped to the active clinic', () => {
+    db.prepare(
+      `INSERT INTO Patient (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active
+       ) VALUES (?, ?, ?, ?, NULL, 'EXTRA-SYNC', 'Extra Sync Patient', 'UNKNOWN', '13900000001',
+         '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
+    ).run('patient-extra-snapshot', context.clinicId, now, now);
     const service = new SyncService(db);
     const metadata = service.fullSnapshot(context);
     expect(metadata.tables?.Patient.total).toBeGreaterThanOrEqual(1);

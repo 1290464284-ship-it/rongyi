@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'node:crypto';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase } from '../../infrastructure/database';
 import { NotFoundError, UnauthorizedError } from '../../infrastructure/errors';
@@ -45,7 +45,7 @@ describe('AuthService login TOCTOU guard', () => {
   const now = '2026-08-05T10:00:00.000Z';
   const later = '2026-08-05T10:00:01.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-auth-toctou-'));
     db = createDatabase(dataDir);
     db.prepare(
@@ -54,7 +54,7 @@ describe('AuthService login TOCTOU guard', () => {
     ).run(now, now);
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });

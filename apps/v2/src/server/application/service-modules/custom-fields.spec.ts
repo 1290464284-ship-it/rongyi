@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -20,14 +20,14 @@ describe('custom fields', () => {
     now: () => new Date(now),
   };
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-custom-fields-spec-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
     runMigrations(db);
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -52,6 +52,11 @@ describe('custom fields', () => {
 
   it('rejects duplicate field names and unsupported types', () => {
     const service = new CustomFieldService(db);
+    service.createDefinition('patient', {
+      label: '是否医保',
+      fieldName: 'isInsurance',
+      fieldType: 'BOOLEAN',
+    }, context);
     try {
       service.createDefinition('patient', {
         label: '重复',
@@ -76,6 +81,16 @@ describe('custom fields', () => {
 
   it('stores and replaces values for an entity instance', () => {
     const service = new CustomFieldService(db);
+    service.createDefinition('patient', {
+      label: '过敏史备注',
+      fieldName: 'allergyNote',
+      fieldType: 'TEXT',
+    }, context);
+    service.createDefinition('patient', {
+      label: '是否医保',
+      fieldName: 'isInsurance',
+      fieldType: 'BOOLEAN',
+    }, context);
     const definitions = service.listDefinitions('patient', context);
     const values = service.setValues('patient', 'patient-custom-1', definitions.map((field) => ({
       fieldId: field.id,
@@ -97,6 +112,16 @@ describe('custom fields', () => {
 
   it('soft deletes a definition and its values', () => {
     const service = new CustomFieldService(db);
+    service.createDefinition('patient', {
+      label: '过敏史备注',
+      fieldName: 'allergyNote',
+      fieldType: 'TEXT',
+    }, context);
+    service.createDefinition('patient', {
+      label: '是否医保',
+      fieldName: 'isInsurance',
+      fieldType: 'BOOLEAN',
+    }, context);
     const definitions = service.listDefinitions('patient', context);
     const [target] = definitions;
     service.setValues('patient', 'patient-custom-2', definitions.map((field) => ({

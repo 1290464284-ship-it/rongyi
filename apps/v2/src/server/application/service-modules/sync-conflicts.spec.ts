@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -21,7 +21,7 @@ describe('sync conflict detection and resolution', () => {
     now: () => new Date(now),
   };
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-sync-conflicts-spec-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -33,7 +33,7 @@ describe('sync conflict detection and resolution', () => {
     ).run(now, '2026-08-09T12:00:00.000Z');
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -66,6 +66,18 @@ describe('sync conflict detection and resolution', () => {
   });
 
   it('resolves with KEEP_LOCAL without touching the local row', async () => {
+    const device = service.registerDevice('sync-device-1', 'Device One', context);
+    await service.push({
+      deviceId: device.deviceId,
+      deviceToken: device.token,
+      changes: [{
+        tableName: 'Patient',
+        recordId: 'sync-patient-1',
+        operation: 'UPDATE',
+        updatedAt: '2026-08-09T11:00:00.000Z',
+        data: { name: 'Remote Name', updatedAt: '2026-08-09T11:00:00.000Z' },
+      }],
+    }, context);
     const [conflict] = service.listConflicts(context);
     await service.resolveConflict(String(conflict.id), 'KEEP_LOCAL', context);
     const row = db.prepare('SELECT name FROM Patient WHERE id = ?').get('sync-patient-1') as { name: string };
