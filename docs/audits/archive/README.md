@@ -31,6 +31,7 @@
 | 第 22 轮 | 2026-08-12 | 前端专项 | `../深度审计报告-第二十二轮-主报告.md` |
 | 第 23 轮 | 2026-08-12 | 条件更新专项 | `../深度审计报告-第二十三轮-主报告.md` |
 | 第 24 轮 | 2026-08-12 | 脚本/CI/结构专项 | `../深度审计报告-第二十四轮-主报告.md` |
+| 第 25 轮 | 2026-08-12 | 并发/多实例专项 | `../深度审计报告-第二十五轮-主报告.md` |
 
 ## 其他归档
 
@@ -65,6 +66,8 @@
 第 23 轮基线 `ff00b35`，条件更新专项修复 6 处：high-value/commission/inventory-batch 补软删/租户/active 过滤与 `changes` 兜底，narcotic/custom-fields/first-exam 补 `changes` 兜底，并加强软删后不可再改/删的回归用例。
 
 第 24 轮基线 `cf14829`，脚本/CI/结构专项：delivery runner 复用 `waitForService` 并消除 DEP0190 告警，`smoke:all` 补入 multi-instance/state-machine-concurrency 并改用固定 web 挂载标记；全部脚本均有引用，无逐字节重复。
+
+第 25 轮基线 `a222af5`，并发/多实例专项：共享写队列/幂等/调度防重入无新 P1/P2，补齐 sync push 与 bulk import 交叉并发回归用例；单测 222/2250 全绿。
 
 ## 当前状态
 

@@ -6,6 +6,7 @@ import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
 import { SyncService } from './sync';
+import { BulkImportService } from './clinical-ops';
 
 describe('sync push concurrency', () => {
   let db: Database.Database;
@@ -68,6 +69,49 @@ describe('sync push concurrency', () => {
     expect(second.failed).toBe(0);
     const count = db.prepare(
       `SELECT COUNT(*) AS count FROM Patient WHERE id IN ('push-a', 'push-b') AND deletedAt IS NULL`,
+    ).get() as { count: number };
+    expect(count.count).toBe(2);
+  });
+
+  it('serializes sync push and bulk import on the same db', async () => {
+    const device = service.registerDevice('sync-cross-device', 'Cross Writer Device', context);
+    const bulk = new BulkImportService(db);
+    const [pushResult, importResult] = await Promise.all([
+      service.push({
+        deviceId: device.deviceId,
+        deviceToken: device.token,
+        changes: [{
+          tableName: 'Patient',
+          recordId: 'push-cross-writer',
+          operation: 'INSERT',
+          updatedAt: '2026-08-09T10:00:00.000Z',
+          data: {
+            code: 'SYNC-CROSS-WRITER',
+            name: 'Cross Writer',
+            gender: 'UNKNOWN',
+            phone: '13600000003',
+            source: 'OTHER',
+            active: true,
+          },
+        }],
+      }, context),
+      bulk.importRows('patients', [{
+        code: 'BULK-CROSS-WRITER',
+        name: 'Bulk Cross Writer',
+        gender: 'UNKNOWN',
+        phone: '13600000004',
+        source: 'OTHER',
+        active: true,
+      }], context, 10),
+    ]);
+
+    expect(pushResult.accepted).toBe(1);
+    expect(pushResult.failed).toBe(0);
+    expect(importResult.imported).toBe(1);
+    expect(importResult.failed).toBe(0);
+    const count = db.prepare(
+      `SELECT COUNT(*) AS count FROM Patient
+       WHERE id = 'push-cross-writer' OR code = 'BULK-CROSS-WRITER'`,
     ).get() as { count: number };
     expect(count.count).toBe(2);
   });
