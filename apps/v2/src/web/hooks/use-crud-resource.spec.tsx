@@ -286,4 +286,64 @@ describe('useCrudResource', () => {
       expect(screen.getByTestId('page').textContent).toBe('2');
     });
   });
+
+  it('uses keyset cursor pagination when enabled', async () => {
+    function CursorHarness() {
+      const crud = useCrudResource<HookRow, HookForm>({
+        queryKey: ['cursor-items'],
+        endpoint: '/resources/things',
+        initialForm: { name: '', note: '' },
+        cursorPagination: true,
+      });
+      return (
+        <div>
+          <button onClick={crud.goNext}>next</button>
+          <button onClick={crud.goPrev}>prev</button>
+          <span data-testid="page">{crud.page}</span>
+          <span data-testid="has-next">{String(crud.hasNext)}</span>
+          <span data-testid="can-prev">{String(crud.canGoPrev)}</span>
+          <span data-testid="next-cursor">{String(crud.query.data?.nextCursor ?? '')}</span>
+        </div>
+      );
+    }
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (String(path).includes('cursor=cursor-1')) {
+        return { items: [{ id: 'r-2' }], total: 2, page: 1, pageSize: 50, nextCursor: 'cursor-2' };
+      }
+      if (String(path).includes('cursor=cursor-2')) {
+        return { items: [], total: 2, page: 1, pageSize: 50 };
+      }
+      return { items: [{ id: 'r-1' }], total: 2, page: 1, pageSize: 50, nextCursor: 'cursor-1' };
+    });
+    render(<CursorHarness />, { wrapper });
+    await waitFor(() => expect(screen.getByTestId('has-next').textContent).toBe('true'));
+
+    fireEvent.click(screen.getByText('next'));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith(expect.stringContaining('cursor=cursor-1'));
+      expect(screen.getByTestId('page').textContent).toBe('2');
+      expect(screen.getByTestId('can-prev').textContent).toBe('true');
+      expect(screen.getByTestId('next-cursor').textContent).toBe('cursor-2');
+    });
+
+    fireEvent.click(screen.getByText('next'));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith(expect.stringContaining('cursor=cursor-2'));
+      expect(screen.getByTestId('has-next').textContent).toBe('false');
+      expect(screen.getByTestId('next-cursor').textContent).toBe('');
+    });
+
+    fireEvent.click(screen.getByText('prev'));
+    await waitFor(() => {
+      expect(screen.getByTestId('page').textContent).toBe('2');
+      expect(screen.getByTestId('can-prev').textContent).toBe('true');
+      expect(apiRequest).toHaveBeenCalledWith(expect.stringContaining('cursor=cursor-1'));
+    });
+
+    fireEvent.click(screen.getByText('prev'));
+    await waitFor(() => {
+      expect(screen.getByTestId('page').textContent).toBe('1');
+      expect(screen.getByTestId('can-prev').textContent).toBe('false');
+    });
+  });
 });

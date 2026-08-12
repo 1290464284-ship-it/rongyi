@@ -3,6 +3,12 @@ import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { trackResourceWrite } from '../../infrastructure/write-tracking';
+import {
+  AGGREGATE_THRESHOLD,
+  readReplenishmentSnapshot,
+  tableRowCount,
+  writeReplenishmentSnapshot,
+} from '../../infrastructure/stats-aggregate';
 import { generateDocumentNumber } from './common';
 import type { AppContext } from '../../../domain/contracts';
 
@@ -23,23 +29,22 @@ export class ReplenishmentService {
     const nowDate = context.now();
     const now = nowDate.toISOString();
     const since = new Date(nowDate.getTime() - 90 * 86_400_000).toISOString();
-    const consumptionParams = clinicId ? [since, clinicId] : [since];
-    const consumptionRows = this.db.prepare(
-      `SELECT itemId,
-              COALESCE(SUM(
-                CASE
-                  WHEN type = 'OUT' THEN quantity
-                  WHEN type = 'ADJUST' AND quantity < 0 THEN ABS(quantity)
-                  ELSE 0
-                END
-              ), 0) AS consumed
-       FROM InventoryTransaction
-       WHERE createdAt >= ? AND deletedAt IS NULL${tenantAnd(clinicId)}
-       GROUP BY itemId`,
-    ).all(...consumptionParams) as Array<{ itemId: string; consumed: number }>;
-    /* v8 ignore start -- the aggregate query always returns a numeric consumed value. */
-    const consumptionByItem = new Map(consumptionRows.map((row) => [row.itemId, Number(row.consumed ?? 0)]));
-    /* v8 ignore stop */
+    // 超过阈值后使用惰性物化快照：写路径失效 + 最新流水时间二次校验，避免重复全表聚合。
+    let consumptionByItem: Map<string, number>;
+    if (clinicId !== null && tableRowCount(this.db, 'InventoryTransaction') > AGGREGATE_THRESHOLD) {
+      const latestRow = this.db.prepare(
+        `SELECT MAX(createdAt) AS m FROM InventoryTransaction WHERE createdAt >= ? AND deletedAt IS NULL`,
+      ).get(since) as { m: string | null } | undefined;
+      const cached = readReplenishmentSnapshot(this.db, clinicId, since, now, latestRow?.m ?? null);
+      if (cached) {
+        consumptionByItem = cached;
+      } else {
+        consumptionByItem = computeConsumption(this.db, clinicId, since);
+        writeReplenishmentSnapshot(this.db, clinicId, since, now, consumptionByItem, now);
+      }
+    } else {
+      consumptionByItem = computeConsumption(this.db, clinicId, since);
+    }
     const leadTimeDays = 7;
     const safetyFactor = 1.5;
     const orderCost = 50;
@@ -191,4 +196,27 @@ export class ReplenishmentService {
       orderCount: orders.length,
     };
   }
+}
+
+/** 90 天消耗聚合（快照与实时共用同一 SQL 口径）。 */
+function computeConsumption(
+  db: Database.Database,
+  clinicId: string | null,
+  since: string,
+): Map<string, number> {
+  const consumptionParams = clinicId ? [since, clinicId] : [since];
+  const rows = db.prepare(
+    `SELECT itemId,
+            COALESCE(SUM(
+              CASE
+                WHEN type = 'OUT' THEN quantity
+                WHEN type = 'ADJUST' AND quantity < 0 THEN ABS(quantity)
+                ELSE 0
+              END
+            ), 0) AS consumed
+     FROM InventoryTransaction
+     WHERE createdAt >= ? AND deletedAt IS NULL${tenantAnd(clinicId)}
+     GROUP BY itemId`,
+  ).all(...consumptionParams) as Array<{ itemId: string; consumed: number }>;
+  return new Map(rows.map((row) => [row.itemId, Number(row.consumed ?? 0)]));
 }

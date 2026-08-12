@@ -1007,16 +1007,16 @@ describe('application services', () => {
     const prepare = vi.spyOn(db, 'prepare');
     try {
       service.dashboard(context);
-      expect(prepare).toHaveBeenCalledTimes(1);
+      expect(prepare).toHaveBeenCalledTimes(2);
 
       const cached = service.dashboard(context);
-      expect(prepare).toHaveBeenCalledTimes(1);
+      expect(prepare).toHaveBeenCalledTimes(2);
       expect(cached).toHaveProperty('patients');
       expect(cached).toHaveProperty('pendingFollowUps');
 
       // A different clinic is a different cache key, so it recomputes.
       service.dashboard({ ...context, clinicId: 'clinic-v2-002' });
-      expect(prepare).toHaveBeenCalledTimes(2);
+      expect(prepare).toHaveBeenCalledTimes(4);
     } finally {
       prepare.mockRestore();
     }
@@ -1047,17 +1047,17 @@ describe('application services', () => {
     const prepare = vi.spyOn(db, 'prepare');
     try {
       service.dashboard(context);
-      expect(prepare).toHaveBeenCalledTimes(1);
+      expect(prepare).toHaveBeenCalledTimes(2);
       service.dashboard(context);
-      expect(prepare).toHaveBeenCalledTimes(1);
+      expect(prepare).toHaveBeenCalledTimes(2);
 
       vi.advanceTimersByTime(29_999);
       service.dashboard(context);
-      expect(prepare).toHaveBeenCalledTimes(1);
+      expect(prepare).toHaveBeenCalledTimes(2);
 
       vi.advanceTimersByTime(1_001);
       service.dashboard(context);
-      expect(prepare).toHaveBeenCalledTimes(2);
+      expect(prepare).toHaveBeenCalledTimes(4);
     } finally {
       prepare.mockRestore();
       vi.useRealTimers();

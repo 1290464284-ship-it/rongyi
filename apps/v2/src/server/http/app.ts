@@ -54,6 +54,12 @@ import { createRouteDependencies, type RouteDependencies } from './routes/deps';
 import { createAuditBuffer } from './audit-buffer';
 import { SqliteRateLimitStore } from '../infrastructure/rate-limit-store';
 
+// 普通 GET 请求日志采样率（0-1），生产可用 V2_REQUEST_LOG_SAMPLE_RATE 覆盖。
+const REQUEST_LOG_SAMPLE_RATE = (() => {
+  const raw = Number(process.env.V2_REQUEST_LOG_SAMPLE_RATE ?? 0.01);
+  return Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : 0.01;
+})();
+
 export type { AuditInput } from './audit-buffer';
 
 export interface AppDependencies {
@@ -148,7 +154,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
       const shouldLog = res.statusCode >= 400
         || req.method !== 'GET'
         || durationMs > 200
-        || (req.path !== '/api/v2/health' && Math.random() < 0.01);
+        || (req.path !== '/api/v2/health' && Math.random() < REQUEST_LOG_SAMPLE_RATE);
       if (!shouldLog) return;
       logger.info('request', {
         traceId: req.traceId,

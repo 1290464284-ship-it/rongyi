@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import { recordSyncChange } from './sync-change';
 import { SEARCH_UPSERT_SQL, touchSearchIndex } from './search-index';
+import { invalidateStatSnapshots } from './stats-aggregate';
 
 export interface ResourceWrite {
   tableName: string;
@@ -30,4 +31,5 @@ export function trackResourceWrite(db: Database.Database, write: ResourceWrite):
   if (SEARCH_UPSERT_SQL[resource]) {
     touchSearchIndex(db, resource, write.recordId, write.operation);
   }
+  invalidateStatSnapshots(db, write.tableName, write.clinicId);
 }

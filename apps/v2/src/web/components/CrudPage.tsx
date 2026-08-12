@@ -122,11 +122,19 @@ export function CrudPage<
         <DataTable columns={columns} rows={rows} keyField="id" />
       )}
       {props.paged && (
-        <PagePager
-          page={page}
-          hasNext={Boolean(query.data) && page * (props.pageSize ?? 50) < query.data!.total}
-          onPageChange={setPage}
-        />
+        crud.cursorPagination ? (
+          <div className="pager">
+            <button type="button" disabled={!crud.canGoPrev} onClick={crud.goPrev}>上一页</button>
+            <span>第 {crud.page} 页</span>
+            <button type="button" disabled={!crud.hasNext} onClick={crud.goNext}>下一页</button>
+          </div>
+        ) : (
+          <PagePager
+            page={page}
+            hasNext={Boolean(query.data) && page * (props.pageSize ?? 50) < query.data!.total}
+            onPageChange={setPage}
+          />
+        )
       )}
 
       <Dialog key={dialogEpoch} open={showForm} title={title} onClose={closeForm}>

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
-import { createDatabase, seedDatabase } from '../src/server/infrastructure/database';
+import { createDatabase, createPerformanceIndexes, seedDatabase } from '../src/server/infrastructure/database';
 import { runMigrations } from '../src/server/infrastructure/migrations';
 import { SearchService, StatsService } from '../src/server/application/read-services';
 import { SyncService } from '../src/server/application/service-modules/sync';
@@ -30,6 +30,7 @@ const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-benchmark-'));
 const db = createDatabase(dataDir);
 seedDatabase(db);
 runMigrations(db);
+createPerformanceIndexes(db);
 
 const context: AppContext = {
   userId: 'user-admin-001',

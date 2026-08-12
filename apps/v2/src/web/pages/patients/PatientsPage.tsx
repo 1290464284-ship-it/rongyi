@@ -126,6 +126,7 @@ export function PatientsPage() {
       queryKey={['patients']}
       endpoint="/resources/patients"
       pageSize={20}
+      cursorPagination
       initialSearch={urlSearch}
       initialForm={() => {
         editingIdRef.current = null;

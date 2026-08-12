@@ -55,6 +55,7 @@
   `./ARCHITECTURE_CONSTRAINTS_ENFORCEMENT_STRATEGY.md`：架构专项。
 - `./NEXT_STEPS.md`：早期后续事项。
 - `./优化报告-2026-08-12-第一批.md`：六项性能/体验/维护性优化落地报告。
+- `./优化报告-2026-08-12-第二批.md`：keyset 前端落地、索引基准、日志采样配置、聚合快照与跨模块搜索推广。
 
 ## 当前状态
 

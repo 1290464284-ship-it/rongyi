@@ -54,6 +54,16 @@ function ReminderSettingsForm({ initialConfig, onSaved }: {
   const [busy, setBusy] = useState(false);
 
   async function save() {
+    for (const [label, value] of [
+      ['复诊提醒天数', form.appointmentDaysBefore],
+      ['治疗回访延迟天数', form.recallDaysAfter],
+      ['首诊跟进延迟天数', form.firstExamDaysAfter],
+    ] as const) {
+      if (!Number.isInteger(value) || value < 0 || value > 365) {
+        showToast(`${label}须在 0-365 之间`, 'error');
+        return;
+      }
+    }
     setBusy(true);
     try {
       await apiRequest('/wechat-reminders/config', {

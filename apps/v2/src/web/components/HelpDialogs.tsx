@@ -19,7 +19,7 @@ export function HelpDialogs({
     <>
       <Dialog open={showHelp} title="快捷键与帮助" onClose={onCloseHelp}>
         <ul className="help-list">
-          <li>Ctrl+K：聚焦全局搜索</li>
+          <li>Ctrl+K：聚焦全局搜索（患者/收费/库存/预约等跨模块）</li>
           <li>？：打开快捷键帮助</li>
           <li>Tab / Shift+Tab：表单和弹窗内焦点移动</li>
           <li>Esc：关闭弹窗</li>

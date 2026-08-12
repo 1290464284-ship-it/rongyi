@@ -23,6 +23,8 @@ export interface CrudResourceOptions<
   listPath?: string | ((params: CrudListParams) => string);
   /** 分页大小，默认 50。 */
   pageSize?: number;
+  /** keyset cursor pagination for large tables (server returns nextCursor). */
+  cursorPagination?: boolean;
   /** 透传给列表 useQuery。 */
   enabled?: boolean;
   /** 初始搜索词（如顶栏全局搜索以 ?q= 跳转带入）。 */
@@ -72,6 +74,11 @@ export interface CrudResourceResult<
   setSearch: (value: string) => void;
   page: number;
   setPage: (value: number) => void;
+  hasNext: boolean;
+  canGoPrev: boolean;
+  goNext: () => void;
+  goPrev: () => void;
+  cursorPagination: boolean;
   showForm: boolean;
   editing: boolean;
   editingId: string | null;
@@ -102,11 +109,18 @@ export function useCrudResource<
   const [prevInitialSearch, setPrevInitialSearch] = useState(options.initialSearch);
   const search = useDebouncedValue(searchInput, 300);
   const [page, setPage] = useState(1);
+  const cursorPagination = options.cursorPagination === true;
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [cursorStack, setCursorStack] = useState<string[]>([]);
   if (options.initialSearch !== prevInitialSearch) {
     setPrevInitialSearch(options.initialSearch);
     setSearchInput(options.initialSearch ?? '');
     // 全局搜索带 ?q= 跳转时回到第一页，避免停留在旧页导致空结果。
     setPage(1);
+    if (cursorPagination) {
+      setCursor(null);
+      setCursorStack([]);
+    }
   }
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -123,8 +137,10 @@ export function useCrudResource<
     : (params: CrudListParams) => staticListPath ?? buildDefaultListPath(options.endpoint, pageSize, params);
 
   const query = useQuery({
-    queryKey: [...options.queryKey, page, search],
-    queryFn: () => apiRequest<Page<TRow>>(resolveListPath({ page, search })),
+    queryKey: cursorPagination ? [...options.queryKey, search, cursor ?? ''] : [...options.queryKey, page, search],
+    queryFn: () => apiRequest<Page<TRow>>(
+      cursorPagination ? resolveCursorListPath(resolveListPath, search, cursor) : resolveListPath({ page, search }),
+    ),
     enabled: options.enabled,
     placeholderData: (previous) => previous,
   });
@@ -132,6 +148,35 @@ export function useCrudResource<
   function setSearch(value: string) {
     setSearchInput(value);
     setPage(1);
+    if (cursorPagination) {
+      setCursor(null);
+      setCursorStack([]);
+    }
+  }
+
+  function goNext() {
+    const next = query.data?.nextCursor;
+    if (!next) return;
+    setCursorStack((current) => [...current, cursor ?? '']);
+    setCursor(next);
+  }
+
+  function goPrev() {
+    if (cursorStack.length === 0) return;
+    const nextStack = [...cursorStack];
+    const previous = nextStack.pop() ?? null;
+    setCursorStack(nextStack);
+    setCursor(previous);
+  }
+
+  function handleSetPage(value: number) {
+    if (!cursorPagination) {
+      setPage(value);
+      return;
+    }
+    const current = cursorStack.length + 1;
+    if (value > current) goNext();
+    else if (value < current) goPrev();
   }
 
   function updateForm(patch: Partial<TForm>) {
@@ -234,7 +279,9 @@ export function useCrudResource<
       showToast(options.messages?.delete ?? DEFAULT_MESSAGES.delete, 'success');
       const refreshed = await query.refetch();
       // 删除末页最后一条时回退一页，避免停留在空页
-      if (page > 1 && (refreshed.data?.items?.length ?? 0) === 0) {
+      if (cursorPagination) {
+        if ((refreshed.data?.items?.length ?? 0) === 0 && cursorStack.length > 0) goPrev();
+      } else if (page > 1 && (refreshed.data?.items?.length ?? 0) === 0) {
         setPage(page - 1);
       }
     } catch (error) {
@@ -252,8 +299,13 @@ export function useCrudResource<
     search,
     searchInput,
     setSearch,
-    page,
-    setPage,
+    page: cursorPagination ? cursorStack.length + 1 : page,
+    setPage: handleSetPage,
+    hasNext: cursorPagination ? Boolean(query.data?.nextCursor) : page * pageSize < (query.data?.total ?? 0),
+    canGoPrev: cursorPagination ? cursorStack.length > 0 : page > 1,
+    goNext,
+    goPrev,
+    cursorPagination,
     showForm,
     editing: editingId !== null,
     editingId,
@@ -292,4 +344,17 @@ function buildDefaultListPath(endpoint: string, pageSize: number, params: CrudLi
   const query = `page=${params.page}&pageSize=${pageSize}`;
   const searchPart = params.search ? `&search=${encodeURIComponent(params.search)}` : '';
   return `${endpoint}?${query}${searchPart}`;
+}
+
+function resolveCursorListPath(
+  resolve: (params: CrudListParams) => string,
+  search: string,
+  cursor: string | null,
+): string {
+  const base = resolve({ page: 1, search });
+  if (!cursor) return base;
+  const [pathPart, queryPart = ''] = base.split('?', 2);
+  const params = new URLSearchParams(queryPart);
+  params.set('cursor', cursor);
+  return `${pathPart}?${params.toString()}`;
 }
