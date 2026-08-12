@@ -2,6 +2,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { waitForService } from './wait-for-services.mjs';
 
 const apiPort = Number(process.env.V2_SMOKE_API_PORT ?? 31871);
 const webPort = Number(process.env.V2_SMOKE_WEB_PORT ?? 51871);
@@ -48,6 +49,15 @@ const baseEnv = {
 const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
 const children = [];
 
+function pnpmCommand(args) {
+  // 与 run-smokes.mjs 保持同一安全约束：Windows 下 shell 拼接命令时，
+  // 拒绝含空白/引号/元字符的参数，避免脆弱的转义变成注入面。
+  for (const part of args) {
+    if (/[\s"'&|$`<>;()]/.test(part)) throw new Error(`unsafe smoke argument: ${part}`);
+  }
+  return [pnpm, '--filter', '@dental/v2', ...args].join(' ');
+}
+
 function start(label, args) {
   const child = label === 'api'
     ? spawn(process.execPath, [path.join(appRoot, 'dist-electron', 'server.cjs')], {
@@ -56,7 +66,7 @@ function start(label, args) {
         stdio: 'inherit',
         windowsHide: true,
       })
-    : spawn(pnpm, ['--filter', '@dental/v2', ...args], {
+    : spawn(pnpmCommand(args), {
         cwd: root,
         env: baseEnv,
         stdio: 'inherit',
@@ -68,25 +78,8 @@ function start(label, args) {
   return child;
 }
 
-async function waitForUrl(url, label, timeoutMs = 90_000) {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < timeoutMs) {
-    try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(2000) });
-      if (response.ok) {
-        console.log(`${label} ready`);
-        return;
-      }
-    } catch {
-      // retry
-    }
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-  }
-  throw new Error(`${label} did not become ready: ${url}`);
-}
-
 function runSmoke(args) {
-  const command = ['pnpm', '--filter', '@dental/v2', ...args].join(' ');
+  const command = pnpmCommand(args);
   const result = spawnSync(command, {
     cwd: root,
     env: baseEnv,
@@ -120,13 +113,18 @@ function stopAll() {
 async function main() {
   start('api', ['dev:api']);
   if (!skipUi) start('web', ['dev:web']);
-  await waitForUrl(`http://127.0.0.1:${apiPort}/api/v2/health`, 'API');
-  if (!skipUi) await waitForUrl(`http://localhost:${webPort}`, 'Web');
+  await waitForService({ url: `http://127.0.0.1:${apiPort}/api/v2/health`, text: '', timeoutMs: 90_000 });
+  console.log('API ready');
+  if (!skipUi) {
+    await waitForService({ url: `http://localhost:${webPort}`, text: '<div id="root"', timeoutMs: 90_000 });
+    console.log('Web ready');
+  }
 
   if (!skipApi) runSmoke(['smoke:api']);
   if (!skipUi) runSmoke(['smoke:ui']);
   if (!skipLoad) runSmoke(['test:load']);
-  await waitForUrl(`http://127.0.0.1:${apiPort}/api/v2/health`, 'API-alive', 10_000);
+  await waitForService({ url: `http://127.0.0.1:${apiPort}/api/v2/health`, text: '', timeoutMs: 10_000 });
+  console.log('API-alive');
   runSmoke(['smoke:state-machine-concurrency']);
   console.log('ALL_DELIVERY_SMOKES_PASSED');
 }

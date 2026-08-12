@@ -139,7 +139,7 @@ async function main() {
 
   await waitForService({ url: apiUrl, text: '', timeoutMs });
   console.log('api ready');
-  await waitForService({ url: webUrl, text: 'root', timeoutMs });
+  await waitForService({ url: webUrl, text: '<div id="root"', timeoutMs });
   console.log('web ready');
 
   runSmoke(['run', 'smoke:api']);
@@ -148,6 +148,8 @@ async function main() {
   runSmoke(['run', 'smoke:electron']);
   delete process.env.V2_SKIP_WEB_START;
   runSmoke(['run', 'test:load']);
+  runSmoke(['run', 'smoke:multi-instance']);
+  runSmoke(['run', 'smoke:state-machine-concurrency']);
   runSmoke(['run', 'smoke:wechat-gateway']);
   runSmoke(['run', 'smoke:http-fuzz']);
   runSmoke(['run', 'smoke:permissions']);
