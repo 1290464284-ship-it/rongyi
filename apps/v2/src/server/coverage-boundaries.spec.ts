@@ -312,12 +312,17 @@ describe('coverage boundaries', () => {
 
   it('covers idempotency without a key', async () => {
     let calls = 0;
-    const result = await withIdempotency({} as Database.Database, { operation: 'x', userId: 'u', clinicId: 'c', requestId: '' }, () => {
+    const execCalls: string[] = [];
+    const dbStub = {
+      exec: (sql: string) => { execCalls.push(sql); },
+    } as unknown as Database.Database;
+    const result = await withIdempotency(dbStub, { operation: 'x', userId: 'u', clinicId: 'c', requestId: '' }, () => {
       calls += 1;
       return { value: 1 };
     });
     expect(result.value).toBe(1);
     expect(calls).toBe(1);
+    expect(execCalls).toEqual(['BEGIN IMMEDIATE', 'COMMIT']);
   });
 
   it('covers an empty metrics snapshot', async () => {

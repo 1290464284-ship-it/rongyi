@@ -121,6 +121,23 @@ describe('withIdempotency', () => {
     expect(calls).toBe(2);
   });
 
+  it('wraps synchronous operations without a request id in a rollback-safe transaction', () => {
+    db.exec('CREATE TABLE IF NOT EXISTS IdemScratch (id TEXT PRIMARY KEY)');
+    const noRequestScope = (key: string) => ({ ...scope(key), requestId: '' });
+    expect(() => withIdempotency(db, noRequestScope('rollback'), () => {
+      db.prepare('INSERT INTO IdemScratch (id) VALUES (?)').run('rolled-back');
+      throw new Error('boom');
+    })).toThrow('boom');
+    expect(db.prepare('SELECT 1 FROM IdemScratch WHERE id = ?').get('rolled-back')).toBeUndefined();
+
+    const result = withIdempotency(db, noRequestScope('commit'), () => {
+      db.prepare('INSERT INTO IdemScratch (id) VALUES (?)').run('committed');
+      return { ok: true };
+    });
+    expect(result).toEqual({ ok: true });
+    expect(db.prepare('SELECT 1 FROM IdemScratch WHERE id = ?').get('committed')).toBeDefined();
+  });
+
   it('keeps the PROCESSING record when an async operation fails, blocking retries', async () => {
     let calls = 0;
     await expect(withIdempotency(db, scope('async-fail'), async () => {

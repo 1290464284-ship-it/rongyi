@@ -39,7 +39,28 @@ export function withIdempotency<T>(
   scope: IdempotencyScope,
   fn: () => T | Promise<T>,
 ): T | Promise<T> {
-  if (!scope?.requestId) return fn();
+  if (!scope?.requestId) {
+    if (isAsyncFunction(fn)) return fn();
+    if (isDbWriteActive(db)) {
+      // 同一条连接上已有显式 BEGIN（sync push / bulk import / resolveConflict）时，
+      // 直接 503，避免嵌套事务污染外层写路径。
+      throw new AppError('DB_BUSY', 'Database write is in progress; retry the request', 503);
+    }
+    // 无 requestId 时没有幂等记录，但仍用 BEGIN IMMEDIATE 包裹同步写入，
+    // 保证“金额/积分/流水”等复合操作要么全部提交要么整体回滚。
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const value = fn();
+      if (isPromise(value)) {
+        throw new Error('Idempotent write must complete synchronously; use an async callback for promises');
+      }
+      db.exec('COMMIT');
+      return value;
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+  }
   if (isDbWriteActive(db)) {
     // 同一连接上已有显式 BEGIN（sync push / bulk import / resolveConflict）时，
     // 任何幂等写都必须直接 503：先写 PROCESSING 记录会混入外层事务。

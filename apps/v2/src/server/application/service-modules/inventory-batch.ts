@@ -93,7 +93,6 @@ export class InventoryBatchService {
 
   /** 新建批次：批次入库并同步增加物料库存，落一条 IN 流水（事务）。 */
   create(input: BatchCreateInput, context: AppContext): { id: string; batchNo: string | null; remainingQuantity: number; stockAfter: number } {
-    this.lockGuard?.(input.itemId, context.clinicId);
     const quantity = Number(input.initialQuantity);
     if (!Number.isSafeInteger(quantity) || quantity < 0 || quantity > 1_000_000_000) {
       throw new ValidationError('入库数量必须是不超过 10 亿的非负整数');
@@ -120,6 +119,8 @@ export class InventoryBatchService {
     const batchNo = typeof input.batchNo === 'string' && input.batchNo.trim() ? input.batchNo.trim() : null;
     let stockAfter = Number(item.stock ?? 0);
     const run = this.db.transaction(() => {
+      // 锁守卫放入事务内，避免“守卫通过后、写入前”被盘点锁定的竞态。
+      this.lockGuard?.(input.itemId, context.clinicId);
       this.db.prepare(
         `INSERT INTO InventoryBatch (
            id, itemId, batchNo, productionDate, expiryDate, initialQuantity,

@@ -162,8 +162,8 @@ export class RefundFlowService {
    */
   private reversal(refundRow: RefundRow, context: AppContext, now: string): void {
     const charge = this.db.prepare(
-      `SELECT * FROM Charge WHERE id = ? AND deletedAt IS NULL`,
-    ).get(refundRow.chargeId) as Record<string, unknown> | undefined;
+      `SELECT * FROM Charge WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    ).get(refundRow.chargeId, ...tenantParams(context.clinicId)) as Record<string, unknown> | undefined;
     if (!charge) return; // 收费单已删则跳过
 
     const amount = Number(refundRow.amount);
@@ -177,8 +177,8 @@ export class RefundFlowService {
              ELSE 'UNPAID'
            END,
            updatedAt = ?
-       WHERE id = ? AND deletedAt IS NULL AND refundedAmount >= ?`,
-    ).run(amount, amount, now, charge.id, amount);
+        WHERE id = ? AND deletedAt IS NULL AND refundedAmount >= ?${tenantAnd(context.clinicId)}`,
+    ).run(amount, amount, now, charge.id, amount, ...tenantParams(context.clinicId));
     if (chargeUpdate.changes === 0) {
       throw new ConflictError('退款冲销金额已变化，请刷新后重试');
     }
@@ -194,8 +194,9 @@ export class RefundFlowService {
     // 按流水精确回退对应卡余额并回退 reversedAmount。旧退款（无 allocations）
     // 走原 payMethod 整单冲销兜底。
     const refundLedger = this.db.prepare(
-      `SELECT allocations FROM PaymentLedger WHERE relatedId = ? AND type = 'REFUND' AND deletedAt IS NULL`,
-    ).get(refundRow.id) as { allocations: string | null } | undefined;
+      `SELECT allocations FROM PaymentLedger
+       WHERE relatedId = ? AND type = 'REFUND' AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    ).get(refundRow.id, ...tenantParams(context.clinicId)) as { allocations: string | null } | undefined;
     let allocations: Array<{ ledgerId: string; cardId: string; amount: number }> = [];
     if (refundLedger?.allocations) {
       try {
@@ -217,8 +218,8 @@ export class RefundFlowService {
         }
         const balanceUpdate = this.db.prepare(
           `UPDATE MemberCard SET balance = balance - ?, updatedAt = ?
-           WHERE id = ? AND deletedAt IS NULL AND balance >= ?`,
-        ).run(allocation.amount, now, card.id, allocation.amount);
+           WHERE id = ? AND deletedAt IS NULL AND balance >= ?${tenantAnd(context.clinicId)}`,
+        ).run(allocation.amount, now, card.id, allocation.amount, ...tenantParams(context.clinicId));
         if (balanceUpdate.changes === 0) {
           throw new ConflictError('退款冲销会员卡余额不足，请先充值后再驳回/取消');
         }
@@ -241,8 +242,9 @@ export class RefundFlowService {
           '退款驳回/取消回滚',
         );
         this.db.prepare(
-          `UPDATE PaymentLedger SET reversedAmount = MAX(0, reversedAmount - ?), updatedAt = ? WHERE id = ?`,
-        ).run(allocation.amount, now, allocation.ledgerId);
+          `UPDATE PaymentLedger SET reversedAmount = MAX(0, reversedAmount - ?), updatedAt = ?
+           WHERE id = ?${tenantAnd(context.clinicId)}`,
+        ).run(allocation.amount, now, allocation.ledgerId, ...tenantParams(context.clinicId));
       }
     } else if (charge.payMethod === 'MEMBER_CARD') {
       // 优先按原支付卡冲销（ChargeService.pay 已把 memberCardId 落库），
@@ -257,8 +259,8 @@ export class RefundFlowService {
       if (!card) throw new ConflictError('退款冲销原支付卡不可用，请恢复会员卡后重试');
       const balanceUpdate = this.db.prepare(
         `UPDATE MemberCard SET balance = balance - ?, updatedAt = ?
-         WHERE id = ? AND deletedAt IS NULL AND balance >= ?`,
-      ).run(amount, now, card.id, amount);
+         WHERE id = ? AND deletedAt IS NULL AND balance >= ?${tenantAnd(context.clinicId)}`,
+      ).run(amount, now, card.id, amount, ...tenantParams(context.clinicId));
       if (balanceUpdate.changes === 0) {
         throw new ConflictError('退款冲销会员卡余额不足，请先充值后再驳回/取消');
       }
@@ -283,13 +285,13 @@ export class RefundFlowService {
       );
       this.db.prepare(
         `UPDATE PaymentLedger SET reversedAmount = MAX(0, reversedAmount - ?), updatedAt = ?
-         WHERE chargeId = ? AND cardId = ? AND type = 'PAY' AND deletedAt IS NULL`,
-      ).run(amount, now, refundRow.chargeId, card.id);
+         WHERE chargeId = ? AND cardId = ? AND type = 'PAY' AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+      ).run(amount, now, refundRow.chargeId, card.id, ...tenantParams(context.clinicId));
     }
 
     const debt = this.db.prepare(
-      `SELECT * FROM Debt WHERE chargeId = ? AND deletedAt IS NULL`,
-    ).get(refundRow.chargeId) as Record<string, unknown> | undefined;
+      `SELECT * FROM Debt WHERE chargeId = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    ).get(refundRow.chargeId, ...tenantParams(context.clinicId)) as Record<string, unknown> | undefined;
     if (debt && Number(debt.paidAmount ?? 0) > 0) {
       // 退款申请时 Debt.paidAmount 已被扣减 amount，驳回/取消需恢复原状（封顶 totalAmount）。
       const debtUpdate = this.db.prepare(
@@ -301,8 +303,8 @@ export class RefundFlowService {
                ELSE 'UNPAID'
              END,
              updatedAt = ?
-         WHERE id = ? AND deletedAt IS NULL AND paidAmount + ? <= totalAmount`,
-      ).run(amount, amount, amount, now, debt.id, amount);
+          WHERE id = ? AND deletedAt IS NULL AND paidAmount + ? <= totalAmount${tenantAnd(context.clinicId)}`,
+      ).run(amount, amount, amount, now, debt.id, amount, ...tenantParams(context.clinicId));
       if (debtUpdate.changes === 0) {
         throw new ConflictError('退款冲销欠款状态已变化，请刷新后重试');
       }

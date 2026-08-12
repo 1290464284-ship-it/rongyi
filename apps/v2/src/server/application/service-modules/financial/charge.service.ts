@@ -224,12 +224,12 @@ export class ChargeService {
     this.db.transaction(() => {
       const result = this.db.prepare(
         `UPDATE Charge SET deletedAt = ?, updatedAt = ?
-         WHERE id = ? AND status = 'UNPAID' AND paidAmount = 0 AND refundedAmount = 0 AND deletedAt IS NULL`,
-      ).run(now, now, id);
+         WHERE id = ? AND status = 'UNPAID' AND paidAmount = 0 AND refundedAmount = 0 AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+      ).run(now, now, id, ...tenantParams(context.clinicId));
       if (result.changes === 0) throw new ConflictError('Only unpaid charges can be deleted');
       this.db.prepare(
-        `UPDATE ChargeItem SET deletedAt = ?, updatedAt = ? WHERE chargeId = ? AND deletedAt IS NULL`,
-      ).run(now, now, id);
+        `UPDATE ChargeItem SET deletedAt = ?, updatedAt = ? WHERE chargeId = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+      ).run(now, now, id, ...tenantParams(context.clinicId));
       // P2-3：取消收费单统一维护同步与搜索索引。
       trackResourceWrite(this.db, { tableName: 'Charge', recordId: id, operation: 'DELETE', clinicId: context.clinicId ?? null });
     })();
