@@ -14,6 +14,14 @@ import { trackResourceWrite } from '../infrastructure/write-tracking';
 import { RESOURCE_PERMISSION_MAP } from '../application/service-modules/permissions';
 import { maskPhoneForExport } from '../application/service-modules/operations';
 
+const EXPORT_PAGE_SIZE = 200;
+const EXPORT_MAX_ROWS = 1_000_000;
+
+function exportMaxRows(): number {
+  const raw = Number(process.env.V2_CSV_EXPORT_MAX_ROWS);
+  return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : EXPORT_MAX_ROWS;
+}
+
 export function createResourceRouter(db: Database.Database): Router {
   const router = Router();
 
@@ -102,7 +110,10 @@ export function createResourceRouter(db: Database.Database): Router {
       const repo = new SqliteRepository(db, resource);
       const firstPage = await repo.findMany({
         page: 1,
-        pageSize: 200,
+        pageSize: EXPORT_PAGE_SIZE,
+        countTotal: false,
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
         filters: parseFilters(req),
       }, req.context!);
       res.setHeader('content-type', 'text/csv; charset=utf-8');
@@ -112,22 +123,40 @@ export function createResourceRouter(db: Database.Database): Router {
         res.end();
         return;
       }
-      const maskedFirst = firstPage.items.map((row) => maskExportRow(resource.name, row));
+      const maxRows = exportMaxRows();
+      const firstAllowed = firstPage.items.slice(0, maxRows);
+      const maskedFirst = firstAllowed.map((row) => maskExportRow(resource.name, row));
       res.write(`${csvHeader(maskedFirst, resource)}\r\n`);
       res.write(`${csvLines(maskedFirst)}\r\n`);
-      let page = 2;
-      for (;;) {
-        if (firstPage.total <= 200) break;
+      let written = firstAllowed.length;
+      let cursor = firstPage.nextCursor;
+      let truncated = written < firstPage.items.length || (written >= maxRows && Boolean(cursor));
+      if (truncated) cursor = undefined;
+      while (cursor && written < maxRows) {
         const result = await repo.findMany({
-          page,
-          pageSize: 200,
+          page: 1,
+          pageSize: EXPORT_PAGE_SIZE,
+          countTotal: false,
+          sortBy: 'createdAt',
+          sortOrder: 'DESC',
+          cursor,
           filters: parseFilters(req),
         }, req.context!);
         if (result.items.length === 0) break;
-        res.write(`${csvLines(result.items.map((row) => maskExportRow(resource.name, row)))}\r\n`);
-        if (page * 200 >= result.total) break;
-        page += 1;
+        const allowed = result.items.slice(0, maxRows - written);
+        res.write(`${csvLines(allowed.map((row) => maskExportRow(resource.name, row)))}\r\n`);
+        written += allowed.length;
+        if (allowed.length < result.items.length) {
+          truncated = true;
+          break;
+        }
+        cursor = result.nextCursor;
+        if (written >= maxRows && cursor) {
+          truncated = true;
+          break;
+        }
       }
+      if (truncated) res.write('# truncated\r\n');
       res.end();
     } catch (error) {
       if (!res.headersSent) next(error);

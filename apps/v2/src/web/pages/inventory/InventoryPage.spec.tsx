@@ -413,6 +413,21 @@ describe('InventoryPage', () => {
     expect(screen.getByText('至 2026-08-31')).toBeDefined();
   });
 
+  it('shows a truncated notice on the detail report', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/inventoryItems?page=1&pageSize=20') return { items: [], total: 0 };
+      if (path === '/inventory/low-stock') return [];
+      if (path === '/inventory/expiring?days=30') return [];
+      if (path === '/inventory-reports/IN') {
+        return { type: 'IN', from: null, to: null, total: 3, items: [{ id: 'r-1', itemName: '材料' }], supplierId: null, truncated: true };
+      }
+      return {};
+    });
+    render(<InventoryPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('tab', { name: '库存明细报表' }));
+    expect(await screen.findByText(/仅显示前/)).toBeDefined();
+  });
+
   it('shows report errors on the report tab', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/inventoryItems?page=1&pageSize=20') return { items: [], total: 0 };

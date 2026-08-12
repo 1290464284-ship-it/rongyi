@@ -247,6 +247,32 @@ describe('resource router', () => {
     expect(exported.text.match(/"Export Row"/g)?.length).toBe(201);
   }, 30_000);
 
+  it('caps CSV exports and marks truncation', async () => {
+    process.env.V2_CSV_EXPORT_MAX_ROWS = '5';
+    try {
+      const small = await request(app)
+        .get('/api/v2/resources/patients/export?name=Export Row')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      expect(small.text).toContain('# truncated');
+      expect(small.text.match(/"Export Row"/g)?.length).toBe(5);
+    } finally {
+      delete process.env.V2_CSV_EXPORT_MAX_ROWS;
+    }
+
+    process.env.V2_CSV_EXPORT_MAX_ROWS = '200';
+    try {
+      const exact = await request(app)
+        .get('/api/v2/resources/patients/export?name=Export Row')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      expect(exact.text).toContain('# truncated');
+      expect(exact.text.match(/"Export Row"/g)?.length).toBe(200);
+    } finally {
+      delete process.env.V2_CSV_EXPORT_MAX_ROWS;
+    }
+  }, 30_000);
+
   it('prefixes formula-injecting CSV cells with a single quote', async () => {
     await request(app)
       .post('/api/v2/resources/patients')

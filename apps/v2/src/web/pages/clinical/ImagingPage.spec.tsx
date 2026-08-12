@@ -345,6 +345,53 @@ describe('ImagingPage', () => {
     expect(within(listTable as HTMLElement).getByText('完成')).toBeDefined();
   });
 
+  it('keeps selected compare images visible after paging back', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/imaging?page=1&pageSize=50') {
+        return {
+          items: [
+            { id: 'i-1', title: '全景片', type: 'PANORAMIC', patientId: 'p-1', doctorId: 'd-1', imageUrl: '/api/v2/files/a.png', takenAt: '2026-01-02T03:04:00.000Z', categoryId: 'c-1', phase: 'INITIAL' },
+            ...Array.from({ length: 49 }, (_, index) => ({ id: `i-extra-${index}`, title: `补充片 ${index}`, type: 'PANORAMIC', patientId: 'p-1', doctorId: 'd-1', imageUrl: `/api/v2/files/e${index}.png`, takenAt: '2026-01-02T03:04:00.000Z', categoryId: 'c-1', phase: 'INITIAL' })),
+          ],
+          total: 51,
+          page: 1,
+          pageSize: 50,
+        };
+      }
+      if (path === '/resources/imaging?page=2&pageSize=50') {
+        return {
+          items: [{ id: 'i-2', title: '侧位片', type: 'CEPHALOMETRIC', patientId: 'p-1', doctorId: 'd-1', imageUrl: '/api/v2/files/b.png', takenAt: '2026-01-03T04:05:00.000Z', categoryId: 'c-2', phase: 'FINISHED' }],
+          total: 51,
+          page: 2,
+          pageSize: 50,
+        };
+      }
+      if (path === '/resources/imagingCategories?page=1&pageSize=100') {
+        return { items: [{ id: 'c-1', name: '正畸类', type: 'ORTHODONTIC', sortOrder: 1, active: true }], total: 1, page: 1, pageSize: 100 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      return {};
+    });
+    render(<ImagingPage />, { wrapper });
+    const compareSection = await screen.findByLabelText('影像对比');
+    await waitFor(() => {
+      expect(within(compareSection).getAllByRole('option', { name: /全景片/ }).length).toBeGreaterThan(0);
+    });
+    fireEvent.click(within(compareSection).getByRole('button', { name: '下一页' }));
+    await waitFor(() => {
+      expect(within(compareSection).getAllByRole('option', { name: /侧位片/ }).length).toBeGreaterThan(0);
+    });
+    fireEvent.change(within(compareSection).getByLabelText('影像一'), { target: { value: 'i-2' } });
+    fireEvent.click(within(compareSection).getByRole('button', { name: '上一页' }));
+    await waitFor(() => {
+      expect(within(compareSection).getAllByRole('option', { name: /全景片/ }).length).toBeGreaterThan(0);
+      expect(within(compareSection).getAllByRole('option', { name: /侧位片/ }).length).toBeGreaterThan(0);
+    });
+  });
+
   it('renders two images side by side with metadata when two are selected for comparison', async () => {
     mockData();
     mockSignedUrls();

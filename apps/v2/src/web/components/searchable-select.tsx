@@ -4,6 +4,7 @@ import { apiRequest } from '../lib/api';
 import type { Page } from '../lib/types';
 import { friendlyError } from '../lib/messages';
 import { useDebouncedValue } from '../hooks/use-debounce';
+import { MissingSelectOption } from './list-controls';
 
 export interface SearchableSelectRow extends Record<string, unknown> {
   id: string;
@@ -103,7 +104,7 @@ export function SearchableSelect({
     <span className="searchable-select">
       <select aria-label={ariaLabel} value={value} onChange={(event) => onChange(event.target.value)}>
         <option value="">{placeholder}</option>
-        {selectedMissing && <option value={value}>{value}</option>}
+        {selectedMissing && <MissingSelectOption value={value} />}
         {loaded.map((row) => (
           <option key={String(row.id)} value={String(row.id)}>
             {String(row[labelField] ?? row.id)}

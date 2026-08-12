@@ -2,7 +2,7 @@ import { FormEvent, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import type { Page } from '../../lib/types';
-import { ConfirmDialog, DataTable, Dialog, LoadingState, PageError, SearchInput, SearchableSelect } from '../../components';
+import { ConfirmDialog, DataTable, Dialog, LoadingState, MissingSelectOption, PageError, SearchInput, SearchableSelect } from '../../components';
 import { errorMessage } from '../../lib/messages';
 import { toLocalInput } from '../../lib/format';
 import { useToast } from '../../lib/toast-context';
@@ -57,6 +57,10 @@ export function AppointmentsPage({ initialSearch }: { initialSearch?: string } =
     queryKey: ['appointment-purposes'],
     queryFn: () => apiRequest<Page<PurposeRow>>('/resources/appointmentPurposes?page=1&pageSize=100'),
   });
+  const doctorIds = new Set((doctors.data ?? []).map((row) => String(row.id)));
+  const purposeIds = new Set((purposes.data?.items ?? []).map((row) => String(row.id)));
+  const doctorMissing = (id: string) => id !== '' && !doctorIds.has(id);
+  const purposeMissing = (id: string) => id !== '' && !purposeIds.has(id);
   const query = useQuery({
     queryKey: ['appointments', page, debouncedSearch],
     queryFn: () => apiRequest<Page<AppointmentRow>>(
@@ -254,6 +258,7 @@ export function AppointmentsPage({ initialSearch }: { initialSearch?: string } =
           {doctors.data?.map((row) => (
             <option key={row.id} value={row.id}>{String(row.name ?? row.id)}</option>
           ))}
+          {doctorMissing(doctorId) && <MissingSelectOption value={doctorId} />}
         </select>
         <SearchableSelect resource="chairs" value={chairId} onChange={setChairId} ariaLabel="椅位" placeholder="不指定椅位" />
         <select aria-label="预约类型" value={type} onChange={(event) => setType(event.target.value)}>
@@ -266,6 +271,7 @@ export function AppointmentsPage({ initialSearch }: { initialSearch?: string } =
           {purposes.data?.items?.map((row) => (
             <option key={row.id} value={row.id}>{String(row.name ?? row.id)}</option>
           ))}
+          {purposeMissing(purpose) && <MissingSelectOption value={purpose} />}
         </select>
         <input aria-label="临时患者姓名" type="text" value={tempPatientName} onChange={(event) => setTempPatientName(event.target.value)} placeholder="临时患者姓名" />
         <input aria-label="临时患者电话" type="text" value={tempPatientPhone} onChange={(event) => setTempPatientPhone(event.target.value)} placeholder="临时患者电话" />
@@ -289,6 +295,7 @@ export function AppointmentsPage({ initialSearch }: { initialSearch?: string } =
             {doctors.data?.map((row) => (
               <option key={row.id} value={row.id}>{String(row.name ?? row.id)}</option>
             ))}
+            {doctorMissing(editForm.doctorId) && <MissingSelectOption value={editForm.doctorId} />}
           </select>
           <SearchableSelect resource="chairs" value={editForm.chairId} onChange={(value) => setEditForm((current) => ({ ...current, chairId: value }))} ariaLabel="椅位" placeholder="不指定椅位" />
           <select aria-label="预约类型" value={editForm.type} onChange={(event) => setEditForm((current) => ({ ...current, type: event.target.value }))}>
@@ -301,6 +308,7 @@ export function AppointmentsPage({ initialSearch }: { initialSearch?: string } =
             {purposes.data?.items?.map((row) => (
               <option key={row.id} value={row.id}>{String(row.name ?? row.id)}</option>
             ))}
+            {purposeMissing(editForm.purpose) && <MissingSelectOption value={editForm.purpose} />}
           </select>
           <input aria-label="临时患者姓名" type="text" value={editForm.tempPatientName} onChange={(event) => setEditForm((current) => ({ ...current, tempPatientName: event.target.value }))} placeholder="临时患者姓名" />
           <input aria-label="临时患者电话" type="text" value={editForm.tempPatientPhone} onChange={(event) => setEditForm((current) => ({ ...current, tempPatientPhone: event.target.value }))} placeholder="临时患者电话" />

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { apiRequest } from '../../lib/api';
 import { Dialog } from '../../components';
 import { toCents } from '../../lib/format';
@@ -22,10 +22,11 @@ export function MemberCardPlanDialog({ open, cardId, onSaved, onClose, showToast
     specialDiscountsJson: '',
   });
   const [planBusy, setPlanBusy] = useState(false);
+  const planBusyRef = useRef(false);
 
   async function savePlan(event: FormEvent) {
     event.preventDefault();
-    if (!cardId || planBusy) return;
+    if (!cardId || planBusy || planBusyRef.current) return;
     let specialDiscountsJson: unknown = null;
     const rawJson = planForm.specialDiscountsJson.trim();
     if (rawJson) {
@@ -37,6 +38,7 @@ export function MemberCardPlanDialog({ open, cardId, onSaved, onClose, showToast
       }
     }
     setPlanBusy(true);
+    planBusyRef.current = true;
     try {
       await apiRequest(`/member-cards/${cardId}/discount-plan`, {
         method: 'PUT',
@@ -54,6 +56,7 @@ export function MemberCardPlanDialog({ open, cardId, onSaved, onClose, showToast
     } catch (error) {
       showToast(errorMessage(error, '保存折扣方案失败'), 'error');
     } finally {
+      planBusyRef.current = false;
       setPlanBusy(false);
     }
   }

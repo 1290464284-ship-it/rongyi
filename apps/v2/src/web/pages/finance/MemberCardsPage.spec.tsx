@@ -163,6 +163,18 @@ describe('MemberCardsPage', () => {
     expect(await screen.findByText('折扣方案已保存')).toBeDefined();
   });
 
+  it('guards discount plan save against double submission', async () => {
+    const onSaved = vi.fn();
+    const onClose = vi.fn();
+    const showToast = vi.fn();
+    vi.mocked(apiRequest).mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve({}), 50)));
+    render(<MemberCardPlanDialog open cardId="card-1" onSaved={onSaved} onClose={onClose} showToast={showToast} />, { wrapper });
+    fireEvent.click(screen.getByText('\u4fdd\u5b58'));
+    fireEvent.click(screen.getByText('\u4fdd\u5b58'));
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/member-cards/card-1/discount-plan')).toHaveLength(1);
+  });
+
   it('rejects invalid special discount JSON with an error toast', async () => {
     mockData();
     render(<MemberCardsPage />, { wrapper });

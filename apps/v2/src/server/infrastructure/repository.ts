@@ -19,6 +19,29 @@ export interface RelationLabelJoin {
   join: string;
 }
 
+const tableColumnCache = new WeakMap<Database.Database, Map<string, ReadonlySet<string>>>();
+
+function cachedTableColumns(db: Database.Database, table: string): ReadonlySet<string> {
+  let tables = tableColumnCache.get(db);
+  if (!tables) {
+    tables = new Map();
+    tableColumnCache.set(db, tables);
+  }
+  let columns = tables.get(table);
+  if (!columns) {
+    columns = new Set(
+      (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((column) => column.name),
+    );
+    tables.set(table, columns);
+  }
+  return columns;
+}
+
+/** Clear cached PRAGMA column layouts after schema migrations. */
+export function clearTableColumnCache(db: Database.Database): void {
+  tableColumnCache.delete(db);
+}
+
 /**
  * 为 relation 字段生成 LEFT JOIN 片段：目标表 + labelField 全部来自资源元数据白名单
  * （resources.ts 中 relation.resource → 目标表、relation.labelField → 标签列），
@@ -83,10 +106,7 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
     options: { emitSyncChange?: boolean } = {},
   ) {
     this.emitSyncChange = options.emitSyncChange ?? true;
-    this.columns = new Set(
-      (this.db.prepare(`PRAGMA table_info(${this.resource.table})`).all() as Array<{ name: string }>)
-        .map((column) => column.name),
-    );
+    this.columns = new Set(cachedTableColumns(this.db, this.resource.table));
   }
 
   async findById(id: string, context: AppContext): Promise<Record<string, unknown> | null> {
@@ -175,8 +195,13 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
     // 的默认排序下返回 nextCursor，让前端直接进入游标路径，避免深分页
     // offset 扫描。total 仍按过滤集整体统计（不含游标条件）。
     const whereSql = where.join(' AND ');
-    const totalRow = this.db.prepare(`SELECT COUNT(*) AS total FROM ${this.resource.table} t WHERE ${whereSql}`).get(...params) as { total: number };
-    let sortField = query.sortBy && this.field(query.sortBy) ? query.sortBy : this.resource.defaultSort?.field ?? 'createdAt';
+    const countTotal = query.countTotal !== false;
+    const totalRow = countTotal
+      ? this.db.prepare(`SELECT COUNT(*) AS total FROM ${this.resource.table} t WHERE ${whereSql}`).get(...params) as { total: number }
+      : undefined;
+    let sortField = query.sortBy && (this.field(query.sortBy) || this.columns.has(query.sortBy))
+      ? query.sortBy
+      : this.resource.defaultSort?.field ?? 'createdAt';
     let sortOrder = query.sortOrder === 'ASC' ? 'ASC' : 'DESC';
     let rowParams = params;
     let rowWhere = whereSql;
@@ -224,7 +249,7 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
     }
     return {
       items: pageRows.map((row) => this.mapRow(row)),
-      total: totalRow.total,
+      total: countTotal ? totalRow!.total : 0,
       page,
       pageSize,
       nextCursor,
@@ -395,8 +420,7 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
   }
 
   private tableHasColumn(table: string, column: string): boolean {
-    const rows = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
-    return rows.some((row) => row.name === column);
+    return cachedTableColumns(this.db, table).has(column);
   }
 
   private assertRelations(entity: Record<string, unknown>, context: AppContext): void {

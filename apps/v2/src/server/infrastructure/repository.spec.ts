@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase } from './database';
-import { SqliteRepository, buildRelationLabelJoins } from './repository';
+import { SqliteRepository, buildRelationLabelJoins, clearTableColumnCache } from './repository';
 import { rebuildSearchIndex, upsertSearchRow } from './search-index';
 import { resourceRegistry } from '../../domain/resources';
 import type { AppContext, ResourceDefinition } from '../../domain/contracts';
@@ -163,6 +163,38 @@ describe('SqliteRepository', () => {
     const second = await repo.findMany({ page: 1, pageSize: 2, search: 'CompositeZetaOnly', cursor: first.nextCursor }, context);
     expect(second.items.map((row) => row.id)).toEqual(['composite-cursor-1', 'composite-cursor-0']);
     expect(second.nextCursor).toBeUndefined();
+  });
+
+  it('skips the COUNT query when countTotal is false and sorts by system columns', async () => {
+    const repo = new SqliteRepository(db, resourceRegistry.get('patients')!);
+    await repo.insert({
+      id: 'count-total-skip',
+      code: 'COUNT-TOTAL-SKIP',
+      name: 'CountTotalSkipOnly',
+      gender: 'UNKNOWN',
+      source: 'OTHER',
+    }, context);
+    const page = await repo.findMany({
+      page: 1,
+      pageSize: 10,
+      search: 'CountTotalSkipOnly',
+      countTotal: false,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+    }, context);
+    expect(page.items.map((row) => row.id)).toEqual(['count-total-skip']);
+    expect(page.total).toBe(0);
+  });
+
+  it('clears cached PRAGMA layouts after schema changes', async () => {
+    const repo = new SqliteRepository(db, resourceRegistry.get('patients')!);
+    await repo.findMany({ page: 1, pageSize: 10, countTotal: false }, context);
+    db.exec('ALTER TABLE Patient ADD COLUMN cacheProbe TEXT');
+    clearTableColumnCache(db);
+    const fresh = new SqliteRepository(db, resourceRegistry.get('patients')!);
+    await expect(fresh.findMany({ page: 1, pageSize: 10, countTotal: false }, context)).resolves.toMatchObject({
+      items: expect.any(Array),
+    });
   });
 
   it('rejects generic writes with missing relation targets', async () => {

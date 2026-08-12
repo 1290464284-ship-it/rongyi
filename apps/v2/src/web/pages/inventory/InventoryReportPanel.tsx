@@ -50,6 +50,7 @@ export function InventoryReportPanel() {
             {report.data.from && <span>从 {report.data.from}</span>}
             {report.data.to && <span>至 {report.data.to}</span>}
           </div>
+          {report.data.truncated && <p className="report-truncated">数据较多，仅显示前 {report.data.total} 条</p>}
           <DataTable
             columns={report.data.type === 'SUMMARY' ? summaryReportColumns : detailReportColumns}
             rows={report.data.items}

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../lib/api';
-import { SearchableSelect, UploadPreview } from '../components';
+import { MissingSelectOption, SearchableSelect, UploadPreview } from '../components';
 import { PHASE_OPTIONS } from './constants';
 import type { ImagingCategoryRow, ImagingForm } from './types';
 
@@ -34,6 +34,9 @@ export function ImagingFormFields({
     queryKey: ['imaging-doctors'],
     queryFn: () => apiRequest<Array<Record<string, unknown>>>('/doctors'),
   });
+  const doctorRows = doctors.data ?? [];
+  const doctorMissing = form.doctorId !== '' && !doctorRows.some((row) => String(row.id) === form.doctorId);
+  const categoryMissing = form.categoryId !== '' && !categories.some((category) => String(category.id) === form.categoryId);
   return (
     <>
       <label>
@@ -44,6 +47,7 @@ export function ImagingFormFields({
         医生
         <select value={form.doctorId} onChange={(event) => update({ doctorId: event.target.value })}>
           <option value="">选择医生</option>
+          {doctorMissing && <MissingSelectOption value={form.doctorId} />}
           {doctors.data?.map((row) => (
             <option key={String(row.id)} value={String(row.id)}>{String(row.name ?? row.id)}</option>
           ))}
@@ -57,6 +61,7 @@ export function ImagingFormFields({
         分类
         <select value={form.categoryId} onChange={(event) => update({ categoryId: event.target.value })}>
           <option value="">不分类</option>
+          {categoryMissing && <MissingSelectOption value={form.categoryId} />}
           {categories.map((category) => (
             <option key={category.id} value={category.id}>{category.name ?? category.id}</option>
           ))}

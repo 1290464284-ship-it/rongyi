@@ -84,6 +84,25 @@ describe('PlanBillingDialog', () => {
     expect(screen.getByText('¥80.00')).toBeDefined();
   });
 
+  it('guards save actions against double submission', async () => {
+    mockItems();
+    render(<PlanBillingDialog plan={planFixture()} onClose={vi.fn()} onChanged={vi.fn()} />, { wrapper });
+    await screen.findByText('洁牙');
+    vi.mocked(apiRequest).mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve({
+      id: 'p1',
+      discountType: 'WHOLE',
+      discountRate: 80,
+      totalFee: 8000,
+    }), 50)));
+    fireEvent.change(screen.getByLabelText('整单折扣类型'), { target: { value: 'WHOLE' } });
+    fireEvent.change(screen.getByLabelText('整单折扣率'), { target: { value: '80' } });
+    const button = screen.getByRole('button', { name: '保存折扣' });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(apiRequest).toHaveBeenCalledTimes(1);
+  });
+
   it('saves a NONE discount without a rate', async () => {
     mockItems();
     render(<PlanBillingDialog plan={planFixture({ discountType: 'WHOLE', discountRate: 80 })} onClose={vi.fn()} onChanged={vi.fn()} />, { wrapper });

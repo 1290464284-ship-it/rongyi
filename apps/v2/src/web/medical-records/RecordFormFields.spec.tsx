@@ -134,6 +134,22 @@ describe('RecordFormFields', () => {
     });
   });
 
+  it('keeps a selected visit visible when it is not on the loaded page', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/doctors') return [];
+      if (path === '/resources/visits?patientId=patient-1&page=1&pageSize=100') {
+        return { items: [{ id: 'visit-1' }], total: 150, page: 1, pageSize: 100 };
+      }
+      if (path.startsWith('/resources/patients?')) return { items: [], total: 0, page: 1, pageSize: 100 };
+      return {};
+    });
+    render(<RecordFormFields form={{ ...emptyForm, patientId: 'patient-1', visitId: 'visit-99' }} update={vi.fn()} />, { wrapper });
+    await waitFor(() => {
+      const option = screen.getByRole('option', { name: 'visit-99' }) as HTMLOptionElement;
+      expect(option.value).toBe('visit-99');
+    });
+  });
+
   it('filters linked visits by patient and clears visitId when the patient changes', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/doctors') return [];

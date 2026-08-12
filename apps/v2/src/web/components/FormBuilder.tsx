@@ -4,6 +4,7 @@ import { apiRequest } from '../lib/api';
 import { useDebouncedValue } from '../hooks/use-debounce';
 import { friendlyError } from '../lib/messages';
 import type { Page, ResourceField } from '../lib/types';
+import { MissingSelectOption } from '../components';
 
 interface FormBuilderProps {
   fields: ResourceField[];
@@ -127,6 +128,8 @@ function RelationSelect({
   const MAX_LOAD_PAGES = 10;
   const canLoadMore = page * 50 < total;
   const loadCapped = canLoadMore && page >= MAX_LOAD_PAGES;
+  const selectedMissing = value !== undefined && value !== null && String(value) !== ''
+    && !items.some((item) => String(item.id) === String(value));
 
   return (
     <>
@@ -147,6 +150,7 @@ function RelationSelect({
         {items.map((item) => (
           <option key={String(item.id)} value={String(item.id)}>{String(item[relation.labelField] ?? item.id)}</option>
         ))}
+        {selectedMissing && <MissingSelectOption value={value} />}
       </select>
       {canLoadMore && (loadCapped ? (
         <span className="relation-load-cap">数据较多，仅展示前 {page * 50} 条，请使用搜索筛选</span>

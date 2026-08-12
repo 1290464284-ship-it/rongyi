@@ -212,4 +212,39 @@ describe('InventoryReportService', () => {
     expect(result.from).toBe('2026-08-01');
     expect(result.to).toBe('2026-08-31');
   });
+
+  it('caps detail reports at 10,000 rows and marks them truncated', () => {
+    const insert = db.prepare(
+      `INSERT INTO InventoryTransaction (
+         id, clinicId, createdAt, updatedAt, deletedAt, itemId, type, quantity,
+         beforeStock, afterStock, referenceType, referenceId, operatorId, remark, batchId
+       ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const run = db.transaction(() => {
+      for (let index = 0; index < 10_001; index += 1) {
+        insert.run(
+          `tx-cap-${index}`,
+          context.clinicId,
+          '2026-08-06T00:00:00.000Z',
+          '2026-08-06T00:00:00.000Z',
+          'inventory-demo-001',
+          'IN',
+          1,
+          100,
+          101,
+          null,
+          null,
+          context.userId,
+          `tx-cap-${index}`,
+          null,
+        );
+      }
+    });
+    run();
+    const service = new InventoryReportService(db);
+    const result = service.report('IN', {}, context) as { total: number; items: Array<{ id: string }>; truncated?: boolean };
+    expect(result.total).toBe(10_000);
+    expect(result.items).toHaveLength(10_000);
+    expect(result.truncated).toBe(true);
+  });
 });

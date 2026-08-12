@@ -44,3 +44,9 @@ export function PagePager({
     </div>
   );
 }
+
+/** Keep a native select visibly selected when its value is not in the loaded options. */
+export function MissingSelectOption({ value, label }: { value: unknown; label?: string }) {
+  if (value === '' || value === null || value === undefined) return null;
+  return <option value={String(value)}>{label ?? String(value)}</option>;
+}

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest, fetchAllPages } from '../lib/api';
-import { SearchableSelect } from '../components';
+import { MissingSelectOption, SearchableSelect } from '../components';
 import { centsToYuanString } from '../lib/format';
 import { errorMessage } from '../lib/messages';
 import { useToast } from '../lib/toast-context';
@@ -89,6 +89,9 @@ export function PlanFormFields({
           {doctors.data?.map((row) => (
             <option key={String(row.id)} value={String(row.id)}>{String(row.name ?? row.id)}</option>
           ))}
+          {form.doctorId !== '' && !(doctors.data ?? []).some((row) => String(row.id) === form.doctorId) && (
+            <MissingSelectOption value={form.doctorId} />
+          )}
         </select>
       </label>
       <label>

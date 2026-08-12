@@ -205,16 +205,25 @@ export class FollowUpService {
     ).all(...templateParams) as Array<{ id: string; name: string; daysAfter: number; content: string | null; assigneeId: string | null }>;
     let generated = 0;
     const now = context.now().toISOString();
+    const existsWithTemplate = this.db.prepare(
+      `SELECT 1 FROM FollowUp
+       WHERE patientId = ? AND planDate = ? AND templateId = ?
+         AND status IN ('PENDING', 'IN_PROGRESS')
+         AND deletedAt IS NULL${tenantAnd(context.clinicId)}
+       LIMIT 1`,
+    );
+    const existsWithoutTemplate = this.db.prepare(
+      `SELECT 1 FROM FollowUp
+       WHERE patientId = ? AND planDate = ? AND templateId IS NULL
+         AND status IN ('PENDING', 'IN_PROGRESS')
+         AND deletedAt IS NULL${tenantAnd(context.clinicId)}
+       LIMIT 1`,
+    );
+    const tenantParamsForExists = tenantParams(context.clinicId);
     const alreadyExists = (patientId: string, planDate: string, templateId: string | null): boolean => {
-      const templateClause = templateId ? 'templateId = ?' : 'templateId IS NULL';
-      const params = [patientId, planDate, ...(templateId ? [templateId] : []), ...tenantParams(context.clinicId)];
-      return Boolean(this.db.prepare(
-        `SELECT 1 FROM FollowUp
-         WHERE patientId = ? AND planDate = ? AND ${templateClause}
-           AND status IN ('PENDING', 'IN_PROGRESS')
-           AND deletedAt IS NULL${tenantAnd(context.clinicId)}
-         LIMIT 1`,
-      ).get(...params));
+      return templateId
+        ? Boolean(existsWithTemplate.get(patientId, planDate, templateId, ...tenantParamsForExists))
+        : Boolean(existsWithoutTemplate.get(patientId, planDate, ...tenantParamsForExists));
     };
     const run = this.db.transaction(() => {
       for (const row of rows) {

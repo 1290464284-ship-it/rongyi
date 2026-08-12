@@ -18,6 +18,7 @@ import { migrations156 } from './v156-156';
 import { migrations157 } from './v157-157';
 import { migrations158 } from './v158-158';
 import { dedupNullClinicRows, snapshotDatabase } from './helpers';
+import { clearTableColumnCache } from '../repository';
 
 export interface Migration {
   version: number;
@@ -153,5 +154,9 @@ export function withMigrationBusyRetry<T>(run: () => T): T {
 }
 
 export function runMigrations(db: Database.Database, options?: { snapshotDir?: string }): number {
-  return withMigrationBusyRetry(() => runMigrationsOnce(db, options));
+  try {
+    return withMigrationBusyRetry(() => runMigrationsOnce(db, options));
+  } finally {
+    clearTableColumnCache(db);
+  }
 }

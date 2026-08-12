@@ -2,7 +2,7 @@ import { useRef, useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest, uploadFile } from '../../lib/api';
 import { CrudPage } from '../../components/CrudPage';
-import { ConfirmDialog, DataTable, SignedImage } from '../../components';
+import { ConfirmDialog, DataTable, MissingSelectOption, SignedImage } from '../../components';
 import { errorMessage } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
 import type { Page } from '../../lib/types';
@@ -322,6 +322,9 @@ export function ImagingPage() {
           <label>
             影像一
             <select value={compareLeftId} onChange={(event) => selectCompare('left', event.target.value)}>
+              {compareLeftId !== '' && !imagingOptions.some((row) => String(row.id) === compareLeftId) && (
+                <MissingSelectOption value={compareLeftId} label={selectedLeft ? imagingOptionLabel(selectedLeft) : compareLeftId} />
+              )}
               <option value="">选择影像</option>
               {imagingOptions.map((row) => (
                 <option key={row.id} value={row.id}>{imagingOptionLabel(row)}</option>
@@ -331,6 +334,9 @@ export function ImagingPage() {
           <label>
             影像二
             <select value={compareRightId} onChange={(event) => selectCompare('right', event.target.value)}>
+              {compareRightId !== '' && !imagingOptions.some((row) => String(row.id) === compareRightId) && (
+                <MissingSelectOption value={compareRightId} label={selectedRight ? imagingOptionLabel(selectedRight) : compareRightId} />
+              )}
               <option value="">选择影像</option>
               {imagingOptions.map((row) => (
                 <option key={row.id} value={row.id}>{imagingOptionLabel(row)}</option>

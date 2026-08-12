@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../lib/api';
-import { PagePager, SearchableSelect } from '../components';
+import { MissingSelectOption, PagePager, SearchableSelect } from '../components';
 import type { Page } from '../lib/types';
 import type { RecordForm } from './types';
 
@@ -32,6 +32,10 @@ export function RecordFormFields({ form, update }: { form: RecordForm; update: (
     // 仅在同一患者的翻页间复用上一页数据，患者切换/清空时不再显示旧患者就诊。
     placeholderData: (previous) => (previous && visitsPatientRef.current === form.patientId ? previous : undefined),
   });
+  const doctorRows = doctors.data ?? [];
+  const visitRows = visits.data?.items ?? [];
+  const doctorMissing = form.doctorId !== '' && !doctors.isLoading && !doctorRows.some((row) => String(row.id) === form.doctorId);
+  const visitMissing = form.visitId !== '' && !visits.isLoading && !visitRows.some((row) => String(row.id) === form.visitId);
   return (
     <>
       <label>
@@ -51,6 +55,7 @@ export function RecordFormFields({ form, update }: { form: RecordForm; update: (
         医生
         <select value={form.doctorId} onChange={(event) => update({ doctorId: event.target.value })}>
           <option value="">选择医生</option>
+          {doctorMissing && <MissingSelectOption value={form.doctorId} />}
           {doctors.data?.map((row) => (
             <option key={String(row.id)} value={String(row.id)}>{String(row.name ?? row.id)}</option>
           ))}
@@ -60,6 +65,7 @@ export function RecordFormFields({ form, update }: { form: RecordForm; update: (
         关联就诊
         <select value={form.visitId} onChange={(event) => update({ visitId: event.target.value })}>
           <option value="">不关联</option>
+          {visitMissing && <MissingSelectOption value={form.visitId} />}
           {(visits.data?.items ?? []).map((row) => (
             <option key={String(row.id)} value={String(row.id)}>{String(row.id)}</option>
           ))}

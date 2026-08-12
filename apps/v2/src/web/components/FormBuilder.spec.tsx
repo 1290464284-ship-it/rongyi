@@ -115,6 +115,22 @@ describe('FormBuilder', () => {
     expect(screen.queryByRole('option', { name: '乙' })).toBeNull();
   });
 
+  it('keeps a selected relation value visible when it is not in the loaded options', async () => {
+    vi.mocked(apiRequest).mockResolvedValue({
+      items: [{ id: 'p1', name: 'Patient One' }],
+      total: 150,
+      page: 1,
+      pageSize: 50,
+    });
+    const fields: ResourceField[] = [
+      { name: 'patientId', type: 'relation', label: 'Patient', relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } },
+    ];
+    render(<FormBuilder fields={fields} values={{ patientId: 'p99' }} onChange={vi.fn()} />, { wrapper });
+    await waitFor(() => {
+      expect((screen.getByRole('option', { name: 'p99' }) as HTMLOptionElement).value).toBe('p99');
+    });
+  });
+
   it('shows relation option query errors', async () => {
     vi.mocked(apiRequest).mockRejectedValue(new Error('relation options failed'));
     const fields: ResourceField[] = [
