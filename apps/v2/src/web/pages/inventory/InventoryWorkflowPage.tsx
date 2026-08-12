@@ -137,7 +137,7 @@ export function InventoryWorkflowPage() {
       key: 'selected',
       label: '选',
       render: (row) => (
-        <input type="checkbox" checked={selectedSuggestions.includes(String(row.id))} onChange={(event) => {
+        <input type="checkbox" aria-label={`选择 ${String(row.id)}`} checked={selectedSuggestions.includes(String(row.id))} onChange={(event) => {
           setSelectedSuggestions((current) => event.target.checked ? [...current, String(row.id)] : current.filter((id) => id !== String(row.id)));
         }} />
       ),
@@ -331,7 +331,10 @@ export function InventoryWorkflowPage() {
               <PagePager
                 page={suggestionsPage}
                 hasNext={suggestionsPage * 100 < (data?.total ?? 0)}
-                onPageChange={setSuggestionsPage}
+                onPageChange={(next) => {
+                  setSelectedSuggestions([]);
+                  setSuggestionsPage(next);
+                }}
                 disabled={suggestions.isFetching}
               />
               {(data?.total ?? 0) > (data?.items?.length ?? 0) && (

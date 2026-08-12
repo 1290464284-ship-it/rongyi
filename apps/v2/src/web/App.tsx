@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes, useParams } from 'react-router';
+import { Navigate, Route, Routes, useParams, useSearchParams } from 'react-router';
 import { Layout } from './components/Layout';
 import { LoginPage } from './pages/auth/LoginPage';
 import { DashboardPage } from './pages/analytics/DashboardPage';
@@ -10,7 +10,9 @@ import { ErrorBoundary } from './components';
 
 function DynamicResourcePage() {
   const { resource } = useParams<{ resource: string }>();
-  return <ResourcePage key={resource} resource={resource} />;
+  const [searchParams] = useSearchParams();
+  const q = searchParams.get('q') ?? '';
+  return <ResourcePage key={`${resource}-${q}`} resource={resource} initialSearch={q} />;
 }
 
 export default function App() {

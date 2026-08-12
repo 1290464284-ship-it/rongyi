@@ -101,7 +101,9 @@ const PROTECTED_WRITE_FIELDS = new Set([
  */
 const RESOURCE_PROTECTED_WRITE_FIELDS: Record<string, ReadonlySet<string>> = {
   wechatMessages: new Set(['status', 'sentAt', 'result']),
-  purchaseOrders: new Set(['status', 'reviewStatus', 'receivedAt', 'approvedById', 'approvedAt', 'rejectionReason', 'receivedById']),
+  purchaseOrders: new Set(['status', 'reviewStatus', 'receivedAt', 'approvedById', 'approvedAt', 'rejectionReason', 'receivedById', 'totalAmount']),
+  purchaseOrderItems: new Set(['subtotal', 'price', 'quantity']),
+  processingOrderItems: new Set(['subtotal', 'unitPrice', 'quantity']),
   processingOrders: new Set(['status', 'sentAt', 'receivedAt', 'deliveredAt', 'settleStatus', 'settledAmount', 'settledAt', 'settlementNote', 'settlementRef']),
 };
 

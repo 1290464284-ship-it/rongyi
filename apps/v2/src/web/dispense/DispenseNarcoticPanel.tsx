@@ -7,6 +7,7 @@ import {
   Dialog,
   LoadingState,
   PageError,
+  PagePager,
   SearchableSelect,
   type DataTableColumn,
 } from '../components';
@@ -23,10 +24,11 @@ export function DispenseNarcoticPanel() {
   const narcoticBusyRef = useRef(false);
   const [editNarcotic, setEditNarcotic] = useState<Record<string, unknown> | null>(null);
   const [deleteNarcoticTarget, setDeleteNarcoticTarget] = useState<Record<string, unknown> | null>(null);
+  const [narcoticPage, setNarcoticPage] = useState(1);
 
   const narcotics = useQuery({
-    queryKey: ['narcotic-registry'],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/narcotic-registry?page=1&pageSize=200'),
+    queryKey: ['narcotic-registry', narcoticPage],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(`/narcotic-registry?page=${narcoticPage}&pageSize=200`),
   });
 
   async function submitNarcotic(event: FormEvent) {
@@ -190,6 +192,12 @@ export function DispenseNarcoticPanel() {
         ) : (
           <>
             <DataTable columns={narcoticColumns} rows={narcotics.data?.items ?? []} keyField="id" emptyText="暂无麻药登记" />
+            <PagePager
+              page={narcoticPage}
+              hasNext={narcoticPage * 200 < (narcotics.data?.total ?? 0)}
+              onPageChange={setNarcoticPage}
+              disabled={narcotics.isFetching}
+            />
             {narcotics.data?.truncated ? (
               <p className="reminder-muted">
                 麻药登记超过 {narcotics.data.pageSize} 条，仅显示前 {narcotics.data.items.length} 条

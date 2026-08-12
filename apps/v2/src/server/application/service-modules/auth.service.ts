@@ -1,7 +1,7 @@
 // 认证/会话服务（M-04：由 auth.ts 拆分；账号管理见 user-management.service.ts）
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { AppError, ConflictError, NotFoundError, UnauthorizedError, ValidationError } from '../../infrastructure/errors';
 import type { Logger } from '../../infrastructure/logger';
@@ -23,6 +23,7 @@ import {
 import { computeEffectivePermissions } from './permissions';
 import { UserManagementService } from './user-management.service';
 import { decryptRefreshClaim, encryptRefreshClaim, refreshClaimKey } from './auth-refresh-claim';
+import { assertActiveClinic } from './clinic-access';
 
 // 与真实哈希同成本（12 轮），避免“用户不存在”与“密码错误”的响应时间差泄漏用户存在性。
 const DUMMY_HASH = '$2b$12$pExdCVEdrVrgBiDGFD8SYexajzEX.TQjKOhHCte3D1XEW1.lYPrdS';
@@ -294,13 +295,13 @@ export class AuthService {
     }
   }
   private resolveClinicId(user: User): string {
-    if (user.currentClinicId) return user.currentClinicId;
-    if (user.clinicId) return user.clinicId;
+    if (user.currentClinicId) return assertActiveClinic(this.db, user.currentClinicId);
+    if (user.clinicId) return assertActiveClinic(this.db, user.clinicId);
     const membershipClinicId = this.authRepository.clinicMemberships(user.id)[0]?.clinicId ?? null;
     if (!membershipClinicId) {
       throw new AppError('FORBIDDEN', 'No clinic scope assigned to this account', 403);
     }
-    return membershipClinicId;
+    return assertActiveClinic(this.db, membershipClinicId);
   }
   async me(payload: TokenPayload): Promise<Omit<User, 'passwordHash'>> {
     const user = await this.getUserById(payload.sub);
@@ -319,7 +320,8 @@ export class AuthService {
     const memberships = this.authRepository.clinicMemberships(userId);
     if (memberships.some((membership) => membership.clinicId === clinicId)) return true;
     // 老库可能没有 UserClinic 行（迁移 123 之前的数据），回退到 User 行字段
-    return (row.currentClinicId ?? row.clinicId ?? null) === clinicId;
+    if ((row.currentClinicId ?? row.clinicId ?? null) !== clinicId) return false;
+    return assertActiveClinic(this.db, clinicId) === clinicId;
   }
 
   async getUserById(userId: string): Promise<Omit<User, 'passwordHash'>> {

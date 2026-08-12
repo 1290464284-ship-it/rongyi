@@ -6,9 +6,8 @@ import { tenantAnd, tenantParams } from '../../../infrastructure/tenant';
 import { SqliteMemberCardRepository } from '../../../infrastructure/repositories/core.repositories';
 import type { AppContext } from '../../../../domain/contracts';
 import type { MemberCardRecord, MemberCardRepository } from '../../ports';
-import { assertPatientExists } from '../common';
+import { MAX_MONEY_CENTS, assertPatientExists } from '../common';
 
-const MAX_MONEY_CENTS = 1_000_000_000_000;
 const MAX_POINTS = 1_000_000_000_000;
 
 export class MemberCardService {

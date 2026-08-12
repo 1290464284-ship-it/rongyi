@@ -1,5 +1,8 @@
 import { ValidationError } from '../infrastructure/errors';
 import type { ResourceDefinition, ResourceField } from '../../domain/contracts';
+import { MAX_MONEY_CENTS } from '../application/service-modules/common';
+
+const MAX_FIELD_TEXT_LENGTH = 500_000;
 
 /**
  * Validates generic resource payloads using the declarative field metadata.
@@ -72,6 +75,9 @@ function validateField(field: ResourceField, raw: unknown): unknown {
       if (field.maxLength && raw.length > field.maxLength) {
         throw new ValidationError(`${field.name} exceeds max length ${field.maxLength}`);
       }
+      if (field.type === 'longText' && !field.maxLength && raw.length > MAX_FIELD_TEXT_LENGTH) {
+        throw new ValidationError(`${field.name} exceeds max length ${MAX_FIELD_TEXT_LENGTH}`);
+      }
       return raw;
     case 'date':
       return assertValidDateValue(raw, field.name);
@@ -100,7 +106,7 @@ function validateField(field: ResourceField, raw: unknown): unknown {
       if (!Number.isSafeInteger(value)) throw new ValidationError(`${field.name} must be an integer amount in cents`);
       if (field.type === 'money') {
         if (value < 0) throw new ValidationError(`${field.name} must be non-negative`);
-        if (value > 1_000_000_00) throw new ValidationError(`${field.name} exceeds maximum amount of 100000000 cents (1000000.00)`);
+        if (value > MAX_MONEY_CENTS) throw new ValidationError(`${field.name} exceeds maximum amount of ${MAX_MONEY_CENTS} cents`);
       }
       if (field.min !== undefined && value < field.min) throw new ValidationError(`${field.name} must be >= ${field.min}`);
       if (field.max !== undefined && value > field.max) throw new ValidationError(`${field.name} must be <= ${field.max}`);
@@ -122,9 +128,17 @@ function validateField(field: ResourceField, raw: unknown): unknown {
         } catch {
           throw new ValidationError(`${field.name} must be valid JSON`);
         }
+        if (!field.maxLength && raw.length > MAX_FIELD_TEXT_LENGTH) {
+          throw new ValidationError(`${field.name} exceeds max length ${MAX_FIELD_TEXT_LENGTH}`);
+        }
         return raw;
       }
-      if (Array.isArray(raw) || (typeof raw === 'object' && raw !== null)) return raw;
+      if (Array.isArray(raw) || (typeof raw === 'object' && raw !== null)) {
+        if (!field.maxLength && JSON.stringify(raw).length > MAX_FIELD_TEXT_LENGTH) {
+          throw new ValidationError(`${field.name} exceeds max length ${MAX_FIELD_TEXT_LENGTH}`);
+        }
+        return raw;
+      }
       throw new ValidationError(`${field.name} must be JSON-compatible`);
     default:
       return raw;

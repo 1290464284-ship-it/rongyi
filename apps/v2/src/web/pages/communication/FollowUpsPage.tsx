@@ -169,6 +169,7 @@ export function FollowUpsPage() {
       render: (row) => (
         <input
           type="checkbox"
+          aria-label={`选择 ${String(row.id)}`}
           disabled={query.isFetching || stale}
           checked={selectedIds.includes(String(row.id))}
           onChange={(event) => {

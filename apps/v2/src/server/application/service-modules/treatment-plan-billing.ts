@@ -12,6 +12,7 @@
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
+import { MAX_MONEY_CENTS } from './common';
 import { trackResourceWrite } from '../../infrastructure/write-tracking';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { generateDocumentNumber } from './common';
@@ -81,13 +82,17 @@ function effectivePrice(item: { price: number; discountRate: number | null }): n
 
 /** 明细小计 = 有效单价 * quantity（Math.round 取整为分）。 */
 function itemSubtotal(item: { price: number; quantity: number; discountRate: number | null }): number {
-  return Math.round(effectivePrice(item) * Number(item.quantity));
+  const value = Math.round(effectivePrice(item) * Number(item.quantity));
+  if (!Number.isSafeInteger(value) || value > MAX_MONEY_CENTS) throw new ValidationError('治疗明细小计超出上限');
+  return value;
 }
 
 /** 计划总价 = Math.round(Σ 明细小计 * (1 - 计划折扣率/100))。 */
 function planTotal(items: PlanItemRow[], rate: number): number {
   const subtotalSum = items.reduce((sum, item) => sum + itemSubtotal(item), 0);
-  return Math.round(subtotalSum * (1 - rate / 100));
+  const value = Math.round(subtotalSum * (1 - rate / 100));
+  if (!Number.isSafeInteger(value) || value > MAX_MONEY_CENTS) throw new ValidationError('治疗计划金额超出上限');
+  return value;
 }
 
 function validateDiscountRate(value: unknown): number | null {
@@ -220,6 +225,9 @@ export class TreatmentPlanBillingService {
     const subtotalSum = selected.reduce((sum, item) => sum + itemSubtotal(item), 0);
     const originalSum = selected.reduce((sum, item) => sum + Number(item.price) * Number(item.quantity), 0);
     const totalAmount = Math.round(subtotalSum * (1 - rate / 100));
+    if (!Number.isSafeInteger(totalAmount) || totalAmount > MAX_MONEY_CENTS) {
+      throw new ValidationError('划价金额超出上限');
+    }
     const discount = Math.round(originalSum) - totalAmount;
 
     const now = context.now().toISOString();

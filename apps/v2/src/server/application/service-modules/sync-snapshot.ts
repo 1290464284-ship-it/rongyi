@@ -57,7 +57,7 @@ export function fullSnapshot(
       ? Math.min(50_000, Math.floor(rawLimit))
       : 5_000;
     const offset = Number.isFinite(rawOffset) && rawOffset >= 0
-      ? Math.floor(rawOffset)
+      ? Math.min(50_000, Math.floor(rawOffset))
       : 0;
     const total = tableTotal(options.table);
     const afterId = typeof options.afterId === 'string' && options.afterId !== '' ? options.afterId : undefined;

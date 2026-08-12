@@ -48,7 +48,7 @@ export function Dialog({
         clearTimeout(closeTimerRef.current);
         closeTimerRef.current = null;
       }
-      previouslyFocused.current?.focus();
+      if (previouslyFocused.current?.isConnected) previouslyFocused.current.focus();
       previouslyFocused.current = null;
     };
   }, [open]);

@@ -11,7 +11,7 @@ import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { trackResourceWrite } from '../../infrastructure/write-tracking';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
-import { generateDocumentNumber } from './common';
+import { MAX_MONEY_CENTS, generateDocumentNumber } from './common';
 import type { AppContext } from '../../../domain/contracts';
 
 export interface PrescriptionProcessInput {
@@ -87,12 +87,16 @@ export class PrescriptionProcessService {
     // 明细 -> 领药库存档案：先按 drugId 匹配，再按 name 精确匹配
     const dispensePlans = items.map((item) => {
       const inventory = this.resolveInventoryItem(item, clinicId);
+      const subtotal = Math.round(item.price * item.quantity);
+      if (!Number.isSafeInteger(subtotal) || subtotal > MAX_MONEY_CENTS) {
+        throw new ValidationError('处方明细小计超出上限');
+      }
       return {
         itemId: inventory.id,
         name: inventory.name,
         spec: inventory.spec !== null && inventory.spec !== '' ? inventory.spec : item.specification,
         quantity: item.quantity,
-        subtotal: Math.round(item.price * item.quantity),
+        subtotal,
       };
     });
 
@@ -102,6 +106,7 @@ export class PrescriptionProcessService {
     const chargeNumber = generateDocumentNumber('CHG');
     const dispenseNumber = generateDocumentNumber('DSP');
     const chargeTotalAmount = dispensePlans.reduce((sum, plan) => sum + plan.subtotal, 0);
+    if (chargeTotalAmount > MAX_MONEY_CENTS) throw new ValidationError('处方划价总额超出上限');
 
     const run = this.db.transaction(() => {
       this.db.prepare(
@@ -132,13 +137,17 @@ export class PrescriptionProcessService {
          ) VALUES (?, ?, NULL, ?, 'DRUG', ?, ?, '[]', ?, 'MATERIAL', ?, ?, ?, NULL)`,
       );
       for (const item of items) {
+        const chargeSubtotal = Math.round(item.price * item.quantity);
+        if (!Number.isSafeInteger(chargeSubtotal) || chargeSubtotal > MAX_MONEY_CENTS) {
+          throw new ValidationError('处方明细小计超出上限');
+        }
         insertChargeItem.run(
           randomUUID(),
           chargeId,
           item.name,
           item.price,
           item.quantity,
-          Math.round(item.price * item.quantity),
+          chargeSubtotal,
           clinicId ?? null,
           now,
           now,

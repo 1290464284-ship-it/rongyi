@@ -6,7 +6,7 @@ import { tenantAnd, tenantParams } from '../../../infrastructure/tenant';
 import { SqliteProcessingOrderRepository } from '../../../infrastructure/repositories/core.repositories';
 import type { AppContext } from '../../../../domain/contracts';
 import type { ProcessingOrderRepository } from '../../ports';
-import { assertDoctorExists, assertPatientExists } from '../common';
+import { MAX_MONEY_CENTS, assertDoctorExists, assertPatientExists } from '../common';
 
 const PROCESSING_TRANSITIONS: Record<string, readonly string[]> = {
   DRAFT: ['SENT', 'CANCELLED'],
@@ -73,7 +73,7 @@ export class ProcessingOrderService {
           throw new ValidationError('Each processing item requires a name, positive quantity, and non-negative unit price');
         }
         const rawSubtotal = unitPrice * quantity;
-        if (!Number.isSafeInteger(rawSubtotal) || rawSubtotal > 1_000_000_000_000) {
+        if (!Number.isSafeInteger(rawSubtotal) || rawSubtotal > MAX_MONEY_CENTS) {
           throw new ValidationError('Processing item subtotal exceeds the allowed amount');
         }
         const subtotal = Math.round(rawSubtotal);
@@ -92,7 +92,7 @@ export class ProcessingOrderService {
         };
       });
       const totalFee = Math.round(Number(input.totalFee));
-      if (totalFee > 1_000_000_000_000) throw new ValidationError('Processing order total fee exceeds the allowed amount');
+      if (totalFee > MAX_MONEY_CENTS) throw new ValidationError('Processing order total fee exceeds the allowed amount');
       const itemTotal = items.reduce((sum, item) => sum + item.subtotal, 0);
       if (itemTotal !== totalFee) throw new ValidationError('Processing order total fee must equal the sum of item subtotals');
       this.db.transaction(() => {

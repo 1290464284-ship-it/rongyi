@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
+import { MAX_MONEY_CENTS } from './common';
 import type { AppContext } from '../../../domain/contracts';
 
 const PERIOD_RE = /^\d{4}-\d{2}$/;
@@ -258,7 +259,7 @@ function normalizeRule(input: CommissionRuleInput): CommissionRuleRow {
   if (input.rateType === 'PERCENT' && rate > 10_000) {
     throw new ValidationError('提成比例不能超过 100%');
   }
-  if (input.rateType === 'FIXED' && rate > 1_000_000_000_000) {
+  if (input.rateType === 'FIXED' && rate > MAX_MONEY_CENTS) {
     throw new ValidationError('固定提成金额超过上限');
   }
   const category = input.category === undefined || input.category === null || String(input.category).trim() === ''
@@ -423,7 +424,7 @@ function computeCommission(
       commission = Math.round((line.paidBase * rule.rate) / 10_000);
     }
     total += commission;
-    if (total > 1_000_000_000_000) throw new ValidationError('提成总额超过上限');
+    if (total > MAX_MONEY_CENTS) throw new ValidationError('提成总额超过上限');
     const key = `${line.category}\u0000${line.costType}`;
     const current = map.get(key) ?? { category: line.category, costType: line.costType, charged: 0, commission: 0 };
     current.charged += line.paidBase;

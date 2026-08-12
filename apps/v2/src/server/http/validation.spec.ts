@@ -50,6 +50,8 @@ describe('validatePayload', () => {
     expect(validatePayload(definition, { name: 'A' }).ratioDefault).toBe(0.25);
     expect(() => validatePayload(definition, { name: 'A', data: 'not-json' })).toThrow('data must be valid JSON');
     expect(validatePayload(definition, { name: 'A', data: '{"a":1}' }).data).toBe('{"a":1}');
+    expect(() => validatePayload(definition, { name: 'A', data: { x: 'a'.repeat(500_001) } }))
+      .toThrow('data exceeds max length');
   });
 
   it('normalizes datetime values to UTC ISO', () => {

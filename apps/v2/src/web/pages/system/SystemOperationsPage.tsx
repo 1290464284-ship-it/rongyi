@@ -114,12 +114,12 @@ export function SystemOperationsPage() {
       <div className="page-head"><h1>{'\u7cfb\u7edf\u64cd\u4f5c'}</h1></div>
       <h2>批量导入</h2>
       <form className="inline-form" onSubmit={submit}>
-        <select value={resource} onChange={(event) => setResource(event.target.value)}>
+        <select aria-label="导入资源类型" value={resource} onChange={(event) => setResource(event.target.value)}>
           <option value="patients">患者</option>
           <option value="inventoryItems">库存项目</option>
           <option value="suppliers">供应商</option>
         </select>
-        <textarea value={rowsJson} onChange={(event) => setRowsJson(event.target.value)} />
+        <textarea aria-label="导入数据 JSON" value={rowsJson} onChange={(event) => setRowsJson(event.target.value)} />
         <input
           aria-label="分片大小"
           type="number"
@@ -129,6 +129,7 @@ export function SystemOperationsPage() {
           onChange={(event) => setChunkSize(event.target.value)}
         />
         <input
+          aria-label="导入文件"
           type="file"
           accept=".json,.csv,application/json,text/csv"
           onChange={(event) => {

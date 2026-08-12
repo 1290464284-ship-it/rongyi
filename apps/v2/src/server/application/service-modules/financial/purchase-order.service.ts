@@ -9,6 +9,7 @@ import {
 } from '../../../infrastructure/repositories/core.repositories';
 import type { AppContext } from '../../../../domain/contracts';
 import type { InventoryRepository, PurchaseOrderRepository } from '../../ports';
+import { MAX_MONEY_CENTS } from '../common';
 
 export class PurchaseOrderService {
   private readonly db: Database.Database;
@@ -67,12 +68,12 @@ export class PurchaseOrderService {
           throw new NotFoundError(`Inventory item not found: ${item.itemId}`);
         }
         const rawSubtotal = unitPrice * quantity;
-        if (!Number.isSafeInteger(rawSubtotal) || rawSubtotal > 1_000_000_000_000) {
+        if (!Number.isSafeInteger(rawSubtotal) || rawSubtotal > MAX_MONEY_CENTS) {
           throw new ValidationError('Purchase item subtotal exceeds the allowed amount');
         }
         const subtotal = Math.round(rawSubtotal);
         totalAmount += subtotal;
-        if (totalAmount > 1_000_000_000_000) {
+        if (totalAmount > MAX_MONEY_CENTS) {
           throw new ValidationError('Purchase order total exceeds the allowed amount');
         }
         return {

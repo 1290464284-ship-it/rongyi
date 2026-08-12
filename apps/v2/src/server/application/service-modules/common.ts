@@ -23,6 +23,7 @@ export const JWT_SECRET = _resolveJwtSecret();
 export const TOKEN_TTL = '8h';
 export const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const BACKUP_MAGIC = Buffer.from('DENTALV2ENC1');
+export const MAX_MONEY_CENTS = 1_000_000_000_000;
 
 /**
  * Generates a human-readable document number: `${prefix}-<base36 timestamp>-<8 hex chars>`.

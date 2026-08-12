@@ -1365,6 +1365,8 @@ describe('service edge coverage', () => {
     expect(Number.isFinite(bounded.limit)).toBe(true);
     expect(Number(bounded.limit)).toBeLessThanOrEqual(50_000);
     expect(Number.isFinite(bounded.offset)).toBe(true);
+    const hugeOffset = service.fullSnapshot(context, { table: 'Patient', limit: 1, offset: 1e12 });
+    expect(Number(hugeOffset.offset ?? 0)).toBeLessThanOrEqual(50_000);
     const first = service.fullSnapshot(context, { table: 'Patient', limit: 1 });
     const second = service.fullSnapshot(context, { table: 'Patient', limit: 1, afterId: String(first.nextId) });
     expect(second.offset).toBeUndefined();

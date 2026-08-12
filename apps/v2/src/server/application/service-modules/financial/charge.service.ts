@@ -20,16 +20,14 @@ import {
   assertPatientExists,
   assertVisitExists,
   generateDocumentNumber,
+  MAX_MONEY_CENTS,
 } from '../common';
 
 const PAY_METHODS: ReadonlySet<string> = new Set(Object.values(PayMethod));
 
-/** 防御性兜底上限：1 亿元（分） */
-const MAX_CHARGE_SUBTOTAL = 100_000_000_00;
-
 function assertSafeSubtotal(price: number, quantity: number): number {
   const subtotal = Math.round(price * quantity);
-  if (!Number.isSafeInteger(subtotal) || subtotal > MAX_CHARGE_SUBTOTAL) {
+  if (!Number.isSafeInteger(subtotal) || subtotal > MAX_MONEY_CENTS) {
     throw new ValidationError('Charge item subtotal exceeds maximum allowed amount');
   }
   return subtotal;

@@ -7,12 +7,11 @@ import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { trackResourceWrite } from '../../infrastructure/write-tracking';
-import { assertDoctorExists, assertPatientExists } from './common';
+import { MAX_MONEY_CENTS, assertDoctorExists, assertPatientExists } from './common';
 import type { AppContext } from '../../../domain/contracts';
 
 const TREATMENT_PLAN_STATUSES = new Set(['PLANNED', 'APPROVED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']);
 const MAX_ITEM_QUANTITY = 1_000_000;
-const MAX_ITEM_PRICE = 100_000_000_00;
 
 export interface TreatmentPlanSaveItem {
   id?: string | null;
@@ -276,11 +275,14 @@ export class EditSaveService {
     if (!code || !name || !category) {
       throw new ValidationError(`第 ${index + 1} 条治疗计划明细缺少编码/名称/分类`);
     }
-    if (!Number.isSafeInteger(price) || price <= 0 || price > MAX_ITEM_PRICE) {
+    if (!Number.isSafeInteger(price) || price <= 0 || price > MAX_MONEY_CENTS) {
       throw new ValidationError(`第 ${index + 1} 条治疗计划明细价格无效`);
     }
     if (!Number.isSafeInteger(quantity) || quantity <= 0 || quantity > MAX_ITEM_QUANTITY) {
       throw new ValidationError(`第 ${index + 1} 条治疗计划明细数量无效`);
+    }
+    if (!Number.isSafeInteger(price * quantity) || price * quantity > MAX_MONEY_CENTS) {
+      throw new ValidationError(`第 ${index + 1} 条治疗计划明细小计超出上限`);
     }
     if (!status) throw new ValidationError(`第 ${index + 1} 条治疗计划明细状态无效`);
     const teethNumbers = Array.isArray(item.teethNumbers) ? item.teethNumbers.map(String) : [];
@@ -326,8 +328,11 @@ export class EditSaveService {
     if (!Number.isSafeInteger(quantity) || quantity <= 0 || quantity > MAX_ITEM_QUANTITY) {
       throw new ValidationError(`第 ${index + 1} 条处方明细数量无效`);
     }
-    if (!Number.isSafeInteger(price) || price < 0 || price > MAX_ITEM_PRICE) {
+    if (!Number.isSafeInteger(price) || price < 0 || price > MAX_MONEY_CENTS) {
       throw new ValidationError(`第 ${index + 1} 条处方明细单价无效`);
+    }
+    if (!Number.isSafeInteger(price * quantity) || price * quantity > MAX_MONEY_CENTS) {
+      throw new ValidationError(`第 ${index + 1} 条处方明细小计超出上限`);
     }
     return {
       id: item.id === undefined || item.id === null || item.id === '' ? undefined : String(item.id),
