@@ -135,7 +135,8 @@ export function AppointmentBoardPage() {
                   <span>{String(row.doctorIdLabel ?? row.doctorId ?? '未分配医生')}</span>
                   <time>{String(row.startTime ?? '')}</time>
                   <select
-                    defaultValue=""
+                    key={`${row.id}-${row.status}`}
+                    value=""
                     aria-label={`${status.label}状态`}
                     disabled={inFlightIds.has(row.id)}
                     onChange={(event) => event.target.value && transition(row.id, event.target.value)}

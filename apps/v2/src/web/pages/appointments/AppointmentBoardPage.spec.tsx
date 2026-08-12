@@ -95,6 +95,9 @@ describe('AppointmentBoardPage', () => {
       '/appointments/a1/status',
       expect.objectContaining({ method: 'PATCH' }),
     ));
+    await waitFor(() => {
+      expect((screen.getByLabelText('已到诊状态') as HTMLSelectElement).value).toBe('');
+    });
   });
 
   it('renders empty board and fallback labels', async () => {
