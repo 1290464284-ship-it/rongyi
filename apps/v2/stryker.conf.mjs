@@ -21,6 +21,6 @@ export default {
   timeoutMS: 30_000,
   // Ratchet from the measured pilot score. Keep this above the current score
   // to prevent silently regressing the property-based verification strength.
-  thresholds: { high: 65, low: 50, break: 47 },
+  thresholds: { high: 70, low: 55, break: 55 },
   cleanTempDir: 'always',
 };

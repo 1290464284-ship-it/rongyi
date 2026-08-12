@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
-import { assertValidDateValue, isValidCalendarDate, parseBooleanStrict, validatePayload } from './validation';
+import { assertValidDateTimeValue, assertValidDateValue, isValidCalendarDate, parseBooleanStrict, validatePayload } from './validation';
 import type { ResourceDefinition } from '../../domain/contracts';
 
 const propertyResource: ResourceDefinition = {
@@ -89,5 +89,40 @@ describe('validation property-based', () => {
       ),
       { numRuns: 100 },
     );
+  });
+
+  it('assertValidDateTimeValue normalizes valid datetimes and rejects invalid calendar values', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 9999 }),
+        fc.integer({ min: 1, max: 12 }),
+        fc.integer({ min: 1, max: 31 }),
+        fc.integer({ min: 0, max: 23 }),
+        fc.integer({ min: 0, max: 59 }),
+        (year, month, day, hour, minute) => {
+          const text = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00.000Z`;
+          if (!isValidCalendarDate(year, month, day)) {
+            expect(() => assertValidDateTimeValue(text, 'startsAt')).toThrow();
+          } else {
+            expect(new Date(assertValidDateTimeValue(text, 'startsAt')).getTime()).not.toBeNaN();
+          }
+        },
+      ),
+      { numRuns: 200 },
+    );
+  });
+
+  it('validatePayload applies defaults and rejects invalid partial payloads', () => {
+    const resourceWithDefault = {
+      ...propertyResource,
+      fields: [
+        { name: 'name', type: 'text' as const },
+        { name: 'ratio', type: 'decimal' as const, default: 0.5 },
+      ],
+    };
+    expect(validatePayload(resourceWithDefault, { name: 'x' })).toMatchObject({ ratio: 0.5 });
+    expect(validatePayload(resourceWithDefault, { name: 'x' }, { partial: true })).toMatchObject({ name: 'x' });
+    expect(() => validatePayload(resourceWithDefault, { ratio: 'bad' })).toThrow('ratio must be a number');
+    expect(() => validatePayload(propertyResource, { name: 'x', active: 'yes' })).toThrow('active must be a boolean');
   });
 });
