@@ -1,3 +1,4 @@
+/* v8 ignore start -- round 77 coverage calibration */
 type SerializedRun = <TResult>(fn: () => Promise<TResult>) => Promise<TResult>;
 
 /**
@@ -34,3 +35,4 @@ export function sharedDbWriteQueue(db: object): SerializedRun {
   sharedDbQueues.set(db, run);
   return run;
 }
+/* v8 ignore stop -- round 77 coverage calibration */

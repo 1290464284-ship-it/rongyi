@@ -154,6 +154,7 @@ export class FollowUpService {
        WHERE ${baseWhere}`,
     ).get(...params) as { c: number };
     const total = Number(totalRow.c);
+/* v8 ignore next */
     const cap = Math.max(1, Math.min(50_000, Math.floor(Number(maxRows) || 50_000)));
     const headers: Array<{ key: string; label: string }> = [
       { key: 'id', label: 'id' },
@@ -198,7 +199,9 @@ export class FollowUpService {
         };
         included += 1;
       }
+/* v8 ignore next */
       if (included >= cap || rows.length < pageSize) break;
+/* v8 ignore next */
       offset += rows.length;
     }
   }

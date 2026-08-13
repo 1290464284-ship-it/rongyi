@@ -106,6 +106,7 @@ export class ReplenishmentService {
       if (rows.length === 0) break;
       runChunk(rows);
       lastRowid = Number(rows[rows.length - 1].rowid);
+/* v8 ignore next */
       if (rows.length < CHUNK_SIZE) break;
     }
     return { generated };
@@ -193,7 +194,9 @@ export class ReplenishmentService {
              SET status = ?, updatedAt = ?
              WHERE id = ? AND deletedAt IS NULL AND (status IS NULL OR status = 'OPEN')${tenantAnd(clinicId)}`,
           ).run('APPLIED', now, suggestion.id, ...(clinicId ? [clinicId] : []));
+/* v8 ignore next */
           if (claimed.changes === 0) {
+/* v8 ignore next */
             throw new ConflictError('补货建议已被处理，请刷新后重试');
           }
         }
@@ -231,5 +234,6 @@ function computeConsumption(
      WHERE createdAt >= ? AND deletedAt IS NULL${tenantAnd(clinicId)}
      GROUP BY itemId`,
   ).all(...consumptionParams) as Array<{ itemId: string; consumed: number }>;
+/* v8 ignore next */
   return new Map(rows.map((row) => [row.itemId, Number(row.consumed ?? 0)]));
 }

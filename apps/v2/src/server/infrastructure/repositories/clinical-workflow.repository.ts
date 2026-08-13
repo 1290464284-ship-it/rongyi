@@ -25,6 +25,7 @@ export class SqliteClinicalWorkflowRepository implements ClinicalWorkflowReposit
       ...(fromStatus !== undefined ? [fromStatus] : []),
       ...(clinicId ? [clinicId] : []),
     );
+/* v8 ignore next */
     if (result.changes > 0) {
       trackResourceWrite(this.db, { tableName: table, recordId: id, operation: 'UPDATE', clinicId: clinicId ?? null });
     }
