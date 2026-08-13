@@ -109,4 +109,9 @@ describe('user role routes', () => {
     expect(res.body.success).toBe(true);
     expect(res.body.data.roles).toEqual([]);
   });
+
+  it('tolerates a missing request body', async () => {
+    const res = await request(app).put('/api/v2/user-roles/missing');
+    expect([200, 400, 403, 404]).toContain(res.status);
+  });
 });

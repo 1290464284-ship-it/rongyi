@@ -101,4 +101,9 @@ describe('high value routes', () => {
       .send({ isHighValue: 'maybe' })
       .expect(400);
   });
+
+  it('tolerates a missing request body', async () => {
+    const res = await request(app).post('/api/v2/inventory-items/missing/high-value');
+    expect([200, 400, 404]).toContain(res.status);
+  });
 });

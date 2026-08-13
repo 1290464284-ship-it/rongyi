@@ -155,4 +155,9 @@ describe('prescription process routes', () => {
     expect(processRes.body.success).toBe(false);
     expect(processRes.body.code).toBe('NOT_FOUND');
   });
+
+  it('tolerates a missing request body', async () => {
+    const res = await request(app).post('/api/v2/prescriptions/missing/process');
+    expect([200, 400, 404, 409]).toContain(res.status);
+  });
 });

@@ -144,4 +144,11 @@ describe('triage routes', () => {
     expect(res.body.success).toBe(false);
     expect(res.body.code).toBe('NOT_FOUND');
   });
+
+  it('tolerates missing request bodies', async () => {
+    const triage = await request(app).post('/api/v2/registrations/missing/triage');
+    expect([200, 400, 404, 409]).toContain(triage.status);
+    const reschedule = await request(app).post('/api/v2/appointments/missing/reschedule');
+    expect([200, 400, 404, 409]).toContain(reschedule.status);
+  });
 });

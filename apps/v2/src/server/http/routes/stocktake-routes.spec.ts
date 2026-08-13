@@ -203,4 +203,11 @@ describe('stocktake routes', () => {
     // LOCKED 录入 → 409
     await request(app).patch(`/api/v2/stocktakes/${stocktakeId}/items/inventory-demo-001`).send({ countedStock: 5 }).expect(409);
   });
+
+  it('tolerates missing request bodies', async () => {
+    const start = await request(app).post('/api/v2/stocktakes');
+    expect([200, 400, 409]).toContain(start.status);
+    const count = await request(app).patch('/api/v2/stocktakes/missing/items/missing');
+    expect([200, 400, 404, 409]).toContain(count.status);
+  });
 });

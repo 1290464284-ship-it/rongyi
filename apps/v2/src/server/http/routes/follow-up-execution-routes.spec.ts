@@ -145,4 +145,9 @@ describe('follow-up execution routes', () => {
     expect(res.body.code).toBe('NOT_FOUND');
     expect(res.body.message).toBe('FollowUp not found');
   });
+
+  it('tolerates a missing request body', async () => {
+    const res = await request(app).post('/api/v2/follow-ups/missing/execute');
+    expect([200, 400, 404, 409]).toContain(res.status);
+  });
 });

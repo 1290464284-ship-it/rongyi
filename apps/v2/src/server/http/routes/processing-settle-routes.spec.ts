@@ -240,4 +240,11 @@ describe('processing settle routes', () => {
       settled: { count: 2, amountTotal: 40000 },
     });
   });
+
+  it('tolerates missing request bodies', async () => {
+    const settle = await request(app).post('/api/v2/processing-orders/missing/settle');
+    expect([200, 400, 404, 409]).toContain(settle.status);
+    const unsettle = await request(app).post('/api/v2/processing-orders/missing/unsettle');
+    expect([200, 400, 404, 409]).toContain(unsettle.status);
+  });
 });

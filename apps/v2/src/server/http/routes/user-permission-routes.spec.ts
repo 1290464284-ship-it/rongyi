@@ -105,4 +105,9 @@ describe('user permission routes', () => {
     expect(res.body.success).toBe(true);
     expect(res.body.data.effective).toEqual(['dashboard', 'patients', 'clinical', 'communication']);
   });
+
+  it('tolerates a missing request body', async () => {
+    const res = await request(app).put('/api/v2/user-permissions/missing');
+    expect([200, 400, 403, 404]).toContain(res.status);
+  });
 });

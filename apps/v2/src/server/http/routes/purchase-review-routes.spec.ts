@@ -210,4 +210,9 @@ describe('purchase review routes', () => {
     expect(res.body.success).toBe(false);
     expect(res.body.code).toBe('VALIDATION_ERROR');
   });
+
+  it('tolerates missing request bodies', async () => {
+    const reject = await request(app).post('/api/v2/purchase-orders/missing/reject');
+    expect([200, 400, 404, 409]).toContain(reject.status);
+  });
 });

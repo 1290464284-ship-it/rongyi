@@ -109,4 +109,9 @@ describe('first exam tracking routes', () => {
     expect(res.body.success).toBe(false);
     expect(res.body.message).toBe('流失原因类型不能为空');
   });
+
+  it('tolerates a missing request body', async () => {
+    const res = await request(app).patch('/api/v2/first-exams/missing/tracking');
+    expect([200, 400, 404]).toContain(res.status);
+  });
 });
