@@ -997,7 +997,7 @@ describe('ChargesPage', () => {
     await screen.findByText('N-1');
 
     async function closeDialog(name: string) {
-      fireEvent.keyDown(document.querySelector('.modal')!, { key: 'Escape' });
+      fireEvent.keyDown(screen.getByRole('dialog', { name }), { key: 'Escape' });
       await waitFor(() => {
         expect(screen.queryByRole('dialog', { name })).toBeNull();
       });
