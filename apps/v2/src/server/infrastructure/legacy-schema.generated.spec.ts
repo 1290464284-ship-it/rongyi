@@ -33,4 +33,14 @@ describe('legacy schema generated SQL', () => {
       'CREATE TABLE U (b TEXT)',
     ]);
   });
+
+  it('splits SQL statements with double-quoted identifiers and quoted content', () => {
+    const statements = splitSqlStatements(
+      'CREATE TABLE "T" ("a" TEXT DEFAULT "x;y"); CREATE TABLE "U" (b TEXT);',
+    );
+    expect(statements).toEqual([
+      'CREATE TABLE "T" ("a" TEXT DEFAULT "x;y")',
+      'CREATE TABLE "U" (b TEXT)',
+    ]);
+  });
 });

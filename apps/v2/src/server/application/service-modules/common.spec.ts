@@ -1,18 +1,22 @@
+import Database from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
 import {
   assertCanManageUser,
+  assertChairExists,
+  assertVisitExists,
   canManageUser,
+  countBossUsersInClinic,
   generateDocumentNumber,
   hashRefreshToken,
   isUserRole,
   newRefreshToken,
   ROLE_MANAGEMENT_LEVEL,
   safeJsonObject,
+  userBelongsToClinic,
 } from './common';
 import { UserRole } from '../../../domain/contracts';
 
-describe('generateDocumentNumber', () => {
-  it('returns a document number in the shared format prefix-<base36 timestamp>-<8 hex chars>', () => {
+describe('generateDocumentNumber', () => {  it('returns a document number in the shared format prefix-<base36 timestamp>-<8 hex chars>', () => {
     const before = Date.now();
     const number = generateDocumentNumber('CHG');
     const after = Date.now();
@@ -111,6 +115,31 @@ describe('auth and JSON helpers', () => {
     expect(safeJsonObject('false')).toEqual({});
     expect(safeJsonObject('""')).toEqual({});
     expect(safeJsonObject('1')).toEqual({});
+  });
+
+  it('falls back for unknown management roles', () => {
+    expect(canManageUser('BOSS' as UserRole, 'UNKNOWN' as UserRole)).toBe(true); // 3 >= 0
+    expect(canManageUser('UNKNOWN' as UserRole, 'BOSS' as UserRole)).toBe(false); // 0 >= 3
+  });
+
+  it('treats a missing clinic id as global scope', () => {
+    const db = new Database(':memory:');
+    db.exec('CREATE TABLE User (id TEXT PRIMARY KEY, role TEXT, active INTEGER, deletedAt TEXT, clinicId TEXT)');
+    expect(userBelongsToClinic(db, 'u1', null)).toBe(true);
+    expect(userBelongsToClinic(db, 'u1', undefined)).toBe(true);
+    expect(countBossUsersInClinic(db, null)).toBe(0);
+    db.close();
+  });
+
+  it('validates chair and visit id inputs', () => {
+    const db = new Database(':memory:');
+    db.exec('CREATE TABLE Chair (id TEXT PRIMARY KEY, active INTEGER, deletedAt TEXT, clinicId TEXT)');
+    db.exec('CREATE TABLE Visit (id TEXT PRIMARY KEY, patientId TEXT, deletedAt TEXT, clinicId TEXT)');
+    expect(() => assertChairExists(db, '', 'clinic-v2-001')).toThrow('chairId is required');
+    expect(() => assertChairExists(db, 42 as unknown as string, 'clinic-v2-001')).toThrow('chairId is required');
+    expect(() => assertVisitExists(db, '', 'p1', 'clinic-v2-001')).toThrow('visitId is required');
+    expect(() => assertVisitExists(db, 'v1', '', 'clinic-v2-001')).toThrow('patientId is required');
+    db.close();
   });
 
 });

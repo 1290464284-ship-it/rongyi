@@ -39,6 +39,25 @@ describe('secret file', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it('treats non-string secret fields as absent', async () => {
+    vi.resetModules();
+    const { secretFileValue } = await import('./secret-file');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-secret-file-types-'));
+    const file = path.join(dir, 'secrets.json');
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ jwt: 123, backupKey: { a: 1 }, wechatAppId: 1, wechatAppSecret: [], adminPassword: true }),
+      { encoding: 'utf8', mode: 0o600 },
+    );
+    process.env.V2_SECRET_FILE = file;
+    expect(secretFileValue('jwt')).toBeNull();
+    expect(secretFileValue('backupKey')).toBeNull();
+    expect(secretFileValue('wechatAppId')).toBeNull();
+    expect(secretFileValue('wechatAppSecret')).toBeNull();
+    expect(secretFileValue('adminPassword')).toBeNull();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('reads valid secrets and reuses the cache', async () => {
     vi.resetModules();
     const { secretFileValue } = await import('./secret-file');
