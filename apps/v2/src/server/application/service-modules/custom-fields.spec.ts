@@ -191,4 +191,11 @@ describe('custom fields', () => {
       required: 'yes' as unknown as boolean,
     }, context)).toThrow('required must be a boolean');
   });
+
+  it('rejects non-object definitions and malformed value arrays', () => {
+    const service = new CustomFieldService(db);
+    expect(() => service.createDefinition('patient', null as never, context)).toThrow('field input is required');
+    expect(() => service.setValues('patient', 'patient-custom-3', null as never, context)).toThrow('values must be an array');
+    expect(() => service.setValues('patient', 'patient-custom-3', [null as never], context)).toThrow('values must be an array');
+  });
 });
