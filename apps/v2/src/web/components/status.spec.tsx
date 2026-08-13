@@ -118,6 +118,27 @@ describe('ErrorBoundary and simple states', () => {
     expect(screen.getByText('正常内容')).toBeDefined();
   });
 
+  it('normalizes non-Error render failures', () => {
+    function BoomString(): ReactNode {
+      throw 'boom-string';
+    }
+    render(
+      <ErrorBoundary>
+        <BoomString />
+      </ErrorBoundary>,
+    );
+    expect(screen.getByText('页面加载失败')).toBeDefined();
+  });
+
+  it('falls back to a generic message for non-Error query errors', () => {
+    render(
+      <QueryBoundary isLoading={false} error="boom-string" data={undefined}>
+        内容
+      </QueryBoundary>,
+    );
+    expect(screen.getByText('操作失败，请稍后重试')).toBeDefined();
+  });
+
   it('renders default labels for PageError, LoadingState and EmptyState', () => {
     render(
       <>
