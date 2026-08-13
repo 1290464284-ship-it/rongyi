@@ -676,4 +676,168 @@ describe('UsersPage', () => {
     expect(checkboxes.length).toBeGreaterThan(0);
     expect(checkboxes.every((checkbox) => !(checkbox as HTMLInputElement).checked)).toBe(true);
   });
+
+  it('ignores a create submit while the list is stale', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/auth/me') return { role: 'BOSS' };
+      if (path === '/resources/users?page=1&pageSize=100') return { ...baseUserList, total: 120 };
+      if (path === '/resources/users?page=2&pageSize=100') return new Promise(() => {});
+      if (path === '/user-roles') return userRoles;
+      return {};
+    });
+    render(<UsersPage />, { wrapper });
+    await screen.findByText('张医生');
+    fireEvent.click(screen.getByText('新建员工'));
+    const dialog = await screen.findByRole('dialog');
+    const form = dialog.querySelector('form');
+    expect(form).not.toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+    await waitFor(() => {
+      expect((screen.getByRole('button', { name: '下一页' }) as HTMLButtonElement).disabled).toBe(true);
+    });
+    fireEvent.submit(form as HTMLFormElement);
+    expect(apiRequest).not.toHaveBeenCalledWith('/admin/users', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('ignores a stale delete after the confirmation opens', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/auth/me') return { role: 'BOSS' };
+      if (path === '/resources/users?page=1&pageSize=100') return { ...baseUserList, total: 120 };
+      if (path === '/resources/users?page=2&pageSize=100') return new Promise(() => {});
+      if (path === '/user-roles') return userRoles;
+      return {};
+    });
+    render(<UsersPage />, { wrapper });
+    await screen.findByText('张医生');
+    fireEvent.click(screen.getByText('删除'));
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+    await waitFor(() => {
+      expect((screen.getByRole('button', { name: '下一页' }) as HTMLButtonElement).disabled).toBe(true);
+    });
+    fireEvent.click(screen.getAllByRole('button', { name: '删除' }).at(-1)!);
+    expect(apiRequest).not.toHaveBeenCalledWith('/admin/users/u1', expect.objectContaining({ method: 'DELETE' }));
+  });
+
+  it('ignores a stale password reset after the prompt opens', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/auth/me') return { role: 'BOSS' };
+      if (path === '/resources/users?page=1&pageSize=100') return { ...baseUserList, total: 120 };
+      if (path === '/resources/users?page=2&pageSize=100') return new Promise(() => {});
+      if (path === '/user-roles') return userRoles;
+      return {};
+    });
+    render(<UsersPage />, { wrapper });
+    await screen.findByText('张医生');
+    fireEvent.click(screen.getByText('重置密码'));
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+    await waitFor(() => {
+      expect((screen.getByRole('button', { name: '下一页' }) as HTMLButtonElement).disabled).toBe(true);
+    });
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'newpass123' } });
+    fireEvent.click(screen.getByText('重置'));
+    expect(apiRequest).not.toHaveBeenCalledWith('/admin/users/u1/password', expect.objectContaining({ method: 'PATCH' }));
+  });
+
+  it('ignores a stale permission save after the dialog opens', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string, options?: RequestInit) => {
+      const method = String(options?.method ?? 'GET').toUpperCase();
+      if (path === '/auth/me') return { role: 'BOSS' };
+      if (path === '/resources/users?page=1&pageSize=100') return { ...baseUserList, total: 120 };
+      if (path === '/resources/users?page=2&pageSize=100') return new Promise(() => {});
+      if (path === '/user-roles') return userRoles;
+      if (path === '/user-permissions/u1' && method === 'GET') return { effective: [] };
+      return {};
+    });
+    render(<UsersPage />, { wrapper });
+    await screen.findByText('张医生');
+    fireEvent.click(screen.getByText('权限'));
+    await screen.findByText('设置「张医生」的权限');
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+    await waitFor(() => {
+      expect((screen.getByRole('button', { name: '下一页' }) as HTMLButtonElement).disabled).toBe(true);
+    });
+    fireEvent.click(screen.getByText('保存权限'));
+    expect(apiRequest).not.toHaveBeenCalledWith('/user-permissions/u1', expect.objectContaining({ method: 'PUT' }));
+  });
+
+  it('blocks saving an edit when roles fail after the dialog opens', async () => {
+    let rejectRoles: ((reason: Error) => void) | undefined;
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/auth/me') return { role: 'BOSS' };
+      if (path === '/resources/users?page=1&pageSize=100') return baseUserList;
+      if (path === '/user-roles') {
+        return await new Promise((_resolve, reject) => {
+          rejectRoles = reject;
+        });
+      }
+      return {};
+    });
+    render(<UsersPage />, { wrapper });
+    await screen.findByText('张医生');
+    fireEvent.click(screen.getAllByText('编辑')[0]);
+    const dialog = await screen.findByRole('dialog');
+    rejectRoles?.(new Error('roles failed'));
+    await screen.findByText('角色数据加载失败，请刷新后重试');
+    const form = dialog.querySelector('form');
+    expect(form).not.toBeNull();
+    fireEvent.submit(form as HTMLFormElement);
+    expect(apiRequest).not.toHaveBeenCalledWith('/admin/users/u1', expect.objectContaining({ method: 'PATCH' }));
+  });
+
+  it('omits phone when saving an edit without one', async () => {
+    const sparseList = {
+      ...baseUserList,
+      items: [{ ...baseUserList.items[0], phone: null }],
+    };
+    vi.mocked(apiRequest).mockImplementation(async (path: string, options?: RequestInit) => {
+      const method = String(options?.method ?? 'GET').toUpperCase();
+      if (path === '/auth/me') return { role: 'BOSS' };
+      if (path === '/resources/users?page=1&pageSize=100') return sparseList;
+      if (path === '/user-roles') return userRoles;
+      if (method === 'PATCH' && path === '/admin/users/u1') return { id: 'u1' };
+      if (method === 'PUT' && path === '/user-roles/u1') return {};
+      return {};
+    });
+    render(<UsersPage />, { wrapper });
+    await screen.findByText('张医生');
+    fireEvent.click(screen.getAllByText('编辑')[0]);
+    fireEvent.click(screen.getByText('保存'));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/admin/users/u1', expect.objectContaining({ method: 'PATCH' }));
+    });
+    const patchCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/admin/users/u1');
+    const body = JSON.parse(String((patchCall?.[1] as RequestInit | undefined)?.body ?? '{}')) as Record<string, unknown>;
+    expect(body.phone).toBeUndefined();
+  });
+
+  it('skips role sync when the create response omits the id', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string, options?: RequestInit) => {
+      const method = String(options?.method ?? 'GET').toUpperCase();
+      if (path === '/auth/me') return { role: 'BOSS' };
+      if (path === '/resources/users?page=1&pageSize=100') return baseUserList;
+      if (path === '/user-roles') return userRoles;
+      if (method === 'POST' && path === '/admin/users') return {};
+      return {};
+    });
+    render(<UsersPage />, { wrapper });
+    await screen.findByText('张医生');
+    fireEvent.click(screen.getByText('新建员工'));
+    fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'nurse' } });
+    fireEvent.change(screen.getByLabelText(/初始密码/), { target: { value: 'password1' } });
+    fireEvent.change(screen.getByLabelText('姓名'), { target: { value: '李护士' } });
+    fireEvent.click(screen.getByText('保存'));
+    expect(await screen.findByText('员工已创建')).toBeDefined();
+    expect(apiRequest).not.toHaveBeenCalledWith('/user-roles/', expect.objectContaining({ method: 'PUT' }));
+  });
+
+  it('renders an empty table when the list payload omits items and total', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/auth/me') return { role: 'BOSS' };
+      if (path === '/resources/users?page=1&pageSize=100') return {};
+      if (path === '/user-roles') return { items: [] };
+      return {};
+    });
+    render(<UsersPage />, { wrapper });
+    expect(await screen.findByText('暂无员工')).toBeDefined();
+  });
 });

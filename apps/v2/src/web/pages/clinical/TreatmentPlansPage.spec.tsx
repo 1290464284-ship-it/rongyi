@@ -928,4 +928,41 @@ describe('TreatmentPlansPage', () => {
     expect(await screen.findByText('创建治疗计划失败')).toBeDefined();
     expect(apiRequest).not.toHaveBeenCalledWith('/resources/treatmentPlanItems', expect.objectContaining({ method: 'POST' }));
   });
+
+  it('prefills null plan fields when editing a sparse row', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/treatmentPlans?page=1&pageSize=50') {
+        return {
+          items: [{
+            id: 'p-null',
+            patientId: null,
+            doctorId: null,
+            name: null,
+            status: null,
+            totalFee: null,
+            followUpStatus: null,
+          }],
+          total: 1,
+          page: 1,
+          pageSize: 50,
+        };
+      }
+      if (path === '/resources/treatmentPlanItems?planId=p-null&page=1&pageSize=100') {
+        return { items: [], total: 0, page: 1, pageSize: 100 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [], total: 0, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [];
+      return {};
+    });
+    render(<TreatmentPlansPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '编辑' }));
+    await screen.findByRole('dialog', { name: '编辑治疗计划管理' });
+    expect((screen.getByLabelText('患者') as HTMLSelectElement).value).toBe('');
+    expect((screen.getByLabelText('医生') as HTMLSelectElement).value).toBe('');
+    expect((screen.getByLabelText('计划名称') as HTMLInputElement).value).toBe('');
+    expect((screen.getByLabelText('状态') as HTMLSelectElement).value).toBe('APPROVED');
+    expect((screen.getByLabelText('总费用') as HTMLInputElement).value).toBe('');
+  });
 });

@@ -613,4 +613,26 @@ describe('InventoryWorkflowPage', () => {
     expect(screen.getByText('加工单超过 100 条，仅显示部分数据')).toBeDefined();
     expect(screen.getByText('补货建议超过 100 条，仅显示部分数据')).toBeDefined();
   });
+
+  it('renders fully sparse purchase, item, and suggestion rows without crashing', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100') {
+        return { items: [{ status: 'PENDING' }], total: 1 };
+      }
+      if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') {
+        return { items: [{ orderId: null, name: null, itemId: null, quantity: null, unitPrice: null, subtotal: null }], total: 1 };
+      }
+      if (path === '/resources/processingOrders?page=1&pageSize=100') {
+        return { items: [{ status: 'PROC_UNKNOWN' }], total: 1 };
+      }
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') {
+        return { items: [{ inventoryId: null, status: 'OPEN' }], total: 1 };
+      }
+      if (path === '/stocktakes?page=1&pageSize=200') return { items: [], total: 0 };
+      return {};
+    });
+    render(<InventoryWorkflowPage />, { wrapper });
+    await screen.findByText('待应用');
+    expect(await screen.findByText('PROC_UNKNOWN')).toBeDefined();
+  });
 });

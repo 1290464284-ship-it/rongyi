@@ -315,7 +315,7 @@ function ResourceCrudPage({ resource: fixedResource, initialSearch }: { resource
       if (deleted > 0) showToast(`已删除 ${deleted} 项`, 'success');
       if (firstError) showToast(friendlyError(firstError.reason), 'error');
       setSelectedIds(new Set(failedIds));
-      setBatchDeleteOpen(failedIds.length === 0);
+      setBatchDeleteOpen(failedIds.length > 0);
       await listQuery.refetch().catch(() => {
         showToast('删除后刷新列表失败', 'error');
       });

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, useNavigate } from 'react-router';
 import { InventoryPage } from './InventoryPage';
 import { apiRequest } from '../../lib/api';
 import { ToastProvider } from '../../components/toast';
@@ -120,7 +120,9 @@ describe('InventoryPage', () => {
     fireEvent.change(screen.getByLabelText('库存项目 ID'), { target: { value: 'item-new' } });
     fireEvent.change(screen.getByDisplayValue('IN'), { target: { value: 'OUT' } });
     fireEvent.change(screen.getByDisplayValue('1'), { target: { value: '2' } });
-    fireEvent.click(screen.getByRole('button', { name: '保存库存流水' }));
+    const form = screen.getByRole('button', { name: '保存库存流水' }).closest('form');
+    expect(form).not.toBeNull();
+    fireEvent.submit(form as HTMLFormElement);
     expect(vi.mocked(apiRequest).mock.calls.filter(([path, options]) =>
       path === '/inventory/transactions' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'POST',
     )).toHaveLength(0);
@@ -809,6 +811,23 @@ describe('InventoryPage', () => {
     expect(await screen.findByText('扫码定位失败')).toBeDefined();
   });
 
+  it('locates an item by code when the barcode field is missing', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/inventoryItems?page=1&pageSize=20') return { items: [], total: 0 };
+      if (path === '/inventory/low-stock') return [];
+      if (path === '/inventory/expiring?days=30') return [];
+      if (path.startsWith('/resources/inventoryItems?page=1&pageSize=20&search=')) {
+        return { items: [{ id: 'i-code', code: 'CODE-X', name: '编码材料' }], total: 1 };
+      }
+      return {};
+    });
+    render(<InventoryPage />, { wrapper });
+    await screen.findByText('库存管理');
+    fireEvent.change(screen.getByLabelText('条码扫码'), { target: { value: 'CODE-X' } });
+    fireEvent.click(screen.getByRole('button', { name: '扫码定位' }));
+    expect(await screen.findByText('已定位：编码材料')).toBeDefined();
+  });
+
   it('switches back to the overview tab after viewing the report', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/inventoryItems?page=1&pageSize=20') return { items: [], total: 0 };
@@ -1090,5 +1109,91 @@ describe('InventoryPage', () => {
       path === '/inventory-batches/b-1' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'DELETE',
     )).toHaveLength(1);
     resolveDelete?.({ ok: true });
+  });
+
+  it('renders truncated notices when list payloads omit items arrays', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/inventoryItems?page=1&pageSize=20') return { items: [] };
+      if (path === '/inventory/low-stock') return { truncated: true };
+      if (path === '/inventory/expiring?days=30') return { truncated: true };
+      return {};
+    });
+    render(<InventoryPage />, { wrapper });
+    expect(await screen.findByText('低库存超过 100 条，仅显示前 100 条')).toBeDefined();
+    expect(screen.getByText('临期项目超过 100 条，仅显示前 100 条')).toBeDefined();
+  });
+
+  it('moves between inventory tabs with arrow keys', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/inventoryItems?page=1&pageSize=20') return { items: [], total: 0 };
+      if (path === '/inventory/low-stock') return [];
+      if (path === '/inventory/expiring?days=30') return [];
+      if (path.startsWith('/inventory-reports/')) {
+        return { type: 'IN', from: null, to: null, total: 0, items: [], supplierId: null };
+      }
+      return {};
+    });
+    render(<InventoryPage />, { wrapper });
+    const overviewTab = await screen.findByRole('tab', { name: '库存概览' });
+    fireEvent.keyDown(overviewTab, { key: 'ArrowRight' });
+    expect(screen.getByRole('tab', { name: '库存明细报表' }).getAttribute('aria-selected')).toBe('true');
+    fireEvent.keyDown(screen.getByRole('tab', { name: '库存明细报表' }), { key: 'ArrowLeft' });
+    expect(screen.getByRole('tab', { name: '库存概览' }).getAttribute('aria-selected')).toBe('true');
+    fireEvent.keyDown(overviewTab, { key: 'Enter' });
+    expect(screen.getByRole('tab', { name: '库存概览' }).getAttribute('aria-selected')).toBe('true');
+    fireEvent.keyDown(screen.getByRole('tab', { name: '库存明细报表' }), { key: 'Enter' });
+    expect(screen.getByRole('tab', { name: '库存明细报表' }).getAttribute('aria-selected')).toBe('false');
+  });
+
+  it('updates the item id when the URL id changes', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/inventoryItems?page=1&pageSize=20') return { items: [], total: 0 };
+      if (path === '/inventory/low-stock') return [];
+      if (path === '/inventory/expiring?days=30') return [];
+      return {};
+    });
+    function UrlChangeHarness() {
+      const navigate = useNavigate();
+      return (
+        <div>
+          <button onClick={() => navigate('/inventory?id=url-new')}>go-url</button>
+          <InventoryPage />
+        </div>
+      );
+    }
+    render(
+      <MemoryRouter initialEntries={['/inventory?id=url-old']}>
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+          <ToastProvider>
+            <UrlChangeHarness />
+          </ToastProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByDisplayValue('url-old')).toBeDefined();
+    fireEvent.click(screen.getByText('go-url'));
+    expect(await screen.findByDisplayValue('url-new')).toBeDefined();
+  });
+
+  it('renders batch rows with missing quantity fields as blank', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/inventoryItems?page=1&pageSize=20') {
+        return { items: [{ id: 'i-1', name: '材料', stock: 1, minStock: 1 }], total: 1 };
+      }
+      if (path === '/inventory/low-stock') return [];
+      if (path === '/inventory/expiring?days=30') return [];
+      if (path === '/inventory-batches?itemId=i-1') {
+        return {
+          batches: [{ id: 'b-1', batchNo: 'B-1', initialQuantity: null, remainingQuantity: null }],
+          expiring: [],
+        };
+      }
+      if (path === '/inventory-batches?days=30') return { batches: [], expiring: [] };
+      if (path.startsWith('/resources/suppliers')) return { items: [], total: 0 };
+      return {};
+    });
+    render(<InventoryPage />, { wrapper });
+    expect(await screen.findByText('批次管理')).toBeDefined();
+    expect(await screen.findByText('B-1')).toBeDefined();
   });
 });

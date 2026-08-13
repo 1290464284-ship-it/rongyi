@@ -1103,8 +1103,10 @@ describe('ChargesPage', () => {
     });
     fireEvent.change(screen.getByLabelText('快捷收费患者'), { target: { value: 'p-1' } });
     const confirm = screen.getByRole('button', { name: '确认快捷收费' });
-    fireEvent.click(confirm);
-    fireEvent.click(confirm);
+    const form = confirm.closest('form');
+    expect(form).not.toBeNull();
+    fireEvent.submit(form as HTMLFormElement);
+    fireEvent.submit(form as HTMLFormElement);
     expect(vi.mocked(apiRequest).mock.calls.filter(([path, options]) =>
       path === '/charge-trees/cat-leaf/quick-charge' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'POST',
     )).toHaveLength(1);
@@ -1138,5 +1140,76 @@ describe('ChargesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '调出收费组合' }));
     fireEvent.click(await screen.findByRole('button', { name: '载入组合 洁牙套餐' }));
     expect((screen.getAllByLabelText('项目名称') as HTMLInputElement[]).map((input) => input.value)).toEqual(['洁牙', '抛光']);
+  });
+
+  it('ignores stale payment, refund, and delete submits', async () => {
+    const unpaidList = { ...chargeList, items: [{ ...chargeList.items[0], status: 'UNPAID' }] };
+    async function renderStaleDialog(open: () => void, list: typeof chargeList = chargeList) {
+      vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+        if (path === '/resources/charges?page=1&pageSize=50') return list;
+        if (path === '/resources/patients?page=1&pageSize=100') {
+          return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+        }
+        if (path.includes('search=stale')) return new Promise(() => {});
+        return {};
+      });
+      render(<ChargesPage />, { wrapper });
+      await screen.findByText('N-1');
+      open();
+      fireEvent.change(screen.getByLabelText('搜索收费单'), { target: { value: 'stale' } });
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      await waitFor(() => {
+        expect(apiRequest).toHaveBeenCalledWith(expect.stringContaining('search=stale'));
+      });
+    }
+
+    await renderStaleDialog(() => {
+      fireEvent.click(screen.getByRole('button', { name: '收款' }));
+      fireEvent.change(screen.getByLabelText('收款金额（元）'), { target: { value: '50' } });
+    });
+    fireEvent.click(screen.getByRole('button', { name: '确认收款' }));
+    expect(apiRequest).not.toHaveBeenCalledWith('/charges/c-1/pay', expect.objectContaining({ method: 'PATCH' }));
+    cleanup();
+
+    await renderStaleDialog(() => {
+      fireEvent.click(screen.getByRole('button', { name: '退款' }));
+      fireEvent.change(screen.getByLabelText('退款金额（元）'), { target: { value: '20' } });
+    });
+    fireEvent.click(screen.getByRole('button', { name: '确认退款' }));
+    expect(apiRequest).not.toHaveBeenCalledWith('/charges/c-1/refund', expect.objectContaining({ method: 'POST' }));
+    cleanup();
+
+    await renderStaleDialog(() => {
+      fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    }, unpaidList);
+    fireEvent.click(screen.getByRole('button', { name: '确认删除' }));
+    expect(apiRequest).not.toHaveBeenCalledWith('/charges/c-1', expect.objectContaining({ method: 'DELETE' }));
+  });
+
+  it('ignores a duplicate delete confirmation while one is pending', async () => {
+    const unpaidList = { ...chargeList, items: [{ ...chargeList.items[0], status: 'UNPAID' }] };
+    let resolveDelete: ((value: unknown) => void) | undefined;
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/resources/charges?page=1&pageSize=50') return unpaidList;
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/charges/c-1' && String(init?.method ?? 'GET').toUpperCase() === 'DELETE') {
+        return await new Promise((resolve) => {
+          resolveDelete = resolve;
+        });
+      }
+      return {};
+    });
+    render(<ChargesPage />, { wrapper });
+    await screen.findByText('N-1');
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    const confirm = await screen.findByRole('button', { name: '确认删除' });
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    expect(vi.mocked(apiRequest).mock.calls.filter(([path, options]) =>
+      path === '/charges/c-1' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'DELETE',
+    )).toHaveLength(1);
+    resolveDelete?.({ deleted: true });
   });
 });

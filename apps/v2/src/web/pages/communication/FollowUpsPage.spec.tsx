@@ -565,4 +565,81 @@ describe('FollowUpsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '确认执行' }));
     await screen.findByText('请填写联系时间');
   });
+
+  it('moves between follow-up tabs with arrow keys', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.startsWith('/follow-ups/reminders?')) return [];
+      if (path === '/follow-ups/reminders/summary') return { total: 0, overdue: 0, today: 0, upcoming: 0 };
+      if (path === '/follow-ups/nps') return { total: 0, promoters: 0, passives: 0, detractors: 0, nps: 0, average: 0, breakdown: [] };
+      if (path === '/resources/followUpDicts?page=1&pageSize=200') return { items: [], total: 0 };
+      return {};
+    });
+    render(<FollowUpsPage />, { wrapper });
+    const listTab = await screen.findByRole('tab', { name: '回访列表' });
+    fireEvent.keyDown(listTab, { key: 'ArrowRight' });
+    expect(screen.getByRole('tab', { name: '词典管理' }).getAttribute('aria-selected')).toBe('true');
+    fireEvent.keyDown(screen.getByRole('tab', { name: '词典管理' }), { key: 'ArrowLeft' });
+    expect(screen.getByRole('tab', { name: '回访列表' }).getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('omits empty optional fields from the execution payload', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.startsWith('/follow-ups/reminders?')) {
+        return [{ id: 'f-1', patientName: '执行患者', planDate: dateKey(new Date()), status: 'PENDING', content: '回访' }];
+      }
+      if (path === '/follow-ups/reminders/summary') return { total: 1, overdue: 0, today: 1, upcoming: 0 };
+      if (path === '/follow-ups/nps') return { total: 1, promoters: 1, passives: 0, detractors: 0, nps: 100, average: 9, breakdown: [] };
+      return {};
+    });
+    render(<FollowUpsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '执行随访' }));
+    fireEvent.change(screen.getByLabelText('执行状态'), { target: { value: 'SKIPPED' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认执行' }));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/follow-ups/f-1/execute', expect.objectContaining({ method: 'POST' }));
+    });
+    const call = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/follow-ups/f-1/execute');
+    const body = JSON.parse(String((call?.[1] as RequestInit | undefined)?.body ?? '{}')) as Record<string, unknown>;
+    expect(body).toEqual({ executionStatus: 'SKIPPED' });
+  });
+
+  it('ignores a stale completion submit', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/follow-ups/reminders?page=1&pageSize=100') {
+        return { items: [{ id: 'f-1', planDate: dateKey(new Date()), status: 'PENDING' }], total: 250, page: 1, pageSize: 100 };
+      }
+      if (path === '/follow-ups/reminders?page=2&pageSize=100') return new Promise(() => {});
+      if (path === '/follow-ups/reminders/summary') return { total: 250, overdue: 0, today: 1, upcoming: 249 };
+      if (path === '/follow-ups/nps') return { total: 0, promoters: 0, passives: 0, detractors: 0, nps: 0, average: 0, breakdown: [] };
+      return {};
+    });
+    render(<FollowUpsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '完成随访' }));
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+    await waitFor(() => {
+      expect((screen.getByRole('button', { name: '下一页' }) as HTMLButtonElement).disabled).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: '确认完成' }));
+    expect(apiRequest).not.toHaveBeenCalledWith('/follow-ups/f-1/complete', expect.objectContaining({ method: 'PATCH' }));
+  });
+
+  it('ignores a stale execution submit', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/follow-ups/reminders?page=1&pageSize=100') {
+        return { items: [{ id: 'f-1', planDate: dateKey(new Date()), status: 'PENDING' }], total: 250, page: 1, pageSize: 100 };
+      }
+      if (path === '/follow-ups/reminders?page=2&pageSize=100') return new Promise(() => {});
+      if (path === '/follow-ups/reminders/summary') return { total: 250, overdue: 0, today: 1, upcoming: 249 };
+      if (path === '/follow-ups/nps') return { total: 0, promoters: 0, passives: 0, detractors: 0, nps: 0, average: 0, breakdown: [] };
+      return {};
+    });
+    render(<FollowUpsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '执行随访' }));
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+    await waitFor(() => {
+      expect((screen.getByRole('button', { name: '下一页' }) as HTMLButtonElement).disabled).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: '确认执行' }));
+    expect(apiRequest).not.toHaveBeenCalledWith('/follow-ups/f-1/execute', expect.objectContaining({ method: 'POST' }));
+  });
 });

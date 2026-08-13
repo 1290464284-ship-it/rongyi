@@ -755,4 +755,50 @@ describe('ResourcePage', () => {
     render(<ResourcePage endpoint="/stats/demo" />, { wrapper });
     expect(await screen.findByRole('heading', { name: '报表' })).toBeDefined();
   });
+
+  it('reports all-failed batch delete and keeps the confirmation open', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([writable])
+      .mockResolvedValueOnce({ items: [{ id: 'p1', name: 'A' }, { id: 'p2', name: 'B' }], total: 2, page: 1, pageSize: 20 })
+      .mockRejectedValueOnce(new Error('first failed'))
+      .mockRejectedValueOnce(new Error('second failed'))
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 20 });
+    render(<ResourcePage resource="patients" />, { wrapper });
+    await screen.findByText('A');
+    const checkboxes = screen.getAllByRole('checkbox');
+    fireEvent.click(checkboxes[1]);
+    fireEvent.click(checkboxes[2]);
+    fireEvent.click(screen.getByText('删除选中'));
+    fireEvent.click(screen.getByText('批量删除'));
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+    expect(screen.queryByText(/已删除 \d+ 项/)).toBeNull();
+    expect(screen.getByRole('dialog', { name: '批量删除确认' })).toBeDefined();
+  });
+
+  it('unchecks a single selected row', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([writable])
+      .mockResolvedValueOnce({ items: [{ id: 'p1', name: 'A' }, { id: 'p2', name: 'B' }], total: 2, page: 1, pageSize: 20 });
+    render(<ResourcePage resource="patients" />, { wrapper });
+    await screen.findByText('A');
+    const checkboxes = screen.getAllByRole('checkbox');
+    fireEvent.click(checkboxes[1]);
+    expect(screen.getByText('已选 1 项')).toBeDefined();
+    fireEvent.click(checkboxes[1]);
+    expect(screen.queryByText('删除选中')).toBeNull();
+  });
+
+  it('renders a read-only report when the endpoint returns undefined', async () => {
+    vi.mocked(apiRequest).mockResolvedValue(null);
+    render(<ResourcePage title="报表" endpoint="/stats/demo" />, { wrapper });
+    expect(await screen.findByText('暂无数据')).toBeDefined();
+  });
+
+  it('renders an empty state when the resource list omits items', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([writable])
+      .mockResolvedValueOnce({ total: 1, page: 1, pageSize: 20 });
+    render(<ResourcePage resource="patients" />, { wrapper });
+    expect(await screen.findByText('暂无记录')).toBeDefined();
+  });
 });

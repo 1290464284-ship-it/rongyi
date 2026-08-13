@@ -258,6 +258,7 @@ describe('useCrudResource', () => {
           <button onClick={() => crud.requestDelete({ id: 'r-1' })}>request-delete</button>
           <button onClick={() => void crud.confirmDelete()}>confirm-delete</button>
           <span data-testid="page">{crud.page}</span>
+          <span data-testid="stale">{String(crud.isStale)}</span>
         </div>
       );
     }
@@ -268,6 +269,10 @@ describe('useCrudResource', () => {
     });
     render(<PagedHarness />, { wrapper });
     fireEvent.click(screen.getByText('page-2'));
+    await waitFor(() => {
+      expect(screen.getByTestId('page').textContent).toBe('2');
+      expect(screen.getByTestId('stale').textContent).toBe('false');
+    });
     fireEvent.click(screen.getByText('request-delete'));
     fireEvent.click(screen.getByText('confirm-delete'));
     await waitFor(() => {
@@ -332,6 +337,9 @@ describe('useCrudResource', () => {
       expect(screen.getByTestId('has-next').textContent).toBe('false');
       expect(screen.getByTestId('next-cursor').textContent).toBe('');
     });
+
+    fireEvent.click(screen.getByText('next'));
+    expect(screen.getByTestId('page').textContent).toBe('3');
 
     fireEvent.click(screen.getByText('prev'));
     await waitFor(() => {
@@ -430,5 +438,204 @@ describe('useCrudResource', () => {
     expect(screen.getByTestId('show').textContent).toBe('false');
     expect(screen.getByTestId('delete').textContent).toBe('false');
     expect(apiRequest).not.toHaveBeenCalledWith('/resources/things/r-1', expect.objectContaining({ method: 'PATCH' }));
+  });
+
+  it('blocks duplicate create submits while one is pending', async () => {
+    let resolvePost: ((value: unknown) => void) | undefined;
+    function PendingCreateHarness() {
+      const crud = useCrudResource<HookRow, HookForm>({
+        queryKey: ['pending-create'],
+        endpoint: '/resources/things',
+        initialForm: { name: '', note: '' },
+      });
+      return (
+        <div>
+          <button onClick={crud.openCreate}>open-create</button>
+          <button onClick={() => void crud.submit()}>submit</button>
+        </div>
+      );
+    }
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (String(init?.method ?? 'GET').toUpperCase() === 'POST' && path === '/resources/things') {
+        return await new Promise((resolve) => {
+          resolvePost = resolve;
+        });
+      }
+      return { items: [], total: 0, page: 1, pageSize: 50 };
+    });
+    render(<PendingCreateHarness />, { wrapper });
+    fireEvent.click(screen.getByText('open-create'));
+    fireEvent.click(screen.getByText('submit'));
+    fireEvent.click(screen.getByText('submit'));
+    expect(vi.mocked(apiRequest).mock.calls.filter(
+      ([path, options]) => path === '/resources/things' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'POST',
+    )).toHaveLength(1);
+    resolvePost?.({ id: 'r-new' });
+    expect(await screen.findByText('创建成功')).toBeDefined();
+  });
+
+  it('blocks an edit submit after the list becomes stale', async () => {
+    function StaleEditHarness() {
+      const crud = useCrudResource<HookRow, HookForm>({
+        queryKey: ['stale-edit-items'],
+        endpoint: '/resources/things',
+        initialForm: { name: '', note: '' },
+      });
+      return (
+        <div>
+          <button onClick={() => crud.openEdit({ id: 'r-1', name: '旧名' })}>open-edit</button>
+          <button onClick={() => crud.setSearch('new')}>search-new</button>
+          <button onClick={() => void crud.submit()}>submit</button>
+          <span data-testid="note">{crud.form.note}</span>
+          <span data-testid="stale">{String(crud.isStale)}</span>
+          <span data-testid="show">{String(crud.showForm)}</span>
+        </div>
+      );
+    }
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (String(path).includes('search=new')) return new Promise(() => {});
+      return { items: [{ id: 'r-1', name: '旧名' }], total: 1, page: 1, pageSize: 50 };
+    });
+    render(<StaleEditHarness />, { wrapper });
+    await waitFor(() => expect(screen.getByTestId('stale').textContent).toBe('false'));
+    fireEvent.click(screen.getByText('open-edit'));
+    await waitFor(() => expect(screen.getByTestId('show').textContent).toBe('true'));
+    expect(screen.getByTestId('note').textContent).toBe('');
+    fireEvent.click(screen.getByText('search-new'));
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    await waitFor(() => expect(screen.getByTestId('stale').textContent).toBe('true'));
+    fireEvent.click(screen.getByText('submit'));
+    expect(apiRequest).not.toHaveBeenCalledWith('/resources/things/r-1', expect.objectContaining({ method: 'PATCH' }));
+    expect(screen.getByTestId('show').textContent).toBe('true');
+  });
+
+  it('ignores confirmDelete without a target', async () => {
+    function DeleteGuardHarness() {
+      const crud = useCrudResource<HookRow, HookForm>({
+        queryKey: ['delete-guard-items'],
+        endpoint: '/resources/things',
+        initialForm: { name: '', note: '' },
+      });
+      return (
+        <div>
+          <button onClick={() => void crud.confirmDelete()}>confirm-delete</button>
+        </div>
+      );
+    }
+    mockApi();
+    render(<DeleteGuardHarness />, { wrapper });
+    fireEvent.click(screen.getByText('confirm-delete'));
+    expect(apiRequest).not.toHaveBeenCalledWith('/resources/things/r-1', expect.objectContaining({ method: 'DELETE' }));
+  });
+
+  it('resets cursor state when initialSearch changes', async () => {
+    function SyncCursorHarness() {
+      const [initial, setInitial] = useState<string | undefined>('a');
+      const crud = useCrudResource<HookRow, HookForm>({
+        queryKey: ['cursor-sync-items'],
+        endpoint: '/resources/things',
+        initialForm: { name: '', note: '' },
+        initialSearch: initial,
+        cursorPagination: true,
+      });
+      return (
+        <div>
+          <button onClick={() => setInitial('b')}>change-initial</button>
+          <button onClick={() => setInitial(undefined)}>clear-initial</button>
+          <span data-testid="search">{crud.searchInput}</span>
+          <span data-testid="page">{crud.page}</span>
+        </div>
+      );
+    }
+    mockApi();
+    render(<SyncCursorHarness />, { wrapper });
+    expect(screen.getByTestId('search').textContent).toBe('a');
+    fireEvent.click(screen.getByText('change-initial'));
+    expect(screen.getByTestId('search').textContent).toBe('b');
+    expect(screen.getByTestId('page').textContent).toBe('1');
+    fireEvent.click(screen.getByText('clear-initial'));
+    expect(screen.getByTestId('search').textContent).toBe('');
+  });
+
+  it('guards goPrev while cursor data is stale', async () => {
+    function CursorStaleHarness() {
+      const crud = useCrudResource<HookRow, HookForm>({
+        queryKey: ['cursor-stale-items'],
+        endpoint: '/resources/things',
+        initialForm: { name: '', note: '' },
+        cursorPagination: true,
+      });
+      return (
+        <div>
+          <button onClick={crud.goNext}>next</button>
+          <button onClick={crud.goPrev}>prev</button>
+          <button onClick={() => crud.setSearch('new')}>search-new</button>
+          <span data-testid="page">{crud.page}</span>
+          <span data-testid="stale">{String(crud.isStale)}</span>
+          <span data-testid="fetching">{String(crud.query.isFetching)}</span>
+        </div>
+      );
+    }
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (String(path).includes('search=new')) return new Promise(() => {});
+      if (String(path).includes('cursor=cursor-1')) return { items: [{ id: 'r-2' }], total: 2, page: 1, pageSize: 50 };
+      return { items: [{ id: 'r-1' }], total: 2, page: 1, pageSize: 50, nextCursor: 'cursor-1' };
+    });
+    render(<CursorStaleHarness />, { wrapper });
+    await waitFor(() => expect(screen.getByTestId('fetching').textContent).toBe('false'));
+    fireEvent.click(screen.getByText('next'));
+    await waitFor(() => {
+      expect(screen.getByTestId('page').textContent).toBe('2');
+      expect(screen.getByTestId('fetching').textContent).toBe('false');
+      expect(screen.getByTestId('stale').textContent).toBe('false');
+    });
+    fireEvent.click(screen.getByText('search-new'));
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    await waitFor(() => expect(screen.getByTestId('stale').textContent).toBe('true'));
+    fireEvent.click(screen.getByText('prev'));
+    expect(screen.getByTestId('page').textContent).toBe('1');
+  });
+
+  it('steps back a page when the refreshed page omits items', async () => {
+    function PagedHarness() {
+      const crud = useCrudResource<HookRow, HookForm>({
+        queryKey: ['hook-items-omit'],
+        endpoint: '/resources/things',
+        initialForm: { name: '', note: '' },
+      });
+      return (
+        <div>
+          <button onClick={() => crud.setPage(2)}>page-2</button>
+          <button onClick={() => crud.requestDelete({ id: 'r-1' })}>request-delete</button>
+          <button onClick={() => void crud.confirmDelete()}>confirm-delete</button>
+          <span data-testid="page">{crud.page}</span>
+          <span data-testid="stale">{String(crud.isStale)}</span>
+          <span data-testid="fetching">{String(crud.query.isFetching)}</span>
+        </div>
+      );
+    }
+    let deleted = false;
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (String(init?.method ?? 'GET').toUpperCase() === 'DELETE') {
+        deleted = true;
+        return { deleted: true };
+      }
+      if (String(path).includes('page=2')) {
+        return deleted ? {} : { items: [{ id: 'r-1' }], total: 2, page: 2, pageSize: 50 };
+      }
+      return { items: [{ id: 'r-1' }], total: 1, page: 1, pageSize: 50 };
+    });
+    render(<PagedHarness />, { wrapper });
+    fireEvent.click(screen.getByText('page-2'));
+    await waitFor(() => {
+      expect(screen.getByTestId('page').textContent).toBe('2');
+      expect(screen.getByTestId('fetching').textContent).toBe('false');
+      expect(screen.getByTestId('stale').textContent).toBe('false');
+    });
+    fireEvent.click(screen.getByText('request-delete'));
+    fireEvent.click(screen.getByText('confirm-delete'));
+    await waitFor(() => {
+      expect(screen.getByTestId('page').textContent).toBe('1');
+    });
   });
 });

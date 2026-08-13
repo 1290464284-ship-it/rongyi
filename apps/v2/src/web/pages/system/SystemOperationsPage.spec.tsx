@@ -203,4 +203,29 @@ describe('SystemOperationsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '立即清理' }));
     expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
   });
+
+  it('renders search results without ids using the row index', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.startsWith('/search?')) return [{ name: 'NoId Result' }];
+      return {};
+    });
+    render(<ToastProvider><SystemOperationsPage /></ToastProvider>);
+    fireEvent.change(screen.getByLabelText('搜索关键词'), { target: { value: 'Demo' } });
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    fireEvent.click(screen.getByRole('button', { name: '搜索' }));
+    expect(await screen.findByText('NoId Result')).toBeDefined();
+  });
+
+  it('loads a file whose reader result is undefined as zero rows', async () => {
+    vi.spyOn(FileReader.prototype, 'readAsText').mockImplementation(function (this: FileReader) {
+      queueMicrotask(() => {
+        (this.onload as (() => void) | null)?.();
+      });
+    });
+    render(<ToastProvider><SystemOperationsPage /></ToastProvider>);
+    fireEvent.change(document.querySelector('input[type="file"]') as HTMLInputElement, {
+      target: { files: [new File(['x'], 'x.json')] },
+    });
+    expect(await screen.findByText('已加载 0 行')).toBeDefined();
+  });
 });
