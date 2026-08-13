@@ -21,8 +21,10 @@ const THRESHOLDS = {
   syncFullPageMs: 5_000,
 } as const;
 const failures: string[] = [];
+const metrics: Record<string, number> = {};
 function report(label: string, elapsedMs: number, limitMs: number): void {
   const ok = elapsedMs <= limitMs;
+  metrics[label] = elapsedMs;
   console.log(`${ok ? 'PASS' : 'FAIL'} ${label}: ${Math.round(elapsedMs)}ms (limit ${limitMs}ms)`);
   if (!ok) failures.push(`${label}: ${Math.round(elapsedMs)}ms > ${limitMs}ms`);
 }
@@ -125,6 +127,10 @@ const syncPageTiming = performance.now();
 const syncPage = sync.fullSnapshot(context, { table: 'Patient', limit: 5_000, offset: 0 });
 report('sync full Patient page (5000)', performance.now() - syncPageTiming, THRESHOLDS.syncFullPageMs);
 console.log(`  page rows ${syncPage.rows?.length ?? 0} total ${syncPage.total ?? 0}`);
+
+const latestPath = path.join(import.meta.dirname, '../performance/latest.json');
+fs.mkdirSync(path.dirname(latestPath), { recursive: true });
+fs.writeFileSync(latestPath, `${JSON.stringify(metrics, null, 2)}\n`);
 
 db.close();
 fs.rmSync(dataDir, { recursive: true, force: true });

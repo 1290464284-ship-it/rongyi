@@ -47,6 +47,7 @@
     "test:large-db-concurrency": "node scripts/large-db-concurrency-smoke.mjs",
     "smoke:state-machine-concurrency": "node scripts/state-machine-concurrency-smoke.mjs",
     "benchmark:load": "tsx scripts/benchmark-load.ts",
+    "benchmark:snapshots": "tsx scripts/benchmark-snapshots.ts",
     "test:performance-history": "node scripts/performance-history.mjs",
     "simulate:clinic-data": "tsx scripts/simulate-clinic-data.ts",
     "smoke:simulated-data": "node scripts/simulated-data-smoke.mjs",
