@@ -299,4 +299,17 @@ describe('inventory batch routes', () => {
     expect(res.body.success).toBe(false);
     expect(res.body.code).toBe('NOT_FOUND');
   });
+
+  it('tolerates missing request bodies and filters', async () => {
+    const list = await request(app).get('/api/v2/inventory-batches');
+    expect([200, 400]).toContain(list.status);
+    const create = await request(app).post('/api/v2/inventory-batches');
+    expect([200, 400]).toContain(create.status);
+    const update = await request(app).patch('/api/v2/inventory-batches/missing');
+    expect([200, 400, 404]).toContain(update.status);
+    const consume = await request(app).post('/api/v2/inventory-batches/consume');
+    expect([200, 400, 404, 409]).toContain(consume.status);
+    const alerts = await request(app).post('/api/v2/inventory-batches/expiry-alerts');
+    expect([200, 400]).toContain(alerts.status);
+  });
 });
