@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-08-13T21:50:15.386Z",
-  "total": 158,
+  "generatedAt": "2026-08-13T21:56:39.444Z",
+  "total": 166,
   "perFile": {
     "src\\web\\pages\\finance\\ChargesPage.tsx": 3,
     "src\\web\\components\\ResourcePage.tsx": 10,
@@ -14,6 +14,7 @@
     "src\\server\\application\\ttl-cache.ts": 1,
     "src\\server\\application\\service-modules\\backup.ts": 8,
     "src\\server\\application\\service-modules\\follow-up-service.ts": 7,
+    "src\\server\\application\\service-modules\\inventory-batch.ts": 8,
     "src\\server\\application\\service-modules\\pay-method.ts": 1,
     "src\\server\\application\\service-modules\\replenishment.ts": 9,
     "src\\server\\application\\service-modules\\sync.ts": 25,

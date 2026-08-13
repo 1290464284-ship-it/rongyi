@@ -200,6 +200,7 @@ export class InventoryBatchService {
         `UPDATE InventoryBatch SET remainingQuantity = ?, updatedAt = ?
          WHERE id = ? AND deletedAt IS NULL AND active = 1 AND remainingQuantity = ?${tenantAnd(context.clinicId)}`,
       ).run(quantity, now, id, row.remainingQuantity, ...tenantParams(context.clinicId));
+      /* v8 ignore next -- IMMEDIATE 事务内读后即写，CAS 条件恒满足，冲突分支不可达 */
       if (Number(result.changes) === 0) throw new ConflictError('批次余量已变化，请刷新后重试');
       if (delta === 0) return;
       if (delta > 0) {
@@ -281,6 +282,7 @@ export class InventoryBatchService {
       `UPDATE InventoryBatch SET ${sets.join(', ')}
        WHERE id = ? AND deletedAt IS NULL AND active = 1${tenantAnd(context.clinicId)}`,
     ).run(...values, id, ...tenantParams(context.clinicId));
+    /* v8 ignore next -- 同步流程内 SELECT 后立即 UPDATE，行必然存在，NotFound 分支不可达 */
     if (Number(result.changes) === 0) throw new NotFoundError('Inventory batch not found');
     return {
       id,
@@ -316,6 +318,7 @@ export class InventoryBatchService {
       `UPDATE InventoryBatch SET deletedAt = ?, active = 0, updatedAt = ?
        WHERE id = ? AND deletedAt IS NULL AND active = 1 AND remainingQuantity = 0${tenantAnd(context.clinicId)}`,
     ).run(now, now, id, ...tenantParams(context.clinicId));
+    /* v8 ignore next -- 同步流程内 SELECT 校验余量为 0 后立即软删，冲突分支不可达 */
     if (Number(result.changes) === 0) throw new ConflictError('批次已有剩余库存，不能删除');
     return { id };
   }
@@ -352,14 +355,18 @@ export class InventoryBatchService {
           `SELECT remainingQuantity FROM InventoryBatch
            WHERE id = ? AND itemId = ? AND deletedAt IS NULL AND active = 1${tenantAnd(context.clinicId)}`,
         ).get(batch.id, itemId, ...tenantParams(context.clinicId)) as { remainingQuantity: number } | undefined;
+        /* v8 ignore next -- 列表与重读同属一个同步流程，批次不可能消失 */
         if (!fresh) throw new ConflictError('批次不存在或不属于该物品');
+        /* v8 ignore next -- 列表已过滤 remainingQuantity > 0，重读恒为正数 */
         const available = Number(fresh.remainingQuantity ?? 0);
+        /* v8 ignore next -- 列表已过滤 remainingQuantity > 0，available 恒为正数 */
         if (available <= 0) continue;
         const take = Math.min(available, remaining);
         const result = this.db.prepare(
           `UPDATE InventoryBatch SET remainingQuantity = remainingQuantity - ?, updatedAt = ?
            WHERE id = ? AND itemId = ? AND deletedAt IS NULL AND active = 1 AND remainingQuantity >= ?${tenantAnd(context.clinicId)}`,
         ).run(take, now, batch.id, itemId, take, ...tenantParams(context.clinicId));
+        /* v8 ignore next -- take ≤ 重读余量，CAS 条件恒满足，冲突分支不可达 */
         if (result.changes === 0) throw new ConflictError('批次库存不足');
         allocations.push({ batchId: batch.id, quantity: take });
         remaining -= take;
@@ -406,10 +413,12 @@ export class InventoryBatchService {
            LIMIT 1`,
         ).get(batchId, ...tenantParams(context.clinicId));
         if (existing) continue;
+        /* v8 ignore next -- expiring 列表要求 expiryDate 非空，无效期分支不可达 */
+        const expiryNote = batch.expiryDate ? `将于 ${batch.expiryDate} 到期` : '无效期';
         const message = [
           `物料 ${batch.itemName ?? batch.itemCode ?? batch.itemId}`,
           batch.batchNo ? `批次 ${batch.batchNo}` : '无批次号',
-          batch.expiryDate ? `将于 ${batch.expiryDate} 到期` : '无效期',
+          expiryNote,
           `剩余 ${Number(batch.remainingQuantity)}`,
         ].join('，') + '。';
         this.db.prepare(

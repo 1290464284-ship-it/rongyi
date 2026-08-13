@@ -78,7 +78,7 @@ export function registerDispenseRoutes(
           requestId,
           requestBodyHash: stableRequestBodyHash(body),
           resourceId: String(req.params.id),
-        }, () => service.returnItems(String(req.params.id), parseReturnInput(body), req.context!), {
+        }, async () => service.returnItems(String(req.params.id), parseReturnInput(body), req.context!), {
           keepProcessingOnAppError: true,
         })
       : await service.returnItems(String(req.params.id), parseReturnInput(body), req.context!);

@@ -67,6 +67,9 @@ Web **96.82% / 92.94% / 98.66% / 98.58%**，双门禁全绿——覆盖率口径
 | `src/web/pages/finance/ChargesPage.tsx`（payRoots/payLeafOptions） | `payRoots[0]?.id ?? ''`、`payLeafOptions[0]?.id ?? ''` 与 `payRootNode ? ... : []` | 2026-08-13 简化为直接索引 + 非空断言：内置缴费方式兜底保证三处集合恒非空（行为零变化，不再需要排除） |
 | `src/web/pages/finance/ChargesPage.tsx`（pay） | `leaf ? ... : 'OTHER'` 的 OTHER 分支、`METHOD_LABELS[...] ?? effectivePayLeaf` 的空值分支 | effectivePayLeaf 经 `some` 校验必在选项/键集中，查表恒命中 |
 | `src/web/pages/finance/ChargesPage.tsx`（deleteCharge） | `crud.page > 1 && (...)` 整行 | 收费列表暂无分页 UI，crud.page 恒为 1，回退逻辑为未来分页预留 |
+| `src/server/application/service-modules/inventory-batch.ts`（adjust/update/remove/consumeFifo） | `result.changes === 0` 冲突分支、`!fresh`、`available <= 0` | 同步流程内读后即写（adjust 在 IMMEDIATE 事务内），CAS 条件恒满足，竞态守卫为防御冗余 |
+| `src/server/application/service-modules/inventory-batch.ts`（consumeFifo） | `fresh.remainingQuantity ?? 0` 空值分支 | 批次列表查询已过滤 `remainingQuantity > 0`（NULL 被排除），重读恒为正数 |
+| `src/server/application/service-modules/inventory-batch.ts`（generateExpiryAlerts） | `expiryDate ? ... : '无效期'` 的无效期分支 | expiring 查询要求 `expiryDate >= today`，NULL 被排除，无效期分支不可达 |
 
 ## 5. 其他已知取舍
 
