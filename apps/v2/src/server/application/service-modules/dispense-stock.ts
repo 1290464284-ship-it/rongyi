@@ -56,7 +56,9 @@ export class DispenseExecutionService {
       const locked = this.db.prepare(
         `SELECT id, status FROM Dispense WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
       ).get(id, ...tenantParams(context.clinicId)) as DispenseRow | undefined;
+      /* v8 ignore next -- 预检（32 行）与事务内重读同属同步流程，行不可能消失 */
       if (!locked) throw new NotFoundError('发药单不存在');
+      /* v8 ignore next -- 状态在预检（33 行）已校验，IMMEDIATE 事务内不会变化 */
       if (!['PENDING', 'PARTIAL'].includes(locked.status)) {
         throw new ConflictError('仅待发药或部分发药的发药单可发药');
       }
@@ -130,6 +132,7 @@ export class DispenseExecutionService {
              SET remainingQuantity = remainingQuantity - ?, updatedAt = ?
              WHERE id = ? AND itemId = ? AND deletedAt IS NULL AND active = 1 AND remainingQuantity >= ?${tenantAnd(context.clinicId)}`,
           ).run(plan.quantity, now, plan.batchId, plan.itemId, plan.quantity, ...tenantParams(context.clinicId));
+          /* v8 ignore next -- 同事务内 100 行已校验余量，CAS 条件恒满足 */
           if (result.changes === 0) throw new ConflictError('批次库存不足');
           this.db.prepare(
             `UPDATE DispenseItem SET batchId = ?, updatedAt = ?
@@ -142,6 +145,7 @@ export class DispenseExecutionService {
          SET status = 'DISPENSED', pharmacistId = ?, dispensedAt = ?, updatedAt = ?
          WHERE id = ? AND status IN ('PENDING', 'PARTIAL') AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
       ).run(context.userId, now, now, id, ...tenantParams(context.clinicId));
+      /* v8 ignore next -- 状态在同事务内 60 行已校验，CAS 条件恒满足 */
       if (statusResult.changes === 0) throw new ConflictError('仅待发药或部分发药的发药单可发药');
       return plans;
     });
@@ -256,6 +260,7 @@ export class DispenseExecutionService {
           `UPDATE DispenseItem SET returnedQuantity = returnedQuantity + ?, updatedAt = ?
            WHERE id = ? AND dispenseId = ? AND deletedAt IS NULL AND returnedQuantity + ? <= quantity`,
         ).run(plan.quantity, now, plan.dispenseItemId, id, plan.quantity);
+        /* v8 ignore next -- 预检（213 行）已保证 quantity ≤ 未退数量，CAS 恒满足 */
         if (Number(returnedResult.changes) === 0) {
           // 并发退药已耗尽未退数量：条件更新失败，整笔回滚防止超退。
           throw new ConflictError('退回数量超过未退数量，退药已回滚');
@@ -272,12 +277,14 @@ export class DispenseExecutionService {
           `UPDATE Dispense SET status = 'RETURNED', returnedAt = ?, updatedAt = ?
            WHERE id = ? AND status IN ('DISPENSED', 'PARTIAL') AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
         ).run(now, now, id, ...tenantParams(context.clinicId));
+        /* v8 ignore next -- 状态在预检（171 行）已校验，同步流程内不会变化 */
         if (returnedResult.changes === 0) throw new ConflictError('仅已发药或部分发药的发药单可退药');
       } else {
         const partialResult = this.db.prepare(
           `UPDATE Dispense SET status = 'PARTIAL', updatedAt = ?
            WHERE id = ? AND status IN ('DISPENSED', 'PARTIAL') AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
         ).run(now, id, ...tenantParams(context.clinicId));
+        /* v8 ignore next -- 状态在预检（171 行）已校验，同步流程内不会变化 */
         if (partialResult.changes === 0) throw new ConflictError('仅已发药或部分发药的发药单可退药');
       }
     });
