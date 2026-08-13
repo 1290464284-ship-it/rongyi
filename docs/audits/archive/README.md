@@ -80,6 +80,7 @@
 | 第 69 轮 | 2026-08-13 | inventory-ledger mutation 覆盖 + 生成物忽略 | `../深度审计报告-第六十九轮-主报告.md` |
 | 第 70 轮 | 2026-08-13 | 质量评分 mutation/OpenAPI 指标修复 | `../深度审计报告-第七十轮-主报告.md` |
 | 第 71 轮 | 2026-08-13 | validation/pagination mutation 提分至 84.77 | `../深度审计报告-第七十一轮-主报告.md` |
+| 第 72 轮 | 2026-08-13 | errors 契约断言提分至 87.44 | `../深度审计报告-第七十二轮-主报告.md` |
 
 ## 其他归档
 
@@ -97,7 +98,7 @@
 
 ## 当前状态
 
-最新一轮为第 71 轮（`bafd8f8`），单测 239 文件 / 2420 用例；mutation score 84.77，route path coverage 100%，完整 sequence.shuffle 全绿，typecheck/lint/knip/unit 均通过。
+最新一轮为第 72 轮（`0e8b6c5`），单测 239 文件 / 2420 用例；mutation score 87.44，route path coverage 100%，完整 sequence.shuffle 全绿，typecheck/lint/knip/unit 均通过。
 历史轮次请以上方轮次索引为准；各轮详情见 `../深度审计报告-第N轮-主报告.md`。
 已收敛的长期决策项：processing-flow 手动改态保留并补 `changes` 校验；大库增量聚合
 暂不启动，`replenishment.generate` 已用有界分块事务，10 万级冷态基准持续 PASS。
