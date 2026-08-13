@@ -548,4 +548,21 @@ describe('FollowUpsPage', () => {
     });
     expect(apiRequest).not.toHaveBeenCalledWith('/follow-ups/f-1/execute', expect.anything());
   });
+
+  it('requires a contact time when executing a completed follow-up', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.startsWith('/follow-ups/reminders?')) {
+        return [{ id: 'f-1', patientName: '执行患者', planDate: dateKey(new Date()), status: 'PENDING', content: '回访' }];
+      }
+      if (path === '/follow-ups/reminders/summary') return { total: 1, overdue: 0, today: 1, upcoming: 0 };
+      if (path === '/follow-ups/nps') return { total: 1, promoters: 1, passives: 0, detractors: 0, nps: 100, average: 9, breakdown: [] };
+      return {};
+    });
+    render(<FollowUpsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '执行随访' }));
+
+    fireEvent.change(screen.getByLabelText('执行状态'), { target: { value: 'DONE' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认执行' }));
+    await screen.findByText('请填写联系时间');
+  });
 });
