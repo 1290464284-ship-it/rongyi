@@ -638,4 +638,168 @@ describe('useCrudResource', () => {
       expect(screen.getByTestId('page').textContent).toBe('1');
     });
   });
+
+  it('guards cursor setPage during stale reloads and on the current page', async () => {
+    function CursorGuardHarness() {
+      const crud = useCrudResource<HookRow, HookForm>({
+        queryKey: ['cursor-guard-items'],
+        endpoint: '/resources/things',
+        initialForm: { name: '', note: '' },
+        cursorPagination: true,
+      });
+      return (
+        <div>
+          <button onClick={() => crud.setSearch('new')}>search-new</button>
+          <button onClick={() => crud.setPage(2)}>set-2</button>
+          <button onClick={() => crud.setPage(1)}>set-1</button>
+          <span data-testid="page">{crud.page}</span>
+          <span data-testid="stale">{String(crud.isStale)}</span>
+          <span data-testid="loaded">{String(Boolean(crud.query.data))}</span>
+        </div>
+      );
+    }
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (String(path).includes('search=new')) {
+        return new Promise(() => {});
+      }
+      return { items: [{ id: 'r-1' }], total: 2, page: 1, pageSize: 50, nextCursor: 'cursor-1' };
+    });
+    render(<CursorGuardHarness />, { wrapper });
+    await waitFor(() => expect(screen.getByTestId('loaded').textContent).toBe('true'));
+    // 当前页 setPage(1)：no-op
+    fireEvent.click(screen.getByText('set-1'));
+    expect(screen.getByTestId('page').textContent).toBe('1');
+    // 搜索换键进入 placeholder：setPage(2) 被拦截
+    fireEvent.click(screen.getByText('search-new'));
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    await waitFor(() => expect(screen.getByTestId('stale').textContent).toBe('true'));
+    fireEvent.click(screen.getByText('set-2'));
+    expect(screen.getByTestId('page').textContent).toBe('1');
+  });
+
+  it('keeps the page when setPage has no next cursor to advance through', async () => {
+    function CursorNoNextHarness() {
+      const crud = useCrudResource<HookRow, HookForm>({
+        queryKey: ['cursor-nonext-items'],
+        endpoint: '/resources/things',
+        initialForm: { name: '', note: '' },
+        cursorPagination: true,
+      });
+      return (
+        <div>
+          <button onClick={() => crud.setPage(3)}>set-3</button>
+          <span data-testid="page">{crud.page}</span>
+        </div>
+      );
+    }
+    vi.mocked(apiRequest).mockResolvedValue({ items: [{ id: 'r-1' }], total: 1, page: 1, pageSize: 50 });
+    render(<CursorNoNextHarness />, { wrapper });
+    await waitFor(() => expect(screen.getByTestId('page').textContent).toBe('1'));
+    fireEvent.click(screen.getByText('set-3'));
+    await waitFor(() => expect(screen.getByTestId('page').textContent).toBe('1'));
+  });
+
+  it('steps back a cursor page after deleting the last row', async () => {
+    function CursorDeleteHarness() {
+      const crud = useCrudResource<HookRow, HookForm>({
+        queryKey: ['cursor-delete-items'],
+        endpoint: '/resources/things',
+        initialForm: { name: '', note: '' },
+        cursorPagination: true,
+      });
+      return (
+        <div>
+          <button onClick={crud.goNext}>next</button>
+          <button onClick={() => crud.requestDelete({ id: 'r-2' })}>request-delete</button>
+          <button onClick={() => void crud.confirmDelete()}>confirm-delete</button>
+          <span data-testid="page">{crud.page}</span>
+          <span data-testid="stale">{String(crud.isStale)}</span>
+          <span data-testid="loaded">{String(Boolean(crud.query.data))}</span>
+        </div>
+      );
+    }
+    let deleted = false;
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (String(init?.method ?? 'GET').toUpperCase() === 'DELETE') {
+        deleted = true;
+        return { deleted: true };
+      }
+      if (String(path).includes('cursor=cursor-1')) {
+        return deleted ? { total: 2 } : { items: [{ id: 'r-2' }], total: 2, page: 1, pageSize: 50 };
+      }
+      return { items: [{ id: 'r-1' }], total: 2, page: 1, pageSize: 50, nextCursor: 'cursor-1' };
+    });
+    render(<CursorDeleteHarness />, { wrapper });
+    await waitFor(() => expect(screen.getByTestId('loaded').textContent).toBe('true'));
+    fireEvent.click(screen.getByText('next'));
+    await waitFor(() => {
+      expect(screen.getByTestId('page').textContent).toBe('2');
+      expect(screen.getByTestId('stale').textContent).toBe('false');
+    });
+    fireEvent.click(screen.getByText('request-delete'));
+    fireEvent.click(screen.getByText('confirm-delete'));
+    await waitFor(() => {
+      expect(screen.getByTestId('page').textContent).toBe('1');
+    });
+  });
+
+  it('patches total-less pages and tolerates missing cache data', async () => {
+    function TotalLessHarness({ enabled }: { enabled?: boolean }) {
+      const crud = useCrudResource<HookRow, HookForm>({
+        queryKey: ['total-less-items'],
+        endpoint: '/resources/things',
+        initialForm: { name: '', note: '' },
+        enabled,
+      });
+      return (
+        <div>
+          <button onClick={() => crud.openCreate()}>open-create</button>
+          <button onClick={() => void crud.submit()}>submit</button>
+          <button onClick={() => crud.requestDelete({ id: 'r-1' })}>request-delete</button>
+          <button onClick={() => void crud.confirmDelete()}>confirm-delete</button>
+        </div>
+      );
+    }
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (String(init?.method ?? 'GET').toUpperCase() === 'POST') return { id: 'r-new' };
+      if (String(init?.method ?? 'GET').toUpperCase() === 'DELETE') return { deleted: true };
+      // 无 total 字段的列表页
+      return { items: [{ id: 'r-1' }], page: 1, pageSize: 50 };
+    });
+    render(<TotalLessHarness />, { wrapper });
+    await waitFor(() => expect(apiRequest).toHaveBeenCalled());
+    fireEvent.click(screen.getByText('open-create'));
+    fireEvent.click(screen.getByText('submit'));
+    await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/resources/things', expect.objectContaining({ method: 'POST' })));
+    fireEvent.click(screen.getByText('request-delete'));
+    fireEvent.click(screen.getByText('confirm-delete'));
+    await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/resources/things/r-1', expect.objectContaining({ method: 'DELETE' })));
+  });
+
+  it('tolerates optimistic removal without cached list data', async () => {
+    function DisabledHarness() {
+      const crud = useCrudResource<HookRow, HookForm>({
+        queryKey: ['disabled-items'],
+        endpoint: '/resources/things',
+        initialForm: { name: '', note: '' },
+        enabled: false,
+      });
+      return (
+        <div>
+          <button onClick={() => crud.requestDelete({ id: 'r-1' })}>request-delete</button>
+          <button onClick={() => void crud.confirmDelete()}>confirm-delete</button>
+        </div>
+      );
+    }
+    vi.mocked(apiRequest).mockImplementation(async (_path: string, init?: RequestInit) => {
+      if (String(init?.method ?? 'GET').toUpperCase() === 'DELETE') return { deleted: true };
+      return { items: [], total: 0, page: 1, pageSize: 50 };
+    });
+    render(<DisabledHarness />, { wrapper });
+    fireEvent.click(screen.getByText('request-delete'));
+    fireEvent.click(screen.getByText('confirm-delete'));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/things/r-1', expect.objectContaining({ method: 'DELETE' }));
+    });
+  });
 });

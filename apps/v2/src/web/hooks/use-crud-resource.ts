@@ -197,7 +197,8 @@ export function useCrudResource<
     if (query.isPlaceholderData) return;
     if (cursorStack.length === 0) return;
     const nextStack = [...cursorStack];
-    const previous = nextStack.pop() ?? null;
+    // 198 行已保证栈非空
+    const previous = nextStack.pop() as string;
     setCursorStack(nextStack);
     setCursor(previous);
   }
