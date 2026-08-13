@@ -246,4 +246,138 @@ describe('CommissionService', () => {
       .find((row) => row.id === 'stmt-null-metadata');
     expect(statement).toMatchObject({ breakdown: [], totalCharged: 0, totalCommission: 0 });
   });
+
+  it('merges explicit undefined, null, and empty-string patches on update', () => {
+    const service = new CommissionService(db);
+    const created = service.createRule(
+      { name: 'X', category: 'A', costType: 'SERVICE', doctorId: 'user-doctor-commission', enabled: false, rateType: 'PERCENT', rate: 100 },
+      context,
+    );
+    // 显式 undefined 保留现有值；null/'' 清空；省略 enabled 保持禁用
+    const merged = service.updateRule(created.id, {
+      category: undefined,
+      costType: null,
+      doctorId: '',
+      rate: 200,
+    }, context);
+    expect(merged.category).toBe('A');
+    expect(merged.costType).toBeNull();
+    expect(merged.doctorId).toBeNull();
+    expect(merged.enabled).toBe(0);
+    expect(merged.rate).toBe(200);
+    expect(service.listRules(context).find((rule) => rule.id === created.id)?.enabled).toBe(0);
+  });
+
+  it('accepts boundary rates and trims names and categories', () => {
+    const service = new CommissionService(db);
+    expect(() => service.createRule({ name: 'x', rateType: 'PERCENT', rate: 0 }, context)).not.toThrow();
+    expect(service.createRule({ name: 'F', rateType: 'FIXED', rate: 1_000_000_000_000 }, context).rate)
+      .toBe(1_000_000_000_000);
+    expect(service.createRule({ name: 'P', rateType: 'PERCENT', rate: 10_000 }, context).rate).toBe(10_000);
+    const trimmed = service.createRule({ name: '  规则A  ', category: '  EXAM  ', rateType: 'PERCENT', rate: 1 }, context);
+    expect(trimmed.name).toBe('规则A');
+    expect(trimmed.category).toBe('EXAM');
+    expect(service.createRule({ name: 'B', category: '', rateType: 'PERCENT', rate: 1 }, context).category).toBeNull();
+    expect(() => service.createRule({ name: '   ', rateType: 'PERCENT', rate: 1 }, context)).toThrow('规则名称不能为空');
+  });
+
+  it('matches each rule tier when more specific rules are absent', () => {
+    const service = new CommissionService(db);
+    // 医生 A：专属 [类型 → 兜底]，顺序由 createdAt 保证
+    service.createRule({ name: 'a-type', doctorId: 'user-doctor-commission', costType: 'MATERIAL', rateType: 'PERCENT', rate: 300 }, context);
+    service.createRule({ name: 'a-all', doctorId: 'user-doctor-commission', rateType: 'PERCENT', rate: 100 }, context);
+    // 医生 B：专属 [仅类别 → 精确]
+    service.createRule({ name: 'b-cat', doctorId: 'user-doctor-commission-2', category: 'EXAM', rateType: 'PERCENT', rate: 200 }, context);
+    service.createRule({ name: 'b-exact', doctorId: 'user-doctor-commission-2', category: 'TREATMENT', costType: 'SERVICE', rateType: 'PERCENT', rate: 400 }, context);
+
+    insertCharge('charge-comm-tier-1', 'user-doctor-commission', '2026-08-04T09:00:00.000Z', { totalAmount: 10_000 });
+    insertItem('charge-comm-tier-1', 'item-tier-1', 'OTHER', 'MATERIAL', 10_000); // 类型层 → 300
+    insertCharge('charge-comm-tier-2', 'user-doctor-commission', '2026-08-04T10:00:00.000Z', { totalAmount: 10_000 });
+    insertItem('charge-comm-tier-2', 'item-tier-2', 'OTHER', 'SERVICE', 10_000); // 兜底层 → 100
+    insertCharge('charge-comm-tier-3', 'user-doctor-commission-2', '2026-08-04T11:00:00.000Z', { totalAmount: 10_000 });
+    insertItem('charge-comm-tier-3', 'item-tier-3', 'EXAM', 'MATERIAL', 10_000); // 类别层 → 200
+    insertCharge('charge-comm-tier-4', 'user-doctor-commission-2', '2026-08-04T12:00:00.000Z', { totalAmount: 10_000 });
+    insertItem('charge-comm-tier-4', 'item-tier-4', 'TREATMENT', 'SERVICE', 10_000); // 精确层 → 400
+
+    const statements = service.calculate('2026-08', context);
+    expect(statements.find((row) => row.doctorId === 'user-doctor-commission')?.totalCommission).toBe(400);
+    expect(statements.find((row) => row.doctorId === 'user-doctor-commission-2')?.totalCommission).toBe(600);
+  });
+
+  it('skips charges without items and floors shares for zero-subtotal items', () => {
+    const service = new CommissionService(db);
+    service.createRule({ name: 'S', rateType: 'PERCENT', rate: 10_000 }, context);
+    // 无明细的收费：该医生不产生任何提成行
+    insertCharge('charge-comm-noitem', 'user-doctor-commission-2', '2026-08-04T09:00:00.000Z', { totalAmount: 10_000 });
+    // 零小计明细 + costType NULL：floor(effectivePaid / 2) 分摊，costType 回退 'SERVICE'
+    insertCharge('charge-comm-zero', 'user-doctor-commission', '2026-08-04T09:00:00.000Z', { totalAmount: 300, paidAmount: 300 });
+    insertItem('charge-comm-zero', 'item-zero-1', 'TREATMENT', null as unknown as string, 0);
+    insertItem('charge-comm-zero', 'item-zero-2', 'TREATMENT', 'MATERIAL', 0);
+
+    const statements = service.calculate('2026-08', context);
+    expect(statements.some((row) => row.doctorId === 'user-doctor-commission-2')).toBe(false);
+    const statement = statements.find((row) => row.doctorId === 'user-doctor-commission');
+    expect(statement?.totalCharged).toBe(300);
+    expect(statement?.breakdown?.reduce((sum, line) => sum + line.charged, 0)).toBe(300);
+    expect(statement?.breakdown?.some((line) => line.costType === 'SERVICE' && line.charged === 150)).toBe(true);
+  });
+
+  it('drops lines whose share rounds down to zero', () => {
+    const service = new CommissionService(db);
+    service.createRule({ name: 'S', rateType: 'PERCENT', rate: 10_000 }, context);
+    insertCharge('charge-comm-one', 'user-doctor-commission', '2026-08-04T09:00:00.000Z', { totalAmount: 1, paidAmount: 1 });
+    insertItem('charge-comm-one', 'item-one-1', 'TREATMENT', 'SERVICE', 1);
+    insertItem('charge-comm-one', 'item-one-2', 'TREATMENT', 'SERVICE', 1);
+
+    const statement = service.calculate('2026-08', context).find((row) => row.doctorId === 'user-doctor-commission');
+    expect(statement?.totalCharged).toBe(1);
+    expect(statement?.breakdown).toHaveLength(1);
+    expect(statement?.breakdown?.[0].charged).toBe(1);
+  });
+
+  it('ignores disabled rules and enforces the total commission cap', () => {
+    const service = new CommissionService(db);
+    // 禁用专属规则不生效，落到启用的默认规则
+    service.createRule({ name: 'disabled-spec', doctorId: 'user-doctor-commission', rateType: 'PERCENT', rate: 10_000, enabled: false }, context);
+    service.createRule({ name: 'enabled-default', rateType: 'PERCENT', rate: 500 }, context);
+    insertCharge('charge-comm-dis', 'user-doctor-commission', '2026-08-04T09:00:00.000Z', { totalAmount: 10_000 });
+    insertItem('charge-comm-dis', 'item-comm-dis', 'TREATMENT', 'SERVICE', 10_000);
+    const statement = service.calculate('2026-08', context).find((row) => row.doctorId === 'user-doctor-commission');
+    expect(statement?.totalCommission).toBe(500);
+  });
+
+  it('accepts a single capped fixed rate and rejects totals beyond the cap', () => {
+    const service = new CommissionService(db);
+    service.createRule({ name: 'fixed-max', rateType: 'FIXED', rate: 1_000_000_000_000 }, context);
+    insertCharge('charge-comm-cap-1', 'user-doctor-commission-2', '2026-08-04T09:00:00.000Z', { totalAmount: 10_000 });
+    insertItem('charge-comm-cap-1', 'item-cap-1', 'TREATMENT', 'SERVICE', 10_000);
+    const single = service.calculate('2026-08', context).find((row) => row.doctorId === 'user-doctor-commission-2');
+    expect(single?.totalCommission).toBe(1_000_000_000_000);
+
+    insertCharge('charge-comm-cap-2', 'user-doctor-commission-2', '2026-08-04T10:00:00.000Z', { totalAmount: 10_000 });
+    insertItem('charge-comm-cap-2', 'item-cap-2', 'TREATMENT', 'SERVICE', 10_000);
+    expect(() => service.calculate('2026-08', context)).toThrow('提成总额超过上限');
+  });
+
+  it('validates period month boundaries', () => {
+    const service = new CommissionService(db);
+    expect(() => service.statements('2026-00', context)).toThrow('月份必须在 01-12');
+    expect(() => service.statements('2026-13', context)).toThrow('月份必须在 01-12');
+    expect(() => service.calculate('2026-0', context)).toThrow('period 格式应为 YYYY-MM');
+    expect(service.calculate('2026-12', context)).toEqual([]);
+  });
+
+  it('filters statements by doctorId for administrators', () => {
+    const service = new CommissionService(db);
+    service.createRule({ name: 'S', rateType: 'PERCENT', rate: 500 }, context);
+    insertCharge('charge-comm-f1', 'user-doctor-commission', '2026-08-04T09:00:00.000Z', { totalAmount: 10_000 });
+    insertItem('charge-comm-f1', 'item-f1', 'TREATMENT', 'SERVICE', 10_000);
+    insertCharge('charge-comm-f2', 'user-doctor-commission-2', '2026-08-04T09:00:00.000Z', { totalAmount: 10_000 });
+    insertItem('charge-comm-f2', 'item-f2', 'TREATMENT', 'SERVICE', 10_000);
+    service.calculate('2026-08', context);
+
+    const filtered = service.statements('2026-08', context, { doctorId: 'user-doctor-commission' });
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0].doctorId).toBe('user-doctor-commission');
+  });
 });

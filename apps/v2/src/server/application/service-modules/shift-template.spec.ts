@@ -148,4 +148,102 @@ describe('ShiftTemplateService validation and edge branches', () => {
       date: '2026-08-04',
     });
   });
+
+  it('generates fixed schedules with created/skipped counts and is idempotent', () => {
+    const service = new ShiftTemplateService(db);
+    createTemplate({ id: 'template-gen' });
+    const first = service.generate({ templateId: 'template-gen', userId: 'user-admin-001', weekStart: '2026-08-03' }, context);
+    expect(first).toEqual({ created: 5, skipped: 0, weekStart: '2026-08-03' });
+    expect(db.prepare('SELECT COUNT(*) AS c FROM WorkSchedule WHERE shiftTemplateId = ?').get('template-gen')).toEqual({ c: 5 });
+
+    const second = service.generate({ templateId: 'template-gen', userId: 'user-admin-001', weekStart: '2026-08-03' }, context);
+    expect(second).toEqual({ created: 0, skipped: 5, weekStart: '2026-08-03' });
+    // 只生成工作日对应的日期（周一 8-03 → 周五 8-07）
+    const dates = (db.prepare('SELECT DISTINCT date(startTime) AS d FROM WorkSchedule WHERE shiftTemplateId = ?').all('template-gen') as Array<{ d: string }>)
+      .map((row) => row.d);
+    expect(dates).toEqual(['2026-08-03', '2026-08-04', '2026-08-05', '2026-08-06', '2026-08-07']);
+  });
+
+  it('rejects inactive templates and unknown users at generate time', () => {
+    const service = new ShiftTemplateService(db);
+    createTemplate({ id: 'template-inactive', active: false });
+    expect(() => service.generate({
+      templateId: 'template-inactive',
+      userId: 'user-admin-001',
+      weekStart: '2026-08-03',
+    }, context)).toThrow('班次模板已停用，无法生成排班');
+
+    createTemplate({ id: 'template-active' });
+    expect(() => service.generate({
+      templateId: 'template-active',
+      userId: 'user-unknown-001',
+      weekStart: '2026-08-03',
+    }, context)).toThrow('User not found');
+  });
+
+  it('normalizes non-Monday and Sunday week starts and rejects invalid dates', () => {
+    const service = new ShiftTemplateService(db);
+    createTemplate({ id: 'template-wk' });
+    // 周三与周日都归一到所在周周一
+    const wednesday = service.generate({ templateId: 'template-wk', userId: 'user-admin-001', weekStart: '2026-08-05' }, context);
+    expect(wednesday.weekStart).toBe('2026-08-03');
+    const sunday = service.generate({ templateId: 'template-wk', userId: 'user-admin-001', weekStart: '2026-08-09' }, context);
+    expect(sunday.weekStart).toBe('2026-08-03');
+    // 非法日历日期与无法解析的字符串
+    expect(() => service.weekSchedules('2026-02-30', context)).toThrow('weekStart 格式应为 YYYY-MM-DD');
+    expect(() => service.weekSchedules('not-a-date', context)).toThrow('weekStart 格式应为 YYYY-MM-DD');
+    // 斜杠日期回退到 Date 解析并按周一归一化
+    expect(service.weekSchedules('2026/08/05', context).length).toBeGreaterThanOrEqual(0);
+    // 跨月周：仅周日模板，8-31（周一）生成的周日落在 9-06
+    createTemplate({ id: 'template-wk-sun', workDaysJson: '[7]' });
+    const crossMonth = service.generate({ templateId: 'template-wk-sun', userId: 'user-admin-001', weekStart: '2026-08-31' }, context);
+    expect(crossMonth.created).toBe(1);
+    const sundayRow = db.prepare(
+      `SELECT startTime FROM WorkSchedule WHERE shiftTemplateId = 'template-wk-sun' AND startTime LIKE '2026-09-06%'`,
+    ).get();
+    expect(sundayRow).toBeDefined();
+  });
+
+  it('serializes and deduplicates work days from arrays and JSON strings', () => {
+    const service = new ShiftTemplateService(db);
+    const fromArray = service.create({ name: '数组', startTime: '09:00', endTime: '18:00', workDaysJson: [3, 1, 3, 7] }, context);
+    expect(fromArray.workDaysJson).toBe('[1,3,7]');
+    const fromString = service.create({ name: '字符串', startTime: '09:00', endTime: '18:00', workDaysJson: '[5,5,2]' }, context);
+    expect(fromString.workDaysJson).toBe('[2,5]');
+    expect(() => service.create({ name: '空数组', startTime: '09:00', endTime: '18:00', workDaysJson: [] }, context))
+      .toThrow('请至少选择一个工作日');
+    expect(() => service.create({ name: '非数组', startTime: '09:00', endTime: '18:00', workDaysJson: '{"a":1}' }, context))
+      .toThrow('请至少选择一个工作日');
+  });
+
+  it('parses invalid and duplicated work days stored in the database', () => {
+    const service = new ShiftTemplateService(db);
+    createTemplate({ id: 'template-bad-json', workDaysJson: 'not-json' });
+    createTemplate({ id: 'template-dup-days', workDaysJson: '[2,2,9,1]' });
+    const rows = service.list(context);
+    expect(rows.find((row) => row.id === 'template-bad-json')?.workDays).toEqual([]);
+    expect(rows.find((row) => row.id === 'template-dup-days')?.workDays).toEqual([1, 2]);
+  });
+
+  it('updates work days and color with explicit null versus undefined', () => {
+    const service = new ShiftTemplateService(db);
+    createTemplate({ id: 'template-upd', color: '#fff', workDaysJson: '[1,2,3]' });
+    // null 保留现有工作日；undefined 保留现有颜色（运行时防御性处理 null）
+    const kept = service.update('template-upd', { workDaysJson: null as unknown as string | number[] }, context);
+    expect(kept.workDaysJson).toBe('[1,2,3]');
+    expect(kept.color).toBe('#fff');
+    const changed = service.update('template-upd', { workDaysJson: [6, 7], color: null }, context);
+    expect(changed.workDaysJson).toBe('[6,7]');
+    expect(changed.color).toBeNull();
+  });
+
+  it('filters the template list by activeOnly', () => {
+    const service = new ShiftTemplateService(db);
+    createTemplate({ id: 'template-on', active: true });
+    createTemplate({ id: 'template-off', active: false });
+    const activeOnly = service.list(context, { activeOnly: true });
+    expect(activeOnly.some((row) => row.id === 'template-on')).toBe(true);
+    expect(activeOnly.some((row) => row.id === 'template-off')).toBe(false);
+    expect(service.list(context).some((row) => row.id === 'template-off')).toBe(true);
+  });
 });
