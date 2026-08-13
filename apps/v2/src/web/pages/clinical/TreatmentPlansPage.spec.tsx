@@ -259,6 +259,27 @@ describe('TreatmentPlansPage', () => {
     expect(await screen.findByText('已打印（第 1 次）')).toBeDefined();
   });
 
+  it('uses zero as the printed count when the server omits it', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/treatmentPlans?page=1&pageSize=50') {
+        return {
+          items: [{ id: 'p-1', patientId: 'p-1', doctorId: 'd-1', name: '正畸计划', totalFee: 20000, status: 'APPROVED', printCount: 0, signedAt: null }],
+          total: 1,
+          page: 1,
+          pageSize: 50,
+        };
+      }
+      if (path === '/treatment-plans/p-1/print') {
+        return { plan: { id: 'p-1', name: '正畸计划' }, items: [], template: { name: '模板' } };
+      }
+      return {};
+    });
+    render(<TreatmentPlansPage />, { wrapper });
+    await screen.findByText('正畸计划');
+    fireEvent.click(screen.getByText('打印'));
+    expect(await screen.findByText('已打印（第 0 次）')).toBeDefined();
+  });
+
   it('shows an error toast when printing fails', async () => {
     mockData();
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
