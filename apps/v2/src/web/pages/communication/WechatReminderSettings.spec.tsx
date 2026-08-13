@@ -88,4 +88,22 @@ describe('WechatReminderSettings', () => {
     fireEvent.click(screen.getByRole('button', { name: '保存设置' }));
     expect(await screen.findByText('保存提醒设置失败')).toBeDefined();
   });
+
+  it('rejects reminder day values outside 0-365', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce({
+      enabled: true,
+      appointmentDaysBefore: 1,
+      recallDaysAfter: 3,
+      firstExamDaysAfter: 3,
+    });
+    render(<WechatReminderSettings />, { wrapper });
+    await screen.findByLabelText('复诊提前提醒天数');
+    fireEvent.change(screen.getByLabelText('治疗回访延迟天数'), { target: { value: '400' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存设置' }));
+    expect(await screen.findByText('治疗回访延迟天数须在 0-365 之间')).toBeDefined();
+    expect(apiRequest).not.toHaveBeenCalledWith(
+      '/wechat-reminders/config',
+      expect.objectContaining({ method: 'PATCH' }),
+    );
+  });
 });
