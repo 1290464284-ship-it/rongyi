@@ -67,4 +67,47 @@ describe('GlobalSearchPage', () => {
     fireEvent.click(patientButton);
     expect(patientButton.getAttribute('aria-pressed')).toBe('true');
   });
+
+  it('renders the hint without a query and error and empty states', async () => {
+    render(
+      <MemoryRouter initialEntries={['/search']}>
+        <GlobalSearchPage />
+      </MemoryRouter>,
+      { wrapper },
+    );
+    expect(screen.getByText('输入至少 2 个字符开始搜索')).toBeDefined();
+    cleanup();
+
+    vi.mocked(mockApiRequest).mockRejectedValue('string-error');
+    render(
+      <MemoryRouter initialEntries={['/search?q=错误']}>
+        <GlobalSearchPage />
+      </MemoryRouter>,
+      { wrapper },
+    );
+    await waitFor(() => expect(screen.getByText('操作失败，请稍后重试')).toBeDefined());
+    cleanup();
+
+    vi.mocked(mockApiRequest).mockResolvedValue([
+      { id: 'u-1', resource: 'unknownResource', label: undefined },
+    ]);
+    render(
+      <MemoryRouter initialEntries={['/search?q=未知']}>
+        <GlobalSearchPage />
+      </MemoryRouter>,
+      { wrapper },
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'unknownResource' })).toBeDefined());
+    expect(screen.getByText('1 条结果')).toBeDefined();
+    cleanup();
+
+    vi.mocked(mockApiRequest).mockResolvedValue([]);
+    render(
+      <MemoryRouter initialEntries={['/search?q=空结果']}>
+        <GlobalSearchPage />
+      </MemoryRouter>,
+      { wrapper },
+    );
+    await waitFor(() => expect(screen.getByText('无匹配结果')).toBeDefined());
+  });
 });
