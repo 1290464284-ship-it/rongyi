@@ -326,4 +326,50 @@ describe('PrescriptionProcessService', () => {
     expect(() => service.status('missing-prescription', context)).toThrow(NotFoundError);
     expect(() => service.process('missing-prescription', {}, context)).toThrow(NotFoundError);
   });
+
+  it('rejects item subtotals and charge totals above the money cap', () => {
+    insertPrescription('rx-over-subtotal');
+    insertInventory('rx-inv-over-subtotal', 'Over Subtotal Drug');
+    insertPrescriptionItem('rx-over-subtotal-item', 'rx-over-subtotal', 'Over Subtotal Drug', {
+      quantity: 1,
+      price: 1_000_000_000_001,
+    });
+    const service = new PrescriptionProcessService(db);
+    expect(() => service.process('rx-over-subtotal', {}, context)).toThrow('处方明细小计超出上限');
+
+    insertPrescription('rx-over-total');
+    insertInventory('rx-inv-over-total-a', 'Over Total A');
+    insertInventory('rx-inv-over-total-b', 'Over Total B');
+    insertPrescriptionItem('rx-over-total-item-a', 'rx-over-total', 'Over Total A', { price: 600_000_000_000 });
+    insertPrescriptionItem('rx-over-total-item-b', 'rx-over-total', 'Over Total B', { price: 600_000_000_000 });
+    expect(() => service.process('rx-over-total', {}, context)).toThrow('处方划价总额超出上限');
+  });
+
+  it('persists a null doctor id and exposes a null status as DRAFT', () => {
+    db.prepare(
+      `INSERT INTO Prescription (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, visitId, doctorId, remark, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', NULL, NULL, NULL, NULL)`,
+    ).run('rx-null-fields', context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO PrescriptionItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         prescriptionId, drugId, name, specification, dosage, frequency, days, quantity, price
+       ) VALUES (?, ?, ?, ?, NULL, ?, NULL, 'Null Drug', NULL, NULL, NULL, 1, 1, 100)`,
+    ).run('rx-null-fields-item', context.clinicId, now, now, 'rx-null-fields');
+    db.prepare(
+      `INSERT INTO InventoryItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, spec, category, unit, stock, minStock, price
+       ) VALUES ('rx-inv-null', ?, ?, ?, NULL, 'CODE-NULL', 'Null Drug', NULL, 'DRUG', 'box', 10, 0, 100)`,
+    ).run(context.clinicId, now, now);
+
+    const service = new PrescriptionProcessService(db);
+    expect(service.status('rx-null-fields', context)).toMatchObject({ status: 'DRAFT' });
+    const processed = service.process('rx-null-fields', {}, context);
+    const dispense = db.prepare('SELECT doctorId, clinicId FROM Dispense WHERE id = ?').get(String(processed.dispenseId)) as { doctorId: string | null; clinicId: string | null };
+    expect(dispense.doctorId).toBeNull();
+    expect(dispense.clinicId).toBe(context.clinicId);
+  });
 });

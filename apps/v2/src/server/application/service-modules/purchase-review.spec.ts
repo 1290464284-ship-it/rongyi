@@ -225,4 +225,19 @@ describe('PurchaseReviewService', () => {
     expect(() => service.submit(id, context)).toThrow(NotFoundError);
     expect(() => service.approve(id, context)).toThrow(NotFoundError);
   });
+
+  it('rejects missing reasons, guards submit status, and tracks review writes', () => {
+    insertOrder('po-missing-reason', { reviewStatus: 'SUBMITTED' });
+    expect(() => service.reject('po-missing-reason', {} as never, context)).toThrow('驳回原因必填');
+
+    insertOrder('po-submit-guard', { reviewStatus: 'SUBMITTED' });
+    expect(() => service.submit('po-submit-guard', context)).toThrow('仅待提交的采购单可提交审核');
+
+    insertOrder('po-write-tracking', { reviewStatus: 'SUBMITTED' });
+    service.approve('po-write-tracking', context);
+    const tracked = db.prepare(
+      `SELECT COUNT(*) AS c FROM SyncChange WHERE tableName = 'PurchaseOrder' AND recordId = 'po-write-tracking'`,
+    ).get() as { c: number };
+    expect(Number(tracked.c)).toBeGreaterThanOrEqual(1);
+  });
 });
