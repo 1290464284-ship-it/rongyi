@@ -91,6 +91,20 @@ describe('ImagingFormFields', () => {
     expect((screen.getByLabelText('分类') as HTMLSelectElement).options.length).toBe(1);
   });
 
+  it('keeps an unknown category selected with a fallback option', () => {
+    render(
+      <ImagingFormFields
+        form={{ ...emptyForm, categoryId: 'missing-category' }}
+        update={vi.fn()}
+        file={null}
+        setFile={vi.fn()}
+        categories={[]}
+      />,
+      { wrapper },
+    );
+    expect(screen.getByRole('option', { name: 'missing-category' })).toBeDefined();
+  });
+
   it('updates patient, doctor, type, description, takenAt and remark', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/doctors') return [{ id: 'doc-1', name: '张医生' }];

@@ -170,4 +170,16 @@ describe('SchedulesPage', () => {
     expect(await screen.findByText('排班中心')).toBeDefined();
     expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
   });
+
+  it('shows a shared error state when templates or users fail to load', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/shift-templates') throw new Error('templates failed');
+      if (path === '/resources/users?page=1&pageSize=100') return users;
+      if (path.startsWith('/schedules/week?weekStart=')) return weekRows;
+      return {};
+    });
+    render(<SchedulesPage />, { wrapper });
+    expect(await screen.findByText('班次模板或员工列表加载失败，请重试')).toBeDefined();
+    expect(screen.getByRole('button', { name: '重试' })).toBeDefined();
+  });
 });
