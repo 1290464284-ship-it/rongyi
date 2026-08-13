@@ -290,16 +290,17 @@ function normalizeRule(input: CommissionRuleInput): CommissionRuleRow {
 function toRuleRow(row: Record<string, unknown>): CommissionRuleRow {
   return {
     id: String(row.id),
-    name: String(row.name ?? ''),
+    // name/rate/enabled/createdAt/updatedAt 均为 NOT NULL 列（迁移 154）
+    name: String(row.name),
     category: row.category === null || row.category === undefined ? null : String(row.category),
     costType: row.costType === null || row.costType === undefined ? null : row.costType as 'SERVICE' | 'MATERIAL',
     rateType: String(row.rateType) as 'PERCENT' | 'FIXED',
-    rate: Number(row.rate ?? 0),
+    rate: Number(row.rate),
     doctorId: row.doctorId === null || row.doctorId === undefined ? null : String(row.doctorId),
-    enabled: Number(row.enabled ?? 1),
+    enabled: Number(row.enabled),
     clinicId: row.clinicId === null || row.clinicId === undefined ? null : String(row.clinicId),
-    createdAt: String(row.createdAt ?? ''),
-    updatedAt: String(row.updatedAt ?? ''),
+    createdAt: String(row.createdAt),
+    updatedAt: String(row.updatedAt),
   };
 }
 
@@ -315,9 +316,10 @@ function toStatementRow(row: StatementRow): CommissionStatementRow {
     id: row.id,
     period: row.period,
     doctorId: row.doctorId,
-    doctorName: row.doctorName === null || row.doctorName === undefined ? null : String(row.doctorName),
-    totalCharged: Number(row.totalCharged ?? 0),
-    totalCommission: Number(row.totalCommission ?? 0),
+    // doctorName 由 COALESCE 保证非空；totalCharged/totalCommission 为 NOT NULL 列（迁移 154）
+    doctorName: String(row.doctorName),
+    totalCharged: Number(row.totalCharged),
+    totalCommission: Number(row.totalCommission),
     breakdown,
     calculatedAt: row.calculatedAt,
   };
@@ -367,8 +369,9 @@ function buildLines(charges: ChargeRow[], items: ItemRow[]): CommissionLine[] {
       chargeLines.push({
         doctorId,
         chargeId: charge.id,
-        category: String(item.category ?? ''),
-        costType: String(item.costType ?? 'SERVICE'),
+        // category 为 NOT NULL 列；costType 已在查询中 COALESCE 兜底
+        category: String(item.category),
+        costType: String(item.costType),
         paidBase,
       });
     }

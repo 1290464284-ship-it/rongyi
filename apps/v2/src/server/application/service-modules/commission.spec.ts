@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -418,5 +418,121 @@ describe('CommissionService', () => {
     // 禁用的默认规则不得兜底 → 提成为 0
     expect(statement?.totalCommission).toBe(0);
     expect(statement?.breakdown).toEqual([]);
+  });
+
+  it('creates rules and calculates statements without a clinic tenant', () => {
+    const globalContext: AppContext = { ...context, clinicId: null };
+    const service = new CommissionService(db);
+    const created = service.createRule({ name: 'Global', rateType: 'PERCENT', rate: 1000 }, globalContext);
+    expect(created.clinicId).toBeNull();
+    db.prepare(
+      `INSERT INTO Charge (
+         id, patientId, visitId, doctorId, number, totalAmount, paidAmount, refundedAmount,
+         discount, status, payMethod, paidAt, remark, clinicId, createdAt, updatedAt, deletedAt
+       ) VALUES ('charge-comm-global', 'patient-demo-001', NULL, 'user-doctor-commission', 'CHG-COMM-GLOBAL', 10000, 10000, 0,
+         0, 'PAID', 'CASH', '2026-08-04T09:00:00.000Z', NULL, NULL, ?, ?, NULL)`,
+    ).run(now, now);
+    db.prepare(
+      `INSERT INTO ChargeItem (
+         id, chargeId, treatmentId, inventoryItemId, consumedQuantity, name, category, price,
+         quantity, teethNumbers, subtotal, clinicId, createdAt, updatedAt, deletedAt, costType
+       ) VALUES ('item-comm-global', 'charge-comm-global', NULL, NULL, 0, '项目', 'EXAM', 10000, 1, '[]', 10000, NULL, ?, ?, NULL, 'SERVICE')`,
+    ).run(now, now);
+    const statements = service.calculate('2026-08', globalContext);
+    expect(statements.find((row) => row.doctorId === 'user-doctor-commission')?.totalCommission).toBe(1000);
+  });
+
+  it('reports NotFound when rule updates or deletes affect zero rows', () => {
+    const service = new CommissionService(db);
+    const rule = service.createRule({ name: 'Race', rateType: 'PERCENT', rate: 100 }, context);
+    const originalPrepare = db.prepare.bind(db);
+    const spyUpdate = vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE CommissionRule') && sql.includes('SET name')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      expect(() => service.updateRule(rule.id, { rate: 200 }, context)).toThrow(NotFoundError);
+    } finally {
+      spyUpdate.mockRestore();
+    }
+    const spyDelete = vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE CommissionRule') && sql.includes('SET deletedAt')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      expect(() => service.deleteRule(rule.id, context)).toThrow(NotFoundError);
+    } finally {
+      spyDelete.mockRestore();
+    }
+  });
+
+  it('skips null-doctor charges and treats null money columns as zero', () => {
+    const service = new CommissionService(db);
+    service.createRule({ name: 'S', rateType: 'PERCENT', rate: 1000 }, context);
+    expect(() => service.calculate(null as never, context)).toThrow(ValidationError);
+
+    // 医生为 NULL 的收费：直接跳过
+    db.prepare(
+      `INSERT INTO Charge (
+         id, patientId, visitId, doctorId, number, totalAmount, paidAmount, refundedAmount,
+         discount, status, payMethod, paidAt, remark, clinicId, createdAt, updatedAt, deletedAt
+       ) VALUES ('charge-comm-nodoctor', 'patient-demo-001', NULL, NULL, 'CHG-COMM-NODOC', 1000, 1000, 0,
+         0, 'PAID', 'CASH', '2026-08-04T09:00:00.000Z', NULL, ?, ?, ?, NULL)`,
+    ).run(context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO ChargeItem (
+         id, chargeId, treatmentId, inventoryItemId, consumedQuantity, name, category, price,
+         quantity, teethNumbers, subtotal, clinicId, createdAt, updatedAt, deletedAt, costType
+       ) VALUES ('item-comm-nodoctor', 'charge-comm-nodoctor', NULL, NULL, 0, '项目', 'EXAM', 1000, 1, '[]', 1000, ?, ?, ?, NULL, 'SERVICE')`,
+    ).run(context.clinicId, now, now);
+
+    // 金额列为 NULL 的旧数据：paidBase 为 0，不产生提成行
+    db.prepare(
+      `INSERT INTO Charge (
+         id, patientId, visitId, doctorId, number, totalAmount, paidAmount, refundedAmount,
+         discount, status, payMethod, paidAt, remark, clinicId, createdAt, updatedAt, deletedAt
+       ) VALUES ('charge-comm-nullmoney', 'patient-demo-001', NULL, 'user-doctor-commission', 'CHG-COMM-NULLM', 1000, NULL, NULL,
+         0, 'PAID', 'CASH', '2026-08-04T10:00:00.000Z', NULL, ?, ?, ?, NULL)`,
+    ).run(context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO ChargeItem (
+         id, chargeId, treatmentId, inventoryItemId, consumedQuantity, name, category, price,
+         quantity, teethNumbers, subtotal, clinicId, createdAt, updatedAt, deletedAt, costType
+       ) VALUES ('item-comm-nullmoney', 'charge-comm-nullmoney', NULL, NULL, 0, '项目', 'EXAM', 1000, 1, '[]', NULL, ?, ?, ?, NULL, 'SERVICE')`,
+    ).run(context.clinicId, now, now);
+
+    // 有效金额 + 一条 NULL 小计明细：分摊时按 0 处理
+    db.prepare(
+      `INSERT INTO Charge (
+         id, patientId, visitId, doctorId, number, totalAmount, paidAmount, refundedAmount,
+         discount, status, payMethod, paidAt, remark, clinicId, createdAt, updatedAt, deletedAt
+       ) VALUES ('charge-comm-mixed', 'patient-demo-001', NULL, 'user-doctor-commission', 'CHG-COMM-MIXED', 1000, 1000, 0,
+         0, 'PAID', 'CASH', '2026-08-04T11:00:00.000Z', NULL, ?, ?, ?, NULL)`,
+    ).run(context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO ChargeItem (
+         id, chargeId, treatmentId, inventoryItemId, consumedQuantity, name, category, price,
+         quantity, teethNumbers, subtotal, clinicId, createdAt, updatedAt, deletedAt, costType
+       ) VALUES ('item-comm-mixed-a', 'charge-comm-mixed', NULL, NULL, 0, '项目A', 'EXAM', 1000, 1, '[]', 1000, ?, ?, ?, NULL, 'SERVICE')`,
+    ).run(context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO ChargeItem (
+         id, chargeId, treatmentId, inventoryItemId, consumedQuantity, name, category, price,
+         quantity, teethNumbers, subtotal, clinicId, createdAt, updatedAt, deletedAt, costType
+       ) VALUES ('item-comm-mixed-b', 'charge-comm-mixed', NULL, NULL, 0, '项目B', 'TREATMENT', 1000, 1, '[]', NULL, ?, ?, ?, NULL, 'SERVICE')`,
+    ).run(context.clinicId, now, now);
+
+    const statements = service.calculate('2026-08', context);
+    const doctor = statements.find((row) => row.doctorId === 'user-doctor-commission');
+    // mixed 收费：1000 分全部计入项目A（项目B 小计按 0 分摊为 0）
+    expect(doctor?.totalCharged).toBe(1000);
+    expect(doctor?.totalCommission).toBe(100);
+    expect(doctor?.breakdown).toEqual([
+      expect.objectContaining({ category: 'EXAM', charged: 1000, commission: 100 }),
+    ]);
   });
 });
