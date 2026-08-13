@@ -129,12 +129,13 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
         const url = new URL(origin);
         const isLoopback = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
         // B-L5：显式端口缺失时按协议默认端口计算（http→80/https→443），否则
-        // Number('') = NaN 会让 http://localhost 这类来源被误拒；开发模式额外
-        // 放行 Vite 常用端口（5173/5180），方便本地前端直连 API。
+        // Number('') = NaN 会让 http://localhost 这类来源被误拒；开发模式仅
+        // 放行 Vite 常用端口（5173/5180）。审计 P2-6：不再放行「任意 loopback
+        // 端口」——被攻破的页面即可探测本机任意回环服务，收紧为显式端口列表。
         const port = url.port === '' ? (url.protocol === 'https:' ? 443 : 80) : Number(url.port);
         const apiPort = Number(process.env.V2_PORT ?? 3180);
         const isAllowedPort = port === apiPort
-          || (process.env.NODE_ENV !== 'production' && (port === 5173 || port === 5180 || isLoopback));
+          || (process.env.NODE_ENV !== 'production' && (port === 5173 || port === 5180));
         if (isLoopback && url.protocol === 'http:' && isAllowedPort) {
           callback(null, true);
           return;

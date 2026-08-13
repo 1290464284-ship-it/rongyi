@@ -84,6 +84,44 @@ describe('electron window trust boundary', () => {
     expect(electron.shell.openExternal).toHaveBeenCalledWith('https://evil.example');
   });
 
+  it('loads the runtime HTML with an exact API port in packaged mode', () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-window-runtime-test-'));
+    const loadedUrls: string[] = [];
+    class BrowserWindowMock {
+      loadURL = (url: string) => { loadedUrls.push(url); };
+      maximize = vi.fn();
+      isMaximized = () => false;
+      getNormalBounds = () => ({ x: 0, y: 0, width: 1280, height: 820 });
+      webContents = { setWindowOpenHandler: vi.fn(), on: vi.fn() };
+      isDestroyed = () => false;
+      hide = vi.fn();
+      on = vi.fn();
+    }
+    const electron = {
+      app: { getPath: () => tempDir, isPackaged: true },
+      BrowserWindow: BrowserWindowMock,
+      shell: { openExternal: vi.fn() },
+      Notification: { isSupported: () => false },
+    };
+    const stateMock = { apiPort: 45678, tray: {}, isQuitting: false };
+    const mod = loadElectronModule<WindowModule>('../../../electron/window.cjs', {
+      electron,
+      './state.cjs': stateMock,
+    });
+
+    mod.createWindow();
+
+    const runtimeUrl = pathToFileURL(path.join(tempDir, 'cache', 'dist-web', 'index.html')).href;
+    expect(loadedUrls).toHaveLength(1);
+    expect(loadedUrls[0]).toBe(runtimeUrl);
+    // 运行时 HTML：CSP 精确到当前端口，通配已被替换
+    const html = fs.readFileSync(path.join(tempDir, 'cache', 'dist-web', 'index.html'), 'utf8');
+    expect(html).toContain('http://127.0.0.1:45678');
+    expect(html).not.toContain('http://127.0.0.1:*');
+    // 信任边界接受运行时 URL
+    expect(() => mod.assertTrustedRenderer({ senderFrame: { url: `${runtimeUrl}#/charges` } })).not.toThrow();
+  });
+
   it('hides the window to tray instead of closing when tray exists', () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-window-tray-test-'));
     const closeHandlers: Array<(event: { preventDefault: () => void }) => void> = [];

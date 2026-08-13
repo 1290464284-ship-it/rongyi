@@ -804,6 +804,54 @@ describe('api helper functions', () => {
     expect(String(fetchMock.mock.calls[1][0])).toContain('127.0.0.1:2222');
   });
 
+  it('notifies onApiReady subscribers when the desktop reports ready', async () => {
+    const statusCallbacks: Array<(event: Record<string, unknown>) => void> = [];
+    (globalThis.window as unknown as { desktop: Record<string, unknown> }).desktop = {
+      getApiPort: vi.fn().mockResolvedValue(1111),
+      onApiStatus: vi.fn((callback: (event: Record<string, unknown>) => void) => {
+        statusCallbacks.push(callback);
+        return () => {};
+      }),
+    };
+    const readyHandler = vi.fn();
+    const unsubscribe = mod.onApiReady(readyHandler);
+    expect(statusCallbacks).toHaveLength(1); // 注册即安装状态监听
+
+    statusCallbacks[0]?.({ status: 'restarting', port: 1111 });
+    expect(readyHandler).not.toHaveBeenCalled();
+
+    statusCallbacks[0]?.({ status: 'ready', port: 2222 });
+    expect(readyHandler).toHaveBeenCalledTimes(1);
+
+    statusCallbacks[0]?.({ status: 'ready', port: 3333 });
+    expect(readyHandler).toHaveBeenCalledTimes(2);
+
+    unsubscribe();
+    statusCallbacks[0]?.({ status: 'ready', port: 4444 });
+    expect(readyHandler).toHaveBeenCalledTimes(2);
+  });
+
+  it('onApiReady swallows handler errors so one listener cannot break the others', async () => {
+    const statusCallbacks: Array<(event: Record<string, unknown>) => void> = [];
+    (globalThis.window as unknown as { desktop: Record<string, unknown> }).desktop = {
+      getApiPort: vi.fn().mockResolvedValue(1111),
+      onApiStatus: vi.fn((callback: (event: Record<string, unknown>) => void) => {
+        statusCallbacks.push(callback);
+        return () => {};
+      }),
+    };
+    const throwing = vi.fn(() => {
+      throw new Error('listener boom');
+    });
+    const good = vi.fn();
+    mod.onApiReady(throwing);
+    mod.onApiReady(good);
+
+    expect(() => statusCallbacks[0]?.({ status: 'ready', port: 2222 })).not.toThrow();
+    expect(throwing).toHaveBeenCalledTimes(1);
+    expect(good).toHaveBeenCalledTimes(1);
+  });
+
   it('fetchAllPages aggregates multiple pages with an existing query', async () => {
     fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
       const url = new URL(String(input));

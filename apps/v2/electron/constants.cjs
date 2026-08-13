@@ -43,6 +43,12 @@ const ALLOWED_SECRET_KEYS = new Set(['v2.token', 'v2.refreshToken']);
 // dev 保留 localhost:5180（V2_WEB_URL 覆盖时亦沿用历史行为）。
 const INDEX_HTML_FILE_URL = pathToFileURL(path.join(__dirname, '..', 'dist-web', 'index.html')).href;
 const ERROR_HTML_FILE_URL = pathToFileURL(path.join(__dirname, 'error.html')).href;
+// 生产打包版运行时加载的 HTML：window.cjs 会把 dist-web 复制到 userData 并
+// 把 meta CSP 的 http://127.0.0.1:* 替换为当前 API 精确端口（asar 只读无法改写），
+// 因此该 URL 也属于可信渲染器/导航白名单。
+const RUNTIME_INDEX_HTML_FILE_URL = pathToFileURL(
+  path.join(app.getPath('userData'), 'cache', 'dist-web', 'index.html'),
+).href;
 // Round8 fix: derive the trusted dev renderer URL from WEB_DEV_ORIGIN so
 // V2_WEB_DEV_PORT / V2_WEB_URL overrides keep IPC handlers working.
 // V2_WEB_URL 可带路径（如 http://localhost:5180/app）；按 origin + pathname
@@ -86,6 +92,7 @@ module.exports = {
   ALLOWED_SECRET_KEYS,
   INDEX_HTML_FILE_URL,
   ERROR_HTML_FILE_URL,
+  RUNTIME_INDEX_HTML_FILE_URL,
   DEV_WEB_URL_PATTERN,
   isAllowedCrashReportUrl,
 };

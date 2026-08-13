@@ -10,7 +10,8 @@
     "legacy/schema/**/*.ts",
     "electron/preload.cjs",
     "electron/supervisor.cjs",
-    "electron/watchdog.cjs"
+    "electron/watchdog.cjs",
+    "electron/telemetry.cjs"
   ],
   "ignore": [],
   "ignoreBinaries": ["openssl"]

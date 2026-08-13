@@ -58,6 +58,8 @@ export function KanbanBoard({ columns, onChange }: KanbanBoardProps) {
         <div
           key={column.id}
           className="ui-kanban-col"
+          role="list"
+          aria-label={column.title}
           onDragOver={allowDrop}
           onDragLeave={leaveDrop}
           onDrop={(event) => drop(event, column.id)}

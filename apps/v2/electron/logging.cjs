@@ -3,12 +3,14 @@ const fs = require('node:fs');
 const https = require('node:https');
 const path = require('node:path');
 const { CRASH_LOG_TIMEOUT_MS, isAllowedCrashReportUrl } = require('./constants.cjs');
+const { redactSensitiveText } = require('./redact.cjs');
 
 function crashLog(message, error) {
   const entry = {
     timestamp: new Date().toISOString(),
-    message,
-    stack: String(error?.stack ?? error).split('\n').slice(0, 20).join('\n'),
+    // 落盘与上报前脱敏：错误消息/栈可能混入患者手机号、身份证号或本地路径。
+    message: redactSensitiveText(message),
+    stack: redactSensitiveText(String(error?.stack ?? error).split('\n').slice(0, 20).join('\n')),
   };
   try {
     const logDir = path.join(app.getPath('userData'), 'logs');

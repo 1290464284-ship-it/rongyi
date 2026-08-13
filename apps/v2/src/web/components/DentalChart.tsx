@@ -13,6 +13,7 @@ export function DentalChart({ upper, lower, statuses = {}, onToothClick }: Denta
       key={number}
       type="button"
       className={`ui-tooth ${statuses[number] ?? 'normal'}`}
+      aria-label={`牙位 ${number}`}
       onClick={() => onToothClick?.(number)}
     >
       {number}

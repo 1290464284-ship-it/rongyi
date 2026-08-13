@@ -4,6 +4,7 @@ const {
   clipboard,
   ipcMain,
   Menu,
+  powerMonitor,
   safeStorage,
   session,
   crashReporter: nativeCrashReporter,
@@ -32,6 +33,7 @@ const {
   isTrustedRendererUrl,
 } = require('./window.cjs');
 const { setupTray } = require('./tray.cjs');
+const { startTelemetry, stopTelemetry } = require('./telemetry.cjs');
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
@@ -100,6 +102,57 @@ function spawnSupervisor() {
     child.unref();
   } catch (error) {
     crashLog('supervisor-spawn-failed', error);
+  }
+}
+
+// 更新检查：启动即查 + 每 24h 周期复查；失败按 1min/5min/30min 退避重试，
+// 连续 3 次失败才向渲染层报错（此前只有 UI 提示、靠用户手动重试）。
+const UPDATE_RETRY_DELAYS_MS = [60_000, 300_000, 1_800_000];
+const UPDATE_RECHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+let updateCheckAttempts = 0;
+let updateRecheckTimer = null;
+
+function scheduleUpdateChecks() {
+  const attemptCheck = () => {
+    autoUpdater.checkForUpdates()
+      .then(() => {
+        updateCheckAttempts = 0;
+      })
+      .catch((error) => {
+        updateCheckAttempts += 1;
+        if (updateCheckAttempts >= 3) {
+          updateCheckAttempts = 0;
+          sendUpdateEvent({ type: 'error', message: `更新检查连续失败：${error instanceof Error ? error.message : String(error)}` });
+          return;
+        }
+        setTimeout(attemptCheck, UPDATE_RETRY_DELAYS_MS[updateCheckAttempts - 1]);
+      });
+  };
+  attemptCheck();
+  updateRecheckTimer = setInterval(() => {
+    void attemptCheck();
+  }, UPDATE_RECHECK_INTERVAL_MS);
+  updateRecheckTimer.unref?.();
+}
+
+// 清理 electron-updater 遗留的旧更新包（下载中断/替换后残留的 *.old 文件），
+// 防止长期运行下 %LOCALAPPDATA%\<app>-updater 无限增长。
+function cleanupUpdaterCache() {
+  try {
+    const localAppData = process.env.LOCALAPPDATA;
+    if (!localAppData || !app.getName()) return;
+    const pendingDir = path.join(localAppData, `${app.getName()}-updater`, 'pending');
+    if (!fs.existsSync(pendingDir)) return;
+    for (const entry of fs.readdirSync(pendingDir)) {
+      if (!entry.endsWith('.old')) continue;
+      try {
+        fs.rmSync(path.join(pendingDir, entry), { recursive: true, force: true });
+      } catch {
+        // best effort：单个文件清理失败不阻塞启动
+      }
+    }
+  } catch {
+    // best effort
   }
 }
 
@@ -294,11 +347,28 @@ app.whenReady().then(async () => {
   }
   spawnSupervisor();
   createWindow();
+  // opt-in 遥测：未配置 V2_TELEMETRY_URL（白名单 HTTPS）时是 no-op
+  startTelemetry();
   if (!isDev && process.env.V2_DISABLE_AUTO_UPDATE !== '1') {
-    autoUpdater.checkForUpdates().catch((error) => {
-      sendUpdateEvent({ type: 'error', message: error instanceof Error ? error.message : String(error) });
-    });
+    scheduleUpdateChecks();
   }
+  cleanupUpdaterCache();
+  powerMonitor.on('resume', () => {
+    // 系统休眠唤醒：通知 API 子进程做即时维护 + 强制健康检查。
+    // Windows 休眠可能使 better-sqlite3 句柄失效，健康检查失败会走
+    // 「杀进程 → 重启」恢复路径，重启后自动执行启动完整性检查。
+    try {
+      state.apiProcess?.send?.('resume');
+    } catch {
+      // best effort：子进程侧消息丢失时下面的健康检查仍会兜底
+    }
+    void ensureApiServerRunning()
+      .then(() => console.log('[power-resume] api healthy after resume'))
+      .catch((error) => {
+        crashLog('power-resume-api-error', error);
+        notify('系统唤醒后服务异常', '本地服务已自动重启，若页面异常请刷新。');
+      });
+  });
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       void ensureApiServerRunning()
@@ -366,6 +436,8 @@ process.on('SIGINT', () => {
 });
 
 app.on('will-quit', () => {
+  if (updateRecheckTimer) clearInterval(updateRecheckTimer);
+  stopTelemetry();
   terminateApiSync();
   // 优雅退出：写停止标记，告知 supervisor 不要拉起新实例。
   // 崩溃路径（app.relaunch + app.exit）不触发 will-quit，supervisor 才会兜底拉起。

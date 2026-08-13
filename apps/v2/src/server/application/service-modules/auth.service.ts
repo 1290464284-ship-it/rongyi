@@ -23,7 +23,7 @@ import {
 } from './common';
 import { computeEffectivePermissions } from './permissions';
 import { UserManagementService } from './user-management.service';
-import { decryptRefreshClaim, encryptRefreshClaim, refreshClaimKey } from './auth-refresh-claim';
+import { clearUserRefreshClaimsStore, readRefreshClaimStore, writeRefreshClaimStore } from './refresh-claims';
 import { assertActiveClinic } from './clinic-access';
 // 与真实哈希同成本（12 轮），避免“用户不存在”与“密码错误”的响应时间差泄漏用户存在性。
 const DUMMY_HASH = '$2b$12$pExdCVEdrVrgBiDGFD8SYexajzEX.TQjKOhHCte3D1XEW1.lYPrdS';
@@ -219,7 +219,8 @@ export class AuthService {
       this.authRepository.clearRefreshToken(row.id, now);
       // 登出后立即作废该用户已签发的 access token，避免"登出后旧 token
       // 仍可调用 API 到自然过期"的会话残留窗口。
-      this.db.prepare?.('UPDATE User SET tokenVersion = tokenVersion + 1, updatedAt = ? WHERE id = ?')?.run(now, row.id);
+      // fail-closed：令牌作废必须成功，异常必须外抛（可选链会静默跳过作废）。
+      this.db.prepare('UPDATE User SET tokenVersion = tokenVersion + 1, updatedAt = ? WHERE id = ?').run(now, row.id);
     });
     return row.id;
   }
@@ -245,51 +246,23 @@ export class AuthService {
   }
   /** 跨实例共享的 refresh 轮换缓存：以 DB 原子 claim 替代仅进程内缓存。 */
   private readRefreshClaim(tokenHash: string, userId: string): AuthSession | null {
-    const key = refreshClaimKey(tokenHash, userId);
-    const row = this.db.prepare(
-      `SELECT responseJson, expiresAt FROM IdempotencyRecord
-       WHERE key = ? AND operation = 'auth.refresh' AND status = 'COMPLETED'
-       ORDER BY createdAt DESC LIMIT 1`,
-    ).get(key) as { responseJson: string; expiresAt: string | null } | undefined;
-    if (!row?.expiresAt || new Date(row.expiresAt).getTime() <= Date.now()) return null;
-    try {
-      const session = decryptRefreshClaim(row.responseJson, tokenHash);
-      if (!session) return null;
+    return readRefreshClaimStore(this.db, tokenHash, userId, (session) => {
       const current = this.authRepository.findById(userId);
-      if (!current) return null;
+      if (!current) return false;
       const user = rowToUser(current);
-      if (!user.active || user.tokenVersion !== session.user.tokenVersion) return null;
-      return session;
-    } catch {
-      return null;
-    }
+      return user.active && user.tokenVersion === session.user.tokenVersion;
+    });
   }
   private writeRefreshClaim(tokenHash: string, userId: string, session: AuthSession): void {
-    const key = refreshClaimKey(tokenHash, userId);
-    const now = new Date().toISOString();
-    const expiresAt = new Date(Date.now() + AuthService.REFRESH_CACHE_TTL_MS).toISOString();
-    this.db.prepare(
-      `DELETE FROM IdempotencyRecord WHERE key = ? AND operation = 'auth.refresh'`,
-    ).run(key);
-    this.db.prepare(
-      `INSERT INTO IdempotencyRecord (
-         id, key, type, status, responseJson, result, userId, clinicId, operation,
-         createdAt, updatedAt, deletedAt, expiresAt
-       ) VALUES (?, ?, 'GENERIC', 'COMPLETED', ?, ?, ?, NULL, 'auth.refresh', ?, ?, NULL, ?)`,
-    ).run(randomUUID(), key, encryptRefreshClaim(session, tokenHash), '{}', userId, now, now, expiresAt);
+    writeRefreshClaimStore(this.db, tokenHash, userId, session, AuthService.REFRESH_CACHE_TTL_MS);
   }
   private clearUserRefreshClaims(userId: string): void {
-    try {
-      this.db.prepare(
-        `DELETE FROM IdempotencyRecord WHERE operation = 'auth.refresh' AND userId = ?`,
-      ).run(userId);
-    } catch {
-      // 缓存清理为尽力而为；会话族吊销与标记已用是权威路径
-    }
+    clearUserRefreshClaimsStore(this.db, userId);
   }
   verifyToken(token: string): TokenPayload {
     try {
-      return jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as TokenPayload;
+      // 时钟容差：系统休眠唤醒/时钟漂移可能让 iat/exp 与本地时间偏差数分钟
+      return jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'], clockTolerance: 300 }) as TokenPayload;
     } catch {
       throw new UnauthorizedError('Invalid or expired token');
     }
@@ -415,7 +388,8 @@ export class AuthService {
       }
       this.authRepository.updatePassword(userId, hash, now);
       this.authRepository.clearRefreshToken(userId, now);
-      this.db.prepare?.('UPDATE User SET tokenVersion = tokenVersion + 1, updatedAt = ? WHERE id = ?')?.run(now, userId);
+      // fail-closed：令牌作废必须成功，任何异常都要外抛（可选链会静默跳过作废）
+      this.db.prepare('UPDATE User SET tokenVersion = tokenVersion + 1, updatedAt = ? WHERE id = ?').run(now, userId);
     });
   }
 

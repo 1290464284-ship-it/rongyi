@@ -108,7 +108,10 @@ export function ChargesPage({ initialSearch }: { initialSearch?: string } = {}) 
     ? paymentMethod
     : (payLeafOptions[0]?.id ?? '');
 
-  return (
+  // 渲染块收进局部函数并在组件末尾调用：消除「return 之后还有函数声明」
+  // 的阅读负担（审计 P2-F4），行为零变化。
+  function renderPage() {
+    return (
     <div className="page">
       <div className="page-head">
         <h1>收费管理</h1>
@@ -208,7 +211,8 @@ export function ChargesPage({ initialSearch }: { initialSearch?: string } = {}) 
         onCancel={() => setDeleteTarget(null)}
       />
     </div>
-  );
+    );
+  }
 
   function updateItem(id: string, patch: Partial<ChargeItemForm>) {
     crud.updateForm({ items: crud.form.items.map((item) => item.id === id ? { ...item, ...patch } : item) });
@@ -410,5 +414,7 @@ export function ChargesPage({ initialSearch }: { initialSearch?: string } = {}) 
       setActionBusy(false);
     }
   }
+
+  return renderPage();
 }
 /* v8 ignore stop -- round 77 coverage calibration */

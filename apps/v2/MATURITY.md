@@ -496,6 +496,66 @@
    without cleanup callbacks lift it to 95.47/86.75/98.72/97.08.
 - Large-scale benchmark re-run at 100k patients/charges: search 7ms,
   dashboard 67ms, sync full metadata 54ms, sync page (5000 rows) 72ms.
+- Quality gates fail closed: `coverageStats` returns `null` on empty inputs and
+  `test:quality-score` refuses to write artifacts without coverage/mutation
+  reports; `pnpm verify` now includes mutation, quality score, and the v8-ignore
+  ratchet; CI enforces `V2_REQUIRE_PERMISSION_SMOKE=1` and release gates include
+  mutation + quality score. The flaky `SystemOperationsPage` spec was made
+  deterministic with act-wrapped debounce waits (verified under concurrent load).
+- Long-running foundations: daily database maintenance (quick_check + PRAGMA
+  optimize + WAL checkpoint) and weekly incremental_vacuum, disk-space threshold
+  alerts, hourly runtime metrics (memory/active resources/event-loop lag) to
+  `logs/runtime.json`, explicit WAL governance pragmas
+  (`synchronous`/`journal_size_limit`/`wal_autocheckpoint`), and a scheduler
+  `triggerResumeMaintenance` path driven by the IPC `resume` message.
+- Crash resilience: JS-level watchdog (`electron/watchdog.cjs`) relaunches after
+  uncaught exceptions with a 10-minute/3-restart crash-loop guard, and a native
+  supervisor sidecar (`electron/supervisor.cjs`, ELECTRON_RUN_AS_NODE) relaunches
+  the app after hard crashes/taskkill unless a graceful-quit stop marker exists;
+  `smoke:supervisor` verifies relaunch/stop semantics.
+- System resume recovery: `powerMonitor('resume')` triggers immediate maintenance
+  plus a strict API health check that restarts a wedged API child; renderer
+  crashes reload the window with a throttled 3-per-10-minutes budget; update
+  checks retry with 1/5/30min backoff and re-check daily; stale updater cache
+  files are swept at startup.
+- Log hygiene: api-console.log rotates 5MB×5 like desktop/v2 logs; phone and ID
+  numbers are masked in crash reports, api-console output, and server log lines
+  (`electron/redact.cjs` + `infrastructure/redact.ts`).
+- Migration failure auto-rollback: when `runMigrations` throws at boot the newest
+  `pre-migration/pre-*.sqlite` snapshot is restored (failed copy kept, WAL/SHM
+  cleared, one retry, then fail closed), covered by `migration-recovery.spec.ts`.
+- Emergency startup repair: a corrupt v2.sqlite triggers a byte-safe REINDEX on a
+  work copy (original never opened for write; restored unchanged on failure)
+  before failing closed with restore guidance; `drill:corrupt-boot` verifies the
+  boot contract in CI.
+- Backend consistency: token invalidation on logout/changePassword/password-reset
+  is fail-closed (no optional chaining), JWT verification allows 300s clock
+  tolerance for sleep/wake drift, route-policy roles were renamed `bossOrAdmin`
+  to stop implying a BOSS-only tier, LAN-mode initial setup requires a
+  `V2_SETUP_TOKEN` (≥16 chars, timing-safe compare), and dev CORS no longer
+  allows arbitrary loopback ports.
+- Web feedback: `onApiReady` wiring invalidates all queries when the desktop API
+  reports ready (no more manual retry after renderer-refresh races);
+  `use-crud-resource` applies optimistic list patches (create/update/delete)
+  before background refetch; save/delete refetch failures no longer show false
+  failure toasts.
+- Accessibility: analytics bar charts expose `role="img"` summaries, dental
+  tooth buttons carry `牙位 N` labels, Kanban columns use `role="list"`.
+- Packaged renderer CSP: `dist-web` is copied to userData at startup with the
+  meta CSP `connect-src http://127.0.0.1:*` wildcard replaced by the exact API
+  port, closing the loopback-port probing surface; the runtime URL is part of
+  the IPC trust boundary and navigation whitelist.
+- Engineering depth: mutation testing expanded from 9 pilot files to 15
+  (triage/stocktake/refund-flow/commission/wechat-reminder/shift-template) with
+  a 75-point ratchet threshold; v2-ci split into verify/smoke jobs;
+  v2-internal-release runs the full smoke suite; a weekly `v2-security-audit`
+  workflow runs osv-scanner + pnpm audit + full cdxgen CycloneDX SBOM;
+  load-smoke is concurrent multi-endpoint with an error-rate gate and JSON
+  evidence; migration 159 adds `(parentId, deletedAt)` indexes on FK child
+  columns; generic keyset cursors (`v:` format) cover arbitrary sort columns;
+  opt-in aggregate telemetry (`V2_TELEMETRY_URL`, allowlist-gated, PII-free).
+- `docs/architecture/coverage-exclusions.md` registers the v8-ignore cleanup
+  batches, mutation ratchet plan, remaining FK work, and known tradeoffs.
 
 ## Remaining
 

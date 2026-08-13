@@ -229,7 +229,36 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
     let rowWhere = whereSql;
     let keysetOrder = false;
     const hasIdColumn = this.columns.has('id');
-    if (cursor && cursor.includes('|')) {
+    if (cursor && cursor.startsWith('v:')) {
+      // 通用 keyset 游标（v:<URL 编码排序值>|<id>）：配合 sortBy/sortOrder 使用，
+      // 覆盖任意可排序列的深分页，避免非默认排序回退 OFFSET 全表扫描。
+      const separator = cursor.lastIndexOf('|');
+      if (separator > 2) {
+        const encoded = cursor.slice(2, separator);
+        const cursorId = cursor.slice(separator + 1);
+        let cursorValue = encoded;
+        try {
+          cursorValue = decodeURIComponent(encoded);
+        } catch {
+          // 编码异常时按原串比较（不会匹配任何行，等价于空页）
+        }
+        const requestedSort = query.sortBy && (this.field(query.sortBy) || this.columns.has(query.sortBy))
+          ? query.sortBy
+          : null;
+        if (requestedSort) {
+          const fieldDef = this.field(requestedSort);
+          if (fieldDef) {
+            const direction = query.sortOrder === 'ASC' ? '>' : '<';
+            const serialized = serialize(fieldDef, cursorValue);
+            rowWhere = `${whereSql} AND (t.${requestedSort} ${direction} ? OR (t.${requestedSort} = ? AND t.id < ?))`;
+            rowParams = [...params, serialized, serialized, cursorId];
+            sortField = requestedSort;
+            sortOrder = direction === '>' ? 'ASC' : 'DESC';
+            keysetOrder = hasIdColumn;
+          }
+        }
+      }
+    } else if (cursor && cursor.includes('|')) {
       const separator = cursor.lastIndexOf('|');
       const cursorTime = cursor.slice(0, separator);
       const cursorId = cursor.slice(separator + 1);
@@ -248,9 +277,13 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
       keysetOrder = true;
     }
     const offset = cursor ? 0 : (page - 1) * pageSize;
+    // keyset 模式下 ORDER BY 必须带 id 决胜键，保证等值排序值下翻页不重不漏。
+    const tiebreakSql = keysetOrder && hasIdColumn
+      ? (sortOrder === 'DESC' ? ', t.id DESC' : ', t.id ASC')
+      : '';
     const orderSql = sortField === 'createdAt' && sortOrder === 'DESC'
       ? `ORDER BY t.createdAt DESC${hasIdColumn ? ', t.id DESC' : ''}`
-      : `ORDER BY t.${sortField} ${sortOrder}`;
+      : `ORDER BY t.${sortField} ${sortOrder}${tiebreakSql}`;
     const fetchSize = keysetOrder ? pageSize + 1 : pageSize;
     const rows = this.queryRows(
       `SELECT t.*${labelSelect} FROM ${this.resource.table} t ${labelJoinSql}
@@ -263,13 +296,17 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
 
     let nextCursor: string | undefined;
     if (keysetOrder && rows.length > pageSize) {
+      const last = pageRows[pageRows.length - 1] as Record<string, unknown>;
       if (sortField === 'createdAt' && sortOrder === 'DESC') {
-        const last = pageRows[pageRows.length - 1] as Record<string, unknown>;
 /* v8 ignore next */
         nextCursor = `${String(last.createdAt ?? '')}|${String(last.id ?? '')}`;
+      } else if (sortField !== 'id' || sortOrder !== 'ASC') {
+        // 通用 keyset：v:<排序值>|<id>（与上方 v: 分支配对解析）
+/* v8 ignore next */
+        nextCursor = `v:${encodeURIComponent(String(last[sortField] ?? ''))}|${String(last.id ?? '')}`;
       } else {
 /* v8 ignore next */
-        nextCursor = String((pageRows[pageRows.length - 1] as Record<string, unknown>).id ?? '');
+        nextCursor = String(last.id ?? '');
       }
     }
     return {

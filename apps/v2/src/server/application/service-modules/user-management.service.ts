@@ -155,7 +155,8 @@ export class UserManagementService {
 /* v8 ignore next */
       if (changes === 0) throw new NotFoundError('User not found');
       if (bumpToken) {
-        this.db.prepare?.('UPDATE User SET tokenVersion = tokenVersion + 1, updatedAt = ? WHERE id = ?')?.run(now, id);
+        // fail-closed：令牌作废必须成功，异常必须外抛
+        this.db.prepare('UPDATE User SET tokenVersion = tokenVersion + 1, updatedAt = ? WHERE id = ?').run(now, id);
       }
     });
     return this.getUserById(id);
@@ -172,7 +173,8 @@ export class UserManagementService {
       const changes = this.authRepository.resetPassword(id, passwordHash, now, context.clinicId);
 /* v8 ignore next */
       if (changes === 0) throw new NotFoundError('User not found');
-      this.db.prepare?.('UPDATE User SET tokenVersion = tokenVersion + 1, updatedAt = ? WHERE id = ?')?.run(now, id);
+      // fail-closed：令牌作废必须成功，异常必须外抛
+      this.db.prepare('UPDATE User SET tokenVersion = tokenVersion + 1, updatedAt = ? WHERE id = ?').run(now, id);
     });
     return { id };
   }

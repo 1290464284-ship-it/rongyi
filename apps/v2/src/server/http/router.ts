@@ -313,7 +313,9 @@ function parseFilters(req: Request): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(req.query)) {
     if (['page', 'pageSize', 'search', 'sortBy', 'sortOrder', 'cursor'].includes(key)) continue;
-    result[key] = typeof value === 'string' ? value : value;
+    // 原实现的三元 `typeof value === 'string' ? value : value` 为死代码；
+    // 数组/对象值由 repository.findMany 的标量校验拒绝，无需在此复制判断。
+    result[key] = value;
   }
   return result;
 }

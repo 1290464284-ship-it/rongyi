@@ -220,7 +220,13 @@ export function AnalyticsDashboardPage() {
             <div className="analytics-panel">
               <h2>月度收入趋势</h2>
               {data?.length ? (
-                <div className="bar-chart">
+                <div
+                  className="bar-chart"
+                  role="img"
+                  aria-label={`月度收入趋势：${data
+                    .map((row) => `${String(row.period ?? '')} ${formatMoney(row.amount)}，${Number(row.count ?? 0)} 单`)
+                    .join('；')}`}
+                >
                   {data.map((row) => (
                     <div className="bar-row" key={String(row.period)}>
                       <span className="bar-label">{String(row.period ?? '')}</span>

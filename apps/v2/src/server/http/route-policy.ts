@@ -6,7 +6,11 @@ const operationalStaff: UserRole[] = ['BOSS', 'ADMIN', 'DOCTOR'];
 const financeStaff: UserRole[] = ['BOSS', 'ADMIN'];
 const clinicalStaff: UserRole[] = ['BOSS', 'ADMIN', 'DOCTOR'];
 const adminStaff: UserRole[] = ['BOSS', 'ADMIN'];
-const bossOnly: UserRole[] = ['BOSS', 'ADMIN'];
+// 命名说明（审计 P2-1）：当前产品口径下 BOSS 与 ADMIN 在管理面同级，
+// 因此该组恒为 ['BOSS','ADMIN']。历史上叫 bossOnly 会让人误以为存在
+// BOSS 独占路由；如需真正的 BOSS 独占（如备份恢复/审计清理），应新增
+// 独立角色组并在服务层补断言，属产品决策，暂不在本轮执行。
+const bossOrAdmin: UserRole[] = ['BOSS', 'ADMIN'];
 
 export interface RouteRoleRule {
   pattern: RegExp;
@@ -22,15 +26,15 @@ export const routeRoleRules: RouteRoleRule[] = [
   { pattern: /^\/api\/v2\/auth\/password/, roles: allStaff },
   { pattern: /^\/api\/v2\/doctors/, roles: operationalStaff },
   { pattern: /^\/api\/v2\/files/, roles: operationalStaff, permission: 'patients' },
-  { pattern: /^\/api\/v2\/admin\/users/, roles: bossOnly },
+  { pattern: /^\/api\/v2\/admin\/users/, roles: bossOrAdmin },
   { pattern: /^\/api\/v2\/resource-meta/, roles: allStaff },
   { pattern: /^\/api\/v2\/resources/, roles: allStaff },
-  { pattern: /^\/api\/v2\/bulk-import\//, roles: bossOnly, permission: 'system' },
-  { pattern: /^\/api\/v2\/sync\//, roles: bossOnly, permission: 'system' },
-  { pattern: /^\/api\/v2\/backups/, roles: bossOnly, permission: 'system' },
-  { pattern: /^\/api\/v2\/system\/business-alerts/, roles: bossOnly, permission: 'system' },
-  { pattern: /^\/api\/v2\/system\/audit\/cleanup/, roles: bossOnly, permission: 'system' },
-  { pattern: /^\/api\/v2\/hr\/leaves/, roles: bossOnly, permission: 'hr' },
+  { pattern: /^\/api\/v2\/bulk-import\//, roles: bossOrAdmin, permission: 'system' },
+  { pattern: /^\/api\/v2\/sync\//, roles: bossOrAdmin, permission: 'system' },
+  { pattern: /^\/api\/v2\/backups/, roles: bossOrAdmin, permission: 'system' },
+  { pattern: /^\/api\/v2\/system\/business-alerts/, roles: bossOrAdmin, permission: 'system' },
+  { pattern: /^\/api\/v2\/system\/audit\/cleanup/, roles: bossOrAdmin, permission: 'system' },
+  { pattern: /^\/api\/v2\/hr\/leaves/, roles: bossOrAdmin, permission: 'hr' },
   { pattern: /^\/api\/v2\/hr\/attendance/, roles: adminStaff, permission: 'hr' },
   { pattern: /^\/api\/v2\/charges(\/|$)/, roles: financeStaff, permission: 'finance' },
   { pattern: /^\/api\/v2\/member-cards(\/|$)/, roles: financeStaff, permission: 'finance' },
@@ -42,9 +46,9 @@ export const routeRoleRules: RouteRoleRule[] = [
   { pattern: /^\/api\/v2\/dispenses/, roles: allStaff, permission: 'inventory' },
   { pattern: /^\/api\/v2\/narcotic-registry/, roles: adminStaff, permission: 'inventory' },
   { pattern: /^\/api\/v2\/purchase-orders/, roles: financeStaff, permission: 'inventory' },
-  { pattern: /^\/api\/v2\/shift-templates/, roles: bossOnly, permission: 'hr' },
-  { pattern: /^\/api\/v2\/schedules\/week/, roles: bossOnly, permission: 'hr' },
-  { pattern: /^\/api\/v2\/user-roles/, roles: bossOnly },
+  { pattern: /^\/api\/v2\/shift-templates/, roles: bossOrAdmin, permission: 'hr' },
+  { pattern: /^\/api\/v2\/schedules\/week/, roles: bossOrAdmin, permission: 'hr' },
+  { pattern: /^\/api\/v2\/user-roles/, roles: bossOrAdmin },
   { pattern: /^\/api\/v2\/processing-orders/, roles: financeStaff, permission: 'inventory' },
   // 治疗计划打折/划价是财务操作（H2：临床医生可自行打折绕过收费岗复核），限财务岗
   { pattern: /^\/api\/v2\/treatment-plans\/[^/]+(\/items\/[^/]+)?\/(bill|discount)(\/|$)/, roles: financeStaff, permission: 'finance' },
@@ -56,7 +60,7 @@ export const routeRoleRules: RouteRoleRule[] = [
   },
   { pattern: /^\/api\/v2\/workbench/, roles: clinicalStaff, permission: 'clinical' },
   { pattern: /^\/api\/v2\/wechat-reminders/, roles: operationalStaff, permission: 'communication' },
-  { pattern: /^\/api\/v2\/wechat\/send-batch/, roles: bossOnly },
+  { pattern: /^\/api\/v2\/wechat\/send-batch/, roles: bossOrAdmin },
   { pattern: /^\/api\/v2\/wechat/, roles: operationalStaff, permission: 'communication' },
   { pattern: /^\/api\/v2\/follow-ups/, roles: operationalStaff, permission: 'communication' },
   { pattern: /^\/api\/v2\/notifications/, roles: allStaff },
@@ -66,7 +70,7 @@ export const routeRoleRules: RouteRoleRule[] = [
   { pattern: /^\/api\/v2\/stats\/inventory/, roles: financeStaff, permission: 'analytics' },
   { pattern: /^\/api\/v2\/stats\/member-cards/, roles: financeStaff, permission: 'analytics' },
   { pattern: /^\/api\/v2\/stats\/cost-share/, roles: adminStaff, permission: 'analytics' },
-  { pattern: /^\/api\/v2\/analytics\/clinic-overview/, roles: bossOnly, permission: 'analytics' },
+  { pattern: /^\/api\/v2\/analytics\/clinic-overview/, roles: bossOrAdmin, permission: 'analytics' },
   { pattern: /^\/api\/v2\/analytics/, roles: adminStaff, permission: 'analytics' },
   { pattern: /^\/api\/v2\/satisfaction/, roles: adminStaff, permission: 'analytics' },
   { pattern: /^\/api\/v2\/charge-assistant/, roles: financeStaff, permission: 'finance' },
@@ -82,8 +86,8 @@ export const routeRoleRules: RouteRoleRule[] = [
   { pattern: /^\/api\/v2\/pay-methods/, roles: financeStaff, permission: 'finance' },
   { pattern: /^\/api\/v2\/charge-trees/, roles: financeStaff, permission: 'finance' },
   { pattern: /^\/api\/v2\/commission/, roles: financeStaff, permission: 'finance' },
-  { pattern: /^\/api\/v2\/user-permissions/, roles: bossOnly },
-  { pattern: /^\/api\/v2\/role-permissions/, roles: bossOnly },
+  { pattern: /^\/api\/v2\/user-permissions/, roles: bossOrAdmin },
+  { pattern: /^\/api\/v2\/role-permissions/, roles: bossOrAdmin },
   { pattern: /^\/api\/v2\/custom-fields/, roles: allStaff },
 ];
 

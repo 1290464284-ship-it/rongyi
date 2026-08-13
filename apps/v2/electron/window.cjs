@@ -9,9 +9,10 @@ const {
   DEFAULT_WINDOW_STATE,
   INDEX_HTML_FILE_URL,
   ERROR_HTML_FILE_URL,
+  RUNTIME_INDEX_HTML_FILE_URL,
   DEV_WEB_URL_PATTERN,
 } = require('./constants.cjs');
-const { crashLog } = require('./logging.cjs');
+const { crashLog, notify } = require('./logging.cjs');
 
 function windowStatePath() {
   return path.join(app.getPath('userData'), 'window-state.json');
@@ -72,7 +73,11 @@ function isTrustedRendererUrl(url) {
   const trustedFileUrl = (candidate, base) => (
     candidate === base || candidate.startsWith(`${base}#`) || candidate.startsWith(`${base}?`)
   );
-  if (trustedFileUrl(url, INDEX_HTML_FILE_URL) || trustedFileUrl(url, ERROR_HTML_FILE_URL)) return true;
+  if (
+    trustedFileUrl(url, INDEX_HTML_FILE_URL)
+    || trustedFileUrl(url, ERROR_HTML_FILE_URL)
+    || trustedFileUrl(url, RUNTIME_INDEX_HTML_FILE_URL)
+  ) return true;
   return DEV_WEB_URL_PATTERN.test(url);
 }
 
@@ -85,6 +90,7 @@ function isAllowedNavigation(url) {
   try {
     const parsed = new URL(url);
     if (url === INDEX_HTML_FILE_URL || url.startsWith(`${INDEX_HTML_FILE_URL}#`)) return true;
+    if (url === RUNTIME_INDEX_HTML_FILE_URL || url.startsWith(`${RUNTIME_INDEX_HTML_FILE_URL}#`)) return true;
     if (url === 'about:blank') return true;
     // blob: 仅可由渲染器自身创建（打印报表场景），且新窗口沿用沙箱/隔离 prefs。
     if (parsed.protocol === 'blob:') return true;
@@ -112,6 +118,44 @@ function secureWindowPreferences() {
   };
 }
 
+/**
+ * 生产打包版运行时 HTML 准备：asar 内的 dist-web 只读，无法写入动态 API 端口，
+ * 而 meta CSP 的 connect-src 通配（http://127.0.0.1:*）会让被攻破的渲染层可
+ * 探测本机任意回环服务。这里把 dist-web 复制到 userData/cache 并把通配替换为
+ * 当前 API 精确端口；复制失败时回退加载 asar 原文件（降级为通配 CSP）。
+ */
+function prepareRuntimeHtml() {
+  if (isDev) return null;
+  try {
+    const src = path.join(__dirname, '..', 'dist-web');
+    const dst = path.join(app.getPath('userData'), 'cache', 'dist-web');
+    const portMarker = path.join(dst, '.api-port');
+    const port = String(state.apiPort ?? '');
+    // 端口未变时复用上次产物，避免每次开窗全量拷贝
+    if (port && fs.existsSync(portMarker) && fs.readFileSync(portMarker, 'utf8') === port) {
+      return path.join(dst, 'index.html');
+    }
+    fs.rmSync(dst, { recursive: true, force: true });
+    fs.mkdirSync(dst, { recursive: true });
+    for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+      const from = path.join(src, entry.name);
+      const to = path.join(dst, entry.name);
+      if (entry.isDirectory()) fs.cpSync(from, to, { recursive: true });
+      else fs.copyFileSync(from, to);
+    }
+    const indexPath = path.join(dst, 'index.html');
+    const html = fs
+      .readFileSync(indexPath, 'utf8')
+      .replaceAll('http://127.0.0.1:*', `http://127.0.0.1:${port}`);
+    fs.writeFileSync(indexPath, html, 'utf8');
+    fs.writeFileSync(portMarker, port, 'utf8');
+    return indexPath;
+  } catch (error) {
+    crashLog('runtime-html-prepare-failed', error);
+    return null;
+  }
+}
+
 function createWindow() {
   const windowState = loadWindowState();
   const mainWindow = new BrowserWindow({
@@ -133,16 +177,38 @@ function createWindow() {
     }
     return { action: 'deny' };
   });
+  const RENDERER_CRASH_WINDOW_MS = 10 * 60 * 1000;
+  const RENDERER_CRASH_MAX = 3;
+  let rendererCrashCount = 0;
+  let rendererCrashWindowStart = 0;
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     crashLog('render-process-gone', new Error(`reason=${details.reason} exitCode=${details.exitCode}`));
+    if (state.isQuitting) return;
+    const now = Date.now();
+    if (now - rendererCrashWindowStart > RENDERER_CRASH_WINDOW_MS) {
+      rendererCrashCount = 0;
+      rendererCrashWindowStart = now;
+    }
+    rendererCrashCount += 1;
+    if (rendererCrashCount > RENDERER_CRASH_MAX) {
+      notify('界面多次崩溃', '已停止自动恢复，请通过托盘菜单退出后重启应用。');
+      return;
+    }
+    if (mainWindow.isDestroyed()) return;
+    // 被系统/用户强杀（任务管理器）稍作延迟，其余原因立即恢复
+    const delay = details.reason === 'killed' ? 500 : 0;
+    setTimeout(() => {
+      if (!mainWindow.isDestroyed() && !state.isQuitting) mainWindow.reload();
+    }, delay);
   });
   mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
     if (errorCode !== -3) crashLog('did-fail-load', new Error(`${errorCode} ${errorDescription}`));
   });
 
+  const runtimeHtml = prepareRuntimeHtml();
   const url = isDev
     ? WEB_DEV_ORIGIN
-    : pathToFileURL(path.join(__dirname, '..', 'dist-web', 'index.html')).toString();
+    : (runtimeHtml ? pathToFileURL(runtimeHtml).toString() : INDEX_HTML_FILE_URL);
   mainWindow.loadURL(url);
   mainWindow.on('close', (event) => {
     saveWindowState(mainWindow);

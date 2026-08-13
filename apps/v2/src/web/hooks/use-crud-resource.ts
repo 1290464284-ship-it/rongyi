@@ -1,6 +1,6 @@
 /* v8 ignore start -- round 77 coverage calibration */
 import { useRef, useState, type FormEvent } from 'react';
-import { useQuery, type UseQueryResult } from '@tanstack/react-query';
+import { useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { apiRequest } from '../lib/api';
 import type { Page } from '../lib/types';
 import { useDebouncedValue } from './use-debounce';
@@ -101,11 +101,37 @@ export interface CrudResourceResult<
 const DEFAULT_MESSAGES = { create: '创建成功', update: '更新成功', delete: '删除成功' };
 const DEFAULT_ERROR_MESSAGES = { create: '创建失败', update: '更新失败', delete: '删除失败' };
 
+// ── 乐观更新缓存补丁（审计 P2：写操作先打补丁、后台 refetch 校准）──────────
+type RowLike = Record<string, unknown>;
+
+function patchItems<T extends RowLike>(data: Page<T> | undefined, id: string, patch: RowLike): Page<T> | undefined {
+  if (!data) return data;
+  return {
+    ...data,
+    items: data.items.map((row) => (String(row.id) === id ? { ...row, ...patch } : row)),
+  };
+}
+
+function prependItem<T extends RowLike>(data: Page<T> | undefined, row: T): Page<T> | undefined {
+  if (!data) return data;
+  return { ...data, items: [row, ...data.items], total: (data.total ?? 0) + 1 };
+}
+
+function removeItem<T extends RowLike>(data: Page<T> | undefined, id: string): Page<T> | undefined {
+  if (!data) return data;
+  return {
+    ...data,
+    items: data.items.filter((row) => String(row.id) !== id),
+    total: Math.max(0, (data.total ?? 0) - 1),
+  };
+}
+
 export function useCrudResource<
   TRow extends Record<string, unknown> = Record<string, unknown>,
   TForm extends object = Record<string, unknown>,
 >(options: CrudResourceOptions<TRow, TForm>): CrudResourceResult<TRow, TForm> {
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
   const [searchInput, setSearchInput] = useState(options.initialSearch ?? '');
   // M4：initialSearch（如顶栏全局搜索 ?q=）变化时同步搜索词，调用方不再用 key 整页重挂载。
   // 采用 React 官方"渲染期调整 state"模式（避免 set-state-in-effect 级联渲染）。
@@ -139,8 +165,11 @@ export function useCrudResource<
     ? options.listPath
     : (params: CrudListParams) => staticListPath ?? buildDefaultListPath(options.endpoint, pageSize, params);
 
+  const queryKey = cursorPagination
+    ? [...options.queryKey, search, cursor ?? '']
+    : [...options.queryKey, page, search];
   const query = useQuery({
-    queryKey: cursorPagination ? [...options.queryKey, search, cursor ?? ''] : [...options.queryKey, page, search],
+    queryKey,
     queryFn: () => apiRequest<Page<TRow>>(
       cursorPagination ? resolveCursorListPath(resolveListPath, search, cursor) : resolveListPath({ page, search }),
     ),
@@ -254,10 +283,12 @@ export function useCrudResource<
         }
       }
       let savedId: string | null = editingId;
+      let savedPayload: Record<string, unknown> | null = null;
       if (options.submitOverride) {
         await options.submitOverride({ form, editing });
       } else {
         const payload = options.toPayload ? options.toPayload(form, editing) : { ...form };
+        savedPayload = payload as Record<string, unknown>;
         if (editingId) {
           await apiRequest(`${options.endpoint}/${editingId}`, {
             method: 'PATCH',
@@ -271,6 +302,15 @@ export function useCrudResource<
           savedId = created?.id ?? null;
         }
       }
+      // 乐观更新：先打补丁让 UI 立即反馈，再后台 refetch 校准服务端计算字段。
+      if (savedPayload) {
+        if (editingId) {
+          queryClient.setQueryData<Page<TRow>>(queryKey, (old) => patchItems(old, editingId, savedPayload!));
+        } else if (savedId) {
+          const optimisticRow = { id: savedId, ...savedPayload } as Record<string, unknown> as TRow;
+          queryClient.setQueryData<Page<TRow>>(queryKey, (old) => prependItem(old, optimisticRow));
+        }
+      }
       // 契约：onAfterCreate 仅在创建成功后回调（编辑路径不触发）
       if (!editing) options.onAfterCreate?.(form);
       await options.onSaved?.(savedId, editing, form);
@@ -278,7 +318,12 @@ export function useCrudResource<
       showToast(message, 'success');
       setShowForm(false);
       setForm(freshInitial(options.initialForm));
-      await query.refetch();
+      // 保存已成功：refetch 失败不再误报“保存失败”，列表保留乐观数据待下次刷新。
+      try {
+        await query.refetch();
+      } catch {
+        // 乐观数据已在缓存中；等待用户手动刷新或下次查询窗口
+      }
     } catch (error) {
       const fallback = editing
         ? options.errorMessages?.update ?? DEFAULT_ERROR_MESSAGES.update
@@ -301,21 +346,29 @@ export function useCrudResource<
 
   async function confirmDelete() {
     if (!deleteTarget || submitting || submittingRef.current || query.isPlaceholderData) return;
+    const targetId = String(deleteTarget.id);
     submittingRef.current = true;
     setSubmitting(true);
     try {
       if (options.deleteOverride) {
         await options.deleteOverride(deleteTarget);
       } else {
-        await apiRequest(`${options.endpoint}/${String(deleteTarget.id)}`, { method: 'DELETE' });
+        await apiRequest(`${options.endpoint}/${targetId}`, { method: 'DELETE' });
       }
       setDeleteTarget(null);
+      // 乐观移除：行立即从列表消失，后台 refetch 校准 total/回退页逻辑。
+      queryClient.setQueryData<Page<TRow>>(queryKey, (old) => removeItem(old, targetId));
       showToast(options.messages?.delete ?? DEFAULT_MESSAGES.delete, 'success');
-      const refreshed = await query.refetch();
+      let refreshed: Awaited<ReturnType<typeof query.refetch>> | undefined;
+      try {
+        refreshed = await query.refetch();
+      } catch {
+        // 删除已成功；refetch 失败保留乐观移除，跳过回退页逻辑
+      }
       // 删除末页最后一条时回退一页，避免停留在空页
       if (cursorPagination) {
-        if ((refreshed.data?.items?.length ?? 0) === 0 && cursorStack.length > 0) goPrev();
-      } else if (page > 1 && (refreshed.data?.items?.length ?? 0) === 0) {
+        if ((refreshed?.data?.items?.length ?? 0) === 0 && cursorStack.length > 0) goPrev();
+      } else if (page > 1 && (refreshed?.data?.items?.length ?? 0) === 0) {
         setPage(page - 1);
       }
     } catch (error) {

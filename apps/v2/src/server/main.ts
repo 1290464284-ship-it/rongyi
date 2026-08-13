@@ -1,8 +1,7 @@
 import * as crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import Database from 'better-sqlite3';
-import { createApp } from './http/app';
+import Database from 'better-sqlite3';import { createApp } from './http/app';
 import { createDatabase, createPerformanceIndexes, seedDatabase, syncLegacySchema } from './infrastructure/database';
 import { cleanupIdempotencyRecords } from './infrastructure/idempotency';
 import { Logger } from './infrastructure/logger';
@@ -10,6 +9,8 @@ import { runMigrations } from './infrastructure/migrations';
 import { rebuildSearchIndex } from './infrastructure/search-index';
 import { importLegacyDatabase } from './infrastructure/legacy-import';
 import { applyStagedRestore } from './infrastructure/restore-apply';
+import { attemptEmergencyRepair } from './infrastructure/emergency-repair';
+import { restoreLatestMigrationSnapshot } from './infrastructure/migration-recovery';
 import { secretFileValue } from './infrastructure/secret-file';
 import { cleanupSyncChanges } from './infrastructure/sync-change';
 import { assertHostAllowed } from './infrastructure/host-policy';
@@ -227,14 +228,24 @@ if (!process.env.V2_DB_PATH && legacyDbPath && fs.existsSync(legacyDbPath)) {
       throw new Error('Legacy database import failed. Refusing to continue with an untrusted working database.');
     }
   } else if (decision.promptRestore) {
-    logger.error('v2 database failed integrity check (quick_check); refusing to start with an untrusted database', {
-      action: 'v2-db-integrity-check',
-      path: v2DbPath,
-    });
-    throw new Error(
-      'v2.sqlite failed integrity check (quick_check). Refusing to continue with an untrusted working database. ' +
-        'Please restore from a backup, or delete the damaged v2.sqlite and restart to re-import the legacy database.',
-    );
+    // 受控紧急修复：先备份再 REINDEX，修复成功则继续启动；仍失败才 fail-closed
+    // 并提示恢复备份（V2_EMERGENCY_REPAIR=0 可关闭该步骤）。
+    const repair = attemptEmergencyRepair(v2DbPath, logger);
+    if (repair.repaired) {
+      logger.warn('database repaired at startup; continuing', {
+        action: 'startup-repair',
+        backupPath: repair.backupPath,
+      });
+    } else {
+      logger.error('v2 database failed integrity check (quick_check); refusing to start with an untrusted database', {
+        action: 'v2-db-integrity-check',
+        path: v2DbPath,
+        repairDetail: repair.detail,
+      });
+      throw new Error(
+        'v2.sqlite 未通过完整性检查且自动修复未成功。请从备份恢复，或删除损坏的 v2.sqlite 后重启以重新导入 legacy 数据库。',
+      );
+    }
   }
 }
 const dbPath = process.env.V2_DB_PATH ?? v2DbPath;
@@ -277,9 +288,48 @@ assertProductionBackupKeyConfigured(nodeEnv);
 applyStagedRestore(dbPath, [dataDir, backupDir], logger);
 const wasCleanExit = fs.existsSync(cleanExitMarker);
 if (wasCleanExit) fs.rmSync(cleanExitMarker, { force: true });
-const db = createDatabase(dataDir, dbPath, { fullIntegrityCheck: !wasCleanExit });
+let db: Database.Database;
+try {
+  db = createDatabase(dataDir, dbPath, { fullIntegrityCheck: !wasCleanExit });
+} catch (error) {
+  // 启动完整性失败：先尝试受控紧急修复（备份→REINDEX→复查），修复成功
+  // 继续启动；仍失败则 fail-closed 并给出恢复指引（V2_EMERGENCY_REPAIR=0 可关）。
+  const repair = attemptEmergencyRepair(dbPath, logger);
+  if (!repair.repaired) {
+    logger.error('v2 database failed integrity check and emergency repair; refusing to start', {
+      action: 'v2-db-integrity-check',
+      path: dbPath,
+      repairDetail: repair.detail,
+      error,
+    });
+    throw new Error(
+      `v2.sqlite 完整性检查失败且自动修复未成功（${repair.detail}）。请从备份恢复，或删除损坏的 v2.sqlite 后重启。`,
+    );
+  }
+  db = createDatabase(dataDir, dbPath, { fullIntegrityCheck: !wasCleanExit });
+}
 syncLegacySchema(db, legacySchemaDir);
-const appliedMigrations = runMigrations(db, { snapshotDir: dataDir });
+// 迁移失败自动回滚：runMigrations 前已有 pre-migration VACUUM INTO 快照，
+// 失败时回滚最近快照并重试一次；再次失败则 fail-closed（保持可回退证据）。
+let appliedMigrations: number;
+try {
+  appliedMigrations = runMigrations(db, { snapshotDir: dataDir });
+} catch (error) {
+  logger.error('migration failed; attempting rollback to pre-migration snapshot', { action: 'migrations', error });
+  db.close();
+  const recovered = restoreLatestMigrationSnapshot(dataDir, dbPath, logger);
+  if (!recovered) {
+    throw new Error('数据库迁移失败且自动回滚失败。请从备份恢复或联系管理员。');
+  }
+  db = createDatabase(dataDir, dbPath, { fullIntegrityCheck: true });
+  try {
+    appliedMigrations = runMigrations(db, { snapshotDir: dataDir });
+  } catch (retryError) {
+    logger.error('migration failed again after rollback', { action: 'migrations', error: retryError });
+    db.close();
+    throw new Error('数据库迁移在回滚后再次失败。请从备份恢复或联系管理员。');
+  }
+}
 createPerformanceIndexes(db);
 // 长期运行：仅在 V2_ENABLE_AUTO_VACUUM=1 时执行一次 INCREMENTAL auto_vacuum
 // 迁移（需重建库文件）；未开启时保持现状，每周维护跳过增量回收。

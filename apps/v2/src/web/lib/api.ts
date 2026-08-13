@@ -10,6 +10,7 @@ let apiStatusListenerInstalled = false;
 let _refreshPromise: Promise<boolean> | null = null;
 let sessionExpiredCallbacks: Array<() => void> = [];
 let sessionExpiredNotified = false;
+let apiReadyCallbacks: Array<() => void> = [];
 const REQUEST_TIMEOUT_MS = 15_000;
 
 interface DesktopSecretStore {
@@ -72,6 +73,29 @@ function notifySessionExpired(): void {
   }
 }
 
+/**
+ * 注册「API 就绪」回调（API 子进程重启/首启完成、端口变化后触发）。
+ * 返回取消函数。渲染层用它触发 queryClient.invalidateQueries()，
+ * 消除「刷新页面时 API 尚未就绪 → 查询失败 → 就绪后不自动恢复」的假失败。
+ */
+export function onApiReady(callback: () => void): () => void {
+  installApiStatusListener();
+  apiReadyCallbacks.push(callback);
+  return () => {
+    apiReadyCallbacks = apiReadyCallbacks.filter((cb) => cb !== callback);
+  };
+}
+
+function notifyApiReady(): void {
+  for (const callback of [...apiReadyCallbacks]) {
+    try {
+      callback();
+    } catch {
+      // 回调异常不得影响 API 状态监听
+    }
+  }
+}
+
 function installApiStatusListener(): void {
   const desktop = getDesktopBridge();
   if (!desktop?.onApiStatus || apiStatusListenerInstalled) return;
@@ -79,6 +103,7 @@ function installApiStatusListener(): void {
   desktop.onApiStatus((event) => {
     if (String(event.status ?? '') === 'ready' && Number.isFinite(Number(event.port))) {
       resetApiBase();
+      notifyApiReady();
     }
   });
 }

@@ -25,6 +25,7 @@ const { buildApiChildEnv } = require('./api-env.cjs');
 const { crashLog, notify, sendApiStatus } = require('./logging.cjs');
 const { getOrCreateSecret } = require('./secrets.cjs');
 const { showApiErrorWindow } = require('./window.cjs');
+const { redactSensitiveText } = require('./redact.cjs');
 
 const SECRET_FILE_STALE_MS = 10 * 60 * 1000;
 
@@ -200,13 +201,19 @@ async function doStartApi() {
         // first write or missing file
       }
       if (size + chunk.length > API_CONSOLE_MAX_BYTES) {
+        // 5MB×5 多级轮转（与 logging.cjs 的 desktop.log 一致）
+        for (let i = 4; i >= 1; i -= 1) {
+          const rotated = `${apiConsolePath}.${i}`;
+          if (fs.existsSync(rotated)) fs.renameSync(rotated, `${apiConsolePath}.${i + 1}`);
+        }
         try {
           fs.renameSync(apiConsolePath, `${apiConsolePath}.1`);
         } catch {
           // rotation is best effort; append into the original file otherwise
         }
       }
-      fs.appendFileSync(apiConsolePath, chunk);
+      // 子进程控制台输出落盘前脱敏（错误栈可能含患者 PII 或本地路径）
+      fs.appendFileSync(apiConsolePath, redactSensitiveText(String(chunk)));
     } catch {
       // best effort
     }

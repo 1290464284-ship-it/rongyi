@@ -1,6 +1,7 @@
 /* v8 ignore start -- round 77 coverage calibration */
 import fs from 'node:fs';
 import path from 'node:path';
+import { redactSensitiveText } from './redact';
 
 type LogLevel = 'info' | 'warn' | 'error';
 
@@ -118,7 +119,9 @@ export class Logger {
       message,
       ...meta,
     };
-    const line = JSON.stringify(serializeValue(entry));
+    // 落盘/输出前对整行做 PII 脱敏（手机号/身份证号），请求日志不含 body/header，
+    // 此处只兜底错误消息/栈里混入的敏感串。
+    const line = redactSensitiveText(JSON.stringify(serializeValue(entry)));
     if (level === 'error') console.error(line);
     else if (level === 'warn') console.warn(line);
     else console.log(line);
