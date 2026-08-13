@@ -391,4 +391,44 @@ describe('useCrudResource', () => {
     fireEvent.click(screen.getByText('prev'));
     await waitFor(() => expect(screen.getByTestId('page').textContent).toBe('1'));
   });
+
+  it('blocks edits, submits, and deletes while the list shows placeholder data', async () => {
+    function StaleHarness() {
+      const crud = useCrudResource<HookRow, HookForm>({
+        queryKey: ['stale-items'],
+        endpoint: '/resources/things',
+        initialForm: { name: '', note: '' },
+      });
+      return (
+        <div>
+          <button onClick={() => crud.setSearch('new')}>search-new</button>
+          <button onClick={() => crud.openEdit({ id: 'r-1', name: 'x' })}>open-edit</button>
+          <button onClick={() => void crud.submit()}>submit</button>
+          <button onClick={() => crud.requestDelete({ id: 'r-1' })}>request-delete</button>
+          <span data-testid="stale">{String(crud.isStale)}</span>
+          <span data-testid="show">{String(crud.showForm)}</span>
+          <span data-testid="delete">{String(crud.deleteTarget !== null)}</span>
+        </div>
+      );
+    }
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (String(path).includes('search=new')) {
+        return new Promise(() => {});
+      }
+      return { items: [{ id: 'r-1', name: 'x' }], total: 1, page: 1, pageSize: 50 };
+    });
+    render(<StaleHarness />, { wrapper });
+    await waitFor(() => expect(screen.getByTestId('stale').textContent).toBe('false'));
+
+    fireEvent.click(screen.getByText('search-new'));
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    await waitFor(() => expect(screen.getByTestId('stale').textContent).toBe('true'));
+
+    fireEvent.click(screen.getByText('open-edit'));
+    fireEvent.click(screen.getByText('submit'));
+    fireEvent.click(screen.getByText('request-delete'));
+    expect(screen.getByTestId('show').textContent).toBe('false');
+    expect(screen.getByTestId('delete').textContent).toBe('false');
+    expect(apiRequest).not.toHaveBeenCalledWith('/resources/things/r-1', expect.objectContaining({ method: 'PATCH' }));
+  });
 });
