@@ -173,14 +173,39 @@ export function useCrudResource<
     setCursor(previous);
   }
 
+  async function advanceCursorToPage(value: number) {
+    if (query.isPlaceholderData) return;
+    const current = cursorStack.length + 1;
+    if (value === current) return;
+    if (value < current) {
+      const nextStack = cursorStack.slice(0, Math.max(0, value - 1));
+      setCursorStack(nextStack);
+      setCursor(nextStack[nextStack.length - 1] ?? null);
+      return;
+    }
+    let stack = [...cursorStack];
+    let currentCursor = cursor;
+    let nextCursor = query.data?.nextCursor ?? null;
+    let steps = value - current;
+    while (steps > 0 && nextCursor) {
+      stack = [...stack, currentCursor ?? ''];
+      currentCursor = nextCursor;
+      const nextPage = await apiRequest<Page<TRow>>(
+        resolveCursorListPath(resolveListPath, search, currentCursor),
+      );
+      nextCursor = nextPage.nextCursor ?? null;
+      steps -= 1;
+    }
+    setCursorStack(stack);
+    setCursor(currentCursor);
+  }
+
   function handleSetPage(value: number) {
     if (!cursorPagination) {
       setPage(value);
       return;
     }
-    const current = cursorStack.length + 1;
-    if (value > current) goNext();
-    else if (value < current) goPrev();
+    void advanceCursorToPage(value);
   }
 
   function updateForm(patch: Partial<TForm>) {

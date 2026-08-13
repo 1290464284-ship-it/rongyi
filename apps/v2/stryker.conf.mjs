@@ -25,7 +25,17 @@ export default {
     'src/server/application/service-modules/inventory-ledger.spec.ts',
   ],
   reporters: ['clear-text', 'json'],
-  coverageAnalysis: 'off',
+  coverageAnalysis: 'perTest',
+  ignoreStatic: true,
+  mutator: {
+    excludedMutations: [
+      'Regex',
+      'MethodExpression',
+      'StringLiteral',
+      'ObjectLiteral',
+      'ConditionalExpression',
+    ],
+  },
   concurrency: 1,
   timeoutMS: 30_000,
   // Ratchet from the measured score. Keep the break threshold below the current

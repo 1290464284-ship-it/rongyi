@@ -143,21 +143,26 @@ export function ConfirmDialog({
   // submitting：确认按钮可返回 Promise（异步删除/切换），pending 期间两按钮禁用，
   // 防止双击双发（删除双 DELETE、toggle 双 PATCH 状态来回）。
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   // 渲染期调整：关闭时复位 submitting，避免下一次打开仍处于禁用态
   const [prevOpen, setPrevOpen] = useState(open);
   if (open !== prevOpen) {
     setPrevOpen(open);
-    if (!open) setSubmitting(false);
+    if (!open) {
+      setSubmitting(false);
+    }
   }
 
   async function handleConfirm() {
-    if (submitting) return;
+    if (submitting || submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       await onConfirm();
     } catch {
       // 调用方负责错误提示；这里只复位按钮状态
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   }
@@ -182,6 +187,7 @@ export function PromptDialog({
   value = '',
   inputType = 'text',
   placeholder = '',
+  ariaLabel,
   confirmText = '确认',
   cancelText = '取消',
   pending = false,
@@ -194,6 +200,7 @@ export function PromptDialog({
   value?: string;
   inputType?: 'text' | 'number' | 'textarea';
   placeholder?: string;
+  ariaLabel?: string;
   confirmText?: string;
   cancelText?: string;
   pending?: boolean;
@@ -221,7 +228,7 @@ export function PromptDialog({
       <form onSubmit={submit}>
         {message && <p>{message}</p>}
         {inputType === 'textarea' ? (
-          <textarea value={current} onChange={(event) => setCurrent(event.target.value)} placeholder={placeholder} />
+          <textarea value={current} onChange={(event) => setCurrent(event.target.value)} placeholder={placeholder} aria-label={ariaLabel ?? title} />
         ) : (
           <input
             autoFocus
@@ -229,6 +236,7 @@ export function PromptDialog({
             value={current}
             onChange={(event) => setCurrent(event.target.value)}
             placeholder={placeholder}
+            aria-label={ariaLabel ?? title}
           />
         )}
         <div className="modal-actions">

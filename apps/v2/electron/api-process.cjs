@@ -305,8 +305,23 @@ async function ensureApiServerRunning() {
     }
   }
   if (state.apiProcess && !state.apiProcess.killed) {
-    state.apiProcess.manualStop = true;
-    state.apiProcess.kill();
+    const processToStop = state.apiProcess;
+    processToStop.manualStop = true;
+    await new Promise((resolve) => {
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      processToStop.once('exit', done);
+      try {
+        processToStop.kill();
+      } catch {
+        done();
+      }
+      setTimeout(done, 5_000);
+    });
   }
   state.apiProcess = null;
   // T2R-14: keep this reset. state.apiRestartCount is only incremented by the

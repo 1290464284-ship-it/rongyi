@@ -105,7 +105,7 @@ export function ResourceHub({ title, tabs }: { title: string; tabs: HubTab[] }) 
                     role="tab"
                     type="button"
                     aria-selected={tab.id === effectiveActiveId}
-                    aria-controls={`hub-panel-${tab.id}`}
+                    aria-controls={tab.id === effectiveActiveId ? `hub-panel-${tab.id}` : undefined}
                     tabIndex={tab.id === effectiveActiveId ? 0 : -1}
                     className={tab.id === effectiveActiveId ? 'tab active' : 'tab'}
                     onClick={() => selectTab(tab.id)}

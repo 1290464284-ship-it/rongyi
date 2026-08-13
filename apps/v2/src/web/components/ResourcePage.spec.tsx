@@ -732,7 +732,7 @@ describe('ResourcePage', () => {
       expect(call).toBeDefined();
       const body = JSON.parse(String((call?.[1] as RequestInit)?.body));
       expect(body.price).toBe(12);
-      expect(body.startTime).toBeUndefined();
+      expect(body.startTime).toBeNull();
     });
   });
 

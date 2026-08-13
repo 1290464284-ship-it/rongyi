@@ -225,4 +225,25 @@ describe('CommissionService', () => {
     expect(() => service.createRule({ name: 'x', rateType: 'FIXED', rate: 1_000_000_000_001 }, context))
       .toThrow('固定提成金额超过上限');
   });
+
+  it('deserializes nullable rule metadata and malformed statement breakdowns', () => {
+    const globalContext: AppContext = { ...context, clinicId: null };
+    db.prepare(
+      `INSERT INTO CommissionRule (
+         id, clinicId, name, category, costType, rateType, rate, doctorId, enabled,
+         createdAt, updatedAt, deletedAt
+       ) VALUES (?, NULL, 'Global Rule', NULL, NULL, 'PERCENT', 0, NULL, 1, ?, ?, NULL)`,
+    ).run('rule-null-metadata', now, now);
+    expect(new CommissionService(db).listRules(globalContext).find((rule) => rule.id === 'rule-null-metadata'))
+      .toMatchObject({ clinicId: null, category: null, costType: null, doctorId: null, enabled: 1 });
+
+    db.prepare(
+      `INSERT INTO CommissionStatement (
+         id, clinicId, period, doctorId, totalCharged, totalCommission, breakdownJson, calculatedAt, deletedAt
+       ) VALUES (?, NULL, '2026-08', 'user-doctor-commission', 0, 0, 'not-json', ?, NULL)`,
+    ).run('stmt-null-metadata', now);
+    const statement = new CommissionService(db).statements('2026-08', globalContext)
+      .find((row) => row.id === 'stmt-null-metadata');
+    expect(statement).toMatchObject({ breakdown: [], totalCharged: 0, totalCommission: 0 });
+  });
 });

@@ -95,7 +95,7 @@ export function Layout() {
   const [collapsed, setCollapsed] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [showHelp, setShowHelp] = useState(false);
-  const [showOnboarding, setShowOnboarding] = useState(readOnboardingDone);
+  const [showOnboarding, setShowOnboarding] = useState(() => !readOnboardingDone());
   useEffect(() => {
     // 会话失效（401 且刷新失败）时全局登出并跳转登录页
     const unsubscribe = onSessionExpired(() => {

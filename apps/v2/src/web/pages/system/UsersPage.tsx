@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import type { Page } from '../../lib/types';
@@ -94,6 +94,7 @@ export function UsersPage() {
   const [permissionTarget, setPermissionTarget] = useState<UserRow | null>(null);
   const [permissionForm, setPermissionForm] = useState<Record<string, boolean>>({});
   const [permissionBusy, setPermissionBusy] = useState(false);
+  const permissionRequestRef = useRef(0);
   const [page, setPage] = useState(1);
 
   const me = useQuery({
@@ -236,17 +237,20 @@ export function UsersPage() {
   }
 
   async function openPermissions(row: UserRow) {
+    const requestId = permissionRequestRef.current + 1;
+    permissionRequestRef.current = requestId;
     setPermissionTarget(row);
     setPermissionBusy(true);
     try {
       const data = await apiRequest<{ effective: string[] }>(`/user-permissions/${row.id}`);
+      if (requestId !== permissionRequestRef.current) return;
       const effective = new Set(data.effective ?? []);
       setPermissionForm(Object.fromEntries(PERMISSION_KEYS.map((key) => [key, effective.has(key)])));
     } catch (error) {
       showToast(errorMessage(error, '加载权限失败'), 'error');
       setPermissionTarget(null);
     } finally {
-      setPermissionBusy(false);
+      if (requestId === permissionRequestRef.current) setPermissionBusy(false);
     }
   }
 

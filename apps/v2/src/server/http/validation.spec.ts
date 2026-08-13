@@ -38,6 +38,7 @@ describe('validatePayload required/default handling', () => {
     ]);
     expect(() => validatePayload(definition, { name: null })).toThrow('name is required');
     expect(validatePayload(definition, { name: 'x', note: null })).toEqual({ name: 'x' });
+    expect(validatePayload(definition, { name: 'x', note: null }, { partial: true })).toEqual({ name: 'x', note: null });
   });
 });
 

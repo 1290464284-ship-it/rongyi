@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { resetApiBase } from '../../lib/api';
 import { errorMessage, friendlyError } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
@@ -27,13 +27,16 @@ export function DesktopSettingsPage() {
   const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
   const [apiStatus, setApiStatus] = useState('');
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const busyActionRef = useRef<string | null>(null);
 
   async function runAction(key: string, fn: () => Promise<void>) {
-    if (busyAction) return;
+    if (busyAction || busyActionRef.current) return;
+    busyActionRef.current = key;
     setBusyAction(key);
     try {
       await fn();
     } finally {
+      busyActionRef.current = null;
       setBusyAction(null);
     }
   }

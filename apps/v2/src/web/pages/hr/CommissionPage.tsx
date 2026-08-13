@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import { ConfirmDialog, DataTable, LoadingState, PageError, type DataTableColumn } from '../../components';
@@ -54,6 +54,7 @@ export function CommissionPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<RuleRow | null>(null);
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
   const [period, setPeriod] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -97,7 +98,7 @@ export function CommissionPage() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (busy) return;
+    if (busy || busyRef.current) return;
     const rate = Number(form.rate);
     if (!form.name.trim() || !Number.isFinite(rate) || rate < 0 || (form.rateType === 'PERCENT' && !Number.isSafeInteger(rate))) {
       showToast('请填写规则名称和非负整数提成值', 'error');
@@ -117,6 +118,7 @@ export function CommissionPage() {
       doctorId: form.doctorId || null,
       enabled: form.enabled,
     };
+    busyRef.current = true;
     setBusy(true);
     try {
       if (editingId) {
@@ -132,12 +134,15 @@ export function CommissionPage() {
     } catch (error) {
       showToast(errorMessage(error, '保存提成规则失败'), 'error');
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }
 
   async function confirmDelete() {
-    if (!deleteTarget) return;
+    if (!deleteTarget || busy || busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
     try {
       await apiRequest(`/commission/rules/${deleteTarget.id}`, { method: 'DELETE' });
       showToast('提成规则已删除', 'success');
@@ -146,10 +151,15 @@ export function CommissionPage() {
     } catch (error) {
       showToast(errorMessage(error, '删除提成规则失败'), 'error');
       setDeleteTarget(null);
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
     }
   }
 
   async function calculate() {
+    if (busy || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     try {
       await apiRequest('/commission/calculate', { method: 'POST', body: JSON.stringify({ period }) });
@@ -158,6 +168,7 @@ export function CommissionPage() {
     } catch (error) {
       showToast(errorMessage(error, '提成计算失败'), 'error');
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }

@@ -196,6 +196,7 @@ export function createResourceRouter(db: Database.Database): Router {
       const treatmentPlanId = resource.name === 'treatmentPlanItems'
         ? String((await repo.findById(req.params.id, req.context!))?.planId ?? '')
         : '';
+      const runPatch = db.transaction(() => {
       // 治疗计划明细：price/quantity 允许经通用 CRUD 维护（前端计划编辑器写未划价明细），
       // 但已划价明细（billed=1）服务端强制不可改价/改量，与 TreatmentPlanBillingService 状态机一致。
       if (resource.name === 'treatmentPlanItems' && (Object.prototype.hasOwnProperty.call(payload, 'price') || Object.prototype.hasOwnProperty.call(payload, 'quantity'))) {
@@ -218,7 +219,9 @@ export function createResourceRouter(db: Database.Database): Router {
           `UPDATE TreatmentPlanItem SET ${sets.join(', ')} WHERE id = ? AND billed = 0 AND deletedAt IS NULL${tenantAnd(req.context!.clinicId)}`,
         ).run(...values);
         if (Number(guardResult.changes) === 0) {
-          const existing = await repo.findById(req.params.id, req.context!);
+          const existing = db.prepare(
+            `SELECT 1 FROM TreatmentPlanItem WHERE id = ? AND deletedAt IS NULL${tenantAnd(req.context!.clinicId)}`,
+          ).get(req.params.id, ...tenantParams(req.context!.clinicId));
           if (!existing) throw new NotFoundError('treatmentPlanItems not found');
           throw new ConflictError(Object.prototype.hasOwnProperty.call(payload, 'price') ? '已划价明细不可改价' : '已划价明细不可修改');
         }
@@ -242,10 +245,12 @@ export function createResourceRouter(db: Database.Database): Router {
           if (billedItem) throw new ConflictError('治疗计划已划价，费用与状态字段不可修改');
         }
       }
-      await repo.update({ id: req.params.id, ...payload }, req.context!);
+      repo.updateSync({ id: req.params.id, ...payload }, req.context!);
       if (resource.name === 'treatmentPlanItems' && treatmentPlanId) {
         new TreatmentPlanBillingService(db).reconcilePlanTotal(treatmentPlanId, req.context!);
       }
+      });
+      runPatch();
       res.json({ success: true, data: { id: req.params.id } });
     } catch (error) {
       next(error);

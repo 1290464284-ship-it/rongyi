@@ -505,7 +505,7 @@ describe('HTTP app', () => {
     await request(app)
       .post('/api/v2/processing-orders')
       .set('Authorization', `Bearer ${token}`)
-      .expect(404);
+      .expect(400);
   });
 
   it('denies sensitive routes to low-privilege roles', async () => {

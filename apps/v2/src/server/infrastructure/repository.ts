@@ -313,12 +313,20 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
     }
   }
 
-  async update(entity: Record<string, unknown>, context: AppContext): Promise<void> {
-    return this.updateSync(entity, context);
+  async update(
+    entity: Record<string, unknown>,
+    context: AppContext,
+    options?: { extraWhere?: string; extraWhereValues?: unknown[]; onZeroChanges?: () => never },
+  ): Promise<void> {
+    return this.updateSync(entity, context, options);
   }
 
   /** sync 批事务专用同步更新；async 公共方法委托本方法。 */
-  updateSync(entity: Record<string, unknown>, context: AppContext): void {
+  updateSync(
+    entity: Record<string, unknown>,
+    context: AppContext,
+    options?: { extraWhere?: string; extraWhereValues?: unknown[]; onZeroChanges?: () => never },
+  ): void {
     const id = String(entity.id);
 
     const sets: string[] = ['updatedAt = ?'];
@@ -344,13 +352,20 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
       }
     }
     /* v8 ignore stop */
+    if (options?.extraWhere) {
+      whereParts.push(options.extraWhere);
+      values.push(...(options.extraWhereValues ?? []));
+    }
     try {
       this.runWrite(() => {
         this.assertRelations(entity, context);
         const result = this.db.prepare(
           `UPDATE ${this.resource.table} SET ${sets.join(', ')} WHERE ${whereParts.join(' AND ')}`,
         ).run(...values);
-        if (Number(result.changes) === 0) throw new NotFoundError(`${this.resource.name} not found`);
+        if (Number(result.changes) === 0) {
+          if (options?.onZeroChanges) throw options.onZeroChanges();
+          throw new NotFoundError(`${this.resource.name} not found`);
+        }
         trackResourceWrite(this.db, {
           tableName: this.resource.table,
           recordId: id,
@@ -423,7 +438,8 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
 
   private runWrite<T>(fn: () => T): T {
     const tx = (this.db as unknown as { transaction?: <U>(cb: () => U) => () => U }).transaction;
-    if (typeof tx === 'function') return tx.call(this.db, fn)() as T;
+    const inTransaction = Boolean((this.db as unknown as { inTransaction?: boolean }).inTransaction);
+    if (typeof tx === 'function' && !inTransaction) return tx.call(this.db, fn)() as T;
     return fn();
   }
 

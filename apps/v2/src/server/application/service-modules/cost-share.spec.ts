@@ -215,6 +215,11 @@ describe('CostShareService', () => {
     const toAug4 = stats({ to: '2026-08-04' });
     expect(toAug4.summary.SERVICE.total).toBe(beforeTo + 999);
   });
+
+  it('supports from-only filtering with full ISO datetime strings', () => {
+    const result = stats({ from: '2026-08-01T00:00:00.000Z' });
+    expect(result.summary.grandTotal).toBe(96000);
+  });
 });
 
 describe('CostShareService (empty database)', () => {

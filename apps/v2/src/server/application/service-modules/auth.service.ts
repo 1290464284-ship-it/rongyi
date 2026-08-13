@@ -133,7 +133,7 @@ export class AuthService {
       const current = this.authRepository.findById(cached.session.user.id);
       if (current) {
         const user = rowToUser(current);
-        if (user.active && user.tokenVersion === cached.session.user.tokenVersion) return cached.session;
+        if (user.active && user.tokenVersion === cached.session.user.tokenVersion && current.refreshToken === tokenHash) return cached.session;
       }
     }
     this.authRepository.cleanupUsedRefreshTokens(new Date(Date.now() - 90 * 86_400_000).toISOString());
@@ -209,9 +209,9 @@ export class AuthService {
     if (!refreshToken) return null;
     const tokenHash = hashRefreshToken(refreshToken);
     // B-M9：注销后同一 token 的缓存会话立即失效（防 5s 窗口内重放）。
-    this.refreshCache.clear();
     const row = this.authRepository.findByRefreshTokenHash(tokenHash);
     if (!row) return null;
+    this.refreshCache.clear();
     this.clearUserRefreshClaims(row.id);
     const now = new Date().toISOString();
     runInTransactionImmediate(this.db, () => {

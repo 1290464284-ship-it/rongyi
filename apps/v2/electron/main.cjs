@@ -28,6 +28,7 @@ const {
   showApiErrorWindow,
   assertTrustedRenderer,
   isAllowedNavigation,
+  isTrustedRendererUrl,
 } = require('./window.cjs');
 const { setupTray } = require('./tray.cjs');
 
@@ -115,7 +116,11 @@ app.whenReady().then(async () => {
     });
   }
 
-  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    if (!isTrustedRendererUrl(webContents.getURL())) {
+      callback(false);
+      return;
+    }
     callback(permission === 'clipboard-sanitized-write' || permission === 'clipboard-read');
   });
   Menu.setApplicationMenu(Menu.buildFromTemplate([

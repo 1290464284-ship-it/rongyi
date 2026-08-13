@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell } = require('electron');
+const { app, BrowserWindow, screen, shell } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -21,11 +21,27 @@ function loadWindowState() {
   try {
     const state = JSON.parse(fs.readFileSync(windowStatePath(), 'utf8'));
     if (Number.isFinite(state.width) && Number.isFinite(state.height)) {
+      const displays = screen.getAllDisplays();
+      const bounds = displays.length
+        ? displays.reduce((acc, display) => {
+            const area = display.workArea;
+            return {
+              minX: Math.min(acc.minX, area.x),
+              minY: Math.min(acc.minY, area.y),
+              maxX: Math.max(acc.maxX, area.x + area.width),
+              maxY: Math.max(acc.maxY, area.y + area.height),
+            };
+          }, { minX: 0, minY: 0, maxX: 0, maxY: 0 })
+        : { minX: 0, minY: 0, maxX: 9999, maxY: 9999 };
+      const width = Math.min(Math.max(900, state.width), Math.max(900, bounds.maxX - bounds.minX));
+      const height = Math.min(Math.max(620, state.height), Math.max(620, bounds.maxY - bounds.minY));
+      const x = Number.isFinite(state.x) ? Math.min(Math.max(state.x, bounds.minX), bounds.maxX - width) : undefined;
+      const y = Number.isFinite(state.y) ? Math.min(Math.max(state.y, bounds.minY), bounds.maxY - height) : undefined;
       return {
-        width: Math.max(900, state.width),
-        height: Math.max(620, state.height),
-        x: Number.isFinite(state.x) ? state.x : undefined,
-        y: Number.isFinite(state.y) ? state.y : undefined,
+        width,
+        height,
+        x,
+        y,
         maximized: Boolean(state.maximized),
       };
     }
@@ -73,7 +89,7 @@ function isAllowedNavigation(url) {
     // blob: 仅可由渲染器自身创建（打印报表场景），且新窗口沿用沙箱/隔离 prefs。
     if (parsed.protocol === 'blob:') return true;
     if (parsed.protocol === 'http:' && parsed.hostname === '127.0.0.1' && parsed.port === String(state.apiPort)) return true;
-    if (isDev && parsed.protocol === 'http:' && parsed.hostname === 'localhost') return true;
+    if (isDev && url === WEB_DEV_ORIGIN) return true;
     if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
       setImmediate(() => shell.openExternal(url));
       return false;
@@ -183,5 +199,6 @@ module.exports = {
   assertTrustedRenderer,
   createWindow,
   isAllowedNavigation,
+  isTrustedRendererUrl,
   showApiErrorWindow,
 };

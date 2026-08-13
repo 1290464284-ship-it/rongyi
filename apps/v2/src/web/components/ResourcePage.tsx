@@ -182,8 +182,15 @@ function ResourceCrudPage({ resource: fixedResource, initialSearch }: { resource
   function openCreate() {
     const initial: Record<string, unknown> = {};
     for (const field of editableFields) {
-      if (field.type === 'boolean') initial[field.name] = false;
-      else if (field.type === 'json') initial[field.name] = '{}';
+      if (field.type === 'boolean') {
+        initial[field.name] = field.default === undefined ? false : Boolean(field.default);
+      } else if (field.type === 'json') {
+        initial[field.name] = field.default === undefined ? '{}' : fieldToForm(field, field.default);
+      } else if (field.default !== undefined) {
+        initial[field.name] = fieldToForm(field, field.default);
+      } else {
+        initial[field.name] = '';
+      }
     }
     setEditingId(null);
     setForm(initial);
@@ -210,7 +217,11 @@ function ResourceCrudPage({ resource: fixedResource, initialSearch }: { resource
     try {
       const payload: Record<string, unknown> = {};
       for (const field of editableFields) {
-        if (form[field.name] === '' && !field.required) continue;
+        const value = form[field.name];
+        if ((value === '' || value === undefined || value === null) && !field.required) {
+          if (editingId) payload[field.name] = null;
+          continue;
+        }
         payload[field.name] = fieldValue(field, form[field.name]);
       }
       if (editingId) {

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -322,5 +322,61 @@ describe('EditSaveService', () => {
       totalFee: 100,
       items: [{ code: 'NEW', name: 'New', category: 'GENERAL', price: 100, quantity: 1, teethNumbers: [], status: 'PLANNED' }],
     }, context)).toThrow(ConflictError);
+  });
+
+  it('saves a global-tenant plan and normalizes empty item ids to generated ids', () => {
+    const globalContext: AppContext = { ...context, clinicId: null };
+    db.prepare(
+      `INSERT INTO TreatmentPlan (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, name, status, totalFee, remark
+       ) VALUES (?, NULL, ?, ?, NULL, 'patient-demo-001', 'user-admin-001', 'Global Plan', 'APPROVED', 100, NULL)`,
+    ).run('plan-global', now, now);
+    db.prepare(
+      `INSERT INTO TreatmentPlanItem (
+         id, clinicId, createdAt, updatedAt, deletedAt, planId,
+         code, name, category, price, quantity, teethNumbers, status, billed
+       ) VALUES (?, NULL, ?, ?, NULL, ?, 'A', 'A', 'GENERAL', 100, 1, '[]', 'PLANNED', 0)`,
+    ).run('item-global', now, now, 'plan-global');
+
+    const result = new EditSaveService(db).saveTreatmentPlan('plan-global', {
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      name: 'Global Plan Updated',
+      status: 'APPROVED',
+      totalFee: 200,
+      items: [
+        { id: 'item-global', code: 'A', name: 'A', category: 'GENERAL', price: 100, quantity: 1, teethNumbers: [], status: 'PLANNED' },
+        { id: '', code: 'GB', name: 'Global New Item', category: 'GENERAL', price: 100, quantity: 1, teethNumbers: [], status: 'PLANNED' },
+      ],
+    }, globalContext);
+
+    expect(result.items).toBe(2);
+    const created = db.prepare('SELECT id, clinicId FROM TreatmentPlanItem WHERE planId = ? AND name = ?')
+      .get('plan-global', 'Global New Item') as { id: string; clinicId: string | null };
+    expect(created.id).not.toBe('');
+    expect(created.clinicId).toBeNull();
+  });
+
+  it('reports NotFound when a prescription item optimistic update affects zero rows', () => {
+    insertPrescription('pres-race');
+    insertPrescriptionItem('pi-race', 'pres-race', { name: 'Race Item' });
+    const originalPrepare = db.prepare.bind(db);
+    const spy = vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE PrescriptionItem') && sql.includes('SET name')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      expect(() => new EditSaveService(db).savePrescription('pres-race', {
+        patientId: 'patient-demo-001',
+        doctorId: 'user-admin-001',
+        status: 'SUBMITTED',
+        items: [{ id: 'pi-race', name: 'Updated Race Item', days: 3, quantity: 1, price: 100 }],
+      }, context)).toThrow(NotFoundError);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

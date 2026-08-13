@@ -36,6 +36,7 @@ export function InventoryPage() {
   const [editExpiryDate, setEditExpiryDate] = useState('');
   const [editSupplierId, setEditSupplierId] = useState('');
   const [editing, setEditing] = useState(false);
+  const editingRef = useRef(false);
   const [deleteTarget, setDeleteTarget] = useState<BatchRow | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'report'>('overview');
   const [page, setPage] = useState(1);
@@ -232,7 +233,8 @@ export function InventoryPage() {
 
   async function submitEditBatch(event: FormEvent) {
     event.preventDefault();
-    if (!editTarget || editing) return;
+    if (!editTarget || editing || editingRef.current) return;
+    editingRef.current = true;
     setEditing(true);
     try {
       await apiRequest(`/inventory-batches/${editTarget.id}`, {
@@ -250,6 +252,7 @@ export function InventoryPage() {
     } catch (error) {
       showToast(errorMessage(error, '批次更新失败'), 'error');
     } finally {
+      editingRef.current = false;
       setEditing(false);
     }
   }

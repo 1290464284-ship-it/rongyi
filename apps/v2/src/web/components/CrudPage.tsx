@@ -61,7 +61,13 @@ export function CrudPage<
   TRow extends Record<string, unknown>,
   TForm extends object,
 >(props: CrudPageProps<TRow, TForm>) {
-  const crud = useCrudResource<TRow, TForm>(props);
+  const crud = useCrudResource<TRow, TForm>({
+    ...props,
+    onSaved: async (id, editing, savedForm) => {
+      props.onFormClose?.();
+      await props.onSaved?.(id, editing, savedForm);
+    },
+  });
   const isStale = crud.isStale;
   const { query, rows, searchInput, setSearch, page, setPage, showForm, editing, form, updateForm, reload } = crud;
   // Dialog key：每次打开表单递增，强制重挂载，取消动画期间再次打开时清掉迟到的关闭定时器

@@ -9,6 +9,7 @@ import type { Express } from 'express';
 import { wrapAsync } from '../middleware';
 import { InventoryBatchService } from '../../application/service-modules/inventory-batch';
 import type { RouteDependencies } from './deps';
+import { stableRequestBodyHash, withIdempotency } from '../../infrastructure/idempotency';
 
 export function registerInventoryBatchRoutes(
   app: Express,
@@ -34,17 +35,26 @@ export function registerInventoryBatchRoutes(
 
   app.post('/api/v2/inventory-batches', wrapAsync((req, res) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
+    const requestId = typeof req.header('idempotency-key') === 'string' ? req.header('idempotency-key')! : '';
+    const result = withIdempotency(db, {
+      operation: 'inventoryBatch.create',
+      userId: req.context!.userId,
+      clinicId: req.context!.clinicId,
+      requestId,
+      requestBodyHash: stableRequestBodyHash(body),
+      resourceId: typeof body.itemId === 'string' ? body.itemId : null,
+    }, () => service.create({
+      itemId: String(body.itemId ?? ''),
+      batchNo: body.batchNo === undefined || body.batchNo === null ? undefined : String(body.batchNo),
+      productionDate: body.productionDate === undefined || body.productionDate === null ? undefined : String(body.productionDate),
+      expiryDate: body.expiryDate === undefined || body.expiryDate === null ? undefined : String(body.expiryDate),
+      initialQuantity: Number(body.initialQuantity),
+      supplierId: body.supplierId === undefined || body.supplierId === null ? undefined : String(body.supplierId),
+      purchaseOrderId: body.purchaseOrderId === undefined || body.purchaseOrderId === null ? undefined : String(body.purchaseOrderId),
+    }, req.context!));
     res.status(201).json({
       success: true,
-      data: service.create({
-        itemId: String(body.itemId ?? ''),
-        batchNo: body.batchNo === undefined || body.batchNo === null ? undefined : String(body.batchNo),
-        productionDate: body.productionDate === undefined || body.productionDate === null ? undefined : String(body.productionDate),
-        expiryDate: body.expiryDate === undefined || body.expiryDate === null ? undefined : String(body.expiryDate),
-        initialQuantity: Number(body.initialQuantity),
-        supplierId: body.supplierId === undefined || body.supplierId === null ? undefined : String(body.supplierId),
-        purchaseOrderId: body.purchaseOrderId === undefined || body.purchaseOrderId === null ? undefined : String(body.purchaseOrderId),
-      }, req.context!),
+      data: result,
     });
   }));
 
@@ -90,9 +100,18 @@ export function registerInventoryBatchRoutes(
 
   app.post('/api/v2/inventory-batches/consume', wrapAsync((req, res) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
+    const requestId = typeof req.header('idempotency-key') === 'string' ? req.header('idempotency-key')! : '';
+    const result = withIdempotency(db, {
+      operation: 'inventoryBatch.consume',
+      userId: req.context!.userId,
+      clinicId: req.context!.clinicId,
+      requestId,
+      requestBodyHash: stableRequestBodyHash(body),
+      resourceId: typeof body.itemId === 'string' ? body.itemId : null,
+    }, () => service.consumeFifo(String(body.itemId ?? ''), Number(body.quantity), req.context!));
     res.json({
       success: true,
-      data: service.consumeFifo(String(body.itemId ?? ''), Number(body.quantity), req.context!),
+      data: result,
     });
   }));
 
