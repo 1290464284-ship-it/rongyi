@@ -40,6 +40,7 @@
     "smoke:packaged-ui-simulated": "node scripts/packaged-ui-simulated-smoke.mjs",
     "smoke:http-fuzz": "node scripts/http-fuzz-smoke.mjs",
     "smoke:multi-instance": "node scripts/multi-instance-smoke.mjs",
+    "smoke:supervisor": "node scripts/supervisor-smoke.mjs",
     "smoke:delivery": "node scripts/delivery-smoke-runner.mjs",
     "soak:smoke": "node scripts/soak-smoke.mjs",
     "smoke:wechat-gateway": "node scripts/wechat-gateway-smoke.mjs",

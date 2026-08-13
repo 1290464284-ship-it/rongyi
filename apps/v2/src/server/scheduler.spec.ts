@@ -454,4 +454,99 @@ describe('startSchedulers', () => {
     expect(() => vi.advanceTimersByTime(24 * 60 * 60 * 1000)).not.toThrow();
     stop();
   });
+
+  it('registers maintenance tasks with startup offsets when callbacks are provided', async () => {
+    vi.useFakeTimers();
+    ensureTimers();
+    const daily = vi.fn();
+    const weekly = vi.fn();
+    const disk = vi.fn();
+
+    const { stop } = startSchedulers({
+      backups: makeBackups(),
+      audit: makeAudit(),
+      autoBackupIntervalMs: 24 * 60 * 60 * 1000,
+      autoBackupKeep: 30,
+      logger: makeLogger(),
+      onAlertCreate: vi.fn(),
+      dailyDbMaintenance: daily,
+      weeklyDbMaintenance: weekly,
+      diskCheck: disk,
+    });
+
+    expect(daily).not.toHaveBeenCalled();
+    expect(weekly).not.toHaveBeenCalled();
+    expect(disk).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(60 * 1000 + 1);
+    expect(disk).toHaveBeenCalledTimes(1); // 磁盘检查 1min 首查
+
+    await vi.advanceTimersByTimeAsync(2 * 60 * 60 * 1000);
+    expect(daily).toHaveBeenCalledTimes(1); // 每日维护 2h 首执行
+
+    await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+    expect(weekly).toHaveBeenCalledTimes(1); // 每周维护 3h 首执行
+
+    stop();
+  }, 15_000);
+
+  it('does not register maintenance timers when callbacks are absent', async () => {
+    vi.useFakeTimers();
+    ensureTimers();
+    const { stop } = startSchedulers({
+      backups: makeBackups(),
+      audit: makeAudit(),
+      autoBackupIntervalMs: 24 * 60 * 60 * 1000,
+      autoBackupKeep: 30,
+      logger: makeLogger(),
+      onAlertCreate: vi.fn(),
+    });
+    expect(() => vi.advanceTimersByTime(3 * 60 * 60 * 1000)).not.toThrow();
+    stop();
+  });
+
+  it('triggerResumeMaintenance runs onResume and daily maintenance immediately', () => {
+    vi.useFakeTimers();
+    ensureTimers();
+    const onResume = vi.fn();
+    const daily = vi.fn();
+    const { stop, triggerResumeMaintenance } = startSchedulers({
+      backups: makeBackups(),
+      audit: makeAudit(),
+      autoBackupIntervalMs: 24 * 60 * 60 * 1000,
+      autoBackupKeep: 30,
+      logger: makeLogger(),
+      onAlertCreate: vi.fn(),
+      dailyDbMaintenance: daily,
+      onResume,
+    });
+    triggerResumeMaintenance();
+    expect(onResume).toHaveBeenCalledTimes(1);
+    expect(daily).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
+  it('triggerResumeMaintenance swallows maintenance errors and logs them', () => {
+    vi.useFakeTimers();
+    ensureTimers();
+    const logger = makeLogger();
+    const daily = vi.fn(() => {
+      throw new Error('maintenance boom');
+    });
+    const { stop, triggerResumeMaintenance } = startSchedulers({
+      backups: makeBackups(),
+      audit: makeAudit(),
+      autoBackupIntervalMs: 24 * 60 * 60 * 1000,
+      autoBackupKeep: 30,
+      logger,
+      onAlertCreate: vi.fn(),
+      dailyDbMaintenance: daily,
+    });
+    expect(() => triggerResumeMaintenance()).not.toThrow();
+    expect(logger.error).toHaveBeenCalledWith(
+      'resume maintenance failed',
+      expect.objectContaining({ action: 'maintenance-resume' }),
+    );
+    stop();
+  });
 });

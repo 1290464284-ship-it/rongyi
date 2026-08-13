@@ -25,13 +25,9 @@ describe('coverageStats', () => {
     });
   });
 
-  it('returns full coverage for empty input', () => {
-    expect(coverageStats({})).toEqual({
-      statements: 1,
-      branches: 1,
-      functions: 1,
-      lines: 1,
-    });
+  it('returns null for empty input so callers fail instead of reporting 100%', () => {
+    expect(coverageStats({})).toBeNull();
+    expect(coverageStats(null)).toBeNull();
   });
 });
 
@@ -59,7 +55,7 @@ describe('mutationScore', () => {
 });
 
 describe('openApiPathMetrics', () => {
-  it('returns zeroed metrics for empty inputs and full coverage', () => {
+  it('returns null route coverage for empty inputs so callers fail instead of reporting 100%', () => {
     expect(openApiPathMetrics()).toEqual({
       corePaths: 0,
       generatedPaths: 0,
@@ -67,7 +63,7 @@ describe('openApiPathMetrics', () => {
       routeEntries: 0,
       uniqueRoutes: 0,
       uniqueRoutePaths: 0,
-      routePathCoverage: 1,
+      routePathCoverage: null,
     });
   });
 

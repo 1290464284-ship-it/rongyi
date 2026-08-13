@@ -45,8 +45,8 @@ function mutationMetrics() {
   return { ...summary, score: total ? summary.killed / total : null };
 }
 
-const serverCoverage = coverageStats(readJson('coverage/coverage-final.json', {}));
-const webCoverage = coverageStats(readJson('coverage-web/coverage-final.json', {}));
+const serverCoverage = coverageStats(readJson('coverage/coverage-final.json', null));
+const webCoverage = coverageStats(readJson('coverage-web/coverage-final.json', null));
 const flaky = flakyMetrics();
 const mutation = mutationMetrics();
 const openapi = openApiPathMetrics({
@@ -54,6 +54,27 @@ const openapi = openApiPathMetrics({
   generatedDoc: readJson('openapi.generated.json', {}),
   routeEntries: readJson('openapi-routes.json', []),
 });
+
+// 防自欺（P1-2）：任一关键输入缺失/不可读/为空时直接失败，
+// 绝不把空输入折算成 100% 并覆盖提交的质量分产物。
+const failures = [];
+if (!serverCoverage) {
+  failures.push('coverage/coverage-final.json is missing, empty, or unreadable; run test:coverage first');
+}
+if (!webCoverage) {
+  failures.push('coverage-web/coverage-final.json is missing, empty, or unreadable; run test:coverage:web first');
+}
+if (openapi.routePathCoverage == null) {
+  failures.push('openapi-routes.json is missing or empty; run generate:openapi-routes first');
+}
+if (mutation.score == null) {
+  failures.push('reports/mutation/mutation.json is missing, empty, or unreadable; run test:mutation first');
+}
+if (failures.length > 0) {
+  for (const failure of failures) console.error(failure);
+  console.error('quality score not computed; refusing to overwrite quality-score.json with incomplete inputs');
+  process.exit(1);
+}
 
 const quality = {
   generatedAt: new Date().toISOString(),
@@ -93,7 +114,6 @@ history.push({
 fs.mkdirSync(path.dirname(historyPath), { recursive: true });
 fs.writeFileSync(historyPath, `${JSON.stringify(history.slice(-100), null, 2)}\n`);
 
-const failures = [];
 const recent = history.slice(-3);
 if (recent.length >= 3) {
   const [older, previous, current] = recent;

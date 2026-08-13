@@ -36,9 +36,21 @@ interface StartSchedulersOptions {
   /** Daily sync-change retention cleanup; receives the UTC cutoff string. */
   syncChangeCleanup?: (beforeIso: string) => { deleted: number };
   syncChangeRetentionDays?: number;
+  /** 每日数据库维护（quick_check + optimize + checkpoint）。缺省不注册。 */
+  dailyDbMaintenance?: () => void;
+  /** 每周数据库维护（incremental_vacuum / 受控全量 VACUUM）。缺省不注册。 */
+  weeklyDbMaintenance?: () => void;
+  /** 磁盘空间检查。缺省不注册。 */
+  diskCheck?: () => void;
+  /** 系统休眠唤醒后的即时维护回调（由 triggerResumeMaintenance 调用）。 */
+  onResume?: () => void;
 }
 
-export function startSchedulers(options: StartSchedulersOptions): { stop(): Promise<void> } {
+export function startSchedulers(options: StartSchedulersOptions): {
+  stop(): Promise<void>;
+  /** 系统休眠唤醒后的即时维护（IPC 'resume' 消息驱动）。 */
+  triggerResumeMaintenance(): void;
+} {
   const {
     backups,
     audit,
@@ -49,6 +61,10 @@ export function startSchedulers(options: StartSchedulersOptions): { stop(): Prom
     idempotencyCleanup,
     syncChangeCleanup,
     syncChangeRetentionDays,
+    dailyDbMaintenance,
+    weeklyDbMaintenance,
+    diskCheck,
+    onResume,
   } = options;
   // Clamp preserved from main.ts: never back up more often than once a minute.
   const intervalMs = Math.max(60_000, autoBackupIntervalMs);
@@ -173,6 +189,25 @@ export function startSchedulers(options: StartSchedulersOptions): { stop(): Prom
     schedule(runSyncChangeCleanup, DAILY_MS);
   }
 
+  // ── 数据库维护与磁盘监控（可选项，缺省不注册）────────────────────────────
+  // 首执行避开开机高峰：每日维护 2h 后、每周维护 3h 后；磁盘检查 1min 后首查。
+  const MAINTENANCE_DAILY_OFFSET_MS = 2 * 60 * 60 * 1000;
+  const MAINTENANCE_WEEKLY_MS = 7 * DAILY_MS;
+  const DISK_CHECK_INTERVAL_MS = 15 * 60 * 1000;
+
+  if (dailyDbMaintenance) {
+    scheduleOnce(() => dailyDbMaintenance(), MAINTENANCE_DAILY_OFFSET_MS);
+    schedule(dailyDbMaintenance, DAILY_MS);
+  }
+  if (weeklyDbMaintenance) {
+    scheduleOnce(() => weeklyDbMaintenance(), MAINTENANCE_DAILY_OFFSET_MS + 60 * 60 * 1000);
+    schedule(weeklyDbMaintenance, MAINTENANCE_WEEKLY_MS);
+  }
+  if (diskCheck) {
+    scheduleOnce(() => diskCheck(), 60 * 1000);
+    schedule(diskCheck, DISK_CHECK_INTERVAL_MS);
+  }
+
   return {
     async stop(): Promise<void> {
       for (const timer of timers) clearInterval(timer);
@@ -185,6 +220,18 @@ export function startSchedulers(options: StartSchedulersOptions): { stop(): Prom
         } catch {
           // runAutoBackup 已记录失败并创建告警；stop 不再吞掉原始流程。
         }
+      }
+    },
+    /**
+     * 系统休眠唤醒后由 main.ts 的 IPC 'resume' 消息触发：立即执行一次
+     * 维护（定时器在休眠期间暂停，唤醒后无需等下一个周期）。
+     */
+    triggerResumeMaintenance(): void {
+      try {
+        onResume?.();
+        dailyDbMaintenance?.();
+      } catch (error) {
+        logger.error('resume maintenance failed', { action: 'maintenance-resume', error });
       }
     },
   };

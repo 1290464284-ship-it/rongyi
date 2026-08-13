@@ -64,6 +64,8 @@ jobs:
           pnpm --filter @dental/v2 test
           pnpm --filter @dental/v2 test:coverage
           pnpm --filter @dental/v2 test:coverage:web
+          pnpm --filter @dental/v2 run test:mutation
+          pnpm --filter @dental/v2 run test:quality-score
           pnpm --filter @dental/v2 run audit:security
           pnpm --filter @dental/v2 security:scan
           pnpm --filter @dental/v2 run license:check

@@ -9,6 +9,7 @@ const {
   crashReporter: nativeCrashReporter,
 } = require('electron');
 const { autoUpdater } = require('electron-updater');
+const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -77,6 +78,30 @@ autoUpdater.on('update-downloaded', (info) => {
 autoUpdater.on('error', (error) => {
   sendUpdateEvent({ type: 'error', message: error instanceof Error ? error.message : String(error) });
 });
+
+// 原生级看门狗：以 ELECTRON_RUN_AS_NODE 拉起 sidecar，主进程硬崩溃/taskkill 时
+// 由它重新拉起应用（V2_ENABLE_WATCHDOG=0 可关，dev 不启用）。JS 级崩溃由
+// logging.cjs 的 handleFatalCrash → watchdog.cjs 处理；两者互补。
+function spawnSupervisor() {
+  if (isDev || process.env.V2_ENABLE_WATCHDOG === '0') return;
+  try {
+    const supervisorPath = path.join(__dirname, 'supervisor.cjs');
+    const stopMarker = path.join(app.getPath('userData'), '.supervisor-stop');
+    const child = spawn(
+      process.execPath,
+      [supervisorPath, process.execPath, String(process.pid), stopMarker],
+      {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true,
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+      },
+    );
+    child.unref();
+  } catch (error) {
+    crashLog('supervisor-spawn-failed', error);
+  }
+}
 
 app.whenReady().then(async () => {
   if (!gotSingleInstanceLock) return;
@@ -267,6 +292,7 @@ app.whenReady().then(async () => {
     showApiErrorWindow(error instanceof Error ? error.message : String(error));
     return;
   }
+  spawnSupervisor();
   createWindow();
   if (!isDev && process.env.V2_DISABLE_AUTO_UPDATE !== '1') {
     autoUpdater.checkForUpdates().catch((error) => {
@@ -341,6 +367,13 @@ process.on('SIGINT', () => {
 
 app.on('will-quit', () => {
   terminateApiSync();
+  // 优雅退出：写停止标记，告知 supervisor 不要拉起新实例。
+  // 崩溃路径（app.relaunch + app.exit）不触发 will-quit，supervisor 才会兜底拉起。
+  try {
+    fs.writeFileSync(path.join(app.getPath('userData'), '.supervisor-stop'), String(Date.now()), 'utf8');
+  } catch {
+    // best effort
+  }
 });
 
 process.on('exit', () => {

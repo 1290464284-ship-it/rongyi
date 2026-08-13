@@ -16,6 +16,9 @@ import { assertHostAllowed } from './infrastructure/host-policy';
 import { assertProductionBackupKeyConfigured } from './infrastructure/security';
 import { AlertService, AuditService, BackupService } from './application/services';
 import { startSchedulers } from './scheduler';
+import { enableIncrementalAutoVacuum, runDailyDatabaseMaintenance, runWeeklyDatabaseMaintenance } from './maintenance/db-maintenance';
+import { checkDiskFree } from './maintenance/disk-monitor';
+import { createRuntimeMetricsSampler, persistRuntimeMetrics } from './maintenance/runtime-metrics';
 import {
   DEFAULT_API_PORT,
   DEFAULT_AUTO_BACKUP_INTERVAL_MS,
@@ -124,6 +127,16 @@ process.on('message', (message) => {
       // best effort: shutdown 照常进行
     }
     shutdown();
+  }
+  if (message === 'resume') {
+    // 系统休眠唤醒：定时器在休眠期间暂停，立即执行一次维护
+    // （完整性检查 + WAL checkpoint），无需等下一个周期。
+    try {
+      logger.info('system resumed from sleep; running immediate maintenance', { action: 'system-resume' });
+      schedulers.triggerResumeMaintenance();
+    } catch (error) {
+      logger.error('resume maintenance failed', { action: 'system-resume', error });
+    }
   }
 });
 if (parentHeartbeatEnabled) {
@@ -268,6 +281,9 @@ const db = createDatabase(dataDir, dbPath, { fullIntegrityCheck: !wasCleanExit }
 syncLegacySchema(db, legacySchemaDir);
 const appliedMigrations = runMigrations(db, { snapshotDir: dataDir });
 createPerformanceIndexes(db);
+// 长期运行：仅在 V2_ENABLE_AUTO_VACUUM=1 时执行一次 INCREMENTAL auto_vacuum
+// 迁移（需重建库文件）；未开启时保持现状，每周维护跳过增量回收。
+enableIncrementalAutoVacuum(db, logger);
 // 搜索索引由单行 upsertSearchRow 增量维护（repository/search-index 同源 SQL）；
 // 仅当本次启动了迁移（可能改动被索引表结构）或索引为空（首次/被清空）时全量重建，
 // 避免每次启动全表扫描拖慢启动。
@@ -324,7 +340,8 @@ const syncChangeRetentionDays = Number.isFinite(configuredSyncRetentionDays)
 // ── 定时任务统一收敛到 scheduler 模块 ──────────────────────────────────────────
 // 原内联的三组定时器（自动备份 5min 首延迟 + interval、审计日志清理每日、
 // idempotency 清理每日）全部由 startSchedulers 管理，shutdown 时通过 stop()
-// 一并清空。
+// 一并清空。数据库维护（每日/每周）与磁盘检查同样收敛在此。
+let diskAlerted = false;
 const schedulers = startSchedulers({
   backups,
   audit,
@@ -335,13 +352,68 @@ const schedulers = startSchedulers({
   idempotencyCleanup: () => cleanupIdempotencyRecords(db),
   syncChangeCleanup: (beforeIso) => cleanupSyncChanges(db, beforeIso),
   syncChangeRetentionDays,
+  dailyDbMaintenance: () => runDailyDatabaseMaintenance({
+    db,
+    logger,
+    onAlert: (input) => alerts.create(input),
+  }),
+  weeklyDbMaintenance: () => runWeeklyDatabaseMaintenance({
+    db,
+    logger,
+    onAlert: (input) => alerts.create(input),
+    // 全量 VACUUM 阻塞写入，仅在停诊窗口显式开启。
+    allowFullVacuum: process.env.V2_ENABLE_FULL_VACUUM === '1',
+  }),
+  diskCheck: () => {
+    const result = checkDiskFree(backupDir);
+    if (result.ok) {
+      if (diskAlerted) {
+        diskAlerted = false;
+        logger.info('disk space recovered', { action: 'disk-check-recovered', dir: result.dir });
+      }
+      return;
+    }
+    if (diskAlerted) return; // 每个目录只告警一次，恢复后重置
+    diskAlerted = true;
+    logger.error('disk space below threshold', { action: 'disk-check', dir: result.dir, freeBytes: result.freeBytes });
+    alerts.create({
+      alertType: 'DISK_SPACE_LOW',
+      level: 'CRITICAL',
+      severity: 'CRITICAL',
+      title: '磁盘空间不足',
+      message: `备份目录所在磁盘剩余 ${Math.round(result.freeBytes / (1024 * 1024))}MB，低于告警阈值。请清理磁盘或迁移备份目录。`,
+      source: 'DISK_MONITOR',
+      metricName: 'disk_free_bytes',
+      suggestion: '备份会自动保留最近 N 份；可在备份页调整保留数量，或把备份目录迁移到更大磁盘。',
+      clinicId: null,
+    });
+  },
 });
+
+// ── 运行指标采样：每小时落盘 logs/runtime.json（内存/句柄/事件循环/DB 页数） ──
+const runtimeSampler = createRuntimeMetricsSampler(db, () => {
+  try {
+    return fs.statSync(`${dbPath}-wal`).size;
+  } catch {
+    return 0;
+  }
+});
+const RUNTIME_METRICS_INTERVAL_MS = 60 * 60 * 1000;
+const runtimeMetricsTimer = setInterval(() => {
+  try {
+    persistRuntimeMetrics(logDir, runtimeSampler.sample());
+  } catch (error) {
+    logger.error('runtime metrics sampling failed', { action: 'runtime-metrics', error });
+  }
+}, RUNTIME_METRICS_INTERVAL_MS);
+runtimeMetricsTimer.unref?.();
 
 let shuttingDown = false;
 async function shutdown(): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
   try {
+    clearInterval(runtimeMetricsTimer);
     // 先停所有定时器并等待正在执行的自动备份结束，确保关闭数据库期间
     // 没有任何调度回调触碰 db，备份 API 也不会读到已关闭的连接。
     await schedulers.stop();

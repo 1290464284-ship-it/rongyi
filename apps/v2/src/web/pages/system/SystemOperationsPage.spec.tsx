@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { SystemOperationsPage } from './SystemOperationsPage';
 import { apiRequest } from '../../lib/api';
 import { ToastProvider } from '../../components/toast';
@@ -18,6 +18,9 @@ function mockFileReader(text: string) {
 }
 
 describe('SystemOperationsPage', () => {
+  // 防抖（300ms）走 useEffect+setTimeout。等待必须包在 act 内：防抖 setState
+  // 在 act 内触发即被确定性 flush，点击时读到最新值；裸 await 睡眠会让该
+  // 更新落在 act 之外，是否 flush 取决于时序 → 全量并行负载下 flaky。
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
@@ -42,7 +45,7 @@ describe('SystemOperationsPage', () => {
 
     fireEvent.change(screen.getByLabelText('搜索关键词'), { target: { value: 'Demo' } });
     // 搜索输入已防抖（300ms），等待防抖值落地后再点击。
-    await new Promise((resolve) => setTimeout(resolve, 350));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 350)); });
     fireEvent.click(screen.getByRole('button', { name: '搜索' }));
     expect(await screen.findByText('Demo Patient', {}, { timeout: 5000 })).toBeDefined();
   });
@@ -121,13 +124,13 @@ describe('SystemOperationsPage', () => {
 
     fireEvent.change(screen.getByLabelText('搜索关键词'), { target: { value: 'D' } });
     // 搜索输入已防抖（300ms），等待防抖值落地后再点击。
-    await new Promise((resolve) => setTimeout(resolve, 350));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 350)); });
     fireEvent.click(screen.getByRole('button', { name: '搜索' }));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
     expect(apiRequest).not.toHaveBeenCalledWith('/search?q=D', expect.anything());
 
     fireEvent.change(screen.getByLabelText('搜索关键词'), { target: { value: 'Demo' } });
-    await new Promise((resolve) => setTimeout(resolve, 350));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 350)); });
     fireEvent.click(screen.getByRole('button', { name: '搜索' }));
     expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
 
@@ -160,17 +163,20 @@ describe('SystemOperationsPage', () => {
     fireEvent.click(importButton);
 
     fireEvent.change(screen.getByLabelText('搜索关键词'), { target: { value: 'Demo' } });
-    await new Promise((resolve) => setTimeout(resolve, 350));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 350)); });
     const searchButton = screen.getByRole('button', { name: '搜索' });
     fireEvent.click(searchButton);
     fireEvent.click(searchButton);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
 
     const importCalls = vi.mocked(apiRequest).mock.calls.filter(([path]) => String(path).startsWith('/bulk-import/'));
     const searchCalls = vi.mocked(apiRequest).mock.calls.filter(([path]) => String(path).startsWith('/search?'));
     expect(importCalls).toHaveLength(1);
     expect(searchCalls).toHaveLength(1);
     pending.forEach((resolve) => resolve());
+    // 让 import/search 的挂起 promise 续体（toast/setBusy(false)）在测试结束前落定，
+    // 避免 act 之外的延迟状态更新告警。
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
   });
 
   it('cleans audit logs with a configured retention window', async () => {
@@ -211,7 +217,7 @@ describe('SystemOperationsPage', () => {
     });
     render(<ToastProvider><SystemOperationsPage /></ToastProvider>);
     fireEvent.change(screen.getByLabelText('搜索关键词'), { target: { value: 'Demo' } });
-    await new Promise((resolve) => setTimeout(resolve, 350));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 350)); });
     fireEvent.click(screen.getByRole('button', { name: '搜索' }));
     expect(await screen.findByText('NoId Result')).toBeDefined();
   });

@@ -8,7 +8,9 @@
   "entry": [
     "src/domain/contracts/index.ts",
     "legacy/schema/**/*.ts",
-    "electron/preload.cjs"
+    "electron/preload.cjs",
+    "electron/supervisor.cjs",
+    "electron/watchdog.cjs"
   ],
   "ignore": [],
   "ignoreBinaries": ["openssl"]

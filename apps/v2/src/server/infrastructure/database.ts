@@ -267,6 +267,10 @@ export function createDatabase(
     throw new Error('SQLite integrity check failed');
   }
   db.pragma('journal_mode = WAL');
+  // 长期运行治理：显式化关键 PRAGMA，防止 WAL 文件与检查点行为漂移。
+  db.pragma('synchronous = FULL');            // 医疗数据以耐久性优先（WAL 下崩溃安全）
+  db.pragma('journal_size_limit = 67108864'); // WAL 文件上限 64MB，防长期不 checkpoint 无限增长
+  db.pragma('wal_autocheckpoint = 1000');     // 默认值显式声明；备份/关闭路径仍走 TRUNCATE
   db.pragma('foreign_keys = ON');
   db.pragma('busy_timeout = 5000');
   db.pragma('cache_size = -20000');

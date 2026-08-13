@@ -5,6 +5,10 @@ function normalizeOpenApiPath(path) {
 
 export function coverageStats(data) {
   const files = data && typeof data === 'object' ? Object.values(data) : [];
+  if (files.length === 0) {
+    // 防自欺（P1-2）：空/缺失输入绝不能折算成 100% 覆盖率，调用方必须显式失败。
+    return null;
+  }
   let statements = 0;
   let branches = 0;
   let functions = 0;
@@ -89,6 +93,7 @@ export function openApiPathMetrics({ coreDoc, generatedDoc, routeEntries } = {})
     routeEntries: routes.length,
     uniqueRoutes: uniqueRoutes.size,
     uniqueRoutePaths: uniqueRoutePaths.size,
-    routePathCoverage: uniqueRoutePaths.size ? coveredRoutePaths / uniqueRoutePaths.size : 1,
+    // 防自欺（P1-2）：无路由条目时不得折算为 100% 路由覆盖，调用方必须显式失败。
+    routePathCoverage: uniqueRoutePaths.size ? coveredRoutePaths / uniqueRoutePaths.size : null,
   };
 }
