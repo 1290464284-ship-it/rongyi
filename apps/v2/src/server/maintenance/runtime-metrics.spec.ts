@@ -24,6 +24,20 @@ describe('createRuntimeMetricsSampler', () => {
     expect(Number.isNaN(Date.parse(sample.sampledAt))).toBe(false);
     db.close();
   });
+
+  it('falls back to zero event-loop metrics when the histogram has no samples', () => {
+    const db = new Database(':memory:');
+    // 创建后立刻采样：直方图尚无样本，mean/percentile 为 NaN → 输出 0
+    const sampler = createRuntimeMetricsSampler(db, () => 0);
+    const sample = sampler.sample();
+    expect(Number.isFinite(sample.eventLoop.maxLagMs)).toBe(true);
+    expect(Number.isFinite(sample.eventLoop.meanLagMs)).toBe(true);
+    expect(Number.isFinite(sample.eventLoop.p99LagMs)).toBe(true);
+    expect(sample.eventLoop.maxLagMs).toBeGreaterThanOrEqual(0);
+    expect(sample.eventLoop.meanLagMs).toBeGreaterThanOrEqual(0);
+    expect(sample.eventLoop.p99LagMs).toBeGreaterThanOrEqual(0);
+    db.close();
+  });
 });
 
 function minimalSample(): RuntimeMetricsSample {

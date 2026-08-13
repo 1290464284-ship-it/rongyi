@@ -40,6 +40,12 @@ describe('checkDiskFree', () => {
     expect(result.freeBytes).toBe(0);
     expect(result.ok).toBe(false);
   });
+
+  it('applies the default threshold when none is provided', () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-disk-'));
+    const result = checkDiskFree(tempDir); // 默认 1GB 阈值
+    expect(result.ok).toBe(true);
+  });
 });
 
 describe('startDiskMonitor', () => {

@@ -104,6 +104,32 @@ describe('application services', () => {
     expect(charge.status).toBe('PAID');
   });
 
+  it('debt payments fall back patient ids and write ledgers with null clinics', async () => {
+    const service = new ChargeService(db);
+    const created = await service.create({
+      patientId: 'patient-demo-001',
+      items: [{ name: 'Fallback Debt', category: 'EXAM', price: 100, quantity: 1 }],
+    }, context);
+    await service.pay(String(created.id), 30, 'DEBT', undefined, context);
+    const debt = db.prepare('SELECT id FROM Debt WHERE chargeId = ?').get(String(created.id)) as { id: string };
+    // 债务患者缺失 → 回退收费单患者
+    db.prepare('UPDATE Debt SET patientId = NULL WHERE id = ?').run(debt.id);
+    await new DebtService(db).pay(debt.id, 40, context);
+    const ledger1 = db.prepare(
+      `SELECT patientId FROM PaymentLedger WHERE chargeId = ? AND method = 'DEBT' ORDER BY createdAt DESC LIMIT 1`,
+    ).get(String(created.id)) as { patientId: string };
+    expect(ledger1.patientId).toBe('patient-demo-001');
+
+    // 收费单患者也缺失 + 空诊所 → 患者空串、clinicId 落 NULL
+    db.prepare('UPDATE Charge SET patientId = NULL WHERE id = ?').run(String(created.id));
+    await new DebtService(db).pay(debt.id, 20, { ...context, clinicId: null });
+    const ledger2 = db.prepare(
+      `SELECT patientId, clinicId FROM PaymentLedger WHERE chargeId = ? AND method = 'DEBT' ORDER BY createdAt DESC LIMIT 1`,
+    ).get(String(created.id)) as { patientId: string; clinicId: string | null };
+    expect(ledger2.patientId).toBe('');
+    expect(ledger2.clinicId).toBeNull();
+  });
+
   it('rolls back debt payment when the charge update fails', async () => {
     // Dedicated temp database so DROP TABLE Charge cannot affect the shared
     // db used by the other tests in this file (or trip FK constraints from
