@@ -1,15 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { loadRegistry } from './flaky-quarantine-manager.mjs';
 
-const appRoot = path.resolve(path.dirname(pathToFileURL(import.meta.url).pathname), '..');
+const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const historyPath = path.join(appRoot, 'flaky-quarantine', 'history.json');
 const history = fs.existsSync(historyPath) ? JSON.parse(fs.readFileSync(historyPath, 'utf8')) : [];
 const quarantined = loadRegistry().quarantinedTests.length;
-const runs = history.length;
-const failures = history.filter((entry) => !entry.passed).length;
-const recent = history.slice(-10);
+const recent = history.slice(-3);
+const runs = recent.length;
+const failures = recent.filter((entry) => !entry.passed).length;
 const recentFailures = recent.filter((entry) => !entry.passed).length;
 
 console.log(JSON.stringify({

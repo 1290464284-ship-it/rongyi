@@ -21,8 +21,9 @@ function readJsonFile(full, fallback = null) {
 
 function flakyMetrics() {
   const history = readJson('flaky-quarantine/history.json', []);
-  const runs = history.length;
-  const failures = history.filter((entry) => !entry.passed).length;
+  const recent = history.slice(-3);
+  const runs = recent.length;
+  const failures = recent.filter((entry) => !entry.passed).length;
   return { runs, failures, flakinessRate: runs ? failures / runs : 0 };
 }
 
