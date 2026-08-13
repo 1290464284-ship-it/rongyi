@@ -105,7 +105,7 @@
 
 最新一轮为第 75 轮，单测 258 文件 / 2613 用例；Web coverage 96.82 / 93.13 / 98.57 / 98.53，
 mutation score 96.54，quality score 95.92，route path coverage 100%，
-build/electron:compile/verify:package/smoke:api/smoke:ui/test:load/large-db-concurrency/multi-instance/state-machine-concurrency 全绿。
+build/electron:compile/verify:package/smoke:api/smoke:ui/test:load/large-db-concurrency/multi-instance/state-machine-concurrency/soak-smoke 全绿。
 历史轮次请以上方轮次索引为准；各轮详情见 `../深度审计报告-第N轮-主报告.md`。
 已收敛的长期决策项：processing-flow 手动改态保留并补 `changes` 校验；大库增量聚合
 暂不启动，`replenishment.generate` 已用有界分块事务，10 万级冷态基准持续 PASS。
