@@ -93,6 +93,44 @@ describe('dispense routes', () => {
       .then((res) => String(res.body.data.id));
   }
 
+  it('normalizes malformed dispense and narcotic inputs before business validation', async () => {
+    const malformedDispense = await request(app)
+      .post('/api/v2/dispenses')
+      .send({
+        number: 123,
+        patientId: null,
+        doctorId: 456,
+        note: null,
+        items: [
+          { itemId: 7, quantity: 'x', batchId: '' },
+          { itemId: null, batchId: '' },
+        ],
+      });
+    expect([400, 404]).toContain(malformedDispense.status);
+
+    const malformedNarcotic = await request(app)
+      .post('/api/v2/narcotic-registry')
+      .send({
+        recordDate: 20260101,
+        patientId: null,
+        doctorId: '',
+        itemId: 9,
+        batchNo: null,
+        quantity: 'bad',
+        unit: null,
+        usage: '',
+        balanceBefore: 'abc',
+        balanceAfter: '5',
+        remark: null,
+      });
+    expect([400, 404]).toContain(malformedNarcotic.status);
+
+    const missingNarcotic = await request(app)
+      .patch('/api/v2/narcotic-registry/narcotic-missing')
+      .send({ recordDate: null, itemId: 9, quantity: 1 });
+    expect([400, 404]).toContain(missingNarcotic.status);
+  });
+
   it('POST /api/v2/dispenses creates a PENDING dispense and persists rows', async () => {
     const res = await request(app)
       .post('/api/v2/dispenses')

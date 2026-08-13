@@ -130,4 +130,22 @@ describe('custom field routes', () => {
       .expect(400);
     expect(res.body.code).toBe('VALIDATION_ERROR');
   });
+
+  it('falls back to default entity and tolerates missing bodies', async () => {
+    const listed = await request(app).get('/api/v2/custom-fields').expect(200);
+    expect(listed.body.success).toBe(true);
+    const values = await request(app).get('/api/v2/custom-fields/values');
+    expect(values.status).toBe(400);
+
+    const created = await request(app)
+      .post('/api/v2/custom-fields')
+      .send({ label: '无实体字段', fieldName: 'noEntityField', fieldType: 'TEXT' })
+      .expect(201);
+    expect(created.body.success).toBe(true);
+
+    const emptyPost = await request(app).post('/api/v2/custom-fields');
+    expect(emptyPost.status).toBe(400);
+    const emptyPut = await request(app).put('/api/v2/custom-fields/values');
+    expect([200, 400]).toContain(emptyPut.status);
+  });
 });
