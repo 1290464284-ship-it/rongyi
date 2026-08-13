@@ -65,4 +65,28 @@ describe('modal-a11y', () => {
     unregister();
     expect(sidebar.hasAttribute('inert')).toBe(false);
   });
+
+  it('skips head/script children and deduplicates repeated layer registration', () => {
+    const root = document.createElement('div');
+    root.id = 'root';
+    const script = document.createElement('script');
+    const button = document.createElement('button');
+    root.append(script, button);
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    const modal = document.createElement('div');
+    backdrop.append(modal);
+    root.append(backdrop);
+    document.body.append(root);
+
+    const unregister = registerModalLayer(modal);
+    const unregisterAgain = registerModalLayer(modal);
+    expect(script.hasAttribute('inert')).toBe(false);
+    expect(button.hasAttribute('inert')).toBe(true);
+
+    unregisterAgain();
+    expect(button.hasAttribute('inert')).toBe(false);
+    unregister();
+    expect(button.hasAttribute('inert')).toBe(false);
+  });
 });
