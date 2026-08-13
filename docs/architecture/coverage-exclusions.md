@@ -72,6 +72,8 @@ Web **96.82% / 92.94% / 98.66% / 98.58%**，双门禁全绿——覆盖率口径
 | `src/server/application/service-modules/inventory-batch.ts`（generateExpiryAlerts） | `expiryDate ? ... : '无效期'` 的无效期分支 | expiring 查询要求 `expiryDate >= today`，NULL 被排除，无效期分支不可达 |
 | `src/server/application/service-modules/dispense-stock.ts`（dispense/returnItems） | 事务内 `!locked`/状态 CAS/批次 CAS/退药 CAS 的冲突分支 | 预检与事务内重读同属同步流程，CAS 条件恒满足，竞态守卫为防御冗余（legacy NULL 数据路径仍可测） |
 | `src/server/application/service-modules/shift-template.ts`（addDays） | `if (!match) throw` 日期格式校验 | 调用方均先经 normalizeWeekStart 归一化，日期格式恒有效 |
+| `src/server/infrastructure/idempotency.ts`（async 分支） | async 回调的同步抛错 catch 与 `!isPromise(result)` 返回 | AsyncFunction 恒返回 Promise、恒不同步抛错，两条分支为防御性兜底 |
+| `src/server/infrastructure/idempotency.ts`（sync 路径） | `if (isDbWriteActive(db))` 第二次写锁检查 | 66 行已拦截活动写锁，两次检查之间无异步让出，重复守卫不可达 |
 
 ## 5. 其他已知取舍
 

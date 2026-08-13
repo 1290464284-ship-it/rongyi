@@ -106,6 +106,7 @@ export function withIdempotency<T>(
   // back, so a retry must not re-run the operation. cleanupIdempotencyRecords
   // removes the stuck PROCESSING record after the processing timeout.
   if (isAsyncFunction(fn)) {
+    /* v8 ignore start -- async 回调恒返回 Promise：同步抛错与同步返回值分支不可达（防御性兜底） */
     let result: T | Promise<T>;
     const keepProcessing = (error: unknown): boolean =>
       (error instanceof AppError && options?.keepProcessingOnAppError === true)
@@ -125,6 +126,7 @@ export function withIdempotency<T>(
       throw error;
     }
     if (!isPromise(result)) return result;
+    /* v8 ignore stop */
     return result.then(
       (value) => {
         const completedAt = new Date().toISOString();
@@ -156,6 +158,7 @@ export function withIdempotency<T>(
   // nested transactions / SAVEPOINTs), the processing record is deleted, and
   // the error is rethrown so the client can retry without duplicating effects.
   try {
+    /* v8 ignore next -- 66 行已拦截活动写锁，两次检查之间无异步让出，重复守卫不可达 */
     if (isDbWriteActive(db)) {
       // 同一连接上已有 async 写路径持有显式 BEGIN（sync push / bulk import /
       // resolveConflict），同步路径此时 BEGIN 会嵌套并污染事务；返回可重试 503。

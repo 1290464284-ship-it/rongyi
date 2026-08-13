@@ -60,6 +60,45 @@ describe('withIdempotency', () => {
     expect(calls).toBe(1);
   });
 
+  it('rejects promises from non-async callbacks on the no-key sync path', () => {
+    expect(() => withIdempotency(db, scope(''), () => Promise.resolve(1)))
+      .toThrow('Idempotent write must complete synchronously');
+  });
+
+  it('refuses keyless sync writes while the shared queue holds the write lock', async () => {
+    const queue = sharedDbWriteQueue(db);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const pending = queue(async () => {
+      await gate;
+      return 'done';
+    });
+    // 队列在微任务中启动，等一拍让 active 计数生效。
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(isDbWriteActive(db)).toBe(true);
+    expect(() => withIdempotency(db, scope(''), () => ({ ok: true })))
+      .toThrow('Database write is in progress');
+    release();
+    await pending;
+  });
+
+  it('reports rejected strings from async callbacks', async () => {
+    await expect(withIdempotency(db, scope('reject-string'), async () => {
+      throw 'string-rejection';
+    })).rejects.toThrow('string-rejection');
+  });
+
+  it('normalizes non-finite numbers and non-object values in body hashes', () => {
+    const nanHash = stableRequestBodyHash({ amount: Number.NaN });
+    const infHash = stableRequestBodyHash({ amount: Number.POSITIVE_INFINITY });
+    expect(nanHash).toBe(infHash);
+    expect(nanHash).toBe(stableRequestBodyHash({ amount: null }));
+    // 非对象顶层值（symbol）回退 String(...) 序列化，不崩溃且结果稳定
+    expect(stableRequestBodyHash(Symbol.for('marker'))).toBe(stableRequestBodyHash(Symbol.for('marker')));
+  });
+
   it('recovers from a corrupt completed response by deleting the record and re-running', async () => {
     const key = scopeKey(scope('corrupt-response'));
     db.prepare(
