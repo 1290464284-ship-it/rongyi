@@ -72,6 +72,29 @@ describe('prescriptions/api', () => {
     expect(body.status).toBeUndefined();
   });
 
+  it('omits the item id when the local row has none', async () => {
+    vi.mocked(apiRequest).mockResolvedValue({ id: 'pres-1' });
+    const form = {
+      ...validForm(),
+      items: [{
+        id: '',
+        name: '阿莫西林',
+        spec: '0.25g',
+        dosage: '1粒',
+        frequency: '每日三次',
+        days: '5',
+        quantity: '2',
+        price: '12',
+      }],
+    };
+    await updatePrescription(form as never, 'pres-1');
+    const body = JSON.parse(String(
+      vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/prescriptions/pres-1/save')?.[1]?.body,
+    ));
+    expect(body.items[0]).toMatchObject({ name: '阿莫西林', days: 5, quantity: 2, price: 1200 });
+    expect(body.items[0].id).toBeUndefined();
+  });
+
   it('rethrows save endpoint failures', async () => {
     vi.mocked(apiRequest).mockRejectedValue(new Error('save failed'));
     await expect(updatePrescription(validForm() as never, 'pres-1')).rejects.toThrow('save failed');

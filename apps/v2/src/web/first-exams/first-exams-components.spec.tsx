@@ -152,6 +152,20 @@ describe('first-exam actions', () => {
     expect(reload).not.toHaveBeenCalled();
   });
 
+  it('ignores a second transition while the first is in flight', async () => {
+    let resolveApi: (() => void) | undefined;
+    vi.mocked(apiRequest).mockImplementation(
+      () => new Promise((resolve) => {
+        resolveApi = () => resolve({});
+      }),
+    );
+    const first = transitionFirstExam(vi.fn(), vi.fn(), 'f-1', 'SUBMITTED');
+    const second = transitionFirstExam(vi.fn(), vi.fn(), 'f-1', 'APPROVED');
+    resolveApi?.();
+    await Promise.all([first, second]);
+    expect(apiRequest).toHaveBeenCalledTimes(1);
+  });
+
   it('changes dentition and reloads on success', async () => {
     const showToast = vi.fn();
     const reload = vi.fn().mockResolvedValue(undefined);
