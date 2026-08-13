@@ -55,4 +55,46 @@ describe('stats-aggregate snapshots', () => {
     invalidateStatSnapshots(db, 'InventoryTransaction', 'clinic-v2-001');
     expect(readReplenishmentSnapshot(db, 'clinic-v2-001', '2026-01-01T00:00:00.000Z', '2026-04-01T00:00:00.000Z', null)).toBeNull();
   });
+
+  it('no-ops for missing clinic ids and rejects corrupt or non-object snapshot JSON', () => {
+    expect(readDashboardSnapshot(db, null)).toBeNull();
+    expect(readReplenishmentSnapshot(db, null, '2026-01-01T00:00:00.000Z', '2026-02-01T00:00:00.000Z', null)).toBeNull();
+    expect(() => writeDashboardSnapshot(db, null, { a: 1 }, '2026-01-01T00:00:00.000Z')).not.toThrow();
+    expect(() => writeReplenishmentSnapshot(
+      db,
+      null,
+      '2026-01-01T00:00:00.000Z',
+      '2026-02-01T00:00:00.000Z',
+      new Map(),
+      '2026-01-01T00:00:00.000Z',
+    )).not.toThrow();
+
+    writeDashboardSnapshot(db, 'clinic-corrupt', { a: 1 }, '2026-01-01T00:00:00.000Z');
+    db.prepare(`UPDATE StatSnapshot SET valueJson = '[1]' WHERE clinicId = 'clinic-corrupt' AND key = 'dashboard'`).run();
+    expect(readDashboardSnapshot(db, 'clinic-corrupt')).toBeNull();
+
+    writeReplenishmentSnapshot(
+      db,
+      'clinic-array',
+      '2026-01-01T00:00:00.000Z',
+      '2026-02-01T00:00:00.000Z',
+      new Map(),
+      '2026-01-01T00:00:00.000Z',
+    );
+    db.prepare(`UPDATE ReplenishmentSnapshot SET dataJson = '[]' WHERE clinicId = 'clinic-array'`).run();
+    expect(readReplenishmentSnapshot(db, 'clinic-array', '2026-01-01T00:00:00.000Z', '2026-02-01T00:00:00.000Z', null)).toBeNull();
+  });
+
+  it('coerces null replenishment values to zero', () => {
+    writeReplenishmentSnapshot(
+      db,
+      'clinic-null-val',
+      '2026-01-01T00:00:00.000Z',
+      '2026-02-01T00:00:00.000Z',
+      new Map([['item-1', null as unknown as number]]),
+      '2026-01-02T00:00:00.000Z',
+    );
+    expect(readReplenishmentSnapshot(db, 'clinic-null-val', '2026-01-01T00:00:00.000Z', '2026-02-01T00:00:00.000Z', null))
+      .toEqual(new Map([['item-1', 0]]));
+  });
 });

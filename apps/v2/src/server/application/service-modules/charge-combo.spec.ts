@@ -79,16 +79,18 @@ describe('ChargeComboService', () => {
       price?: number;
       quantity?: number;
       costType?: 'SERVICE' | 'MATERIAL' | null;
+      catalogId?: string | null;
     } = {},
   ): void {
     db.prepare(
       `INSERT INTO ChargeComboItem (
          id, comboId, catalogId, name, category, price, quantity, costType,
          clinicId, createdAt, updatedAt, deletedAt
-       ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
     ).run(
       id,
       comboId,
+      overrides.catalogId === undefined ? null : overrides.catalogId,
       overrides.name ?? `Item ${id}`,
       overrides.category ?? 'GENERAL',
       overrides.price ?? 100,
@@ -196,5 +198,28 @@ describe('ChargeComboService', () => {
     const service = new ChargeComboService(db);
     await expect(service.applyToCharge('combo-missing', 'patient-demo-001', context))
       .rejects.toThrow(NotFoundError);
+  });
+
+  it('validates catalog references and prices when applying combo items', async () => {
+    db.prepare(
+      `INSERT INTO TreatmentCatalog (id, code, name, category, price, clinicId, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run('catalog-1', 'CAT-1', '目录洁牙', 'CLEAN', 100, 'clinic-v2-001', now, now);
+
+    insertCombo('combo-catalog-ok');
+    insertComboItem('combo-catalog-ok-item', 'combo-catalog-ok', { catalogId: 'catalog-1', price: 100, costType: null });
+    const service = new ChargeComboService(db);
+    await expect(service.applyToCharge('combo-catalog-ok', 'patient-demo-001', context))
+      .resolves.toMatchObject({ comboId: 'combo-catalog-ok' });
+
+    insertCombo('combo-catalog-missing');
+    insertComboItem('combo-catalog-missing-item', 'combo-catalog-missing', { catalogId: 'missing-catalog', price: 100 });
+    await expect(service.applyToCharge('combo-catalog-missing', 'patient-demo-001', context))
+      .rejects.toThrow('收费组合明细引用的目录项不存在: Item combo-catalog-missing-item');
+
+    insertCombo('combo-catalog-mismatch');
+    insertComboItem('combo-catalog-mismatch-item', 'combo-catalog-mismatch', { catalogId: 'catalog-1', price: 999 });
+    await expect(service.applyToCharge('combo-catalog-mismatch', 'patient-demo-001', context))
+      .rejects.toThrow('收费组合明细价格与目录不一致: Item combo-catalog-mismatch-item');
   });
 });

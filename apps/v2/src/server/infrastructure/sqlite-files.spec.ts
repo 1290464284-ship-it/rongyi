@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import Database from 'better-sqlite3';
 import {
   backupSqliteFile,
@@ -111,5 +111,48 @@ describe('sqlite file helpers', () => {
     } finally {
       backup.close();
     }
+  });
+
+  it('backupSqliteFile rejects a WAL checkpoint blocked by an active reader', () => {
+    const dbPath = path.join(dir, 'wal-busy.sqlite');
+    const db = new Database(dbPath);
+    db.pragma('journal_mode = WAL');
+    db.pragma('wal_autocheckpoint = 0');
+    db.exec('CREATE TABLE T (id TEXT PRIMARY KEY)');
+    db.prepare('INSERT INTO T (id) VALUES (?)').run('busy-1');
+
+    const reader = new Database(dbPath, { readonly: true });
+    reader.prepare('BEGIN').run();
+    reader.prepare('SELECT COUNT(*) FROM T').get();
+    const logger = { warn: vi.fn() };
+    try {
+      expect(() => backupSqliteFile(dbPath, path.join(dir, 'busy-backup.sqlite'), logger)).toThrow(
+        /WAL checkpoint not clean/,
+      );
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('SQLite backup skipped: WAL checkpoint busy'),
+        expect.objectContaining({ action: 'sqlite-backup' }),
+      );
+    } finally {
+      reader.close();
+      db.close();
+    }
+  });
+
+  it('backupSqliteFile warns when VACUUM INTO fails and falls back to a plain copy', () => {
+    const dbPath = path.join(dir, 'vacuum-fallback.sqlite');
+    const db = new Database(dbPath);
+    db.exec('CREATE TABLE T (id TEXT PRIMARY KEY)');
+    db.prepare('INSERT INTO T (id) VALUES (?)').run('fallback-1');
+    db.close();
+
+    const logger = { warn: vi.fn() };
+    const targetDir = path.join(dir, 'missing-target-dir');
+    const target = path.join(targetDir, 'backup.sqlite');
+    expect(() => backupSqliteFile(dbPath, target, logger)).toThrow();
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('VACUUM INTO backup failed'),
+      expect.objectContaining({ action: 'sqlite-backup', target }),
+    );
   });
 });

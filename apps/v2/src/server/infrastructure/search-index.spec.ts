@@ -149,4 +149,15 @@ describe('runtime SearchIndex maintenance', () => {
     expect(() => upsertSearchRow(db, 'UnknownResource', 'x1')).not.toThrow();
     expect(() => removeSearchRow(db, 'Patient', 'si-never-existed')).not.toThrow();
   });
+
+  it('no-ops for databases without the SearchIndex table or child patientId columns', () => {
+    const db = new Database(':memory:');
+    db.exec('CREATE TABLE Patient (id TEXT PRIMARY KEY); CREATE TABLE Appointment (id TEXT PRIMARY KEY);');
+    expect(() => upsertSearchRow(db, 'Patient', 'p1')).not.toThrow();
+    expect(() => removeSearchRow(db, 'Patient', 'p1')).not.toThrow();
+    expect(() => removeSearchRowsByRecordIds(db, 'Patient', ['p1'])).not.toThrow();
+    expect(() => rebuildSearchIndex(db)).not.toThrow();
+    expect(() => refreshPatientChildSearchRows(db, 'p1')).not.toThrow();
+    db.close();
+  });
 });
