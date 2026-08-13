@@ -297,4 +297,75 @@ describe('RefundsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '重试' }));
     expect(await screen.findByText('CHG-1')).toBeDefined();
   });
+
+  it('renders sparse refund rows and missing summary statuses', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/refunds/summary') {
+        return { counts: { REQUESTED: 1 }, total: 1 };
+      }
+      if (path.startsWith('/refunds?')) {
+        return {
+          items: [{
+            id: 'r-sparse',
+            patientId: null,
+            patientName: null,
+            chargeId: null,
+            chargeNumber: null,
+            amount: null,
+            reason: null,
+            status: null,
+            createdAt: null,
+          }],
+          total: 1,
+          page: 1,
+          pageSize: 20,
+        };
+      }
+      return {};
+    });
+    render(<RefundsPage />, { wrapper });
+    await screen.findByText('退款管理');
+    // 缺省状态桶回退为 0
+    const chips = document.querySelector('[aria-label="退款状态汇总"]');
+    expect(chips?.getAttribute('data-total')).toBe('1');
+    expect(screen.getAllByText(/ 0$/).length).toBeGreaterThan(0);
+    // 稀疏行渲染为空串占位
+    expect(await screen.findByText('申请时间')).toBeDefined();
+  });
+
+  it('ignores stale action clicks across all action states', async () => {
+    let resolvePage2: (value: unknown) => void = () => {};
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/refunds/summary') {
+        return { counts: { REQUESTED: 1, PENDING_REFUND: 1 }, total: 2 };
+      }
+      if (path === '/refunds?page=1&pageSize=20') {
+        return {
+          items: [refundRows[0], refundRows[1]],
+          total: 25,
+          page: 1,
+          pageSize: 20,
+        };
+      }
+      if (path === '/refunds?page=2&pageSize=20') {
+        return new Promise((resolve) => { resolvePage2 = resolve; });
+      }
+      return {};
+    });
+    render(<RefundsPage />, { wrapper });
+    await screen.findByText('通过审批');
+    fireEvent.click(screen.getByText('下一页'));
+    await waitFor(() => {
+      expect((screen.getByText('下一页') as HTMLButtonElement).disabled).toBe(true); // stale
+    });
+    fireEvent.click(screen.getByText('通过审批'));
+    fireEvent.click(screen.getByText('驳回'));
+    fireEvent.click(screen.getByText('取消'));
+    fireEvent.click(screen.getByText('确认退款'));
+    expect(vi.mocked(apiRequest)).not.toHaveBeenCalledWith('/refunds/r-requested/approve', expect.anything());
+    expect(vi.mocked(apiRequest)).not.toHaveBeenCalledWith('/refunds/r-requested/reject', expect.anything());
+    expect(vi.mocked(apiRequest)).not.toHaveBeenCalledWith('/refunds/r-requested/cancel', expect.anything());
+    expect(vi.mocked(apiRequest)).not.toHaveBeenCalledWith('/refunds/r-pending/process', expect.anything());
+    resolvePage2({ items: [], total: 25, page: 2, pageSize: 20 });
+  });
 });
