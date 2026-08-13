@@ -39,7 +39,7 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
         requestId: req.header('idempotency-key') ?? '',
         requestBodyHash: stableRequestBodyHash(req.body ?? {}),
       }, async () => {
-        const created = await appointments.create(req.body, req.context!);
+        const created = await appointments.create(req.body ?? {}, req.context!);
         return { success: true, data: created };
       });
       res.status(201).json(result);
@@ -119,7 +119,7 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
         requestId: req.header('idempotency-key') ?? '',
         requestBodyHash: stableRequestBodyHash(req.body ?? {}),
       }, async () => {
-        const created = await charges.create(req.body, req.context!);
+        const created = await charges.create(req.body ?? {}, req.context!);
         return { success: true, data: created };
       });
       res.status(201).json(result);
@@ -297,7 +297,7 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
 
   app.post('/api/v2/inventory/transactions', writeLimiter, wrapAsync(async (req, res) => {
       const result = await inventory.createTransaction(
-        req.body,
+        req.body ?? {},
         req.context!,
         typeof req.body?.requestId === 'string' ? req.body.requestId : undefined,
       );
