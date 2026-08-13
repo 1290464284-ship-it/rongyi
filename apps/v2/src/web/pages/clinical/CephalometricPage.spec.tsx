@@ -75,6 +75,17 @@ describe('CephalometricPage', () => {
     vi.mocked(uploadFile).mockReset();
   });
 
+  it('filters compare options by search', async () => {
+    mockData();
+    render(<CephalometricPage />, { wrapper });
+    fireEvent.change(await screen.findByLabelText('对比选项搜索'), { target: { value: '张' } });
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith(
+        '/resources/cephalometricCases?page=1&pageSize=50&search=%E5%BC%A0',
+      );
+    });
+  });
+
   it('lists and creates cephalometric cases with an uploaded image', async () => {
     mockData();
     vi.mocked(uploadFile).mockResolvedValue({ id: 'file-1', filename: 'file-1.png', url: '/api/v2/files/file-1.png' });
