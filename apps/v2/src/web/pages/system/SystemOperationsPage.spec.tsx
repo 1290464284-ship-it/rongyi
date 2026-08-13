@@ -99,6 +99,16 @@ describe('SystemOperationsPage', () => {
     expect(await screen.findByText('JSON 每行必须是对象')).toBeDefined();
   });
 
+  it('parses escaped quotes inside CSV cells', async () => {
+    mockFileReader('name,code\n"a""b",X');
+    render(<ToastProvider><SystemOperationsPage /></ToastProvider>);
+    fireEvent.change(document.querySelector('input[type="file"]') as HTMLInputElement, {
+      target: { files: [new File(['x'], 'x.csv')] },
+    });
+    await screen.findAllByText('已加载 1 行');
+    expect((document.querySelector('textarea') as HTMLTextAreaElement).value).toContain('a\\"b');
+  });
+
   it('reports import and search failures and skips short searches', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path.startsWith('/search?')) return [];
