@@ -5,6 +5,7 @@ import {
   generateDocumentNumber,
   hashRefreshToken,
   isUserRole,
+  newRefreshToken,
   ROLE_MANAGEMENT_LEVEL,
   safeJsonObject,
 } from './common';
@@ -70,6 +71,14 @@ describe('role management hierarchy', () => {
     expect(() => assertCanManageUser('ADMIN', 'BOSS')).toThrow('管理员不能管理老板账号');
     expect(() => assertCanManageUser('DOCTOR', 'DOCTOR')).toThrow('医生不能管理员工账号');
     expect(() => assertCanManageUser('BOSS', 'ADMIN')).not.toThrow();
+    for (const attempt of [() => assertCanManageUser('ADMIN', 'BOSS'), () => assertCanManageUser('DOCTOR', 'DOCTOR')]) {
+      try {
+        attempt();
+        throw new Error('expected assertion to throw');
+      } catch (error) {
+        expect((error as { code?: string }).code).toBe('FORBIDDEN');
+      }
+    }
   });
 });
 
@@ -78,6 +87,11 @@ describe('auth and JSON helpers', () => {
     const token = 'refresh-token-value';
     expect(hashRefreshToken(token)).toBe(hashRefreshToken(token));
     expect(hashRefreshToken(token)).toMatch(/^[0-9a-f]{64}$/);
+    const first = newRefreshToken();
+    const second = newRefreshToken();
+    expect(first).toMatch(/^[0-9a-f]{96}$/);
+    expect(second).toMatch(/^[0-9a-f]{96}$/);
+    expect(first).not.toBe(second);
   });
 
   it('recognizes only the three supported user roles', () => {
@@ -92,5 +106,10 @@ describe('auth and JSON helpers', () => {
     expect(safeJsonObject('not-json')).toEqual({});
     expect(safeJsonObject('[1,2]')).toEqual({});
     expect(safeJsonObject(null)).toEqual({});
+    expect(safeJsonObject('0')).toEqual({});
+    expect(safeJsonObject('false')).toEqual({});
+    expect(safeJsonObject('""')).toEqual({});
+    expect(safeJsonObject('1')).toEqual({});
   });
+
 });

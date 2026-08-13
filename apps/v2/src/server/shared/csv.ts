@@ -91,7 +91,6 @@ export async function streamCsvResponse<T extends Record<string, unknown>>(
         yield mapper ? mapper(row) : row;
       }
     })(),
-    { objectMode: true },
   );
   await pipeline(rowStream, createCsvStream(columns, options), res);
 }

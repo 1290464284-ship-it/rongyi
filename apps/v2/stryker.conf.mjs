@@ -30,6 +30,6 @@ export default {
   timeoutMS: 30_000,
   // Ratchet from the measured score. Keep the break threshold below the current
   // score so a regression fails the mutation gate instead of silently slipping.
-  thresholds: { high: 85, low: 82, break: 80 },
+  thresholds: { high: 93, low: 90, break: 88 },
   cleanTempDir: 'always',
 };
