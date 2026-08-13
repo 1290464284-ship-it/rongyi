@@ -69,4 +69,10 @@ describe('parsePagination property-based', () => {
       { numRuns: 50 },
     );
   });
+
+  it('rejects pages above the hard cap and treats blank or missing values as defaults', () => {
+    expect(() => parsePagination(request({ page: '1000001', pageSize: '1' }))).toThrow('page must be <= 1000000');
+    expect(parsePagination(request({ page: ' ', pageSize: ' ' }))).toEqual({ page: 1, pageSize: 20 });
+    expect(parsePagination(request({ page: null, pageSize: null }))).toEqual({ page: 1, pageSize: 20 });
+  });
 });

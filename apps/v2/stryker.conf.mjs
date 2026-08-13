@@ -16,6 +16,7 @@ export default {
   testFiles: [
     'src/server/http/pagination.property.spec.ts',
     'src/server/http/validation.property.spec.ts',
+    'src/server/http/validation.spec.ts',
     'src/server/infrastructure/tenant.spec.ts',
     'src/server/infrastructure/errors.spec.ts',
     'src/server/shared/csv.spec.ts',
@@ -27,8 +28,8 @@ export default {
   coverageAnalysis: 'off',
   concurrency: 1,
   timeoutMS: 30_000,
-  // Ratchet from the measured pilot score. Keep this above the current score
-  // to prevent silently regressing the property-based verification strength.
-  thresholds: { high: 72, low: 60, break: 59 },
+  // Ratchet from the measured score. Keep the break threshold below the current
+  // score so a regression fails the mutation gate instead of silently slipping.
+  thresholds: { high: 85, low: 82, break: 80 },
   cleanTempDir: 'always',
 };

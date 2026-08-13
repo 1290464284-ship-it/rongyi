@@ -53,9 +53,6 @@ export function assertValidDateTimeValue(raw: unknown, label: string): string {
     throw new ValidationError(`${label} must be a valid date-time`);
   }
   const normalized = new Date(raw).toISOString();
-  if (Number.isNaN(new Date(normalized).getTime())) {
-    throw new ValidationError(`${label} must be a valid date-time`);
-  }
   return normalized;
 }
 
