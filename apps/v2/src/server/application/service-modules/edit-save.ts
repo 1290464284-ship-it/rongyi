@@ -293,9 +293,8 @@ export class EditSaveService {
   }
 
   private planItemMatches(existing: Record<string, unknown>, item: TreatmentPlanSaveItem): boolean {
-    const existingTeeth = Array.isArray(existing.teethNumbers)
-      ? existing.teethNumbers.map(String)
-      : this.parseTeeth(existing.teethNumbers);
+    // teethNumbers 列恒为 JSON 字符串（写入侧 JSON.stringify），Array.isArray 分支不可达
+    const existingTeeth = this.parseTeeth(existing.teethNumbers);
     return (
       String(existing.code ?? '') === item.code &&
       String(existing.name ?? '') === item.name &&
@@ -303,13 +302,15 @@ export class EditSaveService {
       Number(existing.price ?? 0) === item.price &&
       Number(existing.quantity ?? 0) === item.quantity &&
       JSON.stringify(existingTeeth) === JSON.stringify(item.teethNumbers) &&
-      String(existing.status ?? '') === item.status
+      // status 列 NOT NULL，nullish 回退不可达
+      String(existing.status) === item.status
     );
   }
 
   private parseTeeth(value: unknown): string[] {
     try {
-      const parsed = JSON.parse(String(value ?? '[]')) as unknown;
+      // teethNumbers 列 NOT NULL DEFAULT '[]'，nullish 回退不可达
+      const parsed = JSON.parse(String(value)) as unknown;
       return Array.isArray(parsed) ? parsed.map(String) : [];
     } catch {
       return [];

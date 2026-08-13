@@ -379,4 +379,179 @@ describe('EditSaveService', () => {
       spy.mockRestore();
     }
   });
+
+  it('reports NotFound when plan or prescription main updates affect zero rows', () => {
+    insertPlan('plan-race-main');
+    insertPlanItem('item-race-main', 'plan-race-main');
+    insertPrescription('pres-race-main');
+    const originalPrepare = db.prepare.bind(db);
+    const service = new EditSaveService(db);
+    const planBase = {
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      name: 'Race',
+      status: 'APPROVED',
+      totalFee: 100,
+      items: [{ id: 'item-race-main', code: 'A', name: 'A', category: 'GENERAL', price: 100, quantity: 1, teethNumbers: [], status: 'PLANNED' }],
+    };
+    const spyMain = vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE TreatmentPlan') && sql.includes('SET patientId')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      expect(() => service.saveTreatmentPlan('plan-race-main', planBase, context)).toThrow(NotFoundError);
+    } finally {
+      spyMain.mockRestore();
+    }
+    const spyItem = vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE TreatmentPlanItem') && sql.includes('SET code')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      expect(() => service.saveTreatmentPlan('plan-race-main', planBase, context)).toThrow(NotFoundError);
+    } finally {
+      spyItem.mockRestore();
+    }
+    const spyPres = vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE Prescription') && sql.includes('SET patientId')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      expect(() => service.savePrescription('pres-race-main', {
+        patientId: 'patient-demo-001',
+        doctorId: 'user-admin-001',
+        status: 'SUBMITTED',
+        items: [{ name: 'M', days: 3, quantity: 1, price: 100 }],
+      }, context)).toThrow(NotFoundError);
+    } finally {
+      spyPres.mockRestore();
+    }
+  });
+
+  it('saves a global-tenant prescription with mixed item shapes', () => {
+    const globalContext: AppContext = { ...context, clinicId: null };
+    db.prepare(
+      `INSERT INTO Prescription (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, remark, status
+       ) VALUES ('pres-global', NULL, ?, ?, NULL, 'patient-demo-001', 'user-admin-001', NULL, 'DRAFT')`,
+    ).run(now, now);
+    db.prepare(
+      `INSERT INTO PrescriptionItem (
+         id, clinicId, createdAt, updatedAt, deletedAt, prescriptionId,
+         name, specification, dosage, frequency, days, quantity, price
+       ) VALUES ('pi-global-keep', NULL, ?, ?, NULL, 'pres-global', 'Keep', NULL, NULL, NULL, 3, 1, 100)`,
+    ).run(now, now);
+    db.prepare(
+      `INSERT INTO PrescriptionItem (
+         id, clinicId, createdAt, updatedAt, deletedAt, prescriptionId,
+         name, specification, dosage, frequency, days, quantity, price
+       ) VALUES ('pi-global-drop', NULL, ?, ?, NULL, 'pres-global', 'Drop', NULL, NULL, NULL, 3, 1, 100)`,
+    ).run(now, now);
+    const result = new EditSaveService(db).savePrescription('pres-global', {
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      status: 'SUBMITTED',
+      items: [
+        { id: 'pi-global-keep', name: 'Keep', dosage: '5mg', frequency: 'tid', days: 3, quantity: 1, price: 100 },
+        { id: '', name: 'New', dosage: null as never, frequency: null as never, days: 3, quantity: 1, price: 100 },
+      ],
+    }, globalContext);
+    expect(result.items).toBe(2);
+    const dropped = db.prepare('SELECT deletedAt FROM PrescriptionItem WHERE id = ?').get('pi-global-drop') as { deletedAt: string | null };
+    expect(dropped.deletedAt).not.toBeNull();
+    const created = db.prepare('SELECT id, clinicId, dosage, frequency FROM PrescriptionItem WHERE prescriptionId = ? AND name = ?')
+      .get('pres-global', 'New') as { id: string; clinicId: string | null; dosage: string | null; frequency: string | null };
+    expect(created.id).not.toBe('');
+    expect(created.clinicId).toBeNull();
+    expect(created.dosage).toBeNull();
+    expect(created.frequency).toBeNull();
+  });
+
+  it('saves a global plan, soft-deletes removed items, and normalizes sparse shapes', () => {
+    const globalContext: AppContext = { ...context, clinicId: null };
+    db.prepare(
+      `INSERT INTO TreatmentPlan (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, name, status, totalFee, remark
+       ) VALUES ('plan-global-2', NULL, ?, ?, NULL, 'patient-demo-001', 'user-admin-001', 'Global 2', 'APPROVED', 100, NULL)`,
+    ).run(now, now);
+    db.prepare(
+      `INSERT INTO TreatmentPlanItem (
+         id, clinicId, createdAt, updatedAt, deletedAt, planId,
+         code, name, category, price, quantity, teethNumbers, status, billed
+       ) VALUES ('item-global-keep', NULL, ?, ?, NULL, 'plan-global-2', 'A', 'A', 'GENERAL', 100, 1, '[]', 'PLANNED', 0)`,
+    ).run(now, now);
+    db.prepare(
+      `INSERT INTO TreatmentPlanItem (
+         id, clinicId, createdAt, updatedAt, deletedAt, planId,
+         code, name, category, price, quantity, teethNumbers, status, billed
+       ) VALUES ('item-global-drop', NULL, ?, ?, NULL, 'plan-global-2', 'B', 'B', 'GENERAL', 100, 1, '[]', 'PLANNED', 0)`,
+    ).run(now, now);
+    const result = new EditSaveService(db).saveTreatmentPlan('plan-global-2', {
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      name: 'Global 2 Updated',
+      status: 'APPROVED',
+      totalFee: 200,
+      items: [
+        { id: 'item-global-keep', code: 'A', name: 'A', category: 'GENERAL', price: 100, quantity: 1, teethNumbers: '11' as never, status: 'PLANNED' },
+      ],
+    }, globalContext);
+    expect(result.items).toBe(1);
+    const dropped = db.prepare('SELECT deletedAt FROM TreatmentPlanItem WHERE id = ?').get('item-global-drop') as { deletedAt: string | null };
+    expect(dropped.deletedAt).not.toBeNull();
+  });
+
+  it('normalizes missing plan name and sparse item fields before validation', () => {
+    insertPlan('plan-sparse');
+    const service = new EditSaveService(db);
+    const base = {
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      name: 'Sparse',
+      status: 'APPROVED',
+      totalFee: 100,
+      items: [{ code: 'A', name: 'A', category: 'GENERAL', price: 100, quantity: 1, teethNumbers: [], status: 'PLANNED' }],
+    };
+    expect(() => service.saveTreatmentPlan('plan-sparse', { ...base, name: undefined as never }, context)).toThrow(ValidationError);
+    expect(() => service.saveTreatmentPlan('plan-sparse', {
+      ...base,
+      items: [{ code: 'A', name: undefined as never, category: 'GENERAL', price: 100, quantity: 1, teethNumbers: [], status: 'PLANNED' }],
+    }, context)).toThrow(ValidationError);
+    expect(() => service.saveTreatmentPlan('plan-sparse', {
+      ...base,
+      items: [{ code: 'A', name: 'A', category: undefined as never, price: 100, quantity: 1, teethNumbers: [], status: 'PLANNED' }],
+    }, context)).toThrow(ValidationError);
+    expect(() => service.saveTreatmentPlan('plan-sparse', {
+      ...base,
+      items: [{ code: 'A', name: 'A', category: 'GENERAL', price: 100, quantity: 1, teethNumbers: [], status: undefined as never }],
+    }, context)).toThrow(/状态无效/);
+  });
+
+  it('keeps matching billed items with array or non-array teeth payloads', () => {
+    insertPlan('plan-billed-keep');
+    insertPlanItem('bi-array', 'plan-billed-keep', { code: 'K', name: 'K', billed: 1 });
+    insertPlanItem('bi-five', 'plan-billed-keep', { code: 'K2', name: 'K2', billed: 1 });
+    // 非数组 JSON 载荷：parseTeeth 回退为空数组后仍可匹配
+    db.prepare('UPDATE TreatmentPlanItem SET teethNumbers = ? WHERE id = ?').run('5', 'bi-five');
+    const result = new EditSaveService(db).saveTreatmentPlan('plan-billed-keep', {
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      name: 'K',
+      status: 'APPROVED',
+      totalFee: 200,
+      items: [
+        { id: 'bi-array', code: 'K', name: 'K', category: 'GENERAL', price: 100, quantity: 1, teethNumbers: [], status: 'PLANNED' },
+        { id: 'bi-five', code: 'K2', name: 'K2', category: 'GENERAL', price: 100, quantity: 1, teethNumbers: [], status: 'PLANNED' },
+      ],
+    }, context);
+    expect(result.items).toBe(2);
+  });
 });
