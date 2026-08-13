@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 /**
  * 加工流程自定义与流程统计服务。
  *
@@ -276,4 +275,3 @@ export class ProcessingFlowService {
     return rows.map((row) => ({ ...row, sortOrder: Number(row.sortOrder) }));
   }
 }
-/* v8 ignore stop -- round 77 coverage calibration */

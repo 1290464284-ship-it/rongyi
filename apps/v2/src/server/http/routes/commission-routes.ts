@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import type { Express } from 'express';
 
 import { wrapAsync } from '../middleware';
@@ -84,4 +83,3 @@ export function registerCommissionRoutes(app: Express, deps: RouteDependencies):
     res.json({ success: true, data: service.statements(period, req.context!, { doctorId }) });
   }));
 }
-/* v8 ignore stop -- round 77 coverage calibration */

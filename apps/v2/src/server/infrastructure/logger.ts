@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import fs from 'node:fs';
 import path from 'node:path';
 import { redactSensitiveText } from './redact';
@@ -175,4 +174,3 @@ export class Logger {
     }
   }
 }
-/* v8 ignore stop -- round 77 coverage calibration */

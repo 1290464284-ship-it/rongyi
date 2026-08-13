@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 // 跨实例 refresh 轮换的 DB claim 缓存（B-M9）：从 auth.service.ts 抽取，
 // 保持「5 秒窗口内并发/重复 refresh 返回同一新会话、跨进程一致」的语义。
 import { randomUUID } from 'node:crypto';
@@ -59,4 +58,3 @@ export function clearUserRefreshClaimsStore(db: Database.Database, userId: strin
     // 缓存清理为尽力而为；会话族吊销与标记已用是权威路径
   }
 }
-/* v8 ignore stop -- round 77 coverage calibration */

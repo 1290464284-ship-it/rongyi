@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 /**
  * 库存明细报表路由：GET /api/v2/inventory-reports/:type。
  * supplierId 目前不参与过滤，但透传回响应供前端展示。
@@ -23,4 +22,3 @@ export function registerInventoryReportRoutes(app: Express, deps: RouteDependenc
     res.json({ success: true, data: { ...data, supplierId: supplierId ?? null } });
   }));
 }
-/* v8 ignore stop -- round 77 coverage calibration */

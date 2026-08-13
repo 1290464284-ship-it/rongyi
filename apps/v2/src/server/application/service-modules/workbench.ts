@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import type Database from 'better-sqlite3';
 import { SystemClock, clinicDayEndUtc, clinicDayStartUtc } from '../../infrastructure/clock';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
@@ -99,4 +98,3 @@ export class ClinicalWorkbenchService {
     };
   }
 }
-/* v8 ignore stop -- round 77 coverage calibration */

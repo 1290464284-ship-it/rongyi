@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import { useEffect, useRef, useState } from 'react';
 import { fetchAllPages } from '../lib/api';
 import { SearchableSelect, type SearchableSelectRow } from '../components';
@@ -108,4 +107,3 @@ export function PurchaseOrderFormFields({
     </>
   );
 }
-/* v8 ignore stop -- round 77 coverage calibration */

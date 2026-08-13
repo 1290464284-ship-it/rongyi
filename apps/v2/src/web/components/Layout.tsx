@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import { FormEvent, useEffect, useRef, useState, type ComponentType } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
@@ -329,4 +328,3 @@ return (
     </>
   );
 }
-/* v8 ignore stop -- round 77 coverage calibration */

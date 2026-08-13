@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import type Database from 'better-sqlite3';
 import { AppError, ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
@@ -167,4 +166,3 @@ export class MedicalRecordEditService {
     return row;
   }
 }
-/* v8 ignore stop -- round 77 coverage calibration */

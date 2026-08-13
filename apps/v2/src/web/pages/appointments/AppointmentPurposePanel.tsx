@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import { FormEvent, useState } from 'react';
 import type { UseQueryResult } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
@@ -179,4 +178,3 @@ function TogglePurposeButton({ row, onToggle }: { row: PurposeRow; onToggle: (ro
     </button>
   );
 }
-/* v8 ignore stop -- round 77 coverage calibration */

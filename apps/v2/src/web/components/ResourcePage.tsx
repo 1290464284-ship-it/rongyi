@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import { FormEvent, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'react-router';
@@ -480,4 +479,3 @@ function ResourceCrudPage({ resource: fixedResource, initialSearch }: { resource
     </div>
   );
 }
-/* v8 ignore stop -- round 77 coverage calibration */

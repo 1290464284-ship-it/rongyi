@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { apiRequest } from '../../lib/api';
 import { CrudPage } from '../../components/CrudPage';
@@ -253,4 +252,3 @@ function ReloadSync({
   }, [reload, onReload]);
   return null;
 }
-/* v8 ignore stop -- round 77 coverage calibration */

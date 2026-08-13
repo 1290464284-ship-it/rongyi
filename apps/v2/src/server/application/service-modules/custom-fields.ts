@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import type Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import { NotFoundError, ValidationError } from '../../infrastructure/errors';
@@ -226,4 +225,3 @@ export class CustomFieldService {
     }
   }
 }
-/* v8 ignore stop -- round 77 coverage calibration */

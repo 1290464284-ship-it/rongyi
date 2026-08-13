@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 /**
  * 测量报告：轮廓图 / 折线图 / 保存 / 微信发送 / 轮廓重叠比较。
  *
@@ -134,4 +133,3 @@ export class CephalometricReportService {
     };
   }
 }
-/* v8 ignore stop -- round 77 coverage calibration */

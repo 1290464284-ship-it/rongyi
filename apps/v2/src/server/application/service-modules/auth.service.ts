@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 // 认证/会话服务（M-04：由 auth.ts 拆分；账号管理见 user-management.service.ts）
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -420,4 +419,3 @@ export class AuthService {
     return jwt.sign(payload, JWT_SECRET, { expiresIn: TOKEN_TTL });
   }
 }
-/* v8 ignore stop -- round 77 coverage calibration */

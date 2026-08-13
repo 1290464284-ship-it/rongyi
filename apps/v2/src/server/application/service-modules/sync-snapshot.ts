@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import Database from 'better-sqlite3';
 import { AppError, ValidationError } from '../../infrastructure/errors';
 import type { AppContext } from '../../../domain/contracts';
@@ -94,4 +93,3 @@ export function fullSnapshot(
   }
   return { serverTime: new Date().toISOString(), tables };
 }
-/* v8 ignore stop -- round 77 coverage calibration */

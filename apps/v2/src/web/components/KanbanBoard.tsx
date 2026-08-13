@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import { useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react';
 
 interface KanbanCard {
@@ -105,4 +104,3 @@ function moveCard(columns: KanbanColumn[], cardId: string, targetColumnId: strin
     return column;
   });
 }
-/* v8 ignore stop -- round 77 coverage calibration */

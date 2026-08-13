@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 /**
  * 微信提醒服务：每天为"该给谁发微信、发什么"生成人工跟进清单。
  *
@@ -401,4 +400,3 @@ export class WechatReminderService {
     };
   }
 }
-/* v8 ignore stop -- round 77 coverage calibration */

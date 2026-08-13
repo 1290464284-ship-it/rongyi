@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 /**
  * 多岗位（一人多角色）+ 角色权限配置基础服务。
  *
@@ -105,4 +104,3 @@ export class UserRoleService {
     return desired;
   }
 }
-/* v8 ignore stop -- round 77 coverage calibration */

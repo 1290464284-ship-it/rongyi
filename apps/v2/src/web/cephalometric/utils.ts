@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import type { Point2D } from './types';
 
 export function toPoint(point: Point2D): { x: number; y: number } {
@@ -51,4 +50,3 @@ export function jsonToText(value: unknown): string {
   if (value === null || value === undefined) return '{}';
   return JSON.stringify(value);
 }
-/* v8 ignore stop -- round 77 coverage calibration */

@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 /**
  * 首诊追踪/流失登记服务。
  *
@@ -99,4 +98,3 @@ export class FirstExamTrackingService {
     return { ...counts, total, dueToday: Number(dueRow?.count ?? 0) };
   }
 }
-/* v8 ignore stop -- round 77 coverage calibration */

@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 /**
  * 会员折扣方案：方案维护（savePlan/getPlan）与报价试算（quote/quoteByPatient）。
  *
@@ -280,4 +279,3 @@ export class MemberDiscountService {
     return row;
   }
 }
-/* v8 ignore stop -- round 77 coverage calibration */

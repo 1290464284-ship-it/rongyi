@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { registerModalLayer } from '../lib/modal-a11y';
 
@@ -248,4 +247,3 @@ export function PromptDialog({
     </Dialog>
   );
 }
-/* v8 ignore stop -- round 77 coverage calibration */

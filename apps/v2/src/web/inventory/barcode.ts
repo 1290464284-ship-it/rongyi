@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 /** Code39 编码：n 窄条、w 宽条，每字符 9 元素，宽/窄宽度比为 3:1。 */
 const CODE39_TABLE: Record<string, string> = {
   '0': 'nnnwwnwnn',
@@ -77,4 +76,3 @@ export function barcodeDimensions(bars: Array<{ x: number; width: number }>): { 
   const last = bars[bars.length - 1];
   return { width: (last?.x ?? 0) + (last?.width ?? 0), height: BAR_HEIGHT };
 }
-/* v8 ignore stop -- round 77 coverage calibration */

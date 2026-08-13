@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import type { DataTableColumn } from '../components';
 import { EDIT_STATUS_LABELS } from './constants';
 import type { MedicalRecordRow } from './types';
@@ -15,4 +14,3 @@ export const recordColumns: DataTableColumn<MedicalRecordRow>[] = [
     render: (row) => EDIT_STATUS_LABELS[String(row.editRequestStatus ?? 'NONE')] ?? String(row.editRequestStatus ?? 'NONE'),
   },
 ];
-/* v8 ignore stop -- round 77 coverage calibration */

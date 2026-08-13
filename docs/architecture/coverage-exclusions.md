@@ -16,10 +16,15 @@ web 页面/组件），其中相当部分超出 AGENTS.md 承诺的「schema/SQL
 
 | 批次 | 范围 | 状态 |
 |---|---|---|
-| A | server 基础设施（logger/scheduler/database/idempotency/db-write-queue/clock/secret-file/security/search-index/sqlite-files/seed/ttl-cache） | 待办 |
-| B | server service-modules（32 文件） | 待办 |
-| C | web lib/hooks/components 核心（api/messages/use-crud-resource/data-table/dialog 等） | 待办 |
-| D | web pages/dialogs（88 文件） | 待办 |
+| A | server 基础设施（logger/scheduler/database/idempotency/db-write-queue/clock/secret-file/security/search-index/sqlite-files/seed/ttl-cache） | ✅ 完成（2026-08-13 深夜） |
+| B | server service-modules（48 文件） | ✅ 完成（2026-08-13 深夜） |
+| C | web lib/hooks/components 核心（api/messages/use-crud-resource/data-table/dialog 等） | ✅ 完成（2026-08-13 深夜） |
+| D | web pages/dialogs（88 文件） | ✅ 完成（2026-08-13 深夜） |
+
+四批一次性执行完毕：`v8 ignore` 标记 525 处（202 文件）→ **145 处（15 文件）**，
+剩余全部为带理由的细粒度防御分支排除（见 §4 口径）。移除后实测门禁：
+服务端 **96.33% statements / 90.92% branches / 99.47% functions / 97.64% lines**，
+Web **96.82% / 92.94% / 98.66% / 98.58%**，双门禁全绿——覆盖率口径恢复真实。
 
 每批完成后重跑 `test:coverage` / `test:coverage:web` 并下调用
 `V2_V8_UPDATE_BASELINE=1 pnpm --filter @dental/v2 run v8-ignore:report` 更新基线。

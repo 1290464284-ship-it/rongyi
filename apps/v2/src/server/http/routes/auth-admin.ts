@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import { timingSafeEqual } from 'node:crypto';
 import type { Express, Request } from 'express';
 import { createIpRateLimit, createRateLimit } from '../rate-limit';
@@ -196,4 +195,3 @@ export function registerAdminRoutes(app: Express, deps: RouteDependencies): void
       res.json({ success: true, data: result });
   }));
 }
-/* v8 ignore stop -- round 77 coverage calibration */

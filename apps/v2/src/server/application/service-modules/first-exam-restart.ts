@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 /**
  * 首诊重启与牙列/主诉标记服务。
  *
@@ -158,4 +157,3 @@ export class FirstExamRestartService {
     ).all(patientId, ...tenantParams(clinicId)) as FirstExamHistoryItem[];
   }
 }
-/* v8 ignore stop -- round 77 coverage calibration */

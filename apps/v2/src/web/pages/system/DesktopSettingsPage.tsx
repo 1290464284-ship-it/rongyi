@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import { useEffect, useRef, useState } from 'react';
 import { resetApiBase } from '../../lib/api';
 import { errorMessage, friendlyError } from '../../lib/messages';
@@ -192,4 +191,3 @@ export function DesktopSettingsPage() {
     </div>
   );
 }
-/* v8 ignore stop -- round 77 coverage calibration */

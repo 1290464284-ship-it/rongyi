@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import type { DataTableColumn } from '../components';
 import { formatMoney } from '../lib/format';
 import { STATUS_LABELS, type ProcessingFlowStatRow, type ProcessingRow } from './types';
@@ -16,4 +15,3 @@ export const processingColumns: DataTableColumn<ProcessingRow>[] = [
   { key: 'settleStatus', label: '结算状态', render: (row) => (row.settleStatus === 'SETTLED' ? '已结算' : '未结算') },
   { key: 'settledAmount', label: '结算金额', render: (row) => (row.settledAmount === null || row.settledAmount === undefined ? '—' : formatMoney(row.settledAmount)) },
 ];
-/* v8 ignore stop -- round 77 coverage calibration */

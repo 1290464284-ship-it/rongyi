@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
@@ -435,4 +434,3 @@ function normalizeDays(days: number | undefined): number {
   // 上限 1..3650：超大值会造成无效的全表范围扫描（与 workflow expiring 路由一致）
   return Math.min(Math.max(Math.floor(value), 1), 3650);
 }
-/* v8 ignore stop -- round 77 coverage calibration */

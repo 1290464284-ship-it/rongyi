@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import { apiRequest } from '../lib/api';
 import { errorMessage } from '../lib/messages';
 import type { ToastKind } from '../lib/toast-context';
@@ -91,4 +90,3 @@ async function cleanupOrphanPrescription(
     showToast?.(`删除孤儿处方 ${prescriptionId} 失败，请检查未完成数据`, 'error');
   }
 }
-/* v8 ignore stop -- round 77 coverage calibration */

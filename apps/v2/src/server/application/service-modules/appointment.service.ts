@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 // 预约服务（M-04：由 auth.ts 拆分）
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
@@ -160,4 +159,3 @@ export class AppointmentService {
     if (rows.length > 0) throw new ConflictError('Doctor or chair is already booked in this time range');
   }
 }
-/* v8 ignore stop -- round 77 coverage calibration */

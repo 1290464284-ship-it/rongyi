@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import { apiRequest, fetchAllPages } from '../lib/api';
 import { toCents } from '../lib/format';
 import type { ProcessingItemForm, ProcessingOrderForm, ProcessingOrderItemRow } from './types';
@@ -86,4 +85,3 @@ export async function reconcileProcessingItems(orderId: string, items: Processin
     }
   }
 }
-/* v8 ignore stop -- round 77 coverage calibration */

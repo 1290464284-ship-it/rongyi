@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import { friendlyError } from './messages';
 import type { Page } from './types';
 
@@ -478,4 +477,3 @@ function createTraceparent(): string | undefined {
   const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
   return `00-${hex.slice(0, 32)}-${hex.slice(32, 48)}-01`;
 }
-/* v8 ignore stop -- round 77 coverage calibration */

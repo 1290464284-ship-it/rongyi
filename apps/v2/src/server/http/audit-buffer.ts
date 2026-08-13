@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import type { Logger } from '../infrastructure/logger';
@@ -165,4 +164,3 @@ export function createAuditBuffer(db: Database.Database, logger: Logger): AuditB
   }
   return { push: pushAudit, flushNow: shutdownFlushAudit };
 }
-/* v8 ignore stop -- round 77 coverage calibration */

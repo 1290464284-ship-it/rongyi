@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import { useState, type ReactNode } from 'react';
 import { useCrudResource, type CrudResourceOptions } from '../hooks/use-crud-resource';
 import { ConfirmDialog, DataTable, Dialog, EmptyState, LoadingState, PageError, PagePager, SearchInput, type DataTableColumn } from '.';
@@ -178,4 +177,3 @@ export function CrudPage<
     </div>
   );
 }
-/* v8 ignore stop -- round 77 coverage calibration */

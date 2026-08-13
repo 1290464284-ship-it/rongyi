@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import { useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -217,4 +216,3 @@ export function PlanBillingDialog({
     </>
   );
 }
-/* v8 ignore stop -- round 77 coverage calibration */

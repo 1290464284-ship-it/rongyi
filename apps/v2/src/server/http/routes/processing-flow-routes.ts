@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 /**
  * 加工流程路由：加工单步骤查看/顺序登记/手动修改 + 流程统计。
  *
@@ -52,4 +51,3 @@ export function registerProcessingFlowRoutes(app: Express, deps: RouteDependenci
     res.json({ success: true, data: service.stats({ from, to }, req.context!) });
   }));
 }
-/* v8 ignore stop -- round 77 coverage calibration */

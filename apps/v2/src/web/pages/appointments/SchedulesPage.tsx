@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
@@ -67,4 +66,3 @@ export function SchedulesPage() {
     </div>
   );
 }
-/* v8 ignore stop -- round 77 coverage calibration */

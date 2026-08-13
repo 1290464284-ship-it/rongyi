@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import { Component, useEffect, useState, type ReactNode } from 'react';
 import { type UseQueryResult } from '@tanstack/react-query';
 import { getSignedFileUrl } from '../lib/api';
@@ -140,4 +139,3 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
     return this.props.children;
   }
 }
-/* v8 ignore stop -- round 77 coverage calibration */

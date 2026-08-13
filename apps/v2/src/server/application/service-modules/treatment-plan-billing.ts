@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 /**
  * 治疗计划折扣与收费联动：
  * - 整单折（NONE/WHOLE/DOUBLE）与单条折扣（明细级 discountRate）
@@ -383,4 +382,3 @@ export class TreatmentPlanBillingService {
     ).all(planId, ...tenantParams(context.clinicId)) as PlanItemRow[];
   }
 }
-/* v8 ignore stop -- round 77 coverage calibration */

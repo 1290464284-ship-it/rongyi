@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 /**
  * 批次管理 + 效期提醒路由。
  *
@@ -125,4 +124,3 @@ export function registerInventoryBatchRoutes(
     });
   }));
 }
-/* v8 ignore stop -- round 77 coverage calibration */

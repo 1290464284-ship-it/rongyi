@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import { JWT_SECRET } from './common';
 import type { AuthSession } from './common';
@@ -33,4 +32,3 @@ export function decryptRefreshClaim(payload: string, tokenHash: string): AuthSes
 export function refreshClaimKey(tokenHash: string, userId: string): string {
   return createHash('sha256').update(['auth.refresh', tokenHash, userId].join('\0')).digest('hex');
 }
-/* v8 ignore stop -- round 77 coverage calibration */

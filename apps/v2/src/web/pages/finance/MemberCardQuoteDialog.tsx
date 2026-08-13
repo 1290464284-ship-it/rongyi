@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import { useState, type FormEvent } from 'react';
 import { apiRequest } from '../../lib/api';
 import { Dialog } from '../../components';
@@ -64,4 +63,3 @@ export function MemberCardQuoteDialog({ open, cardId, onClose, showToast }: Memb
     </Dialog>
   );
 }
-/* v8 ignore stop -- round 77 coverage calibration */

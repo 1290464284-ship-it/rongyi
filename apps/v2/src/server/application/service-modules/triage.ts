@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 /**
  * 分诊科室维度服务：挂号分诊、分诊队列，以及预约中心拖拽（改时间/改医生/改椅位）的支撑端点。
  *
@@ -228,4 +227,3 @@ export class TriageService {
     if (row) throw new ConflictError('医生或椅位在该时段已被占用');
   }
 }
-/* v8 ignore stop -- round 77 coverage calibration */

@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router';
@@ -101,4 +100,3 @@ const RESOURCE_LABELS: Record<string, string> = {
   followUps: '随访',
   suppliers: '供应商',
 };
-/* v8 ignore stop -- round 77 coverage calibration */

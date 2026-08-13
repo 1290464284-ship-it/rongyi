@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import type Database from 'better-sqlite3';
 import { tenantAnd, tenantParams } from './tenant';
 
@@ -127,4 +126,3 @@ export function writeReplenishmentSnapshot(
        updatedAt = excluded.updatedAt`,
   ).run(clinicId, windowStart, windowEnd, JSON.stringify(Object.fromEntries(consumption)), now);
 }
-/* v8 ignore stop -- round 77 coverage calibration */

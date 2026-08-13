@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { AppError, NotFoundError, ValidationError, isSystematicSqliteError } from '../../infrastructure/errors';
@@ -268,4 +267,3 @@ function parseLandmarks(value: unknown): Record<string, { x: number; y: number }
     return {};
   }
 }
-/* v8 ignore stop -- round 77 coverage calibration */

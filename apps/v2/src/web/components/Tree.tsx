@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import { useState } from 'react';
 
 export interface TreeNode {
@@ -156,4 +155,3 @@ export function Tree({
     </div>
   );
 }
-/* v8 ignore stop -- round 77 coverage calibration */

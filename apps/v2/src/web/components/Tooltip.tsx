@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import { cloneElement, isValidElement, useId, useState, type FocusEventHandler, type ReactElement, type ReactNode } from 'react';
 
 interface TooltipProps {
@@ -32,4 +31,3 @@ export function Tooltip({ content, children }: TooltipProps) {
     </span>
   );
 }
-/* v8 ignore stop -- round 77 coverage calibration */

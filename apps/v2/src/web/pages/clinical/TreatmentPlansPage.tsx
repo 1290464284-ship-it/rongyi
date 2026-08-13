@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import { useRef, useState } from 'react';
 import { apiRequest, fetchAllPages } from '../../lib/api';
 import { CrudPage } from '../../components/CrudPage';
@@ -232,4 +231,3 @@ async function requestPrint(
     showToast(errorMessage(error, '打印失败'), 'error');
   }
 }
-/* v8 ignore stop -- round 77 coverage calibration */

@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 /**
  * 技耗分离分账统计。
  *
@@ -113,4 +112,3 @@ export class CostShareService {
     };
   }
 }
-/* v8 ignore stop -- round 77 coverage calibration */

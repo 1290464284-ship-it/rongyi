@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 // Legacy schema 同步（M-04：由 database.ts 拆分）
 import fs from 'node:fs';
 import path from 'node:path';
@@ -107,4 +106,3 @@ export function syncLegacySchema(db: Database.Database, schemaDir: string): void
     db.pragma('foreign_keys = ON');
   }
 }
-/* v8 ignore stop -- round 77 coverage calibration */

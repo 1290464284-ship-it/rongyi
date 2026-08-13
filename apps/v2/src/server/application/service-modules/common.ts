@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import type { User, UserRole } from '../../../domain/contracts';
@@ -253,4 +252,3 @@ export function assertVisitExists(
     throw new NotFoundError('Visit does not belong to the patient');
   }
 }
-/* v8 ignore stop -- round 77 coverage calibration */

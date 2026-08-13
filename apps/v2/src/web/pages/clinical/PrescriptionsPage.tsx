@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import { useEffect, useRef, useState } from 'react';
 import { apiRequest, fetchAllPages } from '../../lib/api';
 import { CrudPage } from '../../components/CrudPage';
@@ -161,4 +160,3 @@ function ProcessPrescriptionButton({
     </button>
   );
 }
-/* v8 ignore stop -- round 77 coverage calibration */

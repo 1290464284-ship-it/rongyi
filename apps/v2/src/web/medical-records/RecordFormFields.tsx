@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../lib/api';
@@ -134,4 +133,3 @@ export function RecordFormFields({ form, update }: { form: RecordForm; update: (
     </>
   );
 }
-/* v8 ignore stop -- round 77 coverage calibration */

@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import { Dialog, LoadingState, PageError } from '../../components';
 import { formatDateTime } from '../../lib/format';
 import { FLOW_STATUSES, FLOW_STATUS_LABELS } from '../../processing-orders/types';
@@ -75,4 +74,3 @@ export function ProcessingFlowDialog({
     </Dialog>
   );
 }
-/* v8 ignore stop -- round 77 coverage calibration */

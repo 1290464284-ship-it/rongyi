@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import { useRef, useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { apiRequest } from '../lib/api';
@@ -446,4 +445,3 @@ function resolveCursorListPath(
   params.set('cursor', cursor);
   return `${pathPart}?${params.toString()}`;
 }
-/* v8 ignore stop -- round 77 coverage calibration */

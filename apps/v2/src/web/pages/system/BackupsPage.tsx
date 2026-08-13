@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import { useQuery } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { apiRequest } from '../../lib/api';
@@ -202,4 +201,3 @@ export function BackupsPage() {
     </div>
   );
 }
-/* v8 ignore stop -- round 77 coverage calibration */

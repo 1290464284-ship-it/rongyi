@@ -1,4 +1,3 @@
-/* v8 ignore start -- round 77 coverage calibration */
 import { Copy } from 'lucide-react';
 import { copyText } from '../../lib/clipboard';
 import { useToast } from '../../lib/toast-context';
@@ -97,4 +96,3 @@ export function WechatTemplateLibrary({ config }: { config?: WechatTemplateConfi
     </section>
   );
 }
-/* v8 ignore stop -- round 77 coverage calibration */
