@@ -103,6 +103,9 @@ jobs:
       - name: Web coverage
         run: pnpm --filter @dental/v2 test:coverage:web
 
+      - name: Quality score
+        run: pnpm --filter @dental/v2 run test:quality-score
+
       - name: Audit
         run: pnpm --filter @dental/v2 run audit:security
 
