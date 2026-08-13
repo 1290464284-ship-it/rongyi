@@ -97,7 +97,7 @@
 
 ## 当前状态
 
-最新一轮为第 71 轮（`b2f0ac6`），单测 239 文件 / 2420 用例；mutation score 84.77，route path coverage 100%，完整 sequence.shuffle 全绿，typecheck/lint/knip/unit 均通过。
+最新一轮为第 71 轮（`bafd8f8`），单测 239 文件 / 2420 用例；mutation score 84.77，route path coverage 100%，完整 sequence.shuffle 全绿，typecheck/lint/knip/unit 均通过。
 历史轮次请以上方轮次索引为准；各轮详情见 `../深度审计报告-第N轮-主报告.md`。
 已收敛的长期决策项：processing-flow 手动改态保留并补 `changes` 校验；大库增量聚合
 暂不启动，`replenishment.generate` 已用有界分块事务，10 万级冷态基准持续 PASS。
