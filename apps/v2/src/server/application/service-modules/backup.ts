@@ -111,8 +111,8 @@ export class BackupService {
       const backupSidecars = [`${finalPath}-wal`, `${finalPath}-shm`].filter((p) => fs.existsSync(p));
       const sourceWalSidecar = `${this.dbPath}-wal`;
       const sourceWalNonEmpty = fs.existsSync(sourceWalSidecar) && fs.statSync(sourceWalSidecar).size > 0;
-      if (backupSidecars.length > 0 || sourceWalNonEmpty) {
-        const leftovers = [...backupSidecars, ...(sourceWalNonEmpty ? [sourceWalSidecar] : [])];
+      const leftovers = [...backupSidecars, ...(sourceWalNonEmpty ? [sourceWalSidecar] : [])];
+      if (leftovers.length > 0) {
         throw new Error(`backup finished but sqlite sidecars remain: ${leftovers.join(', ')}`);
       }
       const fileSize = fs.statSync(finalPath).size;
@@ -256,19 +256,16 @@ export class BackupService {
       };
     } finally {
       if (!keepStaged) {
-        if (fs.existsSync(stagedPath)) {
-          try {
-            fs.rmSync(stagedPath, { force: true });
-          } catch {
-            // best effort: 保留原始错误
-          }
+        // rmSync(force) 对不存在的路径是 no-op：无需先 existsSync 判断
+        try {
+          fs.rmSync(stagedPath, { force: true });
+        } catch {
+          // best effort: 保留原始错误
         }
-        if (fs.existsSync(markerPath)) {
-          try {
-            fs.rmSync(markerPath, { force: true });
-          } catch {
-            // best effort
-          }
+        try {
+          fs.rmSync(markerPath, { force: true });
+        } catch {
+          // best effort
         }
       }
     }
