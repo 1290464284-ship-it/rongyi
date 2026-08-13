@@ -148,6 +148,17 @@ describe('LoginPage', () => {
     expect(apiRequest).not.toHaveBeenCalledWith('/auth/setup', expect.anything());
   });
 
+  it('rejects a setup password shorter than six characters', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce({ setupRequired: true });
+    renderNavigablePage();
+    await screen.findByText('设置初始管理员');
+    fireEvent.change(screen.getByLabelText('新管理员密码'), { target: { value: '12345' } });
+    fireEvent.change(screen.getByLabelText('确认密码'), { target: { value: '12345' } });
+    fireEvent.click(screen.getByRole('button', { name: '创建管理员并登录' }));
+    expect(await screen.findByText('管理员密码至少需要 6 位')).toBeDefined();
+    expect(apiRequest).not.toHaveBeenCalledWith('/auth/setup', expect.anything());
+  });
+
   it('continues when localStorage writes fail while remembering login', async () => {
     vi.mocked(login).mockResolvedValue({ token: 't', user: { id: 'u' } });
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
