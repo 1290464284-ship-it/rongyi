@@ -535,6 +535,153 @@ describe('RefundFlowService', () => {
     expect(() => service.list(context, { pageSize: 0 })).toThrow(ValidationError);
   });
 
+  it('clamps and validates refund list pagination boundaries', async () => {
+    const chargeService = new ChargeService(db);
+    const service = new RefundFlowService(db);
+    expect(() => service.list(context, { page: 1.5 })).toThrow(ValidationError);
+    expect(() => service.list(context, { pageSize: 1.5 })).toThrow(ValidationError);
+    expect(() => service.list(context, { page: -1 })).toThrow(ValidationError);
+    // pageSize 恰好 1 合法；500 钳制到 200 上限
+    expect(service.list(context, { page: 1, pageSize: 1 }).length).toBeLessThanOrEqual(1);
+    expect(service.list(context, { page: 1, pageSize: 500 }).length).toBeLessThanOrEqual(200);
+
+    // offset 语义：第 2 页应跳过前 pageSize 条（相对 total 断言，免受共享库累积影响）
+    for (let i = 0; i < 3; i += 1) {
+      const chargeId = await createPaidCharge(100 + i, 'CASH');
+      await chargeService.refund(chargeId, 10 + i, `分页-${i}`, context);
+    }
+    const total = service.count(context);
+    const page1 = service.list(context, { page: 1, pageSize: 2 });
+    const page2 = service.list(context, { page: 2, pageSize: 2 });
+    expect(page1.length).toBe(2);
+    expect(page2.length).toBe(Math.min(2, Math.max(0, total - 2)));
+    expect(page1.map((row) => row.id).some((id) => page2.map((row) => row.id).includes(String(id)))).toBe(false);
+  });
+
+  it('counts and summarizes refunds by status without null buckets', async () => {
+    const chargeService = new ChargeService(db);
+    const service = new RefundFlowService(db);
+    const c1 = await createPaidCharge(1000, 'CASH');
+    const r1 = await chargeService.refund(c1, 100, '汇总1', context);
+    service.approve(String(r1.id), context);
+    service.process(String(r1.id), context); // COMPLETED
+    const c2 = await createPaidCharge(2000, 'CASH');
+    const r2 = await chargeService.refund(c2, 200, '汇总2', context); // REQUESTED
+    service.reject(String(r2.id), context); // REJECTED
+    // 直接插入一条 status 为空串的旧数据（防御分支：空串与 NULL 同桶）
+    db.prepare(
+      `INSERT INTO Refund (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         chargeId, patientId, amount, reason, operatorId, status
+       ) VALUES ('refund-null-status', 'clinic-v2-001', ?, ?, NULL, ?, 'patient-demo-001', 50, '旧数据', 'user-admin-001', '')`,
+    ).run(now, now, c2);
+
+    const total = service.count(context);
+    expect(total).toBeGreaterThanOrEqual(3);
+    const summary = service.summary(context);
+    expect(summary.total).toBe(total);
+    expect(summary.counts.COMPLETED).toBeGreaterThanOrEqual(1);
+    expect(summary.counts.REJECTED).toBeGreaterThanOrEqual(1);
+    expect(summary.counts['']).toBeGreaterThanOrEqual(1); // 空串状态归入空串桶
+    expect(summary.counts).not.toHaveProperty('null');
+  });
+
+  it('rejects a refund whose charge refunded amount has changed', async () => {
+    const chargeId = await createPaidCharge(10000, 'CASH');
+    const chargeService = new ChargeService(db);
+    const refundResult = await chargeService.refund(chargeId, 3000, '金额变化测试', context);
+    const refundId = String(refundResult.id);
+    db.prepare('UPDATE Charge SET refundedAmount = 1000 WHERE id = ?').run(chargeId);
+
+    const service = new RefundFlowService(db);
+    expect(() => service.reject(refundId, context)).toThrow('退款冲销金额已变化，请刷新后重试');
+  });
+
+  it('rejects a cash refund without ledger allocations (legacy path) without errors', async () => {
+    const chargeId = await createPaidCharge(10000, 'CASH');
+    const chargeService = new ChargeService(db);
+    const refundResult = await chargeService.refund(chargeId, 3000, '无流水测试', context);
+    const refundId = String(refundResult.id);
+    // 删除 REFUND 流水：旧数据无 allocations，走 payMethod 兜底分支
+    db.prepare("DELETE FROM PaymentLedger WHERE relatedId = ? AND type = 'REFUND'").run(refundId);
+
+    const service = new RefundFlowService(db);
+    expect(service.reject(refundId, context)).toEqual({ id: refundId, status: 'REJECTED' });
+    const charge = db.prepare('SELECT refundedAmount, status FROM Charge WHERE id = ?').get(chargeId) as
+      { refundedAmount: number; status: string };
+    expect(charge.refundedAmount).toBe(0);
+    expect(charge.status).toBe('PAID');
+  });
+
+  it('treats non-array allocations as an empty legacy allocation set', async () => {
+    const chargeId = await createPaidCharge(10000, 'CASH');
+    const chargeService = new ChargeService(db);
+    const refundResult = await chargeService.refund(chargeId, 3000, '对象分配测试', context);
+    const refundId = String(refundResult.id);
+    db.prepare("UPDATE PaymentLedger SET allocations = '{}' WHERE relatedId = ? AND type = 'REFUND'").run(refundId);
+
+    const service = new RefundFlowService(db);
+    expect(service.reject(refundId, context)).toEqual({ id: refundId, status: 'REJECTED' });
+  });
+
+  it('throws when the reversal card balance is insufficient', async () => {
+    const cardId = await createCardWithBalance(10000);
+    const chargeId = await createPaidCharge(10000, 'MEMBER_CARD');
+    const chargeService = new ChargeService(db);
+    const refundResult = await chargeService.refund(chargeId, 4000, '余额不足测试', context);
+    const refundId = String(refundResult.id);
+    db.prepare('UPDATE MemberCard SET balance = 1000 WHERE id = ?').run(cardId);
+
+    const service = new RefundFlowService(db);
+    expect(() => service.reject(refundId, context)).toThrow('退款冲销会员卡余额不足，请先充值后再驳回/取消');
+    expect((db.prepare('SELECT status FROM Refund WHERE id = ?').get(refundId) as { status: string }).status)
+      .toBe('REQUESTED');
+  });
+
+  it('records the fallback reversal log with exact amounts and signs', async () => {
+    const cardId = await createCardWithBalance(10000);
+    const chargeId = await createPaidCharge(10000, 'MEMBER_CARD');
+    const chargeService = new ChargeService(db);
+    const refundResult = await chargeService.refund(chargeId, 4000, '兜底日志测试', context);
+    const refundId = String(refundResult.id);
+    // 清空 allocations：走 memberCardId 兜底分支（余额 4000 已回充）
+    db.prepare("UPDATE PaymentLedger SET allocations = NULL WHERE relatedId = ? AND type = 'REFUND'").run(refundId);
+
+    const service = new RefundFlowService(db);
+    expect(service.reject(refundId, context)).toEqual({ id: refundId, status: 'REJECTED' });
+    const log = db.prepare(
+      `SELECT * FROM MemberCardLog WHERE cardId = ? AND type = 'REFUND_REVERSAL' ORDER BY createdAt DESC LIMIT 1`,
+    ).get(cardId) as { amount: number; balanceAfter: number };
+    expect(log.amount).toBe(-4000);
+    expect(log.balanceAfter).toBe(0);
+  });
+
+  it('skips the debt reversal when the debt has no paid amount', async () => {
+    const chargeId = await createCharge(10000);
+    const chargeService = new ChargeService(db);
+    await chargeService.pay(chargeId, 3000, 'DEBT', undefined, context);
+    db.prepare('UPDATE Debt SET paidAmount = 0 WHERE chargeId = ?').run(chargeId);
+    const refundResult = await chargeService.refund(chargeId, 1000, '零已付欠款测试', context);
+    const refundId = String(refundResult.id);
+
+    const service = new RefundFlowService(db);
+    expect(service.reject(refundId, context)).toEqual({ id: refundId, status: 'REJECTED' });
+    const debt = db.prepare('SELECT paidAmount FROM Debt WHERE chargeId = ?').get(chargeId) as { paidAmount: number };
+    expect(debt.paidAmount).toBe(0);
+  });
+
+  it('throws when the debt reversal guard fails', async () => {
+    const chargeId = await createCharge(10000);
+    const chargeService = new ChargeService(db);
+    await chargeService.pay(chargeId, 8000, 'DEBT', undefined, context); // 部分支付建债 paidAmount=8000
+    const refundResult = await chargeService.refund(chargeId, 1000, '欠款守卫测试', context);
+    const refundId = String(refundResult.id);
+    db.prepare('UPDATE Debt SET totalAmount = 500 WHERE chargeId = ?').run(chargeId); // 8000-1000+1000 > 500 → 守卫失败
+
+    const service = new RefundFlowService(db);
+    expect(() => service.reject(refundId, context)).toThrow('退款冲销欠款状态已变化，请刷新后重试');
+  });
+
   it('rejects approve and process when optimistic status updates change zero rows', async () => {
     const chargeId = await createPaidCharge(100, 'CASH');
     db.prepare(
