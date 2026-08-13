@@ -380,4 +380,43 @@ describe('CommissionService', () => {
     expect(filtered).toHaveLength(1);
     expect(filtered[0].doctorId).toBe('user-doctor-commission');
   });
+
+  it('clears stale statements when no charge yields any line', () => {
+    const service = new CommissionService(db);
+    service.createRule({ name: 'S', rateType: 'PERCENT', rate: 500 }, context);
+    // 先产生一张有效提成单
+    insertCharge('charge-comm-clear-1', 'user-doctor-commission', '2026-08-04T09:00:00.000Z', { totalAmount: 10_000 });
+    insertItem('charge-comm-clear-1', 'item-clear-1', 'TREATMENT', 'SERVICE', 10_000);
+    service.calculate('2026-08', context);
+    expect(service.statements('2026-08', context).length).toBeGreaterThan(0);
+    // 清除计费行后：本期只有无明细的收费 → 无任何提成行 → 历史提成单被清空
+    db.prepare("DELETE FROM ChargeItem WHERE chargeId = 'charge-comm-clear-1'").run();
+    const statements = service.calculate('2026-08', context);
+    expect(statements).toEqual([]);
+  });
+
+  it('drops doctors whose shares all round down to zero', () => {
+    const service = new CommissionService(db);
+    service.createRule({ name: 'S', rateType: 'PERCENT', rate: 10_000 }, context);
+    insertCharge('charge-comm-zero-share', 'user-doctor-commission', '2026-08-04T09:00:00.000Z', { totalAmount: 1, paidAmount: 1 });
+    insertItem('charge-comm-zero-share', 'item-zs-1', 'TREATMENT', 'SERVICE', 0);
+    insertItem('charge-comm-zero-share', 'item-zs-2', 'TREATMENT', 'SERVICE', 0);
+    insertItem('charge-comm-zero-share', 'item-zs-3', 'TREATMENT', 'SERVICE', 0);
+
+    const statements = service.calculate('2026-08', context);
+    expect(statements.some((row) => row.doctorId === 'user-doctor-commission')).toBe(false);
+  });
+
+  it('excludes disabled default rules from the fallback chain', () => {
+    const service = new CommissionService(db);
+    service.createRule({ name: 'enabled-spec', doctorId: 'user-doctor-commission', category: 'EXAM', rateType: 'PERCENT', rate: 500 }, context);
+    service.createRule({ name: 'disabled-default', rateType: 'PERCENT', rate: 9000, enabled: false }, context);
+    insertCharge('charge-comm-disdef', 'user-doctor-commission', '2026-08-04T09:00:00.000Z', { totalAmount: 10_000 });
+    insertItem('charge-comm-disdef', 'item-disdef', 'TREATMENT', 'SERVICE', 10_000); // 不匹配专属 EXAM 规则
+
+    const statement = service.calculate('2026-08', context).find((row) => row.doctorId === 'user-doctor-commission');
+    // 禁用的默认规则不得兜底 → 提成为 0
+    expect(statement?.totalCommission).toBe(0);
+    expect(statement?.breakdown).toEqual([]);
+  });
 });

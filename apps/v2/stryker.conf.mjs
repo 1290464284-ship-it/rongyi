@@ -53,10 +53,9 @@ export default {
   },
   concurrency: 1,
   timeoutMS: 30_000,
-  // Ratchet：扩面后实测 77.61（2026-08-13，含 triage/stocktake/refund-flow/
-  // commission/wechat-reminder/shift-template）。break 定在实测分之下，防止
-  // 回归；幸存变异（尤其 wechat-reminder 的 noCoverage）的消灭清单见
-  // docs/architecture/coverage-exclusions.md，随测试补齐逐步上调。
-  thresholds: { high: 82, low: 77, break: 75 },
+  // Ratchet：扩面后实测 77.61 → 81.35 → 84.40 → 88.72 → 90.62 → 93.05 → 95.15
+  // （2026-08-13 夜间逐轮击杀）。break 始终低于实测分，防止回归；
+  // 剩余幸存以等价变异为主，明细见 docs/architecture/coverage-exclusions.md。
+  thresholds: { high: 96, low: 93, break: 90 },
   cleanTempDir: 'always',
 };

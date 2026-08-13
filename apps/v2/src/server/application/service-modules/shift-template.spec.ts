@@ -246,4 +246,73 @@ describe('ShiftTemplateService validation and edge branches', () => {
     expect(activeOnly.some((row) => row.id === 'template-off')).toBe(false);
     expect(service.list(context).some((row) => row.id === 'template-off')).toBe(true);
   });
+
+  it('creates templates with explicit color and active values', () => {
+    const service = new ShiftTemplateService(db);
+    const colored = service.create({ name: '带颜色', startTime: '09:00', endTime: '18:00', color: '#abc123', active: false }, context);
+    expect(colored.color).toBe('#abc123');
+    expect(colored.active).toBe(0);
+    const nullColor = service.create({ name: '空颜色', startTime: '09:00', endTime: '18:00', color: null as unknown as string }, context);
+    expect(nullColor.color).toBeNull();
+    const defaultActive = service.create({ name: '默认启用', startTime: '09:00', endTime: '18:00', active: true }, context);
+    expect(defaultActive.active).toBe(1);
+  });
+
+  it('rejects equal start and end times on create and update', () => {
+    const service = new ShiftTemplateService(db);
+    expect(() => service.create({ name: '等时', startTime: '09:00', endTime: '09:00' }, context))
+      .toThrow('结束时间必须晚于开始时间');
+    createTemplate({ id: 'template-eq' });
+    expect(() => service.update('template-eq', { startTime: '10:00', endTime: '10:00' }, context))
+      .toThrow('结束时间必须晚于开始时间');
+  });
+
+  it('updates color to a concrete value and keeps active when omitted', () => {
+    const service = new ShiftTemplateService(db);
+    createTemplate({ id: 'template-color-upd', color: '#fff', active: true });
+    const updated = service.update('template-color-upd', { color: '#123456' }, context);
+    expect(updated.color).toBe('#123456');
+    expect(updated.active).toBe(1); // 未传 active → 保持启用
+  });
+
+  it('carries template color into generated schedules with sunday weekDay 0', () => {
+    const service = new ShiftTemplateService(db);
+    createTemplate({ id: 'template-color-sun', color: '#00ff00', workDaysJson: '[7]' });
+    service.generate({ templateId: 'template-color-sun', userId: 'user-admin-001', weekStart: '2026-08-31' }, context);
+    const row = db.prepare(
+      `SELECT color, weekDay FROM WorkSchedule WHERE shiftTemplateId = 'template-color-sun'`,
+    ).get() as { color: string | null; weekDay: number };
+    expect(row.color).toBe('#00ff00');
+    expect(row.weekDay).toBe(0); // day 7 % 7 = 0（周日）
+  });
+
+  it('maps week schedule rows with concrete color values', () => {
+    db.prepare(
+      `INSERT INTO WorkSchedule (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         userId, startTime, endTime, type, remark,
+         shiftTemplateId, title, weekDay, color, isRecurring
+       ) VALUES ('ws-colored', 'clinic-v2-001', ?, ?, NULL, 'user-admin-001',
+                 '2026-08-04T09:00:00', '2026-08-04T18:00:00', 'FIXED', NULL,
+                 'shift-1', '值班', 1, '#ff0000', 1)`,
+    ).run(now, now);
+    const service = new ShiftTemplateService(db);
+    const row = service.weekSchedules('2026-08-03', context).find((entry) => entry.id === 'ws-colored');
+    expect(row).toMatchObject({ color: '#ff0000', weekDay: 1, shiftTemplateId: 'shift-1', title: '值班' });
+  });
+
+  it('parses non-array and fractional stored work days defensively', () => {
+    const service = new ShiftTemplateService(db);
+    createTemplate({ id: 'template-obj-days', workDaysJson: '{"a":1}' });
+    createTemplate({ id: 'template-frac-days', workDaysJson: '[2,1.5]' });
+    const rows = service.list(context);
+    expect(rows.find((row) => row.id === 'template-obj-days')?.workDays).toEqual([]);
+    expect(rows.find((row) => row.id === 'template-frac-days')?.workDays).toEqual([2]);
+  });
+
+  it('rejects fractional work days during serialization', () => {
+    const service = new ShiftTemplateService(db);
+    expect(() => service.create({ name: '小数日', startTime: '09:00', endTime: '18:00', workDaysJson: [1.5] }, context))
+      .toThrow('工作日必须为 1（周一）到 7（周日）的整数');
+  });
 });
