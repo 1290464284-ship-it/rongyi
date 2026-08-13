@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -866,6 +866,165 @@ describe('DispenseService', () => {
       db.prepare('UPDATE DispenseItem SET returnedQuantity = quantity WHERE dispenseId = ?').run(String(created.id));
       db.prepare("UPDATE Dispense SET status = 'PARTIAL' WHERE id = ?").run(String(created.id));
       await expect(service().dispense(String(created.id), context)).rejects.toThrow(ValidationError);
+    });
+
+    it('rejects non-string numbers and accepts real charge and prescription references', async () => {
+      expect(() => service().create({
+        number: 42 as never,
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'validation-assign-item', quantity: 1 }],
+      }, context)).toThrow(ValidationError);
+
+      db.prepare(
+        `INSERT INTO Charge (
+           id, patientId, visitId, doctorId, number, totalAmount, paidAmount, refundedAmount,
+           discount, status, payMethod, paidAt, remark, clinicId, createdAt, updatedAt, deletedAt
+         ) VALUES ('charge-ref-dispense', 'patient-demo-001', NULL, NULL, 'CHG-REF-D', 100, 0, 0,
+           0, 'UNPAID', NULL, NULL, NULL, ?, ?, ?, NULL)`,
+      ).run(context.clinicId, now, now);
+      db.prepare(
+        `INSERT INTO Prescription (
+           id, clinicId, createdAt, updatedAt, deletedAt, patientId, doctorId, remark, status
+         ) VALUES ('pres-ref-dispense', ?, ?, ?, NULL, 'patient-demo-001', 'user-admin-001', NULL, 'DRAFT')`,
+      ).run(context.clinicId, now, now);
+      const withRefs = service().create({
+        number: 'PF-REF-1',
+        patientId: 'patient-demo-001',
+        chargeId: 'charge-ref-dispense',
+        prescriptionId: 'pres-ref-dispense',
+        items: [{ itemId: 'validation-assign-item', quantity: 1 }],
+      }, context);
+      expect(withRefs.number).toBe('PF-REF-1');
+      const row = db.prepare('SELECT chargeId, prescriptionId FROM Dispense WHERE id = ?').get(String(withRefs.id)) as {
+        chargeId: string | null; prescriptionId: string | null;
+      };
+      expect(row.chargeId).toBe('charge-ref-dispense');
+      expect(row.prescriptionId).toBe('pres-ref-dispense');
+
+      const withNullRefs = service().create({
+        number: 'PF-REF-2',
+        patientId: 'patient-demo-001',
+        chargeId: null as never,
+        prescriptionId: null as never,
+        items: [{ itemId: 'validation-assign-item', quantity: 1 }],
+      }, context);
+      const nullRow = db.prepare('SELECT chargeId, prescriptionId FROM Dispense WHERE id = ?').get(String(withNullRefs.id)) as {
+        chargeId: string | null; prescriptionId: string | null;
+      };
+      expect(nullRow.chargeId).toBeNull();
+      expect(nullRow.prescriptionId).toBeNull();
+    });
+
+    it('updates with a null clinic, omitted note, and rejects non-string numbers', async () => {
+      insertItem('update-null-clinic-item', 100, 0);
+      const created = service().create({
+        number: 'PF-NULLC-1',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'update-null-clinic-item', quantity: 1 }],
+      }, context);
+      const globalContext: AppContext = { ...context, clinicId: null };
+      const updated = service().updateDispense(String(created.id), {
+        number: 'PF-NULLC-2',
+        patientId: 'patient-demo-001',
+        items: [
+          { itemId: 'update-null-clinic-item', quantity: 1 },
+          { itemId: 'update-null-clinic-item', quantity: 1 },
+        ],
+      }, globalContext);
+      expect(updated.number).toBe('PF-NULLC-2');
+      const inserted = db.prepare(
+        'SELECT quantity, clinicId FROM DispenseItem WHERE dispenseId = ? AND deletedAt IS NULL',
+      ).get(String(created.id)) as { quantity: number; clinicId: string | null };
+      expect(inserted.quantity).toBe(2);
+      expect(inserted.clinicId).toBeNull();
+      const main = db.prepare('SELECT note FROM Dispense WHERE id = ?').get(String(created.id)) as { note: string | null };
+      expect(main.note).toBeNull();
+      expect(() => service().updateDispense(String(created.id), {
+        number: 7 as never,
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'update-null-clinic-item', quantity: 1 }],
+      }, context)).toThrow(ValidationError);
+    });
+
+    it('reports conflicts for zero-row updates/deletes and duplicate numbers', async () => {
+      insertItem('race-dispense-item', 100, 0);
+      const a = service().create({
+        number: 'PF-RACE-1',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'race-dispense-item', quantity: 1 }],
+      }, context);
+      const b = service().create({
+        number: 'PF-RACE-2',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'race-dispense-item', quantity: 1 }],
+      }, context);
+      // 重复单号 → UNIQUE 冲突
+      expect(() => service().updateDispense(String(b.id), {
+        number: 'PF-RACE-1',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'race-dispense-item', quantity: 1 }],
+      }, context)).toThrow(ConflictError);
+
+      const originalPrepare = db.prepare.bind(db);
+      const spyUpdate = vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+        if (sql.includes('UPDATE Dispense') && sql.includes('SET number')) {
+          return { run: () => ({ changes: 0 }) } as never;
+        }
+        return originalPrepare(sql);
+      });
+      try {
+        expect(() => service().updateDispense(String(a.id), {
+          number: 'PF-RACE-3',
+          patientId: 'patient-demo-001',
+          items: [{ itemId: 'race-dispense-item', quantity: 1 }],
+        }, context)).toThrow(ConflictError);
+      } finally {
+        spyUpdate.mockRestore();
+      }
+      const spyDelete = vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+        if (sql.includes('UPDATE Dispense') && sql.includes('SET deletedAt')) {
+          return { run: () => ({ changes: 0 }) } as never;
+        }
+        return originalPrepare(sql);
+      });
+      try {
+        expect(() => service().deleteDispense(String(a.id), context)).toThrow(ConflictError);
+      } finally {
+        spyDelete.mockRestore();
+      }
+
+      // 非唯一约束的未知错误原样抛出（isUniqueConstraintError 的假分支）
+      insertItem('boom-dispense-item', 100, 0);
+      const spyBoomCreate = vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+        if (sql.includes('INSERT INTO Dispense (')) {
+          return { run: () => { throw new Error('boom-create'); } } as never;
+        }
+        return originalPrepare(sql);
+      });
+      try {
+        expect(() => service().create({
+          number: 'PF-BOOM-1',
+          patientId: 'patient-demo-001',
+          items: [{ itemId: 'boom-dispense-item', quantity: 1 }],
+        }, context)).toThrow('boom-create');
+      } finally {
+        spyBoomCreate.mockRestore();
+      }
+      const spyBoomUpdate = vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+        if (sql.includes('UPDATE Dispense') && sql.includes('SET number')) {
+          return { run: () => { throw new Error('boom-update'); } } as never;
+        }
+        return originalPrepare(sql);
+      });
+      try {
+        expect(() => service().updateDispense(String(a.id), {
+          number: 'PF-BOOM-2',
+          patientId: 'patient-demo-001',
+          items: [{ itemId: 'race-dispense-item', quantity: 1 }],
+        }, context)).toThrow('boom-update');
+      } finally {
+        spyBoomUpdate.mockRestore();
+      }
     });
   });
 });

@@ -96,7 +96,9 @@ export class DispenseService {
       const existing = merged.get(key);
       if (existing) {
         existing.quantity += quantity;
-        if (existing.quantity > 1_000_000_000) {
+        if (existing.quantity <= 1_000_000_000) {
+          // 合并后仍在限内
+        } else {
           throw new ValidationError('发药数量必须为不超过 10 亿的正整数');
         }
       } else {
@@ -283,7 +285,9 @@ export class DispenseService {
       const existing = merged.get(key);
       if (existing) {
         existing.quantity += quantity;
-        if (existing.quantity > 1_000_000_000) {
+        if (existing.quantity <= 1_000_000_000) {
+          // 合并后仍在限内
+        } else {
           throw new ValidationError('发药数量必须为不超过 10 亿的正整数');
         }
       } else {
@@ -325,20 +329,14 @@ export class DispenseService {
           keptIds.add(newId);
         }
       }
-      // 服务端有而表单没有的明细：软删
+      // 服务端有而表单没有的明细：软删。
+      // merged 至少一条明细（items 长度校验），且每行要么保留 id 要么插入新 id，kept 恒非空。
       const kept = Array.from(keptIds);
-      if (kept.length > 0) {
-        const placeholders = kept.map(() => '?').join(',');
-        this.db.prepare(
-          `UPDATE DispenseItem SET deletedAt = ?, updatedAt = ?
-           WHERE dispenseId = ? AND deletedAt IS NULL AND id NOT IN (${placeholders})`,
-        ).run(now, now, id, ...kept);
-      } else {
-        this.db.prepare(
-          `UPDATE DispenseItem SET deletedAt = ?, updatedAt = ?
-           WHERE dispenseId = ? AND deletedAt IS NULL`,
-        ).run(now, now, id);
-      }
+      const placeholders = kept.map(() => '?').join(',');
+      this.db.prepare(
+        `UPDATE DispenseItem SET deletedAt = ?, updatedAt = ?
+         WHERE dispenseId = ? AND deletedAt IS NULL AND id NOT IN (${placeholders})`,
+      ).run(now, now, id, ...kept);
       const updated = this.db.prepare(
         `UPDATE Dispense SET number = ?, patientId = ?, note = ?, updatedAt = ?
          WHERE id = ? AND status = 'PENDING' AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
