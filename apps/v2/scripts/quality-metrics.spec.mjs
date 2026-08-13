@@ -1,5 +1,39 @@
 import { describe, expect, it } from 'vitest';
-import { mutationScore, openApiPathMetrics } from './lib/quality-metrics.mjs';
+import { coverageStats, mutationScore, openApiPathMetrics } from './lib/quality-metrics.mjs';
+
+describe('coverageStats', () => {
+  it('counts statements, branch paths, functions, and statement-derived lines', () => {
+    const stats = coverageStats({
+      'file-a.js': {
+        statementMap: {
+          '0': { start: { line: 1, column: 0 }, end: { line: 1, column: 4 } },
+          '1': { start: { line: 2, column: 0 }, end: { line: 2, column: 4 } },
+          '2': { start: { line: 1, column: 5 }, end: { line: 1, column: 9 } },
+        },
+        s: { '0': 1, '1': 0, '2': 0 },
+        fnMap: { '0': { name: 'fn', decl: {}, loc: {} } },
+        f: { '0': 1 },
+        branchMap: { '0': { type: 'if', locations: [] } },
+        b: { '0': [1, 0] },
+      },
+    });
+    expect(stats).toEqual({
+      statements: 1 / 3,
+      branches: 0.5,
+      functions: 1,
+      lines: 0.5,
+    });
+  });
+
+  it('returns full coverage for empty input', () => {
+    expect(coverageStats({})).toEqual({
+      statements: 1,
+      branches: 1,
+      functions: 1,
+      lines: 1,
+    });
+  });
+});
 
 describe('mutationScore', () => {
   it('counts killed and timeout mutants as covered', () => {

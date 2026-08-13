@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { mutationScore, openApiPathMetrics } from './lib/quality-metrics.mjs';
+import { coverageStats, mutationScore, openApiPathMetrics } from './lib/quality-metrics.mjs';
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -13,41 +13,6 @@ function readJson(relativePath, fallback = null) {
   } catch {
     return fallback;
   }
-}
-
-function coverageMetrics() {
-  const data = readJson('coverage/coverage-final.json', {});
-  let statements = 0;
-  let branches = 0;
-  let functions = 0;
-  let lines = 0;
-  let statementsHit = 0;
-  let branchesHit = 0;
-  let functionsHit = 0;
-  let linesHit = 0;
-
-  for (const file of Object.values(data)) {
-    statements += Object.keys(file.s ?? {}).length;
-    branches += Object.keys(file.b ?? {}).length;
-    functions += Object.keys(file.f ?? {}).length;
-    for (const count of Object.values(file.s ?? {})) if (count > 0) statementsHit += 1;
-    for (const branch of Object.values(file.b ?? {})) {
-      if (Array.isArray(branch) && branch.some((count) => count > 0)) branchesHit += 1;
-    }
-    for (const count of Object.values(file.f ?? {})) if (count > 0) functionsHit += 1;
-    for (const [line, count] of Object.entries(file.l ?? {})) {
-      if (!line.startsWith('_')) {
-        lines += 1;
-        if (count > 0) linesHit += 1;
-      }
-    }
-  }
-  return {
-    statements: statements ? statementsHit / statements : 1,
-    branches: branches ? branchesHit / branches : 1,
-    functions: functions ? functionsHit / functions : 1,
-    lines: lines ? linesHit / lines : 1,
-  };
 }
 
 function flakyMetrics() {
@@ -75,7 +40,7 @@ function mutationMetrics() {
   return { ...summary, score: total ? summary.killed / total : null };
 }
 
-const coverage = coverageMetrics();
+const coverage = coverageStats(readJson('coverage/coverage-final.json', {}));
 const flaky = flakyMetrics();
 const mutation = mutationMetrics();
 const openapi = openApiPathMetrics({
