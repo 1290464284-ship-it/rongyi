@@ -180,6 +180,54 @@ describe('SqliteRepository', () => {
     expect(second.nextCursor).toBeUndefined();
   });
 
+  it('supports generic v: keyset cursors for explicit sort fields', async () => {
+    const repo = new SqliteRepository(db, resourceRegistry.get('patients')!);
+    for (let i = 0; i < 5; i += 1) {
+      await repo.insert({
+        id: `vz-${i}`,
+        code: `VZ-${i}`,
+        name: `VZeta${String(i).padStart(2, '0')}`,
+        gender: 'UNKNOWN',
+        source: 'OTHER',
+      }, context);
+    }
+    const first = await repo.findMany({
+      page: 1, pageSize: 2, search: 'VZeta', sortBy: 'name', sortOrder: 'ASC', cursor: 'v:VZeta00|vz-0',
+    }, context);
+    expect(first.items.map((row) => row.name)).toEqual(['VZeta01', 'VZeta02']);
+    expect(first.nextCursor).toBe('v:VZeta02|vz-2');
+
+    const second = await repo.findMany({
+      page: 1, pageSize: 2, search: 'VZeta', sortBy: 'name', sortOrder: 'ASC', cursor: first.nextCursor,
+    }, context);
+    expect(second.items.map((row) => row.name)).toEqual(['VZeta03', 'VZeta04']);
+    expect(second.nextCursor).toBeUndefined();
+
+    const desc = await repo.findMany({
+      page: 1, pageSize: 2, search: 'VZeta', sortBy: 'name', sortOrder: 'DESC', cursor: 'v:VZeta04|vz-4',
+    }, context);
+    expect(desc.items.map((row) => row.name)).toEqual(['VZeta03', 'VZeta02']);
+
+    // 非法/不完整游标与未知排序字段：回退全量分页不崩溃
+    const shortCursor = await repo.findMany({
+      page: 1, pageSize: 2, search: 'VZeta', sortBy: 'name', sortOrder: 'ASC', cursor: 'v:x',
+    }, context);
+    expect(shortCursor.items.length).toBe(2);
+    const missingField = await repo.findMany({
+      page: 1, pageSize: 2, search: 'VZeta', sortBy: 'missingField', sortOrder: 'DESC', cursor: 'v:VZeta01%7Cvz-1',
+    }, context);
+    expect(missingField.items.length).toBe(2);
+    const noSort = await repo.findMany({
+      page: 1, pageSize: 2, search: 'VZeta', cursor: 'v:VZeta01|vz-1',
+    }, context);
+    expect(noSort.items.length).toBe(2);
+    // 系统列（非声明字段）：columns.has 命中但 field 未命中，回退 offset 分页
+    const bySystemColumn = await repo.findMany({
+      page: 1, pageSize: 2, search: 'VZeta', sortBy: 'createdAt', sortOrder: 'DESC', cursor: 'v:2026-08-05T00:00:00.000Z|vz-4',
+    }, context);
+    expect(bySystemColumn.items.length).toBe(2);
+  });
+
   it('skips the COUNT query when countTotal is false and sorts by system columns', async () => {
     const repo = new SqliteRepository(db, resourceRegistry.get('patients')!);
     await repo.insert({
