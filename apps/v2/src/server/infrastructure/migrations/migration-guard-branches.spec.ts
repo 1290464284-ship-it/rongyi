@@ -27,6 +27,7 @@ describe('migration defensive branches', () => {
     db.exec(
       'CREATE TABLE Clinic (id TEXT PRIMARY KEY, createdAt TEXT); CREATE TABLE UserClinic (userId TEXT, clinicId TEXT); CREATE TABLE User (id TEXT PRIMARY KEY);',
     );
+    db.prepare('INSERT INTO Clinic (id, createdAt) VALUES (?, ?)').run('clinic-1', '2026-01-01T00:00:00.000Z');
     const migration = migrations121to130.find((entry) => entry.version === 121);
     expect(migration).toBeDefined();
     expect(() => migration!.up(db)).not.toThrow();
