@@ -77,7 +77,7 @@ export default defineConfig({
     port: Number(process.env.V2_WEB_DEV_PORT) || DEFAULT_WEB_DEV_PORT,
     proxy: {
       // P1-7/P1-8：后端端口不再硬编码，跟随 V2_PORT 环境变量（默认 DEFAULT_API_PORT）
-      '/api': `http://localhost:${process.env.V2_PORT ?? DEFAULT_API_PORT}`,
+      '/api': `http://127.0.0.1:${process.env.V2_PORT ?? DEFAULT_API_PORT}`,
     },
   },
 });

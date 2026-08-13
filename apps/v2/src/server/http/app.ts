@@ -132,7 +132,8 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
         // 放行 Vite 常用端口（5173/5180），方便本地前端直连 API。
         const port = url.port === '' ? (url.protocol === 'https:' ? 443 : 80) : Number(url.port);
         const apiPort = Number(process.env.V2_PORT ?? 3180);
-        const isAllowedPort = port === apiPort || (process.env.NODE_ENV !== 'production' && (port === 5173 || port === 5180));
+        const isAllowedPort = port === apiPort
+          || (process.env.NODE_ENV !== 'production' && (port === 5173 || port === 5180 || isLoopback));
         if (isLoopback && url.protocol === 'http:' && isAllowedPort) {
           callback(null, true);
           return;

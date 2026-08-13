@@ -87,11 +87,12 @@ describe('HTTP app', () => {
     expect(response.headers['access-control-allow-origin']).toBeUndefined();
   });
 
-  it('rejects loopback origins on ports other than the API and Vite dev ports', async () => {
+  it('allows loopback origins on any port in development', async () => {
     const response = await request(app)
       .get('/api/v2/health')
-      .set('Origin', 'http://127.0.0.1:9999');
-    expect(response.headers['access-control-allow-origin']).toBeUndefined();
+      .set('Origin', 'http://127.0.0.1:9999')
+      .expect(200);
+    expect(response.headers['access-control-allow-origin']).toBe('http://127.0.0.1:9999');
   });
 
   it('allows the configured API port and the Vite dev port as CORS origins', async () => {
