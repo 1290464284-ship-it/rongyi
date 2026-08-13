@@ -594,4 +594,23 @@ describe('InventoryWorkflowPage', () => {
     const call = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/stocktakes');
     expect(JSON.parse(String(call?.[1]?.body))).toEqual({ number: 'PD-NO-NOTE' });
   });
+
+  it('shows truncated notices for purchase, processing, and suggestions panels', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100') return { items: [], total: 0, truncated: true };
+      if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 1, truncated: true };
+      if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0, truncated: true };
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') {
+        return { items: [], total: 1, page: 1, pageSize: 100 };
+      }
+      if (path === '/stocktakes?page=1&pageSize=200') return { items: [], total: 0 };
+      return {};
+    });
+    render(<InventoryWorkflowPage />, { wrapper });
+    await screen.findByText('库存盘点');
+    expect(await screen.findByText('采购单超过 100 条，仅显示部分数据')).toBeDefined();
+    expect(screen.getByText('采购明细超过 200 条，仅显示部分数据')).toBeDefined();
+    expect(screen.getByText('加工单超过 100 条，仅显示部分数据')).toBeDefined();
+    expect(screen.getByText('补货建议超过 100 条，仅显示部分数据')).toBeDefined();
+  });
 });
