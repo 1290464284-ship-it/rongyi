@@ -171,4 +171,16 @@ describe('treatment plan billing routes', () => {
       .expect(404);
     expect(missing.body.code).toBe('NOT_FOUND');
   });
+
+  it('tolerates missing request bodies', async () => {
+    for (const path of [
+      '/api/v2/treatment-plans/missing/discount',
+      '/api/v2/treatment-plans/missing/items/missing/discount',
+      '/api/v2/treatment-plans/missing/bill',
+      '/api/v2/treatment-plans/missing/follow-up',
+    ]) {
+      const res = await request(app).post(path);
+      expect([200, 400, 404, 409]).toContain(res.status);
+    }
+  });
 });

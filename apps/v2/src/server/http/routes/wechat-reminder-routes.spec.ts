@@ -171,4 +171,13 @@ describe('wechat reminder routes', () => {
     const row = db.prepare('SELECT status FROM WechatReminder WHERE id = ?').get(pending!.id) as { status: string };
     expect(row.status).toBe('DISMISSED');
   });
+
+  it('tolerates missing request bodies', async () => {
+    const config = await request(app).patch('/api/v2/wechat-reminders/config');
+    expect([200, 400, 403, 404]).toContain(config.status);
+    for (const path of ['/api/v2/wechat-reminders/missing/mark-sent', '/api/v2/wechat-reminders/missing/dismiss']) {
+      const res = await request(app).post(path);
+      expect([200, 400, 404]).toContain(res.status);
+    }
+  });
 });

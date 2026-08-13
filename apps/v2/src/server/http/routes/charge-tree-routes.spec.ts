@@ -134,4 +134,9 @@ describe('charge tree routes', () => {
     expect(res.body.success).toBe(true);
     expect(res.body.data.chargeId).toBeTruthy();
   });
+
+  it('tolerates a missing request body', async () => {
+    const res = await request(app).post('/api/v2/charge-trees/missing/quick-charge');
+    expect([200, 400, 404, 409]).toContain(res.status);
+  });
 });

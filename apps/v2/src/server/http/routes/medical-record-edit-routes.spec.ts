@@ -204,4 +204,11 @@ describe('medical record edit routes', () => {
     expect(response.body.code).toBe('VALIDATION_ERROR');
     expect(response.body.message).toBe('修改原因不能为空');
   });
+
+  it('tolerates missing request bodies', async () => {
+    const edit = await request(app).post('/api/v2/medical-records/missing/edit-request');
+    expect([200, 400, 404, 409]).toContain(edit.status);
+    const review = await request(app).patch('/api/v2/medical-records/missing/edit-request/review');
+    expect([200, 400, 404, 409]).toContain(review.status);
+  });
 });

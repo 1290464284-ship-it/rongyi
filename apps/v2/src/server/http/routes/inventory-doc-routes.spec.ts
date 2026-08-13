@@ -153,4 +153,15 @@ describe('inventory doc routes', () => {
     expect(res.body.success).toBe(false);
     expect(res.body.code).toBe('CONFLICT');
   });
+
+  it('tolerates missing request bodies', async () => {
+    for (const path of [
+      '/api/v2/inventory-docs/return-supplier',
+      '/api/v2/inventory-docs/loss',
+      '/api/v2/inventory-docs/transfer',
+    ]) {
+      const res = await request(app).post(path);
+      expect([200, 400, 404, 409]).toContain(res.status);
+    }
+  });
 });

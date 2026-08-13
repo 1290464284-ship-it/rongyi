@@ -116,4 +116,15 @@ describe('first exam restart routes', () => {
     const row = db.prepare('SELECT chiefMark FROM FirstExamTooth WHERE id = ?').get('route-tooth-1') as { chiefMark: string };
     expect(row.chiefMark).toBe('HORIZONTAL_DONE');
   });
+
+  it('tolerates missing request bodies', async () => {
+    for (const path of [
+      '/api/v2/first-exams/route-exam-1/restart',
+      '/api/v2/first-exams/route-exam-1/dentition',
+      '/api/v2/first-exams/route-exam-1/teeth/route-tooth-1/chief-mark',
+    ]) {
+      const res = await request(app).post(path);
+      expect([200, 400, 404]).toContain(res.status);
+    }
+  });
 });

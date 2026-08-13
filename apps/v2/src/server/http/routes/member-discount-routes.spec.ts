@@ -254,4 +254,13 @@ describe('member discount routes', () => {
     expect(res.body.success).toBe(false);
     expect(res.body.code).toBe('NOT_FOUND');
   });
+
+  it('tolerates missing request bodies', async () => {
+    const plan = await request(app).put('/api/v2/member-cards/missing/discount-plan');
+    expect([200, 400, 404]).toContain(plan.status);
+    const quote = await request(app).post('/api/v2/member-cards/missing/quote');
+    expect([200, 400, 404]).toContain(quote.status);
+    const quoteByPatient = await request(app).post('/api/v2/member-cards/quote');
+    expect([200, 400, 404]).toContain(quoteByPatient.status);
+  });
 });

@@ -147,4 +147,15 @@ describe('cephalometric report routes', () => {
     expect(res.body.code).toBe('VALIDATION_ERROR');
     expect(res.body.message).toBe('请选择 1-10 个测量病例进行比较');
   });
+
+  it('tolerates missing request bodies', async () => {
+    for (const path of [
+      '/api/v2/cephalometric/compare',
+      '/api/v2/cephalometric/missing/report',
+      '/api/v2/cephalometric/missing/send',
+    ]) {
+      const res = await request(app).post(path);
+      expect([200, 400, 404, 409]).toContain(res.status);
+    }
+  });
 });

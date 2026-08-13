@@ -156,4 +156,11 @@ describe('processing flow routes', () => {
     expect(res.body.data.from).toBeNull();
     expect(res.body.data.to).toBeNull();
   });
+
+  it('tolerates missing request bodies', async () => {
+    const register = await request(app).post('/api/v2/processing-orders/missing/register-step');
+    expect([200, 400, 404, 409]).toContain(register.status);
+    const setStep = await request(app).post('/api/v2/processing-orders/missing/set-step');
+    expect([200, 400, 404, 409]).toContain(setStep.status);
+  });
 });
