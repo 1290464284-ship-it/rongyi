@@ -332,6 +332,29 @@ describe('UsersPage', () => {
     expect(await screen.findByText('网络请求失败，请重试')).toBeDefined();
   });
 
+  it('blocks editing when roles fail to load and renders an empty table', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/auth/me') return { role: 'BOSS' };
+      if (path === '/resources/users?page=1&pageSize=100') return { items: [], total: 0, page: 1, pageSize: 100 };
+      if (path === '/user-roles') throw new Error('roles failed');
+      return {};
+    });
+    render(<UsersPage />, { wrapper });
+    expect(await screen.findByText('暂无员工')).toBeDefined();
+
+    cleanup();
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/auth/me') return { role: 'BOSS' };
+      if (path === '/resources/users?page=1&pageSize=100') return baseUserList;
+      if (path === '/user-roles') throw new Error('roles failed');
+      return {};
+    });
+    render(<UsersPage />, { wrapper });
+    await screen.findByText('张医生');
+    fireEvent.click(screen.getByText('编辑'));
+    expect((await screen.findAllByText('角色数据加载失败，请刷新后重试')).length).toBeGreaterThan(0);
+  });
+
   it('reports save failures', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string, options?: RequestInit) => {
       const method = String(options?.method ?? 'GET').toUpperCase();
