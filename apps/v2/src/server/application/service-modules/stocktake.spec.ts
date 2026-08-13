@@ -310,4 +310,63 @@ describe('StocktakeService', () => {
     expect(service.lockedItemIds(undefined)).toEqual([]);
     service.assertNotLocked('stock-item-free', undefined);
   });
+
+  it('start：缺省 input 与非字符串 note 均安全处理', () => {
+    expect(() => service.start(undefined as unknown as { number: string; note?: string }, context))
+      .toThrow(ValidationError);
+    const withBadNote = service.start({ number: 'PD-BADNOTE', note: 42 as unknown as string }, context);
+    expect(db.prepare('SELECT note FROM Stocktake WHERE id = ?').get(String(withBadNote.id))).toEqual({ note: null });
+  });
+
+  it('list：分页参数钳制、offset 与 truncated 边界', () => {
+    for (let i = 0; i < 3; i += 1) {
+      db.prepare(
+        `INSERT INTO Stocktake (id, number, status, startedById, startedAt, clinicId, createdAt, updatedAt, deletedAt)
+         VALUES (?, ?, 'CANCELLED', 'user-admin-001', ?, 'clinic-v2-001', ?, ?, NULL)`,
+      ).run(`st-pg-${i}`, `PD-PG-${i}`, now, new Date(Date.parse(now) + i * 1000).toISOString(), now);
+    }
+
+    // 非法参数钳制：page 0 → 1；pageSize 0 → 200；pageSize 500 → 200；page 1.9 → 1
+    const clamped = service.list(context, { page: 0, pageSize: 0 });
+    expect(clamped.page).toBe(1);
+    expect(clamped.pageSize).toBe(200);
+    const capped = service.list(context, { page: 1.9, pageSize: 500 });
+    expect(capped.page).toBe(1);
+    expect(capped.pageSize).toBe(200);
+
+    // offset 语义：第 2 页（pageSize 1）返回第 2 新的单；truncated 随剩余量变化
+    const page2 = service.list(context, { page: 2, pageSize: 1 });
+    expect(page2.items.map((row) => row.number)).toEqual(['PD-PG-1']);
+    expect(page2.truncated).toBe(true); // total 3 > offset(1) + rows(1)
+    const lastPage = service.list(context, { page: 3, pageSize: 1 });
+    expect(lastPage.items.map((row) => row.number)).toEqual(['PD-PG-0']);
+    expect(lastPage.truncated).toBe(false); // 3 > 2 + 1 不成立
+  });
+
+  it('recordCount：接受 0 与 10 亿边界，拒绝超上限', () => {
+    insertItem('stock-item-bound', 'ST-BOUND', '边界品', 5);
+    const { id } = service.start({ number: 'PD-BOUND' }, context);
+
+    const zero = service.recordCount(String(id), 'stock-item-bound', 0, context);
+    expect(zero.difference).toBe(-5);
+    const max = service.recordCount(String(id), 'stock-item-bound', 1_000_000_000, context);
+    expect(max.difference).toBe(1_000_000_000 - 5);
+    expect(() => service.recordCount(String(id), 'stock-item-bound', 1_000_000_001, context))
+      .toThrow(ValidationError);
+  });
+
+  it('complete：批号商品带差异时拒绝（防御绕过录入入口的脏数据）', () => {
+    db.prepare(
+      `INSERT INTO InventoryItem (
+         id, clinicId, createdAt, updatedAt, deletedAt, code, name, category, unit,
+         stock, minStock, price, batchManaged
+       ) VALUES (?, ?, ?, ?, NULL, 'ST-BMC', '批次完成品', 'CONSUMABLE', 'box', 10, 0, 1000, 1)`,
+    ).run('stock-item-bmc', context.clinicId, now, now);
+    const { id } = service.start({ number: 'PD-BMC' }, context);
+    db.prepare(
+      `UPDATE StocktakeItem SET countedStock = 15, difference = 5 WHERE stocktakeId = ? AND itemId = ?`,
+    ).run(String(id), 'stock-item-bmc');
+    service.lock(String(id), context);
+    expect(() => service.complete(String(id), context)).toThrow('批号管理商品不能通过盘点直接调整库存');
+  });
 });

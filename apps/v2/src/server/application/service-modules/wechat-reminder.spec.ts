@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -427,5 +427,70 @@ describe('WechatReminderService', () => {
     const result = service.today(context);
     expect(result.items).toHaveLength(1000);
     expect(result.truncated).toBe(false);
+  });
+
+  it('falls back for out-of-range configured days and accepts exact update boundaries', () => {
+    db.prepare(
+      `INSERT INTO Setting (id, clinicId, createdAt, updatedAt, deletedAt, key, value)
+       VALUES (?, ?, ?, ?, NULL, 'wechatReminder.recallDaysAfter', '366')`,
+    ).run('setting-recall-366', context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO Setting (id, clinicId, createdAt, updatedAt, deletedAt, key, value)
+       VALUES (?, ?, ?, ?, NULL, 'wechatReminder.firstExamDaysAfter', '-5')`,
+    ).run('setting-exam-neg', context.clinicId, now, now);
+    const service = new WechatReminderService(db);
+    const config = service.config(context);
+    expect(config.recallDaysAfter).toBe(3); // 366 → 回退默认
+    expect(config.firstExamDaysAfter).toBe(3); // -5 → 回退默认
+
+    // updateConfig 恰好 365 / 恰好 2000 字 → 接受（边界值合法）
+    const updated = service.updateConfig({ recallDaysAfter: 365, appointmentContent: 'x'.repeat(2000) }, context);
+    expect(updated.recallDaysAfter).toBe(365);
+    expect(updated.appointmentContent).toHaveLength(2000);
+  });
+
+  it('treats an empty-string clinic id as the global cache key', () => {
+    const service = new WechatReminderService(db);
+    const emptyClinic: AppContext = { ...context, clinicId: '' as unknown as string };
+    const result = service.today(emptyClinic);
+    expect(result.config.enabled).toBe(true);
+    expect(result.date).toBe('2026-08-05');
+  });
+
+  it('regenerates exactly at the cache TTL boundary', () => {
+    vi.useFakeTimers();
+    try {
+      const service = new WechatReminderService(db);
+      service.today(context);
+      insertAppointment('appt-ttl-edge', '2026-08-06T09:00:00.000Z');
+      vi.setSystemTime(Date.now() + 5 * 60 * 1000); // 恰好等于 TTL
+      const second = service.today(context);
+      expect(second.items.some((row) => row.sourceId === 'appt-ttl-edge')).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('renders first-exam content without null artifacts for missing patient names', () => {
+    db.prepare(
+      `INSERT INTO Patient (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active
+       ) VALUES (?, ?, ?, ?, NULL, 'P-NONAME', NULL, 'UNKNOWN', '13700000010',
+         '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
+    ).run('patient-noname', context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO FirstExam (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, status, followUpStatus
+       ) VALUES (?, ?, ?, ?, NULL, ?, 'user-admin-001', 'NEW', NULL)`,
+    ).run('exam-noname', context.clinicId, '2026-08-02T02:00:00.000Z', now, 'patient-noname');
+
+    const service = new WechatReminderService(db);
+    const item = service.today(context).items.find((row) => row.sourceId === 'exam-noname');
+    expect(item).toBeDefined();
+    expect(item?.content).toContain('您好');
+    expect(item?.content).not.toContain('null');
   });
 });

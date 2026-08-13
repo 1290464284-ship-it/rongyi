@@ -335,4 +335,52 @@ describe('TriageService', () => {
     expect(() => service.rescheduleAppointment('appt-reschedule-cancelled', { startTime: '2099-03-05T09:00:00.000Z' }, context)).toThrow('已取消或未到的预约不能改期');
     expect(() => service.rescheduleAppointment('appt-reschedule-noshow', { startTime: '2099-03-05T09:00:00.000Z' }, context)).toThrow(ConflictError);
   });
+
+  it('requires startTime with the dedicated message for every falsy form', () => {
+    insertAppointment('appt-falsy-start');
+    const service = new TriageService(db);
+    expect(() => service.rescheduleAppointment('appt-falsy-start', { startTime: '' }, context))
+      .toThrow('startTime 必填');
+    expect(() => service.rescheduleAppointment('appt-falsy-start', { startTime: undefined as unknown as string }, context))
+      .toThrow('startTime 必填');
+    expect(() => service.rescheduleAppointment('appt-falsy-start', { startTime: null as unknown as string }, context))
+      .toThrow('startTime 必填');
+  });
+
+  it('updates the stored doctor when a different doctorId is provided', () => {
+    db.prepare(
+      `INSERT INTO User (id, clinicId, createdAt, updatedAt, deletedAt, username, passwordHash, name, role, active, loginAttempts, tokenVersion)
+       VALUES ('user-doctor-triage', ?, ?, ?, NULL, 'triage-doctor', 'x', '分诊医生', 'DOCTOR', 1, 0, 0)`,
+    ).run(context.clinicId, now, now);
+    insertAppointment('appt-doc-change', {
+      doctorId: 'user-admin-001',
+      startTime: '2099-12-01T09:00:00.000Z',
+      endTime: '2099-12-01T10:00:00.000Z',
+    });
+    const service = new TriageService(db);
+    const result = service.rescheduleAppointment('appt-doc-change', {
+      startTime: '2099-12-01T09:00:00.000Z',
+      doctorId: 'user-doctor-triage',
+    }, context);
+    expect(result.doctorId).toBe('user-doctor-triage');
+  });
+
+  it('conflict check falls back to the stored doctor when doctorId is omitted', () => {
+    insertAppointment('appt-fb-a', {
+      doctorId: 'user-admin-001',
+      startTime: '2099-12-02T09:00:00.000Z',
+      endTime: '2099-12-02T10:00:00.000Z',
+    });
+    insertAppointment('appt-fb-b', {
+      doctorId: 'user-admin-001',
+      startTime: '2099-12-02T09:00:00.000Z',
+      endTime: '2099-12-02T10:00:00.000Z',
+    });
+    const service = new TriageService(db);
+    // 不带 doctorId 改期：冲突检测必须回退到库内已存医生 → 与 A 冲突
+    expect(() => service.rescheduleAppointment('appt-fb-b', {
+      startTime: '2099-12-02T09:30:00.000Z',
+      endTime: '2099-12-02T10:30:00.000Z',
+    }, context)).toThrow('医生或椅位在该时段已被占用');
+  });
 });
