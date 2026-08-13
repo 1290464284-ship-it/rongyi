@@ -346,4 +346,49 @@ describe('useCrudResource', () => {
       expect(screen.getByTestId('can-prev').textContent).toBe('false');
     });
   });
+
+  it('guards cursor setPage and empty next/prev navigation', async () => {
+    function CursorPageHarness() {
+      const crud = useCrudResource<HookRow, HookForm>({
+        queryKey: ['cursor-page-items'],
+        endpoint: '/resources/things',
+        initialForm: { name: '', note: '' },
+        cursorPagination: true,
+      });
+      return (
+        <div>
+          <button onClick={crud.goNext}>next</button>
+          <button onClick={crud.goPrev}>prev</button>
+          <button onClick={() => crud.setPage(2)}>set-2</button>
+          <button onClick={() => crud.setPage(1)}>set-1</button>
+          <span data-testid="page">{crud.page}</span>
+          <span data-testid="can-prev">{String(crud.canGoPrev)}</span>
+          <span data-testid="has-next">{String(crud.hasNext)}</span>
+        </div>
+      );
+    }
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (String(path).includes('cursor=cursor-1')) {
+        return { items: [{ id: 'r-2' }], total: 2, page: 1, pageSize: 50 };
+      }
+      return { items: [{ id: 'r-1' }], total: 2, page: 1, pageSize: 50, nextCursor: 'cursor-1' };
+    });
+    render(<CursorPageHarness />, { wrapper });
+    await waitFor(() => expect(screen.getByTestId('has-next').textContent).toBe('true'));
+
+    fireEvent.click(screen.getByText('set-2'));
+    await waitFor(() => expect(screen.getByTestId('page').textContent).toBe('2'));
+    expect(screen.getByTestId('can-prev').textContent).toBe('true');
+
+    fireEvent.click(screen.getByText('next'));
+    await waitFor(() => expect(screen.getByTestId('has-next').textContent).toBe('false'));
+    expect(screen.getByTestId('page').textContent).toBe('2');
+
+    fireEvent.click(screen.getByText('set-1'));
+    await waitFor(() => expect(screen.getByTestId('page').textContent).toBe('1'));
+    expect(screen.getByTestId('can-prev').textContent).toBe('false');
+
+    fireEvent.click(screen.getByText('prev'));
+    await waitFor(() => expect(screen.getByTestId('page').textContent).toBe('1'));
+  });
 });
