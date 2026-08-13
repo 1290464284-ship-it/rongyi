@@ -73,4 +73,30 @@ describe('createAuditBuffer production paths', () => {
     await vi.advanceTimersByTimeAsync(1000);
     expect(logger.error).toHaveBeenCalledWith('audit batch retry flush failed', expect.anything());
   });
+
+  it('logs immediate full-buffer flush failures and the single retry', async () => {
+    process.env.NODE_ENV = 'production';
+    vi.useFakeTimers();
+    failOperationLog();
+    const logger = { error: vi.fn() } as unknown as Logger;
+    const buffer = createAuditBuffer(db, logger);
+    for (let i = 0; i < 50; i += 1) {
+      buffer.push({ action: `test.full.${i}` });
+    }
+    expect(logger.error).toHaveBeenCalledWith('audit batch flush failed', expect.anything());
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(logger.error).toHaveBeenCalledWith('audit batch retry flush failed', expect.anything());
+  });
+
+  it('stores null optional fields in test mode', () => {
+    process.env.NODE_ENV = 'test';
+    const buffer = createAuditBuffer(db, undefined as unknown as Logger);
+    buffer.push({ action: 'test.null-fields' });
+    const row = db.prepare(
+      `SELECT ip, traceId, statusCode FROM OperationLog WHERE action = 'test.null-fields' ORDER BY rowid DESC LIMIT 1`,
+    ).get() as { ip: string | null; traceId: string | null; statusCode: string | null };
+    expect(row.ip).toBeNull();
+    expect(row.traceId).toBeNull();
+    expect(row.statusCode).toBeNull();
+  });
 });
