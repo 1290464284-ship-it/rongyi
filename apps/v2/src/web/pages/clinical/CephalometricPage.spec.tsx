@@ -286,6 +286,26 @@ describe('CephalometricPage', () => {
     expect(screen.getByText('对比说明')).toBeDefined();
   });
 
+  it('paginates the compare case options', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/cephalometricCases?page=1&pageSize=50') {
+        return { items: [{ id: 'c-1', patientId: 'p-1', patientName: '患者甲', createdAt: '2026-08-01T02:00:00.000Z' }], total: 51, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/cephalometricCases?page=2&pageSize=50') {
+        return { items: [{ id: 'c-51', patientId: 'p-1', patientName: '患者乙', createdAt: '2026-08-02T02:00:00.000Z' }], total: 51, page: 2, pageSize: 50 };
+      }
+      return { items: [], total: 0, page: 1, pageSize: 50 };
+    });
+    render(<CephalometricPage />, { wrapper });
+    expect(await screen.findByRole('checkbox', { name: /c-1/ })).toBeDefined();
+    fireEvent.click(screen.getByText('下一页'));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/cephalometricCases?page=2&pageSize=50');
+    });
+    expect(await screen.findByRole('checkbox', { name: /c-51/ })).toBeDefined();
+    expect(screen.getByText('上一页')).toBeDefined();
+  });
+
   it('edits a cephalometric case keeping the original image', async () => {
     mockData();
     render(<CephalometricPage />, { wrapper });
