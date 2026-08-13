@@ -16,9 +16,11 @@ describe('wechat reminder routes', () => {
   let db: Database.Database;
   let app: Express;
   let service: WechatReminderService;
+  let currentRole: 'BOSS' | 'DOCTOR';
   const nowIso = '2026-08-05T10:00:00.000Z';
 
   beforeEach(() => {
+    currentRole = 'BOSS';
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-wechat-reminder-routes-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -33,7 +35,7 @@ describe('wechat reminder routes', () => {
       (req as unknown as { context: unknown }).context = {
         userId: 'user-admin-001',
         clinicId: 'clinic-v2-001',
-        role: 'BOSS',
+        role: currentRole,
         traceId: 'test-trace',
         now: () => new Date('2026-08-05T10:00:00.000Z'),
       };
@@ -179,5 +181,11 @@ describe('wechat reminder routes', () => {
       const res = await request(app).post(path);
       expect([200, 400, 404]).toContain(res.status);
     }
+  });
+
+  it('blocks non-BOSS roles from updating the config', async () => {
+    currentRole = 'DOCTOR';
+    const res = await request(app).patch('/api/v2/wechat-reminders/config').send({ enabled: true });
+    expect(res.status).toBe(403);
   });
 });

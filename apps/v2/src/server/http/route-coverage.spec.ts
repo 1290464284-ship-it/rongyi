@@ -61,4 +61,32 @@ describe('route policy coverage', () => {
       ).toBe(true);
     }
   });
+
+  it('collectRoutes joins nested prefixes and strips duplicate slashes', () => {
+    const routes = collectRoutes([
+      {
+        path: '/api/v2/',
+        handle: {
+          stack: [
+            {
+              route: { path: '/items', methods: { get: true } },
+            },
+            {
+              handle: {
+                stack: [
+                  {
+                    route: { path: 'sub', methods: { post: true } },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      },
+    ]);
+    expect(routes).toEqual([
+      { method: 'GET', path: '/api/v2/items' },
+      { method: 'POST', path: '/api/v2/sub' },
+    ]);
+  });
 });
