@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import { parsePagination } from './pagination';
-import { ValidationError } from '../infrastructure/errors';
 
 function request(query: Record<string, unknown>): Parameters<typeof parsePagination>[0] {
   return { query } as Parameters<typeof parsePagination>[0];
