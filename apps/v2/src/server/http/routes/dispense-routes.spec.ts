@@ -568,4 +568,13 @@ describe('dispense routes', () => {
     expect(missing.body.code).toBe('NOT_FOUND');
     expect(missing.body.message).toBe('麻药登记不存在');
   });
+
+  it('treats absent request bodies as empty payloads', async () => {
+    await request(app).post('/api/v2/dispenses').expect(400);
+    expect([400, 404]).toContain((await request(app).patch('/api/v2/dispenses/route-missing')).status);
+    expect([400, 404]).toContain((await request(app).post('/api/v2/dispenses/route-missing/dispense')).status);
+    expect([400, 404]).toContain((await request(app).post('/api/v2/dispenses/route-missing/return')).status);
+    await request(app).post('/api/v2/narcotic-registry').expect(400);
+    expect([400, 404]).toContain((await request(app).patch('/api/v2/narcotic-registry/route-missing')).status);
+  });
 });
