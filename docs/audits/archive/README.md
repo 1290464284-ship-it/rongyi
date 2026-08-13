@@ -82,6 +82,7 @@
 | 第 71 轮 | 2026-08-13 | validation/pagination mutation 提分至 84.77 | `../深度审计报告-第七十一轮-主报告.md` |
 | 第 72 轮 | 2026-08-13 | errors 契约断言提分至 87.44 | `../深度审计报告-第七十二轮-主报告.md` |
 | 第 73 轮 | 2026-08-13 | mutation 破 90 分（90.24） | `../深度审计报告-第七十三轮-主报告.md` |
+| 第 74 轮 | 2026-08-13 | 评分覆盖率口径与 Vitest 对齐 | `../深度审计报告-第七十四轮-主报告.md` |
 
 ## 其他归档
 
@@ -99,7 +100,7 @@
 
 ## 当前状态
 
-最新一轮为第 73 轮（`4e46745`），单测 239 文件 / 2421 用例；mutation score 90.24，route path coverage 100%，完整 sequence.shuffle 全绿，typecheck/lint/knip/unit 均通过。
+最新一轮为第 74 轮（`3da7a9f`），单测 239 文件 / 2423 用例；coverage 95.19 / 86.68 / 98.98 / 97.15，mutation score 90.24，route path coverage 100%，typecheck/lint/knip/unit 均通过。
 历史轮次请以上方轮次索引为准；各轮详情见 `../深度审计报告-第N轮-主报告.md`。
 已收敛的长期决策项：processing-flow 手动改态保留并补 `changes` 校验；大库增量聚合
 暂不启动，`replenishment.generate` 已用有界分块事务，10 万级冷态基准持续 PASS。
