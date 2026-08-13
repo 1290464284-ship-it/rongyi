@@ -148,4 +148,39 @@ describe('custom field routes', () => {
     const emptyPut = await request(app).put('/api/v2/custom-fields/values');
     expect([200, 400]).toContain(emptyPut.status);
   });
+
+  it('normalizes boolean values and select options', async () => {
+    const booleanField = await request(app)
+      .post('/api/v2/custom-fields')
+      .send({ entity: 'patient', label: '启用标记', fieldName: 'enabledFlag', fieldType: 'BOOLEAN' })
+      .expect(201);
+    const fieldId = booleanField.body.data.id as string;
+    await request(app)
+      .put('/api/v2/custom-fields/values')
+      .send({ entity: 'patient', entityId: 'patient-boolean-1', values: [{ fieldId, value: 'true' }] })
+      .expect(200);
+    const values = await request(app)
+      .get('/api/v2/custom-fields/values?entity=patient&entityId=patient-boolean-1')
+      .expect(200);
+    expect(values.body.data.values[fieldId]).toBe('1');
+
+    await request(app)
+      .post('/api/v2/custom-fields')
+      .send({ entity: 'patient', label: '坏类型', fieldName: 'badType', fieldType: 'BOGUS' })
+      .expect(400);
+    await request(app)
+      .post('/api/v2/custom-fields')
+      .send({
+        entity: 'patient',
+        label: '选项',
+        fieldName: 'choiceField',
+        fieldType: 'SELECT',
+        options: [' a ', '', 'b '],
+      })
+      .expect(201);
+    const listed = await request(app).get('/api/v2/custom-fields?entity=patient').expect(200);
+    const choice = (listed.body.data as Array<{ fieldName: string; optionsJson: string }>)
+      .find((field) => field.fieldName === 'choiceField');
+    expect(JSON.parse(choice?.optionsJson ?? '[]')).toEqual(['a', 'b']);
+  });
 });
