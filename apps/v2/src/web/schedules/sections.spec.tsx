@@ -115,6 +115,20 @@ describe('GenerateSection', () => {
     fireEvent.click(screen.getByRole('button', { name: '生成固定排班' }));
     expect(await screen.findByText('网络请求失败，请重试')).toBeDefined();
   });
+
+  it('falls back to the user id when name and username are absent', () => {
+    render(
+      <GenerateSection
+        templates={templates}
+        users={[{ id: 'user-x' }]}
+        weekStart="2026-08-03"
+        onWeekStartChange={vi.fn()}
+        onGenerated={vi.fn()}
+      />,
+      { wrapper },
+    );
+    expect(screen.getByRole('option', { name: 'user-x' })).toBeDefined();
+  });
 });
 
 describe('TemplateSection', () => {
