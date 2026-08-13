@@ -80,6 +80,7 @@ if (!release) {
   // 本地裸跑场景：默认 tag 来自 package.json，未发布不代表脚本错误。
   console.warn(`::warning::${message}`);
   console.warn(`::warning::local bare run: package.json version ${pkg.version} may not be published yet; pass V2_RELEASE_TAG to verify strictly`);
+  await new Promise((resolve) => setTimeout(resolve, 250));
   process.exit(0);
 }
 
