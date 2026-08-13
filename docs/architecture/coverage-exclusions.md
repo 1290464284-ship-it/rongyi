@@ -71,6 +71,7 @@ Web **96.82% / 92.94% / 98.66% / 98.58%**，双门禁全绿——覆盖率口径
 | `src/server/application/service-modules/inventory-batch.ts`（consumeFifo） | `fresh.remainingQuantity ?? 0` 空值分支 | 批次列表查询已过滤 `remainingQuantity > 0`（NULL 被排除），重读恒为正数 |
 | `src/server/application/service-modules/inventory-batch.ts`（generateExpiryAlerts） | `expiryDate ? ... : '无效期'` 的无效期分支 | expiring 查询要求 `expiryDate >= today`，NULL 被排除，无效期分支不可达 |
 | `src/server/application/service-modules/dispense-stock.ts`（dispense/returnItems） | 事务内 `!locked`/状态 CAS/批次 CAS/退药 CAS 的冲突分支 | 预检与事务内重读同属同步流程，CAS 条件恒满足，竞态守卫为防御冗余（legacy NULL 数据路径仍可测） |
+| `src/server/application/service-modules/shift-template.ts`（addDays） | `if (!match) throw` 日期格式校验 | 调用方均先经 normalizeWeekStart 归一化，日期格式恒有效 |
 
 ## 5. 其他已知取舍
 

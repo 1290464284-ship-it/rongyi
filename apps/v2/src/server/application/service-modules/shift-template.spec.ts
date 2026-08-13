@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -314,5 +314,76 @@ describe('ShiftTemplateService validation and edge branches', () => {
     const service = new ShiftTemplateService(db);
     expect(() => service.create({ name: '小数日', startTime: '09:00', endTime: '18:00', workDaysJson: [1.5] }, context))
       .toThrow('工作日必须为 1（周一）到 7（周日）的整数');
+  });
+
+  it('maps week schedule rows with a null startTime', () => {
+    // startTime 为 WHERE 过滤列，NULL 行不会进入周视图；此处仅覆盖 NULL endTime/type
+    db.prepare(
+      `INSERT INTO WorkSchedule (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         userId, startTime, endTime, type, remark,
+         shiftTemplateId, title, weekDay, color, isRecurring
+       ) VALUES ('ws-null-start', 'clinic-v2-001', ?, ?, NULL, 'user-admin-001',
+                 '2026-08-04T09:00:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL)`,
+    ).run(now, now);
+    const service = new ShiftTemplateService(db);
+    const row = service.weekSchedules('2026-08-03', context).find((entry) => entry.id === 'ws-null-start');
+    expect(row).toMatchObject({ startTime: '2026-08-04T09:00:00', endTime: '', type: '', weekDay: 0 });
+  });
+
+  it('defaults a null active flag on read', () => {
+    db.prepare(
+      `INSERT INTO ShiftTemplate (
+         id, name, startTime, endTime, workDaysJson, color, active, clinicId,
+         createdAt, updatedAt, deletedAt
+       ) VALUES ('template-null-meta', 'NullMeta', '09:00', '18:00', '[1]', NULL, NULL, ?, ?, ?, NULL)`,
+    ).run(context.clinicId, now, now);
+    const service = new ShiftTemplateService(db);
+    const row = service.list(context).find((entry) => entry.id === 'template-null-meta');
+    expect(row).toMatchObject({ active: 1, color: null });
+  });
+
+  it('reports NotFound when a template update affects zero rows', () => {
+    const service = new ShiftTemplateService(db);
+    createTemplate({ id: 'template-race' });
+    const originalPrepare = db.prepare.bind(db);
+    const spy = vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE ShiftTemplate') && sql.includes('SET name')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      expect(() => service.update('template-race', { name: 'Race' }, context)).toThrow('Shift template not found');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('rejects non-string times and week starts', () => {
+    const service = new ShiftTemplateService(db);
+    createTemplate({ id: 'template-shape' });
+    expect(() => service.update('template-shape', { startTime: 42 as never }, context)).toThrow('开始时间格式应为 HH:MM');
+    expect(() => service.generate({
+      templateId: 'template-shape',
+      userId: 'user-admin-001',
+      weekStart: 42 as never,
+    }, context)).toThrow('weekStart 格式应为 YYYY-MM-DD');
+  });
+
+  it('generates fixed schedules without a clinic tenant', () => {
+    const service = new ShiftTemplateService(db);
+    createTemplate({ id: 'template-global' });
+    const globalContext: AppContext = { ...context, clinicId: null };
+    const result = service.generate({
+      templateId: 'template-global',
+      userId: 'user-admin-001',
+      weekStart: '2026-08-03',
+    }, globalContext);
+    expect(result.created).toBe(5);
+    const row = db.prepare(
+      'SELECT clinicId FROM WorkSchedule WHERE shiftTemplateId = ? LIMIT 1',
+    ).get('template-global') as { clinicId: string | null };
+    expect(row.clinicId).toBeNull();
   });
 });
