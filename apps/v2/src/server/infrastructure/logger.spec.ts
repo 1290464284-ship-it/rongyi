@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Logger, MAX_SERIALIZE_DEPTH, serializeValue } from './logger';
 
@@ -103,5 +106,32 @@ describe('Logger.write', () => {
     expect(parsed.message).toBe('request failed');
     expect(parsed.error).toMatchObject({ message: 'boom' });
     expect(JSON.stringify(parsed.circular)).toContain('"[MaxDepth]"');
+  });
+});
+
+describe('Logger file rotation', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('rotates the log file and shifts existing backups', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-logger-rotate-'));
+    const logPath = path.join(dir, 'v2.log');
+    fs.writeFileSync(logPath, 'x'.repeat(5 * 1024 * 1024));
+    for (const suffix of ['.1', '.2', '.3', '.4']) {
+      fs.writeFileSync(`${logPath}${suffix}`, suffix);
+    }
+    try {
+      const logger = new Logger({ logDir: dir });
+      logger.error('trigger rotation');
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      expect(fs.existsSync(`${logPath}.5`)).toBe(true);
+      expect(fs.readFileSync(`${logPath}.4`, 'utf8')).toBe('.3');
+      expect(fs.readFileSync(`${logPath}.1`, 'utf8')).toBe('x'.repeat(5 * 1024 * 1024));
+      expect(fs.existsSync(logPath)).toBe(true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

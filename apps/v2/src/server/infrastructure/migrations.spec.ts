@@ -112,6 +112,25 @@ describe('migrations', () => {
     expect(isMigrationBusy(other)).toBe(false);
   });
 
+  it('treats non-Error busy inputs as not busy', () => {
+    expect(isMigrationBusy('database is locked')).toBe(false);
+    expect(isMigrationBusy(null)).toBe(false);
+  });
+
+  it('snapshots before pending migrations and skips when none are pending', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-mig-snapshot-'));
+    const db = createDatabase(dir);
+    const snapshotDir = path.join(dir, 'snapshots');
+    try {
+      expect(runMigrations(db, { snapshotDir })).toBeGreaterThan(0);
+      expect(fs.existsSync(path.join(snapshotDir, 'pre-migration'))).toBe(true);
+      expect(runMigrations(db, { snapshotDir })).toBe(0);
+    } finally {
+      db.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('adds missing migration columns when legacy schema lacks them', () => {
     const freshDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-mig-fresh-'));
     const freshDb = createDatabase(freshDir);
