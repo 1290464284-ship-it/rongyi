@@ -107,6 +107,22 @@ describe('createRateLimit', () => {
     limiter(fakeRequest('/b'), fakeResponse().res, (err) => { errorB = err; });
     expect(errorB).toMatchObject({ status: 429 });
   });
+
+  it('supports an external store without atomic increment', () => {
+    const store = {
+      get: vi.fn(),
+      set: vi.fn(),
+    };
+    const limiter = createRateLimit({ windowMs: 60_000, max: 2 }, store as never);
+    const next = vi.fn();
+    limiter(fakeRequest('/store'), fakeResponse().res, next);
+    expect(store.get).toHaveBeenCalled();
+    expect(store.set).toHaveBeenCalled();
+
+    store.get.mockReturnValueOnce({ count: 1, resetAt: Date.now() + 60_000 });
+    limiter(fakeRequest('/store'), fakeResponse().res, next);
+    expect(store.set).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('createIpRateLimit', () => {
@@ -160,5 +176,12 @@ describe('createIpRateLimit', () => {
     const otherNext = vi.fn();
     limiter(fakeRequest('/login', '10.0.0.3'), fakeResponse().res, otherNext);
     expect(otherNext).toHaveBeenCalledOnce();
+  });
+
+  it('falls back to unknown when the request has no ip', () => {
+    const limiter = createIpRateLimit({ windowMs: 60_000, max: 1 });
+    const next = vi.fn();
+    limiter({ method: 'GET', path: '/no-ip' } as unknown as Request, fakeResponse().res, next);
+    expect(next).toHaveBeenCalledOnce();
   });
 });

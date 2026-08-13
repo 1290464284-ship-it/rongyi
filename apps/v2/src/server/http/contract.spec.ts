@@ -134,4 +134,10 @@ describe('public HTTP contract', () => {
       .expect(200);
     expect(validateContract(resourceDetailEnvelopeSchema, detail.body)).toEqual([]);
   });
+
+  it('maps contract validation errors with stable instance paths', () => {
+    const errors = validateContract(loginEnvelopeSchema, { success: false });
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors.some((error) => error.startsWith('/') || error.startsWith('data/'))).toBe(true);
+  });
 });
