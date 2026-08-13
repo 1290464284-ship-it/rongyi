@@ -217,4 +217,12 @@ describe('CommissionService', () => {
     expect(statement?.totalCharged).toBe(101);
     expect(statement?.breakdown?.reduce((sum, line) => sum + line.charged, 0)).toBe(101);
   });
+
+  it('normalizes non-string names and fixed-rate caps', () => {
+    const service = new CommissionService(db);
+    expect(() => service.createRule({ name: 123 as never, rateType: 'PERCENT', rate: 1 }, context))
+      .toThrow('规则名称不能为空');
+    expect(() => service.createRule({ name: 'x', rateType: 'FIXED', rate: 1_000_000_000_001 }, context))
+      .toThrow('固定提成金额超过上限');
+  });
 });
