@@ -150,6 +150,14 @@ describe('DispenseListPanel', () => {
     expect(screen.getByText('暂无发药单')).toBeDefined();
   });
 
+  it('renders an empty list when the query data is undefined', () => {
+    render(
+      <DispenseListPanel dispenses={queryResult({ data: undefined as never })} dispensePage={1} setDispensePage={vi.fn()} />,
+      { wrapper },
+    );
+    expect(screen.getByText('暂无发药单')).toBeDefined();
+  });
+
   it('renders status-specific action buttons', () => {
     render(
       <DispenseListPanel
