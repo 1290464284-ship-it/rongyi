@@ -609,6 +609,15 @@ describe('api helper functions', () => {
     createSpy.mockRestore();
   });
 
+  it('downloadCsv includes the search query', async () => {
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:csv');
+    fetchMock.mockResolvedValueOnce(new Response('a,b\n1,2', { status: 200 }));
+    await mod.downloadCsv('patients', '张');
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/resources/patients/export?search=');
+    clickSpy.mockRestore();
+  });
+
   it('getSignedFileUrl returns an absolute signed URL', async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(
