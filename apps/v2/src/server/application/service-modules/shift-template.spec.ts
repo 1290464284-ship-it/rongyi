@@ -123,4 +123,29 @@ describe('ShiftTemplateService validation and edge branches', () => {
       workDaysJson: 'not-json',
     }, context)).toThrow('工作日格式无效');
   });
+
+  it('maps week schedule rows with null optional fields', () => {
+    db.prepare(
+      `INSERT INTO WorkSchedule (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         userId, startTime, endTime, type, remark,
+         shiftTemplateId, title, weekDay, color, isRecurring
+       ) VALUES (?, 'clinic-v2-001', ?, ?, NULL, 'user-admin-001',
+                 '2026-08-04T09:00:00', NULL, NULL, NULL,
+                 NULL, NULL, NULL, NULL, NULL)`,
+    ).run('ws-null-optional', now, now);
+    const service = new ShiftTemplateService(db);
+    const row = service.weekSchedules('2026-08-03', context).find((entry) => entry.id === 'ws-null-optional');
+    expect(row).toMatchObject({
+      userIdLabel: 'System Administrator',
+      shiftTemplateId: null,
+      title: null,
+      color: null,
+      weekDay: 0,
+      startTime: '2026-08-04T09:00:00',
+      endTime: '',
+      type: '',
+      date: '2026-08-04',
+    });
+  });
 });
