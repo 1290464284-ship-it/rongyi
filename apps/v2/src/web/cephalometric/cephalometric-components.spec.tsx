@@ -117,6 +117,11 @@ describe('OutlineSvg', () => {
     expect(screen.getByText('暂无轮廓数据')).toBeDefined();
   });
 
+  it('handles reports without a polylines field', () => {
+    render(<OutlineSvg report={{ outline: [] }} />);
+    expect(screen.getByText('暂无轮廓数据')).toBeDefined();
+  });
+
   it('renders outline points and labelled polylines', () => {
     const { container } = render(
       <OutlineSvg

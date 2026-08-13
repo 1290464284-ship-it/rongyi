@@ -196,6 +196,33 @@ describe('RecordDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: '提交病历' }));
     expect(await screen.findByText('创建病历失败')).toBeDefined();
   });
+
+  it('submits empty patient and visit fallbacks', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      return {};
+    });
+    render(
+      <RecordDialog
+        row={{ id: 'r-null', patientId: null, visitId: null } as never}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+      />,
+      { wrapper },
+    );
+    await waitFor(() => {
+      expect((screen.getByRole('option', { name: '张医生' }) as HTMLOptionElement).value).toBe('d-1');
+    });
+    fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
+    fireEvent.click(screen.getByRole('button', { name: '提交病历' }));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/medicalRecords', expect.objectContaining({ method: 'POST' }));
+    });
+    const call = vi.mocked(apiRequest).mock.calls.find((entry) => entry[0] === '/resources/medicalRecords');
+    const body = JSON.parse(String((call?.[1] as RequestInit)?.body)) as Record<string, unknown>;
+    expect(body.patientId).toBe('');
+    expect('visitId' in body).toBe(false);
+  });
 });
 
 describe('CreateFollowUpDialog', () => {
