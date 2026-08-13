@@ -103,4 +103,34 @@ describe('HrWorkflowPage', () => {
     render(<HrWorkflowPage />, { wrapper });
     expect(await screen.findByText('暂无待审批请假')).toBeDefined();
   });
+
+  it('shows a fallback error message and renders unknown statuses', async () => {
+    vi.mocked(apiRequest).mockRejectedValueOnce('boom-string');
+    render(<HrWorkflowPage />, { wrapper });
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+    cleanup();
+
+    vi.mocked(apiRequest).mockResolvedValue({
+      items: [{ id: 'l-x', userId: 'u-x', startDate: '2026-08-01', endDate: '2026-08-02', status: 'WEIRD' }],
+      total: 1,
+    });
+    render(<HrWorkflowPage />, { wrapper });
+    expect(await screen.findByText('WEIRD')).toBeDefined();
+  });
+
+  it('paginates through pending leaves', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/leaveRequests?status=PENDING&page=1&pageSize=100') {
+        return { items: [{ id: 'l-1', userId: 'u-1', startDate: '2026-08-01', endDate: '2026-08-02', status: 'PENDING' }], total: 101 };
+      }
+      if (path === '/resources/leaveRequests?status=PENDING&page=2&pageSize=100') {
+        return { items: [{ id: 'l-2', userId: 'u-2', startDate: '2026-08-03', endDate: '2026-08-04', status: 'PENDING' }], total: 101 };
+      }
+      return {};
+    });
+    render(<HrWorkflowPage />, { wrapper });
+    expect(await screen.findByText('u-1')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+    expect(await screen.findByText('u-2')).toBeDefined();
+  });
 });
