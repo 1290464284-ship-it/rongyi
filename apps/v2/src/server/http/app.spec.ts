@@ -1804,4 +1804,31 @@ describe('HTTP app', () => {
       }
     }
   });
+
+  it('validates print kinds and masks temp patient phones in by-date output', async () => {
+    await request(app).get('/api/v2/print?kind=pdf').set('Authorization', `Bearer ${token}`).expect(400);
+    await request(app).post('/api/v2/print').set('Authorization', `Bearer ${token}`).send({ kind: 'pdf' }).expect(400);
+    await request(app).post('/api/v2/print').set('Authorization', `Bearer ${token}`).send({ kind: 'report', data: 'not-an-object' }).expect(400);
+    await request(app).get('/api/v2/appointments/by-date?date=').set('Authorization', `Bearer ${token}`).expect(400);
+
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO Appointment (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, startTime, endTime, status, type, tempPatientPhone
+       ) VALUES ('appt-mask-http', 'clinic-v2-001', ?, ?, NULL,
+                 'patient-demo-001', 'user-admin-001',
+                 '2026-08-05T04:00:00.000Z', '2026-08-05T05:00:00.000Z',
+                 'BOOKED', 'REGULAR', '13800001111')`,
+    ).run(now, now);
+    const res = await request(app)
+      .get('/api/v2/appointments/by-date?date=2026-08-05')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const item = (res.body.data.items as Array<Record<string, unknown>>)
+      .find((row) => row.id === 'appt-mask-http');
+    expect(item).toBeDefined();
+    expect(String(item?.tempPatientPhone)).not.toBe('13800001111');
+    expect(String(item?.tempPatientPhone)).toContain('*');
+  });
 });

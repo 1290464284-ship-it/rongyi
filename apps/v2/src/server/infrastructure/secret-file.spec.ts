@@ -52,6 +52,27 @@ describe('secret file', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it('treats non-string secret fields as missing', async () => {
+    vi.resetModules();
+    const { secretFileValue } = await import('./secret-file');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-secret-file-types-'));
+    const file = path.join(dir, 'secrets.json');
+    process.env.V2_SECRET_FILE = file;
+    fs.writeFileSync(file, JSON.stringify({
+      jwt: 123,
+      backupKey: null,
+      wechatAppId: true,
+      wechatAppSecret: {},
+      adminPassword: [],
+    }), { encoding: 'utf8', mode: 0o600 });
+    expect(secretFileValue('jwt')).toBeNull();
+    expect(secretFileValue('backupKey')).toBeNull();
+    expect(secretFileValue('wechatAppId')).toBeNull();
+    expect(secretFileValue('wechatAppSecret')).toBeNull();
+    expect(secretFileValue('adminPassword')).toBeNull();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('rejects non-owner-only secret file modes on POSIX', async () => {
     vi.resetModules();
     const { assertOwnerOnlySecretFile } = await import('./secret-file');
