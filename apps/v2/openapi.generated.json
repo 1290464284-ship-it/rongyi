@@ -5,9 +5,19 @@
     "version": "2.2.0"
   },
   "paths": {
-    "/admin/users/:id": {
+    "/admin/users/{id}": {
       "delete": {
-        "summary": "DELETE /admin/users/:id",
+        "summary": "DELETE /admin/users/{id}",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -32,7 +42,17 @@
         }
       },
       "patch": {
-        "summary": "PATCH /admin/users/:id",
+        "summary": "PATCH /admin/users/{id}",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -57,9 +77,19 @@
         }
       }
     },
-    "/charges/:id": {
+    "/charges/{id}": {
       "delete": {
-        "summary": "DELETE /charges/:id",
+        "summary": "DELETE /charges/{id}",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -84,9 +114,19 @@
         }
       }
     },
-    "/commission/rules/:id": {
+    "/commission/rules/{id}": {
       "delete": {
-        "summary": "DELETE /commission/rules/:id",
+        "summary": "DELETE /commission/rules/{id}",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -111,7 +151,17 @@
         }
       },
       "patch": {
-        "summary": "PATCH /commission/rules/:id",
+        "summary": "PATCH /commission/rules/{id}",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -136,9 +186,19 @@
         }
       }
     },
-    "/custom-fields/:id": {
+    "/custom-fields/{id}": {
       "delete": {
-        "summary": "DELETE /custom-fields/:id",
+        "summary": "DELETE /custom-fields/{id}",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -163,7 +223,17 @@
         }
       },
       "patch": {
-        "summary": "PATCH /custom-fields/:id",
+        "summary": "PATCH /custom-fields/{id}",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -188,9 +258,19 @@
         }
       }
     },
-    "/dispenses/:id": {
+    "/dispenses/{id}": {
       "delete": {
-        "summary": "DELETE /dispenses/:id",
+        "summary": "DELETE /dispenses/{id}",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -215,7 +295,17 @@
         }
       },
       "get": {
-        "summary": "GET /dispenses/:id",
+        "summary": "GET /dispenses/{id}",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -240,7 +330,17 @@
         }
       },
       "patch": {
-        "summary": "PATCH /dispenses/:id",
+        "summary": "PATCH /dispenses/{id}",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -265,9 +365,19 @@
         }
       }
     },
-    "/files/:name": {
+    "/files/{name}": {
       "delete": {
-        "summary": "DELETE /files/:name",
+        "summary": "DELETE /files/{name}",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -292,7 +402,17 @@
         }
       },
       "get": {
-        "summary": "GET /files/:name",
+        "summary": "GET /files/{name}",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -317,9 +437,19 @@
         }
       }
     },
-    "/inventory-batches/:id": {
+    "/inventory-batches/{id}": {
       "delete": {
-        "summary": "DELETE /inventory-batches/:id",
+        "summary": "DELETE /inventory-batches/{id}",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -344,7 +474,17 @@
         }
       },
       "patch": {
-        "summary": "PATCH /inventory-batches/:id",
+        "summary": "PATCH /inventory-batches/{id}",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -369,9 +509,19 @@
         }
       }
     },
-    "/narcotic-registry/:id": {
+    "/narcotic-registry/{id}": {
       "delete": {
-        "summary": "DELETE /narcotic-registry/:id",
+        "summary": "DELETE /narcotic-registry/{id}",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -396,7 +546,17 @@
         }
       },
       "patch": {
-        "summary": "PATCH /narcotic-registry/:id",
+        "summary": "PATCH /narcotic-registry/{id}",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -421,9 +581,27 @@
         }
       }
     },
-    "/resources/:resource/:id": {
+    "/resources/{resource}/{id}": {
       "delete": {
-        "summary": "DELETE /resources/:resource/:id",
+        "summary": "DELETE /resources/{resource}/{id}",
+        "parameters": [
+          {
+            "name": "resource",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -448,14 +626,32 @@
         }
       },
       "get": {
-        "summary": "GET /resources/:resource/:id",
+        "summary": "GET /resources/{resource}/{id}",
+        "parameters": [
+          {
+            "name": "resource",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/GenericSuccessEnvelope"
+                  "$ref": "#/components/schemas/ResourceListEnvelope"
                 }
               }
             }
@@ -473,7 +669,25 @@
         }
       },
       "patch": {
-        "summary": "PATCH /resources/:resource/:id",
+        "summary": "PATCH /resources/{resource}/{id}",
+        "parameters": [
+          {
+            "name": "resource",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -793,9 +1007,19 @@
         }
       }
     },
-    "/backups/:filename/verify": {
+    "/backups/{filename}/verify": {
       "get": {
-        "summary": "GET /backups/:filename/verify",
+        "summary": "GET /backups/{filename}/verify",
+        "parameters": [
+          {
+            "name": "filename",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -820,9 +1044,19 @@
         }
       }
     },
-    "/cephalometric/:id/report": {
+    "/cephalometric/{id}/report": {
       "get": {
-        "summary": "GET /cephalometric/:id/report",
+        "summary": "GET /cephalometric/{id}/report",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -847,7 +1081,17 @@
         }
       },
       "post": {
-        "summary": "POST /cephalometric/:id/report",
+        "summary": "POST /cephalometric/{id}/report",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -926,9 +1170,19 @@
         }
       }
     },
-    "/charge-combos/:id/items": {
+    "/charge-combos/{id}/items": {
       "get": {
-        "summary": "GET /charge-combos/:id/items",
+        "summary": "GET /charge-combos/{id}/items",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -1242,9 +1496,19 @@
         }
       }
     },
-    "/files/:name/sign": {
+    "/files/{name}/sign": {
       "get": {
-        "summary": "GET /files/:name/sign",
+        "summary": "GET /files/{name}/sign",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -1591,9 +1855,19 @@
         }
       }
     },
-    "/inventory-reports/:type": {
+    "/inventory-reports/{type}": {
       "get": {
-        "summary": "GET /inventory-reports/:type",
+        "summary": "GET /inventory-reports/{type}",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -1672,9 +1946,19 @@
         }
       }
     },
-    "/member-cards/:id/discount-plan": {
+    "/member-cards/{id}/discount-plan": {
       "get": {
-        "summary": "GET /member-cards/:id/discount-plan",
+        "summary": "GET /member-cards/{id}/discount-plan",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -1699,7 +1983,17 @@
         }
       },
       "put": {
-        "summary": "PUT /member-cards/:id/discount-plan",
+        "summary": "PUT /member-cards/{id}/discount-plan",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -1857,9 +2151,19 @@
         }
       }
     },
-    "/prescriptions/:id/safety": {
+    "/prescriptions/{id}/safety": {
       "get": {
-        "summary": "GET /prescriptions/:id/safety",
+        "summary": "GET /prescriptions/{id}/safety",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -1884,9 +2188,19 @@
         }
       }
     },
-    "/prescriptions/:id/status": {
+    "/prescriptions/{id}/status": {
       "get": {
-        "summary": "GET /prescriptions/:id/status",
+        "summary": "GET /prescriptions/{id}/status",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -2017,9 +2331,19 @@
         }
       }
     },
-    "/processing-orders/:id/steps": {
+    "/processing-orders/{id}/steps": {
       "get": {
-        "summary": "GET /processing-orders/:id/steps",
+        "summary": "GET /processing-orders/{id}/steps",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -2071,9 +2395,19 @@
         }
       }
     },
-    "/purchase-orders/:id/items": {
+    "/purchase-orders/{id}/items": {
       "get": {
-        "summary": "GET /purchase-orders/:id/items",
+        "summary": "GET /purchase-orders/{id}/items",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -2233,16 +2567,26 @@
         }
       }
     },
-    "/resources/:resource": {
+    "/resources/{resource}": {
       "get": {
-        "summary": "GET /resources/:resource",
+        "summary": "GET /resources/{resource}",
+        "parameters": [
+          {
+            "name": "resource",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/GenericSuccessEnvelope"
+                  "$ref": "#/components/schemas/ResourceListEnvelope"
                 }
               }
             }
@@ -2260,7 +2604,17 @@
         }
       },
       "post": {
-        "summary": "POST /resources/:resource",
+        "summary": "POST /resources/{resource}",
+        "parameters": [
+          {
+            "name": "resource",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -2285,16 +2639,26 @@
         }
       }
     },
-    "/resources/:resource/export": {
+    "/resources/{resource}/export": {
       "get": {
-        "summary": "GET /resources/:resource/export",
+        "summary": "GET /resources/{resource}/export",
+        "parameters": [
+          {
+            "name": "resource",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
             "content": {
-              "application/json": {
+              "text/csv": {
                 "schema": {
-                  "$ref": "#/components/schemas/GenericSuccessEnvelope"
+                  "type": "string"
                 }
               }
             }
@@ -2312,9 +2676,19 @@
         }
       }
     },
-    "/role-permissions/:role": {
+    "/role-permissions/{role}": {
       "get": {
-        "summary": "GET /role-permissions/:role",
+        "summary": "GET /role-permissions/{role}",
+        "parameters": [
+          {
+            "name": "role",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -2339,7 +2713,17 @@
         }
       },
       "put": {
-        "summary": "PUT /role-permissions/:role",
+        "summary": "PUT /role-permissions/{role}",
+        "parameters": [
+          {
+            "name": "role",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -2765,9 +3149,19 @@
         }
       }
     },
-    "/stocktakes/:id/items": {
+    "/stocktakes/{id}/items": {
       "get": {
-        "summary": "GET /stocktakes/:id/items",
+        "summary": "GET /stocktakes/{id}/items",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -2900,9 +3294,19 @@
         }
       }
     },
-    "/treatment-plans/:id/progress": {
+    "/treatment-plans/{id}/progress": {
       "get": {
-        "summary": "GET /treatment-plans/:id/progress",
+        "summary": "GET /treatment-plans/{id}/progress",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -2954,9 +3358,19 @@
         }
       }
     },
-    "/user-permissions/:userId": {
+    "/user-permissions/{userId}": {
       "get": {
-        "summary": "GET /user-permissions/:userId",
+        "summary": "GET /user-permissions/{userId}",
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -2981,7 +3395,17 @@
         }
       },
       "put": {
-        "summary": "PUT /user-permissions/:userId",
+        "summary": "PUT /user-permissions/{userId}",
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -3166,9 +3590,19 @@
         }
       }
     },
-    "/admin/users/:id/password": {
+    "/admin/users/{id}/password": {
       "patch": {
-        "summary": "PATCH /admin/users/:id/password",
+        "summary": "PATCH /admin/users/{id}/password",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -3193,9 +3627,19 @@
         }
       }
     },
-    "/appointments/:id/status": {
+    "/appointments/{id}/status": {
       "patch": {
-        "summary": "PATCH /appointments/:id/status",
+        "summary": "PATCH /appointments/{id}/status",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -3247,9 +3691,19 @@
         }
       }
     },
-    "/charges/:id/pay": {
+    "/charges/{id}/pay": {
       "patch": {
-        "summary": "PATCH /charges/:id/pay",
+        "summary": "PATCH /charges/{id}/pay",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -3274,9 +3728,19 @@
         }
       }
     },
-    "/debts/:id/pay": {
+    "/debts/{id}/pay": {
       "patch": {
-        "summary": "PATCH /debts/:id/pay",
+        "summary": "PATCH /debts/{id}/pay",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -3301,9 +3765,19 @@
         }
       }
     },
-    "/first-exams/:id/status": {
+    "/first-exams/{id}/status": {
       "patch": {
-        "summary": "PATCH /first-exams/:id/status",
+        "summary": "PATCH /first-exams/{id}/status",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -3328,9 +3802,19 @@
         }
       }
     },
-    "/first-exams/:id/tracking": {
+    "/first-exams/{id}/tracking": {
       "patch": {
-        "summary": "PATCH /first-exams/:id/tracking",
+        "summary": "PATCH /first-exams/{id}/tracking",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -3355,9 +3839,19 @@
         }
       }
     },
-    "/follow-ups/:id/complete": {
+    "/follow-ups/{id}/complete": {
       "patch": {
-        "summary": "PATCH /follow-ups/:id/complete",
+        "summary": "PATCH /follow-ups/{id}/complete",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -3382,9 +3876,19 @@
         }
       }
     },
-    "/hr/leaves/:id/approve": {
+    "/hr/leaves/{id}/approve": {
       "patch": {
-        "summary": "PATCH /hr/leaves/:id/approve",
+        "summary": "PATCH /hr/leaves/{id}/approve",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -3409,9 +3913,19 @@
         }
       }
     },
-    "/medical-records/:id/edit-request/review": {
+    "/medical-records/{id}/edit-request/review": {
       "patch": {
-        "summary": "PATCH /medical-records/:id/edit-request/review",
+        "summary": "PATCH /medical-records/{id}/edit-request/review",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -3436,9 +3950,19 @@
         }
       }
     },
-    "/medical-records/:id/lock": {
+    "/medical-records/{id}/lock": {
       "patch": {
-        "summary": "PATCH /medical-records/:id/lock",
+        "summary": "PATCH /medical-records/{id}/lock",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -3463,9 +3987,19 @@
         }
       }
     },
-    "/notifications/:id/read": {
+    "/notifications/{id}/read": {
       "patch": {
-        "summary": "PATCH /notifications/:id/read",
+        "summary": "PATCH /notifications/{id}/read",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -3490,9 +4024,19 @@
         }
       }
     },
-    "/prescriptions/:id/save": {
+    "/prescriptions/{id}/save": {
       "patch": {
-        "summary": "PATCH /prescriptions/:id/save",
+        "summary": "PATCH /prescriptions/{id}/save",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -3517,9 +4061,19 @@
         }
       }
     },
-    "/processing-orders/:id/status": {
+    "/processing-orders/{id}/status": {
       "patch": {
-        "summary": "PATCH /processing-orders/:id/status",
+        "summary": "PATCH /processing-orders/{id}/status",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -3544,9 +4098,19 @@
         }
       }
     },
-    "/purchase-orders/:id/receive": {
+    "/purchase-orders/{id}/receive": {
       "patch": {
-        "summary": "PATCH /purchase-orders/:id/receive",
+        "summary": "PATCH /purchase-orders/{id}/receive",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -3571,9 +4135,19 @@
         }
       }
     },
-    "/registrations/:id/status": {
+    "/registrations/{id}/status": {
       "patch": {
-        "summary": "PATCH /registrations/:id/status",
+        "summary": "PATCH /registrations/{id}/status",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -3598,9 +4172,19 @@
         }
       }
     },
-    "/shift-templates/:id": {
+    "/shift-templates/{id}": {
       "patch": {
-        "summary": "PATCH /shift-templates/:id",
+        "summary": "PATCH /shift-templates/{id}",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -3625,9 +4209,27 @@
         }
       }
     },
-    "/stocktakes/:id/items/:itemId": {
+    "/stocktakes/{id}/items/{itemId}": {
       "patch": {
-        "summary": "PATCH /stocktakes/:id/items/:itemId",
+        "summary": "PATCH /stocktakes/{id}/items/{itemId}",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "itemId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -3652,9 +4254,19 @@
         }
       }
     },
-    "/system/business-alerts/:id/status": {
+    "/system/business-alerts/{id}/status": {
       "patch": {
-        "summary": "PATCH /system/business-alerts/:id/status",
+        "summary": "PATCH /system/business-alerts/{id}/status",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -3679,9 +4291,19 @@
         }
       }
     },
-    "/treatment-plans/:id/save": {
+    "/treatment-plans/{id}/save": {
       "patch": {
-        "summary": "PATCH /treatment-plans/:id/save",
+        "summary": "PATCH /treatment-plans/{id}/save",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -3706,9 +4328,19 @@
         }
       }
     },
-    "/treatments/:id/status": {
+    "/treatments/{id}/status": {
       "patch": {
-        "summary": "PATCH /treatments/:id/status",
+        "summary": "PATCH /treatments/{id}/status",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -3733,9 +4365,19 @@
         }
       }
     },
-    "/visits/:id/status": {
+    "/visits/{id}/status": {
       "patch": {
-        "summary": "PATCH /visits/:id/status",
+        "summary": "PATCH /visits/{id}/status",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -3814,9 +4456,19 @@
         }
       }
     },
-    "/appointments/:id/reschedule": {
+    "/appointments/{id}/reschedule": {
       "post": {
-        "summary": "POST /appointments/:id/reschedule",
+        "summary": "POST /appointments/{id}/reschedule",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -3976,9 +4628,19 @@
         }
       }
     },
-    "/backups/:filename/restore": {
+    "/backups/{filename}/restore": {
       "post": {
-        "summary": "POST /backups/:filename/restore",
+        "summary": "POST /backups/{filename}/restore",
+        "parameters": [
+          {
+            "name": "filename",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -4030,9 +4692,19 @@
         }
       }
     },
-    "/bulk-import/:resource": {
+    "/bulk-import/{resource}": {
       "post": {
-        "summary": "POST /bulk-import/:resource",
+        "summary": "POST /bulk-import/{resource}",
+        "parameters": [
+          {
+            "name": "resource",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -4057,9 +4729,19 @@
         }
       }
     },
-    "/cephalometric/:id/analyze": {
+    "/cephalometric/{id}/analyze": {
       "post": {
-        "summary": "POST /cephalometric/:id/analyze",
+        "summary": "POST /cephalometric/{id}/analyze",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -4084,9 +4766,19 @@
         }
       }
     },
-    "/cephalometric/:id/send": {
+    "/cephalometric/{id}/send": {
       "post": {
-        "summary": "POST /cephalometric/:id/send",
+        "summary": "POST /cephalometric/{id}/send",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -4138,9 +4830,19 @@
         }
       }
     },
-    "/charge-combos/:id/apply": {
+    "/charge-combos/{id}/apply": {
       "post": {
-        "summary": "POST /charge-combos/:id/apply",
+        "summary": "POST /charge-combos/{id}/apply",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -4165,9 +4867,19 @@
         }
       }
     },
-    "/charge-trees/:catalogId/quick-charge": {
+    "/charge-trees/{catalogId}/quick-charge": {
       "post": {
-        "summary": "POST /charge-trees/:catalogId/quick-charge",
+        "summary": "POST /charge-trees/{catalogId}/quick-charge",
+        "parameters": [
+          {
+            "name": "catalogId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -4219,9 +4931,19 @@
         }
       }
     },
-    "/charges/:id/refund": {
+    "/charges/{id}/refund": {
       "post": {
-        "summary": "POST /charges/:id/refund",
+        "summary": "POST /charges/{id}/refund",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -4273,9 +4995,19 @@
         }
       }
     },
-    "/dispenses/:id/dispense": {
+    "/dispenses/{id}/dispense": {
       "post": {
-        "summary": "POST /dispenses/:id/dispense",
+        "summary": "POST /dispenses/{id}/dispense",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -4300,9 +5032,19 @@
         }
       }
     },
-    "/dispenses/:id/return": {
+    "/dispenses/{id}/return": {
       "post": {
-        "summary": "POST /dispenses/:id/return",
+        "summary": "POST /dispenses/{id}/return",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -4354,9 +5096,19 @@
         }
       }
     },
-    "/first-exams/:id/dentition": {
+    "/first-exams/{id}/dentition": {
       "post": {
-        "summary": "POST /first-exams/:id/dentition",
+        "summary": "POST /first-exams/{id}/dentition",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -4381,9 +5133,19 @@
         }
       }
     },
-    "/first-exams/:id/restart": {
+    "/first-exams/{id}/restart": {
       "post": {
-        "summary": "POST /first-exams/:id/restart",
+        "summary": "POST /first-exams/{id}/restart",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -4408,9 +5170,27 @@
         }
       }
     },
-    "/first-exams/:id/teeth/:toothId/chief-mark": {
+    "/first-exams/{id}/teeth/{toothId}/chief-mark": {
       "post": {
-        "summary": "POST /first-exams/:id/teeth/:toothId/chief-mark",
+        "summary": "POST /first-exams/{id}/teeth/{toothId}/chief-mark",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "toothId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -4435,9 +5215,19 @@
         }
       }
     },
-    "/follow-ups/:id/execute": {
+    "/follow-ups/{id}/execute": {
       "post": {
-        "summary": "POST /follow-ups/:id/execute",
+        "summary": "POST /follow-ups/{id}/execute",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -4651,9 +5441,19 @@
         }
       }
     },
-    "/inventory-items/:id/high-value": {
+    "/inventory-items/{id}/high-value": {
       "post": {
-        "summary": "POST /inventory-items/:id/high-value",
+        "summary": "POST /inventory-items/{id}/high-value",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -4759,9 +5559,19 @@
         }
       }
     },
-    "/medical-records/:id/edit-request": {
+    "/medical-records/{id}/edit-request": {
       "post": {
-        "summary": "POST /medical-records/:id/edit-request",
+        "summary": "POST /medical-records/{id}/edit-request",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -4813,9 +5623,19 @@
         }
       }
     },
-    "/member-cards/:id/consume": {
+    "/member-cards/{id}/consume": {
       "post": {
-        "summary": "POST /member-cards/:id/consume",
+        "summary": "POST /member-cards/{id}/consume",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -4840,9 +5660,19 @@
         }
       }
     },
-    "/member-cards/:id/points": {
+    "/member-cards/{id}/points": {
       "post": {
-        "summary": "POST /member-cards/:id/points",
+        "summary": "POST /member-cards/{id}/points",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -4867,9 +5697,19 @@
         }
       }
     },
-    "/member-cards/:id/quote": {
+    "/member-cards/{id}/quote": {
       "post": {
-        "summary": "POST /member-cards/:id/quote",
+        "summary": "POST /member-cards/{id}/quote",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -4894,9 +5734,19 @@
         }
       }
     },
-    "/member-cards/:id/recharge": {
+    "/member-cards/{id}/recharge": {
       "post": {
-        "summary": "POST /member-cards/:id/recharge",
+        "summary": "POST /member-cards/{id}/recharge",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -4948,9 +5798,19 @@
         }
       }
     },
-    "/patients/:id/risk": {
+    "/patients/{id}/risk": {
       "post": {
-        "summary": "POST /patients/:id/risk",
+        "summary": "POST /patients/{id}/risk",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -4975,9 +5835,19 @@
         }
       }
     },
-    "/prescriptions/:id/process": {
+    "/prescriptions/{id}/process": {
       "post": {
-        "summary": "POST /prescriptions/:id/process",
+        "summary": "POST /prescriptions/{id}/process",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -5002,9 +5872,19 @@
         }
       }
     },
-    "/print/templates/:code/render": {
+    "/print/templates/{code}/render": {
       "post": {
-        "summary": "POST /print/templates/:code/render",
+        "summary": "POST /print/templates/{code}/render",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -5056,9 +5936,19 @@
         }
       }
     },
-    "/processing-orders/:id/register-step": {
+    "/processing-orders/{id}/register-step": {
       "post": {
-        "summary": "POST /processing-orders/:id/register-step",
+        "summary": "POST /processing-orders/{id}/register-step",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -5083,9 +5973,19 @@
         }
       }
     },
-    "/processing-orders/:id/set-step": {
+    "/processing-orders/{id}/set-step": {
       "post": {
-        "summary": "POST /processing-orders/:id/set-step",
+        "summary": "POST /processing-orders/{id}/set-step",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -5110,9 +6010,19 @@
         }
       }
     },
-    "/processing-orders/:id/settle": {
+    "/processing-orders/{id}/settle": {
       "post": {
-        "summary": "POST /processing-orders/:id/settle",
+        "summary": "POST /processing-orders/{id}/settle",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -5137,9 +6047,19 @@
         }
       }
     },
-    "/processing-orders/:id/unsettle": {
+    "/processing-orders/{id}/unsettle": {
       "post": {
-        "summary": "POST /processing-orders/:id/unsettle",
+        "summary": "POST /processing-orders/{id}/unsettle",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -5191,9 +6111,19 @@
         }
       }
     },
-    "/purchase-orders/:id/approve": {
+    "/purchase-orders/{id}/approve": {
       "post": {
-        "summary": "POST /purchase-orders/:id/approve",
+        "summary": "POST /purchase-orders/{id}/approve",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -5218,9 +6148,19 @@
         }
       }
     },
-    "/purchase-orders/:id/reject": {
+    "/purchase-orders/{id}/reject": {
       "post": {
-        "summary": "POST /purchase-orders/:id/reject",
+        "summary": "POST /purchase-orders/{id}/reject",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -5245,9 +6185,19 @@
         }
       }
     },
-    "/purchase-orders/:id/reopen": {
+    "/purchase-orders/{id}/reopen": {
       "post": {
-        "summary": "POST /purchase-orders/:id/reopen",
+        "summary": "POST /purchase-orders/{id}/reopen",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -5272,9 +6222,19 @@
         }
       }
     },
-    "/purchase-orders/:id/submit": {
+    "/purchase-orders/{id}/submit": {
       "post": {
-        "summary": "POST /purchase-orders/:id/submit",
+        "summary": "POST /purchase-orders/{id}/submit",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -5299,9 +6259,19 @@
         }
       }
     },
-    "/refunds/:id/approve": {
+    "/refunds/{id}/approve": {
       "post": {
-        "summary": "POST /refunds/:id/approve",
+        "summary": "POST /refunds/{id}/approve",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -5326,9 +6296,19 @@
         }
       }
     },
-    "/refunds/:id/cancel": {
+    "/refunds/{id}/cancel": {
       "post": {
-        "summary": "POST /refunds/:id/cancel",
+        "summary": "POST /refunds/{id}/cancel",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -5353,9 +6333,19 @@
         }
       }
     },
-    "/refunds/:id/process": {
+    "/refunds/{id}/process": {
       "post": {
-        "summary": "POST /refunds/:id/process",
+        "summary": "POST /refunds/{id}/process",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -5380,9 +6370,19 @@
         }
       }
     },
-    "/refunds/:id/reject": {
+    "/refunds/{id}/reject": {
       "post": {
-        "summary": "POST /refunds/:id/reject",
+        "summary": "POST /refunds/{id}/reject",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -5407,9 +6407,19 @@
         }
       }
     },
-    "/registrations/:id/triage": {
+    "/registrations/{id}/triage": {
       "post": {
-        "summary": "POST /registrations/:id/triage",
+        "summary": "POST /registrations/{id}/triage",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -5461,9 +6471,19 @@
         }
       }
     },
-    "/stocktakes/:id/cancel": {
+    "/stocktakes/{id}/cancel": {
       "post": {
-        "summary": "POST /stocktakes/:id/cancel",
+        "summary": "POST /stocktakes/{id}/cancel",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -5488,9 +6508,19 @@
         }
       }
     },
-    "/stocktakes/:id/complete": {
+    "/stocktakes/{id}/complete": {
       "post": {
-        "summary": "POST /stocktakes/:id/complete",
+        "summary": "POST /stocktakes/{id}/complete",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -5515,9 +6545,19 @@
         }
       }
     },
-    "/stocktakes/:id/lock": {
+    "/stocktakes/{id}/lock": {
       "post": {
-        "summary": "POST /stocktakes/:id/lock",
+        "summary": "POST /stocktakes/{id}/lock",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -5569,9 +6609,19 @@
         }
       }
     },
-    "/sync/conflicts/:id/resolve": {
+    "/sync/conflicts/{id}/resolve": {
       "post": {
-        "summary": "POST /sync/conflicts/:id/resolve",
+        "summary": "POST /sync/conflicts/{id}/resolve",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -5677,9 +6727,19 @@
         }
       }
     },
-    "/treatment-plans/:id/bill": {
+    "/treatment-plans/{id}/bill": {
       "post": {
-        "summary": "POST /treatment-plans/:id/bill",
+        "summary": "POST /treatment-plans/{id}/bill",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -5704,9 +6764,19 @@
         }
       }
     },
-    "/treatment-plans/:id/discount": {
+    "/treatment-plans/{id}/discount": {
       "post": {
-        "summary": "POST /treatment-plans/:id/discount",
+        "summary": "POST /treatment-plans/{id}/discount",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -5731,9 +6801,19 @@
         }
       }
     },
-    "/treatment-plans/:id/follow-up": {
+    "/treatment-plans/{id}/follow-up": {
       "post": {
-        "summary": "POST /treatment-plans/:id/follow-up",
+        "summary": "POST /treatment-plans/{id}/follow-up",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -5758,9 +6838,27 @@
         }
       }
     },
-    "/treatment-plans/:id/items/:itemId/discount": {
+    "/treatment-plans/{id}/items/{itemId}/discount": {
       "post": {
-        "summary": "POST /treatment-plans/:id/items/:itemId/discount",
+        "summary": "POST /treatment-plans/{id}/items/{itemId}/discount",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "itemId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -5785,9 +6883,19 @@
         }
       }
     },
-    "/treatment-plans/:id/print": {
+    "/treatment-plans/{id}/print": {
       "post": {
-        "summary": "POST /treatment-plans/:id/print",
+        "summary": "POST /treatment-plans/{id}/print",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -5812,9 +6920,19 @@
         }
       }
     },
-    "/treatment-plans/:id/sign": {
+    "/treatment-plans/{id}/sign": {
       "post": {
-        "summary": "POST /treatment-plans/:id/sign",
+        "summary": "POST /treatment-plans/{id}/sign",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -5839,9 +6957,19 @@
         }
       }
     },
-    "/wechat-reminders/:id/dismiss": {
+    "/wechat-reminders/{id}/dismiss": {
       "post": {
-        "summary": "POST /wechat-reminders/:id/dismiss",
+        "summary": "POST /wechat-reminders/{id}/dismiss",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -5866,9 +6994,19 @@
         }
       }
     },
-    "/wechat-reminders/:id/mark-sent": {
+    "/wechat-reminders/{id}/mark-sent": {
       "post": {
-        "summary": "POST /wechat-reminders/:id/mark-sent",
+        "summary": "POST /wechat-reminders/{id}/mark-sent",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -5893,9 +7031,19 @@
         }
       }
     },
-    "/wechat/:id/send": {
+    "/wechat/{id}/send": {
       "post": {
-        "summary": "POST /wechat/:id/send",
+        "summary": "POST /wechat/{id}/send",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -5947,9 +7095,19 @@
         }
       }
     },
-    "/user-roles/:userId": {
+    "/user-roles/{userId}": {
       "put": {
-        "summary": "PUT /user-roles/:userId",
+        "summary": "PUT /user-roles/{userId}",
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -5988,6 +7146,48 @@
             "const": true
           },
           "data": {}
+        }
+      },
+      "ResourceListEnvelope": {
+        "type": "object",
+        "required": [
+          "success",
+          "data"
+        ],
+        "properties": {
+          "success": {
+            "const": true
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "items",
+              "total",
+              "page",
+              "pageSize"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              },
+              "total": {
+                "type": "number",
+                "minimum": 0
+              },
+              "page": {
+                "type": "number",
+                "minimum": 1
+              },
+              "pageSize": {
+                "type": "number",
+                "minimum": 1
+              }
+            }
+          }
         }
       },
       "ErrorEnvelope": {

@@ -221,6 +221,7 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
     let rowParams = params;
     let rowWhere = whereSql;
     let keysetOrder = false;
+    const hasIdColumn = this.columns.has('id');
     if (cursor && cursor.includes('|')) {
       const separator = cursor.lastIndexOf('|');
       const cursorTime = cursor.slice(0, separator);
@@ -229,19 +230,19 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
       rowParams = [...params, cursorTime, cursorTime, cursorId];
       sortField = 'createdAt';
       sortOrder = 'DESC';
-      keysetOrder = true;
-    } else if (cursor) {
+      keysetOrder = hasIdColumn;
+    } else if (cursor && hasIdColumn) {
       rowWhere = `${whereSql} AND t.id > ?`;
       rowParams = [...params, cursor];
       sortField = 'id';
       sortOrder = 'ASC';
       keysetOrder = true;
-    } else if ((sortField === 'id' && sortOrder === 'ASC') || (sortField === 'createdAt' && sortOrder === 'DESC')) {
+    } else if (hasIdColumn && ((sortField === 'id' && sortOrder === 'ASC') || (sortField === 'createdAt' && sortOrder === 'DESC'))) {
       keysetOrder = true;
     }
     const offset = cursor ? 0 : (page - 1) * pageSize;
     const orderSql = sortField === 'createdAt' && sortOrder === 'DESC'
-      ? 'ORDER BY t.createdAt DESC, t.id DESC'
+      ? `ORDER BY t.createdAt DESC${hasIdColumn ? ', t.id DESC' : ''}`
       : `ORDER BY t.${sortField} ${sortOrder}`;
     const fetchSize = keysetOrder ? pageSize + 1 : pageSize;
     const rows = this.queryRows(

@@ -9,6 +9,10 @@ import { createDatabase, seedDatabase } from '../infrastructure/database';
 import { runMigrations } from '../infrastructure/migrations';
 import { Logger } from '../infrastructure/logger';
 
+function toOpenApiPath(expressPath: string): string {
+  return expressPath.replace(/:[A-Za-z0-9_]+/g, (segment) => `{${segment.slice(1)}}`);
+}
+
 describe('OpenAPI route inventory coverage', () => {
   let dataDir: string;
   let db: Database.Database;
@@ -56,7 +60,23 @@ describe('OpenAPI route inventory coverage', () => {
       const key = route.path.startsWith('/api/v2')
         ? route.path.slice('/api/v2'.length) || '/'
         : route.path;
-      expect(generated.paths[key]?.[route.method.toLowerCase()], `${route.method} ${key}`).toBeDefined();
+      const openApiPath = toOpenApiPath(key);
+      expect(generated.paths[openApiPath]?.[route.method.toLowerCase()], `${route.method} ${openApiPath}`).toBeDefined();
+    }
+  });
+
+  it('generates OpenAPI path templates with declared path parameters', () => {
+    const generated = JSON.parse(
+      fs.readFileSync(path.resolve(import.meta.dirname, '../../../openapi.generated.json'), 'utf8'),
+    ) as { paths: Record<string, Record<string, { parameters?: Array<{ name: string }> }>> };
+    for (const [pathKey, operations] of Object.entries(generated.paths)) {
+      expect(pathKey).not.toContain(':');
+      const pathParams = [...pathKey.matchAll(/\{([^}]+)\}/g)].map((match) => match[1]);
+      if (pathParams.length === 0) continue;
+      for (const operation of Object.values(operations)) {
+        const declared = operation.parameters?.map((parameter) => parameter.name) ?? [];
+        expect(declared).toEqual(expect.arrayContaining(pathParams));
+      }
     }
   });
 });

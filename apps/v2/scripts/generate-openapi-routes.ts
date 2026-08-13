@@ -34,21 +34,38 @@ console.log(`Wrote ${routes.length} routes to ${outPath}`);
 
 const generatedPath = path.resolve(import.meta.dirname, '../openapi.generated.json');
 const generatedPaths: Record<string, Record<string, unknown>> = {};
+
+function toOpenApiPath(expressPath: string): string {
+  return expressPath.replace(/:[A-Za-z0-9_]+/g, (segment) => `{${segment.slice(1)}}`);
+}
+
 for (const route of routes) {
   const key = route.path.startsWith('/api/v2')
     ? route.path.slice('/api/v2'.length) || '/'
     : route.path;
-  generatedPaths[key] = {
-    ...(generatedPaths[key] ?? {}),
+  const openApiPath = toOpenApiPath(key);
+  const parameters = [...openApiPath.matchAll(/\{([^}]+)\}/g)].map((match) => ({
+    name: match[1],
+    in: 'path',
+    required: true,
+    schema: { type: 'string' },
+  }));
+  const isResourceExport = key.startsWith('/resources/') && key.endsWith('/export');
+  const responseSchema = isResourceExport
+    ? { type: 'string' }
+    : key.startsWith('/resources/') && route.method === 'GET'
+      ? { $ref: '#/components/schemas/ResourceListEnvelope' }
+      : { $ref: '#/components/schemas/GenericSuccessEnvelope' };
+  generatedPaths[openApiPath] = {
+    ...(generatedPaths[openApiPath] ?? {}),
     [route.method.toLowerCase()]: {
-      summary: `${route.method} ${key}`,
+      summary: `${route.method} ${openApiPath}`,
+      ...(parameters.length ? { parameters } : {}),
       responses: {
         '200': {
           description: 'Successful response',
           content: {
-            'application/json': {
-              schema: { $ref: '#/components/schemas/GenericSuccessEnvelope' },
-            },
+            [isResourceExport ? 'text/csv' : 'application/json']: { schema: responseSchema },
           },
         },
         default: {
@@ -75,6 +92,23 @@ fs.writeFileSync(
           type: 'object',
           required: ['success', 'data'],
           properties: { success: { const: true }, data: {} },
+        },
+        ResourceListEnvelope: {
+          type: 'object',
+          required: ['success', 'data'],
+          properties: {
+            success: { const: true },
+            data: {
+              type: 'object',
+              required: ['items', 'total', 'page', 'pageSize'],
+              properties: {
+                items: { type: 'array', items: { type: 'object', additionalProperties: true } },
+                total: { type: 'number', minimum: 0 },
+                page: { type: 'number', minimum: 1 },
+                pageSize: { type: 'number', minimum: 1 },
+              },
+            },
+          },
         },
         ErrorEnvelope: {
           type: 'object',

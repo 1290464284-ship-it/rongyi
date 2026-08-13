@@ -68,6 +68,21 @@ describe('SqliteRepository', () => {
     expect(await repo.findById('repo-patient-1', context)).toBeNull();
   });
 
+  it('lists a resource table without an id column', async () => {
+    db.prepare(`INSERT INTO UserRole (userId, role, clinicId, createdAt, updatedAt, deletedAt)
+      VALUES (?, ?, ?, ?, ?, NULL)`).run(
+      'repo-user-1',
+      'ADMIN',
+      context.clinicId,
+      '2026-08-01T00:00:00.000Z',
+      '2026-08-01T00:00:00.000Z',
+    );
+    const repo = new SqliteRepository(db, resourceRegistry.get('userRoles')!);
+    const page = await repo.findMany({ page: 1, pageSize: 10 }, context);
+    expect(page.total).toBe(1);
+    expect(page.items[0]).toMatchObject({ userId: 'repo-user-1', role: 'ADMIN' });
+  });
+
   it('treats whitespace-only search as an empty result instead of an unfiltered list', async () => {
     const repo = new SqliteRepository(db, resourceRegistry.get('patients')!);
     await repo.insert({
