@@ -79,8 +79,9 @@ export class RefundFlowService {
     let total = 0;
     for (const row of rows) {
       const status = String(row.status ?? '');
-      counts[status] = Number(row.count ?? 0);
-      total += Number(row.count ?? 0);
+      // COUNT(*) 恒返回非空整数
+      counts[status] = Number(row.count);
+      total += Number(row.count);
     }
     return { counts, total };
   }
@@ -187,7 +188,8 @@ export class RefundFlowService {
       tableName: 'Charge',
       recordId: String(charge.id),
       operation: 'UPDATE',
-      clinicId: charge.clinicId ? String(charge.clinicId) : null,
+      // Charge.clinicId 为 NOT NULL 列
+      clinicId: String(charge.clinicId),
     });
 
     // 新退款（迁移 146 后）在 PaymentLedger 留有 REFUND 行与逐笔 allocations：
@@ -232,7 +234,7 @@ export class RefundFlowService {
            ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
         ).run(
           randomUUID(),
-          charge.clinicId ?? null,
+          charge.clinicId,
           now,
           now,
           card.id,
@@ -274,7 +276,7 @@ export class RefundFlowService {
          ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
       ).run(
         randomUUID(),
-        charge.clinicId ?? null,
+        charge.clinicId,
         now,
         now,
         card.id,

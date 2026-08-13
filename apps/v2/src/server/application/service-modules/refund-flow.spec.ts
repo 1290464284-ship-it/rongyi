@@ -708,4 +708,86 @@ describe('RefundFlowService', () => {
     expect(() => service.process('refund-race', context)).toThrow(ConflictError);
     vi.restoreAllMocks();
   });
+
+  it('rejects reject and cancel when optimistic status updates change zero rows', async () => {
+    const chargeId = await createPaidCharge(100, 'CASH');
+    db.prepare(
+      `INSERT INTO Refund (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         chargeId, patientId, amount, status, operatorId, reason
+       ) VALUES ('refund-race-2', 'clinic-v2-001', ?, ?, NULL, ?, 'patient-demo-001', 100, 'REQUESTED', 'user-admin-001', 'race')`,
+    ).run(now, now, chargeId);
+    const service = new RefundFlowService(db);
+    const originalPrepare = db.prepare.bind(db);
+
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes("SET status = 'REJECTED'")) return { run: () => ({ changes: 0 }) } as never;
+      return originalPrepare(sql);
+    });
+    expect(() => service.reject('refund-race-2', context)).toThrow(ConflictError);
+    vi.restoreAllMocks();
+
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes("SET status = 'CANCELLED'")) return { run: () => ({ changes: 0 }) } as never;
+      return originalPrepare(sql);
+    });
+    expect(() => service.cancel('refund-race-2', context)).toThrow(ConflictError);
+    vi.restoreAllMocks();
+  });
+
+  it('buckets a null-status legacy refund in the summary', async () => {
+    const chargeId = await createPaidCharge(100, 'CASH');
+    db.prepare(
+      `INSERT INTO Refund (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         chargeId, patientId, amount, status, operatorId, reason
+       ) VALUES ('refund-null-status-row', 'clinic-v2-001', ?, ?, NULL, ?, 'patient-demo-001', 50, NULL, 'user-admin-001', '旧数据')`,
+    ).run(now, now, chargeId);
+    const service = new RefundFlowService(db);
+    const summary = service.summary(context);
+    expect(summary.counts['']).toBeGreaterThanOrEqual(1);
+  });
+
+  it('rejects the member-card fallback when the original card id is missing', async () => {
+    const cardId = await createCardWithBalance(10000);
+    const chargeId = await createPaidCharge(10000, 'MEMBER_CARD');
+    const chargeService = new ChargeService(db);
+    const refundResult = await chargeService.refund(chargeId, 4000, '缺卡兜底测试', context);
+    const refundId = String(refundResult.id);
+    // 清空 allocations 与 memberCardId：走 memberCardId 兜底分支且卡缺失
+    db.prepare("DELETE FROM PaymentLedger WHERE relatedId = ? AND type = 'REFUND'").run(refundId);
+    db.prepare('UPDATE Charge SET memberCardId = NULL WHERE id = ?').run(chargeId);
+
+    const service = new RefundFlowService(db);
+    expect(() => service.reject(refundId, context)).toThrow('退款冲销原支付卡不可用，请恢复会员卡后重试');
+    // 驳回失败即回滚：退款申请时的回充（4000）保持不动
+    const card = db.prepare('SELECT balance FROM MemberCard WHERE id = ?').get(cardId) as { balance: number };
+    expect(card.balance).toBe(4000);
+  });
+
+  it('rejects the member-card fallback when the reversal balance is insufficient', async () => {
+    const cardId = await createCardWithBalance(10000);
+    const chargeId = await createPaidCharge(10000, 'MEMBER_CARD');
+    const chargeService = new ChargeService(db);
+    const refundResult = await chargeService.refund(chargeId, 4000, '兜底余额不足测试', context);
+    const refundId = String(refundResult.id);
+    // 清空 allocations 保留 memberCardId，并把余额压到冲销额以下
+    db.prepare("UPDATE PaymentLedger SET allocations = NULL WHERE relatedId = ? AND type = 'REFUND'").run(refundId);
+    db.prepare('UPDATE MemberCard SET balance = 1000 WHERE id = ?').run(cardId);
+
+    const service = new RefundFlowService(db);
+    expect(() => service.reject(refundId, context)).toThrow('退款冲销会员卡余额不足，请先充值后再驳回/取消');
+  });
+
+  it('skips the debt reversal when the debt paid amount is null', async () => {
+    const chargeId = await createCharge(10000);
+    const chargeService = new ChargeService(db);
+    await chargeService.pay(chargeId, 3000, 'DEBT', undefined, context);
+    db.prepare('UPDATE Debt SET paidAmount = NULL WHERE chargeId = ?').run(chargeId);
+    const refundResult = await chargeService.refund(chargeId, 1000, '空已付欠款测试', context);
+    const refundId = String(refundResult.id);
+
+    const service = new RefundFlowService(db);
+    expect(service.reject(refundId, context)).toEqual({ id: refundId, status: 'REJECTED' });
+  });
 });
