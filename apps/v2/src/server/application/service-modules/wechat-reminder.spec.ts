@@ -302,4 +302,130 @@ describe('WechatReminderService', () => {
     expect(result.truncated).toBe(true);
     expect(db.prepare('SELECT 1 FROM WechatReminder WHERE sourceId = ?').get('appt-bulk-1000')).toBeDefined();
   });
+
+  it('updates reminder config settings and validates bounds', () => {
+    // 先写入一行，覆盖 update 路径；未写过的键覆盖 insert 路径
+    db.prepare(
+      `INSERT INTO Setting (id, clinicId, createdAt, updatedAt, deletedAt, key, value)
+       VALUES (?, ?, ?, ?, NULL, 'wechatReminder.appointmentDaysBefore', '1')`,
+    ).run('setting-appt-days', context.clinicId, now, now);
+
+    const service = new WechatReminderService(db);
+    const config = service.updateConfig(
+      { enabled: false, appointmentDaysBefore: 7, firstExamDaysAfter: 0, recallContent: '回顾内容' },
+      context,
+    );
+    expect(config.enabled).toBe(false);
+    expect(config.appointmentDaysBefore).toBe(7);
+    expect(config.firstExamDaysAfter).toBe(0);
+    expect(config.recallContent).toBe('回顾内容');
+    // 更新路径与插入路径都落库
+    const row = db.prepare(
+      `SELECT value FROM Setting WHERE key = ? AND clinicId = ? AND deletedAt IS NULL`,
+    ).get('wechatReminder.appointmentDaysBefore', context.clinicId) as { value: string };
+    expect(row.value).toBe('7');
+    expect(db.prepare(
+      `SELECT value FROM Setting WHERE key = 'wechatReminder.firstExamDaysAfter' AND clinicId = ? AND deletedAt IS NULL`,
+    ).get(context.clinicId)).toBeDefined();
+  });
+
+  it('rejects invalid reminder config values', () => {
+    const service = new WechatReminderService(db);
+    expect(() => service.updateConfig({ appointmentDaysBefore: 1.5 }, context)).toThrow('must be an integer between 0 and 365');
+    expect(() => service.updateConfig({ appointmentDaysBefore: -1 }, context)).toThrow('must be an integer between 0 and 365');
+    expect(() => service.updateConfig({ recallDaysAfter: 366 }, context)).toThrow('must be an integer between 0 and 365');
+    expect(() => service.updateConfig({ firstExamContent: 'x'.repeat(2001) }, context)).toThrow('must be a string up to 2000 characters');
+    expect(() => service.updateConfig({ firstExamContent: 42 as unknown as string }, context)).toThrow('must be a string up to 2000 characters');
+    // 校验失败不得残留部分写入
+    expect(db.prepare(
+      `SELECT 1 FROM Setting WHERE key = 'wechatReminder.appointmentDaysBefore' AND clinicId = ? AND deletedAt IS NULL`,
+    ).get(context.clinicId)).toBeUndefined();
+  });
+
+  it('caches today generation within the TTL and clears explicitly', () => {
+    const service = new WechatReminderService(db);
+    service.today(context);
+    // TTL 内新增候选：缓存命中路径不会重新生成
+    insertAppointment('appt-cache-miss', '2026-08-06T09:00:00.000Z');
+    const second = service.today(context);
+    expect(second.items.some((row) => row.sourceId === 'appt-cache-miss')).toBe(false);
+    // 显式清缓存后重新生成
+    service.clearTodayGeneratedCache();
+    const third = service.today(context);
+    expect(third.items.some((row) => row.sourceId === 'appt-cache-miss')).toBe(true);
+  });
+
+  it('formats appointment time in the clinic timezone (+8)', () => {
+    insertAppointment('appt-tz-1', '2026-08-05T23:30:00.000Z');
+    const service = new WechatReminderService(db);
+    const item = service.today(context).items.find((row) => row.sourceId === 'appt-tz-1');
+    expect(item).toBeDefined();
+    expect(item?.content).toContain('07:30');
+  });
+
+  it('accepts boundary day values of 0 and 365 and falls back for invalid values', () => {
+    db.prepare(
+      `INSERT INTO Setting (id, clinicId, createdAt, updatedAt, deletedAt, key, value)
+       VALUES (?, ?, ?, ?, NULL, 'wechatReminder.recallDaysAfter', '0')`,
+    ).run('setting-recall-zero', context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO Setting (id, clinicId, createdAt, updatedAt, deletedAt, key, value)
+       VALUES (?, ?, ?, ?, NULL, 'wechatReminder.firstExamDaysAfter', '365')`,
+    ).run('setting-exam-365', context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO Setting (id, clinicId, createdAt, updatedAt, deletedAt, key, value)
+       VALUES (?, ?, ?, ?, NULL, 'wechatReminder.appointmentDaysBefore', 'abc')`,
+    ).run('setting-appt-abc', context.clinicId, now, now);
+    const service = new WechatReminderService(db);
+    const config = service.config(context);
+    expect(config.recallDaysAfter).toBe(0);
+    expect(config.firstExamDaysAfter).toBe(365);
+    expect(config.appointmentDaysBefore).toBe(1); // 非法值回退默认
+  });
+
+  it('handles a null clinic context with a global cache key', () => {
+    const service = new WechatReminderService(db);
+    const globalContext: AppContext = { ...context, clinicId: null };
+    const result = service.today(globalContext);
+    expect(result.config.enabled).toBe(true);
+    expect(result.date).toBe('2026-08-05');
+  });
+
+  it('pages recall candidates beyond 1000 rows', () => {
+    for (let i = 0; i < 1001; i += 1) {
+      insertVisit(`visit-bulk-${i}`, '2026-08-02T08:00:00.000Z');
+    }
+    const service = new WechatReminderService(db);
+    service.today(context);
+    const count = (db.prepare(
+      `SELECT COUNT(*) AS c FROM WechatReminder
+       WHERE clinicId = ? AND status = 'PENDING' AND sourceId LIKE 'visit-bulk-%'`,
+    ).get(context.clinicId) as { c: number }).c;
+    expect(count).toBe(1001);
+  });
+
+  it('pages first-exam candidates beyond 1000 rows', () => {
+    for (let i = 0; i < 1001; i += 1) {
+      insertFirstExam(`exam-bulk-${i}`, '2026-08-02T02:00:00.000Z', null);
+    }
+    const service = new WechatReminderService(db);
+    service.today(context);
+    const count = (db.prepare(
+      `SELECT COUNT(*) AS c FROM WechatReminder
+       WHERE clinicId = ? AND status = 'PENDING' AND sourceId LIKE 'exam-bulk-%'`,
+    ).get(context.clinicId) as { c: number }).c;
+    expect(count).toBe(1001);
+  });
+
+  it('reports truncated false exactly at the list limit', () => {
+    for (let i = 0; i < 1000; i += 1) {
+      const hour = String(Math.floor(i / 60) % 16).padStart(2, '0');
+      const minute = String(i % 60).padStart(2, '0');
+      insertAppointment(`appt-exact-${i}`, `2026-08-06T${hour}:${minute}:00.000Z`);
+    }
+    const service = new WechatReminderService(db);
+    const result = service.today(context);
+    expect(result.items).toHaveLength(1000);
+    expect(result.truncated).toBe(false);
+  });
 });
