@@ -83,6 +83,7 @@
 | 第 72 轮 | 2026-08-13 | errors 契约断言提分至 87.44 | `../深度审计报告-第七十二轮-主报告.md` |
 | 第 73 轮 | 2026-08-13 | mutation 破 90 分（90.24） | `../深度审计报告-第七十三轮-主报告.md` |
 | 第 74 轮 | 2026-08-13 | 评分覆盖率口径与 Vitest 对齐 | `../深度审计报告-第七十四轮-主报告.md` |
+| 第 75 轮 | 2026-08-13 | P0-P2 收口与完整交付门禁 | `../深度审计报告-第七十五轮-主报告.md` |
 
 ## 其他归档
 
@@ -101,7 +102,9 @@
 
 ## 当前状态
 
-最新一轮为第 74 轮（`66e2f3b`），单测 239 文件 / 2423 用例；coverage 95.19 / 86.68 / 98.98 / 97.15，mutation score 90.24，route path coverage 100%，typecheck/lint/knip/unit 均通过。
+最新一轮为第 75 轮，单测 256 文件 / 2603 用例；Web coverage 96.82 / 93.01 / 98.57 / 98.53，
+mutation score 96.54，quality score 93.3，route path coverage 100%，
+build/electron:compile/verify:package/smoke:api/smoke:ui/test:load/large-db-concurrency 全绿。
 历史轮次请以上方轮次索引为准；各轮详情见 `../深度审计报告-第N轮-主报告.md`。
 已收敛的长期决策项：processing-flow 手动改态保留并补 `changes` 校验；大库增量聚合
 暂不启动，`replenishment.generate` 已用有界分块事务，10 万级冷态基准持续 PASS。
