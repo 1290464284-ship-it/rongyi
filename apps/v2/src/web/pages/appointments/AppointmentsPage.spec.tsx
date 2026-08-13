@@ -105,6 +105,39 @@ await waitFor(() => {
     expect((screen.getByLabelText('搜索预约') as HTMLInputElement).value).toBe('张三');
   });
 
+  it('renders missing select values for unknown doctors and purposes', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/appointments?page=1&pageSize=20') {
+        return {
+          items: [{
+            id: 'a-missing',
+            patientId: 'p-missing',
+            doctorId: 'd-missing',
+            purpose: 'purpose-missing',
+            startTime: '2026-08-04T09:00:00.000Z',
+            status: 'BOOKED',
+          }],
+          total: 1,
+          page: 1,
+          pageSize: 20,
+        };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') return { items: [], total: 0, page: 1, pageSize: 200 };
+      if (path === '/doctors') return [];
+      if (path === '/resources/chairs?page=1&pageSize=100') return { items: [], total: 0, page: 1, pageSize: 200 };
+      if (path === '/resources/appointmentPurposes?page=1&pageSize=100') return { items: [], total: 0, page: 1, pageSize: 100 };
+      if (path === '/resources/appointments/a-missing') {
+        return { id: 'a-missing', patientId: 'p-missing', doctorId: 'd-missing', purpose: 'purpose-missing', startTime: '2026-08-04T09:00:00.000Z', status: 'BOOKED' };
+      }
+      return {};
+    });
+    render(<AppointmentsPage />, { wrapper });
+    expect(await screen.findByText('预约管理')).toBeDefined();
+    fireEvent.click(await screen.findByRole('button', { name: '编辑' }));
+    expect(await screen.findByRole('option', { name: 'd-missing' })).toBeDefined();
+    expect(await screen.findByRole('option', { name: 'purpose-missing' })).toBeDefined();
+  });
+
   it('shows an error when appointments fail to load', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/appointments?page=1&pageSize=20') throw new Error('appointments failed');
