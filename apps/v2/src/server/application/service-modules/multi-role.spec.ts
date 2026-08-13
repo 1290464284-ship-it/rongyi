@@ -149,4 +149,11 @@ describe('UserRoleService', () => {
     const all = service.listAll(context);
     expect(all.some((row) => row.userId === 'user-doctor-005')).toBe(false);
   });
+
+  it('listAll falls back to an unscoped query when clinic id is missing', () => {
+    const service = new UserRoleService(db);
+    insertUser('user-doctor-007', 'DOCTOR');
+    service.setRoles('user-doctor-007', ['BOSS'], context);
+    expect(() => service.listAll({ ...context, clinicId: null })).not.toThrow();
+  });
 });

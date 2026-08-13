@@ -135,6 +135,27 @@ describe('charge tree routes', () => {
     expect(res.body.data.chargeId).toBeTruthy();
   });
 
+  it('POST quick-charge normalizes explicit visit, doctor and remark values', async () => {
+    db.prepare(
+      `INSERT INTO Visit (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, startTime, status
+       ) VALUES ('visit-quick-charge', 'clinic-v2-001', ?, ?, NULL,
+                 'patient-demo-001', 'user-admin-001', '2026-08-06T09:00:00.000Z', 'IN_PROGRESS')`,
+    ).run(nowIso, nowIso);
+    const res = await request(app)
+      .post('/api/v2/charge-trees/route-cat-root/quick-charge')
+      .send({
+        patientId: 'patient-demo-001',
+        quantity: 1,
+        visitId: 'visit-quick-charge',
+        doctorId: 'user-admin-001',
+        remark: '快速划价',
+      })
+      .expect(201);
+    expect(res.body.success).toBe(true);
+  });
+
   it('tolerates a missing request body', async () => {
     const res = await request(app).post('/api/v2/charge-trees/missing/quick-charge');
     expect([200, 400, 404, 409]).toContain(res.status);

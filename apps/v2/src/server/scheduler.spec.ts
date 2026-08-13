@@ -276,6 +276,34 @@ describe('startSchedulers', () => {
     );
   });
 
+  it('runAutoBackup 对非 Error 失败也生成可读告警', async () => {
+    vi.useFakeTimers();
+    ensureTimers();
+    const backups = makeBackups();
+    vi.mocked(backups.create).mockRejectedValueOnce('boom-string');
+    const audit = makeAudit();
+    const logger = makeLogger();
+    const onAlertCreate = vi.fn();
+
+    const { stop } = startSchedulers({
+      backups,
+      audit,
+      autoBackupIntervalMs: 60_000,
+      autoBackupKeep: 30,
+      logger,
+      onAlertCreate,
+    });
+
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 1);
+    const input = await vi.waitFor<AlertCreateInput>(() => {
+      expect(onAlertCreate).toHaveBeenCalled();
+      return onAlertCreate.mock.calls[0][0] as AlertCreateInput;
+    });
+    stop();
+
+    expect(input.message).toBe('boom-string');
+  });
+
   it('stop 清除定时器', () => {
     const backups = makeBackups();
     const audit = makeAudit();
