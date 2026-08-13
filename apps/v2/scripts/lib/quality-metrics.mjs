@@ -1,5 +1,6 @@
 function normalizeOpenApiPath(path) {
-  return path.startsWith('/api/v2') ? (path.slice('/api/v2'.length) || '/') : path;
+  const trimmed = path.startsWith('/api/v2') ? (path.slice('/api/v2'.length) || '/') : path;
+  return trimmed.replace(/:[A-Za-z0-9_]+/g, (segment) => `{${segment.slice(1)}}`);
 }
 
 export function coverageStats(data) {

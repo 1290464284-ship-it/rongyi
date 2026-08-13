@@ -74,7 +74,7 @@ describe('openApiPathMetrics', () => {
   it('merges core and generated paths and normalizes the /api/v2 prefix', () => {
     const metrics = openApiPathMetrics({
       coreDoc: { paths: { '/health': {} } },
-      generatedDoc: { paths: { '/files/:name': {} } },
+      generatedDoc: { paths: { '/files/{name}': {} } },
       routeEntries: [
         { method: 'GET', path: '/api/v2/health' },
         { method: 'GET', path: '/api/v2/files/:name' },
@@ -94,7 +94,7 @@ describe('openApiPathMetrics', () => {
   it('deduplicates repeated method/path registrations', () => {
     const metrics = openApiPathMetrics({
       coreDoc: { paths: {} },
-      generatedDoc: { paths: { '/files/:name': {}, '/files/:name/sign': {} } },
+      generatedDoc: { paths: { '/files/{name}': {}, '/files/{name}/sign': {} } },
       routeEntries: [
         { method: 'GET', path: '/api/v2/files/:name' },
         { method: 'GET', path: '/api/v2/files/:name' },
