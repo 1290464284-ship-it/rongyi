@@ -284,6 +284,13 @@ describe('AppointmentBoardPage', () => {
     expect(screen.getByRole('button', { name: '重试' })).toBeDefined();
   });
 
+  it('falls back to a generic message for non-Error board failures', async () => {
+    vi.mocked(apiRequest).mockRejectedValueOnce('boom-string');
+    render(<AppointmentBoardPage />, { wrapper });
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+    expect(screen.getByRole('button', { name: '重试' })).toBeDefined();
+  });
+
   it('clears the drag-over highlight when leaving a column', async () => {
     const today = todayLocalDate();
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
