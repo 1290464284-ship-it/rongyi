@@ -270,7 +270,9 @@ describe('ResourcePage', () => {
     await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith('/resources/patients?page=1&pageSize=20&search=stale');
     });
-    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    // disabled 按钮点击会被 React 抑制，直接提交表单以触达 stale 守卫
+    const form = screen.getByRole('button', { name: '保存' }).closest('form') as HTMLFormElement;
+    fireEvent.submit(form);
     expect(vi.mocked(apiRequest).mock.calls.some(([path, options]) =>
       path === '/resources/patients/p1' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'PATCH',
     )).toBe(false);
@@ -800,5 +802,70 @@ describe('ResourcePage', () => {
       .mockResolvedValueOnce({ total: 1, page: 1, pageSize: 20 });
     render(<ResourcePage resource="patients" />, { wrapper });
     expect(await screen.findByText('暂无记录')).toBeDefined();
+  });
+
+  it('disables CSV export when the report is truncated', async () => {
+    vi.mocked(apiRequest).mockResolvedValue({ items: [{ id: 's1', name: 'Alice' }], truncated: true });
+    render(<ResourcePage title="报表" endpoint="/stats/demo" />, { wrapper });
+    expect(((await screen.findByText('导出')) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('seeds create forms from field defaults', async () => {
+    const defaults = {
+      name: 'typed',
+      table: 'Typed',
+      fields: [
+        { name: 'name', type: 'text', required: true, default: 'Guest' },
+        { name: 'active', type: 'boolean', default: true },
+        { name: 'data', type: 'json', default: { a: 1 } },
+      ],
+      capabilities: { create: true, update: false, delete: false, softDelete: false },
+    };
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([defaults])
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 20 });
+    render(<ResourcePage resource="typed" />, { wrapper });
+    fireEvent.click(await screen.findByText('新建'));
+    expect((screen.getByLabelText('name') as HTMLInputElement).value).toBe('Guest');
+    expect((screen.getByLabelText('active') as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByLabelText('data') as HTMLTextAreaElement).value).toContain('"a": 1');
+  });
+
+  it('ignores stale delete confirmations', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([writable])
+      .mockResolvedValueOnce({ items: [{ id: 'p1', name: 'Alice', active: true }], total: 1, page: 1, pageSize: 20 });
+    render(<ResourcePage resource="patients" />, { wrapper });
+    // 先在可用态打开删除确认弹窗，再翻页制造 stale（React 会抑制 disabled 按钮的点击）
+    fireEvent.click(await screen.findByText('删除'));
+    expect(await screen.findByText('确认删除')).toBeDefined();
+    vi.mocked(apiRequest).mockImplementationOnce(() => new Promise(() => {}));
+    fireEvent.change(screen.getByPlaceholderText('搜索...'), { target: { value: 'stale' } });
+    await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/resources/patients?page=1&pageSize=20&search=stale'));
+    fireEvent.click(screen.getByText('确认删除'));
+    expect(vi.mocked(apiRequest)).not.toHaveBeenCalledWith(
+      '/resources/patients/p1',
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+    expect(screen.getByRole('dialog', { name: '删除确认' })).toBeDefined();
+  });
+
+  it('ignores duplicate submits while a save is pending', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([writable])
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 20 });
+    render(<ResourcePage resource="patients" />, { wrapper });
+    fireEvent.click(await screen.findByText('新建'));
+    fireEvent.change(screen.getByLabelText('name'), { target: { value: 'Bob' } });
+    let resolveSave: (value: unknown) => void = () => {};
+    vi.mocked(apiRequest).mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve; }));
+    vi.mocked(apiRequest).mockResolvedValueOnce({ items: [{ id: 'p2', name: 'Bob' }], total: 1, page: 1, pageSize: 20 });
+    const form = screen.getByLabelText('name').closest('form') as HTMLFormElement;
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    const postCalls = vi.mocked(apiRequest).mock.calls.filter(([, options]) => (options as RequestInit)?.method === 'POST');
+    expect(postCalls).toHaveLength(1);
+    resolveSave({ success: true });
+    await waitFor(() => expect(screen.queryByText('保存')).toBeNull());
   });
 });

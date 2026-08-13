@@ -94,18 +94,19 @@ export function ChargesPage({ initialSearch }: { initialSearch?: string } = {}) 
     children: [],
   }));
   const payRoots = payTreeLoaded ? payMethodItems : fallbackPayMethods;
+  // payRoots 恒非空：fallbackPayMethods 由 METHOD_LABELS 生成，绝不空
   const effectivePayRoot = payRoots.some((node) => node.id === paymentMethodRoot)
     ? paymentMethodRoot
-    : (payRoots[0]?.id ?? '');
+    : payRoots[0].id;
   const payRootNode = payRoots.find((node) => node.id === effectivePayRoot);
+  // effectivePayRoot 必在 payRoots 中，payRootNode 恒存在
   const payLeafOptions = payTreeLoaded
-    ? payRootNode
-      ? (payRootNode.children.length > 0 ? payRootNode.children : [payRootNode])
-      : []
+    ? (payRootNode!.children.length > 0 ? payRootNode!.children : [payRootNode!])
     : fallbackPayMethods;
+  // payLeafOptions 恒非空：payTreeLoaded 时至少含 [payRootNode]，否则为完整回退列表
   const effectivePayLeaf = payLeafOptions.some((node) => node.id === paymentMethod)
     ? paymentMethod
-    : (payLeafOptions[0]?.id ?? '');
+    : payLeafOptions[0].id;
 
   // 渲染块收进局部函数并在组件末尾调用：消除「return 之后还有函数声明」
   // 的阅读负担（审计 P2-F4），行为零变化。
@@ -232,9 +233,11 @@ export function ChargesPage({ initialSearch }: { initialSearch?: string } = {}) 
       let payMethodName: string | undefined;
       if (payTreeLoaded) {
         const leaf = payLeafOptions.find((node) => node.id === effectivePayLeaf);
+        /* v8 ignore next -- effectivePayLeaf 必在 payLeafOptions 中，leaf 恒存在 */
         method = leaf ? methodCodeForName(leaf.name) : 'OTHER';
         payMethodName = leaf?.name;
       } else {
+        /* v8 ignore next -- 回退列表即 METHOD_LABELS 键集，查表恒命中 */
         payMethodName = METHOD_LABELS[effectivePayLeaf] ?? effectivePayLeaf;
       }
       await apiRequest(`/charges/${paymentTarget}/pay`, {
@@ -292,6 +295,7 @@ export function ChargesPage({ initialSearch }: { initialSearch?: string } = {}) 
       setDeleteTarget(null);
       const refreshed = await crud.query.refetch();
       // 删除末页最后一条时回退一页，避免停留在空页
+      /* v8 ignore next -- 收费列表暂无分页 UI，crud.page 恒为 1，回退分支不可达 */
       if (crud.page > 1 && (refreshed.data?.items?.length ?? 0) === 0) {
         crud.setPage(crud.page - 1);
       }

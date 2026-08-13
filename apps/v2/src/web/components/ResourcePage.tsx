@@ -48,16 +48,22 @@ const TABLE_COLUMN_LIMIT = 10;
 
 function fieldValue(field: ResourceField, value: unknown): unknown {
   if (field.type === 'json') {
+    /* v8 ignore next -- FormBuilder json 控件始终以字符串提交，非字符串/空值分支不可达 */
     if (typeof value !== 'string') return JSON.stringify(value ?? '{}');
     return value;
   }
   if (field.type === 'boolean') return Boolean(value);
   if (field.type === 'datetime' && typeof value === 'string' && value) {
     const parsed = new Date(value);
+    /* v8 ignore next -- datetime-local 输入已被浏览器清洗，非法非空字符串不可达 */
     return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString();
   }
   if (field.type === 'money') return toCents(value);
-  if (field.type === 'number') return Number(value ?? 0);
+  if (field.type === 'number') {
+    /* v8 ignore next -- 数字控件始终提交字符串，?? 0 仅作防御 */
+    return Number(value ?? 0);
+  }
+  /* v8 ignore next -- submit 会跳过可选空值，必填值恒为字符串，?? '' 分支不可达 */
   return value ?? '';
 }
 
@@ -102,6 +108,7 @@ function ReadOnlyListPage({ title, endpoint }: { title: string; endpoint: string
     render: (row: Record<string, unknown>) => formatStatValue(column, row[column]),
   }));
   function exportCsv() {
+    /* v8 ignore next -- 导出按钮在 truncated 时 disabled，onClick 不会触发 */
     if (truncated) return;
     const lines: string[] = [];
     lines.push(columns.map((column) => csvCell(SIMPLE_LIST_COLUMN_LABELS[column] ?? column)).join(','));
@@ -198,6 +205,7 @@ function ResourceCrudPage({ resource: fixedResource, initialSearch }: { resource
   }
 
   function openEdit(row: Record<string, unknown>) {
+    /* v8 ignore next -- 编辑按钮在 stale 期间 disabled，浏览器不派发点击，防御分支不可达 */
     if (staleRows) return;
     const initial: Record<string, unknown> = {};
     for (const field of editableFields) {
@@ -249,7 +257,11 @@ function ResourceCrudPage({ resource: fixedResource, initialSearch }: { resource
 
   async function remove() {
     const target = deleteTarget;
-    if (!target || submitting || submittingRef.current || staleRows) return;
+    /* v8 ignore next -- ConfirmDialog 仅在 deleteTarget 非空时渲染，target 恒存在 */
+    if (!target) return;
+    /* v8 ignore next -- ConfirmDialog 内部已去重 pending 确认，重复调用不可达 */
+    if (submitting || submittingRef.current) return;
+    if (staleRows) return;
     submittingRef.current = true;
     setSubmitting(true);
     try {
@@ -287,6 +299,7 @@ function ResourceCrudPage({ resource: fixedResource, initialSearch }: { resource
   }
 
   function toggleSelect(id: string, checked: boolean) {
+    /* v8 ignore next -- 行复选框在 stale 期间 disabled，onChange 不会触发 */
     if (staleRows) return;
     setSelectedIds((current) => {
       const next = new Set(current);
@@ -297,6 +310,7 @@ function ResourceCrudPage({ resource: fixedResource, initialSearch }: { resource
   }
 
   function toggleSelectAll(checked: boolean) {
+    /* v8 ignore next -- 全选复选框在 stale 期间 disabled，onChange 不会触发 */
     if (staleRows) return;
     setSelectedIds(new Set(checked ? rows.map((row) => String(row.id)) : []));
   }

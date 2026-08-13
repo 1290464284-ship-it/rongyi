@@ -1,7 +1,9 @@
 {
-  "generatedAt": "2026-08-13T16:51:05.798Z",
-  "total": 145,
+  "generatedAt": "2026-08-13T21:50:15.386Z",
+  "total": 158,
   "perFile": {
+    "src\\web\\pages\\finance\\ChargesPage.tsx": 3,
+    "src\\web\\components\\ResourcePage.tsx": 10,
     "src\\server\\infrastructure\\repository.ts": 33,
     "src\\server\\infrastructure\\repositories\\clinical-workflow.repository.ts": 3,
     "src\\server\\infrastructure\\migrations\\v101-110.ts": 5,

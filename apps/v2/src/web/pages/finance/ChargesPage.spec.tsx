@@ -1212,4 +1212,74 @@ describe('ChargesPage', () => {
     )).toHaveLength(1);
     resolveDelete?.({ deleted: true });
   });
+
+  it('shows the row id in the delete message when the number is missing', async () => {
+    const noNumberList = {
+      ...chargeList,
+      items: [{ id: 'c-2', totalAmount: 100, paidAmount: 0, status: 'UNPAID' }],
+    };
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/charges?page=1&pageSize=50') return noNumberList;
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      return {};
+    });
+    render(<ChargesPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '删除' }));
+    expect(await screen.findByText(/（c-2）/)).toBeDefined();
+  });
+
+  it('defaults the refund reason when none is provided', async () => {
+    mockData();
+    render(<ChargesPage />, { wrapper });
+    await screen.findByText('N-1');
+    fireEvent.click(screen.getByRole('button', { name: '退款' }));
+    fireEvent.change(screen.getByLabelText('退款金额（元）'), { target: { value: '20' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认退款' }));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/charges/c-1/refund', expect.objectContaining({ method: 'POST' }));
+    });
+    const refundCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/charges/c-1/refund');
+    const refundBody = JSON.parse(String(refundCall?.[1]?.body));
+    expect(refundBody.reason).toBe('桌面端退款');
+  });
+
+  it('blocks deletion while a payment is pending', async () => {
+    let resolvePay: ((value: unknown) => void) | undefined;
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/charges?page=1&pageSize=50') {
+        return { ...chargeList, items: [{ ...chargeList.items[0], status: 'UNPAID' }] };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/charges/c-1/pay') {
+        return await new Promise((resolve) => { resolvePay = resolve; });
+      }
+      return {};
+    });
+    render(<ChargesPage />, { wrapper });
+    await screen.findByText('N-1');
+    fireEvent.click(screen.getByRole('button', { name: '收款' }));
+    fireEvent.change(screen.getByLabelText('收款金额（元）'), { target: { value: '50' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认收款' }));
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    fireEvent.click(await screen.findByRole('button', { name: '确认删除' }));
+    expect(vi.mocked(apiRequest).mock.calls.filter(([path, options]) =>
+      path === '/charges/c-1' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'DELETE',
+    )).toHaveLength(0);
+    resolvePay?.({ status: 'PAID' });
+  });
+
+  it('keeps untouched rows when updating a later line item', async () => {
+    mockData();
+    render(<ChargesPage />, { wrapper });
+    await screen.findByText('N-1');
+    fireEvent.click(screen.getByRole('button', { name: '添加明细' }));
+    const priceInputs = screen.getAllByLabelText('单价') as HTMLInputElement[];
+    fireEvent.change(priceInputs[1], { target: { value: '88' } });
+    expect(priceInputs[0].value).toBe('');
+    expect(priceInputs[1].value).toBe('88');
+  });
 });

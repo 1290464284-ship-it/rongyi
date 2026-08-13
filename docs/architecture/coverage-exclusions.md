@@ -57,7 +57,16 @@ Web **96.82% / 92.94% / 98.66% / 98.58%**，双门禁全绿——覆盖率口径
 
 | 文件 | 分支 | 理由 |
 |---|---|---|
-| （暂无新登记——历史 525 处待四批清理计划处理） | | |
+| `src/web/components/ResourcePage.tsx`（fieldValue json） | `typeof value !== 'string'` / `value ?? '{}'` | FormBuilder 的 json 控件始终以 textarea 字符串提交，非字符串/空值输入不可达 |
+| `src/web/components/ResourcePage.tsx`（fieldValue number） | `value ?? 0` | 数字控件提交字符串；submit 会跳过可选空值，nullish 不可达 |
+| `src/web/components/ResourcePage.tsx`（fieldValue 兜底） | `value ?? ''` | 其余类型表单值恒为字符串/布尔，nullish 不可达 |
+| `src/web/components/ResourcePage.tsx`（fieldValue datetime） | `Number.isNaN(...) ? value` 真值分支 | datetime-local 输入由浏览器/表单清洗为合法值或空串，非法非空字符串不可达 |
+| `src/web/components/ResourcePage.tsx`（openEdit / toggleSelect / toggleSelectAll） | `if (staleRows) return` | 三个入口按钮/复选框在 stale 期间均 `disabled`，浏览器不派发点击/变更事件，内部守卫为防御冗余 |
+| `src/web/components/ResourcePage.tsx`（remove） | `!target` 与 `submitting`/`submittingRef` 守卫 | ConfirmDialog 仅在 deleteTarget 非空时渲染；且 ConfirmDialog 内部已对 pending 确认去重，重复调用不可达。stale 守卫仍可测（弹窗先开后置 stale） |
+| `src/web/components/ResourcePage.tsx`（ReadOnlyListPage exportCsv） | `if (truncated) return` | 导出按钮在 truncated 时 disabled，onClick 不会触发，内部守卫为防御冗余 |
+| `src/web/pages/finance/ChargesPage.tsx`（payRoots/payLeafOptions） | `payRoots[0]?.id ?? ''`、`payLeafOptions[0]?.id ?? ''` 与 `payRootNode ? ... : []` | 2026-08-13 简化为直接索引 + 非空断言：内置缴费方式兜底保证三处集合恒非空（行为零变化，不再需要排除） |
+| `src/web/pages/finance/ChargesPage.tsx`（pay） | `leaf ? ... : 'OTHER'` 的 OTHER 分支、`METHOD_LABELS[...] ?? effectivePayLeaf` 的空值分支 | effectivePayLeaf 经 `some` 校验必在选项/键集中，查表恒命中 |
+| `src/web/pages/finance/ChargesPage.tsx`（deleteCharge） | `crud.page > 1 && (...)` 整行 | 收费列表暂无分页 UI，crud.page 恒为 1，回退逻辑为未来分页预留 |
 
 ## 5. 其他已知取舍
 

@@ -177,7 +177,8 @@ function DispenseActionPanel({
         const isBatchManaged = Number(item.batchManaged ?? 0) === 1;
         return {
           dispenseItemId: item.id,
-          batchId: isBatchManaged ? (batchSelections[item.id] ?? item.batchId ?? null) : null,
+          // missingBatch 校验保证批次物品在此处必有 batchSelections 或 batchId 之一
+          batchId: isBatchManaged ? (batchSelections[item.id] ?? item.batchId) : null,
         };
       });
       setBusy(true);
