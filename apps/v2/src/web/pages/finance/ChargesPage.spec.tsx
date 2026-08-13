@@ -119,6 +119,49 @@ describe('ChargesPage', () => {
     expect(await screen.findByText('退款已记录')).toBeDefined();
   });
 
+  it('pays with a leaf method from the configured pay tree', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/charges?page=1&pageSize=50') return chargeList;
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/pay-methods/tree') {
+        return {
+          items: [{
+            id: 'root-1',
+            name: '线上',
+            parentId: null,
+            sortOrder: 0,
+            active: true,
+            children: [{
+              id: 'wx-leaf',
+              name: '微信',
+              parentId: 'root-1',
+              sortOrder: 0,
+              active: true,
+              children: [],
+            }],
+          }],
+        };
+      }
+      return {};
+    });
+    render(<ChargesPage />, { wrapper });
+    await screen.findByText('N-1');
+    fireEvent.click(screen.getByRole('button', { name: '收款' }));
+    await waitFor(() => {
+      expect((screen.getByLabelText('支付方式') as HTMLSelectElement).options.length).toBeGreaterThan(0);
+    });
+    fireEvent.change(screen.getByLabelText('收款金额（元）'), { target: { value: '50' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认收款' }));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/charges/c-1/pay', expect.objectContaining({
+        body: expect.stringContaining('"method":"WECHAT"'),
+      }));
+    });
+    expect(await screen.findByText('收款已记录')).toBeDefined();
+  });
+
   it('validates required charge fields', async () => {
     mockData();
     render(<ChargesPage />, { wrapper });
