@@ -211,4 +211,15 @@ describe('commission routes', () => {
       .send({ name: '非法布尔', rateType: 'PERCENT', rate: 100, enabled: 'yes' })
       .expect(400);
   });
+
+  it('tolerates missing request bodies and period filters', async () => {
+    const create = await request(app).post('/api/v2/commission/rules');
+    expect([200, 400]).toContain(create.status);
+    const update = await request(app).patch('/api/v2/commission/rules/missing');
+    expect([200, 400, 404]).toContain(update.status);
+    const calculate = await request(app).post('/api/v2/commission/calculate');
+    expect([200, 400]).toContain(calculate.status);
+    const statements = await request(app).get('/api/v2/commission/statements');
+    expect([200, 400]).toContain(statements.status);
+  });
 });

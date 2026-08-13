@@ -298,4 +298,15 @@ describe('shift template routes', () => {
     const row = (list.body.data as Array<Record<string, unknown>>).find((entry) => entry.id === id);
     expect(row?.workDays).toEqual([]);
   });
+
+  it('tolerates missing request bodies and weekStart filters', async () => {
+    const create = await request(app).post('/api/v2/shift-templates');
+    expect([200, 400]).toContain(create.status);
+    const update = await request(app).patch('/api/v2/shift-templates/missing');
+    expect([200, 400, 404]).toContain(update.status);
+    const generate = await request(app).post('/api/v2/shift-templates/generate');
+    expect([200, 400, 404]).toContain(generate.status);
+    const schedules = await request(app).get('/api/v2/schedules/week');
+    expect([200, 400]).toContain(schedules.status);
+  });
 });
