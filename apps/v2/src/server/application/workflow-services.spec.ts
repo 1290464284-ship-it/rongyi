@@ -15,6 +15,8 @@ import {
   WechatService,
 } from './workflow-services';
 import type { AppContext } from '../../domain/contracts';
+import type { ClinicalWorkflowRepository } from './ports';
+import { ConflictError } from '../infrastructure/errors';
 
 describe('workflow services', () => {
   let db: Database.Database;
@@ -94,6 +96,55 @@ describe('workflow services', () => {
       `SELECT 1 FROM SyncChange WHERE tableName = 'Treatment' AND recordId = ? AND operation = 'UPDATE' AND clinicId = ?`,
     ).get('treatment-wf', context.clinicId)).toBeDefined();
     expect(service.lockMedicalRecord('record-wf', true, context).isLocked).toBe(true);
+  });
+
+  it('cancels a registration without a visit id (no extra visit columns)', () => {
+    db.prepare(
+      `INSERT INTO Registration (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, type, status, registeredAt, registeredBy
+       ) VALUES (?, ?, ?, ?, NULL, ?, ?, 'REGULAR', 'REGISTERED', ?, 'user-admin-001')`,
+    ).run('reg-no-visit', context.clinicId, now, now, 'patient-demo-001', 'user-admin-001', now);
+
+    const service = new ClinicalWorkflowService(db);
+    const result = service.registrationStatus('reg-no-visit', 'CANCELLED', context);
+    expect(result).toEqual({ id: 'reg-no-visit', status: 'CANCELLED', visitId: null });
+  });
+
+  it('throws a conflict when optimistic status updates change zero rows', () => {
+    const cases: Array<{ name: string; row: Record<string, unknown>; invoke: (service: ClinicalWorkflowService) => Record<string, unknown> }> = [
+      {
+        name: 'Registration',
+        row: { id: 'r1', status: 'REGISTERED', patientId: 'patient-demo-001', doctorId: 'user-admin-001', visitId: 'v1' },
+        invoke: (service) => service.registrationStatus('r1', 'CANCELLED', context),
+      },
+      {
+        name: 'Visit',
+        row: { id: 'v1', status: 'IN_PROGRESS' },
+        invoke: (service) => service.visitStatus('v1', 'CANCELLED', context),
+      },
+      {
+        name: 'FirstExam',
+        row: { id: 'f1', status: 'DRAFT' },
+        invoke: (service) => service.firstExamStatus('f1', 'SUBMITTED', context),
+      },
+      {
+        name: 'Treatment',
+        row: { id: 't1', status: 'PLANNED' },
+        invoke: (service) => service.treatmentStatus('t1', 'CANCELLED', context),
+      },
+    ];
+    for (const testCase of cases) {
+      const stub = {
+        getRow: vi.fn(() => testCase.row),
+        updateStatus: vi.fn(() => 0),
+        createVisit: vi.fn(),
+        lockMedicalRecord: vi.fn(),
+      } as unknown as ClinicalWorkflowRepository;
+      const service = new ClinicalWorkflowService(db, stub);
+      expect(() => testCase.invoke(service), testCase.name).toThrow(ConflictError);
+      expect(() => testCase.invoke(service), testCase.name).toThrow(/已变化/);
+    }
   });
 
   it('generates and applies replenishment suggestions', () => {

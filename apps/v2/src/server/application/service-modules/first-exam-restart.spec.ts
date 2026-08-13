@@ -7,7 +7,7 @@ import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
 import { NotFoundError, ValidationError } from '../../infrastructure/errors';
 import type { AppContext } from '../../../domain/contracts';
-import { FirstExamRestartService, type ChiefMark, type Dentition } from './first-exam-restart';
+import { FirstExamRestartService, type ChiefMark, type Dentition, type SetChiefMarkInput, type SetDentitionInput } from './first-exam-restart';
 
 describe('FirstExamRestartService', () => {
   let db: Database.Database;
@@ -148,6 +148,53 @@ describe('FirstExamRestartService', () => {
   it('restart throws NotFoundError when the exam does not exist', () => {
     const service = new FirstExamRestartService(db);
     expect(() => service.restart('missing-exam', {}, context)).toThrow(NotFoundError);
+  });
+
+  it('restart rejects invalid dentition values', () => {
+    insertExam('exam-bad-dent');
+    const service = new FirstExamRestartService(db);
+    expect(() => service.restart('exam-bad-dent', { dentition: 'BOGUS' as Dentition }, context))
+      .toThrow('Invalid dentition');
+  });
+
+  it('restart propagates null optional fields from the original exam', () => {
+    insertExam('exam-null-fields', {
+      consultantId: null,
+      chiefComplaint: null,
+      presentIllness: null,
+      pastHistory: null,
+      oralExam: null,
+      auxiliaryExam: null,
+      diagnosis: null,
+      treatmentSuggestion: null,
+      dentition: null,
+    });
+    const service = new FirstExamRestartService(db);
+    const created = service.restart('exam-null-fields', {}, context);
+    expect(created.consultantId).toBeNull();
+    expect(created.chiefComplaint).toBeNull();
+    expect(created.presentIllness).toBeNull();
+    expect(created.pastHistory).toBeNull();
+    expect(created.oralExam).toBeNull();
+    expect(created.auxiliaryExam).toBeNull();
+    expect(created.diagnosis).toBeNull();
+    expect(created.treatmentSuggestion).toBeNull();
+    expect(created.dentition).toBeNull();
+  });
+
+  it('setDentition rejects an absent dentition value', () => {
+    insertExam('exam-dent-empty');
+    const service = new FirstExamRestartService(db);
+    expect(() => service.setDentition('exam-dent-empty', {} as SetDentitionInput, context))
+      .toThrow('Invalid dentition');
+  });
+
+  it('setChiefMark rejects an absent chief mark value', () => {
+    insertExam('exam-mark-empty');
+    insertTooth('tooth-mark-empty', 'exam-mark-empty');
+    const service = new FirstExamRestartService(db);
+    expect(() => service.setChiefMark('exam-mark-empty', 'tooth-mark-empty', {} as SetChiefMarkInput, context))
+      .toThrow('Invalid chiefMark');
   });
 
   it('setDentition updates the dentition and rejects invalid values', () => {
