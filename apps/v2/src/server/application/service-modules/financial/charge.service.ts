@@ -303,7 +303,11 @@ export class ChargeService {
         }
         const debt = this.debtRepository.findByCharge(id, context?.clinicId ?? null);
         if (debt) {
-          const debtStatus = newPaid >= Number(debt.totalAmount) ? 'PAID' : newPaid > 0 ? 'PARTIAL' : 'UNPAID';
+          // newPaid 恒为正（amount > 0 已校验）；满额即 PAID，否则 PARTIAL
+          let debtStatus = 'PARTIAL';
+          if (newPaid >= Number(debt.totalAmount)) {
+            debtStatus = 'PAID';
+          }
           this.debtRepository.updatePaid(debt.id, newPaid, debtStatus, now, Number(debt.paidAmount), context?.clinicId ?? null);
         } else if (method === 'DEBT' && newStatus === 'PARTIAL') {
           this.db.prepare(
@@ -313,7 +317,7 @@ export class ChargeService {
              ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
           ).run(
             randomUUID(),
-            row.clinicId ?? null,
+            row.clinicId,
             now,
             now,
             id,
