@@ -397,4 +397,192 @@ describe('AuthService login TOCTOU guard', () => {
     await expect(service.refresh('token-expired-claim')).resolves.toBeDefined();
   });
 
+  it('falls back to the default clinic id when no clinic rows exist', async () => {
+    db.prepare('DELETE FROM Clinic').run();
+    const service = new AuthService(db);
+    await expect(service.setupInitialAdmin('pw-12345678')).resolves.toEqual({ created: true });
+    const user = db.prepare('SELECT clinicId FROM User WHERE username = ?').get('admin') as { clinicId: string };
+    expect(user.clinicId).toBe('clinic-v2-001');
+  });
+
+  it('rejects a second setup when the guarded insert affects zero rows', async () => {
+    const service = new AuthService(db);
+    const originalPrepare = db.prepare.bind(db);
+    const spy = vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('INSERT OR IGNORE INTO User')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      await expect(service.setupInitialAdmin('pw-12345678')).rejects.toThrow(/already configured/);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('logs in and refreshes users whose lock window already expired', async () => {
+    const hash = bcrypt.hashSync('pw-123456', 4);
+    const tokenHash = hashRefreshToken('token-unlocked');
+    const user = {
+      ...record(hash, now),
+      lockedUntil: '2000-01-01T00:00:00.000Z',
+      refreshToken: tokenHash,
+      refreshTokenExpiresAt: '2099-01-01T00:00:00.000Z',
+    };
+    const service = new AuthService(db, stubRepo({
+      findByUsername: () => user,
+      findById: () => user,
+      findByRefreshTokenHash: () => user,
+      isRefreshTokenUsed: () => false,
+      findUsedRefreshToken: () => null,
+    }));
+    await expect(service.login('unlocked', 'pw-123456')).resolves.toBeDefined();
+    await expect(service.refresh('token-unlocked')).resolves.toBeDefined();
+  });
+
+  it('serves the cached session on an immediate replay and skips vanished cached users', async () => {
+    const hash = bcrypt.hashSync('pw-123456', 4);
+    const tokenHash = hashRefreshToken('token-cached');
+    const user = {
+      ...record(hash, now),
+      refreshToken: tokenHash,
+      refreshTokenExpiresAt: '2099-01-01T00:00:00.000Z',
+    };
+    let vanished = false;
+    const service = new AuthService(db, stubRepo({
+      findByRefreshTokenHash: () => (vanished ? null : user),
+      findById: () => (vanished ? null : user),
+      isRefreshTokenUsed: () => false,
+      findUsedRefreshToken: () => null,
+    }));
+    const first = await service.refresh('token-cached');
+    expect(first).toBeDefined();
+    // 5 秒窗口内同 token 重放：缓存会话直接返回
+    await expect(service.refresh('token-cached')).resolves.toBeDefined();
+    // 缓存命中的用户已被删除：跳过缓存继续常规流程
+    vanished = true;
+    await expect(service.refresh('token-cached')).rejects.toThrow(UnauthorizedError);
+  });
+
+  it('returns in-transaction refresh claims for still-present rows', async () => {
+    const hash = bcrypt.hashSync('pass', 4);
+    const tokenHash = hashRefreshToken('token-tx-claim');
+    const user = {
+      ...record(hash, now),
+      refreshToken: tokenHash,
+      refreshTokenExpiresAt: '2099-01-01T00:00:00.000Z',
+    };
+    const { passwordHash: _passwordHash, ...safeUser } = user;
+    const session = {
+      token: 'tx-claim-token',
+      refreshToken: 'tx-claim-next',
+      expiresIn: 8 * 60 * 60,
+      user: safeUser as unknown as AuthSession['user'],
+    };
+    let reads = 0;
+    const service = new AuthService(db, stubRepo({
+      findByRefreshTokenHash: () => {
+        if (reads++ === 1) {
+          db.prepare(
+            `INSERT OR REPLACE INTO IdempotencyRecord (
+               id, key, type, status, responseJson, result, userId, clinicId, operation,
+               createdAt, updatedAt, deletedAt, expiresAt
+             ) VALUES (?, ?, 'GENERIC', 'COMPLETED', ?, '{}', ?, NULL, 'auth.refresh', ?, ?, NULL, ?)`,
+          ).run(randomUUID(), refreshClaimKey(tokenHash, user.id), encryptRefreshClaim(session, tokenHash), user.id, now, now, '2099-01-01T00:00:00.000Z');
+        }
+        return user;
+      },
+      findById: () => user,
+      isRefreshTokenUsed: () => false,
+      findUsedRefreshToken: () => null,
+    }));
+    await expect(service.refresh('token-tx-claim')).resolves.toMatchObject({ token: 'tx-claim-token' });
+  });
+
+  it('rejects expired refresh tokens without an expiry timestamp', async () => {
+    const hash = bcrypt.hashSync('pass', 4);
+    const tokenHash = hashRefreshToken('token-no-expiry');
+    const user = {
+      ...record(hash, now),
+      refreshToken: tokenHash,
+      refreshTokenExpiresAt: null,
+    };
+    const service = new AuthService(db, stubRepo({
+      findByRefreshTokenHash: () => user,
+      findById: () => user,
+      isRefreshTokenUsed: () => false,
+      findUsedRefreshToken: () => null,
+    }));
+    await expect(service.refresh('token-no-expiry')).rejects.toThrow(UnauthorizedError);
+  });
+
+  it('revokes a replayed family without a used-row user id', async () => {
+    const service = new AuthService(db, stubRepo({
+      findByRefreshTokenHash: () => null,
+      findUsedRefreshToken: () => null,
+      isRefreshTokenUsed: () => true,
+    }));
+    await expect(service.refresh('token-replayed')).rejects.toThrow(UnauthorizedError);
+  });
+
+  it('logs the retry failure when family revocation keeps throwing', async () => {
+    const logger = { error: vi.fn(), warn: vi.fn() };
+    let reads = 0;
+    const service = new AuthService(db, stubRepo({
+      findByRefreshTokenHash: () => null,
+      findUsedRefreshToken: () => {
+        reads += 1;
+        if (reads >= 2) throw 'boom-string';
+        return null;
+      },
+      isRefreshTokenUsed: () => true,
+    }), logger as unknown as Logger);
+    await expect(service.refresh('token-revoked-family')).rejects.toThrow(UnauthorizedError);
+    expect(logger.error).toHaveBeenCalledWith(
+      'session family revocation retry failed',
+      expect.objectContaining({ error: 'boom-string' }),
+    );
+  });
+
+  it('fails closed for users without any clinic scope', () => {
+    const hash = bcrypt.hashSync('pass', 4);
+    const user = { ...record(hash, now), clinicId: null, currentClinicId: null };
+    const service = new AuthService(db, stubRepo({
+      findById: () => user,
+      clinicMemberships: () => [],
+    }));
+    expect(service.isClinicAccessible(user.id, 'clinic-x')).toBe(false);
+  });
+
+  it('lists doctors without a clinic scope', () => {
+    const service = new AuthService(db);
+    const rows = service.listDoctors({
+      userId: 'user-admin-001',
+      clinicId: null,
+      role: 'BOSS',
+      traceId: 't',
+      now: () => new Date(),
+    });
+    expect(Array.isArray(rows)).toBe(true);
+  });
+
+  it('rejects switching to a membership clinic that no longer exists', async () => {
+    const hash = bcrypt.hashSync('pass', 4);
+    const user = record(hash, now);
+    const service = new AuthService(db, stubRepo({
+      findById: () => user,
+      clinicMemberships: () => [{ clinicId: 'clinic-ghost', name: 'Ghost', role: 'BOSS' }],
+    }));
+    expect(() => service.switchClinic(user.id, 'BOSS', 'clinic-ghost')).toThrow(NotFoundError);
+  });
+
+  it('rejects password changes when the user vanishes inside the transaction', async () => {
+    const hash = bcrypt.hashSync('old-pass', 4);
+    let reads = 0;
+    const service = new AuthService(db, stubRepo({
+      findById: () => (reads++ === 0 ? record(hash, now) : null),
+    }));
+    await expect(service.changePassword('user-toctou-001', 'old-pass', 'new-pass-123')).rejects.toThrow(NotFoundError);
+  });
 });
