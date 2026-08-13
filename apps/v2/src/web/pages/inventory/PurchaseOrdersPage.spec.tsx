@@ -275,8 +275,81 @@ describe('PurchaseOrdersPage', () => {
     expect(await screen.findByText('采购单已更新')).toBeDefined();
   });
 
-  it('deletes a purchase order after confirmation', async () => {
-    mockData();
+  it('edits a sparse purchase order row with null supplier and status', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/purchase-orders/review-stats') return {};
+      if (path === '/resources/purchaseOrders?page=1&pageSize=50') {
+        return {
+          items: [{ id: 'po-sparse', number: 'PO-SPARSE', supplierId: null, totalAmount: 100, status: null }],
+          total: 1, page: 1, pageSize: 50,
+        };
+      }
+      if (path === '/resources/suppliers?page=1&pageSize=100') {
+        return { items: [], total: 0, page: 1, pageSize: 200 };
+      }
+      if (path === '/resources/inventoryItems?page=1&pageSize=100') {
+        return { items: [{ id: 'i-1', name: '耗材' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/resources/purchaseOrderItems?orderId=po-sparse&page=1&pageSize=100') {
+        return {
+          items: [{ id: 'poi-1', itemId: 'i-1', name: '耗材', spec: 'S', quantity: 1, unitPrice: 100, subtotal: 100 }],
+          total: 1, page: 1, pageSize: 100,
+        };
+      }
+      return {};
+    });
+
+    render(<PurchaseOrdersPage />, { wrapper });
+    await screen.findByText('PO-SPARSE');
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    await waitFor(() => {
+      expect((screen.getByLabelText('采购项目') as HTMLSelectElement).value).toBe('i-1');
+    });
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/purchaseOrders/po-sparse', expect.objectContaining({ method: 'PATCH' }));
+    });
+    const patchCall = vi.mocked(apiRequest).mock.calls.find(
+      ([path, options]) => path === '/resources/purchaseOrders/po-sparse' && options?.method === 'PATCH',
+    );
+    const body = JSON.parse(String(patchCall?.[1]?.body)) as Record<string, unknown>;
+    expect(body.supplierId).toBeUndefined();
+    expect(body.status).toBe('');
+    expect(body.number).toBe('PO-SPARSE');
+  });
+
+  it('blocks saving while edit detail rows are still loading', async () => {
+    let resolveItems: (value: unknown) => void = () => {};
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/purchase-orders/review-stats') return {};
+      if (path === '/resources/purchaseOrders?page=1&pageSize=50') {
+        return {
+          items: [{ id: 'po-load', number: 'PO-LOAD', supplierId: 's-1', totalAmount: 200, status: 'PENDING' }],
+          total: 1, page: 1, pageSize: 50,
+        };
+      }
+      if (path === '/resources/suppliers?page=1&pageSize=100') {
+        return { items: [{ id: 's-1', name: '供应商甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/resources/inventoryItems?page=1&pageSize=100') {
+        return { items: [], total: 0, page: 1, pageSize: 200 };
+      }
+      if (path === '/resources/purchaseOrderItems?orderId=po-load&page=1&pageSize=100') {
+        return new Promise((resolve) => { resolveItems = resolve; });
+      }
+      return {};
+    });
+
+    render(<PurchaseOrdersPage />, { wrapper });
+    await screen.findByText('PO-LOAD');
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    fireEvent.click(screen.getByText('保存'));
+    expect(await screen.findByText('明细加载中，请稍候再保存')).toBeDefined();
+    resolveItems({ items: [], total: 0, page: 1, pageSize: 100 });
+  });
+
+  it('deletes a purchase order after confirmation', async () => {    mockData();
     render(<PurchaseOrdersPage />, { wrapper });
     await screen.findByText('PO-1');
     fireEvent.click(screen.getByRole('button', { name: '删除' }));

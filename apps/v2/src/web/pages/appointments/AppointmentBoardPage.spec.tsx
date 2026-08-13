@@ -42,6 +42,73 @@ describe('AppointmentBoardPage', () => {
     expect(vi.mocked(apiRequest)).toHaveBeenCalledWith(`/appointments/by-date?date=${today}`);
   });
 
+  it('renders sparse rows with null status without crashing', async () => {
+    vi.mocked(apiRequest).mockResolvedValue({
+      items: [{ id: 'a1', patientId: 'P1', doctorId: null, startTime: '2026-08-04T09:00:00.000Z', status: null }],
+      total: 1,
+      page: 1,
+      pageSize: 200,
+    });
+    render(<AppointmentBoardPage />, { wrapper });
+    await waitFor(() => expect(screen.queryByText('预约看板加载中...')).toBeNull());
+    // 空状态列文案与回退标签
+    expect(screen.getAllByText('暂无预约').length).toBeGreaterThan(0);
+    expect(vi.mocked(apiRequest)).toHaveBeenCalled();
+  });
+
+  it('ignores drag interactions while the board is stale', async () => {
+    const today = todayLocalDate();
+    let resolveNew: (value: unknown) => void = () => {};
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === `/appointments/by-date?date=${today}`) {
+        return {
+          items: [{ id: 'a1', patientId: 'P1', doctorId: 'D1', startTime: '2026-08-04T09:00:00.000Z', status: 'BOOKED' }],
+          total: 1,
+          page: 1,
+          pageSize: 200,
+        };
+      }
+      return new Promise((resolve) => { resolveNew = resolve; });
+    });
+    render(<AppointmentBoardPage />, { wrapper });
+    await screen.findByText('P1');
+    fireEvent.change(screen.getByLabelText('日期'), { target: { value: '2026-08-05' } });
+    // 新日期查询挂起 → placeholder 旧数据 → stale
+    await waitFor(() => expect(document.querySelector('.page')?.getAttribute('aria-busy')).toBe('true'));
+    const card = document.querySelector('[data-id="a1"]') as HTMLElement;
+    const booked = document.querySelector('[data-status="BOOKED"]') as HTMLElement;
+    fireEvent.dragStart(card, { dataTransfer: {} });
+    fireEvent.dragOver(booked, { dataTransfer: {} });
+    fireEvent.drop(booked, { dataTransfer: {} });
+    expect(vi.mocked(apiRequest)).not.toHaveBeenCalledWith('/appointments/a1/status', expect.anything());
+    resolveNew({ items: [], total: 0, page: 1, pageSize: 200 });
+  });
+
+  it('keeps the drag-over highlight when leaving a different column and skips same-status drops', async () => {
+    vi.mocked(apiRequest).mockResolvedValue({
+      items: [{ id: 'a1', patientId: 'P1', doctorId: 'D1', startTime: '2026-08-04T09:00:00.000Z', status: 'BOOKED' }],
+      total: 1,
+      page: 1,
+      pageSize: 200,
+    });
+    render(<AppointmentBoardPage />, { wrapper });
+    await screen.findByText('P1');
+    const booked = document.querySelector('[data-status="BOOKED"]') as HTMLElement;
+    const cancelled = document.querySelector('[data-status="CANCELLED"]') as HTMLElement;
+    fireEvent.dragOver(booked, { dataTransfer: {} });
+    expect(booked.className).toContain('drag-over');
+    fireEvent.dragLeave(cancelled);
+    expect(booked.className).toContain('drag-over'); // 离开其他列不清除
+    fireEvent.dragLeave(booked);
+    expect(booked.className).not.toContain('drag-over'); // 离开当前列才清除
+
+    // 拖到同状态列 → 无状态变更请求
+    const card = document.querySelector('[data-id="a1"]') as HTMLElement;
+    fireEvent.dragStart(card, { dataTransfer: { setData: vi.fn() } });
+    fireEvent.drop(booked, { dataTransfer: { setData: vi.fn() } });
+    expect(vi.mocked(apiRequest)).not.toHaveBeenCalledWith('/appointments/a1/status', expect.anything());
+  });
+
   it('filters the board by selected date and requests the by-date endpoint', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/appointments/by-date?date=2026-08-04') {
