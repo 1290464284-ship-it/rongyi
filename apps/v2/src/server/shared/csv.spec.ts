@@ -67,4 +67,15 @@ describe('shared CSV helpers', () => {
     expect(headers['content-type']).toBe('text/csv; charset=utf-8');
     expect(headers['content-disposition']).toBe('attachment; filename="rows.csv"');
   });
+
+  it('forwards row serialization errors to the stream callback', async () => {
+    const stream = createCsvStream<{ id: unknown }>([{ key: 'id' }]);
+    const error = new Promise<Error>((resolve) => {
+      stream.on('error', resolve);
+    });
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    stream.write({ id: circular });
+    await expect(error).resolves.toBeInstanceOf(Error);
+  });
 });

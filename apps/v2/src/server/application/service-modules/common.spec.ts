@@ -45,6 +45,7 @@ describe('generateDocumentNumber', () => {
 
 describe('role management hierarchy', () => {
   it('defines a strict three-level hierarchy', () => {
+    expect(ROLE_MANAGEMENT_LEVEL).toEqual({ BOSS: 3, ADMIN: 2, DOCTOR: 1 });
     expect(ROLE_MANAGEMENT_LEVEL.BOSS).toBeGreaterThan(ROLE_MANAGEMENT_LEVEL.ADMIN);
     expect(ROLE_MANAGEMENT_LEVEL.ADMIN).toBeGreaterThan(ROLE_MANAGEMENT_LEVEL.DOCTOR);
   });

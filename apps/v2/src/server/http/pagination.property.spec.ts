@@ -34,7 +34,7 @@ describe('parsePagination property-based', () => {
           fc.constant('Infinity'),
         ),
         (page) => {
-          expect(() => parsePagination(request({ page, pageSize: '1' }))).toThrow(ValidationError);
+          expect(() => parsePagination(request({ page, pageSize: '1' }))).toThrow('page must be a positive integer');
         },
       ),
       { numRuns: 50 },
@@ -50,7 +50,9 @@ describe('parsePagination property-based', () => {
           fc.constant('Infinity'),
         ),
         (pageSize) => {
-          expect(() => parsePagination(request({ page: '1', pageSize }))).toThrow(ValidationError);
+          expect(() => parsePagination(request({ page: '1', pageSize }))).toThrow(
+            'pageSize must be an integer between 1 and 200',
+          );
         },
       ),
       { numRuns: 50 },
@@ -71,6 +73,7 @@ describe('parsePagination property-based', () => {
   });
 
   it('rejects pages above the hard cap and treats blank or missing values as defaults', () => {
+    expect(parsePagination(request({ page: '1000000', pageSize: '200' }))).toEqual({ page: 1_000_000, pageSize: 200 });
     expect(() => parsePagination(request({ page: '1000001', pageSize: '1' }))).toThrow('page must be <= 1000000');
     expect(parsePagination(request({ page: ' ', pageSize: ' ' }))).toEqual({ page: 1, pageSize: 20 });
     expect(parsePagination(request({ page: null, pageSize: null }))).toEqual({ page: 1, pageSize: 20 });

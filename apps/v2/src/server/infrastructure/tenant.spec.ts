@@ -19,6 +19,8 @@ describe('tenant helpers', () => {
     expect(tenantMatches('clinic-1', 'clinic-1')).toBe(true);
     expect(tenantMatches('clinic-2', 'clinic-1')).toBe(false);
     expect(tenantMatches('clinic-2', null)).toBe(true);
+    expect(tenantMatches(null, 'null')).toBe(false);
+    expect(tenantMatches(undefined, 'undefined')).toBe(false);
   });
 
   it('matches arbitrary non-null clinic ids only when equal', () => {

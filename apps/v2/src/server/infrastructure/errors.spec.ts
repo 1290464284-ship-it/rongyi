@@ -41,6 +41,16 @@ describe('errors', () => {
     const tooLarge = new Error('request entity too large') as Error & { type?: string };
     tooLarge.type = 'entity.too.large';
     expect(asAppError(tooLarge)).toMatchObject({ status: 413, code: 'PAYLOAD_TOO_LARGE', message: '请求内容过大' });
+
+    const bareSyntaxError = new SyntaxError('Unexpected token');
+    expect(asAppError(bareSyntaxError)).toMatchObject({ status: 500, code: 'INTERNAL_ERROR' });
+    const plainParseTyped = new Error('Unexpected token') as Error & { type?: string };
+    plainParseTyped.type = 'entity.parse.failed';
+    expect(asAppError(plainParseTyped)).toMatchObject({ status: 500, code: 'INTERNAL_ERROR' });
+    const wrongParseType = new SyntaxError('Unexpected token') as SyntaxError & { type?: string };
+    wrongParseType.type = 'other';
+    expect(asAppError(wrongParseType)).toMatchObject({ status: 500, code: 'INTERNAL_ERROR' });
+    expect(asAppError({ type: 'entity.too.large' })).toMatchObject({ status: 500, code: 'INTERNAL_ERROR' });
   });
 
   it('normalizes CORS rejections and systematic SQLite errors', () => {
@@ -54,6 +64,9 @@ describe('errors', () => {
       error.code = code;
       expect(isSystematicSqliteError(error)).toBe(true);
     }
+    const prefixed = new Error('storage') as Error & { code?: string };
+    prefixed.code = 'XSQLITE_BUSY';
+    expect(isSystematicSqliteError(prefixed)).toBe(false);
     expect(isSystematicSqliteError(new Error('storage'))).toBe(false);
     expect(isSystematicSqliteError('not-an-error')).toBe(false);
   });
