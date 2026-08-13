@@ -614,6 +614,26 @@ describe('InventoryWorkflowPage', () => {
     expect(screen.getByText('补货建议超过 100 条，仅显示部分数据')).toBeDefined();
   });
 
+  it('renders missing panel item arrays and stocktake item errors', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { total: 1 };
+      if (path === '/resources/processingOrders?page=1&pageSize=100') return { total: 1 };
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') return { total: 1 };
+      if (path === '/stocktakes?page=1&pageSize=200') {
+        return { items: [{ id: 'st-1', number: 'PD-001', status: 'IN_PROGRESS', startedById: 'user-1', startedAt: '2026-08-05T10:00:00.000Z', itemCount: 1, differenceCount: 0 }], total: 1 };
+      }
+      if (path === '/stocktakes/st-1/items') throw new Error('stocktake items failed');
+      return {};
+    });
+    render(<InventoryWorkflowPage />, { wrapper });
+    expect(await screen.findByText('暂无采购明细')).toBeDefined();
+    expect(screen.getByText('暂无加工单')).toBeDefined();
+    expect(screen.getByText('补货建议超过 100 条，仅显示部分数据')).toBeDefined();
+    fireEvent.click(await screen.findByRole('button', { name: '录入' }));
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+  });
+
   it('renders fully sparse purchase, item, and suggestion rows without crashing', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/purchaseOrders?page=1&pageSize=100') {
