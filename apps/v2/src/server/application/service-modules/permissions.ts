@@ -219,6 +219,8 @@ export class UserPermissionService {
       seen.add(permission);
       normalized.push({ permission, allowed: parsePermissionBoolean(input.allowed) });
     }
+    const clinicId = context.clinicId;
+    if (!clinicId) throw new ValidationError('clinicId is required for permission updates');
 
     const now = context.now().toISOString();
     const run = this.db.transaction(() => {
@@ -230,7 +232,7 @@ export class UserPermissionService {
          VALUES (?, ?, ?, ?, ?, ?, NULL)`,
       );
       for (const input of normalized) {
-        insert.run(userId, input.permission, input.allowed ? 1 : 0, context.clinicId ?? null, now, now);
+        insert.run(userId, input.permission, input.allowed ? 1 : 0, clinicId, now, now);
       }
     });
     run();
@@ -310,6 +312,8 @@ export class RoleModulePermissionService {
       seen.add(resource);
       normalized.push({ resource, allowed: parsePermissionBoolean(input.allowed) });
     }
+    const clinicId = context.clinicId;
+    if (!clinicId) throw new ValidationError('clinicId is required for permission updates');
 
     const now = context.now().toISOString();
     const run = this.db.transaction(() => {
@@ -322,7 +326,7 @@ export class RoleModulePermissionService {
          VALUES (?, ?, ?, 'access', ?, ?, ?, ?, NULL)`,
       );
       for (const input of normalized) {
-        insert.run(randomUUID(), role, input.resource, input.allowed ? 1 : 0, context.clinicId ?? null, now, now);
+        insert.run(randomUUID(), role, input.resource, input.allowed ? 1 : 0, clinicId, now, now);
       }
     });
     run();

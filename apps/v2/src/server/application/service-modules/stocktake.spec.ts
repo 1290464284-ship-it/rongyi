@@ -267,4 +267,47 @@ describe('StocktakeService', () => {
     const k = items.find((row) => row.itemId === 'stock-item-k');
     expect(k).toMatchObject({ systemStock: 9, countedStock: 11, difference: 2, name: '物品K', code: 'ST-K' });
   });
+
+  it('start：非字符串单号与缺失 clinicId 均按空/null 处理', () => {
+    expect(() => service.start({ number: 42 as unknown as string }, context)).toThrow(ValidationError);
+    const result = service.start({ number: 'PD-NOCLINIC' }, { ...context, clinicId: null });
+    expect(db.prepare('SELECT clinicId FROM Stocktake WHERE id = ?').get(String(result.id))).toEqual({ clinicId: null });
+    expect((db.prepare('SELECT clinicId FROM StocktakeItem WHERE stocktakeId = ? LIMIT 1').get(String(result.id)) as { clinicId: string | null }).clinicId)
+      .toBeNull();
+  });
+
+  it('recordCount：盘点明细或库存物品不存在时返回 NotFound', () => {
+    insertItem('stock-item-z', 'ST-Z', '物品Z', 1);
+    const { id } = service.start({ number: 'PD-GHOST' }, context);
+    expect(() => service.recordCount(String(id), 'stock-item-ghost', 5, context)).toThrow(NotFoundError);
+    db.prepare('DELETE FROM InventoryItem WHERE id = ?').run('stock-item-z');
+    expect(() => service.recordCount(String(id), 'stock-item-z', 5, context)).toThrow(NotFoundError);
+  });
+
+  it('lock：缺少开始时间的盘点单不可锁定', () => {
+    insertItem('stock-item-lock', 'ST-L', '锁定物品', 1);
+    const { id } = service.start({ number: 'PD-NOSTART' }, context);
+    db.prepare('UPDATE Stocktake SET startedAt = NULL WHERE id = ?').run(String(id));
+    expect(() => service.lock(String(id), context)).toThrow('盘点单缺少开始时间');
+  });
+
+  it('complete：batchManaged 为空的物品按非批号商品处理', () => {
+    insertItem('stock-item-orphan', 'ST-O', '孤儿物品', 4);
+    const { id } = service.start({ number: 'PD-ORPHAN' }, context);
+    service.recordCount(String(id), 'stock-item-orphan', 6, context);
+    db.prepare('UPDATE InventoryItem SET batchManaged = NULL WHERE id = ?').run('stock-item-orphan');
+    service.lock(String(id), context);
+    const completed = service.complete(String(id), context);
+    expect(completed).toMatchObject({ adjustedCount: 1 });
+    expect((completed.items as Array<Record<string, unknown>>)[0]).toMatchObject({
+      itemId: 'stock-item-orphan',
+      name: '孤儿物品',
+    });
+  });
+
+  it('assertNotLocked / lockedItemIds：无诊所参数时按未锁定空集合处理', () => {
+    insertItem('stock-item-free', 'ST-FREE', '自由物品', 2);
+    expect(service.lockedItemIds(undefined)).toEqual([]);
+    service.assertNotLocked('stock-item-free', undefined);
+  });
 });
