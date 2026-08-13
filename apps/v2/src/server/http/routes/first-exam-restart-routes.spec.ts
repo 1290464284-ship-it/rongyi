@@ -126,5 +126,7 @@ describe('first exam restart routes', () => {
       const res = await request(app).post(path);
       expect([200, 400, 404]).toContain(res.status);
     }
+    const history = await request(app).get('/api/v2/first-exams/history');
+    expect([200, 400, 404]).toContain(history.status);
   });
 });

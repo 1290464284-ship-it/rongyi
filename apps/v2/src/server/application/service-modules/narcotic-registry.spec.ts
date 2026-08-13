@@ -98,6 +98,22 @@ describe('NarcoticRegistryService', () => {
       itemId: 'inventory-demo-001',
       quantity: 1.5,
     }, context)).toThrow(ValidationError);
+    expect(() => narcoticService().recordNarcotic({
+      recordDate: 123,
+      itemId: 'inventory-demo-001',
+      quantity: 1,
+    } as never, context)).toThrow(ValidationError);
+    expect(() => narcoticService().recordNarcotic({
+      recordDate: '2026-08-05',
+      itemId: 123,
+      quantity: 1,
+    } as never, context)).toThrow(ValidationError);
+    expect(() => narcoticService().recordNarcotic({
+      recordDate: '2026-08-05',
+      itemId: 'inventory-demo-001',
+      quantity: 1,
+      balanceBefore: 'abc',
+    } as never, context)).toThrow(ValidationError);
   });
 
   it('updates editable fields and preserves patientId/doctorId', () => {
