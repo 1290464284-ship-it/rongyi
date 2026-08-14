@@ -112,6 +112,22 @@ describe('HTTP app', () => {
     expect(dev.headers['access-control-allow-origin']).toBe('http://localhost:5180');
   });
 
+  it('allows a custom V2_WEB_DEV_PORT origin as a CORS origin in development', async () => {
+    // smoke:all 随机 Web 端口场景：显式配置的 V2_WEB_DEV_PORT 必须进入开发白名单
+    const previous = process.env.V2_WEB_DEV_PORT;
+    process.env.V2_WEB_DEV_PORT = '35180';
+    try {
+      const dev = await request(app)
+        .get('/api/v2/health')
+        .set('Origin', 'http://localhost:35180')
+        .expect(200);
+      expect(dev.headers['access-control-allow-origin']).toBe('http://localhost:35180');
+    } finally {
+      if (previous === undefined) delete process.env.V2_WEB_DEV_PORT;
+      else process.env.V2_WEB_DEV_PORT = previous;
+    }
+  });
+
   it('uploads and serves allowed files', async () => {
     const upload = await request(app)
       .post('/api/v2/files')

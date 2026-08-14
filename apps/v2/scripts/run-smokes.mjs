@@ -110,6 +110,11 @@ async function main() {
   // 未显式指定端口时动态挑选空闲端口，避免固定 3180/5180 撞上 Windows 保留端口段。
   process.env.V2_PORT = String(apiPort);
   process.env.V2_WEB_DEV_PORT = String(webPort);
+  // 客户端冒烟脚本默认打 3180/5180（api-smoke 的 V2_BASE_URL、ui-smoke 的 V2_WEB_URL 兜底），
+  // 随机端口模式下必须把实际端口传播过去，否则 smoke:api / smoke:ui 会 ECONNREFUSED。
+  // 该随机端口路径此前未被任何流水线实际跑过（内部发布流程按审计从未运行），属潜在缺陷。
+  process.env.V2_BASE_URL = process.env.V2_BASE_URL ?? `http://localhost:${apiPort}/api/v2`;
+  process.env.V2_WEB_URL = process.env.V2_WEB_URL ?? `http://localhost:${webPort}`;
   apiUrl = apiUrl || `http://localhost:${apiPort}/api/v2/health`;
   webUrl = webUrl || `http://localhost:${webPort}`;
   for (const [label, port] of [['API', apiPort], ['web', webPort]]) {

@@ -31,12 +31,14 @@ if (!fs.existsSync(serverCjs)) {
 
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-electron-smoke-'));
 const userDataDir = path.join(dataDir, 'user-data');
-const webPort = 5180;
+// V2_SKIP_WEB_START=1（smoke:all）时使用调用方传入的 V2_WEB_DEV_PORT/V2_WEB_URL
+// （可能指向随机空闲端口），否则默认 5180 并自启 vite。
+const webPort = Number(process.env.V2_WEB_DEV_PORT) || 5180;
 const adminPassword = 'ElectronSmokePass123';
 const env = {
   ...process.env,
   V2_WEB_DEV_PORT: String(webPort),
-  V2_WEB_URL: `http://localhost:${webPort}`,
+  V2_WEB_URL: process.env.V2_WEB_URL || `http://localhost:${webPort}`,
   V2_ADMIN_PASSWORD: adminPassword,
   V2_DATA_DIR: dataDir,
   V2_BACKUP_DIR: path.join(dataDir, 'backups'),

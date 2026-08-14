@@ -81,6 +81,8 @@ describe('electron api process', () => {
     process.env.V2_WECHAT_API_URL = 'https://wechat-gateway.example/send';
     process.env.V2_WECHAT_APP_SECRET = 'should-not-leak-wechat-secret';
     process.env.V2_ADMIN_PASSWORD = 'should-not-leak-admin';
+    process.env.V2_WEB_DEV_PORT = '35180';
+    process.env.V2_WEB_URL = 'http://localhost:35180';
     try {
       const electron = {
         app: { getPath: () => 'userData', isPackaged: false },
@@ -110,6 +112,9 @@ describe('electron api process', () => {
       expect(env.V2_PORT).toBe('3180');
       expect(env.NODE_ENV).toBe('production');
       expect(env.V2_ELECTRON_RENDERER).toBe('1');
+      // dev CORS 白名单依赖的 Web 开发端口/来源必须透传给 API 子进程
+      expect(env.V2_WEB_DEV_PORT).toBe('35180');
+      expect(env.V2_WEB_URL).toBe('http://localhost:35180');
 
       const devEnv = apiEnv.buildApiChildEnv({
         userDataDir: 'C:\\user-data',
@@ -120,6 +125,8 @@ describe('electron api process', () => {
       });
       expect(devEnv.V2_ADMIN_PASSWORD).toBe('should-not-leak-admin');
       expect(devEnv.V2_WECHAT_APP_SECRET).toBeUndefined();
+      expect(devEnv.V2_WEB_DEV_PORT).toBe('35180');
+      expect(devEnv.V2_WEB_URL).toBe('http://localhost:35180');
     } finally {
       if (previousDbPath === undefined) delete process.env.V2_DB_PATH;
       else process.env.V2_DB_PATH = previousDbPath;

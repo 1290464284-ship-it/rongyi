@@ -16,7 +16,7 @@ const logDir = path.join(dataDir, 'logs');
 const port = 43000 + Math.floor(Math.random() * 1000);
 // 模拟库由 simulate:clinic-data 用固定默认密码生成；不读外层 V2_ADMIN_PASSWORD，
 // 否则并入 smoke:all 时会因外层 smoke 密码与库内管理员不一致而 401。
-const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'v2-sim-admin-password';
+const adminPassword = 'v2-sim-admin-password';
 
 const sourceSimDir = resolveSimulatedDataDir();
 if (!sourceSimDir) {
