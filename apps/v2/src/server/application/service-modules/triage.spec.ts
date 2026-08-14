@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -382,5 +382,79 @@ describe('TriageService', () => {
       startTime: '2099-12-02T09:30:00.000Z',
       endTime: '2099-12-02T10:30:00.000Z',
     }, context)).toThrow('医生或椅位在该时段已被占用');
+  });
+
+  it('rethrows unexpected doctor-check errors unchanged', () => {
+    insertRegistration('reg-triage-doctor-err');
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('SELECT u.id FROM User u')) throw new Error('db exploded');
+      return originalPrepare(sql);
+    });
+    try {
+      expect(() => new TriageService(db).triage('reg-triage-doctor-err', { doctorId: 'user-x' }, context))
+        .toThrow('db exploded');
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('rejects triage when the CAS update matches no rows', () => {
+    insertRegistration('reg-triage-cas');
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE Registration SET')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      expect(() => new TriageService(db).triage('reg-triage-cas', {}, context)).toThrow(ConflictError);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('falls back to an empty doctor string in the conflict check when both input and row lack a doctor', () => {
+    db.prepare(
+      `INSERT INTO Appointment (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, chairId, startTime, endTime, status, type
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', NULL, NULL, ?, ?, 'BOOKED', 'REGULAR')`,
+    ).run('appt-null-doctor', context.clinicId, now, now, '2099-02-10T09:00:00.000Z', '2099-02-10T10:00:00.000Z');
+    const service = new TriageService(db);
+    const result = service.rescheduleAppointment('appt-null-doctor', {
+      startTime: '2099-02-11T09:00:00.000Z',
+      endTime: '2099-02-11T10:00:00.000Z',
+    }, context);
+    expect(result.startTime).toBe('2099-02-11T09:00:00.000Z');
+  });
+
+  it('rejects rescheduling when the CAS update matches no rows', () => {
+    insertAppointment('appt-cas');
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE Appointment SET')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      expect(() => new TriageService(db).rescheduleAppointment('appt-cas', {
+        startTime: '2099-02-11T09:00:00.000Z',
+        endTime: '2099-02-11T10:00:00.000Z',
+      }, context)).toThrow('已取消或未到的预约不能改期');
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('tracks the reschedule write with a null clinic when the context has no clinic', () => {
+    insertAppointment('appt-null-clinic');
+    const result = new TriageService(db).rescheduleAppointment('appt-null-clinic', {
+      startTime: '2099-02-11T09:00:00.000Z',
+      endTime: '2099-02-11T10:00:00.000Z',
+    }, { ...context, clinicId: null });
+    expect(result.startTime).toBe('2099-02-11T09:00:00.000Z');
   });
 });
