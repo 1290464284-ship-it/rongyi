@@ -59,7 +59,7 @@ describe('DesktopSettingsPage', () => {
     expect(screen.getByText('API 已重启')).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: '检查更新' }));
-    expect(await screen.findByText('发现新版本 2.0.0，点击"下载更新"按钮开始下载')).toBeDefined();
+    expect(await screen.findByText('发现新版本 2.0.0，正在自动下载…')).toBeDefined();
     expect(screen.getByRole('button', { name: '下载更新' })).toBeDefined();
     fireEvent.click(screen.getByRole('button', { name: '下载更新' }));
     expect(bridge.downloadUpdate).toHaveBeenCalled();
@@ -131,7 +131,7 @@ describe('DesktopSettingsPage', () => {
     updateCallback?.({ type: 'progress' });
     expect(await screen.findByText('更新下载中：%')).toBeDefined();
     updateCallback?.({ type: 'available' });
-    expect(await screen.findByText('发现新版本 ，点击"下载更新"按钮开始下载')).toBeDefined();
+    expect(await screen.findByText('发现新版本 ，正在自动下载…')).toBeDefined();
     updateCallback?.({ type: 'error' });
     expect(await screen.findByText('更新失败')).toBeDefined();
     apiCallback?.({});
@@ -144,7 +144,7 @@ describe('DesktopSettingsPage', () => {
     expect(await screen.findByText('更新下载中：42%')).toBeDefined();
     expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('42');
     updateCallback?.({ type: 'available', version: '2.2.0' });
-    expect(await screen.findByText('发现新版本 2.2.0，点击"下载更新"按钮开始下载')).toBeDefined();
+    expect(await screen.findByText('发现新版本 2.2.0，正在自动下载…')).toBeDefined();
     expect(screen.queryByRole('progressbar')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '下载更新' }));
     expect(bridge.downloadUpdate).toHaveBeenCalled();
@@ -224,7 +224,7 @@ describe('DesktopSettingsPage', () => {
     await screen.findByText('3180');
 
     fireEvent.click(screen.getByRole('button', { name: '检查更新' }));
-    expect(await screen.findByText('发现新版本 3.0.0，点击"下载更新"按钮开始下载')).toBeDefined();
+    expect(await screen.findByText('发现新版本 3.0.0，正在自动下载…')).toBeDefined();
     fireEvent.click(screen.getByRole('button', { name: '下载更新' }));
     expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
 
@@ -261,7 +261,7 @@ describe('DesktopSettingsPage', () => {
     await screen.findByText('3180');
 
     fireEvent.click(screen.getByRole('button', { name: '检查更新' }));
-    expect(await screen.findByText('发现新版本 undefined，点击"下载更新"按钮开始下载')).toBeDefined();
+    expect(await screen.findByText('发现新版本 undefined，正在自动下载…')).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: '检查更新' }));
     expect(await screen.findByText('正在检查更新')).toBeDefined();
@@ -279,7 +279,7 @@ describe('DesktopSettingsPage', () => {
     await screen.findByText('3180');
 
     fireEvent.click(screen.getByRole('button', { name: '检查更新' }));
-    expect(await screen.findByText('发现新版本 4.0.0，点击"下载更新"按钮开始下载')).toBeDefined();
+    expect(await screen.findByText('发现新版本 4.0.0，正在自动下载…')).toBeDefined();
     fireEvent.click(screen.getByRole('button', { name: '下载更新' }));
     expect(await screen.findByText('当前环境不支持自动下载更新')).toBeDefined();
 
