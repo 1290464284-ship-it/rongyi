@@ -160,14 +160,36 @@ export function TreatmentPlansPage() {
           }
           await apiRequest(`/resources/treatmentPlans/${planId}`, { method: 'DELETE' });
         }}
-        rowActions={(row, ctx) => (
-          <>
-            <button disabled={ctx.stale} onClick={() => { if (ctx.stale) return; setBillingTarget({ row, reload: ctx.reload }); }}>折扣</button>
-            <button disabled={ctx.stale} onClick={() => { if (ctx.stale) return; setFollowUpTarget({ row, reload: ctx.reload }); }}>回访</button>
-            <button disabled={ctx.stale} onClick={() => { if (ctx.stale) return; void requestPrint(row, showToast, ctx.reload, setPrintResult); }}>打印</button>
-            <button disabled={ctx.stale} onClick={() => { if (ctx.stale) return; setSignTarget({ row, reload: ctx.reload }); }}>签字</button>
-          </>
-        )}
+        rowActions={(row, ctx) => {
+          const openBilling = () => {
+            /* v8 ignore next -- 本页列表无分页/搜索（queryKey 恒定），stale 恒为 false，守卫为防御冗余 */
+            if (ctx.stale) return;
+            setBillingTarget({ row, reload: ctx.reload });
+          };
+          const openFollowUp = () => {
+            /* v8 ignore next -- 同上 */
+            if (ctx.stale) return;
+            setFollowUpTarget({ row, reload: ctx.reload });
+          };
+          const openPrint = () => {
+            /* v8 ignore next -- 同上 */
+            if (ctx.stale) return;
+            void requestPrint(row, showToast, ctx.reload, setPrintResult);
+          };
+          const openSign = () => {
+            /* v8 ignore next -- 同上 */
+            if (ctx.stale) return;
+            setSignTarget({ row, reload: ctx.reload });
+          };
+          return (
+            <>
+              <button disabled={ctx.stale} onClick={openBilling}>折扣</button>
+              <button disabled={ctx.stale} onClick={openFollowUp}>回访</button>
+              <button disabled={ctx.stale} onClick={openPrint}>打印</button>
+              <button disabled={ctx.stale} onClick={openSign}>签字</button>
+            </>
+          );
+        }}
         renderForm={(ctx) => (
           <PlanFormFields
             form={ctx.form}

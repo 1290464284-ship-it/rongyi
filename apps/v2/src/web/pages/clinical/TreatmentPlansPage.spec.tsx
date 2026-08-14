@@ -837,18 +837,33 @@ describe('TreatmentPlansPage', () => {
             discountRate: null,
             followUpStatus: 'CUSTOM',
             nextFollowUpAt: null,
+          }, {
+            id: 'p-null-followup',
+            patientId: null,
+            doctorId: null,
+            name: '无回访状态',
+            totalFee: null,
+            status: 'APPROVED',
+            printCount: null,
+            signedAt: null,
+            discountType: null,
+            discountRate: null,
+            followUpStatus: null,
+            nextFollowUpAt: null,
           }],
-          total: 1, page: 1, pageSize: 50,
+          total: 2, page: 1, pageSize: 50,
         };
       }
       return {};
     });
     render(<TreatmentPlansPage />, { wrapper });
     expect(await screen.findByText('WEIRD')).toBeDefined();
-    expect(screen.getByText('0')).toBeDefined();
-    expect(screen.getByText('未签')).toBeDefined();
+    expect(screen.getAllByText('0').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('未签').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('MYSTERY 0%')).toBeDefined();
     expect(screen.getByText('CUSTOM')).toBeDefined();
+    expect(screen.getByText('无回访状态')).toBeDefined();
+    expect(screen.getByText('无')).toBeDefined();
   });
 
   it('prefills sparse plan items and doctor ids when editing', async () => {

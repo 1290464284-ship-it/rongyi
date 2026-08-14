@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-08-14T02:07:00.478Z",
-  "total": 218,
+  "generatedAt": "2026-08-14T02:14:44.635Z",
+  "total": 222,
   "perFile": {
     "src\\web\\pages\\system\\SystemOperationsPage.tsx": 3,
     "src\\web\\pages\\patients\\PatientTimelinePage.tsx": 4,
@@ -12,6 +12,7 @@
     "src\\web\\pages\\clinical\\CephalometricPage.tsx": 3,
     "src\\web\\pages\\clinical\\ImagingPage.tsx": 3,
     "src\\web\\pages\\clinical\\MedicalRecordsPage.tsx": 3,
+    "src\\web\\pages\\clinical\\TreatmentPlansPage.tsx": 4,
     "src\\web\\pages\\clinical\\TreatmentsPage.tsx": 2,
     "src\\web\\pages\\analytics\\AnalyticsDashboardPage.tsx": 1,
     "src\\web\\first-exams\\TeethMarkDialog.tsx": 1,

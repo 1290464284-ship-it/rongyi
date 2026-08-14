@@ -95,6 +95,7 @@ Web **96.82% / 92.94% / 98.66% / 98.58%**，双门禁全绿——覆盖率口径
 | `src/web/first-exams/TeethMarkDialog.tsx`（selectTooth） | `if (tooth) setSelectedToothId(...)` 未命中守卫 | 图表按钮仅渲染 teeth 列表内存在的编号（同一数据源 filter 而来），lookup 恒命中，防御冗余 |
 | `src/web/pages/system/SystemOperationsPage.tsx`（runSearch generation 守卫） | `generation === searchGenerationRef.current` 的未命中分支 | searchBusy 状态 + 按钮 disabled 已完全串行化搜索（同一时间最多一个在途请求），过期响应不可达；import/cleanup 的 busy 守卫由 spec「guards import and cleanup against same-tick double submits」真实覆盖 |
 | `src/web/pages/inventory/InventoryWorkflowPage.tsx`（applySuggestions / StatusFlowSelect / 采购状态列） | `if (!selectedSuggestions.length) return`、`if (next) run(...)` 与 `PURCHASE_STATUS_LABELS[...] ?? String(...)` 兜底 | 应用按钮在 0 选中时 disabled；占位项是受控 value（重选 '' 不派发 change）；pendingPurchaseRows 已过滤为恒 PENDING（标签查表恒命中）——均为防御冗余 |
+| `src/web/pages/clinical/TreatmentPlansPage.tsx`（rowActions / 划价对话框标题） | `if (ctx.stale) return` 守卫与 `billingTarget ? ... : '明细与划价'` 的空值分支 | 本页列表无分页/搜索（queryKey 恒定），stale 恒为 false，守卫防御冗余；对话框标题三元在关闭态（billingTarget null）每次渲染都执行空值分支（行为即默认标题），v8 未为 JSX 属性表达式入账，属采集缺陷 |
 
 ## 5. 其他已知取舍
 
