@@ -34,7 +34,9 @@ describe('main bootstrap', () => {
     readyHandlers.length = 0;
     roots.length = 0;
     vi.resetModules();
-    document.body.innerHTML = '';
+    // 清空 jsdom body 的标准清理写法：用 replaceChildren 而非 innerHTML，
+    // 保持 security:scan 的「innerHTML 赋值禁止」规则不被测试绕过。
+    document.body.replaceChildren();
   });
 
   it('boots the React tree and registers the API-ready invalidate hook', async () => {
