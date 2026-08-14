@@ -1,10 +1,11 @@
-// AuthService 模块化 spec：自 services.spec.ts（聚合文件）迁移而来。
-// 迁移约定：聚合文件按模块逐步拆出后删除（迁移前保持聚合）。
+// AuthService 模块化 spec：自 services.spec.ts / services-edge.spec.ts
+// （聚合文件）迁移而来。迁移约定：聚合文件按模块逐步拆出后删除（迁移前保持聚合）。
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import bcrypt from 'bcryptjs';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -12,10 +13,18 @@ import { AuthService } from './auth.service';
 import type { AuthRepository } from '../ports';
 import type { AppContext } from '../../../domain/contracts';
 
+interface TokenPayload {
+  sub: string;
+  clinicId: string | null;
+  role: string;
+  tokenVersion: number;
+}
+
 describe('AuthService', () => {
   let db: Database.Database;
   let dataDir: string;
   let context: AppContext;
+  const now = '2026-08-04T00:00:00.000Z';
 
   beforeAll(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-auth-'));
@@ -35,6 +44,35 @@ describe('AuthService', () => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
+
+  function insertUser(id: string, overrides: Record<string, unknown> = {}): void {
+    const merged = {
+      id,
+      clinicId: 'clinic-v2-001',
+      createdAt: now,
+      updatedAt: now,
+      username: `user-${id}`,
+      passwordHash: '$2a$10$7EqJtq98hPqEX7fNZaFWoOhi4J7BQj2rC1s6s5n9oJ3l6dL6J9t1e',
+      name: `User ${id}`,
+      role: 'BOSS',
+      active: 1,
+      loginAttempts: 0,
+      tokenVersion: 0,
+      lockedUntil: null,
+      ...overrides,
+    };
+    db.prepare(
+      `INSERT OR REPLACE INTO User (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         username, passwordHash, name, role, active, loginAttempts, tokenVersion,
+         lockedUntil
+       ) VALUES (
+         @id, @clinicId, @createdAt, @updatedAt, NULL,
+         @username, @passwordHash, @name, @role, @active, @loginAttempts, @tokenVersion,
+         @lockedUntil
+       )`,
+    ).run(merged);
+  }
 
   it('rotates refresh tokens and rejects reused tokens', async () => {
     const service = new AuthService(db);
@@ -322,5 +360,239 @@ describe('AuthService', () => {
       .rejects.toThrow('管理员不能管理老板账号');
     await expect(auth.deleteUser(context.userId, adminContext))
       .rejects.toThrow('管理员不能管理老板账号');
+  });
+
+  // ---- 边缘分支测试（自 services-edge.spec.ts 聚合文件迁移，相对顺序保留）----
+
+  it('covers auth login, refresh, logout, me, and password branches', async () => {
+    const auth = new AuthService(db);
+    insertUser('edge-disabled', { active: 0 });
+    await expect(auth.login('user-edge-disabled', 'v2-test-seed-password')).rejects.toThrow('disabled');
+    insertUser('edge-locked', { lockedUntil: new Date(Date.now() + 60_000).toISOString() });
+    await expect(auth.login('user-edge-locked', 'v2-test-seed-password')).rejects.toThrow('locked');
+    insertUser('edge-lockout', { passwordHash: bcrypt.hashSync('correct', 10) });
+    for (let i = 0; i < 5; i += 1) {
+      await expect(auth.login('user-edge-lockout', 'wrong')).rejects.toThrow();
+    }
+
+    await expect(auth.refresh('')).rejects.toThrow('Refresh token is required');
+    await expect(auth.refresh('unknown')).rejects.toThrow('Invalid refresh token');
+    const session = await auth.login('admin', 'v2-test-seed-password');
+    const tokenPayload: TokenPayload = {
+      sub: 'user-admin-001',
+      clinicId: 'clinic-v2-001',
+      role: 'BOSS',
+      tokenVersion: 0,
+    };
+    db.prepare('UPDATE User SET tokenVersion = 1 WHERE id = ?').run('user-admin-001');
+    await expect(auth.me(tokenPayload)).rejects.toThrow('Token is no longer valid');
+    db.prepare('UPDATE User SET tokenVersion = 0 WHERE id = ?').run('user-admin-001');
+    await expect(auth.me(tokenPayload)).resolves.toMatchObject({ username: 'admin' });
+
+    await expect(auth.getUserById('missing-user')).rejects.toThrow('User not found');
+    await expect(auth.changePassword('missing-user', 'x', 'newpass123')).rejects.toThrow('User not found');
+    await expect(auth.changePassword('user-admin-001', 'wrong', 'newpass123')).rejects.toThrow('Old password is incorrect');
+    await expect(auth.changePassword('user-admin-001', 'v2-test-seed-password', 'short')).rejects.toThrow('at least 6');
+
+    await auth.logout('');
+    await auth.logout('unknown-token');
+    await auth.logout(session.refreshToken);
+    // 登出必须立即作废已签发 access token（tokenVersion + 1）。
+    await expect(auth.me(tokenPayload)).rejects.toThrow('Token is no longer valid');
+
+    await expect(auth.login('unknown-user', 'wrong')).rejects.toThrow('Invalid username or password');
+    expect(() => auth.verifyToken('invalid-token')).toThrow('Invalid or expired token');
+
+    insertUser('edge-refresh-disabled', { active: 0 });
+    db.prepare('UPDATE User SET refreshToken = ?, refreshTokenExpiresAt = ? WHERE id = ?')
+      .run(createHash('sha256').update('token-disabled').digest('hex'), new Date(Date.now() + 60_000).toISOString(), 'edge-refresh-disabled');
+    await expect(auth.refresh('token-disabled')).rejects.toThrow('disabled');
+
+    insertUser('edge-refresh-locked', { lockedUntil: new Date(Date.now() + 60_000).toISOString() });
+    db.prepare('UPDATE User SET refreshToken = ?, refreshTokenExpiresAt = ? WHERE id = ?')
+      .run(createHash('sha256').update('token-locked').digest('hex'), new Date(Date.now() + 60_000).toISOString(), 'edge-refresh-locked');
+    await expect(auth.refresh('token-locked')).rejects.toThrow('locked');
+
+    db.prepare('UPDATE User SET refreshToken = ?, refreshTokenExpiresAt = ? WHERE id = ?')
+      .run(createHash('sha256').update('token-expired').digest('hex'), new Date(Date.now() - 60_000).toISOString(), 'user-admin-001');
+    await expect(auth.refresh('token-expired')).rejects.toThrow('expired');
+
+    insertUser('edge-null-clinic', {
+      clinicId: null,
+      loginAttempts: null,
+      tokenVersion: null,
+      passwordHash: bcrypt.hashSync('nullpass', 10),
+    });
+    // 无诊所作用域（clinicId NULL 且无 UserClinic 成员关系）的用户登录/刷新必须被拒绝。
+    await expect(auth.login('user-edge-null-clinic', 'nullpass')).rejects.toThrow('No clinic scope assigned to this account');
+    await expect(auth.login('user-edge-null-clinic', 'nullpass')).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
+    // 无 clinicId 的 token 也必须 fail-closed，不能以“全诊所可见”作用域通过校验。
+    expect(auth.isClinicAccessible('user-admin-001', null)).toBe(false);
+    expect(auth.isClinicAccessible('user-admin-001', 'clinic-v2-001')).toBe(true);
+
+    const mockAuthRepository = {
+      findByUsername: () => ({
+        id: 'mock-auth-user',
+        clinicId: null,
+        username: 'mock-auth',
+        passwordHash: bcrypt.hashSync('mockpass', 10),
+        name: 'Mock',
+        role: 'BOSS',
+        active: 1,
+        loginAttempts: undefined,
+        tokenVersion: undefined,
+        createdAt: now,
+        updatedAt: now,
+      }),
+      resetLoginAttempts: vi.fn(),
+      updateRefreshToken: vi.fn(),
+      clinicMemberships: () => [{ clinicId: 'clinic-v2-001', name: 'Clinic', role: 'BOSS' }],
+    } as unknown as AuthRepository;
+    const mockAuth = new AuthService({} as Database.Database, mockAuthRepository);
+    const mockSession = await mockAuth.login('mock-auth', 'mockpass');
+    expect(mockSession.user.clinicId).toBeNull();
+    // 用户行本身无 clinicId 时，token 作用域来自 UserClinic 第一个成员关系。
+    const mockPayload = mockAuth.verifyToken(mockSession.token);
+    expect(mockPayload.clinicId).toBe('clinic-v2-001');
+  });
+
+  it('rejects self-deletion and unscoped clinic access', async () => {
+    const auth = new AuthService(db);
+    await expect(auth.deleteUser(context.userId, context)).rejects.toThrow('不能删除当前登录账号');
+    expect(auth.isClinicAccessible('missing-user', 'clinic-v2-001')).toBe(false);
+    expect(auth.isClinicAccessible('user-admin-001', 'clinic-other')).toBe(false);
+  });
+
+  it('does not store raw refresh tokens in idempotency claims', async () => {
+    const auth = new AuthService(db);
+    const session = await auth.login('admin', 'v2-test-seed-password');
+    const refreshed = await auth.refresh(session.refreshToken);
+    const claims = db.prepare(
+      `SELECT responseJson FROM IdempotencyRecord
+       WHERE operation = 'auth.refresh' AND status = 'COMPLETED'`,
+    ).all() as Array<{ responseJson: string }>;
+    expect(claims.length).toBeGreaterThan(0);
+    for (const claim of claims) {
+      expect(String(claim.responseJson)).not.toContain(refreshed.refreshToken);
+      expect(String(claim.responseJson)).not.toContain(refreshed.token);
+      expect(String(claim.responseJson).split('.')).toHaveLength(3);
+    }
+  });
+
+  it('allows only BOSS to access multiple clinics and switch current clinic', async () => {
+    db.prepare(
+      `INSERT OR IGNORE INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+       VALUES (?, NULL, ?, ?, NULL, 'V2-2', 'Clinic 2', 1)`,
+    ).run('clinic-v2-other', now, now);
+    db.prepare(
+      `INSERT OR IGNORE INTO UserClinic (userId, clinicId, role, createdAt, updatedAt, deletedAt)
+       VALUES ('user-admin-001', 'clinic-v2-other', 'BOSS', ?, ?, NULL)`,
+    ).run(now, now);
+    const auth = new AuthService(db);
+    expect(() => auth.listAccessibleClinics('missing-user', 'BOSS')).toThrow('User not found');
+    db.prepare(
+      `INSERT OR IGNORE INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+       VALUES (?, NULL, ?, ?, NULL, 'V2-EMPTY', '', 1)`,
+    ).run('clinic-v2-empty', now, now);
+    db.prepare(
+      `INSERT OR IGNORE INTO UserClinic (userId, clinicId, role, createdAt, updatedAt, deletedAt)
+       VALUES ('user-admin-001', 'clinic-v2-empty', 'BOSS', ?, ?, NULL)`,
+    ).run(now, now);
+    const boss = await auth.createUser({
+      username: 'boss-multi',
+      password: 'password123',
+      name: 'Boss Multi',
+      role: 'BOSS',
+      clinicIds: ['clinic-v2-001', 'clinic-v2-other'],
+    }, context);
+    const accessible = auth.listAccessibleClinics(boss.id, 'BOSS');
+    expect(accessible.clinics).toHaveLength(2);
+    const emptyNameBoss = await auth.createUser({
+      username: 'boss-empty-name',
+      password: 'password123',
+      name: 'Boss Empty Name',
+      role: 'BOSS',
+      clinicIds: ['clinic-v2-empty'],
+    }, context);
+    expect(auth.listAccessibleClinics(emptyNameBoss.id, 'BOSS').clinics.some((clinic) => clinic.name === 'clinic-v2-empty')).toBe(true);
+    expect(() => auth.switchClinic('missing-user', 'BOSS', 'clinic-v2-001')).toThrow('User not found');
+    expect(() => auth.switchClinic(boss.id, 'BOSS', 'clinic-v2-missing')).toThrow('Clinic not found');
+    const switched = auth.switchClinic(boss.id, 'BOSS', 'clinic-v2-other');
+    expect(switched.clinicId).toBe('clinic-v2-other');
+    expect((await auth.getUserById(boss.id)).currentClinicId).toBe('clinic-v2-other');
+    db.prepare('DELETE FROM UserClinic WHERE userId = ?').run(boss.id);
+    expect(auth.listAccessibleClinics(boss.id, 'BOSS').clinics).toHaveLength(1);
+    await expect(auth.createUser({
+      username: 'boss-bad-clinics',
+      password: 'password123',
+      name: 'Bad Clinics',
+      role: 'BOSS',
+      clinicIds: 'clinic-v2-001' as unknown as string[],
+    }, context)).rejects.toThrow('clinicIds must be an array of strings');
+    await expect(auth.createUser({
+      username: 'boss-missing-clinic',
+      password: 'password123',
+      name: 'Missing Clinic',
+      role: 'BOSS',
+      clinicIds: ['clinic-v2-missing'],
+    }, context)).rejects.toThrow('Cannot create users outside your clinic scope');
+    db.prepare(
+      `INSERT OR IGNORE INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+       VALUES ('clinic-v2-disabled', NULL, ?, ?, NULL, 'V2-DISABLED', 'Disabled Clinic', 0)`,
+    ).run(now, now);
+    db.prepare(
+      `INSERT OR IGNORE INTO UserClinic (userId, clinicId, role, createdAt, updatedAt, deletedAt)
+       VALUES (?, 'clinic-v2-disabled', 'BOSS', ?, ?, NULL)`,
+    ).run(boss.id, now, now);
+    expect(() => auth.switchClinic(boss.id, 'BOSS', 'clinic-v2-disabled')).toThrow('Clinic not found');
+
+    const nurse = await auth.createUser({
+      username: 'nurse-single',
+      password: 'password123',
+      name: 'Nurse Single',
+      role: 'DOCTOR',
+      clinicIds: ['clinic-v2-other'],
+    }, { ...context, clinicId: 'clinic-v2-001' });
+    expect(auth.listAccessibleClinics(nurse.id, 'DOCTOR').clinics).toHaveLength(1);
+    expect(() => auth.switchClinic(nurse.id, 'DOCTOR', 'clinic-v2-other')).toThrow('Only administrators can switch clinics');
+
+    const bossNull = await auth.createUser({
+      username: 'boss-null-clinic',
+      password: 'password123',
+      name: 'Boss Null Clinic',
+      role: 'ADMIN',
+    }, { ...context, clinicId: null });
+    const nurseNull = await auth.createUser({
+      username: 'nurse-null-clinic',
+      password: 'password123',
+      name: 'Nurse Null Clinic',
+      role: 'DOCTOR',
+    }, { ...context, clinicId: null });
+    expect(auth.listAccessibleClinics(bossNull.id, 'BOSS').clinics).toEqual([]);
+    expect(auth.listAccessibleClinics(nurseNull.id, 'DOCTOR')).toEqual({
+      currentClinicId: null,
+      clinics: [],
+    });
+  });
+
+  it('lists active doctors scoped to the current clinic', async () => {
+    const auth = new AuthService(db);
+    const doctor = await auth.createUser({
+      username: 'doctor-list-a',
+      password: 'password123',
+      name: 'Doctor A',
+      role: 'DOCTOR',
+    }, context);
+    const disabledDoctor = await auth.createUser({
+      username: 'doctor-list-disabled',
+      password: 'password123',
+      name: 'Disabled Doctor',
+      role: 'DOCTOR',
+      active: false,
+    }, context);
+
+    const doctors = auth.listDoctors(context);
+    expect(doctors.some((entry) => entry.id === doctor.id)).toBe(true);
+    expect(doctors.some((entry) => entry.id === disabledDoctor.id)).toBe(false);
   });
 });
