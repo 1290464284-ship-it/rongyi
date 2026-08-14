@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { NextFunction, Request, Response } from 'express';
 import { AuthService } from '../application/services';
 import { AppError, ValidationError } from '../infrastructure/errors';
+import type { Logger } from '../infrastructure/logger';
 import { authMiddleware, errorMiddleware, roleMiddleware, traceMiddleware, traceparentTraceId } from './middleware';
 
 function fakeResponse(): Response {
@@ -135,5 +136,71 @@ describe('middleware', () => {
     let error: unknown;
     await authMiddleware(authService)(req, fakeResponse(), (err) => { error = err; });
     expect(error).toMatchObject({ code: 'FORBIDDEN', status: 403 });
+  });
+
+  it('falls back to a null clinic id when the token payload omits it', async () => {
+    const authService = {
+      verifyToken: () => ({
+        sub: 'user-null-clinic',
+        clinicId: undefined,
+        role: 'ADMIN',
+        tokenVersion: 0,
+      }),
+      getUserById: async () => ({
+        id: 'user-null-clinic',
+        clinicId: null,
+        currentClinicId: null,
+        active: true,
+        lockedUntil: null,
+        tokenVersion: 0,
+        role: 'ADMIN',
+      }),
+      isClinicAccessible: () => true,
+      effectivePermissions: vi.fn(() => []),
+    } as unknown as AuthService;
+    const req = {
+      header: () => 'Bearer signed-token',
+      context: undefined,
+    } as unknown as Request;
+    await authMiddleware(authService)(req, fakeResponse(), () => {});
+    expect(req.context?.clinicId).toBeNull();
+    expect(authService.effectivePermissions).toHaveBeenCalledWith('user-null-clinic', null, 'ADMIN');
+  });
+
+  it('locks the account when lockedUntil is not a valid date', async () => {
+    const warns: Array<Array<unknown>> = [];
+    const authService = {
+      verifyToken: () => ({
+        sub: 'user-bad-lock',
+        clinicId: 'clinic-1',
+        role: 'ADMIN',
+        tokenVersion: 0,
+      }),
+      getUserById: async () => ({
+        id: 'user-bad-lock',
+        clinicId: 'clinic-1',
+        currentClinicId: 'clinic-1',
+        active: true,
+        lockedUntil: 'not-a-date',
+        tokenVersion: 0,
+        role: 'ADMIN',
+      }),
+      isClinicAccessible: () => true,
+      effectivePermissions: () => [],
+    } as unknown as AuthService;
+    const logger = {
+      warn: (...args: unknown[]) => {
+        warns.push(args);
+      },
+    } as unknown as Logger;
+    const req = {
+      header: () => 'Bearer signed-token',
+      context: undefined,
+    } as unknown as Request;
+    let error: unknown;
+    await authMiddleware(authService, logger)(req, fakeResponse(), (err) => { error = err; });
+    expect(error).toMatchObject({ code: 'UNAUTHORIZED', status: 401, message: 'Account is temporarily locked' });
+    expect(warns).toHaveLength(1);
+    expect(warns[0]?.[1]).toMatchObject({ userId: 'user-bad-lock' });
   });
 });
