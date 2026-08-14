@@ -820,6 +820,12 @@ describe('api helper functions', () => {
     statusCallbacks[0]?.({ status: 'restarting', port: 1111 });
     expect(readyHandler).not.toHaveBeenCalled();
 
+    statusCallbacks[0]?.({ port: 1111 });
+    expect(readyHandler).not.toHaveBeenCalled();
+
+    statusCallbacks[0]?.({ status: 'ready', port: 'not-a-number' });
+    expect(readyHandler).not.toHaveBeenCalled();
+
     statusCallbacks[0]?.({ status: 'ready', port: 2222 });
     expect(readyHandler).toHaveBeenCalledTimes(1);
 
@@ -917,6 +923,20 @@ describe('api helper functions', () => {
     expect(String(fetchMock.mock.calls[2][0])).toContain('cursor=c-2');
   });
 
+  it('fetchAllPages refuses an endless cursor chain at the page cap', async () => {
+    fetchMock.mockImplementation(() =>
+      Promise.resolve(new Response(
+        JSON.stringify({
+          success: true,
+          data: { items: [{ id: 'x' }], total: 1, page: 1, pageSize: 100, nextCursor: 'never-ending' },
+        }),
+        { status: 200 },
+      )),
+    );
+    await expect(mod.fetchAllPages('/resources/patients')).rejects.toThrow('page cap');
+    expect(fetchMock.mock.calls.length).toBe(1000);
+  });
+
   it('fetchAllPages returns early for empty first pages', async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(
@@ -966,6 +986,32 @@ describe('api helper functions', () => {
       new Response(JSON.stringify({ message: 'print template missing' }), { status: 500 }),
     );
     await expect(mod.fetchPrintHtml('/print/visit', { visitId: 'v1' })).rejects.toThrow('操作失败，请稍后重试');
+  });
+
+  it('fetchPrintHtml falls back to a generic message when the error body is not JSON', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('oops', { status: 500 }));
+    await expect(mod.fetchPrintHtml('/print/visit', { visitId: 'v1' })).rejects.toThrow();
+  });
+
+  it('getSignedFileUrl falls back to a generic message when the error body is not JSON', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('oops', { status: 500 }));
+    await expect(mod.getSignedFileUrl('/api/v2/files/x.png')).rejects.toThrow();
+  });
+
+  it('omits the traceparent header when crypto.getRandomValues is unavailable', async () => {
+    const originalCrypto = globalThis.crypto;
+    vi.stubGlobal('crypto', undefined);
+    try {
+      fetchMock.mockResolvedValueOnce(
+        new Response(JSON.stringify({ success: true, data: 'ok' }), { status: 200 }),
+      );
+      await expect(mod.apiRequest('/no-crypto')).resolves.toBe('ok');
+      const call = fetchMock.mock.calls[0];
+      const request = new Request(new URL(String(call[0]), 'http://127.0.0.1:5180/'), call[1]);
+      expect(request.headers.get('traceparent')).toBeNull();
+    } finally {
+      vi.stubGlobal('crypto', originalCrypto);
+    }
   });
 
   it('getSignedFileUrl and uploadFile reject invalid responses', async () => {
