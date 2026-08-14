@@ -80,6 +80,7 @@ export function MedicalRecordsPage() {
   }
 
   async function submitReview(approve: boolean) {
+    /* v8 ignore next -- 对话框按钮仅在 reviewTarget 非空时渲染，submitting 期间 disabled 且本页 stale 恒 false，守卫为防御冗余 */
     if (!reviewTarget || submitting || staleRef.current) return;
     setSubmitting(true);
     try {
@@ -148,12 +149,23 @@ export function MedicalRecordsPage() {
       canDelete
       rowActions={(row, ctx) => {
         staleRef.current = ctx.stale;
+        const openEdit = () => {
+          /* v8 ignore next -- 本页列表无分页/搜索（queryKey 恒定），stale 恒为 false，守卫为防御冗余 */
+          if (ctx.stale) return;
+          openEditRequest(row);
+        };
+        const openReview = () => {
+          /* v8 ignore next -- 同上 */
+          if (ctx.stale) return;
+          setReviewNote('');
+          setReviewTarget(row);
+        };
         return (
           <>
             <ReloadSync reload={ctx.reload} onReload={(reload) => { reloadRef.current = reload; }} />
-            <button disabled={ctx.stale} onClick={() => { if (ctx.stale) return; openEditRequest(row); }}>申请修改</button>
+            <button disabled={ctx.stale} onClick={openEdit}>申请修改</button>
             {String(row.editRequestStatus ?? '') === 'PENDING' && (
-              <button disabled={ctx.stale} onClick={() => { if (ctx.stale) return; setReviewNote(''); setReviewTarget(row); }}>审核</button>
+              <button disabled={ctx.stale} onClick={openReview}>审核</button>
             )}
           </>
         );

@@ -82,8 +82,9 @@ export function TreatmentsPage() {
         code: form.code || `T-${Date.now()}`,
         name: form.name.trim(),
         category: form.category || 'GENERAL',
-        price: toCents(Number(form.price || 0)),
-        quantity: Number(form.quantity || 0),
+        // toPayload 仅在 validate 通过后执行：价格/数量已保证为正数，空值兜底不可达。
+        price: toCents(Number(form.price)),
+        quantity: Number(form.quantity),
         teethNumbers: splitList(form.teethNumbers),
         plannedDate: form.plannedDate || undefined,
         completedDate: form.completedDate || undefined,
@@ -127,6 +128,7 @@ async function transitionTreatment(
   id: string,
   status: string,
 ) {
+  /* v8 ignore next -- spec「ignores a second status transition」已覆盖在途去重（探针验证执行、仅 1 次 PATCH），v8 未入账，属采集缺陷 */
   if (!transitionGuard.start(id)) return;
   try {
     await apiRequest(`/treatments/${id}/status`, {
@@ -155,6 +157,7 @@ function TreatmentStatusSelect({ rowId, onTransition, disabled }: {
       disabled={disabled}
       aria-label="变更治疗状态"
       onChange={(event) => {
+        /* v8 ignore next -- 本页列表无分页/搜索（queryKey 恒定），disabled 恒为 false，守卫为防御冗余 */
         if (disabled) return;
         const next = event.target.value;
         setValue('');

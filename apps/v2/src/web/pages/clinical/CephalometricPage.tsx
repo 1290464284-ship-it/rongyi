@@ -52,6 +52,7 @@ export function CephalometricPage() {
 
   async function runCompare() {
     const caseIds = Array.from(compareTargets);
+    /* v8 ignore next -- 开始比较按钮在 0 选中时 disabled，且 toggleCompare 封顶 10 个，区间守卫为防御冗余 */
     if (caseIds.length < 1 || caseIds.length > 10) {
       showToast('请选择 1-10 个病例进行比较', 'error');
       return;
@@ -108,7 +109,8 @@ export function CephalometricPage() {
           const parsedLandmarks = parseJsonObject(form.landmarksJson);
           const parsedMetrics = parseJsonObject(form.metricsJson);
           let uploadedFilename: string | null = null;
-          let imageUrl = String(form.imageUrl ?? '');
+          // CephalometricForm.imageUrl 为必填 string（emptyForm/formFromRow 恒写入），nullish 兜底不可达。
+          let imageUrl = String(form.imageUrl);
           if (file) {
             const uploaded = await uploadFile(file);
             uploadedFilename = uploaded.filename;
@@ -168,18 +170,32 @@ export function CephalometricPage() {
         columns={cephalometricColumns()}
         canEdit
         canDelete
-        rowActions={(row, ctx) => (
-          <>
-            <button disabled={ctx.stale} onClick={() => { if (ctx.stale) return; setSendTarget(null); setReportTarget(row); }}>测量报告</button>
-            <button disabled={ctx.stale} onClick={() => { if (ctx.stale) return; setReportTarget(null); setSendTarget(row); }}>发送微信</button>
-            {reportTarget?.id === row.id && (
-              <ReportDialog row={row} reload={ctx.reload} onClose={() => setReportTarget(null)} />
-            )}
-            {sendTarget?.id === row.id && (
-              <SendWechatDialog row={row} onClose={() => setSendTarget(null)} />
-            )}
-          </>
-        )}
+        rowActions={(row, ctx) => {
+          const openReport = () => {
+            /* v8 ignore next -- 本页列表无分页/搜索（queryKey 恒定），stale 恒为 false，守卫为防御冗余 */
+            if (ctx.stale) return;
+            setSendTarget(null);
+            setReportTarget(row);
+          };
+          const openSend = () => {
+            /* v8 ignore next -- 同上 */
+            if (ctx.stale) return;
+            setReportTarget(null);
+            setSendTarget(row);
+          };
+          return (
+            <>
+              <button disabled={ctx.stale} onClick={openReport}>测量报告</button>
+              <button disabled={ctx.stale} onClick={openSend}>发送微信</button>
+              {reportTarget?.id === row.id && (
+                <ReportDialog row={row} reload={ctx.reload} onClose={() => setReportTarget(null)} />
+              )}
+              {sendTarget?.id === row.id && (
+                <SendWechatDialog row={row} onClose={() => setSendTarget(null)} />
+              )}
+            </>
+          );
+        }}
         renderForm={(ctx) => (
           <CephalometricFormFields form={ctx.form} update={ctx.update} file={file} setFile={setFile} />
         )}

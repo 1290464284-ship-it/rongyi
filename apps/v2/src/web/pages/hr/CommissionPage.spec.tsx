@@ -406,4 +406,110 @@ describe('CommissionPage', () => {
     expect((screen.getByLabelText('分类') as HTMLSelectElement).textContent).toContain('cat-1');
     expect((screen.getByLabelText('适用医生') as HTMLSelectElement).textContent).toContain('d-9');
   });
+
+  it('renders zero percent fallbacks for sparse percent rules', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/commission/rules') {
+        return [{ id: 'rule-null', name: '空比例', category: null, costType: null, rateType: 'PERCENT', rate: null, doctorId: null, enabled: 1 }];
+      }
+      if (path.startsWith('/commission/statements?')) return [];
+      if (path === '/doctors') return [];
+      if (path === '/resources/treatmentCatalogs?page=1&pageSize=200') {
+        return { items: [], total: 0, page: 1, pageSize: 200 };
+      }
+      return {};
+    });
+    render(<CommissionPage />, { wrapper });
+    expect(await screen.findByText('空比例')).toBeDefined();
+    expect(screen.getByText('0%')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    await waitFor(() => {
+      expect((screen.getByLabelText('提成值') as HTMLInputElement).value).toBe('0');
+    });
+  });
+
+  it('renders empty doctor names for statements missing both name and id', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/commission/rules') return [];
+      if (path.startsWith('/commission/statements?')) {
+        return [{
+          id: 'stmt-null',
+          period: '2026-08',
+          doctorId: null,
+          doctorName: null,
+          totalCharged: 0,
+          totalCommission: 0,
+          breakdown: [],
+          calculatedAt: '2026-08-10T10:00:00.000Z',
+        }];
+      }
+      if (path === '/doctors') return [];
+      if (path === '/resources/treatmentCatalogs?page=1&pageSize=200') {
+        return { items: [], total: 0, page: 1, pageSize: 200 };
+      }
+      return {};
+    });
+    render(<CommissionPage />, { wrapper });
+    expect(await screen.findByText('—')).toBeDefined();
+  });
+
+  it('treats undefined rule and statement data as errored queries', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/commission/rules') return undefined;
+      if (path.startsWith('/commission/statements?')) return undefined;
+      if (path === '/doctors') return [];
+      if (path === '/resources/treatmentCatalogs?page=1&pageSize=200') {
+        return { items: [], total: 0, page: 1, pageSize: 200 };
+      }
+      return {};
+    });
+    render(<CommissionPage />, { wrapper });
+    // TanStack Query v5 将 data 为 undefined 的查询标记为 error，页面落入错误态而非空表。
+    expect((await screen.findAllByText('操作失败，请稍后重试')).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('ignores a duplicate delete confirm while the delete is in flight', async () => {
+    mockApi();
+    let deleteCalls = 0;
+    const base = vi.mocked(apiRequest).getMockImplementation();
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/commission/rules/rule-1' && String(init?.method ?? 'GET').toUpperCase() === 'DELETE') {
+        deleteCalls += 1;
+        return new Promise(() => {});
+      }
+      return base?.(path, init);
+    });
+    render(<CommissionPage />, { wrapper });
+    await screen.findByText('服务 10%');
+    fireEvent.click(screen.getAllByRole('button', { name: '删除' })[0]);
+    const dialog = await screen.findByRole('dialog');
+    const confirmButton = Array.from(dialog.querySelectorAll('button')).find((button) => button.textContent === '删除') as HTMLButtonElement;
+    fireEvent.click(confirmButton);
+    fireEvent.click(confirmButton);
+    await waitFor(() => {
+      expect(deleteCalls).toBe(1);
+    });
+  });
+
+  it('ignores a duplicate calculate while the calculation is in flight', async () => {
+    mockApi();
+    let calculateCalls = 0;
+    const base = vi.mocked(apiRequest).getMockImplementation();
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/commission/calculate' && String(init?.method ?? 'GET').toUpperCase() === 'POST') {
+        calculateCalls += 1;
+        return new Promise(() => {});
+      }
+      return base?.(path, init);
+    });
+    render(<CommissionPage />, { wrapper });
+    await screen.findByText('服务 10%');
+    const button = screen.getByRole('button', { name: '计算本月提成' });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    await waitFor(() => {
+      expect(calculateCalls).toBe(1);
+    });
+  });
 });

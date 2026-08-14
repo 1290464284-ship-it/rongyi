@@ -204,6 +204,62 @@ describe('CephalometricPage', () => {
     expect(await screen.findByText('请选择患者并上传影像或填写标记点')).toBeDefined();
   });
 
+  it('treats empty landmark and metric text as empty JSON objects', async () => {
+    mockData();
+    vi.mocked(uploadFile).mockResolvedValue({ id: 'file-1', filename: 'file-1.png', url: '/api/v2/files/file-1.png' });
+    render(<CephalometricPage />, { wrapper });
+    await screen.findByText('DRAFT');
+    fireEvent.click(screen.getByText('新建测量'));
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    fireEvent.change(screen.getByLabelText('标记点 JSON'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('测量结果 JSON'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('影像文件'), {
+      target: { files: [new File(['x'], 'ceph.png', { type: 'image/png' })] },
+    });
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/cephalometricCases', expect.objectContaining({ method: 'POST' }));
+    });
+    const postCall = vi.mocked(apiRequest).mock.calls.find(
+      (call) => call[0] === '/resources/cephalometricCases' && (call[1] as RequestInit)?.method === 'POST',
+    );
+    const body = JSON.parse(String((postCall?.[1] as RequestInit)?.body));
+    expect(body.landmarksJson).toBe('{}');
+    expect(body.metricsJson).toBe('{}');
+  });
+
+  it('normalizes non-object JSON inputs to empty objects on submit', async () => {
+    mockData();
+    vi.mocked(uploadFile).mockResolvedValue({ id: 'file-1', filename: 'file-1.png', url: '/api/v2/files/file-1.png' });
+    render(<CephalometricPage />, { wrapper });
+    await screen.findByText('DRAFT');
+    fireEvent.click(screen.getByText('新建测量'));
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    fireEvent.change(screen.getByLabelText('标记点 JSON'), { target: { value: 'null' } });
+    fireEvent.change(screen.getByLabelText('测量结果 JSON'), { target: { value: '[]' } });
+    fireEvent.change(screen.getByLabelText('影像文件'), {
+      target: { files: [new File(['x'], 'ceph.png', { type: 'image/png' })] },
+    });
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/cephalometricCases', expect.objectContaining({ method: 'POST' }));
+    });
+    const postCall = vi.mocked(apiRequest).mock.calls.find(
+      (call) => call[0] === '/resources/cephalometricCases' && (call[1] as RequestInit)?.method === 'POST',
+    );
+    const body = JSON.parse(String((postCall?.[1] as RequestInit)?.body));
+    expect(body.landmarksJson).toBe('{}');
+    expect(body.metricsJson).toBe('{}');
+  });
+
   it('loads and saves a report through the report dialog', async () => {
     mockData();
     render(<CephalometricPage />, { wrapper });

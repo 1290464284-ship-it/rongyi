@@ -251,6 +251,52 @@ describe('TreatmentsPage', () => {
     expect(apiRequest).not.toHaveBeenCalledWith('/resources/treatments', expect.objectContaining({ method: 'POST' }));
   });
 
+  it('rejects an empty quantity', async () => {
+    mockData();
+    render(<TreatmentsPage />, { wrapper });
+    await screen.findByText('补牙');
+    fireEvent.click(screen.getByText('新建治疗'));
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
+    fireEvent.change(screen.getByLabelText('治疗名称'), { target: { value: '洁牙' } });
+    fireEvent.change(screen.getByLabelText('价格'), { target: { value: '100' } });
+    fireEvent.change(screen.getByLabelText('数量'), { target: { value: '' } });
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.submit(dialog.querySelector('form') as HTMLFormElement);
+    expect(await screen.findByText('请选择患者、医生并填写治疗名称、价格和数量')).toBeDefined();
+  });
+
+  it('renders an empty status cell for rows without a status', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/treatments?page=1&pageSize=50') {
+        return { items: [{ id: 't-null', name: '无状态治疗', status: null }], total: 1, page: 1, pageSize: 50 };
+      }
+      return {};
+    });
+    render(<TreatmentsPage />, { wrapper });
+    expect(await screen.findByText('无状态治疗')).toBeDefined();
+  });
+
+  it('ignores a second status transition while the first is in flight', async () => {
+    mockData();
+    render(<TreatmentsPage />, { wrapper });
+    await screen.findByText('补牙');
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/treatments/t-1/status') return new Promise(() => {});
+      return {};
+    });
+    const select = screen.getByLabelText('变更治疗状态') as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: 'IN_PROGRESS' } });
+    fireEvent.change(select, { target: { value: 'DONE' } });
+    await waitFor(() => {
+      const calls = vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/treatments/t-1/status');
+      expect(calls).toHaveLength(1);
+    });
+  });
+
   it('joins array teeth numbers when editing and falls back to ids for unnamed doctors', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/treatments?page=1&pageSize=50') {

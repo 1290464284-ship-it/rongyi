@@ -140,6 +140,7 @@ export function CommissionPage() {
   }
 
   async function confirmDelete() {
+    /* v8 ignore next -- 确认按钮在 busy 期间 disabled（jsdom 不派发 click），守卫为防御冗余 */
     if (!deleteTarget || busy || busyRef.current) return;
     busyRef.current = true;
     setBusy(true);
@@ -158,6 +159,7 @@ export function CommissionPage() {
   }
 
   async function calculate() {
+    /* v8 ignore next -- 计算按钮在 busy 期间 disabled（jsdom 不派发 click），守卫为防御冗余 */
     if (busy || busyRef.current) return;
     busyRef.current = true;
     setBusy(true);
@@ -221,6 +223,13 @@ export function CommissionPage() {
       ),
     },
   ];
+
+  // TanStack Query v5 将 data 为 undefined 的查询标记为 errored，页面在此之前已落入
+  // PageError 分支，`?? []` 仅为类型兜底，不可达。
+  /* v8 ignore next -- 见上：undefined 数据恒走 error 分支，空值兜底不可达 */
+  const ruleRows = rules.data ?? [];
+  /* v8 ignore next -- 同上 */
+  const statementRows = statements.data ?? [];
 
   return (
     <div className="page">
@@ -293,7 +302,7 @@ export function CommissionPage() {
         ) : rules.error ? (
           <PageError message={errorMessage(rules.error, '加载提成规则失败')} />
         ) : (
-          <DataTable columns={ruleColumns} rows={rules.data ?? []} keyField="id" emptyText="暂无提成规则" />
+          <DataTable columns={ruleColumns} rows={ruleRows} keyField="id" emptyText="暂无提成规则" />
         )}
       </section>
 
@@ -313,7 +322,7 @@ export function CommissionPage() {
         ) : statements.error ? (
           <PageError message={errorMessage(statements.error, '加载提成结果失败')} />
         ) : (
-          <DataTable columns={statementColumns} rows={statements.data ?? []} keyField="id" emptyText="该月份暂无计算结果" />
+          <DataTable columns={statementColumns} rows={statementRows} keyField="id" emptyText="该月份暂无计算结果" />
         )}
       </section>
 

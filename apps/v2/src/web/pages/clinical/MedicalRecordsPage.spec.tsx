@@ -205,6 +205,95 @@ describe('MedicalRecordsPage', () => {
     expect(screen.getAllByText('审核').length).toBe(1);
   });
 
+  it('hides the review button when editRequestStatus is missing', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/medicalRecords?page=1&pageSize=50') {
+        return {
+          items: [{ id: 'r-null', patientId: 'p-1', doctorId: 'd-1', category: 'GENERAL', diagnosis: '无状态', status: 'DRAFT' }],
+          total: 1,
+          page: 1,
+          pageSize: 50,
+        };
+      }
+      return {};
+    });
+    render(<MedicalRecordsPage />, { wrapper });
+    expect(await screen.findByText('无状态')).toBeDefined();
+    expect(screen.queryAllByText('审核')).toHaveLength(0);
+    expect(screen.getAllByText('申请修改')).toHaveLength(1);
+  });
+
+  it('prefills blank patient and doctor ids when editing a sparse row', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/medicalRecords?page=1&pageSize=50') {
+        return {
+          items: [{ id: 'r-sparse', patientId: null, doctorId: null, category: 'GENERAL', status: 'DRAFT' }],
+          total: 1,
+          page: 1,
+          pageSize: 50,
+        };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      return {};
+    });
+    render(<MedicalRecordsPage />, { wrapper });
+    fireEvent.click(await screen.findByText('编辑'));
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).value).toBe('');
+      expect((screen.getByLabelText('医生') as HTMLSelectElement).value).toBe('');
+    });
+  });
+
+  it('renders null proposed values as blank text in the review dialog', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/medicalRecords?page=1&pageSize=50') {
+        return {
+          items: [{
+            id: 'r-null-prop',
+            patientId: 'p-1',
+            doctorId: 'd-1',
+            category: 'GENERAL',
+            status: 'DRAFT',
+            editRequestStatus: 'PENDING',
+            editRequestReason: '清空诊断',
+            proposedContentJson: JSON.stringify({ diagnosis: null, status: 'SUBMITTED' }),
+          }],
+          total: 1,
+          page: 1,
+          pageSize: 50,
+        };
+      }
+      return {};
+    });
+    render(<MedicalRecordsPage />, { wrapper });
+    fireEvent.click(await screen.findByText('审核'));
+    expect(await screen.findByText('申请原因：清空诊断')).toBeDefined();
+    expect(screen.getByText(/^diagnosis:\s*$/)).toBeDefined();
+    expect(screen.getByText('status: SUBMITTED')).toBeDefined();
+  });
+
+  it('ignores a second review submit while the review is in flight', async () => {
+    mockData();
+    render(<MedicalRecordsPage />, { wrapper });
+    await screen.findByText('龋齿');
+    fireEvent.click(screen.getByText('审核'));
+
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/medical-records/r-1/edit-request/review') return new Promise(() => {});
+      return {};
+    });
+    const approveButton = screen.getByText('通过');
+    fireEvent.click(approveButton);
+    fireEvent.click(approveButton);
+    await waitFor(() => {
+      const reviewCalls = vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/medical-records/r-1/edit-request/review');
+      expect(reviewCalls).toHaveLength(1);
+    });
+  });
+
   it('edits a medical record with a prefilled form', async () => {
     mockData();
     render(<MedicalRecordsPage />, { wrapper });

@@ -87,6 +87,11 @@ Web **96.82% / 92.94% / 98.66% / 98.58%**，双门禁全绿——覆盖率口径
 | `src/server/http/audit-buffer.ts`（scheduleAuditRetry） | `if (room > 0)` 空位守卫与 `length + rows > capacity` 超容量丢弃守卫 | 缓冲被 unshift 封顶在 100 且 push 满 50 立即刷出：重试未在途时 buffer≤49、rows≤50（和 ≤99），重试在途时 splice 后 room 恒 ≥49——两条防御分支不可达（容量配置预留），超容量丢弃路径由 spec「drops overflow rows...」覆盖 |
 | `src/web/pages/analytics/AnalyticsDashboardPage.tsx`（printReport） | `if (printing \|\| printingRef.current) return` | 打印按钮在 printing 期间 disabled（浏览器不派发点击），双击竞态守卫为防御冗余 |
 | `src/web/pages/communication/FollowUpsPage.tsx`（goToPage / batchGenerate） | `if (stale) return` 守卫 | 分页与批量生成按钮在 stale（placeholderData）期间 disabled，浏览器不派发点击，守卫为防御冗余；submitCompletion/submitExecution 的同款守卫由 spec「ignores a stale ... submit」真实覆盖 |
+| `src/web/pages/clinical/CephalometricPage.tsx`（runCompare / rowActions） | `caseIds` 区间守卫与 `if (ctx.stale) return` | 开始比较按钮在 0 选中时 disabled 且 toggleCompare 封顶 10；本页列表无分页/搜索（queryKey 恒定、同 key refetch 不产生 placeholderData），stale 恒为 false——均为防御冗余 |
+| `src/web/pages/clinical/MedicalRecordsPage.tsx`（rowActions / submitReview） | `if (ctx.stale) return` 守卫与 `!reviewTarget \|\| submitting \|\| staleRef` 守卫 | 本页列表无分页/搜索（queryKey 恒定），stale 恒为 false；审核按钮仅在 reviewTarget 非空时渲染且 submitting 期间 disabled（jsdom 对 disabled 按钮不派发 click）——均为防御冗余；submitEditRequest 的 busy 守卫由 spec「ignores a second submit...」真实覆盖 |
+| `src/web/pages/clinical/TreatmentsPage.tsx`（TreatmentStatusSelect / transitionTreatment） | `if (disabled) return` 守卫与 `if (!transitionGuard.start(id)) return` 去重 | 本页列表无分页/搜索（queryKey 恒定），disabled 恒为 false；在途去重由 spec「ignores a second status transition...」覆盖（探针验证 handler 执行且仅 1 次 PATCH），v8 未入账，属采集缺陷 |
+| `src/web/pages/hr/CommissionPage.tsx`（confirmDelete / calculate / 空值兜底） | `busy \|\| busyRef.current` 守卫与 `rules.data ?? []`、`statements.data ?? []` | 删除确认与计算按钮在 busy 期间 disabled（jsdom 对 disabled 按钮不派发 click），busy 守卫不可达；TanStack Query v5 将 data 为 undefined 的查询直接标记为 errored（页面落入 PageError 分支），`?? []` 兜底不可达——均为防御冗余 |
+| `src/web/dispense/DispenseEditDialog.tsx`（setItemsMeta onLoaded） | `row.batchManaged ?? 0` 的 nullish 分支 | 位于 setState 更新器内的 `??`，v8 不为其入账（setState-updater 采集缺陷类，见多处既往登记）；行为由 spec「treats items without a batchManaged flag...」覆盖（无 batchManaged 的条目不渲染批次下拉） |
 
 ## 5. 其他已知取舍
 
