@@ -11,6 +11,9 @@ export const recordColumns: DataTableColumn<MedicalRecordRow>[] = [
   {
     key: 'editRequestStatus',
     label: '修改状态',
-    render: (row) => EDIT_STATUS_LABELS[String(row.editRequestStatus ?? 'NONE')] ?? String(row.editRequestStatus ?? 'NONE'),
+    render: (row) => {
+      const value = String(row.editRequestStatus ?? 'NONE');
+      return EDIT_STATUS_LABELS[value] ?? value;
+    },
   },
 ];

@@ -77,6 +77,24 @@ describe('ImagingFormFields', () => {
     expect(setFile).toHaveBeenCalledWith(null);
   });
 
+  it('formats megabyte-sized files', async () => {
+    vi.mocked(apiRequest).mockResolvedValue([]);
+    const file = new File(['x'], 'large.png', { type: 'image/png' });
+    Object.defineProperty(file, 'size', { value: 1048576 });
+    render(
+      <ImagingFormFields
+        form={emptyForm}
+        update={vi.fn()}
+        file={file}
+        setFile={vi.fn()}
+        categories={categories}
+      />,
+      { wrapper },
+    );
+    expect(await screen.findByText('large.png')).toBeDefined();
+    expect(screen.getByText('1.0 MB')).toBeDefined();
+  });
+
   it('renders empty categories when none are provided', () => {
     render(
       <ImagingFormFields

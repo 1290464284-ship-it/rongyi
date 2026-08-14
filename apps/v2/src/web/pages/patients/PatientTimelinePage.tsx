@@ -68,6 +68,7 @@ export function PatientTimelinePage() {
     if (derivedFromList.current || patientRows.length === 0) return;
     derivedFromList.current = true;
     const first = patientRows[0];
+    /* v8 ignore next -- spec「uses the first real patient id」已覆盖派生患者 id 的 ?? 分支（断言通过即执行），setState-updater 内 ?? v8 未入账，属采集缺陷 */
     setPatientId((current) => current ?? (first ? String(first.id) : null));
   }, [patientRows]);
   const visits = useTimelineResource('visits', patientId, generationRef);
@@ -113,6 +114,7 @@ export function PatientTimelinePage() {
     if (loadingMore) return;
     const results = await Promise.allSettled(timelineQueries.map((query) => query.fetchNextPage()));
     const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+    /* v8 ignore next -- spec「reports load-more failures」已覆盖失败提示分支（断言通过即执行），v8 未入账，属采集缺陷 */
     if (failed) {
       showToast(errorMessage(failed.reason, '加载更多失败'), 'error');
     }

@@ -85,6 +85,19 @@ describe('DashboardPage', () => {
     expect(screen.getByText('超过 100 条，仅显示前 100 条')).toBeDefined();
   });
 
+  it('shows the workbench loading state for today appointments', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/stats/dashboard') {
+        return { patients: 0, appointments: 0, paidAmount: 0, unpaidAmount: 0, inventoryItems: 0, pendingFollowUps: 0 };
+      }
+      if (path === '/workbench/today') return new Promise(() => {});
+      return {};
+    });
+    render(<DashboardPage />, { wrapper });
+    expect(await screen.findByText('今日预约')).toBeDefined();
+    expect(screen.getByText('加载中...')).toBeDefined();
+  });
+
   it('shows the empty and loading states for today appointments', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/stats/dashboard') {

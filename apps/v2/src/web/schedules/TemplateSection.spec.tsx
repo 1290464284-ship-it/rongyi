@@ -244,4 +244,36 @@ describe('TemplateSection', () => {
     pending[1]?.();
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
+
+  it('ignores a delete confirmation while a template save is in flight', async () => {
+    let resolvePost: (value: unknown) => void = () => {};
+    vi.mocked(apiRequest).mockImplementation(async (path: string, options?: RequestInit) => {
+      const method = String(options?.method ?? 'GET').toUpperCase();
+      if (method === 'POST' && path === '/shift-templates') {
+        return new Promise((resolve) => { resolvePost = resolve; });
+      }
+      if (method === 'DELETE') {
+        throw new Error('should not delete');
+      }
+      return {};
+    });
+    render(<TemplateSection templates={[templateFixture()]} reload={vi.fn()} />, { wrapper });
+    await screen.findByText('早班');
+    fireEvent.change(screen.getByLabelText('模板名称'), { target: { value: '夜班' } });
+    fireEvent.change(screen.getByLabelText('开始时间'), { target: { value: '20:00' } });
+    fireEvent.change(screen.getByLabelText('结束时间'), { target: { value: '23:00' } });
+    const form = screen.getByLabelText('模板名称').closest('form') as HTMLFormElement;
+    fireEvent.submit(form);
+
+    // 保存挂起期间确认删除：deleteTemplate 的 submittingRef 守卫直接返回，不发起 DELETE
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    const dialog = await screen.findByRole('dialog', { name: '删除班次模板' });
+    fireEvent.click(within(dialog).getByRole('button', { name: '删除' }));
+    expect(apiRequest).not.toHaveBeenCalledWith('/resources/shiftTemplates/t1', expect.objectContaining({ method: 'DELETE' }));
+
+    resolvePost({ id: 't-new' });
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: '保存中...' })).toBeNull();
+    });
+  });
 });

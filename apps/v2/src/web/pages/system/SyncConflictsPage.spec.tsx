@@ -117,6 +117,12 @@ describe('SyncConflictsPage', () => {
     });
   });
 
+  it('treats a null conflict list as empty', async () => {
+    vi.mocked(apiRequest).mockResolvedValue(null);
+    render(<SyncConflictsPage />, { wrapper });
+    expect(await screen.findByText('暂无待处理冲突')).toBeDefined();
+  });
+
   it('ignores a duplicate resolve request while one is pending', async () => {
     let resolveResolve: ((value: unknown) => void) | undefined;
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {

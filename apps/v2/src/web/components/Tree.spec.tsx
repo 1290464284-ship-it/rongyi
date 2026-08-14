@@ -68,4 +68,11 @@ describe('Tree', () => {
     const badge = screen.getByText('1');
     expect(badge.className).toBe('ui-badge neutral');
   });
+
+  it('ignores unrelated keys during keyboard selection', () => {
+    const onSelect = vi.fn();
+    render(<Tree nodes={nodes} onSelect={onSelect} />);
+    fireEvent.keyDown(screen.getByText('叶子'), { key: 'Escape' });
+    expect(onSelect).not.toHaveBeenCalled();
+  });
 });

@@ -666,7 +666,7 @@ describe('InventoryWorkflowPage', () => {
         return { items: [{ id: 'st-1', number: 'PD-001', status: 'IN_PROGRESS', startedById: 'user-1', startedAt: '2026-08-05T10:00:00.000Z', itemCount: 1, differenceCount: 0 }], total: 1 };
       }
       if (path === '/stocktakes/st-1/items') {
-        return [{ id: 'item-x', itemId: 'item-x', name: null, code: null, systemStock: null, countedStock: null, difference: null }];
+        return [{ id: 'item-x', itemId: null, name: null, code: null, systemStock: null, countedStock: null, difference: null }];
       }
       return {};
     });

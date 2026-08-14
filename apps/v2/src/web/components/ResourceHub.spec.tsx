@@ -253,6 +253,9 @@ it('exposes selected tab state and supports arrow key navigation', async () => {
   expect(screen.getByRole('tab', { name: 'Three' }).getAttribute('aria-selected')).toBe('true');
   fireEvent.keyDown(screen.getByRole('tab', { name: 'Three' }), { key: 'Home' });
   expect(screen.getByRole('tab', { name: 'One' }).getAttribute('aria-selected')).toBe('true');
+
+  fireEvent.keyDown(screen.getByRole('tab', { name: 'One' }), { key: 'Enter' });
+  expect(screen.getByRole('tab', { name: 'One' }).getAttribute('aria-selected')).toBe('true');
 });
 
 it('syncs the active tab when the URL drops its tab or gains a query', async () => {

@@ -131,6 +131,17 @@ describe('FormBuilder', () => {
     });
   });
 
+  it('handles relation responses without an items array', async () => {
+    vi.mocked(apiRequest).mockResolvedValue({ total: 150, page: 1, pageSize: 50 });
+    const fields: ResourceField[] = [
+      { name: 'patientId', type: 'relation', label: '患者', relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } },
+    ];
+    render(<FormBuilder fields={fields} values={{ patientId: '' }} onChange={vi.fn()} />, { wrapper });
+    // total=150 让「加载更多」按钮出现，等待关系查询真正解析后再断言空选项
+    expect(await screen.findByRole('button', { name: '加载更多' })).toBeDefined();
+    expect((screen.getByLabelText('患者') as HTMLSelectElement).value).toBe('');
+  });
+
   it('shows relation option query errors', async () => {
     vi.mocked(apiRequest).mockRejectedValue(new Error('relation options failed'));
     const fields: ResourceField[] = [

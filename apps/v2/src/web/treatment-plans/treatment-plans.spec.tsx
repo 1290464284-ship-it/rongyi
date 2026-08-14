@@ -281,6 +281,29 @@ describe('PlanFormFields', () => {
     expect(errors.length).toBeGreaterThan(0);
   });
 
+  it('ignores a backfill failure after unmount', async () => {
+    let rejectItems: (reason: Error) => void = () => {};
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      if (path.startsWith('/resources/patients?')) return { items: [], total: 0, page: 1, pageSize: 100 };
+      if (path === '/resources/treatmentPlanItems?planId=plan-1') {
+        return new Promise((_resolve, reject) => { rejectItems = reject; });
+      }
+      return {};
+    });
+    const { unmount } = render(
+      <PlanFormFields form={emptyPlanForm()} update={vi.fn()} editing planId="plan-1" onItemsLoaded={vi.fn()} />,
+      { wrapper },
+    );
+    await waitFor(() => {
+      expect(vi.mocked(apiRequest)).toHaveBeenCalledWith('/resources/treatmentPlanItems?planId=plan-1');
+    });
+    unmount();
+    rejectItems(new Error('backfill failed'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByText('加载明细失败')).toBeNull();
+  });
+
   it('locks billed rows', () => {
     const form = emptyPlanForm();
     form.items[0] = { ...form.items[0], name: '植体', billed: true };

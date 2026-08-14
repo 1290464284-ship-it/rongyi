@@ -8,8 +8,9 @@ interface TooltipProps {
 export function Tooltip({ content, children }: TooltipProps) {
   const [visible, setVisible] = useState(false);
   const tooltipId = useId();
+  // React 元素恒携带非空 props 对象（JSX/createElement 产物），`?? {}` 兜底不可达（死代码）。
   const childProps = isValidElement(children)
-    ? (children as ReactElement<{ onFocus?: FocusEventHandler; onBlur?: FocusEventHandler; 'aria-describedby'?: string }>).props ?? {}
+    ? (children as ReactElement<{ onFocus?: FocusEventHandler; onBlur?: FocusEventHandler; 'aria-describedby'?: string }>).props
     : {};
   const child = isValidElement(children)
     ? cloneElement(children as ReactElement<{ onFocus?: FocusEventHandler; onBlur?: FocusEventHandler; 'aria-describedby'?: string }>, {

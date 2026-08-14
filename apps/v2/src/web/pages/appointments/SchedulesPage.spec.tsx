@@ -158,6 +158,17 @@ describe('SchedulesPage', () => {
     expect(await screen.findByText('本周暂无排班')).toBeDefined();
   });
 
+  it('falls back to an empty week table when the week query resolves null', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/shift-templates') return templates;
+      if (path === '/resources/users?page=1&pageSize=100') return users;
+      if (path.startsWith('/schedules/week?weekStart=')) return null;
+      return {};
+    });
+    render(<SchedulesPage />, { wrapper });
+    expect(await screen.findByText('本周暂无排班')).toBeDefined();
+  });
+
   it('shows a week query error without hiding the rest of the page', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path.startsWith('/schedules/week?')) throw new Error('week failed');

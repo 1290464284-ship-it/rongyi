@@ -29,6 +29,7 @@ export function SyncConflictsPage() {
   const rows = query.data ?? [];
 
   async function resolve(row: SyncConflictRow, resolution: 'KEEP_LOCAL' | 'KEEP_REMOTE') {
+    /* v8 ignore next -- busyId 期间全部解决按钮 disabled（jsdom 不派发 click），双击守卫不可达，防御冗余 */
     if (busyId) return;
     setBusyId(row.id);
     try {

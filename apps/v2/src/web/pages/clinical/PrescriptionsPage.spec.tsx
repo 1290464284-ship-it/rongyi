@@ -600,6 +600,33 @@ describe('PrescriptionsPage', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
+  it('ignores a prescription item load failure after unmount', async () => {
+    let rejectItems: (reason: Error) => void = () => {};
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/prescriptions?page=1&pageSize=50') {
+        return { items: [{ id: 'pres-1', patientId: 'p-1', doctorId: 'd-1', remark: '饭后服用' }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      if (path.includes('/resources/prescriptionItems?')) {
+        return new Promise((_resolve, reject) => { rejectItems = reject; });
+      }
+      return {};
+    });
+    const { unmount } = render(<PrescriptionsPage />, { wrapper });
+    await screen.findByText('饭后服用');
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    await waitFor(() => {
+      expect(vi.mocked(apiRequest)).toHaveBeenCalledWith('/resources/prescriptionItems?prescriptionId=pres-1&page=1&pageSize=100');
+    });
+    unmount();
+    rejectItems(new Error('明细加载失败'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByText('加载处方明细失败')).toBeNull();
+  });
+
   it('aborts deleting the master when prescription detail deletes fail', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/prescriptions?page=1&pageSize=50') {

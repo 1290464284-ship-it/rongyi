@@ -301,4 +301,11 @@ describe('processing-orders/columns', () => {
     const flow = flowStatsColumns.find((entry) => entry.key === 'doneCount');
     expect(flow && typeof flow.render === 'function' ? flow.render({ id: 's', stepName: '1', doneCount: 2, inProgressCount: 0 }) : '').toBe('2');
   });
+
+  it('falls back to zero for missing flow stat counts', () => {
+    const done = flowStatsColumns.find((entry) => entry.key === 'doneCount');
+    const inProgress = flowStatsColumns.find((entry) => entry.key === 'inProgressCount');
+    expect(done && typeof done.render === 'function' ? done.render({ stepName: '1' } as never) : '').toBe('0');
+    expect(inProgress && typeof inProgress.render === 'function' ? inProgress.render({ stepName: '1' } as never) : '').toBe('0');
+  });
 });

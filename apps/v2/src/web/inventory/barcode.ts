@@ -60,7 +60,9 @@ export function code39Bars(value: string): Array<{ x: number; width: number }> {
   const bars: Array<{ x: number; width: number }> = [];
   let x = 0;
   for (const char of text) {
-    const pattern = CODE39_TABLE[char] ?? CODE39_TABLE['*'];
+    // `text` 恒由 '*' 与 sanitizeCode39 过滤后的合法字符组成，CODE39_TABLE 对这两类字符均有条目，
+    // `?? CODE39_TABLE['*']` 兜底不可达（死代码）。
+    const pattern = CODE39_TABLE[char];
     for (let index = 0; index < pattern.length; index += 1) {
       const wide = pattern[index] === 'w';
       const width = wide ? WIDE : NARROW;

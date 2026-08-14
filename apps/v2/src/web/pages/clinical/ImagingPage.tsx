@@ -166,7 +166,8 @@ export function ImagingPage() {
         validate={(form) => (!form.patientId || !form.doctorId || !form.title ? '请选择患者、医生并填写影像标题' : null)}
         submitOverride={async ({ form, editing }) => {
           let uploadedFilename: string | null = null;
-          let imageUrl = String(form.imageUrl ?? '');
+          // form.imageUrl 恒为 string（emptyForm 写 ''，formFromRow 写 String(row.imageUrl ?? '')），nullish 兜底为死代码，已删除。
+          let imageUrl = form.imageUrl;
           if (file) {
             const uploaded = await uploadFile(file);
             uploadedFilename = uploaded.filename;

@@ -534,6 +534,27 @@ describe('Layout clinic switcher', () => {
     expect(await screen.findByText('5 分钟前')).toBeDefined();
   });
 
+  it('sorts backups with a missing timestamp in the middle', async () => {
+    const now = Date.now();
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/auth/navigation') return { permissions: ['dashboard'], role: 'BOSS' };
+      if (path === '/auth/clinics') {
+        return { currentClinicId: 'clinic-1', clinics: [{ clinicId: 'clinic-1', name: 'Clinic 1' }] };
+      }
+      if (path === '/auth/me') return { name: '王丽', username: 'wangli' };
+      if (path === '/backups') {
+        return [
+          { createdAt: new Date(now - 5 * 86_400_000).toISOString() },
+          { createdAt: undefined },
+          { createdAt: new Date(now - 5 * 60_000).toISOString() },
+        ];
+      }
+      return {};
+    });
+    renderLayout();
+    expect(await screen.findByText('5 分钟前')).toBeDefined();
+  });
+
   it('denies resource routes when the definition has no roles', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/auth/navigation') return { permissions: ['dashboard'], role: 'BOSS' };

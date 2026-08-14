@@ -12,4 +12,9 @@ describe('week schedule columns', () => {
     expect(title?.render?.({} as never)).toBe('—');
     expect(type?.render?.({ type: 'WEIRD' } as never)).toBe('WEIRD');
   });
+
+  it('falls back to an empty weekday for out-of-range weekDays', () => {
+    const date = weekColumns.find((column) => column.key === 'date');
+    expect(date?.render?.({ date: '2026-08-03', weekDay: 7 } as never)).toBe('2026-08-03（）');
+  });
 });

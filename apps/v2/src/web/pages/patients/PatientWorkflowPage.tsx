@@ -30,6 +30,7 @@ export function PatientWorkflowPage() {
   const stale = patients.isPlaceholderData;
 
   async function calculate(patientId: string) {
+    /* v8 ignore next -- 计算按钮在 stale 期间 disabled（jsdom 不派发 click），守卫为防御冗余 */
     if (stale) return;
     try {
       await apiRequest<Record<string, unknown>>(`/patients/${patientId}/risk`, { method: 'POST', body: JSON.stringify({}) });

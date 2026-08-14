@@ -247,4 +247,21 @@ describe('CommunicationWorkflowPage', () => {
     expect(screen.getByText('今日提醒超过 1000 条，仅显示前 1000 条')).toBeDefined();
     expect(screen.getByText('暂无微信消息')).toBeDefined();
   });
+
+  it('falls back to an empty reminder list when the payload omits items', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/wechat/status') {
+        return { configured: true, provider: 'http' };
+      }
+      if (path === '/wechat-reminders/today') {
+        return { date: '2026-08-05', config: { enabled: true, appointmentDaysBefore: 1, recallDaysAfter: 3, firstExamDaysAfter: 3 } };
+      }
+      if (path === '/resources/wechatMessages?page=1&pageSize=100') {
+        return { items: [], total: 0 };
+      }
+      return {};
+    });
+    render(<CommunicationWorkflowPage />, { wrapper });
+    expect(await screen.findByText('今日无待发提醒')).toBeDefined();
+  });
 });

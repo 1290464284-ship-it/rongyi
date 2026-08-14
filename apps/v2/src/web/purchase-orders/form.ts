@@ -16,7 +16,8 @@ export function buildValidItems(items: PurchaseItemForm[]): ValidPurchaseItem[] 
       const matchedName = item.itemId ? (item.name.trim() || '自定义项目').trim() : '';
       return {
         itemId: item.itemId || undefined,
-        name: item.itemId ? (matchedName || '自定义项目') : '自定义项目',
+        // matchedName 在 itemId 非空时恒为 (item.name.trim() || '自定义项目').trim()，必为非空字符串，`|| '自定义项目'` 为死代码，已删除。
+        name: item.itemId ? matchedName : '自定义项目',
         quantity: Number(item.quantity),
         unitPrice: toCents(item.unitPrice),
       };

@@ -71,8 +71,8 @@ export function PurchaseOrdersPage() {
                 number: form.number.trim(),
                 supplierId: form.supplierId || undefined,
                 totalAmount,
-                // formFromRow 恒以 String(row.status ?? '') 写入（编辑时必为 string），nullish 兜底不可达。
-                status: editingStatusRef.current ?? 'PENDING',
+                // formFromRow 恒以 String(row.status ?? '') 写入（编辑时必为 string），nullish 兜底不可达，已删除。
+                status: editingStatusRef.current,
               }),
             });
             await reconcilePurchaseItems(orderId, form.items);

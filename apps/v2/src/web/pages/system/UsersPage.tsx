@@ -408,6 +408,7 @@ export function UsersPage() {
         onClose={() => setPermissionTarget(null)}
       >
         <div className="role-checkbox-group">
+          {/* PERMISSION_KEYS 全部存在于 PERMISSION_LABELS 中，`?? key` 兜底为死代码，已删除。 */}
           {PERMISSION_KEYS.map((key) => (
             <label key={key}>
               <input
@@ -416,7 +417,7 @@ export function UsersPage() {
                 disabled={permissionBusy}
                 onChange={(event) => setPermissionForm((current) => ({ ...current, [key]: event.target.checked }))}
               />
-              {PERMISSION_LABELS[key] ?? key}
+              {PERMISSION_LABELS[key]}
             </label>
           ))}
         </div>

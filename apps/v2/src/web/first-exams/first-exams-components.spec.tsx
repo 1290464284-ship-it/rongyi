@@ -529,5 +529,6 @@ describe('first-exam columns', () => {
     expect(renderColumn('status', row)).toBe('UNKNOWN');
     expect(renderColumn('followUpStatus', row)).toBe('未追踪');
     expect(renderColumn('restartedAt', row)).toBe('');
+    expect(renderColumn('followUpStatus', { id: 'f-1', followUpStatus: 'CUSTOM' })).toBe('CUSTOM');
   });
 });

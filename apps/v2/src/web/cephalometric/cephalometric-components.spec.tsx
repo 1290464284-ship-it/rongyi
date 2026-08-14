@@ -276,6 +276,14 @@ describe('ReportDialog', () => {
     });
     expect(area).toBeDefined();
   });
+
+  it('treats an empty JSON textarea as an empty report object', async () => {
+    mockReport();
+    render(<ReportDialog row={{ id: 'c-1' }} reload={vi.fn()} onClose={vi.fn()} />, { wrapper });
+    const area = await screen.findByLabelText('报告 JSON');
+    fireEvent.change(area, { target: { value: '' } });
+    expect(await screen.findByText('暂无轮廓数据')).toBeDefined();
+  });
 });
 
 describe('SendWechatDialog', () => {
