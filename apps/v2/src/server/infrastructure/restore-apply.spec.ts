@@ -315,4 +315,43 @@ describe('applyStagedRestore', () => {
     expect(leftovers).toEqual([]);
     vi.restoreAllMocks();
   });
+
+  it('removes the marker when renaming it to the invalid path fails', () => {
+    const caseDir = path.join(dir, 'unsafe-rename-fail');
+    fs.mkdirSync(caseDir, { recursive: true });
+    const dbPath = path.join(caseDir, 'unsafe.sqlite');
+    fs.writeFileSync(path.join(caseDir, '.restore-pending.json'), JSON.stringify(markerFor('C:/outside/evil.sqlite', false)));
+    vi.spyOn(fs, 'renameSync').mockImplementationOnce(() => {
+      throw new Error('rename boom');
+    });
+    try {
+      const result = applyStagedRestore(dbPath, [caseDir]);
+      expect(result).toEqual({ applied: false });
+      expect(fs.existsSync(path.join(caseDir, '.restore-pending.json'))).toBe(false);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('removes the marker when the hash-mismatch rename fails', () => {
+    const caseDir = path.join(dir, 'hash-rename-fail');
+    fs.mkdirSync(caseDir, { recursive: true });
+    const dbPath = path.join(caseDir, 'hash.sqlite');
+    const stagedPath = path.join(caseDir, 'backups', 'hash.sqlite');
+    fs.mkdirSync(path.dirname(stagedPath), { recursive: true });
+    fs.writeFileSync(stagedPath, 'original');
+    const marker = markerFor(stagedPath);
+    fs.writeFileSync(stagedPath, 'tampered');
+    fs.writeFileSync(path.join(caseDir, '.restore-pending.json'), JSON.stringify(marker));
+    vi.spyOn(fs, 'renameSync').mockImplementationOnce(() => {
+      throw new Error('rename boom');
+    });
+    try {
+      const result = applyStagedRestore(dbPath, [caseDir]);
+      expect(result).toEqual({ applied: false });
+      expect(fs.existsSync(path.join(caseDir, '.restore-pending.json'))).toBe(false);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
 });

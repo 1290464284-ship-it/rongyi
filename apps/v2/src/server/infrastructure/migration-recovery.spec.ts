@@ -104,6 +104,27 @@ describe('restoreLatestMigrationSnapshot', () => {
       expect.objectContaining({ action: 'migration-rollback' }),
     );
   });
+
+  it('survives a snapshot that vanishes during the mtime sort', () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-migrec-'));
+    const dbPath = path.join(dir, 'v2.sqlite');
+    const snapDir = path.join(dir, 'pre-migration');
+    fs.mkdirSync(snapDir, { recursive: true });
+    createDb(path.join(snapDir, 'pre-1000.sqlite'), 'old');
+    createDb(path.join(snapDir, 'pre-2000.sqlite'), 'new');
+    createDb(dbPath, 'broken');
+    const originalStat = fs.statSync.bind(fs);
+    const spy = vi.spyOn(fs, 'statSync').mockImplementation((p: fs.PathLike) => {
+      if (String(p).includes('pre-migration')) throw new Error('vanished');
+      return originalStat(p);
+    });
+    try {
+      expect(restoreLatestMigrationSnapshot(dir, dbPath, makeLogger())).toBe(true);
+      expect(fs.readdirSync(dir).filter((name) => name.startsWith('v2.sqlite.failed-'))).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });
 
 describe('pruneFailedCopies', () => {
@@ -148,5 +169,24 @@ describe('pruneFailedCopies', () => {
 
     expect(pruneFailedCopies(dbPath, -1)).toBe(2);
     expect(fs.readdirSync(dir).filter((name) => name.startsWith('v2.sqlite.failed-'))).toEqual([]);
+  });
+
+  it('survives a failed copy that vanishes during the prune sort', () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-migrec-'));
+    const dbPath = path.join(dir, 'v2.sqlite');
+    createDb(dbPath, 'x');
+    for (let i = 1; i <= 3; i += 1) {
+      fs.writeFileSync(`${dbPath}.failed-${i}`, `copy-${i}`);
+    }
+    const originalStat = fs.statSync.bind(fs);
+    const spy = vi.spyOn(fs, 'statSync').mockImplementation((p: fs.PathLike) => {
+      if (String(p).includes('.failed-')) throw new Error('vanished');
+      return originalStat(p);
+    });
+    try {
+      expect(pruneFailedCopies(dbPath, 1)).toBe(2);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

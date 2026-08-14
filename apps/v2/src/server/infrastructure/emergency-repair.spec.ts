@@ -92,4 +92,27 @@ describe('attemptEmergencyRepair', () => {
       execSpy.mockRestore();
     }
   });
+
+  it('reports integrity_check still failing after REINDEX succeeds', () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-repair-'));
+    const dbPath = path.join(dir, 'v2.sqlite');
+    createHealthyDb(dbPath);
+    // REINDEX runs cleanly but integrity_check keeps reporting a problem:
+    // 覆盖“REINDEX 后 integrity_check 仍失败”的 fail-closed 分支。
+    const originalPragma = Database.prototype.pragma;
+    const pragmaSpy = vi.spyOn(Database.prototype, 'pragma').mockImplementation(function (
+      this: Database.Database,
+      source: string,
+    ) {
+      if (source === 'integrity_check') return [{ integrity_check: 'database disk image is malformed' }];
+      return originalPragma.call(this, source);
+    });
+    try {
+      const result = attemptEmergencyRepair(dbPath, makeLogger());
+      expect(result.repaired).toBe(false);
+      expect(result.detail).toBe('integrity_check still failing after REINDEX');
+    } finally {
+      pragmaSpy.mockRestore();
+    }
+  });
 });

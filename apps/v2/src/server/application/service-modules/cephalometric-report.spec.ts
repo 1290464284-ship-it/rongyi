@@ -140,6 +140,21 @@ describe('CephalometricReportService', () => {
     expect(report.landmarksJson).toEqual({});
   });
 
+  it('normalizes array-valued JSON fields to empty objects', () => {
+    insertCase('case-get-array', {
+      landmarksJson: '[]',
+      metricsJson: '[1,2,3]',
+      reportJson: '[]',
+    });
+    const service = new CephalometricReportService(db);
+
+    const report = service.getReport('case-get-array', context);
+
+    expect(report.reportJson).toEqual({});
+    expect(report.metricsJson).toEqual({});
+    expect(report.landmarksJson).toEqual({});
+  });
+
   it('passes non-string JSON objects through instead of parsing them', () => {
     const service = new CephalometricReportService(db);
     const originalPrepare = db.prepare.bind(db);

@@ -12,7 +12,8 @@ import type { AuthRepository, AuthUserRecord } from '../ports';
 import { AuthService } from './auth.service';
 import { UserManagementService } from './user-management.service';
 import { hashRefreshToken, type AuthSession } from './common';
-import { encryptRefreshClaim, refreshClaimKey } from './auth-refresh-claim';
+import { decryptRefreshClaim, encryptRefreshClaim, refreshClaimKey } from './auth-refresh-claim';
+import { readRefreshClaimStore } from './refresh-claims';
 
 function stubRepo(overrides: Partial<AuthRepository>): AuthRepository {
   return {
@@ -584,5 +585,33 @@ describe('AuthService login TOCTOU guard', () => {
       findById: () => (reads++ === 0 ? record(hash, now) : null),
     }));
     await expect(service.changePassword('user-toctou-001', 'old-pass', 'new-pass-123')).rejects.toThrow(NotFoundError);
+  });
+
+  it('decryptRefreshClaim returns null for a tampered payload', () => {
+    const iv = Buffer.alloc(12).toString('base64');
+    const tag = Buffer.alloc(16).toString('base64');
+    const data = Buffer.from('garbage').toString('base64');
+    expect(decryptRefreshClaim(`${iv}.${tag}.${data}`, 'some-token-hash')).toBeNull();
+  });
+
+  it('readRefreshClaimStore returns null when the session validation callback throws', () => {
+    const tokenHash = 'claim-token-hash';
+    const userId = 'user-admin-001';
+    const key = refreshClaimKey(tokenHash, userId);
+    const session = {
+      token: 'claim-token',
+      refreshToken: 'claim-next',
+      expiresIn: 8 * 60 * 60,
+      user: { id: userId },
+    } as unknown as AuthSession;
+    db.prepare(
+      `INSERT INTO IdempotencyRecord (
+         id, key, type, status, responseJson, result, userId, clinicId, operation,
+         createdAt, updatedAt, deletedAt, expiresAt
+       ) VALUES (?, ?, 'GENERIC', 'COMPLETED', ?, '{}', ?, NULL, 'auth.refresh', ?, ?, NULL, ?)`,
+    ).run(randomUUID(), key, encryptRefreshClaim(session, tokenHash), userId, now, now, '2099-01-01T00:00:00.000Z');
+    expect(readRefreshClaimStore(db, tokenHash, userId, () => {
+      throw new Error('session check boom');
+    })).toBeNull();
   });
 });

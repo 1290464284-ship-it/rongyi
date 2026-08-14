@@ -297,6 +297,13 @@ describe('MemberDiscountService', () => {
     expect(service.getPlan(cardId, context).specialDiscountsJson).toBeNull();
   });
 
+  it('getPlan normalizes unparseable stored special discounts to null', () => {
+    const cardId = createCard('MD-CARD-BADJSON');
+    const service = new MemberDiscountService(db);
+    db.prepare('UPDATE MemberCard SET specialDiscountsJson = ? WHERE id = ?').run('{broken', cardId);
+    expect(service.getPlan(cardId, context).specialDiscountsJson).toBeNull();
+  });
+
   it('quote rejects a non-array items value and non-object items', () => {
     const cardId = createCard('MD-CARD-ITEMS');
     const service = new MemberDiscountService(db);

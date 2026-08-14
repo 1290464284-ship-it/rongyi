@@ -348,4 +348,103 @@ describe('BackupService staged cleanup', () => {
     expect(logger.warn).toHaveBeenCalledWith('[backup] failed to delete backup file during cleanup', expect.objectContaining({ error: 'unlink-string' }));
     expect(originalUnlink).toBeDefined();
   });
+
+  it('skips backup files that vanish between readdir and stat during listing', () => {
+    const backupsDir = path.join(dir, 'backups');
+    fs.mkdirSync(backupsDir, { recursive: true });
+    fs.writeFileSync(path.join(backupsDir, 'clinic-null-backup-vanish.sqlite'), 'x');
+    const originalStat = fs.statSync.bind(fs);
+    const spy = vi.spyOn(fs, 'statSync').mockImplementation((p: fs.PathLike) => {
+      if (String(p).endsWith('clinic-null-backup-vanish.sqlite')) throw new Error('gone');
+      return originalStat(p);
+    });
+    try {
+      expect(service.list()).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('treats a file as deletable when its grace-period stat fails during cleanup', () => {
+    const backupsDir = path.join(dir, 'backups');
+    fs.mkdirSync(backupsDir, { recursive: true });
+    const now = Date.now();
+    const newer = path.join(backupsDir, 'clinic-null-backup-newer.sqlite');
+    const older = path.join(backupsDir, 'clinic-null-backup-older.sqlite');
+    fs.writeFileSync(newer, 'x');
+    fs.writeFileSync(older, 'x');
+    fs.utimesSync(newer, new Date(now - 3600_000), new Date(now - 3600_000));
+    fs.utimesSync(older, new Date(now - 7200_000), new Date(now - 7200_000));
+    const db = new Database(':memory:');
+    db.exec('CREATE TABLE BackupRecord (id TEXT, clinicId TEXT, createdAt TEXT, updatedAt TEXT, deletedAt TEXT, filename TEXT, fileSize INTEGER, type TEXT, operatorId TEXT, operatorName TEXT)');
+    const dbService = new BackupService(db as unknown as Database.Database, path.join(dir, 'v2.sqlite'), backupsDir);
+    const originalStat = fs.statSync.bind(fs);
+    const statCounts = new Map<string, number>();
+    const spy = vi.spyOn(fs, 'statSync').mockImplementation((p: fs.PathLike) => {
+      const key = String(p);
+      if (key.endsWith('clinic-null-backup-older.sqlite')) {
+        const seen = (statCounts.get(key) ?? 0) + 1;
+        statCounts.set(key, seen);
+        if (seen >= 2) throw new Error('gone mid-cleanup');
+      }
+      return originalStat(p);
+    });
+    try {
+      const result = dbService.cleanup(1);
+      expect(result.deleted.map((file) => file.filename)).toEqual(['clinic-null-backup-older.sqlite']);
+      expect(fs.existsSync(older)).toBe(false);
+      expect(fs.existsSync(newer)).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('returns zero when the backup directory is missing', () => {
+    expect(service.cleanupStaged()).toEqual({ removed: 0 });
+  });
+
+  it('skips staged entries that vanish between listing and stat', () => {
+    const backupsDir = path.join(dir, 'backups');
+    fs.mkdirSync(backupsDir, { recursive: true });
+    const vanished = path.join(backupsDir, '.staged-vanish.sqlite');
+    fs.writeFileSync(vanished, 'x');
+    const originalStat = fs.statSync.bind(fs);
+    const spy = vi.spyOn(fs, 'statSync').mockImplementation((p: fs.PathLike) => {
+      if (String(p).endsWith('.staged-vanish.sqlite')) throw new Error('gone');
+      return originalStat(p);
+    });
+    try {
+      expect(service.cleanupStaged()).toEqual({ removed: 0 });
+      expect(fs.existsSync(vanished)).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('logs a warning when a stale staged file cannot be removed', () => {
+    const backupsDir = path.join(dir, 'backups');
+    fs.mkdirSync(backupsDir, { recursive: true });
+    const stale = path.join(backupsDir, '.staged-stale.sqlite');
+    fs.writeFileSync(stale, 'x');
+    const now = Date.now();
+    fs.utimesSync(stale, new Date(now - 7 * 60 * 60 * 1000), new Date(now - 7 * 60 * 60 * 1000));
+    const logger = { warn: vi.fn() };
+    const db = new Database(':memory:');
+    const dbService = new BackupService(db as unknown as Database.Database, path.join(dir, 'v2.sqlite'), backupsDir, logger as never);
+    const originalRm = fs.rmSync.bind(fs);
+    const spy = vi.spyOn(fs, 'rmSync').mockImplementation((p: fs.PathLike, options?: fs.RmOptions) => {
+      if (String(p).endsWith('.staged-stale.sqlite')) throw new Error('rm boom');
+      return originalRm(p, options);
+    });
+    try {
+      const result = dbService.cleanupStaged();
+      expect(result.removed).toBe(0);
+      expect(logger.warn).toHaveBeenCalledWith(
+        'failed to remove stale staged backup file',
+        expect.objectContaining({ action: 'staged-cleanup', filename: '.staged-stale.sqlite' }),
+      );
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });

@@ -163,3 +163,21 @@ describe('Logger file rotation', () => {
     }
   });
 });
+
+describe('Logger exit flush', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('flushes every live logger when the process exits', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-logger-exit-'));
+    const logger = new Logger({ logDir: dir });
+    const flushSpy = vi.spyOn(logger, 'flush');
+    try {
+      (process as NodeJS.EventEmitter).emit('exit');
+      expect(flushSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

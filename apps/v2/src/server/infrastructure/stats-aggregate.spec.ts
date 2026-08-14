@@ -97,4 +97,21 @@ describe('stats-aggregate snapshots', () => {
     expect(readReplenishmentSnapshot(db, 'clinic-null-val', '2026-01-01T00:00:00.000Z', '2026-02-01T00:00:00.000Z', null))
       .toEqual(new Map([['item-1', 0]]));
   });
+
+  it('returns null when snapshot JSON is not parseable', () => {
+    writeDashboardSnapshot(db, 'clinic-bad-json', { a: 1 }, '2026-01-01T00:00:00.000Z');
+    db.prepare(`UPDATE StatSnapshot SET valueJson = '{broken' WHERE clinicId = 'clinic-bad-json' AND key = 'dashboard'`).run();
+    expect(readDashboardSnapshot(db, 'clinic-bad-json')).toBeNull();
+
+    writeReplenishmentSnapshot(
+      db,
+      'clinic-repl-bad-json',
+      '2026-01-01T00:00:00.000Z',
+      '2026-02-01T00:00:00.000Z',
+      new Map([['item-1', 1]]),
+      '2026-01-02T00:00:00.000Z',
+    );
+    db.prepare(`UPDATE ReplenishmentSnapshot SET dataJson = '{broken' WHERE clinicId = 'clinic-repl-bad-json'`).run();
+    expect(readReplenishmentSnapshot(db, 'clinic-repl-bad-json', '2026-01-01T00:00:00.000Z', '2026-02-01T00:00:00.000Z', null)).toBeNull();
+  });
 });
