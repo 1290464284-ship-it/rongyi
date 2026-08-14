@@ -99,6 +99,8 @@ Web **96.82% / 92.94% / 98.66% / 98.58%**，双门禁全绿——覆盖率口径
 | `src/web/pages/clinical/ClinicalWorkflowPage.tsx`（状态标签兜底） | `STATUS_LABELS[status] ?? status` / `STATUS_LABELS[next] ?? next` 的原始值分支 | transitions 配置内的全部状态（IN_PROGRESS/CANCELLED/COMPLETED/SUBMITTED/APPROVED）均在标签表中，兜底仅面向未来配置扩展，防御冗余 |
 | `src/web/pages/system/UsersPage.tsx`（deleteUser / resetPassword / savePermissions / 权限标签） | `!deleteTarget \|\| submitting`、`!passwordTarget \|\| submitting`、`!permissionTarget \|\| permissionBusy` 守卫与 `PERMISSION_LABELS[key] ?? key` | 确认/重置/保存按钮仅在目标非空时渲染且 busy 期间 disabled（jsdom 不派发）；PERMISSION_KEYS 全部在标签表中，`?? key` 仅面向未来扩展——均为防御冗余；openPermissions 的 requestId 守卫由 spec「drops a stale permission load...」真实覆盖 |
 | `src/server/application/service-modules/workbench.ts`（today） | `dayStart/dayEnd 为 null` 解析失败守卫 | clinicDate 恒产出合法 YYYY-MM-DD（+8 时区），`clinicDayStartUtc/EndUtc` 解析不会失败，防御冗余（COUNT(*) 空值兜底已删除，聚合恒返回一行） |
+| `src/web/components/Tree.tsx`（handleToggle） | `if (!hasChildren) return` | 展开按钮仅在有子节点时渲染（`hasChildren &&`），无子节点分支不可达，防御冗余 |
+| `src/web/pages/clinical/PrescriptionsPage.tsx`（effect / ProcessPrescriptionButton） | `if (!prescriptionId) return` 与 `if (disabled) return` | editLoadKey 仅在 formFromRow（先写入 editingIdRef）中递增，prescriptionId 恒非空；处理按钮 busy/disabled 期间禁用（jsdom 不派发）——均为防御冗余 |
 
 ## 5. 其他已知取舍
 

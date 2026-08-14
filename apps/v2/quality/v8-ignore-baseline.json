@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-08-14T03:16:57.188Z",
-  "total": 226,
+  "generatedAt": "2026-08-14T03:25:42.678Z",
+  "total": 229,
   "perFile": {
     "src\\web\\pages\\system\\SystemOperationsPage.tsx": 3,
     "src\\web\\pages\\system\\UsersPage.tsx": 3,
@@ -13,12 +13,14 @@
     "src\\web\\pages\\clinical\\CephalometricPage.tsx": 3,
     "src\\web\\pages\\clinical\\ImagingPage.tsx": 3,
     "src\\web\\pages\\clinical\\MedicalRecordsPage.tsx": 3,
+    "src\\web\\pages\\clinical\\PrescriptionsPage.tsx": 2,
     "src\\web\\pages\\clinical\\TreatmentPlansPage.tsx": 4,
     "src\\web\\pages\\clinical\\TreatmentsPage.tsx": 2,
     "src\\web\\pages\\analytics\\AnalyticsDashboardPage.tsx": 1,
     "src\\web\\first-exams\\TeethMarkDialog.tsx": 1,
     "src\\web\\components\\dialog.tsx": 2,
     "src\\web\\components\\ResourcePage.tsx": 10,
+    "src\\web\\components\\Tree.tsx": 1,
     "src\\server\\infrastructure\\idempotency.ts": 3,
     "src\\server\\infrastructure\\repository.ts": 33,
     "src\\server\\infrastructure\\repositories\\clinical-workflow.repository.ts": 3,

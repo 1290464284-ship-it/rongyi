@@ -25,6 +25,7 @@ export function PrescriptionsPage() {
   useEffect(() => {
     if (editLoadKey === 0) return;
     const prescriptionId = editingIdRef.current;
+    /* v8 ignore next -- editLoadKey 仅在 formFromRow（先写入 editingIdRef）中递增，prescriptionId 恒非空，防御冗余 */
     if (!prescriptionId) return;
     let cancelled = false;
     (async () => {
@@ -155,7 +156,11 @@ function ProcessPrescriptionButton({
 }) {
   const { busy, run } = useAsyncAction();
   return (
-    <button disabled={busy || disabled} onClick={() => { if (disabled) return; run(() => processPrescription(row, reload, showToast)); }}>
+    <button disabled={busy || disabled} onClick={() => {
+      /* v8 ignore next -- 按钮在 busy/disabled 期间禁用（jsdom 不派发 click），守卫为防御冗余 */
+      if (disabled) return;
+      run(() => processPrescription(row, reload, showToast));
+    }}>
       {busy ? '处理中...' : '处理'}
     </button>
   );

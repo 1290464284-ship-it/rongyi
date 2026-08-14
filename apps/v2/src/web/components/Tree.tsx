@@ -45,6 +45,7 @@ function TreeNodeView({
   const open = expandedIds ? Boolean(expandedIds[node.id]) : openIds.has(node.id);
 
   function handleToggle() {
+    /* v8 ignore next -- 展开按钮仅在有子节点时渲染，无子节点分支不可达，防御冗余 */
     if (!hasChildren) return;
     if (expandedIds && onToggle) onToggle(node.id);
     else toggle(node.id);

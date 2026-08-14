@@ -53,4 +53,19 @@ describe('Tree', () => {
     fireEvent.click(screen.getByRole('button', { name: '收起 根' }));
     expect(onToggle).toHaveBeenCalledWith('root');
   });
+
+  it('marks the selected node and selects with the space key', () => {
+    const onSelect = vi.fn();
+    render(<Tree nodes={nodes} selectedId="leaf" onSelect={onSelect} />);
+    const leaf = screen.getByText('叶子');
+    fireEvent.keyDown(leaf, { key: ' ' });
+    expect(onSelect).toHaveBeenCalledWith('leaf');
+    expect(leaf.parentElement?.className).toContain('selected');
+  });
+
+  it('defaults a missing badge tone to neutral', () => {
+    render(<Tree nodes={[{ id: 'b1', label: '徽章', badge: '1' }]} />);
+    const badge = screen.getByText('1');
+    expect(badge.className).toBe('ui-badge neutral');
+  });
 });

@@ -403,6 +403,63 @@ describe('PrescriptionsPage', () => {
     });
   });
 
+  it('blocks saving with the loading message while the item backfill is pending', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/prescriptions?page=1&pageSize=50') {
+        return { items: [{ id: 'pres-1', patientId: 'p-1', doctorId: 'd-1', remark: '饭后服用' }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      if (path.includes('/resources/prescriptionItems?')) return new Promise(() => {});
+      return {};
+    });
+    render(<PrescriptionsPage />, { wrapper });
+    await screen.findByText('饭后服用');
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    await screen.findByRole('dialog', { name: '编辑处方' });
+    fireEvent.click(screen.getByText('保存'));
+    expect(await screen.findByText('处方明细加载中，请稍候再保存')).toBeDefined();
+  });
+
+  it('ignores a stale item backfill after reopening the edit dialog', async () => {
+    const pending: Array<(value: unknown) => void> = [];
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/prescriptions?page=1&pageSize=50') {
+        return { items: [
+          { id: 'pres-1', patientId: 'p-1', doctorId: 'd-1', remark: '处方一' },
+          { id: 'pres-2', patientId: 'p-1', doctorId: 'd-1', remark: '处方二' },
+        ], total: 2, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      if (path === '/resources/prescriptionItems?prescriptionId=pres-1&page=1&pageSize=100') {
+        return await new Promise((resolve) => { pending.push(resolve); });
+      }
+      if (path === '/resources/prescriptionItems?prescriptionId=pres-2&page=1&pageSize=100') {
+        return { items: [{ id: 'pi-2', name: '布洛芬', quantity: 1, unitPrice: 5, days: 1, status: 'DRAFT' }], total: 1, page: 1, pageSize: 100 };
+      }
+      return {};
+    });
+    render(<PrescriptionsPage />, { wrapper });
+    await screen.findByText('处方一');
+    const editButtons = screen.getAllByRole('button', { name: '编辑' });
+    fireEvent.click(editButtons[0]);
+    await screen.findByRole('dialog', { name: '编辑处方' });
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    // 重新打开第二个处方：effect 重新执行（editLoadKey 递增），旧请求被取消标记
+    fireEvent.click(editButtons[1]);
+    // 迟到解析第一个处方：不得覆盖当前表单（药品名称保持空）
+    pending[0]?.({ items: [{ id: 'pi-1', name: '阿莫西林', quantity: 1, unitPrice: 1, days: 1, status: 'DRAFT' }], total: 1, page: 1, pageSize: 100 });
+    await waitFor(() => {
+      expect((screen.getAllByLabelText('药品名称')[0] as HTMLInputElement).value).toBe('布洛芬');
+    });
+  });
+
   it('deletes a prescription through the generic resource endpoint', async () => {
     mockData();
     render(<PrescriptionsPage />, { wrapper });
