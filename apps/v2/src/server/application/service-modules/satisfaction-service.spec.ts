@@ -39,4 +39,26 @@ describe('SatisfactionService', () => {
     expect(satisfaction.trend(nullContext)).toBeInstanceOf(Array);
     expect(satisfaction.doctorRankings(nullContext)).toBeInstanceOf(Array);
   });
+
+  it('ignores soft-deleted surveys in nps and reports trend and rankings', () => {
+    const context: AppContext = {
+      userId: 'user-admin-001',
+      clinicId: 'clinic-v2-001',
+      role: 'BOSS',
+      traceId: 'test-trace',
+      now: () => new Date(),
+    };
+    const satisfaction = new SatisfactionService(db);
+    const npsBefore = satisfaction.nps(context);
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO SatisfactionSurvey (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, score, channel, comment, surveyDate
+       ) VALUES (?, ?, ?, ?, ?, 'patient-demo-001', 'user-admin-001', 10, 'CLINIC', 'deleted', '2026-08-04')`,
+    ).run('satisfaction-deleted', context.clinicId, now, now, now);
+    expect(satisfaction.nps(context)).toEqual(npsBefore);
+    expect(satisfaction.trend(context)).toBeInstanceOf(Array);
+    expect(satisfaction.doctorRankings(context)).toBeInstanceOf(Array);
+  });
 });

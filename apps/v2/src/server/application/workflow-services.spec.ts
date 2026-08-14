@@ -496,4 +496,20 @@ describe('workflow services', () => {
     const print = new PrintTemplateService(db);
     expect(print.render('T-1', { title: null }, context)).not.toContain('null');
   });
+
+  it('rejects registration status transitions and missing replenishment suggestions', () => {
+    const workflow = new ClinicalWorkflowService(db);
+    expect(() => workflow.registrationStatus('missing-registration', 'IN_PROGRESS', context)).toThrow('Registration not found');
+    const nowIso = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO Registration (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, type, status, registeredAt
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'user-admin-001', 'REGULAR', 'REGISTERED', ?)`,
+    ).run('registration-edge-invalid', context.clinicId, nowIso, nowIso, nowIso);
+    expect(() => workflow.registrationStatus('registration-edge-invalid', 'COMPLETED', context)).toThrow('Cannot transition');
+
+    const replenishment = new ReplenishmentService(db);
+    expect(() => replenishment.applyToPurchaseOrder(['missing-suggestion'], context)).toThrow('No applicable suggestions');
+  });
 });

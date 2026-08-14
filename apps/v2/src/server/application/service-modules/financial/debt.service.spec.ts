@@ -164,4 +164,18 @@ describe('DebtService', () => {
     expect(Number(charge.paidAmount)).toBe(-50);
     expect(charge.status).toBe('UNPAID');
   });
+
+  it('rejects missing and invalid debt payments', async () => {
+    const debt = new DebtService(db);
+    await expect(debt.pay('missing-debt', 1, context)).rejects.toThrow('Debt record not found');
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO Debt (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         chargeId, patientId, totalAmount, paidAmount, status
+       ) VALUES (?, ?, ?, ?, NULL, 'charge-edge-debt', 'patient-demo-001', 500, 0, 'UNPAID')`,
+    ).run('debt-edge-pay', context.clinicId, now, now);
+    await expect(debt.pay('debt-edge-pay', 0, context)).rejects.toThrow('Invalid debt payment');
+    expect((await debt.pay('debt-edge-pay', 500, context)).status).toBe('PAID');
+  });
 });

@@ -15,6 +15,7 @@ describe('ProcessingOrderService', () => {
   let db: Database.Database;
   let dataDir: string;
   let context: AppContext;
+  const now = '2026-08-04T00:00:00.000Z';
   const nullContext: AppContext = {
     userId: 'user-admin-001',
     clinicId: null,
@@ -121,5 +122,25 @@ describe('ProcessingOrderService', () => {
     expect(Number((settle.stats(context) as { settled: { count: number } }).settled.count)).toBeGreaterThanOrEqual(1);
     expect(settle.unsettle(procId, context).settleStatus).toBe('UNSETTLED');
     expect(Number((settle.stats(context) as { unsettled: { count: number } }).unsettled.count)).toBeGreaterThanOrEqual(1);
+  });
+
+  it('covers transition branches including null clinic scope', () => {
+    const processing = new ProcessingOrderService(db);
+    expect(() => processing.transition('missing-processing', 'SENT', context)).toThrow('Processing order not found');
+    db.prepare(
+      `INSERT INTO ProcessingOrder (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         number, patientId, status
+       ) VALUES (?, ?, ?, ?, NULL, 'PO-EDGE-PROC', 'patient-demo-001', 'DRAFT')`,
+    ).run('proc-edge', context.clinicId, now, now);
+    expect(processing.transition('proc-edge', 'CANCELLED', context).status).toBe('CANCELLED');
+    expect(() => processing.transition('proc-edge', 'SENT', context)).toThrow('Cannot transition');
+    db.prepare(
+      `INSERT INTO ProcessingOrder (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         number, patientId, status
+       ) VALUES (?, NULL, ?, ?, NULL, 'PROC-NULL', 'patient-demo-001', 'DRAFT')`,
+    ).run('proc-edge-null', now, now);
+    expect(processing.transition('proc-edge-null', 'SENT', nullContext).status).toBe('SENT');
   });
 });

@@ -190,4 +190,100 @@ describe('PurchaseOrderService', () => {
     await purchase.receive('po-lock', context);
     expect(lockGuard).toHaveBeenCalledWith('inventory-po-lock', 'clinic-v2-001');
   });
+
+  it('covers receive branches: missing, non-pending, missing items, and null clinic receipts', async () => {
+    const purchase = new PurchaseOrderService(db);
+    await expect(purchase.receive('missing-po', context)).rejects.toThrow('Purchase order not found');
+    db.prepare(
+      `INSERT INTO PurchaseOrder (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         number, supplierId, totalAmount, status
+       ) VALUES (?, ?, ?, ?, NULL, 'PO-EDGE', NULL, 0, 'RECEIVED')`,
+    ).run('po-edge', context.clinicId, now, now);
+    await expect(purchase.receive('po-edge', context)).rejects.toThrow('not pending');
+    db.prepare(
+      `INSERT INTO PurchaseOrder (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         number, supplierId, totalAmount, status, reviewStatus
+       ) VALUES (?, ?, ?, ?, NULL, 'PO-EDGE-2', NULL, 0, 'PENDING', 'APPROVED')`,
+    ).run('po-edge-2', context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO PurchaseOrderItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         orderId, itemId, name, quantity, unitPrice, subtotal
+       ) VALUES (?, ?, ?, ?, NULL, 'po-edge-2', NULL, 'No item', 1, 100, 100)`,
+    ).run('poi-edge-null', context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO InventoryItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, category, unit, stock, minStock, price
+       ) VALUES (?, ?, ?, ?, NULL, 'PO-OTHER', 'Other Clinic Item', 'MAT', 'box', 1, 0, 100)`,
+    ).run('inventory-po-other', 'clinic-v2-other', now, now);
+    db.prepare(
+      `INSERT INTO PurchaseOrderItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         orderId, itemId, name, quantity, unitPrice, subtotal
+       ) VALUES (?, ?, ?, ?, NULL, 'po-edge-2', 'inventory-po-other', 'Other Clinic Item', 1, 100, 100)`,
+    ).run('poi-edge-missing', context.clinicId, now, now);
+    await expect(purchase.receive('po-edge-2', context)).rejects.toThrow('missing inventory items');
+    db.prepare(
+      `INSERT INTO InventoryItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, category, unit, stock, minStock, price
+       ) VALUES (?, ?, ?, ?, NULL, 'PO-ITEM', 'PO Item', 'MAT', 'box', 1, 0, 100)`,
+    ).run('inventory-po-valid', context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO PurchaseOrder (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         number, supplierId, totalAmount, status, reviewStatus
+       ) VALUES (?, ?, ?, ?, NULL, 'PO-EDGE-3', NULL, 0, 'PENDING', 'APPROVED')`,
+    ).run('po-edge-3', context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO PurchaseOrderItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         orderId, itemId, name, quantity, unitPrice, subtotal
+       ) VALUES (?, ?, ?, ?, NULL, 'po-edge-3', 'inventory-po-valid', 'Valid', 2, 100, 200)`,
+    ).run('poi-edge-valid', context.clinicId, now, now);
+    const receipt = await purchase.receive('po-edge-3', context);
+    expect(receipt).toMatchObject({
+      id: 'po-edge-3',
+      status: 'RECEIVED',
+      number: 'PO-EDGE-3',
+      items: [
+        {
+          itemId: 'inventory-po-valid',
+          name: 'Valid',
+          quantity: 2,
+          unitPrice: 100,
+          subtotal: 200,
+          beforeStock: 1,
+          afterStock: 3,
+        },
+      ],
+    });
+    expect(purchase.items('po-edge-3', context).length).toBe(1);
+    expect(() => purchase.items('missing-po', context)).toThrow('Purchase order not found');
+    db.prepare(
+      `INSERT INTO PurchaseOrder (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         number, supplierId, totalAmount, status, reviewStatus
+       ) VALUES (?, NULL, ?, ?, NULL, 'PO-EDGE-NULL', NULL, 0, 'PENDING', 'APPROVED')`,
+    ).run('po-edge-null', now, now);
+    db.prepare(
+      `INSERT INTO PurchaseOrderItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         orderId, itemId, name, quantity, unitPrice, subtotal
+       ) VALUES (?, NULL, ?, ?, NULL, 'po-edge-null', 'inventory-po-valid', 'Null Clinic', 1, 100, 100)`,
+    ).run('poi-edge-null-clinic', now, now);
+    const nullReceipt = await purchase.receive('po-edge-null', nullContext);
+    expect(nullReceipt.items).toEqual([
+      expect.objectContaining({
+        itemId: 'inventory-po-valid',
+        beforeStock: 3,
+        afterStock: 4,
+      }),
+    ]);
+    const stock = db.prepare('SELECT stock FROM InventoryItem WHERE id = ?').get('inventory-po-valid') as { stock: number };
+    expect(Number(stock.stock)).toBe(4);
+  });
 });

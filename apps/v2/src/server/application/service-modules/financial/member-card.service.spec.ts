@@ -9,6 +9,7 @@ import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../../infrastructure/database';
 import { runMigrations } from '../../../infrastructure/migrations';
 import { MemberCardService } from './member-card.service';
+import { MAX_MONEY_CENTS } from '../common';
 import type { MemberCardRepository } from '../../ports';
 import type { AppContext } from '../../../../domain/contracts';
 
@@ -127,5 +128,34 @@ describe('MemberCardService', () => {
       status: 'ACTIVE',
       level: 'NORMAL',
     }, context)).toThrow('database down');
+  });
+
+  it('rejects invalid recharge, consume, and points values including MAX guards', async () => {
+    const insertNow = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO MemberCard (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, cardNo, balance, totalRecharge, totalConsume,
+         status, points, totalPoints, level
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'CARD-EDGE-2', 100, 100, 0, 'ACTIVE', 10, 10, 'NORMAL')`,
+    ).run('card-edge-2', context.clinicId, insertNow, insertNow);
+    const cards = new MemberCardService(db);
+    await expect(cards.recharge('card-edge-2', 0, context)).rejects.toThrow('Recharge');
+    await expect(cards.consume('card-edge-2', 0, context)).rejects.toThrow('Consume');
+    await expect(cards.consume('card-edge-2', 101, context)).rejects.toThrow('Insufficient member card');
+    await expect(cards.addPoints('card-edge-2', -11, context)).rejects.toThrow('Insufficient points');
+    await expect(cards.addPoints('card-edge-2', 0, context)).rejects.toThrow('non-zero integer');
+    await expect(cards.addPoints('card-edge-2', 1.5, context)).rejects.toThrow('non-zero integer');
+    await cards.addPoints('card-edge-2', -5, context);
+    await expect(cards.recharge('missing-card', 1, context)).rejects.toThrow('Member card not found');
+    await cards.recharge('card-edge-2', 10, { ...context, clinicId: null });
+    await cards.consume('card-edge-2', 10, { ...context, clinicId: null });
+    await cards.addPoints('card-edge-2', 5, { ...context, clinicId: null });
+    // MAX 上限守卫：金额/积分在数值边界的拒绝路径
+    await expect(cards.recharge('card-edge-2', MAX_MONEY_CENTS + 1, context)).rejects.toThrow('exceeds the member card balance limit');
+    await expect(cards.recharge('card-edge-2', MAX_MONEY_CENTS, context)).rejects.toThrow('exceeds the member card balance limit');
+    await expect(cards.consume('card-edge-2', MAX_MONEY_CENTS + 1, context)).rejects.toThrow('exceeds the member card limit');
+    await expect(cards.addPoints('card-edge-2', 1_000_000_000_001, context)).rejects.toThrow('exceeds the member card points limit');
+    await expect(cards.addPoints('card-edge-2', 999_999_999_992, context)).rejects.toThrow('exceeds the member card points limit');
   });
 });

@@ -277,4 +277,22 @@ describe('WechatService', () => {
     // fresh 缺失 → 不可发送
     await expect(service.send('wechat-race-missing', context)).rejects.toThrow('cannot be sent');
   });
+
+  // ---- 边缘分支测试（自 services-edge.spec.ts 聚合文件迁移）----
+
+  it('sends a configured fake-channel batch', async () => {
+    const nowIso = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO WechatMessage (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, type, content, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'TEXT', 'batch', 'PENDING')`,
+    ).run('wechat-edge-batch', context.clinicId, nowIso, nowIso);
+    const wechat = new WechatService(db, undefined, {
+      name: 'fake',
+      isConfigured: () => true,
+      send: async () => ({ ok: true }),
+    });
+    expect((await wechat.sendBatch(['wechat-edge-batch'], context)).sent).toBe(1);
+  });
 });

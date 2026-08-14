@@ -73,4 +73,9 @@ describe('AnalyticsService', () => {
     expect(printTemplates.list(nullContext)).toBeInstanceOf(Array);
     expect(() => printTemplates.render('missing-null-template', {}, nullContext)).toThrow('Print template not found');
   });
+
+  it('rejects rendering a missing print template', () => {
+    const printTemplates = new PrintTemplateService(db);
+    expect(() => printTemplates.render('missing-template', {}, context)).toThrow('Print template not found');
+  });
 });
