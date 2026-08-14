@@ -14,6 +14,10 @@ interface StartSchedulersOptions {
   audit: AuditService;
   autoBackupIntervalMs: number;
   autoBackupKeep: number;
+  /** A-P2.1：异地镜像目录（V2_BACKUP_MIRROR_DIR）。缺省不镜像。 */
+  backupMirrorDir?: string;
+  /** A-P2.2：镜像目录保留份数（V2_BACKUP_MIRROR_KEEP）。缺省同 autoBackupKeep。 */
+  backupMirrorKeep?: number;
   logger: Logger;
   onAlertCreate: (input: {
     alertType: string;
@@ -55,6 +59,8 @@ export function startSchedulers(options: StartSchedulersOptions): {
     audit,
     autoBackupIntervalMs,
     autoBackupKeep,
+    backupMirrorDir,
+    backupMirrorKeep,
     logger,
     onAlertCreate,
     idempotencyCleanup,
@@ -92,6 +98,39 @@ export function startSchedulers(options: StartSchedulersOptions): {
         const result = await backups.create({ type: 'AUTO' });
         const cleanup = backups.cleanup(autoBackupKeep);
         logger.info('automatic backup completed', { action: 'auto-backup', ...result, cleanup });
+        // A-P2.1：异地镜像。失败只告警不抛错——主备份已完成，镜像失败不能
+        // 让整个定时任务被判失败（告警表 + 日志已足够运维发现）。
+        if (backupMirrorDir) {
+          try {
+            const mirrored = await backups.mirrorBackup(String(result.filename), backupMirrorDir);
+            const mirrorCleanup = backups.mirrorCleanup(backupMirrorDir, backupMirrorKeep ?? autoBackupKeep);
+            logger.info('automatic backup mirrored', {
+              action: 'auto-backup-mirror',
+              ...mirrored,
+              cleanup: mirrorCleanup,
+            });
+          } catch (mirrorError) {
+            logger.error('automatic backup mirror failed', { action: 'auto-backup-mirror', error: mirrorError });
+            try {
+              onAlertCreate({
+                alertType: 'SCHEDULER_TASK_FAILURE',
+                level: 'CRITICAL',
+                severity: 'CRITICAL',
+                title: '备份镜像同步失败',
+                message: mirrorError instanceof Error ? mirrorError.message : String(mirrorError),
+                source: 'BACKUP_MIRROR',
+                metricName: 'backup_mirror',
+                suggestion: '请检查镜像目录（V2_BACKUP_MIRROR_DIR）的网络连接、权限与磁盘空间；主备份不受影响。',
+                clinicId: null,
+              });
+            } catch (alertError) {
+              logger.error('automatic backup mirror alert creation failed', {
+                action: 'auto-backup-mirror-alert',
+                error: alertError,
+              });
+            }
+          }
+        }
       } catch (error) {
         logger.error('automatic backup failed', { action: 'auto-backup', error });
         try {

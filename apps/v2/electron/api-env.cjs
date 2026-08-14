@@ -4,13 +4,15 @@ const path = require('node:path');
  * API 子进程环境构造。独立成模块是为了让单元测试可以直接校验环境变量，
  * 同时避免 Electron 主进程链在 knip 下产生“导出未被使用”的误报。
  */
-function buildApiChildEnv({ userDataDir, legacyBase, secretFilePath, apiPort, isPackaged }) {
+function buildApiChildEnv({ userDataDir, legacyBase, secretFilePath, apiPort, isPackaged, appVersion }) {
   const env = {
     V2_PORT: String(apiPort),
     V2_HOST: '127.0.0.1',
     NODE_ENV: isPackaged ? 'production' : 'development',
     // P0-CORS: 打包版渲染器来源是 file:///opaque null，API 需据此放行 CORS。
     V2_ELECTRON_RENDERER: isPackaged ? '1' : '0',
+    // A-P3.1: 应用版本注入 API 子进程，供 health.json / 健康快照使用。
+    V2_APP_VERSION: String(appVersion ?? 'unknown'),
     V2_DATA_DIR: path.join(userDataDir, 'data'),
     V2_BACKUP_DIR: path.join(userDataDir, 'backups'),
     V2_LOG_DIR: path.join(userDataDir, 'logs'),
@@ -26,6 +28,9 @@ function buildApiChildEnv({ userDataDir, legacyBase, secretFilePath, apiPort, is
   const optionalKeys = [
     'V2_AUTO_BACKUP_INTERVAL_MS',
     'V2_AUTO_BACKUP_KEEP',
+    'V2_BACKUP_MIRROR_DIR',
+    'V2_BACKUP_MIRROR_KEEP',
+    'V2_DISK_THRESHOLD_BYTES',
     'V2_SYNC_CHANGE_RETENTION_DAYS',
     'V2_CORS_ORIGIN',
     'V2_WECHAT_API_URL',
