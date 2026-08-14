@@ -866,6 +866,26 @@ describe('TreatmentPlansPage', () => {
     expect(screen.getByText('无')).toBeDefined();
   });
 
+  it('renders the billing dialog title with an empty name for unnamed plans', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/treatmentPlans?page=1&pageSize=50') {
+        return { items: [{ id: 'p-1', patientId: 'p-1', doctorId: 'd-1', name: null, totalFee: 20000, status: 'APPROVED', printCount: 0, signedAt: null }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/treatmentPlanItems?planId=p-1&page=1&pageSize=100') {
+        return { items: [], total: 0, page: 1, pageSize: 100 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      return {};
+    });
+    render(<TreatmentPlansPage />, { wrapper });
+    await screen.findByRole('button', { name: '折扣' });
+    fireEvent.click(screen.getAllByRole('button', { name: '折扣' })[0]);
+    expect(await screen.findByLabelText('明细与划价：')).toBeDefined();
+  });
+
   it('prefills sparse plan items and doctor ids when editing', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/treatmentPlans?page=1&pageSize=50') {

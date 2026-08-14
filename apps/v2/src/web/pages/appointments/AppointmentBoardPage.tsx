@@ -72,13 +72,12 @@ export function AppointmentBoardPage() {
   }
 
   async function handleDrop(statusKey: string) {
-    if (stale) return;
     const id = draggingId;
     setDraggingId(null);
     setDragOverColumn(null);
     if (!id) return;
     const row = rows.find((entry) => entry.id === id);
-    if (!row || String(row.status ?? '') === statusKey) return;
+    if (!row || String(row.status) === statusKey) return;
     await transition(id, statusKey);
   }
 

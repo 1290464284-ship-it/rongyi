@@ -384,6 +384,21 @@ describe('TeethMarkDialog', () => {
     fireEvent.change(select, { target: { value: 'CARIES' } });
     expect(await screen.findByText('牙齿 t-null 主诉标记已更新')).toBeDefined();
   });
+
+  it('treats a null chief mark on an unselected tooth as normal', async () => {
+    vi.mocked(apiRequest).mockResolvedValue({
+      items: [
+        { id: 't-1', examId: 'f-1', toothNumber: 16, toothStatus: 'CARIES', chiefMark: 'NONE' },
+        { id: 't-2', examId: 'f-1', toothNumber: 26, toothStatus: 'HEALTHY', chiefMark: null },
+      ],
+      total: 2,
+      page: 1,
+      pageSize: 200,
+    });
+    render(<TeethMarkDialog row={{ id: 'f-1' }} reload={vi.fn().mockResolvedValue(undefined)} onClose={vi.fn()} />, { wrapper });
+    await screen.findByLabelText('牙齿 16 主诉标记');
+    expect((screen.getByLabelText('牙位 26') as HTMLButtonElement).className).toContain('normal');
+  });
 });
 
 describe('TrackingDialog', () => {

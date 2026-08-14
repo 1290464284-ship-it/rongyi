@@ -71,6 +71,7 @@ describe('cephalometric utils', () => {
     expect(toPoint([10, 20])).toEqual({ x: 10, y: 20 });
     expect(toPoint({ x: 3, y: 4 })).toEqual({ x: 3, y: 4 });
     expect(toPoint([null, 5] as unknown as [number, number])).toEqual({ x: 0, y: 5 });
+    expect(toPoint([10, null] as unknown as [number, number])).toEqual({ x: 10, y: 0 });
     expect(toPoint({} as { x: number; y: number })).toEqual({ x: 0, y: 0 });
   });
 
@@ -97,6 +98,7 @@ describe('cephalometric utils', () => {
       { x: 30, y: 40 },
     ]);
     expect(landmarksOutline({ skip: 'x', bad: ['a', 1] })).toEqual([]);
+    expect(landmarksOutline({ badPoint: { x: 'a', y: 2 } })).toEqual([]);
   });
 
   it('serializes values to json text', () => {

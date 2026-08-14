@@ -80,8 +80,8 @@ export function TeethMarkDialog({
   });
 
   function selectTooth(number: number) {
-    /* v8 ignore next -- 图表按钮仅渲染牙齿列表内存在的编号，lookup 恒命中，守卫为防御冗余 */
     const tooth = teeth.find((item) => Number(item.toothNumber) === number);
+    /* v8 ignore next -- 图表按钮仅渲染牙齿列表内存在的编号（同一数据源 filter 而来），lookup 恒命中，if 守卫为防御冗余 */
     if (tooth) setSelectedToothId(tooth.id);
   }
 

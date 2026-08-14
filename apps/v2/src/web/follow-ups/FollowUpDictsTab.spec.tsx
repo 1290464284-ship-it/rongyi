@@ -133,4 +133,24 @@ describe('FollowUpDictsTab', () => {
     expect(await screen.findByText('稀疏字典')).toBeDefined();
     expect(screen.getByText('否')).toBeDefined();
   });
+
+  it('shows the raw failure message for non-error failures', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.startsWith('/resources/followUpDicts?')) throw '词典加载异常';
+      return {};
+    });
+    render(<FollowUpDictsTab />, { wrapper });
+    expect(await screen.findByText('词典加载异常')).toBeDefined();
+  });
+
+  it('shows a truncation notice for oversized dictionaries', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/followUpDicts?page=1&pageSize=200') {
+        return { items: rows, total: 2, page: 1, pageSize: 200, truncated: true };
+      }
+      return {};
+    });
+    render(<FollowUpDictsTab />, { wrapper });
+    expect(await screen.findByText(/词典项超过 200 条/)).toBeDefined();
+  });
 });

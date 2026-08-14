@@ -453,6 +453,36 @@ describe('InventoryPage', () => {
     expect(screen.getByRole('button', { name: '重试' })).toBeDefined();
   });
 
+  it('shows a raw non-error message on the report tab', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/inventoryItems?page=1&pageSize=20') return { items: [], total: 0 };
+      if (path === '/inventory/low-stock') return [];
+      if (path === '/inventory/expiring?days=30') return [];
+      if (path.startsWith('/inventory-reports/')) throw '报表加载异常';
+      return {};
+    });
+
+    render(<InventoryPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('tab', { name: '库存明细报表' }));
+    expect(await screen.findByText('报表加载异常')).toBeDefined();
+  });
+
+  it('falls back to the raw report type when its label is missing', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/inventoryItems?page=1&pageSize=20') return { items: [], total: 0 };
+      if (path === '/inventory/low-stock') return [];
+      if (path === '/inventory/expiring?days=30') return [];
+      if (path === '/inventory-reports/IN') {
+        return { type: 'WEIRD', from: null, to: null, total: 1, items: [{ id: 'r-1', itemName: '材料' }], supplierId: null };
+      }
+      return {};
+    });
+
+    render(<InventoryPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('tab', { name: '库存明细报表' }));
+    expect(await screen.findByText('WEIRD')).toBeDefined();
+  });
+
   it('edits a batch via the dialog and PATCH /inventory-batches/:id', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/inventoryItems?page=1&pageSize=20') {

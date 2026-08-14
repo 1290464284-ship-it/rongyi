@@ -40,7 +40,8 @@ const planColumns: DataTableColumn<PlanRow>[] = [
     key: 'followUpStatus',
     label: '回访',
     render: (row) => {
-      const label = FOLLOW_UP_LABELS[String(row.followUpStatus ?? 'NONE')] ?? String(row.followUpStatus ?? 'NONE');
+      const rawStatus = String(row.followUpStatus ?? 'NONE');
+      const label = FOLLOW_UP_LABELS[rawStatus] ?? rawStatus;
       return row.nextFollowUpAt ? `${label}（${String(row.nextFollowUpAt)}）` : label;
     },
   },

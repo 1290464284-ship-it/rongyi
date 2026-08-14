@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { LoginPage } from './LoginPage';
 import { apiRequest, login } from '../../lib/api';
@@ -169,6 +169,39 @@ describe('LoginPage', () => {
     fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'v2-test-seed-password' } });
     fireEvent.click(screen.getByRole('checkbox', { name: '记住我' }));
     fireEvent.click(screen.getByRole('button', { name: '登录' }));
+    expect(await screen.findByText('工作台')).toBeDefined();
+  });
+
+  it('ignores a late setup-status response after unmount', async () => {
+    let resolveSetup: (value: unknown) => void = () => {};
+    vi.mocked(apiRequest).mockImplementationOnce(
+      () => new Promise((resolve) => { resolveSetup = resolve; }),
+    );
+    const { unmount } = renderPage();
+    unmount();
+    resolveSetup({ setupRequired: true });
+    await act(async () => {});
+  });
+
+  it('ignores a second setup submit while the first is in flight', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce({ setupRequired: true });
+    let resolveSetup: ((value: unknown) => void) | undefined;
+    vi.mocked(apiRequest).mockImplementationOnce(
+      () => new Promise((resolve) => { resolveSetup = resolve; }),
+    );
+    vi.mocked(login).mockResolvedValue({ token: 't', user: { id: 'u' } });
+    renderNavigablePage();
+    await screen.findByText('设置初始管理员');
+    fireEvent.change(screen.getByLabelText('新管理员密码'), { target: { value: 'first-run-123' } });
+    fireEvent.change(screen.getByLabelText('确认密码'), { target: { value: 'first-run-123' } });
+    const form = screen.getByText('创建管理员并登录').closest('form') as HTMLFormElement;
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/auth/setup', expect.objectContaining({ method: 'POST' }));
+    });
+    expect(apiRequest).toHaveBeenCalledTimes(2);
+    resolveSetup?.({ created: true });
     expect(await screen.findByText('工作台')).toBeDefined();
   });
 });

@@ -89,4 +89,11 @@ describe('modal-a11y', () => {
     unregister();
     expect(button.hasAttribute('inert')).toBe(false);
   });
+
+  it('falls back to the layer itself and document.body for detached layers', () => {
+    const layer = document.createElement('div');
+    const unregister = registerModalLayer(layer);
+    expect(layer.hasAttribute('inert')).toBe(false);
+    unregister();
+  });
 });

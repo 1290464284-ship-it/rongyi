@@ -8,7 +8,7 @@ import type { FirstExamHistoryItem, FirstExamRow } from './types';
 export function HistoryDialog({ row, onClose }: { row: FirstExamRow; onClose: () => void }) {
   const historyQuery = useQuery({
     queryKey: ['first-exam-history', row.id],
-    queryFn: () => apiRequest<FirstExamHistoryItem[]>(`/first-exams/history?patientId=${encodeURIComponent(String(row.patientId ?? ''))}`),
+    queryFn: () => apiRequest<FirstExamHistoryItem[]>(`/first-exams/history?patientId=${encodeURIComponent(String(row.patientId))}`),
     enabled: Boolean(row.patientId),
   });
   const items = historyQuery.data ?? [];
@@ -43,7 +43,7 @@ export function HistoryDialog({ row, onClose }: { row: FirstExamRow; onClose: ()
                 <td>{item.chiefComplaint ?? ''}</td>
                 <td>{DENTITION_LABELS[String(item.dentition ?? '')] ?? String(item.dentition ?? '')}</td>
                 <td>{STATUS_LABELS[String(item.status ?? '')] ?? String(item.status ?? '')}</td>
-                <td>{FOLLOW_UP_STATUS_LABELS[String(item.followUpStatus ?? 'NONE')] ?? String(item.followUpStatus ?? '')}</td>
+                <td>{FOLLOW_UP_STATUS_LABELS[String(item.followUpStatus ?? 'NONE')] ?? String(item.followUpStatus)}</td>
                 <td>
                   {item.previousExamId
                     ? item.restartedAt

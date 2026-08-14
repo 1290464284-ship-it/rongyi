@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ProcessingOrderFormFields } from './ProcessingOrderFormFields';
@@ -78,6 +78,26 @@ describe('processing-orders/items', () => {
       unitPrice: 5000,
       status: 'DRAFT',
     });
+  });
+
+  it('reconciles blank spec/status fallbacks and drops empty-name rows', async () => {
+    vi.mocked(fetchAllPages).mockResolvedValue([
+      { id: 'keep2', name: '基托', spec: 'S', quantity: 1, unitPrice: 100, subtotal: 100, status: 'DRAFT' },
+    ]);
+    const items = [
+      { id: 'keep2', name: '基托', spec: '', quantity: '2', unitPrice: '1', subtotal: '', status: '' },
+      { id: undefined, name: '  ', spec: '', quantity: '1', unitPrice: '50', subtotal: '', status: 'DRAFT' },
+    ];
+    await reconcileProcessingItems('po-2', items as never);
+
+    const patchCall = vi.mocked(apiRequest).mock.calls.find(
+      ([path, options]) => path === '/resources/processingOrderItems/keep2' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'PATCH',
+    );
+    const body = JSON.parse(String((patchCall?.[1] as RequestInit)?.body));
+    expect(body.spec).toBeUndefined();
+    expect(body.status).toBe('DRAFT');
+    // 空名称行被 validFormItems 过滤，不会触发新建
+    expect(apiRequest).not.toHaveBeenCalledWith('/resources/processingOrderItems', expect.objectContaining({ method: 'POST' }));
   });
 });
 
@@ -217,6 +237,40 @@ describe('ProcessingOrderFormFields', () => {
           expect.objectContaining({ id: 'i9', name: '', spec: '', quantity: '1', unitPrice: '0.00', status: 'DRAFT' }),
         ]),
       }));
+    });
+  });
+
+  it('treats a null item page as an empty item list', async () => {
+    vi.mocked(apiRequest).mockResolvedValue([]);
+    vi.mocked(fetchAllPages).mockResolvedValue(null as never);
+    const update = vi.fn();
+    render(<ProcessingOrderFormFields form={emptyProcessingForm()} update={update} editing editingId="po-10" />, { wrapper });
+    await waitFor(() => {
+      expect(update).toHaveBeenCalledWith({ items: [] });
+    });
+  });
+
+  it('ignores a late item load failure after unmount', async () => {
+    vi.mocked(apiRequest).mockResolvedValue([]);
+    let rejectLoad: (reason?: unknown) => void = () => {};
+    vi.mocked(fetchAllPages).mockReturnValue(new Promise<never>((_, reject) => { rejectLoad = reject; }));
+    const { unmount } = render(
+      <ProcessingOrderFormFields form={emptyProcessingForm()} update={vi.fn()} editing editingId="po-11" />,
+      { wrapper },
+    );
+    await waitFor(() => expect(fetchAllPages).toHaveBeenCalled());
+    unmount();
+    await act(async () => {
+      rejectLoad(new Error('boom'));
+    });
+    expect(screen.queryByText('明细加载失败，请关闭后重试')).toBeNull();
+  });
+
+  it('falls back to the doctor id when a doctor has no name', async () => {
+    vi.mocked(apiRequest).mockResolvedValue([{ id: 'd-9' }]);
+    render(<ProcessingOrderFormFields form={emptyProcessingForm()} update={vi.fn()} editing={false} editingId={null} />, { wrapper });
+    await waitFor(() => {
+      expect((screen.getByRole('option', { name: 'd-9' }) as HTMLOptionElement).value).toBe('d-9');
     });
   });
 });
