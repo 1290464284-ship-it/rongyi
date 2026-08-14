@@ -84,6 +84,7 @@ Web **96.82% / 92.94% / 98.66% / 98.58%**，双门禁全绿——覆盖率口径
 | `src/web/components/dialog.tsx`（requestClose 定时器） | `closeEpochRef.current !== epoch` 迟到通知守卫 | 关闭时组件卸载会先清掉定时器（spec 验证），迟到通知不可达，防御冗余 |
 | `src/server/application/service-modules/custom-fields.ts`（setValues BOOLEAN） | `parseBooleanStrict(...) ? '1' : '0'` 的真值分支 | 行为由 spec「sets null clinic values...」覆盖（断言结果为 '1' 即执行），v8 未入账，属采集缺陷 |
 | `src/server/application/service-modules/wechat-reminder.ts`（dayRange） | `if (start === null \|\| end === null) throw` 解析失败守卫 | shiftDate 恒产出合法 YYYY-MM-DD（含 +8 时区与负间隔），`slice(0,10)` 解析不会失败，防御冗余 |
+| `src/server/http/audit-buffer.ts`（scheduleAuditRetry） | `if (room > 0)` 空位守卫与 `length + rows > capacity` 超容量丢弃守卫 | 缓冲被 unshift 封顶在 100 且 push 满 50 立即刷出：重试未在途时 buffer≤49、rows≤50（和 ≤99），重试在途时 splice 后 room 恒 ≥49——两条防御分支不可达（容量配置预留），超容量丢弃路径由 spec「drops overflow rows...」覆盖 |
 
 ## 5. 其他已知取舍
 

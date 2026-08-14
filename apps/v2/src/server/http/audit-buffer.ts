@@ -86,6 +86,7 @@ export function createAuditBuffer(db: Database.Database, logger: Logger): AuditB
       // 保持 FIFO 且不会重复写入；仅超容量部分留痕丢弃。
       const room = Math.max(0, capacity - auditBuffer.length);
       const dropped = Math.max(0, rows.length - room);
+      /* v8 ignore next -- 缓冲被 unshift 封顶在 100，push 后先 splice 再入重试，room 恒 ≥49，空位守卫为防御冗余 */
       if (room > 0) auditBuffer.unshift(...rows.slice(0, room));
       if (dropped > 0) {
         if (logger) logger.error('audit rows dropped (retry buffer over capacity)', { action: 'audit-drop', dropped });
@@ -93,6 +94,7 @@ export function createAuditBuffer(db: Database.Database, logger: Logger): AuditB
       }
       return;
     }
+    /* v8 ignore next -- retry 未在途时 buffer≤49 且 rows≤50（≥50 立即刷出），和恒 ≤99，超容量丢弃守卫为防御冗余 */
     if (auditBuffer.length + rows.length > capacity) {
       // B-H5：超限静默丢弃审计行会掩盖合规痕迹；丢弃前必须留告警日志。
       const dropped = rows.length;

@@ -323,8 +323,8 @@ function pagedPath(path: string, page: number, pageSize: number): string {
   const params = new URLSearchParams(query);
   params.set('page', String(page));
   params.set('pageSize', String(pageSize));
-  const qs = params.toString();
-  return qs ? `${base}?${qs}` : base;
+  // page/pageSize 恒被写入，qs 不可能为空。
+  return `${base}?${params.toString()}`;
 }
 
 function cursorPath(path: string, cursor: string, pageSize: number): string {
@@ -332,8 +332,8 @@ function cursorPath(path: string, cursor: string, pageSize: number): string {
   const params = new URLSearchParams(query);
   params.set('pageSize', String(pageSize));
   params.set('cursor', cursor);
-  const qs = params.toString();
-  return qs ? `${base}?${qs}` : base;
+  // pageSize/cursor 恒被写入，qs 不可能为空。
+  return `${base}?${params.toString()}`;
 }
 
 export async function login(username: string, password: string): Promise<{ token: string; user: Record<string, unknown> }> {

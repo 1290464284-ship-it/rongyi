@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-08-14T00:49:02.706Z",
-  "total": 194,
+  "generatedAt": "2026-08-14T01:05:09.012Z",
+  "total": 196,
   "perFile": {
     "src\\web\\pages\\patients\\PatientTimelinePage.tsx": 4,
     "src\\web\\pages\\inventory\\ProcessingOrdersPage.tsx": 7,
@@ -12,6 +12,7 @@
     "src\\server\\infrastructure\\repository.ts": 33,
     "src\\server\\infrastructure\\repositories\\clinical-workflow.repository.ts": 3,
     "src\\server\\infrastructure\\migrations\\v101-110.ts": 5,
+    "src\\server\\http\\audit-buffer.ts": 2,
     "src\\server\\http\\metrics.ts": 4,
     "src\\server\\http\\rate-limit.ts": 2,
     "src\\server\\http\\router.ts": 26,
