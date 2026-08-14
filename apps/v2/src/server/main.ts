@@ -420,7 +420,6 @@ const syncChangeRetentionDays = Number.isFinite(configuredSyncRetentionDays)
 
 // A-P3.2：磁盘告警阈值可配（V2_DISK_THRESHOLD_BYTES，默认 1GB）。
 const configuredDiskThreshold = Number(process.env.V2_DISK_THRESHOLD_BYTES);
-/* v8 ignore next 3 -- env 注入分支：测试环境不设 V2_DISK_THRESHOLD_BYTES，仅生产部署可配（登记 coverage-exclusions） */
 let diskThresholdBytes: number | undefined;
 if (Number.isFinite(configuredDiskThreshold) && configuredDiskThreshold > 0) {
   diskThresholdBytes = configuredDiskThreshold;
