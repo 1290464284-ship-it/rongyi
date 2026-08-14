@@ -5,6 +5,10 @@ import type { Logger } from './infrastructure/logger';
 const AUDIT_RETENTION_MS = 365 * 24 * 60 * 60 * 1000;
 const SYNC_CHANGE_RETENTION_DAYS = 90;
 const DAILY_MS = 24 * 60 * 60 * 1000;
+/** 自动备份首执行默认延迟：避免每次启动立即全量备份拖慢启动。 */
+const DEFAULT_AUTO_BACKUP_FIRST_DELAY_MS = 5 * 60 * 1000;
+/** 自动备份首执行延迟下限：drill/soak 可用毫秒级加速，但拒绝 0 与负数。 */
+const MIN_AUTO_BACKUP_FIRST_DELAY_MS = 250;
 // PROCESSING 幂等记录的超时是 30 分钟；清理周期必须远小于一天，
 // 否则一次异常留下的记录会把 key 锁到下一个清理周期。
 const IDEMPOTENCY_CLEANUP_INTERVAL_MS = 10 * 60 * 1000;
@@ -14,6 +18,11 @@ interface StartSchedulersOptions {
   audit: AuditService;
   autoBackupIntervalMs: number;
   autoBackupKeep: number;
+  /**
+   * 自动备份首执行延迟（毫秒）。缺省 5 分钟；恢复演练与 soak 通过
+   * V2_AUTO_BACKUP_FIRST_DELAY_MS 注入更短延迟，不必等待完整首延迟。
+   */
+  autoBackupFirstDelayMs?: number;
   /** A-P2.1：异地镜像目录（V2_BACKUP_MIRROR_DIR）。缺省不镜像。 */
   backupMirrorDir?: string;
   /** A-P2.2：镜像目录保留份数（V2_BACKUP_MIRROR_KEEP）。缺省同 autoBackupKeep。 */
@@ -59,6 +68,7 @@ export function startSchedulers(options: StartSchedulersOptions): {
     audit,
     autoBackupIntervalMs,
     autoBackupKeep,
+    autoBackupFirstDelayMs,
     backupMirrorDir,
     backupMirrorKeep,
     logger,
@@ -212,9 +222,12 @@ export function startSchedulers(options: StartSchedulersOptions): {
     }
   }
 
-  // 首执行延迟 5 分钟（恢复原 main.ts 的首延迟行为），避免每次启动立即执行
-  // 全量备份拖慢启动；此后按 intervalMs 周期执行。
-  scheduleOnce(() => void runAutoBackup(), 5 * 60 * 1000);
+  // 首执行默认延迟 5 分钟（恢复原 main.ts 的首延迟行为），避免每次启动立即
+  // 执行全量备份拖慢启动；演练/soak 可用更短延迟加速，此后按 intervalMs 周期执行。
+  const firstDelayMs = Number.isFinite(Number(autoBackupFirstDelayMs))
+    ? Math.max(MIN_AUTO_BACKUP_FIRST_DELAY_MS, Math.floor(Number(autoBackupFirstDelayMs)))
+    : DEFAULT_AUTO_BACKUP_FIRST_DELAY_MS;
+  scheduleOnce(() => void runAutoBackup(), firstDelayMs);
   schedule(() => void runAutoBackup(), intervalMs);
 
   cleanupAuditLogs();
