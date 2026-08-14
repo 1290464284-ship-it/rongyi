@@ -657,4 +657,71 @@ describe('BackupService mirror (A-P2)', () => {
     expect(service.mirrorCleanup(mirrorDir, 1)).toEqual({ kept: 0, deleted: [] });
     expect(fs.readdirSync(mirrorDir)).toHaveLength(2);
   });
+
+  it('mirror cleanup clamps keep into 1..365 and falls back for non-finite keep', () => {
+    const mirrorDir = path.join(dir, 'mirror');
+    fs.mkdirSync(mirrorDir, { recursive: true });
+    fs.writeFileSync(path.join(mirrorDir, 'clinic-null-backup-2026-08-14T00-00-00-000Z-00000001.enc'), 'x');
+    fs.writeFileSync(path.join(mirrorDir, 'clinic-null-backup-2026-08-15T00-00-00-000Z-00000002.enc'), 'x');
+
+    const clampedLow = service.mirrorCleanup(mirrorDir, 0);
+    expect(clampedLow.kept).toBe(1);
+    expect(clampedLow.deleted).toHaveLength(1);
+
+    expect(service.mirrorCleanup(mirrorDir, 999).kept).toBe(1);
+    expect(service.mirrorCleanup(mirrorDir, Number.NaN).kept).toBe(1);
+  });
+
+  it('mirror cleanup returns zero when the mirror path is a regular file', () => {
+    const mirrorFile = path.join(dir, 'mirror-file.txt');
+    fs.writeFileSync(mirrorFile, 'not a directory');
+    expect(service.mirrorCleanup(mirrorFile, 5)).toEqual({ kept: 0, deleted: [] });
+  });
+
+  it('mirror cleanup logs delete failures for Error and non-Error causes', () => {
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    } as unknown as import('../../infrastructure/logger').Logger;
+    const db = new Database(':memory:');
+    const loggedService = new BackupService(
+      db as unknown as Database.Database,
+      path.join(dir, 'v2.sqlite'),
+      path.join(dir, 'backups'),
+      logger,
+    );
+
+    const mirrorDirA = path.join(dir, 'mirror-a');
+    fs.mkdirSync(mirrorDirA, { recursive: true });
+    fs.writeFileSync(path.join(mirrorDirA, 'clinic-null-backup-2026-08-14T00-00-00-000Z-00000001.enc'), 'x');
+    fs.writeFileSync(path.join(mirrorDirA, 'clinic-null-backup-2026-08-15T00-00-00-000Z-00000002.enc'), 'x');
+
+    const mirrorDirB = path.join(dir, 'mirror-b');
+    fs.mkdirSync(mirrorDirB, { recursive: true });
+    fs.writeFileSync(path.join(mirrorDirB, 'clinic-null-backup-2026-08-14T00-00-00-000Z-00000001.enc'), 'x');
+    fs.writeFileSync(path.join(mirrorDirB, 'clinic-null-backup-2026-08-15T00-00-00-000Z-00000002.enc'), 'x');
+
+    const rmSpy = vi.spyOn(fs, 'rmSync')
+      .mockImplementationOnce(() => {
+        throw new Error('locked by antivirus');
+      })
+      .mockImplementationOnce(() => {
+        throw 'plain string failure';
+      });
+
+    try {
+      expect(loggedService.mirrorCleanup(mirrorDirA, 1).deleted).toEqual([]);
+      expect(loggedService.mirrorCleanup(mirrorDirB, 1).deleted).toEqual([]);
+      expect(logger.warn).toHaveBeenCalledTimes(2);
+      const first = vi.mocked(logger.warn).mock.calls[0];
+      expect(first[0]).toBe('[backup] failed to delete mirror backup during cleanup');
+      expect(String(first[1]?.error)).toBe('locked by antivirus');
+      const second = vi.mocked(logger.warn).mock.calls[1];
+      expect(String(second[1]?.error)).toBe('plain string failure');
+    } finally {
+      rmSpy.mockRestore();
+      db.close();
+    }
+  });
 });

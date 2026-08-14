@@ -635,6 +635,79 @@ describe('startSchedulers', () => {
     stop();
   });
 
+  it('falls back to autoBackupKeep for mirror retention (A-P2)', async () => {
+    vi.useFakeTimers();
+    ensureTimers();
+    const backups = makeBackups();
+    const { stop } = startSchedulers({
+      backups,
+      audit: makeAudit(),
+      autoBackupIntervalMs: 24 * 60 * 60 * 1000,
+      autoBackupKeep: 30,
+      backupMirrorDir: 'Z:\\mirror',
+      logger: makeLogger(),
+      onAlertCreate: vi.fn(),
+    });
+
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 1);
+    await vi.waitFor(() => expect(backups.mirrorCleanup).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(backups.mirrorCleanup)).toHaveBeenCalledWith('Z:\\mirror', 30);
+    stop();
+  });
+
+  it('renders non-Error mirror failures into a readable alert (A-P2)', async () => {
+    vi.useFakeTimers();
+    ensureTimers();
+    const backups = makeBackups();
+    vi.mocked(backups.mirrorBackup).mockRejectedValue('plain mirror failure');
+    const onAlertCreate = vi.fn();
+    const { stop } = startSchedulers({
+      backups,
+      audit: makeAudit(),
+      autoBackupIntervalMs: 24 * 60 * 60 * 1000,
+      autoBackupKeep: 30,
+      backupMirrorDir: 'Z:\\mirror',
+      logger: makeLogger(),
+      onAlertCreate,
+    });
+
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 1);
+    await vi.waitFor(() => expect(onAlertCreate).toHaveBeenCalledTimes(1));
+    const alert = vi.mocked(onAlertCreate).mock.calls[0][0];
+    expect(alert.alertType).toBe('SCHEDULER_TASK_FAILURE');
+    expect(alert.source).toBe('BACKUP_MIRROR');
+    expect(String(alert.message)).toContain('plain mirror failure');
+    stop();
+  });
+
+  it('logs when the mirror alert itself cannot be created (A-P2)', async () => {
+    vi.useFakeTimers();
+    ensureTimers();
+    const backups = makeBackups();
+    vi.mocked(backups.mirrorBackup).mockRejectedValue(new Error('network drive offline'));
+    const logger = makeLogger();
+    const onAlertCreate = vi.fn(() => {
+      throw new Error('alert insert failed');
+    });
+    const { stop } = startSchedulers({
+      backups,
+      audit: makeAudit(),
+      autoBackupIntervalMs: 24 * 60 * 60 * 1000,
+      autoBackupKeep: 30,
+      backupMirrorDir: 'Z:\\mirror',
+      logger,
+      onAlertCreate,
+    });
+
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 1);
+    await vi.waitFor(() => expect(backups.mirrorBackup).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(logger.error).toHaveBeenCalledWith(
+      'automatic backup mirror alert creation failed',
+      expect.objectContaining({ action: 'auto-backup-mirror-alert' }),
+    ));
+    stop();
+  });
+
   it('does not mirror when backupMirrorDir is absent (A-P2)', async () => {
     vi.useFakeTimers();
     ensureTimers();

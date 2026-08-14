@@ -41,6 +41,14 @@ describe('stability snapshot', () => {
     fs.writeFileSync(backupFile, 'x');
     const now = Date.now();
     fs.utimesSync(backupFile, new Date(now), new Date(now));
+    // 覆盖 latestBackupMtime 的过滤与比较分支：非备份扩展名跳过、
+    // 无 backup- 前缀跳过；两份同 mtime 备份保证第二次比较走
+    // 「不大于 latest」的 else 分支（严格大于才会替换）。
+    fs.writeFileSync(path.join(dir, 'backups', 'notes.txt'), 'x');
+    fs.writeFileSync(path.join(dir, 'backups', 'manual.sqlite'), 'x');
+    const sameMtimeBackup = path.join(dir, 'backups', 'clinic-null-backup-2026-08-13T00-00-00-000Z-same.enc');
+    fs.writeFileSync(sameMtimeBackup, 'x');
+    fs.utimesSync(sameMtimeBackup, new Date(now), new Date(now));
     fs.writeFileSync(path.join(dir, 'logs', 'desktop.log'), [
       '{"timestamp":"2026-08-14T00:00:00.000Z","message":"api-exit","stack":"..."}',
       '{"timestamp":"2026-08-14T00:00:01.000Z","message":"state.tray-show-api-error","stack":"..."}',
@@ -59,6 +67,18 @@ describe('stability snapshot', () => {
     expect(snapshot.desktopLogEntries).toBe(3);
     // api-exit 与 render-process-gone 命中崩溃标签；tray 条目不算
     expect(snapshot.desktopCrashEntries).toBe(2);
+  });
+
+  it('treats an unreadable desktop.log as zero entries', () => {
+    // desktop.log 被目录占位：existsSync 通过，readFileSync 抛错 → 走 catch 归零
+    fs.mkdirSync(path.join(dir, 'logs', 'desktop.log'));
+    const snapshot = stabilitySnapshot(
+      path.join(dir, 'v2.sqlite'),
+      path.join(dir, 'backups'),
+      path.join(dir, 'logs'),
+    );
+    expect(snapshot.desktopLogEntries).toBe(0);
+    expect(snapshot.desktopCrashEntries).toBe(0);
   });
 
   it('persists stability json without throwing', () => {
