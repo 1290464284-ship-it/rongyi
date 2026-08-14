@@ -259,4 +259,48 @@ describe('CrudPage', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(onFormClose).toHaveBeenCalledTimes(1);
   });
+
+  it('falls back to default labels and omits the actions column', async () => {
+    mockData();
+    render(
+      <CrudPage<ThingRow, ThingForm>
+        title="极简"
+        queryKey={['minimal-things']}
+        endpoint="/resources/things"
+        initialForm={{ name: '', note: '' }}
+        columns={[{ key: 'name', label: '名称' }]}
+        renderForm={({ form, update }) => (
+          <label>名称<input value={form.name} onChange={(event) => update({ name: event.target.value })} /></label>
+        )}
+      />,
+      { wrapper },
+    );
+    expect(await screen.findByText('物品甲')).toBeDefined();
+    expect(screen.getByRole('button', { name: '新建' })).toBeDefined();
+    expect(screen.queryByRole('button', { name: '编辑' })).toBeNull();
+    expect(screen.queryByText('操作')).toBeNull();
+  });
+
+  it('cancels a stale delete confirmation without deleting', async () => {
+    const pendingSearch = new Promise<never>(() => {});
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      const url = new URL(path, 'http://localhost');
+      if (url.searchParams.get('search')) return pendingSearch;
+      return { items: [{ id: 't-1', name: '物品甲', note: '说明一' }], total: 120, page: 1, pageSize: 50 };
+    });
+    render(<CrudPage<ThingRow, ThingForm> {...baseProps()} />, { wrapper });
+    await screen.findByText('物品甲');
+    fireEvent.click(screen.getAllByText('删除')[0]);
+    expect(await screen.findByText('确定删除该记录吗？')).toBeDefined();
+    // 确认框打开期间列表变 stale（搜索挂起）
+    fireEvent.change(screen.getByLabelText('搜索'), { target: { value: '甲' } });
+    await waitFor(() => {
+      expect((screen.getAllByText('删除')[0] as HTMLButtonElement).disabled).toBe(true);
+    });
+    fireEvent.click(screen.getByText('确认删除'));
+    await waitFor(() => {
+      expect(apiRequest).not.toHaveBeenCalledWith('/resources/things/t-1', expect.objectContaining({ method: 'DELETE' }));
+    });
+    expect(screen.queryByText('确定删除该记录吗？')).toBeNull();
+  });
 });

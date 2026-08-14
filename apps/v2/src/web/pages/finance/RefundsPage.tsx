@@ -136,25 +136,36 @@ function RefundRowActions({
 }) {
   const status = String(row.status ?? '');
   const { busy, run } = useAsyncAction();
+  const approve = () => {
+    /* v8 ignore next -- 按钮在 stale 期间 disabled（jsdom 不派发 click），守卫为防御冗余 */
+    if (stale) return;
+    run(() => transitionRefund(showToast, reload, row.id, 'approve', '退款已通过审批'));
+  };
+  const reject = () => {
+    /* v8 ignore next -- 同上 */
+    if (stale) return;
+    run(() => transitionRefund(showToast, reload, row.id, 'reject', '退款已驳回'));
+  };
+  const cancel = () => {
+    /* v8 ignore next -- 同上 */
+    if (stale) return;
+    run(() => transitionRefund(showToast, reload, row.id, 'cancel', '退款已取消'));
+  };
+  const process = () => {
+    /* v8 ignore next -- 同上 */
+    if (stale) return;
+    run(() => transitionRefund(showToast, reload, row.id, 'process', '退款已完成'));
+  };
   if (status === 'REQUESTED') {
     return (
       <span>
-        <button disabled={busy || stale} onClick={() => {
-          if (stale) return;
-          run(() => transitionRefund(showToast, reload, row.id, 'approve', '退款已通过审批'));
-        }}>
+        <button disabled={busy || stale} onClick={approve}>
           通过审批
         </button>
-        <button disabled={busy || stale} onClick={() => {
-          if (stale) return;
-          run(() => transitionRefund(showToast, reload, row.id, 'reject', '退款已驳回'));
-        }}>
+        <button disabled={busy || stale} onClick={reject}>
           驳回
         </button>
-        <button disabled={busy || stale} onClick={() => {
-          if (stale) return;
-          run(() => transitionRefund(showToast, reload, row.id, 'cancel', '退款已取消'));
-        }}>
+        <button disabled={busy || stale} onClick={cancel}>
           取消
         </button>
       </span>
@@ -163,10 +174,7 @@ function RefundRowActions({
   if (status === 'PENDING_REFUND') {
     return (
       <span>
-        <button disabled={busy || stale} onClick={() => {
-          if (stale) return;
-          run(() => transitionRefund(showToast, reload, row.id, 'process', '退款已完成'));
-        }}>
+        <button disabled={busy || stale} onClick={process}>
           确认退款
         </button>
       </span>

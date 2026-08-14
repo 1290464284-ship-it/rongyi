@@ -105,6 +105,8 @@ Web **96.82% / 92.94% / 98.66% / 98.58%**，双门禁全绿——覆盖率口径
 | `src/web/lib/format.ts`（formatDate dateOnly） | `!Number.isNaN(local.getTime())` 的 NaN 分支 | 四位年份的 Date 构造恒产生有效日期（越界自动滚动），NaN 分支不可达，防御冗余 |
 | `src/web/components/ResourceHub.tsx`（handleTabKeyDown） | `if (!target) return` | keydown 来自已渲染的 tab 按钮（filteredTabs 非空且 next 恒在界内），target 恒存在，防御冗余 |
 | `src/web/pages/clinical/FirstExamsPage.tsx`（rowActions） | `if (ctx.stale) return` 守卫 | 本页列表无分页/搜索（queryKey 恒定），stale 恒为 false，守卫为防御冗余 |
+| `src/web/pages/finance/RefundsPage.tsx`（RefundRowActions） | `if (stale) return` 守卫 | 动作按钮在 stale 期间 disabled（jsdom 不派发 click），守卫为防御冗余；stale 期间行为由 spec「ignores stale action clicks」覆盖 |
+| `src/web/pages/appointments/AppointmentsPage.tsx`（transition / openEdit / delete） | `if (stale) return` 与 `!deleteTarget \|\| submitting` 守卫 | 行内动作/编辑/删除按钮在 stale 期间 disabled，确认框仅在目标非空时渲染且 submitting 期间 disabled——均为防御冗余；stale 期间行为由 spec「does not save an edit while the appointment list is stale」覆盖 |
 
 ## 5. 其他已知取舍
 

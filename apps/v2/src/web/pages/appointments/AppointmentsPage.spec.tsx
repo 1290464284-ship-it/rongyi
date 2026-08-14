@@ -138,6 +138,36 @@ await waitFor(() => {
     expect(await screen.findByRole('option', { name: 'purpose-missing' })).toBeDefined();
   });
 
+  it('renders create-form markers for unknown doctor and purpose ids', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/appointments?page=1&pageSize=20') return { items: [], total: 0, page: 1, pageSize: 20 };
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      if (path === '/resources/chairs?page=1&pageSize=100') return { items: [], total: 0, page: 1, pageSize: 200 };
+      if (path === '/resources/appointmentPurposes?page=1&pageSize=100') {
+        return { items: [{ id: 'purpose-1', name: '咨询' }], total: 1, page: 1, pageSize: 100 };
+      }
+      return {};
+    });
+    render(<AppointmentsPage />, { wrapper });
+    expect(await screen.findByText('预约管理')).toBeDefined();
+    const doctorSelect = screen.getByLabelText('医生') as HTMLSelectElement;
+    const purposeSelect = screen.getByLabelText('预约事项') as HTMLSelectElement;
+    // 先挂一个临时 option 让浏览器级 value 赋值成功，驱动 onChange 选中未知 id
+    const doctorOption = document.createElement('option');
+    doctorOption.value = 'd-unknown';
+    doctorSelect.appendChild(doctorOption);
+    fireEvent.change(doctorSelect, { target: { value: 'd-unknown' } });
+    const purposeOption = document.createElement('option');
+    purposeOption.value = 'purpose-unknown';
+    purposeSelect.appendChild(purposeOption);
+    fireEvent.change(purposeSelect, { target: { value: 'purpose-unknown' } });
+    expect(await screen.findByRole('option', { name: 'd-unknown' })).toBeDefined();
+    expect(await screen.findByRole('option', { name: 'purpose-unknown' })).toBeDefined();
+  });
+
   it('shows an error when appointments fail to load', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/appointments?page=1&pageSize=20') throw new Error('appointments failed');

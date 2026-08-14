@@ -209,6 +209,17 @@ describe('RefundsPage', () => {
     expect(await screen.findByText('暂无退款记录')).toBeDefined();
   });
 
+  it('renders an empty state when the list payload omits items', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/refunds/summary') {
+        return { counts: { REQUESTED: 0, PENDING_REFUND: 0, COMPLETED: 0, REJECTED: 0, CANCELLED: 0 }, total: 0 };
+      }
+      return { total: 0, page: 1, pageSize: 20 };
+    });
+    render(<RefundsPage />, { wrapper });
+    expect(await screen.findByText('暂无退款记录')).toBeDefined();
+  });
+
   it('navigates between refund pages', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/refunds/summary') {

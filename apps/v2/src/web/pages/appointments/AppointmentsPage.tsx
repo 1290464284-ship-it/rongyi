@@ -115,6 +115,7 @@ export function AppointmentsPage({ initialSearch }: { initialSearch?: string } =
   }
 
   async function transition(id: string, status: string) {
+    /* v8 ignore next -- 行内动作按钮在 stale 期间 disabled（jsdom 不派发 click），守卫为防御冗余 */
     if (stale) return;
     if (!transitionGuard.start(id)) return;
     try {
@@ -132,6 +133,7 @@ export function AppointmentsPage({ initialSearch }: { initialSearch?: string } =
   }
 
   function openEditAppointment(row: AppointmentRow) {
+    /* v8 ignore next -- 行内编辑按钮在 stale 期间 disabled，守卫为防御冗余 */
     if (stale) return;
     const appointmentId = String(row.id);
     const cachedPhone = rawPhoneCache[appointmentId];
@@ -210,7 +212,9 @@ export function AppointmentsPage({ initialSearch }: { initialSearch?: string } =
   }
 
   async function deleteAppointment() {
+    /* v8 ignore next -- 删除按钮在 stale 期间 disabled，守卫为防御冗余 */
     if (stale) return;
+    /* v8 ignore next -- 确认框仅在 deleteTarget 非空时渲染且 submitting 期间 disabled，守卫为防御冗余 */
     if (!deleteTarget || submitting) return;
     setSubmitting(true);
     try {
