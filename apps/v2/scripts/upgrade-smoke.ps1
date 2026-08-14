@@ -1,6 +1,10 @@
 param(
   [string]$CurrentInstallerPath = "",
-  [string]$PreviousInstallerPath = ""
+  [string]$PreviousInstallerPath = "",
+  # 同源码版本的内部构建（internal 时间戳只进 package.json/latest.yml，
+  # exe 的 ProductVersion 仍是 2.2.0.0）无法通过版本递增断言；运营复验
+  # 升级链路时用此开关跳过，公开发布场景必须保留该断言。
+  [switch]$SkipVersionCheck
 )
 
 $ErrorActionPreference = "Stop"
@@ -37,10 +41,23 @@ function Wait-ApiHealthy {
   }
 }
 
-$releaseDir = Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..\release-v2")
+# 显式传入安装器时无需 release-v2 目录存在（默认可选）：仅当需要回退到
+# 目录默认值时再解析，避免该目录缺失时即使给了显式路径也必然失败。
+$releaseDir = Join-Path $PSScriptRoot "..\release-v2"
+if (-not $CurrentInstallerPath -or -not $PreviousInstallerPath) {
+  if (-not (Test-Path -LiteralPath $releaseDir)) {
+    throw "Release directory not found: $releaseDir (pass -CurrentInstallerPath/-PreviousInstallerPath instead)"
+  }
+  $releaseDir = (Resolve-Path -LiteralPath $releaseDir).Path
+}
 if (-not $CurrentInstallerPath) {
   $CurrentInstallerPath = Get-ChildItem -LiteralPath $releaseDir -Filter "*.exe" |
     Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1 -ExpandProperty FullName
+}
+if (-not $PreviousInstallerPath) {
+  $PreviousInstallerPath = Get-ChildItem -LiteralPath $releaseDir -Filter "*.exe" |
+    Sort-Object LastWriteTime |
     Select-Object -First 1 -ExpandProperty FullName
 }
 
@@ -148,12 +165,16 @@ if ($current.ExitCode -ne 0) {
 
 $currentVersion = (Get-Item -LiteralPath (Join-Path $installDir "Dental Clinic V2.exe")).VersionInfo.ProductVersion
 Write-Host "Current installed version: $currentVersion"
-if ($currentVersion -and $previousVersion) {
-  if ($currentVersion -le $previousVersion) {
-    throw "Upgrade smoke did not increase the installed version: $previousVersion -> $currentVersion"
+if (-not $SkipVersionCheck) {
+  if ($currentVersion -and $previousVersion) {
+    if ($currentVersion -le $previousVersion) {
+      throw "Upgrade smoke did not increase the installed version: $previousVersion -> $currentVersion"
+    }
+  } elseif ($currentVersion -eq $previousVersion) {
+    throw "Upgrade smoke could not prove a version increase (both empty)"
   }
-} elseif ($currentVersion -eq $previousVersion) {
-  throw "Upgrade smoke could not prove a version increase (both empty)"
+} else {
+  Write-Host "Version increase check skipped (-SkipVersionCheck)"
 }
 
 $appExe = Join-Path $installDir "Dental Clinic V2.exe"
