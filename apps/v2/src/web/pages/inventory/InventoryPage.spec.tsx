@@ -126,6 +126,14 @@ describe('InventoryPage', () => {
     expect(vi.mocked(apiRequest).mock.calls.filter(([path, options]) =>
       path === '/inventory/transactions' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'POST',
     )).toHaveLength(0);
+
+    // 批次表单同样在 stale 阶段被守卫拦截（fireEvent.submit 可绕过 disabled 提交按钮）
+    const batchForm = screen.getByRole('button', { name: '新增批次' }).closest('form');
+    expect(batchForm).not.toBeNull();
+    fireEvent.submit(batchForm as HTMLFormElement);
+    expect(vi.mocked(apiRequest).mock.calls.filter(([path, options]) =>
+      path === '/inventory-batches' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'POST',
+    )).toHaveLength(0);
   });
 
   it('clears the item id when paging the inventory list', async () => {
@@ -1039,8 +1047,10 @@ describe('InventoryPage', () => {
     });
     render(<InventoryPage />, { wrapper });
     const button = await screen.findByRole('button', { name: '生成到期提醒' });
-    fireEvent.click(button);
-    fireEvent.click(button);
+    act(() => {
+      fireEvent.click(button);
+      fireEvent.click(button);
+    });
     expect(vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/inventory-batches/expiry-alerts')).toHaveLength(1);
     resolveAlerts?.({ ok: true });
   });
@@ -1068,8 +1078,10 @@ describe('InventoryPage', () => {
     render(<InventoryPage />, { wrapper });
     fireEvent.click(await screen.findByRole('button', { name: '编辑' }));
     const save = await screen.findByRole('button', { name: '保存' });
-    fireEvent.click(save);
-    fireEvent.click(save);
+    act(() => {
+      fireEvent.click(save);
+      fireEvent.click(save);
+    });
     expect(apiRequest).toHaveBeenCalledWith('/inventory-batches/b-1', expect.objectContaining({ method: 'PATCH' }));
     expect(vi.mocked(apiRequest).mock.calls.filter(([path, options]) =>
       path === '/inventory-batches/b-1' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'PATCH',
@@ -1195,5 +1207,166 @@ describe('InventoryPage', () => {
     render(<InventoryPage />, { wrapper });
     expect(await screen.findByText('批次管理')).toBeDefined();
     expect(await screen.findByText('B-1')).toBeDefined();
+  });
+
+  it('ignores a second replenishment request while one is pending', async () => {
+    let resolveReplenish: ((value: unknown) => void) | undefined;
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/resources/inventoryItems?page=1&pageSize=20') return { items: [], total: 0 };
+      if (path === '/inventory/low-stock') return [];
+      if (path === '/inventory/expiring?days=30') return [];
+      if (path === '/inventory/replenishment/generate' && String(init?.method ?? 'GET').toUpperCase() === 'POST') {
+        return await new Promise((resolve) => { resolveReplenish = resolve; });
+      }
+      return {};
+    });
+    render(<InventoryPage />, { wrapper });
+    const button = await screen.findByRole('button', { name: '生成补货建议' });
+    act(() => {
+      fireEvent.click(button);
+      fireEvent.click(button);
+    });
+    expect(vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/inventory/replenishment/generate')).toHaveLength(1);
+    resolveReplenish?.({ ok: true });
+  });
+
+  it('ignores replenishment while a transaction is still pending', async () => {
+    let resolveTransaction: ((value: unknown) => void) | undefined;
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/resources/inventoryItems?page=1&pageSize=20') return { items: [], total: 0 };
+      if (path === '/inventory/low-stock') return [];
+      if (path === '/inventory/expiring?days=30') return [];
+      if (path === '/inventory/transactions' && String(init?.method ?? 'GET').toUpperCase() === 'POST') {
+        return await new Promise((resolve) => { resolveTransaction = resolve; });
+      }
+      return {};
+    });
+    render(<InventoryPage />, { wrapper });
+    fireEvent.change(await screen.findByLabelText('库存项目 ID'), { target: { value: 'item-1' } });
+    fireEvent.change(screen.getByDisplayValue('1'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存库存流水' }));
+    await screen.findByRole('button', { name: '保存中...' });
+    fireEvent.click(screen.getByRole('button', { name: '生成补货建议' }));
+    expect(vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/inventory/replenishment/generate')).toHaveLength(0);
+    resolveTransaction?.({ id: 'tx-1' });
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: '保存中...' })).toBeNull();
+    });
+  });
+
+  it('ignores a second batch submit while one is pending', async () => {
+    let resolveBatch: ((value: unknown) => void) | undefined;
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/resources/inventoryItems?page=1&pageSize=20') {
+        return { items: [{ id: 'i-batch', name: 'Batch Material', stock: 10, minStock: 1 }], total: 1 };
+      }
+      if (path === '/inventory/low-stock') return [];
+      if (path === '/inventory/expiring?days=30') return [];
+      if (path.startsWith('/resources/suppliers')) return { items: [], total: 0 };
+      if (path === '/inventory-batches' && String(init?.method ?? 'GET').toUpperCase() === 'POST') {
+        return await new Promise((resolve) => { resolveBatch = resolve; });
+      }
+      if (path.startsWith('/inventory-batches')) return { batches: [], expiring: [] };
+      return {};
+    });
+    render(<InventoryPage />, { wrapper });
+    await screen.findByDisplayValue('i-batch');
+    fireEvent.change(screen.getByLabelText('入库数量'), { target: { value: '8' } });
+    const button = screen.getByRole('button', { name: '新增批次' });
+    act(() => {
+      fireEvent.click(button);
+      fireEvent.click(button);
+    });
+    expect(vi.mocked(apiRequest).mock.calls.filter(([path, options]) =>
+      path === '/inventory-batches' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'POST',
+    )).toHaveLength(1);
+    resolveBatch?.({ id: 'b-new' });
+  });
+
+  it('ignores a batch edit submit while a previous edit is pending', async () => {
+    let resolvePatch: ((value: unknown) => void) | undefined;
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/resources/inventoryItems?page=1&pageSize=20') {
+        return { items: [{ id: 'i-batch', name: 'Batch Material', stock: 10, minStock: 1 }], total: 1 };
+      }
+      if (path === '/inventory/low-stock') return [];
+      if (path === '/inventory/expiring?days=30') return [];
+      if (path.startsWith('/resources/suppliers')) return { items: [], total: 0 };
+      if (path === '/inventory-batches?itemId=i-batch') {
+        return { batches: [{ id: 'b-1', batchNo: 'B-001', initialQuantity: 10, remainingQuantity: 10 }], expiring: [] };
+      }
+      if (path === '/inventory-batches/b-1' && String(init?.method ?? 'GET').toUpperCase() === 'PATCH') {
+        return await new Promise((resolve) => { resolvePatch = resolve; });
+      }
+      if (path.startsWith('/inventory-batches')) return { batches: [], expiring: [] };
+      return {};
+    });
+    render(<InventoryPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '编辑' }));
+    await screen.findByRole('dialog', { name: '编辑批次' });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await screen.findByRole('button', { name: '保存中...' });
+    const form = screen.getByRole('button', { name: '保存中...' }).closest('form');
+    expect(form).not.toBeNull();
+    fireEvent.submit(form as HTMLFormElement);
+    expect(vi.mocked(apiRequest).mock.calls.filter(([path, options]) =>
+      path === '/inventory-batches/b-1' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'PATCH',
+    )).toHaveLength(1);
+    resolvePatch?.({ id: 'b-1' });
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: '编辑批次' })).toBeNull();
+    });
+  });
+
+  it('ignores a batch delete confirmation while a transaction is pending', async () => {
+    let resolveTransaction: ((value: unknown) => void) | undefined;
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/resources/inventoryItems?page=1&pageSize=20') {
+        return { items: [{ id: 'i-batch', name: 'Batch Material', stock: 10, minStock: 1 }], total: 1 };
+      }
+      if (path === '/inventory/low-stock') return [];
+      if (path === '/inventory/expiring?days=30') return [];
+      if (path.startsWith('/resources/suppliers')) return { items: [], total: 0 };
+      if (path === '/inventory-batches?itemId=i-batch') {
+        return { batches: [{ id: 'b-1', batchNo: 'B-001', initialQuantity: 10, remainingQuantity: 10 }], expiring: [] };
+      }
+      if (path === '/inventory/transactions' && String(init?.method ?? 'GET').toUpperCase() === 'POST') {
+        return await new Promise((resolve) => { resolveTransaction = resolve; });
+      }
+      if (path.startsWith('/inventory-batches')) return { batches: [], expiring: [] };
+      return {};
+    });
+    render(<InventoryPage />, { wrapper });
+    await screen.findByText('B-001');
+    fireEvent.change(screen.getByLabelText('库存项目 ID'), { target: { value: 'i-batch' } });
+    fireEvent.change(screen.getByDisplayValue('1'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存库存流水' }));
+    await screen.findByRole('button', { name: '保存中...' });
+    fireEvent.click(screen.getAllByRole('button', { name: '删除' })[0]);
+    fireEvent.click(await screen.findByRole('button', { name: '确认' }));
+    expect(vi.mocked(apiRequest).mock.calls.filter(([path, options]) =>
+      path === '/inventory-batches/b-1' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'DELETE',
+    )).toHaveLength(0);
+    resolveTransaction?.({ id: 'tx-1' });
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: '保存中...' })).toBeNull();
+    });
+  });
+
+  it('misses barcode matches when only the code is missing', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/inventoryItems?page=1&pageSize=20') return { items: [], total: 0 };
+      if (path === '/inventory/low-stock') return [];
+      if (path === '/inventory/expiring?days=30') return [];
+      if (path.startsWith('/resources/inventoryItems?page=1&pageSize=20&search=')) {
+        return { items: [{ id: 'i-x', barcode: 'BC-9', code: null }], total: 1 };
+      }
+      return {};
+    });
+    render(<InventoryPage />, { wrapper });
+    await screen.findByText('库存管理');
+    fireEvent.change(screen.getByLabelText('条码扫码'), { target: { value: 'ZZ-9' } });
+    fireEvent.click(screen.getByRole('button', { name: '扫码定位' }));
+    expect(await screen.findByText('未找到匹配的库存项目')).toBeDefined();
   });
 });
