@@ -1,11 +1,12 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
-import { AppError } from '../../infrastructure/errors';
+import { AppError, NotFoundError } from '../../infrastructure/errors';
+import type { AppContext } from '../../../domain/contracts';
 import { CustomFieldService } from './custom-fields';
 
 describe('custom fields', () => {
@@ -197,5 +198,77 @@ describe('custom fields', () => {
     expect(() => service.createDefinition('patient', null as never, context)).toThrow('field input is required');
     expect(() => service.setValues('patient', 'patient-custom-3', null as never, context)).toThrow('values must be an array');
     expect(() => service.setValues('patient', 'patient-custom-3', [null as never], context)).toThrow('values must be an array');
+  });
+
+  it('creates required definitions without a clinic tenant and normalizes sparse inputs', () => {
+    const noClinic: AppContext = { ...context, clinicId: null };
+    const service = new CustomFieldService(db);
+    const created = service.createDefinition('patient', {
+      label: '必填字段',
+      fieldName: 'requiredField',
+      fieldType: 'TEXT',
+      required: true,
+    }, noClinic);
+    expect(Number(created.required)).toBe(1);
+    expect(created.clinicId).toBeNull();
+    const updated = service.updateDefinition(String(created.id), {
+      label: '必填字段改',
+      fieldName: 'requiredField',
+      fieldType: 'TEXT',
+      required: true,
+    }, noClinic);
+    expect(Number(updated.required)).toBe(1);
+
+    // fieldType 缺失 → 空串 → 无效类型
+    expect(() => service.createDefinition('patient', {
+      label: '无类型',
+      fieldName: 'noType',
+      fieldType: undefined as never,
+    }, context)).toThrow('Invalid fieldType: ');
+    // SELECT 缺 options → nullish 分支 → 至少一个选项校验
+    expect(() => service.createDefinition('patient', {
+      label: '无选项',
+      fieldName: 'noOptions',
+      fieldType: 'SELECT',
+      options: undefined as never,
+    }, context)).toThrow('SELECT fields require at least one option');
+  });
+
+  it('sets null clinic values and rejects undefined field ids', () => {
+    const service = new CustomFieldService(db);
+    const field = service.createDefinition('patient', {
+      label: '布尔字段',
+      fieldName: 'boolField',
+      fieldType: 'BOOLEAN',
+    }, context);
+    const noClinic: AppContext = { ...context, clinicId: null };
+    const result = service.setValues('patient', 'patient-demo-001', [
+      { fieldId: String(field.id), value: true },
+    ], noClinic);
+    expect(result[String(field.id)]).toBe('1');
+    expect(() => service.setValues('patient', 'patient-demo-001', [
+      { fieldId: undefined as never, value: 'x' },
+    ], context)).toThrow('Unknown custom field: ');
+  });
+
+  it('reports NotFound when a definition delete affects zero rows', () => {
+    const service = new CustomFieldService(db);
+    const field = service.createDefinition('patient', {
+      label: '删除竞态',
+      fieldName: 'deleteRace',
+      fieldType: 'TEXT',
+    }, context);
+    const originalPrepare = db.prepare.bind(db);
+    const spy = vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE CustomField') && sql.includes('SET deletedAt')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      expect(() => service.deleteDefinition(String(field.id), context)).toThrow(NotFoundError);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

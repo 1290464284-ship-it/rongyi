@@ -82,6 +82,7 @@ Web **96.82% / 92.94% / 98.66% / 98.58%**，双门禁全绿——覆盖率口径
 | `src/web/pages/clinical/ImagingPage.tsx`（submitOverride imageUrl） | `form.imageUrl ?? ''` 的 nullish 分支 | 行为由 spec「submits a blank image url for records with a null image」覆盖（断言 body.imageUrl 为空串即执行），v8 未入账，属采集缺陷 |
 | `src/web/components/dialog.tsx`（ConfirmDialog handleConfirm） | `submitting \|\| submittingRef.current` 守卫 | 确认按钮在 submitting 时 disabled，双击不可达，防御冗余 |
 | `src/web/components/dialog.tsx`（requestClose 定时器） | `closeEpochRef.current !== epoch` 迟到通知守卫 | 关闭时组件卸载会先清掉定时器（spec 验证），迟到通知不可达，防御冗余 |
+| `src/server/application/service-modules/custom-fields.ts`（setValues BOOLEAN） | `parseBooleanStrict(...) ? '1' : '0'` 的真值分支 | 行为由 spec「sets null clinic values...」覆盖（断言结果为 '1' 即执行），v8 未入账，属采集缺陷 |
 
 ## 5. 其他已知取舍
 
