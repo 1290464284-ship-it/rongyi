@@ -124,6 +124,63 @@ describe('ProcessingSettleService', () => {
     expect(row('settle-draft').settleStatus).toBe('UNSETTLED');
   });
 
+  it('validates doctor, factory and fee relationships when creating orders', async () => {
+    const orders = new ProcessingOrderService(db);
+
+    // 合法 doctorId 通过医生存在性校验
+    await expect(orders.create({
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      number: 'PO-DOC-1',
+      totalFee: 10000,
+      items: [{ name: '烤瓷冠', quantity: 1, unitPrice: 10000 }],
+    }, context)).resolves.toMatchObject({ status: 'DRAFT' });
+
+    // 缺失工厂 → NotFound；存在工厂 → 成功
+    await expect(orders.create({
+      patientId: 'patient-demo-001',
+      factoryId: 'factory-missing',
+      number: 'PO-FAC-1',
+      totalFee: 10000,
+      items: [{ name: '烤瓷冠', quantity: 1, unitPrice: 10000 }],
+    }, context)).rejects.toThrow('Processing factory not found');
+    db.prepare(
+      `INSERT INTO ProcessingFactory (id, clinicId, createdAt, updatedAt, deletedAt, name)
+       VALUES ('factory-1', 'clinic-v2-001', ?, ?, NULL, '工厂甲')`,
+    ).run(now, now);
+    await expect(orders.create({
+      patientId: 'patient-demo-001',
+      factoryId: 'factory-1',
+      number: 'PO-FAC-2',
+      totalFee: 10000,
+      items: [{ name: '烤瓷冠', quantity: 1, unitPrice: 10000 }],
+    }, context)).resolves.toMatchObject({ status: 'DRAFT' });
+
+    // 明细小计超上限
+    await expect(orders.create({
+      patientId: 'patient-demo-001',
+      number: 'PO-OVER-1',
+      totalFee: 10000,
+      items: [{ name: '烤瓷冠', quantity: 1, unitPrice: 2_000_000_000_000 }],
+    }, context)).rejects.toThrow('Processing item subtotal exceeds the allowed amount');
+
+    // 总额超上限（明细小计合法）
+    await expect(orders.create({
+      patientId: 'patient-demo-001',
+      number: 'PO-OVER-2',
+      totalFee: 2_000_000_000_000,
+      items: [{ name: '烤瓷冠', quantity: 1, unitPrice: 1000 }],
+    }, context)).rejects.toThrow('Processing order total fee exceeds the allowed amount');
+
+    // 总额不等于明细合计
+    await expect(orders.create({
+      patientId: 'patient-demo-001',
+      number: 'PO-MISMATCH',
+      totalFee: 1000,
+      items: [{ name: '烤瓷冠', quantity: 1, unitPrice: 5000 }],
+    }, context)).rejects.toThrow('must equal the sum of item subtotals');
+  });
+
   it('rejects unsettle of an order that is not settled', () => {
     insertOrder('settle-not-settled', { status: 'COMPLETED', totalFee: 10000 });
     const service = new ProcessingSettleService(db);

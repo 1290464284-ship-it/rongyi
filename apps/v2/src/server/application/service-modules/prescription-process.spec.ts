@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -34,6 +34,7 @@ describe('PrescriptionProcessService', () => {
   });
 
   afterAll(() => {
+    vi.restoreAllMocks();
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -371,5 +372,58 @@ describe('PrescriptionProcessService', () => {
     const dispense = db.prepare('SELECT doctorId, clinicId FROM Dispense WHERE id = ?').get(String(processed.dispenseId)) as { doctorId: string | null; clinicId: string | null };
     expect(dispense.doctorId).toBeNull();
     expect(dispense.clinicId).toBe(context.clinicId);
+  });
+
+  it('falls back to a name-matched inventory when the drugId lookup misses', () => {
+    insertPrescription('rx-name-fallback');
+    insertInventory('rx-inv-name', 'Name Matched Drug');
+    insertPrescriptionItem('rx-name-fallback-item', 'rx-name-fallback', 'Name Matched Drug', { drugId: 'rx-missing-inv', quantity: 1, price: 500 });
+    const service = new PrescriptionProcessService(db);
+    const result = service.process('rx-name-fallback', {}, context);
+    const dispenseItem = db.prepare('SELECT itemId FROM DispenseItem WHERE dispenseId = ?').get(String(result.dispenseId)) as { itemId: string };
+    expect(dispenseItem.itemId).toBe('rx-inv-name');
+  });
+
+  it('processes under a global null-clinic context', () => {
+    const globalContext = { ...context, clinicId: null };
+    db.prepare(
+      `INSERT INTO Prescription (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, visitId, doctorId, remark, status
+       ) VALUES ('rx-global', ?, ?, ?, NULL, 'patient-demo-001', NULL, 'user-admin-001', NULL, 'DRAFT')`,
+    ).run(context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO PrescriptionItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         prescriptionId, drugId, name, specification, dosage, frequency, days, quantity, price
+       ) VALUES ('rx-global-item', ?, ?, ?, NULL, 'rx-global', NULL, 'Global Drug', NULL, NULL, NULL, 1, 1, 100)`,
+    ).run(context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO InventoryItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, spec, category, unit, stock, minStock, price
+       ) VALUES ('rx-inv-global', ?, ?, ?, NULL, 'CODE-GLOBAL', 'Global Drug', NULL, 'DRUG', 'box', 10, 0, 100)`,
+    ).run(context.clinicId, now, now);
+
+    const service = new PrescriptionProcessService(db);
+    const result = service.process('rx-global', {}, globalContext);
+    const charge = db.prepare('SELECT clinicId FROM Charge WHERE id = ?').get(String(result.chargeId)) as { clinicId: string | null };
+    const dispense = db.prepare('SELECT clinicId FROM Dispense WHERE id = ?').get(String(result.dispenseId)) as { clinicId: string | null };
+    expect(charge.clinicId).toBeNull();
+    expect(dispense.clinicId).toBeNull();
+  });
+
+  it('rejects concurrent processing through the CAS guard', () => {
+    insertPrescription('rx-cas');
+    insertInventory('rx-inv-cas', 'Cas Drug');
+    insertPrescriptionItem('rx-cas-item', 'rx-cas', 'Cas Drug', { quantity: 1, price: 100 });
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes("SET status = 'PROCESSED'")) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    expect(() => new PrescriptionProcessService(db).process('rx-cas', {}, context)).toThrow('处方已处理');
   });
 });

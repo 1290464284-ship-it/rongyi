@@ -495,6 +495,80 @@ describe('service edge coverage', () => {
     expect(Number((settle.stats(context) as { unsettled: { count: number } }).unsettled.count)).toBeGreaterThanOrEqual(1);
   });
 
+  it('validates supplier links, overflow amounts and non-approved receives', async () => {
+    const purchase = new PurchaseOrderService(db);
+    db.prepare(
+      `INSERT INTO Supplier (id, clinicId, createdAt, updatedAt, deletedAt, code, name)
+       VALUES ('sup-po-edge', ?, ?, ?, NULL, 'SUP-PO-EDGE', 'PO供应商')`,
+    ).run(context.clinicId, now, now);
+
+    await expect(purchase.create({
+      number: 'PO-SUP-1',
+      supplierId: 'sup-po-edge',
+      items: [{ name: 'X', quantity: 1, unitPrice: 1 }],
+    }, context)).resolves.toMatchObject({ status: 'PENDING' });
+    await expect(purchase.create({
+      number: 'PO-SUP-2',
+      supplierId: 'sup-missing',
+      items: [{ name: 'X', quantity: 1, unitPrice: 1 }],
+    }, context)).rejects.toThrow('Supplier not found');
+    await expect(purchase.create({
+      number: 'PO-SUB-OVER',
+      items: [{ name: 'X', quantity: 1, unitPrice: 2_000_000_000_000 }],
+    }, context)).rejects.toThrow('Purchase item subtotal exceeds');
+    await expect(purchase.create({
+      number: 'PO-TOTAL-OVER',
+      items: [
+        { name: 'A', quantity: 1, unitPrice: 600_000_000_000 },
+        { name: 'B', quantity: 1, unitPrice: 600_000_000_000 },
+      ],
+    }, context)).rejects.toThrow('Purchase order total exceeds');
+
+    db.prepare(
+      `INSERT INTO PurchaseOrder (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         number, supplierId, totalAmount, status, reviewStatus
+       ) VALUES ('po-not-approved', ?, ?, ?, NULL, 'PO-NA', NULL, 0, 'PENDING', 'SUBMITTED')`,
+    ).run(context.clinicId, now, now);
+    await expect(purchase.receive('po-not-approved', context)).rejects.toThrow('must be approved before receiving');
+  });
+
+  it('falls back to the pre-adjust stock when the post-adjust snapshot is missing', async () => {
+    db.prepare(
+      `INSERT INTO InventoryItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, category, unit, stock, minStock, price
+       ) VALUES ('item-af', ?, ?, ?, NULL, 'AF-CODE', 'AF Item', 'MAT', 'box', 5, 0, 100)`,
+    ).run(context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO PurchaseOrder (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         number, supplierId, totalAmount, status, reviewStatus
+       ) VALUES ('po-after-fallback', ?, ?, ?, NULL, 'PO-AF', NULL, 0, 'PENDING', 'APPROVED')`,
+    ).run(context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO PurchaseOrderItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         orderId, itemId, name, quantity, unitPrice, subtotal
+       ) VALUES ('poi-af', ?, ?, ?, NULL, 'po-after-fallback', 'item-af', 'AF Item', 2, 100, 200)`,
+    ).run(context.clinicId, now, now);
+
+    let finds = 0;
+    const fakeInventory = {
+      findItem: () => {
+        finds += 1;
+        return finds === 1 ? { id: 'item-af', stock: 5 } : null;
+      },
+      adjustStock: () => undefined,
+      createTransaction: () => undefined,
+    };
+    const purchase = new PurchaseOrderService(db, undefined, fakeInventory as never);
+    const result = await purchase.receive('po-after-fallback', context) as {
+      items: Array<{ itemId: string; beforeStock: number; afterStock: number }>;
+    };
+    expect(result.items[0]).toMatchObject({ itemId: 'item-af', beforeStock: 5, afterStock: 7 });
+  });
+
   it('covers audit logs with nullish optional fields', () => {
     const audit = new AuditService(db);
     audit.log({ action: 'EDGE_NULL' });

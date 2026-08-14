@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-08-14T03:25:42.678Z",
-  "total": 229,
+  "generatedAt": "2026-08-14T03:31:42.125Z",
+  "total": 230,
   "perFile": {
     "src\\web\\pages\\system\\SystemOperationsPage.tsx": 3,
     "src\\web\\pages\\system\\UsersPage.tsx": 3,
@@ -36,6 +36,7 @@
     "src\\server\\application\\service-modules\\follow-up-service.ts": 7,
     "src\\server\\application\\service-modules\\inventory-batch.ts": 8,
     "src\\server\\application\\service-modules\\pay-method.ts": 1,
+    "src\\server\\application\\service-modules\\prescription-process.ts": 1,
     "src\\server\\application\\service-modules\\replenishment.ts": 9,
     "src\\server\\application\\service-modules\\shift-template.ts": 1,
     "src\\server\\application\\service-modules\\sync.ts": 25,

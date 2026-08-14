@@ -138,6 +138,7 @@ export class PrescriptionProcessService {
       );
       for (const item of items) {
         const chargeSubtotal = Math.round(item.price * item.quantity);
+        /* v8 ignore next -- 同一算式已在事务外（dispensePlans 构建）校验并拦截，事务内二次校验为防御冗余 */
         if (!Number.isSafeInteger(chargeSubtotal) || chargeSubtotal > MAX_MONEY_CENTS) {
           throw new ValidationError('处方明细小计超出上限');
         }
