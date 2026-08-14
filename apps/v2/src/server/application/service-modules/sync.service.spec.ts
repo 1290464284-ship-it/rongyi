@@ -242,4 +242,207 @@ describe('SyncService', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ deviceId: 'sync-server-origin-device', operation: 'INSERT' });
   });
+
+  it('covers sync push error branches', async () => {
+    const service = new SyncService(db);
+    const freshIso = new Date(Date.now() + 60_000).toISOString();
+    expect(() => service.pull(now, '', 'bad-token', context)).toThrow('Device credentials');
+    await expect(service.push({
+      deviceId: 'device-1',
+      deviceToken: 'bad-token',
+      changes: [],
+    }, context)).rejects.toThrow('not registered');
+    expect(() => service.registerDevice('forbidden-device', 'x', { ...context, role: 'DOCTOR' }))
+      .toThrow('Sync requires BOSS');
+    expect(() => service.registerDevice('null-clinic-device', 'x', { ...context, clinicId: null }))
+      .toThrow('Sync requires a clinic scope');
+    const device = service.registerDevice('device-1', 'Edge Device', context);
+    expect(() => service.pull(now, 'device-1', device.token, { ...context, clinicId: null }))
+      .toThrow('Sync requires a clinic scope');
+    await expect(service.push({
+      deviceId: 'device-1',
+      deviceToken: device.token,
+      changes: [],
+    }, { ...context, clinicId: null })).rejects.toThrow('Sync requires a clinic scope');
+    expect(() => service.pull(now, 'device-1', device.token, { ...context, role: 'DOCTOR' }))
+      .toThrow('Sync requires BOSS');
+    await expect(service.push({
+      deviceId: 'device-1',
+      deviceToken: device.token,
+      changes: [],
+    }, { ...context, role: 'DOCTOR' })).rejects.toThrow('Sync requires BOSS');
+    expect(service.pull(now, 'device-1', device.token, context)).toHaveProperty('changes');
+    const notAllowed = await service.push({
+      deviceId: 'device-1',
+      deviceToken: device.token,
+      changes: [{ tableName: 'NotAllowed', recordId: 'x', operation: 'INSERT', updatedAt: now, data: {} }],
+    }, context);
+    expect(notAllowed.failed).toBe(1);
+    const missingData = await service.push({
+      deviceId: 'device-1',
+      deviceToken: device.token,
+      changes: [{ tableName: 'Patient', recordId: 'edge-sync-1', operation: 'INSERT', updatedAt: now, data: undefined }],
+    }, context);
+    expect(missingData.failed).toBe(1);
+    const badOperation = await service.push({
+      deviceId: 'device-1',
+      deviceToken: device.token,
+      changes: [{ tableName: 'Patient', recordId: 'edge-sync-op', operation: 'UPSERT', updatedAt: now, data: {} }],
+    }, context);
+    expect(badOperation.failed).toBe(1);
+    const chargeSync = await service.push({
+      deviceId: 'device-1',
+      deviceToken: device.token,
+      changes: [{ tableName: 'Charge', recordId: 'edge-sync-charge', operation: 'INSERT', updatedAt: now, data: {} }],
+    }, context);
+    expect(chargeSync.failed).toBe(1);
+    // Charge 任何操作（含 DELETE）都禁止经 sync 写入，防绕过 cancel 状态机软删收费单
+    const chargeDelete = await service.push({
+      deviceId: 'device-1',
+      deviceToken: device.token,
+      changes: [{ tableName: 'Charge', recordId: 'edge-sync-charge', operation: 'DELETE', updatedAt: now }],
+    }, context);
+    expect(chargeDelete.failed).toBe(1);
+    expect(chargeDelete.errors[0].error).toBe('Charge writes are disabled in sync; use charge APIs');
+    const deleteResult = await service.push({
+      deviceId: 'device-1',
+      deviceToken: device.token,
+      changes: [{ tableName: 'Patient', recordId: 'edge-sync-2', operation: 'DELETE', updatedAt: now }],
+    }, context);
+    expect(deleteResult.failed).toBe(1);
+    const updateResult = await service.push({
+      deviceId: 'device-1',
+      deviceToken: device.token,
+      changes: [{
+        tableName: 'Patient',
+        recordId: 'patient-sync-edge',
+        operation: 'INSERT',
+        updatedAt: now,
+        data: { code: 'SYNC-EDGE', name: 'Sync Edge', gender: 'UNKNOWN', phone: '13600000002', source: 'OTHER', active: true },
+      }],
+    }, context);
+    expect(updateResult.accepted).toBe(1);
+    const updateAgain = await service.push({
+      deviceId: 'device-1',
+      deviceToken: device.token,
+      changes: [{
+        tableName: 'Patient',
+        recordId: 'patient-sync-edge',
+        operation: 'INSERT',
+        updatedAt: freshIso,
+        data: { name: 'Sync Edge Updated' },
+      }],
+    }, context);
+    expect(updateAgain.accepted).toBe(1);
+    const deleteTarget = await service.push({
+      deviceId: 'device-1',
+      deviceToken: device.token,
+      changes: [{
+        tableName: 'Patient',
+        recordId: 'patient-sync-delete',
+        operation: 'INSERT',
+        updatedAt: now,
+        data: { code: 'SYNC-DELETE', name: 'Sync Delete', gender: 'UNKNOWN', phone: '13600000005', source: 'OTHER', active: true },
+      }],
+    }, context);
+    expect(deleteTarget.accepted).toBe(1);
+    const deleteExisting = await service.push({
+      deviceId: 'device-1',
+      deviceToken: device.token,
+      changes: [{ tableName: 'Patient', recordId: 'patient-sync-delete', operation: 'DELETE', updatedAt: freshIso }],
+    }, context);
+    expect(deleteExisting.accepted).toBe(1);
+    const deletedRow = db.prepare('SELECT deletedAt FROM Patient WHERE id = ?').get('patient-sync-delete') as { deletedAt: string | null } | undefined;
+    expect(deletedRow?.deletedAt).not.toBeNull();
+    // 状态机资源不能经 sync 直写终态；INSERT 缺省状态时注入初始状态。
+    const terminalTreatment = await service.push({
+      deviceId: 'device-1',
+      deviceToken: device.token,
+      changes: [{
+        tableName: 'Treatment',
+        recordId: 'edge-sync-treatment-terminal',
+        operation: 'INSERT',
+        updatedAt: now,
+        data: {
+          patientId: 'patient-demo-001',
+          doctorId: 'user-admin-001',
+          code: 'T-SYNC-TERMINAL',
+          name: 'Terminal',
+          category: 'GENERAL',
+          price: 100,
+          quantity: 1,
+          status: 'COMPLETED',
+        },
+      }],
+    }, context);
+    expect(terminalTreatment.failed).toBe(1);
+    expect(terminalTreatment.errors[0].error).toContain('状态由服务端状态机管理');
+    const defaultTreatment = await service.push({
+      deviceId: 'device-1',
+      deviceToken: device.token,
+      changes: [{
+        tableName: 'Treatment',
+        recordId: 'edge-sync-treatment-default',
+        operation: 'INSERT',
+        updatedAt: now,
+        data: {
+          patientId: 'patient-demo-001',
+          doctorId: 'user-admin-001',
+          code: 'T-SYNC-DEFAULT',
+          name: 'Default',
+          category: 'GENERAL',
+          price: 100,
+          quantity: 1,
+        },
+      }],
+    }, context);
+    expect(defaultTreatment.accepted).toBe(1);
+    expect((db.prepare('SELECT status FROM Treatment WHERE id = ?').get('edge-sync-treatment-default') as { status: string }).status)
+      .toBe('PLANNED');
+    const mismatchedUpdate = await service.push({
+      deviceId: 'device-1',
+      deviceToken: device.token,
+      changes: [{
+        tableName: 'Treatment',
+        recordId: 'edge-sync-treatment-default',
+        operation: 'UPDATE',
+        updatedAt: freshIso,
+        data: { status: 'COMPLETED' },
+      }],
+    }, context);
+    expect(mismatchedUpdate.failed).toBe(1);
+    const matchedUpdate = await service.push({
+      deviceId: 'device-1',
+      deviceToken: device.token,
+      changes: [{
+        tableName: 'Treatment',
+        recordId: 'edge-sync-treatment-default',
+        operation: 'UPDATE',
+        updatedAt: freshIso,
+        data: { name: 'Default Updated', status: 'PLANNED' },
+      }],
+    }, context);
+    expect(matchedUpdate.accepted).toBe(1);
+    const trickyData: Record<string, unknown> = {};
+    Object.defineProperty(trickyData, 'code', {
+      enumerable: true,
+      get() {
+        throw 'sync-string-error';
+      },
+    });
+    const nonError = await service.push({
+      deviceId: 'device-1',
+      deviceToken: device.token,
+      changes: [{
+        tableName: 'Patient',
+        recordId: 'patient-sync-non-error',
+        operation: 'INSERT',
+        updatedAt: now,
+        data: trickyData,
+      }],
+    }, context);
+    expect(nonError.failed).toBe(1);
+    expect(() => service.cleanup(now, { ...context, clinicId: null })).toThrow('Sync requires a clinic scope');
+    expect(service.cleanup(now, context).deleted).toBeGreaterThanOrEqual(0);
+  });
 });
