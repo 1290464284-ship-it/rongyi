@@ -59,8 +59,12 @@ app.on('second-instance', () => {
 });
 
 const isInternalBuild = /-internal\./.test(app.getVersion());
-autoUpdater.autoDownload = false;
-autoUpdater.autoInstallOnAppQuit = false;
+// 无人值守模式（A-P1.1）：发现新版自动下载、退出时自动安装，下次启动即
+// 新版；V2_DISABLE_AUTO_UPDATE=1 可整体关闭（scheduleUpdateChecks 不注册）。
+// 手动 IPC（desktop:download-update / desktop:install-update）保留为
+// 即时重试/立即安装入口。
+autoUpdater.autoDownload = true;
+autoUpdater.autoInstallOnAppQuit = true;
 autoUpdater.allowPrerelease = isInternalBuild;
 autoUpdater.on('checking-for-update', () => sendUpdateEvent({ type: 'checking' }));
 autoUpdater.on('update-available', (info) => sendUpdateEvent({ type: 'available', version: info?.version }));
@@ -105,11 +109,15 @@ function spawnSupervisor() {
   }
 }
 
-// 更新检查：启动即查 + 每 24h 周期复查；失败按 1min/5min/30min 退避重试，
-// 连续 3 次失败才向渲染层报错（此前只有 UI 提示、靠用户手动重试）。
-const UPDATE_RETRY_DELAYS_MS = [60_000, 300_000, 1_800_000];
+// 更新检查：启动即查 + 每 24h 周期复查；失败按指数退避持续重试
+// （1min/5min/30min/1h/4h/12h 封顶），无人值守下连续失败 ≥24h 才
+// notify + 渲染层报错（此前 3 次失败即报错，无人维护场景下过于频繁）；
+// 任一成功即重置计数。
+const UPDATE_RETRY_DELAYS_MS = [60_000, 300_000, 1_800_000, 3_600_000, 14_400_000, 43_200_000];
+const UPDATE_FAILURE_NOTIFY_MS = 24 * 60 * 60 * 1000;
 const UPDATE_RECHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 let updateCheckAttempts = 0;
+let updateFirstFailureAt = 0;
 let updateRecheckTimer = null;
 
 function scheduleUpdateChecks() {
@@ -117,15 +125,27 @@ function scheduleUpdateChecks() {
     autoUpdater.checkForUpdates()
       .then(() => {
         updateCheckAttempts = 0;
+        updateFirstFailureAt = 0;
       })
       .catch((error) => {
+        const now = Date.now();
+        if (updateCheckAttempts === 0) updateFirstFailureAt = now;
         updateCheckAttempts += 1;
-        if (updateCheckAttempts >= 3) {
+        if (now - updateFirstFailureAt >= UPDATE_FAILURE_NOTIFY_MS) {
           updateCheckAttempts = 0;
-          sendUpdateEvent({ type: 'error', message: `更新检查连续失败：${error instanceof Error ? error.message : String(error)}` });
+          updateFirstFailureAt = 0;
+          notify(
+            '更新检查持续失败',
+            `自动更新已连续失败超过 24 小时，请检查网络连接。${error instanceof Error ? error.message : String(error)}`,
+          );
+          sendUpdateEvent({
+            type: 'error',
+            message: `更新检查连续失败超过 24h：${error instanceof Error ? error.message : String(error)}`,
+          });
           return;
         }
-        setTimeout(attemptCheck, UPDATE_RETRY_DELAYS_MS[updateCheckAttempts - 1]);
+        const delay = UPDATE_RETRY_DELAYS_MS[Math.min(updateCheckAttempts - 1, UPDATE_RETRY_DELAYS_MS.length - 1)];
+        setTimeout(attemptCheck, delay);
       });
   };
   attemptCheck();
@@ -346,6 +366,18 @@ app.whenReady().then(async () => {
     return;
   }
   spawnSupervisor();
+  // A-P1.2：首次运行默认开启开机自启（无人值守部署）；V2_DISABLE_AUTO_LAUNCH=1
+  // 或 dev 模式不自动开启；标记文件落盘后不再重复写，用户此后可在设置页
+  // 自由开关（desktop:set-auto-launch）。
+  const autoLaunchInitMarker = path.join(app.getPath('userData'), '.auto-launch-initialized');
+  if (!isDev && process.env.V2_DISABLE_AUTO_LAUNCH !== '1' && !fs.existsSync(autoLaunchInitMarker)) {
+    try {
+      app.setLoginItemSettings({ openAtLogin: true });
+      fs.writeFileSync(autoLaunchInitMarker, new Date().toISOString());
+    } catch (error) {
+      crashLog('auto-launch-init-failed', error);
+    }
+  }
   createWindow();
   // opt-in 遥测：未配置 V2_TELEMETRY_URL（白名单 HTTPS）时是 no-op
   startTelemetry();
