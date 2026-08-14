@@ -109,6 +109,35 @@ describe('shift template routes', () => {
     expect(ids).not.toContain(id);
   });
 
+  it('PATCH handles explicit null time fields and both color branches', async () => {
+    const created = await request(app)
+      .post('/api/v2/shift-templates')
+      .send({ name: '空时间班次', startTime: '09:00', endTime: '18:00', color: '#111111' })
+      .expect(201);
+    const id = String(created.body.data.id);
+
+    // startTime/endTime 显式 null：跳过而不覆盖；color null 直写 null
+    const cleared = await request(app)
+      .patch(`/api/v2/shift-templates/${id}`)
+      .send({ name: '空时间班次', startTime: null, endTime: null, color: null })
+      .expect(200);
+    expect(cleared.body.data).toMatchObject({ startTime: '09:00', endTime: '18:00', color: null });
+
+    // color 非空字符串：字符串化写入
+    const colored = await request(app)
+      .patch(`/api/v2/shift-templates/${id}`)
+      .send({ color: '#FF0000' })
+      .expect(200);
+    expect(colored.body.data).toMatchObject({ color: '#FF0000', startTime: '09:00', endTime: '18:00' });
+
+    // startTime/endTime 非空：正常覆盖
+    const timed = await request(app)
+      .patch(`/api/v2/shift-templates/${id}`)
+      .send({ startTime: '10:00', endTime: '20:00' })
+      .expect(200);
+    expect(timed.body.data).toMatchObject({ startTime: '10:00', endTime: '20:00' });
+  });
+
   it('PATCH rejects a soft-deleted shift template', async () => {
     const created = await request(app)
       .post('/api/v2/shift-templates')

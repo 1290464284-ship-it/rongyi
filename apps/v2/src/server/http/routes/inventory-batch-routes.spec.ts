@@ -312,4 +312,69 @@ describe('inventory batch routes', () => {
     const alerts = await request(app).post('/api/v2/inventory-batches/expiry-alerts');
     expect([200, 400]).toContain(alerts.status);
   });
+
+  it('parses explicit null and string supplier fields with idempotency headers', async () => {
+    db.prepare(
+      `INSERT INTO Supplier (id, clinicId, createdAt, updatedAt, deletedAt, code, name)
+       VALUES ('sup-route', 'clinic-v2-001', ?, ?, NULL, 'SUP-ROUTE', '路由供应商')`,
+    ).run(now, now);
+
+    const nullRes = await request(app)
+      .post('/api/v2/inventory-batches')
+      .send({ itemId: 'route-item-1', initialQuantity: 2, supplierId: null, purchaseOrderId: null })
+      .expect(201);
+    expect(nullRes.body.success).toBe(true);
+    const nullRow = db.prepare('SELECT supplierId, purchaseOrderId FROM InventoryBatch WHERE id = ?')
+      .get(String(nullRes.body.data.id)) as { supplierId: string | null; purchaseOrderId: string | null };
+    expect(nullRow.supplierId).toBeNull();
+    expect(nullRow.purchaseOrderId).toBeNull();
+
+    const headerRes = await request(app)
+      .post('/api/v2/inventory-batches')
+      .set('idempotency-key', 'route-create-key-1')
+      .send({ itemId: 'route-item-1', initialQuantity: 1, supplierId: 'sup-route', purchaseOrderId: 'po-route' })
+      .expect(201);
+    expect(headerRes.body.success).toBe(true);
+    const valueRow = db.prepare('SELECT supplierId, purchaseOrderId FROM InventoryBatch WHERE id = ?')
+      .get(String(headerRes.body.data.id)) as { supplierId: string | null; purchaseOrderId: string | null };
+    expect(valueRow.supplierId).toBe('sup-route');
+    expect(valueRow.purchaseOrderId).toBe('po-route');
+
+    // 重复幂等键：返回既有结果而非重复创建
+    const replay = await request(app)
+      .post('/api/v2/inventory-batches')
+      .set('idempotency-key', 'route-create-key-1')
+      .send({ itemId: 'route-item-1', initialQuantity: 1, supplierId: 'sup-route', purchaseOrderId: 'po-route' })
+      .expect(201);
+    expect(replay.body.data).toMatchObject({ remainingQuantity: 1 });
+  });
+
+  it('tolerates malformed numeric list filters', async () => {
+    await createRouteBatchOne();
+    const nanDays = await request(app).get('/api/v2/inventory-batches?days=abc').expect(200);
+    expect(nanDays.body.success).toBe(true);
+    const nanLimit = await request(app).get('/api/v2/inventory-batches?limit=xyz').expect(200);
+    expect(nanLimit.body.success).toBe(true);
+    const itemIdEmpty = await request(app).get('/api/v2/inventory-batches?itemId=').expect(200);
+    expect(itemIdEmpty.body.success).toBe(true);
+  });
+
+  it('accepts an idempotency header on batch consume', async () => {
+    db.prepare(
+      `INSERT INTO InventoryBatch (
+         id, itemId, batchNo, productionDate, expiryDate, initialQuantity,
+         remainingQuantity, supplierId, purchaseOrderId, active, clinicId,
+         createdAt, updatedAt, deletedAt
+       ) VALUES (?, 'route-item-1', 'ROUTE-IDEM', NULL, '2026-08-20', 3, 3, NULL, NULL, 1, 'clinic-v2-001', ?, ?, NULL)`,
+    ).run('route-idem', now, now);
+    const res = await request(app)
+      .post('/api/v2/inventory-batches/consume')
+      .set('idempotency-key', 'route-consume-key-1')
+      .send({ itemId: 'route-item-1', quantity: 2 })
+      .expect(200);
+    expect(res.body.data).toEqual({
+      allocations: [{ batchId: 'route-idem', quantity: 2 }],
+      itemId: 'route-item-1',
+    });
+  });
 });
