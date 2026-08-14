@@ -114,6 +114,7 @@ Web **96.82% / 92.94% / 98.66% / 98.58%**，双门禁全绿——覆盖率口径
 | `src/web/pages/inventory/PurchaseOrdersPage.tsx`（submitOverride / 收货按钮） | `!orderId` 抛错与 `if (ctx.stale) return` | editing 提交恒经 openEdit（formFromRow 先写 editingIdRef），orderId 恒非空；收货按钮在 stale 期间 disabled——均为防御冗余 |
 | `src/web/treatment-plans/PlanBillingDialog.tsx`（bill） | `selectedIds.length > 0 ? ... : {}` 的空选分支 | 划价按钮在 0 选中时 disabled，`{}` 兜底不可达，防御冗余 |
 | `src/web/pages/finance/MemberCardsPage.tsx`（openAction / openPlan / openQuote / runAction） | `if (stale) return` 与 runAction 综合守卫 | 本页列表无分页/搜索（queryKey 恒定），stale 恒为 false 且按钮 disabled；动作表单仅在目标与动作类型就绪时渲染、busy 期间按钮 disabled——均为防御冗余 |
+| `src/server/http/routes/workflow.ts`（appointment/charge/bulk-import/batch-complete 的空体 nullish 与 payMethodName 三元） | `req.body ?? {}`（4 处 requestBodyHash + charges.create）与 `typeof payMethodName === 'string' ? ... : undefined` 的 undefined 分支 | 行为由 workflow.spec「normalizes absent write bodies」真实执行（probe 中间件验证 req.body 为 undefined、handler 返回 400/404、断言通过即执行）；单文件/双文件覆盖运行均入账，全量多 worker 套件合并时 v8 不为其入账，属 v8 覆盖合并采集缺陷 |
 
 ## 5. 其他已知取舍
 

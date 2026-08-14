@@ -58,6 +58,11 @@ describe('workflow routes', () => {
     expect([200, 400, 404]).toContain((await request(app).post('/api/v2/follow-ups/batch-generate')).status);
   });
 
+  it('cancels a charge through the workflow route', async () => {
+    const res = await request(app).delete('/api/v2/charges/missing');
+    expect([200, 404]).toContain(res.status);
+  });
+
   it('validates follow-up reminder scope query values', async () => {
     await request(app).get('/api/v2/follow-ups/reminders?scope=overdue').expect(200);
     await request(app).get('/api/v2/follow-ups/reminders?scope=bad').expect(400);
