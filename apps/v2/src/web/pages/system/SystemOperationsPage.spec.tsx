@@ -132,7 +132,11 @@ describe('SystemOperationsPage', () => {
     fireEvent.change(screen.getByLabelText('搜索关键词'), { target: { value: 'Demo' } });
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 350)); });
     fireEvent.click(screen.getByRole('button', { name: '搜索' }));
-    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+    // 搜索 1 成功（mock 返回 []）：必须等它真正完成（'搜索完成' toast 出现即
+    // busy 状态已随同一批 state 提交复位），否则改 mock 后的第二次点击会被
+    // searchBusy 守卫吞掉 → 并行负载下 flaky（此前断言复用了导入失败的旧 toast，
+    // 根本没等搜索 1 落定）。
+    expect(await screen.findByText('搜索完成')).toBeDefined();
 
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path.startsWith('/search?')) throw 'boom';
