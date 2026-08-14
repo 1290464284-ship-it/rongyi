@@ -234,4 +234,69 @@ describe('SystemOperationsPage', () => {
     });
     expect(await screen.findByText('已加载 0 行')).toBeDefined();
   });
+
+  it('ignores a stale file load after a newer selection', async () => {
+    const onloads: Array<() => void> = [];
+    vi.spyOn(FileReader.prototype, 'readAsText').mockImplementation(function (this: FileReader, blob: Blob) {
+      const content = (blob as File).name.startsWith('a') ? '[{"code":"STALE"}]' : '[{"code":"FRESH"}]';
+      Object.defineProperty(this, 'result', { value: content, configurable: true });
+      onloads.push(() => (this.onload as (() => void) | null)?.());
+    });
+    render(<ToastProvider><SystemOperationsPage /></ToastProvider>);
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [new File(['x'], 'a.json')] } });
+    fireEvent.change(fileInput, { target: { files: [new File(['x'], 'b.json')] } });
+    // 先触发旧文件（generation 1）的 onload：守卫丢弃；再触发新文件（generation 2）
+    act(() => onloads[0]?.());
+    act(() => onloads[1]?.());
+    expect(await screen.findByText('已加载 1 行')).toBeDefined();
+    expect((document.querySelector('textarea') as HTMLTextAreaElement).value).toContain('FRESH');
+    expect((document.querySelector('textarea') as HTMLTextAreaElement).value).not.toContain('STALE');
+    expect(screen.getAllByText('已加载 1 行')).toHaveLength(1);
+  });
+
+  it('ignores an empty file selection', async () => {
+    render(<ToastProvider><SystemOperationsPage /></ToastProvider>);
+    fireEvent.change(document.querySelector('input[type="file"]') as HTMLInputElement, {
+      target: { files: [] },
+    });
+    expect(screen.queryByText(/已加载/)).toBeNull();
+  });
+
+  it('guards import and cleanup against same-tick double submits', async () => {
+    const pending: Array<() => void> = [];
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.startsWith('/bulk-import/') || path === '/system/audit/cleanup') {
+        return new Promise((resolve) => {
+          pending.push(() => resolve(
+            path.startsWith('/bulk-import/')
+              ? { imported: 1, failed: 0, errors: [], chunks: 1 }
+              : { deleted: 1 },
+          ));
+        });
+      }
+      return {};
+    });
+    render(<ToastProvider><SystemOperationsPage /></ToastProvider>);
+
+    const importButton = screen.getByRole('button', { name: '导入' });
+    act(() => {
+      fireEvent.click(importButton);
+      fireEvent.click(importButton);
+    });
+
+    fireEvent.change(screen.getByLabelText('日志保留天数'), { target: { value: '30' } });
+    const cleanupButton = screen.getByRole('button', { name: '立即清理' });
+    act(() => {
+      fireEvent.click(cleanupButton);
+      fireEvent.click(cleanupButton);
+    });
+
+    const importCalls = vi.mocked(apiRequest).mock.calls.filter(([path]) => String(path).startsWith('/bulk-import/'));
+    const cleanupCalls = vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/system/audit/cleanup');
+    expect(importCalls).toHaveLength(1);
+    expect(cleanupCalls).toHaveLength(1);
+    pending.forEach((resolve) => resolve());
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+  });
 });

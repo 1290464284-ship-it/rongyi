@@ -251,7 +251,7 @@ describe('DesktopSettingsPage', () => {
   });
 
   it('renders update-check fallbacks for sparse results', async () => {
-    const bridge = installBridge({
+    installBridge({
       checkUpdates: vi.fn()
         .mockResolvedValueOnce({ status: 'available' })
         .mockResolvedValueOnce({ status: 'checking', message: '正在检查更新' })

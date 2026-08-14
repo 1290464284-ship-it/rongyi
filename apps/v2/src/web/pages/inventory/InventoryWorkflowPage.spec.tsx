@@ -655,4 +655,54 @@ describe('InventoryWorkflowPage', () => {
     await screen.findByText('待应用');
     expect(await screen.findByText('PROC_UNKNOWN')).toBeDefined();
   });
+
+  it('renders stocktake item rows missing both name and item id', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 0 };
+      if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/stocktakes?page=1&pageSize=200') {
+        return { items: [{ id: 'st-1', number: 'PD-001', status: 'IN_PROGRESS', startedById: 'user-1', startedAt: '2026-08-05T10:00:00.000Z', itemCount: 1, differenceCount: 0 }], total: 1 };
+      }
+      if (path === '/stocktakes/st-1/items') {
+        return [{ id: 'item-x', itemId: 'item-x', name: null, code: null, systemStock: null, countedStock: null, difference: null }];
+      }
+      return {};
+    });
+    render(<InventoryWorkflowPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '录入' }));
+    expect(await screen.findByLabelText('实盘数量')).toBeDefined();
+  });
+
+  it('shows a generic error for non-Error stocktake item failures', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 0 };
+      if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/stocktakes?page=1&pageSize=200') {
+        return { items: [{ id: 'st-1', number: 'PD-001', status: 'IN_PROGRESS', startedById: 'user-1', startedAt: '2026-08-05T10:00:00.000Z', itemCount: 1, differenceCount: 0 }], total: 1 };
+      }
+      if (path === '/stocktakes/st-1/items') throw 'stocktake items broke';
+      return {};
+    });
+    render(<InventoryWorkflowPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '录入' }));
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+  });
+
+  it('tolerates suggestion pages without total and items', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 0 };
+      if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') return { items: [] };
+      if (path === '/stocktakes?page=1&pageSize=200') return { items: [], total: 0 };
+      return {};
+    });
+    render(<InventoryWorkflowPage />, { wrapper });
+    expect(await screen.findByText('暂无待应用补货建议')).toBeDefined();
+    expect(screen.queryByText(/补货建议超过/)).toBeNull();
+  });
 });

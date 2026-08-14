@@ -558,4 +558,64 @@ describe('Layout clinic switcher', () => {
     );
     expect(await screen.findByText('无访问权限')).toBeDefined();
   });
+
+  it('denies resource routes when the navigation omits the role', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/auth/navigation') return { permissions: ['dashboard'] };
+      if (path === '/auth/clinics') {
+        return { currentClinicId: 'clinic-1', clinics: [{ clinicId: 'clinic-1', name: 'Clinic 1' }] };
+      }
+      if (path === '/auth/me') return { name: '王丽', username: 'wangli' };
+      if (path === '/resource-meta') return [{ name: 'patients', roles: ['BOSS'] }];
+      return {};
+    });
+    render(
+      <MemoryRouter initialEntries={['/resources/patients']}>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route path="/" element={<div>Home</div>} />
+            <Route path="/resources/patients" element={<div>Resource Page</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+      { wrapper: noRetryWrapper },
+    );
+    expect(await screen.findByText('无访问权限')).toBeDefined();
+  });
+
+  it('falls back to an empty clinic selection and a generic switch error', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce({ permissions: ['dashboard'], role: 'BOSS' })
+      .mockResolvedValueOnce({
+        currentClinicId: null,
+        clinics: [
+          { clinicId: 'clinic-1', name: 'Clinic 1' },
+          { clinicId: 'clinic-2', name: 'Clinic 2' },
+        ],
+      })
+      .mockResolvedValueOnce({ name: '王丽', username: 'wangli' });
+    vi.mocked(switchClinic).mockRejectedValue('plain failure');
+    renderLayout();
+    const switcher = (await screen.findByLabelText('当前诊所')) as HTMLSelectElement;
+    expect(switcher.options).toHaveLength(2);
+    fireEvent.change(switcher, { target: { value: 'clinic-2' } });
+    expect(await screen.findByText('切换诊所失败')).toBeDefined();
+    // 失败后回退到旧值（null → 空选中，DOM 落回首个选项）
+    expect((screen.getByLabelText('当前诊所') as HTMLSelectElement).value).toBe('clinic-1');
+  });
+
+  it('renders without a crash when the me query resolves undefined', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/auth/navigation') return { permissions: ['dashboard'], role: 'BOSS' };
+      if (path === '/auth/clinics') {
+        return { currentClinicId: 'clinic-1', clinics: [{ clinicId: 'clinic-1', name: 'Clinic 1' }] };
+      }
+      if (path === '/auth/me') return undefined;
+      if (path === '/backups') return [];
+      return {};
+    });
+    renderLayout();
+    expect(await screen.findByText('跳到主内容')).toBeDefined();
+    expect(screen.getByText('蓉易口腔诊所')).toBeDefined();
+  });
 });

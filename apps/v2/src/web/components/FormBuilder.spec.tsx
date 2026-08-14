@@ -164,4 +164,25 @@ describe('FormBuilder', () => {
     expect(await screen.findByText(/数据较多/)).toBeDefined();
     expect(screen.queryByRole('button', { name: '加载更多' })).toBeNull();
   });
+
+  it('renders sparse values, missing items and relation help text', async () => {
+    vi.mocked(apiRequest).mockResolvedValue({ total: 0, page: 1, pageSize: 50 });
+    const fields: ResourceField[] = [
+      { name: 'status', type: 'enum', label: '状态', enumValues: ['A'] },
+      { name: 'notes', type: 'longText' },
+      { name: 'name', type: 'text' },
+      { name: 'patientId', type: 'relation', label: '患者', helpText: '关联患者', relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } },
+      { name: 'plain', type: 'text', label: '普通', helpText: '说明' },
+    ];
+    render(<FormBuilder fields={fields} values={{}} onChange={vi.fn()} />, { wrapper });
+    expect((screen.getByLabelText('状态') as HTMLSelectElement).value).toBe('');
+    expect((screen.getByLabelText('notes') as HTMLTextAreaElement).value).toBe('');
+    expect((screen.getByLabelText('name') as HTMLInputElement).value).toBe('');
+    expect((screen.getByLabelText(/^普通/) as HTMLInputElement).value).toBe('');
+    expect(screen.getByText('关联患者')).toBeDefined();
+    expect(screen.getByText('说明')).toBeDefined();
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).value).toBe('');
+    });
+  });
 });

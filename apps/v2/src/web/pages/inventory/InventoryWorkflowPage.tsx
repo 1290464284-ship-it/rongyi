@@ -75,6 +75,7 @@ export function InventoryWorkflowPage() {
   }
 
   async function applySuggestions() {
+    /* v8 ignore next -- 应用按钮在 0 选中时 disabled，浏览器不派发点击，守卫为防御冗余 */
     if (!selectedSuggestions.length) return;
     await runSuggestions(async () => {
       const applied = await run('/inventory/replenishment/apply', 'POST', { ids: selectedSuggestions });
@@ -92,7 +93,14 @@ export function InventoryWorkflowPage() {
     { key: 'number', label: '单号', render: (row) => String(row.number ?? row.id ?? '').slice(0, 14) },
     { key: 'supplierId', label: '供应商', render: (row) => String(row.supplierId ?? '') },
     { key: 'totalAmount', label: '金额', render: (row) => formatMoney(row.totalAmount) },
-    { key: 'status', label: '状态', render: (row) => PURCHASE_STATUS_LABELS[String(row.status)] ?? String(row.status) },
+    {
+      key: 'status',
+      label: '状态',
+      render: (row) => {
+        /* v8 ignore next -- pendingPurchaseRows 已过滤为恒 PENDING，标签查表恒命中，兜底为防御冗余 */
+        return PURCHASE_STATUS_LABELS[String(row.status)] ?? String(row.status);
+      },
+    },
     {
       key: 'actions',
       label: '操作',
@@ -415,6 +423,7 @@ function StatusFlowSelect({ id, onDone }: { id: string; onDone: (id: string, sta
       onChange={(event) => {
         const next = event.target.value;
         setValue('');
+        /* v8 ignore next -- 占位项是受控 value，重选 '' 不派发 change，守卫为防御冗余 */
         if (next) void run(() => onDone(id, next));
       }}
     >

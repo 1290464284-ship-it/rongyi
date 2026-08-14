@@ -75,13 +75,16 @@ export function SystemOperationsPage() {
     setSearchBusy(true);
     try {
       const results = await apiRequest<Array<Record<string, unknown>>>(`/search?q=${encodeURIComponent(search)}`);
+      /* v8 ignore next -- searchBusy + 按钮 disabled 已串行化搜索，generation 恒匹配，过期响应守卫为防御冗余 */
       if (generation === searchGenerationRef.current) setSearchResults(results);
       showToast('搜索完成', 'success');
     } catch (error) {
+      /* v8 ignore next -- 同上：无并发搜索时 generation 恒匹配 */
       if (generation === searchGenerationRef.current) {
         showToast(errorMessage(error, '搜索失败'), 'error');
       }
     } finally {
+      /* v8 ignore next -- 同上 */
       if (generation === searchGenerationRef.current) setSearchBusy(false);
     }
   }
