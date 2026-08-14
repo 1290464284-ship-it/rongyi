@@ -37,8 +37,7 @@ export function DataTable<T extends Record<string, unknown>>({
   const renderedRows = windowed ? visibleRows.slice(0, visibleCount) : visibleRows;
   function handleScroll() {
     const el = scrollRef.current;
-    if (!el || !windowed) return;
-    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) {
+    if (el && el.scrollTop + el.clientHeight >= el.scrollHeight - 200) {
       setVisibleCount((current) => Math.min(visibleRows.length, current + WINDOW_STEP));
     }
   }

@@ -23,9 +23,9 @@ export function RecordFormFields({ form, update }: { form: RecordForm; update: (
     queryKey: ['record-visits', form.patientId, visitPage],
     queryFn: async () => {
       const page = await apiRequest<Page<Record<string, unknown>>>(
-        `/resources/visits?patientId=${encodeURIComponent(form.patientId ?? '')}&page=${visitPage}&pageSize=${VISIT_PAGE_SIZE}`,
+        `/resources/visits?patientId=${encodeURIComponent(form.patientId)}&page=${visitPage}&pageSize=${VISIT_PAGE_SIZE}`,
       );
-      visitsPatientRef.current = form.patientId ?? null;
+      visitsPatientRef.current = form.patientId;
       return page;
     },
     enabled: Boolean(form.patientId),

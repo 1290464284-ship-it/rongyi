@@ -216,4 +216,50 @@ describe('BackupsPage', () => {
     render(<BackupsPage />, { wrapper });
     expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
   });
+
+  it('falls back to an empty list when the backups query resolves null', async () => {
+    vi.mocked(apiRequest).mockResolvedValue(null);
+    render(<BackupsPage />, { wrapper });
+    expect(await screen.findByText('暂无备份')).toBeDefined();
+  });
+
+  it('ignores restore staging confirmation while a create is in flight', async () => {
+    let resolveCreate: ((value: unknown) => void) | undefined;
+    const row = { filename: 'backup-1.sqlite', encrypted: false, fileSize: 100, createdAt: '2026-08-04' };
+    vi.mocked(apiRequest).mockImplementation(async (path: string, options?: RequestInit) => {
+      const method = String(options?.method ?? 'GET').toUpperCase();
+      if (path === '/backups' && method === 'GET') return [row];
+      if (path === '/backups' && method === 'POST') {
+        return await new Promise((resolve) => { resolveCreate = resolve; });
+      }
+      return {};
+    });
+    render(<BackupsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '创建备份' }));
+    fireEvent.click(screen.getByRole('button', { name: '暂存恢复' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认' }));
+    expect(apiRequest).not.toHaveBeenCalledWith('/backups/backup-1.sqlite/restore', expect.anything());
+    resolveCreate?.({ filename: 'backup-1.sqlite', encrypted: false });
+    expect(await screen.findByText('备份已创建：backup-1.sqlite')).toBeDefined();
+  });
+
+  it('ignores cleanup confirmation while a create is in flight', async () => {
+    let resolveCreate: ((value: unknown) => void) | undefined;
+    const row = { filename: 'backup-1.sqlite', encrypted: false, fileSize: 100, createdAt: '2026-08-04' };
+    vi.mocked(apiRequest).mockImplementation(async (path: string, options?: RequestInit) => {
+      const method = String(options?.method ?? 'GET').toUpperCase();
+      if (path === '/backups' && method === 'GET') return [row];
+      if (path === '/backups' && method === 'POST') {
+        return await new Promise((resolve) => { resolveCreate = resolve; });
+      }
+      return {};
+    });
+    render(<BackupsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '创建备份' }));
+    fireEvent.click(screen.getByRole('button', { name: '清理备份（保留 30 个）' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认' }));
+    expect(apiRequest).not.toHaveBeenCalledWith('/backups/cleanup', expect.anything());
+    resolveCreate?.({ filename: 'backup-1.sqlite', encrypted: false });
+    expect(await screen.findByText('备份已创建：backup-1.sqlite')).toBeDefined();
+  });
 });

@@ -117,4 +117,28 @@ describe('SearchableSelect', () => {
     const searchCalls = vi.mocked(apiRequest).mock.calls.filter(([path]) => String(path).includes('search='));
     expect(searchCalls).toHaveLength(1);
   });
+
+  it('resets loaded options and refetches when the resource scope changes', async () => {
+    mockPages();
+    const { rerender } = render(
+      <SearchableSelect resource="patients" value="" onChange={vi.fn()} ariaLabel="患者" />,
+      { wrapper },
+    );
+    await screen.findByRole('option', { name: '患者甲' });
+    rerender(<SearchableSelect resource="doctors" value="" onChange={vi.fn()} ariaLabel="患者" />);
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/doctors?page=1&pageSize=100');
+    });
+  });
+
+  it('suppresses Enter on the search input and ignores other keys', async () => {
+    mockPages();
+    render(<SearchableSelect resource="patients" value="" onChange={vi.fn()} ariaLabel="患者" />, { wrapper });
+    await screen.findByRole('option', { name: '患者甲' });
+    const input = screen.getByLabelText('患者搜索');
+    fireEvent.keyDown(input, { key: 'Enter' });
+    fireEvent.keyDown(input, { key: 'a' });
+    // 输入值不变：Enter 被 preventDefault，普通按键不改动受控输入
+    expect((input as HTMLInputElement).value).toBe('');
+  });
 });

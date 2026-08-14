@@ -38,4 +38,16 @@ describe('DataTable', () => {
     expect(screen.queryByText('Row 499')).not.toBeNull();
     expect(screen.queryByText('Row 500')).toBeNull();
   });
+
+  it('does not reveal more rows when scrolled above the load threshold', () => {
+    const rows = Array.from({ length: 150 }, (_, index) => ({ id: `r-${index}`, name: `Row ${index}` }));
+    render(<DataTable columns={[{ key: 'name', label: '名称' }]} rows={rows} keyField="id" />);
+    const container = document.querySelector('.data-table-scroll') as HTMLElement;
+    Object.defineProperty(container, 'scrollHeight', { value: 10000, configurable: true });
+    Object.defineProperty(container, 'clientHeight', { value: 500, configurable: true });
+    Object.defineProperty(container, 'scrollTop', { value: 0, configurable: true });
+    fireEvent.scroll(container);
+    // 未接近底部，可见行数不变
+    expect(screen.queryByText('Row 100')).toBeNull();
+  });
 });

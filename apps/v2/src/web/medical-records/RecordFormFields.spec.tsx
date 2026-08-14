@@ -150,6 +150,19 @@ describe('RecordFormFields', () => {
     });
   });
 
+  it('keeps a selected doctor visible when it is not in the loaded list', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/doctors') return [{ id: 'doc-1', name: '张医生' }];
+      if (path.startsWith('/resources/patients?')) return { items: [], total: 0, page: 1, pageSize: 100 };
+      return {};
+    });
+    render(<RecordFormFields form={{ ...emptyForm, doctorId: 'doc-missing' }} update={vi.fn()} />, { wrapper });
+    await waitFor(() => {
+      const option = screen.getByRole('option', { name: 'doc-missing' }) as HTMLOptionElement;
+      expect(option.value).toBe('doc-missing');
+    });
+  });
+
   it('filters linked visits by patient and clears visitId when the patient changes', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/doctors') return [];

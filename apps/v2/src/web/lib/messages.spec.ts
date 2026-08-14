@@ -66,4 +66,9 @@ describe('friendlyError', () => {
     (error as { traceId?: string }).traceId = 'trace-abc';
     expect(errorMessage(error)).toBe('患者不存在（trace: trace-abc）');
   });
+
+  it('distinguishes create from other unsupported-resource messages', () => {
+    expect(friendlyError('Create bulk is not supported for this resource')).toBe('该资源不支持新建');
+    expect(friendlyError('Export is not supported for this resource')).toBe('该资源不支持此操作');
+  });
 });
