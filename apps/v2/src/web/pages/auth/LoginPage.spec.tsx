@@ -49,6 +49,12 @@ describe('LoginPage', () => {
     });
   });
 
+  it('keeps the login page when the setup-status probe fails', async () => {
+    vi.mocked(apiRequest).mockRejectedValueOnce(new Error('probe failed'));
+    renderPage();
+    expect(await screen.findByLabelText('用户名')).toBeDefined();
+  });
+
   it('shows login errors', async () => {
     vi.mocked(login).mockRejectedValue(new Error('invalid credentials'));
     renderPage();

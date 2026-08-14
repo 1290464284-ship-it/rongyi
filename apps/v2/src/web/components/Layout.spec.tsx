@@ -201,6 +201,43 @@ describe('Layout clinic switcher', () => {
     expect(screen.getByText('登录状态已失效，请重新登录')).toBeDefined();
   });
 
+  it('still navigates to login when the session-expiry logout itself fails', async () => {
+    let onExpire: (() => void) | undefined;
+    vi.mocked(onSessionExpired).mockImplementation((callback: () => void) => {
+      onExpire = callback;
+      return vi.fn();
+    });
+    vi.mocked(logout).mockRejectedValue(new Error('logout failed'));
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce({ permissions: ['dashboard'] })
+      .mockResolvedValueOnce({
+        currentClinicId: 'clinic-1',
+        clinics: [{ clinicId: 'clinic-1', name: 'Clinic 1' }],
+      })
+      .mockResolvedValueOnce({ name: '王丽', username: 'wangli' });
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route path="/" element={<div>Home</div>} />
+          </Route>
+          <Route path="/login" element={<div>Login Page</div>} />
+        </Routes>
+      </MemoryRouter>,
+      { wrapper },
+    );
+    await screen.findByText('蓉易口腔诊所');
+
+    act(() => { onExpire!(); });
+
+    await waitFor(() => {
+      expect(logout).toHaveBeenCalled();
+    });
+    expect(await screen.findByText('Login Page')).toBeDefined();
+    expect(screen.getByText('登录状态已失效，请重新登录')).toBeDefined();
+  });
+
   it('renders navigation and submits global search', async () => {
     vi.mocked(apiRequest)
       .mockResolvedValueOnce({ permissions: ['dashboard', 'frontDesk', 'patients'] })
