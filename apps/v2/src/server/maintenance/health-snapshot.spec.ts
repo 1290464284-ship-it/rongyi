@@ -35,6 +35,11 @@ describe('health snapshot (A-P3.1)', () => {
     fs.writeFileSync(path.join(backupDir, 'clinic-null-backup-2026-08-15T00-00-00-000Z-bbb.enc'), 'x');
     fs.writeFileSync(path.join(backupDir, 'notes.txt'), 'x'); // 非备份文件不计
     fs.writeFileSync(path.join(logDir, 'main.log'), 'log-bytes');
+    // 显式拉开 mtime：Windows 上连续两次写入的 mtime 可能相同，latestBackup
+    // 按严格大于选取，避免同刻写入导致选择不稳定（顺序依赖 flaky）。
+    const now = Date.now();
+    fs.utimesSync(path.join(backupDir, 'clinic-null-backup-2026-08-14T00-00-00-000Z-aaa.enc'), new Date(now - 60_000), new Date(now - 60_000));
+    fs.utimesSync(path.join(backupDir, 'clinic-null-backup-2026-08-15T00-00-00-000Z-bbb.enc'), new Date(now), new Date(now));
     const dbPath = path.join(dir, 'v2.sqlite');
     fs.writeFileSync(dbPath, 'db-bytes');
 
