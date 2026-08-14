@@ -407,4 +407,60 @@ describe('TreatmentPlanBillingService', () => {
     expect(chargeItems.every((row) => row.treatmentId === 'treatment-billing-1')).toBe(true);
     expect(chargeItems.every((row) => row.teethNumbers === '[]')).toBe(true);
   });
+
+  it('treats a stored WHOLE discount with a NULL rate as zero', () => {
+    insertPlan('plan-null-rate', 'Null Rate', { discountType: 'WHOLE', discountRate: null });
+    insertItem('plan-null-rate', 'plan-null-rate-i1', { price: 10000, quantity: 1 });
+    const service = new TreatmentPlanBillingService(db);
+    expect(service.reconcilePlanTotal('plan-null-rate', context)).toBe(10000);
+    expect(planRow('plan-null-rate').totalFee).toBe(10000);
+  });
+
+  it('rejects a plan whose item subtotals overflow the money cap', () => {
+    insertPlan('plan-big-sum', 'Big Sum');
+    insertItem('plan-big-sum', 'plan-big-sum-i1', { price: 600_000_000_000, quantity: 1 });
+    insertItem('plan-big-sum', 'plan-big-sum-i2', { price: 600_000_000_000, quantity: 1 });
+    const service = new TreatmentPlanBillingService(db);
+    expect(() => service.setPlanDiscount('plan-big-sum', { discountType: 'WHOLE', discountRate: 0 }, context))
+      .toThrow(new ValidationError('治疗计划金额超出上限'));
+    expect(() => service.bill('plan-big-sum', {}, context))
+      .toThrow(new ValidationError('划价金额超出上限'));
+  });
+
+  it('bills under a global context and stores a NULL doctor id', () => {
+    insertPlan('plan-global', 'Global Bill', { visitId: null });
+    insertItem('plan-global', 'plan-global-i1', { price: 10000, quantity: 1 });
+    db.prepare("UPDATE TreatmentPlan SET doctorId = NULL WHERE id = 'plan-global'").run();
+    const globalContext: AppContext = { ...context, clinicId: null };
+    const result = new TreatmentPlanBillingService(db).bill('plan-global', {}, globalContext);
+    const charge = chargeRow(result.chargeId);
+    expect(charge.clinicId).toBeNull();
+    expect(charge.doctorId).toBeNull();
+    expect(charge.visitId).toBeNull();
+  });
+
+  it('drops treatment ids that do not point at a real treatment row', () => {
+    insertPlan('plan-ghost-treatment', 'Ghost Treatment');
+    insertItem('plan-ghost-treatment', 'plan-ghost-treatment-i1', { price: 10000, quantity: 1 });
+    db.prepare("UPDATE TreatmentPlanItem SET treatmentId = 'treatment-ghost' WHERE planId = 'plan-ghost-treatment'").run();
+    const result = new TreatmentPlanBillingService(db).bill('plan-ghost-treatment', {}, context);
+    const chargeItem = db.prepare('SELECT treatmentId FROM ChargeItem WHERE chargeId = ?').get(result.chargeId) as { treatmentId: string | null };
+    expect(chargeItem.treatmentId).toBeNull();
+  });
+
+  it('rolls back when the billed CAS update changes zero rows', () => {
+    insertPlan('plan-bill-race', 'Bill Race');
+    insertItem('plan-bill-race', 'plan-bill-race-i1', { price: 10000, quantity: 1 });
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE TreatmentPlanItem') && sql.includes('SET billed = 1')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    expect(() => new TreatmentPlanBillingService(db).bill('plan-bill-race', {}, context))
+      .toThrow(new ConflictError('已划价明细不可重复划价'));
+    const leftover = db.prepare("SELECT COUNT(*) AS c FROM Charge WHERE remark = '治疗计划划价：Bill Race'").get() as { c: number };
+    expect(leftover.c).toBe(0);
+  });
 });

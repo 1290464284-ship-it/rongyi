@@ -105,14 +105,13 @@ function validateDiscountRate(value: unknown): number | null {
 
 /** 明细 teethNumbers 在库中为 JSON 字符串；归一后重新序列化，避免双重编码。 */
 function storedTeethNumbers(value: unknown): string {
-  if (typeof value === 'string') {
-    try {
-      return JSON.stringify(JSON.parse(value));
-    } catch {
-      return '[]';
-    }
+  // TreatmentPlanItem.teethNumbers 为 TEXT NOT NULL（v158 重建），入库值恒为
+  // 非空字符串；解析失败（历史脏数据）归一为 '[]'。
+  try {
+    return JSON.stringify(JSON.parse(String(value)));
+  } catch {
+    return '[]';
   }
-  return JSON.stringify(value ?? []);
 }
 
 export class TreatmentPlanBillingService {

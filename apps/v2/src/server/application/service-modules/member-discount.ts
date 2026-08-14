@@ -84,17 +84,16 @@ function optionalSpecialDiscounts(value: unknown): SpecialDiscount[] | null {
 /** 读取库中存储的特殊折扣（JSON 字符串或 null），空值一律归一为 null。 */
 function parseStoredSpecialDiscounts(value: unknown): SpecialDiscount[] | null {
   if (value === null || value === undefined) return null;
-  let parsed: unknown = value;
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (!trimmed) return null;
-    try {
-      parsed = JSON.parse(trimmed);
-    } catch {
-      return null;
-    }
+  // MemberCard.specialDiscountsJson 为 TEXT 列：入库值恒为 JSON 字符串或 NULL，
+  // 非字符串入参不可达，直接按字符串归一。
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    return Array.isArray(parsed) && parsed.length > 0 ? (parsed as SpecialDiscount[]) : null;
+  } catch {
+    return null;
   }
-  return Array.isArray(parsed) && parsed.length > 0 ? (parsed as SpecialDiscount[]) : null;
 }
 
 function roundTotal(rawTotal: number, roundingMode: string): number {
@@ -224,8 +223,9 @@ export class MemberDiscountService {
        FROM Charge
        WHERE patientId = ? AND deletedAt IS NULL AND discount > 0
          AND strftime('%Y', createdAt, ?) = ?${tenantAnd(context.clinicId)}`,
-    ).get(card.patientId, `+${CLINIC_TZ_OFFSET_HOURS} hours`, clinicYear, ...tenantParams(context.clinicId)) as { usage: number } | undefined;
-    const annualUsage = Number(usageRow?.usage ?? 0);
+    ).get(card.patientId, `+${CLINIC_TZ_OFFSET_HOURS} hours`, clinicYear, ...tenantParams(context.clinicId)) as { usage: number };
+    // 聚合查询恒返回一行（COALESCE 兜底），usageRow 与 usage 都不可能为 nullish。
+    const annualUsage = Number(usageRow.usage);
     let annualRemaining: number | null = null;
     if (card.annualDiscountLimit !== null && card.annualDiscountLimit !== undefined) {
       annualRemaining = Math.max(0, Number(card.annualDiscountLimit) - annualUsage);

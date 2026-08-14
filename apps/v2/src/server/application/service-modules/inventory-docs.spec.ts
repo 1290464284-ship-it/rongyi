@@ -260,4 +260,46 @@ describe('InventoryDocService', () => {
     expect(() => service.createTransfer({ items: [{ fromItemId: '', toItemId: 'inventory-demo-002', quantity: 1 }] }, context)).toThrow(ValidationError);
     expect(() => service.createTransfer({ items: [{ fromItemId: 'inventory-demo-001', toItemId: 'inventory-demo-001', quantity: 1 }] }, context)).toThrow(ValidationError);
   });
+
+  it('rejects transfer entries whose source or destination id is not a string', () => {
+    const service = new InventoryDocService(db);
+    expect(() => service.createTransfer({
+      items: [{ toItemId: 'inventory-demo-001', quantity: 1 } as never],
+    }, context)).toThrow('调拨明细必须指定来源与去向物料');
+    expect(() => service.createTransfer({
+      items: [{ fromItemId: 'inventory-demo-001', quantity: 1 } as never],
+    }, context)).toThrow('调拨明细必须指定来源与去向物料');
+  });
+
+  it('rejects doc entries that are null or lack an itemId', () => {
+    const service = new InventoryDocService(db);
+    expect(() => service.createLoss({ items: [null as never] }, context)).toThrow('明细必须指定物料');
+    expect(() => service.createLoss({ items: [{ quantity: 1 } as never] }, context)).toThrow('明细必须指定物料');
+  });
+
+  it('treats a legacy NULL stock as zero and rejects the doc', () => {
+    insertSupplier('sup-nullstock', 'SUP-NULL', '库存空值供应商');
+    db.prepare('UPDATE InventoryItem SET stock = NULL WHERE id = ?').run('inventory-demo-001');
+    const service = new InventoryDocService(db);
+    expect(() => service.createReturnSupplier({
+      supplierId: 'sup-nullstock',
+      items: [{ itemId: 'inventory-demo-001', quantity: 1 }],
+    }, context)).toThrow(ConflictError);
+    expect(stockOf('inventory-demo-001')).toBe(0);
+  });
+
+  it('creates a loss doc under a global (null clinic) context', () => {
+    setStock('inventory-demo-001', 50);
+    const globalContext: AppContext = { ...context, clinicId: null };
+    const service = new InventoryDocService(db);
+    const result = service.createLoss({
+      items: [{ itemId: 'inventory-demo-001', quantity: 2 }],
+    }, globalContext) as { doc: Record<string, unknown>; items: Array<Record<string, unknown>> };
+
+    expect(result.doc.clinicId).toBeNull();
+    expect(result.items[0].clinicId).toBeNull();
+    expect(stockOf('inventory-demo-001')).toBe(48);
+    const tx = db.prepare('SELECT clinicId FROM InventoryTransaction WHERE referenceId = ?').get(result.doc.id) as { clinicId: string | null };
+    expect(tx.clinicId).toBeNull();
+  });
 });

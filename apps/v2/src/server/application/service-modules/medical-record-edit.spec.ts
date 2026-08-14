@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -67,6 +67,7 @@ describe('MedicalRecordEditService', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -124,6 +125,10 @@ describe('MedicalRecordEditService', () => {
       proposedContent: { diagnosis: 'X' },
     }, context)).toThrow('修改原因不能为空');
     expect(() => service.requestEdit('r-edit-valid', {
+      reason: 123 as never,
+      proposedContent: { diagnosis: 'X' },
+    }, context)).toThrow('修改原因不能为空');
+    expect(() => service.requestEdit('r-edit-valid', {
       reason: '原因',
       proposedContent: [] as unknown as Record<string, unknown>,
     }, context)).toThrow(ValidationError);
@@ -143,6 +148,65 @@ describe('MedicalRecordEditService', () => {
       reason: '原因',
       proposedContent: { diagnosis: 'X' },
     }, context)).toThrow('MedicalRecord not found');
+  });
+
+  it('reports a conflict when the request CAS update changes zero rows', () => {
+    insertRecord('r-edit-race');
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes("editRequestStatus = 'PENDING'")) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    expect(() => new MedicalRecordEditService(db).requestEdit('r-edit-race', {
+      reason: '并发申请',
+      proposedContent: { diagnosis: 'X' },
+    }, context)).toThrow(ConflictError);
+  });
+
+  it('approve merges null and non-string values through the ternary encoder', () => {
+    insertRecord('r-edit-encode', { diagnosis: '原诊断', isLocked: 1 });
+    const service = new MedicalRecordEditService(db);
+    service.requestEdit('r-edit-encode', {
+      reason: '编码测试',
+      proposedContent: { category: null, status: 123, diagnosis: '新诊断' },
+    }, context);
+    service.review('r-edit-encode', { approve: true }, reviewContext);
+
+    const row = getRecord('r-edit-encode');
+    expect(row.category).toBeNull();
+    expect(row.status).toBe('123');
+    expect(row.diagnosis).toBe('新诊断');
+    expect(row.isLocked).toBe(0);
+  });
+
+  it('rejects approval when proposedContentJson is NULL or not an object', () => {
+    const service = new MedicalRecordEditService(db);
+    insertRecord('r-edit-null-json', { editRequestStatus: 'PENDING', proposedContentJson: null });
+    expect(() => service.review('r-edit-null-json', { approve: true }, reviewContext))
+      .toThrow(new ValidationError('修改内容格式无效'));
+
+    insertRecord('r-edit-array-json', { editRequestStatus: 'PENDING', proposedContentJson: '[]' });
+    expect(() => service.review('r-edit-array-json', { approve: true }, reviewContext))
+      .toThrow(new ValidationError('修改内容格式无效'));
+  });
+
+  it('reports a conflict when the review CAS update changes zero rows', () => {
+    insertRecord('r-edit-review-race', {
+      editRequestStatus: 'PENDING',
+      editRequestedById: 'user-admin-001',
+      proposedContentJson: JSON.stringify({ diagnosis: 'x' }),
+    });
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('reviewedById')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    expect(() => new MedicalRecordEditService(db).review('r-edit-review-race', { approve: true }, reviewContext))
+      .toThrow(ConflictError);
   });
 
   it('honors tenant scoping for lookups', () => {
@@ -349,10 +413,20 @@ describe('MedicalRecordEditService', () => {
       editRequestStatus: 'PENDING',
       proposedContentJson: 'broken-json',
     });
+    insertRecord('r-edit-pending-3', {
+      editRequestStatus: 'PENDING',
+      proposedContentJson: null,
+    });
+    insertRecord('r-edit-pending-4', {
+      editRequestStatus: 'PENDING',
+      proposedContentJson: '[1,2]',
+    });
     const pending = service.pending(context);
     const ids = pending.map((row) => row.id);
     expect(ids).toContain('r-edit-pending-1');
     expect(ids).toContain('r-edit-pending-2');
+    expect(ids).toContain('r-edit-pending-3');
+    expect(ids).toContain('r-edit-pending-4');
     // 已 APPROVED/REJECTED/NONE 的行不返回
     expect(ids).not.toContain('r-edit-approve');
     expect(ids).not.toContain('r-edit-reject');
@@ -361,5 +435,9 @@ describe('MedicalRecordEditService', () => {
     expect(parsed?.proposedContent).toEqual({ diagnosis: '待审诊断' });
     const broken = pending.find((row) => row.id === 'r-edit-pending-2');
     expect(broken?.proposedContent).toBeNull();
+    const nullJson = pending.find((row) => row.id === 'r-edit-pending-3');
+    expect(nullJson?.proposedContent).toBeNull();
+    const arrayJson = pending.find((row) => row.id === 'r-edit-pending-4');
+    expect(arrayJson?.proposedContent).toBeNull();
   });
 });
