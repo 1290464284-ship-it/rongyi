@@ -2,16 +2,19 @@ import { useState } from 'react';
 import { STATUS_LABELS } from './types';
 
 /** 行内受控状态下拉：选中后立即复位为占位项，避免非受控 select 在行复用后残留旧值。 */
-export function ProcessingStatusSelect({ rowId, onTransition }: {
+export function ProcessingStatusSelect({ rowId, onTransition, disabled }: {
   rowId: string;
   onTransition: (id: string, status: string) => void;
+  disabled?: boolean;
 }) {
   const [value, setValue] = useState('');
   return (
     <select
       value={value}
+      disabled={disabled}
       aria-label="变更加工状态"
       onChange={(event) => {
+        if (disabled) return;
         const next = event.target.value;
         setValue('');
         if (next) onTransition(rowId, next);

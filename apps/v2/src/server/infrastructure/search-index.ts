@@ -115,7 +115,6 @@ export function refreshPatientChildSearchRows(db: Database.Database, patientId: 
       const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
       if (!columns.some((column) => column.name === 'patientId')) continue;
       const sql = SEARCH_UPSERT_SQL[resource];
-      if (!sql) continue;
       const rows = db.prepare(`SELECT id FROM ${table} WHERE patientId = ? AND deletedAt IS NULL`).all(patientId) as Array<{ id: string }>;
       for (const row of rows) {
         upsertSearchRowUnwrapped(db, resource, String(row.id), sql);

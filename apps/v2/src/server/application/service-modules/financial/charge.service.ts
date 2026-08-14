@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../../infrastructure/errors';
-import { withIdempotency } from '../../../infrastructure/idempotency';
+import { stableRequestBodyHash, withIdempotency } from '../../../infrastructure/idempotency';
 import { tenantAnd, tenantParams } from '../../../infrastructure/tenant';
 import { trackResourceWrite } from '../../../infrastructure/write-tracking';
 import { SqliteChargeRepository } from '../../../infrastructure/repositories/charge.repository';
@@ -9,7 +9,7 @@ import {
   SqliteDebtRepository,
   SqliteMemberCardRepository,
 } from '../../../infrastructure/repositories/core.repositories';
-import type { AppContext } from '../../../../domain/contracts';
+import { PayMethod, type AppContext } from '../../../../domain/contracts';
 import type {
   ChargeRepository,
   DebtRepository,
@@ -20,26 +20,14 @@ import {
   assertPatientExists,
   assertVisitExists,
   generateDocumentNumber,
+  MAX_MONEY_CENTS,
 } from '../common';
 
-const PAY_METHODS = new Set([
-  'CASH',
-  'WECHAT',
-  'ALIPAY',
-  'CARD',
-  'DEBT',
-  'MEMBER_CARD',
-  'UNIONPAY',
-  'INSURANCE',
-  'OTHER',
-]);
-
-/** 防御性兜底上限：1 亿元（分） */
-const MAX_CHARGE_SUBTOTAL = 100_000_000_00;
+const PAY_METHODS: ReadonlySet<string> = new Set(Object.values(PayMethod));
 
 function assertSafeSubtotal(price: number, quantity: number): number {
   const subtotal = Math.round(price * quantity);
-  if (!Number.isSafeInteger(subtotal) || subtotal > MAX_CHARGE_SUBTOTAL) {
+  if (!Number.isSafeInteger(subtotal) || subtotal > MAX_MONEY_CENTS) {
     throw new ValidationError('Charge item subtotal exceeds maximum allowed amount');
   }
   return subtotal;
@@ -61,7 +49,7 @@ interface PaymentLedgerInput {
   cardId?: string | null;
 }
 
-function recordPaymentLedger(db: Database.Database, input: PaymentLedgerInput): void {
+export function recordPaymentLedger(db: Database.Database, input: PaymentLedgerInput): void {
   db.prepare(
     `INSERT INTO PaymentLedger (
        id, clinicId, createdAt, updatedAt, deletedAt,
@@ -107,7 +95,15 @@ export class ChargeService {
     patientId: string;
     visitId?: string;
     doctorId?: string;
-    items: Array<{ name: string; category: string; price: number; quantity: number; teethNumbers?: string[]; costType?: 'SERVICE' | 'MATERIAL' }>;
+    items: Array<{
+      name: string;
+      category: string;
+      price: number;
+      quantity: number;
+      teethNumbers?: string[];
+      costType?: 'SERVICE' | 'MATERIAL';
+      catalogId?: string;
+    }>;
     discount?: number;
     remark?: string;
     discountPlanSnapshot?: Record<string, unknown> | null;
@@ -148,6 +144,21 @@ export class ChargeService {
     const totalAmount = baseTotal - discount;
 
     const chargeRun = this.db.transaction(() => {
+      // 目录价必须在开单事务内复验，避免组合价校验与落库之间的 TOCTOU。
+      const catalogStmt = this.db.prepare(
+        `SELECT id, price FROM TreatmentCatalog
+         WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+      );
+      for (const item of input.items) {
+        if (!item.catalogId) continue;
+        const catalog = catalogStmt.get(item.catalogId, ...tenantParams(context.clinicId)) as
+          | { id: string; price: number }
+          | undefined;
+        if (!catalog) throw new ValidationError(`收费项目引用的目录项不存在: ${item.name}`);
+        if (Number(catalog.price) !== item.price) {
+          throw new ValidationError(`收费项目价格与目录不一致: ${item.name}`);
+        }
+      }
       this.chargeRepository.create({
         id,
         clinicId: context.clinicId ?? null,
@@ -211,12 +222,12 @@ export class ChargeService {
     this.db.transaction(() => {
       const result = this.db.prepare(
         `UPDATE Charge SET deletedAt = ?, updatedAt = ?
-         WHERE id = ? AND status = 'UNPAID' AND paidAmount = 0 AND refundedAmount = 0 AND deletedAt IS NULL`,
-      ).run(now, now, id);
+         WHERE id = ? AND status = 'UNPAID' AND paidAmount = 0 AND refundedAmount = 0 AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+      ).run(now, now, id, ...tenantParams(context.clinicId));
       if (result.changes === 0) throw new ConflictError('Only unpaid charges can be deleted');
       this.db.prepare(
-        `UPDATE ChargeItem SET deletedAt = ?, updatedAt = ? WHERE chargeId = ? AND deletedAt IS NULL`,
-      ).run(now, now, id);
+        `UPDATE ChargeItem SET deletedAt = ?, updatedAt = ? WHERE chargeId = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+      ).run(now, now, id, ...tenantParams(context.clinicId));
       // P2-3：取消收费单统一维护同步与搜索索引。
       trackResourceWrite(this.db, { tableName: 'Charge', recordId: id, operation: 'DELETE', clinicId: context.clinicId ?? null });
     })();
@@ -230,6 +241,7 @@ export class ChargeService {
       userId: context?.userId ?? null,
       clinicId: context?.clinicId ?? null,
       requestId: requestId ?? '',
+      requestBodyHash: stableRequestBodyHash({ amount, method, payMethodName }),
     }, () => {
       const row = this.chargeRepository.findById(id, context?.clinicId ?? null);
       if (!row) throw new NotFoundError('Charge not found');
@@ -291,7 +303,11 @@ export class ChargeService {
         }
         const debt = this.debtRepository.findByCharge(id, context?.clinicId ?? null);
         if (debt) {
-          const debtStatus = newPaid >= Number(debt.totalAmount) ? 'PAID' : newPaid > 0 ? 'PARTIAL' : 'UNPAID';
+          // newPaid 恒为正（amount > 0 已校验）；满额即 PAID，否则 PARTIAL
+          let debtStatus = 'PARTIAL';
+          if (newPaid >= Number(debt.totalAmount)) {
+            debtStatus = 'PAID';
+          }
           this.debtRepository.updatePaid(debt.id, newPaid, debtStatus, now, Number(debt.paidAmount), context?.clinicId ?? null);
         } else if (method === 'DEBT' && newStatus === 'PARTIAL') {
           this.db.prepare(
@@ -301,7 +317,7 @@ export class ChargeService {
              ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
           ).run(
             randomUUID(),
-            row.clinicId ?? null,
+            row.clinicId,
             now,
             now,
             id,
@@ -330,6 +346,7 @@ export class ChargeService {
       userId: context.userId,
       clinicId: context.clinicId,
       requestId: requestId ?? '',
+      requestBodyHash: stableRequestBodyHash({ amount, reason }),
     }, () => {
       const row = this.chargeRepository.findById(id, context.clinicId);
       if (!row) throw new NotFoundError('Charge not found');

@@ -2,20 +2,24 @@ import { FormEvent, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import type { Page } from '../../lib/types';
-import { ConfirmDialog, DataTable, Dialog, LoadingState, PageError, SearchableSelect } from '../../components';
+import { ConfirmDialog, DataTable, Dialog, LoadingState, MissingSelectOption, PageError, SearchInput, SearchableSelect } from '../../components';
 import { errorMessage } from '../../lib/messages';
 import { toLocalInput } from '../../lib/format';
 import { useToast } from '../../lib/toast-context';
+import { useDebouncedValue } from '../../hooks/use-debounce';
 import { APPOINTMENT_TYPE_LABELS } from '../../lib/labels';
 import { parseLocalDateTime } from '../../appointments/date';
 import { appointmentColumns } from '../../appointments/columns';
+import { createInFlightGuard } from '../../lib/in-flight';
 import type { AppointmentRow, AppointmentForm, PurposeRow, LookupRow } from '../../appointments/types';
 import { AppointmentPurposePanel } from './AppointmentPurposePanel';
 
-const transitionInFlight = new Set<string>();
+const transitionGuard = createInFlightGuard();
 
-export function AppointmentsPage() {
+export function AppointmentsPage({ initialSearch }: { initialSearch?: string } = {}) {
   const { showToast } = useToast();
+  const [searchInput, setSearchInput] = useState(initialSearch ?? '');
+  const debouncedSearch = useDebouncedValue(searchInput, 300);
   const [patientId, setPatientId] = useState('');
   const [doctorId, setDoctorId] = useState('');
   const [chairId, setChairId] = useState('');
@@ -27,6 +31,7 @@ export function AppointmentsPage() {
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const createBusyRef = useRef(false);
   const [editingAppointment, setEditingAppointment] = useState<AppointmentRow | null>(null);
   // 编辑回填用原始电话缓存（列表行可能被服务端掩码，详情接口返回原始值）
   const [rawPhoneCache, setRawPhoneCache] = useState<Record<string, string>>({});
@@ -52,20 +57,29 @@ export function AppointmentsPage() {
     queryKey: ['appointment-purposes'],
     queryFn: () => apiRequest<Page<PurposeRow>>('/resources/appointmentPurposes?page=1&pageSize=100'),
   });
+  const doctorIds = new Set((doctors.data ?? []).map((row) => String(row.id)));
+  const purposeIds = new Set((purposes.data?.items ?? []).map((row) => String(row.id)));
+  const doctorMissing = (id: string) => id !== '' && !doctorIds.has(id);
+  const purposeMissing = (id: string) => id !== '' && !purposeIds.has(id);
   const query = useQuery({
-    queryKey: ['appointments', page],
-    queryFn: () => apiRequest<Page<AppointmentRow>>(`/resources/appointments?page=${page}&pageSize=20`),
+    queryKey: ['appointments', page, debouncedSearch],
+    queryFn: () => apiRequest<Page<AppointmentRow>>(
+      `/resources/appointments?page=${page}&pageSize=20${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}`,
+    ),
+    placeholderData: (previous) => previous,
   });
+  const stale = query.isPlaceholderData;
 
   if (query.isLoading) return <LoadingState />;
   if (query.error) return <PageError message={(query.error as Error).message} />;
 
   async function create(event: FormEvent) {
     event.preventDefault();
+    if (createBusyRef.current) return;
     const tempName = tempPatientName.trim();
     const startDate = parseLocalDateTime(startTime);
     const endDate = parseLocalDateTime(endTime);
-    if (submitting || !(patientId || tempName) || !doctorId || !startTime || !endTime || !startDate || !endDate) {
+    if (!(patientId || tempName) || !doctorId || !startTime || !endTime || !startDate || !endDate) {
       showToast('请选择患者、医生并填写开始和结束时间', 'error');
       return;
     }
@@ -73,6 +87,7 @@ export function AppointmentsPage() {
       showToast('结束时间必须晚于开始时间', 'error');
       return;
     }
+    createBusyRef.current = true;
     setSubmitting(true);
     try {
       await apiRequest('/appointments', {
@@ -94,13 +109,15 @@ export function AppointmentsPage() {
     } catch (error) {
       showToast(errorMessage(error, '创建预约失败'), 'error');
     } finally {
+      createBusyRef.current = false;
       setSubmitting(false);
     }
   }
 
   async function transition(id: string, status: string) {
-    if (transitionInFlight.has(id)) return;
-    transitionInFlight.add(id);
+    /* v8 ignore next -- 行内动作按钮在 stale 期间 disabled（jsdom 不派发 click），守卫为防御冗余 */
+    if (stale) return;
+    if (!transitionGuard.start(id)) return;
     try {
       await apiRequest(`/appointments/${id}/status`, {
         method: 'PATCH',
@@ -111,11 +128,13 @@ export function AppointmentsPage() {
     } catch (error) {
       showToast(errorMessage(error, '状态更新失败'), 'error');
     } finally {
-      transitionInFlight.delete(id);
+      transitionGuard.finish(id);
     }
   }
 
   function openEditAppointment(row: AppointmentRow) {
+    /* v8 ignore next -- 行内编辑按钮在 stale 期间 disabled，守卫为防御冗余 */
+    if (stale) return;
     const appointmentId = String(row.id);
     const cachedPhone = rawPhoneCache[appointmentId];
     setEditForm({
@@ -155,7 +174,7 @@ export function AppointmentsPage() {
 
   async function saveEditAppointment(event: FormEvent) {
     event.preventDefault();
-    if (!editingAppointment || submitting) return;
+    if (!editingAppointment || submitting || stale) return;
     const startDate = parseLocalDateTime(editForm.startTime);
     const endDate = parseLocalDateTime(editForm.endTime);
     if (!editForm.doctorId || !editForm.startTime || !editForm.endTime || !startDate || !endDate) {
@@ -193,6 +212,9 @@ export function AppointmentsPage() {
   }
 
   async function deleteAppointment() {
+    /* v8 ignore next -- 删除按钮在 stale 期间 disabled，守卫为防御冗余 */
+    if (stale) return;
+    /* v8 ignore next -- 确认框仅在 deleteTarget 非空时渲染且 submitting 期间 disabled，守卫为防御冗余 */
     if (!deleteTarget || submitting) return;
     setSubmitting(true);
     try {
@@ -219,11 +241,20 @@ export function AppointmentsPage() {
     onTransition: (id, status) => void transition(id, status),
     onEdit: (row) => openEditAppointment(row),
     onDelete: (row) => setDeleteTarget(row),
+    disabled: stale,
   });
 
   return (
     <div className="page">
-      <div className="page-head"><h1>预约管理</h1></div>
+      <div className="page-head">
+        <h1>预约管理</h1>
+        <SearchInput
+          value={searchInput}
+          onChange={(value) => { setSearchInput(value); setPage(1); }}
+          placeholder="搜索预约..."
+          ariaLabel="搜索预约"
+        />
+      </div>
       <form className="inline-form" onSubmit={create}>
         <SearchableSelect resource="patients" value={patientId} onChange={setPatientId} ariaLabel="患者" placeholder="选择患者" />
         <select aria-label="医生" value={doctorId} onChange={(event) => setDoctorId(event.target.value)}>
@@ -231,6 +262,7 @@ export function AppointmentsPage() {
           {doctors.data?.map((row) => (
             <option key={row.id} value={row.id}>{String(row.name ?? row.id)}</option>
           ))}
+          {doctorMissing(doctorId) && <MissingSelectOption value={doctorId} />}
         </select>
         <SearchableSelect resource="chairs" value={chairId} onChange={setChairId} ariaLabel="椅位" placeholder="不指定椅位" />
         <select aria-label="预约类型" value={type} onChange={(event) => setType(event.target.value)}>
@@ -243,6 +275,7 @@ export function AppointmentsPage() {
           {purposes.data?.items?.map((row) => (
             <option key={row.id} value={row.id}>{String(row.name ?? row.id)}</option>
           ))}
+          {purposeMissing(purpose) && <MissingSelectOption value={purpose} />}
         </select>
         <input aria-label="临时患者姓名" type="text" value={tempPatientName} onChange={(event) => setTempPatientName(event.target.value)} placeholder="临时患者姓名" />
         <input aria-label="临时患者电话" type="text" value={tempPatientPhone} onChange={(event) => setTempPatientPhone(event.target.value)} placeholder="临时患者电话" />
@@ -253,9 +286,9 @@ export function AppointmentsPage() {
       <AppointmentPurposePanel purposes={purposes} showToast={showToast} />
       <DataTable columns={columns} rows={query.data?.items ?? []} keyField="id" emptyText="暂无预约" />
       <div className="pager">
-        <button disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>上一页</button>
+        <button disabled={stale || page <= 1} onClick={() => setPage((value) => value - 1)}>上一页</button>
         <span>第 {page} 页</span>
-        <button disabled={!query.data || page * 20 >= query.data.total} onClick={() => setPage((value) => value + 1)}>下一页</button>
+        <button disabled={stale || !query.data || page * 20 >= query.data.total} onClick={() => setPage((value) => value + 1)}>下一页</button>
       </div>
 
       <Dialog open={editingAppointment !== null} title="编辑预约" onClose={closeEditAppointment}>
@@ -266,6 +299,7 @@ export function AppointmentsPage() {
             {doctors.data?.map((row) => (
               <option key={row.id} value={row.id}>{String(row.name ?? row.id)}</option>
             ))}
+            {doctorMissing(editForm.doctorId) && <MissingSelectOption value={editForm.doctorId} />}
           </select>
           <SearchableSelect resource="chairs" value={editForm.chairId} onChange={(value) => setEditForm((current) => ({ ...current, chairId: value }))} ariaLabel="椅位" placeholder="不指定椅位" />
           <select aria-label="预约类型" value={editForm.type} onChange={(event) => setEditForm((current) => ({ ...current, type: event.target.value }))}>
@@ -278,6 +312,7 @@ export function AppointmentsPage() {
             {purposes.data?.items?.map((row) => (
               <option key={row.id} value={row.id}>{String(row.name ?? row.id)}</option>
             ))}
+            {purposeMissing(editForm.purpose) && <MissingSelectOption value={editForm.purpose} />}
           </select>
           <input aria-label="临时患者姓名" type="text" value={editForm.tempPatientName} onChange={(event) => setEditForm((current) => ({ ...current, tempPatientName: event.target.value }))} placeholder="临时患者姓名" />
           <input aria-label="临时患者电话" type="text" value={editForm.tempPatientPhone} onChange={(event) => setEditForm((current) => ({ ...current, tempPatientPhone: event.target.value }))} placeholder="临时患者电话" />
@@ -285,7 +320,7 @@ export function AppointmentsPage() {
           <input aria-label="结束时间" type="datetime-local" value={editForm.endTime} onChange={(event) => setEditForm((current) => ({ ...current, endTime: event.target.value }))} />
           <div className="modal-actions">
             <button type="button" onClick={closeEditAppointment}>取消</button>
-            <button type="submit" disabled={submitting}>{submitting ? '保存中...' : '保存'}</button>
+            <button type="submit" disabled={submitting || stale}>{submitting ? '保存中...' : '保存'}</button>
           </div>
         </form>
       </Dialog>

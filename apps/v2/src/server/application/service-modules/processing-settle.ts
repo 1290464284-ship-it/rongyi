@@ -39,11 +39,12 @@ export class ProcessingSettleService {
     const ref = normalizeOptionalString(input.ref);
     const note = normalizeOptionalString(input.note);
     const now = context.now().toISOString();
-    this.db.prepare(
+    const result = this.db.prepare(
       `UPDATE ProcessingOrder
        SET settleStatus = 'SETTLED', settledAmount = ?, settledAt = ?, settlementNote = ?, settlementRef = ?, updatedAt = ?
-       WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+       WHERE id = ? AND deletedAt IS NULL AND settleStatus != 'SETTLED' AND status IN ('COMPLETED', 'RECEIVED')${tenantAnd(context.clinicId)}`,
     ).run(amount, now, note, ref, now, id, ...tenantParams(context.clinicId));
+    if (Number(result.changes) === 0) throw new ConflictError('加工单已结算或状态已变更');
     return { id, settleStatus: 'SETTLED', settledAmount: amount, settledAt: now };
   }
 
@@ -56,12 +57,13 @@ export class ProcessingSettleService {
     if (row.settleStatus !== 'SETTLED') throw new ConflictError('加工单未结算');
 
     const now = context.now().toISOString();
-    this.db.prepare(
+    const result = this.db.prepare(
       `UPDATE ProcessingOrder
        SET settleStatus = 'UNSETTLED', settledAmount = NULL, settledAt = NULL,
            settlementNote = NULL, settlementRef = NULL, updatedAt = ?
-       WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+       WHERE id = ? AND deletedAt IS NULL AND settleStatus = 'SETTLED'${tenantAnd(context.clinicId)}`,
     ).run(now, id, ...tenantParams(context.clinicId));
+    if (Number(result.changes) === 0) throw new ConflictError('加工单未结算或状态已变更');
     return { id, settleStatus: 'UNSETTLED' };
   }
 

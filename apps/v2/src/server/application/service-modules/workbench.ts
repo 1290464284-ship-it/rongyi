@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import { SystemClock } from '../../infrastructure/clock';
+import { SystemClock, clinicDayEndUtc, clinicDayStartUtc } from '../../infrastructure/clock';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import type { AppContext } from '../../../domain/contracts';
 
@@ -38,6 +38,13 @@ export class ClinicalWorkbenchService {
     const clinicId = context.clinicId;
     const date = new SystemClock().clinicDate(context.now());
     const clinicParams = tenantParams(clinicId);
+    const dayStart = clinicDayStartUtc(date);
+    const dayEnd = clinicDayEndUtc(date);
+    /* v8 ignore next -- clinicDate 恒产出合法 YYYY-MM-DD，解析不会失败，守卫为防御冗余 */
+    if (dayStart === null || dayEnd === null) {
+      throw new Error(`invalid clinic date: ${date}`);
+    }
+    const dayParams = [dayStart, dayEnd];
 
     const registrations = this.db.prepare(
       `SELECT r.id, r.patientId, p.name AS patientName, r.doctorId, u.name AS doctorName,
@@ -45,10 +52,10 @@ export class ClinicalWorkbenchService {
        FROM Registration r
        LEFT JOIN Patient p ON p.id = r.patientId AND p.deletedAt IS NULL
        LEFT JOIN User u ON u.id = r.doctorId AND u.deletedAt IS NULL
-       WHERE r.deletedAt IS NULL AND r.registeredAt LIKE ? AND r.status != 'CANCELLED'${tenantAnd(clinicId, 'r.clinicId')}
+       WHERE r.deletedAt IS NULL AND r.registeredAt >= ? AND r.registeredAt <= ? AND r.status != 'CANCELLED'${tenantAnd(clinicId, 'r.clinicId')}
        ORDER BY r.registeredAt DESC
        LIMIT 100`,
-    ).all(`${date}%`, ...clinicParams) as WorkbenchRegistration[];
+    ).all(...dayParams, ...clinicParams) as WorkbenchRegistration[];
 
     const appointments = this.db.prepare(
       `SELECT a.id, a.patientId, p.name AS patientName, a.doctorId, u.name AS doctorName,
@@ -56,38 +63,39 @@ export class ClinicalWorkbenchService {
        FROM Appointment a
        LEFT JOIN Patient p ON p.id = a.patientId AND p.deletedAt IS NULL
        LEFT JOIN User u ON u.id = a.doctorId AND u.deletedAt IS NULL
-       WHERE a.deletedAt IS NULL AND a.startTime LIKE ?${tenantAnd(clinicId, 'a.clinicId')}
+       WHERE a.deletedAt IS NULL AND a.startTime >= ? AND a.startTime <= ?${tenantAnd(clinicId, 'a.clinicId')}
        ORDER BY a.startTime ASC
        LIMIT 100`,
-    ).all(`${date}%`, ...clinicParams) as WorkbenchAppointment[];
+    ).all(...dayParams, ...clinicParams) as WorkbenchAppointment[];
 
     const registrationTotal = this.db.prepare(
       `SELECT COUNT(*) AS count FROM Registration r
-       WHERE r.deletedAt IS NULL AND r.registeredAt LIKE ? AND r.status != 'CANCELLED'${tenantAnd(clinicId, 'r.clinicId')}`,
-    ).get(`${date}%`, ...clinicParams) as { count: number } | undefined;
+       WHERE r.deletedAt IS NULL AND r.registeredAt >= ? AND r.registeredAt <= ? AND r.status != 'CANCELLED'${tenantAnd(clinicId, 'r.clinicId')}`,
+    ).get(...dayParams, ...clinicParams) as { count: number };
 
     const appointmentTotal = this.db.prepare(
       `SELECT COUNT(*) AS count FROM Appointment a
-       WHERE a.deletedAt IS NULL AND a.startTime LIKE ?${tenantAnd(clinicId, 'a.clinicId')}`,
-    ).get(`${date}%`, ...clinicParams) as { count: number } | undefined;
+       WHERE a.deletedAt IS NULL AND a.startTime >= ? AND a.startTime <= ?${tenantAnd(clinicId, 'a.clinicId')}`,
+    ).get(...dayParams, ...clinicParams) as { count: number };
 
     const inProgressVisits = this.db.prepare(
       `SELECT COUNT(*) AS count FROM Visit v
-       WHERE v.deletedAt IS NULL AND v.status = 'IN_PROGRESS' AND v.startTime LIKE ?${tenantAnd(clinicId, 'v.clinicId')}`,
-    ).get(`${date}%`, ...clinicParams) as { count: number } | undefined;
+       WHERE v.deletedAt IS NULL AND v.status = 'IN_PROGRESS' AND v.startTime >= ? AND v.startTime <= ?${tenantAnd(clinicId, 'v.clinicId')}`,
+    ).get(...dayParams, ...clinicParams) as { count: number };
 
     return {
       date,
       registrations,
       appointments,
       totals: {
-        registrations: Number(registrationTotal?.count ?? 0),
-        appointments: Number(appointmentTotal?.count ?? 0),
-        inProgressVisits: Number(inProgressVisits?.count ?? 0),
+        // COUNT(*) 聚合恒返回一行，count 不可能为 nullish。
+        registrations: Number(registrationTotal.count),
+        appointments: Number(appointmentTotal.count),
+        inProgressVisits: Number(inProgressVisits.count),
       },
       truncated: {
-        registrations: registrations.length < Number(registrationTotal?.count ?? 0),
-        appointments: appointments.length < Number(appointmentTotal?.count ?? 0),
+        registrations: registrations.length < Number(registrationTotal.count),
+        appointments: appointments.length < Number(appointmentTotal.count),
       },
     };
   }

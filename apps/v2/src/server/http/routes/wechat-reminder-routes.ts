@@ -8,6 +8,7 @@ import type { Express } from 'express';
 
 import { wrapAsync } from '../middleware';
 import { WechatReminderService } from '../../application/service-modules/wechat-reminder';
+import { AppError } from '../../infrastructure/errors';
 import type { RouteDependencies } from './deps';
 
 export function registerWechatReminderRoutes(
@@ -27,6 +28,9 @@ export function registerWechatReminderRoutes(
   }));
 
   app.patch('/api/v2/wechat-reminders/config', wrapAsync(async (req, res) => {
+    if (!['BOSS', 'ADMIN'].includes(req.context!.role)) {
+      throw new AppError('FORBIDDEN', '仅老板或管理员可修改提醒配置', 403);
+    }
     res.json({ success: true, data: reminderService.updateConfig(req.body ?? {}, req.context!) });
   }));
 

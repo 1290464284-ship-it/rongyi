@@ -89,4 +89,50 @@ describe('DispenseNarcoticPanel', () => {
     });
     expect(await screen.findByText('麻药登记已删除')).toBeDefined();
   });
+
+  it('falls back to empty rows and zero total when the list omits keys', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/narcotic-registry?page=1&pageSize=200') return {};
+      if (path === '/resources/inventoryItems?page=1&pageSize=100') {
+        return { items: [], total: 0, page: 1, pageSize: 100 };
+      }
+      return {};
+    });
+    render(<DispenseNarcoticPanel />, { wrapper });
+    expect(await screen.findByText('暂无麻药登记')).toBeDefined();
+  });
+
+  it('ignores delete confirmation while a create is in flight', async () => {
+    let resolvePost: ((value: unknown) => void) | undefined;
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/narcotic-registry?page=1&pageSize=200') {
+        return { items: [{ id: 'n-1', recordDate: '2026-08-05', itemId: 'item-1', batchNo: 'B-1', quantity: 1 }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/resources/inventoryItems?page=1&pageSize=100') {
+        return { items: [{ id: 'item-1', name: '麻药甲', batchManaged: 0 }], total: 1, page: 1, pageSize: 100 };
+      }
+      if (init?.method === 'POST' && path === '/narcotic-registry') {
+        return await new Promise((resolve) => { resolvePost = resolve; });
+      }
+      return {};
+    });
+    render(<DispenseNarcoticPanel />, { wrapper });
+    await screen.findByText('麻药登记记录');
+    await waitFor(() => {
+      expect((screen.getByLabelText('麻药物品') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('登记日期'), { target: { value: '2026-08-05' } });
+    fireEvent.change(screen.getByLabelText('麻药物品'), { target: { value: 'item-1' } });
+    fireEvent.change(screen.getByLabelText('麻药数量'), { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: '登记' }));
+
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    const dialog = await screen.findByRole('dialog', { name: '删除麻药登记' });
+    fireEvent.click(within(dialog).getByRole('button', { name: '删除' }));
+
+    expect(apiRequest).not.toHaveBeenCalledWith('/narcotic-registry/n-1', expect.objectContaining({ method: 'DELETE' }));
+
+    resolvePost?.({ id: 'n-new' });
+    expect(await screen.findByText('麻药登记成功')).toBeDefined();
+  });
 });

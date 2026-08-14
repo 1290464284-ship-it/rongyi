@@ -158,6 +158,17 @@ describe('SchedulesPage', () => {
     expect(await screen.findByText('本周暂无排班')).toBeDefined();
   });
 
+  it('falls back to an empty week table when the week query resolves null', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/shift-templates') return templates;
+      if (path === '/resources/users?page=1&pageSize=100') return users;
+      if (path.startsWith('/schedules/week?weekStart=')) return null;
+      return {};
+    });
+    render(<SchedulesPage />, { wrapper });
+    expect(await screen.findByText('本周暂无排班')).toBeDefined();
+  });
+
   it('shows a week query error without hiding the rest of the page', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path.startsWith('/schedules/week?')) throw new Error('week failed');
@@ -169,5 +180,37 @@ describe('SchedulesPage', () => {
 
     expect(await screen.findByText('排班中心')).toBeDefined();
     expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+  });
+
+  it('shows a shared error state when templates or users fail to load', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/shift-templates') throw new Error('templates failed');
+      if (path === '/resources/users?page=1&pageSize=100') return users;
+      if (path.startsWith('/schedules/week?weekStart=')) return weekRows;
+      return {};
+    });
+    render(<SchedulesPage />, { wrapper });
+    expect(await screen.findByText('班次模板或员工列表加载失败，请重试')).toBeDefined();
+    expect(screen.getByRole('button', { name: '重试' })).toBeDefined();
+  });
+
+  it('retries the failed template and user queries on demand', async () => {
+    let templatesCalls = 0;
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/shift-templates') {
+        templatesCalls += 1;
+        if (templatesCalls === 1) throw new Error('templates failed');
+        return templates;
+      }
+      if (path === '/resources/users?page=1&pageSize=100') return users;
+      if (path.startsWith('/schedules/week?weekStart=')) return weekRows;
+      return {};
+    });
+    render(<SchedulesPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '重试' }));
+    await waitFor(() => {
+      expect(screen.queryByText('班次模板或员工列表加载失败，请重试')).toBeNull();
+    });
+    expect((await screen.findAllByText('早班')).length).toBeGreaterThan(0);
   });
 });

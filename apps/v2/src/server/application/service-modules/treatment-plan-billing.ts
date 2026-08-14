@@ -12,6 +12,7 @@
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
+import { MAX_MONEY_CENTS } from './common';
 import { trackResourceWrite } from '../../infrastructure/write-tracking';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { generateDocumentNumber } from './common';
@@ -81,13 +82,17 @@ function effectivePrice(item: { price: number; discountRate: number | null }): n
 
 /** 明细小计 = 有效单价 * quantity（Math.round 取整为分）。 */
 function itemSubtotal(item: { price: number; quantity: number; discountRate: number | null }): number {
-  return Math.round(effectivePrice(item) * Number(item.quantity));
+  const value = Math.round(effectivePrice(item) * Number(item.quantity));
+  if (!Number.isSafeInteger(value) || value > MAX_MONEY_CENTS) throw new ValidationError('治疗明细小计超出上限');
+  return value;
 }
 
 /** 计划总价 = Math.round(Σ 明细小计 * (1 - 计划折扣率/100))。 */
 function planTotal(items: PlanItemRow[], rate: number): number {
   const subtotalSum = items.reduce((sum, item) => sum + itemSubtotal(item), 0);
-  return Math.round(subtotalSum * (1 - rate / 100));
+  const value = Math.round(subtotalSum * (1 - rate / 100));
+  if (!Number.isSafeInteger(value) || value > MAX_MONEY_CENTS) throw new ValidationError('治疗计划金额超出上限');
+  return value;
 }
 
 function validateDiscountRate(value: unknown): number | null {
@@ -100,14 +105,13 @@ function validateDiscountRate(value: unknown): number | null {
 
 /** 明细 teethNumbers 在库中为 JSON 字符串；归一后重新序列化，避免双重编码。 */
 function storedTeethNumbers(value: unknown): string {
-  if (typeof value === 'string') {
-    try {
-      return JSON.stringify(JSON.parse(value));
-    } catch {
-      return '[]';
-    }
+  // TreatmentPlanItem.teethNumbers 为 TEXT NOT NULL（v158 重建），入库值恒为
+  // 非空字符串；解析失败（历史脏数据）归一为 '[]'。
+  try {
+    return JSON.stringify(JSON.parse(String(value)));
+  } catch {
+    return '[]';
   }
-  return JSON.stringify(value ?? []);
 }
 
 export class TreatmentPlanBillingService {
@@ -118,30 +122,37 @@ export class TreatmentPlanBillingService {
     input: SetPlanDiscountInput,
     context: AppContext,
   ): { id: string; discountType: string; discountRate: number | null; totalFee: number } {
-    this.findPlan(planId, context); // 校验计划存在且属于当前租户（plan 变量本身此处用不到）
-    const discountType = input?.discountType;
-    if (typeof discountType !== 'string' || !PLAN_DISCOUNT_TYPES.has(discountType)) {
-      throw new ValidationError('折扣类型无效');
-    }
-    const discountRate = discountType === 'NONE'
-      ? null
-      : (() => {
-          const rate = validateDiscountRate(input?.discountRate);
-          if (rate === null) throw new ValidationError('折扣率须在 0-100 之间');
-          return rate;
-        })();
+    const run = this.db.transaction(() => {
+      this.findPlan(planId, context);
+      const discountType = input?.discountType;
+      if (typeof discountType !== 'string' || !PLAN_DISCOUNT_TYPES.has(discountType)) {
+        throw new ValidationError('折扣类型无效');
+      }
+      const discountRate = discountType === 'NONE'
+        ? null
+        : (() => {
+            const rate = validateDiscountRate(input?.discountRate);
+            if (rate === null) throw new ValidationError('折扣率须在 0-100 之间');
+            return rate;
+          })();
 
-    const items = this.listPlanItems(planId, context);
-    const totalFee = planTotal(items, planRate({ discountType, discountRate }));
+      const items = this.listPlanItems(planId, context);
+      const totalFee = planTotal(items, planRate({ discountType, discountRate }));
 
-    const now = context.now().toISOString();
-    this.db.prepare(
-      `UPDATE TreatmentPlan
-       SET discountType = ?, discountRate = ?, totalFee = ?, updatedAt = ?
-       WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
-    ).run(discountType, discountRate, totalFee, now, planId, ...tenantParams(context.clinicId));
-
-    return { id: planId, discountType, discountRate, totalFee };
+      const now = context.now().toISOString();
+      const result = this.db.prepare(
+        `UPDATE TreatmentPlan
+         SET discountType = ?, discountRate = ?, totalFee = ?, updatedAt = ?
+         WHERE id = ? AND deletedAt IS NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM TreatmentPlanItem i
+             WHERE i.planId = TreatmentPlan.id AND i.billed = 1 AND i.deletedAt IS NULL
+           )${tenantAnd(context.clinicId)}`,
+      ).run(discountType, discountRate, totalFee, now, planId, ...tenantParams(context.clinicId));
+      if (Number(result.changes) === 0) throw new ConflictError('治疗计划已划价，整单折扣不可修改');
+      return { id: planId, discountType, discountRate, totalFee };
+    });
+    return run();
   }
 
   setItemDiscount(
@@ -150,6 +161,7 @@ export class TreatmentPlanBillingService {
     input: SetItemDiscountInput,
     context: AppContext,
   ): { itemId: string; discountRate: number | null; planTotalFee: number } {
+    const run = this.db.transaction(() => {
     this.findPlan(planId, context);
     const item = this.findPlanItem(planId, itemId, context);
     if (item.billed === 1) {
@@ -158,11 +170,12 @@ export class TreatmentPlanBillingService {
     const discountRate = validateDiscountRate(input?.discountRate);
 
     const now = context.now().toISOString();
-    this.db.prepare(
+    const updateResult = this.db.prepare(
       `UPDATE TreatmentPlanItem
        SET discountRate = ?, updatedAt = ?
-       WHERE id = ? AND planId = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+       WHERE id = ? AND planId = ? AND (billed IS NULL OR billed = 0) AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).run(discountRate, now, itemId, planId, ...tenantParams(context.clinicId));
+    if (Number(updateResult.changes) === 0) throw new ConflictError('已划价明细不可改价');
 
     const items = this.listPlanItems(planId, context);
     const plan = this.findPlan(planId, context);
@@ -172,6 +185,22 @@ export class TreatmentPlanBillingService {
     ).run(planTotalFee, now, planId, ...tenantParams(context.clinicId));
 
     return { itemId, discountRate, planTotalFee };
+    });
+    return run();
+  }
+
+  /**
+   * Recomputes the plan total after generic treatmentPlanItems CRUD changes.
+   * Only intended for unbilled items; callers already guard billed rows.
+   */
+  reconcilePlanTotal(planId: string, context: AppContext): number {
+    const plan = this.findPlan(planId, context);
+    const items = this.listPlanItems(planId, context);
+    const totalFee = planTotal(items, planRate(plan));
+    this.db.prepare(
+      `UPDATE TreatmentPlan SET totalFee = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    ).run(totalFee, context.now().toISOString(), planId, ...tenantParams(context.clinicId));
+    return totalFee;
   }
 
   bill(
@@ -179,6 +208,7 @@ export class TreatmentPlanBillingService {
     input: BillInput,
     context: AppContext,
   ): { chargeId: string; number: string; totalAmount: number; itemCount: number; billedItemIds: string[] } {
+    const run = this.db.transaction((): { chargeId: string; number: string; totalAmount: number; itemCount: number; billedItemIds: string[] } => {
     const plan = this.findPlan(planId, context);
 
     const items = this.listPlanItems(planId, context);
@@ -208,6 +238,9 @@ export class TreatmentPlanBillingService {
     const subtotalSum = selected.reduce((sum, item) => sum + itemSubtotal(item), 0);
     const originalSum = selected.reduce((sum, item) => sum + Number(item.price) * Number(item.quantity), 0);
     const totalAmount = Math.round(subtotalSum * (1 - rate / 100));
+    if (!Number.isSafeInteger(totalAmount) || totalAmount > MAX_MONEY_CENTS) {
+      throw new ValidationError('划价金额超出上限');
+    }
     const discount = Math.round(originalSum) - totalAmount;
 
     const now = context.now().toISOString();
@@ -227,7 +260,6 @@ export class TreatmentPlanBillingService {
       ).get(item.treatmentId, ...tenantParams(context.clinicId)) as { id: string } | undefined;
       if (row) existingTreatmentIds.add(item.treatmentId);
     }
-    const run = this.db.transaction(() => {
       this.db.prepare(
         `INSERT INTO Charge (
            id, clinicId, createdAt, updatedAt, deletedAt,
@@ -275,24 +307,27 @@ export class TreatmentPlanBillingService {
       const updateItem = this.db.prepare(
         `UPDATE TreatmentPlanItem
          SET billed = 1, billedChargeId = ?, updatedAt = ?
-         WHERE id = ? AND planId = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+         WHERE id = ? AND planId = ? AND (billed = 0 OR billed IS NULL) AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
       );
       for (const item of selected) {
-        updateItem.run(chargeId, now, item.id, planId, ...tenantParams(context.clinicId));
+        const result = updateItem.run(chargeId, now, item.id, planId, ...tenantParams(context.clinicId));
+        if (Number(result.changes) === 0) {
+          // 并发划价：另一进程已把该明细置为 billed=1，整笔回滚，防止重复生成 Charge。
+          throw new ConflictError('已划价明细不可重复划价');
+        }
       }
       this.db.prepare(
         `UPDATE TreatmentPlan SET totalFee = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
       ).run(totalAmount, now, planId, ...tenantParams(context.clinicId));
+      return {
+        chargeId,
+        number,
+        totalAmount,
+        itemCount: selected.length,
+        billedItemIds: selected.map((item) => item.id),
+      };
     });
-    run();
-
-    return {
-      chargeId,
-      number,
-      totalAmount,
-      itemCount: selected.length,
-      billedItemIds: selected.map((item) => item.id),
-    };
+    return run.immediate();
   }
 
   planFollowUp(

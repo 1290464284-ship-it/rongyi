@@ -80,7 +80,8 @@ export function seedDatabase(db: Database.Database, logger?: Logger): void {
 
   const doctorRow = db.prepare("SELECT id FROM User WHERE username = 'doctor'").get() as { id: string } | undefined;
   if (!doctorRow && !isProduction) {
-    const doctorHash = bcrypt.hashSync('REDACTED', 10);
+    // 开发种子医生使用随机口令，避免仓库里存在可登录的固定默认凭据。
+    const doctorHash = bcrypt.hashSync(randomBytes(18).toString('base64url'), 10);
     db.prepare(
       `INSERT OR IGNORE INTO User (
          id, clinicId, createdAt, updatedAt, deletedAt,

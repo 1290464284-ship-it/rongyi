@@ -9,7 +9,6 @@ import {
   assertChairExists,
   assertDoctorExists,
   assertPatientExists,
-  runInTransaction,
 } from './common';
 
 const APPOINTMENT_TRANSITIONS: Record<string, readonly string[]> = {
@@ -50,9 +49,11 @@ export class AppointmentService {
     }
     if (input.patientId) assertPatientExists(this.db, input.patientId, context.clinicId);
     this.assertTimeRange(input.startTime, input.endTime);
+    const startIso = new Date(input.startTime).toISOString();
+    const endIso = new Date(input.endTime).toISOString();
     const now = context.now().toISOString();
     const id = randomUUID();
-    runInTransaction(this.db, () => {
+    const run = this.db.transaction(() => {
       let resolvedPatientId = input.patientId;
       if (!resolvedPatientId) {
         resolvedPatientId = randomUUID();
@@ -73,7 +74,7 @@ export class AppointmentService {
         // B-H4：直写 Patient（临时患者建档）绕过 repository，统一维护同步与索引。
         trackResourceWrite(this.db, { tableName: 'Patient', recordId: resolvedPatientId, operation: 'INSERT', clinicId: context.clinicId });
       }
-      this.assertNoConflict(input.doctorId, input.chairId, input.startTime, input.endTime, context.clinicId);
+      this.assertNoConflict(input.doctorId, input.chairId, startIso, endIso, context.clinicId);
       this.db.prepare(
         `INSERT INTO Appointment (
            id, clinicId, createdAt, updatedAt, deletedAt,
@@ -88,17 +89,19 @@ export class AppointmentService {
         resolvedPatientId as string,
         input.doctorId,
         input.chairId ?? null,
-        input.startTime,
-        input.endTime,
+        startIso,
+        endIso,
         input.type,
         input.remark ?? null,
         input.purpose ?? null,
-        input.patientId ? null : (tempPatientName || null),
+        // 到达此处时 tempPatientName 已通过非空校验（无 patientId 必填姓名），nullish 兜底不可达。
+        input.patientId ? null : tempPatientName,
         input.patientId ? null : (tempPatientPhone || null),
       );
       // B-H4：直写 Appointment（绕过 repository）统一维护同步与索引。
       trackResourceWrite(this.db, { tableName: 'Appointment', recordId: id, operation: 'INSERT', clinicId: context.clinicId });
     });
+    run.immediate();
     return { id, status: 'BOOKED' };
   }
 

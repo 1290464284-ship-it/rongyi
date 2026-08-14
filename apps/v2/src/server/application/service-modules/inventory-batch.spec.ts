@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -15,7 +15,7 @@ describe('InventoryBatchService', () => {
   let context: AppContext;
   const now = '2026-08-05T10:00:00.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-inventory-batch-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -29,7 +29,7 @@ describe('InventoryBatchService', () => {
     };
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -152,6 +152,7 @@ describe('InventoryBatchService', () => {
     const before = db.prepare('SELECT COUNT(*) AS n FROM InventoryBatch').get() as { n: number };
     expect(() => service.create({ itemId: 'item-invalid', initialQuantity: -1 }, context)).toThrow(ValidationError);
     expect(() => service.create({ itemId: 'item-invalid', initialQuantity: 1.5 }, context)).toThrow(ValidationError);
+    expect(() => service.create({ itemId: 'item-invalid', initialQuantity: 1_000_000_001 }, context)).toThrow(ValidationError);
     expect(() => service.create({ itemId: 'item-invalid', initialQuantity: 2, expiryDate: '2026/09/01' }, context)).toThrow(ValidationError);
     expect(() => service.create({ itemId: 'item-invalid', initialQuantity: 2, productionDate: 'not-a-date' }, context)).toThrow(ValidationError);
     expect(() => service.create({ itemId: 'item-missing', initialQuantity: 2 }, context)).toThrow(NotFoundError);
@@ -160,7 +161,7 @@ describe('InventoryBatchService', () => {
   });
 
   it('consumes FIFO across batches by expiry date and rolls back on insufficient stock', () => {
-    insertItem('item-fifo', { code: 'FIFO-001', name: '正畸弓丝' });
+    insertItem('item-fifo', { code: 'FIFO-001', name: '正畸弓丝', stock: 20 });
     insertBatch('batch-fifo-early', { itemId: 'item-fifo', batchNo: 'EARLY', expiryDate: '2026-08-10', initialQuantity: 5, remainingQuantity: 5 });
     insertBatch('batch-fifo-late', { itemId: 'item-fifo', batchNo: 'LATE', expiryDate: '2026-09-10', initialQuantity: 10, remainingQuantity: 10 });
     const service = new InventoryBatchService(db);
@@ -175,6 +176,10 @@ describe('InventoryBatchService', () => {
     });
     expect(batchRow('batch-fifo-early').remainingQuantity).toBe(0);
     expect(batchRow('batch-fifo-late').remainingQuantity).toBe(8);
+    const itemStock = (itemId: string): number => Number(
+      (db.prepare('SELECT stock FROM InventoryItem WHERE id = ?').get(itemId) as { stock: number }).stock,
+    );
+    expect(itemStock('item-fifo')).toBe(13);
 
     insertBatch('batch-fifo-over-a', { itemId: 'item-fifo', batchNo: 'OVER-A', expiryDate: '2026-09-20', initialQuantity: 3, remainingQuantity: 3 });
     insertBatch('batch-fifo-over-b', { itemId: 'item-fifo', batchNo: 'OVER-B', expiryDate: '2026-09-30', initialQuantity: 2, remainingQuantity: 2 });
@@ -183,10 +188,11 @@ describe('InventoryBatchService', () => {
     // 超量时整体回滚：不产生部分扣减
     expect(batchRow('batch-fifo-over-a').remainingQuantity).toBe(3);
     expect(batchRow('batch-fifo-over-b').remainingQuantity).toBe(2);
+    expect(itemStock('item-fifo')).toBe(13);
   });
 
   it('calls the stocktake lock guard while consuming FIFO', () => {
-    insertItem('item-lock-fifo', { code: 'LOCK-FIFO' });
+    insertItem('item-lock-fifo', { code: 'LOCK-FIFO', stock: 10 });
     insertBatch('batch-lock-fifo', { itemId: 'item-lock-fifo', batchNo: 'LOCK', initialQuantity: 5, remainingQuantity: 5 });
     const lockGuard = vi.fn();
     const service = new InventoryBatchService(db, lockGuard);
@@ -194,6 +200,10 @@ describe('InventoryBatchService', () => {
     service.consumeFifo('item-lock-fifo', 1, context);
 
     expect(lockGuard).toHaveBeenCalledWith('item-lock-fifo', 'clinic-v2-001');
+    const lockStock = Number(
+      (db.prepare('SELECT stock FROM InventoryItem WHERE id = ?').get('item-lock-fifo') as { stock: number }).stock,
+    );
+    expect(lockStock).toBe(9);
   });
 
   it('rejects consume for non-batch-managed or missing items and invalid quantities', () => {
@@ -208,16 +218,61 @@ describe('InventoryBatchService', () => {
   });
 
   it('adjusts the remaining quantity and rejects missing batches', () => {
-    insertItem('item-adjust', { code: 'ADJUST-001' });
+    insertItem('item-adjust', { code: 'ADJUST-001', stock: 9 });
     insertBatch('batch-adjust', { itemId: 'item-adjust', batchNo: 'ADJ', initialQuantity: 9, remainingQuantity: 9 });
     const service = new InventoryBatchService(db);
     const result = service.adjust('batch-adjust', { remainingQuantity: 3, note: '盘点修正' }, context);
     expect(result).toEqual({ id: 'batch-adjust', remainingQuantity: 3 });
     expect(batchRow('batch-adjust').remainingQuantity).toBe(3);
     expect(batchRow('batch-adjust').updatedAt).toBe(now);
+    const stockAfter = Number(
+      (db.prepare('SELECT stock FROM InventoryItem WHERE id = ?').get('item-adjust') as { stock: number }).stock,
+    );
+    expect(stockAfter).toBe(3);
+    const transaction = db.prepare(
+      `SELECT type, quantity, beforeStock, afterStock, referenceType, referenceId, batchId
+       FROM InventoryTransaction
+       WHERE itemId = 'item-adjust' AND referenceType = 'INVENTORY_BATCH' AND referenceId = 'batch-adjust'
+       ORDER BY rowid DESC LIMIT 1`,
+    ).get() as { type: string; quantity: number; beforeStock: number; afterStock: number; referenceType: string; referenceId: string; batchId: string };
+    expect(transaction).toMatchObject({
+      type: 'ADJUST',
+      quantity: -6,
+      beforeStock: 9,
+      afterStock: 3,
+      referenceType: 'INVENTORY_BATCH',
+      referenceId: 'batch-adjust',
+      batchId: 'batch-adjust',
+    });
+    service.adjust('batch-adjust', { remainingQuantity: 5 }, context);
+    expect(Number(
+      (db.prepare('SELECT stock FROM InventoryItem WHERE id = ?').get('item-adjust') as { stock: number }).stock,
+    )).toBe(5);
 
     expect(() => service.adjust('batch-missing', { remainingQuantity: 1 }, context)).toThrow(NotFoundError);
     expect(() => service.adjust('batch-adjust', { remainingQuantity: -1 }, context)).toThrow(ValidationError);
+    expect(() => service.adjust('batch-adjust', { remainingQuantity: 1_000_000_001 }, context)).toThrow(ValidationError);
+  });
+
+  it('removes only empty batches and rejects non-empty ones', () => {
+    const service = new InventoryBatchService(db);
+    insertItem('item-remove-only', { code: 'REMOVE-ONLY-001', stock: 0 });
+    insertBatch('batch-empty-only', { itemId: 'item-remove-only', batchNo: 'EMPTY-ONLY', initialQuantity: 0, remainingQuantity: 0 });
+    insertBatch('batch-nonempty-only', { itemId: 'item-remove-only', batchNo: 'NONEMPTY-ONLY', initialQuantity: 5, remainingQuantity: 5 });
+
+    expect(service.remove('batch-empty-only', context)).toEqual({ id: 'batch-empty-only' });
+    expect(batchRow('batch-empty-only').active).toBe(0);
+    expect(() => service.remove('batch-nonempty-only', context)).toThrow(ConflictError);
+  });
+
+  it('blocks adjusting a batch while its item is locked by a stocktake', () => {
+    insertItem('item-adjust-lock', { code: 'ADJUST-LOCK' });
+    insertBatch('batch-adjust-lock', { itemId: 'item-adjust-lock', batchNo: 'LOCK', initialQuantity: 5, remainingQuantity: 5 });
+    const lockGuard = vi.fn(() => { throw new ConflictError('盘点已锁定'); });
+    const service = new InventoryBatchService(db, lockGuard);
+    expect(() => service.adjust('batch-adjust-lock', { remainingQuantity: 2 }, context)).toThrow(ConflictError);
+    expect(lockGuard).toHaveBeenCalledWith('item-adjust-lock', 'clinic-v2-001');
+    expect(batchRow('batch-adjust-lock').remainingQuantity).toBe(5);
   });
 
   it('updates batch metadata without touching quantities and clears fields on empty strings', () => {
@@ -363,5 +418,139 @@ describe('InventoryBatchService', () => {
     const service = new InventoryBatchService(db, guard);
     service.create({ itemId: 'item-lock', initialQuantity: 1 }, context);
     expect(guard).toHaveBeenCalledWith('item-lock', 'clinic-v2-001');
+  });
+
+  it('honors valid list limits', () => {
+    insertItem('item-limit', { code: 'LIMIT-001' });
+    insertBatch('batch-limit', { itemId: 'item-limit' });
+    const service = new InventoryBatchService(db);
+    const { batches } = service.list(context, { limit: 100 });
+    expect(batches.map((batch) => batch.id)).toEqual(['batch-limit']);
+  });
+
+  it('lists, creates and expires alerts without a clinic tenant', () => {
+    insertItem('item-noclinic', { code: 'NOCLINIC-001' });
+    insertBatch('batch-noclinic', {
+      itemId: 'item-noclinic',
+      expiryDate: '2026-08-12',
+      initialQuantity: 3,
+      remainingQuantity: 3,
+    });
+    const service = new InventoryBatchService(db);
+    const noClinic = { ...context, clinicId: null };
+    const { batches, expiring } = service.list(noClinic, { days: 30 });
+    expect(batches.length).toBe(1);
+    expect(expiring.length).toBe(1);
+    const created = service.create({ itemId: 'item-noclinic', initialQuantity: 2 }, noClinic);
+    expect(created.stockAfter).toBe(2);
+  });
+
+  it('creates a zero-quantity batch without a stock movement', () => {
+    insertItem('item-zero', { code: 'ZERO-001', stock: 5 });
+    const service = new InventoryBatchService(db);
+    const result = service.create({ itemId: 'item-zero', initialQuantity: 0 }, context);
+    expect(result.remainingQuantity).toBe(0);
+    expect(result.stockAfter).toBe(5);
+    const ledger = db.prepare(
+      "SELECT COUNT(*) AS n FROM InventoryTransaction WHERE itemId = 'item-zero'",
+    ).get() as { n: number };
+    expect(ledger.n).toBe(0);
+  });
+
+  it('falls back to zero stock for items with a null stock column', () => {
+    db.prepare(
+      `INSERT INTO InventoryItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, category, unit, stock, minStock, price, batchManaged
+       ) VALUES ('item-nullstock', 'clinic-v2-001', ?, ?, NULL, 'NULL-001', '空库存物料', 'CONSUMABLE', 'box', NULL, 0, 100, 1)`,
+    ).run(now, now);
+    const service = new InventoryBatchService(db);
+    const result = service.create({ itemId: 'item-nullstock', initialQuantity: 3 }, context);
+    // NULL + 3 仍为 NULL，stockAfter 回退为 0（仅防御，不会在生产数据出现）
+    expect(result.stockAfter).toBe(0);
+  });
+
+  it('adjusts down with a null clinic and skips identical adjustments', () => {
+    insertItem('item-adjust', { code: 'ADJ-001', stock: 10 });
+    insertBatch('batch-adjust', { itemId: 'item-adjust', initialQuantity: 4, remainingQuantity: 4 });
+    const service = new InventoryBatchService(db);
+    const noClinic = { ...context, clinicId: null };
+    const down = service.adjust('batch-adjust', { remainingQuantity: 1 }, noClinic);
+    expect(down.remainingQuantity).toBe(1);
+    const countAdjusts = () => (db.prepare(
+      "SELECT COUNT(*) AS n FROM InventoryTransaction WHERE referenceType = 'INVENTORY_BATCH'",
+    ).get() as { n: number }).n;
+    const before = countAdjusts();
+    // delta === 0：直接返回，不产生新流水
+    service.adjust('batch-adjust', { remainingQuantity: 1 }, noClinic);
+    expect(countAdjusts()).toBe(before);
+  });
+
+  it('omits unchanged fields in update results', () => {
+    insertItem('item-update', { code: 'UPD-001' });
+    insertBatch('batch-update', { itemId: 'item-update', batchNo: 'KEEP-ME', expiryDate: '2026-09-01' });
+    const service = new InventoryBatchService(db);
+    const result = service.update('batch-update', { expiryDate: '2026-10-01' }, context);
+    expect(result.batchNo).toBe('KEEP-ME');
+    expect(result.expiryDate).toBe('2026-10-01');
+    expect(result.productionDate).toBeNull();
+    expect(result.supplierId).toBeNull();
+  });
+
+  it('rejects oversized FIFO quantities', () => {
+    insertItem('item-big', { code: 'BIG-001' });
+    const service = new InventoryBatchService(db);
+    expect(() => service.consumeFifo('item-big', 1_000_000_001, context)).toThrow(ValidationError);
+  });
+
+  it('breaks early when the first batch satisfies the whole quantity', () => {
+    insertItem('item-break', { code: 'BREAK-001', stock: 10 });
+    insertBatch('batch-break-a', { itemId: 'item-break', expiryDate: '2026-08-01', initialQuantity: 5, remainingQuantity: 5 });
+    insertBatch('batch-break-b', { itemId: 'item-break', expiryDate: '2026-09-01', initialQuantity: 3, remainingQuantity: 3 });
+    const service = new InventoryBatchService(db);
+    const noClinic = { ...context, clinicId: null };
+    const result = service.consumeFifo('item-break', 2, noClinic);
+    expect(result.allocations).toEqual([{ batchId: 'batch-break-a', quantity: 2 }]);
+    expect(batchRow('batch-break-b').remainingQuantity).toBe(3);
+  });
+
+  it('falls back to code or id in alert messages for sparse items', () => {
+    db.prepare(
+      `INSERT INTO InventoryItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, category, unit, stock, minStock, price, batchManaged
+       ) VALUES ('item-code-only', 'clinic-v2-001', ?, ?, NULL, 'ALERT-CODE', NULL, 'CONSUMABLE', 'box', 0, 0, 100, 1)`,
+    ).run(now, now);
+    db.prepare(
+      `INSERT INTO InventoryItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, category, unit, stock, minStock, price, batchManaged
+       ) VALUES ('item-no-meta', 'clinic-v2-001', ?, ?, NULL, NULL, NULL, 'CONSUMABLE', 'box', 0, 0, 100, 1)`,
+    ).run(now, now);
+    insertBatch('batch-code-only', {
+      itemId: 'item-code-only',
+      batchNo: null,
+      expiryDate: '2026-08-12',
+      initialQuantity: 2,
+      remainingQuantity: 2,
+    });
+    insertBatch('batch-no-meta', {
+      itemId: 'item-no-meta',
+      batchNo: null,
+      expiryDate: '2026-08-12',
+      initialQuantity: 2,
+      remainingQuantity: 2,
+    });
+    const service = new InventoryBatchService(db);
+    const noClinic = { ...context, clinicId: null };
+    const result = service.generateExpiryAlerts(30, noClinic);
+    expect(result.generated).toBe(2);
+    const alerts = db.prepare(
+      "SELECT message FROM BusinessAlert WHERE alertType = 'BATCH_EXPIRY' ORDER BY metricName",
+    ).all() as Array<{ message: string }>;
+    expect(alerts[0].message).toContain('物料 ALERT-CODE');
+    expect(alerts[0].message).toContain('无批次号');
+    expect(alerts[1].message).toContain('物料 item-no-meta');
+    expect(alerts[1].message).toContain('无批次号');
   });
 });

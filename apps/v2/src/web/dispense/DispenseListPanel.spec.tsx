@@ -150,6 +150,14 @@ describe('DispenseListPanel', () => {
     expect(screen.getByText('暂无发药单')).toBeDefined();
   });
 
+  it('renders an empty list when the query data is undefined', () => {
+    render(
+      <DispenseListPanel dispenses={queryResult({ data: undefined as never })} dispensePage={1} setDispensePage={vi.fn()} />,
+      { wrapper },
+    );
+    expect(screen.getByText('暂无发药单')).toBeDefined();
+  });
+
   it('renders status-specific action buttons', () => {
     render(
       <DispenseListPanel
@@ -163,6 +171,23 @@ describe('DispenseListPanel', () => {
     expect(screen.getAllByText('退药')).toHaveLength(2);
     expect(screen.getAllByText('编辑')).toHaveLength(1);
     expect(screen.getAllByText('删除')).toHaveLength(1);
+  });
+
+  it('closes the action panel when the page changes', () => {
+    const setDispensePage = vi.fn();
+    render(
+      <DispenseListPanel
+        dispenses={queryResult({ data: { items: rows.slice(0, 1), total: 21, page: 1, pageSize: 20 } })}
+        dispensePage={1}
+        setDispensePage={setDispensePage}
+      />,
+      { wrapper },
+    );
+    fireEvent.click(screen.getByRole('button', { name: '发药' }));
+    expect(screen.getByText(/发药：DISP-001/)).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+    expect(screen.queryByText(/发药：DISP-001/)).toBeNull();
+    expect(setDispensePage).toHaveBeenCalledTimes(1);
   });
 
   it('opens the edit dialog from a pending row', async () => {
@@ -392,6 +417,39 @@ describe('DispenseListPanel', () => {
     expect(apiRequest).not.toHaveBeenCalledWith('/dispenses/disp-1/return', expect.objectContaining({ method: 'POST' }));
   });
 
+  it('rejects a return quantity above the pending quantity', async () => {
+    mockApi(detailRow({
+      status: 'DISPENSED',
+      items: [
+        {
+          id: 'di-1',
+          itemId: 'item-1',
+          batchId: null,
+          name: '麻药',
+          spec: null,
+          quantity: 5,
+          returnedQuantity: 3,
+          batchManaged: 0,
+          stock: 90,
+        },
+      ],
+    }));
+    render(
+      <DispenseListPanel
+        dispenses={queryResult({ data: { items: [returnRow], total: 1, page: 1, pageSize: 20 } })}
+        dispensePage={1}
+        setDispensePage={vi.fn()}
+      />,
+      { wrapper },
+    );
+    fireEvent.click(screen.getByRole('button', { name: '退药' }));
+    const input = (await screen.findByLabelText('退回数量')) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '3' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认退药' }));
+    expect(await screen.findByText('退回数量不能超过未退数量')).toBeDefined();
+    expect(apiRequest).not.toHaveBeenCalledWith('/dispenses/disp-1/return', expect.objectContaining({ method: 'POST' }));
+  });
+
   it('shows an error toast when return fails', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
       const method = String(init?.method ?? 'GET').toUpperCase();
@@ -580,5 +638,202 @@ describe('DispenseListPanel', () => {
     });
     expect(input.max).toBe('0');
     expect(screen.getByText('0')).toBeDefined();
+  });
+
+  it('ignores a delete confirmation while the list is stale', async () => {
+    mockApi();
+    const { rerender } = render(
+      <DispenseListPanel
+        dispenses={queryResult({ data: { items: rows.slice(0, 1), total: 1, page: 1, pageSize: 20 } })}
+        dispensePage={1}
+        setDispensePage={vi.fn()}
+      />,
+      { wrapper },
+    );
+    // 先在可用态打开删除确认弹窗，再置 stale（React 会抑制 disabled 按钮的点击）
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    const dialog = await screen.findByRole('dialog');
+    rerender(
+      <DispenseListPanel
+        dispenses={queryResult({
+          data: { items: rows.slice(0, 1), total: 1, page: 1, pageSize: 20 },
+          isPlaceholderData: true,
+        })}
+        dispensePage={1}
+        setDispensePage={vi.fn()}
+      />,
+    );
+    fireEvent.click(within(dialog).getByRole('button', { name: '删除' }));
+    expect(apiRequest).not.toHaveBeenCalledWith('/dispenses/disp-1', expect.objectContaining({ method: 'DELETE' }));
+  });
+
+  it('steps back when the refreshed page omits its items array', async () => {
+    mockApi();
+    const refetch = vi.fn().mockResolvedValue({ data: { total: 25, page: 2, pageSize: 20 } });
+    const setDispensePage = vi.fn();
+    render(
+      <DispenseListPanel
+        dispenses={queryResult({ data: { items: rows.slice(0, 1), total: 25, page: 2, pageSize: 20 }, refetch })}
+        dispensePage={2}
+        setDispensePage={setDispensePage}
+      />,
+      { wrapper },
+    );
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: '删除' }));
+    await waitFor(() => expect(refetch).toHaveBeenCalled());
+    expect(setDispensePage).toHaveBeenCalledWith(expect.any(Function));
+  });
+
+  it('ignores a dispense submission while the list is stale', async () => {
+    mockApi();
+    const { rerender } = render(
+      <DispenseListPanel
+        dispenses={queryResult({ data: { items: rows.slice(0, 1), total: 1, page: 1, pageSize: 20 } })}
+        dispensePage={1}
+        setDispensePage={vi.fn()}
+      />,
+      { wrapper },
+    );
+    fireEvent.click(screen.getByRole('button', { name: '发药' }));
+    await waitFor(() => {
+      expect((screen.getByRole('button', { name: '确认发药' }) as HTMLButtonElement).disabled).toBe(false);
+    });
+    rerender(
+      <DispenseListPanel
+        dispenses={queryResult({
+          data: { items: rows.slice(0, 1), total: 1, page: 1, pageSize: 20 },
+          isPlaceholderData: true,
+        })}
+        dispensePage={1}
+        setDispensePage={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '确认发药' }));
+    expect(apiRequest).not.toHaveBeenCalledWith(
+      '/dispenses/disp-1/dispense',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('dispenses sparse items without a batchManaged flag', async () => {
+    mockApi(
+      detailRow({
+        items: [
+          { id: 'di-1', itemId: 'item-1', batchId: null, name: '麻药', spec: null, quantity: 2, returnedQuantity: 0, stock: 90 },
+        ],
+      }),
+    );
+    render(
+      <DispenseListPanel
+        dispenses={queryResult({ data: { items: rows.slice(0, 1), total: 1, page: 1, pageSize: 20 } })}
+        dispensePage={1}
+        setDispensePage={vi.fn()}
+      />,
+      { wrapper },
+    );
+    fireEvent.click(screen.getByRole('button', { name: '发药' }));
+    await waitFor(() => {
+      expect((screen.getByRole('button', { name: '确认发药' }) as HTMLButtonElement).disabled).toBe(false);
+    });
+    fireEvent.click(screen.getByRole('button', { name: '确认发药' }));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/dispenses/disp-1/dispense', expect.objectContaining({ method: 'POST' }));
+    });
+    const dispenseCall = vi.mocked(apiRequest).mock.calls.find((entry) => entry[0] === '/dispenses/disp-1/dispense');
+    const body = JSON.parse(String((dispenseCall?.[1] as RequestInit)?.body));
+    expect(body).toMatchObject({ items: [{ dispenseItemId: 'di-1', batchId: null }] });
+  });
+
+  it('falls back to an empty item id for batch items without one', async () => {
+    mockApi(
+      detailRow({
+        items: [
+          { id: 'di-1', batchId: 'batch-1', name: '麻药', spec: null, quantity: 2, returnedQuantity: 0, batchManaged: 1, stock: 90 },
+        ],
+      }),
+    );
+    render(
+      <DispenseListPanel
+        dispenses={queryResult({ data: { items: rows.slice(0, 1), total: 1, page: 1, pageSize: 20 } })}
+        dispensePage={1}
+        setDispensePage={vi.fn()}
+      />,
+      { wrapper },
+    );
+    fireEvent.click(screen.getByRole('button', { name: '发药' }));
+    // itemId 缺失时批次查询被禁用，仅校验选择器渲染与默认批次回退
+    expect(await screen.findByLabelText('发药批次')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '确认发药' }));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/dispenses/disp-1/dispense', expect.objectContaining({ method: 'POST' }));
+    });
+    const dispenseCall = vi.mocked(apiRequest).mock.calls.find((entry) => entry[0] === '/dispenses/disp-1/dispense');
+    const body = JSON.parse(String((dispenseCall?.[1] as RequestInit)?.body));
+    expect(body).toMatchObject({ items: [{ dispenseItemId: 'di-1', batchId: 'batch-1' }] });
+  });
+
+  it('ignores blank return quantities for items without an input', async () => {
+    mockApi(
+      detailRow({
+        status: 'DISPENSED',
+        items: [
+          { id: 'di-1', itemId: 'item-1', batchId: null, name: 'A', spec: null, quantity: 5, returnedQuantity: 0, batchManaged: 0, stock: 10 },
+          { id: 'di-2', itemId: 'item-2', batchId: null, name: 'B', spec: null, quantity: 3, returnedQuantity: 0, batchManaged: 0, stock: 10 },
+        ],
+      }),
+    );
+    render(
+      <DispenseListPanel
+        dispenses={queryResult({ data: { items: [returnRow], total: 1, page: 1, pageSize: 20 } })}
+        dispensePage={1}
+        setDispensePage={vi.fn()}
+      />,
+      { wrapper },
+    );
+    fireEvent.click(screen.getByRole('button', { name: '退药' }));
+    const inputs = (await screen.findAllByLabelText('退回数量')) as HTMLInputElement[];
+    fireEvent.change(inputs[0], { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认退药' }));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/dispenses/disp-1/return', expect.objectContaining({ method: 'POST' }));
+    });
+    const returnCall = vi.mocked(apiRequest).mock.calls.find((entry) => entry[0] === '/dispenses/disp-1/return');
+    const body = JSON.parse(String((returnCall?.[1] as RequestInit)?.body));
+    expect(body).toMatchObject({ items: [{ dispenseItemId: 'di-1', quantity: 1 }] });
+  });
+
+  it('falls back to the row id in headers when the number is missing', async () => {
+    mockApi();
+    render(
+      <DispenseListPanel
+        dispenses={queryResult({
+          data: {
+            items: [
+              { id: 'n-1', status: 'PENDING' },
+              { id: 'n-2', status: 'DISPENSED' },
+            ] as DispenseRow[],
+            total: 2,
+            page: 1,
+            pageSize: 20,
+          },
+        })}
+        dispensePage={1}
+        setDispensePage={vi.fn()}
+      />,
+      { wrapper },
+    );
+    fireEvent.click(screen.getAllByRole('button', { name: '发药' })[0]);
+    expect(await screen.findByText(/发药：n-1/)).toBeDefined();
+    await waitFor(() => {
+      expect((screen.getByRole('button', { name: '确认发药' }) as HTMLButtonElement).disabled).toBe(false);
+    });
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+    fireEvent.click(screen.getAllByRole('button', { name: '退药' })[0]);
+    expect(await screen.findByText(/退药：n-2/)).toBeDefined();
+    await waitFor(() => {
+      expect((screen.getByRole('button', { name: '确认退药' }) as HTMLButtonElement).disabled).toBe(false);
+    });
   });
 });

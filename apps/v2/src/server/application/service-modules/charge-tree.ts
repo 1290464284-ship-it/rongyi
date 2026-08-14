@@ -87,15 +87,10 @@ export class ChargeTreeService {
     context: AppContext,
   ): { chargeId: string; number: string; totalAmount: number; catalogId: string; itemId: string | null } {
     const now = context.now().toISOString();
-
-    const catalog = this.db.prepare(
-      `SELECT id, name, category, price, costType
-       FROM TreatmentCatalog
-       WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
-    ).get(catalogId, ...tenantParams(context.clinicId)) as
-      | { id: string; name: string; category: string; price: number; costType: string | null }
-      | undefined;
-    if (!catalog) throw new NotFoundError('Treatment catalog not found');
+    const patientId = input.patientId;
+    if (typeof patientId !== 'string' || patientId.trim() === '') {
+      throw new ValidationError('Patient id is required');
+    }
 
     const quantity = input.quantity ?? 1;
     if (!Number.isSafeInteger(quantity) || quantity <= 0) {
@@ -104,7 +99,7 @@ export class ChargeTreeService {
 
     const patient = this.db.prepare(
       `SELECT id FROM Patient WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
-    ).get(input.patientId, ...tenantParams(context.clinicId));
+    ).get(patientId, ...tenantParams(context.clinicId));
     if (!patient) throw new NotFoundError('Patient not found');
     if (input.visitId) {
       assertVisitExists(this.db, input.visitId, input.patientId, context.clinicId);
@@ -128,12 +123,26 @@ export class ChargeTreeService {
       itemId = input.itemId;
     }
 
-    const totalAmount = Number(catalog.price) * quantity;
     const chargeId = randomUUID();
     const number = generateDocumentNumber('CHG');
-    const remark = input.remark ?? `快捷划价：${catalog.name}`;
+    let totalAmount = 0;
 
     const chargeRun = this.db.transaction(() => {
+      // 目录价格在事务内重新读取，避免“事务外读价 → 价格被改 → 按旧价开单”的 TOCTOU。
+      const catalog = this.db.prepare(
+        `SELECT id, name, category, price, costType
+         FROM TreatmentCatalog
+         WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+      ).get(catalogId, ...tenantParams(context.clinicId)) as
+        | { id: string; name: string; category: string; price: number; costType: string | null }
+        | undefined;
+      if (!catalog) throw new NotFoundError('Treatment catalog not found');
+      const rawTotal = Math.round(Number(catalog.price) * quantity);
+      if (!Number.isSafeInteger(rawTotal) || rawTotal > 100_000_000) {
+        throw new ValidationError('Charge item subtotal exceeds maximum allowed amount');
+      }
+      totalAmount = rawTotal;
+      const remark = input.remark ?? `快捷划价：${catalog.name}`;
       this.db.prepare(
         `INSERT INTO Charge (
            id, clinicId, createdAt, updatedAt, deletedAt,
@@ -145,7 +154,7 @@ export class ChargeTreeService {
         context.clinicId ?? null,
         now,
         now,
-        input.patientId,
+        patientId,
         input.visitId ?? null,
         input.doctorId ?? null,
         number,

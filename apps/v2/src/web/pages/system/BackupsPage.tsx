@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { apiRequest } from '../../lib/api';
 import { DataTable, ConfirmDialog, LoadingState, PageError, type DataTableColumn } from '../../components';
 import { errorMessage } from '../../lib/messages';
@@ -51,6 +51,7 @@ function SummaryPanel({ label, summary }: { label: string; summary?: DatabaseSum
 export function BackupsPage() {
   const { showToast } = useToast();
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
   const [comparison, setComparison] = useState<{ backup?: DatabaseSummary; current?: DatabaseSummary } | null>(null);
   // L6：暂存恢复 / 清理备份走统一 ConfirmDialog（danger 样式），替代原生 window.confirm
   const [restoreTarget, setRestoreTarget] = useState<string | null>(null);
@@ -71,7 +72,8 @@ export function BackupsPage() {
   }
 
   async function create() {
-    if (busy) return;
+    if (busy || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     try {
       const result = await apiRequest<{ filename: string; encrypted: boolean }>('/backups', { method: 'POST' });
@@ -80,12 +82,14 @@ export function BackupsPage() {
     } catch (error) {
       showToast(errorMessage(error, '创建备份失败'), 'error');
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }
 
   async function verify(filename: string) {
-    if (busy) return;
+    if (busy || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     try {
       const result = await apiRequest<{ integrity: string }>(`/backups/${encodeURIComponent(filename)}/verify`);
@@ -93,6 +97,7 @@ export function BackupsPage() {
     } catch (error) {
       showToast(errorMessage(error, '校验备份失败'), 'error');
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }
@@ -103,7 +108,8 @@ export function BackupsPage() {
 
   async function confirmStageRestore() {
     const filename = restoreTarget;
-    if (!filename || busy) return;
+    if (!filename || busy || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     try {
       const result = await apiRequest<RestoreStagingResult>(`/backups/${encodeURIComponent(filename)}/restore`, {
@@ -115,6 +121,7 @@ export function BackupsPage() {
     } catch (error) {
       showToast(errorMessage(error, '暂存恢复失败'), 'error');
     } finally {
+      busyRef.current = false;
       setBusy(false);
       setRestoreTarget(null);
     }
@@ -125,7 +132,8 @@ export function BackupsPage() {
   }
 
   async function confirmCleanup() {
-    if (busy) return;
+    if (busy || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     try {
       const result = await apiRequest<{ kept: number; deleted: Array<{ filename: string }> }>('/backups/cleanup', {
@@ -137,6 +145,7 @@ export function BackupsPage() {
     } catch (error) {
       showToast(errorMessage(error, '清理备份失败'), 'error');
     } finally {
+      busyRef.current = false;
       setBusy(false);
       setCleanupOpen(false);
     }

@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ProcessingOrdersPage } from './ProcessingOrdersPage';
 import { ProcessingSettleDialog } from './ProcessingSettleDialog';
@@ -510,10 +510,11 @@ describe('ProcessingOrdersPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: '流程' }));
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText('流程加载中...')).toBeDefined();
+    vi.useFakeTimers();
     fireEvent.keyDown(dialog, { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog')).toBeNull();
-    });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    vi.useRealTimers();
     resolveSteps?.([{ id: 's-1', stepName: '取模', status: 'DONE', sortOrder: 1, completedAt: null }]);
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).toBeNull();
@@ -702,10 +703,11 @@ describe('ProcessingOrdersPage', () => {
     const dialog = await screen.findByRole('dialog');
     await within(dialog).findByText('取模');
     fireEvent.click(within(dialog).getByRole('button', { name: '推进' }));
+    vi.useFakeTimers();
     fireEvent.keyDown(dialog, { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog')).toBeNull();
-    });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    vi.useRealTimers();
     resolveAdvance?.([{ id: 's-1', stepName: '取模', status: 'DONE', sortOrder: 1, completedAt: null }]);
     expect(screen.queryByRole('dialog')).toBeNull();
 
@@ -713,12 +715,65 @@ describe('ProcessingOrdersPage', () => {
     const dialog2 = await screen.findByRole('dialog');
     await within(dialog2).findByText('取模');
     fireEvent.change(within(dialog2).getByLabelText('调整取模'), { target: { value: 'DONE' } });
+    vi.useFakeTimers();
     fireEvent.keyDown(dialog2, { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog')).toBeNull();
-    });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    vi.useRealTimers();
     resolveAdjust?.({ id: 's-1', stepName: '取模', status: 'DONE', sortOrder: 1, completedAt: null });
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('ignores stale advance and adjust failures after closing the flow dialog', async () => {
+    let rejectAdvance: ((error: unknown) => void) | undefined;
+    let rejectAdjust: ((error: unknown) => void) | undefined;
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = String(init?.method ?? 'GET').toUpperCase();
+      if (path === '/resources/processingOrders?page=1&pageSize=50') {
+        return { items: [{ id: 'proc-1', number: 'PROC-1', patientId: 'p-1', status: 'DRAFT' }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      if (path === '/processing-orders/proc-1/steps') {
+        return [{ id: 's-1', stepId: 'st-1', stepName: '取模', status: 'PENDING', sortOrder: 1, completedAt: null }];
+      }
+      if (method === 'POST' && path === '/processing-orders/proc-1/register-step') {
+        return await new Promise((_resolve, reject) => { rejectAdvance = reject; });
+      }
+      if (method === 'POST' && path === '/processing-orders/proc-1/set-step') {
+        return await new Promise((_resolve, reject) => { rejectAdjust = reject; });
+      }
+      return {};
+    });
+
+    render(<ProcessingOrdersPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '流程' }));
+    let dialog = await screen.findByRole('dialog');
+    await within(dialog).findByText('取模');
+    fireEvent.click(within(dialog).getByRole('button', { name: '推进' }));
+    vi.useFakeTimers();
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    vi.useRealTimers();
+    rejectAdvance?.(new Error('late advance failure'));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByText('推进流程失败')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '流程' }));
+    dialog = await screen.findByRole('dialog');
+    await within(dialog).findByText('取模');
+    fireEvent.change(within(dialog).getByLabelText('调整取模'), { target: { value: 'DONE' } });
+    vi.useFakeTimers();
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    vi.useRealTimers();
+    rejectAdjust?.(new Error('late adjust failure'));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByText('调整步骤失败')).toBeNull();
   });
 
   it('prefills sparse processing rows when editing', async () => {
@@ -825,5 +880,63 @@ describe('ProcessingSettleDialog', () => {
     });
     const call = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/processing-orders/proc-1/settle');
     expect(JSON.parse(String(call?.[1]?.body))).toEqual({ amount: 30000 });
+  });
+
+  it('ignores a stale flow load failure after closing the dialog', async () => {
+    let rejectSteps: ((error: unknown) => void) | undefined;
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/processingOrders?page=1&pageSize=50') {
+        return { items: [{ id: 'proc-1', number: 'PROC-1', patientId: 'p-1', status: 'DRAFT' }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      if (path === '/processing-orders/proc-1/steps') {
+        return await new Promise((_resolve, reject) => { rejectSteps = reject; });
+      }
+      return {};
+    });
+    render(<ProcessingOrdersPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '流程' }));
+    const dialog = await screen.findByRole('dialog');
+    vi.useFakeTimers();
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    vi.useRealTimers();
+    rejectSteps?.(new Error('late failure'));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // 关闭后的旧请求失败被守卫吞掉，不弹出任何错误
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByText('操作失败，请稍后重试')).toBeNull();
+  });
+
+  it('blocks editing saves while the items backfill is still loading', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/processingOrders?page=1&pageSize=50') {
+        return { items: [{ id: 'proc-1', number: 'PROC-1', patientId: 'p-1', status: 'DRAFT', totalFee: 50000 }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      if (path === '/resources/processingOrderItems?orderId=proc-1&page=1&pageSize=100') {
+        return new Promise(() => {});
+      }
+      return {};
+    });
+    render(<ProcessingOrdersPage />, { wrapper });
+    await screen.findByText('PROC-1');
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    await waitFor(() => {
+      expect((screen.getByLabelText('加工单号') as HTMLInputElement).value).toBe('PROC-1');
+    });
+    fireEvent.click(screen.getByText('保存'));
+    expect(await screen.findByText('明细加载中，请稍候再保存')).toBeDefined();
+    expect(apiRequest).not.toHaveBeenCalledWith(
+      '/resources/processingOrders/proc-1',
+      expect.objectContaining({ method: 'PATCH' }),
+    );
   });
 });

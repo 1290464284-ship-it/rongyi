@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -20,7 +20,7 @@ describe('CostShareService', () => {
   let outsideContext: AppContext;
   let chargeService: ChargeService;
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-cost-share-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -93,7 +93,7 @@ describe('CostShareService', () => {
     ).run('ci-other-1', NOW, NOW);
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -215,20 +215,49 @@ describe('CostShareService', () => {
     const toAug4 = stats({ to: '2026-08-04' });
     expect(toAug4.summary.SERVICE.total).toBe(beforeTo + 999);
   });
+
+  it('supports from-only filtering with full ISO datetime strings', () => {
+    const result = stats({ from: '2026-08-01T00:00:00.000Z' });
+    expect(result.summary.grandTotal).toBe(96000);
+  });
+
+  it('creates a new bucket for unknown costTypes via the nullish fallback', () => {
+    db.prepare(
+      `INSERT INTO Charge (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, number, totalAmount, paidAmount, refundedAmount, discount, status
+       ) VALUES (?, 'clinic-v2-001', ?, ?, NULL, 'patient-demo-001', 'CHG-WEIRD-001', 4321, 0, 0, 0, 'UNPAID')`,
+    ).run('charge-weird-1', NOW, NOW);
+    db.prepare(
+      `INSERT INTO ChargeItem (
+         id, chargeId, clinicId, createdAt, updatedAt, deletedAt,
+         name, category, price, quantity, subtotal, costType
+       ) VALUES (?, 'charge-weird-1', 'clinic-v2-001', ?, ?, NULL, 'Weird Item', 'WEIRD', 4321, 1, 4321, 'WEIRD')`,
+    ).run('ci-weird-1', NOW, NOW);
+
+    const result = stats();
+    expect(result.rows.find((row) => row.costType === 'WEIRD')).toEqual({
+      costType: 'WEIRD', category: 'WEIRD', total: 4321, itemCount: 1, chargeCount: 1,
+    });
+    // 未知 costType 仍计入 grandTotal，但不影响 SERVICE/MATERIAL 汇总。
+    expect(result.summary.grandTotal).toBe(107111 + 4321);
+    expect(result.summary.SERVICE.total).toBe(41111);
+    expect(result.summary.MATERIAL.total).toBe(66000);
+  });
 });
 
 describe('CostShareService (empty database)', () => {
   let db: Database.Database;
   let dataDir: string;
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-cost-share-empty-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
     runMigrations(db);
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });

@@ -1,8 +1,8 @@
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import type { Page } from '../../lib/types';
-import { DataTable, QuerySection } from '../../components';
+import { DataTable, PagePager, QuerySection } from '../../components';
 import { errorMessage } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
 import { STATUS_LABELS, type TodayData, type WorkbenchDialog } from '../../clinical-workflow/types';
@@ -17,6 +17,8 @@ const RESOURCE_LABELS: Record<string, string> = {
   firstExams: '首诊',
   treatments: '治疗',
 };
+
+const WORKFLOW_PAGE_SIZE = 100;
 
 const transitions: Record<string, Record<string, string[]>> = {
   registrations: {
@@ -41,33 +43,59 @@ type ResourcePageQuery = UseQueryResult<Page<Record<string, unknown>>, Error>;
 
 export function ClinicalWorkflowPage() {
   const { showToast } = useToast();
+  const [resourcePage, setResourcePage] = useState<Record<typeof resources[number], number>>({
+    registrations: 1,
+    visits: 1,
+    firstExams: 1,
+    treatments: 1,
+  });
   const today = useQuery({
     queryKey: ['workbench', 'today'],
     queryFn: () => apiRequest<TodayData>('/workbench/today'),
   });
   const registrations = useQuery({
-    queryKey: ['workflow', 'registrations'],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/registrations?page=1&pageSize=100'),
+    queryKey: ['workflow', 'registrations', resourcePage.registrations],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(
+      `/resources/registrations?page=${resourcePage.registrations}&pageSize=${WORKFLOW_PAGE_SIZE}`,
+    ),
+    placeholderData: (previous) => previous,
   });
   const visits = useQuery({
-    queryKey: ['workflow', 'visits'],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/visits?page=1&pageSize=100'),
+    queryKey: ['workflow', 'visits', resourcePage.visits],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(
+      `/resources/visits?page=${resourcePage.visits}&pageSize=${WORKFLOW_PAGE_SIZE}`,
+    ),
+    placeholderData: (previous) => previous,
   });
   const firstExams = useQuery({
-    queryKey: ['workflow', 'firstExams'],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/firstExams?page=1&pageSize=100'),
+    queryKey: ['workflow', 'firstExams', resourcePage.firstExams],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(
+      `/resources/firstExams?page=${resourcePage.firstExams}&pageSize=${WORKFLOW_PAGE_SIZE}`,
+    ),
+    placeholderData: (previous) => previous,
   });
   const treatments = useQuery({
-    queryKey: ['workflow', 'treatments'],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/treatments?page=1&pageSize=100'),
+    queryKey: ['workflow', 'treatments', resourcePage.treatments],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(
+      `/resources/treatments?page=${resourcePage.treatments}&pageSize=${WORKFLOW_PAGE_SIZE}`,
+    ),
+    placeholderData: (previous) => previous,
   });
   const queries = { registrations, visits, firstExams, treatments } as Record<typeof resources[number], ResourcePageQuery>;
+  const stale = queries.registrations.isPlaceholderData
+    || queries.visits.isPlaceholderData
+    || queries.firstExams.isPlaceholderData
+    || queries.treatments.isPlaceholderData;
   const [activeDialog, setActiveDialog] = useState<WorkbenchDialog | null>(null);
   const [transitionKey, setTransitionKey] = useState<string | null>(null);
+  // ref 同步防重：state 更新前同一次点击风暴内连续点击也能被拦下，避免并发 PATCH。
+  const transitionRef = useRef(false);
 
   async function transition(resource: string, id: string, status: string) {
+    if (stale) return;
     const key = `${resource}:${id}:${status}`;
-    if (transitionKey) return;
+    if (transitionRef.current) return;
+    transitionRef.current = true;
     setTransitionKey(key);
     try {
       const endpoint = resource === 'registrations'
@@ -78,11 +106,16 @@ export function ClinicalWorkflowPage() {
             ? `/first-exams/${id}/status`
             : `/treatments/${id}/status`;
       await apiRequest(endpoint, { method: 'PATCH', body: JSON.stringify({ status }) });
-      showToast(`${RESOURCE_LABELS[resource]}已更新为${STATUS_LABELS[status] ?? status}`, 'success');
+      showToast(`${RESOURCE_LABELS[resource]}已更新为${STATUS_LABELS[status]}`, 'success');
       await queries[resource as typeof resources[number]].refetch();
+      if (resource === 'registrations' && (status === 'IN_PROGRESS' || status === 'COMPLETED')) {
+        void queries.visits.refetch();
+        void today.refetch();
+      }
     } catch (error) {
       showToast(errorMessage(error, '状态更新失败'), 'error');
     } finally {
+      transitionRef.current = false;
       setTransitionKey(null);
     }
   }
@@ -90,19 +123,20 @@ export function ClinicalWorkflowPage() {
   function refreshAfterAction() {
     void today.refetch();
     void queries.registrations.refetch();
+    void queries.visits.refetch();
   }
 
   function registrationActions(row: Record<string, unknown>): ReactNode {
     return (
       <div className="kanban-actions">
         {(transitions.registrations?.[String(row.status)] ?? []).map((next) => (
-          <button key={next} disabled={transitionKey !== null} onClick={() => transition('registrations', String(row.id), next)}>
-            {STATUS_LABELS[next] ?? next}
+          <button key={next} disabled={transitionKey !== null || stale} onClick={() => transition('registrations', String(row.id), next)}>
+            {STATUS_LABELS[next]}
           </button>
         ))}
         {row.status === 'TRIAGED' && <span className="triage-badge">已分诊</span>}
-        <button onClick={() => setActiveDialog({ kind: 'record', row })}>病历</button>
-        <button onClick={() => setActiveDialog({ kind: 'followup', row })}>回访</button>
+        <button disabled={stale} onClick={() => setActiveDialog({ kind: 'record', row })}>病历</button>
+        <button disabled={stale} onClick={() => setActiveDialog({ kind: 'followup', row })}>回访</button>
       </div>
     );
   }
@@ -120,6 +154,12 @@ export function ClinicalWorkflowPage() {
           filterRows={(row) => String(row.status ?? '') !== 'REGISTERED'}
           emptyText="暂无已分诊患者"
         />
+        <PagePager
+          page={resourcePage.registrations}
+          hasNext={resourcePage.registrations * WORKFLOW_PAGE_SIZE < (registrations.data?.total ?? 0)}
+          onPageChange={(page) => setResourcePage((current) => ({ ...current, registrations: page }))}
+          disabled={stale}
+        />
       </section>
       {resources.slice(1).map((resource) => {
         const query = queries[resource];
@@ -136,8 +176,8 @@ export function ClinicalWorkflowPage() {
             render: (row: Record<string, unknown>) => (
               <>
                 {(transitions[resource]?.[String(row.status)] ?? []).map((next) => (
-                  <button key={next} disabled={transitionKey !== null} onClick={() => transition(resource, String(row.id), next)}>
-                    {STATUS_LABELS[next] ?? next}
+                  <button key={next} disabled={transitionKey !== null || stale} onClick={() => transition(resource, String(row.id), next)}>
+                    {STATUS_LABELS[next]}
                   </button>
                 ))}
               </>
@@ -151,13 +191,19 @@ export function ClinicalWorkflowPage() {
               query={query}
               render={(data) => <DataTable columns={columns} rows={data?.items ?? []} keyField="id" emptyText="暂无记录" />}
             />
+            <PagePager
+              page={resourcePage[resource]}
+              hasNext={resourcePage[resource] * WORKFLOW_PAGE_SIZE < (query.data?.total ?? 0)}
+              onPageChange={(page) => setResourcePage((current) => ({ ...current, [resource]: page }))}
+              disabled={stale}
+            />
           </section>
         );
       })}
-      {activeDialog?.kind === 'record' && (
+      {activeDialog?.kind === 'record' && !stale && (
         <RecordDialog row={activeDialog.row} onClose={() => setActiveDialog(null)} onSaved={refreshAfterAction} />
       )}
-      {activeDialog?.kind === 'followup' && (
+      {activeDialog?.kind === 'followup' && !stale && (
         <CreateFollowUpDialog row={activeDialog.row} onClose={() => setActiveDialog(null)} onSaved={refreshAfterAction} />
       )}
     </div>

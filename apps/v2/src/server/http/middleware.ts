@@ -16,10 +16,22 @@ declare global {
 
 export function traceMiddleware(req: Request, res: Response, next: NextFunction): void {
   const incoming = req.header('x-request-id');
-  const traceId = incoming && /^[a-zA-Z0-9-]{8,64}$/.test(incoming) ? incoming : randomUUID();
+  const traceId = incoming && /^[a-zA-Z0-9-]{8,64}$/.test(incoming)
+    ? incoming
+    : traceparentTraceId(req.header('traceparent')) ?? randomUUID();
   req.traceId = traceId;
   res.setHeader('x-request-id', traceId);
   next();
+}
+
+/**
+ * Accepts W3C traceparent headers as a fallback so distributed callers can
+ * keep one trace id across the Electron renderer and API process.
+ */
+export function traceparentTraceId(header: string | undefined): string | undefined {
+  if (!header) return undefined;
+  const match = /^00-([0-9a-f]{32})-[0-9a-f]{16}-[0-9a-f]{2}$/i.exec(header);
+  return match?.[1]?.toLowerCase();
 }
 
 const DETAILS_WHITELIST = ['VALIDATION_ERROR'];

@@ -5,10 +5,15 @@ import type { ReactNode } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { FinanceWorkflowPage } from './FinanceWorkflowPage';
-import { apiRequest } from '../../lib/api';
+import { apiRequest, fetchAllPages } from '../../lib/api';
 import { ToastProvider } from '../../components/toast';
 
-vi.mock('../../lib/api', () => ({ apiRequest: vi.fn(), downloadCsv: vi.fn() }));
+vi.mock('../../lib/api', () => ({ apiRequest: vi.fn(), fetchAllPages: vi.fn(), downloadCsv: vi.fn() }));
+
+vi.mocked(fetchAllPages).mockImplementation(async (path: string) => {
+  const data = await vi.mocked(apiRequest)(path) as { items?: unknown[] } | unknown[];
+  return Array.isArray(data) ? data : (data as { items?: unknown[] })?.items ?? [];
+});
 
 const wrapper = ({ children }: { children: ReactNode }) => (
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ToastProvider>{children}</ToastProvider></QueryClientProvider>
@@ -197,5 +202,51 @@ describe('FinanceWorkflowPage', () => {
     expect(actionCalls).toHaveLength(1);
     resolveAction?.({ ok: true });
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('renders undefined query data as empty tables', async () => {
+    vi.mocked(apiRequest).mockResolvedValue(undefined);
+    render(<FinanceWorkflowPage />, { wrapper });
+    expect(await screen.findByText('财务操作')).toBeDefined();
+    await waitFor(() => expect(screen.queryByText('加载中...')).toBeNull());
+    expect(screen.getAllByText('下一页').length).toBeGreaterThan(0);
+  });
+
+  it('ignores amount submissions while the page is stale', async () => {
+    let resolveCards: (value: unknown) => void = () => {};
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/memberCards?page=1&pageSize=100') {
+        return { items: [{ id: 'c-1', cardNo: 'CARD-1', balance: 100 }], total: 125 };
+      }
+      if (path === '/resources/memberCards?page=2&pageSize=100') {
+        return new Promise((resolve) => { resolveCards = resolve; });
+      }
+      if (path === '/resources/debtRecords?page=1&pageSize=100') {
+        return { items: [], total: 0 };
+      }
+      return {};
+    });
+    render(<FinanceWorkflowPage />, { wrapper });
+    // 先在可用态打开金额弹窗，再翻页制造 stale（React 会抑制 disabled 按钮的点击）
+    const recharge = (await screen.findAllByRole('button', { name: '充值' }))[0];
+    fireEvent.click(recharge);
+    const input = await screen.findByPlaceholderText('例如：100');
+    fireEvent.change(input, { target: { value: '10' } });
+    const form = input.closest('form') as HTMLFormElement;
+    const nextButton = screen.getAllByRole('button', { name: '下一页' })[0] as HTMLButtonElement;
+    fireEvent.click(nextButton);
+    await waitFor(() => expect(nextButton.disabled).toBe(true));
+    fireEvent.submit(form);
+    expect(vi.mocked(apiRequest)).not.toHaveBeenCalledWith('/member-cards/c-1/recharge', expect.anything());
+    resolveCards({ items: [], total: 125 });
+    // stale 期间提交被忽略：不触发写操作，弹窗保持打开供用户重新确认
+    await waitFor(() => expect(screen.getByRole('dialog')).not.toBeNull());
+  });
+
+  it('renders empty tables when query data omits the items array', async () => {
+    vi.mocked(apiRequest).mockResolvedValue({ total: 0 });
+    render(<FinanceWorkflowPage />, { wrapper });
+    expect(await screen.findByText('暂无会员卡')).toBeDefined();
+    expect(screen.getByText('暂无欠费')).toBeDefined();
   });
 });

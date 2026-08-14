@@ -14,7 +14,12 @@ import { migrations152 } from './v152-152';
 import { migrations153 } from './v153-153';
 import { migrations154 } from './v154-154';
 import { migrations155 } from './v155-155';
+import { migrations156 } from './v156-156';
+import { migrations157 } from './v157-157';
+import { migrations158 } from './v158-158';
+import { migrations159 } from './v159-159';
 import { dedupNullClinicRows, snapshotDatabase } from './helpers';
+import { clearTableColumnCache } from '../repository';
 
 export interface Migration {
   version: number;
@@ -56,19 +61,29 @@ export const migrations: Migration[] = [
   ...migrations153,
   ...migrations154,
   ...migrations155,
+  ...migrations156,
+  ...migrations157,
+  ...migrations158,
+  ...migrations159,
 ];
 
 const MIGRATION_BUSY_RETRY_DELAYS_MS = [200, 400, 800, 1500, 3000, 5000, 5000];
 
-function isMigrationBusy(error: unknown): boolean {
+export function isMigrationBusy(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   const code = String((error as { code?: unknown }).code ?? '');
+  // Error.message 恒为字符串（默认空串），?? '' 兜底为死代码。
+  const message = error.message;
   // SQLITE_CONSTRAINT_* covers two processes racing to record the same
   // migration version (schema_migrations.version PRIMARY KEY). Retrying the
   // whole run re-reads applied versions and skips the already-recorded one.
+  // 双进程并发 ALTER 时后到者会抛 duplicate column/table already exists，
+  // 同样整轮重试：重读 schema_migrations 后已应用版本会被跳过。
   return /SQLITE_(BUSY|LOCKED)/.test(code)
     || code === 'SQLITE_CONSTRAINT_UNIQUE'
-    || code === 'SQLITE_CONSTRAINT_PRIMARYKEY';
+    || code === 'SQLITE_CONSTRAINT_PRIMARYKEY'
+    || /duplicate column name/i.test(message)
+    || /already exists/i.test(message);
 }
 
 function sleepSync(milliseconds: number): void {
@@ -138,9 +153,14 @@ export function withMigrationBusyRetry<T>(run: () => T): T {
       sleepSync(MIGRATION_BUSY_RETRY_DELAYS_MS[attempt]);
     }
   }
+  /* v8 ignore next -- 末次尝试的 catch 必先 throw（isMigrationBusy 或超限），循环不会正常退出，此为 TS 收尾所需 */
   throw lastError;
 }
 
 export function runMigrations(db: Database.Database, options?: { snapshotDir?: string }): number {
-  return withMigrationBusyRetry(() => runMigrationsOnce(db, options));
+  try {
+    return withMigrationBusyRetry(() => runMigrationsOnce(db, options));
+  } finally {
+    clearTableColumnCache(db);
+  }
 }

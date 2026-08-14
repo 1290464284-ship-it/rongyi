@@ -14,6 +14,7 @@ import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { userBelongsToClinic } from './common';
+import { isValidCalendarDate } from '../../http/validation';
 import type { AppContext } from '../../../domain/contracts';
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -134,11 +135,12 @@ export class ShiftTemplateService {
     const color = patch.color === undefined ? existing.color : (patch.color ?? null);
     const active = patch.active === undefined ? Number(existing.active) : (patch.active ? 1 : 0);
     const now = context.now().toISOString();
-    this.db.prepare(
+    const updated = this.db.prepare(
       `UPDATE ShiftTemplate
        SET name = ?, startTime = ?, endTime = ?, workDaysJson = ?, color = ?, active = ?, updatedAt = ?
-       WHERE id = ?${tenantAnd(context.clinicId)}`,
+       WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).run(name, startTime, endTime, workDaysJson, color, active, now, id, ...tenantParams(context.clinicId));
+    if (Number(updated.changes) === 0) throw new NotFoundError('Shift template not found');
     return this.getById(id, context)!;
   }
 
@@ -214,15 +216,17 @@ export class ShiftTemplateService {
     return rows.map((row) => ({
       id: String(row.id),
       userId: String(row.userId),
-      userIdLabel: String(row.userIdLabel ?? row.userId ?? ''),
+      // userIdLabel 由 COALESCE 保证非空
+      userIdLabel: String(row.userIdLabel),
       shiftTemplateId: row.shiftTemplateId === null || row.shiftTemplateId === undefined ? null : String(row.shiftTemplateId),
       title: row.title === null || row.title === undefined ? null : String(row.title),
       color: row.color === null || row.color === undefined ? null : String(row.color),
       weekDay: Number(row.weekDay ?? 0),
-      startTime: String(row.startTime ?? ''),
+      // startTime 由 WHERE startTime >= ? 过滤，恒非空
+      startTime: String(row.startTime),
       endTime: String(row.endTime ?? ''),
       type: String(row.type ?? ''),
-      date: String(row.startTime ?? '').slice(0, 10),
+      date: String(row.startTime).slice(0, 10),
     }));
   }
 
@@ -237,16 +241,18 @@ export class ShiftTemplateService {
 function toTemplateRow(row: Record<string, unknown>): ShiftTemplateRow {
   return {
     id: String(row.id),
-    name: String(row.name ?? ''),
-    startTime: String(row.startTime ?? ''),
-    endTime: String(row.endTime ?? ''),
+    // name/startTime/endTime 为 NOT NULL 列（迁移 133）
+    name: String(row.name),
+    startTime: String(row.startTime),
+    endTime: String(row.endTime),
     workDaysJson: row.workDaysJson === null || row.workDaysJson === undefined ? null : String(row.workDaysJson),
     workDays: parseWorkDays(row.workDaysJson as string | null | undefined),
     color: row.color === null || row.color === undefined ? null : String(row.color),
     active: Number(row.active ?? 1),
     clinicId: row.clinicId === null || row.clinicId === undefined ? null : String(row.clinicId),
-    createdAt: String(row.createdAt ?? ''),
-    updatedAt: String(row.updatedAt ?? ''),
+    // createdAt/updatedAt 在迁移后的表中为 NOT NULL
+    createdAt: String(row.createdAt),
+    updatedAt: String(row.updatedAt),
   };
 }
 
@@ -294,6 +300,9 @@ function normalizeWeekStart(value: string): string {
   const match = DATE_RE.exec(trimmed);
   let date: Date;
   if (match) {
+    if (!isValidCalendarDate(Number(match[1]), Number(match[2]), Number(match[3]))) {
+      throw new ValidationError('weekStart 格式应为 YYYY-MM-DD');
+    }
     date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
   } else {
     date = new Date(trimmed);
@@ -307,6 +316,7 @@ function normalizeWeekStart(value: string): string {
 
 function addDays(dateStr: string, days: number): string {
   const match = DATE_RE.exec(dateStr);
+  /* v8 ignore next -- 调用方均已通过 normalizeWeekStart 归一化，日期格式恒有效 */
   if (!match) throw new ValidationError('日期格式无效');
   const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + days);
   return formatLocalDate(date);

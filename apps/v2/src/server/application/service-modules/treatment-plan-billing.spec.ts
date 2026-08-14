@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -15,7 +15,7 @@ describe('TreatmentPlanBillingService', () => {
   let context: AppContext;
   const now = '2026-08-05T10:00:00.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-treatment-plan-billing-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -33,7 +33,8 @@ describe('TreatmentPlanBillingService', () => {
     ).run('2099-01-01T00:00:00.000Z', '2099-01-01T01:00:00.000Z', now);
   });
 
-  afterAll(() => {
+  afterEach(() => {
+    vi.restoreAllMocks();
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -130,6 +131,18 @@ describe('TreatmentPlanBillingService', () => {
     expect(planRow('plan-double').totalFee).toBe(16000);
   });
 
+  it('setPlanDiscount rejects a plan that already has billed items', () => {
+    insertPlan('plan-billed-discount', '已划价计划');
+    insertItem('plan-billed-discount', 'plan-billed-discount-i1', { price: 10000, quantity: 1, billed: 1 });
+
+    const service = new TreatmentPlanBillingService(db);
+    expect(() => service.setPlanDiscount('plan-billed-discount', { discountType: 'WHOLE', discountRate: 10 }, context))
+      .toThrow(ConflictError);
+    const row = planRow('plan-billed-discount');
+    expect(row.discountType).toBeNull();
+    expect(row.discountRate).toBeNull();
+  });
+
   it('setPlanDiscount treats NONE as no discount and stores null rate', () => {
     insertPlan('plan-none', '无折扣计划');
     insertItem('plan-none', 'plan-none-i1', { price: 10000, quantity: 1 });
@@ -187,6 +200,20 @@ describe('TreatmentPlanBillingService', () => {
     ).run(now);
     expect(() => service.setItemDiscount('plan-a', 'plan-a-i1', { discountRate: 10 }, context))
       .toThrow(new ConflictError('已划价明细不可改价'));
+  });
+
+  it('setItemDiscount reports a conflict when the optimistic update changes zero rows', () => {
+    insertPlan('plan-item-race', 'Race Plan');
+    insertItem('plan-item-race', 'plan-item-race-i1', { price: 10000, quantity: 1 });
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE TreatmentPlanItem') && sql.includes('SET discountRate')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    expect(() => new TreatmentPlanBillingService(db).setItemDiscount('plan-item-race', 'plan-item-race-i1', { discountRate: 10 }, context))
+      .toThrow(ConflictError);
   });
 
   it('bill creates a Charge with plan discount applied for all items by default', () => {
@@ -329,5 +356,111 @@ describe('TreatmentPlanBillingService', () => {
       .toThrow(ValidationError);
     expect(() => service.planFollowUp('plan-missing', { followUpStatus: 'NONE' }, context))
       .toThrow(NotFoundError);
+  });
+
+  it('validates bill selection shapes, missing patients, and amount limits', () => {
+    insertPlan('plan-shape-bill', 'Shape Bill');
+    insertItem('plan-shape-bill', 'plan-shape-bill-i1', { price: 10000, quantity: 1 });
+    const service = new TreatmentPlanBillingService(db);
+    expect(() => service.bill('plan-shape-bill', { itemIds: 'bad' as never }, context))
+      .toThrow(ValidationError);
+
+    insertPlan('plan-overflow-bill', 'Overflow Bill');
+    insertItem('plan-overflow-bill', 'plan-overflow-bill-i1', { price: 700_000_000_000, quantity: 2 });
+    expect(() => service.bill('plan-overflow-bill', {}, context)).toThrow(ValidationError);
+
+    insertPlan('plan-missing-patient-bill', 'Missing Patient', { visitId: null });
+    db.prepare("UPDATE TreatmentPlan SET patientId = 'patient-missing' WHERE id = 'plan-missing-patient-bill'").run();
+    insertItem('plan-missing-patient-bill', 'plan-missing-patient-bill-i1', { price: 10000, quantity: 1 });
+    expect(() => service.bill('plan-missing-patient-bill', {}, context)).toThrow(NotFoundError);
+  });
+
+  it('rejects selecting an already billed item while unbilled items remain', () => {
+    insertPlan('plan-partial-billed', 'Partial Billed');
+    insertItem('plan-partial-billed', 'plan-partial-billed-i1', { price: 10000, quantity: 1, billed: 1 });
+    insertItem('plan-partial-billed', 'plan-partial-billed-i2', { price: 10000, quantity: 1 });
+    const service = new TreatmentPlanBillingService(db);
+    expect(() => service.bill('plan-partial-billed', { itemIds: ['plan-partial-billed-i1'] }, context))
+      .toThrow(ConflictError);
+  });
+
+  it('writes treatment ids and tolerates corrupt teeth JSON when billing', () => {
+    db.prepare(
+      `INSERT INTO Treatment (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, visitId, doctorId, code, name, category,
+         price, quantity, status, completedDate
+       ) VALUES (?, 'clinic-v2-001', ?, ?, NULL, 'patient-demo-001', 'visit-billing-treatment', 'user-admin-001', 'T-BILL', 'Billing Treatment', 'GENERAL', 100, 1, 'COMPLETED', ?)`,
+    ).run('treatment-billing-1', now, now, now);
+    insertPlan('plan-treatment-ids', 'Treatment Ids');
+    insertItem('plan-treatment-ids', 'plan-treatment-ids-i1', { price: 10000, quantity: 1 });
+    insertItem('plan-treatment-ids', 'plan-treatment-ids-i2', { price: 5000, quantity: 1 });
+    db.prepare("UPDATE TreatmentPlanItem SET treatmentId = 'treatment-billing-1', teethNumbers = 'bad-json' WHERE planId = 'plan-treatment-ids'").run();
+
+    const service = new TreatmentPlanBillingService(db);
+    const result = service.bill('plan-treatment-ids', {}, context);
+    const chargeItems = db.prepare('SELECT treatmentId, teethNumbers FROM ChargeItem WHERE chargeId = ?').all(result.chargeId) as Array<{
+      treatmentId: string | null;
+      teethNumbers: string;
+    }>;
+    expect(chargeItems).toHaveLength(2);
+    expect(chargeItems.every((row) => row.treatmentId === 'treatment-billing-1')).toBe(true);
+    expect(chargeItems.every((row) => row.teethNumbers === '[]')).toBe(true);
+  });
+
+  it('treats a stored WHOLE discount with a NULL rate as zero', () => {
+    insertPlan('plan-null-rate', 'Null Rate', { discountType: 'WHOLE', discountRate: null });
+    insertItem('plan-null-rate', 'plan-null-rate-i1', { price: 10000, quantity: 1 });
+    const service = new TreatmentPlanBillingService(db);
+    expect(service.reconcilePlanTotal('plan-null-rate', context)).toBe(10000);
+    expect(planRow('plan-null-rate').totalFee).toBe(10000);
+  });
+
+  it('rejects a plan whose item subtotals overflow the money cap', () => {
+    insertPlan('plan-big-sum', 'Big Sum');
+    insertItem('plan-big-sum', 'plan-big-sum-i1', { price: 600_000_000_000, quantity: 1 });
+    insertItem('plan-big-sum', 'plan-big-sum-i2', { price: 600_000_000_000, quantity: 1 });
+    const service = new TreatmentPlanBillingService(db);
+    expect(() => service.setPlanDiscount('plan-big-sum', { discountType: 'WHOLE', discountRate: 0 }, context))
+      .toThrow(new ValidationError('治疗计划金额超出上限'));
+    expect(() => service.bill('plan-big-sum', {}, context))
+      .toThrow(new ValidationError('划价金额超出上限'));
+  });
+
+  it('bills under a global context and stores a NULL doctor id', () => {
+    insertPlan('plan-global', 'Global Bill', { visitId: null });
+    insertItem('plan-global', 'plan-global-i1', { price: 10000, quantity: 1 });
+    db.prepare("UPDATE TreatmentPlan SET doctorId = NULL WHERE id = 'plan-global'").run();
+    const globalContext: AppContext = { ...context, clinicId: null };
+    const result = new TreatmentPlanBillingService(db).bill('plan-global', {}, globalContext);
+    const charge = chargeRow(result.chargeId);
+    expect(charge.clinicId).toBeNull();
+    expect(charge.doctorId).toBeNull();
+    expect(charge.visitId).toBeNull();
+  });
+
+  it('drops treatment ids that do not point at a real treatment row', () => {
+    insertPlan('plan-ghost-treatment', 'Ghost Treatment');
+    insertItem('plan-ghost-treatment', 'plan-ghost-treatment-i1', { price: 10000, quantity: 1 });
+    db.prepare("UPDATE TreatmentPlanItem SET treatmentId = 'treatment-ghost' WHERE planId = 'plan-ghost-treatment'").run();
+    const result = new TreatmentPlanBillingService(db).bill('plan-ghost-treatment', {}, context);
+    const chargeItem = db.prepare('SELECT treatmentId FROM ChargeItem WHERE chargeId = ?').get(result.chargeId) as { treatmentId: string | null };
+    expect(chargeItem.treatmentId).toBeNull();
+  });
+
+  it('rolls back when the billed CAS update changes zero rows', () => {
+    insertPlan('plan-bill-race', 'Bill Race');
+    insertItem('plan-bill-race', 'plan-bill-race-i1', { price: 10000, quantity: 1 });
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE TreatmentPlanItem') && sql.includes('SET billed = 1')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    expect(() => new TreatmentPlanBillingService(db).bill('plan-bill-race', {}, context))
+      .toThrow(new ConflictError('已划价明细不可重复划价'));
+    const leftover = db.prepare("SELECT COUNT(*) AS c FROM Charge WHERE remark = '治疗计划划价：Bill Race'").get() as { c: number };
+    expect(leftover.c).toBe(0);
   });
 });

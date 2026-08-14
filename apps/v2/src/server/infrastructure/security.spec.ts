@@ -93,4 +93,37 @@ describe('security helpers', () => {
       else process.env.V2_BACKUP_KEY = previousBackupKey;
     }
   });
+
+  it('honours exempt fields across generic, resource and state-machine protection', () => {
+    const kept = stripProtectedWriteFields(
+      { role: 'ADMIN', balance: 100, status: 'COMPLETED', totalAmount: 500 },
+      new Set(['role', 'status', 'totalAmount']),
+      'purchaseOrders',
+      { protectStateMachine: true },
+    );
+    expect(kept.role).toBe('ADMIN');
+    expect(kept.balance).toBeUndefined();
+    expect(kept.status).toBe('COMPLETED');
+    expect(kept.totalAmount).toBe(500);
+
+    const stateKept = stripProtectedWriteFields(
+      { status: 'COMPLETED', passwordHash: 'h' },
+      new Set(['status']),
+      'appointments',
+      { protectStateMachine: true },
+    );
+    expect(stateKept.status).toBe('COMPLETED');
+    expect(stateKept.passwordHash).toBeUndefined();
+  });
+
+  it('treats a missing NODE_ENV as development', () => {
+    const previous = process.env.NODE_ENV;
+    try {
+      delete process.env.NODE_ENV;
+      expect(() => assertProductionBackupKeyConfigured()).not.toThrow();
+    } finally {
+      if (previous === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previous;
+    }
+  });
 });

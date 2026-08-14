@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -97,5 +97,33 @@ describe('HighValueService', () => {
   it('throws NotFound for an unknown item', () => {
     const service = new HighValueService(db);
     expect(() => service.mark('item-missing', { isHighValue: true, catalogId: 'cat-hv-a' }, context)).toThrow(NotFoundError);
+  });
+
+  it('does not mark a soft-deleted item', () => {
+    const service = new HighValueService(db);
+    db.prepare(
+      `INSERT INTO InventoryItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, category, unit, stock, minStock, price, batchManaged
+       ) VALUES (?, ?, ?, ?, ?, 'CODE-HV-DEL', '已删除耗材', 'CONSUMABLE', 'box', 0, 0, 100, 0)`,
+    ).run('inventory-hv-deleted', context.clinicId, now, now, now);
+    expect(() => service.mark('inventory-hv-deleted', { isHighValue: true, catalogId: 'cat-hv-a' }, context))
+      .toThrow(NotFoundError);
+  });
+
+  it('reports NotFound when the optimistic update affects zero rows', () => {
+    const originalPrepare = db.prepare.bind(db);
+    const spy = vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE InventoryItem SET isHighValue')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      expect(() => new HighValueService(db).mark('inventory-demo-001', { isHighValue: false, catalogId: '' }, context))
+        .toThrow(NotFoundError);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

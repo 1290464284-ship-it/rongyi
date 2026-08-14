@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { apiRequest } from '../../lib/api';
 import { errorMessage } from '../../lib/messages';
 import type { ToastKind } from '../../lib/toast-context';
@@ -8,6 +8,7 @@ export function ChangeOwnPasswordForm({ showToast }: { showToast: (message: stri
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -15,6 +16,8 @@ export function ChangeOwnPasswordForm({ showToast }: { showToast: (message: stri
       showToast('两次输入的新密码不一致', 'error');
       return;
     }
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       await apiRequest('/auth/password', {
@@ -28,6 +31,7 @@ export function ChangeOwnPasswordForm({ showToast }: { showToast: (message: stri
     } catch (error) {
       showToast(errorMessage(error, '修改密码失败'), 'error');
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   }

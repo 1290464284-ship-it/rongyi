@@ -48,10 +48,10 @@ export class FirstExamTrackingService {
     }
 
     const now = context.now().toISOString();
-    this.db.prepare(
+    const result = this.db.prepare(
       `UPDATE FirstExam
        SET followUpStatus = ?, lossReasonType = ?, lossReason = ?, nextFollowUpAt = ?, trackingNote = ?, updatedAt = ?
-       WHERE id = ?${tenantAnd(clinicId)}`,
+       WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
     ).run(
       followUpStatus,
       input.lossReasonType ?? null,
@@ -62,6 +62,7 @@ export class FirstExamTrackingService {
       id,
       ...tenantParams(clinicId),
     );
+    if (Number(result.changes) === 0) throw new NotFoundError('FirstExam not found');
     return { id, followUpStatus, nextFollowUpAt: input.nextFollowUpAt ?? null };
   }
 
@@ -82,7 +83,8 @@ export class FirstExamTrackingService {
       LOST: 0,
     };
     for (const row of rows) {
-      counts[row.followUpStatus] = Number(row.count ?? 0);
+      // COUNT(*) 恒非空，nullish 兜底不可达。
+      counts[row.followUpStatus] = Number(row.count);
     }
 
     const today = new SystemClock().clinicDate(context.now());
@@ -91,9 +93,10 @@ export class FirstExamTrackingService {
        WHERE deletedAt IS NULL
          AND followUpStatus IN ('PENDING', 'HORIZONTAL_SHOULD')
          AND nextFollowUpAt LIKE ?${tenantAnd(clinicId)}`,
-    ).get(`${today}%`, ...tenantParams(clinicId)) as { count: number } | undefined;
+    ).get(`${today}%`, ...tenantParams(clinicId)) as { count: number };
 
-    const total = rows.reduce((sum, row) => sum + Number(row.count ?? 0), 0);
-    return { ...counts, total, dueToday: Number(dueRow?.count ?? 0) };
+    const total = rows.reduce((sum, row) => sum + Number(row.count), 0);
+    // 聚合查询恒返回一行，dueRow 不可能为 nullish。
+    return { ...counts, total, dueToday: Number(dueRow.count) };
   }
 }

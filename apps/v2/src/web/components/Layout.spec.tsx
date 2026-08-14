@@ -46,6 +46,7 @@ function renderLayoutAt(path: string) {
         <Route element={<Layout />}>
           <Route path="/" element={<div>Home</div>} />
           <Route path="/patients" element={<div>Patients</div>} />
+          <Route path="/search" element={<div>Search</div>} />
         </Route>
       </Routes>
     </MemoryRouter>,
@@ -200,6 +201,43 @@ describe('Layout clinic switcher', () => {
     expect(screen.getByText('登录状态已失效，请重新登录')).toBeDefined();
   });
 
+  it('still navigates to login when the session-expiry logout itself fails', async () => {
+    let onExpire: (() => void) | undefined;
+    vi.mocked(onSessionExpired).mockImplementation((callback: () => void) => {
+      onExpire = callback;
+      return vi.fn();
+    });
+    vi.mocked(logout).mockRejectedValue(new Error('logout failed'));
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce({ permissions: ['dashboard'] })
+      .mockResolvedValueOnce({
+        currentClinicId: 'clinic-1',
+        clinics: [{ clinicId: 'clinic-1', name: 'Clinic 1' }],
+      })
+      .mockResolvedValueOnce({ name: '王丽', username: 'wangli' });
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route path="/" element={<div>Home</div>} />
+          </Route>
+          <Route path="/login" element={<div>Login Page</div>} />
+        </Routes>
+      </MemoryRouter>,
+      { wrapper },
+    );
+    await screen.findByText('蓉易口腔诊所');
+
+    act(() => { onExpire!(); });
+
+    await waitFor(() => {
+      expect(logout).toHaveBeenCalled();
+    });
+    expect(await screen.findByText('Login Page')).toBeDefined();
+    expect(screen.getByText('登录状态已失效，请重新登录')).toBeDefined();
+  });
+
   it('renders navigation and submits global search', async () => {
     vi.mocked(apiRequest)
       .mockResolvedValueOnce({ permissions: ['dashboard', 'frontDesk', 'patients'] })
@@ -217,7 +255,7 @@ describe('Layout clinic switcher', () => {
         <Routes>
           <Route element={<Layout />}>
             <Route path="/" element={<div>Home</div>} />
-            <Route path="/patients" element={<SearchProbe />} />
+            <Route path="/search" element={<SearchProbe />} />
           </Route>
         </Routes>
       </MemoryRouter>,
@@ -297,6 +335,22 @@ describe('Layout clinic switcher', () => {
     fireEvent.click(screen.getByRole('button', { name: '完成' }));
     expect(localStorage.getItem('v2-onboarding-done')).toBe('1');
     expect(screen.queryByRole('heading', { name: '新手引导' })).toBeNull();
+  });
+
+  it('treats onboarding as incomplete when localStorage is unavailable', async () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('storage denied');
+    });
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/auth/navigation') return { permissions: ['dashboard'] };
+      if (path === '/auth/clinics') {
+        return { currentClinicId: 'clinic-1', clinics: [{ clinicId: 'clinic-1', name: 'Clinic 1' }] };
+      }
+      if (path === '/auth/me') return { name: '王丽', username: 'wangli' };
+      return {};
+    });
+    renderLayout();
+    expect(await screen.findByRole('heading', { name: '新手引导' })).toBeDefined();
   });
 
   it('shows the sidebar backup state', async () => {
@@ -501,7 +555,7 @@ describe('Layout clinic switcher', () => {
     });
   });
 
-  it('submits an empty global search to the patients page', async () => {
+  it('submits an empty global search to the search page', async () => {
     vi.mocked(apiRequest)
       .mockResolvedValueOnce({ permissions: ['dashboard', 'patients'] })
       .mockResolvedValueOnce({
@@ -512,7 +566,7 @@ describe('Layout clinic switcher', () => {
     renderLayoutAt('/');
     await screen.findByText('蓉易口腔诊所');
     fireEvent.submit(screen.getByRole('search'));
-    expect(await screen.findByText('Patients')).toBeDefined();
+    expect(await screen.findByText('Search')).toBeDefined();
   });
 
   it('renders the username when the display name is empty and sorts backups without timestamps', async () => {
@@ -530,6 +584,27 @@ describe('Layout clinic switcher', () => {
     });
     renderLayout();
     expect(await screen.findByText('wangli')).toBeDefined();
+    expect(await screen.findByText('5 分钟前')).toBeDefined();
+  });
+
+  it('sorts backups with a missing timestamp in the middle', async () => {
+    const now = Date.now();
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/auth/navigation') return { permissions: ['dashboard'], role: 'BOSS' };
+      if (path === '/auth/clinics') {
+        return { currentClinicId: 'clinic-1', clinics: [{ clinicId: 'clinic-1', name: 'Clinic 1' }] };
+      }
+      if (path === '/auth/me') return { name: '王丽', username: 'wangli' };
+      if (path === '/backups') {
+        return [
+          { createdAt: new Date(now - 5 * 86_400_000).toISOString() },
+          { createdAt: undefined },
+          { createdAt: new Date(now - 5 * 60_000).toISOString() },
+        ];
+      }
+      return {};
+    });
+    renderLayout();
     expect(await screen.findByText('5 分钟前')).toBeDefined();
   });
 
@@ -556,5 +631,65 @@ describe('Layout clinic switcher', () => {
       { wrapper: noRetryWrapper },
     );
     expect(await screen.findByText('无访问权限')).toBeDefined();
+  });
+
+  it('denies resource routes when the navigation omits the role', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/auth/navigation') return { permissions: ['dashboard'] };
+      if (path === '/auth/clinics') {
+        return { currentClinicId: 'clinic-1', clinics: [{ clinicId: 'clinic-1', name: 'Clinic 1' }] };
+      }
+      if (path === '/auth/me') return { name: '王丽', username: 'wangli' };
+      if (path === '/resource-meta') return [{ name: 'patients', roles: ['BOSS'] }];
+      return {};
+    });
+    render(
+      <MemoryRouter initialEntries={['/resources/patients']}>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route path="/" element={<div>Home</div>} />
+            <Route path="/resources/patients" element={<div>Resource Page</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+      { wrapper: noRetryWrapper },
+    );
+    expect(await screen.findByText('无访问权限')).toBeDefined();
+  });
+
+  it('falls back to an empty clinic selection and a generic switch error', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce({ permissions: ['dashboard'], role: 'BOSS' })
+      .mockResolvedValueOnce({
+        currentClinicId: null,
+        clinics: [
+          { clinicId: 'clinic-1', name: 'Clinic 1' },
+          { clinicId: 'clinic-2', name: 'Clinic 2' },
+        ],
+      })
+      .mockResolvedValueOnce({ name: '王丽', username: 'wangli' });
+    vi.mocked(switchClinic).mockRejectedValue('plain failure');
+    renderLayout();
+    const switcher = (await screen.findByLabelText('当前诊所')) as HTMLSelectElement;
+    expect(switcher.options).toHaveLength(2);
+    fireEvent.change(switcher, { target: { value: 'clinic-2' } });
+    expect(await screen.findByText('切换诊所失败')).toBeDefined();
+    // 失败后回退到旧值（null → 空选中，DOM 落回首个选项）
+    expect((screen.getByLabelText('当前诊所') as HTMLSelectElement).value).toBe('clinic-1');
+  });
+
+  it('renders without a crash when the me query resolves undefined', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/auth/navigation') return { permissions: ['dashboard'], role: 'BOSS' };
+      if (path === '/auth/clinics') {
+        return { currentClinicId: 'clinic-1', clinics: [{ clinicId: 'clinic-1', name: 'Clinic 1' }] };
+      }
+      if (path === '/auth/me') return undefined;
+      if (path === '/backups') return [];
+      return {};
+    });
+    renderLayout();
+    expect(await screen.findByText('跳到主内容')).toBeDefined();
+    expect(screen.getByText('蓉易口腔诊所')).toBeDefined();
   });
 });

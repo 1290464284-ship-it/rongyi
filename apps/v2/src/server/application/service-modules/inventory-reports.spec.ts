@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -15,7 +15,7 @@ describe('InventoryReportService', () => {
   let context: AppContext;
   const now = '2026-08-05T10:00:00.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-inventory-reports-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -51,7 +51,7 @@ describe('InventoryReportService', () => {
     insertTx('tx-in-3', 'inventory-demo-002', 'IN', 20, 30, 50, null, null, '2026-08-05T11:00:00.000Z');
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -192,6 +192,24 @@ describe('InventoryReportService', () => {
     expect(ids(result)).toEqual(['tx-in-3']);
   });
 
+  it('filters the summary by itemId and zeroes a NULL current stock', () => {
+    db.prepare(
+      `INSERT INTO InventoryItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, category, unit, stock, minStock, price
+       ) VALUES (?, ?, ?, ?, NULL, 'MAT-NULL', 'Null Stock Item', 'CONSUMABLE', 'piece', NULL, 0, 100)`,
+    ).run('item-null-stock', context.clinicId, now, now);
+    insertTx('tx-null-stock', 'item-null-stock', 'IN', 1, 0, 1, null, null, '2026-08-05T12:00:00.000Z');
+
+    const service = new InventoryReportService(db);
+    const filtered = service.report('SUMMARY', { itemId: 'item-null-stock' }, context) as {
+      total: number;
+      items: Array<{ itemId: string; currentStock: number }>;
+    };
+    expect(filtered.total).toBe(1);
+    expect(filtered.items[0]).toMatchObject({ itemId: 'item-null-stock', currentStock: 0 });
+  });
+
   it('summarizes with from/to as period values', () => {
     const service = new InventoryReportService(db);
     const result = service.report('SUMMARY', { from: '2026-08-04', to: '2026-08-04' }, context) as {
@@ -211,5 +229,40 @@ describe('InventoryReportService', () => {
     const result = service.report('LOSS', { from: '2026-08-01', to: '2026-08-31' }, context) as { from: string | null; to: string | null };
     expect(result.from).toBe('2026-08-01');
     expect(result.to).toBe('2026-08-31');
+  });
+
+  it('caps detail reports at 10,000 rows and marks them truncated', () => {
+    const insert = db.prepare(
+      `INSERT INTO InventoryTransaction (
+         id, clinicId, createdAt, updatedAt, deletedAt, itemId, type, quantity,
+         beforeStock, afterStock, referenceType, referenceId, operatorId, remark, batchId
+       ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const run = db.transaction(() => {
+      for (let index = 0; index < 10_001; index += 1) {
+        insert.run(
+          `tx-cap-${index}`,
+          context.clinicId,
+          '2026-08-06T00:00:00.000Z',
+          '2026-08-06T00:00:00.000Z',
+          'inventory-demo-001',
+          'IN',
+          1,
+          100,
+          101,
+          null,
+          null,
+          context.userId,
+          `tx-cap-${index}`,
+          null,
+        );
+      }
+    });
+    run();
+    const service = new InventoryReportService(db);
+    const result = service.report('IN', {}, context) as { total: number; items: Array<{ id: string }>; truncated?: boolean };
+    expect(result.total).toBe(10_000);
+    expect(result.items).toHaveLength(10_000);
+    expect(result.truncated).toBe(true);
   });
 });

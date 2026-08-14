@@ -2,13 +2,18 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MedicalRecordsPage } from './MedicalRecordsPage';
-import { apiRequest } from '../../lib/api';
+import { apiRequest, fetchAllPages } from '../../lib/api';
 import { ToastProvider } from '../../components/toast';
 
-vi.mock('../../lib/api', () => ({ apiRequest: vi.fn() }));
+vi.mock('../../lib/api', () => ({ apiRequest: vi.fn(), fetchAllPages: vi.fn() }));
+
+vi.mocked(fetchAllPages).mockImplementation(async (path: string) => {
+  const data = await vi.mocked(apiRequest)(path) as { items?: unknown[] } | unknown[];
+  return Array.isArray(data) ? data : (data as { items?: unknown[] })?.items ?? [];
+});
 
 const wrapper = ({ children }: { children: ReactNode }) => (
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -53,7 +58,7 @@ function mockData() {
       return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
     }
     if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
-    if (path === '/resources/visits?page=1&pageSize=100') {
+    if (path === '/resources/visits?patientId=p-1&page=1&pageSize=100') {
       return { items: [{ id: 'v-1' }], total: 1, page: 1, pageSize: 100 };
     }
     return {};
@@ -77,6 +82,9 @@ describe('MedicalRecordsPage', () => {
     });
     fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
     fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
+    await waitFor(() => {
+      expect((screen.getByRole('option', { name: 'v-1' }) as HTMLOptionElement).value).toBe('v-1');
+    });
     fireEvent.change(screen.getByLabelText('关联就诊'), { target: { value: 'v-1' } });
     fireEvent.change(screen.getByLabelText('诊断'), { target: { value: '牙周炎' } });
     fireEvent.change(screen.getByLabelText('涉及牙位（逗号分隔）'), { target: { value: '11, 21' } });
@@ -95,7 +103,6 @@ describe('MedicalRecordsPage', () => {
       diagnosis: '牙周炎',
       teethInvolved: ['11', '21'],
       isTemplate: false,
-      status: 'DRAFT',
     });
     expect(await screen.findByText('病历已创建')).toBeDefined();
   });
@@ -196,6 +203,95 @@ describe('MedicalRecordsPage', () => {
     await screen.findByText('龋齿');
     expect(screen.getAllByText('申请修改').length).toBe(2);
     expect(screen.getAllByText('审核').length).toBe(1);
+  });
+
+  it('hides the review button when editRequestStatus is missing', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/medicalRecords?page=1&pageSize=50') {
+        return {
+          items: [{ id: 'r-null', patientId: 'p-1', doctorId: 'd-1', category: 'GENERAL', diagnosis: '无状态', status: 'DRAFT' }],
+          total: 1,
+          page: 1,
+          pageSize: 50,
+        };
+      }
+      return {};
+    });
+    render(<MedicalRecordsPage />, { wrapper });
+    expect(await screen.findByText('无状态')).toBeDefined();
+    expect(screen.queryAllByText('审核')).toHaveLength(0);
+    expect(screen.getAllByText('申请修改')).toHaveLength(1);
+  });
+
+  it('prefills blank patient and doctor ids when editing a sparse row', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/medicalRecords?page=1&pageSize=50') {
+        return {
+          items: [{ id: 'r-sparse', patientId: null, doctorId: null, category: 'GENERAL', status: 'DRAFT' }],
+          total: 1,
+          page: 1,
+          pageSize: 50,
+        };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      return {};
+    });
+    render(<MedicalRecordsPage />, { wrapper });
+    fireEvent.click(await screen.findByText('编辑'));
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).value).toBe('');
+      expect((screen.getByLabelText('医生') as HTMLSelectElement).value).toBe('');
+    });
+  });
+
+  it('renders null proposed values as blank text in the review dialog', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/medicalRecords?page=1&pageSize=50') {
+        return {
+          items: [{
+            id: 'r-null-prop',
+            patientId: 'p-1',
+            doctorId: 'd-1',
+            category: 'GENERAL',
+            status: 'DRAFT',
+            editRequestStatus: 'PENDING',
+            editRequestReason: '清空诊断',
+            proposedContentJson: JSON.stringify({ diagnosis: null, status: 'SUBMITTED' }),
+          }],
+          total: 1,
+          page: 1,
+          pageSize: 50,
+        };
+      }
+      return {};
+    });
+    render(<MedicalRecordsPage />, { wrapper });
+    fireEvent.click(await screen.findByText('审核'));
+    expect(await screen.findByText('申请原因：清空诊断')).toBeDefined();
+    expect(screen.getByText(/^diagnosis:\s*$/)).toBeDefined();
+    expect(screen.getByText('status: SUBMITTED')).toBeDefined();
+  });
+
+  it('ignores a second review submit while the review is in flight', async () => {
+    mockData();
+    render(<MedicalRecordsPage />, { wrapper });
+    await screen.findByText('龋齿');
+    fireEvent.click(screen.getByText('审核'));
+
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/medical-records/r-1/edit-request/review') return new Promise(() => {});
+      return {};
+    });
+    const approveButton = screen.getByText('通过');
+    fireEvent.click(approveButton);
+    fireEvent.click(approveButton);
+    await waitFor(() => {
+      const reviewCalls = vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/medical-records/r-1/edit-request/review');
+      expect(reviewCalls).toHaveLength(1);
+    });
   });
 
   it('edits a medical record with a prefilled form', async () => {
@@ -383,17 +479,21 @@ describe('MedicalRecordsPage', () => {
 
     fireEvent.click(screen.getAllByText('申请修改')[0]);
     await screen.findByLabelText('修改原因');
-    fireEvent.keyDown(await screen.findByRole('dialog'), { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByLabelText('修改原因')).toBeNull();
-    });
+    const dialog = await screen.findByRole('dialog');
+    vi.useFakeTimers();
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByLabelText('修改原因')).toBeNull();
+    vi.useRealTimers();
 
     fireEvent.click(screen.getByText('审核'));
     await screen.findByText('申请原因：诊断有误');
-    fireEvent.keyDown(await screen.findByRole('dialog'), { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByText('申请原因：诊断有误')).toBeNull();
-    });
+    const reviewDialog = await screen.findByRole('dialog');
+    vi.useFakeTimers();
+    fireEvent.keyDown(reviewDialog, { key: 'Escape' });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByText('申请原因：诊断有误')).toBeNull();
+    vi.useRealTimers();
 
     fireEvent.click(screen.getByText('审核'));
     await screen.findByText('申请原因：诊断有误');

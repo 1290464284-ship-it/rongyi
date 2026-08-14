@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../infrastructure/database';
 import { runMigrations } from '../infrastructure/migrations';
@@ -49,6 +49,10 @@ describe('service coverage', () => {
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('authenticates users and changes passwords', async () => {
     const auth = new AuthService(db);
     const login = await auth.login('admin', 'v2-test-seed-password');
@@ -69,6 +73,78 @@ describe('service coverage', () => {
       type: 'REGULAR',
     }, context);
     await expect(service.transition(String(created.id), 'CANCELLED', context)).resolves.toMatchObject({ status: 'CANCELLED' });
+  });
+
+  it('creates appointments for temp patients with a blank phone', async () => {
+    const service = new AppointmentService(db);
+    const created = await service.create({
+      doctorId: 'user-admin-001',
+      startTime: new Date(Date.now() + 3 * 86_400_000).toISOString(),
+      endTime: new Date(Date.now() + 3 * 86_400_000 + 3_600_000).toISOString(),
+      type: 'REGULAR',
+      tempPatientName: '临时患者甲',
+      tempPatientPhone: '',
+    }, context);
+    const row = db.prepare('SELECT * FROM Appointment WHERE id = ?').get(created.id) as Record<string, unknown>;
+    expect(row.tempPatientName).toBe('临时患者甲');
+    expect(row.tempPatientPhone).toBeNull();
+  });
+
+  it('creates temp patients under a global null-clinic context', async () => {
+    const service = new AppointmentService(db);
+    const globalContext = { ...context, clinicId: null };
+    const created = await service.create({
+      doctorId: 'user-admin-001',
+      startTime: new Date(Date.now() + 4 * 86_400_000).toISOString(),
+      endTime: new Date(Date.now() + 4 * 86_400_000 + 3_600_000).toISOString(),
+      type: 'REGULAR',
+      tempPatientName: '全局临时',
+    }, globalContext);
+    const patientId = db.prepare('SELECT patientId FROM Appointment WHERE id = ?').get(created.id) as { patientId: string };
+    const patient = db.prepare('SELECT clinicId FROM Patient WHERE id = ?').get(patientId.patientId) as { clinicId: string | null };
+    expect(patient.clinicId).toBeNull();
+  });
+
+  it('reports the fresh status when an appointment transition races', async () => {
+    const service = new AppointmentService(db);
+    const created = await service.create({
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      startTime: new Date(Date.now() + 5 * 86_400_000).toISOString(),
+      endTime: new Date(Date.now() + 5 * 86_400_000 + 3_600_000).toISOString(),
+      type: 'REGULAR',
+    }, context);
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE Appointment SET status = ?')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    await expect(service.transition(String(created.id), 'ARRIVED', context))
+      .rejects.toThrow('Cannot transition appointment from BOOKED to ARRIVED');
+  });
+
+  it('reports not-found when an appointment disappears during a transition race', async () => {
+    const service = new AppointmentService(db);
+    const created = await service.create({
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      startTime: new Date(Date.now() + 6 * 86_400_000).toISOString(),
+      endTime: new Date(Date.now() + 6 * 86_400_000 + 3_600_000).toISOString(),
+      type: 'REGULAR',
+    }, context);
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE Appointment SET status = ?')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      if (sql.includes('SELECT status FROM Appointment')) {
+        return { get: () => undefined } as never;
+      }
+      return originalPrepare(sql);
+    });
+    await expect(service.transition(String(created.id), 'ARRIVED', context)).rejects.toThrow('Appointment not found');
   });
 
   it('generates follow-ups and lists reminders', async () => {
@@ -119,7 +195,10 @@ describe('service coverage', () => {
     const service = new BackupService(db, path.join(dataDir, 'v2.sqlite'), backupDir);
     const backup = await service.create({ type: 'AUTO', encrypted: true });
     expect(String(backup.filename)).toMatch(/\.enc$/);
-    await service.create({ type: 'AUTO', encrypted: true });
+    const secondBackup = await service.create({ type: 'AUTO', encrypted: true });
+    const oldMtime = new Date(Date.now() - 120_000);
+    fs.utimesSync(path.join(backupDir, String(backup.filename)), oldMtime, oldMtime);
+    fs.utimesSync(path.join(backupDir, String(secondBackup.filename)), oldMtime, oldMtime);
     const verified = await service.verify(String(backup.filename));
     expect(verified.integrity).toBe('ok');
     const staged = await service.stageRestore(String(backup.filename));

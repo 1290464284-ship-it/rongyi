@@ -8,11 +8,17 @@ param(
 $ErrorActionPreference = "Stop"
 
 $certFile = ""
+$tempDir = $env:TEMP
+$wasTempFile = $false
+Get-ChildItem -LiteralPath $tempDir -Filter 'v2-signing-cert-*.pfx' -ErrorAction SilentlyContinue |
+  Where-Object { $_.LastWriteTime -lt (Get-Date).AddHours(-24) } |
+  ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue }
 if (Test-Path -LiteralPath $CertificatePath) {
   $certFile = (Resolve-Path -LiteralPath $CertificatePath).Path
 } elseif ($CertificatePath -match '^[A-Za-z0-9+/=]+$') {
-  $certFile = Join-Path $env:TEMP ("v2-signing-cert-" + [guid]::NewGuid().ToString("N") + ".pfx")
+  $certFile = Join-Path $tempDir ("v2-signing-cert-" + [guid]::NewGuid().ToString("N") + ".pfx")
   [System.IO.File]::WriteAllBytes($certFile, [System.Convert]::FromBase64String($CertificatePath))
+  $wasTempFile = $true
 } else {
   throw "CSC_LINK is neither an existing file nor base64"
 }
@@ -45,7 +51,7 @@ try {
   [System.IO.File]::WriteAllText($PackageJson, $json, [System.Text.UTF8Encoding]::new($false))
   Write-Host "publisherName set to $publisherName"
 } finally {
-  if ($CertificatePath -ne $certFile -and (Test-Path -LiteralPath $certFile)) {
+  if ($wasTempFile -and (Test-Path -LiteralPath $certFile)) {
     Remove-Item -LiteralPath $certFile -Force -ErrorAction SilentlyContinue
   }
 }

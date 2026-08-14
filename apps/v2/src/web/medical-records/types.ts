@@ -18,7 +18,6 @@ export interface RecordForm {
   visitId: string;
   doctorId: string;
   category: string;
-  status: string;
   isTemplate: boolean;
   chiefComplaint: string;
   presentIllness: string;
@@ -37,7 +36,6 @@ export const emptyForm: RecordForm = {
   visitId: '',
   doctorId: '',
   category: '',
-  status: 'DRAFT',
   isTemplate: false,
   chiefComplaint: '',
   presentIllness: '',

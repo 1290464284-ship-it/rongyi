@@ -21,6 +21,7 @@ export function parsePagination(req: Request, options?: { defaultPageSize?: numb
   const page = typeof rawPage === 'string' && rawPage.trim() !== '' ? Number(rawPage) : 1;
   const pageSize = typeof rawPageSize === 'string' && rawPageSize.trim() !== '' ? Number(rawPageSize) : defaultPageSize;
   if (!Number.isInteger(page) || page < 1) throw new ValidationError('page must be a positive integer');
+  if (page > 1_000_000) throw new ValidationError('page must be <= 1000000');
   if (!Number.isInteger(pageSize) || pageSize < 1) {
     throw new ValidationError(`pageSize must be an integer between 1 and ${MAX_PAGE_SIZE}`);
   }

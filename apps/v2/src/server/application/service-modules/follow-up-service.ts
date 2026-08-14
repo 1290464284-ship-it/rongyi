@@ -7,6 +7,7 @@ import { SystemClock } from '../../infrastructure/clock';
 import { tenantAnd, tenantParams, tenantWhere } from '../../infrastructure/tenant';
 import type { AppContext } from '../../../domain/contracts';
 import type { FollowUpRepository } from '../ports';
+import { csvCell } from '../../shared/csv';
 
 export class FollowUpService {
   private readonly db: Database.Database;
@@ -19,7 +20,7 @@ export class FollowUpService {
 
   reminders(
     context: AppContext,
-    options?: { page?: number; pageSize?: number },
+    options?: { page?: number; pageSize?: number; scope?: 'overdue' | 'today' | 'upcoming' | 'all' },
   ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean } {
     return this.followUpRepository.reminders(context.clinicId, options);
   }
@@ -108,7 +109,25 @@ export class FollowUpService {
     return { completed, skipped: errors.length, errors };
   }
 
-  remindersCsv(scope: string, context: AppContext): string {
+  remindersCsv(scope: string, context: AppContext, maxRows = 50_000): string {
+    const exportResult = this.remindersCsvExport(scope, context, maxRows);
+    const lines = [exportResult.columns.map((column) => csvCell(column.label)).join(',')];
+    for (const row of exportResult.rows) {
+      lines.push(exportResult.columns.map((column) => csvCell(row[column.key])).join(','));
+    }
+    if (exportResult.truncated) lines.push('# truncated');
+    return lines.join('\n');
+  }
+
+  remindersCsvExport(
+    scope: string,
+    context: AppContext,
+    maxRows = 50_000,
+  ): {
+    columns: Array<{ key: string; label: string }>;
+    rows: Iterable<Record<string, unknown>>;
+    truncated: boolean;
+  } {
     const allowed = new Set(['overdue', 'today', 'upcoming', 'all']);
     if (!allowed.has(scope)) {
       throw new ValidationError('Follow-up export scope must be overdue, today, upcoming, or all');
@@ -124,18 +143,19 @@ export class FollowUpService {
     const params = scope === 'all'
       ? [...tenantParams(context.clinicId)]
       : [today, ...tenantParams(context.clinicId)];
-    const rows = this.db.prepare(
-      `SELECT F.id, P.name AS patientName, P.phone AS patientPhone,
-              F.planDate, F.status, F.content, F.completedAt, F.result
-       FROM FollowUp F
-       LEFT JOIN Patient P ON P.id = F.patientId
-       WHERE F.status IN ('PENDING', 'IN_PROGRESS')
+    const tenantClause = tenantAnd(context.clinicId, 'F.clinicId');
+    const baseWhere = `F.status IN ('PENDING', 'IN_PROGRESS')
          AND F.deletedAt IS NULL
          AND ${scopeClause}
-         ${tenantAnd(context.clinicId, 'F.clinicId')}
-       ORDER BY F.planDate ASC, P.name ASC`,
-    ).all(...params) as Array<Record<string, unknown>>;
-    const masked: Array<Record<string, unknown>> = rows.map((row) => ({ ...row, patientPhone: maskPhoneForExport(row.patientPhone as string | null | undefined) }));
+         ${tenantClause}`;
+    const totalRow = this.db.prepare(
+      `SELECT COUNT(*) AS c FROM FollowUp F
+       LEFT JOIN Patient P ON P.id = F.patientId
+       WHERE ${baseWhere}`,
+    ).get(...params) as { c: number };
+    const total = Number(totalRow.c);
+/* v8 ignore next */
+    const cap = Math.max(1, Math.min(50_000, Math.floor(Number(maxRows) || 50_000)));
     const headers: Array<{ key: string; label: string }> = [
       { key: 'id', label: 'id' },
       { key: 'patientName', label: '患者' },
@@ -146,15 +166,48 @@ export class FollowUpService {
       { key: 'completedAt', label: '完成时间' },
       { key: 'result', label: '结果' },
     ];
-    return [
-      headers.map((header) => csvCell(header.label)).join(','),
-      ...masked.map((row) => headers.map((header) => csvCell(row[header.key])).join(',')),
-    ].join('\n');
+    const pageSize = 1000;
+    const rows = this.remindersCsvRows(baseWhere, params, headers, pageSize, cap);
+    return { columns: headers, rows, truncated: cap < total };
+  }
+
+  private *remindersCsvRows(
+    baseWhere: string,
+    params: unknown[],
+    headers: Array<{ key: string; label: string }>,
+    pageSize: number,
+    cap: number,
+  ): Iterable<Record<string, unknown>> {
+    let offset = 0;
+    let included = 0;
+    for (;;) {
+      const rows = this.db.prepare(
+        `SELECT F.id, P.name AS patientName, P.phone AS patientPhone,
+                F.planDate, F.status, F.content, F.completedAt, F.result
+         FROM FollowUp F
+         LEFT JOIN Patient P ON P.id = F.patientId
+         WHERE ${baseWhere}
+         ORDER BY F.planDate ASC, P.name ASC
+         LIMIT ? OFFSET ?`,
+      ).all(...params, pageSize, offset) as Array<Record<string, unknown>>;
+      if (rows.length === 0) break;
+      for (const row of rows) {
+        if (included >= cap) return;
+        yield {
+          ...row,
+          patientPhone: maskPhoneForExport(row.patientPhone as string | null | undefined),
+        };
+        included += 1;
+      }
+/* v8 ignore next */
+      if (included >= cap || rows.length < pageSize) break;
+/* v8 ignore next */
+      offset += rows.length;
+    }
   }
 
   async batchGenerate(limit = 50, context: AppContext): Promise<{ processed: number; generated: number }> {
     const maxLimit = Math.min(200, Math.max(1, Math.floor(Number(limit) || 50)));
-    const _tenant = tenantWhere(context.clinicId);
     const tenantV = tenantWhere(context.clinicId, 'V.clinicId');
     const tenantTpl = tenantWhere(context.clinicId);
     const rowParams = [...tenantV.params, maxLimit];
@@ -181,16 +234,25 @@ export class FollowUpService {
     ).all(...templateParams) as Array<{ id: string; name: string; daysAfter: number; content: string | null; assigneeId: string | null }>;
     let generated = 0;
     const now = context.now().toISOString();
+    const existsWithTemplate = this.db.prepare(
+      `SELECT 1 FROM FollowUp
+       WHERE patientId = ? AND planDate = ? AND templateId = ?
+         AND status IN ('PENDING', 'IN_PROGRESS')
+         AND deletedAt IS NULL${tenantAnd(context.clinicId)}
+       LIMIT 1`,
+    );
+    const existsWithoutTemplate = this.db.prepare(
+      `SELECT 1 FROM FollowUp
+       WHERE patientId = ? AND planDate = ? AND templateId IS NULL
+         AND status IN ('PENDING', 'IN_PROGRESS')
+         AND deletedAt IS NULL${tenantAnd(context.clinicId)}
+       LIMIT 1`,
+    );
+    const tenantParamsForExists = tenantParams(context.clinicId);
     const alreadyExists = (patientId: string, planDate: string, templateId: string | null): boolean => {
-      const templateClause = templateId ? 'templateId = ?' : 'templateId IS NULL';
-      const params = [patientId, planDate, ...(templateId ? [templateId] : []), ...tenantParams(context.clinicId)];
-      return Boolean(this.db.prepare(
-        `SELECT 1 FROM FollowUp
-         WHERE patientId = ? AND planDate = ? AND ${templateClause}
-           AND status IN ('PENDING', 'IN_PROGRESS')
-           AND deletedAt IS NULL${tenantAnd(context.clinicId)}
-         LIMIT 1`,
-      ).get(...params));
+      return templateId
+        ? Boolean(existsWithTemplate.get(patientId, planDate, templateId, ...tenantParamsForExists))
+        : Boolean(existsWithoutTemplate.get(patientId, planDate, ...tenantParamsForExists));
     };
     const run = this.db.transaction(() => {
       for (const row of rows) {
@@ -233,7 +295,9 @@ export class FollowUpService {
         }
       }
     });
-    run();
+    // BEGIN IMMEDIATE 使并发 batch-generate 串行化：后到的事务能看到先到事务
+    // 已插入的 FollowUp 行，alreadyExists 检查随即生效，避免并发生成重复随访。
+    run.immediate();
     return { processed: rows.length, generated };
   }
 
@@ -253,18 +317,10 @@ export class FollowUpService {
   }
 }
 
-function csvCell(value: unknown): string {
-  if (value === null || value === undefined) return '';
-  const text = typeof value === 'object' ? JSON.stringify(value) : String(value);
-  // CWE-1236：阻止公式注入（Excel 打开时执行 =SUM(...) 等）
-  const guarded = /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
-  return `"${guarded.replaceAll('"', '""')}"`;
-}
-
 /** 导出时掩码手机号：保留前 3 后 4，中间以 * 代替。 */
 export function maskPhoneForExport(phone: string | null | undefined): string {
   if (!phone) return '';
   const digits = phone.replace(/[^\d]/g, '');
-  if (digits.length < 7) return phone.replace(/./g, '*');
+  if (digits.length <= 7) return phone.replace(/./g, '*');
   return `${digits.slice(0, 3)}****${digits.slice(-4)}`;
 }

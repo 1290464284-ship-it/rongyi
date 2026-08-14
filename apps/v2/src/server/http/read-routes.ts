@@ -13,6 +13,7 @@ import { maskPhoneForExport } from '../application/service-modules/operations';
 import { resourceRegistry } from '../../domain/resources';
 import { wrapAsync } from './middleware';
 import { createRateLimit } from './rate-limit';
+import type { RateLimitStore } from './rate-limit';
 import type {
   AnalyticsService,
   ChargeAssistantService,
@@ -28,6 +29,7 @@ export interface ReadRouteDependencies {
   stats: StatsService;
   print: PrintService;
   search: SearchService;
+  rateLimitStore?: RateLimitStore;
 }
 
 export function registerReadRoutes(app: Express, deps: ReadRouteDependencies): void {
@@ -163,7 +165,8 @@ export function registerReadRoutes(app: Express, deps: ReadRouteDependencies): v
       res.json({ success: true, data: { items, total: rows.length } });
   }));
 
-  const searchLimiter = createRateLimit({ windowMs: 60_000, max: 300 });
+  // 与其他限流器一致使用 DB 后端，多实例共享同一窗口。
+  const searchLimiter = createRateLimit({ windowMs: 60_000, max: 300 }, deps.rateLimitStore);
   app.get('/api/v2/search', searchLimiter, wrapAsync(async (req, res) => {
       const q = String(req.query.q ?? '').trim();
       if (q.length < 2) {

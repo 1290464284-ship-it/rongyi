@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -16,7 +16,7 @@ describe('StocktakeService', () => {
   let context: AppContext;
   const now = '2026-08-05T10:00:00.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-stocktake-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -31,18 +31,12 @@ describe('StocktakeService', () => {
     };
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
   // 每个用例从干净状态出发：清空盘点相关表与流水（库存流水仅盘点用例写入）。
-  beforeEach(() => {
-    db.prepare('DELETE FROM StocktakeItem').run();
-    db.prepare('DELETE FROM Stocktake').run();
-    db.prepare('DELETE FROM InventoryTransaction').run();
-  });
-
   function insertItem(id: string, code: string, name: string, stock: number, clinicId = 'clinic-v2-001'): void {
     db.prepare(
       `INSERT INTO InventoryItem (id, clinicId, createdAt, updatedAt, deletedAt, code, name, category, unit, stock, minStock, price)
@@ -138,17 +132,38 @@ describe('StocktakeService', () => {
     expect(e.stock).toBe(5);
 
     const txs = db.prepare(
-      'SELECT itemId, type, quantity, beforeStock, afterStock, operatorId, remark FROM InventoryTransaction ORDER BY itemId',
+      'SELECT itemId, type, quantity, beforeStock, afterStock, operatorId, remark, referenceType, referenceId FROM InventoryTransaction ORDER BY itemId',
     ).all() as Array<Record<string, unknown>>;
     expect(txs).toHaveLength(2);
     expect(txs[0]).toEqual({
       itemId: 'stock-item-d', type: 'ADJUST', quantity: 5, beforeStock: 10, afterStock: 15,
-      operatorId: 'user-admin-001', remark: '盘点差异调整',
+      operatorId: 'user-admin-001', remark: '盘点差异调整', referenceType: 'STOCKTAKE', referenceId: String(id),
     });
     expect(txs[1]).toEqual({
       itemId: 'stock-item-e', type: 'ADJUST', quantity: -3, beforeStock: 8, afterStock: 5,
-      operatorId: 'user-admin-001', remark: '盘点差异调整',
+      operatorId: 'user-admin-001', remark: '盘点差异调整', referenceType: 'STOCKTAKE', referenceId: String(id),
     });
+  });
+
+  it('recordCount：批号管理商品禁止直接调整库存，实盘与系统一致才可录入', () => {
+    db.prepare(
+      `INSERT INTO InventoryItem (
+         id, clinicId, createdAt, updatedAt, deletedAt, code, name, category, unit,
+         stock, minStock, price, batchManaged
+       ) VALUES (?, ?, ?, ?, NULL, 'ST-BM', '批次品', 'CONSUMABLE', 'box', 10, 0, 1000, 1)`,
+    ).run('stock-item-bm', context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO InventoryBatch (
+         id, itemId, batchNo, productionDate, expiryDate, initialQuantity,
+         remainingQuantity, supplierId, purchaseOrderId, active, clinicId,
+         createdAt, updatedAt, deletedAt
+       ) VALUES (?, ?, 'BM-1', NULL, '2026-09-01', 10, 10, NULL, NULL, 1, ?, ?, ?, NULL)`,
+    ).run('batch-bm', 'stock-item-bm', context.clinicId, now, now);
+
+    const { id } = service.start({ number: 'PD-2026-BM' }, context);
+    expect(() => service.recordCount(String(id), 'stock-item-bm', 12, context)).toThrow(ValidationError);
+    const ok = service.recordCount(String(id), 'stock-item-bm', 10, context);
+    expect(ok).toMatchObject({ systemStock: 10, countedStock: 10, difference: 0 });
   });
 
   it('complete：仅 LOCKED 可完成；无差异时库存不变且无流水', () => {
@@ -187,7 +202,9 @@ describe('StocktakeService', () => {
     insertItem('stock-item-i', 'ST-I', '物品I', 6);
     const { id } = service.start({ number: 'PD-2026-009' }, context);
 
-    service.assertNotLocked('stock-item-h', context.clinicId); // 未锁定不抛
+    // IN_PROGRESS 即冻结，避免完成时覆盖盘点期间发生的库存变动
+    expect(() => service.assertNotLocked('stock-item-h', context.clinicId)).toThrow(ConflictError);
+    expect(() => service.assertNotLocked('stock-item-h', context.clinicId)).toThrow('库存盘点进行中');
 
     service.lock(String(id), context);
     // 盘点单快照覆盖该租户全部在库物品，锁定后全部进入锁定集合
@@ -196,7 +213,7 @@ describe('StocktakeService', () => {
     ).all('clinic-v2-001') as Array<{ id: string }>).map((row) => row.id).sort();
     expect(service.lockedItemIds(context.clinicId).sort()).toEqual(allItemIds);
     expect(() => service.assertNotLocked('stock-item-h', context.clinicId)).toThrow(ConflictError);
-    expect(() => service.assertNotLocked('stock-item-h', context.clinicId)).toThrow('库存盘点锁定中');
+    expect(() => service.assertNotLocked('stock-item-h', context.clinicId)).toThrow('库存盘点进行中');
 
     service.complete(String(id), context);
     expect(service.lockedItemIds(context.clinicId)).toEqual([]);
@@ -249,5 +266,210 @@ describe('StocktakeService', () => {
     const items = service.items(String(second.id), context);
     const k = items.find((row) => row.itemId === 'stock-item-k');
     expect(k).toMatchObject({ systemStock: 9, countedStock: 11, difference: 2, name: '物品K', code: 'ST-K' });
+  });
+
+  it('start：非字符串单号与缺失 clinicId 均按空/null 处理', () => {
+    expect(() => service.start({ number: 42 as unknown as string }, context)).toThrow(ValidationError);
+    const result = service.start({ number: 'PD-NOCLINIC' }, { ...context, clinicId: null });
+    expect(db.prepare('SELECT clinicId FROM Stocktake WHERE id = ?').get(String(result.id))).toEqual({ clinicId: null });
+    expect((db.prepare('SELECT clinicId FROM StocktakeItem WHERE stocktakeId = ? LIMIT 1').get(String(result.id)) as { clinicId: string | null }).clinicId)
+      .toBeNull();
+  });
+
+  it('recordCount：盘点明细或库存物品不存在时返回 NotFound', () => {
+    insertItem('stock-item-z', 'ST-Z', '物品Z', 1);
+    const { id } = service.start({ number: 'PD-GHOST' }, context);
+    expect(() => service.recordCount(String(id), 'stock-item-ghost', 5, context)).toThrow(NotFoundError);
+    db.prepare('DELETE FROM InventoryItem WHERE id = ?').run('stock-item-z');
+    expect(() => service.recordCount(String(id), 'stock-item-z', 5, context)).toThrow(NotFoundError);
+  });
+
+  it('lock：缺少开始时间的盘点单不可锁定', () => {
+    insertItem('stock-item-lock', 'ST-L', '锁定物品', 1);
+    const { id } = service.start({ number: 'PD-NOSTART' }, context);
+    db.prepare('UPDATE Stocktake SET startedAt = NULL WHERE id = ?').run(String(id));
+    expect(() => service.lock(String(id), context)).toThrow('盘点单缺少开始时间');
+  });
+
+  it('complete：batchManaged 为空的物品按非批号商品处理', () => {
+    insertItem('stock-item-orphan', 'ST-O', '孤儿物品', 4);
+    const { id } = service.start({ number: 'PD-ORPHAN' }, context);
+    service.recordCount(String(id), 'stock-item-orphan', 6, context);
+    db.prepare('UPDATE InventoryItem SET batchManaged = NULL WHERE id = ?').run('stock-item-orphan');
+    service.lock(String(id), context);
+    const completed = service.complete(String(id), context);
+    expect(completed).toMatchObject({ adjustedCount: 1 });
+    expect((completed.items as Array<Record<string, unknown>>)[0]).toMatchObject({
+      itemId: 'stock-item-orphan',
+      name: '孤儿物品',
+    });
+  });
+
+  it('assertNotLocked / lockedItemIds：无诊所参数时按未锁定空集合处理', () => {
+    insertItem('stock-item-free', 'ST-FREE', '自由物品', 2);
+    expect(service.lockedItemIds(undefined)).toEqual([]);
+    service.assertNotLocked('stock-item-free', undefined);
+  });
+
+  it('start：缺省 input 与非字符串 note 均安全处理', () => {
+    expect(() => service.start(undefined as unknown as { number: string; note?: string }, context))
+      .toThrow(ValidationError);
+    const withBadNote = service.start({ number: 'PD-BADNOTE', note: 42 as unknown as string }, context);
+    expect(db.prepare('SELECT note FROM Stocktake WHERE id = ?').get(String(withBadNote.id))).toEqual({ note: null });
+  });
+
+  it('list：分页参数钳制、offset 与 truncated 边界', () => {
+    for (let i = 0; i < 3; i += 1) {
+      db.prepare(
+        `INSERT INTO Stocktake (id, number, status, startedById, startedAt, clinicId, createdAt, updatedAt, deletedAt)
+         VALUES (?, ?, 'CANCELLED', 'user-admin-001', ?, 'clinic-v2-001', ?, ?, NULL)`,
+      ).run(`st-pg-${i}`, `PD-PG-${i}`, now, new Date(Date.parse(now) + i * 1000).toISOString(), now);
+    }
+
+    // 非法参数钳制：page 0 → 1；pageSize 0 → 200；pageSize 500 → 200；page 1.9 → 1
+    const clamped = service.list(context, { page: 0, pageSize: 0 });
+    expect(clamped.page).toBe(1);
+    expect(clamped.pageSize).toBe(200);
+    const capped = service.list(context, { page: 1.9, pageSize: 500 });
+    expect(capped.page).toBe(1);
+    expect(capped.pageSize).toBe(200);
+
+    // offset 语义：第 2 页（pageSize 1）返回第 2 新的单；truncated 随剩余量变化
+    const page2 = service.list(context, { page: 2, pageSize: 1 });
+    expect(page2.items.map((row) => row.number)).toEqual(['PD-PG-1']);
+    expect(page2.truncated).toBe(true); // total 3 > offset(1) + rows(1)
+    const lastPage = service.list(context, { page: 3, pageSize: 1 });
+    expect(lastPage.items.map((row) => row.number)).toEqual(['PD-PG-0']);
+    expect(lastPage.truncated).toBe(false); // 3 > 2 + 1 不成立
+  });
+
+  it('recordCount：接受 0 与 10 亿边界，拒绝超上限', () => {
+    insertItem('stock-item-bound', 'ST-BOUND', '边界品', 5);
+    const { id } = service.start({ number: 'PD-BOUND' }, context);
+
+    const zero = service.recordCount(String(id), 'stock-item-bound', 0, context);
+    expect(zero.difference).toBe(-5);
+    const max = service.recordCount(String(id), 'stock-item-bound', 1_000_000_000, context);
+    expect(max.difference).toBe(1_000_000_000 - 5);
+    expect(() => service.recordCount(String(id), 'stock-item-bound', 1_000_000_001, context))
+      .toThrow(ValidationError);
+  });
+
+  it('complete：批号商品带差异时拒绝（防御绕过录入入口的脏数据）', () => {
+    db.prepare(
+      `INSERT INTO InventoryItem (
+         id, clinicId, createdAt, updatedAt, deletedAt, code, name, category, unit,
+         stock, minStock, price, batchManaged
+       ) VALUES (?, ?, ?, ?, NULL, 'ST-BMC', '批次完成品', 'CONSUMABLE', 'box', 10, 0, 1000, 1)`,
+    ).run('stock-item-bmc', context.clinicId, now, now);
+    const { id } = service.start({ number: 'PD-BMC' }, context);
+    db.prepare(
+      `UPDATE StocktakeItem SET countedStock = 15, difference = 5 WHERE stocktakeId = ? AND itemId = ?`,
+    ).run(String(id), 'stock-item-bmc');
+    service.lock(String(id), context);
+    expect(() => service.complete(String(id), context)).toThrow('批号管理商品不能通过盘点直接调整库存');
+  });
+
+  it('rejects a number reused by a soft-deleted stocktake', () => {
+    insertItem('stock-item-soft', 'ST-SOFT', '软删物品', 10);
+    const first = service.start({ number: 'ST-SOFT-NUM' }, context);
+    db.prepare('UPDATE Stocktake SET deletedAt = ? WHERE id = ?').run(now, String(first.id));
+    expect(() => service.start({ number: 'ST-SOFT-NUM' }, context)).toThrow('盘点单号已存在');
+  });
+
+  it('completes with null counted stock, a deleted item and a null clinic', () => {
+    insertItem('stock-item-null', 'ST-NULL', '空值物品', 42);
+    const { id } = service.start({ number: 'ST-NULL-1' }, context);
+    db.prepare(
+      `UPDATE StocktakeItem SET difference = 5, countedStock = NULL WHERE stocktakeId = ? AND itemId = ?`,
+    ).run(String(id), 'stock-item-null');
+    service.lock(String(id), context);
+    db.prepare('UPDATE InventoryItem SET deletedAt = ? WHERE id = ?').run(now, 'stock-item-null');
+    const noClinic: AppContext = { ...context, clinicId: null };
+    const result = service.complete(String(id), noClinic);
+    expect(result.adjustedCount).toBe(1);
+    expect((result.items as Array<Record<string, unknown>>)[0].countedStock).toBe(42);
+  });
+
+  it('reports conflicts when optimistic status updates affect zero rows', () => {
+    insertItem('stock-item-race', 'ST-RACE', '竞态物品', 10);
+    const { id } = service.start({ number: 'ST-RACE-1' }, context);
+    const itemId = 'stock-item-race';
+    const originalPrepare = db.prepare.bind(db);
+
+    const spyRecord = vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE StocktakeItem') && sql.includes('SET countedStock')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      expect(() => service.recordCount(String(id), itemId, 10, context)).toThrow(ConflictError);
+    } finally {
+      spyRecord.mockRestore();
+    }
+
+    const spyLock = vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE Stocktake') && sql.includes("status = 'LOCKED'")) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      expect(() => service.lock(String(id), context)).toThrow(ConflictError);
+    } finally {
+      spyLock.mockRestore();
+    }
+
+    db.prepare("UPDATE Stocktake SET status = 'LOCKED' WHERE id = ?").run(String(id));
+    const spyComplete = vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE Stocktake') && sql.includes("status = 'COMPLETED'")) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      expect(() => service.complete(String(id), context)).toThrow(ConflictError);
+    } finally {
+      spyComplete.mockRestore();
+    }
+
+    db.prepare("UPDATE Stocktake SET status = 'IN_PROGRESS' WHERE id = ?").run(String(id));
+    const spyCancel = vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE Stocktake') && sql.includes("status = 'CANCELLED'")) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      expect(() => service.cancel(String(id), context)).toThrow(ConflictError);
+    } finally {
+      spyCancel.mockRestore();
+    }
+  });
+
+  it('list：offset 用乘法计算，第 2 页 pageSize 2 从第 3 条开始', () => {
+    for (let i = 0; i < 5; i += 1) {
+      db.prepare(
+        `INSERT INTO Stocktake (id, number, status, startedById, startedAt, clinicId, createdAt, updatedAt, deletedAt)
+         VALUES (?, ?, 'CANCELLED', 'user-admin-001', ?, 'clinic-v2-001', ?, ?, NULL)`,
+      ).run(`st-off-${i}`, `PD-OFF-${i}`, now, new Date(Date.parse(now) + i * 1000).toISOString(), now);
+    }
+
+    const page2 = service.list(context, { page: 2, pageSize: 2 });
+    expect(page2.items.map((row) => row.number)).toEqual(['PD-OFF-2', 'PD-OFF-1']);
+  });
+
+  it('complete：差异调整流水写入所属诊所 clinicId', () => {
+    insertItem('stock-item-clinic', 'ST-CLINIC', '诊所物品', 10);
+    const { id } = service.start({ number: 'PD-CLINIC' }, context);
+    service.recordCount(String(id), 'stock-item-clinic', 15, context);
+    service.lock(String(id), context);
+    service.complete(String(id), context);
+
+    const row = db.prepare(
+      'SELECT clinicId FROM InventoryTransaction WHERE itemId = ?',
+    ).get('stock-item-clinic') as { clinicId: string | null };
+    expect(row.clinicId).toBe('clinic-v2-001');
   });
 });

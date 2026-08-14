@@ -28,12 +28,13 @@ export function DispenseListPanel({
   setDispensePage: Dispatch<SetStateAction<number>>;
 }) {
   const { showToast } = useToast();
+  const stale = dispenses.isPlaceholderData;
   const [action, setAction] = useState<{ mode: 'dispense' | 'return'; row: DispenseRow } | null>(null);
   const [editDispenseId, setEditDispenseId] = useState<string | null>(null);
   const [deleteDispenseTarget, setDeleteDispenseTarget] = useState<DispenseRow | null>(null);
 
   async function confirmDeleteDispense() {
-    if (!deleteDispenseTarget) return;
+    if (!deleteDispenseTarget || stale) return;
     try {
       await apiRequest(`/dispenses/${deleteDispenseTarget.id}`, { method: 'DELETE' });
       showToast('发药单已删除', 'success');
@@ -66,15 +67,15 @@ export function DispenseListPanel({
         return (
           <span className="row-actions">
             {(status === 'PENDING' || status === 'PARTIAL') && (
-              <button type="button" onClick={() => setAction({ mode: 'dispense', row })}>发药</button>
+              <button type="button" disabled={stale} onClick={() => setAction({ mode: 'dispense', row })}>发药</button>
             )}
             {(status === 'DISPENSED' || status === 'PARTIAL') && (
-              <button type="button" onClick={() => setAction({ mode: 'return', row })}>退药</button>
+              <button type="button" disabled={stale} onClick={() => setAction({ mode: 'return', row })}>退药</button>
             )}
             {status === 'PENDING' && (
               <>
-                <button type="button" onClick={() => setEditDispenseId(row.id)}>编辑</button>
-                <button type="button" onClick={() => setDeleteDispenseTarget(row)}>删除</button>
+                <button type="button" disabled={stale} onClick={() => setEditDispenseId(row.id)}>编辑</button>
+                <button type="button" disabled={stale} onClick={() => setDeleteDispenseTarget(row)}>删除</button>
               </>
             )}
           </span>
@@ -97,12 +98,19 @@ export function DispenseListPanel({
         <PagePager
           page={dispensePage}
           hasNext={Boolean(dispenses.data) && dispensePage * 20 < dispenses.data!.total}
-          onPageChange={setDispensePage}
+          onPageChange={(next) => {
+            setAction(null);
+            setEditDispenseId(null);
+            setDeleteDispenseTarget(null);
+            setDispensePage(next);
+          }}
+          disabled={stale}
         />
         {action && (
           <DispenseActionPanel
             mode={action.mode}
             row={action.row}
+            stale={stale}
             onClose={() => setAction(null)}
             onDone={() => void dispenses.refetch()}
           />
@@ -111,6 +119,7 @@ export function DispenseListPanel({
       {editDispenseId && (
         <DispenseEditDialog
           dispenseId={editDispenseId}
+          stale={stale}
           onClose={() => setEditDispenseId(null)}
           onDone={() => void dispenses.refetch()}
         />
@@ -132,11 +141,13 @@ export function DispenseListPanel({
 function DispenseActionPanel({
   mode,
   row,
+  stale,
   onClose,
   onDone,
 }: {
   mode: 'dispense' | 'return';
   row: DispenseRow;
+  stale: boolean;
   onClose: () => void;
   onDone: () => void;
 }) {
@@ -153,7 +164,7 @@ function DispenseActionPanel({
     Number(item.quantity ?? 0) - Number(item.returnedQuantity ?? 0);
 
   async function submit() {
-    if (busy || !detail.data) return;
+    if (busy || stale || !detail.data) return;
     if (mode === 'dispense') {
       const missingBatch = detail.data.items.some(
         (item) => Number(item.batchManaged ?? 0) === 1 && !(batchSelections[item.id] ?? item.batchId ?? ''),
@@ -166,7 +177,8 @@ function DispenseActionPanel({
         const isBatchManaged = Number(item.batchManaged ?? 0) === 1;
         return {
           dispenseItemId: item.id,
-          batchId: isBatchManaged ? (batchSelections[item.id] ?? item.batchId ?? null) : null,
+          // missingBatch 校验保证批次物品在此处必有 batchSelections 或 batchId 之一
+          batchId: isBatchManaged ? (batchSelections[item.id] ?? item.batchId) : null,
         };
       });
       setBusy(true);
@@ -190,6 +202,14 @@ function DispenseActionPanel({
       .filter((entry) => Number.isSafeInteger(entry.quantity) && entry.quantity > 0);
     if (items.length === 0) {
       showToast('请填写退回数量', 'error');
+      return;
+    }
+    const overReturn = detail.data.items.find((item) => {
+      const quantity = Number(returnQuantities[item.id] ?? '');
+      return Number.isSafeInteger(quantity) && quantity > 0 && quantity > pendingQuantity(item);
+    });
+    if (overReturn) {
+      showToast('退回数量不能超过未退数量', 'error');
       return;
     }
     setBusy(true);

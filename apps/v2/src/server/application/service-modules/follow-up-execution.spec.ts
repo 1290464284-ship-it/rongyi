@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -183,6 +183,16 @@ describe('FollowUpExecutionService', () => {
     }, context)).toThrow(NotFoundError);
   });
 
+  it('throws NotFoundError for a soft-deleted follow-up', () => {
+    insertFollowUp('fu-deleted');
+    db.prepare('UPDATE FollowUp SET deletedAt = ?, updatedAt = ? WHERE id = ?').run(now, now, 'fu-deleted');
+    const service = new FollowUpExecutionService(db);
+    expect(() => service.execute('fu-deleted', {
+      executionStatus: 'DONE',
+      contactedAt: '2026-08-05T09:30:00.000Z',
+    }, context)).toThrow(NotFoundError);
+  });
+
   it('computes NPS groups, average and breakdown from rated follow-ups', () => {
     db.prepare('DELETE FROM FollowUp WHERE patientRating IS NOT NULL').run();
     const ratings: Array<[string, number]> = [['nps-9', 9], ['nps-10', 10], ['nps-7', 7], ['nps-5', 5], ['nps-3', 3]];
@@ -218,5 +228,49 @@ describe('FollowUpExecutionService', () => {
       average: 0,
       breakdown: [],
     });
+  });
+
+  it('rejects invalid contactedAt and nextPlanDate formats', async () => {
+    insertFollowUp('followup-invalid-date', { executionStatus: 'PENDING' });
+    const service = new FollowUpExecutionService(db);
+    expect(() => service.execute('followup-invalid-date', {
+      executionStatus: 'DONE',
+      contactedAt: 'not-a-date',
+    } as never, context)).toThrow(ValidationError);
+    expect(() => service.execute('followup-invalid-date', {
+      executionStatus: 'DONE',
+      contactedAt: '2026-08-05T10:00:00.000Z',
+      nextPlanDate: '2026-02-30',
+    } as never, context)).toThrow(ValidationError);
+  });
+
+  it('rejects execution when the CAS update matches no rows', () => {
+    insertFollowUp('fu-cas');
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE FollowUp')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      expect(() => new FollowUpExecutionService(db).execute('fu-cas', {
+        executionStatus: 'SKIPPED',
+      }, context)).toThrow('该随访已完成执行');
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('executes and tracks the write with a null clinic when the context has no clinic', () => {
+    insertFollowUp('fu-null-clinic');
+    const result = new FollowUpExecutionService(db).execute('fu-null-clinic', {
+      executionStatus: 'SKIPPED',
+    }, { ...context, clinicId: null });
+    expect(result.id).toBe('fu-null-clinic');
+    const row = db.prepare('SELECT executionStatus FROM FollowUp WHERE id = ?').get('fu-null-clinic') as {
+      executionStatus: string;
+    };
+    expect(row.executionStatus).toBe('SKIPPED');
   });
 });

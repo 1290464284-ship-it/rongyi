@@ -13,6 +13,7 @@ import type Database from 'better-sqlite3';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { NotFoundError, ValidationError } from '../../infrastructure/errors';
 import type { AppContext } from '../../../domain/contracts';
+import { assertDoctorExists } from './common';
 
 export type Dentition = 'DECIDUOUS' | 'PERMANENT' | 'MIXED';
 export type ChiefMark = 'NONE' | 'HORIZONTAL_SHOULD' | 'HORIZONTAL_DONE';
@@ -58,6 +59,9 @@ export class FirstExamRestartService {
 
     if (input.dentition !== undefined && !DENTITIONS.includes(input.dentition)) {
       throw new ValidationError('Invalid dentition');
+    }
+    if (input.doctorId !== undefined) {
+      assertDoctorExists(this.db, input.doctorId, clinicId);
     }
 
     const now = context.now().toISOString();
@@ -106,9 +110,11 @@ export class FirstExamRestartService {
     if (!DENTITIONS.includes(dentition)) throw new ValidationError('Invalid dentition');
 
     const now = context.now().toISOString();
-    this.db.prepare(
-      `UPDATE FirstExam SET dentition = ?, updatedAt = ? WHERE id = ?${tenantAnd(clinicId)}`,
+    const result = this.db.prepare(
+      `UPDATE FirstExam SET dentition = ?, updatedAt = ?
+       WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
     ).run(dentition, now, examId, ...tenantParams(clinicId));
+    if (Number(result.changes) === 0) throw new NotFoundError('First exam not found');
     return { examId, dentition: dentition as Dentition };
   }
 
@@ -128,9 +134,11 @@ export class FirstExamRestartService {
     if (!CHIEF_MARKS.includes(chiefMark)) throw new ValidationError('Invalid chiefMark');
 
     const now = context.now().toISOString();
-    this.db.prepare(
-      `UPDATE FirstExamTooth SET chiefMark = ?, updatedAt = ? WHERE id = ?${tenantAnd(clinicId)}`,
+    const result = this.db.prepare(
+      `UPDATE FirstExamTooth SET chiefMark = ?, updatedAt = ?
+       WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
     ).run(chiefMark, now, toothId, ...tenantParams(clinicId));
+    if (Number(result.changes) === 0) throw new NotFoundError('First exam tooth not found');
     return { toothId, chiefMark: chiefMark as ChiefMark };
   }
 

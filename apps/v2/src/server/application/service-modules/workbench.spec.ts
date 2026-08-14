@@ -187,4 +187,49 @@ describe('ClinicalWorkbenchService', () => {
     expect(result.appointments.some((row) => row.id === 'appt-deleted')).toBe(false);
     expect(result.totals).toEqual({ registrations: 1, appointments: 1, inProgressVisits: 1 });
   });
+
+  it('marks lists as truncated when more than 100 rows match the day', () => {
+    const isolatedDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-workbench-truncated-'));
+    const isolatedDb = createDatabase(isolatedDir);
+    try {
+      seedDatabase(isolatedDb);
+      runMigrations(isolatedDb);
+      for (let i = 0; i < 101; i += 1) {
+        const id = `trunc-reg-${String(i).padStart(3, '0')}`;
+        isolatedDb.prepare(
+          `INSERT INTO Registration (
+             id, clinicId, createdAt, updatedAt, deletedAt,
+             patientId, doctorId, type, status, registeredAt, chiefComplaint
+           ) VALUES (?, ?, ?, ?, NULL, ?, ?, 'REGULAR', 'REGISTERED', ?, '批量')`,
+        ).run(id, 'clinic-v2-001', nowIso, nowIso, 'patient-demo-001', 'user-admin-001', `2026-08-05T01:${String(i % 60).padStart(2, '0')}:00.000Z`);
+        isolatedDb.prepare(
+          `INSERT INTO Appointment (
+             id, clinicId, createdAt, updatedAt, deletedAt,
+             patientId, doctorId, startTime, endTime, status, type
+           ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, 'BOOKED', 'REGULAR')`,
+        ).run(
+          `trunc-appt-${String(i).padStart(3, '0')}`,
+          'clinic-v2-001',
+          nowIso,
+          nowIso,
+          'patient-demo-001',
+          'user-admin-001',
+          `2026-08-05T09:${String(i % 60).padStart(2, '0')}:00.000Z`,
+          `2026-08-05T10:${String(i % 60).padStart(2, '0')}:00.000Z`,
+        );
+      }
+      const service = new ClinicalWorkbenchService(isolatedDb);
+      const result = service.today(context) as {
+        registrations: Array<Record<string, unknown>>;
+        appointments: Array<Record<string, unknown>>;
+        truncated: Record<string, boolean>;
+      };
+      expect(result.registrations).toHaveLength(100);
+      expect(result.appointments).toHaveLength(100);
+      expect(result.truncated).toEqual({ registrations: true, appointments: true });
+    } finally {
+      isolatedDb.close();
+      fs.rmSync(isolatedDir, { recursive: true, force: true });
+    }
+  });
 });

@@ -22,6 +22,10 @@ export function registerRefundFlowRoutes(app: Express, deps: RouteDependencies):
     res.json({ success: true, data: { items, total, page, pageSize } });
   }));
 
+  app.get('/api/v2/refunds/summary', wrapAsync(async (req, res) => {
+    res.json({ success: true, data: service.summary(req.context!) });
+  }));
+
   app.post('/api/v2/refunds/:id/approve', wrapAsync(async (req, res) => {
     res.json({ success: true, data: service.approve(String(req.params.id), req.context!) });
   }));

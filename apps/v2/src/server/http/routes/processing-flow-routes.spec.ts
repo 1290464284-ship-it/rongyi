@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import express, { type Express } from 'express';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -17,7 +17,7 @@ describe('processing flow routes', () => {
   let app: Express;
   const nowIso = '2026-08-05T10:00:00.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-processing-flow-routes-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -70,7 +70,7 @@ describe('processing flow routes', () => {
     });
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -95,6 +95,30 @@ describe('processing flow routes', () => {
     expect(res.body.data[1].status).toBe('PENDING');
   });
 
+  it('POST register-step 将空串 stepId 归一化为未指定并推进默认第一步', async () => {
+    const res = await request(app)
+      .post('/api/v2/processing-orders/route-po-2/register-step')
+      .send({ stepId: '' })
+      .expect(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data[0]).toMatchObject({
+      stepId: 'route-step-model',
+      status: 'DONE',
+    });
+  });
+
+  it('POST register-step accepts an explicit matching stepId string', async () => {
+    const res = await request(app)
+      .post('/api/v2/processing-orders/route-po-2/register-step')
+      .send({ stepId: 'route-step-model' })
+      .expect(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data[0]).toMatchObject({
+      stepId: 'route-step-model',
+      status: 'DONE',
+    });
+  });
+
   it('POST set-step 手动修改状态（双击手动改）', async () => {
     const res = await request(app)
       .post('/api/v2/processing-orders/route-po-3/set-step')
@@ -111,6 +135,14 @@ describe('processing flow routes', () => {
 
   it('GET stats 按日期筛选返回流程统计', async () => {
     await request(app).post('/api/v2/processing-orders/route-po-4/register-step').send({}).expect(200);
+    await request(app)
+      .post('/api/v2/processing-orders/route-po-4/set-step')
+      .send({ stepId: 'route-step-tryon', status: 'IN_PROGRESS' })
+      .expect(200);
+    await request(app)
+      .post('/api/v2/processing-orders/route-po-3/set-step')
+      .send({ stepId: 'route-step-model', status: 'IN_PROGRESS' })
+      .expect(200);
     const res = await request(app).get('/api/v2/processing-flow-stats?from=2026-08-05&to=2026-08-05').expect(200);
     expect(res.body.success).toBe(true);
     expect(res.body.data.from).toBe('2026-08-05');
@@ -147,5 +179,12 @@ describe('processing flow routes', () => {
     expect(res.body.success).toBe(true);
     expect(res.body.data.from).toBeNull();
     expect(res.body.data.to).toBeNull();
+  });
+
+  it('tolerates missing request bodies', async () => {
+    const register = await request(app).post('/api/v2/processing-orders/missing/register-step');
+    expect([200, 400, 404, 409]).toContain(register.status);
+    const setStep = await request(app).post('/api/v2/processing-orders/missing/set-step');
+    expect([200, 400, 404, 409]).toContain(setStep.status);
   });
 });

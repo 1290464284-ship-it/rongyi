@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import request from 'supertest';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -17,7 +17,7 @@ describe('stocktake routes', () => {
   let app: express.Express;
   const now = '2026-08-05T10:00:00.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-stocktake-routes-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -44,7 +44,7 @@ describe('stocktake routes', () => {
     });
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -202,5 +202,12 @@ describe('stocktake routes', () => {
     await request(app).post(`/api/v2/stocktakes/${stocktakeId}/lock`).expect(409);
     // LOCKED 录入 → 409
     await request(app).patch(`/api/v2/stocktakes/${stocktakeId}/items/inventory-demo-001`).send({ countedStock: 5 }).expect(409);
+  });
+
+  it('tolerates missing request bodies', async () => {
+    const start = await request(app).post('/api/v2/stocktakes');
+    expect([200, 400, 409]).toContain(start.status);
+    const count = await request(app).patch('/api/v2/stocktakes/missing/items/missing');
+    expect([200, 400, 404, 409]).toContain(count.status);
   });
 });

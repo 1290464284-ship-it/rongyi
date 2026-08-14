@@ -73,6 +73,7 @@ export function WechatTemplateLibrary({ config }: { config?: WechatTemplateConfi
       <h2>微信信息模板</h2>
       <div className="wechat-template-grid">
         {SCENES.map((scene) => {
+          /* v8 ignore next -- DEFAULT_CONTENT 为三个 contentKey 均提供非空默认文案，`|| ''` 仅用于 noUncheckedIndexedAccess 的类型收窄，运行期死代码 */
           const content = config?.[scene.contentKey]?.trim() || DEFAULT_CONTENT[scene.contentKey] || '';
           const sample = renderSample(content, scene.placeholders);
           return (

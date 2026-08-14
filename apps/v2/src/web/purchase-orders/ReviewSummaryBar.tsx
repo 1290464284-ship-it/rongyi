@@ -12,6 +12,7 @@ export function ReviewSummaryBar({ refreshKey }: { refreshKey: number }) {
         approved: Number(data?.approved ?? 0),
       };
     },
+    placeholderData: (previous) => previous,
   });
   return (
     <div className="tracking-overview" aria-label="采购审核汇总">

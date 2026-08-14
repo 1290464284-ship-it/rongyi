@@ -79,6 +79,24 @@ describe('CustomFieldsPage', () => {
     expect(await screen.findByText('字段已创建')).toBeDefined();
   });
 
+  it('blocks saving fields with missing names or SELECT options', async () => {
+    mockApi();
+    render(<CustomFieldsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '新建字段' }));
+
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    expect(await screen.findByText('请填写显示名称和字段名')).toBeDefined();
+
+    fireEvent.change(screen.getByLabelText('显示名称'), { target: { value: '医保类型' } });
+    fireEvent.change(screen.getByLabelText('字段名（字母开头）'), { target: { value: 'insuranceType' } });
+    fireEvent.change(screen.getByLabelText('类型'), { target: { value: 'SELECT' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    expect(await screen.findByText('SELECT 类型至少需要一个选项')).toBeDefined();
+
+    const postCalls = vi.mocked(apiRequest).mock.calls.filter(([, options]) => options?.method === 'POST');
+    expect(postCalls).toHaveLength(0);
+  });
+
   it('edits an existing field', async () => {
     mockApi();
     render(<CustomFieldsPage />, { wrapper });
@@ -226,6 +244,20 @@ describe('CustomFieldsPage', () => {
     expect(apiRequest).not.toHaveBeenCalledWith('/custom-fields/field-1', expect.objectContaining({ method: 'DELETE' }));
   });
 
+  it('closes the create dialog through the dialog close path', async () => {
+    mockApi();
+    render(<CustomFieldsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '新建字段' }));
+    expect(await screen.findByRole('dialog', { name: '新建字段' })).toBeDefined();
+
+    vi.useFakeTimers();
+    fireEvent.keyDown(document.querySelector('.modal')!, { key: 'Escape' });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByRole('dialog', { name: '新建字段' })).toBeNull();
+    vi.useRealTimers();
+    expect(apiRequest).not.toHaveBeenCalledWith('/custom-fields', expect.objectContaining({ method: 'POST' }));
+  });
+
   it('renders a blank label in the delete confirmation for sparse rows', async () => {
     vi.mocked(apiRequest).mockResolvedValueOnce([{ id: 'f-x', fieldName: 'x', label: undefined, fieldType: 'TEXT' }]);
     render(<CustomFieldsPage />, { wrapper });
@@ -275,5 +307,52 @@ describe('CustomFieldsPage', () => {
       path === '/custom-fields/field-1' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'DELETE',
     )).toHaveLength(1);
     resolveDelete?.({ ok: true });
+  });
+
+  it('falls back to an empty list when the query resolves null', async () => {
+    vi.mocked(apiRequest).mockResolvedValue(null);
+    render(<CustomFieldsPage />, { wrapper });
+    expect(await screen.findByText('暂未配置自定义字段')).toBeDefined();
+  });
+
+  it('backfills a missing sort order with zero when editing', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string, options?: RequestInit) => {
+      if (path === '/custom-fields?entity=patient') {
+        return [{ id: 'field-1', fieldName: 'allergies', label: '过敏史', fieldType: 'TEXT', required: false }];
+      }
+      if (path === '/custom-fields/field-1' && options?.method === 'PATCH') return {};
+      throw new Error(`unexpected request ${String(options?.method ?? 'GET')} ${path}`);
+    });
+    render(<CustomFieldsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '编辑' }));
+    expect(await screen.findByText('编辑字段')).toBeDefined();
+    expect((screen.getByLabelText('排序') as HTMLInputElement).value).toBe('0');
+  });
+
+  it('ignores delete confirmation while a create is in flight', async () => {
+    let resolveCreate: ((value: unknown) => void) | undefined;
+    vi.mocked(apiRequest).mockImplementation(async (path: string, options?: RequestInit) => {
+      if (path === '/custom-fields?entity=patient') {
+        return [{ id: 'field-1', fieldName: 'allergies', label: '过敏史', fieldType: 'TEXT', required: false, sortOrder: 1 }];
+      }
+      if (path === '/custom-fields' && options?.method === 'POST') {
+        return await new Promise((resolve) => { resolveCreate = resolve; });
+      }
+      return {};
+    });
+    render(<CustomFieldsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '新建字段' }));
+    fireEvent.change(screen.getByLabelText('显示名称'), { target: { value: '测试' } });
+    fireEvent.change(screen.getByLabelText('字段名（字母开头）'), { target: { value: 'testField' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    const confirm = screen.getAllByRole('button', { name: '删除' }).at(-1) as HTMLButtonElement;
+    fireEvent.click(confirm);
+    expect(apiRequest).not.toHaveBeenCalledWith('/custom-fields/field-1', expect.objectContaining({ method: 'DELETE' }));
+
+    resolveCreate?.({ id: 'field-new' });
+    expect(await screen.findByText('字段已创建')).toBeDefined();
   });
 });

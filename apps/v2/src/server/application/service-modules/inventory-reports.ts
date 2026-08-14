@@ -25,6 +25,7 @@ export interface InventoryReportQuery {
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const INVENTORY_DETAIL_LIMIT = 10_000;
 
 /**
  * 分类规则：除 SUMMARY 外的每个报表类型对应一组 InventoryTransaction
@@ -75,7 +76,7 @@ export class InventoryReportService {
     }
     // JOIN 侧的 i.clinicId 占位符在 SQL 中最先出现，参数按 ? 顺序排列：
     // [i.clinicId, ...过滤参数, t.clinicId]
-    const rows = this.db.prepare(`
+    const rawRows = this.db.prepare(`
       SELECT t.id, t.itemId, i.name AS itemName, i.spec, i.category, i.unit,
              t.type, t.quantity, t.beforeStock, t.afterStock, t.referenceType,
              t.referenceId, t.operatorId, t.remark, t.batchId, t.createdAt
@@ -83,7 +84,10 @@ export class InventoryReportService {
       JOIN InventoryItem i ON i.id = t.itemId AND i.deletedAt IS NULL${tenantAnd(context.clinicId, 'i.clinicId')}
       WHERE t.deletedAt IS NULL AND ${filters.join(' AND ')}${tenantAnd(context.clinicId, 't.clinicId')}
       ORDER BY t.createdAt DESC
-    `).all(...tenantParams(context.clinicId), ...params, ...tenantParams(context.clinicId)) as Array<Record<string, unknown>>;
+      LIMIT ?
+    `).all(...tenantParams(context.clinicId), ...params, ...tenantParams(context.clinicId), INVENTORY_DETAIL_LIMIT + 1) as Array<Record<string, unknown>>;
+    const truncated = rawRows.length > INVENTORY_DETAIL_LIMIT;
+    const rows = truncated ? rawRows.slice(0, INVENTORY_DETAIL_LIMIT) : rawRows;
 
     const items = rows.map((row) => ({
       id: row.id,
@@ -103,7 +107,7 @@ export class InventoryReportService {
       batchId: row.batchId,
       createdAt: row.createdAt,
     }));
-    return { type, from: query.from ?? null, to: query.to ?? null, total: items.length, items };
+    return { type, from: query.from ?? null, to: query.to ?? null, total: items.length, items, truncated };
   }
 
   private summary(query: InventoryReportQuery, context: AppContext): Record<string, unknown> {
@@ -143,9 +147,10 @@ export class InventoryReportService {
       category: row.category,
       unit: row.unit,
       currentStock: Number(row.currentStock ?? 0),
-      inQuantity: Number(row.inQuantity ?? 0),
-      outQuantity: Number(row.outQuantity ?? 0),
-      adjustQuantity: Number(row.adjustQuantity ?? 0),
+      // 三个聚合列由 COALESCE 兜底，恒非空，nullish 兜底不可达。
+      inQuantity: Number(row.inQuantity),
+      outQuantity: Number(row.outQuantity),
+      adjustQuantity: Number(row.adjustQuantity),
     }));
     return { type: 'SUMMARY', from: query.from ?? null, to: query.to ?? null, total: items.length, items };
   }

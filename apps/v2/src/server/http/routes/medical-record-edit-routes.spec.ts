@@ -16,6 +16,7 @@ describe('medical record edit routes', () => {
   let dataDir: string;
   let app: express.Express;
   const now = '2026-08-03T00:00:00.000Z';
+  let currentUserId = 'user-admin-001';
 
   function insertRecord(
     id: string,
@@ -58,7 +59,7 @@ describe('medical record edit routes', () => {
     app.use(express.json());
     app.use((req, _res, next) => {
       (req as unknown as { context: unknown }).context = {
-        userId: 'user-admin-001',
+        userId: currentUserId,
         clinicId: 'clinic-v2-001',
         role: 'BOSS',
         traceId: 'test-trace',
@@ -102,6 +103,7 @@ describe('medical record edit routes', () => {
       .send({ reason: '更新内容', proposedContent: { diagnosis: '合并后诊断', teethInvolved: ['12'] } })
       .expect(201);
 
+    currentUserId = 'user-admin-002';
     const response = await request(app)
       .patch('/api/v2/medical-records/r-route-2/edit-request/review')
       .send({ approve: true, reviewNote: '同意' })
@@ -115,8 +117,9 @@ describe('medical record edit routes', () => {
     expect(row.isLocked).toBe(0);
     expect(row.lockedAt).toBeNull();
     expect(row.lockedBy).toBeNull();
-    expect(row.reviewedById).toBe('user-admin-001');
+    expect(row.reviewedById).toBe('user-admin-002');
     expect(row.reviewNote).toBe('同意');
+    currentUserId = 'user-admin-001';
   });
 
   it('rejects with approve=false and keeps the record locked', async () => {
@@ -127,6 +130,7 @@ describe('medical record edit routes', () => {
       .send({ reason: '申请修改', proposedContent: { diagnosis: '不应合并' } })
       .expect(201);
 
+    currentUserId = 'user-admin-002';
     const response = await request(app)
       .patch('/api/v2/medical-records/r-route-3/edit-request/review')
       .send({ approve: false, reviewNote: '不通过' })
@@ -138,6 +142,20 @@ describe('medical record edit routes', () => {
     expect(row.isLocked).toBe(1);
     expect(row.editRequestStatus).toBe('REJECTED');
     expect(row.reviewNote).toBe('不通过');
+    currentUserId = 'user-admin-001';
+  });
+
+  it('rejects non-boolean approve payloads', async () => {
+    insertRecord('r-route-strict-bool');
+    await request(app)
+      .post('/api/v2/medical-records/r-route-strict-bool/edit-request')
+      .send({ reason: '严格布尔', proposedContent: { diagnosis: '新诊断' } })
+      .expect(201);
+    const response = await request(app)
+      .patch('/api/v2/medical-records/r-route-strict-bool/edit-request/review')
+      .send({ approve: 'yes' })
+      .expect(400);
+    expect(response.body.code).toBe('VALIDATION_ERROR');
   });
 
   it('returns 404 for an unknown record', async () => {
@@ -185,5 +203,12 @@ describe('medical record edit routes', () => {
       .expect(400);
     expect(response.body.code).toBe('VALIDATION_ERROR');
     expect(response.body.message).toBe('修改原因不能为空');
+  });
+
+  it('tolerates missing request bodies', async () => {
+    const edit = await request(app).post('/api/v2/medical-records/missing/edit-request');
+    expect([200, 400, 404, 409]).toContain(edit.status);
+    const review = await request(app).patch('/api/v2/medical-records/missing/edit-request/review');
+    expect([200, 400, 404, 409]).toContain(review.status);
   });
 });

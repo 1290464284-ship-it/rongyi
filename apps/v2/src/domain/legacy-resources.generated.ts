@@ -77,7 +77,6 @@ export const legacyResources: ResourceDefinition[] = [
     { name: "analysisDate", type: 'text' },
     { name: "doctorId", type: 'text' },
     { name: "remark", type: 'text' },
-    { name: "patientId", type: 'text' },
   ], {
     searchableFields: ["landmarkSetId","method","metricsJson"],
     defaultSort: { field: "createdAt", order: 'DESC' },
@@ -88,10 +87,6 @@ export const legacyResources: ResourceDefinition[] = [
     { name: "patientId", type: 'text' },
     { name: "imageId", type: 'text' },
     { name: "landmarkJson", type: 'text' },
-    { name: "name", type: 'text' },
-    { name: "method", type: 'text' },
-    { name: "status", type: 'text' },
-    { name: "createdBy", type: 'text' },
   ], {
     searchableFields: ["patientId","imageId","landmarkJson"],
     defaultSort: { field: "createdAt", order: 'DESC' },
@@ -109,7 +104,6 @@ export const legacyResources: ResourceDefinition[] = [
     { name: "stdDev", type: 'number' },
     { name: "unit", type: 'text' },
     { name: "source", type: 'text' },
-    { name: "adultChildFlag", type: 'text' },
   ], {
     searchableFields: ["method","metricName","race"],
     defaultSort: { field: "createdAt", order: 'DESC' },
@@ -141,29 +135,6 @@ export const legacyResources: ResourceDefinition[] = [
     searchableFields: ["antecedent","consequent","computedAt"],
     defaultSort: { field: "createdAt", order: 'DESC' },
     capabilities: { list: true, create: false, update: false, delete: false, softDelete: false },
-    roles: ['BOSS'],
-  }),
-  legacy("chargeCombo", "ChargeCombo", [
-    { name: "name", type: 'text' },
-    { name: "category", type: 'text' },
-    { name: "isPublic", type: 'number' },
-    { name: "creatorId", type: 'text' },
-  ], {
-    searchableFields: ["name","category","creatorId"],
-    defaultSort: { field: "createdAt", order: 'DESC' },
-    capabilities: { list: true, create: false, update: false, delete: false, softDelete: true },
-    roles: ['BOSS'],
-  }),
-  legacy("chargeComboItem", "ChargeComboItem", [
-    { name: "comboId", type: 'text' },
-    { name: "treatmentCatalogId", type: 'text' },
-    { name: "itemName", type: 'text' },
-    { name: "price", type: 'number' },
-    { name: "quantity", type: 'number' },
-  ], {
-    searchableFields: ["comboId","treatmentCatalogId","itemName"],
-    defaultSort: { field: "createdAt", order: 'DESC' },
-    capabilities: { list: true, create: false, update: false, delete: false, softDelete: true },
     roles: ['BOSS'],
   }),
   legacy("clinicInfo", "ClinicInfo", [
@@ -248,11 +219,6 @@ export const legacyResources: ResourceDefinition[] = [
     { name: "lactationFlag", type: 'number' },
     { name: "renalFlag", type: 'number' },
     { name: "hepaticFlag", type: 'number' },
-    { name: "ruleId", type: 'text' },
-    { name: "level", type: 'text' },
-    { name: "appliesToJson", type: 'text' },
-    { name: "bidirectional", type: 'number' },
-    { name: "doseMinDailyMg", type: 'number' },
   ], {
     searchableFields: ["drugAId","drugBId","drugCategoryA"],
     defaultSort: { field: "createdAt", order: 'DESC' },
@@ -264,7 +230,7 @@ export const legacyResources: ResourceDefinition[] = [
   ], {
     searchableFields: ["name"],
     defaultSort: { field: "createdAt", order: 'DESC' },
-    capabilities: { list: true, create: false, update: false, delete: false, softDelete: true },
+    capabilities: { list: true, create: false, update: false, delete: false, softDelete: false },
     roles: ['BOSS'],
   }),
   legacy("firstExamFollowUp", "FirstExamFollowUp", [
@@ -316,7 +282,7 @@ export const legacyResources: ResourceDefinition[] = [
   ], {
     searchableFields: ["name","category","templateId"],
     defaultSort: { field: "createdAt", order: 'DESC' },
-    capabilities: { list: true, create: false, update: false, delete: false, softDelete: true },
+    capabilities: { list: true, create: false, update: false, delete: false, softDelete: false },
     roles: ['BOSS'],
   }),
   legacy("followUpResult", "FollowUpResult", [
@@ -326,7 +292,7 @@ export const legacyResources: ResourceDefinition[] = [
   ], {
     searchableFields: ["name","category"],
     defaultSort: { field: "createdAt", order: 'DESC' },
-    capabilities: { list: true, create: false, update: false, delete: false, softDelete: true },
+    capabilities: { list: true, create: false, update: false, delete: false, softDelete: false },
     roles: ['BOSS'],
   }),
   legacy("medicalRecordPhrase", "MedicalRecordPhrase", [
@@ -337,11 +303,6 @@ export const legacyResources: ResourceDefinition[] = [
     { name: "creatorId", type: 'text' },
     { name: "ownerId", type: 'text' },
     { name: "pinOrder", type: 'number' },
-    { name: "useCount", type: 'number' },
-    { name: "triggerToothStatuses", type: 'text' },
-    { name: "triggerToothConditions", type: 'text' },
-    { name: "lastUsedAt", type: 'text' },
-    { name: "copiedFromId", type: 'text' },
   ], {
     searchableFields: ["name","category","content"],
     defaultSort: { field: "createdAt", order: 'DESC' },
@@ -434,7 +395,7 @@ export const legacyResources: ResourceDefinition[] = [
   ], {
     searchableFields: ["factoryId","name","category"],
     defaultSort: { field: "createdAt", order: 'DESC' },
-    capabilities: { list: true, create: false, update: false, delete: false, softDelete: true },
+    capabilities: { list: true, create: false, update: false, delete: false, softDelete: false },
     roles: ['BOSS'],
   }),
   legacy("recordModifyRequest", "RecordModifyRequest", [
@@ -480,17 +441,6 @@ export const legacyResources: ResourceDefinition[] = [
     searchableFields: ["staffId","scheduleDate","shiftId"],
     defaultSort: { field: "createdAt", order: 'DESC' },
     capabilities: { list: true, create: false, update: false, delete: false, softDelete: true },
-    roles: ['BOSS'],
-  }),
-  legacy("syncChangeLog", "SyncChangeLog", [
-    { name: "tableName", type: 'text' },
-    { name: "recordId", type: 'text' },
-    { name: "operation", type: 'text' },
-    { name: "deviceId", type: 'text' },
-  ], {
-    searchableFields: ["tableName","recordId","operation"],
-    defaultSort: { field: "createdAt", order: 'DESC' },
-    capabilities: { list: true, create: false, update: false, delete: false, softDelete: false },
     roles: ['BOSS'],
   }),
   legacy("systemAlert", "SystemAlert", [

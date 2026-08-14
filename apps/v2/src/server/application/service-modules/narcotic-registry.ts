@@ -4,6 +4,7 @@ import { NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import type { AppContext } from '../../../domain/contracts';
 import type { NarcoticCreateInput, NarcoticUpdateInput } from './dispense-types';
+import { assertDoctorExists, assertPatientExists } from './common';
 
 export type { NarcoticCreateInput, NarcoticUpdateInput } from './dispense-types';
 
@@ -79,6 +80,12 @@ export class NarcoticRegistryService {
       `SELECT id FROM InventoryItem WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).get(input.itemId, ...tenantParams(context.clinicId));
     if (!item) throw new NotFoundError('Inventory item not found');
+    if (input.patientId !== undefined && input.patientId !== null && input.patientId !== '') {
+      assertPatientExists(this.db, String(input.patientId), context.clinicId);
+    }
+    if (input.doctorId !== undefined && input.doctorId !== null && input.doctorId !== '') {
+      assertDoctorExists(this.db, String(input.doctorId), context.clinicId);
+    }
     const now = context.now().toISOString();
     const id = randomUUID();
     this.db.prepare(
@@ -137,7 +144,7 @@ export class NarcoticRegistryService {
     ).get(input.itemId, ...tenantParams(context.clinicId));
     if (!item) throw new NotFoundError('Inventory item not found');
     const now = context.now().toISOString();
-    this.db.prepare(
+    const result = this.db.prepare(
       `UPDATE NarcoticRegistry SET
          recordDate = ?, itemId = ?, batchNo = ?, quantity = ?,
          usage = ?, balanceBefore = ?, balanceAfter = ?, remark = ?, updatedAt = ?
@@ -155,6 +162,7 @@ export class NarcoticRegistryService {
       id,
       ...tenantParams(context.clinicId),
     );
+    if (Number(result.changes) === 0) throw new NotFoundError('麻药登记不存在');
     return { id };
   }
 
@@ -165,10 +173,11 @@ export class NarcoticRegistryService {
     ).get(id, ...tenantParams(context.clinicId));
     if (!record) throw new NotFoundError('麻药登记不存在');
     const now = context.now().toISOString();
-    this.db.prepare(
+    const result = this.db.prepare(
       `UPDATE NarcoticRegistry SET deletedAt = ?, updatedAt = ?
        WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).run(now, now, id, ...tenantParams(context.clinicId));
+    if (Number(result.changes) === 0) throw new NotFoundError('麻药登记不存在');
     return { id, deleted: true };
   }
 }

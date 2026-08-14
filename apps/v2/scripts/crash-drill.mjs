@@ -14,7 +14,9 @@ const dataDir = path.join(tempRoot, 'data');
 const backupDir = path.join(dataDir, 'backups');
 const logDir = path.join(dataDir, 'logs');
 const port = 42000 + Math.floor(Math.random() * 1000);
-const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'v2-sim-admin-password';
+// 模拟库管理员密码固定为 v2-sim-admin-password（simulate-clinic-data.ts
+// 硬编码）；本 drill 复制模拟库，登录必须用固定口令（同 disaster-drill）。
+const adminPassword = 'v2-sim-admin-password';
 
 const sourceSimDir = resolveSimulatedDataDir();
 if (!sourceSimDir) {

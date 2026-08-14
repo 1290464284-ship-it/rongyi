@@ -13,7 +13,7 @@ const infrastructureDir = path.resolve(applicationDir, '..', 'infrastructure');
 const repositoriesDir = path.resolve(infrastructureDir, 'repositories');
 const httpDir = path.resolve(applicationDir, '..', 'http');
 const SYNC_TABLE_WRITE_RE =
-  /\b(INSERT INTO|UPDATE|DELETE FROM)\s+(Patient|Appointment|Charge|InventoryItem|FollowUp|PurchaseOrder)\b/;
+  /\b(INSERT INTO|UPDATE|DELETE FROM)\s+(Patient|Appointment|Treatment|Charge|InventoryItem|FollowUp|PurchaseOrder)\b/;
 
 describe('architecture boundaries', () => {
   it('keeps application service modules under a maintainable size', () => {
@@ -141,7 +141,7 @@ describe('architecture boundaries', () => {
         if (!relative.endsWith('.ts') || relative.endsWith('.spec.ts')) continue;
         const file = path.join(dir, relative);
         const content = fs.readFileSync(file, 'utf8');
-        if (SYNC_TABLE_WRITE_RE.test(content)) {
+        if (SYNC_TABLE_WRITE_RE.test(content) || /\bUPDATE\s+\$\{/.test(content)) {
           expect(content, file).toMatch(/recordSyncChange|trackResourceWrite/);
         }
       }

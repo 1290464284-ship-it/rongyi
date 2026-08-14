@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppointmentsPage } from './AppointmentsPage';
 import { apiRequest } from '../../lib/api';
@@ -78,6 +78,94 @@ await waitFor(() => {
     vi.mocked(apiRequest).mockImplementation(() => new Promise(() => {}));
     render(<AppointmentsPage />, { wrapper });
     expect(screen.getByText('加载中...')).toBeDefined();
+  });
+
+  it('applies initialSearch from a deep link', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/appointments?page=1&pageSize=20&search=%E5%BC%A0%E4%B8%89') {
+        return { items: [{ id: 'a-9', patientId: 'p-9', doctorId: 'd-9', startTime: null, status: null }], total: 1, page: 1, pageSize: 20 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-9', name: '患者九' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-9', name: '张医生' }];
+      if (path === '/resources/chairs?page=1&pageSize=100') {
+        return { items: [], total: 0, page: 1, pageSize: 200 };
+      }
+      if (path === '/resources/appointmentPurposes?page=1&pageSize=100') {
+        return { items: [], total: 0, page: 1, pageSize: 100 };
+      }
+      return {};
+    });
+    render(<AppointmentsPage initialSearch="张三" />, { wrapper });
+    expect(await screen.findByText('预约管理')).toBeDefined();
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/appointments?page=1&pageSize=20&search=%E5%BC%A0%E4%B8%89');
+    });
+    expect((screen.getByLabelText('搜索预约') as HTMLInputElement).value).toBe('张三');
+  });
+
+  it('renders missing select values for unknown doctors and purposes', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/appointments?page=1&pageSize=20') {
+        return {
+          items: [{
+            id: 'a-missing',
+            patientId: 'p-missing',
+            doctorId: 'd-missing',
+            purpose: 'purpose-missing',
+            startTime: '2026-08-04T09:00:00.000Z',
+            status: 'BOOKED',
+          }],
+          total: 1,
+          page: 1,
+          pageSize: 20,
+        };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') return { items: [], total: 0, page: 1, pageSize: 200 };
+      if (path === '/doctors') return [];
+      if (path === '/resources/chairs?page=1&pageSize=100') return { items: [], total: 0, page: 1, pageSize: 200 };
+      if (path === '/resources/appointmentPurposes?page=1&pageSize=100') return { items: [], total: 0, page: 1, pageSize: 100 };
+      if (path === '/resources/appointments/a-missing') {
+        return { id: 'a-missing', patientId: 'p-missing', doctorId: 'd-missing', purpose: 'purpose-missing', startTime: '2026-08-04T09:00:00.000Z', status: 'BOOKED' };
+      }
+      return {};
+    });
+    render(<AppointmentsPage />, { wrapper });
+    expect(await screen.findByText('预约管理')).toBeDefined();
+    fireEvent.click(await screen.findByRole('button', { name: '编辑' }));
+    expect(await screen.findByRole('option', { name: 'd-missing' })).toBeDefined();
+    expect(await screen.findByRole('option', { name: 'purpose-missing' })).toBeDefined();
+  });
+
+  it('renders create-form markers for unknown doctor and purpose ids', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/appointments?page=1&pageSize=20') return { items: [], total: 0, page: 1, pageSize: 20 };
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      if (path === '/resources/chairs?page=1&pageSize=100') return { items: [], total: 0, page: 1, pageSize: 200 };
+      if (path === '/resources/appointmentPurposes?page=1&pageSize=100') {
+        return { items: [{ id: 'purpose-1', name: '咨询' }], total: 1, page: 1, pageSize: 100 };
+      }
+      return {};
+    });
+    render(<AppointmentsPage />, { wrapper });
+    expect(await screen.findByText('预约管理')).toBeDefined();
+    const doctorSelect = screen.getByLabelText('医生') as HTMLSelectElement;
+    const purposeSelect = screen.getByLabelText('预约事项') as HTMLSelectElement;
+    // 先挂一个临时 option 让浏览器级 value 赋值成功，驱动 onChange 选中未知 id
+    const doctorOption = document.createElement('option');
+    doctorOption.value = 'd-unknown';
+    doctorSelect.appendChild(doctorOption);
+    fireEvent.change(doctorSelect, { target: { value: 'd-unknown' } });
+    const purposeOption = document.createElement('option');
+    purposeOption.value = 'purpose-unknown';
+    purposeSelect.appendChild(purposeOption);
+    fireEvent.change(purposeSelect, { target: { value: 'purpose-unknown' } });
+    expect(await screen.findByRole('option', { name: 'd-unknown' })).toBeDefined();
+    expect(await screen.findByRole('option', { name: 'purpose-unknown' })).toBeDefined();
   });
 
   it('shows an error when appointments fail to load', async () => {
@@ -343,6 +431,22 @@ await waitFor(() => {
     await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith('/resources/appointments/a-1', expect.objectContaining({ method: 'PATCH' }));
     });
+  });
+
+  it('does not save an edit while the appointment list is stale', async () => {
+    mockLookups();
+    render(<AppointmentsPage />, { wrapper });
+    await screen.findByText('预约管理');
+    fireEvent.click((await screen.findAllByRole('button', { name: '编辑' }))[2]);
+    vi.mocked(apiRequest).mockImplementationOnce(() => new Promise(() => {}));
+    fireEvent.change(screen.getByLabelText('搜索预约'), { target: { value: 'stale' } });
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/appointments?page=1&pageSize=20&search=stale');
+    });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    expect(vi.mocked(apiRequest).mock.calls.some(([path, options]) =>
+      path === '/resources/appointments/a-1' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'PATCH',
+    )).toBe(false);
   });
 
   it('deletes an appointment after confirmation', async () => {
@@ -641,10 +745,11 @@ await waitFor(() => {
     await screen.findByText('预约管理');
     fireEvent.click((await screen.findAllByRole('button', { name: '删除' }))[2]);
     const dialog = await screen.findByRole('dialog', { name: '删除预约' });
+    vi.useFakeTimers();
     fireEvent.keyDown(dialog, { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog', { name: '删除预约' })).toBeNull();
-    });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByRole('dialog', { name: '删除预约' })).toBeNull();
+    vi.useRealTimers();
     expect(apiRequest).not.toHaveBeenCalledWith('/resources/appointments/a-1', expect.objectContaining({ method: 'DELETE' }));
   });
 
@@ -654,8 +759,8 @@ await waitFor(() => {
       const method = String(init?.method ?? 'GET').toUpperCase();
       if (path === '/resources/appointments?page=2&pageSize=20') {
         return deleted
-          ? { items: [], total: 21, page: 2, pageSize: 20 }
-          : { items: [{ id: 'a-9', patientId: 'p-1', doctorId: 'd-1', startTime: '2026-08-04T09:00:00.000Z', status: 'BOOKED' }], total: 21, page: 2, pageSize: 20 };
+          ? {}
+          : { items: [{ id: 'a-9', patientId: 'p-9', doctorId: 'd-1', startTime: '2026-08-04T09:00:00.000Z', status: 'BOOKED' }], total: 21, page: 2, pageSize: 20 };
       }
       if (path === '/resources/appointments?page=1&pageSize=20') {
         return { items: appointmentList.items, total: 21, page: 1, pageSize: 20 };
@@ -680,7 +785,7 @@ await waitFor(() => {
     render(<AppointmentsPage />, { wrapper });
     await screen.findByText('预约管理');
     fireEvent.click(screen.getByRole('button', { name: '下一页' }));
-    await screen.findByText('第 2 页');
+    await screen.findByText('p-9');
     fireEvent.click(screen.getAllByRole('button', { name: '删除' })[0]);
     const confirmButtons = screen.getAllByRole('button', { name: '删除' });
     fireEvent.click(confirmButtons[confirmButtons.length - 1]);
@@ -716,6 +821,9 @@ await waitFor(() => {
     await screen.findByText('预约管理');
     fireEvent.click(screen.getByRole('button', { name: '下一页' }));
     await screen.findByText('第 2 页');
+    await waitFor(() => {
+      expect((screen.getByRole('button', { name: '上一页' }) as HTMLButtonElement).disabled).toBe(false);
+    });
     fireEvent.click(screen.getByRole('button', { name: '上一页' }));
     expect(await screen.findByText('第 1 页')).toBeDefined();
   });
@@ -772,10 +880,12 @@ await waitFor(() => {
     expect(await screen.findByText('事项已更新')).toBeDefined();
 
     fireEvent.click((await screen.findAllByRole('button', { name: '编辑' }))[0]);
-    fireEvent.keyDown(await screen.findByRole('dialog'), { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog')).toBeNull();
-    });
+    const dialog = await screen.findByRole('dialog');
+    vi.useFakeTimers();
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    vi.useRealTimers();
 
     fireEvent.click((await screen.findAllByRole('button', { name: '编辑' }))[0]);
     fireEvent.click(screen.getByRole('button', { name: '取消' }));
@@ -809,5 +919,187 @@ await waitFor(() => {
     expect(patchCalls).toHaveLength(1);
     resolvePatch?.({ id: 'purpose-1' });
     expect(await screen.findByText('事项已更新')).toBeDefined();
+  });
+
+  it('ignores a duplicate create submit while one is pending', async () => {
+    mockLookups();
+    let resolveCreate: ((value: unknown) => void) | undefined;
+    const base = vi.mocked(apiRequest).getMockImplementation();
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (String(init?.method ?? 'GET').toUpperCase() === 'POST' && path === '/appointments') {
+        return await new Promise((resolve) => {
+          resolveCreate = resolve;
+        });
+      }
+      return base?.(path, init);
+    });
+    render(<AppointmentsPage />, { wrapper });
+    await screen.findByText('预约管理');
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
+    fireEvent.change(screen.getByLabelText('开始时间'), { target: { value: '2026-08-05T09:00' } });
+    fireEvent.change(screen.getByLabelText('结束时间'), { target: { value: '2026-08-05T10:00' } });
+    const form = screen.getByRole('button', { name: '创建预约' }).closest('form');
+    expect(form).not.toBeNull();
+    fireEvent.submit(form as HTMLFormElement);
+    fireEvent.submit(form as HTMLFormElement);
+
+    const postCalls = vi.mocked(apiRequest).mock.calls.filter(
+      ([path, options]) => path === '/appointments' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'POST',
+    );
+    expect(postCalls).toHaveLength(1);
+    resolveCreate?.({ id: 'a-new' });
+    expect(await screen.findByText('预约已创建')).toBeDefined();
+  });
+
+  it('ignores a duplicate status transition while one is in flight', async () => {
+    mockLookups();
+    let resolveStatus: ((value: unknown) => void) | undefined;
+    const base = vi.mocked(apiRequest).getMockImplementation();
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (String(init?.method ?? 'GET').toUpperCase() === 'PATCH' && path === '/appointments/a-1/status') {
+        return await new Promise((resolve) => {
+          resolveStatus = resolve;
+        });
+      }
+      return base?.(path, init);
+    });
+    render(<AppointmentsPage />, { wrapper });
+    await screen.findByText('预约管理');
+    const statusSelect = (await screen.findAllByLabelText('变更预约状态'))[0];
+    fireEvent.change(statusSelect, { target: { value: 'ARRIVED' } });
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/appointments/a-1/status', expect.objectContaining({ method: 'PATCH' }));
+    });
+    fireEvent.change(statusSelect, { target: { value: 'CANCELLED' } });
+    const patchCalls = vi.mocked(apiRequest).mock.calls.filter(
+      ([path, options]) => path === '/appointments/a-1/status' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'PATCH',
+    );
+    expect(patchCalls).toHaveLength(1);
+    resolveStatus?.({ id: 'a-1' });
+    expect(await screen.findByText('预约状态已更新')).toBeDefined();
+  });
+
+  it('reuses the cached raw phone when editing the same appointment again', async () => {
+    let detailCalls = 0;
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/appointments?page=1&pageSize=20') {
+        return {
+          items: [{ id: 'a-1', patientId: 'p-1', doctorId: 'd-1', tempPatientPhone: '138****0000', startTime: '2026-08-04T09:00:00.000Z', status: 'BOOKED' }],
+          total: 1,
+          page: 1,
+          pageSize: 20,
+        };
+      }
+      if (path === '/resources/appointments/a-1') {
+        detailCalls += 1;
+        return { id: 'a-1', tempPatientPhone: '13800000000' };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      if (path === '/resources/chairs?page=1&pageSize=100') {
+        return { items: [{ id: 'c-1', name: '椅位 1' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/resources/appointmentPurposes?page=1&pageSize=100') {
+        return { items: [], total: 0, page: 1, pageSize: 100 };
+      }
+      return {};
+    });
+
+    render(<AppointmentsPage />, { wrapper });
+    await screen.findByText('预约管理');
+    const editButtons = await screen.findAllByRole('button', { name: '编辑' });
+    fireEvent.click(editButtons[0]);
+    let phoneInputs = screen.getAllByLabelText('临时患者电话');
+    await waitFor(() => {
+      expect((phoneInputs[phoneInputs.length - 1] as HTMLInputElement).value).toBe('13800000000');
+    });
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: '编辑预约' })).toBeNull();
+    });
+    fireEvent.click((await screen.findAllByRole('button', { name: '编辑' }))[0]);
+    phoneInputs = screen.getAllByLabelText('临时患者电话');
+    await waitFor(() => {
+      expect((phoneInputs[phoneInputs.length - 1] as HTMLInputElement).value).toBe('13800000000');
+    });
+    expect(detailCalls).toBe(1);
+  });
+
+  it('edits a row with null patient and doctor ids and omits the patient id', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = String(init?.method ?? 'GET').toUpperCase();
+      if (path === '/resources/appointments?page=1&pageSize=20') {
+        return {
+          items: [{ id: 'a-null', patientId: null, doctorId: null, startTime: '2026-08-04T09:00:00.000Z', status: 'BOOKED' }],
+          total: 1,
+          page: 1,
+          pageSize: 20,
+        };
+      }
+      if (method === 'PATCH' && path === '/resources/appointments/a-null') return { id: 'a-null' };
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      if (path === '/resources/chairs?page=1&pageSize=100') {
+        return { items: [], total: 0, page: 1, pageSize: 200 };
+      }
+      if (path === '/resources/appointmentPurposes?page=1&pageSize=100') {
+        return { items: [], total: 0, page: 1, pageSize: 100 };
+      }
+      return {};
+    });
+    render(<AppointmentsPage />, { wrapper });
+    await screen.findByText('预约管理');
+    fireEvent.click((await screen.findAllByRole('button', { name: '编辑' }))[0]);
+    const doctorSelects = screen.getAllByLabelText('医生');
+    expect((doctorSelects[doctorSelects.length - 1] as HTMLSelectElement).value).toBe('');
+    fireEvent.change(doctorSelects[doctorSelects.length - 1], { target: { value: 'd-1' } });
+    const startInputs = screen.getAllByLabelText('开始时间');
+    const endInputs = screen.getAllByLabelText('结束时间');
+    fireEvent.change(startInputs[startInputs.length - 1], { target: { value: '2026-08-05T09:00' } });
+    fireEvent.change(endInputs[endInputs.length - 1], { target: { value: '2026-08-05T10:00' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/appointments/a-null', expect.objectContaining({ method: 'PATCH' }));
+    });
+    const patchCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/resources/appointments/a-null');
+    const body = JSON.parse(String((patchCall?.[1] as RequestInit | undefined)?.body ?? '{}')) as Record<string, unknown>;
+    expect(body.patientId).toBeUndefined();
+  });
+
+  it('falls back to ids for doctor and purpose options without names', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/appointments?page=1&pageSize=20') {
+        return {
+          items: [{ id: 'a-1', patientId: 'p-1', doctorId: 'd-1', purpose: 'purpose-1', startTime: '2026-08-04T09:00:00.000Z', status: 'BOOKED' }],
+          total: 1,
+          page: 1,
+          pageSize: 20,
+        };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1' }];
+      if (path === '/resources/chairs?page=1&pageSize=100') {
+        return { items: [], total: 0, page: 1, pageSize: 200 };
+      }
+      if (path === '/resources/appointmentPurposes?page=1&pageSize=100') {
+        return { items: [{ id: 'purpose-1' }], total: 1, page: 1, pageSize: 100 };
+      }
+      return {};
+    });
+    render(<AppointmentsPage />, { wrapper });
+    await screen.findByText('预约管理');
+    fireEvent.click((await screen.findAllByRole('button', { name: '编辑' }))[0]);
+    expect(screen.getAllByRole('option', { name: 'd-1' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('option', { name: 'purpose-1' }).length).toBeGreaterThan(0);
   });
 });

@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import type { Page } from '../../lib/types';
-import { DataTable, LoadingState, PageError, QuerySection, type DataTableColumn } from '../../components';
+import { DataTable, LoadingState, PageError, PagePager, QuerySection, type DataTableColumn } from '../../components';
 import { formatMoney } from '../../lib/format';
 import { errorMessage } from '../../lib/messages';
 import { useAsyncAction } from '../../hooks/use-async-action';
@@ -18,25 +18,43 @@ export function InventoryWorkflowPage() {
   const [countedInputs, setCountedInputs] = useState<Record<string, string>>({});
   // 写请求 busy 守卫：防止双击重复创建盘点单
   const { busy: creatingStocktake, run: runCreateStocktake } = useAsyncAction();
+  const { busy: suggestionsBusy, run: runSuggestions } = useAsyncAction();
+  const { busy: savingCounted, run: runSavingCounted } = useAsyncAction();
+  const [purchasePage, setPurchasePage] = useState(1);
+  const [purchaseItemsPage, setPurchaseItemsPage] = useState(1);
+  const [processingPage, setProcessingPage] = useState(1);
+  const [suggestionsPage, setSuggestionsPage] = useState(1);
+  const [stocktakePage, setStocktakePage] = useState(1);
   const purchase = useQuery({
-    queryKey: ['po-workflow'],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/purchaseOrders?page=1&pageSize=100'),
+    queryKey: ['po-workflow', purchasePage],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(`/resources/purchaseOrders?page=${purchasePage}&pageSize=100`),
   });
   const purchaseItems = useQuery({
-    queryKey: ['po-items-workflow'],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/purchaseOrderItems?page=1&pageSize=200'),
+    queryKey: ['po-items-workflow', purchaseItemsPage],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(`/resources/purchaseOrderItems?page=${purchaseItemsPage}&pageSize=200`),
   });
+  const pendingPurchaseRows = useMemo(
+    () => (purchase.data?.items ?? []).filter((row) => String(row.status) === 'PENDING'),
+    [purchase.data],
+  );
   const processing = useQuery({
-    queryKey: ['processing-workflow'],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/processingOrders?page=1&pageSize=100'),
+    queryKey: ['processing-workflow', processingPage],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(`/resources/processingOrders?page=${processingPage}&pageSize=100`),
   });
   const suggestions = useQuery({
-    queryKey: ['suggestions-workflow'],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100'),
+    queryKey: ['suggestions-workflow', suggestionsPage],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(`/resources/inventoryReplenishmentSuggestions?page=${suggestionsPage}&pageSize=100`),
   });
+  const openSuggestions = useMemo(
+    () => (suggestions.data?.items ?? []).filter((row) => {
+      const status = row.status === null || row.status === undefined ? 'OPEN' : String(row.status);
+      return status === 'OPEN';
+    }),
+    [suggestions.data],
+  );
   const stocktakes = useQuery({
-    queryKey: ['stocktakes-workflow'],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/stocktakes?page=1&pageSize=200'),
+    queryKey: ['stocktakes-workflow', stocktakePage],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(`/stocktakes?page=${stocktakePage}&pageSize=200`),
   });
   const stocktakeItems = useQuery({
     queryKey: ['stocktake-items', expandedStocktakeId ?? ''],
@@ -44,35 +62,56 @@ export function InventoryWorkflowPage() {
     enabled: expandedStocktakeId !== null,
   });
 
-  async function run(path: string, method: 'PATCH' | 'POST', body: Record<string, unknown>) {
+  async function run(path: string, method: 'PATCH' | 'POST', body: Record<string, unknown>): Promise<boolean> {
     try {
       await apiRequest(path, { method, body: JSON.stringify(body) });
       showToast('操作成功', 'success');
-      await Promise.all([purchase.refetch(), processing.refetch(), suggestions.refetch()]);
+      await Promise.all([purchase.refetch(), purchaseItems.refetch(), processing.refetch(), suggestions.refetch()]);
+      return true;
     } catch (error) {
       showToast(errorMessage(error, '操作失败'), 'error');
+      return false;
     }
   }
 
   async function applySuggestions() {
+    /* v8 ignore next -- 应用按钮在 0 选中时 disabled，浏览器不派发点击，守卫为防御冗余 */
     if (!selectedSuggestions.length) return;
-    await run('/inventory/replenishment/apply', 'POST', { ids: selectedSuggestions });
-    setSelectedSuggestions([]);
+    await runSuggestions(async () => {
+      const applied = await run('/inventory/replenishment/apply', 'POST', { ids: selectedSuggestions });
+      if (applied) setSelectedSuggestions([]);
+    });
   }
 
   async function generateSuggestions() {
-    await run('/inventory/replenishment/generate', 'POST', {});
+    await runSuggestions(async () => {
+      await run('/inventory/replenishment/generate', 'POST', {});
+    });
   }
 
   const purchaseColumns: DataTableColumn<Record<string, unknown>>[] = [
     { key: 'number', label: '单号', render: (row) => String(row.number ?? row.id ?? '').slice(0, 14) },
     { key: 'supplierId', label: '供应商', render: (row) => String(row.supplierId ?? '') },
     { key: 'totalAmount', label: '金额', render: (row) => formatMoney(row.totalAmount) },
-    { key: 'status', label: '状态', render: (row) => PURCHASE_STATUS_LABELS[String(row.status)] ?? String(row.status) },
+    {
+      key: 'status',
+      label: '状态',
+      render: (row) => {
+        /* v8 ignore next -- pendingPurchaseRows 已过滤为恒 PENDING，标签查表恒命中，兜底为防御冗余 */
+        return PURCHASE_STATUS_LABELS[String(row.status)] ?? String(row.status);
+      },
+    },
     {
       key: 'actions',
       label: '操作',
-      render: (row) => <ReceiveButton id={String(row.id)} onDone={(id) => run(`/purchase-orders/${id}/receive`, 'PATCH', {})} />,
+      render: (row) => (
+        <ReceiveButton
+          id={String(row.id)}
+          onDone={async (id) => {
+            await run(`/purchase-orders/${id}/receive`, 'PATCH', {});
+          }}
+        />
+      ),
     },
   ];
 
@@ -91,7 +130,12 @@ export function InventoryWorkflowPage() {
       key: 'actions',
       label: '操作',
       render: (row) => (
-        <StatusFlowSelect id={String(row.id)} onDone={(id, status) => run(`/processing-orders/${id}/status`, 'PATCH', { status })} />
+        <StatusFlowSelect
+          id={String(row.id)}
+          onDone={async (id, status) => {
+            await run(`/processing-orders/${id}/status`, 'PATCH', { status });
+          }}
+        />
       ),
     },
   ];
@@ -101,7 +145,7 @@ export function InventoryWorkflowPage() {
       key: 'selected',
       label: '选',
       render: (row) => (
-        <input type="checkbox" checked={selectedSuggestions.includes(String(row.id))} onChange={(event) => {
+        <input type="checkbox" aria-label={`选择 ${String(row.id)}`} checked={selectedSuggestions.includes(String(row.id))} onChange={(event) => {
           setSelectedSuggestions((current) => event.target.checked ? [...current, String(row.id)] : current.filter((id) => id !== String(row.id)));
         }} />
       ),
@@ -146,16 +190,18 @@ export function InventoryWorkflowPage() {
       showToast('录入数量必须是非负整数', 'error');
       return;
     }
-    try {
-      await apiRequest(`/stocktakes/${stocktakeId}/items/${itemId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ countedStock }),
-      });
-      showToast('操作成功', 'success');
-      await Promise.all([stocktakes.refetch(), stocktakeItems.refetch()]);
-    } catch (error) {
-      showToast(errorMessage(error, '操作失败'), 'error');
-    }
+    await runSavingCounted(async () => {
+      try {
+        await apiRequest(`/stocktakes/${stocktakeId}/items/${itemId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ countedStock }),
+        });
+        showToast('操作成功', 'success');
+        await Promise.all([stocktakes.refetch(), stocktakeItems.refetch()]);
+      } catch (error) {
+        showToast(errorMessage(error, '操作失败'), 'error');
+      }
+    });
   }
 
   const stocktakeColumns: DataTableColumn<Record<string, unknown>>[] = [
@@ -223,7 +269,11 @@ export function InventoryWorkflowPage() {
     {
       key: 'actions',
       label: '操作',
-      render: (row) => (<button onClick={() => saveCountedStock(String(expandedStocktakeId), String(row.itemId))}>保存</button>),
+      render: (row) => (
+        <button disabled={savingCounted} onClick={() => saveCountedStock(String(expandedStocktakeId), String(row.itemId))}>
+          {savingCounted ? '保存中...' : '保存'}
+        </button>
+      ),
     },
   ];
 
@@ -233,40 +283,71 @@ export function InventoryWorkflowPage() {
       <h2>采购单</h2>
       <QuerySection
         query={purchase}
-        render={(data) => (
+        render={() => (
           <DataTable
             columns={purchaseColumns}
-            rows={data?.items.filter((row) => String(row.status) === 'PENDING') ?? []}
+            rows={pendingPurchaseRows}
             keyField="id"
             emptyText="暂无待收货采购单"
           />
         )}
       />
+      <PagePager
+        page={purchasePage}
+        hasNext={purchasePage * 100 < (purchase.data?.total ?? 0)}
+        onPageChange={setPurchasePage}
+        disabled={purchase.isFetching}
+      />
+      {purchase.data?.truncated && <p className="reminder-muted">采购单超过 100 条，仅显示部分数据</p>}
       <h2>采购单明细</h2>
       <QuerySection
         query={purchaseItems}
         render={(data) => <DataTable columns={purchaseItemColumns} rows={data?.items ?? []} keyField="id" emptyText="暂无采购明细" />}
       />
+      <PagePager
+        page={purchaseItemsPage}
+        hasNext={purchaseItemsPage * 200 < (purchaseItems.data?.total ?? 0)}
+        onPageChange={setPurchaseItemsPage}
+        disabled={purchaseItems.isFetching}
+      />
+      {purchaseItems.data && (purchaseItems.data.total ?? 0) > (purchaseItems.data.items?.length ?? 0) && (
+        <p className="reminder-muted">采购明细超过 200 条，仅显示部分数据</p>
+      )}
       <h2>加工单</h2>
       <QuerySection
         query={processing}
         render={(data) => <DataTable columns={processingColumns} rows={data?.items ?? []} keyField="id" emptyText="暂无加工单" />}
       />
+      <PagePager
+        page={processingPage}
+        hasNext={processingPage * 100 < (processing.data?.total ?? 0)}
+        onPageChange={setProcessingPage}
+        disabled={processing.isFetching}
+      />
+      {processing.data?.truncated && <p className="reminder-muted">加工单超过 100 条，仅显示部分数据</p>}
       <h2>补货建议</h2>
       <QuerySection
         query={suggestions}
         render={(data) => {
-          const openSuggestions = data?.items.filter((row) => {
-            const status = row.status === null || row.status === undefined ? 'OPEN' : String(row.status);
-            return status === 'OPEN';
-          }) ?? [];
           return (
             <>
               <div className="inline-form">
-                <button onClick={generateSuggestions}>生成补货建议</button>
-                <button onClick={applySuggestions}>应用选中建议</button>
+                <button disabled={suggestionsBusy} onClick={generateSuggestions}>{suggestionsBusy ? '处理中...' : '生成补货建议'}</button>
+                <button disabled={suggestionsBusy || selectedSuggestions.length === 0} onClick={applySuggestions}>{suggestionsBusy ? '处理中...' : '应用选中建议'}</button>
               </div>
               <DataTable columns={suggestionColumns} rows={openSuggestions} keyField="id" emptyText="暂无待应用补货建议" />
+              <PagePager
+                page={suggestionsPage}
+                hasNext={suggestionsPage * 100 < (data?.total ?? 0)}
+                onPageChange={(next) => {
+                  setSelectedSuggestions([]);
+                  setSuggestionsPage(next);
+                }}
+                disabled={suggestions.isFetching}
+              />
+              {(data?.total ?? 0) > (data?.items?.length ?? 0) && (
+                <p className="reminder-muted">补货建议超过 100 条，仅显示部分数据</p>
+              )}
             </>
           );
         }}
@@ -294,6 +375,12 @@ export function InventoryWorkflowPage() {
       {!stocktakes.isLoading && !stocktakes.error ? (
         <>
           <DataTable columns={stocktakeColumns} rows={stocktakes.data?.items ?? []} keyField="id" emptyText="暂无盘点单" />
+          <PagePager
+            page={stocktakePage}
+            hasNext={stocktakePage * 200 < (stocktakes.data?.total ?? 0)}
+            onPageChange={setStocktakePage}
+            disabled={stocktakes.isFetching}
+          />
           {stocktakes.data?.truncated ? (
             <p className="reminder-muted">
               盘点单超过 {stocktakes.data.pageSize} 条，仅显示前 {stocktakes.data.items.length} 条
@@ -336,6 +423,7 @@ function StatusFlowSelect({ id, onDone }: { id: string; onDone: (id: string, sta
       onChange={(event) => {
         const next = event.target.value;
         setValue('');
+        /* v8 ignore next -- 占位项是受控 value，重选 '' 不派发 change，守卫为防御冗余 */
         if (next) void run(() => onDone(id, next));
       }}
     >

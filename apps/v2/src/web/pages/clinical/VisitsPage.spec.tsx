@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { VisitsPage } from './VisitsPage';
 import { apiRequest } from '../../lib/api';
@@ -67,7 +67,6 @@ describe('VisitsPage', () => {
       patientId: 'p-1',
       doctorId: 'd-1',
       startTime: new Date('2026-08-05T09:00').toISOString(),
-      status: 'IN_PROGRESS',
       chiefComplaint: '补牙',
     });
     expect(body.endTime).toBeUndefined();
@@ -117,7 +116,6 @@ describe('VisitsPage', () => {
     });
     expect((screen.getByLabelText('医生') as HTMLSelectElement).value).toBe('d-1');
     expect((screen.getByLabelText('主诉') as HTMLTextAreaElement).value).toBe('牙痛');
-    expect((screen.getByLabelText('状态') as HTMLSelectElement).value).toBe('IN_PROGRESS');
 
     fireEvent.change(screen.getByLabelText('主诉'), { target: { value: '牙痛加剧' } });
     vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'v-1' });
@@ -266,7 +264,6 @@ describe('VisitsPage', () => {
     expect(await screen.findByLabelText('开始时间')).toBeDefined();
     expect((screen.getByLabelText('患者') as HTMLSelectElement).value).toBe('');
     expect((screen.getByLabelText('医生') as HTMLSelectElement).value).toBe('');
-    expect((screen.getByLabelText('状态') as HTMLSelectElement).value).toBe('IN_PROGRESS');
     expect((screen.getByLabelText('主诉') as HTMLTextAreaElement).value).toBe('');
   });
 
@@ -300,5 +297,62 @@ describe('VisitsPage', () => {
     const select = await screen.findByLabelText('变更就诊状态');
     fireEvent.change(select, { target: { value: '' } });
     expect(apiRequest).not.toHaveBeenCalledWith('/visits/v-1/status', expect.anything());
+  });
+
+  it('falls back to ids for unnamed doctors', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/visits?page=1&pageSize=50') {
+        return {
+          items: [{ id: 'v-1', patientId: 'p-1', doctorId: 'd-9', startTime: '2026-08-04T09:00:00.000Z', status: 'IN_PROGRESS', chiefComplaint: '牙痛' }],
+          total: 1,
+          page: 1,
+          pageSize: 50,
+        };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-9' }];
+      return {};
+    });
+    render(<VisitsPage />, { wrapper });
+    await screen.findByText('牙痛');
+    fireEvent.click(screen.getByText('新建就诊'));
+    await waitFor(() => {
+      expect((screen.getByRole('option', { name: 'd-9' }) as HTMLOptionElement).value).toBe('d-9');
+    });
+  });
+
+  it('ignores a second status transition while the first is in flight', async () => {
+    mockData();
+    render(<VisitsPage />, { wrapper });
+    await screen.findByText('牙痛');
+    let resolveStatus: (() => void) | undefined;
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/visits/v-1/status') {
+        return new Promise<void>((resolve) => { resolveStatus = resolve; });
+      }
+      if (path === '/resources/visits?page=1&pageSize=50') {
+        return {
+          items: [{ id: 'v-1', patientId: 'p-1', doctorId: 'd-1', startTime: '2026-08-04T09:00:00.000Z', status: 'IN_PROGRESS', chiefComplaint: '牙痛' }],
+          total: 1,
+          page: 1,
+          pageSize: 50,
+        };
+      }
+      return {};
+    });
+    const select = screen.getByLabelText('变更就诊状态') as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: 'COMPLETED' } });
+    fireEvent.change(select, { target: { value: 'IN_PROGRESS' } });
+    await waitFor(() => {
+      const calls = vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/visits/v-1/status');
+      expect(calls).toHaveLength(1);
+    });
+    // 释放模块级 transitionGuard：resolve 挂起请求，让 transitionVisit 的
+    // finally 执行 finish()。否则 v-1 被永久标记在途 → shuffle 顺序下后续
+    // 测试（transitions/toast、failure 报告）的 PATCH 被守卫吞掉。
+    resolveStatus?.();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
   });
 });

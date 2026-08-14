@@ -76,7 +76,7 @@ export class SqliteAuthRepository implements AuthRepository {
       `SELECT UC.clinicId, C.name, UC.role
        FROM UserClinic UC
        LEFT JOIN Clinic C ON C.id = UC.clinicId
-       WHERE UC.userId = ? AND UC.deletedAt IS NULL AND C.deletedAt IS NULL
+       WHERE UC.userId = ? AND UC.deletedAt IS NULL AND C.deletedAt IS NULL AND C.active = 1
        ORDER BY C.name ASC`,
     ).all(userId) as Array<{ clinicId: string; name: string; role: string }>;
   }

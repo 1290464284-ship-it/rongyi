@@ -22,11 +22,12 @@ export class TreatmentPlanDocumentService {
     ).get(id, ...tenantParams(clinicId));
     if (!existing) throw new NotFoundError('TreatmentPlan not found');
 
-    this.db.prepare(
+    const printed = this.db.prepare(
       `UPDATE TreatmentPlan
        SET printCount = COALESCE(printCount, 0) + 1, lastPrintedAt = ?, updatedAt = ?
-       WHERE id = ?${tenantAnd(clinicId)}`,
+       WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
     ).run(now, now, id, ...tenantParams(clinicId));
+    if (Number(printed.changes) === 0) throw new NotFoundError('TreatmentPlan not found');
 
     const plan = this.db.prepare(
       `SELECT tp.*, p.name AS patientName, u.name AS doctorName
@@ -68,11 +69,12 @@ export class TreatmentPlanDocumentService {
     if (!signerName) throw new ValidationError('签署人姓名不能为空');
 
     const now = context.now().toISOString();
-    this.db.prepare(
+    const signed = this.db.prepare(
       `UPDATE TreatmentPlan
        SET patientSignature = ?, signerName = ?, signedAt = ?, signatureRemark = ?, updatedAt = ?
-       WHERE id = ?${tenantAnd(clinicId)}`,
+       WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
     ).run(signature, signerName, now, input?.remark ?? null, now, id, ...tenantParams(clinicId));
+    if (Number(signed.changes) === 0) throw new NotFoundError('TreatmentPlan not found');
 
     return { id, signedAt: now, signerName };
   }

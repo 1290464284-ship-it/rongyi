@@ -5,11 +5,12 @@ import type { ReactNode } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ImagingPage } from './ImagingPage';
-import { apiRequest, getSignedFileUrl, uploadFile } from '../../lib/api';
+import { apiRequest, fetchAllPages, getSignedFileUrl, uploadFile } from '../../lib/api';
 import { ToastProvider } from '../../components/toast';
 
 vi.mock('../../lib/api', () => ({
   apiRequest: vi.fn(),
+  fetchAllPages: vi.fn(),
   // S-L8：默认实现让 SignedImage 始终能拿到签名 URL；afterEach 用 mockClear 保留此实现
   getSignedFileUrl: vi.fn(async (path: string) => {
     const name = path.split('/').pop() ?? 'file';
@@ -17,6 +18,11 @@ vi.mock('../../lib/api', () => ({
   }),
   uploadFile: vi.fn(),
 }));
+
+vi.mocked(fetchAllPages).mockImplementation(async (path: string) => {
+  const data = await vi.mocked(apiRequest)(path) as { items?: unknown[] } | unknown[];
+  return Array.isArray(data) ? data : (data as { items?: unknown[] })?.items ?? [];
+});
 
 const wrapper = ({ children }: { children: ReactNode }) => (
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -123,6 +129,70 @@ describe('ImagingPage', () => {
     });
     expect(body.takenAt).toBeUndefined();
     expect(await screen.findByText('影像记录已创建')).toBeDefined();
+  });
+
+  it('deletes the uploaded file when creating the imaging record fails', async () => {
+    mockData();
+    vi.mocked(uploadFile).mockResolvedValue({ id: 'file-1', filename: 'file-1.png', url: '/api/v2/files/file-1.png' });
+    render(<ImagingPage />, { wrapper });
+    await screen.findByText('全景片');
+
+    fireEvent.click(screen.getByText('上传影像'));
+    await waitFor(() => {
+      expect(Array.from((screen.getByLabelText('医生') as HTMLSelectElement).options).some((option) => option.value === 'd-1')).toBe(true);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
+    fireEvent.change(screen.getByLabelText('标题'), { target: { value: '根尖片' } });
+    fireEvent.change(screen.getByLabelText('图片文件'), {
+      target: { files: [new File(['x'], 'root.png', { type: 'image/png' })] },
+    });
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = String(init?.method ?? 'GET').toUpperCase();
+      if (method === 'POST' && path === '/resources/imaging') {
+        const error = new Error('create failed');
+        (error as { status?: number }).status = 409;
+        throw error;
+      }
+      return {};
+    });
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/files/file-1.png', expect.objectContaining({ method: 'DELETE' }));
+    });
+  });
+
+  it('deletes the uploaded file when creating the imaging record fails with a server error', async () => {
+    mockData();
+    vi.mocked(uploadFile).mockResolvedValue({ id: 'file-1', filename: 'file-1.png', url: '/api/v2/files/file-1.png' });
+    render(<ImagingPage />, { wrapper });
+    await screen.findByText('全景片');
+
+    fireEvent.click(screen.getByText('上传影像'));
+    await waitFor(() => {
+      expect(Array.from((screen.getByLabelText('医生') as HTMLSelectElement).options).some((option) => option.value === 'd-1')).toBe(true);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
+    fireEvent.change(screen.getByLabelText('标题'), { target: { value: '根尖片' } });
+    fireEvent.change(screen.getByLabelText('图片文件'), {
+      target: { files: [new File(['x'], 'root.png', { type: 'image/png' })] },
+    });
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = String(init?.method ?? 'GET').toUpperCase();
+      if (method === 'POST' && path === '/resources/imaging') {
+        const error = new Error('server exploded');
+        (error as { status?: number }).status = 500;
+        throw error;
+      }
+      return {};
+    });
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/files/file-1.png', expect.objectContaining({ method: 'DELETE' }));
+    });
   });
 
   it('previews and removes the selected imaging file', async () => {
@@ -237,6 +307,32 @@ describe('ImagingPage', () => {
     });
   });
 
+  it('ignores a second category toggle while one is pending', async () => {
+    mockData();
+    render(<ImagingPage />, { wrapper });
+    await screen.findByText('影像分类管理');
+    const panel = screen.getByLabelText('影像分类管理');
+    await waitFor(() => {
+      expect(within(panel).getByText('正畸类')).toBeDefined();
+    });
+    const categoryRow = within(panel).getByText('正畸类').closest('tr');
+    expect(categoryRow).not.toBeNull();
+    let resolvePatch: (value: unknown) => void = () => {};
+    vi.mocked(apiRequest).mockImplementationOnce(() => new Promise((resolve) => { resolvePatch = resolve; }));
+    const row = categoryRow as HTMLElement;
+    fireEvent.click(within(row).getByText('停用'));
+    fireEvent.click(within(row).getByText('停用'));
+    expect(vi.mocked(apiRequest).mock.calls.filter(([path, options]) =>
+      path === '/resources/imagingCategories/c-1' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'PATCH',
+    )).toHaveLength(1);
+    resolvePatch({ id: 'c-1' });
+    await waitFor(() => {
+      expect(vi.mocked(apiRequest).mock.calls.some(([path, options]) =>
+        path === '/resources/imagingCategories?page=1&pageSize=100' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'GET',
+      )).toBe(true);
+    });
+  });
+
   it('maps categoryId to category names and phase to Chinese labels in the list', async () => {
     mockData();
     render(<ImagingPage />, { wrapper });
@@ -247,6 +343,53 @@ describe('ImagingPage', () => {
     expect(within(listTable as HTMLElement).getByText('missing-9')).toBeDefined();
     expect(within(listTable as HTMLElement).getByText('初诊')).toBeDefined();
     expect(within(listTable as HTMLElement).getByText('完成')).toBeDefined();
+  });
+
+  it('keeps selected compare images visible after paging back', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/imaging?page=1&pageSize=50') {
+        return {
+          items: [
+            { id: 'i-1', title: '全景片', type: 'PANORAMIC', patientId: 'p-1', doctorId: 'd-1', imageUrl: '/api/v2/files/a.png', takenAt: '2026-01-02T03:04:00.000Z', categoryId: 'c-1', phase: 'INITIAL' },
+            ...Array.from({ length: 49 }, (_, index) => ({ id: `i-extra-${index}`, title: `补充片 ${index}`, type: 'PANORAMIC', patientId: 'p-1', doctorId: 'd-1', imageUrl: `/api/v2/files/e${index}.png`, takenAt: '2026-01-02T03:04:00.000Z', categoryId: 'c-1', phase: 'INITIAL' })),
+          ],
+          total: 51,
+          page: 1,
+          pageSize: 50,
+        };
+      }
+      if (path === '/resources/imaging?page=2&pageSize=50') {
+        return {
+          items: [{ id: 'i-2', title: '侧位片', type: 'CEPHALOMETRIC', patientId: 'p-1', doctorId: 'd-1', imageUrl: '/api/v2/files/b.png', takenAt: '2026-01-03T04:05:00.000Z', categoryId: 'c-2', phase: 'FINISHED' }],
+          total: 51,
+          page: 2,
+          pageSize: 50,
+        };
+      }
+      if (path === '/resources/imagingCategories?page=1&pageSize=100') {
+        return { items: [{ id: 'c-1', name: '正畸类', type: 'ORTHODONTIC', sortOrder: 1, active: true }], total: 1, page: 1, pageSize: 100 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      return {};
+    });
+    render(<ImagingPage />, { wrapper });
+    const compareSection = await screen.findByLabelText('影像对比');
+    await waitFor(() => {
+      expect(within(compareSection).getAllByRole('option', { name: /全景片/ }).length).toBeGreaterThan(0);
+    });
+    fireEvent.click(within(compareSection).getByRole('button', { name: '下一页' }));
+    await waitFor(() => {
+      expect(within(compareSection).getAllByRole('option', { name: /侧位片/ }).length).toBeGreaterThan(0);
+    });
+    fireEvent.change(within(compareSection).getByLabelText('影像一'), { target: { value: 'i-2' } });
+    fireEvent.click(within(compareSection).getByRole('button', { name: '上一页' }));
+    await waitFor(() => {
+      expect(within(compareSection).getAllByRole('option', { name: /全景片/ }).length).toBeGreaterThan(0);
+      expect(within(compareSection).getAllByRole('option', { name: /侧位片/ }).length).toBeGreaterThan(0);
+    });
   });
 
   it('renders two images side by side with metadata when two are selected for comparison', async () => {
@@ -752,6 +895,112 @@ describe('ImagingPage', () => {
     await waitFor(() => {
       expect(within(compareSection).getByAltText('影像')).toBeDefined();
       expect(within(compareSection).getAllByText('标题：').length).toBeGreaterThan(0);
+    });
+  });
+
+  it('searches the compare options with the toolbar input', async () => {
+    mockData();
+    render(<ImagingPage />, { wrapper });
+    await screen.findByText('全景片');
+    fireEvent.change(screen.getByLabelText('对比选项搜索'), { target: { value: '侧位' } });
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/imaging?page=1&pageSize=50&search=%E4%BE%A7%E4%BD%8D');
+    });
+  });
+
+  it('ignores stale compare selections missing from the current options page', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/imaging?page=1&pageSize=50') {
+        return { items: [{ id: 'i-1', title: '全景片', type: 'PANORAMIC', imageUrl: '/api/v2/files/a.png' }], total: 60, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/imaging?page=2&pageSize=50') {
+        return { items: [{ id: 'i-2', title: '侧位片', type: 'CEPHALOMETRIC', imageUrl: '/api/v2/files/b.png' }], total: 60, page: 2, pageSize: 50 };
+      }
+      if (path === '/resources/imagingCategories?page=1&pageSize=100') {
+        return { items: [], total: 0, page: 1, pageSize: 100 };
+      }
+      return {};
+    });
+    render(<ImagingPage />, { wrapper });
+    await screen.findByText('全景片');
+    const compareSection = screen.getByLabelText('影像对比');
+    fireEvent.change(within(compareSection).getByLabelText('影像一'), { target: { value: 'i-1' } });
+    // 翻到第 2 页：i-1 不在当前选项页，但保留在 selectedRows
+    fireEvent.click(within(compareSection).getByRole('button', { name: '下一页' }));
+    await waitFor(() => {
+      expect(within(compareSection).getAllByRole('option', { name: /侧位片/ }).length).toBeGreaterThan(0);
+    });
+    // 重新选择过期值：selectCompare 找不到行 → nullish 分支
+    fireEvent.change(within(compareSection).getByLabelText('影像一'), { target: { value: 'i-1' } });
+    expect(within(compareSection).getByRole('option', { name: /全景片/ })).toBeDefined();
+    // 右侧过期值同样渲染 MissingSelectOption
+    fireEvent.change(within(compareSection).getByLabelText('影像二'), { target: { value: 'i-2' } });
+    fireEvent.click(within(compareSection).getByRole('button', { name: '上一页' }));
+    await waitFor(() => {
+      expect(within(compareSection).getByRole('option', { name: /侧位片/ })).toBeDefined();
+    });
+  });
+
+  it('blocks a second category save while one is pending', async () => {
+    mockData();
+    render(<ImagingPage />, { wrapper });
+    const panel = screen.getByLabelText('影像分类管理');
+    await waitFor(() => {
+      expect(within(panel).getByText('正畸类')).toBeDefined();
+    });
+    fireEvent.change(within(panel).getByLabelText('名称'), { target: { value: '新分类' } });
+    let resolvePost: (value: unknown) => void = () => {};
+    vi.mocked(apiRequest).mockImplementationOnce(() => new Promise((resolve) => { resolvePost = resolve; }));
+    const form = within(panel).getByLabelText('名称').closest('form') as HTMLFormElement;
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    const posts = vi.mocked(apiRequest).mock.calls.filter(([path, options]) =>
+      path === '/resources/imagingCategories' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'POST',
+    );
+    expect(posts).toHaveLength(1);
+    resolvePost({ id: 'c-3' });
+    await waitFor(() => {
+      expect(vi.mocked(apiRequest).mock.calls.some(([path, options]) =>
+        path === '/resources/imagingCategories?page=1&pageSize=100' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'GET',
+      )).toBe(true);
+    });
+  });
+
+  it('submits a blank image url for records with a null image', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/imaging?page=1&pageSize=50') {
+        return {
+          items: [{ id: 'i-null', title: 'NullImg', type: 'UNKNOWN', patientId: 'p-1', doctorId: 'd-1', imageUrl: null }],
+          total: 1,
+          page: 1,
+          pageSize: 50,
+        };
+      }
+      if (path === '/resources/imagingCategories?page=1&pageSize=100') {
+        return { items: [], total: 0, page: 1, pageSize: 100 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      return {};
+    });
+    render(<ImagingPage />, { wrapper });
+    await screen.findByText('NullImg');
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    await waitFor(() => {
+      expect((screen.getByLabelText('标题') as HTMLInputElement).value).toBe('NullImg');
+    });
+    vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'i-null' });
+    vi.mocked(apiRequest).mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 50 });
+    fireEvent.click(screen.getByText('保存'));
+    await waitFor(() => {
+      const call = vi.mocked(apiRequest).mock.calls.find(([path, options]) =>
+        path === '/resources/imaging/i-null' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'PATCH',
+      );
+      expect(call).toBeDefined();
+      const body = JSON.parse(String((call?.[1] as RequestInit)?.body));
+      expect(body.imageUrl).toBe('');
     });
   });
 });

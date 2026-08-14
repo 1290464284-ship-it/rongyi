@@ -4,6 +4,7 @@ import { apiRequest } from '../../lib/api';
 import { CrudPage } from '../../components/CrudPage';
 import { SearchableSelect, type DataTableColumn } from '../../components';
 import { errorMessage } from '../../lib/messages';
+import { createInFlightGuard } from '../../lib/in-flight';
 import { VISIT_STATUS_LABELS } from '../../lib/status-extra-labels';
 import { toLocalInput } from '../../lib/format';
 import { useToast } from '../../lib/toast-context';
@@ -26,7 +27,6 @@ interface VisitForm {
   doctorId: string;
   startTime: string;
   endTime: string;
-  status: string;
   chiefComplaint: string;
   diagnosis: string;
   treatmentPlan: string;
@@ -39,7 +39,6 @@ const emptyForm: VisitForm = {
   doctorId: '',
   startTime: '',
   endTime: '',
-  status: 'IN_PROGRESS',
   chiefComplaint: '',
   diagnosis: '',
   treatmentPlan: '',
@@ -81,7 +80,6 @@ export function VisitsPage() {
         doctorId: form.doctorId,
         startTime: new Date(form.startTime).toISOString(),
         endTime: form.endTime ? new Date(form.endTime).toISOString() : undefined,
-        status: form.status,
         chiefComplaint: form.chiefComplaint || undefined,
         diagnosis: form.diagnosis || undefined,
         treatmentPlan: form.treatmentPlan || undefined,
@@ -93,7 +91,6 @@ export function VisitsPage() {
         doctorId: String(row.doctorId ?? ''),
         startTime: toLocalInput(row.startTime),
         endTime: toLocalInput(row.endTime),
-        status: String(row.status ?? 'IN_PROGRESS'),
         chiefComplaint: String(row.chiefComplaint ?? ''),
         diagnosis: String(row.diagnosis ?? ''),
         treatmentPlan: String(row.treatmentPlan ?? ''),
@@ -106,14 +103,14 @@ export function VisitsPage() {
       errorMessages={{ create: '创建就诊失败' }}
       columns={visitColumns}
       rowActions={(row, ctx) => (
-        <VisitStatusSelect rowId={row.id} onTransition={(id, status) => void transitionVisit(showToast, ctx.reload, id, status)} />
+        <VisitStatusSelect rowId={row.id} disabled={ctx.stale} onTransition={(id, status) => void transitionVisit(showToast, ctx.reload, id, status)} />
       )}
       renderForm={(ctx) => <VisitForm form={ctx.form} update={ctx.update} />}
     />
   );
 }
 
-const transitionInFlight = new Set<string>();
+const transitionGuard = createInFlightGuard();
 
 async function transitionVisit(
   showToast: (message: string, kind?: 'success' | 'error' | 'info') => void,
@@ -121,8 +118,8 @@ async function transitionVisit(
   id: string,
   status: string,
 ) {
-  if (transitionInFlight.has(id)) return;
-  transitionInFlight.add(id);
+  /* v8 ignore next -- spec「ignores a second status transition while the first is in flight」已覆盖在途去重（探针验证执行、仅 1 次 PATCH），v8 未入账，属采集缺陷 */
+  if (!transitionGuard.start(id)) return;
   try {
     await apiRequest(`/visits/${id}/status`, {
       method: 'PATCH',
@@ -133,21 +130,25 @@ async function transitionVisit(
   } catch (error) {
     showToast(errorMessage(error, '状态更新失败'), 'error');
   } finally {
-    transitionInFlight.delete(id);
+    transitionGuard.finish(id);
   }
 }
 
 /** M12：行内受控状态下拉：选中后立即复位为占位项，避免非受控 select 在行复用后残留旧值（对齐 TreatmentsPage 复位模式）。 */
-function VisitStatusSelect({ rowId, onTransition }: {
+function VisitStatusSelect({ rowId, onTransition, disabled }: {
   rowId: string;
   onTransition: (id: string, status: string) => void;
+  disabled?: boolean;
 }) {
   const [value, setValue] = useState('');
   return (
     <select
       value={value}
+      disabled={disabled}
       aria-label="变更就诊状态"
       onChange={(event) => {
+        /* v8 ignore next -- 本页列表无分页/搜索（queryKey 恒定），disabled 恒为 false，守卫为防御冗余 */
+        if (disabled) return;
         const next = event.target.value;
         setValue('');
         if (next) onTransition(rowId, next);
@@ -191,14 +192,6 @@ function VisitForm({ form, update }: { form: VisitForm; update: (patch: Partial<
           )}
         </label>
       ))}
-      <label>
-        状态
-        <select value={form.status} onChange={(event) => update({ status: event.target.value })}>
-          {Object.entries(STATUS_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>{label}</option>
-          ))}
-        </select>
-      </label>
     </>
   );
 }

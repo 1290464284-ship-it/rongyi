@@ -79,7 +79,14 @@ async function startGateway() {
       '-subj', '/CN=localhost',
     ], { encoding: 'utf8' });
     if (generated.status !== 0 || !fs.existsSync(keyPath) || !fs.existsSync(certPath)) {
-      console.warn('internal-signing.pfx and openssl are both unavailable; skipping WeChat gateway smoke');
+      if (process.env.V2_ALLOW_WECHAT_SKIP !== '1') {
+        console.error(
+          'internal-signing.pfx and openssl are both unavailable; ' +
+          'set V2_ALLOW_WECHAT_SKIP=1 to explicitly skip the WeChat gateway smoke',
+        );
+        process.exit(1);
+      }
+      console.warn('skipping WeChat gateway smoke (V2_ALLOW_WECHAT_SKIP=1)');
       process.exit(0);
     }
     tlsOptions = { key: fs.readFileSync(keyPath), cert: fs.readFileSync(certPath) };

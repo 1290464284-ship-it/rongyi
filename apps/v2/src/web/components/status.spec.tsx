@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import {
   EmptyState,
   ErrorBoundary,
@@ -60,6 +60,26 @@ describe('SignedImage', () => {
     rerender(<SignedImage path="/b.png" alt="影像" />);
     expect(await screen.findByText('图片加载中失败')).toBeDefined();
   });
+
+  it('ignores late sign-url resolution and rejection after unmount', async () => {
+    let resolveUrl: (value: string) => void = () => {};
+    vi.mocked(getSignedFileUrl).mockImplementationOnce(
+      () => new Promise<string>((resolve) => { resolveUrl = resolve; }),
+    );
+    const first = render(<SignedImage path="/a.png" alt="影像" />);
+    first.unmount();
+    resolveUrl('http://late.png');
+    await act(async () => {});
+
+    let rejectUrl: (error: unknown) => void = () => {};
+    vi.mocked(getSignedFileUrl).mockImplementationOnce(
+      () => new Promise<string>((_resolve, reject) => { rejectUrl = reject; }),
+    );
+    const second = render(<SignedImage path="/b.png" alt="影像" />);
+    second.unmount();
+    rejectUrl(new Error('late failure'));
+    await act(async () => {});
+  });
 });
 
 describe('QuerySection', () => {
@@ -103,6 +123,11 @@ describe('ErrorBoundary and simple states', () => {
   }
 
   it('catches child render errors', () => {
+    const reload = vi.fn();
+    Object.defineProperty(window, 'location', {
+      value: { ...window.location, reload },
+      writable: true,
+    });
     render(
       <ErrorBoundary>
         <Boom />
@@ -110,12 +135,34 @@ describe('ErrorBoundary and simple states', () => {
     );
     expect(screen.getByText('页面加载失败')).toBeDefined();
     expect(screen.getByText('网络请求失败，请重试')).toBeDefined();
-    expect(screen.getByRole('button', { name: '重新加载' })).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '重新加载' }));
+    expect(reload).toHaveBeenCalled();
   });
 
   it('renders children when there is no error', () => {
     render(<ErrorBoundary><span>正常内容</span></ErrorBoundary>);
     expect(screen.getByText('正常内容')).toBeDefined();
+  });
+
+  it('normalizes non-Error render failures', () => {
+    function BoomString(): ReactNode {
+      throw 'boom-string';
+    }
+    render(
+      <ErrorBoundary>
+        <BoomString />
+      </ErrorBoundary>,
+    );
+    expect(screen.getByText('页面加载失败')).toBeDefined();
+  });
+
+  it('falls back to a generic message for non-Error query errors', () => {
+    render(
+      <QueryBoundary isLoading={false} error="boom-string" data={undefined}>
+        内容
+      </QueryBoundary>,
+    );
+    expect(screen.getByText('操作失败，请稍后重试')).toBeDefined();
   });
 
   it('renders default labels for PageError, LoadingState and EmptyState', () => {

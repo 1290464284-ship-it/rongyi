@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -98,6 +98,22 @@ describe('NarcoticRegistryService', () => {
       itemId: 'inventory-demo-001',
       quantity: 1.5,
     }, context)).toThrow(ValidationError);
+    expect(() => narcoticService().recordNarcotic({
+      recordDate: 123,
+      itemId: 'inventory-demo-001',
+      quantity: 1,
+    } as never, context)).toThrow(ValidationError);
+    expect(() => narcoticService().recordNarcotic({
+      recordDate: '2026-08-05',
+      itemId: 123,
+      quantity: 1,
+    } as never, context)).toThrow(ValidationError);
+    expect(() => narcoticService().recordNarcotic({
+      recordDate: '2026-08-05',
+      itemId: 'inventory-demo-001',
+      quantity: 1,
+      balanceBefore: 'abc',
+    } as never, context)).toThrow(ValidationError);
   });
 
   it('updates editable fields and preserves patientId/doctorId', () => {
@@ -170,5 +186,112 @@ describe('NarcoticRegistryService', () => {
     const listed = narcoticService().narcoticList(context);
     expect(listed.items.map((entry) => String(entry.id))).not.toContain(String(created.id));
     expect(() => narcoticService().deleteNarcotic('narcotic-missing', context)).toThrow(NotFoundError);
+    expect(() => narcoticService().updateNarcotic(String(created.id), {
+      recordDate: '2026-08-05',
+      itemId: 'inventory-demo-001',
+      quantity: 1,
+    }, context)).toThrow(NotFoundError);
+    expect(() => narcoticService().deleteNarcotic(String(created.id), context)).toThrow(NotFoundError);
+  });
+
+  it('records without a clinic tenant and normalizes null optional fields', () => {
+    const noClinic: AppContext = { ...context, clinicId: null };
+    const created = narcoticService().recordNarcotic({
+      recordDate: '2026-08-05',
+      itemId: 'inventory-demo-001',
+      quantity: 1,
+      batchNo: null as never,
+      balanceBefore: null as never,
+      balanceAfter: null as never,
+      remark: null as never,
+    }, noClinic);
+    const row = db.prepare(
+      'SELECT clinicId, batchNo, balanceBefore, balanceAfter, remark FROM NarcoticRegistry WHERE id = ?',
+    ).get(String(created.id)) as Record<string, unknown>;
+    expect(row.clinicId).toBeNull();
+    expect(row.batchNo).toBeNull();
+    expect(row.balanceBefore).toBeNull();
+    expect(row.balanceAfter).toBeNull();
+    expect(row.remark).toBeNull();
+  });
+
+  it('updates null optional fields and rejects malformed dates and balances', () => {
+    const created = narcoticService().recordNarcotic({
+      recordDate: '2026-08-05',
+      itemId: 'inventory-demo-001',
+      quantity: 1,
+    }, context);
+    narcoticService().updateNarcotic(String(created.id), {
+      itemId: 'inventory-demo-001',
+      quantity: 1,
+      recordDate: '2026-08-06',
+      batchNo: null as never,
+      balanceBefore: null as never,
+      balanceAfter: null as never,
+      remark: null as never,
+    }, context);
+    const row = db.prepare(
+      'SELECT batchNo, balanceBefore, balanceAfter, remark, recordDate FROM NarcoticRegistry WHERE id = ?',
+    ).get(String(created.id)) as Record<string, unknown>;
+    expect(row.batchNo).toBeNull();
+    expect(row.balanceBefore).toBeNull();
+    expect(row.balanceAfter).toBeNull();
+    expect(row.remark).toBeNull();
+    expect(row.recordDate).toBe('2026-08-06');
+
+    // 非字符串 recordDate → '' → 必填校验
+    expect(() => narcoticService().updateNarcotic(String(created.id), {
+      itemId: 'inventory-demo-001',
+      quantity: 1,
+      recordDate: 42 as never,
+    }, context)).toThrow(ValidationError);
+    // 非法日期格式
+    expect(() => narcoticService().updateNarcotic(String(created.id), {
+      itemId: 'inventory-demo-001',
+      quantity: 1,
+      recordDate: '2026/08/05',
+    }, context)).toThrow(ValidationError);
+    // 非数字余量
+    expect(() => narcoticService().updateNarcotic(String(created.id), {
+      itemId: 'inventory-demo-001',
+      quantity: 1,
+      recordDate: '2026-08-06',
+      balanceBefore: 'abc' as never,
+    }, context)).toThrow(ValidationError);
+  });
+
+  it('reports NotFound when optimistic updates or deletes affect zero rows', () => {
+    const created = narcoticService().recordNarcotic({
+      recordDate: '2026-08-05',
+      itemId: 'inventory-demo-001',
+      quantity: 1,
+    }, context);
+    const originalPrepare = db.prepare.bind(db);
+    const spyUpdate = vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE NarcoticRegistry') && sql.includes('SET')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      expect(() => narcoticService().updateNarcotic(String(created.id), {
+        itemId: 'inventory-demo-001',
+        quantity: 1,
+        recordDate: '2026-08-06',
+      }, context)).toThrow(NotFoundError);
+    } finally {
+      spyUpdate.mockRestore();
+    }
+    const spyDelete = vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE NarcoticRegistry') && sql.includes('SET deletedAt')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      expect(() => narcoticService().deleteNarcotic(String(created.id), context)).toThrow(NotFoundError);
+    } finally {
+      spyDelete.mockRestore();
+    }
   });
 });

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ConfirmDialog, DataTable, Dialog, LoadingState, PageError, type DataTableColumn } from '../components';
+import { ConfirmDialog, DataTable, Dialog, LoadingState, PageError, PagePager, type DataTableColumn } from '../components';
 import { useCrudResource } from '../hooks/use-crud-resource';
 import { DICT_TYPE_LABELS, DICT_TYPES } from './constants';
 import { emptyDictForm, type FollowUpDictForm } from './types';
@@ -9,7 +9,7 @@ export function FollowUpDictsTab() {
   const crud = useCrudResource<Record<string, unknown>, FollowUpDictForm>({
     queryKey: ['followup-dicts', dictTypeFilter],
     endpoint: '/resources/followUpDicts',
-    listPath: `/resources/followUpDicts?page=1&pageSize=200${dictTypeFilter ? `&dictType=${encodeURIComponent(dictTypeFilter)}` : ''}`,
+    listPath: (params) => `/resources/followUpDicts?page=${params.page}&pageSize=200${dictTypeFilter ? `&dictType=${encodeURIComponent(dictTypeFilter)}` : ''}`,
     initialForm: emptyDictForm,
     canEdit: true,
     canDelete: true,
@@ -70,6 +70,8 @@ export function FollowUpDictsTab() {
         ))}
       </select>
       <DataTable columns={columns} rows={crud.rows} keyField="id" emptyText="暂无词典项" />
+      <PagePager page={crud.page} hasNext={crud.hasNext} onPageChange={crud.setPage} disabled={crud.isStale} />
+      {crud.query.data?.truncated && <p className="reminder-muted">词典项超过 200 条，仅显示部分数据</p>}
       <Dialog open={crud.showForm} title={crud.editing ? '编辑词典项' : '新建词典项'} onClose={crud.closeForm}>
         <form onSubmit={crud.submit}>
           <label>

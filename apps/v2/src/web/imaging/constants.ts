@@ -22,4 +22,3 @@ export const PHASE_OPTIONS = [
 ];
 
 export const CATEGORIES_LIST_PATH = '/resources/imagingCategories?page=1&pageSize=100';
-export const IMAGING_LIST_PATH = '/resources/imaging?page=1&pageSize=50';

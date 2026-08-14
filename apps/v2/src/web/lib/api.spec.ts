@@ -72,6 +72,16 @@ describe('api baseUrl 解析', () => {
     expect(String(call[0])).toBe('http://127.0.0.1:9999/api/v2/ping');
   });
 
+  it('sends a W3C traceparent header on API requests', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ success: true, data: 'ok' }), { status: 200 }),
+    );
+    await apiRequest<string>('/ping');
+    const call = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    const request = new Request(new URL(String(call[0]), 'http://127.0.0.1:5180/'), call[1]);
+    expect(request.headers.get('traceparent')).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
+  });
+
   it('无 desktop 时 fallback 到 VITE_API_BASE_URL 或 /api/v2', async () => {
     const targetEnv = (globalThis as unknown as { import: { meta: { env: Record<string, string> } } }).import.meta.env;
     targetEnv.VITE_API_BASE_URL = 'http://fallback.example:8888/api/v2';
@@ -599,6 +609,15 @@ describe('api helper functions', () => {
     createSpy.mockRestore();
   });
 
+  it('downloadCsv includes the search query', async () => {
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:csv');
+    fetchMock.mockResolvedValueOnce(new Response('a,b\n1,2', { status: 200 }));
+    await mod.downloadCsv('patients', '张');
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/resources/patients/export?search=');
+    clickSpy.mockRestore();
+  });
+
   it('getSignedFileUrl returns an absolute signed URL', async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(
@@ -785,6 +804,60 @@ describe('api helper functions', () => {
     expect(String(fetchMock.mock.calls[1][0])).toContain('127.0.0.1:2222');
   });
 
+  it('notifies onApiReady subscribers when the desktop reports ready', async () => {
+    const statusCallbacks: Array<(event: Record<string, unknown>) => void> = [];
+    (globalThis.window as unknown as { desktop: Record<string, unknown> }).desktop = {
+      getApiPort: vi.fn().mockResolvedValue(1111),
+      onApiStatus: vi.fn((callback: (event: Record<string, unknown>) => void) => {
+        statusCallbacks.push(callback);
+        return () => {};
+      }),
+    };
+    const readyHandler = vi.fn();
+    const unsubscribe = mod.onApiReady(readyHandler);
+    expect(statusCallbacks).toHaveLength(1); // 注册即安装状态监听
+
+    statusCallbacks[0]?.({ status: 'restarting', port: 1111 });
+    expect(readyHandler).not.toHaveBeenCalled();
+
+    statusCallbacks[0]?.({ port: 1111 });
+    expect(readyHandler).not.toHaveBeenCalled();
+
+    statusCallbacks[0]?.({ status: 'ready', port: 'not-a-number' });
+    expect(readyHandler).not.toHaveBeenCalled();
+
+    statusCallbacks[0]?.({ status: 'ready', port: 2222 });
+    expect(readyHandler).toHaveBeenCalledTimes(1);
+
+    statusCallbacks[0]?.({ status: 'ready', port: 3333 });
+    expect(readyHandler).toHaveBeenCalledTimes(2);
+
+    unsubscribe();
+    statusCallbacks[0]?.({ status: 'ready', port: 4444 });
+    expect(readyHandler).toHaveBeenCalledTimes(2);
+  });
+
+  it('onApiReady swallows handler errors so one listener cannot break the others', async () => {
+    const statusCallbacks: Array<(event: Record<string, unknown>) => void> = [];
+    (globalThis.window as unknown as { desktop: Record<string, unknown> }).desktop = {
+      getApiPort: vi.fn().mockResolvedValue(1111),
+      onApiStatus: vi.fn((callback: (event: Record<string, unknown>) => void) => {
+        statusCallbacks.push(callback);
+        return () => {};
+      }),
+    };
+    const throwing = vi.fn(() => {
+      throw new Error('listener boom');
+    });
+    const good = vi.fn();
+    mod.onApiReady(throwing);
+    mod.onApiReady(good);
+
+    expect(() => statusCallbacks[0]?.({ status: 'ready', port: 2222 })).not.toThrow();
+    expect(throwing).toHaveBeenCalledTimes(1);
+    expect(good).toHaveBeenCalledTimes(1);
+  });
+
   it('fetchAllPages aggregates multiple pages with an existing query', async () => {
     fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
       const url = new URL(String(input));
@@ -801,6 +874,67 @@ describe('api helper functions', () => {
     expect(rows[0]).toEqual({ id: 'r-1-1' });
     expect(rows[249]).toEqual({ id: 'r-3-50' });
     expect(String(fetchMock.mock.calls[1][0])).toContain('&page=2');
+  });
+
+  it('fetchAllPages overrides existing page/pageSize params instead of duplicating them', async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      expect(url.searchParams.getAll('page')).toEqual(['1']);
+      expect(url.searchParams.getAll('pageSize')).toEqual(['100']);
+      expect(url.searchParams.get('clinic')).toBe('1');
+      return new Response(
+        JSON.stringify({ success: true, data: { items: [{ id: 'a' }], total: 1, page: 1, pageSize: 100 } }),
+        { status: 200 },
+      );
+    });
+    const rows = await mod.fetchAllPages('/resources/patients?page=3&pageSize=50&clinic=1');
+    expect(rows).toEqual([{ id: 'a' }]);
+    const callUrl = new URL(String(fetchMock.mock.calls[0][0]));
+    expect(callUrl.searchParams.get('page')).toBe('1');
+    expect(callUrl.searchParams.get('pageSize')).toBe('100');
+    expect(callUrl.searchParams.get('clinic')).toBe('1');
+  });
+
+  it('fetchAllPages follows nextCursor when the first page returns one', async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      const cursor = url.searchParams.get('cursor');
+      if (!cursor) {
+        return new Response(JSON.stringify({
+          success: true,
+          data: { items: [{ id: 'r-1' }], total: 3, page: 1, pageSize: 100, nextCursor: 'c-1' },
+        }), { status: 200 });
+      }
+      if (cursor === 'c-1') {
+        expect(url.searchParams.get('page')).toBeNull();
+        return new Response(JSON.stringify({
+          success: true,
+          data: { items: [{ id: 'r-2' }], total: 3, page: 1, pageSize: 100, nextCursor: 'c-2' },
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({
+        success: true,
+        data: { items: [{ id: 'r-3' }], total: 3, page: 1, pageSize: 100 },
+      }), { status: 200 });
+    });
+    const rows = await mod.fetchAllPages('/resources/patients');
+    expect(rows).toEqual([{ id: 'r-1' }, { id: 'r-2' }, { id: 'r-3' }]);
+    expect(String(fetchMock.mock.calls[1][0])).toContain('cursor=c-1');
+    expect(String(fetchMock.mock.calls[2][0])).toContain('cursor=c-2');
+  });
+
+  it('fetchAllPages refuses an endless cursor chain at the page cap', async () => {
+    fetchMock.mockImplementation(() =>
+      Promise.resolve(new Response(
+        JSON.stringify({
+          success: true,
+          data: { items: [{ id: 'x' }], total: 1, page: 1, pageSize: 100, nextCursor: 'never-ending' },
+        }),
+        { status: 200 },
+      )),
+    );
+    await expect(mod.fetchAllPages('/resources/patients')).rejects.toThrow('page cap');
+    expect(fetchMock.mock.calls.length).toBe(1000);
   });
 
   it('fetchAllPages returns early for empty first pages', async () => {
@@ -852,6 +986,32 @@ describe('api helper functions', () => {
       new Response(JSON.stringify({ message: 'print template missing' }), { status: 500 }),
     );
     await expect(mod.fetchPrintHtml('/print/visit', { visitId: 'v1' })).rejects.toThrow('操作失败，请稍后重试');
+  });
+
+  it('fetchPrintHtml falls back to a generic message when the error body is not JSON', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('oops', { status: 500 }));
+    await expect(mod.fetchPrintHtml('/print/visit', { visitId: 'v1' })).rejects.toThrow();
+  });
+
+  it('getSignedFileUrl falls back to a generic message when the error body is not JSON', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('oops', { status: 500 }));
+    await expect(mod.getSignedFileUrl('/api/v2/files/x.png')).rejects.toThrow();
+  });
+
+  it('omits the traceparent header when crypto.getRandomValues is unavailable', async () => {
+    const originalCrypto = globalThis.crypto;
+    vi.stubGlobal('crypto', undefined);
+    try {
+      fetchMock.mockResolvedValueOnce(
+        new Response(JSON.stringify({ success: true, data: 'ok' }), { status: 200 }),
+      );
+      await expect(mod.apiRequest('/no-crypto')).resolves.toBe('ok');
+      const call = fetchMock.mock.calls[0];
+      const request = new Request(new URL(String(call[0]), 'http://127.0.0.1:5180/'), call[1]);
+      expect(request.headers.get('traceparent')).toBeNull();
+    } finally {
+      vi.stubGlobal('crypto', originalCrypto);
+    }
   });
 
   it('getSignedFileUrl and uploadFile reject invalid responses', async () => {
@@ -1063,5 +1223,37 @@ describe('api helper functions', () => {
   it('maps non-Error fetch failures through the friendly error fallback', async () => {
     fetchMock.mockRejectedValue('network exploded');
     await expect(mod.apiRequest('/string-failure')).rejects.toThrow('操作失败，请稍后重试');
+  });
+
+  it('clearSession deletes both token keys from the secret store', async () => {
+    const secrets = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue(true),
+      delete: vi.fn().mockResolvedValue(true),
+    };
+    (globalThis.window as unknown as { desktop: Record<string, unknown> }).desktop = {
+      getApiPort: vi.fn().mockResolvedValue(9999),
+      secrets,
+    };
+    await mod.setTokens('tok', 'refresh');
+    await expect(mod.logout()).resolves.toBeUndefined();
+    expect(secrets.delete).toHaveBeenCalledWith('v2.token');
+    expect(secrets.delete).toHaveBeenCalledWith('v2.refreshToken');
+  });
+
+  it('returns false from refresh when the refresh request throws', async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/warmup')) {
+        return new Response(JSON.stringify({ success: true, data: 'ok' }), { status: 200 });
+      }
+      if (url.endsWith('/auth/refresh')) {
+        throw new Error('network down');
+      }
+      return new Response(JSON.stringify({ success: false, message: 'Invalid or expired token' }), { status: 401 });
+    });
+    await mod.apiRequest('/warmup');
+    await mod.setTokens('expired', 'refresh-alive');
+    await expect(mod.apiRequest('/patients')).rejects.toThrow();
   });
 });

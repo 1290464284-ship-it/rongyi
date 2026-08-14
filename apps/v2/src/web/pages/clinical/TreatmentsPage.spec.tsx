@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TreatmentsPage } from './TreatmentsPage';
 import { apiRequest } from '../../lib/api';
@@ -67,7 +67,6 @@ describe('TreatmentsPage', () => {
       price: 20000,
       quantity: 1,
       teethNumbers: ['11', '21'],
-      status: 'PLANNED',
     });
     expect(body.code).toMatch(/^T-\d+$/);
     expect(body.plannedDate).toBeUndefined();
@@ -100,7 +99,6 @@ describe('TreatmentsPage', () => {
     expect((screen.getByLabelText('治疗名称') as HTMLInputElement).value).toBe('补牙');
     expect((screen.getByLabelText('价格') as HTMLInputElement).value).toBe('100.00');
     expect((screen.getByLabelText('牙位（逗号分隔）') as HTMLInputElement).value).toBe('');
-    expect((screen.getByLabelText('状态') as HTMLSelectElement).value).toBe('PLANNED');
 
     fireEvent.change(screen.getByLabelText('治疗名称'), { target: { value: '补牙(升级)' } });
     vi.mocked(apiRequest).mockResolvedValueOnce({ id: 't-1' });
@@ -113,7 +111,7 @@ describe('TreatmentsPage', () => {
       (call) => call[0] === '/resources/treatments/t-1' && (call[1] as RequestInit)?.method === 'PATCH',
     );
     const body = JSON.parse(String((patchCall?.[1] as RequestInit)?.body));
-    expect(body).toMatchObject({ name: '补牙(升级)', price: 10000, quantity: 1, teethNumbers: [], status: 'PLANNED' });
+    expect(body).toMatchObject({ name: '补牙(升级)', price: 10000, quantity: 1, teethNumbers: [] });
     expect(await screen.findByText('治疗记录已更新')).toBeDefined();
   });
 
@@ -191,7 +189,6 @@ describe('TreatmentsPage', () => {
     expect(await screen.findByText('请选择患者、医生并填写治疗名称、价格和数量')).toBeDefined();
 
     fireEvent.change(screen.getByLabelText('价格'), { target: { value: '300' } });
-    fireEvent.change(screen.getByLabelText('状态'), { target: { value: 'IN_PROGRESS' } });
     fireEvent.change(screen.getByLabelText('计划日期'), { target: { value: '2026-08-10' } });
     fireEvent.change(screen.getByLabelText('完成日期'), { target: { value: '2026-08-12' } });
     fireEvent.change(screen.getByLabelText('备注'), { target: { value: '两日后复诊' } });
@@ -208,7 +205,6 @@ describe('TreatmentsPage', () => {
       category: 'PROSTHETIC',
       price: 30000,
       quantity: 2,
-      status: 'IN_PROGRESS',
       plannedDate: '2026-08-10',
       completedDate: '2026-08-12',
       remark: '两日后复诊',
@@ -255,6 +251,77 @@ describe('TreatmentsPage', () => {
     expect(apiRequest).not.toHaveBeenCalledWith('/resources/treatments', expect.objectContaining({ method: 'POST' }));
   });
 
+  it('rejects an empty quantity', async () => {
+    mockData();
+    render(<TreatmentsPage />, { wrapper });
+    await screen.findByText('补牙');
+    fireEvent.click(screen.getByText('新建治疗'));
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'p-1' } });
+    fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
+    fireEvent.change(screen.getByLabelText('治疗名称'), { target: { value: '洁牙' } });
+    fireEvent.change(screen.getByLabelText('价格'), { target: { value: '100' } });
+    fireEvent.change(screen.getByLabelText('数量'), { target: { value: '' } });
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.submit(dialog.querySelector('form') as HTMLFormElement);
+    expect(await screen.findByText('请选择患者、医生并填写治疗名称、价格和数量')).toBeDefined();
+  });
+
+  it('renders an empty status cell for rows without a status', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/treatments?page=1&pageSize=50') {
+        return { items: [{ id: 't-null', name: '无状态治疗', status: null }], total: 1, page: 1, pageSize: 50 };
+      }
+      return {};
+    });
+    render(<TreatmentsPage />, { wrapper });
+    expect(await screen.findByText('无状态治疗')).toBeDefined();
+  });
+
+  it('ignores a second status transition while the first is in flight', async () => {
+    mockData();
+    render(<TreatmentsPage />, { wrapper });
+    await screen.findByText('补牙');
+    let resolveStatus: (() => void) | undefined;
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/treatments/t-1/status') {
+        return new Promise<void>((resolve) => { resolveStatus = resolve; });
+      }
+      if (path === '/resources/treatments?page=1&pageSize=50') {
+        return { items: [{ id: 't-1', patientId: 'p-1', doctorId: 'd-1', name: '补牙', price: 10000, status: 'PLANNED' }], total: 1, page: 1, pageSize: 50 };
+      }
+      return {};
+    });
+    const select = screen.getByLabelText('变更治疗状态') as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: 'IN_PROGRESS' } });
+    fireEvent.change(select, { target: { value: 'DONE' } });
+    await waitFor(() => {
+      const calls = vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/treatments/t-1/status');
+      expect(calls).toHaveLength(1);
+    });
+    // 释放模块级 transitionGuard：resolve 挂起请求，让 transitionVisit 的
+    // finally 执行 finish()。否则 t-1 被永久标记在途 → shuffle 顺序下后续
+    // 测试（creates with cents payload、failure 报告等）的 PATCH 被守卫吞掉。
+    resolveStatus?.();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+  });
+
+  it('reports status transition failures', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/treatments?page=1&pageSize=50') {
+        return { items: [{ id: 't-2', patientId: 'p-1', doctorId: 'd-1', name: '补牙', price: 10000, status: 'PLANNED' }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/treatments/t-2/status') throw 'transition failed';
+      return {};
+    });
+    render(<TreatmentsPage />, { wrapper });
+    await screen.findByText('补牙');
+    fireEvent.change(screen.getByLabelText('变更治疗状态'), { target: { value: 'IN_PROGRESS' } });
+    expect(await screen.findByText('状态更新失败')).toBeDefined();
+  });
+
   it('joins array teeth numbers when editing and falls back to ids for unnamed doctors', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/treatments?page=1&pageSize=50') {
@@ -275,7 +342,6 @@ describe('TreatmentsPage', () => {
     await waitFor(() => {
       expect((screen.getByRole('option', { name: 'd-9' }) as HTMLOptionElement).value).toBe('d-9');
     });
-    expect((screen.getByLabelText('状态') as HTMLSelectElement).value).toBe('COMPLETED');
   });
 
   it('ignores an empty status transition selection', async () => {

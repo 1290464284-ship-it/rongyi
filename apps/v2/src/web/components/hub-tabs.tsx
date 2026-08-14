@@ -1,4 +1,4 @@
-import { lazy, type ComponentType } from 'react';
+import { lazy, useMemo, type ComponentType } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../lib/api';
 import { DataTable, LoadingState, PageError } from './index';
@@ -50,9 +50,13 @@ export function CostShareTab() {
     queryKey: ['stats', 'cost-share'],
     queryFn: () => apiRequest<{ rows: Array<Record<string, unknown>>; summary: { SERVICE?: { total: number; itemCount: number; chargeCount: number }; MATERIAL?: { total: number; itemCount: number; chargeCount: number }; grandTotal?: number } }>('/stats/cost-share'),
   });
+  const { rows, summary } = query.data ?? { rows: [], summary: {} };
+  const tableRows = useMemo(
+    () => rows.map((row) => ({ ...row, id: `${row.costType}-${row.category}` })),
+    [rows],
+  );
   if (query.isLoading) return <LoadingState />;
   if (query.error) return <PageError message={(query.error as Error).message} />;
-  const { rows, summary } = query.data ?? { rows: [], summary: {} };
   const columns = [
     { key: 'costType', label: '类型', render: (row: Record<string, unknown>) => (row.costType === 'SERVICE' ? '技术服务' : row.costType === 'MATERIAL' ? '材料耗材' : String(row.costType ?? '')) },
     { key: 'category', label: '分类' },
@@ -68,17 +72,17 @@ export function CostShareTab() {
         <span>材料耗材合计：{formatMoney(summary.MATERIAL?.total ?? 0)}（{summary.MATERIAL?.itemCount ?? 0} 明细 / {summary.MATERIAL?.chargeCount ?? 0} 单）</span>
         <span>总计：{formatMoney(summary.grandTotal ?? 0)}</span>
       </div>
-      <DataTable columns={columns} rows={rows.map((row) => ({ ...row, id: `${row.costType}-${row.category}` }))} keyField="id" emptyText="暂无收费明细数据" />
+      <DataTable columns={columns} rows={tableRows} keyField="id" emptyText="暂无收费明细数据" />
     </div>
   );
 }
 
 export type HubTab =
-  | { id: string; label: string; kind: 'resource'; resource: string; bossOnly?: boolean; group?: string }
-  | { id: string; label: string; kind: 'custom'; component: ComponentType; bossOnly?: boolean; group?: string };
+  | { id: string; label: string; kind: 'resource'; resource: string; bossOnly?: boolean; group?: string; searchTab?: boolean }
+  | { id: string; label: string; kind: 'custom'; component: ComponentType<{ initialSearch?: string }>; bossOnly?: boolean; group?: string; searchTab?: boolean };
 
 export const patientHubTabs: HubTab[] = [
-  { id: 'patients', label: '\u60a3\u8005\u6863\u6848', kind: 'custom', component: PatientsPage },
+  { id: 'patients', label: '\u60a3\u8005\u6863\u6848', kind: 'custom', component: PatientsPage, searchTab: true },
   { id: 'timeline', label: '\u65f6\u95f4\u7ebf', kind: 'custom', component: PatientTimelinePage },
   { id: 'workflow', label: '\u98ce\u9669\u8bc4\u5206', kind: 'custom', component: PatientWorkflowPage },
   { id: 'family', label: '\u5bb6\u5c5e\u8054\u7cfb\u4eba', kind: 'resource', resource: 'familyMembers' },
@@ -86,7 +90,7 @@ export const patientHubTabs: HubTab[] = [
 
 export const frontDeskHubTabs: HubTab[] = [
   { id: 'workflow', label: '\u6302\u53f7\u5206\u8bca', kind: 'custom', component: FrontDeskWorkflowPage },
-  { id: 'appointments', label: '\u9884\u7ea6', kind: 'custom', component: AppointmentsPage },
+  { id: 'appointments', label: '\u9884\u7ea6', kind: 'custom', component: AppointmentsPage, searchTab: true },
   { id: 'appointmentBoard', label: '\u9884\u7ea6\u770b\u677f', kind: 'custom', component: AppointmentBoardPage },
   { id: 'departments', label: '\u5206\u8bca\u79d1\u5ba4', kind: 'resource', resource: 'departments' },
 ];
@@ -105,7 +109,7 @@ export const clinicalHubTabs: HubTab[] = [
 
 export const financeHubTabs: HubTab[] = [
   { id: 'workflow', label: '\u6536\u94f6', kind: 'custom', component: FinanceWorkflowPage },
-  { id: 'charges', label: '\u6536\u8d39', kind: 'custom', component: ChargesPage },
+  { id: 'charges', label: '\u6536\u8d39', kind: 'custom', component: ChargesPage, searchTab: true },
   { id: 'memberCards', label: '\u4f1a\u5458\u5361', kind: 'custom', component: MemberCardsPage },
   { id: 'treatmentCatalogs', label: '\u6536\u8d39\u9879\u76ee', kind: 'resource', resource: 'treatmentCatalogs', bossOnly: true },
   { id: 'payMethods', label: '\u7f34\u8d39\u65b9\u5f0f', kind: 'resource', resource: 'payMethods' },
@@ -118,7 +122,7 @@ export const inventoryHubTabs: HubTab[] = [
   { id: 'items', label: '\u5e93\u5b58\u5de5\u4f5c\u53f0', kind: 'custom', component: InventoryPage, group: '\u5e38\u7528' },
   { id: 'pharmacy', label: '\u836f\u623f\u5de5\u4f5c\u53f0', kind: 'custom', component: DispenseWorkbenchPage, group: '\u5e38\u7528' },
   { id: 'workflow', label: '\u91c7\u8d2d\u5de5\u4f5c\u53f0', kind: 'custom', component: InventoryWorkflowPage, group: '\u5e38\u7528' },
-  { id: 'itemMaster', label: '\u5e93\u5b58\u9879\u76ee', kind: 'resource', resource: 'inventoryItems', group: '\u8d44\u6599' },
+  { id: 'itemMaster', label: '\u5e93\u5b58\u9879\u76ee', kind: 'resource', resource: 'inventoryItems', group: '\u8d44\u6599', searchTab: true },
   { id: 'suppliers', label: '\u4f9b\u5e94\u5546', kind: 'resource', resource: 'suppliers', group: '\u8d44\u6599' },
   { id: 'purchaseOrders', label: '\u91c7\u8d2d\u5355', kind: 'custom', component: PurchaseOrdersPage, group: '\u8d44\u6599' },
   { id: 'processingOrders', label: '\u52a0\u5de5\u5355', kind: 'custom', component: ProcessingOrdersPage, group: '\u8d44\u6599' },

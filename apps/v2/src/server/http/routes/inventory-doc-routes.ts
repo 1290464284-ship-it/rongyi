@@ -8,9 +8,13 @@ import { wrapAsync } from '../middleware';
 import { InventoryDocService } from '../../application/service-modules/inventory-docs';
 import type { RouteDependencies } from './deps';
 
-export function registerInventoryDocRoutes(app: Express, deps: RouteDependencies): void {
+export function registerInventoryDocRoutes(
+  app: Express,
+  deps: RouteDependencies,
+  options?: { lockGuard?: (itemId: string, clinicId?: string | null) => void },
+): void {
   const { db } = deps;
-  const service = new InventoryDocService(db);
+  const service = new InventoryDocService(db, options?.lockGuard);
 
   app.post('/api/v2/inventory-docs/return-supplier', wrapAsync(async (req, res) => {
     res.json({ success: true, data: service.createReturnSupplier(req.body ?? {}, req.context!) });

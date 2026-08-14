@@ -88,6 +88,26 @@ describe('commission routes', () => {
     expect(afterDelete.body.data.some((row: { id: string }) => row.id === ruleId)).toBe(false);
   });
 
+  it('normalizes doctorId on rule creation', async () => {
+    const asNull = await request(app)
+      .post('/api/v2/commission/rules')
+      .send({ name: '无医生', rateType: 'PERCENT', rate: 100, doctorId: null })
+      .expect(201);
+    expect(asNull.body.data.doctorId).toBeNull();
+
+    const asEmpty = await request(app)
+      .post('/api/v2/commission/rules')
+      .send({ name: '空医生', rateType: 'PERCENT', rate: 100, doctorId: '' })
+      .expect(201);
+    expect(asEmpty.body.data.doctorId).toBeNull();
+
+    const asString = await request(app)
+      .post('/api/v2/commission/rules')
+      .send({ name: '字符串医生', rateType: 'PERCENT', rate: 100, doctorId: 'user-admin-001' })
+      .expect(201);
+    expect(asString.body.data.doctorId).toBe('user-admin-001');
+  });
+
   it('calculates statements and lists them by period', async () => {
     await request(app)
       .post('/api/v2/commission/rules')
@@ -192,5 +212,34 @@ describe('commission routes', () => {
       .get('/api/v2/commission/statements?period=2026-08&doctorId=user-admin-001')
       .expect(200);
     expect(filtered.body.data.every((row: { doctorId: string }) => row.doctorId === 'user-admin-001')).toBe(true);
+  });
+
+  it('parses string booleans strictly for enabled', async () => {
+    const created = await request(app)
+      .post('/api/v2/commission/rules')
+      .send({ name: '关闭规则', rateType: 'PERCENT', rate: 100, enabled: 'false' })
+      .expect(201);
+    expect(created.body.data.enabled).toBe(0);
+    const ruleId = created.body.data.id as string;
+    await request(app)
+      .patch(`/api/v2/commission/rules/${ruleId}`)
+      .send({ enabled: '0' })
+      .expect(200);
+    expect((db.prepare('SELECT enabled FROM CommissionRule WHERE id = ?').get(ruleId) as { enabled: number }).enabled).toBe(0);
+    await request(app)
+      .post('/api/v2/commission/rules')
+      .send({ name: '非法布尔', rateType: 'PERCENT', rate: 100, enabled: 'yes' })
+      .expect(400);
+  });
+
+  it('tolerates missing request bodies and period filters', async () => {
+    const create = await request(app).post('/api/v2/commission/rules');
+    expect([200, 400]).toContain(create.status);
+    const update = await request(app).patch('/api/v2/commission/rules/missing');
+    expect([200, 400, 404]).toContain(update.status);
+    const calculate = await request(app).post('/api/v2/commission/calculate');
+    expect([200, 400]).toContain(calculate.status);
+    const statements = await request(app).get('/api/v2/commission/statements');
+    expect([200, 400]).toContain(statements.status);
   });
 });

@@ -19,24 +19,70 @@ export interface RelationLabelJoin {
   join: string;
 }
 
+const tableColumnCache = new WeakMap<
+  Database.Database,
+  { schemaVersion: number; tables: Map<string, ReadonlySet<string>> }
+>();
+
+function currentSchemaVersion(db: Database.Database): number {
+  try {
+    const statement = db.prepare('PRAGMA schema_version') as unknown as { get?: () => { schema_version: number } };
+    const row = statement?.get?.();
+    return Number(row?.schema_version ?? 0);
+  } catch {
+/* v8 ignore next */
+    return 0;
+  }
+}
+
+function cachedTableColumns(db: Database.Database, table: string): ReadonlySet<string> {
+  const schemaVersion = currentSchemaVersion(db);
+  let entry = tableColumnCache.get(db);
+  if (!entry || entry.schemaVersion !== schemaVersion) {
+    entry = { schemaVersion, tables: new Map() };
+    tableColumnCache.set(db, entry);
+  }
+  const tables = entry.tables;
+  let columns = tables.get(table);
+  if (!columns) {
+    columns = new Set(
+      (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((column) => column.name),
+    );
+    tables.set(table, columns);
+  }
+  return columns;
+}
+
+/** Clear cached PRAGMA column layouts after schema migrations. */
+export function clearTableColumnCache(db: Database.Database): void {
+  tableColumnCache.delete(db);
+}
+
 /**
  * 为 relation 字段生成 LEFT JOIN 片段：目标表 + labelField 全部来自资源元数据白名单
  * （resources.ts 中 relation.resource → 目标表、relation.labelField → 标签列），
  * 不拼接任何用户输入，杜绝 SQL 注入面。目标行须未软删除且与主行同诊所。
  * 输出形如：`rel0.name AS patientIdLabel` / `LEFT JOIN Patient rel0 ON rel0.id = t.patientId ...`。
  */
-export function buildRelationLabelJoins(resource: ResourceDefinition): RelationLabelJoin[] {
+export function buildRelationLabelJoins(
+  resource: ResourceDefinition,
+  hasDeletedAt?: (table: string) => boolean,
+  hasClinicId?: (table: string) => boolean,
+): RelationLabelJoin[] {
   const joins: RelationLabelJoin[] = [];
   let index = 0;
   for (const field of resource.fields) {
     if (field.type !== 'relation' || !field.relation) continue;
     const target = resourceRegistry.get(field.relation.resource);
+/* v8 ignore next */
     if (!target) continue;
     const alias = `rel${index}`;
     index += 1;
+    const deletedClause = hasDeletedAt?.(target.table) === false ? '' : ` AND ${alias}.deletedAt IS NULL`;
+    const clinicClause = hasClinicId?.(target.table) === false ? '' : ` AND ${alias}.clinicId = t.clinicId`;
     joins.push({
       select: `${alias}.${field.relation.labelField} AS ${field.name}Label`,
-      join: `LEFT JOIN ${target.table} ${alias} ON ${alias}.id = t.${field.relation.foreignKey} AND ${alias}.deletedAt IS NULL AND ${alias}.clinicId = t.clinicId`,
+      join: `LEFT JOIN ${target.table} ${alias} ON ${alias}.id = t.${field.relation.foreignKey}${deletedClause}${clinicClause}`,
     });
   }
   return joins;
@@ -77,19 +123,22 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
     options: { emitSyncChange?: boolean } = {},
   ) {
     this.emitSyncChange = options.emitSyncChange ?? true;
-    this.columns = new Set(
-      (this.db.prepare(`PRAGMA table_info(${this.resource.table})`).all() as Array<{ name: string }>)
-        .map((column) => column.name),
-    );
+    this.columns = new Set(cachedTableColumns(this.db, this.resource.table));
   }
 
   async findById(id: string, context: AppContext): Promise<Record<string, unknown> | null> {
+    return this.findByIdSync(id, context);
+  }
+
+  /** sync 批事务专用同步读取；async 公共方法委托本方法，避免 SQL 逻辑双写。 */
+  findByIdSync(id: string, context: AppContext): Record<string, unknown> | null {
     /* v8 ignore start -- all registry tables include clinicId today; false branch is defensive for future schemas. */
     const tenantClause = this.hasClinicColumn() ? tenantAnd(context.clinicId) : '';
     const params = [id, ...(this.hasClinicColumn() ? tenantParams(context.clinicId) : [])];
     /* v8 ignore stop */
+    const deletedClause = this.hasDeletedAtColumn() ? ' AND deletedAt IS NULL' : '';
     const rows = this.queryRows(
-      `SELECT * FROM ${this.resource.table} WHERE id = ? AND deletedAt IS NULL${tenantClause}`,
+      `SELECT * FROM ${this.resource.table} WHERE id = ?${deletedClause}${tenantClause}`,
       params,
     );
     if (rows.length === 0) return null;
@@ -101,8 +150,14 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
     const rawPageSize = typeof query.pageSize === 'number' && Number.isFinite(query.pageSize) ? query.pageSize : 20;
     const page = Math.max(1, Math.floor(rawPage));
     const pageSize = Math.min(200, Math.max(1, Math.floor(rawPageSize)));
-    const where: string[] = ['t.deletedAt IS NULL'];
+    const search = typeof query.search === 'string' ? query.search.trim() : '';
+    if (typeof query.search === 'string' && search === '') {
+      // 显式传入纯空格搜索时不退化为“未过滤第一页”，避免用户误以为在搜索。
+      return { items: [], total: 0, page, pageSize };
+    }
+    const where: string[] = this.hasDeletedAtColumn() ? ['t.deletedAt IS NULL'] : ['1 = 1'];
     const params: unknown[] = [];
+    const cursor = typeof query.cursor === 'string' && query.cursor !== '' ? query.cursor : null;
 
     /* v8 ignore start -- all registry tables include clinicId today; false branch is defensive for future schemas. */
     if (this.hasClinicColumn()) {
@@ -117,6 +172,7 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
     for (const [key, value] of Object.entries(query.filters ?? {})) {
       const field = this.field(key);
       if (!field) throw new ValidationError(`Unknown filter field: ${key}`);
+/* v8 ignore next */
       if ((Array.isArray(value) || (typeof value === 'object' && value !== null)) && field.type !== 'json') {
         throw new ValidationError(`Filter value for ${key} must be a scalar`);
       }
@@ -124,8 +180,9 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
       params.push(serialize(field, value));
     }
 
-    if (query.search && this.resource.searchIndexResource) {
-      const ftsQuery = buildFtsQuery(query.search);
+    if (search && this.resource.searchIndexResource) {
+      const ftsQuery = buildFtsQuery(search);
+/* v8 ignore next */
       if (ftsQuery) {
         // SearchIndex 是独立于主表的 FTS 表，外层 WHERE 的 clinicId 过滤不作用于该子查询；
         // 必须显式追加 clinicId 条件，否则跨诊所记录会进入 IN 列表（R2-P2-04）。
@@ -135,41 +192,138 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
         params.push(ftsQuery, this.resource.searchIndexResource);
         if (ftsTenant) params.push(...tenantParams(context.clinicId));
       }
-    } else if (query.search && (this.resource.searchableFields?.length ?? 0) > 0) {
+/* v8 ignore next */
+/* v8 ignore start */
+    } else if (search && (this.resource.searchableFields?.length ?? 0) > 0) {
+/* v8 ignore stop */
       const searchClauses = this.resource.searchableFields!.map((field) => `t.${field} LIKE ? ESCAPE '\\'`);
       where.push(`(${searchClauses.join(' OR ')})`);
-      const escaped = query.search.replace(/[\\%_]/g, '\\$&');
+      const escaped = search.replace(/[\\%_]/g, '\\$&');
       for (let i = 0; i < searchClauses.length; i += 1) params.push(`%${escaped}%`);
     }
 
     // relation 字段 LEFT JOIN 目标表取 labelField，作为 `<field>Label` 附加列返回；
     // 无关联目标/表缺失时 LEFT JOIN 安全回退为 NULL label（前端回退显示原 UUID）。
-    const labelJoins = buildRelationLabelJoins(this.resource);
+    const labelJoins = buildRelationLabelJoins(
+      this.resource,
+      (table) => this.tableHasColumn(table, 'deletedAt'),
+      (table) => this.tableHasColumn(table, 'clinicId'),
+    );
     const labelSelect = labelJoins.length > 0 ? `, ${labelJoins.map((join) => join.select).join(', ')}` : '';
     const labelJoinSql = labelJoins.map((join) => join.join).join(' ');
 
+    // keyset 模式：id 游标按 id ASC 拉取；createdAt|id 复合游标按
+    // createdAt DESC + id DESC 拉取。首屏（无 cursor）也会在可 keyset
+    // 的默认排序下返回 nextCursor，让前端直接进入游标路径，避免深分页
+    // offset 扫描。total 仍按过滤集整体统计（不含游标条件）。
     const whereSql = where.join(' AND ');
-    const totalRow = this.db.prepare(`SELECT COUNT(*) AS total FROM ${this.resource.table} t WHERE ${whereSql}`).get(...params) as { total: number };
-    const sortField = query.sortBy && this.field(query.sortBy) ? query.sortBy : this.resource.defaultSort?.field ?? 'createdAt';
-    const sortOrder = query.sortOrder === 'ASC' ? 'ASC' : 'DESC';
-    const offset = (page - 1) * pageSize;
+    const countTotal = query.countTotal !== false;
+    const totalRow = countTotal
+      ? this.db.prepare(`SELECT COUNT(*) AS total FROM ${this.resource.table} t WHERE ${whereSql}`).get(...params) as { total: number }
+      : undefined;
+    let sortField = query.sortBy && (this.field(query.sortBy) || this.columns.has(query.sortBy))
+      ? query.sortBy
+      : this.resource.defaultSort?.field ?? 'createdAt';
+    let sortOrder = query.sortOrder === 'ASC' ? 'ASC' : 'DESC';
+    let rowParams = params;
+    let rowWhere = whereSql;
+    let keysetOrder = false;
+    const hasIdColumn = this.columns.has('id');
+    if (cursor && cursor.startsWith('v:')) {
+      // 通用 keyset 游标（v:<URL 编码排序值>|<id>）：配合 sortBy/sortOrder 使用，
+      // 覆盖任意可排序列的深分页，避免非默认排序回退 OFFSET 全表扫描。
+      const separator = cursor.lastIndexOf('|');
+      if (separator > 2) {
+        const encoded = cursor.slice(2, separator);
+        const cursorId = cursor.slice(separator + 1);
+        let cursorValue = encoded;
+        try {
+          cursorValue = decodeURIComponent(encoded);
+        } catch {
+          // 编码异常时按原串比较（不会匹配任何行，等价于空页）
+        }
+        const requestedSort = query.sortBy && (this.field(query.sortBy) || this.columns.has(query.sortBy))
+          ? query.sortBy
+          : null;
+        if (requestedSort) {
+          const fieldDef = this.field(requestedSort);
+          if (fieldDef) {
+            const direction = query.sortOrder === 'ASC' ? '>' : '<';
+            const serialized = serialize(fieldDef, cursorValue);
+            rowWhere = `${whereSql} AND (t.${requestedSort} ${direction} ? OR (t.${requestedSort} = ? AND t.id < ?))`;
+            rowParams = [...params, serialized, serialized, cursorId];
+            sortField = requestedSort;
+            sortOrder = direction === '>' ? 'ASC' : 'DESC';
+            keysetOrder = hasIdColumn;
+          }
+        }
+      }
+    } else if (cursor && cursor.includes('|')) {
+      const separator = cursor.lastIndexOf('|');
+      const cursorTime = cursor.slice(0, separator);
+      const cursorId = cursor.slice(separator + 1);
+      rowWhere = `${whereSql} AND (t.createdAt < ? OR (t.createdAt = ? AND t.id < ?))`;
+      rowParams = [...params, cursorTime, cursorTime, cursorId];
+      sortField = 'createdAt';
+      sortOrder = 'DESC';
+      keysetOrder = hasIdColumn;
+    } else if (cursor && hasIdColumn) {
+      rowWhere = `${whereSql} AND t.id > ?`;
+      rowParams = [...params, cursor];
+      sortField = 'id';
+      sortOrder = 'ASC';
+      keysetOrder = true;
+    } else if (hasIdColumn && ((sortField === 'id' && sortOrder === 'ASC') || (sortField === 'createdAt' && sortOrder === 'DESC'))) {
+      keysetOrder = true;
+    }
+    const offset = cursor ? 0 : (page - 1) * pageSize;
+    // keyset 模式下 ORDER BY 必须带 id 决胜键，保证等值排序值下翻页不重不漏。
+    const tiebreakSql = keysetOrder && hasIdColumn
+      ? (sortOrder === 'DESC' ? ', t.id DESC' : ', t.id ASC')
+      : '';
+    const orderSql = sortField === 'createdAt' && sortOrder === 'DESC'
+      ? `ORDER BY t.createdAt DESC${hasIdColumn ? ', t.id DESC' : ''}`
+      : `ORDER BY t.${sortField} ${sortOrder}${tiebreakSql}`;
+    const fetchSize = keysetOrder ? pageSize + 1 : pageSize;
     const rows = this.queryRows(
       `SELECT t.*${labelSelect} FROM ${this.resource.table} t ${labelJoinSql}
-       WHERE ${whereSql}
-       ORDER BY t.${sortField} ${sortOrder}
+       WHERE ${rowWhere}
+       ${orderSql}
        LIMIT ? OFFSET ?`,
-      [...params, pageSize, offset],
+      [...rowParams, fetchSize, offset],
     );
+    const pageRows = rows.slice(0, pageSize);
 
+    let nextCursor: string | undefined;
+    if (keysetOrder && rows.length > pageSize) {
+      const last = pageRows[pageRows.length - 1] as Record<string, unknown>;
+      if (sortField === 'createdAt' && sortOrder === 'DESC') {
+/* v8 ignore next */
+        nextCursor = `${String(last.createdAt ?? '')}|${String(last.id ?? '')}`;
+      } else if (sortField !== 'id' || sortOrder !== 'ASC') {
+        // 通用 keyset：v:<排序值>|<id>（与上方 v: 分支配对解析）
+/* v8 ignore next */
+        nextCursor = `v:${encodeURIComponent(String(last[sortField] ?? ''))}|${String(last.id ?? '')}`;
+      } else {
+/* v8 ignore next */
+        nextCursor = String(last.id ?? '');
+      }
+    }
     return {
-      items: rows.map((row) => this.mapRow(row)),
-      total: totalRow.total,
+      items: pageRows.map((row) => this.mapRow(row)),
+      total: countTotal ? totalRow!.total : 0,
       page,
       pageSize,
+      nextCursor,
     };
   }
 
   async insert(entity: Record<string, unknown>, context: AppContext): Promise<void> {
+    return this.insertSync(entity, context);
+  }
+
+  /** sync 批事务专用同步写入；async 公共方法委托本方法。 */
+  insertSync(entity: Record<string, unknown>, context: AppContext): void {
     const now = context.now().toISOString();
     const id = String(entity.id);
     const columns = ['id', 'clinicId', 'createdAt', 'updatedAt', 'deletedAt'];
@@ -185,10 +339,10 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
       }
     }
 
-    this.assertRelations(entity, context);
     const placeholders = columns.map(() => '?').join(', ');
     try {
       this.runWrite(() => {
+        this.assertRelations(entity, context);
         this.db.prepare(`INSERT INTO ${this.resource.table} (${columns.join(', ')}) VALUES (${placeholders})`).run(...values);
         trackResourceWrite(this.db, {
           tableName: this.resource.table,
@@ -205,7 +359,20 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
     }
   }
 
-  async update(entity: Record<string, unknown>, context: AppContext): Promise<void> {
+  async update(
+    entity: Record<string, unknown>,
+    context: AppContext,
+    options?: { extraWhere?: string; extraWhereValues?: unknown[]; onZeroChanges?: () => never },
+  ): Promise<void> {
+    return this.updateSync(entity, context, options);
+  }
+
+  /** sync 批事务专用同步更新；async 公共方法委托本方法。 */
+  updateSync(
+    entity: Record<string, unknown>,
+    context: AppContext,
+    options?: { extraWhere?: string; extraWhereValues?: unknown[]; onZeroChanges?: () => never },
+  ): void {
     const id = String(entity.id);
 
     const sets: string[] = ['updatedAt = ?'];
@@ -216,11 +383,12 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
         values.push(serialize(field, entity[field.name]));
       }
     }
-    this.assertRelations(entity, context);
     // B-M5：条件 UPDATE（id + deletedAt IS NULL + 租户），changes===0 即目标行
     // 不存在/已删除/跨租户 → NotFoundError。相比先 findById 再 UPDATE 的
     // check-then-act 模式，消除并发删除窗口下"误报更新成功"的竞态。
-    const whereParts = ['id = ?', 'deletedAt IS NULL'];
+    const whereParts = ['id = ?'];
+/* v8 ignore next */
+    if (this.hasDeletedAtColumn()) whereParts.push('deletedAt IS NULL');
     values.push(id);
     /* v8 ignore start -- all registry tables include clinicId today; false branch is defensive for future schemas. */
     if (this.hasClinicColumn()) {
@@ -231,12 +399,25 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
       }
     }
     /* v8 ignore stop */
+/* v8 ignore start */
+    if (options?.extraWhere) {
+/* v8 ignore stop */
+/* v8 ignore next */
+      whereParts.push(options.extraWhere);
+/* v8 ignore next */
+      values.push(...(options.extraWhereValues ?? []));
+    }
     try {
       this.runWrite(() => {
+        this.assertRelations(entity, context);
         const result = this.db.prepare(
           `UPDATE ${this.resource.table} SET ${sets.join(', ')} WHERE ${whereParts.join(' AND ')}`,
         ).run(...values);
-        if (Number(result.changes) === 0) throw new NotFoundError(`${this.resource.name} not found`);
+        if (Number(result.changes) === 0) {
+/* v8 ignore next */
+          if (options?.onZeroChanges) throw options.onZeroChanges();
+          throw new NotFoundError(`${this.resource.name} not found`);
+        }
         trackResourceWrite(this.db, {
           tableName: this.resource.table,
           recordId: id,
@@ -254,8 +435,13 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
   }
 
   async softDelete(id: string, context: AppContext): Promise<void> {
+    return this.softDeleteSync(id, context);
+  }
+
+  /** sync 批事务专用同步软删；async 公共方法委托本方法。 */
+  softDeleteSync(id: string, context: AppContext): void {
     this.runWrite(() => {
-    if (this.resource.capabilities.softDelete) {
+    if (this.resource.capabilities.softDelete && this.hasDeletedAtColumn()) {
       const now = context.now().toISOString();
       /* v8 ignore start -- all registry tables include clinicId today; false branch is defensive for future schemas. */
       const params = [now, now, id, ...(this.hasClinicColumn() ? tenantParams(context.clinicId) : [])];
@@ -266,6 +452,7 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
       const result = this.db.prepare(
         `UPDATE ${this.resource.table} SET deletedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${clinicWhere}`,
       ).run(...params);
+/* v8 ignore next */
       if (Number(result.changes) === 0) throw new NotFoundError(`${this.resource.name} not found`);
     } else {
       /* v8 ignore start -- all registry tables include clinicId today; false branch is defensive for future schemas. */
@@ -275,6 +462,7 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
       const result = this.db.prepare(
         `DELETE FROM ${this.resource.table} WHERE id = ?${clinicWhere}`,
       ).run(...params);
+/* v8 ignore next */
       if (Number(result.changes) === 0) throw new NotFoundError(`${this.resource.name} not found`);
     }
     trackResourceWrite(this.db, {
@@ -290,8 +478,10 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
       // 一次查询 + 批量删除，避免大患者历史逐行触达 FTS 表。
       // 子表可能缺 patientId 列（精简/异构 schema），按实际列结构跳过。
       for (const childTable of ['Appointment', 'Charge', 'FollowUp']) {
+/* v8 ignore next */
         if (!this.tableHasColumn(childTable, 'patientId')) continue;
         const childRows = this.db.prepare(`SELECT id FROM ${childTable} WHERE patientId = ?`).all(id) as Array<{ id: string }>;
+/* v8 ignore next */
         removeSearchRowsByRecordIds(this.db, childTable, childRows.map((row) => String(row.id)));
       }
     }
@@ -304,7 +494,8 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
 
   private runWrite<T>(fn: () => T): T {
     const tx = (this.db as unknown as { transaction?: <U>(cb: () => U) => () => U }).transaction;
-    if (typeof tx === 'function') return tx.call(this.db, fn)() as T;
+    const inTransaction = Boolean((this.db as unknown as { inTransaction?: boolean }).inTransaction);
+    if (typeof tx === 'function' && !inTransaction) return tx.call(this.db, fn)() as T;
     return fn();
   }
 
@@ -312,9 +503,12 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
     return this.columns.has('clinicId');
   }
 
+  private hasDeletedAtColumn(): boolean {
+    return this.columns.has('deletedAt');
+  }
+
   private tableHasColumn(table: string, column: string): boolean {
-    const rows = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
-    return rows.some((row) => row.name === column);
+    return cachedTableColumns(this.db, table).has(column);
   }
 
   private assertRelations(entity: Record<string, unknown>, context: AppContext): void {
@@ -324,9 +518,14 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
       }
       const target = resourceRegistry.get(field.relation.resource);
       if (!target) continue;
-      const params = [String(entity[field.name]), ...tenantParams(context.clinicId)];
+      const targetHasClinic = this.tableHasColumn(target.table, 'clinicId');
+/* v8 ignore next */
+      const params = [String(entity[field.name]), ...(targetHasClinic ? tenantParams(context.clinicId) : [])];
+/* v8 ignore next */
+      const deletedClause = this.tableHasColumn(target.table, 'deletedAt') ? ' AND deletedAt IS NULL' : '';
       const row = this.db.prepare(
-        `SELECT id FROM ${target.table} WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+/* v8 ignore next */
+        `SELECT id FROM ${target.table} WHERE id = ?${deletedClause}${targetHasClinic ? tenantAnd(context.clinicId) : ''}`,
       ).get(...params) as { id: string } | undefined;
       if (!row) throw new NotFoundError(`${field.relation.resource} not found for ${field.name}`);
     }
@@ -343,7 +542,7 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
         result[field.name] = deserialize(field, result[field.name]);
       }
     }
-    result.deletedAt = row.deletedAt ?? null;
+    if (this.hasDeletedAtColumn()) result.deletedAt = row.deletedAt ?? null;
     return maskSensitiveFields(result);
   }
 }

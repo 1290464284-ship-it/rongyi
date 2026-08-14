@@ -88,7 +88,9 @@ try {
         }
         Invoke-OrFail "pnpm build"
         Invoke-OrFail "pnpm electron:compile"
-        Invoke-OrFail "electron-builder --publish never --config.directories.output=$releaseDir"
+        # 可移植性：electron-builder 是本地 devDependency，裸命令依赖 node_modules/.bin
+        # 在 PATH 上（CI 偶然而已）；pnpm exec 在任何环境下都能解析本地二进制。
+        Invoke-OrFail "pnpm exec electron-builder --publish never --config.directories.output=$releaseDir"
         if ($manualSignCertPath) {
             $signCert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
                 $manualSignCertPath,

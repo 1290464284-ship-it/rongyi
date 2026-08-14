@@ -2,14 +2,15 @@ import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { AppError, NotFoundError, ValidationError, isSystematicSqliteError } from '../../infrastructure/errors';
 import { SqliteRepository } from '../../infrastructure/repository';
-import { stripProtectedWriteFields } from '../../infrastructure/security';
+import { applyStateMachineDefaults, stripProtectedWriteFields } from '../../infrastructure/security';
 import { validatePayload } from '../../http/validation';
 import { SqlitePatientRiskRepository } from '../../infrastructure/repositories/core.repositories';
 import { resourceRegistry } from '../../../domain/resources';
-import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
+import { tenantAnd, tenantParams, tenantWhere } from '../../infrastructure/tenant';
 import type { AppContext } from '../../../domain/contracts';
 import type { PatientRiskRepository } from '../ports';
 import { FORBIDDEN_BULK_IMPORT_RESOURCES, assertPatientExists } from './common';
+import { RESOURCE_PERMISSION_MAP } from './permissions';
 import { sharedDbWriteQueue } from './serial-queue';
 
 export class PatientRiskService {
@@ -146,6 +147,11 @@ export class BulkImportService {
     if (!definition.roles.includes(context.role)) {
       throw new AppError('FORBIDDEN', `Forbidden resource: ${resourceName}`, 403);
     }
+    const requiredPermission = RESOURCE_PERMISSION_MAP[resourceName];
+    // 与通用资源路由一致：模块权限在角色之上收口，避免只授予 system 的账号越权导入业务表。
+    if (requiredPermission && context.permissions && !context.permissions.includes(requiredPermission)) {
+      throw new AppError('FORBIDDEN', `Forbidden resource: ${resourceName}`, 403);
+    }
     if (!Array.isArray(rows) || rows.length > 10_000) {
       throw new ValidationError('Bulk import rows must be an array with at most 10000 rows');
     }
@@ -161,12 +167,19 @@ export class BulkImportService {
       try {
         for (const row of chunk) {
           try {
-            const payload = stripProtectedWriteFields(validatePayload(definition, row), undefined, resourceName);
-            await repository.insert({ id: randomUUID(), ...payload }, context);
+            const payload = stripProtectedWriteFields(
+              validatePayload(definition, row),
+              undefined,
+              resourceName,
+              { protectStateMachine: true },
+            );
+            applyStateMachineDefaults(resourceName, payload);
+            repository.insertSync({ id: randomUUID(), ...payload }, context);
             imported += 1;
           } catch (error) {
             if (isSystematicSqliteError(error)) {
-              throw new AppError('IMPORT_SYSTEM_ERROR', `批量导入中止：${error instanceof Error ? error.message : String(error)}`, 500);
+              // isSystematicSqliteError 以 instanceof Error 为前提，String(error) 兜底为死代码。
+              throw new AppError('IMPORT_SYSTEM_ERROR', `批量导入中止：${(error as Error).message}`, 500);
             }
             errors.push(error instanceof Error ? error.message : String(error));
             continue;
@@ -181,7 +194,8 @@ export class BulkImportService {
         errors.length = chunkStartErrors;
         if (e instanceof AppError) throw e;
         if (isSystematicSqliteError(e)) {
-          const message = e instanceof Error ? e.message : String(e);
+          // isSystematicSqliteError 以 instanceof Error 为前提，String(e) 兜底为死代码。
+          const message = (e as Error).message;
           throw new AppError('IMPORT_SYSTEM_ERROR', `批量导入中止：前 ${imported} 条已导入，请人工核对后重试（${message}）`, 500);
         }
         throw e;
@@ -196,6 +210,7 @@ export class NotificationService {
 
   list(
     userId: string,
+    clinicId?: string | null,
     options?: { page?: number; pageSize?: number },
   ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean } {
     const rawPage = Number(options?.page);
@@ -203,18 +218,24 @@ export class NotificationService {
     const page = Number.isFinite(rawPage) && rawPage >= 1 ? Math.floor(rawPage) : 1;
     const pageSize = Number.isFinite(rawPageSize) && rawPageSize >= 1 ? Math.min(100, Math.floor(rawPageSize)) : 100;
     const offset = (page - 1) * pageSize;
+    const clinicFilter = tenantWhere(clinicId, 'Notification.clinicId');
+    const clinicClause = clinicFilter.sql ? ` AND ${clinicFilter.sql}` : '';
+    const clinicParams = clinicFilter.params;
     const total = Number((this.db.prepare(
-      'SELECT COUNT(*) AS total FROM Notification WHERE userId = ? AND deletedAt IS NULL',
-    ).get(userId) as { total: number }).total);
+      `SELECT COUNT(*) AS total FROM Notification WHERE userId = ? AND deletedAt IS NULL${clinicClause}`,
+    ).get(userId, ...clinicParams) as { total: number }).total);
     const items = this.db.prepare(
-      'SELECT * FROM Notification WHERE userId = ? AND deletedAt IS NULL ORDER BY createdAt DESC LIMIT ? OFFSET ?',
-    ).all(userId, pageSize, offset) as Array<Record<string, unknown>>;
+      `SELECT * FROM Notification WHERE userId = ? AND deletedAt IS NULL${clinicClause} ORDER BY createdAt DESC LIMIT ? OFFSET ?`,
+    ).all(userId, ...clinicParams, pageSize, offset) as Array<Record<string, unknown>>;
     return { items, total, page, pageSize, truncated: total > offset + items.length };
   }
 
-  markRead(id: string, userId: string): Record<string, unknown> {
-    const result = this.db.prepare('UPDATE Notification SET readAt = ?, updatedAt = ? WHERE id = ? AND userId = ? AND deletedAt IS NULL')
-      .run(new Date().toISOString(), new Date().toISOString(), id, userId);
+  markRead(id: string, userId: string, clinicId?: string | null): Record<string, unknown> {
+    const clinicFilter = tenantWhere(clinicId, 'Notification.clinicId');
+    const clinicClause = clinicFilter.sql ? ` AND ${clinicFilter.sql}` : '';
+    const clinicParams = clinicFilter.params;
+    const result = this.db.prepare(`UPDATE Notification SET readAt = ?, updatedAt = ? WHERE id = ? AND userId = ? AND deletedAt IS NULL${clinicClause}`)
+      .run(new Date().toISOString(), new Date().toISOString(), id, userId, ...clinicParams);
     if (result.changes === 0) throw new NotFoundError('Notification not found');
     return { id, read: true };
   }

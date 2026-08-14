@@ -10,7 +10,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TreatmentPlansPage } from './TreatmentPlansPage';
 import { apiRequest } from '../../lib/api';
@@ -259,6 +259,27 @@ describe('TreatmentPlansPage', () => {
     expect(await screen.findByText('已打印（第 1 次）')).toBeDefined();
   });
 
+  it('uses zero as the printed count when the server omits it', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/treatmentPlans?page=1&pageSize=50') {
+        return {
+          items: [{ id: 'p-1', patientId: 'p-1', doctorId: 'd-1', name: '正畸计划', totalFee: 20000, status: 'APPROVED', printCount: 0, signedAt: null }],
+          total: 1,
+          page: 1,
+          pageSize: 50,
+        };
+      }
+      if (path === '/treatment-plans/p-1/print') {
+        return { plan: { id: 'p-1', name: '正畸计划' }, items: [], template: { name: '模板' } };
+      }
+      return {};
+    });
+    render(<TreatmentPlansPage />, { wrapper });
+    await screen.findByText('正畸计划');
+    fireEvent.click(screen.getByText('打印'));
+    expect(await screen.findByText('已打印（第 0 次）')).toBeDefined();
+  });
+
   it('shows an error toast when printing fails', async () => {
     mockData();
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
@@ -388,7 +409,7 @@ describe('TreatmentPlansPage', () => {
     expect(JSON.parse(String(calls[1]?.[1]?.body))).toEqual({ discountRate: null });
   });
 
-  it('bills selected items, then bills all items when nothing is selected', async () => {
+  it('bills selected items and disables billing when nothing is selected', async () => {
     mockData();
     render(<TreatmentPlansPage />, { wrapper });
     await screen.findByText('正畸计划');
@@ -401,16 +422,11 @@ describe('TreatmentPlansPage', () => {
       expect(apiRequest).toHaveBeenCalledWith('/treatment-plans/p-1/bill', expect.objectContaining({ method: 'POST' }));
     });
     expect(await screen.findByText('已生成划价单 CHG-ABC123')).toBeDefined();
-    let billCalls = vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/treatment-plans/p-1/bill');
+    const billCalls = vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/treatment-plans/p-1/bill');
     expect(JSON.parse(String(billCalls[0]?.[1]?.body))).toEqual({ itemIds: ['item-1'] });
 
-    // 勾选在划价后被清空：再次划价应发送全量（空 body）
-    fireEvent.click(screen.getByRole('button', { name: '划价' }));
-    await waitFor(() => {
-      billCalls = vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/treatment-plans/p-1/bill');
-      expect(billCalls.length).toBe(2);
-    });
-    expect(JSON.parse(String(billCalls[1]?.[1]?.body))).toEqual({});
+    // 勾选在划价后被清空：未勾选明细时按钮应禁用，避免无意义请求
+    expect((screen.getByRole('button', { name: '划价' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('disables discount and billing controls when items are already billed', async () => {
@@ -478,6 +494,22 @@ describe('TreatmentPlansPage', () => {
     expect(JSON.parse(String(call?.[1]?.body))).toEqual({
       followUpStatus: 'NONE',
     });
+  });
+
+  it('shows an error toast when saving follow-up info fails', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/treatmentPlans?page=1&pageSize=50') {
+        return { items: [{ id: 'p-1', patientId: 'p-1', doctorId: 'd-1', name: '正畸计划', totalFee: 20000, status: 'APPROVED', printCount: 0, signedAt: null }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/treatment-plans/p-1/follow-up') throw new Error('');
+      return {};
+    });
+    render(<TreatmentPlansPage />, { wrapper });
+    await screen.findByText('正畸计划');
+    fireEvent.click(screen.getAllByRole('button', { name: '回访' })[0]);
+    await screen.findByLabelText('回访状态');
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    expect(await screen.findByText('保存回访失败')).toBeDefined();
   });
 
   it('renders discount and follow-up columns from plan rows', async () => {
@@ -613,49 +645,26 @@ describe('TreatmentPlansPage', () => {
     fireEvent.change(afterPriceInputs[2], { target: { value: '1000' } });
     fireEvent.click(screen.getByText('保存'));
 
-    // 主记录 PATCH
+    // 主记录 + 明细在一次事务端点中保存
     await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/resources/treatmentPlans/p-1', expect.objectContaining({ method: 'PATCH' }));
+      expect(apiRequest).toHaveBeenCalledWith('/treatment-plans/p-1/save', expect.objectContaining({ method: 'PATCH' }));
     });
-    const planCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/resources/treatmentPlans/p-1');
-    expect(JSON.parse(String(planCall?.[1]?.body))).toMatchObject({
+    const saveCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/treatment-plans/p-1/save');
+    const saveBody = JSON.parse(String(saveCall?.[1]?.body)) as { items: Array<Record<string, unknown>> };
+    expect(saveBody).toMatchObject({
       patientId: 'p-1',
       doctorId: 'd-1',
       name: '正畸计划-改',
       status: 'APPROVED',
       totalFee: 20000,
     });
-    // 变更明细 PATCH
-    await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/resources/treatmentPlanItems/item-2', expect.objectContaining({ method: 'PATCH' }));
-    });
-    const item2Call = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/resources/treatmentPlanItems/item-2');
-    expect(JSON.parse(String(item2Call?.[1]?.body))).toMatchObject({
-      code: 'CODE-2',
-      name: '基台-改',
-      category: 'GENERAL',
-      price: 5000,
-      quantity: 2,
-      teethNumbers: [],
-      status: 'PLANNED',
-    });
-    // 移除明细 DELETE
-    expect(apiRequest).toHaveBeenCalledWith('/resources/treatmentPlanItems/item-1', expect.objectContaining({ method: 'DELETE' }));
-    // 新增明细 POST（带 planId）
-    const postCalls = vi.mocked(apiRequest).mock.calls.filter(([path, options]) => path === '/resources/treatmentPlanItems' && options?.method === 'POST');
-    expect(postCalls.length).toBe(1);
-    expect(JSON.parse(String(postCalls[0]?.[1]?.body))).toMatchObject({
-      planId: 'p-1',
-      name: '新项目',
-      category: 'GENERAL',
-      price: 100000,
-      quantity: 1,
-      teethNumbers: [],
-      status: 'PLANNED',
-    });
-    // billed 保护：已划价明细 item-3 不做 PATCH、不做 DELETE
-    const billedCalls = vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/resources/treatmentPlanItems/item-3');
-    expect(billedCalls.length).toBe(0);
+    expect(saveBody.items).toHaveLength(3);
+    expect(saveBody.items.map((item) => item.id)).toEqual(['item-2', 'item-3', expect.any(String)]);
+    expect(saveBody.items[0]).toMatchObject({ name: '基台-改', price: 5000, quantity: 2 });
+    expect(saveBody.items[1]).toMatchObject({ id: 'item-3', name: '牙冠', price: 30000, quantity: 1 });
+    expect(saveBody.items[2]).toMatchObject({ name: '新项目', price: 100000, quantity: 1 });
+    expect(apiRequest).not.toHaveBeenCalledWith('/resources/treatmentPlanItems/item-2', expect.objectContaining({ method: 'PATCH' }));
+    expect(apiRequest).not.toHaveBeenCalledWith('/resources/treatmentPlanItems/item-1', expect.objectContaining({ method: 'DELETE' }));
     expect(await screen.findByText('治疗计划已更新')).toBeDefined();
   });
 
@@ -724,10 +733,11 @@ describe('TreatmentPlansPage', () => {
 
     fireEvent.click(screen.getAllByText('打印')[0]);
     await screen.findByText('打印预览');
-    fireEvent.keyDown(await screen.findByRole('dialog'), { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByText('打印预览')).toBeNull();
-    });
+    vi.useFakeTimers();
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByText('打印预览')).toBeNull();
+    vi.useRealTimers();
 
     fireEvent.click(screen.getAllByText('打印')[0]);
     await screen.findByText('打印预览');
@@ -738,24 +748,27 @@ describe('TreatmentPlansPage', () => {
 
     fireEvent.click(screen.getAllByRole('button', { name: '签字' })[0]);
     await screen.findByText('电子签字');
-    fireEvent.keyDown(await screen.findByRole('dialog'), { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByText('电子签字')).toBeNull();
-    });
+    vi.useFakeTimers();
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByText('电子签字')).toBeNull();
+    vi.useRealTimers();
 
     fireEvent.click(screen.getAllByRole('button', { name: '折扣' })[0]);
     await screen.findByLabelText('明细与划价：正畸计划');
-    fireEvent.keyDown(await screen.findByRole('dialog'), { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByLabelText('明细与划价：正畸计划')).toBeNull();
-    });
+    vi.useFakeTimers();
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByLabelText('明细与划价：正畸计划')).toBeNull();
+    vi.useRealTimers();
 
     fireEvent.click(screen.getAllByRole('button', { name: '回访' })[0]);
     await screen.findByLabelText('回访状态');
-    fireEvent.keyDown(await screen.findByRole('dialog'), { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByLabelText('回访状态')).toBeNull();
-    });
+    vi.useFakeTimers();
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByLabelText('回访状态')).toBeNull();
+    vi.useRealTimers();
   });
 
   it('reports cleanup failures and detail delete failures', async () => {
@@ -794,9 +807,9 @@ describe('TreatmentPlansPage', () => {
     await screen.findByText('正畸计划');
     fireEvent.click(screen.getAllByRole('button', { name: '删除' })[0]);
     fireEvent.click(await screen.findByText('确认删除'));
-    expect(await screen.findByText('删除部分治疗计划明细失败，已继续删除主记录')).toBeDefined();
+    expect(await screen.findByText('删除治疗计划明细失败，已中止删除主记录')).toBeDefined();
     await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/resources/treatmentPlans/p-1', expect.objectContaining({ method: 'DELETE' }));
+      expect(apiRequest).not.toHaveBeenCalledWith('/resources/treatmentPlans/p-1', expect.objectContaining({ method: 'DELETE' }));
     });
   });
 
@@ -844,18 +857,53 @@ describe('TreatmentPlansPage', () => {
             discountRate: null,
             followUpStatus: 'CUSTOM',
             nextFollowUpAt: null,
+          }, {
+            id: 'p-null-followup',
+            patientId: null,
+            doctorId: null,
+            name: '无回访状态',
+            totalFee: null,
+            status: 'APPROVED',
+            printCount: null,
+            signedAt: null,
+            discountType: null,
+            discountRate: null,
+            followUpStatus: null,
+            nextFollowUpAt: null,
           }],
-          total: 1, page: 1, pageSize: 50,
+          total: 2, page: 1, pageSize: 50,
         };
       }
       return {};
     });
     render(<TreatmentPlansPage />, { wrapper });
     expect(await screen.findByText('WEIRD')).toBeDefined();
-    expect(screen.getByText('0')).toBeDefined();
-    expect(screen.getByText('未签')).toBeDefined();
+    expect(screen.getAllByText('0').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('未签').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('MYSTERY 0%')).toBeDefined();
     expect(screen.getByText('CUSTOM')).toBeDefined();
+    expect(screen.getByText('无回访状态')).toBeDefined();
+    expect(screen.getByText('无')).toBeDefined();
+  });
+
+  it('renders the billing dialog title with an empty name for unnamed plans', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/treatmentPlans?page=1&pageSize=50') {
+        return { items: [{ id: 'p-1', patientId: 'p-1', doctorId: 'd-1', name: null, totalFee: 20000, status: 'APPROVED', printCount: 0, signedAt: null }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/treatmentPlanItems?planId=p-1&page=1&pageSize=100') {
+        return { items: [], total: 0, page: 1, pageSize: 100 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      return {};
+    });
+    render(<TreatmentPlansPage />, { wrapper });
+    await screen.findByRole('button', { name: '折扣' });
+    fireEvent.click(screen.getAllByRole('button', { name: '折扣' })[0]);
+    expect(await screen.findByLabelText('明细与划价：')).toBeDefined();
   });
 
   it('prefills sparse plan items and doctor ids when editing', async () => {
@@ -934,5 +982,54 @@ describe('TreatmentPlansPage', () => {
     fireEvent.click(screen.getByText('保存'));
     expect(await screen.findByText('创建治疗计划失败')).toBeDefined();
     expect(apiRequest).not.toHaveBeenCalledWith('/resources/treatmentPlanItems', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('prefills null plan fields when editing a sparse row', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/treatmentPlans?page=1&pageSize=50') {
+        return {
+          items: [{
+            id: 'p-null',
+            patientId: null,
+            doctorId: null,
+            name: null,
+            status: null,
+            totalFee: null,
+            followUpStatus: null,
+          }],
+          total: 1,
+          page: 1,
+          pageSize: 50,
+        };
+      }
+      if (path === '/resources/treatmentPlanItems?planId=p-null&page=1&pageSize=100') {
+        return { items: [], total: 0, page: 1, pageSize: 100 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [], total: 0, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [];
+      return {};
+    });
+    render(<TreatmentPlansPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '编辑' }));
+    await screen.findByRole('dialog', { name: '编辑治疗计划管理' });
+    expect((screen.getByLabelText('患者') as HTMLSelectElement).value).toBe('');
+    expect((screen.getByLabelText('医生') as HTMLSelectElement).value).toBe('');
+    expect((screen.getByLabelText('计划名称') as HTMLInputElement).value).toBe('');
+    expect((screen.getByLabelText('状态') as HTMLSelectElement).value).toBe('APPROVED');
+    expect((screen.getByLabelText('总费用') as HTMLInputElement).value).toBe('');
+  });
+
+  it('closes the billing dialog through its own close button', async () => {
+    mockData();
+    render(<TreatmentPlansPage />, { wrapper });
+    await screen.findByText('正畸计划');
+    fireEvent.click(screen.getAllByRole('button', { name: '折扣' })[0]);
+    await screen.findByLabelText('明细与划价：正畸计划');
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+    await waitFor(() => {
+      expect(screen.queryByLabelText('明细与划价：正畸计划')).toBeNull();
+    });
   });
 });

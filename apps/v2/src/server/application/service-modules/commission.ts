@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
+import { MAX_MONEY_CENTS } from './common';
 import type { AppContext } from '../../../domain/contracts';
 
 const PERIOD_RE = /^\d{4}-\d{2}$/;
@@ -124,14 +125,15 @@ export class CommissionService {
       enabled: patch.enabled === undefined ? Number(existing.enabled) === 1 : patch.enabled,
     });
     const now = context.now().toISOString();
-    this.db.prepare(
+    const result = this.db.prepare(
       `UPDATE CommissionRule
        SET name = ?, category = ?, costType = ?, rateType = ?, rate = ?, doctorId = ?, enabled = ?, updatedAt = ?
-       WHERE id = ?${tenantAnd(context.clinicId)}`,
+       WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).run(
       merged.name, merged.category, merged.costType, merged.rateType, merged.rate,
       merged.doctorId, merged.enabled ? 1 : 0, now, id, ...tenantParams(context.clinicId),
     );
+    if (Number(result.changes) === 0) throw new NotFoundError('Commission rule not found');
     return this.getRule(id, context)!;
   }
 
@@ -139,9 +141,10 @@ export class CommissionService {
     const existing = this.getRule(id, context);
     if (!existing) throw new NotFoundError('Commission rule not found');
     const now = context.now().toISOString();
-    this.db.prepare(
-      `UPDATE CommissionRule SET deletedAt = ?, updatedAt = ? WHERE id = ?${tenantAnd(context.clinicId)}`,
+    const result = this.db.prepare(
+      `UPDATE CommissionRule SET deletedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).run(now, now, id, ...tenantParams(context.clinicId));
+    if (Number(result.changes) === 0) throw new NotFoundError('Commission rule not found');
   }
 
   calculate(period: string, context: AppContext): CommissionStatementRow[] {
@@ -153,13 +156,13 @@ export class CommissionService {
        WHERE paidAt >= ? AND paidAt < ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).all(start, endExclusive, ...tenantParams(context.clinicId)) as ChargeRow[];
     const chargeIds = charges.map((charge) => charge.id);
-    if (chargeIds.length === 0) return [];
 
-    const placeholders = chargeIds.map(() => '?').join(',');
-    const items = this.db.prepare(
-      `SELECT chargeId, category, COALESCE(costType, 'SERVICE') AS costType, subtotal
-       FROM ChargeItem WHERE chargeId IN (${placeholders}) AND deletedAt IS NULL`,
-    ).all(...chargeIds) as ItemRow[];
+    const items = chargeIds.length > 0
+      ? (this.db.prepare(
+          `SELECT chargeId, category, COALESCE(costType, 'SERVICE') AS costType, subtotal
+           FROM ChargeItem WHERE chargeId IN (${chargeIds.map(() => '?').join(',')}) AND deletedAt IS NULL`,
+        ).all(...chargeIds) as ItemRow[])
+      : [];
 
     const rules = this.listRules(context);
     const lines = buildLines(charges, items);
@@ -183,6 +186,14 @@ export class CommissionService {
          calculatedAt = excluded.calculatedAt`,
     );
     const run = this.db.transaction(() => {
+      // 本期无任何计费（例如全部退款）时，历史生成的提成单必须清空，
+      // 否则报表继续展示早已失效的金额。
+      if (grouped.size === 0) {
+        this.db.prepare(
+          `DELETE FROM CommissionStatement WHERE period = ?${tenantAnd(context.clinicId)}`,
+        ).run(normalizedPeriod, ...tenantParams(context.clinicId));
+        return;
+      }
       for (const [doctorId, bucket] of grouped) {
         const ruleSet = ruleSetForDoctor(rules, doctorId);
         const { total: commission, breakdown } = computeCommission(bucket.rows, ruleSet);
@@ -192,6 +203,13 @@ export class CommissionService {
           bucket.charged, commission, JSON.stringify(breakdown), now,
         );
       }
+      // 医生被移除/规则变化后不再出现在本期结果时，旧提成单必须一并删除。
+      const presentDoctorIds = Array.from(grouped.keys());
+      const doctorPlaceholders = presentDoctorIds.map(() => '?').join(',');
+      this.db.prepare(
+        `DELETE FROM CommissionStatement
+         WHERE period = ? AND deletedAt IS NULL AND doctorId NOT IN (${doctorPlaceholders})${tenantAnd(context.clinicId)}`,
+      ).run(normalizedPeriod, ...presentDoctorIds, ...tenantParams(context.clinicId));
     });
     run();
     return this.statements(normalizedPeriod, context, { doctorId: null });
@@ -241,6 +259,9 @@ function normalizeRule(input: CommissionRuleInput): CommissionRuleRow {
   if (input.rateType === 'PERCENT' && rate > 10_000) {
     throw new ValidationError('提成比例不能超过 100%');
   }
+  if (input.rateType === 'FIXED' && rate > MAX_MONEY_CENTS) {
+    throw new ValidationError('固定提成金额超过上限');
+  }
   const category = input.category === undefined || input.category === null || String(input.category).trim() === ''
     ? null
     : String(input.category).trim();
@@ -269,16 +290,17 @@ function normalizeRule(input: CommissionRuleInput): CommissionRuleRow {
 function toRuleRow(row: Record<string, unknown>): CommissionRuleRow {
   return {
     id: String(row.id),
-    name: String(row.name ?? ''),
+    // name/rate/enabled/createdAt/updatedAt 均为 NOT NULL 列（迁移 154）
+    name: String(row.name),
     category: row.category === null || row.category === undefined ? null : String(row.category),
     costType: row.costType === null || row.costType === undefined ? null : row.costType as 'SERVICE' | 'MATERIAL',
     rateType: String(row.rateType) as 'PERCENT' | 'FIXED',
-    rate: Number(row.rate ?? 0),
+    rate: Number(row.rate),
     doctorId: row.doctorId === null || row.doctorId === undefined ? null : String(row.doctorId),
-    enabled: Number(row.enabled ?? 1),
+    enabled: Number(row.enabled),
     clinicId: row.clinicId === null || row.clinicId === undefined ? null : String(row.clinicId),
-    createdAt: String(row.createdAt ?? ''),
-    updatedAt: String(row.updatedAt ?? ''),
+    createdAt: String(row.createdAt),
+    updatedAt: String(row.updatedAt),
   };
 }
 
@@ -294,9 +316,10 @@ function toStatementRow(row: StatementRow): CommissionStatementRow {
     id: row.id,
     period: row.period,
     doctorId: row.doctorId,
-    doctorName: row.doctorName === null || row.doctorName === undefined ? null : String(row.doctorName),
-    totalCharged: Number(row.totalCharged ?? 0),
-    totalCommission: Number(row.totalCommission ?? 0),
+    // doctorName 由 COALESCE 保证非空；totalCharged/totalCommission 为 NOT NULL 列（迁移 154）
+    doctorName: String(row.doctorName),
+    totalCharged: Number(row.totalCharged),
+    totalCommission: Number(row.totalCommission),
     breakdown,
     calculatedAt: row.calculatedAt,
   };
@@ -337,18 +360,34 @@ function buildLines(charges: ChargeRow[], items: ItemRow[]): CommissionLine[] {
     const effectivePaid = Math.max(0, Number(charge.paidAmount ?? 0) - Number(charge.refundedAmount ?? 0));
     if (effectivePaid <= 0) continue;
     const totalSubtotal = chargeItems.reduce((sum, item) => sum + Math.max(0, Number(item.subtotal ?? 0)), 0);
+    const chargeLines: CommissionLine[] = [];
     for (const item of chargeItems) {
       const paidBase = totalSubtotal > 0
         ? Math.round((effectivePaid * Math.max(0, Number(item.subtotal ?? 0))) / totalSubtotal)
         : Math.floor(effectivePaid / chargeItems.length);
       if (paidBase <= 0) continue;
-      lines.push({
+      chargeLines.push({
         doctorId,
         chargeId: charge.id,
-        category: String(item.category ?? ''),
-        costType: String(item.costType ?? 'SERVICE'),
+        // category 为 NOT NULL 列；costType 已在查询中 COALESCE 兜底
+        category: String(item.category),
+        costType: String(item.costType),
         paidBase,
       });
+    }
+    // 独立四舍五入可能让各明细分摊之和超过 effectivePaid（例如 101 分两行
+    // 各 50 分得到 51+51=102），从末行回退溢出，保证总额不越界。
+    const allocated = chargeLines.reduce((sum, line) => sum + line.paidBase, 0);
+    if (allocated > effectivePaid) {
+      let overshoot = allocated - effectivePaid;
+      for (let i = chargeLines.length - 1; i >= 0 && overshoot > 0; i -= 1) {
+        const reduce = Math.min(chargeLines[i].paidBase, overshoot);
+        chargeLines[i].paidBase -= reduce;
+        overshoot -= reduce;
+      }
+    }
+    for (const line of chargeLines) {
+      if (line.paidBase > 0) lines.push(line);
     }
   }
   return lines;
@@ -388,6 +427,7 @@ function computeCommission(
       commission = Math.round((line.paidBase * rule.rate) / 10_000);
     }
     total += commission;
+    if (total > MAX_MONEY_CENTS) throw new ValidationError('提成总额超过上限');
     const key = `${line.category}\u0000${line.costType}`;
     const current = map.get(key) ?? { category: line.category, costType: line.costType, charged: 0, commission: 0 };
     current.charged += line.paidBase;

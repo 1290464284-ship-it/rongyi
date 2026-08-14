@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import { errorMessage } from '../../lib/messages';
@@ -27,6 +27,15 @@ export function WechatReminderSettings() {
   if (query.isLoading) {
     return <div className="reminder-muted">提醒设置加载中...</div>;
   }
+  if (query.error) {
+    return (
+      <section className="wechat-reminder-settings">
+        <h2>提醒设置</h2>
+        <p className="error">加载提醒设置失败</p>
+        <button type="button" onClick={() => void query.refetch()}>重试</button>
+      </section>
+    );
+  }
 
   return (
     <ReminderSettingsForm
@@ -43,8 +52,21 @@ function ReminderSettingsForm({ initialConfig, onSaved }: {
   const { showToast } = useToast();
   const [form, setForm] = useState<ReminderConfig>(initialConfig);
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
 
   async function save() {
+    if (busyRef.current) return;
+    for (const [label, value] of [
+      ['复诊提醒天数', form.appointmentDaysBefore],
+      ['治疗回访延迟天数', form.recallDaysAfter],
+      ['首诊跟进延迟天数', form.firstExamDaysAfter],
+    ] as const) {
+      if (!Number.isInteger(value) || value < 0 || value > 365) {
+        showToast(`${label}须在 0-365 之间`, 'error');
+        return;
+      }
+    }
+    busyRef.current = true;
     setBusy(true);
     try {
       await apiRequest('/wechat-reminders/config', {
@@ -56,6 +78,7 @@ function ReminderSettingsForm({ initialConfig, onSaved }: {
     } catch (error) {
       showToast(errorMessage(error, '保存提醒设置失败'), 'error');
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }

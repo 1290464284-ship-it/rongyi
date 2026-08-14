@@ -12,7 +12,7 @@ import {
   PageError,
   PromptDialog,
 } from '.';
-import { formatDate, formatDateTime, formatDisplayValue, formatMoney } from '../lib/format';
+import { centsToYuanString, formatDate, formatDateTime, formatDisplayValue, formatMoney, toCents } from '../lib/format';
 
 describe('shared web components', () => {
   afterEach(() => {
@@ -82,7 +82,13 @@ describe('shared web components', () => {
     );
     expect(screen.getByText('仅显示前 500 行（共 501 行），请使用搜索或筛选缩小范围')).toBeDefined();
     expect(screen.queryByText('行 500')).toBeNull();
-    expect(screen.getByText('行 499')).toBeDefined();
+    const container = document.querySelector('.data-table-scroll') as HTMLElement;
+    Object.defineProperty(container, 'scrollHeight', { value: 20000, configurable: true });
+    Object.defineProperty(container, 'clientHeight', { value: 500, configurable: true });
+    Object.defineProperty(container, 'scrollTop', { value: 19500, configurable: true });
+    for (let index = 0; index < 5; index += 1) fireEvent.scroll(container);
+    expect(screen.queryByText('行 499')).not.toBeNull();
+    expect(screen.queryByText('行 500')).toBeNull();
   });
 
   it('renders rows when the key field value is null', () => {
@@ -186,6 +192,18 @@ describe('shared web components', () => {
       type: 'enum',
       enumLabels: { MALE: '男' },
     })).toBe('X');
+  });
+
+  it('covers nullish cents and invalid date fallbacks', () => {
+    expect(toCents(null)).toBe(0);
+    expect(toCents(undefined)).toBe(0);
+    expect(toCents('abc')).toBe(0);
+    expect(toCents(10.5)).toBe(1050);
+    expect(centsToYuanString(null)).toBe('');
+    expect(centsToYuanString('abc')).toBe('abc');
+    expect(centsToYuanString(12345)).toBe('123.45');
+    // 非 date-only 文本经 Date 解析成功 → 本地化日期
+    expect(formatDate('2026-08-05T10:00:00Z')).toContain('2026');
   });
 
   it('closes dialogs when the backdrop is clicked', () => {

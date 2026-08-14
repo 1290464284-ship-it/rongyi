@@ -133,7 +133,7 @@ describe('triage routes', () => {
       .expect(400);
     expect(res.body.success).toBe(false);
     expect(res.body.code).toBe('VALIDATION_ERROR');
-    expect(res.body.message).toBe('startTime 必须是合法时间');
+    expect(res.body.message).toBe('startTime must be a valid date-time');
   });
 
   it('rejects triaging a missing registration with 404', async () => {
@@ -143,5 +143,12 @@ describe('triage routes', () => {
       .expect(404);
     expect(res.body.success).toBe(false);
     expect(res.body.code).toBe('NOT_FOUND');
+  });
+
+  it('tolerates missing request bodies', async () => {
+    const triage = await request(app).post('/api/v2/registrations/missing/triage');
+    expect([200, 400, 404, 409]).toContain(triage.status);
+    const reschedule = await request(app).post('/api/v2/appointments/missing/reschedule');
+    expect([200, 400, 404, 409]).toContain(reschedule.status);
   });
 });

@@ -1,4 +1,4 @@
-import { useState, type DragEvent, type ReactNode } from 'react';
+import { useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react';
 
 interface KanbanCard {
   id: string;
@@ -41,12 +41,24 @@ export function KanbanBoard({ columns, onChange }: KanbanBoardProps) {
     else setItems(next);
   }
 
+  function moveByKeyboard(cardId: string, delta: number) {
+    const sourceIndex = visibleColumns.findIndex((column) => column.cards.some((card) => card.id === cardId));
+    const targetIndex = sourceIndex + delta;
+    if (sourceIndex < 0 || targetIndex < 0 || targetIndex >= visibleColumns.length) return;
+    const next = moveCard(visibleColumns, cardId, visibleColumns[targetIndex].id);
+    if (!next) return;
+    if (onChange) onChange(next);
+    else setItems(next);
+  }
+
   return (
     <div className="ui-kanban">
       {visibleColumns.map((column) => (
         <div
           key={column.id}
           className="ui-kanban-col"
+          role="list"
+          aria-label={column.title}
           onDragOver={allowDrop}
           onDragLeave={leaveDrop}
           onDrop={(event) => drop(event, column.id)}
@@ -57,7 +69,19 @@ export function KanbanBoard({ columns, onChange }: KanbanBoardProps) {
               key={card.id}
               className="ui-kanban-card"
               draggable
+              tabIndex={0}
+              role="listitem"
+              aria-label={`卡片 ${card.title}`}
               onDragStart={(event) => event.dataTransfer.setData('text/plain', card.id)}
+              onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
+                if (event.key === 'ArrowRight') {
+                  event.preventDefault();
+                  moveByKeyboard(card.id, 1);
+                } else if (event.key === 'ArrowLeft') {
+                  event.preventDefault();
+                  moveByKeyboard(card.id, -1);
+                }
+              }}
             >
               <strong>{card.title}</strong>
               {card.subtitle && <span>{card.subtitle}</span>}

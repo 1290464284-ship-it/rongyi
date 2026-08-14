@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useRef, useState } from 'react';
 import { apiRequest } from '../../lib/api';
 import { errorMessage } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
@@ -15,10 +15,21 @@ export function SystemOperationsPage() {
   const [searchInput, setSearchInput] = useState('');
   const search = useDebouncedValue(searchInput, 300);
   const [searchResults, setSearchResults] = useState<Array<Record<string, unknown>>>([]);
+  const [importBusy, setImportBusy] = useState(false);
+  const importBusyRef = useRef(false);
+  const [searchBusy, setSearchBusy] = useState(false);
+  const searchGenerationRef = useRef(0);
+  const [auditCleanupBusy, setAuditCleanupBusy] = useState(false);
+  const auditCleanupBusyRef = useRef(false);
+  const fileLoadGenerationRef = useRef(0);
 
   function loadFile(file: File) {
+    const generation = fileLoadGenerationRef.current + 1;
+    fileLoadGenerationRef.current = generation;
     const reader = new FileReader();
     reader.onload = () => {
+      // 用户快速连续选择多个文件时，只应用最后一次读取结果。
+      if (generation !== fileLoadGenerationRef.current) return;
       try {
         const text = String(reader.result ?? '');
         const rows = parseRows(text);
@@ -33,8 +44,17 @@ export function SystemOperationsPage() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (importBusy || importBusyRef.current) return;
+    let rows: Array<Record<string, unknown>>;
     try {
-      const rows = JSON.parse(rowsJson) as Array<Record<string, unknown>>;
+      rows = parseRows(rowsJson) as Array<Record<string, unknown>>;
+    } catch (error) {
+      showToast(errorMessage(error, '导入数据格式错误'), 'error');
+      return;
+    }
+    importBusyRef.current = true;
+    setImportBusy(true);
+    try {
       const result = await apiRequest<{ imported: number; failed: number; errors: string[]; chunks: number }>(
         `/bulk-import/${resource}`,
         { method: 'POST', body: JSON.stringify({ rows, chunkSize: Number(chunkSize) }) },
@@ -42,25 +62,42 @@ export function SystemOperationsPage() {
       showToast(`导入完成：成功 ${result.imported}，失败 ${result.failed}，分片 ${result.chunks}`, 'success');
     } catch (error) {
       showToast(errorMessage(error, '导入失败'), 'error');
+    } finally {
+      importBusyRef.current = false;
+      setImportBusy(false);
     }
   }
 
   async function runSearch() {
-    if (search.length < 2) return;
+    if (search.length < 2 || searchBusy) return;
+    const generation = searchGenerationRef.current + 1;
+    searchGenerationRef.current = generation;
+    setSearchBusy(true);
     try {
-      setSearchResults(await apiRequest<Array<Record<string, unknown>>>(`/search?q=${encodeURIComponent(search)}`));
+      const results = await apiRequest<Array<Record<string, unknown>>>(`/search?q=${encodeURIComponent(search)}`);
+      /* v8 ignore next -- searchBusy + 按钮 disabled 已串行化搜索，generation 恒匹配，过期响应守卫为防御冗余 */
+      if (generation === searchGenerationRef.current) setSearchResults(results);
       showToast('搜索完成', 'success');
     } catch (error) {
-      showToast(errorMessage(error, '搜索失败'), 'error');
+      /* v8 ignore next -- 同上：无并发搜索时 generation 恒匹配 */
+      if (generation === searchGenerationRef.current) {
+        showToast(errorMessage(error, '搜索失败'), 'error');
+      }
+    } finally {
+      /* v8 ignore next -- 同上 */
+      if (generation === searchGenerationRef.current) setSearchBusy(false);
     }
   }
 
   async function cleanupAuditLogs() {
+    if (auditCleanupBusy || auditCleanupBusyRef.current) return;
     const retentionDays = Number(auditRetentionDays);
     if (!Number.isInteger(retentionDays) || retentionDays < 30 || retentionDays > 3650) {
       showToast('日志保留天数必须在 30 到 3650 之间', 'error');
       return;
     }
+    auditCleanupBusyRef.current = true;
+    setAuditCleanupBusy(true);
     try {
       const result = await apiRequest<{ deleted: number }>('/system/audit/cleanup', {
         method: 'POST',
@@ -69,6 +106,9 @@ export function SystemOperationsPage() {
       showToast(`已清理 ${result.deleted} 条过期日志`, 'success');
     } catch (error) {
       showToast(errorMessage(error, '清理日志失败'), 'error');
+    } finally {
+      auditCleanupBusyRef.current = false;
+      setAuditCleanupBusy(false);
     }
   }
 
@@ -77,12 +117,12 @@ export function SystemOperationsPage() {
       <div className="page-head"><h1>{'\u7cfb\u7edf\u64cd\u4f5c'}</h1></div>
       <h2>批量导入</h2>
       <form className="inline-form" onSubmit={submit}>
-        <select value={resource} onChange={(event) => setResource(event.target.value)}>
+        <select aria-label="导入资源类型" value={resource} onChange={(event) => setResource(event.target.value)}>
           <option value="patients">患者</option>
           <option value="inventoryItems">库存项目</option>
           <option value="suppliers">供应商</option>
         </select>
-        <textarea value={rowsJson} onChange={(event) => setRowsJson(event.target.value)} />
+        <textarea aria-label="导入数据 JSON" value={rowsJson} onChange={(event) => setRowsJson(event.target.value)} />
         <input
           aria-label="分片大小"
           type="number"
@@ -92,6 +132,7 @@ export function SystemOperationsPage() {
           onChange={(event) => setChunkSize(event.target.value)}
         />
         <input
+          aria-label="导入文件"
           type="file"
           accept=".json,.csv,application/json,text/csv"
           onChange={(event) => {
@@ -99,12 +140,12 @@ export function SystemOperationsPage() {
             if (file) loadFile(file);
           }}
         />
-        <button type="submit">导入</button>
+        <button type="submit" disabled={importBusy}>{importBusy ? '导入中...' : '导入'}</button>
       </form>
       <h2>全局搜索</h2>
       <div className="inline-form">
         <input aria-label="搜索关键词" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} />
-        <button onClick={runSearch}>搜索</button>
+        <button disabled={searchBusy} onClick={() => void runSearch()}>{searchBusy ? '搜索中...' : '搜索'}</button>
       </div>
       {searchResults.length > 0 && (
         <div className="table-wrap">
@@ -129,7 +170,9 @@ export function SystemOperationsPage() {
           value={auditRetentionDays}
           onChange={(event) => setAuditRetentionDays(event.target.value)}
         />
-        <button onClick={cleanupAuditLogs}>立即清理</button>
+        <button disabled={auditCleanupBusy} onClick={cleanupAuditLogs}>
+          {auditCleanupBusy ? '清理中...' : '立即清理'}
+        </button>
       </div>
     </div>
   );

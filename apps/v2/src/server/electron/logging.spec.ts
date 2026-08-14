@@ -18,6 +18,7 @@ describe('electron logging', () => {
     if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
     vi.restoreAllMocks();
     delete process.env.V2_CRASH_REPORT_URL;
+    delete process.env.V2_ALLOWED_CRASH_REPORT_HOSTS;
   });
 
   it('writes crash logs to userData and rotates by size', () => {
@@ -53,6 +54,7 @@ describe('electron logging', () => {
       Notification: { isSupported: () => false },
     };
     process.env.V2_CRASH_REPORT_URL = 'https://crash.example/report';
+    process.env.V2_ALLOWED_CRASH_REPORT_HOSTS = 'crash.example';
     const mod = loadElectronModule<LoggingModule>('../../../electron/logging.cjs', {
       electron,
       'node:https': { request: requestMock },
@@ -67,6 +69,26 @@ describe('electron logging', () => {
     );
     expect(sent[0]?.body).toContain('boom');
     expect(sent[0]?.body).toContain('failure');
+  });
+
+  it('skips crash upload when the host is not in the allowlist', () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-logging-allowlist-test-'));
+    const requestMock = vi.fn();
+    const electron = {
+      app: { getPath: () => tempDir },
+      BrowserWindow: { getAllWindows: () => [] },
+      Notification: { isSupported: () => false },
+    };
+    process.env.V2_CRASH_REPORT_URL = 'https://not-allowed.example/report';
+    process.env.V2_ALLOWED_CRASH_REPORT_HOSTS = 'allowed.example';
+    const mod = loadElectronModule<LoggingModule>('../../../electron/logging.cjs', {
+      electron,
+      'node:https': { request: requestMock },
+    });
+
+    mod.crashLog('boom', new Error('failure'));
+
+    expect(requestMock).not.toHaveBeenCalled();
   });
 
   it('sends events only to live windows', () => {

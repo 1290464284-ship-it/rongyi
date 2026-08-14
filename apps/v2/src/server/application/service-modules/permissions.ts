@@ -217,8 +217,10 @@ export class UserPermissionService {
       }
       if (seen.has(permission)) throw new ValidationError(`Duplicate permission key: ${permission}`);
       seen.add(permission);
-      normalized.push({ permission, allowed: Boolean(input.allowed) });
+      normalized.push({ permission, allowed: parsePermissionBoolean(input.allowed) });
     }
+    const clinicId = context.clinicId;
+    if (!clinicId) throw new ValidationError('clinicId is required for permission updates');
 
     const now = context.now().toISOString();
     const run = this.db.transaction(() => {
@@ -230,7 +232,7 @@ export class UserPermissionService {
          VALUES (?, ?, ?, ?, ?, ?, NULL)`,
       );
       for (const input of normalized) {
-        insert.run(userId, input.permission, input.allowed ? 1 : 0, context.clinicId ?? null, now, now);
+        insert.run(userId, input.permission, input.allowed ? 1 : 0, clinicId, now, now);
       }
     });
     run();
@@ -308,8 +310,10 @@ export class RoleModulePermissionService {
       }
       if (seen.has(resource)) throw new ValidationError(`Duplicate permission key: ${resource}`);
       seen.add(resource);
-      normalized.push({ resource, allowed: Boolean(input.allowed) });
+      normalized.push({ resource, allowed: parsePermissionBoolean(input.allowed) });
     }
+    const clinicId = context.clinicId;
+    if (!clinicId) throw new ValidationError('clinicId is required for permission updates');
 
     const now = context.now().toISOString();
     const run = this.db.transaction(() => {
@@ -322,7 +326,7 @@ export class RoleModulePermissionService {
          VALUES (?, ?, ?, 'access', ?, ?, ?, ?, NULL)`,
       );
       for (const input of normalized) {
-        insert.run(randomUUID(), role, input.resource, input.allowed ? 1 : 0, context.clinicId ?? null, now, now);
+        insert.run(randomUUID(), role, input.resource, input.allowed ? 1 : 0, clinicId, now, now);
       }
     });
     run();
@@ -353,4 +357,11 @@ export class RoleModulePermissionService {
     }
     return role as UserRole;
   }
+}
+
+function parsePermissionBoolean(value: unknown): boolean {
+  if (value === true || value === 1 || value === '1' || value === 'true') return true;
+  if (value === false || value === 0 || value === '0' || value === 'false') return false;
+  // Boolean('false') === true 会让“撤销”变成“授权”，必须严格解析。
+  throw new ValidationError('allowed must be a boolean');
 }

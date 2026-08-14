@@ -276,6 +276,64 @@ describe('startSchedulers', () => {
     );
   });
 
+  it('logs when the backup-failure alert creation itself fails', async () => {
+    vi.useFakeTimers();
+    ensureTimers();
+    const backups = makeBackups();
+    vi.mocked(backups.create).mockRejectedValueOnce(new Error('disk full'));
+    const audit = makeAudit();
+    const logger = makeLogger();
+    const onAlertCreate = vi.fn().mockImplementation(() => {
+      throw new Error('alert create failed');
+    });
+
+    const { stop } = startSchedulers({
+      backups,
+      audit,
+      autoBackupIntervalMs: 24 * 60 * 60 * 1000,
+      autoBackupKeep: 30,
+      logger,
+      onAlertCreate,
+    });
+
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 1);
+    await vi.waitFor(() => {
+      expect(logger.error).toHaveBeenCalledWith(
+        'automatic backup alert creation failed',
+        expect.objectContaining({ action: 'auto-backup-alert' }),
+      );
+    });
+    stop();
+  });
+
+  it('runAutoBackup 对非 Error 失败也生成可读告警', async () => {
+    vi.useFakeTimers();
+    ensureTimers();
+    const backups = makeBackups();
+    vi.mocked(backups.create).mockRejectedValueOnce('boom-string');
+    const audit = makeAudit();
+    const logger = makeLogger();
+    const onAlertCreate = vi.fn();
+
+    const { stop } = startSchedulers({
+      backups,
+      audit,
+      autoBackupIntervalMs: 60_000,
+      autoBackupKeep: 30,
+      logger,
+      onAlertCreate,
+    });
+
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 1);
+    const input = await vi.waitFor<AlertCreateInput>(() => {
+      expect(onAlertCreate).toHaveBeenCalled();
+      return onAlertCreate.mock.calls[0][0] as AlertCreateInput;
+    });
+    stop();
+
+    expect(input.message).toBe('boom-string');
+  });
+
   it('stop 清除定时器', () => {
     const backups = makeBackups();
     const audit = makeAudit();
@@ -321,11 +379,10 @@ describe('startSchedulers', () => {
       idempotencyCleanup,
     });
 
-    // 首启不立即执行自动备份（5 分钟首延迟），审计清理照常首启执行；
-    // idempotency 与原内联行为一致不首启执行。
+    // 首启不立即执行自动备份（5 分钟首延迟），审计与幂等清理照常首启执行。
     expect(backups.create).not.toHaveBeenCalled();
     expect(audit.cleanup).toHaveBeenCalledTimes(1);
-    expect(idempotencyCleanup).not.toHaveBeenCalled();
+    expect(idempotencyCleanup).toHaveBeenCalledTimes(1);
 
     stop();
 
@@ -341,7 +398,7 @@ describe('startSchedulers', () => {
     expect(onAlertCreate).not.toHaveBeenCalled();
   });
 
-  it('idempotencyCleanup 按每日周期被调用，且不首启执行', async () => {
+  it('idempotencyCleanup 首启执行并按 10 分钟周期清理', async () => {
     vi.useFakeTimers();
     const backups = makeBackups();
     const audit = makeAudit();
@@ -359,23 +416,23 @@ describe('startSchedulers', () => {
       idempotencyCleanup,
     });
 
-    expect(idempotencyCleanup).not.toHaveBeenCalled();
-
-    // 24h 前一刻仍未触发
-    await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000 - 1);
-    expect(idempotencyCleanup).not.toHaveBeenCalled();
-
-    // 满 24h 触发一次，并记录删除数量
-    await vi.advanceTimersByTimeAsync(1);
     expect(idempotencyCleanup).toHaveBeenCalledTimes(1);
+
+    // 10 分钟前一刻仍未触发
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000 - 1);
+    expect(idempotencyCleanup).toHaveBeenCalledTimes(1);
+
+    // 满 10 分钟触发第二次，并记录删除数量
+    await vi.advanceTimersByTimeAsync(1);
+    expect(idempotencyCleanup).toHaveBeenCalledTimes(2);
     expect(logger.info).toHaveBeenCalledWith(
       'idempotency cleanup completed',
       expect.objectContaining({ action: 'idempotency-cleanup', deleted: 2 }),
     );
 
-    // 再推 24h：第二次触发
-    await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000);
-    expect(idempotencyCleanup).toHaveBeenCalledTimes(2);
+    // 再推 10 分钟：第三次触发
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+    expect(idempotencyCleanup).toHaveBeenCalledTimes(3);
 
     stop();
   });
@@ -400,13 +457,14 @@ describe('startSchedulers', () => {
       idempotencyCleanup,
     });
 
-    await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000);
-
     expect(idempotencyCleanup).toHaveBeenCalledTimes(1);
     expect(logger.error).toHaveBeenCalledWith(
       'idempotency cleanup failed',
       expect.objectContaining({ action: 'idempotency-cleanup' }),
     );
+
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+    expect(idempotencyCleanup).toHaveBeenCalledTimes(2);
     expect(onAlertCreate).not.toHaveBeenCalled();
 
     stop();
@@ -424,6 +482,101 @@ describe('startSchedulers', () => {
       onAlertCreate: vi.fn(),
     });
     expect(() => vi.advanceTimersByTime(24 * 60 * 60 * 1000)).not.toThrow();
+    stop();
+  });
+
+  it('registers maintenance tasks with startup offsets when callbacks are provided', async () => {
+    vi.useFakeTimers();
+    ensureTimers();
+    const daily = vi.fn();
+    const weekly = vi.fn();
+    const disk = vi.fn();
+
+    const { stop } = startSchedulers({
+      backups: makeBackups(),
+      audit: makeAudit(),
+      autoBackupIntervalMs: 24 * 60 * 60 * 1000,
+      autoBackupKeep: 30,
+      logger: makeLogger(),
+      onAlertCreate: vi.fn(),
+      dailyDbMaintenance: daily,
+      weeklyDbMaintenance: weekly,
+      diskCheck: disk,
+    });
+
+    expect(daily).not.toHaveBeenCalled();
+    expect(weekly).not.toHaveBeenCalled();
+    expect(disk).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(60 * 1000 + 1);
+    expect(disk).toHaveBeenCalledTimes(1); // 磁盘检查 1min 首查
+
+    await vi.advanceTimersByTimeAsync(2 * 60 * 60 * 1000);
+    expect(daily).toHaveBeenCalledTimes(1); // 每日维护 2h 首执行
+
+    await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+    expect(weekly).toHaveBeenCalledTimes(1); // 每周维护 3h 首执行
+
+    stop();
+  }, 15_000);
+
+  it('does not register maintenance timers when callbacks are absent', async () => {
+    vi.useFakeTimers();
+    ensureTimers();
+    const { stop } = startSchedulers({
+      backups: makeBackups(),
+      audit: makeAudit(),
+      autoBackupIntervalMs: 24 * 60 * 60 * 1000,
+      autoBackupKeep: 30,
+      logger: makeLogger(),
+      onAlertCreate: vi.fn(),
+    });
+    expect(() => vi.advanceTimersByTime(3 * 60 * 60 * 1000)).not.toThrow();
+    stop();
+  });
+
+  it('triggerResumeMaintenance runs onResume and daily maintenance immediately', () => {
+    vi.useFakeTimers();
+    ensureTimers();
+    const onResume = vi.fn();
+    const daily = vi.fn();
+    const { stop, triggerResumeMaintenance } = startSchedulers({
+      backups: makeBackups(),
+      audit: makeAudit(),
+      autoBackupIntervalMs: 24 * 60 * 60 * 1000,
+      autoBackupKeep: 30,
+      logger: makeLogger(),
+      onAlertCreate: vi.fn(),
+      dailyDbMaintenance: daily,
+      onResume,
+    });
+    triggerResumeMaintenance();
+    expect(onResume).toHaveBeenCalledTimes(1);
+    expect(daily).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
+  it('triggerResumeMaintenance swallows maintenance errors and logs them', () => {
+    vi.useFakeTimers();
+    ensureTimers();
+    const logger = makeLogger();
+    const daily = vi.fn(() => {
+      throw new Error('maintenance boom');
+    });
+    const { stop, triggerResumeMaintenance } = startSchedulers({
+      backups: makeBackups(),
+      audit: makeAudit(),
+      autoBackupIntervalMs: 24 * 60 * 60 * 1000,
+      autoBackupKeep: 30,
+      logger,
+      onAlertCreate: vi.fn(),
+      dailyDbMaintenance: daily,
+    });
+    expect(() => triggerResumeMaintenance()).not.toThrow();
+    expect(logger.error).toHaveBeenCalledWith(
+      'resume maintenance failed',
+      expect.objectContaining({ action: 'maintenance-resume' }),
+    );
     stop();
   });
 });

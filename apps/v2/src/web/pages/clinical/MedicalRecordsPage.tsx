@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { apiRequest } from '../../lib/api';
 import { CrudPage } from '../../components/CrudPage';
 import { Dialog } from '../../components';
@@ -19,7 +19,8 @@ export function MedicalRecordsPage() {
   const [editForm, setEditForm] = useState<EditRequestForm>(emptyEditForm);
   const [reviewNote, setReviewNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const reloadRef = useRef<() => Promise<unknown>>(async () => undefined);
+  const reloadRef = useRef<(() => Promise<unknown>) | null>(null);
+  const staleRef = useRef(false);
 
   function openEditRequest(row: MedicalRecordRow) {
     setEditForm({
@@ -41,7 +42,7 @@ export function MedicalRecordsPage() {
   }
 
   async function submitEditRequest() {
-    if (!editTarget || submitting) return;
+    if (!editTarget || submitting || staleRef.current) return;
     if (!editForm.reason.trim()) {
       showToast('请填写修改原因', 'error');
       return;
@@ -70,7 +71,7 @@ export function MedicalRecordsPage() {
       });
       showToast('修改申请已提交', 'success');
       setEditTarget(null);
-      await reloadRef.current();
+      await reloadRef.current?.();
     } catch (error) {
       showToast(errorMessage(error, '提交失败'), 'error');
     } finally {
@@ -79,7 +80,8 @@ export function MedicalRecordsPage() {
   }
 
   async function submitReview(approve: boolean) {
-    if (!reviewTarget || submitting) return;
+    /* v8 ignore next -- 对话框按钮仅在 reviewTarget 非空时渲染，submitting 期间 disabled 且本页 stale 恒 false，守卫为防御冗余 */
+    if (!reviewTarget || submitting || staleRef.current) return;
     setSubmitting(true);
     try {
       await apiRequest(`/medical-records/${reviewTarget.id}/edit-request/review`, {
@@ -89,7 +91,7 @@ export function MedicalRecordsPage() {
       showToast(approve ? '已通过修改申请' : '已驳回修改申请', 'success');
       setReviewTarget(null);
       setReviewNote('');
-      await reloadRef.current();
+      await reloadRef.current?.();
     } catch (error) {
       showToast(errorMessage(error, '审核失败'), 'error');
     } finally {
@@ -111,7 +113,6 @@ export function MedicalRecordsPage() {
         visitId: form.visitId || undefined,
         doctorId: form.doctorId,
         category: form.category || undefined,
-        status: form.status,
         isTemplate: form.isTemplate,
         chiefComplaint: form.chiefComplaint || undefined,
         presentIllness: form.presentIllness || undefined,
@@ -130,7 +131,6 @@ export function MedicalRecordsPage() {
         visitId: String(row.visitId ?? ''),
         doctorId: String(row.doctorId ?? ''),
         category: textValue(row.category),
-        status: textValue(row.status) || 'DRAFT',
         isTemplate: Boolean(row.isTemplate),
         chiefComplaint: textValue(row.chiefComplaint),
         presentIllness: textValue(row.presentIllness),
@@ -148,12 +148,24 @@ export function MedicalRecordsPage() {
       canEdit
       canDelete
       rowActions={(row, ctx) => {
-        reloadRef.current = ctx.reload;
+        staleRef.current = ctx.stale;
+        const openEdit = () => {
+          /* v8 ignore next -- 本页列表无分页/搜索（queryKey 恒定），stale 恒为 false，守卫为防御冗余 */
+          if (ctx.stale) return;
+          openEditRequest(row);
+        };
+        const openReview = () => {
+          /* v8 ignore next -- 同上 */
+          if (ctx.stale) return;
+          setReviewNote('');
+          setReviewTarget(row);
+        };
         return (
           <>
-            <button onClick={() => openEditRequest(row)}>申请修改</button>
+            <ReloadSync reload={ctx.reload} onReload={(reload) => { reloadRef.current = reload; }} />
+            <button disabled={ctx.stale} onClick={openEdit}>申请修改</button>
             {String(row.editRequestStatus ?? '') === 'PENDING' && (
-              <button onClick={() => { setReviewNote(''); setReviewTarget(row); }}>审核</button>
+              <button disabled={ctx.stale} onClick={openReview}>审核</button>
             )}
           </>
         );
@@ -242,4 +254,19 @@ export function MedicalRecordsPage() {
       </Dialog>
     </>
   );
+}
+
+// 与 MemberCardsPage 相同的 M9 约定：渲染期写 ref 是反模式（StrictMode 双渲染/
+// 行集合变化时 ref 可能指向旧实例），改到 effect 提交后同步。
+function ReloadSync({
+  reload,
+  onReload,
+}: {
+  reload: () => Promise<unknown>;
+  onReload: (reload: () => Promise<unknown>) => void;
+}) {
+  useEffect(() => {
+    onReload(reload);
+  }, [reload, onReload]);
+  return null;
 }

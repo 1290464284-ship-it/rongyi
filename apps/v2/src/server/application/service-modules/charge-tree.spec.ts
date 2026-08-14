@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -15,7 +15,7 @@ describe('ChargeTreeService', () => {
   let context: AppContext;
   const now = '2026-08-05T10:00:00.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-charge-tree-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -32,7 +32,7 @@ describe('ChargeTreeService', () => {
     ).run('2099-01-01T00:00:00.000Z', '2099-01-01T01:00:00.000Z', now);
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -83,15 +83,17 @@ describe('ChargeTreeService', () => {
     insertCatalog('cat-child-2', 'CAT-ROOT-1-02', '调整复诊', 5000, { parentId: 'cat-root-1', costType: 'SERVICE' });
     insertCatalog('cat-child-1', 'CAT-ROOT-1-01', '初诊检查', 3000, { parentId: 'cat-root-1', costType: 'SERVICE', anesthesia: true });
     insertCatalog('cat-root-2', 'CAT-ROOT-2', '种植材料', 200000, { costType: 'MATERIAL', businessCategory: 'MATERIAL' });
+    insertCatalog('cat-root-3', 'CAT-ROOT-3', '无成本类型', 1000, {});
 
     const service = new ChargeTreeService(db);
     const items = service.tree(context).items;
-    expect(items.map((node) => node.id)).toEqual(['cat-root-1', 'cat-root-2']);
+    expect(items.map((node) => node.id)).toEqual(['cat-root-1', 'cat-root-2', 'cat-root-3']);
     const root1 = items[0];
     expect(root1).toMatchObject({ code: 'CAT-ROOT-1', name: '正畸项目', price: 10000, costType: 'SERVICE', parentId: null });
     expect(root1.children.map((child) => child.id)).toEqual(['cat-child-1', 'cat-child-2']);
     expect(root1.children[0]).toMatchObject({ code: 'CAT-ROOT-1-01', anesthesia: true, businessCategory: null });
     expect(root1.children[0].children).toEqual([]);
+    expect(items[2]).toMatchObject({ costType: null, businessCategory: null });
   });
 
   it('quick-charges a catalog into a Charge with correct amounts', () => {
@@ -147,6 +149,13 @@ describe('ChargeTreeService', () => {
     expect(charge.remark).toBe('快捷划价：洁牙');
   });
 
+  it('rejects quick charge subtotals above the maximum allowed amount', () => {
+    insertCatalog('cat-qc-over', 'CAT-QC-OVER', '超限项目', 60_000_000, { costType: 'SERVICE' });
+    const service = new ChargeTreeService(db);
+    expect(() => service.quickCharge('cat-qc-over', { patientId: 'patient-demo-001', quantity: 2 }, context))
+      .toThrow(ValidationError);
+  });
+
   it('rejects non-positive or non-integer quantities with ValidationError', () => {
     insertCatalog('cat-qc-3', 'CAT-QC-3', '拍片', 20000, { costType: 'SERVICE' });
     const service = new ChargeTreeService(db);
@@ -175,7 +184,7 @@ describe('ChargeTreeService', () => {
   });
 
   it('rejects a high-value item whose catalog does not match', () => {
-    insertCatalog('cat-hv-1', 'CAT-HV-1', '种植体标准', 150000, { costType: 'MATERIAL', businessCategory: 'MATERIAL' });
+    insertCatalog('cat-hv-1', 'CAT-HV-1', 'HV Material', 150000, { costType: 'MATERIAL', businessCategory: 'MATERIAL' });
     insertCatalog('cat-hv-2', 'CAT-HV-2', '种植体特惠', 120000, { costType: 'MATERIAL', businessCategory: 'MATERIAL' });
     db.prepare(
       `UPDATE InventoryItem SET isHighValue = 1, catalogId = ?, updatedAt = ? WHERE id = 'inventory-demo-001'`,
@@ -187,6 +196,10 @@ describe('ChargeTreeService', () => {
   });
 
   it('allows a high-value item when its linked catalog matches', () => {
+    insertCatalog('cat-hv-1', 'CAT-HV-1', '种植体标准', 150000, { costType: 'MATERIAL', businessCategory: 'MATERIAL' });
+    db.prepare(
+      `UPDATE InventoryItem SET isHighValue = 1, catalogId = ?, updatedAt = ? WHERE id = 'inventory-demo-001'`,
+    ).run('cat-hv-1', now);
     const service = new ChargeTreeService(db);
     const result = service.quickCharge('cat-hv-1', { patientId: 'patient-demo-001', itemId: 'inventory-demo-001', quantity: 1 }, context);
     expect(result.itemId).toBe('inventory-demo-001');
@@ -201,5 +214,32 @@ describe('ChargeTreeService', () => {
     const service = new ChargeTreeService(db);
     const result = service.quickCharge('cat-hv-3', { patientId: 'patient-demo-001', itemId: 'inventory-demo-001' }, context);
     expect(result.totalAmount).toBe(2000);
+  });
+
+  it('rejects a high-value item whose catalog link is missing', () => {
+    insertCatalog('cat-hv-null', 'CAT-HV-NULL', '高值无关联', 150000, { costType: 'MATERIAL' });
+    db.prepare(
+      `UPDATE InventoryItem SET isHighValue = 1, catalogId = NULL, updatedAt = ? WHERE id = 'inventory-demo-001'`,
+    ).run(now);
+    const service = new ChargeTreeService(db);
+    expect(() => service.quickCharge('cat-hv-null', { patientId: 'patient-demo-001', itemId: 'inventory-demo-001' }, context))
+      .toThrow(ConflictError);
+  });
+
+  it('defaults a null catalog costType to SERVICE', async () => {
+    insertCatalog('cat-null-cost', 'CAT-NULL-COST', '无成本类型', 8000, {});
+    const service = new ChargeTreeService(db);
+    const result = service.quickCharge('cat-null-cost', { patientId: 'patient-demo-001' }, context);
+    const item = db.prepare('SELECT costType FROM ChargeItem WHERE chargeId = ?').get(result.chargeId) as { costType: string };
+    expect(item.costType).toBe('SERVICE');
+  });
+
+  it('quick-charges under a global null-clinic context', () => {
+    insertCatalog('cat-global', 'CAT-GLOBAL', '全局划价', 3000, { costType: 'SERVICE' });
+    const globalContext = { ...context, clinicId: null };
+    const service = new ChargeTreeService(db);
+    const result = service.quickCharge('cat-global', { patientId: 'patient-demo-001' }, globalContext);
+    const charge = db.prepare('SELECT clinicId FROM Charge WHERE id = ?').get(result.chargeId) as { clinicId: string | null };
+    expect(charge.clinicId).toBeNull();
   });
 });

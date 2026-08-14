@@ -114,4 +114,86 @@ describe('FormBuilder', () => {
     expect(await screen.findByRole('option', { name: '甲' })).toBeDefined();
     expect(screen.queryByRole('option', { name: '乙' })).toBeNull();
   });
+
+  it('keeps a selected relation value visible when it is not in the loaded options', async () => {
+    vi.mocked(apiRequest).mockResolvedValue({
+      items: [{ id: 'p1', name: 'Patient One' }],
+      total: 150,
+      page: 1,
+      pageSize: 50,
+    });
+    const fields: ResourceField[] = [
+      { name: 'patientId', type: 'relation', label: 'Patient', relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } },
+    ];
+    render(<FormBuilder fields={fields} values={{ patientId: 'p99' }} onChange={vi.fn()} />, { wrapper });
+    await waitFor(() => {
+      expect((screen.getByRole('option', { name: 'p99' }) as HTMLOptionElement).value).toBe('p99');
+    });
+  });
+
+  it('handles relation responses without an items array', async () => {
+    vi.mocked(apiRequest).mockResolvedValue({ total: 150, page: 1, pageSize: 50 });
+    const fields: ResourceField[] = [
+      { name: 'patientId', type: 'relation', label: '患者', relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } },
+    ];
+    render(<FormBuilder fields={fields} values={{ patientId: '' }} onChange={vi.fn()} />, { wrapper });
+    // total=150 让「加载更多」按钮出现，等待关系查询真正解析后再断言空选项
+    expect(await screen.findByRole('button', { name: '加载更多' })).toBeDefined();
+    expect((screen.getByLabelText('患者') as HTMLSelectElement).value).toBe('');
+  });
+
+  it('shows relation option query errors', async () => {
+    vi.mocked(apiRequest).mockRejectedValue(new Error('relation options failed'));
+    const fields: ResourceField[] = [
+      { name: 'patientId', type: 'relation', label: '患者', relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } },
+    ];
+    render(<FormBuilder fields={fields} values={{ patientId: '' }} onChange={vi.fn()} />, { wrapper });
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+  });
+
+  it('caps relation load more at ten pages', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      const url = new URL(path, 'http://localhost');
+      const page = Number(url.searchParams.get('page') ?? 1);
+      if (page >= 10) return { items: [], total: 9999, page, pageSize: 50 };
+      return {
+        items: Array.from({ length: 50 }, (_, index) => ({ id: `p${page}-${index}`, name: `项目${page}-${index}` })),
+        total: 9999,
+        page,
+        pageSize: 50,
+      };
+    });
+    const fields: ResourceField[] = [
+      { name: 'patientId', type: 'relation', label: '患者', relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } },
+    ];
+    render(<FormBuilder fields={fields} values={{ patientId: '' }} onChange={vi.fn()} />, { wrapper });
+    await screen.findByRole('option', { name: '项目1-0' });
+    for (let index = 0; index < 9; index += 1) {
+      const button = await screen.findByRole('button', { name: '加载更多' });
+      fireEvent.click(button);
+    }
+    expect(await screen.findByText(/数据较多/)).toBeDefined();
+    expect(screen.queryByRole('button', { name: '加载更多' })).toBeNull();
+  });
+
+  it('renders sparse values, missing items and relation help text', async () => {
+    vi.mocked(apiRequest).mockResolvedValue({ total: 0, page: 1, pageSize: 50 });
+    const fields: ResourceField[] = [
+      { name: 'status', type: 'enum', label: '状态', enumValues: ['A'] },
+      { name: 'notes', type: 'longText' },
+      { name: 'name', type: 'text' },
+      { name: 'patientId', type: 'relation', label: '患者', helpText: '关联患者', relation: { resource: 'patients', foreignKey: 'patientId', labelField: 'name' } },
+      { name: 'plain', type: 'text', label: '普通', helpText: '说明' },
+    ];
+    render(<FormBuilder fields={fields} values={{}} onChange={vi.fn()} />, { wrapper });
+    expect((screen.getByLabelText('状态') as HTMLSelectElement).value).toBe('');
+    expect((screen.getByLabelText('notes') as HTMLTextAreaElement).value).toBe('');
+    expect((screen.getByLabelText('name') as HTMLInputElement).value).toBe('');
+    expect((screen.getByLabelText(/^普通/) as HTMLInputElement).value).toBe('');
+    expect(screen.getByText('关联患者')).toBeDefined();
+    expect(screen.getByText('说明')).toBeDefined();
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).value).toBe('');
+    });
+  });
 });

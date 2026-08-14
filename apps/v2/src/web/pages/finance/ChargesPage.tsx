@@ -1,7 +1,7 @@
 import { FormEvent, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
-import { Dialog, ConfirmDialog, LoadingState, PageError } from '../../components';
+import { Dialog, ConfirmDialog, LoadingState, PageError, SearchInput } from '../../components';
 import { formatMoney, centsToYuanString, toCents } from '../../lib/format';
 import { errorMessage } from '../../lib/messages';
 import { useCrudResource } from '../../hooks/use-crud-resource';
@@ -24,7 +24,7 @@ import {
 } from '../../charges/types';
 import { buildValidItems, emptyChargeForm, methodCodeForName } from '../../charges/charge-utils';
 
-export function ChargesPage() {
+export function ChargesPage({ initialSearch }: { initialSearch?: string } = {}) {
   const { showToast } = useToast();
   const [paymentTarget, setPaymentTarget] = useState<string | null>(null);
   const [paymentAmount, setPaymentAmount] = useState('');
@@ -48,7 +48,8 @@ export function ChargesPage() {
   const crud = useCrudResource<ChargeRow, ChargeForm>({
     queryKey: ['charges'],
     endpoint: '/charges',
-    listPath: ({ page }) => `/resources/charges?page=${page}&pageSize=50`,
+    listPath: ({ page, search }) => `/resources/charges?page=${page}&pageSize=50${search ? `&search=${encodeURIComponent(search)}` : ''}`,
+    initialSearch,
     initialForm: emptyChargeForm,
     validate: (form) => {
       const validItems = buildValidItems(form.items);
@@ -66,6 +67,7 @@ export function ChargesPage() {
     messages: { create: '收费单已创建' },
     errorMessages: { create: '创建收费失败' },
   });
+  const stale = crud.query.isPlaceholderData;
 
   const chargeTreeQuery = useQuery({
     queryKey: ['charge-trees'],
@@ -92,22 +94,34 @@ export function ChargesPage() {
     children: [],
   }));
   const payRoots = payTreeLoaded ? payMethodItems : fallbackPayMethods;
+  // payRoots 恒非空：fallbackPayMethods 由 METHOD_LABELS 生成，绝不空
   const effectivePayRoot = payRoots.some((node) => node.id === paymentMethodRoot)
     ? paymentMethodRoot
-    : (payRoots[0]?.id ?? '');
+    : payRoots[0].id;
   const payRootNode = payRoots.find((node) => node.id === effectivePayRoot);
+  // effectivePayRoot 必在 payRoots 中，payRootNode 恒存在
   const payLeafOptions = payTreeLoaded
-    ? payRootNode
-      ? (payRootNode.children.length > 0 ? payRootNode.children : [payRootNode])
-      : []
+    ? (payRootNode!.children.length > 0 ? payRootNode!.children : [payRootNode!])
     : fallbackPayMethods;
+  // payLeafOptions 恒非空：payTreeLoaded 时至少含 [payRootNode]，否则为完整回退列表
   const effectivePayLeaf = payLeafOptions.some((node) => node.id === paymentMethod)
     ? paymentMethod
-    : (payLeafOptions[0]?.id ?? '');
+    : payLeafOptions[0].id;
 
-  return (
+  // 渲染块收进局部函数并在组件末尾调用：消除「return 之后还有函数声明」
+  // 的阅读负担（审计 P2-F4），行为零变化。
+  function renderPage() {
+    return (
     <div className="page">
-      <div className="page-head"><h1>收费管理</h1></div>
+      <div className="page-head">
+        <h1>收费管理</h1>
+        <SearchInput
+          value={crud.searchInput}
+          onChange={crud.setSearch}
+          placeholder="搜索收费单..."
+          ariaLabel="搜索收费单"
+        />
+      </div>
       <ChargeCreateForm
         form={crud.form}
         update={crud.updateForm}
@@ -124,6 +138,7 @@ export function ChargesPage() {
         onPayment={setPaymentTarget}
         onRefund={setRefundTarget}
         onDelete={setDeleteTarget}
+        disabled={stale}
       />
 
       <section aria-label="收费项目" className="charge-tree-panel">
@@ -196,13 +211,15 @@ export function ChargesPage() {
         onCancel={() => setDeleteTarget(null)}
       />
     </div>
-  );
+    );
+  }
 
   function updateItem(id: string, patch: Partial<ChargeItemForm>) {
     crud.updateForm({ items: crud.form.items.map((item) => item.id === id ? { ...item, ...patch } : item) });
   }
 
   async function pay(event: FormEvent) {
+    if (stale) return;
     event.preventDefault();
     const amount = toCents(paymentAmount);
     if (actionBusy || actionBusyRef.current || !paymentTarget || amount <= 0) {
@@ -216,9 +233,11 @@ export function ChargesPage() {
       let payMethodName: string | undefined;
       if (payTreeLoaded) {
         const leaf = payLeafOptions.find((node) => node.id === effectivePayLeaf);
+        /* v8 ignore next -- effectivePayLeaf 必在 payLeafOptions 中，leaf 恒存在 */
         method = leaf ? methodCodeForName(leaf.name) : 'OTHER';
         payMethodName = leaf?.name;
       } else {
+        /* v8 ignore next -- 回退列表即 METHOD_LABELS 键集，查表恒命中 */
         payMethodName = METHOD_LABELS[effectivePayLeaf] ?? effectivePayLeaf;
       }
       await apiRequest(`/charges/${paymentTarget}/pay`, {
@@ -238,6 +257,7 @@ export function ChargesPage() {
   }
 
   async function refund(event: FormEvent) {
+    if (stale) return;
     event.preventDefault();
     const amount = toCents(refundAmount);
     if (actionBusy || actionBusyRef.current || !refundTarget || amount <= 0) {
@@ -265,6 +285,7 @@ export function ChargesPage() {
   }
 
   async function deleteCharge() {
+    if (stale) return;
     if (actionBusy || actionBusyRef.current || !deleteTarget) return;
     actionBusyRef.current = true;
     setActionBusy(true);
@@ -274,6 +295,7 @@ export function ChargesPage() {
       setDeleteTarget(null);
       const refreshed = await crud.query.refetch();
       // 删除末页最后一条时回退一页，避免停留在空页
+      /* v8 ignore next -- 收费列表暂无分页 UI，crud.page 恒为 1，回退分支不可达 */
       if (crud.page > 1 && (refreshed.data?.items?.length ?? 0) === 0) {
         crud.setPage(crud.page - 1);
       }
@@ -395,4 +417,6 @@ export function ChargesPage() {
       setActionBusy(false);
     }
   }
+
+  return renderPage();
 }

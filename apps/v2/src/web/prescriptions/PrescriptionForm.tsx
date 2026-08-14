@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../lib/api';
-import { SearchableSelect } from '../components';
+import { MissingSelectOption, SearchableSelect } from '../components';
 import { PRESCRIPTION_STATUS_LABELS } from './constants';
 import { ITEM_FIELDS, newItem } from './form';
 import type { PrescriptionForm, PrescriptionItemForm } from './types';
@@ -33,6 +33,9 @@ export function PrescriptionForm({ form, update, editing }: { form: Prescription
           {doctors.data?.map((row) => (
             <option key={String(row.id)} value={String(row.id)}>{String(row.name ?? row.id)}</option>
           ))}
+          {form.doctorId !== '' && !(doctors.data ?? []).some((row) => String(row.id) === form.doctorId) && (
+            <MissingSelectOption value={form.doctorId} />
+          )}
         </select>
       </label>
       <label>
@@ -42,7 +45,7 @@ export function PrescriptionForm({ form, update, editing }: { form: Prescription
       {editing && (
         <label>
           状态
-          <select value={form.status} onChange={(event) => update({ status: event.target.value })}>
+          <select value={form.status} disabled>
             {Object.entries(PRESCRIPTION_STATUS_LABELS).map(([value, label]) => (
               <option key={value} value={value}>{label}</option>
             ))}

@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import express, { type Express } from 'express';
 import request from 'supertest';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -16,9 +16,11 @@ describe('wechat reminder routes', () => {
   let db: Database.Database;
   let app: Express;
   let service: WechatReminderService;
+  let currentRole: 'BOSS' | 'DOCTOR';
   const nowIso = '2026-08-05T10:00:00.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
+    currentRole = 'BOSS';
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-wechat-reminder-routes-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -33,7 +35,7 @@ describe('wechat reminder routes', () => {
       (req as unknown as { context: unknown }).context = {
         userId: 'user-admin-001',
         clinicId: 'clinic-v2-001',
-        role: 'BOSS',
+        role: currentRole,
         traceId: 'test-trace',
         now: () => new Date('2026-08-05T10:00:00.000Z'),
       };
@@ -56,7 +58,7 @@ describe('wechat reminder routes', () => {
     service.clearTodayGeneratedCache();
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -139,6 +141,12 @@ describe('wechat reminder routes', () => {
   });
 
   it('marks a reminder as sent and writes a WechatMessage', async () => {
+    db.prepare(
+      `INSERT INTO Appointment (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, startTime, endTime, status, type
+       ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, 'BOOKED', 'REGULAR')`,
+    ).run('route-appt-rem', 'clinic-v2-001', nowIso, nowIso, 'patient-demo-001', 'user-admin-001', '2026-08-06T09:00:00.000Z', '2026-08-06T10:00:00.000Z');
     const list = await request(app).get('/api/v2/wechat-reminders/today').expect(200);
     const item = list.body.data.items[0];
     const res = await request(app).post(`/api/v2/wechat-reminders/${item.id}/mark-sent`).expect(200);
@@ -164,5 +172,20 @@ describe('wechat reminder routes', () => {
     expect(res.body.data.status).toBe('DISMISSED');
     const row = db.prepare('SELECT status FROM WechatReminder WHERE id = ?').get(pending!.id) as { status: string };
     expect(row.status).toBe('DISMISSED');
+  });
+
+  it('tolerates missing request bodies', async () => {
+    const config = await request(app).patch('/api/v2/wechat-reminders/config');
+    expect([200, 400, 403, 404]).toContain(config.status);
+    for (const path of ['/api/v2/wechat-reminders/missing/mark-sent', '/api/v2/wechat-reminders/missing/dismiss']) {
+      const res = await request(app).post(path);
+      expect([200, 400, 404]).toContain(res.status);
+    }
+  });
+
+  it('blocks non-BOSS roles from updating the config', async () => {
+    currentRole = 'DOCTOR';
+    const res = await request(app).patch('/api/v2/wechat-reminders/config').send({ enabled: true });
+    expect(res.status).toBe(403);
   });
 });

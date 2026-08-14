@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -390,6 +390,31 @@ describe('DispenseService', () => {
       expect(stockOf('ret-plain-201')).toBe(100);
     });
 
+    it('rolls back the return when the referenced batch was deleted after dispense', async () => {
+      insertItem('ret-batch-203', 50, 1);
+      insertBatch('ret-batch-203-b', 'ret-batch-203', 10);
+      const created = service().create({
+        number: 'PF-203',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'ret-batch-203', quantity: 4 }],
+      }, context);
+      const di = db.prepare('SELECT id FROM DispenseItem WHERE dispenseId = ?').get(String(created.id)) as { id: string };
+      await service().dispense(String(created.id), context, {
+        items: [{ dispenseItemId: di.id, batchId: 'ret-batch-203-b' }],
+      });
+      expect(stockOf('ret-batch-203')).toBe(46);
+
+      // 模拟另一进程在发药后删除了该批次（remaining=0 时允许删除）。
+      db.prepare('UPDATE InventoryBatch SET deletedAt = ? WHERE id = ?').run(now, 'ret-batch-203-b');
+
+      await expect(service().returnItems(String(created.id), {
+        items: [{ dispenseItemId: di.id, quantity: 1 }],
+      }, context)).rejects.toThrow(ConflictError);
+      expect(stockOf('ret-batch-203')).toBe(46);
+      const diRow = db.prepare('SELECT returnedQuantity FROM DispenseItem WHERE id = ?').get(di.id) as { returnedQuantity: number };
+      expect(diRow.returnedQuantity).toBe(0);
+    });
+
     it('rejects over-return, unknown items, invalid quantities, and returns on PENDING orders', async () => {
       insertItem('ret-plain-202', 100, 0);
       const created = service().create({
@@ -412,6 +437,10 @@ describe('DispenseService', () => {
       // 非正整数
       await expect(service().returnItems(String(created.id), {
         items: [{ dispenseItemId: di.id, quantity: 0 }],
+      }, context)).rejects.toThrow(ValidationError);
+      // 超出数量上界
+      await expect(service().returnItems(String(created.id), {
+        items: [{ dispenseItemId: di.id, quantity: 1_000_000_001 }],
       }, context)).rejects.toThrow(ValidationError);
       // 明细不属于该发药单
       await expect(service().returnItems(String(created.id), {
@@ -625,6 +654,378 @@ describe('DispenseService', () => {
       };
       const otherIds = (service().list(otherContext) as Array<Record<string, unknown>>).map((entry) => String(entry.id));
       expect(otherIds).toContain('dispense-other-001');
+    });
+  });
+
+  describe('validation coverage', () => {
+    it('rejects missing prescriptions, malformed doctors, and oversized quantities', () => {
+      const base = {
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'inventory-demo-001', quantity: 1 }],
+      };
+      expect(() => service().create({ ...base, number: 'PF-500', prescriptionId: 'missing-pres' }, context)).toThrow(NotFoundError);
+      expect(() => service().create({ ...base, number: 'PF-501', doctorId: 123 as unknown as string }, context)).toThrow(NotFoundError);
+      expect(() => service().create({
+        ...base,
+        number: 'PF-502',
+        items: [{ itemId: 'inventory-demo-001', quantity: 1_000_000_001 }],
+      }, context)).toThrow(ValidationError);
+      expect(() => service().create({
+        ...base,
+        number: 'PF-503',
+        items: [
+          { itemId: 'inventory-demo-001', quantity: 600_000_000 },
+          { itemId: 'inventory-demo-001', quantity: 600_000_000 },
+        ],
+      }, context)).toThrow(ValidationError);
+    });
+
+    it('rejects invalid pagination and update shapes', () => {
+      expect(() => service().list(context, { page: 0 })).toThrow(ValidationError);
+      expect(() => service().list(context, { pageSize: 0 })).toThrow(ValidationError);
+
+      const created = service().create({
+        number: 'PF-504',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'inventory-demo-001', quantity: 1 }],
+      }, context);
+      expect(() => service().updateDispense(String(created.id), {
+        number: 'PF-504-U',
+        patientId: '',
+        items: [],
+      }, context)).toThrow(ValidationError);
+
+      const manyItems = Array.from({ length: 201 }, () => ({ itemId: 'inventory-demo-001', quantity: 1 }));
+      expect(() => service().updateDispense(String(created.id), {
+        number: 'PF-504-U',
+        patientId: 'patient-demo-001',
+        items: manyItems,
+      }, context)).toThrow(ValidationError);
+
+      expect(() => service().updateDispense(String(created.id), {
+        number: 'PF-504-U',
+        patientId: 'patient-demo-001',
+        items: [{ quantity: 1 } as unknown as { itemId: string; quantity: number }],
+      }, context)).toThrow(ValidationError);
+
+      expect(() => service().updateDispense(String(created.id), {
+        number: 'PF-504-U',
+        patientId: 'patient-demo-001',
+        items: [
+          { itemId: 'inventory-demo-001', quantity: 600_000_000 },
+          { itemId: 'inventory-demo-001', quantity: 600_000_000 },
+        ],
+      }, context)).toThrow(ValidationError);
+    });
+
+    it('reports duplicate dispense numbers as conflicts', () => {
+      service().create({
+        number: 'PF-505',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'inventory-demo-001', quantity: 1 }],
+      }, context);
+      expect(() => service().create({
+        number: 'PF-505',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'inventory-demo-001', quantity: 1 }],
+      }, context)).toThrow(ConflictError);
+    });
+
+    it('rejects malformed dispense assignments and return inputs', async () => {
+      insertItem('validation-assign-item', 100, 0);
+      const created = service().create({
+        number: 'PF-506',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'validation-assign-item', quantity: 2 }],
+      }, context);
+      await expect(service().dispense(String(created.id), context, { items: 'bad' as never })).rejects.toThrow(ValidationError);
+      await service().dispense(String(created.id), context);
+
+      await expect(service().returnItems(String(created.id), { items: [] }, context)).rejects.toThrow(ValidationError);
+      await expect(service().returnItems(String(created.id), {
+        items: [{ quantity: 1 } as never],
+      }, context)).rejects.toThrow(ValidationError);
+      await expect(service().returnItems(String(created.id), {
+        items: [{ dispenseItemId: firstItemId(String(created.id)), quantity: 1_000_000_001 }],
+      }, context)).rejects.toThrow(ValidationError);
+    });
+
+    it('rejects insufficient stock and empty item lists during dispense', async () => {
+      insertItem('validation-no-stock', 0, 0);
+      const noStock = service().create({
+        number: 'PF-507',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'validation-no-stock', quantity: 1 }],
+      }, context);
+      await expect(service().dispense(String(noStock.id), context)).rejects.toThrow(ConflictError);
+
+      insertItem('validation-empty-item', 100, 0);
+      const empty = service().create({
+        number: 'PF-508',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'validation-empty-item', quantity: 1 }],
+      }, context);
+      db.prepare('UPDATE DispenseItem SET deletedAt = ? WHERE dispenseId = ?').run(now, String(empty.id));
+      await expect(service().dispense(String(empty.id), context)).rejects.toThrow(ValidationError);
+    });
+
+    it('skips fully returned items and honors explicit null batch assignments', async () => {
+      insertItem('assign-null-a', 100, 0);
+      insertItem('assign-null-b', 100, 0);
+      const created = service().create({
+        number: 'PF-510',
+        patientId: 'patient-demo-001',
+        items: [
+          { itemId: 'assign-null-a', quantity: 2 },
+          { itemId: 'assign-null-b', quantity: 3 },
+        ],
+      }, context);
+      const items = db.prepare(
+        'SELECT id FROM DispenseItem WHERE dispenseId = ? ORDER BY createdAt ASC',
+      ).all(String(created.id)) as Array<{ id: string }>;
+      // 第一条已全额退（pending <= 0 跳过），第二条以显式 null 批次发药
+      db.prepare('UPDATE DispenseItem SET returnedQuantity = quantity WHERE id = ?').run(items[0].id);
+      const result = await service().dispense(String(created.id), context, {
+        items: [{ dispenseItemId: items[1].id, batchId: null }],
+      });
+      expect(result.items).toEqual([
+        expect.objectContaining({ quantity: 3, batchId: null }),
+      ]);
+    });
+
+    it('rejects non-string assignment ids and missing items during dispense', async () => {
+      insertItem('assign-bad-id', 100, 0);
+      const created = service().create({
+        number: 'PF-511',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'assign-bad-id', quantity: 1 }],
+      }, context);
+      await expect(service().dispense(String(created.id), context, {
+        items: [{ dispenseItemId: 42 } as never],
+      })).rejects.toThrow(ValidationError);
+
+      insertItem('assign-gone-item', 100, 0);
+      const gone = service().create({
+        number: 'PF-512',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'assign-gone-item', quantity: 1 }],
+      }, context);
+      db.prepare('UPDATE InventoryItem SET deletedAt = ? WHERE id = ?').run(now, 'assign-gone-item');
+      await expect(service().dispense(String(gone.id), context)).rejects.toThrow(NotFoundError);
+    });
+
+    it('dispenses and returns null returnedQuantity rows with a null clinic', async () => {
+      const globalContext: AppContext = { ...context, clinicId: null };
+      insertItem('null-ret-item', 100, 0);
+      const a = service().create({
+        number: 'PF-514',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'null-ret-item', quantity: 2 }],
+      }, globalContext);
+      db.prepare('UPDATE DispenseItem SET returnedQuantity = NULL WHERE dispenseId = ?').run(String(a.id));
+      await service().dispense(String(a.id), globalContext);
+
+      const b = service().create({
+        number: 'PF-515',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'null-ret-item', quantity: 2 }],
+      }, globalContext);
+      await service().dispense(String(b.id), globalContext);
+      db.prepare('UPDATE DispenseItem SET returnedQuantity = NULL WHERE dispenseId = ?').run(String(b.id));
+      // NULL returnedQuantity 会让 CAS 的 NULL 运算失效：整笔回滚并拒绝
+      await expect(service().returnItems(String(b.id), {
+        items: [{ dispenseItemId: firstItemId(String(b.id)), quantity: 1 }],
+      }, globalContext)).rejects.toThrow(ConflictError);
+    });
+
+    it('rejects merged return quantities above the cap', async () => {
+      insertItem('merge-cap-item', 100, 0);
+      const created = service().create({
+        number: 'PF-516',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'merge-cap-item', quantity: 2 }],
+      }, context);
+      await service().dispense(String(created.id), context);
+      const itemId = firstItemId(String(created.id));
+      await expect(service().returnItems(String(created.id), {
+        items: [
+          { dispenseItemId: itemId, quantity: 600_000_000 },
+          { dispenseItemId: itemId, quantity: 600_000_000 },
+        ],
+      }, context)).rejects.toThrow(ValidationError);
+    });
+
+    it('rejects dispensing when every item is already returned', async () => {
+      insertItem('all-returned-item', 100, 0);
+      const created = service().create({
+        number: 'PF-517',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'all-returned-item', quantity: 1 }],
+      }, context);
+      await service().dispense(String(created.id), context);
+      db.prepare('UPDATE DispenseItem SET returnedQuantity = quantity WHERE dispenseId = ?').run(String(created.id));
+      db.prepare("UPDATE Dispense SET status = 'PARTIAL' WHERE id = ?").run(String(created.id));
+      await expect(service().dispense(String(created.id), context)).rejects.toThrow(ValidationError);
+    });
+
+    it('rejects non-string numbers and accepts real charge and prescription references', async () => {
+      insertItem('validation-ref-item', 100, 0);
+      expect(() => service().create({
+        number: 42 as never,
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'validation-ref-item', quantity: 1 }],
+      }, context)).toThrow(ValidationError);
+
+      db.prepare(
+        `INSERT INTO Charge (
+           id, patientId, visitId, doctorId, number, totalAmount, paidAmount, refundedAmount,
+           discount, status, payMethod, paidAt, remark, clinicId, createdAt, updatedAt, deletedAt
+         ) VALUES ('charge-ref-dispense', 'patient-demo-001', NULL, NULL, 'CHG-REF-D', 100, 0, 0,
+           0, 'UNPAID', NULL, NULL, NULL, ?, ?, ?, NULL)`,
+      ).run(context.clinicId, now, now);
+      db.prepare(
+        `INSERT INTO Prescription (
+           id, clinicId, createdAt, updatedAt, deletedAt, patientId, doctorId, remark, status
+         ) VALUES ('pres-ref-dispense', ?, ?, ?, NULL, 'patient-demo-001', 'user-admin-001', NULL, 'DRAFT')`,
+      ).run(context.clinicId, now, now);
+      const withRefs = service().create({
+        number: 'PF-REF-1',
+        patientId: 'patient-demo-001',
+        chargeId: 'charge-ref-dispense',
+        prescriptionId: 'pres-ref-dispense',
+        items: [{ itemId: 'validation-ref-item', quantity: 1 }],
+      }, context);
+      expect(withRefs.number).toBe('PF-REF-1');
+      const row = db.prepare('SELECT chargeId, prescriptionId FROM Dispense WHERE id = ?').get(String(withRefs.id)) as {
+        chargeId: string | null; prescriptionId: string | null;
+      };
+      expect(row.chargeId).toBe('charge-ref-dispense');
+      expect(row.prescriptionId).toBe('pres-ref-dispense');
+
+      const withNullRefs = service().create({
+        number: 'PF-REF-2',
+        patientId: 'patient-demo-001',
+        chargeId: null as never,
+        prescriptionId: null as never,
+        items: [{ itemId: 'validation-ref-item', quantity: 1 }],
+      }, context);
+      const nullRow = db.prepare('SELECT chargeId, prescriptionId FROM Dispense WHERE id = ?').get(String(withNullRefs.id)) as {
+        chargeId: string | null; prescriptionId: string | null;
+      };
+      expect(nullRow.chargeId).toBeNull();
+      expect(nullRow.prescriptionId).toBeNull();
+    });
+
+    it('updates with a null clinic, omitted note, and rejects non-string numbers', async () => {
+      insertItem('update-null-clinic-item', 100, 0);
+      const created = service().create({
+        number: 'PF-NULLC-1',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'update-null-clinic-item', quantity: 1 }],
+      }, context);
+      const globalContext: AppContext = { ...context, clinicId: null };
+      const updated = service().updateDispense(String(created.id), {
+        number: 'PF-NULLC-2',
+        patientId: 'patient-demo-001',
+        items: [
+          { itemId: 'update-null-clinic-item', quantity: 1 },
+          { itemId: 'update-null-clinic-item', quantity: 1 },
+        ],
+      }, globalContext);
+      expect(updated.number).toBe('PF-NULLC-2');
+      const inserted = db.prepare(
+        'SELECT quantity, clinicId FROM DispenseItem WHERE dispenseId = ? AND deletedAt IS NULL',
+      ).get(String(created.id)) as { quantity: number; clinicId: string | null };
+      expect(inserted.quantity).toBe(2);
+      expect(inserted.clinicId).toBeNull();
+      const main = db.prepare('SELECT note FROM Dispense WHERE id = ?').get(String(created.id)) as { note: string | null };
+      expect(main.note).toBeNull();
+      expect(() => service().updateDispense(String(created.id), {
+        number: 7 as never,
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'update-null-clinic-item', quantity: 1 }],
+      }, context)).toThrow(ValidationError);
+    });
+
+    it('reports conflicts for zero-row updates/deletes and duplicate numbers', async () => {
+      insertItem('race-dispense-item', 100, 0);
+      const a = service().create({
+        number: 'PF-RACE-1',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'race-dispense-item', quantity: 1 }],
+      }, context);
+      const b = service().create({
+        number: 'PF-RACE-2',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'race-dispense-item', quantity: 1 }],
+      }, context);
+      // 重复单号 → UNIQUE 冲突
+      expect(() => service().updateDispense(String(b.id), {
+        number: 'PF-RACE-1',
+        patientId: 'patient-demo-001',
+        items: [{ itemId: 'race-dispense-item', quantity: 1 }],
+      }, context)).toThrow(ConflictError);
+
+      const originalPrepare = db.prepare.bind(db);
+      const spyUpdate = vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+        if (sql.includes('UPDATE Dispense') && sql.includes('SET number')) {
+          return { run: () => ({ changes: 0 }) } as never;
+        }
+        return originalPrepare(sql);
+      });
+      try {
+        expect(() => service().updateDispense(String(a.id), {
+          number: 'PF-RACE-3',
+          patientId: 'patient-demo-001',
+          items: [{ itemId: 'race-dispense-item', quantity: 1 }],
+        }, context)).toThrow(ConflictError);
+      } finally {
+        spyUpdate.mockRestore();
+      }
+      const spyDelete = vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+        if (sql.includes('UPDATE Dispense') && sql.includes('SET deletedAt')) {
+          return { run: () => ({ changes: 0 }) } as never;
+        }
+        return originalPrepare(sql);
+      });
+      try {
+        expect(() => service().deleteDispense(String(a.id), context)).toThrow(ConflictError);
+      } finally {
+        spyDelete.mockRestore();
+      }
+
+      // 非唯一约束的未知错误原样抛出（isUniqueConstraintError 的假分支）
+      insertItem('boom-dispense-item', 100, 0);
+      const spyBoomCreate = vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+        if (sql.includes('INSERT INTO Dispense (')) {
+          return { run: () => { throw new Error('boom-create'); } } as never;
+        }
+        return originalPrepare(sql);
+      });
+      try {
+        expect(() => service().create({
+          number: 'PF-BOOM-1',
+          patientId: 'patient-demo-001',
+          items: [{ itemId: 'boom-dispense-item', quantity: 1 }],
+        }, context)).toThrow('boom-create');
+      } finally {
+        spyBoomCreate.mockRestore();
+      }
+      const spyBoomUpdate = vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+        if (sql.includes('UPDATE Dispense') && sql.includes('SET number')) {
+          return { run: () => { throw new Error('boom-update'); } } as never;
+        }
+        return originalPrepare(sql);
+      });
+      try {
+        expect(() => service().updateDispense(String(a.id), {
+          number: 'PF-BOOM-2',
+          patientId: 'patient-demo-001',
+          items: [{ itemId: 'race-dispense-item', quantity: 1 }],
+        }, context)).toThrow('boom-update');
+      } finally {
+        spyBoomUpdate.mockRestore();
+      }
     });
   });
 });

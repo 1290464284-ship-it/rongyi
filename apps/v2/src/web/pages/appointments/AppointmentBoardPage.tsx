@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import type { Page } from '../../lib/types';
@@ -26,10 +26,14 @@ export function AppointmentBoardPage() {
   const [date, setDate] = useState(todayLocalDate());
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
+  const [inFlightIds, setInFlightIds] = useState<ReadonlySet<string>>(new Set());
+  const inFlightRef = useRef<Set<string>>(new Set());
   const query = useQuery({
     queryKey: ['appointment-board', date],
     queryFn: () => apiRequest<Page<AppointmentRow>>(`/appointments/by-date?date=${encodeURIComponent(date)}`),
+    placeholderData: (previous) => previous,
   });
+  const stale = query.isPlaceholderData;
 
   if (query.isLoading) return <LoadingState label="预约看板加载中..." />;
   if (query.error) {
@@ -45,6 +49,9 @@ export function AppointmentBoardPage() {
   const countFor = (status: string): number => rows.filter((row) => String(row.status ?? '') === status).length;
 
   async function transition(id: string, status: string) {
+    if (inFlightRef.current.has(id)) return;
+    inFlightRef.current.add(id);
+    setInFlightIds((current) => new Set(current).add(id));
     try {
       await apiRequest(`/appointments/${id}/status`, {
         method: 'PATCH',
@@ -54,6 +61,13 @@ export function AppointmentBoardPage() {
       await query.refetch();
     } catch (error) {
       showToast(errorMessage(error, '状态更新失败'), 'error');
+    } finally {
+      inFlightRef.current.delete(id);
+      setInFlightIds((current) => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
     }
   }
 
@@ -63,12 +77,12 @@ export function AppointmentBoardPage() {
     setDragOverColumn(null);
     if (!id) return;
     const row = rows.find((entry) => entry.id === id);
-    if (!row || String(row.status ?? '') === statusKey) return;
+    if (!row || String(row.status) === statusKey) return;
     await transition(id, statusKey);
   }
 
   return (
-    <div className="page">
+    <div className="page" aria-busy={stale}>
       <div className="page-head">
         <h1>预约看板</h1>
         <input aria-label="日期" type="date" value={date} onChange={(event) => setDate(event.target.value)} />
@@ -88,11 +102,13 @@ export function AppointmentBoardPage() {
             data-status={status.key}
             key={status.key}
             onDragOver={(event) => {
+              if (stale) return;
               event.preventDefault();
               setDragOverColumn(status.key);
             }}
             onDragLeave={() => setDragOverColumn((current) => (current === status.key ? null : current))}
             onDrop={(event) => {
+              if (stale) return;
               event.preventDefault();
               void handleDrop(status.key);
             }}
@@ -106,10 +122,11 @@ export function AppointmentBoardPage() {
               .map((row) => (
                 <article
                   className={`board-card${draggingId === row.id ? ' dragging' : ''}`}
-                  draggable
+                  draggable={!stale}
                   data-id={row.id}
                   key={row.id}
                   onDragStart={(event) => {
+                    if (stale) return;
                     event.dataTransfer?.setData('text/plain', row.id);
                     setDraggingId(row.id);
                   }}
@@ -122,8 +139,10 @@ export function AppointmentBoardPage() {
                   <span>{String(row.doctorIdLabel ?? row.doctorId ?? '未分配医生')}</span>
                   <time>{String(row.startTime ?? '')}</time>
                   <select
-                    defaultValue=""
+                    key={`${row.id}-${row.status}`}
+                    value=""
                     aria-label={`${status.label}状态`}
+                    disabled={stale || inFlightIds.has(row.id)}
                     onChange={(event) => event.target.value && transition(row.id, event.target.value)}
                   >
                     <option value="">变更状态</option>

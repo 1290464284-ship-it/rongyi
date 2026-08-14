@@ -1,6 +1,10 @@
 param(
   [string]$CurrentInstallerPath = "",
-  [string]$PreviousInstallerPath = ""
+  [string]$PreviousInstallerPath = "",
+  # 同源码版本的内部构建（internal 时间戳只进 package.json/latest.yml，
+  # exe 的 ProductVersion 仍是 2.2.0.0）无法通过版本递增断言；运营复验
+  # 升级链路时用此开关跳过，公开发布场景必须保留该断言。
+  [switch]$SkipVersionCheck
 )
 
 $ErrorActionPreference = "Stop"
@@ -37,10 +41,23 @@ function Wait-ApiHealthy {
   }
 }
 
-$releaseDir = Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..\release-v2")
+# 显式传入安装器时无需 release-v2 目录存在（默认可选）：仅当需要回退到
+# 目录默认值时再解析，避免该目录缺失时即使给了显式路径也必然失败。
+$releaseDir = Join-Path $PSScriptRoot "..\release-v2"
+if (-not $CurrentInstallerPath -or -not $PreviousInstallerPath) {
+  if (-not (Test-Path -LiteralPath $releaseDir)) {
+    throw "Release directory not found: $releaseDir (pass -CurrentInstallerPath/-PreviousInstallerPath instead)"
+  }
+  $releaseDir = (Resolve-Path -LiteralPath $releaseDir).Path
+}
 if (-not $CurrentInstallerPath) {
   $CurrentInstallerPath = Get-ChildItem -LiteralPath $releaseDir -Filter "*.exe" |
     Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1 -ExpandProperty FullName
+}
+if (-not $PreviousInstallerPath) {
+  $PreviousInstallerPath = Get-ChildItem -LiteralPath $releaseDir -Filter "*.exe" |
+    Sort-Object LastWriteTime |
     Select-Object -First 1 -ExpandProperty FullName
 }
 
@@ -59,6 +76,21 @@ if (Test-Path -LiteralPath $appDataRoot) {
   [System.IO.Directory]::Delete($appDataRoot, $true)
 }
 
+# 失败路径也必须回收子进程并清理临时目录，避免 CI 残留安装器/数据目录。
+trap {
+  foreach ($proc in @($previousApi, $api)) {
+    if ($proc -and -not $proc.HasExited) {
+      Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+    }
+  }
+  foreach ($dir in @($installDir, $appDataRoot)) {
+    if ($dir -and (Test-Path -LiteralPath $dir)) {
+      [System.IO.Directory]::Delete($dir, $true) | Out-Null
+    }
+  }
+  exit 1
+}
+
 $env:APPDATA = $appDataRoot
 foreach ($markerDir in @((Join-Path $appDataRoot "Dental Clinic V2"), (Join-Path $appDataRoot "dental-clinic-v2"))) {
   [System.IO.Directory]::CreateDirectory($markerDir) | Out-Null
@@ -70,6 +102,8 @@ $previous = Start-Process -FilePath $PreviousInstallerPath -ArgumentList "/S", "
 if ($previous.ExitCode -ne 0) {
   throw "Previous installer exited with code $($previous.ExitCode)"
 }
+$previousVersion = (Get-Item -LiteralPath (Join-Path $installDir "Dental Clinic V2.exe")).VersionInfo.ProductVersion
+Write-Host "Previous installed version: $previousVersion"
 
 $env:ELECTRON_RUN_AS_NODE = "1"
 $env:V2_PORT = [string]$smokePort
@@ -129,6 +163,20 @@ if ($current.ExitCode -ne 0) {
   throw "Current installer exited with code $($current.ExitCode)"
 }
 
+$currentVersion = (Get-Item -LiteralPath (Join-Path $installDir "Dental Clinic V2.exe")).VersionInfo.ProductVersion
+Write-Host "Current installed version: $currentVersion"
+if (-not $SkipVersionCheck) {
+  if ($currentVersion -and $previousVersion) {
+    if ($currentVersion -le $previousVersion) {
+      throw "Upgrade smoke did not increase the installed version: $previousVersion -> $currentVersion"
+    }
+  } elseif ($currentVersion -eq $previousVersion) {
+    throw "Upgrade smoke could not prove a version increase (both empty)"
+  }
+} else {
+  Write-Host "Version increase check skipped (-SkipVersionCheck)"
+}
+
 $appExe = Join-Path $installDir "Dental Clinic V2.exe"
 if (-not (Test-Path -LiteralPath $appExe)) {
   throw "Upgraded executable not found"
@@ -156,6 +204,13 @@ try {
     Stop-Process -Id $api.Id -Force -ErrorAction SilentlyContinue
   }
 }
+
+$env:V2_DB_PATH = Join-Path $env:V2_DATA_DIR "v2.sqlite"
+& node (Join-Path $PSScriptRoot "verify-database.mjs")
+if ($LASTEXITCODE -ne 0) {
+  throw "Upgraded database integrity verification failed"
+}
+Write-Host "Upgraded database integrity ok"
 
 $uninstaller = Get-ChildItem -LiteralPath $installDir -Filter "Uninstall*.exe" |
   Select-Object -First 1 -ExpandProperty FullName

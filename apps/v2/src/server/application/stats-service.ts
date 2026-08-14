@@ -3,6 +3,11 @@ import type Database from 'better-sqlite3';
 import type { AppContext } from '../../domain/contracts';
 import { tenantWhere } from '../infrastructure/tenant';
 import { clinicDayEndUtc, clinicDayStartUtc } from '../infrastructure/clock';
+import {
+  aggregateThresholdExceeded,
+  readDashboardSnapshot,
+  writeDashboardSnapshot,
+} from '../infrastructure/stats-aggregate';
 import { TtlCache } from './ttl-cache';
 
 export class StatsService {
@@ -15,29 +20,13 @@ export class StatsService {
     const role = context.role;
     const isDoctor = role === 'DOCTOR';
     return this.cache.get(`dashboard:${context.clinicId ?? 'none'}:${role}`, () => {
-      const tenant = tenantWhere(context.clinicId);
-      const where = tenant.sql ? `WHERE ${tenant.sql} AND deletedAt IS NULL` : 'WHERE deletedAt IS NULL';
-      const wherePending = tenant.sql
-        ? `WHERE ${tenant.sql} AND deletedAt IS NULL AND status = 'PENDING'`
-        : "WHERE deletedAt IS NULL AND status = 'PENDING'";
-      const whereCharge = tenant.sql ? `WHERE ${tenant.sql} AND deletedAt IS NULL` : 'WHERE deletedAt IS NULL';
-      const row = this.db.prepare(
-        `SELECT (SELECT COUNT(*) FROM Patient ${where}) AS p,
-                (SELECT COUNT(*) FROM Appointment ${where}) AS a,
-                (SELECT COALESCE(SUM(CASE WHEN status <> 'CANCELLED' THEN paidAmount - refundedAmount ELSE 0 END), 0) FROM Charge ${whereCharge}) AS paid,
-                (SELECT COALESCE(SUM(CASE WHEN status IN ('UNPAID', 'PARTIAL') THEN totalAmount - paidAmount ELSE 0 END), 0) FROM Charge ${whereCharge}) AS unpaid,
-                (SELECT COUNT(*) FROM InventoryItem ${where}) AS i,
-                (SELECT COUNT(*) FROM FollowUp ${wherePending}) AS f`,
-      ).get(...tenant.params, ...tenant.params, ...tenant.params, ...tenant.params, ...tenant.params, ...tenant.params) as
-        { p: number; a: number; paid: number; unpaid: number; i: number; f: number };
-      const result: Record<string, unknown> = {
-        patients: row.p,
-        appointments: row.a,
-        paidAmount: row.paid,
-        unpaidAmount: row.unpaid,
-        inventoryItems: row.i,
-        pendingFollowUps: row.f,
-      };
+      // 超过阈值后启用惰性物化快照：写路径失效快照，读路径命中缓存时直接复用。
+      const useSnapshot = context.clinicId !== null
+        && aggregateThresholdExceeded(this.db);
+      const result = useSnapshot
+        ? (readDashboardSnapshot(this.db, context.clinicId)
+          ?? this.computeAndSnapshotDashboard(context))
+        : this.computeDashboard(context);
       if (isDoctor) {
         // DOCTOR 角色裁剪营收/待收金额，避免营业数据越权可见。
         delete result.paidAmount;
@@ -45,6 +34,38 @@ export class StatsService {
       }
       return result;
     });
+  }
+
+  private computeDashboard(context: AppContext): Record<string, unknown> {
+    const tenant = tenantWhere(context.clinicId);
+    const where = tenant.sql ? `WHERE ${tenant.sql} AND deletedAt IS NULL` : 'WHERE deletedAt IS NULL';
+    const wherePending = tenant.sql
+      ? `WHERE ${tenant.sql} AND deletedAt IS NULL AND status = 'PENDING'`
+      : "WHERE deletedAt IS NULL AND status = 'PENDING'";
+    const whereCharge = tenant.sql ? `WHERE ${tenant.sql} AND deletedAt IS NULL` : 'WHERE deletedAt IS NULL';
+    const row = this.db.prepare(
+      `SELECT (SELECT COUNT(*) FROM Patient ${where}) AS p,
+              (SELECT COUNT(*) FROM Appointment ${where}) AS a,
+              (SELECT COALESCE(SUM(CASE WHEN status <> 'CANCELLED' THEN paidAmount - refundedAmount ELSE 0 END), 0) FROM Charge ${whereCharge}) AS paid,
+              (SELECT COALESCE(SUM(CASE WHEN status IN ('UNPAID', 'PARTIAL') THEN totalAmount - paidAmount ELSE 0 END), 0) FROM Charge ${whereCharge}) AS unpaid,
+              (SELECT COUNT(*) FROM InventoryItem ${where}) AS i,
+              (SELECT COUNT(*) FROM FollowUp ${wherePending}) AS f`,
+    ).get(...tenant.params, ...tenant.params, ...tenant.params, ...tenant.params, ...tenant.params, ...tenant.params) as
+      { p: number; a: number; paid: number; unpaid: number; i: number; f: number };
+    return {
+      patients: row.p,
+      appointments: row.a,
+      paidAmount: row.paid,
+      unpaidAmount: row.unpaid,
+      inventoryItems: row.i,
+      pendingFollowUps: row.f,
+    };
+  }
+
+  private computeAndSnapshotDashboard(context: AppContext): Record<string, unknown> {
+    const result = this.computeDashboard(context);
+    writeDashboardSnapshot(this.db, context.clinicId, result, context.now().toISOString());
+    return result;
   }
 
   revenue(

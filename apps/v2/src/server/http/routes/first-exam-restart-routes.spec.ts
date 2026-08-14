@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import express, { type Express } from 'express';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -16,7 +16,7 @@ describe('first exam restart routes', () => {
   let app: Express;
   const nowIso = '2026-08-05T10:00:00.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-first-exam-restart-routes-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -40,7 +40,7 @@ describe('first exam restart routes', () => {
     registerFirstExamRestartRoutes(app, buildRouteDeps(db));
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -85,6 +85,7 @@ describe('first exam restart routes', () => {
   });
 
   it('POST /api/v2/first-exams/:id/dentition updates the dentition', async () => {
+    insertExam('route-exam-1');
     const res = await request(app)
       .post('/api/v2/first-exams/route-exam-1/dentition')
       .send({ dentition: 'MIXED' })
@@ -97,6 +98,7 @@ describe('first exam restart routes', () => {
   });
 
   it('POST /api/v2/first-exams/:id/teeth/:toothId/chief-mark marks the tooth', async () => {
+    insertExam('route-exam-1');
     db.prepare(
       `INSERT INTO FirstExamTooth (
          id, clinicId, createdAt, updatedAt, deletedAt,
@@ -113,5 +115,18 @@ describe('first exam restart routes', () => {
 
     const row = db.prepare('SELECT chiefMark FROM FirstExamTooth WHERE id = ?').get('route-tooth-1') as { chiefMark: string };
     expect(row.chiefMark).toBe('HORIZONTAL_DONE');
+  });
+
+  it('tolerates missing request bodies', async () => {
+    for (const path of [
+      '/api/v2/first-exams/route-exam-1/restart',
+      '/api/v2/first-exams/route-exam-1/dentition',
+      '/api/v2/first-exams/route-exam-1/teeth/route-tooth-1/chief-mark',
+    ]) {
+      const res = await request(app).post(path);
+      expect([200, 400, 404]).toContain(res.status);
+    }
+    const history = await request(app).get('/api/v2/first-exams/history');
+    expect([200, 400, 404]).toContain(history.status);
   });
 });

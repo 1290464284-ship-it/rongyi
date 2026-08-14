@@ -1,20 +1,20 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase } from './database';
-import { SqliteRepository } from './repository';
+import { SqliteRepository, buildRelationLabelJoins, clearTableColumnCache } from './repository';
 import { rebuildSearchIndex, upsertSearchRow } from './search-index';
 import { resourceRegistry } from '../../domain/resources';
-import type { AppContext } from '../../domain/contracts';
+import type { AppContext, ResourceDefinition } from '../../domain/contracts';
 
 describe('SqliteRepository', () => {
   let db: Database.Database;
   let dataDir: string;
   let context: AppContext;
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-repo-'));
     db = createDatabase(dataDir);
     // createDatabase 不跑迁移，按迁移 115 的 DDL 建 FTS 表供 FTS 分支用例使用。
@@ -33,7 +33,7 @@ describe('SqliteRepository', () => {
     };
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -68,6 +68,37 @@ describe('SqliteRepository', () => {
     expect(await repo.findById('repo-patient-1', context)).toBeNull();
   });
 
+  it('lists a resource table without an id column', async () => {
+    db.prepare(`INSERT INTO UserRole (userId, role, clinicId, createdAt, updatedAt, deletedAt)
+      VALUES (?, ?, ?, ?, ?, NULL)`).run(
+      'repo-user-1',
+      'ADMIN',
+      context.clinicId,
+      '2026-08-01T00:00:00.000Z',
+      '2026-08-01T00:00:00.000Z',
+    );
+    const repo = new SqliteRepository(db, resourceRegistry.get('userRoles')!);
+    const page = await repo.findMany({ page: 1, pageSize: 10 }, context);
+    expect(page.total).toBe(1);
+    expect(page.items[0]).toMatchObject({ userId: 'repo-user-1', role: 'ADMIN' });
+  });
+
+  it('treats whitespace-only search as an empty result instead of an unfiltered list', async () => {
+    const repo = new SqliteRepository(db, resourceRegistry.get('patients')!);
+    await repo.insert({
+      id: 'repo-ws-1',
+      code: 'WS-001',
+      name: 'Whitespace Search',
+      gender: 'UNKNOWN',
+      phone: '13100000000',
+      source: 'WALK_IN',
+      active: true,
+    }, context);
+    const page = await repo.findMany({ page: 1, pageSize: 10, search: '   ' }, context);
+    expect(page.items).toEqual([]);
+    expect(page.total).toBe(0);
+  });
+
   it('applies declared defaults and hides null-clinic rows from scoped queries', async () => {
     const repo = new SqliteRepository(db, resourceRegistry.get('patients')!);
     await repo.insert({
@@ -92,6 +123,141 @@ describe('SqliteRepository', () => {
     expect(await repo.findById('repo-null-clinic', context)).toBeNull();
     const page = await repo.findMany({}, context);
     expect(page.total).toBeGreaterThanOrEqual(1);
+  });
+
+  it('supports keyset cursor pagination on id order', async () => {
+    const repo = new SqliteRepository(db, resourceRegistry.get('patients')!);
+    for (let i = 0; i < 5; i += 1) {
+      await repo.insert({
+        id: `cursor-test-${i}`,
+        code: `CURSOR-TEST-${i}`,
+        name: `CursorZetaOnly ${i}`,
+        gender: 'UNKNOWN',
+        source: 'OTHER',
+      }, context);
+    }
+    const first = await repo.findMany({ page: 1, pageSize: 2, search: 'CursorZetaOnly', sortBy: 'id', sortOrder: 'ASC' }, context);
+    expect(first.items.map((row) => row.id)).toEqual(['cursor-test-0', 'cursor-test-1']);
+    const second = await repo.findMany({ page: 1, pageSize: 2, search: 'CursorZetaOnly', cursor: 'cursor-test-1' }, context);
+    expect(second.items.map((row) => row.id)).toEqual(['cursor-test-2', 'cursor-test-3']);
+    expect(second.nextCursor).toBe('cursor-test-3');
+    const third = await repo.findMany({ page: 1, pageSize: 2, search: 'CursorZetaOnly', cursor: 'cursor-test-3' }, context);
+    expect(third.items.map((row) => row.id)).toEqual(['cursor-test-4']);
+    expect(third.nextCursor).toBeUndefined();
+  });
+
+  it('supports composite keyset pagination on createdAt DESC with id tie-break', async () => {
+    const repo = new SqliteRepository(db, resourceRegistry.get('patients')!);
+    const ids = ['composite-cursor-0', 'composite-cursor-1', 'composite-cursor-2', 'composite-cursor-3'];
+    for (let i = 0; i < ids.length; i += 1) {
+      await repo.insert({
+        id: ids[i],
+        code: `COMPOSITE-${i}`,
+        name: `CompositeZetaOnly ${i}`,
+        gender: 'UNKNOWN',
+        source: 'OTHER',
+      }, context);
+    }
+    db.prepare(
+      `UPDATE Patient SET createdAt = ? WHERE id = ?`,
+    ).run('2026-08-01T00:00:00.000Z', 'composite-cursor-0');
+    db.prepare(
+      `UPDATE Patient SET createdAt = ? WHERE id = ?`,
+    ).run('2026-08-02T00:00:00.000Z', 'composite-cursor-1');
+    db.prepare(
+      `UPDATE Patient SET createdAt = ? WHERE id = ?`,
+    ).run('2026-08-03T00:00:00.000Z', 'composite-cursor-2');
+    db.prepare(
+      `UPDATE Patient SET createdAt = ? WHERE id = ?`,
+    ).run('2026-08-04T00:00:00.000Z', 'composite-cursor-3');
+
+    const first = await repo.findMany({ page: 1, pageSize: 2, search: 'CompositeZetaOnly' }, context);
+    expect(first.items.map((row) => row.id)).toEqual(['composite-cursor-3', 'composite-cursor-2']);
+    expect(first.nextCursor).toMatch(/^2026-08-03T00:00:00\.000Z\|composite-cursor-2$/);
+
+    const second = await repo.findMany({ page: 1, pageSize: 2, search: 'CompositeZetaOnly', cursor: first.nextCursor }, context);
+    expect(second.items.map((row) => row.id)).toEqual(['composite-cursor-1', 'composite-cursor-0']);
+    expect(second.nextCursor).toBeUndefined();
+  });
+
+  it('supports generic v: keyset cursors for explicit sort fields', async () => {
+    const repo = new SqliteRepository(db, resourceRegistry.get('patients')!);
+    for (let i = 0; i < 5; i += 1) {
+      await repo.insert({
+        id: `vz-${i}`,
+        code: `VZ-${i}`,
+        name: `VZeta${String(i).padStart(2, '0')}`,
+        gender: 'UNKNOWN',
+        source: 'OTHER',
+      }, context);
+    }
+    const first = await repo.findMany({
+      page: 1, pageSize: 2, search: 'VZeta', sortBy: 'name', sortOrder: 'ASC', cursor: 'v:VZeta00|vz-0',
+    }, context);
+    expect(first.items.map((row) => row.name)).toEqual(['VZeta01', 'VZeta02']);
+    expect(first.nextCursor).toBe('v:VZeta02|vz-2');
+
+    const second = await repo.findMany({
+      page: 1, pageSize: 2, search: 'VZeta', sortBy: 'name', sortOrder: 'ASC', cursor: first.nextCursor,
+    }, context);
+    expect(second.items.map((row) => row.name)).toEqual(['VZeta03', 'VZeta04']);
+    expect(second.nextCursor).toBeUndefined();
+
+    const desc = await repo.findMany({
+      page: 1, pageSize: 2, search: 'VZeta', sortBy: 'name', sortOrder: 'DESC', cursor: 'v:VZeta04|vz-4',
+    }, context);
+    expect(desc.items.map((row) => row.name)).toEqual(['VZeta03', 'VZeta02']);
+
+    // 非法/不完整游标与未知排序字段：回退全量分页不崩溃
+    const shortCursor = await repo.findMany({
+      page: 1, pageSize: 2, search: 'VZeta', sortBy: 'name', sortOrder: 'ASC', cursor: 'v:x',
+    }, context);
+    expect(shortCursor.items.length).toBe(2);
+    const missingField = await repo.findMany({
+      page: 1, pageSize: 2, search: 'VZeta', sortBy: 'missingField', sortOrder: 'DESC', cursor: 'v:VZeta01%7Cvz-1',
+    }, context);
+    expect(missingField.items.length).toBe(2);
+    const noSort = await repo.findMany({
+      page: 1, pageSize: 2, search: 'VZeta', cursor: 'v:VZeta01|vz-1',
+    }, context);
+    expect(noSort.items.length).toBe(2);
+    // 系统列（非声明字段）：columns.has 命中但 field 未命中，回退 offset 分页
+    const bySystemColumn = await repo.findMany({
+      page: 1, pageSize: 2, search: 'VZeta', sortBy: 'createdAt', sortOrder: 'DESC', cursor: 'v:2026-08-05T00:00:00.000Z|vz-4',
+    }, context);
+    expect(bySystemColumn.items.length).toBe(2);
+  });
+
+  it('skips the COUNT query when countTotal is false and sorts by system columns', async () => {
+    const repo = new SqliteRepository(db, resourceRegistry.get('patients')!);
+    await repo.insert({
+      id: 'count-total-skip',
+      code: 'COUNT-TOTAL-SKIP',
+      name: 'CountTotalSkipOnly',
+      gender: 'UNKNOWN',
+      source: 'OTHER',
+    }, context);
+    const page = await repo.findMany({
+      page: 1,
+      pageSize: 10,
+      search: 'CountTotalSkipOnly',
+      countTotal: false,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+    }, context);
+    expect(page.items.map((row) => row.id)).toEqual(['count-total-skip']);
+    expect(page.total).toBe(0);
+  });
+
+  it('clears cached PRAGMA layouts after schema changes', async () => {
+    const repo = new SqliteRepository(db, resourceRegistry.get('patients')!);
+    await repo.findMany({ page: 1, pageSize: 10, countTotal: false }, context);
+    db.exec('ALTER TABLE Patient ADD COLUMN cacheProbe TEXT');
+    clearTableColumnCache(db);
+    const fresh = new SqliteRepository(db, resourceRegistry.get('patients')!);
+    await expect(fresh.findMany({ page: 1, pageSize: 10, countTotal: false }, context)).resolves.toMatchObject({
+      items: expect.any(Array),
+    });
   });
 
   it('rejects generic writes with missing relation targets', async () => {
@@ -573,5 +739,44 @@ describe('SqliteRepository', () => {
     });
     // 分页计数不受 JOIN 影响（LEFT JOIN 主键不产生行倍增）。
     expect(page.total).toBe(page.items.length);
+  });
+
+  it('lists legacy tables that have no deletedAt column', async () => {
+    db.exec(`CREATE TABLE IF NOT EXISTS LegacyNoDeleted (
+      id TEXT PRIMARY KEY,
+      clinicId TEXT,
+      createdAt TEXT,
+      updatedAt TEXT,
+      name TEXT
+    )`);
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO LegacyNoDeleted (id, clinicId, createdAt, updatedAt, name)
+       VALUES ('legacy-1', 'clinic-v2-001', ?, ?, 'Legacy Row')`,
+    ).run(now, now);
+    const resource = {
+      name: 'legacyNoDeleted',
+      table: 'LegacyNoDeleted',
+      fields: [{ name: 'name', type: 'text' }],
+      audit: false,
+      searchableFields: ['name'],
+      defaultSort: { field: 'id', order: 'ASC' },
+      capabilities: { list: true, create: false, update: false, delete: false, softDelete: false },
+      roles: ['BOSS'],
+    } as ResourceDefinition;
+    const repo = new SqliteRepository(db, resource);
+    const page = await repo.findMany({ page: 1, pageSize: 10, search: 'Legacy' }, context);
+    expect(page.items.some((row) => row.id === 'legacy-1')).toBe(true);
+    const row = await repo.findById('legacy-1', context);
+    expect(row?.name).toBe('Legacy Row');
+    expect(row).not.toHaveProperty('deletedAt');
+  });
+
+  it('omits deletedAt/clinicId join clauses for legacy relation targets without those columns', () => {
+    const base = resourceRegistry.get('appointments')!;
+    const resource = { ...base, name: 'legacyAppointments' } as ResourceDefinition;
+    const joins = buildRelationLabelJoins(resource, () => false, () => false);
+    expect(joins.length).toBeGreaterThan(0);
+    expect(joins.every((join) => !join.join.includes('deletedAt') && !join.join.includes('clinicId'))).toBe(true);
   });
 });

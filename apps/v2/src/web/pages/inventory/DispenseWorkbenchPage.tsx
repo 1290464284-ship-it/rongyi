@@ -19,6 +19,7 @@ export function DispenseWorkbenchPage() {
   const dispenses = useQuery({
     queryKey: ['dispenses', dispensePage],
     queryFn: () => apiRequest<Page<DispenseRow>>(`/dispenses?page=${dispensePage}&pageSize=20`),
+    placeholderData: (previous) => previous,
   });
 
   return (

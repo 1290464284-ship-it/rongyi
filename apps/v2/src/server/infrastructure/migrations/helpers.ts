@@ -21,7 +21,24 @@ export function ensureForeignKeys(
 ): void {
   const existing = db.prepare(`PRAGMA foreign_key_list("${table}")`).all();
   if (existing.length > 0) return;
+  rebuildTable(db, table, createSql, false);
+}
 
+/** 与 ensureForeignKeys 相同，但无条件重建表（用于修正旧 legacy schema 的 CHECK/FK 缺陷）。 */
+export function forceRebuildTable(
+  db: Database.Database,
+  table: string,
+  createSql: string,
+): void {
+  rebuildTable(db, table, createSql, true);
+}
+
+function rebuildTable(
+  db: Database.Database,
+  table: string,
+  createSql: string,
+  preserveMissingColumns: boolean,
+): void {
   const indexes = db.prepare(
     `SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ? AND sql IS NOT NULL`,
   ).all(table) as Array<{ sql: string }>;
@@ -36,9 +53,16 @@ export function ensureForeignKeys(
   );
   const missing = [...oldColumns].filter((column) => !newColumns.has(column));
   if (missing.length > 0) {
-    throw new Error(`Migration for ${table} would drop columns: ${missing.join(', ')}`);
+    if (!preserveMissingColumns) {
+      throw new Error(`Migration for ${table} would drop columns: ${missing.join(', ')}`);
+    }
+    // 旧库可能有新 DDL 未声明的扩展列：以 TEXT 补列保留数据，而不是中断迁移。
+    for (const column of missing) {
+      db.exec(`ALTER TABLE "${newTable}" ADD COLUMN "${column}" TEXT`);
+      newColumns.add(column);
+    }
   }
-  const columns = [...newColumns].filter((column) => oldColumns.has(column));
+  const columns = [...oldColumns].filter((column) => newColumns.has(column));
   const columnList = columns.map((column) => `"${column}"`).join(', ');
   repairLegacyData(db, table);
   db.prepare(

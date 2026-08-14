@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import type { User, UserRole } from '../../../domain/contracts';
-import { AppError, NotFoundError } from '../../infrastructure/errors';
+import { AppError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { secretFileValue } from '../../infrastructure/secret-file';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import type { AuthUserRecord } from '../ports';
@@ -23,6 +23,7 @@ export const JWT_SECRET = _resolveJwtSecret();
 export const TOKEN_TTL = '8h';
 export const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const BACKUP_MAGIC = Buffer.from('DENTALV2ENC1');
+export const MAX_MONEY_CENTS = 1_000_000_000_000;
 
 /**
  * Generates a human-readable document number: `${prefix}-<base36 timestamp>-<8 hex chars>`.
@@ -157,7 +158,21 @@ export function runInTransaction<T>(db: Database.Database, fn: () => T): T {
   return fn();
 }
 
+/** 与 runInTransaction 相同的回退语义，但使用 BEGIN IMMEDIATE 提前获取写锁。 */
+export function runInTransactionImmediate<T>(db: Database.Database, fn: () => T): T {
+  const tx = (db as unknown as { transaction?: <U>(cb: () => U) => () => U }).transaction;
+  if (typeof tx === 'function') {
+    const runner = tx.call(db, fn);
+    if (typeof (runner as { immediate?: () => T }).immediate === 'function') {
+      return (runner as unknown as { immediate: () => T }).immediate();
+    }
+    return runner() as T;
+  }
+  return fn();
+}
+
 export function assertPatientExists(db: Database.Database, patientId: string, clinicId: string | null): void {
+  if (typeof patientId !== 'string' || patientId.trim() === '') throw new ValidationError('patientId is required');
   const row = db.prepare(
     `SELECT id FROM Patient WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
   ).get(patientId, ...tenantParams(clinicId)) as { id: string } | undefined;
@@ -165,6 +180,7 @@ export function assertPatientExists(db: Database.Database, patientId: string, cl
 }
 
 export function assertDoctorExists(db: Database.Database, doctorId: string, clinicId: string | null): void {
+  if (typeof doctorId !== 'string' || doctorId.trim() === '') throw new ValidationError('doctorId is required');
   const row = db.prepare(
     `SELECT u.id FROM User u
      WHERE u.id = ? AND u.role IN ('DOCTOR', 'BOSS') AND u.active = 1 AND u.deletedAt IS NULL
@@ -213,6 +229,7 @@ export function countBossUsersInClinic(db: Database.Database, clinicId: string |
 }
 
 export function assertChairExists(db: Database.Database, chairId: string, clinicId: string | null): void {
+  if (typeof chairId !== 'string' || chairId.trim() === '') throw new ValidationError('chairId is required');
   const row = db.prepare(
     `SELECT id FROM Chair WHERE id = ? AND active = 1 AND deletedAt IS NULL${tenantAnd(clinicId)}`,
   ).get(chairId, ...tenantParams(clinicId)) as { id: string } | undefined;
@@ -225,6 +242,8 @@ export function assertVisitExists(
   patientId: string,
   clinicId: string | null,
 ): void {
+  if (typeof visitId !== 'string' || visitId.trim() === '') throw new ValidationError('visitId is required');
+  if (typeof patientId !== 'string' || patientId.trim() === '') throw new ValidationError('patientId is required');
   const row = db.prepare(
     `SELECT id, patientId FROM Visit WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
   ).get(visitId, ...tenantParams(clinicId)) as { id: string; patientId?: string | null } | undefined;

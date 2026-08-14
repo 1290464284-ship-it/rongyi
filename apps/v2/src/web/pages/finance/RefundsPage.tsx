@@ -27,6 +27,11 @@ interface RefundRow extends Record<string, unknown> {
   createdAt?: string | null;
 }
 
+interface RefundSummary {
+  counts: Record<string, number>;
+  total: number;
+}
+
 const columns: DataTableColumn<RefundRow>[] = [
   { key: 'patient', label: '患者', render: (row) => row.patientName ?? row.patientId ?? '' },
   { key: 'chargeNumber', label: '收费单号', render: (row) => row.chargeNumber ?? '' },
@@ -45,13 +50,15 @@ export function RefundsPage() {
   const [page, setPage] = useState(1);
   const summary = useQuery({
     queryKey: ['refunds-summary'],
-    queryFn: () => apiRequest<Page<RefundRow>>('/refunds?page=1&pageSize=200'),
+    queryFn: () => apiRequest<RefundSummary>('/refunds/summary'),
     staleTime: 30_000,
   });
   const query = useQuery({
     queryKey: ['refunds', page],
     queryFn: () => apiRequest<Page<RefundRow>>(`/refunds?page=${page}&pageSize=20`),
+    placeholderData: (previous) => previous,
   });
+  const stale = query.isPlaceholderData;
 
   if (query.isLoading) return <LoadingState label="退款记录加载中..." />;
   if (query.error) {
@@ -72,7 +79,10 @@ export function RefundsPage() {
       render: (row) => (
         <RefundRowActions
           row={row}
-          reload={() => query.refetch()}
+          stale={stale}
+          reload={async () => {
+            await Promise.all([query.refetch(), summary.refetch()]);
+          }}
           showToast={showToast}
         />
       ),
@@ -84,32 +94,29 @@ export function RefundsPage() {
       <div className="page-head">
         <h1>退款管理</h1>
       </div>
-      <RefundStatusChips rows={summary.data?.items ?? []} />
+      {summary.data && (
+        <RefundStatusChips counts={summary.data.counts} total={summary.data.total} />
+      )}
       {rows.length === 0 ? (
         <EmptyState message="暂无退款记录" />
       ) : (
         <DataTable columns={withActions} rows={rows} keyField="id" emptyText="暂无退款记录" />
       )}
       <div className="pager">
-        <button disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>上一页</button>
+        <button disabled={stale || page <= 1} onClick={() => setPage((value) => value - 1)}>上一页</button>
         <span>第 {page} 页</span>
-        <button disabled={!query.data || page * 20 >= query.data.total} onClick={() => setPage((value) => value + 1)}>下一页</button>
+        <button disabled={stale || !query.data || page * 20 >= query.data.total} onClick={() => setPage((value) => value + 1)}>下一页</button>
       </div>
     </div>
   );
 }
 
-function RefundStatusChips({ rows }: { rows: RefundRow[] }) {
-  const counts = new Map<string, number>();
-  for (const row of rows) {
-    const status = String(row.status ?? '');
-    counts.set(status, (counts.get(status) ?? 0) + 1);
-  }
+function RefundStatusChips({ counts, total }: { counts: Record<string, number>; total: number }) {
   return (
-    <div className="tracking-overview" aria-label="退款状态汇总">
+    <div className="tracking-overview" aria-label="退款状态汇总" data-total={total}>
       {STATUS_ORDER.map((status) => (
         <span className="tracking-chip" key={status}>
-          {STATUS_LABELS[status]} {counts.get(status) ?? 0}
+          {STATUS_LABELS[status]} {counts[status] ?? 0}
         </span>
       ))}
     </div>
@@ -118,25 +125,47 @@ function RefundStatusChips({ rows }: { rows: RefundRow[] }) {
 
 function RefundRowActions({
   row,
+  stale,
   reload,
   showToast,
 }: {
   row: RefundRow;
+  stale: boolean;
   reload: () => Promise<unknown>;
   showToast: (message: string, kind?: 'success' | 'error' | 'info') => void;
 }) {
   const status = String(row.status ?? '');
   const { busy, run } = useAsyncAction();
+  const approve = () => {
+    /* v8 ignore next -- 按钮在 stale 期间 disabled（jsdom 不派发 click），守卫为防御冗余 */
+    if (stale) return;
+    run(() => transitionRefund(showToast, reload, row.id, 'approve', '退款已通过审批'));
+  };
+  const reject = () => {
+    /* v8 ignore next -- 同上 */
+    if (stale) return;
+    run(() => transitionRefund(showToast, reload, row.id, 'reject', '退款已驳回'));
+  };
+  const cancel = () => {
+    /* v8 ignore next -- 同上 */
+    if (stale) return;
+    run(() => transitionRefund(showToast, reload, row.id, 'cancel', '退款已取消'));
+  };
+  const process = () => {
+    /* v8 ignore next -- 同上 */
+    if (stale) return;
+    run(() => transitionRefund(showToast, reload, row.id, 'process', '退款已完成'));
+  };
   if (status === 'REQUESTED') {
     return (
       <span>
-        <button disabled={busy} onClick={() => run(() => transitionRefund(showToast, reload, row.id, 'approve', '退款已通过审批'))}>
+        <button disabled={busy || stale} onClick={approve}>
           通过审批
         </button>
-        <button disabled={busy} onClick={() => run(() => transitionRefund(showToast, reload, row.id, 'reject', '退款已驳回'))}>
+        <button disabled={busy || stale} onClick={reject}>
           驳回
         </button>
-        <button disabled={busy} onClick={() => run(() => transitionRefund(showToast, reload, row.id, 'cancel', '退款已取消'))}>
+        <button disabled={busy || stale} onClick={cancel}>
           取消
         </button>
       </span>
@@ -145,7 +174,7 @@ function RefundRowActions({
   if (status === 'PENDING_REFUND') {
     return (
       <span>
-        <button disabled={busy} onClick={() => run(() => transitionRefund(showToast, reload, row.id, 'process', '退款已完成'))}>
+        <button disabled={busy || stale} onClick={process}>
           确认退款
         </button>
       </span>

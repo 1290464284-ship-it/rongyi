@@ -114,6 +114,26 @@ describe('PermissionsPage', () => {
     expect(screen.getByRole('tab', { name: '医生' }).getAttribute('aria-selected')).toBe('true');
   });
 
+  it('jumps to the first and last role tabs with Home and End', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/role-permissions/DOCTOR') return doctorPermissions;
+      if (path === '/role-permissions/BOSS') return bossPermissions;
+      return {};
+    });
+    render(<PermissionsPage />, { wrapper });
+    await screen.findByText('医生默认模块权限');
+
+    fireEvent.keyDown(screen.getByRole('tab', { name: '医生' }), { key: 'Home' });
+    const firstTab = screen.getByRole('tab', { name: '老板' });
+    expect(document.activeElement).toBe(firstTab);
+    expect(firstTab.getAttribute('aria-selected')).toBe('true');
+
+    fireEvent.keyDown(firstTab, { key: 'End' });
+    const lastTab = screen.getByRole('tab', { name: '医生' });
+    expect(document.activeElement).toBe(lastTab);
+    expect(lastTab.getAttribute('aria-selected')).toBe('true');
+  });
+
   it('saves the full module permission set for the active role', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/role-permissions/DOCTOR') return doctorPermissions;
@@ -153,5 +173,18 @@ describe('PermissionsPage', () => {
     await screen.findByText('医生默认模块权限');
     fireEvent.click(screen.getByRole('button', { name: '保存角色权限' }));
     expect(await screen.findByText('保存角色权限失败')).toBeDefined();
+  });
+
+  it('ignores unhandled tab keys without changing the active role', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/role-permissions/DOCTOR') return doctorPermissions;
+      return {};
+    });
+    render(<PermissionsPage />, { wrapper });
+    await screen.findByText('医生默认模块权限');
+    const doctorTab = screen.getByRole('tab', { name: '医生' });
+    fireEvent.keyDown(doctorTab, { key: 'Escape' });
+    expect(doctorTab.getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByText('医生默认模块权限')).toBeDefined();
   });
 });

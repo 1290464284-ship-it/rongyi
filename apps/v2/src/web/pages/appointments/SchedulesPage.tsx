@@ -26,6 +26,20 @@ export function SchedulesPage() {
     queryFn: () => apiRequest<WeekScheduleRow[]>(`/schedules/week?weekStart=${weekStart}`),
   });
 
+  if (templatesQuery.error || usersQuery.error) {
+    return (
+      <div className="page">
+        <div className="page-head"><h1>排班中心</h1></div>
+        <div className="query-section-error">
+          <p className="error">班次模板或员工列表加载失败，请重试</p>
+          <button type="button" onClick={() => { void templatesQuery.refetch(); void usersQuery.refetch(); }}>
+            重试
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const reloadTemplates = () => queryClient.invalidateQueries({ queryKey: ['shift-templates'] });
   const reloadWeek = () => queryClient.invalidateQueries({ queryKey: ['schedules-week'] });
 

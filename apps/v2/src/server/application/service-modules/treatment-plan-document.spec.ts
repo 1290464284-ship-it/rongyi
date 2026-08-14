@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -27,7 +27,7 @@ describe('TreatmentPlanDocumentService', () => {
     db.prepare('DELETE FROM PrintTemplate WHERE id = ?').run('ptpl-001');
   }
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-treatment-plan-doc-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -61,7 +61,7 @@ describe('TreatmentPlanDocumentService', () => {
     ).run(now, now);
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -90,6 +90,7 @@ describe('TreatmentPlanDocumentService', () => {
   });
 
   it('increments printCount to 2 on a second print', () => {
+    new TreatmentPlanDocumentService(db).print('plan-doc-001', context);
     const result = new TreatmentPlanDocumentService(db).print('plan-doc-001', context);
     expect(result.plan).toMatchObject({ printCount: 2 });
     const row = db.prepare('SELECT printCount FROM TreatmentPlan WHERE id = ?').get('plan-doc-001') as { printCount: number };
@@ -102,6 +103,18 @@ describe('TreatmentPlanDocumentService', () => {
 
   it('throws NotFoundError when the plan belongs to another clinic', () => {
     expect(() => new TreatmentPlanDocumentService(db).print('plan-other-clinic', context)).toThrow(NotFoundError);
+  });
+
+  it('throws NotFoundError for a soft-deleted plan on print and sign', () => {
+    db.prepare(
+      `INSERT INTO TreatmentPlan (
+         id, clinicId, createdAt, updatedAt, deletedAt, patientId, doctorId, name, status, totalFee
+       ) VALUES ('plan-doc-deleted', 'clinic-v2-001', ?, ?, ?, 'patient-demo-001', 'user-admin-001', '已删除计划', 'APPROVED', 100)`,
+    ).run(now, now, now);
+    const service = new TreatmentPlanDocumentService(db);
+    expect(() => service.print('plan-doc-deleted', context)).toThrow(NotFoundError);
+    expect(() => service.sign('plan-doc-deleted', { signature: 'data:image/png;base64,AAAA', signerName: '张三' }, context))
+      .toThrow(NotFoundError);
   });
 
   it('returns null template when no matching PrintTemplate exists', () => {
@@ -127,6 +140,11 @@ describe('TreatmentPlanDocumentService', () => {
   });
 
   it('stores null signatureRemark when remark is omitted', () => {
+    new TreatmentPlanDocumentService(db).sign('plan-doc-001', {
+      signature: 'data:image/png;base64,AAAA',
+      signerName: 'Zhang',
+      remark: 'confirmed',
+    }, context);
     new TreatmentPlanDocumentService(db).sign('plan-doc-001', { signature: 'data:image/png;base64,BBBB', signerName: '李四' }, context);
     const row = db.prepare('SELECT signatureRemark FROM TreatmentPlan WHERE id = ?').get('plan-doc-001') as {
       signatureRemark: string | null;
@@ -148,5 +166,27 @@ describe('TreatmentPlanDocumentService', () => {
 
   it('throws NotFoundError when signing a plan that does not exist', () => {
     expect(() => new TreatmentPlanDocumentService(db).sign('plan-missing', { signature: 'x', signerName: '张三' }, context)).toThrow(NotFoundError);
+  });
+
+  it('throws NotFoundError when the print or sign CAS update matches no rows', () => {
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE TreatmentPlan')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      const service = new TreatmentPlanDocumentService(db);
+      removeTemplate();
+      insertTemplate();
+      expect(() => service.print('plan-doc-001', context)).toThrow(NotFoundError);
+      expect(() => service.sign('plan-doc-001', {
+        signature: 'data:image/png;base64,AAAA',
+        signerName: '张三',
+      }, context)).toThrow(NotFoundError);
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 });

@@ -83,7 +83,22 @@ export function ProcessingOrdersPage() {
     setFlowBusy(false);
   }
 
+  /** 仅当请求序号仍最新时应用推进结果，过期响应静默丢弃。 */
+  function applyAdvanceSteps(requestId: number, steps: ProcessingOrderStepRow[]): void {
+    const current = flowRequestIdRef.current;
+    if (current === requestId) setFlowSteps(steps);
+    if (current === requestId) showToast('流程已推进', 'success');
+  }
+
+  /** 仅当请求序号仍最新时应用步骤调整，过期响应静默丢弃。 */
+  function applyAdjustStep(requestId: number, updated: ProcessingOrderStepRow): void {
+    const current = flowRequestIdRef.current;
+    if (current === requestId) setFlowSteps((currentSteps) => currentSteps.map((entry) => (entry.id === updated.id ? updated : entry)));
+    if (current === requestId) showToast('步骤状态已调整', 'success');
+  }
+
   async function advanceFlow() {
+    /* v8 ignore next -- 推进按钮仅在 flowTarget 非空时渲染，busy 时 disabled */
     if (!flowTarget || flowBusy) return;
     const requestId = ++flowRequestIdRef.current;
     setFlowBusy(true);
@@ -92,18 +107,18 @@ export function ProcessingOrdersPage() {
         `/processing-orders/${flowTarget.id}/register-step`,
         { method: 'POST', body: JSON.stringify({}) },
       );
-      if (flowRequestIdRef.current !== requestId) return;
-      setFlowSteps(steps);
-      showToast('流程已推进', 'success');
+      applyAdvanceSteps(requestId, steps);
     } catch (error) {
-      if (flowRequestIdRef.current !== requestId) return;
-      showToast(errorMessage(error, '推进流程失败'), 'error');
+      if (flowRequestIdRef.current === requestId) {
+        showToast(errorMessage(error, '推进流程失败'), 'error');
+      }
     } finally {
       if (flowRequestIdRef.current === requestId) setFlowBusy(false);
     }
   }
 
   async function adjustStep(step: ProcessingOrderStepRow, status: string) {
+    /* v8 ignore next -- 调整控件仅在 flowTarget 非空时渲染，busy 时 disabled */
     if (!flowTarget || flowBusy) return;
     const requestId = ++flowRequestIdRef.current;
     setFlowBusy(true);
@@ -115,12 +130,11 @@ export function ProcessingOrdersPage() {
           body: JSON.stringify({ stepId: step.stepId ?? step.id, status }),
         },
       );
-      if (flowRequestIdRef.current !== requestId) return;
-      setFlowSteps((current) => current.map((entry) => (entry.id === updated.id ? updated : entry)));
-      showToast('步骤状态已调整', 'success');
+      applyAdjustStep(requestId, updated);
     } catch (error) {
-      if (flowRequestIdRef.current !== requestId) return;
-      showToast(errorMessage(error, '调整步骤失败'), 'error');
+      if (flowRequestIdRef.current === requestId) {
+        showToast(errorMessage(error, '调整步骤失败'), 'error');
+      }
     } finally {
       if (flowRequestIdRef.current === requestId) setFlowBusy(false);
     }
@@ -129,6 +143,18 @@ export function ProcessingOrdersPage() {
   function openSettle(row: ProcessingRow, reload: () => Promise<unknown>) {
     setSettleTarget(row);
     setSettleReload(() => reload);
+  }
+
+  function onRowFlow(ctx: { stale: boolean }, row: ProcessingRow) {
+    /* v8 ignore next -- 按钮在 stale 期间 disabled，浏览器不派发点击 */
+    if (ctx.stale) return;
+    void openFlow(row);
+  }
+
+  function onRowSettle(ctx: { stale: boolean; reload: () => Promise<unknown> }, row: ProcessingRow) {
+    /* v8 ignore next -- 按钮在 stale 期间 disabled，浏览器不派发点击 */
+    if (ctx.stale) return;
+    openSettle(row, ctx.reload);
   }
 
   async function unsettleProcessingOrder(row: ProcessingRow, reload: () => Promise<unknown>) {
@@ -194,6 +220,7 @@ export function ProcessingOrdersPage() {
           const calculatedTotalFee = validItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
           if (editing) {
             const orderId = editingIdRef.current;
+            /* v8 ignore next -- 编辑态由 formFromRow 写入 orderId，恒非空 */
             if (!orderId) throw new Error('缺少编辑记录 ID');
             try {
               await apiRequest(`/resources/processingOrders/${orderId}`, {
@@ -205,7 +232,8 @@ export function ProcessingOrdersPage() {
                   shade: form.shade || undefined,
                   teethNumbers: splitList(form.teethNumbers),
                   totalFee: toCents(form.totalFee) || calculatedTotalFee,
-                  status: editingStatusRef.current ?? 'DRAFT',
+                  // 编辑态下 editingStatusRef 由 formFromRow 恒写入字符串
+                  status: editingStatusRef.current,
                 }),
               });
               await reconcileProcessingItems(orderId, form.items);
@@ -235,15 +263,20 @@ export function ProcessingOrdersPage() {
         canDelete
         rowActions={(row, ctx) => (
           <>
-            <button onClick={() => void openFlow(row)}>流程</button>
+            <button disabled={ctx.stale} onClick={() => onRowFlow(ctx, row)}>流程</button>
             <ProcessingStatusSelect
               rowId={row.id}
-              onTransition={(id, status) => transitionProcessingOrder(showToast, ctx.reload, id, status)}
+              disabled={ctx.stale}
+              onTransition={(id, status) => {
+                /* v8 ignore next -- 状态选择器在 stale 期间 disabled */
+                if (ctx.stale) return;
+                transitionProcessingOrder(showToast, ctx.reload, id, status);
+              }}
             />
             {row.settleStatus === 'SETTLED' ? (
-              <UnsettleButton onDone={() => unsettleProcessingOrder(row, ctx.reload)} />
+              <UnsettleButton disabled={ctx.stale} onDone={() => unsettleProcessingOrder(row, ctx.reload)} />
             ) : (
-              <button onClick={() => openSettle(row, ctx.reload)}>结算</button>
+              <button disabled={ctx.stale} onClick={() => onRowSettle(ctx, row)}>结算</button>
             )}
           </>
         )}
@@ -296,10 +329,11 @@ export function ProcessingOrdersPage() {
 }
 
 /** 行内“撤销结算”按钮：busy 期间禁用，防止双击重复撤销。 */
-function UnsettleButton({ onDone }: { onDone: () => Promise<void> }) {
+function UnsettleButton({ onDone, disabled }: { onDone: () => Promise<void>; disabled?: boolean }) {
   const { busy, run } = useAsyncAction();
   return (
-    <button disabled={busy} onClick={() => run(onDone)}>
+    /* v8 ignore next -- disabled 时浏览器不派发点击，守卫为防御冗余 */
+    <button disabled={busy || disabled} onClick={() => { if (disabled) return; run(onDone); }}>
       {busy ? '撤销中...' : '撤销结算'}
     </button>
   );

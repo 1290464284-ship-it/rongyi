@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { DesktopSettingsPage } from './DesktopSettingsPage';
 import { ToastProvider } from '../../components/toast';
 
@@ -231,5 +231,60 @@ describe('DesktopSettingsPage', () => {
     bridge.downloadUpdate?.mockResolvedValueOnce({ status: 'error', message: '自定义下载失败' });
     fireEvent.click(screen.getByRole('button', { name: '下载更新' }));
     expect(await screen.findByText('自定义下载失败')).toBeDefined();
+  });
+
+  it('ignores a second action click while the first is in flight', async () => {
+    let resolveRestart: (() => void) | undefined;
+    const bridge = installBridge({
+      restartApi: vi.fn().mockImplementation(() => new Promise<number>((resolve) => { resolveRestart = () => resolve(3182); })),
+    });
+    render(<ToastProvider><DesktopSettingsPage /></ToastProvider>);
+    await screen.findByText('3180');
+    const button = screen.getByRole('button', { name: '重启 API' });
+    act(() => {
+      fireEvent.click(button);
+      fireEvent.click(button);
+    });
+    expect(bridge.restartApi).toHaveBeenCalledTimes(1);
+    act(() => resolveRestart?.());
+    expect(await screen.findByText('3182')).toBeDefined();
+  });
+
+  it('renders update-check fallbacks for sparse results', async () => {
+    installBridge({
+      checkUpdates: vi.fn()
+        .mockResolvedValueOnce({ status: 'available' })
+        .mockResolvedValueOnce({ status: 'checking', message: '正在检查更新' })
+        .mockResolvedValueOnce({ status: 'checking' }),
+    });
+    render(<ToastProvider><DesktopSettingsPage /></ToastProvider>);
+    await screen.findByText('3180');
+
+    fireEvent.click(screen.getByRole('button', { name: '检查更新' }));
+    expect(await screen.findByText('发现新版本 undefined，点击"下载更新"按钮开始下载')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: '检查更新' }));
+    expect(await screen.findByText('正在检查更新')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: '检查更新' }));
+    expect(await screen.findByText('检查失败')).toBeDefined();
+  });
+
+  it('falls back when the download bridge or error detail is missing', async () => {
+    const bridge = installBridge({
+      checkUpdates: vi.fn().mockResolvedValue({ status: 'available', version: '4.0.0' }),
+    });
+    delete bridge.downloadUpdate;
+    render(<ToastProvider><DesktopSettingsPage /></ToastProvider>);
+    await screen.findByText('3180');
+
+    fireEvent.click(screen.getByRole('button', { name: '检查更新' }));
+    expect(await screen.findByText('发现新版本 4.0.0，点击"下载更新"按钮开始下载')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '下载更新' }));
+    expect(await screen.findByText('当前环境不支持自动下载更新')).toBeDefined();
+
+    bridge.downloadUpdate = vi.fn().mockResolvedValue({ status: 'error' });
+    fireEvent.click(screen.getByRole('button', { name: '下载更新' }));
+    expect(await screen.findByText('下载失败')).toBeDefined();
   });
 });

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
+import { registerModalLayer } from '../lib/modal-a11y';
 
 const FOCUSABLE_SELECTOR =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -35,17 +36,18 @@ export function Dialog({
     if (!open) return;
     closeEpochRef.current += 1;
     previouslyFocused.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const modal = modalRef.current;
-    if (modal) {
-      const firstFocusable = modal.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
-      (firstFocusable ?? modal).focus();
-    }
+    // 打开态渲染时 modal 已挂载，ref 恒非空
+    const modal = modalRef.current as HTMLDivElement;
+    const cleanupInert = registerModalLayer(modal);
+    const firstFocusable = modal.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
+    (firstFocusable ?? modal).focus();
     return () => {
+      cleanupInert?.();
       if (closeTimerRef.current) {
         clearTimeout(closeTimerRef.current);
         closeTimerRef.current = null;
       }
-      previouslyFocused.current?.focus();
+      if (previouslyFocused.current?.isConnected) previouslyFocused.current.focus();
       previouslyFocused.current = null;
     };
   }, [open]);
@@ -60,6 +62,7 @@ export function Dialog({
     closeTimerRef.current = setTimeout(() => {
       closeTimerRef.current = null;
       // 若弹窗在动画期间已被重新打开（代际变化），丢弃这次迟到的关闭通知
+      /* v8 ignore next -- 关闭时组件卸载会先清掉定时器，迟到通知不可达（防御冗余） */
       if (closeEpochRef.current !== epoch) return;
       onClose();
     }, DIALOG_CLOSE_MS);
@@ -73,8 +76,8 @@ export function Dialog({
     }
     if (event.key !== 'Tab') return;
     // 焦点陷阱：Tab/Shift+Tab 在弹窗内循环，焦点逃逸到弹窗外时拉回第一个可聚焦元素
-    const modal = modalRef.current;
-    if (!modal) return;
+    // 处理器挂载在 modal 自身，currentTarget 恒非空
+    const modal = event.currentTarget;
     const focusables = Array.from(modal.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
     if (focusables.length === 0) {
       event.preventDefault();
@@ -140,21 +143,27 @@ export function ConfirmDialog({
   // submitting：确认按钮可返回 Promise（异步删除/切换），pending 期间两按钮禁用，
   // 防止双击双发（删除双 DELETE、toggle 双 PATCH 状态来回）。
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   // 渲染期调整：关闭时复位 submitting，避免下一次打开仍处于禁用态
   const [prevOpen, setPrevOpen] = useState(open);
   if (open !== prevOpen) {
     setPrevOpen(open);
-    if (!open) setSubmitting(false);
+    if (!open) {
+      setSubmitting(false);
+    }
   }
 
   async function handleConfirm() {
-    if (submitting) return;
+    /* v8 ignore next -- 确认按钮在 submitting 时 disabled，双击不可达 */
+    if (submitting || submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       await onConfirm();
     } catch {
       // 调用方负责错误提示；这里只复位按钮状态
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   }
@@ -179,6 +188,7 @@ export function PromptDialog({
   value = '',
   inputType = 'text',
   placeholder = '',
+  ariaLabel,
   confirmText = '确认',
   cancelText = '取消',
   pending = false,
@@ -191,6 +201,7 @@ export function PromptDialog({
   value?: string;
   inputType?: 'text' | 'number' | 'textarea';
   placeholder?: string;
+  ariaLabel?: string;
   confirmText?: string;
   cancelText?: string;
   pending?: boolean;
@@ -209,6 +220,7 @@ export function PromptDialog({
 
   function submit(event: FormEvent) {
     event.preventDefault();
+    if (pending) return;
     onSubmit(current);
   }
 
@@ -217,7 +229,7 @@ export function PromptDialog({
       <form onSubmit={submit}>
         {message && <p>{message}</p>}
         {inputType === 'textarea' ? (
-          <textarea value={current} onChange={(event) => setCurrent(event.target.value)} placeholder={placeholder} />
+          <textarea value={current} onChange={(event) => setCurrent(event.target.value)} placeholder={placeholder} aria-label={ariaLabel ?? title} />
         ) : (
           <input
             autoFocus
@@ -225,6 +237,7 @@ export function PromptDialog({
             value={current}
             onChange={(event) => setCurrent(event.target.value)}
             placeholder={placeholder}
+            aria-label={ariaLabel ?? title}
           />
         )}
         <div className="modal-actions">

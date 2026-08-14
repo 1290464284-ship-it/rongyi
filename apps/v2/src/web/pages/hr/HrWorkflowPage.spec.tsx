@@ -5,10 +5,15 @@ import type { ReactNode } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { HrWorkflowPage } from './HrWorkflowPage';
-import { apiRequest } from '../../lib/api';
+import { apiRequest, fetchAllPages } from '../../lib/api';
 import { ToastProvider } from '../../components/toast';
 
-vi.mock('../../lib/api', () => ({ apiRequest: vi.fn(), downloadCsv: vi.fn() }));
+vi.mock('../../lib/api', () => ({ apiRequest: vi.fn(), fetchAllPages: vi.fn(), downloadCsv: vi.fn() }));
+
+vi.mocked(fetchAllPages).mockImplementation(async (path: string) => {
+  const data = await vi.mocked(apiRequest)(path) as { items?: unknown[] } | unknown[];
+  return Array.isArray(data) ? data : (data as { items?: unknown[] })?.items ?? [];
+});
 
 const wrapper = ({ children }: { children: ReactNode }) => (
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ToastProvider>{children}</ToastProvider></QueryClientProvider>
@@ -22,11 +27,10 @@ describe('HrWorkflowPage', () => {
 
   it('renders pending leaves and approves or rejects them', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/leaveRequests?page=1&pageSize=100') {
+      if (path === '/resources/leaveRequests?status=PENDING&page=1&pageSize=100') {
         return {
           items: [
             { id: 'l-1', userId: 'u-1', startDate: '2026-08-01', endDate: '2026-08-02', status: 'PENDING' },
-            { id: 'l-2', userId: null, startDate: null, endDate: null, status: 'APPROVED' },
             { id: 'l-3', userId: null, startDate: null, endDate: null, status: 'PENDING' },
           ],
           total: 2,
@@ -50,7 +54,7 @@ describe('HrWorkflowPage', () => {
 
   it('reports approval failures', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/leaveRequests?page=1&pageSize=100') {
+      if (path === '/resources/leaveRequests?status=PENDING&page=1&pageSize=100') {
         return { items: [{ id: 'l-1', userId: 'u-1', startDate: '2026-08-01', endDate: '2026-08-02', status: 'PENDING' }], total: 1 };
       }
       throw new Error('approve failed');
@@ -61,7 +65,7 @@ describe('HrWorkflowPage', () => {
     expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
 
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/leaveRequests?page=1&pageSize=100') {
+      if (path === '/resources/leaveRequests?status=PENDING&page=1&pageSize=100') {
         return { items: [{ id: 'l-1', userId: 'u-1', startDate: '2026-08-01', endDate: '2026-08-02', status: 'PENDING' }], total: 1 };
       }
       throw 'boom';
@@ -98,5 +102,45 @@ describe('HrWorkflowPage', () => {
     vi.mocked(apiRequest).mockResolvedValue({ items: [], total: 0 });
     render(<HrWorkflowPage />, { wrapper });
     expect(await screen.findByText('暂无待审批请假')).toBeDefined();
+  });
+
+  it('shows a fallback error message and renders unknown statuses', async () => {
+    vi.mocked(apiRequest).mockRejectedValueOnce('boom-string');
+    render(<HrWorkflowPage />, { wrapper });
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+    cleanup();
+
+    vi.mocked(apiRequest).mockResolvedValue({
+      items: [
+        { id: 'l-x', userId: 'u-x', startDate: '2026-08-01', endDate: '2026-08-02', status: 'WEIRD' },
+        { id: 'l-null', userId: 'u-null', startDate: '2026-08-01', endDate: '2026-08-02', status: null },
+      ],
+      total: 2,
+    });
+    render(<HrWorkflowPage />, { wrapper });
+    expect(await screen.findByText('WEIRD')).toBeDefined();
+    expect(screen.getByText('u-null')).toBeDefined();
+  });
+
+  it('renders an empty table when the list payload omits items and total', async () => {
+    vi.mocked(apiRequest).mockResolvedValue({});
+    render(<HrWorkflowPage />, { wrapper });
+    expect(await screen.findByText('暂无待审批请假')).toBeDefined();
+  });
+
+  it('paginates through pending leaves', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/leaveRequests?status=PENDING&page=1&pageSize=100') {
+        return { items: [{ id: 'l-1', userId: 'u-1', startDate: '2026-08-01', endDate: '2026-08-02', status: 'PENDING' }], total: 101 };
+      }
+      if (path === '/resources/leaveRequests?status=PENDING&page=2&pageSize=100') {
+        return { items: [{ id: 'l-2', userId: 'u-2', startDate: '2026-08-03', endDate: '2026-08-04', status: 'PENDING' }], total: 101 };
+      }
+      return {};
+    });
+    render(<HrWorkflowPage />, { wrapper });
+    expect(await screen.findByText('u-1')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+    expect(await screen.findByText('u-2')).toBeDefined();
   });
 });

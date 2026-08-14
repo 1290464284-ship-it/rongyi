@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../infrastructure/database';
 import {
@@ -15,6 +15,8 @@ import {
   WechatService,
 } from './workflow-services';
 import type { AppContext } from '../../domain/contracts';
+import type { ClinicalWorkflowRepository } from './ports';
+import { ConflictError } from '../infrastructure/errors';
 
 describe('workflow services', () => {
   let db: Database.Database;
@@ -23,7 +25,7 @@ describe('workflow services', () => {
   let nullContext: AppContext;
   const now = '2026-08-03T00:00:00.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-workflow-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -43,10 +45,21 @@ describe('workflow services', () => {
     };
   });
 
-  afterAll(() => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
+
+  function insertPrintTemplate(id: string): void {
+    db.prepare(
+      `INSERT INTO PrintTemplate (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, category, content
+       ) VALUES (?, ?, ?, ?, NULL, 'T-1', 'Template', 'REPORT', '<h1>{{title}}</h1>')`,
+    ).run(id, context.clinicId, now, now);
+  }
 
   it('transitions clinical records and locks medical records', () => {
     db.prepare(
@@ -78,7 +91,60 @@ describe('workflow services', () => {
     expect(service.visitStatus('visit-wf', 'COMPLETED', context).status).toBe('COMPLETED');
     expect(service.firstExamStatus('exam-wf', 'SUBMITTED', context).status).toBe('SUBMITTED');
     expect(service.treatmentStatus('treatment-wf', 'IN_PROGRESS', context).status).toBe('IN_PROGRESS');
+    // 状态迁移属于业务写路径，必须记录 SyncChange，否则其他设备收不到 Treatment 状态变化。
+    expect(db.prepare(
+      `SELECT 1 FROM SyncChange WHERE tableName = 'Treatment' AND recordId = ? AND operation = 'UPDATE' AND clinicId = ?`,
+    ).get('treatment-wf', context.clinicId)).toBeDefined();
     expect(service.lockMedicalRecord('record-wf', true, context).isLocked).toBe(true);
+  });
+
+  it('cancels a registration without a visit id (no extra visit columns)', () => {
+    db.prepare(
+      `INSERT INTO Registration (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, type, status, registeredAt, registeredBy
+       ) VALUES (?, ?, ?, ?, NULL, ?, ?, 'REGULAR', 'REGISTERED', ?, 'user-admin-001')`,
+    ).run('reg-no-visit', context.clinicId, now, now, 'patient-demo-001', 'user-admin-001', now);
+
+    const service = new ClinicalWorkflowService(db);
+    const result = service.registrationStatus('reg-no-visit', 'CANCELLED', context);
+    expect(result).toEqual({ id: 'reg-no-visit', status: 'CANCELLED', visitId: null });
+  });
+
+  it('throws a conflict when optimistic status updates change zero rows', () => {
+    const cases: Array<{ name: string; row: Record<string, unknown>; invoke: (service: ClinicalWorkflowService) => Record<string, unknown> }> = [
+      {
+        name: 'Registration',
+        row: { id: 'r1', status: 'REGISTERED', patientId: 'patient-demo-001', doctorId: 'user-admin-001', visitId: 'v1' },
+        invoke: (service) => service.registrationStatus('r1', 'CANCELLED', context),
+      },
+      {
+        name: 'Visit',
+        row: { id: 'v1', status: 'IN_PROGRESS' },
+        invoke: (service) => service.visitStatus('v1', 'CANCELLED', context),
+      },
+      {
+        name: 'FirstExam',
+        row: { id: 'f1', status: 'DRAFT' },
+        invoke: (service) => service.firstExamStatus('f1', 'SUBMITTED', context),
+      },
+      {
+        name: 'Treatment',
+        row: { id: 't1', status: 'PLANNED' },
+        invoke: (service) => service.treatmentStatus('t1', 'CANCELLED', context),
+      },
+    ];
+    for (const testCase of cases) {
+      const stub = {
+        getRow: vi.fn(() => testCase.row),
+        updateStatus: vi.fn(() => 0),
+        createVisit: vi.fn(),
+        lockMedicalRecord: vi.fn(),
+      } as unknown as ClinicalWorkflowRepository;
+      const service = new ClinicalWorkflowService(db, stub);
+      expect(() => testCase.invoke(service), testCase.name).toThrow(ConflictError);
+      expect(() => testCase.invoke(service), testCase.name).toThrow(/已变化/);
+    }
   });
 
   it('generates and applies replenishment suggestions', () => {
@@ -170,15 +236,11 @@ describe('workflow services', () => {
       findById: () => ({ id: 'missing-update', status: 'PENDING' }),
       markSent: () => 0,
     };
-    await expect(new WechatService(db, fakeWechat as never, provider).send('missing-update', context))
-      .rejects.toThrow('cannot be sent');
+    // 网关已投递成功；即使补偿写本地行失败，也不允许客户端重试再次调用网关。
+    expect(await new WechatService(db, fakeWechat as never, provider).send('missing-update', context))
+      .toMatchObject({ status: 'SENT' });
 
-    db.prepare(
-      `INSERT INTO PrintTemplate (
-         id, clinicId, createdAt, updatedAt, deletedAt,
-         code, name, category, content
-       ) VALUES (?, ?, ?, ?, NULL, 'T-1', 'Template', 'REPORT', '<h1>{{title}}</h1>')`,
-    ).run('print-wf', context.clinicId, now, now);
+    insertPrintTemplate('print-wf');
     const print = new PrintTemplateService(db);
     expect(print.list(context).length).toBeGreaterThanOrEqual(1);
     expect(print.render('T-1', { title: 'Hello' }, context)).toContain('Hello');
@@ -188,6 +250,28 @@ describe('workflow services', () => {
     const dollar = print.render('T-1', { title: '$&' }, context);
     expect(dollar).toContain('$&');
     expect(dollar).not.toContain('{{title}}');
+  });
+
+  it('compensates a gateway-delivered message when markSent races to zero', async () => {
+    db.prepare(
+      `INSERT INTO WechatMessage (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, type, content, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'TEXT', 'compensate', 'PENDING')`,
+    ).run('wechat-compensate', context.clinicId, now, now);
+    const provider = {
+      name: 'fake',
+      isConfigured: () => true,
+      send: async () => ({ ok: true, result: 'delivered' }),
+    };
+    const fakeRepo = {
+      findById: () => ({ id: 'wechat-compensate', status: 'PENDING' }),
+      markSent: () => 0,
+    };
+    const wechat = new WechatService(db, fakeRepo as never, provider);
+    expect(await wechat.send('wechat-compensate', context)).toMatchObject({ status: 'SENT', result: 'delivered' });
+    const row = db.prepare("SELECT status FROM WechatMessage WHERE id = 'wechat-compensate'").get() as { status: string };
+    expect(row.status).toBe('SENT');
   });
 
   it('includes the patient wechatId in the provider payload', async () => {
@@ -408,7 +492,24 @@ describe('workflow services', () => {
       const applied = replenishment.applyToPurchaseOrder([suggestion.id], nullContext);
       expect(applied).toHaveProperty('orderId');
     }
+    insertPrintTemplate('print-edge');
     const print = new PrintTemplateService(db);
     expect(print.render('T-1', { title: null }, context)).not.toContain('null');
+  });
+
+  it('rejects registration status transitions and missing replenishment suggestions', () => {
+    const workflow = new ClinicalWorkflowService(db);
+    expect(() => workflow.registrationStatus('missing-registration', 'IN_PROGRESS', context)).toThrow('Registration not found');
+    const nowIso = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO Registration (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, type, status, registeredAt
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'user-admin-001', 'REGULAR', 'REGISTERED', ?)`,
+    ).run('registration-edge-invalid', context.clinicId, nowIso, nowIso, nowIso);
+    expect(() => workflow.registrationStatus('registration-edge-invalid', 'COMPLETED', context)).toThrow('Cannot transition');
+
+    const replenishment = new ReplenishmentService(db);
+    expect(() => replenishment.applyToPurchaseOrder(['missing-suggestion'], context)).toThrow('No applicable suggestions');
   });
 });

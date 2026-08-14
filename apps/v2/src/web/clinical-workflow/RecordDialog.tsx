@@ -42,6 +42,7 @@ export function RecordDialog({
         method: 'POST',
         body: JSON.stringify({
           patientId,
+          visitId: row.visitId ? String(row.visitId) : undefined,
           doctorId,
           category: category || undefined,
           status,

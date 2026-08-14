@@ -1,16 +1,16 @@
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
-import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { waitForService } from './wait-for-services.mjs';
+import { isPortFree, pnpmCommand, stopProcessTree } from './lib/smoke-runtime.mjs';
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const root = path.resolve(appRoot, '..', '..');
 const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
-const apiUrl = process.env.V2_API_URL ?? 'http://localhost:3180/api/v2/health';
-const webUrl = process.env.V2_WEB_URL ?? 'http://localhost:5180';
+let apiUrl = process.env.V2_API_URL ?? '';
+let webUrl = process.env.V2_WEB_URL ?? '';
 const timeoutMs = Number(process.env.V2_WAIT_TIMEOUT_MS ?? 90_000);
 const children = [];
 const logFds = [];
@@ -44,19 +44,12 @@ process.env.V2_BACKUP_DIR = path.join(smokeRoot, 'backups');
 process.env.V2_LOG_DIR = path.join(smokeRoot, 'logs');
 
 function shellCommand(args) {
-  return ['pnpm', '--filter', '@dental/v2', ...args]
-    .map((part) => (/[\s"]/.test(part) ? `"${part.replaceAll('"', '\\"')}"` : part))
-    .join(' ');
-}
-
-function isPortFree(port) {
-  return new Promise((resolve) => {
-    const server = net.createServer();
-    server.once('error', () => resolve(false));
-    server.listen({ port, host: '127.0.0.1' }, () => {
-      server.close(() => resolve(true));
-    });
-  });
+  // Windows 下 spawn 需要 shell 解析 pnpm.cmd，因此保留 shell 但参数必须
+  // 是固定字面量：含空白/引号的参数直接拒绝，避免脆弱转义变成注入面。
+  for (const part of args) {
+    if (/[\s"'&|$`<>;()]/.test(part)) throw new Error(`unsafe smoke argument: ${part}`);
+  }
+  return pnpmCommand(args);
 }
 
 function startDev(label, args) {
@@ -89,19 +82,7 @@ function startDev(label, args) {
 function stopDev() {
   for (const child of children.splice(0)) {
     if (!child || typeof child.pid !== 'number') continue;
-    if (process.platform === 'win32') {
-      spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
-    } else {
-      try {
-        process.kill(-child.pid, 'SIGTERM');
-      } catch {
-        try {
-          child.kill('SIGTERM');
-        } catch {
-          // process already exited
-        }
-      }
-    }
+    stopProcessTree(child.pid);
   }
 }
 
@@ -122,8 +103,20 @@ function runSmoke(args) {
 }
 
 async function main() {
-  const apiPort = Number(process.env.V2_PORT ?? 3180);
-  const webPort = Number(process.env.V2_WEB_DEV_PORT ?? 5180);
+  const configuredApiPort = Number(process.env.V2_PORT ?? 0);
+  const configuredWebPort = Number(process.env.V2_WEB_DEV_PORT ?? 0);
+  const apiPort = configuredApiPort || (await pickFreePort());
+  const webPort = configuredWebPort || (await pickFreePort());
+  // 未显式指定端口时动态挑选空闲端口，避免固定 3180/5180 撞上 Windows 保留端口段。
+  process.env.V2_PORT = String(apiPort);
+  process.env.V2_WEB_DEV_PORT = String(webPort);
+  // 客户端冒烟脚本默认打 3180/5180（api-smoke 的 V2_BASE_URL、ui-smoke 的 V2_WEB_URL 兜底），
+  // 随机端口模式下必须把实际端口传播过去，否则 smoke:api / smoke:ui 会 ECONNREFUSED。
+  // 该随机端口路径此前未被任何流水线实际跑过（内部发布流程按审计从未运行），属潜在缺陷。
+  process.env.V2_BASE_URL = process.env.V2_BASE_URL ?? `http://localhost:${apiPort}/api/v2`;
+  process.env.V2_WEB_URL = process.env.V2_WEB_URL ?? `http://localhost:${webPort}`;
+  apiUrl = apiUrl || `http://localhost:${apiPort}/api/v2/health`;
+  webUrl = webUrl || `http://localhost:${webPort}`;
   for (const [label, port] of [['API', apiPort], ['web', webPort]]) {
     if (!(await isPortFree(port))) {
       throw new Error(
@@ -136,7 +129,7 @@ async function main() {
 
   await waitForService({ url: apiUrl, text: '', timeoutMs });
   console.log('api ready');
-  await waitForService({ url: webUrl, text: 'root', timeoutMs });
+  await waitForService({ url: webUrl, text: '<div id="root"', timeoutMs });
   console.log('web ready');
 
   runSmoke(['run', 'smoke:api']);
@@ -145,10 +138,20 @@ async function main() {
   runSmoke(['run', 'smoke:electron']);
   delete process.env.V2_SKIP_WEB_START;
   runSmoke(['run', 'test:load']);
+  runSmoke(['run', 'smoke:multi-instance']);
+  runSmoke(['run', 'smoke:state-machine-concurrency']);
   runSmoke(['run', 'smoke:wechat-gateway']);
   runSmoke(['run', 'smoke:http-fuzz']);
   runSmoke(['run', 'smoke:permissions']);
   console.log('full smoke passed');
+}
+
+async function pickFreePort() {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const candidate = 30_000 + Math.floor(Math.random() * 20_000);
+    if (await isPortFree(candidate)) return candidate;
+  }
+  throw new Error('no free smoke port available');
 }
 
 function cleanupSmokeEnvironment() {

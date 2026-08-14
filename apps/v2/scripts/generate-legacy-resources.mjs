@@ -6,16 +6,14 @@ const appRoot = path.resolve(import.meta.dirname, '..');
 const dbPath = path.join(appRoot, 'legacy', 'dental.sqlite');
 const outputPath = path.join(appRoot, 'src', 'domain', 'legacy-resources.generated.ts');
 
-// M-07 降级路径：legacy/dental.sqlite 已从仓库移除（见 .env.example R2-P0-04）。
-// 干净克隆/CI 上缺失该输入时，保留已提交的生成物并打印警告，而不是让
-// better-sqlite3 抛出难读的打开失败。需要重新生成时先恢复 dental.sqlite。
+// M-07：legacy/dental.sqlite 是生成器的必要输入；缺失时不得静默保留旧产物，
+// 否则资源定义与 legacy schema 漂移无法被 CI 发现。先运行 ensure:legacy。
 if (!fs.existsSync(dbPath)) {
-  console.warn(
-    `[generate-legacy-resources] legacy/dental.sqlite not found (no longer tracked).\n` +
-    `  Keeping committed ${path.relative(appRoot, outputPath)} unchanged. ` +
-    'Run pnpm --filter @dental/v2 ensure:legacy to generate a sanitized copy before regenerating definitions.',
+  console.error(
+    `[generate-legacy-resources] legacy/dental.sqlite not found at ${dbPath}.\n` +
+    'Run pnpm --filter @dental/v2 ensure:legacy first, then regenerate.',
   );
-  process.exit(0);
+  process.exit(1);
 }
 const db = new Database(dbPath, { readonly: true });
 
@@ -28,7 +26,20 @@ const INTERNAL_TABLES = new Set([
   'UsedRefreshToken',
   'UserClinic',
 ]);
-const resourcesSource = fs.readFileSync(path.join(appRoot, 'src', 'domain', 'resources.ts'), 'utf8');
+// 资源定义已按域拆分为 resources/*.ts（core/clinical/finance/inventory/
+// operations/r2/shared）；生成器改为扫描目录，避免继续读取已删除的
+// src/domain/resources.ts 导致 ENOENT 后产物静默失联。
+const resourceDir = path.join(appRoot, 'src', 'domain', 'resources');
+function listTsFiles(dir) {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name);
+    return entry.isDirectory() ? listTsFiles(full) : entry.name.endsWith('.ts') ? [full] : [];
+  });
+}
+const resourcesSource = listTsFiles(resourceDir)
+  .sort()
+  .map((file) => fs.readFileSync(file, 'utf8'))
+  .join('\n');
 const explicitTables = new Set(
   [...resourcesSource.matchAll(/crud\('([^']+)',\s*'([^']+)'/g)].map((match) => match[2]),
 );

@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
+import { AppError, ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import type { AppContext } from '../../../domain/contracts';
 
@@ -53,7 +53,7 @@ export class MedicalRecordEditService {
       throw new ValidationError('修改内容不能为空');
     }
     const now = context.now().toISOString();
-    this.db.prepare(
+    const result = this.db.prepare(
       `UPDATE MedicalRecord
        SET editRequestStatus = 'PENDING',
            editRequestReason = ?,
@@ -61,8 +61,11 @@ export class MedicalRecordEditService {
            editRequestedAt = ?,
            proposedContentJson = ?,
            updatedAt = ?
-       WHERE id = ?${tenantAnd(context.clinicId)}`,
+       WHERE id = ?
+         AND (editRequestStatus IS NULL OR editRequestStatus IN ('NONE', 'REJECTED'))
+         AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).run(reason, context.userId, now, JSON.stringify(proposedContent), now, id, ...tenantParams(context.clinicId));
+    if (result.changes === 0) throw new ConflictError('该病历已有待审核的修改申请');
     return { id, editRequestStatus: 'PENDING' };
   }
 
@@ -72,6 +75,12 @@ export class MedicalRecordEditService {
     context: AppContext,
   ): Record<string, unknown> {
     const row = this.getRecord(id, context.clinicId);
+    if (!['BOSS', 'ADMIN'].includes(context.role)) {
+      throw new AppError('FORBIDDEN', '仅管理员可审核病历修改申请', 403);
+    }
+    if (context.userId === String(row.editRequestedById ?? '')) {
+      throw new AppError('FORBIDDEN', '不能审核自己的修改申请', 403);
+    }
     if (String(row.editRequestStatus ?? '') !== 'PENDING') {
       throw new ConflictError('该病历没有待审核的修改申请');
     }
@@ -122,9 +131,11 @@ export class MedicalRecordEditService {
       typeof input.reviewNote === 'string' ? input.reviewNote : null,
       now,
     );
-    this.db.prepare(
-      `UPDATE MedicalRecord SET ${sets.join(', ')} WHERE id = ?${tenantAnd(context.clinicId)}`,
+    const result = this.db.prepare(
+      `UPDATE MedicalRecord SET ${sets.join(', ')}
+       WHERE id = ? AND editRequestStatus = 'PENDING' AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).run(...values, id, ...tenantParams(context.clinicId));
+    if (result.changes === 0) throw new ConflictError('该病历没有待审核的修改申请');
 
     return { id, editRequestStatus: approve ? 'APPROVED' : 'REJECTED', applied: approve };
   }

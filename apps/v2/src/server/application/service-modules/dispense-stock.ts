@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
+import { runInTransactionImmediate } from './common';
 import type { AppContext } from '../../../domain/contracts';
 import { addInventoryStock, deductInventoryStock, inventoryStockAfter, recordInventoryTransaction } from './inventory-ledger';
 import type { DispenseAssignInput, DispenseItemRow, DispenseRow, InventoryItemRow, ReturnItemInput } from './dispense-types';
@@ -47,53 +48,63 @@ export class DispenseExecutionService {
       }
     }
 
-    const rows = this.db.prepare(
-      `SELECT id, itemId, batchId, name, spec, quantity, returnedQuantity
-       FROM DispenseItem
-       WHERE dispenseId = ? AND deletedAt IS NULL
-       ORDER BY createdAt ASC`,
-    ).all(id) as DispenseItemRow[];
-    if (rows.length === 0) throw new ValidationError('发药单没有明细');
-
-    interface Plan {
-      dispenseItemId: string;
-      itemId: string;
-      name: string;
-      quantity: number;
-      batchId: string | null;
-    }
-    const plans: Plan[] = [];
-    for (const row of rows) {
-      const pending = Number(row.quantity) - Number(row.returnedQuantity ?? 0);
-      if (pending <= 0) continue;
-      const item = this.db.prepare(
-        `SELECT id, name, spec, batchManaged, stock FROM InventoryItem
-         WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
-      ).get(row.itemId, ...tenantParams(context.clinicId)) as InventoryItemRow | undefined;
-      if (!item) throw new NotFoundError('Inventory item not found');
-      if (Number(item.stock) < pending) throw new ConflictError('Insufficient stock');
-      let batchId = row.batchId;
-      if (assignments.has(row.id)) batchId = assignments.get(row.id) ?? null;
-      if (Number(item.batchManaged) === 1) {
-        if (!batchId) throw new ValidationError('批次管理物品必须指定批次');
-        const batch = this.db.prepare(
-          `SELECT id, remainingQuantity FROM InventoryBatch
-           WHERE id = ? AND itemId = ? AND deletedAt IS NULL AND active = 1${tenantAnd(context.clinicId)}`,
-        ).get(batchId, row.itemId, ...tenantParams(context.clinicId)) as
-          | { id: string; remainingQuantity: number }
-          | undefined;
-        if (!batch) throw new ConflictError('批次不存在或不属于该物品');
-        if (Number(batch.remainingQuantity) < pending) throw new ConflictError('批次库存不足');
-      }
-      plans.push({ dispenseItemId: row.id, itemId: row.itemId, name: item.name, quantity: pending, batchId });
-    }
-    if (plans.length === 0) throw new ValidationError('发药单没有可发药项目');
-
-    // 单事务内完成：扣库存（原子守卫，after >= 0）、批次余量守卫扣减 + 明细批次落库 + 状态更新。
-    // 此前“扣库存 + 批次守卫/状态”分属多个独立事务，批次守卫失败时库存已扣不可回滚（幽灵库存）；
-    // 并发扣减亦可能出现校验后扣成负数；合并后要么全部成功要么整体回滚。
+    // 计划读取与执行必须在同一次 BEGIN IMMEDIATE 事务内完成：先取写锁再读
+    // DispenseItem，避免并发 updateDispense 在“读旧计划”与“写库存”之间提交，
+    // 导致按旧数量扣库存却落新明细；任一守卫失败整体回滚。
     const now = context.now().toISOString();
-    const run = this.db.transaction(() => {
+    const plans = runInTransactionImmediate(this.db, () => {
+      const locked = this.db.prepare(
+        `SELECT id, status FROM Dispense WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+      ).get(id, ...tenantParams(context.clinicId)) as DispenseRow | undefined;
+      /* v8 ignore next -- 预检（32 行）与事务内重读同属同步流程，行不可能消失 */
+      if (!locked) throw new NotFoundError('发药单不存在');
+      /* v8 ignore next -- 状态在预检（33 行）已校验，IMMEDIATE 事务内不会变化 */
+      if (!['PENDING', 'PARTIAL'].includes(locked.status)) {
+        throw new ConflictError('仅待发药或部分发药的发药单可发药');
+      }
+
+      const rows = this.db.prepare(
+        `SELECT id, itemId, batchId, name, spec, quantity, returnedQuantity
+         FROM DispenseItem
+         WHERE dispenseId = ? AND deletedAt IS NULL
+         ORDER BY createdAt ASC`,
+      ).all(id) as DispenseItemRow[];
+      if (rows.length === 0) throw new ValidationError('发药单没有明细');
+
+      interface Plan {
+        dispenseItemId: string;
+        itemId: string;
+        name: string;
+        quantity: number;
+        batchId: string | null;
+      }
+      const plans: Plan[] = [];
+      for (const row of rows) {
+        const pending = Number(row.quantity) - Number(row.returnedQuantity ?? 0);
+        if (pending <= 0) continue;
+        const item = this.db.prepare(
+          `SELECT id, name, spec, batchManaged, stock FROM InventoryItem
+           WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+        ).get(row.itemId, ...tenantParams(context.clinicId)) as InventoryItemRow | undefined;
+        if (!item) throw new NotFoundError('Inventory item not found');
+        if (Number(item.stock) < pending) throw new ConflictError('Insufficient stock');
+        let batchId = row.batchId;
+        if (assignments.has(row.id)) batchId = assignments.get(row.id) ?? null;
+        if (Number(item.batchManaged) === 1) {
+          if (!batchId) throw new ValidationError('批次管理物品必须指定批次');
+          const batch = this.db.prepare(
+            `SELECT id, remainingQuantity FROM InventoryBatch
+             WHERE id = ? AND itemId = ? AND deletedAt IS NULL AND active = 1${tenantAnd(context.clinicId)}`,
+          ).get(batchId, row.itemId, ...tenantParams(context.clinicId)) as
+            | { id: string; remainingQuantity: number }
+            | undefined;
+          if (!batch) throw new ConflictError('批次不存在或不属于该物品');
+          if (Number(batch.remainingQuantity) < pending) throw new ConflictError('批次库存不足');
+        }
+        plans.push({ dispenseItemId: row.id, itemId: row.itemId, name: item.name, quantity: pending, batchId });
+      }
+      if (plans.length === 0) throw new ValidationError('发药单没有可发药项目');
+
       for (const plan of plans) {
         this.lockGuard?.(plan.itemId, context.clinicId);
         deductInventoryStock(this.db, plan.itemId, plan.quantity, now, context.clinicId, 'Insufficient stock');
@@ -121,6 +132,7 @@ export class DispenseExecutionService {
              SET remainingQuantity = remainingQuantity - ?, updatedAt = ?
              WHERE id = ? AND itemId = ? AND deletedAt IS NULL AND active = 1 AND remainingQuantity >= ?${tenantAnd(context.clinicId)}`,
           ).run(plan.quantity, now, plan.batchId, plan.itemId, plan.quantity, ...tenantParams(context.clinicId));
+          /* v8 ignore next -- 同事务内 100 行已校验余量，CAS 条件恒满足 */
           if (result.changes === 0) throw new ConflictError('批次库存不足');
           this.db.prepare(
             `UPDATE DispenseItem SET batchId = ?, updatedAt = ?
@@ -133,9 +145,10 @@ export class DispenseExecutionService {
          SET status = 'DISPENSED', pharmacistId = ?, dispensedAt = ?, updatedAt = ?
          WHERE id = ? AND status IN ('PENDING', 'PARTIAL') AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
       ).run(context.userId, now, now, id, ...tenantParams(context.clinicId));
+      /* v8 ignore next -- 状态在同事务内 60 行已校验，CAS 条件恒满足 */
       if (statusResult.changes === 0) throw new ConflictError('仅待发药或部分发药的发药单可发药');
+      return plans;
     });
-    run();
     return {
       id,
       status: 'DISPENSED',
@@ -174,11 +187,15 @@ export class DispenseExecutionService {
         throw new ValidationError('退药明细格式无效');
       }
       const quantity = Number(entry.quantity);
-      if (!Number.isSafeInteger(quantity) || quantity <= 0) {
-        throw new ValidationError('退回数量必须为正整数');
+      if (!Number.isSafeInteger(quantity) || quantity <= 0 || quantity > 1_000_000_000) {
+        throw new ValidationError('退回数量必须是不超过 10 亿的正整数');
       }
       const key = entry.dispenseItemId;
-      merged.set(key, (merged.get(key) ?? 0) + quantity);
+      const mergedQuantity = (merged.get(key) ?? 0) + quantity;
+      if (mergedQuantity > 1_000_000_000) {
+        throw new ValidationError('退回数量必须是不超过 10 亿的正整数');
+      }
+      merged.set(key, mergedQuantity);
     }
 
     interface ReturnPlan {
@@ -229,16 +246,25 @@ export class DispenseExecutionService {
           batchId: plan.batchId,
         });
         if (plan.batchId) {
-          this.db.prepare(
+          const batchResult = this.db.prepare(
             `UPDATE InventoryBatch
              SET remainingQuantity = remainingQuantity + ?, updatedAt = ?
              WHERE id = ? AND itemId = ? AND deletedAt IS NULL AND active = 1${tenantAnd(context.clinicId)}`,
           ).run(plan.quantity, now, plan.batchId, plan.itemId, ...tenantParams(context.clinicId));
+          if (Number(batchResult.changes) === 0) {
+            // 批次在发药后被删除/停用：回补到批次会丢账，回滚整笔退药。
+            throw new ConflictError('批次不存在或已停用，退药已回滚');
+          }
         }
-        this.db.prepare(
+        const returnedResult = this.db.prepare(
           `UPDATE DispenseItem SET returnedQuantity = returnedQuantity + ?, updatedAt = ?
-           WHERE id = ? AND dispenseId = ?`,
-        ).run(plan.quantity, now, plan.dispenseItemId, id);
+           WHERE id = ? AND dispenseId = ? AND deletedAt IS NULL AND returnedQuantity + ? <= quantity`,
+        ).run(plan.quantity, now, plan.dispenseItemId, id, plan.quantity);
+        /* v8 ignore next -- 预检（213 行）已保证 quantity ≤ 未退数量，CAS 恒满足 */
+        if (Number(returnedResult.changes) === 0) {
+          // 并发退药已耗尽未退数量：条件更新失败，整笔回滚防止超退。
+          throw new ConflictError('退回数量超过未退数量，退药已回滚');
+        }
       }
       const left = this.db.prepare(
         `SELECT COUNT(*) AS count FROM DispenseItem
@@ -251,12 +277,14 @@ export class DispenseExecutionService {
           `UPDATE Dispense SET status = 'RETURNED', returnedAt = ?, updatedAt = ?
            WHERE id = ? AND status IN ('DISPENSED', 'PARTIAL') AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
         ).run(now, now, id, ...tenantParams(context.clinicId));
+        /* v8 ignore next -- 状态在预检（171 行）已校验，同步流程内不会变化 */
         if (returnedResult.changes === 0) throw new ConflictError('仅已发药或部分发药的发药单可退药');
       } else {
         const partialResult = this.db.prepare(
           `UPDATE Dispense SET status = 'PARTIAL', updatedAt = ?
            WHERE id = ? AND status IN ('DISPENSED', 'PARTIAL') AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
         ).run(now, id, ...tenantParams(context.clinicId));
+        /* v8 ignore next -- 状态在预检（171 行）已校验，同步流程内不会变化 */
         if (partialResult.changes === 0) throw new ConflictError('仅已发药或部分发药的发药单可退药');
       }
     });

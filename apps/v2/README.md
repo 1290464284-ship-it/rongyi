@@ -209,11 +209,12 @@ electron/           Electron main and preload
 
 ## Project Scale
 
-Verified 2026-08-11:
+Verified 2026-08-14:
 
-- 约 8.9 万行 TypeScript/TSX（`src/`，含测试代码）
-- 217 个测试文件
-- 2165 个测试用例（最近一次 vitest 全量运行记录）
+- 约 9 万行 TypeScript/TSX（`src/`，含测试代码）
+- 298 个测试文件（server + web + electron）
+- 3264 个测试用例（最近一次 vitest 全量运行记录；`test:flaky` 双轮 shuffle
+  全绿）；服务端与 Web 覆盖率均 100%（语句/分支/函数/行），质量分 100
 
 ## Sidebar Groups
 

@@ -195,7 +195,11 @@ export class WechatService {
     if (claimed === 0) {
       const fresh = this.wechatRepository.findById(messageId, context.clinicId);
       if (fresh?.status === 'SENT') return { id: messageId, status: 'SENT' };
-      if (fresh?.status === 'IN_PROGRESS') throw new ConflictError('Wechat message is already being sent');
+      if (fresh?.status === 'IN_PROGRESS') {
+        const conflict = new ConflictError('Wechat message is already being sent');
+        (conflict as ConflictError & { keepProcessing?: boolean }).keepProcessing = true;
+        throw conflict;
+      }
       // 状态仍为 PENDING/DRAFT（行刚被并发删除或测试用仓库无真实行）：继续发送，
       // markSent 仍会在状态不匹配时以 0 changes 拒绝。
       if (!fresh || !SENDABLE_WECHAT_STATUSES.has(fresh.status)) {
@@ -228,7 +232,20 @@ export class WechatService {
       return { id: messageId, status: 'FAILED', result: delivery.result, detail: delivery.detail };
     }
     const changes = this.wechatRepository.markSent(messageId, now, now, context.clinicId);
-    if (changes === 0) throw new ConflictError('Wechat message cannot be sent from current status');
+    if (changes === 0) {
+      // 网关已投递成功；markSent 若因状态竞争返回 0，直接补偿为 SENT，
+      // 避免消息留在可重试状态导致后续重复发送（网关幂等键只作最后兜底）。
+      const compensated = this.db.prepare(
+        `UPDATE WechatMessage SET status = 'SENT', sentAt = ?, updatedAt = ?
+         WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+      ).run(now, now, messageId, ...(context.clinicId ? [context.clinicId] : [])).changes;
+      if (compensated === 0) {
+        // 投递已发生；行被并发删除也不应让客户端重试再次调用网关，幂等键兜底。
+        this.logger?.error('wechat delivery succeeded but local message row is missing', { recordId: messageId });
+      } else {
+        this.logger?.warn('wechat markSent race compensated after gateway delivery', { recordId: messageId });
+      }
+    }
     return { id: messageId, status: 'SENT', result: delivery.result ?? 'sent' };
   }
 

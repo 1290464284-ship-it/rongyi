@@ -269,7 +269,7 @@ export interface ProcessingOrderItemRecord {
 
 export interface ProcessingOrderRepository {
   findById(id: string, clinicId?: string | null): { id: string; status: string; deletedAt?: string | null } | null;
-  updateStatus(id: string, status: string, updatedAt: string, clinicId?: string | null): void;
+  updateStatus(id: string, status: string, updatedAt: string, clinicId?: string | null, fromStatus?: string): number;
   createOrder(input: ProcessingOrderRecord): void;
   createItem(input: ProcessingOrderItemRecord): void;
 }
@@ -291,7 +291,7 @@ export interface FollowUpRecord {
 export interface FollowUpRepository {
   reminders(
     clinicId?: string | null,
-    options?: { page?: number; pageSize?: number },
+    options?: { page?: number; pageSize?: number; scope?: 'overdue' | 'today' | 'upcoming' | 'all' },
   ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean };
   insert(record: FollowUpRecord): void;
   complete(id: string, completedAt: string, updatedAt: string, clinicId?: string | null, result?: string | null): number;
@@ -341,7 +341,7 @@ export interface HrRepository {
 
 export interface ClinicalWorkflowRepository {
   getRow(table: string, id: string, clinicId?: string | null): Record<string, unknown> | null;
-  updateStatus(table: string, id: string, status: string, now: string, extra?: Record<string, unknown>, clinicId?: string | null): void;
+  updateStatus(table: string, id: string, status: string, now: string, extra?: Record<string, unknown>, clinicId?: string | null, fromStatus?: string): number;
   createVisit(input: Record<string, unknown>): string;
   lockMedicalRecord(id: string, locked: boolean, userId: string, now: string, clinicId?: string | null): void;
 }

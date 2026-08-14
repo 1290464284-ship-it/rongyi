@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
-import { addInventoryStock, deductInventoryStock, recordInventoryTransaction } from './inventory-ledger';
+import { addInventoryStock, deductInventoryStock, inventoryStockAfter, recordInventoryTransaction } from './inventory-ledger';
 import { generateDocumentNumber } from './common';
 import type { AppContext } from '../../../domain/contracts';
 
@@ -49,8 +49,8 @@ interface ItemStockRow {
 
 function positiveQuantity(value: unknown): number {
   const quantity = Number(value);
-  if (!Number.isSafeInteger(quantity) || quantity <= 0) {
-    throw new ValidationError('数量必须为正整数');
+  if (!Number.isSafeInteger(quantity) || quantity <= 0 || quantity > 1_000_000_000) {
+    throw new ValidationError('数量必须为不超过 10 亿的正整数');
   }
   return quantity;
 }
@@ -63,7 +63,10 @@ function positiveQuantity(value: unknown): number {
  * InventoryItem.stock。所有 SQL 均按 context.clinicId 做租户过滤。
  */
 export class InventoryDocService {
-  constructor(private readonly db: Database.Database) {}
+  constructor(
+    private readonly db: Database.Database,
+    private readonly lockGuard?: (itemId: string, clinicId?: string | null) => void,
+  ) {}
 
   /** 退回厂商：校验供应商与每件物料库存，出库并落 RETURN_SUPPLIER 流水。 */
   createReturnSupplier(input: ReturnSupplierInput, context: AppContext): Record<string, unknown> {
@@ -78,7 +81,7 @@ export class InventoryDocService {
     ).get(input.supplierId, ...tenantParams(clinicId));
     if (!supplier) throw new NotFoundError('供应商不存在');
 
-    const stocks = items.map((entry) => this.requireItemWithStock(entry.itemId, entry.quantity, context));
+    items.forEach((entry) => this.requireItemWithStock(entry.itemId, entry.quantity, context));
     const now = context.now().toISOString();
     const docId = randomUUID();
     const number = generateDocumentNumber('RTS');
@@ -87,10 +90,11 @@ export class InventoryDocService {
       this.insertDoc(docId, number, 'RETURN_SUPPLIER', input.supplierId, now, input.remark, context);
       for (let index = 0; index < items.length; index += 1) {
         const entry = items[index];
-        const before = Number(stocks[index].stock ?? 0);
+        this.lockGuard?.(entry.itemId, context.clinicId);
         this.insertDocItem(docId, entry.itemId, null, entry.quantity, entry.unitPrice, entry.remark, context);
-        this.insertTransaction(entry.itemId, 'OUT', entry.quantity, before, before - entry.quantity, 'RETURN_SUPPLIER', docId, '退回厂商', context);
         deductInventoryStock(this.db, entry.itemId, entry.quantity, now, context.clinicId, `库存不足：${entry.itemId}`);
+        const after = inventoryStockAfter(this.db, entry.itemId, context.clinicId);
+        this.insertTransaction(entry.itemId, 'OUT', entry.quantity, after + entry.quantity, after, 'RETURN_SUPPLIER', docId, '退回厂商', context);
       }
     });
     run();
@@ -100,7 +104,7 @@ export class InventoryDocService {
   /** 库损：校验物料库存，出库并落 LOSS 流水。 */
   createLoss(input: LossInput, context: AppContext): Record<string, unknown> {
     const items = this.normalizeItems(input.items);
-    const stocks = items.map((entry) => this.requireItemWithStock(entry.itemId, entry.quantity, context));
+    items.forEach((entry) => this.requireItemWithStock(entry.itemId, entry.quantity, context));
     const now = context.now().toISOString();
     const docId = randomUUID();
     const number = generateDocumentNumber('LSS');
@@ -109,10 +113,11 @@ export class InventoryDocService {
       this.insertDoc(docId, number, 'LOSS', null, now, input.remark, context);
       for (let index = 0; index < items.length; index += 1) {
         const entry = items[index];
-        const before = Number(stocks[index].stock ?? 0);
+        this.lockGuard?.(entry.itemId, context.clinicId);
         this.insertDocItem(docId, entry.itemId, null, entry.quantity, undefined, entry.remark, context);
-        this.insertTransaction(entry.itemId, 'OUT', entry.quantity, before, before - entry.quantity, 'LOSS', docId, '库损', context);
         deductInventoryStock(this.db, entry.itemId, entry.quantity, now, context.clinicId, `库存不足：${entry.itemId}`);
+        const after = inventoryStockAfter(this.db, entry.itemId, context.clinicId);
+        this.insertTransaction(entry.itemId, 'OUT', entry.quantity, after + entry.quantity, after, 'LOSS', docId, '库损', context);
       }
     });
     run();
@@ -136,8 +141,8 @@ export class InventoryDocService {
       };
     });
 
-    const fromStocks = items.map((entry) => this.requireItemWithStock(entry.fromItemId, entry.quantity, context));
-    const toStocks = items.map((entry) => this.requireItem(entry.toItemId, context));
+    items.forEach((entry) => this.requireItemWithStock(entry.fromItemId, entry.quantity, context));
+    items.forEach((entry) => this.requireItem(entry.toItemId, context));
     const now = context.now().toISOString();
     const docId = randomUUID();
     const number = generateDocumentNumber('TRF');
@@ -146,13 +151,18 @@ export class InventoryDocService {
       this.insertDoc(docId, number, 'TRANSFER', null, now, input.remark, context);
       for (let index = 0; index < items.length; index += 1) {
         const entry = items[index];
-        const fromBefore = Number(fromStocks[index].stock ?? 0);
-        const toBefore = Number(toStocks[index].stock ?? 0);
+        if (entry.fromItemId === entry.toItemId) {
+          throw new ValidationError('Transfer source and destination must be different items');
+        }
+        this.lockGuard?.(entry.fromItemId, context.clinicId);
+        this.lockGuard?.(entry.toItemId, context.clinicId);
         this.insertDocItem(docId, entry.fromItemId, entry.toItemId, entry.quantity, undefined, entry.remark, context);
-        this.insertTransaction(entry.fromItemId, 'OUT', entry.quantity, fromBefore, fromBefore - entry.quantity, 'TRANSFER', docId, '调拨出库', context);
-        this.insertTransaction(entry.toItemId, 'IN', entry.quantity, toBefore, toBefore + entry.quantity, 'TRANSFER', docId, '调拨入库', context);
         deductInventoryStock(this.db, entry.fromItemId, entry.quantity, now, context.clinicId, `库存不足：${entry.fromItemId}`);
         addInventoryStock(this.db, entry.toItemId, entry.quantity, now, context.clinicId);
+        const fromAfter = inventoryStockAfter(this.db, entry.fromItemId, context.clinicId);
+        const toAfter = inventoryStockAfter(this.db, entry.toItemId, context.clinicId);
+        this.insertTransaction(entry.fromItemId, 'OUT', entry.quantity, fromAfter + entry.quantity, fromAfter, 'TRANSFER', docId, '调拨出库', context);
+        this.insertTransaction(entry.toItemId, 'IN', entry.quantity, toAfter - entry.quantity, toAfter, 'TRANSFER', docId, '调拨入库', context);
       }
     });
     run();

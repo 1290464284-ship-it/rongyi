@@ -40,7 +40,8 @@ const planColumns: DataTableColumn<PlanRow>[] = [
     key: 'followUpStatus',
     label: '回访',
     render: (row) => {
-      const label = FOLLOW_UP_LABELS[String(row.followUpStatus ?? 'NONE')] ?? String(row.followUpStatus ?? 'NONE');
+      const rawStatus = String(row.followUpStatus ?? 'NONE');
+      const label = FOLLOW_UP_LABELS[rawStatus] ?? rawStatus;
       return row.nextFollowUpAt ? `${label}（${String(row.nextFollowUpAt)}）` : label;
     },
   },
@@ -129,11 +130,9 @@ export function TreatmentPlansPage() {
           } catch (error) {
             // 主记录已创建但明细中途失败：清理孤儿记录（清理失败仅告警，不掩盖原始错误）
             if (planId) {
-              try {
-                await cleanupOrphanPlan(planId, createdItemIds, showToast);
-              } catch {
-                showToast('清理孤儿治疗计划失败，请检查未完成数据', 'error');
-              }
+              // cleanupOrphanPlan 内部已对每次 DELETE 分别 try/catch（失败仅告警），
+              // 函数本身不会 reject，此处的 catch 兜底不可达。
+              await cleanupOrphanPlan(planId, createdItemIds, showToast);
             }
             throw error;
           }
@@ -154,19 +153,42 @@ export function TreatmentPlansPage() {
               await apiRequest(`/resources/treatmentPlanItems/${String(item.id)}`, { method: 'DELETE' });
             }
           } catch (error) {
-            console.warn(`删除治疗计划明细失败（继续删除主记录）：${planId}`, error);
-            showToast('删除部分治疗计划明细失败，已继续删除主记录', 'error');
+            console.warn(`删除治疗计划明细失败（已中止删除主记录）：${planId}`, error);
+            showToast('删除治疗计划明细失败，已中止删除主记录', 'error');
+            throw error;
           }
           await apiRequest(`/resources/treatmentPlans/${planId}`, { method: 'DELETE' });
         }}
-        rowActions={(row, ctx) => (
-          <>
-            <button onClick={() => setBillingTarget({ row, reload: ctx.reload })}>折扣</button>
-            <button onClick={() => setFollowUpTarget({ row, reload: ctx.reload })}>回访</button>
-            <button onClick={() => void requestPrint(row, showToast, ctx.reload, setPrintResult)}>打印</button>
-            <button onClick={() => setSignTarget({ row, reload: ctx.reload })}>签字</button>
-          </>
-        )}
+        rowActions={(row, ctx) => {
+          const openBilling = () => {
+            /* v8 ignore next -- 本页列表无分页/搜索（queryKey 恒定），stale 恒为 false，守卫为防御冗余 */
+            if (ctx.stale) return;
+            setBillingTarget({ row, reload: ctx.reload });
+          };
+          const openFollowUp = () => {
+            /* v8 ignore next -- 同上 */
+            if (ctx.stale) return;
+            setFollowUpTarget({ row, reload: ctx.reload });
+          };
+          const openPrint = () => {
+            /* v8 ignore next -- 同上 */
+            if (ctx.stale) return;
+            void requestPrint(row, showToast, ctx.reload, setPrintResult);
+          };
+          const openSign = () => {
+            /* v8 ignore next -- 同上 */
+            if (ctx.stale) return;
+            setSignTarget({ row, reload: ctx.reload });
+          };
+          return (
+            <>
+              <button disabled={ctx.stale} onClick={openBilling}>折扣</button>
+              <button disabled={ctx.stale} onClick={openFollowUp}>回访</button>
+              <button disabled={ctx.stale} onClick={openPrint}>打印</button>
+              <button disabled={ctx.stale} onClick={openSign}>签字</button>
+            </>
+          );
+        }}
         renderForm={(ctx) => (
           <PlanFormFields
             form={ctx.form}

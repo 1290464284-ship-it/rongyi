@@ -25,7 +25,7 @@ describe('purchase-orders/api', () => {
       { id: undefined, itemId: '', name: '', spec: '', quantity: '1', unitPrice: '50' },
       { id: 'bad', itemId: 'i-1', name: '', spec: '', quantity: '0', unitPrice: '100' },
     ];
-    await reconcilePurchaseItems('po-1', items as never, [{ id: 'i-1', name: '耗材' }] as never);
+    await reconcilePurchaseItems('po-1', items as never);
 
     expect(apiRequest).toHaveBeenCalledWith('/resources/purchaseOrderItems/keep', expect.objectContaining({ method: 'PATCH' }));
     expect(apiRequest).toHaveBeenCalledWith('/resources/purchaseOrderItems', expect.objectContaining({ method: 'POST' }));
@@ -80,7 +80,7 @@ describe('purchase-orders/api', () => {
       { id: undefined, itemId: 'i-9', name: '', spec: '', quantity: '1', unitPrice: '1' },
       { id: undefined, itemId: '', name: '', spec: '', quantity: '', unitPrice: '1' },
     ];
-    await reconcilePurchaseItems('po-2', items as never, [{ id: 'i-1', name: '耗材' }] as never);
+    await reconcilePurchaseItems('po-2', items as never);
 
     const patchCall = vi.mocked(apiRequest).mock.calls.find(
       ([path, options]) => path === '/resources/purchaseOrderItems/keep2' && (options as RequestInit)?.method === 'PATCH',
@@ -96,14 +96,14 @@ describe('purchase-orders/api', () => {
     );
     expect(postCalls).toHaveLength(1);
     const postBody = JSON.parse(String((postCalls[0]?.[1] as RequestInit)?.body)) as Record<string, unknown>;
-    expect(postBody).toMatchObject({ itemId: 'i-9', name: '' });
+    expect(postBody).toMatchObject({ itemId: 'i-9', name: '自定义项目' });
     expect(postBody.spec).toBeUndefined();
   });
 
-  it('uses the inventory row name when the item id is matched', async () => {
+  it('uses the form item name when the item id is matched', async () => {
     vi.mocked(fetchAllPages).mockResolvedValue([]);
-    const items = [{ id: undefined, itemId: 'i-1', name: '', spec: 'X', quantity: '1', unitPrice: '1' }];
-    await reconcilePurchaseItems('po-3', items as never, [{ id: 'i-1', name: '耗材甲' }] as never);
+    const items = [{ id: undefined, itemId: 'i-1', name: '耗材甲', spec: 'X', quantity: '1', unitPrice: '1' }];
+    await reconcilePurchaseItems('po-3', items as never);
     const postCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/resources/purchaseOrderItems');
     const postBody = JSON.parse(String((postCall?.[1] as RequestInit)?.body)) as Record<string, unknown>;
     expect(postBody).toMatchObject({ name: '耗材甲', spec: 'X' });

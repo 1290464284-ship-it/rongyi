@@ -2,13 +2,18 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { UsersPage } from './UsersPage';
-import { apiRequest } from '../../lib/api';
+import { apiRequest, fetchAllPages } from '../../lib/api';
 import { ToastProvider } from '../../components/toast';
 
-vi.mock('../../lib/api', () => ({ apiRequest: vi.fn() }));
+vi.mock('../../lib/api', () => ({ apiRequest: vi.fn(), fetchAllPages: vi.fn() }));
+
+vi.mocked(fetchAllPages).mockImplementation(async (path: string) => {
+  const data = await vi.mocked(apiRequest)(path) as { items?: unknown[] } | unknown[];
+  return Array.isArray(data) ? data : (data as { items?: unknown[] })?.items ?? [];
+});
 
 const wrapper = ({ children }: { children: ReactNode }) => (
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -295,6 +300,43 @@ describe('UsersPage', () => {
     expect(await screen.findByText('用户权限已更新')).toBeDefined();
   });
 
+  it('drops a stale permission load after a newer request', async () => {
+    const pending: Array<(value: unknown) => void> = [];
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/auth/me') return { role: 'BOSS' };
+      if (path === '/resources/users?page=1&pageSize=100') {
+        return {
+          items: [
+            { id: 'u1', username: 'doctor', name: '张医生', role: 'DOCTOR', active: true },
+            { id: 'u2', username: 'nurse', name: '李护士', role: 'DOCTOR', active: true },
+          ],
+          total: 2, page: 1, pageSize: 100,
+        };
+      }
+      if (path === '/user-roles') return { items: [] };
+      if (path === '/user-permissions/u1') {
+        return new Promise((resolve) => { pending.push(resolve); });
+      }
+      if (path === '/user-permissions/u2') return { effective: ['finance'] };
+      return {};
+    });
+    render(<UsersPage />, { wrapper });
+    await screen.findByText('张医生');
+    const permissionButtons = screen.getAllByText('权限');
+    fireEvent.click(permissionButtons[0]);
+    // 第一个请求挂起时打开第二个用户的权限：requestId 已前进
+    fireEvent.click(permissionButtons[1]);
+    await waitFor(() => {
+      expect(screen.getByText('设置「李护士」的权限')).toBeDefined();
+      expect(screen.getByLabelText('收费财务')).toHaveProperty('checked', true);
+    });
+    // 迟到响应被 requestId 守卫丢弃，不覆盖当前表单
+    pending[0]?.({ effective: ['system'] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByLabelText('系统管理')).toHaveProperty('checked', false);
+    expect(screen.getByLabelText('收费财务')).toHaveProperty('checked', true);
+  });
+
   it('does not delete a user when the confirmation is cancelled', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/auth/me') return { role: 'BOSS' };
@@ -325,6 +367,29 @@ describe('UsersPage', () => {
     render(<UsersPage />, { wrapper });
     expect(screen.getByText('加载中...')).toBeDefined();
     expect(await screen.findByText('网络请求失败，请重试')).toBeDefined();
+  });
+
+  it('blocks editing when roles fail to load and renders an empty table', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/auth/me') return { role: 'BOSS' };
+      if (path === '/resources/users?page=1&pageSize=100') return { items: [], total: 0, page: 1, pageSize: 100 };
+      if (path === '/user-roles') throw new Error('roles failed');
+      return {};
+    });
+    render(<UsersPage />, { wrapper });
+    expect(await screen.findByText('暂无员工')).toBeDefined();
+
+    cleanup();
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/auth/me') return { role: 'BOSS' };
+      if (path === '/resources/users?page=1&pageSize=100') return baseUserList;
+      if (path === '/user-roles') throw new Error('roles failed');
+      return {};
+    });
+    render(<UsersPage />, { wrapper });
+    await screen.findByText('张医生');
+    fireEvent.click(screen.getByText('编辑'));
+    expect((await screen.findAllByText('角色数据加载失败，请刷新后重试')).length).toBeGreaterThan(0);
   });
 
   it('reports save failures', async () => {
@@ -486,10 +551,12 @@ describe('UsersPage', () => {
     expect(await screen.findByText('员工已创建')).toBeDefined();
 
     fireEvent.click(screen.getAllByText('编辑')[0]);
-    fireEvent.keyDown(await screen.findByRole('dialog'), { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog')).toBeNull();
-    });
+    const dialog = await screen.findByRole('dialog');
+    vi.useFakeTimers();
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    vi.useRealTimers();
 
     fireEvent.click(screen.getByText('新建员工'));
     fireEvent.click(screen.getByRole('button', { name: '取消' }));
@@ -511,10 +578,11 @@ describe('UsersPage', () => {
 
     fireEvent.click(screen.getByText('权限'));
     const permissionDialog = await screen.findByRole('dialog');
+    vi.useFakeTimers();
     fireEvent.keyDown(permissionDialog, { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByText('设置「张医生」的权限')).toBeNull();
-    });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByText('设置「张医生」的权限')).toBeNull();
+    vi.useRealTimers();
 
     fireEvent.click(screen.getByText('权限'));
     await screen.findByText('设置「张医生」的权限');
@@ -525,10 +593,11 @@ describe('UsersPage', () => {
 
     fireEvent.click(screen.getByText('重置密码'));
     const passwordDialog = await screen.findByRole('dialog');
+    vi.useFakeTimers();
     fireEvent.keyDown(passwordDialog, { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByText('输入新密码，至少 6 位')).toBeNull();
-    });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByText('输入新密码，至少 6 位')).toBeNull();
+    vi.useRealTimers();
   });
 
   it('ignores a duplicate user submit while busy', async () => {
@@ -647,5 +716,169 @@ describe('UsersPage', () => {
     const checkboxes = within(dialog).getAllByRole('checkbox');
     expect(checkboxes.length).toBeGreaterThan(0);
     expect(checkboxes.every((checkbox) => !(checkbox as HTMLInputElement).checked)).toBe(true);
+  });
+
+  it('ignores a create submit while the list is stale', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/auth/me') return { role: 'BOSS' };
+      if (path === '/resources/users?page=1&pageSize=100') return { ...baseUserList, total: 120 };
+      if (path === '/resources/users?page=2&pageSize=100') return new Promise(() => {});
+      if (path === '/user-roles') return userRoles;
+      return {};
+    });
+    render(<UsersPage />, { wrapper });
+    await screen.findByText('张医生');
+    fireEvent.click(screen.getByText('新建员工'));
+    const dialog = await screen.findByRole('dialog');
+    const form = dialog.querySelector('form');
+    expect(form).not.toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+    await waitFor(() => {
+      expect((screen.getByRole('button', { name: '下一页' }) as HTMLButtonElement).disabled).toBe(true);
+    });
+    fireEvent.submit(form as HTMLFormElement);
+    expect(apiRequest).not.toHaveBeenCalledWith('/admin/users', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('ignores a stale delete after the confirmation opens', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/auth/me') return { role: 'BOSS' };
+      if (path === '/resources/users?page=1&pageSize=100') return { ...baseUserList, total: 120 };
+      if (path === '/resources/users?page=2&pageSize=100') return new Promise(() => {});
+      if (path === '/user-roles') return userRoles;
+      return {};
+    });
+    render(<UsersPage />, { wrapper });
+    await screen.findByText('张医生');
+    fireEvent.click(screen.getByText('删除'));
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+    await waitFor(() => {
+      expect((screen.getByRole('button', { name: '下一页' }) as HTMLButtonElement).disabled).toBe(true);
+    });
+    fireEvent.click(screen.getAllByRole('button', { name: '删除' }).at(-1)!);
+    expect(apiRequest).not.toHaveBeenCalledWith('/admin/users/u1', expect.objectContaining({ method: 'DELETE' }));
+  });
+
+  it('ignores a stale password reset after the prompt opens', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/auth/me') return { role: 'BOSS' };
+      if (path === '/resources/users?page=1&pageSize=100') return { ...baseUserList, total: 120 };
+      if (path === '/resources/users?page=2&pageSize=100') return new Promise(() => {});
+      if (path === '/user-roles') return userRoles;
+      return {};
+    });
+    render(<UsersPage />, { wrapper });
+    await screen.findByText('张医生');
+    fireEvent.click(screen.getByText('重置密码'));
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+    await waitFor(() => {
+      expect((screen.getByRole('button', { name: '下一页' }) as HTMLButtonElement).disabled).toBe(true);
+    });
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'newpass123' } });
+    fireEvent.click(screen.getByText('重置'));
+    expect(apiRequest).not.toHaveBeenCalledWith('/admin/users/u1/password', expect.objectContaining({ method: 'PATCH' }));
+  });
+
+  it('ignores a stale permission save after the dialog opens', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string, options?: RequestInit) => {
+      const method = String(options?.method ?? 'GET').toUpperCase();
+      if (path === '/auth/me') return { role: 'BOSS' };
+      if (path === '/resources/users?page=1&pageSize=100') return { ...baseUserList, total: 120 };
+      if (path === '/resources/users?page=2&pageSize=100') return new Promise(() => {});
+      if (path === '/user-roles') return userRoles;
+      if (path === '/user-permissions/u1' && method === 'GET') return { effective: [] };
+      return {};
+    });
+    render(<UsersPage />, { wrapper });
+    await screen.findByText('张医生');
+    fireEvent.click(screen.getByText('权限'));
+    await screen.findByText('设置「张医生」的权限');
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+    await waitFor(() => {
+      expect((screen.getByRole('button', { name: '下一页' }) as HTMLButtonElement).disabled).toBe(true);
+    });
+    fireEvent.click(screen.getByText('保存权限'));
+    expect(apiRequest).not.toHaveBeenCalledWith('/user-permissions/u1', expect.objectContaining({ method: 'PUT' }));
+  });
+
+  it('blocks saving an edit when roles fail after the dialog opens', async () => {
+    let rejectRoles: ((reason: Error) => void) | undefined;
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/auth/me') return { role: 'BOSS' };
+      if (path === '/resources/users?page=1&pageSize=100') return baseUserList;
+      if (path === '/user-roles') {
+        return await new Promise((_resolve, reject) => {
+          rejectRoles = reject;
+        });
+      }
+      return {};
+    });
+    render(<UsersPage />, { wrapper });
+    await screen.findByText('张医生');
+    fireEvent.click(screen.getAllByText('编辑')[0]);
+    const dialog = await screen.findByRole('dialog');
+    rejectRoles?.(new Error('roles failed'));
+    await screen.findByText('角色数据加载失败，请刷新后重试');
+    const form = dialog.querySelector('form');
+    expect(form).not.toBeNull();
+    fireEvent.submit(form as HTMLFormElement);
+    expect(apiRequest).not.toHaveBeenCalledWith('/admin/users/u1', expect.objectContaining({ method: 'PATCH' }));
+  });
+
+  it('omits phone when saving an edit without one', async () => {
+    const sparseList = {
+      ...baseUserList,
+      items: [{ ...baseUserList.items[0], phone: null }],
+    };
+    vi.mocked(apiRequest).mockImplementation(async (path: string, options?: RequestInit) => {
+      const method = String(options?.method ?? 'GET').toUpperCase();
+      if (path === '/auth/me') return { role: 'BOSS' };
+      if (path === '/resources/users?page=1&pageSize=100') return sparseList;
+      if (path === '/user-roles') return userRoles;
+      if (method === 'PATCH' && path === '/admin/users/u1') return { id: 'u1' };
+      if (method === 'PUT' && path === '/user-roles/u1') return {};
+      return {};
+    });
+    render(<UsersPage />, { wrapper });
+    await screen.findByText('张医生');
+    fireEvent.click(screen.getAllByText('编辑')[0]);
+    fireEvent.click(screen.getByText('保存'));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/admin/users/u1', expect.objectContaining({ method: 'PATCH' }));
+    });
+    const patchCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/admin/users/u1');
+    const body = JSON.parse(String((patchCall?.[1] as RequestInit | undefined)?.body ?? '{}')) as Record<string, unknown>;
+    expect(body.phone).toBeUndefined();
+  });
+
+  it('skips role sync when the create response omits the id', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string, options?: RequestInit) => {
+      const method = String(options?.method ?? 'GET').toUpperCase();
+      if (path === '/auth/me') return { role: 'BOSS' };
+      if (path === '/resources/users?page=1&pageSize=100') return baseUserList;
+      if (path === '/user-roles') return userRoles;
+      if (method === 'POST' && path === '/admin/users') return {};
+      return {};
+    });
+    render(<UsersPage />, { wrapper });
+    await screen.findByText('张医生');
+    fireEvent.click(screen.getByText('新建员工'));
+    fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'nurse' } });
+    fireEvent.change(screen.getByLabelText(/初始密码/), { target: { value: 'password1' } });
+    fireEvent.change(screen.getByLabelText('姓名'), { target: { value: '李护士' } });
+    fireEvent.click(screen.getByText('保存'));
+    expect(await screen.findByText('员工已创建')).toBeDefined();
+    expect(apiRequest).not.toHaveBeenCalledWith('/user-roles/', expect.objectContaining({ method: 'PUT' }));
+  });
+
+  it('renders an empty table when the list payload omits items and total', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/auth/me') return { role: 'BOSS' };
+      if (path === '/resources/users?page=1&pageSize=100') return {};
+      if (path === '/user-roles') return { items: [] };
+      return {};
+    });
+    render(<UsersPage />, { wrapper });
+    expect(await screen.findByText('暂无员工')).toBeDefined();
   });
 });

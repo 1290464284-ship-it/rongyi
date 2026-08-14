@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -281,6 +281,15 @@ describe('TriageService', () => {
     expect(() => service.rescheduleAppointment('appt-reschedule-bad-end', { startTime: '2099-05-01T09:00:00.000Z', endTime: 'oops' }, context)).toThrow(ValidationError);
   });
 
+  it('rejects impossible calendar dates when rescheduling', () => {
+    insertAppointment('appt-reschedule-calendar');
+    const service = new TriageService(db);
+    expect(() => service.rescheduleAppointment('appt-reschedule-calendar', {
+      startTime: '2026-02-30T10:00:00.000Z',
+      endTime: '2026-02-30T11:00:00.000Z',
+    }, context)).toThrow(ValidationError);
+  });
+
   it('throws NotFound for an unknown appointment', () => {
     const service = new TriageService(db);
     expect(() => service.rescheduleAppointment('appt-missing', { startTime: '2099-05-01T09:00:00.000Z' }, context)).toThrow(NotFoundError);
@@ -325,5 +334,187 @@ describe('TriageService', () => {
     const service = new TriageService(db);
     expect(() => service.rescheduleAppointment('appt-reschedule-cancelled', { startTime: '2099-03-05T09:00:00.000Z' }, context)).toThrow('已取消或未到的预约不能改期');
     expect(() => service.rescheduleAppointment('appt-reschedule-noshow', { startTime: '2099-03-05T09:00:00.000Z' }, context)).toThrow(ConflictError);
+  });
+
+  it('requires startTime with the dedicated message for every falsy form', () => {
+    insertAppointment('appt-falsy-start');
+    const service = new TriageService(db);
+    expect(() => service.rescheduleAppointment('appt-falsy-start', { startTime: '' }, context))
+      .toThrow('startTime 必填');
+    expect(() => service.rescheduleAppointment('appt-falsy-start', { startTime: undefined as unknown as string }, context))
+      .toThrow('startTime 必填');
+    expect(() => service.rescheduleAppointment('appt-falsy-start', { startTime: null as unknown as string }, context))
+      .toThrow('startTime 必填');
+  });
+
+  it('updates the stored doctor when a different doctorId is provided', () => {
+    db.prepare(
+      `INSERT INTO User (id, clinicId, createdAt, updatedAt, deletedAt, username, passwordHash, name, role, active, loginAttempts, tokenVersion)
+       VALUES ('user-doctor-triage', ?, ?, ?, NULL, 'triage-doctor', 'x', '分诊医生', 'DOCTOR', 1, 0, 0)`,
+    ).run(context.clinicId, now, now);
+    insertAppointment('appt-doc-change', {
+      doctorId: 'user-admin-001',
+      startTime: '2099-12-01T09:00:00.000Z',
+      endTime: '2099-12-01T10:00:00.000Z',
+    });
+    const service = new TriageService(db);
+    const result = service.rescheduleAppointment('appt-doc-change', {
+      startTime: '2099-12-01T09:00:00.000Z',
+      doctorId: 'user-doctor-triage',
+    }, context);
+    expect(result.doctorId).toBe('user-doctor-triage');
+  });
+
+  it('conflict check falls back to the stored doctor when doctorId is omitted', () => {
+    insertAppointment('appt-fb-a', {
+      doctorId: 'user-admin-001',
+      startTime: '2099-12-02T09:00:00.000Z',
+      endTime: '2099-12-02T10:00:00.000Z',
+    });
+    insertAppointment('appt-fb-b', {
+      doctorId: 'user-admin-001',
+      startTime: '2099-12-02T09:00:00.000Z',
+      endTime: '2099-12-02T10:00:00.000Z',
+    });
+    const service = new TriageService(db);
+    // 不带 doctorId 改期：冲突检测必须回退到库内已存医生 → 与 A 冲突
+    expect(() => service.rescheduleAppointment('appt-fb-b', {
+      startTime: '2099-12-02T09:30:00.000Z',
+      endTime: '2099-12-02T10:30:00.000Z',
+    }, context)).toThrow('医生或椅位在该时段已被占用');
+  });
+
+  it('rethrows unexpected doctor-check errors unchanged', () => {
+    insertRegistration('reg-triage-doctor-err');
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('SELECT u.id FROM User u')) throw new Error('db exploded');
+      return originalPrepare(sql);
+    });
+    try {
+      expect(() => new TriageService(db).triage('reg-triage-doctor-err', { doctorId: 'user-x' }, context))
+        .toThrow('db exploded');
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('rejects triage when the CAS update matches no rows', () => {
+    insertRegistration('reg-triage-cas');
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE Registration SET')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      expect(() => new TriageService(db).triage('reg-triage-cas', {}, context)).toThrow(ConflictError);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('falls back to an empty doctor string in the conflict check when both input and row lack a doctor', () => {
+    db.prepare(
+      `INSERT INTO Appointment (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, chairId, startTime, endTime, status, type
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', NULL, NULL, ?, ?, 'BOOKED', 'REGULAR')`,
+    ).run('appt-null-doctor', context.clinicId, now, now, '2099-02-10T09:00:00.000Z', '2099-02-10T10:00:00.000Z');
+    const service = new TriageService(db);
+    const result = service.rescheduleAppointment('appt-null-doctor', {
+      startTime: '2099-02-11T09:00:00.000Z',
+      endTime: '2099-02-11T10:00:00.000Z',
+    }, context);
+    expect(result.startTime).toBe('2099-02-11T09:00:00.000Z');
+  });
+
+  it('rejects rescheduling when the CAS update matches no rows', () => {
+    insertAppointment('appt-cas');
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE Appointment SET')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      // 目标时段必须与其他测试互斥（shuffle 下共享库会残留同槽位预约 → 冲突检测先于 CAS 抛错）
+      expect(() => new TriageService(db).rescheduleAppointment('appt-cas', {
+        startTime: '2099-04-11T09:00:00.000Z',
+        endTime: '2099-04-11T10:00:00.000Z',
+      }, context)).toThrow('已取消或未到的预约不能改期');
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('tracks the reschedule write with a null clinic when the context has no clinic', () => {
+    insertAppointment('appt-null-clinic');
+    const result = new TriageService(db).rescheduleAppointment('appt-null-clinic', {
+      startTime: '2099-02-11T09:00:00.000Z',
+      endTime: '2099-02-11T10:00:00.000Z',
+    }, { ...context, clinicId: null });
+    expect(result.startTime).toBe('2099-02-11T09:00:00.000Z');
+  });
+
+  it('reschedule omitting chairId preserves the stored chair in conflict detection', () => {
+    insertAppointment('appt-chair-keep-a', {
+      doctorId: 'doctor-a',
+      chairId: 'chair-1',
+      startTime: '2099-11-01T09:00:00.000Z',
+      endTime: '2099-11-01T10:00:00.000Z',
+    });
+    insertAppointment('appt-chair-keep-b', {
+      doctorId: 'doctor-b',
+      chairId: 'chair-1',
+      startTime: '2099-11-01T09:00:00.000Z',
+      endTime: '2099-11-01T10:00:00.000Z',
+    });
+    const service = new TriageService(db);
+    expect(() => service.rescheduleAppointment('appt-chair-keep-a', {
+      startTime: '2099-11-01T09:30:00.000Z',
+      endTime: '2099-11-01T10:30:00.000Z',
+    }, context)).toThrow('医生或椅位在该时段已被占用');
+  });
+
+  it('reschedule clearing the chair uses null in conflict detection', () => {
+    insertAppointment('appt-chair-clear-a', {
+      doctorId: 'doctor-e',
+      chairId: 'chair-9',
+      startTime: '2099-11-02T09:00:00.000Z',
+      endTime: '2099-11-02T10:00:00.000Z',
+    });
+    insertAppointment('appt-chair-clear-b', {
+      doctorId: 'doctor-f',
+      chairId: '',
+      startTime: '2099-11-02T09:00:00.000Z',
+      endTime: '2099-11-02T10:00:00.000Z',
+    });
+    const service = new TriageService(db);
+    const result = service.rescheduleAppointment('appt-chair-clear-a', {
+      startTime: '2099-11-02T09:30:00.000Z',
+      endTime: '2099-11-02T10:30:00.000Z',
+      chairId: '',
+    }, context);
+    expect(result.chairId).toBeNull();
+  });
+
+  it('tracks the reschedule write with the clinic id for sync', () => {
+    insertAppointment('appt-sync-clinic');
+    new TriageService(db).rescheduleAppointment('appt-sync-clinic', {
+      startTime: '2099-11-03T09:00:00.000Z',
+      endTime: '2099-11-03T10:00:00.000Z',
+    }, context);
+    const sync = db.prepare(
+      "SELECT clinicId, tableName, recordId, operation FROM SyncChange WHERE recordId = 'appt-sync-clinic'",
+    ).get();
+    expect(sync).toEqual({
+      clinicId: 'clinic-v2-001',
+      tableName: 'Appointment',
+      recordId: 'appt-sync-clinic',
+      operation: 'UPDATE',
+    });
   });
 });

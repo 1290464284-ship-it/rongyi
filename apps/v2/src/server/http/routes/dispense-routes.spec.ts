@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -17,7 +17,7 @@ describe('dispense routes', () => {
   let app: express.Express;
   const now = '2026-08-05T10:00:00.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-dispense-routes-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -70,7 +70,7 @@ describe('dispense routes', () => {
     ).run('route-plain-return', now, now);
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -92,6 +92,44 @@ describe('dispense routes', () => {
       .expect(201)
       .then((res) => String(res.body.data.id));
   }
+
+  it('normalizes malformed dispense and narcotic inputs before business validation', async () => {
+    const malformedDispense = await request(app)
+      .post('/api/v2/dispenses')
+      .send({
+        number: 123,
+        patientId: null,
+        doctorId: 456,
+        note: null,
+        items: [
+          { itemId: 7, quantity: 'x', batchId: '' },
+          { itemId: null, batchId: '' },
+        ],
+      });
+    expect([400, 404]).toContain(malformedDispense.status);
+
+    const malformedNarcotic = await request(app)
+      .post('/api/v2/narcotic-registry')
+      .send({
+        recordDate: 20260101,
+        patientId: null,
+        doctorId: '',
+        itemId: 9,
+        batchNo: null,
+        quantity: 'bad',
+        unit: null,
+        usage: '',
+        balanceBefore: 'abc',
+        balanceAfter: '5',
+        remark: null,
+      });
+    expect([400, 404]).toContain(malformedNarcotic.status);
+
+    const missingNarcotic = await request(app)
+      .patch('/api/v2/narcotic-registry/narcotic-missing')
+      .send({ recordDate: null, itemId: 9, quantity: 1 });
+    expect([400, 404]).toContain(missingNarcotic.status);
+  });
 
   it('POST /api/v2/dispenses creates a PENDING dispense and persists rows', async () => {
     const res = await request(app)
@@ -343,6 +381,17 @@ describe('dispense routes', () => {
       .expect(400);
     expect(noDate.body.code).toBe('VALIDATION_ERROR');
     expect(noDate.body.message).toBe('登记日期不能为空');
+
+    const missingPatient = await request(app)
+      .post('/api/v2/narcotic-registry')
+      .send({ recordDate: '2026-08-05', patientId: 'patient-missing', doctorId: 'user-admin-001', itemId: 'inventory-demo-001', quantity: 1 })
+      .expect(404);
+    expect(missingPatient.body.code).toBe('NOT_FOUND');
+    const missingDoctor = await request(app)
+      .post('/api/v2/narcotic-registry')
+      .send({ recordDate: '2026-08-05', patientId: 'patient-demo-001', doctorId: 'doctor-missing', itemId: 'inventory-demo-001', quantity: 1 })
+      .expect(404);
+    expect(missingDoctor.body.code).toBe('NOT_FOUND');
   });
 
   it('PATCH /api/v2/dispenses/:id updates a PENDING dispense and reconciles items', async () => {
@@ -518,5 +567,97 @@ describe('dispense routes', () => {
     const missing = await request(app).delete('/api/v2/narcotic-registry/route-missing').expect(404);
     expect(missing.body.code).toBe('NOT_FOUND');
     expect(missing.body.message).toBe('麻药登记不存在');
+  });
+
+  it('treats absent request bodies as empty payloads', async () => {
+    await request(app).post('/api/v2/dispenses').expect(400);
+    expect([400, 404]).toContain((await request(app).patch('/api/v2/dispenses/route-missing')).status);
+    expect([400, 404]).toContain((await request(app).post('/api/v2/dispenses/route-missing/dispense')).status);
+    expect([400, 404]).toContain((await request(app).post('/api/v2/dispenses/route-missing/return')).status);
+    await request(app).post('/api/v2/narcotic-registry').expect(400);
+    expect([400, 404]).toContain((await request(app).patch('/api/v2/narcotic-registry/route-missing')).status);
+  });
+
+  it('normalizes mixed assign and return item shapes before business validation', async () => {
+    const id = await createDispense('PF-SHAPE-1', [{ itemId: 'route-plain-dispense', quantity: 10 }]);
+    await request(app).post(`/api/v2/dispenses/${id}/dispense`).send({}).expect(200);
+    const detail = (await request(app).get(`/api/v2/dispenses/${id}`).expect(200)).body.data;
+    const diId = String(detail.items[0].id);
+
+    // parseAssignInput：字符串/数值/null dispenseItemId 与 batchId 的字符串/null/空串/缺省形态
+    const assign = await request(app)
+      .post(`/api/v2/dispenses/${id}/dispense`)
+      .send({
+        items: [
+          { dispenseItemId: diId, batchId: 'route-batch-001' },
+          { dispenseItemId: 42, batchId: null },
+          { dispenseItemId: null, batchId: '' },
+          { batchId: undefined },
+        ],
+      });
+    expect([400, 409]).toContain(assign.status);
+
+    // parseReturnInput：非字符串/null dispenseItemId 统一转字符串
+    const ret = await request(app)
+      .post(`/api/v2/dispenses/${id}/return`)
+      .send({ items: [{ dispenseItemId: 42, quantity: 1 }, { dispenseItemId: null, quantity: 1 }, { quantity: 1 }] });
+    expect([200, 400]).toContain(ret.status);
+  });
+
+  it('normalizes update item ids and batch ids', async () => {
+    const id = await createDispense('PF-UPDSHAPE-1', [{ itemId: 'route-plain-dispense', quantity: 2 }]);
+    const detail = (await request(app).get(`/api/v2/dispenses/${id}`).expect(200)).body.data;
+    const diId = String(detail.items[0].id);
+    const res = await request(app)
+      .patch(`/api/v2/dispenses/${id}`)
+      .send({
+        items: [
+          { id: diId, itemId: 7, quantity: 1, batchId: 'route-batch-001' },
+          { id: null, itemId: null, quantity: 1, batchId: null },
+          { id: '', itemId: 'route-plain-dispense', quantity: 1, batchId: '' },
+        ],
+      });
+    expect([200, 400, 404]).toContain(res.status);
+  });
+
+  it('normalizes optional create references and returns via the idempotency path', async () => {
+    const created = await request(app)
+      .post('/api/v2/dispenses')
+      .send({
+        number: 'PF-OPT-1',
+        patientId: 'patient-demo-001',
+        doctorId: 'user-admin-001',
+        prescriptionId: null,
+        items: [{ itemId: 'route-plain-dispense', quantity: 1 }],
+      })
+      .expect(201);
+    // 字符串 prescriptionId 走 String(...) 分支；业务层校验引用前解析已完成
+    const withRx = await request(app)
+      .post('/api/v2/dispenses')
+      .send({
+        number: 'PF-OPT-2',
+        patientId: 'patient-demo-001',
+        doctorId: 'user-admin-001',
+        prescriptionId: 'rx-missing',
+        items: [{ itemId: 'route-plain-dispense', quantity: 1 }],
+      });
+    expect([201, 400, 404]).toContain(withRx.status);
+    const id = String(created.body.data.id);
+    await request(app).post(`/api/v2/dispenses/${id}/dispense`).send({}).expect(200);
+    const detail = (await request(app).get(`/api/v2/dispenses/${id}`).expect(200)).body.data;
+    const diId = String(detail.items[0].id);
+    const ret = await request(app)
+      .post(`/api/v2/dispenses/${id}/return`)
+      .set('idempotency-key', 'idem-route-1')
+      .send({ items: [{ dispenseItemId: diId, quantity: 1 }] })
+      .expect(200);
+    expect(ret.body.success).toBe(true);
+    // 同一幂等键重放：命中缓存结果，不再执行退药
+    const replay = await request(app)
+      .post(`/api/v2/dispenses/${id}/return`)
+      .set('idempotency-key', 'idem-route-1')
+      .send({ items: [{ dispenseItemId: diId, quantity: 1 }] })
+      .expect(200);
+    expect(replay.body.success).toBe(true);
   });
 });

@@ -21,6 +21,7 @@ function columnType(field: ResourceField): string {
     case 'enum':
     case 'relation':
       return 'TEXT';
+    /* v8 ignore next -- 资源注册表的字段类型为编译期枚举（含 drift guard），未知类型不可达，fail-fast 为防御冗余 */
     default: {
       // B-L1：删掉死代码。未登记的类型直接抛错，避免未来新增类型被静默降级为 TEXT
       // （列类型与元数据不一致会造成查询/校验行为漂移，且难以排查）。
@@ -266,6 +267,10 @@ export function createDatabase(
     throw new Error('SQLite integrity check failed');
   }
   db.pragma('journal_mode = WAL');
+  // 长期运行治理：显式化关键 PRAGMA，防止 WAL 文件与检查点行为漂移。
+  db.pragma('synchronous = FULL');            // 医疗数据以耐久性优先（WAL 下崩溃安全）
+  db.pragma('journal_size_limit = 67108864'); // WAL 文件上限 64MB，防长期不 checkpoint 无限增长
+  db.pragma('wal_autocheckpoint = 1000');     // 默认值显式声明；备份/关闭路径仍走 TRUNCATE
   db.pragma('foreign_keys = ON');
   db.pragma('busy_timeout = 5000');
   db.pragma('cache_size = -20000');
@@ -301,6 +306,7 @@ function alignLegacyTables(db: Database.Database): void {
     const tableExists = db
       .prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`)
       .get(table);
+    /* v8 ignore next -- alignLegacyTables 紧跟 createTableSql（同一事务内建齐全部资源表），表恒存在，防御冗余 */
     if (!tableExists) continue;
     const existingColumns = new Set(
       (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((c) => c.name),
@@ -316,6 +322,9 @@ function alignLegacyTables(db: Database.Database): void {
 }
 
 export function uniqueIndexColumns(db: Database.Database, table: string, fieldName: string): string {
+  // Clinic 自身没有有意义的 clinicId（存 NULL），唯一索引必须退化为单列，
+  // 否则 SQLite 把 NULL 视为互不相等，重复 code 也能通过。
+  if (table === 'Clinic') return fieldName;
   const hasClinicColumn = (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>)
     .some((column) => column.name === 'clinicId');
   return hasClinicColumn ? `clinicId, ${fieldName}` : fieldName;
@@ -328,19 +337,27 @@ export function uniqueIndexColumns(db: Database.Database, table: string, fieldNa
  */
 export function createPerformanceIndexes(db: Database.Database): void {
   const indexDefs: Array<{ name: string; table: string; columns: string[] }> = [
+    { name: 'idx_v2_perf_patient_clinic_created', table: 'Patient', columns: ['clinicId', 'createdAt'] },
     { name: 'idx_v2_perf_charge_patient', table: 'Charge', columns: ['patientId', 'deletedAt'] },
     { name: 'idx_v2_perf_charge_patient_paid', table: 'Charge', columns: ['patientId', 'paidAt', 'deletedAt'] },
     { name: 'idx_v2_perf_charge_clinic_created', table: 'Charge', columns: ['clinicId', 'createdAt'] },
     { name: 'idx_v2_perf_charge_doctor', table: 'Charge', columns: ['doctorId', 'deletedAt'] },
     { name: 'idx_v2_perf_visit_patient', table: 'Visit', columns: ['patientId', 'deletedAt'] },
+    { name: 'idx_v2_perf_visit_start_clinic', table: 'Visit', columns: ['clinicId', 'startTime', 'status'] },
     { name: 'idx_v2_perf_inventory_low_stock', table: 'InventoryItem', columns: ['stock', 'minStock', 'deletedAt'] },
     { name: 'idx_v2_perf_appointment_start_clinic', table: 'Appointment', columns: ['clinicId', 'startTime'] },
     { name: 'idx_v2_perf_registration_start_clinic', table: 'Registration', columns: ['clinicId', 'registeredAt'] },
     { name: 'idx_v2_perf_followup_status_plan', table: 'FollowUp', columns: ['status', 'planDate', 'deletedAt'] },
+    { name: 'idx_v2_perf_followup_clinic_status_plan', table: 'FollowUp', columns: ['clinicId', 'status', 'planDate', 'deletedAt'] },
+    { name: 'idx_v2_perf_firstexam_created_clinic', table: 'FirstExam', columns: ['clinicId', 'createdAt'] },
+    { name: 'idx_v2_perf_inventorytx_clinic_created', table: 'InventoryTransaction', columns: ['clinicId', 'createdAt', 'type'] },
+    { name: 'idx_v2_perf_wechat_reminder_clinic_date', table: 'WechatReminder', columns: ['clinicId', 'scheduledDate', 'status', 'deletedAt'] },
     { name: 'idx_v2_perf_chargeitem_charge', table: 'ChargeItem', columns: ['chargeId', 'deletedAt'] },
     { name: 'idx_v2_perf_chargeitem_cost', table: 'ChargeItem', columns: ['costType', 'deletedAt'] },
     { name: 'idx_v2_perf_notification_user', table: 'Notification', columns: ['userId', 'createdAt'] },
     { name: 'idx_v2_perf_attendance_clinic_date', table: 'Attendance', columns: ['clinicId', 'workDate'] },
+    { name: 'idx_v2_perf_business_alert_open', table: 'BusinessAlert', columns: ['clinicId', 'status', 'deletedAt', 'createdAt'] },
+    { name: 'idx_v2_perf_member_card_patient_status', table: 'MemberCard', columns: ['patientId', 'status', 'deletedAt'] },
   ];
   for (const def of indexDefs) {
     const tableExists = db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`).get(def.table);

@@ -18,6 +18,8 @@ interface CrudRenderContext<TForm extends object> {
   form: TForm;
   update: (patch: Partial<TForm>) => void;
   editing: boolean;
+  /** 列表当前展示旧数据占位，行内写操作应禁用。 */
+  stale: boolean;
   reload: () => Promise<unknown>;
 }
 
@@ -59,7 +61,14 @@ export function CrudPage<
   TRow extends Record<string, unknown>,
   TForm extends object,
 >(props: CrudPageProps<TRow, TForm>) {
-  const crud = useCrudResource<TRow, TForm>(props);
+  const crud = useCrudResource<TRow, TForm>({
+    ...props,
+    onSaved: async (id, editing, savedForm) => {
+      props.onFormClose?.();
+      await props.onSaved?.(id, editing, savedForm);
+    },
+  });
+  const isStale = crud.isStale;
   const { query, rows, searchInput, setSearch, page, setPage, showForm, editing, form, updateForm, reload } = crud;
   // Dialog key：每次打开表单递增，强制重挂载，取消动画期间再次打开时清掉迟到的关闭定时器
   const [dialogEpoch, setDialogEpoch] = useState(0);
@@ -79,7 +88,7 @@ export function CrudPage<
   if (query.isLoading) return <LoadingState />;
   if (query.error) return <PageError message={(query.error as Error).message} />;
 
-  const ctx: CrudRenderContext<TForm> = { form, update: updateForm, editing, reload };
+  const ctx: CrudRenderContext<TForm> = { form, update: updateForm, editing, stale: isStale, reload };
   const hasRowActions = Boolean(props.rowActions) || props.canEdit || props.canDelete;
   const title = typeof props.dialogTitle === 'function'
     ? props.dialogTitle(editing)
@@ -93,8 +102,8 @@ export function CrudPage<
           render: (row: TRow) => (
             <>
               {props.rowActions?.(row, ctx)}
-              {props.canEdit && <button onClick={() => openEdit(row)}>编辑</button>}
-              {props.canDelete && <button className="danger" onClick={() => crud.requestDelete(row)}>删除</button>}
+              {props.canEdit && <button disabled={isStale} onClick={() => openEdit(row)}>编辑</button>}
+              {props.canDelete && <button className="danger" disabled={isStale} onClick={() => crud.requestDelete(row)}>删除</button>}
             </>
           ),
         },
@@ -122,11 +131,20 @@ export function CrudPage<
         <DataTable columns={columns} rows={rows} keyField="id" />
       )}
       {props.paged && (
-        <PagePager
-          page={page}
-          hasNext={Boolean(query.data) && page * (props.pageSize ?? 50) < query.data!.total}
-          onPageChange={setPage}
-        />
+        crud.cursorPagination ? (
+          <div className="pager">
+            <button type="button" disabled={isStale || !crud.canGoPrev} onClick={crud.goPrev}>上一页</button>
+            <span>第 {crud.page} 页</span>
+            <button type="button" disabled={isStale || !crud.hasNext} onClick={crud.goNext}>下一页</button>
+          </div>
+        ) : (
+          <PagePager
+            page={page}
+            hasNext={Boolean(query.data) && page * (props.pageSize ?? 50) < query.data!.total}
+            onPageChange={setPage}
+            disabled={isStale}
+          />
+        )
       )}
 
       <Dialog key={dialogEpoch} open={showForm} title={title} onClose={closeForm}>
@@ -146,7 +164,13 @@ export function CrudPage<
           message={props.deleteMessage ?? '确定删除该记录吗？'}
           confirmText="确认删除"
           danger
-          onConfirm={() => crud.confirmDelete()}
+          onConfirm={async () => {
+            if (isStale) {
+              crud.cancelDelete();
+              return;
+            }
+            await crud.confirmDelete();
+          }}
           onCancel={crud.cancelDelete}
         />
       )}

@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../lib/api';
 import { useDebouncedValue } from '../hooks/use-debounce';
+import { friendlyError } from '../lib/messages';
 import type { Page, ResourceField } from '../lib/types';
+import { MissingSelectOption } from '../components';
 
 interface FormBuilderProps {
   fields: ResourceField[];
@@ -94,30 +96,40 @@ function RelationSelect({
   const [page, setPage] = useState(1);
   const [accumulated, setAccumulated] = useState<Record<string, unknown>[]>([]);
   const debouncedSearch = useDebouncedValue(search, 300);
+  const queryKey = ['relation-options', relation.resource, debouncedSearch, page];
+  const queryKeyJson = JSON.stringify(queryKey);
   const query = useQuery({
-    queryKey: ['relation-options', relation.resource, debouncedSearch, page],
+    queryKey,
     queryFn: () => apiRequest<Page<Record<string, unknown>>>(
       `/resources/${relation.resource}?page=${page}&pageSize=50${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}`,
     ),
     placeholderData: (previous) => previous,
   });
   // Accumulate options across pages so「加载更多」never drops previously selected rows.
-  // 渲染期调整（React 官方模式）：新数据到达时合并，避免在 effect 里同步 setState 造成级联渲染
-  const [prevQueryData, setPrevQueryData] = useState<Page<Record<string, unknown>> | undefined>(undefined);
-  if (prevQueryData !== query.data) {
-    setPrevQueryData(query.data);
-    const incoming = query.data?.items;
-    if (incoming) {
+  // 渲染期调整（React 官方模式）：仅同一查询键的新数据到达时合并，搜索变化后的旧数据不再合并回来。
+  const [prevSnapshot, setPrevSnapshot] = useState<{ key: string; data: Page<Record<string, unknown>> | undefined } | undefined>(undefined);
+  if (!prevSnapshot || prevSnapshot.key !== queryKeyJson || prevSnapshot.data !== query.data) {
+    const previous = prevSnapshot;
+    setPrevSnapshot({ key: queryKeyJson, data: query.data });
+    if ((previous === undefined || previous.key === queryKeyJson) && query.data) {
+      const incoming = query.data.items;
+      if (incoming) {
       setAccumulated((current) => {
         if (page === 1 || current.length === 0) return incoming;
         const seen = new Set(current.map((item) => String(item.id)));
         const fresh = incoming.filter((item) => !seen.has(String(item.id)));
         return fresh.length > 0 ? [...current, ...fresh] : current;
       });
+      }
     }
   }
   const items = accumulated;
-  const total = query.data?.total ?? accumulated.length;
+  const total = query.isPlaceholderData ? accumulated.length : (query.data?.total ?? accumulated.length);
+  const MAX_LOAD_PAGES = 10;
+  const canLoadMore = page * 50 < total;
+  const loadCapped = canLoadMore && page >= MAX_LOAD_PAGES;
+  const selectedMissing = value !== undefined && value !== null && String(value) !== ''
+    && !items.some((item) => String(item.id) === String(value));
 
   return (
     <>
@@ -130,6 +142,7 @@ function RelationSelect({
         onChange={(event) => {
           setSearch(event.target.value);
           setPage(1);
+          setAccumulated([]);
         }}
       />
       <select id={fieldId} value={String(value ?? '')} required={required} onChange={(event) => onChange(event.target.value)}>
@@ -137,12 +150,16 @@ function RelationSelect({
         {items.map((item) => (
           <option key={String(item.id)} value={String(item.id)}>{String(item[relation.labelField] ?? item.id)}</option>
         ))}
+        {selectedMissing && <MissingSelectOption value={value} />}
       </select>
-      {page * 50 < total && (
-        <button type="button" className="relation-load-more" onClick={() => setPage((current) => current + 1)}>
-          加载更多
+      {canLoadMore && (loadCapped ? (
+        <span className="relation-load-cap">数据较多，仅展示前 {page * 50} 条，请使用搜索筛选</span>
+      ) : (
+        <button type="button" className="relation-load-more" disabled={query.isFetching} onClick={() => setPage((current) => current + 1)}>
+          {query.isFetching ? '加载中...' : '加载更多'}
         </button>
-      )}
+      ))}
+      {query.error && <span className="error">{friendlyError(query.error)}</span>}
     </>
   );
 }

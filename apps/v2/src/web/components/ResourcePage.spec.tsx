@@ -248,12 +248,34 @@ describe('ResourcePage', () => {
     vi.mocked(apiRequest).mockResolvedValueOnce({ items: [], total: 30, page: 2, pageSize: 20 });
     fireEvent.click(await screen.findByText('下一页'));
     expect(await screen.findByText('第 2 页')).toBeDefined();
+    await waitFor(() => {
+      expect((screen.getByRole('button', { name: '上一页' }) as HTMLButtonElement).disabled).toBe(false);
+    });
     vi.mocked(apiRequest).mockResolvedValueOnce({ items: [{ id: 'p1', name: 'Alice', active: true }], total: 30, page: 1, pageSize: 20 });
     fireEvent.click(screen.getByText('上一页'));
     expect(await screen.findByText('第 1 页')).toBeDefined();
     vi.mocked(apiRequest).mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 20 });
     fireEvent.change(screen.getByPlaceholderText('搜索...'), { target: { value: 'Alice' } });
     expect(await screen.findByText('暂无记录')).toBeDefined();
+  });
+
+  it('does not submit an edit while the list is stale', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([writable])
+      .mockResolvedValueOnce({ items: [{ id: 'p1', name: 'Alice', active: true }], total: 1, page: 1, pageSize: 20 });
+    render(<ResourcePage resource="patients" />, { wrapper });
+    fireEvent.click(await screen.findByText('编辑'));
+    vi.mocked(apiRequest).mockImplementationOnce(() => new Promise(() => {}));
+    fireEvent.change(screen.getByPlaceholderText('搜索...'), { target: { value: 'stale' } });
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/patients?page=1&pageSize=20&search=stale');
+    });
+    // disabled 按钮点击会被 React 抑制，直接提交表单以触达 stale 守卫
+    const form = screen.getByRole('button', { name: '保存' }).closest('form') as HTMLFormElement;
+    fireEvent.submit(form);
+    expect(vi.mocked(apiRequest).mock.calls.some(([path, options]) =>
+      path === '/resources/patients/p1' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'PATCH',
+    )).toBe(false);
   });
 
   it('renders null cell values without crashing', async () => {
@@ -586,7 +608,9 @@ describe('ResourcePage', () => {
     await screen.findByText('A');
     fireEvent.click(screen.getByText('下一页'));
     await screen.findByText('第 2 页');
-    fireEvent.click(screen.getByText('删除'));
+    const deleteButton = await screen.findByRole('button', { name: '删除' });
+    await waitFor(() => expect((deleteButton as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(deleteButton);
     fireEvent.click(await screen.findByText('确认删除'));
     await waitFor(() => expect(vi.mocked(apiRequest)).toHaveBeenCalledWith(
       '/resources/patients/p1',
@@ -632,7 +656,9 @@ describe('ResourcePage', () => {
     await screen.findByText('A');
     fireEvent.click(screen.getByText('下一页'));
     await screen.findByText('第 2 页');
-    fireEvent.click(screen.getByText('删除'));
+    const deleteButton = await screen.findByRole('button', { name: '删除' });
+    await waitFor(() => expect((deleteButton as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(deleteButton);
     fireEvent.click(await screen.findByText('确认删除'));
     await waitFor(() => {
       expect(vi.mocked(apiRequest)).toHaveBeenCalledWith('/resources/patients/p1', expect.objectContaining({ method: 'DELETE' }));
@@ -708,7 +734,7 @@ describe('ResourcePage', () => {
       expect(call).toBeDefined();
       const body = JSON.parse(String((call?.[1] as RequestInit)?.body));
       expect(body.price).toBe(12);
-      expect(body.startTime).toBeUndefined();
+      expect(body.startTime).toBeNull();
     });
   });
 
@@ -730,5 +756,116 @@ describe('ResourcePage', () => {
     vi.mocked(apiRequest).mockResolvedValue([]);
     render(<ResourcePage endpoint="/stats/demo" />, { wrapper });
     expect(await screen.findByRole('heading', { name: '报表' })).toBeDefined();
+  });
+
+  it('reports all-failed batch delete and keeps the confirmation open', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([writable])
+      .mockResolvedValueOnce({ items: [{ id: 'p1', name: 'A' }, { id: 'p2', name: 'B' }], total: 2, page: 1, pageSize: 20 })
+      .mockRejectedValueOnce(new Error('first failed'))
+      .mockRejectedValueOnce(new Error('second failed'))
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 20 });
+    render(<ResourcePage resource="patients" />, { wrapper });
+    await screen.findByText('A');
+    const checkboxes = screen.getAllByRole('checkbox');
+    fireEvent.click(checkboxes[1]);
+    fireEvent.click(checkboxes[2]);
+    fireEvent.click(screen.getByText('删除选中'));
+    fireEvent.click(screen.getByText('批量删除'));
+    expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
+    expect(screen.queryByText(/已删除 \d+ 项/)).toBeNull();
+    expect(screen.getByRole('dialog', { name: '批量删除确认' })).toBeDefined();
+  });
+
+  it('unchecks a single selected row', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([writable])
+      .mockResolvedValueOnce({ items: [{ id: 'p1', name: 'A' }, { id: 'p2', name: 'B' }], total: 2, page: 1, pageSize: 20 });
+    render(<ResourcePage resource="patients" />, { wrapper });
+    await screen.findByText('A');
+    const checkboxes = screen.getAllByRole('checkbox');
+    fireEvent.click(checkboxes[1]);
+    expect(screen.getByText('已选 1 项')).toBeDefined();
+    fireEvent.click(checkboxes[1]);
+    expect(screen.queryByText('删除选中')).toBeNull();
+  });
+
+  it('renders a read-only report when the endpoint returns undefined', async () => {
+    vi.mocked(apiRequest).mockResolvedValue(null);
+    render(<ResourcePage title="报表" endpoint="/stats/demo" />, { wrapper });
+    expect(await screen.findByText('暂无数据')).toBeDefined();
+  });
+
+  it('renders an empty state when the resource list omits items', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([writable])
+      .mockResolvedValueOnce({ total: 1, page: 1, pageSize: 20 });
+    render(<ResourcePage resource="patients" />, { wrapper });
+    expect(await screen.findByText('暂无记录')).toBeDefined();
+  });
+
+  it('disables CSV export when the report is truncated', async () => {
+    vi.mocked(apiRequest).mockResolvedValue({ items: [{ id: 's1', name: 'Alice' }], truncated: true });
+    render(<ResourcePage title="报表" endpoint="/stats/demo" />, { wrapper });
+    expect(((await screen.findByText('导出')) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('seeds create forms from field defaults', async () => {
+    const defaults = {
+      name: 'typed',
+      table: 'Typed',
+      fields: [
+        { name: 'name', type: 'text', required: true, default: 'Guest' },
+        { name: 'active', type: 'boolean', default: true },
+        { name: 'data', type: 'json', default: { a: 1 } },
+      ],
+      capabilities: { create: true, update: false, delete: false, softDelete: false },
+    };
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([defaults])
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 20 });
+    render(<ResourcePage resource="typed" />, { wrapper });
+    fireEvent.click(await screen.findByText('新建'));
+    expect((screen.getByLabelText('name') as HTMLInputElement).value).toBe('Guest');
+    expect((screen.getByLabelText('active') as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByLabelText('data') as HTMLTextAreaElement).value).toContain('"a": 1');
+  });
+
+  it('ignores stale delete confirmations', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([writable])
+      .mockResolvedValueOnce({ items: [{ id: 'p1', name: 'Alice', active: true }], total: 1, page: 1, pageSize: 20 });
+    render(<ResourcePage resource="patients" />, { wrapper });
+    // 先在可用态打开删除确认弹窗，再翻页制造 stale（React 会抑制 disabled 按钮的点击）
+    fireEvent.click(await screen.findByText('删除'));
+    expect(await screen.findByText('确认删除')).toBeDefined();
+    vi.mocked(apiRequest).mockImplementationOnce(() => new Promise(() => {}));
+    fireEvent.change(screen.getByPlaceholderText('搜索...'), { target: { value: 'stale' } });
+    await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/resources/patients?page=1&pageSize=20&search=stale'));
+    fireEvent.click(screen.getByText('确认删除'));
+    expect(vi.mocked(apiRequest)).not.toHaveBeenCalledWith(
+      '/resources/patients/p1',
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+    expect(screen.getByRole('dialog', { name: '删除确认' })).toBeDefined();
+  });
+
+  it('ignores duplicate submits while a save is pending', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce([writable])
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 20 });
+    render(<ResourcePage resource="patients" />, { wrapper });
+    fireEvent.click(await screen.findByText('新建'));
+    fireEvent.change(screen.getByLabelText('name'), { target: { value: 'Bob' } });
+    let resolveSave: (value: unknown) => void = () => {};
+    vi.mocked(apiRequest).mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve; }));
+    vi.mocked(apiRequest).mockResolvedValueOnce({ items: [{ id: 'p2', name: 'Bob' }], total: 1, page: 1, pageSize: 20 });
+    const form = screen.getByLabelText('name').closest('form') as HTMLFormElement;
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    const postCalls = vi.mocked(apiRequest).mock.calls.filter(([, options]) => (options as RequestInit)?.method === 'POST');
+    expect(postCalls).toHaveLength(1);
+    resolveSave({ success: true });
+    await waitFor(() => expect(screen.queryByText('保存')).toBeNull());
   });
 });

@@ -21,6 +21,8 @@ function buildApiChildEnv({ userDataDir, legacyBase, secretFilePath, apiPort, is
   };
   // 显式白名单：只透传 API 实际需要的可选配置，避免未来新增 V2_* 时无意把
   // 密钥、路径或明文备份开关泄漏给子进程。JWT/备份密钥只经 V2_SECRET_FILE。
+  // dev 态 CORS 白名单依赖 V2_WEB_DEV_PORT / V2_WEB_URL（app.ts 读取），
+  // smoke:all 随机端口场景必须透传，否则渲染器来源被 CORS 拒绝。
   const optionalKeys = [
     'V2_AUTO_BACKUP_INTERVAL_MS',
     'V2_AUTO_BACKUP_KEEP',
@@ -28,6 +30,8 @@ function buildApiChildEnv({ userDataDir, legacyBase, secretFilePath, apiPort, is
     'V2_CORS_ORIGIN',
     'V2_WECHAT_API_URL',
     'V2_WECHAT_APP_ID',
+    'V2_WEB_DEV_PORT',
+    'V2_WEB_URL',
   ];
   for (const key of optionalKeys) {
     if (process.env[key] !== undefined) env[key] = process.env[key];

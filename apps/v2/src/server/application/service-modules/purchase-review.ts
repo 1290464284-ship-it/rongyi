@@ -72,7 +72,7 @@ export class PurchaseReviewService {
   submit(id: string, context: AppContext): Record<string, unknown> {
     const row = this.findOrder(id, context);
     if (row.reviewStatus !== 'PENDING') throw new ConflictError('仅待提交的采购单可提交审核');
-    this.updateReview(id, context, { reviewStatus: 'SUBMITTED' });
+    this.updateReview(id, context, { reviewStatus: 'SUBMITTED' }, 'PENDING');
     return { id, reviewStatus: 'SUBMITTED' };
   }
 
@@ -81,11 +81,12 @@ export class PurchaseReviewService {
     const row = this.findOrder(id, context);
     if (row.reviewStatus !== 'SUBMITTED') throw new ConflictError('仅待审核的采购单可通过');
     const now = context.now().toISOString();
-    this.db.prepare(
+    const result = this.db.prepare(
       `UPDATE PurchaseOrder
        SET reviewStatus = 'APPROVED', approvedById = ?, approvedAt = ?, rejectionReason = NULL, updatedAt = ?
-       WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+       WHERE id = ? AND reviewStatus = 'SUBMITTED' AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).run(context.userId, now, now, id, ...tenantParams(context.clinicId));
+    if (Number(result.changes) === 0) throw new ConflictError('仅待审核的采购单可通过');
     trackResourceWrite(this.db, { tableName: 'PurchaseOrder', recordId: id, operation: 'UPDATE', clinicId: context.clinicId ?? null });
     return { id, reviewStatus: 'APPROVED', approvedById: context.userId, approvedAt: now };
   }
@@ -98,11 +99,12 @@ export class PurchaseReviewService {
     if (!reason) throw new ValidationError('驳回原因必填');
     if (reason.length > 500) throw new ValidationError('驳回原因不能超过 500 字');
     const now = context.now().toISOString();
-    this.db.prepare(
+    const result = this.db.prepare(
       `UPDATE PurchaseOrder
        SET reviewStatus = 'REJECTED', rejectionReason = ?, approvedById = ?, approvedAt = ?, updatedAt = ?
-       WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+       WHERE id = ? AND reviewStatus = 'SUBMITTED' AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).run(reason, context.userId, now, now, id, ...tenantParams(context.clinicId));
+    if (Number(result.changes) === 0) throw new ConflictError('仅待审核的采购单可驳回');
     trackResourceWrite(this.db, { tableName: 'PurchaseOrder', recordId: id, operation: 'UPDATE', clinicId: context.clinicId ?? null });
     return { id, reviewStatus: 'REJECTED', rejectionReason: reason };
   }
@@ -111,7 +113,7 @@ export class PurchaseReviewService {
   reopen(id: string, context: AppContext): Record<string, unknown> {
     const row = this.findOrder(id, context);
     if (row.reviewStatus !== 'REJECTED') throw new ConflictError('仅已驳回的采购单可重新提交');
-    this.updateReview(id, context, { reviewStatus: 'SUBMITTED', rejectionReason: null });
+    this.updateReview(id, context, { reviewStatus: 'SUBMITTED', rejectionReason: null }, 'REJECTED');
     return { id, reviewStatus: 'SUBMITTED' };
   }
 
@@ -132,8 +134,9 @@ export class PurchaseReviewService {
       `SELECT COALESCE(SUM(totalAmount), 0) AS amount
        FROM PurchaseOrder
        WHERE reviewStatus IN ('PENDING', 'SUBMITTED') AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
-    ).get(...tenantParams(context.clinicId)) as { amount: number | null } | undefined;
-    const pendingAmount = Number(pendingAmountRow?.amount ?? 0);
+    ).get(...tenantParams(context.clinicId)) as { amount: number };
+    // 聚合查询恒返回一行且 COALESCE 兜底，amount 不可能为 nullish。
+    const pendingAmount = Number(pendingAmountRow.amount);
     return {
       total,
       pending: byStatus.PENDING ?? 0,
@@ -158,6 +161,7 @@ export class PurchaseReviewService {
     id: string,
     context: AppContext,
     patch: { reviewStatus: string; rejectionReason?: string | null },
+    fromStatus: string,
   ): void {
     const now = context.now().toISOString();
     const sets = ['reviewStatus = ?'];
@@ -167,11 +171,12 @@ export class PurchaseReviewService {
       params.push(patch.rejectionReason ?? null);
     }
     sets.push('updatedAt = ?');
-    params.push(now, id, ...tenantParams(context.clinicId));
-    this.db.prepare(
+    params.push(now, id, fromStatus, ...tenantParams(context.clinicId));
+    const result = this.db.prepare(
       `UPDATE PurchaseOrder SET ${sets.join(', ')}
-       WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+       WHERE id = ? AND reviewStatus = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).run(...params);
+    if (Number(result.changes) === 0) throw new ConflictError('采购单审核状态已变更，请刷新后重试');
     trackResourceWrite(this.db, { tableName: 'PurchaseOrder', recordId: id, operation: 'UPDATE', clinicId: context.clinicId ?? null });
   }
 }

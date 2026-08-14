@@ -131,6 +131,10 @@ describe('ChargeList', () => {
 });
 
 describe('QuickChargeDialog', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   it('renders empty and busy states', () => {
     const target: ChargeTreeNode = {
       id: 'i1',
@@ -378,5 +382,47 @@ describe('ChargeTreePanel', () => {
       />,
     );
     expect(screen.getByText('收费项目加载失败')).toBeDefined();
+  });
+
+  it('searches across sibling subtrees and skips quick charge for catalogs', () => {
+    const onQuickCharge = vi.fn();
+    const items: ChargeTreeNode[] = [
+      {
+        id: 'cat1',
+        code: 'C1',
+        name: '目录一',
+        category: '',
+        price: 0,
+        costType: 'SERVICE',
+        anesthesia: false,
+        businessCategory: 'SERVICE',
+        parentId: null,
+        children: [
+          { id: 'leaf1', code: 'L1', name: '洁牙', category: '', price: 10000, costType: 'MATERIAL', anesthesia: false, businessCategory: 'MATERIAL', parentId: 'cat1', children: [] },
+        ],
+      },
+      {
+        id: 'cat2',
+        code: 'C2',
+        name: '目录二',
+        category: '',
+        price: 0,
+        costType: 'SERVICE',
+        anesthesia: false,
+        businessCategory: 'SERVICE',
+        parentId: null,
+        children: [
+          { id: 'leaf2', code: 'L2', name: '补牙', category: '', price: 20000, costType: 'SERVICE', anesthesia: false, businessCategory: 'SERVICE', parentId: 'cat2', children: [] },
+        ],
+      },
+    ];
+    render(
+      <ChargeTreePanel isLoading={false} error={null} items={items} expandedCatalogs={{ cat1: true, cat2: true }} onToggleCatalog={vi.fn()} onQuickCharge={onQuickCharge} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '快捷划价 补牙' }));
+    expect(onQuickCharge).toHaveBeenCalledWith(expect.objectContaining({ id: 'leaf2' }));
+
+    fireEvent.click(screen.getByRole('button', { name: '目录一' }));
+    expect(onQuickCharge).toHaveBeenCalledTimes(1);
   });
 });

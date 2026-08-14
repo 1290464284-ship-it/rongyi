@@ -2,14 +2,19 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ClinicalWorkflowPage } from './ClinicalWorkflowPage';
-import { apiRequest } from '../../lib/api';
+import { apiRequest, fetchAllPages } from '../../lib/api';
 import type { Page } from '../../lib/types';
 import { ToastProvider } from '../../components/toast';
 
-vi.mock('../../lib/api', () => ({ apiRequest: vi.fn(), downloadCsv: vi.fn() }));
+vi.mock('../../lib/api', () => ({ apiRequest: vi.fn(), fetchAllPages: vi.fn(), downloadCsv: vi.fn() }));
+
+vi.mocked(fetchAllPages).mockImplementation(async (path: string) => {
+  const data = await vi.mocked(apiRequest)(path) as { items?: unknown[] } | unknown[];
+  return Array.isArray(data) ? data : (data as { items?: unknown[] })?.items ?? [];
+});
 
 const wrapper = ({ children }: { children: ReactNode }) => (
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ToastProvider>{children}</ToastProvider></QueryClientProvider>
@@ -235,7 +240,6 @@ describe('ClinicalWorkflowPage', () => {
       patientId: 'p-1',
       planDate: '2026-08-12',
       content: '术后回访',
-      status: 'PENDING',
     });
     expect(await screen.findByText('回访已创建')).toBeDefined();
   });
@@ -280,5 +284,127 @@ describe('ClinicalWorkflowPage', () => {
     expect(await screen.findByText('候诊')).toBeDefined();
     expect(screen.getByText('就诊工作台')).toBeDefined();
     expect(await screen.findByRole('button', { name: '病历' })).toBeDefined();
+  });
+
+  it('pages the registration board server-side', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/registrations?page=1&pageSize=100') {
+        return {
+          items: [{ id: 'r-1', status: 'TRIAGED', patientId: 'p-1', patientIdLabel: '张四' }],
+          total: 150,
+          page: 1,
+          pageSize: 100,
+        };
+      }
+      if (path === '/resources/registrations?page=2&pageSize=100') {
+        return {
+          items: [{ id: 'r-2', status: 'TRIAGED', patientId: 'p-2', patientIdLabel: '李五' }],
+          total: 150,
+          page: 2,
+          pageSize: 100,
+        };
+      }
+      return { items: [], total: 0, page: 1, pageSize: 100 };
+    });
+    render(<ClinicalWorkflowPage />, { wrapper });
+    expect(await screen.findByText('张四')).toBeDefined();
+    fireEvent.click(screen.getAllByRole('button', { name: '下一页' })[0]);
+    expect(await screen.findByText('李五')).toBeDefined();
+    expect(screen.getByText('第 2 页')).toBeDefined();
+  });
+
+  it('ignores board transitions while the registration list is stale', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/registrations?page=1&pageSize=100') {
+        return {
+          items: [{ id: 'r-1', status: 'TRIAGED', patientId: 'p-1', patientIdLabel: '张四' }],
+          total: 150,
+          page: 1,
+          pageSize: 100,
+        };
+      }
+      if (path === '/resources/registrations?page=2&pageSize=100') return new Promise(() => {});
+      return { items: [], total: 0, page: 1, pageSize: 100 };
+    });
+    render(<ClinicalWorkflowPage />, { wrapper });
+    await screen.findByText('张四');
+    fireEvent.click(screen.getAllByRole('button', { name: '下一页' })[0]);
+    await waitFor(() => {
+      expect((screen.getAllByRole('button', { name: '下一页' })[0] as HTMLButtonElement).disabled).toBe(true);
+    });
+    // 拖拽卡片到“就诊中”列：stale 守卫拦截状态转换（看板自身无 disabled 门禁）
+    const card = screen.getByLabelText(/^卡片/);
+    fireEvent.dragStart(card, { dataTransfer: { setData: vi.fn() } });
+    fireEvent.drop(screen.getByRole('list', { name: '就诊中' }), { dataTransfer: { getData: () => 'r-1' } });
+    await waitFor(() => {
+      expect(apiRequest).not.toHaveBeenCalledWith('/registrations/r-1/status', expect.objectContaining({ method: 'PATCH' }));
+    });
+  });
+
+  it('ignores same-tick duplicate transition clicks', async () => {
+    const pending: Array<() => void> = [];
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path in resourceData()) return resourceData()[path];
+      if (path === '/registrations/r-1/status') {
+        return new Promise((resolve) => {
+          pending.push(() => resolve({}));
+        });
+      }
+      return {};
+    });
+    render(<ClinicalWorkflowPage />, { wrapper });
+    const button = (await screen.findAllByRole('button', { name: '进行中' }))[0];
+    act(() => {
+      fireEvent.click(button);
+      fireEvent.click(button);
+    });
+    const calls = vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/registrations/r-1/status');
+    expect(calls).toHaveLength(1);
+    pending.forEach((resolve) => resolve());
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+  });
+
+  it('refetches visits and today when a registration transitions to completed', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/registrations?page=1&pageSize=100') {
+        return { items: [{ id: 'r-1', status: 'IN_PROGRESS', patientId: 'p-1', patientIdLabel: '张四' }], total: 1 };
+      }
+      if (path === '/resources/visits?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/firstExams?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/treatments?page=1&pageSize=100') return { items: [], total: 0 };
+      return resourceData()[path] ?? {};
+    });
+    render(<ClinicalWorkflowPage />, { wrapper });
+    fireEvent.click((await screen.findAllByRole('button', { name: '已完成' }))[0]);
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/registrations/r-1/status', expect.objectContaining({ method: 'PATCH' }));
+    });
+    const call = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/registrations/r-1/status');
+    expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({ status: 'COMPLETED' });
+  });
+
+  it('pages the visit resource list server-side', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/workbench/today') return {};
+      if (path === '/resources/registrations?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/visits?page=1&pageSize=100') {
+        return { items: [{ id: 'v-1', status: 'IN_PROGRESS' }], total: 150, page: 1, pageSize: 100 };
+      }
+      if (path === '/resources/visits?page=2&pageSize=100') {
+        return { items: [{ id: 'v-2', status: 'IN_PROGRESS' }], total: 150, page: 2, pageSize: 100 };
+      }
+      if (path === '/resources/firstExams?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/treatments?page=1&pageSize=100') return { items: [], total: 0 };
+      return {};
+    });
+    render(<ClinicalWorkflowPage />, { wrapper });
+    expect(await screen.findByText('v-1')).toBeDefined();
+    const nextButtons = screen.getAllByRole('button', { name: '下一页' });
+    const enabledNext = nextButtons.find((button) => !(button as HTMLButtonElement).disabled);
+    expect(enabledNext).toBeDefined();
+    fireEvent.click(enabledNext!);
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/visits?page=2&pageSize=100');
+    });
   });
 });

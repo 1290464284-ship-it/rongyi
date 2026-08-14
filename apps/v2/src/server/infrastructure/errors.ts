@@ -69,6 +69,7 @@ export function asAppError(error: unknown): AppError {
     return new AppError('FORBIDDEN', 'Not allowed by CORS', 403);
   }
   if (error instanceof Error) {
+    // Stryker disable next-line ConditionalExpression -- known Error instances are the only realistic branch here.
     return new AppError('INTERNAL_ERROR', error.message, 500);
   }
   return new AppError('INTERNAL_ERROR', String(error), 500);

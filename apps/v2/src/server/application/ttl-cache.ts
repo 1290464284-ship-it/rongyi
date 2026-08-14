@@ -15,6 +15,7 @@ export class TtlCache {
     this.entries.set(key, { at: now, data });
     if (this.entries.size > this.maxEntries) {
       const oldest = this.entries.keys().next().value;
+      /* v8 ignore next -- a new entry is always present when size exceeds maxEntries. */
       if (oldest !== undefined) this.entries.delete(oldest);
     }
     return data;

@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router';
 import { CalendarDays, Clock, Package, PhoneCall, Stethoscope, Users, Wallet } from 'lucide-react';
 import { apiRequest } from '../../lib/api';
 import { formatMoney } from '../../lib/format';
@@ -79,10 +80,10 @@ function DashboardContent({ data, workbench, workbenchLoading }: { data: Dashboa
         <div className="card">
           <div className="card-head"><h2>快捷操作</h2></div>
           <div className="quick-action-list">
-            <a href="#/patients"><Users size={18} />患者档案</a>
-            <a href="#/clinical"><Stethoscope size={18} />临床记录</a>
-            <a href="#/finance"><Wallet size={18} />财务中心</a>
-            <a href="#/inventory"><Package size={18} />库存与采购</a>
+            <Link to="/patients"><Users size={18} />患者档案</Link>
+            <Link to="/clinical"><Stethoscope size={18} />临床记录</Link>
+            <Link to="/finance"><Wallet size={18} />财务中心</Link>
+            <Link to="/inventory"><Package size={18} />库存与采购</Link>
           </div>
         </div>
         <div className="card">

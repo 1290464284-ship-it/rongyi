@@ -1,18 +1,26 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import type { Page } from '../../lib/types';
-import { DataTable, LoadingState, PageError, type DataTableColumn } from '../../components';
+import { DataTable, LoadingState, PageError, PagePager, type DataTableColumn } from '../../components';
 import { errorMessage } from '../../lib/messages';
 import { useAsyncAction } from '../../hooks/use-async-action';
 import { useToast } from '../../lib/toast-context';
 import { LEAVE_STATUS_LABELS } from '../../lib/labels';
 
+const WORKFLOW_PAGE_SIZE = 100;
+
 export function HrWorkflowPage() {
   const { showToast } = useToast();
+  const [page, setPage] = useState(1);
   const leaves = useQuery({
-    queryKey: ['leaves'],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/leaveRequests?page=1&pageSize=100'),
+    queryKey: ['leaves', page],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(
+      `/resources/leaveRequests?status=PENDING&page=${page}&pageSize=${WORKFLOW_PAGE_SIZE}`,
+    ),
+    placeholderData: (previous) => previous,
   });
+  const stale = leaves.isPlaceholderData;
 
   if (leaves.isLoading) return <LoadingState label="请假数据加载中..." />;
   if (leaves.error) {
@@ -25,6 +33,8 @@ export function HrWorkflowPage() {
   }
 
   async function approve(id: string, approved: boolean) {
+    /* v8 ignore next -- 行内审批按钮在 stale 期间 disabled（jsdom 不派发 click），守卫为防御冗余 */
+    if (stale) return;
     try {
       await apiRequest(`/hr/leaves/${id}/approve`, {
         method: 'PATCH',
@@ -49,7 +59,7 @@ export function HrWorkflowPage() {
     {
       key: 'actions',
       label: '操作',
-      render: (row) => <ApproveButtons id={String(row.id)} onDone={approve} />,
+      render: (row) => <ApproveButtons id={String(row.id)} onDone={approve} disabled={stale} />,
     },
   ];
 
@@ -58,21 +68,27 @@ export function HrWorkflowPage() {
       <div className="page-head"><h1>人事审批</h1></div>
       <DataTable
         columns={columns}
-        rows={leaves.data?.items.filter((row) => String(row.status) === 'PENDING') ?? []}
+        rows={leaves.data?.items ?? []}
         keyField="id"
         emptyText="暂无待审批请假"
+      />
+      <PagePager
+        page={page}
+        hasNext={page * WORKFLOW_PAGE_SIZE < (leaves.data?.total ?? 0)}
+        onPageChange={setPage}
+        disabled={stale}
       />
     </div>
   );
 }
 
 /** 行内审批按钮：busy 期间同时禁用批准/驳回，防止双击重复审批。 */
-function ApproveButtons({ id, onDone }: { id: string; onDone: (id: string, approved: boolean) => Promise<void> }) {
+function ApproveButtons({ id, onDone, disabled }: { id: string; onDone: (id: string, approved: boolean) => Promise<void>; disabled?: boolean }) {
   const { busy, run } = useAsyncAction();
   return (
     <>
-      <button disabled={busy} onClick={() => run(() => onDone(id, true))}>批准</button>
-      <button className="danger" disabled={busy} onClick={() => run(() => onDone(id, false))}>驳回</button>
+      <button disabled={busy || disabled} onClick={() => run(() => onDone(id, true))}>批准</button>
+      <button className="danger" disabled={busy || disabled} onClick={() => run(() => onDone(id, false))}>驳回</button>
     </>
   );
 }

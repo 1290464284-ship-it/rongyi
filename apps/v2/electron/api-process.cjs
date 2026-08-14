@@ -20,10 +20,38 @@ const {
   API_READY_WINDOW_STRICT_MS,
   API_HEARTBEAT_INTERVAL_MS,
 } = require('./constants.cjs');
+const API_CONSOLE_MAX_BYTES = 5 * 1024 * 1024;
 const { buildApiChildEnv } = require('./api-env.cjs');
 const { crashLog, notify, sendApiStatus } = require('./logging.cjs');
 const { getOrCreateSecret } = require('./secrets.cjs');
 const { showApiErrorWindow } = require('./window.cjs');
+const { redactSensitiveText } = require('./redact.cjs');
+
+const SECRET_FILE_STALE_MS = 10 * 60 * 1000;
+
+// 崩溃/强制终止可能把 v2-secrets-*.json 留在 tmpdir；启动时清扫过期文件，
+// 避免密钥文件堆积。10 分钟保护窗口不会误删另一实例正在使用的新文件。
+function sweepStaleSecretFiles() {
+  try {
+    const tmpDir = os.tmpdir();
+    const cutoff = Date.now() - SECRET_FILE_STALE_MS;
+    for (const entry of fs.readdirSync(tmpDir)) {
+      if (!entry.startsWith('v2-secrets-') || !entry.endsWith('.json')) continue;
+      const fullPath = path.join(tmpDir, entry);
+      try {
+        const stat = fs.statSync(fullPath);
+        if (!stat.isFile() || stat.mtimeMs >= cutoff) continue;
+        // POSIX 上只清理当前用户属主的文件，避免误删其他用户/实例的密钥文件。
+        if (process.platform !== 'win32' && stat.uid !== process.getuid()) continue;
+        fs.rmSync(fullPath, { force: true });
+      } catch {
+        // 单个文件清理失败不阻塞启动
+      }
+    }
+  } catch {
+    // tmpdir 不可读时作为 best effort 忽略
+  }
+}
 
 function apiReadinessWindowMs({ firstCheck }) {
   return firstCheck ? API_READY_WINDOW_FIRST_MS : API_READY_WINDOW_STRICT_MS;
@@ -114,6 +142,7 @@ async function startApi() {
 
 async function doStartApi() {
   if (state.apiProcess && !state.apiProcess.killed) return state.apiPort;
+  sweepStaleSecretFiles();
   state.apiPort = await pickFreePort();
   const userDataDir = app.getPath('userData');
   // S-L2（第七轮）：JWT/备份密钥不再经 spawn env 透传（Windows 上同用户进程
@@ -149,12 +178,48 @@ async function doStartApi() {
       apiPort: state.apiPort,
       isPackaged: app.isPackaged,
     }),
-    stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+    // stdout/stderr 接管道并落盘：idempotency/audit-buffer 等基础设施仍走
+    // console，打包版不能把它们的诊断输出丢弃（stdio: ignore 会彻底消失）。
+    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     windowsHide: true,
   });
   state.apiSpawnedAt = Date.now();
   state.apiEverReady = false;
   const startedProcess = state.apiProcess;
+  const apiConsolePath = path.join(userDataDir, 'logs', 'api-console.log');
+  try {
+    fs.mkdirSync(path.dirname(apiConsolePath), { recursive: true });
+  } catch {
+    // best effort: 日志目录不可写时仅丢失控制台侧输出，不阻塞启动
+  }
+  const appendApiConsole = (chunk) => {
+    try {
+      let size = 0;
+      try {
+        size = fs.statSync(apiConsolePath).size;
+      } catch {
+        // first write or missing file
+      }
+      if (size + chunk.length > API_CONSOLE_MAX_BYTES) {
+        // 5MB×5 多级轮转（与 logging.cjs 的 desktop.log 一致）
+        for (let i = 4; i >= 1; i -= 1) {
+          const rotated = `${apiConsolePath}.${i}`;
+          if (fs.existsSync(rotated)) fs.renameSync(rotated, `${apiConsolePath}.${i + 1}`);
+        }
+        try {
+          fs.renameSync(apiConsolePath, `${apiConsolePath}.1`);
+        } catch {
+          // rotation is best effort; append into the original file otherwise
+        }
+      }
+      // 子进程控制台输出落盘前脱敏（错误栈可能含患者 PII 或本地路径）
+      fs.appendFileSync(apiConsolePath, redactSensitiveText(String(chunk)));
+    } catch {
+      // best effort
+    }
+  };
+  startedProcess.stdout?.on('data', appendApiConsole);
+  startedProcess.stderr?.on('data', appendApiConsole);
   startedProcess.manualStop = false;
   attachApiHeartbeat(startedProcess);
   state.apiProcess.on('error', (error) => crashLog('api-spawn-error', error));
@@ -247,8 +312,23 @@ async function ensureApiServerRunning() {
     }
   }
   if (state.apiProcess && !state.apiProcess.killed) {
-    state.apiProcess.manualStop = true;
-    state.apiProcess.kill();
+    const processToStop = state.apiProcess;
+    processToStop.manualStop = true;
+    await new Promise((resolve) => {
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      processToStop.once('exit', done);
+      try {
+        processToStop.kill();
+      } catch {
+        done();
+      }
+      setTimeout(done, 5_000);
+    });
   }
   state.apiProcess = null;
   // T2R-14: keep this reset. state.apiRestartCount is only incremented by the

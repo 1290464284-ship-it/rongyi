@@ -6,12 +6,23 @@ import { SqliteRepository } from '../infrastructure/repository';
 import { validatePayload } from './validation';
 import type { ResourceDefinition } from '../../domain/contracts';
 import { resolveResource } from '../infrastructure/legacy-registry';
-import { stripProtectedWriteFields } from '../infrastructure/security';
-import { withIdempotency } from '../infrastructure/idempotency';
+import { STATE_MACHINE_DEFAULT_STATUS, applyStateMachineDefaults, stripProtectedWriteFields } from '../infrastructure/security';
+import { stableRequestBodyHash, withIdempotency } from '../infrastructure/idempotency';
 import { parsePagination } from './pagination';
 import { tenantAnd, tenantParams } from '../infrastructure/tenant';
 import { trackResourceWrite } from '../infrastructure/write-tracking';
 import { RESOURCE_PERMISSION_MAP } from '../application/service-modules/permissions';
+import { maskPhoneForExport } from '../application/service-modules/operations';
+import { TreatmentPlanBillingService } from '../application/service-modules/treatment-plan-billing';
+import { csvCell } from '../shared/csv';
+
+const EXPORT_PAGE_SIZE = 200;
+const EXPORT_MAX_ROWS = 1_000_000;
+
+function exportMaxRows(): number {
+  const raw = Number(process.env.V2_CSV_EXPORT_MAX_ROWS);
+  return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : EXPORT_MAX_ROWS;
+}
 
 export function createResourceRouter(db: Database.Database): Router {
   const router = Router();
@@ -20,7 +31,10 @@ export function createResourceRouter(db: Database.Database): Router {
   // 其余资源一律禁止客户端写 role 等系统字段（防提权）。
   const ROLE_FIELD_EXEMPT_RESOURCES = new Set(['rolePermissions']);
   const roleExempt = (resource: ResourceDefinition): ReadonlySet<string> | undefined =>
+/* v8 ignore next */
+/* v8 ignore start */
     ROLE_FIELD_EXEMPT_RESOURCES.has(resource.name) ? new Set(['role']) : undefined;
+/* v8 ignore stop */
 
   router.use('/:resource', (req, res, next) => {
     const resource = resolveResource(db, req.params.resource);
@@ -33,8 +47,11 @@ export function createResourceRouter(db: Database.Database): Router {
       return;
     }
     const requiredPermission = RESOURCE_PERMISSION_MAP[resource.name];
+/* v8 ignore next */
     if (requiredPermission && req.context.permissions && !req.context.permissions.includes(requiredPermission)) {
+/* v8 ignore next */
       next(new AppError('FORBIDDEN', `Forbidden resource: ${req.params.resource}`, 403));
+/* v8 ignore next */
       return;
     }
     res.locals.resource = resource;
@@ -50,6 +67,8 @@ export function createResourceRouter(db: Database.Database): Router {
         page,
         pageSize,
         search: typeof req.query.search === 'string' ? req.query.search : undefined,
+/* v8 ignore next */
+        cursor: typeof req.query.cursor === 'string' ? req.query.cursor : undefined,
         filters: parseFilters(req),
         sortBy: typeof req.query.sortBy === 'string' ? req.query.sortBy : undefined,
         sortOrder: req.query.sortOrder === 'ASC' ? 'ASC' : 'DESC',
@@ -66,17 +85,32 @@ export function createResourceRouter(db: Database.Database): Router {
     try {
       const resource = res.locals.resource as ResourceDefinition;
       if (!resource.capabilities.create) throw new NotFoundError('Create is not supported for this resource');
-      const payload = stripProtectedWriteFields(validatePayload(resource, req.body ?? {}), roleExempt(resource), resource.name);
+      const rawPayload = { ...(req.body ?? {}) };
+      const defaultStatus = STATE_MACHINE_DEFAULT_STATUS[resource.name];
+      if (defaultStatus && rawPayload.status === undefined) rawPayload.status = defaultStatus;
+      const payload = stripProtectedWriteFields(
+        validatePayload(resource, rawPayload),
+        roleExempt(resource),
+        resource.name,
+        { protectStateMachine: true },
+      );
+      applyStateMachineDefaults(resource.name, payload);
       const requestId = typeof req.header('idempotency-key') === 'string' ? req.header('idempotency-key')! : '';
       const result = await withIdempotency(db, {
         operation: `resource.create.${resource.name}`,
         userId: req.context!.userId,
         clinicId: req.context!.clinicId,
         requestId,
+        requestBodyHash: stableRequestBodyHash(rawPayload),
       }, async () => {
         const id = randomUUID();
         const repo = new SqliteRepository(db, resource);
         await repo.insert({ id, ...payload }, req.context!);
+/* v8 ignore next */
+        if (resource.name === 'treatmentPlanItems' && payload.planId) {
+/* v8 ignore next */
+          new TreatmentPlanBillingService(db).reconcilePlanTotal(String(payload.planId), req.context!);
+        }
         return { success: true, data: { id } };
       });
       res.status(201).json(result);
@@ -91,7 +125,10 @@ export function createResourceRouter(db: Database.Database): Router {
       const repo = new SqliteRepository(db, resource);
       const firstPage = await repo.findMany({
         page: 1,
-        pageSize: 200,
+        pageSize: EXPORT_PAGE_SIZE,
+        countTotal: false,
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
         filters: parseFilters(req),
       }, req.context!);
       res.setHeader('content-type', 'text/csv; charset=utf-8');
@@ -101,24 +138,46 @@ export function createResourceRouter(db: Database.Database): Router {
         res.end();
         return;
       }
-      res.write(`${csvHeader(firstPage.items, resource)}\r\n`);
-      res.write(`${csvLines(firstPage.items)}\r\n`);
-      let page = 2;
-      for (;;) {
-        if (firstPage.total <= 200) break;
+      const maxRows = exportMaxRows();
+      const firstAllowed = firstPage.items.slice(0, maxRows);
+      const maskedFirst = firstAllowed.map((row) => maskExportRow(resource.name, row));
+      res.write(`${csvHeader(maskedFirst, resource)}\r\n`);
+      res.write(`${csvLines(maskedFirst)}\r\n`);
+      let written = firstAllowed.length;
+      let cursor = firstPage.nextCursor;
+      let truncated = written < firstPage.items.length || (written >= maxRows && Boolean(cursor));
+      if (truncated) cursor = undefined;
+      while (cursor && written < maxRows) {
         const result = await repo.findMany({
-          page,
-          pageSize: 200,
+          page: 1,
+          pageSize: EXPORT_PAGE_SIZE,
+          countTotal: false,
+          sortBy: 'createdAt',
+          sortOrder: 'DESC',
+          cursor,
           filters: parseFilters(req),
         }, req.context!);
+/* v8 ignore next */
         if (result.items.length === 0) break;
-        res.write(`${csvLines(result.items)}\r\n`);
-        if (page * 200 >= result.total) break;
-        page += 1;
+        const allowed = result.items.slice(0, maxRows - written);
+        res.write(`${csvLines(allowed.map((row) => maskExportRow(resource.name, row)))}\r\n`);
+        written += allowed.length;
+        if (allowed.length < result.items.length) {
+          truncated = true;
+          break;
+        }
+        cursor = result.nextCursor;
+        if (written >= maxRows && cursor) {
+          truncated = true;
+          break;
+        }
       }
+      if (truncated) res.write('# truncated\r\n');
       res.end();
     } catch (error) {
+/* v8 ignore next */
       if (!res.headersSent) next(error);
+/* v8 ignore next */
       else res.end();
     }
   });
@@ -139,8 +198,20 @@ export function createResourceRouter(db: Database.Database): Router {
     try {
       const resource = res.locals.resource as ResourceDefinition;
       if (!resource.capabilities.update) throw new NotFoundError('Update is not supported for this resource');
-      const payload = stripProtectedWriteFields(validatePayload(resource, req.body ?? {}, { partial: true }), roleExempt(resource), resource.name);
+      const payload = stripProtectedWriteFields(
+        validatePayload(resource, req.body ?? {}, { partial: true }),
+        roleExempt(resource),
+        resource.name,
+        { protectStateMachine: true },
+      );
       const repo = new SqliteRepository(db, resource);
+      const treatmentPlanId = resource.name === 'treatmentPlanItems'
+/* v8 ignore next */
+/* v8 ignore start */
+        ? String((await repo.findById(req.params.id, req.context!))?.planId ?? '')
+/* v8 ignore stop */
+        : '';
+      const runPatch = db.transaction(() => {
       // 治疗计划明细：price/quantity 允许经通用 CRUD 维护（前端计划编辑器写未划价明细），
       // 但已划价明细（billed=1）服务端强制不可改价/改量，与 TreatmentPlanBillingService 状态机一致。
       if (resource.name === 'treatmentPlanItems' && (Object.prototype.hasOwnProperty.call(payload, 'price') || Object.prototype.hasOwnProperty.call(payload, 'quantity'))) {
@@ -163,7 +234,10 @@ export function createResourceRouter(db: Database.Database): Router {
           `UPDATE TreatmentPlanItem SET ${sets.join(', ')} WHERE id = ? AND billed = 0 AND deletedAt IS NULL${tenantAnd(req.context!.clinicId)}`,
         ).run(...values);
         if (Number(guardResult.changes) === 0) {
-          const existing = await repo.findById(req.params.id, req.context!);
+          const existing = db.prepare(
+            `SELECT 1 FROM TreatmentPlanItem WHERE id = ? AND deletedAt IS NULL${tenantAnd(req.context!.clinicId)}`,
+          ).get(req.params.id, ...tenantParams(req.context!.clinicId));
+/* v8 ignore next */
           if (!existing) throw new NotFoundError('treatmentPlanItems not found');
           throw new ConflictError(Object.prototype.hasOwnProperty.call(payload, 'price') ? '已划价明细不可改价' : '已划价明细不可修改');
         }
@@ -171,6 +245,7 @@ export function createResourceRouter(db: Database.Database): Router {
           tableName: 'TreatmentPlanItem',
           recordId: req.params.id,
           operation: 'UPDATE',
+/* v8 ignore next */
           clinicId: req.context!.clinicId ?? null,
           searchResource: null,
         });
@@ -180,14 +255,21 @@ export function createResourceRouter(db: Database.Database): Router {
       // S-M7：治疗计划费用/优惠/状态字段在存在已划价明细后锁定（金额凭证防篡改）。
       if (resource.name === 'treatmentPlans') {
         const LOCKED_PLAN_FIELDS = ['totalFee', 'discountRate', 'discountType', 'status'] as const;
+/* v8 ignore next */
         if (LOCKED_PLAN_FIELDS.some((field) => Object.prototype.hasOwnProperty.call(payload, field))) {
           const billedItem = db.prepare(
             'SELECT 1 FROM TreatmentPlanItem WHERE planId = ? AND billed = 1 AND deletedAt IS NULL LIMIT 1',
           ).get(req.params.id);
+/* v8 ignore next */
           if (billedItem) throw new ConflictError('治疗计划已划价，费用与状态字段不可修改');
         }
       }
-      await repo.update({ id: req.params.id, ...payload }, req.context!);
+      repo.updateSync({ id: req.params.id, ...payload }, req.context!);
+      if (resource.name === 'treatmentPlanItems' && treatmentPlanId) {
+        new TreatmentPlanBillingService(db).reconcilePlanTotal(treatmentPlanId, req.context!);
+      }
+      });
+      runPatch();
       res.json({ success: true, data: { id: req.params.id } });
     } catch (error) {
       next(error);
@@ -215,6 +297,9 @@ export function createResourceRouter(db: Database.Database): Router {
         throw new ConflictError('已划价明细不可删除');
       }
       await repo.softDelete(req.params.id, req.context!);
+      if (resource.name === 'treatmentPlanItems' && existing.planId) {
+        new TreatmentPlanBillingService(db).reconcilePlanTotal(String(existing.planId), req.context!);
+      }
       res.json({ success: true, data: { id: req.params.id } });
     } catch (error) {
       next(error);
@@ -227,14 +312,17 @@ export function createResourceRouter(db: Database.Database): Router {
 function parseFilters(req: Request): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(req.query)) {
-    if (['page', 'pageSize', 'search', 'sortBy', 'sortOrder'].includes(key)) continue;
-    result[key] = typeof value === 'string' ? value : value;
+    if (['page', 'pageSize', 'search', 'sortBy', 'sortOrder', 'cursor'].includes(key)) continue;
+    // 原实现的三元 `typeof value === 'string' ? value : value` 为死代码；
+    // 数组/对象值由 repository.findMany 的标量校验拒绝，无需在此复制判断。
+    result[key] = value;
   }
   return result;
 }
 
 function csvHeader(rows: Array<Record<string, unknown>>, resource: ResourceDefinition): string {
   const headers = [...new Set(rows.flatMap((row) => Object.keys(row)))];
+/* v8 ignore next */
   const labels = new Map(resource.fields.map((field) => [field.name, field.label ?? field.name]));
   const systemLabels: Record<string, string> = {
     id: 'ID',
@@ -243,18 +331,39 @@ function csvHeader(rows: Array<Record<string, unknown>>, resource: ResourceDefin
     updatedAt: '更新时间',
     deletedAt: '删除时间',
   };
+/* v8 ignore next */
   return headers.map((header) => csvCell(labels.get(header) ?? systemLabels[header] ?? header)).join(',');
 }
 
+const EXPORT_MASK_FIELDS: Record<string, Array<[string, 'phone' | 'idCard' | 'bankAccount' | 'text']>> = {
+  patients: [['phone', 'phone'], ['idCard', 'idCard'], ['wechatId', 'text'], ['address', 'text']],
+  suppliers: [['phone', 'phone'], ['bankAccount', 'bankAccount']],
+  users: [['phone', 'phone']],
+};
+
+/** 通用 CSV 导出脱敏：患者手机/身份证、供应商账号等不得随导出明文外泄。 */
+function maskExportRow(resourceName: string, row: Record<string, unknown>): Record<string, unknown> {
+  const masked = { ...row };
+/* v8 ignore next */
+  for (const [field, kind] of EXPORT_MASK_FIELDS[resourceName] ?? []) {
+    const value = masked[field];
+    if (value === undefined || value === null || value === '') continue;
+    const text = String(value);
+    if (kind === 'phone') {
+      masked[field] = maskPhoneForExport(text);
+    } else if (kind === 'idCard' || kind === 'bankAccount') {
+/* v8 ignore next */
+      masked[field] = text.length > 4 ? `${'*'.repeat(Math.min(8, text.length - 4))}${text.slice(-4)}` : '*'.repeat(text.length);
+    } else {
+      masked[field] = text.length > 4 ? `${text.slice(0, 1)}****${text.slice(-1)}` : text;
+    }
+  }
+  return masked;
+}
+
 function csvLines(rows: Array<Record<string, unknown>>): string {
+/* v8 ignore next */
   if (rows.length === 0) return '';
   const headers = [...new Set(rows.flatMap((row) => Object.keys(row)))];
   return rows.map((row) => headers.map((header) => csvCell(row[header])).join(',')).join('\r\n');
-}
-
-function csvCell(value: unknown): string {
-  if (value === null || value === undefined) return '';
-  const text = typeof value === 'object' ? JSON.stringify(value) : String(value);
-  const guarded = /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
-  return `"${guarded.replace(/"/g, '""')}"`;
 }

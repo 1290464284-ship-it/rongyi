@@ -10,17 +10,42 @@ export class SqliteFollowUpRepository implements FollowUpRepository {
 
   reminders(
     clinicId?: string | null,
-    options?: { page?: number; pageSize?: number },
+    options?: { page?: number; pageSize?: number; scope?: 'overdue' | 'today' | 'upcoming' | 'all' },
   ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean } {
+    const today = new SystemClock().clinicDate();
     const future = new SystemClock().clinicDate(Date.now() + 14 * 86_400_000);
     const rawPage = Number(options?.page);
     const rawPageSize = Number(options?.pageSize);
     const page = Number.isFinite(rawPage) && rawPage >= 1 ? Math.floor(rawPage) : 1;
     const pageSize = Number.isFinite(rawPageSize) && rawPageSize >= 1 ? Math.min(100, Math.floor(rawPageSize)) : 100;
     const offset = (page - 1) * pageSize;
-    const params: Array<string | number> = clinicId ? [future, clinicId] : [future];
+    let scopeClause: string;
+    let scopeParams: string[];
+    switch (options?.scope) {
+      case 'overdue':
+        scopeClause = "F.status IN ('PENDING', 'IN_PROGRESS') AND F.deletedAt IS NULL AND F.planDate < ?";
+        scopeParams = [today];
+        break;
+      case 'today':
+        scopeClause = "F.status IN ('PENDING', 'IN_PROGRESS') AND F.deletedAt IS NULL AND F.planDate = ?";
+        scopeParams = [today];
+        break;
+      case 'upcoming':
+        scopeClause = "F.status IN ('PENDING', 'IN_PROGRESS') AND F.deletedAt IS NULL AND F.planDate > ?";
+        scopeParams = [today];
+        break;
+      case 'all':
+        scopeClause = "F.status IN ('PENDING', 'IN_PROGRESS') AND F.deletedAt IS NULL AND F.planDate IS NOT NULL";
+        scopeParams = [];
+        break;
+      default:
+        scopeClause = "F.status = 'PENDING' AND F.deletedAt IS NULL AND F.planDate <= ?";
+        scopeParams = [future];
+        break;
+    }
+    const params: Array<string | number> = [...scopeParams, ...(clinicId ? [clinicId] : [])];
     const tenantClause = tenantAnd(clinicId, 'F.clinicId');
-    const where = `WHERE F.status = 'PENDING' AND F.deletedAt IS NULL AND F.planDate <= ?${tenantClause}`;
+    const where = `WHERE ${scopeClause}${tenantClause}`;
     const total = Number((this.db.prepare(
       `SELECT COUNT(*) AS total FROM FollowUp F ${where}`,
     ).get(...params) as { total: number }).total);

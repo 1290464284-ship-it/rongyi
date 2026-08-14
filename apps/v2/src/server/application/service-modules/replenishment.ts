@@ -1,8 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
-import { NotFoundError, ValidationError } from '../../infrastructure/errors';
+import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { trackResourceWrite } from '../../infrastructure/write-tracking';
+import {
+  AGGREGATE_THRESHOLD,
+  readReplenishmentSnapshot,
+  tableRowCount,
+  writeReplenishmentSnapshot,
+} from '../../infrastructure/stats-aggregate';
 import { generateDocumentNumber } from './common';
 import type { AppContext } from '../../../domain/contracts';
 
@@ -17,70 +23,91 @@ export class ReplenishmentService {
        SET status = 'IGNORED', updatedAt = ?
        WHERE deletedAt IS NULL AND (status IS NULL OR status = 'OPEN')${tenantAnd(clinicId)}`,
     ).run(context.now().toISOString(), ...clinicParams);
-    const items = this.db.prepare(
-      `SELECT * FROM InventoryItem WHERE deletedAt IS NULL${tenantAnd(clinicId)}`,
-    ).all(...clinicParams) as Array<Record<string, unknown>>;
     const nowDate = context.now();
     const now = nowDate.toISOString();
-    const since = new Date(nowDate.getTime() - 90 * 86_400_000).toISOString();
-    const consumptionParams = clinicId ? [since, clinicId] : [since];
-    const consumptionRows = this.db.prepare(
-      `SELECT itemId,
-              COALESCE(SUM(
-                CASE
-                  WHEN type = 'OUT' THEN quantity
-                  WHEN type = 'ADJUST' AND quantity < 0 THEN ABS(quantity)
-                  ELSE 0
-                END
-              ), 0) AS consumed
-       FROM InventoryTransaction
-       WHERE createdAt >= ? AND deletedAt IS NULL${tenantAnd(clinicId)}
-       GROUP BY itemId`,
-    ).all(...consumptionParams) as Array<{ itemId: string; consumed: number }>;
-    /* v8 ignore start -- the aggregate query always returns a numeric consumed value. */
-    const consumptionByItem = new Map(consumptionRows.map((row) => [row.itemId, Number(row.consumed ?? 0)]));
-    /* v8 ignore stop */
+    // 快照窗口按 UTC 日对齐，同一自然日内重复生成可复用物化快照；
+    // 窗口标签为“今日 0 点往前 90 个完整 UTC 日”，新增流水仍由
+    // MAX(createdAt) 二次校验兜底，跨进程/直写路径也不会漏失效。
+    const DAY_MS = 86_400_000;
+    const todayUtcStart = Math.floor(nowDate.getTime() / DAY_MS) * DAY_MS;
+    const windowEnd = new Date(todayUtcStart).toISOString();
+    const since = new Date(todayUtcStart - 90 * DAY_MS).toISOString();
+    // 超过阈值后使用惰性物化快照：写路径失效 + 最新流水时间二次校验，避免重复全表聚合。
+    let consumptionByItem: Map<string, number>;
+    if (clinicId !== null && tableRowCount(this.db, 'InventoryTransaction') > AGGREGATE_THRESHOLD) {
+      const latestRow = this.db.prepare(
+        `SELECT MAX(createdAt) AS m FROM InventoryTransaction
+         WHERE createdAt >= ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
+      ).get(since, ...clinicParams) as { m: string | null } | undefined;
+      const cached = readReplenishmentSnapshot(this.db, clinicId, since, windowEnd, latestRow?.m ?? null);
+      if (cached) {
+        consumptionByItem = cached;
+      } else {
+        consumptionByItem = computeConsumption(this.db, clinicId, since);
+        writeReplenishmentSnapshot(this.db, clinicId, since, windowEnd, consumptionByItem, now);
+      }
+    } else {
+      consumptionByItem = computeConsumption(this.db, clinicId, since);
+    }
     const leadTimeDays = 7;
     const safetyFactor = 1.5;
     const orderCost = 50;
     const holdingCostRate = 0.1;
     let generated = 0;
-    for (const item of items) {
-      const stock = Number(item.stock ?? 0);
-      const minStock = Number(item.minStock ?? 0);
-      const consumed = consumptionByItem.get(String(item.id)) ?? 0;
-      const avgDaily = Math.max(0.01, consumed / 90);
-      const safetyStock = Math.ceil(avgDaily * safetyFactor * 2);
-      const rop = Math.ceil(avgDaily * leadTimeDays + safetyStock);
-      const annualDemand = Math.max(1, avgDaily * 365);
-      const eoq = Math.ceil(Math.sqrt((2 * annualDemand * orderCost) / holdingCostRate));
-      if (stock <= rop) {
-        const suggestedQty = Math.max(1, Math.ceil(rop - stock + 1), eoq);
-        const snapshot = {
-          avgDaily,
-          leadTimeDays,
-          safetyFactor,
-          safetyStock,
-          rop,
-          eoq,
-          consumedLast90Days: consumed,
-          consumptionWindowDays: 90,
-          stockAtCalculation: stock,
-          minStockAtCalculation: minStock,
-          reason: consumed > 0 ? 'DEMAND_BASED_ROP' : 'MIN_STOCK_BASELINE',
-        };
-        this.db.prepare(
-          `INSERT INTO InventoryReplenishmentSuggestion (
-             id, clinicId, inventoryId, avgDailyConsumption, leadTimeDays,
-             safetyFactor, rop, suggestedQty, calculationSnapshotJson,
-             createdAt, updatedAt, deletedAt
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
-        ).run(
-          randomUUID(), context.clinicId ?? null, item.id, avgDaily, leadTimeDays, safetyFactor, rop, suggestedQty,
-          JSON.stringify(snapshot), now, now,
-        );
-        generated += 1;
+    const insertSuggestion = this.db.prepare(
+      `INSERT INTO InventoryReplenishmentSuggestion (
+         id, clinicId, inventoryId, avgDailyConsumption, leadTimeDays,
+         safetyFactor, rop, suggestedQty, calculationSnapshotJson,
+         createdAt, updatedAt, deletedAt
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+    );
+    // 有界分块事务：大库下避免单个长事务占用写锁过久，同时保持每块原子性。
+    const runChunk = this.db.transaction((chunk: Array<Record<string, unknown>>) => {
+      for (const item of chunk) {
+        const stock = Number(item.stock ?? 0);
+        const minStock = Number(item.minStock ?? 0);
+        const consumed = consumptionByItem.get(String(item.id)) ?? 0;
+        const avgDaily = Math.max(0.01, consumed / 90);
+        const safetyStock = Math.ceil(avgDaily * safetyFactor * 2);
+        const rop = Math.ceil(avgDaily * leadTimeDays + safetyStock);
+        const annualDemand = Math.max(1, avgDaily * 365);
+        const eoq = Math.ceil(Math.sqrt((2 * annualDemand * orderCost) / holdingCostRate));
+        if (stock <= rop) {
+          const suggestedQty = Math.max(1, Math.ceil(rop - stock + 1), eoq);
+          const snapshot = {
+            avgDaily,
+            leadTimeDays,
+            safetyFactor,
+            safetyStock,
+            rop,
+            eoq,
+            consumedLast90Days: consumed,
+            consumptionWindowDays: 90,
+            stockAtCalculation: stock,
+            minStockAtCalculation: minStock,
+            reason: consumed > 0 ? 'DEMAND_BASED_ROP' : 'MIN_STOCK_BASELINE',
+          };
+          insertSuggestion.run(
+            randomUUID(), context.clinicId ?? null, item.id, avgDaily, leadTimeDays, safetyFactor, rop, suggestedQty,
+            JSON.stringify(snapshot), now, now,
+          );
+          generated += 1;
+        }
       }
+    });
+    // 有界 keyset 分批读取：避免十万级库存整表进内存，同时保持每块事务原子性。
+    const CHUNK_SIZE = 200;
+    let lastRowid = 0;
+    for (;;) {
+      const rows = this.db.prepare(
+        `SELECT rowid, * FROM InventoryItem WHERE deletedAt IS NULL AND rowid > ?${tenantAnd(clinicId)}
+         ORDER BY rowid ASC LIMIT ?`,
+      ).all(lastRowid, ...clinicParams, CHUNK_SIZE) as Array<Record<string, unknown>>;
+      if (rows.length === 0) break;
+      runChunk(rows);
+      lastRowid = Number(rows[rows.length - 1].rowid);
+/* v8 ignore next */
+      if (rows.length < CHUNK_SIZE) break;
     }
     return { generated };
   }
@@ -162,9 +189,16 @@ export class ReplenishmentService {
             unitPrice,
             quantity * unitPrice,
           );
-          this.db.prepare(
-            `UPDATE InventoryReplenishmentSuggestion SET status = ?, updatedAt = ? WHERE id = ?${tenantAnd(clinicId)}`,
+          const claimed = this.db.prepare(
+            `UPDATE InventoryReplenishmentSuggestion
+             SET status = ?, updatedAt = ?
+             WHERE id = ? AND deletedAt IS NULL AND (status IS NULL OR status = 'OPEN')${tenantAnd(clinicId)}`,
           ).run('APPLIED', now, suggestion.id, ...(clinicId ? [clinicId] : []));
+/* v8 ignore next */
+          if (claimed.changes === 0) {
+/* v8 ignore next */
+            throw new ConflictError('补货建议已被处理，请刷新后重试');
+          }
         }
         orders.push({ id: orderId, number: orderNumber, supplierId, totalAmount, items: group.length });
       }
@@ -178,4 +212,28 @@ export class ReplenishmentService {
       orderCount: orders.length,
     };
   }
+}
+
+/** 90 天消耗聚合（快照与实时共用同一 SQL 口径）。 */
+function computeConsumption(
+  db: Database.Database,
+  clinicId: string | null,
+  since: string,
+): Map<string, number> {
+  const consumptionParams = clinicId ? [since, clinicId] : [since];
+  const rows = db.prepare(
+    `SELECT itemId,
+            COALESCE(SUM(
+              CASE
+                WHEN type = 'OUT' THEN quantity
+                WHEN type = 'ADJUST' AND quantity < 0 THEN ABS(quantity)
+                ELSE 0
+              END
+            ), 0) AS consumed
+     FROM InventoryTransaction
+     WHERE createdAt >= ? AND deletedAt IS NULL${tenantAnd(clinicId)}
+     GROUP BY itemId`,
+  ).all(...consumptionParams) as Array<{ itemId: string; consumed: number }>;
+/* v8 ignore next */
+  return new Map(rows.map((row) => [row.itemId, Number(row.consumed ?? 0)]));
 }

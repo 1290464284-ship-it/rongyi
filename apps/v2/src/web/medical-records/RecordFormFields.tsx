@@ -1,28 +1,61 @@
+import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../lib/api';
-import { SearchableSelect } from '../components';
+import { MissingSelectOption, PagePager, SearchableSelect } from '../components';
 import type { Page } from '../lib/types';
 import type { RecordForm } from './types';
 
+const VISIT_PAGE_SIZE = 100;
+
 export function RecordFormFields({ form, update }: { form: RecordForm; update: (patch: Partial<RecordForm>) => void }) {
+  const [visitPage, setVisitPage] = useState(1);
+  const [prevPatientId, setPrevPatientId] = useState(form.patientId);
+  const visitsPatientRef = useRef<string | null>(null);
+  if (prevPatientId !== form.patientId) {
+    setPrevPatientId(form.patientId);
+    setVisitPage(1);
+  }
   const doctors = useQuery({
     queryKey: ['record-doctors'],
     queryFn: () => apiRequest<Array<Record<string, unknown>>>('/doctors'),
   });
   const visits = useQuery({
-    queryKey: ['record-visits'],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/visits?page=1&pageSize=100'),
+    queryKey: ['record-visits', form.patientId, visitPage],
+    queryFn: async () => {
+      const page = await apiRequest<Page<Record<string, unknown>>>(
+        `/resources/visits?patientId=${encodeURIComponent(form.patientId)}&page=${visitPage}&pageSize=${VISIT_PAGE_SIZE}`,
+      );
+      visitsPatientRef.current = form.patientId;
+      return page;
+    },
+    enabled: Boolean(form.patientId),
+    // 仅在同一患者的翻页间复用上一页数据，患者切换/清空时不再显示旧患者就诊。
+    placeholderData: (previous) => (previous && visitsPatientRef.current === form.patientId ? previous : undefined),
   });
+  const doctorRows = doctors.data ?? [];
+  const visitRows = visits.data?.items ?? [];
+  const doctorMissing = form.doctorId !== '' && !doctors.isLoading && !doctorRows.some((row) => String(row.id) === form.doctorId);
+  const visitMissing = form.visitId !== '' && !visits.isLoading && !visitRows.some((row) => String(row.id) === form.visitId);
   return (
     <>
       <label>
         患者
-        <SearchableSelect resource="patients" value={form.patientId} onChange={(id) => update({ patientId: id })} ariaLabel="患者" placeholder="选择患者" />
+        <SearchableSelect
+          resource="patients"
+          value={form.patientId}
+          onChange={(id) => {
+            if (id !== form.patientId) update({ patientId: id, visitId: '' });
+            else update({ patientId: id });
+          }}
+          ariaLabel="患者"
+          placeholder="选择患者"
+        />
       </label>
       <label>
         医生
         <select value={form.doctorId} onChange={(event) => update({ doctorId: event.target.value })}>
           <option value="">选择医生</option>
+          {doctorMissing && <MissingSelectOption value={form.doctorId} />}
           {doctors.data?.map((row) => (
             <option key={String(row.id)} value={String(row.id)}>{String(row.name ?? row.id)}</option>
           ))}
@@ -32,18 +65,26 @@ export function RecordFormFields({ form, update }: { form: RecordForm; update: (
         关联就诊
         <select value={form.visitId} onChange={(event) => update({ visitId: event.target.value })}>
           <option value="">不关联</option>
-          {visits.data?.items.map((row) => (
+          {visitMissing && <MissingSelectOption value={form.visitId} />}
+          {(visits.data?.items ?? []).map((row) => (
             <option key={String(row.id)} value={String(row.id)}>{String(row.id)}</option>
           ))}
         </select>
       </label>
+      {form.patientId && (
+        <PagePager
+          page={visitPage}
+          hasNext={visitPage * VISIT_PAGE_SIZE < (visits.data?.total ?? 0)}
+          onPageChange={(next) => {
+            update({ visitId: '' });
+            setVisitPage(next);
+          }}
+          disabled={visits.isPlaceholderData}
+        />
+      )}
       <label>
         分类
         <input value={form.category} onChange={(event) => update({ category: event.target.value })} />
-      </label>
-      <label>
-        状态
-        <input value={form.status} onChange={(event) => update({ status: event.target.value })} />
       </label>
       <label>
         <input type="checkbox" checked={form.isTemplate} onChange={(event) => update({ isTemplate: event.target.checked })} />

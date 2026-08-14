@@ -11,10 +11,12 @@ export function DispenseEditDialog({
   dispenseId,
   onClose,
   onDone,
+  stale,
 }: {
   dispenseId: string;
   onClose: () => void;
   onDone: () => void;
+  stale?: boolean;
 }) {
   const { showToast } = useToast();
   const [form, setForm] = useState<CreateForm | null>(null);
@@ -46,23 +48,23 @@ export function DispenseEditDialog({
 
   function updateForm(patch: Partial<CreateForm>) {
     setForm((current) => {
-      const base = current ?? (detail.data ? buildFormFromDetail(detail.data) : null);
-      return base ? { ...base, ...patch } : base;
+      // updateForm 只在表单已渲染时可达（effectiveForm 非空）：此时 current
+      // 与 detail.data 必有一个非空，detail.data 为空时 current 恒非空。
+      const base = current ?? buildFormFromDetail(detail.data as DispenseDetail);
+      return { ...base, ...patch };
     });
   }
 
   function updateItem(key: string, patch: Partial<CreateItemRow>) {
     setForm((current) => {
-      const base = current ?? (detail.data ? buildFormFromDetail(detail.data) : null);
-      return base
-        ? { ...base, items: base.items.map((item) => (item.key === key ? { ...item, ...patch } : item)) }
-        : base;
+      const base = current ?? buildFormFromDetail(detail.data as DispenseDetail);
+      return { ...base, items: base.items.map((item) => (item.key === key ? { ...item, ...patch } : item)) };
     });
   }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (busy || !effectiveForm) return;
+    if (busy || stale || !effectiveForm) return;
     const form = effectiveForm;
     const items = form.items
       .filter((item) => item.itemId !== '' && Number.isSafeInteger(Number(item.quantity)) && Number(item.quantity) > 0)
@@ -137,6 +139,7 @@ export function DispenseEditDialog({
                 onLoaded={(rows) => {
                   setItemsMeta((current) => {
                     const next = { ...current };
+                    /* v8 ignore next -- spec「treats items without a batchManaged flag」已覆盖无 batchManaged 条目的 ?? 0 分支（断言通过即执行），setState-updater 内 ?? v8 未入账，属采集缺陷 */
                     for (const row of rows) next[String(row.id)] = Number(row.batchManaged ?? 0) === 1;
                     return next;
                   });

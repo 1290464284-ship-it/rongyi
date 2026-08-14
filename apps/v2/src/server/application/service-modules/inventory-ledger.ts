@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3';
 import { ConflictError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { trackResourceWrite } from '../../infrastructure/write-tracking';
+import { invalidateStatSnapshots } from '../../infrastructure/stats-aggregate';
 
 /**
  * 库存增减的唯一入口：原子 UPDATE（OUT 带 `stock >= ?` 防并发扣成负数）、
@@ -99,4 +100,5 @@ export function recordInventoryTransaction(db: Database.Database, record: Invent
     record.referenceId ?? null,
     record.batchId ?? null,
   );
+  invalidateStatSnapshots(db, 'InventoryTransaction', record.clinicId);
 }

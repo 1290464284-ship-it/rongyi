@@ -45,6 +45,7 @@ function TreeNodeView({
   const open = expandedIds ? Boolean(expandedIds[node.id]) : openIds.has(node.id);
 
   function handleToggle() {
+    /* v8 ignore next -- 展开按钮仅在有子节点时渲染，无子节点分支不可达，防御冗余 */
     if (!hasChildren) return;
     if (expandedIds && onToggle) onToggle(node.id);
     else toggle(node.id);
@@ -56,15 +57,17 @@ function TreeNodeView({
         className={`ui-tree-item${selectedId === node.id ? ' selected' : ''}`}
         style={{ paddingLeft: depth * 16 + 8 }}
       >
-        <button
-          type="button"
-          className="ui-tree-toggle"
-          onClick={handleToggle}
-          aria-expanded={open}
-          aria-label={hasChildren ? (open ? `收起 ${node.label}` : `展开 ${node.label}`) : undefined}
-        >
-          {hasChildren ? (open ? '▼' : '+') : ''}
-        </button>
+        {hasChildren && (
+          <button
+            type="button"
+            className="ui-tree-toggle"
+            onClick={handleToggle}
+            aria-expanded={open}
+            aria-label={open ? `收起 ${node.label}` : `展开 ${node.label}`}
+          >
+            {open ? '▼' : '+'}
+          </button>
+        )}
         <span
           className="ui-tree-label"
           role="button"

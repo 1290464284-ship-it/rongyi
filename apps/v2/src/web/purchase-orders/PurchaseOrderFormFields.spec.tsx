@@ -7,8 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { PurchaseOrderFormFields } from './PurchaseOrderFormFields';
 import { emptyPurchaseForm } from './form';
 import { apiRequest, fetchAllPages } from '../lib/api';
-import type { SearchableSelectRow } from '../components';
-import type { PurchaseOrderForm } from './types';
+import type { PurchaseOrderForm, PurchaseOrderItemRow } from './types';
 
 vi.mock('../lib/api', () => ({
   apiRequest: vi.fn(),
@@ -33,17 +32,23 @@ function mockLookups() {
   });
 }
 
-function FormHarness({ editing = false, editingId = null }: { editing?: boolean; editingId?: string | null }) {
+function FormHarness({
+  editing = false,
+  editingId = null,
+  onItemsLoaded,
+}: {
+  editing?: boolean;
+  editingId?: string | null;
+  onItemsLoaded?: () => void;
+}) {
   const [form, setForm] = useState<PurchaseOrderForm>(() => emptyPurchaseForm());
-  const [inventoryRows, setInventoryRows] = useState<SearchableSelectRow[]>([]);
   return (
     <PurchaseOrderFormFields
       form={form}
       update={(patch) => setForm((current) => ({ ...current, ...patch }))}
-      inventoryRows={inventoryRows}
-      setInventoryRows={setInventoryRows}
       editing={editing}
       editingId={editingId}
+      onItemsLoaded={onItemsLoaded}
     />
   );
 }
@@ -96,8 +101,10 @@ describe('PurchaseOrderFormFields', () => {
 
   it('reports backfill failures', async () => {
     vi.mocked(fetchAllPages).mockRejectedValue(new Error(''));
-    render(<FormHarness editing editingId="po-1" />, { wrapper });
+    const onItemsLoaded = vi.fn();
+    render(<FormHarness editing editingId="po-1" onItemsLoaded={onItemsLoaded} />, { wrapper });
     expect(await screen.findByText('明细加载失败，请关闭后重试')).toBeDefined();
+    expect(onItemsLoaded).not.toHaveBeenCalled();
   });
 
   it('backfills sparse rows with blank and default fallbacks', async () => {
@@ -110,5 +117,67 @@ describe('PurchaseOrderFormFields', () => {
       expect((screen.getByLabelText('采购数量') as HTMLInputElement).value).toBe('1');
     });
     expect((screen.getByLabelText('采购单价') as HTMLInputElement).value).toBe('0.00');
+  });
+
+  it('backfills an empty list when the detail fetch resolves null', async () => {
+    mockLookups();
+    vi.mocked(fetchAllPages).mockImplementation(
+      async () => null as unknown as PurchaseOrderItemRow[],
+    );
+    const onItemsLoaded = vi.fn();
+    render(<FormHarness editing editingId="po-null" onItemsLoaded={onItemsLoaded} />, { wrapper });
+    await waitFor(() => {
+      expect(onItemsLoaded).toHaveBeenCalled();
+    });
+    expect((screen.getByRole('button', { name: '添加明细' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('ignores backfill settlement after unmount', async () => {
+    let rejectItems!: (reason?: unknown) => void;
+    vi.mocked(fetchAllPages).mockImplementation(() => new Promise((_resolve, reject) => {
+      rejectItems = reject;
+    }));
+    const update = vi.fn();
+    render(<PurchaseOrderFormFields form={emptyPurchaseForm()} update={update} editing editingId="po-1" />, { wrapper });
+    cleanup();
+    rejectItems(new Error('late rejection'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('keeps the current name when the option list never loaded', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.startsWith('/resources/suppliers?')) {
+        return { items: [{ id: 's-1', name: '供应商甲' }], total: 1, page: 1, pageSize: 100 };
+      }
+      if (path.startsWith('/resources/inventoryItems?')) throw new Error('load failed');
+      return {};
+    });
+    const update = vi.fn();
+    render(<PurchaseOrderFormFields form={emptyPurchaseForm()} update={update} editing={false} editingId={null} />, { wrapper });
+    const select = await screen.findByLabelText('采购项目') as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: 'i-1' } });
+    const patch = update.mock.calls.at(-1)?.[0] as { items?: Array<{ itemId: string; name: string }> };
+    expect(patch?.items?.[0]?.itemId).toBe('');
+    expect(patch?.items?.[0]?.name).toBe('');
+  });
+
+  it('keeps a blank name when the selected option has no name', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.startsWith('/resources/suppliers?')) {
+        return { items: [{ id: 's-1', name: '供应商甲' }], total: 1, page: 1, pageSize: 100 };
+      }
+      if (path.startsWith('/resources/inventoryItems?')) {
+        return { items: [{ id: 'i-null', name: null }], total: 1, page: 1, pageSize: 100 };
+      }
+      return {};
+    });
+    render(<FormHarness />, { wrapper });
+    const select = await screen.findByLabelText('采购项目') as HTMLSelectElement;
+    await waitFor(() => {
+      expect(select.options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(select, { target: { value: 'i-null' } });
+    expect((screen.getByLabelText('采购项目') as HTMLSelectElement).value).toBe('i-null');
   });
 });

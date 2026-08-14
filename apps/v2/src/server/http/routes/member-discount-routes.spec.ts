@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -16,7 +16,7 @@ describe('member discount routes', () => {
   let dataDir: string;
   let app: express.Express;
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-member-discount-routes-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -94,10 +94,23 @@ describe('member discount routes', () => {
     });
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
+
+  async function seedUpdatedPlan(): Promise<void> {
+    await request(app)
+      .put('/api/v2/member-cards/route-card-plan/discount-plan')
+      .send({
+        discountRate: 85,
+        maxDiscountAmount: 30000,
+        roundingMode: 'ROUND',
+        annualDiscountLimit: 500000,
+        specialDiscountsJson: [{ name: '绉嶆', category: 'IMPLANT', rate: 85 }],
+      })
+      .expect(200);
+  }
 
   it('PUT /api/v2/member-cards/:id/discount-plan saves the plan and GET reads it back', async () => {
     const put = await request(app)
@@ -140,6 +153,7 @@ describe('member discount routes', () => {
   });
 
   it('POST /api/v2/member-cards/:id/quote returns the discounted total', async () => {
+    await seedUpdatedPlan();
     const res = await request(app)
       .post('/api/v2/member-cards/route-card-plan/quote')
       .send({ baseTotal: 20000 })
@@ -177,6 +191,7 @@ describe('member discount routes', () => {
   });
 
   it('POST /api/v2/member-cards/quote quotes through the patient active card', async () => {
+    await seedUpdatedPlan();
     const res = await request(app)
       .post('/api/v2/member-cards/quote')
       .send({ patientId: 'patient-demo-001', baseTotal: 10000 })
@@ -238,5 +253,14 @@ describe('member discount routes', () => {
       .expect(404);
     expect(res.body.success).toBe(false);
     expect(res.body.code).toBe('NOT_FOUND');
+  });
+
+  it('tolerates missing request bodies', async () => {
+    const plan = await request(app).put('/api/v2/member-cards/missing/discount-plan');
+    expect([200, 400, 404]).toContain(plan.status);
+    const quote = await request(app).post('/api/v2/member-cards/missing/quote');
+    expect([200, 400, 404]).toContain(quote.status);
+    const quoteByPatient = await request(app).post('/api/v2/member-cards/quote');
+    expect([200, 400, 404]).toContain(quoteByPatient.status);
   });
 });

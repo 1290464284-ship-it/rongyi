@@ -45,4 +45,5 @@ export interface InventoryReportData {
   total: number;
   items: InventoryReportRow[];
   supplierId?: string | null;
+  truncated?: boolean;
 }

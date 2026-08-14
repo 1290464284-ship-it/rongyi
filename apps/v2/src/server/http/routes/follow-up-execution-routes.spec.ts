@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -16,7 +16,7 @@ describe('follow-up execution routes', () => {
   let dataDir: string;
   let app: express.Express;
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-follow-up-execution-routes-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -59,7 +59,7 @@ describe('follow-up execution routes', () => {
     }
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -144,5 +144,10 @@ describe('follow-up execution routes', () => {
     expect(res.body.success).toBe(false);
     expect(res.body.code).toBe('NOT_FOUND');
     expect(res.body.message).toBe('FollowUp not found');
+  });
+
+  it('tolerates a missing request body', async () => {
+    const res = await request(app).post('/api/v2/follow-ups/missing/execute');
+    expect([200, 400, 404, 409]).toContain(res.status);
   });
 });

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -16,7 +16,7 @@ describe('ChargeComboService', () => {
   let otherContext: AppContext;
   const now = '2026-08-05T10:00:00.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-charge-combo-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -37,7 +37,7 @@ describe('ChargeComboService', () => {
     };
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -79,16 +79,18 @@ describe('ChargeComboService', () => {
       price?: number;
       quantity?: number;
       costType?: 'SERVICE' | 'MATERIAL' | null;
+      catalogId?: string | null;
     } = {},
   ): void {
     db.prepare(
       `INSERT INTO ChargeComboItem (
          id, comboId, catalogId, name, category, price, quantity, costType,
          clinicId, createdAt, updatedAt, deletedAt
-       ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
     ).run(
       id,
       comboId,
+      overrides.catalogId === undefined ? null : overrides.catalogId,
       overrides.name ?? `Item ${id}`,
       overrides.category ?? 'GENERAL',
       overrides.price ?? 100,
@@ -131,6 +133,8 @@ describe('ChargeComboService', () => {
   });
 
   it('returns a combo with items; owner can read own PRIVATE combo', () => {
+    insertCombo('combo-private-mine', { name: '我的组合', type: 'PRIVATE', ownerId: 'user-admin-001' });
+    insertComboItem('combo-private-mine-item-1', 'combo-private-mine', { name: '私人项目', price: 8800, costType: null });
     const service = new ChargeComboService(db);
     const result = service.comboWithItems('combo-private-mine', context);
     expect(result.id).toBe('combo-private-mine');
@@ -142,6 +146,8 @@ describe('ChargeComboService', () => {
   });
 
   it('hides PRIVATE combos from other users and rejects missing/inactive combos', () => {
+    insertCombo('combo-private-mine', { type: 'PRIVATE', ownerId: 'user-admin-001' });
+    insertCombo('combo-inactive', { active: 0 });
     const service = new ChargeComboService(db);
     expect(() => service.comboWithItems('combo-private-mine', otherContext)).toThrow(NotFoundError);
     expect(() => service.comboWithItems('combo-private-mine', otherContext)).toThrow('Charge combo not found');
@@ -150,6 +156,9 @@ describe('ChargeComboService', () => {
   });
 
   it('applies a combo to a charge and persists costType on charge items', async () => {
+    insertCombo('combo-public-a', { name: '洁牙套餐' });
+    insertComboItem('combo-public-a-item-1', 'combo-public-a', { name: '洁牙', price: 30000, costType: 'SERVICE' });
+    insertComboItem('combo-public-a-item-2', 'combo-public-a', { name: '抛光膏', price: 5000, quantity: 2, costType: 'MATERIAL' });
     const service = new ChargeComboService(db);
     const result = await service.applyToCharge('combo-public-a', 'patient-demo-001', context);
     expect(result).toMatchObject({
@@ -189,5 +198,28 @@ describe('ChargeComboService', () => {
     const service = new ChargeComboService(db);
     await expect(service.applyToCharge('combo-missing', 'patient-demo-001', context))
       .rejects.toThrow(NotFoundError);
+  });
+
+  it('validates catalog references and prices when applying combo items', async () => {
+    db.prepare(
+      `INSERT INTO TreatmentCatalog (id, code, name, category, price, clinicId, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run('catalog-1', 'CAT-1', '目录洁牙', 'CLEAN', 100, 'clinic-v2-001', now, now);
+
+    insertCombo('combo-catalog-ok');
+    insertComboItem('combo-catalog-ok-item', 'combo-catalog-ok', { catalogId: 'catalog-1', price: 100, costType: null });
+    const service = new ChargeComboService(db);
+    await expect(service.applyToCharge('combo-catalog-ok', 'patient-demo-001', context))
+      .resolves.toMatchObject({ comboId: 'combo-catalog-ok' });
+
+    insertCombo('combo-catalog-missing');
+    insertComboItem('combo-catalog-missing-item', 'combo-catalog-missing', { catalogId: 'missing-catalog', price: 100 });
+    await expect(service.applyToCharge('combo-catalog-missing', 'patient-demo-001', context))
+      .rejects.toThrow('收费组合明细引用的目录项不存在: Item combo-catalog-missing-item');
+
+    insertCombo('combo-catalog-mismatch');
+    insertComboItem('combo-catalog-mismatch-item', 'combo-catalog-mismatch', { catalogId: 'catalog-1', price: 999 });
+    await expect(service.applyToCharge('combo-catalog-mismatch', 'patient-demo-001', context))
+      .rejects.toThrow('收费组合明细价格与目录不一致: Item combo-catalog-mismatch-item');
   });
 });

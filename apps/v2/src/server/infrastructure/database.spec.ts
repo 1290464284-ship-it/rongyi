@@ -99,6 +99,25 @@ describe('database bootstrap', () => {
     });
   });
 
+  it('skips legacy schema sync entirely in the test environment', () => {
+    const schemaDir = path.resolve(import.meta.dirname, '..', '..', '..', 'legacy', 'schema');
+    const count = () => (db.prepare(
+      "SELECT COUNT(*) AS c FROM sqlite_master WHERE type = 'table' AND name = 'PrintTemplate'",
+    ).get() as { c: number }).c;
+    const before = count();
+    // NODE_ENV=test → 直接返回，不建任何 legacy 表
+    syncLegacySchema(db, schemaDir);
+    expect(count()).toBe(before);
+  });
+
+  it('skips legacy schema sync when the schema directory has no files', () => {
+    withLegacySyncEnv(() => {
+      const emptyDir = path.join(dataDir, 'empty-schema');
+      fs.mkdirSync(emptyDir, { recursive: true });
+      expect(() => syncLegacySchema(db, emptyDir)).not.toThrow();
+    });
+  });
+
   it('parses every CREATE TABLE statement from all legacy schema files (format drift guard)', () => {
     // Round7 H-03: syncLegacySchema executes regex-extracted CREATE TABLE text
     // from legacy/schema/*.tables.ts at runtime. This assertion pins the implicit
@@ -323,6 +342,9 @@ describe('database bootstrap', () => {
     const chargeIndexes = (perfDb.prepare("PRAGMA index_list('Charge')").all() as Array<{ name: string }>)
       .map((row) => row.name);
     expect(chargeIndexes).toContain('idx_v2_perf_charge_patient');
+    const patientIndexes = (perfDb.prepare("PRAGMA index_list('Patient')").all() as Array<{ name: string }>)
+      .map((row) => row.name);
+    expect(patientIndexes).toContain('idx_v2_perf_patient_clinic_created');
     const appointmentIndexes = (perfDb.prepare("PRAGMA index_list('Appointment')").all() as Array<{ name: string }>)
       .map((row) => row.name);
     expect(appointmentIndexes).toContain('idx_v2_perf_appointment_start_clinic');
@@ -334,6 +356,17 @@ describe('database bootstrap', () => {
     expect(syncIndexes).toContain('idx_v2_sync_change_clinic_created');
     expect(() => createPerformanceIndexes(perfDb)).not.toThrow();
     perfDb.close();
+  });
+
+  it('skips performance indexes for missing tables and missing columns', () => {
+    const sparse = new Database(':memory:');
+    sparse.exec('CREATE TABLE Charge (id TEXT PRIMARY KEY)');
+    expect(() => createPerformanceIndexes(sparse)).not.toThrow();
+    const chargeIndexes = (sparse.prepare("PRAGMA index_list('Charge')").all() as Array<{ name: string }>)
+      .map((row) => row.name);
+    // 表存在但缺 patientId 等列：跳过而非报错；Patient 表不存在：跳过
+    expect(chargeIndexes.some((name) => name.startsWith('idx_v2_perf'))).toBe(false);
+    sparse.close();
   });
 
   it('full integrity check rejects a database file corrupted with garbage bytes', () => {

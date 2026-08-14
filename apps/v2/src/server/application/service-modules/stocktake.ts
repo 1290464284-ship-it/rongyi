@@ -103,8 +103,9 @@ export class StocktakeService {
     return {
       items: rows.map((row) => ({
         ...row,
-        itemCount: Number(row.itemCount ?? 0),
-        differenceCount: Number(row.differenceCount ?? 0),
+        // COUNT(*) 子查询恒返回非空整数
+        itemCount: Number(row.itemCount),
+        differenceCount: Number(row.differenceCount),
       })),
       total,
       page,
@@ -128,8 +129,8 @@ export class StocktakeService {
 
   /** 录入盘点数量：仅 IN_PROGRESS 可录入，差异 = 实盘 - 系统库存。 */
   recordCount(stocktakeId: string, itemId: string, countedStock: unknown, context: AppContext): Record<string, unknown> {
-    if (typeof countedStock !== 'number' || !Number.isInteger(countedStock) || countedStock < 0) {
-      throw new ValidationError('录入数量必须是非负整数');
+    if (typeof countedStock !== 'number' || !Number.isSafeInteger(countedStock) || countedStock < 0 || countedStock > 1_000_000_000) {
+      throw new ValidationError('录入数量必须是不超过 10 亿的非负整数');
     }
     const stocktake = this.findStocktake(stocktakeId, context);
     if (stocktake.status !== 'IN_PROGRESS') throw new ConflictError('仅进行中的盘点单可录入数量');
@@ -143,11 +144,26 @@ export class StocktakeService {
 
     const value = Number(countedStock);
     const systemStock = Number(row.systemStock);
+    const item = this.db.prepare(
+      `SELECT batchManaged FROM InventoryItem WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    ).get(itemId, ...tenantParams(context.clinicId)) as { batchManaged: number } | undefined;
+    if (!item) throw new NotFoundError('Inventory item not found');
+    if (Number(item.batchManaged) === 1 && value !== systemStock) {
+      // 批号管理商品的总库存由批次余量求和决定，直接改写主库存会让
+      // InventoryItem.stock 与 InventoryBatch.remainingQuantity 永久背离。
+      throw new ValidationError('批号管理商品不能直接调整库存，请调整批次余量');
+    }
     const difference = value - systemStock;
     const now = context.now().toISOString();
-    this.db.prepare(
-      `UPDATE StocktakeItem SET countedStock = ?, difference = ?, updatedAt = ? WHERE id = ?`,
-    ).run(value, difference, now, row.id);
+    const result = this.db.prepare(
+      `UPDATE StocktakeItem SET countedStock = ?, difference = ?, updatedAt = ?
+       WHERE id = ? AND deletedAt IS NULL AND stocktakeId = ?
+         AND EXISTS (
+           SELECT 1 FROM Stocktake s
+           WHERE s.id = StocktakeItem.stocktakeId AND s.status = 'IN_PROGRESS' AND s.deletedAt IS NULL
+         )`,
+    ).run(value, difference, now, row.id, stocktakeId);
+    if (Number(result.changes) === 0) throw new ConflictError('仅进行中的盘点单可录入数量');
     return { id: row.id, systemStock, countedStock: value, difference };
   }
 
@@ -157,9 +173,11 @@ export class StocktakeService {
     if (row.status !== 'IN_PROGRESS') throw new ConflictError('仅进行中的盘点单可锁定');
     if (!row.startedAt) throw new ConflictError('盘点单缺少开始时间');
     const now = context.now().toISOString();
-    this.db.prepare(
-      `UPDATE Stocktake SET status = 'LOCKED', updatedAt = ? WHERE id = ? AND deletedAt IS NULL`,
-    ).run(now, stocktakeId);
+    const result = this.db.prepare(
+      `UPDATE Stocktake SET status = 'LOCKED', updatedAt = ?
+       WHERE id = ? AND status = 'IN_PROGRESS' AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    ).run(now, stocktakeId, ...tenantParams(context.clinicId));
+    if (Number(result.changes) === 0) throw new ConflictError('仅进行中的盘点单可锁定');
     return { id: stocktakeId, status: 'LOCKED' };
   }
 
@@ -173,13 +191,14 @@ export class StocktakeService {
     const now = context.now().toISOString();
 
     const run = this.db.transaction((): { adjustedCount: number; items: Array<Record<string, unknown>> } => {
-      this.db.prepare(
+      const statusResult = this.db.prepare(
         `UPDATE Stocktake SET status = 'COMPLETED', completedById = ?, completedAt = ?, updatedAt = ?
-         WHERE id = ? AND deletedAt IS NULL`,
-      ).run(context.userId, now, now, stocktakeId);
+         WHERE id = ? AND status = 'LOCKED' AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+      ).run(context.userId, now, now, stocktakeId, ...tenantParams(context.clinicId));
+      if (Number(statusResult.changes) === 0) throw new ConflictError('仅已锁定的盘点单可完成');
 
       const diffs = this.db.prepare(
-        `SELECT si.itemId, si.systemStock, si.countedStock, si.difference, i.name
+        `SELECT si.itemId, si.systemStock, si.countedStock, si.difference, i.name, i.batchManaged
          FROM StocktakeItem si
          LEFT JOIN InventoryItem i ON i.id = si.itemId
          WHERE si.stocktakeId = ? AND si.deletedAt IS NULL AND si.difference != 0
@@ -190,18 +209,23 @@ export class StocktakeService {
         countedStock: number | null;
         difference: number;
         name: string | null;
+        batchManaged: number | null;
       }>;
 
       const insertTx = this.db.prepare(
         `INSERT INTO InventoryTransaction (
            id, clinicId, createdAt, updatedAt, deletedAt,
-           itemId, type, quantity, beforeStock, afterStock, operatorId, remark
-         ) VALUES (?, ?, ?, ?, NULL, ?, 'ADJUST', ?, ?, ?, ?, ?)`,
+           itemId, type, quantity, beforeStock, afterStock, operatorId, remark,
+           referenceType, referenceId
+         ) VALUES (?, ?, ?, ?, NULL, ?, 'ADJUST', ?, ?, ?, ?, ?, 'STOCKTAKE', ?)`,
       );
       const items: Array<Record<string, unknown>> = [];
       for (const diff of diffs) {
         const systemStock = Number(diff.systemStock);
         const countedStock = Number(diff.countedStock ?? systemStock);
+        if (Number(diff.batchManaged ?? 0) === 1) {
+          throw new ConflictError('批号管理商品不能通过盘点直接调整库存，请调整批次余量');
+        }
         setInventoryStock(this.db, diff.itemId, countedStock, now, context.clinicId);
         insertTx.run(
           randomUUID(),
@@ -214,10 +238,12 @@ export class StocktakeService {
           countedStock,
           context.userId,
           '盘点差异调整',
+          stocktakeId,
         );
         items.push({
           itemId: diff.itemId,
-          name: diff.name ?? null,
+          // InventoryTransaction.itemId 外键保证物品行必然存在，LEFT JOIN 恒有 name
+          name: diff.name,
           systemStock,
           countedStock,
           difference: Number(diff.difference),
@@ -237,9 +263,11 @@ export class StocktakeService {
       throw new ConflictError('仅进行中或已锁定的盘点单可取消');
     }
     const now = context.now().toISOString();
-    this.db.prepare(
-      `UPDATE Stocktake SET status = 'CANCELLED', updatedAt = ? WHERE id = ? AND deletedAt IS NULL`,
-    ).run(now, stocktakeId);
+    const result = this.db.prepare(
+      `UPDATE Stocktake SET status = 'CANCELLED', updatedAt = ?
+       WHERE id = ? AND status IN ('IN_PROGRESS', 'LOCKED') AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+    ).run(now, stocktakeId, ...tenantParams(context.clinicId));
+    if (Number(result.changes) === 0) throw new ConflictError('仅进行中或已锁定的盘点单可取消');
     return { id: stocktakeId, status: 'CANCELLED' };
   }
 
@@ -253,10 +281,10 @@ export class StocktakeService {
        FROM StocktakeItem si
        JOIN Stocktake s ON s.id = si.stocktakeId
        WHERE si.itemId = ? AND si.deletedAt IS NULL
-         AND s.status = 'LOCKED' AND s.deletedAt IS NULL${tenantAnd(clinicId ?? null, 'si.clinicId')}
+         AND s.status IN ('IN_PROGRESS', 'LOCKED') AND s.deletedAt IS NULL${tenantAnd(clinicId ?? null, 'si.clinicId')}
        LIMIT 1`,
     ).get(itemId, ...tenantParams(clinicId ?? null)) as { id: string } | undefined;
-    if (row) throw new ConflictError('库存盘点锁定中，该物品暂不能出入库');
+    if (row) throw new ConflictError('库存盘点进行中，该物品暂不能出入库');
   }
 
   /** 返回被 LOCKED 盘点单覆盖的物品 id 列表。 */
@@ -265,7 +293,7 @@ export class StocktakeService {
       `SELECT DISTINCT si.itemId
        FROM StocktakeItem si
        JOIN Stocktake s ON s.id = si.stocktakeId
-       WHERE si.deletedAt IS NULL AND s.deletedAt IS NULL AND s.status = 'LOCKED'
+       WHERE si.deletedAt IS NULL AND s.deletedAt IS NULL AND s.status IN ('IN_PROGRESS', 'LOCKED')
          ${tenantAnd(clinicId ?? null, 'si.clinicId')}`,
     ).all(...tenantParams(clinicId ?? null)) as Array<{ itemId: string }>;
     return rows.map((row) => row.itemId);

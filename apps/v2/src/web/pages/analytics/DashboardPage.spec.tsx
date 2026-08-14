@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { cleanup, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router';
 import { DashboardPage } from './DashboardPage';
 import { apiRequest } from '../../lib/api';
 import { ToastProvider } from '../../components/toast';
@@ -11,7 +12,7 @@ import { ToastProvider } from '../../components/toast';
 vi.mock('../../lib/api', () => ({ apiRequest: vi.fn(), downloadCsv: vi.fn() }));
 
 const wrapper = ({ children }: { children: ReactNode }) => (
-  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ToastProvider>{children}</ToastProvider></QueryClientProvider>
+  <MemoryRouter><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ToastProvider>{children}</ToastProvider></QueryClientProvider></MemoryRouter>
 );
 
 describe('DashboardPage', () => {
@@ -82,6 +83,19 @@ describe('DashboardPage', () => {
     expect(screen.getByText('未知患者')).toBeDefined();
     expect(screen.getByText((content) => content.includes('未分配医生') && content.includes('预约'))).toBeDefined();
     expect(screen.getByText('超过 100 条，仅显示前 100 条')).toBeDefined();
+  });
+
+  it('shows the workbench loading state for today appointments', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/stats/dashboard') {
+        return { patients: 0, appointments: 0, paidAmount: 0, unpaidAmount: 0, inventoryItems: 0, pendingFollowUps: 0 };
+      }
+      if (path === '/workbench/today') return new Promise(() => {});
+      return {};
+    });
+    render(<DashboardPage />, { wrapper });
+    expect(await screen.findByText('今日预约')).toBeDefined();
+    expect(screen.getByText('加载中...')).toBeDefined();
   });
 
   it('shows the empty and loading states for today appointments', async () => {

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -25,7 +25,7 @@ describe('user module permissions', () => {
     now: () => new Date(now),
   };
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-user-permissions-spec-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -50,7 +50,7 @@ describe('user module permissions', () => {
     ).run(now, now);
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -68,6 +68,27 @@ describe('user module permissions', () => {
        VALUES ('perm-user-001', 'BOSS', 'clinic-v2-001', ?, ?, NULL)`,
     ).run(now, now);
     expect(computeEffectivePermissions(db, 'perm-user-001', 'clinic-v2-001', 'DOCTOR')).toEqual(PERMISSION_KEYS);
+  });
+
+  it('ignores legacy UserRole rows whose role is not in the default permission table', () => {
+    db.prepare(
+      `INSERT INTO UserRole (userId, role, clinicId, createdAt, updatedAt, deletedAt)
+       VALUES ('perm-user-001', 'GHOST-LEGACY-ROLE', 'clinic-v2-001', ?, ?, NULL)`,
+    ).run(now, now);
+    // 未知角色跳过（hasOwnProperty else 分支），结果与无附加角色时一致
+    expect(computeEffectivePermissions(db, 'perm-user-001', 'clinic-v2-001', 'DOCTOR')).toEqual([
+      'dashboard',
+      'patients',
+      'clinical',
+      'communication',
+    ]);
+  });
+
+  it('rejects non-boolean allowed values in user permission updates', () => {
+    const service = new UserPermissionService(db);
+    expect(() => service.setPermissions('perm-user-001', [
+      { permission: 'finance', allowed: 'yes' as never },
+    ], context)).toThrow('allowed must be a boolean');
   });
 
   it('applies per-user overrides on top of role defaults', () => {
@@ -97,6 +118,10 @@ describe('user module permissions', () => {
 
   it('replaces the whole override set on PUT semantics', () => {
     const service = new UserPermissionService(db);
+    db.prepare(
+      `INSERT INTO RolePermission (id, role, resource, permission, allowed, clinicId, createdAt, updatedAt, deletedAt)
+       VALUES ('role-finance-fixture', 'DOCTOR', 'finance', 'access', 1, 'clinic-v2-001', ?, ?, NULL)`,
+    ).run(now, now);
     const result = service.setPermissions('perm-user-001', [
       { permission: 'inventory', allowed: true },
     ], context);
@@ -170,5 +195,78 @@ describe('user module permissions', () => {
       { resource: 'finance', allowed: true },
       { resource: 'patients', allowed: false },
     ]);
+  });
+
+  it('rejects malformed, duplicate, and missing permission keys', () => {
+    const service = new UserPermissionService(db);
+    expect(() => service.setPermissions('perm-user-001', null as unknown as [], context))
+      .toThrow('permissions must be an array');
+    expect(() => service.setPermissions('perm-user-001', [null as never], context))
+      .toThrow('permissions must be an array');
+    expect(() => service.setPermissions('perm-user-001', [{ allowed: true } as never], context))
+      .toThrow('Invalid permission key: ');
+    expect(() => service.setPermissions('perm-user-001', [
+      { permission: 'finance', allowed: true },
+      { permission: 'finance', allowed: false },
+    ], context)).toThrow('Duplicate permission key: finance');
+
+    const roleService = new RoleModulePermissionService(db);
+    expect(() => roleService.setForRole('DOCTOR', null as unknown as [], context))
+      .toThrow('permissions must be an array');
+    expect(() => roleService.setForRole('DOCTOR', [{ allowed: true } as never], context))
+      .toThrow('Invalid permission key: ');
+    expect(() => roleService.setForRole('DOCTOR', [
+      { resource: 'finance', allowed: true },
+      { resource: 'finance', allowed: false },
+    ], context)).toThrow('Duplicate permission key: finance');
+  });
+
+  it('normalizes all canonical false representations', () => {
+    const service = new UserPermissionService(db);
+    const result = service.setPermissions('perm-user-001', [
+      { permission: 'finance', allowed: 0 as unknown as boolean },
+      { permission: 'analytics', allowed: '0' as unknown as boolean },
+      { permission: 'hr', allowed: 'false' as unknown as boolean },
+    ], context);
+    expect(result.items.map((row) => ({ permission: row.permission, allowed: row.allowed })).sort(
+      (a, b) => a.permission.localeCompare(b.permission),
+    )).toEqual([
+      { permission: 'analytics', allowed: 0 },
+      { permission: 'finance', allowed: 0 },
+      { permission: 'hr', allowed: 0 },
+    ]);
+  });
+
+  it('rejects permission updates without a clinic id instead of failing on NOT NULL', () => {
+    const service = new UserPermissionService(db);
+    expect(() => service.setPermissions(
+      'perm-user-001',
+      [{ permission: 'finance', allowed: true }],
+      { ...context, clinicId: null },
+    )).toThrow('clinicId is required for permission updates');
+    const roleService = new RoleModulePermissionService(db);
+    expect(() => roleService.setForRole(
+      'DOCTOR',
+      [{ resource: 'finance', allowed: true }],
+      { ...context, clinicId: null },
+    )).toThrow('clinicId is required for permission updates');
+  });
+
+  it('ignores unknown role permission resources and user permission keys', () => {
+    db.prepare(
+      `INSERT INTO RolePermission (id, role, resource, permission, allowed, clinicId, createdAt, updatedAt, deletedAt)
+       VALUES ('role-bogus-1', 'DOCTOR', 'not-a-module', 'access', 1, 'clinic-v2-001', ?, ?, NULL)`,
+    ).run(now, now);
+    db.prepare(
+      `INSERT INTO UserPermission (userId, permission, allowed, clinicId, createdAt, updatedAt, deletedAt)
+       VALUES ('perm-user-001', 'not-a-module', 1, 'clinic-v2-001', ?, ?, NULL)`,
+    ).run(now, now);
+    expect(computeEffectivePermissions(db, 'perm-user-001', 'clinic-v2-001', 'DOCTOR'))
+      .toEqual(['dashboard', 'patients', 'clinical', 'communication']);
+
+    const roleService = new RoleModulePermissionService(db);
+    const listed = roleService.listForRole('DOCTOR', context);
+    expect(listed.items).toEqual([{ resource: 'not-a-module', allowed: true }]);
+    expect(listed.effective).not.toContain('not-a-module');
   });
 });

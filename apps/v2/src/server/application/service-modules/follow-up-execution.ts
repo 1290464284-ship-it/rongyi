@@ -3,6 +3,7 @@ import { ConflictError, NotFoundError, ValidationError } from '../../infrastruct
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { trackResourceWrite } from '../../infrastructure/write-tracking';
 import { computeNps, computeAverage } from '../nps';
+import { assertValidDateValue, assertValidDateTimeValue } from '../../http/validation';
 import type { AppContext } from '../../../domain/contracts';
 
 const EXECUTION_STATUSES = new Set(['DONE', 'SKIPPED']);
@@ -50,22 +51,32 @@ export class FollowUpExecutionService {
     const patientRating = validateRating(input.patientRating);
     const painLevel = validateRating(input.painLevel);
     const feedback = normalizeOptionalString(input.feedback);
-    const contactedAt = normalizeOptionalString(input.contactedAt);
-    const nextPlanDate = normalizeOptionalString(input.nextPlanDate);
+    const contactedAt = input.contactedAt === undefined || input.contactedAt === null
+      || (typeof input.contactedAt === 'string' && input.contactedAt.trim() === '')
+      ? null
+      : assertValidDateTimeValue(input.contactedAt, 'contactedAt');
+    const nextPlanDate = input.nextPlanDate === undefined || input.nextPlanDate === null
+      || (typeof input.nextPlanDate === 'string' && input.nextPlanDate.trim() === '')
+      ? null
+      : assertValidDateValue(input.nextPlanDate, 'nextPlanDate');
     if (executionStatus === 'DONE' && !contactedAt) {
       throw new ValidationError('请填写联系时间');
     }
 
     const now = context.now().toISOString();
-    this.db.prepare(
+    const result = this.db.prepare(
       `UPDATE FollowUp
        SET executionStatus = ?, patientRating = ?, painLevel = ?, feedback = ?,
             contactedAt = ?, nextPlanDate = ?, status = 'COMPLETED', completedAt = ?, updatedAt = ?
-       WHERE id = ?${tenantAnd(context.clinicId)}`,
+       WHERE id = ? AND deletedAt IS NULL
+         AND (executionStatus IS NULL OR executionStatus = 'PENDING')${tenantAnd(context.clinicId)}`,
     ).run(
        executionStatus, patientRating, painLevel, feedback, contactedAt, nextPlanDate, now, now, id,
        ...tenantParams(context.clinicId),
     );
+    if (Number(result.changes) === 0) {
+      throw new ConflictError('该随访已完成执行');
+    }
     trackResourceWrite(this.db, { tableName: 'FollowUp', recordId: id, operation: 'UPDATE', clinicId: context.clinicId ?? null });
     return { id, executionStatus, patientRating, painLevel, nextPlanDate };
   }

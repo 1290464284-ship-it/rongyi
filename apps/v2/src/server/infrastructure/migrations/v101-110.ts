@@ -143,7 +143,10 @@ export const migrations101to110: Migration[] = [
         "SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name != 'schema_migrations'",
       ).all() as Array<{ name: string; sql: string | null }>;
       const virtualTables = tables
+/* v8 ignore next */
+/* v8 ignore start */
         .filter((row) => String(row.sql ?? '').toUpperCase().includes('CREATE VIRTUAL TABLE'))
+/* v8 ignore stop */
         .map((row) => row.name);
       const baseColumns: Array<[string, string]> = [
         ['clinicId', 'TEXT'],

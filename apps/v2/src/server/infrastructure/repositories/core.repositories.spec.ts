@@ -5,10 +5,11 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase } from '../database';
 import { runMigrations } from '../migrations';
+import { SystemClock } from '../clock';
 import {
   SqliteAlertRepository,
   SqliteAuthRepository,
@@ -30,7 +31,7 @@ describe('core repositories', () => {
   let dataDir: string;
   const now = '2026-08-03T00:00:00.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-core-repo-'));
     db = createDatabase(dataDir);
     runMigrations(db);
@@ -67,10 +68,34 @@ describe('core repositories', () => {
     ).run('user-1', now, now);
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
+
+  const seedDependentFixtures = () => {
+    db.prepare(
+      `INSERT INTO Patient (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active
+       ) VALUES (?, NULL, ?, ?, NULL, 'FU', 'Follow Up Patient', 'UNKNOWN', '13400000000',
+         '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
+    ).run('followup-patient', now, now);
+    db.prepare(
+      `INSERT INTO MemberCard (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, cardNo, balance, totalRecharge, totalConsume,
+         status, points, totalPoints, level
+       ) VALUES (?, ?, ?, ?, NULL, ?, 'CARD', 0, 0, 0, 'ACTIVE', 0, 0, 'NORMAL')`,
+    ).run('card-repo', null, now, now, 'patient-repo');
+    db.prepare(
+      `INSERT INTO InventoryItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, category, unit, stock, minStock, price
+       ) VALUES (?, ?, ?, ?, NULL, 'LOW', 'Low Item', 'MAT', 'box', 1, 5, 100)`,
+    ).run('inventory-repo', null, now, now);
+  };
 
   it('persists member card balance and logs', () => {
     const repo = new SqliteMemberCardRepository(db);
@@ -92,6 +117,18 @@ describe('core repositories', () => {
     repo.updatePoints('card-repo', -5, 0, now);
     expect(repo.findById('card-repo')?.points).toBe(25);
     expect(() => repo.updateConsume('card-repo', 999, now)).toThrow('Insufficient member card balance');
+  });
+
+  it('throws Insufficient points when a card has too few points', () => {
+    const member = new SqliteMemberCardRepository(db);
+    db.prepare(
+      `INSERT INTO MemberCard (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, cardNo, balance, totalRecharge, totalConsume,
+         status, points, totalPoints, level
+       ) VALUES (?, ?, ?, ?, NULL, ?, 'CARD-NO-POINTS', 0, 0, 0, 'ACTIVE', 5, 5, 'NORMAL')`,
+    ).run('card-no-points', null, now, now, 'patient-repo');
+    expect(() => member.updatePoints('card-no-points', -10, 0, now)).toThrow('Insufficient points');
   });
 
   it('filters soft-deleted rows and supports member-card refund lookups', () => {
@@ -272,6 +309,28 @@ describe('core repositories', () => {
     expect(row.status).toBe('UNPAID');
   });
 
+  it('coerces undefined payMethod and memberCardId to null for clinic-scoped updates', () => {
+    const repo = new SqliteChargeRepository(db);
+    repo.create({
+      id: 'charge-scoped-null',
+      clinicId: 'clinic-v2-001',
+      patientId: 'patient',
+      number: 'CHG-SCOPED-NULL',
+      totalAmount: 1000,
+      discount: 0,
+      status: 'UNPAID',
+      createdAt: now,
+      updatedAt: now,
+    });
+    repo.updatePayment('charge-scoped-null', 100, 'PARTIAL', now, 0, undefined, null, 'clinic-v2-001');
+    const row = db.prepare('SELECT payMethod, memberCardId FROM Charge WHERE id = ?').get('charge-scoped-null') as {
+      payMethod: string | null;
+      memberCardId: string | null;
+    };
+    expect(row.payMethod).toBeNull();
+    expect(row.memberCardId).toBeNull();
+  });
+
   it('creates purchase orders and marks them received', () => {
     const repo = new SqlitePurchaseOrderRepository(db);
     repo.createOrder({
@@ -310,8 +369,36 @@ describe('core repositories', () => {
          number, patientId, status
        ) VALUES (?, ?, ?, ?, NULL, 'PO-PROC', 'patient', 'DRAFT')`,
     ).run('proc-repo', null, now, now);
-    processing.updateStatus('proc-repo', 'SENT', now);
+    processing.updateStatus('proc-repo', 'SENT', now, undefined, 'DRAFT');
     expect(processing.findById('proc-repo')?.status).toBe('SENT');
+    // fromStatus 省略时回退到空串条件（带/不带 clinicId 两个分支），
+    // 此时与当前状态不匹配，CAS 条件更新返回 0 且不推进状态。
+    expect(processing.updateStatus('proc-repo', 'RECEIVED', now, undefined, undefined)).toBe(0);
+    expect(processing.updateStatus('proc-repo', 'RECEIVED', now, 'clinic-v2-001', undefined)).toBe(0);
+    expect(processing.findById('proc-repo')?.status).toBe('SENT');
+
+    const processing2 = new SqliteProcessingOrderRepository(db);
+    processing2.createOrder({
+      id: 'proc-settle-default',
+      clinicId: null,
+      patientId: 'patient',
+      visitId: null,
+      factoryId: null,
+      doctorId: null,
+      number: 'PO-SETTLE-DEFAULT',
+      shade: null,
+      teethNumbers: [],
+      totalFee: 0,
+      status: 'DRAFT',
+      expectedAt: null,
+      remark: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const settleRow = db.prepare(
+      'SELECT settleStatus FROM ProcessingOrder WHERE id = ?',
+    ).get('proc-settle-default') as { settleStatus: string };
+    expect(settleRow.settleStatus).toBe('UNSETTLED');
 
     const wechat = new SqliteWechatMessageRepository(db);
     db.prepare(
@@ -381,7 +468,43 @@ describe('core repositories', () => {
     expect(resultRow.result).toBe('已回访');
   });
 
+  it('filters reminders by overdue/today/upcoming scope', () => {
+    seedDependentFixtures();
+    const repo = new SqliteFollowUpRepository(db);
+    const today = new SystemClock().clinicDate();
+    const yesterday = new SystemClock().clinicDate(Date.now() - 86_400_000);
+    const tomorrow = new SystemClock().clinicDate(Date.now() + 86_400_000);
+    for (const [id, date] of [
+      ['scope-overdue', yesterday],
+      ['scope-today', today],
+      ['scope-upcoming', tomorrow],
+    ] as const) {
+      repo.insert({
+        id,
+        clinicId: null,
+        patientId: 'followup-patient',
+        planDate: date,
+        content: id,
+        status: 'PENDING',
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+    const overdue = repo.reminders(undefined, { scope: 'overdue' } as never);
+    const todayList = repo.reminders(undefined, { scope: 'today' } as never);
+    const upcoming = repo.reminders(undefined, { scope: 'upcoming' } as never);
+    expect(overdue.items.some((row) => row.id === 'scope-overdue')).toBe(true);
+    expect(overdue.items.some((row) => row.id === 'scope-today')).toBe(false);
+    expect(todayList.items.some((row) => row.id === 'scope-today')).toBe(true);
+    expect(upcoming.items.some((row) => row.id === 'scope-upcoming')).toBe(true);
+    const all = repo.reminders(undefined, { scope: 'all' } as never);
+    expect(all.items.some((row) => row.id === 'scope-overdue')).toBe(true);
+    expect(all.items.some((row) => row.id === 'scope-today')).toBe(true);
+    expect(all.items.some((row) => row.id === 'scope-upcoming')).toBe(true);
+  });
+
   it('covers repository nullish, boolean, and auth mapping branches', () => {
+    seedDependentFixtures();
     const member = new SqliteMemberCardRepository(db);
     member.insertLog({
       id: 'member-log-clinic',

@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router';
 import { apiRequest } from '../../lib/api';
 import type { Page } from '../../lib/types';
-import { ConfirmDialog, Dialog, LoadingState, PageError, SearchableSelect } from '../../components';
+import { ConfirmDialog, Dialog, LoadingState, PageError, PagePager, SearchableSelect } from '../../components';
 import { errorMessage } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
 import type { BatchRow, BatchListData } from '../../inventory/types';
@@ -15,6 +15,11 @@ export function InventoryPage() {
   const [searchParams] = useSearchParams();
   const urlItemId = searchParams.get('id');
   const [itemId, setItemId] = useState<string | null>(urlItemId);
+  const [prevUrlItemId, setPrevUrlItemId] = useState(urlItemId);
+  if (prevUrlItemId !== urlItemId) {
+    setPrevUrlItemId(urlItemId);
+    setItemId(urlItemId);
+  }
   const [itemIdError, setItemIdError] = useState<string | null>(null);
   const [type, setType] = useState<'IN' | 'OUT' | 'ADJUST'>('IN');
   const [quantity, setQuantity] = useState('1');
@@ -31,14 +36,20 @@ export function InventoryPage() {
   const [editExpiryDate, setEditExpiryDate] = useState('');
   const [editSupplierId, setEditSupplierId] = useState('');
   const [editing, setEditing] = useState(false);
+  const editingRef = useRef(false);
   const [deleteTarget, setDeleteTarget] = useState<BatchRow | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'report'>('overview');
+  const [page, setPage] = useState(1);
   const [barcodeSearch, setBarcodeSearch] = useState('');
   const [barcodeTarget, setBarcodeTarget] = useState<Record<string, unknown> | null>(null);
   const query = useQuery({
-    queryKey: ['inventory'],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/inventoryItems?page=1&pageSize=20'),
+    queryKey: ['inventory', page],
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(
+      `/resources/inventoryItems?page=${page}&pageSize=20`,
+    ),
+    placeholderData: (previous) => previous,
   });
+  const stale = query.isPlaceholderData;
   const derivedFromList = useRef(false);
   useEffect(() => {
     if (derivedFromList.current || !query.data) return;
@@ -87,7 +98,7 @@ export function InventoryPage() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (submitting || submittingRef.current) return;
+    if (submitting || submittingRef.current || stale) return;
     // M13：itemId 必填，提交前字段级校验（避免报错延迟到服务端）
     if (!itemId || !itemId.trim()) {
       setItemIdError('请填写库存项目 ID');
@@ -117,7 +128,7 @@ export function InventoryPage() {
   }
 
   async function generateReplenishment() {
-    if (submitting || submittingRef.current) return;
+    if (submitting || submittingRef.current || stale) return;
     submittingRef.current = true;
     setSubmitting(true);
     try {
@@ -157,7 +168,7 @@ export function InventoryPage() {
 
   async function submitBatch(event: FormEvent) {
     event.preventDefault();
-    if (submitting || submittingRef.current) return;
+    if (submitting || submittingRef.current || stale) return;
     if (!itemId) {
       showToast('请先填写库存项目 ID', 'error');
       return;
@@ -222,7 +233,8 @@ export function InventoryPage() {
 
   async function submitEditBatch(event: FormEvent) {
     event.preventDefault();
-    if (!editTarget || editing) return;
+    if (!editTarget || editing || editingRef.current) return;
+    editingRef.current = true;
     setEditing(true);
     try {
       await apiRequest(`/inventory-batches/${editTarget.id}`, {
@@ -240,6 +252,7 @@ export function InventoryPage() {
     } catch (error) {
       showToast(errorMessage(error, '批次更新失败'), 'error');
     } finally {
+      editingRef.current = false;
       setEditing(false);
     }
   }
@@ -266,7 +279,7 @@ export function InventoryPage() {
     <div className="page">
       <div className="page-head">
         <h1>库存管理</h1>
-        <button onClick={generateReplenishment}>生成补货建议</button>
+        <button disabled={stale} onClick={generateReplenishment}>生成补货建议</button>
       </div>
       <form
         className="inline-form"
@@ -344,7 +357,7 @@ export function InventoryPage() {
               <option value="ADJUST">ADJUST</option>
             </select>
             <input type="number" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
-            <button type="submit" disabled={submitting}>{submitting ? '保存中...' : '保存库存流水'}</button>
+            <button type="submit" disabled={submitting || stale}>{submitting ? '保存中...' : '保存库存流水'}</button>
           </form>
           <div className="cards">
             {query.data?.items.map((row) => (
@@ -356,6 +369,16 @@ export function InventoryPage() {
               </div>
             ))}
           </div>
+          <PagePager
+            page={page}
+            hasNext={page * 20 < (query.data?.total ?? 0)}
+            onPageChange={(next) => {
+              setPage(next);
+              setItemId('');
+              setItemIdError('');
+            }}
+            disabled={stale}
+          />
           <h2>低库存</h2>
           {lowTruncated && <p className="reminder-muted">低库存超过 100 条，仅显示前 100 条</p>}
           <div className="table-wrap">
@@ -387,7 +410,7 @@ export function InventoryPage() {
             <input aria-label="效期日期" type="date" value={expiryDate} onChange={(event) => setExpiryDate(event.target.value)} />
             <input aria-label="入库数量" type="number" value={batchQuantity} onChange={(event) => setBatchQuantity(event.target.value)} />
             <SearchableSelect resource="suppliers" ariaLabel="供应商" value={supplierId} onChange={setSupplierId} placeholder="供应商（可选）" />
-            <button type="submit" disabled={submitting}>{submitting ? '入库中...' : '新增批次'}</button>
+            <button type="submit" disabled={submitting || stale}>{submitting ? '入库中...' : '新增批次'}</button>
           </form>
           <div className="table-wrap">
             <table>

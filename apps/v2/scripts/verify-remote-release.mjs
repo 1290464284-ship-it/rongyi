@@ -1,8 +1,28 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import { createWriteStream } from 'node:fs';
+import { Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 
 const REQUEST_TIMEOUT_MS = 300_000;
+const MAX_INSTALLER_BYTES = 2 * 1024 * 1024 * 1024;
+
+function sha512File(filePath) {
+  const hash = crypto.createHash('sha512');
+  const fd = fs.openSync(filePath, 'r');
+  const buffer = Buffer.alloc(64 * 1024);
+  try {
+    let bytesRead = 0;
+    while ((bytesRead = fs.readSync(fd, buffer, 0, buffer.length, null)) > 0) {
+      hash.update(buffer.subarray(0, bytesRead));
+    }
+  } finally {
+    fs.closeSync(fd);
+  }
+  return hash.digest('base64');
+}
 
 function timedFetch(url, init = {}) {
   return fetch(url, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
@@ -34,20 +54,33 @@ async function api(pathname) {
       ...(process.env.GH_TOKEN ? { authorization: `Bearer ${process.env.GH_TOKEN}` } : {}),
     },
   });
-  if (!response.ok) throw new Error(`GitHub API ${pathname} failed: ${response.status}`);
+  if (!response.ok) {
+    const error = new Error(`GitHub API ${pathname} failed: ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
   return response.json();
 }
 
-const releases = await api('releases?per_page=100');
-const release = releases.find((item) => item.tag_name === tag);
+let release;
+try {
+  release = await api(`releases/tags/${encodeURIComponent(tag)}`);
+} catch (error) {
+  if (error?.status === 404) {
+    release = undefined;
+  } else {
+    throw error;
+  }
+}
 if (!release) {
-  const message = `Release ${tag} not found (latest remote: ${releases[0]?.tag_name ?? 'none'})`;
+  const message = `Release ${tag} not found`;
   if (tagExplicitlySet) {
     throw new Error(`${message}; V2_RELEASE_TAG was set explicitly — this is a real failure`);
   }
   // 本地裸跑场景：默认 tag 来自 package.json，未发布不代表脚本错误。
   console.warn(`::warning::${message}`);
   console.warn(`::warning::local bare run: package.json version ${pkg.version} may not be published yet; pass V2_RELEASE_TAG to verify strictly`);
+  await new Promise((resolve) => setTimeout(resolve, 250));
   process.exit(0);
 }
 
@@ -64,11 +97,16 @@ const latestYml = await latestResponse.text();
 const pathMatch = latestYml.match(/^path:\s*(.+)$/m);
 const sizeMatch = latestYml.match(/^\s+size:\s*(\d+)$/m);
 const sha512Match = latestYml.match(/^\s*sha512:\s*([A-Za-z0-9+/=]+)$/m);
-if (!pathMatch || !sizeMatch || !sha512Match) {
-  throw new Error('latest.yml is missing path, size or sha512');
+const versionMatch = latestYml.match(/^version:\s*(.+)$/m);
+if (!pathMatch || !sizeMatch || !sha512Match || !versionMatch) {
+  throw new Error('latest.yml is missing path, size, sha512 or version');
 }
 
 const installerName = pathMatch[1].trim();
+const ymlVersion = versionMatch[1].trim();
+if (ymlVersion && !installerName.includes(ymlVersion)) {
+  throw new Error(`latest.yml version ${ymlVersion} does not match installer name ${installerName}`);
+}
 const installerSize = Number(sizeMatch[1]);
 const expectedSha512 = sha512Match[1];
 const installerAsset = assets.get(installerName);
@@ -83,19 +121,41 @@ if (!assets.has(blockmapName)) throw new Error(`Blockmap asset not found: ${bloc
 // Round7 H7：下载安装包并校验 sha512 与 latest.yml 一致（校验闭环）。
 // 只比对 size 无法发现"元数据生成后被替换/上传错误产物"的场景。
 console.log(`downloading installer ${installerName} (${installerSize} bytes)`);
+if (installerSize > MAX_INSTALLER_BYTES) {
+  throw new Error(`Installer size ${installerSize} exceeds limit ${MAX_INSTALLER_BYTES}`);
+}
 const installerResponse = await timedFetch(installerAsset.browser_download_url, {
   headers: { connection: 'close' },
 });
 if (!installerResponse.ok) {
   throw new Error(`Installer download failed: ${installerResponse.status}`);
 }
-const installerBuffer = Buffer.from(await installerResponse.arrayBuffer());
-const actualSha512 = crypto.createHash('sha512').update(installerBuffer).digest('base64');
-if (actualSha512 !== expectedSha512) {
-  throw new Error(`sha512 mismatch: latest.yml=${expectedSha512}, installer=${actualSha512}`);
+if (!installerResponse.body) {
+  throw new Error('Installer download has no body');
 }
-if (installerBuffer.length !== installerSize) {
-  throw new Error(`Size mismatch on download: latest.yml=${installerSize}, actual=${installerBuffer.length}`);
+const tempInstaller = path.join(os.tmpdir(), `v2-verify-installer-${Date.now()}.exe`);
+let received = 0;
+try {
+  const counter = new Transform({
+    transform(chunk, _encoding, callback) {
+      received += chunk.length;
+      if (received > installerSize) {
+        callback(new Error('Installer download exceeded declared size'));
+        return;
+      }
+      callback(null, chunk);
+    },
+  });
+  await pipeline(installerResponse.body, counter, createWriteStream(tempInstaller));
+  if (received !== installerSize) {
+    throw new Error(`Size mismatch on download: latest.yml=${installerSize}, actual=${received}`);
+  }
+  const actualSha512 = sha512File(tempInstaller);
+  if (actualSha512 !== expectedSha512) {
+    throw new Error(`sha512 mismatch: latest.yml=${expectedSha512}, installer=${actualSha512}`);
+  }
+} finally {
+  fs.rmSync(tempInstaller, { force: true });
 }
 
 console.log(`remote release verified: ${tag} -> ${installerName} (${installerSize} bytes, sha512 ok)`);

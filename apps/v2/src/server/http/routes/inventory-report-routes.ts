@@ -13,7 +13,7 @@ export function registerInventoryReportRoutes(app: Express, deps: RouteDependenc
   const service = new InventoryReportService(db);
 
   app.get('/api/v2/inventory-reports/:type', wrapAsync(async (req, res) => {
-    const query = req.query ?? {};
+    const query = req.query;
     const from = typeof query.from === 'string' && query.from !== '' ? query.from : undefined;
     const to = typeof query.to === 'string' && query.to !== '' ? query.to : undefined;
     const itemId = typeof query.itemId === 'string' && query.itemId !== '' ? query.itemId : undefined;

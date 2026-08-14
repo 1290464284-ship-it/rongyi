@@ -18,7 +18,16 @@ export function TriageQueuePanel({ onStartVisit }: { onStartVisit: (id: string) 
         departmentId ? `/triage/queue?departmentId=${encodeURIComponent(departmentId)}` : '/triage/queue',
       ),
   });
-  if (queue.isLoading || queue.error) return null;
+  if (queue.isLoading) return null;
+  if (queue.error) {
+    return (
+      <section className="triage-queue">
+        <h2>分诊队列</h2>
+        <p className="error">加载分诊队列失败</p>
+        <button type="button" onClick={() => void queue.refetch()}>重试</button>
+      </section>
+    );
+  }
   const items = queue.data?.items ?? [];
 
   async function startVisit(row: Record<string, unknown>) {

@@ -35,6 +35,19 @@ function verifyRestoreMarker(stagedPath: string, sha256: string, signature: unkn
   return timingSafeEqual(expected, actual);
 }
 
+function syncFile(filePath: string): void {
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    try {
+      fs.fsyncSync(fd);
+    } catch {
+      // 部分平台对只读 fd 调用 fsync 会返回 EPERM；临时文件已完整落盘，fsync 是尽力而为。
+    }
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 export function applyStagedRestore(
   dbPath: string,
   allowedDirs: string[],
@@ -105,7 +118,22 @@ export function applyStagedRestore(
     backupSqliteFile(dbPath, backupPath);
   }
   removeSqliteSidecars(dbPath);
-  fs.copyFileSync(resolvedStaged, dbPath);
+  const tempPath = `${dbPath}.restore-tmp-${Date.now()}`;
+  try {
+    // 同目录临时文件 + fsync + rename：复制中断不会留下半覆盖的主库。
+    fs.copyFileSync(resolvedStaged, tempPath);
+    syncFile(tempPath);
+    try {
+      fs.renameSync(tempPath, dbPath);
+    } catch {
+      // Windows rename 无法覆盖已存在目标时回退：先移除旧主库再 rename（pre-restore 备份仍保留）。
+      fs.rmSync(dbPath, { force: true });
+      fs.renameSync(tempPath, dbPath);
+    }
+  } catch (error) {
+    fs.rmSync(tempPath, { force: true });
+    throw error;
+  }
   removeSqliteSidecars(dbPath);
   removeSqliteSidecars(resolvedStaged);
   fs.rmSync(markerPath, { force: true });

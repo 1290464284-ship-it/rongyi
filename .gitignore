@@ -7,6 +7,7 @@ coverage-web
 release-v2/
 apps/v2/data/
 apps/v2/logs/
+apps/v2/reports/
 *.log
 .env
 .env.*.local
@@ -14,6 +15,7 @@ certs/
 .vscode/
 *.tsbuildinfo
 *.sqlite
+*.before-sanitize-*
 *.sqlite-wal
 *.sqlite-shm
 *.sqlite.bak
@@ -22,3 +24,13 @@ certs/
 .qoder/
 .superpowers/
 .playwright-cli/
+apps/v2/apps/
+apps/v2/test-results/
+apps/v2/sbom.cdx.json
+apps/v2/quality-score.json
+apps/v2/quality/history.json
+apps/v2/performance/history.json
+apps/v2/performance/latest.json
+apps/v2/performance/snapshot-latest.json
+apps/v2/flaky-quarantine/history.json
+apps/v2/.stryker-tmp/

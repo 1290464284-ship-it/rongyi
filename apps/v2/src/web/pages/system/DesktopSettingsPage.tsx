@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { resetApiBase } from '../../lib/api';
 import { errorMessage, friendlyError } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
@@ -27,13 +27,16 @@ export function DesktopSettingsPage() {
   const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
   const [apiStatus, setApiStatus] = useState('');
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const busyActionRef = useRef<string | null>(null);
 
   async function runAction(key: string, fn: () => Promise<void>) {
-    if (busyAction) return;
+    if (busyAction || busyActionRef.current) return;
+    busyActionRef.current = key;
     setBusyAction(key);
     try {
       await fn();
     } finally {
+      busyActionRef.current = null;
       setBusyAction(null);
     }
   }
@@ -121,15 +124,19 @@ export function DesktopSettingsPage() {
       if (result.status === 'error') {
         showToast(result.message ? friendlyError(result.message) : '检查失败', 'error');
         setUpdateStatus('');
+        setUpdateAvailable(null);
       } else if (result.status === 'disabled') {
         setUpdateStatus('当前环境不支持在线更新');
+        setUpdateAvailable(null);
       } else {
         if (result.status === 'available') setUpdateAvailable(result.version ?? '');
+        else setUpdateAvailable(null);
         setUpdateStatus(result.status === 'available' ? `发现新版本 ${result.version}，点击"下载更新"按钮开始下载` : result.status === 'none' ? '当前已是最新版本' : result.message ?? '检查失败');
       }
     } catch (error) {
       showToast(errorMessage(error, '检查失败'), 'error');
       setUpdateStatus('');
+      setUpdateAvailable(null);
     }
   }
 

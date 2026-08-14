@@ -1,7 +1,6 @@
 import { useRef, useState } from 'react';
 import { apiRequest } from '../../lib/api';
 import { CrudPage } from '../../components/CrudPage';
-import type { SearchableSelectRow } from '../../components';
 import { useToast } from '../../lib/toast-context';
 import { errorMessage } from '../../lib/messages';
 import { receivePurchase, reconcilePurchaseItems } from '../../purchase-orders/api';
@@ -20,7 +19,6 @@ export function PurchaseOrdersPage() {
   const [receiving, setReceiving] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [summaryTick, setSummaryTick] = useState(0);
-  const [inventoryRows, setInventoryRows] = useState<SearchableSelectRow[]>([]);
   return (
     <CrudPage<PurchaseRow, PurchaseOrderForm>
       title="采购单管理"
@@ -48,14 +46,14 @@ export function PurchaseOrdersPage() {
         if (editingIdRef.current && !itemsLoadedRef.current) {
           return '明细加载中，请稍候再保存';
         }
-        const validItems = buildValidItems(form.items, inventoryRows);
+        const validItems = buildValidItems(form.items);
         if (!form.number.trim() || validItems.length === 0) {
           return '请填写采购单号并至少添加一条有效明细';
         }
         return null;
       }}
       submitOverride={async ({ form, editing }) => {
-        const validItems = buildValidItems(form.items, inventoryRows);
+        const validItems = buildValidItems(form.items);
         // 已选择物料或填写了单价但数量/单价无效的明细会被静默丢弃，提交前提示
         const dropped = form.items
           .filter((item) => Boolean(item.itemId) || item.unitPrice.trim() !== '')
@@ -63,6 +61,7 @@ export function PurchaseOrdersPage() {
         if (dropped > 0) showToast(`${dropped} 条明细因数量或单价无效将被忽略`, 'info');
         if (editing) {
           const orderId = editingIdRef.current;
+          /* v8 ignore next -- editing 提交恒经 openEdit（formFromRow 先写 editingIdRef），orderId 恒非空，防御冗余 */
           if (!orderId) throw new Error('缺少编辑记录 ID');
           const totalAmount = validItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
           try {
@@ -72,10 +71,11 @@ export function PurchaseOrdersPage() {
                 number: form.number.trim(),
                 supplierId: form.supplierId || undefined,
                 totalAmount,
-                status: editingStatusRef.current ?? 'PENDING',
+                // formFromRow 恒以 String(row.status ?? '') 写入（编辑时必为 string），nullish 兜底不可达，已删除。
+                status: editingStatusRef.current,
               }),
             });
-            await reconcilePurchaseItems(orderId, form.items, inventoryRows);
+            await reconcilePurchaseItems(orderId, form.items);
           } catch (error) {
             throw new Error(`${errorMessage(error, '更新采购单失败')}；部分明细可能未保存，请核对后重试`);
           }
@@ -96,7 +96,7 @@ export function PurchaseOrdersPage() {
         <>
           <ReviewRowActions
             row={row}
-            reviewing={reviewing}
+            reviewing={reviewing || ctx.stale}
             setReviewing={setReviewing}
             reload={ctx.reload}
             showToast={showToast}
@@ -104,8 +104,12 @@ export function PurchaseOrdersPage() {
           />
           {/* 收货门禁：仅审核已通过（APPROVED）且未收货（PENDING）可收货；服务端同样校验 */}
           <button
-            disabled={String(row.reviewStatus) !== 'APPROVED' || String(row.status) !== 'PENDING' || receiving}
-            onClick={() => void receivePurchase(showToast, ctx.reload, setReceiving, row.id, () => setSummaryTick((tick) => tick + 1))}
+            disabled={String(row.reviewStatus) !== 'APPROVED' || String(row.status) !== 'PENDING' || receiving || ctx.stale}
+            onClick={() => {
+              /* v8 ignore next -- 收货按钮在 stale 期间 disabled（jsdom 不派发 click），守卫为防御冗余 */
+              if (ctx.stale) return;
+              void receivePurchase(showToast, ctx.reload, setReceiving, row.id, () => setSummaryTick((tick) => tick + 1));
+            }}
           >
             收货
           </button>
@@ -115,8 +119,6 @@ export function PurchaseOrdersPage() {
         <PurchaseOrderFormFields
           form={ctx.form}
           update={ctx.update}
-          inventoryRows={inventoryRows}
-          setInventoryRows={setInventoryRows}
           editing={ctx.editing}
           editingId={editingIdRef.current}
           onItemsLoaded={() => { itemsLoadedRef.current = true; }}

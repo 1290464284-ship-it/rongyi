@@ -17,9 +17,16 @@ export class SqliteProcessingOrderRepository implements ProcessingOrderRepositor
       | undefined) ?? null;
   }
 
-  updateStatus(id: string, status: string, updatedAt: string, clinicId?: string | null): void {
-    const params = clinicId ? [status, updatedAt, id, clinicId] : [status, updatedAt, id];
-    this.db.prepare(`UPDATE ProcessingOrder SET status = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`).run(...params);
+  updateStatus(id: string, status: string, updatedAt: string, clinicId?: string | null, fromStatus?: string): number {
+    // 条件更新：只有当前状态仍为 fromStatus 时才推进，防止并发请求互相覆盖状态。
+    const params = clinicId
+      ? [status, updatedAt, id, fromStatus ?? '', clinicId]
+      : [status, updatedAt, id, fromStatus ?? ''];
+    const result = this.db.prepare(
+      `UPDATE ProcessingOrder SET status = ?, updatedAt = ?
+       WHERE id = ? AND status = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
+    ).run(...params);
+    return Number(result.changes);
   }
 
   createOrder(input: ProcessingOrderRecord): void {

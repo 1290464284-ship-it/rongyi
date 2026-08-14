@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -17,7 +17,7 @@ describe('refund flow routes', () => {
   let app: express.Express;
   const now = '2026-08-05T10:00:00.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-refund-flow-routes-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -77,7 +77,7 @@ describe('refund flow routes', () => {
     insertRefund('route-refund-7', 'route-charge-7', 6000, 'REQUESTED');
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -98,6 +98,21 @@ describe('refund flow routes', () => {
     expect(row.amount).toBe(3000);
     expect(row.status).toBe('REQUESTED');
     expect(row.reason).toBe('原因-route-refund-1');
+  });
+
+  it('GET /api/v2/refunds/summary returns full status counts', async () => {
+    const res = await request(app).get('/api/v2/refunds/summary').expect(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toEqual({
+      counts: {
+        REQUESTED: 4,
+        PENDING_REFUND: 1,
+        COMPLETED: 1,
+        REJECTED: 0,
+        CANCELLED: 0,
+      },
+      total: 6,
+    });
   });
 
   it('GET /api/v2/refunds honors page/pageSize', async () => {

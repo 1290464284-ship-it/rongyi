@@ -9,6 +9,7 @@ let apiStatusListenerInstalled = false;
 let _refreshPromise: Promise<boolean> | null = null;
 let sessionExpiredCallbacks: Array<() => void> = [];
 let sessionExpiredNotified = false;
+let apiReadyCallbacks: Array<() => void> = [];
 const REQUEST_TIMEOUT_MS = 15_000;
 
 interface DesktopSecretStore {
@@ -71,6 +72,29 @@ function notifySessionExpired(): void {
   }
 }
 
+/**
+ * 注册「API 就绪」回调（API 子进程重启/首启完成、端口变化后触发）。
+ * 返回取消函数。渲染层用它触发 queryClient.invalidateQueries()，
+ * 消除「刷新页面时 API 尚未就绪 → 查询失败 → 就绪后不自动恢复」的假失败。
+ */
+export function onApiReady(callback: () => void): () => void {
+  installApiStatusListener();
+  apiReadyCallbacks.push(callback);
+  return () => {
+    apiReadyCallbacks = apiReadyCallbacks.filter((cb) => cb !== callback);
+  };
+}
+
+function notifyApiReady(): void {
+  for (const callback of [...apiReadyCallbacks]) {
+    try {
+      callback();
+    } catch {
+      // 回调异常不得影响 API 状态监听
+    }
+  }
+}
+
 function installApiStatusListener(): void {
   const desktop = getDesktopBridge();
   if (!desktop?.onApiStatus || apiStatusListenerInstalled) return;
@@ -78,6 +102,7 @@ function installApiStatusListener(): void {
   desktop.onApiStatus((event) => {
     if (String(event.status ?? '') === 'ready' && Number.isFinite(Number(event.port))) {
       resetApiBase();
+      notifyApiReady();
     }
   });
 }
@@ -92,7 +117,7 @@ function desktopSecretStore(): DesktopSecretStore | null {
 }
 
 class ClientError extends Error {
-  constructor(message: string, readonly code = 'REQUEST_FAILED', readonly traceId?: string) {
+  constructor(message: string, readonly code = 'REQUEST_FAILED', readonly traceId?: string, readonly status?: number) {
     super(message);
   }
 }
@@ -216,6 +241,8 @@ async function fetchAuthenticated(
   if (response.status === 401 && retry) {
     const refreshed = await refreshAccessToken();
     if (refreshed) return fetchAuthenticated(input, init, false);
+    // 刷新失败且原请求为 401：会话确实已失效，全局通知 UI 登出（与 apiRequest 一致）。
+    notifySessionExpired();
   }
   return response;
 }
@@ -242,7 +269,7 @@ export async function apiRequest<T>(
   }
   const body = await response.json().catch(() => null) as { success?: boolean; data?: T; code?: string; message?: string; traceId?: string } | null;
   if (!response.ok || body?.success === false || body === null) {
-    throw new ClientError(friendlyError(body?.message ?? `Request failed (${response.status})`), body?.code, body?.traceId);
+    throw new ClientError(friendlyError(body?.message ?? `Request failed (${response.status})`), body?.code, body?.traceId, response.status);
   }
   return body.data as T;
 }
@@ -253,11 +280,26 @@ export async function apiRequest<T>(
  */
 export async function fetchAllPages<T>(path: string): Promise<T[]> {
   const pageSize = 100;
-  const separator = path.includes('?') ? '&' : '?';
   const MAX_PAGES = 1000;
   const CONCURRENCY = 8;
-  const first = await apiRequest<Page<T>>(`${path}${separator}page=1&pageSize=${pageSize}`);
+  const first = await apiRequest<Page<T>>(pagedPath(path, 1, pageSize));
   const items: T[] = [...first.items];
+  // keyset 游标优先：服务端返回 nextCursor 时按 id 游标逐页拉取，避免深分页 offset 扫描。
+  if (first.nextCursor !== undefined) {
+    let cursor: string | undefined = first.nextCursor;
+    let pagesFetched = 1;
+    while (pagesFetched < MAX_PAGES) {
+      if (cursor === undefined) break;
+      const next: Page<T> = await apiRequest<Page<T>>(cursorPath(path, cursor, pageSize));
+      items.push(...next.items);
+      cursor = next.nextCursor;
+      pagesFetched += 1;
+    }
+    if (cursor !== undefined) {
+      throw new Error('fetchAllPages exceeded the page cap; refusing to continue');
+    }
+    return items;
+  }
   if (first.items.length === 0 || items.length >= first.total) return items;
 
   const totalPages = Math.min(MAX_PAGES, Math.ceil(first.total / pageSize));
@@ -266,7 +308,7 @@ export async function fetchAllPages<T>(path: string): Promise<T[]> {
   for (let offset = 0; offset < pages.length; offset += CONCURRENCY) {
     const batch = pages.slice(offset, offset + CONCURRENCY);
     const results = await Promise.all(
-      batch.map((page) => apiRequest<Page<T>>(`${path}${separator}page=${page}&pageSize=${pageSize}`)),
+      batch.map((page) => apiRequest<Page<T>>(pagedPath(path, page, pageSize))),
     );
     for (const data of results) items.push(...data.items);
   }
@@ -274,6 +316,24 @@ export async function fetchAllPages<T>(path: string): Promise<T[]> {
     throw new Error('fetchAllPages exceeded the page cap; refusing to continue');
   }
   return items;
+}
+
+function pagedPath(path: string, page: number, pageSize: number): string {
+  const [base, query = ''] = path.split('?', 2);
+  const params = new URLSearchParams(query);
+  params.set('page', String(page));
+  params.set('pageSize', String(pageSize));
+  // page/pageSize 恒被写入，qs 不可能为空。
+  return `${base}?${params.toString()}`;
+}
+
+function cursorPath(path: string, cursor: string, pageSize: number): string {
+  const [base, query = ''] = path.split('?', 2);
+  const params = new URLSearchParams(query);
+  params.set('pageSize', String(pageSize));
+  params.set('cursor', cursor);
+  // pageSize/cursor 恒被写入，qs 不可能为空。
+  return `${base}?${params.toString()}`;
 }
 
 export async function login(username: string, password: string): Promise<{ token: string; user: Record<string, unknown> }> {
@@ -389,12 +449,15 @@ export async function uploadFile(file: File): Promise<{ id: string; filename: st
 async function fetchWithRetry(input: RequestInfo | URL, init: FetchOptions = {}): Promise<Response> {
   const method = (init.method ?? 'GET').toUpperCase();
   const isIdempotent = method === 'GET' || method === 'HEAD' || init.idempotent === true;
+  const traceparent = createTraceparent();
   let lastError: unknown;
   for (let attempt = 0; attempt < (isIdempotent ? 2 : 1); attempt += 1) {
     try {
+      const headers = new Headers(init.headers);
+      if (traceparent && !headers.has('traceparent')) headers.set('traceparent', traceparent);
       const timeoutSignal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
       const signal = init.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal;
-      return await fetch(input, { ...init, signal });
+      return await fetch(input, { ...init, headers, signal });
     } catch (error) {
       lastError = error;
       if (isIdempotent && attempt === 0) {
@@ -405,4 +468,12 @@ async function fetchWithRetry(input: RequestInfo | URL, init: FetchOptions = {})
     }
   }
   throw lastError;
+}
+
+function createTraceparent(): string | undefined {
+  const cryptoObj = globalThis.crypto;
+  if (!cryptoObj?.getRandomValues) return undefined;
+  const bytes = cryptoObj.getRandomValues(new Uint8Array(24));
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return `00-${hex.slice(0, 32)}-${hex.slice(32, 48)}-01`;
 }

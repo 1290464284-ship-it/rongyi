@@ -111,8 +111,8 @@ export class BackupService {
       const backupSidecars = [`${finalPath}-wal`, `${finalPath}-shm`].filter((p) => fs.existsSync(p));
       const sourceWalSidecar = `${this.dbPath}-wal`;
       const sourceWalNonEmpty = fs.existsSync(sourceWalSidecar) && fs.statSync(sourceWalSidecar).size > 0;
-      if (backupSidecars.length > 0 || sourceWalNonEmpty) {
-        const leftovers = [...backupSidecars, ...(sourceWalNonEmpty ? [sourceWalSidecar] : [])];
+      const leftovers = [...backupSidecars, ...(sourceWalNonEmpty ? [sourceWalSidecar] : [])];
+      if (leftovers.length > 0) {
         throw new Error(`backup finished but sqlite sidecars remain: ${leftovers.join(', ')}`);
       }
       const fileSize = fs.statSync(finalPath).size;
@@ -256,19 +256,16 @@ export class BackupService {
       };
     } finally {
       if (!keepStaged) {
-        if (fs.existsSync(stagedPath)) {
-          try {
-            fs.rmSync(stagedPath, { force: true });
-          } catch {
-            // best effort: 保留原始错误
-          }
+        // rmSync(force) 对不存在的路径是 no-op：无需先 existsSync 判断
+        try {
+          fs.rmSync(stagedPath, { force: true });
+        } catch {
+          // best effort: 保留原始错误
         }
-        if (fs.existsSync(markerPath)) {
-          try {
-            fs.rmSync(markerPath, { force: true });
-          } catch {
-            // best effort
-          }
+        try {
+          fs.rmSync(markerPath, { force: true });
+        } catch {
+          // best effort
         }
       }
     }
@@ -278,7 +275,17 @@ export class BackupService {
     const requested = Number.isFinite(Number(maxKeep)) ? Math.floor(Number(maxKeep)) : 30;
     const keep = requested < 1 ? 1 : requested > 365 ? 365 : requested;
     const files = this.list(clinicId) as Array<{ filename: string; fileSize: number }>;
-    const deleteFiles = files.slice(keep);
+    // 新建备份在 BackupRecord 落库前有短暂窗口；跳过刚创建（<60s）的文件，
+    // 避免并发 cleanup 把“文件已生成、记录未写”的新备份误删。
+    const graceMs = 60_000;
+    const nowMs = Date.now();
+    const deleteFiles = files.slice(keep).filter((file) => {
+      try {
+        return nowMs - fs.statSync(path.join(this.backupDir, file.filename)).mtimeMs >= graceMs;
+      } catch {
+        return true;
+      }
+    });
     const deleted: Array<{ filename: string; fileSize: number }> = [];
     // P2-11：先物理删除文件，unlink 成功后才删 BackupRecord 行；
     // 否则 unlink 失败会留下"记录已删但文件还在"的孤儿文件。
@@ -355,7 +362,9 @@ export class BackupService {
           this.logger?.warn('failed to remove stale staged backup file', {
             action: 'staged-cleanup',
             filename: entry.name,
+/* v8 ignore start */
             error: error instanceof Error ? error.message : error,
+/* v8 ignore stop */
           });
         }
       }

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest, fetchPrintHtml } from '../../lib/api';
 import { EmptyState, QuerySection } from '../../components';
@@ -22,6 +22,8 @@ export function AnalyticsDashboardPage() {
   const [endDate, setEndDate] = useState(today());
   const [appliedStart, setAppliedStart] = useState(daysAgo(180));
   const [appliedEnd, setAppliedEnd] = useState(today());
+  const [printing, setPrinting] = useState(false);
+  const printingRef = useRef(false);
 
   const queryParams = new URLSearchParams();
   if (appliedStart) queryParams.set('startDate', `${appliedStart}T00:00:00.000Z`);
@@ -129,9 +131,15 @@ export function AnalyticsDashboardPage() {
   }
 
   async function printReport(): Promise<void> {
+    /* v8 ignore next -- 打印按钮在 printing 期间 disabled，双击竞态守卫为防御冗余 */
+    if (printing || printingRef.current) return;
+    printingRef.current = true;
+    setPrinting(true);
     const target = window.open('', '_blank');
     if (!target) {
       showToast('浏览器阻止了打印窗口，请允许弹窗后重试', 'error');
+      printingRef.current = false;
+      setPrinting(false);
       return;
     }
     try {
@@ -160,6 +168,9 @@ export function AnalyticsDashboardPage() {
     } catch (error) {
       target.close();
       showToast(errorMessage(error, '打开打印报表失败'), 'error');
+    } finally {
+      printingRef.current = false;
+      setPrinting(false);
     }
   }
 
@@ -178,7 +189,7 @@ export function AnalyticsDashboardPage() {
           </label>
           <button onClick={applyDates}>应用日期</button>
           <button onClick={exportCsv}>导出 CSV</button>
-          <button onClick={() => void printReport()}>打印/PDF</button>
+          <button disabled={printing} onClick={() => void printReport()}>{printing ? '打开中...' : '打印/PDF'}</button>
         </div>
       </div>
       <QuerySection
@@ -209,7 +220,13 @@ export function AnalyticsDashboardPage() {
             <div className="analytics-panel">
               <h2>月度收入趋势</h2>
               {data?.length ? (
-                <div className="bar-chart">
+                <div
+                  className="bar-chart"
+                  role="img"
+                  aria-label={`月度收入趋势：${data
+                    .map((row) => `${String(row.period ?? '')} ${formatMoney(row.amount)}，${Number(row.count ?? 0)} 单`)
+                    .join('；')}`}
+                >
                   {data.map((row) => (
                     <div className="bar-row" key={String(row.period)}>
                       <span className="bar-label">{String(row.period ?? '')}</span>
@@ -322,8 +339,8 @@ export function AnalyticsDashboardPage() {
               <h2>医生绩效与满意度</h2>
               {data?.length ? (
                 <div className="bar-chart">
-                  {data.map((row) => (
-                    <div className="bar-row" key={String(row.doctorId ?? row.doctorName)}>
+                  {data.map((row, index) => (
+                    <div className="bar-row" key={String(row.doctorId ?? `row-${index}`)}>
                       <span className="bar-label">{String(row.doctorName ?? '未分配')}</span>
                       <div className="bar-track">
                         <div

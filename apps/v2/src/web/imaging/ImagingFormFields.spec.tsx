@@ -77,6 +77,24 @@ describe('ImagingFormFields', () => {
     expect(setFile).toHaveBeenCalledWith(null);
   });
 
+  it('formats megabyte-sized files', async () => {
+    vi.mocked(apiRequest).mockResolvedValue([]);
+    const file = new File(['x'], 'large.png', { type: 'image/png' });
+    Object.defineProperty(file, 'size', { value: 1048576 });
+    render(
+      <ImagingFormFields
+        form={emptyForm}
+        update={vi.fn()}
+        file={file}
+        setFile={vi.fn()}
+        categories={categories}
+      />,
+      { wrapper },
+    );
+    expect(await screen.findByText('large.png')).toBeDefined();
+    expect(screen.getByText('1.0 MB')).toBeDefined();
+  });
+
   it('renders empty categories when none are provided', () => {
     render(
       <ImagingFormFields
@@ -89,6 +107,20 @@ describe('ImagingFormFields', () => {
       { wrapper },
     );
     expect((screen.getByLabelText('分类') as HTMLSelectElement).options.length).toBe(1);
+  });
+
+  it('keeps an unknown category selected with a fallback option', () => {
+    render(
+      <ImagingFormFields
+        form={{ ...emptyForm, categoryId: 'missing-category' }}
+        update={vi.fn()}
+        file={null}
+        setFile={vi.fn()}
+        categories={[]}
+      />,
+      { wrapper },
+    );
+    expect(screen.getByRole('option', { name: 'missing-category' })).toBeDefined();
   });
 
   it('updates patient, doctor, type, description, takenAt and remark', async () => {

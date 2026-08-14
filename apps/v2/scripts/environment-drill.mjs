@@ -11,6 +11,7 @@ const legacySchemaDir = path.join(appRoot, 'legacy', 'schema');
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-environment-drill-'));
 const dataDir = path.join(tempRoot, 'data');
 const logDir = path.join(tempRoot, 'logs');
+const children = [];
 const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'v2-sim-admin-password';
 const jwtSecret = 'environment-drill-secret-0123456789abcdef0123456789abcdef';
 const backupKey = 'environment-drill-backup-key-0123456789abcdef';
@@ -107,6 +108,7 @@ try {
   const port = 45000 + Math.floor(Math.random() * 1000);
 
   const healthy = startApi({ V2_PORT: String(port) });
+  children.push(healthy);
   await waitForApi(port);
   const login = await request(port, '/auth/login', {
     method: 'POST',
@@ -129,6 +131,7 @@ try {
     V2_PORT: String(blockedBackupPort),
     V2_BACKUP_DIR: blockedBackupPath,
   });
+  children.push(blockedBackup);
   await waitForApi(blockedBackupPort);
   const blockedLogin = await request(blockedBackupPort, '/auth/login', {
     method: 'POST',
@@ -157,6 +160,7 @@ try {
     V2_BACKUP_DIR: path.join(tempRoot, 'backups'),
     V2_LOG_DIR: path.join(tempRoot, 'logs-blocked-data'),
   });
+  children.push(blockedData);
   const blockedDataResult = await waitForExit(blockedData);
   assert(blockedDataResult.code !== 0, 'API must refuse to start when the data directory cannot be created');
   assert(!fs.existsSync(path.join(blockedDataPath, 'v2.sqlite')), 'no database file may be created under a blocked data path');
@@ -164,5 +168,13 @@ try {
 
   console.log('environment drill passed: baseline, blocked backup, blocked data');
 } finally {
+  for (const child of children) {
+    if (!child || child.exitCode !== null) continue;
+    try {
+      child.kill('SIGKILL');
+    } catch {
+      // best effort: 进程可能已退出
+    }
+  }
   fs.rmSync(tempRoot, { recursive: true, force: true });
 }

@@ -3,13 +3,14 @@ import os from 'node:os';
 import path from 'node:path';
 import request from 'supertest';
 import bcrypt from 'bcryptjs';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createApp } from './app';
 import { createDatabase, seedDatabase } from '../infrastructure/database';
 import { runMigrations } from '../infrastructure/migrations';
 import { rebuildSearchIndex } from '../infrastructure/search-index';
 import { Logger } from '../infrastructure/logger';
+import { SqliteRepository } from '../infrastructure/repository';
 
 describe('resource router', () => {
   let dataDir: string;
@@ -19,7 +20,7 @@ describe('resource router', () => {
   let receptionToken: string;
   const now = new Date().toISOString();
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-router-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -46,7 +47,8 @@ describe('resource router', () => {
     receptionToken = reception.body.data.token as string;
   });
 
-  afterAll(() => {
+  afterEach(() => {
+    vi.restoreAllMocks();
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -191,6 +193,40 @@ describe('resource router', () => {
       .expect(200);
   });
 
+  it('rejects generic writes to state-machine resources (inventory/stocktake/dispense/narcotic)', async () => {
+    const cases: Array<{ method: 'post' | 'patch'; path: string; body: Record<string, unknown> }> = [
+      {
+        method: 'post',
+        path: '/api/v2/resources/inventoryBatches',
+        body: { itemId: 'inventory-demo-001', batchNo: 'ROUTER-B-1', initialQuantity: 100, remainingQuantity: 100 },
+      },
+      { method: 'post', path: '/api/v2/resources/stocktakes', body: { number: 'ROUTER-ST-1', status: 'IN_PROGRESS' } },
+      { method: 'patch', path: '/api/v2/resources/stocktakeItems/whatever', body: { countedStock: 1 } },
+      {
+        method: 'post',
+        path: '/api/v2/resources/dispenses',
+        body: { number: 'ROUTER-DS-1', patientId: 'patient-demo-001', status: 'DISPENSED' },
+      },
+      {
+        method: 'post',
+        path: '/api/v2/resources/dispenseItems',
+        body: { dispenseId: 'route-missing', itemId: 'inventory-demo-001', quantity: 1 },
+      },
+      {
+        method: 'post',
+        path: '/api/v2/resources/narcoticRegistry',
+        body: { recordDate: '2026-08-05', itemId: 'inventory-demo-001', quantity: 1 },
+      },
+    ];
+    for (const entry of cases) {
+      const res = await request(app)[entry.method](entry.path)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send(entry.body);
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('NOT_FOUND');
+    }
+  });
+
   it('exports more than one page of rows', async () => {
     for (let index = 0; index < 201; index += 1) {
       await request(app)
@@ -211,6 +247,158 @@ describe('resource router', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
     expect(exported.text.match(/"Export Row"/g)?.length).toBe(201);
+  }, 30_000);
+
+  it('forbids resources outside the requesting role', async () => {
+    await request(app)
+      .get('/api/v2/resources/auditLog')
+      .set('Authorization', `Bearer ${receptionToken}`)
+      .expect(403);
+  });
+
+  it('blocks fee and status edits on billed treatment plans', async () => {
+    const planId = 'router-plan-locked-fields';
+    const nowIso = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO TreatmentPlan (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, name, status, totalFee
+       ) VALUES (?, 'clinic-v2-001', ?, ?, NULL, 'patient-demo-001', 'user-router-doctor', 'Locked Plan', 'APPROVED', 100)`,
+    ).run(planId, nowIso, nowIso);
+    db.prepare(
+      `INSERT INTO TreatmentPlanItem (
+         id, planId, code, name, category, price, quantity, teethNumbers, status,
+         discountRate, billed, billedChargeId, clinicId, createdAt, updatedAt, deletedAt
+       ) VALUES (?, ?, 'R-LOCKED', 'Billed', 'SERVICE', 100, 1, '[]', 'PLANNED', NULL, 1, 'charge-locked', 'clinic-v2-001', ?, ?, NULL)`,
+    ).run('router-item-locked-fields', planId, nowIso, nowIso);
+    try {
+      const res = await request(app)
+        .patch(`/api/v2/resources/treatmentPlans/${planId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ status: 'CANCELLED' })
+        .expect(409);
+      expect(res.body.message).toContain('已划价');
+    } finally {
+      db.prepare('DELETE FROM TreatmentPlanItem WHERE planId = ?').run(planId);
+      db.prepare('DELETE FROM TreatmentPlan WHERE id = ?').run(planId);
+    }
+  });
+
+  it('masks identity card exports', async () => {
+    await request(app)
+      .post('/api/v2/resources/patients')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: 'EXPORT-IDCARD',
+        name: 'Identity Card Patient',
+        gender: 'UNKNOWN',
+        phone: '13600009999',
+        idCard: '110101199001011234',
+        source: 'OTHER',
+        active: true,
+      })
+      .expect(201);
+    const exported = await request(app)
+      .get('/api/v2/resources/patients/export?code=EXPORT-IDCARD')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(exported.text).not.toContain('110101199001011234');
+    expect(exported.text).toMatch(/\*{8}1234/);
+  });
+
+  it('ends an export response when streaming fails after headers', async () => {
+    const streamNow = new Date().toISOString();
+    const insertStream = db.prepare(
+      `INSERT INTO Patient (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active
+       ) VALUES (?, 'clinic-v2-001', ?, ?, NULL, ?, 'Export Row', 'UNKNOWN', ?, '[]', '[]', '[]', '[]', '[]', 'OTHER', 1)`,
+    );
+    for (let index = 0; index < 2; index += 1) {
+      insertStream.run(`stream-row-${index}`, streamNow, streamNow, `EXPORT-STREAM-${index}`, `13710000${String(index).padStart(4, '0')}`);
+    }
+
+    const original = SqliteRepository.prototype.findMany;
+    let calls = 0;
+    vi.spyOn(SqliteRepository.prototype, 'findMany').mockImplementation(async function (
+      this: SqliteRepository,
+      query,
+      context,
+    ) {
+      calls += 1;
+      if (calls > 1) throw new Error('stream failed');
+      return original.call(this, query, context);
+    });
+    const exported = await request(app)
+      .get('/api/v2/resources/patients/export?name=Export Row')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(exported.text).toContain('Export Row');
+  });
+
+  it('caps CSV exports and marks truncation', async () => {
+    const insertCap = db.prepare(
+      `INSERT INTO Patient (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active
+       ) VALUES (?, 'clinic-v2-001', ?, ?, NULL, ?, 'Export Row', 'UNKNOWN', ?, '[]', '[]', '[]', '[]', '[]', 'OTHER', 1)`,
+    );
+    const capNow = new Date().toISOString();
+    for (let index = 0; index < 300; index += 1) {
+      insertCap.run(`cap-row-${index}`, capNow, capNow, `EXPORT-CAP-${index}`, `13700000${String(index).padStart(4, '0')}`);
+    }
+    for (let index = 0; index < 101; index += 1) {
+      insertCap.run(`cap-extra-${index}`, capNow, capNow, `EXPORT-CAP-EXTRA-${index}`, `13720000${String(index).padStart(4, '0')}`);
+    }
+    process.env.V2_CSV_EXPORT_MAX_ROWS = '5';
+    try {
+      const small = await request(app)
+        .get('/api/v2/resources/patients/export?name=Export Row')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      expect(small.text).toContain('# truncated');
+      expect(small.text.match(/"Export Row"/g)?.length).toBe(5);
+    } finally {
+      delete process.env.V2_CSV_EXPORT_MAX_ROWS;
+    }
+
+    process.env.V2_CSV_EXPORT_MAX_ROWS = '200';
+    try {
+      const exact = await request(app)
+        .get('/api/v2/resources/patients/export?name=Export Row')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      expect(exact.text).toContain('# truncated');
+      expect(exact.text.match(/"Export Row"/g)?.length).toBe(200);
+    } finally {
+      delete process.env.V2_CSV_EXPORT_MAX_ROWS;
+    }
+
+    process.env.V2_CSV_EXPORT_MAX_ROWS = '250';
+    try {
+      const mid = await request(app)
+        .get('/api/v2/resources/patients/export?name=Export Row')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      expect(mid.text).toContain('# truncated');
+      expect(mid.text.match(/"Export Row"/g)?.length).toBe(250);
+    } finally {
+      delete process.env.V2_CSV_EXPORT_MAX_ROWS;
+    }
+
+    process.env.V2_CSV_EXPORT_MAX_ROWS = '400';
+    try {
+      const deep = await request(app)
+        .get('/api/v2/resources/patients/export?name=Export Row')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      expect(deep.text).toContain('# truncated');
+      expect(deep.text.match(/"Export Row"/g)?.length).toBe(400);
+    } finally {
+      delete process.env.V2_CSV_EXPORT_MAX_ROWS;
+    }
   }, 30_000);
 
   it('prefixes formula-injecting CSV cells with a single quote', async () => {
@@ -420,6 +608,8 @@ describe('resource router', () => {
         .set(auth)
         .send({ price: 150 })
         .expect(200);
+      const planAfterPrice = db.prepare('SELECT totalFee FROM TreatmentPlan WHERE id = ?').get(planId) as { totalFee: number };
+      expect(Number(planAfterPrice.totalFee)).toBe(350);
       // 已划价明细不可改价（服务端强制，与 TreatmentPlanBillingService 一致）
       const rejected = await request(app)
         .patch('/api/v2/resources/treatmentPlanItems/router-item-billed')
@@ -459,6 +649,8 @@ describe('resource router', () => {
       const deletedRow = db.prepare('SELECT deletedAt FROM TreatmentPlanItem WHERE id = ?')
         .get('router-item-unbilled') as { deletedAt: string | null };
       expect(deletedRow.deletedAt).not.toBeNull();
+      const planAfterDelete = db.prepare('SELECT totalFee FROM TreatmentPlan WHERE id = ?').get(planId) as { totalFee: number };
+      expect(Number(planAfterDelete.totalFee)).toBe(200);
     } finally {
       db.prepare('DELETE FROM TreatmentPlanItem WHERE planId = ?').run(planId);
       db.prepare('DELETE FROM TreatmentPlan WHERE id = ?').run(planId);

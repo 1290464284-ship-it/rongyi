@@ -36,7 +36,7 @@ describe('FollowUpsPage', () => {
 
   it('completes a pending follow-up through the dialog', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/follow-ups/reminders') {
+      if (path.startsWith('/follow-ups/reminders?')) {
         return [{ id: 'fu-1', patientName: '示例患者', planDate: dateKey(new Date()), status: 'PENDING', content: '回访' }];
       }
       if (path === '/follow-ups/reminders/summary') return { total: 1, overdue: 0, today: 1, upcoming: 0 };
@@ -57,7 +57,7 @@ describe('FollowUpsPage', () => {
 
   it('generates follow-ups in batch and reports failures', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/follow-ups/reminders') return [];
+      if (path.startsWith('/follow-ups/reminders?')) return [];
       if (path === '/follow-ups/reminders/summary') return { total: 0, overdue: 0, today: 0, upcoming: 0 };
       if (path === '/follow-ups/batch-generate') throw new Error('batch failed');
       return {};
@@ -68,7 +68,7 @@ describe('FollowUpsPage', () => {
     expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
 
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/follow-ups/reminders') return [];
+      if (path.startsWith('/follow-ups/reminders?')) return [];
       if (path === '/follow-ups/reminders/summary') return { total: 0, overdue: 0, today: 0, upcoming: 0 };
       return {};
     });
@@ -78,7 +78,7 @@ describe('FollowUpsPage', () => {
 
   it('reports follow-up completion failures', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/follow-ups/reminders') return [{ id: 'fu-2', status: 'PENDING' }];
+      if (path.startsWith('/follow-ups/reminders?')) return [{ id: 'fu-2', status: 'PENDING' }];
       if (path === '/follow-ups/reminders/summary') return { total: 1, overdue: 1, today: 0, upcoming: 0 };
       if (path === '/follow-ups/fu-2/complete') throw new Error('complete failed');
       return {};
@@ -92,7 +92,7 @@ describe('FollowUpsPage', () => {
 
   it('uses generic fallback messages for non-error failures', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/follow-ups/reminders') return [{ id: 'fu-3', status: 'PENDING' }];
+      if (path.startsWith('/follow-ups/reminders?')) return [{ id: 'fu-3', status: 'PENDING' }];
       if (path === '/follow-ups/reminders/summary') return { total: 1, overdue: 0, today: 0, upcoming: 1 };
       throw 'boom';
     });
@@ -108,7 +108,7 @@ describe('FollowUpsPage', () => {
 
   it('batch completes selected follow-ups and exports overdue reminders', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/follow-ups/reminders') {
+      if (path.startsWith('/follow-ups/reminders?')) {
         return [
           { id: 'fu-batch-1', patientName: '批量一', planDate: '2026-08-01', status: 'PENDING' },
           { id: 'fu-batch-2', patientName: '批量二', planDate: '2026-08-01', status: 'PENDING' },
@@ -141,9 +141,28 @@ describe('FollowUpsPage', () => {
     });
   });
 
+  it('surfaces per-item errors from batch completion', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.startsWith('/follow-ups/reminders?')) {
+        return [{ id: 'fu-err-1', patientName: '错误患者', planDate: '2026-08-01', status: 'PENDING' }];
+      }
+      if (path === '/follow-ups/reminders/summary') return { total: 1, overdue: 1, today: 0, upcoming: 0 };
+      if (path === '/follow-ups/batch-complete') {
+        return { completed: 0, skipped: 1, errors: ['随访记录不存在：fu-err-1'] };
+      }
+      return {};
+    });
+
+    render(<FollowUpsPage />, { wrapper });
+    fireEvent.click((await screen.findAllByRole('checkbox'))[0]);
+    fireEvent.click(screen.getByRole('button', { name: '批量完成' }));
+    await submitDialog();
+    expect(await screen.findByText(/随访记录不存在：fu-err-1/)).toBeDefined();
+  });
+
   it('reports batch completion and export failures', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/follow-ups/reminders') return [{ id: 'fu-batch-fail', planDate: '2026-08-01', status: 'PENDING' }];
+      if (path.startsWith('/follow-ups/reminders?')) return [{ id: 'fu-batch-fail', planDate: '2026-08-01', status: 'PENDING' }];
       if (path === '/follow-ups/reminders/summary') return { total: 1, overdue: 1, today: 0, upcoming: 0 };
       if (path === '/follow-ups/batch-complete') throw new Error('batch complete failed');
       return {};
@@ -164,7 +183,7 @@ describe('FollowUpsPage', () => {
     const now = new Date();
     const todayKey = dateKey(now);
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/follow-ups/reminders') {
+      if (path.startsWith('/follow-ups/reminders?')) {
         return [{ id: 'fu-empty', patientName: '空结果', planDate: todayKey, status: null }];
       }
       if (path === '/follow-ups/reminders/summary') return undefined;
@@ -202,7 +221,7 @@ describe('FollowUpsPage', () => {
     const yesterday = dateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
     const tomorrow = dateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1));
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/follow-ups/reminders') {
+      if (path.startsWith('/follow-ups/reminders?')) {
         return [
           { id: 'fu-overdue', patientName: '逾期患者', planDate: yesterday, status: 'PENDING' },
           { id: 'fu-today', patientName: '今日患者', planDate: todayKey, status: 'PENDING' },
@@ -224,15 +243,18 @@ describe('FollowUpsPage', () => {
     expect(screen.getByText('后续患者')).toBeDefined();
   });
 
-  it('shows a truncation hint when reminders exceed the page size', async () => {
+  it('shows a truncation hint and paginates reminders', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/follow-ups/reminders') {
+      if (path.startsWith('/follow-ups/reminders?')) {
+        const page = Number(new URL(path, 'http://localhost').searchParams.get('page') ?? '1');
         return {
-          items: [{ id: 'fu-trunc', patientName: '截断患者', planDate: dateKey(new Date()), status: 'PENDING' }],
+          items: page === 1
+            ? [{ id: 'fu-trunc', patientName: '截断患者', planDate: dateKey(new Date()), status: 'PENDING' }]
+            : [{ id: 'fu-page2', patientName: '第二页患者', planDate: dateKey(new Date()), status: 'PENDING' }],
           total: 150,
-          page: 1,
+          page,
           pageSize: 100,
-          truncated: true,
+          truncated: page === 1,
         };
       }
       if (path === '/follow-ups/reminders/summary') return { total: 150, overdue: 150, today: 0, upcoming: 0 };
@@ -242,11 +264,16 @@ describe('FollowUpsPage', () => {
 
     render(<FollowUpsPage />, { wrapper });
     expect(await screen.findByText('随访提醒超过 100 条，仅显示前 1 条')).toBeDefined();
+    expect(screen.getByText(/共 150 条/)).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+    expect(await screen.findByText('第二页患者')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '上一页' }));
+    expect(await screen.findByText('截断患者')).toBeDefined();
   });
 
   it('cancels the completion dialog without changing state', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/follow-ups/reminders') return [{ id: 'fu-cancel', planDate: dateKey(new Date()), status: 'PENDING' }];
+      if (path.startsWith('/follow-ups/reminders?')) return [{ id: 'fu-cancel', planDate: dateKey(new Date()), status: 'PENDING' }];
       return { total: 1, overdue: 0, today: 1, upcoming: 0 };
     });
     render(<FollowUpsPage />, { wrapper });
@@ -258,7 +285,7 @@ describe('FollowUpsPage', () => {
 
   it('renders NPS chips from the nps endpoint', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/follow-ups/reminders') return [];
+      if (path.startsWith('/follow-ups/reminders?')) return [];
       if (path === '/follow-ups/reminders/summary') return { total: 0, overdue: 0, today: 0, upcoming: 0 };
       if (path === '/follow-ups/nps') {
         return { total: 10, promoters: 5, passives: 3, detractors: 2, nps: 30, average: 7.8, breakdown: [] };
@@ -276,7 +303,7 @@ describe('FollowUpsPage', () => {
 
   it('records a follow-up execution through the dialog', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/follow-ups/reminders') {
+      if (path.startsWith('/follow-ups/reminders?')) {
         return [{ id: 'f-1', patientName: '执行患者', planDate: dateKey(new Date()), status: 'PENDING', content: '回访' }];
       }
       if (path === '/follow-ups/reminders/summary') return { total: 1, overdue: 0, today: 1, upcoming: 0 };
@@ -312,7 +339,7 @@ describe('FollowUpsPage', () => {
 
   it('reports follow-up execution failures', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/follow-ups/reminders') return [{ id: 'f-2', planDate: dateKey(new Date()), status: 'PENDING' }];
+      if (path.startsWith('/follow-ups/reminders?')) return [{ id: 'f-2', planDate: dateKey(new Date()), status: 'PENDING' }];
       if (path === '/follow-ups/reminders/summary') return { total: 1, overdue: 0, today: 1, upcoming: 0 };
       if (path === '/follow-ups/nps') return { total: 0, promoters: 0, passives: 0, detractors: 0, nps: 0, average: 0, breakdown: [] };
       if (path === '/follow-ups/f-2/execute') throw new Error('execute failed');
@@ -322,13 +349,14 @@ describe('FollowUpsPage', () => {
     render(<FollowUpsPage />, { wrapper });
     fireEvent.click(await screen.findByRole('button', { name: '执行随访' }));
     fireEvent.change(screen.getByLabelText('患者评分（0-10）'), { target: { value: '9' } });
+    fireEvent.change(screen.getByLabelText('联系时间'), { target: { value: '2026-08-05T09:30' } });
     fireEvent.click(screen.getByRole('button', { name: '确认执行' }));
     expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
   });
 
   it('switches to dict management and lists follow-up dictionary entries', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/follow-ups/reminders') return [];
+      if (path.startsWith('/follow-ups/reminders?')) return [];
       if (path === '/follow-ups/reminders/summary') return { total: 0, overdue: 0, today: 0, upcoming: 0 };
       if (path === '/follow-ups/nps') return { total: 0, promoters: 0, passives: 0, detractors: 0, nps: 0, average: 0, breakdown: [] };
       if (path === '/resources/followUpDicts?page=1&pageSize=200') {
@@ -358,7 +386,7 @@ describe('FollowUpsPage', () => {
 
   it('creates a follow-up dictionary entry via POST', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/follow-ups/reminders') return [];
+      if (path.startsWith('/follow-ups/reminders?')) return [];
       if (path === '/follow-ups/reminders/summary') return { total: 0, overdue: 0, today: 0, upcoming: 0 };
       if (path === '/follow-ups/nps') return { total: 0, promoters: 0, passives: 0, detractors: 0, nps: 0, average: 0, breakdown: [] };
       if (path === '/resources/followUpDicts?page=1&pageSize=200') return { items: [], total: 0 };
@@ -394,7 +422,7 @@ describe('FollowUpsPage', () => {
 
   it('updates a follow-up dictionary entry via PATCH', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/follow-ups/reminders') return [];
+      if (path.startsWith('/follow-ups/reminders?')) return [];
       if (path === '/follow-ups/reminders/summary') return { total: 0, overdue: 0, today: 0, upcoming: 0 };
       if (path === '/follow-ups/nps') return { total: 0, promoters: 0, passives: 0, detractors: 0, nps: 0, average: 0, breakdown: [] };
       if (path === '/resources/followUpDicts?page=1&pageSize=200') {
@@ -429,7 +457,7 @@ describe('FollowUpsPage', () => {
 
   it('deletes a follow-up dictionary entry after confirmation', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/follow-ups/reminders') return [];
+      if (path.startsWith('/follow-ups/reminders?')) return [];
       if (path === '/follow-ups/reminders/summary') return { total: 0, overdue: 0, today: 0, upcoming: 0 };
       if (path === '/follow-ups/nps') return { total: 0, promoters: 0, passives: 0, detractors: 0, nps: 0, average: 0, breakdown: [] };
       if (path === '/resources/followUpDicts?page=1&pageSize=200') {
@@ -452,7 +480,7 @@ describe('FollowUpsPage', () => {
 
   it('filters dictionary entries by dictType', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/follow-ups/reminders') return [];
+      if (path.startsWith('/follow-ups/reminders?')) return [];
       if (path === '/follow-ups/reminders/summary') return { total: 0, overdue: 0, today: 0, upcoming: 0 };
       if (path === '/follow-ups/nps') return { total: 0, promoters: 0, passives: 0, detractors: 0, nps: 0, average: 0, breakdown: [] };
       if (path.startsWith('/resources/followUpDicts')) {
@@ -473,14 +501,14 @@ describe('FollowUpsPage', () => {
 
   it('shows an error state and retries the follow-up queries', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/follow-ups/reminders') throw 'load failed';
+      if (path.startsWith('/follow-ups/reminders?')) throw 'load failed';
       return {};
     });
     render(<FollowUpsPage />, { wrapper });
     expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
 
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/follow-ups/reminders') return [];
+      if (path.startsWith('/follow-ups/reminders?')) return [];
       if (path === '/follow-ups/reminders/summary') return { total: 0, overdue: 0, today: 0, upcoming: 0 };
       if (path === '/follow-ups/nps') return { total: 0, promoters: 0, passives: 0, detractors: 0, nps: 0, average: 0, breakdown: [] };
       return {};
@@ -489,9 +517,20 @@ describe('FollowUpsPage', () => {
     expect(await screen.findByText('随访管理')).toBeDefined();
   });
 
+  it('shows the mapped message when the query fails with an Error instance', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.startsWith('/follow-ups/reminders?')) {
+        throw new Error('Search query must be at most 200 characters');
+      }
+      return {};
+    });
+    render(<FollowUpsPage />, { wrapper });
+    expect(await screen.findByText('搜索关键词不能超过 200 个字符')).toBeDefined();
+  });
+
   it('switches back to the follow-up list tab', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/follow-ups/reminders') return [];
+      if (path.startsWith('/follow-ups/reminders?')) return [];
       if (path === '/follow-ups/reminders/summary') return { total: 0, overdue: 0, today: 0, upcoming: 0 };
       if (path === '/follow-ups/nps') return { total: 0, promoters: 0, passives: 0, detractors: 0, nps: 0, average: 0, breakdown: [] };
       if (path === '/resources/followUpDicts?page=1&pageSize=200') return { items: [], total: 0 };
@@ -506,7 +545,7 @@ describe('FollowUpsPage', () => {
 
   it('closes the execution dialog without submitting', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/follow-ups/reminders') {
+      if (path.startsWith('/follow-ups/reminders?')) {
         return [{ id: 'f-1', patientName: '执行患者', planDate: dateKey(new Date()), status: 'PENDING', content: '回访' }];
       }
       if (path === '/follow-ups/reminders/summary') return { total: 1, overdue: 0, today: 1, upcoming: 0 };
@@ -521,5 +560,131 @@ describe('FollowUpsPage', () => {
       expect(screen.queryByRole('dialog')).toBeNull();
     });
     expect(apiRequest).not.toHaveBeenCalledWith('/follow-ups/f-1/execute', expect.anything());
+  });
+
+  it('requires a contact time when executing a completed follow-up', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.startsWith('/follow-ups/reminders?')) {
+        return [{ id: 'f-1', patientName: '执行患者', planDate: dateKey(new Date()), status: 'PENDING', content: '回访' }];
+      }
+      if (path === '/follow-ups/reminders/summary') return { total: 1, overdue: 0, today: 1, upcoming: 0 };
+      if (path === '/follow-ups/nps') return { total: 1, promoters: 1, passives: 0, detractors: 0, nps: 100, average: 9, breakdown: [] };
+      return {};
+    });
+    render(<FollowUpsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '执行随访' }));
+
+    fireEvent.change(screen.getByLabelText('执行状态'), { target: { value: 'DONE' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认执行' }));
+    await screen.findByText('请填写联系时间');
+  });
+
+  it('validates the patient rating and pain level ranges', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.startsWith('/follow-ups/reminders?')) {
+        return [{ id: 'f-1', patientName: '执行患者', planDate: dateKey(new Date()), status: 'PENDING', content: '回访' }];
+      }
+      if (path === '/follow-ups/reminders/summary') return { total: 1, overdue: 0, today: 1, upcoming: 0 };
+      if (path === '/follow-ups/nps') return { total: 1, promoters: 1, passives: 0, detractors: 0, nps: 100, average: 9, breakdown: [] };
+      return {};
+    });
+    render(<FollowUpsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '执行随访' }));
+
+    fireEvent.change(screen.getByLabelText('联系时间'), { target: { value: '2026-08-05T09:30' } });
+    fireEvent.change(screen.getByLabelText('患者评分（0-10）'), { target: { value: '3.5' } });
+    // 浏览器约束校验会拦截非法数字的点击提交；直接用 submit 事件驱动，
+    // 覆盖业务层评分/疼痛度兜底校验。
+    const form = screen.getByLabelText('患者评分（0-10）').closest('form') as HTMLFormElement;
+    fireEvent.submit(form);
+    expect(await screen.findByText('评分须在 0-10 之间')).toBeDefined();
+
+    fireEvent.change(screen.getByLabelText('患者评分（0-10）'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('疼痛度（0-10）'), { target: { value: '11' } });
+    fireEvent.submit(form);
+    expect(await screen.findByText('疼痛度须在 0-10 之间')).toBeDefined();
+    expect(apiRequest).not.toHaveBeenCalledWith('/follow-ups/f-1/execute', expect.anything());
+  });
+
+  it('moves between follow-up tabs with arrow keys', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.startsWith('/follow-ups/reminders?')) return [];
+      if (path === '/follow-ups/reminders/summary') return { total: 0, overdue: 0, today: 0, upcoming: 0 };
+      if (path === '/follow-ups/nps') return { total: 0, promoters: 0, passives: 0, detractors: 0, nps: 0, average: 0, breakdown: [] };
+      if (path === '/resources/followUpDicts?page=1&pageSize=200') return { items: [], total: 0 };
+      return {};
+    });
+    render(<FollowUpsPage />, { wrapper });
+    const listTab = await screen.findByRole('tab', { name: '回访列表' });
+    fireEvent.keyDown(listTab, { key: 'Tab' });
+    expect(listTab.getAttribute('aria-selected')).toBe('true');
+    fireEvent.keyDown(listTab, { key: 'ArrowRight' });
+    expect(screen.getByRole('tab', { name: '词典管理' }).getAttribute('aria-selected')).toBe('true');
+    const dictsTab = screen.getByRole('tab', { name: '词典管理' });
+    fireEvent.keyDown(dictsTab, { key: 'Enter' });
+    expect(dictsTab.getAttribute('aria-selected')).toBe('true');
+    fireEvent.keyDown(dictsTab, { key: 'ArrowLeft' });
+    expect(screen.getByRole('tab', { name: '回访列表' }).getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('omits empty optional fields from the execution payload', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.startsWith('/follow-ups/reminders?')) {
+        return [{ id: 'f-1', patientName: '执行患者', planDate: dateKey(new Date()), status: 'PENDING', content: '回访' }];
+      }
+      if (path === '/follow-ups/reminders/summary') return { total: 1, overdue: 0, today: 1, upcoming: 0 };
+      if (path === '/follow-ups/nps') return { total: 1, promoters: 1, passives: 0, detractors: 0, nps: 100, average: 9, breakdown: [] };
+      return {};
+    });
+    render(<FollowUpsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '执行随访' }));
+    fireEvent.change(screen.getByLabelText('执行状态'), { target: { value: 'SKIPPED' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认执行' }));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/follow-ups/f-1/execute', expect.objectContaining({ method: 'POST' }));
+    });
+    const call = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/follow-ups/f-1/execute');
+    const body = JSON.parse(String((call?.[1] as RequestInit | undefined)?.body ?? '{}')) as Record<string, unknown>;
+    expect(body).toEqual({ executionStatus: 'SKIPPED' });
+  });
+
+  it('ignores a stale completion submit', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/follow-ups/reminders?page=1&pageSize=100') {
+        return { items: [{ id: 'f-1', planDate: dateKey(new Date()), status: 'PENDING' }], total: 250, page: 1, pageSize: 100 };
+      }
+      if (path === '/follow-ups/reminders?page=2&pageSize=100') return new Promise(() => {});
+      if (path === '/follow-ups/reminders/summary') return { total: 250, overdue: 0, today: 1, upcoming: 249 };
+      if (path === '/follow-ups/nps') return { total: 0, promoters: 0, passives: 0, detractors: 0, nps: 0, average: 0, breakdown: [] };
+      return {};
+    });
+    render(<FollowUpsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '完成随访' }));
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+    await waitFor(() => {
+      expect((screen.getByRole('button', { name: '下一页' }) as HTMLButtonElement).disabled).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: '确认完成' }));
+    expect(apiRequest).not.toHaveBeenCalledWith('/follow-ups/f-1/complete', expect.objectContaining({ method: 'PATCH' }));
+  });
+
+  it('ignores a stale execution submit', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/follow-ups/reminders?page=1&pageSize=100') {
+        return { items: [{ id: 'f-1', planDate: dateKey(new Date()), status: 'PENDING' }], total: 250, page: 1, pageSize: 100 };
+      }
+      if (path === '/follow-ups/reminders?page=2&pageSize=100') return new Promise(() => {});
+      if (path === '/follow-ups/reminders/summary') return { total: 250, overdue: 0, today: 1, upcoming: 249 };
+      if (path === '/follow-ups/nps') return { total: 0, promoters: 0, passives: 0, detractors: 0, nps: 0, average: 0, breakdown: [] };
+      return {};
+    });
+    render(<FollowUpsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '执行随访' }));
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+    await waitFor(() => {
+      expect((screen.getByRole('button', { name: '下一页' }) as HTMLButtonElement).disabled).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: '确认执行' }));
+    expect(apiRequest).not.toHaveBeenCalledWith('/follow-ups/f-1/execute', expect.objectContaining({ method: 'POST' }));
   });
 });

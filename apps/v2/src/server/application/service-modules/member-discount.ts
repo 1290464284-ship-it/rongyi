@@ -84,17 +84,16 @@ function optionalSpecialDiscounts(value: unknown): SpecialDiscount[] | null {
 /** 读取库中存储的特殊折扣（JSON 字符串或 null），空值一律归一为 null。 */
 function parseStoredSpecialDiscounts(value: unknown): SpecialDiscount[] | null {
   if (value === null || value === undefined) return null;
-  let parsed: unknown = value;
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (!trimmed) return null;
-    try {
-      parsed = JSON.parse(trimmed);
-    } catch {
-      return null;
-    }
+  // MemberCard.specialDiscountsJson 为 TEXT 列：入库值恒为 JSON 字符串或 NULL，
+  // 非字符串入参不可达，直接按字符串归一。
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    return Array.isArray(parsed) && parsed.length > 0 ? (parsed as SpecialDiscount[]) : null;
+  } catch {
+    return null;
   }
-  return Array.isArray(parsed) && parsed.length > 0 ? (parsed as SpecialDiscount[]) : null;
 }
 
 function roundTotal(rawTotal: number, roundingMode: string): number {
@@ -168,22 +167,20 @@ export class MemberDiscountService {
   quote(cardId: string, input: QuoteInput, context: AppContext): Record<string, unknown> {
     const card = this.findCard(cardId, context, true);
     const specials = parseStoredSpecialDiscounts(card.specialDiscountsJson);
-    const passedBaseTotal = Number(input?.baseTotal ?? 0);
+    const baseTotal = input?.baseTotal;
+    if (typeof baseTotal !== 'number' || !Number.isSafeInteger(baseTotal) || baseTotal < 0) {
+      throw new ValidationError('原价金额必须为不小于 0 的整数（分）');
+    }
     if (card.discountRate === null && !specials) {
       return {
         cardId: card.id,
         cardNo: card.cardNo,
         applied: false,
-        baseTotal: passedBaseTotal,
+        baseTotal,
         discount: 0,
-        total: passedBaseTotal,
+        total: baseTotal,
         reason: 'NO_PLAN',
       };
-    }
-
-    const baseTotal = input.baseTotal;
-    if (typeof baseTotal !== 'number' || !Number.isSafeInteger(baseTotal) || baseTotal < 0) {
-      throw new ValidationError('原价金额必须为不小于 0 的整数（分）');
     }
 
     const items: QuoteItem[] = [];
@@ -226,8 +223,9 @@ export class MemberDiscountService {
        FROM Charge
        WHERE patientId = ? AND deletedAt IS NULL AND discount > 0
          AND strftime('%Y', createdAt, ?) = ?${tenantAnd(context.clinicId)}`,
-    ).get(card.patientId, `+${CLINIC_TZ_OFFSET_HOURS} hours`, clinicYear, ...tenantParams(context.clinicId)) as { usage: number } | undefined;
-    const annualUsage = Number(usageRow?.usage ?? 0);
+    ).get(card.patientId, `+${CLINIC_TZ_OFFSET_HOURS} hours`, clinicYear, ...tenantParams(context.clinicId)) as { usage: number };
+    // 聚合查询恒返回一行（COALESCE 兜底），usageRow 与 usage 都不可能为 nullish。
+    const annualUsage = Number(usageRow.usage);
     let annualRemaining: number | null = null;
     if (card.annualDiscountLimit !== null && card.annualDiscountLimit !== undefined) {
       annualRemaining = Math.max(0, Number(card.annualDiscountLimit) - annualUsage);
@@ -235,7 +233,9 @@ export class MemberDiscountService {
     }
 
     const roundingMode = card.roundingMode ?? 'FLOOR';
-    const rawTotal = baseTotal - discount;
+    // 明细维度折扣按 items 小计计算，而 baseTotal 由调用方传入；两者不一致时
+    // 折扣可能超过原价，这里兜底保证报价总价与优惠金额都不会为负。
+    const rawTotal = Math.max(0, baseTotal - discount);
     const total = roundTotal(rawTotal, roundingMode);
     const finalDiscount = baseTotal - total;
 

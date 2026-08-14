@@ -5,8 +5,9 @@ import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase } from './database';
-import { cleanupIdempotencyRecords, withIdempotency, type IdempotencyScope } from './idempotency';
+import { cleanupIdempotencyRecords, stableRequestBodyHash, withIdempotency, type IdempotencyScope } from './idempotency';
 import { isDbWriteActive, sharedDbWriteQueue } from './db-write-queue';
+import { ValidationError } from './errors';
 
 const scope = (requestId: string, overrides: Partial<IdempotencyScope> = {}): IdempotencyScope => ({
   operation: 'charge.pay',
@@ -19,7 +20,14 @@ const scope = (requestId: string, overrides: Partial<IdempotencyScope> = {}): Id
 
 function scopeKey(input: IdempotencyScope): string {
   return createHash('sha256')
-    .update([input.operation, input.resourceId ?? '', input.userId ?? '', input.clinicId ?? '', input.requestId].join('\0'))
+    .update([
+      input.operation,
+      input.resourceId ?? '',
+      input.userId ?? '',
+      input.clinicId ?? '',
+      input.requestId,
+      input.requestBodyHash ?? '',
+    ].join('\0'))
     .digest('hex');
 }
 
@@ -50,6 +58,45 @@ describe('withIdempotency', () => {
     expect(first.value).toBe(1);
     expect(second.value).toBe(1);
     expect(calls).toBe(1);
+  });
+
+  it('rejects promises from non-async callbacks on the no-key sync path', () => {
+    expect(() => withIdempotency(db, scope(''), () => Promise.resolve(1)))
+      .toThrow('Idempotent write must complete synchronously');
+  });
+
+  it('refuses keyless sync writes while the shared queue holds the write lock', async () => {
+    const queue = sharedDbWriteQueue(db);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const pending = queue(async () => {
+      await gate;
+      return 'done';
+    });
+    // 队列在微任务中启动，等一拍让 active 计数生效。
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(isDbWriteActive(db)).toBe(true);
+    expect(() => withIdempotency(db, scope(''), () => ({ ok: true })))
+      .toThrow('Database write is in progress');
+    release();
+    await pending;
+  });
+
+  it('reports rejected strings from async callbacks', async () => {
+    await expect(withIdempotency(db, scope('reject-string'), async () => {
+      throw 'string-rejection';
+    })).rejects.toThrow('string-rejection');
+  });
+
+  it('normalizes non-finite numbers and non-object values in body hashes', () => {
+    const nanHash = stableRequestBodyHash({ amount: Number.NaN });
+    const infHash = stableRequestBodyHash({ amount: Number.POSITIVE_INFINITY });
+    expect(nanHash).toBe(infHash);
+    expect(nanHash).toBe(stableRequestBodyHash({ amount: null }));
+    // 非对象顶层值（symbol）回退 String(...) 序列化，不崩溃且结果稳定
+    expect(stableRequestBodyHash(Symbol.for('marker'))).toBe(stableRequestBodyHash(Symbol.for('marker')));
   });
 
   it('recovers from a corrupt completed response by deleting the record and re-running', async () => {
@@ -90,6 +137,21 @@ describe('withIdempotency', () => {
     expect(calls).toBe(2);
   });
 
+  it('separates identical request ids when the request body differs', async () => {
+    let calls = 0;
+    const first = await withIdempotency(db, scope('body-hash', { requestBodyHash: stableRequestBodyHash({ amount: 100 }) }), () => {
+      calls += 1;
+      return { amount: 100 };
+    });
+    const second = await withIdempotency(db, scope('body-hash', { requestBodyHash: stableRequestBodyHash({ amount: 200 }) }), () => {
+      calls += 1;
+      return { amount: 200 };
+    });
+    expect(first.amount).toBe(100);
+    expect(second.amount).toBe(200);
+    expect(calls).toBe(2);
+  });
+
   it('allows retry after the operation throws', async () => {
     let calls = 0;
     expect(() => withIdempotency(db, scope('key-2'), () => {
@@ -102,6 +164,39 @@ describe('withIdempotency', () => {
     });
     expect(result.ok).toBe(true);
     expect(calls).toBe(2);
+  });
+
+  it('rejects non-async callbacks that return promises instead of marking them completed', async () => {
+    let calls = 0;
+    expect(() => withIdempotency(db, scope('promise-sync'), () => {
+      calls += 1;
+      return Promise.resolve({ ok: true });
+    })).toThrow('must complete synchronously');
+    expect(calls).toBe(1);
+    // 同步路径失败会回滚并删除 PROCESSING 记录，允许用正确写法重试。
+    const result = await withIdempotency(db, scope('promise-sync'), async () => {
+      calls += 1;
+      return { ok: true };
+    });
+    expect(result).toEqual({ ok: true });
+    expect(calls).toBe(2);
+  });
+
+  it('wraps synchronous operations without a request id in a rollback-safe transaction', () => {
+    db.exec('CREATE TABLE IF NOT EXISTS IdemScratch (id TEXT PRIMARY KEY)');
+    const noRequestScope = (key: string) => ({ ...scope(key), requestId: '' });
+    expect(() => withIdempotency(db, noRequestScope('rollback'), () => {
+      db.prepare('INSERT INTO IdemScratch (id) VALUES (?)').run('rolled-back');
+      throw new Error('boom');
+    })).toThrow('boom');
+    expect(db.prepare('SELECT 1 FROM IdemScratch WHERE id = ?').get('rolled-back')).toBeUndefined();
+
+    const result = withIdempotency(db, noRequestScope('commit'), () => {
+      db.prepare('INSERT INTO IdemScratch (id) VALUES (?)').run('committed');
+      return { ok: true };
+    });
+    expect(result).toEqual({ ok: true });
+    expect(db.prepare('SELECT 1 FROM IdemScratch WHERE id = ?').get('committed')).toBeDefined();
   });
 
   it('keeps the PROCESSING record when an async operation fails, blocking retries', async () => {
@@ -167,6 +262,27 @@ describe('withIdempotency', () => {
     expect(calls).toBe(0);
     const row = db.prepare('SELECT status FROM IdempotencyRecord WHERE key = ?').get(key);
     expect(row).toEqual({ status: 'PROCESSING' });
+  });
+
+  it('deletes the PROCESSING record when an async operation fails with a known business error', async () => {
+    await expect(withIdempotency(db, scope('async-validation'), async () => {
+      throw new ValidationError('bad input');
+    })).rejects.toThrow('bad input');
+    await expect(withIdempotency(db, scope('async-validation'), async () => 'ok')).resolves.toBe('ok');
+  });
+
+  it('keeps PROCESSING only for flagged side-effect errors', async () => {
+    const flagged = new ValidationError('flagged');
+    (flagged as ValidationError & { keepProcessing?: boolean }).keepProcessing = true;
+    await expect(withIdempotency(db, scope('async-flagged'), async () => { throw flagged; }))
+      .rejects.toThrow('flagged');
+    expect(() => withIdempotency(db, scope('async-flagged'), async () => 'ok'))
+      .toThrow('Operation is already in progress');
+    expect(db.prepare('SELECT status FROM IdempotencyRecord WHERE key = ?')
+      .get(scopeKey(scope('async-flagged')))).toEqual({ status: 'PROCESSING' });
+    db.prepare('UPDATE IdempotencyRecord SET updatedAt = ? WHERE key = ?')
+      .run(new Date(Date.now() - 3_600_000).toISOString(), scopeKey(scope('async-flagged')));
+    cleanupIdempotencyRecords(db);
   });
 
   it('treats expired completed records as retryable', async () => {

@@ -50,7 +50,9 @@ describe('FollowUpDictsTab', () => {
 
     fireEvent.change(screen.getByLabelText('词典分类筛选'), { target: { value: 'CONTENT' } });
     expect(await screen.findByText('回访内容')).toBeDefined();
-    expect(screen.queryByText('初诊类型')).toBeNull();
+    await waitFor(() => {
+      expect(screen.queryByText('初诊类型')).toBeNull();
+    });
   });
 
   it('creates and validates dictionary entries', async () => {
@@ -113,6 +115,15 @@ describe('FollowUpDictsTab', () => {
     resolveList(Promise.reject(new Error('Load failed')));
     expect(await screen.findByText('网络请求失败，请重试')).toBeDefined();
     expect(screen.getByRole('button', { name: '重试' })).toBeDefined();
+
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/followUpDicts?page=1&pageSize=200') {
+        return { items: rows, total: 2, page: 1, pageSize: 200 };
+      }
+      return {};
+    });
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    expect(await screen.findByText('初诊类型')).toBeDefined();
   });
 
   it('renders sparse dictionary rows with blank fallbacks', async () => {
@@ -130,5 +141,25 @@ describe('FollowUpDictsTab', () => {
     render(<FollowUpDictsTab />, { wrapper });
     expect(await screen.findByText('稀疏字典')).toBeDefined();
     expect(screen.getByText('否')).toBeDefined();
+  });
+
+  it('shows the raw failure message for non-error failures', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.startsWith('/resources/followUpDicts?')) throw '词典加载异常';
+      return {};
+    });
+    render(<FollowUpDictsTab />, { wrapper });
+    expect(await screen.findByText('词典加载异常')).toBeDefined();
+  });
+
+  it('shows a truncation notice for oversized dictionaries', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/followUpDicts?page=1&pageSize=200') {
+        return { items: rows, total: 2, page: 1, pageSize: 200, truncated: true };
+      }
+      return {};
+    });
+    render(<FollowUpDictsTab />, { wrapper });
+    expect(await screen.findByText(/词典项超过 200 条/)).toBeDefined();
   });
 });

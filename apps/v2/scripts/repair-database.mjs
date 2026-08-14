@@ -32,6 +32,13 @@ if (initialOk) {
 }
 
 const backupPath = `${dbPath}.pre-repair-${Date.now()}`;
+// 先 TRUNCATE checkpoint 把 WAL 帧合入主库，再复制备份，避免修复备份丢失未落盘数据。
+const checkpointDb = new Database(dbPath);
+try {
+  checkpointDb.pragma('wal_checkpoint(TRUNCATE)');
+} finally {
+  checkpointDb.close();
+}
 fs.copyFileSync(dbPath, backupPath);
 console.log(`backup created: ${backupPath}`);
 

@@ -1,5 +1,5 @@
 import { useRef, useState, type FormEvent } from 'react';
-import { useQuery, type UseQueryResult } from '@tanstack/react-query';
+import { useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { apiRequest } from '../lib/api';
 import type { Page } from '../lib/types';
 import { useDebouncedValue } from './use-debounce';
@@ -23,6 +23,8 @@ export interface CrudResourceOptions<
   listPath?: string | ((params: CrudListParams) => string);
   /** 分页大小，默认 50。 */
   pageSize?: number;
+  /** keyset cursor pagination for large tables (server returns nextCursor). */
+  cursorPagination?: boolean;
   /** 透传给列表 useQuery。 */
   enabled?: boolean;
   /** 初始搜索词（如顶栏全局搜索以 ?q= 跳转带入）。 */
@@ -63,6 +65,8 @@ export interface CrudResourceResult<
   TForm extends object,
 > {
   query: UseQueryResult<Page<TRow>>;
+  /** 列表当前展示的是旧数据占位（新查询键加载中），行写操作应禁用。 */
+  isStale: boolean;
   rows: TRow[];
   reload: () => Promise<unknown>;
   /** 防抖后的搜索词（查询用）。 */
@@ -72,6 +76,11 @@ export interface CrudResourceResult<
   setSearch: (value: string) => void;
   page: number;
   setPage: (value: number) => void;
+  hasNext: boolean;
+  canGoPrev: boolean;
+  goNext: () => void;
+  goPrev: () => void;
+  cursorPagination: boolean;
   showForm: boolean;
   editing: boolean;
   editingId: string | null;
@@ -91,22 +100,55 @@ export interface CrudResourceResult<
 const DEFAULT_MESSAGES = { create: '创建成功', update: '更新成功', delete: '删除成功' };
 const DEFAULT_ERROR_MESSAGES = { create: '创建失败', update: '更新失败', delete: '删除失败' };
 
+// ── 乐观更新缓存补丁（审计 P2：写操作先打补丁、后台 refetch 校准）──────────
+type RowLike = Record<string, unknown>;
+
+function patchItems<T extends RowLike>(data: Page<T> | undefined, id: string, patch: RowLike): Page<T> | undefined {
+  if (!data) return data;
+  return {
+    ...data,
+    items: data.items.map((row) => (String(row.id) === id ? { ...row, ...patch } : row)),
+  };
+}
+
+function prependItem<T extends RowLike>(data: Page<T> | undefined, row: T): Page<T> | undefined {
+  if (!data) return data;
+  return { ...data, items: [row, ...data.items], total: (data.total ?? 0) + 1 };
+}
+
+function removeItem<T extends RowLike>(data: Page<T> | undefined, id: string): Page<T> | undefined {
+  if (!data) return data;
+  return {
+    ...data,
+    items: data.items.filter((row) => String(row.id) !== id),
+    total: Math.max(0, (data.total ?? 0) - 1),
+  };
+}
+
 export function useCrudResource<
   TRow extends Record<string, unknown> = Record<string, unknown>,
   TForm extends object = Record<string, unknown>,
 >(options: CrudResourceOptions<TRow, TForm>): CrudResourceResult<TRow, TForm> {
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
   const [searchInput, setSearchInput] = useState(options.initialSearch ?? '');
   // M4：initialSearch（如顶栏全局搜索 ?q=）变化时同步搜索词，调用方不再用 key 整页重挂载。
   // 采用 React 官方"渲染期调整 state"模式（避免 set-state-in-effect 级联渲染）。
   const [prevInitialSearch, setPrevInitialSearch] = useState(options.initialSearch);
   const search = useDebouncedValue(searchInput, 300);
   const [page, setPage] = useState(1);
+  const cursorPagination = options.cursorPagination === true;
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [cursorStack, setCursorStack] = useState<string[]>([]);
   if (options.initialSearch !== prevInitialSearch) {
     setPrevInitialSearch(options.initialSearch);
     setSearchInput(options.initialSearch ?? '');
     // 全局搜索带 ?q= 跳转时回到第一页，避免停留在旧页导致空结果。
     setPage(1);
+    if (cursorPagination) {
+      setCursor(null);
+      setCursorStack([]);
+    }
   }
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -122,15 +164,78 @@ export function useCrudResource<
     ? options.listPath
     : (params: CrudListParams) => staticListPath ?? buildDefaultListPath(options.endpoint, pageSize, params);
 
+  const queryKey = cursorPagination
+    ? [...options.queryKey, search, cursor ?? '']
+    : [...options.queryKey, page, search];
   const query = useQuery({
-    queryKey: [...options.queryKey, page, search],
-    queryFn: () => apiRequest<Page<TRow>>(resolveListPath({ page, search })),
+    queryKey,
+    queryFn: () => apiRequest<Page<TRow>>(
+      cursorPagination ? resolveCursorListPath(resolveListPath, search, cursor) : resolveListPath({ page, search }),
+    ),
     enabled: options.enabled,
+    placeholderData: (previous) => previous,
   });
 
   function setSearch(value: string) {
     setSearchInput(value);
     setPage(1);
+    if (cursorPagination) {
+      setCursor(null);
+      setCursorStack([]);
+    }
+  }
+
+  function goNext() {
+    if (query.isPlaceholderData) return;
+    const next = query.data?.nextCursor;
+    if (!next) return;
+    setCursorStack((current) => [...current, cursor ?? '']);
+    setCursor(next);
+  }
+
+  function goPrev() {
+    if (query.isPlaceholderData) return;
+    if (cursorStack.length === 0) return;
+    const nextStack = [...cursorStack];
+    // 198 行已保证栈非空
+    const previous = nextStack.pop() as string;
+    setCursorStack(nextStack);
+    setCursor(previous);
+  }
+
+  async function advanceCursorToPage(value: number) {
+    if (query.isPlaceholderData) return;
+    const current = cursorStack.length + 1;
+    if (value === current) return;
+    if (value < current) {
+      const nextStack = cursorStack.slice(0, Math.max(0, value - 1));
+      setCursorStack(nextStack);
+      setCursor(nextStack[nextStack.length - 1] ?? null);
+      return;
+    }
+    let stack = [...cursorStack];
+    let currentCursor = cursor;
+    let nextCursor = query.data?.nextCursor ?? null;
+    let steps = value - current;
+    while (steps > 0 && nextCursor) {
+      stack = [...stack, currentCursor ?? ''];
+      currentCursor = nextCursor;
+      const nextPage = await apiRequest<Page<TRow>>(
+        resolveCursorListPath(resolveListPath, search, currentCursor),
+      );
+      nextCursor = nextPage.nextCursor ?? null;
+      steps -= 1;
+    }
+    setCursorStack(stack);
+    setCursor(currentCursor);
+  }
+
+  function handleSetPage(value: number) {
+    if (!cursorPagination) {
+      setPage(value);
+      return;
+    }
+    void advanceCursorToPage(value);
   }
 
   function updateForm(patch: Partial<TForm>) {
@@ -144,6 +249,7 @@ export function useCrudResource<
   }
 
   function openEdit(row: TRow) {
+    if (query.isPlaceholderData) return;
     setEditingId(String(row.id));
     setForm(options.formFromRow ? options.formFromRow(row) : pickFormFromRow(options.initialForm, row));
     setShowForm(true);
@@ -156,6 +262,8 @@ export function useCrudResource<
   async function submit(event?: FormEvent) {
     event?.preventDefault();
     if (submitting || submittingRef.current) return;
+    // 编辑弹窗已打开时列表进入 placeholder：旧记录仍可 PATCH，必须拦截。
+    if (editingId !== null && query.isPlaceholderData) return;
     submittingRef.current = true;
     setSubmitting(true);
     const editing = editingId !== null;
@@ -175,10 +283,12 @@ export function useCrudResource<
         }
       }
       let savedId: string | null = editingId;
+      let savedPayload: Record<string, unknown> | null = null;
       if (options.submitOverride) {
         await options.submitOverride({ form, editing });
       } else {
         const payload = options.toPayload ? options.toPayload(form, editing) : { ...form };
+        savedPayload = payload as Record<string, unknown>;
         if (editingId) {
           await apiRequest(`${options.endpoint}/${editingId}`, {
             method: 'PATCH',
@@ -192,6 +302,15 @@ export function useCrudResource<
           savedId = created?.id ?? null;
         }
       }
+      // 乐观更新：先打补丁让 UI 立即反馈，再后台 refetch 校准服务端计算字段。
+      if (savedPayload) {
+        if (editingId) {
+          queryClient.setQueryData<Page<TRow>>(queryKey, (old) => patchItems(old, editingId, savedPayload!));
+        } else if (savedId) {
+          const optimisticRow = { id: savedId, ...savedPayload } as Record<string, unknown> as TRow;
+          queryClient.setQueryData<Page<TRow>>(queryKey, (old) => prependItem(old, optimisticRow));
+        }
+      }
       // 契约：onAfterCreate 仅在创建成功后回调（编辑路径不触发）
       if (!editing) options.onAfterCreate?.(form);
       await options.onSaved?.(savedId, editing, form);
@@ -199,7 +318,12 @@ export function useCrudResource<
       showToast(message, 'success');
       setShowForm(false);
       setForm(freshInitial(options.initialForm));
-      await query.refetch();
+      // 保存已成功：refetch 失败不再误报“保存失败”，列表保留乐观数据待下次刷新。
+      try {
+        await query.refetch();
+      } catch {
+        // 乐观数据已在缓存中；等待用户手动刷新或下次查询窗口
+      }
     } catch (error) {
       const fallback = editing
         ? options.errorMessages?.update ?? DEFAULT_ERROR_MESSAGES.update
@@ -212,6 +336,7 @@ export function useCrudResource<
   }
 
   function requestDelete(row: TRow) {
+    if (query.isPlaceholderData) return;
     setDeleteTarget(row);
   }
 
@@ -220,20 +345,30 @@ export function useCrudResource<
   }
 
   async function confirmDelete() {
-    if (!deleteTarget || submitting || submittingRef.current) return;
+    if (!deleteTarget || submitting || submittingRef.current || query.isPlaceholderData) return;
+    const targetId = String(deleteTarget.id);
     submittingRef.current = true;
     setSubmitting(true);
     try {
       if (options.deleteOverride) {
         await options.deleteOverride(deleteTarget);
       } else {
-        await apiRequest(`${options.endpoint}/${String(deleteTarget.id)}`, { method: 'DELETE' });
+        await apiRequest(`${options.endpoint}/${targetId}`, { method: 'DELETE' });
       }
       setDeleteTarget(null);
+      // 乐观移除：行立即从列表消失，后台 refetch 校准 total/回退页逻辑。
+      queryClient.setQueryData<Page<TRow>>(queryKey, (old) => removeItem(old, targetId));
       showToast(options.messages?.delete ?? DEFAULT_MESSAGES.delete, 'success');
-      const refreshed = await query.refetch();
+      let refreshed: Awaited<ReturnType<typeof query.refetch>> | undefined;
+      try {
+        refreshed = await query.refetch();
+      } catch {
+        // 删除已成功；refetch 失败保留乐观移除，跳过回退页逻辑
+      }
       // 删除末页最后一条时回退一页，避免停留在空页
-      if (page > 1 && (refreshed.data?.items?.length ?? 0) === 0) {
+      if (cursorPagination) {
+        if ((refreshed?.data?.items?.length ?? 0) === 0 && cursorStack.length > 0) goPrev();
+      } else if (page > 1 && (refreshed?.data?.items?.length ?? 0) === 0) {
         setPage(page - 1);
       }
     } catch (error) {
@@ -246,13 +381,19 @@ export function useCrudResource<
 
   return {
     query,
+    isStale: query.isPlaceholderData,
     rows: query.data?.items ?? [],
     reload: () => query.refetch(),
     search,
     searchInput,
     setSearch,
-    page,
-    setPage,
+    page: cursorPagination ? cursorStack.length + 1 : page,
+    setPage: handleSetPage,
+    hasNext: cursorPagination ? Boolean(query.data?.nextCursor) : page * pageSize < (query.data?.total ?? 0),
+    canGoPrev: cursorPagination ? cursorStack.length > 0 : page > 1,
+    goNext,
+    goPrev,
+    cursorPagination,
     showForm,
     editing: editingId !== null,
     editingId,
@@ -291,4 +432,17 @@ function buildDefaultListPath(endpoint: string, pageSize: number, params: CrudLi
   const query = `page=${params.page}&pageSize=${pageSize}`;
   const searchPart = params.search ? `&search=${encodeURIComponent(params.search)}` : '';
   return `${endpoint}?${query}${searchPart}`;
+}
+
+function resolveCursorListPath(
+  resolve: (params: CrudListParams) => string,
+  search: string,
+  cursor: string | null,
+): string {
+  const base = resolve({ page: 1, search });
+  if (!cursor) return base;
+  const [pathPart, queryPart = ''] = base.split('?', 2);
+  const params = new URLSearchParams(queryPart);
+  params.set('cursor', cursor);
+  return `${pathPart}?${params.toString()}`;
 }

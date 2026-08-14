@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { PrescriptionsPage } from './PrescriptionsPage';
 import { apiRequest } from '../../lib/api';
@@ -325,17 +325,17 @@ describe('PrescriptionsPage', () => {
     fireEvent.click(screen.getByText('保存'));
 
     await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/resources/prescriptions/pres-1', expect.objectContaining({ method: 'PATCH' }));
+      expect(apiRequest).toHaveBeenCalledWith('/prescriptions/pres-1/save', expect.objectContaining({ method: 'PATCH' }));
     });
-    const masterCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/resources/prescriptions/pres-1');
-    expect(JSON.parse(String(masterCall?.[1]?.body))).toMatchObject({
+    const saveCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/prescriptions/pres-1/save');
+    const saveBody = JSON.parse(String(saveCall?.[1]?.body)) as { items: Array<Record<string, unknown>> };
+    expect(saveBody).toMatchObject({
       patientId: 'p-1',
       doctorId: 'd-1',
       remark: '饭后半小时服用',
-      status: 'DRAFT',
     });
-    const itemPatchCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/resources/prescriptionItems/item-1');
-    expect(JSON.parse(String(itemPatchCall?.[1]?.body))).toMatchObject({
+    expect(saveBody.items[0]).toMatchObject({
+      id: 'item-1',
       name: '阿莫西林',
       specification: '0.25g',
       dosage: '1粒',
@@ -367,18 +367,97 @@ describe('PrescriptionsPage', () => {
     fireEvent.click(screen.getByText('保存'));
 
     await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/resources/prescriptionItems', expect.objectContaining({ method: 'POST' }));
-      expect(apiRequest).toHaveBeenCalledWith('/resources/prescriptionItems/item-1', expect.objectContaining({ method: 'DELETE' }));
+      expect(apiRequest).toHaveBeenCalledWith('/prescriptions/pres-1/save', expect.objectContaining({ method: 'PATCH' }));
     });
-    const postCall = vi.mocked(apiRequest).mock.calls.find((call) => call[0] === '/resources/prescriptionItems' && call[1]?.method === 'POST');
-    expect(JSON.parse(String(postCall?.[1]?.body))).toMatchObject({
-      prescriptionId: 'pres-1',
-      name: '布洛芬',
-      days: 3,
-      quantity: 1,
-      price: 800,
-    });
+    const saveCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/prescriptions/pres-1/save');
+    const saveBody = JSON.parse(String(saveCall?.[1]?.body)) as { items: Array<Record<string, unknown>> };
+    expect(saveBody.items).toEqual([
+      expect.objectContaining({ name: '布洛芬', days: 3, quantity: 1, price: 800 }),
+    ]);
     expect(await screen.findByText('处方已更新')).toBeDefined();
+  });
+
+  it('blocks saving when the item backfill fails so existing items are not deleted', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/prescriptions?page=1&pageSize=50') {
+        return { items: [{ id: 'pres-1', patientId: 'p-1', doctorId: 'd-1', remark: '饭后服用' }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      if (path === '/resources/prescriptionItems?prescriptionId=pres-1&page=1&pageSize=100') {
+        throw new Error('明细加载失败');
+      }
+      return {};
+    });
+    render(<PrescriptionsPage />, { wrapper });
+    await screen.findByText('饭后服用');
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    expect((await screen.findAllByText('明细加载失败')).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => {
+      expect(vi.mocked(apiRequest).mock.calls.some(([path]) => path === '/prescriptions/pres-1/save')).toBe(false);
+    });
+  });
+
+  it('blocks saving with the loading message while the item backfill is pending', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/prescriptions?page=1&pageSize=50') {
+        return { items: [{ id: 'pres-1', patientId: 'p-1', doctorId: 'd-1', remark: '饭后服用' }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      if (path.includes('/resources/prescriptionItems?')) return new Promise(() => {});
+      return {};
+    });
+    render(<PrescriptionsPage />, { wrapper });
+    await screen.findByText('饭后服用');
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    await screen.findByRole('dialog', { name: '编辑处方' });
+    fireEvent.click(screen.getByText('保存'));
+    expect(await screen.findByText('处方明细加载中，请稍候再保存')).toBeDefined();
+  });
+
+  it('ignores a stale item backfill after reopening the edit dialog', async () => {
+    const pending: Array<(value: unknown) => void> = [];
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/prescriptions?page=1&pageSize=50') {
+        return { items: [
+          { id: 'pres-1', patientId: 'p-1', doctorId: 'd-1', remark: '处方一' },
+          { id: 'pres-2', patientId: 'p-1', doctorId: 'd-1', remark: '处方二' },
+        ], total: 2, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      if (path === '/resources/prescriptionItems?prescriptionId=pres-1&page=1&pageSize=100') {
+        return await new Promise((resolve) => { pending.push(resolve); });
+      }
+      if (path === '/resources/prescriptionItems?prescriptionId=pres-2&page=1&pageSize=100') {
+        return { items: [{ id: 'pi-2', name: '布洛芬', quantity: 1, unitPrice: 5, days: 1, status: 'DRAFT' }], total: 1, page: 1, pageSize: 100 };
+      }
+      return {};
+    });
+    render(<PrescriptionsPage />, { wrapper });
+    await screen.findByText('处方一');
+    const editButtons = screen.getAllByRole('button', { name: '编辑' });
+    fireEvent.click(editButtons[0]);
+    await screen.findByRole('dialog', { name: '编辑处方' });
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    // 重新打开第二个处方：effect 重新执行（editLoadKey 递增），旧请求被取消标记
+    fireEvent.click(editButtons[1]);
+    // 迟到解析第一个处方：不得覆盖当前表单（药品名称保持空）
+    pending[0]?.({ items: [{ id: 'pi-1', name: '阿莫西林', quantity: 1, unitPrice: 1, days: 1, status: 'DRAFT' }], total: 1, page: 1, pageSize: 100 });
+    await waitFor(() => {
+      expect((screen.getAllByLabelText('药品名称')[0] as HTMLInputElement).value).toBe('布洛芬');
+    });
   });
 
   it('deletes a prescription through the generic resource endpoint', async () => {
@@ -492,7 +571,7 @@ describe('PrescriptionsPage', () => {
     });
     render(<PrescriptionsPage />, { wrapper });
     fireEvent.click(await screen.findByRole('button', { name: '编辑' }));
-    expect(await screen.findByText('加载处方明细失败')).toBeDefined();
+    expect((await screen.findAllByText('加载处方明细失败')).length).toBeGreaterThan(0);
   });
 
   it('ignores prescription item backfill after the dialog is closed', async () => {
@@ -521,7 +600,34 @@ describe('PrescriptionsPage', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('continues deleting the master when prescription detail deletes fail', async () => {
+  it('ignores a prescription item load failure after unmount', async () => {
+    let rejectItems: (reason: Error) => void = () => {};
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/prescriptions?page=1&pageSize=50') {
+        return { items: [{ id: 'pres-1', patientId: 'p-1', doctorId: 'd-1', remark: '饭后服用' }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      if (path.includes('/resources/prescriptionItems?')) {
+        return new Promise((_resolve, reject) => { rejectItems = reject; });
+      }
+      return {};
+    });
+    const { unmount } = render(<PrescriptionsPage />, { wrapper });
+    await screen.findByText('饭后服用');
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    await waitFor(() => {
+      expect(vi.mocked(apiRequest)).toHaveBeenCalledWith('/resources/prescriptionItems?prescriptionId=pres-1&page=1&pageSize=100');
+    });
+    unmount();
+    rejectItems(new Error('明细加载失败'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByText('加载处方明细失败')).toBeNull();
+  });
+
+  it('aborts deleting the master when prescription detail deletes fail', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/prescriptions?page=1&pageSize=50') {
         return { items: [{ id: 'pres-1', patientId: 'p-1', doctorId: 'd-1', remark: '饭后服用' }], total: 1, page: 1, pageSize: 50 };
@@ -532,9 +638,9 @@ describe('PrescriptionsPage', () => {
     render(<PrescriptionsPage />, { wrapper });
     fireEvent.click(await screen.findByRole('button', { name: '删除' }));
     fireEvent.click(screen.getByRole('button', { name: '确认删除' }));
-    expect(await screen.findByText('删除部分处方明细失败，已继续删除主记录')).toBeDefined();
+    expect(await screen.findByText('删除处方明细失败，已中止删除主记录')).toBeDefined();
     await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/resources/prescriptions/pres-1', expect.objectContaining({ method: 'DELETE' }));
+      expect(apiRequest).not.toHaveBeenCalledWith('/resources/prescriptions/pres-1', expect.objectContaining({ method: 'DELETE' }));
     });
   });
 
@@ -563,5 +669,33 @@ describe('PrescriptionsPage', () => {
     await waitFor(() => {
       expect(screen.queryByText('charge-1')).toBeNull();
     });
+  });
+
+  it('closes the status dialog through the dialog backdrop', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/prescriptions?page=1&pageSize=50') {
+        return {
+          items: [{
+            id: 'pres-1', patientId: 'p-1', patientIdLabel: '患者甲', doctorId: 'd-1', doctorIdLabel: '张医生',
+            remark: '饭后服用', status: 'PROCESSED', processedAt: '2026-08-06T02:00:00.000Z',
+            chargeId: 'charge-1', chargeIdLabel: 'CHG-1001', dispenseId: 'disp-1',
+          }],
+          total: 1, page: 1, pageSize: 50,
+        };
+      }
+      if (path === '/prescriptions/pres-1/status') {
+        return { id: 'pres-1', status: 'PROCESSED', processedAt: '2026-08-06T02:00:00.000Z', chargeId: 'charge-1', dispenseId: 'disp-1' };
+      }
+      return {};
+    });
+    render(<PrescriptionsPage />, { wrapper });
+    await screen.findByText('饭后服用');
+    fireEvent.click(screen.getByRole('button', { name: '查看状态' }));
+    expect(await screen.findByText('charge-1')).toBeDefined();
+    vi.useFakeTimers();
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByText('charge-1')).toBeNull();
+    vi.useRealTimers();
   });
 });

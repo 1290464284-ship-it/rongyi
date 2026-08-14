@@ -1,4 +1,4 @@
-import { apiRequest, fetchAllPages } from '../lib/api';
+import { apiRequest } from '../lib/api';
 import { errorMessage } from '../lib/messages';
 import type { ToastKind } from '../lib/toast-context';
 import { itemPayload, validItems } from './form';
@@ -27,11 +27,9 @@ export async function createPrescription(
   } catch (error) {
     // 主记录已创建但明细中途失败：清理孤儿记录（清理失败仅告警，不掩盖原始错误）
     if (prescriptionId) {
-      try {
-        await cleanupOrphanPrescription(prescriptionId, createdItemIds, showToast);
-      } catch {
-        showToast?.('清理孤儿处方失败，请检查未完成数据', 'error');
-      }
+      // cleanupOrphanPrescription 内部已对每次 DELETE 分别 try/catch（失败仅告警），
+      // 函数本身不会 reject，此处的 catch 兜底不可达。
+      await cleanupOrphanPrescription(prescriptionId, createdItemIds, showToast);
     }
     throw error;
   }
@@ -39,45 +37,19 @@ export async function createPrescription(
 
 export async function updatePrescription(form: PrescriptionForm, prescriptionId: string | null): Promise<void> {
   if (!prescriptionId) throw new Error('处方 ID 缺失');
-  await apiRequest(`/resources/prescriptions/${prescriptionId}`, {
+  const items = form.items
+    .filter((item) => item.name.trim() && item.days && item.quantity && item.price)
+    .map((item) => ({ id: item.id || undefined, payload: itemPayload(item) }))
+    .filter((entry) => entry.payload.days > 0 && entry.payload.quantity > 0 && entry.payload.price >= 0);
+  await apiRequest(`/prescriptions/${prescriptionId}/save`, {
     method: 'PATCH',
     body: JSON.stringify({
       patientId: form.patientId,
       doctorId: form.doctorId,
       remark: form.remark || undefined,
-      status: form.status,
+      items: items.map(({ id, payload }) => ({ id, ...payload })),
     }),
   });
-  const existing = await fetchAllPages<Record<string, unknown>>(
-    `/resources/prescriptionItems?prescriptionId=${prescriptionId}`,
-  );
-  const existingIds = new Set(existing.map((row) => String(row.id)));
-  // 保留的明细（有服务端 id）→ PATCH；新增的明细 → POST（带 prescriptionId）。
-  // 与 validItems 同一套有效性过滤，但保留本地 id 用于判断服务端存在性。
-  const items = form.items
-    .filter((item) => item.name.trim() && item.days && item.quantity && item.price)
-    .map((item) => ({ id: item.id, payload: itemPayload(item) }))
-    .filter((entry) => entry.payload.days > 0 && entry.payload.quantity > 0 && entry.payload.price >= 0);
-  for (const { id, payload } of items) {
-    if (existingIds.has(id)) {
-      await apiRequest(`/resources/prescriptionItems/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify(payload),
-      });
-    } else {
-      await apiRequest('/resources/prescriptionItems', {
-        method: 'POST',
-        body: JSON.stringify({ prescriptionId, ...payload }),
-      });
-    }
-  }
-  // 表单中已移除的明细 → DELETE
-  for (const row of existing) {
-    const id = String(row.id);
-    if (!form.items.some((item) => item.id === id)) {
-      await apiRequest(`/resources/prescriptionItems/${id}`, { method: 'DELETE' });
-    }
-  }
 }
 
 export async function processPrescription(

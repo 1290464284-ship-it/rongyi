@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -15,7 +15,7 @@ describe('ProcessingFlowService', () => {
   let context: AppContext;
   const now = '2026-08-05T10:00:00.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-processing-flow-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -31,9 +31,12 @@ describe('ProcessingFlowService', () => {
     db.prepare(
       `UPDATE Appointment SET startTime = ?, endTime = ?, updatedAt = ? WHERE id = 'appointment-demo-001'`,
     ).run('2099-01-01T00:00:00.000Z', '2099-01-01T01:00:00.000Z', now);
+    insertDictStep('step-model', '模型设计', 0);
+    insertDictStep('step-tryon', '试戴', 1);
   });
 
-  afterAll(() => {
+  afterEach(() => {
+    vi.restoreAllMocks();
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -49,7 +52,7 @@ describe('ProcessingFlowService', () => {
 
   function insertDictStep(id: string, name: string, sortOrder: number, active = 1, clinicId = context.clinicId): void {
     db.prepare(
-      `INSERT INTO ProcessingFlowStep (
+      `INSERT OR IGNORE INTO ProcessingFlowStep (
          id, clinicId, createdAt, updatedAt, deletedAt,
          name, sortOrder, active
        ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?)`,
@@ -101,6 +104,7 @@ describe('ProcessingFlowService', () => {
   });
 
   it('重复 ensureSteps 不重复生成步骤', () => {
+    insertOrder('po-flow-001', 'PF-001');
     const service = new ProcessingFlowService(db);
     const first = service.ensureSteps('po-flow-001', context);
     const second = service.ensureSteps('po-flow-001', context);
@@ -109,6 +113,7 @@ describe('ProcessingFlowService', () => {
   });
 
   it('listSteps 返回步骤列表', () => {
+    insertOrder('po-flow-001', 'PF-001');
     const service = new ProcessingFlowService(db);
     const steps = service.listSteps('po-flow-001', context);
     expect(steps.map((step) => step.stepName)).toEqual(['模型设计', '试戴']);
@@ -240,9 +245,67 @@ describe('ProcessingFlowService', () => {
   it('stats 无词典步骤时按出现的 stepName 聚合', () => {
     const other = { ...context, clinicId: 'clinic-other' };
     const otherService = new ProcessingFlowService(db);
+    insertOrder('po-stats-d', 'PF-STD', 'SENT', 'clinic-other');
+    insertOrderStep('po-stats-d', 'ostep-d-1', 'step-model', '模型设计', 'DONE', 0, now, 'clinic-other');
     const result = otherService.stats({ from: '2026-08-05', to: '2026-08-05' }, other);
     // clinic-other 无词典步骤：聚合出现的步骤名（po-stats-d 的 模型设计 DONE）
     expect(result.steps.map((step) => step.stepName)).toEqual(['模型设计']);
     expect(result.steps[0]).toMatchObject({ stepId: 'step-model', doneCount: 1, inProgressCount: 0 });
+  });
+
+  it('ensureSteps 无词典步骤时返回空列表', () => {
+    const other = { ...context, clinicId: 'clinic-empty-dict' };
+    insertOrder('po-empty-dict', 'PF-EMPTY', 'SENT', 'clinic-empty-dict');
+    const steps = new ProcessingFlowService(db).ensureSteps('po-empty-dict', other);
+    expect(steps).toEqual([]);
+  });
+
+  it('stats 拒绝非法日期格式', () => {
+    const service = new ProcessingFlowService(db);
+    expect(() => service.stats({ from: '2026-8-5' }, context)).toThrow('起始 日期格式必须为 YYYY-MM-DD');
+    expect(() => service.stats({ to: '2026/08/05' }, context)).toThrow('结束 日期格式必须为 YYYY-MM-DD');
+  });
+
+  it('registerStep CAS 为 0 时抛 Conflict', () => {
+    insertOrder('po-flow-cas', 'PF-CAS');
+    new ProcessingFlowService(db).ensureSteps('po-flow-cas', context);
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes("SET status = 'DONE'")) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    expect(() => new ProcessingFlowService(db).registerStep('po-flow-cas', {}, context)).toThrow(ConflictError);
+  });
+
+  it('setStep CAS 为 0 时抛 NotFound', () => {
+    insertOrder('po-flow-set-cas', 'PF-SETCAS');
+    new ProcessingFlowService(db).ensureSteps('po-flow-set-cas', context);
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE ProcessingOrderStep SET status = ?') && sql.includes('operatorId')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    expect(() => new ProcessingFlowService(db).setStep('po-flow-set-cas', { stepId: 'step-model', status: 'DONE' }, context))
+      .toThrow(NotFoundError);
+  });
+
+  it('setStep 更新后列表缺失该行时返回旧步骤对象', () => {
+    insertOrder('po-flow-stale-row', 'PF-STALEROW');
+    new ProcessingFlowService(db).ensureSteps('po-flow-stale-row', context);
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      // 仅拦截 setStep 末尾的列表查询（无 LIMIT）；步骤查找带 LIMIT 1 走真实路径
+      if (sql.includes('id, stepId, stepName, status, sortOrder') && !sql.includes('LIMIT 1')) {
+        return { all: () => [] } as never;
+      }
+      return originalPrepare(sql);
+    });
+    const result = new ProcessingFlowService(db).setStep('po-flow-stale-row', { stepId: 'step-model', status: 'IN_PROGRESS' }, context);
+    // 列表缺失时回退到更新前的旧快照（status 仍为 PENDING）
+    expect(result).toMatchObject({ stepId: 'step-model', status: 'PENDING' });
   });
 });

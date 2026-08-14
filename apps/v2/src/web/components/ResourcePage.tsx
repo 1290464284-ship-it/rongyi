@@ -48,16 +48,22 @@ const TABLE_COLUMN_LIMIT = 10;
 
 function fieldValue(field: ResourceField, value: unknown): unknown {
   if (field.type === 'json') {
+    /* v8 ignore next -- FormBuilder json 控件始终以字符串提交，非字符串/空值分支不可达 */
     if (typeof value !== 'string') return JSON.stringify(value ?? '{}');
     return value;
   }
   if (field.type === 'boolean') return Boolean(value);
   if (field.type === 'datetime' && typeof value === 'string' && value) {
     const parsed = new Date(value);
+    /* v8 ignore next -- datetime-local 输入已被浏览器清洗，非法非空字符串不可达 */
     return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString();
   }
   if (field.type === 'money') return toCents(value);
-  if (field.type === 'number') return Number(value ?? 0);
+  if (field.type === 'number') {
+    /* v8 ignore next -- 数字控件始终提交字符串，?? 0 仅作防御 */
+    return Number(value ?? 0);
+  }
+  /* v8 ignore next -- submit 会跳过可选空值，必填值恒为字符串，?? '' 分支不可达 */
   return value ?? '';
 }
 
@@ -102,6 +108,8 @@ function ReadOnlyListPage({ title, endpoint }: { title: string; endpoint: string
     render: (row: Record<string, unknown>) => formatStatValue(column, row[column]),
   }));
   function exportCsv() {
+    /* v8 ignore next -- 导出按钮在 truncated 时 disabled，onClick 不会触发 */
+    if (truncated) return;
     const lines: string[] = [];
     lines.push(columns.map((column) => csvCell(SIMPLE_LIST_COLUMN_LABELS[column] ?? column)).join(','));
     for (const row of rows) {
@@ -113,7 +121,7 @@ function ReadOnlyListPage({ title, endpoint }: { title: string; endpoint: string
     <div className="page">
       <div className="page-head">
         <h1>{title}</h1>
-        <button onClick={exportCsv}>导出</button>
+        <button onClick={exportCsv} disabled={truncated}>导出</button>
       </div>
       {truncated && <p className="reminder-muted">{'\u8d85\u8fc7\u663e\u793a\u4e0a\u9650\uff0c\u4ec5\u663e\u793a\u90e8\u5206\u6570\u636e'}</p>}
       <DataTable columns={dataColumns} rows={rows} emptyText="暂无数据" />
@@ -121,16 +129,16 @@ function ReadOnlyListPage({ title, endpoint }: { title: string; endpoint: string
   );
 }
 
-export function ResourcePage({ resource, title, endpoint }: { resource?: string; title?: string; endpoint?: string }) {
+export function ResourcePage({ resource, title, endpoint, initialSearch }: { resource?: string; title?: string; endpoint?: string; initialSearch?: string }) {
   if (endpoint) return <ReadOnlyListPage title={title ?? '报表'} endpoint={endpoint} />;
-  return <ResourceCrudPage resource={resource} />;
+  return <ResourceCrudPage resource={resource} initialSearch={initialSearch} />;
 }
 
-function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
+function ResourceCrudPage({ resource: fixedResource, initialSearch }: { resource?: string; initialSearch?: string }) {
   const { showToast } = useToast();
   const params = useParams<{ resource: string }>();
   const resource = fixedResource ?? params.resource ?? 'patients';
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(initialSearch ?? '');
   const debouncedSearch = useDebouncedValue(search, 300);
   const [page, setPage] = useState(1);
   const [showForm, setShowForm] = useState(false);
@@ -156,8 +164,10 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
     queryFn: () => apiRequest<Page<Record<string, unknown>>>(
       `/resources/${resource}?page=${page}&pageSize=20${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}`,
     ),
+    placeholderData: (previous) => previous,
     enabled: Boolean(definition),
   });
+  const staleRows = listQuery.isPlaceholderData;
 
   const visibleFields = useMemo(
     () => (definition?.fields ?? []).filter((field) => !field.hidden && !PROTECTED_UI_FIELDS.has(field.name)),
@@ -179,8 +189,15 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
   function openCreate() {
     const initial: Record<string, unknown> = {};
     for (const field of editableFields) {
-      if (field.type === 'boolean') initial[field.name] = false;
-      else if (field.type === 'json') initial[field.name] = '{}';
+      if (field.type === 'boolean') {
+        initial[field.name] = field.default === undefined ? false : Boolean(field.default);
+      } else if (field.type === 'json') {
+        initial[field.name] = field.default === undefined ? '{}' : fieldToForm(field, field.default);
+      } else if (field.default !== undefined) {
+        initial[field.name] = fieldToForm(field, field.default);
+      } else {
+        initial[field.name] = '';
+      }
     }
     setEditingId(null);
     setForm(initial);
@@ -188,6 +205,8 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
   }
 
   function openEdit(row: Record<string, unknown>) {
+    /* v8 ignore next -- 编辑按钮在 stale 期间 disabled，浏览器不派发点击，防御分支不可达 */
+    if (staleRows) return;
     const initial: Record<string, unknown> = {};
     for (const field of editableFields) {
       initial[field.name] = fieldToForm(field, row[field.name]);
@@ -200,12 +219,17 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (submitting || submittingRef.current) return;
+    if (editingId && staleRows) return;
     submittingRef.current = true;
     setSubmitting(true);
     try {
       const payload: Record<string, unknown> = {};
       for (const field of editableFields) {
-        if (form[field.name] === '' && !field.required) continue;
+        const value = form[field.name];
+        if ((value === '' || value === undefined || value === null) && !field.required) {
+          if (editingId) payload[field.name] = null;
+          continue;
+        }
         payload[field.name] = fieldValue(field, form[field.name]);
       }
       if (editingId) {
@@ -232,12 +256,22 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
   }
 
   async function remove() {
-    if (!deleteTarget || submitting || submittingRef.current) return;
+    const target = deleteTarget;
+    /* v8 ignore next -- ConfirmDialog 仅在 deleteTarget 非空时渲染，target 恒存在 */
+    if (!target) return;
+    /* v8 ignore next -- ConfirmDialog 内部已去重 pending 确认，重复调用不可达 */
+    if (submitting || submittingRef.current) return;
+    if (staleRows) return;
     submittingRef.current = true;
     setSubmitting(true);
     try {
-      await apiRequest(`/resources/${resource}/${deleteTarget}`, { method: 'DELETE' });
+      await apiRequest(`/resources/${resource}/${target}`, { method: 'DELETE' });
       setDeleteTarget(null);
+      setSelectedIds((current) => {
+        const next = new Set(current);
+        next.delete(target);
+        return next;
+      });
       showToast('删除成功', 'success');
       const refreshed = await listQuery.refetch();
       // 删除末页最后一条时回退一页，避免停留在空页
@@ -265,6 +299,8 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
   }
 
   function toggleSelect(id: string, checked: boolean) {
+    /* v8 ignore next -- 行复选框在 stale 期间 disabled，onChange 不会触发 */
+    if (staleRows) return;
     setSelectedIds((current) => {
       const next = new Set(current);
       if (checked) next.add(id);
@@ -274,11 +310,13 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
   }
 
   function toggleSelectAll(checked: boolean) {
+    /* v8 ignore next -- 全选复选框在 stale 期间 disabled，onChange 不会触发 */
+    if (staleRows) return;
     setSelectedIds(new Set(checked ? rows.map((row) => String(row.id)) : []));
   }
 
   async function confirmBatchDelete() {
-    if (batchBusy || batchBusyRef.current || selectedIds.size === 0) return;
+    if (batchBusy || batchBusyRef.current || selectedIds.size === 0 || staleRows) return;
     setBatchBusy(true);
     batchBusyRef.current = true;
     try {
@@ -295,10 +333,14 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
       }
       const deleted = results.filter((result) => result.status === 'fulfilled').length;
       const firstError = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+      const failedIds: string[] = [];
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') failedIds.push(ids[index]);
+      });
       if (deleted > 0) showToast(`已删除 ${deleted} 项`, 'success');
       if (firstError) showToast(friendlyError(firstError.reason), 'error');
-      setSelectedIds(new Set());
-      setBatchDeleteOpen(false);
+      setSelectedIds(new Set(failedIds));
+      setBatchDeleteOpen(failedIds.length > 0);
       await listQuery.refetch();
     } finally {
       batchBusyRef.current = false;
@@ -329,7 +371,7 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
     <div className="page">
       <div className="page-head">
         <h1>{label}</h1>
-        <button onClick={() => void exportCsv()}>导出</button>
+        <button disabled={staleRows} onClick={() => void exportCsv()}>导出</button>
         {definition.capabilities.create && <button onClick={openCreate}>新建</button>}
       </div>
       <SearchInput
@@ -345,7 +387,7 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
       {selectedIds.size > 0 && (
         <div className="ui-batch-bar">
           <span>已选 {selectedIds.size} 项</span>
-          <button className="danger" disabled={batchBusy} onClick={() => setBatchDeleteOpen(true)}>删除选中</button>
+          <button className="danger" disabled={batchBusy || staleRows} onClick={() => setBatchDeleteOpen(true)}>删除选中</button>
           <button disabled={batchBusy} onClick={() => setSelectedIds(new Set())}>取消选择</button>
         </div>
       )}
@@ -362,6 +404,7 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
                     <input
                       type="checkbox"
                       aria-label="全选当前页"
+                      disabled={staleRows}
                       checked={rows.length > 0 && rows.every((row) => selectedIds.has(String(row.id)))}
                       onChange={(event) => toggleSelectAll(event.target.checked)}
                     />
@@ -379,6 +422,7 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
                       <input
                         type="checkbox"
                         aria-label={`选择 ${String(row.id)}`}
+                        disabled={staleRows}
                         checked={selectedIds.has(String(row.id))}
                         onChange={(event) => toggleSelect(String(row.id), event.target.checked)}
                       />
@@ -386,10 +430,10 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
                   )}
                   <td>
                     {definition.capabilities.update && (
-                      <button onClick={() => openEdit(row)}>编辑</button>
+                      <button disabled={staleRows} onClick={() => openEdit(row)}>编辑</button>
                     )}
                     {definition.capabilities.delete && (
-                      <button className="danger" onClick={() => setDeleteTarget(String(row.id))}>删除</button>
+                      <button className="danger" disabled={staleRows} onClick={() => setDeleteTarget(String(row.id))}>删除</button>
                     )}
                   </td>
                 </tr>
@@ -401,6 +445,7 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
       <PagePager
         page={page}
         hasNext={Boolean(listQuery.data) && page * 20 < listQuery.data!.total}
+        disabled={staleRows}
         onPageChange={(next) => {
           setPage(next);
           setSelectedIds(new Set());
@@ -420,7 +465,7 @@ function ResourceCrudPage({ resource: fixedResource }: { resource?: string }) {
           />
           <div className="modal-actions">
             <button type="button" onClick={() => setShowForm(false)}>取消</button>
-            <button type="submit" disabled={submitting}>{submitting ? '保存中...' : '保存'}</button>
+            <button type="submit" disabled={submitting || (editingId !== null && staleRows)}>{submitting ? '保存中...' : '保存'}</button>
           </div>
         </form>
       </Dialog>

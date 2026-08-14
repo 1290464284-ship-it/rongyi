@@ -110,11 +110,49 @@ describe('ChargeDialog', () => {
     expect(await screen.findByText('提交划价失败')).toBeDefined();
   });
 
+  it('blocks submission when a filled row has invalid price or quantity', async () => {
+    mockLookups();
+    const onSaved = vi.fn();
+    render(<ChargeDialog row={row} onClose={vi.fn()} onSaved={onSaved} />, { wrapper });
+
+    fireEvent.change(screen.getAllByLabelText('项目名称')[0], { target: { value: '洁牙' } });
+    fireEvent.change(screen.getAllByLabelText('单价(元)')[0], { target: { value: '100' } });
+    fireEvent.change(screen.getAllByLabelText('数量')[0], { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: '添加明细' }));
+
+    fireEvent.change(screen.getAllByLabelText('项目名称')[1], { target: { value: '无效项' } });
+    fireEvent.change(screen.getAllByLabelText('单价(元)')[1], { target: { value: '0' } });
+    fireEvent.change(screen.getAllByLabelText('数量')[1], { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: '提交划价' }));
+
+    expect(await screen.findByText('存在无效收费明细，请检查数量与单价')).toBeDefined();
+    expect(apiRequest).not.toHaveBeenCalledWith('/charges', expect.objectContaining({ method: 'POST' }));
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
   it('requires a patient before submitting a charge', async () => {
     mockLookups();
     render(<ChargeDialog row={{ id: 'r-1', patientName: '临时患者' }} onClose={vi.fn()} onSaved={vi.fn()} />, { wrapper });
     fireEvent.click(screen.getByRole('button', { name: '提交划价' }));
     expect(await screen.findByText('请至少填写一条有效收费明细')).toBeDefined();
+  });
+
+  it('includes the visit id when the row has one', async () => {
+    mockLookups();
+    render(
+      <ChargeDialog row={{ id: 'r-1', patientId: 'p-1', patientName: '张三', visitId: 'v-9' }} onClose={vi.fn()} onSaved={vi.fn()} />,
+      { wrapper },
+    );
+    fireEvent.change(screen.getAllByLabelText('项目名称')[0], { target: { value: '洁牙' } });
+    fireEvent.change(screen.getAllByLabelText('单价(元)')[0], { target: { value: '100' } });
+    fireEvent.change(screen.getAllByLabelText('数量')[0], { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: '提交划价' }));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/charges', expect.objectContaining({ method: 'POST' }));
+    });
+    const call = vi.mocked(apiRequest).mock.calls.find((entry) => entry[0] === '/charges');
+    const body = JSON.parse(String((call?.[1] as RequestInit)?.body));
+    expect(body.visitId).toBe('v-9');
   });
 });
 
@@ -176,6 +214,76 @@ describe('RecordDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: '提交病历' }));
     expect(await screen.findByText('创建病历失败')).toBeDefined();
   });
+
+  it('submits empty patient and visit fallbacks', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      return {};
+    });
+    render(
+      <RecordDialog
+        row={{ id: 'r-null', patientId: null, visitId: null } as never}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+      />,
+      { wrapper },
+    );
+    await waitFor(() => {
+      expect((screen.getByRole('option', { name: '张医生' }) as HTMLOptionElement).value).toBe('d-1');
+    });
+    fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
+    fireEvent.click(screen.getByRole('button', { name: '提交病历' }));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/medicalRecords', expect.objectContaining({ method: 'POST' }));
+    });
+    const call = vi.mocked(apiRequest).mock.calls.find((entry) => entry[0] === '/resources/medicalRecords');
+    const body = JSON.parse(String((call?.[1] as RequestInit)?.body)) as Record<string, unknown>;
+    expect(body.patientId).toBe('');
+    expect('visitId' in body).toBe(false);
+  });
+
+  it('includes the visit id when the row has one', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      if (path === '/resources/medicalRecords') return { id: 'mr-1' };
+      return {};
+    });
+    render(
+      <RecordDialog row={{ id: 'r-1', patientId: 'p-1', patientName: '张三', visitId: 'v-9' }} onClose={vi.fn()} onSaved={vi.fn()} />,
+      { wrapper },
+    );
+    await waitFor(() => {
+      expect((screen.getByRole('option', { name: '张医生' }) as HTMLOptionElement).value).toBe('d-1');
+    });
+    fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
+    fireEvent.click(screen.getByRole('button', { name: '提交病历' }));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/medicalRecords', expect.objectContaining({ method: 'POST' }));
+    });
+    const call = vi.mocked(apiRequest).mock.calls.find((entry) => entry[0] === '/resources/medicalRecords');
+    const body = JSON.parse(String((call?.[1] as RequestInit)?.body)) as Record<string, unknown>;
+    expect(body.visitId).toBe('v-9');
+  });
+
+  it('submits the selected record status', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      if (path === '/resources/medicalRecords') return { id: 'mr-1' };
+      return {};
+    });
+    render(<RecordDialog row={row} onClose={vi.fn()} onSaved={vi.fn()} />, { wrapper });
+    await waitFor(() => {
+      expect((screen.getByRole('option', { name: '张医生' }) as HTMLOptionElement).value).toBe('d-1');
+    });
+    fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
+    fireEvent.change(screen.getByLabelText('状态'), { target: { value: 'APPROVED' } });
+    fireEvent.click(screen.getByRole('button', { name: '提交病历' }));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/medicalRecords', expect.objectContaining({ method: 'POST' }));
+    });
+    const call = vi.mocked(apiRequest).mock.calls.find((entry) => entry[0] === '/resources/medicalRecords');
+    expect(JSON.parse(String((call?.[1] as RequestInit)?.body))).toMatchObject({ status: 'APPROVED' });
+  });
 });
 
 describe('CreateFollowUpDialog', () => {
@@ -204,7 +312,6 @@ describe('CreateFollowUpDialog', () => {
       patientId: 'p-1',
       planDate: '2026-08-20',
       content: '一周后复查',
-      status: 'PENDING',
     });
     expect(await screen.findByText('回访已创建')).toBeDefined();
     expect(onSaved).toHaveBeenCalled();
@@ -219,6 +326,18 @@ describe('CreateFollowUpDialog', () => {
     render(<CreateFollowUpDialog row={row} onClose={vi.fn()} onSaved={vi.fn()} />, { wrapper });
     fireEvent.click(screen.getByRole('button', { name: '提交回访' }));
     expect(await screen.findByText('创建回访失败')).toBeDefined();
+  });
+
+  it('submits an empty patient id when the row has none', async () => {
+    mockLookups();
+    render(<CreateFollowUpDialog row={{ id: 'r-1', patientName: '临时患者' }} onClose={vi.fn()} onSaved={vi.fn()} />, { wrapper });
+    fireEvent.click(screen.getByRole('button', { name: '提交回访' }));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/followUps', expect.objectContaining({ method: 'POST' }));
+    });
+    const call = vi.mocked(apiRequest).mock.calls.find((entry) => entry[0] === '/resources/followUps');
+    const body = JSON.parse(String((call?.[1] as RequestInit)?.body));
+    expect(body.patientId).toBe('');
   });
 });
 
@@ -263,6 +382,18 @@ describe('TriageDialog', () => {
     render(<TriageDialog row={row} onClose={vi.fn()} onSaved={vi.fn()} />, { wrapper });
     fireEvent.click(await screen.findByRole('button', { name: '提交分诊' }));
     expect(await screen.findByText('提交分诊失败')).toBeDefined();
+  });
+
+  it('falls back to the department id when the department has no name', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      if (path === '/resources/departments?page=1&pageSize=100') {
+        return { items: [{ id: 'dept-9' }], total: 1, page: 1, pageSize: 100 };
+      }
+      return {};
+    });
+    render(<TriageDialog row={row} onClose={vi.fn()} onSaved={vi.fn()} />, { wrapper });
+    expect(await screen.findByRole('option', { name: 'dept-9' })).toBeDefined();
   });
 });
 
@@ -463,7 +594,7 @@ describe('TriageQueuePanel', () => {
     });
   });
 
-  it('hides the panel while the queue loads or errors', async () => {
+  it('shows an error state with retry when the queue fails to load', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/departments?page=1&pageSize=100') {
         return { items: [], total: 0, page: 1, pageSize: 100 };
@@ -472,8 +603,24 @@ describe('TriageQueuePanel', () => {
       return {};
     });
     render(<TriageQueuePanel onStartVisit={vi.fn()} />, { wrapper });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(screen.queryByText('分诊队列')).toBeNull();
+    expect(await screen.findByText('加载分诊队列失败')).toBeDefined();
+    const retry = screen.getByRole('button', { name: '重试' });
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/departments?page=1&pageSize=100') {
+        return { items: [], total: 0, page: 1, pageSize: 100 };
+      }
+      if (path === '/triage/queue') {
+        return {
+          items: [{ id: 'q-retry', patientName: '重试患者', status: 'REGISTERED' }],
+          total: 1,
+          page: 1,
+          pageSize: 50,
+        };
+      }
+      return {};
+    });
+    fireEvent.click(retry);
+    expect(await screen.findByText('重试患者')).toBeDefined();
   });
 
   it('only shows start buttons for REGISTERED rows', async () => {

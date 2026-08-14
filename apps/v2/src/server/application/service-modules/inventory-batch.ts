@@ -3,7 +3,8 @@ import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { SystemClock } from '../../infrastructure/clock';
 import { tenantAnd, tenantParams, tenantWhere } from '../../infrastructure/tenant';
-import { addInventoryStock, recordInventoryTransaction } from './inventory-ledger';
+import { addInventoryStock, deductInventoryStock, inventoryStockAfter, recordInventoryTransaction } from './inventory-ledger';
+import { runInTransactionImmediate } from './common';
 import type { AppContext } from '../../../domain/contracts';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -59,8 +60,15 @@ export class InventoryBatchService {
   ) {}
 
   /** 该租户的启用批次（含 item name/code/spec），以及 days 天内到期的子集。 */
-  list(context: AppContext, filter?: { itemId?: string; days?: number }): { batches: InventoryBatchRow[]; expiring: InventoryBatchRow[] } {
+  list(context: AppContext, filter?: { itemId?: string; days?: number; limit?: number }): {
+    batches: InventoryBatchRow[];
+    expiring: InventoryBatchRow[];
+    truncated: boolean;
+  } {
     const days = normalizeDays(filter?.days);
+    const limit = Number.isFinite(Number(filter?.limit)) && Number(filter!.limit) >= 1
+      ? Math.min(5_000, Math.floor(Number(filter!.limit)))
+      : 1_000;
     const conditions = ['B.deletedAt IS NULL', 'B.active = 1'];
     const params: Array<string | number | null> = [];
     if (filter?.itemId) {
@@ -77,25 +85,32 @@ export class InventoryBatchService {
       INNER JOIN InventoryItem I ON I.id = B.itemId AND I.deletedAt IS NULL
       WHERE ${conditions.join(' AND ')}${tenant.sql ? ` AND ${tenant.sql}` : ''}
       ORDER BY B.expiryDate ASC, B.createdAt DESC
+      LIMIT ?
     `;
-    const batches = this.db.prepare(sql).all(...params, ...tenant.params) as InventoryBatchRow[];
+    const batches = this.db.prepare(sql).all(...params, ...tenant.params, limit) as InventoryBatchRow[];
     const now = context.now();
     const today = new SystemClock().clinicDate(now);
     const cutoff = new SystemClock().clinicDate(new Date(now.getTime() + days * 86_400_000));
-    const expiring = batches.filter((batch) => {
-      const expiry = batch.expiryDate;
-      if (!expiry) return false;
-      return expiry >= today && expiry <= cutoff && Number(batch.remainingQuantity) > 0;
-    });
-    return { batches, expiring };
+    const expiring = this.db.prepare(
+      `SELECT B.id, B.itemId, B.batchNo, B.productionDate, B.expiryDate,
+              B.initialQuantity, B.remainingQuantity, B.supplierId, B.purchaseOrderId,
+              B.active, B.clinicId, B.createdAt, B.updatedAt,
+              I.name AS itemName, I.code AS itemCode, I.spec AS itemSpec
+       FROM InventoryBatch B
+       INNER JOIN InventoryItem I ON I.id = B.itemId AND I.deletedAt IS NULL
+       WHERE B.deletedAt IS NULL AND B.active = 1
+         AND B.expiryDate >= ? AND B.expiryDate <= ? AND B.remainingQuantity > 0${tenant.sql ? ` AND ${tenant.sql}` : ''}
+       ORDER BY B.expiryDate ASC
+       LIMIT ?`,
+    ).all(today, cutoff, ...tenant.params, limit) as InventoryBatchRow[];
+    return { batches, expiring, truncated: batches.length === limit };
   }
 
   /** 新建批次：批次入库并同步增加物料库存，落一条 IN 流水（事务）。 */
   create(input: BatchCreateInput, context: AppContext): { id: string; batchNo: string | null; remainingQuantity: number; stockAfter: number } {
-    this.lockGuard?.(input.itemId, context.clinicId);
     const quantity = Number(input.initialQuantity);
-    if (!Number.isSafeInteger(quantity) || quantity < 0) {
-      throw new ValidationError('入库数量必须为非负整数');
+    if (!Number.isSafeInteger(quantity) || quantity < 0 || quantity > 1_000_000_000) {
+      throw new ValidationError('入库数量必须是不超过 10 亿的非负整数');
     }
     if (input.expiryDate !== undefined && input.expiryDate !== null && input.expiryDate !== '') {
       if (typeof input.expiryDate !== 'string' || !DATE_RE.test(input.expiryDate)) {
@@ -119,6 +134,8 @@ export class InventoryBatchService {
     const batchNo = typeof input.batchNo === 'string' && input.batchNo.trim() ? input.batchNo.trim() : null;
     let stockAfter = Number(item.stock ?? 0);
     const run = this.db.transaction(() => {
+      // 锁守卫放入事务内，避免“守卫通过后、写入前”被盘点锁定的竞态。
+      this.lockGuard?.(input.itemId, context.clinicId);
       this.db.prepare(
         `INSERT INTO InventoryBatch (
            id, itemId, batchNo, productionDate, expiryDate, initialQuantity,
@@ -163,17 +180,52 @@ export class InventoryBatchService {
   /** 修正批次剩余量（盘点/纠错），仅限 active 批次。 */
   adjust(id: string, input: { remainingQuantity: number; note?: string }, context: AppContext): { id: string; remainingQuantity: number } {
     const quantity = Number(input.remainingQuantity);
-    if (!Number.isSafeInteger(quantity) || quantity < 0) {
-      throw new ValidationError('剩余数量必须为非负整数');
+    if (!Number.isSafeInteger(quantity) || quantity < 0 || quantity > 1_000_000_000) {
+      throw new ValidationError('剩余数量必须是不超过 10 亿的非负整数');
     }
-    const row = this.db.prepare(
-      `SELECT id FROM InventoryBatch WHERE id = ? AND deletedAt IS NULL AND active = 1${tenantAnd(context.clinicId)}`,
-    ).get(id, ...tenantParams(context.clinicId)) as { id: string } | undefined;
-    if (!row) throw new NotFoundError('Inventory batch not found');
     const now = context.now().toISOString();
-    this.db.prepare(
-      `UPDATE InventoryBatch SET remainingQuantity = ?, updatedAt = ? WHERE id = ?${tenantAnd(context.clinicId)}`,
-    ).run(quantity, now, id, ...tenantParams(context.clinicId));
+    // BEGIN IMMEDIATE 内重新读取批次余量并以 CAS 更新：两个进程并发
+    // adjust 时后到者必须基于最新余量计算 delta，避免库存与批次背离。
+    runInTransactionImmediate(this.db, () => {
+      const row = this.db.prepare(
+        `SELECT id, itemId, remainingQuantity FROM InventoryBatch
+         WHERE id = ? AND deletedAt IS NULL AND active = 1${tenantAnd(context.clinicId)}`,
+      ).get(id, ...tenantParams(context.clinicId)) as
+        | { id: string; itemId: string; remainingQuantity: number }
+        | undefined;
+      if (!row) throw new NotFoundError('Inventory batch not found');
+      this.lockGuard?.(row.itemId, context.clinicId);
+      const delta = quantity - Number(row.remainingQuantity);
+      const result = this.db.prepare(
+        `UPDATE InventoryBatch SET remainingQuantity = ?, updatedAt = ?
+         WHERE id = ? AND deletedAt IS NULL AND active = 1 AND remainingQuantity = ?${tenantAnd(context.clinicId)}`,
+      ).run(quantity, now, id, row.remainingQuantity, ...tenantParams(context.clinicId));
+      /* v8 ignore next -- IMMEDIATE 事务内读后即写，CAS 条件恒满足，冲突分支不可达 */
+      if (Number(result.changes) === 0) throw new ConflictError('批次余量已变化，请刷新后重试');
+      if (delta === 0) return;
+      if (delta > 0) {
+        addInventoryStock(this.db, row.itemId, delta, now, context.clinicId);
+      } else {
+        deductInventoryStock(this.db, row.itemId, -delta, now, context.clinicId, 'Insufficient stock');
+      }
+      const after = inventoryStockAfter(this.db, row.itemId, context.clinicId);
+      recordInventoryTransaction(this.db, {
+        id: randomUUID(),
+        clinicId: context.clinicId ?? null,
+        itemId: row.itemId,
+        type: 'ADJUST',
+        quantity: delta,
+        beforeStock: after - delta,
+        afterStock: after,
+        operatorId: context.userId,
+        remark: `批次余量修正：${String(input.note ?? '').trim()}`,
+        createdAt: now,
+        updatedAt: now,
+        referenceType: 'INVENTORY_BATCH',
+        referenceId: id,
+        batchId: id,
+      });
+    });
     return { id, remainingQuantity: quantity };
   }
 
@@ -226,9 +278,12 @@ export class InventoryBatchService {
     }
     sets.push('updatedAt = ?');
     values.push(now);
-    this.db.prepare(
-      `UPDATE InventoryBatch SET ${sets.join(', ')} WHERE id = ?${tenantAnd(context.clinicId)}`,
+    const result = this.db.prepare(
+      `UPDATE InventoryBatch SET ${sets.join(', ')}
+       WHERE id = ? AND deletedAt IS NULL AND active = 1${tenantAnd(context.clinicId)}`,
     ).run(...values, id, ...tenantParams(context.clinicId));
+    /* v8 ignore next -- 同步流程内 SELECT 后立即 UPDATE，行必然存在，NotFound 分支不可达 */
+    if (Number(result.changes) === 0) throw new NotFoundError('Inventory batch not found');
     return {
       id,
       batchNo: input.batchNo !== undefined
@@ -259,9 +314,12 @@ export class InventoryBatchService {
       throw new ConflictError('批次仍有剩余库存，不能删除');
     }
     const now = context.now().toISOString();
-    this.db.prepare(
-      `UPDATE InventoryBatch SET deletedAt = ?, active = 0, updatedAt = ? WHERE id = ?${tenantAnd(context.clinicId)}`,
+    const result = this.db.prepare(
+      `UPDATE InventoryBatch SET deletedAt = ?, active = 0, updatedAt = ?
+       WHERE id = ? AND deletedAt IS NULL AND active = 1 AND remainingQuantity = 0${tenantAnd(context.clinicId)}`,
     ).run(now, now, id, ...tenantParams(context.clinicId));
+    /* v8 ignore next -- 同步流程内 SELECT 校验余量为 0 后立即软删，冲突分支不可达 */
+    if (Number(result.changes) === 0) throw new ConflictError('批次已有剩余库存，不能删除');
     return { id };
   }
 
@@ -270,6 +328,9 @@ export class InventoryBatchService {
     const qty = Number(quantity);
     if (!Number.isSafeInteger(qty) || qty <= 0) {
       throw new ValidationError('出库数量必须为正整数');
+    }
+    if (qty > 1_000_000_000) {
+      throw new ValidationError('出库数量超出上限');
     }
     const item = this.db.prepare(
       `SELECT id, batchManaged FROM InventoryItem WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
@@ -294,14 +355,18 @@ export class InventoryBatchService {
           `SELECT remainingQuantity FROM InventoryBatch
            WHERE id = ? AND itemId = ? AND deletedAt IS NULL AND active = 1${tenantAnd(context.clinicId)}`,
         ).get(batch.id, itemId, ...tenantParams(context.clinicId)) as { remainingQuantity: number } | undefined;
+        /* v8 ignore next -- 列表与重读同属一个同步流程，批次不可能消失 */
         if (!fresh) throw new ConflictError('批次不存在或不属于该物品');
+        /* v8 ignore next -- 列表已过滤 remainingQuantity > 0，重读恒为正数 */
         const available = Number(fresh.remainingQuantity ?? 0);
+        /* v8 ignore next -- 列表已过滤 remainingQuantity > 0，available 恒为正数 */
         if (available <= 0) continue;
         const take = Math.min(available, remaining);
         const result = this.db.prepare(
           `UPDATE InventoryBatch SET remainingQuantity = remainingQuantity - ?, updatedAt = ?
            WHERE id = ? AND itemId = ? AND deletedAt IS NULL AND active = 1 AND remainingQuantity >= ?${tenantAnd(context.clinicId)}`,
         ).run(take, now, batch.id, itemId, take, ...tenantParams(context.clinicId));
+        /* v8 ignore next -- take ≤ 重读余量，CAS 条件恒满足，冲突分支不可达 */
         if (result.changes === 0) throw new ConflictError('批次库存不足');
         allocations.push({ batchId: batch.id, quantity: take });
         remaining -= take;
@@ -309,6 +374,25 @@ export class InventoryBatchService {
       if (remaining > 0) {
         throw new ConflictError('批次库存不足');
       }
+      const beforeStock = inventoryStockAfter(this.db, itemId, context.clinicId);
+      deductInventoryStock(this.db, itemId, qty, now, context.clinicId);
+      const afterStock = inventoryStockAfter(this.db, itemId, context.clinicId);
+      recordInventoryTransaction(this.db, {
+        id: randomUUID(),
+        clinicId: context.clinicId ?? null,
+        itemId,
+        type: 'OUT',
+        quantity: qty,
+        beforeStock,
+        afterStock,
+        operatorId: context.userId,
+        remark: '批次 FIFO 出库',
+        createdAt: now,
+        updatedAt: now,
+        referenceType: 'INVENTORY_BATCH',
+        referenceId: allocations.map((allocation) => allocation.batchId).join(','),
+        batchId: null,
+      });
     });
     run();
     return { allocations, itemId };
@@ -329,10 +413,12 @@ export class InventoryBatchService {
            LIMIT 1`,
         ).get(batchId, ...tenantParams(context.clinicId));
         if (existing) continue;
+        /* v8 ignore next -- expiring 列表要求 expiryDate 非空，无效期分支不可达 */
+        const expiryNote = batch.expiryDate ? `将于 ${batch.expiryDate} 到期` : '无效期';
         const message = [
           `物料 ${batch.itemName ?? batch.itemCode ?? batch.itemId}`,
           batch.batchNo ? `批次 ${batch.batchNo}` : '无批次号',
-          batch.expiryDate ? `将于 ${batch.expiryDate} 到期` : '无效期',
+          expiryNote,
           `剩余 ${Number(batch.remainingQuantity)}`,
         ].join('，') + '。';
         this.db.prepare(

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -14,7 +14,7 @@ describe('PayMethodService', () => {
   let context: AppContext;
   const now = '2026-08-05T10:00:00.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-pay-method-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -31,7 +31,7 @@ describe('PayMethodService', () => {
     ).run('2099-01-01T00:00:00.000Z', '2099-01-01T01:00:00.000Z', now);
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -122,5 +122,18 @@ describe('PayMethodService', () => {
     const item = service.tree(context).items.find((node) => node.id === 'pm-empty-parent') as PayMethodNode | undefined;
     expect(item).toBeDefined();
     expect(item!.parentId).toBeNull();
+  });
+
+  it('falls back to sortOrder 0 when the stored value is NULL', () => {
+    db.prepare(
+      `INSERT INTO PayMethod (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         name, parentId, sortOrder, active, remark
+       ) VALUES (?, ?, ?, ?, NULL, ?, NULL, NULL, 1, NULL)`,
+    ).run('pm-null-sort', context.clinicId, now, now, '空排序');
+    const service = new PayMethodService(db);
+    const item = service.tree(context).items.find((node) => node.id === 'pm-null-sort');
+    expect(item).toBeDefined();
+    expect(item!.sortOrder).toBe(0);
   });
 });

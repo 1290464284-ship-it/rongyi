@@ -59,11 +59,32 @@ jobs:
           pnpm --filter @dental/v2 test
           pnpm --filter @dental/v2 test:coverage
           pnpm --filter @dental/v2 test:coverage:web
+          pnpm --filter @dental/v2 run test:mutation
+          pnpm --filter @dental/v2 run test:quality-score
           pnpm --filter @dental/v2 run audit:security
           pnpm --filter @dental/v2 security:scan
           pnpm --filter @dental/v2 run license:check
           pnpm --filter @dental/v2 build
           pnpm --filter @dental/v2 electron:compile
+          # 审计 P2-1：internal 发布此前跳过全套 smoke，门禁强度显著低于
+          # public release。补齐自包含 smoke（各自拉起独立 API 进程）。
+          pnpm --filter @dental/v2 smoke:http-fuzz
+          pnpm --filter @dental/v2 smoke:multi-instance
+          pnpm --filter @dental/v2 run smoke:supervisor
+
+      - name: Generate simulated clinic data
+        # data/simulated-clinic 被 gitignore：新检出为空，不生成则 permission smoke 静默跳过
+        run: pnpm --filter @dental/v2 simulate:clinic-data
+
+      - name: Full smoke suite
+        env:
+          V2_ADMIN_PASSWORD: v2-internal-smoke-admin
+          V2_BACKUP_KEY: v2-internal-smoke-backup
+          V2_SMOKE_USE_EXISTING_DATA: '1'
+          V2_DATA_DIR: ${{ runner.temp }}/v2-internal-smoke-data
+          # 模拟库缺失时权限冒烟必须失败而非静默跳过
+          V2_REQUIRE_PERMISSION_SMOKE: '1'
+        run: pnpm --filter @dental/v2 smoke:all
 
       - name: Build internal installer
         shell: pwsh
@@ -111,11 +132,33 @@ jobs:
           "installer=$($exe.Name)" >> $env:GITHUB_OUTPUT
           "blockmap=$($exe.Name).blockmap" >> $env:GITHUB_OUTPUT
 
+      - name: Resolve internal version from latest.yml
+        id: internal_version
+        shell: pwsh
+        run: |
+          $latest = Get-Content -LiteralPath apps/v2/release-v2-internal/latest.yml -Raw
+          if ($latest -match '(?m)^version:\s*(.+)$') {
+            $version = $Matches[1].Trim()
+          } else {
+            throw "latest.yml is missing version"
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Validate latest.yml version matches package.json
+        shell: pwsh
+        env:
+          LATEST_VERSION: ${{ steps.internal_version.outputs.version }}
+          PKG_VERSION: ${{ steps.pkg_version.outputs.version }}
+        run: |
+          if ($env:LATEST_VERSION -notlike "$env:PKG_VERSION-internal.*") {
+            throw "latest.yml version ($env:LATEST_VERSION) must be $env:PKG_VERSION-internal.*"
+          }
+
       - name: Publish internal release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
-          tag_name: v2-internal-${{ steps.pkg_version.outputs.version }}
-          name: Dental Clinic V2 Internal ${{ steps.pkg_version.outputs.version }}
+          tag_name: v2-internal-${{ steps.internal_version.outputs.version }}
+          name: Dental Clinic V2 Internal ${{ steps.internal_version.outputs.version }}
           prerelease: true
           files: |
             apps/v2/release-v2-internal/${{ steps.assets.outputs.installer }}
@@ -125,5 +168,5 @@ jobs:
       - name: Verify remote internal release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          V2_RELEASE_TAG: v2-internal-${{ steps.pkg_version.outputs.version }}
+          V2_RELEASE_TAG: v2-internal-${{ steps.internal_version.outputs.version }}
         run: pnpm --filter @dental/v2 run verify:remote

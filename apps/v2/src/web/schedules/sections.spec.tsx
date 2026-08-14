@@ -115,6 +115,63 @@ describe('GenerateSection', () => {
     fireEvent.click(screen.getByRole('button', { name: '生成固定排班' }));
     expect(await screen.findByText('网络请求失败，请重试')).toBeDefined();
   });
+
+  it('falls back to the user id when name and username are absent', () => {
+    render(
+      <GenerateSection
+        templates={templates}
+        users={[{ id: 'user-x' }]}
+        weekStart="2026-08-03"
+        onWeekStartChange={vi.fn()}
+        onGenerated={vi.fn()}
+      />,
+      { wrapper },
+    );
+    expect(screen.getByRole('option', { name: 'user-x' })).toBeDefined();
+  });
+
+  it('normalizes an empty week date to the current Monday', () => {
+    const onWeekStartChange = vi.fn();
+    render(
+      <GenerateSection
+        templates={templates}
+        users={users}
+        weekStart="2026-08-03"
+        onWeekStartChange={onWeekStartChange}
+        onGenerated={vi.fn()}
+      />,
+      { wrapper },
+    );
+    fireEvent.change(screen.getByLabelText('选择周'), { target: { value: '' } });
+    expect(onWeekStartChange).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/));
+  });
+
+  it('ignores a second generate submit while one is in flight', async () => {
+    let resolveGenerate: ((value: unknown) => void) | undefined;
+    vi.mocked(apiRequest).mockImplementation(
+      () => new Promise((resolve) => {
+        resolveGenerate = resolve;
+      }),
+    );
+    const onGenerated = vi.fn();
+    const { container } = render(
+      <GenerateSection
+        templates={templates}
+        users={users}
+        weekStart="2026-08-03"
+        onWeekStartChange={vi.fn()}
+        onGenerated={onGenerated}
+      />,
+      { wrapper },
+    );
+    fireEvent.change(screen.getByLabelText('选择用户'), { target: { value: 'user-1' } });
+    fireEvent.change(screen.getByLabelText('选择模板'), { target: { value: 't-1' } });
+    const form = container.querySelector('form') as HTMLFormElement;
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    expect(vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/shift-templates/generate')).toHaveLength(1);
+    resolveGenerate?.({ created: 1, skipped: 0 });
+  });
 });
 
 describe('TemplateSection', () => {

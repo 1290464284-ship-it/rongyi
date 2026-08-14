@@ -218,4 +218,32 @@ describe('AppointmentPurposePanel', () => {
       expect(showToast).toHaveBeenCalledWith('删除事项失败', 'error');
     });
   });
+
+  it('ignores a delete while another purpose operation is pending', async () => {
+    let resolveAdd: ((value: unknown) => void) | undefined;
+    vi.mocked(apiRequest).mockImplementation(async (path: string, options?: RequestInit) => {
+      const method = String(options?.method ?? 'GET').toUpperCase();
+      if (method === 'POST' && path === '/resources/appointmentPurposes') {
+        return new Promise((resolve) => { resolveAdd = resolve; });
+      }
+      if (path === '/resources/appointmentPurposes?page=1&pageSize=100') {
+        return purposePage;
+      }
+      return {};
+    });
+    renderPanel(showToast);
+    await screen.findByText('初诊咨询');
+
+    fireEvent.change(screen.getByLabelText('新事项名称'), { target: { value: '急诊' } });
+    fireEvent.click(screen.getByRole('button', { name: '添加事项' }));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/appointmentPurposes', expect.objectContaining({ method: 'POST' }));
+    });
+
+    fireEvent.click(screen.getAllByRole('button', { name: '删除' })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: '删除' }).at(-1)!);
+    expect(apiRequest).not.toHaveBeenCalledWith('/resources/appointmentPurposes/p-1', expect.objectContaining({ method: 'DELETE' }));
+
+    resolveAdd?.({ items: [], total: 0, page: 1, pageSize: 100 });
+  });
 });

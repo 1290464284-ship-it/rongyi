@@ -1,10 +1,34 @@
-import type { Express } from 'express';
+import { timingSafeEqual } from 'node:crypto';
+import type { Express, Request } from 'express';
 import { createIpRateLimit, createRateLimit } from '../rate-limit';
 import { navigationForRole } from '../route-policy';
 import { wrapAsync } from '../middleware';
-import { AppError } from '../../infrastructure/errors';
+import { AppError, UnauthorizedError } from '../../infrastructure/errors';
 import type { AuditInput } from '../app';
 import type { RouteDependencies } from './deps';
+
+/**
+ * LAN 暴露模式（V2_ALLOW_INSECURE_LAN=1）下首启 setup 是未认证端点，存在
+ * 局域网内抢注 BOSS 的竞态（审计 P2-5）。fail-closed：该模式下必须配置
+ * V2_SETUP_TOKEN（至少 16 位），且 POST /auth/setup 必须携带匹配的
+ * X-V2-Setup-Token 请求头；回环默认部署不受影响。
+ */
+function requireSetupToken(req: Request): void {
+  if (process.env.V2_ALLOW_INSECURE_LAN !== '1') return;
+  const expected = process.env.V2_SETUP_TOKEN;
+  if (!expected || expected.length < 16) {
+    throw new AppError(
+      'SETUP_TOKEN_REQUIRED',
+      '局域网模式首次初始化必须配置 V2_SETUP_TOKEN（至少 16 位），否则拒绝 setup 请求',
+      503,
+    );
+  }
+  const provided = Buffer.from(String(req.get('x-v2-setup-token') ?? ''));
+  const expectedBuffer = Buffer.from(expected);
+  if (provided.length !== expectedBuffer.length || !timingSafeEqual(provided, expectedBuffer)) {
+    throw new UnauthorizedError('Invalid setup token');
+  }
+}
 
 export function registerPublicAuthRoutes(app: Express, deps: RouteDependencies): void {
   const { authService } = deps;
@@ -45,6 +69,7 @@ export function registerPublicAuthRoutes(app: Express, deps: RouteDependencies):
   }));
 
   app.post('/api/v2/auth/setup', setupLimiter, ipSetupLimiter, wrapAsync(async (req, res) => {
+      requireSetupToken(req);
       const result = await authService.setupInitialAdmin(req.body?.password);
       res.json({ success: true, data: result });
   }));

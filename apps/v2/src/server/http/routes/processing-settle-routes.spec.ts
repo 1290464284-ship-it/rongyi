@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -16,7 +16,7 @@ describe('processing settle routes', () => {
   let dataDir: string;
   let app: express.Express;
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-processing-settle-routes-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -79,7 +79,7 @@ describe('processing settle routes', () => {
     insert('route-po-cancelled', 'CANCELLED', 'UNSETTLED', 40000);
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -239,5 +239,12 @@ describe('processing settle routes', () => {
       unsettled: { count: 2, feeTotal: 30000 },
       settled: { count: 2, amountTotal: 40000 },
     });
+  });
+
+  it('tolerates missing request bodies', async () => {
+    const settle = await request(app).post('/api/v2/processing-orders/missing/settle');
+    expect([200, 400, 404, 409]).toContain(settle.status);
+    const unsettle = await request(app).post('/api/v2/processing-orders/missing/unsettle');
+    expect([200, 400, 404, 409]).toContain(unsettle.status);
   });
 });

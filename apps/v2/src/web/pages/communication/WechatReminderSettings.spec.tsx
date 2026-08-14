@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import { ToastProvider } from '../../components/toast';
@@ -50,7 +50,7 @@ describe('WechatReminderSettings', () => {
     });
   });
 
-  it('shows the loading state and falls back to defaults when the config query fails', async () => {
+  it('shows the loading state and an error state instead of editable defaults when the config query fails', async () => {
     vi.mocked(apiRequest).mockImplementation(() => new Promise(() => {}));
     render(<WechatReminderSettings />, { wrapper });
     expect(screen.getByText('提醒设置加载中...')).toBeDefined();
@@ -58,9 +58,18 @@ describe('WechatReminderSettings', () => {
 
     vi.mocked(apiRequest).mockRejectedValue(new Error('config failed'));
     render(<WechatReminderSettings />, { wrapper });
-    expect((await screen.findByLabelText('复诊提前提醒天数') as HTMLInputElement).value).toBe('1');
-    expect((screen.getByLabelText('首诊跟进延迟天数') as HTMLInputElement).value).toBe('3');
-    expect((screen.getByRole('checkbox', { name: '启用提醒' }) as HTMLInputElement).checked).toBe(true);
+    expect(await screen.findByText('加载提醒设置失败')).toBeDefined();
+    expect(screen.queryByLabelText('复诊提前提醒天数')).toBeNull();
+    expect(screen.queryByRole('button', { name: '保存设置' })).toBeNull();
+
+    vi.mocked(apiRequest).mockResolvedValueOnce({
+      enabled: true,
+      appointmentDaysBefore: 1,
+      recallDaysAfter: 3,
+      firstExamDaysAfter: 3,
+    });
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    expect(await screen.findByLabelText('复诊提前提醒天数')).toBeDefined();
   });
 
   it('toggles reminders and reports save failures', async () => {
@@ -78,5 +87,68 @@ describe('WechatReminderSettings', () => {
     vi.mocked(apiRequest).mockRejectedValueOnce('save failed');
     fireEvent.click(screen.getByRole('button', { name: '保存设置' }));
     expect(await screen.findByText('保存提醒设置失败')).toBeDefined();
+  });
+
+  it('rejects reminder day values outside 0-365', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce({
+      enabled: true,
+      appointmentDaysBefore: 1,
+      recallDaysAfter: 3,
+      firstExamDaysAfter: 3,
+    });
+    render(<WechatReminderSettings />, { wrapper });
+    await screen.findByLabelText('复诊提前提醒天数');
+    fireEvent.change(screen.getByLabelText('治疗回访延迟天数'), { target: { value: '400' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存设置' }));
+    expect(await screen.findByText('治疗回访延迟天数须在 0-365 之间')).toBeDefined();
+    expect(apiRequest).not.toHaveBeenCalledWith(
+      '/wechat-reminders/config',
+      expect.objectContaining({ method: 'PATCH' }),
+    );
+  });
+
+  it('renders defaults for a null config and updates the exam delay field', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce(null);
+    render(<WechatReminderSettings />, { wrapper });
+    await screen.findByLabelText('复诊提前提醒天数');
+    expect((screen.getByLabelText('复诊提前提醒天数') as HTMLInputElement).value).toBe('1');
+    expect((screen.getByLabelText('治疗回访延迟天数') as HTMLInputElement).value).toBe('3');
+    expect((screen.getByRole('checkbox', { name: '启用提醒' }) as HTMLInputElement).checked).toBe(true);
+    fireEvent.change(screen.getByLabelText('首诊跟进延迟天数'), { target: { value: '7' } });
+    expect((screen.getByLabelText('首诊跟进延迟天数') as HTMLInputElement).value).toBe('7');
+  });
+
+  it('ignores a same-tick second save while one is in flight', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce({
+      enabled: true,
+      appointmentDaysBefore: 1,
+      recallDaysAfter: 3,
+      firstExamDaysAfter: 3,
+    });
+    let resolveSave: ((value: unknown) => void) | undefined;
+    vi.mocked(apiRequest).mockImplementationOnce(
+      () => new Promise((resolve) => { resolveSave = resolve; }),
+    );
+    render(<WechatReminderSettings />, { wrapper });
+    await screen.findByLabelText('复诊提前提醒天数');
+    const button = screen.getByRole('button', { name: '保存设置' });
+    act(() => {
+      fireEvent.click(button);
+      fireEvent.click(button);
+    });
+    await waitFor(() => {
+      const patches = vi.mocked(apiRequest).mock.calls.filter(([path, options]) => (
+        path === '/wechat-reminders/config' && (options as RequestInit | undefined)?.method === 'PATCH'
+      ));
+      expect(patches).toHaveLength(1);
+    });
+    vi.mocked(apiRequest).mockResolvedValueOnce({
+      enabled: true,
+      appointmentDaysBefore: 1,
+      recallDaysAfter: 3,
+      firstExamDaysAfter: 3,
+    });
+    resolveSave?.({ success: true });
+    expect(await screen.findByText('提醒设置已保存')).toBeDefined();
   });
 });

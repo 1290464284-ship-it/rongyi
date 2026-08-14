@@ -61,16 +61,21 @@ export class SqliteAnalyticsRepository implements AnalyticsRepository {
   }
 
   doctorAnomalies(clinicId: string | null): Array<Record<string, unknown>> {
-    const userClause = tenantAnd(clinicId, 'U.clinicId');
+    const userMembership = clinicId
+      ? ` AND (EXISTS (
+           SELECT 1 FROM UserClinic uc
+           WHERE uc.userId = U.id AND uc.clinicId = ? AND uc.deletedAt IS NULL
+         ) OR U.clinicId = ?)`
+      : '';
     const chargeClause = tenantAnd(clinicId, 'C.clinicId');
-    const params: unknown[] = clinicId ? [clinicId, clinicId] : [];
+    const params: unknown[] = clinicId ? [clinicId, clinicId, clinicId] : [];
     return this.db.prepare(
       `SELECT U.id AS doctorId, U.name AS doctorName,
               COUNT(C.id) AS chargeCount,
               COALESCE(AVG(C.paidAmount - C.refundedAmount), 0) AS avgCharge
        FROM User U
        LEFT JOIN Charge C ON C.doctorId = U.id AND C.deletedAt IS NULL${chargeClause}
-       WHERE U.role IN ('DOCTOR', 'BOSS')${userClause}
+       WHERE U.role IN ('DOCTOR', 'BOSS') AND U.deletedAt IS NULL${userMembership}
        GROUP BY U.id, U.name
        HAVING chargeCount > 0
        ORDER BY avgCharge DESC`,

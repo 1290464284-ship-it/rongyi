@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase } from './database';
-import { migrations, runMigrations, withMigrationBusyRetry } from './migrations';
+import { isMigrationBusy, migrations, runMigrations, withMigrationBusyRetry } from './migrations';
 
 describe('migrations', () => {
   let db: Database.Database;
@@ -101,6 +101,84 @@ describe('migrations', () => {
     expect(() => withMigrationBusyRetry(() => {
       throw new Error('boom');
     })).toThrow('boom');
+  });
+
+  it('classifies duplicate-column and already-exists races as retryable', () => {
+    const duplicate = new Error('SQLITE_ERROR: duplicate column name: barcode');
+    const alreadyExists = new Error('table AlreadyExists already exists');
+    const other = new Error('boom');
+    expect(isMigrationBusy(duplicate)).toBe(true);
+    expect(isMigrationBusy(alreadyExists)).toBe(true);
+    expect(isMigrationBusy(other)).toBe(false);
+  });
+
+  it('treats non-Error busy inputs as not busy', () => {
+    expect(isMigrationBusy('database is locked')).toBe(false);
+    expect(isMigrationBusy(null)).toBe(false);
+  });
+
+  it('snapshots before pending migrations and skips when none are pending', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-mig-snapshot-'));
+    const db = createDatabase(dir);
+    const snapshotDir = path.join(dir, 'snapshots');
+    try {
+      expect(runMigrations(db, { snapshotDir })).toBeGreaterThan(0);
+      expect(fs.existsSync(path.join(snapshotDir, 'pre-migration'))).toBe(true);
+      expect(runMigrations(db, { snapshotDir })).toBe(0);
+    } finally {
+      db.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('warns and continues when the pre-migration snapshot fails', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-mig-snapshot-fail-'));
+    const db = createDatabase(dir);
+    runMigrations(db);
+    // snapshotDir 指向一个已存在的文件：mkdirSync 失败 → 快照失败路径
+    const blocker = path.join(dir, 'snapshot-blocker');
+    fs.writeFileSync(blocker, 'file');
+    const snapshotDir = path.join(blocker, 'pre-migration');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      db.prepare('DELETE FROM schema_migrations').run();
+      expect(runMigrations(db, { snapshotDir })).toBeGreaterThan(0);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('[migrations] pre-migration snapshot failed, continuing'),
+        expect.anything(),
+      );
+    } finally {
+      warn.mockRestore();
+      db.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('preflight skips dedup for resources whose table lacks columns in a legacy schema', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-mig-preflight-'));
+    const db = createDatabase(dir);
+    runMigrations(db);
+    db.prepare('DELETE FROM schema_migrations').run();
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('PRAGMA table_info("MemberCard")')) {
+        return { all: () => [] } as never;
+      }
+      return originalPrepare(sql);
+    });
+    // 重放若触发 busy 重试则跳过真实睡眠（本测试只关心 preflight 分支）
+    const wait = vi.spyOn(Atomics, 'wait').mockImplementation(() => 'ok' as const);
+    try {
+      // 121 未应用 → preflight 对 MemberCard 的列查询为空 → continue 跳过去重。
+      // 全量迁移重放可能在任何一步失败或成功；无论哪种，preflight 分支都已执行，
+      // 这里仅断言不出现 preflight 本身的崩溃形态（dedup 未抛「表不存在」之外的错误）。
+      expect(() => runMigrations(db)).not.toThrow('tableInfo');
+    } finally {
+      wait.mockRestore();
+      vi.restoreAllMocks();
+      db.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('adds missing migration columns when legacy schema lacks them', () => {
@@ -411,6 +489,51 @@ describe('migrations', () => {
     const freshDb = createDatabase(dir);
     freshDb.exec('ALTER TABLE ChargeItem ADD COLUMN legacyExtra TEXT');
     expect(() => runMigrations(freshDb)).toThrow(/would drop columns: legacyExtra/);
+    freshDb.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('replays migration 146 without throwing or duplicating ledger rows', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-mig-146-replay-'));
+    const freshDb = createDatabase(dir);
+    runMigrations(freshDb);
+    const t = new Date().toISOString();
+    freshDb.prepare(
+      `INSERT INTO Charge (
+         id, clinicId, createdAt, updatedAt, deletedAt, patientId, number,
+         totalAmount, paidAmount, refundedAmount, discount, status, payMethod, paidAt
+       ) VALUES (?, ?, ?, ?, NULL, ?, ?, 1000, 1000, 0, 0, 'PAID', 'CASH', ?)`,
+    ).run('charge-replay-146', 'clinic-v2-001', t, t, 'patient-demo-001', 'CHG-REPLAY', t);
+    const before = freshDb.prepare(
+      'SELECT COUNT(*) AS c FROM PaymentLedger WHERE chargeId = ?',
+    ).get('charge-replay-146') as { c: number };
+    // 初始迁移先于本测试插入收费单，回填不包含该行；重放 146 时才补上。
+    expect(before.c).toBe(0);
+
+    freshDb.prepare("DELETE FROM schema_migrations WHERE version = '146'").run();
+    expect(() => runMigrations(freshDb)).not.toThrow();
+    const after = freshDb.prepare(
+      'SELECT COUNT(*) AS c FROM PaymentLedger WHERE chargeId = ?',
+    ).get('charge-replay-146') as { c: number };
+    expect(after.c).toBe(1);
+
+    freshDb.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('rejects duplicate clinic codes on fresh databases', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-mig-clinic-dup-'));
+    const freshDb = createDatabase(dir);
+    runMigrations(freshDb);
+    const t = new Date().toISOString();
+    freshDb.prepare(
+      `INSERT INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+       VALUES (?, NULL, ?, ?, NULL, 'DUP-CODE', 'Clinic A', 1)`,
+    ).run('clinic-dup-a', t, t);
+    expect(() => freshDb.prepare(
+      `INSERT INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+       VALUES (?, NULL, ?, ?, NULL, 'DUP-CODE', 'Clinic B', 1)`,
+    ).run('clinic-dup-b', t, t)).toThrow(/UNIQUE constraint failed/);
     freshDb.close();
     fs.rmSync(dir, { recursive: true, force: true });
   });

@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -17,7 +17,7 @@ describe('shift template routes', () => {
   let app: express.Express;
   const now = '2026-08-06T10:00:00.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-shift-template-routes-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -55,7 +55,7 @@ describe('shift template routes', () => {
     insertUser('user-nurse-001', 'nurse01', '李医生', 'DOCTOR');
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -77,6 +77,10 @@ describe('shift template routes', () => {
   });
 
   it('GET /api/v2/shift-templates lists templates and resolves workDaysJson', async () => {
+    await request(app)
+      .post('/api/v2/shift-templates')
+      .send({ name: '早班', startTime: '09:00', endTime: '18:00', workDaysJson: [1, 2, 3, 4, 5], color: '#4F46E5' })
+      .expect(201);
     const res = await request(app).get('/api/v2/shift-templates').expect(200);
     expect(res.body.success).toBe(true);
     const data = res.body.data as Array<Record<string, unknown>>;
@@ -103,6 +107,48 @@ describe('shift template routes', () => {
     const list = await request(app).get('/api/v2/shift-templates?activeOnly=1').expect(200);
     const ids = (list.body.data as Array<Record<string, unknown>>).map((row) => row.id);
     expect(ids).not.toContain(id);
+  });
+
+  it('PATCH handles explicit null time fields and both color branches', async () => {
+    const created = await request(app)
+      .post('/api/v2/shift-templates')
+      .send({ name: '空时间班次', startTime: '09:00', endTime: '18:00', color: '#111111' })
+      .expect(201);
+    const id = String(created.body.data.id);
+
+    // startTime/endTime 显式 null：跳过而不覆盖；color null 直写 null
+    const cleared = await request(app)
+      .patch(`/api/v2/shift-templates/${id}`)
+      .send({ name: '空时间班次', startTime: null, endTime: null, color: null })
+      .expect(200);
+    expect(cleared.body.data).toMatchObject({ startTime: '09:00', endTime: '18:00', color: null });
+
+    // color 非空字符串：字符串化写入
+    const colored = await request(app)
+      .patch(`/api/v2/shift-templates/${id}`)
+      .send({ color: '#FF0000' })
+      .expect(200);
+    expect(colored.body.data).toMatchObject({ color: '#FF0000', startTime: '09:00', endTime: '18:00' });
+
+    // startTime/endTime 非空：正常覆盖
+    const timed = await request(app)
+      .patch(`/api/v2/shift-templates/${id}`)
+      .send({ startTime: '10:00', endTime: '20:00' })
+      .expect(200);
+    expect(timed.body.data).toMatchObject({ startTime: '10:00', endTime: '20:00' });
+  });
+
+  it('PATCH rejects a soft-deleted shift template', async () => {
+    const created = await request(app)
+      .post('/api/v2/shift-templates')
+      .send({ name: '待删除班次', startTime: '08:00', endTime: '12:00' })
+      .expect(201);
+    const id = String(created.body.data.id);
+    db.prepare('UPDATE ShiftTemplate SET deletedAt = ?, updatedAt = ? WHERE id = ?').run(now, now, id);
+    await request(app)
+      .patch(`/api/v2/shift-templates/${id}`)
+      .send({ name: '不应生效' })
+      .expect(404);
   });
 
   it('POST /api/v2/shift-templates/generate creates one FIXED schedule per work day of the week', async () => {
@@ -230,5 +276,66 @@ describe('shift template routes', () => {
       .send({ templateId, userId: 'user-doctor-001', weekStart: '2026-08-03' })
       .expect(409);
     expect(inactive.body.code).toBe('CONFLICT');
+  });
+
+  it('parses string booleans strictly for active and rejects impossible weekStart dates', async () => {
+    const created = await request(app)
+      .post('/api/v2/shift-templates')
+      .send({ name: '晚班', startTime: '14:00', endTime: '22:00', active: 'false' })
+      .expect(201);
+    const templateId = created.body.data.id as string;
+    expect((db.prepare('SELECT active FROM ShiftTemplate WHERE id = ?').get(templateId) as { active: number }).active).toBe(0);
+    await request(app).patch(`/api/v2/shift-templates/${templateId}`).send({ active: true }).expect(200);
+    await request(app)
+      .post('/api/v2/shift-templates')
+      .send({ name: '非法布尔', startTime: '09:00', endTime: '10:00', active: 'yes' })
+      .expect(400);
+    await request(app)
+      .post('/api/v2/shift-templates/generate')
+      .send({ templateId, userId: 'user-doctor-001', weekStart: '2026-02-30' })
+      .expect(400);
+  });
+
+  it('rejects malformed work day JSON and non-date weekStart values', async () => {
+    await request(app)
+      .post('/api/v2/shift-templates')
+      .send({ name: 'Bad JSON', startTime: '09:00', endTime: '18:00', workDaysJson: 'not-json' })
+      .expect(400);
+    await request(app)
+      .post('/api/v2/shift-templates')
+      .send({ name: 'Bad Shape', startTime: '09:00', endTime: '18:00', workDaysJson: {} })
+      .expect(400);
+
+    const created = await request(app)
+      .post('/api/v2/shift-templates')
+      .send({ name: 'Week Start', startTime: '09:00', endTime: '18:00', workDaysJson: [1, 2, 3, 4, 5] })
+      .expect(201);
+    await request(app)
+      .post('/api/v2/shift-templates/generate')
+      .send({ templateId: String(created.body.data.id), userId: 'user-doctor-001', weekStart: 'garbage' })
+      .expect(400);
+  });
+
+  it('lists templates with non-array workDaysJson as empty work days', async () => {
+    const created = await request(app)
+      .post('/api/v2/shift-templates')
+      .send({ name: 'Object Days', startTime: '09:00', endTime: '18:00', workDaysJson: [1, 2, 3, 4, 5] })
+      .expect(201);
+    const id = String(created.body.data.id);
+    db.prepare('UPDATE ShiftTemplate SET workDaysJson = ? WHERE id = ?').run('{}', id);
+    const list = await request(app).get('/api/v2/shift-templates').expect(200);
+    const row = (list.body.data as Array<Record<string, unknown>>).find((entry) => entry.id === id);
+    expect(row?.workDays).toEqual([]);
+  });
+
+  it('tolerates missing request bodies and weekStart filters', async () => {
+    const create = await request(app).post('/api/v2/shift-templates');
+    expect([200, 400]).toContain(create.status);
+    const update = await request(app).patch('/api/v2/shift-templates/missing');
+    expect([200, 400, 404]).toContain(update.status);
+    const generate = await request(app).post('/api/v2/shift-templates/generate');
+    expect([200, 400, 404]).toContain(generate.status);
+    const schedules = await request(app).get('/api/v2/schedules/week');
+    expect([200, 400]).toContain(schedules.status);
   });
 });

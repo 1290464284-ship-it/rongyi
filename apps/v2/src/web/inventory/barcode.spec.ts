@@ -17,4 +17,10 @@ describe('Code39 barcode encoder', () => {
       expect(bar.width).toBeGreaterThan(0);
     }
   });
+
+  it('handles empty input with placeholder bars and zero dimensions', () => {
+    const bars = code39Bars('');
+    expect(bars.length).toBeGreaterThan(0);
+    expect(barcodeDimensions([])).toEqual({ width: 0, height: 56 });
+  });
 });

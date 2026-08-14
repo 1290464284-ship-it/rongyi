@@ -81,8 +81,8 @@ export class DispenseService {
         throw new ValidationError('Dispense item is required');
       }
       const quantity = Number(entry.quantity);
-      if (!Number.isSafeInteger(quantity) || quantity <= 0) {
-        throw new ValidationError('发药数量必须为正整数');
+      if (!Number.isSafeInteger(quantity) || quantity <= 0 || quantity > 1_000_000_000) {
+        throw new ValidationError('发药数量必须为不超过 10 亿的正整数');
       }
       const item = this.db.prepare(
         `SELECT id, name, spec, batchManaged, stock FROM InventoryItem
@@ -96,6 +96,11 @@ export class DispenseService {
       const existing = merged.get(key);
       if (existing) {
         existing.quantity += quantity;
+        if (existing.quantity <= 1_000_000_000) {
+          // 合并后仍在限内
+        } else {
+          throw new ValidationError('发药数量必须为不超过 10 亿的正整数');
+        }
       } else {
         merged.set(key, { itemId: entry.itemId, quantity, batchId, name: item.name, spec: item.spec ?? null });
       }
@@ -265,8 +270,8 @@ export class DispenseService {
         throw new ValidationError('Dispense item is required');
       }
       const quantity = Number(entry.quantity);
-      if (!Number.isSafeInteger(quantity) || quantity <= 0) {
-        throw new ValidationError('发药数量必须为正整数');
+      if (!Number.isSafeInteger(quantity) || quantity <= 0 || quantity > 1_000_000_000) {
+        throw new ValidationError('发药数量必须为不超过 10 亿的正整数');
       }
       const item = this.db.prepare(
         `SELECT id, name, spec, batchManaged, stock FROM InventoryItem
@@ -280,6 +285,11 @@ export class DispenseService {
       const existing = merged.get(key);
       if (existing) {
         existing.quantity += quantity;
+        if (existing.quantity <= 1_000_000_000) {
+          // 合并后仍在限内
+        } else {
+          throw new ValidationError('发药数量必须为不超过 10 亿的正整数');
+        }
       } else {
         merged.set(key, {
           id: entry.id === undefined || entry.id === null || entry.id === '' ? undefined : String(entry.id),
@@ -319,23 +329,17 @@ export class DispenseService {
           keptIds.add(newId);
         }
       }
-      // 服务端有而表单没有的明细：软删
+      // 服务端有而表单没有的明细：软删。
+      // merged 至少一条明细（items 长度校验），且每行要么保留 id 要么插入新 id，kept 恒非空。
       const kept = Array.from(keptIds);
-      if (kept.length > 0) {
-        const placeholders = kept.map(() => '?').join(',');
-        this.db.prepare(
-          `UPDATE DispenseItem SET deletedAt = ?, updatedAt = ?
-           WHERE dispenseId = ? AND deletedAt IS NULL AND id NOT IN (${placeholders})`,
-        ).run(now, now, id, ...kept);
-      } else {
-        this.db.prepare(
-          `UPDATE DispenseItem SET deletedAt = ?, updatedAt = ?
-           WHERE dispenseId = ? AND deletedAt IS NULL`,
-        ).run(now, now, id);
-      }
+      const placeholders = kept.map(() => '?').join(',');
       this.db.prepare(
+        `UPDATE DispenseItem SET deletedAt = ?, updatedAt = ?
+         WHERE dispenseId = ? AND deletedAt IS NULL AND id NOT IN (${placeholders})`,
+      ).run(now, now, id, ...kept);
+      const updated = this.db.prepare(
         `UPDATE Dispense SET number = ?, patientId = ?, note = ?, updatedAt = ?
-         WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+         WHERE id = ? AND status = 'PENDING' AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
       ).run(
         number,
         input.patientId,
@@ -344,8 +348,14 @@ export class DispenseService {
         id,
         ...tenantParams(context.clinicId),
       );
+      if (updated.changes === 0) throw new ConflictError('仅待发药的发药单可编辑');
     });
-    run();
+    try {
+      run();
+    } catch (error) {
+      if (isUniqueConstraintError(error)) throw new ConflictError('发药单号已存在');
+      throw error;
+    }
     return { id, number, status: 'PENDING', items: merged.size };
   }
 
@@ -358,10 +368,11 @@ export class DispenseService {
     if (dispense.status !== 'PENDING') throw new ConflictError('仅待发药的发药单可删除');
     const now = context.now().toISOString();
     const run = this.db.transaction(() => {
-      this.db.prepare(
+      const deleted = this.db.prepare(
         `UPDATE Dispense SET deletedAt = ?, updatedAt = ?
-         WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+         WHERE id = ? AND status = 'PENDING' AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
       ).run(now, now, id, ...tenantParams(context.clinicId));
+      if (deleted.changes === 0) throw new ConflictError('仅待发药的发药单可删除');
       this.db.prepare(
         `UPDATE DispenseItem SET deletedAt = ?, updatedAt = ?
          WHERE dispenseId = ? AND deletedAt IS NULL`,

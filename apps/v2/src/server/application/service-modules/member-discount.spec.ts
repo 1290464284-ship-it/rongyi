@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -16,7 +16,7 @@ describe('MemberDiscountService', () => {
   let context: AppContext;
   const now = '2026-08-05T10:00:00.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-member-discount-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -30,7 +30,7 @@ describe('MemberDiscountService', () => {
     };
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -281,6 +281,80 @@ describe('MemberDiscountService', () => {
     expect(() => service.quote(cardId, { baseTotal: Number.MAX_SAFE_INTEGER + 1 }, context)).toThrow(ValidationError);
     expect(() => service.quote(cardId, { baseTotal: 100, items: [{ subtotal: -1 }] }, context)).toThrow(ValidationError);
     expect(() => service.quote(cardId, { baseTotal: 100, items: [{ subtotal: 1.5 }] }, context)).toThrow(ValidationError);
+  });
+
+  it('savePlan rejects non-object special discount entries', () => {
+    const cardId = createCard('MD-CARD-ENTRY');
+    const service = new MemberDiscountService(db);
+    expect(() => service.savePlan(cardId, { specialDiscountsJson: [42] }, context)).toThrow('特殊项目折扣格式无效');
+    expect(() => service.savePlan(cardId, { specialDiscountsJson: [null] }, context)).toThrow('特殊项目折扣格式无效');
+  });
+
+  it('getPlan normalizes a whitespace-only stored JSON to null', () => {
+    const cardId = createCard('MD-CARD-SPACE');
+    const service = new MemberDiscountService(db);
+    db.prepare('UPDATE MemberCard SET specialDiscountsJson = ? WHERE id = ?').run('   ', cardId);
+    expect(service.getPlan(cardId, context).specialDiscountsJson).toBeNull();
+  });
+
+  it('getPlan normalizes unparseable stored special discounts to null', () => {
+    const cardId = createCard('MD-CARD-BADJSON');
+    const service = new MemberDiscountService(db);
+    db.prepare('UPDATE MemberCard SET specialDiscountsJson = ? WHERE id = ?').run('{broken', cardId);
+    expect(service.getPlan(cardId, context).specialDiscountsJson).toBeNull();
+  });
+
+  it('quote rejects a non-array items value and non-object items', () => {
+    const cardId = createCard('MD-CARD-ITEMS');
+    const service = new MemberDiscountService(db);
+    service.savePlan(cardId, { discountRate: 90 }, context);
+    expect(() => service.quote(cardId, { baseTotal: 100, items: 'oops' as never }, context)).toThrow('报价项目无效');
+    expect(() => service.quote(cardId, { baseTotal: 100, items: [42 as never] }, context)).toThrow('报价项目无效');
+  });
+
+  it('quote falls back to an empty category when an item omits it', () => {
+    const cardId = createCard('MD-CARD-NOCAT');
+    const service = new MemberDiscountService(db);
+    service.savePlan(cardId, { discountRate: 90, roundingMode: 'NONE' }, context);
+    const result = service.quote(cardId, { baseTotal: 1000, items: [{ subtotal: 100 }] }, context);
+    expect(result.breakdown).toEqual([{ category: '', rate: 90, subtotal: 100, discount: 10 }]);
+    expect(result.discount).toBe(10);
+    expect(result.total).toBe(990);
+  });
+
+  it('quote with specials only and no items applies the 100 default rate', () => {
+    const cardId = createCard('MD-CARD-SPECIAL-ONLY');
+    const service = new MemberDiscountService(db);
+    service.savePlan(cardId, {
+      specialDiscountsJson: [{ name: '种植', category: 'IMPLANT', rate: 85 }],
+    }, context);
+    // 无 items 明细时走整体折扣路径：rate 兜底 100 → 不打折但 applied 为 true。
+    const result = service.quote(cardId, { baseTotal: 20000 }, context);
+    expect(result.applied).toBe(true);
+    expect(result.discount).toBe(0);
+    expect(result.total).toBe(20000);
+  });
+
+  it('quote never returns a negative total when item subtotals exceed the base total', () => {
+    const cardId = createCard('MD-CARD-CLAMP');
+    const service = new MemberDiscountService(db);
+    service.savePlan(cardId, { discountRate: 50, roundingMode: 'FLOOR' }, context);
+    // 明细小计 20000，但调用方传入 baseTotal=100；折扣按明细计算会超过原价，
+    // 修复后总价与优惠都必须落回 [0, baseTotal]。
+    const result = service.quote(cardId, {
+      baseTotal: 100,
+      items: [{ category: 'IMPLANT', subtotal: 20000 }],
+    }, context);
+    expect(result.total).toBe(0);
+    expect(result.discount).toBe(100);
+  });
+
+  it('quote validates baseTotal even when the card has no discount plan', () => {
+    const cardId = createCard('MD-CARD-NOPLAN');
+    const service = new MemberDiscountService(db);
+    expect(() => service.quote(cardId, { baseTotal: 1.5 }, context)).toThrow(ValidationError);
+    expect(() => service.quote(cardId, { baseTotal: -10 }, context)).toThrow(ValidationError);
+    expect(service.quote(cardId, { baseTotal: 0 }, context).applied).toBe(false);
   });
 
   it('savePlan rejects invalid plan fields', () => {

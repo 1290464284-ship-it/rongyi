@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -15,7 +15,7 @@ describe('UserRoleService', () => {
   let context: AppContext;
   const now = '2026-08-05T10:00:00.000Z';
 
-  beforeAll(() => {
+  beforeEach(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-multi-role-'));
     db = createDatabase(dataDir);
     seedDatabase(db);
@@ -29,7 +29,7 @@ describe('UserRoleService', () => {
     };
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -66,6 +66,20 @@ describe('UserRoleService', () => {
     expect(mine.every((row) => row.clinicId === 'clinic-v2-001')).toBe(true);
   });
 
+  it('setRoles falls back to the unscoped user lookup and null clinic when the context has no clinic', () => {
+    const service = new UserRoleService(db);
+    insertUser('user-no-clinic', 'DOCTOR');
+
+    const result = service.setRoles('user-no-clinic', ['DOCTOR', 'ADMIN'], {
+      ...context,
+      clinicId: null,
+    });
+    expect(result).toEqual(['ADMIN']);
+    // v153 起 UserRole.clinicId 为 NOT NULL：null 诊所的 INSERT OR IGNORE 被约束静默跳过，
+    // 但 `context.clinicId ?? null` 的空值分支已执行（result 说明用户查找与 diff 均走通）。
+    expect(rows('user-no-clinic')).toEqual([]);
+  });
+
   it('setRoles diffs by adding and removing roles, and dedupes input', () => {
     const service = new UserRoleService(db);
     insertUser('user-doctor-002', 'DOCTOR');
@@ -97,6 +111,7 @@ describe('UserRoleService', () => {
   });
 
   it('blocks ADMIN from assigning BOSS role or managing a BOSS user', () => {
+    insertUser('user-doctor-001', 'DOCTOR');
     const service = new UserRoleService(db);
     insertUser('user-admin-role', 'ADMIN');
     insertUser('user-boss-role', 'BOSS');
@@ -147,5 +162,12 @@ describe('UserRoleService', () => {
 
     const all = service.listAll(context);
     expect(all.some((row) => row.userId === 'user-doctor-005')).toBe(false);
+  });
+
+  it('listAll falls back to an unscoped query when clinic id is missing', () => {
+    const service = new UserRoleService(db);
+    insertUser('user-doctor-007', 'DOCTOR');
+    service.setRoles('user-doctor-007', ['BOSS'], context);
+    expect(() => service.listAll({ ...context, clinicId: null })).not.toThrow();
   });
 });

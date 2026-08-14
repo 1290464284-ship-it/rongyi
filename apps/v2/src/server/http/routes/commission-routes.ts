@@ -4,6 +4,7 @@ import { wrapAsync } from '../middleware';
 import { AppError } from '../../infrastructure/errors';
 import { CommissionService } from '../../application/service-modules/commission';
 import type { RouteDependencies } from './deps';
+import { parseBooleanStrict } from '../validation';
 
 function requireFinanceAdmin(context: { role: string }): void {
   if (!['BOSS', 'ADMIN'].includes(context.role)) {
@@ -34,7 +35,7 @@ export function registerCommissionRoutes(app: Express, deps: RouteDependencies):
         doctorId: body.doctorId === undefined || body.doctorId === null || body.doctorId === ''
           ? null
           : String(body.doctorId),
-        enabled: body.enabled === undefined ? true : Boolean(body.enabled),
+        enabled: body.enabled === undefined ? true : parseBooleanStrict(body.enabled, 'enabled'),
       }, req.context!),
     });
   }));
@@ -55,7 +56,7 @@ export function registerCommissionRoutes(app: Express, deps: RouteDependencies):
     if (body.doctorId !== undefined) {
       patch.doctorId = body.doctorId === null || body.doctorId === '' ? null : String(body.doctorId);
     }
-    if (body.enabled !== undefined) patch.enabled = Boolean(body.enabled);
+    if (body.enabled !== undefined) patch.enabled = parseBooleanStrict(body.enabled, 'enabled');
     res.json({
       success: true,
       data: service.updateRule(String(req.params.id), patch, req.context!),

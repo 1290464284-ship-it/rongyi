@@ -6,6 +6,7 @@ import Database from 'better-sqlite3';
 import type { Logger } from './logger';
 import { applyStagedRestore, signRestoreMarker } from './restore-apply';
 import { sha256File } from './sqlite-files';
+import { resetSecretFileCache } from './secret-file';
 
 function markerFor(stagedPath: string, fileExists = true): { stagedPath: string; sha256: string; sig: string } {
   const sha256 = fileExists ? sha256File(stagedPath) : '0'.repeat(64);
@@ -194,5 +195,163 @@ describe('applyStagedRestore', () => {
       'staged restore content hash mismatch; discarding marker',
       expect.objectContaining({ action: 'restore-apply' }),
     );
+  });
+
+  it('throws when signing a restore marker in production without a backup key', () => {
+    const prevNodeEnv = process.env.NODE_ENV;
+    const prevKey = process.env.V2_BACKUP_KEY;
+    try {
+      process.env.NODE_ENV = 'production';
+      delete process.env.V2_BACKUP_KEY;
+      delete process.env.V2_SECRET_FILE;
+      resetSecretFileCache();
+      expect(() => signRestoreMarker('C:/staged.sqlite', '0'.repeat(64))).toThrow(
+        'V2_BACKUP_KEY must be set in production for restore markers',
+      );
+    } finally {
+      resetSecretFileCache();
+      if (prevNodeEnv === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = prevNodeEnv;
+      if (prevKey === undefined) delete process.env.V2_BACKUP_KEY; else process.env.V2_BACKUP_KEY = prevKey;
+    }
+  });
+
+  it('discards markers with an empty signature', () => {
+    const caseDir = path.join(dir, 'empty-sig-case');
+    fs.mkdirSync(caseDir, { recursive: true });
+    const dbPath = path.join(caseDir, 'empty-sig.sqlite');
+    const stagedPath = path.join(caseDir, 'backups', 'empty-sig.sqlite');
+    fs.mkdirSync(path.dirname(stagedPath), { recursive: true });
+    fs.writeFileSync(stagedPath, 'staged-db');
+    fs.writeFileSync(path.join(caseDir, '.restore-pending.json'), JSON.stringify({
+      stagedPath,
+      sha256: sha256File(stagedPath),
+      sig: '',
+    }));
+    const warn = vi.fn();
+
+    const result = applyStagedRestore(dbPath, [caseDir], { warn } as unknown as Logger);
+
+    expect(result).toEqual({ applied: false });
+    expect(fs.existsSync(path.join(caseDir, '.restore-pending.json'))).toBe(false);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toContain('signature is invalid');
+  });
+
+  it('discards markers whose signature has the wrong byte length', () => {
+    const caseDir = path.join(dir, 'short-sig-case');
+    fs.mkdirSync(caseDir, { recursive: true });
+    const dbPath = path.join(caseDir, 'short-sig.sqlite');
+    const stagedPath = path.join(caseDir, 'backups', 'short-sig.sqlite');
+    fs.mkdirSync(path.dirname(stagedPath), { recursive: true });
+    fs.writeFileSync(stagedPath, 'staged-db');
+    fs.writeFileSync(path.join(caseDir, '.restore-pending.json'), JSON.stringify({
+      stagedPath,
+      sha256: sha256File(stagedPath),
+      sig: 'abcd',
+    }));
+    const warn = vi.fn();
+
+    const result = applyStagedRestore(dbPath, [caseDir], { warn } as unknown as Logger);
+
+    expect(result).toEqual({ applied: false });
+    expect(fs.existsSync(path.join(caseDir, '.restore-pending.json'))).toBe(false);
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('discards a marker that is not valid JSON', () => {
+    const caseDir = path.join(dir, 'bad-json-case');
+    fs.mkdirSync(caseDir, { recursive: true });
+    const dbPath = path.join(caseDir, 'bad-json.sqlite');
+    fs.writeFileSync(path.join(caseDir, '.restore-pending.json'), '{not json');
+    const warn = vi.fn();
+
+    const result = applyStagedRestore(dbPath, [caseDir], { warn } as unknown as Logger);
+
+    expect(result).toEqual({ applied: false });
+    expect(fs.existsSync(path.join(caseDir, '.restore-pending.json'))).toBe(false);
+    expect(warn).toHaveBeenCalledWith(
+      'restore marker is invalid JSON, discarded',
+      expect.objectContaining({ markerPath: path.join(caseDir, '.restore-pending.json') }),
+    );
+  });
+
+  it('falls back to remove-then-rename when renaming over the existing database fails', () => {
+    const caseDir = path.join(dir, 'rename-fallback-case');
+    fs.mkdirSync(caseDir, { recursive: true });
+    const dbPath = path.join(caseDir, 'rename.sqlite');
+    const stagedPath = path.join(caseDir, 'backups', 'rename.sqlite');
+    fs.mkdirSync(path.dirname(stagedPath), { recursive: true });
+    const current = new Database(dbPath);
+    current.pragma('journal_mode = WAL');
+    current.exec('CREATE TABLE rename_sample (id TEXT PRIMARY KEY)');
+    current.close();
+    fs.writeFileSync(stagedPath, 'rename-db');
+    fs.writeFileSync(path.join(caseDir, '.restore-pending.json'), JSON.stringify(markerFor(stagedPath)));
+    vi.spyOn(fs, 'renameSync').mockImplementationOnce(() => {
+      throw new Error('EACCES: rename failed');
+    });
+
+    const result = applyStagedRestore(dbPath, [caseDir]);
+
+    expect(result.applied).toBe(true);
+    expect(fs.readFileSync(dbPath, 'utf8')).toBe('rename-db');
+    vi.restoreAllMocks();
+  });
+
+  it('removes the temp copy and rethrows when the copy step fails', () => {
+    const caseDir = path.join(dir, 'copy-fail-case');
+    fs.mkdirSync(caseDir, { recursive: true });
+    const dbPath = path.join(caseDir, 'copy-fail.sqlite');
+    const stagedPath = path.join(caseDir, 'backups', 'copy-fail.sqlite');
+    fs.mkdirSync(path.dirname(stagedPath), { recursive: true });
+    fs.writeFileSync(stagedPath, 'staged-db');
+    fs.writeFileSync(path.join(caseDir, '.restore-pending.json'), JSON.stringify(markerFor(stagedPath)));
+    vi.spyOn(fs, 'copyFileSync').mockImplementation(() => {
+      throw new Error('copy boom');
+    });
+
+    expect(() => applyStagedRestore(dbPath, [caseDir])).toThrow('copy boom');
+    const leftovers = fs.readdirSync(caseDir).filter((name) => name.includes('.restore-tmp-'));
+    expect(leftovers).toEqual([]);
+    vi.restoreAllMocks();
+  });
+
+  it('removes the marker when renaming it to the invalid path fails', () => {
+    const caseDir = path.join(dir, 'unsafe-rename-fail');
+    fs.mkdirSync(caseDir, { recursive: true });
+    const dbPath = path.join(caseDir, 'unsafe.sqlite');
+    fs.writeFileSync(path.join(caseDir, '.restore-pending.json'), JSON.stringify(markerFor('C:/outside/evil.sqlite', false)));
+    vi.spyOn(fs, 'renameSync').mockImplementationOnce(() => {
+      throw new Error('rename boom');
+    });
+    try {
+      const result = applyStagedRestore(dbPath, [caseDir]);
+      expect(result).toEqual({ applied: false });
+      expect(fs.existsSync(path.join(caseDir, '.restore-pending.json'))).toBe(false);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('removes the marker when the hash-mismatch rename fails', () => {
+    const caseDir = path.join(dir, 'hash-rename-fail');
+    fs.mkdirSync(caseDir, { recursive: true });
+    const dbPath = path.join(caseDir, 'hash.sqlite');
+    const stagedPath = path.join(caseDir, 'backups', 'hash.sqlite');
+    fs.mkdirSync(path.dirname(stagedPath), { recursive: true });
+    fs.writeFileSync(stagedPath, 'original');
+    const marker = markerFor(stagedPath);
+    fs.writeFileSync(stagedPath, 'tampered');
+    fs.writeFileSync(path.join(caseDir, '.restore-pending.json'), JSON.stringify(marker));
+    vi.spyOn(fs, 'renameSync').mockImplementationOnce(() => {
+      throw new Error('rename boom');
+    });
+    try {
+      const result = applyStagedRestore(dbPath, [caseDir]);
+      expect(result).toEqual({ applied: false });
+      expect(fs.existsSync(path.join(caseDir, '.restore-pending.json'))).toBe(false);
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 });

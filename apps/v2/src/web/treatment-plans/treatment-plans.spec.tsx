@@ -103,19 +103,21 @@ describe('plan-utils', () => {
           billed: false,
         } as unknown as TreatmentPlanForm['items'][number],
         { id: 'keep', code: 'A', name: 'A', category: 'GENERAL', price: '1', quantity: '1', teethNumbers: '11', status: 'PLANNED', billed: false },
-        { id: 'bill', code: 'B', name: 'B2', category: 'GENERAL', price: '1', quantity: '1', teethNumbers: '', status: 'PLANNED', billed: true },
+        { id: 'bill', code: 'B', name: 'B', category: 'GENERAL', price: '1', quantity: '1', teethNumbers: '', status: 'PLANNED', billed: true },
       ],
     };
     await updatePlanWithItems(form, 'plan-1');
 
-    const patch = vi.mocked(apiRequest).mock.calls.find((entry) => entry[0] === '/resources/treatmentPlans/plan-1');
-    expect(JSON.parse(String((patch?.[1] as RequestInit)?.body))).toMatchObject({
+    const patch = vi.mocked(apiRequest).mock.calls.find((entry) => entry[0] === '/treatment-plans/plan-1/save');
+    expect(patch?.[1]?.method).toBe('PATCH');
+    const body = JSON.parse(String((patch?.[1] as RequestInit)?.body)) as { items: Array<{ id?: string }> };
+    expect(body).toMatchObject({
       patientId: 'p-1',
       name: '计划',
       totalFee: 10200,
     });
-    expect(apiRequest).toHaveBeenCalledWith('/resources/treatmentPlanItems', expect.objectContaining({ method: 'POST' }));
-    expect(apiRequest).toHaveBeenCalledWith('/resources/treatmentPlanItems/remove', expect.objectContaining({ method: 'DELETE' }));
+    expect(body.items).toHaveLength(3);
+    expect(body.items.map((item) => item.id)).toEqual(expect.arrayContaining([undefined, 'keep', 'bill']));
     expect(apiRequest).not.toHaveBeenCalledWith('/resources/treatmentPlanItems/keep', expect.objectContaining({ method: 'PATCH' }));
     expect(apiRequest).not.toHaveBeenCalledWith('/resources/treatmentPlanItems/bill', expect.objectContaining({ method: 'PATCH' }));
   });
@@ -277,6 +279,29 @@ describe('PlanFormFields', () => {
     render(<PlanFormFields form={emptyPlanForm()} update={vi.fn()} editing planId="plan-1" onItemsLoaded={vi.fn()} />, { wrapper });
     const errors = await screen.findAllByText('加载明细失败');
     expect(errors.length).toBeGreaterThan(0);
+  });
+
+  it('ignores a backfill failure after unmount', async () => {
+    let rejectItems: (reason: Error) => void = () => {};
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      if (path.startsWith('/resources/patients?')) return { items: [], total: 0, page: 1, pageSize: 100 };
+      if (path === '/resources/treatmentPlanItems?planId=plan-1') {
+        return new Promise((_resolve, reject) => { rejectItems = reject; });
+      }
+      return {};
+    });
+    const { unmount } = render(
+      <PlanFormFields form={emptyPlanForm()} update={vi.fn()} editing planId="plan-1" onItemsLoaded={vi.fn()} />,
+      { wrapper },
+    );
+    await waitFor(() => {
+      expect(vi.mocked(apiRequest)).toHaveBeenCalledWith('/resources/treatmentPlanItems?planId=plan-1');
+    });
+    unmount();
+    rejectItems(new Error('backfill failed'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByText('加载明细失败')).toBeNull();
   });
 
   it('locks billed rows', () => {

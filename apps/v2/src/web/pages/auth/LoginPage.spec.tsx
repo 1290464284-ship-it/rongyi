@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { LoginPage } from './LoginPage';
 import { apiRequest, login } from '../../lib/api';
@@ -47,6 +47,12 @@ describe('LoginPage', () => {
     await waitFor(() => {
       expect(login).toHaveBeenCalledWith('admin', 'v2-test-seed-password');
     });
+  });
+
+  it('keeps the login page when the setup-status probe fails', async () => {
+    vi.mocked(apiRequest).mockRejectedValueOnce(new Error('probe failed'));
+    renderPage();
+    expect(await screen.findByLabelText('用户名')).toBeDefined();
   });
 
   it('shows login errors', async () => {
@@ -148,6 +154,17 @@ describe('LoginPage', () => {
     expect(apiRequest).not.toHaveBeenCalledWith('/auth/setup', expect.anything());
   });
 
+  it('rejects a setup password shorter than six characters', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce({ setupRequired: true });
+    renderNavigablePage();
+    await screen.findByText('设置初始管理员');
+    fireEvent.change(screen.getByLabelText('新管理员密码'), { target: { value: '12345' } });
+    fireEvent.change(screen.getByLabelText('确认密码'), { target: { value: '12345' } });
+    fireEvent.click(screen.getByRole('button', { name: '创建管理员并登录' }));
+    expect(await screen.findByText('管理员密码至少需要 6 位')).toBeDefined();
+    expect(apiRequest).not.toHaveBeenCalledWith('/auth/setup', expect.anything());
+  });
+
   it('continues when localStorage writes fail while remembering login', async () => {
     vi.mocked(login).mockResolvedValue({ token: 't', user: { id: 'u' } });
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
@@ -159,5 +176,59 @@ describe('LoginPage', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: '记住我' }));
     fireEvent.click(screen.getByRole('button', { name: '登录' }));
     expect(await screen.findByText('工作台')).toBeDefined();
+  });
+
+  it('ignores a late setup-status response after unmount', async () => {
+    let resolveSetup: (value: unknown) => void = () => {};
+    vi.mocked(apiRequest).mockImplementationOnce(
+      () => new Promise((resolve) => { resolveSetup = resolve; }),
+    );
+    const { unmount } = renderPage();
+    unmount();
+    resolveSetup({ setupRequired: true });
+    await act(async () => {});
+  });
+
+  it('ignores a second setup submit while the first is in flight', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce({ setupRequired: true });
+    let resolveSetup: ((value: unknown) => void) | undefined;
+    vi.mocked(apiRequest).mockImplementationOnce(
+      () => new Promise((resolve) => { resolveSetup = resolve; }),
+    );
+    vi.mocked(login).mockResolvedValue({ token: 't', user: { id: 'u' } });
+    renderNavigablePage();
+    await screen.findByText('设置初始管理员');
+    fireEvent.change(screen.getByLabelText('新管理员密码'), { target: { value: 'first-run-123' } });
+    fireEvent.change(screen.getByLabelText('确认密码'), { target: { value: 'first-run-123' } });
+    const form = screen.getByText('创建管理员并登录').closest('form') as HTMLFormElement;
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/auth/setup', expect.objectContaining({ method: 'POST' }));
+    });
+    expect(apiRequest).toHaveBeenCalledTimes(2);
+    resolveSetup?.({ created: true });
+    expect(await screen.findByText('工作台')).toBeDefined();
+  });
+
+  it('falls back to empty credentials when localStorage reads throw', () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('privacy mode');
+    });
+    renderPage();
+    expect((screen.getByLabelText('用户名') as HTMLInputElement).value).toBe('');
+    expect((screen.getByRole('checkbox', { name: '记住我' }) as HTMLInputElement).checked).toBe(false);
+  });
+
+  it('shows a setup failure toast when creating the admin fails', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce({ setupRequired: true })
+      .mockRejectedValueOnce('setup failed');
+    renderNavigablePage();
+    await screen.findByText('设置初始管理员');
+    fireEvent.change(screen.getByLabelText('新管理员密码'), { target: { value: 'first-run-123' } });
+    fireEvent.change(screen.getByLabelText('确认密码'), { target: { value: 'first-run-123' } });
+    fireEvent.click(screen.getByRole('button', { name: '创建管理员并登录' }));
+    expect(await screen.findByText('创建管理员失败')).toBeDefined();
   });
 });

@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Logger, MAX_SERIALIZE_DEPTH, serializeValue } from './logger';
 
@@ -74,6 +77,29 @@ describe('logger serializeValue', () => {
     expect(JSON.stringify(serializeValue({ at: date }))).toBe(JSON.stringify({ at: date.toISOString() }));
   });
 
+  it('truncates deep cause chains and arrays at max depth', () => {
+    let cause: Error | undefined = new Error('leaf');
+    for (let i = 0; i < MAX_SERIALIZE_DEPTH + 2; i += 1) {
+      cause = new Error(`level-${i}`, { cause });
+    }
+    const serialized = serializeValue(cause) as Record<string, unknown>;
+    expect(JSON.stringify(serialized)).toContain('"[MaxDepth]"');
+
+    let array: unknown = 'leaf';
+    for (let i = 0; i < MAX_SERIALIZE_DEPTH + 2; i += 1) {
+      array = [array];
+    }
+    const arraySerialized = serializeValue(array) as unknown[];
+    expect(JSON.stringify(arraySerialized)).toContain('"[MaxDepth]"');
+  });
+
+  it('omits the stack key when an error has no string stack', () => {
+    const error = new Error('no stack');
+    delete (error as Partial<Error>).stack;
+    const serialized = serializeValue(error) as Record<string, unknown>;
+    expect(serialized).toEqual({ message: 'no stack' });
+  });
+
   it('leaves primitives untouched', () => {
     expect(serializeValue('text')).toBe('text');
     expect(serializeValue(42)).toBe(42);
@@ -86,6 +112,11 @@ describe('logger serializeValue', () => {
 describe('Logger.write', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('flushes an empty buffer without error', () => {
+    const logger = new Logger();
+    expect(() => logger.flush()).not.toThrow();
   });
 
   it('emits a valid JSON line with Error expanded, without throwing on circular meta', () => {
@@ -103,5 +134,50 @@ describe('Logger.write', () => {
     expect(parsed.message).toBe('request failed');
     expect(parsed.error).toMatchObject({ message: 'boom' });
     expect(JSON.stringify(parsed.circular)).toContain('"[MaxDepth]"');
+  });
+});
+
+describe('Logger file rotation', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('rotates the log file and shifts existing backups', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-logger-rotate-'));
+    const logPath = path.join(dir, 'v2.log');
+    fs.writeFileSync(logPath, 'x'.repeat(5 * 1024 * 1024));
+    for (const suffix of ['.1', '.2', '.3', '.4']) {
+      fs.writeFileSync(`${logPath}${suffix}`, suffix);
+    }
+    try {
+      const logger = new Logger({ logDir: dir });
+      logger.error('trigger rotation');
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      expect(fs.existsSync(`${logPath}.5`)).toBe(true);
+      expect(fs.readFileSync(`${logPath}.4`, 'utf8')).toBe('.3');
+      expect(fs.readFileSync(`${logPath}.1`, 'utf8')).toBe('x'.repeat(5 * 1024 * 1024));
+      expect(fs.existsSync(logPath)).toBe(true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('Logger exit flush', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('flushes every live logger when the process exits', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-logger-exit-'));
+    const logger = new Logger({ logDir: dir });
+    const flushSpy = vi.spyOn(logger, 'flush');
+    try {
+      (process as NodeJS.EventEmitter).emit('exit');
+      expect(flushSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

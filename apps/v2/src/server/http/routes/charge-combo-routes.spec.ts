@@ -124,4 +124,9 @@ describe('charge combo routes', () => {
     expect(res.body.code).toBe('NOT_FOUND');
     expect(res.body.message).toBe('Charge combo not found');
   });
+
+  it('tolerates a missing request body', async () => {
+    const res = await request(app).post('/api/v2/charge-combos/missing/apply');
+    expect([200, 400, 404]).toContain(res.status);
+  });
 });

@@ -8,6 +8,7 @@ import type { Express } from 'express';
 
 import { wrapAsync } from '../middleware';
 import { parsePagination } from '../pagination';
+import { stableRequestBodyHash, withIdempotency } from '../../infrastructure/idempotency';
 import {
   DispenseService,
   type DispenseAssignInput,
@@ -68,9 +69,22 @@ export function registerDispenseRoutes(
 
   app.post('/api/v2/dispenses/:id/return', wrapAsync(async (req, res) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
+    const requestId = typeof req.header('idempotency-key') === 'string' ? req.header('idempotency-key')! : '';
+    const result = requestId
+      ? await withIdempotency(db, {
+          operation: 'dispense.return',
+          userId: req.context!.userId,
+          clinicId: req.context!.clinicId,
+          requestId,
+          requestBodyHash: stableRequestBodyHash(body),
+          resourceId: String(req.params.id),
+        }, async () => service.returnItems(String(req.params.id), parseReturnInput(body), req.context!), {
+          keepProcessingOnAppError: true,
+        })
+      : await service.returnItems(String(req.params.id), parseReturnInput(body), req.context!);
     res.json({
       success: true,
-      data: await service.returnItems(String(req.params.id), parseReturnInput(body), req.context!),
+      data: result,
     });
   }));
 

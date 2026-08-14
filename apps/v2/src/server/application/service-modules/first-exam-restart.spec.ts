@@ -1,13 +1,13 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
 import { NotFoundError, ValidationError } from '../../infrastructure/errors';
 import type { AppContext } from '../../../domain/contracts';
-import { FirstExamRestartService, type ChiefMark, type Dentition } from './first-exam-restart';
+import { FirstExamRestartService, type ChiefMark, type Dentition, type SetChiefMarkInput, type SetDentitionInput } from './first-exam-restart';
 
 describe('FirstExamRestartService', () => {
   let db: Database.Database;
@@ -138,8 +138,8 @@ describe('FirstExamRestartService', () => {
   it('restart honors explicit doctorId and dentition overrides', () => {
     insertExam('exam-orig-2', { doctorId: 'user-admin-001', dentition: 'MIXED' });
     const service = new FirstExamRestartService(db);
-    const created = service.restart('exam-orig-2', { doctorId: 'user-doctor-002', dentition: 'PERMANENT' }, context);
-    expect(created.doctorId).toBe('user-doctor-002');
+    const created = service.restart('exam-orig-2', { doctorId: 'user-seed-doctor-001', dentition: 'PERMANENT' }, context);
+    expect(created.doctorId).toBe('user-seed-doctor-001');
     expect(created.dentition).toBe('PERMANENT');
     expect(created.previousExamId).toBe('exam-orig-2');
     expect(created.status).toBe('IN_PROGRESS');
@@ -148,6 +148,55 @@ describe('FirstExamRestartService', () => {
   it('restart throws NotFoundError when the exam does not exist', () => {
     const service = new FirstExamRestartService(db);
     expect(() => service.restart('missing-exam', {}, context)).toThrow(NotFoundError);
+  });
+
+  it('restart rejects invalid dentition values', () => {
+    insertExam('exam-bad-dent');
+    const service = new FirstExamRestartService(db);
+    expect(() => service.restart('exam-bad-dent', { dentition: 'BOGUS' as Dentition }, context))
+      .toThrow('Invalid dentition');
+  });
+
+  it('restart propagates null optional fields from the original exam', () => {
+    insertExam('exam-null-fields', {
+      doctorId: null,
+      consultantId: null,
+      chiefComplaint: null,
+      presentIllness: null,
+      pastHistory: null,
+      oralExam: null,
+      auxiliaryExam: null,
+      diagnosis: null,
+      treatmentSuggestion: null,
+      dentition: null,
+    });
+    const service = new FirstExamRestartService(db);
+    const created = service.restart('exam-null-fields', {}, context);
+    expect(created.doctorId).toBeNull();
+    expect(created.consultantId).toBeNull();
+    expect(created.chiefComplaint).toBeNull();
+    expect(created.presentIllness).toBeNull();
+    expect(created.pastHistory).toBeNull();
+    expect(created.oralExam).toBeNull();
+    expect(created.auxiliaryExam).toBeNull();
+    expect(created.diagnosis).toBeNull();
+    expect(created.treatmentSuggestion).toBeNull();
+    expect(created.dentition).toBeNull();
+  });
+
+  it('setDentition rejects an absent dentition value', () => {
+    insertExam('exam-dent-empty');
+    const service = new FirstExamRestartService(db);
+    expect(() => service.setDentition('exam-dent-empty', {} as SetDentitionInput, context))
+      .toThrow('Invalid dentition');
+  });
+
+  it('setChiefMark rejects an absent chief mark value', () => {
+    insertExam('exam-mark-empty');
+    insertTooth('tooth-mark-empty', 'exam-mark-empty');
+    const service = new FirstExamRestartService(db);
+    expect(() => service.setChiefMark('exam-mark-empty', 'tooth-mark-empty', {} as SetChiefMarkInput, context))
+      .toThrow('Invalid chiefMark');
   });
 
   it('setDentition updates the dentition and rejects invalid values', () => {
@@ -185,6 +234,41 @@ describe('FirstExamRestartService', () => {
     const service = new FirstExamRestartService(db);
     expect(() => service.setChiefMark('exam-mark-a', 'tooth-mark-b1', { chiefMark: 'HORIZONTAL_SHOULD' }, context)).toThrow(NotFoundError);
     expect(() => service.setChiefMark('missing-exam', 'tooth-mark-b1', { chiefMark: 'NONE' }, context)).toThrow(NotFoundError);
+  });
+
+  it('throws NotFoundError when the dentition UPDATE affects zero rows (CAS guard)', () => {
+    insertExam('exam-dent-cas');
+    const service = new FirstExamRestartService(db);
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE FirstExam SET')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      expect(() => service.setDentition('exam-dent-cas', { dentition: 'PERMANENT' }, context)).toThrow(NotFoundError);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('throws NotFoundError when the tooth UPDATE affects zero rows (CAS guard)', () => {
+    insertExam('exam-mark-cas');
+    insertTooth('tooth-mark-cas', 'exam-mark-cas');
+    const service = new FirstExamRestartService(db);
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE FirstExamTooth SET')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      expect(() => service.setChiefMark('exam-mark-cas', 'tooth-mark-cas', { chiefMark: 'HORIZONTAL_DONE' }, context)).toThrow(NotFoundError);
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 
   it('history returns non-deleted exams for the patient ordered by createdAt desc', () => {

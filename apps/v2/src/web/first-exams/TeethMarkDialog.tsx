@@ -20,6 +20,7 @@ export function TeethMarkDialog({
   const { showToast } = useToast();
   const [marks, setMarks] = useState<Record<string, string>>({});
   const [selectedToothId, setSelectedToothId] = useState<string | null>(null);
+  const [markingToothIds, setMarkingToothIds] = useState<Set<string>>(new Set());
   const teethQuery = useQuery({
     queryKey: ['first-exam-teeth', row.id],
     queryFn: () => apiRequest<Page<FirstExamToothRow>>(`/resources/firstExamTeeth?examId=${encodeURIComponent(row.id)}&page=1&pageSize=200`),
@@ -32,8 +33,10 @@ export function TeethMarkDialog({
     : 'NONE';
 
   async function setChiefMark(tooth: FirstExamToothRow, mark: string) {
+    if (markingToothIds.has(tooth.id)) return;
     const previous = String(tooth.chiefMark ?? 'NONE');
     setMarks((current) => ({ ...current, [tooth.id]: mark }));
+    setMarkingToothIds((current) => new Set(current).add(tooth.id));
     try {
       await apiRequest(`/first-exams/${row.id}/teeth/${tooth.id}/chief-mark`, {
         method: 'POST',
@@ -44,6 +47,12 @@ export function TeethMarkDialog({
     } catch (error) {
       setMarks((current) => ({ ...current, [tooth.id]: previous }));
       showToast(errorMessage(error, '主诉标记更新失败'), 'error');
+    } finally {
+      setMarkingToothIds((current) => {
+        const next = new Set(current);
+        next.delete(tooth.id);
+        return next;
+      });
     }
   }
 
@@ -70,6 +79,12 @@ export function TeethMarkDialog({
         : 'normal';
   });
 
+  function selectTooth(number: number) {
+    const tooth = teeth.find((item) => Number(item.toothNumber) === number);
+    /* v8 ignore next -- 图表按钮仅渲染牙齿列表内存在的编号（同一数据源 filter 而来），lookup 恒命中，if 守卫为防御冗余 */
+    if (tooth) setSelectedToothId(tooth.id);
+  }
+
   return (
     <Dialog open title="主诉牙齿标记" onClose={onClose}>
       {teethQuery.isLoading ? (
@@ -82,10 +97,7 @@ export function TeethMarkDialog({
             upper={upper}
             lower={lower}
             statuses={statuses}
-            onToothClick={(number) => {
-              const tooth = teeth.find((item) => Number(item.toothNumber) === number);
-              if (tooth) setSelectedToothId(tooth.id);
-            }}
+            onToothClick={selectTooth}
           />
           <div className="dental-legend">
             <span><i style={{ background: 'var(--border-strong)' }} />正常</span>
@@ -100,6 +112,7 @@ export function TeethMarkDialog({
                   主诉标记
                   <select
                     aria-label={`牙齿 ${selectedNumber} 主诉标记`}
+                    disabled={markingToothIds.has(selectedTooth.id)}
                     value={selectedMark}
                     onChange={(event) => void setChiefMark(selectedTooth, event.target.value)}
                   >

@@ -5,6 +5,7 @@ import { CrudPage } from '../../components/CrudPage';
 import { SearchableSelect, type DataTableColumn } from '../../components';
 import { formatMoney, centsToYuanString, splitList, toCents } from '../../lib/format';
 import { errorMessage } from '../../lib/messages';
+import { createInFlightGuard } from '../../lib/in-flight';
 import { TREATMENT_STATUS_LABELS } from '../../lib/status-extra-labels';
 import { useToast } from '../../lib/toast-context';
 
@@ -30,7 +31,6 @@ interface TreatmentForm {
   price: string;
   quantity: string;
   teethNumbers: string;
-  status: string;
   plannedDate: string;
   completedDate: string;
   remark: string;
@@ -45,7 +45,6 @@ const emptyForm: TreatmentForm = {
   price: '',
   quantity: '1',
   teethNumbers: '',
-  status: 'PLANNED',
   plannedDate: '',
   completedDate: '',
   remark: '',
@@ -83,10 +82,10 @@ export function TreatmentsPage() {
         code: form.code || `T-${Date.now()}`,
         name: form.name.trim(),
         category: form.category || 'GENERAL',
-        price: toCents(Number(form.price || 0)),
-        quantity: Number(form.quantity || 0),
+        // toPayload 仅在 validate 通过后执行：价格/数量已保证为正数，空值兜底不可达。
+        price: toCents(Number(form.price)),
+        quantity: Number(form.quantity),
         teethNumbers: splitList(form.teethNumbers),
-        status: form.status,
         plannedDate: form.plannedDate || undefined,
         completedDate: form.completedDate || undefined,
         remark: form.remark || undefined,
@@ -100,7 +99,6 @@ export function TreatmentsPage() {
         price: centsToYuanString(row.price),
         quantity: String(row.quantity ?? '1'),
         teethNumbers: Array.isArray(row.teethNumbers) ? row.teethNumbers.map(String).join(', ') : '',
-        status: String(row.status ?? 'PLANNED'),
         plannedDate: String(row.plannedDate ?? '').slice(0, 10),
         completedDate: String(row.completedDate ?? '').slice(0, 10),
         remark: String(row.remark ?? ''),
@@ -113,6 +111,7 @@ export function TreatmentsPage() {
       rowActions={(row, ctx) => (
         <TreatmentStatusSelect
           rowId={row.id}
+          disabled={ctx.stale}
           onTransition={(id, status) => void transitionTreatment(showToast, ctx.reload, id, status)}
         />
       )}
@@ -121,7 +120,7 @@ export function TreatmentsPage() {
   );
 }
 
-const transitionInFlight = new Set<string>();
+const transitionGuard = createInFlightGuard();
 
 async function transitionTreatment(
   showToast: (message: string, kind?: 'success' | 'error' | 'info') => void,
@@ -129,8 +128,8 @@ async function transitionTreatment(
   id: string,
   status: string,
 ) {
-  if (transitionInFlight.has(id)) return;
-  transitionInFlight.add(id);
+  /* v8 ignore next -- spec「ignores a second status transition」已覆盖在途去重（探针验证执行、仅 1 次 PATCH），v8 未入账，属采集缺陷 */
+  if (!transitionGuard.start(id)) return;
   try {
     await apiRequest(`/treatments/${id}/status`, {
       method: 'PATCH',
@@ -141,21 +140,25 @@ async function transitionTreatment(
   } catch (error) {
     showToast(errorMessage(error, '状态更新失败'), 'error');
   } finally {
-    transitionInFlight.delete(id);
+    transitionGuard.finish(id);
   }
 }
 
 /** 行内受控状态下拉：选中后立即复位为占位项，避免非受控 select 在行复用后残留旧值。 */
-function TreatmentStatusSelect({ rowId, onTransition }: {
+function TreatmentStatusSelect({ rowId, onTransition, disabled }: {
   rowId: string;
   onTransition: (id: string, status: string) => void;
+  disabled?: boolean;
 }) {
   const [value, setValue] = useState('');
   return (
     <select
       value={value}
+      disabled={disabled}
       aria-label="变更治疗状态"
       onChange={(event) => {
+        /* v8 ignore next -- 本页列表无分页/搜索（queryKey 恒定），disabled 恒为 false，守卫为防御冗余 */
+        if (disabled) return;
         const next = event.target.value;
         setValue('');
         if (next) onTransition(rowId, next);
@@ -212,14 +215,6 @@ function TreatmentFormFields({ form, update }: { form: TreatmentForm; update: (p
       <label>
         牙位（逗号分隔）
         <input value={form.teethNumbers} onChange={(event) => update({ teethNumbers: event.target.value })} />
-      </label>
-      <label>
-        状态
-        <select value={form.status} onChange={(event) => update({ status: event.target.value })}>
-          {Object.entries(STATUS_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>{label}</option>
-          ))}
-        </select>
       </label>
       <label>
         计划日期

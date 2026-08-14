@@ -12,6 +12,7 @@ import type { Express } from 'express';
 import { wrapAsync } from '../middleware';
 import { CephalometricReportService } from '../../application/service-modules/cephalometric-report';
 import type { RouteDependencies } from './deps';
+import { stableRequestBodyHash, withIdempotency } from '../../infrastructure/idempotency';
 
 export function registerCephalometricReportRoutes(app: Express, deps: RouteDependencies): void {
   const { db } = deps;
@@ -39,12 +40,21 @@ export function registerCephalometricReportRoutes(app: Express, deps: RouteDepen
 
   app.post('/api/v2/cephalometric/:id/send', wrapAsync(async (req, res) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
-    res.json({
-      success: true,
-      data: service.sendWechat(String(req.params.id), {
-        phone: body.phone as string | undefined,
-        note: body.note as string | undefined,
-      }, req.context!),
+    const result = await withIdempotency(deps.db, {
+      operation: `cephalometric.send.${String(req.params.id)}`,
+      userId: req.context!.userId,
+      clinicId: req.context!.clinicId,
+      requestId: req.header('idempotency-key') ?? '',
+      requestBodyHash: stableRequestBodyHash(body),
+    }, async () => {
+      return {
+        success: true,
+        data: service.sendWechat(String(req.params.id), {
+          phone: body.phone as string | undefined,
+          note: body.note as string | undefined,
+        }, req.context!),
+      };
     });
+    res.json(result);
   }));
 }

@@ -45,9 +45,19 @@ export function ChargeDialog({
         name: item.name.trim(),
         category: item.category.trim() || 'GENERAL',
         price: toCents(item.price),
-        quantity: Number(item.quantity || 0),
+        quantity: Number(item.quantity),
       }))
-      .filter((item) => item.price > 0 && item.quantity > 0);
+      .filter((item) => item.price > 0 && Number.isSafeInteger(item.quantity) && item.quantity > 0);
+    const hasInvalidFilledRow = items
+      .filter((item) => item.name.trim() !== '')
+      .some((item) => {
+        const quantity = Number(item.quantity);
+        return toCents(item.price) <= 0 || !Number.isSafeInteger(quantity) || quantity <= 0;
+      });
+    if (hasInvalidFilledRow) {
+      showToast('存在无效收费明细，请检查数量与单价', 'error');
+      return;
+    }
     if (!patientId || validItems.length === 0) {
       showToast('请至少填写一条有效收费明细', 'error');
       return;
@@ -56,7 +66,14 @@ export function ChargeDialog({
     try {
       // 注意：/api/v2/charges 的 route-policy 只允许财务角色，医生点击会得到 403 ——
       // 这是既有权限设计，页面只负责把错误 toast 出来，不做绕过。
-      await apiRequest('/charges', { method: 'POST', body: JSON.stringify({ patientId, items: validItems }) });
+      await apiRequest('/charges', {
+        method: 'POST',
+        body: JSON.stringify({
+          patientId,
+          visitId: row.visitId ? String(row.visitId) : undefined,
+          items: validItems,
+        }),
+      });
       showToast('划价已提交', 'success');
       onSaved();
       onClose();

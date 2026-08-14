@@ -7,12 +7,18 @@ on:
     tags:
       - 'v2-*'
     paths:
+      - 'pnpm-lock.yaml'
+      - 'package.json'
+      - 'pnpm-workspace.yaml'
       - 'apps/v2/**'
       - 'docs/architecture/**'
       - 'docs/release/**'
       - '.github/workflows/v2-ci.yml'
   pull_request:
     paths:
+      - 'pnpm-lock.yaml'
+      - 'package.json'
+      - 'pnpm-workspace.yaml'
       - 'apps/v2/**'
       - 'docs/architecture/**'
       - 'docs/release/**'
@@ -27,18 +33,18 @@ concurrency:
   group: v2-ci-${{ github.ref }}
   cancel-in-progress: true
 
-# Round7 M13：CI 专用备份密钥从仓库变量读取（非生产密钥），不再硬编码入库。
-# 需在仓库 Settings > Variables 配置 V2_BACKUP_KEY；缺失时 API smoke 的
-# 备份用例会失败（无 key 且非 test 环境时 POST /backups 返回 500）。
-env:
-  V2_BACKUP_KEY: ${{ vars.V2_BACKUP_KEY }}
-  V2_ADMIN_PASSWORD: v2-ci-admin-${{ github.run_id }}
+# Round7 M13 修订（round 42 环境隔离审计）：CI 专用备份密钥与管理员口令
+# 只挂到 smoke job——verify job 的 vitest/mutation/quality-score 步骤必须
+# 在无 V2_* env 的封闭环境运行（测试套件已封闭化，但根源上不注入更稳）。
 
 jobs:
+  # 审计 P2-4：原单 job 40+ 步骤挤在 40min 上限内，任一步超时即整体失败。
+  # 拆为 verify（静态/单测/覆盖率/变异/构建）与 smoke（dev server + 全套
+  # smoke + drills）两个 job，分别限时、失败可局部重跑。
   verify:
-    name: Lint, Build, Type Check, Test & E2E
+    name: Static Checks, Tests, Coverage & Build
     runs-on: ubuntu-latest
-    # Round7 H8：25 分钟余量太小，放宽到 40 分钟。
+    # 含 13 分钟的变异测试（扩面后），预留余量。
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24 runtime, Round7 M4)
@@ -50,15 +56,8 @@ jobs:
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
-          # Round7 H8：pnpm store 缓存，避免每次全量下载依赖。
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-
-      - name: Cache Playwright browsers
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -80,11 +79,35 @@ jobs:
       - name: Unit tests
         run: pnpm --filter @dental/v2 test
 
+      - name: Full shuffle tests
+        run: pnpm --filter @dental/v2 run test:flaky
+        env:
+          FLAKY_RUNS: 1
+
+      - name: Mutation
+        run: pnpm --filter @dental/v2 run test:mutation
+
+      - name: Flaky report
+        run: pnpm --filter @dental/v2 run test:flaky:report
+
       - name: Coverage
         run: pnpm --filter @dental/v2 test:coverage
 
       - name: Web coverage
         run: pnpm --filter @dental/v2 test:coverage:web
+
+      - name: Quality score
+        run: pnpm --filter @dental/v2 run test:quality-score
+
+      - name: v8 ignore ratchet
+        run: pnpm --filter @dental/v2 run v8-ignore:report
+
+      - name: Upload quality score artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: quality-score
+          path: apps/v2/quality-score.json
+          if-no-files-found: error
 
       - name: Audit
         run: pnpm --filter @dental/v2 run audit:security
@@ -95,10 +118,61 @@ jobs:
       - name: License scan
         run: pnpm --filter @dental/v2 run license:check
 
+      - name: SBOM
+        run: pnpm --filter @dental/v2 run sbom
+
       - name: Build
         run: pnpm --filter @dental/v2 build
 
       - name: Electron compile
+        run: pnpm --filter @dental/v2 electron:compile
+
+      - name: Upload test artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: v2-verify-artifacts
+          if-no-files-found: ignore
+          path: |
+            apps/v2/coverage
+            apps/v2/coverage-web
+
+  smoke:
+    name: Smoke Suites & Drills
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # dev server 引导 admin + 备份加密需要；仅本 job（脚本类 smoke）使用，
+      # 不注入 verify job 的测试进程。
+      V2_BACKUP_KEY: ${{ vars.V2_BACKUP_KEY }}
+      V2_ADMIN_PASSWORD: v2-ci-admin-${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          version: 11.15.1
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Compile electron server bundle
+        # smoke 与全部 drills 都各自以 dist-electron/server.cjs 拉起独立 API
+        # 进程；smoke job 跑在独立 runner（fresh checkout）上，verify job 的
+        # electron:compile 产物不会带过来，必须在本 job 自行编译。
         run: pnpm --filter @dental/v2 electron:compile
 
       - name: Install Playwright
@@ -119,8 +193,8 @@ jobs:
       - name: Load smoke
         run: pnpm --filter @dental/v2 test:load
 
-      - name: Load benchmark
-        run: pnpm --filter @dental/v2 benchmark:load
+      - name: Performance history
+        run: pnpm --filter @dental/v2 run test:performance-history
 
       - name: HTTP fuzz smoke
         run: pnpm --filter @dental/v2 smoke:http-fuzz
@@ -140,10 +214,18 @@ jobs:
       - name: Ensure sanitized legacy database
         run: pnpm --filter @dental/v2 ensure:legacy
 
+      - name: Verify legacy resource generator output
+        run: |
+          pnpm --filter @dental/v2 run generate:legacy-resources
+          git diff --exit-code -- apps/v2/src/domain/legacy-resources.generated.ts
+
       - name: Simulate clinic data
         run: pnpm --filter @dental/v2 simulate:clinic-data
 
       - name: Permission smoke
+        env:
+          # 防假绿：模拟库缺失时必须失败，不允许静默跳过。
+          V2_REQUIRE_PERMISSION_SMOKE: '1'
         run: pnpm --filter @dental/v2 smoke:permissions
 
       - name: Disaster drill
@@ -157,6 +239,9 @@ jobs:
 
       - name: Environment failure drill
         run: pnpm --filter @dental/v2 drill:environment
+
+      - name: Corrupt boot drill
+        run: pnpm --filter @dental/v2 drill:corrupt-boot
 
       - name: Delivery drill
         run: pnpm --filter @dental/v2 delivery:drill
@@ -173,14 +258,12 @@ jobs:
             echo "No /tmp/v2-dev.log found"
           fi
 
-      # Round7 H8：失败时上传 coverage / dev server 日志，便于定位。
-      - name: Upload test artifacts on failure
+      - name: Upload smoke artifacts on failure
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: v2-ci-artifacts
+          name: v2-smoke-artifacts
           if-no-files-found: ignore
           path: |
-            apps/v2/coverage
-            apps/v2/coverage-web
+            apps/v2/reports/load-smoke.json
             /tmp/v2-dev.log

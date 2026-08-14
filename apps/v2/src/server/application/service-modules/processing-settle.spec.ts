@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -124,6 +124,63 @@ describe('ProcessingSettleService', () => {
     expect(row('settle-draft').settleStatus).toBe('UNSETTLED');
   });
 
+  it('validates doctor, factory and fee relationships when creating orders', async () => {
+    const orders = new ProcessingOrderService(db);
+
+    // 合法 doctorId 通过医生存在性校验
+    await expect(orders.create({
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      number: 'PO-DOC-1',
+      totalFee: 10000,
+      items: [{ name: '烤瓷冠', quantity: 1, unitPrice: 10000 }],
+    }, context)).resolves.toMatchObject({ status: 'DRAFT' });
+
+    // 缺失工厂 → NotFound；存在工厂 → 成功
+    await expect(orders.create({
+      patientId: 'patient-demo-001',
+      factoryId: 'factory-missing',
+      number: 'PO-FAC-1',
+      totalFee: 10000,
+      items: [{ name: '烤瓷冠', quantity: 1, unitPrice: 10000 }],
+    }, context)).rejects.toThrow('Processing factory not found');
+    db.prepare(
+      `INSERT INTO ProcessingFactory (id, clinicId, createdAt, updatedAt, deletedAt, name)
+       VALUES ('factory-1', 'clinic-v2-001', ?, ?, NULL, '工厂甲')`,
+    ).run(now, now);
+    await expect(orders.create({
+      patientId: 'patient-demo-001',
+      factoryId: 'factory-1',
+      number: 'PO-FAC-2',
+      totalFee: 10000,
+      items: [{ name: '烤瓷冠', quantity: 1, unitPrice: 10000 }],
+    }, context)).resolves.toMatchObject({ status: 'DRAFT' });
+
+    // 明细小计超上限
+    await expect(orders.create({
+      patientId: 'patient-demo-001',
+      number: 'PO-OVER-1',
+      totalFee: 10000,
+      items: [{ name: '烤瓷冠', quantity: 1, unitPrice: 2_000_000_000_000 }],
+    }, context)).rejects.toThrow('Processing item subtotal exceeds the allowed amount');
+
+    // 总额超上限（明细小计合法）
+    await expect(orders.create({
+      patientId: 'patient-demo-001',
+      number: 'PO-OVER-2',
+      totalFee: 2_000_000_000_000,
+      items: [{ name: '烤瓷冠', quantity: 1, unitPrice: 1000 }],
+    }, context)).rejects.toThrow('Processing order total fee exceeds the allowed amount');
+
+    // 总额不等于明细合计
+    await expect(orders.create({
+      patientId: 'patient-demo-001',
+      number: 'PO-MISMATCH',
+      totalFee: 1000,
+      items: [{ name: '烤瓷冠', quantity: 1, unitPrice: 5000 }],
+    }, context)).rejects.toThrow('must equal the sum of item subtotals');
+  });
+
   it('rejects unsettle of an order that is not settled', () => {
     insertOrder('settle-not-settled', { status: 'COMPLETED', totalFee: 10000 });
     const service = new ProcessingSettleService(db);
@@ -155,6 +212,7 @@ describe('ProcessingSettleService', () => {
   });
 
   it('computes settlement stats excluding cancelled and other-tenant orders', () => {
+    db.prepare('DELETE FROM ProcessingOrderItem').run();
     db.prepare('DELETE FROM ProcessingOrder').run();
     insertOrder('stats-u1', { status: 'COMPLETED', settleStatus: 'UNSETTLED', totalFee: 10000 });
     insertOrder('stats-u2', { status: 'RECEIVED', settleStatus: 'UNSETTLED', totalFee: 20000 });
@@ -175,5 +233,24 @@ describe('ProcessingSettleService', () => {
       unsettled: { count: 0, feeTotal: 0 },
       settled: { count: 0, amountTotal: 0 },
     });
+  });
+
+  it('rejects settle and unsettle when the CAS update matches no rows', () => {
+    insertOrder('settle-cas', { status: 'RECEIVED', totalFee: 10000 });
+    insertOrder('unsettle-cas', { status: 'RECEIVED', settleStatus: 'SETTLED', settledAmount: 10000, settledAt: now, totalFee: 10000 });
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE ProcessingOrder')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      const service = new ProcessingSettleService(db);
+      expect(() => service.settle('settle-cas', { amount: 10000 }, context)).toThrow('加工单已结算或状态已变更');
+      expect(() => service.unsettle('unsettle-cas', context)).toThrow('加工单未结算或状态已变更');
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 });

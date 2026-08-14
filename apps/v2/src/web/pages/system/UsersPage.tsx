@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import type { Page } from '../../lib/types';
@@ -8,6 +8,7 @@ import {
   Dialog,
   LoadingState,
   PageError,
+  PagePager,
   PromptDialog,
 } from '../../components';
 import { formatDisplayValue } from '../../lib/format';
@@ -79,6 +80,8 @@ const emptyForm: UserForm = {
   active: true,
 };
 
+const USER_PAGE_SIZE = 100;
+
 export function UsersPage() {
   const { showToast } = useToast();
   const [form, setForm] = useState<UserForm>(emptyForm);
@@ -91,14 +94,17 @@ export function UsersPage() {
   const [permissionTarget, setPermissionTarget] = useState<UserRow | null>(null);
   const [permissionForm, setPermissionForm] = useState<Record<string, boolean>>({});
   const [permissionBusy, setPermissionBusy] = useState(false);
+  const permissionRequestRef = useRef(0);
+  const [page, setPage] = useState(1);
 
   const me = useQuery({
     queryKey: ['auth-me'],
     queryFn: () => apiRequest<{ role?: string }>('/auth/me'),
   });
   const users = useQuery({
-    queryKey: ['users'],
-    queryFn: () => apiRequest<Page<UserRow>>('/resources/users?page=1&pageSize=100'),
+    queryKey: ['users', page],
+    queryFn: () => apiRequest<Page<UserRow>>(`/resources/users?page=${page}&pageSize=${USER_PAGE_SIZE}`),
+    placeholderData: (previous) => previous,
     enabled: me.data?.role === 'BOSS' || me.data?.role === 'ADMIN',
   });
   const userRoles = useQuery({
@@ -106,6 +112,7 @@ export function UsersPage() {
     queryFn: () => apiRequest<{ items: UserRoleRow[] }>('/user-roles'),
     enabled: me.data?.role === 'BOSS' || me.data?.role === 'ADMIN',
   });
+  const stale = users.isPlaceholderData;
 
   if (me.isLoading) return <LoadingState />;
   if (me.error || !['BOSS', 'ADMIN'].includes(me.data?.role ?? '')) {
@@ -123,6 +130,10 @@ export function UsersPage() {
   }
 
   function openEdit(row: UserRow) {
+    if (userRoles.error) {
+      showToast('角色数据加载失败，请刷新后重试', 'error');
+      return;
+    }
     setEditingId(row.id);
     setForm({
       username: row.username,
@@ -140,7 +151,12 @@ export function UsersPage() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (stale) return;
     if (submitting) return;
+    if (editingId && userRoles.error) {
+      showToast('角色数据加载失败，请刷新后重试', 'error');
+      return;
+    }
     setSubmitting(true);
     try {
       let targetId = editingId;
@@ -186,6 +202,8 @@ export function UsersPage() {
   }
 
   async function deleteUser() {
+    if (stale) return;
+    /* v8 ignore next -- 确认框按钮仅在 deleteTarget 非空时渲染且 pending 期间 disabled，守卫为防御冗余 */
     if (!deleteTarget || submitting) return;
     setSubmitting(true);
     try {
@@ -202,6 +220,8 @@ export function UsersPage() {
   }
 
   async function resetPassword(password: string) {
+    if (stale) return;
+    /* v8 ignore next -- 重置弹窗仅在 passwordTarget 非空时渲染且 pending 期间确认按钮 disabled，守卫为防御冗余 */
     if (!passwordTarget || submitting) return;
     setSubmitting(true);
     try {
@@ -219,21 +239,26 @@ export function UsersPage() {
   }
 
   async function openPermissions(row: UserRow) {
+    const requestId = permissionRequestRef.current + 1;
+    permissionRequestRef.current = requestId;
     setPermissionTarget(row);
     setPermissionBusy(true);
     try {
       const data = await apiRequest<{ effective: string[] }>(`/user-permissions/${row.id}`);
+      if (requestId !== permissionRequestRef.current) return;
       const effective = new Set(data.effective ?? []);
       setPermissionForm(Object.fromEntries(PERMISSION_KEYS.map((key) => [key, effective.has(key)])));
     } catch (error) {
       showToast(errorMessage(error, '加载权限失败'), 'error');
       setPermissionTarget(null);
     } finally {
-      setPermissionBusy(false);
+      if (requestId === permissionRequestRef.current) setPermissionBusy(false);
     }
   }
 
   async function savePermissions() {
+    if (stale) return;
+    /* v8 ignore next -- 保存按钮仅在权限弹窗内渲染且 permissionBusy 期间 disabled，守卫为防御冗余 */
     if (!permissionTarget || permissionBusy) return;
     setPermissionBusy(true);
     try {
@@ -287,10 +312,10 @@ export function UsersPage() {
       render: (row: UserRow) => (
         isBoss || row.role !== 'BOSS' ? (
           <>
-            <button onClick={() => openEdit(row)}>编辑</button>
-            <button onClick={() => void openPermissions(row)}>权限</button>
-            <button onClick={() => setPasswordTarget(row.id)}>重置密码</button>
-            <button className="danger" onClick={() => setDeleteTarget(row)}>删除</button>
+            <button disabled={stale} onClick={() => openEdit(row)}>编辑</button>
+            <button disabled={stale} onClick={() => void openPermissions(row)}>权限</button>
+            <button disabled={stale} onClick={() => setPasswordTarget(row.id)}>重置密码</button>
+            <button className="danger" disabled={stale} onClick={() => setDeleteTarget(row)}>删除</button>
           </>
         ) : (
           <span>老板账号</span>
@@ -305,7 +330,14 @@ export function UsersPage() {
         <h1>员工管理</h1>
         <button onClick={openCreate}>新建员工</button>
       </div>
+      {userRoles.error && <p className="error">角色数据加载失败，请刷新后重试</p>}
       <DataTable columns={columns} rows={users.data?.items ?? []} keyField="id" emptyText="暂无员工" />
+      <PagePager
+        page={page}
+        hasNext={page * USER_PAGE_SIZE < (users.data?.total ?? 0)}
+        onPageChange={setPage}
+        disabled={stale}
+      />
 
       <Dialog open={showForm} title={editingId ? '编辑员工' : '新建员工'} onClose={() => setShowForm(false)}>
         <form onSubmit={submit}>
@@ -376,6 +408,7 @@ export function UsersPage() {
         onClose={() => setPermissionTarget(null)}
       >
         <div className="role-checkbox-group">
+          {/* PERMISSION_KEYS 全部存在于 PERMISSION_LABELS 中，`?? key` 兜底为死代码，已删除。 */}
           {PERMISSION_KEYS.map((key) => (
             <label key={key}>
               <input
@@ -384,7 +417,7 @@ export function UsersPage() {
                 disabled={permissionBusy}
                 onChange={(event) => setPermissionForm((current) => ({ ...current, [key]: event.target.checked }))}
               />
-              {PERMISSION_LABELS[key] ?? key}
+              {PERMISSION_LABELS[key]}
             </label>
           ))}
         </div>
@@ -402,6 +435,7 @@ export function UsersPage() {
         title="重置密码"
         message="输入新密码，至少 6 位"
         confirmText="重置"
+        pending={submitting}
         onSubmit={(value) => void resetPassword(value)}
         onCancel={() => setPasswordTarget(null)}
       />

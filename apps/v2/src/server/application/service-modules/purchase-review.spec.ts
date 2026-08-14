@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -39,6 +39,10 @@ describe('PurchaseReviewService', () => {
   afterAll(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   function insertOrder(id: string, overrides: Record<string, unknown> = {}): void {
@@ -224,5 +228,77 @@ describe('PurchaseReviewService', () => {
     expect(rows.items.some((entry) => entry.id === id)).toBe(false);
     expect(() => service.submit(id, context)).toThrow(NotFoundError);
     expect(() => service.approve(id, context)).toThrow(NotFoundError);
+  });
+
+  it('rejects missing reasons, guards submit status, and tracks review writes', () => {
+    insertOrder('po-missing-reason', { reviewStatus: 'SUBMITTED' });
+    expect(() => service.reject('po-missing-reason', {} as never, context)).toThrow('驳回原因必填');
+
+    insertOrder('po-submit-guard', { reviewStatus: 'SUBMITTED' });
+    expect(() => service.submit('po-submit-guard', context)).toThrow('仅待提交的采购单可提交审核');
+
+    insertOrder('po-write-tracking', { reviewStatus: 'SUBMITTED' });
+    service.approve('po-write-tracking', context);
+    const tracked = db.prepare(
+      `SELECT COUNT(*) AS c FROM SyncChange WHERE tableName = 'PurchaseOrder' AND recordId = 'po-write-tracking'`,
+    ).get() as { c: number };
+    expect(Number(tracked.c)).toBeGreaterThanOrEqual(1);
+  });
+
+  it('reports conflicts when the approve CAS update changes zero rows', () => {
+    insertOrder('po-approve-race', { reviewStatus: 'SUBMITTED' });
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes("reviewStatus = 'APPROVED'")) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    expect(() => service.approve('po-approve-race', context)).toThrow(ConflictError);
+  });
+
+  it('reports conflicts when the reject CAS update changes zero rows', () => {
+    insertOrder('po-reject-race', { reviewStatus: 'SUBMITTED' });
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes("reviewStatus = 'REJECTED'")) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    expect(() => service.reject('po-reject-race', { reason: '原因' }, context)).toThrow(ConflictError);
+  });
+
+  it('reports conflicts when the updateReview CAS update changes zero rows', () => {
+    insertOrder('po-update-race', { reviewStatus: 'PENDING' });
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('SET reviewStatus = ?, updatedAt = ?')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    expect(() => service.submit('po-update-race', context)).toThrow('采购单审核状态已变更，请刷新后重试');
+  });
+
+  it('counts orders with a NULL reviewStatus in the stats total', () => {
+    const before = service.stats(context) as Record<string, number>;
+    insertOrder('po-stats-null', { totalAmount: 100 });
+    db.prepare("UPDATE PurchaseOrder SET reviewStatus = NULL WHERE id = 'po-stats-null'").run();
+    const stats = service.stats(context) as Record<string, number>;
+    expect(stats.total).toBe(before.total + 1);
+    expect(stats.pendingAmount).toBe(before.pendingAmount);
+  });
+
+  it('approves and rejects orders under a global null-clinic context', () => {
+    const globalContext = { ...context, clinicId: null };
+    insertOrder('po-global-approve', { reviewStatus: 'SUBMITTED' });
+    expect(service.approve('po-global-approve', globalContext)).toMatchObject({ reviewStatus: 'APPROVED' });
+
+    insertOrder('po-global-reject', { reviewStatus: 'SUBMITTED' });
+    expect(service.reject('po-global-reject', { reason: '全局驳回' }, globalContext)).toMatchObject({ reviewStatus: 'REJECTED' });
+
+    insertOrder('po-global-submit', { reviewStatus: 'PENDING' });
+    expect(service.submit('po-global-submit', globalContext)).toMatchObject({ reviewStatus: 'SUBMITTED' });
   });
 });

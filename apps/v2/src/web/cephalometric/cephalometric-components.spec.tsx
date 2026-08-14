@@ -71,6 +71,7 @@ describe('cephalometric utils', () => {
     expect(toPoint([10, 20])).toEqual({ x: 10, y: 20 });
     expect(toPoint({ x: 3, y: 4 })).toEqual({ x: 3, y: 4 });
     expect(toPoint([null, 5] as unknown as [number, number])).toEqual({ x: 0, y: 5 });
+    expect(toPoint([10, null] as unknown as [number, number])).toEqual({ x: 10, y: 0 });
     expect(toPoint({} as { x: number; y: number })).toEqual({ x: 0, y: 0 });
   });
 
@@ -97,6 +98,7 @@ describe('cephalometric utils', () => {
       { x: 30, y: 40 },
     ]);
     expect(landmarksOutline({ skip: 'x', bad: ['a', 1] })).toEqual([]);
+    expect(landmarksOutline({ badPoint: { x: 'a', y: 2 } })).toEqual([]);
   });
 
   it('serializes values to json text', () => {
@@ -114,6 +116,11 @@ describe('OutlineSvg', () => {
 
   it('renders an empty placeholder', () => {
     render(<OutlineSvg report={{ outline: [], polylines: [] }} />);
+    expect(screen.getByText('暂无轮廓数据')).toBeDefined();
+  });
+
+  it('handles reports without a polylines field', () => {
+    render(<OutlineSvg report={{ outline: [] }} />);
     expect(screen.getByText('暂无轮廓数据')).toBeDefined();
   });
 
@@ -269,6 +276,14 @@ describe('ReportDialog', () => {
     });
     expect(area).toBeDefined();
   });
+
+  it('treats an empty JSON textarea as an empty report object', async () => {
+    mockReport();
+    render(<ReportDialog row={{ id: 'c-1' }} reload={vi.fn()} onClose={vi.fn()} />, { wrapper });
+    const area = await screen.findByLabelText('报告 JSON');
+    fireEvent.change(area, { target: { value: '' } });
+    expect(await screen.findByText('暂无轮廓数据')).toBeDefined();
+  });
 });
 
 describe('SendWechatDialog', () => {
@@ -332,6 +347,10 @@ describe('cephalometric columns', () => {
 });
 
 describe('OutlineSvg', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   it('renders empty, labeled and single-point states', () => {
     const { rerender } = render(<OutlineSvg report={{ outline: [], polylines: [] }} />);
     expect(screen.getByText('暂无轮廓数据')).toBeDefined();

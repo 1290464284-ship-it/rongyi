@@ -3,6 +3,7 @@ import type Database from 'better-sqlite3';
 import type { AppContext } from '../../domain/contracts';
 import { buildFtsQuery } from '../infrastructure/search-index';
 import { tenantAnd, tenantParams } from '../infrastructure/tenant';
+import { maskPhoneForExport } from './service-modules/follow-up-service';
 
 export class SearchService {
   constructor(private readonly db: Database.Database) {}
@@ -100,7 +101,10 @@ export class SearchService {
           resource: search.resource,
           id: row.id,
           label: search.label(row),
-          detail: row,
+          // 搜索结果不返回完整手机号，避免 PII 随 /search 外泄。
+          detail: typeof row.phone === 'string' && row.phone !== ''
+            ? { ...row, phone: maskPhoneForExport(row.phone) }
+            : row,
         });
       }
     }

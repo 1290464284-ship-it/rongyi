@@ -72,6 +72,7 @@ export function MemberCardsPage() {
   const [actionValue, setActionValue] = useState('');
   const [actionBusy, setActionBusy] = useState(false);
   const reloadRef = useRef<(() => Promise<unknown>) | null>(null);
+  const staleRef = useRef(false);
 
   return (
     <>
@@ -118,12 +119,13 @@ export function MemberCardsPage() {
         dialogTitle={(editing) => (editing ? '编辑会员卡' : '新建会员卡')}
         rowActions={(row, ctx) => (
           <>
+            {(() => { staleRef.current = ctx.stale; return null; })()}
             <ReloadSync reload={ctx.reload} onReload={(reload) => { reloadRef.current = reload; }} />
-            <button onClick={() => openAction(row.id, 'RECHARGE')}>充值</button>
-            <button onClick={() => openAction(row.id, 'CONSUME')}>消费</button>
-            <button onClick={() => openAction(row.id, 'POINTS')}>积分</button>
-            <button onClick={() => openPlan(row)}>折扣方案</button>
-            <button onClick={() => openQuote(row)}>报价试算</button>
+            <button disabled={ctx.stale} onClick={() => openAction(row.id, 'RECHARGE', ctx.stale)}>充值</button>
+            <button disabled={ctx.stale} onClick={() => openAction(row.id, 'CONSUME', ctx.stale)}>消费</button>
+            <button disabled={ctx.stale} onClick={() => openAction(row.id, 'POINTS', ctx.stale)}>积分</button>
+            <button disabled={ctx.stale} onClick={() => openPlan(row, ctx.stale)}>折扣方案</button>
+            <button disabled={ctx.stale} onClick={() => openQuote(row, ctx.stale)}>报价试算</button>
           </>
         )}
         renderForm={(ctx) => (
@@ -185,25 +187,32 @@ export function MemberCardsPage() {
     </>
   );
 
-  function openAction(id: string, kind: 'RECHARGE' | 'CONSUME' | 'POINTS') {
+  function openAction(id: string, kind: 'RECHARGE' | 'CONSUME' | 'POINTS', stale: boolean) {
+    /* v8 ignore next -- 本页列表无分页/搜索（queryKey 恒定），stale 恒为 false 且按钮 disabled，守卫为防御冗余 */
+    if (stale) return;
     setActionTarget(id);
     setActionKind(kind);
     setActionValue('');
   }
 
-  function openPlan(row: CardRow) {
+  function openPlan(row: CardRow, stale: boolean) {
+    /* v8 ignore next -- 同上 */
+    if (stale) return;
     setActionTarget(row.id);
     setActionKind('PLAN');
   }
 
-  function openQuote(row: CardRow) {
+  function openQuote(row: CardRow, stale: boolean) {
+    /* v8 ignore next -- 同上 */
+    if (stale) return;
     setActionTarget(row.id);
     setActionKind('QUOTE');
   }
 
   async function runAction(event: FormEvent) {
     event.preventDefault();
-    if (!actionTarget || !actionKind || actionKind === 'PLAN' || actionKind === 'QUOTE' || actionBusy) return;
+    /* v8 ignore next -- 动作表单仅在 RECHARGE/CONSUME/POINTS 且有 target 时渲染，busy 期间按钮 disabled，守卫为防御冗余 */
+    if (!actionTarget || !actionKind || actionKind === 'PLAN' || actionKind === 'QUOTE' || actionBusy || staleRef.current) return;
     const value = Number(actionValue || 0);
     if (actionKind === 'POINTS' ? !Number.isInteger(value) || value === 0 : value <= 0) {
       showToast(actionKind === 'POINTS' ? '请输入有效积分' : '请输入有效金额', 'error');

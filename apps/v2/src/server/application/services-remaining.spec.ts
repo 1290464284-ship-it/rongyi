@@ -101,8 +101,8 @@ describe('remaining services', () => {
        ) VALUES (?, ?, ?, ?, NULL, 'user-admin-001', 'system', 'Title', 'Content')`,
     ).run('notification-remaining', context.clinicId, now, now);
     const notifications = new NotificationService(db);
-    expect(notifications.list('user-admin-001').items.length).toBeGreaterThanOrEqual(1);
-    const paged = notifications.list('user-admin-001', { page: 1, pageSize: 5 });
+    expect(notifications.list('user-admin-001', null).items.length).toBeGreaterThanOrEqual(1);
+    const paged = notifications.list('user-admin-001', null, { page: 1, pageSize: 5 });
     expect(paged.items.length).toBeGreaterThanOrEqual(1);
     expect(paged.total).toBeGreaterThanOrEqual(paged.items.length);
     expect(notifications.markRead('notification-remaining', 'user-admin-001').read).toBe(true);
@@ -126,5 +126,23 @@ describe('remaining services', () => {
     ], context);
     expect(result.imported).toBe(0);
     expect(result.failed).toBe(1);
+  });
+
+  it('resets state-machine statuses during bulk import', async () => {
+    const service = new BulkImportService(db);
+    const result = await service.importRows('treatments', [{
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      code: 'BULK-T-1',
+      name: 'Bulk Treatment',
+      category: 'GENERAL',
+      price: 10000,
+      quantity: 1,
+      status: 'COMPLETED',
+    }], context);
+    expect(result.imported).toBe(1);
+    const row = db.prepare('SELECT status FROM Treatment WHERE code = ? AND clinicId = ?')
+      .get('BULK-T-1', context.clinicId) as { status: string } | undefined;
+    expect(row?.status).toBe('PLANNED');
   });
 });

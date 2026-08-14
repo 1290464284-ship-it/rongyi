@@ -98,8 +98,6 @@ describe('FirstExamFormFields', () => {
     expect(update).toHaveBeenCalledWith({ doctorId: 'd-1' });
     fireEvent.change(screen.getByLabelText('会诊医生'), { target: { value: 'd-1' } });
     expect(update).toHaveBeenCalledWith({ consultantId: 'd-1' });
-    fireEvent.change(screen.getByLabelText('状态'), { target: { value: 'SUBMITTED' } });
-    expect(update).toHaveBeenCalledWith({ status: 'SUBMITTED' });
     fireEvent.change(screen.getByLabelText('主诉'), { target: { value: '牙痛' } });
     expect(update).toHaveBeenCalledWith({ chiefComplaint: '牙痛' });
     fireEvent.change(screen.getByLabelText('现病史'), { target: { value: '三天' } });
@@ -152,6 +150,20 @@ describe('first-exam actions', () => {
     await transitionFirstExam(showToast, reload, 'f-1', 'APPROVED');
     expect(showToast).toHaveBeenCalledWith('状态更新失败', 'error');
     expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('ignores a second transition while the first is in flight', async () => {
+    let resolveApi: (() => void) | undefined;
+    vi.mocked(apiRequest).mockImplementation(
+      () => new Promise((resolve) => {
+        resolveApi = () => resolve({});
+      }),
+    );
+    const first = transitionFirstExam(vi.fn(), vi.fn(), 'f-1', 'SUBMITTED');
+    const second = transitionFirstExam(vi.fn(), vi.fn(), 'f-1', 'APPROVED');
+    resolveApi?.();
+    await Promise.all([first, second]);
+    expect(apiRequest).toHaveBeenCalledTimes(1);
   });
 
   it('changes dentition and reloads on success', async () => {
@@ -296,6 +308,39 @@ describe('TeethMarkDialog', () => {
     });
   });
 
+  it('ignores a second mark change for the same tooth while the first is in flight', async () => {
+    const resolveMark: Array<() => void> = [];
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = String(init?.method ?? 'GET').toUpperCase();
+      if (method === 'POST' && path === '/first-exams/f-1/teeth/t-1/chief-mark') {
+        return new Promise<void>((resolve) => {
+          resolveMark.push(() => resolve());
+        });
+      }
+      if (path === '/resources/firstExamTeeth?examId=f-1&page=1&pageSize=200') {
+        return {
+          items: [{ id: 't-1', examId: 'f-1', toothNumber: 16, toothStatus: 'CARIES', chiefMark: 'NONE' }],
+          total: 1,
+          page: 1,
+          pageSize: 200,
+        };
+      }
+      return {};
+    });
+
+    render(<TeethMarkDialog row={{ id: 'f-1' }} reload={vi.fn()} onClose={vi.fn()} />, { wrapper });
+    const select = (await screen.findByLabelText('牙齿 16 主诉标记')) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: 'HORIZONTAL_SHOULD' } });
+    fireEvent.change(select, { target: { value: 'HORIZONTAL_DONE' } });
+    await waitFor(() => {
+      const markCalls = vi.mocked(apiRequest).mock.calls.filter(
+        ([path]) => path === '/first-exams/f-1/teeth/t-1/chief-mark',
+      );
+      expect(markCalls).toHaveLength(1);
+    });
+    resolveMark[0]?.();
+  });
+
   it('handles lower teeth, non-numeric numbers, issue marks and tooth clicks', async () => {
     vi.mocked(apiRequest).mockResolvedValue({
       items: [
@@ -314,6 +359,45 @@ describe('TeethMarkDialog', () => {
       expect((screen.getByLabelText('牙齿 31 主诉标记') as HTMLSelectElement).value).toBe('HORIZONTAL_DONE');
     });
     expect(screen.getByText('牙体状态：')).toBeDefined();
+  });
+
+  it('falls back to tooth ids when tooth numbers are missing', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = String(init?.method ?? 'GET').toUpperCase();
+      if (method === 'POST') return { ok: true };
+      if (path === '/resources/firstExamTeeth?examId=f-1&page=1&pageSize=200') {
+        return {
+          items: [{ id: 't-null', examId: 'f-1', toothNumber: null, toothStatus: null, chiefMark: null }],
+          total: 1,
+          page: 1,
+          pageSize: 200,
+        };
+      }
+      return {};
+    });
+    render(<TeethMarkDialog row={{ id: 'f-1' }} reload={vi.fn().mockResolvedValue(undefined)} onClose={vi.fn()} />, { wrapper });
+    const select = (await screen.findByLabelText('牙齿 t-null 主诉标记')) as HTMLSelectElement;
+    expect(select.value).toBe('NONE');
+    expect(screen.getByText('牙位 t-null')).toBeDefined();
+    expect(screen.getByText('牙体状态：')).toBeDefined();
+
+    fireEvent.change(select, { target: { value: 'CARIES' } });
+    expect(await screen.findByText('牙齿 t-null 主诉标记已更新')).toBeDefined();
+  });
+
+  it('treats a null chief mark on an unselected tooth as normal', async () => {
+    vi.mocked(apiRequest).mockResolvedValue({
+      items: [
+        { id: 't-1', examId: 'f-1', toothNumber: 16, toothStatus: 'CARIES', chiefMark: 'NONE' },
+        { id: 't-2', examId: 'f-1', toothNumber: 26, toothStatus: 'HEALTHY', chiefMark: null },
+      ],
+      total: 2,
+      page: 1,
+      pageSize: 200,
+    });
+    render(<TeethMarkDialog row={{ id: 'f-1' }} reload={vi.fn().mockResolvedValue(undefined)} onClose={vi.fn()} />, { wrapper });
+    await screen.findByLabelText('牙齿 16 主诉标记');
+    expect((screen.getByLabelText('牙位 26') as HTMLButtonElement).className).toContain('normal');
   });
 });
 
@@ -445,5 +529,6 @@ describe('first-exam columns', () => {
     expect(renderColumn('status', row)).toBe('UNKNOWN');
     expect(renderColumn('followUpStatus', row)).toBe('未追踪');
     expect(renderColumn('restartedAt', row)).toBe('');
+    expect(renderColumn('followUpStatus', { id: 'f-1', followUpStatus: 'CUSTOM' })).toBe('CUSTOM');
   });
 });

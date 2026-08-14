@@ -10,7 +10,7 @@ import { metricsMiddleware, metricsSnapshot, persistMetrics } from './metrics';
 import { persistStabilityMetrics, stabilitySnapshot } from './stability';
 import { deepHealth } from './health';
 import type { Logger } from '../infrastructure/logger';
-import { maskSensitiveFields } from '../infrastructure/security';
+import { maskAuditFields } from '../infrastructure/security';
 import { routeRoleRules } from './route-policy';
 import { registerReadRoutes } from './read-routes';
 import { registerAdminRoutes, registerPublicAuthRoutes } from './routes/auth-admin';
@@ -49,9 +49,16 @@ import { registerPayMethodRoutes } from './routes/pay-method-routes';
 import { registerChargeTreeRoutes } from './routes/charge-tree-routes';
 import { registerHighValueRoutes } from './routes/high-value-routes';
 import { registerCommissionRoutes } from './routes/commission-routes';
+import { registerEditSaveRoutes } from './routes/edit-save-routes';
 import { createRouteDependencies, type RouteDependencies } from './routes/deps';
 import { createAuditBuffer } from './audit-buffer';
 import { SqliteRateLimitStore } from '../infrastructure/rate-limit-store';
+
+// 普通 GET 请求日志采样率（0-1），生产可用 V2_REQUEST_LOG_SAMPLE_RATE 覆盖。
+const REQUEST_LOG_SAMPLE_RATE = (() => {
+  const raw = Number(process.env.V2_REQUEST_LOG_SAMPLE_RATE ?? 0.01);
+  return Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : 0.01;
+})();
 
 export type { AuditInput } from './audit-buffer';
 
@@ -121,11 +128,18 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
         const url = new URL(origin);
         const isLoopback = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
         // B-L5：显式端口缺失时按协议默认端口计算（http→80/https→443），否则
-        // Number('') = NaN 会让 http://localhost 这类来源被误拒；开发模式额外
-        // 放行 Vite 常用端口（5173/5180），方便本地前端直连 API。
+        // Number('') = NaN 会让 http://localhost 这类来源被误拒；开发模式仅
+        // 放行 Vite 常用端口（5173/5180）与 V2_WEB_DEV_PORT 显式覆盖值。
+        // 审计 P2-6：不再放行「任意 loopback 端口」——被攻破的页面即可探测本机
+        // 任意回环服务，收紧为显式端口列表；smoke:all 的随机 Web 端口场景
+        // 依赖 V2_WEB_DEV_PORT 传播（run-smokes.mjs 已设置）。
         const port = url.port === '' ? (url.protocol === 'https:' ? 443 : 80) : Number(url.port);
         const apiPort = Number(process.env.V2_PORT ?? 3180);
-        const isAllowedPort = port === apiPort || (process.env.NODE_ENV !== 'production' && (port === 5173 || port === 5180));
+        const configuredDevWebPort = Number(process.env.V2_WEB_DEV_PORT);
+        const devWebPorts = new Set([5173, 5180]);
+        if (Number.isInteger(configuredDevWebPort) && configuredDevWebPort > 0) devWebPorts.add(configuredDevWebPort);
+        const isAllowedPort = port === apiPort
+          || (process.env.NODE_ENV !== 'production' && devWebPorts.has(port));
         if (isLoopback && url.protocol === 'http:' && isAllowedPort) {
           callback(null, true);
           return;
@@ -141,12 +155,20 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
   app.use(metricsMiddleware);
   app.use((req, res, next) => {
     res.on('finish', () => {
+      const durationMs = Date.now() - Number(res.locals.startedAt);
+      // 高频读采样：仅记录慢请求（>200ms）、写请求、错误请求与 1% 的普通 GET，
+      // 避免大库/高频查询时请求日志无限膨胀；健康检查默认不再逐条记录。
+      const shouldLog = res.statusCode >= 400
+        || req.method !== 'GET'
+        || durationMs > 200
+        || (req.path !== '/api/v2/health' && Math.random() < REQUEST_LOG_SAMPLE_RATE);
+      if (!shouldLog) return;
       logger.info('request', {
         traceId: req.traceId,
         method: req.method,
         path: req.path,
         statusCode: res.statusCode,
-        durationMs: Date.now() - Number(res.locals.startedAt),
+        durationMs,
         userId: req.context?.userId,
         clinicId: req.context?.clinicId ?? null,
       });
@@ -201,7 +223,20 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
         action: auditOverride?.action ?? `${req.method} ${req.path}`,
         target: auditOverride?.target ?? params.id ?? params.resource ?? null,
         detail: auditOverride?.detail ?? (params.resource
-          ? JSON.stringify({ resource: params.resource, body: maskSensitiveFields(req.body ?? {}) })
+          ? (() => {
+              const masked = maskAuditFields(req.body ?? {});
+              const serialized = JSON.stringify({ resource: params.resource, body: masked });
+              if (serialized.length <= 4000) return serialized;
+              return JSON.stringify({
+                resource: params.resource,
+                body: {
+                  truncated: true,
+                  // maskAuditFields 对对象输入恒返回对象（maskWith 顶层非数组非深度溢出），
+                  // 非对象兜底为死代码，已删除。
+                  keys: Object.keys(masked).length,
+                },
+              });
+            })()
           : null),
         ip: req.ip,
         traceId: req.traceId,
@@ -215,15 +250,15 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
     const rule = routeRoleRules.find((candidate) => candidate.pattern.test(req.originalUrl));
     if (rule) {
       if (rule.permission) {
-        const permissions = req.context?.permissions;
-        if (permissions) {
-          if (!permissions.includes(rule.permission)) {
-            next(new AppError('FORBIDDEN', 'Insufficient permissions', 403));
-            return;
-          }
-          next();
+        // authMiddleware 恒先于本中间件写入 context.permissions（effectivePermissions 恒返回数组，
+        // 且其上的 audit 中间件已使用 req.context!），permissions 缺失分支为死代码，已删除。
+        const permissions = req.context!.permissions!;
+        if (!permissions.includes(rule.permission)) {
+          next(new AppError('FORBIDDEN', 'Insufficient permissions', 403));
           return;
         }
+        next();
+        return;
       }
       roleMiddleware(...rule.roles)(req, res, next);
       return;
@@ -240,6 +275,7 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
     stats: deps.stats,
     print: new PrintService(),
     search: deps.search,
+    rateLimitStore,
   });
 
   app.get('/api/v2/resource-meta', wrapAsync(async (req, res) => {
@@ -270,10 +306,11 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
   registerCustomFieldRoutes(app, deps);
   registerWechatReminderRoutes(app, deps);
   registerInventoryReportRoutes(app, deps);
-  registerInventoryDocRoutes(app, deps);
+  registerInventoryDocRoutes(app, deps, { lockGuard: deps.stocktakeLockGuard });
   registerTreatmentPlanBillingRoutes(app, deps);
   registerPrescriptionProcessRoutes(app, deps);
   registerFirstExamRestartRoutes(app, deps);
+  registerEditSaveRoutes(app, deps);
   registerCephalometricReportRoutes(app, deps);
   registerProcessingFlowRoutes(app, deps);
   registerTriageRoutes(app, deps);

@@ -127,6 +127,11 @@ describe('MemberCardsPage', () => {
     fireEvent.change(screen.getByLabelText('积分数量'), { target: { value: '0' } });
     fireEvent.click(screen.getByText('确认'));
     expect(await screen.findByText('请输入有效积分')).toBeDefined();
+
+    fireEvent.change(screen.getByLabelText('积分数量'), { target: { value: '-5' } });
+    fireEvent.click(screen.getByText('确认'));
+    expect(await screen.findByText('请输入有效积分')).toBeDefined();
+    expect(vi.mocked(apiRequest).mock.calls.filter(([path]) => String(path).includes('/points')).length).toBe(0);
   });
 
   it('saves a discount plan from the plan dialog', async () => {
@@ -156,6 +161,18 @@ describe('MemberCardsPage', () => {
       specialDiscountsJson: [{ name: '隐形矫正', category: 'ORTHODONTIC', rate: 90 }],
     });
     expect(await screen.findByText('折扣方案已保存')).toBeDefined();
+  });
+
+  it('guards discount plan save against double submission', async () => {
+    const onSaved = vi.fn();
+    const onClose = vi.fn();
+    const showToast = vi.fn();
+    vi.mocked(apiRequest).mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve({}), 50)));
+    render(<MemberCardPlanDialog open cardId="card-1" onSaved={onSaved} onClose={onClose} showToast={showToast} />, { wrapper });
+    fireEvent.click(screen.getByText('\u4fdd\u5b58'));
+    fireEvent.click(screen.getByText('\u4fdd\u5b58'));
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/member-cards/card-1/discount-plan')).toHaveLength(1);
   });
 
   it('rejects invalid special discount JSON with an error toast', async () => {
@@ -211,10 +228,12 @@ describe('MemberCardsPage', () => {
     });
 
     fireEvent.click(screen.getByRole('button', { name: '充值' }));
-    fireEvent.keyDown(await screen.findByRole('dialog'), { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog')).toBeNull();
-    });
+    const dialog = await screen.findByRole('dialog');
+    vi.useFakeTimers();
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    vi.useRealTimers();
 
     fireEvent.click(screen.getByRole('button', { name: '积分' }));
     await screen.findByRole('dialog');
@@ -225,10 +244,11 @@ describe('MemberCardsPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '报价试算' }));
     const quoteDialog = (await screen.findByLabelText('原价金额（元）')).closest('[role="dialog"]') as HTMLElement;
+    vi.useFakeTimers();
     fireEvent.keyDown(quoteDialog, { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByLabelText('原价金额（元）')).toBeNull();
-    });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByLabelText('原价金额（元）')).toBeNull();
+    vi.useRealTimers();
   });
 
   it('reports member card action failures', async () => {
@@ -249,8 +269,9 @@ describe('MemberCardsPage', () => {
           items: [
             { id: 'card-null', status: null, level: null },
             { id: 'card-weird', status: 'WEIRD', level: 'CUSTOM' },
+            { id: 'card-rate', status: 'ACTIVE', level: 'NORMAL', discountRate: 90 },
           ],
-          total: 2,
+          total: 3,
           page: 1,
           pageSize: 100,
         };
@@ -264,6 +285,7 @@ describe('MemberCardsPage', () => {
     expect(await screen.findByText('WEIRD')).toBeDefined();
     expect(screen.getByText('CUSTOM')).toBeDefined();
     expect(screen.getAllByText('—').length).toBeGreaterThan(0);
+    expect(screen.getByText('90%')).toBeDefined();
 
     fireEvent.click(screen.getAllByRole('button', { name: '编辑' })[0]);
     await waitFor(() => {

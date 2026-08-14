@@ -5,7 +5,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
+import { ValidationError } from '../../infrastructure/errors';
 import { SyncService } from './sync';
+import { BulkImportService } from './clinical-ops';
 
 describe('sync push concurrency', () => {
   let db: Database.Database;
@@ -68,6 +70,49 @@ describe('sync push concurrency', () => {
     expect(second.failed).toBe(0);
     const count = db.prepare(
       `SELECT COUNT(*) AS count FROM Patient WHERE id IN ('push-a', 'push-b') AND deletedAt IS NULL`,
+    ).get() as { count: number };
+    expect(count.count).toBe(2);
+  });
+
+  it('serializes sync push and bulk import on the same db', async () => {
+    const device = service.registerDevice('sync-cross-device', 'Cross Writer Device', context);
+    const bulk = new BulkImportService(db);
+    const [pushResult, importResult] = await Promise.all([
+      service.push({
+        deviceId: device.deviceId,
+        deviceToken: device.token,
+        changes: [{
+          tableName: 'Patient',
+          recordId: 'push-cross-writer',
+          operation: 'INSERT',
+          updatedAt: '2026-08-09T10:00:00.000Z',
+          data: {
+            code: 'SYNC-CROSS-WRITER',
+            name: 'Cross Writer',
+            gender: 'UNKNOWN',
+            phone: '13600000003',
+            source: 'OTHER',
+            active: true,
+          },
+        }],
+      }, context),
+      bulk.importRows('patients', [{
+        code: 'BULK-CROSS-WRITER',
+        name: 'Bulk Cross Writer',
+        gender: 'UNKNOWN',
+        phone: '13600000004',
+        source: 'OTHER',
+        active: true,
+      }], context, 10),
+    ]);
+
+    expect(pushResult.accepted).toBe(1);
+    expect(pushResult.failed).toBe(0);
+    expect(importResult.imported).toBe(1);
+    expect(importResult.failed).toBe(0);
+    const count = db.prepare(
+      `SELECT COUNT(*) AS count FROM Patient
+       WHERE id = 'push-cross-writer' OR code = 'BULK-CROSS-WRITER'`,
     ).get() as { count: number };
     expect(count.count).toBe(2);
   });
@@ -150,5 +195,46 @@ describe('sync push concurrency', () => {
     expect(validRow).toBeDefined();
     const invalidRow = db.prepare('SELECT id FROM Patient WHERE id = ? AND deletedAt IS NULL').get('push-invalid-row');
     expect(invalidRow).toBeUndefined();
+  });
+
+  it('rejects malformed device credentials with validation errors', async () => {
+    const badPayload = (overrides: Record<string, unknown>) =>
+      ({ deviceId: 'x', deviceToken: 'y', changes: [], ...overrides }) as unknown as Parameters<typeof service.push>[0];
+    await expect(service.push(badPayload({ deviceId: {} }), context)).rejects.toThrow(ValidationError);
+    await expect(service.push(badPayload({ deviceToken: {} }), context)).rejects.toThrow(ValidationError);
+    await expect(service.push(badPayload({ deviceId: '', deviceToken: '' }), context)).rejects.toThrow(ValidationError);
+  });
+
+  it('rolls back business writes when SyncChange recording fails', async () => {
+    const device = service.registerDevice('sync-syncchange-fail', 'SyncChange Fail Device', context);
+    db.exec(`CREATE TRIGGER IF NOT EXISTS fail_syncchange_insert
+             BEFORE INSERT ON SyncChange
+             BEGIN SELECT RAISE(ABORT, 'syncchange down'); END;`);
+    try {
+      const result = await service.push({
+        deviceId: device.deviceId,
+        deviceToken: device.token,
+        changes: [{
+          tableName: 'Patient',
+          recordId: 'syncchange-rollback',
+          operation: 'INSERT',
+          updatedAt: '2026-08-09T10:00:00.000Z',
+          data: {
+            code: 'SYNC-CHANGE-ROLLBACK',
+            name: 'Rollback Patient',
+            gender: 'UNKNOWN',
+            phone: '13600000009',
+            source: 'OTHER',
+            active: true,
+          },
+        }],
+      }, context);
+      expect(result.accepted).toBe(0);
+      expect(result.failed).toBe(1);
+      const row = db.prepare('SELECT id FROM Patient WHERE id = ? AND deletedAt IS NULL').get('syncchange-rollback');
+      expect(row).toBeUndefined();
+    } finally {
+      db.exec('DROP TRIGGER IF EXISTS fail_syncchange_insert');
+    }
   });
 });

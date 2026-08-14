@@ -47,21 +47,34 @@ export function importLegacyDatabase(
     backupCreated = `${targetPath}.pre-import-${Date.now()}`;
     backupSqliteFile(targetPath, backupCreated, logger);
   }
-  removeSqliteSidecars(targetPath);
-  if (fs.existsSync(targetPath)) fs.rmSync(targetPath, { force: true });
-  copySqliteFileReadonly(sourcePath, targetPath);
-
-  // 只读连接的 integrity_check 会跳过 CHECK 约束（实测 better-sqlite3），
-  // 因此目标库必须用读写连接复查，避免脏旧库被放行后启动阶段才崩溃。
-  const targetDb = new Database(targetPath);
+  // 先复制到临时文件并完整校验，再原子替换目标：复制/校验失败时旧库保持不变，
+  // 不会留下“半成品 v2.sqlite”导致下次启动误入恢复模式。
+  const tempPath = `${targetPath}.import-tmp-${Date.now()}`;
   try {
-    const integrity = targetDb.pragma('integrity_check') as Array<{ integrity_check: string }>;
-    if (integrity.length !== 1 || integrity[0].integrity_check !== 'ok') {
-      throw new Error('imported database integrity check failed');
+    copySqliteFileReadonly(sourcePath, tempPath);
+    // 只读连接的 integrity_check 会跳过 CHECK 约束（实测 better-sqlite3），
+    // 因此临时目标必须用读写连接复查，避免脏旧库被放行后启动阶段才崩溃。
+    const tempDb = new Database(tempPath);
+    try {
+      const integrity = tempDb.pragma('integrity_check') as Array<{ integrity_check: string }>;
+      if (integrity.length !== 1 || integrity[0].integrity_check !== 'ok') {
+        throw new Error('imported database integrity check failed');
+      }
+    } finally {
+      tempDb.close();
+      removeSqliteSidecars(tempPath);
     }
-  } finally {
-    targetDb.close();
     removeSqliteSidecars(targetPath);
+    if (fs.existsSync(targetPath)) fs.rmSync(targetPath, { force: true });
+    fs.renameSync(tempPath, targetPath);
+  } finally {
+    if (fs.existsSync(tempPath)) {
+      try {
+        fs.rmSync(tempPath, { force: true });
+      } catch {
+        // best effort: 保留原始校验/复制错误
+      }
+    }
   }
 
   logger?.info('legacy database imported', { action: 'legacy-import', target: targetPath, backupCreated });

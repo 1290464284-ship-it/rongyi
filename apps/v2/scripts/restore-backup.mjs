@@ -13,18 +13,49 @@ function backupKey() {
   return createHash('sha256').update(key).digest();
 }
 
-function decryptFile(sourcePath, targetPath) {
-  const data = fs.readFileSync(sourcePath);
-  if (data.length < BACKUP_MAGIC.length + 12 + 16) throw new Error('Encrypted backup file is too short');
-  if (!data.subarray(0, BACKUP_MAGIC.length).equals(BACKUP_MAGIC)) {
-    throw new Error('Encrypted backup header is invalid');
+function readFullySync(fd, buffer, position) {
+  let offset = 0;
+  while (offset < buffer.length) {
+    const read = fs.readSync(fd, buffer, offset, buffer.length - offset, position + offset);
+    if (read <= 0) throw new Error('Encrypted backup file is truncated');
+    offset += read;
   }
-  const iv = data.subarray(BACKUP_MAGIC.length, BACKUP_MAGIC.length + 12);
-  const authTag = data.subarray(data.length - 16);
-  const encrypted = data.subarray(BACKUP_MAGIC.length + 12, data.length - 16);
-  const decipher = createDecipheriv('aes-256-gcm', backupKey(), iv);
-  decipher.setAuthTag(authTag);
-  fs.writeFileSync(targetPath, Buffer.concat([decipher.update(encrypted), decipher.final()]));
+}
+
+function decryptFile(sourcePath, targetPath) {
+  const fdIn = fs.openSync(sourcePath, 'r');
+  const fdOut = fs.openSync(targetPath, 'w', 0o600);
+  try {
+    const header = Buffer.alloc(BACKUP_MAGIC.length + 12);
+    readFullySync(fdIn, header, 0);
+    if (!header.subarray(0, BACKUP_MAGIC.length).equals(BACKUP_MAGIC)) {
+      throw new Error('Encrypted backup header is invalid');
+    }
+    const stat = fs.fstatSync(fdIn);
+    if (stat.size < header.length + 16) throw new Error('Encrypted backup file is too short');
+    const iv = header.subarray(BACKUP_MAGIC.length);
+    const authTag = Buffer.alloc(16);
+    readFullySync(fdIn, authTag, stat.size - 16);
+    const decipher = createDecipheriv('aes-256-gcm', backupKey(), iv);
+    decipher.setAuthTag(authTag);
+    const totalEncrypted = stat.size - header.length - 16;
+    const chunk = Buffer.alloc(1024 * 1024);
+    let position = header.length;
+    let remaining = totalEncrypted;
+    while (remaining > 0) {
+      const toRead = Math.min(chunk.length, remaining);
+      const read = fs.readSync(fdIn, chunk, 0, toRead, position);
+      if (read <= 0) throw new Error('Encrypted backup file is truncated');
+      const decrypted = decipher.update(chunk.subarray(0, read));
+      if (decrypted.length > 0) fs.writeSync(fdOut, decrypted);
+      position += read;
+      remaining -= read;
+    }
+    fs.writeSync(fdOut, decipher.final());
+  } finally {
+    fs.closeSync(fdIn);
+    fs.closeSync(fdOut);
+  }
 }
 
 const [backupArg, targetArg] = process.argv.slice(2);
@@ -41,31 +72,33 @@ if (!fs.existsSync(backupPath)) {
 }
 
 const tempPath = path.join(path.dirname(targetPath), `.restore-${Date.now()}.sqlite`);
-fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-if (backupPath.endsWith('.enc')) {
-  decryptFile(backupPath, tempPath);
-} else {
-  fs.copyFileSync(backupPath, tempPath);
-}
-
-const db = new Database(tempPath, { readonly: true });
-let integrityOk = false;
 try {
-  const integrity = db.pragma('integrity_check');
-  integrityOk = Array.isArray(integrity) && integrity.length === 1 && integrity[0].integrity_check === 'ok';
-} finally {
-  db.close();
-}
-if (!integrityOk) {
-  fs.unlinkSync(tempPath);
-  throw new Error('Restore backup failed integrity check');
-}
+  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+  if (backupPath.endsWith('.enc')) {
+    decryptFile(backupPath, tempPath);
+  } else {
+    fs.copyFileSync(backupPath, tempPath);
+  }
 
-if (fs.existsSync(targetPath)) {
-  const backupTarget = `${targetPath}.pre-restore-${Date.now()}`;
-  fs.copyFileSync(targetPath, backupTarget);
-  console.log(`Previous database preserved at ${backupTarget}`);
+  const db = new Database(tempPath, { readonly: true });
+  let integrityOk = false;
+  try {
+    const integrity = db.pragma('integrity_check');
+    integrityOk = Array.isArray(integrity) && integrity.length === 1 && integrity[0].integrity_check === 'ok';
+  } finally {
+    db.close();
+  }
+  if (!integrityOk) {
+    throw new Error('Restore backup failed integrity check');
+  }
+
+  if (fs.existsSync(targetPath)) {
+    const backupTarget = `${targetPath}.pre-restore-${Date.now()}`;
+    fs.copyFileSync(targetPath, backupTarget);
+    console.log(`Previous database preserved at ${backupTarget}`);
+  }
+  fs.copyFileSync(tempPath, targetPath);
+  console.log(`Restored ${backupPath} -> ${targetPath}`);
+} finally {
+  fs.rmSync(tempPath, { force: true });
 }
-fs.copyFileSync(tempPath, targetPath);
-fs.unlinkSync(tempPath);
-console.log(`Restored ${backupPath} -> ${targetPath}`);

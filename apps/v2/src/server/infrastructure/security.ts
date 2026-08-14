@@ -19,6 +19,26 @@ const SENSITIVE_FIELDS = new Set([
   'creditCard',
 ]);
 
+/** 审计日志专用脱敏集合：额外覆盖业务 PII（响应里医生需要，审计里不应明文留存）。 */
+const AUDIT_SENSITIVE_FIELDS = new Set([
+  ...SENSITIVE_FIELDS,
+  'phone',
+  'phoneNumber',
+  'tempPatientPhone',
+  'email',
+  'idCard',
+  'cardNo',
+  'wechatId',
+  'birthDate',
+  'address',
+  'allergies',
+  'medicalHistory',
+  'medicationHistory',
+  'systemicDiseases',
+  'occupation',
+  'bankAccount',
+]);
+
 // Business PII (phone/email/idCard/cardNo) is intentionally not masked here:
 // authorized clinic staff need these values in lists, edit forms and
 // duplicate checks. Masking them to null wiped phone numbers on edit.
@@ -81,26 +101,93 @@ const PROTECTED_WRITE_FIELDS = new Set([
  */
 const RESOURCE_PROTECTED_WRITE_FIELDS: Record<string, ReadonlySet<string>> = {
   wechatMessages: new Set(['status', 'sentAt', 'result']),
+  purchaseOrders: new Set(['status', 'reviewStatus', 'receivedAt', 'approvedById', 'approvedAt', 'rejectionReason', 'receivedById', 'totalAmount']),
+  purchaseOrderItems: new Set(['subtotal', 'price', 'quantity']),
+  processingOrderItems: new Set(['subtotal', 'unitPrice', 'quantity']),
+  processingOrders: new Set(['status', 'sentAt', 'receivedAt', 'deliveredAt', 'settleStatus', 'settledAmount', 'settledAt', 'settlementNote', 'settlementRef']),
 };
 
+/**
+ * 状态机资源：通用 CRUD（resources router）不得直接写状态字段，否则可绕过
+ * appointment/clinical-workflow 的转移校验（如直接 PATCH 成 COMPLETED 或创建
+ * 终态记录）。sync/bulk-import 仍走各自校验与幂等路径，不受此集合约束。
+ */
+export const STATE_MACHINE_PROTECTED_WRITE_FIELDS: Record<string, ReadonlySet<string>> = {
+  appointments: new Set(['status']),
+  visits: new Set(['status']),
+  treatments: new Set(['status']),
+  firstExams: new Set(['status']),
+  prescriptions: new Set(['status', 'processedAt', 'chargeId', 'dispenseId']),
+  registrations: new Set(['status']),
+  followUps: new Set(['status', 'executionStatus']),
+  medicalRecords: new Set([
+    'status',
+    'isLocked',
+    'lockedAt',
+    'lockedBy',
+    'editRequestStatus',
+    'editRequestReason',
+    'editRequestedById',
+    'editRequestedAt',
+    'proposedContentJson',
+    'reviewedById',
+    'reviewedAt',
+    'reviewNote',
+  ]),
+  leaveRequests: new Set(['status', 'reviewerId', 'reviewedAt']),
+  businessAlerts: new Set(['status', 'acknowledged', 'acknowledgedBy', 'acknowledgedAt']),
+};
+
+export const STATE_MACHINE_DEFAULT_STATUS: Record<string, string> = {
+  appointments: 'BOOKED',
+  visits: 'IN_PROGRESS',
+  treatments: 'PLANNED',
+  firstExams: 'DRAFT',
+  prescriptions: 'DRAFT',
+  registrations: 'REGISTERED',
+  followUps: 'PENDING',
+  medicalRecords: 'DRAFT',
+  leaveRequests: 'PENDING',
+  businessAlerts: 'OPEN',
+};
+
+export function applyStateMachineDefaults(resourceName: string, payload: Record<string, unknown>): Record<string, unknown> {
+  const defaultStatus = STATE_MACHINE_DEFAULT_STATUS[resourceName];
+  if (defaultStatus && payload.status === undefined) payload.status = defaultStatus;
+  // followUps.executionStatus 与 status 一样由服务端状态机管理；通用创建/Sync/导入
+  // 缺省时必须显式注入，避免依赖列默认值（新表列默认值可能为空）。
+  if (resourceName === 'followUps' && payload.executionStatus === undefined) payload.executionStatus = 'PENDING';
+  return payload;
+}
+
 /** 递归掩码：数组逐项、对象逐键；深度 >5 时截断为占位值，避免深层嵌套泄露敏感键。 */
-export function maskSensitiveFields<T>(row: T, depth = 0): T {
+function maskWith<T>(row: T, sensitive: ReadonlySet<string>, depth = 0): T {
   if (depth > 5) return '[MaxDepth]' as unknown as T;
-  if (Array.isArray(row)) return row.map((item) => maskSensitiveFields(item, depth + 1)) as unknown as T;
+  if (Array.isArray(row)) return row.map((item) => maskWith(item, sensitive, depth + 1)) as unknown as T;
   if (row && typeof row === 'object') {
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(row as Record<string, unknown>)) {
-      result[key] = SENSITIVE_FIELDS.has(key) ? null : maskSensitiveFields(value, depth + 1);
+      result[key] = sensitive.has(key) ? null : maskWith(value, sensitive, depth + 1);
     }
     return result as unknown as T;
   }
   return row;
 }
 
+export function maskSensitiveFields<T>(row: T, depth = 0): T {
+  return maskWith(row, SENSITIVE_FIELDS, depth);
+}
+
+/** 审计入账专用掩码：PII 也置空，避免 OperationLog 长期明文留存手机/证件号。 */
+export function maskAuditFields<T>(row: T, depth = 0): T {
+  return maskWith(row, AUDIT_SENSITIVE_FIELDS, depth);
+}
+
 export function stripProtectedWriteFields(
   payload: Record<string, unknown>,
   exemptFields?: ReadonlySet<string>,
   resourceName?: string,
+  options?: { protectStateMachine?: boolean },
 ): Record<string, unknown> {
   const result = { ...payload };
   for (const field of PROTECTED_WRITE_FIELDS) {
@@ -110,6 +197,15 @@ export function stripProtectedWriteFields(
   const resourceProtected = resourceName ? RESOURCE_PROTECTED_WRITE_FIELDS[resourceName] : undefined;
   if (resourceProtected) {
     for (const field of resourceProtected) {
+      if (exemptFields?.has(field)) continue;
+      delete result[field];
+    }
+  }
+  const stateMachineProtected = options?.protectStateMachine && resourceName
+    ? STATE_MACHINE_PROTECTED_WRITE_FIELDS[resourceName]
+    : undefined;
+  if (stateMachineProtected) {
+    for (const field of stateMachineProtected) {
       if (exemptFields?.has(field)) continue;
       delete result[field];
     }

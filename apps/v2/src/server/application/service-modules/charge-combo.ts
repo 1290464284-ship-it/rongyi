@@ -31,7 +31,8 @@ export class ChargeComboService {
        WHERE deletedAt IS NULL AND active = 1 AND (type = 'PUBLIC' OR ownerId = ?)${tenantAnd(context.clinicId)}
        ORDER BY createdAt DESC`,
     ).all(context.userId, ...tenantParams(context.clinicId)) as Array<Record<string, unknown>>;
-    return combos.map((combo) => ({ ...combo, items: this.itemsOf(String(combo.id)) }));
+    const itemsByCombo = this.itemsByComboIds(combos.map((combo) => String(combo.id)));
+    return combos.map((combo) => ({ ...combo, items: itemsByCombo.get(String(combo.id)) ?? [] }));
   }
 
   /** 单个组合及其明细；不存在或他人私有组合均按 NotFoundError 处理。 */
@@ -77,6 +78,7 @@ export class ChargeComboService {
         price: Number(item.price),
         quantity: Number(item.quantity),
         costType: item.costType ?? undefined,
+        catalogId: item.catalogId ?? undefined,
       })),
       remark: `收费组合 ${String(combo.name)}`,
     }, context);
@@ -90,5 +92,23 @@ export class ChargeComboService {
        WHERE comboId = ? AND deletedAt IS NULL
        ORDER BY createdAt`,
     ).all(comboId) as ChargeComboItemRow[];
+  }
+
+  private itemsByComboIds(comboIds: string[]): Map<string, ChargeComboItemRow[]> {
+    const groups = new Map<string, ChargeComboItemRow[]>();
+    if (comboIds.length === 0) return groups;
+    const placeholders = comboIds.map(() => '?').join(',');
+    const rows = this.db.prepare(
+      `SELECT id, comboId, catalogId, name, category, price, quantity, costType
+       FROM ChargeComboItem
+       WHERE comboId IN (${placeholders}) AND deletedAt IS NULL
+       ORDER BY createdAt`,
+    ).all(...comboIds) as ChargeComboItemRow[];
+    for (const row of rows) {
+      const list = groups.get(row.comboId) ?? [];
+      list.push(row);
+      groups.set(row.comboId, list);
+    }
+    return groups;
   }
 }

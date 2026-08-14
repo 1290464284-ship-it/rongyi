@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createApp } from './app';
 import { createDatabase, seedDatabase } from '../infrastructure/database';
@@ -108,7 +108,7 @@ describe('HTTP app edge error handling', () => {
   let token: string;
   let refreshToken: string;
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-app-edge-'));
     process.env.V2_CORS_ORIGIN = 'https://trusted.example';
     db = createDatabase(dataDir);
@@ -130,7 +130,7 @@ describe('HTTP app edge error handling', () => {
     fs.writeFileSync(backupDir, 'not a directory');
   });
 
-  afterAll(() => {
+  afterEach(() => {
     delete process.env.V2_CORS_ORIGIN;
     if (db.open) db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
@@ -161,6 +161,133 @@ describe('HTTP app edge error handling', () => {
       .expect(404);
   });
 
+  it('prevents generic resource writes from bypassing state machines', async () => {
+    const auth = (req: request.Test): request.Test => req.set('Authorization', `Bearer ${token}`);
+    const created = await auth(request(app).post('/api/v2/resources/appointments')).send({
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      startTime: '2026-08-10T02:00:00.000Z',
+      endTime: '2026-08-10T03:00:00.000Z',
+      type: 'REGULAR',
+      status: 'COMPLETED',
+    }).expect(201);
+    const appointmentId = created.body.data.id as string;
+    expect((db.prepare('SELECT status FROM Appointment WHERE id = ?').get(appointmentId) as { status: string }).status).toBe('BOOKED');
+    await auth(request(app).patch(`/api/v2/resources/appointments/${appointmentId}`))
+      .send({ status: 'COMPLETED' })
+      .expect(200);
+    expect((db.prepare('SELECT status FROM Appointment WHERE id = ?').get(appointmentId) as { status: string }).status).toBe('BOOKED');
+
+    const rx = await auth(request(app).post('/api/v2/resources/prescriptions')).send({
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      status: 'PROCESSED',
+      chargeId: 'fake-charge',
+    }).expect(201);
+    const rxRow = db.prepare('SELECT status, chargeId FROM Prescription WHERE id = ?').get(rx.body.data.id as string) as {
+      status: string;
+      chargeId: string | null;
+    };
+    expect(rxRow.status).toBe('DRAFT');
+    expect(rxRow.chargeId).toBeNull();
+
+    const registration = await auth(request(app).post('/api/v2/resources/registrations')).send({
+      patientId: 'patient-demo-001',
+      type: 'REGULAR',
+      registeredAt: new Date().toISOString(),
+      status: 'COMPLETED',
+    }).expect(201);
+    expect((db.prepare('SELECT status FROM Registration WHERE id = ?').get(registration.body.data.id as string) as { status: string }).status)
+      .toBe('REGISTERED');
+
+    const followUp = await auth(request(app).post('/api/v2/resources/followUps')).send({
+      patientId: 'patient-demo-001',
+      planDate: '2026-08-05',
+      content: 'state machine reset',
+      status: 'COMPLETED',
+      executionStatus: 'DONE',
+    }).expect(201);
+    const followUpRow = db.prepare('SELECT status, executionStatus FROM FollowUp WHERE id = ?')
+      .get(followUp.body.data.id as string) as { status: string; executionStatus: string };
+    expect(followUpRow.status).toBe('PENDING');
+    expect(followUpRow.executionStatus).toBe('PENDING');
+  });
+
+  it('rejects non-boolean medical record lock payloads', async () => {
+    const auth = (req: request.Test): request.Test => req.set('Authorization', `Bearer ${token}`);
+    const created = await auth(request(app).post('/api/v2/resources/medicalRecords')).send({
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      status: 'DRAFT',
+    }).expect(201);
+    const response = await auth(request(app).patch(`/api/v2/medical-records/${created.body.data.id as string}/lock`))
+      .send({ locked: 'yes' })
+      .expect(400);
+    expect(response.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('protects medical records, leave requests, and business alerts from generic state writes', async () => {
+    const auth = (req: request.Test): request.Test => req.set('Authorization', `Bearer ${token}`);
+    const medical = await auth(request(app).post('/api/v2/resources/medicalRecords')).send({
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      status: 'DRAFT',
+    }).expect(201);
+    const medicalId = medical.body.data.id as string;
+    const nowIso = new Date().toISOString();
+    db.prepare(
+      `UPDATE MedicalRecord SET isLocked = 1, editRequestStatus = 'NONE', updatedAt = ? WHERE id = ?`,
+    ).run(nowIso, medicalId);
+    await auth(request(app).patch(`/api/v2/resources/medicalRecords/${medicalId}`))
+      .send({ isLocked: false, editRequestStatus: 'APPROVED' })
+      .expect(200);
+    const lockedRow = db.prepare('SELECT isLocked, editRequestStatus FROM MedicalRecord WHERE id = ?').get(medicalId) as {
+      isLocked: number; editRequestStatus: string;
+    };
+    expect(lockedRow.isLocked).toBe(1);
+    expect(lockedRow.editRequestStatus).toBe('NONE');
+    await auth(request(app).delete(`/api/v2/resources/medicalRecords/${medicalId}`)).expect(403);
+
+    const leave = await auth(request(app).post('/api/v2/resources/leaveRequests')).send({
+      userId: 'user-admin-001',
+      startDate: '2026-08-20',
+      endDate: '2026-08-21',
+      type: 'ANNUAL',
+      reason: 'generic create',
+      status: 'APPROVED',
+    }).expect(201);
+    expect((db.prepare('SELECT status FROM LeaveRequest WHERE id = ?').get(leave.body.data.id as string) as { status: string }).status)
+      .toBe('PENDING');
+
+    db.prepare(
+      `INSERT INTO BusinessAlert (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         alertType, level, severity, title, message, source, status, acknowledged
+       ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, 'OPEN', 0)`,
+    ).run('alert-generic-guard', 'clinic-v2-001', nowIso, nowIso, 'BATCH_EXPIRY', 'WARNING', 'WARN', 'A', 'M', 'TEST');
+    await auth(request(app).patch('/api/v2/resources/businessAlerts/alert-generic-guard'))
+      .send({ status: 'RESOLVED', acknowledged: true })
+      .expect(200);
+    const alertRow = db.prepare('SELECT status, acknowledged FROM BusinessAlert WHERE id = ?').get('alert-generic-guard') as {
+      status: string; acknowledged: number;
+    };
+    expect(alertRow.status).toBe('OPEN');
+    expect(alertRow.acknowledged).toBe(0);
+  });
+
+  it('replays bulk import with the same requestId without duplicate writes', async () => {
+    const auth = (req: request.Test): request.Test => req.set('Authorization', `Bearer ${token}`);
+    const payload = {
+      requestId: 'bulk-replay-1',
+      rows: [{ code: 'BULK-REPLAY', name: 'Bulk Replay', gender: 'UNKNOWN', phone: '13500000009', source: 'OTHER' }],
+    };
+    const first = await auth(request(app).post('/api/v2/bulk-import/patients')).send(payload).expect(200);
+    const second = await auth(request(app).post('/api/v2/bulk-import/patients')).send(payload).expect(200);
+    expect(second.body.data.imported).toBe(first.body.data.imported);
+    const count = db.prepare('SELECT COUNT(*) AS c FROM Patient WHERE code = ?').get('BULK-REPLAY') as { c: number };
+    expect(Number(count.c)).toBe(1);
+  });
+
   it('short search terms and unknown routes return safe local responses', async () => {
     const short = await request(app)
       .get('/api/v2/search?q=a')
@@ -173,10 +300,10 @@ describe('HTTP app edge error handling', () => {
       .set('Authorization', `Bearer ${token}`)
       .expect(403);
     expect(missing.body.code).toBe('FORBIDDEN');
-    db.close();
   });
 
   it('routes closed-database and invalid-input errors through the app error middleware', async () => {
+    db.close();
     for (const routeCase of errorCases) {
       let req = request(app)[routeCase.method](routeCase.path);
       if (routeCase.body) req = req.send(routeCase.body);
@@ -186,6 +313,7 @@ describe('HTTP app edge error handling', () => {
   }, 10_000);
 
   it('routes logout errors through the app error middleware', async () => {
+    db.close();
     const response = await request(app)
       .post('/api/v2/auth/logout')
       .set('Authorization', `Bearer ${token}`)

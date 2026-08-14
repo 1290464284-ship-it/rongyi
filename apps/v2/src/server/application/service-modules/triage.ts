@@ -14,6 +14,7 @@ import { ConflictError, NotFoundError, ValidationError } from '../../infrastruct
 import { trackResourceWrite } from '../../infrastructure/write-tracking';
 import type { AppContext } from '../../../domain/contracts';
 import { assertChairExists, assertDoctorExists } from './common';
+import { assertValidDateTimeValue } from '../../http/validation';
 
 export interface TriageInput {
   doctorId?: string;
@@ -152,16 +153,10 @@ export class TriageService {
     if (input.startTime === undefined || input.startTime === null || input.startTime === '') {
       throw new ValidationError('startTime 必填');
     }
-    if (Number.isNaN(new Date(input.startTime).getTime())) {
-      throw new ValidationError('startTime 必须是合法时间');
-    }
-    if (input.endTime !== undefined && Number.isNaN(new Date(input.endTime).getTime())) {
-      throw new ValidationError('endTime 必须是合法时间');
-    }
-    const startIso = new Date(input.startTime).toISOString();
-    const endIso = input.endTime === undefined
+    const startIso = assertValidDateTimeValue(input.startTime, 'startTime');
+    const endIso = input.endTime === undefined || input.endTime === null || input.endTime === ''
       ? new Date(String(appointment.endTime)).toISOString()
-      : new Date(input.endTime).toISOString();
+      : assertValidDateTimeValue(input.endTime, 'endTime');
     if (new Date(endIso).getTime() <= new Date(startIso).getTime()) {
       throw new ValidationError('endTime 必须晚于 startTime');
     }
@@ -197,10 +192,11 @@ export class TriageService {
         endIso,
         clinicId,
       );
-      this.db.prepare(
+      const updated = this.db.prepare(
         `UPDATE Appointment SET ${sets.join(', ')}
-         WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
+         WHERE id = ? AND status NOT IN ('CANCELLED', 'NO_SHOW') AND deletedAt IS NULL${tenantAnd(clinicId)}`,
       ).run(...params, appointmentId, ...tenantParams(clinicId));
+      if (updated.changes === 0) throw new ConflictError('已取消或未到的预约不能改期');
       // 预约改期统一维护同步与搜索索引。
       trackResourceWrite(this.db, { tableName: 'Appointment', recordId: appointmentId, operation: 'UPDATE', clinicId: clinicId ?? null });
     });

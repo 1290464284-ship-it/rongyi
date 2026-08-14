@@ -8,13 +8,14 @@ import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createApp, type AuditInput } from './app';
 import { createDatabase, seedDatabase } from '../infrastructure/database';
 import { runMigrations } from '../infrastructure/migrations';
 import { rebuildSearchIndex } from '../infrastructure/search-index';
 import { Logger } from '../infrastructure/logger';
+import { resourceRegistry } from '../../domain/resources';
 
 describe('HTTP app', () => {
   let dbPath: string;
@@ -25,7 +26,7 @@ describe('HTTP app', () => {
   let token: string;
   let deviceToken: string;
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-http-'));
     dbPath = path.join(dataDir, 'v2.sqlite');
     backupDir = path.join(dataDir, 'backups');
@@ -49,7 +50,7 @@ describe('HTTP app', () => {
     deviceToken = device.body.data.token;
   });
 
-  afterAll(() => {
+  afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -87,10 +88,13 @@ describe('HTTP app', () => {
     expect(response.headers['access-control-allow-origin']).toBeUndefined();
   });
 
-  it('rejects loopback origins on ports other than the API and Vite dev ports', async () => {
+  it('rejects loopback origins on arbitrary ports in development', async () => {
+    // 审计 P2-6 收紧：任意 loopback 端口不再放行（避免被攻破页面探测本机回环服务），
+    // 仅放行 API 端口与 Vite dev 端口。
     const response = await request(app)
       .get('/api/v2/health')
       .set('Origin', 'http://127.0.0.1:9999');
+    expect(response.status).toBeGreaterThanOrEqual(400);
     expect(response.headers['access-control-allow-origin']).toBeUndefined();
   });
 
@@ -106,6 +110,22 @@ describe('HTTP app', () => {
       .set('Origin', 'http://localhost:5180')
       .expect(200);
     expect(dev.headers['access-control-allow-origin']).toBe('http://localhost:5180');
+  });
+
+  it('allows a custom V2_WEB_DEV_PORT origin as a CORS origin in development', async () => {
+    // smoke:all 随机 Web 端口场景：显式配置的 V2_WEB_DEV_PORT 必须进入开发白名单
+    const previous = process.env.V2_WEB_DEV_PORT;
+    process.env.V2_WEB_DEV_PORT = '35180';
+    try {
+      const dev = await request(app)
+        .get('/api/v2/health')
+        .set('Origin', 'http://localhost:35180')
+        .expect(200);
+      expect(dev.headers['access-control-allow-origin']).toBe('http://localhost:35180');
+    } finally {
+      if (previous === undefined) delete process.env.V2_WEB_DEV_PORT;
+      else process.env.V2_WEB_DEV_PORT = previous;
+    }
   });
 
   it('uploads and serves allowed files', async () => {
@@ -301,6 +321,15 @@ describe('HTTP app', () => {
       .expect(401);
 
     // 跨诊所无法签发（签发端点按租户过滤）
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+       VALUES (?, NULL, ?, ?, NULL, 'V2-2', 'Clinic Two', 1)`,
+    ).run('clinic-v2-002', now, now);
+    db.prepare(
+      `INSERT INTO UserClinic (userId, clinicId, role, createdAt, updatedAt, deletedAt)
+       VALUES (?, ?, 'BOSS', ?, ?, NULL)`,
+    ).run('user-admin-001', 'clinic-v2-002', now, now);
     const switched = await request(app)
       .post('/api/v2/auth/switch-clinic')
       .set('Authorization', `Bearer ${token}`)
@@ -495,7 +524,7 @@ describe('HTTP app', () => {
     await request(app)
       .post('/api/v2/processing-orders')
       .set('Authorization', `Bearer ${token}`)
-      .expect(404);
+      .expect(400);
   });
 
   it('denies sensitive routes to low-privilege roles', async () => {
@@ -755,6 +784,38 @@ describe('HTTP app', () => {
     expect(row.statusCode).toBe('400');
   });
 
+  it('masks business PII and caps audit detail for generic resource writes', async () => {
+    const before = (db.prepare('SELECT COUNT(*) AS c FROM OperationLog').get() as { c: number }).c;
+    await request(app)
+      .post('/api/v2/resources/patients')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        code: 'AUDIT-MASK-001',
+        name: 'Audit Mask',
+        gender: 'UNKNOWN',
+        phone: '13912345678',
+        idCard: '110101199001011234',
+        source: 'OTHER',
+        remark: 'x'.repeat(5000),
+      })
+      .expect(201);
+    const after = (db.prepare('SELECT COUNT(*) AS c FROM OperationLog').get() as { c: number }).c;
+    expect(after).toBe(before + 1);
+    const row = db.prepare(
+      'SELECT detail FROM OperationLog ORDER BY createdAt DESC, rowid DESC LIMIT 1',
+    ).get() as { detail: string | null };
+    expect(String(row.detail)).not.toContain('13912345678');
+    expect(String(row.detail)).not.toContain('110101199001011234');
+    expect(String(row.detail).length).toBeLessThanOrEqual(4000);
+    const parsed = JSON.parse(String(row.detail)) as { body: Record<string, unknown> };
+    if (parsed.body.truncated === true) {
+      expect(parsed.body.keys).toBeGreaterThan(0);
+    } else {
+      expect(parsed.body.phone).toBeNull();
+      expect(parsed.body.idCard).toBeNull();
+    }
+  });
+
   it('rejects malformed print query data with a validation error', async () => {
     const response = await request(app)
       .get('/api/v2/print?kind=report&data=%7B%22bad%22')
@@ -854,6 +915,27 @@ describe('HTTP app', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ approved: true })
       .expect(200);
+  });
+
+  it('rejects non-boolean HR leave approval payloads', async () => {
+    const leave = await request(app)
+      .post('/api/v2/resources/leaveRequests')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        userId: 'user-admin-001',
+        startDate: '2026-08-03',
+        endDate: '2026-08-04',
+        type: 'ANNUAL',
+        reason: 'strict boolean leave',
+        status: 'PENDING',
+      })
+      .expect(201);
+    const response = await request(app)
+      .patch(`/api/v2/hr/leaves/${leave.body.data.id}/approve`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ approved: 'yes' })
+      .expect(400);
+    expect(response.body.code).toBe('VALIDATION_ERROR');
   });
 
   it('returns resource metadata and creates a patient', async () => {
@@ -968,6 +1050,17 @@ describe('HTTP app', () => {
     const relogin = await request(app).post('/api/v2/auth/login').send({ username: 'admin', password: 'newpass123' }).expect(200);
     token = relogin.body.data.token;
     // 资源列表 search 已走 FTS；迁移 119 移除触发器后需显式重建索引（运行时插入的行不会自动入索引）。
+    await request(app).post('/api/v2/resources/patients')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        code: 'HTTP-AUTH-PATIENT',
+        name: 'HTTP Auth Patient',
+        gender: 'UNKNOWN',
+        phone: '13600000000',
+        source: 'OTHER',
+        active: true,
+      })
+      .expect(201);
     rebuildSearchIndex(db);
     const patients = await request(app).get('/api/v2/resources/patients?search=HTTP')
       .set('Authorization', `Bearer ${token}`)
@@ -1086,6 +1179,55 @@ describe('HTTP app', () => {
     }
   });
 
+  it('returns appointment rows without label joins when the resource has no label relations', async () => {
+    const localDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-http-nolabel-'));
+    const localDbPath = path.join(localDir, 'v2.sqlite');
+    const localDb = createDatabase(localDir, localDbPath);
+    seedDatabase(localDb);
+    runMigrations(localDb);
+    const originalGet = resourceRegistry.get.bind(resourceRegistry);
+    const spy = vi.spyOn(resourceRegistry, 'get').mockImplementation((name: string) => {
+      const definition = originalGet(name);
+      return name === 'appointments' && definition ? { ...definition, fields: [] } : definition;
+    });
+    try {
+      const localApp = createApp({
+        db: localDb,
+        dbPath: localDbPath,
+        backupDir: path.join(localDir, 'backups'),
+        logDir: localDir,
+        logger: new Logger({ logDir: localDir }),
+      });
+      const login = await request(localApp).post('/api/v2/auth/login')
+        .send({ username: 'admin', password: 'v2-test-seed-password' })
+        .expect(200);
+      const localToken = login.body.data.token as string;
+
+      const nowIso = new Date().toISOString();
+      localDb.prepare(
+        `INSERT INTO Appointment (
+           id, clinicId, createdAt, updatedAt, deletedAt,
+           patientId, doctorId, startTime, endTime, status, type
+         ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'user-admin-001', ?, ?, 'BOOKED', 'REGULAR')`,
+      ).run('appointment-by-date-nolabel', 'clinic-v2-001', nowIso, nowIso, '2026-08-05T02:00:00.000Z', '2026-08-05T03:00:00.000Z');
+
+      const hit = await request(localApp)
+        .get('/api/v2/appointments/by-date?date=2026-08-05')
+        .set('Authorization', `Bearer ${localToken}`)
+        .expect(200);
+      const item = hit.body.data.items.find(
+        (entry: { id: string }) => entry.id === 'appointment-by-date-nolabel',
+      ) as Record<string, unknown>;
+      expect(item).toBeDefined();
+      expect(item).not.toHaveProperty('patientIdLabel');
+      expect(item).not.toHaveProperty('doctorIdLabel');
+    } finally {
+      spy.mockRestore();
+      localDb.close();
+      fs.rmSync(localDir, { recursive: true, force: true });
+    }
+  });
+
   it('supports member cards, debt, purchase, processing, metrics, and replenishment', async () => {
     const card = await request(app).post('/api/v2/member-cards')
       .set('Authorization', `Bearer ${token}`)
@@ -1145,6 +1287,10 @@ describe('HTTP app', () => {
   });
 
   it('rotates refresh tokens, logs out, and records audit entries', async () => {
+    await request(app).patch('/api/v2/auth/password')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ oldPassword: 'v2-test-seed-password', newPassword: 'newpass123' })
+      .expect(200);
     const login = await request(app).post('/api/v2/auth/login').send({ username: 'admin', password: 'newpass123' }).expect(200);
     const refreshToken = login.body.data.refreshToken as string;
     const refreshed = await request(app).post('/api/v2/auth/refresh').send({ refreshToken }).expect(200);
@@ -1272,7 +1418,7 @@ describe('HTTP app', () => {
     const patientResult = search.body.data.find((item: { resource: string; id: string }) =>
       item.resource === 'patients' && item.id === 'patient-searchable');
     expect(patientResult).toBeDefined();
-    expect(patientResult.detail.phone).toBe('13900001111');
+    expect(patientResult.detail.phone).toBe('139****1111');
   });
 
   it('supports clinical workflows and system actions', async () => {
@@ -1499,7 +1645,7 @@ describe('HTTP app', () => {
   // 'production'（try/finally 恢复）；insertAuditStmt 在 createApp 时一次性
   // prepare，要模拟 flush 失败必须在 createApp 之前包装 db.prepare，故每个用例
   // 使用独立的临时 db + 独立 app，避免影响 beforeAll 的共享 app。
-  function wrapOperationLogInsertFailures(localDb: Database.Database, mode: 'once' | 'always'): () => number {
+  function wrapOperationLogInsertFailures(localDb: Database.Database, mode: 'once' | 'twice' | 'always'): () => number {
     let runCalls = 0;
     const originalPrepare = localDb.prepare.bind(localDb);
     localDb.prepare = ((source: string) => {
@@ -1508,7 +1654,7 @@ describe('HTTP app', () => {
         const originalRun = statement.run.bind(statement);
         statement.run = ((...args: unknown[]) => {
           runCalls += 1;
-          if (mode === 'always' || runCalls === 1) {
+          if (mode === 'always' || (mode === 'once' && runCalls === 1) || (mode === 'twice' && runCalls <= 2)) {
             throw new Error('simulated audit flush failure');
           }
           return originalRun(...args);
@@ -1519,7 +1665,7 @@ describe('HTTP app', () => {
     return () => runCalls;
   }
 
-  function createIsolatedAuditApp(failMode?: 'once' | 'always'): {
+  function createIsolatedAuditApp(failMode?: 'once' | 'twice' | 'always'): {
     app: ReturnType<typeof createApp>;
     db: Database.Database;
     dataDir: string;
@@ -1662,6 +1808,43 @@ describe('HTTP app', () => {
     }
   });
 
+  it('keeps a second failed flush while a retry is already scheduled', async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    vi.useFakeTimers();
+    let isolated: ReturnType<typeof createIsolatedAuditApp> | undefined;
+    try {
+      process.env.NODE_ENV = 'production';
+      isolated = createIsolatedAuditApp('twice');
+      const audit = isolated.app.locals.audit as (input: AuditInput) => void;
+      for (let i = 0; i < 50; i += 1) {
+        audit({ userId: 'u-audit-coalesce', action: `first-${i}`, statusCode: 200 });
+      }
+      for (let i = 0; i < 50; i += 1) {
+        audit({ userId: 'u-audit-coalesce', action: `second-${i}`, statusCode: 200 });
+      }
+      // 首批失败后重试在途，第二批立即 flush 再失败时并入队列；随后成功 flush 落库，
+      // 无丢弃、无重复。2 次失败 + 100 次成功插入 = 102 次 run。
+      expect(isolated.runCalls()).toBe(102);
+      const rows = isolated.db.prepare(
+        "SELECT action FROM OperationLog WHERE userId = 'u-audit-coalesce' ORDER BY rowid ASC",
+      ).all() as Array<{ action: string }>;
+      expect(rows).toHaveLength(100);
+      expect(rows.map((row) => row.action).slice(0, 50))
+        .toEqual(Array.from({ length: 50 }, (_, index) => `first-${index}`));
+      expect(rows.map((row) => row.action).slice(50))
+        .toEqual(Array.from({ length: 50 }, (_, index) => `second-${index}`));
+      await vi.advanceTimersByTimeAsync(10_000); // 在途重试定时器无残留，不再产生调用
+      expect(isolated.runCalls()).toBe(102);
+    } finally {
+      restoreNodeEnv(previousNodeEnv);
+      vi.useRealTimers();
+      if (isolated) {
+        isolated.db.close();
+        fs.rmSync(isolated.dataDir, { recursive: true, force: true });
+      }
+    }
+  });
+
   it('stops after one retry when the flush keeps failing (no infinite loop)', async () => {
     const previousNodeEnv = process.env.NODE_ENV;
     vi.useFakeTimers();
@@ -1689,5 +1872,32 @@ describe('HTTP app', () => {
         fs.rmSync(isolated.dataDir, { recursive: true, force: true });
       }
     }
+  });
+
+  it('validates print kinds and masks temp patient phones in by-date output', async () => {
+    await request(app).get('/api/v2/print?kind=pdf').set('Authorization', `Bearer ${token}`).expect(400);
+    await request(app).post('/api/v2/print').set('Authorization', `Bearer ${token}`).send({ kind: 'pdf' }).expect(400);
+    await request(app).post('/api/v2/print').set('Authorization', `Bearer ${token}`).send({ kind: 'report', data: 'not-an-object' }).expect(400);
+    await request(app).get('/api/v2/appointments/by-date?date=').set('Authorization', `Bearer ${token}`).expect(400);
+
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO Appointment (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, startTime, endTime, status, type, tempPatientPhone
+       ) VALUES ('appt-mask-http', 'clinic-v2-001', ?, ?, NULL,
+                 'patient-demo-001', 'user-admin-001',
+                 '2026-08-05T04:00:00.000Z', '2026-08-05T05:00:00.000Z',
+                 'BOOKED', 'REGULAR', '13800001111')`,
+    ).run(now, now);
+    const res = await request(app)
+      .get('/api/v2/appointments/by-date?date=2026-08-05')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const item = (res.body.data.items as Array<Record<string, unknown>>)
+      .find((row) => row.id === 'appt-mask-http');
+    expect(item).toBeDefined();
+    expect(String(item?.tempPatientPhone)).not.toBe('13800001111');
+    expect(String(item?.tempPatientPhone)).toContain('*');
   });
 });

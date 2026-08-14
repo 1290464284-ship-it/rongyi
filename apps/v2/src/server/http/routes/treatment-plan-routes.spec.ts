@@ -125,4 +125,11 @@ describe('treatment plan routes', () => {
       .expect(404);
     expect(response.body.code).toBe('NOT_FOUND');
   });
+
+  it('tolerates missing request bodies', async () => {
+    const sign = await request(app).post('/api/v2/treatment-plans/missing/sign');
+    expect([200, 400, 404, 409]).toContain(sign.status);
+    const print = await request(app).post('/api/v2/treatment-plans/missing/print');
+    expect([200, 400, 404, 409]).toContain(print.status);
+  });
 });

@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../../infrastructure/errors';
-import { withIdempotency } from '../../../infrastructure/idempotency';
+import { stableRequestBodyHash, withIdempotency } from '../../../infrastructure/idempotency';
+import { tenantAnd, tenantParams } from '../../../infrastructure/tenant';
 import { SqliteProcessingOrderRepository } from '../../../infrastructure/repositories/core.repositories';
 import type { AppContext } from '../../../../domain/contracts';
 import type { ProcessingOrderRepository } from '../../ports';
-import { assertPatientExists } from '../common';
+import { MAX_MONEY_CENTS, assertDoctorExists, assertPatientExists } from '../common';
 
 const PROCESSING_TRANSITIONS: Record<string, readonly string[]> = {
   DRAFT: ['SENT', 'CANCELLED'],
@@ -46,8 +47,16 @@ export class ProcessingOrderService {
       userId: context.userId,
       clinicId: context.clinicId,
       requestId: requestId ?? '',
+      requestBodyHash: stableRequestBodyHash(input),
     }, () => {
       assertPatientExists(this.db, input.patientId, context.clinicId);
+      if (input.doctorId) assertDoctorExists(this.db, input.doctorId, context.clinicId);
+      if (input.factoryId) {
+        const factory = this.db.prepare(
+          `SELECT id FROM ProcessingFactory WHERE id = ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
+        ).get(input.factoryId, ...tenantParams(context.clinicId));
+        if (!factory) throw new NotFoundError('Processing factory not found');
+      }
       if (!input.number?.trim()) throw new ValidationError('Processing order number is required');
       if (!Number.isSafeInteger(Number(input.totalFee)) || Number(input.totalFee) < 0) {
         throw new ValidationError('Processing order total fee must be non-negative');
@@ -64,7 +73,11 @@ export class ProcessingOrderService {
         if (!name || !Number.isSafeInteger(quantity) || quantity <= 0 || !Number.isSafeInteger(unitPrice) || unitPrice < 0) {
           throw new ValidationError('Each processing item requires a name, positive quantity, and non-negative unit price');
         }
-        const subtotal = Math.round(unitPrice * quantity);
+        const rawSubtotal = unitPrice * quantity;
+        if (!Number.isSafeInteger(rawSubtotal) || rawSubtotal > MAX_MONEY_CENTS) {
+          throw new ValidationError('Processing item subtotal exceeds the allowed amount');
+        }
+        const subtotal = Math.round(rawSubtotal);
         return {
           id: randomUUID(),
           clinicId: context.clinicId ?? null,
@@ -79,6 +92,10 @@ export class ProcessingOrderService {
           updatedAt: now,
         };
       });
+      const totalFee = Math.round(Number(input.totalFee));
+      if (totalFee > MAX_MONEY_CENTS) throw new ValidationError('Processing order total fee exceeds the allowed amount');
+      const itemTotal = items.reduce((sum, item) => sum + item.subtotal, 0);
+      if (itemTotal !== totalFee) throw new ValidationError('Processing order total fee must equal the sum of item subtotals');
       this.db.transaction(() => {
         this.processingOrderRepository.createOrder({
           id,
@@ -89,7 +106,7 @@ export class ProcessingOrderService {
           number: input.number.trim(),
           shade: input.shade ?? null,
           teethNumbers: Array.isArray(input.teethNumbers) ? input.teethNumbers : [],
-          totalFee: Math.round(Number(input.totalFee)),
+          totalFee,
           status: 'DRAFT',
           settleStatus: 'UNSETTLED',
           expectedAt: input.expectedAt ?? null,
@@ -109,7 +126,16 @@ export class ProcessingOrderService {
     if (!PROCESSING_TRANSITIONS[row.status]?.includes(status)) {
       throw new ConflictError(`Cannot transition processing order from ${row.status} to ${status}`);
     }
-    this.processingOrderRepository.updateStatus(id, status, context.now().toISOString(), context.clinicId);
+    const changes = this.processingOrderRepository.updateStatus(
+      id,
+      status,
+      context.now().toISOString(),
+      context.clinicId,
+      row.status,
+    );
+    if (changes === 0) {
+      throw new ConflictError(`Cannot transition processing order from ${row.status} to ${status}`);
+    }
     return { id, status };
   }
 }

@@ -99,7 +99,8 @@ const patientColumns: DataTableColumn<PatientRow>[] = [
   {
     key: 'preferredContact',
     label: '首选联系',
-    render: (row) => PREFERRED_CONTACT_LABELS[String(row.preferredContact ?? 'PHONE')] ?? String(row.preferredContact ?? 'PHONE'),
+    // 兜底仅在 preferredContact 为非空未知值时求值（空值时 `?? 'PHONE'` 恒命中标签表 PHONE），故兜底不再 `?? 'PHONE'`。
+    render: (row) => PREFERRED_CONTACT_LABELS[String(row.preferredContact ?? 'PHONE')] ?? String(row.preferredContact),
   },
   { key: 'birthDate', label: '出生日期' },
   {
@@ -126,6 +127,7 @@ export function PatientsPage() {
       queryKey={['patients']}
       endpoint="/resources/patients"
       pageSize={20}
+      cursorPagination
       initialSearch={urlSearch}
       initialForm={() => {
         editingIdRef.current = null;

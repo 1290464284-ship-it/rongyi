@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest, fetchAllPages } from '../lib/api';
@@ -25,6 +25,7 @@ export function PlanBillingDialog({
   const [totalFee, setTotalFee] = useState(Number(plan.totalFee ?? 0));
   const [busy, setBusy] = useState(false);
   const [billBusy, setBillBusy] = useState(false);
+  const submitLockRef = useRef(false);
 
   const itemsQuery = useQuery({
     queryKey: ['treatment-plan-items', plan.id],
@@ -47,6 +48,8 @@ export function PlanBillingDialog({
         return;
       }
     }
+    if (submitLockRef.current) return;
+    submitLockRef.current = true;
     setBusy(true);
     try {
       const result = await apiRequest<{ id: string; discountType: string; discountRate: number | null; totalFee: number }>(
@@ -62,6 +65,7 @@ export function PlanBillingDialog({
     } catch (error) {
       showToast(errorMessage(error, '保存折扣失败'), 'error');
     } finally {
+      submitLockRef.current = false;
       setBusy(false);
     }
   }
@@ -73,6 +77,8 @@ export function PlanBillingDialog({
       showToast('折扣率须在 0-100 之间', 'error');
       return;
     }
+    if (submitLockRef.current) return;
+    submitLockRef.current = true;
     setBusy(true);
     try {
       const result = await apiRequest<{ itemId: string; discountRate: number | null; planTotalFee: number }>(
@@ -88,19 +94,24 @@ export function PlanBillingDialog({
     } catch (error) {
       showToast(errorMessage(error, '保存明细折扣失败'), 'error');
     } finally {
+      submitLockRef.current = false;
       setBusy(false);
     }
   }
 
   async function bill(): Promise<void> {
     const selectedIds = items.filter((item) => selected[item.id]).map((item) => item.id);
+    if (submitLockRef.current) return;
+    submitLockRef.current = true;
     setBillBusy(true);
     try {
+      /* v8 ignore next -- 划价按钮在 0 选中时 disabled，{} 兜底不可达，防御冗余 */
+      const billBody = selectedIds.length > 0 ? { itemIds: selectedIds } : {};
       const result = await apiRequest<{ chargeId: string; number: string; totalAmount: number; itemCount: number; billedItemIds: string[] }>(
         `/treatment-plans/${plan.id}/bill`,
         {
           method: 'POST',
-          body: JSON.stringify(selectedIds.length > 0 ? { itemIds: selectedIds } : {}),
+          body: JSON.stringify(billBody),
         },
       );
       setTotalFee(Number(result.totalAmount));
@@ -110,6 +121,7 @@ export function PlanBillingDialog({
     } catch (error) {
       showToast(errorMessage(error, '划价失败'), 'error');
     } finally {
+      submitLockRef.current = false;
       setBillBusy(false);
     }
   }
@@ -147,7 +159,11 @@ export function PlanBillingDialog({
         </button>
       </div>
       <div className="modal-actions">
-        <button type="button" disabled={billBusy || items.length === 0} onClick={() => void bill()}>
+        <button
+          type="button"
+          disabled={billBusy || items.length === 0 || items.filter((item) => selected[item.id]).length === 0}
+          onClick={() => void bill()}
+        >
           {billBusy ? '划价中...' : '划价'}
         </button>
       </div>

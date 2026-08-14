@@ -277,6 +277,26 @@ describe('DispenseCreateForm', () => {
     expect(onCreated).toHaveBeenCalled();
   });
 
+  it('captures the dispense note in the create payload', async () => {
+    mockApi();
+    render(<DispenseCreateForm onCreated={vi.fn()} />, { wrapper });
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'patient-1' } });
+    fireEvent.change(screen.getByLabelText('单号'), { target: { value: 'DISP-105' } });
+    fireEvent.change(screen.getByLabelText('发药备注'), { target: { value: '加急发药' } });
+    fireEvent.change(screen.getByLabelText('物品'), { target: { value: 'item-1' } });
+    fireEvent.change(screen.getByLabelText('发药数量'), { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: '创建发药单' }));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/dispenses', expect.objectContaining({ method: 'POST' }));
+    });
+    const createCall = vi.mocked(apiRequest).mock.calls.find((entry) => entry[0] === '/dispenses');
+    expect(JSON.parse(String((createCall?.[1] as RequestInit)?.body))).toMatchObject({ note: '加急发药' });
+  });
+
   it('adds and removes detail rows', async () => {
     mockApi();
     render(<DispenseCreateForm onCreated={vi.fn()} />, { wrapper });
@@ -338,6 +358,66 @@ describe('DispenseCreateForm', () => {
     vi.mocked(apiRequest).mockImplementationOnce(() => Promise.reject(new Error('')));
     fireEvent.click(screen.getByRole('button', { name: '创建发药单' }));
     expect(await screen.findByText('创建发药单失败')).toBeDefined();
+  });
+
+  it('ignores a duplicate create submit while busy', async () => {
+    let resolvePost: ((value: unknown) => void) | undefined;
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = String(init?.method ?? 'GET').toUpperCase();
+      if (method === 'POST' && path === '/dispenses') {
+        return await new Promise((resolve) => { resolvePost = resolve; });
+      }
+      if (path.startsWith('/resources/patients?')) {
+        return { items: [{ id: 'patient-1', name: '李患者' }], total: 1, page: 1, pageSize: 100 };
+      }
+      if (path.startsWith('/resources/inventoryItems?')) {
+        return { items: [{ id: 'item-1', name: '麻药' }], total: 1, page: 1, pageSize: 100 };
+      }
+      return {};
+    });
+    const { container } = render(<DispenseCreateForm onCreated={vi.fn()} />, { wrapper });
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'patient-1' } });
+    fireEvent.change(screen.getByLabelText('单号'), { target: { value: 'DISP-104' } });
+    await waitFor(() => {
+      expect((screen.getByLabelText('物品') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('物品'), { target: { value: 'item-1' } });
+    fireEvent.change(screen.getByLabelText('发药数量'), { target: { value: '1' } });
+    const form = container.querySelector('form');
+    expect(form).not.toBeNull();
+    fireEvent.submit(form as HTMLFormElement);
+    fireEvent.submit(form as HTMLFormElement);
+
+    const postCalls = vi.mocked(apiRequest).mock.calls.filter(
+      ([path, options]) => path === '/dispenses' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'POST',
+    );
+    expect(postCalls).toHaveLength(1);
+    resolvePost?.({ id: 'disp-1' });
+    expect(await screen.findByText('发药单已创建')).toBeDefined();
+  });
+
+  it('treats items without a batchManaged flag as non-batch', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.startsWith('/resources/patients?')) {
+        return { items: [{ id: 'patient-1', name: '李患者' }], total: 1, page: 1, pageSize: 100 };
+      }
+      if (path.startsWith('/resources/inventoryItems?')) {
+        return { items: [{ id: 'item-1', name: '麻药' }], total: 1, page: 1, pageSize: 100 };
+      }
+      return {};
+    });
+    render(<DispenseCreateForm onCreated={vi.fn()} />, { wrapper });
+    await waitFor(() => {
+      expect((screen.getByLabelText('物品') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('物品'), { target: { value: 'item-1' } });
+    await waitFor(() => {
+      expect((screen.getByLabelText('物品') as HTMLSelectElement).value).toBe('item-1');
+    });
+    expect(screen.queryByLabelText('批次')).toBeNull();
   });
 });
 

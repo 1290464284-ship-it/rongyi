@@ -15,6 +15,7 @@ import type { Express } from 'express';
 import { wrapAsync } from '../middleware';
 import { ShiftTemplateService } from '../../application/service-modules/shift-template';
 import type { RouteDependencies } from './deps';
+import { parseBooleanStrict } from '../validation';
 
 export function registerShiftTemplateRoutes(app: Express, deps: RouteDependencies): void {
   const { db } = deps;
@@ -40,7 +41,7 @@ export function registerShiftTemplateRoutes(app: Express, deps: RouteDependencie
           ? undefined
           : (body.workDaysJson as string | number[]),
         color: body.color === undefined || body.color === null ? undefined : String(body.color),
-        active: body.active === undefined ? undefined : Boolean(body.active),
+        active: body.active === undefined ? undefined : parseBooleanStrict(body.active, 'active'),
       }, req.context!),
     });
   }));
@@ -55,7 +56,7 @@ export function registerShiftTemplateRoutes(app: Express, deps: RouteDependencie
       patch.workDaysJson = body.workDaysJson as string | number[];
     }
     if (body.color !== undefined) patch.color = body.color === null ? null : String(body.color);
-    if (body.active !== undefined) patch.active = Boolean(body.active);
+    if (body.active !== undefined) patch.active = parseBooleanStrict(body.active, 'active');
     res.json({
       success: true,
       data: service.update(String(req.params.id), patch, req.context!),

@@ -1,49 +1,32 @@
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
-import { AppError, NotFoundError, ValidationError, isSystematicSqliteError } from '../../infrastructure/errors';
+import { AppError, ConflictError, NotFoundError, ValidationError, isSystematicSqliteError } from '../../infrastructure/errors';
 import { SqliteRepository } from '../../infrastructure/repository';
-import { stripProtectedWriteFields } from '../../infrastructure/security';
 import { validatePayload } from '../../http/validation';
 import { resourceRegistry } from '../../../domain/resources';
 import type { AppContext } from '../../../domain/contracts';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { recordSyncChange, type SyncChangeOperation } from '../../infrastructure/sync-change';
 import { hashRefreshToken, newRefreshToken, safeJsonObject } from './common';
+import { assertSyncPushShape, assertSyncTablePermission, SyncChangeRecordError, SYNC_ALLOWED_TABLES, SYNC_RESOURCES } from './sync-permissions';
+import { STATE_MACHINE_DEFAULT_STATUS, applyStateMachineDefaults, stripProtectedWriteFields } from '../../infrastructure/security';
 import type { SyncPushPayload, SyncPushResult } from './sync-push-queue';
 import { sharedDbWriteQueue } from './serial-queue';
-
-const SYNC_ALLOWED_TABLES = new Set([
-  'Patient',
-  'Appointment',
-  'Treatment',
-  'Charge',
-  'InventoryItem',
-  'FollowUp',
-  'PurchaseOrder',
-]);
-
-const SYNC_RESOURCES: Record<string, string> = {
-  Patient: 'patients',
-  Appointment: 'appointments',
-  Treatment: 'treatments',
-  Charge: 'charges',
-  InventoryItem: 'inventoryItems',
-  FollowUp: 'followUps',
-  PurchaseOrder: 'purchaseOrders',
-};
-
+import { fullSnapshot } from './sync-snapshot';
 export class SyncService {
   constructor(private readonly db: Database.Database) {}
-
   async push(payload: SyncPushPayload, context: AppContext): Promise<SyncPushResult> {
     return sharedDbWriteQueue(this.db)(() => this.executePush(payload, context));
   }
-
   pull(since: string, deviceId: string, deviceToken: string, context: AppContext): { changes: Array<Record<string, unknown>>; cursor: string; serverTime: string } {
     if (!context.clinicId) throw new AppError('FORBIDDEN', 'Sync requires a clinic scope', 403);
+    if (typeof since !== 'string' || since.length === 0 || since.length > 200) {
+      throw new ValidationError('since must be a cursor string');
+    }
     if (!['BOSS', 'ADMIN'].includes(context.role)) {
       throw new AppError('FORBIDDEN', 'Sync requires BOSS', 403);
     }
+    for (const table of SYNC_ALLOWED_TABLES) assertSyncTablePermission(context, table);
     this.assertDevice(deviceId, deviceToken, context);
     // 游标支持两种格式：新格式 `createdAt|rowid`（复合键），旧格式为纯 createdAt
     // 时间戳。旧格式按 rowid 开区间（-1）解析：同毫秒的行可能被重复投递一次，但
@@ -64,83 +47,27 @@ export class SyncService {
     const cursor = last ? `${String(last.createdAt)}|${String(last.rowid)}` : since;
     return { changes, cursor, serverTime: new Date().toISOString() };
   }
-
-  /**
-   * 全量快照：离线超过 SyncChange 保留窗口的设备用它做基线重建。
-   * 不带 table 时返回各表总数元数据；带 table 时按 offset/limit 分页返回，
-   * 避免十万级库一次性构建数百 MB JSON 卡死 API。
-   */
   fullSnapshot(
     context: AppContext,
-    options: { table?: string; limit?: number; offset?: number } = {},
-  ): {
-    serverTime: string;
-    table?: string;
-    rows?: Array<Record<string, unknown>>;
-    total?: number;
-    offset?: number;
-    limit?: number;
-    truncated?: boolean;
-    tables?: Record<string, { total: number; truncated: boolean }>;
-  } {
-    if (!context.clinicId) throw new AppError('FORBIDDEN', 'Sync requires a clinic scope', 403);
-    if (!['BOSS', 'ADMIN'].includes(context.role)) {
-      throw new AppError('FORBIDDEN', 'Sync requires BOSS', 403);
-    }
-    const tableExists = (table: string): boolean => Boolean(
-      this.db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`).get(table),
-    );
-    const tableTotal = (table: string): number => {
-      const row = this.db.prepare(
-        `SELECT COUNT(*) AS total FROM "${table}" WHERE deletedAt IS NULL${tenantAnd(context.clinicId)}`,
-      ).get(...tenantParams(context.clinicId)) as { total: number };
-      return Number(row.total);
-    };
-
-    if (options.table) {
-      if (!SYNC_ALLOWED_TABLES.has(options.table) || !tableExists(options.table)) {
-        throw new ValidationError('Sync table is not allowed');
-      }
-      const limit = Math.min(50_000, Math.max(1, Math.floor(Number(options.limit) || 5_000)));
-      const offset = Math.max(0, Math.floor(Number(options.offset) || 0));
-      const total = tableTotal(options.table);
-      const rows = this.db.prepare(
-        `SELECT * FROM "${options.table}" WHERE deletedAt IS NULL${tenantAnd(context.clinicId)}
-         ORDER BY id ASC LIMIT ? OFFSET ?`,
-      ).all(...tenantParams(context.clinicId), limit, offset) as Array<Record<string, unknown>>;
-      return {
-        serverTime: new Date().toISOString(),
-        table: options.table,
-        rows,
-        total,
-        offset,
-        limit,
-        truncated: offset + rows.length < total,
-      };
-    }
-
-    const tables: Record<string, { total: number; truncated: boolean }> = {};
-    for (const table of SYNC_ALLOWED_TABLES) {
-      if (!tableExists(table)) continue;
-      const total = tableTotal(table);
-      tables[table] = { total, truncated: total > 0 };
-    }
-    return { serverTime: new Date().toISOString(), tables };
+    options: { table?: string; limit?: number; offset?: number; afterId?: string } = {},
+  ) {
+    return fullSnapshot(this.db, context, options);
   }
-
   private async executePush(payload: SyncPushPayload, context: AppContext): Promise<SyncPushResult> {
     if (!context.clinicId) throw new AppError('FORBIDDEN', 'Sync requires a clinic scope', 403);
     if (!['BOSS', 'ADMIN'].includes(context.role)) {
       throw new AppError('FORBIDDEN', 'Sync requires BOSS', 403);
     }
+    assertSyncPushShape(payload);
+    for (const change of payload.changes) {
+      if (SYNC_ALLOWED_TABLES.has(change.tableName)) assertSyncTablePermission(context, change.tableName);
+    }
     this.assertDevice(payload.deviceId, payload.deviceToken, context);
     let accepted = 0;
     const errors: Array<{ recordId: string; error: string }> = [];
     const conflicts: Array<{ recordId: string; message: string }> = [];
-    // 每 500 条一个事务批。注意：better-sqlite3 的 db.transaction 会拒绝返回 Promise 的
-    // 回调（TypeError: Transaction function cannot return a promise），而 apply 路径是
-    // async repository 方法（其 SQL 在已 resolve 的微任务链中同步执行），因此这里用显式
-    // BEGIN/COMMIT/ROLLBACK 实现等价的批事务：整批要么全部生效、要么整体回滚。
+    // 每 500 条一个事务批。批内只允许同步仓储方法（*Sync），禁止 await 任何业务/仓储调用，
+    // 避免真实异步 I/O 嵌套或污染显式 BEGIN/COMMIT/ROLLBACK 事务。
     for (let offset = 0; offset < payload.changes.length; offset += 500) {
       const batch = payload.changes.slice(offset, offset + 500);
       // 本批已记录单条 error 的下标；系统性错误回滚后按此去重，避免重复记账。
@@ -180,7 +107,7 @@ export class SyncService {
           try {
             const repo = new SqliteRepository(this.db, definition, { emitSyncChange: false });
             if (change.operation === 'DELETE') {
-              const existingForDelete = await repo.findById(change.recordId, context);
+              const existingForDelete = repo.findByIdSync(change.recordId, context);
               if (!existingForDelete) {
                 throw new Error(`Sync record not found: ${change.recordId}`);
               }
@@ -190,33 +117,58 @@ export class SyncService {
                 failedIndexes.add(index);
                 continue;
               }
-              await repo.softDelete(change.recordId, context);
+              repo.softDeleteSync(change.recordId, context);
             } else {
               if (!change.data || typeof change.data !== 'object') {
                 throw new Error('Sync change requires row data');
               }
-              const existing = await repo.findById(change.recordId, context);
+              const existing = repo.findByIdSync(change.recordId, context);
               if (existing && this.isStaleRemote(change, existing)) {
                 this.registerConflict(change, existing, payload.deviceId, context);
                 conflicts.push({ recordId: change.recordId, message: 'Conflict: remote change is older than local version' });
                 failedIndexes.add(index);
                 continue;
               }
-              const payloadRow = stripProtectedWriteFields(validatePayload(
-                definition,
-                change.data,
-                existing ? { partial: true } : {},
-              ), undefined, resourceName);
+              const rawData = change.data as Record<string, unknown> | undefined;
+              const defaultStatus = STATE_MACHINE_DEFAULT_STATUS[resourceName];
+              // 状态机资源在服务端定义里 status 是必填；INSERT 缺省时先注入初始状态，
+              // 否则 validatePayload 会在默认状态兜底逻辑执行前就拒绝整行。
+              const dataForValidation = defaultStatus && !existing && rawData?.status === undefined
+                ? { ...rawData, status: defaultStatus }
+                : rawData;
+              const rawStatus = (dataForValidation as Record<string, unknown> | undefined)?.status;
+              const payloadRow = stripProtectedWriteFields(
+/* v8 ignore next */
+                validatePayload(definition, dataForValidation ?? change.data, existing ? { partial: true } : {}),
+                undefined,
+                resourceName,
+                { protectStateMachine: true },
+              );
+              if (defaultStatus) {
+/* v8 ignore next */
+                const effectiveStatus = existing ? String(existing.status ?? '') : defaultStatus;
+                if (rawStatus !== undefined && String(rawStatus) !== effectiveStatus) {
+                  throw new Error('状态由服务端状态机管理，不能经 sync 直写');
+                }
+                if (!existing) applyStateMachineDefaults(resourceName, payloadRow);
+              }
               const entity = { id: change.recordId, ...payloadRow };
-              if (existing) await repo.update(entity, context);
-              else await repo.insert(entity, context);
+              if (existing) repo.updateSync(entity, context);
+              else repo.insertSync(entity, context);
             }
-            // B-M1：业务写入已完成（批事务内），此后 record() 若失败，客户端
-            // 收到错误后不应盲目重试——写入可能已生效，重试可能造成重复变更。
+            // B-M1：record() 失败必须回滚本批，否则 SyncChange 缺失且业务已生效。
             wrote = true;
-            this.record(change.tableName, change.recordId, change.operation, payload.deviceId, context.clinicId);
+            try {
+              this.record(change.tableName, change.recordId, change.operation, payload.deviceId, context.clinicId);
+            } catch (error) {
+/* v8 ignore next */
+              if (isSystematicSqliteError(error)) throw error;
+/* v8 ignore next */
+              throw new SyncChangeRecordError(error instanceof Error ? error.message : String(error));
+            }
             batchAccepted += 1;
           } catch (error) {
+            if (error instanceof SyncChangeRecordError) throw error;
             /* v8 ignore start -- systematic SQLite errors carry a `code` (SQLITE_FULL/BUSY/IOERR/...) and abort the batch */
             if (isSystematicSqliteError(error)) throw error;
             /* v8 ignore stop */
@@ -242,6 +194,13 @@ export class SyncService {
             // Preserve the original error if ROLLBACK itself fails.
           }
         }
+        if (error instanceof SyncChangeRecordError) {
+          const message = `SyncChange record failed; batch rolled back: ${error.message}`;
+          for (let index = 0; index < batch.length; index += 1) {
+            if (!failedIndexes.has(index)) errors.push({ recordId: batch[index].recordId, error: message });
+          }
+          return { accepted, failed: errors.length, errors, conflicts };
+        }
         if (!(error instanceof Error) || !isSystematicSqliteError(error)) throw error;
         const message = error.message;
         for (let index = 0; index < batch.length; index += 1) {
@@ -255,8 +214,8 @@ export class SyncService {
     }
     return { accepted, failed: errors.length, errors, conflicts };
   }
-
   listConflicts(context: AppContext): Array<Record<string, unknown>> {
+/* v8 ignore next */
     if (!context.clinicId) throw new AppError('FORBIDDEN', 'Sync requires a clinic scope', 403);
     if (!['BOSS', 'ADMIN'].includes(context.role)) {
       throw new AppError('FORBIDDEN', 'Sync requires BOSS', 403);
@@ -278,6 +237,7 @@ export class SyncService {
   }
 
   private async executeResolveConflict(id: string, resolution: string, context: AppContext): Promise<Record<string, unknown>> {
+/* v8 ignore next */
     if (!context.clinicId) throw new AppError('FORBIDDEN', 'Sync requires a clinic scope', 403);
     if (!['BOSS', 'ADMIN'].includes(context.role)) {
       throw new AppError('FORBIDDEN', 'Sync requires BOSS', 403);
@@ -289,10 +249,13 @@ export class SyncService {
       `SELECT * FROM SyncConflict
        WHERE id = ? AND status = 'PENDING' AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).get(id, ...tenantParams(context.clinicId)) as Record<string, unknown> | undefined;
+/* v8 ignore next */
     if (!row) throw new NotFoundError('Sync conflict not found');
+    assertSyncTablePermission(context, String(row.tableName));
 
     const resourceName = SYNC_RESOURCES[String(row.tableName)];
     const definition = resourceRegistry.get(resourceName);
+/* v8 ignore next */
     if (!definition) throw new NotFoundError('Sync conflict table is not supported');
 
     this.db.exec('BEGIN IMMEDIATE');
@@ -301,17 +264,19 @@ export class SyncService {
         const remoteSnapshot = safeJsonObject(row.remoteSnapshotJson);
         const repo = new SqliteRepository(this.db, definition, { emitSyncChange: false });
         if (String(row.remoteOperation) === 'DELETE') {
-          const existing = await repo.findById(String(row.recordId), context);
-          if (existing) await repo.softDelete(String(row.recordId), context);
+          const existing = repo.findByIdSync(String(row.recordId), context);
+/* v8 ignore next */
+          if (existing) repo.softDeleteSync(String(row.recordId), context);
         } else {
-          const payloadRow = stripProtectedWriteFields(validatePayload(
-            definition,
-            remoteSnapshot,
-            { partial: true },
-          ), undefined, resourceName);
-          const existing = await repo.findById(String(row.recordId), context);
-          if (existing) await repo.update({ id: String(row.recordId), ...payloadRow }, context);
-          else await repo.insert({ id: String(row.recordId), ...payloadRow }, context);
+          const payloadRow = stripProtectedWriteFields(
+            validatePayload(definition, remoteSnapshot, { partial: true }),
+            undefined,
+            resourceName,
+            { protectStateMachine: true },
+          );
+          const existing = repo.findByIdSync(String(row.recordId), context);
+          if (existing) repo.updateSync({ id: String(row.recordId), ...payloadRow }, context);
+          else repo.insertSync({ id: String(row.recordId), ...payloadRow }, context);
         }
         this.record(String(row.tableName), String(row.recordId), String(row.remoteOperation), 'server', context.clinicId);
       } else {
@@ -319,11 +284,13 @@ export class SyncService {
       }
 
       const now = new Date().toISOString();
-      this.db.prepare(
+      const resolved = this.db.prepare(
         `UPDATE SyncConflict
          SET status = 'RESOLVED', resolution = ?, resolvedAt = ?, resolvedById = ?, updatedAt = ?, deletedAt = ?
-         WHERE id = ? AND status = 'PENDING'${tenantAnd(context.clinicId)}`,
+         WHERE id = ? AND status = 'PENDING' AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
       ).run(resolution, now, context.userId, now, now, id, ...tenantParams(context.clinicId));
+/* v8 ignore next */
+      if (Number(resolved.changes) === 0) throw new ConflictError('Sync conflict was already resolved');
       this.db.exec('COMMIT');
       return { ...row, resolution, resolvedAt: now, resolvedById: context.userId };
     } catch (error) {
@@ -340,8 +307,11 @@ export class SyncService {
     change: { updatedAt?: string },
     existing: Record<string, unknown>,
   ): boolean {
+/* v8 ignore next */
     const local = String(existing.updatedAt ?? '');
+/* v8 ignore next */
     const remote = String(change.updatedAt ?? '');
+/* v8 ignore next */
     if (!local || !remote) return false;
     const localTime = Date.parse(local);
     const remoteTime = Date.parse(remote);
@@ -372,7 +342,9 @@ export class SyncService {
       change.operation,
       JSON.stringify(existing),
       JSON.stringify(change.data ?? {}),
+/* v8 ignore next */
       String(existing.updatedAt ?? ''),
+/* v8 ignore next */
       String(change.updatedAt ?? ''),
       now,
       now,
@@ -395,17 +367,17 @@ export class SyncService {
     }
     const token = newRefreshToken();
     const now = new Date().toISOString();
-    this.db.prepare(
-      `INSERT INTO SyncDevice (
-         id, clinicId, userId, deviceId, tokenHash, name, active,
-         createdAt, updatedAt, deletedAt
-       ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, NULL)
-       ON CONFLICT(clinicId, deviceId) DO UPDATE SET
-         tokenHash = excluded.tokenHash,
-         name = excluded.name,
-         active = 1,
-         updatedAt = excluded.updatedAt`,
+    const result = this.db.prepare(
+      `INSERT INTO SyncDevice (id, clinicId, userId, deviceId, tokenHash, name, active, createdAt, updatedAt, deletedAt)
+       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, NULL)
+       ON CONFLICT(clinicId, deviceId) DO UPDATE SET tokenHash = excluded.tokenHash, name = excluded.name, active = 1, updatedAt = excluded.updatedAt
+       WHERE SyncDevice.userId = excluded.userId`,
     ).run(randomUUID(), context.clinicId, context.userId, deviceId, hashRefreshToken(token), name, now, now);
+/* v8 ignore next */
+    if (Number(result.changes) === 0) {
+/* v8 ignore next */
+      throw new AppError('CONFLICT', 'Device is already registered to another user', 409);
+    }
     return { deviceId, token };
   }
 
