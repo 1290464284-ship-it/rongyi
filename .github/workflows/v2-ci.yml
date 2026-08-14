@@ -33,10 +33,9 @@ concurrency:
   group: v2-ci-${{ github.ref }}
   cancel-in-progress: true
 
-# Round7 M13：CI 专用备份密钥从仓库变量读取（非生产密钥），不再硬编码入库。
-env:
-  V2_BACKUP_KEY: ${{ vars.V2_BACKUP_KEY }}
-  V2_ADMIN_PASSWORD: v2-ci-admin-${{ github.run_id }}
+# Round7 M13 修订（round 42 环境隔离审计）：CI 专用备份密钥与管理员口令
+# 只挂到 smoke job——verify job 的 vitest/mutation/quality-score 步骤必须
+# 在无 V2_* env 的封闭环境运行（测试套件已封闭化，但根源上不注入更稳）。
 
 jobs:
   # 审计 P2-4：原单 job 40+ 步骤挤在 40min 上限内，任一步超时即整体失败。
@@ -143,6 +142,11 @@ jobs:
     needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # dev server 引导 admin + 备份加密需要；仅本 job（脚本类 smoke）使用，
+      # 不注入 verify job 的测试进程。
+      V2_BACKUP_KEY: ${{ vars.V2_BACKUP_KEY }}
+      V2_ADMIN_PASSWORD: v2-ci-admin-${{ github.run_id }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
