@@ -119,6 +119,7 @@ Web **96.82% / 92.94% / 98.66% / 98.58%**，双门禁全绿——覆盖率口径
 | `src/web/pages/system/PermissionsPage.tsx`（save） | `if (busy) return` 守卫 | 保存按钮在 busy 期间 disabled（jsdom 不派发 click），双击守卫不可达，防御冗余 |
 | `src/server/http/app.ts`（审计截断 keys / 权限规则） | `typeof masked === 'object' ? ... : 0` 的非对象分支与 `if (permissions)` 的缺失分支 | 2026-08-14 已删除两处死代码：maskAuditFields 对对象输入恒返回对象（maskWith 顶层非数组非深度溢出）；authMiddleware 恒先写 context.permissions（effectivePermissions 恒返回数组），且前置 audit 中间件已用 req.context!——均为不可达防御，删除后行为零变化 |
 | `src/server/scheduler.ts`（runAutoBackup finally / 两个清理闭包） | `currentBackup === task` 的身份不符分支与 `!idempotencyCleanup`/`!syncChangeCleanup` 空守卫 | isRunning 串行化保证 currentBackup 恒为当前 task；两个清理闭包仅在注册点（存在性已 gate）调用，闭包内空守卫不可达——均为防御冗余 |
+| `src/server/application/service-modules/clinical-ops.ts`（doImport 系统错误消息） | `error instanceof Error ? ... : String(error)` 两处非 Error 分支 | 2026-08-14 已删除：两处三元均在 isSystematicSqliteError 分支内，而该守卫以 instanceof Error 为前提，String(...) 兜底为死代码，删除后行为零变化 |
 
 ## 5. 其他已知取舍
 

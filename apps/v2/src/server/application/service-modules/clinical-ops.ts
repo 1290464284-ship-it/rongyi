@@ -178,7 +178,8 @@ export class BulkImportService {
             imported += 1;
           } catch (error) {
             if (isSystematicSqliteError(error)) {
-              throw new AppError('IMPORT_SYSTEM_ERROR', `批量导入中止：${error instanceof Error ? error.message : String(error)}`, 500);
+              // isSystematicSqliteError 以 instanceof Error 为前提，String(error) 兜底为死代码。
+              throw new AppError('IMPORT_SYSTEM_ERROR', `批量导入中止：${(error as Error).message}`, 500);
             }
             errors.push(error instanceof Error ? error.message : String(error));
             continue;
@@ -193,7 +194,8 @@ export class BulkImportService {
         errors.length = chunkStartErrors;
         if (e instanceof AppError) throw e;
         if (isSystematicSqliteError(e)) {
-          const message = e instanceof Error ? e.message : String(e);
+          // isSystematicSqliteError 以 instanceof Error 为前提，String(e) 兜底为死代码。
+          const message = (e as Error).message;
           throw new AppError('IMPORT_SYSTEM_ERROR', `批量导入中止：前 ${imported} 条已导入，请人工核对后重试（${message}）`, 500);
         }
         throw e;
