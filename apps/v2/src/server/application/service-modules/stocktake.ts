@@ -103,8 +103,9 @@ export class StocktakeService {
     return {
       items: rows.map((row) => ({
         ...row,
-        itemCount: Number(row.itemCount ?? 0),
-        differenceCount: Number(row.differenceCount ?? 0),
+        // COUNT(*) 子查询恒返回非空整数
+        itemCount: Number(row.itemCount),
+        differenceCount: Number(row.differenceCount),
       })),
       total,
       page,
@@ -241,7 +242,8 @@ export class StocktakeService {
         );
         items.push({
           itemId: diff.itemId,
-          name: diff.name ?? null,
+          // InventoryTransaction.itemId 外键保证物品行必然存在，LEFT JOIN 恒有 name
+          name: diff.name,
           systemStock,
           countedStock,
           difference: Number(diff.difference),

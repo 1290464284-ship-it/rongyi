@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -368,5 +368,83 @@ describe('StocktakeService', () => {
     ).run(String(id), 'stock-item-bmc');
     service.lock(String(id), context);
     expect(() => service.complete(String(id), context)).toThrow('批号管理商品不能通过盘点直接调整库存');
+  });
+
+  it('rejects a number reused by a soft-deleted stocktake', () => {
+    insertItem('stock-item-soft', 'ST-SOFT', '软删物品', 10);
+    const first = service.start({ number: 'ST-SOFT-NUM' }, context);
+    db.prepare('UPDATE Stocktake SET deletedAt = ? WHERE id = ?').run(now, String(first.id));
+    expect(() => service.start({ number: 'ST-SOFT-NUM' }, context)).toThrow('盘点单号已存在');
+  });
+
+  it('completes with null counted stock, a deleted item and a null clinic', () => {
+    insertItem('stock-item-null', 'ST-NULL', '空值物品', 42);
+    const { id } = service.start({ number: 'ST-NULL-1' }, context);
+    db.prepare(
+      `UPDATE StocktakeItem SET difference = 5, countedStock = NULL WHERE stocktakeId = ? AND itemId = ?`,
+    ).run(String(id), 'stock-item-null');
+    service.lock(String(id), context);
+    db.prepare('UPDATE InventoryItem SET deletedAt = ? WHERE id = ?').run(now, 'stock-item-null');
+    const noClinic: AppContext = { ...context, clinicId: null };
+    const result = service.complete(String(id), noClinic);
+    expect(result.adjustedCount).toBe(1);
+    expect((result.items as Array<Record<string, unknown>>)[0].countedStock).toBe(42);
+  });
+
+  it('reports conflicts when optimistic status updates affect zero rows', () => {
+    insertItem('stock-item-race', 'ST-RACE', '竞态物品', 10);
+    const { id } = service.start({ number: 'ST-RACE-1' }, context);
+    const itemId = 'stock-item-race';
+    const originalPrepare = db.prepare.bind(db);
+
+    const spyRecord = vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE StocktakeItem') && sql.includes('SET countedStock')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      expect(() => service.recordCount(String(id), itemId, 10, context)).toThrow(ConflictError);
+    } finally {
+      spyRecord.mockRestore();
+    }
+
+    const spyLock = vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE Stocktake') && sql.includes("status = 'LOCKED'")) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      expect(() => service.lock(String(id), context)).toThrow(ConflictError);
+    } finally {
+      spyLock.mockRestore();
+    }
+
+    db.prepare("UPDATE Stocktake SET status = 'LOCKED' WHERE id = ?").run(String(id));
+    const spyComplete = vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE Stocktake') && sql.includes("status = 'COMPLETED'")) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      expect(() => service.complete(String(id), context)).toThrow(ConflictError);
+    } finally {
+      spyComplete.mockRestore();
+    }
+
+    db.prepare("UPDATE Stocktake SET status = 'IN_PROGRESS' WHERE id = ?").run(String(id));
+    const spyCancel = vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE Stocktake') && sql.includes("status = 'CANCELLED'")) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      expect(() => service.cancel(String(id), context)).toThrow(ConflictError);
+    } finally {
+      spyCancel.mockRestore();
+    }
   });
 });
