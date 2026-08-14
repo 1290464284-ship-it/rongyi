@@ -44,12 +44,20 @@ const serverEnv = {
 };
 
 function runCommand(args, extraEnv = {}) {
-  const shellArgs = ['/c', 'pnpm', ...args];
-  const result = spawnSync(process.env.ComSpec, shellArgs, {
-    cwd: appRoot,
-    env: { ...process.env, ...extraEnv },
-    stdio: 'inherit',
-  });
+  // 跨平台启动 pnpm：Windows 经 ComSpec + '/c'，POSIX 直接 spawn（pnpm 在
+  // PATH 上）。与 flaky-detect.mjs 同一模式，避免 ubuntu CI 上 ComSpec
+  // undefined 崩溃。
+  const result = process.platform === 'win32'
+    ? spawnSync(process.env.ComSpec, ['/c', 'pnpm', ...args], {
+        cwd: appRoot,
+        env: { ...process.env, ...extraEnv },
+        stdio: 'inherit',
+      })
+    : spawnSync('pnpm', args, {
+        cwd: appRoot,
+        env: { ...process.env, ...extraEnv },
+        stdio: 'inherit',
+      });
   if (result.status !== 0) {
     throw new Error(`command failed (${result.status}): pnpm ${args.join(' ')}`);
   }
