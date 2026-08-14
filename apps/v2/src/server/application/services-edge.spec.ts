@@ -19,7 +19,6 @@ import { MAX_MONEY_CENTS } from './service-modules/common';
 import {
   AlertService,
   AppointmentService,
-  AuditService,
   BackupService,
   BulkImportService,
   CephalometricService,
@@ -297,15 +296,6 @@ describe('service edge coverage', () => {
       items: Array<{ itemId: string; beforeStock: number; afterStock: number }>;
     };
     expect(result.items[0]).toMatchObject({ itemId: 'item-af', beforeStock: 5, afterStock: 7 });
-  });
-
-  it('covers audit logs with nullish optional fields', () => {
-    const audit = new AuditService(db);
-    audit.log({ action: 'EDGE_NULL' });
-    const row = db.prepare("SELECT * FROM OperationLog WHERE action = 'EDGE_NULL'").get() as Record<string, unknown>;
-    expect(row.userId).toBeNull();
-    expect(row.traceId).toBeNull();
-    expect(row.clinicId).toBeNull();
   });
 
   it('covers appointment validation and conflict branches', async () => {

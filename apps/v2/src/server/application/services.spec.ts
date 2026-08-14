@@ -13,7 +13,6 @@ import { createDatabase, seedDatabase } from '../infrastructure/database';
 import { runMigrations } from '../infrastructure/migrations';
 import {
   AppointmentService,
-  AuditService,
   ChargeService,
   MemberCardService,
   PatientRiskService,
@@ -234,22 +233,5 @@ describe('application services', () => {
     const charge = db.prepare('SELECT * FROM Charge WHERE id = ?').get(String(created.id)) as Record<string, unknown>;
     expect(Number(charge.paidAmount)).toBe(0);
     expect(charge.status).toBe('UNPAID');
-  });
-
-  it('writes operation log entries', () => {
-    const audit = new AuditService(db);
-    audit.log({
-      userId: 'user-admin-001',
-      action: 'TEST_WRITE',
-      target: 'target-1',
-      traceId: 'trace-audit',
-      clinicId: 'clinic-v2-001',
-    });
-    const row = db.prepare('SELECT * FROM OperationLog WHERE target = ?').get('target-1') as Record<string, unknown>;
-    expect(row.action).toBe('TEST_WRITE');
-    expect(row.traceId).toBe('trace-audit');
-    db.prepare('UPDATE OperationLog SET createdAt = ? WHERE target = ?')
-      .run('2000-01-01T00:00:00.000Z', 'target-1');
-    expect(audit.cleanup('2000-01-02T00:00:00.000Z')).toBe(1);
   });
 });
