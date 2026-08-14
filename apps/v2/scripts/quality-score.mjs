@@ -30,19 +30,49 @@ function flakyMetrics() {
 function mutationMetrics() {
   const report = readJson('reports/mutation/mutation.json', null);
   if (!report) return { score: null };
-  const files = report.files ? Object.values(report.files) : [];
-  const summary = files.reduce(
-    (acc, file) => {
-      const fileScore = mutationScore(file.mutants);
-      acc.killed += fileScore.killed;
-      acc.survived += fileScore.survived;
-      acc.noCoverage += fileScore.noCoverage;
-      return acc;
-    },
-    { killed: 0, survived: 0, noCoverage: 0 },
+  // 等价变异白名单（用户拍板口径，见 docs/audits/多维度评分-拉满运动-2026-08-13.md）：
+  // 每条目精确匹配「文件:行号:变异算子:替换代码」，命中即按已击杀折算。
+  // 防自欺：条目必须精确命中一个幸存变异，否则记为失效并拒绝出分。
+  const whitelist = readJson('quality/equivalent-mutants.json', { entries: [] });
+  const entries = Array.isArray(whitelist.entries) ? whitelist.entries : [];
+  const whitelistKeys = new Set(
+    entries.map((entry) => `${entry.file}:${entry.line}:${entry.mutator}:${entry.replacement}`),
   );
-  const total = summary.killed + summary.survived + summary.noCoverage;
-  return { ...summary, score: total ? summary.killed / total : null };
+  const keyOf = (filePath, line, mutator, replacement) => {
+    const normalized = filePath.replace(/\\/g, '/');
+    const marker = 'apps/v2/';
+    const index = normalized.lastIndexOf(marker);
+    const relative = index >= 0 ? normalized.slice(index + marker.length) : normalized;
+    return `${relative}:${line}:${mutator}:${replacement}`;
+  };
+  const staleEntries = [];
+  const summary = { killed: 0, survived: 0, noCoverage: 0, equivalent: 0 };
+  for (const [filePath, file] of Object.entries(report.files ?? {})) {
+    for (const mutant of file.mutants ?? []) {
+      if (mutant.status === 'Killed' || mutant.status === 'Timeout') {
+        summary.killed += 1;
+      } else if (mutant.status === 'Survived') {
+        const key = keyOf(filePath, mutant.location?.start?.line, mutant.mutatorName, mutant.replacement);
+        if (whitelistKeys.has(key)) {
+          summary.equivalent += 1;
+          whitelistKeys.delete(key);
+        } else {
+          summary.survived += 1;
+        }
+      } else if (mutant.status === 'NoCoverage') {
+        summary.noCoverage += 1;
+      }
+    }
+  }
+  for (const key of whitelistKeys) {
+    staleEntries.push(`equivalent-mutant whitelist entry no longer matches a survived mutant (stale): ${key}`);
+  }
+  const total = summary.killed + summary.equivalent + summary.survived + summary.noCoverage;
+  return {
+    ...summary,
+    staleWhitelistEntries: staleEntries,
+    score: total ? (summary.killed + summary.equivalent) / total : null,
+  };
 }
 
 const serverCoverage = coverageStats(readJson('coverage/coverage-final.json', null));
@@ -69,6 +99,9 @@ if (openapi.routePathCoverage == null) {
 }
 if (mutation.score == null) {
   failures.push('reports/mutation/mutation.json is missing, empty, or unreadable; run test:mutation first');
+}
+for (const stale of mutation.staleWhitelistEntries ?? []) {
+  failures.push(stale);
 }
 if (failures.length > 0) {
   for (const failure of failures) console.error(failure);

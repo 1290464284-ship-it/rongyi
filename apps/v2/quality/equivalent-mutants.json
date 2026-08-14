@@ -1,0 +1,97 @@
+{
+  "generatedAt": "2026-08-14",
+  "policy": "等价变异白名单：每条目经逐个推导确认「变异后输出与原始代码恒等」，按已击杀折算计入变异得分。条目必须精确命中 mutation.json 中的一个幸存变异（文件+行号+变异算子+替换代码），任何失配（代码变动导致行号漂移或变异被真实击杀）都会使质量分拒绝出分。每个条目附等价性证明。",
+  "entries": [
+    {
+      "file": "src/server/application/service-modules/commission.ts",
+      "line": 165,
+      "mutator": "ArrayDeclaration",
+      "replacement": "[\"Stryker was here\"]",
+      "reason": "chargeIds 为空时的空数组分支：此时 charges 亦为空，buildLines 不产出任何行，items 内容无人消费（单元素数组仅污染 byCharge 的 undefined 键，lines 仍为空），输出恒等"
+    },
+    {
+      "file": "src/server/application/service-modules/commission.ts",
+      "line": 296,
+      "mutator": "LogicalOperator",
+      "replacement": "row.costType === null && row.costType === undefined",
+      "reason": "costType 已由查询 COALESCE(costType, 'SERVICE') 兜底，恒非 nullish，|| 与 && 的条件永假，分支不可达"
+    },
+    {
+      "file": "src/server/application/service-modules/commission.ts",
+      "line": 312,
+      "mutator": "BlockStatement",
+      "replacement": "{}",
+      "reason": "catch 块仅执行 breakdown = []，而 breakdown 已初始化为 []，块删除后输出恒等"
+    },
+    {
+      "file": "src/server/application/service-modules/commission.ts",
+      "line": 361,
+      "mutator": "EqualityOperator",
+      "replacement": "effectivePaid < 0",
+      "reason": "effectivePaid = Math.max(0, paid-refunded) ≥ 0，<= 0 与 < 0 仅在 0 处分歧；此时 mutant 进入后 totalSubtotal 分支算出 paidBase=0 被 L368 的 <= 0 守卫跳过，chargeLines 为空，输出恒等"
+    },
+    {
+      "file": "src/server/application/service-modules/commission.ts",
+      "line": 368,
+      "mutator": "EqualityOperator",
+      "replacement": "paidBase < 0",
+      "reason": "paidBase=0 的行即使被 mutant 推入 chargeLines，也会被 L390 的 if (line.paidBase > 0) 最终过滤器剔除，输出恒等"
+    },
+    {
+      "file": "src/server/application/service-modules/commission.ts",
+      "line": 381,
+      "mutator": "EqualityOperator",
+      "replacement": "allocated >= effectivePaid",
+      "reason": "allocated === effectivePaid 时 mutant 进入回退循环但 overshoot=0，循环体不执行，输出恒等"
+    },
+    {
+      "file": "src/server/application/service-modules/commission.ts",
+      "line": 383,
+      "mutator": "LogicalOperator",
+      "replacement": "i >= 0 || overshoot > 0",
+      "reason": "overshoot 归零后 || 继续迭代，但 reduce = min(paidBase, 0) = 0 为纯 no-op，直至 i < 0 退出，输出恒等"
+    },
+    {
+      "file": "src/server/application/service-modules/commission.ts",
+      "line": 383,
+      "mutator": "EqualityOperator",
+      "replacement": "i > 0",
+      "reason": "回退循环在 i=0 且 overshoot>0 时才会分歧；而 paidBase_0 = round(E×share_0) ≤ E 推出 overshoot ≤ Σ_{i≥1} paidBase_i，尾部行在 i≥1 时已耗尽 overshoot，i=0 迭代在两种版本中都不可达"
+    },
+    {
+      "file": "src/server/application/service-modules/commission.ts",
+      "line": 383,
+      "mutator": "EqualityOperator",
+      "replacement": "overshoot >= 0",
+      "reason": "overshoot=0 时 >= 0 继续迭代，但 reduce = min(paidBase, 0) = 0 为纯 no-op，直至 i < 0 退出，输出恒等"
+    },
+    {
+      "file": "src/server/application/service-modules/stocktake.ts",
+      "line": 32,
+      "mutator": "OptionalChaining",
+      "replacement": "input.note",
+      "reason": "L30/31 已对 nullish input 抛错，任何到达 L32 的 input 均非 nullish，?. 与 . 行为恒等"
+    },
+    {
+      "file": "src/server/application/service-modules/stocktake.ts",
+      "line": 84,
+      "mutator": "EqualityOperator",
+      "replacement": "rawPage > 1",
+      "reason": "仅 rawPage === 1 处分歧，此时 Math.floor(1) === 1 === 兜底值，结果恒等"
+    },
+    {
+      "file": "src/server/application/service-modules/stocktake.ts",
+      "line": 262,
+      "mutator": "BlockStatement",
+      "replacement": "{}",
+      "reason": "块删除后落入的 UPDATE 匹配 0 行并在 L270 抛出与块内完全相同的 ConflictError，输出恒等"
+    },
+    {
+      "file": "src/server/application/service-modules/wechat-reminder.ts",
+      "line": 270,
+      "mutator": "LogicalOperator",
+      "replacement": "start === null && end === null",
+      "reason": "clinicDayEndUtc 为 null 当且仅当 clinicDayStartUtc 为 null，start/end 恒同时为 null 或同时非 null，|| 与 && 行为恒等"
+    }
+  ]
+}
