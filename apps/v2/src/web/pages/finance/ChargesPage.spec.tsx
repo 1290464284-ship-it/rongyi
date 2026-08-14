@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ChargesPage } from './ChargesPage';
 import { apiRequest } from '../../lib/api';
@@ -997,10 +997,13 @@ describe('ChargesPage', () => {
     await screen.findByText('N-1');
 
     async function closeDialog(name: string) {
+      // 对话框关闭走 140ms 真实定时器（DIALOG_CLOSE_MS）；用 fake timers 确定性推进，
+      // 避免并发负载下真实定时器迟到导致 waitFor 超时（既往偶发 flaky 根因）。
+      vi.useFakeTimers();
       fireEvent.keyDown(screen.getByRole('dialog', { name }), { key: 'Escape' });
-      await waitFor(() => {
-        expect(screen.queryByRole('dialog', { name })).toBeNull();
-      });
+      act(() => vi.advanceTimersByTime(150));
+      expect(screen.queryByRole('dialog', { name })).toBeNull();
+      vi.useRealTimers();
     }
 
     fireEvent.click(screen.getByRole('button', { name: '收款' }));
