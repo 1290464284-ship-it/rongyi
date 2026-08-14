@@ -447,4 +447,29 @@ describe('StocktakeService', () => {
       spyCancel.mockRestore();
     }
   });
+
+  it('list：offset 用乘法计算，第 2 页 pageSize 2 从第 3 条开始', () => {
+    for (let i = 0; i < 5; i += 1) {
+      db.prepare(
+        `INSERT INTO Stocktake (id, number, status, startedById, startedAt, clinicId, createdAt, updatedAt, deletedAt)
+         VALUES (?, ?, 'CANCELLED', 'user-admin-001', ?, 'clinic-v2-001', ?, ?, NULL)`,
+      ).run(`st-off-${i}`, `PD-OFF-${i}`, now, new Date(Date.parse(now) + i * 1000).toISOString(), now);
+    }
+
+    const page2 = service.list(context, { page: 2, pageSize: 2 });
+    expect(page2.items.map((row) => row.number)).toEqual(['PD-OFF-2', 'PD-OFF-1']);
+  });
+
+  it('complete：差异调整流水写入所属诊所 clinicId', () => {
+    insertItem('stock-item-clinic', 'ST-CLINIC', '诊所物品', 10);
+    const { id } = service.start({ number: 'PD-CLINIC' }, context);
+    service.recordCount(String(id), 'stock-item-clinic', 15, context);
+    service.lock(String(id), context);
+    service.complete(String(id), context);
+
+    const row = db.prepare(
+      'SELECT clinicId FROM InventoryTransaction WHERE itemId = ?',
+    ).get('stock-item-clinic') as { clinicId: string | null };
+    expect(row.clinicId).toBe('clinic-v2-001');
+  });
 });

@@ -457,4 +457,63 @@ describe('TriageService', () => {
     }, { ...context, clinicId: null });
     expect(result.startTime).toBe('2099-02-11T09:00:00.000Z');
   });
+
+  it('reschedule omitting chairId preserves the stored chair in conflict detection', () => {
+    insertAppointment('appt-chair-keep-a', {
+      doctorId: 'doctor-a',
+      chairId: 'chair-1',
+      startTime: '2099-11-01T09:00:00.000Z',
+      endTime: '2099-11-01T10:00:00.000Z',
+    });
+    insertAppointment('appt-chair-keep-b', {
+      doctorId: 'doctor-b',
+      chairId: 'chair-1',
+      startTime: '2099-11-01T09:00:00.000Z',
+      endTime: '2099-11-01T10:00:00.000Z',
+    });
+    const service = new TriageService(db);
+    expect(() => service.rescheduleAppointment('appt-chair-keep-a', {
+      startTime: '2099-11-01T09:30:00.000Z',
+      endTime: '2099-11-01T10:30:00.000Z',
+    }, context)).toThrow('医生或椅位在该时段已被占用');
+  });
+
+  it('reschedule clearing the chair uses null in conflict detection', () => {
+    insertAppointment('appt-chair-clear-a', {
+      doctorId: 'doctor-e',
+      chairId: 'chair-9',
+      startTime: '2099-11-02T09:00:00.000Z',
+      endTime: '2099-11-02T10:00:00.000Z',
+    });
+    insertAppointment('appt-chair-clear-b', {
+      doctorId: 'doctor-f',
+      chairId: '',
+      startTime: '2099-11-02T09:00:00.000Z',
+      endTime: '2099-11-02T10:00:00.000Z',
+    });
+    const service = new TriageService(db);
+    const result = service.rescheduleAppointment('appt-chair-clear-a', {
+      startTime: '2099-11-02T09:30:00.000Z',
+      endTime: '2099-11-02T10:30:00.000Z',
+      chairId: '',
+    }, context);
+    expect(result.chairId).toBeNull();
+  });
+
+  it('tracks the reschedule write with the clinic id for sync', () => {
+    insertAppointment('appt-sync-clinic');
+    new TriageService(db).rescheduleAppointment('appt-sync-clinic', {
+      startTime: '2099-11-03T09:00:00.000Z',
+      endTime: '2099-11-03T10:00:00.000Z',
+    }, context);
+    const sync = db.prepare(
+      "SELECT clinicId, tableName, recordId, operation FROM SyncChange WHERE recordId = 'appt-sync-clinic'",
+    ).get();
+    expect(sync).toEqual({
+      clinicId: 'clinic-v2-001',
+      tableName: 'Appointment',
+      recordId: 'appt-sync-clinic',
+      operation: 'UPDATE',
+    });
+  });
 });

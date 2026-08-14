@@ -565,4 +565,30 @@ describe('WechatReminderService', () => {
     const item = service.today(context).items.find((row) => row.id === 'unknown-scene');
     expect(item?.sceneLabel).toBe('UNKNOWN_SCENE');
   });
+
+  it('shares the global generation cache between null and "global" clinic contexts', () => {
+    const service = new WechatReminderService(db);
+    const nullContext: AppContext = { ...context, clinicId: null };
+    // 首次以 null 诊所生成并缓存（原实现键为 'global'）。
+    service.today(nullContext);
+    // 生成后新增 global 诊所的明日预约：若缓存键未共享，会重新生成并命中该候选。
+    db.prepare(
+      `INSERT INTO Appointment (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, doctorId, startTime, endTime, status, type
+       ) VALUES (?, 'global', ?, ?, NULL, 'patient-demo-001', 'user-admin-001',
+         '2026-08-06T09:00:00.000Z', '2026-08-06T10:00:00.000Z', 'BOOKED', 'REGULAR')`,
+    ).run('appt-global-cache', now, now);
+    const globalContext: AppContext = { ...context, clinicId: 'global' };
+    const result = service.today(globalContext);
+    expect(result.items.find((row) => row.sourceId === 'appt-global-cache')).toBeUndefined();
+  });
+
+  it('renders first-exam content with the patient name (no undefined artifact)', () => {
+    insertFirstExam('exam-named', '2026-08-02T02:00:00.000Z', null);
+    const service = new WechatReminderService(db);
+    const item = service.today(context).items.find((row) => row.sourceId === 'exam-named');
+    expect(item?.content).toContain('Demo Patient');
+    expect(item?.content).not.toContain('undefined');
+  });
 });

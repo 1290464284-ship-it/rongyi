@@ -386,4 +386,29 @@ describe('ShiftTemplateService validation and edge branches', () => {
     ).get('template-global') as { clinicId: string | null };
     expect(row.clinicId).toBeNull();
   });
+
+  it('generates a null color for templates without a color', () => {
+    const service = new ShiftTemplateService(db);
+    createTemplate({ id: 'template-null-color-gen' });
+    service.generate({ templateId: 'template-null-color-gen', userId: 'user-admin-001', weekStart: '2026-08-03' }, context);
+    const row = db.prepare(
+      'SELECT color FROM WorkSchedule WHERE shiftTemplateId = ? LIMIT 1',
+    ).get('template-null-color-gen') as { color: string | null };
+    expect(row.color).toBeNull();
+  });
+
+  it('maps a null workDaysJson to null (not the string "null")', () => {
+    const service = new ShiftTemplateService(db);
+    createTemplate({ id: 'template-null-wd' });
+    db.prepare('UPDATE ShiftTemplate SET workDaysJson = NULL WHERE id = ?').run('template-null-wd');
+    const row = service.list(context).find((entry) => entry.id === 'template-null-wd');
+    expect(row?.workDaysJson).toBeNull();
+  });
+
+  it('maps a concrete clinicId back to its string value', () => {
+    const service = new ShiftTemplateService(db);
+    createTemplate({ id: 'template-clinic-concrete' });
+    const row = service.list(context).find((entry) => entry.id === 'template-clinic-concrete');
+    expect(row?.clinicId).toBe('clinic-v2-001');
+  });
 });

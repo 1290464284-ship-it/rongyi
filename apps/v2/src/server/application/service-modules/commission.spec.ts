@@ -535,4 +535,117 @@ describe('CommissionService', () => {
       expect.objectContaining({ category: 'EXAM', charged: 1000, commission: 100 }),
     ]);
   });
+
+  it('preserves a non-null doctorId when reading a rule back (L299)', () => {
+    const service = new CommissionService(db);
+    const created = service.createRule(
+      { name: 'doctorId-read', doctorId: 'user-doctor-commission', rateType: 'PERCENT', rate: 100 },
+      context,
+    );
+    const listed = service.listRules(context).find((rule) => rule.id === created.id);
+    expect(listed?.doctorId).toBe('user-doctor-commission');
+  });
+
+  it('preserves a non-null clinicId when reading a rule back (L301)', () => {
+    const service = new CommissionService(db);
+    const created = service.createRule({ name: 'clinicId-read', rateType: 'PERCENT', rate: 100 }, context);
+    const listed = service.listRules(context).find((rule) => rule.id === created.id);
+    expect(listed?.clinicId).toBe('clinic-v2-001');
+  });
+
+  it('keeps breakdown an empty array for valid non-array JSON (L308)', () => {
+    const globalContext: AppContext = { ...context, clinicId: null };
+    db.prepare(
+      `INSERT INTO CommissionStatement (
+         id, clinicId, period, doctorId, totalCharged, totalCommission, breakdownJson, calculatedAt, deletedAt
+       ) VALUES (?, NULL, '2026-08', 'user-doctor-commission', 0, 0, '{"object":true}', ?, NULL)`,
+    ).run('stmt-breakdown-nonarray', now);
+    const statement = new CommissionService(db).statements('2026-08', globalContext)
+      .find((row) => row.id === 'stmt-breakdown-nonarray');
+    expect(statement?.breakdown).toEqual([]);
+  });
+
+  it('reduces multi-line overshoot without indexing past the end (L383 i += 1)', () => {
+    const service = new CommissionService(db);
+    service.createRule({ name: 'overshoot', rateType: 'PERCENT', rate: 10_000 }, context);
+    insertCharge('charge-comm-overshoot', 'user-doctor-commission', '2026-08-05T09:00:00.000Z', {
+      totalAmount: 4,
+      paidAmount: 4,
+    });
+    for (let i = 1; i <= 7; i += 1) {
+      insertItem('charge-comm-overshoot', `item-overshoot-${i}`, 'TREATMENT', 'SERVICE', 1);
+    }
+    const statement = service.calculate('2026-08', context)
+      .find((row) => row.doctorId === 'user-doctor-commission');
+    expect(statement?.totalCharged).toBe(4);
+    expect(statement?.totalCommission).toBe(4);
+  });
+
+  it('drops zero-paid lines produced by overshoot reduction (L390)', () => {
+    const service = new CommissionService(db);
+    service.createRule({ name: 'zero-drop', rateType: 'PERCENT', rate: 10_000 }, context);
+    insertCharge('charge-comm-zerodrop', 'user-doctor-commission', '2026-08-05T09:00:00.000Z', {
+      totalAmount: 2,
+      paidAmount: 2,
+    });
+    insertItem('charge-comm-zerodrop', 'item-zerodrop-1', 'TREATMENT', 'SERVICE', 1);
+    insertItem('charge-comm-zerodrop', 'item-zerodrop-2', 'TREATMENT', 'SERVICE', 1);
+    insertItem('charge-comm-zerodrop', 'item-zerodrop-3', 'EXAM', 'SERVICE', 1);
+    const statement = service.calculate('2026-08', context)
+      .find((row) => row.doctorId === 'user-doctor-commission');
+    expect(statement?.breakdown).toEqual([
+      expect.objectContaining({ category: 'TREATMENT', charged: 2, commission: 2 }),
+    ]);
+  });
+
+  it('requires both category and costType to match the exact rule tier (L404)', () => {
+    const service = new CommissionService(db);
+    service.createRule({
+      name: 'partial-category', doctorId: 'user-doctor-commission',
+      category: 'TREATMENT', costType: 'MATERIAL', rateType: 'PERCENT', rate: 1000,
+    }, context);
+    service.createRule({
+      name: 'exact-default', category: 'TREATMENT', costType: 'SERVICE', rateType: 'PERCENT', rate: 2000,
+    }, context);
+    insertCharge('charge-comm-exactmatch', 'user-doctor-commission', '2026-08-05T09:00:00.000Z', { totalAmount: 10_000 });
+    insertItem('charge-comm-exactmatch', 'item-exactmatch-1', 'TREATMENT', 'SERVICE', 10_000);
+    const statement = service.calculate('2026-08', context)
+      .find((row) => row.doctorId === 'user-doctor-commission');
+    expect(statement?.totalCommission).toBe(2000);
+  });
+
+  it('matches the costType-only rule tier for a null category (L406)', () => {
+    const service = new CommissionService(db);
+    service.createRule({ name: 'costtype-only', costType: 'SERVICE', rateType: 'PERCENT', rate: 2000 }, context);
+    insertCharge('charge-comm-costtype', 'user-doctor-commission', '2026-08-05T09:00:00.000Z', { totalAmount: 10_000 });
+    insertItem('charge-comm-costtype', 'item-costtype-1', 'TREATMENT', 'SERVICE', 10_000);
+    const statement = service.calculate('2026-08', context)
+      .find((row) => row.doctorId === 'user-doctor-commission');
+    expect(statement?.totalCommission).toBe(2000);
+  });
+
+  it('does not query ChargeItem when no charges fall in the period (L160)', () => {
+    const service = new CommissionService(db);
+    const spy = vi.spyOn(db, 'prepare');
+    try {
+      service.calculate('2026-01', context);
+      const itemPrepares = spy.mock.calls.filter(([sql]) => String(sql).includes('FROM ChargeItem'));
+      expect(itemPrepares).toHaveLength(0);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('hard-clears soft-deleted statements when a period yields no lines (L191)', () => {
+    const service = new CommissionService(db);
+    db.prepare(
+      `INSERT INTO CommissionStatement (
+         id, clinicId, period, doctorId, totalCharged, totalCommission, breakdownJson, calculatedAt, deletedAt
+       ) VALUES (?, ?, '2026-01', 'user-doctor-commission', 1, 1, '[]', ?, ?)`,
+    ).run('stmt-soft-deleted', context.clinicId, now, now);
+    service.calculate('2026-01', context);
+    const row = db.prepare('SELECT COUNT(*) AS n FROM CommissionStatement WHERE id = ?')
+      .get('stmt-soft-deleted') as { n: number };
+    expect(row.n).toBe(0);
+  });
 });
