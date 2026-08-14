@@ -99,6 +99,25 @@ describe('database bootstrap', () => {
     });
   });
 
+  it('skips legacy schema sync entirely in the test environment', () => {
+    const schemaDir = path.resolve(import.meta.dirname, '..', '..', '..', 'legacy', 'schema');
+    const count = () => (db.prepare(
+      "SELECT COUNT(*) AS c FROM sqlite_master WHERE type = 'table' AND name = 'PrintTemplate'",
+    ).get() as { c: number }).c;
+    const before = count();
+    // NODE_ENV=test → 直接返回，不建任何 legacy 表
+    syncLegacySchema(db, schemaDir);
+    expect(count()).toBe(before);
+  });
+
+  it('skips legacy schema sync when the schema directory has no files', () => {
+    withLegacySyncEnv(() => {
+      const emptyDir = path.join(dataDir, 'empty-schema');
+      fs.mkdirSync(emptyDir, { recursive: true });
+      expect(() => syncLegacySchema(db, emptyDir)).not.toThrow();
+    });
+  });
+
   it('parses every CREATE TABLE statement from all legacy schema files (format drift guard)', () => {
     // Round7 H-03: syncLegacySchema executes regex-extracted CREATE TABLE text
     // from legacy/schema/*.tables.ts at runtime. This assertion pins the implicit

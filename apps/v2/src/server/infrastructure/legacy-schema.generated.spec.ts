@@ -43,4 +43,9 @@ describe('legacy schema generated SQL', () => {
       'CREATE TABLE "U" (b TEXT)',
     ]);
   });
+
+  it('skips empty statements and keeps a trailing statement without a semicolon', () => {
+    expect(splitSqlStatements(';;  ;')).toEqual([]);
+    expect(splitSqlStatements('SELECT 1; SELECT 2')).toEqual(['SELECT 1', 'SELECT 2']);
+  });
 });
