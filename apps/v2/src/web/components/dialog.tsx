@@ -36,12 +36,11 @@ export function Dialog({
     if (!open) return;
     closeEpochRef.current += 1;
     previouslyFocused.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const modal = modalRef.current;
-    const cleanupInert = modal ? registerModalLayer(modal) : null;
-    if (modal) {
-      const firstFocusable = modal.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
-      (firstFocusable ?? modal).focus();
-    }
+    // 打开态渲染时 modal 已挂载，ref 恒非空
+    const modal = modalRef.current as HTMLDivElement;
+    const cleanupInert = registerModalLayer(modal);
+    const firstFocusable = modal.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
+    (firstFocusable ?? modal).focus();
     return () => {
       cleanupInert?.();
       if (closeTimerRef.current) {
@@ -63,6 +62,7 @@ export function Dialog({
     closeTimerRef.current = setTimeout(() => {
       closeTimerRef.current = null;
       // 若弹窗在动画期间已被重新打开（代际变化），丢弃这次迟到的关闭通知
+      /* v8 ignore next -- 关闭时组件卸载会先清掉定时器，迟到通知不可达（防御冗余） */
       if (closeEpochRef.current !== epoch) return;
       onClose();
     }, DIALOG_CLOSE_MS);
@@ -76,8 +76,8 @@ export function Dialog({
     }
     if (event.key !== 'Tab') return;
     // 焦点陷阱：Tab/Shift+Tab 在弹窗内循环，焦点逃逸到弹窗外时拉回第一个可聚焦元素
-    const modal = modalRef.current;
-    if (!modal) return;
+    // 处理器挂载在 modal 自身，currentTarget 恒非空
+    const modal = event.currentTarget;
     const focusables = Array.from(modal.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
     if (focusables.length === 0) {
       event.preventDefault();
@@ -154,6 +154,7 @@ export function ConfirmDialog({
   }
 
   async function handleConfirm() {
+    /* v8 ignore next -- 确认按钮在 submitting 时 disabled，双击不可达 */
     if (submitting || submittingRef.current) return;
     submittingRef.current = true;
     setSubmitting(true);

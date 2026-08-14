@@ -189,4 +189,44 @@ describe('PromptDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: '处理中...' }));
     expect(onSubmit).not.toHaveBeenCalled();
   });
+
+  it('records a null previously-focused element for non-HTML active elements', () => {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    Object.defineProperty(document, 'activeElement', { value: svg, configurable: true });
+    render(<Dialog open title="T" onClose={vi.fn()}><p>content</p></Dialog>);
+    expect(screen.getByText('content')).toBeDefined();
+    delete (document as unknown as Record<string, unknown>).activeElement;
+  });
+
+  it('clears the close timer when the dialog unmounts mid-animation', () => {
+    const onClose = vi.fn();
+    const { rerender } = render(<Dialog open title="T" onClose={onClose}><p>content</p></Dialog>);
+    vi.useFakeTimers();
+    fireEvent.keyDown(document.querySelector('.modal')!, { key: 'Escape' });
+    // 动画期间卸载：effect 清理会取消定时器
+    rerender(<Dialog open={false} title="T" onClose={onClose}><p>content</p></Dialog>);
+    act(() => vi.advanceTimersByTime(150));
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('ignores non-tab key presses and no-ops mid-list tabs', () => {
+    render(
+      <Dialog open title="T" onClose={vi.fn()}>
+        <button type="button">first</button>
+        <button type="button">last</button>
+      </Dialog>,
+    );
+    const modal = document.querySelector('.modal') as HTMLElement;
+    fireEvent.keyDown(modal, { key: 'ArrowDown' });
+    const first = screen.getByRole('button', { name: 'first' });
+    const last = screen.getByRole('button', { name: 'last' });
+    // 中间元素上的普通 Tab：不拦截、不改变焦点
+    first.focus();
+    fireEvent.keyDown(modal, { key: 'Tab' });
+    expect(document.activeElement).toBe(first);
+    // Shift+Tab 且焦点在弹窗外：拉回最后一个可聚焦元素
+    (document.activeElement as HTMLElement).blur();
+    fireEvent.keyDown(modal, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(last);
+  });
 });

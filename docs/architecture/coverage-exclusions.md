@@ -80,6 +80,8 @@ Web **96.82% / 92.94% / 98.66% / 98.58%**，双门禁全绿——覆盖率口径
 | `src/web/pages/patients/PatientTimelinePage.tsx`（派生患者 id / loadMore 失败提示） | `current ?? (...)` 与 `if (failed)` 的已执行路径 | 行为由 spec「uses the first real patient id」与「reports load-more failures」覆盖（断言通过即执行），v8 未将其入账，属采集缺陷 |
 | `src/web/pages/clinical/ImagingPage.tsx`（confirmDeleteCategory / toggleCategory / missingSelectLabel） | `!target`、`toggleBusyId === id`、`!row` 守卫 | ConfirmDialog 仅在 target 非空时渲染；忙碌行按钮不可重复点击；过期 id 由 selectCompare 恒写入 selectedRows——均为防御冗余 |
 | `src/web/pages/clinical/ImagingPage.tsx`（submitOverride imageUrl） | `form.imageUrl ?? ''` 的 nullish 分支 | 行为由 spec「submits a blank image url for records with a null image」覆盖（断言 body.imageUrl 为空串即执行），v8 未入账，属采集缺陷 |
+| `src/web/components/dialog.tsx`（ConfirmDialog handleConfirm） | `submitting \|\| submittingRef.current` 守卫 | 确认按钮在 submitting 时 disabled，双击不可达，防御冗余 |
+| `src/web/components/dialog.tsx`（requestClose 定时器） | `closeEpochRef.current !== epoch` 迟到通知守卫 | 关闭时组件卸载会先清掉定时器（spec 验证），迟到通知不可达，防御冗余 |
 
 ## 5. 其他已知取舍
 
