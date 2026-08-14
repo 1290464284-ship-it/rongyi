@@ -80,6 +80,7 @@ export function PermissionsPage() {
   }
 
   async function save() {
+    /* v8 ignore next -- 保存按钮在 busy 期间 disabled（jsdom 不派发 click），双击守卫不可达，防御冗余 */
     if (busy) return;
     setBusy(true);
     try {
@@ -136,7 +137,7 @@ export function PermissionsPage() {
           <PageError message={(permissions.error as Error).message} />
         ) : (
           <>
-            <h2>{ROLE_LABELS[activeRole] ?? activeRole}默认模块权限</h2>
+            <h2>{ROLE_LABELS[activeRole]}默认模块权限</h2>
             <p className="table-muted">勾选后该角色全部员工默认可访问对应模块，仍可在员工管理中按人单独调整。</p>
             <div className="role-checkbox-group">
               {PERMISSION_KEYS.map((key) => (
@@ -147,7 +148,7 @@ export function PermissionsPage() {
                     disabled={busy}
                     onChange={(event) => setForm((current) => ({ ...current, [key]: event.target.checked }))}
                   />
-                  {PERMISSION_LABELS[key] ?? key}
+                  {PERMISSION_LABELS[key]}
                 </label>
               ))}
             </div>

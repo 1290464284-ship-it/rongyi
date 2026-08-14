@@ -39,6 +39,7 @@ export function FinanceWorkflowPage() {
   const stale = cards.isPlaceholderData || debts.isPlaceholderData;
 
   async function run(path: string, id: string, body: Record<string, unknown>, method: 'POST' | 'PATCH' = 'POST') {
+    /* v8 ignore next -- run 仅由 submitAmount 在 stale 已校验为 false 后同步调用，stale 守卫为防御冗余 */
     if (stale) return;
     try {
       await apiRequest<Record<string, unknown>>(path, { method, body: JSON.stringify(body) });
@@ -64,7 +65,8 @@ export function FinanceWorkflowPage() {
         await run(`/member-cards/${action.id}/recharge`, action.id, { amount, requestId: crypto.randomUUID() });
       } else if (action.kind === 'consume') {
         await run(`/member-cards/${action.id}/consume`, action.id, { amount, requestId: crypto.randomUUID() });
-      } else if (action.kind === 'debt') {
+      } else {
+        // action.kind 为 recharge/consume/debt 三态穷举，此处即 debt（dead-code 简化：移除 else-if 的不可达 else 分支）
         await run(`/debts/${action.id}/pay`, action.id, { amount, requestId: crypto.randomUUID() }, 'PATCH');
       }
     } finally {

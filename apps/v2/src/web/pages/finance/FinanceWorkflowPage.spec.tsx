@@ -242,4 +242,11 @@ describe('FinanceWorkflowPage', () => {
     // stale 期间提交被忽略：不触发写操作，弹窗保持打开供用户重新确认
     await waitFor(() => expect(screen.getByRole('dialog')).not.toBeNull());
   });
+
+  it('renders empty tables when query data omits the items array', async () => {
+    vi.mocked(apiRequest).mockResolvedValue({ total: 0 });
+    render(<FinanceWorkflowPage />, { wrapper });
+    expect(await screen.findByText('暂无会员卡')).toBeDefined();
+    expect(screen.getByText('暂无欠费')).toBeDefined();
+  });
 });

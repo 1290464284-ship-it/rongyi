@@ -174,4 +174,17 @@ describe('PermissionsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '保存角色权限' }));
     expect(await screen.findByText('保存角色权限失败')).toBeDefined();
   });
+
+  it('ignores unhandled tab keys without changing the active role', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/role-permissions/DOCTOR') return doctorPermissions;
+      return {};
+    });
+    render(<PermissionsPage />, { wrapper });
+    await screen.findByText('医生默认模块权限');
+    const doctorTab = screen.getByRole('tab', { name: '医生' });
+    fireEvent.keyDown(doctorTab, { key: 'Escape' });
+    expect(doctorTab.getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByText('医生默认模块权限')).toBeDefined();
+  });
 });

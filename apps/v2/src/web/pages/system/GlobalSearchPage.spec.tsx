@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, useSearchParams } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GlobalSearchPage } from './GlobalSearchPage';
 
@@ -15,6 +15,16 @@ const wrapper = ({ children }: { children: ReactNode }) => (
     {children}
   </QueryClientProvider>
 );
+
+function QueryHarness({ next }: { next: string }) {
+  const [, setSearchParams] = useSearchParams();
+  return (
+    <>
+      <GlobalSearchPage />
+      <button type="button" onClick={() => setSearchParams({ q: next })}>navigate</button>
+    </>
+  );
+}
 
 describe('GlobalSearchPage', () => {
   afterEach(() => {
@@ -109,5 +119,58 @@ describe('GlobalSearchPage', () => {
       { wrapper },
     );
     await waitFor(() => expect(screen.getByText('无匹配结果')).toBeDefined());
+  });
+
+  it('resets the resource filter when the query changes', async () => {
+    vi.mocked(mockApiRequest).mockImplementation(async (path: string) => {
+      if (path === '/search?q=%E5%BC%A0%E4%B8%89') {
+        return [{ id: 'p-1', resource: 'patients', label: '张三' }];
+      }
+      if (path === '/search?q=abc') {
+        return [{ id: 'c-1', resource: 'charges', label: 'CHG-1' }];
+      }
+      return [];
+    });
+    render(
+      <MemoryRouter initialEntries={['/search?q=张三']}>
+        <QueryHarness next="abc" />
+      </MemoryRouter>,
+      { wrapper },
+    );
+    await waitFor(() => expect(screen.getByText('张三')).toBeDefined());
+    fireEvent.click(screen.getByRole('button', { name: '患者' }));
+    expect(screen.getByRole('button', { name: '患者' }).getAttribute('aria-pressed')).toBe('true');
+
+    fireEvent.click(screen.getByRole('button', { name: 'navigate' }));
+    await waitFor(() => expect(screen.getByText('CHG-1')).toBeDefined());
+    expect(screen.getByRole('button', { name: '全部' }).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('handles rows without a resource and filters them out', async () => {
+    vi.mocked(mockApiRequest).mockResolvedValue([
+      { id: 'p-1', resource: 'patients', label: '张三' },
+      { id: 'x-1', label: '无资源行' },
+    ]);
+    render(
+      <MemoryRouter initialEntries={['/search?q=张三']}>
+        <GlobalSearchPage />
+      </MemoryRouter>,
+      { wrapper },
+    );
+    await waitFor(() => expect(screen.getByText('无资源行')).toBeDefined());
+    fireEvent.click(screen.getByRole('button', { name: '患者' }));
+    expect(screen.queryByText('无资源行')).toBeNull();
+    expect(screen.getByText('张三')).toBeDefined();
+  });
+
+  it('renders an Error instance message for a failed search', async () => {
+    vi.mocked(mockApiRequest).mockRejectedValue(new Error('Patient not found'));
+    render(
+      <MemoryRouter initialEntries={['/search?q=错误']}>
+        <GlobalSearchPage />
+      </MemoryRouter>,
+      { wrapper },
+    );
+    expect(await screen.findByText('患者不存在')).toBeDefined();
   });
 });

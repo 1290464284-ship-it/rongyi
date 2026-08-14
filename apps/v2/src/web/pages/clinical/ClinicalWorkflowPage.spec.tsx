@@ -363,4 +363,23 @@ describe('ClinicalWorkflowPage', () => {
     pending.forEach((resolve) => resolve());
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
   });
+
+  it('refetches visits and today when a registration transitions to completed', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/registrations?page=1&pageSize=100') {
+        return { items: [{ id: 'r-1', status: 'IN_PROGRESS', patientId: 'p-1', patientIdLabel: '张四' }], total: 1 };
+      }
+      if (path === '/resources/visits?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/firstExams?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/treatments?page=1&pageSize=100') return { items: [], total: 0 };
+      return resourceData()[path] ?? {};
+    });
+    render(<ClinicalWorkflowPage />, { wrapper });
+    fireEvent.click((await screen.findAllByRole('button', { name: '已完成' }))[0]);
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/registrations/r-1/status', expect.objectContaining({ method: 'PATCH' }));
+    });
+    const call = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/registrations/r-1/status');
+    expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({ status: 'COMPLETED' });
+  });
 });

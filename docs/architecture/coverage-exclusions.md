@@ -96,7 +96,7 @@ Web **96.82% / 92.94% / 98.66% / 98.58%**，双门禁全绿——覆盖率口径
 | `src/web/pages/system/SystemOperationsPage.tsx`（runSearch generation 守卫） | `generation === searchGenerationRef.current` 的未命中分支 | searchBusy 状态 + 按钮 disabled 已完全串行化搜索（同一时间最多一个在途请求），过期响应不可达；import/cleanup 的 busy 守卫由 spec「guards import and cleanup against same-tick double submits」真实覆盖 |
 | `src/web/pages/inventory/InventoryWorkflowPage.tsx`（applySuggestions / StatusFlowSelect / 采购状态列） | `if (!selectedSuggestions.length) return`、`if (next) run(...)` 与 `PURCHASE_STATUS_LABELS[...] ?? String(...)` 兜底 | 应用按钮在 0 选中时 disabled；占位项是受控 value（重选 '' 不派发 change）；pendingPurchaseRows 已过滤为恒 PENDING（标签查表恒命中）——均为防御冗余 |
 | `src/web/pages/clinical/TreatmentPlansPage.tsx`（rowActions / 划价对话框标题） | `if (ctx.stale) return` 守卫与 `billingTarget ? ... : '明细与划价'` 的空值分支 | 本页列表无分页/搜索（queryKey 恒定），stale 恒为 false，守卫防御冗余；对话框标题三元在关闭态（billingTarget null）每次渲染都执行空值分支（行为即默认标题），v8 未为 JSX 属性表达式入账，属采集缺陷 |
-| `src/web/pages/clinical/ClinicalWorkflowPage.tsx`（状态标签兜底） | `STATUS_LABELS[status] ?? status` / `STATUS_LABELS[next] ?? next` 的原始值分支 | transitions 配置内的全部状态（IN_PROGRESS/CANCELLED/COMPLETED/SUBMITTED/APPROVED）均在标签表中，兜底仅面向未来配置扩展，防御冗余 |
+| `src/web/pages/clinical/ClinicalWorkflowPage.tsx`（状态标签兜底） | `STATUS_LABELS[status] ?? status` / `STATUS_LABELS[next] ?? next` 的原始值分支 | 2026-08-14 已删除兜底：transitions 配置内的全部状态（IN_PROGRESS/CANCELLED/COMPLETED/SUBMITTED/APPROVED）均在标签表中，兜底仅面向未来配置扩展，删除后行为零变化（渲染列的空值兜底保留） |
 | `src/web/pages/system/UsersPage.tsx`（deleteUser / resetPassword / savePermissions / 权限标签） | `!deleteTarget \|\| submitting`、`!passwordTarget \|\| submitting`、`!permissionTarget \|\| permissionBusy` 守卫与 `PERMISSION_LABELS[key] ?? key` | 确认/重置/保存按钮仅在目标非空时渲染且 busy 期间 disabled（jsdom 不派发）；PERMISSION_KEYS 全部在标签表中，`?? key` 仅面向未来扩展——均为防御冗余；openPermissions 的 requestId 守卫由 spec「drops a stale permission load...」真实覆盖 |
 | `src/server/application/service-modules/workbench.ts`（today） | `dayStart/dayEnd 为 null` 解析失败守卫 | clinicDate 恒产出合法 YYYY-MM-DD（+8 时区），`clinicDayStartUtc/EndUtc` 解析不会失败，防御冗余（COUNT(*) 空值兜底已删除，聚合恒返回一行） |
 | `src/web/components/Tree.tsx`（handleToggle） | `if (!hasChildren) return` | 展开按钮仅在有子节点时渲染（`hasChildren &&`），无子节点分支不可达，防御冗余 |
@@ -115,6 +115,8 @@ Web **96.82% / 92.94% / 98.66% / 98.58%**，双门禁全绿——覆盖率口径
 | `src/web/treatment-plans/PlanBillingDialog.tsx`（bill） | `selectedIds.length > 0 ? ... : {}` 的空选分支 | 划价按钮在 0 选中时 disabled，`{}` 兜底不可达，防御冗余 |
 | `src/web/pages/finance/MemberCardsPage.tsx`（openAction / openPlan / openQuote / runAction） | `if (stale) return` 与 runAction 综合守卫 | 本页列表无分页/搜索（queryKey 恒定），stale 恒为 false 且按钮 disabled；动作表单仅在目标与动作类型就绪时渲染、busy 期间按钮 disabled——均为防御冗余 |
 | `src/server/http/routes/workflow.ts`（appointment/charge/bulk-import/batch-complete 的空体 nullish 与 payMethodName 三元） | `req.body ?? {}`（4 处 requestBodyHash + charges.create）与 `typeof payMethodName === 'string' ? ... : undefined` 的 undefined 分支 | 行为由 workflow.spec「normalizes absent write bodies」真实执行（probe 中间件验证 req.body 为 undefined、handler 返回 400/404、断言通过即执行）；单文件/双文件覆盖运行均入账，全量多 worker 套件合并时 v8 不为其入账，属 v8 覆盖合并采集缺陷 |
+| `src/web/pages/finance/FinanceWorkflowPage.tsx`（run） | `if (stale) return` 守卫 | run 仅由 submitAmount 在 stale 已校验为 false 后同步调用（其间无 await），stale 守卫为防御冗余；submitAmount 的同款 stale 守卫由 spec「ignores amount submissions while the page is stale」真实覆盖 |
+| `src/web/pages/system/PermissionsPage.tsx`（save） | `if (busy) return` 守卫 | 保存按钮在 busy 期间 disabled（jsdom 不派发 click），双击守卫不可达，防御冗余 |
 
 ## 5. 其他已知取舍
 

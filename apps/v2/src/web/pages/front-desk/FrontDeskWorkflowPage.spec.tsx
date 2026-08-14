@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { FrontDeskWorkflowPage } from './FrontDeskWorkflowPage';
 import { apiRequest, fetchAllPages } from '../../lib/api';
@@ -205,5 +205,54 @@ describe('FrontDeskWorkflowPage', () => {
     expect(await screen.findByText('p-x')).toBeDefined();
     expect(screen.getByText('WEIRD')).toBeDefined();
     expect(screen.queryByRole('button', { name: '分诊' })).toBeNull();
+  });
+
+  it('ignores board transitions while the registration list is stale', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/registrations?page=1&pageSize=100') {
+        return { items: [{ id: 'r-1', status: 'REGISTERED', patientId: 'p-1', patientIdLabel: '张三' }], total: 150 };
+      }
+      if (path === '/resources/registrations?page=2&pageSize=100') return new Promise(() => {});
+      if (path === '/triage/queue') return { items: [], total: 0 };
+      return {};
+    });
+    render(<FrontDeskWorkflowPage />, { wrapper });
+    await screen.findByText('张三');
+    fireEvent.click(screen.getAllByRole('button', { name: '下一页' })[0]);
+    await waitFor(() => {
+      expect((screen.getAllByRole('button', { name: '下一页' })[0] as HTMLButtonElement).disabled).toBe(true);
+    });
+    const dataTransfer = { setData: vi.fn(), getData: () => 'r-1' };
+    const card = screen.getByText('张三').closest('.ui-kanban-card') as HTMLElement;
+    const doneColumn = screen.getByText('已完成').closest('.ui-kanban-col') as HTMLElement;
+    fireEvent.dragStart(card, { dataTransfer });
+    fireEvent.drop(doneColumn, { dataTransfer });
+    await waitFor(() => {
+      expect(apiRequest).not.toHaveBeenCalledWith('/registrations/r-1/status', expect.objectContaining({ method: 'PATCH' }));
+    });
+  });
+
+  it('ignores same-tick duplicate transition clicks', async () => {
+    const pending: Array<() => void> = [];
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/registrations?page=1&pageSize=100') {
+        return { items: [{ id: 'r-1', status: 'REGISTERED', patientId: 'p-1', patientIdLabel: '张三' }], total: 1 };
+      }
+      if (path === '/triage/queue') return { items: [], total: 0 };
+      if (path === '/registrations/r-1/status') {
+        return new Promise((resolve) => { pending.push(() => resolve({})); });
+      }
+      return {};
+    });
+    render(<FrontDeskWorkflowPage />, { wrapper });
+    const button = (await screen.findAllByRole('button', { name: '已分诊' }))[0];
+    act(() => {
+      fireEvent.click(button);
+      fireEvent.click(button);
+    });
+    const calls = vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/registrations/r-1/status');
+    expect(calls).toHaveLength(1);
+    pending.forEach((resolve) => resolve());
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
   });
 });

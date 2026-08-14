@@ -106,7 +106,7 @@ export function ClinicalWorkflowPage() {
             ? `/first-exams/${id}/status`
             : `/treatments/${id}/status`;
       await apiRequest(endpoint, { method: 'PATCH', body: JSON.stringify({ status }) });
-      showToast(`${RESOURCE_LABELS[resource]}已更新为${STATUS_LABELS[status] ?? status}`, 'success');
+      showToast(`${RESOURCE_LABELS[resource]}已更新为${STATUS_LABELS[status]}`, 'success');
       await queries[resource as typeof resources[number]].refetch();
       if (resource === 'registrations' && (status === 'IN_PROGRESS' || status === 'COMPLETED')) {
         void queries.visits.refetch();
@@ -131,7 +131,7 @@ export function ClinicalWorkflowPage() {
       <div className="kanban-actions">
         {(transitions.registrations?.[String(row.status)] ?? []).map((next) => (
           <button key={next} disabled={transitionKey !== null || stale} onClick={() => transition('registrations', String(row.id), next)}>
-            {STATUS_LABELS[next] ?? next}
+            {STATUS_LABELS[next]}
           </button>
         ))}
         {row.status === 'TRIAGED' && <span className="triage-badge">已分诊</span>}
@@ -177,7 +177,7 @@ export function ClinicalWorkflowPage() {
               <>
                 {(transitions[resource]?.[String(row.status)] ?? []).map((next) => (
                   <button key={next} disabled={transitionKey !== null || stale} onClick={() => transition(resource, String(row.id), next)}>
-                    {STATUS_LABELS[next] ?? next}
+                    {STATUS_LABELS[next]}
                   </button>
                 ))}
               </>

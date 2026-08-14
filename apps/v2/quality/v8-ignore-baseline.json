@@ -1,9 +1,10 @@
 {
-  "generatedAt": "2026-08-14T04:41:21.575Z",
-  "total": 265,
+  "generatedAt": "2026-08-14T04:53:07.475Z",
+  "total": 267,
   "perFile": {
     "src\\web\\treatment-plans\\PlanBillingDialog.tsx": 1,
     "src\\web\\schedules\\TemplateSection.tsx": 1,
+    "src\\web\\pages\\system\\PermissionsPage.tsx": 1,
     "src\\web\\pages\\system\\SystemOperationsPage.tsx": 3,
     "src\\web\\pages\\system\\UsersPage.tsx": 3,
     "src\\web\\pages\\patients\\PatientTimelinePage.tsx": 4,
@@ -13,6 +14,7 @@
     "src\\web\\pages\\hr\\CommissionPage.tsx": 4,
     "src\\web\\pages\\hr\\HrWorkflowPage.tsx": 1,
     "src\\web\\pages\\finance\\ChargesPage.tsx": 3,
+    "src\\web\\pages\\finance\\FinanceWorkflowPage.tsx": 1,
     "src\\web\\pages\\finance\\MemberCardsPage.tsx": 4,
     "src\\web\\pages\\finance\\RefundsPage.tsx": 4,
     "src\\web\\pages\\communication\\FollowUpsPage.tsx": 2,

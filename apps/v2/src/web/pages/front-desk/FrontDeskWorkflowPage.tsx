@@ -44,7 +44,7 @@ export function FrontDeskWorkflowPage() {
     setTransitionKey(key);
     try {
       await apiRequest(`/registrations/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
-      showToast(`挂号已更新为${STATUS_LABELS[status] ?? status}`, 'success');
+      showToast(`挂号已更新为${STATUS_LABELS[status]}`, 'success');
       await registrations.refetch();
     } catch (error) {
       showToast(errorMessage(error, '状态更新失败'), 'error');
@@ -71,7 +71,7 @@ export function FrontDeskWorkflowPage() {
             <div className="kanban-actions">
               {(registrationTransitions[String(row.status)] ?? []).map((next) => (
                 <button key={next} disabled={transitionKey !== null || stale} onClick={() => void transition(String(row.id), next)}>
-                  {STATUS_LABELS[next] ?? next}
+                  {STATUS_LABELS[next]}
                 </button>
               ))}
               {row.status === 'REGISTERED' && (
