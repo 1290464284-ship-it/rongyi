@@ -1,9 +1,9 @@
-// L-04 索引：早期聚合的"主路径 + 跨服务集成"测试（22 个），当前仅剩
-// ChargeService/DebtService/MemberCardService/AppointmentService 的
-// 主流程与跨服务集成（收费/欠款/会员卡/预约冲突/操作日志），以及刻意保留的
-// 集成层测试（回滚联动、跨服务缺患者校验）。其余模块（Wechat/Stats/Auth/
-// Sync/FollowUp/BulkImport/PatientRisk）已迁出到 service-modules/*.spec.ts，
-// 后续逐域迁移后删除本文件，迁移前保持聚合。
+// L-04 索引：跨服务集成测试（5 个，rounds 9-32 模块化后的保留层）。
+// ChargeService/MemberCardService/AppointmentService/PatientRiskService 的
+// 跨服务联动：回滚联动（欠款支付回滚、会员卡扣减回滚）、卡退款链路
+// （删除卡/遗留卡/余额扣减退款）、缺患者跨服务校验、预约冲突诊所隔离。
+// 其余模块均已迁出到 service-modules/*.spec.ts；本文件作为集成层保留，
+// 迁移前保持聚合。
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
