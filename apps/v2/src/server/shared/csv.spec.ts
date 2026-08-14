@@ -12,6 +12,8 @@ describe('shared CSV helpers', () => {
     expect(csvCell(undefined)).toBe('');
     expect(csvCell('a=b')).toBe('"a=b"');
     expect(csvCell({ a: 1 })).toBe('"{\"\"a\"\":1}"');
+    // B-4 属性测试探针：toJSON 返回 undefined 的对象此前抛 TypeError
+    expect(csvCell({ toJSON: () => undefined })).toBe('"[object Object]"');
   });
 
   it('emits a header followed by object-mode rows', async () => {

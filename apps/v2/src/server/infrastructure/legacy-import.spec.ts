@@ -193,6 +193,13 @@ describe('shouldImportLegacyDb (T2R-15 / R2-P1-12)', () => {
     process.env.V2_LOG_DIR = path.join(decisionDir, 'logs');
     process.env.V2_LEGACY_DB_PATH = path.join(decisionDir, 'no-legacy.sqlite');
     delete process.env.V2_DB_PATH;
+    // A-P3.3：预置"未来时间"启动标记，覆盖 main.ts 顶层时钟漂移告警分支。
+    fs.mkdirSync(path.join(decisionDir, 'logs'), { recursive: true });
+    fs.writeFileSync(
+      path.join(decisionDir, 'logs', 'last-run.json'),
+      JSON.stringify({ startedAt: new Date(Date.now() + 72 * 60 * 60 * 1000 + 1000).toISOString() }),
+      'utf8',
+    );
     ({ shouldImportLegacyDb } = await import('../main'));
   });
 
