@@ -15,7 +15,7 @@ on:
       - 'package.json'
       - 'pnpm-workspace.yaml'
       - 'apps/v2/**'
-      - '.github/workflows/v2-windows-smoke.yml'
+      - '.github/workflows/**'
 
 # Round7 H2：本 workflow 只读（不需要写仓库权限）。
 permissions:
