@@ -145,4 +145,37 @@ describe('StatsService', () => {
     expect(row).toBeDefined();
     expect(JSON.parse(String(row?.valueJson))).toHaveProperty('patients');
   });
+
+  // ---- 边缘分支测试（自 services-edge.spec.ts 聚合文件迁移）----
+
+  it('excludes soft-deleted member cards from memberStats', () => {
+    const now = new Date().toISOString();
+    const clinicId = 'clinic-v2-001';
+    db.prepare(
+      `INSERT INTO Patient (id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active)
+       VALUES ('patient-stats-del', ?, ?, ?, NULL, 'P-STATS-DEL', 'Stats Del', 'UNKNOWN', '13700000005',
+         '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
+    ).run(clinicId, now, now);
+    db.prepare(
+      `INSERT INTO MemberCard (id, clinicId, createdAt, updatedAt, deletedAt, patientId, cardNo,
+         balance, totalRecharge, totalConsume, status, points, totalPoints, level)
+       VALUES ('card-stats-del', ?, ?, ?, NULL, 'patient-stats-del', 'CARD-STATS-DEL', 100, 100, 0, 'ACTIVE', 10, 10, 'NORMAL')`,
+    ).run(clinicId, now, now);
+    // 缓存按实例隔离：每次断言用新实例，避免 30s TTL 缓存。
+    const countActive = (): number => {
+      const row = db.prepare(
+        `SELECT COUNT(*) AS c FROM MemberCard WHERE clinicId = ? AND deletedAt IS NULL`,
+      ).get(clinicId) as { c: number };
+      return Number(row.c);
+    };
+    const before = new StatsService(db).memberStats(makeContext());
+    expect(Number(before.total)).toBe(countActive());
+    // 软删该卡后统计应减去一行。
+    db.prepare(`UPDATE MemberCard SET deletedAt = ? WHERE id = 'card-stats-del'`).run(now);
+    const after = new StatsService(db).memberStats(makeContext());
+    expect(Number(after.total)).toBe(countActive());
+    expect(Number(after.total)).toBe(Number(before.total) - 1);
+  });
 });
