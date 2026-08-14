@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-08-14T05:59:26.804Z",
-  "total": 278,
+  "generatedAt": "2026-08-14T06:16:17.980Z",
+  "total": 279,
   "perFile": {
     "src\\web\\treatment-plans\\PlanBillingDialog.tsx": 1,
     "src\\web\\schedules\\TemplateSection.tsx": 1,
@@ -41,6 +41,7 @@
     "src\\server\\infrastructure\\idempotency.ts": 3,
     "src\\server\\infrastructure\\repository.ts": 33,
     "src\\server\\infrastructure\\repositories\\clinical-workflow.repository.ts": 3,
+    "src\\server\\infrastructure\\migrations\\index.ts": 1,
     "src\\server\\infrastructure\\migrations\\v101-110.ts": 5,
     "src\\server\\http\\audit-buffer.ts": 2,
     "src\\server\\http\\metrics.ts": 4,

@@ -103,4 +103,46 @@ describe('startDiskMonitor', () => {
     vi.advanceTimersByTime(60_000);
     expect(alerts).toHaveLength(1);
   });
+
+  it('stays silent on a healthy tick without a prior alert', () => {
+    vi.useFakeTimers();
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-disk-healthy-'));
+    const alerts: MaintenanceAlert[] = [];
+    const logger = makeLogger();
+    const monitor = startDiskMonitor({
+      dirs: [tempDir],
+      intervalMs: 1000,
+      thresholdBytes: 1, // 磁盘立即健康：alerted.delete 返回 false 的 else 分支
+      logger,
+      onAlert: (input: MaintenanceAlert) => alerts.push(input),
+    });
+    vi.advanceTimersByTime(1000);
+    expect(alerts).toHaveLength(0);
+    expect(logger.info).not.toHaveBeenCalled();
+    expect(logger.error).not.toHaveBeenCalled();
+    monitor.stop();
+  });
+
+  it('falls back to the default threshold when the option is omitted', () => {
+    vi.useFakeTimers();
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-disk-default-'));
+    const alerts: MaintenanceAlert[] = [];
+    const logger = makeLogger();
+    // 模拟 500MB 剩余空间：低于默认 1GB 阈值 → 告警，且日志记录默认阈值
+    vi.spyOn(fs, 'statfsSync').mockReturnValue({ bavail: 500 * 1024, bsize: 1024 } as never);
+    const monitor = startDiskMonitor({
+      dirs: [tempDir],
+      intervalMs: 1000,
+      logger,
+      onAlert: (input: MaintenanceAlert) => alerts.push(input),
+    });
+    vi.advanceTimersByTime(1000);
+    expect(alerts).toHaveLength(1);
+    expect(logger.error).toHaveBeenCalledWith(
+      'disk space below threshold',
+      expect.objectContaining({ thresholdBytes: 1024 * 1024 * 1024 }),
+    );
+    monitor.stop();
+    vi.restoreAllMocks();
+  });
 });

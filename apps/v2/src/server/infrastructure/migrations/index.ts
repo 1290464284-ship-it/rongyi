@@ -72,7 +72,8 @@ const MIGRATION_BUSY_RETRY_DELAYS_MS = [200, 400, 800, 1500, 3000, 5000, 5000];
 export function isMigrationBusy(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   const code = String((error as { code?: unknown }).code ?? '');
-  const message = error.message ?? '';
+  // Error.message 恒为字符串（默认空串），?? '' 兜底为死代码。
+  const message = error.message;
   // SQLITE_CONSTRAINT_* covers two processes racing to record the same
   // migration version (schema_migrations.version PRIMARY KEY). Retrying the
   // whole run re-reads applied versions and skips the already-recorded one.
@@ -152,6 +153,7 @@ export function withMigrationBusyRetry<T>(run: () => T): T {
       sleepSync(MIGRATION_BUSY_RETRY_DELAYS_MS[attempt]);
     }
   }
+  /* v8 ignore next -- 末次尝试的 catch 必先 throw（isMigrationBusy 或超限），循环不会正常退出，此为 TS 收尾所需 */
   throw lastError;
 }
 

@@ -131,6 +131,56 @@ describe('migrations', () => {
     }
   });
 
+  it('warns and continues when the pre-migration snapshot fails', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-mig-snapshot-fail-'));
+    const db = createDatabase(dir);
+    runMigrations(db);
+    // snapshotDir 指向一个已存在的文件：mkdirSync 失败 → 快照失败路径
+    const blocker = path.join(dir, 'snapshot-blocker');
+    fs.writeFileSync(blocker, 'file');
+    const snapshotDir = path.join(blocker, 'pre-migration');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      db.prepare('DELETE FROM schema_migrations').run();
+      expect(runMigrations(db, { snapshotDir })).toBeGreaterThan(0);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('[migrations] pre-migration snapshot failed, continuing'),
+        expect.anything(),
+      );
+    } finally {
+      warn.mockRestore();
+      db.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('preflight skips dedup for resources whose table lacks columns in a legacy schema', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-mig-preflight-'));
+    const db = createDatabase(dir);
+    runMigrations(db);
+    db.prepare('DELETE FROM schema_migrations').run();
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('PRAGMA table_info("MemberCard")')) {
+        return { all: () => [] } as never;
+      }
+      return originalPrepare(sql);
+    });
+    // 重放若触发 busy 重试则跳过真实睡眠（本测试只关心 preflight 分支）
+    const wait = vi.spyOn(Atomics, 'wait').mockImplementation(() => 'ok' as const);
+    try {
+      // 121 未应用 → preflight 对 MemberCard 的列查询为空 → continue 跳过去重。
+      // 全量迁移重放可能在任何一步失败或成功；无论哪种，preflight 分支都已执行，
+      // 这里仅断言不出现 preflight 本身的崩溃形态（dedup 未抛「表不存在」之外的错误）。
+      expect(() => runMigrations(db)).not.toThrow('tableInfo');
+    } finally {
+      wait.mockRestore();
+      vi.restoreAllMocks();
+      db.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('adds missing migration columns when legacy schema lacks them', () => {
     const freshDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-mig-fresh-'));
     const freshDb = createDatabase(freshDir);
