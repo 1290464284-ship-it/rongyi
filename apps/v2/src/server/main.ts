@@ -20,6 +20,7 @@ import { startSchedulers } from './scheduler';
 import { enableIncrementalAutoVacuum, runDailyDatabaseMaintenance, runWeeklyDatabaseMaintenance } from './maintenance/db-maintenance';
 import { checkDiskFree } from './maintenance/disk-monitor';
 import { createRuntimeMetricsSampler, persistRuntimeMetrics } from './maintenance/runtime-metrics';
+import { buildHealthSnapshot, writeHealthSnapshot } from './maintenance/health-snapshot';
 import {
   DEFAULT_API_PORT,
   DEFAULT_AUTO_BACKUP_INTERVAL_MS,
@@ -466,12 +467,38 @@ const runtimeMetricsTimer = setInterval(() => {
 }, RUNTIME_METRICS_INTERVAL_MS);
 runtimeMetricsTimer.unref?.();
 
+// ── A-P3.1：运维健康快照 health.json（启动即写 + 每 15 分钟） ──────────────
+// 无人值守多机部署的巡检入口：dsh-ssh 批量读 userData/logs/health.json 一个
+// 文件即可判断健康度。写入失败仅告警日志，不影响业务。
+const HEALTH_SNAPSHOT_INTERVAL_MS = 15 * 60 * 1000;
+const apiStartedAt = Date.now();
+function persistHealthSnapshot(): void {
+  try {
+    const snapshot = buildHealthSnapshot({
+      db,
+      dbPath,
+      backupDir,
+      logDir,
+      version: process.env.V2_APP_VERSION ?? 'unknown',
+      startedAt: apiStartedAt,
+      openAlertsCount: () => alerts.open().total,
+    });
+    writeHealthSnapshot({ logDir, snapshot, logger });
+  } catch (error) {
+    logger.error('health snapshot failed', { action: 'health-snapshot', error });
+  }
+}
+persistHealthSnapshot();
+const healthSnapshotTimer = setInterval(persistHealthSnapshot, HEALTH_SNAPSHOT_INTERVAL_MS);
+healthSnapshotTimer.unref?.();
+
 let shuttingDown = false;
 async function shutdown(): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
   try {
     clearInterval(runtimeMetricsTimer);
+    clearInterval(healthSnapshotTimer);
     // 先停所有定时器并等待正在执行的自动备份结束，确保关闭数据库期间
     // 没有任何调度回调触碰 db，备份 API 也不会读到已关闭的连接。
     await schedulers.stop();
