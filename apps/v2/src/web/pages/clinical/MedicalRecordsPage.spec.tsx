@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MedicalRecordsPage } from './MedicalRecordsPage';
 import { apiRequest, fetchAllPages } from '../../lib/api';
@@ -479,17 +479,21 @@ describe('MedicalRecordsPage', () => {
 
     fireEvent.click(screen.getAllByText('申请修改')[0]);
     await screen.findByLabelText('修改原因');
-    fireEvent.keyDown(await screen.findByRole('dialog'), { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByLabelText('修改原因')).toBeNull();
-    });
+    const dialog = await screen.findByRole('dialog');
+    vi.useFakeTimers();
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByLabelText('修改原因')).toBeNull();
+    vi.useRealTimers();
 
     fireEvent.click(screen.getByText('审核'));
     await screen.findByText('申请原因：诊断有误');
-    fireEvent.keyDown(await screen.findByRole('dialog'), { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByText('申请原因：诊断有误')).toBeNull();
-    });
+    const reviewDialog = await screen.findByRole('dialog');
+    vi.useFakeTimers();
+    fireEvent.keyDown(reviewDialog, { key: 'Escape' });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByText('申请原因：诊断有误')).toBeNull();
+    vi.useRealTimers();
 
     fireEvent.click(screen.getByText('审核'));
     await screen.findByText('申请原因：诊断有误');

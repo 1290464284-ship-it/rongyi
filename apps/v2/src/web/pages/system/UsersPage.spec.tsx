@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { UsersPage } from './UsersPage';
 import { apiRequest, fetchAllPages } from '../../lib/api';
@@ -551,10 +551,12 @@ describe('UsersPage', () => {
     expect(await screen.findByText('员工已创建')).toBeDefined();
 
     fireEvent.click(screen.getAllByText('编辑')[0]);
-    fireEvent.keyDown(await screen.findByRole('dialog'), { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog')).toBeNull();
-    });
+    const dialog = await screen.findByRole('dialog');
+    vi.useFakeTimers();
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    vi.useRealTimers();
 
     fireEvent.click(screen.getByText('新建员工'));
     fireEvent.click(screen.getByRole('button', { name: '取消' }));
@@ -576,10 +578,11 @@ describe('UsersPage', () => {
 
     fireEvent.click(screen.getByText('权限'));
     const permissionDialog = await screen.findByRole('dialog');
+    vi.useFakeTimers();
     fireEvent.keyDown(permissionDialog, { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByText('设置「张医生」的权限')).toBeNull();
-    });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByText('设置「张医生」的权限')).toBeNull();
+    vi.useRealTimers();
 
     fireEvent.click(screen.getByText('权限'));
     await screen.findByText('设置「张医生」的权限');
@@ -590,10 +593,11 @@ describe('UsersPage', () => {
 
     fireEvent.click(screen.getByText('重置密码'));
     const passwordDialog = await screen.findByRole('dialog');
+    vi.useFakeTimers();
     fireEvent.keyDown(passwordDialog, { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByText('输入新密码，至少 6 位')).toBeNull();
-    });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByText('输入新密码，至少 6 位')).toBeNull();
+    vi.useRealTimers();
   });
 
   it('ignores a duplicate user submit while busy', async () => {

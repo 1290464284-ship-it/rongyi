@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { PrescriptionsPage } from './PrescriptionsPage';
 import { apiRequest } from '../../lib/api';
@@ -692,9 +692,10 @@ describe('PrescriptionsPage', () => {
     await screen.findByText('饭后服用');
     fireEvent.click(screen.getByRole('button', { name: '查看状态' }));
     expect(await screen.findByText('charge-1')).toBeDefined();
+    vi.useFakeTimers();
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByText('charge-1')).toBeNull();
-    });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByText('charge-1')).toBeNull();
+    vi.useRealTimers();
   });
 });

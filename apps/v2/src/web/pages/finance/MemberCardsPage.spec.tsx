@@ -228,10 +228,12 @@ describe('MemberCardsPage', () => {
     });
 
     fireEvent.click(screen.getByRole('button', { name: '充值' }));
-    fireEvent.keyDown(await screen.findByRole('dialog'), { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog')).toBeNull();
-    });
+    const dialog = await screen.findByRole('dialog');
+    vi.useFakeTimers();
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    vi.useRealTimers();
 
     fireEvent.click(screen.getByRole('button', { name: '积分' }));
     await screen.findByRole('dialog');
@@ -242,10 +244,11 @@ describe('MemberCardsPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '报价试算' }));
     const quoteDialog = (await screen.findByLabelText('原价金额（元）')).closest('[role="dialog"]') as HTMLElement;
+    vi.useFakeTimers();
     fireEvent.keyDown(quoteDialog, { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByLabelText('原价金额（元）')).toBeNull();
-    });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByLabelText('原价金额（元）')).toBeNull();
+    vi.useRealTimers();
   });
 
   it('reports member card action failures', async () => {

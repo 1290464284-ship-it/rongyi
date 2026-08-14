@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppointmentsPage } from './AppointmentsPage';
 import { apiRequest } from '../../lib/api';
@@ -745,10 +745,11 @@ await waitFor(() => {
     await screen.findByText('预约管理');
     fireEvent.click((await screen.findAllByRole('button', { name: '删除' }))[2]);
     const dialog = await screen.findByRole('dialog', { name: '删除预约' });
+    vi.useFakeTimers();
     fireEvent.keyDown(dialog, { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog', { name: '删除预约' })).toBeNull();
-    });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByRole('dialog', { name: '删除预约' })).toBeNull();
+    vi.useRealTimers();
     expect(apiRequest).not.toHaveBeenCalledWith('/resources/appointments/a-1', expect.objectContaining({ method: 'DELETE' }));
   });
 
@@ -879,10 +880,12 @@ await waitFor(() => {
     expect(await screen.findByText('事项已更新')).toBeDefined();
 
     fireEvent.click((await screen.findAllByRole('button', { name: '编辑' }))[0]);
-    fireEvent.keyDown(await screen.findByRole('dialog'), { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog')).toBeNull();
-    });
+    const dialog = await screen.findByRole('dialog');
+    vi.useFakeTimers();
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    vi.useRealTimers();
 
     fireEvent.click((await screen.findAllByRole('button', { name: '编辑' }))[0]);
     fireEvent.click(screen.getByRole('button', { name: '取消' }));

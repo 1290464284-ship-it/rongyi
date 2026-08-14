@@ -10,7 +10,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TreatmentPlansPage } from './TreatmentPlansPage';
 import { apiRequest } from '../../lib/api';
@@ -733,10 +733,11 @@ describe('TreatmentPlansPage', () => {
 
     fireEvent.click(screen.getAllByText('打印')[0]);
     await screen.findByText('打印预览');
-    fireEvent.keyDown(await screen.findByRole('dialog'), { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByText('打印预览')).toBeNull();
-    });
+    vi.useFakeTimers();
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByText('打印预览')).toBeNull();
+    vi.useRealTimers();
 
     fireEvent.click(screen.getAllByText('打印')[0]);
     await screen.findByText('打印预览');
@@ -747,24 +748,27 @@ describe('TreatmentPlansPage', () => {
 
     fireEvent.click(screen.getAllByRole('button', { name: '签字' })[0]);
     await screen.findByText('电子签字');
-    fireEvent.keyDown(await screen.findByRole('dialog'), { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByText('电子签字')).toBeNull();
-    });
+    vi.useFakeTimers();
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByText('电子签字')).toBeNull();
+    vi.useRealTimers();
 
     fireEvent.click(screen.getAllByRole('button', { name: '折扣' })[0]);
     await screen.findByLabelText('明细与划价：正畸计划');
-    fireEvent.keyDown(await screen.findByRole('dialog'), { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByLabelText('明细与划价：正畸计划')).toBeNull();
-    });
+    vi.useFakeTimers();
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByLabelText('明细与划价：正畸计划')).toBeNull();
+    vi.useRealTimers();
 
     fireEvent.click(screen.getAllByRole('button', { name: '回访' })[0]);
     await screen.findByLabelText('回访状态');
-    fireEvent.keyDown(await screen.findByRole('dialog'), { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByLabelText('回访状态')).toBeNull();
-    });
+    vi.useFakeTimers();
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByLabelText('回访状态')).toBeNull();
+    vi.useRealTimers();
   });
 
   it('reports cleanup failures and detail delete failures', async () => {

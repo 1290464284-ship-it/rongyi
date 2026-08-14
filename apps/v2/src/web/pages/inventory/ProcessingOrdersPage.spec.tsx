@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ProcessingOrdersPage } from './ProcessingOrdersPage';
 import { ProcessingSettleDialog } from './ProcessingSettleDialog';
@@ -510,10 +510,11 @@ describe('ProcessingOrdersPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: '流程' }));
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText('流程加载中...')).toBeDefined();
+    vi.useFakeTimers();
     fireEvent.keyDown(dialog, { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog')).toBeNull();
-    });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    vi.useRealTimers();
     resolveSteps?.([{ id: 's-1', stepName: '取模', status: 'DONE', sortOrder: 1, completedAt: null }]);
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).toBeNull();
@@ -702,10 +703,11 @@ describe('ProcessingOrdersPage', () => {
     const dialog = await screen.findByRole('dialog');
     await within(dialog).findByText('取模');
     fireEvent.click(within(dialog).getByRole('button', { name: '推进' }));
+    vi.useFakeTimers();
     fireEvent.keyDown(dialog, { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog')).toBeNull();
-    });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    vi.useRealTimers();
     resolveAdvance?.([{ id: 's-1', stepName: '取模', status: 'DONE', sortOrder: 1, completedAt: null }]);
     expect(screen.queryByRole('dialog')).toBeNull();
 
@@ -713,10 +715,11 @@ describe('ProcessingOrdersPage', () => {
     const dialog2 = await screen.findByRole('dialog');
     await within(dialog2).findByText('取模');
     fireEvent.change(within(dialog2).getByLabelText('调整取模'), { target: { value: 'DONE' } });
+    vi.useFakeTimers();
     fireEvent.keyDown(dialog2, { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog')).toBeNull();
-    });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    vi.useRealTimers();
     resolveAdjust?.({ id: 's-1', stepName: '取模', status: 'DONE', sortOrder: 1, completedAt: null });
     expect(screen.queryByRole('dialog')).toBeNull();
   });
@@ -750,10 +753,11 @@ describe('ProcessingOrdersPage', () => {
     let dialog = await screen.findByRole('dialog');
     await within(dialog).findByText('取模');
     fireEvent.click(within(dialog).getByRole('button', { name: '推进' }));
+    vi.useFakeTimers();
     fireEvent.keyDown(dialog, { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog')).toBeNull();
-    });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    vi.useRealTimers();
     rejectAdvance?.(new Error('late advance failure'));
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(screen.queryByText('推进流程失败')).toBeNull();
@@ -762,10 +766,11 @@ describe('ProcessingOrdersPage', () => {
     dialog = await screen.findByRole('dialog');
     await within(dialog).findByText('取模');
     fireEvent.change(within(dialog).getByLabelText('调整取模'), { target: { value: 'DONE' } });
+    vi.useFakeTimers();
     fireEvent.keyDown(dialog, { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog')).toBeNull();
-    });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    vi.useRealTimers();
     rejectAdjust?.(new Error('late adjust failure'));
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(screen.queryByText('调整步骤失败')).toBeNull();
@@ -895,8 +900,11 @@ describe('ProcessingSettleDialog', () => {
     render(<ProcessingOrdersPage />, { wrapper });
     fireEvent.click(await screen.findByRole('button', { name: '流程' }));
     const dialog = await screen.findByRole('dialog');
+    vi.useFakeTimers();
     fireEvent.keyDown(dialog, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    vi.useRealTimers();
     rejectSteps?.(new Error('late failure'));
     await new Promise((resolve) => setTimeout(resolve, 50));
     // 关闭后的旧请求失败被守卫吞掉，不弹出任何错误
