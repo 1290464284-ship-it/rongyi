@@ -3,17 +3,16 @@
 // operator's clinic, and verify/stageRestore reject files owned by another
 // clinic with 403. System-level AUTO backups stay global (clinicId = null).
 import fs from 'node:fs';
-import { createReadStream, createWriteStream } from 'node:fs';
 import path from 'node:path';
-import { pipeline } from 'node:stream/promises';
-import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { AppError, NotFoundError } from '../../infrastructure/errors';
 import { removeSqliteSidecars, sha256File, summarizeSqliteFile } from '../../infrastructure/sqlite-files';
 import type { Logger } from '../../infrastructure/logger';
 import { secretFileValue } from '../../infrastructure/secret-file';
 import { signRestoreMarker } from '../../infrastructure/restore-apply';
-import { BACKUP_MAGIC, backupEncryptionKey } from './common';
+import { cleanupMirrorDir, mirrorBackupFile, type MirrorResult } from './backup-mirror';
+import { decryptBackupFile, encryptBackupFile } from './backup-crypto';
 
 export interface BackupCreateOptions {
   type?: 'MANUAL' | 'AUTO' | 'RESTORE';
@@ -85,7 +84,7 @@ export class BackupService {
       if (encrypted) {
         // 先写 .partial 再 rename：加密中途失败不会在正式目录留下可见的损坏 .enc，
         // 且 .partial 不被 over-limit 清理误删（只按 6h 过期清理）。
-        await this.encryptFile(tempPath, encryptTempPath);
+        await encryptBackupFile(tempPath, encryptTempPath);
         fs.renameSync(encryptTempPath, finalPath);
         fs.unlinkSync(tempPath);
       } else {
@@ -177,7 +176,7 @@ export class BackupService {
     let tempPath: string | undefined;
     if (encrypted) {
       tempPath = path.join(this.backupDir, `.verify-${Date.now()}-${randomBytes(4).toString('hex')}.sqlite`);
-      await this.decryptFile(file, tempPath);
+      await decryptBackupFile(file, tempPath);
       sqlitePath = tempPath;
     }
     try {
@@ -221,7 +220,7 @@ export class BackupService {
     let keepStaged = false;
     try {
       if (source.endsWith('.enc')) {
-        await this.decryptFile(source, stagedPath);
+        await decryptBackupFile(source, stagedPath);
       } else {
         fs.copyFileSync(source, stagedPath);
       }
@@ -322,6 +321,27 @@ export class BackupService {
     return { removed: this.cleanupStagedEntries() };
   }
 
+  /**
+   * A-P2.1：把备份文件镜像复制到异地目录（网络共享/NAS/USB）。先写 .partial
+   * 再 rename，中途失败不留半截文件；复制后 sha256 与源文件比对，不一致即
+   * 删除 partial 并抛错（由 scheduler 捕获进告警，不阻塞主备份流程）。
+   * 实现见 backup-mirror.ts。
+   */
+  async mirrorBackup(filename: string, mirrorDir: string): Promise<MirrorResult> {
+    const source = this.safePath(filename);
+    if (!fs.existsSync(source)) throw new NotFoundError('Backup file not found');
+    return mirrorBackupFile(source, mirrorDir);
+  }
+
+  /**
+   * A-P2.2：镜像目录独立保留策略。只清理文件名含 `backup-` 的正式备份
+   * （.enc/.sqlite），按文件名时间戳排序保留最近 keep 份；删除失败仅记录
+   * 日志不抛错（镜像清理失败不应影响主流程）。实现见 backup-mirror.ts。
+   */
+  mirrorCleanup(mirrorDir: string, keep = 30): { kept: number; deleted: Array<string> } {
+    return cleanupMirrorDir(mirrorDir, keep, this.logger);
+  }
+
   private cleanupStagedEntries(): number {
     const backupDir = this.backupDir;
     try {
@@ -393,46 +413,6 @@ export class BackupService {
     const prefix = `${clinicPrefix(clinicId)}backup-`;
     if (!path.basename(filename).startsWith(prefix)) {
       throw new AppError('FORBIDDEN', 'Backup belongs to another clinic', 403);
-    }
-  }
-
-  private async encryptFile(sourcePath: string, targetPath: string): Promise<void> {
-    const iv = randomBytes(12);
-    const cipher = createCipheriv('aes-256-gcm', backupEncryptionKey(), iv);
-    const output = createWriteStream(targetPath);
-    output.write(Buffer.concat([BACKUP_MAGIC, iv]));
-    await pipeline(createReadStream(sourcePath), cipher, output);
-    await fs.promises.appendFile(targetPath, cipher.getAuthTag());
-  }
-
-  private async decryptFile(sourcePath: string, targetPath: string): Promise<void> {
-    const file = await fs.promises.open(sourcePath, 'r');
-    try {
-      const { size } = await file.stat();
-      const headerSize = BACKUP_MAGIC.length + 12;
-      if (size < headerSize + 16) throw new Error('Encrypted backup file is too short');
-      const header = Buffer.alloc(headerSize);
-      const { bytesRead } = await file.read(header, 0, header.length, 0);
-      /* v8 ignore start -- a regular file shorter than the checked size cannot return a short header read. */
-      if (bytesRead < header.length) throw new Error('Encrypted backup file is too short');
-      /* v8 ignore stop */
-      const magic = header.subarray(0, BACKUP_MAGIC.length);
-      if (!magic.equals(BACKUP_MAGIC)) throw new Error('Encrypted backup header is invalid');
-      const iv = header.subarray(BACKUP_MAGIC.length, BACKUP_MAGIC.length + 12);
-      const authTag = Buffer.alloc(16);
-      const { bytesRead: tagBytesRead } = await file.read(authTag, 0, authTag.length, size - authTag.length);
-      /* v8 ignore start -- the size guard above guarantees the tag read is complete. */
-      if (tagBytesRead < authTag.length) throw new Error('Encrypted backup auth tag is missing');
-      /* v8 ignore stop */
-      const decipher = createDecipheriv('aes-256-gcm', backupEncryptionKey(), iv);
-      decipher.setAuthTag(authTag);
-      await pipeline(
-        createReadStream(sourcePath, { start: headerSize, end: size - authTag.length - 1 }),
-        decipher,
-        createWriteStream(targetPath),
-      );
-    } finally {
-      await file.close();
     }
   }
 }
