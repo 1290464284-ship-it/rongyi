@@ -169,6 +169,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Compile electron server bundle
+        # smoke 与全部 drills 都各自以 dist-electron/server.cjs 拉起独立 API
+        # 进程；smoke job 跑在独立 runner（fresh checkout）上，verify job 的
+        # electron:compile 产物不会带过来，必须在本 job 自行编译。
+        run: pnpm --filter @dental/v2 electron:compile
+
       - name: Install Playwright
         run: pnpm --filter @dental/v2 exec playwright install --with-deps chromium
 
