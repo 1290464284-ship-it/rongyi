@@ -8,7 +8,8 @@
 // - .env.example（文档）
 //
 // 默认值均可被环境变量覆盖（V2_PORT / V2_WEB_DEV_PORT / V2_WEB_URL /
-// V2_AUTO_BACKUP_INTERVAL_MS / V2_AUTO_BACKUP_KEEP）。
+// V2_AUTO_BACKUP_INTERVAL_MS / V2_AUTO_BACKUP_KEEP / V2_BACKUP_MIRROR_DIR /
+// V2_BACKUP_MIRROR_KEEP）。
 
 /** V2 API 默认监听端口（V2_PORT 可覆盖；Windows 上若被 excludedportranges 占用请改值）。 */
 export const DEFAULT_API_PORT = Number(process.env.V2_PORT) || 3180;
