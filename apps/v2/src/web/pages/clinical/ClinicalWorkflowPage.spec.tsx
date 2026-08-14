@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ClinicalWorkflowPage } from './ClinicalWorkflowPage';
 import { apiRequest, fetchAllPages } from '../../lib/api';
@@ -311,5 +311,56 @@ describe('ClinicalWorkflowPage', () => {
     fireEvent.click(screen.getAllByRole('button', { name: '下一页' })[0]);
     expect(await screen.findByText('李五')).toBeDefined();
     expect(screen.getByText('第 2 页')).toBeDefined();
+  });
+
+  it('ignores board transitions while the registration list is stale', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/registrations?page=1&pageSize=100') {
+        return {
+          items: [{ id: 'r-1', status: 'TRIAGED', patientId: 'p-1', patientIdLabel: '张四' }],
+          total: 150,
+          page: 1,
+          pageSize: 100,
+        };
+      }
+      if (path === '/resources/registrations?page=2&pageSize=100') return new Promise(() => {});
+      return { items: [], total: 0, page: 1, pageSize: 100 };
+    });
+    render(<ClinicalWorkflowPage />, { wrapper });
+    await screen.findByText('张四');
+    fireEvent.click(screen.getAllByRole('button', { name: '下一页' })[0]);
+    await waitFor(() => {
+      expect((screen.getAllByRole('button', { name: '下一页' })[0] as HTMLButtonElement).disabled).toBe(true);
+    });
+    // 拖拽卡片到“就诊中”列：stale 守卫拦截状态转换（看板自身无 disabled 门禁）
+    const card = screen.getByLabelText(/^卡片/);
+    fireEvent.dragStart(card, { dataTransfer: { setData: vi.fn() } });
+    fireEvent.drop(screen.getByRole('list', { name: '就诊中' }), { dataTransfer: { getData: () => 'r-1' } });
+    await waitFor(() => {
+      expect(apiRequest).not.toHaveBeenCalledWith('/registrations/r-1/status', expect.objectContaining({ method: 'PATCH' }));
+    });
+  });
+
+  it('ignores same-tick duplicate transition clicks', async () => {
+    const pending: Array<() => void> = [];
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path in resourceData()) return resourceData()[path];
+      if (path === '/registrations/r-1/status') {
+        return new Promise((resolve) => {
+          pending.push(() => resolve({}));
+        });
+      }
+      return {};
+    });
+    render(<ClinicalWorkflowPage />, { wrapper });
+    const button = (await screen.findAllByRole('button', { name: '进行中' }))[0];
+    act(() => {
+      fireEvent.click(button);
+      fireEvent.click(button);
+    });
+    const calls = vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/registrations/r-1/status');
+    expect(calls).toHaveLength(1);
+    pending.forEach((resolve) => resolve());
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
   });
 });
