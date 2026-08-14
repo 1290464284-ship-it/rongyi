@@ -134,8 +134,9 @@ export class PurchaseReviewService {
       `SELECT COALESCE(SUM(totalAmount), 0) AS amount
        FROM PurchaseOrder
        WHERE reviewStatus IN ('PENDING', 'SUBMITTED') AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
-    ).get(...tenantParams(context.clinicId)) as { amount: number | null } | undefined;
-    const pendingAmount = Number(pendingAmountRow?.amount ?? 0);
+    ).get(...tenantParams(context.clinicId)) as { amount: number };
+    // 聚合查询恒返回一行且 COALESCE 兜底，amount 不可能为 nullish。
+    const pendingAmount = Number(pendingAmountRow.amount);
     return {
       total,
       pending: byStatus.PENDING ?? 0,
