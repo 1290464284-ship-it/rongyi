@@ -163,32 +163,41 @@ describe('BackupService staged cleanup', () => {
     db.exec('CREATE TABLE BackupRecord (id TEXT, clinicId TEXT, createdAt TEXT, updatedAt TEXT, deletedAt TEXT, filename TEXT, fileSize INTEGER, type TEXT, operatorId TEXT, operatorName TEXT)');
     db.exec('CREATE TABLE t (id TEXT)');
     const dbService = new BackupService(db as unknown as Database.Database, dbPath, backupsDir);
-    // 空侧车 + EBUSY：跳过且校验通过
-    fs.writeFileSync(`${dbPath}-wal`, '');
-    const originalRm = fs.rmSync.bind(fs);
-    const spyBusy = vi.spyOn(fs, 'rmSync').mockImplementation((p: fs.PathLike, options?: fs.RmOptions) => {
-      if (String(p).endsWith('-wal')) {
-        throw Object.assign(new Error('busy'), { code: 'EBUSY' });
-      }
-      return originalRm(p, options);
-    });
+    // 环境隔离：外部导出 V2_BACKUP_KEY（CI job env）会使 create 自动加密
+    // 生成 .enc 而非 .sqlite，破坏明文备份断言 → 测试期间删除、结束后还原。
+    const prevKey = process.env.V2_BACKUP_KEY;
+    delete process.env.V2_BACKUP_KEY;
     try {
-      const result = await dbService.create({});
-      expect(result.filename).toMatch(/clinic-null-backup-.*\.sqlite/);
-    } finally {
-      spyBusy.mockRestore();
-    }
-    // 其它错误码：直接外抛
-    const spyEacces = vi.spyOn(fs, 'rmSync').mockImplementation((p: fs.PathLike, options?: fs.RmOptions) => {
-      if (String(p).endsWith('-wal')) {
-        throw Object.assign(new Error('denied'), { code: 'EACCES' });
+      // 空侧车 + EBUSY：跳过且校验通过
+      fs.writeFileSync(`${dbPath}-wal`, '');
+      const originalRm = fs.rmSync.bind(fs);
+      const spyBusy = vi.spyOn(fs, 'rmSync').mockImplementation((p: fs.PathLike, options?: fs.RmOptions) => {
+        if (String(p).endsWith('-wal')) {
+          throw Object.assign(new Error('busy'), { code: 'EBUSY' });
+        }
+        return originalRm(p, options);
+      });
+      try {
+        const result = await dbService.create({});
+        expect(result.filename).toMatch(/clinic-null-backup-.*\.sqlite/);
+      } finally {
+        spyBusy.mockRestore();
       }
-      return originalRm(p, options);
-    });
-    try {
-      await expect(dbService.create({})).rejects.toThrow('denied');
+      // 其它错误码：直接外抛
+      const spyEacces = vi.spyOn(fs, 'rmSync').mockImplementation((p: fs.PathLike, options?: fs.RmOptions) => {
+        if (String(p).endsWith('-wal')) {
+          throw Object.assign(new Error('denied'), { code: 'EACCES' });
+        }
+        return originalRm(p, options);
+      });
+      try {
+        await expect(dbService.create({})).rejects.toThrow('denied');
+      } finally {
+        spyEacces.mockRestore();
+      }
     } finally {
-      spyEacces.mockRestore();
+      if (prevKey === undefined) delete process.env.V2_BACKUP_KEY;
+      else process.env.V2_BACKUP_KEY = prevKey;
     }
     db.close();
   });
