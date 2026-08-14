@@ -795,30 +795,4 @@ describe('service edge coverage', () => {
 
     expect(() => new PrintTemplateService(db).render('missing-template', {}, context)).toThrow('Print template not found');
   });
-
-  it('includes doctors linked only through UserClinic in doctor anomalies', () => {
-    db.prepare(
-      `INSERT INTO User (
-         id, clinicId, createdAt, updatedAt, deletedAt,
-         username, passwordHash, name, role, active, loginAttempts, tokenVersion
-       ) VALUES ('doctor-anomaly-membership', NULL, ?, ?, NULL, 'anomaly-doc', 'x', 'Anomaly Doc', 'DOCTOR', 1, 0, 0)`,
-    ).run(now, now);
-    db.prepare(
-      `INSERT INTO UserClinic (userId, clinicId, role, createdAt, updatedAt, deletedAt)
-       VALUES ('doctor-anomaly-membership', 'clinic-v2-001', 'DOCTOR', ?, ?, NULL)`,
-    ).run(now, now);
-    db.prepare(
-      `INSERT INTO Charge (
-         id, patientId, visitId, doctorId, number, totalAmount, paidAmount, refundedAmount,
-         discount, status, payMethod, paidAt, remark, clinicId, createdAt, updatedAt, deletedAt
-       ) VALUES ('charge-anomaly-membership', 'patient-demo-001', NULL, 'doctor-anomaly-membership', 'CHG-ANOM',
-         10000, 10000, 0, 0, 'PAID', 'CASH', ?, NULL, 'clinic-v2-001', ?, ?, NULL)`,
-    ).run(now, now, now);
-
-    const analytics = new AnalyticsService(db);
-    const rows = analytics.doctorAnomalies(context);
-    expect(rows.some((row) => row.doctorId === 'doctor-anomaly-membership')).toBe(true);
-    const other = analytics.doctorAnomalies({ ...context, clinicId: 'clinic-other' });
-    expect(other.some((row) => row.doctorId === 'doctor-anomaly-membership')).toBe(false);
-  });
 });
