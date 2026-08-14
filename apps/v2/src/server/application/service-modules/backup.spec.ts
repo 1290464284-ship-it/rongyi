@@ -576,3 +576,85 @@ describe('BackupService edge branches', () => {
     expect(fs.existsSync(path.join(backupDir, String(globalBackup.filename)))).toBe(true);
   });
 });
+
+describe('BackupService mirror (A-P2)', () => {
+  let dir: string;
+  let service: BackupService;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-backup-mirror-spec-'));
+    const db = new Database(':memory:');
+    service = new BackupService(db as unknown as Database.Database, path.join(dir, 'v2.sqlite'), path.join(dir, 'backups'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('mirrors a backup file with sha256 verification and no partial residue', async () => {
+    const backupDir = path.join(dir, 'backups');
+    fs.mkdirSync(backupDir, { recursive: true });
+    const mirrorDir = path.join(dir, 'mirror');
+    const filename = 'clinic-null-backup-2026-08-14T00-00-00-000Z-abc12345.enc';
+    fs.writeFileSync(path.join(backupDir, filename), 'encrypted-bytes');
+
+    const result = await service.mirrorBackup(filename, mirrorDir);
+    expect(result.filename).toBe(filename);
+    expect(result.fileSize).toBe('encrypted-bytes'.length);
+    expect(result.sha256).toHaveLength(64);
+    expect(fs.readFileSync(path.join(mirrorDir, filename), 'utf8')).toBe('encrypted-bytes');
+    expect(fs.existsSync(`${path.join(mirrorDir, filename)}.partial`)).toBe(false);
+  });
+
+  it('throws NotFoundError when the source backup is missing', async () => {
+    await expect(service.mirrorBackup('clinic-null-backup-missing.enc', path.join(dir, 'mirror')))
+      .rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('rejects a sha256 mismatch and leaves no partial file', async () => {
+    const backupDir = path.join(dir, 'backups');
+    fs.mkdirSync(backupDir, { recursive: true });
+    const mirrorDir = path.join(dir, 'mirror');
+    const filename = 'clinic-null-backup-2026-08-14T00-00-00-000Z-abc12345.enc';
+    fs.writeFileSync(path.join(backupDir, filename), 'source-bytes');
+    // 源与目标 sha256 不一致：第二次调用（目标文件）返回不同摘要。
+    const sqliteFiles = await import('../../infrastructure/sqlite-files');
+    const spy = vi.spyOn(sqliteFiles, 'sha256File')
+      .mockResolvedValueOnce('a'.repeat(64))
+      .mockResolvedValueOnce('b'.repeat(64));
+    try {
+      await expect(service.mirrorBackup(filename, mirrorDir)).rejects.toThrow(/sha256 mismatch/);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(fs.existsSync(`${path.join(mirrorDir, filename)}.partial`)).toBe(false);
+  });
+
+  it('mirror cleanup keeps the newest N backups by filename timestamp', () => {
+    const mirrorDir = path.join(dir, 'mirror');
+    fs.mkdirSync(mirrorDir, { recursive: true });
+    for (let i = 1; i <= 5; i += 1) {
+      fs.writeFileSync(
+        path.join(mirrorDir, `clinic-null-backup-2026-08-1${i}T00-00-00-000Z-0000000${i}.enc`),
+        'x',
+      );
+    }
+    const result = service.mirrorCleanup(mirrorDir, 2);
+    expect(result.kept).toBe(2);
+    expect(result.deleted).toHaveLength(3);
+    expect(fs.readdirSync(mirrorDir)).toHaveLength(2);
+    // 字典序最小的三份（08-11/12/13）被删，08-14/15 保留
+    expect(fs.existsSync(path.join(mirrorDir, 'clinic-null-backup-2026-08-11T00-00-00-000Z-00000001.enc'))).toBe(false);
+    expect(fs.existsSync(path.join(mirrorDir, 'clinic-null-backup-2026-08-15T00-00-00-000Z-00000005.enc'))).toBe(true);
+  });
+
+  it('mirror cleanup tolerates missing dirs and ignores non-backup files', () => {
+    expect(service.mirrorCleanup(path.join(dir, 'no-such-mirror'), 5)).toEqual({ kept: 0, deleted: [] });
+    const mirrorDir = path.join(dir, 'mirror');
+    fs.mkdirSync(mirrorDir, { recursive: true });
+    fs.writeFileSync(path.join(mirrorDir, 'notes.txt'), 'x');
+    fs.writeFileSync(path.join(mirrorDir, 'other.enc'), 'x');
+    expect(service.mirrorCleanup(mirrorDir, 1)).toEqual({ kept: 0, deleted: [] });
+    expect(fs.readdirSync(mirrorDir)).toHaveLength(2);
+  });
+});
