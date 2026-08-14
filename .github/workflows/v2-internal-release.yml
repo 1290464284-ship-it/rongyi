@@ -72,12 +72,18 @@ jobs:
           pnpm --filter @dental/v2 smoke:multi-instance
           pnpm --filter @dental/v2 run smoke:supervisor
 
+      - name: Generate simulated clinic data
+        # data/simulated-clinic 被 gitignore：新检出为空，不生成则 permission smoke 静默跳过
+        run: pnpm --filter @dental/v2 simulate:clinic-data
+
       - name: Full smoke suite
         env:
           V2_ADMIN_PASSWORD: v2-internal-smoke-admin
           V2_BACKUP_KEY: v2-internal-smoke-backup
           V2_SMOKE_USE_EXISTING_DATA: '1'
           V2_DATA_DIR: ${{ runner.temp }}/v2-internal-smoke-data
+          # 模拟库缺失时权限冒烟必须失败而非静默跳过
+          V2_REQUIRE_PERMISSION_SMOKE: '1'
         run: pnpm --filter @dental/v2 smoke:all
 
       - name: Build internal installer
