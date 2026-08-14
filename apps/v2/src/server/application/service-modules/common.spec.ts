@@ -1,5 +1,8 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import Database from 'better-sqlite3';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   assertCanManageUser,
   assertChairExists,
@@ -142,4 +145,65 @@ describe('auth and JSON helpers', () => {
     db.close();
   });
 
+});
+
+describe('jwt secret resolution and transaction fallbacks', () => {
+  const originalFile = process.env.V2_SECRET_FILE;
+  const originalJwt = process.env.V2_JWT_SECRET;
+  const originalNodeEnv = process.env.NODE_ENV;
+
+  afterEach(() => {
+    vi.resetModules();
+    vi.restoreAllMocks();
+    if (originalFile === undefined) delete process.env.V2_SECRET_FILE;
+    else process.env.V2_SECRET_FILE = originalFile;
+    if (originalJwt === undefined) delete process.env.V2_JWT_SECRET;
+    else process.env.V2_JWT_SECRET = originalJwt;
+    if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = originalNodeEnv;
+  });
+
+  it('prefers the secret file over the env fallback', async () => {
+    vi.resetModules();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-common-secret-'));
+    const file = path.join(dir, 'secrets.json');
+    fs.writeFileSync(file, JSON.stringify({ jwt: 'file-secret' }), { encoding: 'utf8', mode: 0o600 });
+    try {
+      process.env.V2_SECRET_FILE = file;
+      delete process.env.V2_JWT_SECRET;
+      const mod = await import('./common');
+      expect(mod.JWT_SECRET).toBe('file-secret');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('falls back to the JWT env secret without a file', async () => {
+    vi.resetModules();
+    delete process.env.V2_SECRET_FILE;
+    process.env.V2_JWT_SECRET = 'env-secret';
+    const mod = await import('./common');
+    expect(mod.JWT_SECRET).toBe('env-secret');
+  });
+
+  it('requires a secret in production and generates one otherwise', async () => {
+    delete process.env.V2_SECRET_FILE;
+    delete process.env.V2_JWT_SECRET;
+    process.env.NODE_ENV = 'production';
+    await expect(import('./common')).rejects.toThrow('V2_JWT_SECRET must be set');
+
+    vi.resetModules();
+    delete process.env.NODE_ENV;
+    const mod = await import('./common');
+    expect(mod.JWT_SECRET).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('falls back to direct execution when the db has no transaction helper', async () => {
+    const { runInTransaction, runInTransactionImmediate } = await import('./common');
+    const plainDb = { transaction: undefined } as never;
+    expect(runInTransaction(plainDb, () => 42)).toBe(42);
+
+    const noImmediateDb = { transaction: (cb: () => number) => () => cb() } as never;
+    expect(runInTransactionImmediate(noImmediateDb, () => 43)).toBe(43);
+  });
 });

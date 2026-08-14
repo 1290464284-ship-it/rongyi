@@ -98,6 +98,7 @@ Web **96.82% / 92.94% / 98.66% / 98.58%**，双门禁全绿——覆盖率口径
 | `src/web/pages/clinical/TreatmentPlansPage.tsx`（rowActions / 划价对话框标题） | `if (ctx.stale) return` 守卫与 `billingTarget ? ... : '明细与划价'` 的空值分支 | 本页列表无分页/搜索（queryKey 恒定），stale 恒为 false，守卫防御冗余；对话框标题三元在关闭态（billingTarget null）每次渲染都执行空值分支（行为即默认标题），v8 未为 JSX 属性表达式入账，属采集缺陷 |
 | `src/web/pages/clinical/ClinicalWorkflowPage.tsx`（状态标签兜底） | `STATUS_LABELS[status] ?? status` / `STATUS_LABELS[next] ?? next` 的原始值分支 | transitions 配置内的全部状态（IN_PROGRESS/CANCELLED/COMPLETED/SUBMITTED/APPROVED）均在标签表中，兜底仅面向未来配置扩展，防御冗余 |
 | `src/web/pages/system/UsersPage.tsx`（deleteUser / resetPassword / savePermissions / 权限标签） | `!deleteTarget \|\| submitting`、`!passwordTarget \|\| submitting`、`!permissionTarget \|\| permissionBusy` 守卫与 `PERMISSION_LABELS[key] ?? key` | 确认/重置/保存按钮仅在目标非空时渲染且 busy 期间 disabled（jsdom 不派发）；PERMISSION_KEYS 全部在标签表中，`?? key` 仅面向未来扩展——均为防御冗余；openPermissions 的 requestId 守卫由 spec「drops a stale permission load...」真实覆盖 |
+| `src/server/application/service-modules/workbench.ts`（today） | `dayStart/dayEnd 为 null` 解析失败守卫 | clinicDate 恒产出合法 YYYY-MM-DD（+8 时区），`clinicDayStartUtc/EndUtc` 解析不会失败，防御冗余（COUNT(*) 空值兜底已删除，聚合恒返回一行） |
 
 ## 5. 其他已知取舍
 

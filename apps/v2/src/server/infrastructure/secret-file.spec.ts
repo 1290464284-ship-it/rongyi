@@ -128,4 +128,43 @@ describe('secret file', () => {
     const { secretFileValue } = await import('./secret-file');
     expect(() => secretFileValue('jwt')).toThrow('permission denied');
   });
+
+  it('reads string wechat and admin secret fields', async () => {
+    vi.resetModules();
+    const { secretFileValue } = await import('./secret-file');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-secret-file-str-'));
+    const file = path.join(dir, 'secrets.json');
+    process.env.V2_SECRET_FILE = file;
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        jwt: 'jwt-value',
+        backupKey: 'backup-value',
+        wechatAppId: 'wx-app-id',
+        wechatAppSecret: 'wx-app-secret',
+        adminPassword: 'admin-pass',
+      }),
+      { encoding: 'utf8', mode: 0o600 },
+    );
+    expect(secretFileValue('wechatAppId')).toBe('wx-app-id');
+    expect(secretFileValue('wechatAppSecret')).toBe('wx-app-secret');
+    expect(secretFileValue('adminPassword')).toBe('admin-pass');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('rejects secrets owned by another user on POSIX', async () => {
+    vi.resetModules();
+    vi.spyOn(fs, 'openSync').mockReturnValue(42);
+    vi.spyOn(fs, 'fstatSync').mockReturnValue({ uid: 999, mode: 0o100600 } as never);
+    vi.spyOn(fs, 'closeSync').mockReturnValue(undefined as never);
+    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+    Object.defineProperty(process, 'getuid', { value: () => 1234, configurable: true });
+    try {
+      process.env.V2_SECRET_FILE = 'other-owner.json';
+      const { secretFileValue } = await import('./secret-file');
+      expect(() => secretFileValue('jwt')).toThrow('owned by the current user');
+    } finally {
+      Reflect.deleteProperty(process, 'getuid');
+    }
+  });
 });

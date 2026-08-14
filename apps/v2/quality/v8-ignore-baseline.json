@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-08-14T02:35:23.775Z",
-  "total": 225,
+  "generatedAt": "2026-08-14T03:16:57.188Z",
+  "total": 226,
   "perFile": {
     "src\\web\\pages\\system\\SystemOperationsPage.tsx": 3,
     "src\\web\\pages\\system\\UsersPage.tsx": 3,
@@ -39,6 +39,7 @@
     "src\\server\\application\\service-modules\\sync.ts": 25,
     "src\\server\\application\\service-modules\\user-management.service.ts": 18,
     "src\\server\\application\\service-modules\\wechat-reminder.ts": 1,
+    "src\\server\\application\\service-modules\\workbench.ts": 1,
     "src\\domain\\resources\\index.ts": 2
   }
 }

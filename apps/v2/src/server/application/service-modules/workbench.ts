@@ -40,6 +40,7 @@ export class ClinicalWorkbenchService {
     const clinicParams = tenantParams(clinicId);
     const dayStart = clinicDayStartUtc(date);
     const dayEnd = clinicDayEndUtc(date);
+    /* v8 ignore next -- clinicDate 恒产出合法 YYYY-MM-DD，解析不会失败，守卫为防御冗余 */
     if (dayStart === null || dayEnd === null) {
       throw new Error(`invalid clinic date: ${date}`);
     }
@@ -70,30 +71,31 @@ export class ClinicalWorkbenchService {
     const registrationTotal = this.db.prepare(
       `SELECT COUNT(*) AS count FROM Registration r
        WHERE r.deletedAt IS NULL AND r.registeredAt >= ? AND r.registeredAt <= ? AND r.status != 'CANCELLED'${tenantAnd(clinicId, 'r.clinicId')}`,
-    ).get(...dayParams, ...clinicParams) as { count: number } | undefined;
+    ).get(...dayParams, ...clinicParams) as { count: number };
 
     const appointmentTotal = this.db.prepare(
       `SELECT COUNT(*) AS count FROM Appointment a
        WHERE a.deletedAt IS NULL AND a.startTime >= ? AND a.startTime <= ?${tenantAnd(clinicId, 'a.clinicId')}`,
-    ).get(...dayParams, ...clinicParams) as { count: number } | undefined;
+    ).get(...dayParams, ...clinicParams) as { count: number };
 
     const inProgressVisits = this.db.prepare(
       `SELECT COUNT(*) AS count FROM Visit v
        WHERE v.deletedAt IS NULL AND v.status = 'IN_PROGRESS' AND v.startTime >= ? AND v.startTime <= ?${tenantAnd(clinicId, 'v.clinicId')}`,
-    ).get(...dayParams, ...clinicParams) as { count: number } | undefined;
+    ).get(...dayParams, ...clinicParams) as { count: number };
 
     return {
       date,
       registrations,
       appointments,
       totals: {
-        registrations: Number(registrationTotal?.count ?? 0),
-        appointments: Number(appointmentTotal?.count ?? 0),
-        inProgressVisits: Number(inProgressVisits?.count ?? 0),
+        // COUNT(*) 聚合恒返回一行，count 不可能为 nullish。
+        registrations: Number(registrationTotal.count),
+        appointments: Number(appointmentTotal.count),
+        inProgressVisits: Number(inProgressVisits.count),
       },
       truncated: {
-        registrations: registrations.length < Number(registrationTotal?.count ?? 0),
-        appointments: appointments.length < Number(appointmentTotal?.count ?? 0),
+        registrations: registrations.length < Number(registrationTotal.count),
+        appointments: appointments.length < Number(appointmentTotal.count),
       },
     };
   }
