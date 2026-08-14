@@ -116,6 +116,46 @@ describe('secret file', () => {
     expect(secretFileValue('jwt')).toBe('posix-value');
   });
 
+  it('reads secrets through the win32 direct-read path', async () => {
+    // CI 是 ubuntu（platform=linux），若不显式 mock win32，readSecretFile 的
+    // win32 直读分支在 CI 覆盖率里永远缺失（本地 Windows 恰好覆盖，掩盖了
+    // 平台相关的覆盖率差）。显式覆盖两平台，保证 CI/本地一致 100%。
+    vi.resetModules();
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-secret-file-win-'));
+    const file = path.join(dir, 'secrets.json');
+    fs.writeFileSync(file, JSON.stringify({ jwt: 'win-value' }), { encoding: 'utf8', mode: 0o600 });
+    process.env.V2_SECRET_FILE = file;
+    const { secretFileValue } = await import('./secret-file');
+    expect(secretFileValue('jwt')).toBe('win-value');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('skips the owner check when getuid is unavailable', async () => {
+    // POSIX 分支里 `typeof process.getuid === 'function' ? getuid() : -1` 的
+    // -1 臂（getuid 缺失，即 Windows 宿主）在 CI ubuntu 上不可达；显式删除
+    // getuid 覆盖该臂，保证两平台覆盖率一致。
+    vi.resetModules();
+    const originalGetuid = process.getuid;
+    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+    Reflect.deleteProperty(process, 'getuid');
+    try {
+      vi.spyOn(fs, 'openSync').mockReturnValue(42);
+      vi.spyOn(fs, 'fstatSync').mockReturnValue({ uid: 999, mode: 0o100600 } as never);
+      vi.spyOn(fs, 'readFileSync').mockReturnValue(JSON.stringify({ jwt: 'no-uid-value' }));
+      vi.spyOn(fs, 'closeSync').mockReturnValue(undefined as never);
+      process.env.V2_SECRET_FILE = 'no-uid.json';
+      const { secretFileValue } = await import('./secret-file');
+      expect(secretFileValue('jwt')).toBe('no-uid-value');
+    } finally {
+      if (originalGetuid !== undefined) {
+        Object.defineProperty(process, 'getuid', { value: originalGetuid, configurable: true });
+      } else {
+        Reflect.deleteProperty(process, 'getuid');
+      }
+    }
+  });
+
   it('rethrows non-ENOENT secret file errors', async () => {
     vi.resetModules();
     const denied = new Error('permission denied') as NodeJS.ErrnoException;
