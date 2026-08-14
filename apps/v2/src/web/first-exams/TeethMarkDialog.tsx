@@ -79,6 +79,12 @@ export function TeethMarkDialog({
         : 'normal';
   });
 
+  function selectTooth(number: number) {
+    /* v8 ignore next -- 图表按钮仅渲染牙齿列表内存在的编号，lookup 恒命中，守卫为防御冗余 */
+    const tooth = teeth.find((item) => Number(item.toothNumber) === number);
+    if (tooth) setSelectedToothId(tooth.id);
+  }
+
   return (
     <Dialog open title="主诉牙齿标记" onClose={onClose}>
       {teethQuery.isLoading ? (
@@ -91,10 +97,7 @@ export function TeethMarkDialog({
             upper={upper}
             lower={lower}
             statuses={statuses}
-            onToothClick={(number) => {
-              const tooth = teeth.find((item) => Number(item.toothNumber) === number);
-              if (tooth) setSelectedToothId(tooth.id);
-            }}
+            onToothClick={selectTooth}
           />
           <div className="dental-legend">
             <span><i style={{ background: 'var(--border-strong)' }} />正常</span>

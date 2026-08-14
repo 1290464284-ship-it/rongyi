@@ -360,6 +360,30 @@ describe('TeethMarkDialog', () => {
     });
     expect(screen.getByText('牙体状态：')).toBeDefined();
   });
+
+  it('falls back to tooth ids when tooth numbers are missing', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = String(init?.method ?? 'GET').toUpperCase();
+      if (method === 'POST') return { ok: true };
+      if (path === '/resources/firstExamTeeth?examId=f-1&page=1&pageSize=200') {
+        return {
+          items: [{ id: 't-null', examId: 'f-1', toothNumber: null, toothStatus: null, chiefMark: null }],
+          total: 1,
+          page: 1,
+          pageSize: 200,
+        };
+      }
+      return {};
+    });
+    render(<TeethMarkDialog row={{ id: 'f-1' }} reload={vi.fn().mockResolvedValue(undefined)} onClose={vi.fn()} />, { wrapper });
+    const select = (await screen.findByLabelText('牙齿 t-null 主诉标记')) as HTMLSelectElement;
+    expect(select.value).toBe('NONE');
+    expect(screen.getByText('牙位 t-null')).toBeDefined();
+    expect(screen.getByText('牙体状态：')).toBeDefined();
+
+    fireEvent.change(select, { target: { value: 'CARIES' } });
+    expect(await screen.findByText('牙齿 t-null 主诉标记已更新')).toBeDefined();
+  });
 });
 
 describe('TrackingDialog', () => {

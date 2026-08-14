@@ -94,7 +94,8 @@ export class AppointmentService {
         input.type,
         input.remark ?? null,
         input.purpose ?? null,
-        input.patientId ? null : (tempPatientName || null),
+        // 到达此处时 tempPatientName 已通过非空校验（无 patientId 必填姓名），nullish 兜底不可达。
+        input.patientId ? null : tempPatientName,
         input.patientId ? null : (tempPatientPhone || null),
       );
       // B-H4：直写 Appointment（绕过 repository）统一维护同步与索引。
