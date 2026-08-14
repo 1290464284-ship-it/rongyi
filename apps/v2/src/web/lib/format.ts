@@ -35,6 +35,7 @@ export function formatDate(value: unknown): string {
   const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
   if (dateOnly) {
     const local = new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]));
+    /* v8 ignore next -- 四位年份的 Date 构造恒产生有效日期（越界会滚动），NaN 分支不可达，防御冗余 */
     if (!Number.isNaN(local.getTime())) return local.toLocaleDateString('zh-CN');
   }
   const date = new Date(text);

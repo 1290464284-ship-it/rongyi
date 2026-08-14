@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-08-14T03:31:42.125Z",
-  "total": 230,
+  "generatedAt": "2026-08-14T03:37:57.758Z",
+  "total": 232,
   "perFile": {
     "src\\web\\pages\\system\\SystemOperationsPage.tsx": 3,
     "src\\web\\pages\\system\\UsersPage.tsx": 3,
@@ -17,8 +17,10 @@
     "src\\web\\pages\\clinical\\TreatmentPlansPage.tsx": 4,
     "src\\web\\pages\\clinical\\TreatmentsPage.tsx": 2,
     "src\\web\\pages\\analytics\\AnalyticsDashboardPage.tsx": 1,
+    "src\\web\\lib\\format.ts": 1,
     "src\\web\\first-exams\\TeethMarkDialog.tsx": 1,
     "src\\web\\components\\dialog.tsx": 2,
+    "src\\web\\components\\ResourceHub.tsx": 1,
     "src\\web\\components\\ResourcePage.tsx": 10,
     "src\\web\\components\\Tree.tsx": 1,
     "src\\server\\infrastructure\\idempotency.ts": 3,

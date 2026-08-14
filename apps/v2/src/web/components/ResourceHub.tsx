@@ -67,6 +67,7 @@ export function ResourceHub({ title, tabs }: { title: string; tabs: HubTab[] }) 
     else return;
     event.preventDefault();
     const target = filteredTabs[next];
+    /* v8 ignore next -- keydown 来自已渲染的 tab 按钮，filteredTabs 非空且 next 恒在界内，target 恒存在，防御冗余 */
     if (!target) return;
     selectTab(target.id);
     tabRefs.current.get(target.id)?.focus();

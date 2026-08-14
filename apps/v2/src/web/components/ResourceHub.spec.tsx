@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useEffect, type ReactNode } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, useSearchParams } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ResourceHub } from './ResourceHub';
 import { analyticsHubTabs, inventoryHubTabs, systemHubTabs, type HubTab } from './hub-tabs';
@@ -253,4 +253,60 @@ it('exposes selected tab state and supports arrow key navigation', async () => {
   expect(screen.getByRole('tab', { name: 'Three' }).getAttribute('aria-selected')).toBe('true');
   fireEvent.keyDown(screen.getByRole('tab', { name: 'Three' }), { key: 'Home' });
   expect(screen.getByRole('tab', { name: 'One' }).getAttribute('aria-selected')).toBe('true');
+});
+
+it('syncs the active tab when the URL drops its tab or gains a query', async () => {
+  vi.mocked(apiRequest).mockResolvedValue([]);
+  const tabs: HubTab[] = [
+    { id: 'one', label: 'One', kind: 'custom', component: () => <div>One panel</div> },
+    { id: 'two', label: 'Two', kind: 'custom', component: () => <div>Two panel</div> },
+    { id: 'search', label: 'Search', kind: 'custom', component: () => <div>Search panel</div>, searchTab: true },
+  ];
+  function UrlDriver() {
+    const [, setParams] = useSearchParams();
+    return (
+      <>
+        <button onClick={() => setParams({ tab: 'two' }, { replace: true })}>go-two</button>
+        <button onClick={() => setParams({ q: 'hello' }, { replace: true })}>go-query</button>
+        <button onClick={() => setParams({}, { replace: true })}>go-empty</button>
+      </>
+    );
+  }
+  render(
+    <MemoryRouter initialEntries={['/']}>
+      <QueryClientProvider client={queryClient}>
+        <ToastProvider>
+          <UrlDriver />
+          <ResourceHub title="Hub" tabs={tabs} />
+        </ToastProvider>
+      </QueryClientProvider>
+    </MemoryRouter>,
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'go-two' }));
+  await waitFor(() => {
+    expect(screen.getByRole('tab', { name: 'Two' }).getAttribute('aria-selected')).toBe('true');
+  });
+  // 去掉 tab 但带 q：落到声明为搜索的 tab（24 的 else 与 25 的 hasQuery 分支）
+  fireEvent.click(screen.getByRole('button', { name: 'go-query' }));
+  await waitFor(() => {
+    expect(screen.getByRole('tab', { name: 'Search' }).getAttribute('aria-selected')).toBe('true');
+  });
+  // 全空 URL：不主动切换（25 的 else 分支）
+  fireEvent.click(screen.getByRole('button', { name: 'go-empty' }));
+  await waitFor(() => {
+    expect(screen.getByRole('tab', { name: 'Search' }).getAttribute('aria-selected')).toBe('true');
+  });
+});
+
+it('shows a navigation error state for boss-only hubs', async () => {
+  vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+    if (path === '/auth/navigation') throw new Error('nav failed');
+    return [];
+  });
+  const tabs: HubTab[] = [
+    { id: 'boss', label: 'Boss', kind: 'custom', component: () => <div>Boss panel</div>, bossOnly: true },
+  ];
+  render(<ResourceHub title="Hub" tabs={tabs} />, { wrapper });
+  expect(await screen.findByText('导航权限加载失败，无法确定可访问模块')).toBeDefined();
+  expect(screen.getByRole('button', { name: '重试' })).toBeDefined();
 });

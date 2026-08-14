@@ -102,6 +102,8 @@ Web **96.82% / 92.94% / 98.66% / 98.58%**，双门禁全绿——覆盖率口径
 | `src/web/components/Tree.tsx`（handleToggle） | `if (!hasChildren) return` | 展开按钮仅在有子节点时渲染（`hasChildren &&`），无子节点分支不可达，防御冗余 |
 | `src/web/pages/clinical/PrescriptionsPage.tsx`（effect / ProcessPrescriptionButton） | `if (!prescriptionId) return` 与 `if (disabled) return` | editLoadKey 仅在 formFromRow（先写入 editingIdRef）中递增，prescriptionId 恒非空；处理按钮 busy/disabled 期间禁用（jsdom 不派发）——均为防御冗余 |
 | `src/server/application/service-modules/prescription-process.ts`（事务内小计校验） | `chargeSubtotal` 溢出守卫 | 同一算式已在事务外（dispensePlans 构建时）校验并拦截，两次校验之间无数据变更，事务内二次校验为防御冗余 |
+| `src/web/lib/format.ts`（formatDate dateOnly） | `!Number.isNaN(local.getTime())` 的 NaN 分支 | 四位年份的 Date 构造恒产生有效日期（越界自动滚动），NaN 分支不可达，防御冗余 |
+| `src/web/components/ResourceHub.tsx`（handleTabKeyDown） | `if (!target) return` | keydown 来自已渲染的 tab 按钮（filteredTabs 非空且 next 恒在界内），target 恒存在，防御冗余 |
 
 ## 5. 其他已知取舍
 
