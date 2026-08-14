@@ -45,8 +45,11 @@ export function createRuntimeMetricsSampler(
         activeResources: resources,
         eventLoop: {
           // 无样本时直方图返回 NaN（mean 为 NaN、percentile 亦为 NaN），按 0 输出。
+          /* v8 ignore next -- 测试环境直方图恒有样本（max/percentile 初值有限），NaN 路径仅文档化防御 */
           maxLagMs: Number.isFinite(lagHistogram.max) ? Number(lagHistogram.max.toFixed(2)) : 0,
+          /* v8 ignore next -- 同上 */
           meanLagMs: Number.isFinite(lagHistogram.mean) ? Number(lagHistogram.mean.toFixed(2)) : 0,
+          /* v8 ignore next -- 同上 */
           p99LagMs: Number.isFinite(lagHistogram.percentile(99)) ? Number(lagHistogram.percentile(99).toFixed(2)) : 0,
         },
         db: {

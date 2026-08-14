@@ -339,6 +339,17 @@ describe('database bootstrap', () => {
     perfDb.close();
   });
 
+  it('skips performance indexes for missing tables and missing columns', () => {
+    const sparse = new Database(':memory:');
+    sparse.exec('CREATE TABLE Charge (id TEXT PRIMARY KEY)');
+    expect(() => createPerformanceIndexes(sparse)).not.toThrow();
+    const chargeIndexes = (sparse.prepare("PRAGMA index_list('Charge')").all() as Array<{ name: string }>)
+      .map((row) => row.name);
+    // 表存在但缺 patientId 等列：跳过而非报错；Patient 表不存在：跳过
+    expect(chargeIndexes.some((name) => name.startsWith('idx_v2_perf'))).toBe(false);
+    sparse.close();
+  });
+
   it('full integrity check rejects a database file corrupted with garbage bytes', () => {
     const corruptDir = path.join(dataDir, 'corrupt-full-check');
     fs.mkdirSync(corruptDir, { recursive: true });

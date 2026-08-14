@@ -21,6 +21,7 @@ function columnType(field: ResourceField): string {
     case 'enum':
     case 'relation':
       return 'TEXT';
+    /* v8 ignore next -- 资源注册表的字段类型为编译期枚举（含 drift guard），未知类型不可达，fail-fast 为防御冗余 */
     default: {
       // B-L1：删掉死代码。未登记的类型直接抛错，避免未来新增类型被静默降级为 TEXT
       // （列类型与元数据不一致会造成查询/校验行为漂移，且难以排查）。
@@ -305,6 +306,7 @@ function alignLegacyTables(db: Database.Database): void {
     const tableExists = db
       .prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`)
       .get(table);
+    /* v8 ignore next -- alignLegacyTables 紧跟 createTableSql（同一事务内建齐全部资源表），表恒存在，防御冗余 */
     if (!tableExists) continue;
     const existingColumns = new Set(
       (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((c) => c.name),

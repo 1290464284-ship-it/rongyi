@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createRuntimeMetricsSampler, persistRuntimeMetrics, type RuntimeMetricsSample } from './runtime-metrics';
 
 describe('createRuntimeMetricsSampler', () => {
@@ -36,6 +36,16 @@ describe('createRuntimeMetricsSampler', () => {
     expect(sample.eventLoop.maxLagMs).toBeGreaterThanOrEqual(0);
     expect(sample.eventLoop.meanLagMs).toBeGreaterThanOrEqual(0);
     expect(sample.eventLoop.p99LagMs).toBeGreaterThanOrEqual(0);
+    db.close();
+  });
+
+  it('counts active resources without a dash prefix by their raw name', () => {
+    vi.spyOn(process, 'getActiveResourcesInfo').mockReturnValue(['TCPSocketWrap', 'Timeout-1', 'Timeout-2']);
+    const db = new Database(':memory:');
+    const sampler = createRuntimeMetricsSampler(db, () => 0);
+    const sample = sampler.sample();
+    expect(sample.activeResources).toEqual({ TCPSocketWrap: 1, Timeout: 2 });
+    vi.restoreAllMocks();
     db.close();
   });
 });

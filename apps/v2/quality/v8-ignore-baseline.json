@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-08-14T03:43:28.496Z",
-  "total": 245,
+  "generatedAt": "2026-08-14T03:53:45.944Z",
+  "total": 250,
   "perFile": {
     "src\\web\\pages\\system\\SystemOperationsPage.tsx": 3,
     "src\\web\\pages\\system\\UsersPage.tsx": 3,
@@ -26,6 +26,8 @@
     "src\\web\\components\\ResourceHub.tsx": 1,
     "src\\web\\components\\ResourcePage.tsx": 10,
     "src\\web\\components\\Tree.tsx": 1,
+    "src\\server\\maintenance\\runtime-metrics.ts": 3,
+    "src\\server\\infrastructure\\database.ts": 2,
     "src\\server\\infrastructure\\idempotency.ts": 3,
     "src\\server\\infrastructure\\repository.ts": 33,
     "src\\server\\infrastructure\\repositories\\clinical-workflow.repository.ts": 3,

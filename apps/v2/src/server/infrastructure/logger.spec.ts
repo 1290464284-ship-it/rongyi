@@ -77,6 +77,29 @@ describe('logger serializeValue', () => {
     expect(JSON.stringify(serializeValue({ at: date }))).toBe(JSON.stringify({ at: date.toISOString() }));
   });
 
+  it('truncates deep cause chains and arrays at max depth', () => {
+    let cause: Error | undefined = new Error('leaf');
+    for (let i = 0; i < MAX_SERIALIZE_DEPTH + 2; i += 1) {
+      cause = new Error(`level-${i}`, { cause });
+    }
+    const serialized = serializeValue(cause) as Record<string, unknown>;
+    expect(JSON.stringify(serialized)).toContain('"[MaxDepth]"');
+
+    let array: unknown = 'leaf';
+    for (let i = 0; i < MAX_SERIALIZE_DEPTH + 2; i += 1) {
+      array = [array];
+    }
+    const arraySerialized = serializeValue(array) as unknown[];
+    expect(JSON.stringify(arraySerialized)).toContain('"[MaxDepth]"');
+  });
+
+  it('omits the stack key when an error has no string stack', () => {
+    const error = new Error('no stack');
+    delete (error as Partial<Error>).stack;
+    const serialized = serializeValue(error) as Record<string, unknown>;
+    expect(serialized).toEqual({ message: 'no stack' });
+  });
+
   it('leaves primitives untouched', () => {
     expect(serializeValue('text')).toBe('text');
     expect(serializeValue(42)).toBe(42);
@@ -89,6 +112,11 @@ describe('logger serializeValue', () => {
 describe('Logger.write', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('flushes an empty buffer without error', () => {
+    const logger = new Logger();
+    expect(() => logger.flush()).not.toThrow();
   });
 
   it('emits a valid JSON line with Error expanded, without throwing on circular meta', () => {
