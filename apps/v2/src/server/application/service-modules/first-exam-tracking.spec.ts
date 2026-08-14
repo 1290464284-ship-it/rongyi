@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -30,6 +30,7 @@ describe('FirstExamTrackingService', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -127,5 +128,24 @@ describe('FirstExamTrackingService', () => {
        ) VALUES ('track-deleted', ?, ?, ?, ?, 'patient-demo-001', 'user-admin-001', 'COMPLETED', 'x', 'NONE', 'PERMANENT')`,
     ).run(context.clinicId, now, now, now);
     expect(() => service.updateTracking('track-deleted', { followUpStatus: 'NONE' }, context)).toThrow(NotFoundError);
+  });
+
+  it('rejects an update without a followUpStatus', () => {
+    insertFirstExam('upd-nostatus', 'NONE', null);
+    const service = new FirstExamTrackingService(db);
+    expect(() => service.updateTracking('upd-nostatus', {} as never, context)).toThrow('Invalid followUpStatus');
+  });
+
+  it('reports not-found when the tracking CAS update changes zero rows', () => {
+    insertFirstExam('upd-cas', 'NONE', null);
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('SET followUpStatus')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    expect(() => new FirstExamTrackingService(db).updateTracking('upd-cas', { followUpStatus: 'NONE' }, context))
+      .toThrow(NotFoundError);
   });
 });

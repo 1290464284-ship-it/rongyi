@@ -83,7 +83,8 @@ export class FirstExamTrackingService {
       LOST: 0,
     };
     for (const row of rows) {
-      counts[row.followUpStatus] = Number(row.count ?? 0);
+      // COUNT(*) 恒非空，nullish 兜底不可达。
+      counts[row.followUpStatus] = Number(row.count);
     }
 
     const today = new SystemClock().clinicDate(context.now());
@@ -92,9 +93,10 @@ export class FirstExamTrackingService {
        WHERE deletedAt IS NULL
          AND followUpStatus IN ('PENDING', 'HORIZONTAL_SHOULD')
          AND nextFollowUpAt LIKE ?${tenantAnd(clinicId)}`,
-    ).get(`${today}%`, ...tenantParams(clinicId)) as { count: number } | undefined;
+    ).get(`${today}%`, ...tenantParams(clinicId)) as { count: number };
 
-    const total = rows.reduce((sum, row) => sum + Number(row.count ?? 0), 0);
-    return { ...counts, total, dueToday: Number(dueRow?.count ?? 0) };
+    const total = rows.reduce((sum, row) => sum + Number(row.count), 0);
+    // 聚合查询恒返回一行，dueRow 不可能为 nullish。
+    return { ...counts, total, dueToday: Number(dueRow.count) };
   }
 }

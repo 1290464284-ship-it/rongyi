@@ -192,6 +192,24 @@ describe('InventoryReportService', () => {
     expect(ids(result)).toEqual(['tx-in-3']);
   });
 
+  it('filters the summary by itemId and zeroes a NULL current stock', () => {
+    db.prepare(
+      `INSERT INTO InventoryItem (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, category, unit, stock, minStock, price
+       ) VALUES (?, ?, ?, ?, NULL, 'MAT-NULL', 'Null Stock Item', 'CONSUMABLE', 'piece', NULL, 0, 100)`,
+    ).run('item-null-stock', context.clinicId, now, now);
+    insertTx('tx-null-stock', 'item-null-stock', 'IN', 1, 0, 1, null, null, '2026-08-05T12:00:00.000Z');
+
+    const service = new InventoryReportService(db);
+    const filtered = service.report('SUMMARY', { itemId: 'item-null-stock' }, context) as {
+      total: number;
+      items: Array<{ itemId: string; currentStock: number }>;
+    };
+    expect(filtered.total).toBe(1);
+    expect(filtered.items[0]).toMatchObject({ itemId: 'item-null-stock', currentStock: 0 });
+  });
+
   it('summarizes with from/to as period values', () => {
     const service = new InventoryReportService(db);
     const result = service.report('SUMMARY', { from: '2026-08-04', to: '2026-08-04' }, context) as {

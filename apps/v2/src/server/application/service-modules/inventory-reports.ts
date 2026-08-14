@@ -147,9 +147,10 @@ export class InventoryReportService {
       category: row.category,
       unit: row.unit,
       currentStock: Number(row.currentStock ?? 0),
-      inQuantity: Number(row.inQuantity ?? 0),
-      outQuantity: Number(row.outQuantity ?? 0),
-      adjustQuantity: Number(row.adjustQuantity ?? 0),
+      // 三个聚合列由 COALESCE 兜底，恒非空，nullish 兜底不可达。
+      inQuantity: Number(row.inQuantity),
+      outQuantity: Number(row.outQuantity),
+      adjustQuantity: Number(row.adjustQuantity),
     }));
     return { type: 'SUMMARY', from: query.from ?? null, to: query.to ?? null, total: items.length, items };
   }
