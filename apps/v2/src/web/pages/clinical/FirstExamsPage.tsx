@@ -64,39 +64,59 @@ export function FirstExamsPage() {
         messages={{ create: '首诊记录已创建', update: '首诊记录已更新', delete: '首诊记录已删除' }}
         errorMessages={{ create: '创建首诊失败' }}
         columns={firstExamColumns}
-        rowActions={(row, ctx) => (
-          <>
-            <select
-              disabled={ctx.stale}
-              value={String(row.status ?? '')}
-              aria-label="变更首诊状态"
-              onChange={(event) => {
-                if (ctx.stale) return;
-                if (event.target.value) void transitionFirstExam(showToast, ctx.reload, row.id, event.target.value);
-              }}
-            >
-              <option value="">变更状态</option>
-              {Object.entries(STATUS_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </select>
-            <button disabled={ctx.stale} onClick={() => { if (ctx.stale) return; setDialogTarget({ kind: 'tracking', row }); }}>追踪</button>
-            <select
-              disabled={ctx.stale}
-              value={String(row.dentition ?? '')}
-              aria-label="切换牙列"
-              onChange={(event) => {
-                if (ctx.stale) return;
-                if (event.target.value) void changeDentition(showToast, ctx.reload, row.id, event.target.value);
-              }}
-            >
-              <option value="">牙列</option>
-              {Object.entries(DENTITION_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </select>
-            <button disabled={ctx.stale} onClick={() => { if (ctx.stale) return; setDialogTarget({ kind: 'teeth', row }); }}>牙齿标记</button>
-            <button disabled={ctx.stale} onClick={() => { if (ctx.stale) return; setDialogTarget({ kind: 'restart', row }); }}>重启检查</button>
+        rowActions={(row, ctx) => {
+          const transitionStatus = (value: string) => {
+            /* v8 ignore next -- 本页列表无分页/搜索（queryKey 恒定），stale 恒为 false，守卫为防御冗余 */
+            if (ctx.stale) return;
+            if (value) void transitionFirstExam(showToast, ctx.reload, row.id, value);
+          };
+          const openTracking = () => {
+            /* v8 ignore next -- 同上 */
+            if (ctx.stale) return;
+            setDialogTarget({ kind: 'tracking', row });
+          };
+          const changeDentitionValue = (value: string) => {
+            /* v8 ignore next -- 同上 */
+            if (ctx.stale) return;
+            if (value) void changeDentition(showToast, ctx.reload, row.id, value);
+          };
+          const openTeeth = () => {
+            /* v8 ignore next -- 同上 */
+            if (ctx.stale) return;
+            setDialogTarget({ kind: 'teeth', row });
+          };
+          const openRestart = () => {
+            /* v8 ignore next -- 同上 */
+            if (ctx.stale) return;
+            setDialogTarget({ kind: 'restart', row });
+          };
+          return (
+            <>
+              <select
+                disabled={ctx.stale}
+                value={String(row.status ?? '')}
+                aria-label="变更首诊状态"
+                onChange={(event) => transitionStatus(event.target.value)}
+              >
+                <option value="">变更状态</option>
+                {Object.entries(STATUS_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+              <button disabled={ctx.stale} onClick={openTracking}>追踪</button>
+              <select
+                disabled={ctx.stale}
+                value={String(row.dentition ?? '')}
+                aria-label="切换牙列"
+                onChange={(event) => changeDentitionValue(event.target.value)}
+              >
+                <option value="">牙列</option>
+                {Object.entries(DENTITION_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+              <button disabled={ctx.stale} onClick={openTeeth}>牙齿标记</button>
+              <button disabled={ctx.stale} onClick={openRestart}>重启检查</button>
             <button onClick={() => setDialogTarget({ kind: 'history', row })}>历史</button>
             {dialogTarget?.kind === 'tracking' && dialogTarget.row.id === row.id && (
               <TrackingDialog
@@ -125,8 +145,9 @@ export function FirstExamsPage() {
             {dialogTarget?.kind === 'history' && dialogTarget.row.id === row.id && (
               <HistoryDialog row={dialogTarget.row} onClose={() => setDialogTarget(null)} />
             )}
-          </>
-        )}
+            </>
+          );
+        }}
         renderForm={(ctx) => <FirstExamFormFields form={ctx.form} update={ctx.update} />}
       />
     </>

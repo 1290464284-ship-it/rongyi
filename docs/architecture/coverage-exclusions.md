@@ -104,6 +104,7 @@ Web **96.82% / 92.94% / 98.66% / 98.58%**，双门禁全绿——覆盖率口径
 | `src/server/application/service-modules/prescription-process.ts`（事务内小计校验） | `chargeSubtotal` 溢出守卫 | 同一算式已在事务外（dispensePlans 构建时）校验并拦截，两次校验之间无数据变更，事务内二次校验为防御冗余 |
 | `src/web/lib/format.ts`（formatDate dateOnly） | `!Number.isNaN(local.getTime())` 的 NaN 分支 | 四位年份的 Date 构造恒产生有效日期（越界自动滚动），NaN 分支不可达，防御冗余 |
 | `src/web/components/ResourceHub.tsx`（handleTabKeyDown） | `if (!target) return` | keydown 来自已渲染的 tab 按钮（filteredTabs 非空且 next 恒在界内），target 恒存在，防御冗余 |
+| `src/web/pages/clinical/FirstExamsPage.tsx`（rowActions） | `if (ctx.stale) return` 守卫 | 本页列表无分页/搜索（queryKey 恒定），stale 恒为 false，守卫为防御冗余 |
 
 ## 5. 其他已知取舍
 
