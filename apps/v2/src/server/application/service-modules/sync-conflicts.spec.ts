@@ -7,6 +7,7 @@ import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
 import { SqliteRepository } from '../../infrastructure/repository';
 import { SyncService } from './sync';
+import { fullSnapshot } from './sync-snapshot';
 
 describe('sync conflict detection and resolution', () => {
   let db: Database.Database;
@@ -316,5 +317,44 @@ describe('sync conflict detection and resolution', () => {
     });
     await expect(service.resolveConflict('sync-conflict-rollback', 'KEEP_REMOTE', context)).rejects.toThrow();
     expect(execSpy).toHaveBeenCalledWith('ROLLBACK');
+  });
+
+  it('rejects a full snapshot without a clinic scope', () => {
+    expect(() => fullSnapshot(db, { ...context, clinicId: null })).toThrow('Sync requires a clinic scope');
+  });
+
+  it('slices the keyset page when more rows remain than the limit', () => {
+    const insert = db.prepare(
+      `INSERT INTO Patient (id, clinicId, createdAt, updatedAt, deletedAt, code, name, gender, phone, source, active)
+       VALUES (?, 'clinic-v2-001', ?, ?, NULL, ?, ?, 'UNKNOWN', '13800000011', 'WALK_IN', 1)`,
+    );
+    db.transaction(() => {
+      for (const id of ['snapshot-a-1', 'snapshot-a-2', 'snapshot-a-3']) {
+        insert.run(id, now, now, `SNAP-${id}`, `Snapshot ${id}`);
+      }
+    })();
+    const page = fullSnapshot(db, context, { table: 'Patient', limit: 2, afterId: 'snapshot-a-0' });
+    expect(page.rows).toHaveLength(2);
+    expect(page.truncated).toBe(true);
+    expect(page.nextId).toBe('snapshot-a-2');
+  });
+
+  it('skips sync tables that do not exist in the schema', () => {
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('sqlite_master')) {
+        return {
+          get: (table: string) => (table === 'PurchaseOrder' ? undefined : originalPrepare(sql).get(table)),
+        } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      const metadata = fullSnapshot(db, context);
+      expect(metadata.tables?.Patient).toBeDefined();
+      expect(metadata.tables?.PurchaseOrder).toBeUndefined();
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 });

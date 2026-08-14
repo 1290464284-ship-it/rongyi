@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -159,6 +159,7 @@ describe('FirstExamRestartService', () => {
 
   it('restart propagates null optional fields from the original exam', () => {
     insertExam('exam-null-fields', {
+      doctorId: null,
       consultantId: null,
       chiefComplaint: null,
       presentIllness: null,
@@ -171,6 +172,7 @@ describe('FirstExamRestartService', () => {
     });
     const service = new FirstExamRestartService(db);
     const created = service.restart('exam-null-fields', {}, context);
+    expect(created.doctorId).toBeNull();
     expect(created.consultantId).toBeNull();
     expect(created.chiefComplaint).toBeNull();
     expect(created.presentIllness).toBeNull();
@@ -232,6 +234,41 @@ describe('FirstExamRestartService', () => {
     const service = new FirstExamRestartService(db);
     expect(() => service.setChiefMark('exam-mark-a', 'tooth-mark-b1', { chiefMark: 'HORIZONTAL_SHOULD' }, context)).toThrow(NotFoundError);
     expect(() => service.setChiefMark('missing-exam', 'tooth-mark-b1', { chiefMark: 'NONE' }, context)).toThrow(NotFoundError);
+  });
+
+  it('throws NotFoundError when the dentition UPDATE affects zero rows (CAS guard)', () => {
+    insertExam('exam-dent-cas');
+    const service = new FirstExamRestartService(db);
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE FirstExam SET')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      expect(() => service.setDentition('exam-dent-cas', { dentition: 'PERMANENT' }, context)).toThrow(NotFoundError);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('throws NotFoundError when the tooth UPDATE affects zero rows (CAS guard)', () => {
+    insertExam('exam-mark-cas');
+    insertTooth('tooth-mark-cas', 'exam-mark-cas');
+    const service = new FirstExamRestartService(db);
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE FirstExamTooth SET')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      expect(() => service.setChiefMark('exam-mark-cas', 'tooth-mark-cas', { chiefMark: 'HORIZONTAL_DONE' }, context)).toThrow(NotFoundError);
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 
   it('history returns non-deleted exams for the patient ordered by createdAt desc', () => {

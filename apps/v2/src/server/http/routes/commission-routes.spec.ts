@@ -88,6 +88,26 @@ describe('commission routes', () => {
     expect(afterDelete.body.data.some((row: { id: string }) => row.id === ruleId)).toBe(false);
   });
 
+  it('normalizes doctorId on rule creation', async () => {
+    const asNull = await request(app)
+      .post('/api/v2/commission/rules')
+      .send({ name: '无医生', rateType: 'PERCENT', rate: 100, doctorId: null })
+      .expect(201);
+    expect(asNull.body.data.doctorId).toBeNull();
+
+    const asEmpty = await request(app)
+      .post('/api/v2/commission/rules')
+      .send({ name: '空医生', rateType: 'PERCENT', rate: 100, doctorId: '' })
+      .expect(201);
+    expect(asEmpty.body.data.doctorId).toBeNull();
+
+    const asString = await request(app)
+      .post('/api/v2/commission/rules')
+      .send({ name: '字符串医生', rateType: 'PERCENT', rate: 100, doctorId: 'user-admin-001' })
+      .expect(201);
+    expect(asString.body.data.doctorId).toBe('user-admin-001');
+  });
+
   it('calculates statements and lists them by period', async () => {
     await request(app)
       .post('/api/v2/commission/rules')
