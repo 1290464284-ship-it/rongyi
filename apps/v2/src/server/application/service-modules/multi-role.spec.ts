@@ -66,6 +66,20 @@ describe('UserRoleService', () => {
     expect(mine.every((row) => row.clinicId === 'clinic-v2-001')).toBe(true);
   });
 
+  it('setRoles falls back to the unscoped user lookup and null clinic when the context has no clinic', () => {
+    const service = new UserRoleService(db);
+    insertUser('user-no-clinic', 'DOCTOR');
+
+    const result = service.setRoles('user-no-clinic', ['DOCTOR', 'ADMIN'], {
+      ...context,
+      clinicId: null,
+    });
+    expect(result).toEqual(['ADMIN']);
+    // v153 起 UserRole.clinicId 为 NOT NULL：null 诊所的 INSERT OR IGNORE 被约束静默跳过，
+    // 但 `context.clinicId ?? null` 的空值分支已执行（result 说明用户查找与 diff 均走通）。
+    expect(rows('user-no-clinic')).toEqual([]);
+  });
+
   it('setRoles diffs by adding and removing roles, and dedupes input', () => {
     const service = new UserRoleService(db);
     insertUser('user-doctor-002', 'DOCTOR');

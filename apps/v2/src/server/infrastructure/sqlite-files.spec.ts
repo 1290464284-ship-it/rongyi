@@ -139,6 +139,23 @@ describe('sqlite file helpers', () => {
     }
   });
 
+  it('reports n/a checkpoint fields when the pragma returns no rows', () => {
+    const dbPath = path.join(dir, 'wal-empty-pragma.sqlite');
+    const db = new Database(dbPath);
+    db.pragma('journal_mode = WAL');
+    db.exec('CREATE TABLE T (id TEXT PRIMARY KEY)');
+    db.close();
+
+    const pragmaSpy = vi.spyOn(Database.prototype, 'pragma').mockReturnValue([] as never);
+    try {
+      expect(() => backupSqliteFile(dbPath, path.join(dir, 'empty-backup.sqlite'))).toThrow(
+        /busy=n\/a, log=n\/a, checkpointed=n\/a/,
+      );
+    } finally {
+      pragmaSpy.mockRestore();
+    }
+  });
+
   it('backupSqliteFile warns when VACUUM INTO fails and falls back to a plain copy', () => {
     const dbPath = path.join(dir, 'vacuum-fallback.sqlite');
     const db = new Database(dbPath);

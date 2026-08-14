@@ -337,6 +337,34 @@ describe('core repositories', () => {
     ).run('proc-repo', null, now, now);
     processing.updateStatus('proc-repo', 'SENT', now, undefined, 'DRAFT');
     expect(processing.findById('proc-repo')?.status).toBe('SENT');
+    // fromStatus 省略时回退到空串条件（带/不带 clinicId 两个分支），
+    // 此时与当前状态不匹配，CAS 条件更新返回 0 且不推进状态。
+    expect(processing.updateStatus('proc-repo', 'RECEIVED', now, undefined, undefined)).toBe(0);
+    expect(processing.updateStatus('proc-repo', 'RECEIVED', now, 'clinic-v2-001', undefined)).toBe(0);
+    expect(processing.findById('proc-repo')?.status).toBe('SENT');
+
+    const processing2 = new SqliteProcessingOrderRepository(db);
+    processing2.createOrder({
+      id: 'proc-settle-default',
+      clinicId: null,
+      patientId: 'patient',
+      visitId: null,
+      factoryId: null,
+      doctorId: null,
+      number: 'PO-SETTLE-DEFAULT',
+      shade: null,
+      teethNumbers: [],
+      totalFee: 0,
+      status: 'DRAFT',
+      expectedAt: null,
+      remark: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const settleRow = db.prepare(
+      'SELECT settleStatus FROM ProcessingOrder WHERE id = ?',
+    ).get('proc-settle-default') as { settleStatus: string };
+    expect(settleRow.settleStatus).toBe('UNSETTLED');
 
     const wechat = new SqliteWechatMessageRepository(db);
     db.prepare(
