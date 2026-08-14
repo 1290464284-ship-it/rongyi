@@ -244,6 +244,20 @@ describe('CustomFieldsPage', () => {
     expect(apiRequest).not.toHaveBeenCalledWith('/custom-fields/field-1', expect.objectContaining({ method: 'DELETE' }));
   });
 
+  it('closes the create dialog through the dialog close path', async () => {
+    mockApi();
+    render(<CustomFieldsPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '新建字段' }));
+    expect(await screen.findByRole('dialog', { name: '新建字段' })).toBeDefined();
+
+    vi.useFakeTimers();
+    fireEvent.keyDown(document.querySelector('.modal')!, { key: 'Escape' });
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByRole('dialog', { name: '新建字段' })).toBeNull();
+    vi.useRealTimers();
+    expect(apiRequest).not.toHaveBeenCalledWith('/custom-fields', expect.objectContaining({ method: 'POST' }));
+  });
+
   it('renders a blank label in the delete confirmation for sparse rows', async () => {
     vi.mocked(apiRequest).mockResolvedValueOnce([{ id: 'f-x', fieldName: 'x', label: undefined, fieldType: 'TEXT' }]);
     render(<CustomFieldsPage />, { wrapper });
