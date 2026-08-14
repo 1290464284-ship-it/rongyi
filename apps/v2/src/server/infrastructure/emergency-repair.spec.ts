@@ -76,4 +76,20 @@ describe('attemptEmergencyRepair', () => {
     expect(result.repaired).toBe(false);
     expect(result.detail).toBe('pre-repair copy failed');
   });
+
+  it('records the raw error detail when a non-Error value is thrown', () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-repair-'));
+    const dbPath = path.join(dir, 'v2.sqlite');
+    createHealthyDb(dbPath);
+    const execSpy = vi.spyOn(Database.prototype, 'exec').mockImplementation(() => {
+      throw 'corrupt-signal';
+    });
+    try {
+      const result = attemptEmergencyRepair(dbPath, makeLogger());
+      expect(result.repaired).toBe(false);
+      expect(result.detail).toBe('corrupt-signal');
+    } finally {
+      execSpy.mockRestore();
+    }
+  });
 });

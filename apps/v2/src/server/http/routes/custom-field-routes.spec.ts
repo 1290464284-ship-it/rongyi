@@ -149,6 +149,17 @@ describe('custom field routes', () => {
     expect([200, 400]).toContain(emptyPut.status);
   });
 
+  it('tolerates a missing PATCH body', async () => {
+    currentRole = 'BOSS';
+    const created = await request(app)
+      .post('/api/v2/custom-fields')
+      .send({ entity: 'patient', label: '空体更新', fieldName: 'noBodyUpdate', fieldType: 'TEXT' })
+      .expect(201);
+    const id = created.body.data.id as string;
+    const res = await request(app).patch(`/api/v2/custom-fields/${id}`);
+    expect([200, 400]).toContain(res.status);
+  });
+
   it('normalizes boolean values and select options', async () => {
     const booleanField = await request(app)
       .post('/api/v2/custom-fields')

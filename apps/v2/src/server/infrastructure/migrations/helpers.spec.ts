@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { addColumns, dedupNullClinicRows, snapshotDatabase } from './helpers';
+import { addColumns, dedupNullClinicRows, ensureForeignKeys, snapshotDatabase } from './helpers';
 
 describe('migration helpers', () => {
   let dir: string;
@@ -60,5 +60,17 @@ describe('migration helpers', () => {
     const files = fs.readdirSync(preDir).filter((name) => name.endsWith('.sqlite'));
     expect(files.length).toBeLessThanOrEqual(3);
     expect(fs.existsSync(path.join(preDir, 'pre-1.sqlite'))).toBe(false);
+  });
+
+  it('repairs NULL Refund.amount rows and logs an empty beforeValue', () => {
+    db.exec('CREATE TABLE Refund (id TEXT PRIMARY KEY, amount INTEGER, clinicId TEXT)');
+    db.prepare('INSERT INTO Refund (id, amount, clinicId) VALUES (?, NULL, ?)').run('refund-null-1', 'clinic-a');
+    ensureForeignKeys(db, 'Refund', 'CREATE TABLE "Refund" (id TEXT PRIMARY KEY, amount INTEGER, clinicId TEXT)');
+    const row = db.prepare('SELECT amount FROM Refund WHERE id = ?').get('refund-null-1') as { amount: number };
+    expect(row.amount).toBe(1);
+    const log = db.prepare(
+      'SELECT beforeValue FROM MigrationRepairLog WHERE tableName = ? AND recordId = ? AND field = ?',
+    ).get('Refund', 'refund-null-1', 'amount') as { beforeValue: string };
+    expect(log.beforeValue).toBe('');
   });
 });

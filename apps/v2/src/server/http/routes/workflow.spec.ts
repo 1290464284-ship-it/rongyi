@@ -55,6 +55,7 @@ describe('workflow routes', () => {
     expect([200, 400, 404]).toContain((await request(app).post('/api/v2/inventory/transactions')).status);
     expect([200, 400, 404]).toContain((await request(app).post('/api/v2/bulk-import/patients')).status);
     expect([200, 400, 404]).toContain((await request(app).post('/api/v2/follow-ups/batch-complete')).status);
+    expect([200, 400, 404]).toContain((await request(app).patch('/api/v2/follow-ups/missing/complete')).status);
     expect([200, 400, 404]).toContain((await request(app).post('/api/v2/follow-ups/batch-generate')).status);
   });
 

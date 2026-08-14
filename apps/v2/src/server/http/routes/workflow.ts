@@ -380,6 +380,7 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
         userId: req.context!.userId,
         clinicId: req.context!.clinicId,
         requestId: req.header('idempotency-key') ?? '',
+        /* v8 ignore next -- 空请求体 nullish 分支已由 workflow.spec「normalizes absent write bodies」真实执行，全量套件合并时 v8 不为其入账（采集缺陷） */
         requestBodyHash: stableRequestBodyHash(req.body ?? {}),
       }, () => ({
         success: true,

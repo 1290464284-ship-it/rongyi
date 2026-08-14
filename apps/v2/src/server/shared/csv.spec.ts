@@ -68,6 +68,24 @@ describe('shared CSV helpers', () => {
     expect(headers['content-disposition']).toBe('attachment; filename="rows.csv"');
   });
 
+  it('applies the mapRow option to each row before serialization', async () => {
+    const writes: Buffer[] = [];
+    const passthrough = new PassThrough();
+    passthrough.on('data', (chunk: Buffer) => writes.push(Buffer.from(chunk)));
+    const res = Object.assign(passthrough, {
+      setHeader: () => {},
+    }) as unknown as Response;
+    await streamCsvResponse(
+      res,
+      'mapped.csv',
+      [{ key: 'id' }, { key: 'name' }],
+      Readable.from([{ id: '1', name: 'One' }], { objectMode: true }),
+      { mapRow: (row) => ({ id: row.id, name: `Mapped ${row.name}` }) },
+    );
+    const body = writes.map((chunk) => chunk.toString()).join('');
+    expect(body).toContain('"1","Mapped One"');
+  });
+
   it('forwards row serialization errors to the stream callback', async () => {
     const stream = createCsvStream<{ id: unknown }>([{ key: 'id' }]);
     const error = new Promise<Error>((resolve) => {

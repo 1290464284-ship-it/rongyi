@@ -107,6 +107,18 @@ describe('processing flow routes', () => {
     });
   });
 
+  it('POST register-step accepts an explicit matching stepId string', async () => {
+    const res = await request(app)
+      .post('/api/v2/processing-orders/route-po-2/register-step')
+      .send({ stepId: 'route-step-model' })
+      .expect(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data[0]).toMatchObject({
+      stepId: 'route-step-model',
+      status: 'DONE',
+    });
+  });
+
   it('POST set-step 手动修改状态（双击手动改）', async () => {
     const res = await request(app)
       .post('/api/v2/processing-orders/route-po-3/set-step')

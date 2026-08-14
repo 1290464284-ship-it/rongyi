@@ -119,6 +119,18 @@ describe('core repositories', () => {
     expect(() => repo.updateConsume('card-repo', 999, now)).toThrow('Insufficient member card balance');
   });
 
+  it('throws Insufficient points when a card has too few points', () => {
+    const member = new SqliteMemberCardRepository(db);
+    db.prepare(
+      `INSERT INTO MemberCard (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, cardNo, balance, totalRecharge, totalConsume,
+         status, points, totalPoints, level
+       ) VALUES (?, ?, ?, ?, NULL, ?, 'CARD-NO-POINTS', 0, 0, 0, 'ACTIVE', 5, 5, 'NORMAL')`,
+    ).run('card-no-points', null, now, now, 'patient-repo');
+    expect(() => member.updatePoints('card-no-points', -10, 0, now)).toThrow('Insufficient points');
+  });
+
   it('filters soft-deleted rows and supports member-card refund lookups', () => {
     const member = new SqliteMemberCardRepository(db);
     db.prepare(
@@ -297,6 +309,28 @@ describe('core repositories', () => {
     expect(row.status).toBe('UNPAID');
   });
 
+  it('coerces undefined payMethod and memberCardId to null for clinic-scoped updates', () => {
+    const repo = new SqliteChargeRepository(db);
+    repo.create({
+      id: 'charge-scoped-null',
+      clinicId: 'clinic-v2-001',
+      patientId: 'patient',
+      number: 'CHG-SCOPED-NULL',
+      totalAmount: 1000,
+      discount: 0,
+      status: 'UNPAID',
+      createdAt: now,
+      updatedAt: now,
+    });
+    repo.updatePayment('charge-scoped-null', 100, 'PARTIAL', now, 0, undefined, null, 'clinic-v2-001');
+    const row = db.prepare('SELECT payMethod, memberCardId FROM Charge WHERE id = ?').get('charge-scoped-null') as {
+      payMethod: string | null;
+      memberCardId: string | null;
+    };
+    expect(row.payMethod).toBeNull();
+    expect(row.memberCardId).toBeNull();
+  });
+
   it('creates purchase orders and marks them received', () => {
     const repo = new SqlitePurchaseOrderRepository(db);
     repo.createOrder({
@@ -463,6 +497,10 @@ describe('core repositories', () => {
     expect(overdue.items.some((row) => row.id === 'scope-today')).toBe(false);
     expect(todayList.items.some((row) => row.id === 'scope-today')).toBe(true);
     expect(upcoming.items.some((row) => row.id === 'scope-upcoming')).toBe(true);
+    const all = repo.reminders(undefined, { scope: 'all' } as never);
+    expect(all.items.some((row) => row.id === 'scope-overdue')).toBe(true);
+    expect(all.items.some((row) => row.id === 'scope-today')).toBe(true);
+    expect(all.items.some((row) => row.id === 'scope-upcoming')).toBe(true);
   });
 
   it('covers repository nullish, boolean, and auth mapping branches', () => {

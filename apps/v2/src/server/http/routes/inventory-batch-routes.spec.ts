@@ -355,6 +355,9 @@ describe('inventory batch routes', () => {
     expect(nanDays.body.success).toBe(true);
     const nanLimit = await request(app).get('/api/v2/inventory-batches?limit=xyz').expect(200);
     expect(nanLimit.body.success).toBe(true);
+    const finiteLimit = await request(app).get('/api/v2/inventory-batches?limit=5').expect(200);
+    expect(finiteLimit.body.success).toBe(true);
+    expect(Array.isArray(finiteLimit.body.data.batches)).toBe(true);
     const itemIdEmpty = await request(app).get('/api/v2/inventory-batches?itemId=').expect(200);
     expect(itemIdEmpty.body.success).toBe(true);
   });
