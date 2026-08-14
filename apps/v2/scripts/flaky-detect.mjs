@@ -16,11 +16,20 @@ for (let run = 1; run <= runs; run += 1) {
   const args = ['--filter', '@dental/v2', 'exec', 'vitest', 'run', '--sequence.shuffle'];
   if (testPattern) args.push(testPattern);
   console.log(`[flaky-detect] run ${run}/${runs}: pnpm ${args.join(' ')}`);
-  const result = spawnSync(process.env.ComSpec, ['/c', 'pnpm', ...args], {
-    cwd: repoRoot,
-    env: process.env,
-    stdio: 'inherit',
-  });
+  // 跨平台启动 pnpm：Windows 上 pnpm 是 .cmd/.ps1 shim，必须经 ComSpec + '/c'
+  // 启动；POSIX（CI 的 ubuntu-latest，pnpm/action-setup 已将 pnpm 加入 PATH）
+  // 上直接 spawn 'pnpm' 即可。按平台分支，避免 ComSpec undefined 崩溃。
+  const result = process.platform === 'win32'
+    ? spawnSync(process.env.ComSpec, ['/c', 'pnpm', ...args], {
+        cwd: repoRoot,
+        env: process.env,
+        stdio: 'inherit',
+      })
+    : spawnSync('pnpm', args, {
+        cwd: repoRoot,
+        env: process.env,
+        stdio: 'inherit',
+      });
   if (result.status !== 0) failures.push(run);
   history.push({
     timestamp: new Date().toISOString(),
