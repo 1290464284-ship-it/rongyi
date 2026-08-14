@@ -4,7 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import type { ReactNode } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, useNavigate } from 'react-router';
 import { PatientTimelinePage } from './PatientTimelinePage';
 import { apiRequest } from '../../lib/api';
 import { ToastProvider } from '../../components/toast';
@@ -489,5 +489,85 @@ describe('PatientTimelinePage', () => {
     await screen.findByText('Visit A');
     fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
     expect(await screen.findByText('加载中...')).toBeDefined();
+  });
+
+  it('resets the patient when the URL id changes', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.includes('patientId=')) return { items: [], total: 0, page: 1, pageSize: 200 };
+      return { items: [{ id: 'p-list-1', name: 'List Patient' }], total: 1, page: 1, pageSize: 200 };
+    });
+    function NavigateButton() {
+      const navigate = useNavigate();
+      return <button onClick={() => navigate({ pathname: '/timeline', search: '?id=second-patient' })}>navigate</button>;
+    }
+    render(
+      <MemoryRouter initialEntries={[{ pathname: '/timeline', search: '?id=first-patient' }]}>
+        <QueryClientProvider client={new QueryClient()}>
+          <ToastProvider>
+            <PatientTimelinePage />
+            <NavigateButton />
+          </ToastProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith(expect.stringContaining('patientId=first-patient'));
+    });
+    fireEvent.click(screen.getByText('navigate'));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith(expect.stringContaining('patientId=second-patient'));
+    });
+  });
+
+  it('drops in-flight timeline pages from the previous patient', async () => {
+    let resolveOld: ((value: unknown) => void) | undefined;
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.includes('patientId=p-old')) {
+        return await new Promise((resolve) => { resolveOld = resolve; });
+      }
+      if (path.includes('patientId=')) return { items: [], total: 0, page: 1, pageSize: 200 };
+      return {
+        items: [{ id: 'p-old', name: 'Old Patient' }, { id: 'p-new', name: 'New Patient' }],
+        total: 2,
+        page: 1,
+        pageSize: 200,
+      };
+    });
+    render(<PatientTimelinePage />, { wrapper });
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith(expect.stringContaining('patientId=p-old'));
+    });
+    await waitFor(() => {
+      const combo = screen.getByRole('combobox') as HTMLSelectElement;
+      if (!Array.from(combo.options).some((option) => option.value === 'p-new')) {
+        throw new Error('p-new option missing');
+      }
+      fireEvent.change(combo, { target: { value: 'p-new' } });
+    });
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith(expect.stringContaining('patientId=p-new'));
+    });
+    // 旧患者的挂起响应返回：generation 守卫将其丢弃为空页
+    resolveOld?.({ items: [{ id: 'stale-row', summary: 'Stale Visit' }], total: 1, page: 1, pageSize: 50 });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByText('Stale Visit')).toBeNull();
+  });
+
+  it('caps the rendered timeline and shows the overflow reminder', async () => {
+    const bigItems = Array.from({ length: 501 }, (_, index) => ({
+      id: `v-${index}`,
+      startTime: `2026-08-0${(index % 9) + 1}T10:00:00.000Z`,
+      summary: `Visit ${index}`,
+      status: 'COMPLETED',
+    }));
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.includes('/resources/visits?')) {
+        return { items: bigItems, total: 501, page: 1, pageSize: 50 };
+      }
+      if (path.includes('patientId=')) return { items: [], total: 0, page: 1, pageSize: 50 };
+      return { items: [{ id: 'p-real-1', name: 'Real Patient' }], total: 1, page: 1, pageSize: 200 };
+    });
+    render(<PatientTimelinePage />, { wrapper });
+    expect(await screen.findByText(/时间线超过 500 条，仅显示最近 500 条/)).toBeDefined();
   });
 });
