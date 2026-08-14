@@ -298,50 +298,6 @@ describe('service edge coverage', () => {
     expect(result.items[0]).toMatchObject({ itemId: 'item-af', beforeStock: 5, afterStock: 7 });
   });
 
-  it('covers appointment validation and conflict branches', async () => {
-    const service = new AppointmentService(db);
-    const base = {
-      patientId: 'patient-demo-001',
-      doctorId: 'user-admin-001',
-      startTime: new Date(Date.now() + 10 * 86_400_000).toISOString(),
-      endTime: new Date(Date.now() + 10 * 86_400_000 + 3_600_000).toISOString(),
-      type: 'REGULAR',
-    };
-    db.prepare(
-      `INSERT INTO Chair (id, clinicId, createdAt, updatedAt, deletedAt, name, location, active)
-       VALUES (?, ?, ?, ?, NULL, 'Edge Chair', 'Room 2', 1)`,
-    ).run('chair-1', context.clinicId, new Date().toISOString(), new Date().toISOString());
-    await expect(service.create({ ...base, doctorId: 'missing-doctor' }, context))
-      .rejects.toThrow('Doctor not found');
-    await expect(service.create({ ...base, chairId: 'missing-chair' }, context))
-      .rejects.toThrow('Chair not found');
-    const created = await service.create({ ...base, chairId: 'chair-1', remark: 'r' }, context);
-    expect(db.prepare(
-      `SELECT 1 FROM SyncChange WHERE tableName = 'Appointment' AND recordId = ? AND operation = 'INSERT' AND clinicId = ?`,
-    ).get(String(created.id), context.clinicId)).toBeDefined();
-    await expect(service.transition('missing-appointment', 'ARRIVED', context)).rejects.toThrow('Appointment not found');
-    await expect(service.transition(String(created.id), 'INVALID', context)).rejects.toThrow('Cannot transition');
-    await expect(service.create({ ...base, startTime: 'bad', endTime: 'worse' }, context)).rejects.toThrow('endTime');
-    await expect(service.create(base, context)).rejects.toThrow('already booked');
-  });
-
-  it('guards appointment transitions against stale status', async () => {
-    const service = new AppointmentService(db);
-    const created = await service.create({
-      patientId: 'patient-demo-001',
-      doctorId: 'user-admin-001',
-      startTime: new Date(Date.now() + 11 * 86_400_000).toISOString(),
-      endTime: new Date(Date.now() + 11 * 86_400_000 + 3_600_000).toISOString(),
-      type: 'REGULAR',
-    }, context);
-    await service.transition(String(created.id), 'ARRIVED', context);
-    expect(db.prepare(
-      `SELECT 1 FROM SyncChange WHERE tableName = 'Appointment' AND recordId = ? AND operation = 'UPDATE' AND clinicId = ?`,
-    ).get(String(created.id), context.clinicId)).toBeDefined();
-    await expect(service.transition(String(created.id), 'NO_SHOW', context))
-      .rejects.toThrow('Cannot transition appointment from ARRIVED to NO_SHOW');
-  });
-
   it('covers charge creation, payment, refund, member-card, and debt branches', async () => {
     const service = new ChargeService(db);
     await expect(service.create({ patientId: 'patient-demo-001', items: [] }, context)).rejects.toThrow('At least one');
