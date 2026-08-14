@@ -74,6 +74,8 @@ Web **96.82% / 92.94% / 98.66% / 98.58%**，双门禁全绿——覆盖率口径
 | `src/server/application/service-modules/shift-template.ts`（addDays） | `if (!match) throw` 日期格式校验 | 调用方均先经 normalizeWeekStart 归一化，日期格式恒有效 |
 | `src/server/infrastructure/idempotency.ts`（async 分支） | async 回调的同步抛错 catch 与 `!isPromise(result)` 返回 | AsyncFunction 恒返回 Promise、恒不同步抛错，两条分支为防御性兜底 |
 | `src/server/infrastructure/idempotency.ts`（sync 路径） | `if (isDbWriteActive(db))` 第二次写锁检查 | 66 行已拦截活动写锁，两次检查之间无异步让出，重复守卫不可达 |
+| `src/web/pages/inventory/ProcessingOrdersPage.tsx`（行内按钮/状态选择/撤销结算） | `if (ctx.stale) return`、`if (disabled) return`、`!flowTarget \|\| flowBusy`、`!orderId` | 触发按钮在 stale/busy 期间 disabled（浏览器不派发点击）；对话框按钮仅在 target 非空时渲染；编辑态 orderId 由 formFromRow 恒写入——均为防御冗余 |
+| `src/web/pages/inventory/ProcessingOrdersPage.tsx`（advanceFlow/adjustStep 成功守卫） | `if (flowRequestIdRef.current === requestId)` 未命中分支 | 过期响应丢弃行为由 spec「ignores stale advance and adjust responses」覆盖（probe 验证执行）；该分支无源码区间，v8-ignore 与多种结构重写（else/return/同步 helper/单语句/局部变量）均无法让其入账，属 v8 覆盖采集缺陷 |
 
 ## 5. 其他已知取舍
 

@@ -826,4 +826,59 @@ describe('ProcessingSettleDialog', () => {
     const call = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/processing-orders/proc-1/settle');
     expect(JSON.parse(String(call?.[1]?.body))).toEqual({ amount: 30000 });
   });
+
+  it('ignores a stale flow load failure after closing the dialog', async () => {
+    let rejectSteps: ((error: unknown) => void) | undefined;
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/processingOrders?page=1&pageSize=50') {
+        return { items: [{ id: 'proc-1', number: 'PROC-1', patientId: 'p-1', status: 'DRAFT' }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      if (path === '/processing-orders/proc-1/steps') {
+        return await new Promise((_resolve, reject) => { rejectSteps = reject; });
+      }
+      return {};
+    });
+    render(<ProcessingOrdersPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '流程' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    rejectSteps?.(new Error('late failure'));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // 关闭后的旧请求失败被守卫吞掉，不弹出任何错误
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByText('操作失败，请稍后重试')).toBeNull();
+  });
+
+  it('blocks editing saves while the items backfill is still loading', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/processingOrders?page=1&pageSize=50') {
+        return { items: [{ id: 'proc-1', number: 'PROC-1', patientId: 'p-1', status: 'DRAFT', totalFee: 50000 }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      if (path === '/resources/processingOrderItems?orderId=proc-1&page=1&pageSize=100') {
+        return new Promise(() => {});
+      }
+      return {};
+    });
+    render(<ProcessingOrdersPage />, { wrapper });
+    await screen.findByText('PROC-1');
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    await waitFor(() => {
+      expect((screen.getByLabelText('加工单号') as HTMLInputElement).value).toBe('PROC-1');
+    });
+    fireEvent.click(screen.getByText('保存'));
+    expect(await screen.findByText('明细加载中，请稍候再保存')).toBeDefined();
+    expect(apiRequest).not.toHaveBeenCalledWith(
+      '/resources/processingOrders/proc-1',
+      expect.objectContaining({ method: 'PATCH' }),
+    );
+  });
 });
