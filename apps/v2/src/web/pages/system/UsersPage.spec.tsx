@@ -300,6 +300,43 @@ describe('UsersPage', () => {
     expect(await screen.findByText('用户权限已更新')).toBeDefined();
   });
 
+  it('drops a stale permission load after a newer request', async () => {
+    const pending: Array<(value: unknown) => void> = [];
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/auth/me') return { role: 'BOSS' };
+      if (path === '/resources/users?page=1&pageSize=100') {
+        return {
+          items: [
+            { id: 'u1', username: 'doctor', name: '张医生', role: 'DOCTOR', active: true },
+            { id: 'u2', username: 'nurse', name: '李护士', role: 'DOCTOR', active: true },
+          ],
+          total: 2, page: 1, pageSize: 100,
+        };
+      }
+      if (path === '/user-roles') return { items: [] };
+      if (path === '/user-permissions/u1') {
+        return new Promise((resolve) => { pending.push(resolve); });
+      }
+      if (path === '/user-permissions/u2') return { effective: ['finance'] };
+      return {};
+    });
+    render(<UsersPage />, { wrapper });
+    await screen.findByText('张医生');
+    const permissionButtons = screen.getAllByText('权限');
+    fireEvent.click(permissionButtons[0]);
+    // 第一个请求挂起时打开第二个用户的权限：requestId 已前进
+    fireEvent.click(permissionButtons[1]);
+    await waitFor(() => {
+      expect(screen.getByText('设置「李护士」的权限')).toBeDefined();
+      expect(screen.getByLabelText('收费财务')).toHaveProperty('checked', true);
+    });
+    // 迟到响应被 requestId 守卫丢弃，不覆盖当前表单
+    pending[0]?.({ effective: ['system'] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByLabelText('系统管理')).toHaveProperty('checked', false);
+    expect(screen.getByLabelText('收费财务')).toHaveProperty('checked', true);
+  });
+
   it('does not delete a user when the confirmation is cancelled', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/auth/me') return { role: 'BOSS' };

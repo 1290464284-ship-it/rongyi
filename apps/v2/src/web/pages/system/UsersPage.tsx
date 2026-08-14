@@ -203,6 +203,7 @@ export function UsersPage() {
 
   async function deleteUser() {
     if (stale) return;
+    /* v8 ignore next -- 确认框按钮仅在 deleteTarget 非空时渲染且 pending 期间 disabled，守卫为防御冗余 */
     if (!deleteTarget || submitting) return;
     setSubmitting(true);
     try {
@@ -220,6 +221,7 @@ export function UsersPage() {
 
   async function resetPassword(password: string) {
     if (stale) return;
+    /* v8 ignore next -- 重置弹窗仅在 passwordTarget 非空时渲染且 pending 期间确认按钮 disabled，守卫为防御冗余 */
     if (!passwordTarget || submitting) return;
     setSubmitting(true);
     try {
@@ -256,6 +258,7 @@ export function UsersPage() {
 
   async function savePermissions() {
     if (stale) return;
+    /* v8 ignore next -- 保存按钮仅在权限弹窗内渲染且 permissionBusy 期间 disabled，守卫为防御冗余 */
     if (!permissionTarget || permissionBusy) return;
     setPermissionBusy(true);
     try {

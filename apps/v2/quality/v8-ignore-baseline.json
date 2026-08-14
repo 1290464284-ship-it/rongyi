@@ -1,8 +1,9 @@
 {
-  "generatedAt": "2026-08-14T02:14:44.635Z",
-  "total": 222,
+  "generatedAt": "2026-08-14T02:35:23.775Z",
+  "total": 225,
   "perFile": {
     "src\\web\\pages\\system\\SystemOperationsPage.tsx": 3,
+    "src\\web\\pages\\system\\UsersPage.tsx": 3,
     "src\\web\\pages\\patients\\PatientTimelinePage.tsx": 4,
     "src\\web\\pages\\inventory\\InventoryWorkflowPage.tsx": 3,
     "src\\web\\pages\\inventory\\ProcessingOrdersPage.tsx": 7,
