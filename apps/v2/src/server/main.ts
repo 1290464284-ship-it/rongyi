@@ -21,6 +21,7 @@ import { enableIncrementalAutoVacuum, runDailyDatabaseMaintenance, runWeeklyData
 import { checkDiskFree } from './maintenance/disk-monitor';
 import { createRuntimeMetricsSampler, persistRuntimeMetrics } from './maintenance/runtime-metrics';
 import { buildHealthSnapshot, writeHealthSnapshot } from './maintenance/health-snapshot';
+import { checkClockDrift, writeClockMarker } from './maintenance/clock-drift';
 import {
   DEFAULT_API_PORT,
   DEFAULT_AUTO_BACKUP_INTERVAL_MS,
@@ -375,6 +376,29 @@ if (stagedCleanup.removed > 0) {
 }
 const audit = new AuditService(db);
 const alerts = new AlertService(db);
+
+// ── A-P3.3：时钟漂移检测 ─────────────────────────────────────────────────────
+// 上次启动时间戳若落在未来（>72h 偏差），说明系统时钟被回拨/错误设置——
+// JWT 过期、备份时间戳错乱类故障的最常见根因。检测后仅告警 + 落日志，
+// 不自动改时间。
+const CLOCK_DRIFT_THRESHOLD_MS = 72 * 60 * 60 * 1000;
+const clockMarkerPath = path.join(logDir, 'last-run.json');
+const clockDrift = checkClockDrift(clockMarkerPath, CLOCK_DRIFT_THRESHOLD_MS);
+if (clockDrift.drifted) {
+  logger.error('system clock drift detected', { action: 'clock-drift', lastStartedAt: clockDrift.lastStartedAt });
+  alerts.create({
+    alertType: 'CLOCK_DRIFT',
+    level: 'CRITICAL',
+    severity: 'CRITICAL',
+    title: '系统时钟异常',
+    message: `检测到系统时钟被回拨（上次运行 ${clockDrift.lastStartedAt ?? '未知'} 距今偏差超过 72 小时）。请校准系统时间，否则登录令牌与备份时间戳可能异常。`,
+    source: 'STARTUP',
+    metricName: 'clock_drift',
+    suggestion: '在系统设置中开启自动时间同步，或手动校准系统时钟。',
+    clinicId: null,
+  });
+}
+writeClockMarker(clockMarkerPath, logDir);
 const configuredAutoBackupInterval = Number(process.env.V2_AUTO_BACKUP_INTERVAL_MS ?? DEFAULT_AUTO_BACKUP_INTERVAL_MS);
 const autoBackupIntervalMs = Number.isFinite(configuredAutoBackupInterval) && configuredAutoBackupInterval >= 60_000
   ? configuredAutoBackupInterval
@@ -394,6 +418,13 @@ const syncChangeRetentionDays = Number.isFinite(configuredSyncRetentionDays)
   ? Math.min(3650, Math.max(1, Math.floor(configuredSyncRetentionDays)))
   : undefined;
 
+// A-P3.2：磁盘告警阈值可配（V2_DISK_THRESHOLD_BYTES，默认 1GB）。
+const configuredDiskThreshold = Number(process.env.V2_DISK_THRESHOLD_BYTES);
+/* v8 ignore next 3 -- env 注入分支：测试环境不设 V2_DISK_THRESHOLD_BYTES，仅生产部署可配（登记 coverage-exclusions） */
+let diskThresholdBytes: number | undefined;
+if (Number.isFinite(configuredDiskThreshold) && configuredDiskThreshold > 0) {
+  diskThresholdBytes = configuredDiskThreshold;
+}
 // ── 定时任务统一收敛到 scheduler 模块 ──────────────────────────────────────────
 // 原内联的三组定时器（自动备份 5min 首延迟 + interval、审计日志清理每日、
 // idempotency 清理每日）全部由 startSchedulers 管理，shutdown 时通过 stop()
@@ -424,7 +455,7 @@ const schedulers = startSchedulers({
     allowFullVacuum: process.env.V2_ENABLE_FULL_VACUUM === '1',
   }),
   diskCheck: () => {
-    const result = checkDiskFree(backupDir);
+    const result = checkDiskFree(backupDir, diskThresholdBytes);
     if (result.ok) {
       if (diskAlerted) {
         diskAlerted = false;
