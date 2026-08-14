@@ -24,7 +24,6 @@ import {
   CephalometricService,
   ChargeService,
   DebtService,
-  FollowUpService,
   HrService,
   InventoryService,
   MemberCardService,
@@ -284,59 +283,6 @@ describe('service edge coverage', () => {
       items: Array<{ itemId: string; beforeStock: number; afterStock: number }>;
     };
     expect(result.items[0]).toMatchObject({ itemId: 'item-af', beforeStock: 5, afterStock: 7 });
-  });
-
-  it('covers follow-up generation with and without templates and adherence rate', async () => {
-    const service = new FollowUpService(db);
-    const now = new Date().toISOString();
-    db.prepare(
-      `INSERT INTO Visit (
-         id, clinicId, createdAt, updatedAt, deletedAt,
-         patientId, doctorId, startTime, endTime, status
-       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'user-admin-001', ?, ?, 'COMPLETED')`,
-    ).run('visit-edge-followup', context.clinicId, now, now, now, now);
-    db.prepare(
-      `INSERT INTO Treatment (
-         id, clinicId, createdAt, updatedAt, deletedAt,
-         patientId, visitId, doctorId, code, name, category,
-         price, quantity, status, completedDate
-       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'visit-edge-followup', 'user-admin-001',
-         'EDGE-T', 'T', 'GENERAL', 100, 1, 'COMPLETED', ?)`,
-    ).run('treatment-edge-followup', context.clinicId, now, now, now.slice(0, 10));
-    expect(service.adherence(context).rate).toBe(0);
-    db.prepare(
-      `INSERT INTO FollowUp (
-         id, clinicId, createdAt, updatedAt, deletedAt,
-         patientId, planDate, content, status, completedAt
-       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', ?, 'x', 'COMPLETED', ?)`,
-    ).run('followup-edge-completed', context.clinicId, now, now, now.slice(0, 10), now.slice(0, 10));
-    expect(service.adherence(context).rate).toBeGreaterThanOrEqual(0);
-    const noTemplateResult = await service.batchGenerate(1, nullContext);
-    expect(noTemplateResult.generated).toBeGreaterThanOrEqual(1);
-
-    db.prepare(
-      `INSERT INTO FollowUpTemplate (
-         id, clinicId, createdAt, updatedAt, deletedAt,
-         name, daysAfter, content, assigneeId, isEnabled,
-         minIntervalDays, recommendedIntervalDays, maxIntervalDays
-       ) VALUES (?, ?, ?, ?, NULL, 'Null Template', NULL, NULL, NULL, 1, 1, 7, 14)`,
-    ).run('template-edge-null', context.clinicId, now, now);
-    db.prepare(
-      `INSERT INTO Visit (
-         id, clinicId, createdAt, updatedAt, deletedAt,
-         patientId, doctorId, startTime, endTime, status
-       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'user-admin-001', ?, ?, 'COMPLETED')`,
-    ).run('visit-edge-null-template', context.clinicId, now, now, now, now);
-    db.prepare(
-      `INSERT INTO Treatment (
-         id, clinicId, createdAt, updatedAt, deletedAt,
-         patientId, visitId, doctorId, code, name, category,
-         price, quantity, status, completedDate
-       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'visit-edge-null-template', 'user-admin-001',
-         'NULL-T', 'T', 'GENERAL', 100, 1, 'COMPLETED', NULL)`,
-    ).run('treatment-edge-null-template', context.clinicId, now, now);
-    const nullTemplateResult = await service.batchGenerate(1, nullContext);
-    expect(nullTemplateResult.generated).toBeGreaterThanOrEqual(1);
   });
 
   it('covers backup missing, corrupt, encrypted, and restore branches', async () => {

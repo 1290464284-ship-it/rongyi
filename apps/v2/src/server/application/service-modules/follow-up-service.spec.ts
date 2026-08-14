@@ -290,4 +290,70 @@ describe('FollowUpService', () => {
     expect(maskPhoneForExport(null)).toBe('');
     expect(maskPhoneForExport(undefined)).toBe('');
   });
+
+  // ---- 边缘分支测试（自 services-edge.spec.ts 聚合文件迁移）----
+
+  it('covers follow-up generation with and without templates and adherence rate', async () => {
+    // 共享库内前序测试已留下 COMPLETED 随访，会破坏「初始 adherence = 0」的
+    // 前提 → 专用临时库，保持聚合文件中的全新库语义。
+    const localDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-followup-edge-'));
+    const localDb = createDatabase(localDir);
+    seedDatabase(localDb);
+    runMigrations(localDb);
+    try {
+      const service = new FollowUpService(localDb);
+      const now = new Date().toISOString();
+      localDb.prepare(
+        `INSERT INTO Visit (
+           id, clinicId, createdAt, updatedAt, deletedAt,
+           patientId, doctorId, startTime, endTime, status
+         ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'user-admin-001', ?, ?, 'COMPLETED')`,
+      ).run('visit-edge-followup', context.clinicId, now, now, now, now);
+      localDb.prepare(
+        `INSERT INTO Treatment (
+           id, clinicId, createdAt, updatedAt, deletedAt,
+           patientId, visitId, doctorId, code, name, category,
+           price, quantity, status, completedDate
+         ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'visit-edge-followup', 'user-admin-001',
+           'EDGE-T', 'T', 'GENERAL', 100, 1, 'COMPLETED', ?)`,
+      ).run('treatment-edge-followup', context.clinicId, now, now, now.slice(0, 10));
+      expect(service.adherence(context).rate).toBe(0);
+      localDb.prepare(
+        `INSERT INTO FollowUp (
+           id, clinicId, createdAt, updatedAt, deletedAt,
+           patientId, planDate, content, status, completedAt
+         ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', ?, 'x', 'COMPLETED', ?)`,
+      ).run('followup-edge-completed', context.clinicId, now, now, now.slice(0, 10), now.slice(0, 10));
+      expect(service.adherence(context).rate).toBeGreaterThanOrEqual(0);
+      const noTemplateResult = await service.batchGenerate(1, { ...context, clinicId: null });
+      expect(noTemplateResult.generated).toBeGreaterThanOrEqual(1);
+
+      localDb.prepare(
+        `INSERT INTO FollowUpTemplate (
+           id, clinicId, createdAt, updatedAt, deletedAt,
+           name, daysAfter, content, assigneeId, isEnabled,
+           minIntervalDays, recommendedIntervalDays, maxIntervalDays
+         ) VALUES (?, ?, ?, ?, NULL, 'Null Template', NULL, NULL, NULL, 1, 1, 7, 14)`,
+      ).run('template-edge-null', context.clinicId, now, now);
+      localDb.prepare(
+        `INSERT INTO Visit (
+           id, clinicId, createdAt, updatedAt, deletedAt,
+           patientId, doctorId, startTime, endTime, status
+         ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'user-admin-001', ?, ?, 'COMPLETED')`,
+      ).run('visit-edge-null-template', context.clinicId, now, now, now, now);
+      localDb.prepare(
+        `INSERT INTO Treatment (
+           id, clinicId, createdAt, updatedAt, deletedAt,
+           patientId, visitId, doctorId, code, name, category,
+           price, quantity, status, completedDate
+         ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'visit-edge-null-template', 'user-admin-001',
+           'NULL-T', 'T', 'GENERAL', 100, 1, 'COMPLETED', NULL)`,
+      ).run('treatment-edge-null-template', context.clinicId, now, now);
+      const nullTemplateResult = await service.batchGenerate(1, { ...context, clinicId: null });
+      expect(nullTemplateResult.generated).toBeGreaterThanOrEqual(1);
+    } finally {
+      localDb.close();
+      fs.rmSync(localDir, { recursive: true, force: true });
+    }
+  });
 });
