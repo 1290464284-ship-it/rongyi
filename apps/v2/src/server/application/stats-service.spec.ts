@@ -1,14 +1,14 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../infrastructure/database';
 import { runMigrations } from '../infrastructure/migrations';
 import { StatsService } from './stats-service';
 import type { AppContext } from '../../domain/contracts';
 
-describe('StatsService snapshot and role pruning', () => {
+describe('StatsService', () => {
   let db: Database.Database;
   let dataDir: string;
 
@@ -30,6 +30,69 @@ describe('StatsService snapshot and role pruning', () => {
   afterAll(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  // 缓存测试依赖初始库（未超聚合阈值）：必须先于 10 万行快照测试执行。
+  it('serves repeated dashboard calls from the TTL cache without re-running aggregation SQL', () => {
+    const service = new StatsService(db);
+    const prepare = vi.spyOn(db, 'prepare');
+    try {
+      service.dashboard(makeContext());
+      expect(prepare).toHaveBeenCalledTimes(2);
+
+      const cached = service.dashboard(makeContext());
+      expect(prepare).toHaveBeenCalledTimes(2);
+      expect(cached).toHaveProperty('patients');
+      expect(cached).toHaveProperty('pendingFollowUps');
+
+      // A different clinic is a different cache key, so it recomputes.
+      service.dashboard({ ...makeContext(), clinicId: 'clinic-v2-002' });
+      expect(prepare).toHaveBeenCalledTimes(4);
+    } finally {
+      prepare.mockRestore();
+    }
+  });
+
+  it('keeps revenue cache keys distinct per date range and granularity', () => {
+    const service = new StatsService(db);
+    const prepare = vi.spyOn(db, 'prepare');
+    try {
+      service.revenue('2026-01-01', '2026-01-31', 'month', makeContext());
+      expect(prepare).toHaveBeenCalledTimes(1);
+      service.revenue('2026-01-01', '2026-01-31', 'month', makeContext());
+      expect(prepare).toHaveBeenCalledTimes(1);
+
+      service.revenue('2026-02-01', '2026-02-28', 'month', makeContext());
+      expect(prepare).toHaveBeenCalledTimes(2);
+      service.revenue('2026-01-01', '2026-01-31', 'day', makeContext());
+      expect(prepare).toHaveBeenCalledTimes(3);
+    } finally {
+      prepare.mockRestore();
+    }
+  });
+
+  it('recomputes dashboard aggregation after the 30s TTL expires', () => {
+    const service = new StatsService(db);
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-05T00:00:00.000Z'));
+    const prepare = vi.spyOn(db, 'prepare');
+    try {
+      service.dashboard(makeContext());
+      expect(prepare).toHaveBeenCalledTimes(2);
+      service.dashboard(makeContext());
+      expect(prepare).toHaveBeenCalledTimes(2);
+
+      vi.advanceTimersByTime(29_999);
+      service.dashboard(makeContext());
+      expect(prepare).toHaveBeenCalledTimes(2);
+
+      vi.advanceTimersByTime(1_001);
+      service.dashboard(makeContext());
+      expect(prepare).toHaveBeenCalledTimes(4);
+    } finally {
+      prepare.mockRestore();
+      vi.useRealTimers();
+    }
   });
 
   it('prunes revenue fields for DOCTOR dashboards', () => {
