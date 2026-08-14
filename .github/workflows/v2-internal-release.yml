@@ -97,6 +97,17 @@ jobs:
             powershell -ExecutionPolicy Bypass -File apps/v2/scripts/build-internal-installer.ps1
           }
 
+      # A-P0.2：干净机证书信任链验证。模拟受控机器首次部署：清空同 Subject
+      # 旧证书 → 导入包内 .cer → 校验安装包 Authenticode 签名 Valid 且指纹
+      # 一致。失败即阻断发布，避免签出「干净机不信任」的包。
+      - name: Certificate trust chain smoke (A-P0.2)
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -LiteralPath apps/v2/release-v2-internal -Filter '*.exe' |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $exe) { throw "No installer produced under apps/v2/release-v2-internal" }
+          powershell -ExecutionPolicy Bypass -File apps/v2/scripts/cert-trust-smoke.ps1 -InstallerPath $exe.FullName
+
       - name: Resolve version from package.json
         id: pkg_version
         shell: bash
