@@ -251,6 +251,21 @@ describe('custom fields', () => {
     ], context)).toThrow('Unknown custom field: ');
   });
 
+  it('stores false boolean values as "0"', () => {
+    const service = new CustomFieldService(db);
+    const field = service.createDefinition('patient', {
+      label: '布尔假值',
+      fieldName: 'boolFalseValue',
+      fieldType: 'BOOLEAN',
+    }, context);
+    const result = service.setValues('patient', 'patient-bool-false', [
+      { fieldId: String(field.id), value: false },
+    ], context);
+    expect(result[String(field.id)]).toBe('0');
+    const listed = service.listValues('patient', 'patient-bool-false', context);
+    expect(listed.values[String(field.id)]).toBe('0');
+  });
+
   it('reports NotFound when a definition delete affects zero rows', () => {
     const service = new CustomFieldService(db);
     const field = service.createDefinition('patient', {

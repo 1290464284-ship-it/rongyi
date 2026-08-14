@@ -15,6 +15,7 @@ import { createDatabase, seedDatabase } from '../infrastructure/database';
 import { runMigrations } from '../infrastructure/migrations';
 import { rebuildSearchIndex } from '../infrastructure/search-index';
 import { Logger } from '../infrastructure/logger';
+import { resourceRegistry } from '../../domain/resources';
 
 describe('HTTP app', () => {
   let dbPath: string;
@@ -1159,6 +1160,55 @@ describe('HTTP app', () => {
       expect(invalid.body.code).toBe('VALIDATION_ERROR');
     } finally {
       db.prepare("DELETE FROM Appointment WHERE id = 'appointment-by-date-http'").run();
+    }
+  });
+
+  it('returns appointment rows without label joins when the resource has no label relations', async () => {
+    const localDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-http-nolabel-'));
+    const localDbPath = path.join(localDir, 'v2.sqlite');
+    const localDb = createDatabase(localDir, localDbPath);
+    seedDatabase(localDb);
+    runMigrations(localDb);
+    const originalGet = resourceRegistry.get.bind(resourceRegistry);
+    const spy = vi.spyOn(resourceRegistry, 'get').mockImplementation((name: string) => {
+      const definition = originalGet(name);
+      return name === 'appointments' && definition ? { ...definition, fields: [] } : definition;
+    });
+    try {
+      const localApp = createApp({
+        db: localDb,
+        dbPath: localDbPath,
+        backupDir: path.join(localDir, 'backups'),
+        logDir: localDir,
+        logger: new Logger({ logDir: localDir }),
+      });
+      const login = await request(localApp).post('/api/v2/auth/login')
+        .send({ username: 'admin', password: 'v2-test-seed-password' })
+        .expect(200);
+      const localToken = login.body.data.token as string;
+
+      const nowIso = new Date().toISOString();
+      localDb.prepare(
+        `INSERT INTO Appointment (
+           id, clinicId, createdAt, updatedAt, deletedAt,
+           patientId, doctorId, startTime, endTime, status, type
+         ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'user-admin-001', ?, ?, 'BOOKED', 'REGULAR')`,
+      ).run('appointment-by-date-nolabel', 'clinic-v2-001', nowIso, nowIso, '2026-08-05T02:00:00.000Z', '2026-08-05T03:00:00.000Z');
+
+      const hit = await request(localApp)
+        .get('/api/v2/appointments/by-date?date=2026-08-05')
+        .set('Authorization', `Bearer ${localToken}`)
+        .expect(200);
+      const item = hit.body.data.items.find(
+        (entry: { id: string }) => entry.id === 'appointment-by-date-nolabel',
+      ) as Record<string, unknown>;
+      expect(item).toBeDefined();
+      expect(item).not.toHaveProperty('patientIdLabel');
+      expect(item).not.toHaveProperty('doctorIdLabel');
+    } finally {
+      spy.mockRestore();
+      localDb.close();
+      fs.rmSync(localDir, { recursive: true, force: true });
     }
   });
 

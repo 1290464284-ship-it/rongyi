@@ -89,4 +89,11 @@ describe('route policy coverage', () => {
       { method: 'POST', path: '/api/v2/sub' },
     ]);
   });
+
+  it('skips disabled methods and HEAD routes', () => {
+    const routes = collectRoutes([
+      { route: { path: '/health', methods: { get: true, head: true, options: false, post: false } } },
+    ]);
+    expect(routes).toEqual([{ method: 'GET', path: '/health' }]);
+  });
 });

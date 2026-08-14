@@ -220,6 +220,30 @@ describe('CostShareService', () => {
     const result = stats({ from: '2026-08-01T00:00:00.000Z' });
     expect(result.summary.grandTotal).toBe(96000);
   });
+
+  it('creates a new bucket for unknown costTypes via the nullish fallback', () => {
+    db.prepare(
+      `INSERT INTO Charge (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         patientId, number, totalAmount, paidAmount, refundedAmount, discount, status
+       ) VALUES (?, 'clinic-v2-001', ?, ?, NULL, 'patient-demo-001', 'CHG-WEIRD-001', 4321, 0, 0, 0, 'UNPAID')`,
+    ).run('charge-weird-1', NOW, NOW);
+    db.prepare(
+      `INSERT INTO ChargeItem (
+         id, chargeId, clinicId, createdAt, updatedAt, deletedAt,
+         name, category, price, quantity, subtotal, costType
+       ) VALUES (?, 'charge-weird-1', 'clinic-v2-001', ?, ?, NULL, 'Weird Item', 'WEIRD', 4321, 1, 4321, 'WEIRD')`,
+    ).run('ci-weird-1', NOW, NOW);
+
+    const result = stats();
+    expect(result.rows.find((row) => row.costType === 'WEIRD')).toEqual({
+      costType: 'WEIRD', category: 'WEIRD', total: 4321, itemCount: 1, chargeCount: 1,
+    });
+    // 未知 costType 仍计入 grandTotal，但不影响 SERVICE/MATERIAL 汇总。
+    expect(result.summary.grandTotal).toBe(107111 + 4321);
+    expect(result.summary.SERVICE.total).toBe(41111);
+    expect(result.summary.MATERIAL.total).toBe(66000);
+  });
 });
 
 describe('CostShareService (empty database)', () => {

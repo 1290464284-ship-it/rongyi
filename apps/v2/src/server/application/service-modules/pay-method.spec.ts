@@ -123,4 +123,17 @@ describe('PayMethodService', () => {
     expect(item).toBeDefined();
     expect(item!.parentId).toBeNull();
   });
+
+  it('falls back to sortOrder 0 when the stored value is NULL', () => {
+    db.prepare(
+      `INSERT INTO PayMethod (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         name, parentId, sortOrder, active, remark
+       ) VALUES (?, ?, ?, ?, NULL, ?, NULL, NULL, 1, NULL)`,
+    ).run('pm-null-sort', context.clinicId, now, now, '空排序');
+    const service = new PayMethodService(db);
+    const item = service.tree(context).items.find((node) => node.id === 'pm-null-sort');
+    expect(item).toBeDefined();
+    expect(item!.sortOrder).toBe(0);
+  });
 });

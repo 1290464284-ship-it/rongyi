@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -138,6 +138,35 @@ describe('CephalometricReportService', () => {
     expect(report.reportJson).toEqual({});
     expect(report.metricsJson).toEqual({});
     expect(report.landmarksJson).toEqual({});
+  });
+
+  it('passes non-string JSON objects through instead of parsing them', () => {
+    const service = new CephalometricReportService(db);
+    const originalPrepare = db.prepare.bind(db);
+    const spy = vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('FROM CephalometricCase WHERE id = ?')) {
+        return {
+          get: () => ({
+            id: 'case-get-object',
+            patientId: 'patient-demo-001',
+            reportJson: { conclusion: '对象输入' },
+            reportStatus: 'COMPLETED',
+            metricsJson: { snLength: 71.2 },
+            landmarksJson: { sella: [10, 20] },
+            createdAt: now,
+          }),
+        } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      const report = service.getReport('case-get-object', context);
+      expect(report.reportJson).toEqual({ conclusion: '对象输入' });
+      expect(report.metricsJson).toEqual({ snLength: 71.2 });
+      expect(report.landmarksJson).toEqual({ sella: [10, 20] });
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('throws NotFound when reading a missing case report', () => {

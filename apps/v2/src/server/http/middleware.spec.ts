@@ -203,4 +203,39 @@ describe('middleware', () => {
     expect(warns).toHaveLength(1);
     expect(warns[0]?.[1]).toMatchObject({ userId: 'user-bad-lock' });
   });
+
+  it('does not lock the account when lockedUntil is already past', async () => {
+    const authService = {
+      verifyToken: () => ({
+        sub: 'user-past-lock',
+        clinicId: 'clinic-1',
+        role: 'ADMIN',
+        tokenVersion: 0,
+      }),
+      getUserById: async () => ({
+        id: 'user-past-lock',
+        clinicId: 'clinic-1',
+        currentClinicId: 'clinic-1',
+        active: true,
+        lockedUntil: '2000-01-01T00:00:00.000Z',
+        tokenVersion: 0,
+        role: 'ADMIN',
+      }),
+      isClinicAccessible: () => true,
+      effectivePermissions: () => [],
+    } as unknown as AuthService;
+    const req = {
+      header: () => 'Bearer signed-token',
+      context: undefined,
+    } as unknown as Request;
+    let called = false;
+    let nextError: unknown;
+    await authMiddleware(authService)(req, fakeResponse(), (err) => {
+      called = true;
+      nextError = err;
+    });
+    expect(called).toBe(true);
+    expect(nextError).toBeUndefined();
+    expect(req.context?.clinicId).toBe('clinic-1');
+  });
 });
