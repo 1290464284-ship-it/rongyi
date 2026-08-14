@@ -130,6 +130,17 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm --filter @dental/v2 electron:dist
 
+      - name: Exclude internal signing certificate from the public package
+        # 内部版打包脚本（build-internal-installer.ps1）会临时生成/复制该证书；
+        # 公开版不允许打包自签名内部证书（verify:package 会拒绝），
+        # 且运行时无任何代码引用它，打包前移除即可（此证书为公开密钥 .cer，无泄密风险）。
+        shell: pwsh
+        run: |
+          Remove-Item -LiteralPath "apps/v2/build/internal-signing.pfx.cer" -Force
+          if (Test-Path -LiteralPath "apps/v2/build/internal-signing.pfx.cer") {
+            Write-Error "internal signing certificate removal failed"
+          }
+
       - name: Verify package
         run: pnpm --filter @dental/v2 run verify:package
 
