@@ -32,7 +32,8 @@ export function invalidateStatSnapshots(db: Database.Database, tableName: string
 
 export function tableRowCount(db: Database.Database, table: string): number {
   const row = db.prepare(`SELECT COUNT(*) AS c FROM "${table}"`).get() as { c: number };
-  return Number(row.c ?? 0);
+  // COUNT(*) 恒返回一行且 c 恒为整数（空表为 0），?? 0 兜底为死代码。
+  return Number(row.c);
 }
 
 /** 单次 SQL 判断是否超过聚合阈值（Patient + Charge 行数）。 */
@@ -40,7 +41,8 @@ export function aggregateThresholdExceeded(db: Database.Database): boolean {
   const row = db.prepare(
     `SELECT (SELECT COUNT(*) FROM Patient) + (SELECT COUNT(*) FROM Charge) AS c`,
   ).get() as { c: number };
-  return Number(row.c ?? 0) > AGGREGATE_THRESHOLD;
+  // 标量子查询 COUNT 恒返回整数，?? 0 兜底为死代码。
+  return Number(row.c) > AGGREGATE_THRESHOLD;
 }
 
 export function readDashboardSnapshot(

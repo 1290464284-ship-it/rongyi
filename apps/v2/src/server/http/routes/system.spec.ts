@@ -84,6 +84,11 @@ describe('system routes', () => {
       .send({ resolution: 'KEEP_LOCAL' })
       .expect(200);
     expect(resolve.body.success).toBe(true);
+    // 缺省 resolution 回退空串（sync.resolveConflict 以 mock 返回 {} 兜底）
+    const resolveDefault = await request(app)
+      .post('/api/v2/sync/conflicts/conflict-2/resolve')
+      .expect(200);
+    expect(resolveDefault.body.success).toBe(true);
     const approve = await request(app)
       .patch('/api/v2/hr/leaves/leave-1/approve')
       .send({ approved: 'true' })
@@ -97,6 +102,12 @@ describe('system routes', () => {
       .patch('/api/v2/hr/leaves/leave-3/approve')
       .send({ approved: 'not-bool' })
       .expect(400);
+  });
+
+  it('defaults the audit cleanup retention window to 365 days', async () => {
+    const res = await request(app).post('/api/v2/system/audit/cleanup').expect(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.retentionDays).toBe(365);
   });
 
   it('validates retentionDays and maxKeep bounds', async () => {

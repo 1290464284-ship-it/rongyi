@@ -120,6 +120,9 @@ Web **96.82% / 92.94% / 98.66% / 98.58%**，双门禁全绿——覆盖率口径
 | `src/server/http/app.ts`（审计截断 keys / 权限规则） | `typeof masked === 'object' ? ... : 0` 的非对象分支与 `if (permissions)` 的缺失分支 | 2026-08-14 已删除两处死代码：maskAuditFields 对对象输入恒返回对象（maskWith 顶层非数组非深度溢出）；authMiddleware 恒先写 context.permissions（effectivePermissions 恒返回数组），且前置 audit 中间件已用 req.context!——均为不可达防御，删除后行为零变化 |
 | `src/server/scheduler.ts`（runAutoBackup finally / 两个清理闭包） | `currentBackup === task` 的身份不符分支与 `!idempotencyCleanup`/`!syncChangeCleanup` 空守卫 | isRunning 串行化保证 currentBackup 恒为当前 task；两个清理闭包仅在注册点（存在性已 gate）调用，闭包内空守卫不可达——均为防御冗余 |
 | `src/server/application/service-modules/clinical-ops.ts`（doImport 系统错误消息） | `error instanceof Error ? ... : String(error)` 两处非 Error 分支 | 2026-08-14 已删除：两处三元均在 isSystematicSqliteError 分支内，而该守卫以 instanceof Error 为前提，String(...) 兜底为死代码，删除后行为零变化 |
+| `src/server/infrastructure/db-write-queue.ts`（executeWithActive finally） | `activeWriters.get(db) ?? 1` 的 nullish 与 `next > 0` 的留存分支 | per-DB 队列串行化保证 finally 时本 run 计数恒 ≥1（条目必存在、next 恒为 0）；nullish 与留存分支为嵌套写场景预留的防御，当前无嵌套调用方——防御冗余 |
+| `src/server/infrastructure/stats-aggregate.ts`（tableRowCount / aggregateThresholdExceeded） | `row.c ?? 0` 两处 nullish 兜底 | 2026-08-14 已删除：COUNT(*) 与标量 COUNT 子查询恒返回一行且 c 恒为整数（空表为 0），?? 0 为死代码，删除后行为零变化 |
+| `src/web/pages/clinical/VisitsPage.tsx`（VisitStatusSelect / transitionVisit） | `if (disabled) return` 守卫与 `if (!transitionGuard.start(id)) return` 去重 | 本页列表无分页/搜索（queryKey 恒定、同 key refetch 不产生 placeholderData），disabled 恒为 false；在途去重由 spec「ignores a second status transition while the first is in flight」覆盖（探针验证 handler 执行且仅 1 次 PATCH），v8 未入账，属采集缺陷 |
 
 ## 5. 其他已知取舍
 

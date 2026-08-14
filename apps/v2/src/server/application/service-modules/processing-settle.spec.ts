@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -233,5 +233,24 @@ describe('ProcessingSettleService', () => {
       unsettled: { count: 0, feeTotal: 0 },
       settled: { count: 0, amountTotal: 0 },
     });
+  });
+
+  it('rejects settle and unsettle when the CAS update matches no rows', () => {
+    insertOrder('settle-cas', { status: 'RECEIVED', totalFee: 10000 });
+    insertOrder('unsettle-cas', { status: 'RECEIVED', settleStatus: 'SETTLED', settledAmount: 10000, settledAt: now, totalFee: 10000 });
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE ProcessingOrder')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      const service = new ProcessingSettleService(db);
+      expect(() => service.settle('settle-cas', { amount: 10000 }, context)).toThrow('加工单已结算或状态已变更');
+      expect(() => service.unsettle('unsettle-cas', context)).toThrow('加工单未结算或状态已变更');
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 });

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
@@ -166,5 +166,27 @@ describe('TreatmentPlanDocumentService', () => {
 
   it('throws NotFoundError when signing a plan that does not exist', () => {
     expect(() => new TreatmentPlanDocumentService(db).sign('plan-missing', { signature: 'x', signerName: '张三' }, context)).toThrow(NotFoundError);
+  });
+
+  it('throws NotFoundError when the print or sign CAS update matches no rows', () => {
+    const originalPrepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('UPDATE TreatmentPlan')) {
+        return { run: () => ({ changes: 0 }) } as never;
+      }
+      return originalPrepare(sql);
+    });
+    try {
+      const service = new TreatmentPlanDocumentService(db);
+      removeTemplate();
+      insertTemplate();
+      expect(() => service.print('plan-doc-001', context)).toThrow(NotFoundError);
+      expect(() => service.sign('plan-doc-001', {
+        signature: 'data:image/png;base64,AAAA',
+        signerName: '张三',
+      }, context)).toThrow(NotFoundError);
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 });

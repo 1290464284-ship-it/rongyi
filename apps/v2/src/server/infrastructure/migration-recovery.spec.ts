@@ -77,6 +77,33 @@ describe('restoreLatestMigrationSnapshot', () => {
     expect(restoreLatestMigrationSnapshot(dir, dbPath, makeLogger())).toBe(false);
     expect(readMarker(dbPath)).toBe('x');
   });
+
+  it('returns false when the snapshot directory has no valid candidates', () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-migrec-'));
+    const dbPath = path.join(dir, 'v2.sqlite');
+    const snapDir = path.join(dir, 'pre-migration');
+    fs.mkdirSync(snapDir, { recursive: true });
+    fs.writeFileSync(path.join(snapDir, 'notes.txt'), 'not a snapshot');
+    createDb(dbPath, 'x');
+
+    expect(restoreLatestMigrationSnapshot(dir, dbPath, makeLogger())).toBe(false);
+    expect(readMarker(dbPath)).toBe('x');
+  });
+
+  it('returns false and logs when the rollback itself fails', () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-migrec-'));
+    const dbPath = path.join(dir, 'v2.sqlite'); // 故意不创建：renameSync 会失败
+    const snapDir = path.join(dir, 'pre-migration');
+    fs.mkdirSync(snapDir, { recursive: true });
+    createDb(path.join(snapDir, 'pre-1000.sqlite'), 'snap');
+
+    const logger = makeLogger();
+    expect(restoreLatestMigrationSnapshot(dir, dbPath, logger)).toBe(false);
+    expect(logger.error).toHaveBeenCalledWith(
+      'migration rollback failed',
+      expect.objectContaining({ action: 'migration-rollback' }),
+    );
+  });
 });
 
 describe('pruneFailedCopies', () => {
@@ -109,5 +136,17 @@ describe('pruneFailedCopies', () => {
     const dbPath = path.join(dir, 'v2.sqlite');
     createDb(dbPath, 'x');
     expect(pruneFailedCopies(dbPath, 3)).toBe(0);
+  });
+
+  it('drains every copy and breaks on an empty shift when keep is negative', () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-migrec-'));
+    const dbPath = path.join(dir, 'v2.sqlite');
+    createDb(dbPath, 'x');
+    for (let i = 1; i <= 2; i += 1) {
+      fs.writeFileSync(`${dbPath}.failed-${i}`, `copy-${i}`);
+    }
+
+    expect(pruneFailedCopies(dbPath, -1)).toBe(2);
+    expect(fs.readdirSync(dir).filter((name) => name.startsWith('v2.sqlite.failed-'))).toEqual([]);
   });
 });

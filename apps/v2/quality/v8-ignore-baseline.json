@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-08-14T05:10:00.769Z",
-  "total": 273,
+  "generatedAt": "2026-08-14T05:59:26.804Z",
+  "total": 278,
   "perFile": {
     "src\\web\\treatment-plans\\PlanBillingDialog.tsx": 1,
     "src\\web\\schedules\\TemplateSection.tsx": 1,
@@ -25,6 +25,7 @@
     "src\\web\\pages\\clinical\\PrescriptionsPage.tsx": 2,
     "src\\web\\pages\\clinical\\TreatmentPlansPage.tsx": 4,
     "src\\web\\pages\\clinical\\TreatmentsPage.tsx": 2,
+    "src\\web\\pages\\clinical\\VisitsPage.tsx": 2,
     "src\\web\\pages\\appointments\\AppointmentsPage.tsx": 4,
     "src\\web\\pages\\analytics\\AnalyticsDashboardPage.tsx": 1,
     "src\\web\\lib\\format.ts": 1,
@@ -36,6 +37,7 @@
     "src\\server\\scheduler.ts": 3,
     "src\\server\\maintenance\\runtime-metrics.ts": 3,
     "src\\server\\infrastructure\\database.ts": 2,
+    "src\\server\\infrastructure\\db-write-queue.ts": 3,
     "src\\server\\infrastructure\\idempotency.ts": 3,
     "src\\server\\infrastructure\\repository.ts": 33,
     "src\\server\\infrastructure\\repositories\\clinical-workflow.repository.ts": 3,

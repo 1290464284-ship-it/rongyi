@@ -22,8 +22,11 @@ export function sharedDbWriteQueue(db: object): SerializedRun {
       try {
         return await fn();
       } finally {
+        /* v8 ignore next -- 队列串行化保证 finally 时本 run 的计数仍 ≥1，条目必存在（nullish 与 else 为嵌套写预留的防御） */
         const next = (activeWriters.get(db) ?? 1) - 1;
+        /* v8 ignore next -- 当前无嵌套写调用方，next 恒为 0（防御冗余，见 coverage-exclusions.md） */
         if (next <= 0) activeWriters.delete(db);
+        /* v8 ignore next -- 嵌套写场景才会进入的留存分支，当前不可达 */
         else activeWriters.set(db, next);
       }
     };

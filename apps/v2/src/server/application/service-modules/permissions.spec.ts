@@ -70,6 +70,27 @@ describe('user module permissions', () => {
     expect(computeEffectivePermissions(db, 'perm-user-001', 'clinic-v2-001', 'DOCTOR')).toEqual(PERMISSION_KEYS);
   });
 
+  it('ignores legacy UserRole rows whose role is not in the default permission table', () => {
+    db.prepare(
+      `INSERT INTO UserRole (userId, role, clinicId, createdAt, updatedAt, deletedAt)
+       VALUES ('perm-user-001', 'GHOST-LEGACY-ROLE', 'clinic-v2-001', ?, ?, NULL)`,
+    ).run(now, now);
+    // 未知角色跳过（hasOwnProperty else 分支），结果与无附加角色时一致
+    expect(computeEffectivePermissions(db, 'perm-user-001', 'clinic-v2-001', 'DOCTOR')).toEqual([
+      'dashboard',
+      'patients',
+      'clinical',
+      'communication',
+    ]);
+  });
+
+  it('rejects non-boolean allowed values in user permission updates', () => {
+    const service = new UserPermissionService(db);
+    expect(() => service.setPermissions('perm-user-001', [
+      { permission: 'finance', allowed: 'yes' as never },
+    ], context)).toThrow('allowed must be a boolean');
+  });
+
   it('applies per-user overrides on top of role defaults', () => {
     const service = new UserPermissionService(db);
     service.setPermissions('perm-user-001', [

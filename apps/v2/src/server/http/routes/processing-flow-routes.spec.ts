@@ -95,6 +95,18 @@ describe('processing flow routes', () => {
     expect(res.body.data[1].status).toBe('PENDING');
   });
 
+  it('POST register-step 将空串 stepId 归一化为未指定并推进默认第一步', async () => {
+    const res = await request(app)
+      .post('/api/v2/processing-orders/route-po-2/register-step')
+      .send({ stepId: '' })
+      .expect(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data[0]).toMatchObject({
+      stepId: 'route-step-model',
+      status: 'DONE',
+    });
+  });
+
   it('POST set-step 手动修改状态（双击手动改）', async () => {
     const res = await request(app)
       .post('/api/v2/processing-orders/route-po-3/set-step')
