@@ -219,4 +219,93 @@ describe('ChargeService coverage', () => {
     const refundB = await service.refund(String(b.id), 200, 'missing card id', context);
     expect(refundB.status).toBe('REFUNDED');
   });
+
+  // ---- 主路径测试（自 services.spec.ts 聚合文件迁移，相对顺序保留）----
+
+  it('creates, pays, and refunds a charge', async () => {
+    const service = new ChargeService(db);
+    const created = await service.create({
+      patientId: 'patient-demo-001',
+      items: [{ name: 'Exam', category: 'EXAM', price: 100, quantity: 2 }],
+    }, context);
+    const paid = await service.pay(String(created.id), 200, 'CASH', undefined, context);
+    expect(paid.status).toBe('PAID');
+    const refunded = await service.refund(String(created.id), 50, 'adjustment', context);
+    expect(refunded.amount).toBe(50);
+  });
+
+  it('applies a discount when creating a charge', async () => {
+    const service = new ChargeService(db);
+    const created = await service.create({
+      patientId: 'patient-demo-001',
+      items: [{ name: 'Exam', category: 'EXAM', price: 200, quantity: 1 }],
+      discount: 50,
+    }, context);
+    expect(created.totalAmount).toBe(150);
+    const row = db.prepare('SELECT totalAmount, discount FROM Charge WHERE id = ?').get(String(created.id)) as {
+      totalAmount: number;
+      discount: number;
+    };
+    expect(row.totalAmount).toBe(150);
+    expect(row.discount).toBe(50);
+  });
+
+  it('persists costType and discount plan snapshot on charge items', async () => {
+    const service = new ChargeService(db);
+    const created = await service.create({
+      patientId: 'patient-demo-001',
+      items: [
+        { name: 'Brace Adjustment', category: 'ORTHODONTIC', price: 300, quantity: 1, costType: 'SERVICE' },
+        { name: 'Bracket', category: 'MATERIAL', price: 500, quantity: 2, costType: 'MATERIAL' },
+        { name: 'Default Type', category: 'OTHER', price: 100, quantity: 1 },
+      ],
+      discount: 50,
+      discountPlanSnapshot: { plan: 'VIP', discountRate: 90 },
+    }, context);
+    expect(created.totalAmount).toBe(300 + 1000 + 100 - 50);
+    const rows = db.prepare(
+      'SELECT name, costType FROM ChargeItem WHERE chargeId = ? ORDER BY name',
+    ).all(String(created.id)) as Array<{ name: string; costType: string }>;
+    expect(rows).toEqual([
+      { name: 'Brace Adjustment', costType: 'SERVICE' },
+      { name: 'Bracket', costType: 'MATERIAL' },
+      { name: 'Default Type', costType: 'SERVICE' },
+    ]);
+    const charge = db.prepare('SELECT discountPlanSnapshotJson FROM Charge WHERE id = ?').get(String(created.id)) as {
+      discountPlanSnapshotJson: string | null;
+    };
+    expect(JSON.parse(String(charge.discountPlanSnapshotJson))).toEqual({ plan: 'VIP', discountRate: 90 });
+  });
+
+  it('rejects charge items with an invalid costType', async () => {
+    const service = new ChargeService(db);
+    await expect(service.create({
+      patientId: 'patient-demo-001',
+      items: [{ name: 'Bad Type', category: 'OTHER', price: 100, quantity: 1, costType: 'LABOR' as 'SERVICE' }],
+    }, context)).rejects.toThrow('Charge item costType must be SERVICE or MATERIAL');
+  });
+
+  it('rejects charge items whose quantity exceeds the maximum', async () => {
+    const service = new ChargeService(db);
+    const before = db.prepare('SELECT COUNT(*) AS n FROM Charge').get() as { n: number };
+    await expect(service.create({
+      patientId: 'patient-demo-001',
+      items: [{ name: 'Huge Quantity', category: 'EXAM', price: 100, quantity: 1e15 }],
+    }, context)).rejects.toThrow('Charge item quantity must not exceed 1000000');
+    // Validation must fail before any write happens.
+    const after = db.prepare('SELECT COUNT(*) AS n FROM Charge').get() as { n: number };
+    expect(after.n).toBe(before.n);
+  });
+
+  it('rejects charge items whose subtotal exceeds the maximum allowed amount', async () => {
+    const service = new ChargeService(db);
+    const before = db.prepare('SELECT COUNT(*) AS n FROM Charge').get() as { n: number };
+    await expect(service.create({
+      patientId: 'patient-demo-001',
+      items: [{ name: 'Huge Subtotal', category: 'EXAM', price: 100_000_000, quantity: 100_000 }],
+    }, context)).rejects.toThrow('Charge item subtotal exceeds maximum allowed amount');
+    // Validation must fail before any write happens.
+    const after = db.prepare('SELECT COUNT(*) AS n FROM Charge').get() as { n: number };
+    expect(after.n).toBe(before.n);
+  });
 });

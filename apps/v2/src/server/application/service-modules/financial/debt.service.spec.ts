@@ -131,4 +131,37 @@ describe('DebtService', () => {
       fs.rmSync(localDir, { recursive: true, force: true });
     }
   });
+
+  it('keeps a charge UNPAID when its paid balance is still non-positive', async () => {
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO Charge (
+         id, clinicId, createdAt, updatedAt, deletedAt, patientId, number,
+         totalAmount, paidAmount, refundedAmount, discount, status
+       ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'CHG-UNPAID-DEBT', 200, -100, 0, 0, 'UNPAID')`,
+    ).run('charge-unpaid-debt', context.clinicId, now, now);
+    db.prepare(
+      `INSERT INTO Debt (
+         id, clinicId, createdAt, updatedAt, deletedAt, chargeId, patientId,
+         totalAmount, paidAmount, status
+       ) VALUES (?, ?, ?, ?, NULL, 'charge-unpaid-debt', 'patient-demo-001', 200, 0, 'UNPAID')`,
+    ).run('debt-unpaid-pay', context.clinicId, now, now);
+
+    const result = await new DebtService(db).pay('debt-unpaid-pay', 50, context);
+
+    expect(result.status).toBe('PARTIAL');
+    const debt = db.prepare('SELECT paidAmount, status FROM Debt WHERE id = ?').get('debt-unpaid-pay') as {
+      paidAmount: number;
+      status: string;
+    };
+    expect(Number(debt.paidAmount)).toBe(50);
+    expect(debt.status).toBe('PARTIAL');
+    const charge = db.prepare('SELECT paidAmount, status FROM Charge WHERE id = ?').get('charge-unpaid-debt') as {
+      paidAmount: number;
+      status: string;
+    };
+    // 负数 paidAmount 是损坏/历史脏数据场景：chargePaid = min(200, -100 + 50) = -50 → UNPAID。
+    expect(Number(charge.paidAmount)).toBe(-50);
+    expect(charge.status).toBe('UNPAID');
+  });
 });
