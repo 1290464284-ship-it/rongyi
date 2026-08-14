@@ -226,7 +226,9 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
                 resource: params.resource,
                 body: {
                   truncated: true,
-                  keys: typeof masked === 'object' && masked !== null ? Object.keys(masked).length : 0,
+                  // maskAuditFields 对对象输入恒返回对象（maskWith 顶层非数组非深度溢出），
+                  // 非对象兜底为死代码，已删除。
+                  keys: Object.keys(masked).length,
                 },
               });
             })()
@@ -243,15 +245,15 @@ export function createApp({ db, dbPath, backupDir, logger, logDir }: AppDependen
     const rule = routeRoleRules.find((candidate) => candidate.pattern.test(req.originalUrl));
     if (rule) {
       if (rule.permission) {
-        const permissions = req.context?.permissions;
-        if (permissions) {
-          if (!permissions.includes(rule.permission)) {
-            next(new AppError('FORBIDDEN', 'Insufficient permissions', 403));
-            return;
-          }
-          next();
+        // authMiddleware 恒先于本中间件写入 context.permissions（effectivePermissions 恒返回数组，
+        // 且其上的 audit 中间件已使用 req.context!），permissions 缺失分支为死代码，已删除。
+        const permissions = req.context!.permissions!;
+        if (!permissions.includes(rule.permission)) {
+          next(new AppError('FORBIDDEN', 'Insufficient permissions', 403));
           return;
         }
+        next();
+        return;
       }
       roleMiddleware(...rule.roles)(req, res, next);
       return;

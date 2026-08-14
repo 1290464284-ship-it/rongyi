@@ -16,6 +16,7 @@ import { createDatabase, seedDatabase } from '../infrastructure/database';
 import { runMigrations } from '../infrastructure/migrations';
 import { rebuildSearchIndex } from '../infrastructure/search-index';
 import { recordSyncChange } from '../infrastructure/sync-change';
+import { MAX_MONEY_CENTS } from './service-modules/common';
 import {
   AlertService,
   AppointmentService,
@@ -1914,6 +1915,12 @@ describe('service edge coverage', () => {
     await cards.recharge('card-edge-2', 10, nullContext);
     await cards.consume('card-edge-2', 10, nullContext);
     await cards.addPoints('card-edge-2', 5, nullContext);
+    // MAX 上限守卫：金额/积分在数值边界的拒绝路径
+    await expect(cards.recharge('card-edge-2', MAX_MONEY_CENTS + 1, context)).rejects.toThrow('exceeds the member card balance limit');
+    await expect(cards.recharge('card-edge-2', MAX_MONEY_CENTS, context)).rejects.toThrow('exceeds the member card balance limit');
+    await expect(cards.consume('card-edge-2', MAX_MONEY_CENTS + 1, context)).rejects.toThrow('exceeds the member card limit');
+    await expect(cards.addPoints('card-edge-2', 1_000_000_000_001, context)).rejects.toThrow('exceeds the member card points limit');
+    await expect(cards.addPoints('card-edge-2', 999_999_999_992, context)).rejects.toThrow('exceeds the member card points limit');
 
     const purchase = new PurchaseOrderService(db);
     await expect(purchase.receive('missing-po', context)).rejects.toThrow('Purchase order not found');

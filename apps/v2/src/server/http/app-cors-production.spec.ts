@@ -94,6 +94,14 @@ describe('HTTP app production CORS for packaged Electron renderer', () => {
     }
   });
 
+  it('rejects an http loopback origin without an explicit port (default port 80)', async () => {
+    for (const app of [appProduction, appElectron]) {
+      const res = await request(app).get('/api/v2/health').set('Origin', 'http://localhost');
+      expect(res.status).toBe(403);
+      expect(res.headers['access-control-allow-origin']).toBeUndefined();
+    }
+  });
+
   it('rejects file uploads before writing anything when the production backup key is missing', async () => {
     const login = await request(appProduction).post('/api/v2/auth/login').send({
       username: 'admin',
