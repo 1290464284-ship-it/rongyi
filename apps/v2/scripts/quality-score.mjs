@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { coverageStats, mutationScore, openApiPathMetrics } from './lib/quality-metrics.mjs';
+import { coverageStats, openApiPathMetrics } from './lib/quality-metrics.mjs';
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
