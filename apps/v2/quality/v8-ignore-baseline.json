@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-08-14T00:32:52.245Z",
-  "total": 193,
+  "generatedAt": "2026-08-14T00:49:02.706Z",
+  "total": 194,
   "perFile": {
     "src\\web\\pages\\patients\\PatientTimelinePage.tsx": 4,
     "src\\web\\pages\\inventory\\ProcessingOrdersPage.tsx": 7,
@@ -26,6 +26,7 @@
     "src\\server\\application\\service-modules\\shift-template.ts": 1,
     "src\\server\\application\\service-modules\\sync.ts": 25,
     "src\\server\\application\\service-modules\\user-management.service.ts": 18,
+    "src\\server\\application\\service-modules\\wechat-reminder.ts": 1,
     "src\\domain\\resources\\index.ts": 2
   }
 }

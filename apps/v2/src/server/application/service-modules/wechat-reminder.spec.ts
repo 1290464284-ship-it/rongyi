@@ -493,4 +493,76 @@ describe('WechatReminderService', () => {
     expect(item?.content).toContain('您好');
     expect(item?.content).not.toContain('null');
   });
+
+  it('skips appointment and recall candidates that already have pending reminders', () => {
+    db.prepare(
+      `INSERT INTO WechatReminder (id, clinicId, patientId, scene, scheduledDate, sourceId, content, status, createdAt, updatedAt, deletedAt)
+       VALUES ('pre-appt', ?, 'patient-demo-001', 'APPOINTMENT_REMINDER', '2026-08-05', 'appt-dup-1', 'x', 'PENDING', ?, ?, NULL)`,
+    ).run(context.clinicId, now, now);
+    insertAppointment('appt-dup-1', '2026-08-06T09:00:00.000Z');
+    db.prepare(
+      `INSERT INTO WechatReminder (id, clinicId, patientId, scene, scheduledDate, sourceId, content, status, createdAt, updatedAt, deletedAt)
+       VALUES ('pre-recall', ?, 'patient-demo-001', 'TREATMENT_RECALL', '2026-08-05', 'visit-dup-1', 'x', 'PENDING', ?, ?, NULL)`,
+    ).run(context.clinicId, now, now);
+    insertVisit('visit-dup-1', '2026-08-02T08:00:00.000Z');
+    db.prepare(
+      `INSERT INTO WechatReminder (id, clinicId, patientId, scene, scheduledDate, sourceId, content, status, createdAt, updatedAt, deletedAt)
+       VALUES ('pre-exam', ?, 'patient-demo-001', 'FIRST_EXAM_NUDGE', '2026-08-05', 'exam-dup-1', 'x', 'PENDING', ?, ?, NULL)`,
+    ).run(context.clinicId, now, now);
+    insertFirstExam('exam-dup-1', '2026-08-02T02:00:00.000Z');
+
+    const service = new WechatReminderService(db);
+    service.today(context);
+    expect((db.prepare("SELECT COUNT(*) AS c FROM WechatReminder WHERE sourceId = 'appt-dup-1'").get() as { c: number }).c).toBe(1);
+    expect((db.prepare("SELECT COUNT(*) AS c FROM WechatReminder WHERE sourceId = 'visit-dup-1'").get() as { c: number }).c).toBe(1);
+    expect((db.prepare("SELECT COUNT(*) AS c FROM WechatReminder WHERE sourceId = 'exam-dup-1'").get() as { c: number }).c).toBe(1);
+  });
+
+  it('renders appointment and recall content without null name artifacts', () => {
+    db.prepare("UPDATE Patient SET name = NULL WHERE id = 'patient-demo-001'").run();
+    insertAppointment('appt-sparse-name', '2026-08-06T09:00:00.000Z');
+    insertVisit('visit-sparse-name', '2026-08-02T08:00:00.000Z');
+    const service = new WechatReminderService(db);
+    const result = service.today(context);
+    const appt = result.items.find((row) => row.sourceId === 'appt-sparse-name');
+    expect(appt?.content).not.toContain('null');
+    const recall = result.items.find((row) => row.sourceId === 'visit-sparse-name');
+    expect(recall?.content).not.toContain('null');
+  });
+
+  it('marks sent reminders with null content and guards the pending CAS', () => {
+    insertAppointment('appt-sent-null', '2026-08-06T09:00:00.000Z');
+    const service = new WechatReminderService(db);
+    service.today(context);
+    const id = (db.prepare("SELECT id FROM WechatReminder WHERE sourceId = 'appt-sent-null'").get() as { id: string }).id;
+    db.prepare('UPDATE WechatReminder SET content = NULL WHERE id = ?').run(id);
+    const result = service.markSent(id, context);
+    expect(result.status).toBe('SENT');
+    const message = db.prepare('SELECT content FROM WechatMessage ORDER BY createdAt DESC LIMIT 1').get() as { content: string };
+    expect(message.content).toBe('');
+
+    insertVisit('visit-sent-cas', '2026-08-02T08:00:00.000Z');
+    new WechatReminderService(db).today(context);
+    const id2 = (db.prepare("SELECT id FROM WechatReminder WHERE sourceId = 'visit-sent-cas'").get() as { id: string }).id;
+    const originalPrepare = db.prepare.bind(db);
+    const spy = vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes("SET status = 'SENT'")) return { run: () => ({ changes: 0 }) } as never;
+      return originalPrepare(sql);
+    });
+    try {
+      expect(() => service.markSent(id2, context)).toThrow(ConflictError);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('falls back to the raw scene label for unknown scenes', () => {
+    db.prepare(
+      `INSERT INTO WechatReminder (id, clinicId, patientId, scene, scheduledDate, sourceId, content, status, createdAt, updatedAt, deletedAt)
+       VALUES ('unknown-scene', ?, 'patient-demo-001', 'UNKNOWN_SCENE', '2026-08-05', 'src-1', 'x', 'PENDING', ?, ?, NULL)`,
+    ).run(context.clinicId, now, now);
+    const service = new WechatReminderService(db);
+    const item = service.today(context).items.find((row) => row.id === 'unknown-scene');
+    expect(item?.sceneLabel).toBe('UNKNOWN_SCENE');
+  });
 });

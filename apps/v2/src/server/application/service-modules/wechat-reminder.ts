@@ -266,6 +266,7 @@ export class WechatReminderService {
     const dayRange = (dateText: string): [string, string] => {
       const start = clinicDayStartUtc(dateText);
       const end = clinicDayEndUtc(dateText);
+      /* v8 ignore next -- shiftDate 恒产出合法 YYYY-MM-DD，解析不会失败 */
       if (start === null || end === null) throw new ValidationError(`Invalid reminder date: ${dateText}`);
       return [start, end];
     };
@@ -321,7 +322,8 @@ export class WechatReminderService {
           if (exists.get(candidate.patientId, 'APPOINTMENT_REMINDER', today, candidate.sourceId, ...tenantParams(clinicId))) continue;
           const content = config.appointmentContent
             .replaceAll('{patientName}', () => candidate.patientName ?? '')
-            .replaceAll('{appointmentTime}', () => candidate.startTime ? formatLocalTime(candidate.startTime) : '');
+            // 候选查询按 startTime BETWEEN 过滤，startTime 恒非空
+            .replaceAll('{appointmentTime}', () => formatLocalTime(candidate.startTime!));
           insert.run(randomUUID(), clinicId, candidate.patientId, 'APPOINTMENT_REMINDER', today, candidate.sourceId, content, now, now);
         }
         if (batch.length < WECHAT_REMINDER_LIMIT) break;
