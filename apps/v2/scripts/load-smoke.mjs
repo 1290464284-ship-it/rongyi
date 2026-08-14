@@ -27,7 +27,7 @@ const reportPath = process.env.V2_LOAD_REPORT ?? path.join(appRoot, 'reports', '
 const ENDPOINTS = [
   { path: '/stats/dashboard', label: 'dashboard', weight: 40 },
   { path: '/resources/patients?pageSize=20', label: 'patients-list', weight: 20 },
-  { path: '/appointments?pageSize=20', label: 'appointments-list', weight: 20 },
+  { path: '/resources/appointments?pageSize=20', label: 'appointments-list', weight: 20 },
   { path: '/follow-ups/reminders/summary', label: 'followup-summary', weight: 10 },
   { path: '/stats/revenue', label: 'revenue', weight: 10 },
 ];
