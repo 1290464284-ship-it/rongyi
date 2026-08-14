@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
-import { AnalyticsService } from './analytics';
+import { AnalyticsService, ChargeAssistantService, PrintTemplateService } from './analytics';
 import type { AppContext } from '../../../domain/contracts';
 
 describe('AnalyticsService', () => {
@@ -59,5 +59,18 @@ describe('AnalyticsService', () => {
     expect(rows.some((row) => row.doctorId === 'doctor-anomaly-membership')).toBe(true);
     const other = analytics.doctorAnomalies({ ...context, clinicId: 'clinic-other' });
     expect(other.some((row) => row.doctorId === 'doctor-anomaly-membership')).toBe(false);
+  });
+
+  it('reports rfm, churn, frequent items, and print templates with a null clinic scope', () => {
+    const nullContext: AppContext = { ...context, clinicId: null };
+    const analytics = new AnalyticsService(db);
+    expect(analytics.rfm(nullContext)).toMatchObject({ items: expect.any(Array), truncated: expect.any(Boolean) });
+    expect(analytics.churn(nullContext)).toMatchObject({ items: expect.any(Array), truncated: expect.any(Boolean) });
+    expect(analytics.doctorAnomalies(nullContext)).toBeInstanceOf(Array);
+    const chargeAssistant = new ChargeAssistantService(db);
+    expect(chargeAssistant.frequentItems(nullContext)).toBeInstanceOf(Array);
+    const printTemplates = new PrintTemplateService(db);
+    expect(printTemplates.list(nullContext)).toBeInstanceOf(Array);
+    expect(() => printTemplates.render('missing-null-template', {}, nullContext)).toThrow('Print template not found');
   });
 });

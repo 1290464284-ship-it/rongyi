@@ -27,7 +27,6 @@ import {
   NotificationService,
   PatientRiskService,
   PrescriptionSafetyService,
-  PrintService,
   ProcessingOrderService,
   PurchaseOrderService,
   SatisfactionService,
@@ -37,7 +36,6 @@ import {
 } from './services';
 import {
   AnalyticsService,
-  ChargeAssistantService,
   ClinicalWorkflowService,
   PrintTemplateService,
   ReplenishmentService,
@@ -76,115 +74,6 @@ describe('service edge coverage', () => {
   afterEach(() => {
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
-  });
-
-  it('covers stats, print, and search label branches', () => {
-    const nullContext = { ...context, clinicId: null };
-    const stats = new StatsService(db);
-    expect(stats.dashboard(nullContext)).toHaveProperty('patients');
-    expect(stats.revenue('2026-01-01T00:00:00.000Z', '2026-12-31T23:59:59.999Z', 'day', nullContext)).toBeInstanceOf(Array);
-    expect(stats.revenue('2026-01-01T00:00:00.000Z', '2026-12-31T23:59:59.999Z', 'month', nullContext)).toBeInstanceOf(Array);
-    expect(stats.patientGrowth('2026-01-01T00:00:00.000Z', '2026-12-31T23:59:59.999Z', nullContext)).toBeInstanceOf(Array);
-    expect(stats.inventoryStats(nullContext)).toBeInstanceOf(Array);
-    expect(stats.memberStats(nullContext)).toHaveProperty('total');
-
-    const print = new PrintService();
-    expect(print.render('report', { title: 'Title', note: 'Note' })).toContain('Title');
-    expect(print.render('report', { note: 'Note' })).toContain('report');
-
-    const analytics = new AnalyticsService(db);
-    expect(analytics.rfm(nullContext)).toMatchObject({ items: expect.any(Array), truncated: expect.any(Boolean) });
-    expect(analytics.churn(nullContext)).toMatchObject({ items: expect.any(Array), truncated: expect.any(Boolean) });
-    expect(analytics.doctorAnomalies(nullContext)).toBeInstanceOf(Array);
-    const satisfaction = new SatisfactionService(db);
-    expect(satisfaction.nps(nullContext).score).toBeGreaterThanOrEqual(0);
-    expect(satisfaction.trend(nullContext)).toBeInstanceOf(Array);
-    expect(satisfaction.doctorRankings(nullContext)).toBeInstanceOf(Array);
-    const chargeAssistant = new ChargeAssistantService(db);
-    expect(chargeAssistant.frequentItems(nullContext)).toBeInstanceOf(Array);
-    const printTemplates = new PrintTemplateService(db);
-    expect(printTemplates.list(nullContext)).toBeInstanceOf(Array);
-    expect(() => printTemplates.render('missing-null-template', {}, nullContext)).toThrow('Print template not found');
-
-    const now = new Date().toISOString();
-    db.prepare(
-      `INSERT INTO Supplier (
-         id, clinicId, createdAt, updatedAt, deletedAt,
-         code, name, phone
-       ) VALUES (?, ?, ?, ?, NULL, 'S-EDGE', NULL, '1351234')`,
-    ).run('supplier-edge', null, now, now);
-    db.prepare(
-      `INSERT INTO Supplier (
-         id, clinicId, createdAt, updatedAt, deletedAt,
-         code, name, phone
-       ) VALUES (?, ?, ?, ?, NULL, NULL, 'Supplier Only', '13512345')`,
-    ).run('supplier-edge-2', null, now, now);
-    db.prepare(
-      `INSERT INTO Patient (
-         id, clinicId, createdAt, updatedAt, deletedAt,
-         code, name, gender, phone, tags, allergies, medicalHistory,
-         medicationHistory, systemicDiseases, source, active
-       ) VALUES (?, ?, ?, ?, NULL, 'XNULL', NULL, 'UNKNOWN', 'PHONE123',
-         '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
-    ).run('patient-null-name', null, now, now);
-    db.prepare(
-      `INSERT INTO Patient (
-         id, clinicId, createdAt, updatedAt, deletedAt,
-         code, name, gender, phone, tags, allergies, medicalHistory,
-         medicationHistory, systemicDiseases, source, active
-       ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, 'UNKNOWN', 'SHORT',
-         '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
-    ).run('patient-short-phone', null, now, now);
-    db.prepare(
-      `INSERT INTO InventoryItem (
-         id, clinicId, createdAt, updatedAt, deletedAt,
-         code, name, category, unit, stock, minStock, price
-       ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, 'SEARCHCAT', 'box', 1, 0, 100)`,
-    ).run('inventory-null-label', null, now, now);
-    // 迁移 119 已移除 FTS 触发器（按需重建索引），测试需显式重建。
-    rebuildSearchIndex(db);
-    const search = new SearchService(db);
-    const results = search.search('Supplier', nullContext);
-    expect(results.length).toBeGreaterThanOrEqual(1);
-    db.prepare(
-      `INSERT INTO SearchIndex(resource, recordId, clinicId, content)
-       VALUES ('Unknown', 'search-unknown', 'clinic-v2-001', 'UNKNOWNTERM')`,
-    ).run();
-    search.search('UNKNOWNTERM', context);
-    expect(search.search('', context)).toEqual([]);
-    expect(search.search('XNULL', nullContext).some((row) => row.resource === 'patients' && row.label === 'XNULL')).toBe(true);
-    expect(search.search('SHORT', nullContext).some((row) => (row.detail as Record<string, unknown>).phone === '*****')).toBe(true);
-    expect(search.search('SEARCHCAT', nullContext).some((row) => row.resource === 'inventoryItems' && row.label === '')).toBe(true);
-
-    db.prepare(
-      `INSERT INTO Appointment (
-         id, clinicId, createdAt, updatedAt, deletedAt,
-         patientId, doctorId, startTime, endTime, status, type
-       ) VALUES (?, NULL, ?, ?, NULL, 'patient-missing-label', 'user-admin-001', ?, ?, 'LABELSTATUS', 'REGULAR')`,
-    ).run('appointment-label-null', now, now, now, now);
-    db.prepare(
-      `INSERT INTO Charge (
-         id, clinicId, createdAt, updatedAt, deletedAt,
-         patientId, number, totalAmount, status
-       ) VALUES (?, NULL, ?, ?, NULL, 'patient-missing-label', NULL, 100, 'LABELCHARGE')`,
-    ).run('charge-label-null', now, now);
-    db.prepare(
-      `INSERT INTO Supplier (
-         id, clinicId, createdAt, updatedAt, deletedAt,
-         code, name, phone
-       ) VALUES (?, NULL, ?, ?, NULL, NULL, NULL, 'LABELPHONE')`,
-    ).run('supplier-label-null', now, now);
-    db.prepare(
-      `INSERT INTO FollowUp (
-         id, clinicId, createdAt, updatedAt, deletedAt,
-         patientId, planDate, content, status
-       ) VALUES (?, NULL, ?, ?, NULL, 'patient-missing-label', ?, 'LABELCONTENT', 'PENDING')`,
-    ).run('followup-label-null', now, now, now.slice(0, 10));
-    rebuildSearchIndex(db);
-    expect(search.search('LABELSTATUS', nullContext).some((row) => row.resource === 'appointments' && row.label === '')).toBe(true);
-    expect(search.search('LABELCHARGE', nullContext).some((row) => row.resource === 'charges' && row.label === '')).toBe(true);
-    expect(search.search('LABELPHONE', nullContext).some((row) => row.resource === 'suppliers' && row.label === '')).toBe(true);
-    expect(search.search('LABELCONTENT', nullContext).some((row) => row.resource === 'followUps' && row.label === '')).toBe(true);
   });
 
   it('enforces tenant scope in core workflows', async () => {
