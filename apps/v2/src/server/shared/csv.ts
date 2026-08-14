@@ -14,7 +14,9 @@ export interface CsvColumn<T = Record<string, unknown>> {
  */
 export function csvCell(value: unknown): string {
   if (value === null || value === undefined) return '';
-  const text = typeof value === 'object' ? JSON.stringify(value) : String(value);
+  // JSON.stringify 对 toJSON 返回 undefined 的对象会得到 undefined（B-4 属性
+  // 测试探针发现：此前直接 replaceAll 会 TypeError）。回退 String(value) 兜底。
+  const text = typeof value === 'object' ? (JSON.stringify(value) ?? String(value)) : String(value);
   const guarded = /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
   return `"${guarded.replaceAll('"', '""')}"`;
 }
