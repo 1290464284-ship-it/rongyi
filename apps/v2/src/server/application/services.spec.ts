@@ -1,9 +1,9 @@
-// L-04 索引：早期聚合的"主路径"测试（约 1217 行），覆盖 ChargeService、
-// DebtService、MemberCardService、FollowUpService、PatientRiskService、
-// BulkImportService、AppointmentService 等的主流程（创建/支付/退款/折扣/
-// 余额/随访/导入/冲突分支）。多数模块已有独立 spec
-// （src/server/application/service-modules/*.spec.ts），断言可逐步迁移后
-// 删除本文件，迁移前保持聚合。
+// L-04 索引：早期聚合的"主路径 + 跨服务集成"测试（22 个），当前仅剩
+// ChargeService/DebtService/MemberCardService/AppointmentService 的
+// 主流程与跨服务集成（收费/欠款/会员卡/预约冲突/操作日志），以及刻意保留的
+// 集成层测试（回滚联动、跨服务缺患者校验）。其余模块（Wechat/Stats/Auth/
+// Sync/FollowUp/BulkImport/PatientRisk）已迁出到 service-modules/*.spec.ts，
+// 后续逐域迁移后删除本文件，迁移前保持聚合。
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -58,101 +58,6 @@ describe('application services', () => {
     expect(paid.status).toBe('PAID');
     const refunded = await service.refund(String(created.id), 50, 'adjustment', context);
     expect(refunded.amount).toBe(50);
-  });
-
-  it('creates and updates debt records for partial DEBT payments', async () => {
-    const service = new ChargeService(db);
-    const created = await service.create({
-      patientId: 'patient-demo-001',
-      items: [{ name: 'Debt Exam', category: 'EXAM', price: 200, quantity: 1 }],
-    }, context);
-    const partial = await service.pay(String(created.id), 80, 'DEBT', undefined, context);
-    expect(partial.status).toBe('PARTIAL');
-    const debt = db.prepare('SELECT id, totalAmount, paidAmount, status FROM Debt WHERE chargeId = ?').get(String(created.id)) as {
-      id: string;
-      totalAmount: number;
-      paidAmount: number;
-      status: string;
-    };
-    expect(debt.totalAmount).toBe(200);
-    expect(debt.paidAmount).toBe(80);
-    expect(debt.status).toBe('PARTIAL');
-
-    await new DebtService(db).pay(String(debt.id), 120, context);
-    const updated = db.prepare('SELECT paidAmount, status FROM Debt WHERE chargeId = ?').get(String(created.id)) as {
-      paidAmount: number;
-      status: string;
-    };
-    expect(updated.paidAmount).toBe(200);
-    expect(updated.status).toBe('PAID');
-    const charge = db.prepare('SELECT paidAmount, status FROM Charge WHERE id = ?').get(String(created.id)) as {
-      paidAmount: number;
-      status: string;
-    };
-    expect(charge.paidAmount).toBe(200);
-    expect(charge.status).toBe('PAID');
-  });
-
-  it('debt payments fall back patient ids and write ledgers with null clinics', async () => {
-    const service = new ChargeService(db);
-    const created = await service.create({
-      patientId: 'patient-demo-001',
-      items: [{ name: 'Fallback Debt', category: 'EXAM', price: 100, quantity: 1 }],
-    }, context);
-    await service.pay(String(created.id), 30, 'DEBT', undefined, context);
-    const debt = db.prepare('SELECT id FROM Debt WHERE chargeId = ?').get(String(created.id)) as { id: string };
-    // 债务患者缺失 → 回退收费单患者
-    db.prepare('UPDATE Debt SET patientId = NULL WHERE id = ?').run(debt.id);
-    await new DebtService(db).pay(debt.id, 40, context);
-    const ledger1 = db.prepare(
-      `SELECT patientId FROM PaymentLedger WHERE chargeId = ? AND method = 'DEBT' ORDER BY createdAt DESC LIMIT 1`,
-    ).get(String(created.id)) as { patientId: string };
-    expect(ledger1.patientId).toBe('patient-demo-001');
-
-    // 收费单患者也缺失 + 空诊所 → 患者空串、clinicId 落 NULL
-    db.prepare('UPDATE Charge SET patientId = NULL WHERE id = ?').run(String(created.id));
-    await new DebtService(db).pay(debt.id, 20, { ...context, clinicId: null });
-    const ledger2 = db.prepare(
-      `SELECT patientId, clinicId FROM PaymentLedger WHERE chargeId = ? AND method = 'DEBT' ORDER BY createdAt DESC LIMIT 1`,
-    ).get(String(created.id)) as { patientId: string; clinicId: string | null };
-    expect(ledger2.patientId).toBe('');
-    expect(ledger2.clinicId).toBeNull();
-  });
-
-  it('rolls back debt payment when the charge update fails', async () => {
-    // Dedicated temp database so DROP TABLE Charge cannot affect the shared
-    // db used by the other tests in this file (or trip FK constraints from
-    // existing ChargeItem rows).
-    const localDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-debt-rollback-'));
-    const localDb = createDatabase(localDir);
-    seedDatabase(localDb);
-    runMigrations(localDb);
-    try {
-      const now = new Date().toISOString();
-      localDb.prepare(
-        `INSERT INTO Charge (
-           id, clinicId, createdAt, updatedAt, deletedAt, patientId, number,
-           totalAmount, paidAmount, refundedAmount, discount, status
-         ) VALUES (?, ?, ?, ?, NULL, 'patient-demo-001', 'CHG-ROLLBACK-DEBT', 500, 0, 0, 0, 'UNPAID')`,
-      ).run('charge-rollback-debt', context.clinicId, now, now);
-      localDb.prepare(
-        `INSERT INTO Debt (
-           id, clinicId, createdAt, updatedAt, deletedAt, chargeId, patientId,
-           totalAmount, paidAmount, status
-         ) VALUES (?, ?, ?, ?, NULL, 'charge-rollback-debt', 'patient-demo-001', 500, 0, 'UNPAID')`,
-      ).run('debt-rollback-pay', context.clinicId, now, now);
-
-      // Make the second write (Charge UPDATE) fail after the Debt update runs.
-      localDb.prepare('DROP TABLE Charge').run();
-      await expect(new DebtService(localDb).pay('debt-rollback-pay', 100, context)).rejects.toThrow();
-      const debt = localDb.prepare('SELECT paidAmount FROM Debt WHERE id = ?').get('debt-rollback-pay') as {
-        paidAmount: number;
-      };
-      expect(Number(debt.paidAmount)).toBe(0);
-    } finally {
-      localDb.close();
-      fs.rmSync(localDir, { recursive: true, force: true });
-    }
   });
 
   it('keeps a charge UNPAID when its paid balance is still non-positive', async () => {
