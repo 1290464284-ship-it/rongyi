@@ -6,8 +6,8 @@
 
 - Desktop-first renderer with merged sidebar hubs.
 - Legacy database copy and legacy table metadata adapter.
-- 111 resources exposed through declarative/dynamic resource definitions
-  (78 declarative CRUD + 33 legacy-compatibility).
+- 110 resources exposed through declarative/dynamic resource definitions
+  (78 declarative CRUD + 32 legacy-compatibility).
 - Core workflows: auth, appointments, registrations, visits, charges, refunds, member cards, inventory, purchase orders, processing orders, follow-ups, backups, analytics, sync, print, HR, alerts, notifications.
 - Production config validation for JWT secret and CORS.
 - CORS whitelist with localhost defaults.
@@ -42,7 +42,7 @@
   defensive branches are explicitly excluded with documented rationale.
 - Metrics persistence to `logs/metrics.json` and Electron crash log file.
 - Electron `win-unpacked` directory package verified with electron-builder.
-- NSIS Windows installer `Dental Clinic V2 Setup 2.2.0.exe` generated successfully.
+- NSIS Windows installer `Dental-Clinic-V2-Setup-2.2.0.exe` generated successfully.
 - Direct dependency license scan gate.
 - GitHub release workflow publishes installer, blockmap, and latest update metadata.
 - Optional remote crash reporting via `V2_CRASH_REPORT_URL`.
@@ -87,7 +87,7 @@
 - Foreign-key migration `116` now covers ChargeItem, PurchaseOrderItem,
   InventoryTransaction, and ProcessingOrder in addition to MemberCard and
   Refund; the rebuild helper refuses DDL that would drop existing columns.
-- `verify:foreign-keys` scans 19 core relations for orphan rows.
+- `verify:foreign-keys` scans 36 core relations for orphan rows.
 - Charge payment/refund repository writes enforce clinic scope, and
   prescription safety, treatment progress, and cephalometric service reads and
   updates are scoped to the active clinic and ignore soft-deleted rows.
@@ -184,7 +184,7 @@
   hub/page, hub tabs, system operations, login, and shared components; the
   expanded set also includes the application layout and follow-up report; it
   now also includes desktop settings and the clinic overview page. 当前实测为
-  86.65% statements / 75.22% branches / 84.27% functions / 90.24% lines，门槛
+  100% statements / 100% branches / 100% functions / 100% lines，门槛
   86/75/84/90（vite.web-coverage.config.ts）。
 - Removed the entire unused ReactBits experiment directory
   (`src/components/reactbits`), its jsrepo config, its dedicated tsconfig, and

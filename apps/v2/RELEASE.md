@@ -12,8 +12,8 @@ GitHub Release（即更新渠道）。内部通道由 `v2-internal-release.yml` 
 
 ## Generated Artifacts
 
-- `release-v2/Dental Clinic V2 Setup <version>.exe`
-- `release-v2/Dental Clinic V2 Setup <version>.exe.blockmap`
+- `release-v2/Dental-Clinic-V2-Setup-<version>.exe`
+- `release-v2/Dental-Clinic-V2-Setup-<version>.exe.blockmap`
 - `release-v2/latest.yml`
 
 `release-v2/win-unpacked/` is a transient electron-builder output and is
@@ -137,14 +137,16 @@ The workflow fails before packaging when either secret is missing.
 > that makes every update fail signature verification. Keep the default
 > `verifyUpdateCodeSignature` behavior — never assign it a boolean value.
 
-The repository ships a local development certificate (`certs/signing-cert.pfx`)
-so local packaging works without secrets. The release pipeline deliberately
-rejects it: `verify:signature` fails when the installer is signed with a
-self-signed certificate (subject contains "Dental Clinic Dev"/"self-signed" or
-issuer equals subject). A CA-issued code signing certificate must be configured
-via the `CSC_LINK`/`CSC_KEY_PASSWORD` secrets before public distribution. If
-you are only distributing internally, this workflow is not required; use the
-internal release path below.
+The repository does not ship a signing certificate (the former development
+`certs/signing-cert.pfx` was removed; local packaging without secrets produces
+an unsigned installer). The release pipeline deliberately rejects self-signed
+certificates: `verify:signature` pins the `V2_EXPECTED_CERT_THUMBPRINT` and
+fails on any thumbprint mismatch, and when no thumbprint is configured it
+rejects installers whose issuer equals the subject (self-signed) and requires
+a valid certificate chain. A CA-issued code signing certificate must be
+configured via the `CSC_LINK`/`CSC_KEY_PASSWORD` secrets before public
+distribution. If you are only distributing internally, this workflow is not
+required; use the internal release path below.
 
 Verify a local installer locally:
 
@@ -155,9 +157,10 @@ pnpm --filter @dental/v2 run verify:signature
 Public release now requires the `V2_EXPECTED_CERT_THUMBPRINT` repository
 variable in addition to `CSC_LINK`/`CSC_KEY_PASSWORD`. `v2-release.yml` fails
 fast when the thumbprint is not configured, and `verify:signature.ps1` pins it
-when present. Configure `publisherName` in `package.json` build only after the
-CA-issued certificate is available; the internal/self-signed path keeps the
-default signature verification behavior.
+when present. `publisherName` is injected automatically from the actual
+`CSC_LINK` certificate by `inject-publisher-name.ps1` during the release build
+(see S-H1 above) — do not hardcode it in `package.json`; the internal/self-signed
+path keeps the default signature verification behavior.
 
 ## Internal Build
 
