@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
+import { recordSyncChange } from '../../infrastructure/sync-change';
 import { SyncService } from './sync';
 import type { AppContext } from '../../../domain/contracts';
 
@@ -14,6 +15,7 @@ describe('SyncService', () => {
   let db: Database.Database;
   let dataDir: string;
   let context: AppContext;
+  const now = '2026-08-04T00:00:00.000Z';
 
   beforeAll(() => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-sync-'));
@@ -148,5 +150,96 @@ describe('SyncService', () => {
       db.prepare('DELETE FROM SyncChange WHERE deviceId = ? AND recordId LIKE ?').run('sync-push-batch-device', 'sync-push-batch-record-%');
       db.prepare('DELETE FROM SyncDevice WHERE deviceId = ?').run('sync-push-batch-device');
     }
+  });
+
+  // ---- 边缘分支测试（自 services-edge.spec.ts 聚合文件迁移，相对顺序保留）----
+
+  it('keeps sync pull scoped to the active clinic', () => {
+    const service = new SyncService(db);
+    const device = service.registerDevice('sync-isolation-device', 'Isolation', context);
+    const afterNow = '2026-08-04T00:00:00.100Z';
+    const otherClinic = 'clinic-v2-sync-other';
+    db.prepare(
+      `INSERT OR IGNORE INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+       VALUES (?, NULL, ?, ?, NULL, 'V2-SYNC-OTHER', 'Sync Other Clinic', 1)`,
+    ).run(otherClinic, now, now);
+    db.prepare(
+      `INSERT INTO SyncChange (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         tableName, recordId, operation, deviceId
+       ) VALUES ('sync-isolation-a', ?, ?, ?, NULL, 'Patient', 'patient-a', 'INSERT', 'other-device')`,
+    ).run(context.clinicId, afterNow, afterNow);
+    db.prepare(
+      `INSERT INTO SyncChange (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         tableName, recordId, operation, deviceId
+       ) VALUES ('sync-isolation-b', ?, ?, ?, NULL, 'Patient', 'patient-b', 'INSERT', 'other-device')`,
+    ).run(otherClinic, afterNow, afterNow);
+
+    const pulled = service.pull(now, 'sync-isolation-device', device.token, context);
+    expect(pulled.changes.some((row) => row.id === 'sync-isolation-a')).toBe(true);
+    expect(pulled.changes.some((row) => row.id === 'sync-isolation-b')).toBe(false);
+  });
+
+  it('provides a full resync snapshot scoped to the active clinic', () => {
+    db.prepare(
+      `INSERT INTO Patient (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, tags, allergies, medicalHistory,
+         medicationHistory, systemicDiseases, source, active
+       ) VALUES (?, ?, ?, ?, NULL, 'EXTRA-SYNC', 'Extra Sync Patient', 'UNKNOWN', '13900000001',
+         '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
+    ).run('patient-extra-snapshot', context.clinicId, now, now);
+    const service = new SyncService(db);
+    const metadata = service.fullSnapshot(context);
+    expect(metadata.tables?.Patient.total).toBeGreaterThanOrEqual(1);
+    const page = service.fullSnapshot(context, { table: 'Patient', limit: 1, offset: 0 });
+    expect(page.rows?.some((row) => row.id === 'patient-demo-001')).toBe(true);
+    expect(page.truncated).toBe(true);
+    const otherPage = service.fullSnapshot({ ...context, clinicId: 'clinic-v2-sync-other' }, { table: 'Patient' });
+    expect(otherPage.rows?.some((row) => row.id === 'patient-demo-001')).toBe(false);
+    expect(() => service.fullSnapshot(context, { table: 'NotATable' })).toThrow('Sync table is not allowed');
+    expect(() => service.fullSnapshot({ ...context, role: 'DOCTOR' })).toThrow('Sync requires BOSS');
+    const bounded = service.fullSnapshot(context, {
+      table: 'Patient',
+      limit: Number.POSITIVE_INFINITY,
+      offset: Number.POSITIVE_INFINITY,
+    });
+    expect(Number.isFinite(bounded.limit)).toBe(true);
+    expect(Number(bounded.limit)).toBeLessThanOrEqual(50_000);
+    expect(Number.isFinite(bounded.offset)).toBe(true);
+    const hugeOffset = service.fullSnapshot(context, { table: 'Patient', limit: 1, offset: 1e12 });
+    expect(Number(hugeOffset.offset ?? 0)).toBeLessThanOrEqual(50_000);
+    const first = service.fullSnapshot(context, { table: 'Patient', limit: 1 });
+    const second = service.fullSnapshot(context, { table: 'Patient', limit: 1, afterId: String(first.nextId) });
+    expect(second.offset).toBeUndefined();
+    expect(second.rows?.[0]?.id).not.toBe(first.rows?.[0]?.id);
+    const exactTotal = Math.max(1, Number(metadata.tables?.Patient.total ?? 0));
+    const exact = service.fullSnapshot(context, { table: 'Patient', limit: exactTotal });
+    expect(exact.truncated).toBe(false);
+    expect(exact.nextId).toBeUndefined();
+  });
+
+  it('pulls server-originated changes to other devices and keeps push single-row', async () => {
+    const service = new SyncService(db);
+    const device = service.registerDevice('sync-server-origin-device', 'Server Origin', context);
+    const since = new Date(Date.now() - 60_000).toISOString();
+    // 模拟 web/服务端本地直写产生的 server 变更。
+    recordSyncChange(db, { tableName: 'Patient', recordId: 'patient-server-origin', operation: 'INSERT', clinicId: context.clinicId as string });
+    const pulled = service.pull(since, 'sync-server-origin-device', device.token, context);
+    expect(pulled.changes.some((c) => String(c.recordId) === 'patient-server-origin' && c.deviceId === 'server')).toBe(true);
+    // push 保持单行且设备归属正确（repository 在 push 内不额外发射 server 行）。
+    const pushed = await service.push({
+      deviceId: 'sync-server-origin-device',
+      deviceToken: device.token,
+      changes: [{
+        tableName: 'Patient', recordId: 'patient-pushed-single', operation: 'INSERT', updatedAt: new Date().toISOString(),
+        data: { code: 'SYNC-SINGLE', name: 'Single', gender: 'UNKNOWN', phone: '13500000001', source: 'WALK_IN', active: true },
+      }],
+    }, context);
+    expect(pushed.accepted).toBe(1);
+    const rows = db.prepare(`SELECT deviceId, operation FROM SyncChange WHERE recordId = 'patient-pushed-single'`).all() as Array<{ deviceId: string; operation: string }>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ deviceId: 'sync-server-origin-device', operation: 'INSERT' });
   });
 });
