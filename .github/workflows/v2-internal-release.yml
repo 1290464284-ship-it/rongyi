@@ -31,7 +31,10 @@ concurrency:
 jobs:
   build:
     runs-on: windows-latest
-    timeout-minutes: 60
+    # A-P0.1：2026-08-14 实测 Verify(全套门禁+mutation)+smoke+内部打包
+    # 超过 60 分钟被 GitHub 自动取消。给足余量，避免发布链在最后一步前
+    # 被 job timeout 掐断。
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24 runtime, Round7 M4)
 
@@ -96,6 +99,17 @@ jobs:
           } else {
             powershell -ExecutionPolicy Bypass -File apps/v2/scripts/build-internal-installer.ps1
           }
+
+      # A-P0.2：干净机证书信任链验证。模拟受控机器首次部署：清空同 Subject
+      # 旧证书 → 导入包内 .cer → 校验安装包 Authenticode 签名 Valid 且指纹
+      # 一致。失败即阻断发布，避免签出「干净机不信任」的包。
+      - name: Certificate trust chain smoke (A-P0.2)
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -LiteralPath apps/v2/release-v2-internal -Filter '*.exe' |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $exe) { throw "No installer produced under apps/v2/release-v2-internal" }
+          powershell -ExecutionPolicy Bypass -File apps/v2/scripts/cert-trust-smoke.ps1 -InstallerPath $exe.FullName
 
       - name: Resolve version from package.json
         id: pkg_version
