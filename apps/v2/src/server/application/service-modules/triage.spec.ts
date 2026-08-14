@@ -440,9 +440,10 @@ describe('TriageService', () => {
       return originalPrepare(sql);
     });
     try {
+      // 目标时段必须与其他测试互斥（shuffle 下共享库会残留同槽位预约 → 冲突检测先于 CAS 抛错）
       expect(() => new TriageService(db).rescheduleAppointment('appt-cas', {
-        startTime: '2099-02-11T09:00:00.000Z',
-        endTime: '2099-02-11T10:00:00.000Z',
+        startTime: '2099-04-11T09:00:00.000Z',
+        endTime: '2099-04-11T10:00:00.000Z',
       }, context)).toThrow('已取消或未到的预约不能改期');
     } finally {
       vi.restoreAllMocks();

@@ -424,6 +424,11 @@ describe('PrescriptionProcessService', () => {
       }
       return originalPrepare(sql);
     });
-    expect(() => new PrescriptionProcessService(db).process('rx-cas', {}, context)).toThrow('处方已处理');
+    try {
+      expect(() => new PrescriptionProcessService(db).process('rx-cas', {}, context)).toThrow('处方已处理');
+    } finally {
+      // 测试内即恢复：shuffle 顺序下该 spy 泄漏会让后续所有处理测试误报「处方已处理」
+      vi.restoreAllMocks();
+    }
   });
 });

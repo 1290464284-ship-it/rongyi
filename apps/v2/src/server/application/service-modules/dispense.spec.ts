@@ -869,10 +869,11 @@ describe('DispenseService', () => {
     });
 
     it('rejects non-string numbers and accepts real charge and prescription references', async () => {
+      insertItem('validation-ref-item', 100, 0);
       expect(() => service().create({
         number: 42 as never,
         patientId: 'patient-demo-001',
-        items: [{ itemId: 'validation-assign-item', quantity: 1 }],
+        items: [{ itemId: 'validation-ref-item', quantity: 1 }],
       }, context)).toThrow(ValidationError);
 
       db.prepare(
@@ -892,7 +893,7 @@ describe('DispenseService', () => {
         patientId: 'patient-demo-001',
         chargeId: 'charge-ref-dispense',
         prescriptionId: 'pres-ref-dispense',
-        items: [{ itemId: 'validation-assign-item', quantity: 1 }],
+        items: [{ itemId: 'validation-ref-item', quantity: 1 }],
       }, context);
       expect(withRefs.number).toBe('PF-REF-1');
       const row = db.prepare('SELECT chargeId, prescriptionId FROM Dispense WHERE id = ?').get(String(withRefs.id)) as {
@@ -906,7 +907,7 @@ describe('DispenseService', () => {
         patientId: 'patient-demo-001',
         chargeId: null as never,
         prescriptionId: null as never,
-        items: [{ itemId: 'validation-assign-item', quantity: 1 }],
+        items: [{ itemId: 'validation-ref-item', quantity: 1 }],
       }, context);
       const nullRow = db.prepare('SELECT chargeId, prescriptionId FROM Dispense WHERE id = ?').get(String(withNullRefs.id)) as {
         chargeId: string | null; prescriptionId: string | null;

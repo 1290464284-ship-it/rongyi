@@ -351,7 +351,7 @@ describe('ChargeService coverage', () => {
 
     const insertNow = new Date().toISOString();
     db.prepare(
-      `INSERT INTO Patient (
+      `INSERT OR IGNORE INTO Patient (
          id, clinicId, createdAt, updatedAt, deletedAt,
          code, name, gender, phone, tags, allergies, medicalHistory,
          medicationHistory, systemicDiseases, source, active
@@ -359,13 +359,13 @@ describe('ChargeService coverage', () => {
          '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
     ).run('patient-edge', context.clinicId, insertNow, insertNow);
     db.prepare(
-      `INSERT INTO Visit (
+      `INSERT OR IGNORE INTO Visit (
          id, clinicId, createdAt, updatedAt, deletedAt,
          patientId, doctorId, startTime, status
        ) VALUES (?, ?, ?, ?, NULL, 'patient-edge', 'user-admin-001', ?, 'IN_PROGRESS')`,
     ).run('visit-edge', context.clinicId, insertNow, insertNow, insertNow);
     db.prepare(
-      `INSERT INTO Patient (
+      `INSERT OR IGNORE INTO Patient (
          id, clinicId, createdAt, updatedAt, deletedAt,
          code, name, gender, phone, tags, allergies, medicalHistory,
          medicationHistory, systemicDiseases, source, active
@@ -373,7 +373,7 @@ describe('ChargeService coverage', () => {
          '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
     ).run('patient-edge-other', context.clinicId, insertNow, insertNow);
     db.prepare(
-      `INSERT INTO Visit (
+      `INSERT OR IGNORE INTO Visit (
          id, clinicId, createdAt, updatedAt, deletedAt,
          patientId, doctorId, startTime, status
        ) VALUES (?, ?, ?, ?, NULL, 'patient-edge-other', 'user-admin-001', ?, 'IN_PROGRESS')`,

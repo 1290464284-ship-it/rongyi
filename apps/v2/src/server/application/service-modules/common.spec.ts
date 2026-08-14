@@ -187,6 +187,7 @@ describe('jwt secret resolution and transaction fallbacks', () => {
   });
 
   it('requires a secret in production and generates one otherwise', async () => {
+    vi.resetModules();
     delete process.env.V2_SECRET_FILE;
     delete process.env.V2_JWT_SECRET;
     process.env.NODE_ENV = 'production';
@@ -199,6 +200,7 @@ describe('jwt secret resolution and transaction fallbacks', () => {
   });
 
   it('falls back to direct execution when the db has no transaction helper', async () => {
+    vi.resetModules();
     const { runInTransaction, runInTransactionImmediate } = await import('./common');
     const plainDb = { transaction: undefined } as never;
     expect(runInTransaction(plainDb, () => 42)).toBe(42);

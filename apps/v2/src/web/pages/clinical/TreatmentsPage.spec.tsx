@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TreatmentsPage } from './TreatmentsPage';
 import { apiRequest } from '../../lib/api';
@@ -284,8 +284,14 @@ describe('TreatmentsPage', () => {
     mockData();
     render(<TreatmentsPage />, { wrapper });
     await screen.findByText('补牙');
+    let resolveStatus: (() => void) | undefined;
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/treatments/t-1/status') return new Promise(() => {});
+      if (path === '/treatments/t-1/status') {
+        return new Promise<void>((resolve) => { resolveStatus = resolve; });
+      }
+      if (path === '/resources/treatments?page=1&pageSize=50') {
+        return { items: [{ id: 't-1', patientId: 'p-1', doctorId: 'd-1', name: '补牙', price: 10000, status: 'PLANNED' }], total: 1, page: 1, pageSize: 50 };
+      }
       return {};
     });
     const select = screen.getByLabelText('变更治疗状态') as HTMLSelectElement;
@@ -295,6 +301,11 @@ describe('TreatmentsPage', () => {
       const calls = vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/treatments/t-1/status');
       expect(calls).toHaveLength(1);
     });
+    // 释放模块级 transitionGuard：resolve 挂起请求，让 transitionVisit 的
+    // finally 执行 finish()。否则 t-1 被永久标记在途 → shuffle 顺序下后续
+    // 测试（creates with cents payload、failure 报告等）的 PATCH 被守卫吞掉。
+    resolveStatus?.();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
   });
 
   it('reports status transition failures', async () => {

@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { VisitsPage } from './VisitsPage';
 import { apiRequest } from '../../lib/api';
@@ -327,8 +327,19 @@ describe('VisitsPage', () => {
     mockData();
     render(<VisitsPage />, { wrapper });
     await screen.findByText('牙痛');
+    let resolveStatus: (() => void) | undefined;
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/visits/v-1/status') return new Promise(() => {});
+      if (path === '/visits/v-1/status') {
+        return new Promise<void>((resolve) => { resolveStatus = resolve; });
+      }
+      if (path === '/resources/visits?page=1&pageSize=50') {
+        return {
+          items: [{ id: 'v-1', patientId: 'p-1', doctorId: 'd-1', startTime: '2026-08-04T09:00:00.000Z', status: 'IN_PROGRESS', chiefComplaint: '牙痛' }],
+          total: 1,
+          page: 1,
+          pageSize: 50,
+        };
+      }
       return {};
     });
     const select = screen.getByLabelText('变更就诊状态') as HTMLSelectElement;
@@ -338,5 +349,10 @@ describe('VisitsPage', () => {
       const calls = vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/visits/v-1/status');
       expect(calls).toHaveLength(1);
     });
+    // 释放模块级 transitionGuard：resolve 挂起请求，让 transitionVisit 的
+    // finally 执行 finish()。否则 v-1 被永久标记在途 → shuffle 顺序下后续
+    // 测试（transitions/toast、failure 报告）的 PATCH 被守卫吞掉。
+    resolveStatus?.();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
   });
 });

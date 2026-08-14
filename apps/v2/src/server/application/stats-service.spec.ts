@@ -28,14 +28,31 @@ describe('StatsService', () => {
   });
 
   afterAll(() => {
+    for (const { db: local, dir } of localDbs) {
+      local.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
     db.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
-  // 缓存测试依赖初始库（未超聚合阈值）：必须先于 10 万行快照测试执行。
+  // shuffle 顺序下共享库会被 10 万行快照测试污染（走快照路径、prepare 计数
+  // 不同），且快照测试之间也互相踩 StatSnapshot 行 → 这些测试各自用独立
+  // 临时库，彻底解耦顺序。
+  const localDbs: Array<{ db: Database.Database; dir: string }> = [];
+  function makeLocalDb(): Database.Database {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-stats-local-'));
+    const local = createDatabase(dir);
+    seedDatabase(local);
+    runMigrations(local);
+    localDbs.push({ db: local, dir });
+    return local;
+  }
+
   it('serves repeated dashboard calls from the TTL cache without re-running aggregation SQL', () => {
-    const service = new StatsService(db);
-    const prepare = vi.spyOn(db, 'prepare');
+    const local = makeLocalDb();
+    const service = new StatsService(local);
+    const prepare = vi.spyOn(local, 'prepare');
     try {
       service.dashboard(makeContext());
       expect(prepare).toHaveBeenCalledTimes(2);
@@ -54,8 +71,9 @@ describe('StatsService', () => {
   });
 
   it('keeps revenue cache keys distinct per date range and granularity', () => {
-    const service = new StatsService(db);
-    const prepare = vi.spyOn(db, 'prepare');
+    const local = makeLocalDb();
+    const service = new StatsService(local);
+    const prepare = vi.spyOn(local, 'prepare');
     try {
       service.revenue('2026-01-01', '2026-01-31', 'month', makeContext());
       expect(prepare).toHaveBeenCalledTimes(1);
@@ -72,10 +90,11 @@ describe('StatsService', () => {
   });
 
   it('recomputes dashboard aggregation after the 30s TTL expires', () => {
-    const service = new StatsService(db);
+    const local = makeLocalDb();
+    const service = new StatsService(local);
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-08-05T00:00:00.000Z'));
-    const prepare = vi.spyOn(db, 'prepare');
+    const prepare = vi.spyOn(local, 'prepare');
     try {
       service.dashboard(makeContext());
       expect(prepare).toHaveBeenCalledTimes(2);
@@ -105,7 +124,8 @@ describe('StatsService', () => {
   });
 
   it('serves the dashboard from the materialized snapshot above the aggregate threshold', () => {
-    db.prepare(
+    const local = makeLocalDb();
+    local.prepare(
       `INSERT INTO StatSnapshot (clinicId, key, valueJson, updatedAt)
        VALUES ('clinic-v2-001', 'dashboard', ?, '2026-08-14T00:00:00.000Z')`,
     ).run(JSON.stringify({
@@ -116,30 +136,44 @@ describe('StatsService', () => {
       inventoryItems: 3,
       pendingFollowUps: 0,
     }));
-    const insert = db.prepare(
+    const insert = local.prepare(
       `INSERT INTO Patient (id, clinicId, createdAt, updatedAt, deletedAt,
          code, name, gender, phone, wechatId, preferredContact, contactNote, tags,
          allergies, medicalHistory, medicationHistory, systemicDiseases, source, active)
        VALUES (?, 'clinic-v2-001', '2026-08-14T00:00:00.000Z', '2026-08-14T00:00:00.000Z', NULL,
          ?, 'Bulk Patient', 'UNKNOWN', '', NULL, 'WECHAT', NULL, '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
     );
-    db.transaction(() => {
+    local.transaction(() => {
       for (let i = 0; i < 100_001; i += 1) {
         insert.run(`bulk-p-${i}`, `B${i}`);
       }
     })();
-    const service = new StatsService(db);
+    const service = new StatsService(local);
     const result = service.dashboard(makeContext());
     expect(result.patients).toBe(999);
     expect(result.paidAmount).toBe(42);
   });
 
   it('rebuilds and persists the snapshot when it is missing above the threshold', () => {
-    db.prepare('DELETE FROM StatSnapshot WHERE 1 = 1').run();
-    const service = new StatsService(db);
+    const local = makeLocalDb();
+    // 自给自足：本库也要超过聚合阈值，快照路径才会写入 StatSnapshot。
+    const insert = local.prepare(
+      `INSERT INTO Patient (id, clinicId, createdAt, updatedAt, deletedAt,
+         code, name, gender, phone, wechatId, preferredContact, contactNote, tags,
+         allergies, medicalHistory, medicationHistory, systemicDiseases, source, active)
+       VALUES (?, 'clinic-v2-001', '2026-08-14T00:00:00.000Z', '2026-08-14T00:00:00.000Z', NULL,
+         ?, 'Bulk Patient', 'UNKNOWN', '', NULL, 'WECHAT', NULL, '[]', '[]', '[]', '[]', '[]', 'WALK_IN', 1)`,
+    );
+    local.transaction(() => {
+      for (let i = 0; i < 100_001; i += 1) {
+        insert.run(`bulk-rebuild-${i}`, `RB${i}`);
+      }
+    })();
+    local.prepare('DELETE FROM StatSnapshot WHERE 1 = 1').run();
+    const service = new StatsService(local);
     const result = service.dashboard(makeContext());
     expect(result).toHaveProperty('patients');
-    const row = db.prepare(
+    const row = local.prepare(
       "SELECT valueJson FROM StatSnapshot WHERE key = 'dashboard' AND clinicId = 'clinic-v2-001'",
     ).get() as { valueJson: string } | undefined;
     expect(row).toBeDefined();
