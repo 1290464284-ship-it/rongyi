@@ -1403,6 +1403,19 @@ describe('application services', () => {
     expect(batch.results[0]).toEqual({ id: 'wechat-string-throw', status: 'FAILED', detail: 'boom' });
   });
 
+  it('captures Error sendOne failures with their message in batches', async () => {
+    const repo: WechatMessageRepository = {
+      findById: () => {
+        throw new Error('row exploded');
+      },
+      markSent: () => 1,
+    };
+    const provider = { name: 'ok', isConfigured: () => true, send: async () => ({ ok: true, result: 'sent' }) };
+    const service = new WechatService(db, repo, provider);
+    const batch = await service.sendBatch(['wechat-error-throw'], context);
+    expect(batch.results[0]).toEqual({ id: 'wechat-error-throw', status: 'FAILED', detail: 'row exploded' });
+  });
+
   it('handles claim races where the fresh row is SENT, IN_PROGRESS or missing', async () => {
     const sequences = new Map<string, Array<{ status?: string } | null>>([
       ['wechat-race-sent', [{ status: 'PENDING' }, { status: 'SENT' }]],
