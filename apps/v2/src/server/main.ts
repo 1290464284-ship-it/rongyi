@@ -382,6 +382,12 @@ const configuredAutoBackupKeep = Number(process.env.V2_AUTO_BACKUP_KEEP ?? DEFAU
 const autoBackupKeep = Number.isFinite(configuredAutoBackupKeep)
   ? Math.min(365, Math.max(1, Math.floor(configuredAutoBackupKeep)))
   : DEFAULT_AUTO_BACKUP_KEEP;
+// A-P2：异地备份镜像（V2_BACKUP_MIRROR_DIR 未配置即不镜像）。
+const backupMirrorDir = process.env.V2_BACKUP_MIRROR_DIR?.trim() || undefined;
+const configuredBackupMirrorKeep = Number(process.env.V2_BACKUP_MIRROR_KEEP ?? DEFAULT_AUTO_BACKUP_KEEP);
+const backupMirrorKeep = Number.isFinite(configuredBackupMirrorKeep)
+  ? Math.min(365, Math.max(1, Math.floor(configuredBackupMirrorKeep)))
+  : DEFAULT_AUTO_BACKUP_KEEP;
 const configuredSyncRetentionDays = Number(process.env.V2_SYNC_CHANGE_RETENTION_DAYS);
 const syncChangeRetentionDays = Number.isFinite(configuredSyncRetentionDays)
   ? Math.min(3650, Math.max(1, Math.floor(configuredSyncRetentionDays)))
@@ -397,6 +403,8 @@ const schedulers = startSchedulers({
   audit,
   autoBackupIntervalMs,
   autoBackupKeep,
+  backupMirrorDir,
+  backupMirrorKeep,
   logger,
   onAlertCreate: (input) => alerts.create(input),
   idempotencyCleanup: () => cleanupIdempotencyRecords(db),
