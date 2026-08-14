@@ -1,5 +1,6 @@
 // AuthService 模块化 spec：自 services.spec.ts（聚合文件）迁移而来。
 // 迁移约定：聚合文件按模块逐步拆出后删除（迁移前保持聚合）。
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -159,5 +160,167 @@ describe('AuthService', () => {
     const service = new AuthService(db, fakeAuth);
     await expect(service.updateUser('user-1', { name: 'x' }, context)).rejects.toThrow('User not found');
     await expect(service.resetPassword('user-1', 'password123', context)).rejects.toThrow('User not found');
+  });
+
+  // ---- 用户管理测试（自 services-edge.spec.ts 聚合文件迁移，相对顺序保留）----
+
+  it('manages users through the admin service', async () => {
+    const auth = new AuthService(db);
+    const created = await auth.createUser({
+      username: 'admin-created',
+      password: 'password123',
+      name: 'Created',
+      role: 'DOCTOR',
+    }, context);
+    expect(created.id).toBeDefined();
+    await expect(auth.createUser({
+      username: 'admin-created',
+      password: 'password123',
+      name: 'Duplicate',
+      role: 'DOCTOR',
+    }, context)).rejects.toThrow('Username already exists');
+    await expect(auth.createUser({
+      username: 'bad-role',
+      password: 'password123',
+      name: 'Bad Role',
+      role: 'SUPER',
+    }, context)).rejects.toThrow('Invalid user role');
+    await expect(auth.createUser({
+      username: 'short',
+      password: 'short',
+      name: 'Short',
+      role: 'DOCTOR',
+    }, context)).rejects.toThrow('at least 6 characters');
+    await expect(auth.createUser({
+      username: '',
+      password: 'password123',
+      name: 'No Username',
+      role: 'DOCTOR',
+    }, context)).rejects.toThrow('Username and name are required');
+    await expect(auth.createUser({} as never, context)).rejects.toThrow('Username and name are required');
+
+    const updated = await auth.updateUser(created.id, { name: 'Updated', phone: '13800000000', role: 'DOCTOR', active: false }, context);
+    expect(updated.name).toBe('Updated');
+    await expect(auth.updateUser(created.id, { role: 'BAD' }, context)).rejects.toThrow('Invalid user role');
+    await expect(auth.updateUser('missing-user', {}, context)).rejects.toThrow('User not found');
+    await expect(auth.resetPassword('missing-user', 'password123', context)).rejects.toThrow('User not found');
+    await expect(auth.resetPassword(created.id, 'short', context)).rejects.toThrow('at least 6 characters');
+    await expect(auth.resetPassword(created.id, 'newpassword123', context)).resolves.toEqual({ id: created.id });
+    db.prepare('UPDATE User SET lockedUntil = ?, loginAttempts = ? WHERE id = ?').run('not-a-date', 5, created.id);
+    await auth.resetPassword(created.id, 'newpassword123', context);
+    const unlocked = db.prepare('SELECT lockedUntil, loginAttempts FROM User WHERE id = ?').get(created.id) as {
+      lockedUntil: string | null;
+      loginAttempts: number;
+    };
+    expect(unlocked.lockedUntil).toBeNull();
+    expect(Number(unlocked.loginAttempts)).toBe(0);
+
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO User (
+         id, clinicId, createdAt, updatedAt, deletedAt,
+         username, passwordHash, name, role, active, loginAttempts, tokenVersion
+       ) VALUES (?, ?, ?, ?, NULL, 'other-user', 'hash', 'Other', 'BOSS', 1, 0, 0)`,
+    ).run('user-other', 'other-clinic', now, now);
+    await expect(auth.updateUser('user-other', {}, context)).rejects.toThrow('User not found');
+    await expect(auth.resetPassword('user-other', 'password123', context)).rejects.toThrow('User not found');
+
+    const replayHash = createHash('sha256').update('replay-token').digest('hex');
+    db.prepare(
+      'UPDATE User SET refreshToken = ?, refreshTokenExpiresAt = ? WHERE id = ?',
+    ).run(replayHash, new Date(Date.now() + 86_400_000).toISOString(), 'user-admin-001');
+    db.prepare('INSERT INTO UsedRefreshToken (tokenHash, userId, usedAt) VALUES (?, ?, ?)')
+      .run(replayHash, 'user-admin-001', now);
+    await expect(auth.refresh('replay-token')).rejects.toThrow('Invalid refresh token');
+  });
+
+  it('refuses to disable or demote the last active BOSS of a clinic', async () => {
+    const auth = new AuthService(db);
+    const t = new Date().toISOString();
+    const clinicId = 'clinic-v2-last-boss';
+    db.prepare(
+      `INSERT OR IGNORE INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+       VALUES (?, NULL, ?, ?, NULL, 'V2-LAST-BOSS', 'Last Boss Clinic', 1)`,
+    ).run(clinicId, t, t);
+    const insertUserAt = (id: string, username: string, role: string): void => {
+      db.prepare(
+        `INSERT INTO User (
+           id, clinicId, createdAt, updatedAt, deletedAt,
+           username, passwordHash, name, role, active, loginAttempts, tokenVersion
+         ) VALUES (?, ?, ?, ?, NULL, ?, 'hash', ?, ?, 1, 0, 0)`,
+      ).run(id, clinicId, t, t, username, id, role);
+    };
+    // 该诊所唯一的 BOSS：禁用或降级必须被拒绝。
+    insertUserAt('user-last-boss', 'lastboss', 'BOSS');
+    const loneContext: AppContext = { ...context, clinicId };
+    await expect(auth.updateUser('user-last-boss', { active: false }, loneContext)).rejects.toThrow('最后一个管理员');
+    await expect(auth.updateUser('user-last-boss', { role: 'DOCTOR' }, loneContext)).rejects.toThrow('最后一个管理员');
+    // 增加第二个 BOSS 后，原 BOSS 可以被禁用（保护只针对最后一个）。
+    insertUserAt('user-last-boss-2', 'lastboss2', 'BOSS');
+    await expect(auth.updateUser('user-last-boss', { active: false }, loneContext)).resolves.toMatchObject({ id: 'user-last-boss' });
+    // 非 BOSS 用户不受保护影响。
+    insertUserAt('user-last-doctor', 'lastdoctor', 'DOCTOR');
+    await expect(auth.updateUser('user-last-doctor', { active: false }, loneContext)).resolves.toMatchObject({ id: 'user-last-doctor' });
+  });
+
+  it('lists and edits cross-clinic users through UserClinic membership', async () => {
+    const auth = new AuthService(db);
+    const t = new Date().toISOString();
+    const clinicB = 'clinic-v2-cross-b';
+    db.prepare(
+      `INSERT OR IGNORE INTO Clinic (id, clinicId, createdAt, updatedAt, deletedAt, code, name, active)
+       VALUES (?, NULL, ?, ?, NULL, 'V2-CROSS-B', 'Cross Clinic B', 1)`,
+    ).run(clinicB, t, t);
+    db.prepare(
+      `INSERT OR IGNORE INTO UserClinic (userId, clinicId, role, createdAt, updatedAt, deletedAt)
+       VALUES ('user-admin-001', ?, 'BOSS', ?, ?, NULL)`,
+    ).run(clinicB, t, t);
+    const doctor = await auth.createUser({
+      username: 'cross-doctor-b',
+      password: 'password123',
+      name: 'Cross Doctor B',
+      role: 'DOCTOR',
+      clinicIds: [clinicB],
+    }, context);
+    const clinicBContext: AppContext = { ...context, clinicId: clinicB };
+    expect(auth.listDoctors(clinicBContext).some((entry) => entry.id === doctor.id)).toBe(true);
+    const updated = await auth.updateUser(doctor.id, { name: 'Cross Doctor B Updated' }, clinicBContext);
+    expect(updated.name).toBe('Cross Doctor B Updated');
+    await expect(auth.resetPassword(doctor.id, 'newpassword123', clinicBContext)).resolves.toEqual({ id: doctor.id });
+  });
+
+  it('allows an admin to create another admin', async () => {
+    const auth = new AuthService(db);
+    const firstAdmin = await auth.createUser({
+      username: 'first-admin',
+      password: 'password123',
+      name: 'First Admin',
+      role: 'ADMIN',
+    }, context);
+    expect(firstAdmin.role).toBe('ADMIN');
+    const adminContext: AppContext = { ...context, role: 'ADMIN', userId: firstAdmin.id };
+    const secondAdmin = await auth.createUser({
+      username: 'second-admin',
+      password: 'password123',
+      name: 'Second Admin',
+      role: 'ADMIN',
+    }, adminContext);
+    expect(secondAdmin.role).toBe('ADMIN');
+    const membership = db.prepare(
+      'SELECT role FROM UserClinic WHERE userId = ? AND clinicId = ? AND deletedAt IS NULL',
+    ).get(secondAdmin.id, context.clinicId) as { role: string } | undefined;
+    expect(membership?.role).toBe('ADMIN');
+    await expect(auth.createUser({
+      username: 'forbidden-boss',
+      password: 'password123',
+      name: 'Forbidden Boss',
+      role: 'BOSS',
+    }, adminContext)).rejects.toThrow('管理员不能创建老板账号');
+    await expect(auth.updateUser(context.userId, { name: 'Hacked' }, adminContext))
+      .rejects.toThrow('管理员不能管理老板账号');
+    await expect(auth.resetPassword(context.userId, 'newpassword123', adminContext))
+      .rejects.toThrow('管理员不能管理老板账号');
+    await expect(auth.deleteUser(context.userId, adminContext))
+      .rejects.toThrow('管理员不能管理老板账号');
   });
 });
