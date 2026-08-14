@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-08-14T05:03:35.771Z",
-  "total": 270,
+  "generatedAt": "2026-08-14T05:10:00.769Z",
+  "total": 273,
   "perFile": {
     "src\\web\\treatment-plans\\PlanBillingDialog.tsx": 1,
     "src\\web\\schedules\\TemplateSection.tsx": 1,
@@ -33,6 +33,7 @@
     "src\\web\\components\\ResourceHub.tsx": 1,
     "src\\web\\components\\ResourcePage.tsx": 10,
     "src\\web\\components\\Tree.tsx": 1,
+    "src\\server\\scheduler.ts": 3,
     "src\\server\\maintenance\\runtime-metrics.ts": 3,
     "src\\server\\infrastructure\\database.ts": 2,
     "src\\server\\infrastructure\\idempotency.ts": 3,

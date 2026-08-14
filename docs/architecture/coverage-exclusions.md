@@ -118,6 +118,7 @@ Web **96.82% / 92.94% / 98.66% / 98.58%**，双门禁全绿——覆盖率口径
 | `src/web/pages/finance/FinanceWorkflowPage.tsx`（run） | `if (stale) return` 守卫 | run 仅由 submitAmount 在 stale 已校验为 false 后同步调用（其间无 await），stale 守卫为防御冗余；submitAmount 的同款 stale 守卫由 spec「ignores amount submissions while the page is stale」真实覆盖 |
 | `src/web/pages/system/PermissionsPage.tsx`（save） | `if (busy) return` 守卫 | 保存按钮在 busy 期间 disabled（jsdom 不派发 click），双击守卫不可达，防御冗余 |
 | `src/server/http/app.ts`（审计截断 keys / 权限规则） | `typeof masked === 'object' ? ... : 0` 的非对象分支与 `if (permissions)` 的缺失分支 | 2026-08-14 已删除两处死代码：maskAuditFields 对对象输入恒返回对象（maskWith 顶层非数组非深度溢出）；authMiddleware 恒先写 context.permissions（effectivePermissions 恒返回数组），且前置 audit 中间件已用 req.context!——均为不可达防御，删除后行为零变化 |
+| `src/server/scheduler.ts`（runAutoBackup finally / 两个清理闭包） | `currentBackup === task` 的身份不符分支与 `!idempotencyCleanup`/`!syncChangeCleanup` 空守卫 | isRunning 串行化保证 currentBackup 恒为当前 task；两个清理闭包仅在注册点（存在性已 gate）调用，闭包内空守卫不可达——均为防御冗余 |
 
 ## 5. 其他已知取舍
 

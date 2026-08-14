@@ -117,6 +117,7 @@ export function startSchedulers(options: StartSchedulersOptions): {
     try {
       await task;
     } finally {
+      /* v8 ignore next -- isRunning 串行化保证 currentBackup 恒为当前 task，身份不符分支不可达（防御冗余） */
       if (currentBackup === task) currentBackup = null;
     }
   }
@@ -131,6 +132,7 @@ export function startSchedulers(options: StartSchedulersOptions): {
   }
 
   function runIdempotencyCleanup(): void {
+    /* v8 ignore next -- 注册点（line 181）已按 idempotencyCleanup 存在性 gate，闭包内空守卫不可达（防御冗余） */
     if (!idempotencyCleanup) return;
     runDailyCleanup(
       'idempotency-cleanup',
@@ -141,6 +143,7 @@ export function startSchedulers(options: StartSchedulersOptions): {
   }
 
   function runSyncChangeCleanup(): void {
+    /* v8 ignore next -- 注册点（line 186）已按 syncChangeCleanup 存在性 gate，闭包内空守卫不可达（防御冗余） */
     if (!syncChangeCleanup) return;
     runDailyCleanup(
       'sync-change-cleanup',

@@ -276,6 +276,36 @@ describe('startSchedulers', () => {
     );
   });
 
+  it('logs when the backup-failure alert creation itself fails', async () => {
+    vi.useFakeTimers();
+    ensureTimers();
+    const backups = makeBackups();
+    vi.mocked(backups.create).mockRejectedValueOnce(new Error('disk full'));
+    const audit = makeAudit();
+    const logger = makeLogger();
+    const onAlertCreate = vi.fn().mockImplementation(() => {
+      throw new Error('alert create failed');
+    });
+
+    const { stop } = startSchedulers({
+      backups,
+      audit,
+      autoBackupIntervalMs: 24 * 60 * 60 * 1000,
+      autoBackupKeep: 30,
+      logger,
+      onAlertCreate,
+    });
+
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 1);
+    await vi.waitFor(() => {
+      expect(logger.error).toHaveBeenCalledWith(
+        'automatic backup alert creation failed',
+        expect.objectContaining({ action: 'auto-backup-alert' }),
+      );
+    });
+    stop();
+  });
+
   it('runAutoBackup 对非 Error 失败也生成可读告警', async () => {
     vi.useFakeTimers();
     ensureTimers();
