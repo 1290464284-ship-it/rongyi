@@ -60,4 +60,30 @@ describe('TriageQueuePanel', () => {
     expect(await screen.findByText('加载分诊队列失败')).toBeDefined();
     expect(screen.getByRole('button', { name: '重试' })).toBeDefined();
   });
+
+  it('renders rows with a triagedAt, null status and a missing items payload', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/triage/queue') {
+        return {
+          items: [{ id: 'r1', status: null, registeredAt: null, triagedAt: '2026-08-05T03:00:00.000Z' }],
+          total: 1,
+          page: 1,
+          pageSize: 20,
+        };
+      }
+      if (path === '/resources/departments?page=1&pageSize=100') return { items: [], total: 0, page: 1, pageSize: 100 };
+      return {};
+    });
+    render(<TriageQueuePanel onStartVisit={vi.fn()} />, { wrapper });
+    expect(await screen.findByText(/2026/)).toBeDefined();
+    cleanup();
+
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/triage/queue') return { total: 0, page: 1, pageSize: 20 };
+      if (path === '/resources/departments?page=1&pageSize=100') return { items: [], total: 0, page: 1, pageSize: 100 };
+      return {};
+    });
+    render(<TriageQueuePanel onStartVisit={vi.fn()} />, { wrapper });
+    expect(await screen.findByText('暂无分诊队列')).toBeDefined();
+  });
 });
