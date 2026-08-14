@@ -500,13 +500,6 @@ describe('application services', () => {
     expect(Number(card.balance)).toBe(800);
   });
 
-  it('calculates a patient risk score', () => {
-    const service = new PatientRiskService(db);
-    const result = service.calculate('patient-demo-001', context);
-    expect(result).toHaveProperty('cariesScore');
-    expect(result).toHaveProperty('periodontalScore');
-  });
-
   it('rolls back charge payment when member card deduction fails', async () => {
     const now = new Date().toISOString();
     db.prepare(

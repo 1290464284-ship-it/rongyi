@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase, seedDatabase } from '../../infrastructure/database';
 import { runMigrations } from '../../infrastructure/migrations';
-import { BulkImportService } from './clinical-ops';
+import { BulkImportService, PatientRiskService } from './clinical-ops';
 import type { AppContext } from '../../../domain/contracts';
 
 describe('BulkImportService edge paths', () => {
@@ -85,5 +85,36 @@ describe('BulkImportService edge paths', () => {
     } finally {
       vi.restoreAllMocks();
     }
+  });
+});
+
+describe('PatientRiskService', () => {
+  // 复用同模块文件（clinical-ops.ts）的共享库：风险评分只读种子患者数据。
+  let db: Database.Database;
+  let dataDir: string;
+
+  beforeAll(() => {
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-risk-'));
+    db = createDatabase(dataDir);
+    seedDatabase(db);
+    runMigrations(db);
+  });
+
+  afterAll(() => {
+    db.close();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  it('calculates a patient risk score', () => {
+    const service = new PatientRiskService(db);
+    const result = service.calculate('patient-demo-001', {
+      userId: 'user-admin-001',
+      clinicId: 'clinic-v2-001',
+      role: 'BOSS',
+      traceId: 'risk-test',
+      now: () => new Date(),
+    });
+    expect(result).toHaveProperty('cariesScore');
+    expect(result).toHaveProperty('periodontalScore');
   });
 });
