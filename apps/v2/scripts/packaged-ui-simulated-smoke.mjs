@@ -41,7 +41,9 @@ const userDataDir = path.join(dataDir, 'user-data');
 // 而不是 dataDir 根目录（api-env 白名单也不会转发 V2_DB_PATH/V2_DATA_DIR）。
 const appDataDir = path.join(userDataDir, 'data');
 fs.mkdirSync(appDataDir, { recursive: true });
-const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'v2-sim-admin-password';
+// 模拟库管理员密码固定为 v2-sim-admin-password（simulate-clinic-data.ts
+// 硬编码）；本 smoke 复制模拟库，登录必须用固定口令（同 disaster-drill）。
+const adminPassword = 'v2-sim-admin-password';
 for (const suffix of ['', '-wal', '-shm']) {
   const source = path.join(sourceSimDir, `v2.sqlite${suffix}`);
   if (fs.existsSync(source)) fs.copyFileSync(source, path.join(appDataDir, `v2.sqlite${suffix}`));
