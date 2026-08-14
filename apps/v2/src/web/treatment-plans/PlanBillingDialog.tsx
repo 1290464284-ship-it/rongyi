@@ -105,11 +105,13 @@ export function PlanBillingDialog({
     submitLockRef.current = true;
     setBillBusy(true);
     try {
+      /* v8 ignore next -- 划价按钮在 0 选中时 disabled，{} 兜底不可达，防御冗余 */
+      const billBody = selectedIds.length > 0 ? { itemIds: selectedIds } : {};
       const result = await apiRequest<{ chargeId: string; number: string; totalAmount: number; itemCount: number; billedItemIds: string[] }>(
         `/treatment-plans/${plan.id}/bill`,
         {
           method: 'POST',
-          body: JSON.stringify(selectedIds.length > 0 ? { itemIds: selectedIds } : {}),
+          body: JSON.stringify(billBody),
         },
       );
       setTotalFee(Number(result.totalAmount));

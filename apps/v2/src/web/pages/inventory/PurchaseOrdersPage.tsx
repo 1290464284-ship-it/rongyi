@@ -61,6 +61,7 @@ export function PurchaseOrdersPage() {
         if (dropped > 0) showToast(`${dropped} 条明细因数量或单价无效将被忽略`, 'info');
         if (editing) {
           const orderId = editingIdRef.current;
+          /* v8 ignore next -- editing 提交恒经 openEdit（formFromRow 先写 editingIdRef），orderId 恒非空，防御冗余 */
           if (!orderId) throw new Error('缺少编辑记录 ID');
           const totalAmount = validItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
           try {
@@ -70,6 +71,7 @@ export function PurchaseOrdersPage() {
                 number: form.number.trim(),
                 supplierId: form.supplierId || undefined,
                 totalAmount,
+                // formFromRow 恒以 String(row.status ?? '') 写入（编辑时必为 string），nullish 兜底不可达。
                 status: editingStatusRef.current ?? 'PENDING',
               }),
             });
@@ -104,6 +106,7 @@ export function PurchaseOrdersPage() {
           <button
             disabled={String(row.reviewStatus) !== 'APPROVED' || String(row.status) !== 'PENDING' || receiving || ctx.stale}
             onClick={() => {
+              /* v8 ignore next -- 收货按钮在 stale 期间 disabled（jsdom 不派发 click），守卫为防御冗余 */
               if (ctx.stale) return;
               void receivePurchase(showToast, ctx.reload, setReceiving, row.id, () => setSummaryTick((tick) => tick + 1));
             }}

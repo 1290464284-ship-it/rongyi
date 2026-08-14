@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TemplateSection } from './TemplateSection';
 import { apiRequest } from '../lib/api';
@@ -185,5 +185,63 @@ describe('TemplateSection', () => {
     });
     expect(await screen.findByText('班次模板已删除')).toBeDefined();
     expect(reload).toHaveBeenCalled();
+  });
+
+  it('reports create and update failures with the right fallback message', async () => {
+    vi.mocked(apiRequest).mockRejectedValue('save failed');
+    render(<TemplateSection templates={[]} reload={vi.fn()} />, { wrapper });
+    fireEvent.change(screen.getByLabelText('模板名称'), { target: { value: '夜班' } });
+    fireEvent.change(screen.getByLabelText('开始时间'), { target: { value: '20:00' } });
+    fireEvent.change(screen.getByLabelText('结束时间'), { target: { value: '23:00' } });
+    fireEvent.click(screen.getByRole('button', { name: '新增模板' }));
+    expect(await screen.findByText('创建模板失败')).toBeDefined();
+
+    cleanup();
+    vi.mocked(apiRequest).mockRejectedValue('patch failed');
+    render(<TemplateSection templates={[templateFixture()]} reload={vi.fn()} />, { wrapper });
+    await screen.findByText('早班');
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存模板' }));
+    expect(await screen.findByText('更新模板失败')).toBeDefined();
+  });
+
+  it('guards same-tick duplicate submits and delete confirms', async () => {
+    const pending: Array<() => void> = [];
+    vi.mocked(apiRequest).mockImplementation(async (path: string, options?: RequestInit) => {
+      const method = String(options?.method ?? 'GET');
+      if (method === 'POST' && path === '/shift-templates') {
+        return new Promise((resolve) => { pending.push(() => resolve({ id: 't-new' })); });
+      }
+      if (method === 'DELETE') {
+        return new Promise((resolve) => { pending.push(() => resolve({ ok: true })); });
+      }
+      return {};
+    });
+    render(<TemplateSection templates={[templateFixture()]} reload={vi.fn()} />, { wrapper });
+    await screen.findByText('早班');
+    fireEvent.change(screen.getByLabelText('模板名称'), { target: { value: '夜班' } });
+    fireEvent.change(screen.getByLabelText('开始时间'), { target: { value: '20:00' } });
+    fireEvent.change(screen.getByLabelText('结束时间'), { target: { value: '23:00' } });
+    const form = screen.getByLabelText('模板名称').closest('form') as HTMLFormElement;
+    act(() => {
+      fireEvent.submit(form);
+      fireEvent.submit(form);
+    });
+    const postCalls = vi.mocked(apiRequest).mock.calls.filter(([path, options]) => path === '/shift-templates' && (options as RequestInit)?.method === 'POST');
+    expect(postCalls).toHaveLength(1);
+    pending[0]?.();
+    await waitFor(() => expect(screen.queryByRole('button', { name: '保存中...' })).toBeNull());
+
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    const dialog = await screen.findByRole('dialog', { name: '删除班次模板' });
+    const confirm = within(dialog).getByRole('button', { name: '删除' });
+    act(() => {
+      fireEvent.click(confirm);
+      fireEvent.click(confirm);
+    });
+    const deleteCalls = vi.mocked(apiRequest).mock.calls.filter(([path, options]) => path === '/resources/shiftTemplates/t1' && (options as RequestInit)?.method === 'DELETE');
+    expect(deleteCalls).toHaveLength(1);
+    pending[1]?.();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 });

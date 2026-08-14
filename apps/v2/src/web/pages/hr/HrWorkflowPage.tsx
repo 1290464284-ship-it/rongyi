@@ -33,6 +33,7 @@ export function HrWorkflowPage() {
   }
 
   async function approve(id: string, approved: boolean) {
+    /* v8 ignore next -- 行内审批按钮在 stale 期间 disabled（jsdom 不派发 click），守卫为防御冗余 */
     if (stale) return;
     try {
       await apiRequest(`/hr/leaves/${id}/approve`, {

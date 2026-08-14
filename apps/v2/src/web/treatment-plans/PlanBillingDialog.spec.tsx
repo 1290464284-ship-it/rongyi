@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { PlanBillingDialog } from './PlanBillingDialog';
 import { apiRequest, fetchAllPages } from '../lib/api';
@@ -202,5 +202,58 @@ describe('PlanBillingDialog', () => {
     expect(screen.getByText(/¥50\.00/)).toBeDefined();
     fireEvent.click(screen.getByRole('button', { name: '关闭' }));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears an item discount when the draft is untouched', async () => {
+    mockItems();
+    render(<PlanBillingDialog plan={planFixture()} onClose={vi.fn()} onChanged={vi.fn()} />, { wrapper });
+    await screen.findByText('洁牙');
+    vi.mocked(apiRequest).mockResolvedValueOnce({ itemId: 'i1', discountRate: null, planTotalFee: 10000 });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith(
+        '/treatment-plans/p1/items/i1/discount',
+        expect.objectContaining({ body: JSON.stringify({ discountRate: null }) }),
+      );
+    });
+  });
+
+  it('guards same-tick duplicate discount and billing submits', async () => {
+    mockItems();
+    render(<PlanBillingDialog plan={planFixture()} onClose={vi.fn()} onChanged={vi.fn()} />, { wrapper });
+    await screen.findByText('洁牙');
+    const pending: Array<() => void> = [];
+    vi.mocked(apiRequest).mockImplementation(async () => new Promise((resolve) => { pending.push(() => resolve({})); }));
+
+    fireEvent.change(screen.getByLabelText('整单折扣类型'), { target: { value: 'WHOLE' } });
+    fireEvent.change(screen.getByLabelText('整单折扣率'), { target: { value: '80' } });
+    const planButton = screen.getByRole('button', { name: '保存折扣' });
+    act(() => {
+      fireEvent.click(planButton);
+      fireEvent.click(planButton);
+    });
+    expect(vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/treatment-plans/p1/discount')).toHaveLength(1);
+    pending[0]?.();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+
+    fireEvent.change(screen.getByLabelText('明细折扣 洁牙'), { target: { value: '90' } });
+    const itemButton = screen.getByRole('button', { name: '保存' });
+    act(() => {
+      fireEvent.click(itemButton);
+      fireEvent.click(itemButton);
+    });
+    expect(vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/treatment-plans/p1/items/i1/discount')).toHaveLength(1);
+    pending[1]?.();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+
+    fireEvent.click(screen.getByRole('checkbox', { name: '勾选划价 洁牙' }));
+    const billButton = screen.getByRole('button', { name: '划价' });
+    act(() => {
+      fireEvent.click(billButton);
+      fireEvent.click(billButton);
+    });
+    expect(vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/treatment-plans/p1/bill')).toHaveLength(1);
+    pending[2]?.();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
   });
 });

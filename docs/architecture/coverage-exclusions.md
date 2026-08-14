@@ -109,6 +109,10 @@ Web **96.82% / 92.94% / 98.66% / 98.58%**，双门禁全绿——覆盖率口径
 | `src/web/pages/appointments/AppointmentsPage.tsx`（transition / openEdit / delete） | `if (stale) return` 与 `!deleteTarget \|\| submitting` 守卫 | 行内动作/编辑/删除按钮在 stale 期间 disabled，确认框仅在目标非空时渲染且 submitting 期间 disabled——均为防御冗余；stale 期间行为由 spec「does not save an edit while the appointment list is stale」覆盖 |
 | `src/server/maintenance/runtime-metrics.ts`（eventLoop 采样） | `Number.isFinite(lagHistogram.max/mean/percentile)` 的 NaN 分支 | 测试环境直方图恒有样本（初值有限），NaN 路径为文档化防御（无样本场景） |
 | `src/server/infrastructure/database.ts`（columnType / alignLegacyTables） | 未知列类型 fail-fast 与 `!tableExists` 跳过 | 资源注册表类型为编译期枚举（含 drift guard）；alignLegacyTables 紧跟 createTableSql 且同一事务内建齐全部资源表，表恒存在——均为防御冗余 |
+| `src/web/pages/hr/HrWorkflowPage.tsx`（approve） | `if (stale) return` 守卫 | 行内审批按钮在 stale 期间 disabled（jsdom 不派发 click），守卫为防御冗余 |
+| `src/web/schedules/TemplateSection.tsx`（toggleActive） | `togglingId === template.id` 去重守卫 | ToggleActiveButton 的 busy 状态已禁用按钮（jsdom 不派发），同行动作去重守卫为防御冗余 |
+| `src/web/pages/inventory/PurchaseOrdersPage.tsx`（submitOverride / 收货按钮） | `!orderId` 抛错与 `if (ctx.stale) return` | editing 提交恒经 openEdit（formFromRow 先写 editingIdRef），orderId 恒非空；收货按钮在 stale 期间 disabled——均为防御冗余 |
+| `src/web/treatment-plans/PlanBillingDialog.tsx`（bill） | `selectedIds.length > 0 ? ... : {}` 的空选分支 | 划价按钮在 0 选中时 disabled，`{}` 兜底不可达，防御冗余 |
 
 ## 5. 其他已知取舍
 

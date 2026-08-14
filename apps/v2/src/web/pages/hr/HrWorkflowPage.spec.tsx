@@ -111,11 +111,21 @@ describe('HrWorkflowPage', () => {
     cleanup();
 
     vi.mocked(apiRequest).mockResolvedValue({
-      items: [{ id: 'l-x', userId: 'u-x', startDate: '2026-08-01', endDate: '2026-08-02', status: 'WEIRD' }],
-      total: 1,
+      items: [
+        { id: 'l-x', userId: 'u-x', startDate: '2026-08-01', endDate: '2026-08-02', status: 'WEIRD' },
+        { id: 'l-null', userId: 'u-null', startDate: '2026-08-01', endDate: '2026-08-02', status: null },
+      ],
+      total: 2,
     });
     render(<HrWorkflowPage />, { wrapper });
     expect(await screen.findByText('WEIRD')).toBeDefined();
+    expect(screen.getByText('u-null')).toBeDefined();
+  });
+
+  it('renders an empty table when the list payload omits items and total', async () => {
+    vi.mocked(apiRequest).mockResolvedValue({});
+    render(<HrWorkflowPage />, { wrapper });
+    expect(await screen.findByText('暂无待审批请假')).toBeDefined();
   });
 
   it('paginates through pending leaves', async () => {

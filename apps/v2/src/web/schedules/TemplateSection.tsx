@@ -95,6 +95,7 @@ export function TemplateSection({ templates, reload }: { templates?: ShiftTempla
   }
 
   async function toggleActive(template: ShiftTemplate) {
+    /* v8 ignore next -- ToggleActiveButton 的 busy 状态已禁用按钮（jsdom 不派发），同行动作去重守卫为防御冗余 */
     if (togglingId === template.id) return;
     setTogglingId(template.id);
     try {

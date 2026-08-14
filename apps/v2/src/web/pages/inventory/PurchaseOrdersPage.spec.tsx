@@ -275,8 +275,7 @@ describe('PurchaseOrdersPage', () => {
     expect(await screen.findByText('采购单已更新')).toBeDefined();
   });
 
-  it('edits a sparse purchase order row with null supplier and status', async () => {
-    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+  it('edits a sparse purchase order row with null supplier and status', async () => {    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/purchase-orders/review-stats') return {};
       if (path === '/resources/purchaseOrders?page=1&pageSize=50') {
         return {
@@ -317,6 +316,29 @@ describe('PurchaseOrdersPage', () => {
     expect(body.supplierId).toBeUndefined();
     expect(body.status).toBe('');
     expect(body.number).toBe('PO-SPARSE');
+  });
+
+  it('prefills a blank number when editing a row without one', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/purchase-orders/review-stats') return {};
+      if (path === '/resources/purchaseOrders?page=1&pageSize=50') {
+        return {
+          items: [{ id: 'po-no-number', number: null, supplierId: null, totalAmount: 100, status: 'PENDING' }],
+          total: 1, page: 1, pageSize: 50,
+        };
+      }
+      if (path === '/resources/suppliers?page=1&pageSize=100') return { items: [], total: 0, page: 1, pageSize: 200 };
+      if (path === '/resources/inventoryItems?page=1&pageSize=100') return { items: [], total: 0, page: 1, pageSize: 200 };
+      if (path === '/resources/purchaseOrderItems?orderId=po-no-number&page=1&pageSize=100') {
+        return { items: [], total: 0, page: 1, pageSize: 100 };
+      }
+      return {};
+    });
+    render(<PurchaseOrdersPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '编辑' }));
+    await waitFor(() => {
+      expect((screen.getByLabelText('采购单号') as HTMLInputElement).value).toBe('');
+    });
   });
 
   it('blocks saving while edit detail rows are still loading', async () => {
@@ -531,6 +553,36 @@ describe('PurchaseOrdersPage', () => {
     const createCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/purchase-orders');
     const body = JSON.parse(String(createCall?.[1]?.body));
     expect(body.items).toHaveLength(1);
+  });
+
+  it('warns about rows that only have a unit price without an item', async () => {
+    mockData();
+    render(<PurchaseOrdersPage />, { wrapper });
+    await screen.findByText('PO-1');
+    fireEvent.click(screen.getByText('新建采购单'));
+    await waitFor(() => {
+      expect((screen.getByLabelText('采购项目') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('采购单号'), { target: { value: 'PO-NEW' } });
+    fireEvent.change(screen.getByLabelText('采购项目'), { target: { value: 'i-1' } });
+    fireEvent.change(screen.getByLabelText('采购数量'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('采购单价'), { target: { value: '100' } });
+    fireEvent.click(screen.getByRole('button', { name: '添加明细' }));
+    await waitFor(() => {
+      expect(screen.getAllByLabelText('采购项目')).toHaveLength(2);
+    });
+    // 第二行不选物料、仅填单价且数量为空：计入将被忽略的明细
+    fireEvent.change(screen.getAllByLabelText('采购数量')[1], { target: { value: '' } });
+    fireEvent.change(screen.getAllByLabelText('采购单价')[1], { target: { value: '50' } });
+    await waitFor(() => {
+      expect((screen.getAllByLabelText('采购单价')[1] as HTMLInputElement).value).toBe('50');
+    });
+    fireEvent.click(screen.getByText('保存'));
+
+    expect(await screen.findByText('1 条明细因数量或单价无效将被忽略')).toBeDefined();
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/purchase-orders', expect.objectContaining({ method: 'POST' }));
+    });
   });
 
   it('reports approve and reopen failures', async () => {
