@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-08-14T04:53:07.475Z",
-  "total": 267,
+  "generatedAt": "2026-08-14T05:03:35.771Z",
+  "total": 270,
   "perFile": {
     "src\\web\\treatment-plans\\PlanBillingDialog.tsx": 1,
     "src\\web\\schedules\\TemplateSection.tsx": 1,
@@ -44,7 +44,7 @@
     "src\\server\\http\\rate-limit.ts": 2,
     "src\\server\\http\\router.ts": 26,
     "src\\server\\http\\routes\\files.ts": 1,
-    "src\\server\\http\\routes\\workflow.ts": 6,
+    "src\\server\\http\\routes\\workflow.ts": 9,
     "src\\server\\application\\ttl-cache.ts": 1,
     "src\\server\\application\\service-modules\\backup.ts": 8,
     "src\\server\\application\\service-modules\\dispense-stock.ts": 7,

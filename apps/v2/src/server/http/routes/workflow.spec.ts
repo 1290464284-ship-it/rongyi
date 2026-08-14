@@ -63,6 +63,18 @@ describe('workflow routes', () => {
     expect([200, 404]).toContain(res.status);
   });
 
+  it('returns the cancelled charge payload on a successful cancel', async () => {
+    const now = new Date('2026-08-13T00:00:00.000Z').toISOString();
+    db.prepare(
+      `INSERT INTO Charge (id, clinicId, createdAt, updatedAt, deletedAt,
+         number, patientId, totalAmount, paidAmount, refundedAmount, status)
+       VALUES ('charge-cancel-1', 'clinic-v2-001', ?, ?, NULL, 'CH-CANCEL-1', 'patient-demo-001', 100, 0, 0, 'UNPAID')`,
+    ).run(now, now);
+    const res = await request(app).delete('/api/v2/charges/charge-cancel-1');
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ success: true, data: { id: 'charge-cancel-1' } });
+  });
+
   it('validates follow-up reminder scope query values', async () => {
     await request(app).get('/api/v2/follow-ups/reminders?scope=overdue').expect(200);
     await request(app).get('/api/v2/follow-ups/reminders?scope=bad').expect(400);
