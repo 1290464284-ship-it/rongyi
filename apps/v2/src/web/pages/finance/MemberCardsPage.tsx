@@ -188,6 +188,7 @@ export function MemberCardsPage() {
   );
 
   function openAction(id: string, kind: 'RECHARGE' | 'CONSUME' | 'POINTS', stale: boolean) {
+    /* v8 ignore next -- 本页列表无分页/搜索（queryKey 恒定），stale 恒为 false 且按钮 disabled，守卫为防御冗余 */
     if (stale) return;
     setActionTarget(id);
     setActionKind(kind);
@@ -195,12 +196,14 @@ export function MemberCardsPage() {
   }
 
   function openPlan(row: CardRow, stale: boolean) {
+    /* v8 ignore next -- 同上 */
     if (stale) return;
     setActionTarget(row.id);
     setActionKind('PLAN');
   }
 
   function openQuote(row: CardRow, stale: boolean) {
+    /* v8 ignore next -- 同上 */
     if (stale) return;
     setActionTarget(row.id);
     setActionKind('QUOTE');
@@ -208,6 +211,7 @@ export function MemberCardsPage() {
 
   async function runAction(event: FormEvent) {
     event.preventDefault();
+    /* v8 ignore next -- 动作表单仅在 RECHARGE/CONSUME/POINTS 且有 target 时渲染，busy 期间按钮 disabled，守卫为防御冗余 */
     if (!actionTarget || !actionKind || actionKind === 'PLAN' || actionKind === 'QUOTE' || actionBusy || staleRef.current) return;
     const value = Number(actionValue || 0);
     if (actionKind === 'POINTS' ? !Number.isInteger(value) || value === 0 : value <= 0) {

@@ -266,8 +266,9 @@ describe('MemberCardsPage', () => {
           items: [
             { id: 'card-null', status: null, level: null },
             { id: 'card-weird', status: 'WEIRD', level: 'CUSTOM' },
+            { id: 'card-rate', status: 'ACTIVE', level: 'NORMAL', discountRate: 90 },
           ],
-          total: 2,
+          total: 3,
           page: 1,
           pageSize: 100,
         };
@@ -281,6 +282,7 @@ describe('MemberCardsPage', () => {
     expect(await screen.findByText('WEIRD')).toBeDefined();
     expect(screen.getByText('CUSTOM')).toBeDefined();
     expect(screen.getAllByText('—').length).toBeGreaterThan(0);
+    expect(screen.getByText('90%')).toBeDefined();
 
     fireEvent.click(screen.getAllByRole('button', { name: '编辑' })[0]);
     await waitFor(() => {
