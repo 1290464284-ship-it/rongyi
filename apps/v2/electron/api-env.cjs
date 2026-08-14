@@ -30,6 +30,7 @@ function buildApiChildEnv({ userDataDir, legacyBase, secretFilePath, apiPort, is
     'V2_AUTO_BACKUP_KEEP',
     'V2_BACKUP_MIRROR_DIR',
     'V2_BACKUP_MIRROR_KEEP',
+    'V2_DISK_THRESHOLD_BYTES',
     'V2_SYNC_CHANGE_RETENTION_DAYS',
     'V2_CORS_ORIGIN',
     'V2_WECHAT_API_URL',
