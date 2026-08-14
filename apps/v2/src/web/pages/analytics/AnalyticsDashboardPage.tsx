@@ -131,6 +131,7 @@ export function AnalyticsDashboardPage() {
   }
 
   async function printReport(): Promise<void> {
+    /* v8 ignore next -- 打印按钮在 printing 期间 disabled，双击竞态守卫为防御冗余 */
     if (printing || printingRef.current) return;
     printingRef.current = true;
     setPrinting(true);

@@ -201,6 +201,53 @@ describe('DispenseEditDialog', () => {
     expect((await screen.findByLabelText('编辑发药数量') as HTMLInputElement).value).toBe('0');
     expect((screen.getByLabelText('编辑单号') as HTMLInputElement).value).toBe('D-9');
   });
+
+  it('renders zero item rows when the detail omits items', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/dispenses/disp-empty') {
+        return { id: 'disp-empty', number: 'D-E', patientId: 'p-1', note: null };
+      }
+      if (path.startsWith('/resources/patients?')) {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 100 };
+      }
+      return {};
+    });
+    render(<DispenseEditDialog dispenseId="disp-empty" onClose={vi.fn()} onDone={vi.fn()} />, { wrapper });
+    expect(await screen.findByDisplayValue('D-E')).toBeDefined();
+    expect(screen.queryAllByLabelText('编辑物品')).toHaveLength(0);
+    expect(screen.getByRole('button', { name: '添加明细' })).toBeDefined();
+  });
+
+  it('ignores a submit while stale', async () => {
+    mockData();
+    render(<DispenseEditDialog dispenseId="d-1" onClose={vi.fn()} onDone={vi.fn()} stale />, { wrapper });
+    await waitFor(() => {
+      expect((screen.getByLabelText('编辑患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    const dialog = screen.getByRole('dialog', { name: '编辑发药单' });
+    fireEvent.submit(dialog.querySelector('form')!);
+    expect(apiRequest).not.toHaveBeenCalledWith('/dispenses/d-1', expect.objectContaining({ method: 'PATCH' }));
+  });
+
+  it('treats items without a batchManaged flag as non-batch-managed', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/dispenses/d-1') {
+        return { ...detail, items: [{ id: 'li-1', itemId: 'item-1', quantity: 2, batchId: 'b-1' }] };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 100 };
+      }
+      if (path === '/resources/inventoryItems?page=1&pageSize=100') {
+        return { items: [{ id: 'item-1', name: '药品甲' }], total: 1, page: 1, pageSize: 100 };
+      }
+      return {};
+    });
+    render(<DispenseEditDialog dispenseId="d-1" onClose={vi.fn()} onDone={vi.fn()} />, { wrapper });
+    await waitFor(() => {
+      expect((screen.getByLabelText('编辑患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    expect(screen.queryByLabelText('编辑批次')).toBeNull();
+  });
 });
 
 describe('BatchSelect', () => {

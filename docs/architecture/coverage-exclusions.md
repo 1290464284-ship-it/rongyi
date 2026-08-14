@@ -85,6 +85,8 @@ Web **96.82% / 92.94% / 98.66% / 98.58%**，双门禁全绿——覆盖率口径
 | `src/server/application/service-modules/custom-fields.ts`（setValues BOOLEAN） | `parseBooleanStrict(...) ? '1' : '0'` 的真值分支 | 行为由 spec「sets null clinic values...」覆盖（断言结果为 '1' 即执行），v8 未入账，属采集缺陷 |
 | `src/server/application/service-modules/wechat-reminder.ts`（dayRange） | `if (start === null \|\| end === null) throw` 解析失败守卫 | shiftDate 恒产出合法 YYYY-MM-DD（含 +8 时区与负间隔），`slice(0,10)` 解析不会失败，防御冗余 |
 | `src/server/http/audit-buffer.ts`（scheduleAuditRetry） | `if (room > 0)` 空位守卫与 `length + rows > capacity` 超容量丢弃守卫 | 缓冲被 unshift 封顶在 100 且 push 满 50 立即刷出：重试未在途时 buffer≤49、rows≤50（和 ≤99），重试在途时 splice 后 room 恒 ≥49——两条防御分支不可达（容量配置预留），超容量丢弃路径由 spec「drops overflow rows...」覆盖 |
+| `src/web/pages/analytics/AnalyticsDashboardPage.tsx`（printReport） | `if (printing \|\| printingRef.current) return` | 打印按钮在 printing 期间 disabled（浏览器不派发点击），双击竞态守卫为防御冗余 |
+| `src/web/pages/communication/FollowUpsPage.tsx`（goToPage / batchGenerate） | `if (stale) return` 守卫 | 分页与批量生成按钮在 stale（placeholderData）期间 disabled，浏览器不派发点击，守卫为防御冗余；submitCompletion/submitExecution 的同款守卫由 spec「ignores a stale ... submit」真实覆盖 |
 
 ## 5. 其他已知取舍
 

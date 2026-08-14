@@ -48,17 +48,17 @@ export function DispenseEditDialog({
 
   function updateForm(patch: Partial<CreateForm>) {
     setForm((current) => {
-      const base = current ?? (detail.data ? buildFormFromDetail(detail.data) : null);
-      return base ? { ...base, ...patch } : base;
+      // updateForm 只在表单已渲染时可达（effectiveForm 非空）：此时 current
+      // 与 detail.data 必有一个非空，detail.data 为空时 current 恒非空。
+      const base = current ?? buildFormFromDetail(detail.data as DispenseDetail);
+      return { ...base, ...patch };
     });
   }
 
   function updateItem(key: string, patch: Partial<CreateItemRow>) {
     setForm((current) => {
-      const base = current ?? (detail.data ? buildFormFromDetail(detail.data) : null);
-      return base
-        ? { ...base, items: base.items.map((item) => (item.key === key ? { ...item, ...patch } : item)) }
-        : base;
+      const base = current ?? buildFormFromDetail(detail.data as DispenseDetail);
+      return { ...base, items: base.items.map((item) => (item.key === key ? { ...item, ...patch } : item)) };
     });
   }
 

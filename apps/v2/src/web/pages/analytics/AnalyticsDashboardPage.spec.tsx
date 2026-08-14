@@ -118,6 +118,30 @@ describe('AnalyticsDashboardPage', () => {
     expect(screen.getByText('暂无医生满意度数据')).toBeDefined();
   });
 
+  it('zeroes summary cards when dashboard fields are missing', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.startsWith('/stats/dashboard')) return {};
+      return [];
+    });
+    render(<AnalyticsDashboardPage />, { wrapper });
+    expect(await screen.findByText('月度收入趋势')).toBeDefined();
+    expect(screen.getAllByText('0')).toHaveLength(4);
+    expect(screen.getAllByText('¥0.00')).toHaveLength(2);
+  });
+
+  it('renders a revenue row missing its count as zero', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.startsWith('/stats/dashboard')) {
+        return { patients: 1, appointments: 1, paidAmount: 0, unpaidAmount: 0, inventoryItems: 1, pendingFollowUps: 0 };
+      }
+      if (path.startsWith('/stats/revenue')) return [{ period: '2026-08', amount: 100 }];
+      return [];
+    });
+    render(<AnalyticsDashboardPage />, { wrapper });
+    const chart = await screen.findByRole('img', { name: /月度收入趋势/ });
+    expect(chart.getAttribute('aria-label')).toContain('0 单');
+  });
+
   it('applies a valid date range and degrades a failing section', async () => {
     installData();
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {

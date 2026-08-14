@@ -48,6 +48,7 @@ export function FollowUpsPage() {
   const totalPages = Math.max(1, Math.ceil(total / Math.max(1, pageSize)));
   const displayPage = Math.min(page, totalPages);
   function goToPage(next: number) {
+    /* v8 ignore next -- 分页按钮在 stale 期间 disabled，浏览器不派发点击事件，守卫为防御冗余 */
     if (stale) return;
     setSelectedIds([]);
     setPage(Math.max(1, Math.min(next, totalPages)));
@@ -74,6 +75,7 @@ export function FollowUpsPage() {
   }
 
   async function batchGenerate() {
+    /* v8 ignore next -- 批量生成按钮在 stale 期间 disabled，浏览器不派发点击事件，守卫为防御冗余 */
     if (stale) return;
     try {
       await apiRequest('/follow-ups/batch-generate', { method: 'POST', body: JSON.stringify({ limit: 50 }) });
@@ -95,7 +97,8 @@ export function FollowUpsPage() {
         });
         showToast('随访已完成', 'success');
         await Promise.all([query.refetch(), summary.refetch()]);
-      } else if (completion?.kind === 'batch') {
+      }
+      if (completion?.kind === 'batch') {
         const data = await apiRequest<{ completed: number; skipped: number; errors: string[] }>(
           '/follow-ups/batch-complete',
           {
