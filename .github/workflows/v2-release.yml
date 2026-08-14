@@ -1,9 +1,11 @@
 name: V2 Release
 
+# 内部渠道为主（v2-internal-release）：不购买代码签名证书，公开发布链
+# 降级为保险丝——仅按需手动触发（workflow_dispatch），避免 tag 误触导致
+# 失败噪音。触发前需人工确认：CSC 签名证书 + V2_EXPECTED_CERT_THUMBPRINT
+# 均已配置，且发布内容经内部渠道验证通过。
 on:
-  push:
-    tags:
-      - 'v2-[0-9]*'
+  workflow_dispatch:
 
 # 发布需要写 Release（contents: write）。注意：本 workflow 携带
 # CSC_LINK / CSC_KEY_PASSWORD 签名证书 secrets，所有第三方 action 一律

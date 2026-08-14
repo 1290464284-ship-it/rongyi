@@ -13,7 +13,7 @@ on:
       - 'apps/v2/**'
       - 'docs/architecture/**'
       - 'docs/release/**'
-      - '.github/workflows/v2-ci.yml'
+      - '.github/workflows/**'
   pull_request:
     paths:
       - 'pnpm-lock.yaml'
@@ -22,7 +22,7 @@ on:
       - 'apps/v2/**'
       - 'docs/architecture/**'
       - 'docs/release/**'
-      - '.github/workflows/v2-ci.yml'
+      - '.github/workflows/**'
 
 # Round7 H2：CI 只读，不需要写权限。
 permissions:
@@ -103,7 +103,7 @@ jobs:
         run: pnpm --filter @dental/v2 run v8-ignore:report
 
       - name: Upload quality score artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: quality-score
           path: apps/v2/quality-score.json
@@ -129,7 +129,7 @@ jobs:
 
       - name: Upload test artifacts on failure
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: v2-verify-artifacts
           if-no-files-found: ignore
@@ -161,7 +161,7 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Cache Playwright browsers
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -260,7 +260,7 @@ jobs:
 
       - name: Upload smoke artifacts on failure
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: v2-smoke-artifacts
           if-no-files-found: ignore
