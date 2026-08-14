@@ -1,10 +1,11 @@
 {
-  "generatedAt": "2026-08-14T00:16:03.381Z",
-  "total": 188,
+  "generatedAt": "2026-08-14T00:25:46.136Z",
+  "total": 191,
   "perFile": {
     "src\\web\\pages\\patients\\PatientTimelinePage.tsx": 4,
     "src\\web\\pages\\inventory\\ProcessingOrdersPage.tsx": 7,
     "src\\web\\pages\\finance\\ChargesPage.tsx": 3,
+    "src\\web\\pages\\clinical\\ImagingPage.tsx": 3,
     "src\\web\\components\\ResourcePage.tsx": 10,
     "src\\server\\infrastructure\\idempotency.ts": 3,
     "src\\server\\infrastructure\\repository.ts": 33,

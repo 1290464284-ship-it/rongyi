@@ -897,6 +897,112 @@ describe('ImagingPage', () => {
       expect(within(compareSection).getAllByText('标题：').length).toBeGreaterThan(0);
     });
   });
+
+  it('searches the compare options with the toolbar input', async () => {
+    mockData();
+    render(<ImagingPage />, { wrapper });
+    await screen.findByText('全景片');
+    fireEvent.change(screen.getByLabelText('对比选项搜索'), { target: { value: '侧位' } });
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/imaging?page=1&pageSize=50&search=%E4%BE%A7%E4%BD%8D');
+    });
+  });
+
+  it('ignores stale compare selections missing from the current options page', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/imaging?page=1&pageSize=50') {
+        return { items: [{ id: 'i-1', title: '全景片', type: 'PANORAMIC', imageUrl: '/api/v2/files/a.png' }], total: 60, page: 1, pageSize: 50 };
+      }
+      if (path === '/resources/imaging?page=2&pageSize=50') {
+        return { items: [{ id: 'i-2', title: '侧位片', type: 'CEPHALOMETRIC', imageUrl: '/api/v2/files/b.png' }], total: 60, page: 2, pageSize: 50 };
+      }
+      if (path === '/resources/imagingCategories?page=1&pageSize=100') {
+        return { items: [], total: 0, page: 1, pageSize: 100 };
+      }
+      return {};
+    });
+    render(<ImagingPage />, { wrapper });
+    await screen.findByText('全景片');
+    const compareSection = screen.getByLabelText('影像对比');
+    fireEvent.change(within(compareSection).getByLabelText('影像一'), { target: { value: 'i-1' } });
+    // 翻到第 2 页：i-1 不在当前选项页，但保留在 selectedRows
+    fireEvent.click(within(compareSection).getByRole('button', { name: '下一页' }));
+    await waitFor(() => {
+      expect(within(compareSection).getAllByRole('option', { name: /侧位片/ }).length).toBeGreaterThan(0);
+    });
+    // 重新选择过期值：selectCompare 找不到行 → nullish 分支
+    fireEvent.change(within(compareSection).getByLabelText('影像一'), { target: { value: 'i-1' } });
+    expect(within(compareSection).getByRole('option', { name: /全景片/ })).toBeDefined();
+    // 右侧过期值同样渲染 MissingSelectOption
+    fireEvent.change(within(compareSection).getByLabelText('影像二'), { target: { value: 'i-2' } });
+    fireEvent.click(within(compareSection).getByRole('button', { name: '上一页' }));
+    await waitFor(() => {
+      expect(within(compareSection).getByRole('option', { name: /侧位片/ })).toBeDefined();
+    });
+  });
+
+  it('blocks a second category save while one is pending', async () => {
+    mockData();
+    render(<ImagingPage />, { wrapper });
+    const panel = screen.getByLabelText('影像分类管理');
+    await waitFor(() => {
+      expect(within(panel).getByText('正畸类')).toBeDefined();
+    });
+    fireEvent.change(within(panel).getByLabelText('名称'), { target: { value: '新分类' } });
+    let resolvePost: (value: unknown) => void = () => {};
+    vi.mocked(apiRequest).mockImplementationOnce(() => new Promise((resolve) => { resolvePost = resolve; }));
+    const form = within(panel).getByLabelText('名称').closest('form') as HTMLFormElement;
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    const posts = vi.mocked(apiRequest).mock.calls.filter(([path, options]) =>
+      path === '/resources/imagingCategories' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'POST',
+    );
+    expect(posts).toHaveLength(1);
+    resolvePost({ id: 'c-3' });
+    await waitFor(() => {
+      expect(vi.mocked(apiRequest).mock.calls.some(([path, options]) =>
+        path === '/resources/imagingCategories?page=1&pageSize=100' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'GET',
+      )).toBe(true);
+    });
+  });
+
+  it('submits a blank image url for records with a null image', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/imaging?page=1&pageSize=50') {
+        return {
+          items: [{ id: 'i-null', title: 'NullImg', type: 'UNKNOWN', patientId: 'p-1', doctorId: 'd-1', imageUrl: null }],
+          total: 1,
+          page: 1,
+          pageSize: 50,
+        };
+      }
+      if (path === '/resources/imagingCategories?page=1&pageSize=100') {
+        return { items: [], total: 0, page: 1, pageSize: 100 };
+      }
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }], total: 1, page: 1, pageSize: 200 };
+      }
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      return {};
+    });
+    render(<ImagingPage />, { wrapper });
+    await screen.findByText('NullImg');
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    await waitFor(() => {
+      expect((screen.getByLabelText('标题') as HTMLInputElement).value).toBe('NullImg');
+    });
+    vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'i-null' });
+    vi.mocked(apiRequest).mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 50 });
+    fireEvent.click(screen.getByText('保存'));
+    await waitFor(() => {
+      const call = vi.mocked(apiRequest).mock.calls.find(([path, options]) =>
+        path === '/resources/imaging/i-null' && String((options as RequestInit)?.method ?? 'GET').toUpperCase() === 'PATCH',
+      );
+      expect(call).toBeDefined();
+      const body = JSON.parse(String((call?.[1] as RequestInit)?.body));
+      expect(body.imageUrl).toBe('');
+    });
+  });
 });
 
 function toLocalDatetime(value: string): string {

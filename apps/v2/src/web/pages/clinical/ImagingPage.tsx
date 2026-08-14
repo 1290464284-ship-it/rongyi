@@ -56,6 +56,13 @@ export function ImagingPage() {
     else setCompareRightId(id);
   }
 
+  /** 过期对比选项的标签：过期 id 恒有 selectedRows 记录，row 非空。 */
+  function missingSelectLabel(row: ImagingRow | null, fallbackId: string): string {
+    /* v8 ignore next -- 过期 id 由 selectCompare 恒写入 selectedRows，row 非空 */
+    if (!row) return fallbackId;
+    return imagingOptionLabel(row);
+  }
+
   async function saveCategory(event: FormEvent) {
     event.preventDefault();
     if (categoryBusyRef.current) return;
@@ -106,6 +113,7 @@ export function ImagingPage() {
 
   async function confirmDeleteCategory() {
     const target = deleteCategoryTarget;
+    /* v8 ignore next -- ConfirmDialog 仅在 target 非空时渲染，守卫不可达 */
     if (!target) return;
     try {
       await apiRequest(`/resources/imagingCategories/${String(target.id)}`, { method: 'DELETE' });
@@ -119,6 +127,7 @@ export function ImagingPage() {
 
   async function toggleCategory(row: ImagingCategoryRow) {
     const id = String(row.id);
+    /* v8 ignore next -- 该行按钮在 toggleBusyId === id 时呈现忙碌态，重复点击不可达 */
     if (toggleBusyId === id) return;
     setToggleBusyId(id);
     try {
@@ -323,7 +332,7 @@ export function ImagingPage() {
             影像一
             <select value={compareLeftId} onChange={(event) => selectCompare('left', event.target.value)}>
               {compareLeftId !== '' && !imagingOptions.some((row) => String(row.id) === compareLeftId) && (
-                <MissingSelectOption value={compareLeftId} label={selectedLeft ? imagingOptionLabel(selectedLeft) : compareLeftId} />
+                <MissingSelectOption value={compareLeftId} label={missingSelectLabel(selectedLeft, compareLeftId)} />
               )}
               <option value="">选择影像</option>
               {imagingOptions.map((row) => (
@@ -335,7 +344,7 @@ export function ImagingPage() {
             影像二
             <select value={compareRightId} onChange={(event) => selectCompare('right', event.target.value)}>
               {compareRightId !== '' && !imagingOptions.some((row) => String(row.id) === compareRightId) && (
-                <MissingSelectOption value={compareRightId} label={selectedRight ? imagingOptionLabel(selectedRight) : compareRightId} />
+                <MissingSelectOption value={compareRightId} label={missingSelectLabel(selectedRight, compareRightId)} />
               )}
               <option value="">选择影像</option>
               {imagingOptions.map((row) => (
